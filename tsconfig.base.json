@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  // Shared base for every app/package in this workspace. Apps extend this
+  // file (e.g. `"extends": "../../tsconfig.base.json"`) and layer their own
+  // module/target/paths on top — see apps/api/tsconfig.json and
+  // apps/mobile/tsconfig.json once scaffolded (mobile also extends
+  // "expo/tsconfig.base"; TS 5+ supports an array of extends).
+  "compilerOptions": {
+    "strict": true,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "forceConsistentCasingInFileNames": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+
+    // "bundler" mirrors how Metro (Expo) and Bun itself resolve modules —
+    // the appropriate default for a Bun+Expo workspace.
+    // GOTCHA: TypeScript requires "moduleResolution": "bundler" to be paired
+    // with "module": "preserve" | "esnext" (or similar ESM value) — it is
+    // NOT valid alongside "module": "commonjs". An app that needs CommonJS
+    // output (e.g. an Express API type-checked/compiled via tsc) must
+    // override BOTH "module" and "moduleResolution" together in its own
+    // tsconfig.json; overriding only one will fail with a TS config error.
+    "moduleResolution": "bundler",
+
+    // Index/array access returns `T | undefined` unless proven safe. The
+    // battle-tested apps this template was extracted from run with this on;
+    // keep it on. An app may opt OUT in its own tsconfig, but new code
+    // should be written against the stricter default.
+    "noUncheckedIndexedAccess": true
+  }
+}

@@ -1,0 +1,25 @@
+{
+  // Standalone config. The monorepo root tsconfig.base.json is owned by another
+  // agent and may not exist yet during extraction, so this package does not
+  // extend it.
+  // TODO(orchestrator): consider extending ../../tsconfig.base.json
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": true,
+    "verbatimModuleSyntax": true,
+    // Explicit types list gives the test files the `bun:test` globals and, by
+    // virtue of being explicit, disables tsc's auto-inclusion of every @types/*
+    // hoisted to the workspace root (which otherwise fails on an unresolved
+    // @types/minimatch). src needs no ambient types; the entry is harmless there.
+    "types": ["bun"]
+  },
+  // Tests are included so `tsc --noEmit` type-checks them too — the template
+  // deliberately does NOT inherit the source repo's "typecheck skips tests" gap.
+  "include": ["src/**/*", "tests/**/*"],
+  "exclude": ["node_modules", "dist"]
+}

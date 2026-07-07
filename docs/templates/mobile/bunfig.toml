@@ -1,0 +1,15 @@
+[test]
+# Loaded before any test file — register global mocks / RN shims here.
+preload = ["./bun.setup.ts"]
+root = "."
+isolateWorkers = true
+
+# Coverage gate. Ratchet upward as suites land; the goal is 80% across the board.
+coverageThreshold = { lines = 25, functions = 25, statements = 25 }
+coverageReporter = ["text", "lcov"]
+coverageSkipTestFiles = true
+coveragePathIgnorePatterns = ["**/bun.setup.ts", "**/packages/**"]
+
+# Run test files one at a time. bun:test has isolation issues when files run
+# concurrently (especially with mock.module()), so force serial execution.
+concurrency = 1

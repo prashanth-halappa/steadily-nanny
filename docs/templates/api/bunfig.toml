@@ -1,0 +1,23 @@
+# Bun configuration for API testing
+# See: https://bun.sh/docs/runtime/bunfig
+
+[test]
+# Coverage gate. Start conservative (a ratcheted threshold that matches your
+# current measured baseline) and raise it toward 80 as test workstreams land.
+# Raising it is a one-line change; lowering it should never happen.
+coverageThreshold = { lines = 30, functions = 30, statements = 30 }
+
+# Coverage reporting options
+coverageReporter = ["text", "lcov"]
+
+# Skip coverage for test files and type definitions
+coverageSkipTestFiles = true
+
+# Exclude test helper and setup files from coverage
+coveragePathIgnorePatterns = ["**/tests/helpers/**", "**/tests/setup/**"]
+
+# CRITICAL: run tests one at a time. `mock.module(...)` (used heavily in
+# service tests) leaks module state between files when they run concurrently,
+# producing flaky failures. concurrency = 1 plus the run-tests-one-file.sh
+# wrapper (separate bun process per file) eliminates the leakage.
+concurrency = 1

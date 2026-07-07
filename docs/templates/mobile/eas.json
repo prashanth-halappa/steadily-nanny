@@ -1,0 +1,56 @@
+{
+  "cli": {
+    "version": ">= 16.6.1",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "channel": "development",
+      "bun": "1.3.9",
+      "env": {
+        "EXPO_USE_PRECOMPILED_MODULES": "0"
+      }
+    },
+    "ios-simulator": {
+      "extends": "development",
+      "ios": {
+        "simulator": true
+      },
+      "channel": "ios-simulator"
+    },
+    "android-emulator": {
+      "extends": "development",
+      "android": {
+        "buildType": "apk"
+      },
+      "channel": "android-emulator"
+    },
+    "preview": {
+      "distribution": "internal",
+      "channel": "preview",
+      "bun": "1.3.9",
+      "env": {
+        "SENTRY_DISABLE_AUTO_UPLOAD": "true",
+        "EXPO_USE_PRECOMPILED_MODULES": "0"
+      }
+    },
+    "production": {
+      "autoIncrement": true,
+      "channel": "production",
+      "bun": "1.3.9",
+      "env": {
+        "SENTRY_ALLOW_FAILURE": "true",
+        "EXPO_USE_PRECOMPILED_MODULES": "0"
+      }
+    }
+  },
+  "submit": {
+    "production": {
+      "android": {
+        "serviceAccountKeyPath": "./play-store-service-account.json"
+      }
+    }
+  }
+}

@@ -1,0 +1,10 @@
+# Mobile build archives
+*.tar.gz
+*.app/
+
+# CocoaPods — must be installed fresh on the EAS builder.
+# Uploading local Pods (while the *.tar.gz rule above strips the Hermes
+# prebuilt tarballs from Pods/hermes-engine-artifacts/) breaks Release
+# builds: RN 0.86's "[Hermes] Replace Hermes" phase wipes Pods/hermes-engine
+# and fails to re-extract the missing release tarball.
+apps/mobile/ios/Pods/

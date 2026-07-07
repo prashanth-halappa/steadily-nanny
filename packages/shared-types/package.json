@@ -1,0 +1,32 @@
+{
+  "name": "@yourapp/shared-types",
+  "version": "0.1.0",
+  "private": true,
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./result": "./src/result.ts",
+    "./errorCodes": "./src/errorCodes.ts",
+    "./api-responses": "./src/api-responses.ts",
+    "./constants": "./src/constants.ts",
+    "./appConfig": "./src/appConfig.ts",
+    "./locale": "./src/locale.ts",
+    "./onboarding": "./src/onboarding.ts",
+    "./text": "./src/text.ts",
+    "./domain/*": "./src/domain/*.ts",
+    "./dto/*": "./src/dto/*.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "for f in tests/*.test.ts; do [ -f \"$f\" ] && (bun test \"$f\" || exit 1); done"
+  },
+  "peerDependencies": {
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.9.3",
+    "zod": "4.4.3"
+  }
+}

@@ -1,0 +1,69 @@
+**/.DS_Store
+
+# Service account keys
+*_Service_account_*.json
+
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Turbo
+.turbo
+
+# Build outputs
+dist/
+build/
+.expo/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+
+# Environment
+.env
+.env.local
+.env*.local
+.env.cloudrun
+.dev.vars
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing
+coverage/
+.nyc_output/
+
+# Local tool caches
+cache/
+
+# Misc
+*.tgz
+.npmrc
+.gemini-clipboard
+apps/mobile/screenshots/
+apps/api/scripts/output/*.md
+apps/api/scripts/translate/output/
+*.ipa
+
+# Playwright MCP scratch files
+.playwright-mcp/
+
+# Mobile build archives
+*.tar.gz
+*.app/
+*.apk
+*.aab
+*.api
+
+# Supabase temp files
+supabase/.temp/

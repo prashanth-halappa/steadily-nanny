@@ -1,0 +1,17 @@
+[install]
+# Equivalent to .npmrc save-exact=true
+exact = true
+# Use hardlink backend for Metro bundler compatibility (Expo/React Native)
+backend = "hardlink"
+# Use hoisted (npm-style flat) node_modules so Expo's native module
+# duplicate-check sees a single copy per package. Bun's default isolated
+# linker creates per-consumer hash buckets that expo-doctor flags as
+# duplicates even when the version is identical.
+linker = "hoisted"
+
+[install.lockfile]
+save = true
+
+[test]
+# Set concurrency to 1 to run tests one by one
+concurrency = 1
