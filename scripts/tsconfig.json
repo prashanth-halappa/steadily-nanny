@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  // Standalone tsconfig for root-level Bun scripts (scripts/*.ts). Not a
+  // workspace member (root package.json only lists apps/* and packages/* as
+  // workspaces), so it isn't picked up by `turbo run typecheck` — this file
+  // exists purely so `bunx tsc --noEmit -p scripts/tsconfig.json` can type
+  // check these scripts directly. See CLAUDE.md's setup-script report for
+  // why this isn't wired into a package.json script.
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    // Same module/moduleResolution pairing as apps/api: "bundler" resolution
+    // (inherited from the base) requires "module": "preserve" | an ESM-ish
+    // value, not "commonjs" — see tsconfig.base.json's GOTCHA comment.
+    "module": "preserve",
+    "target": "ES2023",
+    "noEmit": true
+  },
+  "include": ["*.ts"]
+}

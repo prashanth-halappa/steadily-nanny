@@ -1,0 +1,15 @@
+{
+  "network": "Error de red. Comprueba tu conexión e inténtalo de nuevo.",
+  "server": "Algo salió mal por nuestra parte. Inténtalo de nuevo.",
+  "unknown": "Algo salió mal. Inténtalo de nuevo.",
+  "unauthorized": "Tu sesión ha expirado. Inicia sesión de nuevo.",
+  "forbidden": "No tienes permiso para hacer eso.",
+  "notFound": "No pudimos encontrar lo que buscabas.",
+  "conflict": "Eso entra en conflicto con el estado actual. Actualiza e inténtalo de nuevo.",
+  "rateLimited": "Demasiadas solicitudes. Espera un momento e inténtalo de nuevo.",
+  "validation": "Comprueba la información que ingresaste e inténtalo de nuevo.",
+  "paywallRequired": "Esta función requiere una mejora.",
+  "usageLimitExceeded": "Has alcanzado tu límite de uso. Inténtalo de nuevo más tarde.",
+  "timeout": "La solicitud tardó demasiado. Inténtalo de nuevo.",
+  "offline": "Estás sin conexión. Comprueba tu conexión."
+}

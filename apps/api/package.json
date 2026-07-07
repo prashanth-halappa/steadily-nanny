@@ -1,0 +1,53 @@
+{
+  "name": "@yourapp/api",
+  "version": "1.0.0",
+  "description": "Express 5 + Supabase + Bun API core (template)",
+  "private": true,
+  "main": "src/index.ts",
+  "scripts": {
+    "start": "bun --preload ./src/instrument.ts src/index.ts",
+    "dev": "mkdir -p logs && bun --preload ./src/instrument.ts --watch src/index.ts 2>&1 | tee -a logs/dev.log",
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check .",
+    "format": "biome check --write --unsafe . && biome format --write .",
+    "format:check": "biome format .",
+    "test": "bash scripts/run-tests-one-file.sh tests/unit",
+    "test:coverage": "bun test --coverage",
+    "db:migrate": "bash scripts/db-migrate.sh",
+    "qa:smoke": "bun scripts/qa-smoke.ts",
+    "clean": "rm -rf dist node_modules"
+  },
+  "dependencies": {
+    "@ai-sdk/google-vertex": "4.0.152",
+    "@sentry/bun": "10.58.0",
+    "@supabase/supabase-js": "^2.80.0",
+    "@yourapp/shared-types": "*",
+    "ai": "6.0.208",
+    "compression": "1.8.1",
+    "dotenv": "^17.4.2",
+    "expo-server-sdk": "^6.1.0",
+    "express": "^5.2.1",
+    "express-rate-limit": "8.5.2",
+    "helmet": "^8.1.0",
+    "i18next": "26.3.1",
+    "morgan": "^1.10.1",
+    "node-cache": "5.1.2",
+    "posthog-node": "^5.29.4",
+    "resend": "6.14.0",
+    "winston": "^3.19.0",
+    "winston-transport": "^4.9.0",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/compression": "1.8.1",
+    "@types/express": "^5.0.6",
+    "@types/morgan": "^1.9.10",
+    "@types/node": "^24.10.0",
+    "bun-types": "1.3.14",
+    "typescript": "^5.9.3"
+  },
+  "trustedDependencies": [
+    "@sentry/bun"
+  ]
+}

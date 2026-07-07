@@ -18,6 +18,7 @@
     "typecheck": "turbo run typecheck",
     "clean": "turbo run clean && rm -rf node_modules",
     "qc": "./scripts/qc.sh",
+    "setup": "bun scripts/setup.ts",
     "g": "sh -c 'git add . && git status && git commit -m \"$1\" && git push' _",
     "prepare": "husky"
   },
@@ -37,11 +38,15 @@
   "packageManager": "bun@1.3.9",
   "// TODO(porting)": "Source repo patches expo-constants, expo-updates, and @sentry/react-native via patchedDependencies + patches/*.patch (workarounds for specific Expo/Sentry bugs at specific versions). Not carried over here — re-evaluate once apps/mobile's real dependency versions are extracted, and only reintroduce patchedDependencies if the same bugs reproduce against this template's pinned versions.",
   "lint-staged": {
-    "*.{ts,tsx}": [
+    "//": "Scoped to code dirs on purpose: docs/templates/biome.json is a copy-paste teaching file that Biome 2.x treats as a conflicting nested ROOT config if it (or any file near it) is ever passed explicitly. docs/** is biome-ignored anyway.",
+    "{apps,packages,scripts}/**/*.{ts,tsx}": [
       "biome check --write --no-errors-on-unmatched",
       "biome format --write --no-errors-on-unmatched"
     ],
-    "*.json": [
+    "{apps,packages,scripts}/**/*.json": [
+      "biome format --write --no-errors-on-unmatched"
+    ],
+    "./*.{json,ts}": [
       "biome format --write --no-errors-on-unmatched"
     ]
   }

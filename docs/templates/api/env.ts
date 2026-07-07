@@ -35,8 +35,11 @@ const requiredEnvSchema = z.object({
   SUPABASE_ANON_KEY: z.string().min(1, 'SUPABASE_ANON_KEY is required'),
   SUPABASE_SERVICE_KEY: z.string().min(1, 'SUPABASE_SERVICE_KEY is required'),
 
-  // LLM provider (Google Gemini via the Vercel AI SDK in this stack)
-  LLM_GOOGLE_API_KEY: z.string().min(1, 'LLM_GOOGLE_API_KEY is required'),
+  // LLM provider (Google Gemini via the Vercel AI SDK, through Vertex AI in this
+  // stack — authenticated via Application Default Credentials, NOT an API key;
+  // see 05-API-LLM-JOBS.md §1 and PROVISIONING.md §3)
+  GOOGLE_VERTEX_PROJECT: z.string().min(1, 'GOOGLE_VERTEX_PROJECT is required'),
+  GOOGLE_VERTEX_LOCATION: z.string().min(1).default('us-central1'),
 });
 
 /**
@@ -70,7 +73,8 @@ function validateEnv(): Env {
       SUPABASE_URL: 'http://localhost:54321',
       SUPABASE_ANON_KEY: 'test-anon-key',
       SUPABASE_SERVICE_KEY: 'test-service-key',
-      LLM_GOOGLE_API_KEY: 'test-google-key',
+      GOOGLE_VERTEX_PROJECT: 'test-gcp-project',
+      GOOGLE_VERTEX_LOCATION: 'us-central1',
       JOB_API_KEY: 'test-job-api-key',
       LOG_LEVEL: 'info',
     } as Env;

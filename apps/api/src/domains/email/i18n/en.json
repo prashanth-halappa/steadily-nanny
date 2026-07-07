@@ -1,0 +1,19 @@
+{
+  "common": {
+    "footerCopyright": "&copy; {{year}} {{appName}}. All rights reserved.",
+    "footerHelp": "Need help? Reach us at",
+    "unsubscribe": "Unsubscribe"
+  },
+  "welcome": {
+    "subject": "Welcome to {{appName}}",
+    "fallbackName": "there",
+    "greeting": "Hi {{name}} &mdash; welcome aboard",
+    "intro": "We're really glad you're here. Your {{appName}} account is all set up and ready to go.",
+    "body": "Take a minute to look around and make it your own. Whenever you have a question, we're just an email away.",
+    "tipLabel": "Getting started",
+    "tipBody": "Open the app and finish setting up your profile &mdash; it takes less than a minute and makes everything work better for you.",
+    "ctaOpen": "Open {{appName}}",
+    "closing": "We're glad to have you with us.",
+    "preheader": "Welcome to {{appName}} &mdash; here's how to get started."
+  }
+}

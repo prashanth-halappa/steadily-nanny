@@ -1,0 +1,140 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * Design tokens as CSS variables (HSL channels). Tailwind reads these via the
+ * hsl(var(--token)) indirection in tailwind.config.js, so a single edit here
+ * re-themes the whole app.
+ *
+ * A dark palette is authored below in `.dark:root`, but dark mode is currently
+ * DISABLED — see lib/useColorScheme.ts (it hard-forces light). Wire up the
+ * Appearance API to bring `.dark:root` to life.
+ */
+@layer base {
+  :root {
+    /* Brand & Core Colors */
+    --background: 0 0% 100%; /* #FFFFFF - pure white */
+    --foreground: 240 10% 10%; /* #17181A - near-black */
+    --card: 0 0% 100%; /* #FFFFFF - white */
+    --card-foreground: 240 10% 10%; /* #17181A - near-black */
+    --popover: 0 0% 100%; /* #FFFFFF - white */
+    --popover-foreground: 240 10% 10%; /* #17181A - near-black */
+
+    /* Primary Brand Color (neutral blue) */
+    --primary: 230 80% 60%; /* #3B6FF5 - blue */
+    --primary-foreground: 0 0% 100%; /* white text on brand */
+    --primary-light: 230 80% 70%; /* lighter blue for hover/pressed states */
+    --primary-dark: 230 80% 50%; /* darker blue */
+
+    /* Secondary & Muted */
+    --secondary: 220 10% 94%; /* #EDEEF0 - light gray */
+    --secondary-foreground: 240 10% 10%; /* #17181A - near-black */
+    --muted: 220 14% 96%; /* #F4F5F7 - cool gray */
+    --muted-foreground: 220 8% 50%; /* #777E8B - medium gray */
+
+    /* Accent Color */
+    --accent: 16 80% 58%; /* #EF7B45 - warm orange */
+    --accent-foreground: 0 0% 100%; /* white text on accent */
+
+    /* Category accent colors — three distinct, meaning-free hues */
+    --category-accent1: 239 84% 67%; /* #6366F1 - indigo */
+    --category-accent2: 173 80% 40%; /* #14B8A6 - teal */
+    --category-accent3: 330 81% 60%; /* #EC4899 - pink */
+
+    /* System Colors */
+    --destructive: 0 72% 51%; /* #DC2626 - red */
+    --destructive-foreground: 0 0% 100%; /* white text on destructive */
+    --success-state: 152 60% 42%; /* #2DA86B - green */
+    --warning: 38 92% 50%; /* #F59E0B - amber */
+    --warning-foreground: 240 10% 10%; /* near-black text on warning */
+
+    /* UI Elements */
+    --border: 220 13% 91%; /* #E3E5E8 - cool border */
+    --input: 220 14% 96%; /* #F4F5F7 - cool gray */
+    --ring: 230 80% 60%; /* #3B6FF5 - blue for focus rings */
+    --neutral: 0 0% 66%; /* #A8A8A8 - medium gray */
+
+    /* Specialty: Skeleton Shimmer (neutral gray) */
+    --skeleton-base: 220 13% 95%; /* #F0F1F3 */
+    --skeleton-highlight: 210 20% 98%; /* #F9FAFB */
+
+    /* Specialty: Inline Error (warm amber) */
+    --error-inline-bg: 30 100% 96%; /* #FFF7ED */
+    --error-inline-border: 27 97% 72%; /* #FDBA74 */
+    --error-inline-text: 17 76% 34%; /* #9A3412 */
+
+    /* Neutral Gray Scale (semantic: 50=subtle bg, 900=strong text) */
+    --gray-50: 210 20% 98%; /* #F9FAFB */
+    --gray-100: 220 14% 96%; /* #F3F4F6 */
+    --gray-200: 220 13% 91%; /* #E5E7EB */
+    --gray-300: 216 12% 84%; /* #D1D5DB */
+    --gray-400: 218 11% 65%; /* #9CA3AF */
+    --gray-500: 220 9% 46%; /* #6B7280 */
+    --gray-600: 215 14% 34%; /* #4B5563 */
+    --gray-700: 217 19% 27%; /* #374151 */
+    --gray-800: 215 28% 17%; /* #1F2937 */
+    --gray-900: 221 39% 11%; /* #111827 */
+  }
+
+  .dark:root {
+    /* Dark mode — warm neutral palette (DISABLED until dark mode is wired up) */
+    --background: 240 6% 10%; /* warm dark background */
+    --foreground: 220 14% 96%; /* #F4F5F7 light text */
+    --card: 240 6% 14%; /* warm slightly lighter dark */
+    --card-foreground: 220 14% 96%; /* #F4F5F7 light text */
+    --popover: 240 6% 14%; /* warm slightly lighter dark */
+    --popover-foreground: 220 14% 96%; /* #F4F5F7 light text */
+
+    --primary: 230 80% 70%; /* lighter blue for dark mode */
+    --primary-foreground: 240 6% 10%; /* dark text on light primary */
+    --primary-light: 230 80% 75%; /* even lighter blue for dark mode hover */
+    --primary-dark: 230 80% 60%; /* standard blue variant for dark mode */
+
+    --secondary: 240 6% 20%; /* warm dark secondary */
+    --secondary-foreground: 220 14% 96%; /* light text */
+
+    --muted: 240 6% 16%; /* warm darker muted background */
+    --muted-foreground: 220 14% 80%; /* improved contrast */
+
+    --accent: 16 80% 58%; /* warm orange for dark mode */
+    --accent-foreground: 240 6% 10%; /* dark text on bright accent */
+
+    /* Category accent colors adjusted (brighter) for dark mode */
+    --category-accent1: 235 89% 74%; /* #818CF8 */
+    --category-accent2: 172 66% 50%; /* #2DD4BF */
+    --category-accent3: 330 86% 70%; /* #F472B6 */
+
+    --destructive: 0 72% 60%; /* slightly lighter red */
+    --destructive-foreground: 240 6% 10%; /* dark text */
+    --success-state: 152 60% 55%; /* lighter green */
+    --warning: 38 92% 55%; /* brighter amber for dark mode */
+    --warning-foreground: 240 6% 10%; /* dark text on warning */
+
+    --border: 240 6% 22%; /* warm dark border */
+    --input: 240 6% 18%; /* warm dark input background */
+    --ring: 230 80% 70%; /* lighter blue for focus rings */
+    --neutral: 0 0% 50%; /* medium gray for dark mode */
+
+    /* Specialty: Skeleton Shimmer */
+    --skeleton-base: 240 6% 16%;
+    --skeleton-highlight: 240 6% 22%;
+
+    /* Specialty: Inline Error */
+    --error-inline-bg: 17 50% 14%;
+    --error-inline-border: 17 50% 30%;
+    --error-inline-text: 27 90% 72%;
+
+    /* Neutral Gray Scale (inverted for dark mode: 50=subtle bg, 900=strong text) */
+    --gray-50: 240 6% 14%;
+    --gray-100: 240 6% 16%;
+    --gray-200: 240 6% 22%;
+    --gray-300: 240 6% 28%;
+    --gray-400: 220 8% 45%;
+    --gray-500: 220 8% 55%;
+    --gray-600: 220 8% 65%;
+    --gray-700: 220 10% 75%;
+    --gray-800: 220 14% 88%;
+    --gray-900: 220 14% 96%;
+  }
+}

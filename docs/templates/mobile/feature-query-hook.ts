@@ -1,6 +1,10 @@
 /**
- * Query hook skeleton — read server state for `<feature>`.
- * Lives at: apps/mobile/src/hooks/queries/use<Feature>.ts
+ * Query hook skeletons — read server state for `<feature>`.
+ * One hook per file (see docs/08), so when you copy these, split them into
+ * SEPARATE files:
+ *   apps/mobile/src/hooks/queries/use<Feature>s.ts  — the list hook (useWidgets)
+ *   apps/mobile/src/hooks/queries/use<Feature>.ts   — the single-item hook (useWidget)
+ * They're shown together here only for reference.
  *
  * Wraps the endpoint module in TanStack Query. `enabled` gates the fetch until the
  * user is authenticated so it never fires with a missing token (which the axios
@@ -15,7 +19,7 @@
  */
 
 import { useQuery } from '@tanstack/react-query';
-import { widgetApi } from '../../api/endpoints/widget';
+import { widgetApi } from '../../api/endpoints/widgets';
 import { queryKeys } from '../../api/queryKeys';
 import { useAuthStore } from '../../store/auth';
 import { QUERY_TIMING } from './utils';

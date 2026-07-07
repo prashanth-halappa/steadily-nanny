@@ -1,0 +1,10 @@
+# Keep stale native build artifacts out of EAS uploads.
+# ios/Pods must be ignored so EAS regenerates them — uploading a stale Pods dir
+# caused a Hermes rsync failure in the source app's prod build.
+ios/Pods/
+ios/build/
+android/build/
+android/app/build/
+android/.gradle/
+logs/
+*.log

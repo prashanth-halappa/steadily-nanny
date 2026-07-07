@@ -1,0 +1,152 @@
+# PROVISIONING.md — dashboard-side setup
+
+Everything in this doc happens in a **web console** or a vendor CLI, not in this repo's source. Do [`SETUP.md`](./SETUP.md) alongside it — several fields in `apps/mobile/src/config/appIdentity.json` and both `.env` files are only knowable once you've completed the matching section below.
+
+Each section ends with **Verify:** — an observable check that the step actually worked.
+
+---
+
+## 1. Supabase
+
+1. Create a new project at supabase.com. Note the **Project URL** and, under **Project Settings → API**, the **anon** key and **service_role** key.
+   - `SUPABASE_URL` / `SUPABASE_ANON_KEY` / `SUPABASE_SERVICE_KEY` → `apps/api/.env`
+   - `EXPO_PUBLIC_SUPABASE_URL` / `EXPO_PUBLIC_SUPABASE_ANON_KEY` → `apps/mobile/.env` (anon key only — **never** put the service-role key in the mobile app or bundle it client-side).
+
+2. **Auth settings.** `supabase/config.toml` documents the shape (`site_url`, `additional_redirect_urls`, email confirmation policy). Either apply it via the Supabase CLI (`supabase link --project-ref <ref>` then push your config) or replicate the same settings by hand under **Authentication → URL Configuration** in the dashboard — set `site_url` to your web/deep-link domain and add your app's redirect URL(s).
+
+3. **Apple + Google sign-in providers.** Under **Authentication → Sign In / Providers**:
+   - Enable **Apple**: Client ID = your Services ID or bundle id (see §2 Apple Developer below), Secret = the generated JWT client secret (see §2, step 4).
+   - Enable **Google**: Client ID = a comma-separated list of every OAuth client id your app presents (iOS, Android, and Web — see §3 Google Cloud below; native `signInWithIdToken` verification needs every audience allow-listed, not just one), Secret = the Web client's secret.
+   - `supabase/config.toml`'s commented-out `[auth.external.google]` / `[auth.external.apple]` blocks document the same two fields (`client_id`, `secret`) for CLI-based config-as-code workflows if your Supabase CLI version supports pushing auth config — check `supabase --version` and its docs before relying on that path; the dashboard path above always works.
+
+4. **Run the migrations.** From `apps/api/`:
+   ```bash
+   bun run db:migrate            # supabase db push — after `supabase link --project-ref <ref>`
+   ```
+   This applies all 8 files in `supabase/migrations/` (extensions/helpers, user profiles, device info, job runs, app-config + beta overrides, subscriptions/usage/email, pg_cron + Vault helpers, and the widget example feature). Delete or replace `008_widgets.sql` once you've built your own first feature past the widget example.
+
+5. **Vault secrets for the cron pattern.** Migration `007_pg_cron_vault_and_example_cron.sql` reads two secrets via `vault.decrypted_secrets` (never via `current_setting('app.settings.*')`, which hosted Supabase doesn't grant): `cron_api_base_url` (your deployed API's base URL) and `cron_job_api_key` (must equal your API's `JOB_API_KEY` env var). Create both under **Database → Vault** in the dashboard, or via SQL as `service_role`:
+   ```sql
+   select vault.create_secret('https://api.yourapp.example.com', 'cron_api_base_url');
+   select vault.create_secret('<same value as JOB_API_KEY>', 'cron_job_api_key');
+   ```
+   The migration's own `cron.schedule(...)` example is commented out by design (so the migration never fails on an environment without `pg_cron`) — uncomment and adapt it, or add a new migration, once you have real job endpoints to schedule.
+
+6. **RLS advisor check.** In the dashboard, **Database → Advisors → Security Advisor**. Every table in this template's migrations ships with RLS enabled by default (owner-only policies where the client should read/write directly; `revoke all ... from anon, authenticated` plus service-role-only grants for tables/RPCs the client should never touch directly, e.g. `job_runs`, `app_config`, `subscription_events`, `email_log`, `process_subscription_event`, `check_and_increment_usage`). If you add a table, decide its RLS policy in the same migration — don't defer it.
+
+**Verify:** `bunx supabase migration list` (or the dashboard's Table Editor) shows all 8 migrations applied; the Security Advisor reports no "RLS disabled" findings on your tables.
+
+---
+
+## 2. Apple Developer
+
+1. Register your bundle id (from `apps/mobile/src/config/appIdentity.json` → `ios.bundleIdentifier`, e.g. `com.mycompany.sleepwell`) at developer.apple.com → **Certificates, Identifiers & Profiles → Identifiers**.
+2. Enable the **Sign In with Apple** capability on that identifier (the mobile app already has `usesAppleSignIn: true` and the `expo-apple-authentication` plugin wired in `app.config.ts` — this dashboard step is what makes the capability valid for the bundle id).
+3. **APNs key** (for push notifications): **Keys → Create a key** with the Apple Push Notifications service capability enabled, download the `.p8` once (Apple won't let you re-download it), then register it with EAS:
+   ```bash
+   eas credentials
+   ```
+   Follow the iOS → push notifications prompts to upload the key, Key ID, and Team ID.
+4. If you're enabling Sign In with Apple on the web/Supabase side too (for the OAuth `client_id`/`secret` in §1 step 3), you'll also need a **Services ID** and a generated JWT client secret — see Apple's Sign In with Apple REST API docs for the JWT format (signed with your key, issuer = Team ID, audience = `https://appleid.apple.com`).
+
+**Verify:** `eas credentials` lists a valid push key for iOS; a dev build can request a push token without an APNs error.
+
+---
+
+## 3. Google Cloud
+
+Use **one** GCP project for everything below — splitting Google Sign-In and Firebase/Vertex across projects is a known footgun (mismatched OAuth audiences, SHA registration in the wrong place).
+
+1. **OAuth consent screen** — configure it (external or internal) under **APIs & Services → OAuth consent screen**.
+2. **OAuth client IDs** — create three under **APIs & Services → Credentials**:
+   - **iOS** — bundle id = your app's. The resulting client id becomes `ios.googleSignInUrlScheme` in `appIdentity.json` as `com.googleusercontent.apps.<client-id>`, and its numeric/string id also goes to `EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID` in `apps/mobile/.env`.
+   - **Android** — package name = your app's, **plus the SHA-1 fingerprint**. Register **both** your local debug/EAS-build keystore SHA-1 **and** the Play Console's App Signing SHA-1 (Play re-signs your app for distribution with its own key — if you only register your upload-key SHA-1, sign-in works in internal testing but breaks for real Play Store installs). Get the Play Signing SHA-1 from **Play Console → Setup → App Integrity** once your app has been uploaded once.
+   - **Web** — used as the `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID` (this is the audience Supabase verifies native `signInWithIdToken` calls against) and as the Supabase Google provider's Client ID (§1 step 3).
+3. **Vertex AI** — enable the **Vertex AI API** on the same project (**APIs & Services → Library → Vertex AI API → Enable**).
+4. **Service account for ADC** (Application Default Credentials — the API authenticates to Vertex via ADC, **not** an API key):
+   - Locally: `gcloud auth application-default login` (uses your own Google identity — fine for local dev).
+   - For a deployed API: create a service account with the **Vertex AI User** role, and either mount its JSON key and set `GOOGLE_APPLICATION_CREDENTIALS` to its path, or (on Cloud Run specifically) attach the service account directly to the Cloud Run service and skip the JSON key entirely — Cloud Run's built-in ADC will pick it up.
+   - Set `GOOGLE_VERTEX_PROJECT` = your GCP project id and `GOOGLE_VERTEX_LOCATION` (default `us-central1`) in `apps/api/.env` (and as Cloud Run env vars in production — see §9).
+
+**Verify:** `apps/api` boots without the `GOOGLE_VERTEX_PROJECT is required` Zod validation error; a manual call to the widget domain's "generate description" endpoint (`POST /api/v1/widgets/:widgetId/generate-description`) returns a real Gemini-generated string, not a graceful-degradation fallback.
+
+---
+
+## 4. Firebase
+
+Needed only for Android push notifications (Expo/FCM) and native Android Google Sign-In.
+
+1. Create a Firebase project (or reuse the one backing your GCP project — Firebase projects ARE GCP projects).
+2. Add an Android app with your `android.package` (from `appIdentity.json`) and the same SHA-1(s) as §3 step 2.
+3. Download `google-services.json` and place it at `apps/mobile/google-services.json` (the path `app.config.ts`'s Android config expects — this file is gitignored on purpose; never commit it).
+
+**Verify:** an EAS Android build includes the file (`eas build` fails fast with a clear error if it's missing and a plugin needs it).
+
+---
+
+## 5. RevenueCat
+
+1. Create a **Project**, then an **App** per platform (iOS, Android) under **Project settings → Apps**.
+2. Create an **Entitlement**. Its identifier **must match** the key in `packages/shared-types/src/constants.ts`'s `ENTITLEMENT_TIER_MAP` — after `bun run setup`, that key is `<scheme>-pro-entitlement` (e.g. `sleepwell-pro-entitlement`). Either name your RC entitlement exactly that, or edit `ENTITLEMENT_TIER_MAP` to match whatever identifier you actually created — the map is a real, working lookup, not a stub, so it must stay in sync with RC.
+3. Create your **Products** in each store first (App Store Connect / Play Console), then attach them to the entitlement, then group them into an **Offering**.
+4. **Public SDK keys** (per platform, under **Project settings → API keys**) → `EXPO_PUBLIC_REVENUECAT_IOS_KEY` / `EXPO_PUBLIC_REVENUECAT_ANDROID_KEY` in `apps/mobile/.env`.
+5. **Webhook** → **Project settings → Integrations → Webhooks**: URL = `https://<your-api-host>/api/webhooks/revenuecat`, and set an **Authorization header** whose value you also put in `apps/api/.env` as `REVENUECAT_WEBHOOK_SECRET` (the route mounts pre-auth in `app.ts` and verifies this secret itself — see `docs/04-API-ARCHITECTURE.md` §1.2).
+6. (Optional) `REVENUECAT_SECRET_KEY` — the REST v2 secret key, used only as a fallback reconciliation path if you build one; not required to boot.
+
+**Verify:** a sandbox purchase on a dev build triggers a webhook POST that your API logs (check `apps/api/logs/dev.log`) and that updates `user_subscriptions` in Supabase.
+
+---
+
+## 6. Sentry
+
+Create **two separate projects** — one for the API (Node/Bun), one for mobile (React Native) — sharing DSNs across them defeats per-platform issue grouping and alerting.
+
+- API DSN → `SENTRY_DSN` in `apps/api/.env`.
+- Mobile DSN → `EXPO_PUBLIC_SENTRY_DSN` in `apps/mobile/.env`, and the mobile project's **org slug** / **project slug** → `appIdentity.json`'s `sentry.organization` / `sentry.project` (consumed by the `@sentry/react-native/expo` config plugin in `app.config.ts`, which needs them to auto-upload source maps).
+- `apps/mobile/eas.json`'s `production` build profile already sets `SENTRY_ALLOW_FAILURE: "false"` — keep it that way. It means a broken Sentry source-map upload **fails the production build** instead of silently shipping a release with unsymbolicated crash reports.
+
+**Verify:** trigger a test error in a dev build; it shows up in the mobile Sentry project within a minute, symbolicated (not raw hex addresses).
+
+---
+
+## 7. PostHog
+
+1. Create a project, grab its **Project API Key**.
+2. API side → `POSTHOG_API_KEY` in `apps/api/.env`. Mobile side → `EXPO_PUBLIC_POSTHOG_API_KEY` (and `EXPO_PUBLIC_POSTHOG_HOST` if you're not on PostHog Cloud US — defaults to `https://us.i.posthog.com`) in `apps/mobile/.env`.
+
+**Verify:** an event fired from a dev build appears in **Activity → Live events** within a few seconds.
+
+---
+
+## 8. EAS (Expo Application Services)
+
+1. From `apps/mobile/`: `eas login`, then `eas init` — see `SETUP.md` step 12 for why you must hand-wire the returned project id into `appIdentity.json` (dynamic `app.config.ts` doesn't get this written automatically).
+2. Confirm the three build profiles in `eas.json` (`development`, `preview`, `production`) have the channels you want; `production`'s `EXPO_PUBLIC_API_URL` env override should point at your real deployed API host, not the setup-script default.
+3. Android submission needs a Play Console **service account JSON** at the path `eas.json`'s `submit.production.android.serviceAccountKeyPath` points to (`./SETUP-play-service-account.json` by default — rename the file and update the path, or vice versa; it's gitignored either way).
+
+**Verify:** `eas build --platform ios --profile development` completes and installs on a device/simulator.
+
+---
+
+## 9. Cloud Run (API deploy)
+
+1. Copy the required vars from `apps/api/deploy-cloud-run.sh`'s header into a local `.env.cloudrun` (gitignored): `GCP_PROJECT_ID`, `GCP_REGION`, `SERVICE_NAME`, `ARTIFACT_REGISTRY_REPO`, `IMAGE_TAG` (optional: `MIN_INSTANCES`, `MAX_INSTANCES`, `CPU`, `MEMORY`, `CONCURRENCY`, `TIMEOUT` — all have shell defaults).
+2. Attach the Vertex-AI-capable service account from §3 step 4 to the Cloud Run service so ADC resolves without a mounted key file.
+3. Set the application's own runtime env vars (everything in `apps/api/.env.example`) on the Cloud Run service itself — the deploy script passes secrets inline via `--set-env-vars` from your local `.env`, not a secret manager. **Known limitation, not a bug**: if you need tighter secret handling, layer in Google Secret Manager yourself; it isn't wired up in this template.
+4. Run `bash apps/api/deploy-cloud-run.sh` (or `bun run` whatever script you wire to it).
+
+**Verify:** `curl https://<your-cloud-run-url>/health` returns `{"status":"OK",...}`; `curl https://<your-cloud-run-url>/api/app/status` returns a valid `AppStatusResponse` envelope.
+
+---
+
+## 10. Universal links / AASA (associated domains)
+
+This template ships **without** a hosted `apple-app-site-association` file — `app.config.ts` declares `associatedDomains: [applinks:<your-domain>, webcredentials:<your-domain>]` and the Android intent filter, but nothing in this repo hosts the AASA/`assetlinks.json` file those require. Your options:
+- **Skip it for now.** Deep links via the custom URL scheme (`sleepwell://...`) work with zero extra hosting; only *universal* links (`https://sleepwell.example.com/...` opening the app directly) need AASA hosting.
+- **Host it yourself** at `https://<your-domain>/.well-known/apple-app-site-association` (and `/.well-known/assetlinks.json` for Android App Links) — the content format is standard; generate it from your bundle id + Apple Team ID (iOS) and package name + SHA-256 signing cert fingerprint (Android). Any static host works; this template doesn't include one.
+
+**Verify (if you host it):** `https://<your-domain>/.well-known/apple-app-site-association` returns valid JSON over HTTPS with no redirect; Apple's associated-domains validation (visible in Xcode's device console on install) shows no errors.
+
+---
+
+Once every section above has a green **Verify:**, go back to `SETUP.md` Phases 2–4 and fill in the identity-module fields these steps produced (EAS project id, Sentry org, Google Sign-In client id, store URLs), then run the exit gates.

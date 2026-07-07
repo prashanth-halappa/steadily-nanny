@@ -10,7 +10,7 @@
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { widgetApi } from '../../api/endpoints/widget';
+import { widgetApi } from '../../api/endpoints/widgets';
 import { queryKeys } from '../../api/queryKeys';
 import { getLocalizedErrorMessage, showErrorToast } from '../../lib/toast';
 import type { CreateWidgetInput, Widget } from '@yourapp/shared-types/schemas/widget.schema';

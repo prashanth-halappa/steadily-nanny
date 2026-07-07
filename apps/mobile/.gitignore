@@ -1,0 +1,26 @@
+# Expo / RN
+.expo/
+dist/
+web-build/
+ios/
+android/
+*.orig.*
+
+# Native secrets — NEVER commit
+.env
+.env.*
+!.env.example
+google-services.json
+GoogleService-Info.plist
+*.keystore
+*.p8
+*.p12
+*.mobileprovision
+SETUP-play-service-account.json
+
+# Logs / caches
+logs/
+*.log
+node_modules/
+.turbo/
+coverage/

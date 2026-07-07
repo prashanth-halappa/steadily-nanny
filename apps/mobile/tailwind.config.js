@@ -1,0 +1,203 @@
+const { hairlineWidth } = require('nativewind/theme');
+
+/** @type {import('tailwindcss').Config} */
+module.exports = {
+  content: [
+    './app/**/*.{ts,tsx}',
+    './components/**/*.{ts,tsx}',
+    './src/app/**/*.{ts,tsx}',
+    './src/components/**/*.{ts,tsx}',
+  ],
+  presets: [require('nativewind/preset')],
+  theme: {
+    extend: {
+      // Sora is the template's default OSS font.
+      // NOTE: each Sora weight is a SEPARATE family (Sora-Bold / Sora-SemiBold /
+      // ...). On iOS you MUST select weight via `fontFamily`, not a numeric
+      // `fontWeight` (which is a no-op / faux-bold). To swap fonts, replace these
+      // family names and load the files via expo-font.
+      fontFamily: {
+        sans: ['Sora-Regular'],
+        sora: ['Sora-Regular'],
+        'sora-light': ['Sora-Light'],
+        'sora-medium': ['Sora-Medium'],
+        'sora-semibold': ['Sora-SemiBold'],
+        'sora-bold': ['Sora-Bold'],
+        'sora-extrabold': ['Sora-ExtraBold'],
+      },
+      fontSize: {
+        // Design system typography scale.
+        // Body text minimum 16px for readability.
+        xs: ['12px', { lineHeight: '16px' }],
+        sm: ['14px', { lineHeight: '21px' }], // Caption, label (1.5x line height)
+        base: ['16px', { lineHeight: '24px' }], // Body default (MINIMUM)
+        lg: ['18px', { lineHeight: '27px' }], // Body large
+        xl: ['20px', { lineHeight: '30px' }], // H3
+        '2xl': ['24px', { lineHeight: '36px' }], // H2
+        '3xl': ['28px', { lineHeight: '42px' }], // H1
+        '4xl': ['32px', { lineHeight: '48px' }], // Display
+        // Semantic aliases for design tokens
+        body: ['16px', { lineHeight: '24px' }],
+        'body-lg': ['18px', { lineHeight: '27px' }],
+        'body-sm': ['14px', { lineHeight: '21px' }],
+        caption: ['14px', { lineHeight: '21px' }],
+        label: ['14px', { lineHeight: '21px', fontWeight: '500' }],
+        button: ['16px', { lineHeight: '24px', fontWeight: '500' }],
+        display: ['32px', { lineHeight: '48px', fontWeight: '600' }],
+      },
+      spacing: {
+        // Design system 8pt grid — use these instead of arbitrary values.
+        0.5: '2px',
+        1: '4px', // xs
+        2: '8px', // sm
+        3: '12px', // card gap
+        4: '16px', // md - screen padding
+        5: '20px',
+        6: '24px', // lg - section gap
+        7: '28px',
+        8: '32px', // xl
+        12: '48px', // xxl
+        16: '64px', // xxxl
+        // Component-specific
+        touch: '44px', // iOS minimum touch target
+      },
+      colors: {
+        // Base tokens (from CSS variables)
+        border: 'hsl(var(--border))',
+        input: 'hsl(var(--input))',
+        ring: 'hsl(var(--ring))',
+        background: 'hsl(var(--background))',
+        foreground: 'hsl(var(--foreground))',
+
+        // Primary brand color (use for CTAs only)
+        primary: {
+          DEFAULT: 'hsl(var(--primary))',
+          light: 'hsl(var(--primary-light))',
+          dark: 'hsl(var(--primary-dark))',
+          foreground: 'hsl(var(--primary-foreground))',
+        },
+
+        // Secondary
+        secondary: {
+          DEFAULT: 'hsl(var(--secondary))',
+          foreground: 'hsl(var(--secondary-foreground))',
+        },
+
+        // Destructive/Error
+        destructive: {
+          DEFAULT: 'hsl(var(--destructive))',
+          foreground: 'hsl(var(--destructive-foreground))',
+        },
+        error: 'hsl(var(--destructive))', // Same as destructive
+
+        // Muted/Neutral backgrounds
+        muted: {
+          DEFAULT: 'hsl(var(--muted))',
+          foreground: 'hsl(var(--muted-foreground))',
+        },
+
+        // Accent
+        accent: {
+          DEFAULT: 'hsl(var(--accent))',
+          foreground: 'hsl(var(--accent-foreground))',
+        },
+
+        // Popover
+        popover: {
+          DEFAULT: 'hsl(var(--popover))',
+          foreground: 'hsl(var(--popover-foreground))',
+        },
+
+        // Card
+        card: {
+          DEFAULT: 'hsl(var(--card))',
+          foreground: 'hsl(var(--card-foreground))',
+        },
+
+        // Category accent colors — three distinct, meaning-free hues.
+        category: {
+          accent1: 'hsl(var(--category-accent1))',
+          accent2: 'hsl(var(--category-accent2))',
+          accent3: 'hsl(var(--category-accent3))',
+        },
+
+        // Semantic states
+        state: {
+          success: 'hsl(var(--success-state))',
+        },
+        success: 'hsl(var(--success-state))',
+        warning: 'hsl(var(--warning))',
+        warningForeground: 'hsl(var(--warning-foreground))',
+        neutral: 'hsl(var(--neutral))',
+
+        // Neutral palette (adaptive via CSS variables, inverted in dark mode)
+        gray: {
+          50: 'hsl(var(--gray-50))',
+          100: 'hsl(var(--gray-100))',
+          200: 'hsl(var(--gray-200))',
+          300: 'hsl(var(--gray-300))',
+          400: 'hsl(var(--gray-400))',
+          500: 'hsl(var(--gray-500))',
+          600: 'hsl(var(--gray-600))',
+          700: 'hsl(var(--gray-700))',
+          800: 'hsl(var(--gray-800))',
+          900: 'hsl(var(--gray-900))',
+        },
+
+        // Specialty tokens (adaptive via CSS variables)
+        skeleton: {
+          base: 'hsl(var(--skeleton-base))',
+          highlight: 'hsl(var(--skeleton-highlight))',
+        },
+        'error-inline': {
+          bg: 'hsl(var(--error-inline-bg))',
+          border: 'hsl(var(--error-inline-border))',
+          text: 'hsl(var(--error-inline-text))',
+        },
+      },
+      borderWidth: {
+        hairline: hairlineWidth(),
+      },
+      borderRadius: {
+        // Design system border radius (pill buttons/chips, generous cards)
+        sm: '16px',
+        DEFAULT: '24px',
+        md: '24px',
+        lg: '24px',
+        xl: '24px',
+        '2xl': '24px',
+        '3xl': '32px',
+        // Semantic aliases
+        card: '24px',
+        button: '9999px',
+        chip: '9999px', // Pill shape
+      },
+      boxShadow: {
+        // Professional shadow system — use sparingly; prefer borders for subtle separation.
+        sm: '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
+        DEFAULT:
+          '0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06)',
+        md: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+        lg: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
+        card: '0 2px 8px 0 rgba(0, 0, 0, 0.08)',
+        none: 'none',
+      },
+      keyframes: {
+        'accordion-down': {
+          from: { height: '0' },
+          to: { height: 'var(--radix-accordion-content-height)' },
+        },
+        'accordion-up': {
+          from: { height: 'var(--radix-accordion-content-height)' },
+          to: { height: '0' },
+        },
+      },
+      animation: {
+        'accordion-down':
+          'accordion-down 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)',
+        'accordion-up': 'accordion-up 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)',
+      },
+    },
+  },
+  plugins: [],
+};

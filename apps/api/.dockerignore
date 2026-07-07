@@ -1,0 +1,12 @@
+node_modules
+npm-debug.log
+Dockerfile
+.dockerignore
+.git
+.gitignore
+README.md
+dist
+logs
+# Never bake secrets into the image — manage them via Cloud Run env vars.
+.env
+.env.*

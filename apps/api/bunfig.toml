@@ -1,0 +1,20 @@
+# Bun configuration for API testing
+# See: https://bun.sh/docs/runtime/bunfig
+
+[test]
+# Coverage gate — start conservative and ratchet upward as suites land.
+coverageThreshold = { lines = 30, functions = 30, statements = 30 }
+
+# Coverage reporting options
+coverageReporter = ["text", "lcov"]
+
+# Skip coverage for test files and type definitions
+coverageSkipTestFiles = true
+
+# Exclude test helper and setup files from coverage
+coveragePathIgnorePatterns = ["**/tests/helpers/**", "**/tests/setup/**"]
+
+# Run tests one by one — bun:test has isolation issues (especially with
+# mock.module()) when multiple files run in one process. The `test` script also
+# runs each file in its own process via scripts/run-tests-one-file.sh.
+concurrency = 1

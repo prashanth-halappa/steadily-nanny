@@ -42,40 +42,46 @@ This ordering is **load-bearing**. Each layer depends on state set by an earlier
 | # | Middleware / mount | Why it sits here |
 |---|---|---|
 | 0 | `import './config/env'` (first import) | Fail-fast env validation before anything reads `process.env`. |
-| 1 | `app.set('trust proxy', true)` | `req.ip` resolves to the real client behind a load balancer. |
+| 1 | `app.set('trust proxy', 1)` | Trust exactly **one** proxy hop (e.g. Cloud Run's front-end) so `req.ip` resolves to the real client without trusting a fully client-spoofable `X-Forwarded-For` chain. |
 | 2 | `Sentry.setupExpressErrorHandler(app)` | Error monitoring request handler before routes. |
 | 3 | `helmet(helmetConfig)` | Security headers first. |
-| 4 | `compression()` | gzip/brotli — 60–80% smaller responses. |
+| 4 | `compression()` | gzip/brotli — smaller responses. |
 | 5 | `cacheControl` | Intelligent `Cache-Control` headers. |
-| 6 | `requestId` | Assign `X-Request-ID` before anything logs (correlation). |
+| 6 | `requestId` | Assign a correlation id before anything logs. |
 | 7 | `express.json({ verify })` + `express.urlencoded` | Body parsing. The `verify` callback preserves the **raw body** only for `/api/webhooks/*` so HMAC signatures can be verified (parsed JSON can't be re-hashed). |
 | 8 | `morganMiddleware` | HTTP access log → winston, after body parse. |
 | 9 | **`/api/jobs`** (`jobRoutes`) | **API-KEY auth — mounts BEFORE Supabase auth.** |
-| 9 | **`/api/app`** (status), **`/api/webhooks`** (signed), **`/api/unsubscribe`** (public) | Each has its own / no auth — all mount BEFORE Supabase auth. |
+| 9 | **`/api/app`** (`appStatusRoutes`), **`/api/webhooks`** (`subscriptionWebhookRoutes`, signed) | Each has its own / no auth — both mount BEFORE Supabase auth. |
 | 10a | `/api/v1` → `validateSupabaseToken` | Bearer-token auth; attaches `req.user`. |
 | 10b | `/api/v1` → `userRateLimiter` | After auth so the rate-limit key is the user ID. |
-| 10c | `/api/v1` → `streakRecorder` | Write-side side effect (POST/PUT/PATCH/DELETE), needs `req.user`. |
-| 10d | user-context middleware | `Sentry.setUser(...)` from `req.user`. |
-| 10e | `/api/v1` → `apiRoutes` | The actual versioned router. |
-| 11 | `/docs` Swagger (dev only) | Lazy-`require`d so prod never loads it into memory. |
-| 12 | `/health`, `/` | Health checks for the orchestrator. |
-| 13 | `errorHandler` | **ALWAYS LAST** — Express only catches `next(err)` in middleware registered after the routes. |
+| 10c | `/api/v1` → inline user-context middleware | `Sentry.setUser({ id: req.user.id })` — email deliberately omitted (PII minimization). |
+| 10d | `/api/v1` → `apiRoutes` | The actual versioned router (see `src/routes/index.ts`). |
+| 11 | `/health`, `/` | Health check for the orchestrator; root returns a status message. |
+| 12 | `errorHandler` | **ALWAYS LAST** — Express only catches `next(err)` in middleware registered after the routes. |
+
+This template does **not** ship a streak-recording middleware, a `/api/unsubscribe` route, or a dev-only Swagger/API-docs mount. All three exist in the reference app this template was extracted from, but were deliberately left out of v1 — they're tied to features (a streak/gamification model, an email-preferences model, an API-docs UI) this template doesn't include yet. See `PORTING.md` for what each did and how to add one back if your app needs it. The rule for adding your own doesn't change: any route needing its own auth scheme mounts **before** the `/api/v1` → `validateSupabaseToken` line, exactly like the job/webhook/app-status routes above.
 
 Example: `apps/api/src/app.ts`
 ```ts
-// Job routes - API key authentication (not Supabase token)
-// Must be mounted before Supabase auth middleware
+// Job routes - API-key authentication (not Supabase token).
+// Must be mounted before Supabase auth middleware.
 app.use('/api/jobs', jobRoutes);
-// ...
-// Apply Supabase auth middleware for all API routes
-app.use('/api/v1', validateSupabaseToken);
-// Rate limiting applied after auth so we can use user ID for the key
-app.use('/api/v1', userRateLimiter);
-// Streak recording fires after successful writes; dedupes via cache
-app.use('/api/v1', streakRecorder);
+app.use('/api/app', appStatusRoutes);
+app.use('/api/webhooks', subscriptionWebhookRoutes);
+
+// Supabase-authenticated API (order matters).
+app.use('/api/v1', validateSupabaseToken); // attaches req.user
+app.use('/api/v1', userRateLimiter); // after auth so the key is the user id
+app.use('/api/v1', (req, _res, next) => {
+  if (req.user) {
+    Sentry.setUser({ id: req.user.id }); // email omitted (PII minimization)
+  }
+  next();
+});
+app.use('/api/v1', apiRoutes);
 ```
 
-**Why job routes mount before auth:** scheduled jobs are invoked by an external scheduler (Supabase `pg_cron` + `pg_net`, or any cron hitting the HTTP endpoint). There is no logged-in user and no Supabase JWT — only a shared `X-Job-Api-Key` secret. If `/api/jobs` mounted under `validateSupabaseToken`, every cron call would 401. So the job router carries its own `validateJobApiKey` guard and is mounted on the app *before* the `/api/v1` auth layer. The same logic applies to signed webhooks and public status/unsubscribe routes.
+**Why job routes mount before auth:** scheduled jobs are invoked by an external scheduler (Supabase `pg_cron` + `pg_net`, or any cron hitting the HTTP endpoint). There is no logged-in user and no Supabase JWT — only a shared `X-Job-Api-Key` secret. If `/api/jobs` mounted under `validateSupabaseToken`, every cron call would 401. So the job router carries its own `validateJobApiKey` guard and is mounted on the app *before* the `/api/v1` auth layer. The same logic applies to the signed webhook route and the pre-auth app-status route.
 
 A ready-to-fill, fully-commented version of this file is at `templates/api/app.ts`.
 
@@ -95,48 +101,78 @@ Repositories  — DB access; extend BaseRepository
 
 ### 2.1 Routes — thin, declarative middleware wiring
 
-A route file wires path → middleware chain → controller method. No logic. Validation, auth, and ownership checks are composed from **preset spreads** to kill boilerplate.
+A route file wires path → middleware chain → controller method. No logic. Validation, auth, and ownership checks are composed from **preset spreads** to kill boilerplate. Routes live INSIDE their domain (`domains/<feature>/routes/`), not in a top-level `src/routes/` folder — see §3.
 
-Example: `apps/api/src/routes/memoryRoutes.ts`
+Example: `apps/api/src/domains/widget/routes/widgetRoutes.ts` (mounted at `/api/v1/widgets`)
 ```ts
-// POST /api/v1/memory/children/:childId
+// Shared ownership guard for /:widgetId routes. The lookup throws
+// WidgetNotFoundError (→ 404) when the widget is missing OR not the caller's, so
+// every id-scoped route is authorized before its controller runs (and the
+// looked-up widget is cached + attached to the request).
+const widgetOwnership = {
+  param: 'widgetId',
+  lookup: (userId: string, widgetId: string): Promise<Widget> =>
+    widgetQueryService.getOwned(userId, widgetId),
+};
+
+// Create — no ownership concept yet (the row doesn't exist).
 router.post(
-  '/children/:childId',
-  ...authWithChildParam(ChildIdParamSchema), // requireAuth + validate(params) + ownership
-  validate(CreateMemoryRequestSchema, 'body'),
-  asyncHandler(MemoryController.createMemory)
+  '/',
+  ...authWithValidation(CreateWidgetSchema, 'body'),
+  asyncHandler(WidgetController.create)
+);
+
+// Update — ownership-checked.
+router.patch(
+  '/:widgetId',
+  ...authWithOwnership(WidgetIdParamSchema, widgetOwnership),
+  validate(UpdateWidgetSchema, 'body'),
+  asyncHandler(WidgetController.update)
 );
 ```
 
-The presets live in `apps/api/src/middlewares/presets.ts` and compose the three most common chains:
+The presets live in `apps/api/src/middlewares/presets.ts` and compose the two most common chains:
 ```ts
-/** Auth + param validation + child ownership (childId in URL params) */
-export const authWithChildParam = (schema, target = 'params') => [
-  requireAuth, validate(schema, target), validateChildOwnership,
-];
-/** Auth + validation only (no ownership check) */
-export const authWithValidation = (schema, target = 'params') => [
-  requireAuth, validate(schema, target),
+/** Auth + validation only (no ownership check). */
+export const authWithValidation = (
+  schema: ZodSchema | ZodTypeAny,
+  target: ValidateTarget = 'params'
+): RequestHandler[] => [requireAuth, validate(schema, target)];
+
+/**
+ * Auth + validation + resource-ownership check. Supply a `lookup` (see
+ * `makeOwnershipValidator`) that throws NotFoundError when the user doesn't own
+ * the resource.
+ */
+export const authWithOwnership = <T>(
+  schema: ZodSchema | ZodTypeAny,
+  ownership: OwnershipValidatorOptions<T>, // { param, source?, lookup, attachAs? }
+  target: ValidateTarget = 'params'
+): RequestHandler[] => [
+  requireAuth,
+  validate(schema, target),
+  makeOwnershipValidator(ownership),
 ];
 ```
-Spread them with `...authWithChildParam(schema)` so each route reads as a single declarative chain. (For your domain, replace the "child ownership" check with whatever resource-ownership your entities need.)
+Spread them with `...authWithOwnership(schema, ownership)` so each route reads as a single declarative chain. `makeOwnershipValidator` (`apps/api/src/middlewares/validateResourceOwnership.ts`) is a **generic** resource-ownership factory — it takes an id param name and a `lookup(userId, resourceId)` function for any entity, with positive/negative-TTL caching built in. Supply your own `lookup` per resource; there's no per-domain ownership middleware to hand-write.
 
 ### 2.2 Controllers — HTTP only
 
-Controllers never contain business logic. They: pull params/body, get the authed user id, call a service, and shape the response via `sendSuccessResponse`. Errors go to `next(error)` (the global handler classifies them).
+Controllers never contain business logic. They: pull params/body, get the authed user id, call a service, and shape the response via `sendSuccessResponse`. Errors go to `next(error)` (the global handler classifies them). Controllers live INSIDE their domain (`domains/<feature>/controllers/`), not in a top-level `src/controllers/` folder — see §3.
 
-Example: `apps/api/src/controllers/childController.ts`
+Example: `apps/api/src/domains/widget/controllers/widgetController.ts`
 ```ts
-static async createChild(req: Request, res: Response, next: NextFunction) {
+async create(req: Request, res: Response, next: NextFunction) {
   try {
-    const childData: ChildCreateRequest = req.body;
-    const result = await ChildService.createChild(getAuthUserId(req), childData);
-    return sendSuccessResponse(res, 'Child profile created successfully',
-      { child: result.child, relationship: result.relationship }, 201);
+    const widget = await widgetCommandService.create(
+      getAuthUserId(req),
+      req.body
+    );
+    return sendSuccessResponse(res, 'Widget created', { widget }, 201);
   } catch (error) {
     return next(error);
   }
-}
+},
 ```
 
 Two helpers (`apps/api/src/utils/asyncHandler.ts`) make this safe and terse:
@@ -196,33 +232,25 @@ export class MemoryRepository extends BaseRepository<Memory> {
 
 ## 3. Domain Folder Anatomy
 
-The **blessed** structure is `src/domains/<feature>/`. Each domain is self-contained and exports a barrel `index.ts`. There is **no legacy `src/services/` folder** — all business logic lives under `src/domains/`. (The wider repo also keeps shared HTTP plumbing — `controllers/`, `routes/`, `schemas/`, `middlewares/` — at `src/` top level, but the domain logic itself is always inside `src/domains/`.)
+The **blessed** structure is `src/domains/<feature>/`. Each domain is self-contained: **its own** `controllers/`, `routes/`, `services/`, `repositories/`, `errors/`, `types/`, and an optional `schemas/` all live INSIDE the domain folder, plus a barrel `index.ts`. There is **no legacy `src/services/` folder** — all business logic lives under `src/domains/`, and no per-domain controller/route file lives at top-level `src/controllers/`/`src/routes/` either.
 
-Example: `apps/api/src/domains/memory/`
+Top-level `src/controllers/` and `src/routes/` still exist, but hold only **cross-cutting, non-domain** plumbing that isn't owned by any one feature: the versioned-router aggregator (`src/routes/index.ts`, which mounts every domain's router — see §1.2), the job-only routes/aggregation for `/api/jobs`, and shared factories like `src/controllers/jobHandlerFactory.ts` (`createTrackedJobHandler`/`createSimpleJobHandler`, used by every domain's background jobs). If you're adding a new feature, its controller/route/service/repository files go inside `src/domains/<feature>/`, full stop — see the widget domain below for the real, working shape.
+
+Example: `apps/api/src/domains/widget/`
 ```
-memory/
-├── index.ts          # barrel: re-exports types, errors, services, repositories…
-├── services/         # memoryQueryService, memoryCommandService (CQRS-lite)
-├── repositories/     # memoryRepository (+ specialized: extraction, embedding, pattern)
-├── errors/           # memoryErrors.ts — domain error subclasses
+widget/
+├── index.ts          # barrel
+├── routes/           # widgetRoutes.ts — mounted at /api/v1/widgets in src/routes/index.ts
+├── controllers/      # widgetController.ts — HTTP layer only
+├── services/         # widgetQueryService.ts (reads), widgetCommandService.ts (writes, CQRS-lite)
+├── repositories/      # widgetRepository.ts — extends BaseRepository
+├── errors/           # widgetErrors.ts — WidgetNotFoundError extends NotFoundError
 ├── types/            # domain types
-├── jobs/             # llmExtractionBatchJob, embeddingBatchJob, … (scheduled work)
-├── schemas/          # domain-local Zod schemas
-├── adapters/         # input adapters (chat, assessment, activity, direct)
-├── pipeline/         # multi-stage ingestion pipeline
-└── utils/
+├── jobs/             # widgetDigestJob.ts (scheduled work, via the job-handler factories)
+└── schemas.ts         # domain-local Zod schemas (see the note in §2.1 about promoting
+                        # these to packages/shared-types/src/schemas/<feature>.schema.ts instead)
 ```
-The barrel keeps imports clean — consumers do `import { MemoryQueryService } from '../domains/memory'`:
-```ts
-// apps/api/src/domains/memory/index.ts
-export * from './adapters';
-export * from './errors';
-export * from './pipeline';
-export * from './repositories';
-export * from './services';
-export * from './types';
-```
-For a new project, a minimal domain is just `{ services, repositories, errors, types, index.ts }`; add `jobs/`, `adapters/`, `pipeline/` only when the feature needs them.
+A minimal new domain is just `{ controllers, routes, services, repositories, errors, types, index.ts }`; add `jobs/`, `adapters/`, `pipeline/` only when the feature needs them (larger domains, like a content-ingestion pipeline, add more subfolders — the widget domain above is the minimal real shape to copy).
 
 ---
 
@@ -253,7 +281,7 @@ export const supabaseService = createClient(supabaseUrl, supabaseServiceKey); //
 ```
 
 - **`supabase` (anon key)** — used to verify user JWTs (`supabase.auth.getUser(token)`). Subject to Row-Level Security.
-- **`supabaseService` (service-role key)** — used by **all repositories**. It **bypasses RLS**, so it must be **server-side only and never exposed to clients**. Because RLS is bypassed, the service/repository layer is responsible for ownership enforcement (e.g. the `validateChildOwnership` middleware + service-level checks).
+- **`supabaseService` (service-role key)** — used by **all repositories**. It **bypasses RLS**, so it must be **server-side only and never exposed to clients**. Because RLS is bypassed, the service/repository layer is responsible for ownership enforcement (e.g. the generic `makeOwnershipValidator` middleware factory — see §2.1 — plus service-level checks).
 
 The service key is a top-tier secret — keep it in env, never in the bundle, never in logs.
 
@@ -325,7 +353,7 @@ export abstract class BaseError extends Error {
 }
 ```
 
-Concrete subclasses (`apps/api/src/errors/`): `ValidationError`, `NotFoundError`, `AuthenticationError`, `AuthorizationError`, `ConflictError`, `DatabaseError`, `ExternalServiceError`, `LLMServiceError`, etc. An intermediate `ContextualError<TContext>` adds a typed `context` object plus an overridable `sanitizeContext()` hook for redacting sensitive fields before serialization (used by `LLMServiceError`, `NotificationError`, `WorkflowError`).
+Concrete subclasses (`apps/api/src/errors/`): `ValidationError`, `NotFoundError`, `AuthenticationError`, `AuthorizationError`, `ConflictError`, `DatabaseError`, `ExternalServiceError`, `LLMServiceError`, etc. An intermediate `ContextualError<TContext>` adds a typed `context` object plus an overridable `sanitizeContext()` hook for redacting sensitive fields before serialization (used by `LLMServiceError`, and available for any domain error that needs a redactable typed context).
 
 Domain errors subclass the generic ones with a fixed code, e.g. `apps/api/src/domains/memory/errors/memoryErrors.ts`:
 ```ts
@@ -392,21 +420,22 @@ export function validate<T>(schema, property: 'body'|'query'|'params' = 'body') 
 
 ## 9. Env Validation
 
-`config/env.ts` validates `process.env` with Zod at import time and **fails fast** with a formatted error if anything required is missing. It is the **first import in `app.ts`**, so a misconfigured deploy crashes at boot rather than on the first request. `config/config.ts` re-exports a small typed `Config` object derived from `env`.
+`config/env.ts` validates `process.env` with Zod at import time and **fails fast** with a formatted error if anything required is missing. It is the **first import in `app.ts`**, so a misconfigured deploy crashes at boot rather than on the first request. The schema itself is split across two files merged by `env.ts`: `config/env.core.ts` (the framework-level schema — Supabase, Vertex AI, Sentry, PostHog, job auth, email, RevenueCat *shape*) and `config/app.env.ts` (an intentionally near-empty extension point for your own app-specific vars). `config/config.ts` re-exports a small typed `Config` object derived from `env`.
 
-- **Required** vars (no defaults): `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_KEY`, `LLM_GOOGLE_API_KEY`; `PORT`/`NODE_ENV` have defaults.
-- **Optional / defaulted**: `SENTRY_DSN`, `POSTHOG_API_KEY`, `JOB_API_KEY`, `LOG_LEVEL`, plus product integrations.
-- **Production-only enforcement**: extra `if (NODE_ENV === 'production')` checks throw if certain optional vars are absent in prod.
-- **Test stub**: when `NODE_ENV === 'test'`, `validateEnv()` returns a hardcoded placeholder object so unit tests run without a real `.env`.
+- **Required** vars (no defaults): `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_KEY`, `GOOGLE_VERTEX_PROJECT`; `PORT`/`NODE_ENV`/`GOOGLE_VERTEX_LOCATION` (default `us-central1`) have defaults. Note: the LLM integration authenticates to Vertex AI via **Application Default Credentials (ADC)**, not an API key — there is no `LLM_GOOGLE_API_KEY` in this template (see `05-API-LLM-JOBS.md` §1). Locally, ADC comes from `gcloud auth application-default login` or a `GOOGLE_APPLICATION_CREDENTIALS` service-account path.
+- **Optional / defaulted**: `SENTRY_DSN`, `POSTHOG_API_KEY`, `LOG_LEVEL`, `EMAIL_FROM`, `REVENUECAT_PROJECT_ID`, plus your own app-specific vars in `app.env.ts`.
+- **Production-only enforcement**: `productionRequiredCoreKeys` in `env.core.ts` (currently `JOB_API_KEY`, `RESEND_API_KEY`, `REVENUECAT_WEBHOOK_SECRET`) are optional in dev/test but throw if absent when `NODE_ENV === 'production'`.
+- **Test stub**: when `NODE_ENV === 'test'`, env resolution returns a hardcoded placeholder object (`coreTestEnv` merged with `appTestEnv`) so unit tests run without a real `.env`.
 
 ```ts
 // apps/api/src/config/env.ts (shape)
-if (process.env.NODE_ENV === 'test') return { /* placeholder values */ } as Env;
+const envSchema = coreEnvSchema.extend(appEnvSchema.shape);
+if (process.env.NODE_ENV === 'test') return { ...coreTestEnv, ...appTestEnv } as Env;
 const result = envSchema.safeParse(process.env);
 if (!result.success) { /* print formatted errors */ throw new Error('Environment validation failed'); }
 export const env = result.data;
 ```
-A skeleton with the generic vars is at `templates/api/env.ts`. **Never put real secret values in code or the bundle** — they come from the environment.
+A skeleton with the generic vars is at `templates/api/env.ts`. **Never put real secret values in code or the bundle** — they come from the environment. See `PROVISIONING.md` for where each value comes from.
 
 ---
 

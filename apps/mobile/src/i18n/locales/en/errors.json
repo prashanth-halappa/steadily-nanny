@@ -1,0 +1,15 @@
+{
+  "network": "Network error. Please check your connection and try again.",
+  "server": "Something went wrong on our end. Please try again.",
+  "unknown": "Something went wrong. Please try again.",
+  "unauthorized": "Your session has expired. Please sign in again.",
+  "forbidden": "You don't have permission to do that.",
+  "notFound": "We couldn't find what you were looking for.",
+  "conflict": "That conflicts with the current state. Please refresh and try again.",
+  "rateLimited": "Too many requests. Please wait a moment and try again.",
+  "validation": "Please check the information you entered and try again.",
+  "paywallRequired": "This feature requires an upgrade.",
+  "usageLimitExceeded": "You've reached your usage limit. Please try again later.",
+  "timeout": "The request timed out. Please try again.",
+  "offline": "You're offline. Please check your connection."
+}

@@ -1,0 +1,29 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // MODULE DECISION (see tsconfig.base.json gotcha): the base sets
+    // "moduleResolution": "bundler", which TypeScript refuses to pair with
+    // "module": "commonjs". The source API used commonjs, but this template is
+    // run by Bun (which resolves bundler-style natively) and tsc is used ONLY
+    // for `--noEmit` type-checking — nothing is emitted. So we keep the base's
+    // "bundler" resolution and set "module": "preserve" (the value bundler
+    // resolution requires). This is deliberately DIFFERENT from the source's
+    // commonjs config; overriding only one of the pair would hard-error.
+    "module": "preserve",
+    "target": "ES2023",
+    // No `types`/`typeRoots` override: the hoisted monorepo keeps @types in the
+    // ROOT node_modules, so default resolution (which walks up the tree) finds
+    // them. Bun's globals + `bun:test` come from the reference in
+    // src/types/bun.d.ts (bun-types isn't an @types package).
+    "outDir": "./dist",
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true
+  },
+  // typecheck MUST include tests AND scripts — the source's tsconfig excluded
+  // tests (`include: ["src/**"]`), which let them rot untyped. We include all
+  // three so `bun run typecheck` is a real gate over the whole package. Under
+  // "module":"preserve" + target ES2023, the Bun scripts' top-level await type-
+  // checks fine (nothing is emitted).
+  "include": ["src/**/*", "tests/**/*", "scripts/**/*.ts"],
+  "exclude": ["node_modules", "dist"]
+}

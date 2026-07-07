@@ -2,137 +2,137 @@
 
 > Purpose: how this API talks to an LLM (model registry, type-safe structured output, prompt conventions, error handling/graceful degradation) and how it runs scheduled background work (`/api/jobs/*` behind an API key, triggered by an external cron). All examples are real excerpts from a production API, labelled with their path.
 
-The LLM layer uses **Google Gemini via the Vercel AI SDK** (`ai` + `@ai-sdk/google`). The patterns (centralized model registry, `generateObject` with a Zod schema, XML-tagged prompts, graceful degradation) are provider-agnostic — swap the provider package and model ids for any other.
+The LLM layer uses **Google Gemini via the Vercel AI SDK**, through **Vertex AI** (`ai` + `@ai-sdk/google-vertex`) — authentication is **Application Default Credentials (ADC)**, not an API key. The patterns (centralized model registry, `generateObject`/`generateLlmObject` with a Zod schema, graceful degradation) are provider-agnostic — swap the provider package and model ids for any other.
 
 ---
 
-## 1. Model Registry (`config/llmConfig.ts`)
+## 1. Model Registry (`config/llmProvider.ts` + `config/app.llmConfigs.ts`)
 
-One module instantiates the provider once and exports **named model constants**, each chosen for a task. Call sites import a meaningfully-named model (`multiInsightExtractionModel`), never a raw model string — so model choices are centralized and swappable in one file.
+The provider setup is split into two files. **`llmProvider.ts`** (generic, don't edit per-app) instantiates `createVertex` once and exports **tier factories** — plain functions, not pre-built model instances, so a fresh model handle is created per call:
 
-Example: `apps/api/src/config/llmConfig.ts`
+Example: `apps/api/src/config/llmProvider.ts`
 ```ts
-import { createGoogleGenerativeAI } from '@ai-sdk/google';
+import { createVertex } from '@ai-sdk/google-vertex';
 import { env } from './env';
 
-const google = createGoogleGenerativeAI({ apiKey: env.LLM_GOOGLE_API_KEY });
+const vertex = createVertex({
+  project: env.GOOGLE_VERTEX_PROJECT,
+  location: env.GOOGLE_VERTEX_LOCATION,
+});
 
-// Tiers — pick the cheapest model that meets the task's accuracy/latency bar.
-const flashStructured     = () => google('gemini-2.5-flash');       // fast, cheap, structured
-const flashLiteStructured = () => google('gemini-2.5-flash-lite');  // cheapest, simplest tasks
-
-// Named, task-specific exports
-export const activityModel              = flashLiteStructured();      // trivial generation
-export const multiInsightExtractionModel = flashStructured();        // latency-sensitive extraction
-export const chatModel                  = google('gemini-2.5-flash'); // streaming text (no schema)
-export const narrativeManualModel       = google('gemini-2.5-pro');   // complex narrative synthesis
-export const clinicalSafetyModel        = google('gemini-2.5-pro');   // safety-critical classification
-export const embeddingModel             = google.textEmbeddingModel('text-embedding-004');
+export const flashLiteModel = (): LanguageModel => vertex('gemini-2.5-flash-lite');
+export const flashModel = (): LanguageModel => vertex('gemini-2.5-flash');
+export const proModel = (): LanguageModel => vertex('gemini-2.5-pro');
+export const embeddingModel = () => vertex.embeddingModel('gemini-embedding-001');
 ```
+`llmProvider.ts` also defines the `LlmCallConfig` interface (`model`, `temperature?`, `maxOutputTokens?`, `timeoutMs?`, `maxRetries`, `disableThinking`) that every named config below is built from.
+
+**`app.llmConfigs.ts`** (per-app — this is where you add your own named, task-specific bundles) imports the tier factories and builds a config per LLM-backed feature:
+
+Example: `apps/api/src/config/app.llmConfigs.ts`
+```ts
+import { flashModel } from './llmProvider';
+import type { LlmCallConfig } from './llmProvider';
+
+export const widgetDescriptionConfig: LlmCallConfig = {
+  model: flashModel(),
+  disableThinking: true, // Gemini 2.5's default "thinking" adds 3-6s — skip it for latency-sensitive paths
+};
+```
+Call sites import the named config (`widgetDescriptionConfig`), never a raw model string or tier factory directly — so model choice, temperature, timeout, and retry behavior for a given feature are centralized in one place and swappable without touching the call site.
 
 **The flash / flash-lite / pro split — rationale:**
 - **flash-lite** — cheapest and fastest; trivial, high-volume generations where quality bar is low.
-- **flash** — the default workhorse. Fast and cheap enough for latency-sensitive, high-volume tasks (extraction, chat, digests) where accuracy needs are moderate.
-- **pro** — slower and pricier; reserved for **complex or high-stakes** work where accuracy beats latency/cost: long-form narrative synthesis and **safety-critical / clinical classification**. The principle: *spend tokens where a wrong answer is expensive; save them everywhere else.*
-- A dedicated **embedding model** (`text-embedding-004`) powers semantic-similarity features.
+- **flash** — the default workhorse. Fast and cheap enough for latency-sensitive, high-volume tasks where accuracy needs are moderate.
+- **pro** — slower and pricier; reserved for **complex or high-stakes** work where accuracy beats latency/cost. The principle: *spend tokens where a wrong answer is expensive; save them everywhere else.*
+- A dedicated **embedding model** (`gemini-embedding-001`) powers semantic-similarity features.
+
+**Why Vertex AI instead of a Gemini API key:** ADC lets a Cloud Run service authenticate via its attached service account with no key file to rotate or leak, and centralizes billing/quota under one GCP project. See `PROVISIONING.md` §3 for the one-time GCP setup (enable the Vertex AI API, grant a service account the Vertex AI User role).
 
 ---
 
-## 2. Structured Output — `generateObject` + Zod
+## 2. Structured Output — `generateLlmObject` + Zod
 
-For anything beyond free-text, use `generateObject({ model, schema, system, prompt, temperature })`. The Zod `schema` constrains the model's output and the SDK returns a **type-safe `.object`** matching `z.infer<typeof schema>` — no manual JSON parsing or validation.
+For structured output, use the shipped **`generateLlmObject<T>`** wrapper (`apps/api/src/domains/llm/services/llmGenerate.ts`), not the AI SDK's raw `generateObject`. It wraps `generateObject` and folds in the four things every real call needs: a Zod-typed `.object`, PII masking, a hard timeout (`AbortController`) with bounded retries, and typed error triage (it throws a single `LlmGenerationError` — see §4).
 
-Example: `apps/api/src/domains/llm/services/llmMultiInsightExtractionService.ts`
+Example: `apps/api/src/domains/widget/services/widgetCommandService.ts`
 ```ts
-const result = await generateObject({
-  model: multiInsightExtractionModel,
-  schema: LlmExtractionResponseSchema,   // Zod schema → typed .object
-  system: systemPrompt,
-  prompt: userPrompt,
-  temperature: 0.3,                      // low temp → consistent extraction
-  abortSignal: abortController.signal,   // enforce a hard timeout (see §4)
-  maxRetries: 1,                         // bound retries so back-off can't eat the timeout budget
-  providerOptions: {
-    google: { thinkingConfig: { thinkingBudget: 0 } }, // disable "thinking" latency for fast paths
-  },
+const { object } = await generateLlmObject<WidgetDescription>({
+  config: widgetDescriptionConfig,   // a named LlmCallConfig from app.llmConfigs.ts (model + knobs)
+  schema: WidgetDescriptionSchema,   // Zod schema → typed .object
+  prompt,
+  piiName: ownerDisplayName,         // masked out of the prompt…
+  pii: 'maskAndUnmask',              // …and restored in the result (see GOLDEN-FIXES #9)
+  timeoutLabel: 'widget description',
 });
-return result.object;                    // fully typed
+return object;                       // fully typed as WidgetDescription
 ```
 Notes that generalize:
-- **`temperature`** low (≈0.3) for extraction/classification; higher (≈0.7) for creative/narrative.
-- **`abortSignal` + `maxRetries`** together cap worst-case latency — without bounding retries, the SDK's default back-off can silently consume the timeout budget.
-- Provider-specific knobs go under `providerOptions`. Here, Gemini 2.5's default "thinking" adds 3–6 s; disabling it (`thinkingBudget: 0`) is essential for latency-sensitive paths.
+- **`config`** is a named `LlmCallConfig` bundle (§1), never a raw model string — model/temperature/timeout/retry/`disableThinking` for a feature live in one place, swappable without touching the call site.
+- **`pii`** (`'none' | 'maskOnly' | 'maskAndUnmask'`) masks `piiName` before the prompt leaves the process and, for `maskAndUnmask`, restores it in the typed result — the fix for GOLDEN-FIXES #9.
+- **Timeout + retries** are enforced *inside* the wrapper (`AbortController` plus the config's `timeoutMs`/`maxRetries`), so the SDK's own back-off can't silently blow the latency budget.
+
+Under the hood the wrapper still calls the AI SDK's `generateObject({ model, schema, system, prompt, abortSignal, maxRetries, providerOptions })` — reach for raw `generateObject` only if you need a knob `generateLlmObject` doesn't expose.
 
 ---
 
-## 3. Prompt Conventions (`src/prompts/`)
+## 3. Prompt Conventions
 
-Prompts live in `apps/api/src/prompts/*.ts` as **exported functions** — not inline string literals — so they're versionable, testable, and parameterizable.
+The shipped widget example keeps its single prompt **inline** in the service that uses it:
 
-- Naming: `getSystemPrompt_<task>(locale)` for system prompts, `userPrompt_<task>(...)` / `build…Prompt(...)` for the user message.
-- **XML-style tags** structure the system prompt into sections the model attends to reliably: `<role>`, `<context>`, `<objectives>`, `<instructions>`, plus domain blocks like `<memory_types>`.
-- A **`locale` parameter** threads localization into generation.
-
-Example: `apps/api/src/prompts/focusAreaPrompt.ts`
+Example: `apps/api/src/domains/widget/services/widgetCommandService.ts`
 ```ts
-import { buildLocaleInstruction } from '../utils/localeUtils';
-import { APP_PERSONA } from './shared/appVoiceGuidelines';
-
-export function getSystemPrompt_focusArea(locale: string = 'en'): string {
-  return `
-<role>
-${APP_PERSONA}
-Your expertise includes developmental psychology, evidence-based trait selection, ...
-</role>
-<objectives>
-1. OPTIMAL FOCUS SELECTION: identify the single most helpful trait ...
-2. GROWTH CELEBRATION: recognize specific recent progress ...
-</objectives>
-<instructions>
-STEP 1: REVIEW HISTORICAL CONTEXT — build an exclusion list ...
-STEP 2: ANALYZE CANDIDATE TRAITS — evaluate skill level, timing ...
-</instructions>`;
-}
+const prompt =
+  `Write a warm one-sentence description and up to 3 short lowercase tags ` +
+  `for a widget called "${widgetName}", created by ${ownerDisplayName}.`;
 ```
-`APP_PERSONA` is a plain string constant holding your product's voice/tone guidelines (role, expertise, tone) — swap its content for your own app's persona. Shared persona/voice fragments live in `src/prompts/shared/` and are imported into multiple prompts so tone stays consistent.
+That's fine for one or two prompts. **Once a domain has several prompts** (or any prompt worth versioning/testing/localizing), promote them to **exported functions** in a `src/prompts/` module instead of inline string literals:
+
+- Name them `getSystemPrompt_<task>(locale)` for system prompts and `build<Task>Prompt(...)` for the user message, so they're parameterizable and unit-testable.
+- Structure a longer system prompt with **XML-style section tags** (`<role>`, `<context>`, `<objectives>`, `<instructions>`) — models attend to those sections reliably.
+- Thread a **`locale`** parameter through so localization is a prompt input, not a code fork.
+- Keep shared voice/persona fragments in one place (e.g. `src/prompts/shared/`) and import them into multiple prompts so tone stays consistent.
+
+(This template ships **no `src/prompts/` directory yet** — the one widget prompt is small enough to stay inline. Create the directory when your first multi-prompt domain lands.)
 
 ---
 
 ## 4. LLM Error Handling & Graceful Degradation
 
-LLM failures get a dedicated `LLMServiceError` (extends `ContextualError`) with an **`isRetryable`** flag and **static factory methods** for the common failure modes.
+`generateLlmObject` throws exactly one error type on failure — **`LlmGenerationError`** (`apps/api/src/domains/llm/services/llmGenerate.ts`) — carrying **triage metadata** so callers and logs classify a failure without string-matching:
 
-Example: `apps/api/src/errors/LLMServiceError.ts`
 ```ts
-export class LLMServiceError extends ContextualError<LLMServiceContext> {
-  public readonly isRetryable: boolean;
-  static rateLimitExceeded(ctx = {}) {
-    return new LLMServiceError('LLM service rate limit exceeded', 'RATE_LIMIT_EXCEEDED', 429, ctx, true);
-  }
-  static timeout(ctx = {})         { return new LLMServiceError('LLM request timed out', 'TIMEOUT_ERROR', 504, ctx, true); }
-  static invalidResponse(ctx = {}) { return new LLMServiceError('invalid response format', 'EXTERNAL_SERVICE_ERROR', 502, ctx, false); }
-  // sanitizeContext() truncates the prompt to 500 chars so logs aren't polluted / leak PII
+export type LlmGenerationErrorType = 'timeout' | 'no_object' | 'api_error' | 'unknown';
+export interface LlmGenerationErrorMetadata {
+  errorType: LlmGenerationErrorType;
+  modelId: string;
+  timedOut: boolean;
+  timeoutMs?: number;
 }
 ```
-The context type carries `service`, `model`, `operation`, `duration`, `retryAttempt`, sanitized `prompt`, etc., and `sanitizeContext()` truncates the prompt before serialization.
+The wrapper classifies the underlying AI SDK error (`AI_NoObjectGeneratedError` → `no_object`, `AI_APICallError`/`AI_RetryError` → `api_error`, an abort → `timeout`) and preserves the original as the error's `cause`.
 
-**Graceful degradation — "never 503 to the user":** for user-facing AI features (e.g. voice-to-memory extraction), an LLM failure must **not** surface as an error. The service catches everything and returns an **empty-but-valid** result so the request still succeeds (HTTP 200) and the app degrades gracefully — the work can be retried later by a background job.
+**Graceful degradation — "never 5xx to the user":** a user-facing AI feature must not surface an LLM failure as an error. Catch `LlmGenerationError`, log it, and return an **empty-but-valid** result so the request still succeeds (HTTP 200); rethrow anything that ISN'T an `LlmGenerationError` (that's a real bug, not a degraded model call).
 
-Example: `apps/api/src/domains/llm/services/llmMultiInsightExtractionService.ts`
+Example: `apps/api/src/domains/widget/services/widgetCommandService.ts`
 ```ts
 try {
-  const result = await this.callLlm(transcription, child_age_months);
-  if (!result) {
-    logger.warn('Multi-insight extraction failed, returning empty insights');
-    return { insights: [], transcription, error: 'extraction_unavailable' }; // graceful fallback
-  }
-  // ...filter + return
+  const { object } = await generateLlmObject<WidgetDescription>({
+    config: widgetDescriptionConfig,
+    schema: WidgetDescriptionSchema,
+    prompt,
+    /* … piiName / pii / timeoutLabel … */
+  });
+  return object;
 } catch (error) {
-  logger.error('Multi-insight extraction error', { error: String(error) });
-  return { insights: [], transcription, error: 'extraction_unavailable' };   // never throws to the user
+  if (error instanceof LlmGenerationError) {
+    logLlmGenerationFailure({ operation: 'widgetDescription', widgetName }, error);
+    return { description: `A widget called "${widgetName}".`, tags: [] };   // deterministic fallback
+  }
+  throw error;   // not a degraded LLM call — a real bug; let it surface
 }
 ```
-The internal `callLlm` returns `null` on timeout/abort/error (it doesn't rethrow), and the public method maps that to the safe fallback shape. Logs are PII-sanitized before writing.
+This is exactly why VERIFICATION.md's Level C walkthrough says the widget `generate-description` action still returns *some* description even with no Vertex credentials — the fallback path is the contract working, not a bug. For work that's worth retrying later, pair this instant fallback with a background job (§5).
 
 ---
 
@@ -151,18 +151,17 @@ const jobHandler = (method) => (req, res, next) => { void method(req, res, next)
 const router = Router();
 router.use(validateJobApiKey);                       // every job route requires the API key
 
-router.post('/weekly-summaries',      jobHandler(JobController.runWeeklySummaries));      // Sunday 6 AM UTC
-router.post('/smart-notifications',   jobHandler(JobController.runSmartNotifications));   // every 15 min
-router.post('/llm-extraction-batch',  jobHandler(JobController.runLlmExtractionBatch));   // process pending LLM work
-router.post('/embedding-batch',       jobHandler(JobController.runEmbeddingBatch));       // generate embeddings
+// SETUP: add your own job routes here, one line each.
+router.post('/example-maintenance', jobHandler(JobController.runExampleMaintenance)); // cross-cutting stub
+router.post('/widget-digest',       jobHandler(JobController.runWidgetDigest));       // domain-owned example
 ```
 
 The scheduler is configured once in SQL. The cron call passes the API key as a header:
 ```sql
 -- Supabase SQL editor (pg_cron + pg_net), run with service_role:
-SELECT cron.schedule('dispatch-notifications', '*/15 * * * *',
+SELECT cron.schedule('widget-digest', '0 6 * * *',   -- daily 6 AM UTC
   $$SELECT net.http_post(
-      url := '<API_URL>/api/v1/jobs/dispatch-notifications',
+      url := '<API_URL>/api/jobs/widget-digest',
       headers := jsonb_build_object('X-Job-Api-Key', '<JOB_API_KEY>', 'Content-Type', 'application/json'),
       body := '{}'::jsonb
   )$$);
@@ -170,33 +169,30 @@ SELECT cron.schedule('dispatch-notifications', '*/15 * * * *',
 
 ### 5.2 Where job code lives
 
-- Cross-cutting jobs: `apps/api/src/jobs/` (e.g. `onboardingDripJob`, `reengagementJob`, `monthlySummaryJob`).
-- Domain-owned jobs: `apps/api/src/domains/<feature>/jobs/` (e.g. `domains/memory/jobs/llmExtractionBatchJob.ts`).
-- `JobController` (`apps/api/src/controllers/jobController.ts`) imports the job functions and wraps each with logging/timing/run-tracking (via a `JobRunService`) using shared factory helpers (`createTrackedJobHandler`) to avoid 20+ copies of the same boilerplate.
+- Cross-cutting jobs: `apps/api/src/jobs/` (the shipped example: `exampleMaintenanceJob.ts`).
+- Domain-owned jobs: `apps/api/src/domains/<feature>/jobs/` (the shipped example: `domains/widget/jobs/widgetDigestJob.ts`).
+- `JobController` (`apps/api/src/controllers/jobController.ts`) imports the job functions and wraps each with logging/timing/run-tracking using the shared factory helpers `createTrackedJobHandler` / `createSimpleJobHandler` (`apps/api/src/controllers/jobHandlerFactory.ts`) — `createTrackedJobHandler` records each run into the `job_runs` table, `createSimpleJobHandler` doesn't.
 
-### 5.3 Representative jobs (real examples)
+### 5.3 The shipped jobs
 
 | Endpoint | What it does | Cadence |
 |---|---|---|
-| `POST /api/jobs/weekly-summaries` | Generate weekly developmental summaries | Sunday 6 AM UTC |
-| `POST /api/jobs/smart-notifications` | Evaluate + queue behavioral notifications | every 15 min |
-| `POST /api/jobs/llm-extraction-batch` | Process memories with `extraction_status='pending'` via the LLM | on schedule |
-| `POST /api/jobs/embedding-batch` | Generate embeddings for new records | on schedule |
-| `POST /api/jobs/dispatch-notifications` | Central queue dispatcher | every 15 min |
+| `POST /api/jobs/example-maintenance` | A cross-cutting maintenance stub — replace its body with your own periodic work. | your choice |
+| `POST /api/jobs/widget-digest` | Counts widgets created in the last 24h and returns a summary the tracked-job handler records into `job_runs` (`domains/widget/jobs/widgetDigestJob.ts`). | daily |
 
-### 5.4 Batch-job design notes (worth copying)
+### 5.4 Batch-job design notes (for when you build one)
 
-The LLM extraction batch job (`apps/api/src/domains/memory/jobs/llmExtractionBatchJob.ts`) models robust batch processing:
-- **Small batch size** (`BATCH_SIZE = 10`) so total runtime (≈5–10 s/item) safely fits inside the stuck-timeout window — never size a batch so it can exceed its own re-claim timeout.
+The shipped `widgetDigestJob` is a simple aggregate (one COUNT query) — deliberately minimal. A **real batch job** that processes rows (e.g. retrying the §4 fallback work asynchronously) should follow these patterns — the widget job's own header comment points here:
+- **Small batch size** (e.g. `BATCH_SIZE = 10`) so total runtime safely fits inside the stuck-timeout window — never size a batch so it can exceed its own re-claim timeout.
 - **`FOR UPDATE SKIP LOCKED`** row claiming (via the repository) for safe concurrent workers.
 - **State machine** per row: `pending → processing → success | failed`, with `last_attempt_at` set on claim.
-- **Bounded retries** (`retry_count < 5`) with a cooldown, and **stuck-item requeue** (items stuck in `processing` > 30 min go back to `pending`).
+- **Bounded retries** with a cooldown, and **stuck-item requeue** (items stuck in `processing` past a timeout go back to `pending`).
 - **Log success/failure counts** each run.
 
-This is the backbone of the graceful-degradation story from §4: user-facing extraction returns an empty result instantly on failure, and this batch job retries the work asynchronously.
+This is the backbone of the graceful-degradation story from §4: the user-facing call returns an empty-but-valid result instantly on failure, and a batch job retries the work asynchronously.
 
 ---
 
 ## Cross-references
-- Middleware ordering, env validation, `LLMServiceError`'s `BaseError` lineage, and the `/api/jobs` mount-before-auth rationale: `04-API-ARCHITECTURE.md`.
-- Env skeleton (`LLM_GOOGLE_API_KEY`, `JOB_API_KEY`): `templates/api/env.ts`.
+- Middleware ordering, env validation (including the `env.core.ts`/`app.env.ts` split), `LLMServiceError`'s `BaseError` lineage, and the `/api/jobs` mount-before-auth rationale: `04-API-ARCHITECTURE.md`.
+- Env skeleton (`GOOGLE_VERTEX_PROJECT`, `GOOGLE_VERTEX_LOCATION`, `JOB_API_KEY`): `templates/api/env.ts`. Dashboard-side Vertex AI + service-account setup: `PROVISIONING.md` §3.

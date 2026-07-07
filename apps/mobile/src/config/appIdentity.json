@@ -1,0 +1,23 @@
+{
+  "name": "YourApp",
+  "slug": "yourapp",
+  "scheme": "yourapp",
+  "version": "1.0.0",
+  "runtimeVersion": "1.0.0",
+  "owner": "SETUP-EXPO-ACCOUNT",
+  "associatedDomain": "yourapp.example.com",
+  "easProjectId": "SETUP-EAS-PROJECT-ID",
+  "ios": {
+    "bundleIdentifier": "com.yourco.yourapp",
+    "appStoreUrl": "https://apps.apple.com/app/id0000000000",
+    "googleSignInUrlScheme": "com.googleusercontent.apps.SETUP-GOOGLE-IOS-CLIENT-ID"
+  },
+  "android": {
+    "package": "com.yourco.yourapp",
+    "playStoreUrl": "https://play.google.com/store/apps/details?id=com.yourco.yourapp"
+  },
+  "sentry": {
+    "organization": "SETUP-SENTRY-ORG",
+    "project": "yourapp-mobile"
+  }
+}

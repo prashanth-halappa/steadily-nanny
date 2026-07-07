@@ -1,0 +1,25 @@
+{
+  "//": "Extends the Expo base (jsx/lib/react-native types) then the workspace base (strict + noUncheckedIndexedAccess). Workspace base is last so its stricter flags win. Unlike the source app, this config INCLUDES test files in typecheck — keep it that way so *.test.ts stays type-clean.",
+  "extends": ["expo/tsconfig.base", "../../tsconfig.base.json"],
+  "compilerOptions": {
+    "types": ["bun-types"],
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./*"],
+      "~/*": ["./*"],
+      "tailwind.config": ["./tailwind.config.js"],
+      "@yourapp/shared-types": ["../../packages/shared-types/src"],
+      "@yourapp/shared-types/*": ["../../packages/shared-types/src/*"]
+    },
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true
+  },
+  "include": [
+    "**/*.ts",
+    "**/*.tsx",
+    "nativewind-env.d.ts",
+    ".expo/types/**/*.ts",
+    "expo-env.d.ts"
+  ],
+  "exclude": ["node_modules"]
+}

@@ -1,0 +1,15 @@
+[test]
+preload = ["./bun.setup.ts"]
+root = "."
+isolateWorkers = true
+
+# Ratcheted coverage threshold — start conservative (~25%), raise toward 80 as
+# test workstreams land. This is the live gate; the "80%" in docs is the goal.
+coverageThreshold = { lines = 25, functions = 25, statements = 25 }
+coverageReporter = ["text", "lcov"]
+coverageSkipTestFiles = true
+coveragePathIgnorePatterns = ["**/bun.setup.ts", "**/packages/**"]
+
+# Run tests one by one — bun:test has isolation issues (esp. mock.module)
+# when multiple files run concurrently.
+concurrency = 1

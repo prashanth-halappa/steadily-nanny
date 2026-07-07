@@ -1,0 +1,14 @@
+{
+  "appName": "YourApp",
+  "continue": "Continuar",
+  "cancel": "Cancelar",
+  "save": "Guardar",
+  "retry": "Reintentar",
+  "loading": "Cargando...",
+  "back": "Atrás",
+  "next": "Siguiente",
+  "skip": "Omitir",
+  "done": "Listo",
+  "close": "Cerrar",
+  "error": "Error"
+}

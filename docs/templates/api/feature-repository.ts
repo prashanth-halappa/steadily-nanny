@@ -9,10 +9,10 @@
  * Replace `Widget` / `widgets` with your entity and table name.
  */
 
-import { BaseRepository } from '../../../shared/repositories/baseRepository';
+import type { Widget } from '@yourapp/shared-types/schemas/widget.schema';
 import { supabaseService } from '../../../config/supabase';
 import { DatabaseError } from '../../../errors';
-import type { Widget } from '@yourapp/shared-types/dto/widget.dto';
+import { BaseRepository } from '../../../shared/repositories/baseRepository';
 
 export class WidgetRepository extends BaseRepository<Widget> {
   constructor() {
