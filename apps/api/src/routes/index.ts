@@ -14,6 +14,13 @@ import {
   householdSchedulePatternRoutes,
   schedulePatternRoutes,
 } from '../domains/schedule';
+import { householdShiftRoutes, shiftRoutes } from '../domains/shift';
+import {
+  householdTimeEntryRoutes,
+  householdTimesheetRoutes,
+  timeEntryRoutes,
+  timesheetRoutes,
+} from '../domains/timesheet';
 import usersRoutes from './usersRoutes';
 
 const router = Router();
@@ -38,5 +45,17 @@ router.use(
   householdSchedulePatternRoutes
 );
 router.use('/schedule-patterns', schedulePatternRoutes);
+
+// Materialised shifts. Same nested-then-flat split as schedule patterns: the
+// household-nested router also serves `/:shiftId/events`, the day thread.
+router.use('/households/:householdId/shifts', householdShiftRoutes);
+router.use('/shifts', shiftRoutes);
+
+// Time tracking. Clock in/out is carer-scoped and flat; the week's entries and
+// the timesheet a parent approves are household-scoped.
+router.use('/households/:householdId/time-entries', householdTimeEntryRoutes);
+router.use('/time-entries', timeEntryRoutes);
+router.use('/households/:householdId/timesheets', householdTimesheetRoutes);
+router.use('/timesheets', timesheetRoutes);
 
 export default router;

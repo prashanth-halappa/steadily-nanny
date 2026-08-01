@@ -60,6 +60,47 @@ export const queryKeys = {
   availability: {
     all: ['availability'] as const,
     mine: () => [...queryKeys.availability.all, 'mine'] as const,
+    // A carer's cross-household busy spans, ANONYMISED. Keyed by carer + range
+    // so one family's cached view can never be reused as another's.
+    busy: (carerId?: string, from?: string, to?: string) =>
+      [...queryKeys.availability.all, 'busy', carerId, from, to] as const,
+  },
+
+  // Recurring schedule patterns: the "usual week" a parent proposes.
+  schedulePattern: {
+    all: ['schedulePattern'] as const,
+    list: (householdId?: string) =>
+      [...queryKeys.schedulePattern.all, 'list', householdId] as const,
+    detail: (patternId?: string) =>
+      [...queryKeys.schedulePattern.all, 'detail', patternId] as const,
+  },
+
+  // Materialised shift instances.
+  shift: {
+    all: ['shift'] as const,
+    // Range-scoped: a week view and a month view are different cache entries,
+    // so scrolling the calendar cannot serve stale rows from another window.
+    range: (householdId?: string, from?: string, to?: string) =>
+      [...queryKeys.shift.all, 'range', householdId, from, to] as const,
+    detail: (shiftId?: string) =>
+      [...queryKeys.shift.all, 'detail', shiftId] as const,
+  },
+
+  // Clock in/out and the weekly hours roll-up.
+  timeEntry: {
+    all: ['timeEntry'] as const,
+    // The single open entry, if the carer is currently on the clock.
+    running: () => [...queryKeys.timeEntry.all, 'running'] as const,
+    week: (householdId?: string, weekStart?: string) =>
+      [...queryKeys.timeEntry.all, 'week', householdId, weekStart] as const,
+  },
+
+  timesheet: {
+    all: ['timesheet'] as const,
+    list: (householdId?: string) =>
+      [...queryKeys.timesheet.all, 'list', householdId] as const,
+    week: (householdId?: string, weekStart?: string) =>
+      [...queryKeys.timesheet.all, 'week', householdId, weekStart] as const,
   },
 } as const;
 

@@ -1,0 +1,7 @@
+{
+  "clockInHint": "Starting early? Clock in whenever — we record what happened, not what was planned.",
+  "clockIn": "Clock in",
+  "clockOut": "Clock out",
+  "onTheClock": "You're on the clock",
+  "since": "Since {{time}}"
+}

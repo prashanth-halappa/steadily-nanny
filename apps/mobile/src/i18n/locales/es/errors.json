@@ -9,5 +9,6 @@
   "rateLimited": "Demasiadas solicitudes. Espera un momento e inténtalo de nuevo.",
   "validation": "Comprueba la información que ingresaste e inténtalo de nuevo.",
   "timeout": "La solicitud tardó demasiado. Inténtalo de nuevo.",
-  "offline": "Estás sin conexión. Comprueba tu conexión."
+  "offline": "Estás sin conexión. Comprueba tu conexión.",
+  "alreadyClockedIn": "Ya has fichado la entrada en otro turno. Ficha la salida primero."
 }

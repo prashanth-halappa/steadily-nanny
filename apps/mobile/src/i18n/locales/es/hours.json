@@ -1,0 +1,15 @@
+{
+  "title": "Horas",
+  "yourWeek": "Tu semana",
+  "carerWeek": "La semana de tu cuidadora",
+  "approveWeek": "Aprobar la semana",
+  "approved": "Aprobado",
+  "query": "Consultar",
+  "queryTitle": "Consultar esta semana",
+  "queryHint": "Cuéntale a tu cuidadora qué no cuadra — esto retiene la aprobación hasta resolverlo.",
+  "queryNotePlaceholder": "p. ej. El jueves parece más largo de lo esperado",
+  "querySubmit": "Enviar consulta",
+  "approvedToast": "Semana aprobada",
+  "queriedToast": "Consulta enviada",
+  "queriedWithNote": "Consultado: {{note}}"
+}

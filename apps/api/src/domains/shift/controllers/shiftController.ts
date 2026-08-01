@@ -1,0 +1,80 @@
+/**
+ * Shift controller — HTTP layer ONLY.
+ * @module domains/shift/controllers/shiftController
+ */
+import type { NextFunction, Request, Response } from 'express';
+import { getAuthUserId } from '../../../utils/asyncHandler';
+import { sendSuccessResponse } from '../../../utils/responseHelpers';
+import { shiftCommandService } from '../services/shiftCommandService';
+import { shiftQueryService } from '../services/shiftQueryService';
+import type { ShiftRangeQuery } from '../types';
+
+export class ShiftController {
+  /** The primary calendar feed: GET /households/:householdId/shifts?from=&to=. */
+  static async listForHousehold(
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ) {
+    try {
+      const householdId = req.params.householdId as string;
+      const { from, to } = req.validatedQuery as unknown as ShiftRangeQuery;
+      const shifts = await shiftQueryService.listForHousehold(
+        getAuthUserId(req),
+        householdId,
+        from,
+        to
+      );
+      return sendSuccessResponse(res, 'Shifts fetched', { shifts });
+    } catch (error) {
+      return next(error);
+    }
+  }
+
+  /** One shift with its children: GET /shifts/:shiftId. */
+  static async getById(req: Request, res: Response, next: NextFunction) {
+    try {
+      const shiftId = req.params.shiftId as string;
+      const shift = await shiftQueryService.getOwned(
+        getAuthUserId(req),
+        shiftId
+      );
+      return sendSuccessResponse(res, 'Shift fetched', { shift });
+    } catch (error) {
+      return next(error);
+    }
+  }
+
+  /** The append-only day thread: GET /households/:householdId/shifts/:shiftId/events. */
+  static async listEvents(req: Request, res: Response, next: NextFunction) {
+    try {
+      const householdId = req.params.householdId as string;
+      const shiftId = req.params.shiftId as string;
+      const shift_events = await shiftQueryService.listEvents(
+        getAuthUserId(req),
+        householdId,
+        shiftId
+      );
+      return sendSuccessResponse(res, 'Shift events fetched', {
+        shift_events,
+      });
+    } catch (error) {
+      return next(error);
+    }
+  }
+
+  /** Parent-only time/note edit: PATCH /shifts/:shiftId. */
+  static async update(req: Request, res: Response, next: NextFunction) {
+    try {
+      const shiftId = req.params.shiftId as string;
+      const shift = await shiftCommandService.update(
+        getAuthUserId(req),
+        shiftId,
+        req.body
+      );
+      return sendSuccessResponse(res, 'Shift updated', { shift });
+    } catch (error) {
+      return next(error);
+    }
+  }
+}

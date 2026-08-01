@@ -1,0 +1,15 @@
+{
+  "title": "Hours",
+  "yourWeek": "Your week",
+  "carerWeek": "Your carer's week",
+  "approveWeek": "Approve the week",
+  "approved": "Approved",
+  "query": "Query",
+  "queryTitle": "Query this week",
+  "queryHint": "Tell your carer what looks off — this holds off approval until it's sorted.",
+  "queryNotePlaceholder": "e.g. Thursday looks longer than expected",
+  "querySubmit": "Send query",
+  "approvedToast": "Week approved",
+  "queriedToast": "Query sent",
+  "queriedWithNote": "Queried: {{note}}"
+}

@@ -5,7 +5,8 @@
  * domain yet (deferred — see PROJECT-STATUS "Shift domain (deferred until
  * materialisation lands)"), so this shows household context (who's in the
  * household) plus an honest empty state for the schedule, rather than
- * fabricating shift data.
+ * fabricating shift data. Nannies additionally get the clock-in card — see
+ * `ClockInCard` for the live-timer behavior.
  */
 import { ScrollView, View } from 'react-native';
 import { ChildChip } from '@/src/components/ui/child-chip';
@@ -16,6 +17,7 @@ import { SETUP_ROLES } from '@/src/domains/setup/types';
 import { useChildren } from '@/src/hooks/queries/useChildren';
 import { useHouseholds } from '@/src/hooks/queries/useHouseholds';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
+import { ClockInCard } from './ClockInCard';
 
 export function TodayScreen() {
   // Server-derived role, NOT the local setupProgress store — that's
@@ -52,6 +54,10 @@ export function TodayScreen() {
                 />
               ))}
             </View>
+          ) : null}
+
+          {onboarding.role === SETUP_ROLES.NANNY ? (
+            <ClockInCard householdId={household.id} />
           ) : null}
         </View>
       ) : null}

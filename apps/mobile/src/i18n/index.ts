@@ -7,6 +7,9 @@
  * - auth:     sign-in / sign-up screens
  * - welcome:  first-run welcome carousel
  * - settings: settings screen
+ * - schedule: schedule-pattern build/pending/respond + shifts screens
+ * - today:    the Today tab's clock-in card
+ * - hours:    the Hours tab (clock in/out history, approve/query)
  *
  * Language resolution order (each candidate validated vs SUPPORTED_LANGUAGES):
  *   1. MMKV-persisted preference from the `language-storage` Zustand store
@@ -27,12 +30,18 @@ import { SUPPORTED_LANGUAGES, type SupportedLanguage } from './constants';
 import enAuth from './locales/en/auth.json';
 import enCommon from './locales/en/common.json';
 import enErrors from './locales/en/errors.json';
+import enHours from './locales/en/hours.json';
+import enSchedule from './locales/en/schedule.json';
 import enSettings from './locales/en/settings.json';
+import enToday from './locales/en/today.json';
 import enWelcome from './locales/en/welcome.json';
 import esAuth from './locales/es/auth.json';
 import esCommon from './locales/es/common.json';
 import esErrors from './locales/es/errors.json';
+import esHours from './locales/es/hours.json';
+import esSchedule from './locales/es/schedule.json';
 import esSettings from './locales/es/settings.json';
+import esToday from './locales/es/today.json';
 import esWelcome from './locales/es/welcome.json';
 
 const resources = {
@@ -42,6 +51,9 @@ const resources = {
     auth: enAuth,
     welcome: enWelcome,
     settings: enSettings,
+    schedule: enSchedule,
+    today: enToday,
+    hours: enHours,
   },
   es: {
     common: esCommon,
@@ -49,6 +61,9 @@ const resources = {
     auth: esAuth,
     welcome: esWelcome,
     settings: esSettings,
+    schedule: esSchedule,
+    today: esToday,
+    hours: esHours,
   },
 };
 

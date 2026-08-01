@@ -13,6 +13,7 @@ import type { ExpandedOccurrence } from '../../../../../src/domains/schedule/ser
 import type {
   MaterialisationShiftRepository,
   PatternForMaterialisation,
+  TimeEntryExistenceRepository,
 } from '../../../../../src/domains/schedule/services/scheduleMaterialisationService';
 import { ScheduleMaterialisationService } from '../../../../../src/domains/schedule/services/scheduleMaterialisationService';
 
@@ -85,10 +86,19 @@ function makeRepo(
   };
 }
 
+function makeTimeEntryRepo(
+  overrides: Partial<TimeEntryExistenceRepository> = {}
+): TimeEntryExistenceRepository {
+  return {
+    hasTimeEntries: mock(async () => false),
+    ...overrides,
+  };
+}
+
 describe('ScheduleMaterialisationService — new occurrence', () => {
   it('creates a confirmed, system_generated shift with a deterministic ical_uid, and replaces its children', async () => {
     const repo = makeRepo();
-    const svc = new ScheduleMaterialisationService(repo);
+    const svc = new ScheduleMaterialisationService(repo, makeTimeEntryRepo());
 
     const occ = occurrence({
       children: [{ childId: 'child-1', startsAt: null, endsAt: null }],
@@ -128,7 +138,7 @@ describe('ScheduleMaterialisationService — existing shift, untouched, draft/pe
     const repo = makeRepo({
       findByPatternAndDate: mock(async () => existing),
     });
-    const svc = new ScheduleMaterialisationService(repo);
+    const svc = new ScheduleMaterialisationService(repo, makeTimeEntryRepo());
 
     const occ = occurrence({
       startsAt: '2026-06-04T07:30:00.000Z',
@@ -160,7 +170,7 @@ describe('ScheduleMaterialisationService — existing confirmed, untouched', () 
     const repo = makeRepo({
       findByPatternAndDate: mock(async () => existing),
     });
-    const svc = new ScheduleMaterialisationService(repo);
+    const svc = new ScheduleMaterialisationService(repo, makeTimeEntryRepo());
 
     // Same start/end as `existing` — nothing moved.
     const occ = occurrence({
@@ -180,7 +190,7 @@ describe('ScheduleMaterialisationService — existing confirmed, untouched', () 
     const repo = makeRepo({
       findByPatternAndDate: mock(async () => existing),
     });
-    const svc = new ScheduleMaterialisationService(repo);
+    const svc = new ScheduleMaterialisationService(repo, makeTimeEntryRepo());
 
     const occ = occurrence({
       startsAt: '2026-06-04T08:00:00.000Z', // moved from 07:00Z
@@ -201,7 +211,7 @@ describe('ScheduleMaterialisationService — manually touched shift (origin or c
     const repo = makeRepo({
       findByPatternAndDate: mock(async () => existing),
     });
-    const svc = new ScheduleMaterialisationService(repo);
+    const svc = new ScheduleMaterialisationService(repo, makeTimeEntryRepo());
 
     const result = await svc.materialise(pattern, [occurrence()], NOW);
 
@@ -231,7 +241,7 @@ describe('ScheduleMaterialisationService — manually touched shift (origin or c
       findByPatternAndDate: mock(async () => existing),
       hasChangeRequests: mock(async () => true),
     });
-    const svc = new ScheduleMaterialisationService(repo);
+    const svc = new ScheduleMaterialisationService(repo, makeTimeEntryRepo());
 
     const result = await svc.materialise(pattern, [occurrence()], NOW);
 
@@ -247,7 +257,7 @@ describe('ScheduleMaterialisationService — completed/cancelled shifts are NEVE
     const repo = makeRepo({
       findByPatternAndDate: mock(async () => existing),
     });
-    const svc = new ScheduleMaterialisationService(repo);
+    const svc = new ScheduleMaterialisationService(repo, makeTimeEntryRepo());
 
     const occ = occurrence({ startsAt: '2026-06-04T09:00:00.000Z' });
     const result = await svc.materialise(pattern, [occ], NOW);
@@ -269,12 +279,67 @@ describe('ScheduleMaterialisationService — completed/cancelled shifts are NEVE
     const repo = makeRepo({
       findByPatternAndDate: mock(async () => existing),
     });
-    const svc = new ScheduleMaterialisationService(repo);
+    const svc = new ScheduleMaterialisationService(repo, makeTimeEntryRepo());
 
     await svc.materialise(pattern, [occurrence()], NOW);
 
     expect(repo.update).not.toHaveBeenCalled();
     expect(repo.delete).not.toHaveBeenCalled();
+  });
+});
+
+describe('ScheduleMaterialisationService — a shift with time_entries is NEVER touched', () => {
+  it('leaves an existing shift completely alone when it has a time entry, even though it would otherwise be overwritten (untouched, times moved)', async () => {
+    const existing = baseShift({
+      status: 'confirmed',
+      origin: 'system_generated',
+    });
+    const repo = makeRepo({
+      findByPatternAndDate: mock(async () => existing),
+    });
+    const timeEntryRepo = makeTimeEntryRepo({
+      hasTimeEntries: mock(async () => true),
+    });
+    const svc = new ScheduleMaterialisationService(repo, timeEntryRepo);
+
+    // Times moved and the shift is otherwise untouched (system_generated, no
+    // change requests) — every other branch would overwrite this shift.
+    const occ = occurrence({ startsAt: '2026-06-04T09:00:00.000Z' });
+    const result = await svc.materialise(pattern, [occ], NOW);
+
+    expect(repo.update).not.toHaveBeenCalled();
+    expect(repo.delete).not.toHaveBeenCalled();
+    expect(repo.insertEvent).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      created: 0,
+      updated: 0,
+      deleted: 0,
+      cancelled: 0,
+      conflicts: [],
+    });
+  });
+
+  it('leaves an orphaned (no-longer-produced) shift alone when it has a time entry, even though it is future and untouched', async () => {
+    const orphan = baseShift({
+      id: 'shift-paid-orphan',
+      local_date: '2026-07-01',
+      starts_at: '2026-07-01T07:00:00.000Z',
+      status: 'confirmed',
+    });
+    const repo = makeRepo({
+      findActiveByPattern: mock(async () => [orphan]),
+    });
+    const timeEntryRepo = makeTimeEntryRepo({
+      hasTimeEntries: mock(async () => true),
+    });
+    const svc = new ScheduleMaterialisationService(repo, timeEntryRepo);
+
+    const result = await svc.materialise(pattern, [occurrence()], NOW);
+
+    expect(repo.update).not.toHaveBeenCalled();
+    expect(repo.delete).not.toHaveBeenCalled();
+    expect(result.deleted).toBe(0);
+    expect(result.cancelled).toBe(0);
   });
 });
 
@@ -289,7 +354,7 @@ describe('ScheduleMaterialisationService — occurrences no longer produced by t
     const repo = makeRepo({
       findActiveByPattern: mock(async () => [orphan]),
     });
-    const svc = new ScheduleMaterialisationService(repo);
+    const svc = new ScheduleMaterialisationService(repo, makeTimeEntryRepo());
 
     // Only 2026-06-04 is produced this run — the orphan's date is not.
     const result = await svc.materialise(pattern, [occurrence()], NOW);
@@ -309,7 +374,7 @@ describe('ScheduleMaterialisationService — occurrences no longer produced by t
     const repo = makeRepo({
       findActiveByPattern: mock(async () => [orphan]),
     });
-    const svc = new ScheduleMaterialisationService(repo);
+    const svc = new ScheduleMaterialisationService(repo, makeTimeEntryRepo());
 
     const result = await svc.materialise(pattern, [occurrence()], NOW);
 
@@ -335,7 +400,7 @@ describe('ScheduleMaterialisationService — occurrences no longer produced by t
     const repo = makeRepo({
       findActiveByPattern: mock(async () => [orphan]),
     });
-    const svc = new ScheduleMaterialisationService(repo);
+    const svc = new ScheduleMaterialisationService(repo, makeTimeEntryRepo());
 
     const result = await svc.materialise(pattern, [occurrence()], NOW);
 
@@ -366,7 +431,7 @@ describe('ScheduleMaterialisationService — occurrences no longer produced by t
     const repo = makeRepo({
       findActiveByPattern: mock(async () => [orphanCompleted]),
     });
-    const svc = new ScheduleMaterialisationService(repo);
+    const svc = new ScheduleMaterialisationService(repo, makeTimeEntryRepo());
 
     const result = await svc.materialise(pattern, [occurrence()], NOW);
 

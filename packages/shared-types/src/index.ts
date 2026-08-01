@@ -26,5 +26,6 @@ export * from './schemas/child.schema';
 export * from './schemas/household.schema';
 export * from './schemas/schedule.schema';
 export * from './schemas/shift.schema';
+export * from './schemas/timesheet.schema';
 // Text utilities
 export * from './text';

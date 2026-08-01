@@ -702,6 +702,7 @@ mock.module('lucide-react-native', () => ({
   ArrowRight: 'ArrowRight',
   Bell: 'Bell',
   Calendar: 'Calendar',
+  CalendarDays: 'CalendarDays',
   Check: 'Check',
   CheckCircle2: 'CheckCircle2',
   ChevronDown: 'ChevronDown',
@@ -747,4 +748,44 @@ mock.module('lucide-react-native', () => ({
   User: 'User',
   WifiOff: 'WifiOff',
   X: 'X',
+}));
+
+// FlashList (@shopify/flash-list) creates an Animated-wrapped component at
+// MODULE-EVALUATION time (`Animated.createAnimatedComponent(FlashList)`),
+// which throws under the Animated mock above (its `View`/`Text` are plain
+// strings, not real components). Mock the whole package as a simple,
+// non-virtualized list instead — good enough for both source-inspection
+// tests and mock-rendering tests (docs/09-TESTING.md §5).
+mock.module('@shopify/flash-list', () => ({
+  FlashList: ({
+    data,
+    renderItem,
+    keyExtractor,
+    ListHeaderComponent,
+    ListFooterComponent,
+    ListEmptyComponent,
+    testID,
+  }: any) => {
+    const toElement = (Comp: any) =>
+      !Comp
+        ? null
+        : React.isValidElement(Comp)
+          ? Comp
+          : React.createElement(Comp);
+    const items = Array.isArray(data) ? data : [];
+    return React.createElement(
+      View,
+      { testID },
+      toElement(ListHeaderComponent),
+      ...items.map((item: any, index: number) =>
+        React.createElement(
+          React.Fragment,
+          { key: keyExtractor ? keyExtractor(item, index) : index },
+          renderItem?.({ item, index })
+        )
+      ),
+      items.length === 0 ? toElement(ListEmptyComponent) : null,
+      toElement(ListFooterComponent)
+    );
+  },
 }));

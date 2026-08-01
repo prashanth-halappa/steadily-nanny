@@ -7,6 +7,9 @@
  * is the ONLY place that repository is called from.
  *
  * EXISTING-SHIFT POLICY (see the wave-2 spec table this implements):
+ *   has a time_entries row            -> NEVER touched, full stop (past and
+ *                                         paid-for reality is immutable —
+ *                                         see supabase/migrations/017_time_tracking.sql)
  *   draft/pending, untouched         -> overwrite times, children, note
  *   confirmed, untouched             -> overwrite; back to pending if times moved
  *   manually touched (non-system     -> PRESERVE untouched; emit a
@@ -21,9 +24,19 @@
  * Consistent with the product rule throughout: conflicts warn, they never
  * block.
  *
+ * The time_entries check is injected as a narrow `TimeEntryExistenceRepository`
+ * (defaulting to the timesheet domain's `TimeEntryRepository`) rather than
+ * added to `MaterialisationShiftRepository` — `time_entries` isn't a shift
+ * write, and this keeps the schedule domain's own `ScheduleShiftRepository`
+ * (which this service is the one authorized writer of, per its header
+ * comment) untouched. Cross-domain, read-only import — same convention as
+ * `schedulePatternQueryService`'s read of the household domain's
+ * `HouseholdMemberRepository`.
+ *
  * @module domains/schedule/services/scheduleMaterialisationService
  */
 import type { Shift } from '@steadily-nanny/shared-types/schemas/shift.schema';
+import { TimeEntryRepository } from '../../timesheet/repositories/timeEntryRepository';
 import {
   type NewShiftChildData,
   type NewShiftData,
@@ -79,6 +92,11 @@ export interface MaterialisationShiftRepository {
   insertEvent(data: NewShiftEventData): Promise<void>;
 }
 
+/** The narrow contract this service needs to ask "has anyone clocked into this shift?" — see the module doc for why this isn't folded into `MaterialisationShiftRepository`. */
+export interface TimeEntryExistenceRepository {
+  hasTimeEntries(shiftId: string): Promise<boolean>;
+}
+
 const NEVER_TOUCH_STATUSES: ReadonlySet<Shift['status']> = new Set([
   'completed',
   'cancelled',
@@ -94,7 +112,8 @@ export function deriveOccurrenceIcalUid(
 
 export class ScheduleMaterialisationService {
   constructor(
-    private readonly shiftRepo: MaterialisationShiftRepository = new ScheduleShiftRepository()
+    private readonly shiftRepo: MaterialisationShiftRepository = new ScheduleShiftRepository(),
+    private readonly timeEntryRepo: TimeEntryExistenceRepository = new TimeEntryRepository()
   ) {}
 
   async materialise(
@@ -162,6 +181,10 @@ export class ScheduleMaterialisationService {
       return; // completed/cancelled — never touched, full stop
     }
 
+    if (await this.timeEntryRepo.hasTimeEntries(existing.id)) {
+      return; // past and paid-for reality is immutable — see time_entries (017)
+    }
+
     if (await this.isManuallyTouched(existing)) {
       await this.shiftRepo.insertEvent(
         conflictEvent(pattern, existing, occ.localDate)
@@ -200,6 +223,10 @@ export class ScheduleMaterialisationService {
   ): Promise<void> {
     if (NEVER_TOUCH_STATUSES.has(shift.status)) {
       return; // completed/cancelled — never touched, full stop
+    }
+
+    if (await this.timeEntryRepo.hasTimeEntries(shift.id)) {
+      return; // past and paid-for reality is immutable — see time_entries (017)
     }
 
     const touched = await this.isManuallyTouched(shift);
