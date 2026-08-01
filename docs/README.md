@@ -4,7 +4,7 @@ A product-agnostic blueprint for building **mobile (Expo/React Native)** and **A
 
 > **What this is:** docs for the working monorepo skeleton around them (`apps/`, `packages/`), plus copy-paste config templates for adding new features. Point an AI agent (or yourself) at this folder to understand the shapes, layering, and rules before writing code.
 >
-> **What to swap:** every product-specific name. Domains, bundle IDs, schemes, package scopes (`@yourapp/*`), and copy are placeholders. The **shapes, layering, and rules** are the reusable part.
+> **What to swap:** every product-specific name. Domains, bundle IDs, schemes, package scopes (`@steadily-nanny/*`), and copy are placeholders. The **shapes, layering, and rules** are the reusable part.
 
 ---
 
@@ -50,7 +50,7 @@ The contract between apps lives in `shared-types`: the API validates requests wi
 
 ## `templates/` — copy-paste configs
 
-Genericized, ready to adapt. Swap `@yourapp/*`, bundle IDs (`com.yourco.yourapp`), schemes, and domains.
+Genericized, ready to adapt. Swap `@steadily-nanny/*`, bundle IDs (`com.jetto.steadily.nanny`), schemes, and domains.
 
 ```
 templates/

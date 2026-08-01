@@ -13,7 +13,7 @@ import { useTranslation } from 'react-i18next';
 import { widgetApi } from '../../api/endpoints/widgets';
 import { queryKeys } from '../../api/queryKeys';
 import { getLocalizedErrorMessage, showErrorToast } from '../../lib/toast';
-import type { CreateWidgetInput, Widget } from '@yourapp/shared-types/schemas/widget.schema';
+import type { CreateWidgetInput, Widget } from '@steadily-nanny/shared-types/schemas/widget.schema';
 
 export function useCreateWidget() {
   const queryClient = useQueryClient();

@@ -7,7 +7,7 @@
  *
  * @module domains/user/services/userService
  */
-import type { UserProfile } from '@yourapp/shared-types';
+import type { UserProfile } from '@steadily-nanny/shared-types';
 import { supabaseService } from '../../../config/supabase';
 import { BaseError, DatabaseError } from '../../../errors';
 import { logger } from '../../../middlewares/logger';

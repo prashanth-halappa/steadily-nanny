@@ -1,0 +1,111 @@
+/**
+ * Household member repository — data access for the `household_members`
+ * table, the access spine every other household-scoped table is authorized
+ * against (via membership, not an `owner_id` column).
+ *
+ * @module domains/household/repositories/householdMemberRepository
+ */
+import { supabaseService } from '../../../config/supabase';
+import { DatabaseError } from '../../../errors';
+import { BaseRepository } from '../../../shared/repositories/baseRepository';
+import { AlreadyMemberError } from '../errors/householdErrors';
+import type { HouseholdMember } from '../types';
+
+/** Postgres unique_violation error code. */
+const UNIQUE_VIOLATION = '23505';
+
+export class HouseholdMemberRepository extends BaseRepository<HouseholdMember> {
+  constructor() {
+    super('household_members');
+  }
+
+  /** The caller's active membership row for a household, or null. */
+  async findActiveMembership(
+    householdId: string,
+    userId: string
+  ): Promise<HouseholdMember | null> {
+    const { data, error } = await supabaseService
+      .from(this.table)
+      .select('*')
+      .eq('household_id', householdId)
+      .eq('user_id', userId)
+      .eq('status', 'active')
+      .maybeSingle();
+
+    if (error) {
+      throw new DatabaseError(
+        'Failed to look up household membership',
+        'DATABASE_ERROR',
+        { details: error.message, householdId, userId }
+      );
+    }
+    return data as HouseholdMember | null;
+  }
+
+  /** All active members of a household, oldest-joined first. */
+  async listActiveByHousehold(householdId: string): Promise<HouseholdMember[]> {
+    const { data, error } = await supabaseService
+      .from(this.table)
+      .select('*')
+      .eq('household_id', householdId)
+      .eq('status', 'active')
+      .order('joined_at', { ascending: true });
+
+    if (error) {
+      throw new DatabaseError(
+        'Failed to list household members',
+        'DATABASE_ERROR',
+        { details: error.message, householdId }
+      );
+    }
+    return (data ?? []) as HouseholdMember[];
+  }
+
+  /** Every household id the user actively belongs to. */
+  async listActiveHouseholdIds(userId: string): Promise<string[]> {
+    const { data, error } = await supabaseService
+      .from(this.table)
+      .select('household_id')
+      .eq('user_id', userId)
+      .eq('status', 'active');
+
+    if (error) {
+      throw new DatabaseError(
+        'Failed to list households for user',
+        'DATABASE_ERROR',
+        { details: error.message, userId }
+      );
+    }
+    return ((data ?? []) as { household_id: string }[]).map(
+      row => row.household_id
+    );
+  }
+
+  /**
+   * Insert a membership row, translating the `(user_id, household_id)` unique
+   * constraint into a clean AlreadyMemberError instead of a raw 500 — the
+   * defence against a concurrent double-redeem racing past the service-level
+   * pre-check in `householdCommandService.redeemInvite`.
+   */
+  async createMembership(
+    data: Partial<HouseholdMember>
+  ): Promise<HouseholdMember> {
+    const { data: created, error } = await supabaseService
+      .from(this.table)
+      .insert(data)
+      .select()
+      .single();
+
+    if (error) {
+      if (error.code === UNIQUE_VIOLATION) {
+        throw new AlreadyMemberError(String(data.household_id));
+      }
+      throw new DatabaseError(
+        'Failed to create household member',
+        'DATABASE_ERROR',
+        { details: error.message, code: error.code }
+      );
+    }
+    return created as HouseholdMember;
+  }
+}

@@ -16,7 +16,7 @@ Each step names the exact command and what you should observe. If a step's obser
    ```
    **Expect:** it resolves the `apps/*` and `packages/*` workspaces and finishes without error. If you see peer-dependency warnings from Expo packages, that's normal — Expo package versions are managed by `bun expo install`, not plain `bun add`, once you touch them later.
 
-3. **Checkpoint — what you have now:** a monorepo that installs cleanly but is still full of placeholder identifiers (`yourapp`, `com.yourco.yourapp`, `YourApp`, …) everywhere. Nothing has been renamed yet.
+3. **Checkpoint — what you have now:** a monorepo that installs cleanly but is still full of placeholder identifiers (`steadilynanny`, `com.jetto.steadily.nanny`, `Steadily Nanny`, …) everywhere. Nothing has been renamed yet.
 
 ---
 
@@ -45,22 +45,22 @@ Each step names the exact command and what you should observe. If a step's obser
    **What each flag means:**
    | Flag | Example | Becomes |
    |---|---|---|
-   | `--name` | `SleepWell` | Display name (`YourApp` token; also used in onboarding i18n copy) |
-   | `--scope` | `@sleepwell` | npm/Bun workspace scope (`@yourapp/*` → `@sleepwell/*`) |
-   | `--bundle-id` | `com.mycompany.sleepwell` | iOS bundle id + Android package (`com.yourco.yourapp`) |
+   | `--name` | `SleepWell` | Display name (`Steadily Nanny` token; also used in onboarding i18n copy) |
+   | `--scope` | `@sleepwell` | npm/Bun workspace scope (`@steadily-nanny/*` → `@sleepwell/*`) |
+   | `--bundle-id` | `com.mycompany.sleepwell` | iOS bundle id + Android package (`com.jetto.steadily.nanny`) |
    | `--scheme` | `sleepwell` | URL scheme, Expo slug, and the base "slug" every other derived token is built from (RevenueCat entitlement id, MMKV encryption-key placeholder — see below) |
    | `--domain` | `sleepwell.example.com` | Deep-link / universal-link domain, web URL |
    | `--api-url` | `api.sleepwell.example.com` | API host used in mobile env defaults and EAS build config |
 
-   **Derivation rule you should know about:** the template uses the *same* literal token (`yourapp`) for both the app "slug" and the URL "scheme," so a plain-text find/replace can't tell them apart. `--scheme` doubles as that slug — it's also used to build `<scheme>-pro-entitlement` (the RevenueCat entitlement identifier placeholder in `packages/shared-types/src/constants.ts`) and `<scheme>-secure-key-v1` (the MMKV secure-storage encryption-key placeholder in `apps/mobile/src/lib/mmkvStorage.ts`).
+   **Derivation rule you should know about:** the template uses the *same* literal token (`steadilynanny`) for both the app "slug" and the URL "scheme," so a plain-text find/replace can't tell them apart. `--scheme` doubles as that slug — it's also used to build `<scheme>-pro-entitlement` (the RevenueCat entitlement identifier placeholder in `packages/shared-types/src/constants.ts`) and `<scheme>-secure-key-v1` (the MMKV secure-storage encryption-key placeholder in `apps/mobile/src/lib/mmkvStorage.ts`).
 
    **Expect:** console output ending with `Done — changed N file(s), M replacement(s).`, followed by an explicit reminder of the two things it deliberately does NOT touch (see Phase 2 and Phase 3 below).
 
 5. **Exit gate — zero placeholders left:**
    ```bash
-   grep -ri yourapp --exclude-dir=node_modules --exclude-dir=.git .
+   grep -ri steadilynanny --exclude-dir=node_modules --exclude-dir=.git .
    ```
-   **Expect:** zero hits. (`bun.lock` is intentionally left alone by the script — see step 6 — so if you still have an un-installed lockfile with old `@yourapp/*` names in it, that's expected until step 6.)
+   **Expect:** zero hits. (`bun.lock` is intentionally left alone by the script — see step 6 — so if you still have an un-installed lockfile with old `@steadily-nanny/*` names in it, that's expected until step 6.)
 
 6. **Refresh the lockfile** (the setup script does not text-patch `bun.lock` — it's machine-generated):
    ```bash
@@ -121,7 +121,7 @@ The setup script only does plain-text find/replace on the *tokens themselves* �
 Run these from the repo root:
 
 ```bash
-grep -ri yourapp --exclude-dir=node_modules --exclude-dir=.git .   # expect: zero hits
+grep -ri steadilynanny --exclude-dir=node_modules --exclude-dir=.git .   # expect: zero hits
 bun run qc                                                          # expect: all green (tests + lint + format + typecheck, both apps)
 ```
 (`bunx expo config --type public` from `apps/mobile/` — already covered in step 13.)

@@ -3,7 +3,7 @@
  * sanitization. Extends BaseError with a typed `context` object and an
  * overridable `sanitizeContext()` hook for redacting sensitive fields.
  */
-import type { ErrorCode } from '@yourapp/shared-types';
+import type { ErrorCode } from '@steadily-nanny/shared-types';
 import { BaseError } from './BaseError';
 
 export abstract class ContextualError<

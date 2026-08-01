@@ -6,7 +6,7 @@ Purpose: the `shared-types` package pattern — one workspace package that holds
 
 ## Why a shared package
 
-The API and mobile app must agree on the shape of every payload that crosses the wire: request DTOs, response envelopes, error codes, domain entities, and the Zod schemas that validate them. Putting these in one workspace package (`@yourapp/shared-types`) means:
+The API and mobile app must agree on the shape of every payload that crosses the wire: request DTOs, response envelopes, error codes, domain entities, and the Zod schemas that validate them. Putting these in one workspace package (`@steadily-nanny/shared-types`) means:
 
 - One source of truth — change a DTO once, both apps see it.
 - Zod schemas defined here validate on the server **and** can parse on the client.
@@ -22,7 +22,7 @@ Example: `packages/shared-types/package.json`
 
 ```jsonc
 {
-  "name": "@yourapp/shared-types",
+  "name": "@steadily-nanny/shared-types",
   "private": true,
   "main": "./src/index.ts",
   "types": "./src/index.ts",
@@ -46,7 +46,7 @@ Example: `packages/shared-types/package.json`
 Notes:
 - **Zod is a `peerDependency`** — the package authors schemas against Zod but defers the actual version to the consuming app, so there's exactly one Zod instance in the tree.
 - The only scripts are `clean` and `typecheck`; there is **no `build`** because consumers read source.
-- Wildcard exports (`"./domain/*"`, `"./dto/*"`) mean adding `src/domain/foo.ts` is instantly importable as `@yourapp/shared-types/domain/foo` with no manifest edit.
+- Wildcard exports (`"./domain/*"`, `"./dto/*"`) mean adding `src/domain/foo.ts` is instantly importable as `@steadily-nanny/shared-types/domain/foo` with no manifest edit.
 
 ---
 
@@ -70,7 +70,7 @@ src/
 - **`domain/`** — the entity shapes (what a `Child`, `Memory`, `Activity` *is*).
 - **`dto/`** — the over-the-wire request/response shapes per domain feature.
 - **`schemas/`** — Zod validators (often paired with a DTO; `z.infer` gives the type).
-- **`index.ts`** is a barrel that `export *`s every sub-area so `import { ... } from '@yourapp/shared-types'` reaches everything; subpath imports are for when you want to be narrow.
+- **`index.ts`** is a barrel that `export *`s every sub-area so `import { ... } from '@steadily-nanny/shared-types'` reaches everything; subpath imports are for when you want to be narrow.
 
 ---
 
@@ -104,11 +104,11 @@ export type SubscriptionTier =
 
 ## How apps consume it
 
-Apps reference the package by name and map that name to the source folder with a **tsconfig path alias** — so editors, `tsc`, Metro (mobile), and Bun (api) all resolve `@yourapp/shared-types` to `packages/shared-types/src` directly.
+Apps reference the package by name and map that name to the source folder with a **tsconfig path alias** — so editors, `tsc`, Metro (mobile), and Bun (api) all resolve `@steadily-nanny/shared-types` to `packages/shared-types/src` directly.
 
 1. Declare the dependency in the app's `package.json`:
    ```jsonc
-   "dependencies": { "@yourapp/shared-types": "*" }
+   "dependencies": { "@steadily-nanny/shared-types": "*" }
    ```
 2. Add the path alias in the app's `tsconfig.json`.
 
@@ -116,17 +116,17 @@ Example: `apps/api/tsconfig.json` (mobile is identical)
 
 ```jsonc
 "paths": {
-  "@yourapp/shared-types": ["../../packages/shared-types/src"],
-  "@yourapp/shared-types/*": ["../../packages/shared-types/src/*"]
+  "@steadily-nanny/shared-types": ["../../packages/shared-types/src"],
+  "@steadily-nanny/shared-types/*": ["../../packages/shared-types/src/*"]
 }
 ```
 
 Then in code:
 
 ```ts
-import { ERROR_CODES, type ErrorCode } from '@yourapp/shared-types';
-import { MemoryExtractionResultSchema } from '@yourapp/shared-types/schemas';
-import type { ChildDto } from '@yourapp/shared-types/dto/child.dto';
+import { ERROR_CODES, type ErrorCode } from '@steadily-nanny/shared-types';
+import { MemoryExtractionResultSchema } from '@steadily-nanny/shared-types/schemas';
+import type { ChildDto } from '@steadily-nanny/shared-types/dto/child.dto';
 ```
 
 The mobile app additionally needs Babel/Metro to honor the alias (via `babel-plugin-module-resolver` and Metro's workspace resolution) — but because the workspace uses Bun's **hoisted** linker (see `02-MONOREPO-SETUP.md`), the package is also present in flat `node_modules` and resolves by name without extra config in most cases.
@@ -137,7 +137,7 @@ The mobile app additionally needs Babel/Metro to honor the alias (via `babel-plu
 
 This blueprint ships **only `shared-types`** under `packages/` by default; a `shared-utils` package is referenced here but not scaffolded. When you add shared runtime helpers (date formatting, score math, etc.), create `packages/shared-utils` using the **exact same pattern**:
 
-- `name: "@yourapp/shared-utils"`, `private: true`, source-only entry points.
+- `name: "@steadily-nanny/shared-utils"`, `private: true`, source-only entry points.
 - Subpath `exports` map for granular imports.
-- tsconfig path alias `@yourapp/shared-utils` → `packages/shared-utils/src` in each consuming app.
+- tsconfig path alias `@steadily-nanny/shared-utils` → `packages/shared-utils/src` in each consuming app.
 - No build step; pure functions only (no app-specific or native dependencies) so both Express and React Native can import it.

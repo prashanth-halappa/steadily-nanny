@@ -1,4 +1,4 @@
-import type { ErrorCode } from '@yourapp/shared-types';
+import type { ErrorCode } from '@steadily-nanny/shared-types';
 
 export interface ErrorMetadata {
   [key: string]: unknown;

@@ -54,10 +54,6 @@ export default function PrivateLayout() {
       <OfflineBanner />
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="(tabs)" />
-        <Stack.Screen
-          name="paywall"
-          options={{ presentation: 'fullScreenModal' }}
-        />
       </Stack>
 
       {/* RE-CONSENT GATE EXTENSION POINT — v1 slim omits the legal re-consent

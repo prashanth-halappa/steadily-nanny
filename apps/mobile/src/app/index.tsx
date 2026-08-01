@@ -3,10 +3,13 @@ import { useEffect, useRef } from 'react';
 import { View } from 'react-native';
 import { hasAuthToken } from '@/src/api/client';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
-import { getStepRoute } from '@/src/config/onboardingFlows';
+import {
+  getSetupStepRoute,
+  SETUP_ROLES,
+  SETUP_STEPS,
+} from '@/src/domains/setup/types';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 import { useAuthStore } from '@/src/store/auth';
-import { useOnboardingStore } from '@/src/store/onboarding';
 import { usePendingDeepLinkStore } from '@/src/store/pendingDeepLinkStore';
 
 /**
@@ -16,32 +19,63 @@ export default function Index() {
   const router = useRouter();
   const isInitialized = useAuthStore(s => s.isInitialized);
   const session = useAuthStore(s => s.session);
-  const isOnboarded = useIsOnboarded();
-  const currentStep = useOnboardingStore(s => s.currentStep);
-  const hasRouted = useRef(false);
+  const onboarding = useIsOnboarded();
+
+  // Route once per IDENTITY, not once per mount.
+  //
+  // This was a one-shot `useRef(false)` and it stranded every user who signed
+  // in. Cold start renders this screen, it routes to /welcome, and the ref
+  // flips true. Signing in then fires the auth store's SIGNED_IN handler, which
+  // calls `router.replace('/')` — landing back on this SAME still-mounted
+  // component, where the one-shot guard early-returns and no second routing
+  // decision is ever made. The result is a permanent LoadingIndicator with a
+  // valid session sitting behind it.
+  //
+  // Keying on the user id keeps the original intent (don't re-route on every
+  // render) while still reacting to signed-out -> signed-in and account
+  // switches. `undefined` means "no decision yet" and is deliberately distinct
+  // from `null`, which means "we have decided this user is signed out".
+  const routedForUserId = useRef<string | null | undefined>(undefined);
 
   useEffect(() => {
-    if (hasRouted.current || !isInitialized) return;
+    if (!isInitialized) return;
+
+    const userId = session?.user?.id ?? null;
+    if (routedForUserId.current === userId) return;
 
     if (!session) {
       // During cold start the API token can be set a tick before the Zustand
       // session hydrates — wait instead of bouncing the user to /welcome.
+      // Deliberately do NOT record a decision here; we haven't made one yet.
       if (hasAuthToken()) return;
-      hasRouted.current = true;
+      routedForUserId.current = null;
       router.replace('/welcome' as Href);
       return;
     }
 
-    hasRouted.current = true;
-    if (!isOnboarded) {
-      router.replace(getStepRoute(currentStep) as Href);
+    // Wait for the server-derived onboarding status before deciding.
+    // Routing on a transient in-flight value is exactly how a returning,
+    // already-set-up user gets bounced through the role fork for a frame —
+    // see useIsOnboarded's header comment.
+    if (onboarding.status === 'loading') return;
+
+    routedForUserId.current = userId;
+    if (onboarding.status === 'not-onboarded') {
+      // A parent who already owns a household (just hasn't added a child
+      // yet) resumes at the children step, not the role fork — the server
+      // already told us their role.
+      const step =
+        onboarding.role === SETUP_ROLES.PARENT
+          ? SETUP_STEPS.CHILDREN
+          : SETUP_STEPS.ROLE;
+      router.replace(getSetupStepRoute(step) as Href);
       return;
     }
 
     // Replay a queued deep link (from a push tap while logged out), else tabs.
     const pending = usePendingDeepLinkStore.getState().consumePendingLink();
     router.replace((pending ?? '/(private)/(tabs)/home') as Href);
-  }, [isInitialized, session, isOnboarded, currentStep, router]);
+  }, [isInitialized, session, onboarding.status, onboarding.role, router]);
 
   return (
     <View className="flex-1 items-center justify-center bg-background">

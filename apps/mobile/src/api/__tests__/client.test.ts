@@ -59,50 +59,7 @@ describe('api client interceptors', () => {
     ).rejects.toBeInstanceOf(FakeAxiosError);
   });
 
-  it('engages the gating handler on a 402 PAYWALL_REQUIRED', async () => {
-    const onForbidden = mock((_code?: string) => {});
-    client.setOnForbiddenHandler(onForbidden);
-    const err = {
-      response: { status: 402, data: { error: { code: 'PAYWALL_REQUIRED' } } },
-      config: {},
-    };
-    await expect(responseRejected?.(err)).rejects.toBe(err);
-    expect(onForbidden).toHaveBeenCalledWith('PAYWALL_REQUIRED');
-  });
-
-  it('engages the gating handler on a 403 PAYWALL_REQUIRED', async () => {
-    const onForbidden = mock((_code?: string) => {});
-    client.setOnForbiddenHandler(onForbidden);
-    const err = {
-      response: { status: 403, data: { error: { code: 'PAYWALL_REQUIRED' } } },
-      config: {},
-    };
-    await expect(responseRejected?.(err)).rejects.toBe(err);
-    expect(onForbidden).toHaveBeenCalledWith('PAYWALL_REQUIRED');
-  });
-
-  it('engages the gating handler on a 429 USAGE_LIMIT_EXCEEDED (not retry-after)', async () => {
-    const onForbidden = mock((_code?: string) => {});
-    client.setOnForbiddenHandler(onForbidden);
-    const err = {
-      response: {
-        status: 429,
-        headers: { 'retry-after': '5' },
-        data: { error: { code: 'USAGE_LIMIT_EXCEEDED' } },
-      },
-      config: {},
-    };
-    await expect(responseRejected?.(err)).rejects.toBe(err);
-    expect(onForbidden).toHaveBeenCalledWith('USAGE_LIMIT_EXCEEDED');
-    // A gating 429 goes to the handler, NOT the retry-after annotation path.
-    const annotated = err as { retryAfter?: number; isRateLimited?: boolean };
-    expect(annotated.retryAfter).toBeUndefined();
-    expect(annotated.isRateLimited).toBeUndefined();
-  });
-
-  it('annotates retry-after on a plain 429 RATE_LIMITED (no handler)', async () => {
-    const onForbidden = mock((_code?: string) => {});
-    client.setOnForbiddenHandler(onForbidden);
+  it('annotates retry-after on a 429 RATE_LIMITED', async () => {
     const err = {
       response: {
         status: 429,
@@ -115,18 +72,25 @@ describe('api client interceptors', () => {
       retryAfter: 2000,
       isRateLimited: true,
     });
-    expect(onForbidden).not.toHaveBeenCalled();
   });
 
-  it('does NOT engage the gating handler on a non-gating 403 FORBIDDEN', async () => {
-    const onForbidden = mock((_code?: string) => {});
-    client.setOnForbiddenHandler(onForbidden);
+  it('defaults retry-after to 60s on a 429 with no header', async () => {
+    const err = {
+      response: { status: 429, headers: {}, data: {} },
+      config: {},
+    };
+    await expect(responseRejected?.(err)).rejects.toMatchObject({
+      retryAfter: 60000,
+      isRateLimited: true,
+    });
+  });
+
+  it('passes through a plain 403 FORBIDDEN unmodified', async () => {
     const err = {
       response: { status: 403, data: { error: { code: 'FORBIDDEN' } } },
       config: {},
     };
     await expect(responseRejected?.(err)).rejects.toBe(err);
-    expect(onForbidden).not.toHaveBeenCalled();
   });
 
   it('refreshes the token and retries once on a current-session 401', async () => {

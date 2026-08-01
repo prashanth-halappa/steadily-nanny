@@ -1,10 +1,22 @@
 import { beforeAll, describe, expect, mock, test } from 'bun:test';
 import { z } from 'zod';
-import { widgetDescriptionConfig } from '../../../../src/config/app.llmConfigs';
+import type { LlmCallConfig } from '../../../../src/config/llmProvider';
 
 // mock.module('ai', …) MUST run in beforeAll BEFORE the dynamic import of the
 // module under test, so its `generateObject` binding resolves to the mock.
 let generateLlmObject: any;
+
+// Test-local call config — fast/cheap knobs, same shape as a real app.llmConfigs
+// bundle, but not tied to any product feature.
+const testLlmConfig: LlmCallConfig = {
+  // Cast: the mocked 'ai' module never touches this value.
+  model: {} as LlmCallConfig['model'],
+  temperature: 0.5,
+  maxOutputTokens: 300,
+  timeoutMs: 8000,
+  maxRetries: 2,
+  disableThinking: true,
+};
 
 beforeAll(async () => {
   mock.module('ai', () => ({
@@ -22,7 +34,7 @@ beforeAll(async () => {
 describe('generateLlmObject', () => {
   test('maskAndUnmask: masks the outbound prompt and restores the name in output', async () => {
     const { object } = await generateLlmObject({
-      config: widgetDescriptionConfig,
+      config: testLlmConfig,
       schema: z.object({ text: z.string() }),
       prompt: 'Alex is happy',
       piiName: 'Alex',
@@ -34,7 +46,7 @@ describe('generateLlmObject', () => {
 
   test('none: passes the prompt through unmasked', async () => {
     const { object } = await generateLlmObject({
-      config: widgetDescriptionConfig,
+      config: testLlmConfig,
       schema: z.object({ text: z.string() }),
       prompt: 'no pii here',
     });

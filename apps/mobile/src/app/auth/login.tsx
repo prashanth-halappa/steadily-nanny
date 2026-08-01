@@ -17,10 +17,15 @@ export default function Login() {
   const isLoading = useAuthStore(s => s.isLoading);
 
   return (
-    <SafeAreaView style={{ flex: 1 }} className="bg-background">
+    <SafeAreaView
+      style={{ flex: 1 }}
+      className="bg-background"
+      testID="login-screen"
+    >
       <View className="flex-1 justify-center gap-3 px-6">
         <H1>Sign in</H1>
         <Input
+          testID="login-email"
           accessibilityLabel="Email"
           value={email}
           onChangeText={setEmail}
@@ -29,14 +34,20 @@ export default function Login() {
           keyboardType="email-address"
         />
         <Input
+          testID="login-password"
           accessibilityLabel="Password"
           value={password}
           onChangeText={setPassword}
           placeholder="Password"
           secureTextEntry
         />
-        {error ? <Small className="text-destructive">{error}</Small> : null}
+        {error ? (
+          <Small testID="login-error" className="text-destructive">
+            {error}
+          </Small>
+        ) : null}
         <Button
+          testID="login-submit"
           onPress={() => void signIn(email, password)}
           disabled={isLoading}
         >

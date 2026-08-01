@@ -1,23 +1,23 @@
 {
-  "name": "YourApp",
-  "slug": "yourapp",
-  "scheme": "yourapp",
+  "name": "Steadily Nanny",
+  "slug": "steadilynanny",
+  "scheme": "steadilynanny",
   "version": "1.0.0",
   "runtimeVersion": "1.0.0",
-  "owner": "SETUP-EXPO-ACCOUNT",
-  "associatedDomain": "yourapp.example.com",
+  "owner": "jetto",
+  "associatedDomain": "nanny.getsteadily.app",
   "easProjectId": "SETUP-EAS-PROJECT-ID",
   "ios": {
-    "bundleIdentifier": "com.yourco.yourapp",
+    "bundleIdentifier": "com.jetto.steadily.nanny",
     "appStoreUrl": "https://apps.apple.com/app/id0000000000",
-    "googleSignInUrlScheme": "com.googleusercontent.apps.SETUP-GOOGLE-IOS-CLIENT-ID"
+    "googleSignInUrlScheme": "com.googleusercontent.apps.662649119218-u1qro7hcgcq1re6sglcv77fari4hakij"
   },
   "android": {
-    "package": "com.yourco.yourapp",
-    "playStoreUrl": "https://play.google.com/store/apps/details?id=com.yourco.yourapp"
+    "package": "com.jetto.steadily.nanny",
+    "playStoreUrl": "https://play.google.com/store/apps/details?id=com.jetto.steadily.nanny"
   },
   "sentry": {
-    "organization": "SETUP-SENTRY-ORG",
-    "project": "yourapp-mobile"
+    "organization": "jettohq",
+    "project": "steadilynanny-mobile"
   }
 }

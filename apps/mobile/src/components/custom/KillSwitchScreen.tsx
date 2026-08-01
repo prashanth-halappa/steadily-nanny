@@ -1,4 +1,4 @@
-import type { AppStatusMessage } from '@yourapp/shared-types/appConfig';
+import type { AppStatusMessage } from '@steadily-nanny/shared-types/appConfig';
 import { View } from 'react-native';
 import { Body, H2 } from '@/src/components/ui/typography';
 

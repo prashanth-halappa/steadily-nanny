@@ -4,8 +4,8 @@
     "module": "CommonJS",
     "baseUrl": "./",
     "paths": {
-      "@yourapp/shared-types": ["../../packages/shared-types/src"],
-      "@yourapp/shared-types/*": ["../../packages/shared-types/src/*"]
+      "@steadily-nanny/shared-types": ["../../packages/shared-types/src"],
+      "@steadily-nanny/shared-types/*": ["../../packages/shared-types/src/*"]
     },
     "typeRoots": ["./node_modules/@types", "./src/types"],
     "resolveJsonModule": true,

@@ -530,7 +530,7 @@ mock.module('expo-constants', () => ({
 mock.module('expo-application', () => ({
   nativeApplicationVersion: '1.0.0',
   nativeBuildVersion: '1',
-  applicationId: 'com.yourco.yourapp',
+  applicationId: 'com.jetto.steadily.nanny',
   getInstallationTimeAsync: mock(() => Promise.resolve(new Date(0))),
   getAndroidId: mock(() => 'test-android-id'),
 }));
@@ -580,7 +580,7 @@ mock.module('expo-web-browser', () => ({
 }));
 
 mock.module('expo-linking', () => ({
-  createURL: mock((path: string) => `yourapp://${path}`),
+  createURL: mock((path: string) => `steadilynanny://${path}`),
   openURL: mock(() => Promise.resolve()),
   useURL: mock(() => null),
   addEventListener: mock(() => ({ remove: mock() })),
@@ -659,27 +659,6 @@ mock.module('expo-apple-authentication', () => ({
   ),
 }));
 
-mock.module('react-native-purchases', () => ({
-  default: {
-    configure: mock(() => {}),
-    getOfferings: mock(() =>
-      Promise.resolve({ current: { availablePackages: [] } })
-    ),
-    getCustomerInfo: mock(() =>
-      Promise.resolve({ entitlements: { active: {} } })
-    ),
-    addCustomerInfoUpdateListener: mock(() => {}),
-    logIn: mock(() => Promise.resolve({ customerInfo: {} })),
-    logOut: mock(() => Promise.resolve({})),
-    setLogLevel: mock(() => {}),
-  },
-  LOG_LEVEL: { DEBUG: 'DEBUG', ERROR: 'ERROR' },
-}));
-
-mock.module('react-native-purchases-ui', () => ({
-  default: { presentPaywall: mock(() => Promise.resolve({})) },
-}));
-
 // -----------------------------------------------------------------------------
 // Observability / toast
 // -----------------------------------------------------------------------------
@@ -723,6 +702,7 @@ mock.module('lucide-react-native', () => ({
   ArrowRight: 'ArrowRight',
   Bell: 'Bell',
   Calendar: 'Calendar',
+  CalendarDays: 'CalendarDays',
   Check: 'Check',
   CheckCircle2: 'CheckCircle2',
   ChevronDown: 'ChevronDown',
@@ -768,4 +748,44 @@ mock.module('lucide-react-native', () => ({
   User: 'User',
   WifiOff: 'WifiOff',
   X: 'X',
+}));
+
+// FlashList (@shopify/flash-list) creates an Animated-wrapped component at
+// MODULE-EVALUATION time (`Animated.createAnimatedComponent(FlashList)`),
+// which throws under the Animated mock above (its `View`/`Text` are plain
+// strings, not real components). Mock the whole package as a simple,
+// non-virtualized list instead — good enough for both source-inspection
+// tests and mock-rendering tests (docs/09-TESTING.md §5).
+mock.module('@shopify/flash-list', () => ({
+  FlashList: ({
+    data,
+    renderItem,
+    keyExtractor,
+    ListHeaderComponent,
+    ListFooterComponent,
+    ListEmptyComponent,
+    testID,
+  }: any) => {
+    const toElement = (Comp: any) =>
+      !Comp
+        ? null
+        : React.isValidElement(Comp)
+          ? Comp
+          : React.createElement(Comp);
+    const items = Array.isArray(data) ? data : [];
+    return React.createElement(
+      View,
+      { testID },
+      toElement(ListHeaderComponent),
+      ...items.map((item: any, index: number) =>
+        React.createElement(
+          React.Fragment,
+          { key: keyExtractor ? keyExtractor(item, index) : index },
+          renderItem?.({ item, index })
+        )
+      ),
+      items.length === 0 ? toElement(ListEmptyComponent) : null,
+      toElement(ListFooterComponent)
+    );
+  },
 }));

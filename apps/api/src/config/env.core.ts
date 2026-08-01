@@ -3,7 +3,7 @@
  *
  * These are the variables the reusable API core needs regardless of product:
  * server config, Supabase, the LLM provider (Vertex AI via ADC), monitoring,
- * jobs, email, and the subscription/RevenueCat integration.
+ * jobs, and email.
  *
  * App-specific variables live in `app.env.ts` (the extension point). Both are
  * merged and validated once, fail-fast, in `env.ts`.
@@ -51,14 +51,7 @@ export const coreEnvSchema = z.object({
   // ── Email via Resend (optional; production-required) ─────────────────────────
   RESEND_API_KEY: z.string().optional(),
   RESEND_WEBHOOK_SECRET: z.string().optional(),
-  EMAIL_FROM: z.string().default('yourapp <hello@yourapp.example.com>'),
-
-  // ── Subscriptions via RevenueCat (webhook secret production-required) ────────
-  REVENUECAT_WEBHOOK_SECRET: z.string().optional(),
-  REVENUECAT_SECRET_KEY: z.string().optional(),
-  // RevenueCat project id — needed for the REST v2 /sync fallback + entitlement
-  // lookup. SETUP: set to your RC project id.
-  REVENUECAT_PROJECT_ID: z.string().default('proj_placeholder'),
+  EMAIL_FROM: z.string().default('steadilynanny <hello@nanny.getsteadily.app>'),
 });
 
 /** Core env variables inferred from the schema. */
@@ -71,7 +64,6 @@ export type CoreEnv = z.infer<typeof coreEnvSchema>;
 export const productionRequiredCoreKeys = [
   'JOB_API_KEY',
   'RESEND_API_KEY',
-  'REVENUECAT_WEBHOOK_SECRET',
 ] as const satisfies readonly (keyof CoreEnv)[];
 
 /**
@@ -90,8 +82,5 @@ export const coreTestEnv: CoreEnv = {
   JOB_API_KEY: 'test-job-api-key',
   RESEND_API_KEY: 'test-resend-key',
   RESEND_WEBHOOK_SECRET: 'test-resend-webhook-secret',
-  EMAIL_FROM: 'yourapp <hello@yourapp.example.com>',
-  REVENUECAT_WEBHOOK_SECRET: 'test-rc-webhook-secret',
-  REVENUECAT_SECRET_KEY: 'test-rc-secret-key',
-  REVENUECAT_PROJECT_ID: 'proj_placeholder',
+  EMAIL_FROM: 'steadilynanny <hello@nanny.getsteadily.app>',
 };

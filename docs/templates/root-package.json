@@ -1,5 +1,5 @@
 {
-  "name": "yourapp",
+  "name": "steadilynanny",
   "version": "1.0.0",
   "private": true,
   "workspaces": [
@@ -8,8 +8,8 @@
   ],
   "scripts": {
     "dev": "turbo run dev",
-    "dev:mobile": "turbo run dev --filter=@yourapp/mobile",
-    "dev:api": "turbo run dev --filter=@yourapp/api",
+    "dev:mobile": "turbo run dev --filter=@steadily-nanny/mobile",
+    "dev:api": "turbo run dev --filter=@steadily-nanny/api",
     "build": "turbo run build",
     "lint": "turbo run lint",
     "format": "biome check --write --unsafe . && biome format --write .",

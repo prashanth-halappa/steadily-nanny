@@ -1,5 +1,8 @@
+import type {
+  UserProfile,
+  UserProfileRequest,
+} from '@steadily-nanny/shared-types';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import type { UserProfile, UserProfileRequest } from '@yourapp/shared-types';
 import { useTranslation } from 'react-i18next';
 import { userApi } from '@/src/api/endpoints/user';
 import { queryKeys } from '@/src/api/queryKeys';

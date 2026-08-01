@@ -6,34 +6,27 @@
  * inline at call sites) means model + temperature + timeout choices live in one
  * reviewable place.
  *
- * These two are examples for the widget example domain — replace with your own.
+ * Example shape (see `./llmProvider`'s `LlmCallConfig` for every field):
+ *
+ * ```ts
+ * import type { LlmCallConfig } from './llmProvider';
+ * import { flashModel } from './llmProvider';
+ *
+ * export const myTaskConfig: LlmCallConfig = {
+ *   model: flashModel(),
+ *   temperature: 0.5,
+ *   maxOutputTokens: 300,
+ *   timeoutMs: 8000,
+ *   maxRetries: 2,
+ *   disableThinking: true,
+ * };
+ * ```
+ *
+ * Choose `disableThinking` and `timeoutMs`/`maxRetries` deliberately for every
+ * new bundle — Gemini's "thinking" pass silently adds seconds of latency to
+ * structured-output calls, and an unbounded retry budget can blow through your
+ * latency target via the SDK's own backoff (GOLDEN-FIX #10).
  *
  * @module config/app.llmConfigs
  */
-import type { LlmCallConfig } from './llmProvider';
-import { flashModel } from './llmProvider';
-
-/**
- * Example: generate a short widget description. Fast, cheap, thinking suppressed
- * for latency, tightly bounded output.
- */
-export const widgetDescriptionConfig: LlmCallConfig = {
-  model: flashModel(),
-  temperature: 0.5,
-  maxOutputTokens: 300,
-  timeoutMs: 8000,
-  maxRetries: 2,
-  disableThinking: true,
-};
-
-/**
- * Example: a slightly larger structured generation with a wider token budget.
- */
-export const widgetSummaryConfig: LlmCallConfig = {
-  model: flashModel(),
-  temperature: 0.4,
-  maxOutputTokens: 512,
-  timeoutMs: 10000,
-  maxRetries: 2,
-  disableThinking: true,
-};
+export {};

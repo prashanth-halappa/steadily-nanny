@@ -1,4 +1,4 @@
-import { ERROR_CODES } from '@yourapp/shared-types';
+import { ERROR_CODES } from '@steadily-nanny/shared-types';
 import type { NextFunction, Request, Response } from 'express';
 import { ZodError } from 'zod';
 import Sentry, { getFeatureAreaFromPath } from '../config/sentry';

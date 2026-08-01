@@ -4,16 +4,12 @@
  * The template's manual verification harness: each control drives a REAL kit seam
  * so VERIFICATION.md can assert an observable outcome. Reachable from Settings
  * behind `__DEV__`; a direct deep-link in a release build renders nothing useful.
- *
- * This screen is part of the widget example — remove it (and the Settings link)
- * when you strip the example out.
  */
 
+import type { AppStatusResponse } from '@steadily-nanny/shared-types/appConfig';
 import { onlineManager } from '@tanstack/react-query';
-import type { AppStatusResponse } from '@yourapp/shared-types/appConfig';
 import { type ReactNode, useState } from 'react';
 import { ScrollView, View } from 'react-native';
-import { type UsageStatus, widgetApi } from '@/src/api/endpoints/widgets';
 import { Button } from '@/src/components/ui/button';
 import { Card, CardContent } from '@/src/components/ui/card';
 import { Text } from '@/src/components/ui/text';
@@ -68,8 +64,6 @@ function DebugRow({
 export default function DebugScreen() {
   const status = useAppConfigStore(s => s.status);
   const [forcedOffline, setForcedOffline] = useState(false);
-  const [usage, setUsage] = useState<UsageStatus | null>(null);
-  const [usageError, setUsageError] = useState(false);
 
   if (!__DEV__) {
     return (
@@ -128,16 +122,6 @@ export default function DebugScreen() {
     );
   };
 
-  // 5. Widget quota — the widget_creation counter from subscription/usage.
-  const fetchUsage = async () => {
-    setUsageError(false);
-    try {
-      setUsage(await widgetApi.getWidgetUsage());
-    } catch {
-      setUsageError(true);
-    }
-  };
-
   return (
     <ScrollView
       className="flex-1 bg-background"
@@ -191,30 +175,7 @@ export default function DebugScreen() {
       </DebugRow>
 
       <DebugRow
-        title="5. Widget quota"
-        assertion="Shows used/limit for widget_creation from GET /v1/subscription/usage."
-      >
-        <Button
-          testID="debug-fetch-usage"
-          variant="outline"
-          onPress={() => void fetchUsage()}
-        >
-          <Text>Fetch widget quota</Text>
-        </Button>
-        {usageError ? (
-          <Small className="text-destructive">Failed to load usage.</Small>
-        ) : usage ? (
-          <Small testID="debug-usage-value" className="text-foreground">
-            {usage.feature}: {usage.used}/{usage.limit ?? '∞'} used,{' '}
-            {usage.remaining ?? '∞'} left
-          </Small>
-        ) : (
-          <Small className="text-muted-foreground">Not fetched yet.</Small>
-        )}
-      </DebugRow>
-
-      <DebugRow
-        title="6. Raw /app/status"
+        title="5. Raw /app/status"
         assertion="Shows the current remote-config payload held in appConfigStore."
       >
         <View className="rounded-xl bg-muted p-3">

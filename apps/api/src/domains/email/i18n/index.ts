@@ -2,7 +2,7 @@
  * Email i18n runtime.
  *
  * Localizes transactional email copy across the app's supported locales (see
- * `@yourapp/shared-types/locale`). Mirrors i18next conventions — nested
+ * `@steadily-nanny/shared-types/locale`). Mirrors i18next conventions — nested
  * camelCase keys, `{{var}}` interpolation, `_one`/`_other` plural suffixes.
  *
  * Design notes:
@@ -29,7 +29,7 @@ import {
   isValidLocale,
   SUPPORTED_LOCALES,
   type SupportedLocale,
-} from '@yourapp/shared-types/locale';
+} from '@steadily-nanny/shared-types/locale';
 import { createInstance, type i18n, type TFunction } from 'i18next';
 
 /** Single namespace all email catalogs load under. */

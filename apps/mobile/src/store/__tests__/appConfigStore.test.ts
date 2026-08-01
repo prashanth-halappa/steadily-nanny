@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'bun:test';
-import type { AppStatusResponse } from '@yourapp/shared-types/appConfig';
+import type { AppStatusResponse } from '@steadily-nanny/shared-types/appConfig';
 import { useAppConfigStore } from '../appConfigStore';
 
 const baseStatus: AppStatusResponse = {

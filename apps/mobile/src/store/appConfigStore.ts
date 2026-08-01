@@ -7,7 +7,7 @@
  * restarts.
  */
 
-import type { AppStatusResponse } from '@yourapp/shared-types/appConfig';
+import type { AppStatusResponse } from '@steadily-nanny/shared-types/appConfig';
 import { createPersistedStore } from './createPersistedStore';
 
 export interface AppConfigState {

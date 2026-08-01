@@ -14,7 +14,7 @@ describe('getFeatureAreaFromPath', () => {
   });
 
   test('returns unknown for unmatched or empty paths', () => {
-    expect(getFeatureAreaFromPath('/api/v1/widgets')).toBe('unknown');
+    expect(getFeatureAreaFromPath('/api/v1/unmapped-feature')).toBe('unknown');
     expect(getFeatureAreaFromPath(undefined)).toBe('unknown');
   });
 });

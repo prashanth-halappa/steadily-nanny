@@ -13,7 +13,6 @@ import { queryClient } from '../api/queryClient';
 import { env } from '../config/env';
 import { supabase } from '../lib/supabase';
 import { createPersistedStore } from './createPersistedStore';
-import { useOnboardingStore } from './onboarding';
 import { resetUserScopedStores } from './resetStores';
 
 // Google Sign-In configuration (client ids come from the central env module).
@@ -354,14 +353,30 @@ export const useAuthStore = createPersistedStore<AuthState>(
         } else if (event === 'SIGNED_IN') {
           reset401Handler();
           const userId = session?.user?.id ?? null;
-          // Clear on account switch OR any fresh sign-in after sign-out/delete.
-          const shouldClear =
+          // `previousSignedInUserId` is null on a cold start AND right after
+          // ANY sign-out (see the SIGNED_OUT handler below) — so "null or
+          // different" alone can't distinguish a genuine account SWITCH from
+          // the SAME user simply signing back in. Query cache is fine to drop
+          // either way (queryClient.clear() below), but user-scoped LOCAL
+          // state (setupProgress's in-flight wizard step, notification-primer
+          // counters, ...) must only be wiped on a real switch — wiping it on
+          // a same-user re-sign-in stranded a returning, already-onboarded
+          // parent back at the role fork forever, because the (also nulled)
+          // cached household id meant InviteScreen's effect never fired. See
+          // PROJECT-STATUS / GOLDEN-FIXES for the full writeup.
+          const isFreshSignIn =
             !!userId &&
             (previousSignedInUserId === null ||
               userId !== previousSignedInUserId);
-          if (shouldClear) {
-            await clearAppState();
-            useOnboardingStore.getState().reset();
+          const isAccountSwitch =
+            !!userId &&
+            previousSignedInUserId !== null &&
+            userId !== previousSignedInUserId;
+          if (isFreshSignIn) {
+            queryClient.clear();
+            if (isAccountSwitch) {
+              resetUserScopedStores();
+            }
             router.replace('/' as Href);
           }
           previousSignedInUserId = userId;

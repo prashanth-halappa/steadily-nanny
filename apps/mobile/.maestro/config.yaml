@@ -1,0 +1,4 @@
+appId: com.jetto.steadily.nanny
+screenshotDirectory: screenshots
+assertTimeout: 10000
+waitForAnimationToEnd: true

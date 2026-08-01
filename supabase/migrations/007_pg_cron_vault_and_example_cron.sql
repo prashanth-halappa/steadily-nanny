@@ -5,7 +5,7 @@
 -- pg_net.
 --
 -- ONE-TIME SETUP (run once per project in the SQL editor if these secrets are missing):
---   SELECT vault.create_secret('https://api.yourapp.example.com', 'cron_api_base_url', 'API base URL for pg_cron HTTP jobs');
+--   SELECT vault.create_secret('https://api.nanny.getsteadily.app', 'cron_api_base_url', 'API base URL for pg_cron HTTP jobs');
 --   SELECT vault.create_secret('<JOB_API_KEY>', 'cron_job_api_key', 'X-Job-Api-Key header for pg_cron HTTP jobs');
 -- To rotate: vault.update_secret(...) or create a new secret version per Supabase docs.
 --

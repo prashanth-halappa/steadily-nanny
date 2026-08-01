@@ -481,8 +481,8 @@ await i18n.use(initReactI18next).init({
 ## 7. Deep linking
 
 Configured in `app.json` (genericized in the templates):
-- `"scheme": ["yourapp"]` for custom-scheme links;
-- iOS `associatedDomains`: `["applinks:yourapp.example.com", "webcredentials:yourapp.example.com"]`;
+- `"scheme": ["steadilynanny"]` for custom-scheme links;
+- iOS `associatedDomains`: `["applinks:nanny.getsteadily.app", "webcredentials:nanny.getsteadily.app"]`;
 - Android `intentFilters` with `autoVerify: true` for `https` links to your host.
 
 **Pending deep-link queue.** A push tap can arrive while the user is logged out or mid-cold-start, when auth-gated routes aren't navigable yet. The destination is stashed and replayed post-auth instead of being lost.

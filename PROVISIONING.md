@@ -2,6 +2,8 @@
 
 Everything in this doc happens in a **web console** or a vendor CLI, not in this repo's source. Do [`SETUP.md`](./SETUP.md) alongside it — several fields in `apps/mobile/src/config/appIdentity.json` and both `.env` files are only knowable once you've completed the matching section below.
 
+> **Note:** This app has no paid tier — the subscription/RevenueCat/entitlement-gating layer was removed from both `apps/api` and `apps/mobile`. The former §5 (RevenueCat) section below is removed accordingly. If a paid tier is ever reintroduced, re-provision RevenueCat (project, entitlement, products, offering, public SDK keys, webhook secret) from scratch — see RevenueCat's own dashboard docs.
+
 Each section ends with **Verify:** — an observable check that the step actually worked.
 
 ---
@@ -23,18 +25,18 @@ Each section ends with **Verify:** — an observable check that the step actuall
    ```bash
    bun run db:migrate            # supabase db push — after `supabase link --project-ref <ref>`
    ```
-   This applies all 8 files in `supabase/migrations/` (extensions/helpers, user profiles, device info, job runs, app-config + beta overrides, subscriptions/usage/email, pg_cron + Vault helpers, and the widget example feature). Delete or replace `008_widgets.sql` once you've built your own first feature past the widget example.
+   This applies every file in `supabase/migrations/` (extensions/helpers, user profiles, device info, job runs, app-config + beta overrides, email log, pg_cron + Vault helpers, plus this app's own domain migrations).
 
 5. **Vault secrets for the cron pattern.** Migration `007_pg_cron_vault_and_example_cron.sql` reads two secrets via `vault.decrypted_secrets` (never via `current_setting('app.settings.*')`, which hosted Supabase doesn't grant): `cron_api_base_url` (your deployed API's base URL) and `cron_job_api_key` (must equal your API's `JOB_API_KEY` env var). Create both under **Database → Vault** in the dashboard, or via SQL as `service_role`:
    ```sql
-   select vault.create_secret('https://api.yourapp.example.com', 'cron_api_base_url');
+   select vault.create_secret('https://api.nanny.getsteadily.app', 'cron_api_base_url');
    select vault.create_secret('<same value as JOB_API_KEY>', 'cron_job_api_key');
    ```
    The migration's own `cron.schedule(...)` example is commented out by design (so the migration never fails on an environment without `pg_cron`) — uncomment and adapt it, or add a new migration, once you have real job endpoints to schedule.
 
-6. **RLS advisor check.** In the dashboard, **Database → Advisors → Security Advisor**. Every table in this template's migrations ships with RLS enabled by default (owner-only policies where the client should read/write directly; `revoke all ... from anon, authenticated` plus service-role-only grants for tables/RPCs the client should never touch directly, e.g. `job_runs`, `app_config`, `subscription_events`, `email_log`, `process_subscription_event`, `check_and_increment_usage`). If you add a table, decide its RLS policy in the same migration — don't defer it.
+6. **RLS advisor check.** In the dashboard, **Database → Advisors → Security Advisor**. Every table in this template's migrations ships with RLS enabled by default (owner-only policies where the client should read/write directly; `revoke all ... from PUBLIC, anon, authenticated` plus service-role-only grants for tables/RPCs the client should never touch directly, e.g. `job_runs`, `app_config`, `email_log`). If you add a table, decide its RLS policy in the same migration — don't defer it.
 
-**Verify:** `bunx supabase migration list` (or the dashboard's Table Editor) shows all 8 migrations applied; the Security Advisor reports no "RLS disabled" findings on your tables.
+**Verify:** `bunx supabase migration list` (or the dashboard's Table Editor) shows every migration applied; the Security Advisor reports no "RLS disabled" findings on your tables.
 
 ---
 
@@ -66,9 +68,9 @@ Use **one** GCP project for everything below — splitting Google Sign-In and Fi
 4. **Service account for ADC** (Application Default Credentials — the API authenticates to Vertex via ADC, **not** an API key):
    - Locally: `gcloud auth application-default login` (uses your own Google identity — fine for local dev).
    - For a deployed API: create a service account with the **Vertex AI User** role, and either mount its JSON key and set `GOOGLE_APPLICATION_CREDENTIALS` to its path, or (on Cloud Run specifically) attach the service account directly to the Cloud Run service and skip the JSON key entirely — Cloud Run's built-in ADC will pick it up.
-   - Set `GOOGLE_VERTEX_PROJECT` = your GCP project id and `GOOGLE_VERTEX_LOCATION` (default `us-central1`) in `apps/api/.env` (and as Cloud Run env vars in production — see §9).
+   - Set `GOOGLE_VERTEX_PROJECT` = your GCP project id and `GOOGLE_VERTEX_LOCATION` (default `us-central1`) in `apps/api/.env` (and as Cloud Run env vars in production — see §8).
 
-**Verify:** `apps/api` boots without the `GOOGLE_VERTEX_PROJECT is required` Zod validation error; a manual call to the widget domain's "generate description" endpoint (`POST /api/v1/widgets/:widgetId/generate-description`) returns a real Gemini-generated string, not a graceful-degradation fallback.
+**Verify:** `apps/api` boots without the `GOOGLE_VERTEX_PROJECT is required` Zod validation error; a manual call to one of your domain's LLM-backed endpoints returns a real Gemini-generated string, not a graceful-degradation fallback.
 
 ---
 
@@ -84,20 +86,7 @@ Needed only for Android push notifications (Expo/FCM) and native Android Google 
 
 ---
 
-## 5. RevenueCat
-
-1. Create a **Project**, then an **App** per platform (iOS, Android) under **Project settings → Apps**.
-2. Create an **Entitlement**. Its identifier **must match** the key in `packages/shared-types/src/constants.ts`'s `ENTITLEMENT_TIER_MAP` — after `bun run setup`, that key is `<scheme>-pro-entitlement` (e.g. `sleepwell-pro-entitlement`). Either name your RC entitlement exactly that, or edit `ENTITLEMENT_TIER_MAP` to match whatever identifier you actually created — the map is a real, working lookup, not a stub, so it must stay in sync with RC.
-3. Create your **Products** in each store first (App Store Connect / Play Console), then attach them to the entitlement, then group them into an **Offering**.
-4. **Public SDK keys** (per platform, under **Project settings → API keys**) → `EXPO_PUBLIC_REVENUECAT_IOS_KEY` / `EXPO_PUBLIC_REVENUECAT_ANDROID_KEY` in `apps/mobile/.env`.
-5. **Webhook** → **Project settings → Integrations → Webhooks**: URL = `https://<your-api-host>/api/webhooks/revenuecat`, and set an **Authorization header** whose value you also put in `apps/api/.env` as `REVENUECAT_WEBHOOK_SECRET` (the route mounts pre-auth in `app.ts` and verifies this secret itself — see `docs/04-API-ARCHITECTURE.md` §1.2).
-6. (Optional) `REVENUECAT_SECRET_KEY` — the REST v2 secret key, used only as a fallback reconciliation path if you build one; not required to boot.
-
-**Verify:** a sandbox purchase on a dev build triggers a webhook POST that your API logs (check `apps/api/logs/dev.log`) and that updates `user_subscriptions` in Supabase.
-
----
-
-## 6. Sentry
+## 5. Sentry
 
 Create **two separate projects** — one for the API (Node/Bun), one for mobile (React Native) — sharing DSNs across them defeats per-platform issue grouping and alerting.
 
@@ -109,7 +98,7 @@ Create **two separate projects** — one for the API (Node/Bun), one for mobile 
 
 ---
 
-## 7. PostHog
+## 6. PostHog
 
 1. Create a project, grab its **Project API Key**.
 2. API side → `POSTHOG_API_KEY` in `apps/api/.env`. Mobile side → `EXPO_PUBLIC_POSTHOG_API_KEY` (and `EXPO_PUBLIC_POSTHOG_HOST` if you're not on PostHog Cloud US — defaults to `https://us.i.posthog.com`) in `apps/mobile/.env`.
@@ -118,7 +107,7 @@ Create **two separate projects** — one for the API (Node/Bun), one for mobile 
 
 ---
 
-## 8. EAS (Expo Application Services)
+## 7. EAS (Expo Application Services)
 
 1. From `apps/mobile/`: `eas login`, then `eas init` — see `SETUP.md` step 12 for why you must hand-wire the returned project id into `appIdentity.json` (dynamic `app.config.ts` doesn't get this written automatically).
 2. Confirm the three build profiles in `eas.json` (`development`, `preview`, `production`) have the channels you want; `production`'s `EXPO_PUBLIC_API_URL` env override should point at your real deployed API host, not the setup-script default.
@@ -128,7 +117,7 @@ Create **two separate projects** — one for the API (Node/Bun), one for mobile 
 
 ---
 
-## 9. Cloud Run (API deploy)
+## 8. Cloud Run (API deploy)
 
 1. Copy the required vars from `apps/api/deploy-cloud-run.sh`'s header into a local `.env.cloudrun` (gitignored): `GCP_PROJECT_ID`, `GCP_REGION`, `SERVICE_NAME`, `ARTIFACT_REGISTRY_REPO`, `IMAGE_TAG` (optional: `MIN_INSTANCES`, `MAX_INSTANCES`, `CPU`, `MEMORY`, `CONCURRENCY`, `TIMEOUT` — all have shell defaults).
 2. Attach the Vertex-AI-capable service account from §3 step 4 to the Cloud Run service so ADC resolves without a mounted key file.
@@ -139,7 +128,7 @@ Create **two separate projects** — one for the API (Node/Bun), one for mobile 
 
 ---
 
-## 10. Universal links / AASA (associated domains)
+## 9. Universal links / AASA (associated domains)
 
 This template ships **without** a hosted `apple-app-site-association` file — `app.config.ts` declares `associatedDomains: [applinks:<your-domain>, webcredentials:<your-domain>]` and the Android intent filter, but nothing in this repo hosts the AASA/`assetlinks.json` file those require. Your options:
 - **Skip it for now.** Deep links via the custom URL scheme (`sleepwell://...`) work with zero extra hosting; only *universal* links (`https://sleepwell.example.com/...` opening the app directly) need AASA hosting.

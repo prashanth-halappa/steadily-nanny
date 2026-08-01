@@ -14,20 +14,32 @@ export default function Welcome() {
   const signInWithGoogle = useAuthStore(s => s.signInWithGoogle);
 
   return (
-    <SafeAreaView style={{ flex: 1 }} className="bg-background">
+    <SafeAreaView
+      style={{ flex: 1 }}
+      className="bg-background"
+      testID="welcome-screen"
+    >
       <View className="flex-1 justify-end gap-3 px-6 pb-12">
         <DisplayLarge>{t('welcome:title')}</DisplayLarge>
         <Body className="mb-6 text-muted-foreground">
           {t('welcome:subtitle')}
         </Body>
 
-        <Button onPress={() => void signInWithApple()}>
+        <Button
+          testID="welcome-sign-in-apple"
+          onPress={() => void signInWithApple()}
+        >
           <Text>{t('auth:signInWithApple')}</Text>
         </Button>
-        <Button variant="outline" onPress={() => void signInWithGoogle()}>
+        <Button
+          testID="welcome-sign-in-google"
+          variant="outline"
+          onPress={() => void signInWithGoogle()}
+        >
           <Text>{t('auth:signInWithGoogle')}</Text>
         </Button>
         <Button
+          testID="welcome-sign-in-email"
           variant="ghost"
           onPress={() => router.push('/auth/login' as Href)}
         >

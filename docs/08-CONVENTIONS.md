@@ -301,9 +301,9 @@ export default function HomeRoute() {
 Use subpath imports for the types package, barrel imports for the utils package:
 
 ```typescript
-import type { EntityCreateRequest } from '@yourapp/shared-types';
-import type { ErrorCode } from '@yourapp/shared-types/enums';
-import { formatDate, calculateAge } from '@yourapp/shared-utils';
+import type { EntityCreateRequest } from '@steadily-nanny/shared-types';
+import type { ErrorCode } from '@steadily-nanny/shared-types/enums';
+import { formatDate, calculateAge } from '@steadily-nanny/shared-utils';
 ```
 
 ---

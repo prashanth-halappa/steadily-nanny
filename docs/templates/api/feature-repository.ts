@@ -9,7 +9,7 @@
  * Replace `Widget` / `widgets` with your entity and table name.
  */
 
-import type { Widget } from '@yourapp/shared-types/schemas/widget.schema';
+import type { Widget } from '@steadily-nanny/shared-types/schemas/widget.schema';
 import { supabaseService } from '../../../config/supabase';
 import { DatabaseError } from '../../../errors';
 import { BaseRepository } from '../../../shared/repositories/baseRepository';

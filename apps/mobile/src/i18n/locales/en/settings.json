@@ -5,5 +5,10 @@
   "privacyPolicy": "Privacy Policy",
   "termsOfService": "Terms of Service",
   "account": "Account",
-  "notifications": "Notifications"
+  "notifications": "Notifications",
+  "deleteAccount": "Delete account",
+  "deleteAccountConfirmTitle": "Delete your account?",
+  "deleteAccountConfirmBody": "This permanently deletes your account and all associated data. This action cannot be undone.",
+  "deleteAccountCancel": "Cancel",
+  "deleteAccountConfirm": "Delete account"
 }

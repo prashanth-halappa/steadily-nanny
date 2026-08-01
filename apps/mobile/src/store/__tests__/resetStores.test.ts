@@ -1,27 +1,26 @@
 import { beforeEach, describe, expect, it } from 'bun:test';
-import { SUBSCRIPTION_TIERS } from '@yourapp/shared-types/constants';
+import { SETUP_STEPS } from '@/src/domains/setup/types';
 import { useNotificationStore } from '../notificationStore';
-import { useOnboardingStore } from '../onboarding';
 import { resetUserScopedStores } from '../resetStores';
-import { useSubscriptionStore } from '../subscriptionStore';
+import { useSetupProgressStore } from '../setupProgress';
 
 beforeEach(() => {
-  useOnboardingStore.getState().reset();
-  useSubscriptionStore.getState().reset();
+  useSetupProgressStore.getState().reset();
   useNotificationStore.getState().reset();
 });
 
 describe('resetUserScopedStores', () => {
-  it('resets onboarding, subscription, and notification stores', () => {
-    useOnboardingStore.getState().completeStep('WELCOME');
-    useSubscriptionStore.getState().setTier(SUBSCRIPTION_TIERS.PRO);
+  it('resets setup progress and notification stores', () => {
+    useSetupProgressStore.getState().setRole('parent');
+    useSetupProgressStore.getState().setCurrentStep(SETUP_STEPS.CHILDREN);
+    useSetupProgressStore.getState().setHouseholdId('household-1');
     useNotificationStore.getState().recordPrompt();
 
     resetUserScopedStores();
 
-    expect(useOnboardingStore.getState().completedSteps).toEqual([]);
-    expect(useSubscriptionStore.getState().tier).toBe(SUBSCRIPTION_TIERS.FREE);
-    expect(useSubscriptionStore.getState().isPro).toBe(false);
+    expect(useSetupProgressStore.getState().role).toBeNull();
+    expect(useSetupProgressStore.getState().currentStep).toBe(SETUP_STEPS.ROLE);
+    expect(useSetupProgressStore.getState().householdId).toBeNull();
     expect(useNotificationStore.getState().attempts).toBe(0);
     expect(useNotificationStore.getState().lastPromptAt).toBeNull();
   });
