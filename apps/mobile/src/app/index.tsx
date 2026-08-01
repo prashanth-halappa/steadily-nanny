@@ -3,11 +3,14 @@ import { useEffect, useRef } from 'react';
 import { View } from 'react-native';
 import { hasAuthToken } from '@/src/api/client';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
-import { getSetupStepRoute } from '@/src/domains/setup/types';
+import {
+  getSetupStepRoute,
+  SETUP_ROLES,
+  SETUP_STEPS,
+} from '@/src/domains/setup/types';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 import { useAuthStore } from '@/src/store/auth';
 import { usePendingDeepLinkStore } from '@/src/store/pendingDeepLinkStore';
-import { useSetupProgressStore } from '@/src/store/setupProgress';
 
 /**
  * Entry router — decides where to send the user, exactly once.
@@ -16,8 +19,7 @@ export default function Index() {
   const router = useRouter();
   const isInitialized = useAuthStore(s => s.isInitialized);
   const session = useAuthStore(s => s.session);
-  const isOnboarded = useIsOnboarded();
-  const currentStep = useSetupProgressStore(s => s.currentStep);
+  const onboarding = useIsOnboarded();
 
   // Route once per IDENTITY, not once per mount.
   //
@@ -51,16 +53,29 @@ export default function Index() {
       return;
     }
 
+    // Wait for the server-derived onboarding status before deciding.
+    // Routing on a transient in-flight value is exactly how a returning,
+    // already-set-up user gets bounced through the role fork for a frame —
+    // see useIsOnboarded's header comment.
+    if (onboarding.status === 'loading') return;
+
     routedForUserId.current = userId;
-    if (!isOnboarded) {
-      router.replace(getSetupStepRoute(currentStep) as Href);
+    if (onboarding.status === 'not-onboarded') {
+      // A parent who already owns a household (just hasn't added a child
+      // yet) resumes at the children step, not the role fork — the server
+      // already told us their role.
+      const step =
+        onboarding.role === SETUP_ROLES.PARENT
+          ? SETUP_STEPS.CHILDREN
+          : SETUP_STEPS.ROLE;
+      router.replace(getSetupStepRoute(step) as Href);
       return;
     }
 
     // Replay a queued deep link (from a push tap while logged out), else tabs.
     const pending = usePendingDeepLinkStore.getState().consumePendingLink();
     router.replace((pending ?? '/(private)/(tabs)/home') as Href);
-  }, [isInitialized, session, isOnboarded, currentStep, router]);
+  }, [isInitialized, session, onboarding.status, onboarding.role, router]);
 
   return (
     <View className="flex-1 items-center justify-center bg-background">

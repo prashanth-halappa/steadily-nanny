@@ -11,7 +11,6 @@ describe('useSetupProgressStore', () => {
     const state = useSetupProgressStore.getState();
     expect(state.role).toBeNull();
     expect(state.currentStep).toBe(SETUP_STEPS.ROLE);
-    expect(state.isComplete).toBe(false);
     expect(state.householdId).toBeNull();
   });
 
@@ -29,20 +28,15 @@ describe('useSetupProgressStore', () => {
     expect(state.householdId).toBe('household-1');
   });
 
-  it('marks the flow complete', () => {
-    useSetupProgressStore.getState().complete();
-    expect(useSetupProgressStore.getState().isComplete).toBe(true);
-  });
-
   it('reset() restores the initial state', () => {
     useSetupProgressStore.getState().setRole(SETUP_ROLES.PARENT);
-    useSetupProgressStore.getState().complete();
+    useSetupProgressStore.getState().setHouseholdId('household-1');
 
     useSetupProgressStore.getState().reset();
 
     const state = useSetupProgressStore.getState();
     expect(state.role).toBeNull();
     expect(state.currentStep).toBe(SETUP_STEPS.ROLE);
-    expect(state.isComplete).toBe(false);
+    expect(state.householdId).toBeNull();
   });
 });

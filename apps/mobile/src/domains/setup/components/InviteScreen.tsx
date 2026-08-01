@@ -21,7 +21,6 @@ import { useSetupProgressStore } from '@/src/store/setupProgress';
 export function InviteScreen() {
   const router = useRouter();
   const householdId = useSetupProgressStore(s => s.householdId);
-  const complete = useSetupProgressStore(s => s.complete);
   const createInvite = useCreateInvite(householdId ?? '');
   const hasRequestedInvite = useRef(false);
 
@@ -42,7 +41,10 @@ export function InviteScreen() {
   };
 
   const onDone = () => {
-    complete();
+    // No local "complete" flag to flip — useIsOnboarded is server-derived and
+    // will already read this parent as onboarded (household + >= 1 child
+    // exist by the time this screen is reachable; ChildrenScreen's CTA
+    // requires it).
     router.replace('/(private)/(tabs)/home' as Href);
   };
 

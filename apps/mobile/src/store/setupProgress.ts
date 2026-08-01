@@ -1,13 +1,14 @@
 /**
  * setupProgress.ts
  *
- * Persisted progress through the Wave 1 role-fork setup flow (replaces the
- * old `onboarding.ts` WELCOME/PROFILE/NOTIFICATIONS placeholder machine — see
- * `src/domains/setup/types` for why that's client-only here rather than
- * sourced from shared-types). Tracks which role the user picked and which
- * step they're on, so a cold start can resume mid-flow. Server state
- * (household, children, invites) is intentionally NOT stored here — TanStack
- * Query owns that.
+ * IN-FLIGHT UI STATE ONLY for the Wave 1 role-fork setup wizard — which role
+ * the user picked and which step they're on WITHIN A SINGLE ACTIVE SESSION,
+ * so mid-wizard navigation reads cleanly. This is NOT the source of truth for
+ * "is this user set up" — that predicate is server-derived, see
+ * `src/hooks/queries/useIsOnboarded.ts`'s header comment for why local MMKV
+ * was the wrong choice (it doesn't survive sign-out/sign-in, reinstalls, or a
+ * second device, and disagreeing with the server is exactly what stranded a
+ * returning parent in the wizard forever — see the fix in `store/auth.ts`).
  */
 
 import {
@@ -22,17 +23,13 @@ export interface SetupProgressState {
   role: SetupRole | null;
   /** The step the user is currently on. */
   currentStep: SetupStep;
-  /** True once the user has finished their role's full step sequence. */
-  isComplete: boolean;
   /** Household id created/redeemed during setup, cached for convenience. */
   householdId: string | null;
 
   setRole: (role: SetupRole) => void;
   setCurrentStep: (step: SetupStep) => void;
   setHouseholdId: (householdId: string) => void;
-  /** Mark the whole flow finished (drops the user onto the Today screen). */
-  complete: () => void;
-  /** Reset progress back to the start (e.g. on sign-out). */
+  /** Reset progress back to the start (e.g. on a genuine account switch). */
   reset: () => void;
 }
 
@@ -42,18 +39,15 @@ export const useSetupProgressStore = createPersistedStore<SetupProgressState>(
   set => ({
     role: null,
     currentStep: INITIAL_STEP,
-    isComplete: false,
     householdId: null,
 
     setRole: role => set({ role }),
     setCurrentStep: currentStep => set({ currentStep }),
     setHouseholdId: householdId => set({ householdId }),
-    complete: () => set({ isComplete: true }),
     reset: () =>
       set({
         role: null,
         currentStep: INITIAL_STEP,
-        isComplete: false,
         householdId: null,
       }),
   }),
@@ -63,7 +57,6 @@ export const useSetupProgressStore = createPersistedStore<SetupProgressState>(
     partialize: state => ({
       role: state.role,
       currentStep: state.currentStep,
-      isComplete: state.isComplete,
       householdId: state.householdId,
     }),
   }

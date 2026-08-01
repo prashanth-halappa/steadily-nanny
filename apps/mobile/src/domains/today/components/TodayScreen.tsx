@@ -15,10 +15,14 @@ import { Body, H1 } from '@/src/components/ui/typography';
 import { SETUP_ROLES } from '@/src/domains/setup/types';
 import { useChildren } from '@/src/hooks/queries/useChildren';
 import { useHouseholds } from '@/src/hooks/queries/useHouseholds';
-import { useSetupProgressStore } from '@/src/store/setupProgress';
+import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 
 export function TodayScreen() {
-  const role = useSetupProgressStore(s => s.role);
+  // Server-derived role, NOT the local setupProgress store — that's
+  // in-flight wizard UI state and can be empty/stale for a parent whose
+  // household was seeded directly, or who signed in on a fresh device. See
+  // useIsOnboarded's header comment.
+  const onboarding = useIsOnboarded();
   const households = useHouseholds();
   const household = households.data?.[0] ?? null;
   const children = useChildren(household?.id);
@@ -38,7 +42,7 @@ export function TodayScreen() {
             {household.name}
           </Body>
 
-          {role === SETUP_ROLES.PARENT ? (
+          {onboarding.role === SETUP_ROLES.PARENT ? (
             <View className="flex-row flex-wrap gap-2" testID="today-children">
               {(children.data ?? []).map(child => (
                 <ChildChip

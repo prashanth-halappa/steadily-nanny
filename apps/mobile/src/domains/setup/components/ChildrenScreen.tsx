@@ -37,6 +37,7 @@ export function ChildrenScreen() {
   const setCurrentStep = useSetupProgressStore(s => s.setCurrentStep);
   const cachedHouseholdId = useSetupProgressStore(s => s.householdId);
 
+  const setHouseholdId = useSetupProgressStore(s => s.setHouseholdId);
   const households = useHouseholds();
   const createHousehold = useCreateHousehold();
   // Guard so an in-flight create isn't fired twice while the mutation settles.
@@ -45,15 +46,33 @@ export function ChildrenScreen() {
   const householdId = households.data?.[0]?.id ?? cachedHouseholdId ?? null;
 
   useEffect(() => {
-    if (
-      households.isSuccess &&
-      households.data.length === 0 &&
-      !hasRequestedHouseholdCreate.current
-    ) {
-      hasRequestedHouseholdCreate.current = true;
-      createHousehold.mutate({ name: DEFAULT_HOUSEHOLD_NAME });
+    if (!households.isSuccess) return;
+
+    if (households.data.length === 0) {
+      if (!hasRequestedHouseholdCreate.current) {
+        hasRequestedHouseholdCreate.current = true;
+        createHousehold.mutate({ name: DEFAULT_HOUSEHOLD_NAME });
+      }
+      return;
     }
-  }, [households.isSuccess, households.data, createHousehold]);
+
+    // Adopt an EXISTING household into setupProgress — a returning parent
+    // who signs out and back in reaches this screen with a household already
+    // on the server but nothing cached locally (setupProgress is wiped on
+    // sign-out); without this, InviteScreen reads a null householdId forever
+    // and its effect guard never fires. Don't leave this only on the create
+    // path's onSuccess.
+    const existingId = households.data[0]?.id;
+    if (existingId && existingId !== cachedHouseholdId) {
+      setHouseholdId(existingId);
+    }
+  }, [
+    households.isSuccess,
+    households.data,
+    createHousehold,
+    cachedHouseholdId,
+    setHouseholdId,
+  ]);
 
   const children = useChildren(householdId);
   const createChild = useCreateChild(householdId ?? '');
@@ -99,6 +118,12 @@ export function ChildrenScreen() {
   };
 
   const isLoadingHousehold = !householdId;
+  // Gated on >= 1 child, matching useIsOnboarded's server-derived predicate
+  // (parent onboarded == owns a household with >= 1 child) — letting Continue
+  // through with zero children would let a parent "finish" the wizard in a
+  // state the app itself doesn't consider onboarded, and the next cold start
+  // would bounce them right back here.
+  const hasAtLeastOneChild = (children.data?.length ?? 0) > 0;
 
   return (
     <SetupScreenShell
@@ -107,7 +132,7 @@ export function ChildrenScreen() {
       title="Who are the children?"
       subtitle="Add each child so your nanny knows who they're looking after."
       ctaLabel="Continue"
-      ctaDisabled={isLoadingHousehold}
+      ctaDisabled={isLoadingHousehold || !hasAtLeastOneChild}
       onCta={onContinue}
     >
       {isLoadingHousehold ? (

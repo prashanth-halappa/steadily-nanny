@@ -44,6 +44,12 @@ export function SetupScreenShell({
 }: SetupScreenShellProps) {
   return (
     <SafeAreaView style={{ flex: 1 }} className="bg-background" testID={testID}>
+      {/* Clears the Expo dev-client's quick-access gear button (top-right,
+          __DEV__ only, positioned outside our component tree) so it never
+          overlaps the H1 below. Fixed height rather than a __DEV__ branch —
+          harmless in production and one less conditional to get wrong. */}
+      <View style={{ height: 48 }} />
+
       {typeof progress === 'number' ? (
         <View className="px-6 pt-4">
           <SlimProgressBar ratio={progress} />

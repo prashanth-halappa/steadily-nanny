@@ -10,7 +10,7 @@
   "ios": {
     "bundleIdentifier": "com.jetto.steadily.nanny",
     "appStoreUrl": "https://apps.apple.com/app/id0000000000",
-    "googleSignInUrlScheme": "com.googleusercontent.apps.SETUP-GOOGLE-IOS-CLIENT-ID"
+    "googleSignInUrlScheme": "com.googleusercontent.apps.662649119218-u1qro7hcgcq1re6sglcv77fari4hakij"
   },
   "android": {
     "package": "com.jetto.steadily.nanny",

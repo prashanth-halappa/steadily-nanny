@@ -22,7 +22,6 @@ import { WeekStrip } from '@/src/components/ui/week-strip';
 import { SetupScreenShell } from '@/src/domains/setup/components/SetupScreenShell';
 import { useUpsertAvailability } from '@/src/hooks/mutations/useUpsertAvailability';
 import { useAvailability } from '@/src/hooks/queries/useAvailability';
-import { useSetupProgressStore } from '@/src/store/setupProgress';
 
 const DAY_LABELS: Record<number, string> = {
   0: 'Sunday',
@@ -42,7 +41,6 @@ const DEFAULT_FINISH = '17:00';
 
 export function AvailabilityScreen() {
   const router = useRouter();
-  const complete = useSetupProgressStore(s => s.complete);
 
   const availability = useAvailability();
   const upsertAvailability = useUpsertAvailability();
@@ -77,7 +75,8 @@ export function AvailabilityScreen() {
   };
 
   const onFinish = () => {
-    complete();
+    // No local "complete" flag to flip — useIsOnboarded is server-derived
+    // and already reads a nanny with an active membership as onboarded.
     router.replace('/(private)/(tabs)/home' as Href);
   };
 

@@ -13,14 +13,14 @@ describe('resetUserScopedStores', () => {
   it('resets setup progress and notification stores', () => {
     useSetupProgressStore.getState().setRole('parent');
     useSetupProgressStore.getState().setCurrentStep(SETUP_STEPS.CHILDREN);
-    useSetupProgressStore.getState().complete();
+    useSetupProgressStore.getState().setHouseholdId('household-1');
     useNotificationStore.getState().recordPrompt();
 
     resetUserScopedStores();
 
     expect(useSetupProgressStore.getState().role).toBeNull();
     expect(useSetupProgressStore.getState().currentStep).toBe(SETUP_STEPS.ROLE);
-    expect(useSetupProgressStore.getState().isComplete).toBe(false);
+    expect(useSetupProgressStore.getState().householdId).toBeNull();
     expect(useNotificationStore.getState().attempts).toBe(0);
     expect(useNotificationStore.getState().lastPromptAt).toBeNull();
   });
