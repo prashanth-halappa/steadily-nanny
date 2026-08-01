@@ -38,6 +38,29 @@ export const queryKeys = {
     all: ['notifications'] as const,
     devices: () => [...queryKeys.notifications.all, 'devices'] as const,
   },
+
+  // Households, membership, invites
+  household: {
+    all: ['household'] as const,
+    list: () => [...queryKeys.household.all, 'list'] as const,
+    detail: (householdId?: string) =>
+      [...queryKeys.household.all, 'detail', householdId] as const,
+    invitePreview: (code?: string) =>
+      [...queryKeys.household.all, 'invitePreview', code] as const,
+  },
+
+  // A household's children
+  children: {
+    all: ['children'] as const,
+    list: (householdId?: string) =>
+      [...queryKeys.children.all, 'list', householdId] as const,
+  },
+
+  // The signed-in nanny's own weekly availability
+  availability: {
+    all: ['availability'] as const,
+    mine: () => [...queryKeys.availability.all, 'mine'] as const,
+  },
 } as const;
 
 /**

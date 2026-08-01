@@ -10,10 +10,10 @@
  */
 
 import { useNotificationStore } from './notificationStore';
-import { useOnboardingStore } from './onboarding';
+import { useSetupProgressStore } from './setupProgress';
 
 /** Reset every user-scoped store to its initial state. */
 export const resetUserScopedStores = (): void => {
-  useOnboardingStore.getState().reset();
+  useSetupProgressStore.getState().reset();
   useNotificationStore.getState().reset();
 };

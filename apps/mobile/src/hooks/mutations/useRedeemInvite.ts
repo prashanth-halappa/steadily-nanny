@@ -1,0 +1,30 @@
+import type { HouseholdMember } from '@steadily-nanny/shared-types/schemas/household.schema';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
+import { householdApi } from '@/src/api/endpoints/household';
+import { queryKeys } from '@/src/api/queryKeys';
+import { getLocalizedErrorMessage } from '@/src/lib/errorLocalization';
+import { showErrorToast } from '@/src/lib/toast';
+import { useSetupProgressStore } from '@/src/store/setupProgress';
+
+/**
+ * Redeems a household invite code — creates the caller's membership row.
+ * Caches the resulting household id on `setupProgress` for the availability
+ * step and beyond.
+ */
+export function useRedeemInvite() {
+  const queryClient = useQueryClient();
+  const setHouseholdId = useSetupProgressStore(s => s.setHouseholdId);
+  const { t } = useTranslation('errors');
+
+  return useMutation<HouseholdMember, Error, string>({
+    mutationFn: code => householdApi.redeemInvite(code),
+    onSuccess: membership => {
+      setHouseholdId(membership.household_id);
+      queryClient.invalidateQueries({ queryKey: queryKeys.household.all });
+    },
+    onError: error => {
+      showErrorToast(getLocalizedErrorMessage(error, t));
+    },
+  });
+}

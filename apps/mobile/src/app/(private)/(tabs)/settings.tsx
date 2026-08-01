@@ -92,7 +92,12 @@ export default function SettingsScreen() {
         </AnimatedPressable>
       </View>
 
-      <Button variant="outline" className="mt-8" onPress={() => void signOut()}>
+      <Button
+        testID="settings-sign-out"
+        variant="outline"
+        className="mt-8"
+        onPress={() => void signOut()}
+      >
         <Text>{t('settings:signOut')}</Text>
       </Button>
 

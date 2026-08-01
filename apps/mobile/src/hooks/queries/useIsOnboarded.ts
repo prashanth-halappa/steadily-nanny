@@ -1,12 +1,11 @@
-import { ONBOARDING_STEPS } from '@steadily-nanny/shared-types/onboarding';
-import { useOnboardingStore } from '@/src/store/onboarding';
+import { useSetupProgressStore } from '@/src/store/setupProgress';
 
 /**
- * Default `isOnboarded` predicate for the private-layout auth gate: onboarding
- * is complete once every configured step has been recorded. Swap for a
- * server-truth check (e.g. profile completeness) if your app needs one.
+ * `isOnboarded` predicate for the entry router (app/index.tsx): the Wave 1
+ * role-fork setup flow is complete once `setupProgress.isComplete` is set —
+ * i.e. the user picked a role and finished that role's step sequence
+ * (parent: children -> invite; nanny: code -> availability).
  */
 export function useIsOnboarded(): boolean {
-  const completedSteps = useOnboardingStore(s => s.completedSteps);
-  return ONBOARDING_STEPS.every(step => completedSteps.includes(step));
+  return useSetupProgressStore(s => s.isComplete);
 }

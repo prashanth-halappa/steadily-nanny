@@ -1,0 +1,61 @@
+/**
+ * Carer time-off repository — data access for the `carer_time_off` table.
+ * Uses the service-role Supabase client, so ownership/authorization is
+ * enforced in the SERVICE layer, never here.
+ *
+ * @module domains/availability/repositories/carerTimeOffRepository
+ */
+import { supabaseService } from '../../../config/supabase';
+import { DatabaseError } from '../../../errors';
+import { BaseRepository } from '../../../shared/repositories/baseRepository';
+import { CARER_TIME_OFF_STATUSES } from '../schemas';
+import type { CarerTimeOff } from '../types';
+
+export class CarerTimeOffRepository extends BaseRepository<CarerTimeOff> {
+  constructor() {
+    super('carer_time_off');
+  }
+
+  /** All of a user's time-off rows (including cancelled ones), earliest first. */
+  async listByUserId(userId: string): Promise<CarerTimeOff[]> {
+    const { data, error } = await supabaseService
+      .from(this.table)
+      .select('*')
+      .eq('user_id', userId)
+      .order('starts_at', { ascending: true });
+
+    if (error) {
+      throw new DatabaseError(
+        'Failed to list carer time off',
+        'DATABASE_ERROR',
+        { details: error.message, userId }
+      );
+    }
+    return (data ?? []) as CarerTimeOff[];
+  }
+
+  /**
+   * Soft-cancel: sets `status = 'cancelled'`. Never a hard delete — the
+   * partial index `carer_time_off_user_range_idx ... where status <>
+   * 'cancelled'` implies cancelled rows persist (see
+   * supabase/migrations/011_availability.sql). Ownership is verified by the
+   * caller (service layer) before this runs.
+   */
+  async cancelById(id: string): Promise<CarerTimeOff> {
+    const { data, error } = await supabaseService
+      .from(this.table)
+      .update({ status: CARER_TIME_OFF_STATUSES.CANCELLED })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) {
+      throw new DatabaseError(
+        'Failed to cancel carer time off',
+        'DATABASE_ERROR',
+        { details: error.message, id }
+      );
+    }
+    return data as CarerTimeOff;
+  }
+}

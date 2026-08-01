@@ -2,11 +2,29 @@ const { hairlineWidth } = require('nativewind/theme');
 
 /** @type {import('tailwindcss').Config} */
 module.exports = {
+  // Tailwind only generates classes it can SEE. A file outside these globs still
+  // compiles and renders, but every `className` on it silently does nothing —
+  // which looks like a layout bug, not a config bug.
+  //
+  // `./src/domains/**` was missing, and it cost real time to find: the onboarding
+  // progress bar sets `className="h-1"`, that class was used nowhere else so it
+  // was never generated, the bar therefore had no height, expanded to fill all
+  // 956px of the screen, and pushed the title and CTA out of view. The screen
+  // looked blank while being perfectly mounted and laid out.
+  //
+  // `src/domains/` is where CLAUDE.md tells you to put every feature, so this
+  // would have broken each one in the same invisible way. Root `lib/` is
+  // included for the same reason (StaggeredFadeIn and the icon registry use
+  // className).
+  //
+  // Rule of thumb: if you add a directory that renders JSX, add it here.
   content: [
     './app/**/*.{ts,tsx}',
     './components/**/*.{ts,tsx}',
+    './lib/**/*.{ts,tsx}',
     './src/app/**/*.{ts,tsx}',
     './src/components/**/*.{ts,tsx}',
+    './src/domains/**/*.{ts,tsx}',
   ],
   presets: [require('nativewind/preset')],
   theme: {

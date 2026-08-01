@@ -3,11 +3,11 @@ import { useEffect, useRef } from 'react';
 import { View } from 'react-native';
 import { hasAuthToken } from '@/src/api/client';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
-import { getStepRoute } from '@/src/config/onboardingFlows';
+import { getSetupStepRoute } from '@/src/domains/setup/types';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 import { useAuthStore } from '@/src/store/auth';
-import { useOnboardingStore } from '@/src/store/onboarding';
 import { usePendingDeepLinkStore } from '@/src/store/pendingDeepLinkStore';
+import { useSetupProgressStore } from '@/src/store/setupProgress';
 
 /**
  * Entry router — decides where to send the user, exactly once.
@@ -17,7 +17,7 @@ export default function Index() {
   const isInitialized = useAuthStore(s => s.isInitialized);
   const session = useAuthStore(s => s.session);
   const isOnboarded = useIsOnboarded();
-  const currentStep = useOnboardingStore(s => s.currentStep);
+  const currentStep = useSetupProgressStore(s => s.currentStep);
 
   // Route once per IDENTITY, not once per mount.
   //
@@ -53,7 +53,7 @@ export default function Index() {
 
     routedForUserId.current = userId;
     if (!isOnboarded) {
-      router.replace(getStepRoute(currentStep) as Href);
+      router.replace(getSetupStepRoute(currentStep) as Href);
       return;
     }
 

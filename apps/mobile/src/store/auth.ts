@@ -13,8 +13,8 @@ import { queryClient } from '../api/queryClient';
 import { env } from '../config/env';
 import { supabase } from '../lib/supabase';
 import { createPersistedStore } from './createPersistedStore';
-import { useOnboardingStore } from './onboarding';
 import { resetUserScopedStores } from './resetStores';
+import { useSetupProgressStore } from './setupProgress';
 
 // Google Sign-In configuration (client ids come from the central env module).
 const configureGoogleSignIn = () => {
@@ -361,7 +361,7 @@ export const useAuthStore = createPersistedStore<AuthState>(
               userId !== previousSignedInUserId);
           if (shouldClear) {
             await clearAppState();
-            useOnboardingStore.getState().reset();
+            useSetupProgressStore.getState().reset();
             router.replace('/' as Href);
           }
           previousSignedInUserId = userId;

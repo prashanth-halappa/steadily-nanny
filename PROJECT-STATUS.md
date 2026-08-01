@@ -78,11 +78,56 @@ Wave 1 spine) plus the calendar-integration seams is designed, applied, and
 verified against the live `steadily-nanny` project. See §4b. So the next agent
 is writing services against real tables, not designing schema.
 
+### End-to-end run — verified on the simulator against the live database
+
+`bun run scripts/e2e-assert.ts` → **32 passed, 0 failed.**
+`bun run qc` → green (mobile 377/0, API 197/0).
+
+| # | Flow | UI (Maestro MCP) | Database |
+|---|---|---|---|
+| 1 | Parent signs in | PASS | session valid |
+| 2 | Household + children | PASS | owner membership, no orphan |
+| 3 | Invite code generated | PASS | `P9A-B93`, correct alphabet |
+| 4 | Nanny redeems code | PASS | member, role `nanny`, invite accepted, exactly one row |
+| 5 | Nanny availability | PASS | rows persisted, weekdays correct |
+| 6 | Pattern created + sent | via API | status `accepted`, RRULE + IANA tz |
+| 7 | Shifts materialised | via API | 26 shifts, DST correct |
+| 8 | Cross-family anonymity | n/a | PASS at RLS **and** API |
+
+**The two results that matter most.**
+
+*DST, live:* one pattern authored "Thursdays 08:00–17:00 Europe/London" produced
+26 shifts spanning the 29 March 2026 GMT→BST transition:
+
+| Date | UTC stored | London | Duration |
+|---|---|---|---|
+| 5 Feb (GMT) | `08:00` | 08:00 | 9h |
+| 26 Mar (GMT) | `08:00` | 08:00 | 9h |
+| 2 Apr (BST) | `07:00` | 08:00 | 9h |
+| 30 Jul (BST) | `07:00` | 08:00 | 9h |
+
+The UTC instant moves by an hour; the wall clock and the duration do not.
+
+*Anonymity, live:* the parent of household A queries
+`GET /availability/:carerId/busy` for the nanny, who has a confirmed shift in
+household B. Response:
+```json
+{"busy_blocks":[{"starts_at":"2026-09-10T07:00:00+00:00",
+                 "ends_at":"2026-09-10T16:00:00+00:00",
+                 "kind":"other_commitment"}]}
+```
+Three fields. No household, no child, no note — and the deliberately-planted
+`LEAKCANARY` strings appear nowhere. Separately, at the RLS floor the parent sees
+1 household and 1 child; the nanny sees both households by name. Both halves of
+the promise hold.
+
+### Flow-by-flow status
+
 | Flow | What it is | Status | Files |
 |---|---|---|---|
-| 1a | Welcome / sign-in / onboarding / invite nanny | not started | — |
-| 1b | Nanny invite → onboarding → accept → 2nd family | not started | — |
-| 1c | Weekly recurring schedule (propose → send) | not started | — |
+| 1a | Welcome / sign-in / role fork / children / invite | **done** | `src/app/onboarding/*`, `src/domains/setup/` |
+| 1b | Nanny code → preview → redeem → availability | **done** (availability not persisted) | `src/domains/setup/`, `apps/api/src/domains/{household,availability}` |
+| 1c | Weekly recurring schedule (propose → send → accept) | **API done, no UI** | `apps/api/src/domains/schedule/` |
 | 1d | One-off extra shift (ask/accept/decline/counter) | not started | — |
 | 1e | Short notice change/cancel/swap | not started | — |
 | 1f | Two-parent sync & approval | not started | — |
@@ -297,9 +342,59 @@ Two things about building it that cost real time to discover:
 misleading `java.lang.ExceptionInInitializerError`. It is not a JDK problem —
 Zulu 17 is installed and correct.
 
-## 4d. OPEN BUG — onboarding screens lay out but paint nothing
+## 4d. RESOLVED — the "blank screen" was a missing Tailwind content glob
 
-**Status: unresolved. This blocks the end-to-end run past sign-in.**
+**Status: FIXED.** Kept in full because the failure mode is invisible, will
+recur, and cost hours to find.
+
+### Root cause
+
+`apps/mobile/tailwind.config.js` `content` did not include `./src/domains/**`.
+Tailwind only generates classes it can SEE. A file outside those globs still
+compiles and renders normally — but every `className` on it silently does
+nothing. It fails as a *layout bug*, never as an error.
+
+Concretely: `SlimProgressBar` sets `className="h-1"` (4px). That class was used
+nowhere else in the project, so it was never generated. The bar therefore had no
+height, expanded to fill all 956px of the screen, and pushed the title, body and
+CTA out of view. The screen was correctly routed, mounted and laid out the entire
+time — it just had a full-height progress bar sitting on top of it.
+
+This mattered far beyond one screen: **`src/domains/` is where `CLAUDE.md` tells
+you to put every feature**, so every future domain would have broken the same
+invisible way.
+
+### The fix
+
+Added `./src/domains/**/*.{ts,tsx}` and `./lib/**/*.{ts,tsx}` to the `content`
+array. **Restart Metro after changing that file** — the config is read at
+bundler startup and a hot reload is not enough.
+
+**Rule: if you add a directory that renders JSX, add it to `content`.**
+
+### What actually found it
+
+The Maestro **MCP**'s `inspect_view_hierarchy`, which returns bounds as flat CSV:
+`resource-id=slim-progress-bar` with bounds `[24,0][416,956]` — a "slim" progress
+bar 956px tall. The Maestro **CLI**'s deeply-nested JSON dump contained the same
+fact and it was missed twice. Prefer the MCP's CSV view for layout debugging.
+
+### Hypotheses eliminated before finding it (do not re-test)
+
+Routing (the screen provably mounted), an overlay (a plain red View painted
+full-screen), the design-system components (`H1`/`Text`/`Button` all rendered
+correctly when placed in that route directly), the nested `<Stack>`
+(`auth/login.tsx` is also nested and works), `className="flex-1"` vs inline
+`style`, the `ScrollView`, `useOnboardingNavigation`, `AnimatedSplash`, and
+`AppGate`. All were wrong. The lesson: the elements were *mounted and correctly
+positioned* the whole time, which should have pointed at a sibling consuming the
+space far sooner than it did.
+
+### Known remaining cosmetic issue
+
+`OnboardingScreenShell` has no `SafeAreaView`, so its content sits under the
+status bar. Any replacement shell should include one — `src/app/welcome.tsx` is
+the model.
 
 What works, verified on the simulator:
 - The app builds, installs, launches, and renders `welcome.tsx` correctly — Sora
@@ -401,6 +496,39 @@ rather than once per mount, and still reacts to sign-in and account switches.
 `undefined` (no decision yet) is kept distinct from `null` (decided: signed out)
 so the cold-start `hasAuthToken()` race still works. This was a real bug
 independent of the paint issue above.
+
+## 4e. End-to-end test harness
+
+Every e2e flow is asserted **twice**: through the UI by Maestro, and against the
+live database by `scripts/e2e-assert.ts`. The reason is simple — a screen that
+renders "Invite code: R4K-92T" over an empty `household_invites` table is a green
+Maestro run and a broken product. UI evidence alone is not evidence.
+
+| Script | Purpose |
+|---|---|
+| `scripts/seed-test-users.ts` | Two confirmed accounts (parent, nanny) via the Admin API. Idempotent. |
+| `scripts/seed-second-household.ts` | A SECOND household the same nanny works for. Makes the anonymity check meaningful. |
+| `scripts/e2e-assert.ts` | Database assertions for all eight flows. Exits non-zero on first failure. |
+
+**The second household is not optional.** The cross-family anonymity promise is
+the load-bearing claim of this product, and it is only testable if the nanny
+actually belongs to two households. With one, there is nothing to leak and the
+assertion passes vacuously. `e2e-assert.ts` deliberately prints `SKIP` rather
+than `PASS` in that situation — a test that cannot fail is not evidence.
+
+The seeded household and child are named `LEAKCANARY the Cole household` and
+`LEAKCANARY-Ada` on purpose: if either string ever appears in the first
+household's UI, an API response, or a log, the leak is unmistakable in a
+screenshot or a grep.
+
+That second household is seeded directly against the database rather than
+through the app, deliberately — flow 4 already covers joining by invite code
+through the UI. Flow 8 is about what a DIFFERENT family can READ, so the join
+mechanism is not what is under test.
+
+Order: `seed-test-users` → run the app flows → `seed-second-household` →
+`e2e-assert`. The assert script is safe to run at any point; it reports honestly
+which flows have not happened yet rather than failing confusingly.
 
 ## 5. Deliberate omissions
 

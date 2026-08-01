@@ -8,7 +8,7 @@
 
 export * from './appConfigStore';
 export * from './notificationStore';
-export * from './onboarding';
 export * from './pendingDeepLinkStore';
 export * from './ratingStore';
 export * from './resetStores';
+export * from './setupProgress';

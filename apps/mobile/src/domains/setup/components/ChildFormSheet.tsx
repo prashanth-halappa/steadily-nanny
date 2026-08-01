@@ -1,0 +1,108 @@
+/**
+ * @module domains/setup/components/ChildFormSheet
+ *
+ * Add/edit-child bottom sheet: name + age. GOLDEN-FIXES #1 — sheets always go
+ * through `BottomSheetBase`, never a bare RN modal.
+ */
+import { useEffect, useState } from 'react';
+import { View } from 'react-native';
+import { BottomSheetBase } from '@/src/components/custom/BottomSheetBase';
+import { Button } from '@/src/components/ui/button';
+import { Input } from '@/src/components/ui/input';
+import { Label } from '@/src/components/ui/label';
+import { Text } from '@/src/components/ui/text';
+import { H3 } from '@/src/components/ui/typography';
+
+export interface ChildFormValues {
+  name: string;
+  age: string;
+}
+
+interface ChildFormSheetProps {
+  visible: boolean;
+  onDismiss: () => void;
+  onSubmit: (values: ChildFormValues) => void;
+  isSubmitting?: boolean;
+  /** Present when editing an existing child; omitted when adding. */
+  initialValues?: ChildFormValues;
+}
+
+const EMPTY_VALUES: ChildFormValues = { name: '', age: '' };
+
+export function ChildFormSheet({
+  visible,
+  onDismiss,
+  onSubmit,
+  isSubmitting,
+  initialValues,
+}: ChildFormSheetProps) {
+  const [name, setName] = useState(initialValues?.name ?? '');
+  const [age, setAge] = useState(initialValues?.age ?? '');
+
+  // Reset the form to the right starting values each time the sheet opens.
+  useEffect(() => {
+    if (visible) {
+      setName(initialValues?.name ?? EMPTY_VALUES.name);
+      setAge(initialValues?.age ?? EMPTY_VALUES.age);
+    }
+  }, [visible, initialValues]);
+
+  const ageNumber = Number(age);
+  const isValid =
+    name.trim().length > 0 &&
+    age.trim().length > 0 &&
+    Number.isInteger(ageNumber) &&
+    ageNumber >= 0 &&
+    ageNumber <= 25;
+
+  const handleSubmit = () => {
+    if (!isValid) return;
+    onSubmit({ name: name.trim(), age: age.trim() });
+  };
+
+  return (
+    <BottomSheetBase
+      sheetId="child-form"
+      visible={visible}
+      onDismiss={onDismiss}
+      fitContent
+      testID="child-form-sheet"
+    >
+      <View className="gap-3 px-6 pb-4">
+        <H3>{initialValues ? 'Edit child' : 'Add a child'}</H3>
+
+        <View className="gap-2">
+          <Label>Name</Label>
+          <Input
+            testID="child-form-name"
+            accessibilityLabel="Child's name"
+            value={name}
+            onChangeText={setName}
+            placeholder="Their name"
+            autoFocus
+          />
+        </View>
+
+        <View className="gap-2">
+          <Label>Age</Label>
+          <Input
+            testID="child-form-age"
+            accessibilityLabel="Child's age"
+            value={age}
+            onChangeText={setAge}
+            placeholder="Age in years"
+            keyboardType="number-pad"
+          />
+        </View>
+
+        <Button
+          testID="child-form-submit"
+          onPress={handleSubmit}
+          disabled={!isValid || isSubmitting}
+        >
+          <Text>{initialValues ? 'Save' : 'Add child'}</Text>
+        </Button>
+      </View>
+    </BottomSheetBase>
+  );
+}
