@@ -6,17 +6,16 @@
  * @module routes/index
  */
 import { Router } from 'express';
+import childRoutes from '../domains/child/routes/childRoutes';
+import householdRoutes from '../domains/household/routes/householdRoutes';
 import notificationsRoutes from '../domains/notification/routes/notificationsRoutes';
-import subscriptionRoutes from '../domains/subscription/routes/subscriptionRoutes';
-import widgetRoutes from '../domains/widget/routes/widgetRoutes';
 import usersRoutes from './usersRoutes';
 
 const router = Router();
 
 router.use('/users', usersRoutes);
-router.use('/subscription', subscriptionRoutes);
 router.use('/notifications', notificationsRoutes);
-// Example feature domain (kitchen-sink) — remove with the rest of the widget example.
-router.use('/widgets', widgetRoutes);
+router.use('/households', householdRoutes);
+router.use('/households/:householdId/children', childRoutes);
 
 export default router;

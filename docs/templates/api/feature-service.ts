@@ -19,7 +19,7 @@
  * generic one, used for auth-failure cases, not ownership mismatches).
  */
 
-import type { CreateWidgetInput, Widget } from '@yourapp/shared-types/schemas/widget.schema';
+import type { CreateWidgetInput, Widget } from '@steadily-nanny/shared-types/schemas/widget.schema';
 import { NotFoundError } from '../../../errors';
 import { WidgetRepository } from '../repositories/widgetRepository';
 

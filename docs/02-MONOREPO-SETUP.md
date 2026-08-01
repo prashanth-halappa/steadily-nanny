@@ -11,11 +11,11 @@ Copy-paste-ready templates live in [`templates/`](./templates/). This doc explai
 ```
 <root>/
 ├── apps/
-│   ├── api/          # @yourapp/api    — Express backend
-│   ├── mobile/       # @yourapp/mobile — Expo / React Native
-│   └── web/          # @yourapp/web    — Next.js (optional 3rd app)
+│   ├── api/          # @steadily-nanny/api    — Express backend
+│   ├── mobile/       # @steadily-nanny/mobile — Expo / React Native
+│   └── web/          # @steadily-nanny/web    — Next.js (optional 3rd app)
 ├── packages/
-│   └── shared-types/ # @yourapp/shared-types — see 03-SHARED-PACKAGES.md
+│   └── shared-types/ # @steadily-nanny/shared-types — see 03-SHARED-PACKAGES.md
 ├── scripts/qc.sh
 ├── .github/workflows/ci.yml
 ├── .husky/pre-commit
@@ -39,7 +39,7 @@ Template: [`templates/root-package.json`](./templates/root-package.json).
 }
 ```
 
-- **`workspaces: ["apps/*", "packages/*"]`** — Bun resolves every folder under these globs as a workspace member. Cross-package deps (e.g. `"@yourapp/shared-types": "*"`) link to the local source, no publish step.
+- **`workspaces: ["apps/*", "packages/*"]`** — Bun resolves every folder under these globs as a workspace member. Cross-package deps (e.g. `"@steadily-nanny/shared-types": "*"`) link to the local source, no publish step.
 - **`packageManager` pin** — locks the Bun version for everyone and for CI. Bump deliberately.
 - **`overrides`** — force a single version of cross-cutting deps (e.g. `zod`) so all workspaces share one major. This is what makes shared Zod schemas safe to import everywhere.
 - **`patchedDependencies`** — Bun applies a local patch to a dep (e.g. patching `react-native`). Keep the `.patch` file under `patches/`.
@@ -49,7 +49,7 @@ Template: [`templates/root-package.json`](./templates/root-package.json).
 | Script | Definition | What it does |
 |---|---|---|
 | `dev` | `turbo run dev` | Runs every app's `dev` task in parallel (persistent, uncached). |
-| `dev:mobile` / `dev:api` / `dev:web` | `turbo run dev --filter=@yourapp/<app>` | Single-app dev via Turbo filter. |
+| `dev:mobile` / `dev:api` / `dev:web` | `turbo run dev --filter=@steadily-nanny/<app>` | Single-app dev via Turbo filter. |
 | `build` | `turbo run build` | Builds all (respects `^build` dependency order). |
 | `lint` | `turbo run lint` | Biome lint across workspaces. |
 | `format` | `biome check --write --unsafe . && biome format --write .` | Auto-fix lint + format the whole repo. Run before committing. |

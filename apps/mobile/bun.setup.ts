@@ -530,7 +530,7 @@ mock.module('expo-constants', () => ({
 mock.module('expo-application', () => ({
   nativeApplicationVersion: '1.0.0',
   nativeBuildVersion: '1',
-  applicationId: 'com.yourco.yourapp',
+  applicationId: 'com.jetto.steadily.nanny',
   getInstallationTimeAsync: mock(() => Promise.resolve(new Date(0))),
   getAndroidId: mock(() => 'test-android-id'),
 }));
@@ -580,7 +580,7 @@ mock.module('expo-web-browser', () => ({
 }));
 
 mock.module('expo-linking', () => ({
-  createURL: mock((path: string) => `yourapp://${path}`),
+  createURL: mock((path: string) => `steadilynanny://${path}`),
   openURL: mock(() => Promise.resolve()),
   useURL: mock(() => null),
   addEventListener: mock(() => ({ remove: mock() })),
@@ -657,27 +657,6 @@ mock.module('expo-apple-authentication', () => ({
       email: null,
     })
   ),
-}));
-
-mock.module('react-native-purchases', () => ({
-  default: {
-    configure: mock(() => {}),
-    getOfferings: mock(() =>
-      Promise.resolve({ current: { availablePackages: [] } })
-    ),
-    getCustomerInfo: mock(() =>
-      Promise.resolve({ entitlements: { active: {} } })
-    ),
-    addCustomerInfoUpdateListener: mock(() => {}),
-    logIn: mock(() => Promise.resolve({ customerInfo: {} })),
-    logOut: mock(() => Promise.resolve({})),
-    setLogLevel: mock(() => {}),
-  },
-  LOG_LEVEL: { DEBUG: 'DEBUG', ERROR: 'ERROR' },
-}));
-
-mock.module('react-native-purchases-ui', () => ({
-  default: { presentPaywall: mock(() => Promise.resolve({})) },
 }));
 
 // -----------------------------------------------------------------------------

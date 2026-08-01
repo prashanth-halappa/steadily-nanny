@@ -271,7 +271,7 @@ isolateWorkers = true
 *Example: `apps/mobile/.maestro/config.yaml`*
 
 ```yaml
-appId: com.yourco.yourapp
+appId: com.jetto.steadily.nanny
 screenshotDirectory: screenshots
 assertTimeout: 10000
 waitForAnimationToEnd: true
@@ -290,7 +290,7 @@ Layout: reusable fragments in `.maestro/flows/` (e.g. `login.yaml`), numbered sc
 Sketch (from `04-home-screen.yaml`):
 
 ```yaml
-appId: com.yourco.yourapp
+appId: com.jetto.steadily.nanny
 ---
 - runFlow: ../flows/login.yaml
 - tapOn: { id: "tab-today" }

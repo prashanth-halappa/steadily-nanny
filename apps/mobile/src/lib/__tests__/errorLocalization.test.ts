@@ -8,7 +8,7 @@
  */
 
 import { describe, expect, it } from 'bun:test';
-import { ERROR_CODES } from '@yourapp/shared-types/errorCodes';
+import { ERROR_CODES } from '@steadily-nanny/shared-types/errorCodes';
 import {
   ERROR_CODE_TO_I18N_KEY,
   getLocalizedErrorMessage,
@@ -48,21 +48,6 @@ describe('getLocalizedErrorMessage', () => {
       expect(
         getLocalizedErrorMessage(envelopeError(ERROR_CODES.CONFLICT), t)
       ).toBe('errors:conflict');
-    });
-
-    it('maps PAYWALL_REQUIRED to errors:paywallRequired', () => {
-      expect(
-        getLocalizedErrorMessage(envelopeError(ERROR_CODES.PAYWALL_REQUIRED), t)
-      ).toBe('errors:paywallRequired');
-    });
-
-    it('maps USAGE_LIMIT_EXCEEDED to errors:usageLimitExceeded', () => {
-      expect(
-        getLocalizedErrorMessage(
-          envelopeError(ERROR_CODES.USAGE_LIMIT_EXCEEDED),
-          t
-        )
-      ).toBe('errors:usageLimitExceeded');
     });
 
     it('maps INTERNAL_ERROR to errors:server', () => {

@@ -12,7 +12,7 @@
  * @module config/sentryFeatureAreas
  */
 export const FEATURE_AREAS = {
-  // SETUP: 2-entry example — extend with your domains.
+  // SETUP: extend with your product's route groups.
   user: ['users', 'auth', 'profile'],
   jobs: ['jobs'],
 } as const;

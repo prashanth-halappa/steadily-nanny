@@ -27,11 +27,11 @@ afterEach(() => {
 
 describe('openExternalUrl', () => {
   it('opens https URLs in the in-app browser (bypasses universal-link capture)', async () => {
-    await openExternalUrl('https://yourapp.example.com/terms');
+    await openExternalUrl('https://nanny.getsteadily.app/terms');
 
     expect(openBrowserAsync).toHaveBeenCalledTimes(1);
     expect(openBrowserAsync).toHaveBeenCalledWith(
-      'https://yourapp.example.com/terms'
+      'https://nanny.getsteadily.app/terms'
     );
     expect(linkingOpenURL).not.toHaveBeenCalled();
   });
@@ -44,21 +44,23 @@ describe('openExternalUrl', () => {
   });
 
   it('falls back to Linking for non-web schemes (mailto)', async () => {
-    await openExternalUrl('mailto:support@yourapp.example.com?subject=Hi');
+    await openExternalUrl('mailto:support@nanny.getsteadily.app?subject=Hi');
 
     expect(linkingOpenURL).toHaveBeenCalledWith(
-      'mailto:support@yourapp.example.com?subject=Hi'
+      'mailto:support@nanny.getsteadily.app?subject=Hi'
     );
     expect(openBrowserAsync).not.toHaveBeenCalled();
   });
 
   it('never throws and reports to Sentry when the open fails', async () => {
     openBrowserAsync.mockImplementationOnce(async () => {
-      throw new Error('Unable to open URL: https://yourapp.example.com/terms');
+      throw new Error(
+        'Unable to open URL: https://nanny.getsteadily.app/terms'
+      );
     });
 
     const result = await openExternalUrl(
-      'https://yourapp.example.com/terms',
+      'https://nanny.getsteadily.app/terms',
       'auth-terms'
     );
     expect(result).toBeUndefined();
@@ -68,6 +70,6 @@ describe('openExternalUrl', () => {
       | { tags: { context: string }; extra: { url: string } }
       | undefined;
     expect(options?.tags.context).toBe('auth-terms');
-    expect(options?.extra.url).toBe('https://yourapp.example.com/terms');
+    expect(options?.extra.url).toBe('https://nanny.getsteadily.app/terms');
   });
 });

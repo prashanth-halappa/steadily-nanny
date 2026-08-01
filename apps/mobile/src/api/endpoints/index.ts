@@ -8,6 +8,4 @@
 export { appConfigApi } from './appConfig';
 export type { DeviceRegistrationInput } from './notifications';
 export { notificationsApi } from './notifications';
-export type { SubscriptionStatus } from './subscription';
-export { subscriptionApi } from './subscription';
 export { userApi } from './user';

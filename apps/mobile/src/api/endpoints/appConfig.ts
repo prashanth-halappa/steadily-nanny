@@ -4,8 +4,11 @@
 // force-update, kill-switch, maintenance, server-driven announcements, and the
 // `betaAllPro` beta-override toggle.
 
-import type { AppStatusResponse } from '@yourapp/shared-types/appConfig';
-import { AnnouncementType, AppStatus } from '@yourapp/shared-types/appConfig';
+import type { AppStatusResponse } from '@steadily-nanny/shared-types/appConfig';
+import {
+  AnnouncementType,
+  AppStatus,
+} from '@steadily-nanny/shared-types/appConfig';
 import { z } from 'zod';
 import { apiClient } from '@/src/api/client';
 

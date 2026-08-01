@@ -16,7 +16,7 @@ import {
   WidgetSchema,
   type CreateWidgetInput,
   type Widget,
-} from '@yourapp/shared-types/schemas/widget.schema';
+} from '@steadily-nanny/shared-types/schemas/widget.schema';
 
 export const widgetApi = {
   list: async (): Promise<Widget[]> => {

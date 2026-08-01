@@ -1,4 +1,4 @@
-import type { OnboardingStep } from '@yourapp/shared-types/onboarding';
+import type { OnboardingStep } from '@steadily-nanny/shared-types/onboarding';
 import { type Href, useRouter } from 'expo-router';
 import { useCallback } from 'react';
 import { getNextStep, getStepRoute } from '@/src/config/onboardingFlows';

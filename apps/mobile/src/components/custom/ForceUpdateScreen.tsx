@@ -1,4 +1,4 @@
-import type { AppStatusUpdate } from '@yourapp/shared-types/appConfig';
+import type { AppStatusUpdate } from '@steadily-nanny/shared-types/appConfig';
 import { View } from 'react-native';
 import { Button } from '@/src/components/ui/button';
 import { Text } from '@/src/components/ui/text';

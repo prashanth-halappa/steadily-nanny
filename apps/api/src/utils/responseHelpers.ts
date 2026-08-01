@@ -3,7 +3,7 @@ import type {
   ApiSuccessResponse,
   ErrorCode,
   ValidationErrorDetail,
-} from '@yourapp/shared-types';
+} from '@steadily-nanny/shared-types';
 import type { Response } from 'express';
 import type { ZodError } from 'zod';
 

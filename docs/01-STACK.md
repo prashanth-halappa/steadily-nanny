@@ -22,7 +22,7 @@ Purpose: the exact toolchain and library versions this blueprint reuses, plus th
 
 ---
 
-## API stack (`@yourapp/api` — Express backend)
+## API stack (`@steadily-nanny/api` — Express backend)
 
 | Library | Version | Role | Install note |
 |---|---|---|---|
@@ -50,7 +50,7 @@ Dev/test: `@faker-js/faker`, `@testcontainers/postgresql`, `supertest`, `bun-typ
 
 ---
 
-## Mobile stack (`@yourapp/mobile` — Expo / React Native)
+## Mobile stack (`@steadily-nanny/mobile` — Expo / React Native)
 
 | Library | Version | Role | Install note |
 |---|---|---|---|

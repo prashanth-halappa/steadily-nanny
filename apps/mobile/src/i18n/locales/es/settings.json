@@ -5,5 +5,10 @@
   "privacyPolicy": "Política de privacidad",
   "termsOfService": "Términos del servicio",
   "account": "Cuenta",
-  "notifications": "Notificaciones"
+  "notifications": "Notificaciones",
+  "deleteAccount": "Eliminar cuenta",
+  "deleteAccountConfirmTitle": "¿Eliminar tu cuenta?",
+  "deleteAccountConfirmBody": "Esto elimina permanentemente tu cuenta y todos los datos asociados. Esta acción no se puede deshacer.",
+  "deleteAccountCancel": "Cancelar",
+  "deleteAccountConfirm": "Eliminar cuenta"
 }

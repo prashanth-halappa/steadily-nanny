@@ -33,24 +33,10 @@ export const queryKeys = {
     status: () => [...queryKeys.appConfig.all, 'status'] as const,
   },
 
-  // Subscription / entitlement state
-  subscription: {
-    all: ['subscription'] as const,
-    status: () => [...queryKeys.subscription.all, 'status'] as const,
-  },
-
   // Push device registrations
   notifications: {
     all: ['notifications'] as const,
     devices: () => [...queryKeys.notifications.all, 'devices'] as const,
-  },
-
-  // Example "widget" domain (from the widget kitchen-sink). Delete this block
-  // when you remove the widget example.
-  widget: {
-    all: ['widget'] as const,
-    list: () => [...queryKeys.widget.all, 'list'] as const,
-    byId: (id: string) => [...queryKeys.widget.all, id] as const,
   },
 } as const;
 

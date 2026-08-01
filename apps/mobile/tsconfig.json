@@ -8,8 +8,8 @@
       "@/*": ["./*"],
       "~/*": ["./*"],
       "tailwind.config": ["./tailwind.config.js"],
-      "@yourapp/shared-types": ["../../packages/shared-types/src"],
-      "@yourapp/shared-types/*": ["../../packages/shared-types/src/*"]
+      "@steadily-nanny/shared-types": ["../../packages/shared-types/src"],
+      "@steadily-nanny/shared-types/*": ["../../packages/shared-types/src/*"]
     },
     "noImplicitReturns": true,
     "noFallthroughCasesInSwitch": true

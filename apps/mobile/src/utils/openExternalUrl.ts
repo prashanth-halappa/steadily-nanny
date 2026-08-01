@@ -6,7 +6,7 @@ import { Linking } from 'react-native';
  * Opens an external URL safely from anywhere in the app.
  *
  * WHY this exists (GOLDEN — universal-link capture bug): calling
- * `Linking.openURL('https://yourapp.example.com/...')` fails in production with
+ * `Linking.openURL('https://nanny.getsteadily.app/...')` fails in production with
  * `Unable to open URL` when the app claims that host as a universal link (iOS
  * Associated Domains `applinks:` + Android `autoVerify` intent-filter). The OS
  * resolves the URL against the app's own claim, tries to route it back into the

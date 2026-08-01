@@ -12,7 +12,7 @@ import type {
   UserDeleteAccountResponse,
   UserProfile,
   UserProfileRequest,
-} from '@yourapp/shared-types';
+} from '@steadily-nanny/shared-types';
 import { z } from 'zod';
 import { apiClient } from '@/src/api/client';
 

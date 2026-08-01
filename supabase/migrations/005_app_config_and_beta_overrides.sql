@@ -39,7 +39,7 @@ insert into public.app_config (id, ios_store_url, android_store_url)
 values (
   1,
   'https://apps.apple.com/app/idPLACEHOLDER',
-  'https://play.google.com/store/apps/details?id=com.yourco.yourapp'
+  'https://play.google.com/store/apps/details?id=com.jetto.steadily.nanny'
 )
 on conflict (id) do nothing;
 

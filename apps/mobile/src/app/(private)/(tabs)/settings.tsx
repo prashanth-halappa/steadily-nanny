@@ -1,12 +1,27 @@
+/**
+ * @module app/(private)/(tabs)/settings
+ */
 import { type Href, router } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { ScrollView, View } from 'react-native';
 import { AnimatedPressable } from '@/lib/animations';
 import { cn } from '@/lib/utils';
-import { Button } from '@/src/components/ui/button';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/src/components/ui/alert-dialog';
+import { Button, buttonVariants } from '@/src/components/ui/button';
 import { Text } from '@/src/components/ui/text';
 import { Body, H1, H4, Small } from '@/src/components/ui/typography';
 import { appIdentity } from '@/src/config/appIdentity';
+import { useDeleteAccount } from '@/src/hooks/mutations/useDeleteAccount';
 import { SUPPORTED_LANGUAGES } from '@/src/i18n/constants';
 import { useLanguageStore } from '@/src/i18n/languageStore';
 import { useAuthStore } from '@/src/store/auth';
@@ -21,6 +36,22 @@ export default function SettingsScreen() {
   const language = useLanguageStore(s => s.language);
   const setLanguage = useLanguageStore(s => s.setLanguage);
   const signOut = useAuthStore(s => s.signOut);
+  const { mutateAsync: deleteAccount, isPending: isDeletingAccount } =
+    useDeleteAccount();
+
+  // REVIEW-CHECKLIST.md §8 / App Store Guideline 5.1.1(v): the account must be
+  // deletable in-app. On success, sign out and return to /welcome — a deleted
+  // account has no session to keep around. On failure the mutation's onError
+  // already surfaced a toast, so just stop here without signing out.
+  const confirmDeleteAccount = async () => {
+    try {
+      await deleteAccount();
+    } catch {
+      return;
+    }
+    await signOut();
+    router.replace('/welcome' as Href);
+  };
 
   return (
     <ScrollView
@@ -65,7 +96,43 @@ export default function SettingsScreen() {
         <Text>{t('settings:signOut')}</Text>
       </Button>
 
-      {/* Dev-only entry point to the verification cockpit (widget example). */}
+      <AlertDialog>
+        <AlertDialogTrigger
+          testID="settings-delete-account"
+          className="mt-4 items-center justify-center py-2"
+        >
+          <Body className="text-destructive">
+            {t('settings:deleteAccount')}
+          </Body>
+        </AlertDialogTrigger>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {t('settings:deleteAccountConfirmTitle')}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('settings:deleteAccountConfirmBody')}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>
+              <Text>{t('settings:deleteAccountCancel')}</Text>
+            </AlertDialogCancel>
+            <AlertDialogAction
+              testID="settings-delete-account-confirm"
+              className={buttonVariants({ variant: 'destructive' })}
+              disabled={isDeletingAccount}
+              onPress={() => void confirmDeleteAccount()}
+            >
+              <Text className="text-destructive-foreground">
+                {t('settings:deleteAccountConfirm')}
+              </Text>
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Dev-only entry point to the verification cockpit. */}
       {__DEV__ ? (
         <AnimatedPressable
           testID="settings-debug-link"

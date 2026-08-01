@@ -2,7 +2,7 @@
 
 Purpose: the execution order for building a new product on this blueprint, from an empty folder to a first feature working end-to-end (API endpoint → shared type → mobile screen). Each step says **what to create** and **which doc** covers the how. Do the steps in order — later steps depend on earlier scaffolding.
 
-> Convention used below: `@yourapp` is your package scope, `<feature>` is your first domain (e.g. `widget`), `com.yourco.yourapp` is your bundle id.
+> Convention used below: `@steadily-nanny` is your package scope, `<feature>` is your first domain (e.g. `widget`), `com.jetto.steadily.nanny` is your bundle id.
 
 ---
 
@@ -10,9 +10,9 @@ Purpose: the execution order for building a new product on this blueprint, from 
 
 Pin these before scaffolding; they thread through every config:
 
-- Package scope: `@yourapp` → `@yourapp/api`, `@yourapp/mobile`, `@yourapp/shared-types`
-- Mobile bundle id / scheme: `com.yourco.yourapp` / `yourapp`
-- Backend host + deep-link domain: `api.yourapp.example.com` / `yourapp.example.com`
+- Package scope: `@steadily-nanny` → `@steadily-nanny/api`, `@steadily-nanny/mobile`, `@steadily-nanny/shared-types`
+- Mobile bundle id / scheme: `com.jetto.steadily.nanny` / `steadilynanny`
+- Backend host + deep-link domain: `api.nanny.getsteadily.app` / `nanny.getsteadily.app`
 - First domain name: `<feature>` (you'll build it end-to-end in Phase 5)
 
 Decide your **Bun version** now and use it everywhere (the reference repo's `packageManager` pin and CI version disagree — don't replicate that; see doc 01).
@@ -43,8 +43,8 @@ Decide your **Bun version** now and use it everywhere (the reference repo's `pac
 
 ## Phase 3 — API skeleton  · docs 04, 05
 
-1. `apps/api/package.json` (`@yourapp/api`) with Express 5, `@supabase/supabase-js`, `ai` + `@ai-sdk/google`, `zod`, `winston`, Sentry, helmet, compression, rate-limit (versions in doc 01). Scripts: `dev` (with `tee -a logs/dev.log`), `build` (`tsc --noEmit`), `test` (`bash scripts/run-tests-one-file.sh tests/unit`), `typecheck`.
-2. Configs: [`templates/api/tsconfig.json`](./templates/api/tsconfig.json) (strict, `@yourapp/shared-types` path alias), [`templates/api/bunfig.toml`](./templates/api/bunfig.toml), [`templates/api/run-tests-one-file.sh`](./templates/api/run-tests-one-file.sh).
+1. `apps/api/package.json` (`@steadily-nanny/api`) with Express 5, `@supabase/supabase-js`, `ai` + `@ai-sdk/google`, `zod`, `winston`, Sentry, helmet, compression, rate-limit (versions in doc 01). Scripts: `dev` (with `tee -a logs/dev.log`), `build` (`tsc --noEmit`), `test` (`bash scripts/run-tests-one-file.sh tests/unit`), `typecheck`.
+2. Configs: [`templates/api/tsconfig.json`](./templates/api/tsconfig.json) (strict, `@steadily-nanny/shared-types` path alias), [`templates/api/bunfig.toml`](./templates/api/bunfig.toml), [`templates/api/run-tests-one-file.sh`](./templates/api/run-tests-one-file.sh).
 3. `src/config/env.ts` from [`templates/api/env.ts`](./templates/api/env.ts) — Zod-validated, **fail-fast at startup**, test-mode stub. Add `src/config/supabase.ts` exporting `supabase` (anon) and `supabaseService` (service role — server-only, never shipped to client). Add `src/config/llmConfig.ts` model registry (flash/pro split — doc 05).
 4. `src/app.ts` from [`templates/api/app.ts`](./templates/api/app.ts) — wire the middleware **in the exact order** (Sentry → helmet → compression → requestId → body parsers → `/api/jobs` *before* auth → `/api/v1` behind `validateSupabaseToken` → routes → global error handler **last**). doc 04 explains the ordering, especially why job routes mount before auth.
 5. `src/index.ts` — `app.listen` + graceful shutdown (flush PostHog).
@@ -56,9 +56,9 @@ Decide your **Bun version** now and use it everywhere (the reference repo's `pac
 
 ## Phase 4 — Mobile skeleton  · docs 06, 07
 
-1. `apps/mobile` via Expo (`bun create expo`), then set the package name to `@yourapp/mobile`. Install Expo-managed deps with **`bun expo install`** so they track the SDK (doc 01).
+1. `apps/mobile` via Expo (`bun create expo`), then set the package name to `@steadily-nanny/mobile`. Install Expo-managed deps with **`bun expo install`** so they track the SDK (doc 01).
 2. Add expo-router, TanStack Query, Zustand + `react-native-mmkv`, NativeWind 4 + Tailwind, `@supabase/supabase-js`, axios, i18next, Sentry, PostHog (doc 01 list).
-3. Configs from `templates/mobile/`: [`tsconfig.json`](./templates/mobile/tsconfig.json) (aliases `@/`, `~/`, `@yourapp/shared-types`), [`babel.config.js`](./templates/mobile/babel.config.js), [`metro.config.js`](./templates/mobile/metro.config.js) (monorepo `watchFolders` + NativeWind + Sentry wrap), [`tailwind.config.js`](./templates/mobile/tailwind.config.js), [`bunfig.toml`](./templates/mobile/bunfig.toml), [`eas.json`](./templates/mobile/eas.json). Copy [`.env.example`](./templates/mobile/.env.example) → `.env` and fill **your** `EXPO_PUBLIC_*` values (never commit real keys).
+3. Configs from `templates/mobile/`: [`tsconfig.json`](./templates/mobile/tsconfig.json) (aliases `@/`, `~/`, `@steadily-nanny/shared-types`), [`babel.config.js`](./templates/mobile/babel.config.js), [`metro.config.js`](./templates/mobile/metro.config.js) (monorepo `watchFolders` + NativeWind + Sentry wrap), [`tailwind.config.js`](./templates/mobile/tailwind.config.js), [`bunfig.toml`](./templates/mobile/bunfig.toml), [`eas.json`](./templates/mobile/eas.json). Copy [`.env.example`](./templates/mobile/.env.example) → `.env` and fill **your** `EXPO_PUBLIC_*` values (never commit real keys).
 4. `app.json`: set `scheme`, iOS bundle id / Android package, deep-link `associatedDomains`/`intentFilters`, plugins. **Do not** reuse the reference EAS `projectId` — run `eas init` to get your own.
 5. `global.css` + the CSS-variable theme (light + `.dark:root`); `polyfills.ts` (imported **first** in the root layout — for AI-SDK streaming). doc 07 / 06.
 6. `src/` layout (doc 06): `app/` (routes), `domains/`, `components/ui/`, `hooks/queries|mutations/`, `api/`, `store/`, `lib/`, `i18n/`.

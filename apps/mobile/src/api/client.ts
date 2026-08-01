@@ -1,13 +1,10 @@
 // API client (axios) with token management and single-flight 401 refresh.
 //
-// SEAM: auth + paywall behaviors are INJECTED, not hard-wired, so this module has
-// no dependency on Supabase or RevenueCat:
+// SEAM: auth behavior is INJECTED, not hard-wired, so this module has no
+// dependency on Supabase:
 //  - `configureAuthHandlers({ refreshToken, onUnauthorized })` — the auth store
 //    registers how to refresh the token and how to sign out. Called at app start.
-//  - `setOnForbiddenHandler(fn)` — the subscription kit registers what to do on a
-//    403 PAYWALL_REQUIRED (e.g. present the paywall). Called at app start.
 
-import { ERROR_CODES } from '@yourapp/shared-types/errorCodes';
 import type { AxiosError, InternalAxiosRequestConfig } from 'axios';
 import axios from 'axios';
 import { Platform } from 'react-native';
@@ -56,11 +53,9 @@ export const hasAuthToken = (): boolean => currentAuthToken !== null;
 // ---------------------------------------------------------------------------
 type RefreshTokenFn = () => Promise<string | null>;
 type OnUnauthorizedFn = () => Promise<void>;
-type OnForbiddenFn = (code: string | undefined) => void | Promise<void>;
 
 let refreshTokenFn: RefreshTokenFn | null = null;
 let onUnauthorizedFn: OnUnauthorizedFn | null = null;
-let onForbiddenFn: OnForbiddenFn | null = null;
 
 /** Wire in how to refresh the access token and how to sign out (auth store). */
 export const configureAuthHandlers = (handlers: {
@@ -69,11 +64,6 @@ export const configureAuthHandlers = (handlers: {
 }) => {
   refreshTokenFn = handlers.refreshToken;
   onUnauthorizedFn = handlers.onUnauthorized;
-};
-
-/** Wire in what to do on a 403 with a gating error code (subscription kit). */
-export const setOnForbiddenHandler = (fn: OnForbiddenFn) => {
-  onForbiddenFn = fn;
 };
 
 // Guard against multiple simultaneous 401 handlers.
@@ -142,7 +132,7 @@ apiClient.interceptors.request.use(
 );
 
 // ---------------------------------------------------------------------------
-// Response interceptor — 401 refresh+retry-once, 403 gating, 429 retry-after.
+// Response interceptor — 401 refresh+retry-once, 429 retry-after.
 // ---------------------------------------------------------------------------
 apiClient.interceptors.response.use(
   response => response,
@@ -185,28 +175,12 @@ apiClient.interceptors.response.use(
       }
     }
 
-    // Entitlement-gating errors do NOT map cleanly to one HTTP status: the API
-    // emits PAYWALL_REQUIRED as 402 and USAGE_LIMIT_EXCEEDED as 429 (and other
-    // gates may use 403). So branch on the ENVELOPE error code, not the status.
-    // Gating codes go to the injected handler (e.g. present the paywall); a
-    // NON-gating 429 (e.g. RATE_LIMITED) is annotated with retry-after instead.
-    const status = error.response.status;
-    if (status === 402 || status === 403 || status === 429) {
-      const errorCode = (
-        error.response.data as { error?: { code?: string } } | null | undefined
-      )?.error?.code;
-      const isGating =
-        errorCode === ERROR_CODES.PAYWALL_REQUIRED ||
-        errorCode === ERROR_CODES.USAGE_LIMIT_EXCEEDED;
-
-      if (isGating) {
-        if (onForbiddenFn) await onForbiddenFn(errorCode);
-      } else if (status === 429) {
-        // Plain rate limit — annotate the error with retry-after (ms).
-        const retryAfter = error.response.headers['retry-after'];
-        error.retryAfter = retryAfter ? parseInt(retryAfter, 10) * 1000 : 60000;
-        error.isRateLimited = true;
-      }
+    // A 429 (rate limited) is annotated with retry-after (ms) so callers can
+    // back off instead of retrying immediately.
+    if (error.response.status === 429) {
+      const retryAfter = error.response.headers['retry-after'];
+      error.retryAfter = retryAfter ? parseInt(retryAfter, 10) * 1000 : 60000;
+      error.isRateLimited = true;
     }
 
     throw error;

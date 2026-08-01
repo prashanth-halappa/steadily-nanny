@@ -71,19 +71,4 @@ export const mockDataFactories = {
     name: 'Test User',
     ...overrides,
   }),
-
-  widget: (
-    overrides: Partial<{
-      id: string;
-      title: string;
-      note: string;
-      createdAt: string;
-    }> = {}
-  ) => ({
-    id: 'test-widget-id',
-    title: 'Test Widget',
-    note: 'A test widget note',
-    createdAt: new Date().toISOString(),
-    ...overrides,
-  }),
 };

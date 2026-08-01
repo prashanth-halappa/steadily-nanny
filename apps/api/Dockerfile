@@ -3,7 +3,7 @@
 # ============================================================================
 # Bun runs TypeScript natively, so there is no build step.
 # Build from the MONOREPO ROOT (not from apps/api):
-#   docker build -f apps/api/Dockerfile -t yourapp-api .
+#   docker build -f apps/api/Dockerfile -t steadilynanny-api .
 #
 # SETUP: pin the Bun image to the version in your root package.json
 # ("packageManager": "bun@x.y.z") if you want an exact match.

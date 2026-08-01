@@ -7,7 +7,6 @@ import helmet from 'helmet';
 import { APP_IDENTITY } from './config/app.identity';
 import helmetConfig from './config/helmetConfig';
 import Sentry from './config/sentry';
-import subscriptionWebhookRoutes from './domains/subscription/routes/subscriptionWebhookRoutes';
 import { validateSupabaseToken } from './middlewares/auth';
 import { cacheControl } from './middlewares/cacheControl';
 import { errorHandler } from './middlewares/errorHandler';
@@ -61,8 +60,10 @@ app.use(morganMiddleware);
 app.use('/api/jobs', jobRoutes);
 // App status: pre-auth (optional token resolved inside for per-user betaAllPro).
 app.use('/api/app', appStatusRoutes);
-// Webhooks: signed with their own shared secret, not a Supabase token.
-app.use('/api/webhooks', subscriptionWebhookRoutes);
+// SETUP: mount any signed webhook routes here (their own shared secret, not a
+// Supabase token) — e.g. `app.use('/api/webhooks', myWebhookRoutes)`. The raw
+// body needed for signature verification is captured above for any
+// `/api/webhooks/*` path regardless of which webhook route handles it.
 
 // ── Supabase-authenticated API (order matters).
 app.use('/api/v1', validateSupabaseToken); // attaches req.user

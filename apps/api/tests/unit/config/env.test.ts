@@ -30,10 +30,9 @@ describe('env.core schema', () => {
     }
   });
 
-  test('production-required keys include jobs + email + subscription secrets', () => {
+  test('production-required keys include jobs + email secrets', () => {
     expect(productionRequiredCoreKeys).toContain('JOB_API_KEY');
     expect(productionRequiredCoreKeys).toContain('RESEND_API_KEY');
-    expect(productionRequiredCoreKeys).toContain('REVENUECAT_WEBHOOK_SECRET');
   });
 });
 

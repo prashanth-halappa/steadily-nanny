@@ -29,6 +29,12 @@ export function OnboardingScreenShell({
   onSkip,
 }: Props) {
   return (
+    // KNOWN BUG (unresolved): screens built on this shell render blank on iOS.
+    // See PROJECT-STATUS.md section 4d for the full investigation. Ruled out so
+    // far: routing (this screen provably mounts), an overlay (a plain red View
+    // here paints full-screen), the design-system components (H1/Text/Button
+    // all render correctly when placed here directly), and `flex-1` as a
+    // className vs an inline style (swapping it changed nothing).
     <View className="flex-1 bg-background">
       {typeof progress === 'number' ? (
         <View className="px-6 pt-4">

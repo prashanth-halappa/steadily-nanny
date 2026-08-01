@@ -11,9 +11,6 @@ export const ANALYTICS_EVENTS = {
   SCREEN_VIEWED: 'screen_viewed',
   SIGN_IN_COMPLETED: 'sign_in_completed',
   ONBOARDING_STEP_COMPLETED: 'onboarding_step_completed',
-  PAYWALL_VIEWED: 'paywall_viewed',
-  PURCHASE_COMPLETED: 'purchase_completed',
-  WIDGET_CREATED: 'widget_created',
 } as const;
 
 /** Type for all known event names. */

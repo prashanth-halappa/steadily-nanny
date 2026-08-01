@@ -1,0 +1,52 @@
+# Flow 1 — the parent signs in and gets past the welcome screen.
+#
+# This is the gate for every other flow: nothing else can be tested until a real
+# session exists. Uses the email path deliberately rather than Apple/Google —
+# Apple Sign In needs an Apple ID signed into the simulator, and Google needs
+# OAuth clients that are not wired yet. The email route exercises the same
+# Supabase session, auth store, and token injection.
+#
+# Credentials come from scripts/seed-test-users.ts.
+appId: com.jetto.steadily.nanny
+---
+- launchApp:
+    clearState: false
+
+# Selectors are testIDs, not visible text — the copy is translated (en + es),
+# so matching on strings would break the moment a locale string changes.
+- assertVisible:
+    id: 'welcome-screen'
+
+- tapOn:
+    id: 'welcome-sign-in-email'
+
+- assertVisible:
+    id: 'login-screen'
+
+- tapOn:
+    id: 'login-email'
+- inputText: 'parent@steadilynanny.test'
+
+- tapOn:
+    id: 'login-password'
+- inputText: 'SteadilyTest!2026'
+
+- hideKeyboard
+
+- tapOn:
+    id: 'login-submit'
+
+# Sign-in is a network round trip to Supabase, then the auth store rehydrates
+# and the root layout re-routes. Give it room without asserting on a spinner,
+# which is a race by construction.
+- extendedWaitUntil:
+    notVisible:
+        id: 'welcome-screen'
+    timeout: 20000
+
+# Past the wall. The welcome screen being gone is the assertion that matters;
+# exactly which screen we land on depends on onboarding state, so don't pin it.
+- assertNotVisible:
+    id: 'login-screen'
+
+- takeScreenshot: signed-in-parent

@@ -9,7 +9,7 @@
  * @module lib/errorLocalization
  */
 
-import { ERROR_CODES } from '@yourapp/shared-types/errorCodes';
+import { ERROR_CODES } from '@steadily-nanny/shared-types/errorCodes';
 
 type ErrorTFunction = (key: string) => string;
 
@@ -18,8 +18,7 @@ type ErrorTFunction = (key: string) => string;
  *
  * Keys expected in your `errors` translation namespace:
  *   validation, unauthorized, forbidden, notFound, conflict, rateLimited,
- *   server, paywallRequired, usageLimitExceeded, network, offline, timeout,
- *   unknown.
+ *   server, network, offline, timeout, unknown.
  */
 export const ERROR_CODE_TO_I18N_KEY: Record<string, string> = {
   [ERROR_CODES.VALIDATION_ERROR]: 'errors:validation',
@@ -30,8 +29,6 @@ export const ERROR_CODE_TO_I18N_KEY: Record<string, string> = {
   [ERROR_CODES.RATE_LIMITED]: 'errors:rateLimited',
   [ERROR_CODES.INTERNAL_ERROR]: 'errors:server',
   [ERROR_CODES.EXTERNAL_SERVICE_ERROR]: 'errors:server',
-  [ERROR_CODES.PAYWALL_REQUIRED]: 'errors:paywallRequired',
-  [ERROR_CODES.USAGE_LIMIT_EXCEEDED]: 'errors:usageLimitExceeded',
 };
 
 interface ErrorLike {

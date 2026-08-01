@@ -2,7 +2,7 @@
  * Onboarding flow engine.
  *
  * Steps come from the shared `ONBOARDING_STEPS` machine (WELCOME → PROFILE →
- * NOTIFICATIONS → PAYWALL). Progress is a set of completed steps, so steps can be
+ * NOTIFICATIONS). Progress is a set of completed steps, so steps can be
  * added/reordered without a client migration. Map each step to its route below.
  */
 
@@ -11,21 +11,19 @@ import {
   ONBOARDING_STEPS,
   type OnboardingFlow,
   type OnboardingStep,
-} from '@yourapp/shared-types/onboarding';
+} from '@steadily-nanny/shared-types/onboarding';
 
 /** Route for each step. SETUP: adjust if you rename the onboarding route files. */
 export const ONBOARDING_ROUTES: Record<OnboardingStep, string> = {
   WELCOME: '/onboarding/welcome',
   PROFILE: '/onboarding/profile',
   NOTIFICATIONS: '/onboarding/notifications',
-  PAYWALL: '/onboarding/paywall',
 };
 
 const STEP_LABELS: Record<OnboardingStep, string> = {
   WELCOME: 'Welcome',
   PROFILE: 'Profile',
   NOTIFICATIONS: 'Notifications',
-  PAYWALL: 'Upgrade',
 };
 
 /** The default (only) flow definition. */

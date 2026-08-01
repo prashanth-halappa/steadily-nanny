@@ -4,21 +4,29 @@
  * Progress is tracked as an array of completed steps (not a rigid enum state
  * machine), so steps can be added, reordered, or skipped without a migration.
  *
- * The concrete step list below is a minimal placeholder
- * (welcome -> profile -> notifications -> paywall). Replace ONBOARDING_STEPS
- * and the flow definitions with your app's real onboarding.
+ * WAVE 1 WILL REPLACE THIS LIST. Steadily Nanny forks on role immediately after
+ * sign-in — a parent continues through children -> co-parents -> usual week ->
+ * invite the nanny, while an invited nanny goes code -> household preview ->
+ * availability. Those steps land with the role fork; the list below is what
+ * survives of the template's placeholder until then.
  */
 
 // =============================================================================
 // Step constants (for runtime validation)
 // =============================================================================
 
-/** Ordered onboarding steps. SETUP: replace with your app's real steps. */
+/**
+ * Ordered onboarding steps.
+ *
+ * PAYWALL was removed with the rest of the subscription layer — this app has no
+ * paid tier. Because `ONBOARDING_ROUTES` and `STEP_LABELS` in the mobile app are
+ * `Record<OnboardingStep, string>`, the compiler enforces that they stay
+ * exhaustive: removing a step here is what makes removing its route legal there.
+ */
 export const ONBOARDING_STEPS = [
   'WELCOME',
   'PROFILE',
   'NOTIFICATIONS',
-  'PAYWALL',
 ] as const;
 
 /** A single onboarding step, derived from ONBOARDING_STEPS. */

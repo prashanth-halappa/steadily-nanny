@@ -21,7 +21,7 @@ export const storage = createMMKV();
 // the template — revisit if you store more sensitive data at rest.
 export const secureStorage = createMMKV({
   id: 'secure-storage',
-  encryptionKey: 'yourapp-secure-key-v1',
+  encryptionKey: 'steadilynanny-secure-key-v1',
 });
 
 // Zustand adapter for regular storage

@@ -143,6 +143,10 @@ const config: ExpoConfig = {
       },
     ],
     'expo-image',
+    // Native date/time picker used by the schedule day editor. `expo install`
+    // could not add this automatically because this config is dynamic (.ts);
+    // it must be listed here or the native module is missing at runtime.
+    '@react-native-community/datetimepicker',
     [
       'expo-build-properties',
       {

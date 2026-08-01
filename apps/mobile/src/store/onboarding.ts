@@ -10,7 +10,7 @@
 import {
   ONBOARDING_STEPS,
   type OnboardingStep,
-} from '@yourapp/shared-types/onboarding';
+} from '@steadily-nanny/shared-types/onboarding';
 import { createPersistedStore } from './createPersistedStore';
 
 /** The step a fresh user starts on (the first configured step). */

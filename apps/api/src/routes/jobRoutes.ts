@@ -36,7 +36,5 @@ router.post(
   '/example-maintenance',
   jobHandler(JobController.runExampleMaintenance)
 );
-// Example feature domain (kitchen-sink) — remove with the rest of the widget example.
-router.post('/widget-digest', jobHandler(JobController.runWidgetDigest));
 
 export default router;

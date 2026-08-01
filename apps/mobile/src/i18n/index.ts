@@ -14,7 +14,7 @@
  *   3. Fallback to 'en'
  *
  * SETUP: add a locale by extending SUPPORTED_LOCALES in
- * `@yourapp/shared-types/locale`, adding a `locales/<code>/*.json` set, and
+ * `@steadily-nanny/shared-types/locale`, adding a `locales/<code>/*.json` set, and
  * wiring its imports into the `resources` map below.
  */
 

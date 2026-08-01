@@ -5,10 +5,6 @@
  * (see `api-responses.ts`). Clients branch on these stable strings instead of
  * parsing human-readable messages.
  *
- * `PAYWALL_REQUIRED` and `USAGE_LIMIT_EXCEEDED` are load-bearing for the
- * entitlement-gating flow — clients key their upsell / limit UI off these exact
- * strings, so keep the spelling identical across the API and mobile app.
- *
  * SETUP: add domain-specific codes as your API grows, but keep this generic
  * set intact so shared error handling keeps working.
  */
@@ -21,8 +17,6 @@ export const ERROR_CODES = {
   RATE_LIMITED: 'RATE_LIMITED',
   INTERNAL_ERROR: 'INTERNAL_ERROR',
   EXTERNAL_SERVICE_ERROR: 'EXTERNAL_SERVICE_ERROR',
-  PAYWALL_REQUIRED: 'PAYWALL_REQUIRED',
-  USAGE_LIMIT_EXCEEDED: 'USAGE_LIMIT_EXCEEDED',
 } as const;
 
 /** A valid error code, derived from ERROR_CODES. */

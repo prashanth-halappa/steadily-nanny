@@ -18,7 +18,7 @@ function warnIfMissing(name: string, value: string | undefined): void {
 }
 
 export const env = {
-  /** Base API URL, e.g. https://api.yourapp.example.com/api */
+  /** Base API URL, e.g. https://api.nanny.getsteadily.app/api */
   apiUrl: process.env.EXPO_PUBLIC_API_URL,
   supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL ?? '',
   supabaseAnonKey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '',
@@ -28,8 +28,6 @@ export const env = {
     process.env.EXPO_PUBLIC_POSTHOG_HOST ?? 'https://us.i.posthog.com',
   googleWebClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
   googleIosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
-  revenueCatIosKey: process.env.EXPO_PUBLIC_REVENUECAT_IOS_KEY,
-  revenueCatAndroidKey: process.env.EXPO_PUBLIC_REVENUECAT_ANDROID_KEY,
 } as const;
 
 /** Call once at startup to surface missing-but-recommended config in dev. */

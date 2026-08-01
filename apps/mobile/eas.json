@@ -27,7 +27,7 @@
       "channel": "production",
       "bun": "1.3.9",
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://api.yourapp.example.com/api",
+        "EXPO_PUBLIC_API_URL": "https://api.nanny.getsteadily.app/api",
         "SENTRY_ALLOW_FAILURE": "false",
         "EXPO_USE_PRECOMPILED_MODULES": "0"
       }

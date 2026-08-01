@@ -1,4 +1,4 @@
-import type { Announcement } from '@yourapp/shared-types/appConfig';
+import type { Announcement } from '@steadily-nanny/shared-types/appConfig';
 import { View } from 'react-native';
 import { AnimatedPressable } from '@/lib/animations';
 import { Body, H4, Small } from '@/src/components/ui/typography';

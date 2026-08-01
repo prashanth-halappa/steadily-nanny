@@ -1,4 +1,4 @@
-import { ONBOARDING_STEPS } from '@yourapp/shared-types/onboarding';
+import { ONBOARDING_STEPS } from '@steadily-nanny/shared-types/onboarding';
 import { useOnboardingStore } from '@/src/store/onboarding';
 
 /**

@@ -2,19 +2,19 @@
  * Language constants for i18n configuration.
  *
  * Re-exports the shared locale source of truth from
- * `@yourapp/shared-types/locale` under app-friendly aliases, and adds
+ * `@steadily-nanny/shared-types/locale` under app-friendly aliases, and adds
  * native-script display names for the language picker in the settings UI
  * (the shared package only carries English-only names).
  *
  * SETUP: to add a language, extend SUPPORTED_LOCALES in
- * `@yourapp/shared-types/locale`, then add its native-script entry to
+ * `@steadily-nanny/shared-types/locale`, then add its native-script entry to
  * LANGUAGE_NAMES below and a `locales/<code>/*.json` catalog set.
  */
 
 import {
   SUPPORTED_LOCALES,
   type SupportedLocale,
-} from '@yourapp/shared-types/locale';
+} from '@steadily-nanny/shared-types/locale';
 
 // Re-export with backward-compatible, app-facing aliases.
 export const SUPPORTED_LANGUAGES = SUPPORTED_LOCALES;
@@ -37,4 +37,4 @@ export function isSupported(language: string): language is SupportedLanguage {
 export {
   SUPPORTED_LOCALES,
   type SupportedLocale,
-} from '@yourapp/shared-types/locale';
+} from '@steadily-nanny/shared-types/locale';

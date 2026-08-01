@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'bun:test';
-import { ONBOARDING_STEPS } from '@yourapp/shared-types/onboarding';
+import { ONBOARDING_STEPS } from '@steadily-nanny/shared-types/onboarding';
 import { useOnboardingStore } from '../onboarding';
 
 beforeEach(() => {
@@ -46,7 +46,7 @@ describe('useOnboardingStore', () => {
 
   it('reset clears progress back to the first step', () => {
     useOnboardingStore.getState().completeStep('WELCOME');
-    useOnboardingStore.getState().setCurrentStep('PAYWALL');
+    useOnboardingStore.getState().setCurrentStep('NOTIFICATIONS');
     useOnboardingStore.getState().reset();
 
     const state = useOnboardingStore.getState();

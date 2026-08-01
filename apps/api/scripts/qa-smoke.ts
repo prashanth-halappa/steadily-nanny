@@ -91,22 +91,10 @@ console.log(`\n🔎 API smoke — ${BASE_URL}\n`);
 await call('health', 'GET', '/health', [200], false);
 await call('app', 'GET', '/api/app/status', [200], false);
 await call('user', 'GET', '/api/v1/users/me', [200, 404]); // 404 = profile not created yet
-await call('subscription', 'GET', '/api/v1/subscription/status', [200]);
-await call('subscription', 'GET', '/api/v1/subscription/usage', [200]);
 
-// ── EXTEND-HERE ─────────────────────────────────────────────────────────────
-// Add your domain's GET endpoints below. The widget example round-trips the list
-// and, when it returns at least one widget, the single-widget read.
-const widgetList = await call('widget', 'GET', '/api/v1/widgets', [200]);
-const firstWidgetId = (() => {
-  const data = (widgetList as { data?: { widgets?: Array<{ id?: string }> } })
-    ?.data?.widgets;
-  const id = Array.isArray(data) ? data[0]?.id : undefined;
-  return typeof id === 'string' ? id : undefined;
-})();
-if (firstWidgetId) {
-  await call('widget', 'GET', `/api/v1/widgets/${firstWidgetId}`, [200]);
-}
+// TODO(wave-1): replace with the nanny round-trip — add this app's own
+// domain GET endpoints here (the widget/subscription example round-trip
+// that used to live here was removed along with those example domains).
 
 // ── RLS lockdown (behavioral, bypasses the API) ─────────────────────────────
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -136,7 +124,6 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
 
   // Owner-only tables: anon must not read other users' rows.
   await denyCheck('anon → user_profiles', 'user_profiles');
-  await denyCheck('anon → user_subscriptions', 'user_subscriptions');
 }
 
 // ── Report ───────────────────────────────────────────────────────────────
