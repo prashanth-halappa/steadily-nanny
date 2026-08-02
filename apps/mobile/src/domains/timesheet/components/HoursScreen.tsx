@@ -6,8 +6,16 @@
  * household come from `useIsOnboarded()` (server-derived), never a local
  * flag — see that hook's header comment for why that distinction is
  * ship-blocking. "Hours only — no payments here."
+ *
+ * D15: week navigation lives HERE, not in the child views. `weekOffset` is a
+ * small integer (0 = current week, -1 = last week, ...) rather than an
+ * absolute date, per `addWeeks`'s header comment — it's reconciled against
+ * "now" on every render instead of drifting from it. Every approved week
+ * used to become unreachable the following Monday because nothing above
+ * `WeekTotal` ever passed it the nav callbacks it already supported; both
+ * role views receive the same offset state so neither role regresses.
  */
-import { useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { ScrollView, View } from 'react-native';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { H1 } from '@/src/components/ui/typography';
@@ -15,6 +23,7 @@ import { SETUP_ROLES } from '@/src/domains/setup/types';
 import { useHouseholds } from '@/src/hooks/queries/useHouseholds';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 import {
+  addWeeks,
   formatWeekRangeLabel,
   getWeekDates,
   getWeekStartISO,
@@ -41,15 +50,33 @@ export function HoursScreen() {
   // whenever the screen remounts (tab focus), which is close enough for a
   // "so far today" figure that isn't the headline feature here.
   const nowMs = useMemo(() => Date.now(), []);
-  const weekStartISO = useMemo(
+  // 0 = the current week; negative = weeks back. Reset to 0 whenever the
+  // screen remounts (tab focus) — same "close enough, not sticky" call as
+  // `nowMs` above, and it means returning to the tab always lands on the
+  // current week rather than wherever navigation was left.
+  const [weekOffset, setWeekOffset] = useState(0);
+  const currentWeekStartISO = useMemo(
     () => getWeekStartISO(new Date(), timezone),
     [timezone]
+  );
+  const weekStartISO = useMemo(
+    () => addWeeks(currentWeekStartISO, weekOffset),
+    [currentWeekStartISO, weekOffset]
   );
   const weekDates = useMemo(() => getWeekDates(weekStartISO), [weekStartISO]);
   const weekRangeLabel = useMemo(
     () => formatWeekRangeLabel(weekDates),
     [weekDates]
   );
+  const handlePreviousWeek = useCallback(() => {
+    setWeekOffset(offset => offset - 1);
+  }, []);
+  // Clamped at 0 — there are no hours yet for a future week, and an empty
+  // future week reads as a bug rather than as "nothing to show".
+  const handleNextWeek = useCallback(() => {
+    setWeekOffset(offset => Math.min(offset + 1, 0));
+  }, []);
+  const isNextWeekDisabled = weekOffset >= 0;
 
   if (onboarding.status === 'loading') {
     return (
@@ -80,6 +107,9 @@ export function HoursScreen() {
           weekDates={weekDates}
           weekRangeLabel={weekRangeLabel}
           nowMs={nowMs}
+          onPreviousWeek={handlePreviousWeek}
+          onNextWeek={handleNextWeek}
+          isNextWeekDisabled={isNextWeekDisabled}
         />
       ) : (
         <NannyWeekView
@@ -88,6 +118,9 @@ export function HoursScreen() {
           weekDates={weekDates}
           weekRangeLabel={weekRangeLabel}
           nowMs={nowMs}
+          onPreviousWeek={handlePreviousWeek}
+          onNextWeek={handleNextWeek}
+          isNextWeekDisabled={isNextWeekDisabled}
         />
       )}
     </View>

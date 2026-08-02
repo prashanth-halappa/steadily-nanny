@@ -38,7 +38,7 @@
   "packageManager": "bun@1.3.9",
   "// TODO(porting)": "Source repo patches expo-constants, expo-updates, and @sentry/react-native via patchedDependencies + patches/*.patch (workarounds for specific Expo/Sentry bugs at specific versions). Not carried over here — re-evaluate once apps/mobile's real dependency versions are extracted, and only reintroduce patchedDependencies if the same bugs reproduce against this template's pinned versions.",
   "lint-staged": {
-    "//": "Scoped to code dirs on purpose: docs/templates/biome.json is a copy-paste teaching file that Biome 2.x treats as a conflicting nested ROOT config if it (or any file near it) is ever passed explicitly. docs/** is biome-ignored anyway.",
+    "//": "Scoped to code dirs on purpose: docs/** is biome-ignored anyway. (Historical note, D16: docs/templates/biome.json — the copy-paste teaching file — used to be a conflicting nested ROOT config under Biome 2.x's tree-wide config discovery, which ignores don't stop; it's since been renamed to docs/templates/biome.json.template so Biome no longer discovers it as a config at all, which is what actually unbroke `bun run format`/`format:check` at the root, not this scoping.)",
     "{apps,packages,scripts}/**/*.{ts,tsx}": [
       "biome check --write --no-errors-on-unmatched",
       "biome format --write --no-errors-on-unmatched"

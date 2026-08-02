@@ -93,7 +93,7 @@ Why each setting:
 
 ## 4. `biome.json`
 
-Template: [`templates/biome.json`](./templates/biome.json).
+Template: [`templates/biome.json.template`](./templates/biome.json.template) — named with a `.template` suffix (not `biome.json`) so Biome doesn't discover it as a second root config in *this* repo (see D16 in `DEFECT-LOG.md` / GOLDEN-FIXES #22); copy it to your new repo's root as `biome.json`.
 
 Key choices:
 

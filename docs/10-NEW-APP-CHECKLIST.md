@@ -23,7 +23,7 @@ Decide your **Bun version** now and use it everywhere (the reference repo's `pac
 
 1. `mkdir` the repo; `git init`.
 2. Create root `package.json` from [`templates/root-package.json`](./templates/root-package.json): set `workspaces: ["apps/*","packages/*"]`, the `packageManager` pin, and the script set (`dev`/`build`/`lint`/`test`/`typecheck` via turbo, plus `qc`, `g`, `gg`).
-3. Drop in [`templates/bunfig.toml`](./templates/bunfig.toml) (note `linker = "hoisted"` for Expo, `concurrency = 1` for tests — doc 02 explains why), [`templates/biome.json`](./templates/biome.json), and [`templates/turbo.json`](./templates/turbo.json).
+3. Drop in [`templates/bunfig.toml`](./templates/bunfig.toml) (note `linker = "hoisted"` for Expo, `concurrency = 1` for tests — doc 02 explains why), [`templates/biome.json.template`](./templates/biome.json.template) (copy as `biome.json` at your new repo's root — the `.template` suffix here just keeps Biome from treating this teaching copy as a nested root config; see doc 02), and [`templates/turbo.json`](./templates/turbo.json).
 4. Add [`templates/qc.sh`](./templates/qc.sh) at `scripts/qc.sh` (`chmod +x`). This is the gate you run before marking work done.
 5. Set up Husky + lint-staged (`bun add -d husky lint-staged`, `bunx husky init`, pre-commit → `bunx lint-staged`).
 6. Add CI from [`templates/ci.yml`](./templates/ci.yml) at `.github/workflows/ci.yml`.

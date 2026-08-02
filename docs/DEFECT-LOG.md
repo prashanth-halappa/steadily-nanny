@@ -232,10 +232,23 @@ restarts.
 
 ## D15 — Hours has no week navigation; past weeks are unviewable
 
-**Status:** FIXED (unverified on device) · **Severity:** medium-high — missing core functionality
+**Status:** REOPENED — first fix was a fake green · **Severity:** medium-high
 
-Fixed: `addWeeks` plus previous/next controls on `WeekTotal`, with forward
-navigation disabled at the current week.
+**A first attempt was marked fixed and was not.** `addWeeks` and previous/next
+controls were added to `WeekTotal`, and `WeekTotal.test.tsx` passed — because it
+handed `onPreviousWeek`/`onNextWeek` mocks straight to the component. Nothing in
+the app ever passes them: `WeekTotal:39` renders the chevrons only when both
+callbacks are present, neither `ParentWeekView` nor `NannyWeekView` supplies
+them, and `HoursScreen` still has no week-offset state at all.
+
+Caught on the device, not in review. My own source verification confirmed the
+props existed on the component and never checked that a caller passed them —
+which is the same mistake the test made, one level up.
+
+**The lesson is the defect.** A component test that feeds mocks directly to a
+component proves the component works in isolation. It cannot detect that nobody
+calls it. Any fix here must include a test that renders the real `HoursScreen`
+and asserts the controls are present and change the week actually requested.
 
 `HoursScreen.tsx` hardcodes `weekStartISO` to the current week. There is no
 week-picker, no previous/next control, nothing. Grepped the whole timesheet
@@ -252,6 +265,68 @@ missing fixture route was the symptom; the absent week navigation is the defect.
 
 Same shape as D9: the screen works, its tests pass, and it is simply missing the
 means to reach most of its own data.
+
+---
+
+## D17 — A phantom running timer survives any app resume
+
+**Status:** IN PROGRESS · **Severity:** high
+
+Found by an adversarial follow-up after D7 passed — asking "what else could leave
+this card lying?" rather than stopping at a green check.
+
+After an ordinary clock-in then clock-out, both succeeding server-side, simply
+backgrounding and foregrounding the app leaves Today showing "You're on the
+clock" with a live-ticking timer, indefinitely. `GET /time-entries/running`
+never fires again. Only a true kill-and-relaunch clears it.
+
+Cause: `useRunningTimeEntry` sets no `refetchOnMount: 'always'` and no focus
+refetch, while `queryClient.ts` globally sets `refetchOnWindowFocus: false`. The
+Tabs navigator keeps Today mounted across a resume, so the observer never
+remounts and never revalidates.
+
+Distinct from D7, whose fix added revalidation only on the 409 *error* path.
+Nothing revalidates on ordinary resume — and phones background constantly, so
+this is the common case, not an edge case. The app tells a nanny she is on the
+clock when she is not, and the ticking timer actively lies.
+
+---
+
+## D18 — `scheduled_minutes` is structurally unreachable
+
+**Status:** IN PROGRESS · **Severity:** medium
+
+Never populated in any run, and not for want of trying — it *cannot* be:
+
+- `ClockInCard` only ever sends `{ household_id }`. No `shift_id` is sent from
+  anywhere in the mobile app; no shift-specific clock-in affordance exists,
+  including on the shifts list.
+- `timesheetCommandService.clockIn()` writes whatever `shift_id` arrives (always
+  null) and does no matching against confirmed shifts.
+
+So every clock-in is recorded as ad-hoc and the scheduled-vs-actual comparison
+the schema was built for never happens. Migration 017 freezes `scheduled_minutes`
+at clock-out specifically so a timesheet preserves the agreement as it stood —
+that entire design is currently inert.
+
+Initially assumed to be a test-timing problem (Saturday against a Mon/Wed
+pattern). It was not; a seeded shift for today proved the path doesn't exist.
+
+**Fixed** by auto-matching server-side on clock-in: same carer, same household,
+confirmed shift within ±2h of the clock-in instant. Ad-hoc clock-ins are
+unchanged (no match → `shift_id` stays null), and an explicitly supplied
+`shift_id` still goes through `assertShiftBelongsToCarer`, so auto-matching
+cannot become a new route to D12's attack — it only ever selects from shifts
+already scoped to that carer and household.
+
+Two judgement calls worth preserving. `household.short_notice_hours` was
+deliberately **rejected** as the window: it means "how far in advance counts as
+short notice for cancellation pay" and can span days, which would let a carer
+clock in hours early and still match — the exact false positive the window
+exists to prevent. The rejection is documented in the code so nobody later
+"fixes" it into using that field. And ties resolve deterministically (nearest
+start, then earlier start, then lower id) rather than arbitrarily, because a
+non-deterministic match would attach hours to a different shift on a retry.
 
 ---
 
@@ -340,6 +415,66 @@ workflow have to be the same thing, or one of them is decorative.
 
 ---
 
+# Action item for the account owner — leaked password protection is OFF
+
+Supabase's security advisor flags `auth_leaked_password_protection` as disabled
+on project `dylhrlvfkibipdkguptz`. It is genuinely off, and it is not a migration
+— it's an Auth-service setting (Dashboard → Authentication → Policies → Password
+Security, or the Management API).
+
+**Deliberately not changed.** Altering security settings on someone's account is
+theirs to authorise. Enabling it makes Supabase check new passwords against known
+breach corpora, which is worth having on an app holding families' schedules and
+children's names.
+
+Everything else the advisors flagged was either deliberate architecture or not
+worth acting on — see the audit summary below.
+
+---
+
+# Database advisor audit — what was checked and dismissed
+
+Ran Supabase's security and performance advisors against the live project and
+verified findings against `pg_policies` / `pg_proc` / `pg_indexes` directly
+rather than trusting the migration files.
+
+**Dismissed as deliberate design** (recorded so nobody "fixes" them):
+- Four tables with RLS enabled and zero policies (`app_config`, `email_log`,
+  `job_runs`, `user_beta_overrides`) — that combination is deny-all, the correct
+  locked-down state for backend-only tables. Confirmed no client path exists.
+- Ten "unused" indexes — `idx_scan = 0` reflects a project one day old with no
+  real traffic, not dead weight. Dropping them would regress the exact query each
+  was built for the moment usage starts.
+- Redundant permissive policies on seven tables — a `for select` read policy
+  paired with a `for all` write policy means Postgres ORs both on every read.
+  Harmless (a parent is always also a member) and fixing it properly means
+  splitting every write policy into scoped insert/update/delete across the
+  codebase. A convention decision, not a drive-by.
+
+**Confirmed healthy:** migration 013's fix holds — the only SECURITY DEFINER
+functions executable by `anon`/`authenticated` are the four household helpers
+009/011/012 deliberately grant, each self-scoped. The trigger functions and cron
+accessors are correctly ungranted. The RLS helper index
+(`household_members_user_household_idx`) exists and is the one the helpers probe
+on every policy evaluation.
+
+**Real, written but deliberately not applied yet:**
+`supabase/migrations/018_optimize_rls_initplan.sql` rewrites 18 policies from
+`auth.uid()` to `(select auth.uid())`, so it evaluates once per statement rather
+than once per row, and adds `timesheets_carer_id_idx`. Behaviour-identical.
+Held back from the live database until device testing and the screenshot tour
+finish — this project has already had one incident (012) where a policy change
+broke every RLS check, and the performance benefit is negligible at current
+scale. Applying it mid-test risks the only thing in flight and buys nothing.
+
+Two properties nobody had written down: `shift_events` has no INSERT policy
+either, not merely no update/delete — stricter than append-only, so not even a
+parent can write a day-thread entry outside the service role. And
+`shift_change_requests` is SELECT-only because accept/counter/cancel/split is
+not built yet — an unbuilt feature, not a gap.
+
+---
+
 # Open product question — not a defect
 
 **Time entries are household-scoped, not carer-scoped.**
@@ -402,6 +537,46 @@ choice rather than an oversight, and can delete or adopt them on purpose.
 
 ---
 
+## D17 — Phantom running timer survives app resume
+
+**Status:** FIXED (unverified on device) · **Severity:** high
+
+After a normal clock-in then clock-out — both succeeding server-side — simply
+backgrounding and foregrounding the app left the Today card showing "you're on
+the clock" with a live-ticking timer, indefinitely. `GET /time-entries/running`
+never fired again; only a full kill-and-relaunch fixed it.
+
+Root cause was three things compounding, not one:
+
+1. The Tabs navigator keeps the Today screen mounted across a background/
+   foreground cycle, so `useRunningTimeEntry`'s query observer never remounts
+   and `refetchOnMount` never has a chance to fire.
+2. `src/lib/network.ts`'s `setupNetworkManagers()` — called once at app start
+   in `_layout.tsx` — already wires TanStack's `focusManager` to `AppState`
+   specifically to cover this case; its own header comment says so
+   ("enabling refetch-on-focus").
+3. But `queryClient.ts`'s global default set `refetchOnWindowFocus: false`
+   ("app-focus refetches are noisy + costly on RN"), which silently disabled
+   that wiring for every query in the app. The bridge in (2) fired on every
+   resume and did nothing, because (3) had switched off the one thing it was
+   built to trigger — both pieces landed in the same commit (Phase 1/Wave 2)
+   without being reconciled against each other.
+
+**Fix:** flipped `refetchOnWindowFocus` to `true` globally in `queryClient.ts`,
+rather than overriding it on just the running-entry query. The same latent
+staleness bug applies to every query in the app, not only this one, so a
+narrow fix would have left the class of bug in place; the "noisy" worry
+doesn't hold up in practice because a focus refetch still only fires for a
+query whose own `staleTime` has actually elapsed (`useRunningTimeEntry` keeps
+its existing 30s `staleTime`), so a quick app-switch-and-back refetches
+nothing. Covered by `queryClient.test.ts` (locks the default) and
+`ClockInCard.resume.test.tsx` (end-to-end: an `AppState` transition to
+`active` refetches a stale running entry and clears the card/timer once the
+server says clocked out; a fresh, non-stale entry is left alone on the same
+transition, proving no request storm).
+
+---
+
 ## Test fixtures seeded to unblock the two unexercised paths
 
 `scripts/seed-e2e-approval-fixtures.ts` — idempotent, verified by running twice
@@ -437,6 +612,17 @@ storage. This was the single most likely silent bug in the scheduling model.
 **Cross-household anonymity.** A canary household/child named `LEAKCANARY...`
 never surfaced on any parent screen — checked visually and via
 `inspect_view_hierarchy` across every parent screen reached.
+
+**Metro `ENOENT` on `(private)/schedule/index.tsx`.** Looked alarming — a deleted
+route apparently breaking the bundler — and was investigated as a possible
+committed dangling reference. It is not. That file was deliberately removed in
+`6eb80b0` to resolve a route collision (the canonical `/schedule` is now
+`(private)/(tabs)/schedule.tsx`, whose header documents the removal). Nothing
+committed references the bare `/schedule` index; `.expo/` is gitignored at both
+levels; and `bun run dev` already runs `expo start -c`. The crash came from a
+Metro process started *before* that commit holding a stale route manifest, and a
+plain restart is self-correcting. Recorded so a similar-looking `ENOENT` isn't
+mistaken for a real defect later.
 
 **Timesheet auto-approving on clock-out.** Suspected, investigated, dismissed.
 The approval at `20:28:24` preceded the E2E's schedule send at `20:48:17`; it was

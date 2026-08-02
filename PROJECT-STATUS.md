@@ -1,19 +1,22 @@
 # PROJECT-STATUS.md
 
-Handoff document for Steadily Nanny. Written at the end of Wave 0 (foundation
-setup) so a fresh agent or engineer can pick the project up cold. No claims
-here about work outside Wave 0 unless it was directly observable in the
-working tree at the time this was written (2026-08-01).
+Handoff document for Steadily Nanny. Originally written at the end of Wave 0
+(foundation setup); kept current since through Wave 1 (the 1a/1b/1c/1h spine),
+Wave 2, and Wave 3 (an eighteen-defect adversarial sweep — §4g). Sections below
+still marked "Wave 0" describe what was true then; read §4g for the current
+picture of what's actually verified versus merely built.
 
-**Wave 0 is complete.** `bun run qc` from the repo root is green:
-mobile 311 pass / 0 fail, API 35 pass / 0 fail, lint + format + typecheck clean
-on both. `packages/shared-types` adds 32 pass / 0 fail (its suite is not part of
-`qc` — run it separately from that directory).
+**Committed through `6eb80b0`** ("Wave 3: sixteen-defect sweep —
+authorization, state integrity, reachability"), the current `main` HEAD as of
+2026-08-02. Earlier revisions of this document said "nothing is committed" —
+that was true for Wave 0 only; every wave since has landed on `main`. The
+working tree currently has a handful of uncommitted files, all belonging to
+defects still being fixed live (§4g: D15, D17, D18) — check `git status`
+before assuming a clean baseline, but do not assume an *empty* one either.
 
-**Nothing is committed.** The entire wave sits uncommitted in the working tree
-(~170 changed files plus the untracked font binaries and migrations `009`–`016`).
-Committing was deliberately left to the human. If you are picking this up cold,
-check `git status` before assuming a clean baseline.
+**Wave 0 was complete** with `bun run qc` green (mobile 311/0, API 35/0,
+`packages/shared-types` 32/0 separately) and nothing yet committed. That
+baseline is superseded by everything below.
 
 ## 1. What this is
 
@@ -120,6 +123,12 @@ Three fields. No household, no child, no note — and the deliberately-planted
 `LEAKCANARY` strings appear nowhere. Separately, at the RLS floor the parent sees
 1 household and 1 child; the nanny sees both households by name. Both halves of
 the promise hold.
+
+**Read this table as "the happy path works," not "the app is solid."** It
+predates the Wave 3 defect sweep (§4g), which found eighteen real defects —
+three of them cross-household authorization holes — in code this exact table
+called PASS. A green functional-flow run and a green unit suite both missed
+things an adversarial pass caught. §4g is the more current picture.
 
 ### Flow-by-flow status
 
@@ -533,27 +542,25 @@ which flows have not happened yet rather than failing confusingly.
 
 ## 4f. Known functional gaps (real, not polish)
 
-Ordered by how much they hurt. These are things the product needs, not
-nice-to-haves, and none is blocked on anything external.
+This list was written before the Wave 3 defect sweep (§4g) and is kept here,
+corrected, because it's still the right shape for "things the product needs
+that aren't bugs." For actual defects (broken behavior, not missing behavior),
+see §4g and `docs/DEFECT-LOG.md`.
 
-1. **No way to build a second schedule.** `SchedulePendingScreen`'s `accepted`
-   branch offers only "View shifts". Once a pattern is accepted the parent can
-   never propose another, so the app works for exactly one week and then goes
-   read-only. Fix: a second CTA next to `schedule-pending-view-shifts` routing
-   to `/schedule/build` — keep both, since viewing is the common action.
-   Worth knowing: the behaviour this unlocks already exists and is tested. The
-   idempotent re-materialiser overwrites untouched future shifts while
-   preserving anything completed, cancelled, manually edited, or **clocked
-   into**. Only the UI affordance is missing.
+1. ~~No way to build a second schedule~~ — **RESOLVED (D5).**
+   `schedule-pending-change-week` now routes from `accepted` back into the
+   builder, confirmed live on device (`docs/screenshots/TOUR-PLAN.md`).
 2. **Draft resume.** `schedule-pending-continue-cta` always starts a fresh
-   wizard rather than reopening the saved draft's days.
+   wizard rather than reopening the saved draft's days. Still open — not part
+   of the defect sweep.
 3. **No scheduled job rolls the materialisation horizon forward.** Shifts
    materialise once, on acceptance, for 84 days. An accepted pattern silently
-   stops producing shifts after that.
-4. **Timesheet status on a late clock-out.** Hours landing in an
-   already-`approved` week leave that week's status untouched rather than
-   reopening it — deliberately, but it is an unresolved human-reconciliation
-   case rather than a designed answer.
+   stops producing shifts after that. Still open — not part of the defect
+   sweep.
+4. ~~Timesheet status on a late clock-out~~ — **RESOLVED (D1).** An
+   `approved`/`queried` timesheet now reopens to `submitted` (and clears
+   `approved_by`/`approved_at`) when new hours land in that week, rather than
+   silently absorbing them under a stale approval. See §4g.
 
 ### Things that are done and worth not re-litigating
 
@@ -568,8 +575,125 @@ nice-to-haves, and none is blocked on anything external.
 - A shift with a `time_entries` row is **never** rewritten by re-materialisation.
 - Only one `running` time entry per carer, enforced by a partial unique index;
   the API returns `metadata.reason === 'ALREADY_CLOCKED_IN'` rather than a 500.
+  **That was always true server-side.** What was NOT true until D7 (§4g): the
+  mobile client mishandled that response — the 409 escaped as an unhandled
+  promise rejection, and the Today screen fell back to showing "Clock in"
+  while the nanny was, in fact, on the clock. Fixed, unit-tested; not yet
+  re-verified live on device (see the verification-status note in §4g).
 - `scheduled_minutes` is frozen at clock-out so a later shift edit cannot
-  rewrite what someone was owed.
+  rewrite what someone was owed — **but as of this writing it is never
+  actually populated**, because nothing in the mobile client sends a
+  `shift_id` on clock-in. See D18 in §4g.
+
+## 4g. Wave 3 — the eighteen-defect adversarial sweep (2026-08-01/02)
+
+Full detail lives in `docs/DEFECT-LOG.md` — eighteen defects (D1–D18, numbered
+non-sequentially as they were found), most fixed, three still in flight as of
+this writing. This section is the summary: the *themes*, and what "fixed"
+actually means for each one, not a restated list.
+
+**How it was found.** Not by writing new features and testing them in
+isolation — by running the existing, already-"done," already-green-tested app
+against the live simulator and live database and trying to break it on
+purpose: double-tapping buttons, backgrounding the app mid-flow, changing ids
+in requests, reading raw database rows instead of trusting the screen. Nearly
+every defect here was invisible to the happy-path E2E run in §3 and to unit
+tests written for the feature that shipped it.
+
+### Three themes, not eighteen unrelated bugs
+
+**1. Authorization holes where the service layer is the only real gate
+(D12, D13, D14 — all high severity, all FIXED).** Repositories in this app run
+as the Supabase service role and bypass RLS entirely — a deliberate
+architectural choice (§4b), which means RLS is a backstop, not a check. Three
+places accepted a client-supplied id (`shift_id`, `carer_id`, `child_id`) and
+used it with no ownership/membership validation: a time entry could attach to
+a stranger's shift and permanently lock it as "clocked into," a schedule
+pattern could be assigned to an arbitrary non-member, and a pattern could
+reference another household's child, leaking that child into the wrong
+family's shift data. All three are now the same shape of fix —
+`assertXBelongsToY`-style checks before the write, collapsing "doesn't exist"
+and "not yours" into one error so existence isn't leaked — mirroring a pattern
+(`ChildQueryService.getOwned`) that already existed elsewhere and simply
+wasn't applied consistently.
+
+**2. State-integrity bugs — the UI or the database asserted something false
+(D1, D6, D7, D8, D17; D11 is the same failure mode one step removed).** An
+approved timesheet silently absorbed more hours without losing its "approved"
+claim (D1). A weekly total was a blindly-incremented counter, not idempotent
+under a retried clock-out (D6). A double-tapped Clock-in left the client
+believing — and telling the nanny — she was clocked out while the server had
+her on the clock and accruing paid hours (D7, the highest-severity defect of
+the run). The same missing-rejection-handler shape recurred on the parent's
+Approve/Query buttons (D8) and on schedule-send's error path, which also
+orphaned a draft pattern rather than surfacing the id it had already created
+(D11). Newest of this group: simply backgrounding and foregrounding the app
+after an ordinary clock-out leaves a phantom "on the clock" timer running
+indefinitely, because nothing revalidates on resume (D17) — distinct from D7,
+whose fix only added revalidation on the *error* path. **The throughline:**
+on an app whose entire pitch is an honest record of what happened, an
+optimistic or stale client state that contradicts the server is the worst
+category of bug this product can have, because it's silent by construction.
+
+**3. Screens that work, pass their tests, and simply cannot be reached
+(D9, D15, D18 in part; D10 by deliberate choice).** `ChildrenScreen`,
+`InviteScreen`, and `AvailabilityScreen` all rendered correctly and were
+covered by tests — but were wired only into first-run onboarding, with no
+route back to any of them afterward (D9, confirmed fixed live: new
+`/settings/*` routes, role-gated, both roles verified with real testIDs on
+device). `scheduled_minutes` — the whole scheduled-vs-actual comparison the
+schema was built for — can never populate, not from a timing fluke but
+structurally: no clock-in affordance anywhere in the mobile app sends a
+`shift_id` (D18, fix direction is server-side auto-matching; in flight).
+`AnnouncementModal`/`SoftUpdateBanner` are the deliberate-not-a-bug version of
+this same shape — built, exported, correctly implemented, and intentionally
+never mounted (D10, OPEN by choice, not scheduled to change).
+
+### Verified on the device vs. only unit-tested — the most important distinction in this document
+
+Green tests and green `bun run qc` are necessary and not sufficient. Two
+concrete failures from this run show why, and the second is the most
+instructive thing to come out of the whole sweep:
+
+- **D15 is the sharpest lesson.** A first fix added `addWeeks` and
+  previous/next chevrons to `WeekTotal`, and `WeekTotal.test.tsx` passed —
+  because the test handed `onPreviousWeek`/`onNextWeek` mocks *straight to the
+  component under test*. That proves the component works in isolation. It
+  cannot prove anything calls it. Nothing did: neither `ParentWeekView` nor
+  `NannyWeekView` passed those props, `HoursScreen` had no week-offset state
+  at all, and the defect was marked FIXED anyway — on the strength of a green
+  unit test — until a live device pass caught it and it was **REOPENED**. The
+  fix for D9 above has the identical shape (screens that work in isolation
+  but are unreachable), which is why D9's own device re-verification was done
+  with real testIDs on a real simulator rather than trusted from its tests.
+- **The device pass changed the confidence level of several "fixed"
+  defects, not just found new ones.** `docs/screenshots/TOUR-PLAN.md`
+  (Revision 3, live device regression) confirms D2, D3, D4, D5, and D9 as
+  **CONFIRMED PASS on device** with real testIDs and real data — genuinely
+  solid, not just unit-green. By contrast, D7 (this agent's own fix), D8,
+  D11, D16 are code-reviewed/unit-tested/exit-code-verified but **not yet
+  re-exercised through the UI**; D17 and D18 have fixes dispatched but are
+  still IN PROGRESS as of this writing. Treat `docs/DEFECT-LOG.md`'s status
+  column as the live source of truth — it will have moved past this snapshot.
+
+### What remains, as of this writing
+
+- **D15** (Hours week navigation) — REOPENED, being re-fixed with the lesson
+  above applied: any real fix needs a test that renders the actual
+  `HoursScreen`/`ParentWeekView`/`NannyWeekView` and asserts the controls are
+  wired, not a component test that hands the component its own props.
+- **D17** (phantom running timer on app resume) — IN PROGRESS.
+- **D18** (`scheduled_minutes` structurally unreachable) — IN PROGRESS.
+- **The screenshot tour** — partially done. `docs/screenshots/` has an
+  earlier, partial capture; `docs/screenshots/TOUR-PLAN.md` is a live-verified
+  plan for a fuller pass, explicitly written to hold until D15/D17/D18 land
+  so it doesn't capture states that are about to change. Not yet executed.
+- **Open product question, not a defect:** time entries are
+  household-scoped, not carer-scoped — in a household with two nannies,
+  either can see the other's exact clock times and notes. This matches the
+  RLS policy exactly, so it reads as a deliberate data-model choice rather
+  than an oversight, and narrowing it is a product call, not an engineering
+  one. Recorded in `docs/DEFECT-LOG.md`, not changed unilaterally.
 
 ## 5. Deliberate omissions
 
@@ -679,19 +803,34 @@ Human action items still required before a clean boot:
 
 ## 9. Next agent: start here
 
-1. Read `/Users/prashanthhalappa/.claude/plans/i-want-to-build-elegant-bengio.md` —
-   the full approved implementation plan for this app.
-2. Read `CLAUDE.md` at the repo root — required-reading doc map, toolchain
+**Wave 1 (the spine below) is done — schedule, timesheet, today, availability,
+child, and household domains all exist in both apps, committed through
+`6eb80b0`.** The step-by-step build order that used to live in this section is
+now history, not a forward pointer; if you want it for reference (or are
+porting this pattern to build the *next* domain the same way), it's preserved
+below. If you're picking this project up right now, the actual next work is:
+
+1. **Read `docs/DEFECT-LOG.md`, then §4g above.** Three defects are still in
+   flight (D15, D17, D18) and DEFECT-LOG.md's status column is the live
+   source of truth — more current than this document by the time you read it.
+2. **`docs/screenshots/TOUR-PLAN.md`** is a live-verified, ready-to-execute
+   screenshot plan, deliberately held until D15/D17/D18 land so it doesn't
+   capture states that are about to change. Once they do, executing it is the
+   next concrete task.
+3. Read `CLAUDE.md` at the repo root — required-reading doc map, toolchain
    rules, and the widget-vertical-slice pattern to copy for new features.
-3. Read `GOLDEN-FIXES.md` — hard-won production bugs and their fixes; check
+4. Read `GOLDEN-FIXES.md` — hard-won production bugs and their fixes; check
    it before touching any area it lists (NativeWind + Reanimated, Sora font
-   weights, bare `<Modal>`, `client.ts` auth injection). Ignore the RevenueCat
-   paywall-readiness entry; that layer no longer exists here.
+   weights, bare `<Modal>`, `client.ts` auth injection, and now also #22/D16's
+   Biome nested-config note). Ignore the RevenueCat paywall-readiness entry;
+   that layer no longer exists here.
 
-### Wave 1 — the spine (1a, 1b, 1c + Today + the four views)
+### Historical: Wave 1's build order (already executed — kept for reference)
 
-The schema is done, so Wave 1 is services and screens, not design. Suggested
-order, because each step unblocks the next:
+The schema was done going into Wave 1, so Wave 1 was services and screens, not
+design. This was the suggested order, because each step unblocked the next —
+useful now mainly as a model for adding the *next* domain (1d–1k, 2a–2d) the
+same way:
 
 1. **Shared contract first.** One file per domain under
    `packages/shared-types/src/schemas/` — `household`, `child`, `schedule`,
@@ -710,6 +849,11 @@ order, because each step unblocks the next:
      household", so existence is not leaked to a non-member.
    - Role checks live in the service, one line at the top of each command
      method. This is the slot the deleted entitlement gate used to occupy.
+   **Caveat added after Wave 3:** this dependency-order build got the shape
+   right but not the validation — D12/D13/D14 (§4g) show that "ownership
+   checked at read time" was not enough; every WRITE that accepts a
+   client-supplied foreign id (`shift_id`, `carer_id`, `child_id`) needs its
+   own explicit membership/ownership check, since repositories bypass RLS.
 3. **The recurrence expander is the one piece of real algorithmic work.**
    Write it test-first from a case table before any implementation. Required
    cases, all `Europe/London`: 8am in Feb (GMT) → `08:00Z`; 8am in July (BST) →
@@ -734,6 +878,10 @@ order, because each step unblocks the next:
    `bun expo install` (never `bun add`, never `npx expo install`). The template
    only ever `.map()`s inside a `ScrollView`, which will not hold up for four
    dense calendar surfaces.
+   **Caveat added after Wave 3:** a component that renders correctly and is
+   covered by tests is not the same as a component anything actually calls —
+   D9, D15 (§4g). Wire the screen into real navigation and verify on device
+   before calling a flow done.
 
 ### Open decisions for a human, not for an agent
 

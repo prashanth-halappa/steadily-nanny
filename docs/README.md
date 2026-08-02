@@ -54,7 +54,7 @@ Genericized, ready to adapt. Swap `@steadily-nanny/*`, bundle IDs (`com.jetto.st
 
 ```
 templates/
-├── root-package.json   bunfig.toml   biome.json   turbo.json   qc.sh   ci.yml
+├── root-package.json   bunfig.toml   biome.json.template   turbo.json   qc.sh   ci.yml
 ├── shared/   widget.schema.ts                         ← the cross-app contract (Zod + inferred types)
 ├── api/      tsconfig.json  bunfig.toml  env.ts  app.ts  baseRepository.ts  run-tests-one-file.sh
 │             feature-repository.ts  feature-service.ts  feature-controller.ts  feature-routes.ts

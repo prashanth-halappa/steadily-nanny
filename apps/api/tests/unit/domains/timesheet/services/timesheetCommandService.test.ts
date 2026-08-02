@@ -127,6 +127,9 @@ function makeHouseholdRepo(overrides: Record<string, unknown> = {}): any {
 function makeShiftRepo(overrides: Record<string, unknown> = {}): any {
   return {
     findById: mock(async () => shift),
+    // Empty by default — a test that wants auto-match to find a candidate
+    // must say so explicitly, so "no match" is never accidental.
+    findByHouseholdAndRange: mock(async () => []),
     ...overrides,
   };
 }
@@ -345,9 +348,9 @@ describe('TimesheetCommandService.clockIn', () => {
     expect(timeEntryRepo.clockIn).not.toHaveBeenCalled();
   });
 
-  it('does not look up a shift at all for an ad-hoc clock-in (no shift_id)', async () => {
+  it('never calls the ownership check (findById) for an ad-hoc clock-in — it attempts auto-match instead', async () => {
     const timeEntryRepo = makeTimeEntryRepo();
-    const shiftRepo = makeShiftRepo();
+    const shiftRepo = makeShiftRepo(); // default: findByHouseholdAndRange -> []
     const svc = new TimesheetCommandService(
       timeEntryRepo,
       makeTimesheetRepo(),
@@ -360,7 +363,223 @@ describe('TimesheetCommandService.clockIn', () => {
     await svc.clockIn('carer-1', { household_id: 'h1' });
 
     expect(shiftRepo.findById).not.toHaveBeenCalled();
-    expect(timeEntryRepo.clockIn).toHaveBeenCalled();
+    expect(shiftRepo.findByHouseholdAndRange).toHaveBeenCalled();
+    expect(timeEntryRepo.clockIn).toHaveBeenCalledWith(
+      expect.objectContaining({ shift_id: null })
+    );
+  });
+});
+
+// The seeded confirmed shift this suite reasons against, matching the real
+// fixture used for device/manual verification: id cc667c55-d795-4666-9950-
+// ca3450632a18, 08:00-17:00 Europe/London, household 5d4b0b70-edd9-4218-
+// b7df-a28d234f7e06, carer fd50487c-f94c-4568-b2e5-8836e407886c.
+const seededShift = {
+  ...shift,
+  id: 'cc667c55-d795-4666-9950-ca3450632a18',
+  household_id: '5d4b0b70-edd9-4218-b7df-a28d234f7e06',
+  carer_id: 'fd50487c-f94c-4568-b2e5-8836e407886c',
+  starts_at: '2026-08-03T07:00:00.000Z', // 08:00 Europe/London (BST, UTC+1)
+  ends_at: '2026-08-03T16:00:00.000Z', // 17:00 Europe/London
+};
+
+/** The instant used across the auto-match suite: 07:40 UTC on the seeded shift's day, 20 min before its 08:00 Europe/London start. */
+const clockInInstant = new Date('2026-08-03T07:40:00.000Z');
+
+function makeAutoMatchService(
+  timeEntryRepo: ReturnType<typeof makeTimeEntryRepo>,
+  shiftRepo: ReturnType<typeof makeShiftRepo>
+): TimesheetCommandService {
+  return new TimesheetCommandService(
+    timeEntryRepo,
+    makeTimesheetRepo(),
+    makeMemberRepo({
+      findActiveMembership: mock(async () => ({
+        id: 'm1',
+        household_id: seededShift.household_id,
+        user_id: seededShift.carer_id,
+        role: 'nanny',
+      })),
+    }),
+    makeHouseholdRepo(),
+    shiftRepo,
+    makeQueries()
+  );
+}
+
+describe('TimesheetCommandService.clockIn — auto-match to a confirmed shift', () => {
+  it('matches a confirmed shift when the carer clocks in 20 minutes early (within the 2h tolerance)', async () => {
+    const timeEntryRepo = makeTimeEntryRepo();
+    const shiftRepo = makeShiftRepo({
+      findByHouseholdAndRange: mock(async () => [seededShift]),
+    });
+    const svc = makeAutoMatchService(timeEntryRepo, shiftRepo);
+
+    await svc.clockIn(
+      seededShift.carer_id,
+      { household_id: seededShift.household_id },
+      () => clockInInstant
+    );
+
+    expect(timeEntryRepo.clockIn).toHaveBeenCalledWith(
+      expect.objectContaining({ shift_id: seededShift.id })
+    );
+  });
+
+  it('leaves shift_id null when the only shift in range belongs to a different carer', async () => {
+    const timeEntryRepo = makeTimeEntryRepo();
+    const shiftRepo = makeShiftRepo({
+      findByHouseholdAndRange: mock(async () => [
+        { ...seededShift, carer_id: 'someone-else' },
+      ]),
+    });
+    const svc = makeAutoMatchService(timeEntryRepo, shiftRepo);
+
+    await svc.clockIn(
+      seededShift.carer_id,
+      { household_id: seededShift.household_id },
+      () => clockInInstant
+    );
+
+    expect(timeEntryRepo.clockIn).toHaveBeenCalledWith(
+      expect.objectContaining({ shift_id: null })
+    );
+  });
+
+  it('leaves shift_id null when the only shift in range is not confirmed (e.g. pending)', async () => {
+    const timeEntryRepo = makeTimeEntryRepo();
+    const shiftRepo = makeShiftRepo({
+      findByHouseholdAndRange: mock(async () => [
+        { ...seededShift, status: 'pending' },
+      ]),
+    });
+    const svc = makeAutoMatchService(timeEntryRepo, shiftRepo);
+
+    await svc.clockIn(
+      seededShift.carer_id,
+      { household_id: seededShift.household_id },
+      () => clockInInstant
+    );
+
+    expect(timeEntryRepo.clockIn).toHaveBeenCalledWith(
+      expect.objectContaining({ shift_id: null })
+    );
+  });
+
+  it('leaves shift_id null (an ad-hoc clock-in is legitimate) when findByHouseholdAndRange returns nothing in range', async () => {
+    const timeEntryRepo = makeTimeEntryRepo();
+    const shiftRepo = makeShiftRepo(); // default: []
+    const svc = new TimesheetCommandService(
+      timeEntryRepo,
+      makeTimesheetRepo(),
+      makeMemberRepo(),
+      makeHouseholdRepo(),
+      shiftRepo,
+      makeQueries()
+    );
+
+    await svc.clockIn('carer-1', { household_id: 'h1' });
+
+    expect(timeEntryRepo.clockIn).toHaveBeenCalledWith(
+      expect.objectContaining({ shift_id: null })
+    );
+  });
+
+  it('resolves multiple in-range confirmed candidates deterministically — picks the one whose start is nearest the clock-in instant', async () => {
+    const instant = new Date('2026-08-03T07:50:00.000Z');
+    const nearShift = {
+      ...seededShift,
+      id: 'near-shift',
+      starts_at: '2026-08-03T08:00:00.000Z', // 10 min away
+    };
+    const farShift = {
+      ...seededShift,
+      id: 'far-shift',
+      starts_at: '2026-08-03T09:30:00.000Z', // 100 min away
+    };
+    const timeEntryRepo = makeTimeEntryRepo();
+    const shiftRepo = makeShiftRepo({
+      // Deliberately out of order — nearest-wins must not depend on array order.
+      findByHouseholdAndRange: mock(async () => [farShift, nearShift]),
+    });
+    const svc = makeAutoMatchService(timeEntryRepo, shiftRepo);
+
+    await svc.clockIn(
+      seededShift.carer_id,
+      { household_id: seededShift.household_id },
+      () => instant
+    );
+
+    expect(timeEntryRepo.clockIn).toHaveBeenCalledWith(
+      expect.objectContaining({ shift_id: 'near-shift' })
+    );
+  });
+
+  it('breaks an exact-distance tie deterministically by the earlier starts_at', async () => {
+    const instant = new Date('2026-08-03T08:00:00.000Z');
+    const earlierShift = {
+      ...seededShift,
+      id: 'earlier-shift',
+      starts_at: '2026-08-03T07:30:00.000Z', // 30 min before instant
+    };
+    const laterShift = {
+      ...seededShift,
+      id: 'later-shift',
+      starts_at: '2026-08-03T08:30:00.000Z', // 30 min after instant
+    };
+    const timeEntryRepo = makeTimeEntryRepo();
+    const shiftRepo = makeShiftRepo({
+      findByHouseholdAndRange: mock(async () => [laterShift, earlierShift]),
+    });
+    const svc = makeAutoMatchService(timeEntryRepo, shiftRepo);
+
+    await svc.clockIn(
+      seededShift.carer_id,
+      { household_id: seededShift.household_id },
+      () => instant
+    );
+
+    expect(timeEntryRepo.clockIn).toHaveBeenCalledWith(
+      expect.objectContaining({ shift_id: 'earlier-shift' })
+    );
+  });
+
+  it('does NOT match a shift more than the 2h tolerance away — clocking in at 22:00 never matches tomorrow 08:00', async () => {
+    const instant = new Date('2026-08-02T22:00:00.000Z');
+    const tomorrowShift = {
+      ...seededShift,
+      id: 'tomorrow-shift',
+      starts_at: '2026-08-03T07:00:00.000Z', // 9h away — outside tolerance
+      ends_at: '2026-08-03T16:00:00.000Z',
+    };
+    const timeEntryRepo = makeTimeEntryRepo();
+    const shiftRepo = makeShiftRepo({
+      // The repo call itself is scoped by the service's from/to window, so a
+      // real DB would never return this shift — but even if it did (e.g. a
+      // wider mock), the service still must not pick it.
+      findByHouseholdAndRange: mock(async () => [tomorrowShift]),
+    });
+    const svc = makeAutoMatchService(timeEntryRepo, shiftRepo);
+
+    await svc.clockIn(
+      seededShift.carer_id,
+      { household_id: seededShift.household_id },
+      () => instant
+    );
+
+    expect(timeEntryRepo.clockIn).toHaveBeenCalledWith(
+      expect.objectContaining({ shift_id: null })
+    );
+    const [householdArg, from, to] =
+      shiftRepo.findByHouseholdAndRange.mock.calls[0];
+    expect(householdArg).toBe(seededShift.household_id);
+    // The requested window must exclude the 07:00 next-day shift.
+    expect(new Date(to).getTime()).toBeLessThan(
+      new Date(tomorrowShift.starts_at).getTime()
+    );
+    expect(new Date(from).getTime()).toBe(
+      instant.getTime() - 2 * 60 * 60 * 1000
+    );
   });
 });
 
@@ -414,6 +633,39 @@ describe('TimesheetCommandService.clockOut', () => {
         carer_id: 'carer-1',
         week_start: '2026-08-03', // Monday
         total_minutes: 450, // sumWorkedMinutes([finishedEntryA])
+        status: 'submitted',
+      })
+    );
+  });
+
+  it('leaves scheduled_minutes null at clock-out for a genuinely ad-hoc entry (no matched shift)', async () => {
+    const timeEntryRepo = makeTimeEntryRepo({
+      listForCarerWeek: mock(async () => [finishedEntryA]),
+    });
+    const shiftRepo = makeShiftRepo();
+    const svc = new TimesheetCommandService(
+      timeEntryRepo,
+      makeTimesheetRepo(),
+      makeMemberRepo(),
+      makeHouseholdRepo(),
+      shiftRepo,
+      makeQueries({
+        getOwnedTimeEntry: mock(async () => ({
+          ...runningEntry,
+          shift_id: null,
+        })),
+      })
+    );
+
+    await svc.clockOut('carer-1', 't1', { break_minutes: 30 });
+
+    // No shift to freeze from, so freezeScheduledMinutes never even needs to
+    // look one up.
+    expect(shiftRepo.findById).not.toHaveBeenCalled();
+    expect(timeEntryRepo.update).toHaveBeenCalledWith(
+      't1',
+      expect.objectContaining({
+        scheduled_minutes: null,
         status: 'submitted',
       })
     );

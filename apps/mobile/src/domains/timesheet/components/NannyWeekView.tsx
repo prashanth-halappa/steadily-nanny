@@ -20,6 +20,10 @@ interface NannyWeekViewProps {
   weekDates: string[];
   weekRangeLabel: string;
   nowMs: number;
+  /** D15 week nav, owned by `HoursScreen` — forwarded straight to `WeekTotal`. */
+  onPreviousWeek: () => void;
+  onNextWeek: () => void;
+  isNextWeekDisabled: boolean;
 }
 
 function scheduledMinutesFor(entries: TimeEntry[]): number | null {
@@ -34,6 +38,9 @@ export function NannyWeekView({
   weekDates,
   weekRangeLabel,
   nowMs,
+  onPreviousWeek,
+  onNextWeek,
+  isNextWeekDisabled,
 }: NannyWeekViewProps) {
   const { t } = useTranslation('hours');
   const entriesQuery = useWeekTimeEntries(householdId, weekStartISO);
@@ -73,6 +80,9 @@ export function NannyWeekView({
           weekRangeLabel={weekRangeLabel}
           totalLabel={formatDuration(totalMinutes)}
           overtimeLabel={overtimeLabel}
+          onPreviousWeek={onPreviousWeek}
+          onNextWeek={onNextWeek}
+          isNextDisabled={isNextWeekDisabled}
         />
       }
       contentContainerStyle={{ padding: 24, paddingBottom: 100 }}

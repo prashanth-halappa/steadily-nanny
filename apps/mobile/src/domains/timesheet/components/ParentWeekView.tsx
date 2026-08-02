@@ -29,6 +29,10 @@ interface ParentWeekViewProps {
   weekDates: string[];
   weekRangeLabel: string;
   nowMs: number;
+  /** D15 week nav, owned by `HoursScreen` — forwarded straight to `WeekTotal`. */
+  onPreviousWeek: () => void;
+  onNextWeek: () => void;
+  isNextWeekDisabled: boolean;
 }
 
 export function ParentWeekView({
@@ -37,6 +41,9 @@ export function ParentWeekView({
   weekDates,
   weekRangeLabel,
   nowMs,
+  onPreviousWeek,
+  onNextWeek,
+  isNextWeekDisabled,
 }: ParentWeekViewProps) {
   const { t } = useTranslation('hours');
   const entriesQuery = useWeekTimeEntries(householdId, weekStartISO);
@@ -111,6 +118,9 @@ export function ParentWeekView({
             weekRangeLabel={weekRangeLabel}
             totalLabel={formatDuration(totalMinutes)}
             overtimeLabel={null}
+            onPreviousWeek={onPreviousWeek}
+            onNextWeek={onNextWeek}
+            isNextDisabled={isNextWeekDisabled}
           />
         }
         ListFooterComponent={

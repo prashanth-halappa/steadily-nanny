@@ -33,7 +33,12 @@ import {
   HouseholdMemberRepository,
   HouseholdRepository,
 } from '../../household';
-import { ShiftNotFoundError, ShiftRepository } from '../../shift';
+import {
+  SHIFT_STATUSES,
+  ShiftNotFoundError,
+  ShiftRepository,
+} from '../../shift';
+import type { ShiftWithChildren } from '../../shift/repositories/shiftRepository';
 import {
   AlreadyClockedInError,
   NotACarerError,
@@ -55,6 +60,27 @@ import {
   type TimesheetQueryService,
   timesheetQueryService,
 } from './timesheetQueryService';
+
+/**
+ * Auto-match window for an ad-hoc clock-in (no client-supplied `shift_id`):
+ * a confirmed shift is only matched if its scheduled span overlaps
+ * `[clockInAt - tolerance, clockInAt + tolerance]`. Two hours, deliberately:
+ * - Large enough to catch a carer arriving early (traffic, an earlier
+ *   school run) or clocking in late (forgot at the start of the shift,
+ *   or the shift is genuinely still running) without requiring a
+ *   perfectly-timed tap.
+ * - Small enough that a carer clocking in at 22:00 can NEVER match
+ *   tomorrow's 08:00 shift (10h away) — adjacent-day shifts in this
+ *   product are always many hours apart, so 2h leaves a wide, safe gap.
+ *
+ * Deliberately NOT `household.short_notice_hours`: that field means "how
+ * far in advance counts as short notice for cancellation pay" and
+ * defaults/ranges up to days — using it here would let a carer clock in
+ * many hours before a shift and still match it, which is exactly the
+ * false-positive this tolerance exists to prevent. The two concepts are
+ * unrelated even though both are "hours of slack" fields.
+ */
+const CLOCK_IN_MATCH_TOLERANCE_MS = 2 * 60 * 60 * 1000;
 
 const CARER_ROLES: ReadonlySet<string> = new Set([HOUSEHOLD_ROLES.NANNY]);
 const WRITE_ROLES: ReadonlySet<string> = new Set([
@@ -121,8 +147,25 @@ export class TimesheetCommandService {
    * whenever — we record what happened, not what was planned" — `shift_id`
    * is optional, and no comparison against the shift's own times happens
    * here.
+   *
+   * When the client supplies NO `shift_id`, this auto-matches a confirmed
+   * shift already scoped to this carer/household near the clock-in instant
+   * (see `matchConfirmedShift`), so `scheduled_minutes` can be frozen at
+   * clock-out without requiring the carer to pick a shift from a list. A
+   * client-supplied `shift_id` still goes through the existing
+   * `assertShiftBelongsToCarer` ownership check — auto-matching never
+   * bypasses it, since `matchConfirmedShift` itself only ever selects from
+   * shifts already scoped to this carer and household.
+   *
+   * `now` is injectable (defaults to the real clock) purely for
+   * deterministic tests of the auto-match window — never supplied by
+   * production callers.
    */
-  async clockIn(userId: string, input: ClockInInput): Promise<TimeEntry> {
+  async clockIn(
+    userId: string,
+    input: ClockInInput,
+    now: () => Date = () => new Date()
+  ): Promise<TimeEntry> {
     const membership = await this.memberRepo.findActiveMembership(
       input.household_id,
       userId
@@ -136,11 +179,20 @@ export class TimesheetCommandService {
       throw new AlreadyClockedInError(userId);
     }
 
+    const clockInAt = now();
+    let shiftId: string | null;
     if (input.shift_id) {
       await this.assertShiftBelongsToCarer(
         input.shift_id,
         input.household_id,
         userId
+      );
+      shiftId = input.shift_id;
+    } else {
+      shiftId = await this.matchConfirmedShift(
+        input.household_id,
+        userId,
+        clockInAt
       );
     }
 
@@ -148,8 +200,8 @@ export class TimesheetCommandService {
     return this.timeEntryRepo.clockIn({
       household_id: input.household_id,
       carer_id: userId,
-      shift_id: input.shift_id ?? null,
-      clock_in_at: new Date().toISOString(),
+      shift_id: shiftId,
+      clock_in_at: clockInAt.toISOString(),
       timezone: household?.timezone ?? 'UTC',
       kind: 'worked',
       status: 'running',
@@ -242,6 +294,92 @@ export class TimesheetCommandService {
     ) {
       throw new ShiftNotFoundError(shiftId);
     }
+  }
+
+  /**
+   * Auto-match an ad-hoc clock-in (no client-supplied `shift_id`) to a
+   * confirmed shift, or return null for a genuinely unscheduled clock-in.
+   *
+   * SECURITY: reuses `shiftRepo.findByHouseholdAndRange`, which is already
+   * scoped to `householdId`, then filters to THIS carer and `confirmed`
+   * status in-process — never widens beyond what `assertShiftBelongsToCarer`
+   * would itself accept, so auto-matching cannot become a way to attach a
+   * clock-in to another carer's or another household's shift.
+   *
+   * Candidates are any confirmed shift whose scheduled span overlaps
+   * `[clockInAt - tolerance, clockInAt + tolerance]` (see
+   * `CLOCK_IN_MATCH_TOLERANCE_MS` for why 2h). The `[from, to)` args passed
+   * to the repo are a coarse pre-filter for efficiency; the exact tolerance
+   * check is re-applied in-process below so this method's behaviour never
+   * depends on the repo's own overlap semantics staying in lockstep with
+   * this method's. Ties (more than one shift in range — e.g. back-to-back
+   * shifts) resolve deterministically: closest `starts_at` to the clock-in
+   * instant wins; a further tie (identical `starts_at`, which the app
+   * doesn't otherwise create) falls back to the lower `id` so the result
+   * never depends on array order.
+   */
+  private async matchConfirmedShift(
+    householdId: string,
+    carerId: string,
+    clockInAt: Date
+  ): Promise<string | null> {
+    const instantMs = clockInAt.getTime();
+    const from = new Date(
+      instantMs - CLOCK_IN_MATCH_TOLERANCE_MS
+    ).toISOString();
+    const to = new Date(instantMs + CLOCK_IN_MATCH_TOLERANCE_MS).toISOString();
+
+    const inRange = await this.shiftRepo.findByHouseholdAndRange(
+      householdId,
+      from,
+      to
+    );
+    const candidates = inRange.filter(
+      shift =>
+        shift.carer_id === carerId &&
+        shift.status === SHIFT_STATUSES.CONFIRMED &&
+        this.isWithinClockInTolerance(shift, instantMs)
+    );
+    if (candidates.length === 0) {
+      return null;
+    }
+
+    const nearest = candidates.reduce((best, candidate) =>
+      this.isCloserMatch(candidate, best, instantMs) ? candidate : best
+    );
+    return nearest.id;
+  }
+
+  /** Exact tolerance check: does `instantMs` fall within `[shift.starts_at - tolerance, shift.ends_at + tolerance]`? */
+  private isWithinClockInTolerance(
+    shift: ShiftWithChildren,
+    instantMs: number
+  ): boolean {
+    const startsMs = new Date(shift.starts_at).getTime();
+    const endsMs = new Date(shift.ends_at).getTime();
+    return (
+      instantMs >= startsMs - CLOCK_IN_MATCH_TOLERANCE_MS &&
+      instantMs <= endsMs + CLOCK_IN_MATCH_TOLERANCE_MS
+    );
+  }
+
+  /** Deterministic "is `candidate` a better match than `best`?" — see `matchConfirmedShift`. */
+  private isCloserMatch(
+    candidate: ShiftWithChildren,
+    best: ShiftWithChildren,
+    instantMs: number
+  ): boolean {
+    const candidateDiff = Math.abs(
+      new Date(candidate.starts_at).getTime() - instantMs
+    );
+    const bestDiff = Math.abs(new Date(best.starts_at).getTime() - instantMs);
+    if (candidateDiff !== bestDiff) {
+      return candidateDiff < bestDiff;
+    }
+    if (candidate.starts_at !== best.starts_at) {
+      return candidate.starts_at < best.starts_at;
+    }
+    return candidate.id < best.id;
   }
 
   /**
