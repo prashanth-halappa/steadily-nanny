@@ -76,8 +76,8 @@ the plan's §3 grouping.
 | File | What it shows |
 |---|---|
 | `06a-parent-build-days.png` | Days step. |
-| `06b-parent-build-hours-within-availability.png` | **Recaptured post-fix.** Hours step, default 9:00 AM–5:00 PM — an exact match to the nanny's stated Mon 9–5 availability. No warning, confirming the fix: this exact case used to wrongly warn (see Defect finding below), now correctly doesn't. |
-| `06c-parent-build-hours-outside-availability-warning.png` | **Recaptured post-fix.** Hours step, 8:00 AM start — genuinely before the nanny's marked 9:00 start. Correctly flagged "Outside their marked availability." Time picker and day stay fully enabled alongside the warning, confirming "warn, never block" holds. |
+| `06b-parent-build-hours-within-availability.png` | **Recaptured post-fix, verified.** Hours step, default 9:00 AM–5:00 PM — an exact match to the nanny's stated Mon 9–5 availability. No warning, confirming the fix: this exact case used to wrongly warn (see Defect finding below), now correctly doesn't. First recapture attempt (23:58) predated a fresh Metro bundle pull and got flagged by team-lead as unverifiable; redone after confirming fix commit `2887f23` (23:27:24) via `git log` on `apps/mobile/src/domains/schedule/utils.ts`, a full app kill+relaunch that visibly re-downloaded the JS bundle ("Downloading NN%…" observed on splash), and file mtime `00:03:11` — after the commit. |
+| `06c-parent-build-hours-outside-availability-warning.png` | **Recaptured post-fix, verified.** Hours step, 8:00 AM start — genuinely before the nanny's marked 9:00 start. Correctly flagged "Outside their marked availability." Time picker and day stay fully enabled alongside the warning, confirming "warn, never block" holds. Same verification as `06b`; file mtime `00:04:03`. |
 | `06d-parent-build-repeat.png` | Repeat step. |
 | `06e-parent-build-review.png` | Review step — clean, translated copy, D3 fix confirmed. |
 
