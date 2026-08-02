@@ -9,12 +9,17 @@ tour (earlier, partial, different defects — see "Overlap with the existing
 `docs/screenshots/` tour" below) so this plan doesn't blindly re-propose
 what already exists or silently ignore what's known to conflict with it.
 
-## GO — feature freeze declared, tour executing
+## DONE — tour executed, 53 screenshots captured
 
 Freeze declared, `main` at `538a4f8`, `qc` green (mobile 731/0, API
 315/0). D29 shipped with no UI (see the note in place of the old §3.16);
-D23/D24 never built. Executing now — see `docs/screenshots/tour/README.md`
-for the actual results once done.
+D23/D24 never built. Tour executed 2026-08-01 — see
+`docs/screenshots/tour/README.md` for the full walkthrough, results, gaps,
+and one newly-discovered defect (D25 boundary/off-by-one bug, reported to
+team-lead mid-tour). Onboarding (§3.2/§3.3) is the one major section not
+captured post-freeze, blocked by a Supabase auth email rate limit in this
+shared dev environment rather than by anything in the app; see the README's
+"Gaps" section for detail.
 
 ---
 
