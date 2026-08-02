@@ -45,12 +45,12 @@ export function SchedulePatternPreview({
 
   return (
     <View testID={testID} className="gap-3 rounded-xl border border-border p-4">
-      <Body testID={`${testID}-hours`} className="font-sora-semibold">
+      <Body testID={`${testID}-hours`} className="font-semibold" tabular>
         {t('pending.previewHoursTotal', { hours: totalHours })}
       </Body>
       {ordered.map(day => (
         <View key={day.id} className="gap-1">
-          <Body className="font-sora-medium">
+          <Body className="font-medium" tabular>
             {t(`weekday.${day.weekday}`)} ·{' '}
             {formatWallClockTime(day.start_time)}–
             {formatWallClockTime(day.end_time)}

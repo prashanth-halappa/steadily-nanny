@@ -69,7 +69,7 @@ export function TimeEntryDayRow({
       className="flex-row items-center justify-between border-border border-b py-3"
     >
       <View className="gap-1">
-        <Body className="font-sora-medium">{weekdayLabel(date)}</Body>
+        <Body className="font-medium">{weekdayLabel(date)}</Body>
         {entries.length === 0 ? (
           <Small className="text-muted-foreground">No hours logged</Small>
         ) : (
@@ -88,8 +88,9 @@ export function TimeEntryDayRow({
                 testID={isZeroDuration ? 'hours-zero-duration-flag' : undefined}
                 className={cn(
                   'text-muted-foreground',
-                  isZeroDuration && 'font-sora-medium text-warning'
+                  isZeroDuration && 'font-medium text-warning'
                 )}
+                tabular
               >
                 {entry.clock_in_at ? formatClockTime(entry.clock_in_at) : '—'}
                 {' – '}
@@ -116,9 +117,10 @@ export function TimeEntryDayRow({
       </View>
       <Body
         className={cn(
-          'font-sora-medium',
+          'font-medium',
           isRunning ? 'text-primary' : 'text-foreground'
         )}
+        tabular
       >
         {totalMinutes > 0 || entries.length > 0
           ? formatDuration(totalMinutes)

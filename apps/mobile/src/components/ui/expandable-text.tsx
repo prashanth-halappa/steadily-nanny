@@ -96,9 +96,7 @@ export function ExpandableText({
         accessibilityHint="Toggles the full text display"
         className="flex-row items-center gap-1 mt-2"
       >
-        <ButtonText
-          className={cn('text-primary font-sora-medium', toggleClassName)}
-        >
+        <ButtonText className={cn('text-primary font-medium', toggleClassName)}>
           {expanded ? showLessLabel : readMoreLabel}
         </ButtonText>
         <Animated.View style={chevronStyle}>

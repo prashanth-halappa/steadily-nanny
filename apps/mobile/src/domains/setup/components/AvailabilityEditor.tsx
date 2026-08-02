@@ -88,7 +88,7 @@ export function AvailabilityEditor() {
           .filter(day => rowByWeekday.get(day)?.is_available)
           .map(day => (
             <View key={day} className="gap-2">
-              <Body className="font-sora-medium">{t(`weekday.${day}`)}</Body>
+              <Body className="font-medium">{t(`weekday.${day}`)}</Body>
               <TimeRangePicker
                 testID={`availability-time-range-${day}`}
                 start={rowByWeekday.get(day)?.earliest_start ?? DEFAULT_START}

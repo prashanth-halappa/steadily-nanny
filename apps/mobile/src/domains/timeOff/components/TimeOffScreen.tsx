@@ -147,7 +147,7 @@ export function TimeOffScreen() {
                   >
                     <Small
                       className={cn(
-                        'rounded-full border px-3 py-1.5',
+                        'rounded-chip border px-3 py-1.5',
                         statusFilter === filter
                           ? 'border-primary bg-primary/10 text-primary'
                           : 'border-border text-foreground'

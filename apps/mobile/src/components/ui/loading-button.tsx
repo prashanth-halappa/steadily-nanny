@@ -99,6 +99,7 @@ export function LoadingButton({
   testID = 'loading-button',
   ...buttonProps
 }: LoadingButtonProps) {
+  const themeColors = useThemeColors();
   const reducedMotion = useReducedMotion();
   const shouldAnimate = !reducedMotion;
 
@@ -250,7 +251,7 @@ export function LoadingButton({
           ]}
           testID={`${testID}-check`}
         >
-          <Check size={18} color="white" />
+          <Check size={18} color={themeColors.primaryForeground} />
         </Animated.View>
       </View>
     </Button>

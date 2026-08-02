@@ -43,7 +43,7 @@ export function CoverageGapBanner({
 
   return (
     <View testID="coverage-gap-banner" className="rounded-lg bg-warning/15 p-3">
-      <Body className="font-sora-medium text-warning">Coverage gaps today</Body>
+      <Body className="font-medium text-warning">Coverage gaps today</Body>
       {gaps.map(gap => (
         <Body
           key={gap.id}

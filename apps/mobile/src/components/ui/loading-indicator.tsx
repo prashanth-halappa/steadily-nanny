@@ -30,7 +30,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { contemplativeFade } from '@/lib/animations/easing';
 import { useReducedMotion } from '@/lib/animations/useReducedMotion';
-import { useColorScheme } from '@/lib/useColorScheme';
+import { useThemeColors } from '@/lib/design-tokens/useThemeColors';
 import { LoadingDots } from './loading-dots';
 import { RotatingMicroCopy } from './rotating-micro-copy';
 
@@ -51,7 +51,7 @@ const LOGO_WIDTH = Math.min(SCREEN_WIDTH * 0.6, 320);
 export function LoadingIndicator(props?: LoadingIndicatorProps) {
   const { name, messages, showMicroCopy = true, testID } = props ?? {};
 
-  const { isDarkColorScheme } = useColorScheme();
+  const themeColors = useThemeColors();
   const reducedMotion = useReducedMotion();
 
   // Breathing logo animation — scale 1.0 ↔ 1.03, 4s cycle.
@@ -86,9 +86,7 @@ export function LoadingIndicator(props?: LoadingIndicatorProps) {
     >
       {/* Theme-aware gradient background */}
       <LinearGradient
-        colors={
-          isDarkColorScheme ? ['#18181B', '#222225'] : ['#FFFFFF', '#F5F5F4']
-        }
+        colors={[themeColors.background, themeColors.muted]}
         style={StyleSheet.absoluteFill}
         start={{ x: 0.5, y: 0.3 }}
         end={{ x: 0.5, y: 1 }}

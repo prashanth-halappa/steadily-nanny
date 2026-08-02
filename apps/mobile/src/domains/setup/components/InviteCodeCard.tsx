@@ -34,7 +34,7 @@ export function InviteCodeCard({
         <Text
           testID="invite-code-value"
           selectable
-          className="font-sora-bold text-3xl tracking-widest text-primary"
+          className="font-bold text-3xl tracking-widest text-primary"
         >
           {code}
         </Text>

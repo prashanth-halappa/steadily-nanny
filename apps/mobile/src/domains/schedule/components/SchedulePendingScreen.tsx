@@ -164,7 +164,7 @@ export function SchedulePendingScreen() {
         </View>
       ) : pattern.status === 'draft' ? (
         <View testID="schedule-pending-draft" className="mt-6 gap-4">
-          <Body className="font-sora-semibold">{t('pending.draftTitle')}</Body>
+          <Body className="font-semibold">{t('pending.draftTitle')}</Body>
           <Body className="text-muted-foreground">
             {t('pending.draftBody')}
           </Body>
@@ -203,7 +203,7 @@ export function SchedulePendingScreen() {
               testID="schedule-pending-decline-message"
               className="gap-1 rounded-xl border border-border p-4"
             >
-              <Body className="font-sora-medium">
+              <Body className="font-medium">
                 {t('pending.declineReasonLabel')}
               </Body>
               <Body className="text-muted-foreground">

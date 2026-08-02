@@ -8,6 +8,7 @@
 
 import { cva } from 'class-variance-authority';
 import { View } from 'react-native';
+import { remapChildSwatch } from '@/lib/design-tokens/palette';
 import { cn } from '@/lib/utils';
 import { Text } from '@/src/components/ui/text';
 
@@ -32,7 +33,7 @@ const personAvatarVariants = cva('items-center justify-center rounded-full', {
   defaultVariants: { size: 'md' },
 });
 
-const personAvatarTextVariants = cva('font-sora-semibold text-foreground', {
+const personAvatarTextVariants = cva('font-semibold text-foreground', {
   variants: {
     size: {
       sm: 'text-xs',
@@ -60,12 +61,16 @@ export function PersonAvatar({
   testID,
 }: PersonAvatarProps) {
   const initial = getInitial(name);
+  const resolvedColour = colour ? remapChildSwatch(colour) : undefined;
 
   return (
     <View
       testID={testID}
-      className={cn(personAvatarVariants({ size }), !colour && 'bg-muted')}
-      style={colour ? { backgroundColor: colour } : undefined}
+      className={cn(
+        personAvatarVariants({ size }),
+        !resolvedColour && 'bg-muted'
+      )}
+      style={resolvedColour ? { backgroundColor: resolvedColour } : undefined}
       accessibilityRole="image"
       accessibilityLabel={name.trim().length > 0 ? name : 'Unnamed'}
     >

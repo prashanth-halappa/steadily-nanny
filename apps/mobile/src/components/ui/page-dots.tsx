@@ -7,7 +7,6 @@
 
 import { View, type ViewProps } from 'react-native';
 import { cn } from '@/lib/utils';
-import { colors } from '~/lib/design-tokens/colors';
 import { useThemeColors } from '~/lib/design-tokens/useThemeColors';
 
 interface PageDotsProps extends ViewProps {
@@ -24,12 +23,13 @@ interface PageDotsProps extends ViewProps {
 function PageDots({
   count,
   activeIndex,
-  activeColor = colors.primary.DEFAULT,
+  activeColor,
   inactiveColor,
   className,
   ...props
 }: PageDotsProps) {
   const themeColors = useThemeColors();
+  const resolvedActiveColor = activeColor ?? themeColors.primary;
   const resolvedInactiveColor = inactiveColor ?? themeColors.border;
   if (count <= 1) return null;
 
@@ -50,7 +50,7 @@ function PageDots({
           )}
           style={{
             backgroundColor:
-              i === activeIndex ? activeColor : resolvedInactiveColor,
+              i === activeIndex ? resolvedActiveColor : resolvedInactiveColor,
           }}
           accessibilityRole="tab"
           accessibilityState={{ selected: i === activeIndex }}

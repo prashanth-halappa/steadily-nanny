@@ -37,7 +37,7 @@ export function NannyLiveStatusCard({
       testID="today-nanny-live-status"
       className="gap-1 rounded-xl border border-border bg-card p-4"
     >
-      <Body className="font-sora-semibold">{t('nannyLiveTitle')}</Body>
+      <Body className="font-semibold">{t('nannyLiveTitle')}</Body>
       <Body className="text-muted-foreground">
         {t('nannyLiveBody', { time: formatClockTime(running.clock_in_at) })}
       </Body>

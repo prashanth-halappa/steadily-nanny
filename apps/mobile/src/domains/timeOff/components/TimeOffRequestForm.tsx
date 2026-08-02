@@ -132,7 +132,7 @@ export function TimeOffRequestForm() {
 
   return (
     <View testID="time-off-request-form" className="mb-6 gap-4">
-      <Body className="font-sora-medium">{t('requestTitle')}</Body>
+      <Body className="font-medium">{t('requestTitle')}</Body>
       <TimeOffDateRangePicker
         testID="time-off-request-dates"
         start={startDate}

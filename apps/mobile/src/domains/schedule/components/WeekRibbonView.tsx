@@ -5,6 +5,7 @@
  */
 import type { Shift } from '@steadily-nanny/shared-types/schemas/shift.schema';
 import { ScrollView, View } from 'react-native';
+import { useThemeColors } from '@/lib/design-tokens';
 import { Body } from '@/src/components/ui/typography';
 import {
   hourCellOccupied,
@@ -27,6 +28,7 @@ export function WeekRibbonView({
   displayTimeZone,
   weekStartsOn = 1,
 }: WeekRibbonViewProps) {
+  const themeColors = useThemeColors();
   const displayOrder = getWeekdayOrder(weekStartsOn);
 
   // Minute-resolution overlap, not an hour-integer range check — see
@@ -49,13 +51,15 @@ export function WeekRibbonView({
         <View className="w-8" />
         {displayOrder.map(dow => (
           <View key={dow} className="flex-1 items-center">
-            <Body className="text-xs font-sora-medium">{DAY_LABELS[dow]}</Body>
+            <Body className="text-xs font-medium">{DAY_LABELS[dow]}</Body>
           </View>
         ))}
       </View>
       {HOURS.map(hour => (
         <View key={hour} className="flex-row items-center py-0.5">
-          <Body className="w-8 text-xs text-muted-foreground">{hour}</Body>
+          <Body className="w-8 text-xs text-muted-foreground" tabular>
+            {hour}
+          </Body>
           {displayOrder.map(dow => {
             const filled = cellHasShift(dow, hour);
             return (
@@ -64,10 +68,14 @@ export function WeekRibbonView({
                 testID={`week-ribbon-cell-${dow}-${hour}`}
                 className="mx-0.5 h-4 flex-1 rounded-sm"
                 style={{
-                  backgroundColor: filled ? '#14B8A6' : 'transparent',
+                  backgroundColor: filled
+                    ? themeColors.category.accent2
+                    : 'transparent',
                   opacity: filled ? 0.85 : 0.15,
                   borderWidth: 1,
-                  borderColor: filled ? '#14B8A6' : '#E5E7EB',
+                  borderColor: filled
+                    ? themeColors.category.accent2
+                    : themeColors.border,
                 }}
               />
             );

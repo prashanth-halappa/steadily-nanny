@@ -30,12 +30,12 @@ export const spacing = {
   minTouchTarget: 44, // Minimum touch target size (44x44pt)
   minTouchTargetAndroid: 48, // Android minimum (48x48dp)
 
-  // Border radius
-  radiusSm: 8,
-  radiusMd: 12,
-  radiusLg: 16,
-  radiusXl: 20,
-  radiusXxl: 24,
+  // Border radius — Ledger tight scale
+  radiusSm: 2,
+  radiusMd: 4,
+  radiusLg: 6,
+  radiusXl: 8,
+  radiusXxl: 10,
   radiusFull: 9999,
 } as const;
 

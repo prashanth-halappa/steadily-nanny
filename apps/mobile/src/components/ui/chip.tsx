@@ -116,7 +116,7 @@ export function Chip({
     <Animated.View style={animatedStyle}>
       <View
         className={cn(
-          'flex-row items-center rounded-full',
+          'flex-row items-center rounded-chip',
           sizeClasses[size],
           variantClasses[variant],
           className
@@ -131,11 +131,7 @@ export function Chip({
           />
         )}
         <Text
-          className={cn(
-            'font-sora-medium',
-            textSizeClass,
-            textColorClass[variant]
-          )}
+          className={cn('font-medium', textSizeClass, textColorClass[variant])}
         >
           {children}
         </Text>

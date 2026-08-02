@@ -24,7 +24,12 @@ export {
 
 // Display components
 export { Display, DisplayLarge } from './display';
-
+export {
+  createTypographyComponent,
+  Figure,
+  tabularStyle,
+  tokenToStyle,
+} from './factory';
 // Heading components
 export { H1, H2, H3, H4 } from './heading';
 // Signature components

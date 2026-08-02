@@ -131,7 +131,8 @@ export function BottomSheetBase({
                 left: 0,
                 right: 0,
                 bottom: 0,
-                backgroundColor: 'rgba(0, 0, 0, 0.5)',
+                // scrim is full-saturation ink — alpha applied at the call site
+                backgroundColor: `${themeColors.scrim}80`,
               }}
             />
 
@@ -167,7 +168,7 @@ export function BottomSheetBase({
                         width: 36,
                         height: 4,
                         borderRadius: 2,
-                        backgroundColor: 'rgba(0, 0, 0, 0.2)',
+                        backgroundColor: `${themeColors.scrim}33`,
                       }}
                     />
                   </View>
@@ -197,7 +198,7 @@ export function BottomSheetBase({
                         alignItems: 'center',
                         justifyContent: 'center',
                         backgroundColor: themeColors.muted,
-                        borderRadius: 16,
+                        borderRadius: 8,
                       }}
                       hitSlop={8}
                       accessibilityRole="button"

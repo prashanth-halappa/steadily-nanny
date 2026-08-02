@@ -90,7 +90,7 @@ export function TimeSettingsScreen() {
     >
       <View className="gap-6">
         <View className="gap-2">
-          <Body className="font-sora-medium">
+          <Body className="font-medium">
             {t('settings:time.timezoneLabel')}
           </Body>
           <AnimatedPressable
@@ -106,7 +106,7 @@ export function TimeSettingsScreen() {
         </View>
 
         <View className="gap-2">
-          <Body className="font-sora-medium">
+          <Body className="font-medium">
             {t('settings:time.weekStartsLabel')}
           </Body>
           <View className="flex-row flex-wrap gap-2">
@@ -118,7 +118,7 @@ export function TimeSettingsScreen() {
               >
                 <Small
                   className={cn(
-                    'rounded-full border px-3 py-2',
+                    'rounded-chip border px-3 py-2',
                     day === weekStartsOn
                       ? 'border-primary bg-primary/10 text-primary'
                       : 'border-border text-foreground'

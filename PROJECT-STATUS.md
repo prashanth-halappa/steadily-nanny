@@ -246,20 +246,12 @@ verified by this agent; treat anything not listed as unverified.
   (`testID="settings-delete-account"`) driving a new
   `src/hooks/mutations/useDeleteAccount.ts`, with `en` and `es` strings. Built
   test-first; the red phase was captured before any implementation existed.
-- **Fonts** — DONE (resolved by the orchestrator after this section was first
-  written). `DesignSync` is not exposed to subagents, so the agent that owned
-  this task correctly stopped rather than writing placeholder `.ttf` files; the
-  orchestrator, which does have the tool, fetched them. All 7 weights
-  referenced by `app.config.ts` are now in `apps/mobile/assets/fonts/`
-  (Regular, Light, ExtraLight, Medium, SemiBold, Bold, ExtraBold), each ~58KB
-  and verified as real TrueType data (`file` reports "TrueType Font data",
-  magic bytes `0x00010000`). They are NOT gitignored and will be committed.
-  Note `Sora-Thin.ttf` exists in the design system but is referenced nowhere,
-  so it was deliberately not added.
-  Worth knowing if these ever need re-sourcing: Sora is published upstream only
-  as a VARIABLE font. `fonts.google.com/download` returns HTML, and
-  `google/fonts` has no `ofl/sora/static/` directory (all 404). The Claude
-  Design system project is the authoritative source for these static weights.
+- **Fonts** — DONE. Ledger uses the **platform face** (SF Pro / Roboto); no custom
+  `.ttf` files are shipped. Weight is set via numeric `fontWeight` / Tailwind
+  `font-*` classes — see `apps/mobile/assets/fonts/README.md` and
+  `lib/design-tokens/typography.ts`. (Historical note: Wave 0 briefly shipped
+  Sora static weights; those were removed in the Ledger migration because
+  per-file weight families made numeric `fontWeight` a no-op on iOS.)
 - **Env files** — done by this agent. `apps/api/.env` and `apps/mobile/.env`
   created, both confirmed gitignored and untracked. See §8 for the human
   action items left inside them. Note: `apps/api/.env` already existed before
@@ -456,8 +448,8 @@ status bar. Any replacement shell should include one — `src/app/welcome.tsx` i
 the model.
 
 What works, verified on the simulator:
-- The app builds, installs, launches, and renders `welcome.tsx` correctly — Sora
-  ExtraBold, `#3B6FF5` primary button. The design system is live.
+- The app builds, installs, launches, and renders `welcome.tsx` correctly — Ledger
+  platform face, `#1F4A8C` primary button, tight radii. The design system is live.
 - Sign-in works. Maestro drove it end to end (`.maestro/01-sign-in-parent.yaml`),
   every step COMPLETED, and the welcome screen correctly disappears.
 - The app reaches the API: `GET /api/app/status 200` in `apps/api/logs/dev.log`.
@@ -491,7 +483,7 @@ Metro hot-reload, and screenshotting. Do not re-test them.
    visible white text. Nothing is on top. (`screenshots/08-probe.png`)
 3. **The design-system components** — rendering `H1`, `Text` (from
    `components/ui/text`), and `Button` directly in that route renders all of
-   them correctly: Sora Bold heading, body text, and the blue primary button.
+   them correctly: bold heading, body text, and the Ledger primary button.
    (`screenshots/09-probe2.png`)
 4. **A nested `<Stack>`** — `src/app/auth/login.tsx` is also inside a nested
    Stack (`auth/_layout.tsx`) and renders fine; Maestro typed into its inputs.
@@ -798,8 +790,8 @@ credentials:
   placeholder `SET-ME-service-role-key-from-supabase-dashboard`; a human
   must copy the real value from the Supabase dashboard (Project Settings →
   API → service_role) for project ref `dylhrlvfkibipdkguptz`.
-- ~~Sora font files~~ — RESOLVED, no longer blocked. All 7 referenced weights
-  are in `apps/mobile/assets/fonts/` and verified as real TrueType. See §4.
+- ~~Sora font files~~ — superseded by Ledger (platform face; no custom fonts).
+  See §4 Fonts.
 
 ## 7. Known template defects inherited
 
@@ -846,9 +838,8 @@ environment and need to be run from an unsandboxed shell. This agent did
 that as verifier.
 
 Human action items still required before a clean boot:
-1. Supply the 8 Sora `.ttf` font files into `apps/mobile/assets/fonts/` (see §6/§9).
-2. Fill in `SUPABASE_SERVICE_KEY` in `apps/api/.env` with the real service-role key.
-3. Complete Apple/Google developer setup and `eas init` before any device/store build (§6).
+1. Fill in `SUPABASE_SERVICE_KEY` in `apps/api/.env` with the real service-role key.
+2. Complete Apple/Google developer setup and `eas init` before any device/store build (§6).
 
 ## 9. Next agent: start here
 
@@ -869,10 +860,10 @@ below. If you're picking this project up right now, the actual next work is:
 3. Read `CLAUDE.md` at the repo root — required-reading doc map, toolchain
    rules, and the widget-vertical-slice pattern to copy for new features.
 4. Read `GOLDEN-FIXES.md` — hard-won production bugs and their fixes; check
-   it before touching any area it lists (NativeWind + Reanimated, Sora font
-   weights, bare `<Modal>`, `client.ts` auth injection, and now also #22/D16's
-   Biome nested-config note). Ignore the RevenueCat paywall-readiness entry;
-   that layer no longer exists here.
+   it before touching any area it lists (NativeWind + Reanimated, platform-face
+   typography / `fontWeight`, bare `<Modal>`, `client.ts` auth injection, and
+   now also #22/D16's Biome nested-config note). Ignore the RevenueCat
+   paywall-readiness entry; that layer no longer exists here.
 5. Apply migration `019_apply_parent_shift_edit.sql` before testing parent
    shift edits against a live DB.
 

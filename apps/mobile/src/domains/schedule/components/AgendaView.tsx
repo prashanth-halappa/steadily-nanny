@@ -64,7 +64,7 @@ function ShiftRow({
       className="mx-6 mb-2 flex-row items-center justify-between rounded-lg bg-muted p-3"
     >
       <View className="gap-1">
-        <Body>
+        <Body tabular>
           {formatShiftTime(shift.starts_at, displayTimeZone)} –{' '}
           {formatShiftTime(shift.ends_at, displayTimeZone)}
         </Body>

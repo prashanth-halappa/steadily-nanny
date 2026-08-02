@@ -115,7 +115,7 @@ function SelectContent({
         >
           <SelectPrimitive.Content
             className={cn(
-              'relative z-50 max-h-96 rounded-3xl border border-border bg-popover shadow-md shadow-foreground/10 py-3 px-2 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2',
+              'relative z-50 max-h-96 rounded-3xl border border-border bg-popover py-3 px-2 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2',
               Platform.OS !== 'web'
                 ? ' min-w-[90%]' // Use fixed width for mobile that matches most form fields
                 : position === 'popper'

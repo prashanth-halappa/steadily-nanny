@@ -27,7 +27,7 @@ function Textarea({
         {
           fontSize: typography.body.size,
           lineHeight: typography.body.lineHeight,
-          fontFamily: typography.body.fontFamily,
+          fontWeight: typography.body.weight,
           letterSpacing: typography.body.letterSpacing,
         },
         style,

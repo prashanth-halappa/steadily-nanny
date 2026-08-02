@@ -64,13 +64,13 @@ export function CalendarViewSwitcher({
           accessibilityState={{ selected: value === opt.id }}
           onPress={() => onChange(opt.id)}
           className={cn(
-            'rounded-full px-3 py-1.5',
+            'rounded-chip px-3 py-1.5',
             value === opt.id ? 'bg-primary' : 'bg-muted'
           )}
         >
           <Text
             className={cn(
-              'text-xs font-sora-medium',
+              'text-xs font-medium',
               value === opt.id ? 'text-primary-foreground' : 'text-foreground'
             )}
           >

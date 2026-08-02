@@ -50,7 +50,7 @@ export function OfflineBanner() {
         onPress={handleRetry}
         hitSlop={8}
       >
-        <Text className="text-xs text-primary font-sora-medium">
+        <Text className="text-xs text-primary font-medium">
           {t('retryNow')}
         </Text>
       </Pressable>

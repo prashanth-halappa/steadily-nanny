@@ -46,7 +46,7 @@ function CommitmentRow({
       className="flex-row items-center justify-between rounded-lg bg-muted p-3"
     >
       <View className="flex-1 gap-0.5">
-        <Body className="font-sora-medium">{commitment.label}</Body>
+        <Body className="font-medium">{commitment.label}</Body>
         <Body className="text-xs text-muted-foreground">
           {commitment.kind} · {formatCommitmentTime(commitment.start_time)}–
           {formatCommitmentTime(commitment.end_time)} · {dayCount} day

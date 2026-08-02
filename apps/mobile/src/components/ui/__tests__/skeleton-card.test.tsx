@@ -47,12 +47,12 @@ describe('SkeletonCard', () => {
       const skeletonConfig = {
         width: 200,
         padding: 16, // p-4 = 16px
-        borderRadius: 12, // rounded-xl
+        borderRadius: 6, // Ledger rounded-xl / rounded-card
       };
 
       expect(skeletonConfig.width).toBe(200);
       expect(skeletonConfig.padding).toBe(16);
-      expect(skeletonConfig.borderRadius).toBe(12);
+      expect(skeletonConfig.borderRadius).toBe(6);
     });
   });
 
@@ -80,15 +80,15 @@ describe('SkeletonCard', () => {
 
   describe('Skeleton placeholder dimensions', () => {
     it('should have correct concern tag placeholder dimensions', () => {
-      // Matches the concern tag badge: px-2 py-1 rounded-full
+      // Matches the concern tag badge: px-2 py-1 rounded-chip
       const tagDimensions = {
         width: 80, // approximate width for topic text
         height: 22, // py-1 + text height
-        borderRadius: 999, // rounded-full
+        borderRadius: 4, // rounded-chip
       };
 
       expect(tagDimensions.height).toBeGreaterThanOrEqual(20);
-      expect(tagDimensions.borderRadius).toBe(999);
+      expect(tagDimensions.borderRadius).toBe(4);
     });
 
     it('should have correct activity name placeholder dimensions', () => {
@@ -114,15 +114,15 @@ describe('SkeletonCard', () => {
     });
 
     it('should have correct button placeholder dimensions', () => {
-      // Matches complete button: px-3 py-1.5 rounded-full
+      // Matches complete button: px-3 py-1.5 rounded-button
       const buttonDimensions = {
         width: 80,
         height: 28,
-        borderRadius: 999,
+        borderRadius: 4,
       };
 
       expect(buttonDimensions.height).toBeGreaterThanOrEqual(24);
-      expect(buttonDimensions.borderRadius).toBe(999);
+      expect(buttonDimensions.borderRadius).toBe(4);
     });
   });
 
@@ -141,11 +141,11 @@ describe('SkeletonCard', () => {
       // Activity cards use: bg-primary/5 border border-primary/20 rounded-xl
       const borderStyle = {
         borderWidth: 1,
-        borderRadius: 12, // rounded-xl
+        borderRadius: 6, // Ledger rounded-xl
       };
 
       expect(borderStyle.borderWidth).toBe(1);
-      expect(borderStyle.borderRadius).toBe(12);
+      expect(borderStyle.borderRadius).toBe(6);
     });
   });
 

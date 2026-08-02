@@ -90,7 +90,7 @@ export function TimeOffDateRangePicker({
     <View testID={baseTestID}>
       <View className="flex-row items-center gap-3">
         <View className="flex-1">
-          <Text className="mb-1 font-sora-medium text-muted-foreground text-xs">
+          <Text className="mb-1 font-medium text-muted-foreground text-xs">
             Start
           </Text>
           <DateTimePicker
@@ -101,7 +101,7 @@ export function TimeOffDateRangePicker({
           />
         </View>
         <View className="flex-1">
-          <Text className="mb-1 font-sora-medium text-muted-foreground text-xs">
+          <Text className="mb-1 font-medium text-muted-foreground text-xs">
             End
           </Text>
           <DateTimePicker

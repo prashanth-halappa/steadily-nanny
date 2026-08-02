@@ -3,7 +3,7 @@
  *
  * Replaces cold gray pulse animations with a warm, branded shimmer effect.
  * Uses Reanimated opacity animation cycling between 0.4 and 1.0 on the
- * skeleton base color (#F1F0EB). Respects reduced motion accessibility settings.
+ * skeleton base color (#F2F3F5). Respects reduced motion accessibility settings.
  *
  * Optional dimensionColor prop adds a subtle 2dp top border accent at 20% opacity
  * for category-aware skeleton placeholders.
@@ -32,7 +32,7 @@ interface SkeletonShimmerProps {
 export function SkeletonShimmer({
   width,
   height,
-  borderRadius = 8,
+  borderRadius = 4,
   dimensionColor,
   testID = 'skeleton-shimmer',
 }: SkeletonShimmerProps) {

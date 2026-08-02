@@ -10,6 +10,7 @@
 
 import { View } from 'react-native';
 import { AnimatedPressable } from '@/lib/animations';
+import { remapChildSwatch } from '@/lib/design-tokens/palette';
 import { cn } from '@/lib/utils';
 import { Text } from '@/src/components/ui/text';
 
@@ -31,9 +32,11 @@ export function ChildChip({
   testID,
 }: ChildChipProps) {
   const containerClassName = cn(
-    'flex-row items-center gap-1.5 self-start rounded-full px-3 py-1.5',
+    'flex-row items-center gap-1.5 self-start rounded-chip px-3 py-1.5',
     selected ? 'bg-primary' : 'bg-muted'
   );
+
+  const resolvedColour = colour ? remapChildSwatch(colour) : undefined;
 
   const content = (
     <>
@@ -41,13 +44,13 @@ export function ChildChip({
         testID={testID ? `${testID}-dot` : undefined}
         className={cn(
           'h-2.5 w-2.5 rounded-full',
-          !colour && 'bg-muted-foreground'
+          !resolvedColour && 'bg-muted-foreground'
         )}
-        style={colour ? { backgroundColor: colour } : undefined}
+        style={resolvedColour ? { backgroundColor: resolvedColour } : undefined}
       />
       <Text
         className={cn(
-          'font-sora-medium text-sm',
+          'font-medium text-sm',
           selected ? 'text-primary-foreground' : 'text-foreground'
         )}
       >

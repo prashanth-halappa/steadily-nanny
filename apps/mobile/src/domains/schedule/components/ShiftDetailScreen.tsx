@@ -131,13 +131,13 @@ export function ShiftDetailScreen() {
       contentContainerStyle={{ padding: 24, paddingBottom: 100 }}
     >
       <H1 testID="shift-detail-title">{t('detail.title')}</H1>
-      <Body className="mt-2 text-muted-foreground">
+      <Body className="mt-2 text-muted-foreground" tabular>
         {shift.local_date} · {shift.timezone}
       </Body>
 
       {isParent ? (
         <View className="mt-6 gap-4" testID="shift-detail-edit">
-          <Body className="font-sora-medium">{t('detail.startLabel')}</Body>
+          <Body className="font-medium">{t('detail.startLabel')}</Body>
           <Input
             testID="shift-detail-start"
             value={startTime}
@@ -146,7 +146,7 @@ export function ShiftDetailScreen() {
             autoCapitalize="none"
             autoCorrect={false}
           />
-          <Body className="font-sora-medium">{t('detail.endLabel')}</Body>
+          <Body className="font-medium">{t('detail.endLabel')}</Body>
           <Input
             testID="shift-detail-end"
             value={endTime}
@@ -155,7 +155,7 @@ export function ShiftDetailScreen() {
             autoCapitalize="none"
             autoCorrect={false}
           />
-          <Body className="font-sora-medium">{t('detail.noteLabel')}</Body>
+          <Body className="font-medium">{t('detail.noteLabel')}</Body>
           <Textarea
             testID="shift-detail-note"
             value={note}
@@ -187,14 +187,14 @@ export function ShiftDetailScreen() {
         </View>
       ) : (
         <View className="mt-6 gap-2" testID="shift-detail-readonly">
-          <Body>
+          <Body tabular>
             {utcIsoToWallClockHHMM(shift.starts_at, shift.timezone)} –{' '}
             {utcIsoToWallClockHHMM(shift.ends_at, shift.timezone)}
           </Body>
           {shift.note ? <Body>{shift.note}</Body> : null}
           {isNanny ? (
             <View className="mt-4 gap-3" testID="shift-detail-counter-form">
-              <Body className="font-sora-medium">{t('detail.startLabel')}</Body>
+              <Body className="font-medium">{t('detail.startLabel')}</Body>
               <Input
                 testID="shift-detail-counter-start"
                 value={startTime}
@@ -203,7 +203,7 @@ export function ShiftDetailScreen() {
                 autoCapitalize="none"
                 autoCorrect={false}
               />
-              <Body className="font-sora-medium">{t('detail.endLabel')}</Body>
+              <Body className="font-medium">{t('detail.endLabel')}</Body>
               <Input
                 testID="shift-detail-counter-end"
                 value={endTime}
@@ -320,14 +320,16 @@ function EventRow({ event }: { event: ShiftEvent }) {
       testID={`shift-event-${event.id}`}
       className="rounded-lg bg-muted p-3"
     >
-      <Body className="font-sora-medium">
+      <Body className="font-medium">
         {known
           ? t(`detail.eventType.${event.event_type}`, {
               defaultValue: event.event_type,
             })
           : t('detail.eventTypeUnknown')}
       </Body>
-      <Small className="text-muted-foreground">{event.created_at}</Small>
+      <Small className="text-muted-foreground" tabular>
+        {event.created_at}
+      </Small>
       {!known ? (
         <Small testID={`shift-event-fallback-${event.id}`}>
           {t('detail.eventTypeFallback', { type: event.event_type })}

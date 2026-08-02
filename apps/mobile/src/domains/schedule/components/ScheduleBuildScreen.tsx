@@ -469,9 +469,7 @@ export function ScheduleBuildScreen({
                 return (
                   <View key={day} className="gap-2">
                     <View className="flex-row items-center justify-between gap-2">
-                      <Body className="font-sora-medium">
-                        {t(`weekday.${day}`)}
-                      </Body>
+                      <Body className="font-medium">{t(`weekday.${day}`)}</Body>
                       {outsideAvailability ? (
                         <StatusPill
                           variant="outside-hours"
@@ -568,17 +566,17 @@ export function ScheduleBuildScreen({
           {...cancelProps}
         >
           <View className="gap-4">
-            <Body testID="schedule-review-days-count">
+            <Body testID="schedule-review-days-count" tabular>
               {t('build.reviewDaysCount', { count: selectedDays.length })}
             </Body>
-            <Body testID="schedule-review-hours-total">
+            <Body testID="schedule-review-hours-total" tabular>
               {t('build.reviewHoursTotal', { hours: totalHours })}
             </Body>
             {displayOrder
               .filter(day => selectedDays.includes(day))
               .map(day => (
                 <View key={day} className="gap-1">
-                  <Body className="font-sora-medium">
+                  <Body className="font-medium" tabular>
                     {t(`weekday.${day}`)} —{' '}
                     {dayTimes[day]?.start ?? DEFAULT_START}
                     {'–'}

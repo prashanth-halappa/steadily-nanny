@@ -7,7 +7,7 @@ import Animated, {
   useDerivedValue,
   withTiming,
 } from 'react-native-reanimated';
-import { useColorScheme } from '@/lib/useColorScheme';
+import { useThemeColors } from '@/lib/design-tokens/useThemeColors';
 import { cn } from '@/lib/utils';
 
 function SwitchWeb({
@@ -28,7 +28,7 @@ function SwitchWeb({
     >
       <SwitchPrimitives.Thumb
         className={cn(
-          'pointer-events-none block h-5 w-5 rounded-full bg-background shadow-md shadow-foreground/5 ring-0 transition-transform',
+          'pointer-events-none block h-5 w-5 rounded-full bg-background border border-border ring-0 transition-transform',
           props.checked ? 'translate-x-5' : 'translate-x-0'
         )}
       />
@@ -36,34 +36,22 @@ function SwitchWeb({
   );
 }
 
-// Convert hex colors to RGB for animation interpolation
-// Light mode: primary = #3B6FF5 (59, 111, 245), input = #F4F5F7 (244, 245, 247)
-// Dark mode: primary = #6B92F7 (107, 146, 247), input = #1E2128 (30, 33, 40)
-const RGB_COLORS = {
-  light: {
-    primary: 'rgb(59, 111, 245)', // colors.primary.DEFAULT #3B6FF5
-    input: 'rgb(244, 245, 247)', // colors.input #F4F5F7
-  },
-  dark: {
-    primary: 'rgb(107, 146, 247)', // colors.primary.light #6B92F7
-    input: 'rgb(55, 55, 60)', // dark mode input background — deliberately lighter than --input token for toggle track visibility
-  },
-} as const;
-
 function SwitchNative({
   className,
   ...props
 }: SwitchPrimitives.RootProps & {
   ref?: React.RefObject<SwitchPrimitives.RootRef>;
 }) {
-  const { colorScheme } = useColorScheme();
+  const themeColors = useThemeColors();
+  const trackOff = themeColors.input;
+  const trackOn = themeColors.primary;
   const translateX = useDerivedValue(() => (props.checked ? 18 : 0));
   const animatedRootStyle = useAnimatedStyle(() => {
     return {
       backgroundColor: interpolateColor(
         translateX.value,
         [0, 18],
-        [RGB_COLORS[colorScheme].input, RGB_COLORS[colorScheme].primary]
+        [trackOff, trackOn]
       ),
     };
   });
@@ -95,7 +83,7 @@ function SwitchNative({
         <Animated.View style={animatedThumbStyle}>
           <SwitchPrimitives.Thumb
             className={
-              'h-7 w-7 rounded-full bg-background shadow-md shadow-foreground/25 ring-0'
+              'h-7 w-7 rounded-full bg-background border border-border ring-0'
             }
           />
         </Animated.View>

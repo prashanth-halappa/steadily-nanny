@@ -75,7 +75,7 @@ function DropdownMenuSubContent({
   return (
     <DropdownMenuPrimitive.SubContent
       className={cn(
-        'z-50 min-w-[8rem] overflow-hidden rounded-3xl border border-border mt-1 bg-popover p-3 shadow-md shadow-foreground/5 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2',
+        'z-50 min-w-[8rem] overflow-hidden rounded-3xl border border-border mt-1 bg-popover p-3 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2',
         open
           ? 'web:animate-in web:fade-in-0 web:zoom-in-95'
           : 'web:animate-out web:fade-out-0 web:zoom-out',
@@ -116,7 +116,7 @@ function DropdownMenuContent({
       >
         <DropdownMenuPrimitive.Content
           className={cn(
-            'z-50 min-w-[8rem] overflow-hidden rounded-3xl border border-border bg-popover p-3 shadow-md shadow-foreground/5 web:data-[side=bottom]:slide-in-from-top-2 web:data-[side=left]:slide-in-from-right-2 web:data-[side=right]:slide-in-from-left-2 web:data-[side=top]:slide-in-from-bottom-2',
+            'z-50 min-w-[8rem] overflow-hidden rounded-3xl border border-border bg-popover p-3 web:data-[side=bottom]:slide-in-from-top-2 web:data-[side=left]:slide-in-from-right-2 web:data-[side=right]:slide-in-from-left-2 web:data-[side=top]:slide-in-from-bottom-2',
             open
               ? 'web:animate-in web:fade-in-0 web:zoom-in-95'
               : 'web:animate-out web:fade-out-0 web:zoom-out-95',

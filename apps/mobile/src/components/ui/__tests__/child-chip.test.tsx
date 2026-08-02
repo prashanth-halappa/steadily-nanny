@@ -56,8 +56,9 @@ describe('ChildChip', () => {
       <ChildChip name="Wren" colour="#14B8A6" testID="chip-wren-colour" />
     );
     const dot = getByTestId('chip-wren-colour-dot');
+    // Legacy brand swatches remap to Ledger category accents
     expect(dot.props.style).toEqual(
-      expect.objectContaining({ backgroundColor: '#14B8A6' })
+      expect.objectContaining({ backgroundColor: '#4A6B62' })
     );
   });
 });

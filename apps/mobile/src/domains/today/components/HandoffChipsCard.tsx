@@ -50,13 +50,13 @@ function ChipToggle({
       accessibilityState={{ selected }}
       onPress={onPress}
       className={cn(
-        'rounded-full px-3 py-1.5',
+        'rounded-chip px-3 py-1.5',
         selected ? 'bg-primary' : 'bg-muted'
       )}
     >
       <Text
         className={cn(
-          'text-sm font-sora-medium',
+          'text-sm font-medium',
           selected ? 'text-primary-foreground' : 'text-foreground'
         )}
       >

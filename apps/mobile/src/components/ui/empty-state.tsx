@@ -109,13 +109,13 @@ export function EmptyState({
                 ? {
                     width: 160,
                     height: 160,
-                    borderRadius: 12,
+                    borderRadius: 6,
                     marginBottom: 16,
                   }
                 : {
                     width: 240,
                     height: 240,
-                    borderRadius: 16,
+                    borderRadius: 8,
                     marginBottom: 16,
                   }
             }

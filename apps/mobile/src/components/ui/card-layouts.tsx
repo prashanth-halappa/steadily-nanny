@@ -18,7 +18,7 @@ import {
   type ViewStyle,
 } from 'react-native';
 import { cn } from '@/lib/utils';
-import { colors, getColorWithOpacity } from '~/lib/design-tokens/colors';
+import { getColorWithOpacity } from '~/lib/design-tokens/colors';
 import { useThemeColors } from '~/lib/design-tokens/useThemeColors';
 import { CardVariant, ElevatedCard, FilledCard } from './card-variants';
 
@@ -102,6 +102,7 @@ function MediaCard({
   style,
   ...props
 }: MediaCardProps) {
+  const themeColors = useThemeColors();
   const stripColor = accentColor;
 
   return (
@@ -124,7 +125,7 @@ function MediaCard({
 
         {/* Completed overlay */}
         {completed && (
-          <View className="absolute inset-0 bg-black/40 items-center justify-center">
+          <View className="absolute inset-0 bg-scrim/40 items-center justify-center">
             <Text className="text-2xl">✓</Text>
           </View>
         )}
@@ -149,14 +150,19 @@ function MediaCard({
         {/* Badge pill */}
         {badgeText && (
           <View
-            className="absolute bottom-2 left-3 rounded-full px-2.5 py-1"
+            className="absolute bottom-2 left-3 rounded-chip px-2.5 py-1"
             style={{
               backgroundColor: stripColor
                 ? getColorWithOpacity(stripColor, 80)
-                : 'rgba(0,0,0,0.6)',
+                : getColorWithOpacity(themeColors.scrim, 60),
             }}
           >
-            <Text className="text-xs font-medium text-white">{badgeText}</Text>
+            <Text
+              className="text-xs font-medium"
+              style={{ color: themeColors.primaryForeground }}
+            >
+              {badgeText}
+            </Text>
           </View>
         )}
       </View>
@@ -184,12 +190,13 @@ function InsightCard({
   style,
   ...props
 }: InsightCardProps) {
+  const themeColors = useThemeColors();
   return (
     <CardVariant
       variant="elevated"
-      accentColor={colors.primary.DEFAULT}
+      accentColor={themeColors.primary}
       accentWidth={3}
-      tintColor={colors.primary.DEFAULT}
+      tintColor={themeColors.primary}
       tintOpacity={10}
       className={cn('p-4', className)}
       style={style}
@@ -197,7 +204,7 @@ function InsightCard({
     >
       {label && (
         <View className="flex-row items-center gap-1.5 mb-2">
-          <Sparkles size={14} color={colors.primary.DEFAULT} />
+          <Sparkles size={14} color={themeColors.primary} />
           <Text className="text-xs font-semibold text-primary">{label}</Text>
         </View>
       )}
@@ -369,13 +376,14 @@ function CelebrationCard({
   style,
   ...props
 }: CelebrationCardProps) {
+  const themeColors = useThemeColors();
   return (
     <CardVariant
       variant="filled"
       className={cn('p-4 overflow-hidden', className)}
       style={[
         {
-          backgroundColor: getColorWithOpacity(colors.warning.DEFAULT, 10),
+          backgroundColor: getColorWithOpacity(themeColors.warning, 10),
         },
         style as ViewStyle,
       ]}

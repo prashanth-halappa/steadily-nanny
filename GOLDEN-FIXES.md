@@ -22,11 +22,11 @@ Format: **Symptom → Root cause → Where the fix lives in this repo → What n
 - **Where the fix lives:** the convention (never `className` on an `Animated.View`; use inline `style={{}}` or `useThemeColors()` for dynamic colors) plus the escape-hatch hook itself: `apps/mobile/lib/design-tokens/useThemeColors.ts`. The canonical, heavily-commented reference implementation is `apps/mobile/src/components/ui/loading-indicator.tsx`; see also `apps/mobile/src/components/ui/progress.tsx`, `apps/mobile/src/components/ui/loading-button.tsx`, and `apps/mobile/lib/animations/StaggeredFadeIn.tsx` for more worked examples.
 - **What not to do:** don't put layout/color `className` directly on an `Animated.View` — split it into an inner static `View` for `className` and keep only the animated `style` on the `Animated.View`. There is no automated Biome/CI guard for this in the template (it's convention + comments only) — if you want one, this is a good candidate for a custom lint rule.
 
-**3. Sora font weights silently no-op on iOS**
-- **Symptom:** setting a numeric `fontWeight` (e.g. `700`) on Sora-family text does nothing on iOS, or produces synthetic ("faux") bold instead of the real weight.
-- **Root cause:** each Sora weight ships as a separate font file (`Sora-Bold.ttf`, `Sora-SemiBold.ttf`, …); iOS only picks the correct glyphs when you select the weight via the `fontFamily` string, not a numeric `fontWeight`.
-- **Where the fix lives:** `apps/mobile/lib/design-tokens/typography.ts` — every entry pairs a documentation-only `weight` field with the real `fontFamily: 'Sora-*'` value actually applied.
-- **What not to do:** don't add a new type-scale entry with just a numeric `weight` and expect it to render — always add the matching `fontFamily`.
+**3. Platform face + numeric `fontWeight` (Ledger; Sora removed)**
+- **Symptom (historical):** with Sora, setting a numeric `fontWeight` (e.g. `700`) did nothing on iOS, or produced synthetic ("faux") bold — each weight was a separate font file and iOS only picked the right glyphs via `fontFamily: 'Sora-*'`, not `fontWeight`.
+- **Root cause / fix:** Ledger dropped custom fonts and uses the **platform face** (SF Pro on iOS, Roboto on Android). Omit `fontFamily`; set weight via numeric `fontWeight` in typography tokens, or Tailwind classes like `font-medium` / `font-semibold`.
+- **Where the fix lives:** `apps/mobile/lib/design-tokens/typography.ts` — tokens carry `weight` only; the typography factory maps it to `fontWeight`. See `apps/mobile/assets/fonts/README.md`.
+- **What not to do:** don't set `fontFamily: 'System'` (or any custom face) unless you intentionally load one via `expo-font`. Don't reintroduce per-file weight families and expect numeric `fontWeight` to work on iOS.
 
 **4. `Linking.openURL` fails on the app's own universal-link domain**
 - **Symptom:** tapping a link to the app's own marketing/terms domain (the same domain claimed for universal links) fails silently or shows "Unable to open URL."

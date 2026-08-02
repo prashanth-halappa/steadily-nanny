@@ -124,24 +124,6 @@ const config: ExpoConfig = {
         organization: appIdentity.sentry.organization,
       },
     ],
-    [
-      'expo-font',
-      {
-        // Sora is an OSS Google font shipped as the template default.
-        // SETUP: drop your .ttf files in assets/fonts/ (see the SETUP note in
-        // that folder) or swap Sora for your brand font and update
-        // tailwind.config.js fontFamily entries to match.
-        fonts: [
-          './assets/fonts/Sora-Regular.ttf',
-          './assets/fonts/Sora-Light.ttf',
-          './assets/fonts/Sora-ExtraLight.ttf',
-          './assets/fonts/Sora-Medium.ttf',
-          './assets/fonts/Sora-SemiBold.ttf',
-          './assets/fonts/Sora-Bold.ttf',
-          './assets/fonts/Sora-ExtraBold.ttf',
-        ],
-      },
-    ],
     'expo-image',
     // Native date/time picker used by the schedule day editor. `expo install`
     // could not add this automatically because this config is dynamic (.ts);

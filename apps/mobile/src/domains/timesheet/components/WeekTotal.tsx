@@ -59,7 +59,11 @@ export function WeekTotal({
             >
               <Icon icon={ChevronLeft} size={20} className="text-foreground" />
             </AnimatedPressable>
-            <Small testID="hours-week-label" className="text-muted-foreground">
+            <Small
+              testID="hours-week-label"
+              className="text-muted-foreground"
+              tabular
+            >
               {weekRangeLabel}
             </Small>
             <AnimatedPressable
@@ -77,12 +81,18 @@ export function WeekTotal({
             </AnimatedPressable>
           </View>
         ) : (
-          <Small className="text-muted-foreground">{weekRangeLabel}</Small>
+          <Small className="text-muted-foreground" tabular>
+            {weekRangeLabel}
+          </Small>
         )}
         <View className="flex-row items-baseline gap-2">
-          <H2 testID="hours-total">{totalLabel}</H2>
+          <H2 testID="hours-total" tabular>
+            {totalLabel}
+          </H2>
           {overtimeLabel ? (
-            <Body className="text-muted-foreground">{overtimeLabel}</Body>
+            <Body className="text-muted-foreground" tabular>
+              {overtimeLabel}
+            </Body>
           ) : null}
         </View>
       </CardContent>

@@ -118,7 +118,7 @@ function NavigationMenuContent({
     <NavigationMenuPrimitive.Portal hostName={portalHost}>
       <NavigationMenuPrimitive.Content
         className={cn(
-          'w-full native:border native:border-border native:rounded-lg native:shadow-lg native:bg-popover native:text-popover-foreground native:overflow-hidden',
+          'w-full native:border native:border-border native:rounded-lg native:bg-popover native:text-popover-foreground native:overflow-hidden',
           value === itemValue
             ? 'web:animate-in web:fade-in web:slide-in-from-right-20'
             : 'web:animate-out web:fade-out web:slide-out-to-left-20',
@@ -149,7 +149,7 @@ function NavigationMenuViewport({
     <View className={cn('absolute left-0 top-full flex justify-center')}>
       <View
         className={cn(
-          'web:origin-top-center relative mt-1.5 web:h-[var(--radix-navigation-menu-viewport-height)] w-full overflow-hidden rounded-md border border-border bg-popover text-popover-foreground shadow-lg web:animate-in web:zoom-in-90',
+          'web:origin-top-center relative mt-1.5 web:h-[var(--radix-navigation-menu-viewport-height)] w-full overflow-hidden rounded-md border border-border bg-popover text-popover-foreground web:animate-in web:zoom-in-90',
           className
         )}
         {...props}
@@ -182,7 +182,7 @@ function NavigationMenuIndicator({
       )}
       {...props}
     >
-      <View className="relative top-[60%] h-2 w-2 rotate-45 rounded-tl-sm bg-border shadow-md shadow-foreground/5" />
+      <View className="relative top-[60%] h-2 w-2 rotate-45 rounded-tl-sm bg-border" />
     </NavigationMenuPrimitive.Indicator>
   );
 }

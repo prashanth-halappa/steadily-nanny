@@ -54,7 +54,7 @@ interface IconProps {
  *
  * Usage:
  * <Icon icon={ChevronDown} size="sm" className="text-primary" />
- * <Icon icon={Heart} size={20} color="#F98866" />
+ * <Icon icon={Heart} size={20} color="#1F4A8C" />
  */
 export function Icon({
   icon: IconComponent,

@@ -74,7 +74,7 @@ describe('SkeletonShimmer', () => {
   });
 
   describe('Border radius', () => {
-    it('should use default borderRadius of 8', () => {
+    it('should use default borderRadius of 4', () => {
       const { getByTestId } = render(
         <SkeletonShimmer width={100} height={20} testID="default-radius" />
       );
@@ -83,7 +83,7 @@ describe('SkeletonShimmer', () => {
       const flatStyle = Array.isArray(style)
         ? Object.assign({}, ...style.flat(Number.POSITIVE_INFINITY))
         : style;
-      expect(flatStyle.borderRadius).toBe(8);
+      expect(flatStyle.borderRadius).toBe(4);
     });
 
     it('should apply custom borderRadius', () => {

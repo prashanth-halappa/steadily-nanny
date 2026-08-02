@@ -43,7 +43,7 @@ export function NewBadge({ size = 'sm', label = 'New' }: NewBadgeProps) {
 
   return (
     <Animated.View style={animatedStyle}>
-      <View className={cn('bg-primary rounded-full', sizeClasses)}>
+      <View className={cn('bg-primary rounded-chip', sizeClasses)}>
         <Small className="text-primary-foreground">{label}</Small>
       </View>
     </Animated.View>

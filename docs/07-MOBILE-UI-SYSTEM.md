@@ -14,11 +14,7 @@ Example: `tailwind.config.js` — the token groups that matter:
 
 ```js
 theme: { extend: {
-  fontFamily: {            // custom font loaded via expo-font; one entry per weight
-    sans: ['Sora-Regular'],
-    'sora-medium': ['Sora-Medium'],
-    'sora-bold': ['Sora-Bold'], /* … */
-  },
+  // No fontFamily — Ledger uses the platform face; weight via fontWeight / font-medium
   fontSize: {              // body min 16px; line-heights ~1.5x; semantic aliases
     base: ['16px', { lineHeight: '24px' }],   // MINIMUM body size
     display: ['32px', { lineHeight: '48px', fontWeight: '600' }],
@@ -32,19 +28,20 @@ theme: { extend: {
     primary: { DEFAULT: 'hsl(var(--primary))', foreground: 'hsl(var(--primary-foreground))' },
     /* … */
   },
-  borderRadius: {          // pill buttons, rounded cards
-    card: '24px', button: '9999px', chip: '9999px',
+  borderRadius: {          // Ledger — tight radii; separation by rule + whitespace
+    card: '6px', button: '4px', chip: '4px',
   },
-  boxShadow: { card: '0 2px 8px 0 rgba(0,0,0,0.08)', /* … */ },
+  boxShadow: { card: 'none', /* … all none — use hairline borders */ },
   borderWidth: { hairline: hairlineWidth() },
 }}
 ```
 
 Conventions baked into the tokens:
 - **Spacing is an 8pt grid** — use `p-4` (16px), `gap-6` (24px), not arbitrary values. `touch` (44px) is the minimum tappable size.
-- **Typography minimum is 16px** for body; the scale is semantic (`display`, `caption`, `button`).
-- **Buttons and chips are pills** (`rounded-button` = 9999px); cards use `rounded-card` (24px).
-- **Shadows are used sparingly** — prefer hairline borders for separation.
+- **Typography minimum is 16px** for body; the scale is semantic (`display`, `caption`, `button`). Weight via numeric `fontWeight` / Tailwind `font-*` — no custom `fontFamily`.
+- **Tight radii** — `rounded-card` (6px), `rounded-button` / `rounded-chip` (4px); not pills.
+- **No elevation shadows** — `boxShadow.*` are all `none`; use hairline borders (`borderWidth.hairline`) for separation.
+- **Palette source of truth** — `lib/design-tokens/palette.ts` (Ledger); `global.css` mirrors it and is parity-tested.
 
 A skeleton of this config (generic palette, same structure) ships at `pattern/templates/mobile/tailwind.config.js`.
 
@@ -65,7 +62,7 @@ Example: `global.css` (abridged):
   :root {
     --background: 0 0% 100%;        /* white */
     --foreground: 240 10% 10%;      /* near-black */
-    --primary: 230 80% 60%;         /* brand blue */
+    --primary: 216 64% 34%;         /* deep ledger blue — see palette.ts */
     --primary-foreground: 0 0% 100%;
     --muted: 220 14% 96%;
     --muted-foreground: 220 8% 50%;
@@ -77,7 +74,7 @@ Example: `global.css` (abridged):
   .dark:root {
     --background: 240 6% 10%;       /* warm dark */
     --foreground: 220 14% 96%;
-    --primary: 230 80% 70%;         /* lighter blue for dark */
+    --primary: 216 70% 70%;         /* lighter ledger blue for dark — see palette.ts */
     /* …every token re-declared with dark values, gray scale INVERTED… */
   }
 }
@@ -123,7 +120,7 @@ import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '@/lib/utils';
 
 const buttonVariants = cva(
-  'group flex items-center justify-center rounded-full …',
+  'group flex items-center justify-center rounded-button …',
   {
     variants: {
       variant: {
@@ -136,8 +133,8 @@ const buttonVariants = cva(
       },
       size: {
         default: 'h-10 px-4 py-2 native:h-12 native:px-5 native:py-3',
-        sm: 'h-9 rounded-full px-3',
-        lg: 'h-11 rounded-full px-8 native:h-14',
+        sm: 'h-9 rounded-button px-3',
+        lg: 'h-11 rounded-button px-8 native:h-14',
         icon: 'h-10 w-10',
       },
     },
@@ -164,11 +161,11 @@ Two reusable tricks here: a parallel `buttonTextVariants` is pushed through a `T
 
 ### Typography via a factory
 
-Example: `src/components/ui/typography/factory.tsx`. Instead of hand-writing each heading/body component, a factory turns a token (`size`, `lineHeight`, `weight`, `fontFamily`) into a component — combining an inline `style` (exact numeric metrics) with a `className` (`text-foreground` for theming) and supporting `asChild` via `@rn-primitives/slot`:
+Example: `src/components/ui/typography/factory.tsx`. Instead of hand-writing each heading/body component, a factory turns a token (`size`, `lineHeight`, `weight`) into a component — combining an inline `style` (exact numeric metrics, including `fontWeight`) with a `className` (`text-foreground` for theming) and supporting `asChild` via `@rn-primitives/slot`:
 
 ```tsx
 export function createTypographyComponent(token, displayName, options) {
-  const baseStyle = tokenToStyle(token);           // { fontSize, lineHeight, fontFamily, letterSpacing }
+  const baseStyle = tokenToStyle(token);           // { fontSize, lineHeight, fontWeight, letterSpacing }
   return function TypographyComponent({ className, asChild = false, style, ...props }) {
     const Component = asChild ? Slot.Text : RNText;
     return (
@@ -204,7 +201,7 @@ This is the single most important rule in this doc. It causes a silent, hard-to-
 
 Rules of thumb:
 - Plain (non-animated) RN components → `className` is fine.
-- Any `Reanimated.Animated.*` component → use inline `style`. Resolve theme colors to literal values (e.g. from your color hook / `NAV_THEME`) and pass them inline, since you can't lean on `bg-*` classes.
+- Any `Reanimated.Animated.*` component → use inline `style`. Resolve theme colors to literal values (e.g. from `useThemeColors()` / `palette.ts` hex projections) and pass them inline, since you can't lean on `bg-*` classes.
 - This also applies on the root themed shell: the root layout deliberately avoids most `bg-*`/`shadow` classNames on its wrapper View and uses inline `backgroundColor`, because className + theme toggles can race with the navigation context.
 
 ---
@@ -220,8 +217,10 @@ Rules of thumb:
 
 | Concern | File |
 |---|---|
+| Palette source of truth (Ledger) | `lib/design-tokens/palette.ts` |
 | Token names | `tailwind.config.js` |
 | CSS-variable theme (light/dark) | `global.css` |
+| Typography tokens (platform face) | `lib/design-tokens/typography.ts` |
 | `cn()` class merge | `lib/utils.ts` |
 | CVA variant component | `src/components/ui/button.tsx` |
 | Typography factory | `src/components/ui/typography/factory.tsx` |

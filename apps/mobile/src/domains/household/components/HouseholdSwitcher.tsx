@@ -49,7 +49,7 @@ export function HouseholdSwitcher() {
       >
         <View
           testID="household-switcher"
-          className="flex-row items-center gap-1.5 self-start rounded-full border border-border bg-card px-3 py-1.5"
+          className="flex-row items-center gap-1.5 self-start rounded-chip border border-border bg-card px-3 py-1.5"
         >
           <Body testID="household-switcher-current-name" className="text-sm">
             {household.name}

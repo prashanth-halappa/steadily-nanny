@@ -10,6 +10,7 @@ import type { Household } from '@steadily-nanny/shared-types/schemas/household.s
 import type { Shift } from '@steadily-nanny/shared-types/schemas/shift.schema';
 import { useQueries } from '@tanstack/react-query';
 import { ScrollView, View } from 'react-native';
+import { useThemeColors } from '@/lib/design-tokens';
 import { shiftApi } from '@/src/api/endpoints/shifts';
 import { queryKeys } from '@/src/api/queryKeys';
 import { Body, H3 } from '@/src/components/ui/typography';
@@ -36,13 +37,16 @@ interface CrossFamilyRhythmViewProps {
   activeHouseholdId: string;
 }
 
-function periodDot(filled: boolean, testID: string) {
+function PeriodDot({ filled, testID }: { filled: boolean; testID: string }) {
+  const themeColors = useThemeColors();
   return (
     <View
       testID={testID}
       className="mx-0.5 h-3 w-3 rounded-full"
       style={{
-        backgroundColor: filled ? '#14B8A6' : '#E5E7EB',
+        backgroundColor: filled
+          ? themeColors.category.accent2
+          : themeColors.border,
       }}
     />
   );
@@ -127,16 +131,17 @@ export function CrossFamilyRhythmView({
               testID={`cross-family-day-${h.id}-${date}`}
               className="mb-1 flex-row items-center gap-2"
             >
-              <Body className="w-16 text-xs text-muted-foreground">
+              <Body className="w-16 text-xs text-muted-foreground" tabular>
                 {date.slice(5)}
               </Body>
               <View className="flex-row">
-                {PERIODS.map(period =>
-                  periodDot(
-                    hasShiftInPeriod(h.id, date, period),
-                    `cross-family-dot-${h.id}-${date}-${period}`
-                  )
-                )}
+                {PERIODS.map(period => (
+                  <PeriodDot
+                    key={period}
+                    filled={hasShiftInPeriod(h.id, date, period)}
+                    testID={`cross-family-dot-${h.id}-${date}-${period}`}
+                  />
+                ))}
               </View>
               <Body className="text-xs text-muted-foreground">
                 {PERIOD_LABELS.morning}/{PERIOD_LABELS.afternoon}/

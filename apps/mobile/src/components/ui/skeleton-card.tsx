@@ -27,7 +27,7 @@ export function SkeletonCard(_props?: SkeletonCardProps) {
         testID="skeleton-concern-tag"
         width={80}
         height={22}
-        borderRadius={999}
+        borderRadius={4}
       />
 
       <View style={{ height: 8 }} />
@@ -56,7 +56,7 @@ export function SkeletonCard(_props?: SkeletonCardProps) {
         testID="skeleton-button"
         width={80}
         height={28}
-        borderRadius={999}
+        borderRadius={4}
       />
     </View>
   );

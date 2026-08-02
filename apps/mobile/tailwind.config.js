@@ -19,8 +19,6 @@ module.exports = {
   //
   // Rule of thumb: if you add a directory that renders JSX, add it here.
   content: [
-    './app/**/*.{ts,tsx}',
-    './components/**/*.{ts,tsx}',
     './lib/**/*.{ts,tsx}',
     './src/app/**/*.{ts,tsx}',
     './src/components/**/*.{ts,tsx}',
@@ -29,20 +27,6 @@ module.exports = {
   presets: [require('nativewind/preset')],
   theme: {
     extend: {
-      // Sora is the template's default OSS font.
-      // NOTE: each Sora weight is a SEPARATE family (Sora-Bold / Sora-SemiBold /
-      // ...). On iOS you MUST select weight via `fontFamily`, not a numeric
-      // `fontWeight` (which is a no-op / faux-bold). To swap fonts, replace these
-      // family names and load the files via expo-font.
-      fontFamily: {
-        sans: ['Sora-Regular'],
-        sora: ['Sora-Regular'],
-        'sora-light': ['Sora-Light'],
-        'sora-medium': ['Sora-Medium'],
-        'sora-semibold': ['Sora-SemiBold'],
-        'sora-bold': ['Sora-Bold'],
-        'sora-extrabold': ['Sora-ExtraBold'],
-      },
       fontSize: {
         // Design system typography scale.
         // Body text minimum 16px for readability.
@@ -81,11 +65,15 @@ module.exports = {
       },
       colors: {
         // Base tokens (from CSS variables)
-        border: 'hsl(var(--border))',
+        border: {
+          DEFAULT: 'hsl(var(--border))',
+          strong: 'hsl(var(--border-strong))',
+        },
         input: 'hsl(var(--input))',
         ring: 'hsl(var(--ring))',
         background: 'hsl(var(--background))',
         foreground: 'hsl(var(--foreground))',
+        scrim: 'hsl(var(--scrim))',
 
         // Primary brand color (use for CTAs only)
         primary: {
@@ -114,7 +102,7 @@ module.exports = {
           foreground: 'hsl(var(--muted-foreground))',
         },
 
-        // Accent
+        // Accent — subtle hover ground
         accent: {
           DEFAULT: 'hsl(var(--accent))',
           foreground: 'hsl(var(--accent-foreground))',
@@ -132,7 +120,7 @@ module.exports = {
           foreground: 'hsl(var(--card-foreground))',
         },
 
-        // Category accent colors — three distinct, meaning-free hues.
+        // Category accent colors
         category: {
           accent1: 'hsl(var(--category-accent1))',
           accent2: 'hsl(var(--category-accent2))',
@@ -177,27 +165,24 @@ module.exports = {
         hairline: hairlineWidth(),
       },
       borderRadius: {
-        // Design system border radius (pill buttons/chips, generous cards)
-        sm: '16px',
-        DEFAULT: '24px',
-        md: '24px',
-        lg: '24px',
-        xl: '24px',
-        '2xl': '24px',
-        '3xl': '32px',
-        // Semantic aliases
-        card: '24px',
-        button: '9999px',
-        chip: '9999px', // Pill shape
+        // Ledger — tight radii; separation by rule + whitespace
+        sm: '2px',
+        DEFAULT: '4px',
+        md: '4px',
+        lg: '6px',
+        xl: '6px',
+        '2xl': '6px',
+        '3xl': '8px',
+        card: '6px',
+        button: '4px',
+        chip: '4px',
       },
       boxShadow: {
-        // Professional shadow system — use sparingly; prefer borders for subtle separation.
-        sm: '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
-        DEFAULT:
-          '0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06)',
-        md: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
-        lg: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
-        card: '0 2px 8px 0 rgba(0, 0, 0, 0.08)',
+        sm: 'none',
+        DEFAULT: 'none',
+        md: 'none',
+        lg: 'none',
+        card: 'none',
         none: 'none',
       },
       keyframes: {

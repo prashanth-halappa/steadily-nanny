@@ -41,7 +41,7 @@ export function RoleOptionCard({
       <View className="gap-1">
         <Text
           className={cn(
-            'font-sora-semibold text-lg',
+            'font-semibold text-lg',
             selected ? 'text-primary' : 'text-foreground'
           )}
         >

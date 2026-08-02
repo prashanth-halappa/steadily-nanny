@@ -90,7 +90,7 @@ export default function SettingsScreen() {
             >
               <Small
                 className={cn(
-                  'rounded-full border px-4 py-2',
+                  'rounded-chip border px-4 py-2',
                   lang === language
                     ? 'border-primary bg-primary/10 text-primary'
                     : 'border-border text-foreground'

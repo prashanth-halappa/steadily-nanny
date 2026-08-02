@@ -84,7 +84,7 @@ export function WeekStrip({
           >
             <Text
               className={cn(
-                'font-sora-medium text-sm',
+                'font-medium text-sm',
                 isSelected ? 'text-primary-foreground' : 'text-foreground'
               )}
             >

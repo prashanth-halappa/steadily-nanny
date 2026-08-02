@@ -46,7 +46,6 @@ export function AnimatedPressableComponent({
 }: AnimatedPressableProps) {
   const reducedMotion = useReducedMotion();
   const scale = useSharedValue(1);
-  const glow = useSharedValue(0);
 
   // Determine scale value
   const scaleValue = {
@@ -58,9 +57,9 @@ export function AnimatedPressableComponent({
   // Determine if animations should be active
   const shouldAnimate = animated && !reducedMotion;
 
+  // Scale-only press affordance — no shadowOpacity/elevation (Ledger).
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
-    shadowOpacity: glow.value,
   }));
 
   const handlePressIn = (event: GestureResponderEvent) => {
@@ -70,8 +69,6 @@ export function AnimatedPressableComponent({
         duration: 200,
         easing: easingSignature.growthBloom.easing,
       });
-      // Glow effect on press
-      glow.value = withTiming(0.3, { duration: 150 });
     }
     onPressIn?.(event);
   };
@@ -93,8 +90,6 @@ export function AnimatedPressableComponent({
           easing: easingSignature.growthBloom.easing,
         })
       );
-      // Fade out glow
-      glow.value = withTiming(0, { duration: 200 });
     }
     onPressOut?.(event);
   };

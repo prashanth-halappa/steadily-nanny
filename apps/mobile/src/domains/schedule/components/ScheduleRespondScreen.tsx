@@ -172,7 +172,7 @@ export function ScheduleRespondScreen({
               className="gap-2 rounded-xl border border-border p-4"
             >
               <View className="flex-row items-center justify-between gap-2">
-                <Body className="font-sora-semibold">
+                <Body className="font-semibold" tabular>
                   {t(`weekday.${day.weekday}`)} ·{' '}
                   {formatWallClockTime(day.start_time)}–
                   {formatWallClockTime(day.end_time)}
@@ -219,7 +219,8 @@ export function ScheduleRespondScreen({
 
       <Body
         testID="schedule-respond-total-hours"
-        className="mt-6 font-sora-semibold"
+        className="mt-6 font-semibold"
+        tabular
       >
         {t('respond.totalHours', { hours: totalHours })}
       </Body>

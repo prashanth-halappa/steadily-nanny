@@ -107,6 +107,7 @@ export function CoverageLanesView({
                 key={`${item.childId}-${seg.shiftId}`}
                 testID={`coverage-segment-${item.childId}-${seg.shiftId}`}
                 className="text-sm text-muted-foreground"
+                tabular
               >
                 {seg.label}
               </Body>

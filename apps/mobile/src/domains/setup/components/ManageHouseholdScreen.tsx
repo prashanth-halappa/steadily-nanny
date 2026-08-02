@@ -296,7 +296,7 @@ export function ManageHouseholdScreen() {
             >
               <Small
                 className={cn(
-                  'rounded-full border px-4 py-2',
+                  'rounded-chip border px-4 py-2',
                   mode === approvalMode
                     ? 'border-primary bg-primary/10 text-primary'
                     : 'border-border text-foreground'
@@ -320,7 +320,7 @@ export function ManageHouseholdScreen() {
             >
               <Small
                 className={cn(
-                  'rounded-full border px-4 py-2',
+                  'rounded-chip border px-4 py-2',
                   scope === approvalScope
                     ? 'border-primary bg-primary/10 text-primary'
                     : 'border-border text-foreground'
