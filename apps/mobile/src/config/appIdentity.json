@@ -1,12 +1,12 @@
 {
   "name": "Steadily Nanny",
-  "slug": "steadilynanny",
+  "slug": "steadily-nanny",
   "scheme": "steadilynanny",
   "version": "1.0.0",
   "runtimeVersion": "1.0.0",
   "owner": "jetto",
   "associatedDomain": "nanny.getsteadily.app",
-  "easProjectId": "SETUP-EAS-PROJECT-ID",
+  "easProjectId": "32be2bb5-1b45-4432-8767-71cc1809ae5a",
   "ios": {
     "bundleIdentifier": "com.jetto.steadily.nanny",
     "appStoreUrl": "https://apps.apple.com/app/id0000000000",
