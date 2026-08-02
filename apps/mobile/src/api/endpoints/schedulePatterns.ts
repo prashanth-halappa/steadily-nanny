@@ -62,23 +62,45 @@ export type SchedulePatternDayWithChildren = z.infer<
 >;
 
 // PUT /schedule-patterns/:patternId/days body — mirrors
-// `ReplaceSchedulePatternDaysSchema` in apps/api/src/domains/schedule/schemas.ts.
-// `weekday` is the Postgres `extract(dow)` convention (0=Sunday..6=Saturday);
-// `start_time`/`end_time` are nominal local wall-clock "HH:MM" strings.
-const ReplaceDayChildInputSchema = z.object({
-  child_id: z.uuid(),
-  start_time: z.iso.time().optional(),
-  end_time: z.iso.time().optional(),
-});
-const ReplaceDayInputSchema = z.object({
-  weekday: z.int().min(0).max(6),
-  start_time: z.iso.time(),
-  end_time: z.iso.time(),
-  children: z.array(ReplaceDayChildInputSchema).default([]),
-});
-const ReplaceSchedulePatternDaysInputSchema = z.object({
-  days: z.array(ReplaceDayInputSchema),
-});
+// `ReplaceSchedulePatternDaysSchema` in apps/api/src/domains/schedule/schemas.ts
+// EXACTLY, refinements included (D21): a client-side violation of one of
+// these should fail locally with a clear message, not skip straight to a
+// generic API 400. `weekday` is the Postgres `extract(dow)` convention
+// (0=Sunday..6=Saturday); `start_time`/`end_time` are nominal local
+// wall-clock "HH:MM" strings.
+const ReplaceDayChildInputSchema = z
+  .object({
+    child_id: z.uuid(),
+    start_time: z.iso.time().optional(),
+    end_time: z.iso.time().optional(),
+  })
+  .refine(
+    data => (data.start_time === undefined) === (data.end_time === undefined),
+    {
+      message: 'start_time and end_time must both be set or both omitted',
+      path: ['end_time'],
+    }
+  );
+const ReplaceDayInputSchema = z
+  .object({
+    weekday: z.int().min(0).max(6),
+    start_time: z.iso.time(),
+    end_time: z.iso.time(),
+    children: z.array(ReplaceDayChildInputSchema).default([]),
+  })
+  .refine(data => data.end_time > data.start_time, {
+    message: 'end_time must be after start_time',
+    path: ['end_time'],
+  });
+const ReplaceSchedulePatternDaysInputSchema = z
+  .object({
+    days: z.array(ReplaceDayInputSchema),
+  })
+  .refine(
+    data =>
+      new Set(data.days.map(day => day.weekday)).size === data.days.length,
+    { message: 'each weekday may appear at most once', path: ['days'] }
+  );
 export type ReplaceDayChildInput = z.infer<typeof ReplaceDayChildInputSchema>;
 export type ReplaceDayInput = z.infer<typeof ReplaceDayInputSchema>;
 export type ReplaceSchedulePatternDaysInput = z.infer<

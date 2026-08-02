@@ -12,6 +12,7 @@
  * - hours:    the Hours tab (clock in/out history, approve/query)
  * - household: children/invite/availability, shared between the first-run
  *   setup wizard and their post-onboarding Settings entry points
+ * - timeOff:   the nanny-only time-off request/list/cancel screen
  *
  * Language resolution order (each candidate validated vs SUPPORTED_LANGUAGES):
  *   1. MMKV-persisted preference from the `language-storage` Zustand store
@@ -36,6 +37,7 @@ import enHours from './locales/en/hours.json';
 import enHousehold from './locales/en/household.json';
 import enSchedule from './locales/en/schedule.json';
 import enSettings from './locales/en/settings.json';
+import enTimeOff from './locales/en/timeOff.json';
 import enToday from './locales/en/today.json';
 import enWelcome from './locales/en/welcome.json';
 import esAuth from './locales/es/auth.json';
@@ -45,6 +47,7 @@ import esHours from './locales/es/hours.json';
 import esHousehold from './locales/es/household.json';
 import esSchedule from './locales/es/schedule.json';
 import esSettings from './locales/es/settings.json';
+import esTimeOff from './locales/es/timeOff.json';
 import esToday from './locales/es/today.json';
 import esWelcome from './locales/es/welcome.json';
 
@@ -59,6 +62,7 @@ const resources = {
     today: enToday,
     hours: enHours,
     household: enHousehold,
+    timeOff: enTimeOff,
   },
   es: {
     common: esCommon,
@@ -70,6 +74,7 @@ const resources = {
     today: esToday,
     hours: esHours,
     household: esHousehold,
+    timeOff: esTimeOff,
   },
 };
 

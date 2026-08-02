@@ -25,6 +25,5 @@ export type {
   TimeOffIdParam,
   UpdateCarerAvailabilityInput,
   UpdateCarerTimeOffInput,
-  UpdateUserTimeSettingsInput,
   UserIdParam,
 } from '../schemas';

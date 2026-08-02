@@ -186,6 +186,32 @@ describe('HoursScreen — nanny', () => {
     expect(mockUseWeekTimeEntries.mock.calls.length).toBe(0);
     expect(getByTestId('hours-week-next').props.disabled).toBe(true);
   });
+
+  // Neither API endpoint bounds how far back `week_start` can go — the
+  // screen has to cap it itself (`MAX_WEEKS_BACK` in HoursScreen.tsx) so
+  // nobody can page back indefinitely into years before the household
+  // existed. 104 presses is deliberately one more than the 104-week cap.
+  it('cannot page back past the bounded history window — hours-week-prev disables and stops moving', () => {
+    const currentWeekStart = getWeekStartISO(new Date(), TIMEZONE);
+    const oldestReachableWeek = addWeeks(currentWeekStart, -104);
+
+    const { getByTestId } = render(<HoursScreen />);
+    for (let i = 0; i < 104; i++) {
+      fireEvent.press(getByTestId('hours-week-prev'));
+    }
+
+    expect(getByTestId('hours-week-prev').props.disabled).toBe(true);
+    const lastCallAtCap = mockUseWeekTimeEntries.mock.calls.at(-1) as
+      | [string, string]
+      | undefined;
+    expect(lastCallAtCap?.[1]).toBe(oldestReachableWeek);
+
+    // One more press past the cap must be a genuine no-op, same as the
+    // future-week case above.
+    mockUseWeekTimeEntries.mockClear();
+    fireEvent.press(getByTestId('hours-week-prev'));
+    expect(mockUseWeekTimeEntries.mock.calls.length).toBe(0);
+  });
 });
 
 describe('HoursScreen — parent, historical weeks stay non-actionable', () => {

@@ -16,6 +16,16 @@
  * TIME CONVENTION: `start_time`/`end_time` are nominal local wall-clock
  * "HH:MM" strings end to end — never converted to a `Date` here. The server
  * derives each occurrence's UTC instant from the household's timezone.
+ *
+ * D25: once a carer is selected, this screen fetches their stated
+ * availability (`GET /availability/:userId`, previously orphaned — a parent
+ * could send an entirely unschedulable week and only find out when the
+ * carer declined) and flags a picked day/time that falls outside it with
+ * `StatusPill variant="outside-hours"`, the SAME non-blocking warning
+ * `ScheduleRespondScreen` shows the carer for the mirror-image check — reusing
+ * `isOutsideAvailability` from `../utils` rather than re-deriving the clash
+ * logic here. Per the product rule (see that helper's own doc comment):
+ * warn, never block — every day stays fully selectable regardless.
  */
 import type { HouseholdMember } from '@steadily-nanny/shared-types/schemas/household.schema';
 import { type Href, useRouter } from 'expo-router';
@@ -25,6 +35,7 @@ import { View } from 'react-native';
 import { Button } from '@/src/components/ui/button';
 import { ChildChip } from '@/src/components/ui/child-chip';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
+import { StatusPill } from '@/src/components/ui/status-pill';
 import { Text } from '@/src/components/ui/text';
 import { TimeRangePicker } from '@/src/components/ui/time-range-picker';
 import { Body } from '@/src/components/ui/typography';
@@ -35,11 +46,13 @@ import { SETUP_ROLES } from '@/src/domains/setup/types';
 import { useCreateSchedulePattern } from '@/src/hooks/mutations/useCreateSchedulePattern';
 import { useReplaceSchedulePatternDays } from '@/src/hooks/mutations/useReplaceSchedulePatternDays';
 import { useSendSchedulePattern } from '@/src/hooks/mutations/useSendSchedulePattern';
+import { useAvailabilityForCarer } from '@/src/hooks/queries/useAvailabilityForCarer';
 import { useChildren } from '@/src/hooks/queries/useChildren';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 import {
   buildWeeklyRrule,
   calculateWeekTotalHours,
+  isOutsideAvailability,
   sendScheduleWeek,
   todayIsoDate,
   toggleWeekday,
@@ -76,6 +89,10 @@ export function ScheduleBuildScreen() {
   const children = useChildren(householdId);
 
   const [selectedCarerId, setSelectedCarerId] = useState<string | null>(null);
+  // D25: fetched as soon as a carer is selected (before the 'hours' step is
+  // even reached) so the warning is ready the moment there's something to
+  // warn about, rather than popping in after the picker renders.
+  const carerAvailability = useAvailabilityForCarer(selectedCarerId);
   const [selectedDays, setSelectedDays] = useState<number[]>([]);
   const [dayTimes, setDayTimes] = useState<Record<number, DayTime>>({});
   const [dayChildren, setDayChildren] = useState<Record<number, string[]>>({});
@@ -291,34 +308,68 @@ export function ScheduleBuildScreen() {
           <View className="gap-6">
             {DISPLAY_ORDER_FOR_LIST.filter(day =>
               selectedDays.includes(day)
-            ).map(day => (
-              <View key={day} className="gap-2">
-                <Body className="font-sora-medium">{t(`weekday.${day}`)}</Body>
-                <TimeRangePicker
-                  testID={`schedule-build-time-range-${day}`}
-                  start={dayTimes[day]?.start ?? DEFAULT_START}
-                  end={dayTimes[day]?.end ?? DEFAULT_END}
-                  onChange={(start, end) =>
-                    setDayTimes(prev => ({ ...prev, [day]: { start, end } }))
-                  }
-                />
-                <Body className="text-muted-foreground text-xs">
-                  {t('build.childrenLabel')}
-                </Body>
-                <View className="flex-row flex-wrap gap-2">
-                  {(children.data ?? []).map(child => (
-                    <ChildChip
-                      key={child.id}
-                      testID={`schedule-build-child-${day}-${child.id}`}
-                      name={child.name}
-                      colour={child.colour ?? undefined}
-                      selected={(dayChildren[day] ?? []).includes(child.id)}
-                      onPress={() => toggleChildForDay(day, child.id)}
-                    />
-                  ))}
+            ).map(day => {
+              const dayStart = dayTimes[day]?.start ?? DEFAULT_START;
+              const dayEnd = dayTimes[day]?.end ?? DEFAULT_END;
+              // `undefined` (still loading) is deliberately NOT treated as
+              // "outside availability" — isOutsideAvailability's own
+              // contract is "no row for this weekday = outside", which
+              // would otherwise flash a false warning on every day before
+              // the fetch resolves.
+              const outsideAvailability =
+                carerAvailability.data !== undefined &&
+                isOutsideAvailability(
+                  { weekday: day, start_time: dayStart, end_time: dayEnd },
+                  carerAvailability.data
+                );
+              return (
+                <View key={day} className="gap-2">
+                  <View className="flex-row items-center justify-between gap-2">
+                    <Body className="font-sora-medium">
+                      {t(`weekday.${day}`)}
+                    </Body>
+                    {outsideAvailability ? (
+                      <StatusPill
+                        variant="outside-hours"
+                        label={t('build.outsideHoursWarning')}
+                        testID={`schedule-build-outside-hours-${day}`}
+                      />
+                    ) : null}
+                  </View>
+                  {outsideAvailability ? (
+                    <Body className="text-warning text-xs">
+                      {t('build.outsideHoursNote')}
+                    </Body>
+                  ) : null}
+                  <TimeRangePicker
+                    testID={`schedule-build-time-range-${day}`}
+                    start={dayStart}
+                    end={dayEnd}
+                    onChange={(start, end) =>
+                      setDayTimes(prev => ({
+                        ...prev,
+                        [day]: { start, end },
+                      }))
+                    }
+                  />
+                  <Body className="text-muted-foreground text-xs">
+                    {t('build.childrenLabel')}
+                  </Body>
+                  <View className="flex-row flex-wrap gap-2">
+                    {(children.data ?? []).map(child => (
+                      <ChildChip
+                        key={child.id}
+                        testID={`schedule-build-child-${day}-${child.id}`}
+                        name={child.name}
+                        colour={child.colour ?? undefined}
+                        selected={(dayChildren[day] ?? []).includes(child.id)}
+                        onPress={() => toggleChildForDay(day, child.id)}
+                      />
+                    ))}
+                  </View>
                 </View>
-              </View>
-            ))}
+              );
+            })}
           </View>
         </SetupScreenShell>
       ) : null}

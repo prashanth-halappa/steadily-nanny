@@ -44,8 +44,18 @@ describe('SettingsScreen', () => {
     expect(screenSource).toContain('/settings/invite');
   });
 
+  it('wires a parent-only path to household settings', () => {
+    expect(screenSource).toContain('settings-manage-household');
+    expect(screenSource).toContain('/settings/household');
+  });
+
   it('wires a nanny path to update her availability', () => {
     expect(screenSource).toContain('settings-manage-availability');
     expect(screenSource).toContain('/settings/availability');
+  });
+
+  it('persists a language change through useUpdatePreferredLocale, not just locally (D26)', () => {
+    expect(screenSource).toContain('useUpdatePreferredLocale');
+    expect(screenSource).toContain('setLanguage');
   });
 });

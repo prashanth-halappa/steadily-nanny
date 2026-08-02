@@ -27,6 +27,7 @@ import { apiClient } from '@/src/api/client';
 export const availabilityEndpoints = {
   getMine: '/v1/availability/me',
   upsertMine: '/v1/availability/me',
+  getForUser: (userId: string) => `/v1/availability/${userId}`,
 } as const;
 
 // --- API --------------------------------------------------------------------
@@ -34,6 +35,24 @@ export const availabilityApi = {
   /** The caller's own weekday availability rows (0..7 entries, one per weekday). */
   getMine: async (): Promise<CarerAvailability[]> => {
     const response = await apiClient.get(availabilityEndpoints.getMine);
+    const parsed = CarerAvailabilityListResponseSchema.safeParse(
+      response.data.data
+    );
+    if (!parsed.success) throw parsed.error;
+    return parsed.data.carer_availability;
+  },
+
+  /**
+   * Another user's weekday availability rows — for a parent checking a
+   * carer's stated hours while building or reviewing a schedule with them.
+   * Server-gated on an active shared household (404 either way if none —
+   * see `availabilityRoutes.ts`'s ownership check, "not shared" and
+   * "doesn't exist" are indistinguishable by design).
+   */
+  getForUser: async (userId: string): Promise<CarerAvailability[]> => {
+    const response = await apiClient.get(
+      availabilityEndpoints.getForUser(userId)
+    );
     const parsed = CarerAvailabilityListResponseSchema.safeParse(
       response.data.data
     );

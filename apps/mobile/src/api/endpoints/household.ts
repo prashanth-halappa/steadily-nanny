@@ -25,6 +25,8 @@ import {
   HouseholdMemberSchema,
   HouseholdSchema,
   RedeemHouseholdInviteSchema,
+  type UpdateHouseholdInput,
+  UpdateHouseholdSchema,
 } from '@steadily-nanny/shared-types/schemas/household.schema';
 import { z } from 'zod';
 import { apiClient } from '@/src/api/client';
@@ -34,6 +36,7 @@ export const householdEndpoints = {
   list: '/v1/households',
   create: '/v1/households',
   getById: (householdId: string) => `/v1/households/${householdId}`,
+  update: (householdId: string) => `/v1/households/${householdId}`,
   createInvite: (householdId: string) =>
     `/v1/households/${householdId}/invites`,
   redeemInvite: '/v1/households/invites/redeem',
@@ -83,6 +86,31 @@ export const householdApi = {
   getById: async (householdId: string): Promise<Household> => {
     const response = await apiClient.get(
       householdEndpoints.getById(householdId)
+    );
+    const parsed = z
+      .object({ household: HouseholdSchema })
+      .safeParse(response.data.data);
+    if (!parsed.success) throw parsed.error;
+    return parsed.data.household;
+  },
+
+  /**
+   * Update mutable household fields (name, timezone, address, approval
+   * policy). Owner/parent only — enforced server-side. `input` should be a
+   * DIFF (only the fields that actually changed), not the whole household —
+   * `UpdateHouseholdSchema` requires at least one field and PATCH semantics
+   * mean unset fields are left untouched server-side.
+   */
+  update: async (
+    householdId: string,
+    input: UpdateHouseholdInput
+  ): Promise<Household> => {
+    const validated = UpdateHouseholdSchema.safeParse(input);
+    if (!validated.success) throw validated.error;
+
+    const response = await apiClient.patch(
+      householdEndpoints.update(householdId),
+      validated.data
     );
     const parsed = z
       .object({ household: HouseholdSchema })

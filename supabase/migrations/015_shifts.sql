@@ -133,6 +133,18 @@ create index if not exists shift_children_child_idx
 -- The one place the propose/accept model inverts: a carer can counter-offer.
 -- Also carries parent-initiated time changes, cancellations, splits and
 -- handovers, so a day's negotiation is one queryable list.
+--
+-- DEFERRED, NOT FORGOTTEN: this is flows 1d ("One-off extra shift") and 1e
+-- ("Short notice — change, cancel, or swap") from the design storyboard —
+-- see PROJECT-STATUS.md's flow-by-flow status table, both "not started".
+-- `apps/api/src/domains/shift/services/shiftCommandService.ts`'s header
+-- comment and `apps/api/src/domains/shift/schemas.ts`'s `ParentEditShiftSchema`
+-- doc both name this table as wave-2/out-of-scope, which is why `shifts` has
+-- exactly one write path (the narrow parent time/note edit) and this table
+-- has no repository, service, controller, or route at all. The ONE thing
+-- that already reads it: `scheduleShiftRepository.hasChangeRequests` — the
+-- re-materialisation guard that will refuse to touch a shift once this flow
+-- ships, pre-wired ahead of the feature it protects.
 
 create table if not exists public.shift_change_requests (
   id                 uuid primary key default gen_random_uuid(),

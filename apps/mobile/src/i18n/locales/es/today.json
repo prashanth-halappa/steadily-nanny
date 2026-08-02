@@ -3,5 +3,12 @@
   "clockIn": "Fichar entrada",
   "clockOut": "Fichar salida",
   "onTheClock": "Estás en horario",
-  "since": "Desde las {{time}}"
+  "since": "Desde las {{time}}",
+  "clockOutSheetTitle": "Fichar salida",
+  "clockOutSheetHint": "Añade un descanso si lo tomaste — la mayoría de los días no hará falta.",
+  "breakLabel": "Descanso",
+  "noBreak": "Sin descanso",
+  "breakMinutesOption": "{{minutes}} min",
+  "noteLabel": "Nota (opcional)",
+  "notePlaceholder": "¿Algo que anotar sobre hoy?"
 }

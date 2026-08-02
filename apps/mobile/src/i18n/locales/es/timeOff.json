@@ -1,0 +1,19 @@
+{
+  "screenTitle": "Tiempo libre",
+  "requestTitle": "Solicitar tiempo libre",
+  "messageLabel": "Nota para la familia (opcional)",
+  "messagePlaceholder": "p. ej. Visitando a la familia",
+  "requestSubmit": "Solicitar tiempo libre",
+  "requestedToast": "Tiempo libre confirmado",
+  "emptyTitle": "Aún no hay tiempo libre",
+  "emptyDescription": "Las solicitudes que hagas aparecerán aquí.",
+  "status": {
+    "requested": "Solicitado",
+    "confirmed": "Confirmado",
+    "cancelled": "Cancelado"
+  },
+  "cancelButton": "Cancelar",
+  "cancelledToast": "Tiempo libre cancelado",
+  "notAvailableTitle": "No disponible",
+  "notAvailableDescription": "El tiempo libre lo gestiona la niñera en este hogar."
+}

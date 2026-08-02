@@ -1,7 +1,7 @@
 /**
  * @module app/(private)/settings/__tests__/routes.test
  *
- * The three post-onboarding management routes reachable from Settings.
+ * Post-onboarding management routes reachable from Settings.
  * Colocated in a `__tests__/` folder, never a `*.test.ts` file dropped
  * directly next to a route file — expo-router would try to treat it as a
  * route (GOLDEN-FIXES.md #8).
@@ -45,6 +45,18 @@ describe('settings/availability route', () => {
 
   it('delegates to ManageAvailabilityScreen', () => {
     expect(source).toContain('ManageAvailabilityScreen');
+    expect(source).toContain('export default function');
+  });
+});
+
+describe('settings/household route', () => {
+  let source: string;
+  beforeAll(async () => {
+    source = await readRoute('../household.tsx');
+  });
+
+  it('delegates to ManageHouseholdScreen', () => {
+    expect(source).toContain('ManageHouseholdScreen');
     expect(source).toContain('export default function');
   });
 });

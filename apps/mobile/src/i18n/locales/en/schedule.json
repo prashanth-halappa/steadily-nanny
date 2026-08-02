@@ -16,6 +16,8 @@
     "hoursSubtitle": "Pick a time range for each day, then which children are covered.",
     "hoursCta": "Next: repeat",
     "childrenLabel": "Children covered",
+    "outsideHoursWarning": "Outside their marked availability",
+    "outsideHoursNote": "You can still send this — it's just a heads-up.",
     "repeatTitle": "How often does this repeat?",
     "repeatWeekly": "Every week",
     "repeatFortnightly": "Every other week",

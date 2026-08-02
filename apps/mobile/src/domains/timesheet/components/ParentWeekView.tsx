@@ -33,6 +33,7 @@ interface ParentWeekViewProps {
   onPreviousWeek: () => void;
   onNextWeek: () => void;
   isNextWeekDisabled: boolean;
+  isPreviousWeekDisabled: boolean;
 }
 
 export function ParentWeekView({
@@ -44,6 +45,7 @@ export function ParentWeekView({
   onPreviousWeek,
   onNextWeek,
   isNextWeekDisabled,
+  isPreviousWeekDisabled,
 }: ParentWeekViewProps) {
   const { t } = useTranslation('hours');
   const entriesQuery = useWeekTimeEntries(householdId, weekStartISO);
@@ -121,6 +123,7 @@ export function ParentWeekView({
             onPreviousWeek={onPreviousWeek}
             onNextWeek={onNextWeek}
             isNextDisabled={isNextWeekDisabled}
+            isPreviousDisabled={isPreviousWeekDisabled}
           />
         }
         ListFooterComponent={

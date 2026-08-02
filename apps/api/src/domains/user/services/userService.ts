@@ -33,6 +33,12 @@ export class UserService {
           ...(profileData.additional_data
             ? { additional_data: profileData.additional_data }
             : {}),
+          // Omitted (not forced to null) when the caller doesn't send one —
+          // "seeded from the device" is best-effort, and a client that
+          // couldn't detect a zone yet must not clobber one set earlier by a
+          // PATCH /users/me. Same conditional-spread shape as
+          // `additional_data` above.
+          ...(profileData.timezone ? { timezone: profileData.timezone } : {}),
           updated_at: new Date().toISOString(),
         },
         { onConflict: 'user_id' }
@@ -58,7 +64,9 @@ export class UserService {
   static async getProfileById(userId: string): Promise<UserProfile | null> {
     const { data, error } = await supabaseService
       .from('user_profiles')
-      .select('user_id, name, city, country, preferred_locale, additional_data')
+      .select(
+        'user_id, name, city, country, preferred_locale, timezone, week_starts_on, additional_data'
+      )
       .eq('user_id', userId)
       .maybeSingle();
 

@@ -124,6 +124,35 @@ describe('shift.schema', () => {
         ShiftSchema.safeParse({ ...validShift, carer_id: null }).success
       ).toBe(true);
     });
+
+    it('parses without shift_children (a caller that read shifts without the join)', () => {
+      expect(ShiftSchema.safeParse(validShift).success).toBe(true);
+    });
+
+    it('parses WITH shift_children (the actual shape both read endpoints return)', () => {
+      const withChildren = {
+        ...validShift,
+        shift_children: [
+          {
+            id: VALID_UUID,
+            shift_id: VALID_UUID,
+            child_id: VALID_UUID,
+            starts_at: null,
+            ends_at: null,
+            created_at: NOW,
+          },
+        ],
+      };
+      expect(ShiftSchema.safeParse(withChildren).success).toBe(true);
+    });
+
+    it('rejects a malformed shift_children entry rather than silently dropping it', () => {
+      const malformed = {
+        ...validShift,
+        shift_children: [{ id: 'not-a-uuid' }],
+      };
+      expect(ShiftSchema.safeParse(malformed).success).toBe(false);
+    });
   });
 
   describe('CreateShiftSchema', () => {

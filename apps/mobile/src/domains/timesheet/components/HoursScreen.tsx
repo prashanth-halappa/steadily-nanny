@@ -31,6 +31,15 @@ import {
 import { NannyWeekView } from './NannyWeekView';
 import { ParentWeekView } from './ParentWeekView';
 
+// Neither `/time-entries` nor `/timesheets` bounds how far back `week_start`
+// can be requested — the API will happily answer for a week from before the
+// household even existed, just with empty data. Bound it on this side so
+// nobody can page back indefinitely into empty years looking for a bug that
+// isn't there. Two years is generous relative to how long any household is
+// likely to have been tracking hours in this app; revisit if that stops
+// being true.
+const MAX_WEEKS_BACK = 104;
+
 export function HoursScreen() {
   const onboarding = useIsOnboarded();
   // `useIsOnboarded` already fetches households internally, so this is a
@@ -68,8 +77,9 @@ export function HoursScreen() {
     () => formatWeekRangeLabel(weekDates),
     [weekDates]
   );
+  // Clamped at `-MAX_WEEKS_BACK` — see that constant's comment.
   const handlePreviousWeek = useCallback(() => {
-    setWeekOffset(offset => offset - 1);
+    setWeekOffset(offset => Math.max(offset - 1, -MAX_WEEKS_BACK));
   }, []);
   // Clamped at 0 — there are no hours yet for a future week, and an empty
   // future week reads as a bug rather than as "nothing to show".
@@ -77,6 +87,7 @@ export function HoursScreen() {
     setWeekOffset(offset => Math.min(offset + 1, 0));
   }, []);
   const isNextWeekDisabled = weekOffset >= 0;
+  const isPreviousWeekDisabled = weekOffset <= -MAX_WEEKS_BACK;
 
   if (onboarding.status === 'loading') {
     return (
@@ -110,6 +121,7 @@ export function HoursScreen() {
           onPreviousWeek={handlePreviousWeek}
           onNextWeek={handleNextWeek}
           isNextWeekDisabled={isNextWeekDisabled}
+          isPreviousWeekDisabled={isPreviousWeekDisabled}
         />
       ) : (
         <NannyWeekView
@@ -121,6 +133,7 @@ export function HoursScreen() {
           onPreviousWeek={handlePreviousWeek}
           onNextWeek={handleNextWeek}
           isNextWeekDisabled={isNextWeekDisabled}
+          isPreviousWeekDisabled={isPreviousWeekDisabled}
         />
       )}
     </View>

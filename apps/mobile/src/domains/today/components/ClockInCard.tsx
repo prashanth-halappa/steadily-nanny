@@ -10,8 +10,14 @@
  * No NativeWind `className` on an `Animated.View` here on purpose — the
  * timer is plain text driven by React state, not Reanimated, so the
  * GOLDEN-FIXES #2 gotcha simply doesn't apply; no Animated.View is used.
+ *
+ * D20: "Clock out" no longer clocks out directly — it opens `ClockOutSheet`
+ * so a genuine unpaid break can be recorded (`break_minutes` was previously
+ * always sent as nothing, so every break was recorded as worked time). The
+ * sheet defaults to "no break" already selected, so confirming it is still
+ * one tap for the common case.
  */
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Card, CardContent } from '@/src/components/ui/card';
 import { LoadingButton } from '@/src/components/ui/loading-button';
@@ -21,6 +27,7 @@ import { useClockIn } from '@/src/hooks/mutations/useClockIn';
 import { useClockOut } from '@/src/hooks/mutations/useClockOut';
 import { useRunningTimeEntry } from '@/src/hooks/queries/useRunningTimeEntry';
 import { useElapsedTimer } from '../hooks/useElapsedTimer';
+import { ClockOutSheet, type ClockOutSheetSubmitInput } from './ClockOutSheet';
 
 interface ClockInCardProps {
   householdId: string;
@@ -45,6 +52,7 @@ export function ClockInCard({ householdId }: ClockInCardProps) {
   // useClockIn's onError, which refetches on ALREADY_CLOCKED_IN.
   const clockInInFlightRef = useRef(false);
   const clockOutInFlightRef = useRef(false);
+  const [showClockOutSheet, setShowClockOutSheet] = useState(false);
 
   const handleClockIn = () => {
     if (clockInInFlightRef.current) return;
@@ -60,12 +68,32 @@ export function ClockInCard({ householdId }: ClockInCardProps) {
       });
   };
 
-  const handleClockOut = () => {
+  // D20: only opens the sheet — no network call yet. The actual clock-out
+  // (with whatever break/note were entered) happens in
+  // `handleConfirmClockOut` below, from the sheet's own confirm button.
+  const handleClockOutPress = () => {
+    if (!entry) return;
+    setShowClockOutSheet(true);
+  };
+
+  const handleConfirmClockOut = ({
+    breakMinutes,
+    note,
+  }: ClockOutSheetSubmitInput) => {
     if (!entry || clockOutInFlightRef.current) return;
     clockOutInFlightRef.current = true;
     clockOut
-      .mutateAsync({ entryId: entry.id })
-      // Same rationale as handleClockIn above.
+      .mutateAsync({
+        entryId: entry.id,
+        ...(breakMinutes > 0 ? { break_minutes: breakMinutes } : {}),
+        ...(note ? { note } : {}),
+      })
+      // Only close the sheet on success — useClockOut's onError already
+      // shows a toast, and leaving the sheet open on failure means the
+      // nanny's entered break/note aren't lost and retrying is one tap.
+      .then(() => setShowClockOutSheet(false))
+      // Same double-tap-escaping-as-unhandled-rejection rationale as
+      // handleClockIn above.
       .catch(() => undefined)
       .finally(() => {
         clockOutInFlightRef.current = false;
@@ -88,8 +116,14 @@ export function ClockInCard({ householdId }: ClockInCardProps) {
               testID="today-clock-out"
               variant="outline"
               label={t('clockOut')}
-              isLoading={clockOut.isPending}
-              onPress={handleClockOut}
+              isLoading={false}
+              onPress={handleClockOutPress}
+            />
+            <ClockOutSheet
+              visible={showClockOutSheet}
+              onDismiss={() => setShowClockOutSheet(false)}
+              onSubmit={handleConfirmClockOut}
+              isSubmitting={clockOut.isPending}
             />
           </>
         ) : (

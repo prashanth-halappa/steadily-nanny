@@ -1,0 +1,19 @@
+{
+  "screenTitle": "Time off",
+  "requestTitle": "Request time off",
+  "messageLabel": "Note for the family (optional)",
+  "messagePlaceholder": "e.g. Visiting family",
+  "requestSubmit": "Request time off",
+  "requestedToast": "Time off confirmed",
+  "emptyTitle": "No time off yet",
+  "emptyDescription": "Requests you make will appear here.",
+  "status": {
+    "requested": "Requested",
+    "confirmed": "Confirmed",
+    "cancelled": "Cancelled"
+  },
+  "cancelButton": "Cancel",
+  "cancelledToast": "Time off cancelled",
+  "notAvailableTitle": "Not available",
+  "notAvailableDescription": "Time off is managed by the nanny on this household."
+}

@@ -122,4 +122,28 @@ describe('addWeeks', () => {
     expect(addWeeks('2026-08-03', 4)).toBe('2026-08-31');
     expect(addWeeks('2026-08-03', -4)).toBe('2026-07-06');
   });
+
+  // D15 nav must stay correct when a step crosses a household's DST
+  // transition. British Summer Time starts 2026-03-29 (clocks 01:00->02:00),
+  // inside the week that starts Monday 2026-03-23. `addWeeks` is pure
+  // calendar-date arithmetic on the Y/M/D digits of an ALREADY-RESOLVED
+  // Monday (see the module header) — it never re-derives a zoned instant
+  // after the shift, so it can't drift the way "add a fixed 7*24h duration,
+  // then re-read the zoned calendar date" would across a DST boundary. This
+  // pins that: the week after the one containing the clock change still
+  // starts on a real Monday, not a Sunday 23:00 / Monday 01:00 off-by-one.
+  it('lands on the correct Monday for a week that crosses a household DST transition', () => {
+    expect(addWeeks('2026-03-23', 1)).toBe('2026-03-30');
+    expect(addWeeks('2026-03-30', -1)).toBe('2026-03-23');
+  });
+});
+
+describe('getWeekStartISO — resolves correctly across the household DST transition itself', () => {
+  it('resolves the new week the moment local time crosses into Monday, BST or not', () => {
+    // 2026-03-29T23:30:00Z is 2026-03-30T00:30 in Europe/London — Monday
+    // just after BST began (clocks went forward at 01:00 UTC that day) —
+    // this is already the NEW week, not the one ending 2026-03-29.
+    const instant = new Date('2026-03-29T23:30:00.000Z');
+    expect(getWeekStartISO(instant, 'Europe/London')).toBe('2026-03-30');
+  });
 });

@@ -37,6 +37,21 @@ create index if not exists children_household_idx
 -- A child's fixed life, set once: preschool Mon-Thu 9:00-12:00, swimming,
 -- grandma Fridays. Every shift is then drawn around it, and a commitment marked
 -- `excluded_from_cover` is what carves the visible gap out of a coverage lane.
+--
+-- DEFERRED, NOT FORGOTTEN: this is flow 1g ("Per-child coverage & gaps") and
+-- calendar view 2c ("Coverage lanes") from the design storyboard — see
+-- PROJECT-STATUS.md's flow-by-flow status table, both "not started". The
+-- table (and its household-sync trigger below, hardened in migration 013)
+-- was built alongside `children` because they share this file, not because
+-- 1g itself was in scope. There is NO repository, service, controller, or
+-- route for it anywhere in `apps/api/src` — nothing reads or writes it.
+-- Today, a shift's per-child coverage window is instead entered by hand,
+-- per pattern day, via `schedule_pattern_day_children.start_time`/`end_time`
+-- (see `ReplaceSchedulePatternDaysSchema` in
+-- `apps/api/src/domains/schedule/schemas.ts`) — the "set once per child"
+-- promise this table exists to fulfil is not yet honoured; a parent
+-- currently re-enters "preschool 9-12" on every pattern they build. Wiring
+-- this table up removes that repetition without a schema change.
 
 create table if not exists public.child_commitments (
   id                  uuid primary key default gen_random_uuid(),

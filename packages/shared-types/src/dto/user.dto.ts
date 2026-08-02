@@ -7,6 +7,8 @@ export interface UserProfileRequest {
   country: string;
   /** Flexible JSON blob for app-specific profile data. */
   additional_data?: Record<string, unknown>;
+  /** Optional — "seeded from the device" at signup. See `UserProfile.timezone`. */
+  timezone?: string;
 }
 
 export interface UserProfileResponse {

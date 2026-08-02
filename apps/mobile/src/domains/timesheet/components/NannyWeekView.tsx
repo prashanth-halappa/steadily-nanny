@@ -24,6 +24,7 @@ interface NannyWeekViewProps {
   onPreviousWeek: () => void;
   onNextWeek: () => void;
   isNextWeekDisabled: boolean;
+  isPreviousWeekDisabled: boolean;
 }
 
 function scheduledMinutesFor(entries: TimeEntry[]): number | null {
@@ -41,6 +42,7 @@ export function NannyWeekView({
   onPreviousWeek,
   onNextWeek,
   isNextWeekDisabled,
+  isPreviousWeekDisabled,
 }: NannyWeekViewProps) {
   const { t } = useTranslation('hours');
   const entriesQuery = useWeekTimeEntries(householdId, weekStartISO);
@@ -83,6 +85,7 @@ export function NannyWeekView({
           onPreviousWeek={onPreviousWeek}
           onNextWeek={onNextWeek}
           isNextDisabled={isNextWeekDisabled}
+          isPreviousDisabled={isPreviousWeekDisabled}
         />
       }
       contentContainerStyle={{ padding: 24, paddingBottom: 100 }}

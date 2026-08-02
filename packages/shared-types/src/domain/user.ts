@@ -14,6 +14,31 @@ export interface UserProfile {
   city: string | null;
   country: string | null;
   preferred_locale?: string | null;
+  /**
+   * The user's own IANA time zone (e.g. `Europe/London`), "seeded from the
+   * device" at signup — display only, never a source of truth for a stored
+   * instant. Null until set. Validated server-side against the real IANA
+   * database (`isValidIanaTimeZone` in `apps/api/src/schemas/user.schema.ts`)
+   * — there is no DB CHECK constraint on this column, so a free-text value
+   * that skipped that validation would silently misfile every week-boundary
+   * computation that reads it.
+   *
+   * OPTIONAL here (though the API always returns it, null or not) —
+   * deliberately, so existing callers that construct a `UserProfile` without
+   * this field (it's new — see D29) keep type-checking. Do not tighten to
+   * required without checking every construction site first.
+   */
+  timezone?: string | null;
+  /**
+   * 0 (Sunday) .. 6 (Saturday), matching Postgres `extract(dow)`. Defaults to
+   * 1 (Monday) at the DB level — NOTE: not currently read by any
+   * week-boundary computation in this codebase (every one of them hardcodes
+   * Monday-first, matching the product's en-GB locale) — persisted for a
+   * future per-user override, inert today.
+   *
+   * OPTIONAL here for the same reason as `timezone` above.
+   */
+  week_starts_on?: number;
   created_at?: string;
   updated_at?: string;
   /** Flexible JSON blob for app-specific profile data. */

@@ -23,6 +23,7 @@ import { Body, H1, H4, Small } from '@/src/components/ui/typography';
 import { appIdentity } from '@/src/config/appIdentity';
 import { SETUP_ROLES } from '@/src/domains/setup/types';
 import { useDeleteAccount } from '@/src/hooks/mutations/useDeleteAccount';
+import { useUpdatePreferredLocale } from '@/src/hooks/mutations/useUpdatePreferredLocale';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 import { SUPPORTED_LANGUAGES } from '@/src/i18n/constants';
 import { useLanguageStore } from '@/src/i18n/languageStore';
@@ -40,6 +41,17 @@ export default function SettingsScreen() {
   const signOut = useAuthStore(s => s.signOut);
   const { mutateAsync: deleteAccount, isPending: isDeletingAccount } =
     useDeleteAccount();
+  const updatePreferredLocale = useUpdatePreferredLocale();
+
+  // Apply the language change locally FIRST and unconditionally (MMKV +
+  // i18next re-render) — the app must switch language even offline or if
+  // this network call fails. Persisting server-side is separate, best-effort:
+  // a failed sync here shouldn't undo (or block) the change the user just saw
+  // happen. See useUpdatePreferredLocale's header comment.
+  const handleLanguageChange = (lang: (typeof SUPPORTED_LANGUAGES)[number]) => {
+    void setLanguage(lang);
+    updatePreferredLocale.mutate({ preferred_locale: lang });
+  };
   // Server-derived role, NOT the local setupProgress store — that's
   // in-flight wizard UI state and can be empty/stale here (see
   // useIsOnboarded's header comment / TodayScreen for the same pattern).
@@ -72,7 +84,8 @@ export default function SettingsScreen() {
           {SUPPORTED_LANGUAGES.map(lang => (
             <AnimatedPressable
               key={lang}
-              onPress={() => void setLanguage(lang)}
+              testID={`settings-language-${lang}`}
+              onPress={() => handleLanguageChange(lang)}
             >
               <Small
                 className={cn(
@@ -111,16 +124,32 @@ export default function SettingsScreen() {
                   {t('household:invite.manageTitle')}
                 </Body>
               </AnimatedPressable>
+              <AnimatedPressable
+                testID="settings-manage-household"
+                onPress={() => router.push('/settings/household' as Href)}
+              >
+                <Body className="text-primary">
+                  {t('household:householdSettings.manageTitle')}
+                </Body>
+              </AnimatedPressable>
             </>
           ) : (
-            <AnimatedPressable
-              testID="settings-manage-availability"
-              onPress={() => router.push('/settings/availability' as Href)}
-            >
-              <Body className="text-primary">
-                {t('household:availability.manageTitle')}
-              </Body>
-            </AnimatedPressable>
+            <>
+              <AnimatedPressable
+                testID="settings-manage-availability"
+                onPress={() => router.push('/settings/availability' as Href)}
+              >
+                <Body className="text-primary">
+                  {t('household:availability.manageTitle')}
+                </Body>
+              </AnimatedPressable>
+              <AnimatedPressable
+                testID="settings-request-time-off"
+                onPress={() => router.push('/settings/time-off' as Href)}
+              >
+                <Body className="text-primary">{t('timeOff:screenTitle')}</Body>
+              </AnimatedPressable>
+            </>
           )}
         </View>
       ) : null}

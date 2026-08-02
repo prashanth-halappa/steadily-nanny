@@ -121,6 +121,35 @@ describe('ScheduleBuildScreen source', () => {
     expect(source).toContain("t('build.carerFallbackName')");
   });
 
+  it("D25: fetches the selected carer's availability and warns — never blocks — on a day/time outside it", () => {
+    // Fetched via the real hook (real endpoint, real Zod-validated response
+    // — see useAvailabilityForCarer.test.ts and availability.test.ts's
+    // getForUser cases for that layer's own render/call-level coverage).
+    // The clash check itself is the SAME already-unit-tested pure function
+    // ScheduleRespondScreen uses (utils.test.ts's `isOutsideAvailability`
+    // describe block), reused here rather than re-derived.
+    expect(source).toContain('useAvailabilityForCarer(selectedCarerId)');
+    expect(source).toContain('isOutsideAvailability(');
+    expect(source).toContain("from '../utils'");
+    expect(source).toContain('variant="outside-hours"');
+    expect(source).toContain("t('build.outsideHoursWarning')");
+    // Never blocks: TimeRangePicker is unconditional, not gated behind
+    // `!outsideAvailability` or any disabled/hidden prop tied to it.
+    expect(source).not.toMatch(
+      /outsideAvailability[\s\S]{0,80}<TimeRangePicker/
+    );
+    expect(source).not.toMatch(/TimeRangePicker[\s\S]{0,40}disabled/);
+  });
+
+  it('D25: does not treat a still-loading availability fetch as "outside availability" (no false-positive warning flash)', () => {
+    // isOutsideAvailability itself treats "no row for this weekday" as
+    // outside — correct once data has actually loaded, wrong while it's
+    // still in flight (undefined). The screen must gate on that explicitly.
+    expect(source).toMatch(
+      /carerAvailability\.data !== undefined[\s\S]{0,40}isOutsideAvailability/
+    );
+  });
+
   it('D11 REGRESSION: onPatternCreated persists a freshly-created id into React state immediately, so a retry after partial failure resumes instead of orphaning a second draft', () => {
     // The bug: if `createPattern` succeeded but `replaceDays`/`sendPattern`
     // then failed, the created id never reached this component's

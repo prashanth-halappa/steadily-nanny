@@ -22,6 +22,13 @@ export const userEndpoints = {
   getProfile: '/v1/users/me',
   // API-CONTRACT: POST create-or-update (upsert) of the caller's profile.
   upsertProfile: '/v1/users/profile',
+  // API-CONTRACT: PATCH partial-updates the caller's profile. The full
+  // server schema (`apps/api/src/schemas/user.schema.ts`'s
+  // `UpdateProfileSchema`) also accepts `name`/`city`/`country`/`timezone`/
+  // `week_starts_on` — only `preferred_locale` is wired here (D26). The
+  // per-user `timezone` field is a SEPARATE, not-yet-landed feature (D29);
+  // do not wire it through this method until that contract lands.
+  updateProfile: '/v1/users/me',
   // API-CONTRACT: DELETE removes the caller's account and all associated data.
   deleteAccount: '/v1/users/me',
 } as const;
@@ -63,6 +70,22 @@ const UserProfileRequestSchema = z.object({
   additional_data: z.record(z.string(), z.unknown()).optional(),
 });
 
+// API-CONTRACT: PATCH /v1/users/me returns `{ user: UserProfile }` — note
+// this is a DIFFERENT envelope shape than `upsertProfile`'s `{ message, user }`.
+const UpdateProfileResponseSchema = z.object({ user: UserProfileSchema });
+
+// Outgoing PATCH payload, scoped to preferred_locale only (see
+// `userEndpoints.updateProfile`'s comment for why the rest of the server
+// schema isn't exposed here yet). Mirrors the server's
+// `preferred_locale: z.string().max(16).optional()` but required+non-empty
+// from the client, since every call site always sends a real locale code.
+const UpdatePreferredLocaleSchema = z.object({
+  preferred_locale: z.string().min(1).max(16),
+});
+export type UpdatePreferredLocaleInput = z.infer<
+  typeof UpdatePreferredLocaleSchema
+>;
+
 // --- API --------------------------------------------------------------------
 export const userApi = {
   /**
@@ -90,6 +113,27 @@ export const userApi = {
     );
     // API-CONTRACT: data.data is the UserProfileResponse DTO `{ message, user }`.
     const parsed = UserProfileResponseSchema.safeParse(response.data.data);
+    if (!parsed.success) throw parsed.error;
+    return parsed.data.user;
+  },
+
+  /**
+   * Update the authenticated user's preferred display language. Scoped
+   * deliberately to `preferred_locale` only — see `userEndpoints.updateProfile`.
+   */
+  updatePreferredLocale: async (
+    req: UpdatePreferredLocaleInput
+  ): Promise<UserProfile> => {
+    const validated = UpdatePreferredLocaleSchema.safeParse(req);
+    if (!validated.success) throw validated.error;
+
+    const response = await apiClient.patch(
+      userEndpoints.updateProfile,
+      validated.data
+    );
+    // API-CONTRACT: data.data is `{ user: UserProfile }` — different shape
+    // than upsertProfile's `{ message, user }`.
+    const parsed = UpdateProfileResponseSchema.safeParse(response.data.data);
     if (!parsed.success) throw parsed.error;
     return parsed.data.user;
   },

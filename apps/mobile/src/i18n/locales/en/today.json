@@ -3,5 +3,12 @@
   "clockIn": "Clock in",
   "clockOut": "Clock out",
   "onTheClock": "You're on the clock",
-  "since": "Since {{time}}"
+  "since": "Since {{time}}",
+  "clockOutSheetTitle": "Clock out",
+  "clockOutSheetHint": "Add a break if you took one — most days won't need this.",
+  "breakLabel": "Break",
+  "noBreak": "No break",
+  "breakMinutesOption": "{{minutes}} min",
+  "noteLabel": "Note (optional)",
+  "notePlaceholder": "Anything worth noting about today?"
 }

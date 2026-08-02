@@ -12,7 +12,6 @@ import {
   CreateCarerTimeOffSchema,
   UpdateCarerAvailabilitySchema,
   UpdateCarerTimeOffSchema,
-  UpdateUserTimeSettingsSchema,
 } from '../src/schemas/availability.schema';
 
 const VALID_UUID = '11111111-1111-4111-8111-111111111111';
@@ -218,25 +217,6 @@ describe('availability.schema', () => {
           ['starts_at', 'ends_at', 'kind'].sort()
         );
       }
-    });
-  });
-
-  describe('UpdateUserTimeSettingsSchema', () => {
-    it('rejects an empty object', () => {
-      expect(UpdateUserTimeSettingsSchema.safeParse({}).success).toBe(false);
-    });
-
-    it('accepts a timezone-only update', () => {
-      expect(
-        UpdateUserTimeSettingsSchema.safeParse({ timezone: 'Europe/London' })
-          .success
-      ).toBe(true);
-    });
-
-    it('rejects week_starts_on out of range', () => {
-      expect(
-        UpdateUserTimeSettingsSchema.safeParse({ week_starts_on: 9 }).success
-      ).toBe(false);
     });
   });
 });

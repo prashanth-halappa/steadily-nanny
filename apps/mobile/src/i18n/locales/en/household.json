@@ -41,5 +41,38 @@
     "manageSubtitle": "Update the days and hours you're available to work.",
     "finishButton": "Finish",
     "doneButton": "Done"
+  },
+  "householdSettings": {
+    "manageTitle": "Household settings",
+    "manageSubtitle": "Update your household's name, time zone, address, and approval policy.",
+    "saveButton": "Save",
+    "doneButton": "Done",
+    "savedToast": "Household settings saved",
+    "nameLabel": "Household name",
+    "namePlaceholder": "e.g. The Reyes household",
+    "addressLabel": "Address (optional)",
+    "addressPlaceholder": "Street, city",
+    "timezoneLabel": "Time zone",
+    "timezoneChangeButton": "Change",
+    "timezoneWarning": "Changing the time zone only affects new schedules and how \"this week\" is calculated going forward. Shifts and hours you've already recorded keep the time zone they were created in and won't change.",
+    "timezoneConfirmTitle": "Change time zone to {{zone}}?",
+    "timezoneConfirmBody": "This only affects new schedules and how \"this week\" is calculated going forward. Shifts and hours you've already recorded keep the time zone they were created in and will not change.",
+    "timezoneConfirmCancel": "Cancel",
+    "timezoneConfirmConfirm": "Change time zone",
+    "pickerTitle": "Choose a time zone",
+    "approvalModeLabel": "Who approves changes",
+    "approvalMode": {
+      "either": "Either parent can decide",
+      "ask_other": "Ask the other parent first",
+      "owner_only": "Only the household owner decides"
+    },
+    "approvalScopeLabel": "What needs approval",
+    "approvalScope": {
+      "all": "All changes",
+      "short_notice_and_cancellations": "Only short-notice changes and cancellations"
+    },
+    "approvalTimeoutLabel": "Approval timeout (minutes)",
+    "shortNoticeHoursLabel": "Short-notice window (hours)",
+    "cancellationPaidWithinHoursLabel": "Cancellation still paid within (hours)"
   }
 }

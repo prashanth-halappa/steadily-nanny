@@ -69,6 +69,54 @@ export type ShiftChangeRequestStatus =
   (typeof SHIFT_CHANGE_REQUEST_STATUSES)[keyof typeof SHIFT_CHANGE_REQUEST_STATUSES];
 
 // =============================================================================
+// shift_children
+// =============================================================================
+// NULL start/end means the whole shift; both null or both set is the only
+// legal pairing (DB `shift_children_time_pairing` check). Defined ABOVE
+// `shifts` so `ShiftSchema` below can embed it — see that field's comment.
+
+/** The persisted entity as returned to clients. */
+export const ShiftChildSchema = z.object({
+  id: z.uuid(),
+  shift_id: z.uuid(),
+  child_id: z.uuid(),
+  starts_at: z.iso.datetime({ offset: true }).nullable(),
+  ends_at: z.iso.datetime({ offset: true }).nullable(),
+  created_at: z.iso.datetime({ offset: true }),
+});
+
+/** POST body — what a client sends to create one. */
+export const CreateShiftChildSchema = z
+  .object({
+    child_id: z.uuid(),
+    starts_at: z.iso.datetime({ offset: true }).optional(),
+    ends_at: z.iso.datetime({ offset: true }).optional(),
+  })
+  .refine(
+    data => (data.starts_at === undefined) === (data.ends_at === undefined),
+    {
+      message: 'starts_at and ends_at must both be set or both omitted',
+      path: ['ends_at'],
+    }
+  );
+
+/** URL param validation for /shift-children/:shiftChildId routes. */
+export const ShiftChildIdParamSchema = z.object({
+  shiftChildId: z.uuid(),
+});
+
+/** List response envelope. */
+export const ShiftChildListResponseSchema = z.object({
+  shift_children: z.array(ShiftChildSchema),
+});
+
+export type ShiftChild = z.infer<typeof ShiftChildSchema>;
+export type CreateShiftChildInput = z.infer<typeof CreateShiftChildSchema>;
+export type ShiftChildListResponse = z.infer<
+  typeof ShiftChildListResponseSchema
+>;
+
+// =============================================================================
 // shifts
 // =============================================================================
 
@@ -99,6 +147,13 @@ export const ShiftSchema = z.object({
   created_by: z.uuid().nullable(),
   created_at: z.iso.datetime({ offset: true }),
   updated_at: z.iso.datetime({ offset: true }),
+  // OPTIONAL, not part of the `shifts` table itself — present only when the
+  // caller joined `shift_children` (both `GET .../shifts` and `GET
+  // /shifts/:shiftId` do, via `ShiftRepository`'s `*, shift_children(*)`
+  // select). Optional rather than required so any future caller that reads
+  // `shifts` WITHOUT that join still parses cleanly — this field is an
+  // enrichment, not a guarantee.
+  shift_children: z.array(ShiftChildSchema).optional(),
 });
 
 const ShiftInputSchema = z.object({
@@ -151,53 +206,6 @@ export type Shift = z.infer<typeof ShiftSchema>;
 export type CreateShiftInput = z.infer<typeof CreateShiftSchema>;
 export type UpdateShiftInput = z.infer<typeof UpdateShiftSchema>;
 export type ShiftListResponse = z.infer<typeof ShiftListResponseSchema>;
-
-// =============================================================================
-// shift_children
-// =============================================================================
-// NULL start/end means the whole shift; both null or both set is the only
-// legal pairing (DB `shift_children_time_pairing` check).
-
-/** The persisted entity as returned to clients. */
-export const ShiftChildSchema = z.object({
-  id: z.uuid(),
-  shift_id: z.uuid(),
-  child_id: z.uuid(),
-  starts_at: z.iso.datetime({ offset: true }).nullable(),
-  ends_at: z.iso.datetime({ offset: true }).nullable(),
-  created_at: z.iso.datetime({ offset: true }),
-});
-
-/** POST body — what a client sends to create one. */
-export const CreateShiftChildSchema = z
-  .object({
-    child_id: z.uuid(),
-    starts_at: z.iso.datetime({ offset: true }).optional(),
-    ends_at: z.iso.datetime({ offset: true }).optional(),
-  })
-  .refine(
-    data => (data.starts_at === undefined) === (data.ends_at === undefined),
-    {
-      message: 'starts_at and ends_at must both be set or both omitted',
-      path: ['ends_at'],
-    }
-  );
-
-/** URL param validation for /shift-children/:shiftChildId routes. */
-export const ShiftChildIdParamSchema = z.object({
-  shiftChildId: z.uuid(),
-});
-
-/** List response envelope. */
-export const ShiftChildListResponseSchema = z.object({
-  shift_children: z.array(ShiftChildSchema),
-});
-
-export type ShiftChild = z.infer<typeof ShiftChildSchema>;
-export type CreateShiftChildInput = z.infer<typeof CreateShiftChildSchema>;
-export type ShiftChildListResponse = z.infer<
-  typeof ShiftChildListResponseSchema
->;
 
 // =============================================================================
 // shift_change_requests

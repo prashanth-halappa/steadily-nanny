@@ -10,6 +10,14 @@
  * `/households/:householdId/children` mount) belong HERE, alongside this
  * re-export.
  *
+ * NOT re-exported here: `ChildCommitmentSchema` and its Create/Update/List
+ * siblings (also defined in the shared package, backing the
+ * `child_commitments` table — see `supabase/migrations/010_children.sql`).
+ * That's deliberate, not an oversight — flow 1g ("Per-child coverage &
+ * gaps") is "not started" per PROJECT-STATUS.md's flow-by-flow table, so
+ * this domain has no repository/service/controller/route for commitments at
+ * all yet. Don't go looking for one.
+ *
  * @module domains/child/schemas
  */
 import { z } from 'zod';

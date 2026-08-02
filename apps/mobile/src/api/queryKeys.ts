@@ -60,10 +60,24 @@ export const queryKeys = {
   availability: {
     all: ['availability'] as const,
     mine: () => [...queryKeys.availability.all, 'mine'] as const,
+    // Another user's weekly availability — a parent checking a carer's stated
+    // hours while building a schedule with them. Keyed by user id so one
+    // carer's cached rows can never be served for another.
+    forUser: (userId?: string) =>
+      [...queryKeys.availability.all, 'forUser', userId] as const,
     // A carer's cross-household busy spans, ANONYMISED. Keyed by carer + range
     // so one family's cached view can never be reused as another's.
     busy: (carerId?: string, from?: string, to?: string) =>
       [...queryKeys.availability.all, 'busy', carerId, from, to] as const,
+  },
+
+  // The signed-in carer's own time off. Deliberately takes NO arguments:
+  // `GET /time-off` is scoped by the caller's identity on the server, not by a
+  // household or date range, so there is nothing to key on. Adding a param here
+  // later would be a signal the endpoint's contract changed.
+  timeOff: {
+    all: ['timeOff'] as const,
+    list: () => [...queryKeys.timeOff.all, 'list'] as const,
   },
 
   // Recurring schedule patterns: the "usual week" a parent proposes.

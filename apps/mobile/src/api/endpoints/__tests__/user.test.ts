@@ -28,6 +28,7 @@ describe('userApi', () => {
     (apiClient.get as any).mockReset?.();
     (apiClient.post as any).mockReset?.();
     (apiClient.put as any).mockReset?.();
+    (apiClient.patch as any).mockReset?.();
     (apiClient.delete as any).mockReset?.();
   });
 
@@ -118,6 +119,51 @@ describe('userApi', () => {
       });
 
       await expect(userApi.upsertProfile(req)).rejects.toThrow();
+    });
+  });
+
+  describe('updatePreferredLocale', () => {
+    const validResponse = {
+      user: {
+        user_id: 'user-9',
+        name: 'Sam',
+        city: 'Oslo',
+        country: 'Norway',
+        preferred_locale: 'es',
+        additional_data: null,
+      },
+    };
+
+    it('PATCHes /v1/users/me with only preferred_locale and returns the updated user (different envelope shape than upsertProfile)', async () => {
+      (apiClient.patch as any).mockResolvedValue({
+        data: { data: validResponse },
+      });
+
+      const result = await userApi.updatePreferredLocale({
+        preferred_locale: 'es',
+      });
+
+      expect(apiClient.patch).toHaveBeenCalledWith('/v1/users/me', {
+        preferred_locale: 'es',
+      });
+      expect(result.preferred_locale).toBe('es');
+    });
+
+    it('rejects an empty locale without calling the API', async () => {
+      await expect(
+        userApi.updatePreferredLocale({ preferred_locale: '' })
+      ).rejects.toThrow();
+      expect(apiClient.patch).not.toHaveBeenCalled();
+    });
+
+    it('throws when the response fails validation', async () => {
+      (apiClient.patch as any).mockResolvedValue({
+        data: { data: { user: { name: 'missing user_id' } } },
+      });
+
+      await expect(
+        userApi.updatePreferredLocale({ preferred_locale: 'es' })
+      ).rejects.toThrow();
     });
   });
 

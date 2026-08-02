@@ -24,14 +24,21 @@
  * a fresh per-test client) so this is a genuine regression test: a fresh
  * `createTestQueryClient()` never overrides `refetchOnWindowFocus`, so it
  * already defaults to TanStack's own `true` and would pass either way.
+ *
+ * Drives the resume through the real `setupNetworkManagers` (D19) — the
+ * exact function `_layout.tsx` calls once at app start — rather than a
+ * reproduction of its wiring. That's possible because NetInfo, the piece
+ * that used to make importing it crash under `bun:test`, is now mocked in
+ * the shared preload (`bun.setup.ts`); see `lib/__tests__/network.test.ts`
+ * for direct coverage of `setupNetworkManagers` itself.
  */
 
 import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test';
-import { focusManager } from '@tanstack/react-query';
 import { waitFor } from '@testing-library/react-native';
 import { AppState } from 'react-native';
 import { queryClient } from '@/src/api/queryClient';
 import { queryKeys } from '@/src/api/queryKeys';
+import { setupNetworkManagers } from '@/src/lib/network';
 import { useAuthStore } from '@/src/store/auth';
 import type { MockFn } from '@/src/test-utils';
 import { renderWithProviders } from '@/src/test-utils';
@@ -69,20 +76,10 @@ mock.module('@/src/api/endpoints/timeEntries', () => ({
   },
 }));
 
-// Mirrors the AppState → focusManager wiring in `src/lib/network.ts`'s
-// `setupNetworkManagers` — which is what `_layout.tsx` calls once at app
-// start, and is not itself part of this fix (it's pre-existing, correct,
-// and outside this file's ownership). Reproduced inline rather than
-// imported because that module also wires `onlineManager` to the real
-// NetInfo native module, which isn't available in this test environment and
-// isn't relevant to the fix under test here (`queryClient.ts`'s
-// `refetchOnWindowFocus`).
-focusManager.setEventListener(setFocused => {
-  const subscription = AppState.addEventListener('change', status => {
-    setFocused(status === 'active');
-  });
-  return () => subscription.remove();
-});
+// Wires focusManager to AppState exactly as `_layout.tsx` does at app start.
+// Per its own doc comment this is safe to call more than once — repeat calls
+// replace and clean up the prior listener rather than leaking one.
+setupNetworkManagers();
 
 /** Simulates the OS bringing the app to the foreground. */
 function resumeApp() {

@@ -1,74 +1,178 @@
 /**
  * @module TimeRangePickerTests
  *
- * Source-inspection tests (docs/09-TESTING.md §5 Pattern A) for the
- * TimeRangePicker component's wiring — NOT a render test.
+ * Render tests (docs/09-TESTING.md §5 Pattern B). This file was previously
+ * source-inspection only (Pattern A) because
+ * `@react-native-community/datetimepicker` ships raw Flow-typed `.js`
+ * source that crashed Bun's parser at import time, before any
+ * `mock.module()` could intercept it — see `bun.setup.ts`'s mock for that
+ * package (D25) for the fix: mocking it in the shared preload, the only
+ * place early enough to matter (same root-cause class as D19's netinfo
+ * fix). That mock renders the native picker as a plain host `View`
+ * forwarding `onChange`, so a real selection can be driven with
+ * `fireEvent(getByTestId('...-start'), 'change', {}, someDate)`.
  *
- * Why: `@react-native-community/datetimepicker` ships raw Flow-typed `.js`
- * source with no pre-built dist. `bun:test`'s parser cannot parse it (fails
- * on `import type {...} from './types'` inside a plain `.js` file), and
- * `mock.module()` does not prevent that parse attempt — verified directly:
- * it fails identically whether the package is mocked by its bare specifier
- * or by its fully-resolved absolute path, because Bun attempts to parse the
- * real file before the mock can take effect. So importing/rendering
- * time-range-picker.tsx under bun:test is not possible in this environment.
- *
- * The pure "HH:MM" logic (parseTime/formatTime/isEndAfterStart) lives in
- * the dependency-free time-range-picker.utils.ts and IS genuinely
- * render-free unit tested — see time-range-picker.utils.test.ts. This file
- * only characterizes that the component wires that logic up correctly:
- * exports, testIDs, 24-hour mode, and the refuse-don't-swap contract.
+ * The pure "HH:MM" logic (parseTime/formatTime/isEndAfterStart) has its own
+ * dedicated, dependency-free unit tests in time-range-picker.utils.test.ts —
+ * this file exercises the real component wired to the real (mocked-native)
+ * picker: actual `onChange` calls, the refuse-don't-swap contract, and the
+ * inline error, end to end.
  */
+import { describe, expect, it, mock } from 'bun:test';
+import { fireEvent, render } from '@testing-library/react-native';
+import { TimeRangePicker } from '../time-range-picker';
 
-import { describe, expect, it } from 'bun:test';
-import { join } from 'node:path';
+mock.module('@/lib/animations/useReducedMotion', () => ({
+  useReducedMotion: mock(() => false),
+}));
 
-const componentPath = join(__dirname, '../time-range-picker.tsx');
-let source: string;
+// Derived from `render` rather than hand-written: a props-only shape does not
+// satisfy `fireEvent`'s `ReactTestInstance` parameter, and hand-typing it here
+// drifts the moment the testing library's return type changes.
+type GetByTestId = ReturnType<typeof render>['getByTestId'];
 
-describe('TimeRangePicker source', () => {
-  it('reads the component source', async () => {
-    source = await Bun.file(componentPath).text();
-    expect(source.length).toBeGreaterThan(0);
+/** Drives the mocked native picker's onChange exactly like a real selection. */
+function selectStart(
+  getByTestId: GetByTestId,
+  testID: string,
+  hours: number,
+  minutes: number
+) {
+  fireEvent(
+    getByTestId(`${testID}-start`),
+    'change',
+    {},
+    new Date(2026, 0, 1, hours, minutes)
+  );
+}
+function selectEnd(
+  getByTestId: GetByTestId,
+  testID: string,
+  hours: number,
+  minutes: number
+) {
+  fireEvent(
+    getByTestId(`${testID}-end`),
+    'change',
+    {},
+    new Date(2026, 0, 1, hours, minutes)
+  );
+}
+
+describe('TimeRangePicker', () => {
+  it('renders start and end pickers under the given testID', () => {
+    const { getByTestId } = render(
+      <TimeRangePicker
+        testID="range"
+        start="09:00"
+        end="17:00"
+        onChange={mock()}
+      />
+    );
+    expect(getByTestId('range-start')).toBeTruthy();
+    expect(getByTestId('range-end')).toBeTruthy();
   });
 
-  it('exports the component', () => {
-    expect(source).toContain('export function TimeRangePicker');
+  it('defaults to the "time-range-picker" testID when none is given', () => {
+    const { getByTestId } = render(
+      <TimeRangePicker start="09:00" end="17:00" onChange={mock()} />
+    );
+    expect(getByTestId('time-range-picker')).toBeTruthy();
   });
 
-  it('imports the pure HH:MM helpers from the dependency-free utils module', () => {
-    expect(source).toContain('formatTime');
-    expect(source).toContain('isEndAfterStart');
-    expect(source).toContain('parseTime');
-    expect(source).toContain("from './time-range-picker.utils'");
+  it('calls onChange with a formatted "HH:MM" string, never a raw Date, when the start changes', () => {
+    const onChange = mock();
+    const { getByTestId } = render(
+      <TimeRangePicker
+        testID="range"
+        start="09:00"
+        end="17:00"
+        onChange={onChange}
+      />
+    );
+    selectStart(getByTestId, 'range', 8, 0);
+    expect(onChange).toHaveBeenCalledWith('08:00', '17:00');
   });
 
-  it('uses the native picker in 24-hour time mode', () => {
-    expect(source).toContain('mode="time"');
-    expect(source).toContain('is24Hour');
+  it('calls onChange with a formatted "HH:MM" string when the end changes', () => {
+    const onChange = mock();
+    const { getByTestId } = render(
+      <TimeRangePicker
+        testID="range"
+        start="09:00"
+        end="17:00"
+        onChange={onChange}
+      />
+    );
+    selectEnd(getByTestId, 'range', 18, 30);
+    expect(onChange).toHaveBeenCalledWith('09:00', '18:30');
   });
 
-  it('wires start/end/error testIDs off the base testID', () => {
-    expect(source).toContain('`${baseTestID}-start`');
-    expect(source).toContain('`${baseTestID}-end`');
-    expect(source).toContain('`${baseTestID}-error`');
+  it('refuses a new start at or after the current end: no onChange, no swap, shows the inline error', () => {
+    const onChange = mock();
+    const { getByTestId, queryByTestId } = render(
+      <TimeRangePicker
+        testID="range"
+        start="09:00"
+        end="17:00"
+        onChange={onChange}
+      />
+    );
+    expect(queryByTestId('range-error')).toBeNull();
+
+    selectStart(getByTestId, 'range', 18, 0); // after the current end (17:00)
+
+    expect(onChange).not.toHaveBeenCalled();
+    expect(getByTestId('range-error')).toBeTruthy();
   });
 
-  it('guards BOTH handlers with isEndAfterStart before calling onChange', () => {
-    const guardCount = (source.match(/if \(!isEndAfterStart/g) ?? []).length;
-    expect(guardCount).toBe(2);
+  it('refuses a new end at or before the current start: no onChange, no swap, shows the inline error', () => {
+    const onChange = mock();
+    const { getByTestId } = render(
+      <TimeRangePicker
+        testID="range"
+        start="09:00"
+        end="17:00"
+        onChange={onChange}
+      />
+    );
+    selectEnd(getByTestId, 'range', 8, 0); // before the current start (09:00)
+
+    expect(onChange).not.toHaveBeenCalled();
+    expect(getByTestId('range-error')).toBeTruthy();
   });
 
-  it('never calls onChange with a raw Date — only formatted "HH:MM" strings', () => {
-    expect(source).not.toMatch(/onChange\(\s*date/);
-    expect(source).toContain('onChange(nextStart, end)');
-    expect(source).toContain('onChange(start, nextEnd)');
+  it('refuses an end exactly equal to the start — "after" is strict, not "on or after"', () => {
+    const onChange = mock();
+    const { getByTestId } = render(
+      <TimeRangePicker
+        testID="range"
+        start="09:00"
+        end="17:00"
+        onChange={onChange}
+      />
+    );
+    selectEnd(getByTestId, 'range', 9, 0); // exactly equal to start
+
+    expect(onChange).not.toHaveBeenCalled();
+    expect(getByTestId('range-error')).toBeTruthy();
   });
 
-  it('never silently swaps start and end on rejection', () => {
-    expect(source).not.toContain('onChange(end, start)');
-    expect(source).not.toContain('onChange(nextEnd, nextStart)');
-    // The refuse path must return early instead of calling onChange at all.
-    expect(source).toMatch(/Refuse[\s\S]{0,150}return;/);
+  it('clears the error once a subsequent change is valid', () => {
+    const onChange = mock();
+    const { getByTestId, queryByTestId } = render(
+      <TimeRangePicker
+        testID="range"
+        start="09:00"
+        end="17:00"
+        onChange={onChange}
+      />
+    );
+    selectStart(getByTestId, 'range', 18, 0);
+    expect(getByTestId('range-error')).toBeTruthy();
+
+    selectStart(getByTestId, 'range', 8, 0);
+    expect(queryByTestId('range-error')).toBeNull();
+    expect(onChange).toHaveBeenCalledWith('08:00', '17:00');
   });
 });

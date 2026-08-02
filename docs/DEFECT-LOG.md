@@ -65,7 +65,7 @@ healing itself, not only by unit tests.
 
 ## D2 — First "Send week" always 400s (stale hook binding)
 
-**Status:** FIXED (unverified on device) · **Severity:** high — every first send fails
+**Status:** FIXED — verified on device · **Severity:** high — every first send fails
 
 `POST /schedule-patterns` succeeds and returns a real uuid, then the immediate
 follow-up `PUT /api/v1/schedule-patterns/undefined/days` sends the literal string
@@ -95,7 +95,7 @@ the same class of bug one render away.
 
 ## D3 — Untranslated i18n key rendered as a person's name
 
-**Status:** FIXED (unverified on device) · **Severity:** medium — visible nonsense on a key screen
+**Status:** FIXED — verified on device · **Severity:** medium — visible nonsense on a key screen
 
 The review-before-sending screen rendered:
 `"carerPickerTitle will be able to accept or decline this week."`
@@ -115,7 +115,7 @@ Screenshot: `docs/screenshots/e2e/03d-parent-schedule-review-BUG-i18n-key.png`
 
 ## D4 — Accept gives no feedback; double-tap hazard
 
-**Status:** FIXED (unverified on device) · **Severity:** medium
+**Status:** FIXED — verified on device · **Severity:** medium
 
 The nanny's Accept succeeds (confirmed in the database) but the UI resets to the
 same enabled "Accept" button with no toast and no navigation. A nanny would
@@ -127,7 +127,7 @@ Screenshot: `docs/screenshots/e2e/07-nanny-review-week-BUG-stuck-after-accept.pn
 
 ## D5 — No way to change the week once a pattern is accepted
 
-**Status:** FIXED (unverified on device) · **Severity:** medium — app goes permanently read-only
+**Status:** FIXED — verified on device · **Severity:** medium — app goes permanently read-only
 
 `SchedulePendingScreen`'s state machine has a build/continue CTA for
 `none`/`draft`/`declined`/`withdrawn`, but nothing for `accepted`. After one
@@ -153,7 +153,7 @@ the first time anything unusual happens.
 
 ## D7 — Double-tap Clock in leaves the nanny falsely shown as clocked out
 
-**Status:** FIXED (unverified on device) · **Severity:** highest of this run
+**Status:** FIXED — verified on device · **Severity:** highest of this run
 
 The most damaging defect found, and it took a deliberate adversarial test to find
 it — nothing in the happy path exposes it.
@@ -190,7 +190,7 @@ not instead.
 
 ## D8 — Parent's approve/query mutations have no rejection handler
 
-**Status:** FIXED (unverified on device) · **Severity:** medium
+**Status:** FIXED — verified on device · **Severity:** medium
 
 Found by the app-wide audit prompted by D7, which is the point of auditing a
 class rather than fixing one instance: `ParentWeekView.tsx`'s `handleApprove` and
@@ -209,7 +209,7 @@ The audit is still running; further instances will be added here.
 
 ## D11 — Partial send failure orphans a draft pattern, duplicating on retry
 
-**Status:** FIXED (unverified on device) · **Severity:** medium
+**Status:** FIXED — verified on device · **Severity:** medium
 
 Surfaced by the agent auditing its own prior fix, outside the audit's remit.
 
@@ -232,7 +232,19 @@ restarts.
 
 ## D15 — Hours has no week navigation; past weeks are unviewable
 
-**Status:** REOPENED — first fix was a fake green · **Severity:** medium-high
+**Status:** FIXED on the second attempt (unverified on device) · **Severity:** medium-high
+
+`HoursScreen` now owns `weekOffset` for both roles, clamped so forward navigation
+can never pass the current week, with the handlers threaded through both week
+views. The new test renders the **real screen** and asserts on the query argument
+(`useWeekTimeEntries` receiving `addWeeks(currentWeekStart, -1)`), not on a
+label — and was verified genuinely red against the pre-fix source before being
+accepted. It also pins the case that matters most: an already-`approved` past
+week renders its approve and query buttons disabled, so a parent cannot
+re-approve history.
+
+The original failed attempt is left described below, because the failure mode is
+worth more than the fix.
 
 **A first attempt was marked fixed and was not.** `addWeeks` and previous/next
 controls were added to `WeekTotal`, and `WeekTotal.test.tsx` passed — because it
@@ -270,31 +282,19 @@ means to reach most of its own data.
 
 ## D17 — A phantom running timer survives any app resume
 
-**Status:** IN PROGRESS · **Severity:** high
-
 Found by an adversarial follow-up after D7 passed — asking "what else could leave
-this card lying?" rather than stopping at a green check.
-
-After an ordinary clock-in then clock-out, both succeeding server-side, simply
-backgrounding and foregrounding the app leaves Today showing "You're on the
-clock" with a live-ticking timer, indefinitely. `GET /time-entries/running`
-never fires again. Only a true kill-and-relaunch clears it.
-
-Cause: `useRunningTimeEntry` sets no `refetchOnMount: 'always'` and no focus
-refetch, while `queryClient.ts` globally sets `refetchOnWindowFocus: false`. The
-Tabs navigator keeps Today mounted across a resume, so the observer never
-remounts and never revalidates.
-
-Distinct from D7, whose fix added revalidation only on the 409 *error* path.
-Nothing revalidates on ordinary resume — and phones background constantly, so
-this is the common case, not an edge case. The app tells a nanny she is on the
-clock when she is not, and the ticking timer actively lies.
+this card lying?" rather than stopping at a green check. **Full entry, including
+the three-part root cause, is further down this file.** Recorded there because
+the cause turned out to be more interesting than first diagnosed: `network.ts`
+already wired `focusManager` to `AppState` for exactly this purpose, and
+`queryClient.ts` silently disabled it — two pieces that landed in the same commit
+and were never reconciled.
 
 ---
 
 ## D18 — `scheduled_minutes` is structurally unreachable
 
-**Status:** IN PROGRESS · **Severity:** medium
+**Status:** FIXED — verified on device · **Severity:** medium
 
 Never populated in any run, and not for want of trying — it *cannot* be:
 
@@ -327,6 +327,281 @@ exists to prevent. The rejection is documented in the code so nobody later
 "fixes" it into using that field. And ties resolve deterministically (nearest
 start, then earlier start, then lower id) rather than arbitrarily, because a
 non-deterministic match would attach hours to a different shift on a retry.
+
+---
+
+## D19 — `src/lib/network.ts` cannot be tested at all
+
+**Status:** FIXED · **Severity:** low — test infrastructure, no user impact
+
+Surfaced while writing D17's test. `network.ts` imports
+`@react-native-community/netinfo` at module top level, and that package throws
+synchronously on import when the native module isn't linked — which it never is
+under `bun:test`. So the file had **zero test coverage**, and any test that
+statically imported it crashed before it ran.
+
+`mock.module()` does not rescue it: mocking netinfo works in isolation, but a
+static `import { setupNetworkManagers } from '@/src/lib/network'` earlier in the
+same file evaluates — and throws — before the mock call executes, regardless of
+hoisting.
+
+The consequence for D17 specifically: its test had to reproduce
+`setupNetworkManagers`' `AppState` → `focusManager` wiring inline rather than
+exercising the real function. Everything else in that test is real (the actual
+`ClockInCard`, `useRunningTimeEntry`, and `queryClient` singleton), so the fix
+is genuinely covered — but the one line in `_layout.tsx` that calls
+`setupNetworkManagers()` was not, and could not be.
+
+That mattered more than it sounds: `setupNetworkManagers` is the bridge D17's
+whole fix depends on. It was untestable, so a future change breaking it would
+have silently reintroduced the phantom-timer bug with every test still green.
+
+**Fix:** mocked NetInfo in `bun.setup.ts`'s shared preload (not per-test-file —
+the preload runs before every test file's own imports, which is the only place
+early enough to matter). Added direct coverage for `setupNetworkManagers` itself
+(`lib/__tests__/network.test.ts`: wires `focusManager` to `AppState`, wires
+`onlineManager` to `NetInfo` with the "explicit `false` only" reachability rule
+the header comment documents, and is safe to call more than once). Then switched
+`ClockInCard.resume.test.tsx` over to drive the real `setupNetworkManagers`
+instead of its inline reproduction, closing the gap noted above.
+
+**Bonus fix, same pass:** the preload's `Gesture.Pan()` stub
+(`react-native-gesture-handler` mock) only named an `onBegin` key, and that key
+wasn't even callable (`mock().mockReturnThis?.()` is a no-op — that's Jest API,
+not `bun:test`'s). Nothing in the codebase calls `.onBegin`; the real caller
+(`useSheetDragToDismiss.ts`) chains
+`.activeOffsetY().failOffsetX().onStart().onUpdate().onEnd()`, so any test
+mounting the real `BottomSheetBase` crashed on the first chained call. Fixed
+with a self-returning chain covering the methods actually used (same pattern as
+the documented Supabase query-builder mock, `docs/09-TESTING.md` §4.1). Verified
+by rendering `BottomSheetBase` directly in a disposable test, which now mounts
+without throwing.
+
+---
+
+# D20–D26 — Server capabilities with no path from the app
+
+A systematic sweep, prompted by D9/D15/D18 all turning out to be the same shape:
+something built, tested and correct on the server, with **no way for a user to
+reach it**. Every route in `routes/index.ts` was cross-checked against actual
+mobile callers. Ranked by what a user cannot do, because "no caller for `PATCH
+/x`" is trivia while "a nanny cannot request time off" is a defect.
+
+## D20 — Break minutes are always zero, so hours are overstated
+
+**Severity: high — corrupts the number people are paid on.**
+`ClockInCard` calls `clockOut.mutateAsync({ entryId })` with no input, through
+the app's *only* clock-out call site. So `break_minutes` is permanently 0 and
+`note` permanently null, while `computeWorkedMinutes` faithfully subtracts the
+break it never receives. **Any day with a genuine unpaid break is recorded as
+more worked hours than actually happened.**
+
+Exactly D18's shape — schema field, server logic and ownership check all correct
+and tested, no UI ever populating it — but worse, because the corrupted value is
+the one money depends on.
+
+## D21 — Household settings can never be edited
+
+**Status: FIXED** (unverified on device) — `/settings/household`, parent-only,
+sends only changed fields, with a curated IANA timezone picker.
+
+Timezone retroactivity was **traced rather than assumed**: `schedule_patterns.
+timezone` is copied at creation, `shifts.timezone` frozen at materialisation,
+`timesheets.week_start` computed once at roll-up. The only live read is which
+week Hours opens on. So the change is genuinely going-forward-only, and the
+warning copy says exactly that and nothing stronger — an important distinction,
+since implying it retroactively corrects existing shifts would have been a lie.
+
+**Severity: high.** `PATCH /households/:householdId` has no mobile caller and no
+settings screen exists. Most seriously, **the timezone chosen at onboarding is
+permanent** — and this app derives `local_date`, week boundaries and every
+shift's interpretation from it. A household that picked wrong, or moves, cannot
+correct it. Also unreachable: name, address, `approval_mode`/`scope`/`timeout`,
+and `short_notice_hours`/`cancellation_paid_within_hours` — so a household can
+never adjust the policy deciding whether a cancelled shift is still paid.
+
+## D22 — A nanny cannot request time off
+
+**Status: FIXED** (unverified on device) — `/settings/time-off`, nanny-only:
+list, request, cancel.
+
+Two decisions preserved. Dates use an **exclusive end**, matching
+`weekEndExclusive` on the API side so the codebase has one convention, with the
+offset undone only at display time so a user never sees a phantom extra day.
+And the copy is **honest about what the server actually does**: no "pending
+approval" language, because time off is auto-confirmed with no approval
+endpoint anywhere, and no conflict warning, because the server performs no
+conflict check. A UI implying a review step that will never happen would leave
+a nanny waiting for an approval that cannot arrive.
+
+**Severity: high.** `GET/POST /time-off` and `DELETE /time-off/:id` are a
+complete CRUD API with **no client whatsoever** — there is no
+`endpoints/timeOff.ts`, and no reference to time-off anywhere in `apps/mobile`.
+
+## D23 — A single shift cannot be edited
+
+**Severity: high.** `PATCH /shifts/:shiftId` (`starts_at`/`ends_at`/`note`) has
+no caller, and no shift-detail screen exists. A one-off correction — a nanny
+late that one day, a materialised time that's simply wrong — requires editing
+the entire recurring pattern, or nothing.
+
+## D24 — The day thread is unreachable
+
+**Severity: medium.** `GET /households/:householdId/shifts/:shiftId/events` — the
+append-only audit trail described as the thing households actually argue about —
+has no caller, because D23 means there's no shift-detail screen to host it.
+
+## D25 — A parent builds a schedule blind to availability
+
+**Severity: medium.** `GET /availability/:userId` and `/availability/:carerId/busy`
+are both orphaned. The only availability consumer is the nanny checking her own
+rows *after* a pattern is sent. So a parent can propose an unschedulable week
+with no warning, and the nanny discovers it only when responding — which
+inverts the "parent proposes, nanny accepts" flow into needless back-and-forth.
+
+## D26 — `preferred_locale` can be read but never written
+
+**Severity: low.** The API returns it and `PATCH /users/me` accepts it; nothing
+in the app ever calls that endpoint. A user can never change their language.
+
+## Legitimately deferred — not defects
+
+`shift_change_requests` (counter-offer/cancel/split/handover) is explicitly
+documented as out of scope for this wave in both the service header and the
+schema. Recorded here only so the empty table isn't mistaken for a gap.
+
+`child_commitments` — investigated and settled: **also a deliberate deferral,
+now documented.** `PROJECT-STATUS.md` lists flow 1g ("per-child coverage &
+gaps") and view 2c ("coverage lanes") as not started, which is exactly what this
+table serves. Nothing depends on it — grepping every repository and service for
+the table returns zero hits, so nothing degrades while it's empty.
+
+The detail that settled it: migration 015's "gap detector" comment refers to
+per-pattern-day child times in `shift_children`, **not** to `child_commitments`.
+So the table's promise — set a child's preschool hours once rather than
+re-entering them on every pattern — is *unfulfilled*, not silently broken. A
+parent re-types those windows each time. That's a UX cost, not a correctness bug.
+
+Both cases now carry an explicit "DEFERRED, NOT FORGOTTEN" block in the
+migration itself, naming the flow and pointing at `PROJECT-STATUS.md`.
+`shift_change_requests` had its deferral recorded only in application code, so
+anyone reading the SQL alone hit the same mystery; that's fixed too. Migration
+016's calendar tables were already documented this way and were the model.
+
+A sweep of every table against every application reference found no other
+orphans.
+
+---
+
+# D27–D28 — Wire-contract drift
+
+Found by auditing `packages/shared-types` against the live database's actual
+column nullability and CHECK constraints. This class fails at **runtime, in a
+user's hands** — TypeScript can't catch it, because the API satisfies its own
+types and mobile parses with a Zod schema, and nothing compares the two.
+
+The headline is a negative result worth recording: across every priority table,
+**no nullable column is surfaced as a non-nullable schema field** — the direction
+that throws on a response the server considers perfectly valid. Every CHECK enum
+matches its const-map member for member. That held for the unused tables too, so
+it reflects real discipline rather than only the exercised paths staying honest.
+
+## D27 — `ShiftSchema` is behind its own implementation
+
+**Status:** IN PROGRESS · **Severity:** low now, blocking later
+
+Both shift read endpoints return `ShiftWithChildren` — the shift plus its joined
+`shift_children` — but `ShiftSchema` declares no such field, so Zod silently
+strips it. Harmless today because nothing reads per-child coverage; a concrete
+blocker for flow 2c (coverage lanes), which cannot surface per-child data until
+the schema gains the field.
+
+## D28 — Mobile's hand-mirrored request schema drops three validations
+
+**Status:** FIXED · **Severity:** low
+
+`PUT /schedule-patterns/:patternId/days` is deliberately a server-only schema, so
+mobile hand-mirrors it. The mirror is missing three `.refine()`s the real
+validator has: a day-child's `start_time`/`end_time` must both be set or both
+omitted; `end_time` must follow `start_time`; and each weekday may appear at most
+once per request.
+
+Field shapes match, so no response ever fails to parse. The cost is a *degraded
+error experience*: a client-side violation sails past the validation the mirror
+exists to provide and returns as a generic API 400 — the kind of thing later
+diagnosed as "the API is flaky" rather than as a known client bug.
+
+---
+
+## D29 — Per-user timezone was required, half-built, and silently dropped
+
+**Status:** API FIXED, UI in progress · **Severity:** high — an explicit
+requirement, unbuilt
+
+Absorbed into `PATCH /users/me` rather than a new endpoint, and the orphaned
+`UpdateUserTimeSettingsSchema` was retired rather than left as a second
+competing definition of the same body.
+
+**The validation is the part worth keeping.** `user_profiles.timezone` has no DB
+CHECK — it is free text, so the application is the only gate. The first attempt
+validated against `Intl.supportedValuesOf('timeZone')` and was discarded on
+discovering that list is **canonical-only**: it rejects `Asia/Kolkata`, which
+resolves to canonical `Asia/Calcutta`. Shipping that would have blocked
+onboarding for an entire country. The gate is now a `try/catch` around
+`Intl.DateTimeFormat`, which accepts real aliases, plus an explicit rejection of
+raw offset strings like `"+01:00"` — ECMA-402 permits those as a `timeZone`
+value, and accepting one would defeat the reason this app stores zones rather
+than offsets everywhere else: DST.
+
+`week_starts_on` is exposed but **genuinely inert** — every week computation
+(`weekStart.ts`, `recurrenceExpander.ts`, `dateUtils.ts`) hardcodes Monday-first
+and reads the column nowhere. Recorded rather than quietly shipped behind a
+control that appears to change something and doesn't.
+
+`user_profiles.timezone` and `week_starts_on` exist (migration 011). The write
+schema `UpdateUserTimeSettingsSchema` exists. **Neither is wired up in either
+direction:** `GET /users/me` explicitly `.select(...)`s around both columns, and
+grepping the entire API for the update schema, for `week_starts_on`, or for any
+route touching those columns returns zero hits.
+
+This is not the `child_commitments` shape. That was a flow nobody claimed to have
+built. This was an **explicit, locked product requirement** from the start of the
+project — different households sit in different time zones, each *user* sets
+their own, defaulting from the device, with the app adjusting automatically
+because it holds absolute UTC truth. It was migrated, schema'd, and then dropped
+without anything recording that it hadn't been finished.
+
+Worth noting how it surfaced: not from a failing test or a user-visible symptom,
+but from an audit asking "what does the server support that nothing calls?" A
+requirement can be silently unbuilt and leave no trace in any test suite, because
+there is nothing to fail.
+
+---
+
+## D30 — Time off can silently overlap a confirmed shift
+
+**Status:** OPEN · **Severity:** medium — coordination hole
+
+A nanny can book time off directly over a shift she is confirmed to work, and
+**nothing tells her, the parent, or anyone else.** The parent carries on
+expecting her; she believes the day is hers.
+
+No conflict check exists anywhere: the API performs none on write, and
+`v_busy_blocks` is a read-only display surface, never enforced. The time-off UI
+deliberately says nothing about conflicts rather than inventing a warning the
+backend cannot honour — the right call, since a warning the server doesn't
+actually enforce would be worse than none.
+
+The data to fix it already exists. `GET /availability/:carerId/busy` is live and
+auth-gated, and `queryKeys.availability.busy(...)` is already defined. What's
+missing is purely a mobile client — no endpoint wrapper, no hook, zero
+references in `apps/mobile`. So this is the same "built, tested, unreachable"
+shape as D9/D15/D18/D22, one layer up: the capability exists on both the server
+and in the key factory, and nothing connects them.
+
+Deliberately not fixed during this run — it is a scoped follow-up rather than a
+one-line addition, and it was found while shipping D22 rather than being part
+of it.
 
 ---
 
@@ -493,7 +768,7 @@ engineering call.
 
 ## D9 — Core entity management is unreachable after onboarding
 
-**Status:** FIXED (unverified on device) · **Severity:** high — missing functionality
+**Status:** FIXED — verified on device · **Severity:** high — missing functionality
 
 Fixed: `/settings/children`, `/settings/invite` and `/settings/availability`
 routes added, role-gated, reachable from Settings.
@@ -539,7 +814,7 @@ choice rather than an oversight, and can delete or adopt them on purpose.
 
 ## D17 — Phantom running timer survives app resume
 
-**Status:** FIXED (unverified on device) · **Severity:** high
+**Status:** FIXED — verified on device · **Severity:** high
 
 After a normal clock-in then clock-out — both succeeding server-side — simply
 backgrounding and foregrounding the app left the Today card showing "you're on

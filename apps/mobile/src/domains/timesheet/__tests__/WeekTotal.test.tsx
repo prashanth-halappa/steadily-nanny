@@ -92,4 +92,24 @@ describe('WeekTotal', () => {
     expect(nextButton.props.disabled).toBe(true);
     expect(nextButton.props.accessibilityState?.disabled).toBe(true);
   });
+
+  it('disables the previous-week control when isPreviousDisabled is true — bounds how far back navigation can page', () => {
+    const onPreviousWeek = mock(() => {});
+
+    const { getByTestId } = render(
+      <WeekTotal
+        testID="hours-week-total"
+        weekRangeLabel="27 Jul – 2 Aug"
+        totalLabel="0h 0m"
+        overtimeLabel={null}
+        onPreviousWeek={onPreviousWeek}
+        onNextWeek={() => {}}
+        isPreviousDisabled
+      />
+    );
+
+    const prevButton = getByTestId('hours-week-prev');
+    expect(prevButton.props.disabled).toBe(true);
+    expect(prevButton.props.accessibilityState?.disabled).toBe(true);
+  });
 });

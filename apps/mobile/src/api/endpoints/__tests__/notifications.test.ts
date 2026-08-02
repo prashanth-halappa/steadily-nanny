@@ -85,4 +85,29 @@ describe('notificationsApi.registerDevice', () => {
       'save failed'
     );
   });
+
+  // D21 — mirrors RegisterDeviceSchema's `.min(1)` on these optional string
+  // fields (apps/api/src/domains/notification/schemas.ts) so an empty string
+  // fails locally instead of only at the API.
+
+  it('rejects an empty expoPushToken without calling the API', async () => {
+    await expect(
+      notificationsApi.registerDevice({ ...device, expoPushToken: '' })
+    ).rejects.toThrow();
+    expect(apiClient.post).not.toHaveBeenCalled();
+  });
+
+  it('rejects an empty timezone without calling the API', async () => {
+    await expect(
+      notificationsApi.registerDevice({ ...device, timezone: '' })
+    ).rejects.toThrow();
+    expect(apiClient.post).not.toHaveBeenCalled();
+  });
+
+  it('rejects an empty appVersion without calling the API', async () => {
+    await expect(
+      notificationsApi.registerDevice({ ...device, appVersion: '' })
+    ).rejects.toThrow();
+    expect(apiClient.post).not.toHaveBeenCalled();
+  });
 });

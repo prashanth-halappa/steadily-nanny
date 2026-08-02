@@ -76,6 +76,7 @@ beforeAll(async () => {
 beforeEach(() => {
   apiClient.get.mockReset?.();
   apiClient.post.mockReset?.();
+  apiClient.patch.mockReset?.();
 });
 
 describe('householdApi.list', () => {
@@ -114,6 +115,45 @@ describe('householdApi.create', () => {
   it('rejects an empty name without calling the API', async () => {
     await expect(householdApi.create({ name: '' })).rejects.toThrow();
     expect(apiClient.post).not.toHaveBeenCalled();
+  });
+});
+
+describe('householdApi.update', () => {
+  it('PATCHes /v1/households/:id with only the given diff and returns the updated household', async () => {
+    const updated = { ...validHousehold, name: 'The Reyes Household' };
+    apiClient.patch.mockResolvedValue({
+      data: { data: { household: updated } },
+    });
+
+    const result = await householdApi.update(validHousehold.id, {
+      name: 'The Reyes Household',
+    });
+
+    expect(apiClient.patch).toHaveBeenCalledWith(
+      `/v1/households/${validHousehold.id}`,
+      { name: 'The Reyes Household' }
+    );
+    expect(result.name).toBe('The Reyes Household');
+  });
+
+  it('sends only the timezone field when that is the only change', async () => {
+    apiClient.patch.mockResolvedValue({
+      data: {
+        data: { household: { ...validHousehold, timezone: 'Asia/Tokyo' } },
+      },
+    });
+
+    await householdApi.update(validHousehold.id, { timezone: 'Asia/Tokyo' });
+
+    expect(apiClient.patch).toHaveBeenCalledWith(
+      `/v1/households/${validHousehold.id}`,
+      { timezone: 'Asia/Tokyo' }
+    );
+  });
+
+  it('rejects an empty diff without calling the API', async () => {
+    await expect(householdApi.update(validHousehold.id, {})).rejects.toThrow();
+    expect(apiClient.patch).not.toHaveBeenCalled();
   });
 });
 

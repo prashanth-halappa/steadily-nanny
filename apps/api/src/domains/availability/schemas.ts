@@ -30,7 +30,6 @@ export type {
   CreateCarerTimeOffInput,
   UpdateCarerAvailabilityInput,
   UpdateCarerTimeOffInput,
-  UpdateUserTimeSettingsInput,
 } from '@steadily-nanny/shared-types/schemas/availability.schema';
 export {
   AnonymisedBusyBlockListResponseSchema,
@@ -48,7 +47,6 @@ export {
   CreateCarerTimeOffSchema,
   UpdateCarerAvailabilitySchema,
   UpdateCarerTimeOffSchema,
-  UpdateUserTimeSettingsSchema,
 } from '@steadily-nanny/shared-types/schemas/availability.schema';
 
 /** URL param validation for GET /availability/:userId. */

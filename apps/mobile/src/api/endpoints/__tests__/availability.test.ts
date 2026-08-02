@@ -76,6 +76,41 @@ describe('availabilityApi.getMine', () => {
   });
 });
 
+describe('availabilityApi.getForUser', () => {
+  // D25 — a parent checking a carer's availability while building a
+  // schedule, not the self-view `getMine` covers.
+  const userId = '99999999-9999-4999-9999-999999999999';
+
+  it('GETs /v1/availability/:userId and returns the validated rows', async () => {
+    apiClient.get.mockResolvedValue({
+      data: { data: { carer_availability: [validRow] } },
+    });
+
+    const result = await availabilityApi.getForUser(userId);
+
+    expect(apiClient.get).toHaveBeenCalledWith(`/v1/availability/${userId}`);
+    expect(result).toHaveLength(1);
+    expect(result[0].weekday).toBe(1);
+  });
+
+  it('accepts an empty list (carer has not set any availability yet)', async () => {
+    apiClient.get.mockResolvedValue({
+      data: { data: { carer_availability: [] } },
+    });
+
+    const result = await availabilityApi.getForUser(userId);
+
+    expect(result).toEqual([]);
+  });
+
+  it('throws when the response fails validation', async () => {
+    apiClient.get.mockResolvedValue({
+      data: { data: { carer_availability: [{ weekday: 9 }] } },
+    });
+    await expect(availabilityApi.getForUser(userId)).rejects.toThrow();
+  });
+});
+
 describe('availabilityApi.upsertWeekday', () => {
   it('PUTs the full row for one weekday and returns the singular response', async () => {
     apiClient.put.mockResolvedValue({

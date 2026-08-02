@@ -41,5 +41,38 @@
     "manageSubtitle": "Actualiza los días y horas en que estás disponible para trabajar.",
     "finishButton": "Finalizar",
     "doneButton": "Listo"
+  },
+  "householdSettings": {
+    "manageTitle": "Ajustes del hogar",
+    "manageSubtitle": "Actualiza el nombre, la zona horaria, la dirección y la política de aprobación de tu hogar.",
+    "saveButton": "Guardar",
+    "doneButton": "Listo",
+    "savedToast": "Ajustes del hogar guardados",
+    "nameLabel": "Nombre del hogar",
+    "namePlaceholder": "p. ej. La familia Reyes",
+    "addressLabel": "Dirección (opcional)",
+    "addressPlaceholder": "Calle, ciudad",
+    "timezoneLabel": "Zona horaria",
+    "timezoneChangeButton": "Cambiar",
+    "timezoneWarning": "Cambiar la zona horaria solo afecta a los nuevos horarios y a cómo se calcula \"esta semana\" de ahora en adelante. Los turnos y horas ya registrados mantienen la zona horaria con la que se crearon y no cambiarán.",
+    "timezoneConfirmTitle": "¿Cambiar la zona horaria a {{zone}}?",
+    "timezoneConfirmBody": "Esto solo afecta a los nuevos horarios y a cómo se calcula \"esta semana\" de ahora en adelante. Los turnos y horas ya registrados mantienen la zona horaria con la que se crearon y no cambiarán.",
+    "timezoneConfirmCancel": "Cancelar",
+    "timezoneConfirmConfirm": "Cambiar zona horaria",
+    "pickerTitle": "Elige una zona horaria",
+    "approvalModeLabel": "Quién aprueba los cambios",
+    "approvalMode": {
+      "either": "Cualquiera de los padres puede decidir",
+      "ask_other": "Preguntar primero al otro padre",
+      "owner_only": "Solo decide el propietario del hogar"
+    },
+    "approvalScopeLabel": "Qué necesita aprobación",
+    "approvalScope": {
+      "all": "Todos los cambios",
+      "short_notice_and_cancellations": "Solo cambios de última hora y cancelaciones"
+    },
+    "approvalTimeoutLabel": "Tiempo límite de aprobación (minutos)",
+    "shortNoticeHoursLabel": "Ventana de última hora (horas)",
+    "cancellationPaidWithinHoursLabel": "Cancelación aún pagada dentro de (horas)"
   }
 }

@@ -200,20 +200,15 @@ export type AnonymisedBusyBlockListResponse = z.infer<
   typeof AnonymisedBusyBlockListResponseSchema
 >;
 
-// =============================================================================
-// Per-user time settings (user_profiles.timezone / week_starts_on)
-// =============================================================================
-
-/** PATCH body for a user's own time-display preferences. */
-export const UpdateUserTimeSettingsSchema = z
-  .object({
-    timezone: z.string().min(1).optional(),
-    week_starts_on: z.int().min(0).max(6).optional(),
-  })
-  .refine(data => Object.keys(data).length > 0, {
-    message: 'at least one field is required',
-  });
-
-export type UpdateUserTimeSettingsInput = z.infer<
-  typeof UpdateUserTimeSettingsSchema
->;
+// NOTE: `user_profiles.timezone` / `.week_starts_on` (D29) are NOT modeled
+// here. An earlier `UpdateUserTimeSettingsSchema` lived in this file —
+// migration 011 added those two columns to `user_profiles` in the same
+// migration that created this domain's `carer_availability`/`carer_time_off`
+// tables, which is almost certainly how the schema ended up here — but
+// `user_profiles` is owned by the `user` domain, not `availability`, and
+// that schema had no repository/service/controller/route ANYWHERE for two
+// waves running. Removed rather than left as a second, competing definition:
+// the real one is `UpdateProfileSchema` in
+// `apps/api/src/schemas/user.schema.ts`, which `PATCH /users/me` actually
+// uses and which validates `timezone` against the real IANA database (this
+// file's old version only checked non-empty-string).

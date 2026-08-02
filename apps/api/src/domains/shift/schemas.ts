@@ -15,6 +15,14 @@
  */
 import { z } from 'zod';
 
+// `ShiftChangeRequest` is re-exported below for the ONE thing that already
+// reads the table (`scheduleShiftRepository.hasChangeRequests`, the
+// re-materialisation guard). Its Create/Respond/List schema siblings are
+// deliberately NOT re-exported — flows 1d/1e are "not started" per
+// PROJECT-STATUS.md, so there is no repository/service/controller/route for
+// change requests at all; see `ParentEditShiftSchema` below and
+// `../services/shiftCommandService.ts`'s header for why. Also see
+// `supabase/migrations/015_shifts.sql`'s `shift_change_requests` section.
 export type {
   Shift,
   ShiftChangeRequest,

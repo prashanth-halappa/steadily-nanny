@@ -247,6 +247,56 @@ mock.module('react-native-mmkv', () => {
 });
 
 // -----------------------------------------------------------------------------
+// @react-native-community/netinfo — connectivity status, consumed by
+// src/lib/network.ts's onlineManager bridge (D19). The real package throws
+// synchronously at import time when its native module isn't linked, which it
+// never is here — so any test that statically imports network.ts, even
+// transitively, crashed before a mock.module() registered inside that test
+// file ever got a chance to run (ES import evaluation order resolves the
+// throwing import first). Mocking it in the preload is the only place early
+// enough to matter; this is what makes network.ts testable at all.
+// -----------------------------------------------------------------------------
+mock.module('@react-native-community/netinfo', () => ({
+  default: {
+    addEventListener: mock(() => mock()),
+    fetch: mock(() =>
+      Promise.resolve({
+        isConnected: true,
+        isInternetReachable: true,
+        type: 'wifi',
+      })
+    ),
+    configure: mock(),
+    useNetInfo: mock(() => ({ isConnected: true, isInternetReachable: true })),
+  },
+}));
+
+// -----------------------------------------------------------------------------
+// @react-native-community/datetimepicker — ships raw Flow-typed `.js` source
+// with no pre-built dist (D25, same root-cause class as the netinfo fix
+// above): Bun's parser cannot handle it, and that failure happens at
+// module-graph PARSE time, before any mock.module() call — inside the
+// preload or otherwise — gets a chance to intercept it. Mocking it here is
+// the only place early enough to matter, and it's what makes
+// `TimeRangePicker` (`src/components/ui/time-range-picker.tsx`) and
+// `TimeOffDateRangePicker` (`src/domains/timeOff/components/`) — and any
+// screen that composes either — render-testable at all.
+//
+// Rendered as a plain host `View` (matching this preload's convention for
+// every other RN primitive) carrying `testID`/`onChange`/`value`/`mode`
+// straight through as props — so a test can drive a selection exactly like
+// `fireEvent(getByTestId('...-start'), 'change', {}, someDate)`, which
+// RNTL resolves to `props.onChange({}, someDate)`, same call shape the real
+// native picker uses.
+// -----------------------------------------------------------------------------
+mock.module('@react-native-community/datetimepicker', () => {
+  function MockDateTimePicker(props: Record<string, unknown>) {
+    return React.createElement(View, props);
+  }
+  return { default: MockDateTimePicker };
+});
+
+// -----------------------------------------------------------------------------
 // Reanimated / worklets / gesture-handler
 // -----------------------------------------------------------------------------
 // Chainable animation builder stub: `.delay().duration().springify()...` all
@@ -336,10 +386,32 @@ mock.module('react-native-gesture-handler', () => ({
   BorderlessButton: View,
   FlatList: View,
   GestureHandlerRootView: View,
+  // Self-returning chain — same shape as the documented Supabase
+  // query-builder mock (docs/09-TESTING.md §4.1) — so any call order or
+  // combination of builder methods resolves. The previous stub only named
+  // `onBegin` (which nothing in this codebase even calls — the real caller
+  // is `useSheetDragToDismiss.ts`'s `.activeOffsetY().failOffsetX().onStart()
+  // .onUpdate().onEnd()` chain) and its `mockReturnThis?.()` was a no-op
+  // (that's Jest API, not bun:test's), so `onBegin` itself wasn't callable
+  // either. This crashed any test that actually mounted `BottomSheetBase`.
   Gesture: {
-    Pan: mock(() => ({
-      onBegin: mock().mockReturnThis?.() ?? {},
-    })),
+    Pan: mock(() => {
+      const chain: any = {
+        activeOffsetX: mock(() => chain),
+        activeOffsetY: mock(() => chain),
+        failOffsetX: mock(() => chain),
+        failOffsetY: mock(() => chain),
+        minDistance: mock(() => chain),
+        enabled: mock(() => chain),
+        simultaneousWithExternalGesture: mock(() => chain),
+        onBegin: mock(() => chain),
+        onStart: mock(() => chain),
+        onUpdate: mock(() => chain),
+        onEnd: mock(() => chain),
+        onFinalize: mock(() => chain),
+      };
+      return chain;
+    }),
   },
   GestureDetector: View,
   gestureHandlerRootHOC: mock((component: any) => component),

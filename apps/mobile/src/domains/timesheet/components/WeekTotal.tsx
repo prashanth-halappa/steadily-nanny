@@ -24,6 +24,8 @@ interface WeekTotalProps {
   onNextWeek?: () => void;
   /** Never let navigation reach a week later than the current one. */
   isNextDisabled?: boolean;
+  /** Never let navigation page back past the app's bounded history window. */
+  isPreviousDisabled?: boolean;
 }
 
 export function WeekTotal({
@@ -34,6 +36,7 @@ export function WeekTotal({
   onPreviousWeek,
   onNextWeek,
   isNextDisabled = false,
+  isPreviousDisabled = false,
 }: WeekTotalProps) {
   const { t } = useTranslation('hours');
   const hasNav = !!onPreviousWeek && !!onNextWeek;
@@ -47,9 +50,12 @@ export function WeekTotal({
               testID="hours-week-prev"
               accessibilityRole="button"
               accessibilityLabel={t('previousWeek')}
-              haptic="light"
+              accessibilityState={{ disabled: isPreviousDisabled }}
+              disabled={isPreviousDisabled}
+              haptic={isPreviousDisabled ? 'none' : 'light'}
               scaleIntensity="subtle"
               onPress={onPreviousWeek}
+              className={isPreviousDisabled ? 'opacity-40' : undefined}
             >
               <Icon icon={ChevronLeft} size={20} className="text-foreground" />
             </AnimatedPressable>

@@ -16,6 +16,8 @@
     "hoursSubtitle": "Elige un rango horario para cada día y qué niños están cubiertos.",
     "hoursCta": "Siguiente: repetición",
     "childrenLabel": "Niños cubiertos",
+    "outsideHoursWarning": "Fuera de su disponibilidad indicada",
+    "outsideHoursNote": "Aún puedes enviarlo — esto es solo un aviso.",
     "repeatTitle": "¿Con qué frecuencia se repite?",
     "repeatWeekly": "Cada semana",
     "repeatFortnightly": "Cada dos semanas",
