@@ -9,7 +9,6 @@ import {
   CreateShiftChangeRequestSchema,
   type RespondToShiftChangeRequestInput,
   RespondToShiftChangeRequestSchema,
-  type Shift,
   type ShiftChangeRequest,
   ShiftChangeRequestListResponseSchema,
   ShiftChangeRequestSchema,
@@ -29,26 +28,42 @@ export const changeRequestEndpoints = {
     `/v1/households/${householdId}/shifts/extra`,
 } as const;
 
+const PendingApprovalResultSchema = z.object({
+  status: z.literal('pending_approval'),
+  approval: z.record(z.string(), z.unknown()),
+});
+
 const CreateResultSchema = z.discriminatedUnion('status', [
   z.object({
     status: z.literal('pending'),
     shift_change_request: ShiftChangeRequestSchema,
   }),
-  z.object({
-    status: z.literal('pending_approval'),
-    approval: z.record(z.string(), z.unknown()),
-  }),
+  PendingApprovalResultSchema,
 ]);
 
-const CreateExtraBodySchema = z.object({
-  starts_at: z.iso.datetime({ offset: true }),
-  ends_at: z.iso.datetime({ offset: true }),
-  timezone: z.string().min(1),
-  carer_id: z.uuid().optional(),
-  child_ids: z.array(z.uuid()).optional(),
-  note: z.string().optional(),
-  reason: z.string().optional(),
-});
+const CreateExtraResultSchema = z.discriminatedUnion('status', [
+  z.object({
+    status: z.literal('created'),
+    shift: ShiftSchema,
+  }),
+  PendingApprovalResultSchema,
+]);
+export type CreateExtraShiftResult = z.infer<typeof CreateExtraResultSchema>;
+
+const CreateExtraBodySchema = z
+  .object({
+    starts_at: z.iso.datetime({ offset: true }),
+    ends_at: z.iso.datetime({ offset: true }),
+    timezone: z.string().min(1),
+    carer_id: z.uuid().optional(),
+    child_ids: z.array(z.uuid()).optional(),
+    note: z.string().optional(),
+    reason: z.string().optional(),
+  })
+  .refine(data => data.ends_at > data.starts_at, {
+    message: 'ends_at must be after starts_at',
+    path: ['ends_at'],
+  });
 export type CreateExtraShiftInput = z.infer<typeof CreateExtraBodySchema>;
 
 export const changeRequestApi = {
@@ -98,17 +113,15 @@ export const changeRequestApi = {
   createExtra: async (
     householdId: string,
     input: CreateExtraShiftInput
-  ): Promise<Shift> => {
+  ): Promise<CreateExtraShiftResult> => {
     const validated = CreateExtraBodySchema.safeParse(input);
     if (!validated.success) throw validated.error;
     const response = await apiClient.post(
       changeRequestEndpoints.createExtra(householdId),
       validated.data
     );
-    const parsed = z
-      .object({ shift: ShiftSchema })
-      .safeParse(response.data.data);
+    const parsed = CreateExtraResultSchema.safeParse(response.data.data);
     if (!parsed.success) throw parsed.error;
-    return parsed.data.shift;
+    return parsed.data;
   },
 };

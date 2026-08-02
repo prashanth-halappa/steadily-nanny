@@ -9,6 +9,7 @@
 import { supabaseService } from '../../../config/supabase';
 import { DatabaseError } from '../../../errors';
 import { BaseRepository } from '../../../shared/repositories/baseRepository';
+import { ApprovalNotPendingError } from '../errors/approvalErrors';
 import { CO_PARENT_APPROVAL_STATUSES } from '../schemas';
 import type { CoParentApproval } from '../types';
 
@@ -38,7 +39,11 @@ export class CoParentApprovalRepository extends BaseRepository<CoParentApproval>
     return (data ?? []) as CoParentApproval[];
   }
 
-  /** Record a parent's approve/decline response. */
+  /**
+   * Record a parent's approve/decline response. Compare-and-set on
+   * `status = pending` so a concurrent timeout/respond cannot silently
+   * overwrite a settled row.
+   */
   async respond(
     id: string,
     status: 'approved' | 'declined',
@@ -52,8 +57,9 @@ export class CoParentApprovalRepository extends BaseRepository<CoParentApproval>
         responded_at: new Date().toISOString(),
       })
       .eq('id', id)
+      .eq('status', CO_PARENT_APPROVAL_STATUSES.PENDING)
       .select()
-      .single();
+      .maybeSingle();
 
     if (error) {
       throw new DatabaseError(
@@ -61,6 +67,9 @@ export class CoParentApprovalRepository extends BaseRepository<CoParentApproval>
         'DATABASE_ERROR',
         { details: error.message, id }
       );
+    }
+    if (!data) {
+      throw new ApprovalNotPendingError(id, 'unknown');
     }
     return data as CoParentApproval;
   }

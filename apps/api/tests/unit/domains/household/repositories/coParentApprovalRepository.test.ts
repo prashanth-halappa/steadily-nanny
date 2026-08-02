@@ -1,4 +1,5 @@
 import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
+import { ApprovalNotPendingError } from '../../../../../src/domains/household/errors/approvalErrors';
 
 let CoParentApprovalRepository: any;
 let mockSupabaseService: any;
@@ -13,6 +14,7 @@ function createMockQueryChain(
     update: mock(() => chain),
     order: mock(() => chain),
     single: mock(() => Promise.resolve(finalResponse)),
+    maybeSingle: mock(() => Promise.resolve(finalResponse)),
     // biome-ignore lint/suspicious/noThenProperty: intentional thenable for the mock
     then: (resolve: any) => Promise.resolve(finalResponse).then(resolve),
   };
@@ -57,7 +59,7 @@ describe('CoParentApprovalRepository.listPendingByHousehold', () => {
 });
 
 describe('CoParentApprovalRepository.respond', () => {
-  it('updates status, responded_by, and responded_at', async () => {
+  it('updates status, responded_by, and responded_at with CAS on pending', async () => {
     const updated = { id: 'a1', status: 'approved', responded_by: 'u1' };
     const chain = createMockQueryChain({ data: updated, error: null });
     mockSupabaseService.from.mockImplementation(() => chain);
@@ -66,7 +68,20 @@ describe('CoParentApprovalRepository.respond', () => {
     expect(chain.update).toHaveBeenCalledWith(
       expect.objectContaining({ status: 'approved', responded_by: 'u1' })
     );
+    expect(chain.eq).toHaveBeenCalledWith('id', 'a1');
+    expect(chain.eq).toHaveBeenCalledWith('status', 'pending');
+    expect(chain.maybeSingle).toHaveBeenCalled();
     expect(result).toEqual(updated);
+  });
+
+  it('throws ApprovalNotPendingError when no pending row matches', async () => {
+    mockSupabaseService.from.mockImplementation(() =>
+      createMockQueryChain({ data: null, error: null })
+    );
+    const repo = new CoParentApprovalRepository();
+    await expect(repo.respond('a1', 'approved', 'u1')).rejects.toBeInstanceOf(
+      ApprovalNotPendingError
+    );
   });
 });
 

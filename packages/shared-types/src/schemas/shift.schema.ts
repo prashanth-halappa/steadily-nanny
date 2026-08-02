@@ -223,8 +223,11 @@ export const ShiftChangeRequestSchema = z.object({
   kind: z.enum(Object.values(SHIFT_CHANGE_REQUEST_KINDS)),
   proposed_starts_at: z.iso.datetime({ offset: true }).nullable(),
   proposed_ends_at: z.iso.datetime({ offset: true }).nullable(),
-  // Free text shown verbatim to the other side.
+  // Free text shown verbatim to the other side (the requester's note).
   message: z.string().nullable(),
+  // Responder's reply on accept/decline — kept separate so respond() never
+  // overwrites the request note (migration 023).
+  response_message: z.string().nullable(),
   status: z.enum(Object.values(SHIFT_CHANGE_REQUEST_STATUSES)),
   responded_by: z.uuid().nullable(),
   responded_at: z.iso.datetime({ offset: true }).nullable(),

@@ -13,6 +13,7 @@ const changeRequest = {
   proposed_starts_at: null,
   proposed_ends_at: null,
   message: 'Sorry',
+  response_message: null,
   status: 'pending' as const,
   responded_by: null,
   responded_at: null,

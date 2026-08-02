@@ -242,6 +242,7 @@ describe('shift.schema', () => {
       proposed_starts_at: NOW,
       proposed_ends_at: LATER,
       message: 'Can do straight after 9am',
+      response_message: null,
       status: 'pending',
       responded_by: null,
       responded_at: null,

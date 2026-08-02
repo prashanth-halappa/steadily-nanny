@@ -2,6 +2,7 @@
  * ShiftChangeRequestCommandService — create/respond/withdraw/extra-shift flows.
  */
 import { describe, expect, it, mock } from 'bun:test';
+import { ChildNotFoundError } from '../../../../../src/domains/child/errors/childErrors';
 import { NotAHouseholdParentError } from '../../../../../src/domains/household';
 import {
   ChangeRequestNotPendingError,
@@ -59,6 +60,7 @@ const pendingRequest = {
   proposed_starts_at: null,
   proposed_ends_at: null,
   message: 'Cannot make it',
+  response_message: null,
   status: 'pending' as const,
   responded_by: null,
   responded_at: null,
@@ -84,6 +86,8 @@ function makeChangeRequestRepo(overrides: Record<string, unknown> = {}): any {
       responded_at: 'now',
     })),
     withdraw: mock(async () => ({ ...pendingRequest, status: 'withdrawn' })),
+    // Default: no siblings to close. Every create/respond path calls this.
+    supersedePendingForShift: mock(async () => []),
     ...overrides,
   };
 }
@@ -306,20 +310,38 @@ describe('ShiftChangeRequestCommandService.create — settled-shift guard', () =
 });
 
 describe('ShiftChangeRequestCommandService.createExtraShift', () => {
+  const extraInput = {
+    starts_at: '2026-08-04T08:00:00.000Z',
+    ends_at: '2026-08-04T12:00:00.000Z',
+    timezone: 'Europe/London',
+    reason: 'Date night',
+    carer_id: 'carer-1',
+    child_ids: ['child-1'],
+    note: 'pick up from school',
+  };
+
   it('creates a pending extra shift with parent_proposed origin', async () => {
     const shiftRepo = makeShiftRepo();
     const eventRepo = makeEventRepo();
-    const svc = makeSvc({ shiftRepo, eventRepo });
+    const gate = makeGate();
+    const svc = makeSvc({ shiftRepo, eventRepo, gate });
 
-    const result = await svc.createExtraShift('parent-1', 'h1', {
-      starts_at: '2026-08-04T08:00:00.000Z',
-      ends_at: '2026-08-04T12:00:00.000Z',
-      timezone: 'Europe/London',
-      reason: 'Date night',
-      carer_id: 'carer-1',
-      child_ids: ['child-1'],
-    });
+    const result = await svc.createExtraShift('parent-1', 'h1', extraInput);
 
+    expect(gate.assertApprovalAllows).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'h1' }),
+      expect.objectContaining({ user_id: 'parent-1', role: 'parent' }),
+      'extra_shift',
+      {
+        starts_at: extraInput.starts_at,
+        ends_at: extraInput.ends_at,
+        timezone: extraInput.timezone,
+        carer_id: 'carer-1',
+        child_ids: ['child-1'],
+        note: 'pick up from school',
+        reason: 'Date night',
+      }
+    );
     expect(shiftRepo.createShift).toHaveBeenCalledWith(
       expect.objectContaining({
         kind: 'extra',
@@ -335,11 +357,45 @@ describe('ShiftChangeRequestCommandService.createExtraShift', () => {
     expect(eventRepo.insertMany).toHaveBeenCalledWith([
       expect.objectContaining({ event_type: 'extra_shift_proposed' }),
     ]);
-    expect(result.id).toBe('s-extra');
+    expect(result.status).toBe('created');
+    if (result.status === 'created') {
+      expect(result.shift.id).toBe('s-extra');
+    }
   });
 
-  it('rejects a nanny proposing an extra shift', async () => {
-    const svc = makeSvc();
+  it('returns pending_approval without writing a shift when the gate requires co-parent sign-off', async () => {
+    const shiftRepo = makeShiftRepo();
+    const eventRepo = makeEventRepo();
+    const gate = makeGate({
+      assertApprovalAllows: mock(async () => ({
+        needsApproval: true,
+        approval: { id: 'ap-extra', action: 'extra_shift' },
+      })),
+    });
+    // approval_scope = all so extra_shift is in scope for ask_other households
+    const householdRepo = makeHouseholdRepo({
+      findById: mock(async () => ({
+        ...household,
+        approval_mode: 'ask_other' as const,
+        approval_scope: 'all' as const,
+      })),
+    });
+    const svc = makeSvc({ shiftRepo, eventRepo, gate, householdRepo });
+
+    const result = await svc.createExtraShift('parent-1', 'h1', extraInput);
+
+    expect(result.status).toBe('pending_approval');
+    if (result.status === 'pending_approval') {
+      expect(result.approval.id).toBe('ap-extra');
+    }
+    expect(shiftRepo.createShift).not.toHaveBeenCalled();
+    expect(shiftRepo.insertChildren).not.toHaveBeenCalled();
+    expect(eventRepo.insertMany).not.toHaveBeenCalled();
+  });
+
+  it('rejects a nanny proposing an extra shift before consulting the gate', async () => {
+    const gate = makeGate();
+    const svc = makeSvc({ gate });
     await expect(
       svc.createExtraShift('carer-1', 'h1', {
         starts_at: '2026-08-04T08:00:00.000Z',
@@ -347,6 +403,131 @@ describe('ShiftChangeRequestCommandService.createExtraShift', () => {
         timezone: 'Europe/London',
       })
     ).rejects.toBeInstanceOf(NotAHouseholdParentError);
+    expect(gate.assertApprovalAllows).not.toHaveBeenCalled();
+  });
+});
+
+describe('ShiftChangeRequestCommandService.applyApprovedExtraShift', () => {
+  function approvalFor(overrides: Record<string, unknown> = {}): any {
+    return {
+      id: 'a-extra',
+      household_id: 'h1',
+      requested_by: 'parent-1',
+      action: 'extra_shift',
+      payload: {
+        starts_at: '2026-08-04T08:00:00.000Z',
+        ends_at: '2026-08-04T12:00:00.000Z',
+        timezone: 'Europe/London',
+        carer_id: 'carer-1',
+        child_ids: ['child-1'],
+        note: null,
+        reason: 'Date night',
+      },
+      status: 'approved',
+      timeout_at: '2999-01-01T00:00:00Z',
+      responded_by: 'parent-2',
+      responded_at: 't',
+      created_at: 't',
+      updated_at: 't',
+      ...overrides,
+    };
+  }
+
+  it('re-validates as the original requester and inserts the extra shift', async () => {
+    const shiftRepo = makeShiftRepo();
+    const children = makeChildren();
+    const memberRepo = makeMemberRepo();
+    const svc = makeSvc({ shiftRepo, children, memberRepo });
+
+    const result = await svc.applyApprovedExtraShift(approvalFor());
+
+    expect(memberRepo.findActiveMembership).toHaveBeenCalledWith(
+      'h1',
+      'parent-1'
+    );
+    expect(children.getOwned).toHaveBeenCalledWith('parent-1', 'h1', 'child-1');
+    expect(shiftRepo.createShift).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'extra',
+        status: 'pending',
+        origin: 'parent_proposed',
+        created_by: 'parent-1',
+        carer_id: 'carer-1',
+        reason: 'Date night',
+      })
+    );
+    expect(result.id).toBe('s-extra');
+  });
+
+  it('uses the same createShift shape as the ungated createExtraShift path (anti-drift)', async () => {
+    const shiftRepoGated = makeShiftRepo();
+    const shiftRepoUngated = makeShiftRepo();
+    const gate = makeGate();
+    const input = {
+      starts_at: '2026-08-04T08:00:00.000Z',
+      ends_at: '2026-08-04T12:00:00.000Z',
+      timezone: 'Europe/London',
+      carer_id: 'carer-1',
+      child_ids: ['child-1'],
+      note: 'n',
+      reason: 'r',
+    };
+
+    await makeSvc({ shiftRepo: shiftRepoUngated, gate }).createExtraShift(
+      'parent-1',
+      'h1',
+      input
+    );
+    await makeSvc({ shiftRepo: shiftRepoGated }).applyApprovedExtraShift(
+      approvalFor({
+        payload: {
+          starts_at: input.starts_at,
+          ends_at: input.ends_at,
+          timezone: input.timezone,
+          carer_id: input.carer_id,
+          child_ids: input.child_ids,
+          note: input.note,
+          reason: input.reason,
+        },
+      })
+    );
+
+    const ungatedArg = shiftRepoUngated.createShift.mock.calls[0][0];
+    const gatedArg = shiftRepoGated.createShift.mock.calls[0][0];
+    expect(gatedArg).toEqual(ungatedArg);
+  });
+
+  it('refuses when the original requester no longer exists', async () => {
+    const svc = makeSvc();
+    await expect(
+      svc.applyApprovedExtraShift(approvalFor({ requested_by: null }))
+    ).rejects.toThrow();
+  });
+
+  it('refuses when the assigned carer has left the household', async () => {
+    const memberRepo = makeMemberRepo({
+      findActiveMembership: mock(async (_h: string, userId: string) => {
+        if (userId === 'parent-1') return membershipFor('parent', 'parent-1');
+        if (userId === 'carer-1') return null; // departed
+        return membershipFor('parent', userId);
+      }),
+    });
+    const svc = makeSvc({ memberRepo });
+    await expect(
+      svc.applyApprovedExtraShift(approvalFor())
+    ).rejects.toBeInstanceOf(ValidationError);
+  });
+
+  it('refuses when a child no longer belongs to the household', async () => {
+    const children = makeChildren({
+      getOwned: mock(async () => {
+        throw new ChildNotFoundError('child-1');
+      }),
+    });
+    const svc = makeSvc({ children });
+    await expect(
+      svc.applyApprovedExtraShift(approvalFor())
+    ).rejects.toBeInstanceOf(ValidationError);
   });
 });
 
@@ -364,6 +545,8 @@ describe('ShiftChangeRequestCommandService.respond', () => {
         status: 'cancelled',
         cancelled_by: 'carer-1',
         origin: 'parent_proposed',
+        // requester note — respond no longer overwrites message
+        cancellation_message: 'Cannot make it',
       })
     );
     expect(eventRepo.insertMany).toHaveBeenCalledWith(
@@ -404,6 +587,50 @@ describe('ShiftChangeRequestCommandService.respond', () => {
     );
   });
 
+  it('on accept, supersedes pending siblings and batches superseded events into one insertMany', async () => {
+    const sibling = {
+      ...pendingRequest,
+      id: 'cr-sibling',
+      kind: 'time_change' as const,
+    };
+    const changeRequestRepo = makeChangeRequestRepo({
+      supersedePendingForShift: mock(async () => [sibling]),
+    });
+    const eventRepo = makeEventRepo();
+    const svc = makeSvc({ changeRequestRepo, eventRepo });
+
+    await svc.respond('carer-1', 'cr1', { status: 'accepted' });
+
+    expect(changeRequestRepo.supersedePendingForShift).toHaveBeenCalledWith(
+      's1',
+      'cr1'
+    );
+    expect(eventRepo.insertMany).toHaveBeenCalledTimes(1);
+    expect(eventRepo.insertMany).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({ event_type: 'change_request_accepted' }),
+        expect.objectContaining({ event_type: 'shift_cancelled' }),
+        expect.objectContaining({
+          event_type: 'change_request_superseded',
+          payload: expect.objectContaining({
+            change_request_id: 'cr-sibling',
+            kind: 'time_change',
+            superseded_by: 'cr1',
+          }),
+        }),
+      ])
+    );
+  });
+
+  it('does NOT supersede siblings on decline', async () => {
+    const changeRequestRepo = makeChangeRequestRepo();
+    const svc = makeSvc({ changeRequestRepo });
+
+    await svc.respond('carer-1', 'cr1', { status: 'declined' });
+
+    expect(changeRequestRepo.supersedePendingForShift).not.toHaveBeenCalled();
+  });
+
   it('rejects respond when the caller is not the designated responder', async () => {
     const svc = makeSvc();
     await expect(
@@ -441,10 +668,58 @@ describe('ShiftChangeRequestCommandService.withdraw', () => {
     ]);
   });
 
+  it('does NOT supersede siblings on withdraw', async () => {
+    const changeRequestRepo = makeChangeRequestRepo();
+    const svc = makeSvc({ changeRequestRepo });
+
+    await svc.withdraw('parent-1', 'cr1');
+
+    expect(changeRequestRepo.supersedePendingForShift).not.toHaveBeenCalled();
+  });
+
   it('rejects withdraw by someone other than the requester', async () => {
     const svc = makeSvc();
     await expect(svc.withdraw('parent-2', 'cr1')).rejects.toBeInstanceOf(
       NotTheChangeRequestRequesterError
+    );
+  });
+});
+
+describe('ShiftChangeRequestCommandService.create — supersede siblings', () => {
+  it('after opening a request, supersedes other pending siblings in one insertMany', async () => {
+    const sibling = {
+      ...pendingRequest,
+      id: 'cr-old',
+      kind: 'time_change' as const,
+    };
+    const changeRequestRepo = makeChangeRequestRepo({
+      supersedePendingForShift: mock(async () => [sibling]),
+    });
+    const eventRepo = makeEventRepo();
+    const svc = makeSvc({ changeRequestRepo, eventRepo });
+
+    await svc.create('parent-1', 's1', {
+      kind: 'cancel',
+      message: 'Emergency',
+    });
+
+    expect(changeRequestRepo.supersedePendingForShift).toHaveBeenCalledWith(
+      's1',
+      'cr-new'
+    );
+    expect(eventRepo.insertMany).toHaveBeenCalledTimes(1);
+    expect(eventRepo.insertMany).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({ event_type: 'change_request_created' }),
+        expect.objectContaining({
+          event_type: 'change_request_superseded',
+          payload: expect.objectContaining({
+            change_request_id: 'cr-old',
+            kind: 'time_change',
+            superseded_by: 'cr-new',
+          }),
+        }),
+      ])
     );
   });
 });

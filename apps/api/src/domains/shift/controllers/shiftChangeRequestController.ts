@@ -90,12 +90,21 @@ export class ShiftChangeRequestController {
   ) {
     try {
       const householdId = req.params.householdId as string;
-      const shift = await shiftChangeRequestCommandService.createExtraShift(
+      const result = await shiftChangeRequestCommandService.createExtraShift(
         getAuthUserId(req),
         householdId,
         req.body
       );
-      return sendSuccessResponse(res, 'Extra shift proposed', { shift });
+      if (result.status === 'pending_approval') {
+        return sendSuccessResponse(res, 'Co-parent approval required', {
+          status: result.status,
+          approval: result.approval,
+        });
+      }
+      return sendSuccessResponse(res, 'Extra shift proposed', {
+        status: result.status,
+        shift: result.shift,
+      });
     } catch (error) {
       return next(error);
     }
