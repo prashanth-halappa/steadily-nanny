@@ -8,9 +8,13 @@ export default function NotFound() {
   const { t } = useTranslation('common');
   const onboarding = useIsOnboarded();
   // Role-aware home: once onboarded, land on Today; otherwise the root
-  // gate (`/`) re-routes into auth/onboarding as usual.
+  // gate (`/`) re-routes into auth/onboarding as usual. Explicitly excluding
+  // membershipsError (rather than relying on it happening to coincide with
+  // status !== 'onboarded') keeps this correct even if useIsOnboarded's
+  // error-reporting contract changes later — on a real error we want the
+  // root gate to show its own retryable error, not a stale "home" link.
   const homeHref =
-    onboarding.status === 'onboarded'
+    !onboarding.membershipsError && onboarding.status === 'onboarded'
       ? ('/(private)/(tabs)/home' as Href)
       : ('/' as Href);
 

@@ -1278,7 +1278,125 @@ of which is an app defect:
    the memberships query fails.** Observed live: with the API unreachable, a
    nanny holding two active memberships was shown "Who are you?". This is the
    same `role === null` conflation D40 fixed *inside* the Schedule tab, still
-   present at the root redirect. Not fixed here — recorded as open.
+   present at the root redirect. **Now fixed — see D50.**
+
+---
+
+## D50 — A failed memberships query looked exactly like "never onboarded"
+
+**Status:** FIXED — verified on device · **Severity:** high — drops a real,
+fully set-up user into the signup wizard
+
+Found on device during the round-3 verification pass, not by a test.
+
+With the API unreachable, a nanny holding **two active household memberships**
+was redirected to the onboarding role fork ("Who are you?"). The cause was one
+nullish coalesce in `useIsOnboarded`:
+
+```ts
+const activeMemberships = (membershipsQuery.data ?? []).filter(...)
+```
+
+On error `data` is `undefined` → `[]` → no membership → the hook returned
+`{ status: 'not-onboarded', role: null }`, **byte-identical to a genuinely new
+user**. It never read `isError`. `useMyMemberships` inherits `retry: 1` from the
+global query client, so it reached that state in about two attempts.
+
+`app/index.tsx` then branched on `status`/`role` alone and sent `role === null`
+to `SETUP_STEPS.ROLE`.
+
+**A second defect made it unrecoverable.** `index.tsx` latched its decision per
+user id (`routedForUserId.current = userId`) *before* the not-onboarded branch.
+A later successful refetch re-ran the effect and immediately early-returned, so
+the user was never routed out even after the network came back. Only
+sign-out/sign-in cleared it — a transient blip became a stuck state.
+
+**The fix, and the reason it should hold.** `useIsOnboarded` now exposes
+`membershipsError` and `retryMemberships`, and — the load-bearing part — reports
+an errored query as `status: 'loading'`, **not** `'not-onboarded'`. A consumer
+who forgets to check `membershipsError` now shows a spinner, which is
+recoverable, instead of dropping a real user into a wizard, which is not.
+*Unknown must fail toward WAIT, never toward ASSUME NEW USER.* That single
+choice is what stops this recurring at a fourth call site, rather than relying
+on every future caller remembering to check a flag.
+
+`app/index.tsx` returns before deciding (and therefore before latching) when
+`membershipsError` is set, renders `ErrorState variant="network"` with a retry,
+and its latch key now carries the status it decided on, so a recovered query can
+still route.
+
+Two other consumers were updated: `(tabs)/schedule.tsx` had to move its
+`membershipsError` check **above** its `status === 'loading'` check — the
+contract change genuinely regressed that screen, swallowing its error state into
+an indefinite spinner, and its red test demonstrated exactly that. `+not-found.tsx`
+got a defensive guard only: `membershipsError: true` and `status: 'onboarded'`
+cannot co-occur (the error branch returns early with `'loading'`), so no test was
+written for it and none was faked — recorded here rather than dressed up as a
+fix.
+
+**Why the suite never caught it:** `useIsOnboarded.test.ts` had seven cases and
+not one of them mocked a *rejected* `listMemberships`. The regression test is now
+a discriminating pair — errored → `membershipsError: true`, resolved-but-empty →
+`false` — so a fix that hard-codes either value fails one of them. There was also
+no test for the entry router at all; `app/__tests__/index.behavior.test.tsx` is
+the first, and covers the latch-recovery case that the old code fails.
+
+**Device verification (2026-08-02, iPhone 17 Pro Max, iOS 26.5):** signed in as
+`nanny@steadilynanny.test`, killed the API, relaunched → **"No connection /
+Check your internet connection and try again"** with a Try again button, not the
+role fork. Restarted the API, pressed Try again → routed straight through to
+Today.
+
+### Precision on what each half actually fixed
+
+Recorded because the obvious reading of the above is wrong in two places, and
+both were caught only by insisting on the red phase.
+
+**The hook contract change did most of the routing work on its own.** Once
+`useIsOnboarded` reports an errored query as `'loading'`, the *old* `index.tsx`
+already stopped routing — it hit `if (onboarding.status === 'loading') return`.
+So `index.tsx`'s `membershipsError` guard is defence-in-depth for routing; the
+half that was genuinely still broken there, and that its red phase caught, is the
+**UI**: an unresolvable spinner with no retry and no explanation. The red failed
+on the missing `index-error` testID, *not* on an unwanted `replace` — the
+`expect(mockReplace).not.toHaveBeenCalled()` assertion beside it already passed
+pre-fix.
+
+**The device repro does NOT prove the latch fix.** Killing the API and pressing
+Try again exercises the recovery path, and that path was already green post-
+contract: the error returned at the loading guard *before* the latch write, so
+the latch was never set. The latch defect is real but is no longer reachable
+through a network error at all.
+
+It is reachable exactly one way now — a genuine `not-onboarded` verdict routes to
+`/onboarding/role` **and** sets the latch, then a corrected `'onboarded'` status
+arrives and the effect early-returns, stranding the user in the wizard. That is
+the scenario with the red phase:
+
+```
+- "/(private)/(tabs)/home"
++ "/onboarding/role"
+(fail) routes to home when a not-onboarded verdict is later corrected to onboarded
+```
+
+So the two defects need two separate lines, not one: the conflation was proven
+on device, the latch was proven only by that test.
+
+### Known gaps in the entry-router test
+
+Stated rather than implied, since the file mocks heavily:
+- `ErrorState`/`LoadingIndicator` are testID-only stubs and `react-i18next` is
+  key-echo mocked, so the test proves `variant="network"` is *passed* but not
+  that `errors:states.network.*` resolve. The device run is the only evidence
+  there.
+- `useIsOnboarded` is mocked wholesale, so this file never re-verifies that a
+  failed query really produces `membershipsError: true`. That link lives solely
+  in `useIsOnboarded.test.ts`; if the hook's contract drifts, these tests stay
+  green while the app breaks.
+- `hasAuthToken` is a boolean stub, so the cold-start token/session race it
+  guards is covered as a branch, not as timing.
+- `consumePendingLink` returns null throughout, so the deep-link replay branch is
+  executed but its non-null case is unverified.
 
 **Red-phase provenance: two gaps, recorded rather than papered over.** D42/D46
 (migration 031) and D43/D47 (migration 030) were implemented under the same

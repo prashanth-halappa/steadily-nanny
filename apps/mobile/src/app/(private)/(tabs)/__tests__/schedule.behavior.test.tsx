@@ -5,38 +5,34 @@
  * "role still loading" with "no membership yet" or "memberships query
  * errored": `useIsOnboarded().role` is null in all three situations, but
  * each needs its own affordance (loading spinner / empty state / error
- * state with retry). Also covers the existing nanny/parent/helper forks
- * once role is known.
+ * state with retry). An errored memberships query reports
+ * `status: 'loading'` PLUS `membershipsError: true` (see `useIsOnboarded`),
+ * so the error check must be checked before, and win over, the loading
+ * check — that ordering is what this file's error-state test guards. Also
+ * covers the existing nanny/parent/helper forks once role is known.
  */
 import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 import { fireEvent, render } from '@testing-library/react-native';
 
+const mockRetryMemberships = mock(() => {});
 const mockUseIsOnboarded = mock(
   (): {
     status: 'loading' | 'onboarded' | 'not-onboarded';
     role: 'nanny' | 'parent' | 'helper' | null;
     householdId: string | null;
+    membershipsError: boolean;
+    retryMemberships: () => void;
   } => ({
     status: 'loading',
     role: null,
     householdId: null,
-  })
-);
-
-const mockRefetch = mock(() => Promise.resolve());
-const mockUseMyMemberships = mock(
-  (): { isError: boolean; refetch: () => void } => ({
-    isError: false,
-    refetch: mockRefetch,
+    membershipsError: false,
+    retryMemberships: mockRetryMemberships,
   })
 );
 
 mock.module('@/src/hooks/queries/useIsOnboarded', () => ({
   useIsOnboarded: mockUseIsOnboarded,
-}));
-
-mock.module('@/src/hooks/queries/useMyMemberships', () => ({
-  useMyMemberships: mockUseMyMemberships,
 }));
 
 mock.module('@/src/components/ui/loading-indicator', () => {
@@ -97,13 +93,10 @@ beforeEach(() => {
     status: 'loading' as const,
     role: null,
     householdId: null,
+    membershipsError: false,
+    retryMemberships: mockRetryMemberships,
   }));
-  mockUseMyMemberships.mockReset();
-  mockUseMyMemberships.mockImplementation(() => ({
-    isError: false,
-    refetch: mockRefetch,
-  }));
-  mockRefetch.mockReset();
+  mockRetryMemberships.mockReset();
 });
 
 describe('ScheduleRoute — role fork (Wave A3 + role === null triage)', () => {
@@ -122,10 +115,8 @@ describe('ScheduleRoute — role fork (Wave A3 + role === null triage)', () => {
       status: 'not-onboarded' as const,
       role: null,
       householdId: null,
-    }));
-    mockUseMyMemberships.mockImplementation(() => ({
-      isError: false,
-      refetch: mockRefetch,
+      membershipsError: false,
+      retryMemberships: mockRetryMemberships,
     }));
 
     const { getByTestId, queryByTestId } = render(<ScheduleRoute />);
@@ -136,15 +127,13 @@ describe('ScheduleRoute — role fork (Wave A3 + role === null triage)', () => {
     expect(queryByTestId('error-state-mock')).toBeNull();
   });
 
-  it('shows an error state with retry when the memberships query fails', () => {
+  it('shows an error state with retry when membershipsError is true, even though status reports loading (an errored memberships query reports status: "loading" — see useIsOnboarded — and must not be swallowed by the loading check)', () => {
     mockUseIsOnboarded.mockImplementation(() => ({
-      status: 'not-onboarded' as const,
+      status: 'loading' as const,
       role: null,
       householdId: null,
-    }));
-    mockUseMyMemberships.mockImplementation(() => ({
-      isError: true,
-      refetch: mockRefetch,
+      membershipsError: true,
+      retryMemberships: mockRetryMemberships,
     }));
 
     const { getByTestId, queryByTestId } = render(<ScheduleRoute />);
@@ -154,7 +143,7 @@ describe('ScheduleRoute — role fork (Wave A3 + role === null triage)', () => {
     expect(queryByTestId('schedule-tab-loading')).toBeNull();
 
     fireEvent.press(getByTestId('error-state-mock'));
-    expect(mockRefetch).toHaveBeenCalledTimes(1);
+    expect(mockRetryMemberships).toHaveBeenCalledTimes(1);
   });
 
   it('routes nanny role to ScheduleShiftsScreen without back', () => {
@@ -162,6 +151,8 @@ describe('ScheduleRoute — role fork (Wave A3 + role === null triage)', () => {
       status: 'onboarded' as const,
       role: 'nanny' as const,
       householdId: 'h1',
+      membershipsError: false,
+      retryMemberships: mockRetryMemberships,
     }));
 
     const { getByTestId, queryByTestId } = render(<ScheduleRoute />);
@@ -179,6 +170,8 @@ describe('ScheduleRoute — role fork (Wave A3 + role === null triage)', () => {
       status: 'onboarded' as const,
       role: 'parent' as const,
       householdId: 'h1',
+      membershipsError: false,
+      retryMemberships: mockRetryMemberships,
     }));
 
     const { getByTestId, queryByTestId } = render(<ScheduleRoute />);
@@ -192,6 +185,8 @@ describe('ScheduleRoute — role fork (Wave A3 + role === null triage)', () => {
       status: 'onboarded' as const,
       role: 'helper' as const,
       householdId: 'h1',
+      membershipsError: false,
+      retryMemberships: mockRetryMemberships,
     }));
 
     const { getByTestId, queryByTestId } = render(<ScheduleRoute />);

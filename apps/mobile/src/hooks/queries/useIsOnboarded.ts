@@ -4,6 +4,7 @@ import {
   type HouseholdMember,
   type HouseholdRole,
 } from '@steadily-nanny/shared-types/schemas/household.schema';
+import { useCallback } from 'react';
 import { SETUP_ROLES, type SetupRole } from '@/src/domains/setup/types';
 import { useActiveHousehold } from './useActiveHousehold';
 import { useChildren } from './useChildren';
@@ -18,6 +19,14 @@ export interface OnboardingState {
   /** The relevant household id for the resolved membership. Null while
    * loading or if none exists yet. */
   householdId: string | null;
+  /**
+   * The memberships query FAILED — we do not know whether this user is
+   * onboarded. Deliberately DISTINCT from "resolved with zero memberships":
+   * callers must never treat this as not-onboarded (see the header comment).
+   */
+  membershipsError: boolean;
+  /** Retry the underlying memberships query. */
+  retryMemberships: () => void;
 }
 
 function membershipRoleToSetupRole(role: HouseholdRole): SetupRole | null {
@@ -74,10 +83,27 @@ function isOnboardedForMembership(
  * - Helper (SETUP_ROLES.HELPER): onboarded on an active helper membership.
  *
  * TRI-STATE ON PURPOSE: callers MUST treat 'loading' as "don't route yet".
+ *
+ * A FAILED memberships query is reported as `status: 'loading'` plus
+ * `membershipsError: true` — NOT as 'not-onboarded'. This matters:
+ * `membershipsQuery.data` is undefined on error, and the `?? []` below turns
+ * that into "no memberships", which is byte-identical to a genuinely new user.
+ * That shipped, and on device it routed a nanny holding two active
+ * memberships into the "Who are you?" role fork with the API unreachable.
+ *
+ * Reporting the unknown case as 'loading' is the deliberate failure mode: a
+ * caller that forgets to check `membershipsError` shows a spinner, which is
+ * recoverable, instead of dropping a real user into the signup wizard, which
+ * is not. Unknown must fail toward WAIT, never toward ASSUME NEW USER.
  */
 export function useIsOnboarded(): OnboardingState {
   const membershipsQuery = useMyMemberships();
   const activeHousehold = useActiveHousehold();
+
+  const retryMemberships = useCallback(() => {
+    void membershipsQuery.refetch();
+  }, [membershipsQuery.refetch]);
+  const membershipsError = membershipsQuery.isError;
 
   const activeMemberships = (membershipsQuery.data ?? []).filter(
     membership => membership.status === HOUSEHOLD_MEMBER_STATUSES.ACTIVE
@@ -104,12 +130,37 @@ export function useIsOnboarded(): OnboardingState {
     needsChildCount ? resolvedHouseholdId : undefined
   );
 
+  // BEFORE the loading check, and long before the not-onboarded check: an
+  // errored query must never fall through to `!membership` below, which cannot
+  // tell "the request failed" from "this user has no memberships".
+  if (membershipsError) {
+    return {
+      status: 'loading',
+      role: null,
+      householdId: null,
+      membershipsError: true,
+      retryMemberships,
+    };
+  }
+
   if (membershipsQuery.isLoading || activeHousehold.isLoading) {
-    return { status: 'loading', role: null, householdId: null };
+    return {
+      status: 'loading',
+      role: null,
+      householdId: null,
+      membershipsError: false,
+      retryMemberships,
+    };
   }
 
   if (!membership || !setupRole) {
-    return { status: 'not-onboarded', role: null, householdId: null };
+    return {
+      status: 'not-onboarded',
+      role: null,
+      householdId: null,
+      membershipsError: false,
+      retryMemberships,
+    };
   }
 
   if (needsChildCount && children.isLoading) {
@@ -117,6 +168,8 @@ export function useIsOnboarded(): OnboardingState {
       status: 'loading',
       role: setupRole,
       householdId: resolvedHouseholdId,
+      membershipsError: false,
+      retryMemberships,
     };
   }
 
@@ -127,5 +180,7 @@ export function useIsOnboarded(): OnboardingState {
     status: onboarded ? 'onboarded' : 'not-onboarded',
     role: setupRole,
     householdId: resolvedHouseholdId,
+    membershipsError: false,
+    retryMemberships,
   };
 }
