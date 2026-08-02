@@ -6,9 +6,94 @@
  * 0 minutes must render distinctly, not blend in as a plausible short
  * shift. A still-running entry with 0 elapsed so far must NOT be flagged.
  */
-import { beforeAll, describe, expect, it } from 'bun:test';
-import { render } from '@testing-library/react-native';
+import { beforeAll, describe, expect, it, mock } from 'bun:test';
+import { fireEvent, render } from '@testing-library/react-native';
 import type { TimeEntry } from '../types';
+
+// `@rn-primitives/alert-dialog` .mjs isn't pre-compiled for bun:test —
+// same stand-in as ManageHouseholdScreen.test (Wave 4 flagged-entry dialog).
+mock.module('@rn-primitives/alert-dialog', () => {
+  const React = require('react');
+  const Ctx = React.createContext({
+    open: false,
+    setOpen: (_open: boolean) => {},
+  });
+  return {
+    Root: ({
+      children,
+      open,
+      onOpenChange,
+    }: {
+      children: React.ReactNode;
+      open?: boolean;
+      onOpenChange?: (open: boolean) => void;
+    }) =>
+      React.createElement(
+        Ctx.Provider,
+        {
+          value: {
+            open: open ?? false,
+            setOpen: (next: boolean) => onOpenChange?.(next),
+          },
+        },
+        children
+      ),
+    Trigger: ({
+      children,
+      ...props
+    }: {
+      children: React.ReactNode;
+      [key: string]: unknown;
+    }) => React.createElement('Pressable', props, children),
+    Portal: ({ children }: { children: React.ReactNode }) => children,
+    Overlay: ({
+      children,
+      ...props
+    }: {
+      children?: React.ReactNode;
+      [key: string]: unknown;
+    }) => {
+      const { open } = React.useContext(Ctx);
+      return open ? React.createElement('View', props, children) : null;
+    },
+    Content: ({
+      children,
+      ...props
+    }: {
+      children?: React.ReactNode;
+      [key: string]: unknown;
+    }) => React.createElement('View', props, children),
+    Title: ({
+      children,
+      ...props
+    }: {
+      children?: React.ReactNode;
+      [key: string]: unknown;
+    }) => React.createElement('Text', props, children),
+    Description: ({
+      children,
+      ...props
+    }: {
+      children?: React.ReactNode;
+      [key: string]: unknown;
+    }) => React.createElement('Text', props, children),
+    Cancel: ({
+      children,
+      ...props
+    }: {
+      children?: React.ReactNode;
+      [key: string]: unknown;
+    }) => React.createElement('Pressable', props, children),
+    Action: ({
+      children,
+      ...props
+    }: {
+      children?: React.ReactNode;
+      [key: string]: unknown;
+    }) => React.createElement('Pressable', props, children),
+    useRootContext: () => React.useContext(Ctx),
+  };
+});
 
 let TimeEntryDayRow: typeof import('../components/TimeEntryDayRow').TimeEntryDayRow;
 
@@ -50,6 +135,16 @@ describe('TimeEntryDayRow — zero-duration flag', () => {
     );
 
     expect(getByTestId('hours-zero-duration-flag')).toBeTruthy();
+  });
+
+  it('makes a flagged entry pressable so the explanation dialog can open', () => {
+    const entry = makeEntry();
+    const { getByTestId } = render(
+      <TimeEntryDayRow date="2026-08-01" entries={[entry]} nowMs={NOW_MS} />
+    );
+
+    expect(getByTestId(`hours-flagged-entry-${entry.id}`)).toBeTruthy();
+    fireEvent.press(getByTestId(`hours-flagged-entry-${entry.id}`));
   });
 
   it('does NOT flag a still-running entry with 0 elapsed so far', () => {

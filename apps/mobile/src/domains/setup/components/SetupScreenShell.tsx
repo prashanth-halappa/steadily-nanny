@@ -9,9 +9,14 @@
  * simulator: `SafeAreaView` with an inline `style={{ flex: 1 }}` plus
  * `className="bg-background"`, and an inner `View` using `className` only
  * for colour/spacing while layout-critical props (`flex: 1`) stay inline.
+ *
+ * Wave 4 CX: optional top-left Back (`onBack`) so sub-screens are never
+ * trapped behind a sole "Done"/"Save" CTA, and optional secondary ghost
+ * (`onSkip` + `skipLabel`) for Cancel / Skip without inventing a second
+ * chrome component.
  */
 import type { ReactNode } from 'react';
-import { ScrollView, View } from 'react-native';
+import { Pressable, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button } from '@/src/components/ui/button';
 import { Text } from '@/src/components/ui/text';
@@ -27,7 +32,12 @@ interface SetupScreenShellProps {
   ctaLabel: string;
   onCta: () => void;
   ctaDisabled?: boolean;
+  /** Top-left escape — typically `router.back()` or wizard step-back. */
+  onBack?: () => void;
+  backLabel?: string;
   onSkip?: () => void;
+  /** Defaults to "Skip for now" when omitted (onboarding wizard). */
+  skipLabel?: string;
   testID?: string;
 }
 
@@ -39,7 +49,10 @@ export function SetupScreenShell({
   ctaLabel,
   onCta,
   ctaDisabled,
+  onBack,
+  backLabel = 'Back',
   onSkip,
+  skipLabel = 'Skip for now',
   testID,
 }: SetupScreenShellProps) {
   return (
@@ -49,6 +62,20 @@ export function SetupScreenShell({
           overlaps the H1 below. Fixed height rather than a __DEV__ branch —
           harmless in production and one less conditional to get wrong. */}
       <View style={{ height: 48 }} />
+
+      {onBack ? (
+        <View className="px-6 pb-1">
+          <Pressable
+            testID={`${testID}-back`}
+            accessibilityRole="button"
+            accessibilityLabel={backLabel}
+            onPress={onBack}
+            hitSlop={8}
+          >
+            <Body className="text-primary">{`< ${backLabel}`}</Body>
+          </Pressable>
+        </View>
+      ) : null}
 
       {typeof progress === 'number' ? (
         <View className="px-6 pt-4">
@@ -73,7 +100,7 @@ export function SetupScreenShell({
         </Button>
         {onSkip ? (
           <Button testID={`${testID}-skip`} variant="ghost" onPress={onSkip}>
-            <Text>Skip for now</Text>
+            <Text>{skipLabel}</Text>
           </Button>
         ) : null}
       </View>

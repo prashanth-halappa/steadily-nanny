@@ -10,6 +10,7 @@ import {
   updateAuthToken,
 } from '../api/client';
 import { queryClient } from '../api/queryClient';
+import { appIdentity } from '../config/appIdentity';
 import { env } from '../config/env';
 import { supabase } from '../lib/supabase';
 import { createPersistedStore } from './createPersistedStore';
@@ -46,6 +47,8 @@ interface AuthState {
 
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string) => Promise<void>;
+  /** Sends a Supabase password-reset email. Resolves on success; sets `error` on failure. */
+  resetPasswordForEmail: (email: string) => Promise<void>;
   signOut: () => Promise<void>;
   signInWithGoogle: () => Promise<void>;
   signInWithApple: () => Promise<void>;
@@ -105,6 +108,29 @@ export const useAuthStore = createPersistedStore<AuthState>(
               ? error.message
               : 'An unknown error occurred',
         });
+      } finally {
+        set({ isLoading: false });
+      }
+    },
+
+    resetPasswordForEmail: async email => {
+      set({ isLoading: true, error: null });
+      try {
+        const { error } = await supabase.auth.resetPasswordForEmail(email, {
+          redirectTo: `https://${appIdentity.associatedDomain}/auth/reset`,
+        });
+        if (error) {
+          set({ error: error.message });
+          throw error;
+        }
+      } catch (error) {
+        set({
+          error:
+            error instanceof Error
+              ? error.message
+              : 'An unknown error occurred',
+        });
+        throw error;
       } finally {
         set({ isLoading: false });
       }

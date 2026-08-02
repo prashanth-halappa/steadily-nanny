@@ -15,6 +15,7 @@ const pattern: SchedulePattern = {
   pause_ranges: [],
   timezone: 'Europe/London',
   note: null,
+  decline_message: null,
   created_by: 'u1',
   sent_at: null,
   responded_at: null,

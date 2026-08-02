@@ -24,6 +24,7 @@ import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 export function ManageChildrenScreen() {
   const router = useRouter();
   const { t } = useTranslation('household');
+  const { t: tCommon } = useTranslation('common');
   const onboarding = useIsOnboarded();
 
   return (
@@ -33,6 +34,8 @@ export function ManageChildrenScreen() {
       subtitle={t('children.manageSubtitle')}
       ctaLabel={t('children.doneButton')}
       onCta={() => router.back()}
+      onBack={() => router.back()}
+      backLabel={tCommon('back')}
     >
       {onboarding.householdId ? (
         <ChildrenManager householdId={onboarding.householdId} />

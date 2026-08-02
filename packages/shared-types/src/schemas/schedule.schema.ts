@@ -58,6 +58,8 @@ export const SchedulePatternSchema = z.object({
   // Copied from the household at creation; not client-settable afterwards.
   timezone: z.string().min(1),
   note: z.string().nullable(),
+  /** Carer's optional note when declining; null unless status is declined. */
+  decline_message: z.string().nullable(),
   created_by: z.uuid().nullable(),
   sent_at: z.iso.datetime({ offset: true }).nullable(),
   responded_at: z.iso.datetime({ offset: true }).nullable(),

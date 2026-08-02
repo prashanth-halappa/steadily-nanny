@@ -80,6 +80,7 @@ interface DayTime {
 export function ScheduleBuildScreen() {
   const router = useRouter();
   const { t } = useTranslation('schedule');
+  const { t: tCommon } = useTranslation('common');
   const onboarding = useIsOnboarded();
   const householdId = onboarding.householdId;
   const profile = useUserProfile();
@@ -172,6 +173,16 @@ export function ScheduleBuildScreen() {
   const carerDisplayName = (member: HouseholdMember) =>
     member.display_name_override ?? t('build.carerFallbackName');
 
+  const cancelWizard = () => router.back();
+  const cancelProps = {
+    onSkip: cancelWizard,
+    skipLabel: tCommon('cancel'),
+  } as const;
+
+  /** Step-back only when a prior wizard step exists; first step uses Cancel. */
+  const backToCarerOrExit =
+    (carers.data?.length ?? 0) > 1 ? () => setStep('carer') : cancelWizard;
+
   const onSend = async () => {
     if (!selectedCarerId || selectedDays.length === 0) return;
     setIsSending(true);
@@ -248,6 +259,8 @@ export function ScheduleBuildScreen() {
           subtitle={t('build.noCarerBody')}
           ctaLabel={t('build.noCarerCta')}
           onCta={() => router.back()}
+          onBack={() => router.back()}
+          backLabel={tCommon('back')}
         />
       ) : null}
 
@@ -260,6 +273,9 @@ export function ScheduleBuildScreen() {
           ctaLabel={t('build.carerPickerCta')}
           ctaDisabled={!selectedCarerId}
           onCta={() => setStep('days')}
+          onBack={cancelWizard}
+          backLabel={tCommon('back')}
+          {...cancelProps}
         >
           <View className="gap-2">
             {(carers.data ?? []).map(member => (
@@ -287,6 +303,9 @@ export function ScheduleBuildScreen() {
           ctaLabel={t('build.daysCta')}
           ctaDisabled={selectedDays.length === 0}
           onCta={() => setStep('hours')}
+          onBack={backToCarerOrExit}
+          backLabel={tCommon('back')}
+          {...cancelProps}
         >
           <WeekStrip
             testID="schedule-day-toggle"
@@ -305,6 +324,9 @@ export function ScheduleBuildScreen() {
           subtitle={t('build.hoursSubtitle')}
           ctaLabel={t('build.hoursCta')}
           onCta={() => setStep('repeat')}
+          onBack={() => setStep('days')}
+          backLabel={tCommon('back')}
+          {...cancelProps}
         >
           <View className="gap-6">
             {displayOrder
@@ -382,6 +404,9 @@ export function ScheduleBuildScreen() {
           title={t('build.repeatTitle')}
           ctaLabel={t('build.repeatCta')}
           onCta={() => setStep('review')}
+          onBack={() => setStep('hours')}
+          backLabel={tCommon('back')}
+          {...cancelProps}
         >
           <View className="gap-2">
             <Button
@@ -417,6 +442,9 @@ export function ScheduleBuildScreen() {
           ctaLabel={t('build.reviewSendCta')}
           ctaDisabled={isSending}
           onCta={() => void onSend()}
+          onBack={() => setStep('repeat')}
+          backLabel={tCommon('back')}
+          {...cancelProps}
         >
           <View className="gap-4">
             <Body testID="schedule-review-days-count">

@@ -213,6 +213,8 @@ export class SchedulePatternCommandService {
     const updated = await this.patternRepo.update(patternId, {
       status: input.status,
       responded_at: new Date().toISOString(),
+      decline_message:
+        input.status === 'declined' ? input.message?.trim() || null : null,
     });
 
     if (input.status === 'accepted') {

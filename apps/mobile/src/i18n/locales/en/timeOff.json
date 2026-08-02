@@ -23,5 +23,6 @@
   "checkFailedTitle": "Couldn't check for clashes",
   "checkFailedDescription": "We couldn't verify whether this overlaps an existing shift. You can still request time off.",
   "checkFailedCancel": "Go back",
-  "checkFailedConfirm": "Request anyway"
+  "checkFailedConfirm": "Request anyway",
+  "filterAll": "All"
 }

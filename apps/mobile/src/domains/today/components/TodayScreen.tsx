@@ -24,6 +24,7 @@ import { useChildren } from '@/src/hooks/queries/useChildren';
 import { useHouseholds } from '@/src/hooks/queries/useHouseholds';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 import { ClockInCard } from './ClockInCard';
+import { NannyLiveStatusCard } from './NannyLiveStatusCard';
 
 export function TodayScreen() {
   // Server-derived role, NOT the local setupProgress store — that's
@@ -60,6 +61,13 @@ export function TodayScreen() {
                 />
               ))}
             </View>
+          ) : null}
+
+          {onboarding.role === SETUP_ROLES.PARENT ? (
+            <NannyLiveStatusCard
+              householdId={household.id}
+              timeZone={household.timezone}
+            />
           ) : null}
 
           {onboarding.role === SETUP_ROLES.NANNY ? (

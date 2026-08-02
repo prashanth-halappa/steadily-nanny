@@ -4,11 +4,16 @@
   "cancel": "Cancelar",
   "save": "Guardar",
   "retry": "Reintentar",
+  "retryNow": "Reintentar ahora",
+  "offlineBanner": "Sin conexión — los cambios se reintentarán al reconectar.",
   "loading": "Cargando...",
   "back": "Atrás",
   "next": "Siguiente",
   "skip": "Omitir",
   "done": "Listo",
   "close": "Cerrar",
-  "error": "Error"
+  "error": "Error",
+  "notFoundTitle": "No encontrado",
+  "notFoundBody": "Esta pantalla no existe.",
+  "notFoundGoHome": "Ir al inicio"
 }

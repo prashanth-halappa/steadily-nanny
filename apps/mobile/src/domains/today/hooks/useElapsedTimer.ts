@@ -9,7 +9,7 @@
  * `__tests__/useElapsedTimer.test.ts` — those matter more than the format.
  */
 import { useEffect, useState } from 'react';
-import { formatElapsedSince } from '@/src/domains/timesheet';
+import { formatElapsedSince } from '@/src/domains/timesheet/utils/duration';
 
 const TICK_MS = 1000;
 

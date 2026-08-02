@@ -27,6 +27,7 @@ import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 export function ManageInviteScreen() {
   const router = useRouter();
   const { t } = useTranslation('household');
+  const { t: tCommon } = useTranslation('common');
   const onboarding = useIsOnboarded();
   const householdId = onboarding.householdId ?? '';
 
@@ -52,6 +53,8 @@ export function ManageInviteScreen() {
       subtitle={t('invite.manageSubtitle')}
       ctaLabel={t('invite.doneButton')}
       onCta={() => router.back()}
+      onBack={() => router.back()}
+      backLabel={tCommon('back')}
     >
       {hasStarted ? (
         <>

@@ -47,6 +47,81 @@ mock.module('@/src/domains/timesheet/components/QueryNoteSheet', () => {
   };
 });
 
+// TimeEntryDayRow now hosts a flagged-entry AlertDialog (Wave 4 CX).
+mock.module('@rn-primitives/alert-dialog', () => {
+  const React = require('react');
+  const Ctx = React.createContext({
+    open: false,
+    setOpen: (_open: boolean) => {},
+  });
+  return {
+    Root: ({
+      children,
+      open,
+      onOpenChange,
+    }: {
+      children: React.ReactNode;
+      open?: boolean;
+      onOpenChange?: (open: boolean) => void;
+    }) =>
+      React.createElement(
+        Ctx.Provider,
+        {
+          value: {
+            open: open ?? false,
+            setOpen: (next: boolean) => onOpenChange?.(next),
+          },
+        },
+        children
+      ),
+    Trigger: ({
+      children,
+      ...props
+    }: {
+      children: React.ReactNode;
+      [key: string]: unknown;
+    }) => React.createElement('Pressable', props, children),
+    Portal: ({ children }: { children: React.ReactNode }) => children,
+    Overlay: () => null,
+    Content: ({
+      children,
+      ...props
+    }: {
+      children?: React.ReactNode;
+      [key: string]: unknown;
+    }) => React.createElement('View', props, children),
+    Title: ({
+      children,
+      ...props
+    }: {
+      children?: React.ReactNode;
+      [key: string]: unknown;
+    }) => React.createElement('Text', props, children),
+    Description: ({
+      children,
+      ...props
+    }: {
+      children?: React.ReactNode;
+      [key: string]: unknown;
+    }) => React.createElement('Text', props, children),
+    Cancel: ({
+      children,
+      ...props
+    }: {
+      children?: React.ReactNode;
+      [key: string]: unknown;
+    }) => React.createElement('Pressable', props, children),
+    Action: ({
+      children,
+      ...props
+    }: {
+      children?: React.ReactNode;
+      [key: string]: unknown;
+    }) => React.createElement('Pressable', props, children),
+    useRootContext: () => React.useContext(Ctx),
+  };
+});
+
 const HOUSEHOLD_ID = '5d4b0b70-edd9-4218-b7df-a28d234f7e06';
 const PARENT_USER_ID = '11111111-1111-4111-8111-111111111111';
 // Matches the seeded `submitted` timesheet the app should be able to reach

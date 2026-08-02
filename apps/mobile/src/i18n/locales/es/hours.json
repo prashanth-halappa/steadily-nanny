@@ -13,5 +13,9 @@
   "querySubmit": "Enviar consulta",
   "approvedToast": "Semana aprobada",
   "queriedToast": "Consulta enviada",
-  "queriedWithNote": "Consultado: {{note}}"
+  "queriedWithNote": "Consultado: {{note}}",
+  "flaggedCheckEntry": "revisa esta entrada",
+  "flaggedTitle": "Entrada inusual",
+  "flaggedDescription": "Esta entrada tiene duración cero — suele ser un fichaje accidental. Aún no se pueden editar entradas pasadas; habla con tu hogar si hay que corregirla.",
+  "flaggedDismiss": "Entendido"
 }

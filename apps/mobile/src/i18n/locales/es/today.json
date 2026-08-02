@@ -10,5 +10,7 @@
   "noBreak": "Sin descanso",
   "breakMinutesOption": "{{minutes}} min",
   "noteLabel": "Nota (opcional)",
-  "notePlaceholder": "¿Algo que anotar sobre hoy?"
+  "notePlaceholder": "¿Algo que anotar sobre hoy?",
+  "nannyLiveTitle": "Niñera en horario",
+  "nannyLiveBody": "Entrada a las {{time}} — turno en curso"
 }

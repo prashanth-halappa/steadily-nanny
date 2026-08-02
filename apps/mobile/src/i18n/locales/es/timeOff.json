@@ -23,5 +23,6 @@
   "checkFailedTitle": "No se pudieron comprobar conflictos",
   "checkFailedDescription": "No pudimos verificar si esto se solapa con un turno existente. Aun así puedes solicitar tiempo libre.",
   "checkFailedCancel": "Volver",
-  "checkFailedConfirm": "Solicitar de todos modos"
+  "checkFailedConfirm": "Solicitar de todos modos",
+  "filterAll": "Todos"
 }

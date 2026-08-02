@@ -19,11 +19,16 @@
  * `TimeOffRequestForm`'s submit handler — see that file's header comment.
  */
 import { FlashList } from '@shopify/flash-list';
+import type { CarerTimeOffStatus } from '@steadily-nanny/shared-types/schemas/availability.schema';
+import { useRouter } from 'expo-router';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { View } from 'react-native';
+import { Pressable, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { cn } from '@/lib/utils';
 import { EmptyState } from '@/src/components/ui/empty-state';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
-import { H1 } from '@/src/components/ui/typography';
+import { Body, H1, Small } from '@/src/components/ui/typography';
 import { SETUP_ROLES } from '@/src/domains/setup/types';
 import { useCancelTimeOff } from '@/src/hooks/mutations/useCancelTimeOff';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
@@ -32,11 +37,23 @@ import { showSuccessToast } from '@/src/lib/toast';
 import { TimeOffRequestForm } from './TimeOffRequestForm';
 import { TimeOffRow } from './TimeOffRow';
 
+type StatusFilter = 'all' | CarerTimeOffStatus;
+
+const FILTERS: readonly StatusFilter[] = [
+  'all',
+  'confirmed',
+  'requested',
+  'cancelled',
+] as const;
+
 export function TimeOffScreen() {
+  const router = useRouter();
   const { t } = useTranslation('timeOff');
+  const { t: tCommon } = useTranslation('common');
   const onboarding = useIsOnboarded();
   const timeOff = useTimeOff();
   const cancelTimeOff = useCancelTimeOff();
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
 
   const handleCancel = async (id: string) => {
     if (cancelTimeOff.isPending) return;
@@ -48,10 +65,35 @@ export function TimeOffScreen() {
     showSuccessToast(t('cancelledToast'));
   };
 
+  const backHeader = (
+    <Pressable
+      testID="time-off-back"
+      accessibilityRole="button"
+      accessibilityLabel={tCommon('back')}
+      onPress={() => router.back()}
+      hitSlop={8}
+      className="mb-2 self-start"
+    >
+      <Body className="text-primary">{`< ${tCommon('back')}`}</Body>
+    </Pressable>
+  );
+
+  const allRows = timeOff.data ?? [];
+  const rows = useMemo(
+    () =>
+      statusFilter === 'all'
+        ? allRows
+        : allRows.filter(row => row.status === statusFilter),
+    [allRows, statusFilter]
+  );
+
   if (onboarding.status === 'loading') {
     return (
       <View testID="time-off-screen" className="flex-1 bg-background">
-        <LoadingIndicator testID="time-off-loading" />
+        <SafeAreaView style={{ flex: 1 }} className="bg-background">
+          <View className="px-6 pt-4">{backHeader}</View>
+          <LoadingIndicator testID="time-off-loading" />
+        </SafeAreaView>
       </View>
     );
   }
@@ -59,53 +101,83 @@ export function TimeOffScreen() {
   if (onboarding.role !== SETUP_ROLES.NANNY) {
     return (
       <View testID="time-off-screen" className="flex-1 bg-background">
-        <View testID="time-off-not-available" className="mt-8">
-          <EmptyState
-            variant="inline"
-            title={t('notAvailableTitle')}
-            description={t('notAvailableDescription')}
-          />
-        </View>
+        <SafeAreaView style={{ flex: 1 }} className="bg-background">
+          <View className="px-6 pt-4">{backHeader}</View>
+          <View testID="time-off-not-available" className="mt-8">
+            <EmptyState
+              variant="inline"
+              title={t('notAvailableTitle')}
+              description={t('notAvailableDescription')}
+            />
+          </View>
+        </SafeAreaView>
       </View>
     );
   }
 
-  const rows = timeOff.data ?? [];
-
   return (
     <View testID="time-off-screen" className="flex-1 bg-background">
-      <FlashList
-        testID="time-off-list"
-        data={rows}
-        keyExtractor={row => row.id}
-        renderItem={({ item }) => (
-          <TimeOffRow
-            timeOff={item}
-            onCancel={id => void handleCancel(id)}
-            isCancelling={cancelTimeOff.isPending}
-          />
-        )}
-        ListHeaderComponent={
-          <View className="mb-2 gap-1">
-            <H1 testID="time-off-header">{t('screenTitle')}</H1>
-            <TimeOffRequestForm />
-          </View>
-        }
-        ListEmptyComponent={
-          timeOff.isLoading ? (
-            <LoadingIndicator testID="time-off-loading" />
-          ) : (
-            <View testID="time-off-empty">
-              <EmptyState
-                variant="inline"
-                title={t('emptyTitle')}
-                description={t('emptyDescription')}
-              />
+      <SafeAreaView style={{ flex: 1 }} className="bg-background">
+        <FlashList
+          testID="time-off-list"
+          data={rows}
+          keyExtractor={row => row.id}
+          renderItem={({ item }) => (
+            <TimeOffRow
+              timeOff={item}
+              onCancel={id => void handleCancel(id)}
+              isCancelling={cancelTimeOff.isPending}
+            />
+          )}
+          ListHeaderComponent={
+            <View className="mb-2 gap-1">
+              {backHeader}
+              <H1 testID="time-off-header">{t('screenTitle')}</H1>
+              <TimeOffRequestForm />
+              <View
+                testID="time-off-status-filters"
+                className="mt-4 flex-row flex-wrap gap-2"
+              >
+                {FILTERS.map(filter => (
+                  <Pressable
+                    key={filter}
+                    testID={`time-off-filter-${filter}`}
+                    accessibilityRole="button"
+                    onPress={() => setStatusFilter(filter)}
+                  >
+                    <Small
+                      className={cn(
+                        'rounded-full border px-3 py-1.5',
+                        statusFilter === filter
+                          ? 'border-primary bg-primary/10 text-primary'
+                          : 'border-border text-foreground'
+                      )}
+                    >
+                      {filter === 'all'
+                        ? t('filterAll')
+                        : t(`status.${filter}`)}
+                    </Small>
+                  </Pressable>
+                ))}
+              </View>
             </View>
-          )
-        }
-        contentContainerStyle={{ padding: 24, paddingBottom: 100 }}
-      />
+          }
+          ListEmptyComponent={
+            timeOff.isLoading ? (
+              <LoadingIndicator testID="time-off-loading" />
+            ) : (
+              <View testID="time-off-empty">
+                <EmptyState
+                  variant="inline"
+                  title={t('emptyTitle')}
+                  description={t('emptyDescription')}
+                />
+              </View>
+            )
+          }
+          contentContainerStyle={{ padding: 24, paddingBottom: 100 }}
+        />
+      </SafeAreaView>
     </View>
   );
 }

@@ -10,5 +10,7 @@
   "noBreak": "No break",
   "breakMinutesOption": "{{minutes}} min",
   "noteLabel": "Note (optional)",
-  "notePlaceholder": "Anything worth noting about today?"
+  "notePlaceholder": "Anything worth noting about today?",
+  "nannyLiveTitle": "Nanny on the clock",
+  "nannyLiveBody": "Clocked in at {{time}} — shift in progress"
 }

@@ -1,18 +1,21 @@
 import { type Href, useRouter } from 'expo-router';
 import { useState } from 'react';
-import { View } from 'react-native';
+import { useTranslation } from 'react-i18next';
+import { Pressable, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button } from '@/src/components/ui/button';
 import { Input } from '@/src/components/ui/input';
 import { Text } from '@/src/components/ui/text';
-import { H1, Small } from '@/src/components/ui/typography';
+import { Body, H1, Small } from '@/src/components/ui/typography';
 import { useAuthStore } from '@/src/store/auth';
 
 export default function Login() {
   const router = useRouter();
+  const { t } = useTranslation('auth');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const signIn = useAuthStore(s => s.signIn);
+  const clearError = useAuthStore(s => s.clearError);
   const error = useAuthStore(s => s.error);
   const isLoading = useAuthStore(s => s.isLoading);
 
@@ -23,22 +26,22 @@ export default function Login() {
       testID="login-screen"
     >
       <View className="flex-1 justify-center gap-3 px-6">
-        <H1>Sign in</H1>
+        <H1>{t('signIn')}</H1>
         <Input
           testID="login-email"
-          accessibilityLabel="Email"
+          accessibilityLabel={t('email')}
           value={email}
           onChangeText={setEmail}
-          placeholder="Email"
+          placeholder={t('email')}
           autoCapitalize="none"
           keyboardType="email-address"
         />
         <Input
           testID="login-password"
-          accessibilityLabel="Password"
+          accessibilityLabel={t('password')}
           value={password}
           onChangeText={setPassword}
-          placeholder="Password"
+          placeholder={t('password')}
           secureTextEntry
         />
         {error ? (
@@ -46,18 +49,31 @@ export default function Login() {
             {error}
           </Small>
         ) : null}
+        <Pressable
+          testID="login-forgot-password"
+          accessibilityRole="button"
+          accessibilityLabel={t('forgotPassword')}
+          onPress={() => {
+            clearError();
+            router.push('/auth/forgot-password' as Href);
+          }}
+          hitSlop={8}
+          className="self-start"
+        >
+          <Body className="text-primary">{t('forgotPassword')}</Body>
+        </Pressable>
         <Button
           testID="login-submit"
           onPress={() => void signIn(email, password)}
           disabled={isLoading}
         >
-          <Text>Sign in</Text>
+          <Text>{t('signIn')}</Text>
         </Button>
         <Button
           variant="ghost"
           onPress={() => router.push('/auth/register' as Href)}
         >
-          <Text>Create an account</Text>
+          <Text>{t('createAccount')}</Text>
         </Button>
       </View>
     </SafeAreaView>

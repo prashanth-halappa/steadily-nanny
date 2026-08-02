@@ -32,6 +32,7 @@ const validPattern = {
   pause_ranges: [],
   timezone: 'Europe/London',
   note: null,
+  decline_message: null,
   created_by: householdId,
   sent_at: null,
   responded_at: null,

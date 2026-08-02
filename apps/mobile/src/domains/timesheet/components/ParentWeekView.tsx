@@ -16,12 +16,18 @@ import { useQueryTimesheet } from '@/src/hooks/mutations/useQueryTimesheet';
 import { useWeekTimeEntries } from '@/src/hooks/queries/useWeekTimeEntries';
 import { useWeekTimesheet } from '@/src/hooks/queries/useWeekTimesheet';
 import { showSuccessToast } from '@/src/lib/toast';
-import { TIMESHEET_STATUSES } from '../types';
-import { formatDuration } from '../utils/duration';
+import { TIMESHEET_STATUSES, type TimeEntry } from '../types';
+import { formatDuration, formatOvertimeDelta } from '../utils/duration';
 import { sumEntryMinutes } from '../utils/entryMinutes';
 import { QueryNoteSheet } from './QueryNoteSheet';
 import { TimeEntryDayRow } from './TimeEntryDayRow';
 import { WeekTotal } from './WeekTotal';
+
+function scheduledMinutesFor(entries: TimeEntry[]): number | null {
+  const withSchedule = entries.filter(e => e.scheduled_minutes !== null);
+  if (withSchedule.length === 0) return null;
+  return withSchedule.reduce((sum, e) => sum + (e.scheduled_minutes ?? 0), 0);
+}
 
 interface ParentWeekViewProps {
   householdId: string;
@@ -61,6 +67,10 @@ export function ParentWeekView({
   const entries = entriesQuery.data ?? [];
   const timesheet = timesheetQuery.data ?? null;
   const totalMinutes = sumEntryMinutes(entries, nowMs);
+  const overtimeLabel = formatOvertimeDelta(
+    totalMinutes,
+    scheduledMinutesFor(entries)
+  );
   const isApproved = timesheet?.status === TIMESHEET_STATUSES.APPROVED;
   // Approve/query are ONLY valid on a 'submitted' timesheet — the API 409s
   // (TIMESHEET_NOT_ACTIONABLE) on 'open' (nothing submitted, no row exists
@@ -119,7 +129,7 @@ export function ParentWeekView({
             testID="hours-week-total"
             weekRangeLabel={weekRangeLabel}
             totalLabel={formatDuration(totalMinutes)}
-            overtimeLabel={null}
+            overtimeLabel={overtimeLabel}
             onPreviousWeek={onPreviousWeek}
             onNextWeek={onNextWeek}
             isNextDisabled={isNextWeekDisabled}

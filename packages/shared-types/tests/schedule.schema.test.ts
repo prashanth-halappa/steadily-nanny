@@ -67,6 +67,7 @@ describe('schedule.schema', () => {
       pause_ranges: [{ from: '2026-07-21', to: '2026-09-01' }],
       timezone: 'Europe/London',
       note: null,
+      decline_message: null,
       created_by: VALID_UUID,
       sent_at: null,
       responded_at: null,

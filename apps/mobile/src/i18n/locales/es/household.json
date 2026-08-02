@@ -19,6 +19,8 @@
     "formNamePlaceholder": "Su nombre",
     "formAgeLabel": "Edad",
     "formAgePlaceholder": "Edad en años",
+    "formNotesLabel": "Notas de cuidado (opcional)",
+    "formNotesPlaceholder": "Alergias, hora de dormir, necesidades alimentarias…",
     "formSubmitAdd": "Añadir niño",
     "formSubmitSave": "Guardar"
   },

@@ -4,11 +4,16 @@
   "cancel": "Cancel",
   "save": "Save",
   "retry": "Retry",
+  "retryNow": "Retry now",
+  "offlineBanner": "You're offline — changes will retry when you reconnect.",
   "loading": "Loading...",
   "back": "Back",
   "next": "Next",
   "skip": "Skip",
   "done": "Done",
   "close": "Close",
-  "error": "Error"
+  "error": "Error",
+  "notFoundTitle": "Not found",
+  "notFoundBody": "This screen doesn't exist.",
+  "notFoundGoHome": "Go home"
 }

@@ -6,9 +6,9 @@
  *
  *  - no pattern at all           -> empty state with a "build one" CTA
  *  - `draft` (started, not sent) -> prompt to continue building
- *  - `pending` (sent, awaiting)  -> status + Withdraw action
- *  - `accepted`                  -> status + link to this week's shifts
- *  - `declined` / `withdrawn`    -> status + CTA to build a new week
+ *  - `pending` (sent, awaiting)  -> status + preview + Withdraw action
+ *  - `accepted`                  -> status + preview + link to this week's shifts
+ *  - `declined` / `withdrawn`    -> status + decline note + CTA to build a new week
  *
  * Patterns come back from the API already ordered by `created_at` descending
  * (see `apps/api/src/domains/schedule/repositories/schedulePatternRepository.ts`),
@@ -45,9 +45,12 @@ import {
 } from '@/src/components/ui/status-pill';
 import { Text } from '@/src/components/ui/text';
 import { Body, H1 } from '@/src/components/ui/typography';
+import { SchedulePatternPreview } from '@/src/domains/schedule/components/SchedulePatternPreview';
 import { SETUP_ROLES } from '@/src/domains/setup/types';
 import { useWithdrawSchedulePattern } from '@/src/hooks/mutations/useWithdrawSchedulePattern';
+import { useChildren } from '@/src/hooks/queries/useChildren';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
+import { useSchedulePattern } from '@/src/hooks/queries/useSchedulePattern';
 import { useSchedulePatterns } from '@/src/hooks/queries/useSchedulePatterns';
 
 const BUILD_HREF = '/(private)/schedule/build' as Href;
@@ -61,6 +64,16 @@ export function SchedulePendingScreen() {
   const patterns = useSchedulePatterns(onboarding.householdId);
   const pattern = (patterns.data ?? []).find(p => p.status !== 'ended') ?? null;
   const withdraw = useWithdrawSchedulePattern(pattern?.id);
+  const detail = useSchedulePattern(
+    pattern && pattern.status !== 'draft' ? pattern.id : null
+  );
+  const children = useChildren(onboarding.householdId);
+  const childrenById = new Map(
+    (children.data ?? []).map(c => [
+      c.id,
+      { id: c.id, name: c.name, colour: c.colour },
+    ])
+  );
 
   if (onboarding.role !== SETUP_ROLES.PARENT) {
     return null;
@@ -154,6 +167,27 @@ export function SchedulePendingScreen() {
             variant={statusVariant()}
             label={statusLabel()}
           />
+
+          {detail.data && detail.data.days.length > 0 ? (
+            <SchedulePatternPreview
+              days={detail.data.days}
+              childrenById={childrenById}
+            />
+          ) : null}
+
+          {pattern.status === 'declined' && pattern.decline_message ? (
+            <View
+              testID="schedule-pending-decline-message"
+              className="gap-1 rounded-xl border border-border p-4"
+            >
+              <Body className="font-sora-medium">
+                {t('pending.declineReasonLabel')}
+              </Body>
+              <Body className="text-muted-foreground">
+                {pattern.decline_message}
+              </Body>
+            </View>
+          ) : null}
 
           {pattern.status === 'pending' ? (
             <AlertDialog>

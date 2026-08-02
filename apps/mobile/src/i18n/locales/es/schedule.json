@@ -50,7 +50,9 @@
     "withdrawConfirmCancel": "Cancelar",
     "withdrawConfirmConfirm": "Retirar",
     "viewShifts": "Ver los turnos de esta semana",
-    "changeWeek": "Cambiar la semana"
+    "changeWeek": "Cambiar la semana",
+    "previewHoursTotal": "{{hours}} horas a la semana",
+    "declineReasonLabel": "Por qué lo rechazó"
   },
   "respond": {
     "screenTitle": "Revisa tu semana",
@@ -66,6 +68,8 @@
     "declineConfirmBody": "Puedes explicar por qué, si lo deseas.",
     "declineConfirmCancel": "Cancelar",
     "declineConfirmConfirm": "Rechazar",
+    "declineMessageLabel": "Motivo (opcional)",
+    "declineMessagePlaceholder": "p. ej. Puedo por las mañanas pero no días completos",
     "acceptedToast": "¡Aceptado! Los turnos se añadieron a tu calendario.",
     "declinedToast": "Rechazado."
   },

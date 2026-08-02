@@ -2,9 +2,24 @@
  * @module domains/timesheet/components/TimeEntryDayRow
  * One day's row on the Hours screen: the weekday, the clocked-in/out times
  * (or "in progress" for a still-running entry), and the day's total.
+ *
+ * Zero-duration finished entries show a warning flag; tapping opens an
+ * explanation dialog (read-only — no edit API in this wave).
  */
-import { View } from 'react-native';
+import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { Pressable, View } from 'react-native';
 import { cn } from '@/lib/utils';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/src/components/ui/alert-dialog';
+import { Text } from '@/src/components/ui/text';
 import { Body, Small } from '@/src/components/ui/typography';
 import type { TimeEntry } from '../types';
 import { formatClockTime, formatDuration } from '../utils/duration';
@@ -40,6 +55,8 @@ export function TimeEntryDayRow({
   nowMs,
   testID,
 }: TimeEntryDayRowProps) {
+  const { t } = useTranslation('hours');
+  const [flagExplainerOpen, setFlagExplainerOpen] = useState(false);
   const totalMinutes = entries.reduce(
     (sum, entry) => sum + computeEntryMinutes(entry, nowMs),
     0
@@ -66,9 +83,8 @@ export function TimeEntryDayRow({
             // and is NOT flagged.
             const entryMinutes = computeEntryMinutes(entry, nowMs);
             const isZeroDuration = !!entry.clock_out_at && entryMinutes === 0;
-            return (
+            const label = (
               <Small
-                key={entry.id}
                 testID={isZeroDuration ? 'hours-zero-duration-flag' : undefined}
                 className={cn(
                   'text-muted-foreground',
@@ -80,8 +96,20 @@ export function TimeEntryDayRow({
                 {entry.clock_out_at
                   ? formatClockTime(entry.clock_out_at)
                   : 'in progress'}
-                {isZeroDuration ? ' – check this entry' : ''}
+                {isZeroDuration ? ` – ${t('flaggedCheckEntry')}` : ''}
               </Small>
+            );
+            if (!isZeroDuration) return <View key={entry.id}>{label}</View>;
+            return (
+              <Pressable
+                key={entry.id}
+                testID={`hours-flagged-entry-${entry.id}`}
+                accessibilityRole="button"
+                accessibilityLabel={t('flaggedCheckEntry')}
+                onPress={() => setFlagExplainerOpen(true)}
+              >
+                {label}
+              </Pressable>
             );
           })
         )}
@@ -96,6 +124,25 @@ export function TimeEntryDayRow({
           ? formatDuration(totalMinutes)
           : ''}
       </Body>
+
+      <AlertDialog open={flagExplainerOpen} onOpenChange={setFlagExplainerOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('flaggedTitle')}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('flaggedDescription')}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction
+              testID="hours-flagged-dismiss"
+              onPress={() => setFlagExplainerOpen(false)}
+            >
+              <Text>{t('flaggedDismiss')}</Text>
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </View>
   );
 }

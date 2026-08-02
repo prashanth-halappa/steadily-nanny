@@ -17,6 +17,7 @@ import { SetupScreenShell } from '@/src/domains/setup/components/SetupScreenShel
 export function ManageAvailabilityScreen() {
   const router = useRouter();
   const { t } = useTranslation('household');
+  const { t: tCommon } = useTranslation('common');
 
   return (
     <SetupScreenShell
@@ -25,6 +26,8 @@ export function ManageAvailabilityScreen() {
       subtitle={t('availability.manageSubtitle')}
       ctaLabel={t('availability.doneButton')}
       onCta={() => router.back()}
+      onBack={() => router.back()}
+      backLabel={tCommon('back')}
     >
       <AvailabilityEditor />
     </SetupScreenShell>

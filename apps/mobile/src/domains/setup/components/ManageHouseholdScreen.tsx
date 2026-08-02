@@ -38,6 +38,7 @@ import {
   HOUSEHOLD_APPROVAL_MODES,
   HOUSEHOLD_APPROVAL_SCOPES,
 } from '@steadily-nanny/shared-types/schemas/household.schema';
+import { useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
@@ -89,7 +90,9 @@ function isValidBoundedInt(value: string, max: number): boolean {
 }
 
 export function ManageHouseholdScreen() {
+  const router = useRouter();
   const { t } = useTranslation('household');
+  const { t: tCommon } = useTranslation('common');
   const onboarding = useIsOnboarded();
   const households = useHouseholds();
   const updateHousehold = useUpdateHousehold();
@@ -142,6 +145,8 @@ export function ManageHouseholdScreen() {
       ctaLabel={t('householdSettings.saveButton')}
       onCta={() => {}}
       ctaDisabled
+      onBack={() => router.back()}
+      backLabel={tCommon('back')}
     >
       <LoadingIndicator />
     </SetupScreenShell>
@@ -237,6 +242,8 @@ export function ManageHouseholdScreen() {
       ctaLabel={t('householdSettings.saveButton')}
       onCta={handleCta}
       ctaDisabled={saveDisabled}
+      onBack={() => router.back()}
+      backLabel={tCommon('back')}
     >
       <View className="gap-2">
         <Label>{t('householdSettings.nameLabel')}</Label>

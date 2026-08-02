@@ -57,6 +57,17 @@ function toMinutes(time: string): number {
   return Number(hoursPart ?? 0) * 60 + Number(minutesPart ?? 0);
 }
 
+/**
+ * Formats a nominal wall-clock time from the wire (`09:00:00` or `09:00`)
+ * as en-GB 24-hour `HH:MM` — never leaves raw ISO seconds in the UI.
+ */
+export function formatWallClockTime(time: string): string {
+  const [hoursPart, minutesPart] = time.split(':');
+  const hours = String(Number(hoursPart ?? 0)).padStart(2, '0');
+  const minutes = String(Number(minutesPart ?? 0)).padStart(2, '0');
+  return `${hours}:${minutes}`;
+}
+
 /** Hours between two nominal "HH:MM" wall-clock times (end must be after start). */
 export function calculateDayHours(start: string, end: string): number {
   return (toMinutes(end) - toMinutes(start)) / 60;

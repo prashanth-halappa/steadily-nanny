@@ -22,7 +22,7 @@ import { useTranslation } from 'react-i18next';
 import { Card, CardContent } from '@/src/components/ui/card';
 import { LoadingButton } from '@/src/components/ui/loading-button';
 import { Body, H2, Small } from '@/src/components/ui/typography';
-import { formatClockTime } from '@/src/domains/timesheet';
+import { formatClockTime } from '@/src/domains/timesheet/utils/duration';
 import { useClockIn } from '@/src/hooks/mutations/useClockIn';
 import { useClockOut } from '@/src/hooks/mutations/useClockOut';
 import { useRunningTimeEntry } from '@/src/hooks/queries/useRunningTimeEntry';

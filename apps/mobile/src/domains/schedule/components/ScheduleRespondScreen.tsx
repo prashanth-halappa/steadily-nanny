@@ -48,6 +48,7 @@ import { ChildChip } from '@/src/components/ui/child-chip';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { StatusPill } from '@/src/components/ui/status-pill';
 import { Text } from '@/src/components/ui/text';
+import { Textarea } from '@/src/components/ui/textarea';
 import { Body, H1 } from '@/src/components/ui/typography';
 import { useRespondToSchedulePattern } from '@/src/hooks/mutations/useRespondToSchedulePattern';
 import { useAvailability } from '@/src/hooks/queries/useAvailability';
@@ -58,6 +59,7 @@ import { showSuccessToast } from '@/src/lib/toast';
 import {
   type AvailabilityRow,
   calculateWeekTotalHours,
+  formatWallClockTime,
   isOutsideAvailability,
 } from '../utils';
 
@@ -79,6 +81,7 @@ export function ScheduleRespondScreen({
 
   const hasRespondedRef = useRef(false);
   const [hasResponded, setHasResponded] = useState(false);
+  const [declineMessage, setDeclineMessage] = useState('');
 
   // `AvailabilityRow` mirrors the shared `CarerAvailability` wire type
   // exactly — earliest_start/latest_finish stay nullable end to end.
@@ -128,8 +131,12 @@ export function ScheduleRespondScreen({
   const handleDecline = async () => {
     if (hasRespondedRef.current || respond.isPending) return;
     hasRespondedRef.current = true;
+    const trimmed = declineMessage.trim();
     try {
-      await respond.mutateAsync({ status: 'declined' });
+      await respond.mutateAsync({
+        status: 'declined',
+        message: trimmed.length > 0 ? trimmed : undefined,
+      });
     } catch {
       hasRespondedRef.current = false;
       return;
@@ -161,8 +168,9 @@ export function ScheduleRespondScreen({
             >
               <View className="flex-row items-center justify-between gap-2">
                 <Body className="font-sora-semibold">
-                  {t(`weekday.${day.weekday}`)} · {day.start_time}–
-                  {day.end_time}
+                  {t(`weekday.${day.weekday}`)} ·{' '}
+                  {formatWallClockTime(day.start_time)}–
+                  {formatWallClockTime(day.end_time)}
                 </Body>
                 {outsideHours ? (
                   <StatusPill
@@ -236,6 +244,14 @@ export function ScheduleRespondScreen({
                 {t('respond.declineConfirmBody')}
               </AlertDialogDescription>
             </AlertDialogHeader>
+            <Textarea
+              testID="schedule-respond-decline-message"
+              accessibilityLabel={t('respond.declineMessageLabel')}
+              value={declineMessage}
+              onChangeText={setDeclineMessage}
+              placeholder={t('respond.declineMessagePlaceholder')}
+              className="min-h-[80px]"
+            />
             <AlertDialogFooter>
               <AlertDialogCancel>
                 <Text>{t('respond.declineConfirmCancel')}</Text>

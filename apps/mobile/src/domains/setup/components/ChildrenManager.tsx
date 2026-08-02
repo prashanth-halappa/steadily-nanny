@@ -55,17 +55,28 @@ export function ChildrenManager({ householdId }: ChildrenManagerProps) {
   };
 
   const handleSubmit = (values: ChildFormValues) => {
-    const input = {
-      name: values.name,
-      birth_date: birthDateFromAge(Number(values.age)),
-    };
+    const notes = values.routineNotes.trim();
     if (editingChildId) {
       updateChild.mutate(
-        { childId: editingChildId, input },
+        {
+          childId: editingChildId,
+          input: {
+            name: values.name,
+            birth_date: birthDateFromAge(Number(values.age)),
+            routine_notes: notes,
+          },
+        },
         { onSuccess: () => setFormVisible(false) }
       );
     } else {
-      createChild.mutate(input, { onSuccess: () => setFormVisible(false) });
+      createChild.mutate(
+        {
+          name: values.name,
+          birth_date: birthDateFromAge(Number(values.age)),
+          ...(notes.length > 0 ? { routine_notes: notes } : {}),
+        },
+        { onSuccess: () => setFormVisible(false) }
+      );
     }
   };
 
@@ -114,6 +125,7 @@ export function ChildrenManager({ householdId }: ChildrenManagerProps) {
                         new Date(editingChild.birth_date).getFullYear()
                     : ''
                 ),
+                routineNotes: editingChild.routine_notes ?? '',
               }
             : undefined
         }

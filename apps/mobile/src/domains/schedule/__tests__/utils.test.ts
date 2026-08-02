@@ -14,11 +14,27 @@ import {
   buildWeeklyRrule,
   calculateDayHours,
   calculateWeekTotalHours,
+  formatWallClockTime,
   isOutsideAvailability,
   sendScheduleWeek,
   todayIsoDate,
   toggleWeekday,
 } from '../utils';
+
+describe('formatWallClockTime', () => {
+  it('strips seconds from ISO time strings', () => {
+    expect(formatWallClockTime('09:00:00')).toBe('09:00');
+    expect(formatWallClockTime('17:00:00')).toBe('17:00');
+  });
+
+  it('pads single-digit hours and minutes', () => {
+    expect(formatWallClockTime('9:5')).toBe('09:05');
+  });
+
+  it('passes through already-formatted HH:MM', () => {
+    expect(formatWallClockTime('09:00')).toBe('09:00');
+  });
+});
 
 describe('toggleWeekday', () => {
   it('adds a day that is not yet selected, keeping the result sorted', () => {
