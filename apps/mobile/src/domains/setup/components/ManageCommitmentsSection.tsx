@@ -6,6 +6,7 @@
 import type { ChildCommitment } from '@steadily-nanny/shared-types/schemas/child.schema';
 import { Trash2 } from 'lucide-react-native';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Pressable, View } from 'react-native';
 import { Icon } from '@/lib/icons/iconWithClassName';
 import { Button } from '@/src/components/ui/button';
@@ -16,6 +17,7 @@ import {
   CommitmentFormSheet,
   type CommitmentFormValues,
 } from '@/src/domains/setup/components/CommitmentFormSheet';
+import { commitmentKindLabelKey } from '@/src/domains/setup/constants/commitmentKinds';
 import {
   formatCommitmentTime,
   parseWeeklyDays,
@@ -37,6 +39,7 @@ function CommitmentRow({
   commitment: ChildCommitment;
   onDelete: () => void;
 }) {
+  const { t } = useTranslation('household');
   const days = parseWeeklyDays(commitment.rrule);
   const dayCount = days.length;
 
@@ -48,16 +51,23 @@ function CommitmentRow({
       <View className="flex-1 gap-0.5">
         <Body className="font-medium">{commitment.label}</Body>
         <Body className="text-xs text-muted-foreground">
-          {commitment.kind} · {formatCommitmentTime(commitment.start_time)}–
-          {formatCommitmentTime(commitment.end_time)} · {dayCount} day
-          {dayCount === 1 ? '' : 's'}
-          {commitment.excluded_from_cover ? ' · excluded from cover' : ''}
+          {t(commitmentKindLabelKey(commitment.kind), {
+            defaultValue: commitment.kind,
+          })}{' '}
+          · {formatCommitmentTime(commitment.start_time)}–
+          {formatCommitmentTime(commitment.end_time)} ·{' '}
+          {t('commitments.dayCount', { count: dayCount })}
+          {commitment.excluded_from_cover
+            ? t('commitments.rowExcludedFromCover')
+            : ''}
         </Body>
       </View>
       <Pressable
         testID={`commitment-delete-${commitment.id}`}
         accessibilityRole="button"
-        accessibilityLabel={`Delete ${commitment.label}`}
+        accessibilityLabel={t('commitments.deleteLabel', {
+          label: commitment.label,
+        })}
         onPress={onDelete}
         hitSlop={8}
       >
@@ -72,6 +82,7 @@ export function ManageCommitmentsSection({
   childId,
   childName,
 }: ManageCommitmentsSectionProps) {
+  const { t } = useTranslation('household');
   const commitments = useCommitments(householdId, childId);
   const createCommitment = useCreateCommitment(householdId, childId);
   const deleteCommitment = useDeleteCommitment(householdId, childId);
@@ -96,10 +107,9 @@ export function ManageCommitmentsSection({
       testID={`manage-commitments-${childId}`}
       className="gap-2 rounded-lg border border-border p-3"
     >
-      <H3 className="text-base">Commitments</H3>
+      <H3 className="text-base">{t('commitments.sectionTitle')}</H3>
       <Body className="text-xs text-muted-foreground">
-        Fixed times like preschool or naps — gaps are raised when cover is
-        missing.
+        {t('commitments.sectionBody')}
       </Body>
 
       {(commitments.data ?? []).map(c => (
@@ -116,7 +126,7 @@ export function ManageCommitmentsSection({
         size="sm"
         onPress={() => setFormVisible(true)}
       >
-        <Text>Add commitment</Text>
+        <Text>{t('commitments.addButton')}</Text>
       </Button>
 
       <CommitmentFormSheet

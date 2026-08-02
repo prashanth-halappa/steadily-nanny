@@ -22,6 +22,7 @@ import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { Text } from '@/src/components/ui/text';
 import { Textarea } from '@/src/components/ui/textarea';
 import { Body, H1, H2, Small } from '@/src/components/ui/typography';
+import { shiftChangeRequestKindLabelKey } from '@/src/domains/schedule/constants/changeRequestKinds';
 import { isParentEditorRole, SETUP_ROLES } from '@/src/domains/setup/types';
 import { useCreateShiftChangeRequest } from '@/src/hooks/mutations/useCreateShiftChangeRequest';
 import { useRespondToShiftChangeRequest } from '@/src/hooks/mutations/useRespondToShiftChangeRequest';
@@ -252,7 +253,9 @@ export function ShiftDetailScreen() {
                 className="gap-2 rounded-lg border border-border p-3"
               >
                 <Body>
-                  {req.kind}
+                  {t(shiftChangeRequestKindLabelKey(req.kind), {
+                    defaultValue: req.kind,
+                  })}
                   {req.message ? ` — ${req.message}` : ''}
                 </Body>
                 <View className="flex-row gap-2">

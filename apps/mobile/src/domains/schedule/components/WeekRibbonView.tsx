@@ -4,6 +4,7 @@
  * Calendar view 2b — simplified hour grid Mon–Sun, hours 7–23.
  */
 import type { Shift } from '@steadily-nanny/shared-types/schemas/shift.schema';
+import { useTranslation } from 'react-i18next';
 import { ScrollView, View } from 'react-native';
 import { useThemeColors } from '@/lib/design-tokens';
 import { Body } from '@/src/components/ui/typography';
@@ -15,7 +16,6 @@ import {
 import { getWeekdayOrder } from '@/src/lib/weekdayOrder';
 
 const HOURS = Array.from({ length: 17 }, (_, i) => i + 7); // 7..23
-const DAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
 interface WeekRibbonViewProps {
   shifts: Shift[];
@@ -28,6 +28,7 @@ export function WeekRibbonView({
   displayTimeZone,
   weekStartsOn = 1,
 }: WeekRibbonViewProps) {
+  const { t } = useTranslation('schedule');
   const themeColors = useThemeColors();
   const displayOrder = getWeekdayOrder(weekStartsOn);
 
@@ -51,7 +52,7 @@ export function WeekRibbonView({
         <View className="w-8" />
         {displayOrder.map(dow => (
           <View key={dow} className="flex-1 items-center">
-            <Body className="text-xs font-medium">{DAY_LABELS[dow]}</Body>
+            <Body className="text-xs font-medium">{t(`weekday.${dow}`)}</Body>
           </View>
         ))}
       </View>

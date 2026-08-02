@@ -94,5 +94,32 @@
     "approvalTimeoutLabel": "Tiempo límite de aprobación (minutos)",
     "shortNoticeHoursLabel": "Ventana de última hora (horas)",
     "cancellationPaidWithinHoursLabel": "Cancelación aún pagada dentro de (horas)"
+  },
+  "commitments": {
+    "sectionTitle": "Compromisos",
+    "sectionBody": "Horarios fijos como guardería o siestas — se avisa cuando falta cobertura.",
+    "addButton": "Añadir compromiso",
+    "deleteLabel": "Eliminar {{label}}",
+    "rowExcludedFromCover": " · excluido de la cobertura",
+    "dayCount_one": "{{count}} día",
+    "dayCount_other": "{{count}} días",
+    "kind": {
+      "preschool": "Guardería",
+      "school": "Colegio",
+      "activity": "Actividad",
+      "nap": "Siesta",
+      "other": "Otro"
+    },
+    "form": {
+      "title": "Añadir compromiso para {{childName}}",
+      "kindLabel": "Tipo",
+      "labelLabel": "Etiqueta",
+      "labelPlaceholder": "p. ej. Entrega en la guardería",
+      "labelA11y": "Etiqueta del compromiso",
+      "daysLabel": "Días",
+      "timeLabel": "Horario",
+      "excludedLabel": "Excluido de la cobertura",
+      "submit": "Añadir compromiso"
+    }
   }
 }

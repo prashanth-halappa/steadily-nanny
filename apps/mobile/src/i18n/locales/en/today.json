@@ -26,5 +26,10 @@
       "fussy": "Fussy",
       "outdoor_play": "Outdoor play"
     }
+  },
+  "coverageGap": {
+    "title": "Coverage gaps today",
+    "description": "Coverage gap {{start}}–{{end}}",
+    "descriptionFallback": "Coverage gap today"
   }
 }

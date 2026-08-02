@@ -136,5 +136,32 @@
     "pendingBody_other": "{{count}} days · {{hours}} hours a week",
     "pendingCta": "Review and respond",
     "shiftsCta": "This week's shifts"
+  },
+  "calendarViews": {
+    "agenda": "Agenda",
+    "week_ribbon": "Week",
+    "coverage_lanes": "Coverage",
+    "cross_family": "Rhythm"
+  },
+  "period": {
+    "morning": "AM",
+    "afternoon": "PM",
+    "evening": "Eve"
+  },
+  "crossFamily": {
+    "header": "Two-week rhythm across your families",
+    "thisFamily": "This family",
+    "otherFamily": "Other family"
+  },
+  "coverageLanes": {
+    "allChildren": "All children",
+    "childFallback": "Child"
+  },
+  "changeRequestKind": {
+    "time_change": "Time change",
+    "cancel": "Cancel",
+    "counter_offer": "Counter offer",
+    "split": "Split",
+    "handover": "Handover"
   }
 }

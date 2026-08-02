@@ -53,4 +53,8 @@ describe('ShiftDetailScreen source', () => {
     expect(source).toContain('detail.eventTypeUnknown');
     expect(source).toContain('detail.eventTypeFallback');
   });
+
+  it('localises pending change request kinds instead of raw enum values', () => {
+    expect(source).toContain('shiftChangeRequestKindLabelKey');
+  });
 });

@@ -26,5 +26,10 @@
       "fussy": "Irritable",
       "outdoor_play": "Juego al aire libre"
     }
+  },
+  "coverageGap": {
+    "title": "Huecos de cobertura hoy",
+    "description": "Hueco de cobertura {{start}}–{{end}}",
+    "descriptionFallback": "Hueco de cobertura hoy"
   }
 }

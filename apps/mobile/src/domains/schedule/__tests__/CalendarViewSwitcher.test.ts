@@ -35,5 +35,6 @@ describe('CalendarViewSwitcher source', () => {
   it('gates cross-family view to nanny with multiple households', () => {
     expect(switcherSource).toContain('multiHouseholdOnly');
     expect(switcherSource).toContain('nannyOnly');
+    expect(switcherSource).toContain('calendarViews.${opt.id}');
   });
 });

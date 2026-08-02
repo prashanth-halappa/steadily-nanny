@@ -6,6 +6,7 @@
 import { FlashList } from '@shopify/flash-list';
 import type { Child } from '@steadily-nanny/shared-types/schemas/child.schema';
 import type { Shift } from '@steadily-nanny/shared-types/schemas/shift.schema';
+import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
 import { ChildChip } from '@/src/components/ui/child-chip';
 import { Body, H3 } from '@/src/components/ui/typography';
@@ -28,7 +29,8 @@ interface LaneRow {
 function buildLanes(
   shifts: Shift[],
   children: Child[],
-  displayTimeZone?: string | null
+  displayTimeZone: string | null | undefined,
+  labels: { allChildren: string; childFallback: string }
 ): LaneRow[] {
   const childMap = new Map(children.map(c => [c.id, c]));
   const byChild = new Map<string, LaneRow>();
@@ -40,7 +42,7 @@ function buildLanes(
       const existing = byChild.get(key) ?? {
         key,
         childId: key,
-        childName: 'All children',
+        childName: labels.allChildren,
         segments: [],
       };
       existing.segments.push({
@@ -52,7 +54,7 @@ function buildLanes(
     }
     for (const sc of scList) {
       const child = childMap.get(sc.child_id);
-      const name = child?.name ?? 'Child';
+      const name = child?.name ?? labels.childFallback;
       const existing = byChild.get(sc.child_id) ?? {
         key: sc.child_id,
         childId: sc.child_id,
@@ -78,7 +80,11 @@ export function CoverageLanesView({
   householdChildren,
   displayTimeZone,
 }: CoverageLanesViewProps) {
-  const lanes = buildLanes(shifts, householdChildren, displayTimeZone);
+  const { t } = useTranslation('schedule');
+  const lanes = buildLanes(shifts, householdChildren, displayTimeZone, {
+    allChildren: t('coverageLanes.allChildren'),
+    childFallback: t('coverageLanes.childFallback'),
+  });
 
   return (
     <View testID="calendar-coverage-lanes-view" style={{ flex: 1 }}>

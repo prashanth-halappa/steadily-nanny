@@ -181,24 +181,20 @@ advertised flow non-functional are fixed and covered by tests:
 
 **Still open, deliberately:**
 
-- `createExtraShift` does not consult the approval gate, so an extra shift skips
-  co-parent sign-off when `approval_scope='all'` (not the default). Fixing it
-  changes that endpoint's response to the `pending_approval` union and needs a
-  matching mobile change.
-- `shift_change_requests` has ONE `message` column, so a responder's message
-  overwrites the requester's. The clean fix is a separate `response_message`
-  column — a migration this wave didn't take.
-- Concurrent change requests on one shift are never marked `superseded` (the
-  status exists in the enum and the 015 check constraint but is never written),
-  so accepting an older pending request can silently overwrite a newer accepted
-  one.
 - `shift_events` de-duplication is caller-side with no unique constraint, so two
   concurrent day-thread reads of the same date can both insert. Pre-existing,
   but a read path now hits it more often than a nightly job did.
-- Several new components render hardcoded English and two render raw DB enums
-  as UI text (`ShiftDetailScreen` shows `counter_offer`;
-  `ManageCommitmentsSection` shows `preschool`). No `commitments` or `handoff`
-  namespace exists. en/es are otherwise at exact parity.
+
+**Closed after Wave 5 (follow-ups, uncommitted until reviewed):**
+
+- `createExtraShift` now consults the approval gate (`extra_shift`); response is
+  the `created` | `pending_approval` union on API + mobile.
+- `shift_change_requests.response_message` added (migration 023); respond no
+  longer overwrites the requester's `message`.
+- Opening a new change request (and accepting one) supersedes other pending
+  siblings on the same shift via `supersedePendingForShift`.
+- Wave 5 calendar/commitments/coverage UI + change-request/commitment kind
+  labels are i18n'd in `schedule` / `today` / `household` (en + es).
 
 ## 4. Wave 0 (foundation) — what is done
 

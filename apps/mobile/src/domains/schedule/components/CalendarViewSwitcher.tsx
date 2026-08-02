@@ -4,6 +4,8 @@
  * Segmented control for calendar views 2a–2d. Persists preference per role
  * in MMKV via `useCalendarViewStore`.
  */
+
+import { useTranslation } from 'react-i18next';
 import { Pressable, View } from 'react-native';
 import { cn } from '@/lib/utils';
 import { Text } from '@/src/components/ui/text';
@@ -19,16 +21,14 @@ import {
 
 const VIEW_OPTIONS: {
   id: CalendarViewId;
-  label: string;
   nannyOnly?: boolean;
   multiHouseholdOnly?: boolean;
 }[] = [
-  { id: CALENDAR_VIEWS.AGENDA, label: 'Agenda' },
-  { id: CALENDAR_VIEWS.WEEK_RIBBON, label: 'Week' },
-  { id: CALENDAR_VIEWS.COVERAGE_LANES, label: 'Coverage' },
+  { id: CALENDAR_VIEWS.AGENDA },
+  { id: CALENDAR_VIEWS.WEEK_RIBBON },
+  { id: CALENDAR_VIEWS.COVERAGE_LANES },
   {
     id: CALENDAR_VIEWS.CROSS_FAMILY,
-    label: 'Rhythm',
     nannyOnly: true,
     multiHouseholdOnly: true,
   },
@@ -43,6 +43,7 @@ export function CalendarViewSwitcher({
   value,
   onChange,
 }: CalendarViewSwitcherProps) {
+  const { t } = useTranslation('schedule');
   const onboarding = useIsOnboarded();
   const activeHousehold = useActiveHousehold();
   const isNanny = onboarding.role === SETUP_ROLES.NANNY;
@@ -74,7 +75,7 @@ export function CalendarViewSwitcher({
               value === opt.id ? 'text-primary-foreground' : 'text-foreground'
             )}
           >
-            {opt.label}
+            {t(`calendarViews.${opt.id}`)}
           </Text>
         </Pressable>
       ))}

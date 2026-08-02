@@ -9,6 +9,7 @@
 import type { Household } from '@steadily-nanny/shared-types/schemas/household.schema';
 import type { Shift } from '@steadily-nanny/shared-types/schemas/shift.schema';
 import { useQueries } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { ScrollView, View } from 'react-native';
 import { useThemeColors } from '@/lib/design-tokens';
 import { shiftApi } from '@/src/api/endpoints/shifts';
@@ -16,7 +17,6 @@ import { queryKeys } from '@/src/api/queryKeys';
 import { Body, H3 } from '@/src/components/ui/typography';
 import {
   type DayPeriod,
-  OTHER_FAMILY_LABEL,
   shiftPeriod,
 } from '@/src/domains/schedule/utils/shiftGrouping';
 import {
@@ -26,11 +26,6 @@ import {
 } from '@/src/lib/localDate';
 
 const PERIODS: DayPeriod[] = ['morning', 'afternoon', 'evening'];
-const PERIOD_LABELS: Record<DayPeriod, string> = {
-  morning: 'AM',
-  afternoon: 'PM',
-  evening: 'Eve',
-};
 
 interface CrossFamilyRhythmViewProps {
   households: Household[];
@@ -56,6 +51,7 @@ export function CrossFamilyRhythmView({
   households,
   activeHouseholdId,
 }: CrossFamilyRhythmViewProps) {
+  const { t } = useTranslation('schedule');
   const activeHousehold = households.find(h => h.id === activeHouseholdId);
   const timeZone = activeHousehold?.timezone ?? 'UTC';
   const startDate = localDateInZone(timeZone);
@@ -90,10 +86,10 @@ export function CrossFamilyRhythmView({
 
   const labelFor = (householdId: string): string => {
     if (isActive(householdId)) {
-      return 'This family';
+      return t('crossFamily.thisFamily');
     }
     // Deliberately never use household.name for non-active families.
-    return OTHER_FAMILY_LABEL;
+    return t('crossFamily.otherFamily');
   };
 
   const hasShiftInPeriod = (
@@ -114,7 +110,7 @@ export function CrossFamilyRhythmView({
   return (
     <ScrollView testID="calendar-cross-family-view" className="flex-1 px-4">
       <Body className="mb-3 text-sm text-muted-foreground">
-        Two-week rhythm across your families
+        {t('crossFamily.header')}
       </Body>
       {households.map(h => (
         <View
@@ -144,8 +140,7 @@ export function CrossFamilyRhythmView({
                 ))}
               </View>
               <Body className="text-xs text-muted-foreground">
-                {PERIOD_LABELS.morning}/{PERIOD_LABELS.afternoon}/
-                {PERIOD_LABELS.evening}
+                {PERIODS.map(period => t(`period.${period}`)).join('/')}
               </Body>
             </View>
           ))}
