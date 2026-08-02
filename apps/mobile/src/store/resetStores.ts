@@ -9,6 +9,7 @@
  * part of its sign-out flow.
  */
 
+import { useActiveHouseholdStore } from './activeHousehold';
 import { useNotificationStore } from './notificationStore';
 import { useSetupProgressStore } from './setupProgress';
 
@@ -16,4 +17,5 @@ import { useSetupProgressStore } from './setupProgress';
 export const resetUserScopedStores = (): void => {
   useSetupProgressStore.getState().reset();
   useNotificationStore.getState().reset();
+  useActiveHouseholdStore.getState().reset();
 };

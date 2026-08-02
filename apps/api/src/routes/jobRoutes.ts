@@ -36,5 +36,6 @@ router.post(
   '/example-maintenance',
   jobHandler(JobController.runExampleMaintenance)
 );
+router.post('/schedule-horizon', jobHandler(JobController.runScheduleHorizon));
 
 export default router;

@@ -10,8 +10,13 @@ import { Router } from 'express';
 import { authWithOwnership } from '../../../middlewares/presets';
 import { validate } from '../../../middlewares/validator';
 import { asyncHandler } from '../../../utils/asyncHandler';
+import { ShiftChangeRequestController } from '../controllers/shiftChangeRequestController';
 import { ShiftController } from '../controllers/shiftController';
-import { ParentEditShiftSchema, ShiftIdParamSchema } from '../schemas';
+import {
+  CreateShiftChangeRequestSchema,
+  ParentEditShiftSchema,
+  ShiftIdParamSchema,
+} from '../schemas';
 import { shiftQueryService } from '../services/shiftQueryService';
 import type { Shift } from '../types';
 
@@ -40,6 +45,20 @@ router.patch(
   ...authWithOwnership(ShiftIdParamSchema, shiftOwnership),
   validate(ParentEditShiftSchema, 'body'),
   asyncHandler(ShiftController.update)
+);
+
+// Change requests (flows 1d/1e) — propose against an existing shift.
+router.post(
+  '/:shiftId/change-requests',
+  ...authWithOwnership(ShiftIdParamSchema, shiftOwnership),
+  validate(CreateShiftChangeRequestSchema, 'body'),
+  asyncHandler(ShiftChangeRequestController.create)
+);
+
+router.get(
+  '/:shiftId/change-requests',
+  ...authWithOwnership(ShiftIdParamSchema, shiftOwnership),
+  asyncHandler(ShiftChangeRequestController.listForShift)
 );
 
 export default router;

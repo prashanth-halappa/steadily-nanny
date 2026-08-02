@@ -56,6 +56,14 @@ function makeEventRepo(overrides: Record<string, unknown> = {}): any {
         event_type: 'gap_raised',
       },
     ]),
+    listForHouseholdDate: mock(async () => [
+      {
+        id: 'e2',
+        household_id: 'h1',
+        shift_id: null,
+        event_type: 'coverage_gap',
+      },
+    ]),
     ...overrides,
   };
 }
@@ -65,6 +73,71 @@ function makeMemberRepo(overrides: Record<string, unknown> = {}): any {
     findActiveMembership: mock(async () => membership),
     ...overrides,
   };
+}
+
+const household = {
+  id: 'h1',
+  timezone: 'Europe/London',
+};
+
+const commitment = {
+  id: 'cm1',
+  child_id: 'child-1',
+  household_id: 'h1',
+  rrule: 'FREQ=WEEKLY;BYDAY=MO',
+  start_time: '09:00',
+  end_time: '12:00',
+  starts_on: null,
+  ends_on: null,
+  exdates: [],
+  excluded_from_cover: true,
+};
+
+function makeHouseholdRepo(overrides: Record<string, unknown> = {}): any {
+  return {
+    findById: mock(async () => household),
+    ...overrides,
+  };
+}
+
+function makeCommitmentRepo(overrides: Record<string, unknown> = {}): any {
+  return {
+    findByHouseholdId: mock(async () => [commitment]),
+    ...overrides,
+  };
+}
+
+function makeGapService(overrides: Record<string, unknown> = {}): any {
+  return {
+    raiseGapsOnce: mock(async () => []),
+    ...overrides,
+  };
+}
+
+/** The day-thread wiring needs all six collaborators — see `listDayThread`. */
+function makeDayThreadService(
+  repos: {
+    shiftRepo?: any;
+    eventRepo?: any;
+    memberRepo?: any;
+    householdRepo?: any;
+    commitmentRepo?: any;
+    gapService?: any;
+  } = {}
+): ShiftQueryService {
+  return new ShiftQueryService(
+    repos.shiftRepo ??
+      makeShiftRepo({
+        findByHouseholdAndLocalDate: mock(async () => [
+          { ...shift, shift_children: [{ child_id: 'child-1' }] },
+        ]),
+      }),
+    repos.eventRepo ?? makeEventRepo(),
+    repos.memberRepo ?? makeMemberRepo(),
+    repos.householdRepo ?? makeHouseholdRepo(),
+    repos.commitmentRepo ?? makeCommitmentRepo(),
+    repos.gapService ?? makeGapService()
+  );
 }
 
 describe('ShiftQueryService.listForHousehold', () => {
@@ -145,5 +218,88 @@ describe('ShiftQueryService.listEvents', () => {
     await expect(svc.listEvents('u2', 'h1', 's1')).rejects.toBeInstanceOf(
       ShiftNotFoundError
     );
+  });
+});
+
+describe('ShiftQueryService.listDayThread', () => {
+  it('raises that date coverage gaps BEFORE returning the thread (flow 1g production caller)', async () => {
+    const shiftRepo = makeShiftRepo({
+      findByHouseholdAndLocalDate: mock(async () => [
+        {
+          ...shift,
+          shift_children: [
+            { child_id: 'child-1', starts_at: null, ends_at: null },
+          ],
+        },
+      ]),
+    });
+    const gapService = makeGapService();
+    const eventRepo = makeEventRepo();
+    const svc = makeDayThreadService({ shiftRepo, gapService, eventRepo });
+
+    const result = await svc.listDayThread('u1', 'h1', '2026-08-03');
+
+    expect(shiftRepo.findByHouseholdAndLocalDate).toHaveBeenCalledWith(
+      'h1',
+      '2026-08-03'
+    );
+    expect(gapService.raiseGapsOnce).toHaveBeenCalledWith(
+      'h1',
+      '2026-08-03',
+      'Europe/London', // the household timezone, not the shift's
+      [
+        {
+          id: 's1',
+          startsAt: shift.starts_at,
+          endsAt: shift.ends_at,
+          children: [{ childId: 'child-1', startsAt: null, endsAt: null }],
+        },
+      ],
+      [
+        {
+          id: 'cm1',
+          childId: 'child-1',
+          rrule: 'FREQ=WEEKLY;BYDAY=MO',
+          startTime: '09:00',
+          endTime: '12:00',
+          startsOn: null,
+          endsOn: null,
+          exdates: [],
+          excludedFromCover: true,
+        },
+      ]
+    );
+    expect(eventRepo.listForHouseholdDate).toHaveBeenCalledWith(
+      'h1',
+      '2026-08-03'
+    );
+    expect(result).toHaveLength(1);
+  });
+
+  it('still returns the thread when gap detection blows up (best-effort side effect)', async () => {
+    const gapService = makeGapService({
+      raiseGapsOnce: mock(async () => {
+        throw new Error('supabase is down');
+      }),
+    });
+    const svc = makeDayThreadService({ gapService });
+
+    const result = await svc.listDayThread('u1', 'h1', '2026-08-03');
+    expect(result).toHaveLength(1);
+  });
+
+  it('never raises gaps for a non-member — membership is checked first', async () => {
+    const gapService = makeGapService();
+    const svc = makeDayThreadService({
+      memberRepo: makeMemberRepo({
+        findActiveMembership: mock(async () => null),
+      }),
+      gapService,
+    });
+
+    await expect(
+      svc.listDayThread('u2', 'h1', '2026-08-03')
+    ).rejects.toBeInstanceOf(ShiftNotFoundError);
+    expect(gapService.raiseGapsOnce).not.toHaveBeenCalled();
   });
 });

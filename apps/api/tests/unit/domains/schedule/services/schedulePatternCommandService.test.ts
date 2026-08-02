@@ -127,6 +127,17 @@ function makeHouseholdRepo(overrides: Record<string, unknown> = {}): any {
   };
 }
 
+const defaultDays = [
+  {
+    id: 'd1',
+    pattern_id: 'p1',
+    weekday: 4,
+    start_time: '08:00',
+    end_time: '17:00',
+    children: [],
+  },
+];
+
 function makeQueries(
   pattern: Record<string, unknown> = patternFor(),
   overrides: Record<string, unknown> = {}
@@ -135,17 +146,9 @@ function makeQueries(
     getOwned: mock(async () => pattern),
     getWithDays: mock(async () => ({
       ...pattern,
-      days: [
-        {
-          id: 'd1',
-          pattern_id: 'p1',
-          weekday: 4,
-          start_time: '08:00',
-          end_time: '17:00',
-          children: [],
-        },
-      ],
+      days: defaultDays,
     })),
+    getDaysForPattern: mock(async () => defaultDays),
     ...overrides,
   };
 }
@@ -585,6 +588,50 @@ describe('SchedulePatternCommandService.respond', () => {
     await expect(
       svc.respond('carer-1', 'p1', { status: 'accepted' })
     ).rejects.toBeInstanceOf(PatternNotPendingError);
+  });
+});
+
+describe('SchedulePatternCommandService.materialiseForHorizon', () => {
+  it('materialises an accepted pattern using days fetched WITHOUT an ownership check', async () => {
+    const materialisation = makeMaterialisation();
+    const queries = makeQueries(patternFor({ status: 'accepted' }));
+    const svc = new SchedulePatternCommandService(
+      makePatternRepo(),
+      makeDayRepo(),
+      makeDayChildRepo(),
+      makeMemberRepo('owner'),
+      makeHouseholdRepo(),
+      queries,
+      materialisation
+    );
+
+    const pattern = patternFor({ status: 'accepted' }) as any;
+    const result = await svc.materialiseForHorizon(pattern);
+
+    expect(queries.getDaysForPattern).toHaveBeenCalledWith('p1');
+    expect(queries.getOwned).not.toHaveBeenCalled();
+    expect(materialisation.materialise).toHaveBeenCalledTimes(1);
+    expect(result).toEqual(
+      expect.objectContaining({ created: 1, conflicts: [] })
+    );
+  });
+
+  it('respects a custom horizon override, defaulting to the 84-day acceptance horizon', async () => {
+    const materialisation = makeMaterialisation();
+    const queries = makeQueries();
+    const svc = new SchedulePatternCommandService(
+      makePatternRepo(),
+      makeDayRepo(),
+      makeDayChildRepo(),
+      makeMemberRepo('owner'),
+      makeHouseholdRepo(),
+      queries,
+      materialisation
+    );
+
+    await svc.materialiseForHorizon(patternFor() as any, 30);
+
+    expect(materialisation.materialise).toHaveBeenCalledTimes(1);
   });
 });
 

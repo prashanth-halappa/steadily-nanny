@@ -70,6 +70,7 @@ function makeMemberRepo(overrides: Record<string, unknown> = {}): any {
     findActiveMembership: mock(async () => membership),
     listActiveByHousehold: mock(async () => [membership]),
     listActiveHouseholdIds: mock(async () => ['h1']),
+    listActiveByUser: mock(async () => [membership]),
     ...overrides,
   };
 }
@@ -178,6 +179,28 @@ describe('HouseholdQueryService.listMembers', () => {
     await expect(svc.listMembers('u2', 'h1')).rejects.toBeInstanceOf(
       HouseholdNotFoundError
     );
+  });
+});
+
+describe('HouseholdQueryService.listMembershipsForUser', () => {
+  it('delegates to the member repository, across all households', async () => {
+    const memberRepo = makeMemberRepo();
+    const svc = new HouseholdQueryService(
+      makeHouseholdRepo(),
+      memberRepo,
+      makeInviteRepo()
+    );
+    expect(await svc.listMembershipsForUser('u1')).toEqual([membership]);
+    expect(memberRepo.listActiveByUser).toHaveBeenCalledWith('u1');
+  });
+
+  it('returns [] when the caller belongs to no households', async () => {
+    const svc = new HouseholdQueryService(
+      makeHouseholdRepo(),
+      makeMemberRepo({ listActiveByUser: mock(async () => []) }),
+      makeInviteRepo()
+    );
+    expect(await svc.listMembershipsForUser('u2')).toEqual([]);
   });
 });
 

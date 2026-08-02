@@ -13,8 +13,19 @@
 export const SETUP_ROLES = {
   PARENT: 'parent',
   NANNY: 'nanny',
+  HELPER: 'helper',
 } as const;
 export type SetupRole = (typeof SETUP_ROLES)[keyof typeof SETUP_ROLES];
+
+/** Roles that can edit household data (children, invites, schedule). */
+export function isParentEditorRole(role: SetupRole | null): boolean {
+  return role === SETUP_ROLES.PARENT;
+}
+
+/** Roles that see the parent-facing schedule and Today views (read-only for helper). */
+export function canViewParentSchedule(role: SetupRole | null): boolean {
+  return role === SETUP_ROLES.PARENT || role === SETUP_ROLES.HELPER;
+}
 
 /**
  * Ordered step id per role. `ROLE` is shared; the two paths diverge after
@@ -45,6 +56,9 @@ export function stepsForRole(role: SetupRole | null): SetupStep[] {
   }
   if (role === SETUP_ROLES.NANNY) {
     return [SETUP_STEPS.ROLE, SETUP_STEPS.CODE, SETUP_STEPS.AVAILABILITY];
+  }
+  if (role === SETUP_ROLES.HELPER) {
+    return [SETUP_STEPS.ROLE, SETUP_STEPS.CODE];
   }
   return [SETUP_STEPS.ROLE];
 }

@@ -5,6 +5,8 @@
  * shifts. Route files under `src/app/(private)/schedule/**` import from here
  * rather than reaching into `components/` directly.
  */
+
+export { CalendarViewSwitcher } from './components/CalendarViewSwitcher';
 export { PendingScheduleCard } from './components/PendingScheduleCard';
 export { ScheduleBuildScreen } from './components/ScheduleBuildScreen';
 export { SchedulePendingScreen } from './components/SchedulePendingScreen';

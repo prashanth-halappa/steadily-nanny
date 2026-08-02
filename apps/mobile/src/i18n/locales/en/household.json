@@ -1,4 +1,8 @@
 {
+  "switcher": {
+    "triggerLabel": "Switch household",
+    "sheetTitle": "Choose a household"
+  },
   "children": {
     "wizardTitle": "Who are the children?",
     "wizardSubtitle": "Add each child so your nanny knows who they're looking after.",
@@ -34,7 +38,21 @@
     "shareButton": "Share code",
     "shareMessage": "Join our household on Steadily Nanny — use invite code {{code}} when you sign in.",
     "errorTitle": "Couldn't generate an invite code.",
-    "retryButton": "Try again"
+    "retryButton": "Try again",
+    "roles": {
+      "nanny": {
+        "title": "Nanny",
+        "description": "Can clock in, view their shifts, and submit hours."
+      },
+      "parent": {
+        "title": "Co-parent",
+        "description": "Can view the schedule and approve hours — joins your existing household."
+      },
+      "helper": {
+        "title": "Helper",
+        "description": "Can view the schedule and hours — read-only, no editing."
+      }
+    }
   },
   "availability": {
     "wizardTitle": "When are you available?",

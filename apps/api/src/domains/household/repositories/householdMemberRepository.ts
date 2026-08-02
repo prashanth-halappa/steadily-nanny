@@ -61,6 +61,29 @@ export class HouseholdMemberRepository extends BaseRepository<HouseholdMember> {
     return (data ?? []) as HouseholdMember[];
   }
 
+  /**
+   * Every active membership row for the user, across every household they
+   * belong to — lets the mobile app learn its own role per household without
+   * re-listing each household's full member roster.
+   */
+  async listActiveByUser(userId: string): Promise<HouseholdMember[]> {
+    const { data, error } = await supabaseService
+      .from(this.table)
+      .select('*')
+      .eq('user_id', userId)
+      .eq('status', 'active')
+      .order('joined_at', { ascending: true });
+
+    if (error) {
+      throw new DatabaseError(
+        'Failed to list memberships for user',
+        'DATABASE_ERROR',
+        { details: error.message, userId }
+      );
+    }
+    return (data ?? []) as HouseholdMember[];
+  }
+
   /** Every household id the user actively belongs to. */
   async listActiveHouseholdIds(userId: string): Promise<string[]> {
     const { data, error } = await supabaseService

@@ -14,6 +14,8 @@ function createMockQueryChain(
     order: mock(() => chain),
     maybeSingle: mock(() => Promise.resolve(finalResponse)),
     single: mock(() => Promise.resolve(finalResponse)),
+    // biome-ignore lint/suspicious/noThenProperty: intentional thenable for the mock
+    then: (resolve: any) => Promise.resolve(finalResponse).then(resolve),
   };
   return chain;
 }
@@ -71,5 +73,28 @@ describe('HouseholdMemberRepository.createMembership', () => {
       role: 'nanny',
     });
     expect(result).toEqual(created);
+  });
+});
+
+describe('HouseholdMemberRepository.listActiveByUser', () => {
+  it('returns every active membership row for the user, across households', async () => {
+    const rows = [
+      { id: 'm1', household_id: 'h1', user_id: 'u1', role: 'owner' },
+      { id: 'm2', household_id: 'h2', user_id: 'u1', role: 'nanny' },
+    ];
+    mockSupabaseService.from.mockImplementation(() =>
+      createMockQueryChain({ data: rows, error: null })
+    );
+    const repo = new HouseholdMemberRepository();
+    const result = await repo.listActiveByUser('u1');
+    expect(result).toEqual(rows);
+  });
+
+  it('returns [] when the user has no active memberships', async () => {
+    mockSupabaseService.from.mockImplementation(() =>
+      createMockQueryChain({ data: null, error: null })
+    );
+    const repo = new HouseholdMemberRepository();
+    expect(await repo.listActiveByUser('u1')).toEqual([]);
   });
 });

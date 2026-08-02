@@ -2,6 +2,10 @@
   "build": {
     "screenTitle": "Construye tu semana habitual",
     "loading": "Cargando…",
+    "draftErrorTitle": "No se pudo cargar ese borrador",
+    "draftErrorBody": "No pudimos recuperar la semana que empezaste. Revisa tu conexión e inténtalo de nuevo, o empieza esta semana desde cero.",
+    "draftErrorRetry": "Intentar de nuevo",
+    "draftErrorStartFresh": "Empezar desde cero",
     "noCarerTitle": "Invita primero a una niñera",
     "noCarerBody": "Añade una niñera a tu hogar antes de crear un horario semanal.",
     "noCarerCta": "Volver al hogar",
@@ -103,7 +107,19 @@
       "shift_updated": "Turno actualizado",
       "pattern_conflict": "Conflicto de horario",
       "gap_raised": "Hueco de cobertura"
-    }
+    },
+    "cancelShift": "Pedir cancelación",
+    "counterOffer": "Proponer otros horarios",
+    "changesTitle": "Cambios pendientes",
+    "acceptChange": "Aceptar",
+    "declineChange": "Rechazar",
+    "shortNoticePaidHint": "Dentro de la ventana de cancelación pagada.",
+    "awaitingCoParent": "Esperando aprobación del otro progenitor"
+  },
+  "change": {
+    "requestedToast": "Cambio solicitado",
+    "pendingApprovalToast": "Enviado al otro progenitor para aprobación",
+    "respondedToast": "Respuesta enviada"
   },
   "weekday": {
     "0": "Domingo",

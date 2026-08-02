@@ -32,4 +32,27 @@ export class SchedulePatternRepository extends BaseRepository<SchedulePattern> {
     }
     return (data ?? []) as SchedulePattern[];
   }
+
+  /**
+   * Every currently-accepted pattern across every household — the
+   * horizon-rolling job's own trust boundary (see
+   * `jobs/scheduleHorizonJob.ts`): it re-materialises every row this
+   * returns, unscoped by household or caller, unlike every other read in
+   * this domain.
+   */
+  async listAccepted(): Promise<SchedulePattern[]> {
+    const { data, error } = await supabaseService
+      .from(this.table)
+      .select('*')
+      .eq('status', 'accepted');
+
+    if (error) {
+      throw new DatabaseError(
+        'Failed to list accepted schedule patterns',
+        'DATABASE_ERROR',
+        { details: error.message }
+      );
+    }
+    return (data ?? []) as SchedulePattern[];
+  }
 }

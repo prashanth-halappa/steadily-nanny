@@ -13,6 +13,8 @@
  * identical UI once a code exists. `SetupScreenShell`'s CTA goes back to
  * wherever the parent came from (no progress bar, no "next step").
  */
+import type { HouseholdInviteRole } from '@steadily-nanny/shared-types/schemas/household.schema';
+import { HOUSEHOLD_INVITE_ROLES } from '@steadily-nanny/shared-types/schemas/household.schema';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -20,6 +22,7 @@ import { Share } from 'react-native';
 import { Button } from '@/src/components/ui/button';
 import { Text } from '@/src/components/ui/text';
 import { InviteCodeCard } from '@/src/domains/setup/components/InviteCodeCard';
+import { InviteRolePicker } from '@/src/domains/setup/components/InviteRolePicker';
 import { SetupScreenShell } from '@/src/domains/setup/components/SetupScreenShell';
 import { useCreateInvite } from '@/src/hooks/mutations/useCreateInvite';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
@@ -33,12 +36,15 @@ export function ManageInviteScreen() {
 
   const createInvite = useCreateInvite(householdId);
   const [hasStarted, setHasStarted] = useState(false);
+  const [selectedRole, setSelectedRole] = useState<HouseholdInviteRole>(
+    HOUSEHOLD_INVITE_ROLES.NANNY
+  );
 
   const code = createInvite.data?.code ?? null;
 
   const onGenerate = () => {
     setHasStarted(true);
-    createInvite.mutate({ role: 'nanny' });
+    createInvite.mutate({ role: selectedRole });
   };
 
   const onShare = () => {
@@ -73,13 +79,19 @@ export function ManageInviteScreen() {
           </Button>
         </>
       ) : (
-        <Button
-          testID="invite-generate-button"
-          onPress={onGenerate}
-          disabled={!onboarding.householdId}
-        >
-          <Text>{t('invite.generateButton')}</Text>
-        </Button>
+        <>
+          <InviteRolePicker
+            selected={selectedRole}
+            onSelect={setSelectedRole}
+          />
+          <Button
+            testID="invite-generate-button"
+            onPress={onGenerate}
+            disabled={!onboarding.householdId}
+          >
+            <Text>{t('invite.generateButton')}</Text>
+          </Button>
+        </>
       )}
     </SetupScreenShell>
   );

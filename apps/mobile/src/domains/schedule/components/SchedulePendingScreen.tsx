@@ -17,10 +17,20 @@
  * Parent-only. Normal navigation never sends a nanny here, but this renders
  * `null` defensively if it's ever reached by one.
  *
- * KNOWN GAP: the "continue building" CTA on the draft state always starts a
- * fresh build wizard (`/(private)/schedule/build`) rather than resuming the
- * specific in-progress draft pattern — resume-a-draft is out of scope for
- * this pass.
+ * Wave B: `householdId` comes from `useActiveHousehold`, not
+ * `useIsOnboarded().householdId` — a parent (Wave 1: owns exactly one
+ * household) gets the identical id either way, but this keeps every
+ * data-fetching screen going through the one hook actually responsible for
+ * "which household".
+ *
+ * The `draft` state's "continue building" CTA passes the draft's own id as
+ * `?patternId=` on the build route, so `ScheduleBuildScreen` resumes THAT
+ * pattern (see its own header comment) instead of starting a fresh wizard
+ * and — via `sendScheduleWeek`'s `!patternId` branch — creating a second,
+ * orphaned draft on send. Every OTHER CTA that lands on the build screen
+ * (empty state, accepted "change the week", declined/withdrawn "build a new
+ * week") deliberately omits `patternId`: each of those starts a genuinely
+ * NEW pattern, since there is no draft to resume in those states.
  */
 import { type Href, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
@@ -46,7 +56,10 @@ import {
 import { Text } from '@/src/components/ui/text';
 import { Body, H1 } from '@/src/components/ui/typography';
 import { SchedulePatternPreview } from '@/src/domains/schedule/components/SchedulePatternPreview';
-import { SETUP_ROLES } from '@/src/domains/setup/types';
+import {
+  canViewParentSchedule,
+  isParentEditorRole,
+} from '@/src/domains/setup/types';
 import { useWithdrawSchedulePattern } from '@/src/hooks/mutations/useWithdrawSchedulePattern';
 import { useChildren } from '@/src/hooks/queries/useChildren';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
@@ -75,7 +88,9 @@ export function SchedulePendingScreen() {
     ])
   );
 
-  if (onboarding.role !== SETUP_ROLES.PARENT) {
+  const canEditSchedule = isParentEditorRole(onboarding.role);
+
+  if (!canViewParentSchedule(onboarding.role)) {
     return null;
   }
 
@@ -136,14 +151,16 @@ export function SchedulePendingScreen() {
             title={t('pending.emptyTitle')}
             description={t('pending.emptyBody')}
           />
-          <Button
-            testID="schedule-pending-build-cta"
-            onPress={() => router.push(BUILD_HREF)}
-          >
-            <Text className="text-primary-foreground font-medium">
-              {t('pending.emptyCta')}
-            </Text>
-          </Button>
+          {canEditSchedule ? (
+            <Button
+              testID="schedule-pending-build-cta"
+              onPress={() => router.push(BUILD_HREF)}
+            >
+              <Text className="text-primary-foreground font-medium">
+                {t('pending.emptyCta')}
+              </Text>
+            </Button>
+          ) : null}
         </View>
       ) : pattern.status === 'draft' ? (
         <View testID="schedule-pending-draft" className="mt-6 gap-4">
@@ -151,14 +168,20 @@ export function SchedulePendingScreen() {
           <Body className="text-muted-foreground">
             {t('pending.draftBody')}
           </Body>
-          <Button
-            testID="schedule-pending-continue-cta"
-            onPress={() => router.push(BUILD_HREF)}
-          >
-            <Text className="text-primary-foreground font-medium">
-              {t('pending.draftCta')}
-            </Text>
-          </Button>
+          {canEditSchedule ? (
+            <Button
+              testID="schedule-pending-continue-cta"
+              onPress={() =>
+                router.push(
+                  `/(private)/schedule/build?patternId=${pattern.id}` as Href
+                )
+              }
+            >
+              <Text className="text-primary-foreground font-medium">
+                {t('pending.draftCta')}
+              </Text>
+            </Button>
+          ) : null}
         </View>
       ) : (
         <View className="mt-6 gap-4">
@@ -189,7 +212,7 @@ export function SchedulePendingScreen() {
             </View>
           ) : null}
 
-          {pattern.status === 'pending' ? (
+          {pattern.status === 'pending' && canEditSchedule ? (
             <AlertDialog>
               <AlertDialogTrigger
                 testID="schedule-pending-withdraw"
@@ -235,20 +258,20 @@ export function SchedulePendingScreen() {
                   {t('pending.viewShifts')}
                 </Text>
               </Button>
-              {/* A household's schedule changes — term starts, hours
-                  shift, availability moves. Without this, the app went
-                  permanently read-only the moment one week was accepted. */}
-              <Button
-                testID="schedule-pending-change-week"
-                variant="outline"
-                onPress={() => router.push(BUILD_HREF)}
-              >
-                <Text>{t('pending.changeWeek')}</Text>
-              </Button>
+              {canEditSchedule ? (
+                <Button
+                  testID="schedule-pending-change-week"
+                  variant="outline"
+                  onPress={() => router.push(BUILD_HREF)}
+                >
+                  <Text>{t('pending.changeWeek')}</Text>
+                </Button>
+              ) : null}
             </>
           ) : null}
 
-          {pattern.status === 'declined' || pattern.status === 'withdrawn' ? (
+          {(pattern.status === 'declined' || pattern.status === 'withdrawn') &&
+          canEditSchedule ? (
             <Button
               testID="schedule-pending-build-cta"
               onPress={() => router.push(BUILD_HREF)}

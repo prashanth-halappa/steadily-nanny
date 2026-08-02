@@ -2,6 +2,10 @@
   "build": {
     "screenTitle": "Build your usual week",
     "loading": "Loading…",
+    "draftErrorTitle": "Couldn't load that draft",
+    "draftErrorBody": "We couldn't fetch the week you started. Check your connection and try again, or start this week from scratch.",
+    "draftErrorRetry": "Try again",
+    "draftErrorStartFresh": "Start from scratch",
     "noCarerTitle": "Invite a nanny first",
     "noCarerBody": "Add a nanny to your household before building a weekly schedule.",
     "noCarerCta": "Back to household",
@@ -103,7 +107,19 @@
       "shift_updated": "Shift updated",
       "pattern_conflict": "Schedule conflict",
       "gap_raised": "Coverage gap"
-    }
+    },
+    "cancelShift": "Request cancel",
+    "counterOffer": "Counter with these times",
+    "changesTitle": "Pending changes",
+    "acceptChange": "Accept",
+    "declineChange": "Decline",
+    "shortNoticePaidHint": "Within the paid-cancellation window — hours may still count.",
+    "awaitingCoParent": "Waiting for co-parent approval"
+  },
+  "change": {
+    "requestedToast": "Change requested",
+    "pendingApprovalToast": "Sent to your co-parent for approval",
+    "respondedToast": "Response sent"
   },
   "weekday": {
     "0": "Sunday",

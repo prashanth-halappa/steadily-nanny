@@ -25,6 +25,7 @@ export const queryKeys = {
     all: ['user'] as const,
     profile: (userId?: string) =>
       [...queryKeys.user.all, 'profile', userId] as const,
+    memberships: () => [...queryKeys.user.all, 'memberships'] as const,
   },
 
   // Remote app config (force update, kill switch, announcements, beta override)
@@ -54,6 +55,22 @@ export const queryKeys = {
     all: ['children'] as const,
     list: (householdId?: string) =>
       [...queryKeys.children.all, 'list', householdId] as const,
+  },
+
+  // Per-child fixed commitments (preschool, school, naps…)
+  commitments: {
+    all: ['commitments'] as const,
+    list: (householdId?: string, childId?: string) =>
+      [...queryKeys.commitments.all, 'list', householdId, childId] as const,
+  },
+
+  // Daily handoff notes (morning/evening chips)
+  handoff: {
+    all: ['handoff'] as const,
+    list: (householdId?: string, localDate?: string) =>
+      [...queryKeys.handoff.all, 'list', householdId, localDate] as const,
+    recap: (householdId?: string, localDate?: string) =>
+      [...queryKeys.handoff.all, 'recap', householdId, localDate] as const,
   },
 
   // The signed-in nanny's own weekly availability
@@ -102,6 +119,8 @@ export const queryKeys = {
       [...queryKeys.shift.all, 'events', householdId, shiftId] as const,
     dayThread: (householdId?: string, localDate?: string) =>
       [...queryKeys.shift.all, 'dayThread', householdId, localDate] as const,
+    changeRequests: (shiftId?: string) =>
+      [...queryKeys.shift.all, 'changeRequests', shiftId] as const,
   },
 
   // Clock in/out and the weekly hours roll-up.

@@ -22,6 +22,7 @@ export function useRedeemInvite() {
     onSuccess: membership => {
       setHouseholdId(membership.household_id);
       queryClient.invalidateQueries({ queryKey: queryKeys.household.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.user.memberships() });
     },
     onError: error => {
       showErrorToast(getLocalizedErrorMessage(error, t));

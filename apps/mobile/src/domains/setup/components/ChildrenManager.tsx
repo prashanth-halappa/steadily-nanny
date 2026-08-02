@@ -19,6 +19,7 @@ import {
   type ChildFormValues,
 } from '@/src/domains/setup/components/ChildFormSheet';
 import { ChildRow } from '@/src/domains/setup/components/ChildRow';
+import { ManageCommitmentsSection } from '@/src/domains/setup/components/ManageCommitmentsSection';
 import { useCreateChild } from '@/src/hooks/mutations/useCreateChild';
 import { useDeleteChild } from '@/src/hooks/mutations/useDeleteChild';
 import { useUpdateChild } from '@/src/hooks/mutations/useUpdateChild';
@@ -83,15 +84,21 @@ export function ChildrenManager({ householdId }: ChildrenManagerProps) {
   return (
     <View className="gap-3">
       {(children.data ?? []).map(child => (
-        <ChildRow
-          key={child.id}
-          testID={`children-row-${child.id}`}
-          name={child.name}
-          colour={child.colour}
-          birthDate={child.birth_date}
-          onPress={() => openEditForm(child.id)}
-          onRemove={() => deleteChild.mutate(child.id)}
-        />
+        <View key={child.id} className="gap-2">
+          <ChildRow
+            testID={`children-row-${child.id}`}
+            name={child.name}
+            colour={child.colour}
+            birthDate={child.birth_date}
+            onPress={() => openEditForm(child.id)}
+            onRemove={() => deleteChild.mutate(child.id)}
+          />
+          <ManageCommitmentsSection
+            householdId={householdId}
+            childId={child.id}
+            childName={child.name}
+          />
+        </View>
       ))}
 
       {children.isSuccess && children.data.length === 0 ? (

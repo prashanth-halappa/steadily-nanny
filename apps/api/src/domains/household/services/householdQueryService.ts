@@ -66,6 +66,15 @@ export class HouseholdQueryService {
     return membership;
   }
 
+  /**
+   * List every active membership the caller has, across all households —
+   * how mobile learns "what is my role in each household I belong to"
+   * without walking `listMembers` per household and filtering by userId.
+   */
+  async listMembershipsForUser(userId: string): Promise<HouseholdMember[]> {
+    return this.memberRepo.listActiveByUser(userId);
+  }
+
   /** List a household's active members. Caller must already be a member. */
   async listMembers(
     userId: string,

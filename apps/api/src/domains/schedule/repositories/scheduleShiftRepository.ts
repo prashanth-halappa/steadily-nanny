@@ -7,10 +7,13 @@
  * accept, counter-offer, split, handover — a different bounded concern) to
  * avoid a domain-boundary cycle. This repository is scoped narrowly to what
  * materialisation needs: find-by-pattern, create, update, delete, plus the
- * two satellite tables it also has to keep in sync (`shift_children`,
- * `shift_events`). It never queries `shift_change_requests` for anything
- * beyond "does at least one exist" (used to detect a manually-negotiated
- * shift the re-materialiser must not clobber).
+ * satellite table it also has to keep in sync (`shift_children`). It never
+ * queries `shift_change_requests` for anything beyond "does at least one
+ * exist" (used to detect a manually-negotiated shift the re-materialiser
+ * must not clobber), and it no longer writes `shift_events` at all: the
+ * `pattern_conflict` row must be raised at most once per (pattern, shift,
+ * date), so it goes through the shift domain's idempotent bulk-append pair
+ * instead — see `services/scheduleMaterialisationService.ts`'s header.
  *
  * @module domains/schedule/repositories/scheduleShiftRepository
  */
@@ -38,20 +41,10 @@ export interface NewShiftChildData {
   ends_at: string | null;
 }
 
-export interface NewShiftEventData {
-  household_id: string;
-  shift_id: string | null;
-  local_date: string;
-  actor_id: string | null;
-  event_type: string;
-  payload: Record<string, unknown>;
-}
-
 export class ScheduleShiftRepository {
   private readonly table = 'shifts';
   private readonly childrenTable = 'shift_children';
   private readonly changeRequestsTable = 'shift_change_requests';
-  private readonly eventsTable = 'shift_events';
 
   /** The materialised shift for one pattern occurrence, or null if never created. */
   async findByPatternAndDate(
@@ -187,19 +180,6 @@ export class ScheduleShiftRepository {
         'Failed to insert shift children',
         'DATABASE_ERROR',
         { details: insertError.message, shiftId }
-      );
-    }
-  }
-
-  /** Append-only day-thread entry — see migration 015's comment: an editable audit trail is not an audit trail. */
-  async insertEvent(data: NewShiftEventData): Promise<void> {
-    const { error } = await supabaseService.from(this.eventsTable).insert(data);
-
-    if (error) {
-      throw new DatabaseError(
-        'Failed to insert shift event',
-        'DATABASE_ERROR',
-        { details: error.message }
       );
     }
   }

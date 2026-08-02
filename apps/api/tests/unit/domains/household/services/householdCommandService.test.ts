@@ -296,6 +296,46 @@ describe('HouseholdCommandService.redeemInvite', () => {
     expect(membership.role).toBe('nanny');
   });
 
+  it('redeems an invite with role parent, producing a parent membership', async () => {
+    const memberRepo = makeMemberRepo();
+    const inviteRepo = makeInviteRepo({
+      findByCode: mock(async () => pendingInvite({ role: 'parent' })),
+    });
+    const svc = new HouseholdCommandService(
+      makeHouseholdRepo(),
+      memberRepo,
+      inviteRepo,
+      makeQueries()
+    );
+
+    const membership = await svc.redeemInvite('u2', { code: 'ABC-234' });
+
+    expect(memberRepo.createMembership).toHaveBeenCalledWith(
+      expect.objectContaining({ role: 'parent' })
+    );
+    expect(membership.role).toBe('parent');
+  });
+
+  it('redeems an invite with role helper, producing a helper membership', async () => {
+    const memberRepo = makeMemberRepo();
+    const inviteRepo = makeInviteRepo({
+      findByCode: mock(async () => pendingInvite({ role: 'helper' })),
+    });
+    const svc = new HouseholdCommandService(
+      makeHouseholdRepo(),
+      memberRepo,
+      inviteRepo,
+      makeQueries()
+    );
+
+    const membership = await svc.redeemInvite('u2', { code: 'ABC-234' });
+
+    expect(memberRepo.createMembership).toHaveBeenCalledWith(
+      expect.objectContaining({ role: 'helper' })
+    );
+    expect(membership.role).toBe('helper');
+  });
+
   it('is case-insensitive and trims whitespace on the code', async () => {
     const inviteRepo = makeInviteRepo();
     const svc = new HouseholdCommandService(

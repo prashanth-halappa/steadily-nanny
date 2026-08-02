@@ -6,6 +6,7 @@
  * persistMigrations) are imported by path, not through this barrel.
  */
 
+export * from './activeHousehold';
 export * from './appConfigStore';
 export * from './notificationStore';
 export * from './pendingDeepLinkStore';

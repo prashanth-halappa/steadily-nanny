@@ -9,7 +9,7 @@
  * device the Hours screen was permanently stuck on the current week for
  * both roles. This file renders the ACTUAL `HoursScreen` (both roles) so a
  * green run means the feature is wired end-to-end, not unit-tested in a
- * vacuum. `useIsOnboarded` / `useHouseholds` / `useWeekTimeEntries` /
+ * vacuum. `useIsOnboarded` / `useActiveHousehold` / `useWeekTimeEntries` /
  * `useWeekTimesheet` / the approve+query mutations are mocked via
  * `mock.module()` in `beforeAll`, before the dynamic import, per
  * docs/09-TESTING.md's service-test boilerplate.
@@ -123,7 +123,6 @@ mock.module('@rn-primitives/alert-dialog', () => {
 });
 
 const HOUSEHOLD_ID = '5d4b0b70-edd9-4218-b7df-a28d234f7e06';
-const PARENT_USER_ID = '11111111-1111-4111-8111-111111111111';
 // Matches the seeded `submitted` timesheet the app should be able to reach
 // once nav actually works: id 4359148e-d5ee-4515-9fca-3396b29ee48d,
 // week_start 2026-01-05, household 5d4b0b70-edd9-4218-b7df-a28d234f7e06.
@@ -131,17 +130,18 @@ const TIMEZONE = 'UTC';
 
 let HoursScreen: typeof import('../components/HoursScreen').HoursScreen;
 let mockUseIsOnboarded: ReturnType<typeof mock>;
-let mockUseHouseholds: ReturnType<typeof mock>;
+let mockUseActiveHousehold: ReturnType<typeof mock>;
 let mockUseWeekTimeEntries: ReturnType<typeof mock>;
 let mockUseWeekTimesheet: ReturnType<typeof mock>;
 let mockUseApproveTimesheet: ReturnType<typeof mock>;
 let mockUseQueryTimesheet: ReturnType<typeof mock>;
 
 beforeAll(async () => {
-  mockUseHouseholds = mock(() => ({
-    data: [
-      { id: HOUSEHOLD_ID, timezone: TIMEZONE, created_by: PARENT_USER_ID },
-    ],
+  mockUseActiveHousehold = mock(() => ({
+    household: { id: HOUSEHOLD_ID, timezone: TIMEZONE },
+    householdId: HOUSEHOLD_ID,
+    households: [{ id: HOUSEHOLD_ID, timezone: TIMEZONE }],
+    setActiveHouseholdId: mock(),
     isLoading: false,
   }));
   mockUseWeekTimeEntries = mock(() => ({ data: [], isLoading: false }));
@@ -163,8 +163,8 @@ beforeAll(async () => {
   mock.module('@/src/hooks/queries/useIsOnboarded', () => ({
     useIsOnboarded: mockUseIsOnboarded,
   }));
-  mock.module('@/src/hooks/queries/useHouseholds', () => ({
-    useHouseholds: mockUseHouseholds,
+  mock.module('@/src/hooks/queries/useActiveHousehold', () => ({
+    useActiveHousehold: mockUseActiveHousehold,
   }));
   mock.module('@/src/hooks/queries/useWeekTimeEntries', () => ({
     useWeekTimeEntries: mockUseWeekTimeEntries,
@@ -191,6 +191,44 @@ beforeEach(() => {
   }));
   mockUseWeekTimeEntries.mockClear();
   mockUseWeekTimesheet.mockClear();
+});
+
+describe('HoursScreen — nanny with multiple households (Wave B)', () => {
+  it('uses the ACTIVE household, not onboarding.householdId, when the two differ', () => {
+    const ONBOARDING_HOUSEHOLD_ID = 'onboarding-household-should-not-be-used';
+    const ACTIVE_HOUSEHOLD_ID = 'active-household-should-be-used';
+    mockUseIsOnboarded.mockImplementation(() => ({
+      status: 'onboarded',
+      role: 'nanny',
+      householdId: ONBOARDING_HOUSEHOLD_ID,
+    }));
+    mockUseActiveHousehold.mockImplementation(() => ({
+      household: { id: ACTIVE_HOUSEHOLD_ID, timezone: TIMEZONE },
+      householdId: ACTIVE_HOUSEHOLD_ID,
+      households: [
+        { id: ONBOARDING_HOUSEHOLD_ID, timezone: TIMEZONE },
+        { id: ACTIVE_HOUSEHOLD_ID, timezone: TIMEZONE },
+      ],
+      setActiveHouseholdId: mock(),
+      isLoading: false,
+    }));
+
+    render(<HoursScreen />);
+
+    const lastCall = mockUseWeekTimeEntries.mock.calls.at(-1) as
+      | [string, string]
+      | undefined;
+    expect(lastCall?.[0]).toBe(ACTIVE_HOUSEHOLD_ID);
+
+    // Reset back to the single-household default for subsequent tests.
+    mockUseActiveHousehold.mockImplementation(() => ({
+      household: { id: HOUSEHOLD_ID, timezone: TIMEZONE },
+      householdId: HOUSEHOLD_ID,
+      households: [{ id: HOUSEHOLD_ID, timezone: TIMEZONE }],
+      setActiveHouseholdId: mock(),
+      isLoading: false,
+    }));
+  });
 });
 
 describe('HoursScreen — nanny', () => {

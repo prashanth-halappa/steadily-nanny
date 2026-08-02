@@ -12,8 +12,10 @@ import { Router } from 'express';
 import { authWithValidation } from '../../../middlewares/presets';
 import { validate } from '../../../middlewares/validator';
 import { asyncHandler } from '../../../utils/asyncHandler';
+import { ShiftChangeRequestController } from '../controllers/shiftChangeRequestController';
 import { ShiftController } from '../controllers/shiftController';
 import {
+  CreateExtraShiftSchema,
   HouseholdIdParamSchema,
   HouseholdShiftIdParamSchema,
   ShiftRangeQuerySchema,
@@ -29,6 +31,14 @@ router.get(
   ...authWithValidation(HouseholdIdParamSchema, 'params'),
   validate(ShiftRangeQuerySchema, 'query'),
   asyncHandler(ShiftController.listForHousehold)
+);
+
+// One-off extra shift proposal (flow 1d) — must precede /:shiftId routes.
+router.post(
+  '/extra',
+  ...authWithValidation(HouseholdIdParamSchema, 'params'),
+  validate(CreateExtraShiftSchema, 'body'),
+  asyncHandler(ShiftChangeRequestController.createExtraShift)
 );
 
 // The append-only day thread for one shift.

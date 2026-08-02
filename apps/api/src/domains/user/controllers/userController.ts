@@ -4,6 +4,7 @@
  * @module domains/user/controllers/userController
  */
 import type { NextFunction, Request, Response } from 'express';
+import { householdQueryService } from '../../../domains/household/services/householdQueryService';
 import type {
   UpdateProfileInput,
   UpsertProfileInput,
@@ -44,6 +45,22 @@ export const UserController = {
         req.body as UpdateProfileInput
       );
       sendSuccessResponse(res, 'Profile updated', { user: profile });
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  /**
+   * GET /api/v1/users/me/memberships — every active household membership the
+   * caller has, across all households, so mobile can learn its own role per
+   * household (owner/parent/nanny/helper) without walking each household's
+   * full `/members` roster and filtering by userId itself.
+   */
+  async listMemberships(req: Request, res: Response, next: NextFunction) {
+    try {
+      const household_members =
+        await householdQueryService.listMembershipsForUser(getAuthUserId(req));
+      sendSuccessResponse(res, 'Memberships fetched', { household_members });
     } catch (error) {
       next(error);
     }

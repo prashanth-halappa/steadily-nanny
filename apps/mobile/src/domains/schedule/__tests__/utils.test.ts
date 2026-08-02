@@ -15,7 +15,9 @@ import {
   calculateDayHours,
   calculateWeekTotalHours,
   formatWallClockTime,
+  hydrateDraftPattern,
   isOutsideAvailability,
+  parseWeeklyRruleInterval,
   sendScheduleWeek,
   todayIsoDate,
   toggleWeekday,
@@ -72,6 +74,81 @@ describe('buildWeeklyRrule', () => {
   it('encodes a fortnightly repeat as INTERVAL=2', () => {
     const rrule = buildWeeklyRrule([1], 2);
     expect(rrule).toBe('FREQ=WEEKLY;INTERVAL=2;BYDAY=MO');
+  });
+});
+
+describe('parseWeeklyRruleInterval', () => {
+  it('reads INTERVAL=2 as fortnightly', () => {
+    expect(parseWeeklyRruleInterval('FREQ=WEEKLY;INTERVAL=2;BYDAY=MO')).toBe(2);
+  });
+
+  it('defaults to weekly (1) for INTERVAL=1', () => {
+    expect(parseWeeklyRruleInterval('FREQ=WEEKLY;INTERVAL=1;BYDAY=MO')).toBe(1);
+  });
+
+  it('defaults to weekly (1) for a malformed or missing INTERVAL, never misreading as fortnightly', () => {
+    expect(parseWeeklyRruleInterval('FREQ=WEEKLY;BYDAY=MO')).toBe(1);
+    expect(parseWeeklyRruleInterval('garbage')).toBe(1);
+  });
+
+  it('round-trips with buildWeeklyRrule for both supported intervals', () => {
+    expect(parseWeeklyRruleInterval(buildWeeklyRrule([1], 1))).toBe(1);
+    expect(parseWeeklyRruleInterval(buildWeeklyRrule([1], 2))).toBe(2);
+  });
+});
+
+describe('hydrateDraftPattern', () => {
+  it('derives selected days, per-day times, and per-day children from a draft pattern', () => {
+    const hydrated = hydrateDraftPattern({
+      carer_id: 'carer-1',
+      rrule: 'FREQ=WEEKLY;INTERVAL=1;BYDAY=MO,WE',
+      days: [
+        {
+          weekday: 3,
+          start_time: '08:00',
+          end_time: '17:00',
+          children: [{ child_id: 'child-1' }],
+        },
+        {
+          weekday: 1,
+          start_time: '09:00',
+          end_time: '15:00',
+          children: [],
+        },
+      ],
+    });
+
+    expect(hydrated.carerId).toBe('carer-1');
+    // Sorted numerically, independent of the days' original order.
+    expect(hydrated.selectedDays).toEqual([1, 3]);
+    expect(hydrated.dayTimes).toEqual({
+      1: { start: '09:00', end: '15:00' },
+      3: { start: '08:00', end: '17:00' },
+    });
+    expect(hydrated.dayChildren).toEqual({
+      1: [],
+      3: ['child-1'],
+    });
+    expect(hydrated.intervalWeeks).toBe(1);
+  });
+
+  it('carries a null carer_id through unchanged (a draft may not have a carer picked yet)', () => {
+    const hydrated = hydrateDraftPattern({
+      carer_id: null,
+      rrule: 'FREQ=WEEKLY;INTERVAL=1',
+      days: [],
+    });
+    expect(hydrated.carerId).toBeNull();
+    expect(hydrated.selectedDays).toEqual([]);
+  });
+
+  it('reads a fortnightly draft correctly', () => {
+    const hydrated = hydrateDraftPattern({
+      carer_id: 'carer-1',
+      rrule: 'FREQ=WEEKLY;INTERVAL=2;BYDAY=MO',
+      days: [],
+    });
+    expect(hydrated.intervalWeeks).toBe(2);
   });
 });
 

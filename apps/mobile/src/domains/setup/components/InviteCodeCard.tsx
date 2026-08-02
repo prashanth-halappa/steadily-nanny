@@ -4,9 +4,9 @@
  * Presentational invite-code display (code box + error/retry), extracted
  * out of `InviteScreen` so both the wizard and the settings entry point
  * (`ManageInviteScreen`) render identical UI. Deliberately holds no mutation
- * state of its own — the two callers generate a code differently (the
- * wizard auto-fires on mount; the settings screen waits for an explicit
- * tap), so `code`/`isError`/`onRetry` are passed in.
+ * state of its own — both callers wait for an explicit "Generate" tap (see
+ * InviteScreen's header for why the wizard no longer auto-fires on mount),
+ * so `code`/`isError`/`onRetry` are passed in.
  */
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';

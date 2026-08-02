@@ -16,6 +16,11 @@
  * `days` (list responses don't include nested days — only the detail route
  * does), so the card can show a real day count + hours total rather than
  * just a bare "you have a pattern" notice.
+ *
+ * Wave B: reads the household from `useActiveHousehold`, not
+ * `useIsOnboarded().householdId` — mounted on `TodayScreen`, this card must
+ * track whichever household the switcher currently has selected, same as
+ * everything else on that screen.
  */
 import { type Href, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
@@ -23,7 +28,7 @@ import { View } from 'react-native';
 import { Button } from '@/src/components/ui/button';
 import { Text } from '@/src/components/ui/text';
 import { Body } from '@/src/components/ui/typography';
-import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
+import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
 import { useSchedulePattern } from '@/src/hooks/queries/useSchedulePattern';
 import { useSchedulePatterns } from '@/src/hooks/queries/useSchedulePatterns';
 import { useAuthStore } from '@/src/store/auth';
@@ -34,9 +39,9 @@ export function PendingScheduleCard() {
   const router = useRouter();
 
   const userId = useAuthStore(s => s.session?.user?.id);
-  const onboarding = useIsOnboarded();
+  const activeHousehold = useActiveHousehold();
 
-  const patterns = useSchedulePatterns(onboarding.householdId);
+  const patterns = useSchedulePatterns(activeHousehold.householdId);
   const pendingPattern =
     (patterns.data ?? []).find(
       p => p.status === 'pending' && p.carer_id === userId

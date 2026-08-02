@@ -21,6 +21,7 @@ import { Button, buttonVariants } from '@/src/components/ui/button';
 import { Text } from '@/src/components/ui/text';
 import { Body, H1, H4, Small } from '@/src/components/ui/typography';
 import { appIdentity } from '@/src/config/appIdentity';
+import { HouseholdSwitcher } from '@/src/domains/household';
 import { SETUP_ROLES } from '@/src/domains/setup/types';
 import { useDeleteAccount } from '@/src/hooks/mutations/useDeleteAccount';
 import { useUpdatePreferredLocale } from '@/src/hooks/mutations/useUpdatePreferredLocale';
@@ -113,9 +114,13 @@ export default function SettingsScreen() {
       </View>
 
       {onboarding.role === SETUP_ROLES.PARENT ||
-      onboarding.role === SETUP_ROLES.NANNY ? (
+      onboarding.role === SETUP_ROLES.NANNY ||
+      onboarding.role === SETUP_ROLES.HELPER ? (
         <View className="mt-8 gap-3" testID="settings-household-section">
           <H4>{t('settings:household')}</H4>
+          {/* Renders nothing for one household (every parent, most nannies)
+              — see HouseholdSwitcher's header comment. */}
+          <HouseholdSwitcher />
           {onboarding.role === SETUP_ROLES.PARENT ? (
             <>
               <AnimatedPressable

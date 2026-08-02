@@ -9,9 +9,15 @@
  * @module domains/household/types
  */
 export type {
+  CoParentApproval,
+  CoParentApprovalAction,
+  CoParentApprovalListResponse,
+  CoParentApprovalStatus,
+  CreateCoParentApprovalInput,
   CreateHouseholdInput,
   CreateHouseholdInviteInput,
   Household,
+  HouseholdApprovalIdParam,
   HouseholdInvite,
   HouseholdInviteListResponse,
   HouseholdListResponse,
@@ -19,6 +25,7 @@ export type {
   HouseholdMemberListResponse,
   InvitePreview,
   RedeemHouseholdInviteInput,
+  RespondToCoParentApprovalInput,
   UpdateHouseholdInput,
   UpdateHouseholdInviteInput,
   UpdateHouseholdMemberInput,

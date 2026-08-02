@@ -150,6 +150,38 @@ describe('ScheduleBuildScreen source', () => {
     );
   });
 
+  it('REGRESSION: a failed draft fetch reaches a real error step, never a permanent spinner', () => {
+    // The bug: `hasHydratedDraft` starts false whenever `?patternId=` is
+    // set and only flips inside the hydrate effect's SUCCESS path, while
+    // the step-advance effect refuses to leave 'loading' until it flips —
+    // so `useSchedulePattern` erroring left `step === 'loading'` forever
+    // and the parent stared at a spinner with no retry and no way out.
+    expect(source).toContain("'draft-error'");
+    expect(source).toContain('existingPattern.isError');
+    expect(source).toContain('testID="schedule-build-draft-error"');
+    // Both recoveries: refetch, and abandon-hydration-and-build-by-hand.
+    expect(source).toContain('existingPattern.refetch()');
+    expect(source).toContain('startFreshFromDraftError');
+    expect(source).toContain("t('build.draftErrorTitle')");
+    expect(source).toContain("t('build.draftErrorRetry')");
+    expect(source).toContain("t('build.draftErrorStartFresh')");
+  });
+
+  it("REGRESSION: the error check runs BEFORE the effect's `!existingPattern.data` bail, or it could never fire", () => {
+    const effect = source.match(
+      /useEffect\(\(\) => \{\s*if \(hasHydratedDraft\)[\s\S]*?\n {2}\}, \[[\s\S]*?\]\);/
+    );
+    expect(effect).not.toBeNull();
+    const effectBody = effect?.[0] ?? '';
+    expect(effectBody.indexOf('existingPattern.isError')).toBeLessThan(
+      effectBody.indexOf('!existingPattern.data')
+    );
+    // A retry that fails AGAIN must not re-strand the wizard: the retry
+    // handler leaves `step` on 'draft-error' and it is the hydrate SUCCESS
+    // path that hands control back to 'loading'.
+    expect(effectBody).toContain("setStep('loading')");
+  });
+
   it('D11 REGRESSION: onPatternCreated persists a freshly-created id into React state immediately, so a retry after partial failure resumes instead of orphaning a second draft', () => {
     // The bug: if `createPattern` succeeded but `replaceDays`/`sendPattern`
     // then failed, the created id never reached this component's

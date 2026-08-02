@@ -1,7 +1,7 @@
 import { Tabs } from 'expo-router';
 import { CalendarDays, Clock, Home, Settings } from 'lucide-react-native';
 import { useThemeColors } from '@/lib/design-tokens';
-import { SETUP_ROLES } from '@/src/domains/setup/types';
+import { canViewParentSchedule } from '@/src/domains/setup/types';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 
 /**
@@ -16,7 +16,7 @@ import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 export default function TabsLayout() {
   const colors = useThemeColors();
   const onboarding = useIsOnboarded();
-  const isParent = onboarding.role === SETUP_ROLES.PARENT;
+  const canViewSchedule = canViewParentSchedule(onboarding.role);
 
   return (
     <Tabs
@@ -39,7 +39,7 @@ export default function TabsLayout() {
           title: 'Schedule',
           // Parents only — see `PROJECT-STATUS`/team-lead brief: nannies get
           // their week via the Today card + Hours tab, not a Schedule tab.
-          href: isParent ? undefined : null,
+          href: canViewSchedule ? undefined : null,
           tabBarIcon: ({ color, size }) => (
             <CalendarDays color={color} size={size} />
           ),

@@ -46,8 +46,8 @@ describe('HoursScreen', () => {
     );
   });
 
-  it('forks nanny vs parent views by SETUP_ROLES.PARENT', () => {
-    expect(hoursScreenSource).toContain('SETUP_ROLES.PARENT');
+  it('forks nanny vs parent views by isParentEditorRole (covers co-parents)', () => {
+    expect(hoursScreenSource).toContain('isParentEditorRole');
     expect(hoursScreenSource).toContain('ParentWeekView');
     expect(hoursScreenSource).toContain('NannyWeekView');
   });

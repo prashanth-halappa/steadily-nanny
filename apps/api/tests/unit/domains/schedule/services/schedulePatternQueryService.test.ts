@@ -136,6 +136,34 @@ describe('SchedulePatternQueryService.getOwned', () => {
   });
 });
 
+describe('SchedulePatternQueryService.getDaysForPattern', () => {
+  it('assembles days with children WITHOUT any ownership/membership check', async () => {
+    const memberRepo = makeMemberRepo({
+      findActiveMembership: mock(async () => {
+        throw new Error('should never be called');
+      }),
+    });
+    const svc = new SchedulePatternQueryService(
+      makePatternRepo(),
+      makeDayRepo(),
+      makeDayChildRepo(),
+      memberRepo
+    );
+    const days = await svc.getDaysForPattern('p1');
+    expect(days).toHaveLength(1);
+    expect(days[0]?.children).toEqual([
+      {
+        id: 'c1',
+        pattern_day_id: 'd1',
+        child_id: 'child-1',
+        start_time: null,
+        end_time: null,
+        created_at: 't',
+      },
+    ]);
+  });
+});
+
 describe('SchedulePatternQueryService.getWithDays', () => {
   it('assembles the pattern with its days, each carrying its own children', async () => {
     const svc = new SchedulePatternQueryService(

@@ -13,6 +13,10 @@ import type {
   UserProfile,
   UserProfileRequest,
 } from '@steadily-nanny/shared-types';
+import {
+  type HouseholdMember,
+  HouseholdMemberListResponseSchema,
+} from '@steadily-nanny/shared-types/schemas/household.schema';
 import { z } from 'zod';
 import { apiClient } from '@/src/api/client';
 
@@ -26,6 +30,8 @@ export const userEndpoints = {
   updateProfile: '/v1/users/me',
   // API-CONTRACT: DELETE removes the caller's account and all associated data.
   deleteAccount: '/v1/users/me',
+  // API-CONTRACT: GET returns every active membership row for the caller.
+  listMemberships: '/v1/users/me/memberships',
 } as const;
 
 // --- Zod schemas ------------------------------------------------------------
@@ -186,5 +192,15 @@ export const userApi = {
     );
     if (!parsed.success) throw parsed.error;
     return parsed.data;
+  },
+
+  /** Every household membership row for the signed-in user. */
+  listMemberships: async (): Promise<HouseholdMember[]> => {
+    const response = await apiClient.get(userEndpoints.listMemberships);
+    const parsed = HouseholdMemberListResponseSchema.safeParse(
+      response.data.data
+    );
+    if (!parsed.success) throw parsed.error;
+    return parsed.data.household_members;
   },
 };

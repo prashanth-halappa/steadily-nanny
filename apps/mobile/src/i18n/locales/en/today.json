@@ -12,5 +12,19 @@
   "noteLabel": "Note (optional)",
   "notePlaceholder": "Anything worth noting about today?",
   "nannyLiveTitle": "Nanny on the clock",
-  "nannyLiveBody": "Clocked in at {{time}} — shift in progress"
+  "nannyLiveBody": "Clocked in at {{time}} — shift in progress",
+  "handoff": {
+    "chips": {
+      "slept_well": "Slept well",
+      "rough_night": "Rough night",
+      "ate_breakfast": "Ate breakfast",
+      "needs_early_pickup": "Needs early pickup",
+      "medication_given": "Medication given",
+      "ate_well": "Ate well",
+      "good_nap": "Good nap",
+      "happy_mood": "Happy mood",
+      "fussy": "Fussy",
+      "outdoor_play": "Outdoor play"
+    }
+  }
 }

@@ -217,12 +217,32 @@ const updateMock = mock((_id: string, input: unknown) =>
 const childrenListMock = mock(() =>
   Promise.resolve([{ id: 'child-1', name: 'Ada', age: 4 }])
 );
+const membershipsListMock = mock(() =>
+  Promise.resolve([
+    {
+      id: 'member-1',
+      household_id: HOUSEHOLD_ID,
+      user_id: PARENT_USER_ID,
+      role: 'owner',
+      can_edit: true,
+      status: 'active',
+      display_name_override: null,
+      colour: null,
+      joined_at: now,
+      created_at: now,
+      updated_at: now,
+    },
+  ])
+);
 
 mock.module('@/src/api/endpoints/household', () => ({
   householdApi: { list: listMock, update: updateMock },
 }));
 mock.module('@/src/api/endpoints/children', () => ({
   childrenApi: { list: childrenListMock },
+}));
+mock.module('@/src/api/endpoints/user', () => ({
+  userApi: { listMemberships: membershipsListMock },
 }));
 
 beforeAll(async () => {
@@ -234,12 +254,30 @@ beforeEach(() => {
   listMock.mockReset();
   updateMock.mockReset();
   childrenListMock.mockReset();
+  membershipsListMock.mockReset();
   listMock.mockImplementation(() => Promise.resolve([baseHousehold]));
   updateMock.mockImplementation((_id: string, input: unknown) =>
     Promise.resolve({ ...baseHousehold, ...(input as object) })
   );
   childrenListMock.mockImplementation(() =>
     Promise.resolve([{ id: 'child-1', name: 'Ada', age: 4 }])
+  );
+  membershipsListMock.mockImplementation(() =>
+    Promise.resolve([
+      {
+        id: 'member-1',
+        household_id: HOUSEHOLD_ID,
+        user_id: PARENT_USER_ID,
+        role: 'owner',
+        can_edit: true,
+        status: 'active',
+        display_name_override: null,
+        colour: null,
+        joined_at: now,
+        created_at: now,
+        updated_at: now,
+      },
+    ])
   );
   // Real Zustand store, same pattern as useIsOnboarded.test.ts /
   // ClockInCard.behavior.test.tsx — not mocked.

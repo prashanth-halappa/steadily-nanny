@@ -4,6 +4,14 @@
  * The first tab after setup, for both roles. Shows household context, the
  * nanny's clock-in card, and the entry points into the schedule.
  *
+ * Wave B: a nanny can be an accepted member of several households, so WHICH
+ * household's data this screen shows can no longer be `households.data?.[0]`
+ * — that always showed the same one regardless of which family the nanny
+ * actually wants right now. `useActiveHousehold` (not `useHouseholds`
+ * directly) resolves that choice; `HouseholdSwitcher` is the only UI for
+ * changing it, and renders nothing when there's nothing to switch between
+ * (one household, e.g. every parent).
+ *
  * `PendingScheduleCard` matters more than it looks: without it a nanny had no
  * way to reach `/schedule/respond/[patternId]` at all — the accept half of
  * "parent proposes, nanny accepts" was only reachable by hand-typing a deep
@@ -15,15 +23,18 @@ import { ChildChip } from '@/src/components/ui/child-chip';
 import { EmptyState } from '@/src/components/ui/empty-state';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { Body, H1 } from '@/src/components/ui/typography';
+import { HouseholdSwitcher } from '@/src/domains/household';
 import {
   PendingScheduleCard,
   ThisWeeksShiftsCard,
 } from '@/src/domains/schedule';
-import { SETUP_ROLES } from '@/src/domains/setup/types';
+import { canViewParentSchedule, SETUP_ROLES } from '@/src/domains/setup/types';
+import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
 import { useChildren } from '@/src/hooks/queries/useChildren';
-import { useHouseholds } from '@/src/hooks/queries/useHouseholds';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 import { ClockInCard } from './ClockInCard';
+import { CoverageGapBanner } from './CoverageGapBanner';
+import { HandoffChipsCard } from './HandoffChipsCard';
 import { NannyLiveStatusCard } from './NannyLiveStatusCard';
 
 export function TodayScreen() {
@@ -32,8 +43,8 @@ export function TodayScreen() {
   // household was seeded directly, or who signed in on a fresh device. See
   // useIsOnboarded's header comment.
   const onboarding = useIsOnboarded();
-  const households = useHouseholds();
-  const household = households.data?.[0] ?? null;
+  const activeHousehold = useActiveHousehold();
+  const household = activeHousehold.household;
   const children = useChildren(household?.id);
 
   return (
@@ -43,15 +54,16 @@ export function TodayScreen() {
     >
       <H1 testID="today-header">Today</H1>
 
-      {households.isLoading ? (
+      {activeHousehold.isLoading ? (
         <LoadingIndicator />
       ) : household ? (
         <View className="mt-2 gap-4">
+          <HouseholdSwitcher />
           <Body testID="today-household-name" className="text-muted-foreground">
             {household.name}
           </Body>
 
-          {onboarding.role === SETUP_ROLES.PARENT ? (
+          {canViewParentSchedule(onboarding.role) ? (
             <View className="flex-row flex-wrap gap-2" testID="today-children">
               {(children.data ?? []).map(child => (
                 <ChildChip
@@ -63,7 +75,7 @@ export function TodayScreen() {
             </View>
           ) : null}
 
-          {onboarding.role === SETUP_ROLES.PARENT ? (
+          {canViewParentSchedule(onboarding.role) ? (
             <NannyLiveStatusCard
               householdId={household.id}
               timeZone={household.timezone}
@@ -72,6 +84,19 @@ export function TodayScreen() {
 
           {onboarding.role === SETUP_ROLES.NANNY ? (
             <ClockInCard householdId={household.id} />
+          ) : null}
+
+          <CoverageGapBanner
+            householdId={household.id}
+            timeZone={household.timezone}
+          />
+
+          {onboarding.role ? (
+            <HandoffChipsCard
+              householdId={household.id}
+              timeZone={household.timezone}
+              role={onboarding.role}
+            />
           ) : null}
 
           {/* Renders nothing unless a week is genuinely waiting for this
@@ -85,7 +110,7 @@ export function TodayScreen() {
 
       {/* Only an honest empty state while there is no household at all. Once
           there is one, the cards above carry the schedule story. */}
-      {households.isLoading || household ? null : (
+      {activeHousehold.isLoading || household ? null : (
         <View className="mt-8">
           <EmptyState
             variant="inline"

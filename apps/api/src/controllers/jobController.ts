@@ -7,6 +7,7 @@
  * @module controllers/jobController
  */
 import { runExampleMaintenanceJob } from '../jobs/exampleMaintenanceJob';
+import { runScheduleHorizonJob } from '../jobs/scheduleHorizonJob';
 import { createTrackedJobHandler } from './jobHandlerFactory';
 
 export const JobController = {
@@ -15,5 +16,19 @@ export const JobController = {
     'example-maintenance',
     runExampleMaintenanceJob,
     'Example maintenance job completed'
+  ),
+
+  /** POST /api/jobs/schedule-horizon */
+  runScheduleHorizon: createTrackedJobHandler(
+    'schedule-horizon',
+    runScheduleHorizonJob,
+    'Schedule horizon job completed',
+    {
+      mapForJobRun: result => ({
+        totalProcessed: result.patternsProcessed,
+        successCount: result.successCount,
+        errorCount: result.errorCount,
+      }),
+    }
   ),
 };

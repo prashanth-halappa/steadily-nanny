@@ -42,11 +42,13 @@ import type {
   UpdateSchedulePatternInput,
 } from '../types';
 import { expandRecurrence } from './recurrenceExpander';
+import type { MaterialiseResult } from './scheduleMaterialisationService';
 import {
   type ScheduleMaterialisationService,
   scheduleMaterialisationService,
 } from './scheduleMaterialisationService';
 import {
+  type SchedulePatternDayWithChildren,
   type SchedulePatternQueryService,
   schedulePatternQueryService,
 } from './schedulePatternQueryService';
@@ -57,8 +59,14 @@ const WRITE_ROLES: ReadonlySet<string> = new Set([
 ]);
 const CARER_ROLES: ReadonlySet<string> = new Set([HOUSEHOLD_ROLES.NANNY]);
 
-/** How far ahead of "now" a pattern is materialised on acceptance, when it has no `until`. A later re-run (a scheduled job, not built here) would roll this window forward. */
-const DEFAULT_MATERIALISATION_HORIZON_DAYS = 84; // 12 weeks
+/**
+ * How far ahead of "now" a pattern is materialised — both on acceptance
+ * (`respond`, below) and on every re-run of the horizon-rolling job
+ * (`jobs/scheduleHorizonJob.ts`, which calls `materialiseForHorizon` for
+ * every already-accepted pattern so this window keeps rolling forward
+ * instead of freezing at whatever was materialised on acceptance day).
+ */
+export const DEFAULT_MATERIALISATION_HORIZON_DAYS = 84; // 12 weeks
 
 export class SchedulePatternCommandService {
   constructor(
@@ -239,10 +247,37 @@ export class SchedulePatternCommandService {
     pattern: SchedulePattern
   ): Promise<void> {
     const withDays = await this.queries.getWithDays(userId, pattern.id);
-    const horizonEnd = addDays(
-      new Date(),
+    await this.runMaterialisation(
+      pattern,
+      withDays.days,
       DEFAULT_MATERIALISATION_HORIZON_DAYS
     );
+  }
+
+  /**
+   * Re-materialise an already-accepted pattern out to a fresh horizon. This
+   * is the same logic `respond`'s accept branch runs (see
+   * `materialiseAccepted`, above) factored out so the horizon-rolling job
+   * (`jobs/scheduleHorizonJob.ts`) can call it for every accepted pattern —
+   * NOT scoped to one caller's own request, so no ownership check here: the
+   * job's own "every accepted pattern" listing (`SchedulePatternRepository.listAccepted`)
+   * is the trust boundary, exactly like `respond`'s prior carer check is for
+   * `materialiseAccepted`.
+   */
+  async materialiseForHorizon(
+    pattern: SchedulePattern,
+    horizonDays: number = DEFAULT_MATERIALISATION_HORIZON_DAYS
+  ): Promise<MaterialiseResult> {
+    const days = await this.queries.getDaysForPattern(pattern.id);
+    return this.runMaterialisation(pattern, days, horizonDays);
+  }
+
+  private async runMaterialisation(
+    pattern: SchedulePattern,
+    days: SchedulePatternDayWithChildren[],
+    horizonDays: number
+  ): Promise<MaterialiseResult> {
+    const horizonEnd = addDays(new Date(), horizonDays);
     const horizon =
       pattern.until && pattern.until < horizonEnd ? pattern.until : horizonEnd;
 
@@ -254,7 +289,7 @@ export class SchedulePatternCommandService {
         exdates: pattern.exdates,
         pauseRanges: pattern.pause_ranges,
         timezone: pattern.timezone,
-        days: withDays.days.map(day => ({
+        days: days.map(day => ({
           weekday: day.weekday,
           startTime: day.start_time,
           endTime: day.end_time,
@@ -268,7 +303,7 @@ export class SchedulePatternCommandService {
       horizon
     );
 
-    await this.materialisation.materialise(
+    return this.materialisation.materialise(
       {
         id: pattern.id,
         householdId: pattern.household_id,

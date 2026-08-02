@@ -9,12 +9,16 @@
  * @module domains/shift/types
  */
 export type {
+  CreateExtraShiftInput,
+  CreateShiftChangeRequestInput,
   DayThreadQuery,
   HouseholdIdParam,
   HouseholdShiftIdParam,
   ParentEditShiftInput,
+  RespondToShiftChangeRequestInput,
   Shift,
   ShiftChangeRequest,
+  ShiftChangeRequestListResponse,
   ShiftChild,
   ShiftEvent,
   ShiftEventListResponse,

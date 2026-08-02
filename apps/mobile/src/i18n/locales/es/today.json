@@ -12,5 +12,19 @@
   "noteLabel": "Nota (opcional)",
   "notePlaceholder": "¿Algo que anotar sobre hoy?",
   "nannyLiveTitle": "Niñera en horario",
-  "nannyLiveBody": "Entrada a las {{time}} — turno en curso"
+  "nannyLiveBody": "Entrada a las {{time}} — turno en curso",
+  "handoff": {
+    "chips": {
+      "slept_well": "Durmió bien",
+      "rough_night": "Noche difícil",
+      "ate_breakfast": "Desayunó",
+      "needs_early_pickup": "Necesita recogida temprana",
+      "medication_given": "Medicación administrada",
+      "ate_well": "Comió bien",
+      "good_nap": "Buena siesta",
+      "happy_mood": "De buen humor",
+      "fussy": "Irritable",
+      "outdoor_play": "Juego al aire libre"
+    }
+  }
 }

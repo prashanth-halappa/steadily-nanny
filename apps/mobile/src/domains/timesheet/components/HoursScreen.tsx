@@ -2,10 +2,10 @@
  * @module domains/timesheet/components/HoursScreen
  *
  * The Hours tab — role-aware. A nanny sees her own week's entries and
- * total; a parent sees the week for their carer plus Approve/Query. Role +
- * household come from `useIsOnboarded()` (server-derived), never a local
- * flag — see that hook's header comment for why that distinction is
- * ship-blocking. "Hours only — no payments here."
+ * total; a parent sees the week for their carer plus Approve/Query. Role
+ * comes from `useIsOnboarded()` (server-derived), never a local flag — see
+ * that hook's header comment for why that distinction is ship-blocking.
+ * "Hours only — no payments here."
  *
  * D15: week navigation lives HERE, not in the child views. `weekOffset` is a
  * small integer (0 = current week, -1 = last week, ...) rather than an
@@ -14,14 +14,24 @@
  * used to become unreachable the following Monday because nothing above
  * `WeekTotal` ever passed it the nav callbacks it already supported; both
  * role views receive the same offset state so neither role regresses.
+ *
+ * Wave B: the household shown here comes from `useActiveHousehold`, not
+ * `useIsOnboarded().householdId` — a nanny in multiple households needs the
+ * one she's currently switched to, and `useIsOnboarded` only ever resolves
+ * the FIRST membership it finds. Role (`onboarding.role`/`.status`) still
+ * comes from `useIsOnboarded` — that predicate is unaffected by which
+ * household is active.
  */
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ScrollView, View } from 'react-native';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { Body, H1 } from '@/src/components/ui/typography';
-import { SETUP_ROLES } from '@/src/domains/setup/types';
-import { useHouseholds } from '@/src/hooks/queries/useHouseholds';
+import {
+  canViewParentSchedule,
+  isParentEditorRole,
+} from '@/src/domains/setup/types';
+import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 import {
   addWeeks,
@@ -44,12 +54,11 @@ const MAX_WEEKS_BACK = 104;
 export function HoursScreen() {
   const { t } = useTranslation('settings');
   const onboarding = useIsOnboarded();
-  // `useIsOnboarded` already fetches households internally, so this is a
-  // cache hit, not a second request — needed here for `timezone`, which
-  // that hook doesn't expose.
-  const households = useHouseholds();
-  const household =
-    households.data?.find(h => h.id === onboarding.householdId) ?? null;
+  // `useActiveHousehold` already fetches households internally (a cache hit,
+  // not a second request) — this is the switcher-aware household, which for
+  // a nanny in multiple households may differ from `onboarding.householdId`.
+  const activeHousehold = useActiveHousehold();
+  const household = activeHousehold.household;
   // The week boundary is a HOUSEHOLD-timezone question, never the device's
   // — see utils/week.ts's header comment. Falls back to UTC only for the
   // brief window before the household has loaded (the loading branch below
@@ -91,7 +100,7 @@ export function HoursScreen() {
   const isNextWeekDisabled = weekOffset >= 0;
   const isPreviousWeekDisabled = weekOffset <= -MAX_WEEKS_BACK;
 
-  if (onboarding.status === 'loading') {
+  if (onboarding.status === 'loading' || activeHousehold.isLoading) {
     return (
       <View testID="hours-screen" className="flex-1 bg-background">
         <LoadingIndicator testID="hours-loading" />
@@ -99,7 +108,7 @@ export function HoursScreen() {
     );
   }
 
-  if (!onboarding.householdId || !onboarding.role) {
+  if (!activeHousehold.householdId || !onboarding.role) {
     return (
       <ScrollView
         testID="hours-screen"
@@ -121,9 +130,9 @@ export function HoursScreen() {
           {t('time.weekStartsHint')}
         </Body>
       </View>
-      {onboarding.role === SETUP_ROLES.PARENT ? (
+      {canViewParentSchedule(onboarding.role) ? (
         <ParentWeekView
-          householdId={onboarding.householdId}
+          householdId={activeHousehold.householdId}
           weekStartISO={weekStartISO}
           weekDates={weekDates}
           weekRangeLabel={weekRangeLabel}
@@ -132,10 +141,11 @@ export function HoursScreen() {
           onNextWeek={handleNextWeek}
           isNextWeekDisabled={isNextWeekDisabled}
           isPreviousWeekDisabled={isPreviousWeekDisabled}
+          readOnly={!isParentEditorRole(onboarding.role)}
         />
       ) : (
         <NannyWeekView
-          householdId={onboarding.householdId}
+          householdId={activeHousehold.householdId}
           weekStartISO={weekStartISO}
           weekDates={weekDates}
           weekRangeLabel={weekRangeLabel}

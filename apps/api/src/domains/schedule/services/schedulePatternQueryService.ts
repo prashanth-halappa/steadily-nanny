@@ -73,6 +73,22 @@ export class SchedulePatternQueryService {
     patternId: string
   ): Promise<SchedulePatternWithDays> {
     const pattern = await this.getOwned(userId, patternId);
+    const days = await this.getDaysForPattern(patternId);
+    return { ...pattern, days };
+  }
+
+  /**
+   * Days + per-day children for a pattern, WITHOUT the ownership check
+   * `getWithDays` wraps it in above. Exists for system callers that already
+   * trust their own pattern selection rather than a single user's request —
+   * currently `schedulePatternCommandService.materialiseForHorizon`, called
+   * by the horizon-rolling job (`jobs/scheduleHorizonJob.ts`) for every
+   * accepted pattern, not one caller's own. Never call this directly from a
+   * user-facing route.
+   */
+  async getDaysForPattern(
+    patternId: string
+  ): Promise<SchedulePatternDayWithChildren[]> {
     const days = await this.dayRepo.listForPattern(patternId);
     const children = await this.dayChildRepo.listForDays(
       days.map(day => day.id)
@@ -85,13 +101,10 @@ export class SchedulePatternQueryService {
       childrenByDay.set(child.pattern_day_id, existing);
     }
 
-    return {
-      ...pattern,
-      days: days.map(day => ({
-        ...day,
-        children: childrenByDay.get(day.id) ?? [],
-      })),
-    };
+    return days.map(day => ({
+      ...day,
+      children: childrenByDay.get(day.id) ?? [],
+    }));
   }
 
   /** Membership check shared by every household-scoped read above. */

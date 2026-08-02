@@ -15,17 +15,14 @@
  */
 import { z } from 'zod';
 
-// `ShiftChangeRequest` is re-exported below for the ONE thing that already
-// reads the table (`scheduleShiftRepository.hasChangeRequests`, the
-// re-materialisation guard). Its Create/Respond/List schema siblings are
-// deliberately NOT re-exported — flows 1d/1e are "not started" per
-// PROJECT-STATUS.md, so there is no repository/service/controller/route for
-// change requests at all; see `ParentEditShiftSchema` below and
-// `../services/shiftCommandService.ts`'s header for why. Also see
-// `supabase/migrations/015_shifts.sql`'s `shift_change_requests` section.
+// Re-export the shared change-request wire contract — flows 1d/1e are
+// implemented in `shiftChangeRequestCommandService` / routes below.
 export type {
+  CreateShiftChangeRequestInput,
+  RespondToShiftChangeRequestInput,
   Shift,
   ShiftChangeRequest,
+  ShiftChangeRequestListResponse,
   ShiftChild,
   ShiftEvent,
   ShiftEventListResponse,
@@ -35,9 +32,14 @@ export type {
   ShiftStatus,
 } from '@steadily-nanny/shared-types/schemas/shift.schema';
 export {
+  CreateShiftChangeRequestSchema,
+  RespondToShiftChangeRequestSchema,
   SHIFT_KINDS,
   SHIFT_ORIGINS,
   SHIFT_STATUSES,
+  ShiftChangeRequestIdParamSchema,
+  ShiftChangeRequestListResponseSchema,
+  ShiftChangeRequestSchema,
   ShiftEventListResponseSchema,
   ShiftEventSchema,
   ShiftIdParamSchema,
@@ -101,3 +103,24 @@ export const ParentEditShiftSchema = z
     { message: 'ends_at must be after starts_at', path: ['ends_at'] }
   );
 export type ParentEditShiftInput = z.infer<typeof ParentEditShiftSchema>;
+
+/**
+ * POST /households/:householdId/shifts/extra — parent proposes a one-off
+ * extra shift (flow 1d). Server sets `kind=extra`, `status=pending`,
+ * `origin=parent_proposed`.
+ */
+export const CreateExtraShiftSchema = z
+  .object({
+    starts_at: z.iso.datetime({ offset: true }),
+    ends_at: z.iso.datetime({ offset: true }),
+    timezone: z.string().min(1),
+    carer_id: z.uuid().optional(),
+    child_ids: z.array(z.uuid()).optional(),
+    note: z.string().optional(),
+    reason: z.string().optional(),
+  })
+  .refine(data => data.ends_at > data.starts_at, {
+    message: 'ends_at must be after starts_at',
+    path: ['ends_at'],
+  });
+export type CreateExtraShiftInput = z.infer<typeof CreateExtraShiftSchema>;

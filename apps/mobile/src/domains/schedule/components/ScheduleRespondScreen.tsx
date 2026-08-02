@@ -27,6 +27,13 @@
  * disabled through the brief window between the mutation resolving and
  * navigation actually completing. On success, Accept navigates away
  * entirely rather than leaving the nanny on stale UI with nothing to do.
+ *
+ * Wave B: the covered-children lookup (`useChildren`) is keyed off
+ * `pattern.data.household_id` — the pattern's OWN household, straight off
+ * the fetched record — not `useIsOnboarded().householdId`/the switcher's
+ * active household. This screen is reached by `patternId` alone, and the
+ * pattern always belongs to a specific household regardless of which one a
+ * nanny with several currently has selected.
  */
 import { type Href, useRouter } from 'expo-router';
 import { useRef, useState } from 'react';
@@ -53,7 +60,6 @@ import { Body, H1 } from '@/src/components/ui/typography';
 import { useRespondToSchedulePattern } from '@/src/hooks/mutations/useRespondToSchedulePattern';
 import { useAvailability } from '@/src/hooks/queries/useAvailability';
 import { useChildren } from '@/src/hooks/queries/useChildren';
-import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 import { useSchedulePattern } from '@/src/hooks/queries/useSchedulePattern';
 import { showSuccessToast } from '@/src/lib/toast';
 import {
@@ -72,11 +78,10 @@ export function ScheduleRespondScreen({
 }: ScheduleRespondScreenProps) {
   const { t } = useTranslation('schedule');
   const router = useRouter();
-  const onboarding = useIsOnboarded();
 
   const pattern = useSchedulePattern(patternId);
   const availability = useAvailability();
-  const children = useChildren(onboarding.householdId);
+  const children = useChildren(pattern.data?.household_id);
   const respond = useRespondToSchedulePattern(patternId);
 
   const hasRespondedRef = useRef(false);

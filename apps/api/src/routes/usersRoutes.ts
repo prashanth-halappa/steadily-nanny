@@ -16,6 +16,11 @@ import { asyncHandler } from '../utils/asyncHandler';
 const router = Router();
 
 router.get('/me', requireAuth, asyncHandler(UserController.getMe));
+router.get(
+  '/me/memberships',
+  requireAuth,
+  asyncHandler(UserController.listMemberships)
+);
 router.post(
   '/profile',
   ...authWithValidation(UpsertProfileSchema, 'body'),

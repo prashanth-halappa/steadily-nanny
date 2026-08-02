@@ -17,3 +17,21 @@ export class ChildNotFoundError extends NotFoundError {
     this.name = 'ChildNotFoundError';
   }
 }
+
+/**
+ * 404 — the commitment does not exist, or the caller is not an active
+ * member of the household it belongs to. The SAME error for both cases,
+ * mirroring `ChildNotFoundError` / `ShiftNotFoundError` — no existence leak
+ * to a caller who isn't a member. Used by the flat
+ * `/commitments/:commitmentId` routes, which carry no household id in the
+ * URL to check against (see `childCommitmentQueryService.getOwned`).
+ */
+export class ChildCommitmentNotFoundError extends NotFoundError {
+  constructor(commitmentId: string, metadata?: ErrorMetadata) {
+    super('Child commitment not found', 'CHILD_COMMITMENT_NOT_FOUND', {
+      commitmentId,
+      ...metadata,
+    });
+    this.name = 'ChildCommitmentNotFoundError';
+  }
+}

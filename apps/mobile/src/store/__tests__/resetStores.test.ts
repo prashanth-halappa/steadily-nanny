@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'bun:test';
 import { SETUP_STEPS } from '@/src/domains/setup/types';
+import { useActiveHouseholdStore } from '../activeHousehold';
 import { useNotificationStore } from '../notificationStore';
 import { resetUserScopedStores } from '../resetStores';
 import { useSetupProgressStore } from '../setupProgress';
@@ -7,6 +8,7 @@ import { useSetupProgressStore } from '../setupProgress';
 beforeEach(() => {
   useSetupProgressStore.getState().reset();
   useNotificationStore.getState().reset();
+  useActiveHouseholdStore.getState().reset();
 });
 
 describe('resetUserScopedStores', () => {
@@ -23,5 +25,13 @@ describe('resetUserScopedStores', () => {
     expect(useSetupProgressStore.getState().householdId).toBeNull();
     expect(useNotificationStore.getState().attempts).toBe(0);
     expect(useNotificationStore.getState().lastPromptAt).toBeNull();
+  });
+
+  it('resets the active-household preference (no stale household across accounts)', () => {
+    useActiveHouseholdStore.getState().setPreferredHouseholdId('household-1');
+
+    resetUserScopedStores();
+
+    expect(useActiveHouseholdStore.getState().preferredHouseholdId).toBeNull();
   });
 });

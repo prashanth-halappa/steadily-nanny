@@ -1,7 +1,13 @@
+import {
+  HOUSEHOLD_MEMBER_STATUSES,
+  HOUSEHOLD_ROLES,
+  type HouseholdMember,
+  type HouseholdRole,
+} from '@steadily-nanny/shared-types/schemas/household.schema';
 import { SETUP_ROLES, type SetupRole } from '@/src/domains/setup/types';
-import { useAuthStore } from '@/src/store/auth';
+import { useActiveHousehold } from './useActiveHousehold';
 import { useChildren } from './useChildren';
-import { useHouseholds } from './useHouseholds';
+import { useMyMemberships } from './useMyMemberships';
 
 export type OnboardingStatus = 'loading' | 'onboarded' | 'not-onboarded';
 
@@ -9,9 +15,42 @@ export interface OnboardingState {
   status: OnboardingStatus;
   /** Derived from server membership. Null while loading or genuinely unset. */
   role: SetupRole | null;
-  /** The relevant household id, if any — the one this user owns (parent) or
-   * belongs to (nanny). Null while loading or if none exists yet. */
+  /** The relevant household id for the resolved membership. Null while
+   * loading or if none exists yet. */
   householdId: string | null;
+}
+
+function membershipRoleToSetupRole(role: HouseholdRole): SetupRole | null {
+  if (role === HOUSEHOLD_ROLES.OWNER || role === HOUSEHOLD_ROLES.PARENT) {
+    return SETUP_ROLES.PARENT;
+  }
+  if (role === HOUSEHOLD_ROLES.NANNY) {
+    return SETUP_ROLES.NANNY;
+  }
+  if (role === HOUSEHOLD_ROLES.HELPER) {
+    return SETUP_ROLES.HELPER;
+  }
+  return null;
+}
+
+function isOnboardedForMembership(
+  membership: HouseholdMember,
+  childCount: number
+): boolean {
+  if (membership.status !== HOUSEHOLD_MEMBER_STATUSES.ACTIVE) {
+    return false;
+  }
+  if (membership.role === HOUSEHOLD_ROLES.OWNER) {
+    return childCount > 0;
+  }
+  if (
+    membership.role === HOUSEHOLD_ROLES.PARENT ||
+    membership.role === HOUSEHOLD_ROLES.NANNY ||
+    membership.role === HOUSEHOLD_ROLES.HELPER
+  ) {
+    return true;
+  }
+  return false;
 }
 
 /**
@@ -22,63 +61,71 @@ export interface OnboardingState {
  *
  * SERVER-DERIVED, not local MMKV. `setupProgress` (Zustand) tracks in-flight
  * wizard UI state ONLY (which step is currently showing) — it is NOT
- * consulted here on purpose. Local state doesn't survive sign-out/sign-in, a
- * reinstall, or a second device, and disagreeing with the server is exactly
- * what caused a returning, already-set-up parent to be stranded permanently
- * on the invite screen: `setupProgress` got wiped on re-sign-in, this hook
- * used to read `setupProgress.isComplete`, and the (also nulled) cached
- * household id meant downstream screens' effects never fired. See the
- * `SIGNED_IN` handler fix in `store/auth.ts` for the other half of that bug.
+ * consulted here on purpose.
  *
- * - Parent: onboarded once they own (created) a household with >= 1 child.
- * - Nanny: onboarded once she's an active member of >= 1 household she did
- *   NOT create — Wave 1 never lets anyone create more than one household or
- *   join one they created themselves, so `household.created_by === userId`
- *   is an exact, single-request stand-in for "is the owner/parent member"
- *   without a second round-trip to `/members`. Revisit if co-parents or
- *   multi-household ownership land.
+ * Role and onboarded status come from `GET /v1/users/me/memberships`, keyed
+ * to the active household when the switcher has one (`useActiveHousehold`),
+ * otherwise the first active membership:
+ *
+ * - Owner (SETUP_ROLES.PARENT): onboarded once the household has >= 1 child.
+ * - Co-parent (SETUP_ROLES.PARENT, membership role `parent`): onboarded on
+ *   membership alone — they join an existing family that already has kids.
+ * - Nanny: onboarded on an active nanny membership.
+ * - Helper (SETUP_ROLES.HELPER): onboarded on an active helper membership.
  *
  * TRI-STATE ON PURPOSE: callers MUST treat 'loading' as "don't route yet".
- * Collapsing it into `false` sends an already-onboarded user through the
- * role fork for one frame — the exact class of bug this replaces.
  */
 export function useIsOnboarded(): OnboardingState {
-  const session = useAuthStore(s => s.session);
-  const userId = session?.user?.id;
+  const membershipsQuery = useMyMemberships();
+  const activeHousehold = useActiveHousehold();
 
-  const households = useHouseholds();
-  const ownedHousehold = households.data?.find(h => h.created_by === userId);
-  const memberHousehold = households.data?.find(h => h.created_by !== userId);
+  const activeMemberships = (membershipsQuery.data ?? []).filter(
+    membership => membership.status === HOUSEHOLD_MEMBER_STATUSES.ACTIVE
+  );
 
-  const children = useChildren(ownedHousehold?.id);
+  const resolvedHouseholdId =
+    activeHousehold.householdId ?? activeMemberships[0]?.household_id ?? null;
 
-  if (households.isLoading) {
+  const membership =
+    (resolvedHouseholdId
+      ? activeMemberships.find(m => m.household_id === resolvedHouseholdId)
+      : undefined) ??
+    activeMemberships[0] ??
+    null;
+
+  const setupRole = membership
+    ? membershipRoleToSetupRole(membership.role)
+    : null;
+
+  const needsChildCount =
+    membership?.role === HOUSEHOLD_ROLES.OWNER && resolvedHouseholdId;
+
+  const children = useChildren(
+    needsChildCount ? resolvedHouseholdId : undefined
+  );
+
+  if (membershipsQuery.isLoading || activeHousehold.isLoading) {
     return { status: 'loading', role: null, householdId: null };
   }
 
-  if (ownedHousehold) {
-    if (children.isLoading) {
-      return {
-        status: 'loading',
-        role: SETUP_ROLES.PARENT,
-        householdId: ownedHousehold.id,
-      };
-    }
-    const hasChild = (children.data?.length ?? 0) > 0;
+  if (!membership || !setupRole) {
+    return { status: 'not-onboarded', role: null, householdId: null };
+  }
+
+  if (needsChildCount && children.isLoading) {
     return {
-      status: hasChild ? 'onboarded' : 'not-onboarded',
-      role: SETUP_ROLES.PARENT,
-      householdId: ownedHousehold.id,
+      status: 'loading',
+      role: setupRole,
+      householdId: resolvedHouseholdId,
     };
   }
 
-  if (memberHousehold) {
-    return {
-      status: 'onboarded',
-      role: SETUP_ROLES.NANNY,
-      householdId: memberHousehold.id,
-    };
-  }
+  const childCount = needsChildCount ? (children.data?.length ?? 0) : 0;
+  const onboarded = isOnboardedForMembership(membership, childCount);
 
-  return { status: 'not-onboarded', role: null, householdId: null };
+  return {
+    status: onboarded ? 'onboarded' : 'not-onboarded',
+    role: setupRole,
+    householdId: resolvedHouseholdId,
+  };
 }

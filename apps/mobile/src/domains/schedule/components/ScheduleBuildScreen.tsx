@@ -26,6 +26,30 @@
  * `isOutsideAvailability` from `../utils` rather than re-deriving the clash
  * logic here. Per the product rule (see that helper's own doc comment):
  * warn, never block — every day stays fully selectable regardless.
+ *
+ * DRAFT RESUME: an optional `patternId` prop (from the build route's
+ * `?patternId=` search param — see SchedulePendingScreen's "Continue
+ * building" CTA) resumes an existing draft instead of starting a fresh
+ * wizard. Two things make this safe:
+ *  1. `patternId` local state is seeded from the prop, so `sendScheduleWeek`
+ *     (whose `!patternId` check decides whether to call `createPattern`)
+ *     never creates a SECOND draft for a pattern that already exists.
+ *  2. Once the draft's days load (`useSchedulePattern`), `hydrateDraftPattern`
+ *     (`../utils` — a pure, independently-unit-tested function) derives the
+ *     carer/days/times/children/interval selections from them, so the
+ *     wizard resumes with the parent's prior progress rather than an empty
+ *     carer-picker step.
+ *  3. If that fetch FAILS, the wizard enters the 'draft-error' step instead
+ *     of sitting on the loading spinner forever (`hasHydratedDraft` never
+ *     flips on error, and the step-advance effect will not leave 'loading'
+ *     until it does). Two recoveries are offered: retry the fetch, or
+ *     abandon hydration and build the week by hand against the same draft.
+ *
+ * Wave B: `householdId` comes from `useActiveHousehold`, not
+ * `useIsOnboarded().householdId` — a parent (Wave 1: owns exactly one
+ * household) gets the identical id either way, but this keeps every
+ * data-fetching screen going through the one hook that's actually
+ * responsible for "which household".
  */
 import type { HouseholdMember } from '@steadily-nanny/shared-types/schemas/household.schema';
 import { type Href, useRouter } from 'expo-router';
@@ -46,14 +70,17 @@ import { SETUP_ROLES } from '@/src/domains/setup/types';
 import { useCreateSchedulePattern } from '@/src/hooks/mutations/useCreateSchedulePattern';
 import { useReplaceSchedulePatternDays } from '@/src/hooks/mutations/useReplaceSchedulePatternDays';
 import { useSendSchedulePattern } from '@/src/hooks/mutations/useSendSchedulePattern';
+import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
 import { useAvailabilityForCarer } from '@/src/hooks/queries/useAvailabilityForCarer';
 import { useChildren } from '@/src/hooks/queries/useChildren';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
+import { useSchedulePattern } from '@/src/hooks/queries/useSchedulePattern';
 import { useUserProfile } from '@/src/hooks/queries/useUserProfile';
 import { getWeekdayOrder } from '@/src/lib/weekdayOrder';
 import {
   buildWeeklyRrule,
   calculateWeekTotalHours,
+  hydrateDraftPattern,
   isOutsideAvailability,
   sendScheduleWeek,
   todayIsoDate,
@@ -62,6 +89,7 @@ import {
 
 type Step =
   | 'loading'
+  | 'draft-error'
   | 'no-carer'
   | 'carer'
   | 'days'
@@ -77,17 +105,26 @@ interface DayTime {
   end: string;
 }
 
-export function ScheduleBuildScreen() {
+interface ScheduleBuildScreenProps {
+  /** An existing draft pattern's id, e.g. from the build route's `?patternId=` search param — see this component's own header comment (DRAFT RESUME). */
+  patternId?: string;
+}
+
+export function ScheduleBuildScreen({
+  patternId: resumePatternId,
+}: ScheduleBuildScreenProps = {}) {
   const router = useRouter();
   const { t } = useTranslation('schedule');
   const { t: tCommon } = useTranslation('common');
   const onboarding = useIsOnboarded();
-  const householdId = onboarding.householdId;
+  const activeHousehold = useActiveHousehold();
+  const householdId = activeHousehold.householdId;
   const profile = useUserProfile();
   const displayOrder = getWeekdayOrder(profile.data?.week_starts_on);
 
   const carers = useHouseholdCarers(householdId);
   const children = useChildren(householdId);
+  const existingPattern = useSchedulePattern(resumePatternId);
 
   const [selectedCarerId, setSelectedCarerId] = useState<string | null>(null);
   // D25: fetched as soon as a carer is selected (before the 'hours' step is
@@ -99,28 +136,93 @@ export function ScheduleBuildScreen() {
   const [dayChildren, setDayChildren] = useState<Record<number, string[]>>({});
   const [intervalWeeks, setIntervalWeeks] = useState<1 | 2>(1);
   const [step, setStep] = useState<Step>('loading');
-  const [patternId, setPatternId] = useState<string | undefined>(undefined);
+  // Seeded from `resumePatternId` (never left undefined when resuming) so
+  // `sendScheduleWeek`'s `!patternId` check never fires for this draft —
+  // see the header comment's DRAFT RESUME point 1.
+  const [patternId, setPatternId] = useState<string | undefined>(
+    resumePatternId
+  );
   const [isSending, setIsSending] = useState(false);
+  const [hasHydratedDraft, setHasHydratedDraft] = useState(!resumePatternId);
 
   const createPattern = useCreateSchedulePattern(householdId ?? undefined);
   const replaceDays = useReplaceSchedulePatternDays();
   const sendPattern = useSendSchedulePattern();
 
-  // Advance out of 'loading' once carers have resolved. A single carer is
-  // auto-selected and skips the carer-picker step entirely (the common case
-  // — one nanny per household in this wave).
+  // Resume: once the existing draft's days have loaded, derive this
+  // screen's local selections from them (point 2 of the header comment's
+  // DRAFT RESUME section) — runs at most once, guarded by `hasHydratedDraft`
+  // so a background refetch of the same query never stomps on edits the
+  // parent makes afterwards.
+  //
+  // The error branch is not optional: `hasHydratedDraft` starts `false`
+  // whenever `resumePatternId` is set, and the step-advance effect below
+  // refuses to leave 'loading' until it flips — so a failed
+  // `useSchedulePattern` fetch used to strand the screen on a spinner with
+  // no retry and no way out. A retry deliberately STAYS on 'draft-error'
+  // (its progress shows through `isFetching`); it is this effect's success
+  // path that hands the wizard back to 'loading' for the advance effect
+  // below to pick up, so a retry that fails again can never re-strand.
+  useEffect(() => {
+    if (hasHydratedDraft) return;
+    if (existingPattern.isError) {
+      setStep('draft-error');
+      return;
+    }
+    if (!existingPattern.data) return;
+    const hydrated = hydrateDraftPattern(existingPattern.data);
+    if (hydrated.carerId) setSelectedCarerId(hydrated.carerId);
+    if (hydrated.selectedDays.length > 0) {
+      setSelectedDays(hydrated.selectedDays);
+      setDayTimes(prev => ({ ...prev, ...hydrated.dayTimes }));
+      setDayChildren(prev => ({ ...prev, ...hydrated.dayChildren }));
+    }
+    setIntervalWeeks(hydrated.intervalWeeks);
+    setStep('loading');
+    setHasHydratedDraft(true);
+  }, [hasHydratedDraft, existingPattern.data, existingPattern.isError]);
+
+  /** 'draft-error' recovery A: refetch the draft and re-enter the wizard. */
+  const retryDraftLoad = () => {
+    void existingPattern.refetch();
+  };
+
+  /** 'draft-error' recovery B: abandon hydration and build the week by hand.
+   * `patternId` still points at the existing draft, so sending updates that
+   * draft rather than orphaning a second one. */
+  const startFreshFromDraftError = () => {
+    setHasHydratedDraft(true);
+    setStep('loading');
+  };
+
+  // Advance out of 'loading' once carers (and, when resuming, the draft's
+  // own days) have resolved. A single carer is auto-selected and skips the
+  // carer-picker step entirely (the common case — one nanny per household
+  // in this wave); resuming a draft that already has a carer AND days skips
+  // straight to 'review' instead.
   useEffect(() => {
     if (step !== 'loading' || carers.isLoading) return;
+    if (resumePatternId && !hasHydratedDraft) return;
     const rows = carers.data ?? [];
     if (rows.length === 0) {
       setStep('no-carer');
+    } else if (selectedCarerId) {
+      setStep(selectedDays.length > 0 ? 'review' : 'days');
     } else if (rows.length === 1) {
       setSelectedCarerId(rows[0]?.user_id ?? null);
       setStep('days');
     } else {
       setStep('carer');
     }
-  }, [step, carers.isLoading, carers.data]);
+  }, [
+    step,
+    carers.isLoading,
+    carers.data,
+    resumePatternId,
+    hasHydratedDraft,
+    selectedCarerId,
+    selectedDays.length,
+  ]);
 
   // New days default to 09:00-17:00, covering every current child — synced
   // whenever the selection changes rather than re-derived at send time.
@@ -234,7 +336,11 @@ export function ScheduleBuildScreen() {
     }
   };
 
-  if (onboarding.status === 'loading' || step === 'loading') {
+  if (
+    onboarding.status === 'loading' ||
+    activeHousehold.isLoading ||
+    step === 'loading'
+  ) {
     return (
       <View
         testID="schedule-build-screen"
@@ -252,6 +358,21 @@ export function ScheduleBuildScreen() {
 
   return (
     <View testID="schedule-build-screen" style={{ flex: 1 }}>
+      {step === 'draft-error' ? (
+        <SetupScreenShell
+          testID="schedule-build-draft-error"
+          title={t('build.draftErrorTitle')}
+          subtitle={t('build.draftErrorBody')}
+          ctaLabel={t('build.draftErrorRetry')}
+          ctaDisabled={existingPattern.isFetching}
+          onCta={retryDraftLoad}
+          onSkip={startFreshFromDraftError}
+          skipLabel={t('build.draftErrorStartFresh')}
+          onBack={cancelWizard}
+          backLabel={tCommon('back')}
+        />
+      ) : null}
+
       {step === 'no-carer' ? (
         <SetupScreenShell
           testID="schedule-build-no-carer"

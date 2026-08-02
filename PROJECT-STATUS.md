@@ -134,22 +134,71 @@ things an adversarial pass caught. §4g is the more current picture.
 
 | Flow | What it is | Status | Files |
 |---|---|---|---|
-| 1a | Welcome / sign-in / role fork / children / invite | **done** | `src/app/onboarding/*`, `src/domains/setup/` |
+| 1a | Welcome / sign-in / role fork / children / invite | **done** | `src/app/onboarding/*`, `src/domains/setup/` (invite role picker: nanny/parent/helper) |
 | 1b | Nanny code → preview → redeem → availability | **done** | `src/domains/setup/`, `apps/api/src/domains/{household,availability}` |
-| 1c | Weekly schedule: propose → send → accept | **done** | `apps/api/src/domains/schedule/`, `src/domains/schedule/` |
+| 1c | Weekly schedule: propose → send → accept | **done** | `apps/api/src/domains/schedule/`, `src/domains/schedule/` (draft resume via `?patternId=`) |
+| 1d | One-off extra shift (ask/accept/decline/counter) | **done** | `shiftChangeRequest*` API + `changeRequests` mobile; ShiftDetailScreen counter/cancel |
+| 1e | Short notice change/cancel/swap | **done** | same change-request path; short-notice + cancellation_paid applied on accept |
+| 1f | Two-parent sync & approval | **done** (one gap — see below) | `approvalGateService` + `approvalApplierRegistry`, `co_parent_approvals`, `GET /users/me/memberships`, membership-based `useIsOnboarded` |
+| 1g | Per-child coverage & gaps | **done** | `child_commitments` CRUD, `CoverageGapService` (raised from the day-thread read), ManageCommitmentsSection, CoverageGapBanner |
 | 1h | Clock in/out → hours → weekly approval | **done** | `apps/api/src/domains/timesheet/`, `src/domains/timesheet/`, `src/domains/today/ClockInCard` |
-| 1d | One-off extra shift (ask/accept/decline/counter) | not started | — |
-| 1e | Short notice change/cancel/swap | not started | — |
-| 1f | Two-parent sync & approval | not started | — |
-| 1g | Per-child coverage & gaps | not started | — |
-| 1h | Clock in/out → hours → timesheet | not started | — |
-| 1i | Daily handoff notes | not started | — |
-| 1j | Time off, holidays & availability | not started | — |
-| 1k | Notifications & reminders | not started | — |
-| 2a | Agenda list calendar view | not started | — |
-| 2b | Week ribbon calendar view | not started | — |
-| 2c | Coverage lanes calendar view | not started | — |
-| 2d | Nanny cross-family rhythm view | not started | — |
+| 1i | Daily handoff notes | **done** | `handoff` API domain + `HandoffChipsCard` (no AI/voice) |
+| 1j | Time off, holidays & availability | **done** | existing time-off + availability; horizon job rolls materialisation |
+| 1k | Notifications & reminders | deferred | push/email/SMS delivery deliberately out of scope; template Expo plumbing untouched |
+| 2a | Agenda list calendar view | **done** | `AgendaView` / ScheduleShiftsScreen + CalendarViewSwitcher |
+| 2b | Week ribbon calendar view | **done** | `WeekRibbonView` |
+| 2c | Coverage lanes calendar view | **done** | `CoverageLanesView` |
+| 2d | Nanny cross-family rhythm view | **done** | `CrossFamilyRhythmView` (non-active households labelled "Other family") |
+
+Multi-household: `useActiveHousehold` + `HouseholdSwitcher`. Materialisation horizon: `POST /api/jobs/schedule-horizon`.
+
+#### Wave 5 review — what the sweep found, and what is still open
+
+The table above was written from happy-path runs. An adversarial review before
+commit found sixteen real defects in this wave; the ones that made an
+advertised flow non-functional are fixed and covered by tests:
+
+- **1f was wired but inert.** The gate parked the mutation on the approval row
+  and nothing ever picked it back up, so approving flipped a status and changed
+  nothing. Added `approvalApplierRegistry` (the shift domain registers appliers;
+  household can't import shift without an import cycle). Also: the requester
+  could approve their OWN request — now `SelfApprovalNotAllowedError` — and the
+  nightly expiry called a module and method that never existed, so timeouts only
+  ever fired for a household whose parent happened to open the approvals screen.
+- **1g never ran.** `CoverageGapService` was complete and unit-tested with no
+  production caller. Now raised (best-effort, de-duplicated) from the day-thread
+  read.
+- **Invite wizard minted every code as `nanny`** regardless of the role picked,
+  so invitees landed with wrong permissions and no error anywhere.
+- **Handoff chips** stored English display labels as the row value (localizing
+  later would have orphaned every saved note — now stable snake_case keys),
+  cleared themselves on app foreground, and 403'd for a second carer.
+- Also fixed: unbounded duplicate `pattern_conflict` events, change requests
+  mutating completed/paid shifts, overnight+sub-hour shifts invisible in the
+  week ribbon, overnight counter-offers impossible, cross-family view fetching a
+  different fortnight than it rendered, and a permanent spinner on draft-resume
+  fetch failure.
+
+**Still open, deliberately:**
+
+- `createExtraShift` does not consult the approval gate, so an extra shift skips
+  co-parent sign-off when `approval_scope='all'` (not the default). Fixing it
+  changes that endpoint's response to the `pending_approval` union and needs a
+  matching mobile change.
+- `shift_change_requests` has ONE `message` column, so a responder's message
+  overwrites the requester's. The clean fix is a separate `response_message`
+  column — a migration this wave didn't take.
+- Concurrent change requests on one shift are never marked `superseded` (the
+  status exists in the enum and the 015 check constraint but is never written),
+  so accepting an older pending request can silently overwrite a newer accepted
+  one.
+- `shift_events` de-duplication is caller-side with no unique constraint, so two
+  concurrent day-thread reads of the same date can both insert. Pre-existing,
+  but a read path now hits it more often than a nightly job did.
+- Several new components render hardcoded English and two render raw DB enums
+  as UI text (`ShiftDetailScreen` shows `counter_offer`;
+  `ManageCommitmentsSection` shows `preschool`). No `commitments` or `handoff`
+  namespace exists. en/es are otherwise at exact parity.
 
 ## 4. Wave 0 (foundation) — what is done
 

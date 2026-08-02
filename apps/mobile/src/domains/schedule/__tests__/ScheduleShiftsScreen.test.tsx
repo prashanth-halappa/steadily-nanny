@@ -8,7 +8,7 @@
  * yet" state (not a crash, not a generic error screen) when
  * `isShiftsRouteUnavailable(error)` is true.
  *
- * `useShiftsRange` / `useIsOnboarded` / `isShiftsRouteUnavailable` are
+ * `useShiftsRange` / `useActiveHousehold` / `isShiftsRouteUnavailable` are
  * mocked via `mock.module()` in `beforeAll`, BEFORE the dynamic import of
  * the component under test, per docs/09-TESTING.md's service-test
  * boilerplate (mock.module must be registered before the module that
@@ -32,7 +32,7 @@ mock.module('@/src/components/ui/loading-indicator', () => {
 
 let ScheduleShiftsScreen: typeof import('../components/ScheduleShiftsScreen').ScheduleShiftsScreen;
 let mockUseShiftsRange: ReturnType<typeof mock>;
-let mockUseIsOnboarded: ReturnType<typeof mock>;
+let mockUseActiveHousehold: ReturnType<typeof mock>;
 let mockIsShiftsRouteUnavailable: ReturnType<typeof mock>;
 
 const HOUSEHOLD_ID = '11111111-1111-4111-8111-111111111111';
@@ -73,10 +73,12 @@ beforeAll(async () => {
     isError: false,
     error: null,
   }));
-  mockUseIsOnboarded = mock(() => ({
-    status: 'onboarded',
-    role: 'parent',
+  mockUseActiveHousehold = mock(() => ({
+    household: { id: HOUSEHOLD_ID },
     householdId: HOUSEHOLD_ID,
+    households: [{ id: HOUSEHOLD_ID }],
+    setActiveHouseholdId: mock(),
+    isLoading: false,
   }));
   mockIsShiftsRouteUnavailable = mock(() => false);
 
@@ -84,8 +86,8 @@ beforeAll(async () => {
     useShiftsRange: mockUseShiftsRange,
     isShiftsRouteUnavailable: mockIsShiftsRouteUnavailable,
   }));
-  mock.module('@/src/hooks/queries/useIsOnboarded', () => ({
-    useIsOnboarded: mockUseIsOnboarded,
+  mock.module('@/src/hooks/queries/useActiveHousehold', () => ({
+    useActiveHousehold: mockUseActiveHousehold,
   }));
   mock.module('@/src/hooks/queries/useUserProfile', () => ({
     useUserProfile: mock(() => ({
@@ -93,12 +95,28 @@ beforeAll(async () => {
       isLoading: false,
     })),
   }));
+  mock.module('@/src/hooks/queries/useChildren', () => ({
+    useChildren: mock(() => ({ data: [], isLoading: false })),
+  }));
+  mock.module('@/src/hooks/queries/useIsOnboarded', () => ({
+    useIsOnboarded: mock(() => ({ role: 'parent', status: 'onboarded' })),
+  }));
 
   const mod = await import('../components/ScheduleShiftsScreen');
   ScheduleShiftsScreen = mod.ScheduleShiftsScreen;
 });
 
 describe('ScheduleShiftsScreen', () => {
+  it('fetches shifts for the ACTIVE household, not a hardcoded/first one (Wave B)', () => {
+    render(<ScheduleShiftsScreen />);
+
+    expect(mockUseShiftsRange).toHaveBeenCalledWith(
+      HOUSEHOLD_ID,
+      expect.any(String),
+      expect.any(String)
+    );
+  });
+
   it('renders shifts grouped/listed with the right count when useShiftsRange returns data', () => {
     const shifts = [
       makeShift({ id: 'shift-mon', local_date: '2026-08-03' }),
@@ -118,6 +136,7 @@ describe('ScheduleShiftsScreen', () => {
     const { getByTestId, queryByTestId } = render(<ScheduleShiftsScreen />);
 
     expect(getByTestId('schedule-shifts-screen')).toBeTruthy();
+    expect(getByTestId('calendar-view-switcher')).toBeTruthy();
     expect(getByTestId('schedule-shifts-list')).toBeTruthy();
     expect(getByTestId('schedule-shift-shift-mon')).toBeTruthy();
     expect(getByTestId('schedule-shift-status-shift-mon')).toBeTruthy();
@@ -179,10 +198,12 @@ describe('ScheduleShiftsScreen', () => {
   });
 
   it('does not crash and still renders the screen root while onboarding/household resolution is loading', () => {
-    mockUseIsOnboarded.mockImplementationOnce(() => ({
-      status: 'loading',
-      role: null,
+    mockUseActiveHousehold.mockImplementationOnce(() => ({
+      household: null,
       householdId: null,
+      households: [],
+      setActiveHouseholdId: mock(),
+      isLoading: true,
     }));
     mockUseShiftsRange.mockImplementation(() => ({
       data: undefined,

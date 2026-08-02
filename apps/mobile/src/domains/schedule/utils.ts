@@ -159,6 +159,63 @@ export function timeToMinutes(value: string): number | null {
   return hours * 60 + minutes;
 }
 
+/** Parses the `INTERVAL=` component of a weekly RRULE built by `buildWeeklyRrule` — the inverse of that function's `intervalWeeks` argument. Defaults to 1 (every week) for anything else, so a malformed or missing INTERVAL never reads as fortnightly. */
+export function parseWeeklyRruleInterval(rrule: string): 1 | 2 {
+  return /(?:^|;)INTERVAL=2(?:;|$)/.test(rrule) ? 2 : 1;
+}
+
+export interface DraftPatternDayForHydration {
+  weekday: number;
+  start_time: string;
+  end_time: string;
+  children: { child_id: string }[];
+}
+
+/** The subset of `SchedulePatternWithDays` (`api/endpoints/schedulePatterns.ts`) resuming a draft needs — kept minimal and dependency-free rather than importing the full wire type into this pure-utils module. */
+export interface DraftPatternForHydration {
+  carer_id: string | null;
+  rrule: string;
+  days: DraftPatternDayForHydration[];
+}
+
+export interface HydratedDraftState {
+  carerId: string | null;
+  selectedDays: number[];
+  dayTimes: Record<number, { start: string; end: string }>;
+  dayChildren: Record<number, string[]>;
+  intervalWeeks: 1 | 2;
+}
+
+/**
+ * Derives ScheduleBuildScreen's local wizard state (carer, selected days,
+ * per-day times/children, repeat interval) from an existing DRAFT pattern's
+ * already-saved days. Used to resume a draft — see SchedulePendingScreen's
+ * "Continue building" CTA, which now passes `?patternId=` — rather than
+ * starting the wizard from scratch, which used to both discard the parent's
+ * prior progress AND (via `sendScheduleWeek`'s `!patternId` branch) create
+ * a SECOND, orphaned draft pattern on send.
+ */
+export function hydrateDraftPattern(
+  pattern: DraftPatternForHydration
+): HydratedDraftState {
+  const selectedDays = pattern.days
+    .map(day => day.weekday)
+    .sort((a, b) => a - b);
+  const dayTimes: Record<number, { start: string; end: string }> = {};
+  const dayChildren: Record<number, string[]> = {};
+  for (const day of pattern.days) {
+    dayTimes[day.weekday] = { start: day.start_time, end: day.end_time };
+    dayChildren[day.weekday] = day.children.map(child => child.child_id);
+  }
+  return {
+    carerId: pattern.carer_id,
+    selectedDays,
+    dayTimes,
+    dayChildren,
+    intervalWeeks: parseWeeklyRruleInterval(pattern.rrule),
+  };
+}
+
 /** Formats a Date as a "YYYY-MM-DD" calendar date (local components, no TZ math). */
 export function todayIsoDate(date: Date = new Date()): string {
   const yyyy = date.getFullYear();

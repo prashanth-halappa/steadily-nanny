@@ -35,6 +35,7 @@ describe('SettingsScreen', () => {
     expect(screenSource).toContain('useIsOnboarded');
     expect(screenSource).toContain('SETUP_ROLES.PARENT');
     expect(screenSource).toContain('SETUP_ROLES.NANNY');
+    expect(screenSource).toContain('SETUP_ROLES.HELPER');
   });
 
   it('wires a parent path to manage children and invite another nanny', () => {

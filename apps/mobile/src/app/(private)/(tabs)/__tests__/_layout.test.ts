@@ -32,9 +32,10 @@ describe('TabsLayout', () => {
     expect(layoutSource).toContain('name="settings"');
   });
 
-  it('hides the Schedule tab for non-parents via href: null rather than unmounting it', () => {
+  it('hides the Schedule tab for non-parent viewers via href: null rather than unmounting it', () => {
+    expect(layoutSource).toContain('canViewParentSchedule');
     expect(layoutSource).toMatch(
-      /href:\s*isParent\s*\?\s*undefined\s*:\s*null/
+      /href:\s*canViewSchedule\s*\?\s*undefined\s*:\s*null/
     );
   });
 });

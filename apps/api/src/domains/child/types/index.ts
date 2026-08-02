@@ -10,7 +10,11 @@
  */
 export type {
   Child,
+  ChildCommitment,
+  ChildCommitmentListResponse,
   ChildListResponse,
+  CreateChildCommitmentInput,
   CreateChildInput,
+  UpdateChildCommitmentInput,
   UpdateChildInput,
 } from '../schemas';

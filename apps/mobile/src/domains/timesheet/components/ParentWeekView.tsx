@@ -40,6 +40,8 @@ interface ParentWeekViewProps {
   onNextWeek: () => void;
   isNextWeekDisabled: boolean;
   isPreviousWeekDisabled: boolean;
+  /** Hide approve/query actions — helpers see the parent view read-only. */
+  readOnly?: boolean;
 }
 
 export function ParentWeekView({
@@ -52,6 +54,7 @@ export function ParentWeekView({
   onNextWeek,
   isNextWeekDisabled,
   isPreviousWeekDisabled,
+  readOnly = false,
 }: ParentWeekViewProps) {
   const { t } = useTranslation('hours');
   const entriesQuery = useWeekTimeEntries(householdId, weekStartISO);
@@ -146,23 +149,27 @@ export function ParentWeekView({
                 {t('queriedWithNote', { note: timesheet.query_note })}
               </Body>
             ) : null}
-            <Button
-              testID="hours-approve-button"
-              className="mt-6"
-              disabled={!isActionable || approveTimesheet.isPending}
-              onPress={() => void handleApprove()}
-            >
-              <Text>{isApproved ? t('approved') : t('approveWeek')}</Text>
-            </Button>
-            <Button
-              testID="hours-query-button"
-              variant="ghost"
-              className="mt-2"
-              disabled={!isActionable}
-              onPress={() => setIsQuerySheetVisible(true)}
-            >
-              <Text className="text-destructive">{t('query')}</Text>
-            </Button>
+            {readOnly ? null : (
+              <>
+                <Button
+                  testID="hours-approve-button"
+                  className="mt-6"
+                  disabled={!isActionable || approveTimesheet.isPending}
+                  onPress={() => void handleApprove()}
+                >
+                  <Text>{isApproved ? t('approved') : t('approveWeek')}</Text>
+                </Button>
+                <Button
+                  testID="hours-query-button"
+                  variant="ghost"
+                  className="mt-2"
+                  disabled={!isActionable}
+                  onPress={() => setIsQuerySheetVisible(true)}
+                >
+                  <Text className="text-destructive">{t('query')}</Text>
+                </Button>
+              </>
+            )}
           </>
         }
         contentContainerStyle={{ padding: 24, paddingBottom: 100 }}

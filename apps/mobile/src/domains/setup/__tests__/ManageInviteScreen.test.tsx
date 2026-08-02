@@ -40,6 +40,12 @@ describe('ManageInviteScreen', () => {
     expect(source).not.toContain('useSetupProgressStore');
   });
 
+  it('shows a role picker and passes the selected role to createInvite', () => {
+    expect(source).toContain('InviteRolePicker');
+    expect(source).toContain('selectedRole');
+    expect(source).toContain('createInvite.mutate({ role: selectedRole })');
+  });
+
   it('returns the parent to where they came from, never forward through the wizard', () => {
     expect(source).toContain('router.back()');
   });

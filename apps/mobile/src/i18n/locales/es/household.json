@@ -1,4 +1,8 @@
 {
+  "switcher": {
+    "triggerLabel": "Cambiar de hogar",
+    "sheetTitle": "Elige un hogar"
+  },
   "children": {
     "wizardTitle": "¿Quiénes son los niños?",
     "wizardSubtitle": "Añade cada niño para que tu niñera sepa a quién está cuidando.",
@@ -34,7 +38,21 @@
     "shareButton": "Compartir código",
     "shareMessage": "Únete a nuestro hogar en Steadily Nanny — usa el código de invitación {{code}} al iniciar sesión.",
     "errorTitle": "No se pudo generar un código de invitación.",
-    "retryButton": "Intentar de nuevo"
+    "retryButton": "Intentar de nuevo",
+    "roles": {
+      "nanny": {
+        "title": "Niñera",
+        "description": "Puede fichar, ver sus turnos y enviar horas."
+      },
+      "parent": {
+        "title": "Co-padre/madre",
+        "description": "Puede ver el horario y aprobar horas — se une a tu hogar existente."
+      },
+      "helper": {
+        "title": "Ayudante",
+        "description": "Puede ver el horario y las horas — solo lectura, sin editar."
+      }
+    }
   },
   "availability": {
     "wizardTitle": "¿Cuándo estás disponible?",

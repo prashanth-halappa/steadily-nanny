@@ -24,6 +24,18 @@
  * Consistent with the product rule throughout: conflicts warn, they never
  * block.
  *
+ * PATTERN_CONFLICT EVENTS ARE RAISED AT MOST ONCE per (pattern, shift,
+ * local_date). `isManuallyTouched` is true for any shift with a
+ * `shift_change_requests` row — including withdrawn/declined ones — and the
+ * horizon job re-expands every pattern from `dtstart` on every run, so a
+ * plain append would add an identical `pattern_conflict` row to the
+ * append-only `shift_events` table every night, forever. The conflict is
+ * therefore written through the shift domain's idempotent bulk-append pair
+ * (`ShiftEventRepository.listEventKeysForDate` + `insertMany`, the same
+ * mechanism `coverageGapService.raiseGapsOnce` uses) keyed on
+ * `payload.key`. The in-memory `result.conflicts` warning is still returned
+ * on every run — only the persisted day-thread row is de-duplicated.
+ *
  * The time_entries check is injected as a narrow `TimeEntryExistenceRepository`
  * (defaulting to the timesheet domain's `TimeEntryRepository`) rather than
  * added to `MaterialisationShiftRepository` — `time_entries` isn't a shift
@@ -36,11 +48,16 @@
  * @module domains/schedule/services/scheduleMaterialisationService
  */
 import type { Shift } from '@steadily-nanny/shared-types/schemas/shift.schema';
+// Import the repository files DIRECTLY — never a domain barrel — so this
+// service never pulls another domain's service graph in behind them.
+import {
+  type NewShiftEventInput,
+  ShiftEventRepository,
+} from '../../shift/repositories/shiftEventRepository';
 import { TimeEntryRepository } from '../../timesheet/repositories/timeEntryRepository';
 import {
   type NewShiftChildData,
   type NewShiftData,
-  type NewShiftEventData,
   ScheduleShiftRepository,
 } from '../repositories/scheduleShiftRepository';
 import type { ExpandedOccurrence } from './recurrenceExpander';
@@ -89,7 +106,6 @@ export interface MaterialisationShiftRepository {
     shiftId: string,
     children: NewShiftChildData[]
   ): Promise<void>;
-  insertEvent(data: NewShiftEventData): Promise<void>;
 }
 
 /** The narrow contract this service needs to ask "has anyone clocked into this shift?" — see the module doc for why this isn't folded into `MaterialisationShiftRepository`. */
@@ -97,10 +113,22 @@ export interface TimeEntryExistenceRepository {
   hasTimeEntries(shiftId: string): Promise<boolean>;
 }
 
+/** The idempotent bulk-append pair this service raises `pattern_conflict` through — see `ShiftEventRepository`. */
+export interface ConflictEventRepository {
+  listEventKeysForDate(
+    householdId: string,
+    localDate: string,
+    eventType: string
+  ): Promise<Set<string>>;
+  insertMany(events: NewShiftEventInput[]): Promise<void>;
+}
+
 const NEVER_TOUCH_STATUSES: ReadonlySet<Shift['status']> = new Set([
   'completed',
   'cancelled',
 ]);
+
+const PATTERN_CONFLICT = 'pattern_conflict';
 
 /** Deterministic per-occurrence UID: stable across re-materialisations of the same pattern+date. */
 export function deriveOccurrenceIcalUid(
@@ -113,7 +141,8 @@ export function deriveOccurrenceIcalUid(
 export class ScheduleMaterialisationService {
   constructor(
     private readonly shiftRepo: MaterialisationShiftRepository = new ScheduleShiftRepository(),
-    private readonly timeEntryRepo: TimeEntryExistenceRepository = new TimeEntryRepository()
+    private readonly timeEntryRepo: TimeEntryExistenceRepository = new TimeEntryRepository(),
+    private readonly eventRepo: ConflictEventRepository = new ShiftEventRepository()
   ) {}
 
   async materialise(
@@ -186,9 +215,7 @@ export class ScheduleMaterialisationService {
     }
 
     if (await this.isManuallyTouched(existing)) {
-      await this.shiftRepo.insertEvent(
-        conflictEvent(pattern, existing, occ.localDate)
-      );
+      await this.raiseConflictOnce(pattern, existing, occ.localDate);
       result.conflicts.push({
         shiftId: existing.id,
         localDate: occ.localDate,
@@ -254,6 +281,30 @@ export class ScheduleMaterialisationService {
     }
   }
 
+  /**
+   * Append a `pattern_conflict` day-thread row for this (pattern, shift,
+   * local_date) unless one is already there — see the module header for why
+   * a plain append grows without bound.
+   */
+  private async raiseConflictOnce(
+    pattern: PatternForMaterialisation,
+    shift: Shift,
+    localDate: string
+  ): Promise<void> {
+    const key = conflictKey(pattern.id, shift.id, localDate);
+    const existingKeys = await this.eventRepo.listEventKeysForDate(
+      pattern.householdId,
+      localDate,
+      PATTERN_CONFLICT
+    );
+    if (existingKeys.has(key)) {
+      return;
+    }
+    await this.eventRepo.insertMany([
+      conflictEvent(pattern, shift, localDate, key),
+    ]);
+  }
+
   private async isManuallyTouched(shift: Shift): Promise<boolean> {
     if (shift.origin !== 'system_generated') {
       return true;
@@ -270,18 +321,29 @@ function toChildData(occ: ExpandedOccurrence): NewShiftChildData[] {
   }));
 }
 
+/** De-dupe identity of one persisted conflict: the same pattern, shift and date is one row, however many times the horizon job re-expands it. */
+function conflictKey(
+  patternId: string,
+  shiftId: string,
+  localDate: string
+): string {
+  return `${patternId}|${shiftId}|${localDate}`;
+}
+
 function conflictEvent(
   pattern: PatternForMaterialisation,
   shift: Shift,
-  localDate: string
-): NewShiftEventData {
+  localDate: string,
+  key: string
+): NewShiftEventInput {
   return {
     household_id: pattern.householdId,
     shift_id: shift.id,
     local_date: localDate,
     actor_id: null,
-    event_type: 'pattern_conflict',
+    event_type: PATTERN_CONFLICT,
     payload: {
+      key,
       pattern_id: pattern.id,
       shift_origin: shift.origin,
       reason:

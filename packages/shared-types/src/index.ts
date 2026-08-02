@@ -20,8 +20,10 @@ export * from './locale';
 export * from './onboarding';
 // Result type for explicit error handling
 export * from './result';
+export * from './schemas/approval.schema';
 export * from './schemas/availability.schema';
 export * from './schemas/child.schema';
+export * from './schemas/handoff.schema';
 // Zod wire schemas — household, child, availability, schedule, shift domains
 export * from './schemas/household.schema';
 export * from './schemas/schedule.schema';

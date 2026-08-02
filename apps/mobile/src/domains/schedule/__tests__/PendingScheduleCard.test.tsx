@@ -5,7 +5,7 @@
  * by another agent) to the respond flow. Renders NOTHING when there is no
  * pending pattern where the signed-in user is the carer (no empty state, no
  * placeholder — invisible on an ordinary day). `useSchedulePatterns` /
- * `useSchedulePattern` / `useIsOnboarded` / `useAuthStore` / `expo-router`
+ * `useSchedulePattern` / `useActiveHousehold` / `useAuthStore` / `expo-router`
  * are mocked via `mock.module()` in `beforeAll`, before the dynamic import
  * of the component under test.
  */
@@ -25,7 +25,7 @@ mock.module('@/src/components/ui/loading-indicator', () => {
 let PendingScheduleCard: typeof import('../components/PendingScheduleCard').PendingScheduleCard;
 let mockUseSchedulePatterns: ReturnType<typeof mock>;
 let mockUseSchedulePattern: ReturnType<typeof mock>;
-let mockUseIsOnboarded: ReturnType<typeof mock>;
+let mockUseActiveHousehold: ReturnType<typeof mock>;
 let mockUseAuthStore: ReturnType<typeof mock>;
 let mockPush: ReturnType<typeof mock>;
 
@@ -36,10 +36,12 @@ const PATTERN_ID = '33333333-3333-4333-8333-333333333333';
 beforeAll(async () => {
   mockUseSchedulePatterns = mock(() => ({ data: [], isLoading: false }));
   mockUseSchedulePattern = mock(() => ({ data: undefined, isLoading: false }));
-  mockUseIsOnboarded = mock(() => ({
-    status: 'onboarded',
-    role: 'nanny',
+  mockUseActiveHousehold = mock(() => ({
+    household: { id: HOUSEHOLD_ID, name: 'Test Household' },
     householdId: HOUSEHOLD_ID,
+    households: [{ id: HOUSEHOLD_ID, name: 'Test Household' }],
+    setActiveHouseholdId: mock(),
+    isLoading: false,
   }));
   mockUseAuthStore = mock((selector: (s: unknown) => unknown) =>
     selector({ session: { user: { id: CARER_USER_ID } } })
@@ -52,8 +54,8 @@ beforeAll(async () => {
   mock.module('@/src/hooks/queries/useSchedulePattern', () => ({
     useSchedulePattern: mockUseSchedulePattern,
   }));
-  mock.module('@/src/hooks/queries/useIsOnboarded', () => ({
-    useIsOnboarded: mockUseIsOnboarded,
+  mock.module('@/src/hooks/queries/useActiveHousehold', () => ({
+    useActiveHousehold: mockUseActiveHousehold,
   }));
   mock.module('@/src/store/auth', () => ({
     useAuthStore: mockUseAuthStore,
@@ -81,6 +83,17 @@ const patternDays = [
 ];
 
 describe('PendingScheduleCard', () => {
+  it('fetches patterns for the ACTIVE household, not a hardcoded/first one', () => {
+    mockUseSchedulePatterns.mockImplementation(() => ({
+      data: [],
+      isLoading: false,
+    }));
+
+    render(<PendingScheduleCard />);
+
+    expect(mockUseSchedulePatterns).toHaveBeenCalledWith(HOUSEHOLD_ID);
+  });
+
   it('renders nothing when there is no pending pattern at all', () => {
     mockUseSchedulePatterns.mockImplementation(() => ({
       data: [],
