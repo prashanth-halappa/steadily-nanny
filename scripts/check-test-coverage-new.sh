@@ -19,22 +19,17 @@ echo "Base branch: $BASE_BRANCH"
 # Directories to check (source code directories)
 CHECK_DIRS="apps/api/src"
 
-# Patterns to exclude from test requirement
-EXCLUDE_PATTERNS=(
-  "*.d.ts"           # Type definitions
-  "*/types/*"        # Type files
-  "*/index.ts"       # Index/barrel files
-  "*/config/*"       # Configuration files
-  "*/docs/*"         # Documentation
-  "app.ts"           # Express app setup
-  "index.ts"         # Entry points
-)
-
-# Build exclude grep pattern
-EXCLUDE_GREP=""
-for pattern in "${EXCLUDE_PATTERNS[@]}"; do
-  EXCLUDE_GREP="$EXCLUDE_GREP -e $pattern"
-done
+# Returns 0 when the file matches an exclude pattern (bash case globs, not [[ ]] literals).
+should_exclude_file() {
+  local file="$1"
+  case "$file" in
+    *.d.ts|*/types/*|*/config/*|*/docs/*|*/index.ts) return 0 ;;
+  esac
+  case "$(basename "$file")" in
+    app.ts|index.ts) return 0 ;;
+  esac
+  return 1
+}
 
 # Get new TypeScript files (added in this branch compared to base)
 NEW_FILES=$(git diff --name-only --diff-filter=A "$BASE_BRANCH"...HEAD 2>/dev/null || \
@@ -74,16 +69,8 @@ for file in $NEW_FILES; do
     continue
   fi
 
-  # Skip excluded patterns
-  skip=false
-  for pattern in "${EXCLUDE_PATTERNS[@]}"; do
-    if [[ "$file" == *"$pattern"* ]] || [[ "$file" == *"${pattern#\*}"* ]]; then
-      skip=true
-      break
-    fi
-  done
-
-  if [ "$skip" = true ]; then
+  # Skip excluded patterns (case globs — [[ ]] treats * as literal)
+  if should_exclude_file "$file"; then
     echo -e "${YELLOW}Skipping (excluded): $file${NC}"
     continue
   fi

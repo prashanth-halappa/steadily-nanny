@@ -43,6 +43,7 @@ beforeAll(async () => {
 beforeEach(() => {
   apiClient.get.mockReset?.();
   apiClient.post.mockReset?.();
+  apiClient.patch.mockReset?.();
   apiClient.delete.mockReset?.();
 });
 
@@ -134,5 +135,44 @@ describe('timeOffApi.cancel', () => {
     expect(result.status).toBe('cancelled');
     // Soft-cancel: the row itself, not an empty response — id survives.
     expect(result.id).toBe(validRow.id);
+  });
+});
+
+describe('timeOffApi.update', () => {
+  it('PATCHes the validated body to /v1/time-off/:id and returns the updated row', async () => {
+    const updatedRow = {
+      ...validRow,
+      ends_at: '2026-08-14T00:00:00.000Z',
+      message: 'Extended trip',
+    };
+    apiClient.patch.mockResolvedValue({
+      data: { data: { carer_time_off: updatedRow } },
+    });
+
+    const result = await timeOffApi.update(validRow.id, {
+      ends_at: '2026-08-14T00:00:00.000Z',
+      message: 'Extended trip',
+    });
+
+    expect(apiClient.patch).toHaveBeenCalledWith(
+      `/v1/time-off/${validRow.id}`,
+      {
+        ends_at: '2026-08-14T00:00:00.000Z',
+        message: 'Extended trip',
+      }
+    );
+    expect(result.message).toBe('Extended trip');
+  });
+
+  it('rejects an empty PATCH body without calling the API', async () => {
+    await expect(timeOffApi.update(validRow.id, {})).rejects.toThrow();
+    expect(apiClient.patch).not.toHaveBeenCalled();
+  });
+
+  it('rejects status in the PATCH body — cancel stays on DELETE', async () => {
+    await expect(
+      timeOffApi.update(validRow.id, { status: 'cancelled' })
+    ).rejects.toThrow();
+    expect(apiClient.patch).not.toHaveBeenCalled();
   });
 });

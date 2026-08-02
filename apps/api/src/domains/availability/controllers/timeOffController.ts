@@ -58,4 +58,19 @@ export class TimeOffController {
       return next(error);
     }
   }
+
+  /** PATCH /time-off/:id — edit dates/message on an active row. */
+  static async update(req: Request, res: Response, next: NextFunction) {
+    try {
+      const id = req.params.id as string;
+      const carer_time_off = await timeOffCommandService.update(
+        getAuthUserId(req),
+        id,
+        req.body
+      );
+      return sendSuccessResponse(res, 'Time off updated', { carer_time_off });
+    } catch (error) {
+      return next(error);
+    }
+  }
 }

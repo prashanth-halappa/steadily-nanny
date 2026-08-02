@@ -19,10 +19,9 @@
  * rather than failing the whole job: rolling the schedule horizon is this
  * job's real purpose and must not depend on the approval sweep succeeding.
  *
- * SETUP: wire this into `/api/jobs/schedule-horizon` — see
- * `controllers/jobController.ts` and `routes/jobRoutes.ts`, following the
- * `example-maintenance` job's own wiring — and schedule it daily via
- * pg_cron (see migration 007's commented-out example).
+ * SETUP: scheduled daily via pg_cron in migration
+ * `026_schedule_horizon_cron.sql` (POST `/api/jobs/schedule-horizon`). Requires
+ * Vault secrets `cron_api_base_url` and `cron_job_api_key` (see migration 007).
  *
  * @module jobs/scheduleHorizonJob
  */

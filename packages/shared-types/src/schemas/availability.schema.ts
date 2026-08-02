@@ -144,7 +144,10 @@ export const CreateCarerTimeOffSchema = CarerTimeOffInputSchema.refine(
 
 /** PATCH body — every field optional, but at least one must be present. */
 export const UpdateCarerTimeOffSchema = CarerTimeOffInputSchema.partial()
-  .extend({ status: z.enum(Object.values(CARER_TIME_OFF_STATUSES)).optional() })
+  .extend({
+    status: z.enum(Object.values(CARER_TIME_OFF_STATUSES)).optional(),
+    message: z.string().nullable().optional(),
+  })
   .refine(data => Object.keys(data).length > 0, {
     message: 'at least one field is required',
   });

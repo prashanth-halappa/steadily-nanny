@@ -1,10 +1,14 @@
 {
   "screenTitle": "Time off",
   "requestTitle": "Request time off",
+  "editTitle": "Edit time off",
   "messageLabel": "Note for the family (optional)",
   "messagePlaceholder": "e.g. Visiting family",
   "requestSubmit": "Request time off",
+  "editSubmit": "Save changes",
+  "editCancel": "Cancel edit",
   "requestedToast": "Time off confirmed",
+  "updatedToast": "Time off updated",
   "emptyTitle": "No time off yet",
   "emptyDescription": "Requests you make will appear here.",
   "status": {
@@ -13,6 +17,7 @@
     "cancelled": "Cancelled"
   },
   "cancelButton": "Cancel",
+  "editButton": "Edit",
   "cancelledToast": "Time off cancelled",
   "notAvailableTitle": "Not available",
   "notAvailableDescription": "Time off is managed by the nanny on this household.",
@@ -24,5 +29,10 @@
   "checkFailedDescription": "We couldn't verify whether this overlaps an existing shift. You can still request time off.",
   "checkFailedCancel": "Go back",
   "checkFailedConfirm": "Request anyway",
-  "filterAll": "All"
+  "filterAll": "All",
+  "dateRange": {
+    "start": "Start",
+    "end": "End",
+    "endBeforeStart": "End date must not be before the start date."
+  }
 }

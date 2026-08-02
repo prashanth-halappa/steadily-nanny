@@ -12,6 +12,11 @@
   "deleteAccountConfirmBody": "Esto elimina permanentemente tu cuenta y todos los datos asociados. Esta acción no se puede deshacer.",
   "deleteAccountCancel": "Cancelar",
   "deleteAccountConfirm": "Eliminar cuenta",
+  "softUpdateBanner": {
+    "message": "Hay una nueva versión disponible.",
+    "update": "Actualizar",
+    "dismiss": "Descartar"
+  },
   "time": {
     "menuLabel": "Hora y calendario",
     "title": "Hora y calendario",
@@ -22,5 +27,17 @@
     "weekStartsHint": "Solo reordena los selectores de días. Los horarios compartidos y Horas siguen empezando el lunes.",
     "saveButton": "Guardar",
     "savedToast": "Ajustes de hora guardados"
+  },
+  "notificationsSoftAsk": {
+    "title": "Mantente al día",
+    "body": "Activa las notificaciones para recordatorios y novedades oportunas. Puedes cambiarlo cuando quieras en Ajustes.",
+    "enable": "Activar notificaciones",
+    "later": "Quizá más tarde"
+  },
+  "notificationsPermissionDenied": {
+    "title": "Notificaciones desactivadas",
+    "body": "Activa las notificaciones en Ajustes para recibir recordatorios y novedades.",
+    "notNow": "Ahora no",
+    "openSettings": "Abrir Ajustes"
   }
 }

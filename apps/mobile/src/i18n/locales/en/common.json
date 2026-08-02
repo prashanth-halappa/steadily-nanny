@@ -15,5 +15,52 @@
   "error": "Error",
   "notFoundTitle": "Not found",
   "notFoundBody": "This screen doesn't exist.",
-  "notFoundGoHome": "Go home"
+  "notFoundGoHome": "Go home",
+  "tabs": {
+    "today": "Today",
+    "schedule": "Schedule",
+    "hours": "Hours",
+    "settings": "Settings"
+  },
+  "timeRange": {
+    "start": "Start",
+    "end": "End",
+    "endAfterStart": "End time must be after start time."
+  },
+  "rootError": {
+    "title": "Something went wrong",
+    "body": "The app hit an unexpected error.",
+    "reload": "Reload"
+  },
+  "appStatus": {
+    "forceUpdate": {
+      "title": "Update required",
+      "body": "A newer version is required to keep using the app.",
+      "cta": "Update now"
+    },
+    "killSwitch": {
+      "title": "App unavailable",
+      "body": "This version is no longer available. Please check back later."
+    },
+    "maintenance": {
+      "title": "We'll be right back",
+      "body": "We're doing some maintenance. Please try again shortly."
+    }
+  },
+  "readMore": "Read more",
+  "showLess": "Show less",
+  "expandTextHint": "Toggles the full text display",
+  "a11y": {
+    "loadingContent": "Loading content",
+    "loadingActivityCard": "Loading activity card",
+    "unnamed": "Unnamed"
+  },
+  "microCopy": {
+    "gettingReady": "Getting things ready…",
+    "justAMoment": "Just a moment…",
+    "loadingExperience": "Loading your experience…",
+    "almostThere": "Almost there…",
+    "settingUp": "Setting things up…",
+    "oneSecond": "One second…"
+  }
 }

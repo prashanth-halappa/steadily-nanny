@@ -34,12 +34,10 @@
 -- the existing policy's logic exactly (verified against live `pg_policies`
 -- before writing this file) with only the `auth.uid()` calls rewritten.
 --
--- RISK NOTE — DO NOT APPLY WHILE A DEVICE AGENT IS TESTING AGAINST THIS
--- PROJECT. Migration 012 already recorded one incident where an RLS grant
--- change broke every policy call mid-flight. Dropping and recreating 18
--- policies is mechanical but not free, and the benefit is negligible at
--- current scale (single-digit household member counts) — apply this once
--- the live device regression is done, not before.
+-- APPLIED LIVE as version 20260802150139. All auth.uid() policies are stored
+-- as (SELECT auth.uid()). The earlier hold-back note (device-test risk after
+-- the 012 incident) is historical — do not re-apply; this migration is already
+-- on the project.
 
 -- ---------------------------------------------------------------------------
 -- user_profiles (002_user_profiles.sql)

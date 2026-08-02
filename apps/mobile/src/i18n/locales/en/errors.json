@@ -10,5 +10,30 @@
   "validation": "Please check the information you entered and try again.",
   "timeout": "The request timed out. Please try again.",
   "offline": "You're offline. Please check your connection.",
-  "alreadyClockedIn": "You're already clocked in on another shift. Clock out of it first."
+  "alreadyClockedIn": "You're already clocked in on another shift. Clock out of it first.",
+  "cancelViaDelete": "Cancel time off by using the delete option instead.",
+  "tryAgain": "Try again",
+  "goBack": "Go back",
+  "states": {
+    "network": {
+      "title": "No connection",
+      "message": "Check your internet connection and try again."
+    },
+    "server": {
+      "title": "Something went wrong",
+      "message": "We hit a snag on our end. Please try again."
+    },
+    "notFound": {
+      "title": "Not found",
+      "message": "We couldn't find what you were looking for."
+    },
+    "auth": {
+      "title": "Session expired",
+      "message": "Please sign in again to continue."
+    },
+    "generic": {
+      "title": "Something went wrong",
+      "message": "Please try again."
+    }
+  }
 }

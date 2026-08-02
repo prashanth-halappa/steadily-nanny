@@ -26,6 +26,7 @@
 
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
 import { Text } from '@/src/components/ui/text';
 import {
@@ -51,6 +52,7 @@ export function TimeRangePicker({
   onChange,
   testID,
 }: TimeRangePickerProps) {
+  const { t } = useTranslation('common');
   const baseTestID = testID ?? DEFAULT_TEST_ID;
   const [showError, setShowError] = useState(false);
 
@@ -85,7 +87,7 @@ export function TimeRangePicker({
       <View className="flex-row items-center gap-3">
         <View className="flex-1">
           <Text className="mb-1 font-medium text-muted-foreground text-xs">
-            Start
+            {t('timeRange.start')}
           </Text>
           <DateTimePicker
             testID={`${baseTestID}-start`}
@@ -97,7 +99,7 @@ export function TimeRangePicker({
         </View>
         <View className="flex-1">
           <Text className="mb-1 font-medium text-muted-foreground text-xs">
-            End
+            {t('timeRange.end')}
           </Text>
           <DateTimePicker
             testID={`${baseTestID}-end`}
@@ -113,7 +115,7 @@ export function TimeRangePicker({
           testID={`${baseTestID}-error`}
           className="mt-2 text-destructive text-xs"
         >
-          End time must be after start time.
+          {t('timeRange.endAfterStart')}
         </Text>
       )}
     </View>

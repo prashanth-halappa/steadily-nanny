@@ -208,11 +208,11 @@ async function main(): Promise<void> {
     }
   }
   if (!householdId) {
-    console.error(
-      `Could not find a "${HOUSEHOLD_NAME}" household with ${NANNY_EMAIL} as an active member. ` +
-        'Run scripts/seed-test-users.ts and join the household through the app first.'
+    console.log(
+      `[skip]    Could not find a "${HOUSEHOLD_NAME}" household with ${NANNY_EMAIL} as an active member. ` +
+        'Run scripts/seed-test-users.ts, create the household and join it through the app (flow 4), then re-run this script.'
     );
-    process.exit(1);
+    process.exit(0);
   }
   console.log(`[found]   household "${HOUSEHOLD_NAME}" -> ${householdId}`);
   console.log(`[found]   nanny ${NANNY_EMAIL} -> ${nannyId}`);

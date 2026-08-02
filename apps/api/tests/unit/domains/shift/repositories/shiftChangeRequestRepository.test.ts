@@ -105,33 +105,3 @@ describe('ShiftChangeRequestRepository.withdraw', () => {
     );
   });
 });
-
-describe('ShiftChangeRequestRepository.supersedePendingForShift', () => {
-  it('closes other pending rows on the shift without setting responded_*', async () => {
-    const closed = [
-      { id: 'cr-old', shift_id: 's1', status: 'superseded', kind: 'cancel' },
-    ];
-    const chain = createMockQueryChain({ data: closed, error: null });
-    mockSupabaseService.from.mockImplementation(() => chain);
-    const repo = new ShiftChangeRequestRepository();
-
-    const result = await repo.supersedePendingForShift('s1', 'cr-keep');
-
-    expect(chain.update).toHaveBeenCalledWith({ status: 'superseded' });
-    const updateArg = chain.update.mock.calls[0][0];
-    expect(updateArg).not.toHaveProperty('responded_by');
-    expect(updateArg).not.toHaveProperty('responded_at');
-    expect(chain.eq).toHaveBeenCalledWith('shift_id', 's1');
-    expect(chain.eq).toHaveBeenCalledWith('status', 'pending');
-    expect(chain.neq).toHaveBeenCalledWith('id', 'cr-keep');
-    expect(result).toEqual(closed);
-  });
-
-  it('returns [] when there are no siblings', async () => {
-    mockSupabaseService.from.mockImplementation(() =>
-      createMockQueryChain({ data: null, error: null })
-    );
-    const repo = new ShiftChangeRequestRepository();
-    expect(await repo.supersedePendingForShift('s1', 'cr1')).toEqual([]);
-  });
-});

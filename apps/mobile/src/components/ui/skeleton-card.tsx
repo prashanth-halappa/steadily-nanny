@@ -5,6 +5,7 @@
  * Uses SkeletonShimmer for branded warm loading effect.
  */
 
+import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
 import { SkeletonShimmer } from './skeleton-shimmer';
 
@@ -14,13 +15,15 @@ interface SkeletonCardProps {
 }
 
 export function SkeletonCard(_props?: SkeletonCardProps) {
+  const { t } = useTranslation('common');
+
   return (
     <View
       testID="skeleton-card"
       style={{ width: 200 }}
       className="bg-card border border-border rounded-xl p-4"
       accessibilityRole="none"
-      accessibilityLabel="Loading activity card"
+      accessibilityLabel={t('a11y.loadingActivityCard')}
     >
       {/* Concern tag skeleton */}
       <SkeletonShimmer

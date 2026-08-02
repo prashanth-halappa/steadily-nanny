@@ -8,3 +8,7 @@
 export function shiftChangeRequestKindLabelKey(kind: string): string {
   return `changeRequestKind.${kind}`;
 }
+
+export function shiftChangeRequestStatusLabelKey(status: string): string {
+  return `changeRequestStatus.${status}`;
+}

@@ -57,4 +57,13 @@ describe('ShiftDetailScreen source', () => {
   it('localises pending change request kinds instead of raw enum values', () => {
     expect(source).toContain('shiftChangeRequestKindLabelKey');
   });
+
+  it('shows all change requests (not just pending) and renders response_message', () => {
+    expect(source).not.toContain(".filter(r => r.status === 'pending')");
+    expect(source).not.toMatch(
+      /\(changeRequests\.data \?\? \[\]\)\.some\(r => r\.status === 'pending'\)/
+    );
+    expect(source).toContain('response_message');
+    expect(source).toContain('shiftChangeRequestStatusLabelKey');
+  });
 });

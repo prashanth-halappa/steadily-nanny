@@ -33,20 +33,10 @@ interface TimeEntryDayRowProps {
   testID?: string;
 }
 
-const WEEKDAY_LABELS = [
-  'Sunday',
-  'Monday',
-  'Tuesday',
-  'Wednesday',
-  'Thursday',
-  'Friday',
-  'Saturday',
-] as const;
-
-function weekdayLabel(dateISO: string): string {
+function weekdayDow(dateISO: string): number {
   const [year, month, day] = dateISO.split('-').map(Number);
   const date = new Date(year ?? 0, (month ?? 1) - 1, day ?? 1);
-  return WEEKDAY_LABELS[date.getDay()] ?? dateISO;
+  return date.getDay();
 }
 
 export function TimeEntryDayRow({
@@ -69,9 +59,11 @@ export function TimeEntryDayRow({
       className="flex-row items-center justify-between border-border border-b py-3"
     >
       <View className="gap-1">
-        <Body className="font-medium">{weekdayLabel(date)}</Body>
+        <Body className="font-medium">
+          {t(`schedule:weekday.${weekdayDow(date)}`)}
+        </Body>
         {entries.length === 0 ? (
-          <Small className="text-muted-foreground">No hours logged</Small>
+          <Small className="text-muted-foreground">{t('noHoursLogged')}</Small>
         ) : (
           entries.map(entry => {
             // A FINISHED entry (has clock_out_at) that computes to 0 minutes
@@ -96,7 +88,7 @@ export function TimeEntryDayRow({
                 {' – '}
                 {entry.clock_out_at
                   ? formatClockTime(entry.clock_out_at)
-                  : 'in progress'}
+                  : t('inProgress')}
                 {isZeroDuration ? ` – ${t('flaggedCheckEntry')}` : ''}
               </Small>
             );

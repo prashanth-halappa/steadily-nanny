@@ -52,7 +52,8 @@ import { ParentWeekView } from './ParentWeekView';
 const MAX_WEEKS_BACK = 104;
 
 export function HoursScreen() {
-  const { t } = useTranslation('settings');
+  const { t } = useTranslation('hours');
+  const { t: tSettings } = useTranslation('settings');
   const onboarding = useIsOnboarded();
   // `useActiveHousehold` already fetches households internally (a cache hit,
   // not a second request) — this is the switcher-aware household, which for
@@ -115,7 +116,7 @@ export function HoursScreen() {
         className="flex-1 bg-background"
         contentContainerStyle={{ padding: 24, paddingBottom: 100 }}
       >
-        <H1>Hours</H1>
+        <H1>{t('title')}</H1>
       </ScrollView>
     );
   }
@@ -127,7 +128,7 @@ export function HoursScreen() {
           testID="hours-monday-week-note"
           className="text-muted-foreground text-sm"
         >
-          {t('time.weekStartsHint')}
+          {tSettings('time.weekStartsHint')}
         </Body>
       </View>
       {canViewParentSchedule(onboarding.role) ? (

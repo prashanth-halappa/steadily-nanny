@@ -158,6 +158,60 @@ describe('useIsOnboarded', () => {
     expect(childrenListMock).not.toHaveBeenCalled();
   });
 
+  // A failed memberships query is NOT "this user never signed up". Observed on
+  // device: with the API unreachable, a nanny holding two active memberships
+  // was routed to the onboarding role fork. `data` was undefined, the `?? []`
+  // at the top of the hook turned that into "no memberships", and the entry
+  // router sent her to "Who are you?".
+  //
+  // These two cases are deliberately a DISCRIMINATING PAIR: a fix that reports
+  // `membershipsError` for both the errored and the genuinely-empty case (or
+  // for neither) fails one of them. Testing only the error case would pass
+  // against `membershipsError: true` hard-coded.
+  it('reports membershipsError and does NOT claim not-onboarded when the query fails', async () => {
+    membershipsListMock.mockRejectedValue(new Error('network down'));
+    householdsListMock.mockResolvedValue([]);
+
+    const { result } = renderHookWithProviders(() => useIsOnboarded());
+
+    await waitFor(() => expect(result.current.membershipsError).toBe(true));
+    // The load-bearing assertion: "we don't know" must never be reported as
+    // "we know they are not onboarded", because that routes into the wizard.
+    expect(result.current.status).not.toBe('not-onboarded');
+    expect(result.current.role).toBeNull();
+  });
+
+  it('does NOT report membershipsError when the query succeeds with zero memberships', async () => {
+    membershipsListMock.mockResolvedValue([]);
+    householdsListMock.mockResolvedValue([]);
+
+    const { result } = renderHookWithProviders(() => useIsOnboarded());
+
+    await waitFor(() => expect(result.current.status).toBe('not-onboarded'));
+    expect(result.current.membershipsError).toBe(false);
+  });
+
+  it('exposes a retry that refetches the memberships query', async () => {
+    membershipsListMock.mockRejectedValue(new Error('network down'));
+    householdsListMock.mockResolvedValue([]);
+
+    const { result } = renderHookWithProviders(() => useIsOnboarded());
+
+    await waitFor(() => expect(result.current.membershipsError).toBe(true));
+    const callsBeforeRetry = membershipsListMock.mock.calls.length;
+
+    membershipsListMock.mockResolvedValue([
+      ownerMembership({ role: 'nanny', user_id: USER_ID }),
+    ]);
+    result.current.retryMemberships();
+
+    await waitFor(() => expect(result.current.status).toBe('onboarded'));
+    expect(membershipsListMock.mock.calls.length).toBeGreaterThan(
+      callsBeforeRetry
+    );
+    expect(result.current.membershipsError).toBe(false);
+  });
+
   it('is onboarded as a helper with SETUP_ROLES.HELPER', async () => {
     membershipsListMock.mockResolvedValue([
       ownerMembership({

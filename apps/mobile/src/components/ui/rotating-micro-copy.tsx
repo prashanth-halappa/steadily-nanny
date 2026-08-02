@@ -7,6 +7,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -17,15 +18,14 @@ import { useReducedMotion } from '@/lib/animations/useReducedMotion';
 const FADE_DURATION_MS = 400;
 const DEFAULT_INTERVAL_MS = 3000;
 
-/** Generic default loading messages. Replace with your own via the `messages` prop. */
-const DEFAULT_MESSAGES = [
-  'Getting things ready…',
-  'Just a moment…',
-  'Loading your experience…',
-  'Almost there…',
-  'Setting things up…',
-  'One second…',
-];
+const DEFAULT_MESSAGE_KEYS = [
+  'microCopy.gettingReady',
+  'microCopy.justAMoment',
+  'microCopy.loadingExperience',
+  'microCopy.almostThere',
+  'microCopy.settingUp',
+  'microCopy.oneSecond',
+] as const;
 
 interface RotatingMicroCopyProps {
   /** Rotation interval in milliseconds. Default 3000. */
@@ -58,16 +58,19 @@ export function RotatingMicroCopy({
   name,
   testID = 'rotating-micro-copy',
 }: RotatingMicroCopyProps) {
+  const { t } = useTranslation('common');
   const reducedMotion = useReducedMotion();
   const opacity = useSharedValue(1);
   const [currentIndex, setCurrentIndex] = useState(0);
 
   // Build the message list once on mount.
   const messages = useMemo(() => {
-    const base = messagesProp?.length ? messagesProp : DEFAULT_MESSAGES;
+    const base = messagesProp?.length
+      ? messagesProp
+      : DEFAULT_MESSAGE_KEYS.map(key => t(key));
     const interpolated = name ? base.map(m => m.replace('{name}', name)) : base;
     return fisherYatesShuffle(interpolated);
-  }, [messagesProp, name]);
+  }, [messagesProp, name, t]);
 
   const messagesRef = useRef(messages);
   messagesRef.current = messages;

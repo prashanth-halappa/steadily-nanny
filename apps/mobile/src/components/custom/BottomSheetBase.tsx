@@ -12,6 +12,7 @@
 import { X } from 'lucide-react-native';
 import type { ReactNode } from 'react';
 import { useCallback, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   KeyboardAvoidingView,
   Modal,
@@ -60,6 +61,7 @@ export function BottomSheetBase({
   showCloseButton,
   fitContent,
 }: BottomSheetBaseProps) {
+  const { t } = useTranslation('common');
   const insets = useSafeAreaInsets();
   const reduceMotion = useReducedMotion();
   const themeColors = useThemeColors();
@@ -124,7 +126,7 @@ export function BottomSheetBase({
               testID="bottom-sheet-backdrop"
               onPress={handleDismiss}
               accessibilityRole="button"
-              accessibilityLabel="Close"
+              accessibilityLabel={t('close')}
               style={{
                 position: 'absolute',
                 top: 0,
@@ -202,7 +204,7 @@ export function BottomSheetBase({
                       }}
                       hitSlop={8}
                       accessibilityRole="button"
-                      accessibilityLabel="Close"
+                      accessibilityLabel={t('close')}
                     >
                       <View pointerEvents="none">
                         <X size={20} color={themeColors.mutedForeground} />

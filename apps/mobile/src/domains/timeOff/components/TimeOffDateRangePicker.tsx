@@ -32,6 +32,7 @@
 
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
 import { Text } from '@/src/components/ui/text';
 import {
@@ -57,6 +58,7 @@ export function TimeOffDateRangePicker({
   onChange,
   testID,
 }: TimeOffDateRangePickerProps) {
+  const { t } = useTranslation('timeOff');
   const baseTestID = testID ?? DEFAULT_TEST_ID;
   const [showError, setShowError] = useState(false);
 
@@ -91,7 +93,7 @@ export function TimeOffDateRangePicker({
       <View className="flex-row items-center gap-3">
         <View className="flex-1">
           <Text className="mb-1 font-medium text-muted-foreground text-xs">
-            Start
+            {t('dateRange.start')}
           </Text>
           <DateTimePicker
             testID={`${baseTestID}-start`}
@@ -102,7 +104,7 @@ export function TimeOffDateRangePicker({
         </View>
         <View className="flex-1">
           <Text className="mb-1 font-medium text-muted-foreground text-xs">
-            End
+            {t('dateRange.end')}
           </Text>
           <DateTimePicker
             testID={`${baseTestID}-end`}
@@ -117,7 +119,7 @@ export function TimeOffDateRangePicker({
           testID={`${baseTestID}-error`}
           className="mt-2 text-destructive text-xs"
         >
-          End date must not be before the start date.
+          {t('dateRange.endBeforeStart')}
         </Text>
       )}
     </View>

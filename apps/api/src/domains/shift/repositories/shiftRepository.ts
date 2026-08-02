@@ -165,10 +165,6 @@ export class ShiftRepository extends BaseRepository<Shift> {
     return data as ShiftWithChildren | null;
   }
 
-  /**
-   * Atomic parent edit via `public.apply_parent_shift_edit` (migration 019):
-   * UPDATE shift + INSERT `shift_updated` event in one transaction.
-   */
   /** Create one shift row (extra-shift proposals, change-request outcomes). */
   async createShift(data: {
     household_id: string;
@@ -225,6 +221,13 @@ export class ShiftRepository extends BaseRepository<Shift> {
     }
   }
 
+  /**
+   * Sends the caller's EDIT INTENT only. The new `sequence` and the
+   * `shift_updated` event's before/after snapshots are all derived inside the
+   * RPC from the locked row (migration 031) — anything computed here would be
+   * from an unlocked pre-read, and therefore stale under the very race the
+   * lock exists to close.
+   */
   async applyParentEdit(args: {
     shiftId: string;
     actorId: string;
@@ -235,9 +238,6 @@ export class ShiftRepository extends BaseRepository<Shift> {
     setEndsAt: boolean;
     setNote: boolean;
     origin: string;
-    sequence: number;
-    before: Record<string, unknown>;
-    after: Record<string, unknown>;
   }): Promise<Shift> {
     const { data, error } = await supabaseService.rpc(
       'apply_parent_shift_edit',
@@ -251,9 +251,6 @@ export class ShiftRepository extends BaseRepository<Shift> {
         p_set_ends_at: args.setEndsAt,
         p_set_note: args.setNote,
         p_origin: args.origin,
-        p_sequence: args.sequence,
-        p_before: args.before,
-        p_after: args.after,
       }
     );
 

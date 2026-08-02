@@ -10,5 +10,30 @@
   "validation": "Comprueba la información que ingresaste e inténtalo de nuevo.",
   "timeout": "La solicitud tardó demasiado. Inténtalo de nuevo.",
   "offline": "Estás sin conexión. Comprueba tu conexión.",
-  "alreadyClockedIn": "Ya has fichado la entrada en otro turno. Ficha la salida primero."
+  "alreadyClockedIn": "Ya has fichado la entrada en otro turno. Ficha la salida primero.",
+  "cancelViaDelete": "Cancela el tiempo libre utilizando la opción de eliminar en su lugar.",
+  "tryAgain": "Inténtalo de nuevo",
+  "goBack": "Volver",
+  "states": {
+    "network": {
+      "title": "Sin conexión",
+      "message": "Comprueba tu conexión a internet e inténtalo de nuevo."
+    },
+    "server": {
+      "title": "Algo salió mal",
+      "message": "Tuvimos un problema por nuestra parte. Inténtalo de nuevo."
+    },
+    "notFound": {
+      "title": "No encontrado",
+      "message": "No pudimos encontrar lo que buscabas."
+    },
+    "auth": {
+      "title": "Sesión expirada",
+      "message": "Inicia sesión de nuevo para continuar."
+    },
+    "generic": {
+      "title": "Algo salió mal",
+      "message": "Inténtalo de nuevo."
+    }
+  }
 }

@@ -45,7 +45,11 @@ import {
   NotTheChangeRequestResponderError,
   ShiftNotFoundError,
 } from '../errors/shiftErrors';
-import { ShiftChangeRequestRepository } from '../repositories/shiftChangeRequestRepository';
+import {
+  type AcceptShiftChangeRequestRpcArgs,
+  ShiftChangeRequestRepository,
+  type ShiftEventRpcInsert,
+} from '../repositories/shiftChangeRequestRepository';
 import { ShiftEventRepository } from '../repositories/shiftEventRepository';
 import {
   ShiftRepository,
@@ -102,6 +106,110 @@ function isCancellationPaid(
   cancellationPaidWithinHours: number
 ): boolean {
   return hoursUntilStart(startsAt) < cancellationPaidWithinHours;
+}
+
+/**
+ * Pure planner: RPC args for accept + the day-thread events the RPC inserts in
+ * the same transaction. The events carry no `local_date` — see
+ * `ShiftEventRpcInsert` for why the day thread is the RPC's to resolve.
+ */
+export function planAcceptedChange(
+  userId: string,
+  request: ShiftChangeRequest,
+  shift: ShiftWithChildren,
+  household: Household,
+  responseMessage: string | null | undefined
+): {
+  rpcArgs: AcceptShiftChangeRequestRpcArgs;
+  events: ShiftEventRpcInsert[];
+} {
+  const shortNotice = isShortNotice(
+    shift.starts_at,
+    household.short_notice_hours
+  );
+  const events: ShiftEventRpcInsert[] = [];
+
+  const rpcArgs: AcceptShiftChangeRequestRpcArgs = {
+    p_change_request_id: request.id,
+    p_responded_by: userId,
+    p_response_message: responseMessage ?? null,
+    p_set_cancel: false,
+    p_cancelled_at: null,
+    p_cancelled_by: null,
+    p_cancellation_paid: false,
+    p_cancellation_message: null,
+    p_set_times: false,
+    p_starts_at: null,
+    p_ends_at: null,
+    p_origin: null,
+    p_is_short_notice: shortNotice,
+    p_events: [],
+  };
+
+  if (request.kind === SHIFT_CHANGE_REQUEST_KINDS.CANCEL) {
+    const cancellationPaid = isCancellationPaid(
+      shift.starts_at,
+      household.cancellation_paid_within_hours
+    );
+    rpcArgs.p_set_cancel = true;
+    rpcArgs.p_cancelled_at = new Date().toISOString();
+    rpcArgs.p_cancelled_by = userId;
+    rpcArgs.p_cancellation_paid = cancellationPaid;
+    rpcArgs.p_cancellation_message = request.message;
+    rpcArgs.p_origin = SHIFT_ORIGINS.PARENT_PROPOSED;
+    events.push({
+      household_id: shift.household_id,
+      shift_id: shift.id,
+      actor_id: userId,
+      event_type: 'shift_cancelled',
+      payload: {
+        change_request_id: request.id,
+        cancellation_paid: cancellationPaid,
+        is_short_notice: shortNotice,
+      },
+    });
+    return { rpcArgs, events };
+  }
+
+  if (TIME_KINDS.has(request.kind)) {
+    if (!request.proposed_starts_at || !request.proposed_ends_at) {
+      throw new ValidationError(
+        'Accepted time change is missing proposed times',
+        'MISSING_PROPOSED_TIMES',
+        400,
+        { changeRequestId: request.id }
+      );
+    }
+    const origin =
+      request.kind === SHIFT_CHANGE_REQUEST_KINDS.COUNTER_OFFER
+        ? SHIFT_ORIGINS.NANNY_COUNTERED
+        : SHIFT_ORIGINS.PARENT_PROPOSED;
+    rpcArgs.p_set_times = true;
+    rpcArgs.p_starts_at = request.proposed_starts_at;
+    rpcArgs.p_ends_at = request.proposed_ends_at;
+    rpcArgs.p_origin = origin;
+    events.push({
+      household_id: shift.household_id,
+      shift_id: shift.id,
+      actor_id: userId,
+      event_type: 'shift_updated',
+      payload: {
+        change_request_id: request.id,
+        before: {
+          starts_at: shift.starts_at,
+          ends_at: shift.ends_at,
+        },
+        after: {
+          starts_at: request.proposed_starts_at,
+          ends_at: request.proposed_ends_at,
+        },
+      },
+    });
+    return { rpcArgs, events };
+  }
+
+  // split / handover — record acceptance only; detailed split logic is future work.
+  return { rpcArgs, events };
 }
 
 export class ShiftChangeRequestCommandService {
@@ -179,45 +287,33 @@ export class ShiftChangeRequestCommandService {
   }
 
   /**
-   * Insert the pending request + its day-thread event. Shared by `create`
+   * Insert the pending request + its day-thread events. Shared by `create`
    * (ungated path) and `applyApprovedChangeRequest` (the same work, resumed
    * once the co-parent signed off) so the two can never drift apart.
    *
-   * After the row is created, every other still-pending request on the same
-   * shift is superseded so the day thread never holds competing ask/answer
-   * pairs for one shift.
+   * Every other still-pending request on the same shift is superseded first,
+   * so the day thread never holds competing ask/answer pairs for one shift.
+   *
+   * The RPC writes `change_request_created` and `change_request_superseded`
+   * itself (migration 030). Both name ids that do not exist until it runs —
+   * the row it inserts, and the rows its CTE closed — and a second round-trip
+   * from here would reopen the D23/D24 crash window: a failure between the
+   * two writes would leave a change request with no audit trail. Nothing on
+   * this path may call `eventRepo`.
    */
   private async openChangeRequest(
     shift: Shift,
     requestedBy: string,
     input: CreateShiftChangeRequestInput
   ): Promise<ShiftChangeRequest> {
-    const changeRequest = await this.changeRequestRepo.createRequest({
-      shift_id: shift.id,
-      requested_by: requestedBy,
-      kind: input.kind,
-      proposed_starts_at: input.proposed_starts_at ?? null,
-      proposed_ends_at: input.proposed_ends_at ?? null,
-      message: input.message ?? null,
+    const { changeRequest } = await this.changeRequestRepo.openWithSupersede({
+      p_shift_id: shift.id,
+      p_requested_by: requestedBy,
+      p_kind: input.kind,
+      p_proposed_starts_at: input.proposed_starts_at ?? null,
+      p_proposed_ends_at: input.proposed_ends_at ?? null,
+      p_message: input.message ?? null,
     });
-
-    const events: Parameters<ShiftEventRepository['insertMany']>[0] = [
-      {
-        household_id: shift.household_id,
-        shift_id: shift.id,
-        local_date: shift.local_date,
-        actor_id: requestedBy,
-        event_type: 'change_request_created',
-        payload: {
-          change_request_id: changeRequest.id,
-          kind: input.kind,
-          message: input.message ?? null,
-        },
-      },
-    ];
-
-    await this.supersedeSiblings(requestedBy, changeRequest.id, shift, events);
-    await this.eventRepo.insertMany(events);
 
     return changeRequest;
   }
@@ -277,6 +373,8 @@ export class ShiftChangeRequestCommandService {
       requestedBy,
       payload.shift_id
     );
+
+    await this.shiftRepo.assertMutable(payload.shift_id);
 
     return this.openChangeRequest(shift, requestedBy, {
       kind: payload.kind as CreateShiftChangeRequestInput['kind'],
@@ -514,46 +612,70 @@ export class ShiftChangeRequestCommandService {
     const membership = await this.requireMembership(userId, shift.household_id);
     await this.assertCanRespond(userId, request, shift, membership);
 
-    const updatedRequest = await this.changeRequestRepo.respond(
-      changeRequestId,
-      input.status,
-      userId,
-      input.message
-    );
+    const events: Parameters<ShiftEventRepository['insertMany']>[0] = [];
 
-    const events: Parameters<ShiftEventRepository['insertMany']>[0] = [
-      {
+    let updatedShift: Shift | undefined;
+    let updatedRequest: ShiftChangeRequest;
+
+    if (input.status === SHIFT_CHANGE_REQUEST_STATUSES.ACCEPTED) {
+      const household = await this.requireHousehold(shift.household_id);
+      const { rpcArgs, events: applyEvents } = planAcceptedChange(
+        userId,
+        request,
+        shift,
+        household,
+        input.message
+      );
+      const rpcEvents: ShiftEventRpcInsert[] = [
+        {
+          household_id: shift.household_id,
+          shift_id: shift.id,
+          actor_id: userId,
+          event_type: 'change_request_accepted',
+          payload: {
+            change_request_id: changeRequestId,
+            kind: request.kind,
+            message: input.message ?? null,
+          },
+        },
+        ...applyEvents,
+      ];
+      const applied = await this.changeRequestRepo.acceptAndApply({
+        ...rpcArgs,
+        p_events: rpcEvents,
+      });
+      updatedRequest = applied.changeRequest;
+      // accept_shift_change_request returns the shift row only — no
+      // shift_children join. Preserve the pre-fetch so split/handover (and
+      // other accept paths) stay usable without a second round-trip.
+      updatedShift = {
+        ...applied.shift,
+        shift_children: shift.shift_children,
+      };
+    } else {
+      events.push({
         household_id: shift.household_id,
         shift_id: shift.id,
         local_date: shift.local_date,
         actor_id: userId,
-        event_type:
-          input.status === SHIFT_CHANGE_REQUEST_STATUSES.ACCEPTED
-            ? 'change_request_accepted'
-            : 'change_request_declined',
+        event_type: 'change_request_declined',
         payload: {
           change_request_id: changeRequestId,
           kind: request.kind,
           message: input.message ?? null,
         },
-      },
-    ];
-
-    let updatedShift: Shift | undefined;
-    if (input.status === SHIFT_CHANGE_REQUEST_STATUSES.ACCEPTED) {
-      updatedShift = await this.applyAcceptedChange(
+      });
+      updatedRequest = await this.changeRequestRepo.respond(
+        changeRequestId,
+        input.status,
         userId,
-        request,
-        shift,
-        events
+        input.message
       );
-      // Belt-and-braces: openChangeRequest already supersedes siblings when a
-      // newer request lands, but accept also closes any leftover pending rows
-      // that raced in after the accepted one was opened.
-      await this.supersedeSiblings(userId, changeRequestId, shift, events);
     }
 
-    await this.eventRepo.insertMany(events);
+    if (events.length > 0) {
+      await this.eventRepo.insertMany(events);
+    }
     return { shift_change_request: updatedRequest, shift: updatedShift };
   }
 
@@ -588,126 +710,6 @@ export class ShiftChangeRequestCommandService {
     ]);
 
     return withdrawn;
-  }
-
-  private async applyAcceptedChange(
-    userId: string,
-    request: ShiftChangeRequest,
-    shift: ShiftWithChildren,
-    events: Parameters<ShiftEventRepository['insertMany']>[0]
-  ): Promise<Shift> {
-    const household = await this.requireHousehold(shift.household_id);
-    const shortNotice = isShortNotice(
-      shift.starts_at,
-      household.short_notice_hours
-    );
-
-    if (request.kind === SHIFT_CHANGE_REQUEST_KINDS.CANCEL) {
-      const cancellationPaid = isCancellationPaid(
-        shift.starts_at,
-        household.cancellation_paid_within_hours
-      );
-      // `request` is the pre-update in-memory row; respond() now writes the
-      // responder's text to `response_message` and never overwrites `message`,
-      // so cancellation_message is the requester's note by construction.
-      const updated = await this.shiftRepo.update(shift.id, {
-        status: SHIFT_STATUSES.CANCELLED,
-        cancelled_at: new Date().toISOString(),
-        cancelled_by: userId,
-        cancellation_paid: cancellationPaid,
-        cancellation_message: request.message,
-        is_short_notice: shortNotice,
-        origin: SHIFT_ORIGINS.PARENT_PROPOSED,
-      });
-      events.push({
-        household_id: shift.household_id,
-        shift_id: shift.id,
-        local_date: shift.local_date,
-        actor_id: userId,
-        event_type: 'shift_cancelled',
-        payload: {
-          change_request_id: request.id,
-          cancellation_paid: cancellationPaid,
-          is_short_notice: shortNotice,
-        },
-      });
-      return updated;
-    }
-
-    if (TIME_KINDS.has(request.kind)) {
-      if (!request.proposed_starts_at || !request.proposed_ends_at) {
-        throw new ValidationError(
-          'Accepted time change is missing proposed times',
-          'MISSING_PROPOSED_TIMES',
-          400,
-          { changeRequestId: request.id }
-        );
-      }
-      const origin =
-        request.kind === SHIFT_CHANGE_REQUEST_KINDS.COUNTER_OFFER
-          ? SHIFT_ORIGINS.NANNY_COUNTERED
-          : SHIFT_ORIGINS.PARENT_PROPOSED;
-      const updated = await this.shiftRepo.update(shift.id, {
-        starts_at: request.proposed_starts_at,
-        ends_at: request.proposed_ends_at,
-        origin,
-        is_short_notice: shortNotice,
-        sequence: shift.sequence + 1,
-      });
-      events.push({
-        household_id: shift.household_id,
-        shift_id: shift.id,
-        local_date: updated.local_date,
-        actor_id: userId,
-        event_type: 'shift_updated',
-        payload: {
-          change_request_id: request.id,
-          before: {
-            starts_at: shift.starts_at,
-            ends_at: shift.ends_at,
-          },
-          after: {
-            starts_at: request.proposed_starts_at,
-            ends_at: request.proposed_ends_at,
-          },
-        },
-      });
-      return updated;
-    }
-
-    // split / handover — record acceptance only; detailed split logic is future work.
-    return shift;
-  }
-
-  /**
-   * Close every other still-pending change request on `shift`, appending one
-   * `change_request_superseded` event per closed row into the caller's
-   * `events` array so a single `insertMany` covers the whole mutation.
-   */
-  private async supersedeSiblings(
-    actorId: string,
-    exceptRequestId: string,
-    shift: Shift,
-    events: Parameters<ShiftEventRepository['insertMany']>[0]
-  ): Promise<void> {
-    const closed = await this.changeRequestRepo.supersedePendingForShift(
-      shift.id,
-      exceptRequestId
-    );
-    for (const row of closed) {
-      events.push({
-        household_id: shift.household_id,
-        shift_id: shift.id,
-        local_date: shift.local_date,
-        actor_id: actorId,
-        event_type: 'change_request_superseded',
-        payload: {
-          change_request_id: row.id,
-          kind: row.kind,
-          superseded_by: exceptRequestId,
-        },
-      });
-    }
   }
 
   private assertProposedTimes(input: CreateShiftChangeRequestInput): void {

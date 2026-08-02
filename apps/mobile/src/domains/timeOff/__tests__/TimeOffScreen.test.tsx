@@ -22,7 +22,7 @@
  * real payload the mutation receives.
  */
 import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
-import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { useAuthStore } from '@/src/store/auth';
 import { toAllDayRange } from '../utils/timeOffDate';
 
@@ -211,12 +211,16 @@ let mockUseCancelTimeOff: ReturnType<typeof mock>;
 let mockUseBusyBlocks: ReturnType<typeof mock>;
 let requestMutateAsync: ReturnType<typeof mock>;
 let cancelMutateAsync: ReturnType<typeof mock>;
+let updateMutateAsync: ReturnType<typeof mock>;
 let busyRefetch: ReturnType<typeof mock>;
 
 beforeAll(async () => {
   requestMutateAsync = mock(() => Promise.resolve(makeTimeOff()));
   cancelMutateAsync = mock(() =>
     Promise.resolve(makeTimeOff({ status: 'cancelled' }))
+  );
+  updateMutateAsync = mock(() =>
+    Promise.resolve(makeTimeOff({ message: 'Updated note' }))
   );
   busyRefetch = mock(() =>
     Promise.resolve({ data: [], error: null, isError: false })
@@ -254,6 +258,36 @@ beforeAll(async () => {
   mock.module('@/src/hooks/mutations/useCancelTimeOff', () => ({
     useCancelTimeOff: mockUseCancelTimeOff,
   }));
+  // Each call to useUpdateTimeOff() gets its OWN isPending state, local to
+  // whichever component's Fiber calls it — exactly like the real hook.
+  // There is deliberately NO shared/broadcast pending flag: pending only
+  // flips true while THAT SPECIFIC instance's mutateAsync is in flight. This
+  // is what makes "TimeOffScreen isPending disables row Edit" a real
+  // structural guard: it only passes if the Edit row's disabled prop (fed by
+  // Screen's own useUpdateTimeOff() instance) and the mutateAsync actually
+  // invoked by pressing Submit (fed through the `updateTimeOff` prop
+  // TimeOffRequestForm receives) are the SAME instance. If
+  // TimeOffRequestForm regressed to call useUpdateTimeOff() itself, Submit
+  // would flip that separate instance's pending, not Screen's, and the row
+  // would never disable.
+  mock.module('@/src/hooks/mutations/useUpdateTimeOff', () => {
+    const React = require('react');
+
+    return {
+      useUpdateTimeOff: () => {
+        const [pending, setPending] = React.useState(false);
+        const mutateAsync = React.useCallback((vars: unknown) => {
+          setPending(true);
+          return updateMutateAsync(vars).finally(() => setPending(false));
+        }, []);
+
+        return {
+          isPending: pending,
+          mutateAsync,
+        };
+      },
+    };
+  });
   mock.module('@/src/hooks/queries/useBusyBlocks', () => ({
     useBusyBlocks: mockUseBusyBlocks,
   }));
@@ -279,6 +313,10 @@ beforeEach(() => {
   );
   requestMutateAsync.mockClear();
   cancelMutateAsync.mockClear();
+  updateMutateAsync.mockClear();
+  updateMutateAsync.mockImplementation(() =>
+    Promise.resolve(makeTimeOff({ message: 'Updated note' }))
+  );
 });
 
 describe('TimeOffScreen — nanny', () => {
@@ -474,6 +512,183 @@ describe('TimeOffScreen — nanny', () => {
 
     expect(
       queryByTestId('time-off-cancel-22222222-2222-4222-8222-222222222222')
+    ).toBeNull();
+  });
+
+  it('tapping Edit opens the form in edit mode prefilled from the row', () => {
+    mockUseTimeOff.mockImplementation(() => ({
+      data: [makeTimeOff({ message: 'Visiting family' })],
+      isLoading: false,
+    }));
+
+    const { getByTestId } = render(<TimeOffScreen />);
+
+    fireEvent.press(
+      getByTestId('time-off-edit-22222222-2222-4222-8222-222222222222')
+    );
+
+    expect(getByTestId('time-off-edit-form')).toBeTruthy();
+    expect(getByTestId('time-off-request-message').props.value).toBe(
+      'Visiting family'
+    );
+  });
+
+  it('submitting an edit calls the update mutation with id and payload — not create', async () => {
+    mockUseTimeOff.mockImplementation(() => ({
+      data: [makeTimeOff()],
+      isLoading: false,
+    }));
+
+    const { getByTestId } = render(<TimeOffScreen />);
+
+    fireEvent.press(
+      getByTestId('time-off-edit-22222222-2222-4222-8222-222222222222')
+    );
+    fireEvent.press(getByTestId('time-off-request-dates-set-range'));
+    fireEvent.press(getByTestId('time-off-edit-submit'));
+
+    await waitFor(() => expect(updateMutateAsync).toHaveBeenCalledTimes(1));
+    expect(requestMutateAsync).not.toHaveBeenCalled();
+    const expected = toAllDayRange('2026-08-10', '2026-08-12');
+    expect(updateMutateAsync).toHaveBeenCalledWith({
+      id: '22222222-2222-4222-8222-222222222222',
+      input: expect.objectContaining({
+        starts_at: expected.starts_at,
+        ends_at: expected.ends_at,
+        all_day: true,
+      }),
+    });
+    expect(updateMutateAsync.mock.calls[0]?.[0]?.input?.status).toBeUndefined();
+  });
+
+  it('D30 edit: overlapping other_commitment requires confirm before update mutate', async () => {
+    const expected = toAllDayRange('2026-08-10', '2026-08-12');
+    busyRefetch.mockImplementation(() =>
+      Promise.resolve({
+        data: [
+          {
+            starts_at: '2026-08-11T09:00:00.000Z',
+            ends_at: '2026-08-11T17:00:00.000Z',
+            kind: 'other_commitment',
+          },
+        ],
+        error: null,
+        isError: false,
+      })
+    );
+    mockUseTimeOff.mockImplementation(() => ({
+      data: [makeTimeOff()],
+      isLoading: false,
+    }));
+
+    const { getByTestId } = render(<TimeOffScreen />);
+
+    fireEvent.press(
+      getByTestId('time-off-edit-22222222-2222-4222-8222-222222222222')
+    );
+    fireEvent.press(getByTestId('time-off-request-dates-set-range'));
+    fireEvent.press(getByTestId('time-off-edit-submit'));
+
+    await waitFor(() =>
+      expect(getByTestId('time-off-conflict-confirm')).toBeTruthy()
+    );
+    expect(updateMutateAsync).not.toHaveBeenCalled();
+
+    fireEvent.press(getByTestId('time-off-conflict-confirm'));
+
+    await waitFor(() => expect(updateMutateAsync).toHaveBeenCalledTimes(1));
+    expect(updateMutateAsync).toHaveBeenCalledWith({
+      id: '22222222-2222-4222-8222-222222222222',
+      input: expect.objectContaining({
+        starts_at: expected.starts_at,
+        ends_at: expected.ends_at,
+      }),
+    });
+  });
+
+  it('uses one update mutation instance — Screen isPending disables row Edit while PATCH is in flight', async () => {
+    mockUseTimeOff.mockImplementation(() => ({
+      data: [makeTimeOff()],
+      isLoading: false,
+    }));
+
+    let resolveUpdate!: (value: unknown) => void;
+    updateMutateAsync.mockImplementation(
+      () =>
+        new Promise(resolve => {
+          resolveUpdate = resolve;
+        })
+    );
+
+    const { getByTestId } = render(<TimeOffScreen />);
+
+    fireEvent.press(
+      getByTestId('time-off-edit-22222222-2222-4222-8222-222222222222')
+    );
+    fireEvent.press(getByTestId('time-off-edit-submit'));
+
+    // The mocked useUpdateTimeOff() (see beforeAll) gives every call its own
+    // isPending, local to whichever component calls it — there is no shared
+    // broadcast flag. This assertion can only pass if the mutateAsync that
+    // Submit actually invoked (reached through the `updateTimeOff` prop
+    // TimeOffRequestForm receives from Screen) is the SAME instance whose
+    // isPending drives this row's `disabled` (via Screen's own
+    // useUpdateTimeOff() call → TimeOffRow's `isEditing` prop). If
+    // TimeOffRequestForm regressed to call useUpdateTimeOff() itself, Submit
+    // would flip that separate instance's pending instead, and the row would
+    // never disable — this waitFor would time out.
+    await waitFor(() =>
+      expect(
+        getByTestId('time-off-edit-22222222-2222-4222-8222-222222222222').props
+          .disabled
+      ).toBe(true)
+    );
+
+    act(() => {
+      resolveUpdate(makeTimeOff());
+    });
+
+    await waitFor(() =>
+      expect(
+        getByTestId('time-off-edit-22222222-2222-4222-8222-222222222222').props
+          .disabled
+      ).toBe(false)
+    );
+  });
+
+  it('clearing the note on edit sends message: null — not omitted', async () => {
+    mockUseTimeOff.mockImplementation(() => ({
+      data: [makeTimeOff({ message: 'Visiting family' })],
+      isLoading: false,
+    }));
+
+    const { getByTestId } = render(<TimeOffScreen />);
+
+    fireEvent.press(
+      getByTestId('time-off-edit-22222222-2222-4222-8222-222222222222')
+    );
+    fireEvent.changeText(getByTestId('time-off-request-message'), '   ');
+    fireEvent.press(getByTestId('time-off-edit-submit'));
+
+    await waitFor(() => expect(updateMutateAsync).toHaveBeenCalledTimes(1));
+    expect(updateMutateAsync.mock.calls[0]?.[0]?.input?.message).toBeNull();
+  });
+
+  it('does not offer Edit on a past time-off row', () => {
+    mockUseTimeOff.mockImplementation(() => ({
+      data: [
+        makeTimeOff({
+          starts_at: '2020-01-01T00:00:00.000Z',
+          ends_at: '2020-01-05T00:00:00.000Z',
+        }),
+      ],
+      isLoading: false,
+    }));
+
+    const { queryByTestId } = render(<TimeOffScreen />);
+
+    expect(
+      queryByTestId('time-off-edit-22222222-2222-4222-8222-222222222222')
     ).toBeNull();
   });
 });

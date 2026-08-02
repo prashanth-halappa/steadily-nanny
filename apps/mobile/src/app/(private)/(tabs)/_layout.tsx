@@ -1,22 +1,19 @@
 import { Tabs } from 'expo-router';
 import { CalendarDays, Clock, Home, Settings } from 'lucide-react-native';
+import { useTranslation } from 'react-i18next';
 import { useThemeColors } from '@/lib/design-tokens';
-import { canViewParentSchedule } from '@/src/domains/setup/types';
-import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 
 /**
- * Role-aware tab bar. Parent: Today / Schedule / Hours / Settings. Nanny:
- * Today / Hours / Settings (no Schedule tab). Role comes from
- * `useIsOnboarded()` — SERVER-DERIVED, never a local flag; that hook's
- * header comment explains the re-onboarding bug a local role flag caused.
- * `href: null` hides a `Tabs.Screen` from the tab bar without unmounting
- * its route, so a role that briefly reads as null while loading doesn't
- * flash/remount the navigator once it resolves.
+ * Main tab bar — Today / Schedule / Hours / Settings for every role, all
+ * visible regardless of role (the bar itself is role-uniform). What each
+ * role sees ON the Schedule tab is forked in `schedule.tsx`: nanny gets this
+ * week's shifts; parent/helper get the household's schedule-pattern state;
+ * while role is still resolving, `schedule.tsx` shows a loading, error (with
+ * retry), or empty affordance depending on why the role is still null.
  */
 export default function TabsLayout() {
   const colors = useThemeColors();
-  const onboarding = useIsOnboarded();
-  const canViewSchedule = canViewParentSchedule(onboarding.role);
+  const { t } = useTranslation('common');
 
   return (
     <Tabs
@@ -29,17 +26,14 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="home"
         options={{
-          title: 'Today',
+          title: t('tabs.today'),
           tabBarIcon: ({ color, size }) => <Home color={color} size={size} />,
         }}
       />
       <Tabs.Screen
         name="schedule"
         options={{
-          title: 'Schedule',
-          // Parents only — see `PROJECT-STATUS`/team-lead brief: nannies get
-          // their week via the Today card + Hours tab, not a Schedule tab.
-          href: canViewSchedule ? undefined : null,
+          title: t('tabs.schedule'),
           tabBarIcon: ({ color, size }) => (
             <CalendarDays color={color} size={size} />
           ),
@@ -48,14 +42,14 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="hours"
         options={{
-          title: 'Hours',
+          title: t('tabs.hours'),
           tabBarIcon: ({ color, size }) => <Clock color={color} size={size} />,
         }}
       />
       <Tabs.Screen
         name="settings"
         options={{
-          title: 'Settings',
+          title: t('tabs.settings'),
           tabBarIcon: ({ color, size }) => (
             <Settings color={color} size={size} />
           ),

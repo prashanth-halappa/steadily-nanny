@@ -62,6 +62,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
@@ -79,6 +81,11 @@ jobs:
           done
         env:
           NODE_ENV: test
+      - name: Fetch main for coverage gate diff
+        run: git fetch origin main
+      - name: Check new source files have tests
+        run: BASE_BRANCH=origin/main bash scripts/check-test-coverage-new.sh
+        working-directory: .
 
   api-typecheck:
     name: API - TypeCheck

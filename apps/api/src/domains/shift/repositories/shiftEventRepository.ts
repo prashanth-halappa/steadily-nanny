@@ -10,6 +10,8 @@
  *     (`pattern_conflict`) — re-materialisation re-expands every pattern from
  *     `dtstart` on every horizon run, so an unkeyed append would grow this
  *     table without bound.
+ * Keyed events are deduped at three layers: the pre-insert key filter, an
+ * upsert with `ignoreDuplicates`, and a partial unique index (migration 025).
  * Still append-only: there is NO update/delete method anywhere here,
  * matching the DB's policy: an editable audit trail is not an audit trail
  * (see supabase/migrations/015_shifts.sql).
@@ -86,9 +88,8 @@ export class ShiftEventRepository {
    * event_type — the de-dupe set an idempotent raiser (e.g.
    * `coverageGapService.raiseGapsOnce`,
    * `scheduleMaterialisationService`'s `pattern_conflict`) checks BEFORE
-   * inserting, so re-running never doubles up the day thread. There
-   * is no unique DB constraint enforcing this (see migration 015 — shift
-   * events are freeform), so the guarantee is entirely at this call site.
+   * inserting, so re-running never doubles up the day thread. Migration 025
+   * adds a partial unique index as a backstop for concurrent writers.
    */
   async listEventKeysForDate(
     householdId: string,
@@ -118,16 +119,18 @@ export class ShiftEventRepository {
   }
 
   /**
-   * Bulk append-only insert. Callers (e.g. `coverageGapService.
+   * Bulk append with keyed-event dedupe. Callers (e.g. `coverageGapService.
    * raiseGapsOnce`) are expected to have already filtered out any
-   * `payload.key` returned by `listEventKeysForDate` — this method does not
-   * re-check.
+   * `payload.key` returned by `listEventKeysForDate`; this method upserts
+   * with `ignoreDuplicates` so concurrent writers cannot double-insert.
    */
   async insertMany(events: NewShiftEventInput[]): Promise<void> {
     if (events.length === 0) {
       return;
     }
-    const { error } = await supabaseService.from(this.table).insert(events);
+    const { error } = await supabaseService
+      .from(this.table)
+      .upsert(events, { ignoreDuplicates: true });
 
     if (error) {
       throw new DatabaseError(

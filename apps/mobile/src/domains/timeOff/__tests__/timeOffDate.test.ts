@@ -6,7 +6,11 @@
  * field), so these pass regardless of the test runner's own timezone.
  */
 import { describe, expect, it } from 'bun:test';
-import { formatTimeOffRangeLabel, toAllDayRange } from '../utils/timeOffDate';
+import {
+  formatTimeOffRangeLabel,
+  fromAllDayRange,
+  toAllDayRange,
+} from '../utils/timeOffDate';
 
 describe('toAllDayRange', () => {
   it('a single-day request produces local midnight start and local midnight the next day (exclusive end)', () => {
@@ -54,6 +58,24 @@ describe('toAllDayRange', () => {
     expect(end.getFullYear()).toBe(2026);
     expect(end.getMonth()).toBe(0); // January
     expect(end.getDate()).toBe(1);
+  });
+});
+
+describe('fromAllDayRange', () => {
+  it('round-trips a single-day range through toAllDayRange', () => {
+    const wire = toAllDayRange('2026-08-10', '2026-08-10');
+    expect(fromAllDayRange(wire.starts_at, wire.ends_at)).toEqual({
+      startDate: '2026-08-10',
+      endDate: '2026-08-10',
+    });
+  });
+
+  it('round-trips a multi-day range through toAllDayRange', () => {
+    const wire = toAllDayRange('2026-08-10', '2026-08-12');
+    expect(fromAllDayRange(wire.starts_at, wire.ends_at)).toEqual({
+      startDate: '2026-08-10',
+      endDate: '2026-08-12',
+    });
   });
 });
 

@@ -4,11 +4,17 @@ let TimeOffController: any;
 let listOwn: any;
 let create: any;
 let cancel: any;
+let update: any;
 
 beforeAll(async () => {
   listOwn = mock(async () => [{ id: 't1', status: 'confirmed' }]);
   create = mock(async () => ({ id: 't-new', status: 'confirmed' }));
   cancel = mock(async () => ({ id: 't1', status: 'cancelled' }));
+  update = mock(async () => ({
+    id: 't1',
+    status: 'confirmed',
+    message: 'Updated',
+  }));
 
   mock.module(
     '../../../../../src/domains/availability/services/timeOffQueryService',
@@ -19,7 +25,7 @@ beforeAll(async () => {
   mock.module(
     '../../../../../src/domains/availability/services/timeOffCommandService',
     () => ({
-      timeOffCommandService: { create, cancel },
+      timeOffCommandService: { create, cancel, update },
     })
   );
 
@@ -44,7 +50,7 @@ function mockRes(): any {
 }
 
 beforeEach(() => {
-  for (const m of [listOwn, create, cancel]) {
+  for (const m of [listOwn, create, cancel, update]) {
     m.mockClear?.();
   }
 });
@@ -74,6 +80,24 @@ describe('TimeOffController', () => {
     expect(res.statusCode).toBe(201);
     expect(res.body.data).toEqual({
       carer_time_off: { id: 't-new', status: 'confirmed' },
+    });
+  });
+
+  it('update reads the id param and body and responds 200 with the updated row', async () => {
+    const res = mockRes();
+    await TimeOffController.update(
+      {
+        user: { id: 'u1' },
+        params: { id: 't1' },
+        body: { message: 'Updated' },
+      } as any,
+      res,
+      mock()
+    );
+    expect(update).toHaveBeenCalledWith('u1', 't1', { message: 'Updated' });
+    expect(res.statusCode).toBe(200);
+    expect(res.body.data).toEqual({
+      carer_time_off: { id: 't1', status: 'confirmed', message: 'Updated' },
     });
   });
 

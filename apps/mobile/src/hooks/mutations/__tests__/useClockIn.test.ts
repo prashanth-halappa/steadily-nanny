@@ -11,15 +11,33 @@
  * this domain has the same generic `code`; only `metadata.reason` tells
  * duplicate-clock-in apart from e.g. TIMESHEET_NOT_ACTIONABLE.
  */
-import { beforeAll, describe, expect, it, mock, spyOn } from 'bun:test';
+import { beforeEach, describe, expect, it, mock, spyOn } from 'bun:test';
+import { onlineManager, type QueryClient } from '@tanstack/react-query';
 import { act, waitFor } from '@testing-library/react-native';
+import type { TimeEntry } from '@/src/api/endpoints/timeEntries';
 import { queryKeys } from '@/src/api/queryKeys';
-import { renderHookWithProviders } from '@/src/test-utils';
+import {
+  createTestQueryClient,
+  renderHookWithProviders,
+} from '@/src/test-utils';
+
+const HOUSEHOLD_ID = '00000000-0000-4000-8000-000000000001';
 
 const clockInMock = mock(() =>
   Promise.resolve({ id: 'entry-1', status: 'running' })
 );
 const showErrorToastMock = mock(() => {});
+const useIsOnlineMock = mock(() => true);
+
+/** gcTime: 0 drops cache entries the moment a mutation settles — too early to assert rollback. */
+function createClockMutationTestClient(): QueryClient {
+  const client = createTestQueryClient();
+  client.setDefaultOptions({
+    queries: { retry: false, gcTime: Infinity },
+    mutations: { retry: false },
+  });
+  return client;
+}
 
 mock.module('@/src/api/endpoints/timeEntries', () => ({
   timeEntryApi: { clockIn: clockInMock },
@@ -27,10 +45,22 @@ mock.module('@/src/api/endpoints/timeEntries', () => ({
 mock.module('@/src/lib/toast', () => ({
   showErrorToast: showErrorToastMock,
 }));
+mock.module('@/src/lib/network', () => ({
+  useIsOnline: useIsOnlineMock,
+  setupNetworkManagers: mock(),
+}));
 
 let useClockIn: typeof import('../useClockIn').useClockIn;
 
-beforeAll(async () => {
+beforeEach(async () => {
+  clockInMock.mockReset();
+  clockInMock.mockImplementation(() =>
+    Promise.resolve({ id: 'entry-1', status: 'running' })
+  );
+  showErrorToastMock.mockReset();
+  useIsOnlineMock.mockReset();
+  useIsOnlineMock.mockImplementation(() => true);
+  onlineManager.setOnline(true);
   useClockIn = (await import('../useClockIn')).useClockIn;
 });
 
@@ -39,10 +69,10 @@ describe('useClockIn', () => {
     const { result } = renderHookWithProviders(() => useClockIn());
 
     await act(async () => {
-      await result.current.mutateAsync({ household_id: 'household-1' });
+      await result.current.mutateAsync({ household_id: HOUSEHOLD_ID });
     });
 
-    expect(clockInMock).toHaveBeenCalledWith({ household_id: 'household-1' });
+    expect(clockInMock).toHaveBeenCalledWith({ household_id: HOUSEHOLD_ID });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
   });
 
@@ -64,7 +94,7 @@ describe('useClockIn', () => {
 
     await act(async () => {
       await expect(
-        result.current.mutateAsync({ household_id: 'household-1' })
+        result.current.mutateAsync({ household_id: HOUSEHOLD_ID })
       ).rejects.toBeTruthy();
     });
 
@@ -86,12 +116,17 @@ describe('useClockIn', () => {
         },
       })
     );
-    const { result, queryClient } = renderHookWithProviders(() => useClockIn());
+    const { result, queryClient } = renderHookWithProviders(
+      () => useClockIn(),
+      {
+        queryClient: createClockMutationTestClient(),
+      }
+    );
     const invalidateSpy = spyOn(queryClient, 'invalidateQueries');
 
     await act(async () => {
       await expect(
-        result.current.mutateAsync({ household_id: 'household-1' })
+        result.current.mutateAsync({ household_id: HOUSEHOLD_ID })
       ).rejects.toBeTruthy();
     });
 
@@ -115,12 +150,17 @@ describe('useClockIn', () => {
         },
       })
     );
-    const { result, queryClient } = renderHookWithProviders(() => useClockIn());
+    const { result, queryClient } = renderHookWithProviders(
+      () => useClockIn(),
+      {
+        queryClient: createClockMutationTestClient(),
+      }
+    );
     const invalidateSpy = spyOn(queryClient, 'invalidateQueries');
 
     await act(async () => {
       await expect(
-        result.current.mutateAsync({ household_id: 'household-1' })
+        result.current.mutateAsync({ household_id: HOUSEHOLD_ID })
       ).rejects.toBeTruthy();
     });
 
@@ -146,7 +186,7 @@ describe('useClockIn', () => {
 
     await act(async () => {
       await expect(
-        result.current.mutateAsync({ household_id: 'household-1' })
+        result.current.mutateAsync({ household_id: HOUSEHOLD_ID })
       ).rejects.toBeTruthy();
     });
 
@@ -160,11 +200,193 @@ describe('useClockIn', () => {
 
     await act(async () => {
       await expect(
-        result.current.mutateAsync({ household_id: 'household-1' })
+        result.current.mutateAsync({ household_id: HOUSEHOLD_ID })
       ).rejects.toThrow('boom');
     });
 
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect(showErrorToastMock).toHaveBeenCalledWith('errors:unknown');
+  });
+
+  it('G20: writes an optimistic running entry to the cache before the mutation resolves', async () => {
+    let resolve!: (value: { id: string; status: string }) => void;
+    clockInMock.mockImplementationOnce(
+      () =>
+        new Promise<{ id: string; status: string }>(r => {
+          resolve = r;
+        })
+    );
+
+    const { result, queryClient } = renderHookWithProviders(
+      () => useClockIn(),
+      {
+        queryClient: createClockMutationTestClient(),
+      }
+    );
+
+    let mutationPromise!: Promise<unknown>;
+    await act(async () => {
+      mutationPromise = result.current.mutateAsync({
+        household_id: HOUSEHOLD_ID,
+      });
+    });
+
+    await waitFor(() => {
+      expect(
+        queryClient.getQueryData(queryKeys.timeEntry.running())
+      ).toMatchObject({
+        status: 'running',
+        household_id: HOUSEHOLD_ID,
+      });
+    });
+
+    await act(async () => {
+      resolve({ id: 'entry-1', status: 'running' });
+      await mutationPromise;
+    });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+  });
+
+  it('G20: rolls back the optimistic running entry on a non-409 error', async () => {
+    const runningKey = queryKeys.timeEntry.running();
+    const previousEntry = {
+      id: 'entry-prior',
+      household_id: HOUSEHOLD_ID,
+      clock_in_at: '2026-08-01T19:00:00.000Z',
+      status: 'running',
+    } as TimeEntry;
+    clockInMock.mockImplementationOnce(() => Promise.reject(new Error('boom')));
+    const { result, queryClient } = renderHookWithProviders(
+      () => useClockIn(),
+      {
+        queryClient: createClockMutationTestClient(),
+      }
+    );
+    queryClient.setQueryData<TimeEntry | null>(runningKey, previousEntry);
+    expect(queryClient.getQueryData<TimeEntry | null>(runningKey)).toEqual(
+      previousEntry
+    );
+
+    await act(async () => {
+      await expect(
+        result.current.mutateAsync({ household_id: HOUSEHOLD_ID })
+      ).rejects.toThrow('boom');
+    });
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(showErrorToastMock).toHaveBeenCalledWith('errors:unknown');
+    expect(queryClient.getQueryData<TimeEntry | null>(runningKey)).toEqual(
+      previousEntry
+    );
+  });
+
+  it('G20: surfaces explicit offline copy when clock-in starts while offline', async () => {
+    useIsOnlineMock.mockImplementation(() => false);
+    onlineManager.setOnline(false);
+
+    const { result, queryClient } = renderHookWithProviders(
+      () => useClockIn(),
+      {
+        queryClient: createClockMutationTestClient(),
+      }
+    );
+
+    await act(async () => {
+      void result.current.mutate({ household_id: HOUSEHOLD_ID });
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(showErrorToastMock).toHaveBeenCalledWith('errors:offline');
+      expect(
+        queryClient.getQueryData(queryKeys.timeEntry.running())
+      ).toMatchObject({ status: 'running' });
+    });
+
+    result.current.reset();
+    queryClient.getMutationCache().clear();
+  });
+
+  it('A1: still invokes timeEntryApi.clockIn after onMutate writes the optimistic entry (onMutate must not abort the mutation)', async () => {
+    let resolve!: (value: { id: string; status: string }) => void;
+    clockInMock.mockImplementationOnce(
+      () =>
+        new Promise<{ id: string; status: string }>(r => {
+          resolve = r;
+        })
+    );
+
+    const { result, queryClient } = renderHookWithProviders(
+      () => useClockIn(),
+      {
+        queryClient: createClockMutationTestClient(),
+      }
+    );
+
+    let mutationPromise!: Promise<unknown>;
+    await act(async () => {
+      mutationPromise = result.current.mutateAsync({
+        household_id: HOUSEHOLD_ID,
+      });
+    });
+
+    expect(clockInMock).toHaveBeenCalledTimes(1);
+    expect(
+      queryClient.getQueryData(queryKeys.timeEntry.running())
+    ).toMatchObject({ status: 'running', isOptimistic: true });
+
+    await act(async () => {
+      resolve({ id: 'entry-server', status: 'running' });
+      await mutationPromise;
+    });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+  });
+
+  it('A1: onSuccess replaces the optimistic running entry with the server entry in cache', async () => {
+    const serverEntry = {
+      id: 'entry-server',
+      household_id: HOUSEHOLD_ID,
+      clock_in_at: '2026-08-01T20:00:00.000Z',
+      status: 'running',
+    } as TimeEntry;
+    clockInMock.mockImplementationOnce(() => Promise.resolve(serverEntry));
+
+    const { result, queryClient } = renderHookWithProviders(
+      () => useClockIn(),
+      {
+        queryClient: createClockMutationTestClient(),
+      }
+    );
+
+    await act(async () => {
+      await result.current.mutateAsync({ household_id: HOUSEHOLD_ID });
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(
+      queryClient.getQueryData<TimeEntry | null>(queryKeys.timeEntry.running())
+    ).toEqual(serverEntry);
+  });
+
+  it('G20: retries transient network failures (mutation-level retry overrides the test client default)', async () => {
+    let attempts = 0;
+    clockInMock.mockImplementation(() => {
+      attempts += 1;
+      if (attempts === 1) {
+        return Promise.reject({
+          isAxiosError: true,
+          message: 'Network Error',
+        });
+      }
+      return Promise.resolve({ id: 'entry-1', status: 'running' });
+    });
+    const { result } = renderHookWithProviders(() => useClockIn());
+
+    await act(async () => {
+      await result.current.mutateAsync({ household_id: HOUSEHOLD_ID });
+    });
+
+    expect(clockInMock).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
   });
 });

@@ -10,7 +10,10 @@
  *
  * The write itself goes through `ShiftRepository.applyParentEdit` (Postgres
  * RPC) so the shift row update and the `shift_updated` day-thread event are
- * atomic (D23/D24).
+ * atomic (D23/D24). This service sends the edit INTENT only — the resulting
+ * `sequence` and the event's before/after snapshots are derived inside the
+ * RPC from the row it locks (migration 031), because this service's own read
+ * is unlocked and a concurrent accept can land between the two.
  *
  * @module domains/shift/services/shiftCommandService
  */
@@ -66,23 +69,11 @@ export class ShiftCommandService {
     const setStartsAt = input.starts_at !== undefined;
     const setEndsAt = input.ends_at !== undefined;
     const setNote = input.note !== undefined;
-    const nextSequence = shift.sequence + 1;
 
-    const before = {
-      starts_at: shift.starts_at,
-      ends_at: shift.ends_at,
-      note: shift.note,
-      sequence: shift.sequence,
-      origin: shift.origin,
-    };
-    const after = {
-      starts_at: effectiveStarts,
-      ends_at: effectiveEnds,
-      note: setNote ? (input.note ?? null) : shift.note,
-      sequence: nextSequence,
-      origin: 'parent_proposed',
-    };
-
+    // Deliberately NOT sending a sequence or a before/after snapshot: the
+    // read above is unlocked, so anything derived from it can be overtaken by
+    // a concurrent accept before the RPC takes its lock. The RPC builds both
+    // from the locked row — see migration 031.
     return this.shiftRepo.applyParentEdit({
       shiftId,
       actorId: userId,
@@ -93,9 +84,6 @@ export class ShiftCommandService {
       setEndsAt,
       setNote,
       origin: 'parent_proposed',
-      sequence: nextSequence,
-      before,
-      after,
     });
   }
 

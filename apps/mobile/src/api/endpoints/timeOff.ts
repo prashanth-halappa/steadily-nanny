@@ -28,23 +28,25 @@
 import type {
   CarerTimeOff,
   CreateCarerTimeOffInput,
+  UpdateCarerTimeOffInput,
 } from '@steadily-nanny/shared-types/schemas/availability.schema';
 import {
   CarerTimeOffListResponseSchema,
   CarerTimeOffSchema,
   CreateCarerTimeOffSchema,
+  UpdateCarerTimeOffSchema,
 } from '@steadily-nanny/shared-types/schemas/availability.schema';
 import { z } from 'zod';
 import { apiClient } from '@/src/api/client';
 
 export { CARER_TIME_OFF_STATUSES } from '@steadily-nanny/shared-types/schemas/availability.schema';
-export type { CarerTimeOff, CreateCarerTimeOffInput };
+export type { CarerTimeOff, CreateCarerTimeOffInput, UpdateCarerTimeOffInput };
 
 // --- Endpoint URLs ----------------------------------------------------------
 export const timeOffEndpoints = {
   list: '/v1/time-off',
   create: '/v1/time-off',
-  cancel: (timeOffId: string) => `/v1/time-off/${timeOffId}`,
+  byId: (timeOffId: string) => `/v1/time-off/${timeOffId}`,
 } as const;
 
 // --- API --------------------------------------------------------------------
@@ -77,7 +79,33 @@ export const timeOffApi = {
 
   /** Soft-cancel a time-off row the caller owns — never a hard delete. */
   cancel: async (timeOffId: string): Promise<CarerTimeOff> => {
-    const response = await apiClient.delete(timeOffEndpoints.cancel(timeOffId));
+    const response = await apiClient.delete(timeOffEndpoints.byId(timeOffId));
+    const parsed = z
+      .object({ carer_time_off: CarerTimeOffSchema })
+      .safeParse(response.data.data);
+    if (!parsed.success) throw parsed.error;
+    return parsed.data.carer_time_off;
+  },
+
+  /** Edit dates/message on a time-off row the caller owns — cancel stays on DELETE. */
+  update: async (
+    timeOffId: string,
+    input: UpdateCarerTimeOffInput
+  ): Promise<CarerTimeOff> => {
+    if (input.status !== undefined) {
+      const error = Object.assign(new Error('Use DELETE to cancel time off'), {
+        code: 'CANCEL_VIA_DELETE',
+      });
+      throw error;
+    }
+
+    const validated = UpdateCarerTimeOffSchema.safeParse(input);
+    if (!validated.success) throw validated.error;
+
+    const response = await apiClient.patch(
+      timeOffEndpoints.byId(timeOffId),
+      validated.data
+    );
     const parsed = z
       .object({ carer_time_off: CarerTimeOffSchema })
       .safeParse(response.data.data);

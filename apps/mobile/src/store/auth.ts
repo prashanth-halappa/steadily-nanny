@@ -12,6 +12,7 @@ import {
 import { queryClient } from '../api/queryClient';
 import { appIdentity } from '../config/appIdentity';
 import { env } from '../config/env';
+import i18n from '../i18n';
 import { supabase } from '../lib/supabase';
 import { createPersistedStore } from './createPersistedStore';
 import { resetUserScopedStores } from './resetStores';
@@ -86,7 +87,7 @@ export const useAuthStore = createPersistedStore<AuthState>(
           error:
             error instanceof Error
               ? error.message
-              : 'An unknown error occurred',
+              : i18n.t('errors.unknown', { ns: 'auth' }),
         });
       } finally {
         set({ isLoading: false });
@@ -106,7 +107,7 @@ export const useAuthStore = createPersistedStore<AuthState>(
           error:
             error instanceof Error
               ? error.message
-              : 'An unknown error occurred',
+              : i18n.t('errors.unknown', { ns: 'auth' }),
         });
       } finally {
         set({ isLoading: false });
@@ -128,7 +129,7 @@ export const useAuthStore = createPersistedStore<AuthState>(
           error:
             error instanceof Error
               ? error.message
-              : 'An unknown error occurred',
+              : i18n.t('errors.unknown', { ns: 'auth' }),
         });
         throw error;
       } finally {
@@ -156,7 +157,7 @@ export const useAuthStore = createPersistedStore<AuthState>(
           error:
             error instanceof Error
               ? error.message
-              : 'An unknown error occurred',
+              : i18n.t('errors.unknown', { ns: 'auth' }),
         });
       } finally {
         set({ isLoading: false });
@@ -171,7 +172,7 @@ export const useAuthStore = createPersistedStore<AuthState>(
         const tokens = await GoogleSignin.getTokens();
         const idToken = tokens.idToken;
         if (!idToken) {
-          set({ error: 'Google Sign-In failed: No ID token received' });
+          set({ error: i18n.t('errors.googleNoIdToken', { ns: 'auth' }) });
           throw new Error('No ID token received from Google Sign-In');
         }
         const { error } = await supabase.auth.signInWithIdToken({
@@ -190,16 +191,20 @@ export const useAuthStore = createPersistedStore<AuthState>(
         if (errorCode === 'SIGN_IN_CANCELLED') {
           set({ error: null });
         } else if (errorCode === 'IN_PROGRESS') {
-          set({ error: 'Google Sign-In is already in progress' });
+          set({ error: i18n.t('errors.googleInProgress', { ns: 'auth' }) });
         } else if (errorCode === 'PLAY_SERVICES_NOT_AVAILABLE') {
           set({
-            error: 'Google Play Services not available',
+            error: i18n.t('errors.googlePlayServicesUnavailable', {
+              ns: 'auth',
+            }),
             isPlayServicesUnavailable: true,
           });
         } else if (error instanceof Error) {
           set({ error: error.message });
         } else {
-          set({ error: 'An unknown error occurred during Google Sign-In' });
+          set({
+            error: i18n.t('errors.googleUnknown', { ns: 'auth' }),
+          });
         }
       } finally {
         set({ isLoading: false });
@@ -221,7 +226,9 @@ export const useAuthStore = createPersistedStore<AuthState>(
           // a fresh-looking signup, the Apple ID is still authorized at the OS
           // level — revoke via Settings → Sign in with Apple to re-test.
           if (!appleCredential.identityToken) {
-            set({ error: 'Apple Sign-In failed: No identity token returned.' });
+            set({
+              error: i18n.t('errors.appleNoIdentityToken', { ns: 'auth' }),
+            });
             throw new Error('No identity token returned from Apple Sign-In');
           }
           const { error } = await supabase.auth.signInWithIdToken({
@@ -281,7 +288,7 @@ export const useAuthStore = createPersistedStore<AuthState>(
         } else if (error instanceof Error) {
           set({ error: error.message });
         } else {
-          set({ error: 'An unknown error occurred' });
+          set({ error: i18n.t('errors.unknown', { ns: 'auth' }) });
         }
       } finally {
         set({ isLoading: false });

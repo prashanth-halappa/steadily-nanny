@@ -3,8 +3,10 @@ import { useEffect, useState } from 'react';
 import { Platform, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
+  AnnouncementModal,
   NotificationSoftAskSheet,
   OfflineBanner,
+  SoftUpdateBanner,
 } from '@/src/components/custom';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { useAuthStore } from '@/src/store/auth';
@@ -52,6 +54,7 @@ export default function PrivateLayout() {
   return (
     <SafeAreaView style={{ flex: 1 }} edges={['top']}>
       <OfflineBanner />
+      <SoftUpdateBanner />
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="(tabs)" />
       </Stack>
@@ -60,6 +63,7 @@ export default function PrivateLayout() {
           gate. PORTING: gate on a route-INDEPENDENT `enabled`, and keep <Stack>
           mounted under a loading overlay (never unmount it mid-load). */}
 
+      <AnnouncementModal />
       <NotificationSoftAskSheet
         visible={showSoftAsk}
         onDismiss={() => setShowSoftAsk(false)}

@@ -2,10 +2,11 @@
  * @module domains/timeOff/components/TimeOffRequestForm
  *
  * The request body: a start/end date range plus an optional note, submitted
- * via `useRequestTimeOff`. There is no "pending approval" state anywhere in
- * this flow — `POST /v1/time-off` confirms the request instantly (see
- * `src/api/endpoints/timeOff.ts`'s header comment) — so the success toast
- * says "confirmed", never "requested" or "sent for approval".
+ * via `useRequestTimeOff` (create) or `useUpdateTimeOff` (edit). There is no
+ * "pending approval" state anywhere in this flow — `POST /v1/time-off`
+ * confirms the request instantly (see `src/api/endpoints/timeOff.ts`'s header
+ * comment) — so the success toast says "confirmed", never "requested" or
+ * "sent for approval".
  *
  * D30: before mutate, refetch anonymised busy blocks for the selected range.
  * Overlaps with `other_commitment` / `personal` open a warn-and-confirm
@@ -17,7 +18,12 @@
  * approve/query handlers (an unhandled promise rejection in metro.log even
  * though the mutation's own `onError` already shows a toast).
  */
-import type { CreateCarerTimeOffInput } from '@steadily-nanny/shared-types/schemas/availability.schema';
+import type {
+  CarerTimeOff,
+  CreateCarerTimeOffInput,
+  UpdateCarerTimeOffInput,
+} from '@steadily-nanny/shared-types/schemas/availability.schema';
+import type { UseMutationResult } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
@@ -36,11 +42,12 @@ import { Text } from '@/src/components/ui/text';
 import { Textarea } from '@/src/components/ui/textarea';
 import { Body } from '@/src/components/ui/typography';
 import { useRequestTimeOff } from '@/src/hooks/mutations/useRequestTimeOff';
+import type { UpdateTimeOffVariables } from '@/src/hooks/mutations/useUpdateTimeOff';
 import { useBusyBlocks } from '@/src/hooks/queries/useBusyBlocks';
 import { showSuccessToast } from '@/src/lib/toast';
 import { useAuthStore } from '@/src/store/auth';
 import { findConflictingBusyBlocks } from '../utils/busyConflict';
-import { toAllDayRange } from '../utils/timeOffDate';
+import { fromAllDayRange, toAllDayRange } from '../utils/timeOffDate';
 import { TimeOffDateRangePicker } from './TimeOffDateRangePicker';
 
 /** Today's calendar date, "yyyy-mm-dd", in the DEVICE's local zone. */
@@ -52,17 +59,45 @@ function todayISO(): string {
   return `${y}-${m}-${d}`;
 }
 
-export function TimeOffRequestForm() {
+interface TimeOffRequestFormProps {
+  editTimeOff?: CarerTimeOff;
+  onEditDismiss?: () => void;
+  /** Parent-owned update mutation — Screen passes its single `useUpdateTimeOff` instance. */
+  updateTimeOff?: Pick<
+    UseMutationResult<CarerTimeOff, Error, UpdateTimeOffVariables>,
+    'mutateAsync' | 'isPending'
+  >;
+}
+
+export function TimeOffRequestForm({
+  editTimeOff,
+  onEditDismiss,
+  updateTimeOff,
+}: TimeOffRequestFormProps = {}) {
+  const isEditMode = editTimeOff != null;
+  const initialDates = isEditMode
+    ? fromAllDayRange(editTimeOff.starts_at, editTimeOff.ends_at)
+    : { startDate: todayISO(), endDate: todayISO() };
+
   const { t } = useTranslation('timeOff');
   const requestTimeOff = useRequestTimeOff();
   const userId = useAuthStore(s => s.session?.user?.id ?? null);
-  const [startDate, setStartDate] = useState(todayISO);
-  const [endDate, setEndDate] = useState(todayISO);
-  const [message, setMessage] = useState('');
+  const [startDate, setStartDate] = useState(initialDates.startDate);
+  const [endDate, setEndDate] = useState(initialDates.endDate);
+  const [message, setMessage] = useState(editTimeOff?.message ?? '');
   const [conflictOpen, setConflictOpen] = useState(false);
   const [checkFailedOpen, setCheckFailedOpen] = useState(false);
-  const [pendingPayload, setPendingPayload] =
-    useState<CreateCarerTimeOffInput | null>(null);
+  const [pendingPayload, setPendingPayload] = useState<
+    CreateCarerTimeOffInput | UpdateCarerTimeOffInput | null
+  >(null);
+
+  const activeMutation = isEditMode ? updateTimeOff : requestTimeOff;
+
+  if (isEditMode && !updateTimeOff) {
+    throw new Error(
+      'TimeOffRequestForm edit mode requires updateTimeOff from parent'
+    );
+  }
 
   const { starts_at: rangeStart, ends_at: rangeEnd } = toAllDayRange(
     startDate,
@@ -75,9 +110,19 @@ export function TimeOffRequestForm() {
     setEndDate(end);
   };
 
-  const buildPayload = (): CreateCarerTimeOffInput => {
+  const buildPayload = ():
+    | CreateCarerTimeOffInput
+    | UpdateCarerTimeOffInput => {
     const { starts_at, ends_at } = toAllDayRange(startDate, endDate);
     const trimmedMessage = message.trim();
+    if (isEditMode) {
+      return {
+        starts_at,
+        ends_at,
+        all_day: true,
+        message: trimmedMessage || null,
+      };
+    }
     return {
       starts_at,
       ends_at,
@@ -86,19 +131,28 @@ export function TimeOffRequestForm() {
     };
   };
 
-  const submitPayload = async (payload: CreateCarerTimeOffInput) => {
+  const submitPayload = async (
+    payload: CreateCarerTimeOffInput | UpdateCarerTimeOffInput
+  ) => {
     try {
-      await requestTimeOff.mutateAsync(payload);
+      if (isEditMode && editTimeOff && updateTimeOff) {
+        await updateTimeOff.mutateAsync({ id: editTimeOff.id, input: payload });
+      } else {
+        await requestTimeOff.mutateAsync(payload as CreateCarerTimeOffInput);
+      }
     } catch {
       return;
     }
-    setMessage('');
+    if (!isEditMode) {
+      setMessage('');
+    }
     setPendingPayload(null);
-    showSuccessToast(t('requestedToast'));
+    showSuccessToast(t(isEditMode ? 'updatedToast' : 'requestedToast'));
+    onEditDismiss?.();
   };
 
   const handleSubmit = async () => {
-    if (requestTimeOff.isPending) return;
+    if (activeMutation?.isPending) return;
     const payload = buildPayload();
 
     const result = await busyQuery.refetch();
@@ -109,8 +163,8 @@ export function TimeOffRequestForm() {
     }
 
     const conflicts = findConflictingBusyBlocks(
-      payload.starts_at,
-      payload.ends_at,
+      payload.starts_at ?? rangeStart,
+      payload.ends_at ?? rangeEnd,
       result.data ?? []
     );
     if (conflicts.length > 0) {
@@ -131,8 +185,13 @@ export function TimeOffRequestForm() {
   };
 
   return (
-    <View testID="time-off-request-form" className="mb-6 gap-4">
-      <Body className="font-medium">{t('requestTitle')}</Body>
+    <View
+      testID={isEditMode ? 'time-off-edit-form' : 'time-off-request-form'}
+      className="mb-6 gap-4"
+    >
+      <Body className="font-medium">
+        {t(isEditMode ? 'editTitle' : 'requestTitle')}
+      </Body>
       <TimeOffDateRangePicker
         testID="time-off-request-dates"
         start={startDate}
@@ -146,13 +205,27 @@ export function TimeOffRequestForm() {
         value={message}
         onChangeText={setMessage}
       />
-      <Button
-        testID="time-off-request-submit"
-        disabled={requestTimeOff.isPending}
-        onPress={() => void handleSubmit()}
-      >
-        <Text>{t('requestSubmit')}</Text>
-      </Button>
+      <View className="flex-row gap-2">
+        {isEditMode ? (
+          <Button
+            testID="time-off-edit-cancel"
+            variant="outline"
+            disabled={activeMutation?.isPending ?? false}
+            onPress={() => onEditDismiss?.()}
+          >
+            <Text>{t('editCancel')}</Text>
+          </Button>
+        ) : null}
+        <Button
+          testID={
+            isEditMode ? 'time-off-edit-submit' : 'time-off-request-submit'
+          }
+          disabled={activeMutation?.isPending ?? false}
+          onPress={() => void handleSubmit()}
+        >
+          <Text>{t(isEditMode ? 'editSubmit' : 'requestSubmit')}</Text>
+        </Button>
+      </View>
 
       <AlertDialog open={conflictOpen} onOpenChange={setConflictOpen}>
         <AlertDialogContent>

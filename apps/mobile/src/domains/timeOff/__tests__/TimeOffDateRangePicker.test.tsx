@@ -69,4 +69,14 @@ describe('TimeOffDateRangePicker source', () => {
     // The refuse path must return early instead of calling onChange at all.
     expect(source).toMatch(/Refuse[\s\S]{0,150}return;/);
   });
+
+  it('localizes labels and error through timeOff namespace keys', () => {
+    expect(source).toContain("useTranslation('timeOff')");
+    expect(source).toContain("t('dateRange.start')");
+    expect(source).toContain("t('dateRange.end')");
+    expect(source).toContain("t('dateRange.endBeforeStart')");
+    expect(source).not.toContain('>Start<');
+    expect(source).not.toContain('>End<');
+    expect(source).not.toContain('End date must not be before the start date.');
+  });
 });

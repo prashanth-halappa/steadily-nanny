@@ -18,6 +18,8 @@
  * link, which means it was not really shipped. It renders NOTHING when there is
  * no pending week, so it costs an ordinary day nothing.
  */
+
+import { useTranslation } from 'react-i18next';
 import { ScrollView, View } from 'react-native';
 import { ChildChip } from '@/src/components/ui/child-chip';
 import { EmptyState } from '@/src/components/ui/empty-state';
@@ -38,6 +40,7 @@ import { HandoffChipsCard } from './HandoffChipsCard';
 import { NannyLiveStatusCard } from './NannyLiveStatusCard';
 
 export function TodayScreen() {
+  const { t } = useTranslation('today');
   // Server-derived role, NOT the local setupProgress store — that's
   // in-flight wizard UI state and can be empty/stale for a parent whose
   // household was seeded directly, or who signed in on a fresh device. See
@@ -52,7 +55,7 @@ export function TodayScreen() {
       className="flex-1 bg-background"
       contentContainerStyle={{ padding: 24, paddingBottom: 100 }}
     >
-      <H1 testID="today-header">Today</H1>
+      <H1 testID="today-header">{t('screenTitle')}</H1>
 
       {activeHousehold.isLoading ? (
         <LoadingIndicator />
@@ -114,8 +117,8 @@ export function TodayScreen() {
         <View className="mt-8">
           <EmptyState
             variant="inline"
-            title="Your week will appear here"
-            description="Once you add a schedule, upcoming shifts and updates will show up on this screen."
+            title={t('emptyTitle')}
+            description={t('emptyDescription')}
           />
         </View>
       )}

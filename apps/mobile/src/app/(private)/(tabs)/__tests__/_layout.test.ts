@@ -3,11 +3,9 @@
  *
  * Source-inspection test (Pattern A, docs/09-TESTING.md §5) — the tab
  * layout pulls in expo-router's native tab navigator, so we assert
- * architectural markers instead of rendering. Covers: role comes from the
- * server-derived `useIsOnboarded` hook (never a local flag — that was a
- * ship-blocking bug, see that hook's header comment), the Schedule tab is
- * hidden (not removed) for non-parents via `href: null`, and all four tabs
- * are wired.
+ * architectural markers instead of rendering. Covers: all four tabs are
+ * wired, the Schedule tab is visible for every role (no href gate), and
+ * tab titles are localized via common:tabs.*.
  */
 import { beforeAll, describe, expect, it } from 'bun:test';
 import { join } from 'node:path';
@@ -20,11 +18,6 @@ beforeAll(async () => {
 });
 
 describe('TabsLayout', () => {
-  it('derives role from useIsOnboarded, not a local flag', () => {
-    expect(layoutSource).toContain('useIsOnboarded');
-    expect(layoutSource).not.toMatch(/useSetupProgress|localRole/);
-  });
-
   it('wires all four tab screens', () => {
     expect(layoutSource).toContain('name="home"');
     expect(layoutSource).toContain('name="schedule"');
@@ -32,10 +25,16 @@ describe('TabsLayout', () => {
     expect(layoutSource).toContain('name="settings"');
   });
 
-  it('hides the Schedule tab for non-parent viewers via href: null rather than unmounting it', () => {
-    expect(layoutSource).toContain('canViewParentSchedule');
-    expect(layoutSource).toMatch(
-      /href:\s*canViewSchedule\s*\?\s*undefined\s*:\s*null/
-    );
+  it('does not hide the Schedule tab via href: null (role fork lives in schedule.tsx)', () => {
+    expect(layoutSource).not.toMatch(/href:/);
+    expect(layoutSource).not.toContain('canViewParentSchedule');
+  });
+
+  it('localizes tab titles via common:tabs.* keys', () => {
+    expect(layoutSource).toContain("useTranslation('common')");
+    expect(layoutSource).toContain("t('tabs.today')");
+    expect(layoutSource).toContain("t('tabs.schedule')");
+    expect(layoutSource).toContain("t('tabs.hours')");
+    expect(layoutSource).toContain("t('tabs.settings')");
   });
 });

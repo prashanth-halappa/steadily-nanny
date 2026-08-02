@@ -1,4 +1,8 @@
 {
+  "tab": {
+    "emptyTitle": "No household yet",
+    "emptyDescription": "Once you're added to a household, its schedule will show up here."
+  },
   "build": {
     "screenTitle": "Build your usual week",
     "loading": "Loading…",
@@ -110,7 +114,9 @@
     },
     "cancelShift": "Request cancel",
     "counterOffer": "Counter with these times",
-    "changesTitle": "Pending changes",
+    "changesTitle": "Changes",
+    "requestMessageLabel": "Message",
+    "responseLabel": "Response",
     "acceptChange": "Accept",
     "declineChange": "Decline",
     "shortNoticePaidHint": "Within the paid-cancellation window — hours may still count.",
@@ -163,5 +169,12 @@
     "counter_offer": "Counter offer",
     "split": "Split",
     "handover": "Handover"
+  },
+  "changeRequestStatus": {
+    "pending": "Pending",
+    "accepted": "Accepted",
+    "declined": "Declined",
+    "withdrawn": "Withdrawn",
+    "superseded": "Superseded"
   }
 }

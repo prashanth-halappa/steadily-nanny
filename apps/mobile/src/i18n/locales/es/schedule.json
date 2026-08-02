@@ -1,4 +1,8 @@
 {
+  "tab": {
+    "emptyTitle": "Aún no hay un hogar",
+    "emptyDescription": "Cuando te añadan a un hogar, su horario aparecerá aquí."
+  },
   "build": {
     "screenTitle": "Construye tu semana habitual",
     "loading": "Cargando…",
@@ -110,7 +114,9 @@
     },
     "cancelShift": "Pedir cancelación",
     "counterOffer": "Proponer otros horarios",
-    "changesTitle": "Cambios pendientes",
+    "changesTitle": "Cambios",
+    "requestMessageLabel": "Mensaje",
+    "responseLabel": "Respuesta",
     "acceptChange": "Aceptar",
     "declineChange": "Rechazar",
     "shortNoticePaidHint": "Dentro de la ventana de cancelación pagada.",
@@ -163,5 +169,12 @@
     "counter_offer": "Contraoferta",
     "split": "División",
     "handover": "Traspaso"
+  },
+  "changeRequestStatus": {
+    "pending": "Pendiente",
+    "accepted": "Aceptado",
+    "declined": "Rechazado",
+    "withdrawn": "Retirado",
+    "superseded": "Reemplazado"
   }
 }

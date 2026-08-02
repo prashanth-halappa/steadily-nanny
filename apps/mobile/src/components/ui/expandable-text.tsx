@@ -13,6 +13,7 @@
 
 import { ChevronDown } from 'lucide-react-native';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Pressable, View } from 'react-native';
 import Animated, {
   useAnimatedStyle,
@@ -32,9 +33,9 @@ interface ExpandableTextProps {
   collapsedClassName?: string;
   toggleClassName?: string;
   characterLimit?: number;
-  /** Label shown when collapsed (default: "Read more") */
+  /** Label shown when collapsed (default: common.readMore) */
   readMoreLabel?: string;
-  /** Label shown when expanded (default: "Show less") */
+  /** Label shown when expanded (default: common.showLess) */
   showLessLabel?: string;
 }
 
@@ -46,9 +47,12 @@ export function ExpandableText({
   collapsedClassName,
   toggleClassName,
   characterLimit = 150,
-  readMoreLabel = 'Read more',
-  showLessLabel = 'Show less',
+  readMoreLabel: readMoreLabelProp,
+  showLessLabel: showLessLabelProp,
 }: ExpandableTextProps) {
+  const { t } = useTranslation('common');
+  const readMoreLabel = readMoreLabelProp ?? t('readMore');
+  const showLessLabel = showLessLabelProp ?? t('showLess');
   const [expanded, setExpanded] = useState(false);
   const rotation = useSharedValue(0);
 
@@ -93,7 +97,7 @@ export function ExpandableText({
         onPress={handleToggle}
         accessibilityRole="button"
         accessibilityLabel={expanded ? showLessLabel : readMoreLabel}
-        accessibilityHint="Toggles the full text display"
+        accessibilityHint={t('expandTextHint')}
         className="flex-row items-center gap-1 mt-2"
       >
         <ButtonText className={cn('text-primary font-medium', toggleClassName)}>

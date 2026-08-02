@@ -23,6 +23,7 @@ import { Card, CardContent } from '@/src/components/ui/card';
 import { LoadingButton } from '@/src/components/ui/loading-button';
 import { Body, H2, Small } from '@/src/components/ui/typography';
 import { formatClockTime } from '@/src/domains/timesheet/utils/duration';
+import { isOptimisticTimeEntry } from '@/src/hooks/mutations/timeEntryMutationUtils';
 import { useClockIn } from '@/src/hooks/mutations/useClockIn';
 import { useClockOut } from '@/src/hooks/mutations/useClockOut';
 import { useRunningTimeEntry } from '@/src/hooks/queries/useRunningTimeEntry';
@@ -54,6 +55,12 @@ export function ClockInCard({ householdId }: ClockInCardProps) {
   const clockOutInFlightRef = useRef(false);
   const [showClockOutSheet, setShowClockOutSheet] = useState(false);
 
+  const clockOutBlocked =
+    !entry ||
+    isOptimisticTimeEntry(entry) ||
+    clockIn.isPending ||
+    clockInInFlightRef.current;
+
   const handleClockIn = () => {
     if (clockInInFlightRef.current) return;
     clockInInFlightRef.current = true;
@@ -72,7 +79,14 @@ export function ClockInCard({ householdId }: ClockInCardProps) {
   // (with whatever break/note were entered) happens in
   // `handleConfirmClockOut` below, from the sheet's own confirm button.
   const handleClockOutPress = () => {
-    if (!entry) return;
+    if (
+      !entry ||
+      isOptimisticTimeEntry(entry) ||
+      clockIn.isPending ||
+      clockInInFlightRef.current
+    ) {
+      return;
+    }
     setShowClockOutSheet(true);
   };
 
@@ -80,7 +94,15 @@ export function ClockInCard({ householdId }: ClockInCardProps) {
     breakMinutes,
     note,
   }: ClockOutSheetSubmitInput) => {
-    if (!entry || clockOutInFlightRef.current) return;
+    if (
+      !entry ||
+      isOptimisticTimeEntry(entry) ||
+      clockIn.isPending ||
+      clockInInFlightRef.current ||
+      clockOutInFlightRef.current
+    ) {
+      return;
+    }
     clockOutInFlightRef.current = true;
     clockOut
       .mutateAsync({
@@ -116,7 +138,8 @@ export function ClockInCard({ householdId }: ClockInCardProps) {
               testID="today-clock-out"
               variant="outline"
               label={t('clockOut')}
-              isLoading={false}
+              isLoading={clockIn.isPending}
+              disabled={clockOutBlocked}
               onPress={handleClockOutPress}
             />
             <ClockOutSheet
