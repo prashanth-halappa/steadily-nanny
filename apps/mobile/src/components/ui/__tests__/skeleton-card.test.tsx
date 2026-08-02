@@ -181,8 +181,8 @@ describe('SkeletonCard', () => {
     });
 
     it('should have accessibility label indicating loading state', () => {
-      const accessibilityLabel = 'Loading activity card';
-      expect(accessibilityLabel).toBe('Loading activity card');
+      const { getByLabelText } = render(<SkeletonCard />);
+      expect(getByLabelText('a11y.loadingActivityCard')).toBeTruthy();
     });
   });
 

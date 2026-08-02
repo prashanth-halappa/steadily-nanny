@@ -7,6 +7,7 @@
  */
 import { type Href, useRouter } from 'expo-router';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
 import { Input } from '@/src/components/ui/input';
 import { Label } from '@/src/components/ui/label';
@@ -20,6 +21,7 @@ import { useInvitePreview } from '@/src/hooks/queries/useInvitePreview';
 import { useSetupProgressStore } from '@/src/store/setupProgress';
 
 export function CodeEntryScreen() {
+  const { t } = useTranslation('auth');
   const router = useRouter();
   const setCurrentStep = useSetupProgressStore(s => s.setCurrentStep);
   const [code, setCode] = useState('');
@@ -47,25 +49,27 @@ export function CodeEntryScreen() {
     <SetupScreenShell
       testID="code-screen"
       progress={0.5}
-      title="Enter your invite code"
-      subtitle="Ask the family for the code they shared with you."
-      ctaLabel={preview.data ? 'Join household' : 'Continue'}
+      title={t('onboarding.code.title')}
+      subtitle={t('onboarding.code.subtitle')}
+      ctaLabel={
+        preview.data ? t('onboarding.code.joinHousehold') : t('common:continue')
+      }
       ctaDisabled={
         preview.data ? redeemInvite.isPending : code.trim().length === 0
       }
       onCta={preview.data ? onJoin : onCheckCode}
     >
       <View className="gap-2">
-        <Label>Invite code</Label>
+        <Label>{t('onboarding.code.inviteCodeLabel')}</Label>
         <Input
           testID="code-input"
-          accessibilityLabel="Invite code"
+          accessibilityLabel={t('onboarding.code.inviteCodeLabel')}
           value={code}
           onChangeText={text => {
             setCode(text);
             setSubmittedCode(null);
           }}
-          placeholder="XXX-XXX"
+          placeholder={t('onboarding.code.placeholder')}
           autoCapitalize="characters"
           autoFocus
         />
@@ -75,7 +79,7 @@ export function CodeEntryScreen() {
 
       {preview.isError ? (
         <Body testID="code-error" className="text-destructive">
-          That code doesn't look right. Check it and try again.
+          {t('onboarding.code.invalidError')}
         </Body>
       ) : null}
 
@@ -98,7 +102,7 @@ export function CodeEntryScreen() {
 
       {redeemInvite.isError ? (
         <Body className="text-destructive">
-          Couldn't join that household. Try again.
+          {t('onboarding.code.redeemError')}
         </Body>
       ) : null}
     </SetupScreenShell>

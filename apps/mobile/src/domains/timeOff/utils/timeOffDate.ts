@@ -21,6 +21,11 @@
  * satisfying `CreateCarerTimeOffSchema`'s refinement by construction.
  */
 
+/** True when the exclusive `ends_at` instant is already at or before now. */
+export function isPastTimeOff(endsAt: string, nowMs = Date.now()): boolean {
+  return Date.parse(endsAt) <= nowMs;
+}
+
 /** Nominal "yyyy-mm-dd" calendar dates -> the wire `{ starts_at, ends_at }` pair. */
 export function toAllDayRange(
   startDateISO: string,
@@ -34,6 +39,27 @@ export function toAllDayRange(
   // into the next month) so this works across month/year boundaries too.
   const end = new Date(ey ?? 0, (em ?? 1) - 1, (ed ?? 1) + 1, 0, 0, 0, 0);
   return { starts_at: start.toISOString(), ends_at: end.toISOString() };
+}
+
+function toLocalDateISO(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+/** Inverse of `toAllDayRange` — wire pair back to local calendar pickers. */
+export function fromAllDayRange(
+  startsAt: string,
+  endsAt: string
+): { startDate: string; endDate: string } {
+  const start = new Date(startsAt);
+  const inclusiveEnd = new Date(endsAt);
+  inclusiveEnd.setDate(inclusiveEnd.getDate() - 1);
+  return {
+    startDate: toLocalDateISO(start),
+    endDate: toLocalDateISO(inclusiveEnd),
+  };
 }
 
 const WEEKDAY_ABBREVIATIONS = [

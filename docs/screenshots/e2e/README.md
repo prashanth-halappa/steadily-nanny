@@ -237,10 +237,9 @@ grep missed the Today domain. Recording this precisely so it doesn't get treated
 - **Step 10's "approval is possible" action** — blocked, see note above. Data display half
   confirmed; the approve tap itself was not exercised because no actionable (`submitted`)
   timesheet existed in the household at the time I reached the screen.
-- **`time_entries.scheduled_minutes` non-null case** — not exercised. The seeded/built
-  schedule has no shift on the day the test ran (Saturday); the earliest shift from the new
-  Mon/Wed pattern is three days in the future. Clocking in ad hoc (not against a shift)
-  correctly leaves `scheduled_minutes` null; I did not find a way to clock in against an
-  in-progress *scheduled* shift within this test run's time window.
+- **`time_entries.scheduled_minutes` non-null case** — previously not exercised in this
+  tour (no same-day scheduled shift in the seed window). Superseded: server-side
+  auto-matching at clock-in now populates `scheduled_minutes` (D18 FIXED; see
+  `docs/DEFECT-LOG.md` and `TOUR-PLAN.md`).
 
 Neither step was silently skipped — both are called out here and in the defect list below.

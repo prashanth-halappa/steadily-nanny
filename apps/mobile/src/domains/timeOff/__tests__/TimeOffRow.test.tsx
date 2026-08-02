@@ -133,4 +133,75 @@ describe('TimeOffRow', () => {
         .disabled
     ).toBe(true);
   });
+
+  it('tapping Edit fires onEdit with the row id', () => {
+    const onEdit = mock(() => {});
+    const { getByTestId } = render(
+      <TimeOffRow
+        timeOff={makeTimeOff()}
+        onCancel={() => {}}
+        onEdit={onEdit}
+        isCancelling={false}
+        isEditing={false}
+      />
+    );
+
+    getByTestId(
+      'time-off-edit-22222222-2222-4222-8222-222222222222'
+    ).props.onPress?.();
+
+    expect(onEdit).toHaveBeenCalledWith('22222222-2222-4222-8222-222222222222');
+  });
+
+  it('hides the Edit control once the row is already cancelled', () => {
+    const { queryByTestId } = render(
+      <TimeOffRow
+        timeOff={makeTimeOff({ status: 'cancelled' })}
+        onCancel={() => {}}
+        onEdit={() => {}}
+        isCancelling={false}
+        isEditing={false}
+      />
+    );
+
+    expect(
+      queryByTestId('time-off-edit-22222222-2222-4222-8222-222222222222')
+    ).toBeNull();
+  });
+
+  it('disables Edit while an edit is already in flight', () => {
+    const { getByTestId } = render(
+      <TimeOffRow
+        timeOff={makeTimeOff()}
+        onCancel={() => {}}
+        onEdit={() => {}}
+        isCancelling={false}
+        isEditing
+      />
+    );
+
+    expect(
+      getByTestId('time-off-edit-22222222-2222-4222-8222-222222222222').props
+        .disabled
+    ).toBe(true);
+  });
+
+  it('hides Edit for past time off — the exclusive ends_at is already before now', () => {
+    const { queryByTestId } = render(
+      <TimeOffRow
+        timeOff={makeTimeOff({
+          starts_at: '2020-01-01T00:00:00.000Z',
+          ends_at: '2020-01-05T00:00:00.000Z',
+        })}
+        onCancel={() => {}}
+        onEdit={() => {}}
+        isCancelling={false}
+        isEditing={false}
+      />
+    );
+
+    expect(
+      queryByTestId('time-off-edit-22222222-2222-4222-8222-222222222222')
+    ).toBeNull();
+  });
 });

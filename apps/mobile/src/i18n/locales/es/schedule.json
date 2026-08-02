@@ -1,4 +1,8 @@
 {
+  "tab": {
+    "emptyTitle": "Aún no hay un hogar",
+    "emptyDescription": "Cuando te añadan a un hogar, su horario aparecerá aquí."
+  },
   "build": {
     "screenTitle": "Construye tu semana habitual",
     "loading": "Cargando…",
@@ -110,7 +114,9 @@
     },
     "cancelShift": "Pedir cancelación",
     "counterOffer": "Proponer otros horarios",
-    "changesTitle": "Cambios pendientes",
+    "changesTitle": "Cambios",
+    "requestMessageLabel": "Mensaje",
+    "responseLabel": "Respuesta",
     "acceptChange": "Aceptar",
     "declineChange": "Rechazar",
     "shortNoticePaidHint": "Dentro de la ventana de cancelación pagada.",
@@ -136,5 +142,39 @@
     "pendingBody_other": "{{count}} días · {{hours}} horas a la semana",
     "pendingCta": "Revisar y responder",
     "shiftsCta": "Los turnos de esta semana"
+  },
+  "calendarViews": {
+    "agenda": "Agenda",
+    "week_ribbon": "Semana",
+    "coverage_lanes": "Cobertura",
+    "cross_family": "Ritmo"
+  },
+  "period": {
+    "morning": "AM",
+    "afternoon": "PM",
+    "evening": "Noche"
+  },
+  "crossFamily": {
+    "header": "Ritmo de dos semanas entre tus familias",
+    "thisFamily": "Esta familia",
+    "otherFamily": "Otra familia"
+  },
+  "coverageLanes": {
+    "allChildren": "Todos los niños",
+    "childFallback": "Niño"
+  },
+  "changeRequestKind": {
+    "time_change": "Cambio de horario",
+    "cancel": "Cancelación",
+    "counter_offer": "Contraoferta",
+    "split": "División",
+    "handover": "Traspaso"
+  },
+  "changeRequestStatus": {
+    "pending": "Pendiente",
+    "accepted": "Aceptado",
+    "declined": "Rechazado",
+    "withdrawn": "Retirado",
+    "superseded": "Reemplazado"
   }
 }

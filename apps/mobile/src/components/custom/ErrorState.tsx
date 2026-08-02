@@ -13,6 +13,7 @@ import {
   ServerCrash,
   WifiOff,
 } from 'lucide-react-native';
+import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
 import { Icon } from '@/lib/icons/iconWithClassName';
 import { Button } from '@/src/components/ui/button';
@@ -26,38 +27,12 @@ export type ErrorVariant =
   | 'auth'
   | 'generic';
 
-interface VariantConfig {
-  icon: LucideIcon;
-  title: string;
-  message: string;
-}
-
-const VARIANTS: Record<ErrorVariant, VariantConfig> = {
-  network: {
-    icon: WifiOff,
-    title: 'No connection',
-    message: 'Check your internet connection and try again.',
-  },
-  server: {
-    icon: ServerCrash,
-    title: 'Something went wrong',
-    message: 'We hit a snag on our end. Please try again.',
-  },
-  notFound: {
-    icon: SearchX,
-    title: 'Not found',
-    message: "We couldn't find what you were looking for.",
-  },
-  auth: {
-    icon: Lock,
-    title: 'Session expired',
-    message: 'Please sign in again to continue.',
-  },
-  generic: {
-    icon: AlertCircle,
-    title: 'Something went wrong',
-    message: 'Please try again.',
-  },
+const VARIANT_ICONS: Record<ErrorVariant, LucideIcon> = {
+  network: WifiOff,
+  server: ServerCrash,
+  notFound: SearchX,
+  auth: Lock,
+  generic: AlertCircle,
 };
 
 interface ErrorStateProps {
@@ -75,27 +50,35 @@ export function ErrorState({
   message,
   onRetry,
   onSecondaryAction,
-  secondaryLabel = 'Go back',
+  secondaryLabel,
 }: ErrorStateProps) {
-  const config = VARIANTS[variant];
+  const { t } = useTranslation('errors');
+  const resolvedSecondaryLabel = secondaryLabel ?? t('goBack');
+
   return (
     <View
       testID="error-state"
       className="flex-1 items-center justify-center bg-background px-6"
     >
-      <Icon icon={config.icon} size={40} className="text-muted-foreground" />
-      <H3 className="mt-4 text-center">{title ?? config.title}</H3>
+      <Icon
+        icon={VARIANT_ICONS[variant]}
+        size={40}
+        className="text-muted-foreground"
+      />
+      <H3 className="mt-4 text-center">
+        {title ?? t(`states.${variant}.title`)}
+      </H3>
       <Body className="mt-2 text-center text-muted-foreground">
-        {message ?? config.message}
+        {message ?? t(`states.${variant}.message`)}
       </Body>
       {onRetry ? (
         <Button className="mt-6" onPress={onRetry}>
-          <Text>Try again</Text>
+          <Text>{t('tryAgain')}</Text>
         </Button>
       ) : null}
       {onSecondaryAction ? (
         <Button variant="ghost" className="mt-2" onPress={onSecondaryAction}>
-          <Text>{secondaryLabel}</Text>
+          <Text>{resolvedSecondaryLabel}</Text>
         </Button>
       ) : null}
     </View>

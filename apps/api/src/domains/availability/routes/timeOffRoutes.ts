@@ -10,9 +10,14 @@ import {
   authWithOwnership,
   authWithValidation,
 } from '../../../middlewares/presets';
+import { validate } from '../../../middlewares/validator';
 import { asyncHandler } from '../../../utils/asyncHandler';
 import { TimeOffController } from '../controllers/timeOffController';
-import { CreateCarerTimeOffSchema, TimeOffIdParamSchema } from '../schemas';
+import {
+  CreateCarerTimeOffSchema,
+  TimeOffIdParamSchema,
+  UpdateCarerTimeOffSchema,
+} from '../schemas';
 import { timeOffQueryService } from '../services/timeOffQueryService';
 
 const router = Router();
@@ -33,6 +38,14 @@ router.post(
   '/',
   ...authWithValidation(CreateCarerTimeOffSchema, 'body'),
   asyncHandler(TimeOffController.create)
+);
+
+// Edit dates/message — ownership-checked.
+router.patch(
+  '/:id',
+  ...authWithOwnership(TimeOffIdParamSchema, timeOffOwnership),
+  validate(UpdateCarerTimeOffSchema, 'body'),
+  asyncHandler(TimeOffController.update)
 );
 
 // Cancel (soft delete) — ownership-checked.

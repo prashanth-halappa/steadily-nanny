@@ -37,13 +37,15 @@ const shift: ShiftWithChildren = {
 
 function makeShiftRepo(overrides: Record<string, unknown> = {}): any {
   return {
+    // The sequence is decided by the RPC from the row it locks, never echoed
+    // back from the caller's args — the fake models that.
     applyParentEdit: mock(async (args: Record<string, unknown>) => ({
       ...shift,
       starts_at: args.setStartsAt ? args.startsAt : shift.starts_at,
       ends_at: args.setEndsAt ? args.endsAt : shift.ends_at,
       note: args.setNote ? args.note : shift.note,
       origin: args.origin,
-      sequence: args.sequence,
+      sequence: shift.sequence + 1,
     })),
     ...overrides,
   };
@@ -69,7 +71,7 @@ function makeQueries(overrides: Record<string, unknown> = {}): any {
 }
 
 describe('ShiftCommandService.update', () => {
-  it('applies the edit via RPC with origin parent_proposed, bumped sequence, and before/after payload', async () => {
+  it('applies the edit via RPC with origin parent_proposed and the edit intent only', async () => {
     const shiftRepo = makeShiftRepo();
     const svc = new ShiftCommandService(
       shiftRepo,
@@ -77,34 +79,60 @@ describe('ShiftCommandService.update', () => {
       makeQueries()
     );
 
-    await svc.update('parent-1', 's1', {
+    const result = await svc.update('parent-1', 's1', {
       starts_at: '2026-08-03T09:00:00.000Z',
       ends_at: '2026-08-03T18:00:00.000Z',
     });
 
-    expect(shiftRepo.applyParentEdit).toHaveBeenCalledWith(
-      expect.objectContaining({
-        shiftId: 's1',
-        actorId: 'parent-1',
-        startsAt: '2026-08-03T09:00:00.000Z',
-        endsAt: '2026-08-03T18:00:00.000Z',
-        setStartsAt: true,
-        setEndsAt: true,
-        setNote: false,
-        origin: 'parent_proposed',
-        sequence: 1,
-        before: expect.objectContaining({
-          starts_at: shift.starts_at,
-          ends_at: shift.ends_at,
-        }),
-        after: expect.objectContaining({
-          starts_at: '2026-08-03T09:00:00.000Z',
-          ends_at: '2026-08-03T18:00:00.000Z',
-          origin: 'parent_proposed',
-          sequence: 1,
-        }),
-      })
+    expect(shiftRepo.applyParentEdit).toHaveBeenCalledWith({
+      shiftId: 's1',
+      actorId: 'parent-1',
+      startsAt: '2026-08-03T09:00:00.000Z',
+      endsAt: '2026-08-03T18:00:00.000Z',
+      note: null,
+      setStartsAt: true,
+      setEndsAt: true,
+      setNote: false,
+      origin: 'parent_proposed',
+    });
+    // The bumped sequence comes back from the RPC (which derived it under
+    // lock); the service never computes one.
+    expect(result.sequence).toBe(1);
+  });
+
+  it('does not derive the audit record from the stale pre-read', async () => {
+    // The exact race migration 027 exists to close: the parent's ownership
+    // read sees sequence=3, a nanny accept commits sequence=4, then the RPC
+    // takes the lock and the row correctly becomes 5. ANY sequence or
+    // before/after snapshot the service computes from its own pre-read is
+    // stale by construction (it would say 3 -> 4, and describe a starts_at
+    // that has already been overwritten), so none may be sent at all — the
+    // audit record is derived under lock in SQL.
+    const staleRead = { ...shift, sequence: 3 };
+    const appliedRow = {
+      ...shift,
+      starts_at: '2026-08-03T09:00:00.000Z',
+      origin: 'parent_proposed',
+      sequence: 5,
+    };
+    const shiftRepo = makeShiftRepo({
+      applyParentEdit: mock(async () => appliedRow),
+    });
+    const svc = new ShiftCommandService(
+      shiftRepo,
+      makeMemberRepo(),
+      makeQueries({ getOwned: mock(async () => staleRead) })
     );
+
+    const result = await svc.update('parent-1', 's1', {
+      starts_at: '2026-08-03T09:00:00.000Z',
+    });
+
+    const args = shiftRepo.applyParentEdit.mock.calls[0][0];
+    expect(args).not.toHaveProperty('sequence');
+    expect(args).not.toHaveProperty('before');
+    expect(args).not.toHaveProperty('after');
+    expect(result.sequence).toBe(5);
   });
 
   it('allows a note-only edit, leaving times untouched', async () => {

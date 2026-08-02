@@ -21,6 +21,8 @@ describe('CoverageGapBanner source', () => {
     expect(bannerSource).toContain("event_type === 'coverage_gap'");
     expect(bannerSource).toContain('testID="coverage-gap-banner"');
     expect(bannerSource).toContain('testID={`coverage-gap-item-${gap.id}`}');
+    expect(bannerSource).toContain('coverageGap.title');
+    expect(bannerSource).toContain('coverageGap.description');
   });
 
   it('is mounted on TodayScreen', () => {

@@ -15,6 +15,7 @@ import { router } from 'expo-router';
 import { useEffect } from 'react';
 import { Alert, Linking, Platform } from 'react-native';
 import { queryClient } from '@/src/api/queryClient';
+import i18n from '@/src/i18n';
 import { usePendingDeepLinkStore } from '@/src/store/pendingDeepLinkStore';
 import { analytics } from './analytics';
 
@@ -261,12 +262,19 @@ export async function askForNotificationPermissions(): Promise<
   if (finalStatus !== 'granted') {
     if (existingStatus !== 'undetermined') {
       Alert.alert(
-        'Notifications are off',
-        'Enable notifications in Settings to get reminders and updates.',
+        i18n.t('notificationsPermissionDenied.title', { ns: 'settings' }),
+        i18n.t('notificationsPermissionDenied.body', { ns: 'settings' }),
         [
-          { text: 'Not now', style: 'cancel' },
           {
-            text: 'Open Settings',
+            text: i18n.t('notificationsPermissionDenied.notNow', {
+              ns: 'settings',
+            }),
+            style: 'cancel',
+          },
+          {
+            text: i18n.t('notificationsPermissionDenied.openSettings', {
+              ns: 'settings',
+            }),
             onPress: () => void Linking.openSettings(),
           },
         ]

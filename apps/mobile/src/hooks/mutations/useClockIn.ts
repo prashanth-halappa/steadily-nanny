@@ -1,16 +1,35 @@
-/** @module hooks/mutations/useClockIn */
+/**
+ * @module hooks/mutations/useClockIn
+ *
+ * Optimistic clock-in writes a provisional running entry into the
+ * `queryKeys.timeEntry.running()` cache via onMutate so the Today card
+ * reflects "on the clock" immediately, including while offline (the
+ * mutation pauses until reconnect and then retries). Residual limitation:
+ * if the app process is killed before the paused mutation completes, the
+ * queued clock-in is lost — there is no persistence layer (Wave 2I / G20).
+ */
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import type { ClockInInput, TimeEntry } from '@/src/api/endpoints/timeEntries';
 import { timeEntryApi } from '@/src/api/endpoints/timeEntries';
 import { queryKeys } from '@/src/api/queryKeys';
 import { getLocalizedErrorMessage } from '@/src/lib/errorLocalization';
+import { useIsOnline } from '@/src/lib/network';
 import { showErrorToast } from '@/src/lib/toast';
+import {
+  buildOptimisticRunningEntry,
+  clockMutationRetry,
+  getClockMutationErrorKey,
+} from './timeEntryMutationUtils';
 
 interface ApiErrorLike {
   response?: {
     data?: { error?: { code?: string; metadata?: { reason?: string } } };
   };
+}
+
+interface ClockInMutationContext {
+  previous: TimeEntry | null | undefined;
 }
 
 // VERIFIED LIVE against the running API (2026-08-01): every ConflictError's
@@ -39,18 +58,53 @@ function isAlreadyClockedInError(error: unknown): boolean {
 export function useClockIn() {
   const queryClient = useQueryClient();
   const { t } = useTranslation('errors');
+  const isOnline = useIsOnline();
 
-  return useMutation<TimeEntry, Error, ClockInInput>({
+  return useMutation<TimeEntry, Error, ClockInInput, ClockInMutationContext>({
     mutationFn: input => timeEntryApi.clockIn(input),
-    onSuccess: () => {
+    networkMode: 'online',
+    retry: clockMutationRetry,
+    onMutate: async input => {
+      await queryClient.cancelQueries({
+        queryKey: queryKeys.timeEntry.running(),
+      });
+      const previous = queryClient.getQueryData<TimeEntry | null>(
+        queryKeys.timeEntry.running()
+      );
+      queryClient.setQueryData(
+        queryKeys.timeEntry.running(),
+        buildOptimisticRunningEntry(input)
+      );
+      if (!isOnline) {
+        showErrorToast(
+          getLocalizedErrorMessage({ isAxiosError: true }, t, 'errors:offline')
+        );
+      }
+      return { previous };
+    },
+    onSuccess: data => {
+      queryClient.setQueryData(queryKeys.timeEntry.running(), data);
       queryClient.invalidateQueries({ queryKey: queryKeys.timeEntry.all });
     },
-    onError: error => {
+    onError: (error, _variables, context) => {
+      if (context?.previous !== undefined) {
+        queryClient.setQueryData(
+          queryKeys.timeEntry.running(),
+          context.previous
+        );
+      }
+
       showErrorToast(
         getLocalizedErrorMessage(
           error,
           t,
-          isAlreadyClockedInError(error) ? 'errors:alreadyClockedIn' : undefined
+          getClockMutationErrorKey(
+            error,
+            isOnline,
+            isAlreadyClockedInError(error)
+              ? 'errors:alreadyClockedIn'
+              : undefined
+          )
         )
       );
 

@@ -11,7 +11,7 @@ authorization, state integrity, reachability"), the current `main` HEAD as of
 2026-08-02. Earlier revisions of this document said "nothing is committed" —
 that was true for Wave 0 only; every wave since has landed on `main`. The
 working tree currently has a handful of uncommitted files, all belonging to
-defects still being fixed live (§4g: D15, D17, D18) — check `git status`
+defects still being fixed live (§4g) — check `git status`
 before assuming a clean baseline, but do not assume an *empty* one either.
 
 **Wave 0 was complete** with `bun run qc` green (mobile 311/0, API 35/0,
@@ -181,24 +181,20 @@ advertised flow non-functional are fixed and covered by tests:
 
 **Still open, deliberately:**
 
-- `createExtraShift` does not consult the approval gate, so an extra shift skips
-  co-parent sign-off when `approval_scope='all'` (not the default). Fixing it
-  changes that endpoint's response to the `pending_approval` union and needs a
-  matching mobile change.
-- `shift_change_requests` has ONE `message` column, so a responder's message
-  overwrites the requester's. The clean fix is a separate `response_message`
-  column — a migration this wave didn't take.
-- Concurrent change requests on one shift are never marked `superseded` (the
-  status exists in the enum and the 015 check constraint but is never written),
-  so accepting an older pending request can silently overwrite a newer accepted
-  one.
 - `shift_events` de-duplication is caller-side with no unique constraint, so two
   concurrent day-thread reads of the same date can both insert. Pre-existing,
   but a read path now hits it more often than a nightly job did.
-- Several new components render hardcoded English and two render raw DB enums
-  as UI text (`ShiftDetailScreen` shows `counter_offer`;
-  `ManageCommitmentsSection` shows `preschool`). No `commitments` or `handoff`
-  namespace exists. en/es are otherwise at exact parity.
+
+**Closed after Wave 5 (follow-ups, uncommitted until reviewed):**
+
+- `createExtraShift` now consults the approval gate (`extra_shift`); response is
+  the `created` | `pending_approval` union on API + mobile.
+- `shift_change_requests.response_message` added (migration 023); respond no
+  longer overwrites the requester's `message`.
+- Opening a new change request (and accepting one) supersedes other pending
+  siblings on the same shift via `supersedePendingForShift`.
+- Wave 5 calendar/commitments/coverage UI + change-request/commitment kind
+  labels are i18n'd in `schedule` / `today` / `household` (en + es).
 
 ## 4. Wave 0 (foundation) — what is done
 
@@ -335,17 +331,28 @@ advisor returns only three INFO `rls_enabled_no_policy` notices, all on
 intentionally backend-only tables (`app_config`, `job_runs`,
 `user_beta_overrides`).
 
-**The database contains no seed data.** A verification fixture was created and
-then removed — half-real `auth.users` rows that cannot actually sign in are a
-trap. A proper seed script is still needed. Note that deleting a user cascades
-away profiles and memberships but LEAVES THE HOUSEHOLD ORPHANED, because
-`households.created_by` is `ON DELETE SET NULL`: household deletion must be an
-explicit API operation, never a side effect.
+**Seed data** — run `bun run seed` from the repo root (idempotent). It chains
+`scripts/seed-test-users.ts` → `seed-second-household.ts` →
+`seed-e2e-approval-fixtures.ts` against `apps/api/.env`'s Supabase credentials.
+Never seed a production project. **Bootstrap limits:** step 1 only creates the
+two auth users + `user_profiles` rows; step 2 only seeds the LEAKCANARY second
+household (cross-family RLS fixture); step 3 needs the nanny to have joined
+"Our household" through the app first — if that membership is missing it skips
+with exit 0 rather than failing the chain. The primary household, children,
+invites, and schedules are still created *through the app* during the E2E run.
+Note that deleting a user cascades away profiles and memberships but LEAVES THE
+HOUSEHOLD ORPHANED, because `households.created_by` is `ON DELETE SET NULL`:
+household deletion must be an explicit API operation, never a side effect.
 
 ## 4c. Test fixtures and how to run the app
 
-**Seeded accounts** — created by `scripts/seed-test-users.ts` (idempotent; safe to
-re-run). It reads `SUPABASE_URL` / `SUPABASE_SERVICE_KEY` out of `apps/api/.env`
+**Seeded accounts** — created by `bun run seed` (root), which runs
+`scripts/seed-test-users.ts` then `seed-second-household.ts` then
+`seed-e2e-approval-fixtures.ts` (all idempotent; safe to re-run). Steps are
+chained with `&&` so a hard failure in an earlier script stops the chain; the
+E2E approval fixture step is the exception — it exits 0 with a `[skip]` message
+when the nanny has not yet joined "Our household" through the app. The first
+script reads `SUPABASE_URL` / `SUPABASE_SERVICE_KEY` out of `apps/api/.env`
 at runtime rather than hardcoding them, and creates each user with
 `email_confirm: true` so there is no inbox round-trip.
 
@@ -364,9 +371,12 @@ to `auth.users` (the FK-ordering contract in `003_user_device_info.sql`,
 GOLDEN-FIXES #7). An auth user without a profile row fails at the first household
 insert, a long way from the actual cause.
 
-Deliberately NOT seeded: households, children, invites, schedules. Those are
-created *through the app* during the end-to-end run — seeding them would defeat
-the point of the test.
+Deliberately NOT seeded by step 1: the primary "Our household", children,
+invites, schedules — those are created *through the app* during the end-to-end
+run (seeding them would defeat the point of the test). Step 2 does seed the
+isolated LEAKCANARY second household for cross-family RLS checks; step 3 adds
+optional shift/timesheet fixtures once the nanny has joined the primary
+household in-app.
 
 **iOS build.** `apps/mobile/ios/` is generated by `expo prebuild` and gitignored.
 Two things about building it that cost real time to discover:
@@ -713,8 +723,8 @@ instructive thing to come out of the whole sweep:
   **CONFIRMED PASS on device** with real testIDs and real data — genuinely
   solid, not just unit-green. By contrast, D7 (this agent's own fix), D8,
   D11, D16 are code-reviewed/unit-tested/exit-code-verified but **not yet
-  re-exercised through the UI**; D17 and D18 have fixes dispatched but are
-  still IN PROGRESS as of this writing. Treat `docs/DEFECT-LOG.md`'s status
+  re-exercised through the UI**; D17 and D18 are FIXED in DEFECT-LOG (source of
+  truth). Treat `docs/DEFECT-LOG.md`'s status
   column as the live source of truth — it will have moved past this snapshot.
 
 ### What remains, as of this writing
@@ -723,8 +733,8 @@ instructive thing to come out of the whole sweep:
   above applied: any real fix needs a test that renders the actual
   `HoursScreen`/`ParentWeekView`/`NannyWeekView` and asserts the controls are
   wired, not a component test that hands the component its own props.
-- **D17** (phantom running timer on app resume) — IN PROGRESS.
-- **D18** (`scheduled_minutes` structurally unreachable) — IN PROGRESS.
+- **D17** (phantom running timer on app resume) — FIXED (see DEFECT-LOG).
+- **D18** (`scheduled_minutes` structurally unreachable) — FIXED (see DEFECT-LOG).
 - **The screenshot tour** — partially done. `docs/screenshots/` has an
   earlier, partial capture; `docs/screenshots/TOUR-PLAN.md` is a live-verified
   plan for a fuller pass, explicitly written to hold until D15/D17/D18 land

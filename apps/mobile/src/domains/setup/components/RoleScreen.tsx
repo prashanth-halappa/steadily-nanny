@@ -7,6 +7,7 @@
  */
 import { type Href, useRouter } from 'expo-router';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { SetupRole } from '@/src/domains/setup/types';
 import {
   getSetupStepRoute,
@@ -18,6 +19,7 @@ import { RoleOptionCard } from './RoleOptionCard';
 import { SetupScreenShell } from './SetupScreenShell';
 
 export function RoleScreen() {
+  const { t } = useTranslation('auth');
   const router = useRouter();
   const [selected, setSelected] = useState<SetupRole | null>(null);
   const setRole = useSetupProgressStore(s => s.setRole);
@@ -35,23 +37,23 @@ export function RoleScreen() {
   return (
     <SetupScreenShell
       testID="role-screen"
-      title="Who are you?"
-      subtitle="This sets up the right steps for you."
-      ctaLabel="Continue"
+      title={t('onboarding.role.title')}
+      subtitle={t('onboarding.role.subtitle')}
+      ctaLabel={t('common:continue')}
       ctaDisabled={!selected}
       onCta={onContinue}
     >
       <RoleOptionCard
         testID="role-parent"
-        title="I'm a parent"
-        description="Set up your household, add your children, and invite your nanny."
+        title={t('onboarding.role.parent.title')}
+        description={t('onboarding.role.parent.description')}
         selected={selected === SETUP_ROLES.PARENT}
         onPress={() => setSelected(SETUP_ROLES.PARENT)}
       />
       <RoleOptionCard
         testID="role-nanny"
-        title="I'm a nanny"
-        description="Join a household with an invite code and set your availability."
+        title={t('onboarding.role.nanny.title')}
+        description={t('onboarding.role.nanny.description')}
         selected={selected === SETUP_ROLES.NANNY}
         onPress={() => setSelected(SETUP_ROLES.NANNY)}
       />

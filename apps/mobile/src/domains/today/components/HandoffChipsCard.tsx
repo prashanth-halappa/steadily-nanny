@@ -124,7 +124,9 @@ function HandoffPhaseEditor({
   const isPending = createNote.isPending || updateNote.isPending;
 
   const title =
-    phase === HANDOFF_PHASES.MORNING ? 'Morning handoff' : 'Evening handoff';
+    phase === HANDOFF_PHASES.MORNING
+      ? t('handoff.morningTitle')
+      : t('handoff.eveningTitle');
 
   return (
     <View testID={`handoff-editor-${phase}`} className="gap-2">
@@ -146,7 +148,7 @@ function HandoffPhaseEditor({
         onPress={handleSubmit}
         disabled={isPending || selected.length === 0}
       >
-        <Text>Save</Text>
+        <Text>{t('common:save')}</Text>
       </Button>
     </View>
   );
@@ -215,7 +217,7 @@ export function HandoffChipsCard({
           className="gap-2 border-t border-border pt-3"
         >
           <Body className="text-sm text-muted-foreground">
-            Evening recap from your nanny
+            {t('handoff.eveningRecap')}
           </Body>
           <View className="flex-row flex-wrap gap-1">
             {eveningNote.chips.map(chip => (
@@ -238,8 +240,8 @@ export function HandoffChipsCard({
           >
             <Text>
               {eveningNote.moment_saved_at
-                ? 'Saved as moment'
-                : 'Save as moment'}
+                ? t('handoff.savedAsMoment')
+                : t('handoff.saveAsMoment')}
             </Text>
           </Button>
         </View>

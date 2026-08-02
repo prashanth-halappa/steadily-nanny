@@ -15,5 +15,52 @@
   "error": "Error",
   "notFoundTitle": "No encontrado",
   "notFoundBody": "Esta pantalla no existe.",
-  "notFoundGoHome": "Ir al inicio"
+  "notFoundGoHome": "Ir al inicio",
+  "tabs": {
+    "today": "Hoy",
+    "schedule": "Horario",
+    "hours": "Horas",
+    "settings": "Ajustes"
+  },
+  "timeRange": {
+    "start": "Inicio",
+    "end": "Fin",
+    "endAfterStart": "La hora de fin debe ser posterior a la de inicio."
+  },
+  "rootError": {
+    "title": "Algo salió mal",
+    "body": "La app encontró un error inesperado.",
+    "reload": "Recargar"
+  },
+  "appStatus": {
+    "forceUpdate": {
+      "title": "Actualización necesaria",
+      "body": "Se requiere una versión más reciente para seguir usando la app.",
+      "cta": "Actualizar ahora"
+    },
+    "killSwitch": {
+      "title": "App no disponible",
+      "body": "Esta versión ya no está disponible. Vuelve a comprobarlo más tarde."
+    },
+    "maintenance": {
+      "title": "Volvemos enseguida",
+      "body": "Estamos haciendo mantenimiento. Inténtalo de nuevo en breve."
+    }
+  },
+  "readMore": "Leer más",
+  "showLess": "Mostrar menos",
+  "expandTextHint": "Alterna la visualización del texto completo",
+  "a11y": {
+    "loadingContent": "Cargando contenido",
+    "loadingActivityCard": "Cargando tarjeta de actividad",
+    "unnamed": "Sin nombre"
+  },
+  "microCopy": {
+    "gettingReady": "Preparando todo…",
+    "justAMoment": "Un momento…",
+    "loadingExperience": "Cargando tu experiencia…",
+    "almostThere": "Casi listo…",
+    "settingUp": "Configurando…",
+    "oneSecond": "Un segundo…"
+  }
 }

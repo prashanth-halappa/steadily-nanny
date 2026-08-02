@@ -94,6 +94,21 @@ describe('HandoffChipsCard source', () => {
     expect(cardSource).not.toContain("chip.replace(/\\s+/g, '-')");
     expect(cardSource).toContain('testID={`handoff-chip-${phase}-${chip}`}');
   });
+
+  it('localizes handoff chrome through today namespace keys', () => {
+    expect(cardSource).toContain("t('handoff.morningTitle')");
+    expect(cardSource).toContain("t('handoff.eveningTitle')");
+    expect(cardSource).toContain("t('common:save')");
+    expect(cardSource).toContain("t('handoff.eveningRecap')");
+    expect(cardSource).toContain("t('handoff.saveAsMoment')");
+    expect(cardSource).toContain("t('handoff.savedAsMoment')");
+    expect(cardSource).not.toContain('Morning handoff');
+    expect(cardSource).not.toContain('Evening handoff');
+    expect(cardSource).not.toContain('>Save<');
+    expect(cardSource).not.toContain('Evening recap from your nanny');
+    expect(cardSource).not.toContain('Save as moment');
+    expect(cardSource).not.toContain('Saved as moment');
+  });
 });
 
 describe('handoff chip keys', () => {

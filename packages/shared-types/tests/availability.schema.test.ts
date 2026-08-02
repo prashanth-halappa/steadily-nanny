@@ -160,6 +160,12 @@ describe('availability.schema', () => {
         UpdateCarerTimeOffSchema.safeParse({ status: 'cancelled' }).success
       ).toBe(true);
     });
+
+    it('accepts message: null to clear an existing note', () => {
+      expect(
+        UpdateCarerTimeOffSchema.safeParse({ message: null }).success
+      ).toBe(true);
+    });
   });
 
   describe('CarerTimeOffIdParamSchema', () => {

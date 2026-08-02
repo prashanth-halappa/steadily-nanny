@@ -13,7 +13,20 @@
   "notePlaceholder": "Anything worth noting about today?",
   "nannyLiveTitle": "Nanny on the clock",
   "nannyLiveBody": "Clocked in at {{time}} — shift in progress",
+  "coverageGap": {
+    "title": "Coverage gaps today",
+    "description": "Coverage gap {{start}}–{{end}}",
+    "descriptionFallback": "Coverage gap today"
+  },
+  "screenTitle": "Today",
+  "emptyTitle": "Your week will appear here",
+  "emptyDescription": "Once you add a schedule, upcoming shifts and updates will show up on this screen.",
   "handoff": {
+    "morningTitle": "Morning handoff",
+    "eveningTitle": "Evening handoff",
+    "eveningRecap": "Evening recap from your nanny",
+    "saveAsMoment": "Save as moment",
+    "savedAsMoment": "Saved as moment",
     "chips": {
       "slept_well": "Slept well",
       "rough_night": "Rough night",

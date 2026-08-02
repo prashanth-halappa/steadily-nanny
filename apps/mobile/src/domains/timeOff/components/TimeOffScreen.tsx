@@ -19,7 +19,10 @@
  * `TimeOffRequestForm`'s submit handler — see that file's header comment.
  */
 import { FlashList } from '@shopify/flash-list';
-import type { CarerTimeOffStatus } from '@steadily-nanny/shared-types/schemas/availability.schema';
+import type {
+  CarerTimeOff,
+  CarerTimeOffStatus,
+} from '@steadily-nanny/shared-types/schemas/availability.schema';
 import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -31,6 +34,7 @@ import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { Body, H1, Small } from '@/src/components/ui/typography';
 import { SETUP_ROLES } from '@/src/domains/setup/types';
 import { useCancelTimeOff } from '@/src/hooks/mutations/useCancelTimeOff';
+import { useUpdateTimeOff } from '@/src/hooks/mutations/useUpdateTimeOff';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 import { useTimeOff } from '@/src/hooks/queries/useTimeOff';
 import { showSuccessToast } from '@/src/lib/toast';
@@ -53,7 +57,16 @@ export function TimeOffScreen() {
   const onboarding = useIsOnboarded();
   const timeOff = useTimeOff();
   const cancelTimeOff = useCancelTimeOff();
+  const updateTimeOff = useUpdateTimeOff();
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [editingTimeOff, setEditingTimeOff] = useState<CarerTimeOff | null>(
+    null
+  );
+
+  const handleEdit = (id: string) => {
+    const row = (timeOff.data ?? []).find(item => item.id === id);
+    if (row) setEditingTimeOff(row);
+  };
 
   const handleCancel = async (id: string) => {
     if (cancelTimeOff.isPending) return;
@@ -126,14 +139,25 @@ export function TimeOffScreen() {
             <TimeOffRow
               timeOff={item}
               onCancel={id => void handleCancel(id)}
+              onEdit={handleEdit}
               isCancelling={cancelTimeOff.isPending}
+              isEditing={updateTimeOff.isPending}
             />
           )}
           ListHeaderComponent={
             <View className="mb-2 gap-1">
               {backHeader}
               <H1 testID="time-off-header">{t('screenTitle')}</H1>
-              <TimeOffRequestForm />
+              {editingTimeOff ? (
+                <TimeOffRequestForm
+                  key={editingTimeOff.id}
+                  editTimeOff={editingTimeOff}
+                  onEditDismiss={() => setEditingTimeOff(null)}
+                  updateTimeOff={updateTimeOff}
+                />
+              ) : (
+                <TimeOffRequestForm />
+              )}
               <View
                 testID="time-off-status-filters"
                 className="mt-4 flex-row flex-wrap gap-2"

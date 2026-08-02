@@ -38,6 +38,8 @@ describe('ManageCommitmentsSection source', () => {
     expect(sectionSource).toContain('CommitmentFormSheet');
     expect(formSource).toContain('WeekStrip');
     expect(formSource).toContain('TimeRangePicker');
+    expect(formSource).toContain('commitmentKindLabelKey');
+    expect(sectionSource).toContain('commitmentKindLabelKey');
   });
 
   it('is wired into ChildrenManager', () => {

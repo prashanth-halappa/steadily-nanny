@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
 import { Button } from '@/src/components/ui/button';
 import { Text } from '@/src/components/ui/text';
@@ -18,6 +19,7 @@ interface Props {
  * notificationStore (3-attempt cap / 7-day resurface).
  */
 export function NotificationSoftAskSheet({ visible, onDismiss }: Props) {
+  const { t } = useTranslation('settings');
   const recordPrompt = useNotificationStore(s => s.recordPrompt);
 
   const handleEnable = async () => {
@@ -39,16 +41,15 @@ export function NotificationSoftAskSheet({ visible, onDismiss }: Props) {
       fitContent
     >
       <View className="gap-3 px-6 pb-4">
-        <H3>Stay in the loop</H3>
+        <H3>{t('notificationsSoftAsk.title')}</H3>
         <Body className="text-muted-foreground">
-          Turn on notifications for timely reminders and updates. You can change
-          this anytime in Settings.
+          {t('notificationsSoftAsk.body')}
         </Body>
         <Button onPress={handleEnable}>
-          <Text>Enable notifications</Text>
+          <Text>{t('notificationsSoftAsk.enable')}</Text>
         </Button>
         <Button variant="ghost" onPress={handleLater}>
-          <Text>Maybe later</Text>
+          <Text>{t('notificationsSoftAsk.later')}</Text>
         </Button>
       </View>
     </BottomSheetBase>

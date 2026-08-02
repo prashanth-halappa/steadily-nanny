@@ -12,6 +12,11 @@
   "deleteAccountConfirmBody": "This permanently deletes your account and all associated data. This action cannot be undone.",
   "deleteAccountCancel": "Cancel",
   "deleteAccountConfirm": "Delete account",
+  "softUpdateBanner": {
+    "message": "A new version is available.",
+    "update": "Update",
+    "dismiss": "Dismiss"
+  },
   "time": {
     "menuLabel": "Time & calendar",
     "title": "Time & calendar",
@@ -22,5 +27,17 @@
     "weekStartsHint": "Reorders day selectors only. Shared schedules and Hours weeks still start on Monday.",
     "saveButton": "Save",
     "savedToast": "Time settings saved"
+  },
+  "notificationsSoftAsk": {
+    "title": "Stay in the loop",
+    "body": "Turn on notifications for timely reminders and updates. You can change this anytime in Settings.",
+    "enable": "Enable notifications",
+    "later": "Maybe later"
+  },
+  "notificationsPermissionDenied": {
+    "title": "Notifications are off",
+    "body": "Enable notifications in Settings to get reminders and updates.",
+    "notNow": "Not now",
+    "openSettings": "Open Settings"
   }
 }

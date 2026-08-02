@@ -11,6 +11,7 @@ function createMockQueryChain(
     eq: mock(() => chain),
     order: mock(() => chain),
     insert: mock(() => Promise.resolve(finalResponse)),
+    upsert: mock(() => Promise.resolve(finalResponse)),
     // biome-ignore lint/suspicious/noThenProperty: intentional thenable for the mock
     then: (resolve: (value: unknown) => unknown) =>
       Promise.resolve(finalResponse).then(resolve),
@@ -144,10 +145,9 @@ describe('ShiftEventRepository.listEventKeysForDate', () => {
 });
 
 describe('ShiftEventRepository.insertMany', () => {
-  it('inserts the given rows', async () => {
-    mockSupabaseService.from.mockImplementation(() =>
-      createMockQueryChain({ data: null, error: null })
-    );
+  it('upserts the given rows with ignoreDuplicates and no onConflict', async () => {
+    const chain = createMockQueryChain({ data: null, error: null });
+    mockSupabaseService.from.mockImplementation(() => chain);
     const repo = new ShiftEventRepository();
     const events = [
       {
@@ -161,6 +161,29 @@ describe('ShiftEventRepository.insertMany', () => {
     ];
     await repo.insertMany(events);
     expect(mockSupabaseService.from).toHaveBeenCalledWith('shift_events');
+    expect(chain.upsert).toHaveBeenCalledWith(events, {
+      ignoreDuplicates: true,
+    });
+    expect(chain.insert).not.toHaveBeenCalled();
+    const upsertOptions = chain.upsert.mock.calls[0][1];
+    // Deliberately omitting `onConflict`: migration 025
+    // (supabase/migrations/025_shift_events_keyed_unique.sql) enforces the
+    // dedupe with a PARTIAL EXPRESSION index —
+    // `shift_events_keyed_unique_idx on (household_id, local_date,
+    // event_type, (payload->>'key')) where (payload->>'key') is not null` —
+    // and PostgREST's `onConflict` option only accepts a column-name list,
+    // which cannot name an expression index. Omitting `onConflict` is what
+    // makes PostgREST emit a bare `ON CONFLICT DO NOTHING`, which Postgres
+    // resolves against ANY applicable unique/exclusion constraint or index,
+    // including this partial expression one. Verified against the live
+    // Supabase project on 2026-08-02: concurrent duplicate-keyed event
+    // inserts are silently skipped (ignoreDuplicates behavior), no 23505
+    // unique-violation error. If a future change adds an explicit
+    // `onConflict` here (e.g. "helpfully" naming a column list), it will
+    // NOT match this index and duplicate inserts will start raising 23505
+    // at runtime — a regression this mocked test cannot see for you, since
+    // the mock upsert chain doesn't enforce real constraint-matching.
+    expect(upsertOptions).not.toHaveProperty('onConflict');
   });
 
   it('is a no-op for an empty array (does not touch the database)', async () => {

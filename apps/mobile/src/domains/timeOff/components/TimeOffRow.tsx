@@ -31,22 +31,27 @@ import { Button } from '@/src/components/ui/button';
 import { Card, CardContent } from '@/src/components/ui/card';
 import { Text } from '@/src/components/ui/text';
 import { Body, Small } from '@/src/components/ui/typography';
-import { formatTimeOffRangeLabel } from '../utils/timeOffDate';
+import { formatTimeOffRangeLabel, isPastTimeOff } from '../utils/timeOffDate';
 
 interface TimeOffRowProps {
   timeOff: CarerTimeOff;
   onCancel: (id: string) => void;
+  onEdit?: (id: string) => void;
   isCancelling: boolean;
+  isEditing?: boolean;
 }
 
 export function TimeOffRow({
   timeOff,
   onCancel,
+  onEdit,
   isCancelling,
+  isEditing = false,
 }: TimeOffRowProps) {
   const { t } = useTranslation('timeOff');
   const isCancelled = timeOff.status === CARER_TIME_OFF_STATUSES.CANCELLED;
   const isCancellable = !isCancelled;
+  const isEditable = isCancellable && !isPastTimeOff(timeOff.ends_at);
 
   return (
     <Card
@@ -67,7 +72,17 @@ export function TimeOffRow({
           <Small className="text-muted-foreground">{timeOff.message}</Small>
         ) : null}
         {isCancellable ? (
-          <View className="mt-2">
+          <View className="mt-2 flex-row gap-2">
+            {onEdit && isEditable ? (
+              <Button
+                testID={`time-off-edit-${timeOff.id}`}
+                variant="ghost"
+                disabled={isEditing}
+                onPress={() => onEdit(timeOff.id)}
+              >
+                <Text className="text-primary">{t('editButton')}</Text>
+              </Button>
+            ) : null}
             <Button
               testID={`time-off-cancel-${timeOff.id}`}
               variant="ghost"

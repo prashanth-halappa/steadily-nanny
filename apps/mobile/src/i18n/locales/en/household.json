@@ -94,5 +94,32 @@
     "approvalTimeoutLabel": "Approval timeout (minutes)",
     "shortNoticeHoursLabel": "Short-notice window (hours)",
     "cancellationPaidWithinHoursLabel": "Cancellation still paid within (hours)"
+  },
+  "commitments": {
+    "sectionTitle": "Commitments",
+    "sectionBody": "Fixed times like preschool or naps — gaps are raised when cover is missing.",
+    "addButton": "Add commitment",
+    "deleteLabel": "Delete {{label}}",
+    "rowExcludedFromCover": " · excluded from cover",
+    "dayCount_one": "{{count}} day",
+    "dayCount_other": "{{count}} days",
+    "kind": {
+      "preschool": "Preschool",
+      "school": "School",
+      "activity": "Activity",
+      "nap": "Nap",
+      "other": "Other"
+    },
+    "form": {
+      "title": "Add commitment for {{childName}}",
+      "kindLabel": "Kind",
+      "labelLabel": "Label",
+      "labelPlaceholder": "e.g. Preschool drop-off",
+      "labelA11y": "Commitment label",
+      "daysLabel": "Days",
+      "timeLabel": "Time",
+      "excludedLabel": "Excluded from cover",
+      "submit": "Add commitment"
+    }
   }
 }

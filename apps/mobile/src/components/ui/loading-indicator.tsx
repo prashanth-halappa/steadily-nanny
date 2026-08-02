@@ -20,6 +20,7 @@
 
 import { LinearGradient } from 'expo-linear-gradient';
 import { useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Dimensions, Image, StyleSheet, View } from 'react-native';
 import Animated, {
   useAnimatedStyle,
@@ -50,6 +51,7 @@ const LOGO_WIDTH = Math.min(SCREEN_WIDTH * 0.6, 320);
 
 export function LoadingIndicator(props?: LoadingIndicatorProps) {
   const { name, messages, showMicroCopy = true, testID } = props ?? {};
+  const { t } = useTranslation('common');
 
   const themeColors = useThemeColors();
   const reducedMotion = useReducedMotion();
@@ -82,7 +84,7 @@ export function LoadingIndicator(props?: LoadingIndicatorProps) {
       testID={testID ?? 'loading-indicator-container'}
       style={styles.container}
       accessibilityRole="progressbar"
-      accessibilityLabel="Loading content"
+      accessibilityLabel={t('a11y.loadingContent')}
     >
       {/* Theme-aware gradient background */}
       <LinearGradient

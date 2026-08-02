@@ -216,4 +216,30 @@ describe('ScheduleShiftsScreen', () => {
 
     expect(getByTestId('schedule-shifts-screen')).toBeTruthy();
   });
+
+  it('shows the back button by default (showBack=true)', () => {
+    mockUseShiftsRange.mockImplementation(() => ({
+      data: [],
+      isLoading: false,
+      isError: false,
+      error: null,
+    }));
+
+    const { getByTestId } = render(<ScheduleShiftsScreen />);
+
+    expect(getByTestId('schedule-shifts-back')).toBeTruthy();
+  });
+
+  it('hides the back button when showBack={false}', () => {
+    mockUseShiftsRange.mockImplementation(() => ({
+      data: [],
+      isLoading: false,
+      isError: false,
+      error: null,
+    }));
+
+    const { queryByTestId } = render(<ScheduleShiftsScreen showBack={false} />);
+
+    expect(queryByTestId('schedule-shifts-back')).toBeNull();
+  });
 });

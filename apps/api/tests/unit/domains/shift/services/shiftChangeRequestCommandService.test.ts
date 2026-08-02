@@ -74,10 +74,18 @@ function membershipFor(role: string, userId = 'u1') {
 
 function makeChangeRequestRepo(overrides: Record<string, unknown> = {}): any {
   return {
-    createRequest: mock(async (data: Record<string, unknown>) => ({
-      ...pendingRequest,
-      ...data,
-      id: 'cr-new',
+    openWithSupersede: mock(async (args: Record<string, unknown>) => ({
+      changeRequest: {
+        ...pendingRequest,
+        ...args,
+        id: 'cr-new',
+      },
+      superseded: [],
+    })),
+    acceptAndApply: mock(async () => ({
+      changeRequest: { ...pendingRequest, status: 'accepted' },
+      shift: { ...shift, status: 'cancelled' },
+      superseded: [],
     })),
     respond: mock(async (_id: string, status: string) => ({
       ...pendingRequest,
@@ -86,8 +94,6 @@ function makeChangeRequestRepo(overrides: Record<string, unknown> = {}): any {
       responded_at: 'now',
     })),
     withdraw: mock(async () => ({ ...pendingRequest, status: 'withdrawn' })),
-    // Default: no siblings to close. Every create/respond path calls this.
-    supersedePendingForShift: mock(async () => []),
     ...overrides,
   };
 }
@@ -213,10 +219,12 @@ describe('ShiftChangeRequestCommandService.create', () => {
     if (result.status === 'pending') {
       expect(result.shift_change_request.kind).toBe('cancel');
     }
-    expect(changeRequestRepo.createRequest).toHaveBeenCalled();
-    expect(eventRepo.insertMany).toHaveBeenCalledWith([
-      expect.objectContaining({ event_type: 'change_request_created' }),
-    ]);
+    expect(changeRequestRepo.openWithSupersede).toHaveBeenCalled();
+    // The day-thread events are inserted inside the open RPC's transaction
+    // (migration 030). A second round-trip from here is the D23/D24 crash
+    // window: a crash between the two writes leaves a change request with no
+    // audit trail.
+    expect(eventRepo.insertMany).not.toHaveBeenCalled();
   });
 
   it('returns pending_approval without creating a request when the gate requires co-parent sign-off', async () => {
@@ -253,7 +261,7 @@ describe('ShiftChangeRequestCommandService.create', () => {
       expect(result.approval.id).toBe('ap1');
       expect(result.approval.action).toBe('cancel');
     }
-    expect(changeRequestRepo.createRequest).not.toHaveBeenCalled();
+    expect(changeRequestRepo.openWithSupersede).not.toHaveBeenCalled();
   });
 
   it('rejects a nanny opening a parent-only kind', async () => {
@@ -273,10 +281,10 @@ describe('ShiftChangeRequestCommandService.create', () => {
       proposed_ends_at: '2026-08-03T18:00:00.000Z',
     });
 
-    expect(changeRequestRepo.createRequest).toHaveBeenCalledWith(
+    expect(changeRequestRepo.openWithSupersede).toHaveBeenCalledWith(
       expect.objectContaining({
-        kind: 'counter_offer',
-        requested_by: 'carer-1',
+        p_kind: 'counter_offer',
+        p_requested_by: 'carer-1',
       })
     );
   });
@@ -305,7 +313,7 @@ describe('ShiftChangeRequestCommandService.create — settled-shift guard', () =
     await expect(
       svc.create('u1', 's1', { kind: 'cancel' } as any)
     ).rejects.toThrow('shift is immutable');
-    expect(changeRequestRepo.createRequest).not.toHaveBeenCalled();
+    expect(changeRequestRepo.openWithSupersede).not.toHaveBeenCalled();
   });
 });
 
@@ -533,29 +541,91 @@ describe('ShiftChangeRequestCommandService.applyApprovedExtraShift', () => {
 
 describe('ShiftChangeRequestCommandService.respond', () => {
   it('lets the assigned carer accept a parent cancel and cancels the shift', async () => {
+    const changeRequestRepo = makeChangeRequestRepo();
     const shiftRepo = makeShiftRepo();
     const eventRepo = makeEventRepo();
-    const svc = makeSvc({ shiftRepo, eventRepo });
+    const svc = makeSvc({ changeRequestRepo, shiftRepo, eventRepo });
 
     const result = await svc.respond('carer-1', 'cr1', { status: 'accepted' });
 
-    expect(shiftRepo.update).toHaveBeenCalledWith(
-      's1',
+    expect(changeRequestRepo.acceptAndApply).toHaveBeenCalledWith(
       expect.objectContaining({
-        status: 'cancelled',
-        cancelled_by: 'carer-1',
-        origin: 'parent_proposed',
-        // requester note — respond no longer overwrites message
-        cancellation_message: 'Cannot make it',
+        p_change_request_id: 'cr1',
+        p_responded_by: 'carer-1',
+        p_set_cancel: true,
+        p_cancellation_message: 'Cannot make it',
+        p_events: expect.arrayContaining([
+          expect.objectContaining({ event_type: 'change_request_accepted' }),
+          expect.objectContaining({ event_type: 'shift_cancelled' }),
+        ]),
       })
     );
-    expect(eventRepo.insertMany).toHaveBeenCalledWith(
+    expect(shiftRepo.update).not.toHaveBeenCalled();
+    expect(eventRepo.insertMany).not.toHaveBeenCalled();
+    expect(result.shift?.status).toBe('cancelled');
+  });
+
+  it('sends no local_date on accept-path events — the RPC resolves the day thread from the updated shift row', async () => {
+    const timeRequest = {
+      ...pendingRequest,
+      kind: 'time_change' as const,
+      proposed_starts_at: '2026-08-04T13:00:00.000Z',
+      proposed_ends_at: '2026-08-04T21:00:00.000Z',
+    };
+    const shiftBefore = {
+      ...shift,
+      local_date: '2026-08-03',
+      starts_at: '2026-08-03T13:00:00.000Z',
+      ends_at: '2026-08-03T21:00:00.000Z',
+      shift_children: [{ shift_id: 's1', child_id: 'child-1' }],
+    };
+    const shiftAfter = {
+      ...shiftBefore,
+      local_date: '2026-08-04',
+      starts_at: timeRequest.proposed_starts_at,
+      ends_at: timeRequest.proposed_ends_at,
+    };
+    const changeRequestRepo = makeChangeRequestRepo({
+      acceptAndApply: mock(async () => ({
+        changeRequest: { ...timeRequest, status: 'accepted' },
+        shift: shiftAfter,
+        superseded: [],
+      })),
+    });
+    const eventRepo = makeEventRepo();
+    const svc = makeSvc({
+      queries: makeQueries({
+        getOwned: mock(async () => timeRequest),
+      }),
+      shiftQueries: makeShiftQueries({
+        getOwned: mock(async () => shiftBefore),
+      }),
+      changeRequestRepo,
+      eventRepo,
+    });
+
+    const result = await svc.respond('carer-1', 'cr1', { status: 'accepted' });
+
+    // The day thread an accepted change lands on is the DB's to decide: only
+    // the RPC holds the post-update row, whose `local_date` the
+    // `sync_shifts_local_date` trigger recomputes from the new `starts_at`.
+    // The service must therefore not send a `local_date` it cannot resolve —
+    // a required field the RPC ignores is a trap for the next caller.
+    const events = changeRequestRepo.acceptAndApply.mock.calls[0][0].p_events;
+    expect(events).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ event_type: 'change_request_accepted' }),
-        expect.objectContaining({ event_type: 'shift_cancelled' }),
+        expect.objectContaining({ event_type: 'shift_updated' }),
       ])
     );
-    expect(result.shift?.status).toBe('cancelled');
+    for (const event of events) {
+      expect(event).not.toHaveProperty('local_date');
+    }
+
+    // Cross-midnight semantics, documented: the shift moved to 08-04, so its
+    // audit trail follows it there rather than stranding history on 08-03.
+    expect(result.shift?.local_date).toBe('2026-08-04');
+    expect(eventRepo.insertMany).not.toHaveBeenCalled();
   });
 
   it('lets a parent accept a nanny counter-offer and updates shift times', async () => {
@@ -566,69 +636,67 @@ describe('ShiftChangeRequestCommandService.respond', () => {
       proposed_starts_at: '2026-08-03T09:00:00.000Z',
       proposed_ends_at: '2026-08-03T18:00:00.000Z',
     };
+    const changeRequestRepo = makeChangeRequestRepo();
     const shiftRepo = makeShiftRepo();
     const svc = makeSvc({
       queries: makeQueries({
         getOwned: mock(async () => counterRequest),
       }),
+      changeRequestRepo,
       shiftRepo,
     });
 
     await svc.respond('parent-2', 'cr1', { status: 'accepted' });
 
-    expect(shiftRepo.update).toHaveBeenCalledWith(
-      's1',
+    expect(changeRequestRepo.acceptAndApply).toHaveBeenCalledWith(
       expect.objectContaining({
-        starts_at: '2026-08-03T09:00:00.000Z',
-        ends_at: '2026-08-03T18:00:00.000Z',
-        origin: 'nanny_countered',
-        sequence: 1,
+        p_set_times: true,
+        p_starts_at: '2026-08-03T09:00:00.000Z',
+        p_ends_at: '2026-08-03T18:00:00.000Z',
+        p_origin: 'nanny_countered',
       })
     );
+    expect(shiftRepo.update).not.toHaveBeenCalled();
   });
 
-  it('on accept, supersedes pending siblings and batches superseded events into one insertMany', async () => {
+  it('on accept, passes accept-path events to RPC (superseded events inserted in RPC)', async () => {
     const sibling = {
       ...pendingRequest,
       id: 'cr-sibling',
       kind: 'time_change' as const,
     };
     const changeRequestRepo = makeChangeRequestRepo({
-      supersedePendingForShift: mock(async () => [sibling]),
+      acceptAndApply: mock(async () => ({
+        changeRequest: { ...pendingRequest, status: 'accepted' },
+        shift: { ...shift, status: 'cancelled' },
+        superseded: [sibling],
+      })),
     });
     const eventRepo = makeEventRepo();
     const svc = makeSvc({ changeRequestRepo, eventRepo });
 
     await svc.respond('carer-1', 'cr1', { status: 'accepted' });
 
-    expect(changeRequestRepo.supersedePendingForShift).toHaveBeenCalledWith(
-      's1',
-      'cr1'
-    );
-    expect(eventRepo.insertMany).toHaveBeenCalledTimes(1);
-    expect(eventRepo.insertMany).toHaveBeenCalledWith(
-      expect.arrayContaining([
-        expect.objectContaining({ event_type: 'change_request_accepted' }),
-        expect.objectContaining({ event_type: 'shift_cancelled' }),
-        expect.objectContaining({
-          event_type: 'change_request_superseded',
-          payload: expect.objectContaining({
-            change_request_id: 'cr-sibling',
-            kind: 'time_change',
-            superseded_by: 'cr1',
-          }),
-        }),
-      ])
+    expect(changeRequestRepo.acceptAndApply).toHaveBeenCalledTimes(1);
+    expect(eventRepo.insertMany).not.toHaveBeenCalled();
+    expect(changeRequestRepo.acceptAndApply).toHaveBeenCalledWith(
+      expect.objectContaining({
+        p_events: expect.arrayContaining([
+          expect.objectContaining({ event_type: 'change_request_accepted' }),
+          expect.objectContaining({ event_type: 'shift_cancelled' }),
+        ]),
+      })
     );
   });
 
-  it('does NOT supersede siblings on decline', async () => {
+  it('does NOT call acceptAndApply on decline', async () => {
     const changeRequestRepo = makeChangeRequestRepo();
     const svc = makeSvc({ changeRequestRepo });
 
     await svc.respond('carer-1', 'cr1', { status: 'declined' });
 
-    expect(changeRequestRepo.supersedePendingForShift).not.toHaveBeenCalled();
+    expect(changeRequestRepo.acceptAndApply).not.toHaveBeenCalled();
+    expect(changeRequestRepo.respond).toHaveBeenCalled();
   });
 
   it('rejects respond when the caller is not the designated responder', async () => {
@@ -668,13 +736,13 @@ describe('ShiftChangeRequestCommandService.withdraw', () => {
     ]);
   });
 
-  it('does NOT supersede siblings on withdraw', async () => {
+  it('does NOT call openWithSupersede on withdraw', async () => {
     const changeRequestRepo = makeChangeRequestRepo();
     const svc = makeSvc({ changeRequestRepo });
 
     await svc.withdraw('parent-1', 'cr1');
 
-    expect(changeRequestRepo.supersedePendingForShift).not.toHaveBeenCalled();
+    expect(changeRequestRepo.openWithSupersede).not.toHaveBeenCalled();
   });
 
   it('rejects withdraw by someone other than the requester', async () => {
@@ -686,14 +754,17 @@ describe('ShiftChangeRequestCommandService.withdraw', () => {
 });
 
 describe('ShiftChangeRequestCommandService.create — supersede siblings', () => {
-  it('after opening a request, supersedes other pending siblings in one insertMany', async () => {
+  it('leaves both created and superseded events to the RPC — one atomic write, no second round-trip', async () => {
     const sibling = {
       ...pendingRequest,
       id: 'cr-old',
       kind: 'time_change' as const,
     };
     const changeRequestRepo = makeChangeRequestRepo({
-      supersedePendingForShift: mock(async () => [sibling]),
+      openWithSupersede: mock(async () => ({
+        changeRequest: { ...pendingRequest, id: 'cr-new' },
+        superseded: [sibling],
+      })),
     });
     const eventRepo = makeEventRepo();
     const svc = makeSvc({ changeRequestRepo, eventRepo });
@@ -703,24 +774,12 @@ describe('ShiftChangeRequestCommandService.create — supersede siblings', () =>
       message: 'Emergency',
     });
 
-    expect(changeRequestRepo.supersedePendingForShift).toHaveBeenCalledWith(
-      's1',
-      'cr-new'
-    );
-    expect(eventRepo.insertMany).toHaveBeenCalledTimes(1);
-    expect(eventRepo.insertMany).toHaveBeenCalledWith(
-      expect.arrayContaining([
-        expect.objectContaining({ event_type: 'change_request_created' }),
-        expect.objectContaining({
-          event_type: 'change_request_superseded',
-          payload: expect.objectContaining({
-            change_request_id: 'cr-old',
-            kind: 'time_change',
-            superseded_by: 'cr-new',
-          }),
-        }),
-      ])
-    );
+    // `change_request_created` names the id of the row the RPC itself
+    // inserts, and `change_request_superseded` names the ids the RPC's CTE
+    // closed. Neither is knowable here before the call, so both are derived
+    // inside the transaction — see migration 030.
+    expect(changeRequestRepo.openWithSupersede).toHaveBeenCalledTimes(1);
+    expect(eventRepo.insertMany).not.toHaveBeenCalled();
   });
 });
 
@@ -759,16 +818,16 @@ describe('ShiftChangeRequestCommandService.applyApprovedChangeRequest', () => {
 
     await svc.applyApprovedChangeRequest(approvalFor());
 
-    expect(changeRequestRepo.createRequest).toHaveBeenCalledWith(
+    expect(changeRequestRepo.openWithSupersede).toHaveBeenCalledWith(
       expect.objectContaining({
-        shift_id: 's1',
-        // the requester, NOT the parent who approved
-        requested_by: 'u1',
-        kind: 'cancel',
-        message: 'nursery closed',
+        p_shift_id: 's1',
+        p_requested_by: 'u1',
+        p_kind: 'cancel',
+        p_message: 'nursery closed',
       })
     );
-    expect(eventRepo.insertMany).toHaveBeenCalled();
+    // Resumed-after-approval opens go through the same atomic RPC path.
+    expect(eventRepo.insertMany).not.toHaveBeenCalled();
   });
 
   it('does NOT apply the change to the shift itself — the nanny still gets to respond', async () => {
@@ -787,6 +846,15 @@ describe('ShiftChangeRequestCommandService.applyApprovedChangeRequest', () => {
     await svc.applyApprovedChangeRequest(approvalFor());
 
     expect(shiftQueries.getOwned).toHaveBeenCalledWith('u1', 's1');
+  });
+
+  it('calls assertMutable before opening the parked request', async () => {
+    const shiftRepo = makeShiftRepo();
+    const svc = makeSvc({ shiftRepo });
+
+    await svc.applyApprovedChangeRequest(approvalFor());
+
+    expect(shiftRepo.assertMutable).toHaveBeenCalledWith('s1');
   });
 
   it('refuses a payload that lost the shift it was gating', async () => {

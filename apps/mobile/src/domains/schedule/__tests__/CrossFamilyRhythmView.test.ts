@@ -27,9 +27,8 @@ describe('CrossFamilyRhythmView source', () => {
   it('never renders other household names for non-active families', () => {
     expect(viewSource).not.toContain('h.name');
     expect(viewSource).not.toContain('{h.name}');
-    expect(viewSource).toContain('OTHER_FAMILY_LABEL');
-    expect(viewSource).toContain('This family');
-    expect(groupingSource).toContain('Other family');
+    expect(viewSource).toContain('crossFamily.thisFamily');
+    expect(viewSource).toContain('crossFamily.otherFamily');
   });
 
   it('does not contain LEAKCANARY fixture strings', () => {

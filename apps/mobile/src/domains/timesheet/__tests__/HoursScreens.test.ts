@@ -30,6 +30,12 @@ beforeAll(async () => {
 });
 
 describe('HoursScreen', () => {
+  it('localizes the screen title through hours namespace', () => {
+    expect(hoursScreenSource).toContain("useTranslation('hours')");
+    expect(hoursScreenSource).toContain("t('title')");
+    expect(hoursScreenSource).not.toContain('>Hours<');
+  });
+
   it('wires the hours-screen testID', () => {
     expect(hoursScreenSource).toContain('hours-screen');
   });

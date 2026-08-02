@@ -737,14 +737,11 @@ accessors are correctly ungranted. The RLS helper index
 (`household_members_user_household_idx`) exists and is the one the helpers probe
 on every policy evaluation.
 
-**Real, written but deliberately not applied yet:**
-`supabase/migrations/018_optimize_rls_initplan.sql` rewrites 18 policies from
-`auth.uid()` to `(select auth.uid())`, so it evaluates once per statement rather
-than once per row, and adds `timesheets_carer_id_idx`. Behaviour-identical.
-Held back from the live database until device testing and the screenshot tour
-finish — this project has already had one incident (012) where a policy change
-broke every RLS check, and the performance benefit is negligible at current
-scale. Applying it mid-test risks the only thing in flight and buys nothing.
+**Applied:** `supabase/migrations/018_optimize_rls_initplan.sql` rewrote 18
+policies from `auth.uid()` to `(select auth.uid())` (once per statement rather
+than once per row) and added `timesheets_carer_id_idx`. Behaviour-identical.
+Live version id: `20260802150139`. The earlier "held back until device testing"
+note is stale — the migration is on the project.
 
 Two properties nobody had written down: `shift_events` has no INSERT policy
 either, not merely no update/delete — stricter than append-only, so not even a
@@ -923,3 +920,381 @@ evidence.
    database was already `approved`, so the button was correctly disabled and every
    screenshot shows a disabled control. Being unblocked with a seeded `submitted`
    timesheet.
+
+---
+
+# D32–D49 — Gap-closure rounds against the architecture analysis
+
+Three rounds of implementation against an external architecture analysis
+(G1–G20), each followed by an adversarial review of the resulting diff. Every
+defect below was confirmed by direct inspection, not taken from a report.
+
+**The single most important thing in this section is not any individual defect.
+It is that `bun run qc` was green for all three rounds, and four
+device-breaking defects shipped underneath it anyway.** In every case the test
+mocked away the mechanism that broke. See "Tests that could not fail" below.
+
+## Round 2 — defects in the first implementation pass
+
+## D32 — Clock-in issued no network request at all on device
+
+**Status:** FIXED · **Severity:** highest of this round — the primary nanny action, dead
+
+`timeEntryMutationUtils.ts` called the **global** `crypto.randomUUID()` to build
+an optimistic time entry. Nothing installs a global `crypto` in this app —
+`polyfills.ts` shims only `structuredClone` and `TextEncoderStream`, and
+`expo-crypto` only touches `globalThis.crypto` in its *web* build. The repo's own
+precedent (`src/lib/userDevice.ts:64`) imports `Crypto.randomUUID()` from
+`expo-crypto`.
+
+On Hermes it throws inside `onMutate`. TanStack Query v5 awaits `onMutate`
+*inside* the try that wraps `retryer.start()`, so the throw goes straight to
+`onError` and **`mutationFn` is never called** — no request, just a generic
+toast. Fixed by importing `expo-crypto`.
+
+**Why the suite was green:** Bun's test runtime *has* a global `crypto`. The
+guard now is a test that mocks `expo-crypto` and asserts the mock was called.
+
+## D33 — The time-off picker rendered raw i18n keys in both languages
+
+**Status:** FIXED · **Severity:** medium — visible nonsense, and a regression
+
+`TimeOffDateRangePicker` called `t('dateRange.start')`, `t('dateRange.end')` and
+`t('dateRange.endBeforeStart')`. None of the three existed in `en/timeOff.json`
+*or* `es/timeOff.json`, so users saw the literal strings `dateRange.start` and
+`dateRange.end`. The previous code rendered correct English, so this was a
+regression introduced by the i18n sweep itself.
+
+**Why nothing caught it:** the parity test compares en↔es and both were *equally*
+missing the key. The component's own test was a source-text grep
+(`expect(source).toContain("t('dateRange.start')")`) — it asserted the call was
+written, never that it resolved. Fixed by adding the keys and, more importantly,
+by building `locale-key-resolution.test.ts`, which walks every source file,
+extracts `t(...)` call sites namespace-aware, and fails on any key that does not
+resolve in `en`.
+
+## D34 — Clock-out could fire against a client-generated UUID
+
+**Status:** FIXED · **Severity:** medium-high
+
+The optimistic entry carried a locally-generated `id`, and `ClockInCard` sent
+`entryId: entry.id` on clock-out. The card flips to "on the clock" the instant
+the optimistic row lands, so a fast tap — or any offline period, where
+`networkMode: 'online'` pauses the clock-in indefinitely — sent
+`PATCH /time-entries/<fake-uuid>/clock-out` → 404 → rollback restores the same
+fake entry → loop.
+
+## D35 — `shift_updated` filed on the pre-update day thread
+
+**Status:** FIXED · **Severity:** medium — audit trail lands on the wrong day
+
+The accept path built the event from `shift.local_date` (the pre-update row).
+`sync_shifts_local_date` is a `before insert or update of starts_at, timezone`
+trigger, so it recomputes `local_date` from the new `starts_at`. An accepted
+time-change crossing local midnight therefore filed its event on the day thread
+it had just moved *off*.
+
+## D36 — `useClockOut` had no conflict-invalidate counterpart to D7
+
+**Status:** FIXED · **Severity:** medium
+
+On a 409 "entry is not running" — the exact outcome of a retried clock-out —
+`onError` rolled the running entry *back into* cache and never invalidated. The
+Today card then re-asserted "on the clock" for an entry the server had already
+closed: D7's stuck-card symptom, in the opposite direction. Now a conflict
+invalidates so the server wins, and every other error still rolls back.
+
+## D37 — Time-off PATCH compared ISO datetimes as strings
+
+**Status:** FIXED · **Severity:** medium — money-adjacent scheduling data
+
+`timeOffCommandService` validated the range with `effectiveEnds <= effectiveStarts`
+on raw strings. This path uniquely mixes a DB-normalised value with a
+client-supplied one whose UTC offset may differ (`z.iso.datetime({ offset: true })`
+permits offsets). Result: spurious 400s on valid ranges, and 500s (a DB check
+violation surfacing as `DatabaseError`) on genuinely invalid ones. Fixed with
+`Date.parse`.
+
+## D38 — Time-off edit: three integration defects
+
+**Status:** FIXED · **Severity:** medium
+
+`isEditing` was wired to a *different* `useMutation` instance than the one firing
+the PATCH — React Query instances do not share state, so it was permanently
+`false` and Edit never disabled. A note could not be **cleared** in edit mode
+(`...(trimmedMessage ? {message} : {})` omitted the key entirely, so the API kept
+the old note while the UI reported success). Past time-off was editable — guarded
+in neither layer.
+
+## D39 — The new CI coverage gate could never fail
+
+**Status:** FIXED · **Severity:** medium — a gate that has never been red is not a gate
+
+`check-test-coverage-new.sh` was wired into CI correctly, but no job set
+`fetch-depth: 0`. In a depth-1 clone neither `main` nor `HEAD~1` exists, both
+`git diff` fallbacks fail, `NEW_FILES` is empty, and the script prints "No new
+files detected" and exits 0. Every run was a green no-op. Its glob exclusions
+(`*/types/*`) were also broken by quoting. Fixed, and the gate was then
+**observed failing once** against a deliberately untested file.
+
+## D40 — Schedule tab: dead branch, then a permanent spinner
+
+**Status:** FIXED · **Severity:** medium
+
+Recorded as two states because the first fix introduced the second.
+
+Initially `(tabs)/schedule.tsx` had two identical `return <SchedulePendingScreen />`
+branches, and a nanny on cold start got a blank white tab (`SchedulePendingScreen`
+returns `null` for non-parents *before* computing `isLoading`).
+
+The round-2 fix replaced that with `if (role === null) return <LoadingIndicator/>`.
+But `useIsOnboarded` returns `role: null` for three distinct situations —
+loading, no membership, and a *failed* memberships query — so a member-less or
+errored user got a permanent spinner with no retry. Now split three ways:
+loading → spinner, no membership → empty state, query error → `ErrorState` with a
+wired `refetch`.
+
+## Round 3 — defects introduced by the round-2 fixes
+
+## D41 — `AnnouncementModal` gated on its own sheet id, looping forever
+
+**Status:** FIXED · **Severity:** would have been highest — never shipped
+
+The component subscribed to `activeSheetId` and gated on
+`activeSheetId !== null`, while rendering `<BottomSheetBase sheetId="announcement">`.
+`BottomSheetBase` registers itself via `openSheet(sheetId)` from a mount effect.
+So: mount → `openSheet('announcement')` → store change → re-render → the gate is
+now true *because of its own registration* → `return null` → unmount → cleanup
+`closeSheet()` → re-render → mount → React aborts with "Maximum update depth
+exceeded".
+
+`BottomSheetBase`'s own comment says it reads via `getState()` precisely to avoid
+a "set → re-render → set loop". `AnnouncementModal` reintroduced exactly that
+loop by *subscribing*.
+
+**Provenance, recorded because it changes the severity:** this never reached a
+user. The committed version of the component had no subscription and no gate at
+all — just `if (!announcement) return null;`. The loop was introduced by the
+in-flight uncommitted work of this round and caught before commit.
+
+**Why the suite was green:** the test `mock.module`'d `BottomSheetBase` away and
+replaced it with a bare `<RNModal>`, so the `openSheet` effect never ran. The
+test now renders the real component; the red phase was a hard
+`Maximum update depth exceeded` thrown out of `render()` itself, with exactly the
+predicted pass/fail split — the four negative cases passed (they return `null`
+before the sheet mounts, so nothing loops) and all six mounting cases failed.
+
+## D42 — Migration 027 moved the lost update out of the data and into the audit log
+
+**Status:** FIXED · **Severity:** medium — silent corruption of an append-only record
+
+027 was written to close a parent-edit/nanny-accept race by taking
+`select ... for update` and deriving `sequence = v_locked.sequence + 1`. It did
+that correctly. But `shiftCommandService` still computed `nextSequence` from a
+**stale, unlocked** read and baked it into the `before`/`after` event payload.
+
+Under the exact interleaving 027 exists to close, the *row* correctly becomes 5
+while the *event* records `before.sequence=3, after.sequence=4`, and the `before`
+snapshot describes a state already overwritten. For a change whose entire purpose
+is protecting an append-only audit trail, the bug was relocated rather than
+fixed.
+
+## D43 — Migration 029 silently discarded a required contract field
+
+**Status:** FIXED · **Severity:** low-medium — a trap rather than a live bug
+
+029 hard-coded `v_shift.local_date` for every row inserted from `p_events`,
+ignoring `e->>'local_date'` — which the TypeScript still built and sent as a
+**required, type-checked** member of `ShiftEventRpcInsert`. A required field the
+database throws away is worse than either honouring it or removing it. Resolved
+by dropping it from the contract, with the resulting day-thread semantics
+documented in the migration header rather than left to fall out.
+
+## D44 — Migration 026's `pg_net` sat outside its own guard
+
+**Status:** FIXED · **Severity:** medium — breaks `supabase db reset` / shadow DB
+
+026 registers the schedule-horizon cron and guards on `pg_cron` being present,
+returning with a notice otherwise. But `create extension if not exists pg_net`
+ran *before* that guard, so on any environment lacking `pg_net` the migration
+hard-failed before the guard was ever reached — defeating the graceful
+degradation its own header promised. Migration 007 documents exactly this concern
+and is why its example was left commented out.
+
+## D45 — `level-b-roundtrip.ts` leaked fixtures on every run
+
+**Status:** FIXED · **Severity:** low — testbed hygiene
+
+The `finally` deleted only the two throwaway auth users, and a comment claimed
+this "cascades profile/device/household rows". It does not:
+`households.created_by` and `shifts.carer_id` are both `ON DELETE SET NULL`, and
+only `household_members` cascades. Every run permanently accreted a household, a
+shift, two change requests and their events.
+
+## D46 — Dead `p_sequence` parameter, and the overload trap behind it
+
+**Status:** FIXED · **Severity:** low — but the trap is worth recording
+
+027 left `p_sequence` in its signature, unreferenced, with callers still filling
+it. The reason this is worth a log entry is the trap that removing it springs:
+
+**In Postgres, `create or replace function` with a different argument list
+creates a NEW OVERLOAD rather than replacing.** Delete a parameter naively and
+the old function stays live and callable, the new one inherits **no grants**, and
+any unqualified `comment on function` fails with `42725 function name is not
+unique`. All of that fails at runtime, where no unit test in this repo can see it
+— Supabase is mocked in every test.
+
+The correct pattern is one coherent edit: `drop function if exists` with the
+*exact* old type list, the parameter removal, `comment on function` qualified
+with the new argument list, and the full revoke/grant block repeated. Migration
+029 got this right first and is the template.
+
+## D47 — The open path was still non-atomic for its own events
+
+**Status:** FIXED · **Severity:** low-medium
+
+029 folded the accept path's `shift_events` writes into its RPC, closing the
+D23/D24 crash window. The open path still wrote `change_request_created` and its
+superseded siblings via `insertMany` *after* the RPC committed — the identical
+window, left asymmetric. Folded into the RPC by migration 030.
+
+---
+
+## Tests that could not fail
+
+The recurring root cause across all three rounds, recorded separately because it
+outlived every individual defect above. Each of these passed, and would have
+**kept** passing with the fix it guarded reverted:
+
+1. **`AnnouncementModal.test.tsx`** mocked `BottomSheetBase` away — the defect
+   lived entirely in that component's mount effect (D41).
+2. **Both time-off offset tests** used payloads whose strings diverge early
+   enough that lexicographic comparison gives the right answer anyway. Reverting
+   `Date.parse` to `<=` left both green (D37).
+3. **"Uses one update mutation instance"** used a module mock broadcasting a
+   single `globalPending` to every caller, so it could not distinguish one
+   instance from two — the exact defect (D38).
+4. **"`shift_updated` uses post-update `local_date` when time change crosses
+   local midnight"** built an elaborate cross-midnight fixture and then asserted
+   only `event_type` (D35).
+5. **Lock-position assertions** used `[\s\S]*` spanning the whole file, proving a
+   `for update` existed *somewhere* after *a* `from public.shifts` — not that it
+   was first, nor that it preceded the mutation.
+6. **`locale-key-resolution.test.ts`** could not see `i18n.t(key, { ns })`, which
+   is the form used by the only two files it most needed to cover (D33).
+7. **Every i18n component test** was a source-text grep asserting a `t(...)` call
+   was *written*, never that it *resolved*.
+
+Each has been rewritten to exercise the real mechanism, and — for the inverted
+cases — verified red with its fix reverted, then restored.
+
+**The standing rule this produced:** if a test mocks away a component, module or
+effect, it cannot be the test for a defect that lives there. Where mocking is
+genuinely unavoidable, say so and name what is therefore unverified.
+
+---
+
+## Round 2–3 gate notes
+
+**`bun run qc` runs `format`, not `format:check`.** `scripts/qc.sh:45` is
+`CHECKS=("test" "lint" "format" "typecheck")`, and each app's `format` script
+writes (`biome check --write --unsafe . && biome format --write .`). So the gate
+*reformats the tree* rather than failing on unformatted code — formatting drift
+can never fail `qc`. Recorded, not changed.
+
+**Still unproven, honestly.** The G4 concurrent-accept invariant has no automated
+coverage: Supabase is mocked in every API unit test, and there is no local DB
+harness (`qa-smoke.ts` is read-only). The only real proof is the opt-in
+`RUNBOOK_ALLOW_ROUNDTRIP=1 bun apps/api/scripts/level-b-roundtrip.ts` against a
+live testbed. A green unit suite must not be read as "the race is fixed."
+
+## The G4 concurrent-accept race is unreachable through the API
+
+Recorded because it materially downgrades G4's practical severity, and because
+it was found only by trying to write an honest end-to-end test for it.
+
+`open_shift_change_request` (024, hardened by 028, events folded in by 030)
+supersedes **every** pending request on the shift — no `kind` filter, no
+`id <> self` exclusion — and does so under a `select ... for update` row lock
+that serialises concurrent opens. Verified directly in
+`030_open_shift_change_request_events.sql:97-102`:
+
+```sql
+update public.shift_change_requests
+set status = 'superseded', updated_at = now()
+where shift_id = p_shift_id
+  and status = 'pending'
+```
+
+So after any open, **exactly one** request on a shift is `pending`. Two
+simultaneously-pending requests cannot be produced through the API at all —
+neither sequentially nor by racing.
+
+That means the accept-side race G4 describes (two *different* pending requests
+accepted concurrently) is not reachable by real traffic. The lock and CAS in
+`accept_shift_change_request` are defense-in-depth against a state the write path
+structurally prevents, not a fix for a live production bug.
+
+It also explains something that read as laziness in the roundtrip script: its
+direct `admin.from('shift_change_requests').insert(...)` was not a shortcut, it
+was the only way to construct the two-pending state the test needs. The script
+now opens the first request through the real
+`POST /api/v1/shifts/:shiftId/change-requests` endpoint — so 028's guard is
+exercised for real — and inserts the second directly, with an in-script comment
+explaining why. That is the most end-to-end coverage achievable without
+destroying the fixture the race requires.
+
+**Device pass: DONE — 2026-08-02, iPhone 17 Pro Max simulator, iOS 26.5.**
+Driven via Maestro against a live API (localhost:8080) and the live Supabase
+project, signed in as `nanny@steadilynanny.test`. Every P0 in this section is
+now verified on a real device, not just in the suite:
+
+| | Evidence |
+|---|---|
+| **D32** clock-in dead on device | `POST /api/v1/time-entries/clock-in 201` in the API log, followed by the invalidating `GET .../running`. UI flipped to "You're on the clock / Since 15:00". Before the `expo-crypto` fix this request could not have been issued at all. |
+| **D33** raw `dateRange.*` keys | Time-off picker column headers render **"Start"** and **"End"**, not `dateRange.start` / `dateRange.end`. |
+| **D34** optimistic id used for clock-out | Clock-out addressed the **server** UUID `7c49eee7-…`, not a client-generated one: `POST /api/v1/time-entries/7c49eee7-…/clock-out 200`. |
+| **D40** nanny Schedule tab | Tab bar reports "Schedule, tab, **2 of 4**" for a nanny (was 3 tabs, hidden via `href: null`), and it renders the read-only calendar with all four views — no spinner, no blank tab. |
+| **D41** announcement loop | With a live announcement in `app_config`, the sheet renders inside `BottomSheetBase` and the app stays fully interactive for minutes (timer kept ticking 5m → 7m). Under the buggy gate this exact condition threw "Maximum update depth exceeded" out of `render()`. |
+
+Also confirmed incidentally: the D38(c) past-time-off guard (a row dated
+Sat 1 Aug offered only **Cancel**, no Edit), the i18n sweep on `RoleScreen`,
+`TodayScreen`, `HandoffChipsCard` and the tab bar (all real copy, no raw keys),
+and D18's ad-hoc path — the 15:00 clock-in matched no shift (the day's only
+shift was 01:47–06:17, outside the ±2h tolerance), so `shift_id` and
+`scheduled_minutes` are correctly null.
+
+**Two environment traps worth recording**, both of which cost time and neither
+of which is an app defect:
+
+1. **A test announcement must carry `type` and `dismissible`.**
+   `AnnouncementSchema` (`apps/mobile/src/api/endpoints/appConfig.ts`) requires
+   both. An announcement row missing them fails Zod validation on the mobile
+   side, so `query.data` is undefined, `setStatus` never fires, and the modal
+   silently never renders — with the API returning a perfectly valid-looking
+   payload. This looks exactly like "the modal is broken" and is not.
+2. **`useIsOnboarded` sends an onboarded user to the onboarding role fork when
+   the memberships query fails.** Observed live: with the API unreachable, a
+   nanny holding two active memberships was shown "Who are you?". This is the
+   same `role === null` conflation D40 fixed *inside* the Schedule tab, still
+   present at the root redirect. Not fixed here — recorded as open.
+
+**Red-phase provenance: two gaps, recorded rather than papered over.** D42/D46
+(migration 031) and D43/D47 (migration 030) were implemented under the same
+test-first protocol as everything else, but the agents that wrote them never
+returned their red output despite repeated requests. The fixes were verified
+correct by direct inspection — 031 drops the exact old 12-type signature and
+re-grants; 030 keeps 028's signature byte-identical so `create or replace`
+genuinely replaces; the open path's `insertMany` is gone, so the RPC is the sole
+writer and there is no unkeyed-duplicate risk — and `bun run qc` is green. But
+"the test was seen to fail first" is **unconfirmed** for those four entries.
+Given that this whole section exists because unfalsifiable tests shipped green,
+that distinction is worth keeping visible rather than assuming.
+
+**A note on `'await' has no effect` hints in the API tests.** Investigated and
+dismissed. Every flagged line is `await expect(promise).rejects.…`, which is the
+correct idiom; `bun:test` types the matcher as returning `void`, so TypeScript
+reports the `await` as inert. The assertions do run. Recorded so nobody
+re-investigates it — or, worse, "fixes" it by removing the await, which would
+make them pass vacuously for real.

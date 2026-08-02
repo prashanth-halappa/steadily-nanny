@@ -37,7 +37,14 @@ import { useUserProfile } from '@/src/hooks/queries/useUserProfile';
 import { currentWeekRange } from '@/src/lib/localDate';
 import { CALENDAR_VIEWS } from '@/src/store/calendarViewStore';
 
-export function ScheduleShiftsScreen() {
+type ScheduleShiftsScreenProps = {
+  /** When false, omits the back affordance (Schedule tab root for nannies). */
+  showBack?: boolean;
+};
+
+export function ScheduleShiftsScreen({
+  showBack = true,
+}: ScheduleShiftsScreenProps) {
   const { t } = useTranslation('schedule');
   const { t: tCommon } = useTranslation('common');
   const router = useRouter();
@@ -70,16 +77,18 @@ export function ScheduleShiftsScreen() {
     >
       <SafeAreaView style={{ flex: 1 }} className="bg-background">
         <View className="gap-2 px-6 pt-4 pb-2">
-          <Pressable
-            testID="schedule-shifts-back"
-            accessibilityRole="button"
-            accessibilityLabel={tCommon('back')}
-            onPress={() => router.back()}
-            hitSlop={8}
-            className="self-start"
-          >
-            <Body className="text-primary">{`< ${tCommon('back')}`}</Body>
-          </Pressable>
+          {showBack ? (
+            <Pressable
+              testID="schedule-shifts-back"
+              accessibilityRole="button"
+              accessibilityLabel={tCommon('back')}
+              onPress={() => router.back()}
+              hitSlop={8}
+              className="self-start"
+            >
+              <Body className="text-primary">{`< ${tCommon('back')}`}</Body>
+            </Pressable>
+          ) : null}
           <H1>{t('shifts.screenTitle')}</H1>
           <CalendarViewSwitcher
             value={calendarView}

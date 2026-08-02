@@ -9,6 +9,7 @@ import {
   type ChildCommitmentKind,
 } from '@steadily-nanny/shared-types/schemas/child.schema';
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
 import { BottomSheetBase } from '@/src/components/custom/BottomSheetBase';
 import { Button } from '@/src/components/ui/button';
@@ -19,6 +20,7 @@ import { Text } from '@/src/components/ui/text';
 import { TimeRangePicker } from '@/src/components/ui/time-range-picker';
 import { H3 } from '@/src/components/ui/typography';
 import { WeekStrip } from '@/src/components/ui/week-strip';
+import { commitmentKindLabelKey } from '@/src/domains/setup/constants/commitmentKinds';
 import {
   buildWeeklyRrule,
   formatCommitmentTime,
@@ -41,14 +43,6 @@ interface CommitmentFormSheetProps {
   childName: string;
 }
 
-const KIND_LABELS: Record<ChildCommitmentKind, string> = {
-  preschool: 'Preschool',
-  school: 'School',
-  activity: 'Activity',
-  nap: 'Nap',
-  other: 'Other',
-};
-
 const DEFAULT_DAYS = [1, 2, 3, 4, 5];
 const DEFAULT_START = '09:00';
 const DEFAULT_END = '12:00';
@@ -60,6 +54,7 @@ export function CommitmentFormSheet({
   isSubmitting,
   childName,
 }: CommitmentFormSheetProps) {
+  const { t } = useTranslation('household');
   const [kind, setKind] = useState<ChildCommitmentKind>(
     CHILD_COMMITMENT_KINDS.PRESCHOOL
   );
@@ -110,10 +105,10 @@ export function CommitmentFormSheet({
       testID="commitment-form-sheet"
     >
       <View className="gap-3 px-6 pb-4">
-        <H3>Add commitment for {childName}</H3>
+        <H3>{t('commitments.form.title', { childName })}</H3>
 
         <View className="gap-2">
-          <Label>Kind</Label>
+          <Label>{t('commitments.form.kindLabel')}</Label>
           <View
             className="flex-row flex-wrap gap-2"
             testID="commitment-kind-row"
@@ -128,25 +123,25 @@ export function CommitmentFormSheet({
                 size="sm"
                 onPress={() => setKind(k)}
               >
-                <Text>{KIND_LABELS[k]}</Text>
+                <Text>{t(commitmentKindLabelKey(k), { defaultValue: k })}</Text>
               </Button>
             ))}
           </View>
         </View>
 
         <View className="gap-2">
-          <Label>Label</Label>
+          <Label>{t('commitments.form.labelLabel')}</Label>
           <Input
             testID="commitment-form-label"
-            accessibilityLabel="Commitment label"
+            accessibilityLabel={t('commitments.form.labelA11y')}
             value={label}
             onChangeText={setLabel}
-            placeholder="e.g. Preschool drop-off"
+            placeholder={t('commitments.form.labelPlaceholder')}
           />
         </View>
 
         <View className="gap-2">
-          <Label>Days</Label>
+          <Label>{t('commitments.form.daysLabel')}</Label>
           <WeekStrip
             testID="commitment-form-days"
             selected={days}
@@ -155,7 +150,7 @@ export function CommitmentFormSheet({
         </View>
 
         <View className="gap-2">
-          <Label>Time</Label>
+          <Label>{t('commitments.form.timeLabel')}</Label>
           <TimeRangePicker
             testID="commitment-form-time"
             start={startTime}
@@ -168,7 +163,7 @@ export function CommitmentFormSheet({
         </View>
 
         <View className="flex-row items-center justify-between gap-3">
-          <Label>Excluded from cover</Label>
+          <Label>{t('commitments.form.excludedLabel')}</Label>
           <Switch
             testID="commitment-form-excluded"
             checked={excludedFromCover}
@@ -181,7 +176,7 @@ export function CommitmentFormSheet({
           onPress={handleSubmit}
           disabled={!isValid || isSubmitting}
         >
-          <Text>Add commitment</Text>
+          <Text>{t('commitments.form.submit')}</Text>
         </Button>
       </View>
     </BottomSheetBase>

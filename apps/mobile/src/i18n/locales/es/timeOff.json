@@ -1,10 +1,14 @@
 {
   "screenTitle": "Tiempo libre",
   "requestTitle": "Solicitar tiempo libre",
+  "editTitle": "Editar tiempo libre",
   "messageLabel": "Nota para la familia (opcional)",
   "messagePlaceholder": "p. ej. Visitando a la familia",
   "requestSubmit": "Solicitar tiempo libre",
+  "editSubmit": "Guardar cambios",
+  "editCancel": "Cancelar edición",
   "requestedToast": "Tiempo libre confirmado",
+  "updatedToast": "Tiempo libre actualizado",
   "emptyTitle": "Aún no hay tiempo libre",
   "emptyDescription": "Las solicitudes que hagas aparecerán aquí.",
   "status": {
@@ -13,6 +17,7 @@
     "cancelled": "Cancelado"
   },
   "cancelButton": "Cancelar",
+  "editButton": "Editar",
   "cancelledToast": "Tiempo libre cancelado",
   "notAvailableTitle": "No disponible",
   "notAvailableDescription": "El tiempo libre lo gestiona la niñera en este hogar.",
@@ -24,5 +29,10 @@
   "checkFailedDescription": "No pudimos verificar si esto se solapa con un turno existente. Aun así puedes solicitar tiempo libre.",
   "checkFailedCancel": "Volver",
   "checkFailedConfirm": "Solicitar de todos modos",
-  "filterAll": "Todos"
+  "filterAll": "Todos",
+  "dateRange": {
+    "start": "Inicio",
+    "end": "Fin",
+    "endBeforeStart": "La fecha de fin no puede ser anterior a la de inicio."
+  }
 }

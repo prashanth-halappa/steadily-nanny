@@ -17,5 +17,7 @@
   "flaggedCheckEntry": "revisa esta entrada",
   "flaggedTitle": "Entrada inusual",
   "flaggedDescription": "Esta entrada tiene duración cero — suele ser un fichaje accidental. Aún no se pueden editar entradas pasadas; habla con tu hogar si hay que corregirla.",
-  "flaggedDismiss": "Entendido"
+  "flaggedDismiss": "Entendido",
+  "noHoursLogged": "Sin horas registradas",
+  "inProgress": "en curso"
 }

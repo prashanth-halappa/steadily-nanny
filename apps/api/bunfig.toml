@@ -2,6 +2,9 @@
 # See: https://bun.sh/docs/runtime/bunfig
 
 [test]
+# Quiet console + load .env.test before every file (matches mobile's bun.setup.ts).
+preload = ["./tests/setup/globalSetup.ts"]
+
 # Coverage gate — start conservative and ratchet upward as suites land.
 coverageThreshold = { lines = 30, functions = 30, statements = 30 }
 

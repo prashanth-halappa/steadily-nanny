@@ -118,6 +118,3 @@ export function shiftPeriod(shift: Shift, timeZone: string): DayPeriod {
   if (startHour < 17) return 'afternoon';
   return 'evening';
 }
-
-/** Anonymised label for non-active households — never use household.name. */
-export const OTHER_FAMILY_LABEL = 'Other family';

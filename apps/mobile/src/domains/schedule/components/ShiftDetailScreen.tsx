@@ -22,6 +22,10 @@ import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { Text } from '@/src/components/ui/text';
 import { Textarea } from '@/src/components/ui/textarea';
 import { Body, H1, H2, Small } from '@/src/components/ui/typography';
+import {
+  shiftChangeRequestKindLabelKey,
+  shiftChangeRequestStatusLabelKey,
+} from '@/src/domains/schedule/constants/changeRequestKinds';
 import { isParentEditorRole, SETUP_ROLES } from '@/src/domains/setup/types';
 import { useCreateShiftChangeRequest } from '@/src/hooks/mutations/useCreateShiftChangeRequest';
 import { useRespondToShiftChangeRequest } from '@/src/hooks/mutations/useRespondToShiftChangeRequest';
@@ -241,20 +245,35 @@ export function ShiftDetailScreen() {
         </View>
       )}
 
-      {(changeRequests.data ?? []).some(r => r.status === 'pending') ? (
+      {(changeRequests.data ?? []).length > 0 ? (
         <View testID="shift-detail-changes" className="mt-8 gap-3">
           <H2>{t('detail.changesTitle')}</H2>
-          {(changeRequests.data ?? [])
-            .filter(r => r.status === 'pending')
-            .map(req => (
-              <View
-                key={req.id}
-                className="gap-2 rounded-lg border border-border p-3"
-              >
-                <Body>
-                  {req.kind}
-                  {req.message ? ` — ${req.message}` : ''}
+          {(changeRequests.data ?? []).map(req => (
+            <View
+              key={req.id}
+              className="gap-2 rounded-lg border border-border p-3"
+            >
+              <Body className="font-medium">
+                {t(shiftChangeRequestKindLabelKey(req.kind), {
+                  defaultValue: req.kind,
+                })}
+              </Body>
+              <Small className="text-muted-foreground">
+                {t(shiftChangeRequestStatusLabelKey(req.status), {
+                  defaultValue: req.status,
+                })}
+              </Small>
+              {req.message ? (
+                <Body testID={`shift-change-message-${req.id}`}>
+                  {t('detail.requestMessageLabel')}: {req.message}
                 </Body>
+              ) : null}
+              {req.response_message ? (
+                <Body testID={`shift-change-response-${req.id}`}>
+                  {t('detail.responseLabel')}: {req.response_message}
+                </Body>
+              ) : null}
+              {req.status === 'pending' ? (
                 <View className="flex-row gap-2">
                   <Button
                     testID={`shift-change-accept-${req.id}`}
@@ -282,8 +301,9 @@ export function ShiftDetailScreen() {
                     <Text>{t('detail.declineChange')}</Text>
                   </Button>
                 </View>
-              </View>
-            ))}
+              ) : null}
+            </View>
+          ))}
         </View>
       ) : null}
 

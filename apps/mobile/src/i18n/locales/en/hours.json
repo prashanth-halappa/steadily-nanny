@@ -17,5 +17,7 @@
   "flaggedCheckEntry": "check this entry",
   "flaggedTitle": "Unusual entry",
   "flaggedDescription": "This entry has zero duration — usually from an accidental clock-in and clock-out. Editing past entries isn't available yet; ask your household if you need it corrected.",
-  "flaggedDismiss": "Got it"
+  "flaggedDismiss": "Got it",
+  "noHoursLogged": "No hours logged",
+  "inProgress": "in progress"
 }

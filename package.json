@@ -18,6 +18,7 @@
     "typecheck": "turbo run typecheck",
     "clean": "turbo run clean && rm -rf node_modules",
     "qc": "./scripts/qc.sh",
+    "seed": "bun scripts/seed-test-users.ts && bun scripts/seed-second-household.ts && bun scripts/seed-e2e-approval-fixtures.ts",
     "setup": "bun scripts/setup.ts",
     "g": "sh -c 'git add . && git status && git commit -m \"$1\" && git push' _",
     "prepare": "husky"

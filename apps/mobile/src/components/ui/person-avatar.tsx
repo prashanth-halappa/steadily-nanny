@@ -7,6 +7,7 @@
  */
 
 import { cva } from 'class-variance-authority';
+import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
 import { remapChildSwatch } from '@/lib/design-tokens/palette';
 import { cn } from '@/lib/utils';
@@ -60,6 +61,7 @@ export function PersonAvatar({
   size = 'md',
   testID,
 }: PersonAvatarProps) {
+  const { t } = useTranslation('common');
   const initial = getInitial(name);
   const resolvedColour = colour ? remapChildSwatch(colour) : undefined;
 
@@ -72,7 +74,7 @@ export function PersonAvatar({
       )}
       style={resolvedColour ? { backgroundColor: resolvedColour } : undefined}
       accessibilityRole="image"
-      accessibilityLabel={name.trim().length > 0 ? name : 'Unnamed'}
+      accessibilityLabel={name.trim().length > 0 ? name : t('a11y.unnamed')}
     >
       <Text className={cn(personAvatarTextVariants({ size }))}>{initial}</Text>
     </View>
