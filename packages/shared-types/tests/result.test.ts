@@ -34,38 +34,34 @@ describe('Result', () => {
 
   describe('map', () => {
     it('maps data on success', () => {
-      expect(R.map(R.ok(2), (n) => n * 3)).toEqual(R.ok(6));
+      expect(R.map(R.ok(2), n => n * 3)).toEqual(R.ok(6));
     });
 
     it('passes a failure through unchanged', () => {
       const failure: Result<number, string> = R.fail('e');
-      expect(R.map<number, number, string>(failure, (n) => n * 3)).toBe(
-        failure
-      );
+      expect(R.map<number, number, string>(failure, n => n * 3)).toBe(failure);
     });
   });
 
   describe('mapError', () => {
     it('maps the error on failure', () => {
-      expect(R.mapError(R.fail('e'), (e) => `${e}!`)).toEqual(R.fail('e!'));
+      expect(R.mapError(R.fail('e'), e => `${e}!`)).toEqual(R.fail('e!'));
     });
 
     it('passes a success through unchanged', () => {
       const success: Result<number, string> = R.ok(1);
-      expect(R.mapError<number, string, string>(success, (e) => e)).toBe(
-        success
-      );
+      expect(R.mapError<number, string, string>(success, e => e)).toBe(success);
     });
   });
 
   describe('flatMap', () => {
     it('chains on success', () => {
-      expect(R.flatMap(R.ok(2), (n) => R.ok(n + 1))).toEqual(R.ok(3));
+      expect(R.flatMap(R.ok(2), n => R.ok(n + 1))).toEqual(R.ok(3));
     });
 
     it('short-circuits on failure', () => {
       const failure: Result<number, string> = R.fail('e');
-      expect(R.flatMap<number, number, string>(failure, (n) => R.ok(n + 1))).toBe(
+      expect(R.flatMap<number, number, string>(failure, n => R.ok(n + 1))).toBe(
         failure
       );
     });
@@ -107,9 +103,8 @@ describe('Result', () => {
     });
 
     it('applies the error mapper on rejection', async () => {
-      const r = await R.fromPromise(
-        Promise.reject(new Error('x')),
-        (e) => (e as Error).message.toUpperCase()
+      const r = await R.fromPromise(Promise.reject(new Error('x')), e =>
+        (e as Error).message.toUpperCase()
       );
       expect(r).toEqual(R.fail('X'));
     });

@@ -1,0 +1,79 @@
+/**
+ * @module domains/schedule/components/PendingScheduleCard
+ *
+ * The carer's entry point to the respond flow. Meant to be mounted on the
+ * Today screen (by whichever agent owns `TodayScreen.tsx` — this component
+ * is exported from `src/domains/schedule` for exactly that purpose and
+ * takes no props).
+ *
+ * Renders NOTHING when there is no `pending` schedule pattern where the
+ * signed-in user is the carer — no empty state, no placeholder. It should
+ * be invisible on an ordinary day, only appearing when there's genuinely
+ * something to respond to.
+ *
+ * Two queries are needed: `useSchedulePatterns` to find a pending pattern
+ * addressed to this user, then `useSchedulePattern` for that pattern's
+ * `days` (list responses don't include nested days — only the detail route
+ * does), so the card can show a real day count + hours total rather than
+ * just a bare "you have a pattern" notice.
+ */
+import { type Href, useRouter } from 'expo-router';
+import { useTranslation } from 'react-i18next';
+import { View } from 'react-native';
+import { Button } from '@/src/components/ui/button';
+import { Text } from '@/src/components/ui/text';
+import { Body } from '@/src/components/ui/typography';
+import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
+import { useSchedulePattern } from '@/src/hooks/queries/useSchedulePattern';
+import { useSchedulePatterns } from '@/src/hooks/queries/useSchedulePatterns';
+import { useAuthStore } from '@/src/store/auth';
+import { calculateWeekTotalHours } from '../utils';
+
+export function PendingScheduleCard() {
+  const { t } = useTranslation('schedule');
+  const router = useRouter();
+
+  const userId = useAuthStore(s => s.session?.user?.id);
+  const onboarding = useIsOnboarded();
+
+  const patterns = useSchedulePatterns(onboarding.householdId);
+  const pendingPattern =
+    (patterns.data ?? []).find(
+      p => p.status === 'pending' && p.carer_id === userId
+    ) ?? null;
+
+  const detail = useSchedulePattern(pendingPattern?.id);
+
+  // Invisible until we have BOTH a pending pattern addressed to this user
+  // AND its day detail — never show a placeholder or a momentary "0 days".
+  if (!pendingPattern || detail.isLoading || !detail.data) {
+    return null;
+  }
+
+  const days = detail.data.days;
+  const totalHours = calculateWeekTotalHours(days);
+
+  return (
+    <View
+      testID="today-pending-schedule-card"
+      className="gap-2 rounded-xl border border-border bg-card p-4"
+    >
+      <Body className="font-sora-semibold">{t('todayCard.pendingTitle')}</Body>
+      <Body className="text-muted-foreground">
+        {t('todayCard.pendingBody', { count: days.length, hours: totalHours })}
+      </Body>
+      <Button
+        testID="today-pending-schedule-cta"
+        onPress={() =>
+          router.push(
+            `/(private)/schedule/respond/${pendingPattern.id}` as Href
+          )
+        }
+      >
+        <Text className="text-primary-foreground font-medium">
+          {t('todayCard.pendingCta')}
+        </Text>
+      </Button>
+    </View>
+  );
+}

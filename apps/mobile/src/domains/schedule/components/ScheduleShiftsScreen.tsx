@@ -206,7 +206,17 @@ export function ScheduleShiftsScreen() {
   );
 }
 
+const STATUS_TO_LABEL_KEY: Record<Shift['status'], string> = {
+  draft: 'shifts.statusDraft',
+  pending: 'shifts.statusPending',
+  confirmed: 'shifts.statusConfirmed',
+  declined: 'shifts.statusDeclined',
+  cancelled: 'shifts.statusCancelled',
+  completed: 'shifts.statusCompleted',
+};
+
 function ShiftRow({ shift }: { shift: Shift }) {
+  const { t } = useTranslation('schedule');
   const variant = STATUS_TO_VARIANT[shift.status];
 
   return (
@@ -224,13 +234,13 @@ function ShiftRow({ shift }: { shift: Shift }) {
           <StatusPill
             testID={`schedule-shift-short-notice-${shift.id}`}
             variant="short-notice"
-            label="Short notice"
+            label={t('shifts.shortNotice')}
           />
         ) : null}
         <StatusPill
           testID={`schedule-shift-status-${shift.id}`}
           variant={variant}
-          label={shift.status}
+          label={t(STATUS_TO_LABEL_KEY[shift.status])}
         />
       </View>
     </View>

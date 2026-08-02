@@ -12,6 +12,7 @@ import { ScrollView, View } from 'react-native';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { H1 } from '@/src/components/ui/typography';
 import { SETUP_ROLES } from '@/src/domains/setup/types';
+import { useHouseholds } from '@/src/hooks/queries/useHouseholds';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 import {
   formatWeekRangeLabel,
@@ -23,13 +24,27 @@ import { ParentWeekView } from './ParentWeekView';
 
 export function HoursScreen() {
   const onboarding = useIsOnboarded();
+  // `useIsOnboarded` already fetches households internally, so this is a
+  // cache hit, not a second request — needed here for `timezone`, which
+  // that hook doesn't expose.
+  const households = useHouseholds();
+  const household =
+    households.data?.find(h => h.id === onboarding.householdId) ?? null;
+  // The week boundary is a HOUSEHOLD-timezone question, never the device's
+  // — see utils/week.ts's header comment. Falls back to UTC only for the
+  // brief window before the household has loaded (the loading branch below
+  // returns before this value is ever shown).
+  const timezone = household?.timezone ?? 'UTC';
 
   // A single "now" snapshot per screen render pass, not a live ticker — the
   // Hours screen shows history, not the Today card's live timer. Recomputed
   // whenever the screen remounts (tab focus), which is close enough for a
   // "so far today" figure that isn't the headline feature here.
   const nowMs = useMemo(() => Date.now(), []);
-  const weekStartISO = useMemo(() => getWeekStartISO(new Date()), []);
+  const weekStartISO = useMemo(
+    () => getWeekStartISO(new Date(), timezone),
+    [timezone]
+  );
   const weekDates = useMemo(() => getWeekDates(weekStartISO), [weekStartISO]);
   const weekRangeLabel = useMemo(
     () => formatWeekRangeLabel(weekDates),

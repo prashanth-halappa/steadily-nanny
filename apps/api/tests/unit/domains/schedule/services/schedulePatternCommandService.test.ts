@@ -1,6 +1,9 @@
 import { describe, expect, it, mock } from 'bun:test';
+import { ChildNotFoundError } from '../../../../../src/domains/child';
 import { NotAHouseholdParentError } from '../../../../../src/domains/household';
 import {
+  InvalidPatternCarerError,
+  InvalidPatternChildError,
   NotThePatternCarerError,
   PatternMissingCarerError,
   PatternNotDraftError,
@@ -83,6 +86,36 @@ function makeMemberRepo(
 ): any {
   return {
     findActiveMembership: mock(async () => (role ? membershipFor(role) : null)),
+    ...overrides,
+  };
+}
+
+/**
+ * A member repo that resolves a DIFFERENT role per user id — needed for the
+ * D13 carer-role tests, where the CALLER (e.g. 'u1', an owner) and the
+ * proposed carer_id (e.g. a co-parent, or a stranger) must be looked up
+ * independently and can legitimately have different roles (or no
+ * membership at all).
+ */
+function makeMemberRepoFor(roles: Record<string, string | null>): any {
+  return {
+    findActiveMembership: mock(async (_householdId: string, userId: string) => {
+      const role = roles[userId];
+      return role
+        ? { id: `m-${userId}`, household_id: 'h1', user_id: userId, role }
+        : null;
+    }),
+  };
+}
+
+function makeChildren(overrides: Record<string, unknown> = {}): any {
+  return {
+    getOwned: mock(
+      async (_userId: string, householdId: string, childId: string) => ({
+        id: childId,
+        household_id: householdId,
+      })
+    ),
     ...overrides,
   };
 }
@@ -175,6 +208,75 @@ describe('SchedulePatternCommandService.create', () => {
       })
     ).rejects.toBeInstanceOf(NotAHouseholdParentError);
   });
+
+  // D13 — SECURITY: carer_id was previously taken verbatim from the client
+  // with no membership/role check at all.
+  it('rejects a carer_id with no membership in the household at all', async () => {
+    const patternRepo = makePatternRepo();
+    const svc = new SchedulePatternCommandService(
+      patternRepo,
+      makeDayRepo(),
+      makeDayChildRepo(),
+      makeMemberRepoFor({ u1: 'owner' }), // 'stranger' resolves to no membership
+      makeHouseholdRepo(),
+      makeQueries(),
+      makeMaterialisation()
+    );
+
+    await expect(
+      svc.create('u1', 'h1', {
+        rrule: 'FREQ=WEEKLY;INTERVAL=1',
+        dtstart: '2026-02-02',
+        carer_id: 'stranger',
+      })
+    ).rejects.toBeInstanceOf(InvalidPatternCarerError);
+    expect(patternRepo.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects a carer_id assigned to a co-parent (an active member, but the wrong role)', async () => {
+    const patternRepo = makePatternRepo();
+    const svc = new SchedulePatternCommandService(
+      patternRepo,
+      makeDayRepo(),
+      makeDayChildRepo(),
+      makeMemberRepoFor({ u1: 'owner', 'co-parent-1': 'parent' }),
+      makeHouseholdRepo(),
+      makeQueries(),
+      makeMaterialisation()
+    );
+
+    await expect(
+      svc.create('u1', 'h1', {
+        rrule: 'FREQ=WEEKLY;INTERVAL=1',
+        dtstart: '2026-02-02',
+        carer_id: 'co-parent-1',
+      })
+    ).rejects.toBeInstanceOf(InvalidPatternCarerError);
+    expect(patternRepo.create).not.toHaveBeenCalled();
+  });
+
+  it('allows a carer_id that IS an active nanny member of the household', async () => {
+    const patternRepo = makePatternRepo();
+    const svc = new SchedulePatternCommandService(
+      patternRepo,
+      makeDayRepo(),
+      makeDayChildRepo(),
+      makeMemberRepoFor({ u1: 'owner', 'carer-1': 'nanny' }),
+      makeHouseholdRepo(),
+      makeQueries(),
+      makeMaterialisation()
+    );
+
+    await svc.create('u1', 'h1', {
+      rrule: 'FREQ=WEEKLY;INTERVAL=1',
+      dtstart: '2026-02-02',
+      carer_id: 'carer-1',
+    });
+
+    expect(patternRepo.create).toHaveBeenCalledWith(
+      expect.objectContaining({ carer_id: 'carer-1' })
+    );
+  });
 });
 
 describe('SchedulePatternCommandService.update', () => {
@@ -223,7 +325,8 @@ describe('SchedulePatternCommandService.replaceDays', () => {
       makeMemberRepo('owner'),
       makeHouseholdRepo(),
       makeQueries(),
-      makeMaterialisation()
+      makeMaterialisation(),
+      makeChildren()
     );
 
     await svc.replaceDays('u1', 'p1', {
@@ -243,6 +346,124 @@ describe('SchedulePatternCommandService.replaceDays', () => {
     expect(dayChildRepo.insertForDay).toHaveBeenCalledWith('d1', [
       { child_id: 'child-1' },
     ]);
+  });
+
+  // D14 — SECURITY: child_id was previously inserted verbatim from the
+  // client with no check it belongs to the pattern's own household. The
+  // sharpest possible violation of the cross-household anonymity promise:
+  // one family's child appearing in a different, unrelated family's shift
+  // data.
+  it('rejects a child_id that belongs to a DIFFERENT household, and writes nothing', async () => {
+    const dayRepo = makeDayRepo();
+    const dayChildRepo = makeDayChildRepo();
+    const children = makeChildren({
+      getOwned: mock(async () => {
+        throw new ChildNotFoundError('child-other-household');
+      }),
+    });
+    const svc = new SchedulePatternCommandService(
+      makePatternRepo(),
+      dayRepo,
+      dayChildRepo,
+      makeMemberRepo('owner'),
+      makeHouseholdRepo(),
+      makeQueries(),
+      makeMaterialisation(),
+      children
+    );
+
+    await expect(
+      svc.replaceDays('u1', 'p1', {
+        days: [
+          {
+            weekday: 4,
+            start_time: '08:00',
+            end_time: '17:00',
+            children: [{ child_id: 'child-other-household' }],
+          },
+        ],
+      })
+    ).rejects.toBeInstanceOf(InvalidPatternChildError);
+    expect(dayRepo.replaceForPattern).not.toHaveBeenCalled();
+    expect(dayChildRepo.insertForDay).not.toHaveBeenCalled();
+  });
+
+  it('rejects a child_id that does not exist at all, and writes nothing', async () => {
+    const dayRepo = makeDayRepo();
+    const dayChildRepo = makeDayChildRepo();
+    const children = makeChildren({
+      getOwned: mock(async () => {
+        throw new ChildNotFoundError('missing-child');
+      }),
+    });
+    const svc = new SchedulePatternCommandService(
+      makePatternRepo(),
+      dayRepo,
+      dayChildRepo,
+      makeMemberRepo('owner'),
+      makeHouseholdRepo(),
+      makeQueries(),
+      makeMaterialisation(),
+      children
+    );
+
+    await expect(
+      svc.replaceDays('u1', 'p1', {
+        days: [
+          {
+            weekday: 4,
+            start_time: '08:00',
+            end_time: '17:00',
+            children: [{ child_id: 'missing-child' }],
+          },
+        ],
+      })
+    ).rejects.toBeInstanceOf(InvalidPatternChildError);
+    expect(dayRepo.replaceForPattern).not.toHaveBeenCalled();
+  });
+
+  it('validates every child_id across every day before writing anything', async () => {
+    const dayRepo = makeDayRepo();
+    const dayChildRepo = makeDayChildRepo();
+    const getOwned = mock(
+      async (_userId: string, _householdId: string, childId: string) => {
+        if (childId === 'child-bad') {
+          throw new ChildNotFoundError(childId);
+        }
+        return { id: childId, household_id: 'h1' };
+      }
+    );
+    const children = makeChildren({ getOwned });
+    const svc = new SchedulePatternCommandService(
+      makePatternRepo(),
+      dayRepo,
+      dayChildRepo,
+      makeMemberRepo('owner'),
+      makeHouseholdRepo(),
+      makeQueries(),
+      makeMaterialisation(),
+      children
+    );
+
+    await expect(
+      svc.replaceDays('u1', 'p1', {
+        days: [
+          {
+            weekday: 1,
+            start_time: '08:00',
+            end_time: '17:00',
+            children: [{ child_id: 'child-good' }],
+          },
+          {
+            weekday: 3,
+            start_time: '08:00',
+            end_time: '17:00',
+            children: [{ child_id: 'child-bad' }],
+          },
+        ],
+      })
+    ).rejects.toBeInstanceOf(InvalidPatternChildError);
+    expect(dayRepo.replaceForPattern).not.toHaveBeenCalled();
   });
 });
 

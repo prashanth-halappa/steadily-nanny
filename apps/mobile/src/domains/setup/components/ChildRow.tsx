@@ -5,6 +5,7 @@
  * derived age, tappable to edit, with a separate remove affordance.
  */
 import { X } from 'lucide-react-native';
+import { useTranslation } from 'react-i18next';
 import { Pressable, View } from 'react-native';
 import { Icon } from '@/lib/icons/iconWithClassName';
 import { Card } from '@/src/components/ui/card';
@@ -29,6 +30,7 @@ export function ChildRow({
   onRemove,
   testID,
 }: ChildRowProps) {
+  const { t } = useTranslation('household');
   const age = ageFromBirthDate(birthDate);
 
   return (
@@ -41,13 +43,15 @@ export function ChildRow({
       >
         <ChildChip name={name} colour={colour ?? undefined} />
         <Body className="text-muted-foreground">
-          {age === null ? 'Age unknown' : `${age} yr${age === 1 ? '' : 's'}`}
+          {age === null
+            ? t('children.ageUnknown')
+            : t('children.ageYears', { count: age })}
         </Body>
       </Pressable>
       <Pressable
         testID={`${testID}-remove`}
         accessibilityRole="button"
-        accessibilityLabel={`Remove ${name}`}
+        accessibilityLabel={t('children.removeLabel', { name })}
         onPress={onRemove}
         hitSlop={8}
       >

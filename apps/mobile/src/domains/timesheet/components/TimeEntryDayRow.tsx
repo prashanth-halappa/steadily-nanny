@@ -56,15 +56,34 @@ export function TimeEntryDayRow({
         {entries.length === 0 ? (
           <Small className="text-muted-foreground">No hours logged</Small>
         ) : (
-          entries.map(entry => (
-            <Small key={entry.id} className="text-muted-foreground">
-              {entry.clock_in_at ? formatClockTime(entry.clock_in_at) : '—'}
-              {' – '}
-              {entry.clock_out_at
-                ? formatClockTime(entry.clock_out_at)
-                : 'in progress'}
-            </Small>
-          ))
+          entries.map(entry => {
+            // A FINISHED entry (has clock_out_at) that computes to 0 minutes
+            // is real but suspicious — e.g. an accidental clock-in/out
+            // within the same second. Flag it distinctly rather than
+            // letting it sit indistinguishable from a genuinely short
+            // shift in a list of real hours (team-lead callout, 2026-08-01).
+            // A still-running entry with 0 elapsed is normal (just started)
+            // and is NOT flagged.
+            const entryMinutes = computeEntryMinutes(entry, nowMs);
+            const isZeroDuration = !!entry.clock_out_at && entryMinutes === 0;
+            return (
+              <Small
+                key={entry.id}
+                testID={isZeroDuration ? 'hours-zero-duration-flag' : undefined}
+                className={cn(
+                  'text-muted-foreground',
+                  isZeroDuration && 'font-sora-medium text-warning'
+                )}
+              >
+                {entry.clock_in_at ? formatClockTime(entry.clock_in_at) : '—'}
+                {' – '}
+                {entry.clock_out_at
+                  ? formatClockTime(entry.clock_out_at)
+                  : 'in progress'}
+                {isZeroDuration ? ' – check this entry' : ''}
+              </Small>
+            );
+          })
         )}
       </View>
       <Body

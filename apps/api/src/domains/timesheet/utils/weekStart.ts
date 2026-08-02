@@ -65,3 +65,11 @@ export function weekStartOf(instant: Date, timeZone: string): string {
   const daysSinceMonday = (dow + 6) % 7; // Mon=0,...,Sun=6
   return formatDateOnly(epoch - daysSinceMonday * MS_PER_DAY);
 }
+
+const DAYS_PER_WEEK = 7;
+
+/** The exclusive end ('YYYY-MM-DD') of the week starting `weekStart` — i.e. `weekStart + 7 days`. Pure date arithmetic; `weekStart` need not actually be a Monday. */
+export function weekEndExclusive(weekStart: string): string {
+  const epoch = toEpochDay(parseDateOnly(weekStart));
+  return formatDateOnly(epoch + DAYS_PER_WEEK * MS_PER_DAY);
+}

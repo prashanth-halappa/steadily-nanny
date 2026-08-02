@@ -10,6 +10,8 @@
  * - schedule: schedule-pattern build/pending/respond + shifts screens
  * - today:    the Today tab's clock-in card
  * - hours:    the Hours tab (clock in/out history, approve/query)
+ * - household: children/invite/availability, shared between the first-run
+ *   setup wizard and their post-onboarding Settings entry points
  *
  * Language resolution order (each candidate validated vs SUPPORTED_LANGUAGES):
  *   1. MMKV-persisted preference from the `language-storage` Zustand store
@@ -31,6 +33,7 @@ import enAuth from './locales/en/auth.json';
 import enCommon from './locales/en/common.json';
 import enErrors from './locales/en/errors.json';
 import enHours from './locales/en/hours.json';
+import enHousehold from './locales/en/household.json';
 import enSchedule from './locales/en/schedule.json';
 import enSettings from './locales/en/settings.json';
 import enToday from './locales/en/today.json';
@@ -39,6 +42,7 @@ import esAuth from './locales/es/auth.json';
 import esCommon from './locales/es/common.json';
 import esErrors from './locales/es/errors.json';
 import esHours from './locales/es/hours.json';
+import esHousehold from './locales/es/household.json';
 import esSchedule from './locales/es/schedule.json';
 import esSettings from './locales/es/settings.json';
 import esToday from './locales/es/today.json';
@@ -54,6 +58,7 @@ const resources = {
     schedule: enSchedule,
     today: enToday,
     hours: enHours,
+    household: enHousehold,
   },
   es: {
     common: esCommon,
@@ -64,6 +69,7 @@ const resources = {
     schedule: esSchedule,
     today: esToday,
     hours: esHours,
+    household: esHousehold,
   },
 };
 

@@ -81,11 +81,17 @@ interface ProposedDay {
   end_time: string;
 }
 
-interface AvailabilityRow {
+/**
+ * Matches the shared `CarerAvailability` wire type
+ * (`@steadily-nanny/shared-types/schemas/availability.schema`): a carer can
+ * be marked available for a weekday with no hours set yet, so both bounds
+ * are nullable — never narrowed to `string` at the call site.
+ */
+export interface AvailabilityRow {
   weekday: number;
   is_available: boolean;
-  earliest_start: string;
-  latest_finish: string;
+  earliest_start: string | null;
+  latest_finish: string | null;
 }
 
 /**
@@ -94,6 +100,10 @@ interface AvailabilityRow {
  * row at all, or the whole day is marked unavailable. Per the product spec
  * this is a WARNING, never a block: `StatusPill variant="outside-hours"`,
  * and accepting must remain possible.
+ *
+ * A `null` bound means "no constraint on that side" (available, but no
+ * specific hours set) — it must NOT be treated as a clash by itself, only a
+ * REAL bound the proposed time falls outside of counts.
  */
 export function isOutsideAvailability(
   day: ProposedDay,
@@ -101,9 +111,12 @@ export function isOutsideAvailability(
 ): boolean {
   const row = availability.find(a => a.weekday === day.weekday);
   if (!row?.is_available) return true;
-  return (
-    day.start_time < row.earliest_start || day.end_time > row.latest_finish
-  );
+
+  const beforeEarliestStart =
+    row.earliest_start !== null && day.start_time < row.earliest_start;
+  const afterLatestFinish =
+    row.latest_finish !== null && day.end_time > row.latest_finish;
+  return beforeEarliestStart || afterLatestFinish;
 }
 
 /** Formats a Date as a "YYYY-MM-DD" calendar date (local components, no TZ math). */
@@ -112,4 +125,85 @@ export function todayIsoDate(date: Date = new Date()): string {
   const mm = String(date.getMonth() + 1).padStart(2, '0');
   const dd = String(date.getDate()).padStart(2, '0');
   return `${yyyy}-${mm}-${dd}`;
+}
+
+export interface SendDayInput {
+  weekday: number;
+  start_time: string;
+  end_time: string;
+  children: { child_id: string }[];
+}
+
+interface SendScheduleWeekArgs {
+  /** Existing draft pattern id, if the build screen already created one on
+   * an earlier pass (e.g. retrying after a failed send). */
+  patternId: string | undefined;
+  carerId: string;
+  rrule: string;
+  dtstart: string;
+  days: SendDayInput[];
+  createPattern: (input: {
+    carer_id: string;
+    rrule: string;
+    dtstart: string;
+  }) => Promise<{ id: string }>;
+  replaceDays: (args: {
+    patternId: string;
+    days: SendDayInput[];
+  }) => Promise<unknown>;
+  sendPattern: (args: { patternId: string }) => Promise<unknown>;
+  /**
+   * D11: invoked the INSTANT a new pattern's id is known — before
+   * `replaceDays`/`sendPattern` run — so the caller can persist it
+   * immediately, even if a later step then fails. Without this, a partial
+   * failure (creation succeeds, `replaceDays` or `sendPattern` doesn't)
+   * left the created id trapped inside this function: the caller's own
+   * `patternId` state never learned it, so a retry called `createPattern`
+   * again and littered the household with orphaned drafts. Never called
+   * when an existing `patternId` was passed in (nothing new was created).
+   */
+  onPatternCreated?: (patternId: string) => void;
+}
+
+/**
+ * Orchestrates the build screen's "Send" action: create the draft pattern
+ * (if one doesn't already exist), replace its days, then send it — in that
+ * order, always passing the SAME locally-resolved id to every step.
+ *
+ * This is deliberately a plain async function, not a React hook, so the
+ * pattern id can never go stale: `setPatternId(created.id)` inside a
+ * component is an ASYNC state update that does not rebind a
+ * `useMutation(patternId)` hook parameter within the same handler pass — a
+ * mutation hook bound to `patternId` as a render-time parameter would still
+ * be closed over the value from BEFORE this function ran, sending
+ * `undefined` to `PUT /schedule-patterns/undefined/days`. Here, `patternId`
+ * is a local variable resolved synchronously in one call stack and threaded
+ * explicitly into every dependent call — see `../__tests__/utils.test.ts`'s
+ * regression test.
+ *
+ * `onPatternCreated` (see its own doc comment) is the D11 half of this: it
+ * fires the moment creation succeeds, BEFORE the two calls that can still
+ * fail, specifically so a caller storing the id in React state (via a
+ * stable `setState` dispatch — never itself subject to the staleness this
+ * function exists to avoid) doesn't lose track of a pattern it already paid
+ * to create if the rest of this function subsequently throws.
+ */
+export async function sendScheduleWeek(
+  args: SendScheduleWeekArgs
+): Promise<string> {
+  let patternId = args.patternId;
+  if (!patternId) {
+    const created = await args.createPattern({
+      carer_id: args.carerId,
+      rrule: args.rrule,
+      dtstart: args.dtstart,
+    });
+    patternId = created.id;
+    args.onPatternCreated?.(patternId);
+  }
+
+  await args.replaceDays({ patternId, days: args.days });
+  await args.sendPattern({ patternId });
+
+  return patternId;
 }

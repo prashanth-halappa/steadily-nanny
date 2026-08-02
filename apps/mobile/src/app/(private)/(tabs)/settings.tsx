@@ -21,7 +21,9 @@ import { Button, buttonVariants } from '@/src/components/ui/button';
 import { Text } from '@/src/components/ui/text';
 import { Body, H1, H4, Small } from '@/src/components/ui/typography';
 import { appIdentity } from '@/src/config/appIdentity';
+import { SETUP_ROLES } from '@/src/domains/setup/types';
 import { useDeleteAccount } from '@/src/hooks/mutations/useDeleteAccount';
+import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 import { SUPPORTED_LANGUAGES } from '@/src/i18n/constants';
 import { useLanguageStore } from '@/src/i18n/languageStore';
 import { useAuthStore } from '@/src/store/auth';
@@ -38,6 +40,10 @@ export default function SettingsScreen() {
   const signOut = useAuthStore(s => s.signOut);
   const { mutateAsync: deleteAccount, isPending: isDeletingAccount } =
     useDeleteAccount();
+  // Server-derived role, NOT the local setupProgress store — that's
+  // in-flight wizard UI state and can be empty/stale here (see
+  // useIsOnboarded's header comment / TodayScreen for the same pattern).
+  const onboarding = useIsOnboarded();
 
   // REVIEW-CHECKLIST.md §8 / App Store Guideline 5.1.1(v): the account must be
   // deletable in-app. On success, sign out and return to /welcome — a deleted
@@ -82,6 +88,42 @@ export default function SettingsScreen() {
           ))}
         </View>
       </View>
+
+      {onboarding.role === SETUP_ROLES.PARENT ||
+      onboarding.role === SETUP_ROLES.NANNY ? (
+        <View className="mt-8 gap-3" testID="settings-household-section">
+          <H4>{t('settings:household')}</H4>
+          {onboarding.role === SETUP_ROLES.PARENT ? (
+            <>
+              <AnimatedPressable
+                testID="settings-manage-children"
+                onPress={() => router.push('/settings/children' as Href)}
+              >
+                <Body className="text-primary">
+                  {t('household:children.manageTitle')}
+                </Body>
+              </AnimatedPressable>
+              <AnimatedPressable
+                testID="settings-invite-nanny"
+                onPress={() => router.push('/settings/invite' as Href)}
+              >
+                <Body className="text-primary">
+                  {t('household:invite.manageTitle')}
+                </Body>
+              </AnimatedPressable>
+            </>
+          ) : (
+            <AnimatedPressable
+              testID="settings-manage-availability"
+              onPress={() => router.push('/settings/availability' as Href)}
+            >
+              <Body className="text-primary">
+                {t('household:availability.manageTitle')}
+              </Body>
+            </AnimatedPressable>
+          )}
+        </View>
+      ) : null}
 
       <View className="mt-8 gap-3">
         <AnimatedPressable onPress={() => void openExternalUrl(PRIVACY_URL)}>

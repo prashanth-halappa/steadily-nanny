@@ -39,6 +39,13 @@ describe('HoursScreen', () => {
     expect(hoursScreenSource).not.toMatch(/useSetupProgress|localRole/);
   });
 
+  it('resolves the week boundary in the HOUSEHOLD timezone, not a bare `new Date()`', () => {
+    expect(hoursScreenSource).toContain('household?.timezone');
+    expect(hoursScreenSource).toMatch(
+      /getWeekStartISO\(\s*new Date\(\),\s*timezone\s*\)/
+    );
+  });
+
   it('forks nanny vs parent views by SETUP_ROLES.PARENT', () => {
     expect(hoursScreenSource).toContain('SETUP_ROLES.PARENT');
     expect(hoursScreenSource).toContain('ParentWeekView');
@@ -64,6 +71,25 @@ describe('ParentWeekView', () => {
 
   it('approval is a single tap — no confirmation dialog wrapping it', () => {
     expect(parentWeekViewSource).not.toMatch(/AlertDialog/);
+  });
+
+  it('REGRESSION: approve/query mutateAsync calls are try/caught, never a bare .then() with no rejection handler', () => {
+    // The bug (same class as D7's clock-in double-tap defect):
+    // `void mutation.mutateAsync(...).then(onFulfilled)` with no `.catch()`
+    // and no surrounding try/catch leaves the promise's rejection path
+    // completely unhandled — an "Uncaught (in promise)" in metro.log on any
+    // failure, even though the mutation's own `onError` still shows a toast.
+    // `void` only suppresses a lint warning, it does NOT attach a rejection
+    // handler.
+    expect(parentWeekViewSource).not.toMatch(
+      /void (approveTimesheet|queryTimesheet)\.mutateAsync/
+    );
+    expect(parentWeekViewSource).toMatch(
+      /try\s*\{\s*await approveTimesheet\.mutateAsync/
+    );
+    expect(parentWeekViewSource).toMatch(
+      /try\s*\{\s*await queryTimesheet\.mutateAsync/
+    );
   });
 });
 

@@ -86,4 +86,42 @@ describe('ScheduleRespondScreen source', () => {
     expect(acceptBlock).not.toMatch(/disabled={[^}]*outside/i);
     expect(acceptBlock).not.toMatch(/disabled={[^}]*Outside/);
   });
+
+  it('REGRESSION: a double-tap cannot fire two responds — a synchronous ref guard gates both handlers', () => {
+    // The bug: after a successful accept, the screen re-rendered with the
+    // SAME enabled Accept button (respond.isPending flips back to false the
+    // instant the mutation resolves, and nothing else changed), so a nanny
+    // who taps twice in quick succession could fire two `respond` calls.
+    // `respond.isPending` alone isn't a reliable enough guard against two
+    // taps in the same event-loop tick — a ref, checked and set
+    // SYNCHRONOUSLY before the first `await`, is.
+    expect(source).toContain('useRef');
+    expect(source).toContain('hasRespondedRef');
+    const guardCount = (
+      source.match(
+        /if \(hasRespondedRef\.current \|\| respond\.isPending\) return;/g
+      ) ?? []
+    ).length;
+    expect(guardCount).toBe(2);
+  });
+
+  it('REGRESSION: Accept and the decline-confirm action both disable once responded, and Accept navigates away on success', () => {
+    expect(source).toContain('hasResponded');
+    const acceptBlockMatch = source.match(
+      /testID="schedule-respond-accept"[\s\S]{0,300}?(?:<\/Button>|\/>)/
+    );
+    expect(acceptBlockMatch?.[0]).toMatch(
+      /disabled={respond\.isPending \|\| hasResponded}/
+    );
+    const declineConfirmBlockMatch = source.match(
+      /testID="schedule-respond-decline-confirm"[\s\S]{0,500}?(?:<\/AlertDialogAction>|\/>)/
+    );
+    expect(declineConfirmBlockMatch?.[0]).toMatch(
+      /disabled={respond\.isPending \|\| hasResponded}/
+    );
+    // On success, Accept leaves the screen entirely rather than sitting on
+    // the same stale UI — the prior bug's screenshot was literally titled
+    // "stuck-after-accept".
+    expect(source).toMatch(/router\.replace\(/);
+  });
 });

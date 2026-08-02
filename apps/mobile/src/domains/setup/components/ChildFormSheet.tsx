@@ -5,6 +5,7 @@
  * through `BottomSheetBase`, never a bare RN modal.
  */
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
 import { BottomSheetBase } from '@/src/components/custom/BottomSheetBase';
 import { Button } from '@/src/components/ui/button';
@@ -36,6 +37,7 @@ export function ChildFormSheet({
   isSubmitting,
   initialValues,
 }: ChildFormSheetProps) {
+  const { t } = useTranslation('household');
   const [name, setName] = useState(initialValues?.name ?? '');
   const [age, setAge] = useState(initialValues?.age ?? '');
 
@@ -69,28 +71,32 @@ export function ChildFormSheet({
       testID="child-form-sheet"
     >
       <View className="gap-3 px-6 pb-4">
-        <H3>{initialValues ? 'Edit child' : 'Add a child'}</H3>
+        <H3>
+          {initialValues
+            ? t('children.formEditTitle')
+            : t('children.formAddTitle')}
+        </H3>
 
         <View className="gap-2">
-          <Label>Name</Label>
+          <Label>{t('children.formNameLabel')}</Label>
           <Input
             testID="child-form-name"
-            accessibilityLabel="Child's name"
+            accessibilityLabel={t('children.formNameLabel')}
             value={name}
             onChangeText={setName}
-            placeholder="Their name"
+            placeholder={t('children.formNamePlaceholder')}
             autoFocus
           />
         </View>
 
         <View className="gap-2">
-          <Label>Age</Label>
+          <Label>{t('children.formAgeLabel')}</Label>
           <Input
             testID="child-form-age"
-            accessibilityLabel="Child's age"
+            accessibilityLabel={t('children.formAgeLabel')}
             value={age}
             onChangeText={setAge}
-            placeholder="Age in years"
+            placeholder={t('children.formAgePlaceholder')}
             keyboardType="number-pad"
           />
         </View>
@@ -100,7 +106,11 @@ export function ChildFormSheet({
           onPress={handleSubmit}
           disabled={!isValid || isSubmitting}
         >
-          <Text>{initialValues ? 'Save' : 'Add child'}</Text>
+          <Text>
+            {initialValues
+              ? t('children.formSubmitSave')
+              : t('children.formSubmitAdd')}
+          </Text>
         </Button>
       </View>
     </BottomSheetBase>

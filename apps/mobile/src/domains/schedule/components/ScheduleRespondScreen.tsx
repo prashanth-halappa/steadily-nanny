@@ -14,7 +14,22 @@
  * Decline goes through a confirm step via the shared `AlertDialog` family
  * (never a bare RN Modal component — GOLDEN-FIXES.md #1). Accept is a
  * single tap, no confirm dialog needed.
+ *
+ * DOUBLE-TAP / STUCK-AFTER-ACCEPT: a successful respond re-fetches the
+ * pattern (via the mutation's own cache invalidation) but this screen's own
+ * JSX doesn't branch on the new status — without an explicit guard, the
+ * Accept button would sit there re-enabled the instant `respond.isPending`
+ * flips back to `false`, inviting a second tap. `hasRespondedRef` is a ref
+ * (not state) because it must be checked and set SYNCHRONOUSLY, before the
+ * first `await` — two taps landing in the same event-loop tick could both
+ * pass a state-based check, since state updates don't apply until the next
+ * render. `hasResponded` (state) additionally keeps the buttons visibly
+ * disabled through the brief window between the mutation resolving and
+ * navigation actually completing. On success, Accept navigates away
+ * entirely rather than leaving the nanny on stale UI with nothing to do.
  */
+import { type Href, useRouter } from 'expo-router';
+import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ScrollView, View } from 'react-native';
 import {
@@ -40,7 +55,11 @@ import { useChildren } from '@/src/hooks/queries/useChildren';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 import { useSchedulePattern } from '@/src/hooks/queries/useSchedulePattern';
 import { showSuccessToast } from '@/src/lib/toast';
-import { calculateWeekTotalHours, isOutsideAvailability } from '../utils';
+import {
+  type AvailabilityRow,
+  calculateWeekTotalHours,
+  isOutsideAvailability,
+} from '../utils';
 
 interface ScheduleRespondScreenProps {
   patternId: string;
@@ -50,6 +69,7 @@ export function ScheduleRespondScreen({
   patternId,
 }: ScheduleRespondScreenProps) {
   const { t } = useTranslation('schedule');
+  const router = useRouter();
   const onboarding = useIsOnboarded();
 
   const pattern = useSchedulePattern(patternId);
@@ -57,20 +77,22 @@ export function ScheduleRespondScreen({
   const children = useChildren(onboarding.householdId);
   const respond = useRespondToSchedulePattern(patternId);
 
-  // `isOutsideAvailability`'s `AvailabilityRow` requires non-null
-  // earliest_start/latest_finish; the wire type allows null (no hours set
-  // yet). Treat a row with no hours as unavailable for that weekday, same
-  // as if `is_available` were false — the util already treats a missing
-  // row that way.
-  const availabilityRows = (availability.data ?? []).map(row => ({
-    weekday: row.weekday,
-    is_available:
-      row.is_available &&
-      row.earliest_start !== null &&
-      row.latest_finish !== null,
-    earliest_start: row.earliest_start ?? '',
-    latest_finish: row.latest_finish ?? '',
-  }));
+  const hasRespondedRef = useRef(false);
+  const [hasResponded, setHasResponded] = useState(false);
+
+  // `AvailabilityRow` mirrors the shared `CarerAvailability` wire type
+  // exactly — earliest_start/latest_finish stay nullable end to end.
+  // `isOutsideAvailability` treats a null bound as "no constraint on that
+  // side", NOT as a clash — a nanny marked available with no hours set yet
+  // is a real row, not equivalent to `is_available: false`.
+  const availabilityRows: AvailabilityRow[] = (availability.data ?? []).map(
+    row => ({
+      weekday: row.weekday,
+      is_available: row.is_available,
+      earliest_start: row.earliest_start,
+      latest_finish: row.latest_finish,
+    })
+  );
   const childrenById = new Map(
     (children.data ?? []).map(child => [child.id, child])
   );
@@ -90,21 +112,31 @@ export function ScheduleRespondScreen({
   const totalHours = calculateWeekTotalHours(days);
 
   const handleAccept = async () => {
+    if (hasRespondedRef.current || respond.isPending) return;
+    hasRespondedRef.current = true;
     try {
       await respond.mutateAsync({ status: 'accepted' });
     } catch {
+      hasRespondedRef.current = false;
       return;
     }
     showSuccessToast(t('respond.acceptedToast'));
+    setHasResponded(true);
+    router.replace('/(private)/schedule/shifts' as Href);
   };
 
   const handleDecline = async () => {
+    if (hasRespondedRef.current || respond.isPending) return;
+    hasRespondedRef.current = true;
     try {
       await respond.mutateAsync({ status: 'declined' });
     } catch {
+      hasRespondedRef.current = false;
       return;
     }
     showSuccessToast(t('respond.declinedToast'));
+    setHasResponded(true);
+    router.back();
   };
 
   return (
@@ -182,7 +214,7 @@ export function ScheduleRespondScreen({
       <View className="mt-8 gap-3">
         <Button
           testID="schedule-respond-accept"
-          disabled={respond.isPending}
+          disabled={respond.isPending || hasResponded}
           onPress={() => void handleAccept()}
         >
           <Text>{t('respond.accept')}</Text>
@@ -211,7 +243,7 @@ export function ScheduleRespondScreen({
               <AlertDialogAction
                 testID="schedule-respond-decline-confirm"
                 className={buttonVariants({ variant: 'destructive' })}
-                disabled={respond.isPending}
+                disabled={respond.isPending || hasResponded}
                 onPress={() => void handleDecline()}
               >
                 <Text className="text-destructive-foreground">

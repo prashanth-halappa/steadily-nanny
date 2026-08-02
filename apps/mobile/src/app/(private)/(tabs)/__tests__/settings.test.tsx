@@ -30,4 +30,22 @@ describe('SettingsScreen', () => {
     expect(screenSource).toContain('AlertDialog');
     expect(screenSource).not.toMatch(/<Modal\b/);
   });
+
+  it('gates the household management links on server-derived role', () => {
+    expect(screenSource).toContain('useIsOnboarded');
+    expect(screenSource).toContain('SETUP_ROLES.PARENT');
+    expect(screenSource).toContain('SETUP_ROLES.NANNY');
+  });
+
+  it('wires a parent path to manage children and invite another nanny', () => {
+    expect(screenSource).toContain('settings-manage-children');
+    expect(screenSource).toContain('/settings/children');
+    expect(screenSource).toContain('settings-invite-nanny');
+    expect(screenSource).toContain('/settings/invite');
+  });
+
+  it('wires a nanny path to update her availability', () => {
+    expect(screenSource).toContain('settings-manage-availability');
+    expect(screenSource).toContain('/settings/availability');
+  });
 });

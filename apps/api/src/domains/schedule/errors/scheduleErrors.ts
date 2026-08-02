@@ -86,3 +86,42 @@ export class NotThePatternCarerError extends AuthorizationError {
     this.name = 'NotThePatternCarerError';
   }
 }
+
+/**
+ * 404 — `create()`'s `carer_id` does not resolve to an active NANNY member
+ * of the household. SAME error whether that id has no membership at all,
+ * or is an active member with the wrong role (e.g. a co-parent) — a caller
+ * must not be able to distinguish "no such person" from "wrong role" by
+ * probing ids, exactly like `SchedulePatternNotFoundError` above.
+ */
+export class InvalidPatternCarerError extends NotFoundError {
+  constructor(householdId: string, carerId: string) {
+    super(
+      'This person cannot be assigned as the carer for this household',
+      'INVALID_PATTERN_CARER',
+      { householdId, carerId }
+    );
+    this.name = 'InvalidPatternCarerError';
+  }
+}
+
+/**
+ * 404 — a `child_id` in `replaceDays()` is not an active child of the
+ * pattern's OWN household. Deliberately NOT the same opaque error as the
+ * child domain's `ChildNotFoundError`: the caller here is always a parent
+ * of THIS household (already role/membership-checked by `replaceDays`
+ * before this runs), so "not part of your household" reveals nothing they
+ * couldn't already see by listing their own children — it says nothing
+ * about whether the id exists, or where, in any OTHER household. Contrast
+ * with `timesheetCommandService`'s reuse of `ShiftNotFoundError` verbatim,
+ * where the caller does NOT already own the resource in question.
+ */
+export class InvalidPatternChildError extends NotFoundError {
+  constructor(householdId: string, childId: string) {
+    super('This child is not part of this household', 'INVALID_PATTERN_CHILD', {
+      householdId,
+      childId,
+    });
+    this.name = 'InvalidPatternChildError';
+  }
+}

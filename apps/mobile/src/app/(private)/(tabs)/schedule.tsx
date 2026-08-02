@@ -1,28 +1,19 @@
 /**
  * @module app/(private)/(tabs)/schedule
  *
- * PLACEHOLDER — owned content-wise by the schedule workstream
- * (`src/domains/schedule/**`). This file exists so the parent-only
- * "Schedule" tab (wired in `(tabs)/_layout.tsx`) has a real route to mount
- * instead of crashing expo-router's tab navigator. Replace the body with
- * the real screen (`return <ScheduleScreen />` from `@/src/domains/schedule`)
- * once that domain exports one — no changes to `_layout.tsx` needed.
+ * The parent-only "Schedule" tab (role-gated in `(tabs)/_layout.tsx`). Shows
+ * the household's current schedule-pattern state (none yet / draft / sent
+ * pending / accepted / declined) — see
+ * `src/domains/schedule/components/SchedulePendingScreen` for the real
+ * implementation. This route file previously mounted a placeholder; it is
+ * now the ONE canonical `/schedule` route — a sibling
+ * `(private)/schedule/index.tsx` would collide with this same path and has
+ * been removed. Sub-routes (`/schedule/build`, `/schedule/shifts`,
+ * `/schedule/respond/[patternId]`) still live under `(private)/schedule/`
+ * and do not collide, since they resolve one segment deeper.
  */
-import { ScrollView } from 'react-native';
-import { EmptyState } from '@/src/components/ui/empty-state';
+import { SchedulePendingScreen } from '@/src/domains/schedule';
 
 export default function ScheduleRoute() {
-  return (
-    <ScrollView
-      testID="schedule-screen"
-      className="flex-1 bg-background"
-      contentContainerStyle={{ padding: 24, paddingBottom: 100 }}
-    >
-      <EmptyState
-        variant="inline"
-        title="Schedule is on its way"
-        description="This tab will show the week's shifts once scheduling is wired up."
-      />
-    </ScrollView>
-  );
+  return <SchedulePendingScreen />;
 }

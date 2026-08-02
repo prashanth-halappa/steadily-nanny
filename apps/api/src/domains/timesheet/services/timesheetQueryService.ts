@@ -20,16 +20,7 @@ import {
 import { TimeEntryRepository } from '../repositories/timeEntryRepository';
 import { TimesheetRepository } from '../repositories/timesheetRepository';
 import type { TimeEntry, Timesheet } from '../types';
-import { weekStartOf } from '../utils/weekStart';
-
-const DAYS_PER_WEEK = 7;
-
-/** The exclusive end of the week starting `weekStart` ('YYYY-MM-DD'). */
-function weekEndExclusive(weekStart: string): string {
-  const start = new Date(`${weekStart}T00:00:00.000Z`);
-  const end = new Date(start.getTime() + DAYS_PER_WEEK * 24 * 60 * 60 * 1000);
-  return end.toISOString().slice(0, 10);
-}
+import { weekEndExclusive, weekStartOf } from '../utils/weekStart';
 
 export class TimesheetQueryService {
   constructor(

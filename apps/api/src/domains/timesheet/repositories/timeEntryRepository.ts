@@ -104,6 +104,38 @@ export class TimeEntryRepository extends BaseRepository<TimeEntry> {
   }
 
   /**
+   * ONE carer's entries for `[weekStart, weekEndExclusive)` — the source
+   * `timesheetCommandService.rollUpIntoTimesheet` sums fresh on every
+   * clock-out to derive `total_minutes`, rather than incrementing a running
+   * counter. Deriving from this list on every call is what makes the
+   * roll-up idempotent: a retried/duplicated/replayed clock-out recomputes
+   * the same total instead of adding to one.
+   */
+  async listForCarerWeek(
+    householdId: string,
+    carerId: string,
+    weekStart: string,
+    weekEndExclusive: string
+  ): Promise<TimeEntry[]> {
+    const { data, error } = await supabaseService
+      .from(this.table)
+      .select('*')
+      .eq('household_id', householdId)
+      .eq('carer_id', carerId)
+      .gte('local_date', weekStart)
+      .lt('local_date', weekEndExclusive);
+
+    if (error) {
+      throw new DatabaseError(
+        'Failed to list time entries for carer week',
+        'DATABASE_ERROR',
+        { details: error.message, householdId, carerId, weekStart }
+      );
+    }
+    return (data ?? []) as TimeEntry[];
+  }
+
+  /**
    * Whether ANY time entry has ever been recorded against `shiftId` — the
    * lookup `scheduleMaterialisationService` asks on every occurrence it
    * considers rewriting, so this must stay cheap (see `time_entries_shift_idx`,

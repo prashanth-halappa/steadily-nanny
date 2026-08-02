@@ -81,4 +81,62 @@ describe('ScheduleBuildScreen source', () => {
     expect(source).toContain('testID="schedule-repeat-weekly"');
     expect(source).toContain('testID="schedule-repeat-fortnightly"');
   });
+
+  it('REGRESSION: the send handler goes through sendScheduleWeek, never a manual create-then-mutate chain with hook-bound ids', () => {
+    // The bug: `useReplaceSchedulePatternDays(patternId)` /
+    // `useSendSchedulePattern(patternId)` captured `patternId` at render
+    // time, so a pattern created earlier in the SAME handler pass was still
+    // `undefined` by the time those hooks' mutationFns ran (setPatternId is
+    // an async state update, it doesn't rebind a hook parameter mid-call).
+    // Both hooks now take no id parameter at all — the id travels as part
+    // of the mutate() argument instead, resolved once by sendScheduleWeek.
+    expect(source).toContain('sendScheduleWeek');
+    expect(source).toContain('useReplaceSchedulePatternDays()');
+    expect(source).toContain('useSendSchedulePattern()');
+    expect(source).not.toMatch(/useReplaceSchedulePatternDays\(patternId\)/);
+    expect(source).not.toMatch(/useSendSchedulePattern\(patternId\)/);
+  });
+
+  it('REGRESSION: onSend catches a sendScheduleWeek rejection instead of re-throwing past a bare finally', () => {
+    // The bug: `try { await sendScheduleWeek(...) } finally { setIsSending(false) }`
+    // has NO `catch` — `finally` runs but does not swallow the exception, so
+    // a failure still propagates out of `onSend`, and `onCta={() => void
+    // onSend()}` discards that rejection with no handler — an unhandled
+    // promise rejection, the same defect class as D7's clock-in bug. Each
+    // underlying mutation already shows its own toast via `onError`, so the
+    // fix is simply to stop the rejection from escaping, not to add new UI.
+    const onSendMatch = source.match(
+      /const onSend = async \(\) => \{[\s\S]*?\n {2}\};/
+    );
+    expect(onSendMatch).not.toBeNull();
+    const onSendBody = onSendMatch?.[0] ?? '';
+    expect(onSendBody).toMatch(/\}\s*catch\s*\{/);
+  });
+
+  it('REGRESSION: the carer-name fallback is a translated placeholder, never an un-namespaced UI title string', () => {
+    // The bug: `t('carerPickerTitle')` (missing the `build.` namespace
+    // prefix) resolved to nothing and rendered the raw key as the carer's
+    // NAME — "carerPickerTitle will be able to accept or decline this week."
+    expect(source).not.toContain("t('carerPickerTitle')");
+    expect(source).toContain("t('build.carerFallbackName')");
+  });
+
+  it('D11 REGRESSION: onPatternCreated persists a freshly-created id into React state immediately, so a retry after partial failure resumes instead of orphaning a second draft', () => {
+    // The bug: if `createPattern` succeeded but `replaceDays`/`sendPattern`
+    // then failed, the created id never reached this component's
+    // `patternId` state (only `setPatternId(resolvedPatternId)` AFTER full
+    // success did that) — so retrying called `createPattern` again and left
+    // a second, orphaned draft pattern behind every attempt.
+    const onSendMatch = source.match(
+      /const onSend = async \(\) => \{[\s\S]*?\n {2}\};/
+    );
+    const onSendBody = onSendMatch?.[0] ?? '';
+    expect(onSendBody).toContain('onPatternCreated');
+    // Must call the SAME setPatternId used for the full-success path — a
+    // second, different state setter would risk the two falling out of
+    // sync. Isolate the `sendScheduleWeek({...})` call block and assert
+    // `onPatternCreated` wires directly to `setPatternId`, not to some
+    // intermediate/ref-based tracker that could itself go stale.
+    expect(onSendBody).toMatch(/onPatternCreated:\s*setPatternId/);
+  });
 });

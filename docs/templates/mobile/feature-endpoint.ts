@@ -10,13 +10,13 @@
  * mutation hooks (see feature-query-hook.ts), which wrap these calls.
  */
 
-import { apiClient } from '../client';
 import {
-  WidgetListResponseSchema,
-  WidgetSchema,
   type CreateWidgetInput,
   type Widget,
+  WidgetListResponseSchema,
+  WidgetSchema,
 } from '@steadily-nanny/shared-types/schemas/widget.schema';
+import { apiClient } from '../client';
 
 export const widgetApi = {
   list: async (): Promise<Widget[]> => {

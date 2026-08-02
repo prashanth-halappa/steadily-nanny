@@ -8,6 +8,7 @@
     "carerPickerTitle": "¿Para quién es este horario?",
     "carerPickerSubtitle": "Elige qué cuidadora recibirá esta semana.",
     "carerPickerCta": "Siguiente: días",
+    "carerFallbackName": "Tu niñera",
     "daysTitle": "¿Qué días suele trabajar?",
     "daysSubtitle": "Toca los días que quieras programar.",
     "daysCta": "Siguiente: horario",
@@ -46,7 +47,8 @@
     "withdrawConfirmBody": "Tu niñera no podrá aceptarla después de retirarla.",
     "withdrawConfirmCancel": "Cancelar",
     "withdrawConfirmConfirm": "Retirar",
-    "viewShifts": "Ver los turnos de esta semana"
+    "viewShifts": "Ver los turnos de esta semana",
+    "changeWeek": "Cambiar la semana"
   },
   "respond": {
     "screenTitle": "Revisa tu semana",
@@ -69,7 +71,14 @@
     "screenTitle": "Los turnos de esta semana",
     "loading": "Cargando…",
     "empty": "Aún no hay turnos",
-    "unavailable": "Los turnos aún no están disponibles — vuelve pronto."
+    "unavailable": "Los turnos aún no están disponibles — vuelve pronto.",
+    "statusDraft": "Borrador",
+    "statusPending": "Pendiente",
+    "statusConfirmed": "Confirmado",
+    "statusDeclined": "Rechazado",
+    "statusCancelled": "Cancelado",
+    "statusCompleted": "Completado",
+    "shortNotice": "Última hora"
   },
   "weekday": {
     "0": "Domingo",
@@ -79,5 +88,12 @@
     "4": "Jueves",
     "5": "Viernes",
     "6": "Sábado"
+  },
+  "todayCard": {
+    "pendingTitle": "Una semana te espera",
+    "pendingBody_one": "{{count}} día · {{hours}} horas a la semana",
+    "pendingBody_other": "{{count}} días · {{hours}} horas a la semana",
+    "pendingCta": "Revisar y responder",
+    "shiftsCta": "Los turnos de esta semana"
   }
 }

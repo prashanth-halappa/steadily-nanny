@@ -6,6 +6,7 @@
   "termsOfService": "Terms of Service",
   "account": "Account",
   "notifications": "Notifications",
+  "household": "Household",
   "deleteAccount": "Delete account",
   "deleteAccountConfirmTitle": "Delete your account?",
   "deleteAccountConfirmBody": "This permanently deletes your account and all associated data. This action cannot be undone.",

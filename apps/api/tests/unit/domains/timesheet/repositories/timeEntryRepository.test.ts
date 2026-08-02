@@ -160,3 +160,31 @@ describe('TimeEntryRepository.listForHouseholdWeek', () => {
     ).toEqual([]);
   });
 });
+
+describe('TimeEntryRepository.listForCarerWeek', () => {
+  it('lists one carer entries for the week, scoped to household + carer', async () => {
+    const rows = [{ id: 't1', household_id: 'h1', carer_id: 'carer-1' }];
+    mockSupabaseService.from.mockImplementation(() =>
+      createMockQueryChain({ data: rows, error: null })
+    );
+    const repo = new TimeEntryRepository();
+    const result = await repo.listForCarerWeek(
+      'h1',
+      'carer-1',
+      '2026-08-03',
+      '2026-08-10'
+    );
+    expect(result).toEqual(rows);
+    expect(mockSupabaseService.from).toHaveBeenCalledWith('time_entries');
+  });
+
+  it('returns [] when the query returns no rows', async () => {
+    mockSupabaseService.from.mockImplementation(() =>
+      createMockQueryChain({ data: null, error: null })
+    );
+    const repo = new TimeEntryRepository();
+    expect(
+      await repo.listForCarerWeek('h1', 'carer-1', '2026-08-03', '2026-08-10')
+    ).toEqual([]);
+  });
+});

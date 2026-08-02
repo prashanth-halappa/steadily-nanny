@@ -126,8 +126,9 @@ the promise hold.
 | Flow | What it is | Status | Files |
 |---|---|---|---|
 | 1a | Welcome / sign-in / role fork / children / invite | **done** | `src/app/onboarding/*`, `src/domains/setup/` |
-| 1b | Nanny code → preview → redeem → availability | **done** (availability not persisted) | `src/domains/setup/`, `apps/api/src/domains/{household,availability}` |
-| 1c | Weekly recurring schedule (propose → send → accept) | **API done, no UI** | `apps/api/src/domains/schedule/` |
+| 1b | Nanny code → preview → redeem → availability | **done** | `src/domains/setup/`, `apps/api/src/domains/{household,availability}` |
+| 1c | Weekly schedule: propose → send → accept | **done** | `apps/api/src/domains/schedule/`, `src/domains/schedule/` |
+| 1h | Clock in/out → hours → weekly approval | **done** | `apps/api/src/domains/timesheet/`, `src/domains/timesheet/`, `src/domains/today/ClockInCard` |
 | 1d | One-off extra shift (ask/accept/decline/counter) | not started | — |
 | 1e | Short notice change/cancel/swap | not started | — |
 | 1f | Two-parent sync & approval | not started | — |
@@ -529,6 +530,46 @@ mechanism is not what is under test.
 Order: `seed-test-users` → run the app flows → `seed-second-household` →
 `e2e-assert`. The assert script is safe to run at any point; it reports honestly
 which flows have not happened yet rather than failing confusingly.
+
+## 4f. Known functional gaps (real, not polish)
+
+Ordered by how much they hurt. These are things the product needs, not
+nice-to-haves, and none is blocked on anything external.
+
+1. **No way to build a second schedule.** `SchedulePendingScreen`'s `accepted`
+   branch offers only "View shifts". Once a pattern is accepted the parent can
+   never propose another, so the app works for exactly one week and then goes
+   read-only. Fix: a second CTA next to `schedule-pending-view-shifts` routing
+   to `/schedule/build` — keep both, since viewing is the common action.
+   Worth knowing: the behaviour this unlocks already exists and is tested. The
+   idempotent re-materialiser overwrites untouched future shifts while
+   preserving anything completed, cancelled, manually edited, or **clocked
+   into**. Only the UI affordance is missing.
+2. **Draft resume.** `schedule-pending-continue-cta` always starts a fresh
+   wizard rather than reopening the saved draft's days.
+3. **No scheduled job rolls the materialisation horizon forward.** Shifts
+   materialise once, on acceptance, for 84 days. An accepted pattern silently
+   stops producing shifts after that.
+4. **Timesheet status on a late clock-out.** Hours landing in an
+   already-`approved` week leave that week's status untouched rather than
+   reopening it — deliberately, but it is an unresolved human-reconciliation
+   case rather than a designed answer.
+
+### Things that are done and worth not re-litigating
+
+- Setup status is **server-derived** (`useIsOnboarded`), not local MMKV. It is a
+  tri-state where `loading` means "do not route" — collapsing that to `false`
+  flashes an onboarded user through the role fork and reintroduces a bug we
+  already fixed once.
+- Week boundaries take the **household's IANA timezone**, not the device's,
+  with a test pinning `2026-08-02T23:30:00Z` resolving to different weeks in
+  `UTC` vs `Pacific/Auckland`, plus a control proving normal instants still
+  agree across zones.
+- A shift with a `time_entries` row is **never** rewritten by re-materialisation.
+- Only one `running` time entry per carer, enforced by a partial unique index;
+  the API returns `metadata.reason === 'ALREADY_CLOCKED_IN'` rather than a 500.
+- `scheduled_minutes` is frozen at clock-out so a later shift edit cannot
+  rewrite what someone was owed.
 
 ## 5. Deliberate omissions
 

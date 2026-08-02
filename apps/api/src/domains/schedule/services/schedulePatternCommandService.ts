@@ -10,6 +10,11 @@
  * @module domains/schedule/services/schedulePatternCommandService
  */
 
+import {
+  ChildNotFoundError,
+  type ChildQueryService,
+  childQueryService,
+} from '../../child';
 import type { HouseholdMember } from '../../household';
 import {
   HOUSEHOLD_ROLES,
@@ -18,6 +23,8 @@ import {
   NotAHouseholdParentError,
 } from '../../household';
 import {
+  InvalidPatternCarerError,
+  InvalidPatternChildError,
   NotThePatternCarerError,
   PatternMissingCarerError,
   PatternNotDraftError,
@@ -48,6 +55,7 @@ const WRITE_ROLES: ReadonlySet<string> = new Set([
   HOUSEHOLD_ROLES.OWNER,
   HOUSEHOLD_ROLES.PARENT,
 ]);
+const CARER_ROLES: ReadonlySet<string> = new Set([HOUSEHOLD_ROLES.NANNY]);
 
 /** How far ahead of "now" a pattern is materialised on acceptance, when it has no `until`. A later re-run (a scheduled job, not built here) would roll this window forward. */
 const DEFAULT_MATERIALISATION_HORIZON_DAYS = 84; // 12 weeks
@@ -60,10 +68,17 @@ export class SchedulePatternCommandService {
     private readonly memberRepo: HouseholdMemberRepository = new HouseholdMemberRepository(),
     private readonly householdRepo: HouseholdRepository = new HouseholdRepository(),
     private readonly queries: SchedulePatternQueryService = schedulePatternQueryService,
-    private readonly materialisation: ScheduleMaterialisationService = scheduleMaterialisationService
+    private readonly materialisation: ScheduleMaterialisationService = scheduleMaterialisationService,
+    private readonly children: ChildQueryService = childQueryService
   ) {}
 
-  /** Sketch a draft pattern. Owner/parent only. `timezone` is copied from the household, never client-set. */
+  /**
+   * Sketch a draft pattern. Owner/parent only. `timezone` is copied from the
+   * household, never client-set. `carer_id`, if given, must be an active
+   * NANNY member of THIS household — see `assertCarerRole`; a bare
+   * membership check isn't enough, since a co-parent is a valid member but
+   * not a valid carer.
+   */
   async create(
     userId: string,
     householdId: string,
@@ -77,6 +92,10 @@ export class SchedulePatternCommandService {
       throw new NotAHouseholdParentError(householdId, 'none');
     }
     this.assertWriteRole(householdId, membership);
+
+    if (input.carer_id) {
+      await this.assertCarerRole(householdId, input.carer_id);
+    }
 
     const household = await this.householdRepo.findById(householdId);
     const timezone = household?.timezone ?? 'UTC';
@@ -108,7 +127,14 @@ export class SchedulePatternCommandService {
     return this.patternRepo.update(patternId, input);
   }
 
-  /** Replace a draft pattern's days (and their children) wholesale. Owner/parent only, draft only. */
+  /**
+   * Replace a draft pattern's days (and their children) wholesale.
+   * Owner/parent only, draft only. Every `child_id` referenced across every
+   * day is verified to belong to THIS pattern's household — see
+   * `assertChildrenBelongToHousehold` — before anything is written, so a bad
+   * id fails the whole call cleanly rather than leaving days replaced with
+   * some children missing.
+   */
   async replaceDays(
     userId: string,
     patternId: string,
@@ -117,6 +143,11 @@ export class SchedulePatternCommandService {
     const pattern = await this.queries.getOwned(userId, patternId);
     await this.assertWriteMember(userId, pattern.household_id);
     this.assertDraft(pattern);
+    await this.assertChildrenBelongToHousehold(
+      userId,
+      pattern.household_id,
+      input.days
+    );
 
     const days = await this.dayRepo.replaceForPattern(
       patternId,
@@ -274,6 +305,57 @@ export class SchedulePatternCommandService {
   private assertDraft(pattern: SchedulePattern): void {
     if (pattern.status !== 'draft') {
       throw new PatternNotEditableError(pattern.id, pattern.status);
+    }
+  }
+
+  /**
+   * `carer_id` must be an active NANNY member of `householdId` — not merely
+   * a member (a co-parent is an active member but not a valid carer), and
+   * not merely a real user id (a stranger with no relationship to the
+   * household). Same error either way — see `InvalidPatternCarerError`.
+   */
+  private async assertCarerRole(
+    householdId: string,
+    carerId: string
+  ): Promise<void> {
+    const carerMembership = await this.memberRepo.findActiveMembership(
+      householdId,
+      carerId
+    );
+    if (!carerMembership || !CARER_ROLES.has(carerMembership.role)) {
+      throw new InvalidPatternCarerError(householdId, carerId);
+    }
+  }
+
+  /**
+   * Every `child_id` referenced across every day must belong to
+   * `householdId`. Reuses `ChildQueryService.getOwned` — the SAME check the
+   * child domain's own routes use — rather than a fourth hand-rolled
+   * variant of the underlying membership/household check. Its own
+   * `ChildNotFoundError` is translated to `InvalidPatternChildError` here:
+   * the caller is always a parent of THIS household (already role-checked
+   * by `replaceDays`), so a specific "not part of your household" message
+   * is safe and better UX — it reveals nothing about any OTHER household —
+   * whereas `ChildNotFoundError`'s opaque wording exists for callers who
+   * don't already own the household in question.
+   */
+  private async assertChildrenBelongToHousehold(
+    userId: string,
+    householdId: string,
+    days: ReplaceSchedulePatternDaysInput['days']
+  ): Promise<void> {
+    const childIds = new Set(
+      days.flatMap(day => day.children.map(child => child.child_id))
+    );
+    for (const childId of childIds) {
+      try {
+        await this.children.getOwned(userId, householdId, childId);
+      } catch (error) {
+        if (error instanceof ChildNotFoundError) {
+          throw new InvalidPatternChildError(householdId, childId);
+        }
+        throw error;
+      }
     }
   }
 }

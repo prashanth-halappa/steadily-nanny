@@ -15,6 +15,16 @@
  * `time_entries_one_running_per_carer` partial unique index — the same
  * belt-and-braces pattern as `householdCommandService.redeemInvite`.
  *
+ * SECURITY: `clockIn`'s optional `shift_id` is a client-supplied uuid with
+ * no FK-level household/carer constraint (`shift_id references shifts(id)`
+ * alone — see migration 017). `assertShiftBelongsToCarer` closes that: the
+ * DB has no exclusion constraint, so this must be application-enforced. An
+ * unvalidated `shift_id` would let a carer attach a clock-in to ANY shift in
+ * the system, including a DIFFERENT household's — beyond a bogus
+ * `scheduled_minutes`, `scheduleMaterialisationService` treats any shift
+ * with a `time_entries` row as permanently immutable, so this could
+ * cross-household-pin a stranger's shift shut.
+ *
  * @module domains/timesheet/services/timesheetCommandService
  */
 
@@ -23,7 +33,7 @@ import {
   HouseholdMemberRepository,
   HouseholdRepository,
 } from '../../household';
-import { ShiftRepository } from '../../shift';
+import { ShiftNotFoundError, ShiftRepository } from '../../shift';
 import {
   AlreadyClockedInError,
   NotACarerError,
@@ -40,7 +50,7 @@ import type {
   TimeEntry,
   Timesheet,
 } from '../types';
-import { weekStartOf } from '../utils/weekStart';
+import { weekEndExclusive, weekStartOf } from '../utils/weekStart';
 import {
   type TimesheetQueryService,
   timesheetQueryService,
@@ -53,6 +63,12 @@ const WRITE_ROLES: ReadonlySet<string> = new Set([
 ]);
 /** A timesheet can only be actioned once there is submitted time on it. */
 const ACTIONABLE_STATUSES: ReadonlySet<string> = new Set(['submitted']);
+/**
+ * Terminal states a parent has already acted on. New hours landing here must
+ * re-open the timesheet rather than silently rewrite a total the parent
+ * already signed off on — see `rollUpIntoTimesheet`.
+ */
+const TERMINAL_STATUSES: ReadonlySet<string> = new Set(['approved', 'queried']);
 
 /** Minutes actually worked: clocked span minus the break, never negative. */
 export function computeWorkedMinutes(
@@ -64,6 +80,30 @@ export function computeWorkedMinutes(
     (new Date(clockOutAt).getTime() - new Date(clockInAt).getTime()) / 60_000
   );
   return Math.max(0, rawMinutes - breakMinutes);
+}
+
+/**
+ * A week's total worked minutes, DERIVED fresh from its entries rather than
+ * accumulated. Summing the same list twice always yields the same total —
+ * that's what makes `rollUpIntoTimesheet` idempotent under a retried,
+ * duplicated, or replayed clock-out, and lets the total self-heal if an
+ * entry is later corrected or deleted. A still-running entry (no
+ * `clock_out_at` yet) contributes 0 rather than throwing.
+ */
+export function sumWorkedMinutes(entries: readonly TimeEntry[]): number {
+  return entries.reduce((total, entry) => {
+    if (!entry.clock_in_at || !entry.clock_out_at) {
+      return total;
+    }
+    return (
+      total +
+      computeWorkedMinutes(
+        entry.clock_in_at,
+        entry.clock_out_at,
+        entry.break_minutes
+      )
+    );
+  }, 0);
 }
 
 export class TimesheetCommandService {
@@ -94,6 +134,14 @@ export class TimesheetCommandService {
     const existing = await this.timeEntryRepo.findRunningForCarer(userId);
     if (existing) {
       throw new AlreadyClockedInError(userId);
+    }
+
+    if (input.shift_id) {
+      await this.assertShiftBelongsToCarer(
+        input.shift_id,
+        input.household_id,
+        userId
+      );
     }
 
     const household = await this.householdRepo.findById(input.household_id);
@@ -172,6 +220,31 @@ export class TimesheetCommandService {
   }
 
   /**
+   * Verify a client-supplied `shift_id` is actually THIS carer's shift in
+   * THIS household before letting a clock-in reference it — see the module
+   * doc's SECURITY note. Throws the shift domain's own `ShiftNotFoundError`
+   * (reused cross-domain, same convention as the schedule domain reusing
+   * the household domain's `NotAHouseholdParentError`) for "doesn't exist",
+   * "belongs to a different household", and "assigned to a different
+   * carer" alike — the caller learns nothing about shifts that aren't
+   * theirs to clock into.
+   */
+  private async assertShiftBelongsToCarer(
+    shiftId: string,
+    householdId: string,
+    carerId: string
+  ): Promise<void> {
+    const shift = await this.shiftRepo.findById(shiftId);
+    if (
+      !shift ||
+      shift.household_id !== householdId ||
+      shift.carer_id !== carerId
+    ) {
+      throw new ShiftNotFoundError(shiftId);
+    }
+  }
+
+  /**
    * The shift's scheduled span AT THIS INSTANT, or null for an unscheduled
    * clock-in. Frozen onto the time entry so a later shift edit can never
    * rewrite recorded history (see module doc).
@@ -193,7 +266,15 @@ export class TimesheetCommandService {
     );
   }
 
-  /** Find-or-create the week's timesheet and add this entry's worked minutes to its total. */
+  /**
+   * Find-or-create the week's timesheet and set its total to the FULL
+   * recomputed sum of the week's entries — never an increment. Blind
+   * addition (`existing.total_minutes + workedMinutes`) double-counts a
+   * retried, duplicated, or replayed clock-out; re-deriving the total from
+   * `listForCarerWeek` on every call is idempotent by construction (calling
+   * this twice for the same underlying entries is a no-op the second time)
+   * and self-heals if an entry is later corrected or deleted.
+   */
   private async rollUpIntoTimesheet(entry: TimeEntry): Promise<void> {
     if (!entry.clock_in_at || !entry.clock_out_at) {
       return; // defensive — clockOut always sets both before calling this
@@ -204,11 +285,14 @@ export class TimesheetCommandService {
       new Date(entry.clock_in_at),
       household?.timezone ?? 'UTC'
     );
-    const workedMinutes = computeWorkedMinutes(
-      entry.clock_in_at,
-      entry.clock_out_at,
-      entry.break_minutes
+
+    const weekEntries = await this.timeEntryRepo.listForCarerWeek(
+      entry.household_id,
+      entry.carer_id,
+      weekStart,
+      weekEndExclusive(weekStart)
     );
+    const totalMinutes = sumWorkedMinutes(weekEntries);
 
     const existing = await this.timesheetRepo.findByWeek(
       entry.household_id,
@@ -220,19 +304,23 @@ export class TimesheetCommandService {
         household_id: entry.household_id,
         carer_id: entry.carer_id,
         week_start: weekStart,
-        total_minutes: workedMinutes,
+        total_minutes: totalMinutes,
         status: 'submitted',
       });
       return;
     }
 
+    // A fresh 'open' timesheet becomes 'submitted' on its first hours and
+    // stays 'submitted' as more entries roll in. A timesheet a parent has
+    // already acted on ('approved' or 'queried') is a terminal state: it
+    // must never absorb new minutes silently. Re-open it to 'submitted' —
+    // clearing the approval — so the parent is forced to look again rather
+    // than being recorded as having approved hours they never saw.
+    const reopening = TERMINAL_STATUSES.has(existing.status);
     await this.timesheetRepo.update(existing.id, {
-      total_minutes: existing.total_minutes + workedMinutes,
-      // A fresh 'open' timesheet becomes 'submitted' on its first hours; an
-      // already-actioned one (submitted/approved/queried) keeps its status —
-      // late hours landing on an approved week are a reconciliation call for
-      // a human, not something this rollup silently resolves.
-      status: existing.status === 'open' ? 'submitted' : existing.status,
+      total_minutes: totalMinutes,
+      status: 'submitted',
+      ...(reopening ? { approved_by: null, approved_at: null } : {}),
     });
   }
 

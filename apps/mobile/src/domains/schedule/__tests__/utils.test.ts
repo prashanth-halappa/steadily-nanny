@@ -8,12 +8,14 @@
  * use non-sequential weekdays (e.g. Wednesday=3, Sunday=0) to catch an
  * off-by-one against display order.
  */
-import { describe, expect, it } from 'bun:test';
+import { describe, expect, it, mock } from 'bun:test';
+import type { SendDayInput } from '../utils';
 import {
   buildWeeklyRrule,
   calculateDayHours,
   calculateWeekTotalHours,
   isOutsideAvailability,
+  sendScheduleWeek,
   todayIsoDate,
   toggleWeekday,
 } from '../utils';
@@ -142,6 +144,70 @@ describe('isOutsideAvailability', () => {
       )
     ).toBe(true);
   });
+
+  it('a null earliest_start means no lower bound — does not by itself count as a clash', () => {
+    expect(
+      isOutsideAvailability(
+        { weekday: 3, start_time: '06:00', end_time: '13:00' },
+        [
+          {
+            weekday: 3,
+            is_available: true,
+            earliest_start: null,
+            latest_finish: '17:00',
+          },
+        ]
+      )
+    ).toBe(false);
+  });
+
+  it('a null latest_finish means no upper bound — does not by itself count as a clash', () => {
+    expect(
+      isOutsideAvailability(
+        { weekday: 3, start_time: '09:00', end_time: '20:00' },
+        [
+          {
+            weekday: 3,
+            is_available: true,
+            earliest_start: '09:00',
+            latest_finish: null,
+          },
+        ]
+      )
+    ).toBe(false);
+  });
+
+  it('both bounds null (marked available, no hours set) never counts as a clash', () => {
+    expect(
+      isOutsideAvailability(
+        { weekday: 3, start_time: '00:00', end_time: '23:59' },
+        [
+          {
+            weekday: 3,
+            is_available: true,
+            earliest_start: null,
+            latest_finish: null,
+          },
+        ]
+      )
+    ).toBe(false);
+  });
+
+  it('a null earliest_start still respects a real latest_finish bound', () => {
+    expect(
+      isOutsideAvailability(
+        { weekday: 3, start_time: '06:00', end_time: '18:00' },
+        [
+          {
+            weekday: 3,
+            is_available: true,
+            earliest_start: null,
+            latest_finish: '17:00',
+          },
+        ]
+      )
+    ).toBe(true);
+  });
 });
 
 describe('todayIsoDate', () => {
@@ -151,5 +217,261 @@ describe('todayIsoDate', () => {
 
   it('zero-pads single-digit months and days', () => {
     expect(todayIsoDate(new Date(2026, 8, 3))).toBe('2026-09-03');
+  });
+});
+
+describe('sendScheduleWeek', () => {
+  const days: SendDayInput[] = [
+    { weekday: 3, start_time: '08:00', end_time: '13:00', children: [] },
+  ];
+
+  it('REGRESSION: creates a pattern, then calls replaceDays/sendPattern with the freshly created id — never undefined', async () => {
+    const createPattern = mock(() => Promise.resolve({ id: 'new-pattern-id' }));
+    const replaceDays = mock(
+      (_args: { patternId: string; days: typeof days }) => Promise.resolve()
+    );
+    const sendPattern = mock((_args: { patternId: string }) =>
+      Promise.resolve()
+    );
+
+    const result = await sendScheduleWeek({
+      patternId: undefined,
+      carerId: 'carer-1',
+      rrule: 'FREQ=WEEKLY;INTERVAL=1;BYDAY=WE',
+      dtstart: '2026-08-05',
+      days,
+      createPattern,
+      replaceDays,
+      sendPattern,
+    });
+
+    expect(createPattern).toHaveBeenCalledTimes(1);
+    expect(replaceDays).toHaveBeenCalledWith({
+      patternId: 'new-pattern-id',
+      days,
+    });
+    expect(sendPattern).toHaveBeenCalledWith({ patternId: 'new-pattern-id' });
+    expect(result).toBe('new-pattern-id');
+
+    // The specific bug this guards against: neither call ever receives
+    // `undefined` in place of the id, which would 400 against
+    // `/schedule-patterns/undefined/days`.
+    expect(replaceDays.mock.calls[0]?.[0].patternId).not.toBeUndefined();
+    expect(sendPattern.mock.calls[0]?.[0].patternId).not.toBeUndefined();
+  });
+
+  it('reuses an existing patternId and does not call createPattern again', async () => {
+    const createPattern = mock(() => Promise.resolve({ id: 'ignored' }));
+    const replaceDays = mock(
+      (_args: { patternId: string; days: typeof days }) => Promise.resolve()
+    );
+    const sendPattern = mock((_args: { patternId: string }) =>
+      Promise.resolve()
+    );
+
+    const result = await sendScheduleWeek({
+      patternId: 'existing-pattern-id',
+      carerId: 'carer-1',
+      rrule: 'FREQ=WEEKLY;INTERVAL=1;BYDAY=WE',
+      dtstart: '2026-08-05',
+      days,
+      createPattern,
+      replaceDays,
+      sendPattern,
+    });
+
+    expect(createPattern).not.toHaveBeenCalled();
+    expect(replaceDays).toHaveBeenCalledWith({
+      patternId: 'existing-pattern-id',
+      days,
+    });
+    expect(sendPattern).toHaveBeenCalledWith({
+      patternId: 'existing-pattern-id',
+    });
+    expect(result).toBe('existing-pattern-id');
+  });
+
+  // D11: if `createPattern` succeeds but a later step fails, the created id
+  // must still reach the caller — otherwise a retry has no way to know a
+  // draft already exists and creates a second, orphaned one. Verified as an
+  // explicit three-way split: creation fails; creation succeeds then a
+  // later step fails (retry must NOT create a second pattern); full success.
+  describe('D11 — partial-failure id leakage (orphan draft on retry)', () => {
+    it('creation fails: onPatternCreated is never called, and the failure propagates', async () => {
+      const createPattern = mock(() =>
+        Promise.reject(new Error('network down'))
+      );
+      const replaceDays = mock(
+        (_args: { patternId: string; days: typeof days }) => Promise.resolve()
+      );
+      const sendPattern = mock((_args: { patternId: string }) =>
+        Promise.resolve()
+      );
+      const onPatternCreated = mock((_id: string) => {});
+
+      await expect(
+        sendScheduleWeek({
+          patternId: undefined,
+          carerId: 'carer-1',
+          rrule: 'FREQ=WEEKLY;INTERVAL=1;BYDAY=WE',
+          dtstart: '2026-08-05',
+          days,
+          createPattern,
+          replaceDays,
+          sendPattern,
+          onPatternCreated,
+        })
+      ).rejects.toThrow('network down');
+
+      expect(onPatternCreated).not.toHaveBeenCalled();
+      expect(replaceDays).not.toHaveBeenCalled();
+      expect(sendPattern).not.toHaveBeenCalled();
+    });
+
+    it('creation succeeds, then replaceDays fails: onPatternCreated still fires with the real id BEFORE the rejection', async () => {
+      const createPattern = mock(() =>
+        Promise.resolve({ id: 'newly-created-id' })
+      );
+      const replaceDays = mock(() =>
+        Promise.reject(new Error('400 validation error'))
+      );
+      const sendPattern = mock((_args: { patternId: string }) =>
+        Promise.resolve()
+      );
+      const onPatternCreated = mock((_id: string) => {});
+
+      await expect(
+        sendScheduleWeek({
+          patternId: undefined,
+          carerId: 'carer-1',
+          rrule: 'FREQ=WEEKLY;INTERVAL=1;BYDAY=WE',
+          dtstart: '2026-08-05',
+          days,
+          createPattern,
+          replaceDays,
+          sendPattern,
+          onPatternCreated,
+        })
+      ).rejects.toThrow('400 validation error');
+
+      // The whole point: the id escapes even though the overall call failed.
+      expect(onPatternCreated).toHaveBeenCalledWith('newly-created-id');
+      expect(sendPattern).not.toHaveBeenCalled();
+    });
+
+    it('a retry after that partial failure reuses the persisted id and does NOT create a second pattern', async () => {
+      const createPattern = mock(() =>
+        Promise.resolve({ id: 'newly-created-id' })
+      );
+      const failingReplaceDays = mock(() =>
+        Promise.reject(new Error('400 validation error'))
+      );
+      let persistedPatternId: string | undefined;
+
+      // First attempt: fails after creation, but the caller (standing in
+      // for ScheduleBuildScreen's onPatternCreated -> setPatternId) captures
+      // the id the moment it's known.
+      await expect(
+        sendScheduleWeek({
+          patternId: undefined,
+          carerId: 'carer-1',
+          rrule: 'FREQ=WEEKLY;INTERVAL=1;BYDAY=WE',
+          dtstart: '2026-08-05',
+          days,
+          createPattern,
+          replaceDays: failingReplaceDays,
+          sendPattern: mock(() => Promise.resolve()),
+          onPatternCreated: id => {
+            persistedPatternId = id;
+          },
+        })
+      ).rejects.toThrow();
+
+      expect(persistedPatternId).toBe('newly-created-id');
+
+      // Retry: the caller passes the PERSISTED id back in, exactly as
+      // ScheduleBuildScreen's `patternId` state would after onPatternCreated
+      // updated it. createPattern must NOT be called again.
+      const retryReplaceDays = mock(
+        (_args: { patternId: string; days: typeof days }) => Promise.resolve()
+      );
+      const retrySendPattern = mock((_args: { patternId: string }) =>
+        Promise.resolve()
+      );
+      createPattern.mockClear();
+
+      const result = await sendScheduleWeek({
+        patternId: persistedPatternId,
+        carerId: 'carer-1',
+        rrule: 'FREQ=WEEKLY;INTERVAL=1;BYDAY=WE',
+        dtstart: '2026-08-05',
+        days,
+        createPattern,
+        replaceDays: retryReplaceDays,
+        sendPattern: retrySendPattern,
+      });
+
+      expect(createPattern).not.toHaveBeenCalled();
+      expect(retryReplaceDays).toHaveBeenCalledWith({
+        patternId: 'newly-created-id',
+        days,
+      });
+      expect(retrySendPattern).toHaveBeenCalledWith({
+        patternId: 'newly-created-id',
+      });
+      expect(result).toBe('newly-created-id');
+    });
+
+    it('full success: onPatternCreated fires exactly once with the created id', async () => {
+      const createPattern = mock(() => Promise.resolve({ id: 'full-ok-id' }));
+      const replaceDays = mock(
+        (_args: { patternId: string; days: typeof days }) => Promise.resolve()
+      );
+      const sendPattern = mock((_args: { patternId: string }) =>
+        Promise.resolve()
+      );
+      const onPatternCreated = mock((_id: string) => {});
+
+      const result = await sendScheduleWeek({
+        patternId: undefined,
+        carerId: 'carer-1',
+        rrule: 'FREQ=WEEKLY;INTERVAL=1;BYDAY=WE',
+        dtstart: '2026-08-05',
+        days,
+        createPattern,
+        replaceDays,
+        sendPattern,
+        onPatternCreated,
+      });
+
+      expect(onPatternCreated).toHaveBeenCalledTimes(1);
+      expect(onPatternCreated).toHaveBeenCalledWith('full-ok-id');
+      expect(result).toBe('full-ok-id');
+    });
+
+    it('reusing an existing patternId never calls onPatternCreated (nothing was newly created)', async () => {
+      const createPattern = mock(() => Promise.resolve({ id: 'ignored' }));
+      const replaceDays = mock(
+        (_args: { patternId: string; days: typeof days }) => Promise.resolve()
+      );
+      const sendPattern = mock((_args: { patternId: string }) =>
+        Promise.resolve()
+      );
+      const onPatternCreated = mock((_id: string) => {});
+
+      await sendScheduleWeek({
+        patternId: 'already-exists',
+        carerId: 'carer-1',
+        rrule: 'FREQ=WEEKLY;INTERVAL=1;BYDAY=WE',
+        dtstart: '2026-08-05',
+        days,
+        createPattern,
+        replaceDays,
+        sendPattern,
+        onPatternCreated,
+      });
+
+      expect(onPatternCreated).not.toHaveBeenCalled();
+    });
   });
 });

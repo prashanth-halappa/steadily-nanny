@@ -8,6 +8,7 @@
     "carerPickerTitle": "Who is this schedule for?",
     "carerPickerSubtitle": "Choose which carer will receive this week.",
     "carerPickerCta": "Next: days",
+    "carerFallbackName": "Your nanny",
     "daysTitle": "Which days does she usually work?",
     "daysSubtitle": "Tap the days you'd like to schedule.",
     "daysCta": "Next: hours",
@@ -46,7 +47,8 @@
     "withdrawConfirmBody": "Your nanny won't be able to accept it after you withdraw.",
     "withdrawConfirmCancel": "Cancel",
     "withdrawConfirmConfirm": "Withdraw",
-    "viewShifts": "View this week's shifts"
+    "viewShifts": "View this week's shifts",
+    "changeWeek": "Change the week"
   },
   "respond": {
     "screenTitle": "Review your week",
@@ -69,7 +71,14 @@
     "screenTitle": "This week's shifts",
     "loading": "Loading…",
     "empty": "No shifts yet",
-    "unavailable": "Shifts aren't available yet — check back soon."
+    "unavailable": "Shifts aren't available yet — check back soon.",
+    "statusDraft": "Draft",
+    "statusPending": "Pending",
+    "statusConfirmed": "Confirmed",
+    "statusDeclined": "Declined",
+    "statusCancelled": "Cancelled",
+    "statusCompleted": "Completed",
+    "shortNotice": "Short notice"
   },
   "weekday": {
     "0": "Sunday",
@@ -79,5 +88,12 @@
     "4": "Thursday",
     "5": "Friday",
     "6": "Saturday"
+  },
+  "todayCard": {
+    "pendingTitle": "A week is waiting for you",
+    "pendingBody_one": "{{count}} day · {{hours}} hours a week",
+    "pendingBody_other": "{{count}} days · {{hours}} hours a week",
+    "pendingCta": "Review and respond",
+    "shiftsCta": "This week's shifts"
   }
 }

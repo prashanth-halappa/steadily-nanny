@@ -53,27 +53,42 @@ export function ParentWeekView({
   const timesheet = timesheetQuery.data ?? null;
   const totalMinutes = sumEntryMinutes(entries, nowMs);
   const isApproved = timesheet?.status === TIMESHEET_STATUSES.APPROVED;
+  // Approve/query are ONLY valid on a 'submitted' timesheet — the API 409s
+  // (TIMESHEET_NOT_ACTIONABLE) on 'open' (nothing submitted, no row exists
+  // client-side either — see the `!timesheet` guard below), already-
+  // 'approved', or already-'queried'. Gating on role alone isn't enough;
+  // verified against the live API (api-timesheet's reply, 2026-08-01).
+  const isActionable = timesheet?.status === TIMESHEET_STATUSES.SUBMITTED;
 
   const dayRows = weekDates.map(date => ({
     date,
     entries: entries.filter(entry => entry.local_date === date),
   }));
 
-  const handleApprove = () => {
-    if (!timesheet) return;
-    void approveTimesheet.mutateAsync(timesheet.id).then(() => {
-      showSuccessToast(t('approvedToast'));
-    });
+  // `.mutateAsync(...).then(onFulfilled)` with no rejection handler left a
+  // failure's promise entirely unhandled (an "Uncaught (in promise)" in
+  // metro.log, the same defect class as the clock-in double-tap bug) even
+  // though the mutation's own `onError` still showed a toast. try/catch
+  // consumes the rejection here; the toast is unchanged.
+  const handleApprove = async () => {
+    if (!timesheet || !isActionable || approveTimesheet.isPending) return;
+    try {
+      await approveTimesheet.mutateAsync(timesheet.id);
+    } catch {
+      return;
+    }
+    showSuccessToast(t('approvedToast'));
   };
 
-  const handleQuerySubmit = (note: string) => {
-    if (!timesheet) return;
-    void queryTimesheet
-      .mutateAsync({ timesheetId: timesheet.id, note })
-      .then(() => {
-        setIsQuerySheetVisible(false);
-        showSuccessToast(t('queriedToast'));
-      });
+  const handleQuerySubmit = async (note: string) => {
+    if (!timesheet || !isActionable || queryTimesheet.isPending) return;
+    try {
+      await queryTimesheet.mutateAsync({ timesheetId: timesheet.id, note });
+    } catch {
+      return;
+    }
+    setIsQuerySheetVisible(false);
+    showSuccessToast(t('queriedToast'));
   };
 
   return (
@@ -111,8 +126,8 @@ export function ParentWeekView({
             <Button
               testID="hours-approve-button"
               className="mt-6"
-              disabled={!timesheet || isApproved || approveTimesheet.isPending}
-              onPress={handleApprove}
+              disabled={!isActionable || approveTimesheet.isPending}
+              onPress={() => void handleApprove()}
             >
               <Text>{isApproved ? t('approved') : t('approveWeek')}</Text>
             </Button>
@@ -120,7 +135,7 @@ export function ParentWeekView({
               testID="hours-query-button"
               variant="ghost"
               className="mt-2"
-              disabled={!timesheet}
+              disabled={!isActionable}
               onPress={() => setIsQuerySheetVisible(true)}
             >
               <Text className="text-destructive">{t('query')}</Text>

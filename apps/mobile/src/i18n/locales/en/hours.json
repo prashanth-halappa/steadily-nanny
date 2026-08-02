@@ -1,5 +1,7 @@
 {
   "title": "Hours",
+  "previousWeek": "Previous week",
+  "nextWeek": "Next week",
   "yourWeek": "Your week",
   "carerWeek": "Your carer's week",
   "approveWeek": "Approve the week",

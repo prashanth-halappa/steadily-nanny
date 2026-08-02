@@ -11,6 +11,7 @@
  * timer is plain text driven by React state, not Reanimated, so the
  * GOLDEN-FIXES #2 gotcha simply doesn't apply; no Animated.View is used.
  */
+import { useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Card, CardContent } from '@/src/components/ui/card';
 import { LoadingButton } from '@/src/components/ui/loading-button';
@@ -34,13 +35,41 @@ export function ClockInCard({ householdId }: ClockInCardProps) {
   const entry = running.data ?? null;
   const elapsed = useElapsedTimer(entry?.clock_in_at ?? null);
 
+  // D7 (double-tap clock-in): `clockIn.isPending` only flips once React
+  // commits a re-render, but a fast double-tap can fire the second press
+  // handler before that render ever happens — so the LoadingButton's
+  // `disabled` prop alone doesn't close the race. These refs are read/set
+  // synchronously inside the handler itself, so the second tap is dropped
+  // at the source regardless of render timing. The 409 that DOES get through
+  // (e.g. from a second device) is still handled truthfully — see
+  // useClockIn's onError, which refetches on ALREADY_CLOCKED_IN.
+  const clockInInFlightRef = useRef(false);
+  const clockOutInFlightRef = useRef(false);
+
   const handleClockIn = () => {
-    void clockIn.mutateAsync({ household_id: householdId });
+    if (clockInInFlightRef.current) return;
+    clockInInFlightRef.current = true;
+    clockIn
+      .mutateAsync({ household_id: householdId })
+      // useClockIn's onError already surfaces this failure (toast, plus a
+      // refetch on ALREADY_CLOCKED_IN) — caught here only so a losing
+      // double-tap request never escapes as an unhandled promise rejection.
+      .catch(() => undefined)
+      .finally(() => {
+        clockInInFlightRef.current = false;
+      });
   };
 
   const handleClockOut = () => {
-    if (!entry) return;
-    void clockOut.mutateAsync({ entryId: entry.id });
+    if (!entry || clockOutInFlightRef.current) return;
+    clockOutInFlightRef.current = true;
+    clockOut
+      .mutateAsync({ entryId: entry.id })
+      // Same rationale as handleClockIn above.
+      .catch(() => undefined)
+      .finally(() => {
+        clockOutInFlightRef.current = false;
+      });
   };
 
   return (

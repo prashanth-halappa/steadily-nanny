@@ -11,8 +11,9 @@
  * this domain has the same generic `code`; only `metadata.reason` tells
  * duplicate-clock-in apart from e.g. TIMESHEET_NOT_ACTIONABLE.
  */
-import { beforeAll, describe, expect, it, mock } from 'bun:test';
+import { beforeAll, describe, expect, it, mock, spyOn } from 'bun:test';
 import { act, waitFor } from '@testing-library/react-native';
+import { queryKeys } from '@/src/api/queryKeys';
 import { renderHookWithProviders } from '@/src/test-utils';
 
 const clockInMock = mock(() =>
@@ -69,6 +70,62 @@ describe('useClockIn', () => {
 
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect(showErrorToastMock).toHaveBeenCalledWith('errors:alreadyClockedIn');
+  });
+
+  it('D7: refetches the timeEntry cache on ALREADY_CLOCKED_IN, so the Today card lands on truth (on-the-clock) instead of freezing on stale cache', async () => {
+    clockInMock.mockImplementationOnce(() =>
+      Promise.reject({
+        response: {
+          status: 409,
+          data: {
+            error: {
+              code: 'CONFLICT',
+              metadata: { reason: 'ALREADY_CLOCKED_IN' },
+            },
+          },
+        },
+      })
+    );
+    const { result, queryClient } = renderHookWithProviders(() => useClockIn());
+    const invalidateSpy = spyOn(queryClient, 'invalidateQueries');
+
+    await act(async () => {
+      await expect(
+        result.current.mutateAsync({ household_id: 'household-1' })
+      ).rejects.toBeTruthy();
+    });
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: queryKeys.timeEntry.all,
+    });
+  });
+
+  it('does NOT refetch the timeEntry cache for a different CONFLICT reason (nothing about server truth changed)', async () => {
+    clockInMock.mockImplementationOnce(() =>
+      Promise.reject({
+        response: {
+          status: 409,
+          data: {
+            error: {
+              code: 'CONFLICT',
+              metadata: { reason: 'TIMESHEET_NOT_ACTIONABLE' },
+            },
+          },
+        },
+      })
+    );
+    const { result, queryClient } = renderHookWithProviders(() => useClockIn());
+    const invalidateSpy = spyOn(queryClient, 'invalidateQueries');
+
+    await act(async () => {
+      await expect(
+        result.current.mutateAsync({ household_id: 'household-1' })
+      ).rejects.toBeTruthy();
+    });
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(invalidateSpy).not.toHaveBeenCalled();
   });
 
   it('does NOT show the "already clocked in" copy for a different CONFLICT reason', async () => {

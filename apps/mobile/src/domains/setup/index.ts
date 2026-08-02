@@ -1,11 +1,17 @@
 export * from './childAge';
+export { AvailabilityEditor } from './components/AvailabilityEditor';
 export { AvailabilityScreen } from './components/AvailabilityScreen';
 export type { ChildFormValues } from './components/ChildFormSheet';
 export { ChildFormSheet } from './components/ChildFormSheet';
 export { ChildRow } from './components/ChildRow';
+export { ChildrenManager } from './components/ChildrenManager';
 export { ChildrenScreen } from './components/ChildrenScreen';
 export { CodeEntryScreen } from './components/CodeEntryScreen';
+export { InviteCodeCard } from './components/InviteCodeCard';
 export { InviteScreen } from './components/InviteScreen';
+export { ManageAvailabilityScreen } from './components/ManageAvailabilityScreen';
+export { ManageChildrenScreen } from './components/ManageChildrenScreen';
+export { ManageInviteScreen } from './components/ManageInviteScreen';
 export { RoleOptionCard } from './components/RoleOptionCard';
 export { RoleScreen } from './components/RoleScreen';
 export { SetupScreenShell } from './components/SetupScreenShell';

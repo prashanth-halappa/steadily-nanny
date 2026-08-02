@@ -9,7 +9,10 @@
  * @module tests/unit/domains/timesheet/utils/weekStart
  */
 import { describe, expect, it } from 'bun:test';
-import { weekStartOf } from '../../../../../src/domains/timesheet/utils/weekStart';
+import {
+  weekEndExclusive,
+  weekStartOf,
+} from '../../../../../src/domains/timesheet/utils/weekStart';
 
 describe('weekStartOf', () => {
   it('returns the same date for an instant that is already a Monday, in a timezone matching UTC', () => {
@@ -42,5 +45,19 @@ describe('weekStartOf', () => {
     expect(
       weekStartOf(new Date('2026-08-03T01:30:00.000Z'), 'America/Los_Angeles')
     ).toBe('2026-07-27');
+  });
+});
+
+describe('weekEndExclusive', () => {
+  it('returns the Monday exactly 7 days after weekStart', () => {
+    expect(weekEndExclusive('2026-08-03')).toBe('2026-08-10');
+  });
+
+  it('crosses a month boundary correctly', () => {
+    expect(weekEndExclusive('2026-08-31')).toBe('2026-09-07');
+  });
+
+  it('crosses a year boundary correctly', () => {
+    expect(weekEndExclusive('2025-12-29')).toBe('2026-01-05');
   });
 });

@@ -53,6 +53,17 @@ export function useClockIn() {
           isAlreadyClockedInError(error) ? 'errors:alreadyClockedIn' : undefined
         )
       );
+
+      // D7: a 409 ALREADY_CLOCKED_IN means the thing the caller wanted (being
+      // on the clock) is already true server-side — e.g. the OTHER half of a
+      // double-tap won the race, or another device clocked in first. The
+      // server, not this failed request, is the source of truth, so refetch
+      // rather than leaving the Today card frozen on stale pre-clock-in
+      // cache. Without this, a losing double-tap request left the card
+      // claiming "Clock in" while a running entry existed the whole time.
+      if (isAlreadyClockedInError(error)) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.timeEntry.all });
+      }
     },
   });
 }

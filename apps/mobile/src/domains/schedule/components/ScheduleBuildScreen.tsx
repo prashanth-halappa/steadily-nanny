@@ -40,6 +40,7 @@ import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 import {
   buildWeeklyRrule,
   calculateWeekTotalHours,
+  sendScheduleWeek,
   todayIsoDate,
   toggleWeekday,
 } from '../utils';
@@ -84,8 +85,8 @@ export function ScheduleBuildScreen() {
   const [isSending, setIsSending] = useState(false);
 
   const createPattern = useCreateSchedulePattern(householdId ?? undefined);
-  const replaceDays = useReplaceSchedulePatternDays(patternId);
-  const sendPattern = useSendSchedulePattern(patternId);
+  const replaceDays = useReplaceSchedulePatternDays();
+  const sendPattern = useSendSchedulePattern();
 
   // Advance out of 'loading' once carers have resolved. A single carer is
   // auto-selected and skips the carer-picker step entirely (the common case
@@ -148,25 +149,28 @@ export function ScheduleBuildScreen() {
     }))
   );
 
+  // A missing display name falls back to a neutral, translated placeholder
+  // — NEVER a UI step title (that was the bug: an un-namespaced `t()` call
+  // rendered the raw key "carerPickerTitle" as the carer's name).
   const carerDisplayName = (member: HouseholdMember) =>
-    member.display_name_override ?? t('carerPickerTitle');
+    member.display_name_override ?? t('build.carerFallbackName');
 
   const onSend = async () => {
     if (!selectedCarerId || selectedDays.length === 0) return;
     setIsSending(true);
     try {
-      let currentPatternId = patternId;
-      if (!currentPatternId) {
-        const created = await createPattern.mutateAsync({
-          carer_id: selectedCarerId,
-          rrule: buildWeeklyRrule(selectedDays, intervalWeeks),
-          dtstart: todayIsoDate(),
-        });
-        currentPatternId = created.id;
-        setPatternId(created.id);
-      }
-
-      await replaceDays.mutateAsync({
+      // All orchestration (create -> replaceDays -> send) happens inside
+      // `sendScheduleWeek`, which resolves the pattern id ONCE in this call
+      // stack and threads it explicitly into every dependent mutation —
+      // see its header comment for why a `useMutation(patternId)` hook
+      // parameter is the wrong shape here (React state updates are async,
+      // so `setPatternId` would not have rebound `replaceDays`/`sendPattern`
+      // by the time they're called in this same handler pass).
+      const resolvedPatternId = await sendScheduleWeek({
+        patternId,
+        carerId: selectedCarerId,
+        rrule: buildWeeklyRrule(selectedDays, intervalWeeks),
+        dtstart: todayIsoDate(),
         days: selectedDays.map(day => ({
           weekday: day,
           start_time: dayTimes[day]?.start ?? DEFAULT_START,
@@ -175,11 +179,28 @@ export function ScheduleBuildScreen() {
             child_id: childId,
           })),
         })),
+        createPattern: input => createPattern.mutateAsync(input),
+        replaceDays: args => replaceDays.mutateAsync(args),
+        sendPattern: args => sendPattern.mutateAsync(args),
+        // D11: persist a freshly-created id into state THE INSTANT it's
+        // known, not only after full success — otherwise a partial failure
+        // (creation succeeds, replaceDays/sendPattern doesn't) leaves this
+        // component with no way to learn about the draft it already paid
+        // to create, and a retry calls createPattern again, orphaning a
+        // second draft on every failed attempt. `setPatternId` is a stable
+        // `useState` dispatch, never subject to the staleness `patternId`
+        // (the hook-parameter version) used to have — see sendScheduleWeek's
+        // own header comment.
+        onPatternCreated: setPatternId,
       });
-
-      await sendPattern.mutateAsync();
+      setPatternId(resolvedPatternId);
 
       router.replace('/(private)/schedule' as Href);
+    } catch {
+      // Each underlying mutation (createPattern/replaceDays/sendPattern)
+      // already shows its own toast via onError — a bare `finally` here
+      // would still let the rejection escape past `onCta={() => void
+      // onSend()}` with nothing to catch it, an unhandled promise rejection.
     } finally {
       setIsSending(false);
     }

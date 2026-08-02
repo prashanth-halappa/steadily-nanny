@@ -66,6 +66,18 @@ export function SchedulePendingScreen() {
     return null;
   }
 
+  // Discarding the withdraw mutation's promise with a bare `void` operator
+  // suppresses only the lint warning, not the rejection itself — a failure
+  // would surface as an unhandled promise rejection. try/catch consumes it
+  // here; `onError` on the mutation itself still shows the toast, unchanged.
+  const handleWithdraw = async () => {
+    try {
+      await withdraw.mutateAsync();
+    } catch {
+      // onError already surfaced a toast.
+    }
+  };
+
   const isLoading = onboarding.status === 'loading' || patterns.isLoading;
 
   const statusVariant = (): NonNullable<StatusPillProps['variant']> => {
@@ -168,7 +180,7 @@ export function SchedulePendingScreen() {
                     testID="schedule-pending-withdraw-confirm"
                     className={buttonVariants({ variant: 'destructive' })}
                     disabled={withdraw.isPending}
-                    onPress={() => void withdraw.mutateAsync()}
+                    onPress={() => void handleWithdraw()}
                   >
                     <Text className="text-destructive-foreground">
                       {t('pending.withdrawConfirmConfirm')}
@@ -180,14 +192,26 @@ export function SchedulePendingScreen() {
           ) : null}
 
           {pattern.status === 'accepted' ? (
-            <Button
-              testID="schedule-pending-view-shifts"
-              onPress={() => router.push(SHIFTS_HREF)}
-            >
-              <Text className="text-primary-foreground font-medium">
-                {t('pending.viewShifts')}
-              </Text>
-            </Button>
+            <>
+              <Button
+                testID="schedule-pending-view-shifts"
+                onPress={() => router.push(SHIFTS_HREF)}
+              >
+                <Text className="text-primary-foreground font-medium">
+                  {t('pending.viewShifts')}
+                </Text>
+              </Button>
+              {/* A household's schedule changes — term starts, hours
+                  shift, availability moves. Without this, the app went
+                  permanently read-only the moment one week was accepted. */}
+              <Button
+                testID="schedule-pending-change-week"
+                variant="outline"
+                onPress={() => router.push(BUILD_HREF)}
+              >
+                <Text>{t('pending.changeWeek')}</Text>
+              </Button>
+            </>
           ) : null}
 
           {pattern.status === 'declined' || pattern.status === 'withdrawn' ? (

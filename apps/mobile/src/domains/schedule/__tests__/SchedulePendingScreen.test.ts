@@ -59,4 +59,31 @@ describe('SchedulePendingScreen', () => {
     expect(acceptedIndex).toBeGreaterThan(-1);
     expect(confirmedIndex).toBeGreaterThan(-1);
   });
+
+  it('REGRESSION: withdraw is never a bare .mutateAsync() with no rejection handler', () => {
+    // `void withdraw.mutateAsync()` discards the promise without a
+    // `.catch()` — `void` only suppresses a lint warning, it does not
+    // attach a rejection handler, so a failed withdraw would surface as an
+    // unhandled promise rejection (the same defect class as D7's clock-in
+    // double-tap bug) even though `onError` still shows a toast.
+    expect(screenSource).not.toMatch(/void withdraw\.mutateAsync\(\)/);
+    expect(screenSource).toMatch(/try\s*\{\s*await withdraw\.mutateAsync/);
+  });
+
+  it('REGRESSION: the accepted state offers a way to change the week, alongside (not instead of) viewing shifts', () => {
+    // The bug: once a pattern is `accepted`, the only rendered action was
+    // "View shifts" — there was no way back into the build wizard, so the
+    // app went permanently read-only after one accepted week. Isolate the
+    // whole `pattern.status === 'accepted'` branch and assert it renders
+    // BOTH the existing view-shifts action AND a new "change the week"
+    // action, not a replacement of one by the other.
+    const acceptedBranchMatch = screenSource.match(
+      /pattern\.status === 'accepted'[\s\S]{0,900}?\) : null}/
+    );
+    expect(acceptedBranchMatch).not.toBeNull();
+    const acceptedBranch = acceptedBranchMatch?.[0] ?? '';
+    expect(acceptedBranch).toContain('schedule-pending-view-shifts');
+    expect(acceptedBranch).toContain('schedule-pending-change-week');
+    expect(acceptedBranch).toMatch(/BUILD_HREF/);
+  });
 });

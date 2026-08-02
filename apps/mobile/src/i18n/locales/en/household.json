@@ -1,0 +1,45 @@
+{
+  "children": {
+    "wizardTitle": "Who are the children?",
+    "wizardSubtitle": "Add each child so your nanny knows who they're looking after.",
+    "manageTitle": "Children",
+    "manageSubtitle": "Add, edit, or remove the children in your household.",
+    "continueButton": "Continue",
+    "doneButton": "Done",
+    "addButton": "Add a child",
+    "emptyTitle": "No children yet",
+    "emptyDescription": "Add your first child to get started.",
+    "ageUnknown": "Age unknown",
+    "ageYears_one": "{{count}} yr",
+    "ageYears_other": "{{count}} yrs",
+    "removeLabel": "Remove {{name}}",
+    "formAddTitle": "Add a child",
+    "formEditTitle": "Edit child",
+    "formNameLabel": "Name",
+    "formNamePlaceholder": "Their name",
+    "formAgeLabel": "Age",
+    "formAgePlaceholder": "Age in years",
+    "formSubmitAdd": "Add child",
+    "formSubmitSave": "Save"
+  },
+  "invite": {
+    "wizardTitle": "Invite your nanny",
+    "wizardSubtitle": "Share this code — they'll enter it when they sign up.",
+    "manageTitle": "Invite a nanny",
+    "manageSubtitle": "Generate a new invite code to add another nanny to your household.",
+    "doneButton": "Done",
+    "generateButton": "Generate invite code",
+    "shareButton": "Share code",
+    "shareMessage": "Join our household on Steadily Nanny — use invite code {{code}} when you sign in.",
+    "errorTitle": "Couldn't generate an invite code.",
+    "retryButton": "Try again"
+  },
+  "availability": {
+    "wizardTitle": "When are you available?",
+    "wizardSubtitle": "Select the days you can work, then set your usual hours for each.",
+    "manageTitle": "Availability",
+    "manageSubtitle": "Update the days and hours you're available to work.",
+    "finishButton": "Finish",
+    "doneButton": "Done"
+  }
+}

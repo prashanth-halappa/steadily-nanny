@@ -1,0 +1,45 @@
+{
+  "children": {
+    "wizardTitle": "¿Quiénes son los niños?",
+    "wizardSubtitle": "Añade cada niño para que tu niñera sepa a quién está cuidando.",
+    "manageTitle": "Niños",
+    "manageSubtitle": "Añade, edita o elimina los niños de tu hogar.",
+    "continueButton": "Continuar",
+    "doneButton": "Listo",
+    "addButton": "Añadir un niño",
+    "emptyTitle": "Aún no hay niños",
+    "emptyDescription": "Añade tu primer niño para empezar.",
+    "ageUnknown": "Edad desconocida",
+    "ageYears_one": "{{count}} año",
+    "ageYears_other": "{{count}} años",
+    "removeLabel": "Eliminar a {{name}}",
+    "formAddTitle": "Añadir un niño",
+    "formEditTitle": "Editar niño",
+    "formNameLabel": "Nombre",
+    "formNamePlaceholder": "Su nombre",
+    "formAgeLabel": "Edad",
+    "formAgePlaceholder": "Edad en años",
+    "formSubmitAdd": "Añadir niño",
+    "formSubmitSave": "Guardar"
+  },
+  "invite": {
+    "wizardTitle": "Invita a tu niñera",
+    "wizardSubtitle": "Comparte este código — lo introducirán al registrarse.",
+    "manageTitle": "Invitar a una niñera",
+    "manageSubtitle": "Genera un nuevo código de invitación para añadir otra niñera a tu hogar.",
+    "doneButton": "Listo",
+    "generateButton": "Generar código de invitación",
+    "shareButton": "Compartir código",
+    "shareMessage": "Únete a nuestro hogar en Steadily Nanny — usa el código de invitación {{code}} al iniciar sesión.",
+    "errorTitle": "No se pudo generar un código de invitación.",
+    "retryButton": "Intentar de nuevo"
+  },
+  "availability": {
+    "wizardTitle": "¿Cuándo estás disponible?",
+    "wizardSubtitle": "Selecciona los días que puedes trabajar y luego indica tu horario habitual para cada uno.",
+    "manageTitle": "Disponibilidad",
+    "manageSubtitle": "Actualiza los días y horas en que estás disponible para trabajar.",
+    "finishButton": "Finalizar",
+    "doneButton": "Listo"
+  }
+}

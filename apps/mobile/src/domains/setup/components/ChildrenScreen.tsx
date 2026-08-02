@@ -8,24 +8,13 @@
  * default name the parent can rename later from settings.
  */
 import { type Href, useRouter } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
-import { View } from 'react-native';
-import { Button } from '@/src/components/ui/button';
-import { EmptyState } from '@/src/components/ui/empty-state';
+import { useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
-import { Text } from '@/src/components/ui/text';
-import { birthDateFromAge } from '@/src/domains/setup/childAge';
-import {
-  ChildFormSheet,
-  type ChildFormValues,
-} from '@/src/domains/setup/components/ChildFormSheet';
-import { ChildRow } from '@/src/domains/setup/components/ChildRow';
+import { ChildrenManager } from '@/src/domains/setup/components/ChildrenManager';
 import { SetupScreenShell } from '@/src/domains/setup/components/SetupScreenShell';
 import { getSetupStepRoute, SETUP_STEPS } from '@/src/domains/setup/types';
-import { useCreateChild } from '@/src/hooks/mutations/useCreateChild';
 import { useCreateHousehold } from '@/src/hooks/mutations/useCreateHousehold';
-import { useDeleteChild } from '@/src/hooks/mutations/useDeleteChild';
-import { useUpdateChild } from '@/src/hooks/mutations/useUpdateChild';
 import { useChildren } from '@/src/hooks/queries/useChildren';
 import { useHouseholds } from '@/src/hooks/queries/useHouseholds';
 import { useSetupProgressStore } from '@/src/store/setupProgress';
@@ -75,42 +64,7 @@ export function ChildrenScreen() {
   ]);
 
   const children = useChildren(householdId);
-  const createChild = useCreateChild(householdId ?? '');
-  const updateChild = useUpdateChild(householdId ?? '');
-  const deleteChild = useDeleteChild(householdId ?? '');
-
-  const [formVisible, setFormVisible] = useState(false);
-  const [editingChildId, setEditingChildId] = useState<string | null>(null);
-
-  const editingChild =
-    editingChildId != null
-      ? (children.data?.find(c => c.id === editingChildId) ?? null)
-      : null;
-
-  const openAddForm = () => {
-    setEditingChildId(null);
-    setFormVisible(true);
-  };
-
-  const openEditForm = (childId: string) => {
-    setEditingChildId(childId);
-    setFormVisible(true);
-  };
-
-  const handleSubmit = (values: ChildFormValues) => {
-    const input = {
-      name: values.name,
-      birth_date: birthDateFromAge(Number(values.age)),
-    };
-    if (editingChildId) {
-      updateChild.mutate(
-        { childId: editingChildId, input },
-        { onSuccess: () => setFormVisible(false) }
-      );
-    } else {
-      createChild.mutate(input, { onSuccess: () => setFormVisible(false) });
-    }
-  };
+  const { t } = useTranslation('household');
 
   const onContinue = () => {
     setCurrentStep(SETUP_STEPS.INVITE);
@@ -129,65 +83,17 @@ export function ChildrenScreen() {
     <SetupScreenShell
       testID="children-screen"
       progress={1 / 3}
-      title="Who are the children?"
-      subtitle="Add each child so your nanny knows who they're looking after."
-      ctaLabel="Continue"
+      title={t('children.wizardTitle')}
+      subtitle={t('children.wizardSubtitle')}
+      ctaLabel={t('children.continueButton')}
       ctaDisabled={isLoadingHousehold || !hasAtLeastOneChild}
       onCta={onContinue}
     >
       {isLoadingHousehold ? (
         <LoadingIndicator />
       ) : (
-        <View className="gap-3">
-          {(children.data ?? []).map(child => (
-            <ChildRow
-              key={child.id}
-              testID={`children-row-${child.id}`}
-              name={child.name}
-              colour={child.colour}
-              birthDate={child.birth_date}
-              onPress={() => openEditForm(child.id)}
-              onRemove={() => deleteChild.mutate(child.id)}
-            />
-          ))}
-
-          {children.isSuccess && children.data.length === 0 ? (
-            <EmptyState
-              variant="inline"
-              title="No children yet"
-              description="Add your first child to get started."
-            />
-          ) : null}
-
-          <Button
-            testID="children-add-button"
-            variant="outline"
-            onPress={openAddForm}
-          >
-            <Text>Add a child</Text>
-          </Button>
-        </View>
+        <ChildrenManager householdId={householdId} />
       )}
-
-      <ChildFormSheet
-        visible={formVisible}
-        onDismiss={() => setFormVisible(false)}
-        onSubmit={handleSubmit}
-        isSubmitting={createChild.isPending || updateChild.isPending}
-        initialValues={
-          editingChild
-            ? {
-                name: editingChild.name,
-                age: String(
-                  editingChild.birth_date
-                    ? new Date().getFullYear() -
-                        new Date(editingChild.birth_date).getFullYear()
-                    : ''
-                ),
-              }
-            : undefined
-        }
-      />
     </SetupScreenShell>
   );
 }

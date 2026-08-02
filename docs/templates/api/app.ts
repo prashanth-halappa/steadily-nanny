@@ -24,11 +24,11 @@ import { errorHandler } from './middlewares/errorHandler';      // global error 
 import { morganMiddleware } from './middlewares/logger';        // HTTP access log → winston
 import { userRateLimiter } from './middlewares/rateLimit';      // per-user rate limit
 import { requestId } from './middlewares/requestId';            // X-Request-ID correlation
-
+import apiRoutes from './routes/index';             // bearer-token auth (the main API)
 // --- route groups ---
 import jobRoutes from './routes/jobRoutes';        // API-key auth
 import webhookRoutes from './routes/webhookRoutes'; // signed-payload auth
-import apiRoutes from './routes/index';             // bearer-token auth (the main API)
+
 // import Sentry from './config/sentry';            // optional error monitoring
 
 const app = express();
