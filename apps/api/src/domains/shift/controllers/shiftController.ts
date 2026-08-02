@@ -77,4 +77,25 @@ export class ShiftController {
       return next(error);
     }
   }
+
+  /**
+   * Household/date day thread: GET /households/:householdId/day-thread?local_date=
+   * Includes nullable-shift_id events; does not widen the shift-scoped events route.
+   */
+  static async listDayThread(req: Request, res: Response, next: NextFunction) {
+    try {
+      const householdId = req.params.householdId as string;
+      const { local_date } = req.validatedQuery as unknown as {
+        local_date: string;
+      };
+      const shift_events = await shiftQueryService.listDayThread(
+        getAuthUserId(req),
+        householdId,
+        local_date
+      );
+      return sendSuccessResponse(res, 'Day thread fetched', { shift_events });
+    } catch (error) {
+      return next(error);
+    }
+  }
 }

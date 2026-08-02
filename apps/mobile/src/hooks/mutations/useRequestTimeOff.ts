@@ -23,6 +23,8 @@ export function useRequestTimeOff() {
     mutationFn: input => timeOffApi.create(input),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.timeOff.all });
+      // Busy view unions time_off rows — keep clash checks fresh (D30).
+      queryClient.invalidateQueries({ queryKey: queryKeys.availability.all });
     },
     onError: error => {
       showErrorToast(getLocalizedErrorMessage(error, t));

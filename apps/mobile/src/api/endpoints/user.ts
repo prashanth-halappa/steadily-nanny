@@ -22,18 +22,30 @@ export const userEndpoints = {
   getProfile: '/v1/users/me',
   // API-CONTRACT: POST create-or-update (upsert) of the caller's profile.
   upsertProfile: '/v1/users/profile',
-  // API-CONTRACT: PATCH partial-updates the caller's profile. The full
-  // server schema (`apps/api/src/schemas/user.schema.ts`'s
-  // `UpdateProfileSchema`) also accepts `name`/`city`/`country`/`timezone`/
-  // `week_starts_on` — only `preferred_locale` is wired here (D26). The
-  // per-user `timezone` field is a SEPARATE, not-yet-landed feature (D29);
-  // do not wire it through this method until that contract lands.
+  // API-CONTRACT: PATCH partial-updates the caller's profile.
   updateProfile: '/v1/users/me',
   // API-CONTRACT: DELETE removes the caller's account and all associated data.
   deleteAccount: '/v1/users/me',
 } as const;
 
 // --- Zod schemas ------------------------------------------------------------
+
+/** Same IANA gate as `apps/api/src/schemas/user.schema.ts` — reject offsets. */
+function isValidIanaTimeZone(value: string): boolean {
+  if (value.startsWith('+') || value.startsWith('-')) {
+    return false;
+  }
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: value });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+const TIMEZONE_FIELD = z.string().min(1).max(100).refine(isValidIanaTimeZone, {
+  message: 'timezone must be a valid IANA time zone identifier',
+});
 
 // API-CONTRACT: mirrors the `UserProfile` domain model. `user_id` is always
 // present; the display fields may be null until the profile is completed.
@@ -43,10 +55,16 @@ const UserProfileSchema = z.object({
   city: z.string().nullable(),
   country: z.string().nullable(),
   preferred_locale: z.string().nullable().optional(),
+  timezone: z.string().nullable().optional(),
+  week_starts_on: z.number().int().min(0).max(6).optional(),
   created_at: z.string().optional(),
   updated_at: z.string().optional(),
   additional_data: z.record(z.string(), z.unknown()).nullable().optional(),
 });
+
+// API-CONTRACT: GET /v1/users/me and PATCH return `{ user: UserProfile }`
+// inside the success envelope's `data`.
+const UserEnvelopeSchema = z.object({ user: UserProfileSchema });
 
 // API-CONTRACT: POST /v1/users/profile returns the `UserProfileResponse` DTO
 // (`{ message, user }`) inside the success envelope's `data`.
@@ -68,23 +86,26 @@ const UserProfileRequestSchema = z.object({
   city: z.string().min(1, 'City is required'),
   country: z.string().min(1, 'Country is required'),
   additional_data: z.record(z.string(), z.unknown()).optional(),
+  timezone: TIMEZONE_FIELD.optional(),
 });
 
-// API-CONTRACT: PATCH /v1/users/me returns `{ user: UserProfile }` — note
-// this is a DIFFERENT envelope shape than `upsertProfile`'s `{ message, user }`.
-const UpdateProfileResponseSchema = z.object({ user: UserProfileSchema });
-
-// Outgoing PATCH payload, scoped to preferred_locale only (see
-// `userEndpoints.updateProfile`'s comment for why the rest of the server
-// schema isn't exposed here yet). Mirrors the server's
-// `preferred_locale: z.string().max(16).optional()` but required+non-empty
-// from the client, since every call site always sends a real locale code.
 const UpdatePreferredLocaleSchema = z.object({
   preferred_locale: z.string().min(1).max(16),
 });
 export type UpdatePreferredLocaleInput = z.infer<
   typeof UpdatePreferredLocaleSchema
 >;
+
+const UpdateTimeSettingsSchema = z
+  .object({
+    timezone: TIMEZONE_FIELD.optional(),
+    week_starts_on: z.number().int().min(0).max(6).optional(),
+  })
+  .refine(
+    data => data.timezone !== undefined || data.week_starts_on !== undefined,
+    { message: 'At least one of timezone or week_starts_on is required' }
+  );
+export type UpdateTimeSettingsInput = z.infer<typeof UpdateTimeSettingsSchema>;
 
 // --- API --------------------------------------------------------------------
 export const userApi = {
@@ -93,10 +114,10 @@ export const userApi = {
    */
   getProfile: async (): Promise<UserProfile> => {
     const response = await apiClient.get(userEndpoints.getProfile);
-    // API-CONTRACT: unwrap the success envelope — payload lives at data.data.
-    const parsed = UserProfileSchema.safeParse(response.data.data);
+    // API-CONTRACT: GET /users/me returns `{ user }` inside data.data.
+    const parsed = UserEnvelopeSchema.safeParse(response.data.data);
     if (!parsed.success) throw parsed.error;
-    return parsed.data;
+    return parsed.data.user;
   },
 
   /**
@@ -118,8 +139,7 @@ export const userApi = {
   },
 
   /**
-   * Update the authenticated user's preferred display language. Scoped
-   * deliberately to `preferred_locale` only — see `userEndpoints.updateProfile`.
+   * Update the authenticated user's preferred display language.
    */
   updatePreferredLocale: async (
     req: UpdatePreferredLocaleInput
@@ -131,9 +151,26 @@ export const userApi = {
       userEndpoints.updateProfile,
       validated.data
     );
-    // API-CONTRACT: data.data is `{ user: UserProfile }` — different shape
-    // than upsertProfile's `{ message, user }`.
-    const parsed = UpdateProfileResponseSchema.safeParse(response.data.data);
+    const parsed = UserEnvelopeSchema.safeParse(response.data.data);
+    if (!parsed.success) throw parsed.error;
+    return parsed.data.user;
+  },
+
+  /**
+   * Update the caller's display timezone and/or week-start preference (D29).
+   * Presentation lens only — does not change Monday business-week boundaries.
+   */
+  updateTimeSettings: async (
+    req: UpdateTimeSettingsInput
+  ): Promise<UserProfile> => {
+    const validated = UpdateTimeSettingsSchema.safeParse(req);
+    if (!validated.success) throw validated.error;
+
+    const response = await apiClient.patch(
+      userEndpoints.updateProfile,
+      validated.data
+    );
+    const parsed = UserEnvelopeSchema.safeParse(response.data.data);
     if (!parsed.success) throw parsed.error;
     return parsed.data.user;
   },

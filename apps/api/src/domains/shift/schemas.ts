@@ -58,6 +58,12 @@ export const HouseholdShiftIdParamSchema = z.object({
 });
 export type HouseholdShiftIdParam = z.infer<typeof HouseholdShiftIdParamSchema>;
 
+/** Query for GET /households/:householdId/day-thread?local_date=YYYY-MM-DD. */
+export const DayThreadQuerySchema = z.object({
+  local_date: z.iso.date(),
+});
+export type DayThreadQuery = z.infer<typeof DayThreadQuerySchema>;
+
 /** Query validation for GET /households/:householdId/shifts?from=&to= — the primary calendar feed. */
 export const ShiftRangeQuerySchema = z
   .object({

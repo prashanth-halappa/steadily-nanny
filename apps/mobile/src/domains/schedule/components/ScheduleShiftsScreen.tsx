@@ -22,8 +22,9 @@
 
 import { FlashList } from '@shopify/flash-list';
 import type { Shift } from '@steadily-nanny/shared-types/schemas/shift.schema';
+import { type Href, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
-import { View } from 'react-native';
+import { Pressable, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { EmptyState } from '@/src/components/ui/empty-state';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
@@ -37,6 +38,8 @@ import {
   isShiftsRouteUnavailable,
   useShiftsRange,
 } from '@/src/hooks/queries/useShiftsRange';
+import { useUserProfile } from '@/src/hooks/queries/useUserProfile';
+import { formatInstantInZone } from '@/src/lib/displayTime';
 
 type ShiftStatusVariant = NonNullable<StatusPillProps['variant']>;
 
@@ -114,7 +117,10 @@ function currentWeekRange(now: Date = new Date()): {
   return { from: monday.toISOString(), to: nextMonday.toISOString() };
 }
 
-function formatShiftTime(isoInstant: string): string {
+function formatShiftTime(isoInstant: string, timeZone?: string | null): string {
+  if (timeZone) {
+    return formatInstantInZone(isoInstant, timeZone);
+  }
   const date = new Date(isoInstant);
   if (Number.isNaN(date.getTime())) return '';
   return date.toLocaleTimeString(undefined, {
@@ -126,6 +132,7 @@ function formatShiftTime(isoInstant: string): string {
 export function ScheduleShiftsScreen() {
   const { t } = useTranslation('schedule');
   const onboarding = useIsOnboarded();
+  const profile = useUserProfile();
   const { from, to } = currentWeekRange();
   const shiftsQuery = useShiftsRange(onboarding.householdId, from, to);
 
@@ -195,7 +202,10 @@ export function ScheduleShiftsScreen() {
                     <H2>{item.label}</H2>
                   </View>
                 ) : (
-                  <ShiftRow shift={item.shift} />
+                  <ShiftRow
+                    shift={item.shift}
+                    displayTimeZone={profile.data?.timezone}
+                  />
                 )
               }
             />
@@ -215,18 +225,30 @@ const STATUS_TO_LABEL_KEY: Record<Shift['status'], string> = {
   completed: 'shifts.statusCompleted',
 };
 
-function ShiftRow({ shift }: { shift: Shift }) {
+function ShiftRow({
+  shift,
+  displayTimeZone,
+}: {
+  shift: Shift;
+  displayTimeZone?: string | null;
+}) {
   const { t } = useTranslation('schedule');
+  const router = useRouter();
   const variant = STATUS_TO_VARIANT[shift.status];
 
   return (
-    <View
+    <Pressable
       testID={`schedule-shift-${shift.id}`}
+      accessibilityRole="button"
+      onPress={() =>
+        router.push(`/(private)/schedule/shifts/${shift.id}` as Href)
+      }
       className="mx-6 mb-2 flex-row items-center justify-between rounded-lg bg-muted p-3"
     >
       <View className="gap-1">
         <Body>
-          {formatShiftTime(shift.starts_at)} – {formatShiftTime(shift.ends_at)}
+          {formatShiftTime(shift.starts_at, displayTimeZone)} –{' '}
+          {formatShiftTime(shift.ends_at, displayTimeZone)}
         </Body>
       </View>
       <View className="flex-row items-center gap-2">
@@ -243,6 +265,6 @@ function ShiftRow({ shift }: { shift: Shift }) {
           label={t(STATUS_TO_LABEL_KEY[shift.status])}
         />
       </View>
-    </View>
+    </Pressable>
   );
 }

@@ -15,6 +15,7 @@ import {
   schedulePatternRoutes,
 } from '../domains/schedule';
 import { householdShiftRoutes, shiftRoutes } from '../domains/shift';
+import dayThreadRoutes from '../domains/shift/routes/dayThreadRoutes';
 import {
   householdTimeEntryRoutes,
   householdTimesheetRoutes,
@@ -49,6 +50,8 @@ router.use('/schedule-patterns', schedulePatternRoutes);
 // Materialised shifts. Same nested-then-flat split as schedule patterns: the
 // household-nested router also serves `/:shiftId/events`, the day thread.
 router.use('/households/:householdId/shifts', householdShiftRoutes);
+// Household/date day thread (includes nullable-shift_id events) — D24.
+router.use('/households/:householdId/day-thread', dayThreadRoutes);
 router.use('/shifts', shiftRoutes);
 
 // Time tracking. Clock in/out is carer-scoped and flat; the week's entries and

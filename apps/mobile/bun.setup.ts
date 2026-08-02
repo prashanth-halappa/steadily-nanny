@@ -473,6 +473,7 @@ mock.module('react-i18next', () => ({
 
 mock.module('expo-localization', () => ({
   getLocales: mock(() => [{ languageCode: 'en', regionCode: 'US' }]),
+  getCalendars: mock(() => [{ timeZone: 'America/Los_Angeles' }]),
   locale: 'en-US',
   locales: ['en-US'],
   timezone: 'America/Los_Angeles',

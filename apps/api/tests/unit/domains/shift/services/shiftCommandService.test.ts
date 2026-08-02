@@ -1,3 +1,7 @@
+/**
+ * ShiftCommandService.update — parent edit goes through applyParentEdit RPC
+ * so the shift row and shift_updated event are written atomically (D23/D24).
+ */
 import { describe, expect, it, mock } from 'bun:test';
 import { NotAHouseholdParentError } from '../../../../../src/domains/household';
 import type { ShiftWithChildren } from '../../../../../src/domains/shift/repositories/shiftRepository';
@@ -33,9 +37,13 @@ const shift: ShiftWithChildren = {
 
 function makeShiftRepo(overrides: Record<string, unknown> = {}): any {
   return {
-    update: mock(async (_id: string, patch: Record<string, unknown>) => ({
+    applyParentEdit: mock(async (args: Record<string, unknown>) => ({
       ...shift,
-      ...patch,
+      starts_at: args.setStartsAt ? args.startsAt : shift.starts_at,
+      ends_at: args.setEndsAt ? args.endsAt : shift.ends_at,
+      note: args.setNote ? args.note : shift.note,
+      origin: args.origin,
+      sequence: args.sequence,
     })),
     ...overrides,
   };
@@ -61,7 +69,7 @@ function makeQueries(overrides: Record<string, unknown> = {}): any {
 }
 
 describe('ShiftCommandService.update', () => {
-  it('updates the time, sets origin to parent_proposed, and bumps sequence', async () => {
+  it('applies the edit via RPC with origin parent_proposed, bumped sequence, and before/after payload', async () => {
     const shiftRepo = makeShiftRepo();
     const svc = new ShiftCommandService(
       shiftRepo,
@@ -74,12 +82,27 @@ describe('ShiftCommandService.update', () => {
       ends_at: '2026-08-03T18:00:00.000Z',
     });
 
-    expect(shiftRepo.update).toHaveBeenCalledWith(
-      's1',
+    expect(shiftRepo.applyParentEdit).toHaveBeenCalledWith(
       expect.objectContaining({
-        starts_at: '2026-08-03T09:00:00.000Z',
-        ends_at: '2026-08-03T18:00:00.000Z',
+        shiftId: 's1',
+        actorId: 'parent-1',
+        startsAt: '2026-08-03T09:00:00.000Z',
+        endsAt: '2026-08-03T18:00:00.000Z',
+        setStartsAt: true,
+        setEndsAt: true,
+        setNote: false,
         origin: 'parent_proposed',
+        sequence: 1,
+        before: expect.objectContaining({
+          starts_at: shift.starts_at,
+          ends_at: shift.ends_at,
+        }),
+        after: expect.objectContaining({
+          starts_at: '2026-08-03T09:00:00.000Z',
+          ends_at: '2026-08-03T18:00:00.000Z',
+          origin: 'parent_proposed',
+          sequence: 1,
+        }),
       })
     );
   });
@@ -94,16 +117,15 @@ describe('ShiftCommandService.update', () => {
 
     await svc.update('parent-1', 's1', { note: 'Running 15 min late' });
 
-    expect(shiftRepo.update).toHaveBeenCalledWith(
-      's1',
+    expect(shiftRepo.applyParentEdit).toHaveBeenCalledWith(
       expect.objectContaining({
         note: 'Running 15 min late',
+        setNote: true,
+        setStartsAt: false,
+        setEndsAt: false,
         origin: 'parent_proposed',
       })
     );
-    const patch = shiftRepo.update.mock.calls[0]?.[1];
-    expect(patch.starts_at).toBeUndefined();
-    expect(patch.ends_at).toBeUndefined();
   });
 
   it('validates a one-sided starts_at edit against the EXISTING ends_at', async () => {
@@ -114,12 +136,10 @@ describe('ShiftCommandService.update', () => {
       makeQueries()
     );
 
-    // shift.ends_at is 2026-08-03T17:00:00.000Z — moving starts_at past it
-    // must fail even though only one field was sent.
     await expect(
       svc.update('parent-1', 's1', { starts_at: '2026-08-03T18:00:00.000Z' })
     ).rejects.toBeInstanceOf(ValidationError);
-    expect(shiftRepo.update).not.toHaveBeenCalled();
+    expect(shiftRepo.applyParentEdit).not.toHaveBeenCalled();
   });
 
   it('rejects a nanny (non-parent) trying to edit', async () => {
@@ -140,6 +160,6 @@ describe('ShiftCommandService.update', () => {
     await expect(
       svc.update('carer-1', 's1', { note: 'Can I change this?' })
     ).rejects.toBeInstanceOf(NotAHouseholdParentError);
-    expect(shiftRepo.update).not.toHaveBeenCalled();
+    expect(shiftRepo.applyParentEdit).not.toHaveBeenCalled();
   });
 });

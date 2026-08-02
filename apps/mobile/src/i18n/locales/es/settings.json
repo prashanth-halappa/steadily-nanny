@@ -11,5 +11,16 @@
   "deleteAccountConfirmTitle": "¿Eliminar tu cuenta?",
   "deleteAccountConfirmBody": "Esto elimina permanentemente tu cuenta y todos los datos asociados. Esta acción no se puede deshacer.",
   "deleteAccountCancel": "Cancelar",
-  "deleteAccountConfirm": "Eliminar cuenta"
+  "deleteAccountConfirm": "Eliminar cuenta",
+  "time": {
+    "menuLabel": "Hora y calendario",
+    "title": "Hora y calendario",
+    "subtitle": "Cómo se muestran las horas y los selectores de días. Las horas y hojas de tiempo del hogar siguen empezando el lunes.",
+    "timezoneLabel": "Zona horaria de visualización",
+    "timezoneHint": "Se usa al mostrar horas absolutas. Los turnos se guardan en UTC.",
+    "weekStartsLabel": "La semana empieza el",
+    "weekStartsHint": "Solo reordena los selectores de días. Los horarios compartidos y Horas siguen empezando el lunes.",
+    "saveButton": "Guardar",
+    "savedToast": "Ajustes de hora guardados"
+  }
 }

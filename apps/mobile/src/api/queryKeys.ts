@@ -98,6 +98,10 @@ export const queryKeys = {
       [...queryKeys.shift.all, 'range', householdId, from, to] as const,
     detail: (shiftId?: string) =>
       [...queryKeys.shift.all, 'detail', shiftId] as const,
+    events: (householdId?: string, shiftId?: string) =>
+      [...queryKeys.shift.all, 'events', householdId, shiftId] as const,
+    dayThread: (householdId?: string, localDate?: string) =>
+      [...queryKeys.shift.all, 'dayThread', householdId, localDate] as const,
   },
 
   // Clock in/out and the weekly hours roll-up.

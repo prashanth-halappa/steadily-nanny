@@ -440,16 +440,20 @@ complete CRUD API with **no client whatsoever** — there is no
 
 ## D23 — A single shift cannot be edited
 
-**Severity: high.** `PATCH /shifts/:shiftId` (`starts_at`/`ends_at`/`note`) has
-no caller, and no shift-detail screen exists. A one-off correction — a nanny
-late that one day, a materialised time that's simply wrong — requires editing
-the entire recurring pattern, or nothing.
+**Status:** FIXED (unverified on device) · **Severity:** high.
+
+`PATCH /shifts/:shiftId` is wired through mobile shift detail (`/schedule/shifts/[shiftId]`).
+Parent edit is atomic via `public.apply_parent_shift_edit` (migration 019) which
+also writes a `shift_updated` day-thread event. Nanny view is read-only.
 
 ## D24 — The day thread is unreachable
 
-**Severity: medium.** `GET /households/:householdId/shifts/:shiftId/events` — the
-append-only audit trail described as the thing households actually argue about —
-has no caller, because D23 means there's no shift-detail screen to host it.
+**Status:** FIXED (unverified on device) · **Severity:** medium.
+
+Shift-scoped `GET .../shifts/:shiftId/events` is hosted on the detail screen.
+Household/date day thread is a separate route:
+`GET /households/:householdId/day-thread?local_date=` (includes nullable
+`shift_id` events without widening the shift-scoped endpoint).
 
 ## D25 — A parent builds a schedule blind to availability
 
@@ -535,8 +539,14 @@ diagnosed as "the API is flaky" rather than as a known client bug.
 
 ## D29 — Per-user timezone was required, half-built, and silently dropped
 
-**Status:** API FIXED, UI in progress · **Severity:** high — an explicit
+**Status:** FIXED (unverified on device) · **Severity:** high — an explicit
 requirement, unbuilt
+
+Mobile now unwraps `GET /users/me` as `{ user }`, retains `timezone` /
+`week_starts_on`, exposes Settings → Time & calendar, seeds timezone from
+`expo-localization` when null, and applies `week_starts_on` as a
+**presentation lens** only (WeekStrip / list order). Hours and timesheet week
+boundaries remain Monday business weeks.
 
 Absorbed into `PATCH /users/me` rather than a new endpoint, and the orphaned
 `UpdateUserTimeSettingsSchema` was retired rather than left as a second
@@ -553,55 +563,16 @@ raw offset strings like `"+01:00"` — ECMA-402 permits those as a `timeZone`
 value, and accepting one would defeat the reason this app stores zones rather
 than offsets everywhere else: DST.
 
-`week_starts_on` is exposed but **genuinely inert** — every week computation
-(`weekStart.ts`, `recurrenceExpander.ts`, `dateUtils.ts`) hardcodes Monday-first
-and reads the column nowhere. Recorded rather than quietly shipped behind a
-control that appears to change something and doesn't.
-
-`user_profiles.timezone` and `week_starts_on` exist (migration 011). The write
-schema `UpdateUserTimeSettingsSchema` exists. **Neither is wired up in either
-direction:** `GET /users/me` explicitly `.select(...)`s around both columns, and
-grepping the entire API for the update schema, for `week_starts_on`, or for any
-route touching those columns returns zero hits.
-
-This is not the `child_commitments` shape. That was a flow nobody claimed to have
-built. This was an **explicit, locked product requirement** from the start of the
-project — different households sit in different time zones, each *user* sets
-their own, defaulting from the device, with the app adjusting automatically
-because it holds absolute UTC truth. It was migrated, schema'd, and then dropped
-without anything recording that it hadn't been finished.
-
-Worth noting how it surfaced: not from a failing test or a user-visible symptom,
-but from an audit asking "what does the server support that nothing calls?" A
-requirement can be silently unbuilt and leave no trace in any test suite, because
-there is nothing to fail.
-
 ---
 
 ## D30 — Time off can silently overlap a confirmed shift
 
-**Status:** OPEN · **Severity:** medium — coordination hole
+**Status:** FIXED (unverified on device) · **Severity:** medium — coordination hole
 
-A nanny can book time off directly over a shift she is confirmed to work, and
-**nothing tells her, the parent, or anyone else.** The parent carries on
-expecting her; she believes the day is hers.
-
-No conflict check exists anywhere: the API performs none on write, and
-`v_busy_blocks` is a read-only display surface, never enforced. The time-off UI
-deliberately says nothing about conflicts rather than inventing a warning the
-backend cannot honour — the right call, since a warning the server doesn't
-actually enforce would be worse than none.
-
-The data to fix it already exists. `GET /availability/:carerId/busy` is live and
-auth-gated, and `queryKeys.availability.busy(...)` is already defined. What's
-missing is purely a mobile client — no endpoint wrapper, no hook, zero
-references in `apps/mobile`. So this is the same "built, tested, unreachable"
-shape as D9/D15/D18/D22, one layer up: the capability exists on both the server
-and in the key factory, and nothing connects them.
-
-Deliberately not fixed during this run — it is a scoped follow-up rather than a
-one-line addition, and it was found while shipping D22 rather than being part
-of it.
+Mobile now calls `GET /availability/:carerId/busy` before submitting time off.
+Overlaps with `other_commitment` / `personal` require warn-and-confirm;
+busy-query failure requires explicit acknowledgement (never silent submit).
+Conflicts never hard-block.
 
 ---
 

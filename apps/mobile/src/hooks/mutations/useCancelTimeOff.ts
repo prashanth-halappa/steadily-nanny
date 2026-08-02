@@ -20,6 +20,8 @@ export function useCancelTimeOff() {
     mutationFn: timeOffId => timeOffApi.cancel(timeOffId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.timeOff.all });
+      // Busy view unions time_off rows — keep clash checks fresh (D30).
+      queryClient.invalidateQueries({ queryKey: queryKeys.availability.all });
     },
     onError: error => {
       showErrorToast(getLocalizedErrorMessage(error, t));

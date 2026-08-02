@@ -10,6 +10,10 @@
  * `beforeAll`, before the dynamic import, per docs/09-TESTING.md's
  * service-test boilerplate.
  *
+ * D30: also mocks `useBusyBlocks` (refetch on submit) and
+ * `@rn-primitives/alert-dialog` so conflict / check-failed confirmations
+ * can be asserted through the real form.
+ *
  * `TimeOffDateRangePicker` is mocked too — not to dodge the acceptance bar,
  * but because `@react-native-community/datetimepicker` cannot be parsed
  * under bun:test at all (see that component's header comment); the mock
@@ -19,6 +23,7 @@
  */
 import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import { useAuthStore } from '@/src/store/auth';
 import { toAllDayRange } from '../utils/timeOffDate';
 
 mock.module('@/src/components/ui/loading-indicator', () => {
@@ -31,9 +36,6 @@ mock.module('@/src/components/ui/loading-indicator', () => {
   };
 });
 
-// See this file's header comment — the native datetimepicker package can't
-// be parsed under bun:test, so the whole leaf component is mocked out to a
-// single pressable that fires a known, non-default date range.
 mock.module('@/src/domains/timeOff/components/TimeOffDateRangePicker', () => {
   const React = require('react');
   return {
@@ -48,6 +50,137 @@ mock.module('@/src/domains/timeOff/components/TimeOffDateRangePicker', () => {
         testID: `${testID ?? 'time-off-date-range'}-set-range`,
         onPress: () => onChange('2026-08-10', '2026-08-12'),
       }),
+  };
+});
+
+// Same stand-in as ManageHouseholdScreen.test — @rn-primitives/alert-dialog
+// .mjs distribution isn't pre-compiled for bun:test.
+mock.module('@rn-primitives/alert-dialog', () => {
+  const React = require('react');
+  const Ctx = React.createContext({
+    open: false,
+    setOpen: (_open: boolean) => {},
+  });
+
+  return {
+    Root: ({
+      children,
+      open,
+      onOpenChange,
+    }: {
+      children: React.ReactNode;
+      open?: boolean;
+      onOpenChange?: (open: boolean) => void;
+    }) => {
+      const setOpen = (next: boolean) => onOpenChange?.(next);
+      return React.createElement(
+        Ctx.Provider,
+        { value: { open: open ?? false, setOpen } },
+        children
+      );
+    },
+    Trigger: ({
+      children,
+      onPress,
+      disabled,
+      ...props
+    }: {
+      children: React.ReactNode;
+      onPress?: (e: unknown) => void;
+      disabled?: boolean;
+      [key: string]: unknown;
+    }) => {
+      const { setOpen } = React.useContext(Ctx);
+      return React.createElement(
+        'Pressable',
+        {
+          ...props,
+          disabled,
+          onPress: (e: unknown) => {
+            onPress?.(e);
+            if (!disabled) setOpen(true);
+          },
+        },
+        children
+      );
+    },
+    Portal: ({ children }: { children: React.ReactNode }) => children,
+    Overlay: ({
+      children,
+      ...props
+    }: {
+      children?: React.ReactNode;
+      [key: string]: unknown;
+    }) => {
+      const { open } = React.useContext(Ctx);
+      return open ? React.createElement('View', props, children) : null;
+    },
+    Content: ({
+      children,
+      ...props
+    }: {
+      children?: React.ReactNode;
+      [key: string]: unknown;
+    }) => React.createElement('View', props, children),
+    Title: ({
+      children,
+      ...props
+    }: {
+      children?: React.ReactNode;
+      [key: string]: unknown;
+    }) => React.createElement('Text', props, children),
+    Description: ({
+      children,
+      ...props
+    }: {
+      children?: React.ReactNode;
+      [key: string]: unknown;
+    }) => React.createElement('Text', props, children),
+    Cancel: ({
+      children,
+      onPress,
+      ...props
+    }: {
+      children?: React.ReactNode;
+      onPress?: (e: unknown) => void;
+      [key: string]: unknown;
+    }) => {
+      const { setOpen } = React.useContext(Ctx);
+      return React.createElement(
+        'Pressable',
+        {
+          ...props,
+          onPress: (e: unknown) => {
+            onPress?.(e);
+            setOpen(false);
+          },
+        },
+        children
+      );
+    },
+    Action: ({
+      children,
+      onPress,
+      ...props
+    }: {
+      children?: React.ReactNode;
+      onPress?: (e: unknown) => void;
+      [key: string]: unknown;
+    }) => {
+      const { setOpen } = React.useContext(Ctx);
+      return React.createElement(
+        'Pressable',
+        {
+          ...props,
+          onPress: (e: unknown) => {
+            onPress?.(e);
+            setOpen(false);
+          },
+        },
+        children
+      );
+    },
+    useRootContext: () => React.useContext(Ctx),
   };
 });
 
@@ -75,13 +208,18 @@ let mockUseIsOnboarded: ReturnType<typeof mock>;
 let mockUseTimeOff: ReturnType<typeof mock>;
 let mockUseRequestTimeOff: ReturnType<typeof mock>;
 let mockUseCancelTimeOff: ReturnType<typeof mock>;
+let mockUseBusyBlocks: ReturnType<typeof mock>;
 let requestMutateAsync: ReturnType<typeof mock>;
 let cancelMutateAsync: ReturnType<typeof mock>;
+let busyRefetch: ReturnType<typeof mock>;
 
 beforeAll(async () => {
   requestMutateAsync = mock(() => Promise.resolve(makeTimeOff()));
   cancelMutateAsync = mock(() =>
     Promise.resolve(makeTimeOff({ status: 'cancelled' }))
+  );
+  busyRefetch = mock(() =>
+    Promise.resolve({ data: [], error: null, isError: false })
   );
 
   mockUseIsOnboarded = mock(() => ({
@@ -98,6 +236,11 @@ beforeAll(async () => {
     mutateAsync: cancelMutateAsync,
     isPending: false,
   }));
+  mockUseBusyBlocks = mock(() => ({
+    data: [],
+    refetch: busyRefetch,
+    isLoading: false,
+  }));
 
   mock.module('@/src/hooks/queries/useIsOnboarded', () => ({
     useIsOnboarded: mockUseIsOnboarded,
@@ -111,18 +254,29 @@ beforeAll(async () => {
   mock.module('@/src/hooks/mutations/useCancelTimeOff', () => ({
     useCancelTimeOff: mockUseCancelTimeOff,
   }));
+  mock.module('@/src/hooks/queries/useBusyBlocks', () => ({
+    useBusyBlocks: mockUseBusyBlocks,
+  }));
 
   const mod = await import('../components/TimeOffScreen');
   TimeOffScreen = mod.TimeOffScreen;
 });
 
 beforeEach(() => {
+  useAuthStore.setState({
+    session: { user: { id: NANNY_ID } } as unknown as never,
+    isInitialized: true,
+  } as never);
   mockUseIsOnboarded.mockImplementation(() => ({
     status: 'onboarded',
     role: 'nanny',
     householdId: '5d4b0b70-edd9-4218-b7df-a28d234f7e06',
   }));
   mockUseTimeOff.mockImplementation(() => ({ data: [], isLoading: false }));
+  busyRefetch.mockReset();
+  busyRefetch.mockImplementation(() =>
+    Promise.resolve({ data: [], error: null, isError: false })
+  );
   requestMutateAsync.mockClear();
   cancelMutateAsync.mockClear();
 });
@@ -150,11 +304,11 @@ describe('TimeOffScreen — nanny', () => {
     };
     expect(payload.all_day).toBe(true);
     expect(payload.status).toBeUndefined();
-    // Same-day request: ends_at must be exactly one day after starts_at.
     const spanMs =
       new Date(payload.ends_at).getTime() -
       new Date(payload.starts_at).getTime();
     expect(spanMs).toBe(24 * 60 * 60 * 1000);
+    expect(busyRefetch).toHaveBeenCalled();
   });
 
   it('picking a real (non-default) date range and submitting sends THAT exact range to the mutation — not just a label change', async () => {
@@ -188,6 +342,95 @@ describe('TimeOffScreen — nanny', () => {
       message?: string;
     };
     expect(payload.message).toBe('Visiting family');
+  });
+
+  it('D30: overlapping other_commitment requires confirm before mutate', async () => {
+    const expected = toAllDayRange('2026-08-10', '2026-08-12');
+    busyRefetch.mockImplementation(() =>
+      Promise.resolve({
+        data: [
+          {
+            starts_at: '2026-08-11T09:00:00.000Z',
+            ends_at: '2026-08-11T17:00:00.000Z',
+            kind: 'other_commitment',
+          },
+        ],
+        error: null,
+        isError: false,
+      })
+    );
+
+    const { getByTestId, queryByTestId } = render(<TimeOffScreen />);
+
+    fireEvent.press(getByTestId('time-off-request-dates-set-range'));
+    fireEvent.press(getByTestId('time-off-request-submit'));
+
+    await waitFor(() =>
+      expect(getByTestId('time-off-conflict-confirm')).toBeTruthy()
+    );
+    expect(requestMutateAsync).not.toHaveBeenCalled();
+
+    fireEvent.press(getByTestId('time-off-conflict-confirm'));
+
+    await waitFor(() => expect(requestMutateAsync).toHaveBeenCalledTimes(1));
+    expect(requestMutateAsync).toHaveBeenCalledWith(
+      expect.objectContaining({
+        starts_at: expected.starts_at,
+        ends_at: expected.ends_at,
+      })
+    );
+    expect(queryByTestId('time-off-conflict-confirm')).toBeNull();
+  });
+
+  it('D30: busy check failure requires acknowledgement before mutate — never silent submit', async () => {
+    busyRefetch.mockImplementation(() =>
+      Promise.resolve({
+        data: undefined,
+        error: new Error('network'),
+        isError: true,
+      })
+    );
+
+    const { getByTestId } = render(<TimeOffScreen />);
+
+    fireEvent.press(getByTestId('time-off-request-submit'));
+
+    await waitFor(() =>
+      expect(getByTestId('time-off-check-failed-confirm')).toBeTruthy()
+    );
+    expect(requestMutateAsync).not.toHaveBeenCalled();
+
+    fireEvent.press(getByTestId('time-off-check-failed-confirm'));
+
+    await waitFor(() => expect(requestMutateAsync).toHaveBeenCalledTimes(1));
+  });
+
+  it('D30: cancelling the conflict dialog does not call the mutation', async () => {
+    busyRefetch.mockImplementation(() =>
+      Promise.resolve({
+        data: [
+          {
+            starts_at: '2026-08-11T09:00:00.000Z',
+            ends_at: '2026-08-11T17:00:00.000Z',
+            kind: 'other_commitment',
+          },
+        ],
+        error: null,
+        isError: false,
+      })
+    );
+
+    const { getByTestId } = render(<TimeOffScreen />);
+
+    fireEvent.press(getByTestId('time-off-request-dates-set-range'));
+    fireEvent.press(getByTestId('time-off-request-submit'));
+
+    await waitFor(() =>
+      expect(getByTestId('time-off-conflict-cancel')).toBeTruthy()
+    );
+    fireEvent.press(getByTestId('time-off-conflict-cancel'));
+
+    expect(requestMutateAsync).not.toHaveBeenCalled();
   });
 
   it('renders the empty state when there is no time off on record', () => {

@@ -82,6 +82,25 @@
     "statusCompleted": "Completed",
     "shortNotice": "Short notice"
   },
+  "detail": {
+    "title": "Shift",
+    "missingTitle": "Shift not found",
+    "back": "Back",
+    "startLabel": "Start (HH:MM)",
+    "endLabel": "End (HH:MM)",
+    "noteLabel": "Note",
+    "save": "Save changes",
+    "savedToast": "Shift updated",
+    "threadTitle": "Day thread",
+    "threadEmpty": "No events yet for this shift.",
+    "eventTypeUnknown": "Update",
+    "eventTypeFallback": "Event: {{type}}",
+    "eventType": {
+      "shift_updated": "Shift updated",
+      "pattern_conflict": "Schedule conflict",
+      "gap_raised": "Coverage gap"
+    }
+  },
   "weekday": {
     "0": "Sunday",
     "1": "Monday",

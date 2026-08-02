@@ -12,10 +12,12 @@
 // send every field they want kept, not just the one that changed.
 
 import type {
+  AnonymisedBusyBlock,
   CarerAvailability,
   CreateCarerAvailabilityInput,
 } from '@steadily-nanny/shared-types/schemas/availability.schema';
 import {
+  AnonymisedBusyBlockListResponseSchema,
   CarerAvailabilityListResponseSchema,
   CarerAvailabilitySchema,
   CreateCarerAvailabilitySchema,
@@ -28,6 +30,8 @@ export const availabilityEndpoints = {
   getMine: '/v1/availability/me',
   upsertMine: '/v1/availability/me',
   getForUser: (userId: string) => `/v1/availability/${userId}`,
+  getBusyBlocks: (carerId: string, from: string, to: string) =>
+    `/v1/availability/${carerId}/busy?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
 } as const;
 
 // --- API --------------------------------------------------------------------
@@ -58,6 +62,26 @@ export const availabilityApi = {
     );
     if (!parsed.success) throw parsed.error;
     return parsed.data.carer_availability;
+  },
+
+  /**
+   * Anonymised busy blocks for `carerId` overlapping `[from, to]` — exactly
+   * `starts_at` / `ends_at` / `kind`. Self-reads are allowed (nanny checking
+   * her own clashes before booking time off — D30).
+   */
+  getBusyBlocks: async (
+    carerId: string,
+    from: string,
+    to: string
+  ): Promise<AnonymisedBusyBlock[]> => {
+    const response = await apiClient.get(
+      availabilityEndpoints.getBusyBlocks(carerId, from, to)
+    );
+    const parsed = AnonymisedBusyBlockListResponseSchema.safeParse(
+      response.data.data
+    );
+    if (!parsed.success) throw parsed.error;
+    return parsed.data.busy_blocks;
   },
 
   /** Upsert one weekday row. Send the full row, not a partial diff. */

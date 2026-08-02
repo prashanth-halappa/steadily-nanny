@@ -15,5 +15,13 @@
   "cancelButton": "Cancelar",
   "cancelledToast": "Tiempo libre cancelado",
   "notAvailableTitle": "No disponible",
-  "notAvailableDescription": "El tiempo libre lo gestiona la niñera en este hogar."
+  "notAvailableDescription": "El tiempo libre lo gestiona la niñera en este hogar.",
+  "conflictTitle": "Esto se solapa con un día reservado",
+  "conflictDescription": "Ya tienes un turno u otro compromiso en este periodo. Aun así puedes solicitar tiempo libre, pero avisa a la familia.",
+  "conflictCancel": "Volver",
+  "conflictConfirm": "Solicitar de todos modos",
+  "checkFailedTitle": "No se pudieron comprobar conflictos",
+  "checkFailedDescription": "No pudimos verificar si esto se solapa con un turno existente. Aun así puedes solicitar tiempo libre.",
+  "checkFailedCancel": "Volver",
+  "checkFailedConfirm": "Solicitar de todos modos"
 }

@@ -111,6 +111,64 @@ describe('availabilityApi.getForUser', () => {
   });
 });
 
+describe('availabilityApi.getBusyBlocks', () => {
+  // D30 — GET /availability/:carerId/busy?from=&to= is live on the API;
+  // the mobile wrapper must URL-encode the range and unwrap { busy_blocks }.
+  const carerId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  const from = '2026-08-10T00:00:00.000Z';
+  const to = '2026-08-13T00:00:00.000Z';
+  const validBlock = {
+    starts_at: '2026-08-11T09:00:00.000Z',
+    ends_at: '2026-08-11T17:00:00.000Z',
+    kind: 'other_commitment',
+  };
+
+  it('GETs the busy path with encoded from/to and returns validated blocks', async () => {
+    apiClient.get.mockResolvedValue({
+      data: { data: { busy_blocks: [validBlock] } },
+    });
+
+    const result = await availabilityApi.getBusyBlocks(carerId, from, to);
+
+    expect(apiClient.get).toHaveBeenCalledWith(
+      `/v1/availability/${carerId}/busy?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`
+    );
+    expect(result).toEqual([validBlock]);
+  });
+
+  it('accepts an empty busy list', async () => {
+    apiClient.get.mockResolvedValue({
+      data: { data: { busy_blocks: [] } },
+    });
+
+    const result = await availabilityApi.getBusyBlocks(carerId, from, to);
+
+    expect(result).toEqual([]);
+  });
+
+  it('throws when a block carries a privacy-leaking extra shape or bad kind', async () => {
+    apiClient.get.mockResolvedValue({
+      data: {
+        data: {
+          busy_blocks: [{ ...validBlock, kind: 'dentist' }],
+        },
+      },
+    });
+    await expect(
+      availabilityApi.getBusyBlocks(carerId, from, to)
+    ).rejects.toThrow();
+  });
+
+  it('throws when the envelope is missing busy_blocks', async () => {
+    apiClient.get.mockResolvedValue({
+      data: { data: { carer_availability: [] } },
+    });
+    await expect(
+      availabilityApi.getBusyBlocks(carerId, from, to)
+    ).rejects.toThrow();
+  });
+});
+
 describe('availabilityApi.upsertWeekday', () => {
   it('PUTs the full row for one weekday and returns the singular response', async () => {
     apiClient.put.mockResolvedValue({

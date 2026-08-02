@@ -82,6 +82,25 @@
     "statusCompleted": "Completado",
     "shortNotice": "Última hora"
   },
+  "detail": {
+    "title": "Turno",
+    "missingTitle": "Turno no encontrado",
+    "back": "Volver",
+    "startLabel": "Inicio (HH:MM)",
+    "endLabel": "Fin (HH:MM)",
+    "noteLabel": "Nota",
+    "save": "Guardar cambios",
+    "savedToast": "Turno actualizado",
+    "threadTitle": "Hilo del día",
+    "threadEmpty": "Aún no hay eventos para este turno.",
+    "eventTypeUnknown": "Actualización",
+    "eventTypeFallback": "Evento: {{type}}",
+    "eventType": {
+      "shift_updated": "Turno actualizado",
+      "pattern_conflict": "Conflicto de horario",
+      "gap_raised": "Hueco de cobertura"
+    }
+  },
   "weekday": {
     "0": "Domingo",
     "1": "Lunes",

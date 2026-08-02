@@ -36,4 +36,30 @@ export class ShiftEventRepository {
     }
     return (data ?? []) as ShiftEvent[];
   }
+
+  /**
+   * Day-level thread for a household calendar date — includes rows with
+   * nullable `shift_id` (D24). Distinct from `listForShift`, which stays
+   * shift-scoped and never silently widens.
+   */
+  async listForHouseholdDate(
+    householdId: string,
+    localDate: string
+  ): Promise<ShiftEvent[]> {
+    const { data, error } = await supabaseService
+      .from(this.table)
+      .select('*')
+      .eq('household_id', householdId)
+      .eq('local_date', localDate)
+      .order('created_at', { ascending: true });
+
+    if (error) {
+      throw new DatabaseError(
+        'Failed to list day-thread events',
+        'DATABASE_ERROR',
+        { details: error.message, householdId, localDate }
+      );
+    }
+    return (data ?? []) as ShiftEvent[];
+  }
 }

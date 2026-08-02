@@ -8,6 +8,10 @@
  * human touched this, do not overwrite it" on the next re-materialisation —
  * see that module's header comment.
  *
+ * The write itself goes through `ShiftRepository.applyParentEdit` (Postgres
+ * RPC) so the shift row update and the `shift_updated` day-thread event are
+ * atomic (D23/D24).
+ *
  * @module domains/shift/services/shiftCommandService
  */
 import type { Shift } from '@steadily-nanny/shared-types/schemas/shift.schema';
@@ -59,23 +63,40 @@ export class ShiftCommandService {
       );
     }
 
-    const patch: Partial<Shift> = {
-      // A human touched this — the flag the re-materialiser reads to never
-      // overwrite it again (see module doc).
-      origin: 'parent_proposed',
-      sequence: shift.sequence + 1,
-    };
-    if (input.starts_at !== undefined) {
-      patch.starts_at = input.starts_at;
-    }
-    if (input.ends_at !== undefined) {
-      patch.ends_at = input.ends_at;
-    }
-    if (input.note !== undefined) {
-      patch.note = input.note;
-    }
+    const setStartsAt = input.starts_at !== undefined;
+    const setEndsAt = input.ends_at !== undefined;
+    const setNote = input.note !== undefined;
+    const nextSequence = shift.sequence + 1;
 
-    return this.shiftRepo.update(shiftId, patch);
+    const before = {
+      starts_at: shift.starts_at,
+      ends_at: shift.ends_at,
+      note: shift.note,
+      sequence: shift.sequence,
+      origin: shift.origin,
+    };
+    const after = {
+      starts_at: effectiveStarts,
+      ends_at: effectiveEnds,
+      note: setNote ? (input.note ?? null) : shift.note,
+      sequence: nextSequence,
+      origin: 'parent_proposed',
+    };
+
+    return this.shiftRepo.applyParentEdit({
+      shiftId,
+      actorId: userId,
+      startsAt: input.starts_at ?? null,
+      endsAt: input.ends_at ?? null,
+      note: input.note ?? null,
+      setStartsAt,
+      setEndsAt,
+      setNote,
+      origin: 'parent_proposed',
+      sequence: nextSequence,
+      before,
+      after,
+    });
   }
 
   private async assertWriteMember(

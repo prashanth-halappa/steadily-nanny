@@ -1,7 +1,8 @@
 /**
  * @module WeekStrip
  *
- * A 7-cell day-of-week selector, displayed Monday-first (en-GB) while
+ * A 7-cell day-of-week selector. Display order follows the caller's
+ * `weekStartsOn` preference (D29, default Monday = 1) while
  * storing/reporting days in the Postgres `extract(dow)` convention
  * (0=Sunday..6=Saturday). Those two orderings are DELIBERATELY different —
  * the reordering happens only in this component's render, never in the data
@@ -15,9 +16,7 @@ import { View } from 'react-native';
 import { AnimatedPressable } from '@/lib/animations';
 import { cn } from '@/lib/utils';
 import { Text } from '@/src/components/ui/text';
-
-/** Render order, Monday-first. Values are Postgres `extract(dow)` indices. */
-const DISPLAY_ORDER = [1, 2, 3, 4, 5, 6, 0] as const;
+import { getWeekdayOrder } from '@/src/lib/weekdayOrder';
 
 const DAY_LABELS: Record<number, string> = {
   0: 'S',
@@ -38,6 +37,11 @@ interface WeekStripProps {
   onToggle: (day: number) => void;
   /** Days that cannot be toggled — rendered muted, non-interactive. */
   disabled?: number[];
+  /**
+   * Display-only week start (Postgres dow). Default Monday (1). Does not
+   * change the integers in `selected` / `onToggle`.
+   */
+  weekStartsOn?: number | null;
   testID?: string;
 }
 
@@ -45,16 +49,18 @@ export function WeekStrip({
   selected,
   onToggle,
   disabled = [],
+  weekStartsOn = 1,
   testID,
 }: WeekStripProps) {
   const baseTestID = testID ?? DEFAULT_TEST_ID;
+  const displayOrder = getWeekdayOrder(weekStartsOn);
 
   return (
     <View
       testID={baseTestID}
       className="flex-row items-center justify-between gap-1"
     >
-      {DISPLAY_ORDER.map(day => {
+      {displayOrder.map(day => {
         const isSelected = selected.includes(day);
         const isDisabled = disabled.includes(day);
 

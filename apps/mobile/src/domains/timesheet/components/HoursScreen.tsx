@@ -16,9 +16,10 @@
  * role views receive the same offset state so neither role regresses.
  */
 import { useCallback, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ScrollView, View } from 'react-native';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
-import { H1 } from '@/src/components/ui/typography';
+import { Body, H1 } from '@/src/components/ui/typography';
 import { SETUP_ROLES } from '@/src/domains/setup/types';
 import { useHouseholds } from '@/src/hooks/queries/useHouseholds';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
@@ -41,6 +42,7 @@ import { ParentWeekView } from './ParentWeekView';
 const MAX_WEEKS_BACK = 104;
 
 export function HoursScreen() {
+  const { t } = useTranslation('settings');
   const onboarding = useIsOnboarded();
   // `useIsOnboarded` already fetches households internally, so this is a
   // cache hit, not a second request — needed here for `timezone`, which
@@ -111,6 +113,14 @@ export function HoursScreen() {
 
   return (
     <View testID="hours-screen" className="flex-1 bg-background">
+      <View className="px-6 pt-2">
+        <Body
+          testID="hours-monday-week-note"
+          className="text-muted-foreground text-sm"
+        >
+          {t('time.weekStartsHint')}
+        </Body>
+      </View>
       {onboarding.role === SETUP_ROLES.PARENT ? (
         <ParentWeekView
           householdId={onboarding.householdId}

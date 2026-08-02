@@ -810,13 +810,13 @@ now history, not a forward pointer; if you want it for reference (or are
 porting this pattern to build the *next* domain the same way), it's preserved
 below. If you're picking this project up right now, the actual next work is:
 
-1. **Read `docs/DEFECT-LOG.md`, then §4g above.** Three defects are still in
-   flight (D15, D17, D18) and DEFECT-LOG.md's status column is the live
-   source of truth — more current than this document by the time you read it.
-2. **`docs/screenshots/TOUR-PLAN.md`** is a live-verified, ready-to-execute
-   screenshot plan, deliberately held until D15/D17/D18 land so it doesn't
-   capture states that are about to change. Once they do, executing it is the
-   next concrete task.
+1. **Read `docs/DEFECT-LOG.md`, then §4g above.** D23/D24/D29/D30 are
+   **FIXED (unverified on device)** — shift detail + atomic `shift_updated`
+   audit, Settings → Time & calendar (display lens only), and time-off busy
+   warn-confirm. DEFECT-LOG.md's status column is the live source of truth.
+2. **`docs/screenshots/TOUR-PLAN.md`** should be re-run on device/simulator
+   for the new surfaces (time settings, shift detail, time-off conflict
+   dialog) before promoting those statuses past "unverified on device".
 3. Read `CLAUDE.md` at the repo root — required-reading doc map, toolchain
    rules, and the widget-vertical-slice pattern to copy for new features.
 4. Read `GOLDEN-FIXES.md` — hard-won production bugs and their fixes; check
@@ -824,6 +824,8 @@ below. If you're picking this project up right now, the actual next work is:
    weights, bare `<Modal>`, `client.ts` auth injection, and now also #22/D16's
    Biome nested-config note). Ignore the RevenueCat paywall-readiness entry;
    that layer no longer exists here.
+5. Apply migration `019_apply_parent_shift_edit.sql` before testing parent
+   shift edits against a live DB.
 
 ### Historical: Wave 1's build order (already executed — kept for reference)
 

@@ -9,6 +9,7 @@
  * @module domains/shift/types
  */
 export type {
+  DayThreadQuery,
   HouseholdIdParam,
   HouseholdShiftIdParam,
   ParentEditShiftInput,

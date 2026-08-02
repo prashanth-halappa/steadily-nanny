@@ -1,11 +1,6 @@
 /**
  * @module api/endpoints/__tests__/shifts.test
- * Covers: URL construction (with from/to range params, URL-encoded) and
- * response-envelope unwrap + Zod validation for shiftApi.range. `from`/`to`
- * are full ISO datetime strings with an offset — the backing
- * `GET /households/:householdId/shifts` route validates them with
- * `z.iso.datetime({ offset: true })` and 400s on a plain calendar date, so
- * these fixtures deliberately use full instants, not "YYYY-MM-DD".
+ * Covers range, getById, update, events, day-thread (D23/D24).
  */
 import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 
@@ -42,10 +37,22 @@ const validShift = {
   updated_at: now,
 };
 
+const validEvent = {
+  id: '88888888-8888-4888-8888-888888888888',
+  household_id: householdId,
+  shift_id: shiftId,
+  local_date: '2026-01-07',
+  actor_id: '99999999-9999-4999-8999-999999999999',
+  event_type: 'shift_updated',
+  payload: { before: {}, after: {} },
+  created_at: now,
+};
+
 beforeAll(async () => {
   mock.module('@/src/api/client', () => ({
     apiClient: {
       get: mock(() => Promise.resolve({})),
+      patch: mock(() => Promise.resolve({})),
     },
   }));
 
@@ -56,6 +63,7 @@ beforeAll(async () => {
 
 beforeEach(() => {
   apiClient.get.mockReset?.();
+  apiClient.patch.mockReset?.();
 });
 
 const from = '2026-01-05T00:00:00.000Z';
@@ -89,5 +97,68 @@ describe('shiftApi.range', () => {
       data: { data: { shifts: [{ status: 'not-a-status' }] } },
     });
     await expect(shiftApi.range(householdId, from, to)).rejects.toThrow();
+  });
+});
+
+describe('shiftApi.getById', () => {
+  it('GETs /v1/shifts/:id and unwraps { shift }', async () => {
+    apiClient.get.mockResolvedValue({
+      data: { data: { shift: validShift } },
+    });
+    const result = await shiftApi.getById(shiftId);
+    expect(apiClient.get).toHaveBeenCalledWith(`/v1/shifts/${shiftId}`);
+    expect(result.id).toBe(shiftId);
+  });
+});
+
+describe('shiftApi.update', () => {
+  it('PATCHes ParentEditShift fields only and returns the shift', async () => {
+    apiClient.patch.mockResolvedValue({
+      data: {
+        data: {
+          shift: { ...validShift, note: 'Late', origin: 'parent_proposed' },
+        },
+      },
+    });
+    const result = await shiftApi.update(shiftId, { note: 'Late' });
+    expect(apiClient.patch).toHaveBeenCalledWith(`/v1/shifts/${shiftId}`, {
+      note: 'Late',
+    });
+    expect(result.note).toBe('Late');
+  });
+
+  it('rejects an empty body without calling the API', async () => {
+    await expect(shiftApi.update(shiftId, {})).rejects.toThrow();
+    expect(apiClient.patch).not.toHaveBeenCalled();
+  });
+});
+
+describe('shiftApi.listEvents', () => {
+  it('GETs shift-scoped events and unwraps shift_events', async () => {
+    apiClient.get.mockResolvedValue({
+      data: { data: { shift_events: [validEvent] } },
+    });
+    const result = await shiftApi.listEvents(householdId, shiftId);
+    expect(apiClient.get).toHaveBeenCalledWith(
+      `/v1/households/${householdId}/shifts/${shiftId}/events`
+    );
+    expect(result[0]?.event_type).toBe('shift_updated');
+  });
+});
+
+describe('shiftApi.listDayThread', () => {
+  it('GETs household/date day-thread including nullable shift_id events', async () => {
+    apiClient.get.mockResolvedValue({
+      data: {
+        data: {
+          shift_events: [{ ...validEvent, shift_id: null }],
+        },
+      },
+    });
+    const result = await shiftApi.listDayThread(householdId, '2026-01-07');
+    expect(apiClient.get).toHaveBeenCalledWith(
+      `/v1/households/${householdId}/day-thread?local_date=${encodeURIComponent('2026-01-07')}`
+    );
+    expect(result[0]?.shift_id).toBeNull();
   });
 });

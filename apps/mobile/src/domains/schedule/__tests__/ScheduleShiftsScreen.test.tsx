@@ -87,6 +87,12 @@ beforeAll(async () => {
   mock.module('@/src/hooks/queries/useIsOnboarded', () => ({
     useIsOnboarded: mockUseIsOnboarded,
   }));
+  mock.module('@/src/hooks/queries/useUserProfile', () => ({
+    useUserProfile: mock(() => ({
+      data: { timezone: 'America/New_York', week_starts_on: 1 },
+      isLoading: false,
+    })),
+  }));
 
   const mod = await import('../components/ScheduleShiftsScreen');
   ScheduleShiftsScreen = mod.ScheduleShiftsScreen;

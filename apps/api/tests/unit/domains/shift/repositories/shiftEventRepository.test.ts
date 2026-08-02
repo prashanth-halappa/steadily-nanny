@@ -55,3 +55,19 @@ describe('ShiftEventRepository.listForShift', () => {
     expect(await repo.listForShift('h1', 's1')).toEqual([]);
   });
 });
+
+describe('ShiftEventRepository.listForHouseholdDate', () => {
+  it('lists day-thread events for a household date including nullable shift_id, oldest first', async () => {
+    const rows = [
+      { id: 'e1', shift_id: null, event_type: 'gap_raised' },
+      { id: 'e2', shift_id: 's1', event_type: 'shift_updated' },
+    ];
+    mockSupabaseService.from.mockImplementation(() =>
+      createMockQueryChain({ data: rows, error: null })
+    );
+    const repo = new ShiftEventRepository();
+    const result = await repo.listForHouseholdDate('h1', '2026-08-03');
+    expect(result).toEqual(rows);
+    expect(mockSupabaseService.from).toHaveBeenCalledWith('shift_events');
+  });
+});

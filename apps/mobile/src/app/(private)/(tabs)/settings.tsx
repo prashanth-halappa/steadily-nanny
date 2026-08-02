@@ -102,6 +102,16 @@ export default function SettingsScreen() {
         </View>
       </View>
 
+      <View className="mt-8 gap-3" testID="settings-time-section">
+        <H4>{t('settings:account')}</H4>
+        <AnimatedPressable
+          testID="settings-time"
+          onPress={() => router.push('/settings/time' as Href)}
+        >
+          <Body className="text-primary">{t('settings:time.menuLabel')}</Body>
+        </AnimatedPressable>
+      </View>
+
       {onboarding.role === SETUP_ROLES.PARENT ||
       onboarding.role === SETUP_ROLES.NANNY ? (
         <View className="mt-8 gap-3" testID="settings-household-section">

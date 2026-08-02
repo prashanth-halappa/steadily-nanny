@@ -54,6 +54,11 @@ describe('SettingsScreen', () => {
     expect(screenSource).toContain('/settings/availability');
   });
 
+  it('wires Time & calendar settings (D29 display timezone / week start)', () => {
+    expect(screenSource).toContain('settings-time');
+    expect(screenSource).toContain('/settings/time');
+  });
+
   it('persists a language change through useUpdatePreferredLocale, not just locally (D26)', () => {
     expect(screenSource).toContain('useUpdatePreferredLocale');
     expect(screenSource).toContain('setLanguage');

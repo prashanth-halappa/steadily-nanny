@@ -38,12 +38,14 @@ describe('userApi', () => {
       name: 'Jordan',
       city: 'Lisbon',
       country: 'Portugal',
+      timezone: 'Europe/Lisbon',
+      week_starts_on: 1,
       additional_data: null,
     };
 
-    it('GETs /v1/users/me and returns the validated profile', async () => {
+    it('GETs /v1/users/me, unwraps { user }, and returns timezone + week_starts_on', async () => {
       (apiClient.get as any).mockResolvedValue({
-        data: { data: validProfile },
+        data: { data: { user: validProfile } },
       });
 
       const result = await userApi.getProfile();
@@ -51,12 +53,31 @@ describe('userApi', () => {
       expect(apiClient.get).toHaveBeenCalledWith('/v1/users/me');
       expect(result.user_id).toBe('user-123');
       expect(result.name).toBe('Jordan');
+      expect(result.timezone).toBe('Europe/Lisbon');
+      expect(result.week_starts_on).toBe(1);
     });
 
-    it('accepts null display fields', async () => {
+    it('rejects the bare profile shape without { user } (API contract guard)', async () => {
+      (apiClient.get as any).mockResolvedValue({
+        data: { data: validProfile },
+      });
+
+      await expect(userApi.getProfile()).rejects.toThrow();
+    });
+
+    it('accepts null display fields and null timezone', async () => {
       (apiClient.get as any).mockResolvedValue({
         data: {
-          data: { user_id: 'u1', name: null, city: null, country: null },
+          data: {
+            user: {
+              user_id: 'u1',
+              name: null,
+              city: null,
+              country: null,
+              timezone: null,
+              week_starts_on: 1,
+            },
+          },
         },
       });
 
@@ -64,11 +85,12 @@ describe('userApi', () => {
 
       expect(result.user_id).toBe('u1');
       expect(result.name).toBeNull();
+      expect(result.timezone).toBeNull();
     });
 
     it('throws when the response fails validation', async () => {
       (apiClient.get as any).mockResolvedValue({
-        data: { data: { name: 'missing user_id' } },
+        data: { data: { user: { name: 'missing user_id' } } },
       });
 
       await expect(userApi.getProfile()).rejects.toThrow();
@@ -104,6 +126,30 @@ describe('userApi', () => {
       expect(apiClient.post).toHaveBeenCalledWith('/v1/users/profile', req);
       expect(result.user_id).toBe('user-9');
       expect(result.name).toBe('Sam');
+    });
+
+    it('forwards optional timezone on upsert without stripping it', async () => {
+      (apiClient.post as any).mockResolvedValue({
+        data: {
+          data: {
+            message: 'ok',
+            user: {
+              ...validResponse.user,
+              timezone: 'America/Los_Angeles',
+            },
+          },
+        },
+      });
+
+      await userApi.upsertProfile({
+        ...req,
+        timezone: 'America/Los_Angeles',
+      });
+
+      expect(apiClient.post).toHaveBeenCalledWith('/v1/users/profile', {
+        ...req,
+        timezone: 'America/Los_Angeles',
+      });
     });
 
     it('throws on an invalid request payload (empty name) without calling the API', async () => {
@@ -164,6 +210,52 @@ describe('userApi', () => {
       await expect(
         userApi.updatePreferredLocale({ preferred_locale: 'es' })
       ).rejects.toThrow();
+    });
+  });
+
+  describe('updateTimeSettings', () => {
+    const validResponse = {
+      user: {
+        user_id: 'user-9',
+        name: 'Sam',
+        city: 'Oslo',
+        country: 'Norway',
+        timezone: 'Europe/London',
+        week_starts_on: 0,
+        additional_data: null,
+      },
+    };
+
+    it('PATCHes timezone and week_starts_on and returns the updated user', async () => {
+      (apiClient.patch as any).mockResolvedValue({
+        data: { data: validResponse },
+      });
+
+      const result = await userApi.updateTimeSettings({
+        timezone: 'Europe/London',
+        week_starts_on: 0,
+      });
+
+      expect(apiClient.patch).toHaveBeenCalledWith('/v1/users/me', {
+        timezone: 'Europe/London',
+        week_starts_on: 0,
+      });
+      expect(result.timezone).toBe('Europe/London');
+      expect(result.week_starts_on).toBe(0);
+    });
+
+    it('rejects an invalid IANA timezone without calling the API', async () => {
+      await expect(
+        userApi.updateTimeSettings({ timezone: '+01:00' })
+      ).rejects.toThrow();
+      expect(apiClient.patch).not.toHaveBeenCalled();
+    });
+
+    it('rejects week_starts_on outside 0..6 without calling the API', async () => {
+      await expect(
+        userApi.updateTimeSettings({ week_starts_on: 7 })
+      ).rejects.toThrow();
+      expect(apiClient.patch).not.toHaveBeenCalled();
     });
   });
 

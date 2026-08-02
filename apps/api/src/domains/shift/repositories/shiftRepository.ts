@@ -79,4 +79,50 @@ export class ShiftRepository extends BaseRepository<Shift> {
     }
     return data as ShiftWithChildren | null;
   }
+
+  /**
+   * Atomic parent edit via `public.apply_parent_shift_edit` (migration 019):
+   * UPDATE shift + INSERT `shift_updated` event in one transaction.
+   */
+  async applyParentEdit(args: {
+    shiftId: string;
+    actorId: string;
+    startsAt: string | null;
+    endsAt: string | null;
+    note: string | null;
+    setStartsAt: boolean;
+    setEndsAt: boolean;
+    setNote: boolean;
+    origin: string;
+    sequence: number;
+    before: Record<string, unknown>;
+    after: Record<string, unknown>;
+  }): Promise<Shift> {
+    const { data, error } = await supabaseService.rpc(
+      'apply_parent_shift_edit',
+      {
+        p_shift_id: args.shiftId,
+        p_actor_id: args.actorId,
+        p_starts_at: args.startsAt,
+        p_ends_at: args.endsAt,
+        p_note: args.note,
+        p_set_starts_at: args.setStartsAt,
+        p_set_ends_at: args.setEndsAt,
+        p_set_note: args.setNote,
+        p_origin: args.origin,
+        p_sequence: args.sequence,
+        p_before: args.before,
+        p_after: args.after,
+      }
+    );
+
+    if (error || !data) {
+      throw new DatabaseError(
+        'Failed to apply parent shift edit',
+        'DATABASE_ERROR',
+        { details: error?.message, shiftId: args.shiftId }
+      );
+    }
+    return data as Shift;
+  }
 }

@@ -15,5 +15,13 @@
   "cancelButton": "Cancel",
   "cancelledToast": "Time off cancelled",
   "notAvailableTitle": "Not available",
-  "notAvailableDescription": "Time off is managed by the nanny on this household."
+  "notAvailableDescription": "Time off is managed by the nanny on this household.",
+  "conflictTitle": "This overlaps a booked day",
+  "conflictDescription": "You already have a shift or other commitment in this range. You can still request time off, but make sure your family knows.",
+  "conflictCancel": "Go back",
+  "conflictConfirm": "Request anyway",
+  "checkFailedTitle": "Couldn't check for clashes",
+  "checkFailedDescription": "We couldn't verify whether this overlaps an existing shift. You can still request time off.",
+  "checkFailedCancel": "Go back",
+  "checkFailedConfirm": "Request anyway"
 }

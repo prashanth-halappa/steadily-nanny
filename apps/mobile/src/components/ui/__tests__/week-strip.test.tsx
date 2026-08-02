@@ -41,6 +41,23 @@ describe('WeekStrip', () => {
     expect(cells[cells.length - 1]?.props.testID).toBe('week-strip-day-0');
   });
 
+  it('D29: weekStartsOn=0 reorders display but onToggle still reports Postgres dow', () => {
+    const onToggle = mock(() => {});
+    const { getByTestId } = render(
+      <WeekStrip
+        selected={[]}
+        onToggle={onToggle}
+        weekStartsOn={0}
+        testID="week-strip"
+      />
+    );
+    const cells = getByTestId('week-strip').children.filter(isInstance);
+    expect(cells[0]?.props.testID).toBe('week-strip-day-0');
+    expect(cells[1]?.props.testID).toBe('week-strip-day-1');
+    fireEvent.press(getByTestId('week-strip-day-0'));
+    expect(onToggle).toHaveBeenCalledWith(0);
+  });
+
   it('marks the selected day as selected and leaves others unselected', () => {
     const { getByTestId } = render(
       <WeekStrip selected={[0]} onToggle={() => {}} testID="week-strip" />

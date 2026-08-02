@@ -1,28 +1,46 @@
 /**
  * @module api/endpoints/shifts
  *
- * Read-only endpoint for materialised shift instances. The wire shape comes
- * from `@steadily-nanny/shared-types/schemas/shift.schema` — never redefined
- * here.
+ * Materialised shift instances + parent edit + day thread. Wire shapes from
+ * `@steadily-nanny/shared-types/schemas/shift.schema`.
  *
- * `from`/`to` must be full ISO datetime strings WITH an offset (e.g.
- * `"2026-08-03T00:00:00.000Z"`), never a plain "YYYY-MM-DD" calendar date —
- * `GET /v1/households/:householdId/shifts` validates them with
- * `z.iso.datetime({ offset: true })`
- * (`apps/api/src/domains/shift/schemas.ts`'s `ShiftRangeQuerySchema`) and
- * returns 400 otherwise. See `ScheduleShiftsScreen`'s `currentWeekRange` for
- * how a local calendar week gets converted to this shape.
+ * `from`/`to` must be full ISO datetime strings WITH an offset — see
+ * `ShiftRangeQuerySchema`. Parent edit body is the narrow ParentEditShift
+ * shape (starts_at / ends_at / note only).
  */
 import {
   type Shift,
+  type ShiftEvent,
+  ShiftEventListResponseSchema,
   ShiftListResponseSchema,
+  ShiftSchema,
 } from '@steadily-nanny/shared-types/schemas/shift.schema';
+import { z } from 'zod';
 import { apiClient } from '@/src/api/client';
 
 export const shiftEndpoints = {
   range: (householdId: string, from: string, to: string) =>
     `/v1/households/${householdId}/shifts?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
+  getById: (shiftId: string) => `/v1/shifts/${shiftId}`,
+  update: (shiftId: string) => `/v1/shifts/${shiftId}`,
+  events: (householdId: string, shiftId: string) =>
+    `/v1/households/${householdId}/shifts/${shiftId}/events`,
+  dayThread: (householdId: string, localDate: string) =>
+    `/v1/households/${householdId}/day-thread?local_date=${encodeURIComponent(localDate)}`,
 } as const;
+
+const ParentEditShiftSchema = z
+  .object({
+    starts_at: z.iso.datetime({ offset: true }).optional(),
+    ends_at: z.iso.datetime({ offset: true }).optional(),
+    note: z.string().optional(),
+  })
+  .refine(data => Object.keys(data).length > 0, {
+    message: 'at least one field is required',
+  });
+export type ParentEditShiftInput = z.infer<typeof ParentEditShiftSchema>;
+
+const ShiftEnvelopeSchema = z.object({ shift: ShiftSchema });
 
 export const shiftApi = {
   /** Materialised shifts for a household in a `[from, to)` ISO-datetime range. */
@@ -37,5 +55,52 @@ export const shiftApi = {
     const parsed = ShiftListResponseSchema.safeParse(response.data.data);
     if (!parsed.success) throw parsed.error;
     return parsed.data.shifts;
+  },
+
+  getById: async (shiftId: string): Promise<Shift> => {
+    const response = await apiClient.get(shiftEndpoints.getById(shiftId));
+    const parsed = ShiftEnvelopeSchema.safeParse(response.data.data);
+    if (!parsed.success) throw parsed.error;
+    return parsed.data.shift;
+  },
+
+  update: async (
+    shiftId: string,
+    input: ParentEditShiftInput
+  ): Promise<Shift> => {
+    const validated = ParentEditShiftSchema.safeParse(input);
+    if (!validated.success) throw validated.error;
+
+    const response = await apiClient.patch(
+      shiftEndpoints.update(shiftId),
+      validated.data
+    );
+    const parsed = ShiftEnvelopeSchema.safeParse(response.data.data);
+    if (!parsed.success) throw parsed.error;
+    return parsed.data.shift;
+  },
+
+  listEvents: async (
+    householdId: string,
+    shiftId: string
+  ): Promise<ShiftEvent[]> => {
+    const response = await apiClient.get(
+      shiftEndpoints.events(householdId, shiftId)
+    );
+    const parsed = ShiftEventListResponseSchema.safeParse(response.data.data);
+    if (!parsed.success) throw parsed.error;
+    return parsed.data.shift_events;
+  },
+
+  listDayThread: async (
+    householdId: string,
+    localDate: string
+  ): Promise<ShiftEvent[]> => {
+    const response = await apiClient.get(
+      shiftEndpoints.dayThread(householdId, localDate)
+    );
+    const parsed = ShiftEventListResponseSchema.safeParse(response.data.data);
+    if (!parsed.success) throw parsed.error;
+    return parsed.data.shift_events;
   },
 };

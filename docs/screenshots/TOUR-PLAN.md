@@ -12,8 +12,9 @@ what already exists or silently ignore what's known to conflict with it.
 ## DONE — tour executed, 53 screenshots captured
 
 Freeze declared, `main` at `538a4f8`, `qc` green (mobile 731/0, API
-315/0). D29 shipped with no UI (see the note in place of the old §3.16);
-D23/D24 never built. Tour executed 2026-08-01 — see
+315/0). D29, D23/D24, and D30 landed as FIXED (unverified on device) —
+Settings → Time & calendar, shift detail + day thread, and time-off busy
+warn-confirm. Tour executed 2026-08-01 — see
 `docs/screenshots/tour/README.md` for the full walkthrough, results, gaps,
 and one newly-discovered defect (D25 boundary/off-by-one bug, reported to
 team-lead mid-tour). Onboarding (§3.2/§3.3) is the one major section not

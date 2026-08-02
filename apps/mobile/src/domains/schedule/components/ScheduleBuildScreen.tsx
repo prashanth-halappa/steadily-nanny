@@ -49,6 +49,8 @@ import { useSendSchedulePattern } from '@/src/hooks/mutations/useSendSchedulePat
 import { useAvailabilityForCarer } from '@/src/hooks/queries/useAvailabilityForCarer';
 import { useChildren } from '@/src/hooks/queries/useChildren';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
+import { useUserProfile } from '@/src/hooks/queries/useUserProfile';
+import { getWeekdayOrder } from '@/src/lib/weekdayOrder';
 import {
   buildWeeklyRrule,
   calculateWeekTotalHours,
@@ -70,10 +72,6 @@ type Step =
 const DEFAULT_START = '09:00';
 const DEFAULT_END = '17:00';
 
-/** Monday-first render order (en-GB) for the per-day hours list, matching
- * AvailabilityScreen's own convention — display-only, never sent to the API. */
-const DISPLAY_ORDER_FOR_LIST = [1, 2, 3, 4, 5, 6, 0];
-
 interface DayTime {
   start: string;
   end: string;
@@ -84,6 +82,8 @@ export function ScheduleBuildScreen() {
   const { t } = useTranslation('schedule');
   const onboarding = useIsOnboarded();
   const householdId = onboarding.householdId;
+  const profile = useUserProfile();
+  const displayOrder = getWeekdayOrder(profile.data?.week_starts_on);
 
   const carers = useHouseholdCarers(householdId);
   const children = useChildren(householdId);
@@ -292,6 +292,7 @@ export function ScheduleBuildScreen() {
             testID="schedule-day-toggle"
             selected={selectedDays}
             onToggle={toggleDay}
+            weekStartsOn={profile.data?.week_starts_on}
           />
         </SetupScreenShell>
       ) : null}
@@ -306,70 +307,70 @@ export function ScheduleBuildScreen() {
           onCta={() => setStep('repeat')}
         >
           <View className="gap-6">
-            {DISPLAY_ORDER_FOR_LIST.filter(day =>
-              selectedDays.includes(day)
-            ).map(day => {
-              const dayStart = dayTimes[day]?.start ?? DEFAULT_START;
-              const dayEnd = dayTimes[day]?.end ?? DEFAULT_END;
-              // `undefined` (still loading) is deliberately NOT treated as
-              // "outside availability" — isOutsideAvailability's own
-              // contract is "no row for this weekday = outside", which
-              // would otherwise flash a false warning on every day before
-              // the fetch resolves.
-              const outsideAvailability =
-                carerAvailability.data !== undefined &&
-                isOutsideAvailability(
-                  { weekday: day, start_time: dayStart, end_time: dayEnd },
-                  carerAvailability.data
-                );
-              return (
-                <View key={day} className="gap-2">
-                  <View className="flex-row items-center justify-between gap-2">
-                    <Body className="font-sora-medium">
-                      {t(`weekday.${day}`)}
-                    </Body>
+            {displayOrder
+              .filter(day => selectedDays.includes(day))
+              .map(day => {
+                const dayStart = dayTimes[day]?.start ?? DEFAULT_START;
+                const dayEnd = dayTimes[day]?.end ?? DEFAULT_END;
+                // `undefined` (still loading) is deliberately NOT treated as
+                // "outside availability" — isOutsideAvailability's own
+                // contract is "no row for this weekday = outside", which
+                // would otherwise flash a false warning on every day before
+                // the fetch resolves.
+                const outsideAvailability =
+                  carerAvailability.data !== undefined &&
+                  isOutsideAvailability(
+                    { weekday: day, start_time: dayStart, end_time: dayEnd },
+                    carerAvailability.data
+                  );
+                return (
+                  <View key={day} className="gap-2">
+                    <View className="flex-row items-center justify-between gap-2">
+                      <Body className="font-sora-medium">
+                        {t(`weekday.${day}`)}
+                      </Body>
+                      {outsideAvailability ? (
+                        <StatusPill
+                          variant="outside-hours"
+                          label={t('build.outsideHoursWarning')}
+                          testID={`schedule-build-outside-hours-${day}`}
+                        />
+                      ) : null}
+                    </View>
                     {outsideAvailability ? (
-                      <StatusPill
-                        variant="outside-hours"
-                        label={t('build.outsideHoursWarning')}
-                        testID={`schedule-build-outside-hours-${day}`}
-                      />
+                      <Body className="text-warning text-xs">
+                        {t('build.outsideHoursNote')}
+                      </Body>
                     ) : null}
-                  </View>
-                  {outsideAvailability ? (
-                    <Body className="text-warning text-xs">
-                      {t('build.outsideHoursNote')}
+                    <TimeRangePicker
+                      testID={`schedule-build-time-range-${day}`}
+                      start={dayStart}
+                      end={dayEnd}
+                      onChange={(start, end) =>
+                        setDayTimes(prev => ({
+                          ...prev,
+                          [day]: { start, end },
+                        }))
+                      }
+                    />
+                    <Body className="text-muted-foreground text-xs">
+                      {t('build.childrenLabel')}
                     </Body>
-                  ) : null}
-                  <TimeRangePicker
-                    testID={`schedule-build-time-range-${day}`}
-                    start={dayStart}
-                    end={dayEnd}
-                    onChange={(start, end) =>
-                      setDayTimes(prev => ({
-                        ...prev,
-                        [day]: { start, end },
-                      }))
-                    }
-                  />
-                  <Body className="text-muted-foreground text-xs">
-                    {t('build.childrenLabel')}
-                  </Body>
-                  <View className="flex-row flex-wrap gap-2">
-                    {(children.data ?? []).map(child => (
-                      <ChildChip
-                        key={child.id}
-                        testID={`schedule-build-child-${day}-${child.id}`}
-                        name={child.name}
-                        colour={child.colour ?? undefined}
-                        selected={(dayChildren[day] ?? []).includes(child.id)}
-                        onPress={() => toggleChildForDay(day, child.id)}
-                      />
-                    ))}
+                    <View className="flex-row flex-wrap gap-2">
+                      {(children.data ?? []).map(child => (
+                        <ChildChip
+                          key={child.id}
+                          testID={`schedule-build-child-${day}-${child.id}`}
+                          name={child.name}
+                          colour={child.colour ?? undefined}
+                          selected={(dayChildren[day] ?? []).includes(child.id)}
+                          onPress={() => toggleChildForDay(day, child.id)}
+                        />
+                      ))}
+                    </View>
                   </View>
-                </View>
-              );
-            })}
+                );
+              })}
           </View>
         </SetupScreenShell>
       ) : null}
@@ -424,31 +425,31 @@ export function ScheduleBuildScreen() {
             <Body testID="schedule-review-hours-total">
               {t('build.reviewHoursTotal', { hours: totalHours })}
             </Body>
-            {DISPLAY_ORDER_FOR_LIST.filter(day =>
-              selectedDays.includes(day)
-            ).map(day => (
-              <View key={day} className="gap-1">
-                <Body className="font-sora-medium">
-                  {t(`weekday.${day}`)} —{' '}
-                  {dayTimes[day]?.start ?? DEFAULT_START}
-                  {'–'}
-                  {dayTimes[day]?.end ?? DEFAULT_END}
-                </Body>
-                <View className="flex-row flex-wrap gap-2">
-                  {(children.data ?? [])
-                    .filter(child =>
-                      (dayChildren[day] ?? []).includes(child.id)
-                    )
-                    .map(child => (
-                      <ChildChip
-                        key={child.id}
-                        name={child.name}
-                        colour={child.colour ?? undefined}
-                      />
-                    ))}
+            {displayOrder
+              .filter(day => selectedDays.includes(day))
+              .map(day => (
+                <View key={day} className="gap-1">
+                  <Body className="font-sora-medium">
+                    {t(`weekday.${day}`)} —{' '}
+                    {dayTimes[day]?.start ?? DEFAULT_START}
+                    {'–'}
+                    {dayTimes[day]?.end ?? DEFAULT_END}
+                  </Body>
+                  <View className="flex-row flex-wrap gap-2">
+                    {(children.data ?? [])
+                      .filter(child =>
+                        (dayChildren[day] ?? []).includes(child.id)
+                      )
+                      .map(child => (
+                        <ChildChip
+                          key={child.id}
+                          name={child.name}
+                          colour={child.colour ?? undefined}
+                        />
+                      ))}
+                  </View>
                 </View>
-              </View>
-            ))}
+              ))}
           </View>
         </SetupScreenShell>
       ) : null}

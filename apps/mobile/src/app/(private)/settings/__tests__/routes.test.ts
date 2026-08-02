@@ -49,6 +49,18 @@ describe('settings/availability route', () => {
   });
 });
 
+describe('settings/time route', () => {
+  let source: string;
+  beforeAll(async () => {
+    source = await readRoute('../time.tsx');
+  });
+
+  it('delegates to TimeSettingsScreen', () => {
+    expect(source).toContain('TimeSettingsScreen');
+    expect(source).toContain('export default function');
+  });
+});
+
 describe('settings/household route', () => {
   let source: string;
   beforeAll(async () => {

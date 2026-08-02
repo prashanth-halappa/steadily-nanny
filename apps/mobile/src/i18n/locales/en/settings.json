@@ -11,5 +11,16 @@
   "deleteAccountConfirmTitle": "Delete your account?",
   "deleteAccountConfirmBody": "This permanently deletes your account and all associated data. This action cannot be undone.",
   "deleteAccountCancel": "Cancel",
-  "deleteAccountConfirm": "Delete account"
+  "deleteAccountConfirm": "Delete account",
+  "time": {
+    "menuLabel": "Time & calendar",
+    "title": "Time & calendar",
+    "subtitle": "How times and weekday selectors appear for you. Hours and timesheets still use Monday weeks for the household.",
+    "timezoneLabel": "Display time zone",
+    "timezoneHint": "Used when showing absolute times. Shift records stay in UTC.",
+    "weekStartsLabel": "Week starts on",
+    "weekStartsHint": "Reorders day selectors only. Shared schedules and Hours weeks still start on Monday.",
+    "saveButton": "Save",
+    "savedToast": "Time settings saved"
+  }
 }

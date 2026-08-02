@@ -27,9 +27,8 @@ import { Body } from '@/src/components/ui/typography';
 import { WeekStrip } from '@/src/components/ui/week-strip';
 import { useUpsertAvailability } from '@/src/hooks/mutations/useUpsertAvailability';
 import { useAvailability } from '@/src/hooks/queries/useAvailability';
-
-/** Monday-first render order (en-GB), matching WeekStrip's own display order. */
-const DISPLAY_ORDER = [1, 2, 3, 4, 5, 6, 0];
+import { useUserProfile } from '@/src/hooks/queries/useUserProfile';
+import { getWeekdayOrder } from '@/src/lib/weekdayOrder';
 
 const DEFAULT_START = '09:00';
 const DEFAULT_FINISH = '17:00';
@@ -39,6 +38,8 @@ export function AvailabilityEditor() {
 
   const availability = useAvailability();
   const upsertAvailability = useUpsertAvailability();
+  const profile = useUserProfile();
+  const displayOrder = getWeekdayOrder(profile.data?.week_starts_on);
 
   const rows = availability.data ?? [];
   const rowByWeekday = new Map(rows.map(row => [row.weekday, row]));
@@ -79,11 +80,13 @@ export function AvailabilityEditor() {
         testID="availability-week-strip"
         selected={selectedDays}
         onToggle={onToggleDay}
+        weekStartsOn={profile.data?.week_starts_on}
       />
 
       <View className="gap-4">
-        {DISPLAY_ORDER.filter(day => rowByWeekday.get(day)?.is_available).map(
-          day => (
+        {displayOrder
+          .filter(day => rowByWeekday.get(day)?.is_available)
+          .map(day => (
             <View key={day} className="gap-2">
               <Body className="font-sora-medium">{t(`weekday.${day}`)}</Body>
               <TimeRangePicker
@@ -93,8 +96,7 @@ export function AvailabilityEditor() {
                 onChange={(start, end) => upsertDay(day, { start, end })}
               />
             </View>
-          )
-        )}
+          ))}
       </View>
     </>
   );

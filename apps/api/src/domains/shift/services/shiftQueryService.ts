@@ -76,6 +76,19 @@ export class ShiftQueryService {
     return this.eventRepo.listForShift(householdId, shiftId);
   }
 
+  /**
+   * Household + local_date day thread (includes nullable-shift_id events).
+   * Distinct from the shift-scoped `listEvents` route.
+   */
+  async listDayThread(
+    userId: string,
+    householdId: string,
+    localDate: string
+  ): Promise<ShiftEvent[]> {
+    await this.assertMember(userId, householdId);
+    return this.eventRepo.listForHouseholdDate(householdId, localDate);
+  }
+
   /** Membership check shared by every household-scoped read above. */
   private async assertMember(
     userId: string,
