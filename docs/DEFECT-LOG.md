@@ -605,6 +605,39 @@ of it.
 
 ---
 
+## D31 — "Your usual 9–5" was flagged as outside the carer's availability
+
+**Status:** FIXED · **Severity:** medium — misfires on the most common input
+
+Found during the screenshot tour, hours after D25 shipped green.
+
+A parent proposing a Monday 09:00–17:00 shift against a carer whose stated
+availability is exactly Monday 09:00–17:00 got "Outside their marked
+availability". An exact match — the single most ordinary proposal a parent
+could make — was flagged as a conflict.
+
+**The reported diagnosis was wrong, and the real cause is worth recording.** It
+looked like a strict-vs-inclusive inequality bug (`<` where `<=` was meant).
+It wasn't: the comparison was already inclusive. The real fault was comparing
+times **as strings across two formats**. Postgres `time` columns return
+`'09:00:00'`; the picker emits `'09:00'`. And `'09:00' < '09:00:00'` is **true**,
+because the shorter string sorts first.
+
+That also explains why only the start misfired: at the other end,
+`'17:00' > '17:00:00'` is false. One end wrong and one end right is exactly what
+made it present as a boundary bug.
+
+**Why every test passed.** The existing fixtures used `earliest_start: '09:00'`
+— a format the database never returns. The suite was internally consistent and
+therefore green, while testing a shape production never produces. A fixture that
+doesn't match reality is worse than no fixture: it manufactures confidence.
+
+**Fix:** parse both sides to minutes since midnight and compare numerically;
+unparseable values return null rather than silently reading as 00:00. Regression
+tests now use the real `HH:MM:SS` database format.
+
+---
+
 # Authorization holes (API)
 
 All three are the same class: **an id accepted from the client and used without

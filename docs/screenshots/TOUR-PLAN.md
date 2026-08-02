@@ -9,7 +9,16 @@ tour (earlier, partial, different defects — see "Overlap with the existing
 `docs/screenshots/` tour" below) so this plan doesn't blindly re-propose
 what already exists or silently ignore what's known to conflict with it.
 
-## PAUSED — do not capture. Feature freeze pending.
+## GO — feature freeze declared, tour executing
+
+Freeze declared, `main` at `538a4f8`, `qc` green (mobile 731/0, API
+315/0). D29 shipped with no UI (see the note in place of the old §3.16);
+D23/D24 never built. Executing now — see `docs/screenshots/tour/README.md`
+for the actual results once done.
+
+---
+
+## Pre-freeze planning notes (Revision 4, kept for history)
 
 **Revision 4 status, superseding everything below about readiness:** the
 tour was started, then stopped by team-lead after one state in — not
@@ -655,41 +664,26 @@ capture.
 | Request form (`time-off-request-form`) | tap the request CTA; date-range picker + optional message field |
 | Confirmed entry in the list (`time-off-row-{id}`, status "confirmed") | submit the form |
 
-### 3.16 Per-user timezone — D29 (conditional — may ship with no UI at all)
+### D29 — per-user timezone: DECIDED, no UI shipped, nothing to capture
 
-**Schema-only as of this revision — no state list to write.** Confirmed by
-repo-wide search: `UpdateUserTimeSettingsSchema`
-(`packages/shared-types/src/schemas/availability.schema.ts`) exists as a
-bare type with zero mobile consumers — no endpoint, hook, route, or
-component references it anywhere in `apps/mobile/src`. No Settings entry
-exists for it either.
+**Resolved by team-lead at the freeze go-ahead: D29 ships API-complete,
+UI-deferred.** `user_profiles.timezone` is read nowhere for display, so a
+picker would have been a control that saves a value and changes nothing —
+exactly the failure this whole run has been about. No screen exists, no
+state to plan, §3.16 removed entirely (was a conditional placeholder in
+earlier revisions). Not in the filename list.
 
-**Team-lead's explicit heads-up: this may ship WITHOUT a UI control at
-all.** The API side is done, but the per-user zone currently affects
-nothing on screen, and it doesn't interact with the household zone (D21)
-anywhere in the codebase — team-lead would rather omit a control that
-appears to change how times display and doesn't, than ship one that lies.
-Team-lead will confirm which way it lands before the freeze go-ahead.
-**Treat this section as conditional, not assumed:**
+**Naming correction (confirmed by team-lead), kept for reference:**
+`docs/DEFECT-LOG.md`'s own numbering is authoritative, and team-lead's
+"D21" *is* the log's D21 (household settings) — correct as used throughout
+this plan. The mobile mirror-schema-drift fix that caused the
+`shift.schema.ts` crashes flagged earlier is a **different** defect,
+**D28** in the log, not D21 — an earlier tracker entry had drifted and
+briefly reused the D21 number for it.
 
-- **If D29 ships with a real control**, per team-lead: both Settings
-  screens will carry a timezone concept (household-level from D21,
-  per-user from D29), and the tour should show both together in the same
-  frame, since "which one wins" is exactly what a reviewer will want to
-  check — that comparison is the state worth planning, not a list of this
-  screen's internals in isolation.
-- **If D29 ships with no UI**, this section has nothing to capture —
-  delete it from the plan rather than force a capture of an absent
-  control. Don't guess which way it went; wait for team-lead's word.
-
-**Naming correction (confirmed by team-lead):** `docs/DEFECT-LOG.md`'s own
-numbering is authoritative, and team-lead's "D21" *is* the log's D21
-(household settings) — correct as used throughout this plan. The mobile
-mirror-schema-drift fix that caused the `shift.schema.ts` crashes flagged
-above is a **different** defect, **D28** in the log, not D21 — an earlier
-tracker entry had drifted and briefly reused the D21 number for it. Fixing
-the reference here rather than leaving the earlier guess (this section
-previously said the mirror-drift fix was "D21," which was wrong).
+**D23/D24 (shift-detail editing, day thread): not built, nothing to
+capture.** Never had a dedicated section in this plan, so nothing to
+remove — noted here only so the freeze go-ahead's context is on record.
 
 ---
 

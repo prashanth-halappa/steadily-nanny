@@ -100,6 +100,46 @@ describe('isOutsideAvailability', () => {
     ).toBe(false);
   });
 
+  // REGRESSION: Postgres `time` columns come back as "HH:MM:SS" while the
+  // picker emits "HH:MM". The fixtures above use "09:00" — a format the
+  // database never actually returns — which is why this suite stayed green
+  // while the real screen misfired. Compared as strings, `'09:00' < '09:00:00'`
+  // is TRUE, so a shift proposed at exactly the carer's stated start time read
+  // as "before" it. "Your usual 9-5" is the most ordinary proposal there is.
+  const wednesdayFromDatabase = {
+    weekday: 3,
+    is_available: true,
+    earliest_start: '09:00:00',
+    latest_finish: '17:00:00',
+  };
+
+  it('is false for an EXACT match against database-format times', () => {
+    expect(
+      isOutsideAvailability(
+        { weekday: 3, start_time: '09:00', end_time: '17:00' },
+        [wednesdayFromDatabase]
+      )
+    ).toBe(false);
+  });
+
+  it('still flags a genuinely early start against database-format times', () => {
+    expect(
+      isOutsideAvailability(
+        { weekday: 3, start_time: '08:30', end_time: '17:00' },
+        [wednesdayFromDatabase]
+      )
+    ).toBe(true);
+  });
+
+  it('still flags a genuinely late finish against database-format times', () => {
+    expect(
+      isOutsideAvailability(
+        { weekday: 3, start_time: '09:00', end_time: '17:30' },
+        [wednesdayFromDatabase]
+      )
+    ).toBe(true);
+  });
+
   it('is true when the day starts before the available window', () => {
     // Wed 8:00-13:00 sits outside 09:00-17:00 availability — the exact
     // example from the product spec.

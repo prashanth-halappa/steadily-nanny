@@ -112,11 +112,40 @@ export function isOutsideAvailability(
   const row = availability.find(a => a.weekday === day.weekday);
   if (!row?.is_available) return true;
 
+  const start = timeToMinutes(day.start_time);
+  const end = timeToMinutes(day.end_time);
+  const earliest =
+    row.earliest_start === null ? null : timeToMinutes(row.earliest_start);
+  const latest =
+    row.latest_finish === null ? null : timeToMinutes(row.latest_finish);
+
   const beforeEarliestStart =
-    row.earliest_start !== null && day.start_time < row.earliest_start;
-  const afterLatestFinish =
-    row.latest_finish !== null && day.end_time > row.latest_finish;
+    earliest !== null && start !== null && start < earliest;
+  const afterLatestFinish = latest !== null && end !== null && end > latest;
   return beforeEarliestStart || afterLatestFinish;
+}
+
+/**
+ * "HH:MM" or "HH:MM:SS" -> minutes since midnight. Null for anything
+ * unparseable, so a malformed value can never silently read as 00:00.
+ *
+ * These times MUST be compared numerically, never as strings. Postgres `time`
+ * columns come back as "09:00:00" while the picker emits "09:00", and
+ * `'09:00' < '09:00:00'` is TRUE in string comparison — the shorter string
+ * sorts first. That made a shift proposed at exactly the carer's stated start
+ * time read as "before" it, so "your usual 9-5" — the most ordinary proposal
+ * there is — was wrongly flagged as outside their availability. Only the start
+ * misfired, because at the other end `'17:00' > '17:00:00'` is false, which is
+ * what made it look like an inclusive/exclusive boundary bug rather than a
+ * format mismatch.
+ */
+export function timeToMinutes(value: string): number | null {
+  const match = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(value.trim());
+  if (!match?.[1] || !match[2]) return null;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (hours > 23 || minutes > 59) return null;
+  return hours * 60 + minutes;
 }
 
 /** Formats a Date as a "YYYY-MM-DD" calendar date (local components, no TZ math). */
