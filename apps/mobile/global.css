@@ -7,7 +7,7 @@
  * hsl(var(--token)) indirection in tailwind.config.js, so a single edit here
  * re-themes the whole app.
  *
- * Authoritative source: lib/design-tokens/palette.ts (Ledger). Keep this file
+ * Authoritative source: lib/design-tokens/palette.ts (Daylight). Keep this file
  * in lockstep — the palette-parity test enforces it.
  *
  * A dark palette is authored below in `.dark:root`, but dark mode is currently
@@ -17,128 +17,141 @@
  */
 @layer base {
   :root {
-    /* Brand & Core Colors — Ledger paper / ink */
-    --background: 240 20% 99%; /* #FCFCFD */
-    --foreground: 220 13% 9%; /* #14161A */
+    /* Brand & Core Colors — Daylight warm ground / plum ink */
+    --background: 345 17% 95%; /* #F5F1F2 */
+    --foreground: 295 16% 15%; /* #2A1F2B */
     --card: 0 0% 100%; /* #FFFFFF */
-    --card-foreground: 220 13% 9%; /* #14161A */
+    --card-foreground: 295 16% 15%; /* #2A1F2B */
     --popover: 0 0% 100%; /* #FFFFFF */
-    --popover-foreground: 220 13% 9%; /* #14161A */
+    --popover-foreground: 295 16% 15%; /* #2A1F2B */
 
-    /* Primary — deep ledger blue */
-    --primary: 216 64% 34%; /* #1F4A8C */
+    /* Primary — plum */
+    --primary: 296 20% 30%; /* #5B3E5D */
     --primary-foreground: 0 0% 100%; /* #FFFFFF */
-    --primary-light: 216 64% 48%; /* #2C6BC9 */
-    --primary-dark: 216 64% 26%; /* #183A6D */
+    --primary-light: 295 17% 43%; /* #7C5A7F */
+    --primary-dark: 303 22% 21%; /* #40293F */
 
     /* Secondary & Muted */
-    --secondary: 220 10% 93%; /* #EBEDF0 */
-    --secondary-foreground: 220 13% 9%; /* #14161A */
-    --muted: 220 13% 95%; /* #F2F3F5 */
-    --muted-foreground: 214 7% 38%; /* #5A6068 */
+    --secondary: 323 18% 91%; /* #EDE5EA */
+    --secondary-foreground: 295 16% 15%; /* #2A1F2B */
+    --muted: 326 19% 93%; /* #F0E9ED */
+    --muted-foreground: 291 7% 41%; /* #6E6270 */
 
-    /* Accent — subtle hover ground (not orange) */
-    --accent: 220 13% 95%; /* #F2F3F5 */
-    --accent-foreground: 220 13% 9%; /* #14161A */
+    /* Accent — subtle hover ground (not apricot) */
+    --accent: 322 20% 92%; /* #EFE7EC */
+    --accent-foreground: 295 16% 15%; /* #2A1F2B */
 
-    /* Category accents — records hues */
-    --category-accent1: 214 35% 37%; /* #3D5A80 */
-    --category-accent2: 164 18% 35%; /* #4A6B62 */
-    --category-accent3: 30 33% 36%; /* #7A5C3E */
+    /* Highlight — apricot brand accent */
+    --highlight: 24 79% 57%; /* #E8823C */
+    --highlight-foreground: 295 16% 15%; /* #2A1F2B */
+
+    /* Category accents — Daylight hues */
+    --category-accent1: 282 22% 38%; /* #6A4C77 */
+    --category-accent2: 159 23% 39%; /* #4C7A6A */
+    --category-accent3: 347 30% 51%; /* #A85E6E */
 
     /* System Colors */
-    --destructive: 3 54% 39%; /* #98332E */
+    --destructive: 7 42% 46%; /* #A85145 */
     --destructive-foreground: 0 0% 100%; /* #FFFFFF */
-    --success-state: 152 40% 30%; /* #2E6B4F */
-    --warning: 42 63% 33%; /* #8A6A1F */
-    --warning-foreground: 0 0% 100%; /* #FFFFFF */
+    --success-state: 143 24% 38%; /* #4A7A5C */
+    --warning: 35 51% 50%; /* #C08A3E */
+    --warning-strong: 35 54% 40%; /* #9C6E2E */
+    --warning-foreground: 295 16% 15%; /* #2A1F2B */
+    --short-notice: 20 54% 50%; /* #C4693A */
+    --short-notice-strong: 21 60% 43%; /* #B15A2C */
 
     /* UI Elements */
-    --border: 214 13% 90%; /* #E1E4E8 */
-    --border-strong: 212 14% 82%; /* #CBD1D8 */
-    --input: 220 13% 95%; /* #F2F3F5 */
-    --ring: 216 64% 34%; /* #1F4A8C */
-    --neutral: 0 0% 66%; /* #A8A8A8 */
-    --scrim: 220 13% 9%; /* #14161A — apply alpha at call site */
+    --border: 323 13% 88%; /* #E5DDE2 */
+    --border-strong: 323 13% 80%; /* #D2C5CD */
+    --input: 326 19% 93%; /* #F0E9ED */
+    --ring: 296 20% 30%; /* #5B3E5D */
+    --neutral: 315 6% 61%; /* #A2969F */
+    --scrim: 295 16% 15%; /* #2A1F2B — apply alpha at call site */
 
     /* Specialty: Skeleton Shimmer */
-    --skeleton-base: 220 13% 95%; /* #F2F3F5 */
-    --skeleton-highlight: 210 20% 98%; /* #F9FAFB */
+    --skeleton-base: 322 20% 92%; /* #EFE7EC */
+    --skeleton-highlight: 330 25% 97%; /* #F9F5F7 */
 
     /* Specialty: Inline Error */
-    --error-inline-bg: 30 100% 96%; /* #FFF5EB */
-    --error-inline-border: 3 54% 70%; /* #DC8D89 */
-    --error-inline-text: 3 54% 30%; /* #762723 */
+    --error-inline-bg: 12 65% 95%; /* #FBEFEC */
+    --error-inline-border: 9 48% 74%; /* #DDA79D */
+    --error-inline-text: 8 44% 33%; /* #7A392F */
 
     /* Neutral Gray Scale */
-    --gray-50: 210 20% 98%; /* #F9FAFB */
-    --gray-100: 220 13% 95%; /* #F2F3F5 */
-    --gray-200: 214 13% 90%; /* #E1E4E8 */
-    --gray-300: 212 14% 82%; /* #CBD1D8 */
-    --gray-400: 214 8% 65%; /* #9FA5AD */
-    --gray-500: 214 7% 46%; /* #6B7280 */
-    --gray-600: 214 7% 38%; /* #5A6068 */
-    --gray-700: 217 19% 27%; /* #374151 */
-    --gray-800: 215 28% 17%; /* #1F2937 */
-    --gray-900: 220 13% 9%; /* #14161A */
+    --gray-50: 320 23% 97%; /* #FAF7F9 */
+    --gray-100: 330 19% 94%; /* #F2ECEF */
+    --gray-200: 323 13% 88%; /* #E5DDE2 */
+    --gray-300: 323 13% 80%; /* #D2C5CD */
+    --gray-400: 295 6% 58%; /* #9A8E9B */
+    --gray-500: 291 6% 47%; /* #7E7280 */
+    --gray-600: 291 7% 41%; /* #6E6270 */
+    --gray-700: 291 9% 29%; /* #4E4350 */
+    --gray-800: 295 12% 21%; /* #3A2E3B */
+    --gray-900: 295 16% 15%; /* #2A1F2B */
   }
 
   .dark:root {
     /* Dark — wired & parity-tested, not designed or verified */
-    --background: 218 22% 7%; /* #0E1116 */
-    --foreground: 214 17% 92%; /* #E7EAEE */
-    --card: 215 23% 10%; /* #141920 */
-    --card-foreground: 214 17% 92%; /* #E7EAEE */
-    --popover: 215 23% 10%; /* #141920 */
-    --popover-foreground: 214 17% 92%; /* #E7EAEE */
+    --background: 291 14% 10%; /* #1B151C */
+    --foreground: 309 20% 93%; /* #F1EAF0 */
+    --card: 288 15% 13%; /* #241C26 */
+    --card-foreground: 309 20% 93%; /* #F1EAF0 */
+    --popover: 288 15% 13%; /* #241C26 */
+    --popover-foreground: 309 20% 93%; /* #F1EAF0 */
 
-    --primary: 216 70% 70%; /* #7FA9E8 */
-    --primary-foreground: 218 22% 7%; /* #0E1116 */
-    --primary-light: 216 70% 78%; /* #A0BFEE */
-    --primary-dark: 216 70% 60%; /* #528BE0 */
+    --primary: 297 28% 72%; /* #C9A2CB */
+    --primary-foreground: 291 14% 10%; /* #1B151C */
+    --primary-light: 298 32% 80%; /* #DBBBDC */
+    --primary-dark: 296 22% 58%; /* #A97CAC */
 
-    --secondary: 215 18% 16%; /* #212830 */
-    --secondary-foreground: 214 17% 92%; /* #E7EAEE */
+    --secondary: 286 15% 17%; /* #2E2431 */
+    --secondary-foreground: 309 20% 93%; /* #F1EAF0 */
 
-    --muted: 215 23% 12%; /* #181D26 */
-    --muted-foreground: 213 10% 64%; /* #9BA3AD */
+    --muted: 278 20% 16%; /* #2A2030 */
+    --muted-foreground: 296 9% 67%; /* #B2A4B3 */
 
-    --accent: 215 23% 12%; /* #181D26 */
-    --accent-foreground: 214 17% 92%; /* #E7EAEE */
+    --accent: 286 15% 17%; /* #2E2431 */
+    --accent-foreground: 309 20% 93%; /* #F1EAF0 */
 
-    --category-accent1: 214 35% 55%; /* #6487B4 */
-    --category-accent2: 164 25% 50%; /* #609F8E */
-    --category-accent3: 30 35% 55%; /* #B48C64 */
+    --highlight: 27 87% 62%; /* #F2954B */
+    --highlight-foreground: 291 14% 10%; /* #1B151C */
 
-    --destructive: 4 65% 65%; /* #E0756D */
-    --destructive-foreground: 218 22% 7%; /* #0E1116 */
-    --success-state: 152 43% 56%; /* #5FBF92 */
-    --warning: 41 65% 54%; /* #D6A63F */
-    --warning-foreground: 218 22% 7%; /* #0E1116 */
+    --category-accent1: 284 21% 63%; /* #A98CB4 */
+    --category-accent2: 159 28% 59%; /* #79B39F */
+    --category-accent3: 349 45% 72%; /* #D796A2 */
 
-    --border: 214 18% 17%; /* #242B34 */
-    --border-strong: 214 18% 24%; /* #323C48 */
-    --input: 215 18% 14%; /* #1D232A */
-    --ring: 216 70% 70%; /* #7FA9E8 */
-    --neutral: 0 0% 50%; /* #808080 */
-    --scrim: 218 22% 7%; /* #0E1116 */
+    --destructive: 6 61% 67%; /* #DE8378 */
+    --destructive-foreground: 291 14% 10%; /* #1B151C */
+    --success-state: 142 35% 58%; /* #6FB98A */
+    --warning: 37 67% 63%; /* #E0B061 */
+    --warning-strong: 38 77% 73%; /* #EFC886 */
+    --warning-foreground: 291 14% 10%; /* #1B151C */
+    --short-notice: 25 74% 65%; /* #E89A63 */
+    --short-notice-strong: 23 77% 74%; /* #F0B189 */
 
-    --skeleton-base: 215 23% 12%; /* #181D26 */
-    --skeleton-highlight: 214 18% 17%; /* #242B34 */
+    --border: 279 18% 19%; /* #332839 */
+    --border-strong: 282 15% 26%; /* #46384C */
+    --input: 278 20% 16%; /* #2A2030 */
+    --ring: 297 28% 72%; /* #C9A2CB */
+    --neutral: 285 7% 53%; /* #8C8090 */
+    --scrim: 291 14% 10%; /* #1B151C */
 
-    --error-inline-bg: 4 40% 12%; /* #2B1412 */
-    --error-inline-border: 4 40% 28%; /* #642F2B */
-    --error-inline-text: 4 65% 72%; /* #E68F89 */
+    --skeleton-base: 278 20% 16%; /* #2A2030 */
+    --skeleton-highlight: 279 18% 19%; /* #332839 */
 
-    --gray-50: 215 23% 10%; /* #141920 */
-    --gray-100: 215 23% 12%; /* #181D26 */
-    --gray-200: 214 18% 17%; /* #242B34 */
-    --gray-300: 214 18% 24%; /* #323C48 */
-    --gray-400: 213 10% 45%; /* #67727E */
-    --gray-500: 213 10% 55%; /* #818B98 */
-    --gray-600: 213 10% 64%; /* #9BA3AD */
-    --gray-700: 214 14% 75%; /* #B8BEC6 */
-    --gray-800: 214 16% 88%; /* #DDE1E6 */
-    --gray-900: 214 17% 92%; /* #E7EAEE */
+    --error-inline-bg: 5 31% 14%; /* #2E1A18 */
+    --error-inline-border: 9 32% 28%; /* #5E3730 */
+    --error-inline-text: 6 69% 76%; /* #EC9F96 */
+
+    --gray-50: 288 15% 13%; /* #241C26 */
+    --gray-100: 278 20% 16%; /* #2A2030 */
+    --gray-200: 279 18% 19%; /* #332839 */
+    --gray-300: 282 15% 26%; /* #46384C */
+    --gray-400: 300 6% 49%; /* #857785 */
+    --gray-500: 296 7% 58%; /* #9A8C9B */
+    --gray-600: 296 9% 67%; /* #B2A4B3 */
+    --gray-700: 300 10% 76%; /* #C9BDC9 */
+    --gray-800: 306 14% 86%; /* #E0D6DF */
+    --gray-900: 309 20% 93%; /* #F1EAF0 */
   }
 }

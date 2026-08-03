@@ -242,11 +242,11 @@ verified by this agent; treat anything not listed as unverified.
   (`testID="settings-delete-account"`) driving a new
   `src/hooks/mutations/useDeleteAccount.ts`, with `en` and `es` strings. Built
   test-first; the red phase was captured before any implementation existed.
-- **Fonts** — DONE. Ledger uses the **platform face** (SF Pro / Roboto); no custom
+- **Fonts** — DONE. Daylight keeps the **platform face** (SF Pro / Roboto); no custom
   `.ttf` files are shipped. Weight is set via numeric `fontWeight` / Tailwind
   `font-*` classes — see `apps/mobile/assets/fonts/README.md` and
   `lib/design-tokens/typography.ts`. (Historical note: Wave 0 briefly shipped
-  Sora static weights; those were removed in the Ledger migration because
+  Sora static weights; those were removed in the Ledger→Daylight lineage because
   per-file weight families made numeric `fontWeight` a no-op on iOS.)
 - **Env files** — done by this agent. `apps/api/.env` and `apps/mobile/.env`
   created, both confirmed gitignored and untracked. See §8 for the human
@@ -458,8 +458,10 @@ status bar. Any replacement shell should include one — `src/app/welcome.tsx` i
 the model.
 
 What works, verified on the simulator:
-- The app builds, installs, launches, and renders `welcome.tsx` correctly — Ledger
-  platform face, `#1F4A8C` primary button, tight radii. The design system is live.
+- The app builds, installs, launches, and renders `welcome.tsx` correctly — platform
+  face, primary button, and radii as described at verification time. **Stale:** those
+  claims described the Ledger build (`#1F4A8C` deep blue, tight 4–6px radii); the app
+  now ships Daylight (plum `#5B3E5D`, soft 20px card radii, plum-tinted shadows).
 - Sign-in works. Maestro drove it end to end (`.maestro/01-sign-in-parent.yaml`),
   every step COMPLETED, and the welcome screen correctly disappears.
 - The app reaches the API: `GET /api/app/status 200` in `apps/api/logs/dev.log`.
@@ -493,8 +495,9 @@ Metro hot-reload, and screenshotting. Do not re-test them.
    visible white text. Nothing is on top. (`screenshots/08-probe.png`)
 3. **The design-system components** — rendering `H1`, `Text` (from
    `components/ui/text`), and `Button` directly in that route renders all of
-   them correctly: bold heading, body text, and the Ledger primary button.
-   (`screenshots/09-probe2.png`)
+   them correctly: bold heading, body text, and the primary button.
+   (`screenshots/09-probe2.png`) **Stale:** "Ledger primary button" referred to the
+   deep-blue Ledger palette; current build uses Daylight plum.
 4. **A nested `<Stack>`** — `src/app/auth/login.tsx` is also inside a nested
    Stack (`auth/_layout.tsx`) and renders fine; Maestro typed into its inputs.
 5. **`className="flex-1"` vs inline `style={{flex:1}}`** on the shell root —
@@ -800,7 +803,7 @@ credentials:
   placeholder `SET-ME-service-role-key-from-supabase-dashboard`; a human
   must copy the real value from the Supabase dashboard (Project Settings →
   API → service_role) for project ref `dylhrlvfkibipdkguptz`.
-- ~~Sora font files~~ — superseded by Ledger (platform face; no custom fonts).
+- ~~Sora font files~~ — superseded by Daylight (platform face; no custom fonts).
   See §4 Fonts.
 
 ## 7. Known template defects inherited

@@ -39,6 +39,7 @@ import { type Href, useRouter } from 'expo-router';
 import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ScrollView, View } from 'react-native';
+import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -62,6 +63,7 @@ import { useAvailability } from '@/src/hooks/queries/useAvailability';
 import { useChildren } from '@/src/hooks/queries/useChildren';
 import { useSchedulePattern } from '@/src/hooks/queries/useSchedulePattern';
 import { showSuccessToast } from '@/src/lib/toast';
+import { useElevation } from '~/lib/design-tokens/elevation';
 import {
   type AvailabilityRow,
   calculateWeekTotalHours,
@@ -77,6 +79,7 @@ export function ScheduleRespondScreen({
   patternId,
 }: ScheduleRespondScreenProps) {
   const { t } = useTranslation('schedule');
+  const elevation = useElevation();
   const router = useRouter();
 
   const pattern = useSchedulePattern(patternId);
@@ -155,7 +158,7 @@ export function ScheduleRespondScreen({
     <ScrollView
       testID="schedule-respond-screen"
       className="flex-1 bg-background"
-      contentContainerStyle={{ padding: 24, paddingBottom: 100 }}
+      contentContainerStyle={SCREEN_CONTENT_STYLE}
     >
       <H1>{t('respond.screenTitle')}</H1>
       <Body className="mt-2 text-muted-foreground">
@@ -169,7 +172,8 @@ export function ScheduleRespondScreen({
             <View
               key={day.id}
               testID={`schedule-respond-day-${day.weekday}`}
-              className="gap-2 rounded-xl border border-border p-4"
+              className="gap-2 rounded-row bg-card p-4"
+              style={elevation.row}
             >
               <View className="flex-row items-center justify-between gap-2">
                 <Body className="font-semibold" tabular>

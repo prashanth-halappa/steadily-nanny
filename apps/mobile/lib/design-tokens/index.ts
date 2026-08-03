@@ -7,6 +7,7 @@
  */
 
 export * from './colors';
+export * from './elevation';
 export * from './palette';
 export * from './spacing';
 export * from './typography';

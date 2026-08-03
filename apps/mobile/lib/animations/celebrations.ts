@@ -25,14 +25,15 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 /** Number of confetti particles */
 const PARTICLE_COUNT = 20;
 
-/** Confetti particle colors — Ledger palette */
+/** Confetti particle colors — Daylight palette */
 const CONFETTI_COLORS = [
-  '#1F4A8C', // Primary
-  '#2E6B4F', // Success
-  '#3D5A80', // Category accent 1
-  '#4A6B62', // Category accent 2
-  '#7A5C3E', // Category accent 3
-  '#8A6A1F', // Warning
+  '#5B3E5D', // Primary (plum)
+  '#4A7A5C', // Success
+  '#6A4C77', // Category accent 1
+  '#4C7A6A', // Category accent 2
+  '#A85E6E', // Category accent 3
+  '#C08A3E', // Warning
+  '#E8823C', // Highlight (apricot)
 ];
 
 /** Confetti particle shapes */
@@ -59,7 +60,7 @@ function generateParticles(): ParticleConfig[] {
     x: Math.random() * SCREEN_WIDTH,
     color:
       CONFETTI_COLORS[Math.floor(Math.random() * CONFETTI_COLORS.length)] ??
-      '#1F4A8C',
+      '#5B3E5D',
     size: 6 + Math.random() * 8,
     shape: (Math.random() > 0.5 ? 'square' : 'circle') as ParticleShape,
     delay: Math.random() * 400,

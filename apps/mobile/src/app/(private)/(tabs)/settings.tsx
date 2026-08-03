@@ -5,6 +5,7 @@ import { type Href, router } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { ScrollView, View } from 'react-native';
 import { AnimatedPressable } from '@/lib/animations';
+import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { cn } from '@/lib/utils';
 import {
   AlertDialog,
@@ -75,7 +76,7 @@ export default function SettingsScreen() {
   return (
     <ScrollView
       className="flex-1 bg-background"
-      contentContainerStyle={{ padding: 24, paddingBottom: 100 }}
+      contentContainerStyle={SCREEN_CONTENT_STYLE}
     >
       <H1>{t('settings:title')}</H1>
 

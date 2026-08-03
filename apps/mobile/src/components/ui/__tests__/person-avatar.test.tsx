@@ -43,9 +43,9 @@ describe('PersonAvatar', () => {
       <PersonAvatar name="Dana" colour="#6366F1" testID="avatar-colour" />
     );
     const avatar = getByTestId('avatar-colour');
-    // Legacy brand swatches remap to Ledger category accents
+    // Legacy brand swatches remap to Daylight category accents
     expect(avatar.props.style).toEqual(
-      expect.objectContaining({ backgroundColor: '#3D5A80' })
+      expect.objectContaining({ backgroundColor: '#6A4C77' })
     );
   });
 

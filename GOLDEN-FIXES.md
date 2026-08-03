@@ -22,9 +22,9 @@ Format: **Symptom → Root cause → Where the fix lives in this repo → What n
 - **Where the fix lives:** the convention (never `className` on an `Animated.View`; use inline `style={{}}` or `useThemeColors()` for dynamic colors) plus the escape-hatch hook itself: `apps/mobile/lib/design-tokens/useThemeColors.ts`. The canonical, heavily-commented reference implementation is `apps/mobile/src/components/ui/loading-indicator.tsx`; see also `apps/mobile/src/components/ui/progress.tsx`, `apps/mobile/src/components/ui/loading-button.tsx`, and `apps/mobile/lib/animations/StaggeredFadeIn.tsx` for more worked examples.
 - **What not to do:** don't put layout/color `className` directly on an `Animated.View` — split it into an inner static `View` for `className` and keep only the animated `style` on the `Animated.View`. There is no automated Biome/CI guard for this in the template (it's convention + comments only) — if you want one, this is a good candidate for a custom lint rule.
 
-**3. Platform face + numeric `fontWeight` (Ledger; Sora removed)**
+**3. Platform face + numeric `fontWeight` (Daylight; Sora removed)**
 - **Symptom (historical):** with Sora, setting a numeric `fontWeight` (e.g. `700`) did nothing on iOS, or produced synthetic ("faux") bold — each weight was a separate font file and iOS only picked the right glyphs via `fontFamily: 'Sora-*'`, not `fontWeight`.
-- **Root cause / fix:** Ledger dropped custom fonts and uses the **platform face** (SF Pro on iOS, Roboto on Android). Omit `fontFamily`; set weight via numeric `fontWeight` in typography tokens, or Tailwind classes like `font-medium` / `font-semibold`.
+- **Root cause / fix:** Daylight **deliberately** keeps the **platform face** (SF Pro on iOS, Roboto on Android) — warmth comes from colour, geometry, and shadow, not a custom font. Omit `fontFamily`; set weight via numeric `fontWeight` in typography tokens, or Tailwind classes like `font-medium` / `font-semibold`. Do not re-litigate a font swap unless product explicitly requests one.
 - **Where the fix lives:** `apps/mobile/lib/design-tokens/typography.ts` — tokens carry `weight` only; the typography factory maps it to `fontWeight`. See `apps/mobile/assets/fonts/README.md`.
 - **What not to do:** don't set `fontFamily: 'System'` (or any custom face) unless you intentionally load one via `expo-font`. Don't reintroduce per-file weight families and expect numeric `fontWeight` to work on iOS.
 
@@ -57,6 +57,12 @@ Format: **Symptom → Root cause → Where the fix lives in this repo → What n
 - **Root cause:** expo-router's file-based routing treats any file inside `src/app/` as a route candidate by filename pattern; a test file that shadows a route name collides with it.
 - **Where the fix lives:** the convention this template follows — test files live under `__tests__/` subfolders, never colocated inside `src/app/` with a name that could match a route pattern. See `apps/mobile/src/domains/widget/__tests__/widgetScreens.test.ts` and `apps/mobile/src/app/__tests__/rootLayout.providerOrder.test.ts` for the pattern.
 - **What not to do:** don't add a `*.test.ts(x)` file directly inside `src/app/` (or any expo-router route directory) next to the route files it's testing — put it in a `__tests__/` folder instead.
+
+**19. Shadowed surfaces need opaque backgrounds (Daylight uses RN `boxShadow`, not `elevation`)**
+- **Symptom:** a card that looks fine on iOS shows an unwanted shadow bleed or muddy tint on Android, because the card's background is translucent.
+- **Root cause (historical):** Android's `elevation` prop composites against the view's actual (possibly translucent) background. Daylight avoids `elevation` entirely — shadows come from React Native's multi-layer `boxShadow` style array via `useElevation()` in `apps/mobile/lib/design-tokens/elevation.ts`. That path is less prone to the old bleed, but the discipline still holds: a translucent surface under any shadow reads wrong on device.
+- **Where the fix lives:** `apps/mobile/lib/design-tokens/elevation.ts` — `useElevation()` returns `{ card, liveCard, row }` styles derived from the palette. Consumers merge them inline (`style={[elevation.card, style]}`), never via Tailwind `shadow-*` (NativeWind's box-shadow parser is broken and silently drops multi-layer shadows). **`card-variants.tsx`:** when `tintColor` is set, `tintStyle` applies a translucent background — elevation is **suppressed** on those variants; do not add shadow back without removing the tint or making the ground opaque.
+- **What not to do:** don't put `shadow-sm` / `shadow-md` / etc. on a component and expect it to work — use `useElevation()`. Don't combine elevation styles with translucent `bg-card/90` (or any tinted overlay) on the same surface; use opaque `bg-card` on shadowed cards.
 
 ### API / LLM
 
@@ -127,12 +133,6 @@ These fixes are real and were expensive to learn, but the feature they protect i
 - **Root cause:** a legal re-consent gate whose loading `enabled` flag was derived from the current route, combined with unmounting the navigator (`<Stack>`) during a *transient* loading state instead of only during a stable "blocked" state, created a mount → route-change → re-fetch → remount loop.
 - **Not shipped:** this template has no legal/consent-gating subsystem in v1 (see `PORTING.md`). The lesson is preserved as an inline comment at the exact extension point: `apps/mobile/src/app/(private)/_layout.tsx` has a `RE-CONSENT GATE EXTENSION POINT` comment block stating the fix précis — keep the gate's `enabled` condition route-independent, and only unmount `<Stack>` for the stable blocked state, never a transient loading one (the same file already applies this same "keep `<Stack>` mounted, overlay a loader" pattern for its simple auth-session check, so the working example is right there to copy).
 - **What not to do (when you build this):** don't derive a data-fetch's `enabled` condition from anything that changes on every navigation, and don't unmount your top-level `<Stack>` for any state you expect to resolve quickly.
-
-**19. Android elevation renders through a translucent card background**
-- **Symptom (in a full implementation):** a card component that looks fine on iOS shows an unwanted shadow/gradient bleeding through on Android, because the card's background is translucent.
-- **Root cause:** Android's `elevation` shadow is drawn using the view's actual (possibly translucent) background, unlike iOS's separately-computed shadow — a translucent card surface lets the elevation shadow show through in a way that reads as a rendering bug.
-- **Not shipped:** no generic card-surface/shadow style utility exists in this template's `apps/mobile/lib/` or `apps/mobile/src/components/` today (verified: no `elevation` usage anywhere in those trees). If you build a card component with a shadow, give it an **opaque** background color rather than a translucent one, and reserve any accent/brand color for a non-elevated child element (e.g. an icon badge) rather than the elevated surface itself.
-- **What not to do (when you build this):** don't reuse a translucent/semi-transparent background on any `View` that also has `elevation` set on Android.
 
 **20. Legal policy publish step must run on every policy-version bump**
 - **Symptom (in a full implementation):** sign-up starts failing with a 500 error referencing a missing "archived policy version."

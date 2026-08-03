@@ -9,8 +9,8 @@
  * so `code`/`isError`/`onRetry` are passed in.
  */
 import { useTranslation } from 'react-i18next';
-import { View } from 'react-native';
 import { Button } from '@/src/components/ui/button';
+import { Card } from '@/src/components/ui/card';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { Text } from '@/src/components/ui/text';
 import { Body } from '@/src/components/ui/typography';
@@ -29,7 +29,7 @@ export function InviteCodeCard({
   const { t } = useTranslation('household');
 
   return (
-    <View className="items-center gap-4 rounded-2xl border border-border bg-card p-6">
+    <Card className="items-center gap-4 p-5.5">
       {code ? (
         <Text
           testID="invite-code-value"
@@ -55,6 +55,6 @@ export function InviteCodeCard({
           </Button>
         </>
       ) : null}
-    </View>
+    </Card>
   );
 }

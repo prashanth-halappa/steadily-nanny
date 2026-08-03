@@ -14,7 +14,7 @@ Example: `tailwind.config.js` — the token groups that matter:
 
 ```js
 theme: { extend: {
-  // No fontFamily — Ledger uses the platform face; weight via fontWeight / font-medium
+  // No fontFamily — Daylight keeps the platform face; weight via fontWeight / font-medium
   fontSize: {              // body min 16px; line-heights ~1.5x; semantic aliases
     base: ['16px', { lineHeight: '24px' }],   // MINIMUM body size
     display: ['32px', { lineHeight: '48px', fontWeight: '600' }],
@@ -26,22 +26,32 @@ theme: { extend: {
   colors: {                // EVERY color reads a CSS var — never a literal hex
     background: 'hsl(var(--background))',
     primary: { DEFAULT: 'hsl(var(--primary))', foreground: 'hsl(var(--primary-foreground))' },
+    highlight: { DEFAULT: 'hsl(var(--highlight))', foreground: 'hsl(var(--highlight-foreground))' },
     /* … */
   },
-  borderRadius: {          // Ledger — tight radii; separation by rule + whitespace
-    card: '6px', button: '4px', chip: '4px',
+  borderRadius: {          // Daylight — soft domestic geometry
+    sm: '8px', DEFAULT: '12px', md: '12px', lg: '16px',
+    xl: '16px', '2xl': '20px', '3xl': '24px',
+    card: '20px', button: '14px', chip: '999px',
+    row: '16px', cell: '12px',
   },
-  boxShadow: { card: 'none', /* … all none — use hairline borders */ },
-  borderWidth: { hairline: hairlineWidth() },
+  boxShadow: {
+    // Still all 'none', deliberately: NativeWind's box-shadow parser is broken
+    // (react-native-css-interop 0.2.6 — reads shadowRadius from spread, bails on
+    // multi-layer, falls through into aspect-ratio). Daylight elevation lives in
+    // lib/design-tokens/elevation.ts as RN inline styles via useElevation().
+    sm: 'none', DEFAULT: 'none', md: 'none', lg: 'none', card: 'none', none: 'none',
+  },
+  borderWidth: { hairline: hairlineWidth(), '1.5': '1.5px' },
 }}
 ```
 
 Conventions baked into the tokens:
-- **Spacing is an 8pt grid** — use `p-4` (16px), `gap-6` (24px), not arbitrary values. `touch` (44px) is the minimum tappable size.
+- **Spacing is an 8pt grid** — use `p-4` (16px), `gap-6` (24px), not arbitrary values. `touch` (44px) is the minimum tappable size. Screen content gutters are 22px (`SCREEN_CONTENT_STYLE` in `lib/design-tokens/spacing.ts`).
 - **Typography minimum is 16px** for body; the scale is semantic (`display`, `caption`, `button`). Weight via numeric `fontWeight` / Tailwind `font-*` — no custom `fontFamily`.
-- **Tight radii** — `rounded-card` (6px), `rounded-button` / `rounded-chip` (4px); not pills.
-- **No elevation shadows** — `boxShadow.*` are all `none`; use hairline borders (`borderWidth.hairline`) for separation.
-- **Palette source of truth** — `lib/design-tokens/palette.ts` (Ledger); `global.css` mirrors it and is parity-tested.
+- **Soft radii** — `rounded-card` (20px), `rounded-button` (14px), `rounded-row` (16px), `rounded-cell` (12px); `rounded-chip` (999px) is a pill for badges and chips.
+- **Elevation via inline styles, not Tailwind `shadow-*`** — `boxShadow.*` stay `none` because NativeWind cannot parse multi-layer shadows. Use `useElevation()` from `lib/design-tokens/elevation.ts` for plum-tinted card/row shadows; hairline borders (`borderWidth.hairline`) still separate outlined surfaces.
+- **Palette source of truth** — `lib/design-tokens/palette.ts` (Daylight); `global.css` mirrors it and is parity-tested.
 
 A skeleton of this config (generic palette, same structure) ships at `pattern/templates/mobile/tailwind.config.js`.
 
@@ -60,21 +70,24 @@ Example: `global.css` (abridged):
 
 @layer base {
   :root {
-    --background: 0 0% 100%;        /* white */
-    --foreground: 240 10% 10%;      /* near-black */
-    --primary: 216 64% 34%;         /* deep ledger blue — see palette.ts */
+    --background: 345 17% 95%;      /* #F5F1F2 — warm ground */
+    --foreground: 295 16% 15%;      /* #2A1F2B — plum ink */
+    --primary: 296 20% 30%;         /* #5B3E5D — plum — see palette.ts */
     --primary-foreground: 0 0% 100%;
-    --muted: 220 14% 96%;
-    --muted-foreground: 220 8% 50%;
-    --border: 220 13% 91%;
-    /* category colors, semantic states, a gray-50..900 scale, specialty tokens
-       (skeleton shimmer, hero-card gradient, inline-error) … */
+    --highlight: 24 79% 57%;        /* #E8823C — apricot accent */
+    --highlight-foreground: 295 16% 15%;
+    --muted: 326 19% 93%;           /* #F0E9ED */
+    --muted-foreground: 291 7% 41%; /* #6E6270 */
+    --border: 323 13% 88%;          /* #E5DDE2 — hairline rule */
+    /* category accents, semantic states (success, warning, short-notice, …),
+       gray-50..900 scale, skeleton shimmer, inline-error … */
   }
 
   .dark:root {
-    --background: 240 6% 10%;       /* warm dark */
-    --foreground: 220 14% 96%;
-    --primary: 216 70% 70%;         /* lighter ledger blue for dark — see palette.ts */
+    --background: 291 14% 10%;      /* #1B151C */
+    --foreground: 309 20% 93%;      /* #F1EAF0 */
+    --primary: 297 28% 72%;         /* #C9A2CB — lighter plum for dark */
+    --highlight: 27 87% 62%;        /* #F2954B */
     /* …every token re-declared with dark values, gray scale INVERTED… */
   }
 }
@@ -90,6 +103,37 @@ One `dark` class toggle on a root `<View>` (set in the root layout's themed shel
 - **Always use semantic tokens** (`text-foreground`, `bg-card`, `border-border`) — never literal hex or `text-black`. Literals don't adapt to dark mode.
 - Use foreground/background pairs (`bg-primary` + `text-primary-foreground`) so contrast holds in both themes.
 - The gray scale is *inverted* in dark mode (`gray-50` is a subtle background in both themes, `gray-900` is strong text in both) so `text-gray-900` / `bg-gray-50` read correctly without conditionals.
+
+### Elevation — `useElevation()`, not Tailwind shadows
+
+Daylight restores soft plum-tinted shadows after Ledger removed them entirely. They cannot live in Tailwind: NativeWind 4 / `react-native-css-interop@0.2.6` parses `box-shadow` into a single `shadowColor` + `shadowRadius`, misreads spread as radius, and bails on multi-layer values. So `tailwind.config.js` keeps every `boxShadow` token as `'none'`.
+
+Shadows are authored in `lib/design-tokens/elevation.ts` as React Native `boxShadow` arrays (RN 0.86+, both platforms):
+
+```tsx
+import { useElevation } from '~/lib/design-tokens/elevation';
+
+function Card({ style, live = false, ...props }) {
+  const elevation = useElevation();
+  return (
+    <View
+      className="rounded-card bg-card"
+      style={[live ? elevation.liveCard : elevation.card, style]}
+      {...props}
+    />
+  );
+}
+```
+
+`useElevation()` returns `{ card, liveCard, row }` — colours derived from `palette.ts` via `hexToRgba`, so shadows track theme changes. The two mode variants are built once at module load and returned by reference, so consumers get a stable style identity across renders.
+
+**Shadow instead of rule — the inversion that defines Daylight.** Ledger separated surfaces with a hairline border and no elevation; Daylight does the opposite. `Card` therefore carries **no border**. When you need a card surface, use `<Card>` rather than hand-rolling `<View className="rounded-card border border-border bg-card">` — a hand-rolled one gets the radius but silently misses the shadow, which is how the app ends up looking like Ledger in Daylight's colours. Rows are the same story: `rounded-row bg-card` + `style={elevation.row}`, no border.
+
+Two deliberate exceptions, both still bordered because the border is doing a *different* job: `RoleOptionCard`'s `border-2` is a selection affordance, and form fields keep their input border.
+
+**`live`** swaps the neutral plum shadow for the apricot one. Pass it on exactly the predicate that drives the Today wash (`ClockInCard`, `NannyLiveStatusCard`) so the card carries the signal and the wash reads as its echo — not the other way round.
+
+**`card-variants.tsx`:** suppress elevation when `tintColor` sets a translucent background. Never merge elevation styles onto a Reanimated `Animated.View` that also carries `className` (see §4).
 
 ---
 
@@ -217,10 +261,12 @@ Rules of thumb:
 
 | Concern | File |
 |---|---|
-| Palette source of truth (Ledger) | `lib/design-tokens/palette.ts` |
+| Palette source of truth (Daylight) | `lib/design-tokens/palette.ts` |
+| Elevation shadows (`useElevation()`) | `lib/design-tokens/elevation.ts` |
 | Token names | `tailwind.config.js` |
 | CSS-variable theme (light/dark) | `global.css` |
 | Typography tokens (platform face) | `lib/design-tokens/typography.ts` |
+| Screen content padding | `lib/design-tokens/spacing.ts` |
 | `cn()` class merge | `lib/utils.ts` |
 | CVA variant component | `src/components/ui/button.tsx` |
 | Typography factory | `src/components/ui/typography/factory.tsx` |

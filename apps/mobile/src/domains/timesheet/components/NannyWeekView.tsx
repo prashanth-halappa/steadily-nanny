@@ -6,6 +6,7 @@
  */
 import { FlashList } from '@shopify/flash-list';
 import { useTranslation } from 'react-i18next';
+import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { useWeekTimeEntries } from '@/src/hooks/queries/useWeekTimeEntries';
 import type { TimeEntry } from '../types';
@@ -88,7 +89,7 @@ export function NannyWeekView({
           isPreviousDisabled={isPreviousWeekDisabled}
         />
       }
-      contentContainerStyle={{ padding: 24, paddingBottom: 100 }}
+      contentContainerStyle={SCREEN_CONTENT_STYLE}
       ListEmptyComponent={null}
       accessibilityLabel={t('yourWeek')}
     />

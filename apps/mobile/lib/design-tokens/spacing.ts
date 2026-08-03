@@ -30,13 +30,19 @@ export const spacing = {
   minTouchTarget: 44, // Minimum touch target size (44x44pt)
   minTouchTargetAndroid: 48, // Android minimum (48x48dp)
 
-  // Border radius — Ledger tight scale
-  radiusSm: 2,
-  radiusMd: 4,
-  radiusLg: 6,
-  radiusXl: 8,
-  radiusXxl: 10,
+  // Border radius — Daylight soft scale (see tailwind.config.js borderRadius)
+  radiusSm: 8,
+  radiusMd: 12,
+  radiusLg: 16,
+  radiusXl: 16,
+  radiusXxl: 20,
   radiusFull: 9999,
+} as const;
+
+/** Shared ScrollView / FlashList content padding for tab screens. */
+export const SCREEN_CONTENT_STYLE = {
+  padding: 22,
+  paddingBottom: 100,
 } as const;
 
 /**
@@ -60,10 +66,10 @@ export const spacingClasses = {
   sectionMargin: 'mb-6', // 24px bottom
   cardMargin: 'mb-3', // 12px bottom
 
-  // Border radius
-  radiusSm: 'rounded-lg', // 8px
-  radiusMd: 'rounded-xl', // 12px
-  radiusLg: 'rounded-2xl', // 16px
+  // Border radius — semantic Tailwind aliases (Daylight)
+  radiusSm: 'rounded-sm', // 8px
+  radiusMd: 'rounded-md', // 12px
+  radiusLg: 'rounded-lg', // 16px
   radiusFull: 'rounded-full', // Full circle
 } as const;
 

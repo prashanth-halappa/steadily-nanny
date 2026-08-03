@@ -1,5 +1,5 @@
 /**
- * Ledger palette — single authored source of truth.
+ * Daylight palette — single authored source of truth.
  *
  * Each token holds both notations because neither derives from the other at
  * runtime (Tailwind reads CSS vars; Animated/SVG/LinearGradient need hex):
@@ -37,6 +37,8 @@ export const PALETTE_CSS_VARS = {
   mutedForeground: 'muted-foreground',
   accent: 'accent',
   accentForeground: 'accent-foreground',
+  highlight: 'highlight',
+  highlightForeground: 'highlight-foreground',
   categoryAccent1: 'category-accent1',
   categoryAccent2: 'category-accent2',
   categoryAccent3: 'category-accent3',
@@ -44,7 +46,10 @@ export const PALETTE_CSS_VARS = {
   destructiveForeground: 'destructive-foreground',
   success: 'success-state',
   warning: 'warning',
+  warningStrong: 'warning-strong',
   warningForeground: 'warning-foreground',
+  shortNotice: 'short-notice',
+  shortNoticeStrong: 'short-notice-strong',
   border: 'border',
   borderStrong: 'border-strong',
   input: 'input',
@@ -74,139 +79,149 @@ export type PaletteMode = Record<PaletteKey, PaletteEntry>;
 
 export const palette = {
   light: {
-    background: { css: '240 20% 99%', hex: '#FCFCFD' },
-    foreground: { css: '220 13% 9%', hex: '#14161A' },
+    background: { css: '345 17% 95%', hex: '#F5F1F2' },
+    foreground: { css: '295 16% 15%', hex: '#2A1F2B' },
     card: { css: '0 0% 100%', hex: '#FFFFFF' },
-    cardForeground: { css: '220 13% 9%', hex: '#14161A' },
+    cardForeground: { css: '295 16% 15%', hex: '#2A1F2B' },
     popover: { css: '0 0% 100%', hex: '#FFFFFF' },
-    popoverForeground: { css: '220 13% 9%', hex: '#14161A' },
+    popoverForeground: { css: '295 16% 15%', hex: '#2A1F2B' },
 
-    primary: { css: '216 64% 34%', hex: '#1F4A8C' },
+    primary: { css: '296 20% 30%', hex: '#5B3E5D' },
     primaryForeground: { css: '0 0% 100%', hex: '#FFFFFF' },
-    primaryLight: { css: '216 64% 48%', hex: '#2C6BC9' },
-    primaryDark: { css: '216 64% 26%', hex: '#183A6D' },
+    primaryLight: { css: '295 17% 43%', hex: '#7C5A7F' },
+    primaryDark: { css: '303 22% 21%', hex: '#40293F' },
 
-    secondary: { css: '220 10% 93%', hex: '#EBEDF0' },
-    secondaryForeground: { css: '220 13% 9%', hex: '#14161A' },
-    muted: { css: '220 13% 95%', hex: '#F2F3F5' },
-    mutedForeground: { css: '214 7% 38%', hex: '#5A6068' },
+    secondary: { css: '323 18% 91%', hex: '#EDE5EA' },
+    secondaryForeground: { css: '295 16% 15%', hex: '#2A1F2B' },
+    muted: { css: '326 19% 93%', hex: '#F0E9ED' },
+    mutedForeground: { css: '291 7% 41%', hex: '#6E6270' },
 
-    // Semantic change: accent is a subtle hover ground, not orange.
-    accent: { css: '220 13% 95%', hex: '#F2F3F5' },
-    accentForeground: { css: '220 13% 9%', hex: '#14161A' },
+    // Semantic: accent is a subtle hover ground, not apricot.
+    accent: { css: '322 20% 92%', hex: '#EFE7EC' },
+    accentForeground: { css: '295 16% 15%', hex: '#2A1F2B' },
+    highlight: { css: '24 79% 57%', hex: '#E8823C' },
+    highlightForeground: { css: '295 16% 15%', hex: '#2A1F2B' },
 
-    categoryAccent1: { css: '214 35% 37%', hex: '#3D5A80' },
-    categoryAccent2: { css: '164 18% 35%', hex: '#4A6B62' },
-    categoryAccent3: { css: '30 33% 36%', hex: '#7A5C3E' },
+    categoryAccent1: { css: '282 22% 38%', hex: '#6A4C77' },
+    categoryAccent2: { css: '159 23% 39%', hex: '#4C7A6A' },
+    categoryAccent3: { css: '347 30% 51%', hex: '#A85E6E' },
 
-    destructive: { css: '3 54% 39%', hex: '#98332E' },
+    destructive: { css: '7 42% 46%', hex: '#A85145' },
     destructiveForeground: { css: '0 0% 100%', hex: '#FFFFFF' },
-    success: { css: '152 40% 30%', hex: '#2E6B4F' },
-    warning: { css: '42 63% 33%', hex: '#8A6A1F' },
-    warningForeground: { css: '0 0% 100%', hex: '#FFFFFF' },
+    success: { css: '143 24% 38%', hex: '#4A7A5C' },
+    warning: { css: '35 51% 50%', hex: '#C08A3E' },
+    warningStrong: { css: '35 54% 40%', hex: '#9C6E2E' },
+    warningForeground: { css: '295 16% 15%', hex: '#2A1F2B' },
+    shortNotice: { css: '20 54% 50%', hex: '#C4693A' },
+    shortNoticeStrong: { css: '21 60% 43%', hex: '#B15A2C' },
 
-    border: { css: '214 13% 90%', hex: '#E1E4E8' },
-    borderStrong: { css: '212 14% 82%', hex: '#CBD1D8' },
-    input: { css: '220 13% 95%', hex: '#F2F3F5' },
-    ring: { css: '216 64% 34%', hex: '#1F4A8C' },
-    neutral: { css: '0 0% 66%', hex: '#A8A8A8' },
+    border: { css: '323 13% 88%', hex: '#E5DDE2' },
+    borderStrong: { css: '323 13% 80%', hex: '#D2C5CD' },
+    input: { css: '326 19% 93%', hex: '#F0E9ED' },
+    ring: { css: '296 20% 30%', hex: '#5B3E5D' },
+    neutral: { css: '315 6% 61%', hex: '#A2969F' },
 
-    skeletonBase: { css: '220 13% 95%', hex: '#F2F3F5' },
-    skeletonHighlight: { css: '210 20% 98%', hex: '#F9FAFB' },
+    skeletonBase: { css: '322 20% 92%', hex: '#EFE7EC' },
+    skeletonHighlight: { css: '330 25% 97%', hex: '#F9F5F7' },
 
-    errorInlineBg: { css: '30 100% 96%', hex: '#FFF5EB' },
-    errorInlineBorder: { css: '3 54% 70%', hex: '#DC8D89' },
-    errorInlineText: { css: '3 54% 30%', hex: '#762723' },
+    errorInlineBg: { css: '12 65% 95%', hex: '#FBEFEC' },
+    errorInlineBorder: { css: '9 48% 74%', hex: '#DDA79D' },
+    errorInlineText: { css: '8 44% 33%', hex: '#7A392F' },
 
-    gray50: { css: '210 20% 98%', hex: '#F9FAFB' },
-    gray100: { css: '220 13% 95%', hex: '#F2F3F5' },
-    gray200: { css: '214 13% 90%', hex: '#E1E4E8' },
-    gray300: { css: '212 14% 82%', hex: '#CBD1D8' },
-    gray400: { css: '214 8% 65%', hex: '#9FA5AD' },
-    gray500: { css: '214 7% 46%', hex: '#6B7280' },
-    gray600: { css: '214 7% 38%', hex: '#5A6068' },
-    gray700: { css: '217 19% 27%', hex: '#374151' },
-    gray800: { css: '215 28% 17%', hex: '#1F2937' },
-    gray900: { css: '220 13% 9%', hex: '#14161A' },
+    gray50: { css: '320 23% 97%', hex: '#FAF7F9' },
+    gray100: { css: '330 19% 94%', hex: '#F2ECEF' },
+    gray200: { css: '323 13% 88%', hex: '#E5DDE2' },
+    gray300: { css: '323 13% 80%', hex: '#D2C5CD' },
+    gray400: { css: '295 6% 58%', hex: '#9A8E9B' },
+    gray500: { css: '291 6% 47%', hex: '#7E7280' },
+    gray600: { css: '291 7% 41%', hex: '#6E6270' },
+    gray700: { css: '291 9% 29%', hex: '#4E4350' },
+    gray800: { css: '295 12% 21%', hex: '#3A2E3B' },
+    gray900: { css: '295 16% 15%', hex: '#2A1F2B' },
 
     // Ink at full saturation — apply alpha at the call site (bg-scrim/80).
-    scrim: { css: '220 13% 9%', hex: '#14161A' },
+    scrim: { css: '295 16% 15%', hex: '#2A1F2B' },
   } satisfies PaletteMode,
 
   dark: {
-    background: { css: '218 22% 7%', hex: '#0E1116' },
-    foreground: { css: '214 17% 92%', hex: '#E7EAEE' },
-    card: { css: '215 23% 10%', hex: '#141920' },
-    cardForeground: { css: '214 17% 92%', hex: '#E7EAEE' },
-    popover: { css: '215 23% 10%', hex: '#141920' },
-    popoverForeground: { css: '214 17% 92%', hex: '#E7EAEE' },
+    background: { css: '291 14% 10%', hex: '#1B151C' },
+    foreground: { css: '309 20% 93%', hex: '#F1EAF0' },
+    card: { css: '288 15% 13%', hex: '#241C26' },
+    cardForeground: { css: '309 20% 93%', hex: '#F1EAF0' },
+    popover: { css: '288 15% 13%', hex: '#241C26' },
+    popoverForeground: { css: '309 20% 93%', hex: '#F1EAF0' },
 
-    primary: { css: '216 70% 70%', hex: '#7FA9E8' },
-    primaryForeground: { css: '218 22% 7%', hex: '#0E1116' },
-    primaryLight: { css: '216 70% 78%', hex: '#A0BFEE' },
-    primaryDark: { css: '216 70% 60%', hex: '#528BE0' },
+    primary: { css: '297 28% 72%', hex: '#C9A2CB' },
+    primaryForeground: { css: '291 14% 10%', hex: '#1B151C' },
+    primaryLight: { css: '298 32% 80%', hex: '#DBBBDC' },
+    primaryDark: { css: '296 22% 58%', hex: '#A97CAC' },
 
-    secondary: { css: '215 18% 16%', hex: '#212830' },
-    secondaryForeground: { css: '214 17% 92%', hex: '#E7EAEE' },
-    muted: { css: '215 23% 12%', hex: '#181D26' },
-    mutedForeground: { css: '213 10% 64%', hex: '#9BA3AD' },
+    secondary: { css: '286 15% 17%', hex: '#2E2431' },
+    secondaryForeground: { css: '309 20% 93%', hex: '#F1EAF0' },
+    muted: { css: '278 20% 16%', hex: '#2A2030' },
+    mutedForeground: { css: '296 9% 67%', hex: '#B2A4B3' },
 
-    accent: { css: '215 23% 12%', hex: '#181D26' },
-    accentForeground: { css: '214 17% 92%', hex: '#E7EAEE' },
+    accent: { css: '286 15% 17%', hex: '#2E2431' },
+    accentForeground: { css: '309 20% 93%', hex: '#F1EAF0' },
+    highlight: { css: '27 87% 62%', hex: '#F2954B' },
+    highlightForeground: { css: '291 14% 10%', hex: '#1B151C' },
 
-    categoryAccent1: { css: '214 35% 55%', hex: '#6487B4' },
-    categoryAccent2: { css: '164 25% 50%', hex: '#609F8E' },
-    categoryAccent3: { css: '30 35% 55%', hex: '#B48C64' },
+    categoryAccent1: { css: '284 21% 63%', hex: '#A98CB4' },
+    categoryAccent2: { css: '159 28% 59%', hex: '#79B39F' },
+    categoryAccent3: { css: '349 45% 72%', hex: '#D796A2' },
 
-    destructive: { css: '4 65% 65%', hex: '#E0756D' },
-    destructiveForeground: { css: '218 22% 7%', hex: '#0E1116' },
-    success: { css: '152 43% 56%', hex: '#5FBF92' },
-    warning: { css: '41 65% 54%', hex: '#D6A63F' },
-    warningForeground: { css: '218 22% 7%', hex: '#0E1116' },
+    destructive: { css: '6 61% 67%', hex: '#DE8378' },
+    destructiveForeground: { css: '291 14% 10%', hex: '#1B151C' },
+    success: { css: '142 35% 58%', hex: '#6FB98A' },
+    warning: { css: '37 67% 63%', hex: '#E0B061' },
+    warningStrong: { css: '38 77% 73%', hex: '#EFC886' },
+    warningForeground: { css: '291 14% 10%', hex: '#1B151C' },
+    shortNotice: { css: '25 74% 65%', hex: '#E89A63' },
+    shortNoticeStrong: { css: '23 77% 74%', hex: '#F0B189' },
 
-    border: { css: '214 18% 17%', hex: '#242B34' },
-    borderStrong: { css: '214 18% 24%', hex: '#323C48' },
-    input: { css: '215 18% 14%', hex: '#1D232A' },
-    ring: { css: '216 70% 70%', hex: '#7FA9E8' },
-    neutral: { css: '0 0% 50%', hex: '#808080' },
+    border: { css: '279 18% 19%', hex: '#332839' },
+    borderStrong: { css: '282 15% 26%', hex: '#46384C' },
+    input: { css: '278 20% 16%', hex: '#2A2030' },
+    ring: { css: '297 28% 72%', hex: '#C9A2CB' },
+    neutral: { css: '285 7% 53%', hex: '#8C8090' },
 
-    skeletonBase: { css: '215 23% 12%', hex: '#181D26' },
-    skeletonHighlight: { css: '214 18% 17%', hex: '#242B34' },
+    skeletonBase: { css: '278 20% 16%', hex: '#2A2030' },
+    skeletonHighlight: { css: '279 18% 19%', hex: '#332839' },
 
-    errorInlineBg: { css: '4 40% 12%', hex: '#2B1412' },
-    errorInlineBorder: { css: '4 40% 28%', hex: '#642F2B' },
-    errorInlineText: { css: '4 65% 72%', hex: '#E68F89' },
+    errorInlineBg: { css: '5 31% 14%', hex: '#2E1A18' },
+    errorInlineBorder: { css: '9 32% 28%', hex: '#5E3730' },
+    errorInlineText: { css: '6 69% 76%', hex: '#EC9F96' },
 
-    gray50: { css: '215 23% 10%', hex: '#141920' },
-    gray100: { css: '215 23% 12%', hex: '#181D26' },
-    gray200: { css: '214 18% 17%', hex: '#242B34' },
-    gray300: { css: '214 18% 24%', hex: '#323C48' },
-    gray400: { css: '213 10% 45%', hex: '#67727E' },
-    gray500: { css: '213 10% 55%', hex: '#818B98' },
-    gray600: { css: '213 10% 64%', hex: '#9BA3AD' },
-    gray700: { css: '214 14% 75%', hex: '#B8BEC6' },
-    gray800: { css: '214 16% 88%', hex: '#DDE1E6' },
-    gray900: { css: '214 17% 92%', hex: '#E7EAEE' },
+    gray50: { css: '288 15% 13%', hex: '#241C26' },
+    gray100: { css: '278 20% 16%', hex: '#2A2030' },
+    gray200: { css: '279 18% 19%', hex: '#332839' },
+    gray300: { css: '282 15% 26%', hex: '#46384C' },
+    gray400: { css: '300 6% 49%', hex: '#857785' },
+    gray500: { css: '296 7% 58%', hex: '#9A8C9B' },
+    gray600: { css: '296 9% 67%', hex: '#B2A4B3' },
+    gray700: { css: '300 10% 76%', hex: '#C9BDC9' },
+    gray800: { css: '306 14% 86%', hex: '#E0D6DF' },
+    gray900: { css: '309 20% 93%', hex: '#F1EAF0' },
 
-    scrim: { css: '218 22% 7%', hex: '#0E1116' },
+    scrim: { css: '291 14% 10%', hex: '#1B151C' },
   } satisfies PaletteMode,
 } as const;
 
-/** Old brand child swatches → Ledger category accents. Unmapped values pass through. */
-export const LEDGER_SWATCH_MAP: Readonly<Record<string, string>> = {
-  '#6366F1': '#3D5A80',
-  '#14B8A6': '#4A6B62',
-  '#EC4899': '#7A5C3E',
+/** Old brand child swatches → Daylight category accents. Unmapped values pass through. */
+export const DAYLIGHT_SWATCH_MAP: Readonly<Record<string, string>> = {
+  '#6366F1': '#6A4C77',
+  '#14B8A6': '#4C7A6A',
+  '#EC4899': '#A85E6E',
   // lowercase variants (API may normalise either way)
-  '#6366f1': '#3D5A80',
-  '#14b8a6': '#4A6B62',
-  '#ec4899': '#7A5C3E',
+  '#6366f1': '#6A4C77',
+  '#14b8a6': '#4C7A6A',
+  '#ec4899': '#A85E6E',
 };
 
 export function remapChildSwatch(colour: string): string {
   return (
-    LEDGER_SWATCH_MAP[colour] ??
-    LEDGER_SWATCH_MAP[colour.toLowerCase()] ??
+    DAYLIGHT_SWATCH_MAP[colour] ??
+    DAYLIGHT_SWATCH_MAP[colour.toLowerCase()] ??
     colour
   );
 }

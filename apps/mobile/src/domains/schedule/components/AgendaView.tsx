@@ -12,7 +12,7 @@ import {
   StatusPill,
   type StatusPillProps,
 } from '@/src/components/ui/status-pill';
-import { Body, H2 } from '@/src/components/ui/typography';
+import { Body, DayGroup } from '@/src/components/ui/typography';
 import {
   formatShiftTime,
   groupShiftsByDay,
@@ -101,7 +101,7 @@ export function AgendaView({ shifts, displayTimeZone }: AgendaViewProps) {
         renderItem={({ item }) =>
           item.type === 'header' ? (
             <View className="px-6 pt-4 pb-1">
-              <H2>{item.label}</H2>
+              <DayGroup>{item.label}</DayGroup>
             </View>
           ) : (
             <ShiftRow shift={item.shift} displayTimeZone={displayTimeZone} />

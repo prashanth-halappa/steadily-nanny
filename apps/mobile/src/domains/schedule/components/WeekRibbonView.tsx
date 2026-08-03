@@ -67,7 +67,7 @@ export function WeekRibbonView({
               <View
                 key={`${dow}-${hour}`}
                 testID={`week-ribbon-cell-${dow}-${hour}`}
-                className="mx-0.5 h-4 flex-1 rounded-sm"
+                className="mx-0.5 h-4 flex-1 rounded-full"
                 style={{
                   backgroundColor: filled
                     ? themeColors.category.accent2

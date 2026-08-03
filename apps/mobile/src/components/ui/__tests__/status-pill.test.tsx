@@ -2,8 +2,9 @@
  * @module StatusPillTests
  *
  * TDD tests for StatusPill. Product rule under test: conflicts (short-notice,
- * outside-hours) warn but never block, so they must use the warning treatment
- * — never destructive. Semantic colour lives on the text node (Ledger annotation).
+ * outside-hours) warn but never block, so they must use the shortNotice
+ * treatment — never destructive. Container carries the tint fill; text carries
+ * the contrasting label colour.
  */
 
 import { describe, expect, it } from 'bun:test';
@@ -54,16 +55,19 @@ describe('StatusPill', () => {
     expect(getByTestId('pill-cancelled')).toBeTruthy();
   });
 
-  it('uses destructive for declined (on the text node)', () => {
+  it('uses destructive fill and text for declined', () => {
     const { getByTestId } = render(
       <StatusPill variant="declined" label="Declined" testID="pill-declined" />
+    );
+    expect(getByTestId('pill-declined').props.className).toContain(
+      'bg-destructive/15'
     );
     expect(getByTestId('pill-declined-label').props.className).toContain(
       'destructive'
     );
   });
 
-  it('uses the warning treatment for short-notice, never destructive', () => {
+  it('uses the shortNotice treatment for short-notice, never destructive', () => {
     const { getByTestId } = render(
       <StatusPill
         variant="short-notice"
@@ -71,12 +75,14 @@ describe('StatusPill', () => {
         testID="pill-sn"
       />
     );
+    const container = getByTestId('pill-sn');
     const label = getByTestId('pill-sn-label');
-    expect(label.props.className).toContain('warning');
+    expect(container.props.className).toContain('bg-short-notice/15');
+    expect(label.props.className).toContain('short-notice');
     expect(label.props.className).not.toContain('destructive');
   });
 
-  it('uses the warning treatment for outside-hours, never destructive', () => {
+  it('uses the shortNotice treatment for outside-hours, never destructive', () => {
     const { getByTestId } = render(
       <StatusPill
         variant="outside-hours"
@@ -84,8 +90,36 @@ describe('StatusPill', () => {
         testID="pill-oh"
       />
     );
+    const container = getByTestId('pill-oh');
     const label = getByTestId('pill-oh-label');
-    expect(label.props.className).toContain('warning');
+    expect(container.props.className).toContain('bg-short-notice/15');
+    expect(label.props.className).toContain('short-notice');
     expect(label.props.className).not.toContain('destructive');
+  });
+
+  it('applies success fill on confirmed container', () => {
+    const { getByTestId } = render(
+      <StatusPill
+        variant="confirmed"
+        label="Confirmed"
+        testID="pill-confirmed-fill"
+      />
+    );
+    expect(getByTestId('pill-confirmed-fill').props.className).toContain(
+      'bg-success/15'
+    );
+  });
+
+  it('applies muted fill on cancelled container', () => {
+    const { getByTestId } = render(
+      <StatusPill
+        variant="cancelled"
+        label="Cancelled"
+        testID="pill-cancelled-fill"
+      />
+    );
+    expect(getByTestId('pill-cancelled-fill').props.className).toContain(
+      'bg-muted'
+    );
   });
 });

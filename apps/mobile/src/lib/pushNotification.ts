@@ -178,7 +178,7 @@ async function ensureAndroidChannel(): Promise<void> {
     name: 'default',
     importance: Notifications.AndroidImportance.MAX,
     vibrationPattern: [0, 250, 250, 250],
-    lightColor: '#FF1F4A8C',
+    lightColor: '#FF5B3E5D',
   });
 }
 

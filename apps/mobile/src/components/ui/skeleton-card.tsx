@@ -7,6 +7,7 @@
 
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
+import { useElevation } from '~/lib/design-tokens/elevation';
 import { SkeletonShimmer } from './skeleton-shimmer';
 
 interface SkeletonCardProps {
@@ -16,12 +17,16 @@ interface SkeletonCardProps {
 
 export function SkeletonCard(_props?: SkeletonCardProps) {
   const { t } = useTranslation('common');
+  const elevation = useElevation();
 
   return (
     <View
       testID="skeleton-card"
-      style={{ width: 200 }}
-      className="bg-card border border-border rounded-xl p-4"
+      // Must match <Card>'s geometry exactly — radius, padding and elevation.
+      // A skeleton that separates differently from the card it stands in for
+      // makes the loaded state visibly jump.
+      style={[{ width: 200 }, elevation.card]}
+      className="bg-card rounded-card p-5.5"
       accessibilityRole="none"
       accessibilityLabel={t('a11y.loadingActivityCard')}
     >

@@ -58,6 +58,8 @@ export function TimeOffRow({
       testID={`time-off-row-${timeOff.id}`}
       className={isCancelled ? 'mb-3 opacity-50' : 'mb-3'}
     >
+      {/* Deliberately tighter than CardContent's 22px default: this is a
+          compact list row, not a standalone card surface. */}
       <CardContent className="gap-1 p-4">
         <Body>
           {formatTimeOffRangeLabel(timeOff.starts_at, timeOff.ends_at)}

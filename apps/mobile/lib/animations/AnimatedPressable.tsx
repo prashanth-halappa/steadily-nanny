@@ -57,7 +57,8 @@ export function AnimatedPressableComponent({
   // Determine if animations should be active
   const shouldAnimate = animated && !reducedMotion;
 
-  // Scale-only press affordance — no shadowOpacity/elevation (Ledger).
+  // Scale-only press affordance. Daylight card shadows come from useElevation()
+  // (RN boxShadow); press does not yet soften those shadows.
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
   }));

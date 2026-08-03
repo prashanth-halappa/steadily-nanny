@@ -24,8 +24,8 @@
  */
 import { type Href, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
-import { View } from 'react-native';
 import { Button } from '@/src/components/ui/button';
+import { Card } from '@/src/components/ui/card';
 import { Text } from '@/src/components/ui/text';
 import { Body } from '@/src/components/ui/typography';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
@@ -59,10 +59,7 @@ export function PendingScheduleCard() {
   const totalHours = calculateWeekTotalHours(days);
 
   return (
-    <View
-      testID="today-pending-schedule-card"
-      className="gap-2 rounded-xl border border-border bg-card p-4"
-    >
+    <Card testID="today-pending-schedule-card" className="gap-2 p-5.5">
       <Body className="font-semibold">{t('todayCard.pendingTitle')}</Body>
       <Body className="text-muted-foreground" tabular>
         {t('todayCard.pendingBody', { count: days.length, hours: totalHours })}
@@ -79,6 +76,6 @@ export function PendingScheduleCard() {
           {t('todayCard.pendingCta')}
         </Text>
       </Button>
-    </View>
+    </Card>
   );
 }

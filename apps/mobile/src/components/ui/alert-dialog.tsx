@@ -5,6 +5,7 @@ import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import { cn } from '@/lib/utils';
 import { buttonTextVariants, buttonVariants } from '@/src/components/ui/button';
 import { TextClassContext } from '@/src/components/ui/text';
+import { useElevation } from '~/lib/design-tokens/elevation';
 
 const AlertDialog = AlertDialogPrimitive.Root;
 
@@ -73,13 +74,17 @@ function AlertDialogContent({
   portalHost?: string;
 }) {
   const { open } = AlertDialogPrimitive.useRootContext();
+  const elevation = useElevation();
 
   return (
     <AlertDialogPortal hostName={portalHost}>
       <AlertDialogOverlay>
         <AlertDialogPrimitive.Content
+          // A dialog floats above the screen, so under Daylight it lifts
+          // rather than outlines — same shadow-instead-of-rule rule as <Card>.
+          style={elevation.card}
           className={cn(
-            'z-50 max-w-lg gap-4 border border-border bg-background p-6 web:duration-200 rounded-lg',
+            'z-50 max-w-lg gap-4 bg-background p-6 web:duration-200 rounded-3xl',
             open
               ? 'web:animate-in web:fade-in-0 web:zoom-in-95'
               : 'web:animate-out web:fade-out-0 web:zoom-out-95',

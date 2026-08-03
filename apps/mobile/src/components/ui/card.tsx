@@ -2,16 +2,32 @@ import type * as React from 'react';
 import { Text, type TextProps, View, type ViewProps } from 'react-native';
 import { cn } from '@/lib/utils';
 import { TextClassContext } from '@/src/components/ui/text';
+import { useElevation } from '~/lib/design-tokens/elevation';
 
+/**
+ * Daylight separates surfaces with soft plum-tinted shadow and NO border —
+ * that inversion is the whole point of the direction (Ledger did the opposite:
+ * hairline rule, zero elevation). If the shadow ever reads too faint on a
+ * device, the hairline comes back HERE, once, not per call site.
+ *
+ * `live` swaps the neutral shadow for the apricot one. Pass it wherever the
+ * screen is also showing the Today wash, so the card carries the signal and
+ * the wash echoes it.
+ */
 function Card({
   className,
+  style,
+  live = false,
   ...props
 }: ViewProps & {
   ref?: React.RefObject<View>;
+  live?: boolean;
 }) {
+  const elevation = useElevation();
   return (
     <View
-      className={cn('rounded-2xl border border-border bg-card', className)}
+      className={cn('rounded-card bg-card', className)}
+      style={[live ? elevation.liveCard : elevation.card, style]}
       {...props}
     />
   );
@@ -25,7 +41,7 @@ function CardHeader({
 }) {
   return (
     <View
-      className={cn('flex flex-col space-y-1.5 p-6', className)}
+      className={cn('flex flex-col space-y-1.5 p-5.5', className)}
       {...props}
     />
   );
@@ -72,7 +88,7 @@ function CardContent({
 }) {
   return (
     <TextClassContext.Provider value="text-card-foreground">
-      <View className={cn('p-6 pt-0', className)} {...props} />
+      <View className={cn('p-5.5 pt-0', className)} {...props} />
     </TextClassContext.Provider>
   );
 }
@@ -85,7 +101,7 @@ function CardFooter({
 }) {
   return (
     <View
-      className={cn('flex flex-row items-center p-6 pt-0', className)}
+      className={cn('flex flex-row items-center p-5.5 pt-0', className)}
       {...props}
     />
   );

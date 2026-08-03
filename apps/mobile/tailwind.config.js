@@ -55,6 +55,10 @@ module.exports = {
         3: '12px', // card gap
         4: '16px', // md - screen padding
         5: '20px',
+        // Daylight's card interior / screen gutter. Off the 8pt grid on
+        // purpose — the direction specifies 22px and rounding it to 20 or 24
+        // loses the roominess that distinguishes it from Ledger.
+        5.5: '22px',
         6: '24px', // lg - section gap
         7: '28px',
         8: '32px', // xl
@@ -108,6 +112,12 @@ module.exports = {
           foreground: 'hsl(var(--accent-foreground))',
         },
 
+        // Highlight — apricot brand accent
+        highlight: {
+          DEFAULT: 'hsl(var(--highlight))',
+          foreground: 'hsl(var(--highlight-foreground))',
+        },
+
         // Popover
         popover: {
           DEFAULT: 'hsl(var(--popover))',
@@ -133,7 +143,10 @@ module.exports = {
         },
         success: 'hsl(var(--success-state))',
         warning: 'hsl(var(--warning))',
+        'warning-strong': 'hsl(var(--warning-strong))',
         warningForeground: 'hsl(var(--warning-foreground))',
+        'short-notice': 'hsl(var(--short-notice))',
+        'short-notice-strong': 'hsl(var(--short-notice-strong))',
         neutral: 'hsl(var(--neutral))',
 
         // Neutral palette (adaptive via CSS variables, inverted in dark mode)
@@ -163,21 +176,28 @@ module.exports = {
       },
       borderWidth: {
         hairline: hairlineWidth(),
+        1.5: '1.5px',
       },
       borderRadius: {
-        // Ledger — tight radii; separation by rule + whitespace
-        sm: '2px',
-        DEFAULT: '4px',
-        md: '4px',
-        lg: '6px',
-        xl: '6px',
-        '2xl': '6px',
-        '3xl': '8px',
-        card: '6px',
-        button: '4px',
-        chip: '4px',
+        // Daylight — soft domestic geometry
+        sm: '8px',
+        DEFAULT: '12px',
+        md: '12px',
+        lg: '16px',
+        xl: '16px',
+        '2xl': '20px',
+        '3xl': '24px',
+        card: '20px',
+        button: '14px',
+        chip: '999px',
+        row: '16px',
+        cell: '12px',
       },
       boxShadow: {
+        // Still all 'none', deliberately: NativeWind's box-shadow parser is broken
+        // (react-native-css-interop 0.2.6 — reads shadowRadius from spread, bails on
+        // multi-layer, falls through into aspect-ratio). Daylight elevation lives in
+        // lib/design-tokens/elevation.ts as RN inline styles.
         sm: 'none',
         DEFAULT: 'none',
         md: 'none',

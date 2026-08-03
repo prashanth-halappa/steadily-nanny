@@ -1,14 +1,17 @@
 /**
- * Card Variants
+ * Card Variants (Daylight)
  *
- * Standardized card styles with consistent shadows, borders, and padding.
- * Use these variants across all screens for visual consistency.
+ * Standardized card styles with elevation from `useElevation()` (RN
+ * multi-layer `boxShadow` — not Tailwind `shadow-*`), borders, and padding.
  *
  * Variants:
- * - elevated: Standard card with shadow (default)
- * - hero: Featured card with stronger shadow
+ * - elevated: Standard card with border + plum-tinted card shadow (default)
+ * - hero: Featured card, no border, apricot liveCard shadow
  * - outlined: Card with border, no shadow
- * - filled: Solid background card
+ * - filled: Muted background card, no shadow
+ *
+ * When `tintColor` is set, elevation is suppressed — translucent backgrounds
+ * under shadows read wrong on device (GOLDEN-FIXES #19).
  */
 
 import type * as React from 'react';
@@ -21,6 +24,7 @@ import {
 import { cn } from '@/lib/utils';
 import { TextClassContext } from '@/src/components/ui/text';
 import { getColorWithOpacity } from '~/lib/design-tokens/colors';
+import { useElevation } from '~/lib/design-tokens/elevation';
 
 export type CardVariant = 'elevated' | 'hero' | 'outlined' | 'filled';
 
@@ -49,18 +53,20 @@ interface CardVariantProps extends ViewProps {
   tintOpacity?: 5 | 10 | 15 | 20 | 30 | 40 | 50 | 60 | 70 | 80 | 90;
 }
 
+// `elevated` and `hero` separate with shadow alone, matching <Card> — only
+// `outlined` keeps a border, which is the entire point of that variant.
 const variantStyles: Record<CardVariant, string> = {
-  elevated: 'bg-card border border-border',
-  hero: 'bg-card border border-border',
+  elevated: 'bg-card',
+  hero: 'bg-card',
   outlined: 'bg-card border border-border',
-  filled: 'bg-muted border border-border',
+  filled: 'bg-muted',
 };
 
 /**
  * CardVariant Component
  *
  * A versatile card component with consistent styling across variants.
- * Uses rounded-2xl for all variants per design system.
+ * Uses rounded-card for all variants per Daylight.
  *
  * @example
  * ```tsx
@@ -82,6 +88,8 @@ function CardVariant({
   style,
   ...props
 }: CardVariantProps) {
+  const elevation = useElevation();
+
   const accentStyle: ViewStyle =
     accentWidth > 0 && accentColor
       ? { borderLeftWidth: accentWidth, borderLeftColor: accentColor }
@@ -91,15 +99,31 @@ function CardVariant({
     ? { backgroundColor: getColorWithOpacity(tintColor, tintOpacity) }
     : {};
 
+  // GOLDEN-FIXES #19: tintStyle applies a translucent backgroundColor.
+  // Shadows over translucent grounds bleed / read wrong on device — suppress
+  // elevation whenever tintColor is set (even on elevated/hero variants).
+  const elevationStyle: ViewStyle | undefined = tintColor
+    ? undefined
+    : variant === 'elevated'
+      ? elevation.card
+      : variant === 'hero'
+        ? elevation.liveCard
+        : undefined;
+
   return (
     <View
       className={cn(
-        'rounded-2xl',
+        'rounded-card',
         variantStyles[variant],
         pressed && 'opacity-95 scale-[0.99]',
         className
       )}
-      style={[accentStyle, tintStyle, style as StyleProp<ViewStyle>]}
+      style={[
+        elevationStyle,
+        accentStyle,
+        tintStyle,
+        style as StyleProp<ViewStyle>,
+      ]}
       {...props}
     />
   );

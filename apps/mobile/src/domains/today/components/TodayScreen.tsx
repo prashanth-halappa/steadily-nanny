@@ -19,8 +19,11 @@
  * no pending week, so it costs an ordinary day nothing.
  */
 
+import { LinearGradient } from 'expo-linear-gradient';
 import { useTranslation } from 'react-i18next';
-import { ScrollView, View } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
+import { SCREEN_CONTENT_STYLE, washGradient } from '@/lib/design-tokens';
+import { useColorScheme } from '@/lib/useColorScheme';
 import { ChildChip } from '@/src/components/ui/child-chip';
 import { EmptyState } from '@/src/components/ui/empty-state';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
@@ -34,6 +37,7 @@ import { canViewParentSchedule, SETUP_ROLES } from '@/src/domains/setup/types';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
 import { useChildren } from '@/src/hooks/queries/useChildren';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
+import { useHouseholdIsLive } from '../hooks/useHouseholdIsLive';
 import { ClockInCard } from './ClockInCard';
 import { CoverageGapBanner } from './CoverageGapBanner';
 import { HandoffChipsCard } from './HandoffChipsCard';
@@ -41,6 +45,7 @@ import { NannyLiveStatusCard } from './NannyLiveStatusCard';
 
 export function TodayScreen() {
   const { t } = useTranslation('today');
+  const { isDarkColorScheme } = useColorScheme();
   // Server-derived role, NOT the local setupProgress store — that's
   // in-flight wizard UI state and can be empty/stale for a parent whose
   // household was seeded directly, or who signed in on a fresh device. See
@@ -49,79 +54,102 @@ export function TodayScreen() {
   const activeHousehold = useActiveHousehold();
   const household = activeHousehold.household;
   const children = useChildren(household?.id);
+  // Wash while someone is on the clock — caller running OR household week
+  // entry running. Stays inside this screen (below the tab navigator).
+  const isLive = useHouseholdIsLive(household?.id, household?.timezone);
+  const wash = washGradient(isDarkColorScheme);
 
   return (
-    <ScrollView
-      className="flex-1 bg-background"
-      contentContainerStyle={{ padding: 24, paddingBottom: 100 }}
-    >
-      <H1 testID="today-header">{t('screenTitle')}</H1>
-
-      {activeHousehold.isLoading ? (
-        <LoadingIndicator />
-      ) : household ? (
-        <View className="mt-2 gap-4">
-          <HouseholdSwitcher />
-          <Body testID="today-household-name" className="text-muted-foreground">
-            {household.name}
-          </Body>
-
-          {canViewParentSchedule(onboarding.role) ? (
-            <View className="flex-row flex-wrap gap-2" testID="today-children">
-              {(children.data ?? []).map(child => (
-                <ChildChip
-                  key={child.id}
-                  name={child.name}
-                  colour={child.colour ?? undefined}
-                />
-              ))}
-            </View>
-          ) : null}
-
-          {canViewParentSchedule(onboarding.role) ? (
-            <NannyLiveStatusCard
-              householdId={household.id}
-              timeZone={household.timezone}
-            />
-          ) : null}
-
-          {onboarding.role === SETUP_ROLES.NANNY ? (
-            <ClockInCard householdId={household.id} />
-          ) : null}
-
-          <CoverageGapBanner
-            householdId={household.id}
-            timeZone={household.timezone}
-          />
-
-          {onboarding.role ? (
-            <HandoffChipsCard
-              householdId={household.id}
-              timeZone={household.timezone}
-              role={onboarding.role}
-            />
-          ) : null}
-
-          {/* Renders nothing unless a week is genuinely waiting for this
-              person — deliberately not an empty state. A card announcing its
-              own absence is noise on the screen people open most. */}
-          <PendingScheduleCard />
-
-          <ThisWeeksShiftsCard />
-        </View>
+    <View className="flex-1 bg-background">
+      {isLive ? (
+        <LinearGradient
+          pointerEvents="none"
+          testID="today-live-wash"
+          style={StyleSheet.absoluteFill}
+          colors={wash.colors}
+          locations={wash.locations}
+          start={{ x: 0.5, y: 0 }}
+          end={{ x: 0.5, y: 1 }}
+        />
       ) : null}
+      <ScrollView
+        className="flex-1"
+        contentContainerStyle={SCREEN_CONTENT_STYLE}
+      >
+        <H1 testID="today-header">{t('screenTitle')}</H1>
 
-      {/* Only an honest empty state while there is no household at all. Once
-          there is one, the cards above carry the schedule story. */}
-      {activeHousehold.isLoading || household ? null : (
-        <View className="mt-8">
-          <EmptyState
-            variant="inline"
-            title={t('emptyTitle')}
-            description={t('emptyDescription')}
-          />
-        </View>
-      )}
-    </ScrollView>
+        {activeHousehold.isLoading ? (
+          <LoadingIndicator />
+        ) : household ? (
+          <View className="mt-2 gap-4">
+            <HouseholdSwitcher />
+            <Body
+              testID="today-household-name"
+              className="text-muted-foreground"
+            >
+              {household.name}
+            </Body>
+
+            {canViewParentSchedule(onboarding.role) ? (
+              <View
+                className="flex-row flex-wrap gap-2"
+                testID="today-children"
+              >
+                {(children.data ?? []).map(child => (
+                  <ChildChip
+                    key={child.id}
+                    name={child.name}
+                    colour={child.colour ?? undefined}
+                  />
+                ))}
+              </View>
+            ) : null}
+
+            {canViewParentSchedule(onboarding.role) ? (
+              <NannyLiveStatusCard
+                householdId={household.id}
+                timeZone={household.timezone}
+              />
+            ) : null}
+
+            {onboarding.role === SETUP_ROLES.NANNY ? (
+              <ClockInCard householdId={household.id} />
+            ) : null}
+
+            <CoverageGapBanner
+              householdId={household.id}
+              timeZone={household.timezone}
+            />
+
+            {onboarding.role ? (
+              <HandoffChipsCard
+                householdId={household.id}
+                timeZone={household.timezone}
+                role={onboarding.role}
+              />
+            ) : null}
+
+            {/* Renders nothing unless a week is genuinely waiting for this
+                person — deliberately not an empty state. A card announcing its
+                own absence is noise on the screen people open most. */}
+            <PendingScheduleCard />
+
+            <ThisWeeksShiftsCard />
+          </View>
+        ) : null}
+
+        {/* Only an honest empty state while there is no household at all. Once
+            there is one, the cards above carry the schedule story. */}
+        {activeHousehold.isLoading || household ? null : (
+          <View className="mt-8">
+            <EmptyState
+              variant="inline"
+              title={t('emptyTitle')}
+              description={t('emptyDescription')}
+            />
+          </View>
+        )}
+      </ScrollView>
+    </View>
   );
 }

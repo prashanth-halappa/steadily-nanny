@@ -9,7 +9,7 @@
  * For static components, prefer Tailwind classes (bg-background, text-foreground,
  * etc.) which adapt automatically via the CSS variables in global.css.
  *
- * Values project from `palette.ts` (Ledger). Dark is wired & parity-tested but
+ * Values project from `palette.ts` (Daylight). Dark is wired & parity-tested but
  * unverified — `useColorScheme` hard-forces light (see lib/useColorScheme.ts).
  */
 
@@ -33,17 +33,22 @@ export interface ThemeColors {
   mutedForeground: string;
   accent: string;
   accentForeground: string;
+  highlight: string;
+  highlightForeground: string;
   destructive: string;
   destructiveForeground: string;
   success: string;
   warning: string;
+  warningStrong: string;
   warningForeground: string;
+  shortNotice: string;
+  shortNoticeStrong: string;
   border: string;
   borderStrong: string;
   input: string;
   ring: string;
   neutral: string;
-  /** Three category accent hues (Ledger records palette). */
+  /** Three category accent hues (Daylight palette). */
   category: { accent1: string; accent2: string; accent3: string };
   skeleton: { base: string; highlight: string };
   errorInline: { bg: string; border: string; text: string };
@@ -83,11 +88,16 @@ function themeFromPalette(
     mutedForeground: mode.mutedForeground.hex,
     accent: mode.accent.hex,
     accentForeground: mode.accentForeground.hex,
+    highlight: mode.highlight.hex,
+    highlightForeground: mode.highlightForeground.hex,
     destructive: mode.destructive.hex,
     destructiveForeground: mode.destructiveForeground.hex,
     success: mode.success.hex,
     warning: mode.warning.hex,
+    warningStrong: mode.warningStrong.hex,
     warningForeground: mode.warningForeground.hex,
+    shortNotice: mode.shortNotice.hex,
+    shortNoticeStrong: mode.shortNoticeStrong.hex,
     border: mode.border.hex,
     borderStrong: mode.borderStrong.hex,
     input: mode.input.hex,

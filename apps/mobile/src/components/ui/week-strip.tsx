@@ -77,7 +77,7 @@ export function WeekStrip({
               if (!isDisabled) onToggle(day);
             }}
             className={cn(
-              'h-touch w-touch items-center justify-center rounded-full',
+              'h-touch w-touch items-center justify-center rounded-cell',
               isSelected ? 'bg-primary' : 'bg-muted',
               isDisabled && 'opacity-40'
             )}

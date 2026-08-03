@@ -1,5 +1,5 @@
 /**
- * Typography Design Tokens — Ledger
+ * Typography Design Tokens — Daylight
  *
  * Platform face (omit fontFamily). Weight is load-bearing via numeric
  * `fontWeight` on the system font — SF Pro / Roboto handle this correctly.
@@ -33,8 +33,8 @@ export const typography = {
   h1: {
     size: 32,
     lineHeight: 40,
-    weight: '700' as const,
-    letterSpacing: 0,
+    weight: '600' as const,
+    letterSpacing: -0.58,
   },
   h2: {
     size: 24,
@@ -50,9 +50,25 @@ export const typography = {
   },
   h4: {
     size: 18,
-    lineHeight: 26,
+    lineHeight: 27,
     weight: '600' as const,
     letterSpacing: 0,
+  },
+
+  // Live timer — tabular numerals, lighter weight at large size
+  timer: {
+    size: 44,
+    lineHeight: 48,
+    weight: '500' as const,
+    letterSpacing: -1.14,
+  },
+
+  // Day-group heading — agenda / week views (Wave A3 call sites)
+  dayGroup: {
+    size: 17,
+    lineHeight: 24,
+    weight: '600' as const,
+    letterSpacing: -0.2,
   },
 
   // Body text — MINIMUM 16px for readability (WCAG AA requirement)
@@ -70,7 +86,7 @@ export const typography = {
   },
   bodySmall: {
     size: 14,
-    lineHeight: 20,
+    lineHeight: 21,
     weight: '400' as const,
     letterSpacing: 0,
   },
@@ -84,27 +100,27 @@ export const typography = {
   // UI elements — Interactive elements and labels
   caption: {
     size: 14,
-    lineHeight: 20,
+    lineHeight: 21,
     weight: '400' as const,
     letterSpacing: 0,
   },
   label: {
     size: 14,
-    lineHeight: 20,
+    lineHeight: 21,
     weight: '500' as const,
     letterSpacing: 0,
   },
   metadataLabel: {
-    size: 12,
-    lineHeight: 16,
-    weight: '600' as const,
-    letterSpacing: 0.5,
+    size: 13,
+    lineHeight: 18,
+    weight: '500' as const,
+    letterSpacing: 0,
   },
   button: {
     size: 16,
     lineHeight: 24,
     weight: '600' as const,
-    letterSpacing: 0.3,
+    letterSpacing: 0,
   },
   buttonSmall: {
     size: 14,
@@ -162,18 +178,20 @@ export const typography = {
 export const typographyClasses = {
   displayLarge: 'text-[56px] leading-[64px] font-extrabold',
   display: 'text-[32px] leading-[40px] font-extrabold',
-  h1: 'text-[32px] leading-[40px] font-bold',
+  h1: 'text-[32px] leading-[40px] font-semibold',
   h2: 'text-2xl leading-8 font-semibold',
   h3: 'text-xl leading-7 font-semibold',
-  h4: 'text-lg leading-[26px] font-semibold',
+  h4: 'text-lg leading-[27px] font-semibold',
+  timer: 'text-[44px] leading-[48px] font-medium',
+  dayGroup: 'text-[17px] leading-6 font-semibold',
   body: 'text-base leading-6',
   bodyLarge: 'text-lg leading-7',
-  bodySmall: 'text-sm leading-5',
+  bodySmall: 'text-sm leading-[21px]',
   bodyLight: 'text-base leading-6 font-light',
-  caption: 'text-sm leading-5',
-  label: 'text-sm leading-5 font-medium',
-  metadataLabel: 'text-xs leading-4 font-semibold tracking-wide uppercase',
-  button: 'text-base leading-6 font-semibold tracking-wide',
+  caption: 'text-sm leading-[21px]',
+  label: 'text-sm leading-[21px] font-medium',
+  metadataLabel: 'text-[13px] leading-[18px] font-medium',
+  button: 'text-base leading-6 font-semibold',
   buttonSmall: 'text-sm leading-5 font-semibold tracking-wide',
   achievement: 'text-2xl leading-8 font-bold tracking-wide',
   encouragement: 'text-lg leading-7 italic tracking-wide',

@@ -32,7 +32,7 @@ export function AnimatedSplash({ onFinish }: { onFinish: () => void }) {
       testID="animated-splash"
       exiting={FadeOut.duration(200)}
       pointerEvents="none"
-      style={[StyleSheet.absoluteFill, { backgroundColor: '#FFFFFF' }]}
+      style={[StyleSheet.absoluteFill, { backgroundColor: '#F5F1F2' }]}
     />
   );
 }

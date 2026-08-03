@@ -10,6 +10,7 @@ import type { AppStatusResponse } from '@steadily-nanny/shared-types/appConfig';
 import { onlineManager } from '@tanstack/react-query';
 import { type ReactNode, useState } from 'react';
 import { ScrollView, View } from 'react-native';
+import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { Button } from '@/src/components/ui/button';
 import { Card, CardContent } from '@/src/components/ui/card';
 import { Text } from '@/src/components/ui/text';
@@ -125,7 +126,7 @@ export default function DebugScreen() {
   return (
     <ScrollView
       className="flex-1 bg-background"
-      contentContainerStyle={{ padding: 24, paddingBottom: 100, gap: 12 }}
+      contentContainerStyle={{ ...SCREEN_CONTENT_STYLE, gap: 12 }}
       testID="debug-screen"
     >
       <H1>Debug cockpit</H1>

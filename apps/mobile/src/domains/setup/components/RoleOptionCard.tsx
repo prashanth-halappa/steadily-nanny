@@ -34,7 +34,7 @@ export function RoleOptionCard({
       scaleIntensity="subtle"
       onPress={onPress}
       className={cn(
-        'rounded-2xl border-2 p-4',
+        'rounded-card border-2 p-4',
         selected ? 'border-primary bg-primary/5' : 'border-border bg-card'
       )}
     >

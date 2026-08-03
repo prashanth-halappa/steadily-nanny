@@ -12,6 +12,8 @@ import type { ReactTestRendererJSON } from 'react-test-renderer';
 // Declared at module level; assigned in beforeAll after mocks are registered.
 let Display: any;
 let DisplayLarge: any;
+let Timer: any;
+let DayGroup: any;
 
 beforeAll(async () => {
   // Block react-native-reanimated from executing its withRepeat/withSequence
@@ -60,6 +62,8 @@ beforeAll(async () => {
   const mod = await import('../../typography/display');
   Display = mod.Display;
   DisplayLarge = mod.DisplayLarge;
+  Timer = mod.Timer;
+  DayGroup = mod.DayGroup;
 });
 
 function getJsonChildren(
@@ -121,6 +125,55 @@ describe('Display Typography Components', () => {
         <Display testID="display-test">Text</Display>
       );
       expect(getByTestId('display-test')).toBeTruthy();
+    });
+  });
+
+  describe('Timer', () => {
+    it('should render without crashing', () => {
+      const { root } = render(<Timer>01:23:45</Timer>);
+      expect(root).toBeTruthy();
+    });
+
+    it('should render children', () => {
+      const { toJSON } = render(<Timer>01:23:45</Timer>);
+      const tree = toJSON();
+      expect(getJsonChildren(tree)).toContain('01:23:45');
+    });
+
+    it('should forward testID prop', () => {
+      const { getByTestId } = render(
+        <Timer testID="timer-test">00:00:01</Timer>
+      );
+      expect(getByTestId('timer-test')).toBeTruthy();
+    });
+
+    it('should apply tabular numerals by default', () => {
+      const { getByText } = render(<Timer>12:34:56</Timer>);
+      const node = getByText('12:34:56');
+      const flatStyle = Array.isArray(node.props.style)
+        ? Object.assign({}, ...node.props.style.filter(Boolean))
+        : node.props.style;
+      expect(flatStyle.fontVariant).toEqual(['tabular-nums']);
+    });
+  });
+
+  describe('DayGroup', () => {
+    it('should render without crashing', () => {
+      const { root } = render(<DayGroup>Monday, Aug 2</DayGroup>);
+      expect(root).toBeTruthy();
+    });
+
+    it('should render children', () => {
+      const { toJSON } = render(<DayGroup>Monday, Aug 2</DayGroup>);
+      const tree = toJSON();
+      expect(getJsonChildren(tree)).toContain('Monday, Aug 2');
+    });
+
+    it('should forward testID prop', () => {
+      const { getByTestId } = render(
+        <DayGroup testID="day-group-test">Tuesday</DayGroup>
+      );
+      expect(getByTestId('day-group-test')).toBeTruthy();
     });
   });
 });

@@ -18,6 +18,7 @@
 import type { ReactNode } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { Button } from '@/src/components/ui/button';
 import { Text } from '@/src/components/ui/text';
 import { Body, H1 } from '@/src/components/ui/typography';
@@ -85,7 +86,7 @@ export function SetupScreenShell({
 
       <ScrollView
         style={{ flex: 1 }}
-        contentContainerStyle={{ padding: 24, paddingBottom: 120 }}
+        contentContainerStyle={{ ...SCREEN_CONTENT_STYLE, paddingBottom: 120 }}
       >
         <H1>{title}</H1>
         {subtitle ? (

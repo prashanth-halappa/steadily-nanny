@@ -21,3 +21,16 @@ export const Display = createTypographyComponent(
     ariaLevel: '1',
   }
 );
+
+export const Timer = createTypographyComponent(typography.timer, 'Timer', {
+  tabular: true,
+});
+
+export const DayGroup = createTypographyComponent(
+  typography.dayGroup,
+  'DayGroup',
+  {
+    role: 'heading',
+    ariaLevel: '2',
+  }
+);

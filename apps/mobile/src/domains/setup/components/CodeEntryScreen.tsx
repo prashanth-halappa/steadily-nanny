@@ -9,6 +9,7 @@ import { type Href, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
+import { Card } from '@/src/components/ui/card';
 import { Input } from '@/src/components/ui/input';
 import { Label } from '@/src/components/ui/label';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
@@ -84,10 +85,7 @@ export function CodeEntryScreen() {
       ) : null}
 
       {preview.data ? (
-        <View
-          testID="code-preview-card"
-          className="gap-2 rounded-2xl border border-border bg-card p-4"
-        >
+        <Card testID="code-preview-card" className="gap-2 p-5.5">
           <H3 testID="code-preview-household">{preview.data.household_name}</H3>
           {preview.data.children_first_names.length > 0 ? (
             <Text
@@ -97,7 +95,7 @@ export function CodeEntryScreen() {
               {preview.data.children_first_names.join(', ')}
             </Text>
           ) : null}
-        </View>
+        </Card>
       ) : null}
 
       {redeemInvite.isError ? (

@@ -8,6 +8,7 @@
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
+import { Card } from '@/src/components/ui/card';
 import { Body } from '@/src/components/ui/typography';
 import { formatClockTime } from '@/src/domains/timesheet/utils/duration';
 import { getWeekStartISO } from '@/src/domains/timesheet/utils/week';
@@ -33,14 +34,19 @@ export function NannyLiveStatusCard({
   if (!running?.clock_in_at) return null;
 
   return (
-    <View
-      testID="today-nanny-live-status"
-      className="gap-1 rounded-xl border border-border bg-card p-4"
-    >
-      <Body className="font-semibold">{t('nannyLiveTitle')}</Body>
+    <Card testID="today-nanny-live-status" live className="gap-1 p-5.5">
+      {/* Same apricot signal the nanny sees on their own clock card — this
+          screen answers the parent's version of the same question. */}
+      <View className="flex-row items-center gap-2">
+        <View
+          testID="today-nanny-live-dot"
+          className="h-[7px] w-[7px] rounded-full bg-highlight"
+        />
+        <Body className="font-semibold">{t('nannyLiveTitle')}</Body>
+      </View>
       <Body className="text-muted-foreground">
         {t('nannyLiveBody', { time: formatClockTime(running.clock_in_at) })}
       </Body>
-    </View>
+    </Card>
   );
 }

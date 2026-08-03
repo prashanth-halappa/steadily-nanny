@@ -10,8 +10,8 @@
  */
 import { type Href, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
-import { View } from 'react-native';
 import { Button } from '@/src/components/ui/button';
+import { Card } from '@/src/components/ui/card';
 import { Text } from '@/src/components/ui/text';
 
 export function ThisWeeksShiftsCard() {
@@ -19,10 +19,7 @@ export function ThisWeeksShiftsCard() {
   const router = useRouter();
 
   return (
-    <View
-      testID="today-shifts-card"
-      className="gap-2 rounded-xl border border-border bg-card p-4"
-    >
+    <Card testID="today-shifts-card" className="gap-2 p-5.5">
       <Button
         testID="today-shifts-cta"
         variant="outline"
@@ -30,6 +27,6 @@ export function ThisWeeksShiftsCard() {
       >
         <Text>{t('todayCard.shiftsCta')}</Text>
       </Button>
-    </View>
+    </Card>
   );
 }

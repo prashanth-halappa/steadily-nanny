@@ -28,6 +28,7 @@ import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Pressable, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { cn } from '@/lib/utils';
 import { EmptyState } from '@/src/components/ui/empty-state';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
@@ -199,7 +200,7 @@ export function TimeOffScreen() {
               </View>
             )
           }
-          contentContainerStyle={{ padding: 24, paddingBottom: 100 }}
+          contentContainerStyle={SCREEN_CONTENT_STYLE}
         />
       </SafeAreaView>
     </View>

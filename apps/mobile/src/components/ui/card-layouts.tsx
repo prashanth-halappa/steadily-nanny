@@ -245,7 +245,7 @@ function ActionGridCard({
       <FilledCard className={cn('p-3', className)} style={style} {...props}>
         <View className="flex-row items-center gap-3">
           <View
-            className="w-10 h-10 rounded-xl items-center justify-center"
+            className="w-10 h-10 rounded-cell items-center justify-center"
             style={{
               backgroundColor: iconColor
                 ? getColorWithOpacity(iconColor, 10)

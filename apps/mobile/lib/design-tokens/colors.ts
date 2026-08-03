@@ -1,5 +1,5 @@
 /**
- * Color Design Tokens — light-mode static projection of `palette.ts` (Ledger).
+ * Color Design Tokens — light-mode static projection of `palette.ts` (Daylight).
  *
  * Usage Rules:
  * - Primary color: Only for main CTAs (1-2 per screen max)
@@ -123,7 +123,7 @@ export const opacity = {
 
 /**
  * Helper to create a color with opacity.
- * Example: getColorWithOpacity(colors.primary.DEFAULT, 10) => '#1F4A8C1A'
+ * Example: getColorWithOpacity(colors.primary.DEFAULT, 10) => '#5B3E5D1A'
  */
 export const getColorWithOpacity = (
   color: string,

@@ -1,10 +1,11 @@
 /**
  * @module StatusPill
  *
- * Ledger status annotation for shifts/patterns — small-caps text label, not a
- * filled badge. `short-notice` and `outside-hours` are WARNINGS, not errors —
- * schedule conflicts warn and never block, so those two variants use the
- * muted ochre warning treatment, never destructive.
+ * Daylight filled status pill for shifts/patterns — tinted container with
+ * semibold label text. `short-notice` and `outside-hours` are WARNINGS, not
+ * errors — schedule conflicts warn and never block, so those two variants use
+ * the dedicated `shortNotice` hue (separate from `destructive`), never the
+ * error treatment.
  */
 
 import { cva, type VariantProps } from 'class-variance-authority';
@@ -12,27 +13,36 @@ import { View } from 'react-native';
 import { cn } from '@/lib/utils';
 import { Text } from '@/src/components/ui/text';
 
-/** Layout only — semantic colour lives on the text node. */
 const statusPillVariants = cva(
-  'flex-row items-center self-start rounded-chip px-2 py-0.5'
-);
-
-const statusPillTextVariants = cva(
-  'font-semibold text-xs uppercase tracking-wide',
+  'flex-row items-center self-start rounded-chip px-3 py-[5px]',
   {
     variants: {
       variant: {
-        confirmed: 'text-success',
-        pending: 'text-muted-foreground',
-        declined: 'text-destructive',
-        cancelled: 'text-muted-foreground',
-        'short-notice': 'text-warning',
-        'outside-hours': 'text-warning',
+        confirmed: 'bg-success/15',
+        pending: 'bg-warning/15',
+        declined: 'bg-destructive/15',
+        cancelled: 'bg-muted',
+        'short-notice': 'bg-short-notice/15',
+        'outside-hours': 'bg-short-notice/15',
       },
     },
     defaultVariants: { variant: 'pending' },
   }
 );
+
+const statusPillTextVariants = cva('font-semibold text-xs', {
+  variants: {
+    variant: {
+      confirmed: 'text-success',
+      pending: 'text-warning-strong',
+      declined: 'text-destructive',
+      cancelled: 'text-muted-foreground',
+      'short-notice': 'text-short-notice-strong',
+      'outside-hours': 'text-short-notice-strong',
+    },
+  },
+  defaultVariants: { variant: 'pending' },
+});
 
 type StatusPillProps = VariantProps<typeof statusPillTextVariants> & {
   variant: NonNullable<VariantProps<typeof statusPillTextVariants>['variant']>;
@@ -44,7 +54,7 @@ export function StatusPill({ variant, label, testID }: StatusPillProps) {
   return (
     <View
       testID={testID}
-      className={cn(statusPillVariants())}
+      className={cn(statusPillVariants({ variant }))}
       accessibilityRole="text"
     >
       <Text

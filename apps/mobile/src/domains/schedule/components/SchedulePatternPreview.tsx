@@ -8,6 +8,7 @@
 import type { SchedulePatternDay } from '@steadily-nanny/shared-types/schemas/schedule.schema';
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
+import { Card } from '@/src/components/ui/card';
 import { ChildChip } from '@/src/components/ui/child-chip';
 import { Body } from '@/src/components/ui/typography';
 import { useUserProfile } from '@/src/hooks/queries/useUserProfile';
@@ -44,7 +45,7 @@ export function SchedulePatternPreview({
     .filter((d): d is DayWithChildren => d !== undefined);
 
   return (
-    <View testID={testID} className="gap-3 rounded-xl border border-border p-4">
+    <Card testID={testID} className="gap-3 p-5.5">
       <Body testID={`${testID}-hours`} className="font-semibold" tabular>
         {t('pending.previewHoursTotal', { hours: totalHours })}
       </Body>
@@ -71,6 +72,6 @@ export function SchedulePatternPreview({
           ) : null}
         </View>
       ))}
-    </View>
+    </Card>
   );
 }

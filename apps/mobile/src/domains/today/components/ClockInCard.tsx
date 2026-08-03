@@ -19,9 +19,11 @@
  */
 import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { View } from 'react-native';
 import { Card, CardContent } from '@/src/components/ui/card';
 import { LoadingButton } from '@/src/components/ui/loading-button';
-import { Body, H2, Small } from '@/src/components/ui/typography';
+import { Text } from '@/src/components/ui/text';
+import { Body, Small, Timer } from '@/src/components/ui/typography';
 import { formatClockTime } from '@/src/domains/timesheet/utils/duration';
 import { isOptimisticTimeEntry } from '@/src/hooks/mutations/timeEntryMutationUtils';
 import { useClockIn } from '@/src/hooks/mutations/useClockIn';
@@ -123,12 +125,23 @@ export function ClockInCard({ householdId }: ClockInCardProps) {
   };
 
   return (
-    <Card testID="today-clock-card">
-      <CardContent className="gap-4 p-6">
+    // `live` swaps the neutral plum shadow for the apricot one, on exactly the
+    // predicate that drives the Today wash — so the card carries the signal and
+    // the wash is its echo, rather than the room glowing around a neutral card.
+    <Card testID="today-clock-card" live={Boolean(entry)}>
+      <CardContent className="gap-4">
         {entry ? (
           <>
-            <Small className="text-muted-foreground">{t('onTheClock')}</Small>
-            <H2 testID="today-live-timer">{elapsed}</H2>
+            <View className="flex-row items-center gap-2">
+              <View
+                testID="today-live-dot"
+                className="h-[7px] w-[7px] rounded-full bg-highlight"
+              />
+              <Text className="text-[13px] font-semibold text-highlight">
+                {t('onTheClock')}
+              </Text>
+            </View>
+            <Timer testID="today-live-timer">{elapsed}</Timer>
             {entry.clock_in_at ? (
               <Small className="text-muted-foreground">
                 {t('since', { time: formatClockTime(entry.clock_in_at) })}

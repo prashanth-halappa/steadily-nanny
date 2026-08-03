@@ -75,7 +75,7 @@ export function Chip({
   // Size classes
   const sizeClasses = {
     sm: 'px-2 py-1 gap-1',
-    default: 'px-3 py-1.5 gap-1.5',
+    default: 'px-3 py-1 gap-1.5',
   };
 
   // Variant classes
@@ -107,7 +107,7 @@ export function Chip({
     default: 'text-foreground',
     primary: 'text-primary',
     success: 'text-success',
-    warning: 'text-warning',
+    warning: 'text-warning-strong',
     error: 'text-destructive',
     secondary: 'text-secondary-foreground',
   };

@@ -35,6 +35,7 @@
 import { type Href, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { ScrollView, View } from 'react-native';
+import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -65,12 +66,14 @@ import { useChildren } from '@/src/hooks/queries/useChildren';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 import { useSchedulePattern } from '@/src/hooks/queries/useSchedulePattern';
 import { useSchedulePatterns } from '@/src/hooks/queries/useSchedulePatterns';
+import { useElevation } from '~/lib/design-tokens/elevation';
 
 const BUILD_HREF = '/(private)/schedule/build' as Href;
 const SHIFTS_HREF = '/(private)/schedule/shifts' as Href;
 
 export function SchedulePendingScreen() {
   const { t } = useTranslation('schedule');
+  const elevation = useElevation();
   const router = useRouter();
 
   const onboarding = useIsOnboarded();
@@ -138,7 +141,7 @@ export function SchedulePendingScreen() {
     <ScrollView
       testID="schedule-pending-screen"
       className="flex-1 bg-background"
-      contentContainerStyle={{ padding: 24, paddingBottom: 100 }}
+      contentContainerStyle={SCREEN_CONTENT_STYLE}
     >
       <H1>{t('pending.screenTitle')}</H1>
 
@@ -201,7 +204,8 @@ export function SchedulePendingScreen() {
           {pattern.status === 'declined' && pattern.decline_message ? (
             <View
               testID="schedule-pending-decline-message"
-              className="gap-1 rounded-xl border border-border p-4"
+              className="gap-1 rounded-row bg-card p-4"
+              style={elevation.row}
             >
               <Body className="font-medium">
                 {t('pending.declineReasonLabel')}

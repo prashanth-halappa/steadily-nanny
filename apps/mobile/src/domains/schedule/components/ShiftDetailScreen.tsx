@@ -16,6 +16,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ScrollView, View } from 'react-native';
+import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { Button } from '@/src/components/ui/button';
 import { Input } from '@/src/components/ui/input';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
@@ -39,6 +40,7 @@ import {
   shiftInstantsFromWallClock,
   utcIsoToWallClockHHMM,
 } from '@/src/lib/wallClock';
+import { useElevation } from '~/lib/design-tokens/elevation';
 
 const KNOWN_EVENT_TYPES = new Set([
   'shift_updated',
@@ -48,6 +50,7 @@ const KNOWN_EVENT_TYPES = new Set([
 
 export function ShiftDetailScreen() {
   const { t } = useTranslation('schedule');
+  const elevation = useElevation();
   const router = useRouter();
   const params = useLocalSearchParams<{ shiftId?: string }>();
   const shiftId = typeof params.shiftId === 'string' ? params.shiftId : null;
@@ -132,7 +135,7 @@ export function ShiftDetailScreen() {
     <ScrollView
       testID="shift-detail-screen"
       className="flex-1 bg-background"
-      contentContainerStyle={{ padding: 24, paddingBottom: 100 }}
+      contentContainerStyle={SCREEN_CONTENT_STYLE}
     >
       <H1 testID="shift-detail-title">{t('detail.title')}</H1>
       <Body className="mt-2 text-muted-foreground" tabular>
@@ -251,7 +254,8 @@ export function ShiftDetailScreen() {
           {(changeRequests.data ?? []).map(req => (
             <View
               key={req.id}
-              className="gap-2 rounded-lg border border-border p-3"
+              className="gap-2 rounded-row bg-card p-3"
+              style={elevation.row}
             >
               <Body className="font-medium">
                 {t(shiftChangeRequestKindLabelKey(req.kind), {
@@ -338,7 +342,7 @@ function EventRow({ event }: { event: ShiftEvent }) {
   return (
     <View
       testID={`shift-event-${event.id}`}
-      className="rounded-lg bg-muted p-3"
+      className="rounded-row bg-muted p-3"
     >
       <Body className="font-medium">
         {known

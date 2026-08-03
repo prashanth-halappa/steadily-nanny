@@ -7,6 +7,7 @@
 import { FlashList } from '@shopify/flash-list';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { Button } from '@/src/components/ui/button';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { Text } from '@/src/components/ui/text';
@@ -172,7 +173,7 @@ export function ParentWeekView({
             )}
           </>
         }
-        contentContainerStyle={{ padding: 24, paddingBottom: 100 }}
+        contentContainerStyle={SCREEN_CONTENT_STYLE}
         accessibilityLabel={t('carerWeek')}
       />
 

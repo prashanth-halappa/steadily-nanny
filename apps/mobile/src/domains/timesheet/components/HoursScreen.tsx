@@ -25,6 +25,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ScrollView, View } from 'react-native';
+import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { Body, H1 } from '@/src/components/ui/typography';
 import {
@@ -114,7 +115,7 @@ export function HoursScreen() {
       <ScrollView
         testID="hours-screen"
         className="flex-1 bg-background"
-        contentContainerStyle={{ padding: 24, paddingBottom: 100 }}
+        contentContainerStyle={SCREEN_CONTENT_STYLE}
       >
         <H1>{t('title')}</H1>
       </ScrollView>

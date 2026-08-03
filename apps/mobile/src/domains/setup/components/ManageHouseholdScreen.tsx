@@ -273,7 +273,7 @@ export function ManageHouseholdScreen() {
           testID="household-timezone-trigger"
           onPress={() => setIsTimezoneSheetOpen(true)}
         >
-          <View className="flex-row items-center justify-between rounded-2xl border border-input bg-background px-4 py-3">
+          <View className="flex-row items-center justify-between rounded-row border border-input bg-background px-4 py-3">
             <Body>{selectedTimezoneLabel}</Body>
             <Small className="text-primary">
               {t('householdSettings.timezoneChangeButton')}

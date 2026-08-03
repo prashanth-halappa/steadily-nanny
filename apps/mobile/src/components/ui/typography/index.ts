@@ -23,7 +23,7 @@ export {
 } from './body';
 
 // Display components
-export { Display, DisplayLarge } from './display';
+export { DayGroup, Display, DisplayLarge, Timer } from './display';
 export {
   createTypographyComponent,
   Figure,

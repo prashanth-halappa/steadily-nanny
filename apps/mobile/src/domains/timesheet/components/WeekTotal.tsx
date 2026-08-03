@@ -43,7 +43,7 @@ export function WeekTotal({
 
   return (
     <Card testID={testID} className="mb-4">
-      <CardContent className="gap-1 p-6">
+      <CardContent className="gap-1">
         {hasNav ? (
           <View className="flex-row items-center justify-between">
             <AnimatedPressable
