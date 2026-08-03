@@ -27,7 +27,11 @@ function Card({
   return (
     <View
       className={cn('rounded-card bg-card', className)}
-      style={[live ? elevation.liveCard : elevation.card, style]}
+      style={[
+        live ? elevation.liveCard : elevation.card,
+        live ? { backgroundColor: elevation.liveCardBackground } : null,
+        style,
+      ]}
       {...props}
     />
   );

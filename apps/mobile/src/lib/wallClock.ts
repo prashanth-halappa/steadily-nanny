@@ -74,7 +74,7 @@ export function shiftInstantsFromWallClock(
   };
 }
 
-/** HH:MM in `timeZone` for an absolute ISO instant. */
+/** HH:MM in `timeZone` for an absolute ISO instant (always 24h — wire/forms). */
 export function utcIsoToWallClockHHMM(iso: string, timeZone: string): string {
   const formatter = new Intl.DateTimeFormat('en-GB', {
     timeZone,
@@ -83,4 +83,52 @@ export function utcIsoToWallClockHHMM(iso: string, timeZone: string): string {
     hourCycle: 'h23',
   });
   return formatter.format(new Date(iso));
+}
+
+/**
+ * Display clock for an absolute ISO instant in `timeZone`, using the device
+ * locale's 12h/24h preference. 24h locales get zero-padded `HH:MM`; 12h
+ * locales get the locale's AM/PM form. Pass an explicit `locale` in tests.
+ */
+export function formatInstantDisplay(
+  iso: string,
+  timeZone: string,
+  locale: string = Intl.DateTimeFormat().resolvedOptions().locale
+): string {
+  const hour12 = localePrefersHour12(locale);
+  return new Intl.DateTimeFormat(locale, {
+    timeZone,
+    hour: hour12 ? 'numeric' : '2-digit',
+    minute: '2-digit',
+    ...(hour12 ? {} : { hourCycle: 'h23' as const }),
+  }).format(new Date(iso));
+}
+
+/**
+ * Display a nominal wire wall-clock (`09:00` / `09:00:00`) using the locale's
+ * hour cycle. No timezone — the string is already local to the household day.
+ */
+export function formatNominalWallClockDisplay(
+  time: string,
+  locale: string = Intl.DateTimeFormat().resolvedOptions().locale
+): string {
+  const [hoursPart, minutesPart] = time.split(':');
+  const hours = Number(hoursPart ?? 0);
+  const minutes = Number(minutesPart ?? 0);
+  const date = new Date(Date.UTC(2000, 0, 1, hours, minutes, 0));
+  const hour12 = localePrefersHour12(locale);
+  return new Intl.DateTimeFormat(locale, {
+    timeZone: 'UTC',
+    hour: hour12 ? 'numeric' : '2-digit',
+    minute: '2-digit',
+    ...(hour12 ? {} : { hourCycle: 'h23' as const }),
+  }).format(date);
+}
+
+function localePrefersHour12(locale: string): boolean {
+  const resolved = new Intl.DateTimeFormat(locale, {
+    hour: 'numeric',
+  }).resolvedOptions();
+  if (typeof resolved.hour12 === 'boolean') return resolved.hour12;
+  return resolved.hourCycle === 'h11' || resolved.hourCycle === 'h12';
 }

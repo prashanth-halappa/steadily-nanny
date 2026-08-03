@@ -9,6 +9,7 @@ import { describe, expect, it } from 'bun:test';
 import {
   formatClockTime,
   formatDuration,
+  formatElapsedClock,
   formatElapsedSince,
   formatOvertimeDelta,
 } from '../utils/duration';
@@ -53,6 +54,26 @@ describe('formatElapsedSince', () => {
   });
 });
 
+describe('formatElapsedClock', () => {
+  it('formats elapsed time as zero-padded HH:MM:SS', () => {
+    const start = '2026-08-01T07:58:00.000Z';
+    const now = new Date('2026-08-01T11:40:17.000Z').getTime();
+    expect(formatElapsedClock(start, now)).toBe('03:42:17');
+  });
+
+  it('shows seconds in the first minute (not a frozen 0m)', () => {
+    const start = '2026-08-01T07:58:00.000Z';
+    const now = new Date('2026-08-01T07:58:30.000Z').getTime();
+    expect(formatElapsedClock(start, now)).toBe('00:00:30');
+  });
+
+  it('clamps negative skew to 00:00:00', () => {
+    const start = '2026-08-01T07:58:00.000Z';
+    const now = new Date('2026-08-01T07:57:00.000Z').getTime();
+    expect(formatElapsedClock(start, now)).toBe('00:00:00');
+  });
+});
+
 describe('formatOvertimeDelta', () => {
   it('formats a positive delta against the scheduled minutes', () => {
     expect(formatOvertimeDelta(554, 540)).toBe('+14 min');
@@ -72,40 +93,52 @@ describe('formatOvertimeDelta', () => {
 });
 
 describe('formatClockTime', () => {
-  // Zone-aware (GOLDEN-FIXES #21 bug class) — `timeZone` is always the
-  // HOUSEHOLD's, never the device's. See week.test.ts for the sibling
-  // "two households, one instant" coverage this mirrors.
-  it('formats as zero-padded 24-hour HH:MM in the given IANA zone', () => {
-    expect(formatClockTime('2026-08-03T07:05:00.000Z', 'UTC')).toBe('07:05');
+  // Zone-aware (GOLDEN-FIXES #21) + locale hour cycle (#22). Pass en-GB for
+  // stable 24h assertions; en-US for 12h.
+  it('formats in the household zone with a 24-hour locale', () => {
+    expect(formatClockTime('2026-08-03T07:05:00.000Z', 'UTC', 'en-GB')).toBe(
+      '07:05'
+    );
   });
 
-  it('pads a single-digit hour and minute', () => {
-    expect(formatClockTime('2026-08-03T09:03:00.000Z', 'UTC')).toBe('09:03');
+  it('pads a single-digit hour and minute in a 24-hour locale', () => {
+    expect(formatClockTime('2026-08-03T09:03:00.000Z', 'UTC', 'en-GB')).toBe(
+      '09:03'
+    );
+  });
+
+  it('uses 12-hour clock when the locale prefers it', () => {
+    const formatted = formatClockTime(
+      '2026-08-03T17:28:00.000Z',
+      'UTC',
+      'en-US'
+    );
+    expect(formatted.toLowerCase()).toMatch(/5:28/);
+    expect(formatted.toLowerCase()).toMatch(/pm/);
   });
 
   it('resolves the SAME instant to a different wall-clock time in a household AHEAD of UTC', () => {
-    // Pacific/Auckland is UTC+12 in NZ winter (no DST in August).
     expect(
-      formatClockTime('2026-08-03T23:30:00.000Z', 'Pacific/Auckland')
+      formatClockTime('2026-08-03T23:30:00.000Z', 'Pacific/Auckland', 'en-GB')
     ).toBe('11:30');
   });
 
   it('resolves the SAME instant to a different wall-clock time in a household BEHIND UTC', () => {
-    // America/Los_Angeles is UTC-7 in August (PDT).
     expect(
-      formatClockTime('2026-08-03T07:05:00.000Z', 'America/Los_Angeles')
+      formatClockTime(
+        '2026-08-03T07:05:00.000Z',
+        'America/Los_Angeles',
+        'en-GB'
+      )
     ).toBe('00:05');
   });
 
   it('is DST-aware across a household timezone transition (Europe/London)', () => {
-    // Winter (GMT, UTC+0): 09:00Z reads as 09:00 local.
-    expect(formatClockTime('2026-01-07T09:00:00.000Z', 'Europe/London')).toBe(
-      '09:00'
-    );
-    // Summer (BST, UTC+1): the SAME wall-clock hour is a different instant —
-    // 08:00Z reads as 09:00 local, not 08:00.
-    expect(formatClockTime('2026-08-03T08:00:00.000Z', 'Europe/London')).toBe(
-      '09:00'
-    );
+    expect(
+      formatClockTime('2026-01-07T09:00:00.000Z', 'Europe/London', 'en-GB')
+    ).toBe('09:00');
+    expect(
+      formatClockTime('2026-08-03T08:00:00.000Z', 'Europe/London', 'en-GB')
+    ).toBe('09:00');
   });
 });

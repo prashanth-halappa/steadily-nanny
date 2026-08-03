@@ -24,17 +24,23 @@ import {
 } from '../utils';
 
 describe('formatWallClockTime', () => {
-  it('strips seconds from ISO time strings', () => {
-    expect(formatWallClockTime('09:00:00')).toBe('09:00');
-    expect(formatWallClockTime('17:00:00')).toBe('17:00');
+  it('strips seconds from ISO time strings (24h locale)', () => {
+    expect(formatWallClockTime('09:00:00', 'en-GB')).toBe('09:00');
+    expect(formatWallClockTime('17:00:00', 'en-GB')).toBe('17:00');
   });
 
-  it('pads single-digit hours and minutes', () => {
-    expect(formatWallClockTime('9:5')).toBe('09:05');
+  it('pads single-digit hours and minutes (24h locale)', () => {
+    expect(formatWallClockTime('9:5', 'en-GB')).toBe('09:05');
   });
 
-  it('passes through already-formatted HH:MM', () => {
-    expect(formatWallClockTime('09:00')).toBe('09:00');
+  it('passes through already-formatted HH:MM (24h locale)', () => {
+    expect(formatWallClockTime('09:00', 'en-GB')).toBe('09:00');
+  });
+
+  it('uses 12-hour clock when the locale prefers it', () => {
+    const formatted = formatWallClockTime('17:00:00', 'en-US');
+    expect(formatted.toLowerCase()).toMatch(/5:00/);
+    expect(formatted.toLowerCase()).toMatch(/pm/);
   });
 });
 

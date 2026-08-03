@@ -9,8 +9,15 @@
  * (`domains/timesheet/utils/week.ts` + `lib/wallClock.ts`).
  */
 import { describe, expect, it } from 'bun:test';
+import * as localDate from '../localDate';
 import { currentWeekRange } from '../localDate';
 import { utcIsoToWallClockHHMM } from '../wallClock';
+
+describe('localDate exports', () => {
+  it('does not export twoWeekRange (deleted — device-zone Monday trap)', () => {
+    expect('twoWeekRange' in localDate).toBe(false);
+  });
+});
 
 describe('currentWeekRange', () => {
   it('resolves [Monday 00:00, next Monday 00:00) as UTC instants in UTC', () => {

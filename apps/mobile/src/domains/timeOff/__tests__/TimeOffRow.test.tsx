@@ -186,7 +186,7 @@ describe('TimeOffRow', () => {
     ).toBe(true);
   });
 
-  it('hides Edit for past time off — the exclusive ends_at is already before now', () => {
+  it('hides Edit and Cancel for past time off — the exclusive ends_at is already before now', () => {
     const { queryByTestId } = render(
       <TimeOffRow
         timeOff={makeTimeOff({
@@ -202,6 +202,9 @@ describe('TimeOffRow', () => {
 
     expect(
       queryByTestId('time-off-edit-22222222-2222-4222-8222-222222222222')
+    ).toBeNull();
+    expect(
+      queryByTestId('time-off-cancel-22222222-2222-4222-8222-222222222222')
     ).toBeNull();
   });
 });

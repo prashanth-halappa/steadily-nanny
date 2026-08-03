@@ -119,7 +119,11 @@ export function ScheduleRespondScreen({
     );
   }
 
-  const days = pattern.data.days;
+  const days = [...pattern.data.days].sort((a, b) => {
+    // Monday-first display order (matches parent preview) — not raw API order.
+    const order = [1, 2, 3, 4, 5, 6, 0];
+    return order.indexOf(a.weekday) - order.indexOf(b.weekday);
+  });
   const totalHours = calculateWeekTotalHours(days);
 
   const handleAccept = async () => {
@@ -175,7 +179,7 @@ export function ScheduleRespondScreen({
               className="gap-2 rounded-row bg-card p-4"
               style={elevation.row}
             >
-              <View className="flex-row items-center justify-between gap-2">
+              <View className="gap-2">
                 <Body className="font-semibold" tabular>
                   {t(`weekday.${day.weekday}`)} ·{' '}
                   {formatWallClockTime(day.start_time)}–
@@ -189,12 +193,6 @@ export function ScheduleRespondScreen({
                   />
                 ) : null}
               </View>
-
-              {outsideHours ? (
-                <Body className="text-warning text-xs">
-                  {t('respond.outsideHoursNote')}
-                </Body>
-              ) : null}
 
               {day.children.length > 0 ? (
                 <View className="gap-1.5">

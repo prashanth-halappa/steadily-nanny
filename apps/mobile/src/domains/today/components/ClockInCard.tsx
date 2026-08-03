@@ -20,7 +20,7 @@
 import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
-import { Card, CardContent } from '@/src/components/ui/card';
+import { Card } from '@/src/components/ui/card';
 import { LoadingButton } from '@/src/components/ui/loading-button';
 import { Text } from '@/src/components/ui/text';
 import { Body, Small, Timer } from '@/src/components/ui/typography';
@@ -129,59 +129,59 @@ export function ClockInCard({ householdId, timeZone }: ClockInCardProps) {
   };
 
   return (
-    // `live` swaps the neutral plum shadow for the apricot one, on exactly the
-    // predicate that drives the Today wash — so the card carries the signal and
-    // the wash is its echo, rather than the room glowing around a neutral card.
-    <Card testID="today-clock-card" live={Boolean(entry)}>
-      <CardContent className="gap-4">
-        {entry ? (
-          <>
-            <View className="flex-row items-center gap-2">
-              <View
-                testID="today-live-dot"
-                className="h-[7px] w-[7px] rounded-full bg-highlight"
-              />
-              <Text className="text-[13px] font-semibold text-highlight">
-                {t('onTheClock')}
-              </Text>
-            </View>
-            <Timer testID="today-live-timer">{elapsed}</Timer>
-            {entry.clock_in_at ? (
-              <Small className="text-muted-foreground">
-                {t('since', {
-                  time: formatClockTime(entry.clock_in_at, timeZone),
-                })}
-              </Small>
-            ) : null}
-            <LoadingButton
-              testID="today-clock-out"
-              variant="outline"
-              label={t('clockOut')}
-              isLoading={clockIn.isPending}
-              disabled={clockOutBlocked}
-              onPress={handleClockOutPress}
+    <Card
+      testID="today-clock-card"
+      live={Boolean(entry)}
+      className="gap-4 p-5.5"
+    >
+      {entry ? (
+        <>
+          <View className="flex-row items-center gap-2">
+            <View
+              testID="today-live-dot"
+              className="h-[10px] w-[10px] rounded-full bg-highlight"
             />
-            <ClockOutSheet
-              visible={showClockOutSheet}
-              onDismiss={() => setShowClockOutSheet(false)}
-              onSubmit={handleConfirmClockOut}
-              isSubmitting={clockOut.isPending}
-              clockInAt={entry.clock_in_at}
-              timeZone={timeZone}
-            />
-          </>
-        ) : (
-          <>
-            <Body className="text-muted-foreground">{t('clockInHint')}</Body>
-            <LoadingButton
-              testID="today-clock-in"
-              label={t('clockIn')}
-              isLoading={clockIn.isPending || running.isLoading}
-              onPress={handleClockIn}
-            />
-          </>
-        )}
-      </CardContent>
+            <Text className="text-[13px] font-semibold text-highlight">
+              {t('onTheClock')}
+            </Text>
+          </View>
+          <Timer testID="today-live-timer">{elapsed}</Timer>
+          {entry.clock_in_at ? (
+            <Small className="text-muted-foreground">
+              {t('since', {
+                time: formatClockTime(entry.clock_in_at, timeZone),
+              })}
+            </Small>
+          ) : null}
+          <LoadingButton
+            testID="today-clock-out"
+            variant="outline"
+            label={t('clockOut')}
+            isLoading={clockIn.isPending}
+            disabled={clockOutBlocked}
+            onPress={handleClockOutPress}
+          />
+          <ClockOutSheet
+            visible={showClockOutSheet}
+            onDismiss={() => setShowClockOutSheet(false)}
+            onSubmit={handleConfirmClockOut}
+            isSubmitting={clockOut.isPending}
+            clockInAt={entry.clock_in_at}
+            timeZone={timeZone}
+          />
+        </>
+      ) : (
+        <>
+          <Body className="font-semibold">{t('notOnTheClock')}</Body>
+          <Body className="text-muted-foreground">{t('clockInHint')}</Body>
+          <LoadingButton
+            testID="today-clock-in"
+            label={t('clockIn')}
+            isLoading={clockIn.isPending || running.isLoading}
+            onPress={handleClockIn}
+          />
+        </>
+      )}
     </Card>
   );
 }

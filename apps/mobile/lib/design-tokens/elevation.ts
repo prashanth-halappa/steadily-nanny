@@ -55,10 +55,40 @@ export function washGradient(modeOrIsDark: PaletteMode | boolean): {
   };
 }
 
+/**
+ * Mix `overlay` onto `base` at `amount` (0–1) and return an opaque `#RRGGBB`.
+ * Used for the live card ground (~8% apricot on card) — never a translucent
+ * class like `bg-card/90` (GOLDEN-FIXES #19).
+ */
+export function mixHex(base: string, overlay: string, amount: number): string {
+  const parse = (hex: string) => {
+    const cleaned = hex.startsWith('#') ? hex.slice(1) : hex;
+    return [
+      Number.parseInt(cleaned.slice(0, 2), 16),
+      Number.parseInt(cleaned.slice(2, 4), 16),
+      Number.parseInt(cleaned.slice(4, 6), 16),
+    ] as const;
+  };
+  const [br, bg, bb] = parse(base);
+  const [or, og, ob] = parse(overlay);
+  const t = Math.min(1, Math.max(0, amount));
+  const channel = (b: number, o: number) =>
+    Math.round(b * (1 - t) + o * t)
+      .toString(16)
+      .padStart(2, '0');
+  return `#${channel(br, or)}${channel(bg, og)}${channel(bb, ob)}`.toUpperCase();
+}
+
+/** Opaque live-card fill — highlight mixed onto card at 8%. */
+export function liveCardBackground(mode: PaletteMode): string {
+  return mixHex(palette[mode].card.hex, palette[mode].highlight.hex, 0.08);
+}
+
 /** Exported for token tests — the app should use `useElevation()`. */
 export function elevationForMode(mode: PaletteMode): {
   card: ViewStyle;
   liveCard: ViewStyle;
+  liveCardBackground: string;
   row: ViewStyle;
 } {
   const ink = palette[mode].foreground.hex;
@@ -101,6 +131,7 @@ export function elevationForMode(mode: PaletteMode): {
         },
       ],
     },
+    liveCardBackground: liveCardBackground(mode),
     row: {
       boxShadow: [
         {
@@ -128,6 +159,7 @@ const DARK_ELEVATION = elevationForMode('dark');
 export function useElevation(): {
   card: ViewStyle;
   liveCard: ViewStyle;
+  liveCardBackground: string;
   row: ViewStyle;
 } {
   const { isDarkColorScheme } = useColorScheme();

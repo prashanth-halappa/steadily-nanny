@@ -49,12 +49,14 @@ export const useCalendarViewStore = createPersistedStore<CalendarViewState>(
   }
 );
 
-/** Resolve the stored view for a role, falling back to agenda. */
+/** Resolve the stored view for a role, falling back to agenda.
+ * Coverage lanes were folded into agenda (Daylight UX #33) — remap. */
 export function resolveCalendarView(
   role: CalendarRole,
   stored: CalendarViewState
 ): CalendarViewId {
   const view = role === 'parent' ? stored.parentView : stored.nannyView;
+  if (view === CALENDAR_VIEWS.COVERAGE_LANES) return CALENDAR_VIEWS.AGENDA;
   const valid = Object.values(CALENDAR_VIEWS) as string[];
   return valid.includes(view) ? view : CALENDAR_VIEWS.AGENDA;
 }

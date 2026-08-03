@@ -9,14 +9,14 @@
  * `__tests__/useElapsedTimer.test.ts` — those matter more than the format.
  */
 import { useEffect, useState } from 'react';
-import { formatElapsedSince } from '@/src/domains/timesheet/utils/duration';
+import { formatElapsedClock } from '@/src/domains/timesheet/utils/duration';
 
 const TICK_MS = 1000;
 
 /**
  * Returns the live elapsed string since `startIso` (an ISO instant with
- * offset), ticking once a second, or `null` when `startIso` is `null` (not
- * clocked in) — no interval runs in that case.
+ * offset), ticking once a second as `HH:MM:SS`, or `null` when `startIso`
+ * is `null` (not clocked in) — no interval runs in that case.
  */
 export function useElapsedTimer(startIso: string | null): string | null {
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -31,5 +31,5 @@ export function useElapsedTimer(startIso: string | null): string | null {
   }, [startIso]);
 
   if (!startIso) return null;
-  return formatElapsedSince(startIso, nowMs);
+  return formatElapsedClock(startIso, nowMs);
 }

@@ -24,7 +24,6 @@ import {
   CalendarViewSwitcher,
   useCalendarViewPreference,
 } from '@/src/domains/schedule/components/CalendarViewSwitcher';
-import { CoverageLanesView } from '@/src/domains/schedule/components/CoverageLanesView';
 import { CrossFamilyRhythmView } from '@/src/domains/schedule/components/CrossFamilyRhythmView';
 import { WeekRibbonView } from '@/src/domains/schedule/components/WeekRibbonView';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
@@ -50,7 +49,7 @@ export function ScheduleShiftsScreen({
   const router = useRouter();
   const activeHousehold = useActiveHousehold();
   const profile = useUserProfile();
-  const children = useChildren(activeHousehold.householdId);
+  const _children = useChildren(activeHousehold.householdId);
   const [calendarView, setCalendarView] = useCalendarViewPreference();
   // The week boundary is a HOUSEHOLD-timezone question, never the device's —
   // same fallback chain as the WeekRibbon/CoverageLanes views below, and
@@ -142,16 +141,6 @@ export function ScheduleShiftsScreen({
               activeHousehold.household?.timezone ?? profile.data?.timezone
             }
             weekStartsOn={profile.data?.week_starts_on}
-          />
-        ) : null}
-
-        {showContent && calendarView === CALENDAR_VIEWS.COVERAGE_LANES ? (
-          <CoverageLanesView
-            shifts={shifts}
-            householdChildren={children.data ?? []}
-            displayTimeZone={
-              activeHousehold.household?.timezone ?? profile.data?.timezone
-            }
           />
         ) : null}
 

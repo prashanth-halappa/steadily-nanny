@@ -2,10 +2,11 @@
  * @module app/(private)/(tabs)/settings
  */
 import { type Href, router } from 'expo-router';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ScrollView, View } from 'react-native';
 import { AnimatedPressable } from '@/lib/animations';
-import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
+import { SCREEN_CONTENT_STYLE, spacing } from '@/lib/design-tokens';
 import { cn } from '@/lib/utils';
 import {
   AlertDialog,
@@ -19,6 +20,7 @@ import {
   AlertDialogTrigger,
 } from '@/src/components/ui/alert-dialog';
 import { Button, buttonVariants } from '@/src/components/ui/button';
+import { Input } from '@/src/components/ui/input';
 import { Text } from '@/src/components/ui/text';
 import { Body, H1, H4, Small } from '@/src/components/ui/typography';
 import { appIdentity } from '@/src/config/appIdentity';
@@ -41,9 +43,15 @@ export default function SettingsScreen() {
   const language = useLanguageStore(s => s.language);
   const setLanguage = useLanguageStore(s => s.setLanguage);
   const signOut = useAuthStore(s => s.signOut);
+  const user = useAuthStore(s => s.user);
   const { mutateAsync: deleteAccount, isPending: isDeletingAccount } =
     useDeleteAccount();
   const updatePreferredLocale = useUpdatePreferredLocale();
+  const [deleteConfirmEmail, setDeleteConfirmEmail] = useState('');
+  const accountEmail = user?.email ?? '';
+  const deleteUnlocked =
+    accountEmail.length > 0 &&
+    deleteConfirmEmail.trim().toLowerCase() === accountEmail.toLowerCase();
 
   // Apply the language change locally FIRST and unconditionally (MMKV +
   // i18next re-render) — the app must switch language even offline or if
@@ -80,6 +88,23 @@ export default function SettingsScreen() {
     >
       <H1>{t('settings:title')}</H1>
 
+      {accountEmail || onboarding.role ? (
+        <View className="mt-4 gap-1" testID="settings-identity">
+          {accountEmail ? (
+            <Body className="text-muted-foreground">{accountEmail}</Body>
+          ) : null}
+          {onboarding.role ? (
+            <Small className="text-muted-foreground" testID="settings-role">
+              {onboarding.role}
+            </Small>
+          ) : null}
+        </View>
+      ) : null}
+
+      <View className="mt-6 gap-3" testID="settings-account-section">
+        <H4>{t('settings:account')}</H4>
+      </View>
+
       <View className="mt-6 gap-3">
         <H4>{t('settings:language')}</H4>
         <View className="flex-row flex-wrap gap-2">
@@ -88,6 +113,10 @@ export default function SettingsScreen() {
               key={lang}
               testID={`settings-language-${lang}`}
               onPress={() => handleLanguageChange(lang)}
+              style={{
+                minHeight: spacing.minTouchTarget,
+                justifyContent: 'center',
+              }}
             >
               <Small
                 className={cn(
@@ -171,10 +200,23 @@ export default function SettingsScreen() {
       ) : null}
 
       <View className="mt-8 gap-3">
-        <AnimatedPressable onPress={() => void openExternalUrl(PRIVACY_URL)}>
+        <H4>{t('settings:legal')}</H4>
+        <AnimatedPressable
+          onPress={() => void openExternalUrl(PRIVACY_URL)}
+          style={{
+            minHeight: spacing.minTouchTarget,
+            justifyContent: 'center',
+          }}
+        >
           <Body className="text-primary">{t('settings:privacyPolicy')}</Body>
         </AnimatedPressable>
-        <AnimatedPressable onPress={() => void openExternalUrl(TERMS_URL)}>
+        <AnimatedPressable
+          onPress={() => void openExternalUrl(TERMS_URL)}
+          style={{
+            minHeight: spacing.minTouchTarget,
+            justifyContent: 'center',
+          }}
+        >
           <Body className="text-primary">{t('settings:termsOfService')}</Body>
         </AnimatedPressable>
       </View>
@@ -189,13 +231,16 @@ export default function SettingsScreen() {
       </Button>
 
       <AlertDialog>
-        <AlertDialogTrigger
-          testID="settings-delete-account"
-          className="mt-4 items-center justify-center py-2"
-        >
-          <Body className="text-destructive">
-            {t('settings:deleteAccount')}
-          </Body>
+        <AlertDialogTrigger asChild>
+          <Button
+            testID="settings-delete-account"
+            variant="ghost"
+            className="mt-4"
+          >
+            <Text className="text-destructive">
+              {t('settings:deleteAccount')}
+            </Text>
+          </Button>
         </AlertDialogTrigger>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -205,6 +250,30 @@ export default function SettingsScreen() {
             <AlertDialogDescription>
               {t('settings:deleteAccountConfirmBody')}
             </AlertDialogDescription>
+            <View className="mt-2 gap-1">
+              <Body className="text-sm text-muted-foreground">
+                • {t('settings:deleteAccountConsequenceAccount')}
+              </Body>
+              <Body className="text-sm text-muted-foreground">
+                • {t('settings:deleteAccountConsequenceKeeps')}
+              </Body>
+            </View>
+            {accountEmail ? (
+              <View className="mt-3 gap-2">
+                <Body className="text-sm text-muted-foreground">
+                  {t('settings:deleteAccountTypeEmail')}
+                </Body>
+                <Input
+                  testID="settings-delete-confirm-email"
+                  accessibilityLabel={t('settings:deleteAccountTypeEmail')}
+                  autoCapitalize="none"
+                  keyboardType="email-address"
+                  value={deleteConfirmEmail}
+                  onChangeText={setDeleteConfirmEmail}
+                  placeholder={accountEmail}
+                />
+              </View>
+            ) : null}
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>
@@ -213,7 +282,10 @@ export default function SettingsScreen() {
             <AlertDialogAction
               testID="settings-delete-account-confirm"
               className={buttonVariants({ variant: 'destructive' })}
-              disabled={isDeletingAccount}
+              disabled={
+                isDeletingAccount ||
+                (accountEmail.length > 0 && !deleteUnlocked)
+              }
               onPress={() => void confirmDeleteAccount()}
             >
               <Text className="text-destructive-foreground">

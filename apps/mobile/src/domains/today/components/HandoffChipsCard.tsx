@@ -13,6 +13,7 @@ import { useTranslation } from 'react-i18next';
 import { Pressable, View } from 'react-native';
 import { cn } from '@/lib/utils';
 import { Button } from '@/src/components/ui/button';
+import { Card } from '@/src/components/ui/card';
 import { Text } from '@/src/components/ui/text';
 import { Body, H3 } from '@/src/components/ui/typography';
 import { SETUP_ROLES, type SetupRole } from '@/src/domains/setup/types';
@@ -51,7 +52,7 @@ function ChipToggle({
       onPress={onPress}
       className={cn(
         'rounded-chip px-3 py-1.5',
-        selected ? 'bg-primary' : 'bg-muted'
+        selected ? 'bg-primary' : 'bg-secondary'
       )}
     >
       <Text
@@ -202,7 +203,7 @@ export function HandoffChipsCard({
   const existingNoteId = myNote?.id;
 
   return (
-    <View testID="handoff-chips-card" className="gap-3 rounded-lg bg-muted p-3">
+    <Card testID="handoff-chips-card" className="gap-3 p-5.5">
       <HandoffPhaseEditor
         phase={editorPhase}
         householdId={householdId}
@@ -246,6 +247,6 @@ export function HandoffChipsCard({
           </Button>
         </View>
       ) : null}
-    </View>
+    </Card>
   );
 }

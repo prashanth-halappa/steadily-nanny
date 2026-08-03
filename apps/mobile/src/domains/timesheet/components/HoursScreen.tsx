@@ -27,7 +27,7 @@ import { useTranslation } from 'react-i18next';
 import { ScrollView, View } from 'react-native';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
-import { Body, H1 } from '@/src/components/ui/typography';
+import { H1 } from '@/src/components/ui/typography';
 import {
   canViewParentSchedule,
   isParentEditorRole,
@@ -54,7 +54,6 @@ const MAX_WEEKS_BACK = 104;
 
 export function HoursScreen() {
   const { t } = useTranslation('hours');
-  const { t: tSettings } = useTranslation('settings');
   const onboarding = useIsOnboarded();
   // `useActiveHousehold` already fetches households internally (a cache hit,
   // not a second request) — this is the switcher-aware household, which for
@@ -125,12 +124,7 @@ export function HoursScreen() {
   return (
     <View testID="hours-screen" className="flex-1 bg-background">
       <View className="px-6 pt-2">
-        <Body
-          testID="hours-monday-week-note"
-          className="text-muted-foreground text-sm"
-        >
-          {tSettings('time.weekStartsHint')}
-        </Body>
+        <H1 testID="hours-title">{t('title')}</H1>
       </View>
       {canViewParentSchedule(onboarding.role) ? (
         <ParentWeekView

@@ -43,16 +43,9 @@ describe('CrossFamilyRhythmView source', () => {
   });
 
   it('REGRESSION: fetches the SAME window it renders', () => {
-    // The bug: the query range came from `twoWeekRange()`, which anchors to
-    // the most recent Monday, while the grid always starts at *today* in the
-    // household's zone — so up to six of the fourteen rendered days were
-    // never fetched and their dots silently read as "no shifts". `from`/`to`
-    // are now derived from the same `dates` array the dots read from, which
-    // makes the two impossible to drift apart.
-    // (The component's own comment still NAMES `twoWeekRange` to explain
-    // the bug, so assert on the call/import sites, not the bare word.)
-    expect(viewSource).not.toContain('} = twoWeekRange(');
-    expect(viewSource).not.toMatch(/^\s*twoWeekRange,$/m);
+    // Query `from`/`to` must be derived from the same `dates` array the dots
+    // read from — otherwise up to six of the fourteen rendered days can be
+    // never fetched and their dots silently read as "no shifts".
     expect(viewSource).toContain('dates[0]');
     expect(viewSource).toContain('dates[13]');
     expect(viewSource).toMatch(/const from = .*rangeStart/);

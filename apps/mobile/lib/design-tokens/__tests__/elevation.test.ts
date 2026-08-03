@@ -15,7 +15,13 @@
  */
 import { describe, expect, it } from 'bun:test';
 import type { BoxShadowValue, ViewStyle } from 'react-native';
-import { elevationForMode, hexToRgba, washGradient } from '../elevation';
+import {
+  elevationForMode,
+  hexToRgba,
+  liveCardBackground,
+  mixHex,
+  washGradient,
+} from '../elevation';
 import { palette } from '../palette';
 
 describe('hexToRgba', () => {
@@ -61,6 +67,23 @@ function layers(style: ViewStyle): readonly BoxShadowValue[] {
 function layerColours(style: ViewStyle) {
   return layers(style).map(layer => layer.color);
 }
+
+describe('mixHex / liveCardBackground', () => {
+  it('mixes apricot onto white at 8% as an opaque hex', () => {
+    const mixed = mixHex('#FFFFFF', '#E8823C', 0.08);
+    expect(mixed).toMatch(/^#[0-9A-F]{6}$/);
+    expect(mixed).not.toBe('#FFFFFF');
+    expect(liveCardBackground('light')).toBe(
+      mixHex(palette.light.card.hex, palette.light.highlight.hex, 0.08)
+    );
+  });
+
+  it('exposes liveCardBackground on elevationForMode', () => {
+    expect(elevationForMode('light').liveCardBackground).toBe(
+      liveCardBackground('light')
+    );
+  });
+});
 
 describe('elevationForMode', () => {
   it('derives the resting card shadow from the palette ink, not a hardcoded hex', () => {

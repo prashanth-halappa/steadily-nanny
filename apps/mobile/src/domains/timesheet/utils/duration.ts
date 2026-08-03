@@ -1,12 +1,14 @@
 /**
  * @module domains/timesheet/utils/duration
  * Pure duration formatting for clock in/out and the hours screen. en-GB
- * style ("6h 12m"), 24-hour elsewhere in the domain. No Date math that
- * assumes a specific timezone — callers pass already-resolved minutes or ISO
- * instants, which the browser/Hermes parse in UTC (both ISO strings here
- * carry an explicit offset).
+ * style ("6h 12m") for totals; live timer uses H:MM:SS. Clock *display*
+ * follows the device locale's 12h/24h preference while staying in the
+ * household IANA zone (GOLDEN-FIXES #21).
  */
-import { utcIsoToWallClockHHMM } from '@/src/lib/wallClock';
+import {
+  formatInstantDisplay,
+  utcIsoToWallClockHHMM,
+} from '@/src/lib/wallClock';
 
 /** Minutes in one hour, for readability at call sites. */
 const MINUTES_PER_HOUR = 60;
@@ -38,6 +40,20 @@ export function formatElapsedSince(startIso: string, nowMs: number): string {
 }
 
 /**
+ * Live elapsed clock `HH:MM:SS` (zero-padded). Used by the Today timer so
+ * the first minute visibly ticks — `formatDuration` bottoms out at minutes.
+ */
+export function formatElapsedClock(startIso: string, nowMs: number): string {
+  const startMs = new Date(startIso).getTime();
+  const elapsedSec = Math.max(0, Math.floor((nowMs - startMs) / 1000));
+  const hours = Math.floor(elapsedSec / 3600);
+  const minutes = Math.floor((elapsedSec % 3600) / 60);
+  const seconds = elapsedSec % 60;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
+}
+
+/**
  * "+14 min" / "-40 min" against a scheduled figure, or `null` when there is
  * nothing to compare against (no scheduled shift) or the two match exactly
  * (nothing worth stating). Deliberately minutes-only, unlike
@@ -56,16 +72,19 @@ export function formatOvertimeDelta(
 }
 
 /**
- * 24-hour "07:58" in `timeZone` — en-GB convention throughout this domain.
- * `timeZone` MUST be the HOUSEHOLD's IANA zone, never the device's — two
- * people opening the app in different zones must read the same clock-in
- * time for the same entry (GOLDEN-FIXES #21 bug class; see
- * `domains/timesheet/utils/week.ts`'s header for the long version). Backed
- * by `utcIsoToWallClockHHMM` (`src/lib/wallClock.ts`), the app's one
- * DST-safe instant->wall-clock converter — delegating rather than
- * re-deriving keeps there being exactly one way to answer "what time is
- * it" in this codebase.
+ * Locale-aware clock display in the HOUSEHOLD's IANA zone. Pass `locale`
+ * only in tests — production uses the device default so a 12-hour device
+ * does not show "17:28" under a status bar that reads "5:28".
+ *
+ * Wire/forms still use `utcIsoToWallClockHHMM` (always 24h).
  */
-export function formatClockTime(iso: string, timeZone: string): string {
-  return utcIsoToWallClockHHMM(iso, timeZone);
+export function formatClockTime(
+  iso: string,
+  timeZone: string,
+  locale?: string
+): string {
+  return formatInstantDisplay(iso, timeZone, locale);
 }
+
+/** Always-24h wall clock for form defaults — re-export for callers that need it. */
+export { utcIsoToWallClockHHMM };

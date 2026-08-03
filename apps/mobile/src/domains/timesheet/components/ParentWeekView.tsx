@@ -157,6 +157,16 @@ export function ParentWeekView({
             ) : null}
             {readOnly ? null : (
               <>
+                {!isActionable && !isApproved ? (
+                  <Body
+                    testID="hours-approve-waiting"
+                    className="mt-4 text-muted-foreground"
+                  >
+                    {timesheet?.status === TIMESHEET_STATUSES.QUERIED
+                      ? t('waitingAfterQuery')
+                      : t('waitingForSubmit')}
+                  </Body>
+                ) : null}
                 <Button
                   testID="hours-approve-button"
                   className="mt-6"

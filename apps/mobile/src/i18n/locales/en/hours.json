@@ -19,5 +19,8 @@
   "flaggedDescription": "This entry has zero duration — usually from an accidental clock-in and clock-out. Editing past entries isn't available yet; ask your household if you need it corrected.",
   "flaggedDismiss": "Got it",
   "noHoursLogged": "No hours logged",
+  "emptyWeek": "No hours logged this week yet.",
+  "waitingForSubmit": "Waiting for your carer to submit this week.",
+  "waitingAfterQuery": "Waiting for your carer to resubmit after your query.",
   "inProgress": "in progress"
 }

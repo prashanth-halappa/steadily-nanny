@@ -12,7 +12,7 @@ import { View } from 'react-native';
 import { AnimatedPressable } from '@/lib/animations';
 import { Icon } from '@/lib/icons/iconWithClassName';
 import { Card, CardContent } from '@/src/components/ui/card';
-import { Body, H2, Small } from '@/src/components/ui/typography';
+import { Body, H1, Small } from '@/src/components/ui/typography';
 
 interface WeekTotalProps {
   totalLabel: string;
@@ -86,15 +86,20 @@ export function WeekTotal({
           </Small>
         )}
         <View className="flex-row items-baseline gap-2">
-          <H2 testID="hours-total" tabular>
+          <H1 testID="hours-total" tabular>
             {totalLabel}
-          </H2>
+          </H1>
           {overtimeLabel ? (
             <Body className="text-muted-foreground" tabular>
               {overtimeLabel}
             </Body>
           ) : null}
         </View>
+        {totalLabel === '0m' ? (
+          <Small testID="hours-empty-week" className="text-muted-foreground">
+            {t('emptyWeek')}
+          </Small>
+        ) : null}
       </CardContent>
     </Card>
   );

@@ -50,10 +50,10 @@ describe('ScheduleRespondScreen source', () => {
     expect(source).toContain('schedule-respond-outside-hours-${');
   });
 
-  it('renders a StatusPill outside-hours warning plus non-blocking note copy', () => {
+  it('renders a StatusPill outside-hours warning on its own row (no duplicate note)', () => {
     expect(source).toContain('variant="outside-hours"');
     expect(source).toContain('outsideHoursWarning');
-    expect(source).toContain('outsideHoursNote');
+    expect(source).not.toContain('outsideHoursNote');
   });
 
   it('wires the total-hours summary testID', () => {

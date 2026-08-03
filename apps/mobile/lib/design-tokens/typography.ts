@@ -60,7 +60,7 @@ export const typography = {
     size: 44,
     lineHeight: 48,
     weight: '500' as const,
-    letterSpacing: -1.14,
+    letterSpacing: 0,
   },
 
   // Day-group heading — agenda / week views (Wave A3 call sites)

@@ -2,8 +2,10 @@
  * @module domains/setup/components/RoleOptionCard
  *
  * A single selectable "I'm a parent" / "I'm a nanny" card for the role-fork
- * screen. Plain `AnimatedPressable` + `className` (no Reanimated Animated.View
- * here, so the GOLDEN-FIXES #2 className restriction doesn't apply).
+ * screen. Uses `AnimatedPressable` (Reanimated `createAnimatedComponent(Pressable)`).
+ * GOLDEN-FIXES #2 forbids NativeWind `className` on Reanimated `Animated.View`
+ * specifically — Pressable-based animated wrappers are the established exception
+ * (same pattern as `button.tsx` and Settings rows).
  */
 import { View } from 'react-native';
 import { AnimatedPressable } from '@/lib/animations';

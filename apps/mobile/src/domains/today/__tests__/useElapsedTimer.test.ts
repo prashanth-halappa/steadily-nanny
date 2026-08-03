@@ -70,6 +70,6 @@ describe('useElapsedTimer', () => {
       useElapsedTimer('2026-08-01T07:58:00.000Z')
     );
     expect(typeof result.current).toBe('string');
-    expect(result.current).toMatch(/^\d+[hm]/);
+    expect(result.current).toMatch(/^\d{2}:\d{2}:\d{2}$/);
   });
 });

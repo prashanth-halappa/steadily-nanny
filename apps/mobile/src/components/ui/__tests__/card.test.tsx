@@ -76,6 +76,17 @@ describe('Card', () => {
     expect(colours).not.toContain(INK_RGB);
   });
 
+  it('tints the live card ground with an opaque apricot mix (not translucent)', () => {
+    const { getByTestId } = render(<Card testID="card" live />);
+    const entries = getByTestId('card').props.style as ViewStyle[];
+    const bg = entries.find(
+      (s): s is ViewStyle => Boolean(s) && 'backgroundColor' in (s as object)
+    );
+    expect(bg?.backgroundColor).toMatch(/^#[0-9A-F]{6}$/i);
+    // Must not be pure white card — the 8% mix moves it toward apricot.
+    expect(String(bg?.backgroundColor ?? '').toUpperCase()).not.toBe('#FFFFFF');
+  });
+
   it('reuses one elevation style object across renders', () => {
     // useElevation used to rebuild its styles every call, handing each render
     // a fresh object identity and defeating React.memo below Card.

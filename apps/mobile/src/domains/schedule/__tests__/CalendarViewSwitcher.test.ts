@@ -21,8 +21,12 @@ describe('CalendarViewSwitcher source', () => {
     expect(switcherSource).toContain('testID={`calendar-view-${opt.id}`}');
     expect(switcherSource).toContain('CALENDAR_VIEWS.AGENDA');
     expect(switcherSource).toContain('CALENDAR_VIEWS.WEEK_RIBBON');
-    expect(switcherSource).toContain('CALENDAR_VIEWS.COVERAGE_LANES');
+    expect(switcherSource).not.toContain('CALENDAR_VIEWS.COVERAGE_LANES');
     expect(switcherSource).toContain('CALENDAR_VIEWS.CROSS_FAMILY');
+    expect(storeSource).toContain('COVERAGE_LANES');
+    expect(storeSource).toContain(
+      'COVERAGE_LANES) return CALENDAR_VIEWS.AGENDA'
+    );
   });
 
   it('persists preference per role in MMKV', () => {

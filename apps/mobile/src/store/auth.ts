@@ -13,9 +13,14 @@ import { queryClient } from '../api/queryClient';
 import { appIdentity } from '../config/appIdentity';
 import { env } from '../config/env';
 import i18n from '../i18n';
+import { getLocalizedAuthErrorMessage } from '../lib/errorLocalization';
 import { supabase } from '../lib/supabase';
 import { createPersistedStore } from './createPersistedStore';
 import { resetUserScopedStores } from './resetStores';
+
+function authErrorMessage(error: unknown): string {
+  return getLocalizedAuthErrorMessage(error, key => i18n.t(key));
+}
 
 // Google Sign-In configuration (client ids come from the central env module).
 const configureGoogleSignIn = () => {
@@ -78,17 +83,12 @@ export const useAuthStore = createPersistedStore<AuthState>(
           password,
         });
         if (error) {
-          set({ error: error.message });
+          set({ error: authErrorMessage(error) });
           throw error;
         }
         // Session handled by the listener.
       } catch (error) {
-        set({
-          error:
-            error instanceof Error
-              ? error.message
-              : i18n.t('errors.unknown', { ns: 'auth' }),
-        });
+        set({ error: authErrorMessage(error) });
       } finally {
         set({ isLoading: false });
       }
@@ -99,16 +99,11 @@ export const useAuthStore = createPersistedStore<AuthState>(
       try {
         const { error } = await supabase.auth.signUp({ email, password });
         if (error) {
-          set({ error: error.message });
+          set({ error: authErrorMessage(error) });
           throw error;
         }
       } catch (error) {
-        set({
-          error:
-            error instanceof Error
-              ? error.message
-              : i18n.t('errors.unknown', { ns: 'auth' }),
-        });
+        set({ error: authErrorMessage(error) });
       } finally {
         set({ isLoading: false });
       }
@@ -121,16 +116,11 @@ export const useAuthStore = createPersistedStore<AuthState>(
           redirectTo: `https://${appIdentity.associatedDomain}/auth/reset`,
         });
         if (error) {
-          set({ error: error.message });
+          set({ error: authErrorMessage(error) });
           throw error;
         }
       } catch (error) {
-        set({
-          error:
-            error instanceof Error
-              ? error.message
-              : i18n.t('errors.unknown', { ns: 'auth' }),
-        });
+        set({ error: authErrorMessage(error) });
         throw error;
       } finally {
         set({ isLoading: false });
@@ -145,7 +135,7 @@ export const useAuthStore = createPersistedStore<AuthState>(
 
         const { error } = await supabase.auth.signOut();
         if (error) {
-          set({ error: error.message });
+          set({ error: authErrorMessage(error) });
           throw error;
         }
         // Wipe cached state so the next login can't mount another user's data.
@@ -153,12 +143,7 @@ export const useAuthStore = createPersistedStore<AuthState>(
         await clearAppState();
         // Session nulling handled by the SIGNED_OUT listener.
       } catch (error) {
-        set({
-          error:
-            error instanceof Error
-              ? error.message
-              : i18n.t('errors.unknown', { ns: 'auth' }),
-        });
+        set({ error: authErrorMessage(error) });
       } finally {
         set({ isLoading: false });
       }
@@ -180,7 +165,7 @@ export const useAuthStore = createPersistedStore<AuthState>(
           token: idToken,
         });
         if (error) {
-          set({ error: error.message });
+          set({ error: authErrorMessage(error) });
           throw error;
         }
       } catch (error: unknown) {
@@ -200,7 +185,7 @@ export const useAuthStore = createPersistedStore<AuthState>(
             isPlayServicesUnavailable: true,
           });
         } else if (error instanceof Error) {
-          set({ error: error.message });
+          set({ error: authErrorMessage(error) });
         } else {
           set({
             error: i18n.t('errors.googleUnknown', { ns: 'auth' }),
@@ -236,7 +221,7 @@ export const useAuthStore = createPersistedStore<AuthState>(
             token: appleCredential.identityToken,
           });
           if (error) {
-            set({ error: error.message });
+            set({ error: authErrorMessage(error) });
             throw error;
           }
 
@@ -274,7 +259,7 @@ export const useAuthStore = createPersistedStore<AuthState>(
             provider: 'apple',
           });
           if (error) {
-            set({ error: error.message });
+            set({ error: authErrorMessage(error) });
             throw error;
           }
         }
@@ -286,7 +271,7 @@ export const useAuthStore = createPersistedStore<AuthState>(
         if (errorCode === 'ERR_CANCELED') {
           set({ error: null });
         } else if (error instanceof Error) {
-          set({ error: error.message });
+          set({ error: authErrorMessage(error) });
         } else {
           set({ error: i18n.t('errors.unknown', { ns: 'auth' }) });
         }

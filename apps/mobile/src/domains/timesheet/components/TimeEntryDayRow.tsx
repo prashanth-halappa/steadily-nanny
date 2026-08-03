@@ -21,6 +21,7 @@ import {
 } from '@/src/components/ui/alert-dialog';
 import { Text } from '@/src/components/ui/text';
 import { Body, Small } from '@/src/components/ui/typography';
+import { useElevation } from '~/lib/design-tokens/elevation';
 import type { TimeEntry } from '../types';
 import { formatClockTime, formatDuration } from '../utils/duration';
 import { computeEntryMinutes } from '../utils/entryMinutes';
@@ -56,11 +57,13 @@ export function TimeEntryDayRow({
     0
   );
   const isRunning = entries.some(entry => entry.status === 'running');
+  const elevation = useElevation();
 
   return (
     <View
       testID={testID}
-      className="flex-row items-center justify-between border-border border-b py-3"
+      className="mb-2 flex-row items-center justify-between rounded-row bg-card px-3 py-3"
+      style={elevation.row}
     >
       <View className="gap-1">
         <Body className="font-medium">
@@ -122,7 +125,7 @@ export function TimeEntryDayRow({
       >
         {totalMinutes > 0 || entries.length > 0
           ? formatDuration(totalMinutes)
-          : ''}
+          : formatDuration(0)}
       </Body>
 
       <AlertDialog open={flagExplainerOpen} onOpenChange={setFlagExplainerOpen}>

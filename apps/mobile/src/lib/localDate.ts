@@ -63,20 +63,3 @@ export function currentWeekRange(
     to: wallClockToUtcIso(weekEndISO, '00:00', timeZone),
   };
 }
-
-/** Two-week range [from, to) as ISO datetimes. */
-export function twoWeekRange(now: Date = new Date()): {
-  from: string;
-  to: string;
-} {
-  const dow = now.getDay();
-  const diffToMonday = dow === 0 ? -6 : 1 - dow;
-  const monday = new Date(
-    now.getFullYear(),
-    now.getMonth(),
-    now.getDate() + diffToMonday
-  );
-  const end = new Date(monday);
-  end.setDate(monday.getDate() + 14);
-  return { from: monday.toISOString(), to: end.toISOString() };
-}

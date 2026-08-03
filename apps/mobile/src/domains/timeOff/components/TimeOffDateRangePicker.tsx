@@ -35,6 +35,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
 import { Text } from '@/src/components/ui/text';
+import { useThemeColors } from '~/lib/design-tokens/useThemeColors';
 import {
   formatDate,
   isEndOnOrAfterStart,
@@ -59,6 +60,7 @@ export function TimeOffDateRangePicker({
   testID,
 }: TimeOffDateRangePickerProps) {
   const { t } = useTranslation('timeOff');
+  const colors = useThemeColors();
   const baseTestID = testID ?? DEFAULT_TEST_ID;
   const [showError, setShowError] = useState(false);
 
@@ -100,6 +102,9 @@ export function TimeOffDateRangePicker({
             value={parseDate(start)}
             mode="date"
             onChange={handleStartChange}
+            accentColor={colors.primary}
+            textColor={colors.foreground}
+            themeVariant="light"
           />
         </View>
         <View className="flex-1">
@@ -111,6 +116,9 @@ export function TimeOffDateRangePicker({
             value={parseDate(end)}
             mode="date"
             onChange={handleEndChange}
+            accentColor={colors.primary}
+            textColor={colors.foreground}
+            themeVariant="light"
           />
         </View>
       </View>

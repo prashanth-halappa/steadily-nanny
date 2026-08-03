@@ -17,6 +17,7 @@ import {
   formatShiftTime,
   groupShiftsByDay,
 } from '@/src/domains/schedule/utils/shiftGrouping';
+import { useElevation } from '~/lib/design-tokens/elevation';
 
 type ShiftStatusVariant = NonNullable<StatusPillProps['variant']>;
 
@@ -52,6 +53,7 @@ function ShiftRow({
 }) {
   const { t } = useTranslation('schedule');
   const router = useRouter();
+  const elevation = useElevation();
   const variant = STATUS_TO_VARIANT[shift.status];
 
   return (
@@ -61,7 +63,8 @@ function ShiftRow({
       onPress={() =>
         router.push(`/(private)/schedule/shifts/${shift.id}` as Href)
       }
-      className="mx-6 mb-2 flex-row items-center justify-between rounded-lg bg-muted p-3"
+      className="mx-6 mb-2 flex-row items-center justify-between rounded-row bg-card p-3"
+      style={elevation.row}
     >
       <View className="gap-1">
         <Body tabular>

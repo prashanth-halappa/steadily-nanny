@@ -26,7 +26,6 @@ const VIEW_OPTIONS: {
 }[] = [
   { id: CALENDAR_VIEWS.AGENDA },
   { id: CALENDAR_VIEWS.WEEK_RIBBON },
-  { id: CALENDAR_VIEWS.COVERAGE_LANES },
   {
     id: CALENDAR_VIEWS.CROSS_FAMILY,
     nannyOnly: true,
@@ -56,7 +55,10 @@ export function CalendarViewSwitcher({
   });
 
   return (
-    <View testID="calendar-view-switcher" className="flex-row flex-wrap gap-1">
+    <View
+      testID="calendar-view-switcher"
+      className="flex-row rounded-chip bg-muted p-1"
+    >
       {visibleOptions.map(opt => (
         <Pressable
           key={opt.id}
@@ -65,8 +67,8 @@ export function CalendarViewSwitcher({
           accessibilityState={{ selected: value === opt.id }}
           onPress={() => onChange(opt.id)}
           className={cn(
-            'rounded-chip px-3 py-1.5',
-            value === opt.id ? 'bg-primary' : 'bg-muted'
+            'flex-1 items-center rounded-chip px-3 py-2',
+            value === opt.id ? 'bg-primary' : 'bg-transparent'
           )}
         >
           <Text

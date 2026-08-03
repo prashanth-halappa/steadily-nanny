@@ -11,6 +11,8 @@
  * reports and the API expects. Never re-derive it from display order.
  */
 
+import { formatNominalWallClockDisplay } from '@/src/lib/wallClock';
+
 /**
  * Adds/removes a Postgres-dow weekday from a selection, keeping it sorted
  * numerically (0=Sunday first). Used by WeekStrip's `onToggle` handler —
@@ -59,13 +61,10 @@ function toMinutes(time: string): number {
 
 /**
  * Formats a nominal wall-clock time from the wire (`09:00:00` or `09:00`)
- * as en-GB 24-hour `HH:MM` — never leaves raw ISO seconds in the UI.
+ * using the device locale's 12h/24h preference. Pass `locale` in tests.
  */
-export function formatWallClockTime(time: string): string {
-  const [hoursPart, minutesPart] = time.split(':');
-  const hours = String(Number(hoursPart ?? 0)).padStart(2, '0');
-  const minutes = String(Number(minutesPart ?? 0)).padStart(2, '0');
-  return `${hours}:${minutes}`;
+export function formatWallClockTime(time: string, locale?: string): string {
+  return formatNominalWallClockDisplay(time, locale);
 }
 
 /** Hours between two nominal "HH:MM" wall-clock times (end must be after start). */

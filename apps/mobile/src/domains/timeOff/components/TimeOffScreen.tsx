@@ -47,7 +47,6 @@ type StatusFilter = 'all' | CarerTimeOffStatus;
 const FILTERS: readonly StatusFilter[] = [
   'all',
   'confirmed',
-  'requested',
   'cancelled',
 ] as const;
 

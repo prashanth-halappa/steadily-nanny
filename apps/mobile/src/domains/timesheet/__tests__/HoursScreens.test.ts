@@ -30,10 +30,11 @@ beforeAll(async () => {
 });
 
 describe('HoursScreen', () => {
-  it('localizes the screen title through hours namespace', () => {
-    expect(hoursScreenSource).toContain("useTranslation('hours')");
+  it('renders an H1 title on the main path, not the settings week-starts hint', () => {
+    expect(hoursScreenSource).toContain('hours-title');
     expect(hoursScreenSource).toContain("t('title')");
-    expect(hoursScreenSource).not.toContain('>Hours<');
+    expect(hoursScreenSource).not.toContain('hours-monday-week-note');
+    expect(hoursScreenSource).not.toContain('weekStartsHint');
   });
 
   it('wires the hours-screen testID', () => {
@@ -70,9 +71,9 @@ describe('NannyWeekView', () => {
 });
 
 describe('ParentWeekView', () => {
-  it('wires the approve and query testIDs', () => {
-    expect(parentWeekViewSource).toContain('hours-approve-button');
-    expect(parentWeekViewSource).toContain('hours-query-button');
+  it('explains why Approve is disabled when the week is not actionable', () => {
+    expect(parentWeekViewSource).toContain('hours-approve-waiting');
+    expect(parentWeekViewSource).toContain('waitingForSubmit');
   });
 
   it('approval is a single tap — no confirmation dialog wrapping it', () => {

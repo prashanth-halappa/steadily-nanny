@@ -122,3 +122,43 @@ export function getLocalizedErrorMessage(
 
   return t('errors:unknown');
 }
+
+/**
+ * Map Supabase Auth / OAuth failures to localized auth copy — never surface
+ * raw English backend strings in a bilingual app (Daylight UX #19).
+ */
+export function getLocalizedAuthErrorMessage(
+  error: unknown,
+  t: ErrorTFunction
+): string {
+  const err = asErrorLike(error);
+  const message = (err.message ?? '').toLowerCase();
+
+  if (message.includes('invalid login credentials')) {
+    return t('auth:errors.invalidCredentials');
+  }
+  if (
+    message.includes('only request this after') ||
+    message.includes('rate limit') ||
+    message.includes('too many requests')
+  ) {
+    return t('auth:errors.rateLimited');
+  }
+  if (message.includes('user already registered')) {
+    return t('auth:errors.emailTaken');
+  }
+  if (message.includes('email not confirmed')) {
+    return t('auth:errors.emailNotConfirmed');
+  }
+  if (isTimeoutError(err)) {
+    return t('errors:timeout');
+  }
+  if (isNetworkError(err)) {
+    return t('errors:network');
+  }
+  if (isOfflineError(err)) {
+    return t('errors:offline');
+  }
+
+  return t('auth:errors.unknown');
+}

@@ -83,12 +83,14 @@ export function TodayScreen() {
         ) : household ? (
           <View className="mt-2 gap-4">
             <HouseholdSwitcher />
-            <Body
-              testID="today-household-name"
-              className="text-muted-foreground"
-            >
-              {household.name}
-            </Body>
+            {activeHousehold.households.length <= 1 ? (
+              <Body
+                testID="today-household-name"
+                className="text-muted-foreground"
+              >
+                {household.name}
+              </Body>
+            ) : null}
 
             {canViewParentSchedule(onboarding.role) ? (
               <View
