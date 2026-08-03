@@ -23,6 +23,7 @@ import {
 } from '@/src/components/ui/alert-dialog';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { Switch } from '@/src/components/ui/switch';
+import { Text } from '@/src/components/ui/text';
 import { Body, Small } from '@/src/components/ui/typography';
 import {
   clearMarkedEventsDefault,
@@ -298,8 +299,12 @@ export function TimeSettingsScreen() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
+            {/* Children MUST be wrapped in <Text>: these primitives feed a
+                TextClassContext and a bare string child crashes RN with
+                "Text strings must be rendered within a <Text> component."
+                The test renderer does not enforce this — device only. */}
             <AlertDialogCancel testID="calendar-sync-disconnect-cancel">
-              {t('settings:time.calendarSync.disconnectCancel')}
+              <Text>{t('settings:time.calendarSync.disconnectCancel')}</Text>
             </AlertDialogCancel>
             <AlertDialogAction
               testID="calendar-sync-disconnect-confirm"
@@ -307,7 +312,7 @@ export function TimeSettingsScreen() {
                 void handleConfirmDisconnect();
               }}
             >
-              {t('settings:time.calendarSync.disconnectConfirm')}
+              <Text>{t('settings:time.calendarSync.disconnectConfirm')}</Text>
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
