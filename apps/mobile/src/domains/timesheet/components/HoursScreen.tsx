@@ -139,6 +139,7 @@ export function HoursScreen() {
           weekDates={weekDates}
           weekRangeLabel={weekRangeLabel}
           nowMs={nowMs}
+          timeZone={timezone}
           onPreviousWeek={handlePreviousWeek}
           onNextWeek={handleNextWeek}
           isNextWeekDisabled={isNextWeekDisabled}
@@ -152,6 +153,7 @@ export function HoursScreen() {
           weekDates={weekDates}
           weekRangeLabel={weekRangeLabel}
           nowMs={nowMs}
+          timeZone={timezone}
           onPreviousWeek={handlePreviousWeek}
           onNextWeek={handleNextWeek}
           isNextWeekDisabled={isNextWeekDisabled}

@@ -113,7 +113,10 @@ export function TodayScreen() {
             ) : null}
 
             {onboarding.role === SETUP_ROLES.NANNY ? (
-              <ClockInCard householdId={household.id} />
+              <ClockInCard
+                householdId={household.id}
+                timeZone={household.timezone}
+              />
             ) : null}
 
             <CoverageGapBanner

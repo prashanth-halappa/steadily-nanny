@@ -27,7 +27,11 @@ export {
   formatElapsedSince,
   formatOvertimeDelta,
 } from './utils/duration';
-export { computeEntryMinutes, sumEntryMinutes } from './utils/entryMinutes';
+export {
+  computeEntryMinutes,
+  computeWorkedMinutesFromInstants,
+  sumEntryMinutes,
+} from './utils/entryMinutes';
 export {
   formatWeekRangeLabel,
   getWeekDates,

@@ -10,6 +10,13 @@ import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
 import { Card } from '@/src/components/ui/card';
 import { Body } from '@/src/components/ui/typography';
+// Direct file imports, NOT the domain barrel (`@/src/domains/timesheet`) —
+// that barrel re-exports `HoursScreen`, which pulls in `LoadingIndicator`'s
+// `require('@/assets/splash.png')` and breaks bundling under bun:test (see
+// HoursScreen.test.tsx's header comment). These two utils are pure and have
+// no such cost, so importing them directly keeps this component's tests
+// (and anything else that renders it) from having to mock loading-indicator
+// just to satisfy an unrelated import.
 import { formatClockTime } from '@/src/domains/timesheet/utils/duration';
 import { getWeekStartISO } from '@/src/domains/timesheet/utils/week';
 import { useWeekTimeEntries } from '@/src/hooks/queries/useWeekTimeEntries';
@@ -45,7 +52,9 @@ export function NannyLiveStatusCard({
         <Body className="font-semibold">{t('nannyLiveTitle')}</Body>
       </View>
       <Body className="text-muted-foreground">
-        {t('nannyLiveBody', { time: formatClockTime(running.clock_in_at) })}
+        {t('nannyLiveBody', {
+          time: formatClockTime(running.clock_in_at, timeZone),
+        })}
       </Body>
     </Card>
   );

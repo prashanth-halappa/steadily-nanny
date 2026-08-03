@@ -34,9 +34,13 @@ import { ClockOutSheet, type ClockOutSheetSubmitInput } from './ClockOutSheet';
 
 interface ClockInCardProps {
   householdId: string;
+  /** Household IANA zone — never the device's (GOLDEN-FIXES #21 bug class;
+   * see domains/timesheet/utils/week.ts's header). Drives every clock time
+   * this card and its `ClockOutSheet` render. */
+  timeZone: string;
 }
 
-export function ClockInCard({ householdId }: ClockInCardProps) {
+export function ClockInCard({ householdId, timeZone }: ClockInCardProps) {
   const { t } = useTranslation('today');
   const running = useRunningTimeEntry();
   const clockIn = useClockIn();
@@ -144,7 +148,9 @@ export function ClockInCard({ householdId }: ClockInCardProps) {
             <Timer testID="today-live-timer">{elapsed}</Timer>
             {entry.clock_in_at ? (
               <Small className="text-muted-foreground">
-                {t('since', { time: formatClockTime(entry.clock_in_at) })}
+                {t('since', {
+                  time: formatClockTime(entry.clock_in_at, timeZone),
+                })}
               </Small>
             ) : null}
             <LoadingButton
@@ -160,6 +166,8 @@ export function ClockInCard({ householdId }: ClockInCardProps) {
               onDismiss={() => setShowClockOutSheet(false)}
               onSubmit={handleConfirmClockOut}
               isSubmitting={clockOut.isPending}
+              clockInAt={entry.clock_in_at}
+              timeZone={timeZone}
             />
           </>
         ) : (

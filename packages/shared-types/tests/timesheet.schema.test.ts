@@ -43,6 +43,7 @@ describe('timesheet.schema', () => {
       id: VALID_UUID,
       household_id: VALID_UUID,
       carer_id: VALID_UUID,
+      carer_display_name: 'Nia Rowe',
       shift_id: VALID_UUID,
       clock_in_at: NOW,
       clock_out_at: LATER,
@@ -90,6 +91,19 @@ describe('timesheet.schema', () => {
       const { household_id: _household_id, ...rest } = validEntry;
       expect(TimeEntrySchema.safeParse(rest).success).toBe(false);
     });
+
+    it('accepts a null carer_id (carer account deleted, payroll record preserved)', () => {
+      expect(
+        TimeEntrySchema.safeParse({ ...validEntry, carer_id: null }).success
+      ).toBe(true);
+    });
+
+    it('requires carer_display_name even when carer_id is null', () => {
+      const { carer_display_name: _carer_display_name, ...rest } = validEntry;
+      expect(
+        TimeEntrySchema.safeParse({ ...rest, carer_id: null }).success
+      ).toBe(false);
+    });
   });
 
   describe('ClockInSchema', () => {
@@ -130,6 +144,7 @@ describe('timesheet.schema', () => {
       id: VALID_UUID,
       household_id: VALID_UUID,
       carer_id: VALID_UUID,
+      carer_display_name: 'Nia Rowe',
       week_start: '2026-08-03',
       total_minutes: 2400,
       status: 'open',
@@ -149,6 +164,12 @@ describe('timesheet.schema', () => {
         TimesheetSchema.safeParse({ ...validTimesheet, status: 'maybe' })
           .success
       ).toBe(false);
+    });
+
+    it('accepts a null carer_id (carer account deleted, payroll record preserved)', () => {
+      expect(
+        TimesheetSchema.safeParse({ ...validTimesheet, carer_id: null }).success
+      ).toBe(true);
     });
   });
 

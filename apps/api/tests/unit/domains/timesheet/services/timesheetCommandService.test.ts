@@ -17,6 +17,7 @@ const runningEntry = {
   id: 't1',
   household_id: 'h1',
   carer_id: 'carer-1',
+  carer_display_name: 'Nia Rowe',
   shift_id: 's1',
   clock_in_at: '2026-08-03T08:00:00.000Z',
   clock_out_at: null,
@@ -63,6 +64,7 @@ const timesheet = {
   id: 'ts1',
   household_id: 'h1',
   carer_id: 'carer-1',
+  carer_display_name: 'Nia Rowe',
   week_start: '2026-08-03',
   total_minutes: 480,
   status: 'submitted',
@@ -138,6 +140,16 @@ function makeQueries(overrides: Record<string, unknown> = {}): any {
   return {
     getOwnedTimeEntry: mock(async () => runningEntry),
     getOwnedTimesheet: mock(async () => timesheet),
+    ...overrides,
+  };
+}
+
+function makeUserService(overrides: Record<string, unknown> = {}): any {
+  return {
+    getProfileById: mock(async () => ({
+      user_id: 'carer-1',
+      name: 'Nia Rowe',
+    })),
     ...overrides,
   };
 }
@@ -223,7 +235,8 @@ describe('TimesheetCommandService.clockIn', () => {
       makeMemberRepo(),
       makeHouseholdRepo(),
       makeShiftRepo(),
-      makeQueries()
+      makeQueries(),
+      makeUserService()
     );
 
     await svc.clockIn('carer-1', { household_id: 'h1', shift_id: 's1' });
@@ -240,6 +253,58 @@ describe('TimesheetCommandService.clockIn', () => {
     );
   });
 
+  // Regression coverage for the payroll-preservation fix
+  // (033_preserve_payroll_on_carer_deletion.sql): carer_display_name must be
+  // snapshotted at INSERT time, not left for a later read to derive from a
+  // profile that may since have been deleted.
+  it('snapshots the carer_display_name from the profile at clock-in time', async () => {
+    const timeEntryRepo = makeTimeEntryRepo();
+    const userService = makeUserService({
+      getProfileById: mock(async () => ({
+        user_id: 'carer-1',
+        name: 'Nia Rowe',
+      })),
+    });
+    const svc = new TimesheetCommandService(
+      timeEntryRepo,
+      makeTimesheetRepo(),
+      makeMemberRepo(),
+      makeHouseholdRepo(),
+      makeShiftRepo(),
+      makeQueries(),
+      userService
+    );
+
+    await svc.clockIn('carer-1', { household_id: 'h1', shift_id: 's1' });
+
+    expect(userService.getProfileById).toHaveBeenCalledWith('carer-1');
+    expect(timeEntryRepo.clockIn).toHaveBeenCalledWith(
+      expect.objectContaining({ carer_display_name: 'Nia Rowe' })
+    );
+  });
+
+  it('falls back to a placeholder carer_display_name when the profile has no name set', async () => {
+    const timeEntryRepo = makeTimeEntryRepo();
+    const userService = makeUserService({
+      getProfileById: mock(async () => ({ user_id: 'carer-1', name: null })),
+    });
+    const svc = new TimesheetCommandService(
+      timeEntryRepo,
+      makeTimesheetRepo(),
+      makeMemberRepo(),
+      makeHouseholdRepo(),
+      makeShiftRepo(),
+      makeQueries(),
+      userService
+    );
+
+    await svc.clockIn('carer-1', { household_id: 'h1', shift_id: 's1' });
+
+    expect(timeEntryRepo.clockIn).toHaveBeenCalledWith(
+      expect.objectContaining({ carer_display_name: 'Carer' })
+    );
+  });
+
   it('rejects with AlreadyClockedInError when a running entry already exists', async () => {
     const timeEntryRepo = makeTimeEntryRepo({
       findRunningForCarer: mock(async () => runningEntry),
@@ -250,7 +315,8 @@ describe('TimesheetCommandService.clockIn', () => {
       makeMemberRepo(),
       makeHouseholdRepo(),
       makeShiftRepo(),
-      makeQueries()
+      makeQueries(),
+      makeUserService()
     );
 
     await expect(
@@ -274,7 +340,8 @@ describe('TimesheetCommandService.clockIn', () => {
       }),
       makeHouseholdRepo(),
       makeShiftRepo(),
-      makeQueries()
+      makeQueries(),
+      makeUserService()
     );
 
     await expect(
@@ -301,7 +368,8 @@ describe('TimesheetCommandService.clockIn', () => {
       makeMemberRepo(),
       makeHouseholdRepo(),
       shiftRepo,
-      makeQueries()
+      makeQueries(),
+      makeUserService()
     );
 
     await expect(
@@ -321,7 +389,8 @@ describe('TimesheetCommandService.clockIn', () => {
       makeMemberRepo(),
       makeHouseholdRepo(),
       shiftRepo,
-      makeQueries()
+      makeQueries(),
+      makeUserService()
     );
 
     await expect(
@@ -339,7 +408,8 @@ describe('TimesheetCommandService.clockIn', () => {
       makeMemberRepo(),
       makeHouseholdRepo(),
       shiftRepo,
-      makeQueries()
+      makeQueries(),
+      makeUserService()
     );
 
     await expect(
@@ -357,7 +427,8 @@ describe('TimesheetCommandService.clockIn', () => {
       makeMemberRepo(),
       makeHouseholdRepo(),
       shiftRepo,
-      makeQueries()
+      makeQueries(),
+      makeUserService()
     );
 
     await svc.clockIn('carer-1', { household_id: 'h1' });
@@ -403,7 +474,8 @@ function makeAutoMatchService(
     }),
     makeHouseholdRepo(),
     shiftRepo,
-    makeQueries()
+    makeQueries(),
+    makeUserService()
   );
 }
 
@@ -475,7 +547,8 @@ describe('TimesheetCommandService.clockIn — auto-match to a confirmed shift', 
       makeMemberRepo(),
       makeHouseholdRepo(),
       shiftRepo,
-      makeQueries()
+      makeQueries(),
+      makeUserService()
     );
 
     await svc.clockIn('carer-1', { household_id: 'h1' });
@@ -614,7 +687,8 @@ describe('TimesheetCommandService.clockOut', () => {
       makeMemberRepo(),
       makeHouseholdRepo(),
       makeShiftRepo(),
-      makeQueries()
+      makeQueries(),
+      makeUserService()
     );
 
     await svc.clockOut('carer-1', 't1', { break_minutes: 30 });
@@ -631,10 +705,52 @@ describe('TimesheetCommandService.clockOut', () => {
       expect.objectContaining({
         household_id: 'h1',
         carer_id: 'carer-1',
+        carer_display_name: 'Nia Rowe',
         week_start: '2026-08-03', // Monday
         total_minutes: 450, // sumWorkedMinutes([finishedEntryA])
         status: 'submitted',
       })
+    );
+  });
+
+  // Regression coverage for the payroll-preservation fix
+  // (033_preserve_payroll_on_carer_deletion.sql): the new timesheet's
+  // carer_display_name must come from the time entry's OWN frozen snapshot
+  // (taken at clock-in), never re-resolved from the live profile — that's
+  // what keeps the record legible after the carer's account is deleted.
+  it('carries the time entry own carer_display_name snapshot onto a newly created timesheet, not a freshly re-resolved one', async () => {
+    const timeEntryRepo = makeTimeEntryRepo({
+      listForCarerWeek: mock(async () => [finishedEntryA]),
+      update: mock(async (_id: string, patch: Record<string, unknown>) => ({
+        ...runningEntry,
+        ...patch,
+        carer_display_name: 'Frozen At Clock-In',
+      })),
+    });
+    const timesheetRepo = makeTimesheetRepo();
+    const userService = makeUserService({
+      // Deliberately different from the entry's snapshot — proves the
+      // roll-up never calls back out to the live profile.
+      getProfileById: mock(async () => ({
+        user_id: 'carer-1',
+        name: 'Renamed Since',
+      })),
+    });
+    const svc = new TimesheetCommandService(
+      timeEntryRepo,
+      timesheetRepo,
+      makeMemberRepo(),
+      makeHouseholdRepo(),
+      makeShiftRepo(),
+      makeQueries(),
+      userService
+    );
+
+    await svc.clockOut('carer-1', 't1', { break_minutes: 30 });
+
+    expect(userService.getProfileById).not.toHaveBeenCalled();
+    expect(timesheetRepo.create).toHaveBeenCalledWith(
+      expect.objectContaining({ carer_display_name: 'Frozen At Clock-In' })
     );
   });
 
@@ -654,7 +770,8 @@ describe('TimesheetCommandService.clockOut', () => {
           ...runningEntry,
           shift_id: null,
         })),
-      })
+      }),
+      makeUserService()
     );
 
     await svc.clockOut('carer-1', 't1', { break_minutes: 30 });
@@ -687,7 +804,8 @@ describe('TimesheetCommandService.clockOut', () => {
       makeMemberRepo(),
       makeHouseholdRepo(),
       makeShiftRepo(),
-      makeQueries()
+      makeQueries(),
+      makeUserService()
     );
 
     await svc.clockOut('carer-1', 't1', {});
@@ -716,7 +834,8 @@ describe('TimesheetCommandService.clockOut', () => {
       makeMemberRepo(),
       makeHouseholdRepo(),
       makeShiftRepo(),
-      makeQueries()
+      makeQueries(),
+      makeUserService()
     );
 
     await svc.clockOut('carer-1', 't1', {});
@@ -743,7 +862,8 @@ describe('TimesheetCommandService.clockOut', () => {
       makeMemberRepo(),
       makeHouseholdRepo(),
       makeShiftRepo(),
-      makeQueries()
+      makeQueries(),
+      makeUserService()
     );
 
     await svc.clockOut('carer-1', 't1', {});
@@ -768,7 +888,8 @@ describe('TimesheetCommandService.clockOut', () => {
       makeMemberRepo(),
       makeHouseholdRepo(),
       makeShiftRepo(),
-      makeQueries()
+      makeQueries(),
+      makeUserService()
     );
 
     await svc.clockOut('carer-1', 't1', {});
@@ -800,7 +921,8 @@ describe('TimesheetCommandService.clockOut', () => {
       makeMemberRepo(),
       makeHouseholdRepo(),
       makeShiftRepo(),
-      makeQueries()
+      makeQueries(),
+      makeUserService()
     );
 
     await svc.clockOut('carer-1', 't1', {});
@@ -833,7 +955,8 @@ describe('TimesheetCommandService.clockOut', () => {
       makeMemberRepo(),
       makeHouseholdRepo(),
       makeShiftRepo(),
-      makeQueries()
+      makeQueries(),
+      makeUserService()
     );
 
     await svc.clockOut('carer-1', 't1', {});
@@ -862,7 +985,8 @@ describe('TimesheetCommandService.clockOut', () => {
           ...runningEntry,
           status: 'submitted',
         })),
-      })
+      }),
+      makeUserService()
     );
 
     await expect(svc.clockOut('carer-1', 't1', {})).rejects.toBeInstanceOf(
@@ -888,7 +1012,8 @@ describe('TimesheetCommandService.approve', () => {
       }),
       makeHouseholdRepo(),
       makeShiftRepo(),
-      makeQueries()
+      makeQueries(),
+      makeUserService()
     );
 
     await svc.approve('parent-1', 'ts1');
@@ -906,7 +1031,8 @@ describe('TimesheetCommandService.approve', () => {
       makeMemberRepo(),
       makeHouseholdRepo(),
       makeShiftRepo(),
-      makeQueries()
+      makeQueries(),
+      makeUserService()
     );
 
     await expect(svc.approve('carer-1', 'ts1')).rejects.toBeInstanceOf(
@@ -930,7 +1056,8 @@ describe('TimesheetCommandService.approve', () => {
       makeShiftRepo(),
       makeQueries({
         getOwnedTimesheet: mock(async () => ({ ...timesheet, status: 'open' })),
-      })
+      }),
+      makeUserService()
     );
 
     await expect(svc.approve('parent-1', 'ts1')).rejects.toBeInstanceOf(
@@ -955,7 +1082,8 @@ describe('TimesheetCommandService.query', () => {
       }),
       makeHouseholdRepo(),
       makeShiftRepo(),
-      makeQueries()
+      makeQueries(),
+      makeUserService()
     );
 
     await svc.query('parent-1', 'ts1', { note: 'Query Thursday' });

@@ -55,7 +55,14 @@ export type TimesheetStatus =
 export const TimeEntrySchema = z.object({
   id: z.uuid(),
   household_id: z.uuid(),
-  carer_id: z.uuid(),
+  // Nullable: a carer who deletes her account leaves this row behind for the
+  // household's payroll record — `carer_id` goes to NULL (ON DELETE SET
+  // NULL, see 033_preserve_payroll_on_carer_deletion.sql) rather than
+  // cascading the deletion. `carer_display_name` is the durable identifier.
+  carer_id: z.uuid().nullable(),
+  // Snapshotted at record-creation time from the carer's profile — never
+  // derived on read, so the name survives the profile being deleted.
+  carer_display_name: z.string(),
   // Nullable: a carer can clock in on a day with no scheduled shift.
   shift_id: z.uuid().nullable(),
   clock_in_at: z.iso.datetime({ offset: true }).nullable(),
@@ -106,7 +113,13 @@ export type TimeEntryListResponse = z.infer<typeof TimeEntryListResponseSchema>;
 export const TimesheetSchema = z.object({
   id: z.uuid(),
   household_id: z.uuid(),
-  carer_id: z.uuid(),
+  // Nullable — see TimeEntrySchema.carer_id; same ON DELETE SET NULL, same
+  // reason: a deleted carer must not take the parent's approved timesheet
+  // history with her.
+  carer_id: z.uuid().nullable(),
+  // Snapshotted at record-creation time from the carer's profile — never
+  // derived on read, so the name survives the profile being deleted.
+  carer_display_name: z.string(),
   // Monday, in the household's timezone — en-GB weeks start Monday.
   week_start: z.iso.date(),
   total_minutes: z.int(),

@@ -21,6 +21,9 @@ interface NannyWeekViewProps {
   weekDates: string[];
   weekRangeLabel: string;
   nowMs: number;
+  /** Household IANA zone — forwarded to `TimeEntryDayRow` for zone-aware
+   * clock times (GOLDEN-FIXES #21 bug class). */
+  timeZone: string;
   /** D15 week nav, owned by `HoursScreen` — forwarded straight to `WeekTotal`. */
   onPreviousWeek: () => void;
   onNextWeek: () => void;
@@ -40,6 +43,7 @@ export function NannyWeekView({
   weekDates,
   weekRangeLabel,
   nowMs,
+  timeZone,
   onPreviousWeek,
   onNextWeek,
   isNextWeekDisabled,
@@ -75,6 +79,7 @@ export function NannyWeekView({
           date={item.date}
           entries={item.entries}
           nowMs={nowMs}
+          timeZone={timeZone}
         />
       )}
       ListHeaderComponent={

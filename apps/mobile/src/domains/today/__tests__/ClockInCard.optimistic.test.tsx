@@ -63,7 +63,7 @@ beforeEach(() => {
 describe('ClockInCard — A1 unconfirmed optimistic clock-in', () => {
   it('does not dispatch clock-out while the optimistic running entry is unconfirmed', async () => {
     const { getByTestId } = renderWithProviders(
-      <ClockInCard householdId={HOUSEHOLD_ID} />
+      <ClockInCard householdId={HOUSEHOLD_ID} timeZone="UTC" />
     );
 
     await waitFor(() => expect(getByTestId('today-clock-in')).toBeTruthy());

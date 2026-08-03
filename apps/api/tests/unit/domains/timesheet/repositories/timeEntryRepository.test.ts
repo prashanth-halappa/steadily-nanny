@@ -50,7 +50,12 @@ beforeEach(() => {
 
 describe('TimeEntryRepository.clockIn', () => {
   it('creates a running entry', async () => {
-    const created = { id: 't1', carer_id: 'carer-1', status: 'running' };
+    const created = {
+      id: 't1',
+      carer_id: 'carer-1',
+      carer_display_name: 'Nia Rowe',
+      status: 'running',
+    };
     mockSupabaseService.from.mockImplementation(() =>
       createMockQueryChain({ data: created, error: null })
     );
@@ -58,6 +63,7 @@ describe('TimeEntryRepository.clockIn', () => {
     const result = await repo.clockIn({
       household_id: 'h1',
       carer_id: 'carer-1',
+      carer_display_name: 'Nia Rowe',
       shift_id: null,
       clock_in_at: '2026-08-03T08:00:00.000Z',
       timezone: 'Europe/London',
@@ -80,6 +86,7 @@ describe('TimeEntryRepository.clockIn', () => {
       repo.clockIn({
         household_id: 'h1',
         carer_id: 'carer-1',
+        carer_display_name: 'Nia Rowe',
         shift_id: null,
         clock_in_at: '2026-08-03T08:00:00.000Z',
         timezone: 'Europe/London',

@@ -106,6 +106,11 @@ export function buildOptimisticRunningEntry(
     id: Crypto.randomUUID(),
     household_id: input.household_id,
     carer_id: '00000000-0000-4000-8000-000000000000',
+    // Placeholder, like carer_id above — the caller doesn't have (and
+    // doesn't need) their own snapshotted name for this brief optimistic
+    // window; onSuccess swaps this row for the real server response, which
+    // carries the API's carer_display_name snapshot.
+    carer_display_name: '',
     shift_id: input.shift_id ?? null,
     clock_in_at: clockInAt,
     clock_out_at: null,

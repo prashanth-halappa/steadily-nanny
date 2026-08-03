@@ -6,6 +6,7 @@
  * instants, which the browser/Hermes parse in UTC (both ISO strings here
  * carry an explicit offset).
  */
+import { utcIsoToWallClockHHMM } from '@/src/lib/wallClock';
 
 /** Minutes in one hour, for readability at call sites. */
 const MINUTES_PER_HOUR = 60;
@@ -54,10 +55,17 @@ export function formatOvertimeDelta(
   return `${sign}${Math.abs(delta)} min`;
 }
 
-/** 24-hour "07:58", device-local time — en-GB convention throughout this domain. */
-export function formatClockTime(iso: string): string {
-  const date = new Date(iso);
-  const hours = String(date.getHours()).padStart(2, '0');
-  const minutes = String(date.getMinutes()).padStart(2, '0');
-  return `${hours}:${minutes}`;
+/**
+ * 24-hour "07:58" in `timeZone` — en-GB convention throughout this domain.
+ * `timeZone` MUST be the HOUSEHOLD's IANA zone, never the device's — two
+ * people opening the app in different zones must read the same clock-in
+ * time for the same entry (GOLDEN-FIXES #21 bug class; see
+ * `domains/timesheet/utils/week.ts`'s header for the long version). Backed
+ * by `utcIsoToWallClockHHMM` (`src/lib/wallClock.ts`), the app's one
+ * DST-safe instant->wall-clock converter — delegating rather than
+ * re-deriving keeps there being exactly one way to answer "what time is
+ * it" in this codebase.
+ */
+export function formatClockTime(iso: string, timeZone: string): string {
+  return utcIsoToWallClockHHMM(iso, timeZone);
 }

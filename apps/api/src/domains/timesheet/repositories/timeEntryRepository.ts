@@ -22,6 +22,11 @@ const UNIQUE_VIOLATION = '23505';
 export interface NewTimeEntryData {
   household_id: string;
   carer_id: string;
+  // Snapshotted from the carer's profile at clock-in — see
+  // supabase/migrations/033_preserve_payroll_on_carer_deletion.sql. Written
+  // once, on insert; never re-derived from `carer_id` on read, so the record
+  // survives the carer's profile being deleted.
+  carer_display_name: string;
   shift_id: string | null;
   clock_in_at: string;
   timezone: string;

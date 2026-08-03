@@ -52,7 +52,13 @@ export function ScheduleShiftsScreen({
   const profile = useUserProfile();
   const children = useChildren(activeHousehold.householdId);
   const [calendarView, setCalendarView] = useCalendarViewPreference();
-  const { from, to } = currentWeekRange();
+  // The week boundary is a HOUSEHOLD-timezone question, never the device's —
+  // same fallback chain as the WeekRibbon/CoverageLanes views below, and
+  // 'UTC' only for the brief window before either has loaded (the loading
+  // branch returns before `showContent` can be true).
+  const { from, to } = currentWeekRange(
+    activeHousehold.household?.timezone ?? profile.data?.timezone ?? 'UTC'
+  );
   const shiftsQuery = useShiftsRange(activeHousehold.householdId, from, to);
 
   const isLoading = activeHousehold.isLoading || shiftsQuery.isLoading;

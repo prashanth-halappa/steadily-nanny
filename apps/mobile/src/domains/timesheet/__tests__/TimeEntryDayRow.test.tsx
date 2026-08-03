@@ -107,6 +107,7 @@ function makeEntry(overrides: Partial<TimeEntry> = {}): TimeEntry {
     id: 'entry-1',
     household_id: 'household-1',
     carer_id: 'carer-1',
+    carer_display_name: 'Nia Rowe',
     shift_id: null,
     clock_in_at: '2026-08-01T07:58:00.000Z',
     clock_out_at: '2026-08-01T07:58:00.000Z',
@@ -131,7 +132,12 @@ describe('TimeEntryDayRow — zero-duration flag', () => {
   it('flags a finished entry that computed to 0 minutes', () => {
     const entry = makeEntry(); // clock_in_at === clock_out_at -> 0 minutes
     const { getByTestId } = render(
-      <TimeEntryDayRow date="2026-08-01" entries={[entry]} nowMs={NOW_MS} />
+      <TimeEntryDayRow
+        date="2026-08-01"
+        entries={[entry]}
+        nowMs={NOW_MS}
+        timeZone="Europe/London"
+      />
     );
 
     expect(getByTestId('hours-zero-duration-flag')).toBeTruthy();
@@ -140,7 +146,12 @@ describe('TimeEntryDayRow — zero-duration flag', () => {
   it('makes a flagged entry pressable so the explanation dialog can open', () => {
     const entry = makeEntry();
     const { getByTestId } = render(
-      <TimeEntryDayRow date="2026-08-01" entries={[entry]} nowMs={NOW_MS} />
+      <TimeEntryDayRow
+        date="2026-08-01"
+        entries={[entry]}
+        nowMs={NOW_MS}
+        timeZone="Europe/London"
+      />
     );
 
     expect(getByTestId(`hours-flagged-entry-${entry.id}`)).toBeTruthy();
@@ -154,7 +165,12 @@ describe('TimeEntryDayRow — zero-duration flag', () => {
       status: 'running',
     });
     const { queryByTestId } = render(
-      <TimeEntryDayRow date="2026-08-01" entries={[entry]} nowMs={NOW_MS} />
+      <TimeEntryDayRow
+        date="2026-08-01"
+        entries={[entry]}
+        nowMs={NOW_MS}
+        timeZone="Europe/London"
+      />
     );
 
     expect(queryByTestId('hours-zero-duration-flag')).toBeNull();
@@ -166,7 +182,12 @@ describe('TimeEntryDayRow — zero-duration flag', () => {
       clock_out_at: '2026-08-01T09:58:00.000Z',
     });
     const { queryByTestId } = render(
-      <TimeEntryDayRow date="2026-08-01" entries={[entry]} nowMs={NOW_MS} />
+      <TimeEntryDayRow
+        date="2026-08-01"
+        entries={[entry]}
+        nowMs={NOW_MS}
+        timeZone="Europe/London"
+      />
     );
 
     expect(queryByTestId('hours-zero-duration-flag')).toBeNull();

@@ -7,9 +7,11 @@
  */
 
 import * as Slot from '@rn-primitives/slot';
+import * as React from 'react';
 import type { Role, TextStyle } from 'react-native';
 import { Text as RNText } from 'react-native';
 import { cn } from '@/lib/utils';
+import { TextClassContext } from '@/src/components/ui/text';
 import type { TypographyProps } from './types';
 
 export interface TypographyToken {
@@ -68,6 +70,10 @@ export function createTypographyComponent(
     tabular,
     ...props
   }: TypographyProps) {
+    // Publish channel a container (e.g. Button) uses to override text color —
+    // must lose to an explicit `className` but win over the hardcoded default.
+    // Mirrors text.tsx's resolution order exactly.
+    const textClass = React.useContext(TextClassContext);
     const Component = asChild ? Slot.Text : RNText;
     const useTabular = alwaysTabular || tabular === true;
     return (
@@ -75,7 +81,7 @@ export function createTypographyComponent(
         role={options?.role}
         aria-level={options?.ariaLevel}
         style={[baseStyle, useTabular ? tabularStyle : null, style]}
-        className={cn(baseClassName, className)}
+        className={cn(baseClassName, textClass, className)}
         {...props}
       />
     );

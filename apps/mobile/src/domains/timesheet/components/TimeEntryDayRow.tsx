@@ -30,6 +30,9 @@ interface TimeEntryDayRowProps {
   date: string;
   entries: TimeEntry[];
   nowMs: number;
+  /** Household IANA zone — the clock-in/out times render in THIS zone, never
+   * the device's (GOLDEN-FIXES #21 bug class; see utils/week.ts's header). */
+  timeZone: string;
   testID?: string;
 }
 
@@ -43,6 +46,7 @@ export function TimeEntryDayRow({
   date,
   entries,
   nowMs,
+  timeZone,
   testID,
 }: TimeEntryDayRowProps) {
   const { t } = useTranslation('hours');
@@ -84,10 +88,12 @@ export function TimeEntryDayRow({
                 )}
                 tabular
               >
-                {entry.clock_in_at ? formatClockTime(entry.clock_in_at) : '—'}
+                {entry.clock_in_at
+                  ? formatClockTime(entry.clock_in_at, timeZone)
+                  : '—'}
                 {' – '}
                 {entry.clock_out_at
-                  ? formatClockTime(entry.clock_out_at)
+                  ? formatClockTime(entry.clock_out_at, timeZone)
                   : t('inProgress')}
                 {isZeroDuration ? ` – ${t('flaggedCheckEntry')}` : ''}
               </Small>

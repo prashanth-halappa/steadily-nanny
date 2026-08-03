@@ -72,17 +72,40 @@ describe('formatOvertimeDelta', () => {
 });
 
 describe('formatClockTime', () => {
-  it('formats as zero-padded 24-hour HH:MM, round-tripped through the local timezone', () => {
-    // Round-trip through toISOString so the test is timezone-independent —
-    // whatever local offset the runner has, parsing back must recover it.
-    const date = new Date();
-    date.setHours(7, 5, 0, 0);
-    expect(formatClockTime(date.toISOString())).toBe('07:05');
+  // Zone-aware (GOLDEN-FIXES #21 bug class) — `timeZone` is always the
+  // HOUSEHOLD's, never the device's. See week.test.ts for the sibling
+  // "two households, one instant" coverage this mirrors.
+  it('formats as zero-padded 24-hour HH:MM in the given IANA zone', () => {
+    expect(formatClockTime('2026-08-03T07:05:00.000Z', 'UTC')).toBe('07:05');
   });
 
   it('pads a single-digit hour and minute', () => {
-    const date = new Date();
-    date.setHours(9, 3, 0, 0);
-    expect(formatClockTime(date.toISOString())).toBe('09:03');
+    expect(formatClockTime('2026-08-03T09:03:00.000Z', 'UTC')).toBe('09:03');
+  });
+
+  it('resolves the SAME instant to a different wall-clock time in a household AHEAD of UTC', () => {
+    // Pacific/Auckland is UTC+12 in NZ winter (no DST in August).
+    expect(
+      formatClockTime('2026-08-03T23:30:00.000Z', 'Pacific/Auckland')
+    ).toBe('11:30');
+  });
+
+  it('resolves the SAME instant to a different wall-clock time in a household BEHIND UTC', () => {
+    // America/Los_Angeles is UTC-7 in August (PDT).
+    expect(
+      formatClockTime('2026-08-03T07:05:00.000Z', 'America/Los_Angeles')
+    ).toBe('00:05');
+  });
+
+  it('is DST-aware across a household timezone transition (Europe/London)', () => {
+    // Winter (GMT, UTC+0): 09:00Z reads as 09:00 local.
+    expect(formatClockTime('2026-01-07T09:00:00.000Z', 'Europe/London')).toBe(
+      '09:00'
+    );
+    // Summer (BST, UTC+1): the SAME wall-clock hour is a different instant —
+    // 08:00Z reads as 09:00 local, not 08:00.
+    expect(formatClockTime('2026-08-03T08:00:00.000Z', 'Europe/London')).toBe(
+      '09:00'
+    );
   });
 });

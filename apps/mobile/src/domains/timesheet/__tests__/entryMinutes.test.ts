@@ -4,13 +4,18 @@
  */
 import { describe, expect, it } from 'bun:test';
 import type { TimeEntry } from '../types';
-import { computeEntryMinutes, sumEntryMinutes } from '../utils/entryMinutes';
+import {
+  computeEntryMinutes,
+  computeWorkedMinutesFromInstants,
+  sumEntryMinutes,
+} from '../utils/entryMinutes';
 
 function makeEntry(overrides: Partial<TimeEntry> = {}): TimeEntry {
   return {
     id: 'entry-1',
     household_id: 'household-1',
     carer_id: 'carer-1',
+    carer_display_name: 'Nia Rowe',
     shift_id: null,
     clock_in_at: '2026-08-01T07:58:00.000Z',
     clock_out_at: '2026-08-01T14:12:00.000Z',
@@ -54,6 +59,39 @@ describe('computeEntryMinutes', () => {
       break_minutes: 999,
     });
     expect(computeEntryMinutes(entry, Date.now())).toBe(0);
+  });
+});
+
+describe('computeWorkedMinutesFromInstants', () => {
+  // Mirrors the server's `computeWorkedMinutes`
+  // (apps/api/src/domains/timesheet/services/timesheetCommandService.ts) —
+  // this is the rule the clock-out sheet's live preview total must match.
+  it('computes elapsed minutes minus a break', () => {
+    const clockInAt = '2026-08-02T08:15:00.000Z';
+    const nowMs = new Date('2026-08-02T17:29:00.000Z').getTime();
+    // 08:15 -> 17:29 is 9h14m = 554 minutes, minus a 30 minute break.
+    expect(computeWorkedMinutesFromInstants(clockInAt, nowMs, 30)).toBe(524);
+  });
+
+  it('matches computeEntryMinutes for the same inputs (same underlying rule)', () => {
+    const clockInAt = '2026-08-01T07:58:00.000Z';
+    const entry = makeEntry({ clock_in_at: clockInAt, break_minutes: 30 });
+    const nowMs = new Date('2026-08-01T20:00:00.000Z').getTime();
+    expect(computeWorkedMinutesFromInstants(clockInAt, nowMs, 30)).toBe(
+      computeEntryMinutes({ ...entry, clock_out_at: null }, nowMs)
+    );
+  });
+
+  it('clamps to 0 when the break is longer than the elapsed time — never negative', () => {
+    const clockInAt = '2026-08-02T08:15:00.000Z';
+    const nowMs = new Date('2026-08-02T08:20:00.000Z').getTime(); // 5 minutes elapsed
+    expect(computeWorkedMinutesFromInstants(clockInAt, nowMs, 60)).toBe(0);
+  });
+
+  it('returns 0 for a break exactly equal to the elapsed time', () => {
+    const clockInAt = '2026-08-02T08:15:00.000Z';
+    const nowMs = new Date('2026-08-02T09:15:00.000Z').getTime(); // 60 minutes
+    expect(computeWorkedMinutesFromInstants(clockInAt, nowMs, 60)).toBe(0);
   });
 });
 

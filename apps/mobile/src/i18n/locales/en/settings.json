@@ -9,7 +9,7 @@
   "household": "Household",
   "deleteAccount": "Delete account",
   "deleteAccountConfirmTitle": "Delete your account?",
-  "deleteAccountConfirmBody": "This permanently deletes your account and all associated data. This action cannot be undone.",
+  "deleteAccountConfirmBody": "This permanently deletes your account and profile. It does not delete your household's shared records — hours worked and approved timesheets stay in that history for the other people in your household. This action cannot be undone.",
   "deleteAccountCancel": "Cancel",
   "deleteAccountConfirm": "Delete account",
   "softUpdateBanner": {

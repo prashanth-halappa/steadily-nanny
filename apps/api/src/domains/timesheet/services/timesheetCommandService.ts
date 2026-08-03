@@ -39,6 +39,7 @@ import {
   ShiftRepository,
 } from '../../shift';
 import type { ShiftWithChildren } from '../../shift/repositories/shiftRepository';
+import { UserService } from '../../user';
 import {
   AlreadyClockedInError,
   NotACarerError,
@@ -81,6 +82,14 @@ import {
  * unrelated even though both are "hours of slack" fields.
  */
 const CLOCK_IN_MATCH_TOLERANCE_MS = 2 * 60 * 60 * 1000;
+
+/**
+ * Fallback for `carer_display_name` when the carer's profile has no `name`
+ * set (nullable on `user_profiles` — see 002_user_profiles.sql). Matches the
+ * backfill in 033_preserve_payroll_on_carer_deletion.sql so an unnamed
+ * profile and a since-deleted one read identically.
+ */
+const UNNAMED_CARER_DISPLAY_NAME = 'Carer';
 
 const CARER_ROLES: ReadonlySet<string> = new Set([HOUSEHOLD_ROLES.NANNY]);
 const WRITE_ROLES: ReadonlySet<string> = new Set([
@@ -139,7 +148,13 @@ export class TimesheetCommandService {
     private readonly memberRepo: HouseholdMemberRepository = new HouseholdMemberRepository(),
     private readonly householdRepo: HouseholdRepository = new HouseholdRepository(),
     private readonly shiftRepo: ShiftRepository = new ShiftRepository(),
-    private readonly queries: TimesheetQueryService = timesheetQueryService
+    private readonly queries: TimesheetQueryService = timesheetQueryService,
+    // Only `getProfileById` is needed, so tests can inject a lightweight stub
+    // instead of the full static class.
+    private readonly userService: Pick<
+      typeof UserService,
+      'getProfileById'
+    > = UserService
   ) {}
 
   /**
@@ -196,16 +211,32 @@ export class TimesheetCommandService {
       );
     }
 
-    const household = await this.householdRepo.findById(input.household_id);
+    const [household, carerDisplayName] = await Promise.all([
+      this.householdRepo.findById(input.household_id),
+      this.resolveCarerDisplayName(userId),
+    ]);
     return this.timeEntryRepo.clockIn({
       household_id: input.household_id,
       carer_id: userId,
+      carer_display_name: carerDisplayName,
       shift_id: shiftId,
       clock_in_at: clockInAt.toISOString(),
       timezone: household?.timezone ?? 'UTC',
       kind: 'worked',
       status: 'running',
     });
+  }
+
+  /**
+   * Snapshot the carer's display name AT THIS INSTANT onto the new entry —
+   * see supabase/migrations/033_preserve_payroll_on_carer_deletion.sql. Must
+   * be captured on insert, never derived on read, so the household's payroll
+   * record stays legible after the carer's account (and the profile this
+   * would otherwise join against) is gone.
+   */
+  private async resolveCarerDisplayName(carerId: string): Promise<string> {
+    const profile = await this.userService.getProfileById(carerId);
+    return profile?.name ?? UNNAMED_CARER_DISPLAY_NAME;
   }
 
   /**
@@ -237,7 +268,11 @@ export class TimesheetCommandService {
     }
 
     const updated = await this.timeEntryRepo.update(timeEntryId, patch);
-    await this.rollUpIntoTimesheet(updated);
+    // `userId` is the authenticated caller `getOwnedTimeEntry` already
+    // verified owns this entry — passed through rather than trusting
+    // `updated.carer_id`, which is nullable now that a deleted carer's rows
+    // survive with carer_id = NULL (see the schema comment on TimeEntry).
+    await this.rollUpIntoTimesheet(updated, userId);
     return updated;
   }
 
@@ -413,7 +448,10 @@ export class TimesheetCommandService {
    * this twice for the same underlying entries is a no-op the second time)
    * and self-heals if an entry is later corrected or deleted.
    */
-  private async rollUpIntoTimesheet(entry: TimeEntry): Promise<void> {
+  private async rollUpIntoTimesheet(
+    entry: TimeEntry,
+    carerId: string
+  ): Promise<void> {
     if (!entry.clock_in_at || !entry.clock_out_at) {
       return; // defensive — clockOut always sets both before calling this
     }
@@ -426,7 +464,7 @@ export class TimesheetCommandService {
 
     const weekEntries = await this.timeEntryRepo.listForCarerWeek(
       entry.household_id,
-      entry.carer_id,
+      carerId,
       weekStart,
       weekEndExclusive(weekStart)
     );
@@ -434,13 +472,17 @@ export class TimesheetCommandService {
 
     const existing = await this.timesheetRepo.findByWeek(
       entry.household_id,
-      entry.carer_id,
+      carerId,
       weekStart
     );
     if (!existing) {
       await this.timesheetRepo.create({
         household_id: entry.household_id,
-        carer_id: entry.carer_id,
+        carer_id: carerId,
+        // Snapshotted from the entry that triggered this roll-up, not
+        // re-resolved — the entry's own snapshot is already frozen at
+        // clock-in, so reusing it keeps entry and timesheet in agreement.
+        carer_display_name: entry.carer_display_name,
         week_start: weekStart,
         total_minutes: totalMinutes,
         status: 'submitted',
