@@ -108,10 +108,14 @@ export function useNotificationObserver(routeMap: NotificationRouteMap): void {
       }
     }
 
-    Notifications.getLastNotificationResponseAsync().then(response => {
-      if (!isMounted || !response?.notification) return;
-      redirect(response.notification, { cold: true });
-    });
+    Notifications.getLastNotificationResponseAsync()
+      .then(response => {
+        if (!isMounted || !response?.notification) return;
+        redirect(response.notification, { cold: true });
+      })
+      .catch(() => {
+        // Silently ignore native entitlement / Keychain access failures on unsupported environments
+      });
 
     const subscription = Notifications.addNotificationResponseReceivedListener(
       response => {
@@ -140,19 +144,30 @@ export function useNotificationObserver(routeMap: NotificationRouteMap): void {
  * report `isDevice=false` while still holding push tokens.
  */
 export async function getUserNotificationPermissions(): Promise<string | null> {
-  const perms = await Notifications.getPermissionsAsync();
-  if (perms.ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL) {
-    return 'provisional';
+  try {
+    const perms = await Notifications.getPermissionsAsync();
+    if (
+      perms.ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL
+    ) {
+      return 'provisional';
+    }
+    return perms.status;
+  } catch {
+    return null;
   }
-  return perms.status;
 }
 
 /**
  * Fetches the Expo push token for this install. Returns null when no EAS project
- * id is configured or the request fails. The token is persisted server-side by
- * `registerDeviceWithBackend()` in `userDevice.ts`.
+ * id is configured, when running on a simulator (!Device.isDevice), or when the
+ * request fails (e.g. missing Keychain entitlement). The token is persisted
+ * server-side by `registerDeviceWithBackend()` in `userDevice.ts`.
  */
 export async function getExpoPushToken(): Promise<string | null> {
+  if (!Device.isDevice) {
+    return null;
+  }
+
   const projectId =
     Constants?.expoConfig?.extra?.eas?.projectId ??
     Constants?.easConfig?.projectId;

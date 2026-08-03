@@ -11,6 +11,9 @@ import { beforeAll, describe, expect, it, mock } from 'bun:test';
 import type { NotificationRouteMap } from '../pushNotification';
 
 let resolveNotificationHref: typeof import('../pushNotification').resolveNotificationHref;
+let getExpoPushToken: typeof import('../pushNotification').getExpoPushToken;
+let getUserNotificationPermissions: typeof import('../pushNotification').getUserNotificationPermissions;
+let registerForPushNotificationsAsync: typeof import('../pushNotification').registerForPushNotificationsAsync;
 
 beforeAll(async () => {
   mock.module('@/src/store/pendingDeepLinkStore', () => ({
@@ -18,7 +21,12 @@ beforeAll(async () => {
       getState: () => ({ setPendingLink: mock(() => {}) }),
     },
   }));
-  ({ resolveNotificationHref } = await import('../pushNotification'));
+  ({
+    resolveNotificationHref,
+    getExpoPushToken,
+    getUserNotificationPermissions,
+    registerForPushNotificationsAsync,
+  } = await import('../pushNotification'));
 });
 
 const routeMap: NotificationRouteMap = {
@@ -68,5 +76,73 @@ describe('resolveNotificationHref', () => {
       routeMap
     );
     expect(href).toBe('/(tabs)/home');
+  });
+});
+
+describe('getExpoPushToken', () => {
+  it('returns null when Device.isDevice is false (simulator)', async () => {
+    mock.module('expo-device', () => ({
+      isDevice: false,
+    }));
+    const { getExpoPushToken: getToken } = await import('../pushNotification');
+
+    const token = await getToken();
+    expect(token).toBeNull();
+  });
+
+  it('fetches push token when Device.isDevice is true', async () => {
+    mock.module('expo-device', () => ({
+      isDevice: true,
+    }));
+    mock.module('expo-notifications', () => ({
+      getExpoPushTokenAsync: mock(() =>
+        Promise.resolve({ data: 'ExponentPushToken[test]' })
+      ),
+      getPermissionsAsync: mock(() => Promise.resolve({ status: 'granted' })),
+    }));
+    const { getExpoPushToken: getToken } = await import('../pushNotification');
+
+    const token = await getToken();
+    expect(token).toBe('ExponentPushToken[test]');
+  });
+
+  it('returns null gracefully when getExpoPushTokenAsync throws Keychain/entitlement error', async () => {
+    mock.module('expo-device', () => ({
+      isDevice: true,
+    }));
+    mock.module('expo-notifications', () => ({
+      getExpoPushTokenAsync: mock(() =>
+        Promise.reject(
+          new Error(
+            "Keychain access failed: A required entitlement isn't present."
+          )
+        )
+      ),
+      getPermissionsAsync: mock(() => Promise.resolve({ status: 'granted' })),
+    }));
+    const { getExpoPushToken: getToken } = await import('../pushNotification');
+
+    const token = await getToken();
+    expect(token).toBeNull();
+  });
+});
+
+describe('getUserNotificationPermissions', () => {
+  it('returns null gracefully when getPermissionsAsync throws a Keychain/entitlement error', async () => {
+    mock.module('expo-notifications', () => ({
+      getPermissionsAsync: mock(() =>
+        Promise.reject(
+          new Error(
+            "Keychain access failed: A required entitlement isn't present."
+          )
+        )
+      ),
+    }));
+    const { getUserNotificationPermissions: getPerms } = await import(
+      '../pushNotification'
+    );
+
+    const perms = await getPerms();
+    expect(perms).toBeNull();
   });
 });
