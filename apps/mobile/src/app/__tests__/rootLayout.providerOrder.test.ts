@@ -38,4 +38,10 @@ describe('root layout provider order', () => {
     expect(source.indexOf("import '@/polyfills'")).toBe(0);
     expect(source).toContain('sendDefaultPii: false');
   });
+
+  it('places AnimatedSplash inside QueryClientProvider (needs useIsOnboarded)', () => {
+    const queryIdx = source.indexOf('<QueryClientProvider');
+    const splashIdx = source.indexOf('<AnimatedSplash');
+    expect(splashIdx).toBeGreaterThan(queryIdx);
+  });
 });

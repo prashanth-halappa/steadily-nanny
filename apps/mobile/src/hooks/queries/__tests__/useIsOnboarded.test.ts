@@ -85,6 +85,30 @@ describe('useIsOnboarded', () => {
     expect(result.current.role).toBeNull();
   });
 
+  // TanStack v5: when the query is still enabled:false (auth not initialized),
+  // isLoading is false (pending+idle) while data is undefined. Using isLoading
+  // alone used to report not-onboarded and flash the role fork on cold start /
+  // SIGNED_IN. isPending must keep us in loading.
+  it('stays loading while auth is not initialized — pending+idle is not not-onboarded', () => {
+    useAuthStore.setState({
+      session: { user: { id: USER_ID } } as any,
+      isInitialized: false,
+    });
+    membershipsListMock.mockResolvedValue([
+      ownerMembership({ role: 'nanny', user_id: USER_ID }),
+    ]);
+    householdsListMock.mockResolvedValue([
+      householdRow({ created_by: 'someone-else' }),
+    ]);
+
+    const { result } = renderHookWithProviders(() => useIsOnboarded());
+
+    expect(result.current.status).toBe('loading');
+    expect(result.current.role).toBeNull();
+    expect(result.current.membershipsError).toBe(false);
+    expect(membershipsListMock).not.toHaveBeenCalled();
+  });
+
   it('is not-onboarded with no role when the user has no memberships', async () => {
     membershipsListMock.mockResolvedValue([]);
     householdsListMock.mockResolvedValue([]);

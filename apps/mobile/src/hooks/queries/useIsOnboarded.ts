@@ -95,6 +95,16 @@ function isOnboardedForMembership(
  * caller that forgets to check `membershipsError` shows a spinner, which is
  * recoverable, instead of dropping a real user into the signup wizard, which
  * is not. Unknown must fail toward WAIT, never toward ASSUME NEW USER.
+ *
+ * Wait on `isPending`, not `isLoading`. TanStack Query v5 defines
+ * `isLoading = isPending && isFetching`. When a query is still unresolved but
+ * not fetching yet (pending+idle — disabled→enabled flip, frame after
+ * `queryClient.clear()` on SIGNED_IN), `isLoading` is false while `data` is
+ * still undefined. That used to fall through to `!membership` →
+ * `not-onboarded`, Index replaced into `/onboarding/role`, and the user saw
+ * a "Who are you?" flash before memberships resolved. `isPending` covers
+ * that gap; a successful empty list (`isPending === false`, `data === []`)
+ * remains a genuine `not-onboarded`.
  */
 export function useIsOnboarded(): OnboardingState {
   const membershipsQuery = useMyMemberships();
@@ -143,7 +153,7 @@ export function useIsOnboarded(): OnboardingState {
     };
   }
 
-  if (membershipsQuery.isLoading || activeHousehold.isLoading) {
+  if (membershipsQuery.isPending || activeHousehold.isLoading) {
     return {
       status: 'loading',
       role: null,
@@ -163,7 +173,7 @@ export function useIsOnboarded(): OnboardingState {
     };
   }
 
-  if (needsChildCount && children.isLoading) {
+  if (needsChildCount && children.isPending) {
     return {
       status: 'loading',
       role: setupRole,

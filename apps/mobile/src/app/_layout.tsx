@@ -86,14 +86,16 @@ function RootLayout() {
                   </AppGate>
                   <PortalHost />
                   <ToastManager />
+                  {/* Inside QueryClientProvider so AnimatedSplash can read
+                      useIsOnboarded and hold until routing is decidable. */}
+                  {splashDone ? null : (
+                    <AnimatedSplash onFinish={() => setSplashDone(true)} />
+                  )}
                 </AnalyticsProvider>
               </PostHogProvider>
             </QueryClientProvider>
           </SafeAreaProvider>
         </GestureHandlerRootView>
-        {splashDone ? null : (
-          <AnimatedSplash onFinish={() => setSplashDone(true)} />
-        )}
         <StatusBar style="dark" />
       </View>
     </RootErrorBoundary>

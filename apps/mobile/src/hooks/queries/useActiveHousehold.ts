@@ -41,6 +41,8 @@ export interface UseActiveHouseholdResult {
   /** Persist a new preferred household (e.g. from the switcher UI). Must be
    * an id present in `households` to take effect on the next read. */
   setActiveHouseholdId: (householdId: string) => void;
+  /** True while the households query has not yet resolved (TanStack
+   * `isPending` — includes pending+idle, not only in-flight fetches). */
   isLoading: boolean;
 }
 
@@ -79,6 +81,11 @@ export function useActiveHousehold(): UseActiveHouseholdResult {
     householdId: household?.id ?? null,
     households,
     setActiveHouseholdId,
-    isLoading: householdsQuery.isLoading,
+    // `isPending`, not `isLoading`: TanStack v5's isLoading is false while a
+    // query is still unresolved but not fetching yet (pending+idle — e.g.
+    // disabled→enabled, right after queryClient.clear()). Callers that treat
+    // "not loading" as "list is known" would briefly see an empty household
+    // list and mis-route. isPending covers that gap.
+    isLoading: householdsQuery.isPending,
   };
 }

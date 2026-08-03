@@ -12,6 +12,10 @@
  * `/onboarding/*`, RoleScreen (and siblings) never re-check — so a nanny
  * with two active memberships stays on "Who are you?" even after
  * memberships succeed. This layout is the recovery path for that case.
+ *
+ * Also locks the paint gate: Stack (and therefore RoleScreen) must only
+ * mount for a confirmed `not-onboarded` verdict — loading / onboarded show
+ * a spinner so a transient mis-route never flashes "Who are you?".
  */
 import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 import { render } from '@testing-library/react-native';
@@ -53,6 +57,14 @@ beforeAll(async () => {
     }),
   }));
 
+  mock.module('@/src/components/ui/loading-indicator', () => {
+    const React = require('react');
+    return {
+      LoadingIndicator: () =>
+        React.createElement('View', { testID: 'loading-indicator-mock' }),
+    };
+  });
+
   OnboardingLayout = (await import('../onboarding/_layout')).default;
 });
 
@@ -68,14 +80,16 @@ beforeEach(() => {
 });
 
 describe('OnboardingLayout — already-onboarded bounce', () => {
-  it('does not navigate while onboarding status is still loading', () => {
-    const { getByTestId } = render(<OnboardingLayout />);
+  it('shows a spinner and does not mount the wizard while loading', () => {
+    const { getByTestId, queryByTestId } = render(<OnboardingLayout />);
 
     expect(mockReplace).not.toHaveBeenCalled();
-    expect(getByTestId('onboarding-stack-mock')).toBeTruthy();
+    expect(getByTestId('onboarding-layout-loading')).toBeTruthy();
+    expect(getByTestId('loading-indicator-mock')).toBeTruthy();
+    expect(queryByTestId('onboarding-stack-mock')).toBeNull();
   });
 
-  it('does not navigate for a genuine not-onboarded user', () => {
+  it('mounts the wizard Stack for a genuine not-onboarded user', () => {
     onboardingState = {
       status: 'not-onboarded',
       role: null,
@@ -83,9 +97,11 @@ describe('OnboardingLayout — already-onboarded bounce', () => {
       membershipsError: false,
     };
 
-    render(<OnboardingLayout />);
+    const { getByTestId, queryByTestId } = render(<OnboardingLayout />);
 
     expect(mockReplace).not.toHaveBeenCalled();
+    expect(getByTestId('onboarding-stack-mock')).toBeTruthy();
+    expect(queryByTestId('onboarding-layout-loading')).toBeNull();
   });
 
   it('does not navigate when memberships are in an unknown/error state', () => {
@@ -98,12 +114,14 @@ describe('OnboardingLayout — already-onboarded bounce', () => {
       membershipsError: true,
     };
 
-    render(<OnboardingLayout />);
+    const { getByTestId, queryByTestId } = render(<OnboardingLayout />);
 
     expect(mockReplace).not.toHaveBeenCalled();
+    expect(getByTestId('onboarding-layout-loading')).toBeTruthy();
+    expect(queryByTestId('onboarding-stack-mock')).toBeNull();
   });
 
-  it('replaces to home once status resolves to onboarded', () => {
+  it('replaces to home and keeps the wizard unmounted once onboarded', () => {
     onboardingState = {
       status: 'onboarded',
       role: 'nanny',
@@ -111,16 +129,21 @@ describe('OnboardingLayout — already-onboarded bounce', () => {
       membershipsError: false,
     };
 
-    render(<OnboardingLayout />);
+    const { getByTestId, queryByTestId } = render(<OnboardingLayout />);
 
     expect(mockReplace).toHaveBeenCalledWith('/(private)/(tabs)/home');
+    expect(getByTestId('onboarding-layout-loading')).toBeTruthy();
+    expect(queryByTestId('onboarding-stack-mock')).toBeNull();
   });
 
   it('bounces home when a loading wizard later resolves to onboarded', () => {
     // The stranded-on-role-fork repro: Index already navigated here on a
     // transient not-onboarded / cleared-cache frame; memberships then succeed.
-    const { rerender } = render(<OnboardingLayout />);
+    const { rerender, getByTestId, queryByTestId } = render(
+      <OnboardingLayout />
+    );
     expect(mockReplace).not.toHaveBeenCalled();
+    expect(getByTestId('onboarding-layout-loading')).toBeTruthy();
 
     onboardingState = {
       status: 'onboarded',
@@ -131,5 +154,6 @@ describe('OnboardingLayout — already-onboarded bounce', () => {
     rerender(<OnboardingLayout />);
 
     expect(mockReplace).toHaveBeenCalledWith('/(private)/(tabs)/home');
+    expect(queryByTestId('onboarding-stack-mock')).toBeNull();
   });
 });
