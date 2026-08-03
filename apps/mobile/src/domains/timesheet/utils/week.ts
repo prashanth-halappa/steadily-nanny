@@ -118,10 +118,18 @@ function formatDayMonth(dateISO: string): string {
   return `${day} ${MONTH_ABBREVIATIONS[(month ?? 1) - 1] ?? ''}`;
 }
 
+/**
+ * Humane calendar date for parent-facing surfaces — "30 Jul" from YYYY-MM-DD.
+ * Never leave a raw ISO date in the UI (Daylight UX #32).
+ */
+export function formatDisplayDate(dateISO: string): string {
+  return formatDayMonth(dateISO);
+}
+
 /** "27 Jul – 2 Aug" from a 7-date week array (see `getWeekDates`). */
 export function formatWeekRangeLabel(weekDates: string[]): string {
   const start = weekDates[0];
   const end = weekDates[weekDates.length - 1];
   if (!start || !end) return '';
-  return `${formatDayMonth(start)} – ${formatDayMonth(end)}`;
+  return `${formatDisplayDate(start)} – ${formatDisplayDate(end)}`;
 }

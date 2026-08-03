@@ -100,6 +100,7 @@ beforeAll(async () => {
   mock.module('expo-router', () => ({
     useRouter: () => ({ back: mock(), push: mock() }),
     useLocalSearchParams: () => ({ shiftId: SHIFT_ID }),
+    router: { push: mock(), replace: mock(), back: mock(), navigate: mock() },
   }));
   mock.module('@/src/hooks/queries/useShift', () => ({
     useShift: mockUseShift,
@@ -112,6 +113,12 @@ beforeAll(async () => {
   }));
   mock.module('@/src/hooks/queries/useIsOnboarded', () => ({
     useIsOnboarded: mockUseIsOnboarded,
+  }));
+  mock.module('@/src/hooks/queries/useUserProfile', () => ({
+    useUserProfile: () => ({
+      data: { timezone: 'America/New_York', week_starts_on: 1 },
+      isLoading: false,
+    }),
   }));
   mock.module('@/src/hooks/mutations/useUpdateShift', () => ({
     useUpdateShift: mockUseUpdateShift,

@@ -788,6 +788,7 @@ mock.module('lucide-react-native', () => ({
   Crown: 'Crown',
   Download: 'Download',
   Edit: 'Edit',
+  ExternalLink: 'ExternalLink',
   Eye: 'Eye',
   EyeOff: 'EyeOff',
   Heart: 'Heart',

@@ -55,12 +55,16 @@ import {
   type StatusPillProps,
 } from '@/src/components/ui/status-pill';
 import { Text } from '@/src/components/ui/text';
-import { Body, H1 } from '@/src/components/ui/typography';
+import { Body, H1, Small } from '@/src/components/ui/typography';
 import { SchedulePatternPreview } from '@/src/domains/schedule/components/SchedulePatternPreview';
 import {
   canViewParentSchedule,
   isParentEditorRole,
 } from '@/src/domains/setup/types';
+import {
+  formatWeekRangeLabel,
+  getWeekDates,
+} from '@/src/domains/timesheet/utils/week';
 import { useWithdrawSchedulePattern } from '@/src/hooks/mutations/useWithdrawSchedulePattern';
 import { useChildren } from '@/src/hooks/queries/useChildren';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
@@ -193,6 +197,15 @@ export function SchedulePendingScreen() {
             variant={statusVariant()}
             label={statusLabel()}
           />
+          <Small
+            testID="schedule-pending-subject"
+            className="text-muted-foreground"
+          >
+            {t('pending.subjectLine', {
+              range: formatWeekRangeLabel(getWeekDates(pattern.dtstart)),
+              status: statusLabel(),
+            })}
+          </Small>
 
           {detail.data && detail.data.days.length > 0 ? (
             <SchedulePatternPreview
@@ -254,6 +267,12 @@ export function SchedulePendingScreen() {
 
           {pattern.status === 'accepted' ? (
             <>
+              <Body
+                testID="schedule-pending-accepted-bridge"
+                className="text-muted-foreground"
+              >
+                {t('pending.acceptedMeansShifts')}
+              </Body>
               <Button
                 testID="schedule-pending-view-shifts"
                 onPress={() => router.push(SHIFTS_HREF)}

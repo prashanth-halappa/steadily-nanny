@@ -58,6 +58,20 @@ describe('ShiftDetailScreen source', () => {
     expect(source).toContain('shiftChangeRequestKindLabelKey');
   });
 
+  it('renders StatusPill from shift.status and short-notice consequence copy', () => {
+    expect(source).toContain('StatusPill');
+    expect(source).toContain('STATUS_TO_VARIANT');
+    expect(source).toContain('shift-detail-status');
+    expect(source).toContain('detail.shortNoticePaidHint');
+    expect(source).toContain('detail.awaitingCoParent');
+  });
+
+  it('formats the subtitle with formatDisplayDate — never raw YYYY-MM-DD', () => {
+    expect(source).toContain('formatDisplayDate');
+    expect(source).toContain('shift-detail-subtitle');
+    expect(source).not.toMatch(/\{shift\.local_date\} · \{shift\.timezone\}/);
+  });
+
   it('shows all change requests (not just pending) and renders response_message', () => {
     expect(source).not.toContain(".filter(r => r.status === 'pending')");
     expect(source).not.toMatch(

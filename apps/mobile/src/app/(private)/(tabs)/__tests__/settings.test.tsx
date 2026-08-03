@@ -60,6 +60,15 @@ describe('SettingsScreen', () => {
     expect(screenSource).toContain('/settings/time');
   });
 
+  it('shows chevrons on navigates and an external glyph on legal links', () => {
+    expect(screenSource).toContain('ChevronRight');
+    expect(screenSource).toContain('ExternalLink');
+    expect(screenSource).toContain('SettingsNavRow');
+    expect(screenSource).toContain('SettingsExternalRow');
+    expect(screenSource).toContain('settings-privacy');
+    expect(screenSource).toContain('settings-terms');
+  });
+
   it('persists a language change through useUpdatePreferredLocale, not just locally (D26)', () => {
     expect(screenSource).toContain('useUpdatePreferredLocale');
     expect(screenSource).toContain('setLanguage');

@@ -110,3 +110,18 @@ describe('Card', () => {
     expect(shadowColours(entries)).toContain(INK_RGB);
   });
 });
+
+describe('CardContent padding (Daylight UX #40)', () => {
+  it('defaults to full p-5.5 — not the header-companion pt-0', async () => {
+    const source = await Bun.file(
+      new URL('../card.tsx', import.meta.url).pathname
+    ).text();
+    const start = source.indexOf('function CardContent');
+    const end = source.indexOf('function CardFooter');
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    const cardContent = source.slice(start, end);
+    expect(cardContent).toContain("'p-5.5'");
+    expect(cardContent).not.toContain('pt-0');
+  });
+});

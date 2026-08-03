@@ -11,7 +11,10 @@
  * list elsewhere), and the shift always belongs to a specific household
  * regardless of which one a nanny with several currently has selected.
  */
-import type { ShiftEvent } from '@steadily-nanny/shared-types/schemas/shift.schema';
+import type {
+  Shift,
+  ShiftEvent,
+} from '@steadily-nanny/shared-types/schemas/shift.schema';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -20,6 +23,10 @@ import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { Button } from '@/src/components/ui/button';
 import { Input } from '@/src/components/ui/input';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
+import {
+  StatusPill,
+  type StatusPillProps,
+} from '@/src/components/ui/status-pill';
 import { Text } from '@/src/components/ui/text';
 import { Textarea } from '@/src/components/ui/textarea';
 import { Body, H1, H2, Small } from '@/src/components/ui/typography';
@@ -28,6 +35,7 @@ import {
   shiftChangeRequestStatusLabelKey,
 } from '@/src/domains/schedule/constants/changeRequestKinds';
 import { isParentEditorRole, SETUP_ROLES } from '@/src/domains/setup/types';
+import { formatDisplayDate } from '@/src/domains/timesheet/utils/week';
 import { useCreateShiftChangeRequest } from '@/src/hooks/mutations/useCreateShiftChangeRequest';
 import { useRespondToShiftChangeRequest } from '@/src/hooks/mutations/useRespondToShiftChangeRequest';
 import { useUpdateShift } from '@/src/hooks/mutations/useUpdateShift';
@@ -35,8 +43,10 @@ import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 import { useShift } from '@/src/hooks/queries/useShift';
 import { useShiftChangeRequests } from '@/src/hooks/queries/useShiftChangeRequests';
 import { useShiftEvents } from '@/src/hooks/queries/useShiftEvents';
+import { useUserProfile } from '@/src/hooks/queries/useUserProfile';
 import { showSuccessToast } from '@/src/lib/toast';
 import {
+  formatInstantDisplay,
   shiftInstantsFromWallClock,
   utcIsoToWallClockHHMM,
 } from '@/src/lib/wallClock';
@@ -48,6 +58,26 @@ const KNOWN_EVENT_TYPES = new Set([
   'gap_raised',
 ]);
 
+type ShiftStatusVariant = NonNullable<StatusPillProps['variant']>;
+
+const STATUS_TO_VARIANT: Record<Shift['status'], ShiftStatusVariant> = {
+  draft: 'pending',
+  pending: 'pending',
+  confirmed: 'confirmed',
+  declined: 'declined',
+  cancelled: 'cancelled',
+  completed: 'confirmed',
+};
+
+const STATUS_TO_LABEL_KEY: Record<Shift['status'], string> = {
+  draft: 'shifts.statusDraft',
+  pending: 'shifts.statusPending',
+  confirmed: 'shifts.statusConfirmed',
+  declined: 'shifts.statusDeclined',
+  cancelled: 'shifts.statusCancelled',
+  completed: 'shifts.statusCompleted',
+};
+
 export function ShiftDetailScreen() {
   const { t } = useTranslation('schedule');
   const elevation = useElevation();
@@ -55,6 +85,7 @@ export function ShiftDetailScreen() {
   const params = useLocalSearchParams<{ shiftId?: string }>();
   const shiftId = typeof params.shiftId === 'string' ? params.shiftId : null;
   const onboarding = useIsOnboarded();
+  const profile = useUserProfile();
   const shiftQuery = useShift(shiftId);
   const eventsQuery = useShiftEvents(shiftQuery.data?.household_id, shiftId);
   const updateShift = useUpdateShift();
@@ -65,6 +96,11 @@ export function ShiftDetailScreen() {
   const shift = shiftQuery.data;
   const isParent = isParentEditorRole(onboarding.role);
   const isNanny = onboarding.role === SETUP_ROLES.NANNY;
+  const readerTimeZone = profile.data?.timezone;
+  const showShiftZone =
+    Boolean(shift?.timezone) &&
+    Boolean(readerTimeZone) &&
+    shift?.timezone !== readerTimeZone;
   const [startTime, setStartTime] = useState('09:00');
   const [endTime, setEndTime] = useState('17:00');
   const [note, setNote] = useState('');
@@ -138,9 +174,36 @@ export function ShiftDetailScreen() {
       contentContainerStyle={SCREEN_CONTENT_STYLE}
     >
       <H1 testID="shift-detail-title">{t('detail.title')}</H1>
-      <Body className="mt-2 text-muted-foreground" tabular>
-        {shift.local_date} · {shift.timezone}
+      <Body
+        testID="shift-detail-subtitle"
+        className="mt-2 text-muted-foreground"
+        tabular
+      >
+        {formatDisplayDate(shift.local_date)}
+        {showShiftZone ? ` · ${shift.timezone}` : ''}
       </Body>
+      <View className="mt-3 flex-row flex-wrap items-center gap-2">
+        <StatusPill
+          testID="shift-detail-status"
+          variant={STATUS_TO_VARIANT[shift.status]}
+          label={t(STATUS_TO_LABEL_KEY[shift.status])}
+        />
+        {shift.is_short_notice ? (
+          <StatusPill
+            testID="shift-detail-short-notice"
+            variant="short-notice"
+            label={t('shifts.shortNotice')}
+          />
+        ) : null}
+      </View>
+      {shift.is_short_notice ? (
+        <Small
+          testID="shift-detail-short-notice-hint"
+          className="mt-2 text-muted-foreground"
+        >
+          {t('detail.shortNoticePaidHint')}
+        </Small>
+      ) : null}
 
       {isParent ? (
         <View className="mt-6 gap-4" testID="shift-detail-edit">
@@ -267,6 +330,21 @@ export function ShiftDetailScreen() {
                   defaultValue: req.status,
                 })}
               </Small>
+              <Small
+                testID={`shift-change-created-${req.id}`}
+                className="text-muted-foreground"
+                tabular
+              >
+                {formatInstantDisplay(req.created_at, shift.timezone)}
+              </Small>
+              {req.status === 'pending' ? (
+                <Small
+                  testID={`shift-change-awaiting-${req.id}`}
+                  className="text-muted-foreground"
+                >
+                  {t('detail.awaitingCoParent')}
+                </Small>
+              ) : null}
               {req.message ? (
                 <Body testID={`shift-change-message-${req.id}`}>
                   {t('detail.requestMessageLabel')}: {req.message}
@@ -319,7 +397,7 @@ export function ShiftDetailScreen() {
           </Small>
         ) : (
           (eventsQuery.data ?? []).map(event => (
-            <EventRow key={event.id} event={event} />
+            <EventRow key={event.id} event={event} timeZone={shift.timezone} />
           ))
         )}
       </View>
@@ -336,13 +414,21 @@ export function ShiftDetailScreen() {
   );
 }
 
-function EventRow({ event }: { event: ShiftEvent }) {
+function EventRow({
+  event,
+  timeZone,
+}: {
+  event: ShiftEvent;
+  timeZone: string;
+}) {
   const { t } = useTranslation('schedule');
+  const elevation = useElevation();
   const known = KNOWN_EVENT_TYPES.has(event.event_type);
   return (
     <View
       testID={`shift-event-${event.id}`}
-      className="rounded-row bg-muted p-3"
+      className="rounded-row bg-card p-3"
+      style={elevation.row}
     >
       <Body className="font-medium">
         {known
@@ -352,7 +438,7 @@ function EventRow({ event }: { event: ShiftEvent }) {
           : t('detail.eventTypeUnknown')}
       </Body>
       <Small className="text-muted-foreground" tabular>
-        {event.created_at}
+        {formatInstantDisplay(event.created_at, timeZone)}
       </Small>
       {!known ? (
         <Small testID={`shift-event-fallback-${event.id}`}>

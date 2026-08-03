@@ -2,11 +2,13 @@
  * @module app/(private)/(tabs)/settings
  */
 import { type Href, router } from 'expo-router';
+import { ChevronRight, ExternalLink } from 'lucide-react-native';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ScrollView, View } from 'react-native';
 import { AnimatedPressable } from '@/lib/animations';
 import { SCREEN_CONTENT_STYLE, spacing } from '@/lib/design-tokens';
+import { Icon } from '@/lib/icons/iconWithClassName';
 import { cn } from '@/lib/utils';
 import {
   AlertDialog,
@@ -37,6 +39,58 @@ import { openExternalUrl } from '@/src/utils/openExternalUrl';
 // SETUP: point these at your real hosted legal pages.
 const PRIVACY_URL = `https://${appIdentity.associatedDomain}/privacy`;
 const TERMS_URL = `https://${appIdentity.associatedDomain}/terms`;
+
+function SettingsNavRow({
+  testID,
+  label,
+  onPress,
+}: {
+  testID: string;
+  label: string;
+  onPress: () => void;
+}) {
+  return (
+    <AnimatedPressable
+      testID={testID}
+      onPress={onPress}
+      style={{
+        minHeight: spacing.minTouchTarget,
+        justifyContent: 'center',
+      }}
+    >
+      <View className="flex-row items-center justify-between gap-3">
+        <Body className="flex-1 text-primary">{label}</Body>
+        <Icon icon={ChevronRight} size={20} className="text-muted-foreground" />
+      </View>
+    </AnimatedPressable>
+  );
+}
+
+function SettingsExternalRow({
+  testID,
+  label,
+  onPress,
+}: {
+  testID: string;
+  label: string;
+  onPress: () => void;
+}) {
+  return (
+    <AnimatedPressable
+      testID={testID}
+      onPress={onPress}
+      style={{
+        minHeight: spacing.minTouchTarget,
+        justifyContent: 'center',
+      }}
+    >
+      <View className="flex-row items-center justify-between gap-3">
+        <Body className="flex-1 text-primary">{label}</Body>
+        <Icon icon={ExternalLink} size={18} className="text-muted-foreground" />
+      </View>
+    </AnimatedPressable>
+  );
+}
 
 export default function SettingsScreen() {
   const { t } = useTranslation();
@@ -135,12 +189,11 @@ export default function SettingsScreen() {
 
       <View className="mt-8 gap-3" testID="settings-time-section">
         <H4>{t('settings:account')}</H4>
-        <AnimatedPressable
+        <SettingsNavRow
           testID="settings-time"
+          label={t('settings:time.menuLabel')}
           onPress={() => router.push('/settings/time' as Href)}
-        >
-          <Body className="text-primary">{t('settings:time.menuLabel')}</Body>
-        </AnimatedPressable>
+        />
       </View>
 
       {onboarding.role === SETUP_ROLES.PARENT ||
@@ -153,47 +206,34 @@ export default function SettingsScreen() {
           <HouseholdSwitcher />
           {onboarding.role === SETUP_ROLES.PARENT ? (
             <>
-              <AnimatedPressable
+              <SettingsNavRow
                 testID="settings-manage-children"
+                label={t('household:children.manageTitle')}
                 onPress={() => router.push('/settings/children' as Href)}
-              >
-                <Body className="text-primary">
-                  {t('household:children.manageTitle')}
-                </Body>
-              </AnimatedPressable>
-              <AnimatedPressable
+              />
+              <SettingsNavRow
                 testID="settings-invite-nanny"
+                label={t('household:invite.manageTitle')}
                 onPress={() => router.push('/settings/invite' as Href)}
-              >
-                <Body className="text-primary">
-                  {t('household:invite.manageTitle')}
-                </Body>
-              </AnimatedPressable>
-              <AnimatedPressable
+              />
+              <SettingsNavRow
                 testID="settings-manage-household"
+                label={t('household:householdSettings.manageTitle')}
                 onPress={() => router.push('/settings/household' as Href)}
-              >
-                <Body className="text-primary">
-                  {t('household:householdSettings.manageTitle')}
-                </Body>
-              </AnimatedPressable>
+              />
             </>
           ) : (
             <>
-              <AnimatedPressable
+              <SettingsNavRow
                 testID="settings-manage-availability"
+                label={t('household:availability.manageTitle')}
                 onPress={() => router.push('/settings/availability' as Href)}
-              >
-                <Body className="text-primary">
-                  {t('household:availability.manageTitle')}
-                </Body>
-              </AnimatedPressable>
-              <AnimatedPressable
+              />
+              <SettingsNavRow
                 testID="settings-request-time-off"
+                label={t('timeOff:screenTitle')}
                 onPress={() => router.push('/settings/time-off' as Href)}
-              >
-                <Body className="text-primary">{t('timeOff:screenTitle')}</Body>
-              </AnimatedPressable>
+              />
             </>
           )}
         </View>
@@ -201,24 +241,16 @@ export default function SettingsScreen() {
 
       <View className="mt-8 gap-3">
         <H4>{t('settings:legal')}</H4>
-        <AnimatedPressable
+        <SettingsExternalRow
+          testID="settings-privacy"
+          label={t('settings:privacyPolicy')}
           onPress={() => void openExternalUrl(PRIVACY_URL)}
-          style={{
-            minHeight: spacing.minTouchTarget,
-            justifyContent: 'center',
-          }}
-        >
-          <Body className="text-primary">{t('settings:privacyPolicy')}</Body>
-        </AnimatedPressable>
-        <AnimatedPressable
+        />
+        <SettingsExternalRow
+          testID="settings-terms"
+          label={t('settings:termsOfService')}
           onPress={() => void openExternalUrl(TERMS_URL)}
-          style={{
-            minHeight: spacing.minTouchTarget,
-            justifyContent: 'center',
-          }}
-        >
-          <Body className="text-primary">{t('settings:termsOfService')}</Body>
-        </AnimatedPressable>
+        />
       </View>
 
       <Button

@@ -62,7 +62,9 @@ import { useRespondToSchedulePattern } from '@/src/hooks/mutations/useRespondToS
 import { useAvailability } from '@/src/hooks/queries/useAvailability';
 import { useChildren } from '@/src/hooks/queries/useChildren';
 import { useSchedulePattern } from '@/src/hooks/queries/useSchedulePattern';
+import { useUserProfile } from '@/src/hooks/queries/useUserProfile';
 import { showSuccessToast } from '@/src/lib/toast';
+import { getWeekdayOrder } from '@/src/lib/weekdayOrder';
 import { useElevation } from '~/lib/design-tokens/elevation';
 import {
   type AvailabilityRow,
@@ -83,6 +85,7 @@ export function ScheduleRespondScreen({
   const router = useRouter();
 
   const pattern = useSchedulePattern(patternId);
+  const profile = useUserProfile();
   const availability = useAvailability();
   const children = useChildren(pattern.data?.household_id);
   const respond = useRespondToSchedulePattern(patternId);
@@ -119,11 +122,10 @@ export function ScheduleRespondScreen({
     );
   }
 
-  const days = [...pattern.data.days].sort((a, b) => {
-    // Monday-first display order (matches parent preview) — not raw API order.
-    const order = [1, 2, 3, 4, 5, 6, 0];
-    return order.indexOf(a.weekday) - order.indexOf(b.weekday);
-  });
+  const displayOrder = getWeekdayOrder(profile.data?.week_starts_on);
+  const days = displayOrder
+    .map(dow => pattern.data.days.find(d => d.weekday === dow))
+    .filter((d): d is (typeof pattern.data.days)[number] => d !== undefined);
   const totalHours = calculateWeekTotalHours(days);
 
   const handleAccept = async () => {
@@ -159,75 +161,81 @@ export function ScheduleRespondScreen({
   };
 
   return (
-    <ScrollView
-      testID="schedule-respond-screen"
-      className="flex-1 bg-background"
-      contentContainerStyle={SCREEN_CONTENT_STYLE}
-    >
-      <H1>{t('respond.screenTitle')}</H1>
-      <Body className="mt-2 text-muted-foreground">
-        {t('respond.subtitle')}
-      </Body>
+    <View testID="schedule-respond-screen" className="flex-1 bg-background">
+      <ScrollView
+        testID="schedule-respond-scroll"
+        className="flex-1"
+        contentContainerStyle={SCREEN_CONTENT_STYLE}
+      >
+        <H1>{t('respond.screenTitle')}</H1>
+        <Body className="mt-2 text-muted-foreground">
+          {t('respond.subtitle')}
+        </Body>
 
-      <View className="mt-6 gap-4">
-        {days.map(day => {
-          const outsideHours = isOutsideAvailability(day, availabilityRows);
-          return (
-            <View
-              key={day.id}
-              testID={`schedule-respond-day-${day.weekday}`}
-              className="gap-2 rounded-row bg-card p-4"
-              style={elevation.row}
-            >
-              <View className="gap-2">
-                <Body className="font-semibold" tabular>
-                  {t(`weekday.${day.weekday}`)} ·{' '}
-                  {formatWallClockTime(day.start_time)}–
-                  {formatWallClockTime(day.end_time)}
-                </Body>
-                {outsideHours ? (
-                  <StatusPill
-                    variant="outside-hours"
-                    label={t('respond.outsideHoursWarning')}
-                    testID={`schedule-respond-outside-hours-${day.weekday}`}
-                  />
+        <View className="mt-6 gap-4">
+          {days.map(day => {
+            const outsideHours = isOutsideAvailability(day, availabilityRows);
+            return (
+              <View
+                key={day.id}
+                testID={`schedule-respond-day-${day.weekday}`}
+                className="gap-2 rounded-row bg-card p-4"
+                style={elevation.row}
+              >
+                <View className="gap-2">
+                  <Body className="font-semibold" tabular>
+                    {t(`weekday.${day.weekday}`)} ·{' '}
+                    {formatWallClockTime(day.start_time)}–
+                    {formatWallClockTime(day.end_time)}
+                  </Body>
+                  {outsideHours ? (
+                    <StatusPill
+                      variant="outside-hours"
+                      label={t('respond.outsideHoursWarning')}
+                      testID={`schedule-respond-outside-hours-${day.weekday}`}
+                    />
+                  ) : null}
+                </View>
+
+                {day.children.length > 0 ? (
+                  <View className="gap-1.5">
+                    <Body className="text-muted-foreground text-xs">
+                      {t('respond.childrenLabel')}
+                    </Body>
+                    <View className="flex-row flex-wrap gap-2">
+                      {day.children.map(dayChild => {
+                        const child = childrenById.get(dayChild.child_id);
+                        return (
+                          <ChildChip
+                            key={dayChild.id}
+                            name={child?.name ?? ''}
+                            colour={child?.colour ?? undefined}
+                            testID={`schedule-respond-child-${dayChild.id}`}
+                          />
+                        );
+                      })}
+                    </View>
+                  </View>
                 ) : null}
               </View>
+            );
+          })}
+        </View>
+      </ScrollView>
 
-              {day.children.length > 0 ? (
-                <View className="gap-1.5">
-                  <Body className="text-muted-foreground text-xs">
-                    {t('respond.childrenLabel')}
-                  </Body>
-                  <View className="flex-row flex-wrap gap-2">
-                    {day.children.map(dayChild => {
-                      const child = childrenById.get(dayChild.child_id);
-                      return (
-                        <ChildChip
-                          key={dayChild.id}
-                          name={child?.name ?? ''}
-                          colour={child?.colour ?? undefined}
-                          testID={`schedule-respond-child-${dayChild.id}`}
-                        />
-                      );
-                    })}
-                  </View>
-                </View>
-              ) : null}
-            </View>
-          );
-        })}
-      </View>
-
-      <Body
-        testID="schedule-respond-total-hours"
-        className="mt-6 font-semibold"
-        tabular
+      <View
+        testID="schedule-respond-footer"
+        className="gap-3 bg-background px-6 pb-6 pt-4"
+        style={elevation.row}
       >
-        {t('respond.totalHours', { hours: totalHours })}
-      </Body>
+        <Body
+          testID="schedule-respond-total-hours"
+          className="font-semibold"
+          tabular
+        >
+          {t('respond.totalHours', { hours: totalHours })}
+        </Body>
 
-      <View className="mt-8 gap-3">
         <Button
           testID="schedule-respond-accept"
           disabled={respond.isPending || hasResponded}
@@ -278,6 +286,6 @@ export function ScheduleRespondScreen({
           </AlertDialogContent>
         </AlertDialog>
       </View>
-    </ScrollView>
+    </View>
   );
 }

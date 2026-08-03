@@ -3,6 +3,7 @@
  * Shared helpers for calendar views — day grouping and time-period buckets.
  */
 import type { Shift } from '@steadily-nanny/shared-types/schemas/shift.schema';
+import { formatDisplayDate } from '@/src/domains/timesheet/utils/week';
 import { formatInstantInZone, timeToMinutes } from '@/src/lib/displayTime';
 
 export type ListItem =
@@ -33,7 +34,7 @@ export function groupShiftsByDay(
       items.push({
         type: 'header',
         key: `header-${shift.local_date}`,
-        label: `${weekdayLabel(localDateToWeekday(shift.local_date))} · ${shift.local_date}`,
+        label: `${weekdayLabel(localDateToWeekday(shift.local_date))} · ${formatDisplayDate(shift.local_date)}`,
       });
     }
     items.push({ type: 'shift', key: shift.id, shift });

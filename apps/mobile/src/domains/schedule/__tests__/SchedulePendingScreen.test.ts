@@ -48,6 +48,14 @@ describe('SchedulePendingScreen', () => {
     expect(screenSource).toContain('schedule-pending-view-shifts');
   });
 
+  it('renders a subject line under the status pill and Accepted→Pending bridge copy', () => {
+    expect(screenSource).toContain('schedule-pending-subject');
+    expect(screenSource).toContain('pending.subjectLine');
+    expect(screenSource).toContain('pending.acceptedMeansShifts');
+    expect(screenSource).toContain('schedule-pending-accepted-bridge');
+    expect(screenSource).toContain('formatWeekRangeLabel');
+  });
+
   it('confirms withdrawal via AlertDialog, never a bare RN Modal (GOLDEN-FIX #1)', () => {
     expect(screenSource).toContain('AlertDialog');
     expect(screenSource).not.toMatch(/<Modal\b/);
@@ -78,7 +86,7 @@ describe('SchedulePendingScreen', () => {
     // BOTH the existing view-shifts action AND a new "change the week"
     // action, not a replacement of one by the other.
     const acceptedBranchMatch = screenSource.match(
-      /pattern\.status === 'accepted'[\s\S]{0,900}?\) : null}/
+      /pattern\.status === 'accepted'[\s\S]{0,1400}?\) : null}/
     );
     expect(acceptedBranchMatch).not.toBeNull();
     const acceptedBranch = acceptedBranchMatch?.[0] ?? '';

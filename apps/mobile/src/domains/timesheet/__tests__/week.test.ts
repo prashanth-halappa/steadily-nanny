@@ -8,6 +8,7 @@
 import { describe, expect, it } from 'bun:test';
 import {
   addWeeks,
+  formatDisplayDate,
   formatWeekRangeLabel,
   getWeekDates,
   getWeekStartISO,
@@ -76,6 +77,16 @@ describe('getWeekDates', () => {
       '2026-08-01',
       '2026-08-02',
     ]);
+  });
+});
+
+describe('formatDisplayDate', () => {
+  it('formats YYYY-MM-DD as "D MMM"', () => {
+    expect(formatDisplayDate('2026-07-30')).toBe('30 Jul');
+  });
+
+  it('strips leading zero from single-digit days', () => {
+    expect(formatDisplayDate('2026-08-03')).toBe('3 Aug');
   });
 });
 

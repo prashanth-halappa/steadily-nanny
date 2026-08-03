@@ -60,7 +60,9 @@
     "viewShifts": "Ver los turnos de esta semana",
     "changeWeek": "Cambiar la semana",
     "previewHoursTotal": "{{hours}} horas a la semana",
-    "declineReasonLabel": "Por qué lo rechazó"
+    "declineReasonLabel": "Por qué lo rechazó",
+    "subjectLine": "Semana del {{range}} · {{status}}",
+    "acceptedMeansShifts": "Tu semana está aceptada. Los turnos individuales pueden seguir apareciendo como Pendientes en el calendario hasta que cada uno se confirme."
   },
   "respond": {
     "screenTitle": "Revisa tu semana",
@@ -158,10 +160,6 @@
     "header": "Ritmo de dos semanas entre tus familias",
     "thisFamily": "Esta familia",
     "otherFamily": "Otra familia"
-  },
-  "coverageLanes": {
-    "allChildren": "Todos los niños",
-    "childFallback": "Niño"
   },
   "changeRequestKind": {
     "time_change": "Cambio de horario",

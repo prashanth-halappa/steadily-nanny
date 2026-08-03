@@ -52,7 +52,7 @@ export function ScheduleShiftsScreen({
   const _children = useChildren(activeHousehold.householdId);
   const [calendarView, setCalendarView] = useCalendarViewPreference();
   // The week boundary is a HOUSEHOLD-timezone question, never the device's —
-  // same fallback chain as the WeekRibbon/CoverageLanes views below, and
+  // same fallback chain as the WeekRibbon / agenda views below, and
   // 'UTC' only for the brief window before either has loaded (the loading
   // branch returns before `showContent` can be true).
   const { from, to } = currentWeekRange(

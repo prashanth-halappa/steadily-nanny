@@ -56,6 +56,27 @@ describe('ScheduleRespondScreen source', () => {
     expect(source).not.toContain('outsideHoursNote');
   });
 
+  it('orders days via getWeekdayOrder from the reader profile (matches parent preview)', () => {
+    expect(source).toContain('getWeekdayOrder');
+    expect(source).toContain('useUserProfile');
+    expect(source).toContain('week_starts_on');
+    expect(source).not.toContain('[1, 2, 3, 4, 5, 6, 0]');
+  });
+
+  it('pins total hours + Accept/Decline in a footer outside the day ScrollView', () => {
+    expect(source).toContain('schedule-respond-footer');
+    expect(source).toContain('schedule-respond-scroll');
+    const footerIdx = source.indexOf('schedule-respond-footer');
+    const scrollCloseApprox = source.lastIndexOf('</ScrollView>');
+    expect(footerIdx).toBeGreaterThan(scrollCloseApprox);
+    expect(source.indexOf('schedule-respond-total-hours')).toBeGreaterThan(
+      footerIdx
+    );
+    expect(source.indexOf('schedule-respond-accept')).toBeGreaterThan(
+      footerIdx
+    );
+  });
+
   it('wires the total-hours summary testID', () => {
     expect(source).toContain('testID="schedule-respond-total-hours"');
   });

@@ -60,7 +60,9 @@
     "viewShifts": "View this week's shifts",
     "changeWeek": "Change the week",
     "previewHoursTotal": "{{hours}} hours a week",
-    "declineReasonLabel": "Why they declined"
+    "declineReasonLabel": "Why they declined",
+    "subjectLine": "Week of {{range}} · {{status}}",
+    "acceptedMeansShifts": "Your week is accepted. Individual shifts may still show as Pending on the calendar until each one is confirmed."
   },
   "respond": {
     "screenTitle": "Review your week",
@@ -158,10 +160,6 @@
     "header": "Two-week rhythm across your families",
     "thisFamily": "This family",
     "otherFamily": "Other family"
-  },
-  "coverageLanes": {
-    "allChildren": "All children",
-    "childFallback": "Child"
   },
   "changeRequestKind": {
     "time_change": "Time change",
