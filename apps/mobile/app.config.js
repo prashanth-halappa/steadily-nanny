@@ -1,11 +1,24 @@
-import type { ExpoConfig } from 'expo/config';
+// @ts-check
 // Import the JSON directly (not the .ts wrapper): `expo config` evaluates this
 // file in Node and does NOT transpile imported TypeScript, but it CAN require JSON.
-import appIdentity from './src/config/appIdentity.json';
+const appIdentity = require('./src/config/appIdentity.json');
 
 /**
  * Expo app config (replaces app.json). Reads the static `appIdentity` object so
  * branding lives in one typed place.
+ *
+ * WHY .js AND NOT .ts — do NOT convert this back. Expo evaluates a dynamic
+ * config through `@expo/require-utils`, which needs the TypeScript 5 compiler
+ * API (`ts.ModuleKind`, `ts.transpileModule`). This repo runs TypeScript 7
+ * (root package.json, commit 9ee7e09 "Upgrade to TypeScript 7 for faster
+ * typechecks"), whose main export is `lib/version.cjs` and exposes only
+ * `{ version, versionMajorMinor }` — so `ts.ModuleKind` is undefined and every
+ * `expo config` / `expo prebuild` / `expo run:*` dies with
+ * "Cannot read properties of undefined (reading 'CommonJS')".
+ * Plain JS needs no transpile step, so the toolchain works at any TS version.
+ * Type safety is preserved by `// @ts-check` + the JSDoc annotation below;
+ * `tsconfig.json` lists this file in `include` so `tsc --noEmit` still checks it
+ * (`allowJs` comes from expo/tsconfig.base).
  *
  * Hardening below is load-bearing — do NOT relax without understanding why:
  *  - ios.supportsTablet: false        → App Store 2.1(a): avoids an iPad-only paywall/layout crash surface
@@ -17,8 +30,10 @@ import appIdentity from './src/config/appIdentity.json';
  *
  * SETUP: the `extra.eas.projectId` and `updates.url` are OBVIOUS placeholders.
  * Replace them (and everything in appIdentity) before building.
+ *
+ * @type {import('expo/config').ExpoConfig}
  */
-const config: ExpoConfig = {
+const config = {
   name: appIdentity.name,
   slug: appIdentity.slug,
   version: appIdentity.version,
@@ -125,8 +140,25 @@ const config: ExpoConfig = {
       },
     ],
     'expo-image',
+    // Device calendar sync (EventKit / Android Calendar Provider). Full
+    // calendar access is required so the sync can read events back to
+    // update/delete by the Steadily marker — write-only is not enough.
+    // `remindersPermission: false` keeps the plugin from declaring the
+    // NSReminders* purpose strings: this app never touches EventKit
+    // Reminders, and shipping an unused permission is an App Store review
+    // risk. After `expo prebuild --clean`, confirm Info.plist carries
+    // NSCalendarsFullAccessUsageDescription and NO NSReminders* keys.
+    // Native module: not OTA-updatable.
+    [
+      'expo-calendar',
+      {
+        calendarPermission:
+          'Steadily adds your childcare shifts to your calendar.',
+        remindersPermission: false,
+      },
+    ],
     // Native date/time picker used by the schedule day editor. `expo install`
-    // could not add this automatically because this config is dynamic (.ts);
+    // could not add this automatically because this config is dynamic (.js);
     // it must be listed here or the native module is missing at runtime.
     '@react-native-community/datetimepicker',
     [
@@ -158,4 +190,4 @@ const config: ExpoConfig = {
   },
 };
 
-export default config;
+module.exports = config;

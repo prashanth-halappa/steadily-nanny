@@ -30,7 +30,25 @@
     "weekStartsLabel": "La semana empieza el",
     "weekStartsHint": "Solo reordena los selectores de días. Los horarios compartidos y Horas siguen empezando el lunes.",
     "saveButton": "Guardar",
-    "savedToast": "Ajustes de hora guardados"
+    "savedToast": "Ajustes de hora guardados",
+    "calendarSync": {
+      "toggleLabel": "Añadir mis turnos a mi calendario",
+      "toggleHint": "Tus turnos aparecen en el calendario que ya usas. Steadily es la fuente de verdad: los cambios que hagas en tu app de calendario se sobrescribirán en la próxima sincronización.",
+      "pickerTitle": "Elige un calendario",
+      "chosenCalendar": "{{label}}",
+      "chooseCalendar": "Elige un calendario",
+      "emptyTitle": "No se encontró un calendario de Google o Outlook en este dispositivo",
+      "emptyBody": "Añade la cuenta en Ajustes → Calendario → Cuentas y vuelve aquí. Tener instalada la app de Google Calendar no basta: iOS también necesita la cuenta.",
+      "useLocalAnyway": "Usar el calendario \"En mi iPhone\" / local de todos modos",
+      "cancel": "Cancelar",
+      "permissionDeniedHint": "El acceso al calendario está desactivado. Actívalo en Ajustes de iOS → Steadily.",
+      "openSystemSettings": "Abrir Ajustes",
+      "disconnectTitle": "¿Quitar tus turnos de Steadily de {{label}}?",
+      "disconnectBody": "Esto elimina los eventos de Steadily de ese calendario. Tus otros eventos no se modifican.",
+      "disconnectConfirm": "Quitar",
+      "disconnectCancel": "Seguir sincronizando",
+      "successToast": "Tus turnos están en {{label}}. Los cambios se sincronizarán automáticamente."
+    }
   },
   "notificationsSoftAsk": {
     "title": "Mantente al día",

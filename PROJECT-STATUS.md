@@ -68,7 +68,7 @@ One-line summary of each flow/view:
 | Notifications | No push/email/SMS delivery yet — events written to a `notification_outbox` table and shown in-app only |
 | Locale | en-GB, 24-hour clock, dates as `Mon 4 Aug`, Monday-first week |
 | Time | UTC `timestamptz` is the only source of truth; per-user and per-household IANA timezones layered on top for display |
-| Calendar sync | Google/Apple Calendar sync not built, but the schema is designed to support it later |
+| Calendar sync | Device write via `expo-calendar` shipped (Settings → Time & calendar). Server-side OAuth / seam tables (`016_calendar_seams`) stay dormant |
 
 ## 3. Status board
 
@@ -756,14 +756,14 @@ instructive thing to come out of the whole sweep:
   for mobile, Resend for email — `RESEND_API_KEY`/`RESEND_WEBHOOK_SECRET` are
   already in the API env schema, just unset) that drains the outbox and
   respects the per-person channel/quiet-hours settings from flow 1k.
-- **Google Calendar sync** — not built. To turn on: a GCP OAuth client (see
-  §6), a sync job per connected calendar, and a schema decision on how
-  synced external events interact with `notification_outbox` and coverage
-  gap detection — the current schema is shaped to allow this but nothing
-  reads/writes to Google yet.
-- **Apple Calendar (EventKit) sync** — not built. To turn on: native
-  EventKit entitlement + permission flow on iOS, plus the same sync-job
-  pattern as Google Calendar.
+- **Server-side Google/Apple Calendar OAuth** — not built. Device-local
+  one-way write via `expo-calendar` *is* shipped (Settings → Time & calendar;
+  marker-in-notes diff; no `calendar_event_links` rows). Seam tables in
+  `016_calendar_seams` (`calendar_accounts`, `calendar_event_links`,
+  `external_busy_blocks`) stay dormant on purpose: device EventKit ids are
+  per-device and must not be shared as a server mapping. To turn on
+  server-side sync later: a GCP OAuth client (see §6), a sync job per
+  connected calendar, and a schema decision on busy-import vs coverage gaps.
 - **AI/voice notes** — no AI features exist. `GOOGLE_VERTEX_PROJECT` is set
   to a placeholder purely to satisfy the API's boot-time fail-fast check. To
   turn on: a real GCP project with Vertex AI enabled, ADC credentials, and

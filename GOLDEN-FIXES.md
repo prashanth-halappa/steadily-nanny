@@ -122,6 +122,12 @@ Format: **Symptom → Root cause → Where the fix lives in this repo → What n
 - **Where the fix lives:** this is a provisioning-process fix, not a code fix — see `PROVISIONING.md` §3, step 2: register **both** your build keystore's SHA-1 and the Play Console App Signing SHA-1 against the Android OAuth client.
 - **What not to do:** don't register only the SHA-1 from your local/EAS keystore and assume it covers production Play Store installs.
 
+**23. EventKit cannot see the Google Calendar *app* — only accounts in iOS Settings**
+- **Symptom:** an iPhone user enables "Add my shifts to my calendar", picks what looks like a calendar, and events never appear in the Google Calendar app they actually use. Or the picker only offers "On My iPhone" and they think the feature is broken.
+- **Root cause:** `expo-calendar` on iOS goes through EventKit, which only lists accounts configured under **Settings → Calendar → Accounts**. Installing the Google Calendar app alone does not add a Google source to EventKit. Events written to a local calendar stay on-device and never sync to Google.
+- **Where the fix lives:** `CalendarPickerSheet` groups calendars by `source.name`, shows an honest empty state when no non-local writable calendar exists, and offers "Use On My iPhone / local anyway" only as a secondary action. Permission string + plugin live in `apps/mobile/app.config.ts` (`expo-calendar`). Sync is device-local marker-in-notes (`[steadily:<ical_uid>]`) — see `apps/mobile/src/domains/schedule/utils/calendarSync.ts`. Native module requires a new EAS build (not OTA).
+- **What not to do:** don't silently default to a local calendar and call that success. Don't write device event ids into `calendar_event_links` (per-device ids; seam tables stay dormant for a future server OAuth path).
+
 ---
 
 ## Documented-only (v1 slim) — not shipped in this template

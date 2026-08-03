@@ -30,7 +30,25 @@
     "weekStartsLabel": "Week starts on",
     "weekStartsHint": "Reorders day selectors only. Shared schedules and Hours weeks still start on Monday.",
     "saveButton": "Save",
-    "savedToast": "Time settings saved"
+    "savedToast": "Time settings saved",
+    "calendarSync": {
+      "toggleLabel": "Add my shifts to my calendar",
+      "toggleHint": "Your shifts show up in the calendar you already use. Steadily is the source of truth — edits made in your calendar app will be overwritten on the next sync.",
+      "pickerTitle": "Choose a calendar",
+      "chosenCalendar": "{{label}}",
+      "chooseCalendar": "Choose a calendar",
+      "emptyTitle": "No Google or Outlook calendar found on this device",
+      "emptyBody": "Add the account in Settings → Calendar → Accounts, then come back here. Having the Google Calendar app installed on its own isn't enough — iOS needs the account too.",
+      "useLocalAnyway": "Use \"On My iPhone\" / local calendar anyway",
+      "cancel": "Cancel",
+      "permissionDeniedHint": "Calendar access is off. Turn it on in iOS Settings → Steadily.",
+      "openSystemSettings": "Open Settings",
+      "disconnectTitle": "Remove your Steadily shifts from {{label}}?",
+      "disconnectBody": "This deletes Steadily events from that calendar. Your other events are untouched.",
+      "disconnectConfirm": "Remove",
+      "disconnectCancel": "Keep syncing",
+      "successToast": "Your shifts are in {{label}}. Changes will sync automatically."
+    }
   },
   "notificationsSoftAsk": {
     "title": "Stay in the loop",

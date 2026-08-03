@@ -161,6 +161,10 @@
     "coverage_lanes": "Coverage",
     "cross_family": "Rhythm"
   },
+  "calendarSync": {
+    "childcare": "Childcare",
+    "pendingConfirmation": "Pending confirmation"
+  },
   "period": {
     "morning": "AM",
     "afternoon": "PM",

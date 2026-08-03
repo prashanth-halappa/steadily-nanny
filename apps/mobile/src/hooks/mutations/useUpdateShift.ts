@@ -7,6 +7,7 @@ import {
   shiftApi,
 } from '@/src/api/endpoints/shifts';
 import { queryKeys } from '@/src/api/queryKeys';
+import { requestCalendarSync } from '@/src/domains/schedule/hooks/useCalendarSync';
 import { getLocalizedErrorMessage } from '@/src/lib/errorLocalization';
 import { showErrorToast } from '@/src/lib/toast';
 
@@ -25,6 +26,9 @@ export function useUpdateShift() {
       queryClient.invalidateQueries({
         queryKey: queryKeys.shift.detail(vars.shiftId),
       });
+    },
+    onSettled: () => {
+      requestCalendarSync();
     },
     onError: error => {
       showErrorToast(getLocalizedErrorMessage(error, t));
