@@ -1371,7 +1371,8 @@ through a network error at all.
 It is reachable exactly one way now — a genuine `not-onboarded` verdict routes to
 `/onboarding/role` **and** sets the latch, then a corrected `'onboarded'` status
 arrives and the effect early-returns, stranding the user in the wizard. That is
-the scenario with the red phase:
+the scenario with the red phase (Index-side latch fixed in D50; the
+**post-navigate** half is D51):
 
 ```
 - "/(private)/(tabs)/home"
@@ -1416,3 +1417,26 @@ correct idiom; `bun:test` types the matcher as returning `void`, so TypeScript
 reports the `await` as inert. The assertions do run. Recorded so nobody
 re-investigates it — or, worse, "fixes" it by removing the await, which would
 make them pass vacuously for real.
+
+---
+
+## D51 — Onboarding screens never bounced an already-onboarded user home
+
+**Status:** FIXED — verified on device · **Severity:** high — traps a real user
+in the signup wizard after a transient bad routing decision
+
+D50 fixed Index so a *failed* memberships query no longer looks like
+`not-onboarded`, and so a corrected status can re-route **while Index is still
+mounted**. It left a hole: once Index has already `replace`d into
+`/onboarding/role` (cleared query cache on `SIGNED_IN`, token 401 blip, etc.),
+Index unmounts. `RoleScreen` never reads `useIsOnboarded`, so a later successful
+memberships fetch leaves the nanny staring at "Who are you?" forever even though
+`GET /users/me/memberships` is 200 with two active rows.
+
+**Fix:** `app/onboarding/_layout.tsx` watches `useIsOnboarded` and
+`replace`s to `/(private)/(tabs)/home` only when `status === 'onboarded'`.
+Loading / `not-onboarded` / `membershipsError` stay put — unknown still fails
+toward WAIT. Covered by `app/__tests__/onboarding-layout.behavior.test.tsx`.
+
+**Device verification (2026-08-02):** deep-link an already-signed-in nanny into
+`steadilynanny://onboarding/role` → layout bounces to Today.
