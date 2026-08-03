@@ -66,6 +66,14 @@ describe('ShiftDetailScreen source', () => {
     expect(source).toContain('detail.awaitingCoParent');
   });
 
+  it('names who raised (and who responded to) each change request', () => {
+    expect(source).toContain('useHouseholdMembers');
+    expect(source).toContain('resolveMemberDisplayName');
+    expect(source).toContain('detail.raisedBy');
+    expect(source).toContain('detail.respondedBy');
+    expect(source).toContain('shift-change-raised-by-');
+  });
+
   it('formats the subtitle with formatDisplayDate — never raw YYYY-MM-DD', () => {
     expect(source).toContain('formatDisplayDate');
     expect(source).toContain('shift-detail-subtitle');

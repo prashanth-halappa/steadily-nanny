@@ -8,23 +8,14 @@
  * against the authenticated caller), so the picker needs `user_id`, not a
  * membership row id.
  *
- * Deliberately NOT added to `src/api/endpoints/household.ts` or
- * `src/api/queryKeys.ts` — both are owned by another agent building the
- * household domain concurrently. This hook calls the already-shipped
- * `GET /v1/households/:householdId/members` route directly and validates the
- * response with the shared `HouseholdMemberListResponseSchema`, so the wire
- * shape still has a single source of truth even though the fetch path is
- * local to this domain. TODO: once `household.ts` grows a
- * `householdApi.listMembers`, replace this with that plus a real
- * `queryKeys.household.members(householdId)` key.
+ * Delegates the fetch to `householdApi.listMembers` / central query keys so
+ * other screens (e.g. shift detail actor labels) share one cache.
  */
-import {
-  type HouseholdMember,
-  HouseholdMemberListResponseSchema,
-} from '@steadily-nanny/shared-types/schemas/household.schema';
+import type { HouseholdMember } from '@steadily-nanny/shared-types/schemas/household.schema';
 import { useQuery } from '@tanstack/react-query';
-import { apiClient } from '@/src/api/client';
-import { QUERY_TIMING } from '@/src/hooks/queries/utils';
+import { householdApi } from '@/src/api/endpoints/household';
+import { queryKeys } from '@/src/api/queryKeys';
+import { isValidId, QUERY_TIMING } from '@/src/hooks/queries/utils';
 import { useAuthStore } from '@/src/store/auth';
 
 const CARER_ROLES = ['nanny', 'helper'] as const;
@@ -38,21 +29,11 @@ export function useHouseholdCarers(householdId: string | null | undefined) {
   const isInitialized = useAuthStore(s => s.isInitialized);
 
   return useQuery({
-    // Locally-scoped key (not in the central factory — see module doc).
-    queryKey: ['schedulePattern', 'householdCarers', householdId] as const,
-    queryFn: async (): Promise<HouseholdMember[]> => {
-      const response = await apiClient.get(
-        `/v1/households/${householdId}/members`
-      );
-      const parsed = HouseholdMemberListResponseSchema.safeParse(
-        response.data.data
-      );
-      if (!parsed.success) throw parsed.error;
-      return parsed.data.household_members.filter(member =>
-        isCarerRole(member.role)
-      );
-    },
+    queryKey: queryKeys.household.members(householdId ?? undefined),
+    queryFn: () => householdApi.listMembers(householdId as string),
+    select: (members: HouseholdMember[]) =>
+      members.filter(member => isCarerRole(member.role)),
     staleTime: QUERY_TIMING.STALE_5M,
-    enabled: !!session && isInitialized && !!householdId,
+    enabled: !!session && isInitialized && isValidId(householdId),
   });
 }

@@ -5,7 +5,7 @@ import { type Href, router } from 'expo-router';
 import { ChevronRight, ExternalLink } from 'lucide-react-native';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ScrollView, View } from 'react-native';
+import { Linking, ScrollView, View } from 'react-native';
 import { AnimatedPressable } from '@/lib/animations';
 import { SCREEN_CONTENT_STYLE, spacing } from '@/lib/design-tokens';
 import { Icon } from '@/lib/icons/iconWithClassName';
@@ -35,6 +35,7 @@ import { SUPPORTED_LANGUAGES } from '@/src/i18n/constants';
 import { useLanguageStore } from '@/src/i18n/languageStore';
 import { useAuthStore } from '@/src/store/auth';
 import { openExternalUrl } from '@/src/utils/openExternalUrl';
+import { useElevation } from '~/lib/design-tokens/elevation';
 
 // SETUP: point these at your real hosted legal pages.
 const PRIVACY_URL = `https://${appIdentity.associatedDomain}/privacy`;
@@ -49,16 +50,18 @@ function SettingsNavRow({
   label: string;
   onPress: () => void;
 }) {
+  const elevation = useElevation();
   return (
-    <AnimatedPressable
-      testID={testID}
-      onPress={onPress}
-      style={{
-        minHeight: spacing.minTouchTarget,
-        justifyContent: 'center',
-      }}
-    >
-      <View className="flex-row items-center justify-between gap-3">
+    <AnimatedPressable testID={testID} onPress={onPress}>
+      <View
+        className="flex-row items-center justify-between gap-3 rounded-row bg-card px-4"
+        style={[
+          {
+            minHeight: spacing.minTouchTarget,
+          },
+          elevation.row,
+        ]}
+      >
         <Body className="flex-1 text-primary">{label}</Body>
         <Icon icon={ChevronRight} size={20} className="text-muted-foreground" />
       </View>
@@ -75,16 +78,18 @@ function SettingsExternalRow({
   label: string;
   onPress: () => void;
 }) {
+  const elevation = useElevation();
   return (
-    <AnimatedPressable
-      testID={testID}
-      onPress={onPress}
-      style={{
-        minHeight: spacing.minTouchTarget,
-        justifyContent: 'center',
-      }}
-    >
-      <View className="flex-row items-center justify-between gap-3">
+    <AnimatedPressable testID={testID} onPress={onPress}>
+      <View
+        className="flex-row items-center justify-between gap-3 rounded-row bg-card px-4"
+        style={[
+          {
+            minHeight: spacing.minTouchTarget,
+          },
+          elevation.row,
+        ]}
+      >
         <Body className="flex-1 text-primary">{label}</Body>
         <Icon icon={ExternalLink} size={18} className="text-muted-foreground" />
       </View>
@@ -155,11 +160,23 @@ export default function SettingsScreen() {
         </View>
       ) : null}
 
-      <View className="mt-6 gap-3" testID="settings-account-section">
+      {/* Account before Language — the finding called out Language outranking
+          Account. Time + OS notifications live here; identity sits above. */}
+      <View className="mt-8 gap-3" testID="settings-account-section">
         <H4>{t('settings:account')}</H4>
+        <SettingsNavRow
+          testID="settings-time"
+          label={t('settings:time.menuLabel')}
+          onPress={() => router.push('/settings/time' as Href)}
+        />
+        <SettingsExternalRow
+          testID="settings-notifications"
+          label={t('settings:notifications')}
+          onPress={() => void Linking.openSettings()}
+        />
       </View>
 
-      <View className="mt-6 gap-3">
+      <View className="mt-8 gap-3" testID="settings-language-section">
         <H4>{t('settings:language')}</H4>
         <View className="flex-row flex-wrap gap-2">
           {SUPPORTED_LANGUAGES.map(lang => (
@@ -185,15 +202,6 @@ export default function SettingsScreen() {
             </AnimatedPressable>
           ))}
         </View>
-      </View>
-
-      <View className="mt-8 gap-3" testID="settings-time-section">
-        <H4>{t('settings:account')}</H4>
-        <SettingsNavRow
-          testID="settings-time"
-          label={t('settings:time.menuLabel')}
-          onPress={() => router.push('/settings/time' as Href)}
-        />
       </View>
 
       {onboarding.role === SETUP_ROLES.PARENT ||
@@ -239,7 +247,7 @@ export default function SettingsScreen() {
         </View>
       ) : null}
 
-      <View className="mt-8 gap-3">
+      <View className="mt-8 gap-3" testID="settings-legal-section">
         <H4>{t('settings:legal')}</H4>
         <SettingsExternalRow
           testID="settings-privacy"

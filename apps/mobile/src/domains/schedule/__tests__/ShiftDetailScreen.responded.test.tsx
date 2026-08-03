@@ -120,6 +120,26 @@ beforeAll(async () => {
       isLoading: false,
     }),
   }));
+  mock.module('@/src/hooks/queries/useHouseholdMembers', () => ({
+    useHouseholdMembers: () => ({
+      data: [
+        {
+          id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          household_id: HOUSEHOLD_ID,
+          user_id: '66666666-6666-4666-8666-666666666666',
+          role: 'parent',
+          can_edit: true,
+          status: 'active',
+          display_name_override: 'Alex',
+          colour: null,
+          joined_at: '2026-01-01T00:00:00.000Z',
+          created_at: '2026-01-01T00:00:00.000Z',
+          updated_at: '2026-01-01T00:00:00.000Z',
+        },
+      ],
+      isLoading: false,
+    }),
+  }));
   mock.module('@/src/hooks/mutations/useUpdateShift', () => ({
     useUpdateShift: mockUseUpdateShift,
   }));
@@ -155,6 +175,8 @@ describe('ShiftDetailScreen change requests (responded)', () => {
         makeChangeRequest({
           id: DECLINED_ID,
           status: 'declined',
+          requested_by: '66666666-6666-4666-8666-666666666666',
+          responded_by: '66666666-6666-4666-8666-666666666666',
           message: 'Please cancel',
           response_message: 'Sorry, cannot do that',
         }),
@@ -167,6 +189,10 @@ describe('ShiftDetailScreen change requests (responded)', () => {
     expect(getByTestId('shift-detail-changes')).toBeTruthy();
     expect(getByTestId(`shift-change-message-${DECLINED_ID}`)).toBeTruthy();
     expect(getByTestId(`shift-change-response-${DECLINED_ID}`)).toBeTruthy();
+    expect(getByTestId(`shift-change-raised-by-${DECLINED_ID}`)).toBeTruthy();
+    expect(
+      getByTestId(`shift-change-responded-by-${DECLINED_ID}`)
+    ).toBeTruthy();
     expect(queryByTestId(`shift-change-accept-${DECLINED_ID}`)).toBeNull();
     expect(queryByTestId(`shift-change-decline-${DECLINED_ID}`)).toBeNull();
   });

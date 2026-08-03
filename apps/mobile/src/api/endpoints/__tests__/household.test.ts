@@ -157,6 +157,29 @@ describe('householdApi.update', () => {
   });
 });
 
+describe('householdApi.listMembers', () => {
+  it('GETs /v1/households/:id/members and returns validated rows', async () => {
+    apiClient.get.mockResolvedValue({
+      data: { data: { household_members: [validMembership] } },
+    });
+
+    const result = await householdApi.listMembers(validHousehold.id);
+
+    expect(apiClient.get).toHaveBeenCalledWith(
+      `/v1/households/${validHousehold.id}/members`
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0].user_id).toBe(validMembership.user_id);
+  });
+
+  it('throws when the response fails validation', async () => {
+    apiClient.get.mockResolvedValue({
+      data: { data: { household_members: 'x' } },
+    });
+    await expect(householdApi.listMembers(validHousehold.id)).rejects.toThrow();
+  });
+});
+
 describe('householdApi.createInvite', () => {
   it('POSTs to /v1/households/:id/invites and returns the invite', async () => {
     apiClient.post.mockResolvedValue({

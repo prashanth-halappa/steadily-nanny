@@ -34,11 +34,13 @@ import {
   shiftChangeRequestKindLabelKey,
   shiftChangeRequestStatusLabelKey,
 } from '@/src/domains/schedule/constants/changeRequestKinds';
+import { resolveMemberDisplayName } from '@/src/domains/schedule/utils/memberDisplayName';
 import { isParentEditorRole, SETUP_ROLES } from '@/src/domains/setup/types';
 import { formatDisplayDate } from '@/src/domains/timesheet/utils/week';
 import { useCreateShiftChangeRequest } from '@/src/hooks/mutations/useCreateShiftChangeRequest';
 import { useRespondToShiftChangeRequest } from '@/src/hooks/mutations/useRespondToShiftChangeRequest';
 import { useUpdateShift } from '@/src/hooks/mutations/useUpdateShift';
+import { useHouseholdMembers } from '@/src/hooks/queries/useHouseholdMembers';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 import { useShift } from '@/src/hooks/queries/useShift';
 import { useShiftChangeRequests } from '@/src/hooks/queries/useShiftChangeRequests';
@@ -50,6 +52,7 @@ import {
   shiftInstantsFromWallClock,
   utcIsoToWallClockHHMM,
 } from '@/src/lib/wallClock';
+import { useAuthStore } from '@/src/store/auth';
 import { useElevation } from '~/lib/design-tokens/elevation';
 
 const KNOWN_EVENT_TYPES = new Set([
@@ -86,8 +89,10 @@ export function ShiftDetailScreen() {
   const shiftId = typeof params.shiftId === 'string' ? params.shiftId : null;
   const onboarding = useIsOnboarded();
   const profile = useUserProfile();
+  const currentUserId = useAuthStore(s => s.session?.user?.id ?? null);
   const shiftQuery = useShift(shiftId);
   const eventsQuery = useShiftEvents(shiftQuery.data?.household_id, shiftId);
+  const membersQuery = useHouseholdMembers(shiftQuery.data?.household_id);
   const updateShift = useUpdateShift();
   const createChange = useCreateShiftChangeRequest();
   const respondChange = useRespondToShiftChangeRequest();
@@ -101,6 +106,22 @@ export function ShiftDetailScreen() {
     Boolean(shift?.timezone) &&
     Boolean(readerTimeZone) &&
     shift?.timezone !== readerTimeZone;
+  const membersByUserId = new Map(
+    (membersQuery.data ?? []).map(member => [member.user_id, member])
+  );
+  const memberLabels = {
+    you: t('detail.you'),
+    someone: t('detail.someone'),
+    roleFallback: (role: 'owner' | 'parent' | 'nanny' | 'helper') =>
+      t(`detail.roleFallback.${role}`),
+  };
+  const nameFor = (userId: string | null | undefined) =>
+    resolveMemberDisplayName(
+      userId,
+      currentUserId,
+      membersByUserId,
+      memberLabels
+    );
   const [startTime, setStartTime] = useState('09:00');
   const [endTime, setEndTime] = useState('17:00');
   const [note, setNote] = useState('');
@@ -331,18 +352,36 @@ export function ShiftDetailScreen() {
                 })}
               </Small>
               <Small
+                testID={`shift-change-raised-by-${req.id}`}
+                className="text-muted-foreground"
+              >
+                {t('detail.raisedBy', { name: nameFor(req.requested_by) })}
+              </Small>
+              <Small
                 testID={`shift-change-created-${req.id}`}
                 className="text-muted-foreground"
                 tabular
               >
                 {formatInstantDisplay(req.created_at, shift.timezone)}
               </Small>
-              {req.status === 'pending' ? (
+              {req.status === 'pending' &&
+              req.requested_by !== null &&
+              req.requested_by === currentUserId ? (
                 <Small
                   testID={`shift-change-awaiting-${req.id}`}
                   className="text-muted-foreground"
                 >
                   {t('detail.awaitingCoParent')}
+                </Small>
+              ) : null}
+              {req.status !== 'pending' && req.responded_by ? (
+                <Small
+                  testID={`shift-change-responded-by-${req.id}`}
+                  className="text-muted-foreground"
+                >
+                  {t('detail.respondedBy', {
+                    name: nameFor(req.responded_by),
+                  })}
                 </Small>
               ) : null}
               {req.message ? (

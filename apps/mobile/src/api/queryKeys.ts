@@ -46,6 +46,8 @@ export const queryKeys = {
     list: () => [...queryKeys.household.all, 'list'] as const,
     detail: (householdId?: string) =>
       [...queryKeys.household.all, 'detail', householdId] as const,
+    members: (householdId?: string) =>
+      [...queryKeys.household.all, 'members', householdId] as const,
     invitePreview: (code?: string) =>
       [...queryKeys.household.all, 'invitePreview', code] as const,
   },

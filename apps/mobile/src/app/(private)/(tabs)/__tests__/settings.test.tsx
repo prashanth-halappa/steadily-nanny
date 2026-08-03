@@ -69,6 +69,21 @@ describe('SettingsScreen', () => {
     expect(screenSource).toContain('settings-terms');
   });
 
+  it('puts Account above Language and wires the Notifications row to OS settings', () => {
+    const accountIdx = screenSource.indexOf('settings-account-section');
+    const languageIdx = screenSource.indexOf('settings-language-section');
+    expect(accountIdx).toBeGreaterThan(-1);
+    expect(languageIdx).toBeGreaterThan(accountIdx);
+    expect(screenSource).toContain('settings-notifications');
+    expect(screenSource).toContain('Linking.openSettings');
+    expect(screenSource).toContain("t('settings:notifications')");
+  });
+
+  it('groups navigable rows with elevation.row surfaces', () => {
+    expect(screenSource).toContain('elevation.row');
+    expect(screenSource).toContain('rounded-row');
+  });
+
   it('persists a language change through useUpdatePreferredLocale, not just locally (D26)', () => {
     expect(screenSource).toContain('useUpdatePreferredLocale');
     expect(screenSource).toContain('setLanguage');

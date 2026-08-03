@@ -122,7 +122,17 @@
     "acceptChange": "Aceptar",
     "declineChange": "Rechazar",
     "shortNoticePaidHint": "Dentro de la ventana de cancelación pagada.",
-    "awaitingCoParent": "Esperando aprobación del otro progenitor"
+    "awaitingCoParent": "Esperando aprobación del otro progenitor",
+    "raisedBy": "Solicitado por {{name}}",
+    "respondedBy": "Respondido por {{name}}",
+    "you": "Tú",
+    "someone": "Alguien",
+    "roleFallback": {
+      "owner": "Un progenitor",
+      "parent": "Un progenitor",
+      "nanny": "Una niñera",
+      "helper": "Un ayudante"
+    }
   },
   "change": {
     "requestedToast": "Cambio solicitado",

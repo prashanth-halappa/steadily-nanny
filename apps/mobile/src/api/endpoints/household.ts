@@ -22,6 +22,7 @@ import {
   HouseholdInviteSchema,
   HouseholdListResponseSchema,
   type HouseholdMember,
+  HouseholdMemberListResponseSchema,
   HouseholdMemberSchema,
   HouseholdSchema,
   RedeemHouseholdInviteSchema,
@@ -37,6 +38,7 @@ export const householdEndpoints = {
   create: '/v1/households',
   getById: (householdId: string) => `/v1/households/${householdId}`,
   update: (householdId: string) => `/v1/households/${householdId}`,
+  listMembers: (householdId: string) => `/v1/households/${householdId}/members`,
   createInvite: (householdId: string) =>
     `/v1/households/${householdId}/invites`,
   redeemInvite: '/v1/households/invites/redeem',
@@ -117,6 +119,18 @@ export const householdApi = {
       .safeParse(response.data.data);
     if (!parsed.success) throw parsed.error;
     return parsed.data.household;
+  },
+
+  /** Active membership rows for a household the caller belongs to. */
+  listMembers: async (householdId: string): Promise<HouseholdMember[]> => {
+    const response = await apiClient.get(
+      householdEndpoints.listMembers(householdId)
+    );
+    const parsed = HouseholdMemberListResponseSchema.safeParse(
+      response.data.data
+    );
+    if (!parsed.success) throw parsed.error;
+    return parsed.data.household_members;
   },
 
   /** Generate an invite code (parents only — enforced server-side). */
