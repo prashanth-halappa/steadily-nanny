@@ -15,6 +15,7 @@
     "lint": "biome check --diagnostic-level=warn .",
     "cleanrun": "bun pm cache rm && bun expo start -c",
     "format": "biome check --write --unsafe . && biome format --write .",
+    "format:check": "biome format .",
     "build": "expo export --platform all",
     "typecheck": "tsc --noEmit",
     "build:dev:ios": "EXPO_USE_PRECOMPILED_MODULES=0 eas build --platform ios --profile development",

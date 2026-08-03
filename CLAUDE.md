@@ -25,8 +25,8 @@ If something you need to know isn't written down in one of these, that's a docum
 | Formatter/Linter | **Biome 2.5.0** — never Prettier or ESLint. `noExplicitAny: error`, `noNonNullAssertion: error`, `useImportType: error` (see `biome.json`). Test files (`*.test.ts(x)`, `__tests__/**`) get relaxed `any`/`!` rules via a Biome override — production code does not. |
 | Test runner | **`bun:test`** — never Jest or Vitest. Import test utilities from `'bun:test'`, not `'@jest/globals'` or `'vitest'`. |
 | Typecheck scope | Both apps' `tsconfig.json` **include test files** in `tsc --noEmit` — unlike some setups that exclude tests from typecheck, a type error in a `*.test.ts` file here fails `bun run typecheck` too. Keep test files type-clean. |
-| Format before commit | `bun run format` (root) runs Biome across the whole repo. |
-| Quality gate | `bun run qc` (root) — must be green before marking any task complete. Runs `test`, `lint`, `format:check`, `typecheck` for both apps in parallel (`scripts/qc.sh`, 8 subshells). |
+| Format before commit | `bun run format` (root) runs Biome across the whole repo. **`bun run qc` will not do this for you** — it verifies formatting and goes red on drift. |
+| Quality gate | `bun run qc` (root) — must be green before marking any task complete. Runs `test`, `lint`, `format:check`, `typecheck` for both apps in parallel (`scripts/qc.sh`, 8 subshells). **Every check is read-only**; a red `Format` row means "run `bun run format`, then re-run". Never put a writing command in `CHECKS` (`docs/DEFECT-LOG.md` D52). |
 
 ## Test-running conventions
 

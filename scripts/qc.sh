@@ -1,5 +1,11 @@
 #!/bin/bash
-# Quality Check script - runs tests, lint, format, and typecheck per-app in parallel
+# Quality Check script - runs tests, lint, format:check, and typecheck per-app in parallel
+#
+# EVERY CHECK HERE MUST BE READ-ONLY. Do not put a writing command (`format`,
+# `biome check --write`, `--fix`) in CHECKS: the gate would rewrite your source
+# while reporting green, and — because the checks run concurrently — it would race
+# the other three reading the same files. Run `bun run format` yourself; this
+# script only ever verifies. See docs/DEFECT-LOG.md D52.
 
 # Colors
 RED='\033[0;31m'
@@ -42,7 +48,7 @@ strip_ansi() {
 }
 
 APPS=("mobile" "api")
-CHECKS=("test" "lint" "format" "typecheck")
+CHECKS=("test" "lint" "format:check" "typecheck")
 
 echo -e "${BLUE}${BOLD}📋 Running QC checks in parallel...${NC}\n"
 
@@ -56,10 +62,12 @@ for app in "${APPS[@]}"; do
     for check in "${CHECKS[@]}"; do
         (
             START=$(get_ms)
-            cd "$ROOT_DIR/apps/$app" && bun run --silent "$check" > "$TMP_DIR/${app}_${check}.out" 2>&1
-            echo $? > "$TMP_DIR/${app}_${check}.exit"
+            # Check names may contain a colon (format:check) — sanitise for filenames.
+            SAFE="${check//:/_}"
+            cd "$ROOT_DIR/apps/$app" && bun run --silent "$check" > "$TMP_DIR/${app}_${SAFE}.out" 2>&1
+            echo $? > "$TMP_DIR/${app}_${SAFE}.exit"
             END=$(get_ms)
-            echo $((END - START)) > "$TMP_DIR/${app}_${check}.time"
+            echo $((END - START)) > "$TMP_DIR/${app}_${SAFE}.time"
         ) &
     done
 done
@@ -87,9 +95,10 @@ for i in "${!APPS[@]}"; do
     echo -e "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
     for check in "${CHECKS[@]}"; do
-        OUT="$TMP_DIR/${app}_${check}.out"
-        EXIT_CODE=$(cat "$TMP_DIR/${app}_${check}.exit")
-        TIME_MS=$(cat "$TMP_DIR/${app}_${check}.time")
+        SAFE="${check//:/_}"
+        OUT="$TMP_DIR/${app}_${SAFE}.out"
+        EXIT_CODE=$(cat "$TMP_DIR/${app}_${SAFE}.exit")
+        TIME_MS=$(cat "$TMP_DIR/${app}_${SAFE}.time")
         OUTPUT=$(cat "$OUT")
         CLEAN=$(echo "$OUTPUT" | strip_ansi)
 
@@ -113,13 +122,16 @@ for i in "${!APPS[@]}"; do
                 [ "$WARNINGS" -gt 0 ] && METRIC="${METRIC}, ${WARNINGS} warnings"
                 LABEL_STR="Lint      "
                 ;;
-            format)
-                FILES=$(echo "$CLEAN" | grep -oE 'Formatted [0-9]+ files' | grep -oE '[0-9]+' | awk '{sum += $1} END {print sum+0}')
-                FIXED=$(echo "$CLEAN" | grep -oE 'Fixed [0-9]+ files?' | grep -oE '[0-9]+' | awk '{sum += $1} END {print sum+0}')
+            format:check)
+                # `biome format .` (read-only) prints "Checked N files in Xms. No
+                # fixes applied." and, on drift, "Found N errors." — it never prints
+                # "Formatted"/"Fixed", which only the --write variant emits.
+                FILES=$(echo "$CLEAN" | grep -oE 'Checked [0-9]+ files' | grep -oE '[0-9]+' | awk '{sum += $1} END {print sum+0}')
+                ERRORS=$(echo "$CLEAN" | grep -oE 'Found [0-9]+ errors?' | grep -oE '[0-9]+' | awk '{sum += $1} END {print sum+0}')
                 [ -z "$FILES" ] && FILES="0"
-                [ -z "$FIXED" ] && FIXED="0"
-                if [ "$FIXED" -gt 0 ]; then
-                    METRIC="${FILES} files · ${FIXED} reformatted"
+                [ -z "$ERRORS" ] && ERRORS="0"
+                if [ "$ERRORS" -gt 0 ]; then
+                    METRIC="${FILES} files · ${ERRORS} unformatted"
                 else
                     METRIC="${FILES} files"
                 fi
@@ -146,6 +158,15 @@ for i in "${!APPS[@]}"; do
                 echo "$OUTPUT" | sed 's/^/  /'
                 echo -e "  ${DIM}─────────────────────────────────────────────────${NC}"
             fi
+            # This gate verifies but never writes, so name the command that fixes it.
+            case "$check" in
+                format:check)
+                    echo -e "  ${YELLOW}→ Fix: run ${BOLD}bun run format${NC}${YELLOW} from the repo root, then re-run qc.${NC}"
+                    ;;
+                lint)
+                    echo -e "  ${YELLOW}→ Fix: ${BOLD}bun run format${NC}${YELLOW} applies Biome's safe + unsafe fixes; fix what remains by hand.${NC}"
+                    ;;
+            esac
         fi
     done
 

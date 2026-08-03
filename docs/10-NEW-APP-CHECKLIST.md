@@ -95,7 +95,7 @@ This is the loop you'll repeat for every feature. Build it **test-first** (doc 0
 
 ## Phase 6 — Lock it in
 
-1. `bun run qc` (tests + lint + format + typecheck) — **must pass** before marking done. doc 09.
+1. `bun run qc` (tests + lint + `format:check` + typecheck) — **must pass** before marking done. Read-only: run `bun run format` yourself first. doc 09.
 2. CI green on push (doc 02).
 3. (Mobile) `eas build` a development client to confirm native config; (optional) a Maestro smoke test (doc 09).
 

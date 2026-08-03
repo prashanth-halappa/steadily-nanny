@@ -389,7 +389,18 @@ mobile callers. Ranked by what a user cannot do, because "no caller for `PATCH
 
 ## D20 — Break minutes are always zero, so hours are overstated
 
+**Status: FIXED** (shipped in `538a4f8`) — clock-out now goes through
+`ClockOutSheet` (`domains/today/components/ClockOutSheet.tsx`), which collects
+unpaid break minutes (quick chips + custom entry) and an optional note, and
+submits them at `:117`. `ClockInCard.tsx:113-118` forwards both to
+`clockOut.mutateAsync`, omitting each when empty; `useClockOut.ts:44-45` splits
+`entryId` from the body; `timeEntries.ts:75-85` validates against
+`ClockOutSchema` (`packages/shared-types/src/schemas/timesheet.schema.ts:93-96`)
+before POSTing. The sheet also renders a live worked-total summary
+(`ClockOutSheet.tsx:182-205`), so the nanny sees the number being written.
+
 **Severity: high — corrupts the number people are paid on.**
+*(Original analysis, describing the pre-fix behaviour, preserved below.)*
 `ClockInCard` calls `clockOut.mutateAsync({ entryId })` with no input, through
 the app's *only* clock-out call site. So `break_minutes` is permanently 0 and
 `note` permanently null, while `computeWorkedMinutes` faithfully subtracts the
@@ -457,6 +468,14 @@ Household/date day thread is a separate route:
 
 ## D25 — A parent builds a schedule blind to availability
 
+**Status: FIXED.** `ScheduleBuildScreen.tsx:133` calls
+`useAvailabilityForCarer(selectedCarerId)` (`hooks/queries/useAvailabilityForCarer.ts:15`
+→ `GET /availability/:userId`) and renders a per-day conflict pill at `:463-483`
+(`StatusPill variant="outside-hours"`, `schedule-build-outside-hours-${day}`).
+Loading deliberately does not warn. The sibling `/availability/:carerId/busy`
+route is also no longer orphaned — it backs the time-off conflict check (D30),
+not the builder. See D31 for the string-comparison bug this check shipped with.
+
 **Severity: medium.** `GET /availability/:userId` and `/availability/:carerId/busy`
 are both orphaned. The only availability consumer is the nanny checking her own
 rows *after* a pattern is sent. So a parent can propose an unschedulable week
@@ -464,6 +483,12 @@ with no warning, and the nanny discovers it only when responding — which
 inverts the "parent proposes, nanny accepts" flow into needless back-and-forth.
 
 ## D26 — `preferred_locale` can be read but never written
+
+**Status: FIXED.** Settings has a language picker (`settings.tsx:179-196`,
+`settings-language-${lang}`); `handleLanguageChange` (`:120-122`) applies the
+local language first, then fires `updatePreferredLocale.mutate(...)` best-effort
+→ `PATCH /v1/users/me`. It survived the settings regrouping in `90fed9d`, and
+`__tests__/settings.behavior.test.tsx:115,132,167` asserts the PATCH.
 
 **Severity: low.** The API returns it and `PATCH /users/me` accepts it; nothing
 in the app ever calls that endpoint. A user can never change their language.
@@ -512,13 +537,31 @@ it reflects real discipline rather than only the exercised paths staying honest.
 
 ## D27 — `ShiftSchema` is behind its own implementation
 
-**Status:** IN PROGRESS · **Severity:** low now, blocking later
+**Status:** IN PROGRESS — **still, and it moved backwards** ·
+**Severity:** low now, blocking later
 
 Both shift read endpoints return `ShiftWithChildren` — the shift plus its joined
 `shift_children` — but `ShiftSchema` declares no such field, so Zod silently
 strips it. Harmless today because nothing reads per-child coverage; a concrete
 blocker for flow 2c (coverage lanes), which cannot surface per-child data until
 the schema gains the field.
+
+**Half done, and the other half regressed.** The schema now declares it —
+`packages/shared-types/src/schemas/shift.schema.ts:156`,
+`shift_children: z.array(ShiftChildSchema).optional()` (optional so callers that
+don't join still parse), and the API still returns the join on both reads
+(`shiftRepository.ts` selects `*, shift_children(*)`). But the only mobile
+consumer, `CoverageLanesView.tsx`, was **deleted** in `44b3419` as unrendered
+when coverage was folded into the agenda — and `AgendaView.tsx`, its stated
+replacement, never reads `shift_children`. A repo-wide grep finds **no mobile
+reader of the field at all** outside a test fixture.
+
+So this is now the reverse of where it started: the wire contract is right and
+nothing consumes it. Do not close this on the strength of the schema line alone —
+the entry exists for flow 2c, and flow 2c has no code. Note also that the
+`day.children` reads in `SchedulePatternPreview.tsx`, `ScheduleRespondScreen.tsx`
+and `ScheduleBuildScreen.tsx` are **pattern-day** children, a different shape;
+they are not evidence that this is wired up.
 
 ## D28 — Mobile's hand-mirrored request schema drops three validations
 
@@ -798,7 +841,14 @@ test asserting on a component can detect.
 
 ## D10 — Two components built, exported, and never mounted
 
-**Status:** OPEN (deliberate — recorded, not fixed) · **Severity:** low
+**Status:** FIXED — the decision below was later reversed and both are now
+mounted: `app/(private)/_layout.tsx:57` (`<SoftUpdateBanner />`, between
+`<OfflineBanner />` and `<Stack>`) and `:66` (`<AnnouncementModal />`, a sibling
+overlay after `</Stack>`), imported at `:5-10`. Ordering is guarded by
+`(private)/__tests__/_layout.test.ts:22-26,51`. D41 — the announcement
+render-loop — was found *because* it was mounted. · **Severity:** low
+
+*(Original entry and its decision, now superseded, preserved below.)*
 
 `AnnouncementModal` and `SoftUpdateBanner` (both `components/custom/`) are fully
 implemented, read real store data, and are exported from the barrel — but neither
@@ -1201,7 +1251,9 @@ genuinely unavoidable, say so and name what is therefore unverified.
 `CHECKS=("test" "lint" "format" "typecheck")`, and each app's `format` script
 writes (`biome check --write --unsafe . && biome format --write .`). So the gate
 *reformats the tree* rather than failing on unformatted code — formatting drift
-can never fail `qc`. Recorded, not changed.
+can never fail `qc`. ~~Recorded, not changed.~~ **FIXED — see D52**, which also
+corrects the last sentence above: drift *did* fail `qc`, but via the `Lint` cell
+and never the `Format` one. The diagnosis here was close but not right.
 
 **Still unproven, honestly.** The G4 concurrent-accept invariant has no automated
 coverage: Supabase is mocked in every API unit test, and there is no local DB
@@ -1440,3 +1492,130 @@ toward WAIT. Covered by `app/__tests__/onboarding-layout.behavior.test.tsx`.
 
 **Device verification (2026-08-02):** deep-link an already-signed-in nanny into
 `steadilynanny://onboarding/role` → layout bounces to Today.
+
+---
+
+## D52 — The formatting gate rewrote your code and called it a pass
+
+**Status:** FIXED · **Severity:** medium — process defect, and the second one of
+its exact shape (see D16, D39)
+
+The only item in this log that the log itself flagged and declined to fix. The
+"Round 2–3 gate notes" section recorded it as *"Recorded, not changed."* It sat
+there for three waves. Fixing it turned up two more facts nobody had written
+down, and corrected the original diagnosis.
+
+### 1. The gate contained a write command
+
+`scripts/qc.sh:45` was `CHECKS=("test" "lint" "format" "typecheck")`, and each
+app's `format` script is `biome check --write --unsafe . && biome format --write .`.
+So `bun run qc` — the command `CLAUDE.md` tells every contributor must be green
+before a task is done — **rewrote the working tree as a side effect of checking
+it**, and reported that as a pass.
+
+Observed directly, before the fix, with one deliberately misformatted file:
+
+```
+✅ Format    278 files · 1 reformatted           1.3s
+```
+
+A green check, a file silently modified on disk, and the count of files it
+changed rendered as if it were a statistic rather than a warning.
+
+### 2. The original diagnosis was wrong, and the truth is worse
+
+The old note said *"formatting drift can never fail `qc`."* Not quite. In the
+same run above, drift **did** fail the gate — through the **`Lint`** cell, because
+`biome check .` reports formatter diffs as errors too:
+
+```
+❌ Lint      278 files · 1 errors                 837ms
+✅ Format    278 files · 1 reformatted            1.3s
+```
+
+So the gate was not blind; it was **misattributing**. The `Format` cell could
+never be red, and a formatting failure surfaced under a label that sends you
+looking at lint rules. Worse, `qc` launches all 8 subshells **in parallel**
+(`qc.sh:54-64`), so the writing `format` was racing `lint`, `typecheck` and
+`test` across the same files. Measured 10 concurrent trials: `lint` won every
+time for a single-file drift, so the failure was reliable in practice — but it
+was reliable by luck of timing, not by construction, and nothing about the design
+guaranteed it.
+
+### 3. Mobile was ungated twice over, for a completely different reason
+
+`apps/mobile/package.json` had **no `format:check` script at all** — only
+`format`. But `.github/workflows/ci.yml:129` runs `bun run format:check` with
+`working-directory: apps/mobile`. That job could never pass:
+
+```
+$ cd apps/mobile && bun run format:check
+error: Script not found "format:check"   → exit 1
+```
+
+`apps/api` had the script and exited 0. So mobile formatting was gated **nowhere**
+— not by `qc` (which auto-fixed it) and not by CI (which errored before checking
+anything) — via two unrelated causes that each hid the other. This is the same
+failure mode as D16: the gate and the documented workflow were different things,
+and a real failure was wearing the costume of an infrastructure error.
+
+**The docs had already noticed and nobody reconciled it.** `CLAUDE.md:29` and
+`PROJECT-STATUS.md:840` both said `qc` runs `format:check`; `02-MONOREPO-SETUP.md`
+and `08-CONVENTIONS.md` said `format`. Two groups of docs describing two different
+gates, one of which did not exist.
+
+### The fix
+
+- `apps/mobile/package.json` — added `"format:check": "biome format ."`, mirroring
+  api. This alone un-breaks the CI job.
+- `scripts/qc.sh` — `CHECKS` now uses `format:check`; the `format)` case arm was
+  re-pointed at what the read-only command actually prints (`Checked N files` /
+  `Found N errors`, not `Formatted`/`Fixed`, which only `--write` emits — left
+  alone it would have rendered `0 files` forever); temp filenames are sanitised
+  (`SAFE="${check//:/_}"`) because the check name now contains a colon; and a
+  failing `Format` or `Lint` row now prints the remedy, since the gate no longer
+  applies it for you.
+- `docs/templates/qc.sh` — the same edits. It carried the defect verbatim, so
+  **every repo generated from this template inherited it.**
+- Docs converged on one description of the gate, and `02-MONOREPO-SETUP.md` gained
+  the section whose absence caused §3: a **required per-app scripts** table stating
+  that `qc.sh` and `ci.yml` invoke each check per-app *by name*, so a missing
+  script is a red check disguised as tooling noise.
+
+### The red phase
+
+Per D39 — a gate never observed failing is not a gate. With a deliberately
+misformatted, lint-clean and type-clean probe in each app:
+
+```
+📱 MOBILE   ❌ Lint 545 files · 1 errors    ❌ Format 545 files · 1 unformatted
+⚙️  API     ❌ Lint 278 files · 1 errors    ❌ Format 278 files · 1 unformatted
+            ✅ Tests, ✅ TypeCheck green in both
+❌ Some checks failed.
+```
+
+Both probes were still **unformatted on disk afterwards** — the second half of the
+proof, and the assertion that would have caught the original defect: *a gate run
+must not change `git status`.* Removing the probes returns all 8 cells green with
+a clean tree.
+
+`biome format .` exiting non-zero on drift was verified before anything was
+changed, rather than assumed.
+
+### Deliberately not fixed here
+
+- **~48 files no gate covers.** Root Biome checks 869 files; the two apps sum to
+  821. The difference — `scripts/`, `packages/shared-types/`, `supabase/`, root
+  configs — is formatted by `bun run format` but verified by no gate at all: `qc`
+  is per-app only, and CI has no root or shared-types format/lint job. This is the
+  same structural blind spot that let D16 survive the entire life of the repo, and
+  it deserves its own entry rather than being smuggled into this one.
+- **The `--unsafe` asymmetry.** `format` applies `--unsafe` fixes for *warn*-level
+  rules (`noArrayIndexKey: warn`), so it can still rewrite code that neither `lint`
+  nor `format:check` fails on. Narrower than it was, not gone.
+
+**The lesson, which outlives the fix:** a quality gate must never contain a command
+that writes. If it can repair the thing it is meant to detect, it will report green
+on a broken tree — and in a parallel gate it also races the checks that are trying
+to read those files. Pair every writing developer command with a read-only gate
+counterpart, and make the gate name the fix rather than perform it.

@@ -56,7 +56,7 @@ Template: [`templates/root-package.json`](./templates/root-package.json).
 | `format:check` | `biome format .` | Verify formatting without writing (used in CI). |
 | `test` | `turbo run test` | Runs each app's test task. |
 | `typecheck` | `turbo run typecheck` | `tsc --noEmit` everywhere. |
-| `qc` | `./scripts/qc.sh` | **The quality gate** — tests + lint + format + typecheck per app, in parallel. Must pass before any task is "done". |
+| `qc` | `./scripts/qc.sh` | **The quality gate** — tests + lint + `format:check` + typecheck per app, in parallel. Read-only: it verifies formatting, never applies it. Must pass before any task is "done". |
 | `g` | `git add . && git commit -m "$1" && git push` | One-shot add/commit/push shortcut. |
 | `gg` | pipes the staged diff into an AI CLI to draft a commit message | AI-generated commit message; optional tooling — drop or swap for your own. |
 | `prepare` | `husky` | Installs git hooks on `bun install`. |
@@ -164,11 +164,47 @@ bunx lint-staged
 
 Template: [`templates/qc.sh`](./templates/qc.sh).
 
-`qc.sh` runs **every check for every app in parallel** and prints a per-app summary table. For 3 apps × 4 checks (`test`, `lint`, `format`, `typecheck`) it launches **12 subshells**, `wait`s for all, then parses each output for pass/fail counts. It exits non-zero if any check fails.
+`qc.sh` runs **every check for every app in parallel** and prints a per-app summary table. For 3 apps × 4 checks (`test`, `lint`, `format:check`, `typecheck`) it launches **12 subshells**, `wait`s for all, then parses each output for pass/fail counts. It exits non-zero if any check fails.
 
 - Edit the `APPS=(...)` array to match your app folders.
 - Each subshell does `cd apps/$app && bun run --silent $check`, capturing stdout/exit/time to a temp dir.
 - This is the single command to run before declaring a task complete: `bun run qc`.
+
+### Every check must be read-only
+
+`CHECKS` must never contain a **writing** command (`format`, `biome check --write`,
+anything with `--fix`). Two things go wrong if it does, and this repo shipped both
+for its entire history (`docs/DEFECT-LOG.md` D52):
+
+1. **The check can never go red.** An auto-fixing command fixes the problem and
+   exits 0, so the row reports ✅ — while silently rewriting your working tree. A
+   gate that repairs what it is supposed to detect is not a gate.
+2. **It races the other checks.** All the subshells run *concurrently*, so a
+   writing check rewrites the same files `lint`, `typecheck` and `test` are
+   reading. Which version they see depends on scheduling.
+
+Pair each writing developer command with a read-only gate counterpart: `format`
+(writes, run by hand) ↔ `format:check` (verifies, run by the gate).
+
+### Required per-app scripts
+
+Every app under `apps/` must define **all four** `CHECKS` names in its
+`package.json`, plus `format`:
+
+| Script | Must be | Why |
+|---|---|---|
+| `test` | read-only | gate + CI |
+| `lint` | read-only (`biome check .`) | gate + CI |
+| `format:check` | read-only (`biome format .`) | gate + CI |
+| `typecheck` | read-only (`tsc --noEmit`) | gate + CI |
+| `format` | writes | the developer's fix command; **not** in `CHECKS` |
+
+Both `scripts/qc.sh` and `.github/workflows/ci.yml` invoke these **per-app by
+name**. A missing one is not a skipped check — it fails with
+`error: Script not found`, which in CI reads as an unrelated infrastructure
+failure. `apps/mobile` was missing `format:check` for the whole life of this repo,
+so its CI format job could never pass; nobody noticed, because the failure did not
+look like a formatting failure.
 
 > Note: each app's `test` script itself runs test files **one at a time** (a `for` loop over `*.test.ts`), reinforcing the `concurrency = 1` rule from `bunfig.toml`. This matters most for the API, which relies on it for `mock.module` isolation.
 

@@ -325,3 +325,9 @@ appId: com.jetto.steadily.nanny
 ```
 
 Never mark a task complete until `bun run qc` passes with no errors.
+
+**Step 3 is load-bearing, not a nicety: `format` fixes, `qc` verifies.** Every
+check `qc` runs is read-only, so skipping step 3 shows up as a red `Format` row in
+step 7 rather than being silently cleaned up behind you. Don't "simplify" step 3
+away and then wonder why the gate is red — and never make `qc` itself run the
+writing `format` script to avoid it (`docs/DEFECT-LOG.md` D52).

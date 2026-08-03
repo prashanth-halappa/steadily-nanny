@@ -14,7 +14,7 @@ The reference codebase uses **Bun** (package manager + runtime + test runner), *
 | Formatter / Linter | Use `biome` exclusively. Never Prettier or ESLint. |
 | Test runner | Use `bun:test` exclusively. Never Jest or Vitest. (See `09-TESTING.md`.) |
 | Format before commit | Always run `bun run format`. |
-| Quality gate | Run `bun run qc` (tests + lint + format + typecheck, in parallel) before marking any task done. |
+| Quality gate | Run `bun run qc` (tests + lint + `format:check` + typecheck, in parallel) before marking any task done. It **verifies** formatting rather than applying it — every check is read-only. |
 
 A single `qc` script that fans out to all four checks is the contract for "done." Nothing ships until it is green.
 
