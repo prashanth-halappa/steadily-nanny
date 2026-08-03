@@ -16,6 +16,14 @@
  * always sent as nothing, so every break was recorded as worked time). The
  * sheet defaults to "no break" already selected, so confirming it is still
  * one tap for the common case.
+ *
+ * Daylight audit #7: nothing used to handle a FORGOTTEN clock-out — the
+ * timer would read `37h 12m` the next morning and the server would record
+ * it. Past the entry's own threshold (`utils/clockOutReminder`, the
+ * scheduled finish plus grace where a shift was matched) the card stops
+ * reporting and starts asking, and the sheet opens pre-filled with the
+ * scheduled finish instead of "now". `useClockOutReminder` is the other
+ * half, for the carer whose phone is in her pocket.
  */
 import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -29,7 +37,13 @@ import { isOptimisticTimeEntry } from '@/src/hooks/mutations/timeEntryMutationUt
 import { useClockIn } from '@/src/hooks/mutations/useClockIn';
 import { useClockOut } from '@/src/hooks/mutations/useClockOut';
 import { useRunningTimeEntry } from '@/src/hooks/queries/useRunningTimeEntry';
+import { useShift } from '@/src/hooks/queries/useShift';
+import { useClockOutReminder } from '../hooks/useClockOutReminder';
 import { useElapsedTimer } from '../hooks/useElapsedTimer';
+import {
+  isOverdue as isEntryOverdue,
+  resolveDefaultClockOutAt,
+} from '../utils/clockOutReminder';
 import { ClockOutSheet, type ClockOutSheetSubmitInput } from './ClockOutSheet';
 
 interface ClockInCardProps {
@@ -48,6 +62,23 @@ export function ClockInCard({ householdId, timeZone }: ClockInCardProps) {
 
   const entry = running.data ?? null;
   const elapsed = useElapsedTimer(entry?.clock_in_at ?? null);
+
+  // The shift clock-in already auto-matched (within 2h — see the API's
+  // `matchConfirmedShift`). Its scheduled finish is what makes "still on the
+  // clock?" land at a time that means something, rather than at a flat cap.
+  // Disabled by `useShift` itself when there is no `shift_id`.
+  const shift = useShift(entry?.shift_id);
+  const shiftEndsAt = shift.data?.ends_at ?? null;
+  const clockInAt = entry?.clock_in_at ?? null;
+
+  useClockOutReminder(clockInAt, shiftEndsAt);
+
+  // Re-derived on every tick of `useElapsedTimer`, so the card crosses into
+  // its overdue state while the carer is looking at it — no extra timer.
+  const nowMs = Date.now();
+  const overdue = Boolean(
+    clockInAt && isEntryOverdue(clockInAt, shiftEndsAt, nowMs)
+  );
 
   // D7 (double-tap clock-in): `clockIn.isPending` only flips once React
   // commits a re-render, but a fast double-tap can fire the second press
@@ -99,6 +130,7 @@ export function ClockInCard({ householdId, timeZone }: ClockInCardProps) {
   const handleConfirmClockOut = ({
     breakMinutes,
     note,
+    clockOutAt,
   }: ClockOutSheetSubmitInput) => {
     if (
       !entry ||
@@ -115,6 +147,9 @@ export function ClockInCard({ householdId, timeZone }: ClockInCardProps) {
         entryId: entry.id,
         ...(breakMinutes > 0 ? { break_minutes: breakMinutes } : {}),
         ...(note ? { note } : {}),
+        // Absent unless the carer set a finish — the server's own clock is
+        // the right answer for an ordinary clock-out at the door.
+        ...(clockOutAt ? { clock_out_at: clockOutAt } : {}),
       })
       // Only close the sheet on success — useClockOut's onError already
       // shows a toast, and leaving the sheet open on failure means the
@@ -142,7 +177,7 @@ export function ClockInCard({ householdId, timeZone }: ClockInCardProps) {
               className="h-[10px] w-[10px] rounded-full bg-highlight"
             />
             <Text className="text-[13px] font-semibold text-highlight">
-              {t('onTheClock')}
+              {overdue ? t('stillOnTheClockTitle') : t('onTheClock')}
             </Text>
           </View>
           <Timer testID="today-live-timer">{elapsed}</Timer>
@@ -153,10 +188,17 @@ export function ClockInCard({ householdId, timeZone }: ClockInCardProps) {
               })}
             </Small>
           ) : null}
+          {overdue ? (
+            <Body testID="today-overdue-hint" className="text-warning">
+              {t('stillOnTheClockBody')}
+            </Body>
+          ) : null}
           <LoadingButton
             testID="today-clock-out"
-            variant="outline"
-            label={t('clockOut')}
+            // The overdue state is the one moment this is the only thing
+            // worth doing on the screen, so it stops being a quiet outline.
+            variant={overdue ? 'default' : 'outline'}
+            label={overdue ? t('clockOutNow') : t('clockOut')}
             isLoading={clockIn.isPending}
             disabled={clockOutBlocked}
             onPress={handleClockOutPress}
@@ -168,6 +210,16 @@ export function ClockInCard({ householdId, timeZone }: ClockInCardProps) {
             isSubmitting={clockOut.isPending}
             clockInAt={entry.clock_in_at}
             timeZone={timeZone}
+            // Only pre-filled once overdue. Left undefined for an ordinary
+            // clock-out on purpose: the sheet then sends no finish at all
+            // and the server's own clock records it, keeping the
+            // second-level precision a typed HH:MM would round away.
+            defaultClockOutAt={
+              overdue && clockInAt
+                ? resolveDefaultClockOutAt(clockInAt, shiftEndsAt, nowMs)
+                : undefined
+            }
+            showOverdueHint={overdue && Boolean(shiftEndsAt)}
           />
         </>
       ) : (

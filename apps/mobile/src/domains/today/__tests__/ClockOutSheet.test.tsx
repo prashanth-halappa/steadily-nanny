@@ -184,16 +184,35 @@ describe('ClockOutSheet', () => {
     });
 
     it('formats "in" and "out" through the zone-aware formatClockTime(iso, timeZone), never getHours()', () => {
-      expect(sheetSource).toContain('formatClockTime(clockInAt, timeZone)');
+      // Both arguments now come from `effectiveClockInAt` /
+      // `effectiveClockOutMs` — the instants the typed times resolve to —
+      // rather than the raw props, since #7/P0-2 made the finish editable.
+      // The property under test is unchanged: every label goes through the
+      // zone-aware formatter with `timeZone`, and nothing reads the device
+      // clock's `getHours()`.
       expect(sheetSource).toMatch(
-        /formatClockTime\(new Date\(nowMs\)\.toISOString\(\),\s*timeZone\)/
+        /formatClockTime\(\s*effectiveClockInAt \?\? clockInAt,\s*timeZone\s*\)/
+      );
+      expect(sheetSource).toMatch(
+        /formatClockTime\(\s*new Date\(effectiveClockOutMs\)\.toISOString\(\),\s*timeZone\s*\)/
       );
       expect(sheetSource).not.toMatch(/\.getHours\(\)/);
     });
 
     it('computes the total with computeWorkedMinutesFromInstants — the mirror of the server rule', () => {
+      expect(sheetSource).toMatch(
+        /computeWorkedMinutesFromInstants\(\s*effectiveClockInAt,\s*effectiveClockOutMs,\s*breakMinutes\s*\)/
+      );
+    });
+
+    it('resolves the typed wall clocks in the HOUSEHOLD zone, and rolls an overnight finish onto the next day', () => {
+      // Reuses `shiftInstantsFromWallClock` rather than reimplementing the
+      // conversion — it already handles a finish at or before the start,
+      // which is exactly the overnight shift a carer is most likely to have
+      // forgotten to clock out of.
+      expect(sheetSource).toContain('shiftInstantsFromWallClock(');
       expect(sheetSource).toContain(
-        'computeWorkedMinutesFromInstants(clockInAt, nowMs, breakMinutes)'
+        'localDateInZone(timeZone, new Date(clockInAt))'
       );
     });
   });

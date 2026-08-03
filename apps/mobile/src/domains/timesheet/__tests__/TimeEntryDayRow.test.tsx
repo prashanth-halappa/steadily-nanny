@@ -193,3 +193,91 @@ describe('TimeEntryDayRow — zero-duration flag', () => {
     expect(queryByTestId('hours-zero-duration-flag')).toBeNull();
   });
 });
+
+describe('TimeEntryDayRow — correction affordance (P0-2)', () => {
+  it('makes an editable entry pressable and hands the entry back', () => {
+    const entry = makeEntry({ clock_out_at: '2026-08-01T09:58:00.000Z' });
+    const onEditEntry = mock(() => {});
+    const { getByTestId } = render(
+      <TimeEntryDayRow
+        date="2026-08-01"
+        entries={[entry]}
+        nowMs={NOW_MS}
+        timeZone="Europe/London"
+        onEditEntry={onEditEntry}
+        timesheetStatus="submitted"
+      />
+    );
+
+    fireEvent.press(getByTestId(`hours-edit-entry-${entry.id}`));
+    expect(onEditEntry).toHaveBeenCalledWith(entry);
+  });
+
+  it('offers no edit on the parent side — the row is identical but read-only', () => {
+    const entry = makeEntry({ clock_out_at: '2026-08-01T09:58:00.000Z' });
+    const { queryByTestId } = render(
+      <TimeEntryDayRow
+        date="2026-08-01"
+        entries={[entry]}
+        nowMs={NOW_MS}
+        timeZone="Europe/London"
+        timesheetStatus="submitted"
+      />
+    );
+
+    expect(queryByTestId(`hours-edit-entry-${entry.id}`)).toBeNull();
+  });
+
+  it('offers no edit once the parent has approved the week', () => {
+    const entry = makeEntry({ clock_out_at: '2026-08-01T09:58:00.000Z' });
+    const { queryByTestId } = render(
+      <TimeEntryDayRow
+        date="2026-08-01"
+        entries={[entry]}
+        nowMs={NOW_MS}
+        timeZone="Europe/London"
+        onEditEntry={mock(() => {})}
+        timesheetStatus="approved"
+      />
+    );
+
+    expect(queryByTestId(`hours-edit-entry-${entry.id}`)).toBeNull();
+  });
+
+  it('prefers the correction over the explainer on a flagged-but-editable entry', () => {
+    const entry = makeEntry(); // zero-duration
+    const { getByTestId, queryByTestId } = render(
+      <TimeEntryDayRow
+        date="2026-08-01"
+        entries={[entry]}
+        nowMs={NOW_MS}
+        timeZone="Europe/London"
+        onEditEntry={mock(() => {})}
+        timesheetStatus="submitted"
+      />
+    );
+
+    expect(getByTestId(`hours-edit-entry-${entry.id}`)).toBeTruthy();
+    expect(queryByTestId(`hours-flagged-entry-${entry.id}`)).toBeNull();
+    // The flag itself stays — it's still the thing that drew her eye.
+    expect(getByTestId('hours-zero-duration-flag')).toBeTruthy();
+  });
+
+  it('marks an entry that was changed after it was clocked out', () => {
+    const entry = makeEntry({
+      clock_out_at: '2026-08-01T09:58:00.000Z',
+      updated_at: '2026-08-02T11:00:00.000Z',
+    });
+    const { getByText } = render(
+      <TimeEntryDayRow
+        date="2026-08-01"
+        entries={[entry]}
+        nowMs={NOW_MS}
+        timeZone="Europe/London"
+        timesheetStatus="submitted"
+      />
+    );
+
+    expect(getByText(/edited/)).toBeTruthy();
+  });
+});

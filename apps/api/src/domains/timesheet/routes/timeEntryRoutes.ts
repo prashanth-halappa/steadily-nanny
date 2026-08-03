@@ -17,6 +17,7 @@ import {
   ClockInSchema,
   ClockOutSchema,
   TimeEntryIdParamSchema,
+  UpdateTimeEntrySchema,
 } from '../schemas';
 import { timesheetQueryService } from '../services/timesheetQueryService';
 import type { TimeEntry } from '../types';
@@ -52,6 +53,16 @@ router.post(
   ...authWithOwnership(TimeEntryIdParamSchema, timeEntryOwnership),
   validate(ClockOutSchema, 'body'),
   asyncHandler(TimesheetController.clockOut)
+);
+
+// The carer's correction path. Same ownership guard as clock-out — only the
+// carer an entry belongs to may change it, and the service adds the
+// "still editable?" gate on top (see TimesheetCommandService.updateEntry).
+router.patch(
+  '/:id',
+  ...authWithOwnership(TimeEntryIdParamSchema, timeEntryOwnership),
+  validate(UpdateTimeEntrySchema, 'body'),
+  asyncHandler(TimesheetController.updateEntry)
 );
 
 export default router;

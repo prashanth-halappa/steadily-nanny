@@ -42,8 +42,10 @@ import type { ShiftWithChildren } from '../../shift/repositories/shiftRepository
 import { UserService } from '../../user';
 import {
   AlreadyClockedInError,
+  InvalidClockTimesError,
   NotACarerError,
   NotATimesheetParentError,
+  TimeEntryNotEditableError,
   TimeEntryNotRunningError,
   TimesheetNotActionableError,
 } from '../errors/timesheetErrors';
@@ -55,6 +57,7 @@ import type {
   QueryTimesheetInput,
   TimeEntry,
   Timesheet,
+  UpdateTimeEntryInput,
 } from '../types';
 import { weekEndExclusive, weekStartOf } from '../utils/weekStart';
 import {
@@ -90,6 +93,18 @@ const CLOCK_IN_MATCH_TOLERANCE_MS = 2 * 60 * 60 * 1000;
  * profile and a since-deleted one read identically.
  */
 const UNNAMED_CARER_DISPLAY_NAME = 'Carer';
+
+/**
+ * How far ahead of the server's clock a client-supplied `clock_out_at` (or
+ * `clock_in_at`) may sit before it is rejected as "in the future".
+ *
+ * Not zero, deliberately: the client composes these instants from the
+ * device's own clock, and a phone that is a few seconds fast would
+ * otherwise have a perfectly ordinary clock-out rejected. A minute absorbs
+ * real-world drift without letting a genuinely future-dated entry through —
+ * nobody can pre-record tomorrow's shift.
+ */
+const CLOCK_SKEW_TOLERANCE_MS = 60_000;
 
 const CARER_ROLES: ReadonlySet<string> = new Set([HOUSEHOLD_ROLES.NANNY]);
 const WRITE_ROLES: ReadonlySet<string> = new Set([
@@ -243,6 +258,14 @@ export class TimesheetCommandService {
    * End a clock-in. Only the carer it belongs to may clock it out (enforced
    * by `queries.getOwnedTimeEntry`, which throws the SAME not-found error
    * whether the entry is missing or someone else's — see that method).
+   *
+   * `input.clock_out_at` is the forgotten-clock-out path (Daylight UX #7):
+   * a carer who left at the scheduled finish and only remembers to tap
+   * "Clock out" the next morning would otherwise have every idle hour in
+   * between recorded as worked. When supplied it is bounded by
+   * `assertClockOrder` exactly like a correction — the client may move the
+   * finish EARLIER (or a minute of drift later), never invent future hours.
+   * Omitted, this behaves as it always has: the server's own clock.
    */
   async clockOut(
     userId: string,
@@ -255,7 +278,8 @@ export class TimesheetCommandService {
     }
 
     const scheduledMinutes = await this.freezeScheduledMinutes(entry.shift_id);
-    const clockOutAt = new Date().toISOString();
+    const clockOutAt = input.clock_out_at ?? new Date().toISOString();
+    this.assertClockOrder(entry.clock_in_at, clockOutAt);
 
     const patch: Partial<TimeEntry> = {
       clock_out_at: clockOutAt,
@@ -274,6 +298,113 @@ export class TimesheetCommandService {
     // survive with carer_id = NULL (see the schema comment on TimeEntry).
     await this.rollUpIntoTimesheet(updated, userId);
     return updated;
+  }
+
+  /**
+   * Correct an already-clocked-out entry — the carer's own fix for a wrong
+   * time, a missed break, or a forgotten clock-out she only noticed later
+   * (Daylight UX P0-2). Carer-only, via the same `getOwnedTimeEntry` gate as
+   * `clockOut`.
+   *
+   * Two things make this cheap rather than a second write path:
+   * `rollUpIntoTimesheet` already DERIVES the week total from the week's
+   * entries instead of incrementing one, so a corrected entry self-heals the
+   * total; and its terminal-status branch already re-opens a timesheet the
+   * parent has acted on. Neither needed changing.
+   *
+   * Editable only while the week is unapproved. Once a parent has approved,
+   * the week is a signed agreement — the way back in is the parent's own
+   * query flow, not a silent edit that would revoke an approval they gave.
+   * A `running` entry isn't editable either: clocking out IS its edit, and
+   * that path can already set its own finish time.
+   */
+  async updateEntry(
+    userId: string,
+    timeEntryId: string,
+    input: UpdateTimeEntryInput
+  ): Promise<TimeEntry> {
+    const entry = await this.queries.getOwnedTimeEntry(userId, timeEntryId);
+    if (entry.status !== 'submitted') {
+      throw new TimeEntryNotEditableError(timeEntryId, entry.status);
+    }
+
+    const originalClockInAt = entry.clock_in_at;
+    if (!originalClockInAt) {
+      throw new InvalidClockTimesError('MISSING_CLOCK_TIME', { timeEntryId });
+    }
+    const { clockInAt } = this.assertClockOrder(
+      input.clock_in_at ?? originalClockInAt,
+      input.clock_out_at ?? entry.clock_out_at
+    );
+
+    const household = await this.householdRepo.findById(entry.household_id);
+    const timeZone = household?.timezone ?? 'UTC';
+    const weekStart = weekStartOf(new Date(originalClockInAt), timeZone);
+
+    // ponytail: a clock-in edit that crosses a week boundary is rejected
+    // rather than handled — `rollUpIntoTimesheet` recomputes ONE week, so
+    // moving an entry out of this one would leave the week it left behind
+    // overstated. Teach the roll-up to take both weeks if overnight
+    // corrections across a Monday ever turn out to matter.
+    if (weekStartOf(new Date(clockInAt), timeZone) !== weekStart) {
+      throw new InvalidClockTimesError('CLOCK_IN_CHANGES_WEEK', {
+        timeEntryId,
+        weekStart,
+      });
+    }
+
+    const timesheet = await this.timesheetRepo.findByWeek(
+      entry.household_id,
+      userId,
+      weekStart
+    );
+    if (timesheet?.status === 'approved') {
+      throw new TimeEntryNotEditableError(timeEntryId, 'week_approved');
+    }
+
+    const patch: Partial<TimeEntry> = {};
+    if (input.clock_in_at !== undefined) patch.clock_in_at = input.clock_in_at;
+    if (input.clock_out_at !== undefined)
+      patch.clock_out_at = input.clock_out_at;
+    if (input.break_minutes !== undefined)
+      patch.break_minutes = input.break_minutes;
+    if (input.note !== undefined) patch.note = input.note;
+
+    const updated = await this.timeEntryRepo.update(timeEntryId, patch);
+    await this.rollUpIntoTimesheet(updated, userId);
+    return updated;
+  }
+
+  /**
+   * Reject clock times that can't describe a real session. Mirrors the DB's
+   * `time_entries_clock_order` check (017_time_tracking.sql) so a bad edit
+   * comes back as a 400 the client can render, instead of a constraint
+   * violation surfacing as a 500 — and adds the bound the DB cannot know
+   * about: a finish may not be in the future. Both `clockOut` and
+   * `updateEntry` route through here, so neither can drift from the other.
+   *
+   * Returns the pair it validated so callers get the non-null narrowing for
+   * free rather than re-asserting it.
+   */
+  private assertClockOrder(
+    clockInAt: string | null,
+    clockOutAt: string | null
+  ): { clockInAt: string; clockOutAt: string } {
+    if (!clockInAt || !clockOutAt) {
+      throw new InvalidClockTimesError('MISSING_CLOCK_TIME');
+    }
+    const inMs = new Date(clockInAt).getTime();
+    const outMs = new Date(clockOutAt).getTime();
+    if (outMs <= inMs) {
+      throw new InvalidClockTimesError('CLOCK_OUT_BEFORE_CLOCK_IN', {
+        clockInAt,
+        clockOutAt,
+      });
+    }
+    if (outMs > Date.now() + CLOCK_SKEW_TOLERANCE_MS) {
+      throw new InvalidClockTimesError('CLOCK_OUT_IN_FUTURE', { clockOutAt });
+    }
+    return { clockInAt, clockOutAt };
   }
 
   /** Owner/parent only. Requires submitted hours to act on. */

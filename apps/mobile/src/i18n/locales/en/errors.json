@@ -12,6 +12,8 @@
   "offline": "You're offline. Please check your connection.",
   "alreadyClockedIn": "You're already clocked in on another shift. Clock out of it first.",
   "cancelViaDelete": "Cancel time off by using the delete option instead.",
+  "entryNotEditable": "This entry can't be changed any more — the week has already been approved. Ask your household to query it.",
+  "invalidClockTimes": "Those times don't work. The finish must be after the start, and can't be in the future.",
   "tryAgain": "Try again",
   "goBack": "Go back",
   "states": {

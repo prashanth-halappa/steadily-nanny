@@ -135,6 +135,7 @@ let mockUseWeekTimeEntries: ReturnType<typeof mock>;
 let mockUseWeekTimesheet: ReturnType<typeof mock>;
 let mockUseApproveTimesheet: ReturnType<typeof mock>;
 let mockUseQueryTimesheet: ReturnType<typeof mock>;
+let mockUseUpdateTimeEntry: ReturnType<typeof mock>;
 
 beforeAll(async () => {
   mockUseActiveHousehold = mock(() => ({
@@ -152,6 +153,10 @@ beforeAll(async () => {
   }));
   mockUseQueryTimesheet = mock(() => ({
     mutateAsync: mock(() => Promise.resolve()),
+    isPending: false,
+  }));
+  mockUseUpdateTimeEntry = mock(() => ({
+    mutateAsync: mock(async () => ({})),
     isPending: false,
   }));
   mockUseIsOnboarded = mock(() => ({
@@ -177,6 +182,12 @@ beforeAll(async () => {
   }));
   mock.module('@/src/hooks/mutations/useQueryTimesheet', () => ({
     useQueryTimesheet: mockUseQueryTimesheet,
+  }));
+  // The nanny week's correction path (Daylight UX P0-2) — mocked for the
+  // same reason as the two above: a real `useMutation` needs a
+  // QueryClientProvider this screen test deliberately doesn't stand up.
+  mock.module('@/src/hooks/mutations/useUpdateTimeEntry', () => ({
+    useUpdateTimeEntry: mockUseUpdateTimeEntry,
   }));
 
   const mod = await import('../components/HoursScreen');

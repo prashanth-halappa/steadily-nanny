@@ -26,10 +26,20 @@
  * to 0m, same as the server: it must read as "no hours", not as an error
  * the nanny has to resolve before she can leave.
  *
+ * Daylight audit #7 / P0-2 (second half) — the sheet now also owns the two
+ * cases where "now" is the wrong finish. A FORGOTTEN clock-out opens with
+ * the scheduled finish pre-filled and says so (`showOverdueHint`), so a
+ * carer who left at 17:00 and remembers at 08:00 doesn't bank fourteen idle
+ * hours. And `mode="edit"` reopens the same sheet against an
+ * already-clocked-out entry from the Hours screen, which is the correction
+ * path that did not exist at all. One component for all three because the
+ * live summary — the thing that shows the figure before it is written — must
+ * not exist in two versions that can disagree.
+ *
  * GOLDEN: uses `BottomSheetBase`, never a bare RN Modal directly
  * (GOLDEN-FIXES #1 — iOS modal-freeze).
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
 import { BottomSheetBase } from '@/src/components/custom/BottomSheetBase';
@@ -50,12 +60,28 @@ import {
   formatDuration,
 } from '@/src/domains/timesheet/utils/duration';
 import { computeWorkedMinutesFromInstants } from '@/src/domains/timesheet/utils/entryMinutes';
+import { parseWallClockInput } from '@/src/domains/timesheet/utils/wallClockInput';
+import { localDateInZone } from '@/src/lib/localDate';
+import {
+  shiftInstantsFromWallClock,
+  utcIsoToWallClockHHMM,
+} from '@/src/lib/wallClock';
 
 const QUICK_BREAK_MINUTES = [0, 15, 30, 45, 60] as const;
 
 export interface ClockOutSheetSubmitInput {
   breakMinutes: number;
   note: string;
+  /**
+   * The finish the carer confirmed, as an ISO instant — present only when
+   * she typed one, or when the sheet pre-filled a scheduled finish for a
+   * forgotten clock-out. Absent means "whatever the server's clock says",
+   * which is the ordinary case and keeps second-level precision that a
+   * HH:MM field would round away.
+   */
+  clockOutAt?: string;
+  /** The start, ISO — edit mode only, and only when actually changed. */
+  clockInAt?: string;
 }
 
 interface ClockOutSheetProps {
@@ -76,6 +102,28 @@ interface ClockOutSheetProps {
    * time; tests inject a fixed value for determinism. Re-evaluated on every
    * render, so it moves as the break selection changes. */
   nowMs?: number;
+  /**
+   * The finish to pre-fill, ISO. Defaults to `nowMs` — the ordinary case.
+   * A forgotten clock-out passes the scheduled finish instead (see
+   * `utils/clockOutReminder.resolveDefaultClockOutAt`): "now" is the one
+   * answer certainly wrong when the carer left hours ago.
+   */
+  defaultClockOutAt?: string;
+  /**
+   * `'edit'` corrects an already-clocked-out entry (Daylight UX P0-2): the
+   * START becomes editable too and the confirm button says "Save" rather
+   * than "Clock out". Same sheet on purpose — the live summary that makes
+   * the recorded figure visible before it's written is the whole point, and
+   * it should not exist in two versions that can disagree.
+   */
+  mode?: 'clockOut' | 'edit';
+  /** Edit mode: the entry's current break/note, so the sheet opens on the
+   * record as it stands rather than on blanks. */
+  initialBreakMinutes?: number;
+  initialNote?: string;
+  /** Say out loud that the pre-filled finish is a guess from the schedule,
+   * not something the carer did. Set for the forgotten-clock-out path. */
+  showOverdueHint?: boolean;
 }
 
 /** Parses a break-minutes text field to a non-negative integer, defaulting
@@ -93,14 +141,81 @@ export function ClockOutSheet({
   clockInAt,
   timeZone,
   nowMs = Date.now(),
+  defaultClockOutAt,
+  mode = 'clockOut',
+  initialBreakMinutes = 0,
+  initialNote = '',
+  showOverdueHint = false,
 }: ClockOutSheetProps) {
   const { t } = useTranslation('today');
-  const [breakMinutes, setBreakMinutes] = useState(0);
-  const [breakMinutesText, setBreakMinutesText] = useState('0');
-  const [note, setNote] = useState('');
+  const [breakMinutes, setBreakMinutes] = useState(initialBreakMinutes);
+  const [breakMinutesText, setBreakMinutesText] = useState(
+    String(initialBreakMinutes)
+  );
+  const [note, setNote] = useState(initialNote);
+  // `null` means "untouched" for the finish, which is what keeps an ordinary
+  // clock-out on the server's own second-precise clock instead of rounding
+  // it to the typed minute. The start has no such case: it always shows the
+  // recorded value, and only edit mode lets it be changed.
+  const [outTimeText, setOutTimeText] = useState<string | null>(null);
+  const [inTimeText, setInTimeText] = useState<string | null>(null);
 
-  const workedMinutes = clockInAt
-    ? computeWorkedMinutesFromInstants(clockInAt, nowMs, breakMinutes)
+  // Re-seed whenever the sheet opens: it stays mounted between openings, so
+  // without this a correction would show the previous entry's values.
+  useEffect(() => {
+    if (!visible) return;
+    setBreakMinutes(initialBreakMinutes);
+    setBreakMinutesText(String(initialBreakMinutes));
+    setNote(initialNote);
+    setOutTimeText(
+      defaultClockOutAt
+        ? utcIsoToWallClockHHMM(defaultClockOutAt, timeZone)
+        : null
+    );
+    setInTimeText(null);
+  }, [visible, initialBreakMinutes, initialNote, defaultClockOutAt, timeZone]);
+
+  const recordedInTime = clockInAt
+    ? utcIsoToWallClockHHMM(clockInAt, timeZone)
+    : '';
+  const shownInTime = inTimeText ?? recordedInTime;
+  const shownOutTime =
+    outTimeText ??
+    utcIsoToWallClockHHMM(new Date(nowMs).toISOString(), timeZone);
+
+  const parsedInTime = parseWallClockInput(shownInTime);
+  const parsedOutTime = parseWallClockInput(shownOutTime);
+  const timesAreValid = Boolean(parsedInTime && parsedOutTime);
+
+  /**
+   * The two typed wall clocks resolved back to real instants in the
+   * HOUSEHOLD's zone (never the device's — GOLDEN-FIXES #21).
+   * `shiftInstantsFromWallClock` is reused rather than reimplemented because
+   * it already rolls a finish at or before the start onto the next day,
+   * which is exactly an overnight shift — the case a carer is most likely
+   * to have forgotten to clock out of.
+   */
+  const instants =
+    clockInAt && parsedInTime && parsedOutTime
+      ? shiftInstantsFromWallClock(
+          localDateInZone(timeZone, new Date(clockInAt)),
+          parsedInTime,
+          parsedOutTime,
+          timeZone
+        )
+      : null;
+
+  const effectiveClockInAt = instants?.starts_at ?? clockInAt;
+  const effectiveClockOutMs = instants
+    ? new Date(instants.ends_at).getTime()
+    : nowMs;
+
+  const workedMinutes = effectiveClockInAt
+    ? computeWorkedMinutesFromInstants(
+        effectiveClockInAt,
+        effectiveClockOutMs,
+        breakMinutes
+      )
     : 0;
 
   const selectQuickBreak = (minutes: number) => {
@@ -114,10 +229,18 @@ export function ClockOutSheet({
   };
 
   const handleSubmit = () => {
-    onSubmit({ breakMinutes, note: note.trim() });
-    setBreakMinutes(0);
-    setBreakMinutesText('0');
-    setNote('');
+    if (!timesAreValid) return;
+    onSubmit({
+      breakMinutes,
+      note: note.trim(),
+      // Only sent when the carer set a finish — see the field's own comment.
+      ...(outTimeText !== null && instants
+        ? { clockOutAt: instants.ends_at }
+        : {}),
+      ...(mode === 'edit' && inTimeText !== null && instants
+        ? { clockInAt: instants.starts_at }
+        : {}),
+    });
   };
 
   return (
@@ -130,8 +253,56 @@ export function ClockOutSheet({
       showCloseButton
     >
       <View className="gap-4 px-6 pb-4">
-        <H4>{t('clockOutSheetTitle')}</H4>
-        <Body className="text-muted-foreground">{t('clockOutSheetHint')}</Body>
+        <H4>
+          {mode === 'edit' ? t('editEntryTitle') : t('clockOutSheetTitle')}
+        </H4>
+        <Body className="text-muted-foreground">
+          {mode === 'edit' ? t('editEntryHint') : t('clockOutSheetHint')}
+        </Body>
+
+        {showOverdueHint ? (
+          <Body testID="clockout-overdue-hint" className="text-warning">
+            {t('overdueClockOutHint')}
+          </Body>
+        ) : null}
+
+        {clockInAt ? (
+          <View className="flex-row gap-3" testID="clockout-times">
+            <View className="flex-1 gap-1">
+              <Small className="text-muted-foreground">{t('startLabel')}</Small>
+              <Input
+                testID="clockout-start-time"
+                accessibilityLabel={t('startLabel')}
+                value={shownInTime}
+                onChangeText={setInTimeText}
+                editable={mode === 'edit'}
+                keyboardType="numbers-and-punctuation"
+                maxLength={5}
+                placeholder="HH:MM"
+              />
+            </View>
+            <View className="flex-1 gap-1">
+              <Small className="text-muted-foreground">
+                {t('finishLabel')}
+              </Small>
+              <Input
+                testID="clockout-finish-time"
+                accessibilityLabel={t('finishLabel')}
+                value={shownOutTime}
+                onChangeText={setOutTimeText}
+                keyboardType="numbers-and-punctuation"
+                maxLength={5}
+                placeholder="HH:MM"
+              />
+            </View>
+          </View>
+        ) : null}
+
+        {clockInAt && !timesAreValid ? (
+          <Small testID="clockout-time-error" className="text-destructive">
+            {t('invalidTime')}
+          </Small>
+        ) : null}
 
         <View className="gap-2">
           <Small className="text-muted-foreground">{t('breakLabel')}</Small>
@@ -190,8 +361,11 @@ export function ClockOutSheet({
               tabular
             >
               {t('clockOutSummaryPrefix', {
-                in: formatClockTime(clockInAt, timeZone),
-                out: formatClockTime(new Date(nowMs).toISOString(), timeZone),
+                in: formatClockTime(effectiveClockInAt ?? clockInAt, timeZone),
+                out: formatClockTime(
+                  new Date(effectiveClockOutMs).toISOString(),
+                  timeZone
+                ),
                 breakMinutes,
               })}
             </Small>
@@ -215,8 +389,9 @@ export function ClockOutSheet({
 
         <LoadingButton
           testID="clockout-confirm"
-          label={t('clockOut')}
+          label={mode === 'edit' ? t('saveCorrection') : t('clockOut')}
           isLoading={isSubmitting}
+          disabled={!timesAreValid}
           onPress={handleSubmit}
         />
       </View>

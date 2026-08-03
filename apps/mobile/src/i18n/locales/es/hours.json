@@ -16,11 +16,13 @@
   "queriedWithNote": "Consultado: {{note}}",
   "flaggedCheckEntry": "revisa esta entrada",
   "flaggedTitle": "Entrada inusual",
-  "flaggedDescription": "Esta entrada tiene duración cero — suele ser un fichaje accidental. Aún no se pueden editar entradas pasadas; habla con tu hogar si hay que corregirla.",
+  "flaggedDescription": "Esta entrada tiene duración cero — suele ser un fichaje accidental. Esta semana ya fue aprobada, así que pide a tu hogar que la consulte si hay que corregirla.",
   "flaggedDismiss": "Entendido",
   "noHoursLogged": "Sin horas registradas",
   "emptyWeek": "Aún no hay horas registradas esta semana.",
   "waitingForSubmit": "Esperando a que tu cuidadora envíe esta semana.",
   "waitingAfterQuery": "Esperando a que tu cuidadora vuelva a enviar tras tu consulta.",
-  "inProgress": "en curso"
+  "inProgress": "en curso",
+  "edited": "corregido",
+  "editEntry": "Corregir este registro"
 }

@@ -22,5 +22,6 @@ export type {
   TimesheetIdParam,
   TimesheetListResponse,
   TimesheetStatus,
+  UpdateTimeEntryInput,
   WeekQuery,
 } from '../schemas';

@@ -26,6 +26,7 @@ export type {
   Timesheet,
   TimesheetListResponse,
   TimesheetStatus,
+  UpdateTimeEntryInput,
 } from '@steadily-nanny/shared-types/schemas/timesheet.schema';
 export {
   ClockInSchema,
@@ -38,6 +39,7 @@ export {
   TimeEntrySchema,
   TimesheetListResponseSchema,
   TimesheetSchema,
+  UpdateTimeEntrySchema,
 } from '@steadily-nanny/shared-types/schemas/timesheet.schema';
 
 /** URL param validation for /households/:householdId/time-entries and /households/:householdId/timesheets routes. */

@@ -38,6 +38,21 @@ export class TimesheetController {
     }
   }
 
+  /** PATCH /time-entries/:id — the carer's correction path (Daylight UX P0-2). */
+  static async updateEntry(req: Request, res: Response, next: NextFunction) {
+    try {
+      const id = req.params.id as string;
+      const time_entry = await timesheetCommandService.updateEntry(
+        getAuthUserId(req),
+        id,
+        req.body
+      );
+      return sendSuccessResponse(res, 'Time entry updated', { time_entry });
+    } catch (error) {
+      return next(error);
+    }
+  }
+
   /** GET /time-entries/running — the caller's open entry, or null. */
   static async getRunning(req: Request, res: Response, next: NextFunction) {
     try {

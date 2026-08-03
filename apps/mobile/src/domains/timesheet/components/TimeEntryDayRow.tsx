@@ -3,8 +3,15 @@
  * One day's row on the Hours screen: the weekday, the clocked-in/out times
  * (or "in progress" for a still-running entry), and the day's total.
  *
- * Zero-duration finished entries show a warning flag; tapping opens an
- * explanation dialog (read-only — no edit API in this wave).
+ * Zero-duration finished entries show a warning flag.
+ *
+ * Daylight UX P0-2 — tapping an entry is now the carer's correction path
+ * (`onEditEntry`, wired only by `NannyWeekView`; the parent's identical row
+ * stays read-only). An entry that can no longer be corrected — still
+ * running, or in a week the parent approved — is not pressable, and a
+ * zero-duration one falls back to the explainer dialog it always had. A
+ * corrected entry is marked, so the other party is never shown a silently
+ * changed pay figure.
  */
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -22,8 +29,9 @@ import {
 import { Text } from '@/src/components/ui/text';
 import { Body, Small } from '@/src/components/ui/typography';
 import { useElevation } from '~/lib/design-tokens/elevation';
-import type { TimeEntry } from '../types';
+import type { TimeEntry, TimesheetStatus } from '../types';
 import { formatClockTime, formatDuration } from '../utils/duration';
+import { isEntryEditable, wasEntryEdited } from '../utils/entryEdited';
 import { computeEntryMinutes } from '../utils/entryMinutes';
 
 interface TimeEntryDayRowProps {
@@ -34,6 +42,11 @@ interface TimeEntryDayRowProps {
   /** Household IANA zone — the clock-in/out times render in THIS zone, never
    * the device's (GOLDEN-FIXES #21 bug class; see utils/week.ts's header). */
   timeZone: string;
+  /** Opens the correction sheet. Omitted on the parent's side, which makes
+   * every entry read-only there. */
+  onEditEntry?: (entry: TimeEntry) => void;
+  /** The week's approval state — an approved week is not correctable. */
+  timesheetStatus?: TimesheetStatus | null;
   testID?: string;
 }
 
@@ -48,6 +61,8 @@ export function TimeEntryDayRow({
   entries,
   nowMs,
   timeZone,
+  onEditEntry,
+  timesheetStatus,
   testID,
 }: TimeEntryDayRowProps) {
   const { t } = useTranslation('hours');
@@ -82,6 +97,8 @@ export function TimeEntryDayRow({
             // and is NOT flagged.
             const entryMinutes = computeEntryMinutes(entry, nowMs);
             const isZeroDuration = !!entry.clock_out_at && entryMinutes === 0;
+            const canEdit =
+              !!onEditEntry && isEntryEditable(entry, timesheetStatus);
             const label = (
               <Small
                 testID={isZeroDuration ? 'hours-zero-duration-flag' : undefined}
@@ -99,8 +116,25 @@ export function TimeEntryDayRow({
                   ? formatClockTime(entry.clock_out_at, timeZone)
                   : t('inProgress')}
                 {isZeroDuration ? ` – ${t('flaggedCheckEntry')}` : ''}
+                {wasEntryEdited(entry) ? ` · ${t('edited')}` : ''}
               </Small>
             );
+            // Correcting it beats being told why it looks odd, so an
+            // editable entry goes to the sheet even when flagged; the
+            // explainer is the fallback for one that can no longer be fixed.
+            if (canEdit) {
+              return (
+                <Pressable
+                  key={entry.id}
+                  testID={`hours-edit-entry-${entry.id}`}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('editEntry')}
+                  onPress={() => onEditEntry?.(entry)}
+                >
+                  {label}
+                </Pressable>
+              );
+            }
             if (!isZeroDuration) return <View key={entry.id}>{label}</View>;
             return (
               <Pressable

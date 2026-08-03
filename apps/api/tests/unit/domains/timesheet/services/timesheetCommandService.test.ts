@@ -2,8 +2,10 @@ import { describe, expect, it, mock } from 'bun:test';
 import { ShiftNotFoundError } from '../../../../../src/domains/shift';
 import {
   AlreadyClockedInError,
+  InvalidClockTimesError,
   NotACarerError,
   NotATimesheetParentError,
+  TimeEntryNotEditableError,
   TimeEntryNotRunningError,
   TimesheetNotActionableError,
 } from '../../../../../src/domains/timesheet/errors/timesheetErrors';
@@ -1095,5 +1097,196 @@ describe('TimesheetCommandService.query', () => {
         query_note: 'Query Thursday',
       })
     );
+  });
+});
+
+// A clocked-out entry — the only state a correction can act on. Same week
+// (Monday 2026-08-03, Europe/London) as `timesheet` above.
+const submittedEntry = {
+  ...runningEntry,
+  clock_out_at: '2026-08-03T16:00:00.000Z',
+  break_minutes: 30,
+  scheduled_minutes: 480,
+  status: 'submitted',
+};
+
+describe('TimesheetCommandService.clockOut — supplied clock_out_at (#7)', () => {
+  it('records the supplied finish rather than the server clock, so a forgotten clock-out does not bank idle hours', async () => {
+    const timeEntryRepo = makeTimeEntryRepo({
+      listForCarerWeek: mock(async () => [finishedEntryA]),
+    });
+    const svc = new TimesheetCommandService(
+      timeEntryRepo,
+      makeTimesheetRepo(),
+      makeMemberRepo(),
+      makeHouseholdRepo(),
+      makeShiftRepo(),
+      makeQueries(),
+      makeUserService()
+    );
+
+    await svc.clockOut('carer-1', 't1', {
+      clock_out_at: '2026-08-03T16:00:00.000Z',
+    });
+
+    expect(timeEntryRepo.update).toHaveBeenCalledWith(
+      't1',
+      expect.objectContaining({ clock_out_at: '2026-08-03T16:00:00.000Z' })
+    );
+  });
+
+  it('rejects a finish at or before the clock-in', async () => {
+    const svc = new TimesheetCommandService(
+      makeTimeEntryRepo(),
+      makeTimesheetRepo(),
+      makeMemberRepo(),
+      makeHouseholdRepo(),
+      makeShiftRepo(),
+      makeQueries(),
+      makeUserService()
+    );
+
+    await expect(
+      svc.clockOut('carer-1', 't1', {
+        clock_out_at: '2026-08-03T07:00:00.000Z', // before the 08:00 clock-in
+      })
+    ).rejects.toBeInstanceOf(InvalidClockTimesError);
+  });
+
+  it('rejects a finish in the future — a carer may move a finish earlier, never invent hours', async () => {
+    const svc = new TimesheetCommandService(
+      makeTimeEntryRepo(),
+      makeTimesheetRepo(),
+      makeMemberRepo(),
+      makeHouseholdRepo(),
+      makeShiftRepo(),
+      makeQueries(),
+      makeUserService()
+    );
+
+    const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+    await expect(
+      svc.clockOut('carer-1', 't1', { clock_out_at: tomorrow })
+    ).rejects.toBeInstanceOf(InvalidClockTimesError);
+  });
+});
+
+describe('TimesheetCommandService.updateEntry (P0-2)', () => {
+  function makeEditableSvc(
+    overrides: {
+      timeEntryRepo?: any;
+      timesheetRepo?: any;
+      entry?: Record<string, unknown>;
+    } = {}
+  ) {
+    return new TimesheetCommandService(
+      overrides.timeEntryRepo ??
+        makeTimeEntryRepo({
+          listForCarerWeek: mock(async () => [finishedEntryA]),
+          update: mock(async (_id: string, patch: Record<string, unknown>) => ({
+            ...submittedEntry,
+            ...patch,
+          })),
+        }),
+      overrides.timesheetRepo ??
+        makeTimesheetRepo({
+          findByWeek: mock(async () => ({ ...timesheet, status: 'submitted' })),
+        }),
+      makeMemberRepo(),
+      makeHouseholdRepo(),
+      makeShiftRepo(),
+      makeQueries({
+        getOwnedTimeEntry: mock(async () => overrides.entry ?? submittedEntry),
+      }),
+      makeUserService()
+    );
+  }
+
+  it('applies the correction and re-derives the week total from the corrected entries', async () => {
+    const timeEntryRepo = makeTimeEntryRepo({
+      // The week as it stands AFTER the correction — the roll-up derives
+      // from this list rather than adjusting a stored total.
+      listForCarerWeek: mock(async () => [
+        { ...finishedEntryA, break_minutes: 0 }, // 480, was 450
+      ]),
+      update: mock(async (_id: string, patch: Record<string, unknown>) => ({
+        ...submittedEntry,
+        ...patch,
+      })),
+    });
+    const timesheetRepo = makeTimesheetRepo({
+      findByWeek: mock(async () => ({ ...timesheet, status: 'submitted' })),
+    });
+    const svc = makeEditableSvc({ timeEntryRepo, timesheetRepo });
+
+    await svc.updateEntry('carer-1', 't1', { break_minutes: 0 });
+
+    expect(timeEntryRepo.update).toHaveBeenCalledWith(
+      't1',
+      expect.objectContaining({ break_minutes: 0 })
+    );
+    expect(timesheetRepo.update).toHaveBeenCalledWith(
+      'ts1',
+      expect.objectContaining({ total_minutes: 480, status: 'submitted' })
+    );
+  });
+
+  it('leaves untouched fields alone — an omitted field is not a null', async () => {
+    const timeEntryRepo = makeTimeEntryRepo({
+      listForCarerWeek: mock(async () => [finishedEntryA]),
+      update: mock(async (_id: string, patch: Record<string, unknown>) => ({
+        ...submittedEntry,
+        ...patch,
+      })),
+    });
+    const svc = makeEditableSvc({ timeEntryRepo });
+
+    await svc.updateEntry('carer-1', 't1', {
+      clock_out_at: '2026-08-03T15:00:00.000Z',
+    });
+
+    const patch = timeEntryRepo.update.mock.calls[0][1];
+    expect(patch).toEqual({ clock_out_at: '2026-08-03T15:00:00.000Z' });
+  });
+
+  it('refuses to edit a running entry — clocking out is its edit', async () => {
+    const svc = makeEditableSvc({ entry: runningEntry });
+
+    await expect(
+      svc.updateEntry('carer-1', 't1', { break_minutes: 15 })
+    ).rejects.toBeInstanceOf(TimeEntryNotEditableError);
+  });
+
+  it('refuses to edit a week the parent has already approved', async () => {
+    const svc = makeEditableSvc({
+      timesheetRepo: makeTimesheetRepo({
+        findByWeek: mock(async () => ({ ...timesheet, status: 'approved' })),
+      }),
+    });
+
+    await expect(
+      svc.updateEntry('carer-1', 't1', { break_minutes: 15 })
+    ).rejects.toBeInstanceOf(TimeEntryNotEditableError);
+  });
+
+  it('rejects a clock-in edit that moves the entry into a different week', async () => {
+    const svc = makeEditableSvc();
+
+    await expect(
+      // Sunday 2 Aug in Europe/London — the previous week.
+      svc.updateEntry('carer-1', 't1', {
+        clock_in_at: '2026-08-02T12:00:00.000Z',
+      })
+    ).rejects.toBeInstanceOf(InvalidClockTimesError);
+  });
+
+  it('rejects a correction whose finish lands before its start', async () => {
+    const svc = makeEditableSvc();
+
+    await expect(
+      svc.updateEntry('carer-1', 't1', {
+        clock_out_at: '2026-08-03T07:00:00.000Z',
+      })
+    ).rejects.toBeInstanceOf(InvalidClockTimesError);
   });
 });

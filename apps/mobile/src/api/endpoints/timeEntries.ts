@@ -14,12 +14,14 @@ import type {
   ClockInInput,
   ClockOutInput,
   TimeEntry,
+  UpdateTimeEntryInput,
 } from '@steadily-nanny/shared-types/schemas/timesheet.schema';
 import {
   ClockInSchema,
   ClockOutSchema,
   TimeEntryListResponseSchema,
   TimeEntrySchema,
+  UpdateTimeEntrySchema,
 } from '@steadily-nanny/shared-types/schemas/timesheet.schema';
 import { z } from 'zod';
 import { apiClient } from '@/src/api/client';
@@ -34,12 +36,13 @@ export {
 } from '@steadily-nanny/shared-types/schemas/timesheet.schema';
 // Re-exported so domain-internal imports (`@/src/api/endpoints/timeEntries`)
 // stay stable regardless of where the wire contract itself lives.
-export type { ClockInInput, ClockOutInput, TimeEntry };
+export type { ClockInInput, ClockOutInput, TimeEntry, UpdateTimeEntryInput };
 
 // --- Endpoint URLs ----------------------------------------------------------
 export const timeEntryEndpoints = {
   clockIn: '/v1/time-entries/clock-in',
   clockOut: (entryId: string) => `/v1/time-entries/${entryId}/clock-out`,
+  update: (entryId: string) => `/v1/time-entries/${entryId}`,
   running: '/v1/time-entries/running',
   weekForHousehold: (householdId: string) =>
     `/v1/households/${householdId}/time-entries`,
@@ -81,6 +84,29 @@ export const timeEntryApi = {
 
     const response = await apiClient.post(
       timeEntryEndpoints.clockOut(entryId),
+      validated.data
+    );
+    const parsed = z
+      .object({ time_entry: TimeEntrySchema })
+      .safeParse(response.data.data);
+    if (!parsed.success) throw parsed.error;
+    return parsed.data.time_entry;
+  },
+
+  /**
+   * Correct an already-clocked-out entry (Daylight UX P0-2). Carer-only, and
+   * only while the week is still unapproved — the server owns that gate and
+   * answers a stale attempt with a 409 `TIME_ENTRY_NOT_EDITABLE`.
+   */
+  update: async (
+    entryId: string,
+    input: UpdateTimeEntryInput
+  ): Promise<TimeEntry> => {
+    const validated = UpdateTimeEntrySchema.safeParse(input);
+    if (!validated.success) throw validated.error;
+
+    const response = await apiClient.patch(
+      timeEntryEndpoints.update(entryId),
       validated.data
     );
     const parsed = z

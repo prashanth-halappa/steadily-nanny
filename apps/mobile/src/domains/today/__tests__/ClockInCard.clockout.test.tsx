@@ -32,10 +32,16 @@ mock.module('@/lib/useColorScheme', () => ({
 }));
 
 const HOUSEHOLD_ID = 'household-1';
+// Two hours ago, relative to the real clock. NOT a hardcoded instant: the
+// card's forgotten-clock-out state (Daylight UX #7) triggers off elapsed
+// time, so a fixed past date would silently drift into "overdue" and change
+// what this file is testing. `ClockInCard.overdue.test.tsx` covers that
+// state deliberately.
+const RECENT_CLOCK_IN = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
 const RUNNING_ENTRY = {
   id: 'entry-1',
   household_id: HOUSEHOLD_ID,
-  clock_in_at: '2026-08-01T20:00:00.000Z',
+  clock_in_at: RECENT_CLOCK_IN,
   status: 'running',
 };
 

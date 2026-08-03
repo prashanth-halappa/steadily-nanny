@@ -89,11 +89,41 @@ export const ClockInSchema = z.object({
   shift_id: z.uuid().optional(),
 });
 
-/** POST /time-entries/:id/clock-out body — every field optional. */
+/**
+ * POST /time-entries/:id/clock-out body — every field optional.
+ *
+ * `clock_out_at` exists for the FORGOTTEN clock-out only (Daylight UX #7): a
+ * carer who left at 17:00 and taps "Clock out" the next morning must not
+ * have 14 idle hours recorded as worked. The client supplies the scheduled
+ * finish (or a time the carer typed), and the server bounds it — see
+ * `assertClockOrder` in `timesheetCommandService`. Omitting it keeps the
+ * ordinary behaviour: the server's own clock, i.e. what actually happened.
+ */
 export const ClockOutSchema = z.object({
   break_minutes: z.int().min(0).optional(),
   note: z.string().optional(),
+  clock_out_at: z.iso.datetime({ offset: true }).optional(),
 });
+
+/**
+ * PATCH /time-entries/:id body — the carer's correction path (Daylight UX
+ * P0-2). Every field optional, but at least one must be present: an empty
+ * patch is a client bug, not a no-op worth silently accepting.
+ *
+ * Editable only while the week is still unapproved — the gate lives in
+ * `timesheetCommandService.updateEntry`, not here, because it depends on the
+ * entry's own state rather than the request shape.
+ */
+export const UpdateTimeEntrySchema = z
+  .object({
+    clock_in_at: z.iso.datetime({ offset: true }).optional(),
+    clock_out_at: z.iso.datetime({ offset: true }).optional(),
+    break_minutes: z.int().min(0).optional(),
+    note: z.string().optional(),
+  })
+  .refine(patch => Object.values(patch).some(value => value !== undefined), {
+    message: 'At least one field must be supplied',
+  });
 
 /** List response envelope. */
 export const TimeEntryListResponseSchema = z.object({
@@ -103,6 +133,7 @@ export const TimeEntryListResponseSchema = z.object({
 export type TimeEntry = z.infer<typeof TimeEntrySchema>;
 export type ClockInInput = z.infer<typeof ClockInSchema>;
 export type ClockOutInput = z.infer<typeof ClockOutSchema>;
+export type UpdateTimeEntryInput = z.infer<typeof UpdateTimeEntrySchema>;
 export type TimeEntryListResponse = z.infer<typeof TimeEntryListResponseSchema>;
 
 // =============================================================================

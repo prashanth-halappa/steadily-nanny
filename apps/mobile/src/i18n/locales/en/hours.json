@@ -16,11 +16,13 @@
   "queriedWithNote": "Queried: {{note}}",
   "flaggedCheckEntry": "check this entry",
   "flaggedTitle": "Unusual entry",
-  "flaggedDescription": "This entry has zero duration — usually from an accidental clock-in and clock-out. Editing past entries isn't available yet; ask your household if you need it corrected.",
+  "flaggedDescription": "This entry has zero duration — usually from an accidental clock-in and clock-out. This week has already been approved, so ask your household to query it if it needs correcting.",
   "flaggedDismiss": "Got it",
   "noHoursLogged": "No hours logged",
   "emptyWeek": "No hours logged this week yet.",
   "waitingForSubmit": "Waiting for your carer to submit this week.",
   "waitingAfterQuery": "Waiting for your carer to resubmit after your query.",
-  "inProgress": "in progress"
+  "inProgress": "in progress",
+  "edited": "edited",
+  "editEntry": "Fix this entry"
 }

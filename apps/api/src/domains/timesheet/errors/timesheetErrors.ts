@@ -6,6 +6,7 @@ import {
   AuthorizationError,
   ConflictError,
   NotFoundError,
+  ValidationError,
 } from '../../../errors';
 import type { ErrorMetadata } from '../../../errors/BaseError';
 
@@ -57,6 +58,40 @@ export class TimeEntryNotRunningError extends ConflictError {
       status,
     });
     this.name = 'TimeEntryNotRunningError';
+  }
+}
+
+/**
+ * 409 — a correction (PATCH /time-entries/:id) was attempted on an entry
+ * that is no longer the carer's to change: still `running` (clock out
+ * instead), or belonging to a week the parent has already approved. An
+ * approved week is a signed agreement — the way back into it is the
+ * parent's own query flow, not a silent edit.
+ */
+export class TimeEntryNotEditableError extends ConflictError {
+  constructor(timeEntryId: string, reason: string) {
+    super(
+      'This time entry can no longer be edited',
+      'TIME_ENTRY_NOT_EDITABLE',
+      {
+        timeEntryId,
+        editableReason: reason,
+      }
+    );
+    this.name = 'TimeEntryNotEditableError';
+  }
+}
+
+/**
+ * 400 — the supplied clock times don't describe a possible session: out
+ * before in, or out in the future. Mirrors the DB's
+ * `time_entries_clock_order` check so a bad edit reads as a validation
+ * failure instead of surfacing as a raw constraint violation (500).
+ */
+export class InvalidClockTimesError extends ValidationError {
+  constructor(reason: string, metadata?: ErrorMetadata) {
+    super('Those clock times are not valid', reason, 400, metadata);
+    this.name = 'InvalidClockTimesError';
   }
 }
 

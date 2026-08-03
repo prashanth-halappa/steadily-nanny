@@ -1,9 +1,8 @@
 {
-  "//": "Extends the Expo base (jsx/lib/react-native types) then the workspace base (strict + noUncheckedIndexedAccess). Workspace base is last so its stricter flags win. Unlike the source app, this config INCLUDES test files in typecheck — keep it that way so *.test.ts stays type-clean.",
+  "//": "Extends the Expo base (jsx/lib/react-native types) then the workspace base (strict + noUncheckedIndexedAccess). Workspace base is last so its stricter flags win. Unlike the source app, this config INCLUDES test files in typecheck — keep it that way so *.test.ts stays type-clean. NOTE: `baseUrl` was removed for TypeScript 7 (TS5102). Every mapping in `paths` is already './'-relative and TS resolves them against THIS file's directory, so dropping it changed no import — the @/ and ~/ behaviour described in CLAUDE.md's mobile gotchas still holds.",
   "extends": ["expo/tsconfig.base", "../../tsconfig.base.json"],
   "compilerOptions": {
     "types": ["bun-types"],
-    "baseUrl": ".",
     "paths": {
       "@/*": ["./*"],
       "~/*": ["./*"],
