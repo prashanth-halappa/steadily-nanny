@@ -1,4 +1,5 @@
 import '@/polyfills'; // AI-SDK/streaming shims — MUST be first
+import '@/src/lib/silenceKnownNativeNoise'; // before expo-notifications side-effects
 import '@/global.css'; // NativeWind base styles
 import '@/lib/icons/registry'; // register lucide icons for className support
 import '@/src/i18n'; // initialize i18next
