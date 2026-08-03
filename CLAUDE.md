@@ -34,28 +34,34 @@ Both apps run tests **one file per process** via `scripts/run-tests-one-file.sh`
 
 To run a single test file directly: `bun test path/to/file.test.ts`. **Service tests must call `mock.module()` inside `beforeAll`, BEFORE any dynamic import** — see `docs/09-TESTING.md` for the exact boilerplate.
 
-## Add a feature: copy the widget vertical slice
+## Add a feature: copy the timesheet vertical slice
 
-The `widget` domain (`apps/api/src/domains/widget/` + `apps/mobile/src/domains/widget/`) is a real, compiling, end-to-end feature — not a stub. It's the fastest way to build a new feature correctly: copy its files, rename `Widget` → your entity, and fill in your own business logic. It's also a kitchen-sink example: it already demonstrates CRUD, an LLM-backed field with PII masking and graceful degradation, entitlement gating (a Pro-only quota), a background job, and a push-notification trigger — copy whichever pieces your feature needs and drop the rest.
+The `timesheet` domain (`apps/api/src/domains/timesheet/` + `apps/mobile/src/domains/timesheet/`) is the reference vertical slice: a real, shipping, end-to-end feature that touches every layer below. Read it before building a new one, and copy the layer you need. It demonstrates CRUD, the CQRS-lite query/command split, a shared wire contract, owner-scoped RLS, and a screen wired through query keys and hooks.
+
+It is NOT a kitchen sink — cross-cutting pieces live elsewhere, and each has exactly one worked example:
+- Background/scheduled work → `apps/api/src/jobs/scheduleHorizonJob.ts` (and the barebones `exampleMaintenanceJob.ts`).
+- Push notifications → `apps/api/src/domains/notification/services/notificationSender.ts`.
+- LLM calls + PII masking → `apps/api/src/domains/llm/services/llmGenerate.ts` + `apps/api/src/utils/piiMasking.ts`. **No domain currently wires this in** — `llmGenerate` has zero callers, so treat it as a working building block, not a live example.
+- Role/membership gating → `apps/api/src/domains/household/services/householdCommandService.ts`, one check at the top of each write method.
 
 **Shared contract first:**
-1. `packages/shared-types/src/schemas/<feature>.schema.ts` — Zod request/response schemas + inferred types, following `packages/shared-types/src/schemas/widget.schema.ts`. Both apps import from here — never redefine the same shape twice. The widget example does exactly this end-to-end: the API side's `apps/api/src/domains/widget/schemas.ts` is a thin re-export barrel over the shared module (so domain-internal `../schemas` imports stay stable), and the mobile side's `apps/mobile/src/api/endpoints/widgets.ts` imports the same `WidgetSchema` to validate responses — one wire contract, both apps.
+1. `packages/shared-types/src/schemas/<feature>.schema.ts` — Zod request/response schemas + inferred types, following `packages/shared-types/src/schemas/timesheet.schema.ts`. Both apps import from here — never redefine the same shape twice. The timesheet example does exactly this end-to-end: the API side's `apps/api/src/domains/timesheet/schemas.ts` is a thin re-export barrel over the shared module (so domain-internal `../schemas` imports stay stable) that also holds the server-only URL/query schemas, and the mobile side's `apps/mobile/src/api/endpoints/timesheets.ts` imports the same `TimesheetSchema` to validate responses — one wire contract, both apps.
 
 **API side** (`apps/api/src/domains/<feature>/`), in dependency order:
-2. `supabase/migrations/00X_<feature>.sql` — table + RLS policies (owner-only by default — see `supabase/migrations/002_user_profiles.sql` for the shape), following `008_widgets.sql`.
-3. `repositories/<feature>Repository.ts` — extends `BaseRepository<T>`, add domain queries (`widgetRepository.ts`).
-4. `services/<feature>Service.ts` (or split `QueryService`/`CommandService` for CQRS-lite once the domain has non-trivial write-side logic — see `widgetQueryService.ts` / `widgetCommandService.ts`). Business logic and gating live here, never in the controller.
-5. `errors/<feature>Errors.ts` — a `NotFoundError` subclass for "missing or not yours" (see `widgetErrors.ts`'s `WidgetNotFoundError` — the SAME error for both cases, deliberately, so existence isn't leaked to a non-owner).
-6. `controllers/<feature>Controller.ts` — HTTP layer only (`widgetController.ts`).
-7. `routes/<feature>Routes.ts` — wire `authWithValidation`/`authWithOwnership` presets (`apps/api/src/middlewares/presets.ts`) per route (`widgetRoutes.ts`).
+2. `supabase/migrations/0XX_<feature>.sql` — table + RLS policies (owner-only by default — see `supabase/migrations/002_user_profiles.sql` for the shape), following `017_time_tracking.sql`.
+3. `repositories/<feature>Repository.ts` — extends `BaseRepository<T>`, add domain queries (`timesheetRepository.ts`, `timeEntryRepository.ts`).
+4. `services/<feature>Service.ts` (or split `QueryService`/`CommandService` for CQRS-lite once the domain has non-trivial write-side logic — see `timesheetQueryService.ts` / `timesheetCommandService.ts`). Business logic and gating live here, never in the controller.
+5. `errors/<feature>Errors.ts` — a `NotFoundError` subclass for "missing or not yours" (see `timesheetErrors.ts`'s `TimesheetNotFoundError` / `TimeEntryNotFoundError` — the SAME error for both cases, deliberately, so existence isn't leaked to a non-member).
+6. `controllers/<feature>Controller.ts` — HTTP layer only (`timesheetController.ts`).
+7. `routes/<feature>Routes.ts` — wire `authWithValidation`/`authWithOwnership` presets (`apps/api/src/middlewares/presets.ts`) per route (`timesheetRoutes.ts`; household-scoped variants live alongside as `householdTimesheetRoutes.ts`).
 8. Mount it: add one line to `apps/api/src/routes/index.ts` (`router.use('/<feature>s', <feature>Routes)`).
-9. (Optional) `jobs/<feature>DigestJob.ts` if the feature needs scheduled work — use the `createTrackedJobHandler`/`createSimpleJobHandler` factories in `apps/api/src/controllers/jobHandlerFactory.ts`.
+9. (Optional) `apps/api/src/jobs/<feature>Job.ts` if the feature needs scheduled work — use the `createTrackedJobHandler`/`createSimpleJobHandler` factories in `apps/api/src/controllers/jobHandlerFactory.ts`.
 
 **Mobile side** (`apps/mobile/src/`):
-10. `api/endpoints/<feature>s.ts` — the axios wrapper, validating the response with the shared schema (`endpoints/widgets.ts`).
-11. Add a `<feature>:` block to the central query-key factory `apps/mobile/src/api/queryKeys.ts` (the widget example's `widget:` block is the model) — there is no separate per-feature keys file.
-12. `hooks/queries/use<Feature>(s).ts` + `hooks/mutations/use{Create,Update,Delete}<Feature>.ts` — one hook per file; components call these, never the endpoint module directly (`docs/08-CONVENTIONS.md`).
-13. `domains/<feature>/components/` — the screen(s); a thin route file under `src/app/(private)/...` delegates to it (`domains/widget/components/`, `app/(private)/widget/[widgetId].tsx`).
+10. `api/endpoints/<feature>s.ts` — the axios wrapper, validating the response with the shared schema (`endpoints/timesheets.ts`).
+11. Add a `<feature>:` block to the central query-key factory `apps/mobile/src/api/queryKeys.ts` (the `timesheet:` block is the model) — there is no separate per-feature keys file.
+12. `hooks/queries/use<Feature>.ts` + `hooks/mutations/use<Verb><Feature>.ts` — one hook per file; components call these, never the endpoint module directly (`docs/08-CONVENTIONS.md`). See `hooks/queries/useWeekTimesheet.ts` and `hooks/mutations/useApproveTimesheet.ts`.
+13. `domains/<feature>/components/` — the screen(s); a thin route file under `src/app/(private)/...` delegates to it (`domains/timesheet/components/HoursScreen.tsx`, `app/(private)/(tabs)/hours.tsx`).
 
 **Tests, colocated at every layer** (per `docs/09-TESTING.md`): API service/controller tests next to the source; mobile component tests under a `__tests__/` folder — **never** a `*.test.ts(x)` file colocated directly inside `src/app/` next to a route file (expo-router will try to treat it as a route — see `GOLDEN-FIXES.md` #8).
 
@@ -66,8 +72,8 @@ The `widget` domain (`apps/api/src/domains/widget/` + `apps/mobile/src/domains/w
 - **Tailwind `shadow-*` does nothing — use `useElevation()`.** NativeWind's box-shadow parser is broken (multi-layer bails, spread misread); `tailwind.config.js` keeps `boxShadow.*` as `'none'` on purpose. Plum-tinted card shadows live in `apps/mobile/lib/design-tokens/elevation.ts` and must be applied as inline `style`. See `docs/07-MOBILE-UI-SYSTEM.md` and `GOLDEN-FIXES.md` #19.
 - **`@/` and `~/` both resolve to the `apps/mobile` repo ROOT, not `src/`.** The design system (`lib/design-tokens/`, `lib/animations/`, `lib/icons/`) lives at the root-level `lib/`, separate from `src/lib/` (haptics, network, misc utils). Check `apps/mobile/tsconfig.json`'s `paths` and `babel.config.js`'s `module-resolver` alias before assuming an import resolves the way it looks like it should.
 - **Never use a bare React Native `<Modal>` above the navigator.** A bare `animationType="slide"` modal can strand a transparent, touch-blocking window on iOS and freeze the app. Always use `BottomSheetBase` (`apps/mobile/src/components/custom/BottomSheetBase.tsx`). (`GOLDEN-FIXES.md` #1.)
-- **Paywall entry points must call `isPaywallReady(context)` before touching the RevenueCat SDK** (`apps/mobile/src/domains/subscription/utils/paywallReadiness.ts`) — otherwise an env-drift misconfiguration crashes natively, not as a catchable JS error. (`GOLDEN-FIXES.md` #1 in the App Store section — see `REVIEW-CHECKLIST.md` §1.)
-- **`client.ts`'s auth/paywall behavior is injected, not automatic.** `configureAuthHandlers({ refreshToken, onUnauthorized })` and `setOnForbiddenHandler(fn)` must be called once at app start (the auth store and subscription kit already do this) — if you replace either, re-wire the injection point, don't hardcode a dependency back into `client.ts`.
+- **This app has no paywall.** There is no `domains/subscription/`, no RevenueCat dependency, and no entitlement gating. If you add billing, re-read `GOLDEN-FIXES.md` #1 (App Store section) and `REVIEW-CHECKLIST.md` §1 first — the native-crash-on-env-drift trap they describe is real, it just has nothing to bite here yet.
+- **`client.ts`'s auth behavior is injected, not automatic.** `configureAuthHandlers({ refreshToken, onUnauthorized })` (`apps/mobile/src/api/client.ts`) must be called once at app start — the auth store already does this. If you replace it, re-wire the injection point, don't hardcode a dependency back into `client.ts`.
 
 ## Dev-log locations
 
