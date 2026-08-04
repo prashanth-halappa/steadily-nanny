@@ -78,10 +78,12 @@ authorization and state-integrity defects, and money raises the stakes.
 | 1 command/query services (membership assertion) | **opus** | D12-class authorization check; repositories bypass RLS |
 | 1 controller + routes + mobile endpoint/hooks | sonnet | Mechanical slice copy |
 | 1 screens (parent Pay, nanny read-only) + wiring tests | sonnet | UI + D15-style wiring tests |
+| 1 nanny pay setup flow (form + prompt-card entry points) | sonnet | Same field set as the change sheet; wiring tests for both entry points |
 | 1 i18n en+es, query keys, barrels | haiku | Mechanical |
 | 2 migration `042_timesheet_earnings` | sonnet | Four nullable columns |
 | 2 **earnings engine + case table** | **opus** | The hardest logic in Tier 0: mid-week rate change, overtime/topup interaction, closure weeks, currency-change error arm |
 | 2 timesheet service wiring (live/freeze/reopen-clears-snapshot) | **opus** | Recreates the exact D1 failure surface |
+| 2 cancellation window repoint in shift change-requests | sonnet, **opus review** | Changes what a nanny gets paid; three-arm fallback logic |
 | 2 Hours screen money line + approve dialog + wiring tests | sonnet | UI |
 | 3 migration `043_pto_ledger` (anonymity note, idempotent accrual index) | **opus** | Touches the cross-family anonymity boundary |
 | 3 services (lazy accrual, markTimeOffPaid assertions) | sonnet, **opus review** | One D12-class check inside otherwise patterned work |
@@ -96,6 +98,54 @@ Orchestration notes: within a phase, independent lanes (API slice vs. mobile
 slice after the shared schema lands; i18n alongside screens) run as parallel
 sub-agents; anything touching the same files serializes. The orchestrator —
 not a sub-agent — owns commits, the QC gate, and the phase review handoff.
+
+---
+
+## Owner decisions — 2026-08-04 (binding)
+
+The product owner ruled on the open questions from `docs/TIER0-CX-SPEC.md` §10
+and added two scope changes. These override anything else in this document or
+the CX spec where they conflict:
+
+1. **No co-parent approval for pay changes.** A single parent sets and changes
+   pay terms; nothing routes through `approvalGateService`. The gate stays
+   `can_write_household`, full stop.
+2. **"Gross" stays** as the label (owner: "gross or total is fine").
+3. **PTO entitlement is set during nanny setup** by the parent (it is a field
+   of the arrangement, captured in the setup flow below), and the PTO year is
+   the **calendar year** for v1.
+4. **No future-dated rate changes in v1.** `valid_from` must be today or
+   earlier (service-enforced; backdating allowed — an open week recomputes,
+   an approved week stays frozen). The CX spec's "Scheduled change" card and
+   the nanny's scheduled-change visibility are cut; the change sheet's
+   effective-date default becomes **today**, not next Monday. The mid-week
+   split rendering stays — a mid-week change still splits the week.
+5. **Cancellation policy is per-nanny, set during setup, with a
+   no-cancellation-pay option.** New column on the arrangement:
+   `cancellation_paid_within_hours integer null check (> 0)` — a number means
+   "a cancellation within N hours of the start is paid"; **null means no
+   cancellation pay**. An arrangement's policy always overrides the household
+   column; `households.cancellation_paid_within_hours` remains only as the
+   fallback when no arrangement exists (flagged for deprecation, not dropped).
+6. **Mileage rate is per-nanny, set during setup** — confirmed; this is
+   already where the plan put it (a column on the arrangement).
+7. **Nanny pay setup flow is in Phase 1 scope.** A full-form "Set up pay for
+   {name}" flow — rate, effective date, overtime, guaranteed hours, PTO
+   entitlement/yr, cancellation policy, mileage rate — reachable from (a) a
+   prompt card parents see whenever an active nanny has no arrangement and
+   (b) the no-arrangement empty states already specified. All fields are
+   **live inputs and stored from Phase 1** (they are all columns of migration
+   `041`); what lands later is their downstream *effect* — PTO accrual in
+   Phase 3, mileage pricing in Phase 4. The stored-but-not-yet-priced fields
+   say so inline ("Used from a later update" is banned copy — say what it
+   does: e.g. mileage shows on expenses once expenses ship).
+
+Per-nanny cancellation policy adds one integration task to Phase 2:
+`shiftChangeRequestCommandService.ts` (line ~182) currently decides
+`cancellation_paid` from `household.cancellation_paid_within_hours`; that read
+becomes "the effective arrangement's window, null → not paid, no arrangement →
+household fallback". Red-first tests for all three arms; sonnet with opus
+review (it changes what a nanny gets paid).
 
 ---
 
@@ -235,7 +285,10 @@ pay_arrangements
   guaranteed_minutes_per_week integer check (>= 0)                     -- null = none
   pto_entitlement_minutes_per_year integer check (>= 0)                -- null = none (Phase 3 reads it)
   mileage_rate_per_mile_minor integer check (>= 0)                     -- null = none (Phase 4 reads it)
-  valid_from                  date not null
+  cancellation_paid_within_hours integer check (> 0)                   -- null = NO cancellation pay;
+                                                                       -- overrides households.* when set (owner decision 5)
+  valid_from                  date not null                            -- must be <= today; enforced in the
+                                                                       -- command service (owner decision 4)
   note                        text                                     -- "annual review", shown in history
   created_by                  uuid → user_profiles on delete set null
   created_at                  timestamptz not null default now()
@@ -271,10 +324,13 @@ the module JSDoc mirroring `timesheet.schema.ts`'s style.
   `listForCarer(householdId, carerId)`. `effectiveOn` is the **only** place the
   greatest-valid-from rule exists.
 - `services/payArrangementCommandService.ts` — `create()`: parent-gated (role
-  check at top, house style), then the **D12-class check**: assert `carer_id`
-  is an *active member with role `nanny`* of *this* household before writing —
-  repositories bypass RLS, the service is the gate. Collapse "no such carer"
-  and "not your carer" into one error.
+  check at top, house style — a single parent suffices, owner decision 1: no
+  `approvalGateService` involvement), then the **D12-class check**: assert
+  `carer_id` is an *active member with role `nanny`* of *this* household before
+  writing — repositories bypass RLS, the service is the gate. Collapse "no such
+  carer" and "not your carer" into one error. Also validates
+  `valid_from <= today` (owner decision 4) and rejects a future date with a
+  typed error.
 - `services/payArrangementQueryService.ts` — history + current.
 - `errors/payErrors.ts` — `PayArrangementNotFoundError`.
 - Controller + routes: `GET/POST
@@ -288,14 +344,22 @@ the module JSDoc mirroring `timesheet.schema.ts`'s style.
   `history(householdId, carerId)`).
 - Hooks: `useCurrentPayArrangement`, `usePayArrangementHistory`,
   `useCreatePayArrangement`.
-- UI: parent-only "Pay" screen reached from the member row in Settings →
-  Household (`app/(private)/settings/pay.tsx` thin route →
-  `domains/pay/components/PayArrangementScreen.tsx`): current terms card, an
-  effective-dated "change" form (rate, overtime, guaranteed hours; PTO and
-  mileage fields appear here too but are inert until Phases 3–4), and a
-  history list. Nanny sees a read-only version of her own terms (Settings →
-  "My pay"). Currency input: display-major, store-minor — conversion in one
-  util (`lib/` or shared), property-tested (the classic ×100 float bug).
+- UI (per `docs/TIER0-CX-SPEC.md` §2–3, as amended by owner decisions 4/5/7):
+  parent-only "Pay & terms" screen (`/settings/pay`, `/settings/pay/[carerId]`
+  → `domains/pay/components/PayArrangementScreen.tsx`): current terms card
+  (now including the cancellation-policy row), the change sheet
+  (effective-date default **today**, past dates allowed, no future dates, no
+  Scheduled card), and the append-only history list. Nanny gets read-only
+  "My pay" (`/settings/my-pay`). Currency input: display-major, store-minor —
+  conversion in one util, property-tested (the classic ×100 float bug).
+- **Nanny pay setup flow** (owner decision 7): "Set up pay for {name}" —
+  the change sheet's field set as a first-run form (rate, effective date,
+  overtime, guaranteed hours, PTO entitlement/yr, cancellation policy with an
+  explicit "No cancellation pay" option defaulting from the household's
+  current window, mileage rate). Entry points: a prompt card on Manage
+  household whenever an active nanny has no arrangement, plus the
+  no-arrangement empty states. Every field stores from Phase 1; PTO/mileage
+  *effects* land in Phases 3–4.
 - i18n: en + es for every string.
 
 **Phase 1 estimate: M.** The slice is mechanical; the two careful spots are
@@ -348,6 +412,12 @@ zeros (decision 5).
   path, so what the parent saw is what froze.
 - The D1 reopen path: **null out the four snapshot columns** when an approved
   week reopens. Add the regression test next to the existing D1 test.
+- **Cancellation window repoint** (owner decision 5):
+  `shiftChangeRequestCommandService.ts` (~line 182) decides `cancellation_paid`
+  from `household.cancellation_paid_within_hours`; change the read to the
+  carer's effective arrangement — window set → that window; window null → not
+  paid; no arrangement at all → household fallback. Red-first tests for all
+  three arms before touching the service.
 - Shared contract: extend `timesheet.schema.ts` with `EarningsSchema` (line
   items, totals, `no_arrangement` union arm) on the week response.
 
@@ -509,6 +579,9 @@ Rough total: **4–6 focused implementation sessions** at this repo's
 conventions-and-tests density, Phase 2 the largest.
 
 ## Open items deliberately left with the owner
+
+(The design questions formerly listed here were ruled on 2026-08-04 — see
+"Owner decisions" at the top. What remains is operational:)
 
 - Apply migrations 040–044 to the live project as phases land (service-role
   access is not available to agents here).
