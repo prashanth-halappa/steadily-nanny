@@ -5,6 +5,7 @@
 import type { NextFunction, Request, Response } from 'express';
 import { getAuthUserId } from '../../../utils/asyncHandler';
 import { sendSuccessResponse } from '../../../utils/responseHelpers';
+import { collectClashWarningsForCarer } from '../../me/services/clashWarning';
 import { shiftCommandService } from '../services/shiftCommandService';
 import { shiftQueryService } from '../services/shiftQueryService';
 import type { ShiftRangeQuery } from '../types';
@@ -72,7 +73,49 @@ export class ShiftController {
         shiftId,
         req.body
       );
-      return sendSuccessResponse(res, 'Shift updated', { shift });
+      const warnings =
+        shift.carer_id != null
+          ? await collectClashWarningsForCarer(
+              shift.carer_id,
+              {
+                startsAt: shift.starts_at,
+                endsAt: shift.ends_at,
+                timezone: shift.timezone,
+              },
+              {
+                ignoreExact: { sourceUid: shift.ical_uid },
+              }
+            )
+          : [];
+      return sendSuccessResponse(res, 'Shift updated', { shift, warnings });
+    } catch (error) {
+      return next(error);
+    }
+  }
+
+  /** Carer-only accept pending → confirmed: POST /shifts/:shiftId/accept. */
+  static async accept(req: Request, res: Response, next: NextFunction) {
+    try {
+      const shiftId = req.params.shiftId as string;
+      const shift = await shiftCommandService.accept(
+        getAuthUserId(req),
+        shiftId
+      );
+      const warnings =
+        shift.carer_id != null
+          ? await collectClashWarningsForCarer(
+              shift.carer_id,
+              {
+                startsAt: shift.starts_at,
+                endsAt: shift.ends_at,
+                timezone: shift.timezone,
+              },
+              {
+                ignoreExact: { sourceUid: shift.ical_uid },
+              }
+            )
+          : [];
+      return sendSuccessResponse(res, 'Shift accepted', { shift, warnings });
     } catch (error) {
       return next(error);
     }

@@ -1,7 +1,8 @@
 /**
- * Shift domain barrel — read-focused shift access, parent-only time/note edit,
- * and change-request / extra-shift flows (1d/1e). The schedule domain remains
- * the sole writer of create/update/delete for pattern-driven shifts (see
+ * Shift domain barrel — shift reads, parent time/note edit (consent demotion),
+ * carer accept-pending, and change-request / extra-shift flows (1d/1e). The
+ * schedule domain remains the sole writer of create/update/delete for
+ * pattern-driven shifts (see
  * `domains/schedule/services/scheduleMaterialisationService.ts`).
  *
  * @module domains/shift

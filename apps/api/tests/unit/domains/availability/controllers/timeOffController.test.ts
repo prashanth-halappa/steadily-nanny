@@ -8,12 +8,14 @@ let update: any;
 
 beforeAll(async () => {
   listOwn = mock(async () => [{ id: 't1', status: 'confirmed' }]);
-  create = mock(async () => ({ id: 't-new', status: 'confirmed' }));
+  create = mock(async () => ({
+    carer_time_off: { id: 't-new', status: 'confirmed' },
+    affected_shift_count: 0,
+  }));
   cancel = mock(async () => ({ id: 't1', status: 'cancelled' }));
   update = mock(async () => ({
-    id: 't1',
-    status: 'confirmed',
-    message: 'Updated',
+    carer_time_off: { id: 't1', status: 'confirmed', message: 'Updated' },
+    affected_shift_count: 0,
   }));
 
   mock.module(
@@ -80,6 +82,7 @@ describe('TimeOffController', () => {
     expect(res.statusCode).toBe(201);
     expect(res.body.data).toEqual({
       carer_time_off: { id: 't-new', status: 'confirmed' },
+      affected_shift_count: 0,
     });
   });
 
@@ -98,6 +101,7 @@ describe('TimeOffController', () => {
     expect(res.statusCode).toBe(200);
     expect(res.body.data).toEqual({
       carer_time_off: { id: 't1', status: 'confirmed', message: 'Updated' },
+      affected_shift_count: 0,
     });
   });
 

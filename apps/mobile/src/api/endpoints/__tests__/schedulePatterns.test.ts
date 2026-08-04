@@ -290,10 +290,13 @@ describe('schedulePatternApi.replaceDays', () => {
 });
 
 describe('schedulePatternApi.send', () => {
-  it('POSTs the send action with no body', async () => {
+  it('POSTs the send action with no body and keeps warnings', async () => {
     apiClient.post.mockResolvedValue({
       data: {
-        data: { schedule_pattern: { ...validPattern, status: 'pending' } },
+        data: {
+          schedule_pattern: { ...validPattern, status: 'pending' },
+          warnings: [{ kind: 'outside_availability' }],
+        },
       },
     });
 
@@ -302,15 +305,19 @@ describe('schedulePatternApi.send', () => {
     expect(apiClient.post).toHaveBeenCalledWith(
       `/v1/schedule-patterns/${patternId}/send`
     );
-    expect(result.status).toBe('pending');
+    expect(result.schedule_pattern.status).toBe('pending');
+    expect(result.warnings).toEqual([{ kind: 'outside_availability' }]);
   });
 });
 
 describe('schedulePatternApi.respond', () => {
-  it('POSTs accepted status', async () => {
+  it('POSTs accepted status and keeps warnings', async () => {
     apiClient.post.mockResolvedValue({
       data: {
-        data: { schedule_pattern: { ...validPattern, status: 'accepted' } },
+        data: {
+          schedule_pattern: { ...validPattern, status: 'accepted' },
+          warnings: [],
+        },
       },
     });
 
@@ -322,7 +329,8 @@ describe('schedulePatternApi.respond', () => {
       `/v1/schedule-patterns/${patternId}/respond`,
       { status: 'accepted' }
     );
-    expect(result.status).toBe('accepted');
+    expect(result.schedule_pattern.status).toBe('accepted');
+    expect(result.warnings).toEqual([]);
   });
 });
 

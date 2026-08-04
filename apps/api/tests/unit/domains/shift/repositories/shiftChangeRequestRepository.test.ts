@@ -11,6 +11,7 @@ function createMockQueryChain(
     select: mock(() => chain),
     eq: mock(() => chain),
     neq: mock(() => chain),
+    in: mock(() => chain),
     order: mock(() => chain),
     update: mock(() => chain),
     insert: mock(() => chain),
@@ -78,6 +79,27 @@ describe('ShiftChangeRequestRepository.respond', () => {
     await expect(
       repo.respond('cr1', 'declined', 'carer-1')
     ).rejects.toBeInstanceOf(ChangeRequestNotPendingError);
+  });
+});
+
+describe('ShiftChangeRequestRepository.listPendingByShiftIds', () => {
+  it('returns [] without hitting the DB when shiftIds is empty', async () => {
+    const repo = new ShiftChangeRequestRepository();
+    expect(await repo.listPendingByShiftIds([])).toEqual([]);
+    expect(mockSupabaseService.from).not.toHaveBeenCalled();
+  });
+
+  it('filters pending rows for the given shift ids', async () => {
+    const rows = [{ id: 'cr1', status: 'pending', shift_id: 's1' }];
+    const chain = createMockQueryChain({ data: rows, error: null });
+    mockSupabaseService.from.mockImplementation(() => chain);
+    const repo = new ShiftChangeRequestRepository();
+
+    const result = await repo.listPendingByShiftIds(['s1', 's2']);
+
+    expect(chain.in).toHaveBeenCalledWith('shift_id', ['s1', 's2']);
+    expect(chain.eq).toHaveBeenCalledWith('status', 'pending');
+    expect(result).toEqual(rows);
   });
 });
 

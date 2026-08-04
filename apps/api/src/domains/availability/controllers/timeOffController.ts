@@ -45,19 +45,14 @@ export class TimeOffController {
     }
   }
 
-  /** POST /time-off — create for the caller. */
+  /** POST /time-off — create for the caller; includes affected_shift_count. */
   static async create(req: Request, res: Response, next: NextFunction) {
     try {
-      const carer_time_off = await timeOffCommandService.create(
+      const result = await timeOffCommandService.create(
         getAuthUserId(req),
         req.body
       );
-      return sendSuccessResponse(
-        res,
-        'Time off created',
-        { carer_time_off },
-        201
-      );
+      return sendSuccessResponse(res, 'Time off created', result, 201);
     } catch (error) {
       return next(error);
     }
@@ -83,16 +78,16 @@ export class TimeOffController {
     }
   }
 
-  /** PATCH /time-off/:id — edit dates/message on an active row. */
+  /** PATCH /time-off/:id — edit dates/message; includes affected_shift_count. */
   static async update(req: Request, res: Response, next: NextFunction) {
     try {
       const id = req.params.id as string;
-      const carer_time_off = await timeOffCommandService.update(
+      const result = await timeOffCommandService.update(
         getAuthUserId(req),
         id,
         req.body
       );
-      return sendSuccessResponse(res, 'Time off updated', { carer_time_off });
+      return sendSuccessResponse(res, 'Time off updated', result);
     } catch (error) {
       return next(error);
     }

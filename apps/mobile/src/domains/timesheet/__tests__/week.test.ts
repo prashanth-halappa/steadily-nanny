@@ -12,6 +12,7 @@ import {
   formatWeekRangeLabel,
   getWeekDates,
   getWeekStartISO,
+  weeksBetween,
 } from '../utils/week';
 
 describe('getWeekStartISO', () => {
@@ -146,6 +147,28 @@ describe('addWeeks', () => {
   it('lands on the correct Monday for a week that crosses a household DST transition', () => {
     expect(addWeeks('2026-03-23', 1)).toBe('2026-03-30');
     expect(addWeeks('2026-03-30', -1)).toBe('2026-03-23');
+  });
+});
+
+// Inverse of `addWeeks` — deep-link absolute Monday → Hours weekOffset.
+describe('weeksBetween', () => {
+  it('returns 0 for the same Monday', () => {
+    expect(weeksBetween('2026-08-03', '2026-08-03')).toBe(0);
+  });
+
+  it('returns a negative offset when the target is earlier', () => {
+    expect(weeksBetween('2026-08-03', '2026-07-13')).toBe(-3);
+  });
+
+  it('returns a positive offset when the target is later', () => {
+    expect(weeksBetween('2026-07-13', '2026-08-03')).toBe(3);
+  });
+
+  it('is the inverse of addWeeks for whole-week deltas', () => {
+    const from = '2026-08-03';
+    for (const delta of [-4, -1, 0, 1, 4]) {
+      expect(weeksBetween(from, addWeeks(from, delta))).toBe(delta);
+    }
   });
 });
 

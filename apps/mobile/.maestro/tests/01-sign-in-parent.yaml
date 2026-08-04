@@ -1,0 +1,10 @@
+# Critical login gate — parent signs in via email and leaves the welcome wall.
+# Composes ../flows/login.yaml. Credentials from .env.maestro (seed-test-users).
+appId: com.jetto.steadily.nanny
+tags:
+  - critical
+---
+- runFlow: ../flows/login.yaml
+- assertNotVisible:
+    id: 'welcome-screen'
+- takeScreenshot: signed-in-parent

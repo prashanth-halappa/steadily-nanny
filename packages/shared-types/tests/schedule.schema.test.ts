@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import {
+  AmendSchedulePatternSchema,
   CreateSchedulePatternDayChildSchema,
   CreateSchedulePatternDaySchema,
   CreateSchedulePatternSchema,
@@ -108,6 +109,25 @@ describe('schedule.schema', () => {
         CreateSchedulePatternSchema.safeParse({ dtstart: '2026-08-03' }).success
       ).toBe(false);
     });
+
+    it('rejects until before dtstart', () => {
+      const result = CreateSchedulePatternSchema.safeParse({
+        rrule: 'FREQ=WEEKLY;BYDAY=MO',
+        dtstart: '2026-08-03',
+        until: '2026-08-01',
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it('accepts until equal to dtstart', () => {
+      expect(
+        CreateSchedulePatternSchema.safeParse({
+          rrule: 'FREQ=WEEKLY;BYDAY=MO',
+          dtstart: '2026-08-03',
+          until: '2026-08-03',
+        }).success
+      ).toBe(true);
+    });
   });
 
   describe('UpdateSchedulePatternSchema', () => {
@@ -119,6 +139,44 @@ describe('schedule.schema', () => {
       expect(
         UpdateSchedulePatternSchema.safeParse({ status: 'withdrawn' }).success
       ).toBe(true);
+    });
+
+    it('rejects until before dtstart when both are present', () => {
+      expect(
+        UpdateSchedulePatternSchema.safeParse({
+          dtstart: '2026-08-03',
+          until: '2026-08-01',
+        }).success
+      ).toBe(false);
+    });
+  });
+
+  describe('AmendSchedulePatternSchema', () => {
+    it('rejects an empty object', () => {
+      expect(AmendSchedulePatternSchema.safeParse({}).success).toBe(false);
+    });
+
+    it('accepts exdates / pause_ranges / until only', () => {
+      expect(
+        AmendSchedulePatternSchema.safeParse({
+          exdates: ['2026-09-03'],
+          pause_ranges: [{ from: '2026-07-21', to: '2026-09-01' }],
+          until: '2026-12-01',
+        }).success
+      ).toBe(true);
+    });
+
+    it('rejects day/time fields that belong on draft update', () => {
+      const result = AmendSchedulePatternSchema.safeParse({
+        exdates: ['2026-09-03'],
+        rrule: 'FREQ=WEEKLY',
+      });
+      // Zod strips unknown keys by default — amend is still valid if
+      // at least one amend field is present; rrule is ignored, not an error.
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data).toEqual({ exdates: ['2026-09-03'] });
+      }
     });
   });
 

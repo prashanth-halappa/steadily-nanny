@@ -1,0 +1,63 @@
+# Scenario — parent edits a confirmed shift (demotes to pending) → nanny re-confirms.
+#
+# Prerequisites (.env.maestro):
+#   PARENT_* / NANNY_* credentials
+#   DEMOTED_SHIFT_ID — a confirmed shift the parent can edit (recurring/cover/
+#     sequence>0). Parent Save demotes → pending + parent_proposed; nanny sees
+#     shift-detail-needs-reconfirm (not fresh-proposal copy).
+#
+# Two-role on one simulator: parent edit → logout → nanny accept.
+appId: com.jetto.steadily.nanny
+tags:
+  - scheduling
+---
+# --- Parent: edit times → Save demotes ---
+- runFlow: ../flows/login.yaml
+- openLink: steadilynanny:///(private)/schedule/shifts/${DEMOTED_SHIFT_ID}
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'shift-detail-screen'
+- assertVisible:
+    id: 'shift-detail-edit'
+- tapOn:
+    id: 'shift-detail-end'
+- eraseText
+- inputText: '18:30'
+- hideKeyboard
+- tapOn:
+    id: 'shift-detail-save'
+- waitForAnimationToEnd
+# Time change on a CONFIRMED shift must demote it to pending (migration 034)
+# and show the (not role-gated) reconfirm hint — shift-detail-status renders
+# unconditionally regardless of status, so it alone proves nothing.
+- assertVisible:
+    id: 'shift-detail-status-pending'
+- assertVisible:
+    id: 'shift-detail-needs-reconfirm'
+- takeScreenshot: parent-edited-demoted-shift
+
+# --- Nanny: re-confirm demoted shift ---
+# Pop back to a tab first — logout.yaml is wrapped in `when: visible:
+# tab-settings`, and this screen (a pushed /(private)/schedule/shifts/[id]
+# route outside (tabs)) has no tab bar, so logout would silently no-op and
+# the nanny leg below would run as the still-signed-in parent.
+- back
+- waitForAnimationToEnd
+- runFlow: ../flows/logout.yaml
+- runFlow: ../flows/login-nanny.yaml
+- openLink: steadilynanny:///(private)/schedule/shifts/${DEMOTED_SHIFT_ID}
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'shift-detail-screen'
+- assertVisible:
+    id: 'shift-detail-needs-reconfirm'
+- tapOn:
+    id: 'shift-detail-accept'
+- waitForAnimationToEnd
+- assertNotVisible:
+    id: 'shift-detail-accept'
+- assertNotVisible:
+    id: 'shift-detail-needs-reconfirm'
+- assertVisible:
+    id: 'shift-detail-status-confirmed'
+- takeScreenshot: nanny-reconfirmed-demoted-shift

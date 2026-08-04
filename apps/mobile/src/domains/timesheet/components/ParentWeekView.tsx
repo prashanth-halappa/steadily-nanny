@@ -228,7 +228,7 @@ export function ParentWeekView({
                   >
                     {timesheet?.status === TIMESHEET_STATUSES.QUERIED
                       ? t('waitingAfterQuery')
-                      : t('waitingForSubmit')}
+                      : t('waitingForHours')}
                   </Body>
                 ) : null}
                 <Button

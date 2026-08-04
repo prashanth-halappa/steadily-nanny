@@ -171,7 +171,7 @@ export class ScheduleMaterialisationService {
       if (producedDates.has(shift.local_date)) {
         continue; // still produced this run — handled in the loop above
       }
-      await this.reconcileOrphan(shift, now, result);
+      await this.reconcileOrphan(pattern, shift, now, result);
     }
 
     return result;
@@ -244,6 +244,7 @@ export class ScheduleMaterialisationService {
   }
 
   private async reconcileOrphan(
+    pattern: PatternForMaterialisation,
     shift: Shift,
     now: Date,
     result: MaterialiseResult
@@ -273,6 +274,7 @@ export class ScheduleMaterialisationService {
     result.cancelled++;
 
     if (touched) {
+      await this.raiseConflictOnce(pattern, shift, shift.local_date);
       result.conflicts.push({
         shiftId: shift.id,
         localDate: shift.local_date,

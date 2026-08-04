@@ -7,11 +7,15 @@ import {
   CarerAvailabilityIdParamSchema,
   CarerAvailabilitySchema,
   CarerTimeOffIdParamSchema,
+  CarerTimeOffMutationResponseSchema,
   CarerTimeOffSchema,
   CreateCarerAvailabilitySchema,
   CreateCarerTimeOffSchema,
+  CreateHouseholdClosureSchema,
+  HouseholdClosureSchema,
   UpdateCarerAvailabilitySchema,
   UpdateCarerTimeOffSchema,
+  UpdateHouseholdClosureSchema,
 } from '../src/schemas/availability.schema';
 
 const VALID_UUID = '11111111-1111-4111-8111-111111111111';
@@ -148,6 +152,21 @@ describe('availability.schema', () => {
       });
       expect(result.success).toBe(false);
     });
+
+    it('compares instants, not lexicographic ISO strings across offsets', () => {
+      expect(
+        CreateCarerTimeOffSchema.safeParse({
+          starts_at: '2026-08-10T12:00:00+00:00',
+          ends_at: '2026-08-10T11:30:00-01:00', // 12:30Z — after start
+        }).success
+      ).toBe(true);
+      expect(
+        CreateCarerTimeOffSchema.safeParse({
+          starts_at: '2026-08-10T12:00:00+00:00',
+          ends_at: '2026-08-10T10:30:00-01:00', // 11:30Z — before start
+        }).success
+      ).toBe(false);
+    });
   });
 
   describe('UpdateCarerTimeOffSchema', () => {
@@ -173,6 +192,84 @@ describe('availability.schema', () => {
       expect(
         CarerTimeOffIdParamSchema.safeParse({ timeOffId: 'x' }).success
       ).toBe(false);
+    });
+  });
+
+  describe('CarerTimeOffMutationResponseSchema', () => {
+    it('requires a non-negative affected_shift_count alongside the row', () => {
+      const validTimeOff = {
+        id: VALID_UUID,
+        user_id: VALID_UUID,
+        starts_at: NOW,
+        ends_at: '2026-08-02T10:00:00Z',
+        all_day: true,
+        message: null,
+        status: 'confirmed',
+        ical_uid: 'abc-123',
+        sequence: 0,
+        created_at: NOW,
+        updated_at: NOW,
+      };
+      expect(
+        CarerTimeOffMutationResponseSchema.safeParse({
+          carer_time_off: validTimeOff,
+          affected_shift_count: 3,
+        }).success
+      ).toBe(true);
+      expect(
+        CarerTimeOffMutationResponseSchema.safeParse({
+          carer_time_off: validTimeOff,
+          affected_shift_count: -1,
+        }).success
+      ).toBe(false);
+    });
+  });
+
+  describe('HouseholdClosureSchema', () => {
+    const validClosure = {
+      id: VALID_UUID,
+      household_id: VALID_UUID,
+      starts_at: NOW,
+      ends_at: '2026-08-10T10:00:00Z',
+      message: "We're away",
+      created_by: VALID_UUID,
+      created_at: NOW,
+      updated_at: NOW,
+    };
+
+    it('parses a valid row', () => {
+      expect(HouseholdClosureSchema.safeParse(validClosure).success).toBe(true);
+    });
+
+    it('rejects ends_at before starts_at on create', () => {
+      expect(
+        CreateHouseholdClosureSchema.safeParse({
+          starts_at: '2026-08-10T10:00:00Z',
+          ends_at: NOW,
+        }).success
+      ).toBe(false);
+    });
+
+    it('compares instants, not lexicographic ISO strings across offsets', () => {
+      // Lexicographic: "…T11:00:00-01:00" < "…T12:00:00+00:00" is false
+      // ( '-' < '+' is false), but as instants 11:00-01:00 == 12:00Z — equal,
+      // so ends must be after. Use a later end that sorts "wrong" as text.
+      expect(
+        CreateHouseholdClosureSchema.safeParse({
+          starts_at: '2026-08-10T12:00:00+00:00',
+          ends_at: '2026-08-10T11:30:00-01:00', // 12:30Z — after start
+        }).success
+      ).toBe(true);
+      expect(
+        CreateHouseholdClosureSchema.safeParse({
+          starts_at: '2026-08-10T12:00:00+00:00',
+          ends_at: '2026-08-10T10:30:00-01:00', // 11:30Z — before start
+        }).success
+      ).toBe(false);
+    });
+
+    it('rejects an empty update', () => {
+      expect(UpdateHouseholdClosureSchema.safeParse({}).success).toBe(false);
     });
   });
 

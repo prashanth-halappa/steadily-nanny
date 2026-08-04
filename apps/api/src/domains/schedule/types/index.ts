@@ -9,6 +9,7 @@
  * @module domains/schedule/types
  */
 export type {
+  AmendSchedulePatternInput,
   CreateSchedulePatternDayChildInput,
   CreateSchedulePatternDayInput,
   CreateSchedulePatternInput,

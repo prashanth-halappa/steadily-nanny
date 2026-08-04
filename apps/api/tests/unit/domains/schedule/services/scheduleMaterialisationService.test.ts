@@ -490,7 +490,7 @@ describe('ScheduleMaterialisationService — occurrences no longer produced by t
     expect(result.cancelled).toBe(1);
   });
 
-  it('cancels rather than deletes a future no-longer-produced shift that was manually touched, and warns', async () => {
+  it('cancels rather than deletes a future no-longer-produced shift that was manually touched, warns, and raises pattern_conflict once', async () => {
     const orphan = baseShift({
       id: 'shift-touched-orphan',
       local_date: '2026-07-01',
@@ -501,10 +501,11 @@ describe('ScheduleMaterialisationService — occurrences no longer produced by t
     const repo = makeRepo({
       findActiveByPattern: mock(async () => [orphan]),
     });
+    const eventRepo = makeEventRepo();
     const svc = new ScheduleMaterialisationService(
       repo,
       makeTimeEntryRepo(),
-      makeEventRepo()
+      eventRepo
     );
 
     const result = await svc.materialise(pattern, [occurrence()], NOW);
@@ -524,6 +525,13 @@ describe('ScheduleMaterialisationService — occurrences no longer produced by t
         localDate: '2026-07-01',
         reason: 'manually_edited_now_cancelled',
       },
+    ]);
+    expect(eventRepo.insertMany).toHaveBeenCalledWith([
+      expect.objectContaining({
+        shift_id: 'shift-touched-orphan',
+        event_type: 'pattern_conflict',
+        local_date: '2026-07-01',
+      }),
     ]);
   });
 

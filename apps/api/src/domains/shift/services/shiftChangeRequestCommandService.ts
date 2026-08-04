@@ -7,6 +7,8 @@
  *
  * @module domains/shift/services/shiftChangeRequestCommandService
  */
+
+import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types/schemas/notification.schema';
 import type {
   Shift,
   ShiftChangeRequest,
@@ -19,6 +21,7 @@ import {
   SHIFT_STATUSES,
 } from '@steadily-nanny/shared-types/schemas/shift.schema';
 import { ValidationError } from '../../../errors';
+import { logger } from '../../../middlewares/logger';
 import { ChildNotFoundError } from '../../child/errors/childErrors';
 import {
   type ChildQueryService,
@@ -76,14 +79,40 @@ const CARER_ROLES: ReadonlySet<string> = new Set([HOUSEHOLD_ROLES.NANNY]);
 const PARENT_KINDS: ReadonlySet<string> = new Set([
   SHIFT_CHANGE_REQUEST_KINDS.TIME_CHANGE,
   SHIFT_CHANGE_REQUEST_KINDS.CANCEL,
-  SHIFT_CHANGE_REQUEST_KINDS.SPLIT,
-  SHIFT_CHANGE_REQUEST_KINDS.HANDOVER,
 ]);
 
 const TIME_KINDS: ReadonlySet<string> = new Set([
   SHIFT_CHANGE_REQUEST_KINDS.TIME_CHANGE,
   SHIFT_CHANGE_REQUEST_KINDS.COUNTER_OFFER,
 ]);
+
+/**
+ * Orchestrator seam for paid-cancel → timesheet entry. Defaults to a dynamic
+ * import so this module does not create a load-time cycle with timesheet
+ * (which already imports shift). Tests may replace it with a stub.
+ */
+export type CancellationPaidEntryRecorder = (shift: {
+  id: string;
+  household_id: string;
+  carer_id: string | null;
+  starts_at: string;
+  ends_at: string;
+  timezone: string;
+  cancellation_paid: boolean;
+}) => Promise<unknown>;
+
+let cancellationPaidEntryRecorder: CancellationPaidEntryRecorder =
+  async shift => {
+    const { recordCancellationPaidEntry } = await import('../../timesheet');
+    return recordCancellationPaidEntry(shift);
+  };
+
+/** Test / orchestrator override for the cancellation-pay recorder. */
+export function setCancellationPaidEntryRecorder(
+  recorder: CancellationPaidEntryRecorder
+): void {
+  cancellationPaidEntryRecorder = recorder;
+}
 
 export type CreateChangeRequestResult =
   | { status: 'pending'; shift_change_request: ShiftChangeRequest }
@@ -209,8 +238,14 @@ export function planAcceptedChange(
     return { rpcArgs, events };
   }
 
-  // split / handover — record acceptance only; detailed split logic is future work.
-  return { rpcArgs, events };
+  // split / handover are rejected at CreateShiftChangeRequestSchema; this is
+  // defence in depth if a historical row somehow reaches accept.
+  throw new ValidationError(
+    'This kind of change request is not supported',
+    'UNSUPPORTED_CHANGE_REQUEST_KIND',
+    400,
+    { kind: request.kind, changeRequestId: request.id }
+  );
 }
 
 export class ShiftChangeRequestCommandService {
@@ -433,6 +468,7 @@ export class ShiftChangeRequestCommandService {
     }
 
     const shift = await this.insertExtraShift(userId, householdId, input);
+    this.notifyExtraShiftProposed(shift);
     return { status: 'created', shift };
   }
 
@@ -593,7 +629,13 @@ export class ShiftChangeRequestCommandService {
       approval.household_id,
       input
     );
-    return this.insertExtraShift(requestedBy, approval.household_id, input);
+    const shift = await this.insertExtraShift(
+      requestedBy,
+      approval.household_id,
+      input
+    );
+    this.notifyExtraShiftProposed(shift);
+    return shift;
   }
 
   /**
@@ -648,12 +690,48 @@ export class ShiftChangeRequestCommandService {
       });
       updatedRequest = applied.changeRequest;
       // accept_shift_change_request returns the shift row only — no
-      // shift_children join. Preserve the pre-fetch so split/handover (and
-      // other accept paths) stay usable without a second round-trip.
+      // shift_children join. Preserve the pre-fetch so accept paths stay
+      // usable without a second round-trip.
       updatedShift = {
         ...applied.shift,
         shift_children: shift.shift_children,
       };
+
+      if (
+        request.kind === SHIFT_CHANGE_REQUEST_KINDS.CANCEL &&
+        applied.shift.cancellation_paid
+      ) {
+        // ORCH: cancellation_paid entry — timesheet owns the write; never
+        // fail the accept if rollup fails.
+        try {
+          await cancellationPaidEntryRecorder(updatedShift);
+        } catch (error) {
+          logger.error('Failed to record cancellation_paid time entry', {
+            shiftId: updatedShift.id,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+
+      if (request.kind === SHIFT_CHANGE_REQUEST_KINDS.CANCEL) {
+        // Household parents get SHIFT_CANCELLED. If the requester is the
+        // carer they are not in that fan-out — ping them with ACCEPTED.
+        // A parent requester must not get both ACCEPTED + CANCELLED.
+        this.notifyShiftCancelled(shift, changeRequestId);
+        if (request.requested_by === shift.carer_id) {
+          this.notifyChangeRequestResponded(
+            shift,
+            request,
+            PUSH_NOTIFICATION_TYPES.CHANGE_REQUEST_ACCEPTED
+          );
+        }
+      } else {
+        this.notifyChangeRequestResponded(
+          shift,
+          request,
+          PUSH_NOTIFICATION_TYPES.CHANGE_REQUEST_ACCEPTED
+        );
+      }
     } else {
       events.push({
         household_id: shift.household_id,
@@ -672,6 +750,11 @@ export class ShiftChangeRequestCommandService {
         input.status,
         userId,
         input.message
+      );
+      this.notifyChangeRequestResponded(
+        shift,
+        request,
+        PUSH_NOTIFICATION_TYPES.CHANGE_REQUEST_DECLINED
       );
     }
 
@@ -710,6 +793,8 @@ export class ShiftChangeRequestCommandService {
         },
       },
     ]);
+
+    this.notifyChangeRequestWithdrawn(shift, request, changeRequestId);
 
     return withdrawn;
   }
@@ -855,22 +940,118 @@ export class ShiftChangeRequestCommandService {
     requestedBy: string,
     changeRequestId: string
   ): void {
-    const payload = {
-      title: 'Schedule change requested',
-      body: 'Someone asked to change a shift — open Schedule to respond.',
-      data: {
-        type: 'shift_change_requested',
-        shiftId: shift.id,
-        changeRequestId,
-        householdId: shift.household_id,
-      },
-    };
-    if (requestedBy === shift.carer_id) {
-      notifyHouseholdParents(shift.household_id, payload);
-      return;
-    }
-    if (shift.carer_id) {
-      notifyUser(shift.carer_id, payload);
+    this.safeNotify(() => {
+      const payload = {
+        title: 'Schedule change requested',
+        body: 'Someone asked to change a shift — open Schedule to respond.',
+        data: {
+          type: PUSH_NOTIFICATION_TYPES.SHIFT_CHANGE_REQUESTED,
+          shiftId: shift.id,
+          changeRequestId,
+          householdId: shift.household_id,
+        },
+      };
+      if (requestedBy === shift.carer_id) {
+        notifyHouseholdParents(shift.household_id, payload);
+        return;
+      }
+      if (shift.carer_id) {
+        notifyUser(shift.carer_id, payload);
+      }
+    });
+  }
+
+  /** Fire-and-forget: tell the requester the other side responded. */
+  private notifyChangeRequestResponded(
+    shift: Shift,
+    request: ShiftChangeRequest,
+    type:
+      | typeof PUSH_NOTIFICATION_TYPES.CHANGE_REQUEST_ACCEPTED
+      | typeof PUSH_NOTIFICATION_TYPES.CHANGE_REQUEST_DECLINED
+  ): void {
+    this.safeNotify(() => {
+      if (!request.requested_by) return;
+      const accepted = type === PUSH_NOTIFICATION_TYPES.CHANGE_REQUEST_ACCEPTED;
+      notifyUser(request.requested_by, {
+        title: accepted ? 'Change request accepted' : 'Change request declined',
+        body: accepted
+          ? 'Your schedule change was accepted.'
+          : 'Your schedule change was declined.',
+        data: {
+          type,
+          shiftId: shift.id,
+          changeRequestId: request.id,
+          householdId: shift.household_id,
+        },
+      });
+    });
+  }
+
+  /** Fire-and-forget: tell the other side a pending request was withdrawn. */
+  private notifyChangeRequestWithdrawn(
+    shift: Shift,
+    request: ShiftChangeRequest,
+    changeRequestId: string
+  ): void {
+    this.safeNotify(() => {
+      const payload = {
+        title: 'Change request withdrawn',
+        body: 'A pending schedule change was withdrawn.',
+        data: {
+          type: PUSH_NOTIFICATION_TYPES.CHANGE_REQUEST_WITHDRAWN,
+          shiftId: shift.id,
+          changeRequestId,
+          householdId: shift.household_id,
+        },
+      };
+      if (request.requested_by === shift.carer_id) {
+        notifyHouseholdParents(shift.household_id, payload);
+        return;
+      }
+      if (shift.carer_id) {
+        notifyUser(shift.carer_id, payload);
+      }
+    });
+  }
+
+  /** Fire-and-forget: household parents learn a shift was cancelled. */
+  private notifyShiftCancelled(shift: Shift, changeRequestId: string): void {
+    this.safeNotify(() => {
+      notifyHouseholdParents(shift.household_id, {
+        title: 'Shift cancelled',
+        body: 'A shift has been cancelled.',
+        data: {
+          type: PUSH_NOTIFICATION_TYPES.SHIFT_CANCELLED,
+          shiftId: shift.id,
+          changeRequestId,
+          householdId: shift.household_id,
+        },
+      });
+    });
+  }
+
+  /** Fire-and-forget: assigned carer learns about a new extra shift. */
+  private notifyExtraShiftProposed(shift: Shift): void {
+    this.safeNotify(() => {
+      if (!shift.carer_id) return;
+      notifyUser(shift.carer_id, {
+        title: 'Extra shift proposed',
+        body: 'A parent proposed an extra shift — open Schedule to respond.',
+        data: {
+          type: PUSH_NOTIFICATION_TYPES.EXTRA_SHIFT_PROPOSED,
+          shiftId: shift.id,
+          householdId: shift.household_id,
+        },
+      });
+    });
+  }
+
+  /** Push helpers must never fail the write that triggered them. */
+  private safeNotify(fn: () => void): void {
+    try {
+      fn();
+    } catch {
+      // fire-and-forget
     }
   }
 }

@@ -21,13 +21,14 @@
  * that conversation belongs to `registerForPushNotificationsAsync`, not to
  * someone mid-clock-in.
  */
+import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types/schemas/notification.schema';
 import * as Notifications from 'expo-notifications';
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { getUserNotificationPermissions } from '@/src/lib/pushNotification';
 import { resolveOverdueAtMs } from '../utils/clockOutReminder';
 
-const REMINDER_TYPE = 'clock_out_reminder';
+const REMINDER_TYPE = PUSH_NOTIFICATION_TYPES.CLOCK_OUT_REMINDER;
 
 const ALLOWED_PERMISSIONS = new Set(['granted', 'provisional']);
 

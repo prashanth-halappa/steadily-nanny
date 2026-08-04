@@ -9,7 +9,6 @@ import { createPersistedStore } from './createPersistedStore';
 export const CALENDAR_VIEWS = {
   AGENDA: 'agenda',
   WEEK_RIBBON: 'week_ribbon',
-  COVERAGE_LANES: 'coverage_lanes',
   CROSS_FAMILY: 'cross_family',
 } as const;
 
@@ -50,13 +49,16 @@ export const useCalendarViewStore = createPersistedStore<CalendarViewState>(
 );
 
 /** Resolve the stored view for a role, falling back to agenda.
- * Coverage lanes were folded into agenda (Daylight UX #33) — remap. */
+ * Coverage lanes were folded into agenda (Daylight UX #33) — remap legacy
+ * MMKV values that still store `'coverage_lanes'`. */
 export function resolveCalendarView(
   role: CalendarRole,
   stored: CalendarViewState
 ): CalendarViewId {
-  const view = role === 'parent' ? stored.parentView : stored.nannyView;
-  if (view === CALENDAR_VIEWS.COVERAGE_LANES) return CALENDAR_VIEWS.AGENDA;
+  const view: string = role === 'parent' ? stored.parentView : stored.nannyView;
+  if (view === 'coverage_lanes') return CALENDAR_VIEWS.AGENDA;
   const valid = Object.values(CALENDAR_VIEWS) as string[];
-  return valid.includes(view) ? view : CALENDAR_VIEWS.AGENDA;
+  return valid.includes(view)
+    ? (view as CalendarViewId)
+    : CALENDAR_VIEWS.AGENDA;
 }

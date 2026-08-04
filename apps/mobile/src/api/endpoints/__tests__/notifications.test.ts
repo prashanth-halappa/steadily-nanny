@@ -111,3 +111,64 @@ describe('notificationsApi.registerDevice', () => {
     expect(apiClient.post).not.toHaveBeenCalled();
   });
 });
+
+describe('notificationsApi prefs', () => {
+  const prefs = {
+    disabledTypes: [] as string[],
+    quietHoursEnabled: false,
+    quietHoursStart: null,
+    quietHoursEnd: null,
+    timezone: 'UTC',
+  };
+
+  beforeEach(() => {
+    (apiClient.get as any).mockReset?.();
+    (apiClient.patch as any).mockReset?.();
+  });
+
+  it('GETs /v1/notifications/prefs and returns prefs', async () => {
+    (apiClient.get as any).mockResolvedValue({
+      data: { data: { prefs } },
+    });
+
+    const result = await notificationsApi.getPrefs();
+
+    expect(apiClient.get).toHaveBeenCalledWith('/v1/notifications/prefs');
+    expect(result).toEqual(prefs);
+  });
+
+  it('PATCHes /v1/notifications/prefs with a validated body', async () => {
+    const updated = {
+      ...prefs,
+      quietHoursEnabled: true,
+      quietHoursStart: '22:00',
+      quietHoursEnd: '07:00',
+      timezone: 'America/Los_Angeles',
+    };
+    (apiClient.patch as any).mockResolvedValue({
+      data: { data: { prefs: updated } },
+    });
+
+    const result = await notificationsApi.updatePrefs({
+      quietHoursEnabled: true,
+      quietHoursStart: '22:00',
+      quietHoursEnd: '07:00',
+      timezone: 'America/Los_Angeles',
+    });
+
+    expect(apiClient.patch).toHaveBeenCalledWith('/v1/notifications/prefs', {
+      quietHoursEnabled: true,
+      quietHoursStart: '22:00',
+      quietHoursEnd: '07:00',
+      timezone: 'America/Los_Angeles',
+    });
+    expect(result.timezone).toBe('America/Los_Angeles');
+  });
+
+  it('rejects an invalid IANA timezone without calling the API', async () => {
+    await expect(
+      notificationsApi.updatePrefs({ timezone: 'Not/A_Zone' })
+    ).rejects.toThrow();
+    expect(apiClient.patch).not.toHaveBeenCalled();
+  });
+});

@@ -224,21 +224,14 @@ describe('planAcceptedChange', () => {
     expect(plan.rpcArgs.p_origin).toBe(SHIFT_ORIGINS.NANNY_COUNTERED);
   });
 
-  it('split/handover produces no shift mutation flags', () => {
+  it('split/handover are rejected (no silent no-op accept)', () => {
     const split = {
       ...pendingRequest,
       kind: SHIFT_CHANGE_REQUEST_KINDS.SPLIT,
     };
-    const plan = planAcceptedChange(
-      'carer-1',
-      split,
-      shift,
-      household as any,
-      null
-    );
-    expect(plan.rpcArgs.p_set_cancel).toBe(false);
-    expect(plan.rpcArgs.p_set_times).toBe(false);
-    expect(plan.events).toEqual([]);
+    expect(() =>
+      planAcceptedChange('carer-1', split, shift, household as any, null)
+    ).toThrow(ValidationError);
   });
 
   it('throws when time kind lacks proposed times', () => {

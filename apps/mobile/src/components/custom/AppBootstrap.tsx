@@ -6,12 +6,8 @@
  */
 import { useCalendarSync } from '@/src/domains/schedule/hooks/useCalendarSync';
 import { useAppStatus } from '@/src/hooks/queries/useAppStatus';
-import type { NotificationRouteMap } from '@/src/lib/pushNotification';
+import { NOTIFICATION_ROUTE_MAP } from '@/src/lib/notificationRouteMap';
 import { useNotificationObserver } from '@/src/lib/pushNotification';
-
-// EXTEND-HERE: map a notification payload `type` (or `triggerType`) to an in-app
-// route. See resolveNotificationHref for the shape.
-const NOTIFICATION_ROUTE_MAP: NotificationRouteMap = {};
 
 export function AppBootstrap() {
   useAppStatus();

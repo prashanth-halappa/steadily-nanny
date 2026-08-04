@@ -47,6 +47,14 @@ router.patch(
   asyncHandler(ShiftController.update)
 );
 
+// Carer-only accept pending → confirmed (extra / demoted shifts). Body-less —
+// reuses no Create/Update schema (no third shape).
+router.post(
+  '/:shiftId/accept',
+  ...authWithOwnership(ShiftIdParamSchema, shiftOwnership),
+  asyncHandler(ShiftController.accept)
+);
+
 // Change requests (flows 1d/1e) — propose against an existing shift.
 router.post(
   '/:shiftId/change-requests',

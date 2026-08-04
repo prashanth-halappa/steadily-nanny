@@ -1,7 +1,9 @@
 #!/usr/bin/env bun
 /**
- * Seed the two fixtures needed to unblock testing paths that live device
- * runs have never actually exercised.
+ * Seed the fixtures needed to unblock testing paths that live device runs
+ * have never actually exercised, and that the Maestro E2E suite
+ * (apps/mobile/.maestro/) needs IDs for (EXTRA_SHIFT_ID / DEMOTED_SHIFT_ID /
+ * TIME_ENTRY_ID in apps/mobile/.env.maestro).
  *
  * WHY
  * 1. A shift scheduled for TODAY, for the nanny, in the existing test
@@ -16,23 +18,33 @@
  *    Approve button is only enabled when a timesheet is `submitted` (see
  *    `timesheetCommandService.assertActionable`) — with no such row, every
  *    screenshot of the parent's timesheet screen shows a disabled control.
+ * 3. A PENDING extra shift assigned to the nanny (EXTRA_SHIFT_ID) — Maestro
+ *    flow 02 deep-links straight to it and taps Accept.
+ * 4. A CONFIRMED shift the parent can edit (DEMOTED_SHIFT_ID) — flow 03's
+ *    parent leg edits its time (demoting it to pending, migration 034), then
+ *    the nanny leg re-confirms it.
+ * 5. An EDITABLE time entry inside the same `submitted` week as fixture 2
+ *    (TIME_ENTRY_ID) — flow 04's nanny leg opens it via the correction sheet.
  *
  * Idempotent. Safe to run repeatedly:
- *   - the shift is looked up by `local_date = today` before inserting, so
- *     running twice on the same day reuses the same row (running on a
- *     DIFFERENT day intentionally creates a new "today" shift — that's the
- *     point);
- *   - the timesheet targets a FIXED, seed-owned week (2026-01-05, a Monday
- *     well before the household's real schedule pattern or any live device
- *     testing ever touches — see the real-data survey in the PR/report this
- *     script shipped with), so it can never collide with the
- *     `timesheets_household_carer_week_idx` unique index against real data,
- *     and is looked up by week before inserting.
+ *   - fixtures 1/2 are looked up by a stable key (today's local_date; the
+ *     fixed seed week) before inserting, so a second run on the same day /
+ *     against the same week reuses the same row instead of duplicating it;
+ *   - fixtures 3/4/5 live in the SAME fixed, seed-owned week as fixture 2
+ *     (2026-01-05, a Monday well before the household's real schedule
+ *     pattern or any live device testing ever touches — see the real-data
+ *     survey in the PR/report this script shipped with), so none of them
+ *     can collide with real household data either;
  *   - NEITHER fixture is ever UPDATED once it exists — this script only
  *     INSERTs missing rows and reports what it finds. In particular it never
  *     touches the household's other, real timesheet row(s): the point of a
  *     roll-up-idempotency bug is that live evidence of it is valuable and
- *     must not be quietly "fixed" by a seed script.
+ *     must not be quietly "fixed" by a seed script. Fixtures 3/4/5 are
+ *     test-owned (the whole point is that Maestro flows 02/03/04 mutate
+ *     their status), so once a live E2E run has actioned one, re-running
+ *     this script prints a `[warn]` — same as fixture 2 — rather than
+ *     silently resetting evidence of what actually happened; re-seed a
+ *     fresh run by deleting the row.
  *
  * Run AFTER scripts/seed-test-users.ts (needs both test accounts to exist)
  * and after the nanny has joined "Our household" (flow 4).
@@ -60,6 +72,19 @@ const TIMEZONE = 'Europe/London';
  *  see the module doc's idempotency note. */
 const SEED_TIMESHEET_WEEK_START = '2026-01-05';
 const SEED_TIMESHEET_TOTAL_MINUTES = 480; // a clean 8h, obviously synthetic
+
+/** Wednesday of the seed week — EXTRA_SHIFT_ID (flow 02: nanny accepts). */
+const SEED_EXTRA_SHIFT_LOCAL_DATE = '2026-01-07';
+/** Thursday of the seed week — DEMOTED_SHIFT_ID (flow 03: parent edits a
+ *  confirmed shift, demoting it; nanny re-confirms). `kind: 'cover'` (not
+ *  `'extra'`) so ShiftDetailScreen's `isFreshExtraProposal` check can never
+ *  match it after the demote — it must show the re-confirm copy, not the
+ *  fresh-proposal copy (see that screen's header comment). */
+const SEED_DEMOTED_SHIFT_LOCAL_DATE = '2026-01-08';
+/** Tuesday of the seed week — TIME_ENTRY_ID (flow 04: nanny corrects the
+ *  "Tuesday clock-out" the parent queried). Same week as fixture 2 so it's
+ *  editable (`status: 'submitted'`) for as long as that timesheet is. */
+const SEED_TIME_ENTRY_LOCAL_DATE = '2026-01-06';
 
 function loadEnvFile(path: string): Record<string, string> {
   const env: Record<string, string> = {};
@@ -302,16 +327,203 @@ async function main(): Promise<void> {
     );
   }
 
+  // --- Fixture 3: EXTRA_SHIFT_ID — pending extra shift, assigned to nanny --
+  // Maestro flow 02 (nanny-accept-extra-shift) deep-links straight to this
+  // and taps Accept, mirroring the EXTRA_SHIFT_PROPOSED push route.
+  const { data: existingExtraShift } = await db
+    .from('shifts')
+    .select('id, status')
+    .eq('household_id', householdId)
+    .eq('carer_id', nannyId)
+    .eq('local_date', SEED_EXTRA_SHIFT_LOCAL_DATE)
+    .eq('kind', 'extra')
+    .maybeSingle();
+
+  let extraShiftId: string;
+  if (existingExtraShift) {
+    extraShiftId = existingExtraShift.id;
+    console.log(
+      `[skip]    extra shift fixture already exists (${SEED_EXTRA_SHIFT_LOCAL_DATE}) -> ${extraShiftId} ` +
+        `(status: ${existingExtraShift.status})`
+    );
+    if (existingExtraShift.status !== 'pending') {
+      console.warn(
+        '[warn]    this row is no longer "pending" (a previous E2E run likely accepted it) — ' +
+          'NOT touching it. Delete it manually and re-run this script if you need a fresh pending fixture.'
+      );
+    }
+  } else {
+    const startsAt = zonedWallTimeToUtcIso(
+      SEED_EXTRA_SHIFT_LOCAL_DATE,
+      '08:00',
+      TIMEZONE
+    );
+    const endsAt = zonedWallTimeToUtcIso(
+      SEED_EXTRA_SHIFT_LOCAL_DATE,
+      '13:00',
+      TIMEZONE
+    );
+    const { data: created, error } = await db
+      .from('shifts')
+      .insert({
+        household_id: householdId,
+        carer_id: nannyId,
+        starts_at: startsAt,
+        ends_at: endsAt,
+        timezone: TIMEZONE,
+        local_date: '1900-01-01', // overwritten by the trigger
+        kind: 'extra',
+        status: 'pending',
+        origin: 'parent_proposed',
+        sequence: 0,
+        created_by: parentId,
+      })
+      .select('id')
+      .single();
+    if (error) throw error;
+    extraShiftId = created.id;
+    console.log(
+      `[created] pending extra shift (${SEED_EXTRA_SHIFT_LOCAL_DATE}, 08:00-13:00 ${TIMEZONE}) -> ${extraShiftId}`
+    );
+  }
+
+  // --- Fixture 4: DEMOTED_SHIFT_ID — confirmed shift the parent can edit ---
+  // Maestro flow 03 (parent-edit-demote-reconfirm): parent Save demotes this
+  // to pending + parent_proposed (migration 034), nanny leg re-confirms it.
+  // `kind: 'cover'` (never `'extra'`) so the demoted row can only ever read
+  // as "needs reconfirm", never "fresh proposal" — see the constant's doc.
+  const { data: existingDemotedShift } = await db
+    .from('shifts')
+    .select('id, status')
+    .eq('household_id', householdId)
+    .eq('carer_id', nannyId)
+    .eq('local_date', SEED_DEMOTED_SHIFT_LOCAL_DATE)
+    .eq('kind', 'cover')
+    .maybeSingle();
+
+  let demotedShiftId: string;
+  if (existingDemotedShift) {
+    demotedShiftId = existingDemotedShift.id;
+    console.log(
+      `[skip]    demoted-shift fixture already exists (${SEED_DEMOTED_SHIFT_LOCAL_DATE}) -> ${demotedShiftId} ` +
+        `(status: ${existingDemotedShift.status})`
+    );
+    if (existingDemotedShift.status !== 'confirmed') {
+      console.warn(
+        '[warn]    this row is no longer "confirmed" (a previous E2E run likely edited it and it was left ' +
+          'mid-flow) — NOT touching it. Delete it manually and re-run this script if you need a fresh confirmed fixture.'
+      );
+    }
+  } else {
+    const startsAt = zonedWallTimeToUtcIso(
+      SEED_DEMOTED_SHIFT_LOCAL_DATE,
+      '09:00',
+      TIMEZONE
+    );
+    const endsAt = zonedWallTimeToUtcIso(
+      SEED_DEMOTED_SHIFT_LOCAL_DATE,
+      '17:00',
+      TIMEZONE
+    );
+    const { data: created, error } = await db
+      .from('shifts')
+      .insert({
+        household_id: householdId,
+        carer_id: nannyId,
+        starts_at: startsAt,
+        ends_at: endsAt,
+        timezone: TIMEZONE,
+        local_date: '1900-01-01', // overwritten by the trigger
+        kind: 'cover',
+        status: 'confirmed',
+        origin: 'system_generated',
+        sequence: 0,
+        created_by: parentId,
+      })
+      .select('id')
+      .single();
+    if (error) throw error;
+    demotedShiftId = created.id;
+    console.log(
+      `[created] confirmed shift (${SEED_DEMOTED_SHIFT_LOCAL_DATE}, 09:00-17:00 ${TIMEZONE}) -> ${demotedShiftId}`
+    );
+  }
+
+  // --- Fixture 5: TIME_ENTRY_ID — editable entry in the submitted week ----
+  // Maestro flow 04 (nanny leg): opens ClockOutSheet in edit mode via
+  // `hours-edit-entry-${TIME_ENTRY_ID}`, which requires `status: 'submitted'`
+  // (see `isEntryEditable` in apps/mobile's timesheet/utils/entryEdited.ts)
+  // and a timesheet week that isn't yet approved — both true for fixture 2
+  // until flow 04's own parent leg approves it.
+  const { data: existingTimeEntry } = await db
+    .from('time_entries')
+    .select('id, status')
+    .eq('household_id', householdId)
+    .eq('carer_id', nannyId)
+    .eq('local_date', SEED_TIME_ENTRY_LOCAL_DATE)
+    .maybeSingle();
+
+  let timeEntryId: string;
+  if (existingTimeEntry) {
+    timeEntryId = existingTimeEntry.id;
+    console.log(
+      `[skip]    time entry fixture already exists (${SEED_TIME_ENTRY_LOCAL_DATE}) -> ${timeEntryId} ` +
+        `(status: ${existingTimeEntry.status})`
+    );
+    if (existingTimeEntry.status !== 'submitted') {
+      console.warn(
+        '[warn]    this row is no longer "submitted" — NOT touching it. Delete it manually and re-run ' +
+          'this script if you need a fresh editable fixture.'
+      );
+    }
+  } else {
+    const clockInAt = zonedWallTimeToUtcIso(
+      SEED_TIME_ENTRY_LOCAL_DATE,
+      '09:00',
+      TIMEZONE
+    );
+    const clockOutAt = zonedWallTimeToUtcIso(
+      SEED_TIME_ENTRY_LOCAL_DATE,
+      '17:00',
+      TIMEZONE
+    );
+    const { data: created, error } = await db
+      .from('time_entries')
+      .insert({
+        household_id: householdId,
+        carer_id: nannyId,
+        shift_id: null,
+        clock_in_at: clockInAt,
+        clock_out_at: clockOutAt,
+        break_minutes: 0,
+        kind: 'worked',
+        status: 'submitted',
+        local_date: '1900-01-01', // overwritten by the trigger
+        timezone: TIMEZONE,
+      })
+      .select('id')
+      .single();
+    if (error) throw error;
+    timeEntryId = created.id;
+    console.log(
+      `[created] submitted time entry (${SEED_TIME_ENTRY_LOCAL_DATE}, 09:00-17:00 ${TIMEZONE}) -> ${timeEntryId}`
+    );
+  }
+
   console.log(
-    '\nDone. Fixture ids for the device-driving agent to assert against:'
+    '\nDone. Fixture ids for the device-driving agent to assert against ' +
+      '(paste EXTRA_SHIFT_ID / DEMOTED_SHIFT_ID / TIME_ENTRY_ID into apps/mobile/.env.maestro):'
   );
   console.log(`  household_id:            ${householdId}`);
   console.log(`  nanny_id:                ${nannyId}`);
   console.log(`  parent_id:               ${parentId}`);
   console.log(`  today_shift_id:          ${todayShiftId}`);
   console.log(`  submitted_timesheet_id:  ${submittedTimesheetId}`);
+  console.log(`  EXTRA_SHIFT_ID:          ${extraShiftId}`);
+  console.log(`  DEMOTED_SHIFT_ID:        ${demotedShiftId}`);
+  console.log(`  TIME_ENTRY_ID:           ${timeEntryId}`);
   console.log(
-    '\nExisting real timesheet/time_entries rows (if any) were left untouched — ' +
+    '\nExisting real timesheet/shifts/time_entries rows (if any) were left untouched — ' +
       'this script only inserts missing fixtures, never updates.'
   );
 }

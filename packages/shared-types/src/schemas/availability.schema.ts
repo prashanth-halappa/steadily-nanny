@@ -1,13 +1,14 @@
 /**
- * Carer availability, time off, and the anonymised busy-block wire contract.
+ * Carer availability, time off, household closures, and the anonymised
+ * busy-block wire contract.
  * @module packages/shared-types/src/schemas/availability.schema
  *
- * Backing tables: `carer_availability`, `carer_time_off`, plus the
- * `timezone` / `week_starts_on` columns added to `user_profiles`
- * (supabase/migrations/011_availability.sql). `AnonymisedBusyBlockSchema`
- * additionally mirrors the `v_busy_blocks` view
- * (supabase/migrations/016_calendar_seams.sql) — read the note on that
- * export before touching it.
+ * Backing tables: `carer_availability`, `carer_time_off`
+ * (supabase/migrations/011_availability.sql), `household_closures`
+ * (035_household_closures.sql), plus the `timezone` / `week_starts_on`
+ * columns on `user_profiles`. `AnonymisedBusyBlockSchema` additionally
+ * mirrors the `v_busy_blocks` view (016_calendar_seams.sql) — read the
+ * note on that export before touching it.
  */
 
 import { z } from 'zod';
@@ -138,7 +139,9 @@ const CarerTimeOffInputSchema = z.object({
  * the database remains authoritative.
  */
 export const CreateCarerTimeOffSchema = CarerTimeOffInputSchema.refine(
-  data => data.ends_at > data.starts_at,
+  // Instant compare — lexicographic ISO strings break across offsets
+  // (e.g. `…T11:00:00-01:00` vs `…T12:00:00+00:00`).
+  data => Date.parse(data.ends_at) > Date.parse(data.starts_at),
   { message: 'ends_at must be after starts_at', path: ['ends_at'] }
 );
 
@@ -162,11 +165,85 @@ export const CarerTimeOffListResponseSchema = z.object({
   carer_time_off: z.array(CarerTimeOffSchema),
 });
 
+/**
+ * Create/update response — the row plus how many confirmed shifts the
+ * range overlaps. The count is a total across households; per-household
+ * breakdown is push-only and must never appear on this wire (privacy).
+ */
+export const CarerTimeOffMutationResponseSchema = z.object({
+  carer_time_off: CarerTimeOffSchema,
+  affected_shift_count: z.int().nonnegative(),
+});
+
 export type CarerTimeOff = z.infer<typeof CarerTimeOffSchema>;
 export type CreateCarerTimeOffInput = z.infer<typeof CreateCarerTimeOffSchema>;
 export type UpdateCarerTimeOffInput = z.infer<typeof UpdateCarerTimeOffSchema>;
 export type CarerTimeOffListResponse = z.infer<
   typeof CarerTimeOffListResponseSchema
+>;
+export type CarerTimeOffMutationResponse = z.infer<
+  typeof CarerTimeOffMutationResponseSchema
+>;
+
+// =============================================================================
+// household_closures — parent-declared "we're away" (distinct from carer_time_off)
+// =============================================================================
+
+/** The persisted entity as returned to clients. */
+export const HouseholdClosureSchema = z.object({
+  id: z.uuid(),
+  household_id: z.uuid(),
+  starts_at: z.iso.datetime({ offset: true }),
+  ends_at: z.iso.datetime({ offset: true }),
+  message: z.string().nullable(),
+  created_by: z.uuid().nullable(),
+  created_at: z.iso.datetime({ offset: true }),
+  updated_at: z.iso.datetime({ offset: true }),
+});
+
+const HouseholdClosureInputSchema = z.object({
+  starts_at: z.iso.datetime({ offset: true }),
+  ends_at: z.iso.datetime({ offset: true }),
+  message: z.string().optional(),
+});
+
+/** POST body — parent declares the household is closed for a range. */
+export const CreateHouseholdClosureSchema = HouseholdClosureInputSchema.refine(
+  // Instant compare — lexicographic ISO strings break across offsets
+  // (e.g. `…T11:00:00-01:00` vs `…T12:00:00+00:00`).
+  data => Date.parse(data.ends_at) > Date.parse(data.starts_at),
+  { message: 'ends_at must be after starts_at', path: ['ends_at'] }
+);
+
+/** PATCH body — every field optional, but at least one must be present. */
+export const UpdateHouseholdClosureSchema =
+  HouseholdClosureInputSchema.partial()
+    .extend({
+      message: z.string().nullable().optional(),
+    })
+    .refine(data => Object.keys(data).length > 0, {
+      message: 'at least one field is required',
+    });
+
+/** URL param validation for /closures/:closureId routes. */
+export const HouseholdClosureIdParamSchema = z.object({
+  closureId: z.uuid(),
+});
+
+/** List response envelope. */
+export const HouseholdClosureListResponseSchema = z.object({
+  household_closures: z.array(HouseholdClosureSchema),
+});
+
+export type HouseholdClosure = z.infer<typeof HouseholdClosureSchema>;
+export type CreateHouseholdClosureInput = z.infer<
+  typeof CreateHouseholdClosureSchema
+>;
+export type UpdateHouseholdClosureInput = z.infer<
+  typeof UpdateHouseholdClosureSchema
+>;
+export type HouseholdClosureListResponse = z.infer<
+  typeof HouseholdClosureListResponseSchema
 >;
 
 // =============================================================================

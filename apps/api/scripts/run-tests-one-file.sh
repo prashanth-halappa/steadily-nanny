@@ -11,5 +11,9 @@ while IFS= read -r f; do
   [[ -n "$f" ]] || continue
   bun test "$f" || exit 1
 done < <(
+  # ponytail: .test.tsx is not matched — every caller of this script (api,
+  # shared-types) is TS-only today, so this is a silent skip waiting to
+  # happen the day one of them grows a .tsx test. Add `-o -name '*.test.tsx'`
+  # if/when that happens.
   find "$root" -type f \( -name '*.test.ts' -o -name '*.integration.test.ts' \) | sort -u
 )

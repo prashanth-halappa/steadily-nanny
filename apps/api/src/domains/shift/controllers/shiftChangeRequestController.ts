@@ -5,6 +5,7 @@
 import type { NextFunction, Request, Response } from 'express';
 import { getAuthUserId } from '../../../utils/asyncHandler';
 import { sendSuccessResponse } from '../../../utils/responseHelpers';
+import { collectClashWarningsForCarer } from '../../me/services/clashWarning';
 import { shiftChangeRequestCommandService } from '../services/shiftChangeRequestCommandService';
 import { shiftChangeRequestQueryService } from '../services/shiftChangeRequestQueryService';
 
@@ -101,9 +102,19 @@ export class ShiftChangeRequestController {
           approval: result.approval,
         });
       }
+      const shift = result.shift;
+      const warnings =
+        shift.carer_id != null
+          ? await collectClashWarningsForCarer(shift.carer_id, {
+              startsAt: shift.starts_at,
+              endsAt: shift.ends_at,
+              timezone: shift.timezone,
+            })
+          : [];
       return sendSuccessResponse(res, 'Extra shift proposed', {
         status: result.status,
-        shift: result.shift,
+        shift,
+        warnings,
       });
     } catch (error) {
       return next(error);

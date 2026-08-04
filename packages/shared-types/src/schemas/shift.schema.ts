@@ -46,7 +46,7 @@ export const SHIFT_ORIGINS = {
 } as const;
 export type ShiftOrigin = (typeof SHIFT_ORIGINS)[keyof typeof SHIFT_ORIGINS];
 
-/** shift_change_requests.kind */
+/** shift_change_requests.kind — includes historical split/handover for reads. */
 export const SHIFT_CHANGE_REQUEST_KINDS = {
   TIME_CHANGE: 'time_change',
   CANCEL: 'cancel',
@@ -56,6 +56,17 @@ export const SHIFT_CHANGE_REQUEST_KINDS = {
 } as const;
 export type ShiftChangeRequestKind =
   (typeof SHIFT_CHANGE_REQUEST_KINDS)[keyof typeof SHIFT_CHANGE_REQUEST_KINDS];
+
+/**
+ * Kinds a client may OPEN. `split` / `handover` stay on the read const-map
+ * for historical rows, but are rejected at the create schema boundary until
+ * specified — accepting them today silently no-ops (Wave 1A).
+ */
+export const CREATE_SHIFT_CHANGE_REQUEST_KINDS = {
+  TIME_CHANGE: SHIFT_CHANGE_REQUEST_KINDS.TIME_CHANGE,
+  CANCEL: SHIFT_CHANGE_REQUEST_KINDS.CANCEL,
+  COUNTER_OFFER: SHIFT_CHANGE_REQUEST_KINDS.COUNTER_OFFER,
+} as const;
 
 /** shift_change_requests.status */
 export const SHIFT_CHANGE_REQUEST_STATUSES = {
@@ -176,10 +187,15 @@ export const CreateShiftSchema = ShiftInputSchema.extend({
   starts_at: z.iso.datetime({ offset: true }),
   ends_at: z.iso.datetime({ offset: true }),
   timezone: z.string().min(1),
-}).refine(data => data.ends_at > data.starts_at, {
-  message: 'ends_at must be after starts_at',
-  path: ['ends_at'],
-});
+}).refine(
+  // Instant compare — lexicographic ISO strings break across offsets
+  // (e.g. `…T11:00:00-01:00` vs `…T12:00:00+00:00`).
+  data => Date.parse(data.ends_at) > Date.parse(data.starts_at),
+  {
+    message: 'ends_at must be after starts_at',
+    path: ['ends_at'],
+  }
+);
 
 /**
  * PATCH body — every field optional, but at least one must be present.
@@ -238,7 +254,7 @@ export const ShiftChangeRequestSchema = z.object({
 /** POST body — what a client sends to open one. */
 export const CreateShiftChangeRequestSchema = z
   .object({
-    kind: z.enum(Object.values(SHIFT_CHANGE_REQUEST_KINDS)),
+    kind: z.enum(Object.values(CREATE_SHIFT_CHANGE_REQUEST_KINDS)),
     proposed_starts_at: z.iso.datetime({ offset: true }).optional(),
     proposed_ends_at: z.iso.datetime({ offset: true }).optional(),
     message: z.string().optional(),
@@ -247,7 +263,7 @@ export const CreateShiftChangeRequestSchema = z
     data =>
       data.proposed_starts_at === undefined ||
       data.proposed_ends_at === undefined ||
-      data.proposed_ends_at > data.proposed_starts_at,
+      Date.parse(data.proposed_ends_at) > Date.parse(data.proposed_starts_at),
     {
       message: 'proposed_ends_at must be after proposed_starts_at',
       path: ['proposed_ends_at'],

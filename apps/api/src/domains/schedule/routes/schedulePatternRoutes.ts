@@ -13,6 +13,7 @@ import { validate } from '../../../middlewares/validator';
 import { asyncHandler } from '../../../utils/asyncHandler';
 import { SchedulePatternController } from '../controllers/schedulePatternController';
 import {
+  AmendSchedulePatternSchema,
   ReplaceSchedulePatternDaysSchema,
   RespondToSchedulePatternSchema,
   SchedulePatternIdParamSchema,
@@ -60,6 +61,14 @@ router.post(
   '/:patternId/send',
   ...authWithOwnership(SchedulePatternIdParamSchema, patternOwnership),
   asyncHandler(SchedulePatternController.send)
+);
+
+// accepted only — exdates / pause_ranges / until; re-materialises immediately.
+router.post(
+  '/:patternId/amend',
+  ...authWithOwnership(SchedulePatternIdParamSchema, patternOwnership),
+  validate(AmendSchedulePatternSchema, 'body'),
+  asyncHandler(SchedulePatternController.amend)
 );
 
 // The carer accepts/declines. Accepting materialises shifts.

@@ -25,11 +25,16 @@ export type {
   CarerEveningMode,
   CarerTimeOff,
   CarerTimeOffListResponse,
+  CarerTimeOffMutationResponse,
   CarerTimeOffStatus,
   CreateCarerAvailabilityInput,
   CreateCarerTimeOffInput,
+  CreateHouseholdClosureInput,
+  HouseholdClosure,
+  HouseholdClosureListResponse,
   UpdateCarerAvailabilityInput,
   UpdateCarerTimeOffInput,
+  UpdateHouseholdClosureInput,
 } from '@steadily-nanny/shared-types/schemas/availability.schema';
 export {
   AnonymisedBusyBlockListResponseSchema,
@@ -42,11 +47,17 @@ export {
   CarerAvailabilitySchema,
   CarerTimeOffIdParamSchema,
   CarerTimeOffListResponseSchema,
+  CarerTimeOffMutationResponseSchema,
   CarerTimeOffSchema,
   CreateCarerAvailabilitySchema,
   CreateCarerTimeOffSchema,
+  CreateHouseholdClosureSchema,
+  HouseholdClosureIdParamSchema,
+  HouseholdClosureListResponseSchema,
+  HouseholdClosureSchema,
   UpdateCarerAvailabilitySchema,
   UpdateCarerTimeOffSchema,
+  UpdateHouseholdClosureSchema,
 } from '@steadily-nanny/shared-types/schemas/availability.schema';
 
 /** URL param validation for GET /availability/:userId. */

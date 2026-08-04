@@ -7,7 +7,7 @@ import { type Href, router } from 'expo-router';
 import { ChevronRight, ExternalLink } from 'lucide-react-native';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Linking, ScrollView, View } from 'react-native';
+import { ScrollView, View } from 'react-native';
 import { AnimatedPressable } from '@/lib/animations';
 import { SCREEN_CONTENT_STYLE, spacing } from '@/lib/design-tokens';
 import { Icon } from '@/lib/icons/iconWithClassName';
@@ -29,6 +29,7 @@ import { Text } from '@/src/components/ui/text';
 import { Body, H1, H4, Small } from '@/src/components/ui/typography';
 import { appIdentity } from '@/src/config/appIdentity';
 import { HouseholdSwitcher } from '@/src/domains/household';
+import { useInboxItems } from '@/src/domains/inbox';
 import { SETUP_ROLES } from '@/src/domains/setup/types';
 import { useDeleteAccount } from '@/src/hooks/mutations/useDeleteAccount';
 import { useUpdatePreferredLocale } from '@/src/hooks/mutations/useUpdatePreferredLocale';
@@ -139,6 +140,9 @@ export default function SettingsScreen() {
   // in-flight wizard UI state and can be empty/stale here (see
   // useIsOnboarded's header comment / TodayScreen for the same pattern).
   const onboarding = useIsOnboarded();
+  const inbox = useInboxItems();
+  const inboxBadge =
+    inbox.items.length > 0 ? String(inbox.items.length) : undefined;
 
   const appVersion =
     Constants.expoConfig?.version ?? Constants.nativeAppVersion ?? '—';
@@ -159,6 +163,7 @@ export default function SettingsScreen() {
 
   return (
     <ScrollView
+      testID="settings-screen"
       className="flex-1 bg-background"
       contentContainerStyle={SCREEN_CONTENT_STYLE}
     >
@@ -194,10 +199,16 @@ export default function SettingsScreen() {
           label={t('settings:time.menuLabel')}
           onPress={() => router.push('/settings/time' as Href)}
         />
-        <SettingsExternalRow
+        <SettingsNavRow
+          testID="settings-inbox"
+          label={t('settings:inbox')}
+          value={inboxBadge}
+          onPress={() => router.push('/inbox' as Href)}
+        />
+        <SettingsNavRow
           testID="settings-notifications"
           label={t('settings:notifications')}
-          onPress={() => void Linking.openSettings()}
+          onPress={() => router.push('/settings/notifications' as Href)}
         />
       </View>
 

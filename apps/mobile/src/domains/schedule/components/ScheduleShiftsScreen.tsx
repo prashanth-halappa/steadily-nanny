@@ -17,6 +17,7 @@ import { type ReactNode, useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Pressable, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { ErrorState } from '@/src/components/custom/ErrorState';
 import { Button } from '@/src/components/ui/button';
 import { EmptyState } from '@/src/components/ui/empty-state';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
@@ -31,6 +32,7 @@ import {
 import { CrossFamilyRhythmView } from '@/src/domains/schedule/components/CrossFamilyRhythmView';
 import { WeekRibbonView } from '@/src/domains/schedule/components/WeekRibbonView';
 import { timeOffCoversLocalDate } from '@/src/domains/schedule/utils/timeOffOverlap';
+import { isParentEditorRole } from '@/src/domains/setup/types';
 import {
   addWeeks,
   formatWeekRangeLabel,
@@ -39,6 +41,7 @@ import {
 } from '@/src/domains/timesheet/utils/week';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
 import { useHouseholdTimeOff } from '@/src/hooks/queries/useHouseholdTimeOff';
+import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 import {
   isShiftsRouteUnavailable,
   useShiftsRange,
@@ -65,7 +68,9 @@ export function ScheduleShiftsScreen({
   const { t: tCommon } = useTranslation('common');
   const router = useRouter();
   const activeHousehold = useActiveHousehold();
+  const onboarding = useIsOnboarded();
   const profile = useUserProfile();
+  const canAddExtra = isParentEditorRole(onboarding.role);
   const [calendarView, setCalendarView] = useCalendarViewPreference();
   const [weekOffset, setWeekOffset] = useState(0);
 
@@ -105,9 +110,12 @@ export function ScheduleShiftsScreen({
   const timeOff = timeOffQuery.data ?? [];
 
   const isLoading = activeHousehold.isLoading || shiftsQuery.isLoading;
+  // 404 "route not built yet" stays a calm empty — every other query error
+  // must offer retry (network blip ≠ "check back soon").
   const routeUnavailable =
     shiftsQuery.isError && isShiftsRouteUnavailable(shiftsQuery.error);
-  const showUnavailable = routeUnavailable || shiftsQuery.isError;
+  const showQueryError = shiftsQuery.isError && !routeUnavailable;
+  const showUnavailable = routeUnavailable;
 
   const shifts = shiftsQuery.data ?? [];
   const weekHasAway = useMemo(
@@ -118,13 +126,21 @@ export function ScheduleShiftsScreen({
     [timeOff, weekDates, timeZone]
   );
   const showEmpty =
-    !isLoading && !showUnavailable && shifts.length === 0 && !weekHasAway;
+    !isLoading &&
+    !showUnavailable &&
+    !showQueryError &&
+    shifts.length === 0 &&
+    !weekHasAway;
   const showContent =
-    !isLoading && !showUnavailable && (shifts.length > 0 || weekHasAway);
+    !isLoading &&
+    !showUnavailable &&
+    !showQueryError &&
+    (shifts.length > 0 || weekHasAway);
   const showCrossFamily =
     calendarView === CALENDAR_VIEWS.CROSS_FAMILY &&
     !isLoading &&
     !showUnavailable &&
+    !showQueryError &&
     (activeHousehold.households?.length ?? 0) >= 2;
 
   return (
@@ -156,16 +172,18 @@ export function ScheduleShiftsScreen({
           ) : null}
           <View className="flex-row items-center justify-between gap-2">
             <H1>{t('shifts.screenTitle')}</H1>
-            <Button
-              testID="schedule-shifts-add-extra"
-              variant="ghost"
-              size="sm"
-              onPress={() =>
-                router.push('/(private)/schedule/shifts/extra' as Href)
-              }
-            >
-              <Text className="text-primary">{t('shifts.addExtra')}</Text>
-            </Button>
+            {canAddExtra ? (
+              <Button
+                testID="schedule-shifts-add-extra"
+                variant="ghost"
+                size="sm"
+                onPress={() =>
+                  router.push('/(private)/schedule/shifts/extra' as Href)
+                }
+              >
+                <Text className="text-primary">{t('shifts.addExtra')}</Text>
+              </Button>
+            ) : null}
           </View>
           {patternBanner}
           <WeekNavHeader
@@ -198,6 +216,17 @@ export function ScheduleShiftsScreen({
               variant="default"
               title={t('shifts.screenTitle')}
               description={t('shifts.unavailable')}
+            />
+          </View>
+        ) : null}
+
+        {showQueryError ? (
+          <View testID="schedule-shifts-error" style={{ flex: 1 }}>
+            <ErrorState
+              variant="network"
+              onRetry={() => {
+                void shiftsQuery.refetch();
+              }}
             />
           </View>
         ) : null}

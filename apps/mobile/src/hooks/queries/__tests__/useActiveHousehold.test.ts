@@ -111,4 +111,14 @@ describe('useActiveHousehold', () => {
       'household-b'
     );
   });
+
+  it('surfaces isError when the households list query fails', async () => {
+    householdsListMock.mockRejectedValue(new Error('network down'));
+
+    const { result } = renderHookWithProviders(() => useActiveHousehold());
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(result.current.isLoading).toBe(false);
+    expect(result.current.households).toEqual([]);
+  });
 });

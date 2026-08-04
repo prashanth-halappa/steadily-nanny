@@ -1,0 +1,29 @@
+# Sign out to the welcome wall so the next login.yaml / login-nanny.yaml
+# can authenticate as a different role on the same simulator.
+#
+# Assumes an authenticated session (tabs visible). No-op if already on welcome.
+appId: com.jetto.steadily.nanny
+---
+- runFlow:
+    when:
+      visible:
+        id: 'tab-settings'
+    commands:
+      - tapOn:
+          id: 'tab-settings'
+      - waitForAnimationToEnd
+      - assertVisible:
+          id: 'settings-screen'
+      - scrollUntilVisible:
+          element:
+            id: 'settings-sign-out'
+          direction: DOWN
+          timeout: 10000
+      - tapOn:
+          id: 'settings-sign-out'
+      - extendedWaitUntil:
+          visible:
+            id: 'welcome-screen'
+          timeout: 20000
+
+- waitForAnimationToEnd

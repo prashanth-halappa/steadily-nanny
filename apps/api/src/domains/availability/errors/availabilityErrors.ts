@@ -40,3 +40,17 @@ export class TimeOffNotFoundError extends NotFoundError {
     this.name = 'TimeOffNotFoundError';
   }
 }
+
+/**
+ * 404 — the household closure does not exist OR is not in the caller's
+ * household. SAME error for both cases so existence can't be probed by id.
+ */
+export class HouseholdClosureNotFoundError extends NotFoundError {
+  constructor(closureId: string, metadata?: ErrorMetadata) {
+    super('Household closure not found', 'HOUSEHOLD_CLOSURE_NOT_FOUND', {
+      closureId,
+      ...metadata,
+    });
+    this.name = 'HouseholdClosureNotFoundError';
+  }
+}

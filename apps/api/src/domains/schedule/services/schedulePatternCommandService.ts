@@ -11,6 +11,8 @@
  */
 
 import { MATERIALISATION_HORIZON_DAYS } from '@steadily-nanny/shared-types';
+import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types/schemas/notification.schema';
+import { ValidationError } from '../../../errors';
 import {
   ChildNotFoundError,
   type ChildQueryService,
@@ -23,12 +25,14 @@ import {
   HouseholdRepository,
   NotAHouseholdParentError,
 } from '../../household';
-import { notifyHouseholdParents } from '../../notification';
+import { notifyHouseholdParents, notifyUser } from '../../notification';
+import { localDateOf } from '../../timesheet/utils/weekStart';
 import {
   InvalidPatternCarerError,
   InvalidPatternChildError,
   NotThePatternCarerError,
   PatternMissingCarerError,
+  PatternNotAcceptedError,
   PatternNotDraftError,
   PatternNotEditableError,
   PatternNotPendingError,
@@ -37,6 +41,7 @@ import { SchedulePatternDayChildRepository } from '../repositories/schedulePatte
 import { SchedulePatternDayRepository } from '../repositories/schedulePatternDayRepository';
 import { SchedulePatternRepository } from '../repositories/schedulePatternRepository';
 import type {
+  AmendSchedulePatternInput,
   CreateSchedulePatternInput,
   ReplaceSchedulePatternDaysInput,
   RespondToSchedulePatternInput,
@@ -200,10 +205,89 @@ export class SchedulePatternCommandService {
     if (!pattern.carer_id) {
       throw new PatternMissingCarerError(patternId);
     }
-    return this.patternRepo.update(patternId, {
+    const updated = await this.patternRepo.update(patternId, {
       status: 'pending',
       sent_at: new Date().toISOString(),
     });
+    notifyUser(pattern.carer_id, {
+      title: 'Usual week proposed',
+      body: 'A parent sent you a usual week — open Schedule to respond.',
+      data: {
+        type: PUSH_NOTIFICATION_TYPES.SCHEDULE_PATTERN_SENT,
+        patternId: pattern.id,
+        householdId: pattern.household_id,
+      },
+    });
+    return updated;
+  }
+
+  /**
+   * Amend an accepted pattern's skips / pauses / end date only (not day or
+   * time — that stays a new draft proposal). Re-materialises immediately so
+   * future shifts match, then pushes the carer.
+   *
+   * When `until` is in the past after the write, status flips to `ended`
+   * (the CHECK already allows it; this is the write path that was missing).
+   * "Today" is the calendar date in `pattern.timezone` — UTC would leave
+   * east-of-UTC zones accepted many hours late.
+   *
+   * `now` is injectable so tests (and callers that already have a clock) can
+   * pin the materialisation / ended cutoff without mocking `Date`.
+   */
+  async amend(
+    userId: string,
+    patternId: string,
+    input: AmendSchedulePatternInput,
+    now: Date = new Date()
+  ): Promise<SchedulePattern> {
+    const pattern = await this.queries.getOwned(userId, patternId);
+    await this.assertWriteMember(userId, pattern.household_id);
+    if (pattern.status !== 'accepted') {
+      throw new PatternNotAcceptedError(patternId, pattern.status);
+    }
+
+    if (
+      input.until !== undefined &&
+      input.until !== null &&
+      input.until < pattern.dtstart
+    ) {
+      throw new ValidationError(
+        'until must be on or after dtstart',
+        'INVALID_UNTIL',
+        400,
+        { until: input.until, dtstart: pattern.dtstart }
+      );
+    }
+
+    const today = localDateOf(now, pattern.timezone);
+    const nextUntil = input.until !== undefined ? input.until : pattern.until;
+    const ended = nextUntil !== null && nextUntil < today;
+
+    const updated = await this.patternRepo.update(patternId, {
+      ...(input.exdates !== undefined ? { exdates: input.exdates } : {}),
+      ...(input.pause_ranges !== undefined
+        ? { pause_ranges: input.pause_ranges }
+        : {}),
+      ...(input.until !== undefined ? { until: input.until } : {}),
+      sequence: pattern.sequence + 1,
+      ...(ended ? { status: 'ended' as const } : {}),
+    });
+
+    await this.materialiseAccepted(userId, updated, now);
+
+    if (updated.carer_id) {
+      notifyUser(updated.carer_id, {
+        title: 'Usual week updated',
+        body: 'A parent changed holiday skips or the end date on your usual week.',
+        data: {
+          type: PUSH_NOTIFICATION_TYPES.SCHEDULE_PATTERN_AMENDED,
+          patternId: updated.id,
+          householdId: updated.household_id,
+        },
+      });
+    }
+
+    return updated;
   }
 
   /**
@@ -242,7 +326,7 @@ export class SchedulePatternCommandService {
           ? 'Your usual week was accepted. Shifts are on the calendar.'
           : 'Your usual week was declined.',
       data: {
-        type: 'schedule_pattern_responded',
+        type: PUSH_NOTIFICATION_TYPES.SCHEDULE_PATTERN_RESPONDED,
         patternId: pattern.id,
         householdId: pattern.household_id,
         status: input.status,
@@ -264,13 +348,15 @@ export class SchedulePatternCommandService {
 
   private async materialiseAccepted(
     userId: string,
-    pattern: SchedulePattern
+    pattern: SchedulePattern,
+    now: Date = new Date()
   ): Promise<void> {
     const withDays = await this.queries.getWithDays(userId, pattern.id);
     await this.runMaterialisation(
       pattern,
       withDays.days,
-      DEFAULT_MATERIALISATION_HORIZON_DAYS
+      DEFAULT_MATERIALISATION_HORIZON_DAYS,
+      now
     );
   }
 
@@ -283,21 +369,40 @@ export class SchedulePatternCommandService {
    * job's own "every accepted pattern" listing (`SchedulePatternRepository.listAccepted`)
    * is the trust boundary, exactly like `respond`'s prior carer check is for
    * `materialiseAccepted`.
+   *
+   * `now` is forwarded to materialisation (orphan future/past) and to the
+   * timezone-aware `ended` cutoff.
    */
   async materialiseForHorizon(
     pattern: SchedulePattern,
-    horizonDays: number = DEFAULT_MATERIALISATION_HORIZON_DAYS
+    horizonDays: number = DEFAULT_MATERIALISATION_HORIZON_DAYS,
+    now: Date = new Date()
   ): Promise<MaterialiseResult> {
     const days = await this.queries.getDaysForPattern(pattern.id);
-    return this.runMaterialisation(pattern, days, horizonDays);
+    const result = await this.runMaterialisation(
+      pattern,
+      days,
+      horizonDays,
+      now
+    );
+    const today = localDateOf(now, pattern.timezone);
+    if (
+      pattern.status === 'accepted' &&
+      pattern.until !== null &&
+      pattern.until < today
+    ) {
+      await this.patternRepo.update(pattern.id, { status: 'ended' });
+    }
+    return result;
   }
 
   private async runMaterialisation(
     pattern: SchedulePattern,
     days: SchedulePatternDayWithChildren[],
-    horizonDays: number
+    horizonDays: number,
+    now: Date = new Date()
   ): Promise<MaterialiseResult> {
-    const horizonEnd = addDays(new Date(), horizonDays);
+    const horizonEnd = addDays(now, horizonDays);
     const horizon =
       pattern.until && pattern.until < horizonEnd ? pattern.until : horizonEnd;
 
@@ -332,7 +437,8 @@ export class SchedulePatternCommandService {
         icalUid: pattern.ical_uid,
         note: pattern.note,
       },
-      occurrences
+      occurrences,
+      now
     );
   }
 

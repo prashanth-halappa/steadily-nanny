@@ -7,18 +7,34 @@ let create: any;
 let update: any;
 let replaceDays: any;
 let send: any;
+let amend: any;
 let respond: any;
 let withdraw: any;
+let collectClashWarningsForPattern: any;
+let patternWithAmendOverlay: any;
 
 beforeAll(async () => {
   listForHousehold = mock(async () => [{ id: 'p1' }]);
-  getWithDays = mock(async () => ({ id: 'p1', days: [] }));
+  getWithDays = mock(async () => ({
+    id: 'p1',
+    days: [],
+    carer_id: 'carer-1',
+    exdates: [],
+    pause_ranges: [],
+    until: null,
+  }));
   create = mock(async () => ({ id: 'p-new', status: 'draft' }));
   update = mock(async () => ({ id: 'p1', note: 'Updated' }));
   replaceDays = mock(async () => ({ id: 'p1', days: [] }));
   send = mock(async () => ({ id: 'p1', status: 'pending' }));
+  amend = mock(async () => ({ id: 'p1', status: 'accepted', exdates: [] }));
   respond = mock(async () => ({ id: 'p1', status: 'accepted' }));
   withdraw = mock(async () => ({ id: 'p1', status: 'withdrawn' }));
+  collectClashWarningsForPattern = mock(async () => []);
+  patternWithAmendOverlay = mock((pattern: unknown, input: unknown) => ({
+    ...(pattern as object),
+    overlay: input,
+  }));
 
   mock.module(
     '../../../../../src/domains/schedule/services/schedulePatternQueryService',
@@ -34,9 +50,17 @@ beforeAll(async () => {
         update,
         replaceDays,
         send,
+        amend,
         respond,
         withdraw,
       },
+    })
+  );
+  mock.module(
+    '../../../../../src/domains/schedule/services/patternClashWarnings',
+    () => ({
+      collectClashWarningsForPattern,
+      patternWithAmendOverlay,
     })
   );
 
@@ -68,12 +92,25 @@ beforeEach(() => {
     update,
     replaceDays,
     send,
+    amend,
     respond,
     withdraw,
+    collectClashWarningsForPattern,
+    patternWithAmendOverlay,
   ]) {
     m.mockClear?.();
   }
 });
+
+/** True when `earlier` was invoked before `later` (Bun mock call order). */
+function wasCalledBefore(
+  earlier: { mock: { invocationCallOrder: number[] } },
+  later: { mock: { invocationCallOrder: number[] } }
+): boolean {
+  const a = earlier.mock.invocationCallOrder[0];
+  const b = later.mock.invocationCallOrder[0];
+  return a !== undefined && b !== undefined && a < b;
+}
 
 describe('SchedulePatternController', () => {
   it('list responds 200 with schedule_patterns for the household', async () => {
@@ -114,7 +151,7 @@ describe('SchedulePatternController', () => {
       mock()
     );
     expect(getWithDays).toHaveBeenCalledWith('u1', 'p1');
-    expect(res.body.data).toEqual({ schedule_pattern: { id: 'p1', days: [] } });
+    expect(res.body.data.schedule_pattern.id).toBe('p1');
   });
 
   it('update passes the body through', async () => {
@@ -145,7 +182,7 @@ describe('SchedulePatternController', () => {
     expect(replaceDays).toHaveBeenCalledWith('u1', 'p1', { days: [] });
   });
 
-  it('send responds with the pattern now pending', async () => {
+  it('send collects warnings before materialising command', async () => {
     const res = mockRes();
     await SchedulePatternController.send(
       { user: { id: 'u1' }, params: { patternId: 'p1' } } as any,
@@ -153,12 +190,33 @@ describe('SchedulePatternController', () => {
       mock()
     );
     expect(send).toHaveBeenCalledWith('u1', 'p1');
+    expect(collectClashWarningsForPattern).toHaveBeenCalled();
+    expect(wasCalledBefore(collectClashWarningsForPattern, send)).toBe(true);
     expect(res.body.data).toEqual({
       schedule_pattern: { id: 'p1', status: 'pending' },
+      warnings: [],
     });
   });
 
-  it('respond passes the body through', async () => {
+  it('amend collects warnings (with overlay) before materialising command', async () => {
+    const res = mockRes();
+    const body = { exdates: ['2026-09-03'] };
+    await SchedulePatternController.amend(
+      {
+        user: { id: 'u1' },
+        params: { patternId: 'p1' },
+        body,
+      } as any,
+      res,
+      mock()
+    );
+    expect(patternWithAmendOverlay).toHaveBeenCalled();
+    expect(amend).toHaveBeenCalledWith('u1', 'p1', body);
+    expect(wasCalledBefore(collectClashWarningsForPattern, amend)).toBe(true);
+    expect(res.body.data.warnings).toEqual([]);
+  });
+
+  it('respond collects warnings before accept materialises', async () => {
     const res = mockRes();
     await SchedulePatternController.respond(
       {
@@ -172,6 +230,28 @@ describe('SchedulePatternController', () => {
     expect(respond).toHaveBeenCalledWith('carer-1', 'p1', {
       status: 'accepted',
     });
+    expect(collectClashWarningsForPattern).toHaveBeenCalled();
+    expect(wasCalledBefore(collectClashWarningsForPattern, respond)).toBe(true);
+    expect(res.body.data.warnings).toEqual([]);
+  });
+
+  it('respond skips warning collection on decline', async () => {
+    respond.mockImplementationOnce(async () => ({
+      id: 'p1',
+      status: 'declined',
+    }));
+    const res = mockRes();
+    await SchedulePatternController.respond(
+      {
+        user: { id: 'carer-1' },
+        params: { patternId: 'p1' },
+        body: { status: 'declined' },
+      } as any,
+      res,
+      mock()
+    );
+    expect(collectClashWarningsForPattern).not.toHaveBeenCalled();
+    expect(res.body.data.warnings).toEqual([]);
   });
 
   it('withdraw responds with the pattern now withdrawn', async () => {

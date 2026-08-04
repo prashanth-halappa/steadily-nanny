@@ -43,6 +43,10 @@
   "screenTitle": "Hoy",
   "emptyTitle": "Tu semana aparecerá aquí",
   "emptyDescription": "Cuando añadas un horario, los próximos turnos y novedades se mostrarán en esta pantalla.",
+  "needsAttention": {
+    "title": "Requiere atención ({{count}})",
+    "body": "Hay pendientes que te esperan."
+  },
   "handoff": {
     "morningTitle": "Entrega matutina",
     "eveningTitle": "Entrega vespertina",

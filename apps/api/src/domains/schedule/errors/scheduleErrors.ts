@@ -61,6 +61,20 @@ export class PatternNotEditableError extends ConflictError {
   }
 }
 
+/**
+ * 409 — `amend` (exdates / pause_ranges / until on an accepted pattern) was
+ * attempted on a pattern that is not currently `accepted`.
+ */
+export class PatternNotAcceptedError extends ConflictError {
+  constructor(patternId: string, status: string) {
+    super('Only an accepted pattern can be amended', 'PATTERN_NOT_ACCEPTED', {
+      patternId,
+      status,
+    });
+    this.name = 'PatternNotAcceptedError';
+  }
+}
+
 /** 409 — `respond` was called on a pattern that is not currently `pending`. */
 export class PatternNotPendingError extends ConflictError {
   constructor(patternId: string, status: string) {

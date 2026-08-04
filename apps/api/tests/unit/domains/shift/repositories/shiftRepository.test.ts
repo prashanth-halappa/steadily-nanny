@@ -203,3 +203,53 @@ describe('ShiftRepository.findByIdWithChildren', () => {
     expect(await repo.findByIdWithChildren('missing')).toBeNull();
   });
 });
+
+describe('ShiftRepository.confirmPending — CAS pending → confirmed', () => {
+  function makeTimeEntryRepo(hasTimeEntries = false): any {
+    return { hasTimeEntries: mock(async () => hasTimeEntries) };
+  }
+
+  it('confirms when status is still pending', async () => {
+    const pending = { id: 's1', status: 'pending' };
+    const confirmed = { id: 's1', status: 'confirmed' };
+    let call = 0;
+    mockSupabaseService.from.mockImplementation(() => {
+      call += 1;
+      // assertMutable findById, then CAS update+.maybeSingle
+      if (call === 1) {
+        return createMockQueryChain({ data: pending, error: null });
+      }
+      return createMockQueryChain({ data: confirmed, error: null });
+    });
+
+    const repo = new ShiftRepository(makeTimeEntryRepo(false));
+    expect(await repo.confirmPending('s1')).toEqual(confirmed);
+  });
+
+  it('throws SHIFT_NOT_PENDING ValidationError when the CAS update matches 0 rows', async () => {
+    const { ValidationError } = await import('../../../../../src/errors');
+    const pending = { id: 's1', status: 'pending' };
+    let call = 0;
+    mockSupabaseService.from.mockImplementation(() => {
+      call += 1;
+      if (call === 1) {
+        return createMockQueryChain({ data: pending, error: null });
+      }
+      // Lost race: concurrent cancel/accept already moved status off pending.
+      return createMockQueryChain({ data: null, error: null });
+    });
+
+    const repo = new ShiftRepository(makeTimeEntryRepo(false));
+    try {
+      await repo.confirmPending('s1');
+      expect.unreachable('confirmPending should have thrown');
+    } catch (error) {
+      expect(error).toBeInstanceOf(ValidationError);
+      // ValidationError's machine code is always VALIDATION_ERROR; the CAS
+      // reason lives in metadata.reason (see ValidationError constructor).
+      expect(
+        (error as InstanceType<typeof ValidationError>).metadata?.reason
+      ).toBe('SHIFT_NOT_PENDING');
+    }
+  });
+});

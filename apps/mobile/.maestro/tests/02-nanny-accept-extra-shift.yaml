@@ -1,0 +1,34 @@
+# Scenario — nanny accepts an extra (parent-proposed) shift.
+#
+# Prerequisites (.env.maestro):
+#   NANNY_EMAIL / NANNY_PASSWORD
+#   EXTRA_SHIFT_ID — pending extra shift assigned to this nanny
+#     (parent proposed via schedule-extra / ExtraShiftScreen)
+#
+# Approach: deep-link straight to shift detail (same path as EXTRA_SHIFT_PROPOSED
+# push) so the flow does not depend on calendar scrape. Push itself cannot be
+# injected into the simulator notification center reliably.
+appId: com.jetto.steadily.nanny
+tags:
+  - scheduling
+---
+- runFlow: ../flows/login-nanny.yaml
+
+# Custom-scheme openLink mirrors notificationRouteMap EXTRA_SHIFT_PROPOSED.
+- openLink: steadilynanny:///(private)/schedule/shifts/${EXTRA_SHIFT_ID}
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'shift-detail-screen'
+- assertVisible:
+    id: 'shift-detail-fresh-proposal'
+- tapOn:
+    id: 'shift-detail-accept'
+- waitForAnimationToEnd
+# After accept, pending affordances should clear and status must actually
+# flip pending -> confirmed (shift-detail-status renders unconditionally
+# regardless of status, so it is not a real check on its own).
+- assertVisible:
+    id: 'shift-detail-status-confirmed'
+- assertNotVisible:
+    id: 'shift-detail-accept'
+- takeScreenshot: nanny-accepted-extra-shift

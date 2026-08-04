@@ -115,6 +115,10 @@
     "awayBand": "Ausente",
     "awaySummary": "Tu cuidador tiene tiempo libre esta semana — mira Agenda para los detalles."
   },
+  "clash": {
+    "busyOverlap": "Esto se solapa con otro compromiso — aún puedes continuar.",
+    "outsideAvailability": "Fuera de la disponibilidad marcada — aún puedes continuar."
+  },
   "detail": {
     "title": "Turno",
     "missingTitle": "Turno no encontrado",
@@ -134,6 +138,10 @@
       "gap_raised": "Hueco de cobertura"
     },
     "cancelShift": "Pedir cancelación",
+    "accept": "Aceptar",
+    "acceptedToast": "Turno confirmado",
+    "freshProposal": "Un progenitor propuso este turno nuevo — acepta o propone otros para confirmar.",
+    "needsReconfirm": "Un progenitor cambió estos horarios — acepta o propone otros para confirmar.",
     "counterOffer": "Proponer otros horarios",
     "changesTitle": "Cambios",
     "requestMessageLabel": "Mensaje",
@@ -180,7 +188,6 @@
   "calendarViews": {
     "agenda": "Agenda",
     "week_ribbon": "Semana",
-    "coverage_lanes": "Cobertura",
     "cross_family": "Ritmo"
   },
   "calendarSync": {

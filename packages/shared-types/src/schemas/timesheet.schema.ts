@@ -125,6 +125,22 @@ export const UpdateTimeEntrySchema = z
     message: 'At least one field must be supplied',
   });
 
+/**
+ * POST /time-entries/retroactive body — forgotten clock-in recovery. Both
+ * ends are required (there is no "running" phase): the entry lands
+ * `submitted` and rolls into the week total immediately. `submitted` is
+ * implicit on create here the same way it is on clock-out — there is no
+ * separate submit step.
+ */
+export const CreateRetroactiveTimeEntrySchema = z.object({
+  household_id: z.uuid(),
+  clock_in_at: z.iso.datetime({ offset: true }),
+  clock_out_at: z.iso.datetime({ offset: true }),
+  break_minutes: z.int().min(0).optional(),
+  note: z.string().optional(),
+  shift_id: z.uuid().optional(),
+});
+
 /** List response envelope. */
 export const TimeEntryListResponseSchema = z.object({
   time_entries: z.array(TimeEntrySchema),
@@ -134,6 +150,9 @@ export type TimeEntry = z.infer<typeof TimeEntrySchema>;
 export type ClockInInput = z.infer<typeof ClockInSchema>;
 export type ClockOutInput = z.infer<typeof ClockOutSchema>;
 export type UpdateTimeEntryInput = z.infer<typeof UpdateTimeEntrySchema>;
+export type CreateRetroactiveTimeEntryInput = z.infer<
+  typeof CreateRetroactiveTimeEntrySchema
+>;
 export type TimeEntryListResponse = z.infer<typeof TimeEntryListResponseSchema>;
 
 // =============================================================================

@@ -2,7 +2,10 @@
  * @module domains/schedule/components/ShiftDetailScreen
  *
  * D23/D24 — single-shift detail: parent can edit wall-clock times + note;
- * nanny is read-only. Hosts the shift-scoped day thread.
+ * assigned nanny can Accept a pending shift or counter-offer times. Hosts
+ * the shift-scoped day thread. Pending + `parent_proposed` discriminates:
+ * fresh extra (`kind=extra`, no `source_pattern_id`, `sequence===0`) → proposal copy;
+ * demoted recurring/cover, pattern-sourced, or re-timed extras (`sequence>0`) → re-confirm copy.
  *
  * Wave B: the day-thread query (`useShiftEvents`) is keyed off `shift.household_id`
  * — the shift's OWN household, straight off the fetched record — not
@@ -37,6 +40,7 @@ import {
 import { resolveMemberDisplayName } from '@/src/domains/schedule/utils/memberDisplayName';
 import { isParentEditorRole, SETUP_ROLES } from '@/src/domains/setup/types';
 import { formatDisplayDate } from '@/src/domains/timesheet/utils/week';
+import { useAcceptShift } from '@/src/hooks/mutations/useAcceptShift';
 import { useCreateShiftChangeRequest } from '@/src/hooks/mutations/useCreateShiftChangeRequest';
 import { useRespondToShiftChangeRequest } from '@/src/hooks/mutations/useRespondToShiftChangeRequest';
 import { useUpdateShift } from '@/src/hooks/mutations/useUpdateShift';
@@ -94,6 +98,7 @@ export function ShiftDetailScreen() {
   const eventsQuery = useShiftEvents(shiftQuery.data?.household_id, shiftId);
   const membersQuery = useHouseholdMembers(shiftQuery.data?.household_id);
   const updateShift = useUpdateShift();
+  const acceptShift = useAcceptShift();
   const createChange = useCreateShiftChangeRequest();
   const respondChange = useRespondToShiftChangeRequest();
   const changeRequests = useShiftChangeRequests(shiftId);
@@ -101,6 +106,27 @@ export function ShiftDetailScreen() {
   const shift = shiftQuery.data;
   const isParent = isParentEditorRole(onboarding.role);
   const isNanny = onboarding.role === SETUP_ROLES.NANNY;
+  const isAssignedCarer =
+    isNanny &&
+    currentUserId !== null &&
+    shift?.carer_id !== null &&
+    shift?.carer_id === currentUserId;
+  const canAcceptPending =
+    Boolean(isAssignedCarer) && shift?.status === 'pending';
+  // Fresh EXTRA proposals and demoted-after-edit shifts both land as
+  // pending + parent_proposed. Discriminate: brand-new extra has no
+  // source pattern AND sequence===0; migration 034 demotions bump
+  // sequence only (kind/source_pattern_id stay), so sequence>0 extras
+  // need re-confirm copy, not "new shift proposed".
+  const isPendingParentProposed =
+    shift?.status === 'pending' && shift.origin === 'parent_proposed';
+  const isFreshExtraProposal =
+    Boolean(isPendingParentProposed) &&
+    shift?.kind === 'extra' &&
+    shift.source_pattern_id === null &&
+    shift.sequence === 0;
+  const needsReconfirm =
+    Boolean(isPendingParentProposed) && !isFreshExtraProposal;
   const readerTimeZone = profile.data?.timezone;
   const showShiftZone =
     Boolean(shift?.timezone) &&
@@ -205,7 +231,7 @@ export function ShiftDetailScreen() {
       </Body>
       <View className="mt-3 flex-row flex-wrap items-center gap-2">
         <StatusPill
-          testID="shift-detail-status"
+          testID={`shift-detail-status-${shift.status}`}
           variant={STATUS_TO_VARIANT[shift.status]}
           label={t(STATUS_TO_LABEL_KEY[shift.status])}
         />
@@ -217,6 +243,22 @@ export function ShiftDetailScreen() {
           />
         ) : null}
       </View>
+      {isFreshExtraProposal ? (
+        <Small
+          testID="shift-detail-fresh-proposal"
+          className="mt-2 text-muted-foreground"
+        >
+          {t('detail.freshProposal')}
+        </Small>
+      ) : null}
+      {needsReconfirm ? (
+        <Small
+          testID="shift-detail-needs-reconfirm"
+          className="mt-2 text-muted-foreground"
+        >
+          {t('detail.needsReconfirm')}
+        </Small>
+      ) : null}
       {shift.is_short_notice ? (
         <Small
           testID="shift-detail-short-notice-hint"
@@ -303,30 +345,44 @@ export function ShiftDetailScreen() {
                 autoCapitalize="none"
                 autoCorrect={false}
               />
-              <Button
-                testID="shift-detail-counter"
-                disabled={createChange.isPending}
-                onPress={() => {
-                  // Same overnight-aware builder the parent's Save uses —
-                  // never two instants off the one `local_date`.
-                  const { starts_at, ends_at } = shiftInstantsFromWallClock(
-                    shift.local_date,
-                    startTime,
-                    endTime,
-                    shift.timezone
-                  );
-                  void createChange.mutateAsync({
-                    shiftId: shift.id,
-                    input: {
-                      kind: 'counter_offer',
-                      proposed_starts_at: starts_at,
-                      proposed_ends_at: ends_at,
-                    },
-                  });
-                }}
-              >
-                <Text>{t('detail.counterOffer')}</Text>
-              </Button>
+              <View className="flex-row flex-wrap gap-2">
+                {canAcceptPending ? (
+                  <Button
+                    testID="shift-detail-accept"
+                    disabled={acceptShift.isPending}
+                    onPress={() =>
+                      void acceptShift.mutateAsync({ shiftId: shift.id })
+                    }
+                  >
+                    <Text>{t('detail.accept')}</Text>
+                  </Button>
+                ) : null}
+                <Button
+                  testID="shift-detail-counter"
+                  variant={canAcceptPending ? 'outline' : 'default'}
+                  disabled={createChange.isPending}
+                  onPress={() => {
+                    // Same overnight-aware builder the parent's Save uses —
+                    // never two instants off the one `local_date`.
+                    const { starts_at, ends_at } = shiftInstantsFromWallClock(
+                      shift.local_date,
+                      startTime,
+                      endTime,
+                      shift.timezone
+                    );
+                    void createChange.mutateAsync({
+                      shiftId: shift.id,
+                      input: {
+                        kind: 'counter_offer',
+                        proposed_starts_at: starts_at,
+                        proposed_ends_at: ends_at,
+                      },
+                    });
+                  }}
+                >
+                  <Text>{t('detail.counterOffer')}</Text>
+                </Button>
+              </View>
             </View>
           ) : null}
         </View>

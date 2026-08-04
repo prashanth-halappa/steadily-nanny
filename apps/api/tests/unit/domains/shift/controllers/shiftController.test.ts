@@ -5,12 +5,21 @@ let listForHousehold: any;
 let getOwned: any;
 let listEvents: any;
 let update: any;
+let accept: any;
 
 beforeAll(async () => {
   listForHousehold = mock(async () => [{ id: 's1' }]);
   getOwned = mock(async () => ({ id: 's1' }));
   listEvents = mock(async () => [{ id: 'e1' }]);
   update = mock(async () => ({ id: 's1', note: 'Updated' }));
+  accept = mock(async () => ({
+    id: 's1',
+    status: 'confirmed',
+    carer_id: null,
+    starts_at: '2026-08-05T09:00:00.000Z',
+    ends_at: '2026-08-05T17:00:00.000Z',
+    timezone: 'UTC',
+  }));
 
   mock.module(
     '../../../../../src/domains/shift/services/shiftQueryService',
@@ -21,9 +30,12 @@ beforeAll(async () => {
   mock.module(
     '../../../../../src/domains/shift/services/shiftCommandService',
     () => ({
-      shiftCommandService: { update },
+      shiftCommandService: { update, accept },
     })
   );
+  mock.module('../../../../../src/domains/me/services/clashWarning', () => ({
+    collectClashWarningsForCarer: mock(async () => []),
+  }));
 
   ShiftController = (
     await import('../../../../../src/domains/shift/controllers/shiftController')
@@ -44,7 +56,7 @@ function mockRes(): any {
 }
 
 beforeEach(() => {
-  for (const m of [listForHousehold, getOwned, listEvents, update]) {
+  for (const m of [listForHousehold, getOwned, listEvents, update, accept]) {
     m.mockClear?.();
   }
 });
@@ -111,7 +123,25 @@ describe('ShiftController', () => {
       mock()
     );
     expect(update).toHaveBeenCalledWith('u1', 's1', { note: 'Updated' });
-    expect(res.body.data).toEqual({ shift: { id: 's1', note: 'Updated' } });
+    expect(res.body.data).toEqual({
+      shift: { id: 's1', note: 'Updated' },
+      warnings: [],
+    });
+  });
+
+  it('accept delegates to the command service', async () => {
+    const res = mockRes();
+    await ShiftController.accept(
+      { user: { id: 'carer-1' }, params: { shiftId: 's1' } } as any,
+      res,
+      mock()
+    );
+    expect(accept).toHaveBeenCalledWith('carer-1', 's1');
+    expect(res.body.data.shift).toMatchObject({
+      id: 's1',
+      status: 'confirmed',
+    });
+    expect(res.body.data.warnings).toEqual([]);
   });
 
   it('forwards service errors to next()', async () => {

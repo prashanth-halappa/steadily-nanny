@@ -85,6 +85,25 @@ export function addWeeks(weekStartISO: string, delta: number): string {
   return toISODateUTC(shifted);
 }
 
+/**
+ * Whole weeks from `fromWeekStartISO` to `toWeekStartISO` (both Monday
+ * anchors). Negative means `to` is earlier. Inverse of `addWeeks` — used
+ * when a deep link hands us an absolute `weekStart` and Hours needs the
+ * matching `weekOffset` from "now".
+ */
+export function weeksBetween(
+  fromWeekStartISO: string,
+  toWeekStartISO: string
+): number {
+  const [fromYear, fromMonth, fromDay] = fromWeekStartISO
+    .split('-')
+    .map(Number);
+  const [toYear, toMonth, toDay] = toWeekStartISO.split('-').map(Number);
+  const fromMs = Date.UTC(fromYear ?? 0, (fromMonth ?? 1) - 1, fromDay ?? 1);
+  const toMs = Date.UTC(toYear ?? 0, (toMonth ?? 1) - 1, toDay ?? 1);
+  return Math.round((toMs - fromMs) / (DAYS_IN_WEEK * 24 * 60 * 60 * 1000));
+}
+
 /** The 7 consecutive ISO dates (Monday..Sunday) making up the week starting `weekStartISO`. */
 export function getWeekDates(weekStartISO: string): string[] {
   const [year, month, day] = weekStartISO.split('-').map(Number);

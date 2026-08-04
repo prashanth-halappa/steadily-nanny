@@ -101,6 +101,7 @@ describe('BusyBlockRepository.listForCarer', () => {
       starts_at: '2026-08-03T09:00:00Z',
       ends_at: '2026-08-03T13:00:00Z',
       kind: 'other_commitment',
+      source_uid: 'opaque-uid@steadily',
       household_id: 'household-A-secret',
       user_id: 'carer-1',
       child_id: 'child-A-secret',
@@ -125,9 +126,48 @@ describe('BusyBlockRepository.listForCarer', () => {
       ends_at: '2026-08-03T13:00:00Z',
       kind: 'other_commitment',
     });
+    expect((block as Record<string, unknown>).source_uid).toBeUndefined();
     expect((block as Record<string, unknown>).household_id).toBeUndefined();
     expect((block as Record<string, unknown>).user_id).toBeUndefined();
     expect((block as Record<string, unknown>).child_id).toBeUndefined();
     expect((block as Record<string, unknown>).note).toBeUndefined();
+  });
+});
+
+describe('BusyBlockRepository.listForClashEvaluation', () => {
+  it('selects opaque source_uid for server-internal clash self-ignore', async () => {
+    const chain = createMockQueryChain({
+      data: [
+        {
+          starts_at: '2026-08-03T09:00:00Z',
+          ends_at: '2026-08-03T13:00:00Z',
+          kind: 'other_commitment',
+          source_uid: 'shift-1@steadily',
+          household_id: 'household-A-secret',
+        },
+      ],
+      error: null,
+    });
+    mockSupabaseService.from.mockImplementation(() => chain);
+
+    const repo = new BusyBlockRepository();
+    const result = await repo.listForClashEvaluation(
+      'carer-1',
+      '2026-08-01T00:00:00Z',
+      '2026-08-07T23:59:59Z'
+    );
+
+    expect(chain.select).toHaveBeenCalledWith(
+      'starts_at, ends_at, kind, source_uid'
+    );
+    expect(result).toEqual([
+      {
+        starts_at: '2026-08-03T09:00:00Z',
+        ends_at: '2026-08-03T13:00:00Z',
+        kind: 'other_commitment',
+        source_uid: 'shift-1@steadily',
+      },
+    ]);
+    expect((result[0] as Record<string, unknown>).household_id).toBeUndefined();
   });
 });

@@ -1,0 +1,37 @@
+# Reusable parent email login.
+# Credentials: PARENT_EMAIL / PARENT_PASSWORD from apps/mobile/.env.maestro
+# (see .env.maestro.example). Seed via scripts/seed-test-users.ts.
+#
+# Preserves session when already past the welcome wall (clearState: false).
+# Callers that need a clean slate should clearState themselves or run logout.yaml first.
+appId: com.jetto.steadily.nanny
+---
+- launchApp:
+    clearState: false
+
+- runFlow:
+    when:
+      visible:
+        id: 'welcome-screen'
+    commands:
+      - tapOn:
+          id: 'welcome-sign-in-email'
+      - assertVisible:
+          id: 'login-screen'
+      - tapOn:
+          id: 'login-email'
+      - inputText: ${PARENT_EMAIL}
+      - tapOn:
+          id: 'login-password'
+      - inputText: ${PARENT_PASSWORD}
+      - hideKeyboard
+      - tapOn:
+          id: 'login-submit'
+      - extendedWaitUntil:
+          notVisible:
+            id: 'welcome-screen'
+          timeout: 20000
+      - assertNotVisible:
+          id: 'login-screen'
+
+- waitForAnimationToEnd

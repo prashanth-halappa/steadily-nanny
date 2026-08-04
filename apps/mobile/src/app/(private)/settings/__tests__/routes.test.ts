@@ -61,6 +61,18 @@ describe('settings/time route', () => {
   });
 });
 
+describe('settings/notifications route', () => {
+  let source: string;
+  beforeAll(async () => {
+    source = await readRoute('../notifications.tsx');
+  });
+
+  it('delegates to NotificationPrefsScreen', () => {
+    expect(source).toContain('NotificationPrefsScreen');
+    expect(source).toContain('export default function');
+  });
+});
+
 describe('settings/household route', () => {
   let source: string;
   beforeAll(async () => {

@@ -149,6 +149,12 @@ beforeAll(async () => {
   mock.module('@/src/hooks/mutations/useRespondToShiftChangeRequest', () => ({
     useRespondToShiftChangeRequest: mockUseRespondToShiftChangeRequest,
   }));
+  mock.module('@/src/hooks/mutations/useAcceptShift', () => ({
+    useAcceptShift: () => ({
+      mutateAsync: mock(() => Promise.resolve({})),
+      isPending: false,
+    }),
+  }));
   mock.module('@/src/lib/toast', () => ({
     showSuccessToast: mock(),
   }));

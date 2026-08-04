@@ -1,7 +1,9 @@
 import { describe, expect, it, mock } from 'bun:test';
+import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types/schemas/notification.schema';
 import { ShiftNotFoundError } from '../../../../../src/domains/shift';
 import {
   AlreadyClockedInError,
+  CancellationPaidAlreadyRecordedError,
   InvalidClockTimesError,
   NotACarerError,
   NotATimesheetParentError,
@@ -11,6 +13,7 @@ import {
 } from '../../../../../src/domains/timesheet/errors/timesheetErrors';
 import {
   computeWorkedMinutes,
+  recordCancellationPaidEntry,
   sumWorkedMinutes,
   TimesheetCommandService,
 } from '../../../../../src/domains/timesheet/services/timesheetCommandService';
@@ -152,6 +155,14 @@ function makeUserService(overrides: Record<string, unknown> = {}): any {
       user_id: 'carer-1',
       name: 'Nia Rowe',
     })),
+    ...overrides,
+  };
+}
+
+function makePush(overrides: Record<string, unknown> = {}): any {
+  return {
+    notifyUser: mock(() => undefined),
+    notifyHouseholdParents: mock(() => undefined),
     ...overrides,
   };
 }
@@ -1098,6 +1109,75 @@ describe('TimesheetCommandService.query', () => {
       })
     );
   });
+
+  it('pushes the carer once with TIMESHEET_QUERIED when a week is queried', async () => {
+    const push = makePush();
+    const svc = new TimesheetCommandService(
+      makeTimeEntryRepo(),
+      makeTimesheetRepo(),
+      makeMemberRepo({
+        findActiveMembership: mock(async () => ({
+          id: 'm3',
+          household_id: 'h1',
+          user_id: 'parent-1',
+          role: 'parent',
+        })),
+      }),
+      makeHouseholdRepo(),
+      makeShiftRepo(),
+      makeQueries(),
+      makeUserService(),
+      push
+    );
+
+    await svc.query('parent-1', 'ts1', { note: 'Query Thursday' });
+
+    expect(push.notifyUser).toHaveBeenCalledTimes(1);
+    expect(push.notifyUser).toHaveBeenCalledWith(
+      'carer-1',
+      expect.objectContaining({
+        data: expect.objectContaining({
+          type: PUSH_NOTIFICATION_TYPES.TIMESHEET_QUERIED,
+          timesheetId: 'ts1',
+          householdId: 'h1',
+          weekStart: '2026-08-03',
+        }),
+      })
+    );
+  });
+
+  it('still returns the queried timesheet when the carer push throws', async () => {
+    const push = makePush({
+      notifyUser: mock(() => {
+        throw new Error('expo down');
+      }),
+    });
+    const timesheetRepo = makeTimesheetRepo();
+    const svc = new TimesheetCommandService(
+      makeTimeEntryRepo(),
+      timesheetRepo,
+      makeMemberRepo({
+        findActiveMembership: mock(async () => ({
+          id: 'm3',
+          household_id: 'h1',
+          user_id: 'parent-1',
+          role: 'parent',
+        })),
+      }),
+      makeHouseholdRepo(),
+      makeShiftRepo(),
+      makeQueries(),
+      makeUserService(),
+      push
+    );
+
+    const result = await svc.query('parent-1', 'ts1', {
+      note: 'Query Thursday',
+    });
+
+    expect(result.status).toBe('queried');
+    expect(timesheetRepo.update).toHaveBeenCalled();
+  });
 });
 
 // A clocked-out entry — the only state a correction can act on. Same week
@@ -1288,5 +1368,450 @@ describe('TimesheetCommandService.updateEntry (P0-2)', () => {
         clock_out_at: '2026-08-03T07:00:00.000Z',
       })
     ).rejects.toBeInstanceOf(InvalidClockTimesError);
+  });
+});
+
+describe('TimesheetCommandService.createRetroactiveEntry', () => {
+  // Same week as `timesheet` (Mon 2026-08-03), clearly in the past so
+  // assertClockOrder's future bound never flakes on wall-clock drift.
+  const retroInput = {
+    household_id: 'h1',
+    clock_in_at: '2026-08-03T09:00:00.000Z',
+    clock_out_at: '2026-08-03T17:00:00.000Z', // 480 min
+    break_minutes: 30, // -> 450
+  };
+
+  const createdRetroEntry = {
+    ...submittedEntry,
+    id: 't-retro',
+    clock_in_at: retroInput.clock_in_at,
+    clock_out_at: retroInput.clock_out_at,
+    break_minutes: 30,
+    shift_id: null,
+    status: 'submitted',
+    kind: 'worked',
+  };
+
+  function makeRetroSvc(
+    overrides: {
+      timeEntryRepo?: any;
+      timesheetRepo?: any;
+      shiftRepo?: any;
+    } = {}
+  ) {
+    const created = {
+      ...createdRetroEntry,
+      ...(overrides.timeEntryRepo ? {} : {}),
+    };
+    return new TimesheetCommandService(
+      overrides.timeEntryRepo ??
+        makeTimeEntryRepo({
+          createSubmitted: mock(async (data: Record<string, unknown>) => ({
+            ...created,
+            ...data,
+          })),
+          listForCarerWeek: mock(async () => [
+            finishedEntryA,
+            {
+              clock_in_at: retroInput.clock_in_at,
+              clock_out_at: retroInput.clock_out_at,
+              break_minutes: 30,
+            },
+          ]),
+        }),
+      overrides.timesheetRepo ??
+        makeTimesheetRepo({
+          findByWeek: mock(async () => ({ ...timesheet, status: 'submitted' })),
+        }),
+      makeMemberRepo(),
+      makeHouseholdRepo(),
+      overrides.shiftRepo ?? makeShiftRepo(),
+      makeQueries(),
+      makeUserService(),
+      makePush()
+    );
+  }
+
+  it('lands submitted and rolls the entry into the week total', async () => {
+    const timeEntryRepo = makeTimeEntryRepo({
+      createSubmitted: mock(async (data: Record<string, unknown>) => ({
+        ...createdRetroEntry,
+        ...data,
+      })),
+      // Week after create: prior finishedEntryA (450) + this retro (450) = 900
+      listForCarerWeek: mock(async () => [
+        finishedEntryA,
+        {
+          clock_in_at: retroInput.clock_in_at,
+          clock_out_at: retroInput.clock_out_at,
+          break_minutes: 30,
+        },
+      ]),
+    });
+    const timesheetRepo = makeTimesheetRepo({
+      findByWeek: mock(async () => ({ ...timesheet, status: 'submitted' })),
+    });
+    const svc = makeRetroSvc({ timeEntryRepo, timesheetRepo });
+
+    const result = await svc.createRetroactiveEntry('carer-1', retroInput);
+
+    expect(timeEntryRepo.createSubmitted).toHaveBeenCalledWith(
+      expect.objectContaining({
+        household_id: 'h1',
+        carer_id: 'carer-1',
+        clock_in_at: retroInput.clock_in_at,
+        clock_out_at: retroInput.clock_out_at,
+        break_minutes: 30,
+        kind: 'worked',
+        status: 'submitted',
+      })
+    );
+    expect(result.status).toBe('submitted');
+    expect(timesheetRepo.update).toHaveBeenCalledWith(
+      'ts1',
+      expect.objectContaining({ total_minutes: 900, status: 'submitted' })
+    );
+  });
+
+  it('rejects a session that crosses a week boundary', async () => {
+    const svc = makeRetroSvc();
+
+    await expect(
+      svc.createRetroactiveEntry('carer-1', {
+        household_id: 'h1',
+        // Sunday evening → Monday morning in Europe/London (BST)
+        clock_in_at: '2026-08-02T20:00:00.000Z',
+        clock_out_at: '2026-08-03T08:00:00.000Z',
+      })
+    ).rejects.toBeInstanceOf(InvalidClockTimesError);
+  });
+
+  it('rejects creating an entry on a week the parent has already approved', async () => {
+    const svc = makeRetroSvc({
+      timesheetRepo: makeTimesheetRepo({
+        findByWeek: mock(async () => ({ ...timesheet, status: 'approved' })),
+      }),
+    });
+
+    await expect(
+      svc.createRetroactiveEntry('carer-1', retroInput)
+    ).rejects.toBeInstanceOf(TimeEntryNotEditableError);
+  });
+
+  it('creates a submitted entry even when a running entry already exists (does not violate one-running-entry)', async () => {
+    const timeEntryRepo = makeTimeEntryRepo({
+      findRunningForCarer: mock(async () => runningEntry),
+      createSubmitted: mock(async (data: Record<string, unknown>) => ({
+        ...createdRetroEntry,
+        ...data,
+      })),
+      listForCarerWeek: mock(async () => [
+        {
+          clock_in_at: retroInput.clock_in_at,
+          clock_out_at: retroInput.clock_out_at,
+          break_minutes: 30,
+        },
+      ]),
+    });
+    const svc = makeRetroSvc({ timeEntryRepo });
+
+    await svc.createRetroactiveEntry('carer-1', retroInput);
+
+    expect(timeEntryRepo.createSubmitted).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'submitted' })
+    );
+    // Must never attempt a running insert — that would hit the unique index.
+    expect(timeEntryRepo.clockIn).not.toHaveBeenCalled();
+  });
+});
+
+describe('recordCancellationPaidEntry', () => {
+  const paidShift = {
+    id: 's1',
+    household_id: 'h1',
+    carer_id: 'carer-1',
+    starts_at: '2026-08-03T09:00:00.000Z',
+    ends_at: '2026-08-03T17:00:00.000Z', // 480 min
+    timezone: 'Europe/London',
+    cancellation_paid: true,
+  };
+
+  const cancellationEntry = {
+    ...submittedEntry,
+    id: 't-cancel',
+    shift_id: 's1',
+    clock_in_at: paidShift.starts_at,
+    clock_out_at: paidShift.ends_at,
+    break_minutes: 0,
+    scheduled_minutes: 480,
+    kind: 'cancellation_paid',
+    status: 'submitted',
+  };
+
+  function makeCancelSvc(
+    timeEntryRepo: any,
+    timesheetRepo: any = makeTimesheetRepo({
+      findByWeek: mock(async () => ({ ...timesheet, status: 'submitted' })),
+    })
+  ) {
+    return new TimesheetCommandService(
+      timeEntryRepo,
+      timesheetRepo,
+      makeMemberRepo(),
+      makeHouseholdRepo(),
+      makeShiftRepo(),
+      makeQueries(),
+      makeUserService(),
+      makePush()
+    );
+  }
+
+  it('creates exactly one cancellation_paid entry and rolls it into the week total', async () => {
+    const timeEntryRepo = makeTimeEntryRepo({
+      findCancellationPaidForShift: mock(async () => null),
+      createSubmitted: mock(async (data: Record<string, unknown>) => ({
+        ...cancellationEntry,
+        ...data,
+      })),
+      listForCarerWeek: mock(async () => [
+        finishedEntryA,
+        {
+          clock_in_at: paidShift.starts_at,
+          clock_out_at: paidShift.ends_at,
+          break_minutes: 0,
+        },
+      ]),
+    });
+    const timesheetRepo = makeTimesheetRepo({
+      findByWeek: mock(async () => ({ ...timesheet, status: 'submitted' })),
+    });
+    const svc = makeCancelSvc(timeEntryRepo, timesheetRepo);
+
+    const result = await svc.recordCancellationPaidEntry(paidShift);
+
+    expect(result?.kind).toBe('cancellation_paid');
+    expect(timeEntryRepo.createSubmitted).toHaveBeenCalledTimes(1);
+    expect(timeEntryRepo.createSubmitted).toHaveBeenCalledWith(
+      expect.objectContaining({
+        shift_id: 's1',
+        kind: 'cancellation_paid',
+        status: 'submitted',
+        clock_in_at: paidShift.starts_at,
+        clock_out_at: paidShift.ends_at,
+        scheduled_minutes: 480,
+      })
+    );
+    // 450 (finishedEntryA) + 480 (cancellation) = 930
+    expect(timesheetRepo.update).toHaveBeenCalledWith(
+      'ts1',
+      expect.objectContaining({ total_minutes: 930 })
+    );
+  });
+
+  it('records a FUTURE paid-cancel shift (starts in 6h) — the production case', async () => {
+    // assertClockOrder's CLOCK_OUT_IN_FUTURE bound must NOT apply here:
+    // short-notice cancel accepts before the shift starts, so ends_at is
+    // intentionally in the future. Only ends_at > starts_at is required.
+    const startsAt = new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString();
+    const endsAt = new Date(Date.now() + 14 * 60 * 60 * 1000).toISOString();
+    const futureShift = {
+      ...paidShift,
+      starts_at: startsAt,
+      ends_at: endsAt,
+    };
+    const futureEntry = {
+      ...cancellationEntry,
+      clock_in_at: startsAt,
+      clock_out_at: endsAt,
+      scheduled_minutes: 480,
+    };
+    const timeEntryRepo = makeTimeEntryRepo({
+      findCancellationPaidForShift: mock(async () => null),
+      createSubmitted: mock(async (data: Record<string, unknown>) => ({
+        ...futureEntry,
+        ...data,
+      })),
+      listForCarerWeek: mock(async () => [
+        {
+          clock_in_at: startsAt,
+          clock_out_at: endsAt,
+          break_minutes: 0,
+        },
+      ]),
+    });
+    const timesheetRepo = makeTimesheetRepo({
+      findByWeek: mock(async () => ({ ...timesheet, status: 'submitted' })),
+    });
+    const svc = makeCancelSvc(timeEntryRepo, timesheetRepo);
+
+    const result = await svc.recordCancellationPaidEntry(futureShift);
+
+    expect(result?.kind).toBe('cancellation_paid');
+    expect(timeEntryRepo.createSubmitted).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'cancellation_paid',
+        clock_in_at: startsAt,
+        clock_out_at: endsAt,
+        scheduled_minutes: 480,
+      })
+    );
+  });
+
+  it('is idempotent: a second call does not create another entry', async () => {
+    const timeEntryRepo = makeTimeEntryRepo({
+      findCancellationPaidForShift: mock(async () => cancellationEntry),
+      createSubmitted: mock(async () => cancellationEntry),
+      listForCarerWeek: mock(async () => [
+        {
+          clock_in_at: paidShift.starts_at,
+          clock_out_at: paidShift.ends_at,
+          break_minutes: 0,
+        },
+      ]),
+    });
+    const timesheetRepo = makeTimesheetRepo({
+      findByWeek: mock(async () => ({
+        ...timesheet,
+        total_minutes: 480,
+        status: 'submitted',
+      })),
+    });
+    const svc = makeCancelSvc(timeEntryRepo, timesheetRepo);
+
+    const first = await svc.recordCancellationPaidEntry(paidShift);
+    const second = await svc.recordCancellationPaidEntry(paidShift);
+
+    expect(first?.id).toBe('t-cancel');
+    expect(second?.id).toBe('t-cancel');
+    expect(timeEntryRepo.createSubmitted).not.toHaveBeenCalled();
+  });
+
+  it('stays at one row when a concurrent insert races past find-first (23505)', async () => {
+    // Find-first is an optimisation only — the partial unique index is the
+    // source of truth. Simulate the losing racer: pre-check miss, insert
+    // hits 23505, re-fetch returns the winner's row.
+    const timeEntryRepo = makeTimeEntryRepo({
+      findCancellationPaidForShift: mock()
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(cancellationEntry),
+      createSubmitted: mock(async () => {
+        throw new CancellationPaidAlreadyRecordedError('s1');
+      }),
+      listForCarerWeek: mock(async () => []),
+    });
+    const timesheetRepo = makeTimesheetRepo({
+      findByWeek: mock(async () => ({ ...timesheet, status: 'submitted' })),
+    });
+    const svc = makeCancelSvc(timeEntryRepo, timesheetRepo);
+
+    const result = await svc.recordCancellationPaidEntry(paidShift);
+
+    expect(result?.id).toBe('t-cancel');
+    expect(timeEntryRepo.createSubmitted).toHaveBeenCalledTimes(1);
+    expect(timeEntryRepo.findCancellationPaidForShift).toHaveBeenCalledTimes(2);
+    // Losing racer must not roll up again — the winner already did.
+    expect(timesheetRepo.update).not.toHaveBeenCalled();
+    expect(timesheetRepo.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects recording on a week the parent has already approved', async () => {
+    // Same policy as createRetroactiveEntry: block rather than insert and
+    // let rollUpIntoTimesheet silently un-approve the week.
+    const timeEntryRepo = makeTimeEntryRepo({
+      findCancellationPaidForShift: mock(async () => null),
+      createSubmitted: mock(async () => cancellationEntry),
+    });
+    const timesheetRepo = makeTimesheetRepo({
+      findByWeek: mock(async () => ({ ...timesheet, status: 'approved' })),
+    });
+    const svc = makeCancelSvc(timeEntryRepo, timesheetRepo);
+
+    await expect(
+      svc.recordCancellationPaidEntry(paidShift)
+    ).rejects.toBeInstanceOf(TimeEntryNotEditableError);
+    expect(timeEntryRepo.createSubmitted).not.toHaveBeenCalled();
+  });
+
+  it('uses household timezone for the approved-week guard, not shift.timezone', async () => {
+    // Instant is Monday in UTC / household TZ, but still Sunday in the
+    // shift's America/Los_Angeles — wrong TZ would look up week 2026-07-27
+    // and miss the approved 2026-08-03 timesheet.
+    const divergentShift = {
+      ...paidShift,
+      starts_at: '2026-08-03T01:30:00.000Z',
+      ends_at: '2026-08-03T09:30:00.000Z',
+      timezone: 'America/Los_Angeles',
+    };
+    const timeEntryRepo = makeTimeEntryRepo({
+      findCancellationPaidForShift: mock(async () => null),
+      createSubmitted: mock(async () => cancellationEntry),
+    });
+    const timesheetRepo = makeTimesheetRepo({
+      findByWeek: mock(
+        async (_hh: string, _carer: string, weekStart: string) =>
+          weekStart === '2026-08-03'
+            ? { ...timesheet, week_start: '2026-08-03', status: 'approved' }
+            : null
+      ),
+    });
+    const householdRepo = makeHouseholdRepo({
+      findById: mock(async () => ({ id: 'h1', timezone: 'UTC' })),
+    });
+    const svc = new TimesheetCommandService(
+      timeEntryRepo,
+      timesheetRepo,
+      makeMemberRepo(),
+      householdRepo,
+      makeShiftRepo(),
+      makeQueries(),
+      makeUserService(),
+      makePush()
+    );
+
+    await expect(
+      svc.recordCancellationPaidEntry(divergentShift)
+    ).rejects.toBeInstanceOf(TimeEntryNotEditableError);
+    expect(timesheetRepo.findByWeek).toHaveBeenCalledWith(
+      'h1',
+      'carer-1',
+      '2026-08-03'
+    );
+    expect(timeEntryRepo.createSubmitted).not.toHaveBeenCalled();
+  });
+
+  it('rejects when ends_at is not after starts_at', async () => {
+    const timeEntryRepo = makeTimeEntryRepo({
+      findCancellationPaidForShift: mock(async () => null),
+      createSubmitted: mock(async () => cancellationEntry),
+    });
+    const svc = makeCancelSvc(timeEntryRepo);
+
+    await expect(
+      svc.recordCancellationPaidEntry({
+        ...paidShift,
+        ends_at: paidShift.starts_at,
+      })
+    ).rejects.toBeInstanceOf(InvalidClockTimesError);
+    expect(timeEntryRepo.createSubmitted).not.toHaveBeenCalled();
+  });
+
+  it('no-ops when the shift is not cancellation_paid', async () => {
+    const timeEntryRepo = makeTimeEntryRepo({
+      findCancellationPaidForShift: mock(async () => null),
+      createSubmitted: mock(async () => cancellationEntry),
+    });
+    const svc = makeCancelSvc(timeEntryRepo);
+
+    const result = await svc.recordCancellationPaidEntry({
+      ...paidShift,
+      cancellation_paid: false,
+    });
+
+    expect(result).toBeNull();
+    expect(timeEntryRepo.createSubmitted).not.toHaveBeenCalled();
+  });
+
+  it('exports a module-level helper the orchestrator can call', async () => {
+    expect(typeof recordCancellationPaidEntry).toBe('function');
   });
 });

@@ -53,6 +53,7 @@ beforeAll(async () => {
     apiClient: {
       get: mock(() => Promise.resolve({})),
       patch: mock(() => Promise.resolve({})),
+      post: mock(() => Promise.resolve({})),
     },
   }));
 
@@ -64,6 +65,7 @@ beforeAll(async () => {
 beforeEach(() => {
   apiClient.get.mockReset?.();
   apiClient.patch.mockReset?.();
+  apiClient.post.mockReset?.();
 });
 
 const from = '2026-01-05T00:00:00.000Z';
@@ -112,11 +114,12 @@ describe('shiftApi.getById', () => {
 });
 
 describe('shiftApi.update', () => {
-  it('PATCHes ParentEditShift fields only and returns the shift', async () => {
+  it('PATCHes ParentEditShift fields only and returns the shift + warnings', async () => {
     apiClient.patch.mockResolvedValue({
       data: {
         data: {
           shift: { ...validShift, note: 'Late', origin: 'parent_proposed' },
+          warnings: [{ kind: 'outside_availability' }],
         },
       },
     });
@@ -124,7 +127,8 @@ describe('shiftApi.update', () => {
     expect(apiClient.patch).toHaveBeenCalledWith(`/v1/shifts/${shiftId}`, {
       note: 'Late',
     });
-    expect(result.note).toBe('Late');
+    expect(result.shift.note).toBe('Late');
+    expect(result.warnings).toEqual([{ kind: 'outside_availability' }]);
   });
 
   it('rejects an empty body without calling the API', async () => {
@@ -160,5 +164,51 @@ describe('shiftApi.listDayThread', () => {
       `/v1/households/${householdId}/day-thread?local_date=${encodeURIComponent('2026-01-07')}`
     );
     expect(result[0]?.shift_id).toBeNull();
+  });
+});
+
+describe('shiftApi.accept', () => {
+  it('POSTs /v1/shifts/:id/accept (body-less) and unwraps { shift, warnings }', async () => {
+    apiClient.post.mockResolvedValue({
+      data: {
+        data: {
+          shift: {
+            ...validShift,
+            status: 'confirmed',
+            origin: 'parent_proposed',
+          },
+          warnings: [],
+        },
+      },
+    });
+
+    const result = await shiftApi.accept(shiftId);
+
+    expect(apiClient.post).toHaveBeenCalledWith(`/v1/shifts/${shiftId}/accept`);
+    expect(result.shift.status).toBe('confirmed');
+    expect(result.warnings).toEqual([]);
+  });
+
+  it('defaults missing warnings to [] so Zod does not strip the envelope', async () => {
+    apiClient.post.mockResolvedValue({
+      data: {
+        data: {
+          shift: {
+            ...validShift,
+            status: 'confirmed',
+            origin: 'parent_proposed',
+          },
+        },
+      },
+    });
+    const result = await shiftApi.accept(shiftId);
+    expect(result.warnings).toEqual([]);
+  });
+
+  it('throws when the response fails validation', async () => {
+    apiClient.post.mockResolvedValue({
+      data: { data: { shift: { status: 'not-a-status' } } },
+    });
+    await expect(shiftApi.accept(shiftId)).rejects.toThrow();
   });
 });

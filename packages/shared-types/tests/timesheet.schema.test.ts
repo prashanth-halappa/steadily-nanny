@@ -2,6 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import {
   ClockInSchema,
   ClockOutSchema,
+  CreateRetroactiveTimeEntrySchema,
   QueryTimesheetSchema,
   TIME_ENTRY_KINDS,
   TIME_ENTRY_STATUSES,
@@ -178,6 +179,37 @@ describe('timesheet.schema', () => {
       expect(QueryTimesheetSchema.safeParse({ note: '' }).success).toBe(false);
       expect(
         QueryTimesheetSchema.safeParse({ note: 'Query Thursday' }).success
+      ).toBe(true);
+    });
+  });
+
+  describe('CreateRetroactiveTimeEntrySchema', () => {
+    it('requires household_id, clock_in_at, and clock_out_at', () => {
+      expect(
+        CreateRetroactiveTimeEntrySchema.safeParse({
+          household_id: VALID_UUID,
+          clock_in_at: NOW,
+          clock_out_at: LATER,
+        }).success
+      ).toBe(true);
+      expect(
+        CreateRetroactiveTimeEntrySchema.safeParse({
+          household_id: VALID_UUID,
+          clock_in_at: NOW,
+        }).success
+      ).toBe(false);
+    });
+
+    it('accepts optional break_minutes, note, and shift_id', () => {
+      expect(
+        CreateRetroactiveTimeEntrySchema.safeParse({
+          household_id: VALID_UUID,
+          clock_in_at: NOW,
+          clock_out_at: LATER,
+          break_minutes: 30,
+          note: 'Forgot to clock in',
+          shift_id: VALID_UUID,
+        }).success
       ).toBe(true);
     });
   });

@@ -51,6 +51,13 @@ function makeMemberRepo(overrides: Record<string, unknown> = {}): any {
         role: 'parent',
         status: 'active',
       },
+      {
+        id: 'm4',
+        household_id: 'hh1',
+        user_id: 'helper-1',
+        role: 'helper',
+        status: 'active',
+      },
     ]),
     ...overrides,
   };
@@ -66,7 +73,7 @@ describe('TimeOffQueryService.listOwn', () => {
 });
 
 describe('TimeOffQueryService.listForHousehold', () => {
-  it('lists time off for nanny/helper members only after membership check', async () => {
+  it('lists time off for nanny members only (helpers are not carers) after membership check', async () => {
     const timeOffRepo = makeTimeOffRepo();
     const memberRepo = makeMemberRepo();
     const svc = new TimeOffQueryService(timeOffRepo, memberRepo);
@@ -76,6 +83,8 @@ describe('TimeOffQueryService.listForHousehold', () => {
       'hh1',
       'parent-1'
     );
+    // helper-1 must NOT be included — CARER_ROLES is nanny-only, matching
+    // timesheet/shift/schedule domains.
     expect(timeOffRepo.listByUserIds).toHaveBeenCalledWith(['nanny-1']);
   });
 

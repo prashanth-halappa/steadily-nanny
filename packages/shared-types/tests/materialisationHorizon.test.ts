@@ -5,7 +5,7 @@ import { describe, expect, it } from 'bun:test';
 import {
   MATERIALISATION_HORIZON_DAYS,
   MATERIALISATION_HORIZON_WEEKS,
-} from '../constants';
+} from '../src/constants';
 
 describe('materialisation horizon', () => {
   it('keeps days and weeks in agreement (12 × 7 = 84)', () => {
