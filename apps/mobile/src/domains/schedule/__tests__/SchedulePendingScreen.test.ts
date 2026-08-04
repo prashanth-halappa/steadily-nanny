@@ -48,12 +48,16 @@ describe('SchedulePendingScreen', () => {
     expect(screenSource).toContain('schedule-pending-view-shifts');
   });
 
-  it('renders a subject line under the status pill and Accepted→Pending bridge copy', () => {
+  it('renders a recurrence-as-rule subject line under the status pill and named Accepted bridge', () => {
     expect(screenSource).toContain('schedule-pending-subject');
     expect(screenSource).toContain('pending.subjectLine');
+    expect(screenSource).toContain('parseWeeklyRruleInterval');
+    expect(screenSource).toContain('formatDisplayDate');
+    expect(screenSource).not.toContain('formatWeekRangeLabel');
+    expect(screenSource).not.toContain('getWeekDates');
     expect(screenSource).toContain('pending.acceptedMeansShifts');
+    expect(screenSource).toContain('resolveMemberDisplayName');
     expect(screenSource).toContain('schedule-pending-accepted-bridge');
-    expect(screenSource).toContain('formatWeekRangeLabel');
   });
 
   it('confirms withdrawal via AlertDialog, never a bare RN Modal (GOLDEN-FIX #1)', () => {
@@ -93,5 +97,11 @@ describe('SchedulePendingScreen', () => {
     expect(acceptedBranch).toContain('schedule-pending-view-shifts');
     expect(acceptedBranch).toContain('schedule-pending-change-week');
     expect(acceptedBranch).toMatch(/BUILD_HREF/);
+  });
+
+  it('passes until/exdates/pause_ranges into SchedulePatternPreview', () => {
+    expect(screenSource).toContain('until={pattern.until}');
+    expect(screenSource).toContain('exdates={pattern.exdates}');
+    expect(screenSource).toContain('pauseRanges={pattern.pause_ranges}');
   });
 });

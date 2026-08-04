@@ -21,6 +21,30 @@ export class TimeOffController {
     }
   }
 
+  /**
+   * GET /households/:householdId/time-off — carers' time off for members of
+   * this household. Caller must be an active member. Display-only for parents
+   * this cycle (no approve endpoint).
+   */
+  static async listForHousehold(
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ) {
+    try {
+      const householdId = req.params.householdId as string;
+      const carer_time_off = await timeOffQueryService.listForHousehold(
+        getAuthUserId(req),
+        householdId
+      );
+      return sendSuccessResponse(res, 'Household time off fetched', {
+        carer_time_off,
+      });
+    } catch (error) {
+      return next(error);
+    }
+  }
+
   /** POST /time-off — create for the caller. */
   static async create(req: Request, res: Response, next: NextFunction) {
     try {

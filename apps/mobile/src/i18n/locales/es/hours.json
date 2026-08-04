@@ -19,10 +19,17 @@
   "flaggedDescription": "Esta entrada tiene duración cero — suele ser un fichaje accidental. Esta semana ya fue aprobada, así que pide a tu hogar que la consulte si hay que corregirla.",
   "flaggedDismiss": "Entendido",
   "noHoursLogged": "Sin horas registradas",
+  "notYet": "Todavía no",
+  "todayMarker": "Hoy",
   "emptyWeek": "Aún no hay horas registradas esta semana.",
   "waitingForSubmit": "Esperando a que tu cuidadora envíe esta semana.",
   "waitingAfterQuery": "Esperando a que tu cuidadora vuelva a enviar tras tu consulta.",
   "inProgress": "en curso",
   "edited": "corregido",
-  "editEntry": "Corregir este registro"
+  "editEntry": "Corregir este registro",
+  "statusNotSubmitted": "Aún no enviada",
+  "statusSubmitted": "Enviada — necesita tu aprobación",
+  "statusQueried": "Consultada — esperando reenvío",
+  "statusApproved": "Aprobada",
+  "payBoundary": "Solo horas — el pago se resuelve fuera de la app."
 }

@@ -1,6 +1,8 @@
 /**
  * @module app/(private)/(tabs)/settings
  */
+
+import Constants from 'expo-constants';
 import { type Href, router } from 'expo-router';
 import { ChevronRight, ExternalLink } from 'lucide-react-native';
 import { useState } from 'react';
@@ -23,20 +25,17 @@ import {
 } from '@/src/components/ui/alert-dialog';
 import { Button, buttonVariants } from '@/src/components/ui/button';
 import { Input } from '@/src/components/ui/input';
-import { Label } from '@/src/components/ui/label';
 import { Text } from '@/src/components/ui/text';
 import { Body, H1, H4, Small } from '@/src/components/ui/typography';
 import { appIdentity } from '@/src/config/appIdentity';
 import { HouseholdSwitcher } from '@/src/domains/household';
 import { SETUP_ROLES } from '@/src/domains/setup/types';
 import { useDeleteAccount } from '@/src/hooks/mutations/useDeleteAccount';
-import { useUpdateName } from '@/src/hooks/mutations/useUpdateName';
 import { useUpdatePreferredLocale } from '@/src/hooks/mutations/useUpdatePreferredLocale';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 import { useUserProfile } from '@/src/hooks/queries/useUserProfile';
 import { SUPPORTED_LANGUAGES } from '@/src/i18n/constants';
 import { useLanguageStore } from '@/src/i18n/languageStore';
-import { showSuccessToast } from '@/src/lib/toast';
 import { useAuthStore } from '@/src/store/auth';
 import { openExternalUrl } from '@/src/utils/openExternalUrl';
 import { useElevation } from '~/lib/design-tokens/elevation';
@@ -44,14 +43,17 @@ import { useElevation } from '~/lib/design-tokens/elevation';
 // SETUP: point these at your real hosted legal pages.
 const PRIVACY_URL = `https://${appIdentity.associatedDomain}/privacy`;
 const TERMS_URL = `https://${appIdentity.associatedDomain}/terms`;
+const HELP_URL = `mailto:help@${appIdentity.associatedDomain}`;
 
 function SettingsNavRow({
   testID,
   label,
+  value,
   onPress,
 }: {
   testID: string;
   label: string;
+  value?: string;
   onPress: () => void;
 }) {
   const elevation = useElevation();
@@ -67,6 +69,11 @@ function SettingsNavRow({
         ]}
       >
         <Body className="flex-1 text-primary">{label}</Body>
+        {value ? (
+          <Small className="text-muted-foreground" numberOfLines={1}>
+            {value}
+          </Small>
+        ) : null}
         <Icon icon={ChevronRight} size={20} className="text-muted-foreground" />
       </View>
     </AnimatedPressable>
@@ -111,27 +118,7 @@ export default function SettingsScreen() {
     useDeleteAccount();
   const updatePreferredLocale = useUpdatePreferredLocale();
   const profile = useUserProfile();
-  const updateName = useUpdateName();
-  // null = untouched, so the field tracks the server value until the user
-  // edits it — no seeding effect, and a background refetch can't clobber an
-  // edit in progress.
-  const [nameDraft, setNameDraft] = useState<string | null>(null);
   const savedName = profile.data?.name ?? '';
-  const nameValue = nameDraft ?? savedName;
-  const isNameDirty =
-    nameDraft !== null &&
-    nameDraft.trim().length > 0 &&
-    nameDraft.trim() !== savedName;
-
-  const handleSaveName = async () => {
-    try {
-      await updateName.mutateAsync({ name: nameValue.trim() });
-      setNameDraft(null);
-      showSuccessToast(t('settings:name.savedToast'));
-    } catch {
-      // useUpdateName's onError already surfaced a toast.
-    }
-  };
 
   const [deleteConfirmEmail, setDeleteConfirmEmail] = useState('');
   const accountEmail = user?.email ?? '';
@@ -152,6 +139,9 @@ export default function SettingsScreen() {
   // in-flight wizard UI state and can be empty/stale here (see
   // useIsOnboarded's header comment / TodayScreen for the same pattern).
   const onboarding = useIsOnboarded();
+
+  const appVersion =
+    Constants.expoConfig?.version ?? Constants.nativeAppVersion ?? '—';
 
   // REVIEW-CHECKLIST.md §8 / App Store Guideline 5.1.1(v): the account must be
   // deletable in-app. On success, sign out and return to /welcome — a deleted
@@ -181,7 +171,7 @@ export default function SettingsScreen() {
           ) : null}
           {onboarding.role ? (
             <Small className="text-muted-foreground" testID="settings-role">
-              {onboarding.role}
+              {t(`settings:role.${onboarding.role}`)}
             </Small>
           ) : null}
         </View>
@@ -192,24 +182,12 @@ export default function SettingsScreen() {
       <View className="mt-8 gap-3" testID="settings-account-section">
         <H4>{t('settings:account')}</H4>
         <View className="gap-2">
-          <Label>{t('settings:name.label')}</Label>
-          <Input
-            testID="settings-name-input"
-            accessibilityLabel={t('settings:name.label')}
-            value={nameValue}
-            onChangeText={setNameDraft}
-            placeholder={t('settings:name.placeholder')}
+          <SettingsNavRow
+            testID="settings-name-row"
+            label={t('settings:name.label')}
+            value={savedName || undefined}
+            onPress={() => router.push('/settings/edit-name' as Href)}
           />
-          {isNameDirty ? (
-            <Button
-              testID="settings-name-save"
-              size="sm"
-              disabled={updateName.isPending}
-              onPress={() => void handleSaveName()}
-            >
-              <Text>{t('settings:name.saveButton')}</Text>
-            </Button>
-          ) : null}
         </View>
         <SettingsNavRow
           testID="settings-time"
@@ -276,6 +254,20 @@ export default function SettingsScreen() {
                 label={t('household:householdSettings.manageTitle')}
                 onPress={() => router.push('/settings/household' as Href)}
               />
+              <SettingsNavRow
+                testID="settings-view-availability"
+                label={t('settings:carerAvailability')}
+                onPress={() =>
+                  router.push('/settings/carer-availability' as Href)
+                }
+              />
+              <SettingsNavRow
+                testID="settings-view-time-off"
+                label={t('settings:carerTimeOff')}
+                onPress={() =>
+                  router.push('/settings/household-time-off' as Href)
+                }
+              />
             </>
           ) : (
             <>
@@ -306,6 +298,14 @@ export default function SettingsScreen() {
           label={t('settings:termsOfService')}
           onPress={() => void openExternalUrl(TERMS_URL)}
         />
+        <SettingsExternalRow
+          testID="settings-get-help"
+          label={t('settings:getHelp')}
+          onPress={() => void openExternalUrl(HELP_URL)}
+        />
+        <Small testID="settings-app-version" className="text-muted-foreground">
+          {t('settings:appVersion', { version: appVersion })}
+        </Small>
       </View>
 
       <Button

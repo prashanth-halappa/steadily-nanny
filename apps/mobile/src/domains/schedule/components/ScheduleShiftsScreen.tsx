@@ -1,24 +1,28 @@
 /**
  * @module domains/schedule/components/ScheduleShiftsScreen
  *
- * Both parent- and nanny-facing: the current week's materialised shifts
- * with calendar view switcher (2a–2d). Route: `/schedule/shifts`.
+ * Materialised shifts calendar with week navigation. Used as Schedule tab
+ * root for nannies and (when the usual week is accepted) for parents.
+ * Route: `/schedule/shifts`.
  *
- * `GET /v1/households/:householdId/shifts` (`useShiftsRange`) — until it
- * ships, calls 404. This screen MUST tolerate that gracefully.
- *
- * Wave B: fetches shifts for `useActiveHousehold`'s household.
- * Wave E: calendar view switcher + Agenda / Week ribbon / Coverage lanes /
- * Cross-family rhythm views.
+ * Week offset: 0 = current week; forward clamped at
+ * `MATERIALISATION_HORIZON_WEEKS` (shared-types — matches API
+ * materialisation horizon); back at −104. Shares `WeekNavHeader` with Hours
+ * so the two tabs cannot drift.
  */
 
-import { useRouter } from 'expo-router';
+import { MATERIALISATION_HORIZON_WEEKS } from '@steadily-nanny/shared-types';
+import { type Href, useRouter } from 'expo-router';
+import { type ReactNode, useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Pressable, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Button } from '@/src/components/ui/button';
 import { EmptyState } from '@/src/components/ui/empty-state';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
-import { Body, H1 } from '@/src/components/ui/typography';
+import { Text } from '@/src/components/ui/text';
+import { Body, H1, Small } from '@/src/components/ui/typography';
+import { WeekNavHeader } from '@/src/components/ui/week-nav-header';
 import { AgendaView } from '@/src/domains/schedule/components/AgendaView';
 import {
   CalendarViewSwitcher,
@@ -26,39 +30,79 @@ import {
 } from '@/src/domains/schedule/components/CalendarViewSwitcher';
 import { CrossFamilyRhythmView } from '@/src/domains/schedule/components/CrossFamilyRhythmView';
 import { WeekRibbonView } from '@/src/domains/schedule/components/WeekRibbonView';
+import { timeOffCoversLocalDate } from '@/src/domains/schedule/utils/timeOffOverlap';
+import {
+  addWeeks,
+  formatWeekRangeLabel,
+  getWeekDates,
+  getWeekStartISO,
+} from '@/src/domains/timesheet/utils/week';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
-import { useChildren } from '@/src/hooks/queries/useChildren';
+import { useHouseholdTimeOff } from '@/src/hooks/queries/useHouseholdTimeOff';
 import {
   isShiftsRouteUnavailable,
   useShiftsRange,
 } from '@/src/hooks/queries/useShiftsRange';
 import { useUserProfile } from '@/src/hooks/queries/useUserProfile';
-import { currentWeekRange } from '@/src/lib/wallClock';
+import { wallClockToUtcIso } from '@/src/lib/wallClock';
 import { CALENDAR_VIEWS } from '@/src/store/calendarViewStore';
 
+const MAX_WEEKS_BACK = 104;
+const MAX_WEEKS_FORWARD = MATERIALISATION_HORIZON_WEEKS;
+
 type ScheduleShiftsScreenProps = {
-  /** When false, omits the back affordance (Schedule tab root for nannies). */
+  /** When false, omits the back affordance (Schedule tab root). */
   showBack?: boolean;
+  /** Optional banner above the week nav (accepted-pattern context for parents). */
+  patternBanner?: ReactNode;
 };
 
 export function ScheduleShiftsScreen({
   showBack = true,
+  patternBanner,
 }: ScheduleShiftsScreenProps) {
   const { t } = useTranslation('schedule');
   const { t: tCommon } = useTranslation('common');
   const router = useRouter();
   const activeHousehold = useActiveHousehold();
   const profile = useUserProfile();
-  const _children = useChildren(activeHousehold.householdId);
   const [calendarView, setCalendarView] = useCalendarViewPreference();
-  // The week boundary is a HOUSEHOLD-timezone question, never the device's —
-  // same fallback chain as the WeekRibbon / agenda views below, and
-  // 'UTC' only for the brief window before either has loaded (the loading
-  // branch returns before `showContent` can be true).
-  const { from, to } = currentWeekRange(
-    activeHousehold.household?.timezone ?? profile.data?.timezone ?? 'UTC'
+  const [weekOffset, setWeekOffset] = useState(0);
+
+  const timeZone =
+    activeHousehold.household?.timezone ?? profile.data?.timezone ?? 'UTC';
+  const currentWeekStartISO = useMemo(
+    () => getWeekStartISO(new Date(), timeZone),
+    [timeZone]
   );
+  const weekStartISO = useMemo(
+    () => addWeeks(currentWeekStartISO, weekOffset),
+    [currentWeekStartISO, weekOffset]
+  );
+  const weekDates = useMemo(() => getWeekDates(weekStartISO), [weekStartISO]);
+  const weekRangeLabel = useMemo(
+    () => formatWeekRangeLabel(weekDates),
+    [weekDates]
+  );
+  const from = useMemo(
+    () => wallClockToUtcIso(weekStartISO, '00:00', timeZone),
+    [weekStartISO, timeZone]
+  );
+  const to = useMemo(
+    () => wallClockToUtcIso(addWeeks(weekStartISO, 1), '00:00', timeZone),
+    [weekStartISO, timeZone]
+  );
+
+  const handlePreviousWeek = useCallback(() => {
+    setWeekOffset(offset => Math.max(offset - 1, -MAX_WEEKS_BACK));
+  }, []);
+  const handleNextWeek = useCallback(() => {
+    setWeekOffset(offset => Math.min(offset + 1, MAX_WEEKS_FORWARD));
+  }, []);
+
   const shiftsQuery = useShiftsRange(activeHousehold.householdId, from, to);
+  const timeOffQuery = useHouseholdTimeOff(activeHousehold.householdId);
+  const timeOff = timeOffQuery.data ?? [];
 
   const isLoading = activeHousehold.isLoading || shiftsQuery.isLoading;
   const routeUnavailable =
@@ -66,8 +110,17 @@ export function ScheduleShiftsScreen({
   const showUnavailable = routeUnavailable || shiftsQuery.isError;
 
   const shifts = shiftsQuery.data ?? [];
-  const showEmpty = !isLoading && !showUnavailable && shifts.length === 0;
-  const showContent = !isLoading && !showUnavailable && shifts.length > 0;
+  const weekHasAway = useMemo(
+    () =>
+      timeOff.some(row =>
+        weekDates.some(date => timeOffCoversLocalDate(row, date, timeZone))
+      ),
+    [timeOff, weekDates, timeZone]
+  );
+  const showEmpty =
+    !isLoading && !showUnavailable && shifts.length === 0 && !weekHasAway;
+  const showContent =
+    !isLoading && !showUnavailable && (shifts.length > 0 || weekHasAway);
   const showCrossFamily =
     calendarView === CALENDAR_VIEWS.CROSS_FAMILY &&
     !isLoading &&
@@ -81,7 +134,14 @@ export function ScheduleShiftsScreen({
       className="bg-background"
     >
       <SafeAreaView style={{ flex: 1 }} className="bg-background">
-        <View className="gap-2 px-6 pt-4 pb-2">
+        <View
+          style={{
+            gap: 8,
+            paddingHorizontal: 22,
+            paddingTop: 16,
+            paddingBottom: 8,
+          }}
+        >
           {showBack ? (
             <Pressable
               testID="schedule-shifts-back"
@@ -94,7 +154,32 @@ export function ScheduleShiftsScreen({
               <Body className="text-primary">{`< ${tCommon('back')}`}</Body>
             </Pressable>
           ) : null}
-          <H1>{t('shifts.screenTitle')}</H1>
+          <View className="flex-row items-center justify-between gap-2">
+            <H1>{t('shifts.screenTitle')}</H1>
+            <Button
+              testID="schedule-shifts-add-extra"
+              variant="ghost"
+              size="sm"
+              onPress={() =>
+                router.push('/(private)/schedule/shifts/extra' as Href)
+              }
+            >
+              <Text className="text-primary">{t('shifts.addExtra')}</Text>
+            </Button>
+          </View>
+          {patternBanner}
+          <WeekNavHeader
+            label={weekRangeLabel}
+            onPreviousWeek={handlePreviousWeek}
+            onNextWeek={handleNextWeek}
+            previousAccessibilityLabel={t('shifts.previousWeek')}
+            nextAccessibilityLabel={t('shifts.nextWeek')}
+            isPreviousDisabled={weekOffset <= -MAX_WEEKS_BACK}
+            isNextDisabled={weekOffset >= MAX_WEEKS_FORWARD}
+            previousTestID="schedule-week-prev"
+            nextTestID="schedule-week-next"
+            labelTestID="schedule-week-label"
+          />
           <CalendarViewSwitcher
             value={calendarView}
             onChange={setCalendarView}
@@ -131,17 +216,33 @@ export function ScheduleShiftsScreen({
           <AgendaView
             shifts={shifts}
             displayTimeZone={profile.data?.timezone}
+            timeOff={timeOff}
+            householdTimeZone={timeZone}
+            weekDates={weekDates}
           />
         ) : null}
 
         {showContent && calendarView === CALENDAR_VIEWS.WEEK_RIBBON ? (
-          <WeekRibbonView
-            shifts={shifts}
-            displayTimeZone={
-              activeHousehold.household?.timezone ?? profile.data?.timezone
-            }
-            weekStartsOn={profile.data?.week_starts_on}
-          />
+          <>
+            {weekHasAway ? (
+              <Small
+                testID="schedule-away-summary"
+                className="px-6 pb-2 text-muted-foreground"
+              >
+                {t('shifts.awaySummary')}
+              </Small>
+            ) : null}
+            <WeekRibbonView
+              shifts={shifts}
+              displayTimeZone={
+                activeHousehold.household?.timezone ?? profile.data?.timezone
+              }
+              weekStartsOn={profile.data?.week_starts_on}
+              timeOff={timeOff}
+              householdTimeZone={timeZone}
+              weekDates={weekDates}
+            />
+          </>
         ) : null}
 
         {showCrossFamily && activeHousehold.householdId ? (
@@ -155,4 +256,7 @@ export function ScheduleShiftsScreen({
   );
 }
 
-export { currentWeekRange };
+/** @deprecated Prefer weekOffset + wallClockToUtcIso; kept for test imports. */
+export { currentWeekRange } from '@/src/lib/wallClock';
+
+export type { ScheduleShiftsScreenProps };

@@ -12,6 +12,20 @@
     "savedToast": "Nombre guardado"
   },
   "legal": "Legal",
+  "getHelp": "Obtener ayuda",
+  "appVersion": "Versión {{version}}",
+  "carerAvailability": "Disponibilidad de la niñera",
+  "carerAvailabilityEmpty": "Aún no hay niñera en este hogar",
+  "carerAvailabilityNone": "Tu niñera aún no ha compartido disponibilidad",
+  "carerTimeOff": "Ausencias de la niñera",
+  "carerTimeOffHint": "Ausencias reservadas — solo estado; la aprobación aún no está en la app.",
+  "carerTimeOffEmpty": "No hay ausencias reservadas",
+  "role": {
+    "owner": "Padre/madre (titular)",
+    "parent": "Padre/madre",
+    "nanny": "Niñera",
+    "helper": "Ayudante"
+  },
   "notifications": "Notificaciones",
   "household": "Hogar",
   "deleteAccount": "Eliminar cuenta",

@@ -109,6 +109,15 @@ describe('HandoffChipsCard source', () => {
     expect(cardSource).not.toContain('Save as moment');
     expect(cardSource).not.toContain('Saved as moment');
   });
+
+  it('shows a hint instead of a dead Save when empty, and wires free-text body', () => {
+    expect(cardSource).toContain('handoff.tapHint');
+    expect(cardSource).toContain('handoff.anythingElse');
+    expect(cardSource).toContain('handoff.sentAt');
+    expect(cardSource).toContain('canSave');
+    expect(cardSource).toContain('handoff-hint-${phase}');
+    expect(cardSource).toContain('handoff-body-${phase}');
+  });
 });
 
 describe('handoff chip keys', () => {

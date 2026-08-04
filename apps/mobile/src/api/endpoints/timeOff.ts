@@ -24,6 +24,9 @@
 // caller's own rows via auth (`WHERE user_id = <caller>`), not a household
 // or date-range argument, because time off is scoped to the carer, not any
 // one household.
+//
+// GET /v1/households/:id/time-off is the parent-facing list — carers who are
+// active members of THAT household only.
 
 import type {
   CarerTimeOff,
@@ -47,6 +50,8 @@ export const timeOffEndpoints = {
   list: '/v1/time-off',
   create: '/v1/time-off',
   byId: (timeOffId: string) => `/v1/time-off/${timeOffId}`,
+  forHousehold: (householdId: string) =>
+    `/v1/households/${householdId}/time-off`,
 } as const;
 
 // --- API --------------------------------------------------------------------
@@ -54,6 +59,16 @@ export const timeOffApi = {
   /** The caller's own time-off rows — requested, confirmed, and cancelled alike. */
   list: async (): Promise<CarerTimeOff[]> => {
     const response = await apiClient.get(timeOffEndpoints.list);
+    const parsed = CarerTimeOffListResponseSchema.safeParse(response.data.data);
+    if (!parsed.success) throw parsed.error;
+    return parsed.data.carer_time_off;
+  },
+
+  /** Carers' time off for one household — caller must be an active member. */
+  listForHousehold: async (householdId: string): Promise<CarerTimeOff[]> => {
+    const response = await apiClient.get(
+      timeOffEndpoints.forHousehold(householdId)
+    );
     const parsed = CarerTimeOffListResponseSchema.safeParse(response.data.data);
     if (!parsed.success) throw parsed.error;
     return parsed.data.carer_time_off;

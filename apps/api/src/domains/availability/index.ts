@@ -11,6 +11,7 @@ export * from './repositories/busyBlockRepository';
 export * from './repositories/carerAvailabilityRepository';
 export * from './repositories/carerTimeOffRepository';
 export { default as availabilityRoutes } from './routes/availabilityRoutes';
+export { default as householdTimeOffRoutes } from './routes/householdTimeOffRoutes';
 export { default as timeOffRoutes } from './routes/timeOffRoutes';
 export * from './schemas';
 export * from './services/availabilityCommandService';

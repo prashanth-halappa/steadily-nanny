@@ -33,6 +33,7 @@
  * NEW pattern, since there is no draft to resume in those states.
  */
 import { type Href, useRouter } from 'expo-router';
+import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ScrollView, View } from 'react-native';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
@@ -57,19 +58,20 @@ import {
 import { Text } from '@/src/components/ui/text';
 import { Body, H1, Small } from '@/src/components/ui/typography';
 import { SchedulePatternPreview } from '@/src/domains/schedule/components/SchedulePatternPreview';
+import { parseWeeklyRruleInterval } from '@/src/domains/schedule/utils';
+import { resolveMemberDisplayName } from '@/src/domains/schedule/utils/memberDisplayName';
 import {
   canViewParentSchedule,
   isParentEditorRole,
 } from '@/src/domains/setup/types';
-import {
-  formatWeekRangeLabel,
-  getWeekDates,
-} from '@/src/domains/timesheet/utils/week';
+import { formatDisplayDate } from '@/src/domains/timesheet/utils/week';
 import { useWithdrawSchedulePattern } from '@/src/hooks/mutations/useWithdrawSchedulePattern';
 import { useChildren } from '@/src/hooks/queries/useChildren';
+import { useHouseholdMembers } from '@/src/hooks/queries/useHouseholdMembers';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 import { useSchedulePattern } from '@/src/hooks/queries/useSchedulePattern';
 import { useSchedulePatterns } from '@/src/hooks/queries/useSchedulePatterns';
+import { useAuthStore } from '@/src/store/auth';
 import { useElevation } from '~/lib/design-tokens/elevation';
 
 const BUILD_HREF = '/(private)/schedule/build' as Href;
@@ -79,6 +81,7 @@ export function SchedulePendingScreen() {
   const { t } = useTranslation('schedule');
   const elevation = useElevation();
   const router = useRouter();
+  const currentUserId = useAuthStore(s => s.user?.id ?? null);
 
   const onboarding = useIsOnboarded();
   const patterns = useSchedulePatterns(onboarding.householdId);
@@ -88,11 +91,34 @@ export function SchedulePendingScreen() {
     pattern && pattern.status !== 'draft' ? pattern.id : null
   );
   const children = useChildren(onboarding.householdId);
+  const membersQuery = useHouseholdMembers(onboarding.householdId);
   const childrenById = new Map(
     (children.data ?? []).map(c => [
       c.id,
       { id: c.id, name: c.name, colour: c.colour },
     ])
+  );
+  const membersByUserId = useMemo(
+    () =>
+      new Map(
+        (membersQuery.data ?? []).map(member => [member.user_id, member])
+      ),
+    [membersQuery.data]
+  );
+  const memberLabels = useMemo(
+    () => ({
+      you: t('detail.you'),
+      someone: t('detail.someone'),
+      roleFallback: (role: 'owner' | 'parent' | 'nanny' | 'helper') =>
+        t(`detail.roleFallback.${role}`),
+    }),
+    [t]
+  );
+  const carerName = resolveMemberDisplayName(
+    pattern?.carer_id,
+    currentUserId,
+    membersByUserId,
+    memberLabels
   );
 
   const canEditSchedule = isParentEditorRole(onboarding.role);
@@ -201,16 +227,31 @@ export function SchedulePendingScreen() {
             testID="schedule-pending-subject"
             className="text-muted-foreground"
           >
-            {t('pending.subjectLine', {
-              range: formatWeekRangeLabel(getWeekDates(pattern.dtstart)),
-              status: statusLabel(),
-            })}
+            {t(
+              parseWeeklyRruleInterval(pattern.rrule) === 2
+                ? 'pending.subjectLineFortnightly'
+                : 'pending.subjectLine',
+              { start: formatDisplayDate(pattern.dtstart) }
+            )}
           </Small>
+          {pattern.until ? (
+            <Small
+              testID="schedule-pending-until"
+              className="text-muted-foreground"
+            >
+              {t('pending.untilLine', {
+                end: formatDisplayDate(pattern.until),
+              })}
+            </Small>
+          ) : null}
 
           {detail.data && detail.data.days.length > 0 ? (
             <SchedulePatternPreview
               days={detail.data.days}
               childrenById={childrenById}
+              until={pattern.until}
+              exdates={pattern.exdates}
+              pauseRanges={pattern.pause_ranges}
             />
           ) : null}
 
@@ -271,7 +312,7 @@ export function SchedulePendingScreen() {
                 testID="schedule-pending-accepted-bridge"
                 className="text-muted-foreground"
               >
-                {t('pending.acceptedMeansShifts')}
+                {t('pending.acceptedMeansShifts', { name: carerName })}
               </Body>
               <Button
                 testID="schedule-pending-view-shifts"

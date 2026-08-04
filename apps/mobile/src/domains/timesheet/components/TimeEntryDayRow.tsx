@@ -1,7 +1,7 @@
 /**
  * @module domains/timesheet/components/TimeEntryDayRow
- * One day's row on the Hours screen: the weekday, the clocked-in/out times
- * (or "in progress" for a still-running entry), and the day's total.
+ * One day's row on the Hours screen: the weekday + date, the clocked-in/out
+ * times (or "in progress" for a still-running entry), and the day's total.
  *
  * Zero-duration finished entries show a warning flag.
  *
@@ -12,6 +12,9 @@
  * zero-duration one falls back to the explainer dialog it always had. A
  * corrected entry is marked, so the other party is never shown a silently
  * changed pay figure.
+ *
+ * Parent CX: day label includes the calendar date; "Today" marker; future
+ * empty days say "Not yet"; zero-entry days drop elevation.
  */
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -28,11 +31,13 @@ import {
 } from '@/src/components/ui/alert-dialog';
 import { Text } from '@/src/components/ui/text';
 import { Body, Small } from '@/src/components/ui/typography';
+import { localDateInZone } from '@/src/lib/localDate';
 import { useElevation } from '~/lib/design-tokens/elevation';
 import type { TimeEntry, TimesheetStatus } from '../types';
 import { formatClockTime, formatDuration } from '../utils/duration';
 import { isEntryEditable, wasEntryEdited } from '../utils/entryEdited';
 import { computeEntryMinutes } from '../utils/entryMinutes';
+import { formatDisplayDate } from '../utils/week';
 
 interface TimeEntryDayRowProps {
   /** ISO `yyyy-mm-dd`, local calendar day. */
@@ -73,19 +78,37 @@ export function TimeEntryDayRow({
   );
   const isRunning = entries.some(entry => entry.status === 'running');
   const elevation = useElevation();
+  const todayISO = localDateInZone(timeZone, new Date(nowMs));
+  const isToday = date === todayISO;
+  const isFuture = date > todayISO;
+  const isEmpty = entries.length === 0;
 
   return (
     <View
       testID={testID}
-      className="mb-2 flex-row items-center justify-between rounded-row bg-card px-3 py-3"
-      style={elevation.row}
+      className={cn(
+        'mb-2 flex-row items-center justify-between rounded-row px-3',
+        isEmpty ? 'bg-transparent py-2.5' : 'bg-card py-3'
+      )}
+      style={isEmpty ? undefined : elevation.row}
     >
       <View className="gap-1">
-        <Body className="font-medium">
-          {t(`schedule:weekday.${weekdayDow(date)}`)}
-        </Body>
-        {entries.length === 0 ? (
-          <Small className="text-muted-foreground">{t('noHoursLogged')}</Small>
+        <View className="flex-row items-center gap-2">
+          <Body
+            className={cn('font-medium', isEmpty && 'text-muted-foreground')}
+          >
+            {`${t(`schedule:weekday.${weekdayDow(date)}`)} ${formatDisplayDate(date)}`}
+          </Body>
+          {isToday ? (
+            <Small testID="hours-day-today" className="text-primary">
+              {t('todayMarker')}
+            </Small>
+          ) : null}
+        </View>
+        {isEmpty ? (
+          <Small className="text-muted-foreground">
+            {isFuture ? t('notYet') : t('noHoursLogged')}
+          </Small>
         ) : (
           entries.map(entry => {
             // A FINISHED entry (has clock_out_at) that computes to 0 minutes
@@ -153,7 +176,11 @@ export function TimeEntryDayRow({
       <Body
         className={cn(
           'font-medium',
-          isRunning ? 'text-primary' : 'text-foreground'
+          isRunning
+            ? 'text-primary'
+            : isEmpty
+              ? 'text-muted-foreground'
+              : 'text-foreground'
         )}
         tabular
       >

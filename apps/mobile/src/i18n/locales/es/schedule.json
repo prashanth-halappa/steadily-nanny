@@ -57,12 +57,18 @@
     "withdrawConfirmBody": "Tu niñera no podrá aceptarla después de retirarla.",
     "withdrawConfirmCancel": "Cancelar",
     "withdrawConfirmConfirm": "Retirar",
-    "viewShifts": "Ver los turnos de esta semana",
-    "changeWeek": "Cambiar la semana",
+    "viewShifts": "Ver el calendario",
+    "changeWeek": "Cambiar tu semana habitual",
     "previewHoursTotal": "{{hours}} horas a la semana",
     "declineReasonLabel": "Por qué lo rechazó",
-    "subjectLine": "Semana del {{range}} · {{status}}",
-    "acceptedMeansShifts": "Tu semana está aceptada. Los turnos individuales pueden seguir apareciendo como Pendientes en el calendario hasta que cada uno se confirme."
+    "subjectLine": "Cada semana desde {{start}}",
+    "subjectLineFortnightly": "Cada dos semanas desde {{start}}",
+    "untilLine": "Hasta {{end}}",
+    "exdatesLine": "Omitidos: {{dates}}",
+    "pauseRangeLine": "Pausa {{from}}–{{to}}",
+    "acceptedMeansShifts": "{{name}} aceptó esta semana. Los turnos individuales pueden seguir apareciendo como Pendientes en el calendario hasta que cada uno se confirme.",
+    "patternBannerAccepted": "Tu semana habitual está aceptada",
+    "patternBannerChange": "Cambiarla"
   },
   "respond": {
     "screenTitle": "Revisa tu semana",
@@ -84,9 +90,20 @@
     "declinedToast": "Rechazado."
   },
   "shifts": {
-    "screenTitle": "Los turnos de esta semana",
+    "screenTitle": "Turnos",
     "loading": "Cargando…",
     "empty": "Aún no hay turnos",
+    "previousWeek": "Semana anterior",
+    "nextWeek": "Semana siguiente",
+    "addExtra": "Añadir un turno puntual",
+    "extraCreatedToast": "Turno puntual añadido",
+    "extraScreenTitle": "Turno puntual",
+    "extraDateLabel": "Fecha",
+    "extraStartLabel": "Inicio (HH:MM)",
+    "extraEndLabel": "Fin (HH:MM)",
+    "extraCarerLabel": "Quién cubre",
+    "extraChildrenLabel": "Niños",
+    "extraSubmit": "Añadir turno",
     "unavailable": "Los turnos aún no están disponibles — vuelve pronto.",
     "statusDraft": "Borrador",
     "statusPending": "Pendiente",
@@ -94,7 +111,9 @@
     "statusDeclined": "Rechazado",
     "statusCancelled": "Cancelado",
     "statusCompleted": "Completado",
-    "shortNotice": "Última hora"
+    "shortNotice": "Última hora",
+    "awayBand": "Ausente",
+    "awaySummary": "Tu cuidador tiene tiempo libre esta semana — mira Agenda para los detalles."
   },
   "detail": {
     "title": "Turno",
@@ -153,7 +172,10 @@
     "pendingBody_one": "{{count}} día · {{hours}} horas a la semana",
     "pendingBody_other": "{{count}} días · {{hours}} horas a la semana",
     "pendingCta": "Revisar y responder",
-    "shiftsCta": "Los turnos de esta semana"
+    "shiftsCta": "Los turnos de esta semana",
+    "nextUpTitle": "Próximos",
+    "nextUpEmpty": "No hay turnos en las próximas dos semanas",
+    "viewCalendar": "Ver el calendario"
   },
   "calendarViews": {
     "agenda": "Agenda",

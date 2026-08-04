@@ -12,6 +12,20 @@
     "savedToast": "Name saved"
   },
   "legal": "Legal",
+  "getHelp": "Get help",
+  "appVersion": "Version {{version}}",
+  "carerAvailability": "Nanny availability",
+  "carerAvailabilityEmpty": "No nanny in this household yet",
+  "carerAvailabilityNone": "Your nanny hasn't shared availability yet",
+  "carerTimeOff": "Nanny time off",
+  "carerTimeOffHint": "Booked time off — status only; approval isn't in the app yet.",
+  "carerTimeOffEmpty": "No time off booked",
+  "role": {
+    "owner": "Parent (owner)",
+    "parent": "Parent",
+    "nanny": "Nanny",
+    "helper": "Helper"
+  },
   "notifications": "Notifications",
   "household": "Household",
   "deleteAccount": "Delete account",

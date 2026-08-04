@@ -57,12 +57,18 @@
     "withdrawConfirmBody": "Your nanny won't be able to accept it after you withdraw.",
     "withdrawConfirmCancel": "Cancel",
     "withdrawConfirmConfirm": "Withdraw",
-    "viewShifts": "View this week's shifts",
-    "changeWeek": "Change the week",
+    "viewShifts": "View the calendar",
+    "changeWeek": "Change your usual week",
     "previewHoursTotal": "{{hours}} hours a week",
     "declineReasonLabel": "Why they declined",
-    "subjectLine": "Week of {{range}} · {{status}}",
-    "acceptedMeansShifts": "Your week is accepted. Individual shifts may still show as Pending on the calendar until each one is confirmed."
+    "subjectLine": "Every week from {{start}}",
+    "subjectLineFortnightly": "Every other week from {{start}}",
+    "untilLine": "Until {{end}}",
+    "exdatesLine": "Skipped: {{dates}}",
+    "pauseRangeLine": "Paused {{from}}–{{to}}",
+    "acceptedMeansShifts": "{{name}} accepted this week. Individual shifts may still show as Pending on the calendar until each is confirmed.",
+    "patternBannerAccepted": "Your usual week is accepted",
+    "patternBannerChange": "Change it"
   },
   "respond": {
     "screenTitle": "Review your week",
@@ -84,9 +90,20 @@
     "declinedToast": "Declined."
   },
   "shifts": {
-    "screenTitle": "This week's shifts",
+    "screenTitle": "Shifts",
     "loading": "Loading…",
     "empty": "No shifts yet",
+    "previousWeek": "Previous week",
+    "nextWeek": "Next week",
+    "addExtra": "Add a one-off shift",
+    "extraCreatedToast": "One-off shift added",
+    "extraScreenTitle": "One-off shift",
+    "extraDateLabel": "Date",
+    "extraStartLabel": "Start (HH:MM)",
+    "extraEndLabel": "End (HH:MM)",
+    "extraCarerLabel": "Who's covering",
+    "extraChildrenLabel": "Children",
+    "extraSubmit": "Add shift",
     "unavailable": "Shifts aren't available yet — check back soon.",
     "statusDraft": "Draft",
     "statusPending": "Pending",
@@ -94,7 +111,9 @@
     "statusDeclined": "Declined",
     "statusCancelled": "Cancelled",
     "statusCompleted": "Completed",
-    "shortNotice": "Short notice"
+    "shortNotice": "Short notice",
+    "awayBand": "Away",
+    "awaySummary": "Your carer has time off this week — see Agenda for details."
   },
   "detail": {
     "title": "Shift",
@@ -153,7 +172,10 @@
     "pendingBody_one": "{{count}} day · {{hours}} hours a week",
     "pendingBody_other": "{{count}} days · {{hours}} hours a week",
     "pendingCta": "Review and respond",
-    "shiftsCta": "This week's shifts"
+    "shiftsCta": "This week's shifts",
+    "nextUpTitle": "Next up",
+    "nextUpEmpty": "No upcoming shifts in the next two weeks",
+    "viewCalendar": "View the calendar"
   },
   "calendarViews": {
     "agenda": "Agenda",

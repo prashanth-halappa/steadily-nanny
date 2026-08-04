@@ -80,6 +80,18 @@ describe('ParentWeekView', () => {
     expect(parentWeekViewSource).not.toMatch(/AlertDialog/);
   });
 
+  it('shows ErrorState when the week queries fail — never a silent zero-hour week', () => {
+    expect(parentWeekViewSource).toContain('ErrorState');
+    expect(parentWeekViewSource).toContain('entriesQuery.isError');
+  });
+
+  it('prefers entry-derived carer names and never mislabels a multi-carer week', () => {
+    expect(parentWeekViewSource).toContain('resolveWeekCarerHeaderName');
+    expect(parentWeekViewSource).toContain('useHouseholdMembers');
+    expect(parentWeekViewSource).toContain('resolveMemberDisplayName');
+    expect(parentWeekViewSource).toContain('carer_display_name');
+  });
+
   it('REGRESSION: approve/query mutateAsync calls are try/caught, never a bare .then() with no rejection handler', () => {
     // The bug (same class as D7's clock-in double-tap defect):
     // `void mutation.mutateAsync(...).then(onFulfilled)` with no `.catch()`

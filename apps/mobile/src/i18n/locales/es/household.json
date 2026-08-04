@@ -31,8 +31,8 @@
   "invite": {
     "wizardTitle": "Invita a tu niñera",
     "wizardSubtitle": "Comparte este código — lo introducirán al registrarse.",
-    "manageTitle": "Invitar a una niñera",
-    "manageSubtitle": "Genera un nuevo código de invitación para añadir otra niñera a tu hogar.",
+    "manageTitle": "Invitar a alguien",
+    "manageSubtitle": "Genera un código de invitación para añadir una niñera, un co-padre/madre o un ayudante.",
     "doneButton": "Listo",
     "generateButton": "Generar código de invitación",
     "shareButton": "Compartir código",

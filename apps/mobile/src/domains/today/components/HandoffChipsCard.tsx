@@ -14,8 +14,9 @@ import { Pressable, View } from 'react-native';
 import { cn } from '@/lib/utils';
 import { Button } from '@/src/components/ui/button';
 import { Card } from '@/src/components/ui/card';
+import { Input } from '@/src/components/ui/input';
 import { Text } from '@/src/components/ui/text';
-import { Body, H3 } from '@/src/components/ui/typography';
+import { Body, H3, Small } from '@/src/components/ui/typography';
 import { SETUP_ROLES, type SetupRole } from '@/src/domains/setup/types';
 import {
   chipsForPhase,
@@ -73,33 +74,32 @@ function HandoffPhaseEditor({
   localDate,
   existingChips,
   existingNoteId,
+  existingBody,
+  sentAt,
 }: {
   phase: HandoffPhase;
   householdId: string;
   localDate: string;
   existingChips: string[];
   existingNoteId?: string;
+  existingBody?: string | null;
+  sentAt?: string | null;
 }) {
   const { t } = useTranslation('today');
   const suggestions = chipsForPhase(phase);
   const [selected, setSelected] = useState<string[]>(existingChips);
+  const [body, setBody] = useState(existingBody ?? '');
   const createNote = useCreateHandoffNote(householdId, localDate);
   const updateNote = useUpdateHandoffNote(householdId, localDate);
 
-  // Re-seed the selection ONLY when the underlying note's identity actually
-  // changes. `existingChips` is a brand-new `[]` on every render for as long
-  // as no note exists yet, so an effect keyed on the array itself re-fired
-  // continuously and wiped whatever the user had just tapped — most visibly
-  // under `refetchOnWindowFocus`, where merely backgrounding the app cleared
-  // the in-progress selection. The ref makes "did the real note change?" the
-  // condition, rather than "did a new array literal show up?".
   const hydratedForNoteId = useRef<string | null | undefined>(undefined);
   useEffect(() => {
     const noteIdentity = existingNoteId ?? null;
     if (hydratedForNoteId.current === noteIdentity) return;
     hydratedForNoteId.current = noteIdentity;
     setSelected(existingChips);
-  }, [existingNoteId, existingChips]);
+    setBody(existingBody ?? '');
+  }, [existingNoteId, existingChips, existingBody]);
 
   const toggleChip = (chip: string) => {
     setSelected(prev =>
@@ -107,11 +107,18 @@ function HandoffPhaseEditor({
     );
   };
 
+  const canSave = selected.length > 0 || body.trim().length > 0;
+
   const handleSubmit = () => {
+    const trimmed = body.trim();
+    const payload = {
+      chips: selected,
+      body: trimmed.length > 0 ? trimmed : null,
+    };
     if (existingNoteId) {
       updateNote.mutate({
         handoffNoteId: existingNoteId,
-        input: { chips: selected },
+        input: payload,
       });
       return;
     }
@@ -119,6 +126,7 @@ function HandoffPhaseEditor({
       local_date: localDate,
       phase,
       chips: selected,
+      ...(trimmed.length > 0 ? { body: trimmed } : {}),
     });
   };
 
@@ -128,6 +136,15 @@ function HandoffPhaseEditor({
     phase === HANDOFF_PHASES.MORNING
       ? t('handoff.morningTitle')
       : t('handoff.eveningTitle');
+
+  const sentLabel = sentAt
+    ? t('handoff.sentAt', {
+        time: new Date(sentAt).toLocaleTimeString(undefined, {
+          hour: 'numeric',
+          minute: '2-digit',
+        }),
+      })
+    : null;
 
   return (
     <View testID={`handoff-editor-${phase}`} className="gap-2">
@@ -143,14 +160,38 @@ function HandoffPhaseEditor({
           />
         ))}
       </View>
-      <Button
-        testID={`handoff-submit-${phase}`}
-        size="sm"
-        onPress={handleSubmit}
-        disabled={isPending || selected.length === 0}
-      >
-        <Text>{t('common:save')}</Text>
-      </Button>
+      <Input
+        testID={`handoff-body-${phase}`}
+        accessibilityLabel={t('handoff.anythingElse')}
+        value={body}
+        onChangeText={setBody}
+        placeholder={t('handoff.anythingElse')}
+      />
+      {sentLabel ? (
+        <Small
+          testID={`handoff-sent-${phase}`}
+          className="text-muted-foreground"
+        >
+          {sentLabel}
+        </Small>
+      ) : null}
+      {canSave ? (
+        <Button
+          testID={`handoff-submit-${phase}`}
+          size="sm"
+          onPress={handleSubmit}
+          disabled={isPending}
+        >
+          <Text>{t('common:save')}</Text>
+        </Button>
+      ) : (
+        <Small
+          testID={`handoff-hint-${phase}`}
+          className="text-muted-foreground"
+        >
+          {t('handoff.tapHint')}
+        </Small>
+      )}
     </View>
   );
 }
@@ -210,6 +251,8 @@ export function HandoffChipsCard({
         localDate={localDate}
         existingChips={existingChips}
         existingNoteId={existingNoteId}
+        existingBody={myNote?.body}
+        sentAt={myNote?.created_at}
       />
 
       {role === SETUP_ROLES.PARENT && eveningNote ? (

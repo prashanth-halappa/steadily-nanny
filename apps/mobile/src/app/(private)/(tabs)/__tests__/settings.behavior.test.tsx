@@ -124,27 +124,15 @@ beforeEach(() => {
 });
 
 describe('SettingsScreen — display name', () => {
-  it('seeds from the server profile, and only offers Save once the name actually changes', async () => {
+  it('shows the server profile name on a nav row that opens the edit screen', async () => {
     const { getByTestId, queryByTestId } = renderWithProviders(
       <SettingsScreen />
     );
 
-    // Seeded from getProfile, with no seeding effect to race a refetch.
-    await waitFor(() =>
-      expect(getByTestId('settings-name-input').props.value).toBe('Sam')
-    );
+    await waitFor(() => expect(getByTestId('settings-name-row')).toBeTruthy());
+    // Inline input/save moved to /settings/edit-name.
+    expect(queryByTestId('settings-name-input')).toBeNull();
     expect(queryByTestId('settings-name-save')).toBeNull();
-
-    // Whitespace-only edits aren't a change — Save stays hidden.
-    fireEvent.changeText(getByTestId('settings-name-input'), '  Sam  ');
-    expect(queryByTestId('settings-name-save')).toBeNull();
-
-    fireEvent.changeText(getByTestId('settings-name-input'), '  Samantha  ');
-    fireEvent.press(getByTestId('settings-name-save'));
-
-    await waitFor(() =>
-      expect(updateNameMock).toHaveBeenCalledWith({ name: 'Samantha' })
-    );
   });
 });
 

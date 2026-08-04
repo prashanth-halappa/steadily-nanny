@@ -14,6 +14,7 @@ import { FlashList } from '@shopify/flash-list';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
+import { ErrorState } from '@/src/components/custom/ErrorState';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import {
   ClockOutSheet,
@@ -93,6 +94,18 @@ export function NannyWeekView({
 
   if (entriesQuery.isLoading) {
     return <LoadingIndicator testID="hours-loading" />;
+  }
+
+  if (entriesQuery.isError || timesheetQuery.isError) {
+    return (
+      <ErrorState
+        variant="network"
+        onRetry={() => {
+          void entriesQuery.refetch();
+          void timesheetQuery.refetch();
+        }}
+      />
+    );
   }
 
   const entries = entriesQuery.data ?? [];

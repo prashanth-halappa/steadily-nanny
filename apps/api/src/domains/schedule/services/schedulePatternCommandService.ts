@@ -10,6 +10,7 @@
  * @module domains/schedule/services/schedulePatternCommandService
  */
 
+import { MATERIALISATION_HORIZON_DAYS } from '@steadily-nanny/shared-types';
 import {
   ChildNotFoundError,
   type ChildQueryService,
@@ -22,6 +23,7 @@ import {
   HouseholdRepository,
   NotAHouseholdParentError,
 } from '../../household';
+import { notifyHouseholdParents } from '../../notification';
 import {
   InvalidPatternCarerError,
   InvalidPatternChildError,
@@ -65,8 +67,12 @@ const CARER_ROLES: ReadonlySet<string> = new Set([HOUSEHOLD_ROLES.NANNY]);
  * (`jobs/scheduleHorizonJob.ts`, which calls `materialiseForHorizon` for
  * every already-accepted pattern so this window keeps rolling forward
  * instead of freezing at whatever was materialised on acceptance day).
+ *
+ * Source of truth: `@steadily-nanny/shared-types` `MATERIALISATION_HORIZON_DAYS`
+ * (mobile Schedule week-nav derives its forward clamp from the same package).
  */
-export const DEFAULT_MATERIALISATION_HORIZON_DAYS = 84; // 12 weeks
+export const DEFAULT_MATERIALISATION_HORIZON_DAYS =
+  MATERIALISATION_HORIZON_DAYS;
 
 export class SchedulePatternCommandService {
   constructor(
@@ -228,6 +234,20 @@ export class SchedulePatternCommandService {
     if (input.status === 'accepted') {
       await this.materialiseAccepted(userId, updated);
     }
+
+    notifyHouseholdParents(pattern.household_id, {
+      title: input.status === 'accepted' ? 'Week accepted' : 'Week declined',
+      body:
+        input.status === 'accepted'
+          ? 'Your usual week was accepted. Shifts are on the calendar.'
+          : 'Your usual week was declined.',
+      data: {
+        type: 'schedule_pattern_responded',
+        patternId: pattern.id,
+        householdId: pattern.household_id,
+        status: input.status,
+      },
+    });
 
     return updated;
   }

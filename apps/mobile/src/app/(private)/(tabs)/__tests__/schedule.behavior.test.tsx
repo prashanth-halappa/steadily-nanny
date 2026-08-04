@@ -81,6 +81,18 @@ mock.module('@/src/domains/schedule', () => {
   };
 });
 
+const mockUseSchedulePatterns = mock(
+  (): { data: Array<{ status: string }> | undefined } => ({ data: undefined })
+);
+
+mock.module('@/src/hooks/queries/useSchedulePatterns', () => ({
+  useSchedulePatterns: mockUseSchedulePatterns,
+}));
+
+mock.module('expo-router', () => ({
+  useRouter: () => ({ push: mock(() => {}) }),
+}));
+
 let ScheduleRoute: typeof import('../schedule').default;
 
 beforeAll(async () => {
@@ -97,6 +109,8 @@ beforeEach(() => {
     retryMemberships: mockRetryMemberships,
   }));
   mockRetryMemberships.mockReset();
+  mockUseSchedulePatterns.mockReset();
+  mockUseSchedulePatterns.mockImplementation(() => ({ data: undefined }));
 });
 
 describe('ScheduleRoute — role fork (Wave A3 + role === null triage)', () => {
@@ -165,13 +179,16 @@ describe('ScheduleRoute — role fork (Wave A3 + role === null triage)', () => {
     expect(queryByTestId('schedule-pending-screen-mock')).toBeNull();
   });
 
-  it('routes parent role to SchedulePendingScreen', () => {
+  it('routes parent role to SchedulePendingScreen when no accepted pattern', () => {
     mockUseIsOnboarded.mockImplementation(() => ({
       status: 'onboarded' as const,
       role: 'parent' as const,
       householdId: 'h1',
       membershipsError: false,
       retryMemberships: mockRetryMemberships,
+    }));
+    mockUseSchedulePatterns.mockImplementation(() => ({
+      data: [{ status: 'pending' }],
     }));
 
     const { getByTestId, queryByTestId } = render(<ScheduleRoute />);
@@ -180,7 +197,25 @@ describe('ScheduleRoute — role fork (Wave A3 + role === null triage)', () => {
     expect(queryByTestId('schedule-shifts-screen-mock')).toBeNull();
   });
 
-  it('routes helper role to SchedulePendingScreen', () => {
+  it('routes parent with accepted pattern to ScheduleShiftsScreen (calendar root)', () => {
+    mockUseIsOnboarded.mockImplementation(() => ({
+      status: 'onboarded' as const,
+      role: 'parent' as const,
+      householdId: 'h1',
+      membershipsError: false,
+      retryMemberships: mockRetryMemberships,
+    }));
+    mockUseSchedulePatterns.mockImplementation(() => ({
+      data: [{ status: 'accepted' }],
+    }));
+
+    const { getByTestId, queryByTestId } = render(<ScheduleRoute />);
+
+    expect(getByTestId('schedule-shifts-screen-mock')).toBeTruthy();
+    expect(queryByTestId('schedule-pending-screen-mock')).toBeNull();
+  });
+
+  it('routes helper role to SchedulePendingScreen when no accepted pattern', () => {
     mockUseIsOnboarded.mockImplementation(() => ({
       status: 'onboarded' as const,
       role: 'helper' as const,

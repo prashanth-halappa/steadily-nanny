@@ -5,18 +5,23 @@
  * that takes a note instead of silently withholding approval.
  */
 import { FlashList } from '@shopify/flash-list';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
+import { ErrorState } from '@/src/components/custom/ErrorState';
 import { Button } from '@/src/components/ui/button';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { Text } from '@/src/components/ui/text';
 import { Body } from '@/src/components/ui/typography';
+import { resolveMemberDisplayName } from '@/src/domains/schedule/utils/memberDisplayName';
+import { resolveWeekCarerHeaderName } from '@/src/domains/timesheet/utils/weekCarerHeaderName';
 import { useApproveTimesheet } from '@/src/hooks/mutations/useApproveTimesheet';
 import { useQueryTimesheet } from '@/src/hooks/mutations/useQueryTimesheet';
+import { useHouseholdMembers } from '@/src/hooks/queries/useHouseholdMembers';
 import { useWeekTimeEntries } from '@/src/hooks/queries/useWeekTimeEntries';
 import { useWeekTimesheet } from '@/src/hooks/queries/useWeekTimesheet';
 import { showSuccessToast } from '@/src/lib/toast';
+import { useAuthStore } from '@/src/store/auth';
 import { TIMESHEET_STATUSES, type TimeEntry } from '../types';
 import { formatDuration, formatOvertimeDelta } from '../utils/duration';
 import { sumEntryMinutes } from '../utils/entryMinutes';
@@ -62,14 +67,46 @@ export function ParentWeekView({
   readOnly = false,
 }: ParentWeekViewProps) {
   const { t } = useTranslation('hours');
+  const { t: tSchedule } = useTranslation('schedule');
+  const currentUserId = useAuthStore(s => s.user?.id ?? null);
+  const membersQuery = useHouseholdMembers(householdId);
   const entriesQuery = useWeekTimeEntries(householdId, weekStartISO);
   const timesheetQuery = useWeekTimesheet(householdId, weekStartISO);
   const approveTimesheet = useApproveTimesheet();
   const queryTimesheet = useQueryTimesheet();
   const [isQuerySheetVisible, setIsQuerySheetVisible] = useState(false);
 
+  const membersByUserId = useMemo(
+    () =>
+      new Map(
+        (membersQuery.data ?? []).map(member => [member.user_id, member])
+      ),
+    [membersQuery.data]
+  );
+  const memberLabels = useMemo(
+    () => ({
+      you: tSchedule('detail.you'),
+      someone: tSchedule('detail.someone'),
+      roleFallback: (role: 'owner' | 'parent' | 'nanny' | 'helper') =>
+        tSchedule(`detail.roleFallback.${role}`),
+    }),
+    [tSchedule]
+  );
+
   if (entriesQuery.isLoading || timesheetQuery.isLoading) {
     return <LoadingIndicator testID="hours-loading" />;
+  }
+
+  if (entriesQuery.isError || timesheetQuery.isError) {
+    return (
+      <ErrorState
+        variant="network"
+        onRetry={() => {
+          void entriesQuery.refetch();
+          void timesheetQuery.refetch();
+        }}
+      />
+    );
   }
 
   const entries = entriesQuery.data ?? [];
@@ -79,6 +116,30 @@ export function ParentWeekView({
     totalMinutes,
     scheduledMinutesFor(entries)
   );
+  const entryCarerName =
+    entries.find(e => e.carer_display_name)?.carer_display_name ?? null;
+  const entryCarerIds = [
+    ...new Set(
+      entries
+        .map(e => e.carer_id)
+        .filter((id): id is string => typeof id === 'string' && id.length > 0)
+    ),
+  ];
+  const carerMemberIds = (membersQuery.data ?? [])
+    .filter(m => m.role === 'nanny' || m.role === 'helper')
+    .map(m => m.user_id);
+  const carerName = resolveWeekCarerHeaderName({
+    entryCarerIds,
+    entryCarerDisplayName: entryCarerName,
+    carerMemberIds,
+    resolveMemberName: userId =>
+      resolveMemberDisplayName(
+        userId,
+        currentUserId,
+        membersByUserId,
+        memberLabels
+      ),
+  });
   const isApproved = timesheet?.status === TIMESHEET_STATUSES.APPROVED;
   // Approve/query are ONLY valid on a 'submitted' timesheet — the API 409s
   // (TIMESHEET_NOT_ACTIONABLE) on 'open' (nothing submitted, no row exists
@@ -143,6 +204,9 @@ export function ParentWeekView({
             onNextWeek={onNextWeek}
             isNextDisabled={isNextWeekDisabled}
             isPreviousDisabled={isPreviousWeekDisabled}
+            carerName={carerName}
+            timesheetStatus={timesheet?.status ?? null}
+            showPayBoundary
           />
         }
         ListFooterComponent={

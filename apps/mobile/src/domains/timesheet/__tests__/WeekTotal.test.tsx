@@ -112,4 +112,22 @@ describe('WeekTotal', () => {
     expect(prevButton.props.disabled).toBe(true);
     expect(prevButton.props.accessibilityState?.disabled).toBe(true);
   });
+
+  it('renders carer name and timesheet status pill above the total', () => {
+    const { getByTestId } = render(
+      <WeekTotal
+        testID="hours-week-total"
+        weekRangeLabel="3 Aug – 9 Aug"
+        totalLabel="5h 34m"
+        overtimeLabel={null}
+        carerName="Maria Lopez"
+        timesheetStatus="submitted"
+        showPayBoundary
+      />
+    );
+
+    expect(getByTestId('hours-carer-name')).toBeTruthy();
+    expect(getByTestId('hours-timesheet-status')).toBeTruthy();
+    expect(getByTestId('hours-pay-boundary')).toBeTruthy();
+  });
 });

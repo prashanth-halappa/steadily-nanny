@@ -123,7 +123,7 @@ export function HoursScreen() {
 
   return (
     <View testID="hours-screen" className="flex-1 bg-background">
-      <View className="px-6 pt-2">
+      <View style={{ paddingHorizontal: 22, paddingTop: 8 }}>
         <H1 testID="hours-title">{t('title')}</H1>
       </View>
       {canViewParentSchedule(onboarding.role) ? (

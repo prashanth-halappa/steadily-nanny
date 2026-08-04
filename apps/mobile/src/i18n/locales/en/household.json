@@ -31,8 +31,8 @@
   "invite": {
     "wizardTitle": "Invite your nanny",
     "wizardSubtitle": "Share this code — they'll enter it when they sign up.",
-    "manageTitle": "Invite a nanny",
-    "manageSubtitle": "Generate a new invite code to add another nanny to your household.",
+    "manageTitle": "Invite someone",
+    "manageSubtitle": "Generate an invite code to add a nanny, co-parent, or helper.",
     "doneButton": "Done",
     "generateButton": "Generate invite code",
     "shareButton": "Share code",

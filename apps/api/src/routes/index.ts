@@ -6,7 +6,11 @@
  * @module routes/index
  */
 import { Router } from 'express';
-import { availabilityRoutes, timeOffRoutes } from '../domains/availability';
+import {
+  availabilityRoutes,
+  householdTimeOffRoutes,
+  timeOffRoutes,
+} from '../domains/availability';
 import { childCommitmentRoutes, commitmentRoutes } from '../domains/child';
 import childRoutes from '../domains/child/routes/childRoutes';
 import { handoffRoutes, householdHandoffRoutes } from '../domains/handoff';
@@ -50,6 +54,7 @@ router.use('/commitments', commitmentRoutes);
 // rather than a household-nested one.
 router.use('/availability', availabilityRoutes);
 router.use('/time-off', timeOffRoutes);
+router.use('/households/:householdId/time-off', householdTimeOffRoutes);
 
 // Schedule patterns are split deliberately: create/list are household-nested
 // (you propose a week TO a household), while acting on an existing pattern is

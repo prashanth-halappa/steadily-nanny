@@ -1,45 +1,34 @@
 /**
  * @module app/(private)/(tabs)/schedule
  *
- * Role-aware Schedule tab. Nannies see this week's materialised shifts
- * (no back — they're at tab root). Parents and helpers see the household's
- * schedule-pattern state via SchedulePendingScreen.
- *
- * `useIsOnboarded().role` is null in THREE distinct situations, which this
- * screen must not conflate — that conflation used to render a permanent
- * spinner with no retry affordance for the latter two:
- *   1. memberships are still loading (`status === 'loading'`)        -> spinner
- *   2. the memberships query itself errored                          -> ErrorState + retry
- *   3. the user genuinely has no household membership yet             -> EmptyState
- *
- * `useIsOnboarded` reports an errored memberships query as `status: 'loading'`
- * PLUS `membershipsError: true` (unknown must fail toward WAIT, not toward
- * ASSUME NEW USER — see that hook's header comment). So the `membershipsError`
- * check MUST run before the `status === 'loading'` check here, or the error
- * gets swallowed into an indefinite spinner. `useIsOnboarded` now surfaces
- * `membershipsError`/`retryMemberships` itself, so there's no need for a
- * second `useMyMemberships` subscription just to read `isError`/`refetch`.
- *
- * Sub-routes (`/schedule/build`, `/schedule/shifts`,
- * `/schedule/respond/[patternId]`) live under `(private)/schedule/` one
- * segment deeper and do not collide with this tab route.
+ * Role-aware Schedule tab. Nannies always land on the week calendar.
+ * Parents/helpers with an accepted usual week also land on the calendar
+ * (pattern status is a banner); otherwise SchedulePendingScreen covers
+ * empty / draft / pending / declined.
  */
 
+import { type Href, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
-import { View } from 'react-native';
+import { Pressable, View } from 'react-native';
 import { ErrorState } from '@/src/components/custom/ErrorState';
 import { EmptyState } from '@/src/components/ui/empty-state';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
+import { Body, Small } from '@/src/components/ui/typography';
 import {
   SchedulePendingScreen,
   ScheduleShiftsScreen,
 } from '@/src/domains/schedule';
 import { SETUP_ROLES } from '@/src/domains/setup/types';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
+import { useSchedulePatterns } from '@/src/hooks/queries/useSchedulePatterns';
 
 export default function ScheduleRoute() {
   const { t } = useTranslation('schedule');
+  const router = useRouter();
   const onboarding = useIsOnboarded();
+  const patterns = useSchedulePatterns(
+    onboarding.role !== SETUP_ROLES.NANNY ? onboarding.householdId : null
+  );
 
   if (onboarding.membershipsError) {
     return (
@@ -67,6 +56,35 @@ export default function ScheduleRoute() {
 
   if (onboarding.role === SETUP_ROLES.NANNY) {
     return <ScheduleShiftsScreen showBack={false} />;
+  }
+
+  const pattern = (patterns.data ?? []).find(p => p.status !== 'ended') ?? null;
+
+  if (pattern?.status === 'accepted') {
+    return (
+      <ScheduleShiftsScreen
+        showBack={false}
+        patternBanner={
+          <View
+            testID="schedule-pattern-banner"
+            className="flex-row items-center justify-between gap-2 rounded-row bg-card px-3 py-2"
+          >
+            <Small className="flex-1 text-muted-foreground">
+              {t('pending.patternBannerAccepted')}
+            </Small>
+            <Pressable
+              testID="schedule-pattern-banner-change"
+              accessibilityRole="button"
+              onPress={() => router.push('/(private)/schedule/build' as Href)}
+            >
+              <Body className="text-primary">
+                {t('pending.patternBannerChange')}
+              </Body>
+            </Pressable>
+          </View>
+        }
+      />
+    );
   }
 
   return <SchedulePendingScreen />;

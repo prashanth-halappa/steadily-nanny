@@ -47,6 +47,20 @@ mock.module('@/src/domains/timesheet/components/QueryNoteSheet', () => {
   };
 });
 
+mock.module('@/src/hooks/queries/useHouseholdMembers', () => ({
+  useHouseholdMembers: () => ({
+    data: [
+      {
+        user_id: 'carer-1',
+        role: 'nanny',
+        display_name_override: 'Alex',
+        status: 'active',
+      },
+    ],
+    isLoading: false,
+  }),
+}));
+
 // TimeEntryDayRow now hosts a flagged-entry AlertDialog (Wave 4 CX).
 mock.module('@rn-primitives/alert-dialog', () => {
   const React = require('react');

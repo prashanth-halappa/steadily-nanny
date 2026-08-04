@@ -33,6 +33,7 @@ import {
   HouseholdMemberRepository,
   HouseholdRepository,
 } from '../../household';
+import { notifyHouseholdParents } from '../../notification';
 import {
   SHIFT_STATUSES,
   ShiftNotFoundError,
@@ -618,6 +619,15 @@ export class TimesheetCommandService {
         total_minutes: totalMinutes,
         status: 'submitted',
       });
+      notifyHouseholdParents(entry.household_id, {
+        title: 'Hours submitted',
+        body: `${entry.carer_display_name ?? 'Your carer'} logged hours for this week.`,
+        data: {
+          type: 'timesheet_submitted',
+          householdId: entry.household_id,
+          weekStart,
+        },
+      });
       return;
     }
 
@@ -628,11 +638,24 @@ export class TimesheetCommandService {
     // clearing the approval — so the parent is forced to look again rather
     // than being recorded as having approved hours they never saw.
     const reopening = TERMINAL_STATUSES.has(existing.status);
+    const newlySubmitted = existing.status !== 'submitted';
     await this.timesheetRepo.update(existing.id, {
       total_minutes: totalMinutes,
       status: 'submitted',
       ...(reopening ? { approved_by: null, approved_at: null } : {}),
     });
+    if (newlySubmitted || reopening) {
+      notifyHouseholdParents(entry.household_id, {
+        title: 'Hours submitted',
+        body: `${entry.carer_display_name ?? 'Your carer'} logged hours for this week.`,
+        data: {
+          type: 'timesheet_submitted',
+          householdId: entry.household_id,
+          weekStart,
+          timesheetId: existing.id,
+        },
+      });
+    }
   }
 
   private async assertWriteMember(

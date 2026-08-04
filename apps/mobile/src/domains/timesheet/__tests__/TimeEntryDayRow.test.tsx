@@ -281,3 +281,60 @@ describe('TimeEntryDayRow — correction affordance (P0-2)', () => {
     expect(getByText(/edited/)).toBeTruthy();
   });
 });
+
+describe('TimeEntryDayRow — dated labels (parent CX H1)', () => {
+  it('renders weekday plus calendar date on one line', () => {
+    const { getByText } = render(
+      <TimeEntryDayRow
+        date="2026-08-03"
+        entries={[]}
+        nowMs={NOW_MS}
+        timeZone="Europe/London"
+      />
+    );
+
+    // i18n is unstubbed in this suite — weekday key + formatDisplayDate.
+    expect(getByText(/schedule:weekday\.1 3 Aug/)).toBeTruthy();
+  });
+
+  it('marks today with a Today label', () => {
+    // NOW_MS is 2026-08-01T12:00Z → Europe/London local date is 2026-08-01.
+    const { getByTestId } = render(
+      <TimeEntryDayRow
+        date="2026-08-01"
+        entries={[]}
+        nowMs={NOW_MS}
+        timeZone="Europe/London"
+      />
+    );
+
+    expect(getByTestId('hours-day-today')).toBeTruthy();
+  });
+
+  it('says Not yet for a future empty day, not No hours logged', () => {
+    const { getByText, queryByText } = render(
+      <TimeEntryDayRow
+        date="2026-08-05"
+        entries={[]}
+        nowMs={NOW_MS}
+        timeZone="Europe/London"
+      />
+    );
+
+    expect(getByText('notYet')).toBeTruthy();
+    expect(queryByText('noHoursLogged')).toBeNull();
+  });
+
+  it('says No hours logged for a past empty day', () => {
+    const { getByText } = render(
+      <TimeEntryDayRow
+        date="2026-07-28"
+        entries={[]}
+        nowMs={NOW_MS}
+        timeZone="Europe/London"
+      />
+    );
+
+    expect(getByText('noHoursLogged')).toBeTruthy();
+  });
+});

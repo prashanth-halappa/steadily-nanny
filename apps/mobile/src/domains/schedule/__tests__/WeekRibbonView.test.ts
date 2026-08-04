@@ -103,4 +103,13 @@ describe('WeekRibbonView source', () => {
     expect(viewSource).toContain('testID="calendar-week-ribbon-view"');
     expect(viewSource).toContain('testID={`week-ribbon-cell-${dow}-${hour}`}');
   });
+
+  it('makes occupied cells tappable to shift detail', () => {
+    expect(viewSource).toContain('Pressable');
+    expect(viewSource).toContain('week-ribbon-press');
+    expect(viewSource).toContain('/(private)/schedule/shifts/${shift.id}');
+  });
+
+  // The away band is covered for real in `WeekRibbonView.render.test.tsx` —
+  // a source grep cannot tell a rendered band from an unreachable one.
 });

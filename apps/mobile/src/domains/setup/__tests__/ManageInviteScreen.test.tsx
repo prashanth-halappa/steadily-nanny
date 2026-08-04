@@ -2,7 +2,7 @@
  * @module domains/setup/__tests__/ManageInviteScreen.test
  *
  * Post-onboarding entry point: a parent reaches this from Settings to
- * generate another nanny invite code (e.g. to onboard a second nanny).
+ * generate an invite code for a nanny, co-parent, or helper.
  * Unlike the wizard's InviteScreen, this screen does NOT auto-generate a
  * code on mount — visiting it repeatedly must not silently mint unused
  * invite codes — the parent explicitly taps "generate".

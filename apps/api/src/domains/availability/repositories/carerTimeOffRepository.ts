@@ -35,6 +35,28 @@ export class CarerTimeOffRepository extends BaseRepository<CarerTimeOff> {
   }
 
   /**
+   * Time-off rows for any of the given user ids (household carers). Includes
+   * cancelled rows so a parent can see history; callers may filter.
+   */
+  async listByUserIds(userIds: string[]): Promise<CarerTimeOff[]> {
+    if (userIds.length === 0) return [];
+    const { data, error } = await supabaseService
+      .from(this.table)
+      .select('*')
+      .in('user_id', userIds)
+      .order('starts_at', { ascending: true });
+
+    if (error) {
+      throw new DatabaseError(
+        'Failed to list household carer time off',
+        'DATABASE_ERROR',
+        { details: error.message, userIds }
+      );
+    }
+    return (data ?? []) as CarerTimeOff[];
+  }
+
+  /**
    * Soft-cancel: sets `status = 'cancelled'`. Never a hard delete — the
    * partial index `carer_time_off_user_range_idx ... where status <>
    * 'cancelled'` implies cancelled rows persist (see

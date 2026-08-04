@@ -1,13 +1,14 @@
 /**
  * @module domains/setup/components/ManageInviteScreen
  *
- * Post-onboarding entry point (Settings -> Invite a nanny): a parent could
+ * Post-onboarding entry point (Settings → Invite someone): a parent could
  * only ever generate ONE invite code, during first-run setup — there was no
- * way to onboard a second nanny. Unlike the wizard's `InviteScreen`, this
- * screen does NOT auto-generate a code on mount: revisiting a settings
- * screen must be idempotent, and auto-firing `useCreateInvite` every time
- * this screen is reached would silently mint an unused invite code per
- * visit. The parent explicitly taps "Generate" instead.
+ * way to onboard another household member later. Unlike the wizard's
+ * `InviteScreen`, this screen does NOT auto-generate a code on mount:
+ * revisiting a settings screen must be idempotent, and auto-firing
+ * `useCreateInvite` every time this screen is reached would silently mint
+ * an unused invite code per visit. The parent explicitly taps "Generate"
+ * instead. Role is chosen via `InviteRolePicker` (nanny / co-parent / helper).
  *
  * Reuses `InviteCodeCard` for the code/retry display so both screens render
  * identical UI once a code exists. `SetupScreenShell`'s CTA goes back to

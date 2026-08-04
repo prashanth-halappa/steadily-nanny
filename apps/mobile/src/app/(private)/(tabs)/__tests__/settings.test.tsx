@@ -38,7 +38,7 @@ describe('SettingsScreen', () => {
     expect(screenSource).toContain('SETUP_ROLES.HELPER');
   });
 
-  it('wires a parent path to manage children and invite another nanny', () => {
+  it('wires a parent path to manage children and invite someone', () => {
     expect(screenSource).toContain('settings-manage-children');
     expect(screenSource).toContain('/settings/children');
     expect(screenSource).toContain('settings-invite-nanny');
@@ -87,5 +87,21 @@ describe('SettingsScreen', () => {
   it('persists a language change through useUpdatePreferredLocale, not just locally (D26)', () => {
     expect(screenSource).toContain('useUpdatePreferredLocale');
     expect(screenSource).toContain('setLanguage');
+  });
+
+  it('translates the role string and edits name via a nav row', () => {
+    expect(screenSource).toContain('t(`settings:role.${onboarding.role}`)');
+    expect(screenSource).toContain('settings-name-row');
+    expect(screenSource).toContain('/settings/edit-name');
+    expect(screenSource).not.toContain('settings-name-input');
+  });
+
+  it('offers Get help, app version, and parent time-off/availability views', () => {
+    expect(screenSource).toContain('settings-get-help');
+    expect(screenSource).toContain('settings-app-version');
+    expect(screenSource).toContain('settings-view-availability');
+    expect(screenSource).toContain('settings-view-time-off');
+    expect(screenSource).toContain('/settings/carer-availability');
+    expect(screenSource).toContain('/settings/household-time-off');
   });
 });

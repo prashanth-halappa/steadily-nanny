@@ -19,10 +19,17 @@
   "flaggedDescription": "This entry has zero duration — usually from an accidental clock-in and clock-out. This week has already been approved, so ask your household to query it if it needs correcting.",
   "flaggedDismiss": "Got it",
   "noHoursLogged": "No hours logged",
+  "notYet": "Not yet",
+  "todayMarker": "Today",
   "emptyWeek": "No hours logged this week yet.",
   "waitingForSubmit": "Waiting for your carer to submit this week.",
   "waitingAfterQuery": "Waiting for your carer to resubmit after your query.",
   "inProgress": "in progress",
   "edited": "edited",
-  "editEntry": "Fix this entry"
+  "editEntry": "Fix this entry",
+  "statusNotSubmitted": "Not submitted yet",
+  "statusSubmitted": "Submitted — needs your approval",
+  "statusQueried": "Queried — waiting for resubmit",
+  "statusApproved": "Approved",
+  "payBoundary": "Hours only — pay is settled outside the app."
 }

@@ -5,12 +5,16 @@
  * parent pending/accepted/declined status screen so they can inspect what
  * they sent without leaving the status card.
  */
-import type { SchedulePatternDay } from '@steadily-nanny/shared-types/schemas/schedule.schema';
+import type {
+  PauseRange,
+  SchedulePatternDay,
+} from '@steadily-nanny/shared-types/schemas/schedule.schema';
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
 import { Card } from '@/src/components/ui/card';
 import { ChildChip } from '@/src/components/ui/child-chip';
-import { Body } from '@/src/components/ui/typography';
+import { Body, Small } from '@/src/components/ui/typography';
+import { formatDisplayDate } from '@/src/domains/timesheet/utils/week';
 import { useUserProfile } from '@/src/hooks/queries/useUserProfile';
 import { getWeekdayOrder } from '@/src/lib/weekdayOrder';
 import { calculateWeekTotalHours, formatWallClockTime } from '../utils';
@@ -28,12 +32,18 @@ interface DayWithChildren extends SchedulePatternDay {
 interface SchedulePatternPreviewProps {
   days: ReadonlyArray<DayWithChildren>;
   childrenById: Map<string, ChildInfo>;
+  until?: string | null;
+  exdates?: ReadonlyArray<string>;
+  pauseRanges?: ReadonlyArray<PauseRange>;
   testID?: string;
 }
 
 export function SchedulePatternPreview({
   days,
   childrenById,
+  until = null,
+  exdates = [],
+  pauseRanges = [],
   testID = 'schedule-pattern-preview',
 }: SchedulePatternPreviewProps) {
   const { t } = useTranslation('schedule');
@@ -49,6 +59,33 @@ export function SchedulePatternPreview({
       <Body testID={`${testID}-hours`} className="font-semibold" tabular>
         {t('pending.previewHoursTotal', { hours: totalHours })}
       </Body>
+      {until ? (
+        <Small testID={`${testID}-until`} className="text-muted-foreground">
+          {t('pending.untilLine', { end: formatDisplayDate(until) })}
+        </Small>
+      ) : null}
+      {exdates.length > 0 ? (
+        <Small testID={`${testID}-exdates`} className="text-muted-foreground">
+          {t('pending.exdatesLine', {
+            dates: exdates.map(d => formatDisplayDate(d)).join(', '),
+          })}
+        </Small>
+      ) : null}
+      {pauseRanges.length > 0 ? (
+        <View testID={`${testID}-pauses`} className="gap-1">
+          {pauseRanges.map(range => (
+            <Small
+              key={`${range.from}-${range.to}`}
+              className="text-muted-foreground"
+            >
+              {t('pending.pauseRangeLine', {
+                from: formatDisplayDate(range.from),
+                to: formatDisplayDate(range.to),
+              })}
+            </Small>
+          ))}
+        </View>
+      ) : null}
       {ordered.map(day => (
         <View key={day.id} className="gap-1">
           <Body className="font-medium" tabular>

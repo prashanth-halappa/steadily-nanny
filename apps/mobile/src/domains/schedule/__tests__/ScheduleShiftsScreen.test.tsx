@@ -30,6 +30,15 @@ mock.module('@/src/components/ui/loading-indicator', () => {
   };
 });
 
+mock.module('@/src/hooks/queries/useHouseholdTimeOff', () => ({
+  useHouseholdTimeOff: () => ({
+    data: [],
+    isLoading: false,
+    isError: false,
+    error: null,
+  }),
+}));
+
 let ScheduleShiftsScreen: typeof import('../components/ScheduleShiftsScreen').ScheduleShiftsScreen;
 let mockUseShiftsRange: ReturnType<typeof mock>;
 let mockUseActiveHousehold: ReturnType<typeof mock>;
@@ -94,9 +103,6 @@ beforeAll(async () => {
       data: { timezone: 'America/New_York', week_starts_on: 1 },
       isLoading: false,
     })),
-  }));
-  mock.module('@/src/hooks/queries/useChildren', () => ({
-    useChildren: mock(() => ({ data: [], isLoading: false })),
   }));
   mock.module('@/src/hooks/queries/useIsOnboarded', () => ({
     useIsOnboarded: mock(() => ({ role: 'parent', status: 'onboarded' })),

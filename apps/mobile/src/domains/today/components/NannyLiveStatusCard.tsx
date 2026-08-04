@@ -1,21 +1,28 @@
 /**
  * @module domains/today/components/NannyLiveStatusCard
  *
- * Parent Today: answers "who is with my children today" in four states —
- * scheduled / arriving / on the clock / finished — with apricot live only
- * while a time entry is running (Daylight UX #6).
+ * Parent Today: answers "who is with my children today" — names the carer,
+ * shows duration when finished, and opens Hours on tap.
  */
+import { type Href, useRouter } from 'expo-router';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { View } from 'react-native';
+import { Pressable, View } from 'react-native';
 import { Card } from '@/src/components/ui/card';
 import { Body } from '@/src/components/ui/typography';
-import { formatClockTime } from '@/src/domains/timesheet/utils/duration';
+import { resolveMemberDisplayName } from '@/src/domains/schedule/utils/memberDisplayName';
+import {
+  formatClockTime,
+  formatDuration,
+} from '@/src/domains/timesheet/utils/duration';
+import { sumEntryMinutes } from '@/src/domains/timesheet/utils/entryMinutes';
 import { getWeekStartISO } from '@/src/domains/timesheet/utils/week';
+import { useHouseholdMembers } from '@/src/hooks/queries/useHouseholdMembers';
 import { useShiftsRange } from '@/src/hooks/queries/useShiftsRange';
 import { useWeekTimeEntries } from '@/src/hooks/queries/useWeekTimeEntries';
 import { addLocalDays, localDateInZone } from '@/src/lib/localDate';
 import { wallClockToUtcIso } from '@/src/lib/wallClock';
+import { useAuthStore } from '@/src/store/auth';
 
 interface NannyLiveStatusCardProps {
   householdId: string;
@@ -23,10 +30,20 @@ interface NannyLiveStatusCardProps {
 }
 
 type TodayShiftState =
-  | { kind: 'running'; clockInAt: string }
-  | { kind: 'finished'; clockOutAt: string }
-  | { kind: 'arriving'; start: string }
-  | { kind: 'scheduled'; start: string; end: string }
+  | { kind: 'running'; clockInAt: string; carerId: string | null }
+  | {
+      kind: 'finished';
+      clockOutAt: string;
+      carerId: string | null;
+      durationLabel: string;
+    }
+  | { kind: 'arriving'; start: string; carerId: string | null }
+  | {
+      kind: 'scheduled';
+      start: string;
+      end: string;
+      carerId: string | null;
+    }
   | { kind: 'none' };
 
 const ARRIVING_WINDOW_MS = 60 * 60 * 1000;
@@ -36,6 +53,10 @@ export function NannyLiveStatusCard({
   timeZone,
 }: NannyLiveStatusCardProps) {
   const { t } = useTranslation('today');
+  const { t: tSchedule } = useTranslation('schedule');
+  const router = useRouter();
+  const currentUserId = useAuthStore(s => s.user?.id ?? null);
+  const membersQuery = useHouseholdMembers(householdId);
   const weekStart = useMemo(
     () => getWeekStartISO(new Date(), timeZone),
     [timeZone]
@@ -54,10 +75,39 @@ export function NannyLiveStatusCard({
   const entries = useWeekTimeEntries(householdId, weekStart);
   const shifts = useShiftsRange(householdId, from, to);
 
+  const membersByUserId = useMemo(
+    () =>
+      new Map(
+        (membersQuery.data ?? []).map(member => [member.user_id, member])
+      ),
+    [membersQuery.data]
+  );
+  const memberLabels = useMemo(
+    () => ({
+      you: tSchedule('detail.you'),
+      someone: tSchedule('detail.someone'),
+      roleFallback: (role: 'owner' | 'parent' | 'nanny' | 'helper') =>
+        tSchedule(`detail.roleFallback.${role}`),
+    }),
+    [tSchedule]
+  );
+  const nameFor = (userId: string | null | undefined) =>
+    resolveMemberDisplayName(
+      userId,
+      currentUserId,
+      membersByUserId,
+      memberLabels
+    );
+
   const state: TodayShiftState = useMemo(() => {
+    const nowMs = Date.now();
     const running = (entries.data ?? []).find(e => e.status === 'running');
     if (running?.clock_in_at) {
-      return { kind: 'running', clockInAt: running.clock_in_at };
+      return {
+        kind: 'running',
+        clockInAt: running.clock_in_at,
+        carerId: running.carer_id,
+      };
     }
 
     const finishedToday = (entries.data ?? [])
@@ -66,7 +116,15 @@ export function NannyLiveStatusCard({
         (b.clock_out_at ?? '').localeCompare(a.clock_out_at ?? '')
       )[0];
     if (finishedToday?.clock_out_at) {
-      return { kind: 'finished', clockOutAt: finishedToday.clock_out_at };
+      const todayEntries = (entries.data ?? []).filter(
+        e => e.local_date === today
+      );
+      return {
+        kind: 'finished',
+        clockOutAt: finishedToday.clock_out_at,
+        carerId: finishedToday.carer_id,
+        durationLabel: formatDuration(sumEntryMinutes(todayEntries, nowMs)),
+      };
     }
 
     const todayShifts = (shifts.data ?? [])
@@ -81,33 +139,29 @@ export function NannyLiveStatusCard({
       return {
         kind: 'arriving',
         start: formatClockTime(next.starts_at, timeZone),
+        carerId: next.carer_id,
       };
     }
-    if (now < startMs) {
-      return {
-        kind: 'scheduled',
-        start: formatClockTime(next.starts_at, timeZone),
-        end: formatClockTime(next.ends_at, timeZone),
-      };
-    }
-    // Past scheduled end with no clock data — treat as finished window.
     return {
       kind: 'scheduled',
       start: formatClockTime(next.starts_at, timeZone),
       end: formatClockTime(next.ends_at, timeZone),
+      carerId: next.carer_id,
     };
   }, [entries.data, shifts.data, today, timeZone]);
+
+  const name = state.kind === 'none' ? '' : nameFor(state.carerId);
 
   const live = state.kind === 'running';
   const title =
     state.kind === 'running'
-      ? t('nannyLiveTitle')
+      ? t('nannyLiveTitle', { name })
       : state.kind === 'finished'
-        ? t('nannyFinishedTitle')
+        ? t('nannyFinishedTitle', { name })
         : state.kind === 'arriving'
-          ? t('nannyArrivingTitle')
+          ? t('nannyArrivingTitle', { name })
           : state.kind === 'scheduled'
-            ? t('nannyScheduledTitle')
+            ? t('nannyScheduledTitle', { name })
             : t('nannyNoShiftTitle');
   const body =
     state.kind === 'running'
@@ -117,6 +171,7 @@ export function NannyLiveStatusCard({
       : state.kind === 'finished'
         ? t('nannyFinishedBody', {
             time: formatClockTime(state.clockOutAt, timeZone),
+            duration: state.durationLabel,
           })
         : state.kind === 'arriving'
           ? t('nannyArrivingBody', { start: state.start })
@@ -128,17 +183,23 @@ export function NannyLiveStatusCard({
             : t('nannyNoShiftBody');
 
   return (
-    <Card testID="today-nanny-live-status" live={live} className="gap-1 p-5.5">
-      <View className="flex-row items-center gap-2">
-        {live ? (
-          <View
-            testID="today-nanny-live-dot"
-            className="h-[10px] w-[10px] rounded-full bg-highlight"
-          />
-        ) : null}
-        <Body className="font-semibold">{title}</Body>
-      </View>
-      <Body className="text-muted-foreground">{body}</Body>
-    </Card>
+    <Pressable
+      testID="today-nanny-live-status"
+      accessibilityRole="button"
+      onPress={() => router.push('/(private)/(tabs)/hours' as Href)}
+    >
+      <Card live={live} className="gap-1 p-5.5">
+        <View className="flex-row items-center gap-2">
+          {live ? (
+            <View
+              testID="today-nanny-live-dot"
+              className="h-[10px] w-[10px] rounded-full bg-highlight"
+            />
+          ) : null}
+          <Body className="font-semibold">{title}</Body>
+        </View>
+        <Body className="text-muted-foreground">{body}</Body>
+      </Card>
+    </Pressable>
   );
 }

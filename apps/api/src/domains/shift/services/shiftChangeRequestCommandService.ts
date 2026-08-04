@@ -38,6 +38,7 @@ import {
   HouseholdRepository,
   NotAHouseholdParentError,
 } from '../../household';
+import { notifyHouseholdParents, notifyUser } from '../../notification';
 import {
   ChangeRequestNotPendingError,
   InvalidChangeRequestKindForRoleError,
@@ -283,6 +284,7 @@ export class ShiftChangeRequestCommandService {
     }
 
     const changeRequest = await this.openChangeRequest(shift, userId, input);
+    this.notifyChangeRequestOpened(shift, userId, changeRequest.id);
     return { status: 'pending', shift_change_request: changeRequest };
   }
 
@@ -844,6 +846,31 @@ export class ShiftChangeRequestCommandService {
         400,
         { householdId, carerId }
       );
+    }
+  }
+
+  /** Fire-and-forget: ask the other side to look at a new change request. */
+  private notifyChangeRequestOpened(
+    shift: Shift,
+    requestedBy: string,
+    changeRequestId: string
+  ): void {
+    const payload = {
+      title: 'Schedule change requested',
+      body: 'Someone asked to change a shift — open Schedule to respond.',
+      data: {
+        type: 'shift_change_requested',
+        shiftId: shift.id,
+        changeRequestId,
+        householdId: shift.household_id,
+      },
+    };
+    if (requestedBy === shift.carer_id) {
+      notifyHouseholdParents(shift.household_id, payload);
+      return;
+    }
+    if (shift.carer_id) {
+      notifyUser(shift.carer_id, payload);
     }
   }
 }

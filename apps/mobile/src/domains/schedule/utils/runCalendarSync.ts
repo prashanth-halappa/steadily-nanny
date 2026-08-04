@@ -4,6 +4,7 @@
  * Sync orchestration with injectable deps. Pure of expo-calendar — the
  * native binding lives in `calendarSyncNative.ts` so unit tests never load it.
  */
+import { MATERIALISATION_HORIZON_DAYS } from '@steadily-nanny/shared-types';
 import type { Child } from '@steadily-nanny/shared-types/schemas/child.schema';
 import type {
   Household,
@@ -26,8 +27,8 @@ import {
   resolveMemberDisplayName,
 } from './memberDisplayName';
 
-/** Matches `DEFAULT_MATERIALISATION_HORIZON_DAYS` on the API. */
-export const SYNC_HORIZON_DAYS = 84;
+/** Same horizon the API materialises — shared-types source of truth. */
+export const SYNC_HORIZON_DAYS = MATERIALISATION_HORIZON_DAYS;
 
 /** How far back disconnect/clear looks for stranded Steadily events. */
 export const CLEAR_LOOKBACK_DAYS = 365;

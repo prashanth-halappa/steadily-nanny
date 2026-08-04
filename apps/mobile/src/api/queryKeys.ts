@@ -90,13 +90,14 @@ export const queryKeys = {
       [...queryKeys.availability.all, 'busy', carerId, from, to] as const,
   },
 
-  // The signed-in carer's own time off. Deliberately takes NO arguments:
-  // `GET /time-off` is scoped by the caller's identity on the server, not by a
-  // household or date range, so there is nothing to key on. Adding a param here
-  // later would be a signal the endpoint's contract changed.
+  // The signed-in carer's own time off. Deliberately takes NO arguments on
+  // `list`: `GET /time-off` is scoped by the caller's identity on the server.
+  // `forHousehold` keys the parent-facing household carers list.
   timeOff: {
     all: ['timeOff'] as const,
     list: () => [...queryKeys.timeOff.all, 'list'] as const,
+    forHousehold: (householdId?: string) =>
+      [...queryKeys.timeOff.all, 'household', householdId] as const,
   },
 
   // Recurring schedule patterns: the "usual week" a parent proposes.
