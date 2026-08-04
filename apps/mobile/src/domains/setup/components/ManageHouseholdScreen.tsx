@@ -41,7 +41,8 @@ import {
 import { useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { View } from 'react-native';
+import { Pressable, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { AnimatedPressable } from '@/lib/animations';
 import { cn } from '@/lib/utils';
 import {
@@ -54,6 +55,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/src/components/ui/alert-dialog';
+import { EmptyState } from '@/src/components/ui/empty-state';
 import { Input } from '@/src/components/ui/input';
 import { Label } from '@/src/components/ui/label';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
@@ -154,12 +156,42 @@ export function ManageHouseholdScreen() {
 
   // Defense in depth: the Settings tab already gates this link to parents,
   // but an expo-router route is reachable by URL regardless — never render
-  // the form for a non-parent even if they navigate here directly.
+  // the form for a non-parent even if they navigate here directly. A bare
+  // `null` used to leave a deep-linked nanny/helper staring at a blank
+  // screen with no message and no way back — see TimeOffScreen's
+  // `time-off-not-available` state, the pattern this mirrors.
   if (onboarding.status === 'loading') {
     return loadingShell;
   }
   if (!isParentEditorRole(onboarding.role)) {
-    return null;
+    return (
+      <View
+        testID="manage-household-not-available"
+        className="flex-1 bg-background"
+      >
+        <SafeAreaView style={{ flex: 1 }} className="bg-background">
+          <View className="px-6 pt-4">
+            <Pressable
+              testID="manage-household-not-available-back"
+              accessibilityRole="button"
+              accessibilityLabel={tCommon('back')}
+              onPress={() => router.back()}
+              hitSlop={8}
+              className="self-start"
+            >
+              <Body className="text-primary">{`< ${tCommon('back')}`}</Body>
+            </Pressable>
+          </View>
+          <View className="mt-8 px-6">
+            <EmptyState
+              variant="inline"
+              title={t('householdSettings.notAvailableTitle')}
+              description={t('householdSettings.notAvailableDescription')}
+            />
+          </View>
+        </SafeAreaView>
+      </View>
+    );
   }
   if (!household) {
     return loadingShell;

@@ -13,6 +13,7 @@ import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Pressable, ScrollView, View } from 'react-native';
 import { useThemeColors } from '@/lib/design-tokens';
+import { useTabBarScrollPadding } from '@/lib/layout/useTabBarScrollPadding';
 import { Body, Small } from '@/src/components/ui/typography';
 import {
   hourCellOccupied,
@@ -86,6 +87,10 @@ export function WeekRibbonView({
   const { t } = useTranslation('schedule');
   const themeColors = useThemeColors();
   const router = useRouter();
+  // Same tab-bar dead-zone fix as Settings (BUG1) — this is one of the
+  // Schedule tab's own scrollable views, so it needs the same real
+  // clearance a fixed magic number can't give.
+  const tabBarScrollPadding = useTabBarScrollPadding();
   const displayOrder = getWeekdayOrder(weekStartsOn);
 
   const awayByDow = useMemo(() => {
@@ -101,12 +106,21 @@ export function WeekRibbonView({
   }, [weekDates, timeOff, householdTimeZone]);
 
   return (
-    <ScrollView testID="calendar-week-ribbon-view" className="flex-1 px-4">
+    <ScrollView
+      testID="calendar-week-ribbon-view"
+      className="flex-1 px-4"
+      contentContainerStyle={{ paddingBottom: tabBarScrollPadding }}
+    >
       <View className="flex-row pb-2">
         <View className="w-8" />
         {displayOrder.map(dow => (
           <View key={dow} className="flex-1 items-center">
-            <Body className="text-xs font-medium">{t(`weekday.${dow}`)}</Body>
+            {/* Short form ("Mon") — seven full weekday names ("Monday")
+                don't fit this column width and wrap mid-word ("Monda / y")
+                even on the widest phones. */}
+            <Body className="text-xs font-medium" numberOfLines={1}>
+              {t(`weekdayShort.${dow}`)}
+            </Body>
             {awayByDow.get(dow) ? (
               <Small
                 testID={`week-ribbon-away-${dow}`}

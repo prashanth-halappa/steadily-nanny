@@ -23,6 +23,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useTranslation } from 'react-i18next';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { SCREEN_CONTENT_STYLE, washGradient } from '@/lib/design-tokens';
+import { useTabBarScrollPadding } from '@/lib/layout/useTabBarScrollPadding';
 import { useColorScheme } from '@/lib/useColorScheme';
 import { ChildChip } from '@/src/components/ui/child-chip';
 import { EmptyState } from '@/src/components/ui/empty-state';
@@ -59,6 +60,10 @@ export function TodayScreen() {
   // entry running. Stays inside this screen (below the tab navigator).
   const isLive = useHouseholdIsLive(household?.id, household?.timezone);
   const wash = washGradient(isDarkColorScheme);
+  // Same tab-bar dead-zone fix as Settings (BUG1) — the floating tab bar
+  // overlays this screen's content instead of reserving its own layout
+  // space, so a fixed paddingBottom is not safe-area-aware.
+  const tabBarScrollPadding = useTabBarScrollPadding();
 
   return (
     <View className="flex-1 bg-background">
@@ -75,7 +80,10 @@ export function TodayScreen() {
       ) : null}
       <ScrollView
         className="flex-1"
-        contentContainerStyle={SCREEN_CONTENT_STYLE}
+        contentContainerStyle={{
+          ...SCREEN_CONTENT_STYLE,
+          paddingBottom: tabBarScrollPadding,
+        }}
       >
         <H1 testID="today-header">{t('screenTitle')}</H1>
 
@@ -152,7 +160,7 @@ export function TodayScreen() {
         {/* Only an honest empty state while there is no household at all. Once
             there is one, the cards above carry the schedule story. */}
         {activeHousehold.isLoading || household ? null : (
-          <View className="mt-8">
+          <View className="mt-8" testID="today-empty">
             <EmptyState
               variant="inline"
               title={t('emptyTitle')}

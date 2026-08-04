@@ -24,4 +24,17 @@ describe('TodayScreen i18n', () => {
       'Once you add a schedule, upcoming shifts and updates will show up on this screen.'
     );
   });
+
+  it('REGRESSION: the no-household empty state carries a stable testID so Maestro can assert it', () => {
+    expect(screenSource).toContain('testID="today-empty"');
+  });
+
+  // REGRESSION (BUG1, same as Settings/Hours/Schedule): the floating tab bar
+  // overlays this screen's content instead of reserving its own layout
+  // space — a fixed paddingBottom is not safe-area-aware and can strand the
+  // last row in a tap-through dead zone under the bar.
+  it('REGRESSION: sizes scroll bottom padding off the tab bar height, not a static magic number', () => {
+    expect(screenSource).toContain('useTabBarScrollPadding');
+    expect(screenSource).toContain('paddingBottom: tabBarScrollPadding');
+  });
 });

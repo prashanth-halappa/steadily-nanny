@@ -8,6 +8,7 @@ import { FlashList } from '@shopify/flash-list';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
+import { useTabBarScrollPadding } from '@/lib/layout/useTabBarScrollPadding';
 import { ErrorState } from '@/src/components/custom/ErrorState';
 import { Button } from '@/src/components/ui/button';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
@@ -68,6 +69,9 @@ export function ParentWeekView({
 }: ParentWeekViewProps) {
   const { t } = useTranslation('hours');
   const { t: tSchedule } = useTranslation('schedule');
+  // Same tab-bar dead-zone fix as Settings (BUG1) — the Hours tab's
+  // FlashList needs the same real clearance a fixed magic number can't give.
+  const tabBarScrollPadding = useTabBarScrollPadding();
   const currentUserId = useAuthStore(s => s.user?.id ?? null);
   const membersQuery = useHouseholdMembers(householdId);
   const entriesQuery = useWeekTimeEntries(householdId, weekStartISO);
@@ -252,7 +256,10 @@ export function ParentWeekView({
             )}
           </>
         }
-        contentContainerStyle={SCREEN_CONTENT_STYLE}
+        contentContainerStyle={{
+          ...SCREEN_CONTENT_STYLE,
+          paddingBottom: tabBarScrollPadding,
+        }}
         accessibilityLabel={t('carerWeek')}
       />
 

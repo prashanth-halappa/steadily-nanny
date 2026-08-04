@@ -14,6 +14,7 @@ import type { MeShift } from '@steadily-nanny/shared-types/schemas/me.schema';
 import { useTranslation } from 'react-i18next';
 import { ScrollView, View } from 'react-native';
 import { useThemeColors } from '@/lib/design-tokens';
+import { useTabBarScrollPadding } from '@/lib/layout/useTabBarScrollPadding';
 import { Body, H3 } from '@/src/components/ui/typography';
 import {
   type DayPeriod,
@@ -53,6 +54,10 @@ export function CrossFamilyRhythmView({
   activeHouseholdId,
 }: CrossFamilyRhythmViewProps) {
   const { t } = useTranslation('schedule');
+  // Same tab-bar dead-zone fix as Settings (BUG1) — this is one of the
+  // Schedule tab's own scrollable views, so it needs the same real
+  // clearance a fixed magic number can't give.
+  const tabBarScrollPadding = useTabBarScrollPadding();
   const activeHousehold = households.find(h => h.id === activeHouseholdId);
   const timeZone = activeHousehold?.timezone ?? 'UTC';
   const startDate = localDateInZone(timeZone);
@@ -103,7 +108,11 @@ export function CrossFamilyRhythmView({
   };
 
   return (
-    <ScrollView testID="calendar-cross-family-view" className="flex-1 px-4">
+    <ScrollView
+      testID="calendar-cross-family-view"
+      className="flex-1 px-4"
+      contentContainerStyle={{ paddingBottom: tabBarScrollPadding }}
+    >
       <Body className="mb-3 text-sm text-muted-foreground">
         {t('crossFamily.header')}
       </Body>

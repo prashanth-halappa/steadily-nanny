@@ -14,8 +14,9 @@
  * (see `apps/api/src/domains/schedule/repositories/schedulePatternRepository.ts`),
  * so the first entry that isn't `ended` is the one this screen cares about.
  *
- * Parent-only. Normal navigation never sends a nanny here, but this renders
- * `null` defensively if it's ever reached by one.
+ * Parent/helper only. Normal navigation never sends a nanny here, but a
+ * deep link could — see `schedule-pending-not-available` below for the
+ * honest not-available state that guards it (never a bare `null`).
  *
  * Wave B: `householdId` comes from `useActiveHousehold`, not
  * `useIsOnboarded().householdId` — a parent (Wave 1: owns exactly one
@@ -35,8 +36,10 @@
 import { type Href, useRouter } from 'expo-router';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ScrollView, View } from 'react-native';
+import { Pressable, ScrollView, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
+import { useTabBarScrollPadding } from '@/lib/layout/useTabBarScrollPadding';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -79,7 +82,11 @@ const SHIFTS_HREF = '/(private)/schedule/shifts' as Href;
 
 export function SchedulePendingScreen() {
   const { t } = useTranslation('schedule');
+  const { t: tCommon } = useTranslation('common');
   const elevation = useElevation();
+  // Same tab-bar dead-zone fix as Settings (BUG1) — this is the Schedule
+  // tab's root for a parent with no accepted pattern.
+  const tabBarScrollPadding = useTabBarScrollPadding();
   const router = useRouter();
   const currentUserId = useAuthStore(s => s.user?.id ?? null);
 
@@ -123,8 +130,39 @@ export function SchedulePendingScreen() {
 
   const canEditSchedule = isParentEditorRole(onboarding.role);
 
+  // Parent/helper only. Normal navigation never sends a nanny here, but a
+  // bare `null` used to leave a deep-linked nanny staring at a blank
+  // screen — no message, no back affordance, nothing. Mirrors
+  // TimeOffScreen's `time-off-not-available` pattern.
   if (!canViewParentSchedule(onboarding.role)) {
-    return null;
+    return (
+      <View
+        testID="schedule-pending-not-available"
+        className="flex-1 bg-background"
+      >
+        <SafeAreaView style={{ flex: 1 }} className="bg-background">
+          <View className="px-6 pt-4">
+            <Pressable
+              testID="schedule-pending-not-available-back"
+              accessibilityRole="button"
+              accessibilityLabel={tCommon('back')}
+              onPress={() => router.back()}
+              hitSlop={8}
+              className="self-start"
+            >
+              <Body className="text-primary">{`< ${tCommon('back')}`}</Body>
+            </Pressable>
+          </View>
+          <View className="mt-8 px-6">
+            <EmptyState
+              variant="inline"
+              title={t('pending.notAvailableTitle')}
+              description={t('pending.notAvailableDescription')}
+            />
+          </View>
+        </SafeAreaView>
+      </View>
+    );
   }
 
   // Discarding the withdraw mutation's promise with a bare `void` operator
@@ -171,7 +209,10 @@ export function SchedulePendingScreen() {
     <ScrollView
       testID="schedule-pending-screen"
       className="flex-1 bg-background"
-      contentContainerStyle={SCREEN_CONTENT_STYLE}
+      contentContainerStyle={{
+        ...SCREEN_CONTENT_STYLE,
+        paddingBottom: tabBarScrollPadding,
+      }}
     >
       <H1>{t('pending.screenTitle')}</H1>
 

@@ -110,6 +110,19 @@ describe('WeekRibbonView source', () => {
     expect(viewSource).toContain('/(private)/schedule/shifts/${shift.id}');
   });
 
+  it('REGRESSION: the header row uses short weekday names, not the full ones that wrap mid-word ("Monda / y") at this column width', () => {
+    expect(viewSource).toContain('weekdayShort.${dow}');
+    expect(viewSource).not.toContain('{t(`weekday.${dow}`)}');
+  });
+
+  it('REGRESSION: sizes scroll bottom padding off the tab bar height, not a static magic number (BUG1)', () => {
+    // This is one of the Schedule tab's own scrollable content views (Week
+    // calendar), so it needs the same tap-through dead-zone fix as
+    // Settings/Today/Hours.
+    expect(viewSource).toContain('useTabBarScrollPadding');
+    expect(viewSource).toContain('paddingBottom: tabBarScrollPadding');
+  });
+
   // The away band is covered for real in `WeekRibbonView.render.test.tsx` —
   // a source grep cannot tell a rendered band from an unreachable one.
 });

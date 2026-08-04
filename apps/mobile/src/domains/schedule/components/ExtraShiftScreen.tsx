@@ -9,14 +9,17 @@ import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Pressable, ScrollView, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { Button } from '@/src/components/ui/button';
 import { ChildChip } from '@/src/components/ui/child-chip';
+import { EmptyState } from '@/src/components/ui/empty-state';
 import { Text } from '@/src/components/ui/text';
 import { TimeRangePicker } from '@/src/components/ui/time-range-picker';
 import { Body, H1, Small } from '@/src/components/ui/typography';
 import { useHouseholdCarers } from '@/src/domains/schedule/hooks/useHouseholdCarers';
 import { isExtraShiftFormValid } from '@/src/domains/schedule/utils/extraShiftForm';
+import { isParentEditorRole } from '@/src/domains/setup/types';
 import {
   formatDate,
   parseDate,
@@ -24,6 +27,7 @@ import {
 import { useCreateExtraShift } from '@/src/hooks/mutations/useCreateExtraShift';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
 import { useChildren } from '@/src/hooks/queries/useChildren';
+import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 import { localDateInZone } from '@/src/lib/localDate';
 import { showErrorToast } from '@/src/lib/toast';
 import { wallClockToUtcIso } from '@/src/lib/wallClock';
@@ -32,6 +36,7 @@ export function ExtraShiftScreen() {
   const { t } = useTranslation('schedule');
   const { t: tCommon } = useTranslation('common');
   const router = useRouter();
+  const onboarding = useIsOnboarded();
   const active = useActiveHousehold();
   const timeZone = active.household?.timezone ?? 'UTC';
   const createExtra = useCreateExtraShift(active.householdId);
@@ -94,6 +99,38 @@ export function ExtraShiftScreen() {
       }
     }
   };
+
+  // Parent-only, same guard the siblings (SchedulePendingScreen,
+  // ScheduleBuildScreen) use. This screen used to rely entirely on the
+  // parent-gated button that reaches it — the server rejects a nanny, but
+  // the client happily rendered the form and only failed on submit.
+  if (!isParentEditorRole(onboarding.role)) {
+    return (
+      <View testID="schedule-extra-shift-not-available" style={{ flex: 1 }}>
+        <SafeAreaView style={{ flex: 1 }} className="bg-background">
+          <View className="px-6 pt-4">
+            <Pressable
+              testID="schedule-extra-shift-not-available-back"
+              accessibilityRole="button"
+              accessibilityLabel={tCommon('back')}
+              onPress={() => router.back()}
+              hitSlop={8}
+              className="self-start"
+            >
+              <Body className="text-primary">{`< ${tCommon('back')}`}</Body>
+            </Pressable>
+          </View>
+          <View className="mt-8 px-6">
+            <EmptyState
+              variant="inline"
+              title={t('shifts.extraNotAvailableTitle')}
+              description={t('shifts.extraNotAvailableDescription')}
+            />
+          </View>
+        </SafeAreaView>
+      </View>
+    );
+  }
 
   return (
     <ScrollView

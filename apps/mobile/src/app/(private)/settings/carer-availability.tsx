@@ -41,17 +41,21 @@ export default function CarerAvailabilityScreen() {
       {members.isLoading || availability.isLoading ? (
         <LoadingIndicator />
       ) : !nannyId ? (
-        <EmptyState
-          variant="inline"
-          title={t('carerAvailabilityEmpty')}
-          description=""
-        />
+        <View testID="carer-availability-empty">
+          <EmptyState
+            variant="inline"
+            title={t('carerAvailabilityEmpty')}
+            description=""
+          />
+        </View>
       ) : (availability.data ?? []).length === 0 ? (
-        <EmptyState
-          variant="inline"
-          title={t('carerAvailabilityNone')}
-          description=""
-        />
+        <View testID="carer-availability-none">
+          <EmptyState
+            variant="inline"
+            title={t('carerAvailabilityNone')}
+            description=""
+          />
+        </View>
       ) : (
         <View className="mt-4 gap-2">
           {(availability.data ?? []).map(row => (

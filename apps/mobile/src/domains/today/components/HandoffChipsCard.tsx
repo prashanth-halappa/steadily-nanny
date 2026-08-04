@@ -189,7 +189,9 @@ function HandoffPhaseEditor({
           testID={`handoff-hint-${phase}`}
           className="text-muted-foreground"
         >
-          {t('handoff.tapHint')}
+          {phase === HANDOFF_PHASES.MORNING
+            ? t('handoff.tapHintForNanny')
+            : t('handoff.tapHintForParent')}
         </Small>
       )}
     </View>

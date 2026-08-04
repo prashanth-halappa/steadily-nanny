@@ -10,6 +10,7 @@ import { type Href, useRouter } from 'expo-router';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Pressable, View } from 'react-native';
+import { useTabBarScrollPadding } from '@/lib/layout/useTabBarScrollPadding';
 import {
   StatusPill,
   type StatusPillProps,
@@ -111,6 +112,10 @@ export function AgendaView({
   weekDates = [],
 }: AgendaViewProps) {
   const { t } = useTranslation('schedule');
+  // Same tab-bar dead-zone fix as Settings (BUG1) — this is one of the
+  // Schedule tab's own scrollable views, so it needs the same real
+  // clearance a fixed magic number can't give.
+  const tabBarScrollPadding = useTabBarScrollPadding();
   const items = useMemo(() => {
     const byDate = new Map<string, Shift[]>();
     for (const shift of shifts) {
@@ -162,6 +167,7 @@ export function AgendaView({
         data={items}
         keyExtractor={item => item.key}
         getItemType={item => item.type}
+        contentContainerStyle={{ paddingBottom: tabBarScrollPadding }}
         renderItem={({ item }) => {
           if (item.type === 'header') {
             return (

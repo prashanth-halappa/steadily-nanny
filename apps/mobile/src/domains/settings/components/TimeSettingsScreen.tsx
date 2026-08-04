@@ -51,6 +51,7 @@ function calendarLabelFor(cal: WritableCalendar): string {
 export function TimeSettingsScreen() {
   const router = useRouter();
   const { t } = useTranslation(['settings', 'schedule']);
+  const { t: tCommon } = useTranslation('common');
   const profile = useUserProfile();
   const updateTimeSettings = useUpdateTimeSettings();
 
@@ -170,6 +171,8 @@ export function TimeSettingsScreen() {
       ctaLabel={t('settings:time.saveButton')}
       onCta={() => void handleSave()}
       ctaDisabled={updateTimeSettings.isPending}
+      onBack={() => router.back()}
+      backLabel={tCommon('back')}
     >
       <View className="gap-6">
         <View className="gap-2">

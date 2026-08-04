@@ -84,3 +84,15 @@ describe('settings/household route', () => {
     expect(source).toContain('export default function');
   });
 });
+
+describe('settings/household-closures route', () => {
+  let source: string;
+  beforeAll(async () => {
+    source = await readRoute('../household-closures.tsx');
+  });
+
+  it('delegates to HouseholdClosuresScreen', () => {
+    expect(source).toContain('HouseholdClosuresScreen');
+    expect(source).toContain('export default function');
+  });
+});

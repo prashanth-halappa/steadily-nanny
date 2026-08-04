@@ -6,6 +6,8 @@
   "build": {
     "screenTitle": "Build your usual week",
     "loading": "Loading…",
+    "notAvailableTitle": "Not available",
+    "notAvailableDescription": "Building a usual week is managed by a parent on this household.",
     "draftErrorTitle": "Couldn't load that draft",
     "draftErrorBody": "We couldn't fetch the week you started. Check your connection and try again, or start this week from scratch.",
     "draftErrorRetry": "Try again",
@@ -42,6 +44,8 @@
   "pending": {
     "screenTitle": "Your week",
     "loading": "Loading…",
+    "notAvailableTitle": "Not available",
+    "notAvailableDescription": "This page is for parents and helpers. Ask a parent on this household if you need something changed.",
     "emptyTitle": "No schedule yet",
     "emptyBody": "Build a usual week and send it to your nanny.",
     "emptyCta": "Build your week",
@@ -92,6 +96,8 @@
   "shifts": {
     "screenTitle": "Shifts",
     "loading": "Loading…",
+    "extraNotAvailableTitle": "Not available",
+    "extraNotAvailableDescription": "Adding a one-off shift is managed by a parent on this household.",
     "empty": "No shifts yet",
     "previousWeek": "Previous week",
     "nextWeek": "Next week",
@@ -174,6 +180,15 @@
     "4": "Thursday",
     "5": "Friday",
     "6": "Saturday"
+  },
+  "weekdayShort": {
+    "0": "Sun",
+    "1": "Mon",
+    "2": "Tue",
+    "3": "Wed",
+    "4": "Thu",
+    "5": "Fri",
+    "6": "Sat"
   },
   "todayCard": {
     "pendingTitle": "A week is waiting for you",

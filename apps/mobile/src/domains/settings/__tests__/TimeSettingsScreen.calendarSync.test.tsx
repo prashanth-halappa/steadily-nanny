@@ -317,4 +317,21 @@ describe('TimeSettingsScreen calendar sync', () => {
     });
     expect(clearMarkedEventsDefault).not.toHaveBeenCalled();
   });
+
+  // REGRESSION: TimeSettingsScreen passed no `onBack` to SetupScreenShell,
+  // so the shell rendered neither a back link nor a header chevron — and
+  // since this is a full-screen push, the tab bar is hidden too, leaving
+  // only an iOS edge-swipe as an escape. Every sibling settings screen
+  // (e.g. ManageAvailabilityScreen) passes `onBack={() => router.back()}`;
+  // SetupScreenShell derives the back link's testID as `${testID}-back`.
+  it('REGRESSION: wires a back link out, matching sibling settings screens', async () => {
+    const { getByTestId } = renderWithProviders(<TimeSettingsScreen />);
+
+    await waitFor(() => {
+      expect(getByTestId('time-settings-screen-back')).toBeTruthy();
+    });
+
+    // Must not throw — proves onBack is a real callback, not a missing prop.
+    fireEvent.press(getByTestId('time-settings-screen-back'));
+  });
 });

@@ -80,6 +80,15 @@ describe('HoursScreen', () => {
     expect(hoursScreenSource).toContain('ParentWeekView');
     expect(hoursScreenSource).toContain('NannyWeekView');
   });
+
+  // REGRESSION (BUG1, same fix as Settings/Today/Schedule): the floating
+  // tab bar overlays this screen's content instead of reserving its own
+  // layout space, so a fixed paddingBottom is not safe-area-aware and can
+  // strand the last row in a tap-through dead zone under the bar.
+  it('REGRESSION: sizes the empty-role ScrollView bottom padding off the tab bar height', () => {
+    expect(hoursScreenSource).toContain('useTabBarScrollPadding');
+    expect(hoursScreenSource).toContain('paddingBottom: tabBarScrollPadding');
+  });
 });
 
 describe('NannyWeekView', () => {
@@ -89,6 +98,11 @@ describe('NannyWeekView', () => {
 
   it('computes overtime with formatOvertimeDelta rather than hand-rolled math', () => {
     expect(nannyWeekViewSource).toContain('formatOvertimeDelta');
+  });
+
+  it('REGRESSION: sizes the FlashList bottom padding off the tab bar height (BUG1)', () => {
+    expect(nannyWeekViewSource).toContain('useTabBarScrollPadding');
+    expect(nannyWeekViewSource).toContain('paddingBottom: tabBarScrollPadding');
   });
 });
 
@@ -132,6 +146,13 @@ describe('ParentWeekView', () => {
     );
     expect(parentWeekViewSource).toMatch(
       /try\s*\{\s*await queryTimesheet\.mutateAsync/
+    );
+  });
+
+  it('REGRESSION: sizes the FlashList bottom padding off the tab bar height (BUG1)', () => {
+    expect(parentWeekViewSource).toContain('useTabBarScrollPadding');
+    expect(parentWeekViewSource).toContain(
+      'paddingBottom: tabBarScrollPadding'
     );
   });
 });

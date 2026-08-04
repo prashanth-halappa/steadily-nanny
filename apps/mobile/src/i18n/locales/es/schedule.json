@@ -6,6 +6,8 @@
   "build": {
     "screenTitle": "Construye tu semana habitual",
     "loading": "Cargando…",
+    "notAvailableTitle": "No disponible",
+    "notAvailableDescription": "Construir una semana habitual lo gestiona un progenitor de este hogar.",
     "draftErrorTitle": "No se pudo cargar ese borrador",
     "draftErrorBody": "No pudimos recuperar la semana que empezaste. Revisa tu conexión e inténtalo de nuevo, o empieza esta semana desde cero.",
     "draftErrorRetry": "Intentar de nuevo",
@@ -42,6 +44,8 @@
   "pending": {
     "screenTitle": "Tu semana",
     "loading": "Cargando…",
+    "notAvailableTitle": "No disponible",
+    "notAvailableDescription": "Esta página es para progenitores y ayudantes. Pregunta a un progenitor de este hogar si necesitas algún cambio.",
     "emptyTitle": "Aún no hay horario",
     "emptyBody": "Crea una semana habitual y envíasela a tu niñera.",
     "emptyCta": "Construir tu semana",
@@ -92,6 +96,8 @@
   "shifts": {
     "screenTitle": "Turnos",
     "loading": "Cargando…",
+    "extraNotAvailableTitle": "No disponible",
+    "extraNotAvailableDescription": "Añadir un turno puntual lo gestiona un progenitor de este hogar.",
     "empty": "Aún no hay turnos",
     "previousWeek": "Semana anterior",
     "nextWeek": "Semana siguiente",
@@ -140,8 +146,8 @@
     "cancelShift": "Pedir cancelación",
     "accept": "Aceptar",
     "acceptedToast": "Turno confirmado",
-    "freshProposal": "Un progenitor propuso este turno nuevo — acepta o propone otros para confirmar.",
-    "needsReconfirm": "Un progenitor cambió estos horarios — acepta o propone otros para confirmar.",
+    "freshProposal": "Un progenitor propuso este turno nuevo — acepta o propón otros para confirmar.",
+    "needsReconfirm": "Un progenitor cambió estos horarios — acepta o propón otros para confirmar.",
     "counterOffer": "Proponer otros horarios",
     "changesTitle": "Cambios",
     "requestMessageLabel": "Mensaje",
@@ -174,6 +180,15 @@
     "4": "Jueves",
     "5": "Viernes",
     "6": "Sábado"
+  },
+  "weekdayShort": {
+    "0": "Dom",
+    "1": "Lun",
+    "2": "Mar",
+    "3": "Mié",
+    "4": "Jue",
+    "5": "Vie",
+    "6": "Sáb"
   },
   "todayCard": {
     "pendingTitle": "Una semana te espera",

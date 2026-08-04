@@ -101,6 +101,15 @@ export const queryKeys = {
       [...queryKeys.timeOff.all, 'household', householdId] as const,
   },
 
+  // Parent-declared household closures ("we're away, no cover needed").
+  // Distinct from `timeOff` (carer-scoped) — a closure is scoped to ONE
+  // household, so `list` always takes the household id.
+  householdClosures: {
+    all: ['householdClosures'] as const,
+    list: (householdId?: string) =>
+      [...queryKeys.householdClosures.all, 'list', householdId] as const,
+  },
+
   // Recurring schedule patterns: the "usual week" a parent proposes.
   schedulePattern: {
     all: ['schedulePattern'] as const,

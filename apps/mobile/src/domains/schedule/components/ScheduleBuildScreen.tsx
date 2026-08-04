@@ -55,9 +55,11 @@ import type { HouseholdMember } from '@steadily-nanny/shared-types/schemas/house
 import { type Href, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { View } from 'react-native';
+import { Pressable, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button } from '@/src/components/ui/button';
 import { ChildChip } from '@/src/components/ui/child-chip';
+import { EmptyState } from '@/src/components/ui/empty-state';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { StatusPill } from '@/src/components/ui/status-pill';
 import { Text } from '@/src/components/ui/text';
@@ -352,8 +354,35 @@ export function ScheduleBuildScreen({
     );
   }
 
+  // Parent-only. A bare `null` used to leave a deep-linked nanny/helper
+  // staring at a blank screen — no message, no back affordance, nothing.
+  // Mirrors TimeOffScreen's `time-off-not-available` pattern.
   if (onboarding.role !== SETUP_ROLES.PARENT) {
-    return null;
+    return (
+      <View testID="schedule-build-not-available" style={{ flex: 1 }}>
+        <SafeAreaView style={{ flex: 1 }} className="bg-background">
+          <View className="px-6 pt-4">
+            <Pressable
+              testID="schedule-build-not-available-back"
+              accessibilityRole="button"
+              accessibilityLabel={tCommon('back')}
+              onPress={cancelWizard}
+              hitSlop={8}
+              className="self-start"
+            >
+              <Body className="text-primary">{`< ${tCommon('back')}`}</Body>
+            </Pressable>
+          </View>
+          <View className="mt-8 px-6">
+            <EmptyState
+              variant="inline"
+              title={t('build.notAvailableTitle')}
+              description={t('build.notAvailableDescription')}
+            />
+          </View>
+        </SafeAreaView>
+      </View>
+    );
   }
 
   return (

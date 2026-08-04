@@ -340,6 +340,26 @@ describe('ManageHouseholdScreen', () => {
     expect(updateMock).not.toHaveBeenCalled();
   });
 
+  // `membershipsListMock` (unlike `listMock`) does not consult the auth
+  // store — it is a static fixture. Setting only `useAuthStore`'s session
+  // does NOT change the resolved role; the membership row's own `role`
+  // does. Both nanny-role tests below repoint it to a nanny membership so
+  // `useIsOnboarded` genuinely resolves a non-parent role, rather than
+  // relying on catching the component mid-loading-state.
+  const nannyMembership = {
+    id: 'member-2',
+    household_id: HOUSEHOLD_ID,
+    user_id: NANNY_USER_ID,
+    role: 'nanny',
+    can_edit: false,
+    status: 'active',
+    display_name_override: null,
+    colour: null,
+    joined_at: now,
+    created_at: now,
+    updated_at: now,
+  };
+
   it('is parent-only: a nanny (member, not creator) never sees the form, even navigating here directly', async () => {
     useAuthStore.setState({
       session: { user: { id: NANNY_USER_ID } } as unknown as never,
@@ -347,12 +367,45 @@ describe('ManageHouseholdScreen', () => {
     } as never);
     listMock.mockImplementation(() => Promise.resolve([baseHousehold]));
     childrenListMock.mockImplementation(() => Promise.resolve([]));
+    membershipsListMock.mockImplementation(() =>
+      Promise.resolve([nannyMembership])
+    );
 
-    const { queryByTestId } = renderWithProviders(<ManageHouseholdScreen />);
+    const { getByTestId, queryByTestId } = renderWithProviders(
+      <ManageHouseholdScreen />
+    );
 
     await waitFor(() =>
-      expect(queryByTestId('manage-household-screen')).toBeNull()
+      expect(getByTestId('manage-household-not-available')).toBeTruthy()
     );
     expect(queryByTestId('household-name-input')).toBeNull();
+  });
+
+  // REGRESSION: a bare `null` for the wrong role left a deep-linked nanny/
+  // helper staring at a blank screen — no message, no back affordance,
+  // nothing. Now mirrors TimeOffScreen's `time-off-not-available` pattern:
+  // an EmptyState plus a real way back.
+  it('REGRESSION: a non-parent sees an honest not-available state with a back affordance, never a blank screen', async () => {
+    useAuthStore.setState({
+      session: { user: { id: NANNY_USER_ID } } as unknown as never,
+      isInitialized: true,
+    } as never);
+    listMock.mockImplementation(() => Promise.resolve([baseHousehold]));
+    childrenListMock.mockImplementation(() => Promise.resolve([]));
+    membershipsListMock.mockImplementation(() =>
+      Promise.resolve([nannyMembership])
+    );
+
+    const { getByTestId, queryByTestId } = renderWithProviders(
+      <ManageHouseholdScreen />
+    );
+
+    await waitFor(() =>
+      expect(getByTestId('manage-household-not-available')).toBeTruthy()
+    );
+    expect(queryByTestId('manage-household-screen')).toBeNull();
+
+    // Must not throw — proves the back affordance is a real callback.
+    fireEvent.press(getByTestId('manage-household-not-available-back'));
   });
 });
