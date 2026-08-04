@@ -19,6 +19,7 @@ import { householdApprovalRoutes } from '../domains/household';
 import householdRoutes from '../domains/household/routes/householdRoutes';
 import { meRoutes } from '../domains/me';
 import notificationsRoutes from '../domains/notification/routes/notificationsRoutes';
+import { payArrangementRoutes } from '../domains/pay';
 import {
   householdSchedulePatternRoutes,
   schedulePatternRoutes,
@@ -84,6 +85,15 @@ router.use('/households/:householdId/time-entries', householdTimeEntryRoutes);
 router.use('/time-entries', timeEntryRoutes);
 router.use('/households/:householdId/timesheets', householdTimesheetRoutes);
 router.use('/timesheets', timesheetRoutes);
+
+// Pay arrangements — effective-dated terms for one carer in one household.
+// Carer-nested ONLY: an arrangement is meaningless outside that pair, so there
+// is no flat id-scoped router, and no PATCH/DELETE anywhere (the table is
+// append-only — a change is a new row). See docs/11-MONEY.md §2.
+router.use(
+  '/households/:householdId/carers/:carerId/pay-arrangements',
+  payArrangementRoutes
+);
 
 // Daily handoff notes (design flow 1i): chip-based parent<->nanny notes for
 // a household's local date, plus the evening recap. Same nested-then-flat
