@@ -102,6 +102,11 @@ export type UpdatePreferredLocaleInput = z.infer<
   typeof UpdatePreferredLocaleSchema
 >;
 
+const UpdateNameSchema = z.object({
+  name: z.string().min(1).max(200),
+});
+export type UpdateNameInput = z.infer<typeof UpdateNameSchema>;
+
 const UpdateTimeSettingsSchema = z
   .object({
     timezone: TIMEZONE_FIELD.optional(),
@@ -151,6 +156,22 @@ export const userApi = {
     req: UpdatePreferredLocaleInput
   ): Promise<UserProfile> => {
     const validated = UpdatePreferredLocaleSchema.safeParse(req);
+    if (!validated.success) throw validated.error;
+
+    const response = await apiClient.patch(
+      userEndpoints.updateProfile,
+      validated.data
+    );
+    const parsed = UserEnvelopeSchema.safeParse(response.data.data);
+    if (!parsed.success) throw parsed.error;
+    return parsed.data.user;
+  },
+
+  /**
+   * Update the caller's display name.
+   */
+  updateName: async (req: UpdateNameInput): Promise<UserProfile> => {
+    const validated = UpdateNameSchema.safeParse(req);
     if (!validated.success) throw validated.error;
 
     const response = await apiClient.patch(

@@ -23,16 +23,20 @@ import {
 } from '@/src/components/ui/alert-dialog';
 import { Button, buttonVariants } from '@/src/components/ui/button';
 import { Input } from '@/src/components/ui/input';
+import { Label } from '@/src/components/ui/label';
 import { Text } from '@/src/components/ui/text';
 import { Body, H1, H4, Small } from '@/src/components/ui/typography';
 import { appIdentity } from '@/src/config/appIdentity';
 import { HouseholdSwitcher } from '@/src/domains/household';
 import { SETUP_ROLES } from '@/src/domains/setup/types';
 import { useDeleteAccount } from '@/src/hooks/mutations/useDeleteAccount';
+import { useUpdateName } from '@/src/hooks/mutations/useUpdateName';
 import { useUpdatePreferredLocale } from '@/src/hooks/mutations/useUpdatePreferredLocale';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
+import { useUserProfile } from '@/src/hooks/queries/useUserProfile';
 import { SUPPORTED_LANGUAGES } from '@/src/i18n/constants';
 import { useLanguageStore } from '@/src/i18n/languageStore';
+import { showSuccessToast } from '@/src/lib/toast';
 import { useAuthStore } from '@/src/store/auth';
 import { openExternalUrl } from '@/src/utils/openExternalUrl';
 import { useElevation } from '~/lib/design-tokens/elevation';
@@ -106,6 +110,29 @@ export default function SettingsScreen() {
   const { mutateAsync: deleteAccount, isPending: isDeletingAccount } =
     useDeleteAccount();
   const updatePreferredLocale = useUpdatePreferredLocale();
+  const profile = useUserProfile();
+  const updateName = useUpdateName();
+  // null = untouched, so the field tracks the server value until the user
+  // edits it — no seeding effect, and a background refetch can't clobber an
+  // edit in progress.
+  const [nameDraft, setNameDraft] = useState<string | null>(null);
+  const savedName = profile.data?.name ?? '';
+  const nameValue = nameDraft ?? savedName;
+  const isNameDirty =
+    nameDraft !== null &&
+    nameDraft.trim().length > 0 &&
+    nameDraft.trim() !== savedName;
+
+  const handleSaveName = async () => {
+    try {
+      await updateName.mutateAsync({ name: nameValue.trim() });
+      setNameDraft(null);
+      showSuccessToast(t('settings:name.savedToast'));
+    } catch {
+      // useUpdateName's onError already surfaced a toast.
+    }
+  };
+
   const [deleteConfirmEmail, setDeleteConfirmEmail] = useState('');
   const accountEmail = user?.email ?? '';
   const deleteUnlocked =
@@ -164,6 +191,26 @@ export default function SettingsScreen() {
           Account. Time + OS notifications live here; identity sits above. */}
       <View className="mt-8 gap-3" testID="settings-account-section">
         <H4>{t('settings:account')}</H4>
+        <View className="gap-2">
+          <Label>{t('settings:name.label')}</Label>
+          <Input
+            testID="settings-name-input"
+            accessibilityLabel={t('settings:name.label')}
+            value={nameValue}
+            onChangeText={setNameDraft}
+            placeholder={t('settings:name.placeholder')}
+          />
+          {isNameDirty ? (
+            <Button
+              testID="settings-name-save"
+              size="sm"
+              disabled={updateName.isPending}
+              onPress={() => void handleSaveName()}
+            >
+              <Text>{t('settings:name.saveButton')}</Text>
+            </Button>
+          ) : null}
+        </View>
         <SettingsNavRow
           testID="settings-time"
           label={t('settings:time.menuLabel')}

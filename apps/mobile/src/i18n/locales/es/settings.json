@@ -5,6 +5,12 @@
   "privacyPolicy": "Política de privacidad",
   "termsOfService": "Términos del servicio",
   "account": "Cuenta",
+  "name": {
+    "label": "Tu nombre",
+    "placeholder": "Tu nombre",
+    "saveButton": "Guardar",
+    "savedToast": "Nombre guardado"
+  },
   "legal": "Legal",
   "notifications": "Notificaciones",
   "household": "Hogar",

@@ -63,6 +63,15 @@ const updatePreferredLocaleMock = mock((input: { preferred_locale: string }) =>
     preferred_locale: input.preferred_locale,
   })
 );
+const updateNameMock = mock((input: { name: string }) =>
+  Promise.resolve({
+    user_id: PARENT_USER_ID,
+    name: input.name,
+    city: null,
+    country: null,
+    preferred_locale: 'en',
+  })
+);
 const deleteAccountMock = mock(() =>
   Promise.resolve({ success: true, message: 'deleted' })
 );
@@ -77,6 +86,7 @@ mock.module('@/src/api/endpoints/user', () => ({
   userApi: {
     getProfile: getProfileMock,
     updatePreferredLocale: updatePreferredLocaleMock,
+    updateName: updateNameMock,
     deleteAccount: deleteAccountMock,
   },
 }));
@@ -94,6 +104,7 @@ beforeEach(() => {
   householdListMock.mockReset();
   childrenListMock.mockReset();
   updatePreferredLocaleMock.mockReset();
+  updateNameMock.mockClear();
   householdListMock.mockImplementation(() => Promise.resolve([]));
   childrenListMock.mockImplementation(() => Promise.resolve([]));
   updatePreferredLocaleMock.mockImplementation(
@@ -110,6 +121,31 @@ beforeEach(() => {
     session: { user: { id: PARENT_USER_ID } } as unknown as never,
     isInitialized: true,
   } as never);
+});
+
+describe('SettingsScreen — display name', () => {
+  it('seeds from the server profile, and only offers Save once the name actually changes', async () => {
+    const { getByTestId, queryByTestId } = renderWithProviders(
+      <SettingsScreen />
+    );
+
+    // Seeded from getProfile, with no seeding effect to race a refetch.
+    await waitFor(() =>
+      expect(getByTestId('settings-name-input').props.value).toBe('Sam')
+    );
+    expect(queryByTestId('settings-name-save')).toBeNull();
+
+    // Whitespace-only edits aren't a change — Save stays hidden.
+    fireEvent.changeText(getByTestId('settings-name-input'), '  Sam  ');
+    expect(queryByTestId('settings-name-save')).toBeNull();
+
+    fireEvent.changeText(getByTestId('settings-name-input'), '  Samantha  ');
+    fireEvent.press(getByTestId('settings-name-save'));
+
+    await waitFor(() =>
+      expect(updateNameMock).toHaveBeenCalledWith({ name: 'Samantha' })
+    );
+  });
 });
 
 describe('SettingsScreen — preferred_locale (D26)', () => {
