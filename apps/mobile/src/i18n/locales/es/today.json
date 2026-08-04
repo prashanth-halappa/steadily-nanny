@@ -53,7 +53,8 @@
     "eveningRecap": "Resumen vespertino de tu niñera",
     "saveAsMoment": "Guardar como momento",
     "savedAsMoment": "Guardado como momento",
-    "tapHint": "Toca lo que tu niñera debería saber",
+    "tapHintForNanny": "Toca lo que tu niñera debería saber",
+    "tapHintForParent": "Toca lo que tu familia debería saber",
     "anythingElse": "¿Algo más?",
     "sentAt": "Enviado {{time}}",
     "chips": {

@@ -14,6 +14,7 @@ import { FlashList } from '@shopify/flash-list';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
+import { useTabBarScrollPadding } from '@/lib/layout/useTabBarScrollPadding';
 import { ErrorState } from '@/src/components/custom/ErrorState';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import {
@@ -64,6 +65,9 @@ export function NannyWeekView({
   isPreviousWeekDisabled,
 }: NannyWeekViewProps) {
   const { t } = useTranslation('hours');
+  // Same tab-bar dead-zone fix as Settings (BUG1) — the Hours tab's
+  // FlashList needs the same real clearance a fixed magic number can't give.
+  const tabBarScrollPadding = useTabBarScrollPadding();
   const entriesQuery = useWeekTimeEntries(householdId, weekStartISO);
   const timesheetQuery = useWeekTimesheet(householdId, weekStartISO);
   const updateEntry = useUpdateTimeEntry();
@@ -149,7 +153,10 @@ export function NannyWeekView({
             isPreviousDisabled={isPreviousWeekDisabled}
           />
         }
-        contentContainerStyle={SCREEN_CONTENT_STYLE}
+        contentContainerStyle={{
+          ...SCREEN_CONTENT_STYLE,
+          paddingBottom: tabBarScrollPadding,
+        }}
         ListEmptyComponent={null}
         accessibilityLabel={t('yourWeek')}
       />

@@ -52,4 +52,12 @@ describe('CrossFamilyRhythmView source', () => {
     expect(viewSource).toMatch(/const to = .*rangeEnd/);
     expect(viewSource).toContain('useMeShifts(from, to)');
   });
+
+  it('REGRESSION: sizes scroll bottom padding off the tab bar height, not a static magic number (BUG1)', () => {
+    // This is one of the Schedule tab's own scrollable content views (Wave
+    // 2d, cross-family calendar), so it needs the same tap-through
+    // dead-zone fix as Settings/Today/Hours.
+    expect(viewSource).toContain('useTabBarScrollPadding');
+    expect(viewSource).toContain('paddingBottom: tabBarScrollPadding');
+  });
 });

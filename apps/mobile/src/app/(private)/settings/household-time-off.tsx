@@ -37,11 +37,13 @@ export default function HouseholdTimeOffScreen() {
       {timeOff.isLoading ? (
         <LoadingIndicator />
       ) : rows.length === 0 ? (
-        <EmptyState
-          variant="inline"
-          title={t('carerTimeOffEmpty')}
-          description=""
-        />
+        <View testID="household-time-off-empty">
+          <EmptyState
+            variant="inline"
+            title={t('carerTimeOffEmpty')}
+            description=""
+          />
+        </View>
       ) : (
         <View className="mt-4 gap-2">
           {rows.map(row => (

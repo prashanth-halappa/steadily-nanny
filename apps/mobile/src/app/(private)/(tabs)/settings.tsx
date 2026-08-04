@@ -11,6 +11,7 @@ import { ScrollView, View } from 'react-native';
 import { AnimatedPressable } from '@/lib/animations';
 import { SCREEN_CONTENT_STYLE, spacing } from '@/lib/design-tokens';
 import { Icon } from '@/lib/icons/iconWithClassName';
+import { useTabBarScrollPadding } from '@/lib/layout/useTabBarScrollPadding';
 import { cn } from '@/lib/utils';
 import {
   AlertDialog,
@@ -111,6 +112,12 @@ function SettingsExternalRow({
 
 export default function SettingsScreen() {
   const { t } = useTranslation();
+  // The floating tab bar overlays this screen's content rather than
+  // reserving its own layout space (React Navigation bottom-tabs default —
+  // see useTabBarScrollPadding's header comment); without this, a row that
+  // ends up under the bar is a permanent dead zone: taps land on the tab
+  // bar underneath instead of the row.
+  const tabBarScrollPadding = useTabBarScrollPadding();
   const language = useLanguageStore(s => s.language);
   const setLanguage = useLanguageStore(s => s.setLanguage);
   const signOut = useAuthStore(s => s.signOut);
@@ -165,7 +172,10 @@ export default function SettingsScreen() {
     <ScrollView
       testID="settings-screen"
       className="flex-1 bg-background"
-      contentContainerStyle={SCREEN_CONTENT_STYLE}
+      contentContainerStyle={{
+        ...SCREEN_CONTENT_STYLE,
+        paddingBottom: tabBarScrollPadding,
+      }}
     >
       <H1>{t('settings:title')}</H1>
 
@@ -277,6 +287,13 @@ export default function SettingsScreen() {
                 label={t('settings:carerTimeOff')}
                 onPress={() =>
                   router.push('/settings/household-time-off' as Href)
+                }
+              />
+              <SettingsNavRow
+                testID="settings-household-closures"
+                label={t('household:closures.manageTitle')}
+                onPress={() =>
+                  router.push('/settings/household-closures' as Href)
                 }
               />
             </>

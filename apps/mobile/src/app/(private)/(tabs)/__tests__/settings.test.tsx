@@ -111,4 +111,19 @@ describe('SettingsScreen', () => {
     expect(screenSource).toContain('/settings/carer-availability');
     expect(screenSource).toContain('/settings/household-time-off');
   });
+
+  // REGRESSION: the floating tab bar overlays this screen's content instead
+  // of reserving its own layout space, so the last rows sat at y≈882–926
+  // while the bar started at y≈873 — tapping "Nanny time off" landed on the
+  // Hours tab underneath instead. A fixed `paddingBottom: 100` (the old
+  // SCREEN_CONTENT_STYLE default) wasn't safe-area-aware and wasn't enough
+  // on every device; this screen must size its bottom padding off the real
+  // tab bar height + safe-area inset via useTabBarScrollPadding, not a
+  // reintroduced magic number. A pixel-accurate "is the last row now above
+  // the bar" assertion isn't practical without a real device/layout host —
+  // this pins the wiring instead.
+  it('REGRESSION: sizes scroll bottom padding off the tab bar height, not a static magic number', () => {
+    expect(screenSource).toContain('useTabBarScrollPadding');
+    expect(screenSource).toContain('paddingBottom: tabBarScrollPadding');
+  });
 });

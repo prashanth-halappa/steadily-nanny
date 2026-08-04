@@ -200,4 +200,17 @@ describe('ScheduleBuildScreen source', () => {
     // intermediate/ref-based tracker that could itself go stale.
     expect(onSendBody).toMatch(/onPatternCreated:\s*setPatternId/);
   });
+
+  it('REGRESSION: a non-parent role sees an honest not-available state with a back affordance, never a bare null', () => {
+    // The bug: `if (onboarding.role !== SETUP_ROLES.PARENT) { return null; }`
+    // left a deep-linked nanny/helper staring at a blank screen — no
+    // message, no back affordance, nothing.
+    expect(source).not.toMatch(
+      /if \(onboarding\.role !== SETUP_ROLES\.PARENT\) \{\s*return null;\s*\}/
+    );
+    expect(source).toContain('testID="schedule-build-not-available"');
+    expect(source).toContain('testID="schedule-build-not-available-back"');
+    expect(source).toContain("t('build.notAvailableTitle')");
+    expect(source).toContain("t('build.notAvailableDescription')");
+  });
 });

@@ -27,4 +27,20 @@ describe('ExtraShiftScreen', () => {
     expect(source).toContain('carer_id: carerId');
     expect(source).toContain('child_ids');
   });
+
+  it('REGRESSION: guards the form behind a client-side role check, not just the parent-gated button that reaches it', () => {
+    // The bug: this screen relied entirely on the caller (a parent-gated
+    // button) to keep a nanny out — the server rejects the request, but
+    // the client happily rendered the whole form and only failed on
+    // submit. Mirrors the guard SchedulePendingScreen/ScheduleBuildScreen
+    // use, with an honest not-available state instead of a bare null.
+    expect(source).toContain('isParentEditorRole');
+    expect(source).toContain('useIsOnboarded');
+    expect(source).toContain('testID="schedule-extra-shift-not-available"');
+    expect(source).toContain(
+      'testID="schedule-extra-shift-not-available-back"'
+    );
+    expect(source).toContain("t('shifts.extraNotAvailableTitle')");
+    expect(source).toContain("t('shifts.extraNotAvailableDescription')");
+  });
 });

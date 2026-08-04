@@ -53,7 +53,8 @@
     "eveningRecap": "Evening recap from your nanny",
     "saveAsMoment": "Save as moment",
     "savedAsMoment": "Saved as moment",
-    "tapHint": "Tap what your nanny should know",
+    "tapHintForNanny": "Tap what your nanny should know",
+    "tapHintForParent": "Tap what your family should know",
     "anythingElse": "Anything else?",
     "sentAt": "Sent {{time}}",
     "chips": {

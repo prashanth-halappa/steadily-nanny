@@ -65,6 +65,8 @@
   "householdSettings": {
     "manageTitle": "Ajustes del hogar",
     "manageSubtitle": "Actualiza el nombre, la zona horaria, la dirección y la política de aprobación de tu hogar.",
+    "notAvailableTitle": "No disponible",
+    "notAvailableDescription": "Los ajustes del hogar los gestiona un progenitor de este hogar.",
     "saveButton": "Guardar",
     "doneButton": "Listo",
     "savedToast": "Ajustes del hogar guardados",
@@ -94,6 +96,22 @@
     "approvalTimeoutLabel": "Tiempo límite de aprobación (minutos)",
     "shortNoticeHoursLabel": "Ventana de última hora (horas)",
     "cancellationPaidWithinHoursLabel": "Cancelación aún pagada dentro de (horas)"
+  },
+  "closures": {
+    "manageTitle": "Estamos de viaje",
+    "notAvailableTitle": "No disponible",
+    "notAvailableDescription": "Los cierres los gestiona un padre/madre de este hogar.",
+    "screenTitle": "Estamos de viaje",
+    "screenSubtitle": "Avisa al hogar cuando no se necesite cobertura — los cuidadores pueden ver estas fechas.",
+    "formTitle": "Añadir un cierre",
+    "messageLabel": "Nota para el hogar (opcional)",
+    "messagePlaceholder": "p. ej. Vacaciones de mitad de trimestre en Cornualles",
+    "submitButton": "Guardar cierre",
+    "createdToast": "Cierre guardado",
+    "deleteButton": "Eliminar",
+    "deletedToast": "Cierre eliminado",
+    "emptyTitle": "Aún no hay cierres",
+    "emptyDescription": "Las fechas que añadas aparecerán aquí."
   },
   "commitments": {
     "sectionTitle": "Compromisos",

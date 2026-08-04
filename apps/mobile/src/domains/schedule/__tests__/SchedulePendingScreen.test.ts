@@ -104,4 +104,24 @@ describe('SchedulePendingScreen', () => {
     expect(screenSource).toContain('exdates={pattern.exdates}');
     expect(screenSource).toContain('pauseRanges={pattern.pause_ranges}');
   });
+
+  it('REGRESSION: a non-parent/helper role sees an honest not-available state with a back affordance, never a bare null', () => {
+    // The bug: `if (!canViewParentSchedule(onboarding.role)) { return null; }`
+    // left a deep-linked nanny staring at a blank screen — no message, no
+    // back affordance, nothing.
+    expect(screenSource).not.toMatch(
+      /if \(!canViewParentSchedule\(onboarding\.role\)\) \{\s*return null;\s*\}/
+    );
+    expect(screenSource).toContain('testID="schedule-pending-not-available"');
+    expect(screenSource).toContain(
+      'testID="schedule-pending-not-available-back"'
+    );
+    expect(screenSource).toContain("t('pending.notAvailableTitle')");
+    expect(screenSource).toContain("t('pending.notAvailableDescription')");
+  });
+
+  it('REGRESSION: sizes scroll bottom padding off the tab bar height, not a static magic number (BUG1)', () => {
+    expect(screenSource).toContain('useTabBarScrollPadding');
+    expect(screenSource).toContain('paddingBottom: tabBarScrollPadding');
+  });
 });

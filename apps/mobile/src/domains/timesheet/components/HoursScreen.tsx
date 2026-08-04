@@ -40,6 +40,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ScrollView, View } from 'react-native';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
+import { useTabBarScrollPadding } from '@/lib/layout/useTabBarScrollPadding';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { H1 } from '@/src/components/ui/typography';
 import {
@@ -104,6 +105,11 @@ function weekOffsetFromSearchParam(
 export function HoursScreen() {
   const { t } = useTranslation('hours');
   const router = useRouter();
+  // Same tab-bar dead-zone fix as Settings (BUG1) — the floating tab bar
+  // overlays this screen's content instead of reserving its own layout
+  // space, so a fixed paddingBottom is not safe-area-aware. Threaded into
+  // both role views' FlashLists below, not just the empty-role ScrollView.
+  const tabBarScrollPadding = useTabBarScrollPadding();
   const onboarding = useIsOnboarded();
   // `useActiveHousehold` already fetches households internally (a cache hit,
   // not a second request) — this is the switcher-aware household, which for
@@ -220,7 +226,10 @@ export function HoursScreen() {
       <ScrollView
         testID="hours-screen"
         className="flex-1 bg-background"
-        contentContainerStyle={SCREEN_CONTENT_STYLE}
+        contentContainerStyle={{
+          ...SCREEN_CONTENT_STYLE,
+          paddingBottom: tabBarScrollPadding,
+        }}
       >
         <H1>{t('title')}</H1>
       </ScrollView>
