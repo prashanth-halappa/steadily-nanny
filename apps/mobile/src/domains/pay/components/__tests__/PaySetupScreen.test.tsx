@@ -1,0 +1,232 @@
+/**
+ * @module domains/pay/components/__tests__/PaySetupScreen
+ *
+ * D15 wiring test: renders the REAL `PaySetupScreen`. Covers the two
+ * differences from `PayChangeSheet` that make this its own screen: the
+ * effective-date default (day she joined, when in the past) and the
+ * required — never pre-selected — cancellation choice.
+ */
+import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
+import { fireEvent, waitFor } from '@testing-library/react-native';
+import { useAuthStore } from '@/src/store/auth';
+import { renderWithProviders } from '@/src/test-utils';
+
+let PaySetupScreen: typeof import('../PaySetupScreen').PaySetupScreen;
+
+mock.module('@/src/components/ui/loading-indicator', () => {
+  const React = require('react');
+  return {
+    LoadingIndicator: (props?: { testID?: string }) =>
+      React.createElement('View', {
+        testID: props?.testID ?? 'loading-indicator-container',
+      }),
+  };
+});
+mock.module('@/lib/animations/useReducedMotion', () => ({
+  useReducedMotion: mock(() => false),
+}));
+mock.module('@/lib/useColorScheme', () => ({
+  useColorScheme: () => ({
+    colorScheme: 'light' as const,
+    isDarkColorScheme: false,
+    setColorScheme: () => {},
+    toggleColorScheme: () => {},
+  }),
+}));
+
+const PARENT_USER_ID = 'parent-user-1';
+const NANNY_ID = 'nanny-a';
+const HOUSEHOLD_ID = 'household-1';
+const now = '2026-08-01T00:00:00.000Z';
+
+const baseHousehold = {
+  id: HOUSEHOLD_ID,
+  name: 'The Smiths',
+  timezone: 'UTC',
+  address_line: null,
+  latitude: null,
+  longitude: null,
+  approval_mode: 'either',
+  approval_scope: 'all',
+  approval_timeout_minutes: 60,
+  short_notice_hours: 24,
+  cancellation_paid_within_hours: 24,
+  created_by: PARENT_USER_ID,
+  created_at: now,
+  updated_at: now,
+};
+
+const parentMembership = {
+  id: 'member-1',
+  household_id: HOUSEHOLD_ID,
+  user_id: PARENT_USER_ID,
+  role: 'owner',
+  can_edit: true,
+  status: 'active',
+  display_name_override: null,
+  colour: null,
+  joined_at: now,
+  created_at: now,
+  updated_at: now,
+};
+
+function nannyMember(joinedAt: string) {
+  return {
+    id: 'member-nanny',
+    household_id: HOUSEHOLD_ID,
+    user_id: NANNY_ID,
+    role: 'nanny',
+    can_edit: false,
+    status: 'active',
+    display_name_override: 'Priya',
+    colour: null,
+    joined_at: joinedAt,
+    created_at: now,
+    updated_at: now,
+  };
+}
+
+const listMock = mock(() => Promise.resolve([baseHousehold]));
+const listMembersMock = mock(() =>
+  Promise.resolve([nannyMember('2026-07-01T00:00:00.000Z')])
+);
+const membershipsListMock = mock(() => Promise.resolve([parentMembership]));
+const payCreateMock = mock((_h: string, carerId: string, input: unknown) =>
+  Promise.resolve({ id: 'arr-1', carer_id: carerId, ...(input as object) })
+);
+const routerBack = mock();
+
+mock.module('expo-router', () => ({
+  useRouter: () => ({
+    push: mock(),
+    replace: mock(),
+    back: routerBack,
+    navigate: mock(),
+  }),
+  useLocalSearchParams: mock(() => ({ carerId: NANNY_ID })),
+  useSegments: mock(() => []),
+  usePathname: mock(() => ''),
+  useFocusEffect: mock(() => {}),
+  Link: 'Link',
+  Redirect: 'Redirect',
+  Stack: { Screen: 'StackScreen' },
+  Tabs: { Screen: 'TabsScreen' },
+}));
+
+mock.module('@/src/api/endpoints/household', () => ({
+  householdApi: { list: listMock, listMembers: listMembersMock },
+}));
+mock.module('@/src/api/endpoints/user', () => ({
+  userApi: { listMemberships: membershipsListMock },
+}));
+mock.module('@/src/api/endpoints/payArrangements', () => ({
+  payArrangementApi: {
+    getCurrent: mock(() => Promise.resolve(null)),
+    getHistory: mock(() => Promise.resolve([])),
+    create: payCreateMock,
+  },
+}));
+
+beforeAll(async () => {
+  PaySetupScreen = (await import('../PaySetupScreen')).PaySetupScreen;
+});
+
+beforeEach(() => {
+  listMock.mockReset();
+  listMembersMock.mockReset();
+  membershipsListMock.mockReset();
+  payCreateMock.mockReset();
+  routerBack.mockClear();
+
+  listMock.mockImplementation(() => Promise.resolve([baseHousehold]));
+  listMembersMock.mockImplementation(() =>
+    Promise.resolve([nannyMember('2026-07-01T00:00:00.000Z')])
+  );
+  membershipsListMock.mockImplementation(() =>
+    Promise.resolve([parentMembership])
+  );
+  payCreateMock.mockImplementation(
+    (_h: string, carerId: string, input: unknown) =>
+      Promise.resolve({ id: 'arr-1', carer_id: carerId, ...(input as object) })
+  );
+
+  useAuthStore.setState({
+    session: { user: { id: PARENT_USER_ID } } as unknown as never,
+    user: { id: PARENT_USER_ID } as unknown as never,
+    isInitialized: true,
+  } as never);
+});
+
+describe('PaySetupScreen', () => {
+  it('renders the real form with the setup-specific title/subtitle and every field', async () => {
+    const { getByTestId } = renderWithProviders(<PaySetupScreen />);
+
+    await waitFor(() =>
+      expect(getByTestId('pay-setup-rate-input')).toBeTruthy()
+    );
+    expect(getByTestId('pay-setup-chip-today')).toBeTruthy();
+    expect(getByTestId('pay-setup-chip-earlier')).toBeTruthy();
+    expect(getByTestId('pay-setup-overtime-threshold-input')).toBeTruthy();
+    expect(getByTestId('pay-setup-guaranteed-hours-input')).toBeTruthy();
+    expect(getByTestId('pay-setup-pto-hours-input')).toBeTruthy();
+    expect(getByTestId('pay-setup-mileage-rate-input')).toBeTruthy();
+    expect(getByTestId('pay-setup-cancellation-chip-window')).toBeTruthy();
+    expect(getByTestId('pay-setup-cancellation-chip-none')).toBeTruthy();
+  });
+
+  it('defaults the effective date to the day she joined, since it is in the past', async () => {
+    const { getByTestId } = renderWithProviders(<PaySetupScreen />);
+
+    await waitFor(() =>
+      expect(getByTestId('pay-setup-chip-earlier').props.variant).toBe(
+        'default'
+      )
+    );
+    expect(getByTestId('pay-setup-date-input').props.value).toBe('2026-07-01');
+  });
+
+  it('the cancellation choice starts unselected — Save stays disabled until one is picked', async () => {
+    const { getByTestId } = renderWithProviders(<PaySetupScreen />);
+
+    await waitFor(() =>
+      expect(getByTestId('pay-setup-rate-input')).toBeTruthy()
+    );
+    expect(
+      getByTestId('pay-setup-cancellation-chip-window').props.variant
+    ).toBe('outline');
+    expect(getByTestId('pay-setup-cancellation-chip-none').props.variant).toBe(
+      'outline'
+    );
+    expect(getByTestId('pay-setup-screen-cta').props.disabled).toBe(true);
+
+    fireEvent.changeText(getByTestId('pay-setup-rate-input'), '18.50');
+    expect(getByTestId('pay-setup-screen-cta').props.disabled).toBe(true);
+
+    fireEvent.press(getByTestId('pay-setup-cancellation-chip-none'));
+    expect(getByTestId('pay-setup-screen-cta').props.disabled).toBe(false);
+  });
+
+  it('saves through the real mutation and returns on success', async () => {
+    const { getByTestId } = renderWithProviders(<PaySetupScreen />);
+
+    await waitFor(() =>
+      expect(getByTestId('pay-setup-rate-input')).toBeTruthy()
+    );
+    fireEvent.changeText(getByTestId('pay-setup-rate-input'), '18.50');
+    fireEvent.press(getByTestId('pay-setup-cancellation-chip-none'));
+    fireEvent.press(getByTestId('pay-setup-screen-cta'));
+
+    await waitFor(() =>
+      expect(payCreateMock).toHaveBeenCalledWith(
+        HOUSEHOLD_ID,
+        NANNY_ID,
+        expect.objectContaining({
+          rate_minor: 1850,
+          valid_from: '2026-07-01',
+          cancellation_paid_within_hours: null,
+        })
+      )
+    );
+    await waitFor(() => expect(routerBack).toHaveBeenCalled());
+  });
+});

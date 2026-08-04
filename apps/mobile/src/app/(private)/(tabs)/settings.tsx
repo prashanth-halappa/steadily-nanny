@@ -276,6 +276,11 @@ export default function SettingsScreen() {
                 onPress={() => router.push('/settings/household' as Href)}
               />
               <SettingsNavRow
+                testID="settings-pay"
+                label={t('pay:title')}
+                onPress={() => router.push('/settings/pay' as Href)}
+              />
+              <SettingsNavRow
                 testID="settings-view-availability"
                 label={t('settings:carerAvailability')}
                 onPress={() =>
@@ -304,6 +309,15 @@ export default function SettingsScreen() {
                 label={t('household:availability.manageTitle')}
                 onPress={() => router.push('/settings/availability' as Href)}
               />
+              {/* Nanny only — a helper has no access to pay at all
+                  (docs/TIER0-CX-SPEC.md §8 "Helper role"). */}
+              {onboarding.role === SETUP_ROLES.NANNY ? (
+                <SettingsNavRow
+                  testID="settings-my-pay"
+                  label={t('pay:myPay.title')}
+                  onPress={() => router.push('/settings/my-pay' as Href)}
+                />
+              ) : null}
               <SettingsNavRow
                 testID="settings-request-time-off"
                 label={t('timeOff:screenTitle')}

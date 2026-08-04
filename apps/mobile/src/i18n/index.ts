@@ -14,6 +14,8 @@
  *   setup wizard and their post-onboarding Settings entry points
  * - timeOff:   the nanny-only time-off request/list/cancel screen
  * - inbox:     pending-work "needs attention" surface
+ * - pay:       pay arrangements — parent's "Pay & terms" (current terms,
+ *   change sheet, first-time setup) and the nanny's read-only "My pay"
  *
  * Language resolution order (each candidate validated vs SUPPORTED_LANGUAGES):
  *   1. MMKV-persisted preference from the `language-storage` Zustand store
@@ -37,6 +39,7 @@ import enErrors from './locales/en/errors.json';
 import enHours from './locales/en/hours.json';
 import enHousehold from './locales/en/household.json';
 import enInbox from './locales/en/inbox.json';
+import enPay from './locales/en/pay.json';
 import enSchedule from './locales/en/schedule.json';
 import enSettings from './locales/en/settings.json';
 import enTimeOff from './locales/en/timeOff.json';
@@ -48,6 +51,7 @@ import esErrors from './locales/es/errors.json';
 import esHours from './locales/es/hours.json';
 import esHousehold from './locales/es/household.json';
 import esInbox from './locales/es/inbox.json';
+import esPay from './locales/es/pay.json';
 import esSchedule from './locales/es/schedule.json';
 import esSettings from './locales/es/settings.json';
 import esTimeOff from './locales/es/timeOff.json';
@@ -67,6 +71,7 @@ const resources = {
     household: enHousehold,
     timeOff: enTimeOff,
     inbox: enInbox,
+    pay: enPay,
   },
   es: {
     common: esCommon,
@@ -80,6 +85,7 @@ const resources = {
     household: esHousehold,
     timeOff: esTimeOff,
     inbox: esInbox,
+    pay: esPay,
   },
 };
 

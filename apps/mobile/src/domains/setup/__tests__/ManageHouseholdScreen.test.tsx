@@ -214,10 +214,18 @@ const listMock = mock(() => Promise.resolve([baseHousehold]));
 const updateMock = mock((_id: string, input: unknown) =>
   Promise.resolve({ ...baseHousehold, ...(input as object) })
 );
+const listMembersMock = mock<() => Promise<unknown[]>>(() =>
+  Promise.resolve([])
+);
 const childrenListMock = mock(() =>
   Promise.resolve([{ id: 'child-1', name: 'Ada', age: 4 }])
 );
-const membershipsListMock = mock(() =>
+// PaySetupPromptCard's own hook — resolves `null` (no arrangement) by
+// default so the card renders whenever a test supplies an active nanny.
+const payCurrentMock = mock<() => Promise<unknown>>(() =>
+  Promise.resolve(null)
+);
+const membershipsListMock = mock<() => Promise<unknown[]>>(() =>
   Promise.resolve([
     {
       id: 'member-1',
@@ -236,13 +244,24 @@ const membershipsListMock = mock(() =>
 );
 
 mock.module('@/src/api/endpoints/household', () => ({
-  householdApi: { list: listMock, update: updateMock },
+  householdApi: {
+    list: listMock,
+    update: updateMock,
+    listMembers: listMembersMock,
+  },
 }));
 mock.module('@/src/api/endpoints/children', () => ({
   childrenApi: { list: childrenListMock },
 }));
 mock.module('@/src/api/endpoints/user', () => ({
   userApi: { listMemberships: membershipsListMock },
+}));
+mock.module('@/src/api/endpoints/payArrangements', () => ({
+  payArrangementApi: {
+    getCurrent: payCurrentMock,
+    getHistory: mock(() => Promise.resolve([])),
+    create: mock(),
+  },
 }));
 
 beforeAll(async () => {
@@ -253,8 +272,12 @@ beforeAll(async () => {
 beforeEach(() => {
   listMock.mockReset();
   updateMock.mockReset();
+  listMembersMock.mockReset();
   childrenListMock.mockReset();
   membershipsListMock.mockReset();
+  payCurrentMock.mockReset();
+  listMembersMock.mockImplementation(() => Promise.resolve([]));
+  payCurrentMock.mockImplementation(() => Promise.resolve(null));
   listMock.mockImplementation(() => Promise.resolve([baseHousehold]));
   updateMock.mockImplementation((_id: string, input: unknown) =>
     Promise.resolve({ ...baseHousehold, ...(input as object) })
@@ -407,5 +430,92 @@ describe('ManageHouseholdScreen', () => {
 
     // Must not throw — proves the back affordance is a real callback.
     fireEvent.press(getByTestId('manage-household-not-available-back'));
+  });
+
+  // TIER0-CX-SPEC.md §2 "First-time setup", entry point 1.
+  describe('pay setup prompt card', () => {
+    const activeNannyMember = {
+      id: 'member-3',
+      household_id: HOUSEHOLD_ID,
+      user_id: 'nanny-with-no-arrangement',
+      role: 'nanny',
+      can_edit: false,
+      status: 'active',
+      display_name_override: 'Priya',
+      colour: null,
+      joined_at: now,
+      created_at: now,
+      updated_at: now,
+    };
+
+    it('appears for an active nanny with no pay arrangement', async () => {
+      listMembersMock.mockImplementation(() =>
+        Promise.resolve([activeNannyMember])
+      );
+      payCurrentMock.mockImplementation(() => Promise.resolve(null));
+
+      const { getByTestId } = renderWithProviders(<ManageHouseholdScreen />);
+
+      await waitFor(() =>
+        expect(
+          getByTestId(`pay-setup-prompt-${activeNannyMember.user_id}`)
+        ).toBeTruthy()
+      );
+    });
+
+    it('does not appear once that nanny already has an arrangement', async () => {
+      listMembersMock.mockImplementation(() =>
+        Promise.resolve([activeNannyMember])
+      );
+      payCurrentMock.mockImplementation(() =>
+        Promise.resolve({
+          id: 'arr-1',
+          household_id: HOUSEHOLD_ID,
+          carer_id: activeNannyMember.user_id,
+          rate_minor: 1850,
+          bill_rate_minor: null,
+          currency: 'GBP',
+          overtime_threshold_minutes: null,
+          overtime_multiplier: 1.5,
+          guaranteed_minutes_per_week: null,
+          pto_entitlement_minutes_per_year: null,
+          mileage_rate_per_mile_minor: null,
+          cancellation_paid_within_hours: null,
+          valid_from: '2026-04-01',
+          carer_display_name: 'Priya',
+          note: null,
+          created_by: PARENT_USER_ID,
+          created_at: now,
+        })
+      );
+
+      const { getByTestId, queryByTestId } = renderWithProviders(
+        <ManageHouseholdScreen />
+      );
+
+      await waitFor(() =>
+        expect(getByTestId('household-name-input')).toBeTruthy()
+      );
+      expect(
+        queryByTestId(`pay-setup-prompt-${activeNannyMember.user_id}`)
+      ).toBeNull();
+    });
+
+    it('does not appear for a removed (inactive) nanny', async () => {
+      listMembersMock.mockImplementation(() =>
+        Promise.resolve([{ ...activeNannyMember, status: 'removed' }])
+      );
+
+      const { getByTestId, queryByTestId } = renderWithProviders(
+        <ManageHouseholdScreen />
+      );
+
+      await waitFor(() =>
+        expect(getByTestId('household-name-input')).toBeTruthy()
+      );
+      expect(
+        queryByTestId(`pay-setup-prompt-${activeNannyMember.user_id}`)
+      ).toBeNull();
+    });
   });
 });

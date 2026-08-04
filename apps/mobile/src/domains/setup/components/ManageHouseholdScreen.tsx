@@ -61,9 +61,11 @@ import { Label } from '@/src/components/ui/label';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { Text } from '@/src/components/ui/text';
 import { Body, Small } from '@/src/components/ui/typography';
+import { PaySetupPromptCard } from '@/src/domains/pay/components/PaySetupPromptCard';
 import { isParentEditorRole } from '@/src/domains/setup/types';
 import { findTimezoneOption } from '@/src/domains/setup/utils/timezones';
 import { useUpdateHousehold } from '@/src/hooks/mutations/useUpdateHousehold';
+import { useHouseholdMembers } from '@/src/hooks/queries/useHouseholdMembers';
 import { useHouseholds } from '@/src/hooks/queries/useHouseholds';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 import { showSuccessToast } from '@/src/lib/toast';
@@ -95,12 +97,22 @@ export function ManageHouseholdScreen() {
   const router = useRouter();
   const { t } = useTranslation('household');
   const { t: tCommon } = useTranslation('common');
+  const { t: tSettings } = useTranslation('settings');
   const onboarding = useIsOnboarded();
   const households = useHouseholds();
   const updateHousehold = useUpdateHousehold();
 
   const household =
     households.data?.find(h => h.id === onboarding.householdId) ?? null;
+  // TIER0-CX-SPEC.md §2 "First-time setup", entry point 1: one prompt card
+  // per active nanny with no pay arrangement. `PaySetupPromptCard` itself
+  // decides (per carer) whether it has anything to say — see its own header
+  // comment for why the per-carer hook call has to live in its own
+  // component instance rather than a hook called inside this `.map`.
+  const members = useHouseholdMembers(household?.id ?? null);
+  const activeNannies = (members.data ?? []).filter(
+    m => m.role === 'nanny' && m.status === 'active'
+  );
 
   const [name, setName] = useState('');
   const [addressLine, setAddressLine] = useState('');
@@ -277,6 +289,21 @@ export function ManageHouseholdScreen() {
       onBack={() => router.back()}
       backLabel={tCommon('back')}
     >
+      {household && activeNannies.length > 0 ? (
+        <View testID="pay-setup-prompt-cards">
+          {activeNannies.map(nanny => (
+            <PaySetupPromptCard
+              key={nanny.id}
+              householdId={household.id}
+              carerId={nanny.user_id}
+              carerName={
+                nanny.display_name_override?.trim() || tSettings('role.nanny')
+              }
+            />
+          ))}
+        </View>
+      ) : null}
+
       <View className="gap-2">
         <Label>{t('householdSettings.nameLabel')}</Label>
         <Input
