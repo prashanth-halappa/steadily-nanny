@@ -9,6 +9,7 @@
  */
 
 import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types/schemas/notification.schema';
+import type { PayArrangement } from '@steadily-nanny/shared-types/schemas/payArrangement.schema';
 import type {
   Shift,
   ShiftChangeRequest,
@@ -42,6 +43,7 @@ import {
   NotAHouseholdParentError,
 } from '../../household';
 import { notifyHouseholdParents, notifyUser } from '../../notification';
+import { PayArrangementRepository } from '../../pay/repositories/payArrangementRepository';
 import {
   ChangeRequestNotPendingError,
   InvalidChangeRequestKindForRoleError,
@@ -139,15 +141,53 @@ function isCancellationPaid(
 }
 
 /**
+ * The three-arm cancellation-pay rule (owner decision 5, review finding 10).
+ * `arrangement` is the carer's pay arrangement effective on the SHIFT's
+ * household-local start date — never the accept date, never today — fetched
+ * by the caller (`respond`) before `planAcceptedChange` runs, so this stays
+ * pure and synchronous:
+ *
+ * 1. Arrangement exists, window is a number → that window governs, full stop
+ *    (even if the household's own column would say otherwise).
+ * 2. Arrangement exists, window is explicitly `null` → NOT paid. This is a
+ *    deliberate no-cancellation-pay agreement, not the absence of one, and it
+ *    overrides the household fallback even when the household's window would
+ *    have covered this cancellation.
+ * 3. No arrangement at all → fall back to `household.cancellation_paid_within_hours`
+ *    (legacy behaviour, including its `0`-means-no-pay semantics — `0` is
+ *    never greater than `hoursUntilStart`, so `isCancellationPaid` already
+ *    resolves that case correctly without special-casing it here).
+ */
+function resolveCancellationPaid(
+  startsAt: string,
+  arrangement: PayArrangement | null,
+  household: Household
+): boolean {
+  if (arrangement) {
+    return (
+      arrangement.cancellation_paid_within_hours !== null &&
+      isCancellationPaid(startsAt, arrangement.cancellation_paid_within_hours)
+    );
+  }
+  return isCancellationPaid(startsAt, household.cancellation_paid_within_hours);
+}
+
+/**
  * Pure planner: RPC args for accept + the day-thread events the RPC inserts in
  * the same transaction. The events carry no `local_date` — see
  * `ShiftEventRpcInsert` for why the day thread is the RPC's to resolve.
+ *
+ * `arrangement` has no default and is never optional: callers must be
+ * explicit about arm 3 (no arrangement) by passing `null` rather than
+ * omitting the argument — this is what a nanny gets paid, and a silently
+ * `undefined` arrangement is not an acceptable way to reach the fallback.
  */
 export function planAcceptedChange(
   userId: string,
   request: ShiftChangeRequest,
   shift: ShiftWithChildren,
   household: Household,
+  arrangement: PayArrangement | null,
   responseMessage: string | null | undefined
 ): {
   rpcArgs: AcceptShiftChangeRequestRpcArgs;
@@ -177,9 +217,10 @@ export function planAcceptedChange(
   };
 
   if (request.kind === SHIFT_CHANGE_REQUEST_KINDS.CANCEL) {
-    const cancellationPaid = isCancellationPaid(
+    const cancellationPaid = resolveCancellationPaid(
       shift.starts_at,
-      household.cancellation_paid_within_hours
+      arrangement,
+      household
     );
     rpcArgs.p_set_cancel = true;
     rpcArgs.p_cancelled_at = new Date().toISOString();
@@ -258,7 +299,8 @@ export class ShiftChangeRequestCommandService {
     private readonly queries: ShiftChangeRequestQueryService = shiftChangeRequestQueryService,
     private readonly shiftQueries: ShiftQueryService = shiftQueryService,
     private readonly gate: ApprovalGateService = approvalGateService,
-    private readonly children: ChildQueryService = childQueryService
+    private readonly children: ChildQueryService = childQueryService,
+    private readonly payArrangementRepo: PayArrangementRepository = new PayArrangementRepository()
   ) {}
 
   /**
@@ -663,11 +705,25 @@ export class ShiftChangeRequestCommandService {
 
     if (input.status === SHIFT_CHANGE_REQUEST_STATUSES.ACCEPTED) {
       const household = await this.requireHousehold(shift.household_id);
+      // Only the cancel branch reads the arrangement, and it must be the one
+      // effective on the SHIFT's household-local start date — not today, not
+      // the accept date, since a rate/window change can land between the two
+      // (owner decision 5, review finding 10). Skip the lookup for other
+      // kinds and for an unassigned shift, where no arrangement can exist.
+      const arrangement =
+        request.kind === SHIFT_CHANGE_REQUEST_KINDS.CANCEL && shift.carer_id
+          ? await this.payArrangementRepo.effectiveOn(
+              shift.household_id,
+              shift.carer_id,
+              shift.local_date
+            )
+          : null;
       const { rpcArgs, events: applyEvents } = planAcceptedChange(
         userId,
         request,
         shift,
         household,
+        arrangement,
         input.message
       );
       const rpcEvents: ShiftEventRpcInsert[] = [

@@ -178,6 +178,15 @@ function makeChildren(overrides: Record<string, unknown> = {}): any {
   };
 }
 
+// Arm 3 by default (no arrangement) — the pre-existing household-fallback
+// behaviour every non-cancellation-focused test in this file relies on.
+function makePayArrangementRepo(overrides: Record<string, unknown> = {}): any {
+  return {
+    effectiveOn: mock(async () => null),
+    ...overrides,
+  };
+}
+
 function makeSvc(
   overrides: {
     changeRequestRepo?: any;
@@ -189,6 +198,7 @@ function makeSvc(
     shiftQueries?: any;
     gate?: any;
     children?: any;
+    payArrangementRepo?: any;
   } = {}
 ) {
   return new ShiftChangeRequestCommandService(
@@ -200,7 +210,8 @@ function makeSvc(
     overrides.queries ?? makeQueries(),
     overrides.shiftQueries ?? makeShiftQueries(),
     overrides.gate ?? makeGate(),
-    overrides.children ?? makeChildren()
+    overrides.children ?? makeChildren(),
+    overrides.payArrangementRepo ?? makePayArrangementRepo()
   );
 }
 
@@ -718,6 +729,80 @@ describe('ShiftChangeRequestCommandService.respond', () => {
     await expect(
       svc.respond('carer-1', 'cr1', { status: 'declined' })
     ).rejects.toBeInstanceOf(ChangeRequestNotPendingError);
+  });
+});
+
+describe('ShiftChangeRequestCommandService.respond — cancellation window repoint', () => {
+  // Owner decision 5 / review finding 10: the effective arrangement is
+  // selected by the SHIFT's household-local start date, never the accept
+  // date. A rate/window change landing between the two must not leak into
+  // this cancellation.
+  it('fetches the arrangement effective on the SHIFT local date, not today/accept date, and that arrangement governs', async () => {
+    const shiftDateArrangement = {
+      id: 'arr-old',
+      household_id: 'h1',
+      carer_id: 'carer-1',
+      cancellation_paid_within_hours: 24,
+    };
+    // A later arrangement effective as of "today" (the accept date) with a
+    // deliberately different answer (unpaid) — if the service wrongly asked
+    // for "today" instead of the shift's local date, this is what it would
+    // wrongly get back.
+    const acceptDateArrangement = {
+      id: 'arr-new',
+      household_id: 'h1',
+      carer_id: 'carer-1',
+      cancellation_paid_within_hours: null,
+    };
+    const payArrangementRepo = makePayArrangementRepo({
+      effectiveOn: mock(async (_h: string, _c: string, date: string) =>
+        date === '2026-08-03' ? shiftDateArrangement : acceptDateArrangement
+      ),
+    });
+    const soonShift: ShiftWithChildren = {
+      ...shift,
+      local_date: '2026-08-03',
+      starts_at: new Date(Date.now() + 3_600_000).toISOString(),
+    };
+    const changeRequestRepo = makeChangeRequestRepo();
+    const svc = makeSvc({
+      changeRequestRepo,
+      payArrangementRepo,
+      shiftQueries: makeShiftQueries({ getOwned: mock(async () => soonShift) }),
+    });
+
+    await svc.respond('carer-1', 'cr1', { status: 'accepted' });
+
+    expect(payArrangementRepo.effectiveOn).toHaveBeenCalledWith(
+      'h1',
+      'carer-1',
+      '2026-08-03'
+    );
+    // Governed by the shift-date arrangement's window (24h, and the shift is
+    // an hour away) — NOT the accept-date arrangement's null window, which
+    // would have produced `false`.
+    expect(changeRequestRepo.acceptAndApply).toHaveBeenCalledWith(
+      expect.objectContaining({ p_cancellation_paid: true })
+    );
+  });
+
+  it('does not look up an arrangement for a non-cancel accepted kind', async () => {
+    const counterRequest = {
+      ...pendingRequest,
+      requested_by: 'carer-1',
+      kind: 'counter_offer' as const,
+      proposed_starts_at: '2026-08-03T09:00:00.000Z',
+      proposed_ends_at: '2026-08-03T18:00:00.000Z',
+    };
+    const payArrangementRepo = makePayArrangementRepo();
+    const svc = makeSvc({
+      queries: makeQueries({ getOwned: mock(async () => counterRequest) }),
+      payArrangementRepo,
+    });
+
+    await svc.respond('parent-2', 'cr1', { status: 'accepted' });
+
+    expect(payArrangementRepo.effectiveOn).not.toHaveBeenCalled();
   });
 });
 
