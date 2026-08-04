@@ -281,7 +281,11 @@ Contents, `px-6 pb-4 gap-4`:
 | regular (split) | "Hours worked" ×2 rows | "12h 00m at £18.50 (to Wed 3 Sep)" / "26h 00m at £19.50 (from Thu 4 Sep)" |
 | overtime | "Overtime pay" | "3h 00m at £27.75 (1.5×)" |
 | cancellation_paid | "Cancelled with short notice" | "4h 00m at £18.50 · paid under your cancellation policy" |
-| manual_adjustment | "Adjustment" | the entry note |
+<!-- manual_adjustment is NOT an earnings line: the engine folds it into
+     worked minutes (a clock-span correction of worked time), so a separate
+     priced row would double-count it. Adjustments are visible in the hours
+     record itself. (Amended after the engine implementation caught the
+     double-count.) -->
 | pto | "Paid time off" | "8h 00m at £18.50" |
 | guaranteed_topup | "Guaranteed hours top-up" | "4h 00m to reach the agreed 40h" |
 

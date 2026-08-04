@@ -474,8 +474,11 @@ Pure function first, service wrapper second (test the function exhaustively,
 
 Input: the week's `time_entries` (with `kind`, minutes, `local_date`), the
 arrangements effective across the week, household closure days, the carer's
-time-off days, the guaranteed-minutes config, and (Phase 3+) the week's PTO
-usage. Definitions the engine states in code and tests, not in prose (review
+closure-day shifts, the guaranteed-minutes config, and (Phase 3+) the week's
+PTO usage. (Carer time-off is deliberately NOT an input — the closure-only
+topup ruling made it irrelevant. And until Phase 3 prices a `pto` line, the
+wrapper MUST pass zero PTO minutes: non-zero would suppress a topup without
+paying anything for the PTO.) Definitions the engine states in code and tests, not in prose (review
 findings 4 and 12):
 
 - **Worked minutes** = `worked` + `manual_adjustment` entries (an adjustment
@@ -493,9 +496,12 @@ Output line items:
 
 - `regular` — worked minutes up to the overtime threshold × rate.
 - `overtime` — worked minutes past `overtime_threshold_minutes` in the week ×
-  rate × multiplier. Weekly basis only (decision 8). Uses the arrangement
-  effective on each entry's `local_date`; a mid-week raise means two rates in
-  one week — the case table must include it. An overnight entry belongs
+  rate × multiplier. Weekly basis only (decision 8). Per-entry *rates* use the
+  arrangement effective on each entry's `local_date` (a mid-week raise means
+  two rates in one week — in the case table); the *threshold and multiplier*
+  — weekly terms that cannot coherently vary per-day — come from the
+  arrangement effective on the week's **last worked day** (engine-documented
+  decision, pinned by a test). An overnight entry belongs
   wholly to its clock-in `local_date` (the 017 trigger), so an entry spanning
   a rate-change midnight prices at the old rate — in the case table too.
 - `cancellation_paid` — the existing kind, finally priced.
