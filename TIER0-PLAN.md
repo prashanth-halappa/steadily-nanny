@@ -365,7 +365,9 @@ the migration header, implement it in exactly one repository method, and put
 the same-day-correction case in `effectiveOn`'s red-first case table.
 
 RLS (**house pattern for API-mediated money tables — select-only**, review
-finding 3): select via `(select private.can_read_household(household_id))` —
+finding 3): select via `private.can_read_household(household_id)` — called
+**bare, never `(select ...)`-wrapped** (040's rule: the initplan optimisation
+lives inside the helper; the wrapped form has never existed in this repo) —
 the carer is a member, so she can always see her own terms (deliberate: opaque
 pay is the disease). **No insert/update/delete policies at all** — writes go
 through the API under the service role, exactly like `shifts` (015) and

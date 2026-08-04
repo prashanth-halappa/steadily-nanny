@@ -202,8 +202,11 @@ these definitions exactly, not an approximation:
 ## 8. RLS on money tables: select-only, service-role writes
 
 `pay_arrangements`, `pto_ledger`, and `expenses` all follow one RLS stance:
-a **select** policy via `(select private.can_read_household(household_id))`
-— every member, including the carer whose own terms they are, can read —
+a **select** policy via `private.can_read_household(household_id)` — called
+bare, never `(select ...)`-wrapped; migration 040's rule is that the initplan
+optimisation lives *inside* the helpers, and the wrapped form has never
+existed in this repo — every member, including the carer whose own terms they
+are, can read —
 and **no insert/update/delete policy at all**. Every write goes through the
 API under the service role, exactly like `shifts` and `time_entries`.
 
