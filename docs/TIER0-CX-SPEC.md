@@ -62,9 +62,10 @@ never a bare `<Modal>` (GOLDEN-FIXES #1). Confirmations that must block:
   Thin route → `domains/pay/components/PayArrangementScreen.tsx`.
 - Route `apps/mobile/src/app/(private)/settings/pay/[carerId].tsx` →
   `/settings/pay/{carerId}` for the second-nanny case.
-- `/settings/pay` resolves carers from `useHouseholdMembers` (roles `nanny` /
-  `helper`, `status === 'active'`, the filter `carer-availability.tsx:25`
-  already uses). **One carer → render her terms inline**, no intermediate list.
+- `/settings/pay` resolves carers from `useHouseholdMembers`, filtering
+  `role === 'nanny' && status === 'active'` — write this filter fresh; do
+  **not** copy `carer-availability.tsx:25`, which takes the *first* nanny-or-
+  helper match with no status check (review finding 15). **One carer → render her terms inline**, no intermediate list.
   **Two or more → a picker list**, each a `rounded-row bg-card` +
   `elevation.row` row (copy the `SettingsNavRow` shape at `settings.tsx:50-83`)
   showing name and `£18.50/hr` right-aligned `tabular`, pushing to
@@ -135,9 +136,12 @@ Fields, `gap-4`, each `Label` + control:
    calendar year."**; Mileage → **"Used to price mileage on expenses."**
 5. **Cancellations** — two chips: **"Paid if cancelled within…"** (reveals an
    hours input, numeric, default = the household's current
-   `cancellation_paid_within_hours`) and **"No cancellation pay"**. One is
-   always selected — this term has no blank state; the setup flow (below)
-   forces the choice once, kindly.
+   `cancellation_paid_within_hours`) and **"No cancellation pay"**. A
+   household window of **`0` pre-selects the "No cancellation pay" chip**
+   (review finding 10 — the household column allows 0 = no pay; the
+   arrangement models that as null, never 0). One chip is always selected —
+   this term has no blank state; the setup flow (below) forces the choice
+   once, kindly.
 6. **Note (optional)** — `Textarea`, placeholder "e.g. Annual review".
 
 **Mid-week consequence line.** Whenever the chosen date is not a Monday, render
@@ -179,6 +183,11 @@ than a "change". Differences from the change sheet:
    red — it's an invitation, not an error.
 2. Every no-arrangement empty state in this spec (§2 States, §4.4 parent arm)
    routes its CTA here rather than to the change sheet.
+
+**Manage household note (review finding 10):** `ManageHouseholdScreen` still
+edits the household-level cancellation window. Once any arrangement exists it
+is only the fallback, so that control gains `Small` muted copy: **"Applies
+until a nanny's own pay terms are set — those take over from there."**
 
 ### States
 
@@ -270,7 +279,7 @@ Contents, `px-6 pb-4 gap-4`:
 |---|---|---|
 | regular | "Hours worked" | "38h 00m at £18.50" |
 | regular (split) | "Hours worked" ×2 rows | "12h 00m at £18.50 (to Wed 3 Sep)" / "26h 00m at £19.50 (from Thu 4 Sep)" |
-| overtime | "Overtime" | "3h 00m at £27.75 (1.5×)" |
+| overtime | "Overtime pay" | "3h 00m at £27.75 (1.5×)" |
 | cancellation_paid | "Cancelled with short notice" | "4h 00m at £18.50 · paid under your cancellation policy" |
 | manual_adjustment | "Adjustment" | the entry note |
 | pto | "Paid time off" | "8h 00m at £18.50" |
@@ -278,6 +287,12 @@ Contents, `px-6 pb-4 gap-4`:
 
 - Total row: `rounded-cell bg-muted px-4 py-3`, label `H4` **"Gross pay"**,
   amount `H4 tabular`.
+- **Two "overtime"s must not coexist** (review finding 12): `WeekTotal`
+  already renders an `overtimeLabel` — the worked-vs-scheduled *delta* — on
+  the same card the money line joins. Once paid overtime exists, that delta
+  must stop using the word: retitle its copy to the **"vs scheduled"** form
+  (e.g. "2h over scheduled") so "Overtime pay" is the only "overtime" on the
+  screen.
 - When reimbursements exist: below the total, `Small` muted
   **"Expenses are listed separately and are not part of gross pay."**
 - Footer `Small` muted, always: **"Based on the hours recorded in Steadily.
@@ -486,7 +501,9 @@ appears in the same visual block as gross.
 | **Rejected expense** | Row stays, `declined` pill, reason shown, excluded from the reimbursement subtotal, not re-submittable — she adds a new one. |
 | **Helper role** | Sees the parent statement read-only (`readOnly` at `ParentWeekView.tsx:68`), including gross. No approve, no expense review, no access to `/settings/pay`. |
 | **Nanny with two families** | Hours/earnings are per active household (`useActiveHousehold`) and already switch with `HouseholdSwitcher`. Cross-family surfaces stay anonymised (§5.2). |
-| **Deleted carer account** | `carer_id` goes null (migration 033 discipline); history rows fall back to `carer_display_name`. Pay history must still render. |
+| **Deleted carer account** | `carer_id` goes null (migration 033 discipline); history rows fall back to `carer_display_name` (a snapshot column on every money table). Pay history must still render. |
+| **Departed/deleted carer's unapproved week** | Renders hours-only with `Small` muted **"{Name} is no longer in this household, so this week can't be totalled."** — never the set-a-rate nudge, whose CTA the parent cannot complete (the service requires an active member). |
+| **Week approved before earnings existed** | An `approved` week with no frozen snapshot (approved before the earnings update shipped) renders hours only — no money line at all. A live-computed figure must never appear under an "Approved" label. |
 | **Long amounts** | `£1,234,567.89` must not truncate the label. `WeekEarningsLine` label gets `flex-1`, amount `flex-shrink-0` — the audit's `StatusPill` overflow (#29) is the failure mode to avoid. |
 
 ---
