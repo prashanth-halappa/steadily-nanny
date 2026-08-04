@@ -15,6 +15,7 @@ describe('notification.schema push types', () => {
     expect(ALL_PUSH_NOTIFICATION_TYPES).toContain('carer_time_off_conflict');
     expect(ALL_PUSH_NOTIFICATION_TYPES).toContain('timesheet_queried');
     expect(ALL_PUSH_NOTIFICATION_TYPES).toContain('schedule_pattern_sent');
+    expect(ALL_PUSH_NOTIFICATION_TYPES).toContain('pay_terms_set');
   });
 
   it('parses each const-map value', () => {

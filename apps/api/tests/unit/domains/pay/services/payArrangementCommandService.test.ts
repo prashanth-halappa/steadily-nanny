@@ -1,4 +1,5 @@
 import { describe, expect, it, mock } from 'bun:test';
+import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types/schemas/notification.schema';
 import { NotAHouseholdParentError } from '../../../../../src/domains/household/errors/householdErrors';
 import {
   PayArrangementNotFoundError,
@@ -91,11 +92,19 @@ const OWNER = member('owner', 'owner-1');
 const NANNY = member('nanny', 'carer-1');
 const HELPER = member('helper', 'helper-1');
 
+function makePush(overrides: Record<string, unknown> = {}): any {
+  return {
+    notifyUser: mock(() => {}),
+    ...overrides,
+  };
+}
+
 interface ServiceParts {
   members?: Record<string, unknown>;
   payRepo?: any;
   timezone?: string;
   userService?: any;
+  push?: any;
 }
 
 function service(parts: ServiceParts = {}): any {
@@ -103,7 +112,8 @@ function service(parts: ServiceParts = {}): any {
     parts.payRepo ?? makePayRepo(),
     makeMemberRepo(parts.members ?? { 'parent-1': PARENT, 'carer-1': NANNY }),
     makeHouseholdRepo(parts.timezone ?? 'Europe/London'),
-    parts.userService ?? makeUserService()
+    parts.userService ?? makeUserService(),
+    parts.push ?? makePush()
   );
 }
 
@@ -468,5 +478,64 @@ describe('PayArrangementCommandService.create — the written row', () => {
     );
     expect(created.id).toBe('pa-new');
     expect(created.rate_minor).toBe(1500);
+  });
+});
+
+describe('PayArrangementCommandService.create — notifies the carer', () => {
+  it('notifies the CARER, not the parent who set the terms, after a successful create', async () => {
+    const push = makePush();
+    const svc = service({ push });
+    await svc.create('parent-1', 'h1', 'carer-1', request(), NOW);
+
+    expect(push.notifyUser).toHaveBeenCalledTimes(1);
+    const [recipientId, payload] = push.notifyUser.mock.calls[0];
+    expect(recipientId).toBe('carer-1');
+    expect(payload.data).toEqual({
+      type: PUSH_NOTIFICATION_TYPES.PAY_TERMS_SET,
+      householdId: 'h1',
+    });
+    expect(typeof payload.title).toBe('string');
+    expect(typeof payload.body).toBe('string');
+  });
+
+  it('never notifies the calling parent or the household at large', async () => {
+    const push = makePush();
+    const svc = service({ push });
+    await svc.create('parent-1', 'h1', 'carer-1', request(), NOW);
+
+    const recipients = push.notifyUser.mock.calls.map(
+      (call: unknown[]) => call[0]
+    );
+    expect(recipients).toEqual(['carer-1']);
+  });
+
+  it('does not notify when the write itself fails (role gate)', async () => {
+    const push = makePush();
+    const svc = service({
+      push,
+      members: { 'helper-1': HELPER, 'carer-1': NANNY },
+    });
+    await expect(
+      svc.create('helper-1', 'h1', 'carer-1', request(), NOW)
+    ).rejects.toBeInstanceOf(NotAHouseholdParentError);
+    expect(push.notifyUser).not.toHaveBeenCalled();
+  });
+
+  it('fire-and-forget: create still succeeds when the push throws', async () => {
+    const push = makePush({
+      notifyUser: mock(() => {
+        throw new Error('expo is down');
+      }),
+    });
+    const svc = service({ push });
+    const created = await svc.create(
+      'parent-1',
+      'h1',
+      'carer-1',
+      request(),
+      NOW
+    );
+    expect(created.id).toBe('pa-new');
+    expect(push.notifyUser).toHaveBeenCalledTimes(1);
   });
 });

@@ -98,4 +98,8 @@ export const NOTIFICATION_ROUTE_MAP: NotificationRouteMap &
   [PUSH_NOTIFICATION_TYPES.SHIFT_NEEDS_RECONFIRM]: shiftDetailHref,
 
   [PUSH_NOTIFICATION_TYPES.CARER_TIME_OFF_CONFLICT]: shiftsCalendarHref,
+
+  // Static destination — the nanny's own read-only pay screen fetches every
+  // household she belongs to itself, so no query params are needed here.
+  [PUSH_NOTIFICATION_TYPES.PAY_TERMS_SET]: () => '/(private)/settings/my-pay',
 };

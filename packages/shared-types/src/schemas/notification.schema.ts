@@ -37,6 +37,9 @@ export const PUSH_NOTIFICATION_TYPES = {
   // Schedule (Batch 1 / 2A)
   SCHEDULE_PATTERN_AMENDED: 'schedule_pattern_amended',
   SCHEDULE_PATTERN_SENT: 'schedule_pattern_sent',
+
+  // Pay (TIER0-PLAN.md Phase 2)
+  PAY_TERMS_SET: 'pay_terms_set',
 } as const;
 
 export type PushNotificationType =

@@ -22,14 +22,25 @@
  * append-only, and a correction is a new row that supersedes the old one via
  * `effectiveOn`'s `created_at desc` tie-break (migration 041's header).
  *
+ * Once written, the carer is notified — fire-and-forget, same discipline as
+ * `timesheetCommandService.query`'s `TIMESHEET_QUERIED` push: a push failure
+ * must never fail the write that already succeeded. Notified is the CARER
+ * only, never the parent who made the change or the household at large —
+ * she is the one whose pay just changed, and `notifyUser` (unlike
+ * `notifyHouseholdParents`) already respects her own
+ * `notification_prefs.disabled_types` opt-out by construction.
+ *
  * @module domains/pay/services/payArrangementCommandService
  */
+import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types/schemas/notification.schema';
 import {
   HOUSEHOLD_ROLES,
   HouseholdMemberRepository,
   HouseholdRepository,
   NotAHouseholdParentError,
 } from '../../household';
+import { notifyUser } from '../../notification/services/householdPush';
+import type { PushPayload } from '../../notification/types';
 import { localDateOf } from '../../timesheet/utils/weekStart';
 import { UserService } from '../../user';
 import {
@@ -38,6 +49,11 @@ import {
 } from '../errors/payErrors';
 import { PayArrangementRepository } from '../repositories/payArrangementRepository';
 import type { CreatePayArrangementRequest, PayArrangement } from '../types';
+
+/** Injectable push seam — defaults to the fire-and-forget household helper. */
+export interface PayArrangementPushNotifier {
+  notifyUser: (userId: string, payload: PushPayload) => void;
+}
 
 /** Roles allowed to write pay terms — the household write roles, unchanged. */
 const PAY_WRITE_ROLES: ReadonlySet<string> = new Set([
@@ -64,7 +80,8 @@ export class PayArrangementCommandService {
     private readonly userService: Pick<
       typeof UserService,
       'getProfileById'
-    > = UserService
+    > = UserService,
+    private readonly push: PayArrangementPushNotifier = { notifyUser }
   ) {}
 
   /**
@@ -105,7 +122,7 @@ export class PayArrangementCommandService {
     // exactly the client-settable terms plus the three server-derived values
     // (ids, snapshot name, created_by). `bill_rate_minor` is dormant until
     // Tier 2 and deliberately has no write path.
-    return this.payRepo.create({
+    const created = await this.payRepo.create({
       household_id: householdId,
       carer_id: carerId,
       rate_minor: request.rate_minor,
@@ -126,6 +143,31 @@ export class PayArrangementCommandService {
       note: request.note ?? null,
       created_by: callerId,
     });
+
+    this.notifyCarerOfNewTerms(carerId, householdId);
+    return created;
+  }
+
+  /**
+   * Fire-and-forget push to the carer whose terms just changed — see the
+   * module doc. `notifyUser` (`householdPush.ts`) already swallows delivery
+   * errors internally; the try/catch here is belt-and-braces against any
+   * unexpected SYNCHRONOUS throw, matching
+   * `timesheetCommandService.query`'s identical guard around the same call.
+   */
+  private notifyCarerOfNewTerms(carerId: string, householdId: string): void {
+    try {
+      this.push.notifyUser(carerId, {
+        title: 'Your pay was updated',
+        body: 'A parent set new pay terms for you — open My pay to see the details.',
+        data: {
+          type: PUSH_NOTIFICATION_TYPES.PAY_TERMS_SET,
+          householdId,
+        },
+      });
+    } catch {
+      // notifyUser is sync fire-and-forget; swallow any unexpected throw.
+    }
   }
 
   /** Gate 1 — see the module doc. */

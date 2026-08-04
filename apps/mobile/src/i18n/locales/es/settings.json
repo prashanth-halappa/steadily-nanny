@@ -111,7 +111,8 @@
       "extra_shift_proposed": "Turno extra propuesto",
       "shift_cancelled": "Turno cancelado",
       "shift_needs_reconfirm": "Turno necesita reconfirmación",
-      "carer_time_off_conflict": "Conflicto de ausencia"
+      "carer_time_off_conflict": "Conflicto de ausencia",
+      "pay_terms_set": "Condiciones de pago actualizadas"
     }
   }
 }

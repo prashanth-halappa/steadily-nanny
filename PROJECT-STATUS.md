@@ -228,13 +228,12 @@ verified by this agent; treat anything not listed as unverified.
     unilateral change to a cross-app wire contract. **It now has no reader on
     the client.** Retiring it is an open decision, not an oversight — see §9.
 - **Widget example removal** — DONE, both apps, plus `008_widgets.sql`.
-  Residual mentions are comments only, and one worth knowing about: the JSDoc
-  in `apps/mobile/src/lib/pushNotification.ts` still uses `widget_ready` as its
-  worked example of a `NOTIFICATION_ROUTE_MAP` entry — which is precisely the
-  extension point a developer copies from. Replace it with a real push type
-  (e.g. `shift_reminder`) when the first notification lands. Same for the
-  fixture in its test and the doc-comment example in
-  `src/lib/analytics/plugins/validationPlugin.ts`.
+  Residual mentions are comments only. The one flagged here previously — the
+  JSDoc in `apps/mobile/src/lib/pushNotification.ts` using `widget_ready` as
+  its worked example of a `NOTIFICATION_ROUTE_MAP` entry — is now fixed: it
+  (and the fixture in its test) use `pay_terms_set`, the real type TIER0-PLAN
+  Phase 2 added for "pay terms set → nanny". `src/lib/analytics/plugins/validationPlugin.ts`'s
+  doc-comment example no longer references `widget_ready` either.
 - **Delete-account UI** — DONE, and it closes a real App Store blocker.
   `REVIEW-CHECKLIST.md` §8 recorded that `DELETE /api/v1/users/me` and
   `userApi.deleteAccount()` both existed but no UI called them, which fails
