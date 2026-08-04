@@ -16,6 +16,89 @@ layer and `bun run qc` green before the phase is called done.
 
 ---
 
+## Execution model: sub-agents, strict TDD, and gates
+
+Implementation is orchestrated across sub-agents sized to task complexity, with
+one orchestrator holding the plan and the gates. Rules first, assignments
+second.
+
+### Strict TDD — non-negotiable, per task
+
+1. **Red first, captured.** For every unit of behaviour: write the test, run
+   it, and record the failure (test file + failing output in the task log)
+   **before** any implementation exists. This is house style, not ceremony —
+   Wave 0's delete-account UI shipped this way, and the plan inherits it.
+2. **Green by the minimal change**, then refactor with the suite green.
+   No implementation code lands in a commit that doesn't also contain (or
+   follow) its red-first test.
+3. **Test the wiring, not just the unit** — the D15 lesson. A component test
+   that hands the component its own props proves nothing about the app. Every
+   screen-level task includes a test that renders the real screen
+   (`HoursScreen`, `PayArrangementScreen`) and asserts the control is reachable
+   and wired. Every route/controller task includes a test through the mounted
+   router, not the controller function in isolation.
+4. **Repo test conventions bind every agent**: `bun:test` only;
+   `mock.module()` inside `beforeAll` before any dynamic import
+   (`docs/09-TESTING.md`); one file per process via the existing runner; mobile
+   tests in `__tests__/`, never colocated in `src/app/` (GOLDEN-FIXES #8);
+   test files are typechecked, so they stay type-clean.
+5. **Migrations get executable assertions too**: each migration lands with
+   additions to `scripts/e2e-assert.ts` (or a phase-local assert script)
+   covering its RLS behaviour — written before the migration, red against the
+   pre-migration schema where runnable. Where a live DB isn't available to the
+   agent, the assertion script still lands with the phase and the owner runs it
+   at apply time; "not runnable here" never means "not written".
+
+### The gate — every phase, before it is called done
+
+`bun run format` then **`bun run qc` green from the repo root** (run
+unsandboxed — the sandboxed-shell tempdir failure is a known environment issue,
+PROJECT-STATUS §8; `bun install` first on a fresh container). A red QC row is
+the phase still being in progress, never a footnote in the handoff. The
+orchestrator runs the gate itself rather than trusting a sub-agent's claim of
+green — same verifier discipline the repo already uses.
+
+### Agent assignments by task
+
+Tiering rule: **opus** for tasks where a subtle mistake is expensive and quiet
+(RLS, money math, authorization); **sonnet** for well-scoped vertical-slice
+work with a clear pattern to copy; **haiku** for mechanical, low-blast-radius
+work. Every phase ends with an **opus adversarial review** of the diff — this
+repo's Wave 3/5 history shows happy-path-green code hiding real
+authorization and state-integrity defects, and money raises the stakes.
+
+| Task | Agent | Why |
+|---|---|---|
+| 0-A RLS indirection migration (enumerate + repoint every policy) | **opus** | Wide blast radius, three known traps (grants, initplan, search_path); a quiet mistake here 500s every read |
+| 0-A verification additions to e2e-assert | sonnet | Pattern exists |
+| 0-B paired constraint/const-map comments | haiku | Two comments |
+| 0-C `docs/11-MONEY.md` + doc-table wiring | sonnet | Distillation of locked decisions, needs judgement not invention |
+| 1 migration `041_pay_arrangements` + RLS | **opus** | Append-only policy design; money schema conventions set precedent here |
+| 1 shared schema + repository (incl. `effectiveOn`) | sonnet | `effectiveOn` tie-break rule is subtle but single-method; red-first case table specified below |
+| 1 command/query services (membership assertion) | **opus** | D12-class authorization check; repositories bypass RLS |
+| 1 controller + routes + mobile endpoint/hooks | sonnet | Mechanical slice copy |
+| 1 screens (parent Pay, nanny read-only) + wiring tests | sonnet | UI + D15-style wiring tests |
+| 1 i18n en+es, query keys, barrels | haiku | Mechanical |
+| 2 migration `042_timesheet_earnings` | sonnet | Four nullable columns |
+| 2 **earnings engine + case table** | **opus** | The hardest logic in Tier 0: mid-week rate change, overtime/topup interaction, closure weeks, currency-change error arm |
+| 2 timesheet service wiring (live/freeze/reopen-clears-snapshot) | **opus** | Recreates the exact D1 failure surface |
+| 2 Hours screen money line + approve dialog + wiring tests | sonnet | UI |
+| 3 migration `043_pto_ledger` (anonymity note, idempotent accrual index) | **opus** | Touches the cross-family anonymity boundary |
+| 3 services (lazy accrual, markTimeOffPaid assertions) | sonnet, **opus review** | One D12-class check inside otherwise patterned work |
+| 3 mobile (balance, mark-paid flow, unnamed-family rendering) | sonnet | The unnamed-family surface gets a LEAKCANARY-style test |
+| 4 migration `044_expenses` | sonnet | Patterned, CHECK constraints specified above |
+| 4 services (carer-write gate, approve-freezes-mileage) | sonnet, **opus review** | Carer-writable table is new ground; review focuses there |
+| 4 mobile (add-expense, review sheet, statement section) | sonnet | UI |
+| 4 i18n + statement copy | haiku | Mechanical |
+| Per-phase adversarial diff review | **opus** | Wave 3 culture: try to break it before calling it done |
+
+Orchestration notes: within a phase, independent lanes (API slice vs. mobile
+slice after the shared schema lands; i18n alongside screens) run as parallel
+sub-agents; anything touching the same files serializes. The orchestrator —
+not a sub-agent — owns commits, the QC gate, and the phase review handoff.
+
+---
+
 ## Design decisions locked by this plan
 
 These are the choices the rest of the document assumes. Each is cheap to veto
@@ -386,11 +469,12 @@ in the week — summed separately, excluded from gross and overtime (decision 7)
 
 ## Cross-cutting rules (every phase)
 
-- **Tests**: `bun:test` only; service tests `mock.module()` inside `beforeAll`
-  before any dynamic import (`docs/09-TESTING.md`); mobile component tests in
-  `__tests__/`, never colocated in `src/app/` (GOLDEN-FIXES #8). The earnings
-  engine gets a case-table test file; the minor-units conversion util gets
-  property-ish edge tests (0, 1p, £999999.99).
+- **Tests**: written red-first per the execution model above, `bun:test` only;
+  service tests `mock.module()` inside `beforeAll` before any dynamic import
+  (`docs/09-TESTING.md`); mobile component tests in `__tests__/`, never
+  colocated in `src/app/` (GOLDEN-FIXES #8). The earnings engine gets a
+  case-table test file; the minor-units conversion util gets property-ish edge
+  tests (0, 1p, £999999.99).
 - **Every write that accepts a client-supplied foreign id gets a service-layer
   ownership assertion** (D12/D13/D14). In this plan: `carer_id` on
   arrangements, `time_off_id` on PTO marking, `carer_id`+`household_id` on
