@@ -4,6 +4,7 @@ let TimesheetController: any;
 let getRunning: any;
 let listForHouseholdWeek: any;
 let listTimesheetsForHousehold: any;
+let getWeekWithEarnings: any;
 let clockIn: any;
 let clockOut: any;
 let createRetroactiveEntry: any;
@@ -14,6 +15,11 @@ beforeAll(async () => {
   getRunning = mock(async () => null);
   listForHouseholdWeek = mock(async () => [{ id: 't1' }]);
   listTimesheetsForHousehold = mock(async () => [{ id: 'ts1' }]);
+  getWeekWithEarnings = mock(async () => ({
+    id: 'ts1',
+    status: 'submitted',
+    earnings: { status: 'ok', gross_minor: 14_800 },
+  }));
   clockIn = mock(async () => ({ id: 't-new', status: 'running' }));
   clockOut = mock(async () => ({ id: 't1', status: 'submitted' }));
   createRetroactiveEntry = mock(async () => ({
@@ -30,6 +36,7 @@ beforeAll(async () => {
         getRunning,
         listForHouseholdWeek,
         listTimesheetsForHousehold,
+        getWeekWithEarnings,
       },
     })
   );
@@ -71,6 +78,7 @@ beforeEach(() => {
     getRunning,
     listForHouseholdWeek,
     listTimesheetsForHousehold,
+    getWeekWithEarnings,
     clockIn,
     clockOut,
     createRetroactiveEntry,
@@ -212,5 +220,22 @@ describe('TimesheetController', () => {
       next
     );
     expect(next).toHaveBeenCalled();
+  });
+
+  it('getWeek returns the week with its earnings attached', async () => {
+    const res = mockRes();
+    await TimesheetController.getWeek(
+      { user: { id: 'u1' }, params: { id: 'ts1' } } as any,
+      res,
+      mock()
+    );
+    expect(getWeekWithEarnings).toHaveBeenCalledWith('u1', 'ts1');
+    expect(res.body.data).toEqual({
+      timesheet: {
+        id: 'ts1',
+        status: 'submitted',
+        earnings: { status: 'ok', gross_minor: 14_800 },
+      },
+    });
   });
 });

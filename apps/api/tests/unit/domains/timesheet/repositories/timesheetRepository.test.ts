@@ -77,3 +77,88 @@ describe('TimesheetRepository.listForHousehold', () => {
     expect(await repo.listForHousehold('h1')).toEqual([]);
   });
 });
+
+// =============================================================================
+// The conditional approve — the statement that makes "compute then freeze"
+// safe against a concurrent roll-up (docs/11-MONEY.md §3, review finding 13).
+// =============================================================================
+
+const snapshotPatch = {
+  approved_by: 'parent-1',
+  approved_at: '2026-08-10T09:00:00.000Z',
+  gross_minor: 14_800,
+  currency: 'GBP',
+  earnings: { status: 'ok', gross_minor: 14_800 },
+  earnings_computed_at: '2026-08-10T09:00:00.000Z',
+};
+
+describe('TimesheetRepository.approveSubmittedWithEarnings', () => {
+  it('sets the status AND all four snapshot columns in a single update', async () => {
+    const chain = createMockQueryChain({
+      data: { id: 'ts1', status: 'approved' },
+      error: null,
+    });
+    mockSupabaseService.from.mockImplementation(() => chain);
+
+    const repo = new TimesheetRepository();
+    await repo.approveSubmittedWithEarnings('ts1', snapshotPatch);
+
+    expect(chain.update).toHaveBeenCalledTimes(1);
+    expect(chain.update).toHaveBeenCalledWith({
+      status: 'approved',
+      query_note: null,
+      approved_by: 'parent-1',
+      approved_at: '2026-08-10T09:00:00.000Z',
+      gross_minor: 14_800,
+      currency: 'GBP',
+      earnings: { status: 'ok', gross_minor: 14_800 },
+      earnings_computed_at: '2026-08-10T09:00:00.000Z',
+    });
+  });
+
+  it("constrains the update with `where status = 'submitted'` — the CAS predicate", async () => {
+    const chain = createMockQueryChain({ data: { id: 'ts1' }, error: null });
+    mockSupabaseService.from.mockImplementation(() => chain);
+
+    const repo = new TimesheetRepository();
+    await repo.approveSubmittedWithEarnings('ts1', snapshotPatch);
+
+    expect(chain.eq).toHaveBeenCalledWith('id', 'ts1');
+    expect(chain.eq).toHaveBeenCalledWith('status', 'submitted');
+    expect(chain.eq).toHaveBeenCalledTimes(2);
+  });
+
+  it('returns null when zero rows matched — the week changed under the approve', async () => {
+    mockSupabaseService.from.mockImplementation(() =>
+      createMockQueryChain({ data: null, error: null })
+    );
+    const repo = new TimesheetRepository();
+    expect(
+      await repo.approveSubmittedWithEarnings('ts1', snapshotPatch)
+    ).toBeNull();
+  });
+
+  it('raises a DatabaseError rather than returning a half-written row', async () => {
+    mockSupabaseService.from.mockImplementation(() =>
+      createMockQueryChain({ data: null, error: { message: 'boom' } })
+    );
+    const repo = new TimesheetRepository();
+    await expect(
+      repo.approveSubmittedWithEarnings('ts1', snapshotPatch)
+    ).rejects.toThrow('Failed to approve timesheet with earnings');
+  });
+});
+
+describe('CLEARED_EARNINGS_SNAPSHOT', () => {
+  it('names all four columns, so the reopen path cannot forget one', async () => {
+    const { CLEARED_EARNINGS_SNAPSHOT } = await import(
+      '../../../../../src/domains/timesheet/repositories/timesheetRepository'
+    );
+    expect(CLEARED_EARNINGS_SNAPSHOT).toEqual({
+      gross_minor: null,
+      currency: null,
+      earnings: null,
+      earnings_computed_at: null,
+    });
+  });
+});

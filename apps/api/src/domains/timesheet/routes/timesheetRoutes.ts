@@ -25,6 +25,15 @@ const timesheetOwnership = {
     timesheetQueryService.getOwnedTimesheet(userId, timesheetId),
 };
 
+// The week read. Same ownership guard as the actions below — any active
+// member may READ a week's earnings (a nanny must be able to see what she is
+// owed); only a parent may approve or query it.
+router.get(
+  '/:id',
+  ...authWithOwnership(TimesheetIdParamSchema, timesheetOwnership),
+  asyncHandler(TimesheetController.getWeek)
+);
+
 router.post(
   '/:id/approve',
   ...authWithOwnership(TimesheetIdParamSchema, timesheetOwnership),

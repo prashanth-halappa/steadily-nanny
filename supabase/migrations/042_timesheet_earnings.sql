@@ -57,9 +57,13 @@
 --     display and for distinguishing "never computed" (open week) from "computed
 --     just now" in the audit trail.
 --
--- All four are populated together, at the single point of approval, and
--- cleared together, at the single point of reopen — there is no state where
--- only some of them are set. Nothing here enforces that as a group
+-- All four are populated at the single point of approval, and cleared
+-- together at the single point of reopen. One exception to "all four": an
+-- approved week the engine could not price (no arrangement, or a mid-week
+-- currency change) freezes only `earnings` (the verdict jsonb) and
+-- `earnings_computed_at`, leaving `gross_minor`/`currency` NULL — a stored
+-- zero would be the silently-wrong figure docs/11-MONEY.md §4 forbids. A
+-- legacy pre-042 approval is all-four-NULL. Nothing here enforces this as a
 -- constraint; it is a service-layer invariant, the same trust the append-only
 -- discipline on `pay_arrangements` (041) places in the service layer rather
 -- than a trigger.

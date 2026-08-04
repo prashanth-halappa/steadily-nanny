@@ -349,3 +349,108 @@ export const WeekEarningsSchema = z.discriminatedUnion('status', [
 export type EarningsLine = z.infer<typeof EarningsLineSchema>;
 export type WeekEarnings = z.infer<typeof WeekEarningsSchema>;
 export type WeekEarningsOk = Extract<WeekEarnings, { status: 'ok' }>;
+
+// =============================================================================
+// the week response — a timesheet with its earnings attached
+// =============================================================================
+//
+// What `GET /timesheets/:id` returns, and what the Hours screen renders. The
+// server decides between LIVE and FROZEN here so the client never can:
+// open/submitted/queried weeks carry a freshly computed `WeekEarnings`, an
+// approved week carries the snapshot frozen into `timesheets.earnings` at
+// approval, and neither is distinguishable from the other by shape — the
+// `status` word beside the amount comes from `timesheets.status`
+// (`docs/11-MONEY.md` §3, "state labels are mandatory").
+
+/**
+ * The one state the ENGINE can never produce: this week shows hours and no
+ * money, permanently.
+ *
+ * It exists because a week `approved` before migration 042 has a NULL
+ * snapshot and is never backfilled. Recomputing it live would print today's
+ * arrangement under an "Approved" label — the exact silent substitution
+ * `docs/11-MONEY.md` §3 forbids. Returning `null` instead would be worse
+ * still: every client would have to reinvent this decision, and one of them
+ * would eventually get it wrong. So the server names the state.
+ */
+export const WEEK_EARNINGS_STATES = {
+  ...EARNINGS_RESULT_STATUSES,
+  HOURS_ONLY: 'hours_only',
+} as const;
+export type WeekEarningsState =
+  (typeof WEEK_EARNINGS_STATES)[keyof typeof WEEK_EARNINGS_STATES];
+
+/**
+ * Why a week is hours-only. The arms render similarly; they are
+ * distinguished because they mean very different things to whoever is
+ * debugging — and because `carer_removed` needs its own copy on screen.
+ *
+ * - `legacy_approval` — approved before migration 042, so the snapshot is
+ *   NULL and always will be. Expected, permanent, not a defect.
+ * - `unreadable_snapshot` — a frozen jsonb that failed `WeekEarningsSchema`.
+ *   A real data defect worth finding, which the read path degrades around
+ *   rather than crashing on: a nanny opening Hours must not get a blank
+ *   screen because one row is malformed.
+ * - `carer_removed` — the timesheet's `carer_id` is NULL (the carer deleted
+ *   her account; 033 keeps the payroll record). There is no carer to resolve
+ *   an arrangement against, and per `docs/11-MONEY.md` §4 the parent must NOT
+ *   be shown a "set a pay rate" nudge they cannot complete.
+ */
+export const HOURS_ONLY_REASONS = {
+  LEGACY_APPROVAL: 'legacy_approval',
+  UNREADABLE_SNAPSHOT: 'unreadable_snapshot',
+  CARER_REMOVED: 'carer_removed',
+} as const;
+export type HoursOnlyReason =
+  (typeof HOURS_ONLY_REASONS)[keyof typeof HOURS_ONLY_REASONS];
+
+/** Hours, no money, ever. Carries no amount fields — by construction, not by convention. */
+export const WeekEarningsHoursOnlySchema = z.object({
+  status: z.literal(WEEK_EARNINGS_STATES.HOURS_ONLY),
+  week_start: z.iso.date(),
+  reason: z.enum(Object.values(HOURS_ONLY_REASONS)),
+});
+
+/**
+ * Every arm of `WeekEarningsSchema`, plus `hours_only`.
+ *
+ * Built by spreading `WeekEarningsSchema.options` rather than re-listing the
+ * arms, so the engine's output type and the wire's state type can never drift
+ * apart: a fourth engine arm added later lands here automatically.
+ */
+export const WeekEarningsStateSchema = z.discriminatedUnion('status', [
+  ...WeekEarningsSchema.options,
+  WeekEarningsHoursOnlySchema,
+]);
+
+/**
+ * A timesheet as the week screen reads it: every existing `TimesheetSchema`
+ * field, plus a REQUIRED `earnings` state.
+ *
+ * Required, not optional-or-null: "we have no earnings for this week" is
+ * always one of the named states above, and an absent field would reopen the
+ * ambiguity the union exists to close.
+ *
+ * The four raw snapshot columns (`gross_minor`, `currency`, `earnings`,
+ * `earnings_computed_at`) are deliberately NOT on the wire. They are storage,
+ * and `earnings` here is the same data already parsed and state-tagged —
+ * shipping both would let a client read the frozen jsonb without the
+ * legacy/corrupt handling the server just did on its behalf.
+ */
+export const TimesheetWeekSchema = TimesheetSchema.extend({
+  earnings: WeekEarningsStateSchema,
+});
+
+/**
+ * `GET /timesheets/:id` / the week read envelope. `timesheet` is nullable
+ * because no `timesheets` row exists until the week's first clock-out
+ * (`timesheetCommandService.rollUpIntoTimesheet` creates it).
+ */
+export const TimesheetWeekResponseSchema = z.object({
+  timesheet: TimesheetWeekSchema.nullable(),
+});
+
+export type WeekEarningsHoursOnly = z.infer<typeof WeekEarningsHoursOnlySchema>;
+export type WeekEarningsStateResult = z.infer<typeof WeekEarningsStateSchema>;
+export type TimesheetWeek = z.infer<typeof TimesheetWeekSchema>;
+export type TimesheetWeekResponse = z.infer<typeof TimesheetWeekResponseSchema>;

@@ -4,7 +4,12 @@ import {
   EARNINGS_LINE_ORDER,
   EARNINGS_RESULT_STATUSES,
   EarningsLineSchema,
+  HOURS_ONLY_REASONS,
+  TimesheetWeekResponseSchema,
+  TimesheetWeekSchema,
+  WEEK_EARNINGS_STATES,
   WeekEarningsSchema,
+  WeekEarningsStateSchema,
 } from '../src/schemas/timesheet.schema';
 
 const VALID_UUID = '11111111-1111-4111-8111-111111111111';
@@ -182,6 +187,130 @@ describe('timesheet.schema — earnings', () => {
       expect(
         WeekEarningsSchema.safeParse({ ...validOk, status: 'maybe' }).success
       ).toBe(false);
+    });
+  });
+});
+
+// =============================================================================
+// The week response — earnings attached to a timesheet (Tier 0 Phase 2 wiring)
+// =============================================================================
+
+const validTimesheet = {
+  id: VALID_UUID,
+  household_id: VALID_UUID,
+  carer_id: VALID_UUID,
+  carer_display_name: 'Nia Rowe',
+  week_start: '2026-08-03',
+  total_minutes: 2400,
+  status: 'submitted',
+  approved_by: null,
+  approved_at: null,
+  query_note: null,
+  created_at: '2026-08-03T09:00:00.000Z',
+  updated_at: '2026-08-03T09:00:00.000Z',
+};
+
+describe('timesheet.schema — the week response', () => {
+  describe('WEEK_EARNINGS_STATES', () => {
+    it('adds exactly one arm the engine can never return: hours_only', () => {
+      expect(WEEK_EARNINGS_STATES).toEqual({
+        OK: 'ok',
+        NO_ARRANGEMENT: 'no_arrangement',
+        CURRENCY_CHANGE: 'currency_change',
+        HOURS_ONLY: 'hours_only',
+      });
+    });
+
+    it('names why a week is hours-only — never a bare null', () => {
+      expect(HOURS_ONLY_REASONS).toEqual({
+        LEGACY_APPROVAL: 'legacy_approval',
+        UNREADABLE_SNAPSHOT: 'unreadable_snapshot',
+        CARER_REMOVED: 'carer_removed',
+      });
+    });
+  });
+
+  describe('WeekEarningsStateSchema', () => {
+    it('accepts every arm the engine itself can return', () => {
+      expect(WeekEarningsStateSchema.safeParse(validOk).success).toBe(true);
+      expect(
+        WeekEarningsStateSchema.safeParse({
+          status: EARNINGS_RESULT_STATUSES.NO_ARRANGEMENT,
+          week_start: '2026-08-03',
+          unpriced_dates: ['2026-08-03'],
+        }).success
+      ).toBe(true);
+      expect(
+        WeekEarningsStateSchema.safeParse({
+          status: EARNINGS_RESULT_STATUSES.CURRENCY_CHANGE,
+          week_start: '2026-08-03',
+          currencies: ['GBP', 'EUR'],
+        }).success
+      ).toBe(true);
+    });
+
+    it('accepts the hours_only arm and it carries NO money fields at all', () => {
+      const parsed = WeekEarningsStateSchema.safeParse({
+        status: WEEK_EARNINGS_STATES.HOURS_ONLY,
+        week_start: '2026-08-03',
+        reason: HOURS_ONLY_REASONS.LEGACY_APPROVAL,
+      });
+      expect(parsed.success).toBe(true);
+      expect(parsed.success && 'gross_minor' in parsed.data).toBe(false);
+    });
+
+    it('requires the hours_only arm to name its reason', () => {
+      expect(
+        WeekEarningsStateSchema.safeParse({
+          status: WEEK_EARNINGS_STATES.HOURS_ONLY,
+          week_start: '2026-08-03',
+        }).success
+      ).toBe(false);
+    });
+
+    it('rejects an unknown state', () => {
+      expect(
+        WeekEarningsStateSchema.safeParse({
+          status: 'estimated',
+          week_start: '2026-08-03',
+        }).success
+      ).toBe(false);
+    });
+  });
+
+  describe('TimesheetWeekSchema / TimesheetWeekResponseSchema', () => {
+    it('is TimesheetSchema plus a REQUIRED earnings state — never a sneaked-in null', () => {
+      expect(
+        TimesheetWeekSchema.safeParse({
+          ...validTimesheet,
+          earnings: validOk,
+        }).success
+      ).toBe(true);
+      expect(TimesheetWeekSchema.safeParse(validTimesheet).success).toBe(false);
+      expect(
+        TimesheetWeekSchema.safeParse({ ...validTimesheet, earnings: null })
+          .success
+      ).toBe(false);
+    });
+
+    it('keeps every existing timesheet field (additive extension only)', () => {
+      const parsed = TimesheetWeekSchema.safeParse({
+        ...validTimesheet,
+        earnings: validOk,
+      });
+      expect(parsed.success && parsed.data.total_minutes).toBe(2400);
+      expect(parsed.success && parsed.data.status).toBe('submitted');
+    });
+
+    it('allows a null timesheet on the envelope — no row exists until the first clock-out', () => {
+      expect(
+        TimesheetWeekResponseSchema.safeParse({ timesheet: null }).success
+      ).toBe(true);
+      expect(
+        TimesheetWeekResponseSchema.safeParse({
+          timesheet: { ...validTimesheet, earnings: validOk },
+        }).success
+      ).toBe(true);
     });
   });
 });

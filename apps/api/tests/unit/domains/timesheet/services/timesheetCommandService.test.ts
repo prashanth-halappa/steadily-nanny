@@ -1,5 +1,6 @@
 import { describe, expect, it, mock } from 'bun:test';
 import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types/schemas/notification.schema';
+import type { WeekEarnings } from '@steadily-nanny/shared-types/schemas/timesheet.schema';
 import { ShiftNotFoundError } from '../../../../../src/domains/shift';
 import {
   AlreadyClockedInError,
@@ -1011,7 +1012,18 @@ describe('TimesheetCommandService.clockOut', () => {
 
 describe('TimesheetCommandService.approve', () => {
   it('approves a submitted timesheet as a parent', async () => {
-    const timesheetRepo = makeTimesheetRepo();
+    // The status flip now travels inside the conditional write that also
+    // freezes the earnings snapshot — see the "freezing the earnings
+    // snapshot" block below for the full contract.
+    const timesheetRepo = makeTimesheetRepo({
+      approveSubmittedWithEarnings: mock(
+        async (_id: string, patch: Record<string, unknown>) => ({
+          ...timesheet,
+          status: 'approved',
+          ...patch,
+        })
+      ),
+    });
     const svc = new TimesheetCommandService(
       makeTimeEntryRepo(),
       timesheetRepo,
@@ -1026,14 +1038,25 @@ describe('TimesheetCommandService.approve', () => {
       makeHouseholdRepo(),
       makeShiftRepo(),
       makeQueries(),
-      makeUserService()
+      makeUserService(),
+      makePush(),
+      {
+        computeForWeek: mock(
+          async (): Promise<WeekEarnings> => ({
+            status: 'no_arrangement',
+            week_start: '2026-08-03',
+            unpriced_dates: [],
+          })
+        ),
+      }
     );
 
-    await svc.approve('parent-1', 'ts1');
+    const approved = await svc.approve('parent-1', 'ts1');
 
-    expect(timesheetRepo.update).toHaveBeenCalledWith(
+    expect(approved.status).toBe('approved');
+    expect(timesheetRepo.approveSubmittedWithEarnings).toHaveBeenCalledWith(
       'ts1',
-      expect.objectContaining({ status: 'approved', approved_by: 'parent-1' })
+      expect.objectContaining({ approved_by: 'parent-1' })
     );
   });
 
@@ -1813,5 +1836,400 @@ describe('recordCancellationPaidEntry', () => {
 
   it('exports a module-level helper the orchestrator can call', async () => {
     expect(typeof recordCancellationPaidEntry).toBe('function');
+  });
+});
+
+// =============================================================================
+// Approve: compute -> freeze -> flip, as ONE conditional update
+// (TIER0-PLAN.md Phase 2 "Wiring", docs/11-MONEY.md §3, review finding 13).
+// =============================================================================
+
+const ARRANGEMENT_ID = '11111111-1111-4111-8111-111111111101';
+
+const computedEarnings: WeekEarnings = {
+  status: 'ok',
+  week_start: '2026-08-03',
+  currency: 'GBP',
+  lines: [
+    {
+      kind: 'regular',
+      minutes: 480,
+      rate_minor: 1850,
+      multiplier: null,
+      amount_minor: 14_800,
+      from_date: '2026-08-03',
+      to_date: '2026-08-03',
+      arrangement_id: ARRANGEMENT_ID,
+    },
+  ],
+  gross_minor: 14_800,
+  reimbursements_minor: 0,
+  worked_minutes: 480,
+  payable_minutes: 480,
+  guaranteed_minutes_per_week: null,
+};
+
+function makeEarnings(overrides: Record<string, unknown> = {}): any {
+  return {
+    computeForWeek: mock(async () => computedEarnings),
+    ...overrides,
+  };
+}
+
+function makeParentMemberRepo(): any {
+  return makeMemberRepo({
+    findActiveMembership: mock(async () => ({
+      id: 'm3',
+      household_id: 'h1',
+      user_id: 'parent-1',
+      role: 'parent',
+    })),
+  });
+}
+
+function makeApprovingRepo(overrides: Record<string, unknown> = {}): any {
+  return makeTimesheetRepo({
+    approveSubmittedWithEarnings: mock(
+      async (_id: string, patch: Record<string, unknown>) => ({
+        ...timesheet,
+        status: 'approved',
+        ...patch,
+      })
+    ),
+    ...overrides,
+  });
+}
+
+describe('TimesheetCommandService.approve — freezing the earnings snapshot', () => {
+  it('computes the week, then writes all four snapshot columns AND the status flip in ONE conditional update', async () => {
+    const timesheetRepo = makeApprovingRepo();
+    const earnings = makeEarnings();
+    const svc = new TimesheetCommandService(
+      makeTimeEntryRepo(),
+      timesheetRepo,
+      makeParentMemberRepo(),
+      makeHouseholdRepo(),
+      makeShiftRepo(),
+      makeQueries(),
+      makeUserService(),
+      makePush(),
+      earnings
+    );
+
+    await svc.approve('parent-1', 'ts1');
+
+    expect(earnings.computeForWeek).toHaveBeenCalledWith(
+      'h1',
+      'carer-1',
+      '2026-08-03'
+    );
+    expect(timesheetRepo.approveSubmittedWithEarnings).toHaveBeenCalledTimes(1);
+    const [id, patch] = timesheetRepo.approveSubmittedWithEarnings.mock
+      .calls[0] as [string, Record<string, unknown>];
+    expect(id).toBe('ts1');
+    expect(patch).toEqual({
+      approved_by: 'parent-1',
+      approved_at: expect.any(String),
+      gross_minor: 14_800,
+      currency: 'GBP',
+      earnings: computedEarnings,
+      earnings_computed_at: expect.any(String),
+    });
+    // The general-purpose update must NOT be used: it has no status
+    // predicate, so it cannot be the write that approves a week.
+    expect(timesheetRepo.update).not.toHaveBeenCalled();
+  });
+
+  it('stamps the approval and the snapshot with the SAME instant — one write, one moment', async () => {
+    const timesheetRepo = makeApprovingRepo();
+    const svc = new TimesheetCommandService(
+      makeTimeEntryRepo(),
+      timesheetRepo,
+      makeParentMemberRepo(),
+      makeHouseholdRepo(),
+      makeShiftRepo(),
+      makeQueries(),
+      makeUserService(),
+      makePush(),
+      makeEarnings()
+    );
+
+    await svc.approve('parent-1', 'ts1');
+
+    const [, patch] = timesheetRepo.approveSubmittedWithEarnings.mock
+      .calls[0] as [string, Record<string, unknown>];
+    expect(patch.earnings_computed_at).toBe(patch.approved_at);
+  });
+
+  it('freezes exactly what was computed — a different engine result freezes differently', async () => {
+    const other: WeekEarnings = {
+      ...computedEarnings,
+      status: 'ok',
+      currency: 'EUR',
+      lines: [],
+      gross_minor: 99_900,
+      reimbursements_minor: 0,
+      worked_minutes: 480,
+      payable_minutes: 480,
+      guaranteed_minutes_per_week: null,
+    };
+    const timesheetRepo = makeApprovingRepo();
+    const svc = new TimesheetCommandService(
+      makeTimeEntryRepo(),
+      timesheetRepo,
+      makeParentMemberRepo(),
+      makeHouseholdRepo(),
+      makeShiftRepo(),
+      makeQueries(),
+      makeUserService(),
+      makePush(),
+      makeEarnings({ computeForWeek: mock(async () => other) })
+    );
+
+    await svc.approve('parent-1', 'ts1');
+
+    const [, patch] = timesheetRepo.approveSubmittedWithEarnings.mock
+      .calls[0] as [string, Record<string, unknown>];
+    expect(patch.gross_minor).toBe(99_900);
+    expect(patch.currency).toBe('EUR');
+    expect(patch.earnings).toEqual(other);
+  });
+
+  it('freezes an unpriceable week as the no_arrangement arm, with no amount at all — never £0.00', async () => {
+    const noArrangement: WeekEarnings = {
+      status: 'no_arrangement',
+      week_start: '2026-08-03',
+      unpriced_dates: ['2026-08-03'],
+    };
+    const timesheetRepo = makeApprovingRepo();
+    const svc = new TimesheetCommandService(
+      makeTimeEntryRepo(),
+      timesheetRepo,
+      makeParentMemberRepo(),
+      makeHouseholdRepo(),
+      makeShiftRepo(),
+      makeQueries(),
+      makeUserService(),
+      makePush(),
+      makeEarnings({ computeForWeek: mock(async () => noArrangement) })
+    );
+
+    await svc.approve('parent-1', 'ts1');
+
+    const [, patch] = timesheetRepo.approveSubmittedWithEarnings.mock
+      .calls[0] as [string, Record<string, unknown>];
+    expect(patch.gross_minor).toBeNull();
+    expect(patch.currency).toBeNull();
+    expect(patch.earnings).toEqual(noArrangement);
+  });
+
+  it('approves a departed carer’s week with an empty snapshot rather than inventing a figure', async () => {
+    const timesheetRepo = makeApprovingRepo();
+    const earnings = makeEarnings();
+    const svc = new TimesheetCommandService(
+      makeTimeEntryRepo(),
+      timesheetRepo,
+      makeParentMemberRepo(),
+      makeHouseholdRepo(),
+      makeShiftRepo(),
+      makeQueries({
+        getOwnedTimesheet: mock(async () => ({ ...timesheet, carer_id: null })),
+      }),
+      makeUserService(),
+      makePush(),
+      earnings
+    );
+
+    await svc.approve('parent-1', 'ts1');
+
+    expect(earnings.computeForWeek).not.toHaveBeenCalled();
+    const [, patch] = timesheetRepo.approveSubmittedWithEarnings.mock
+      .calls[0] as [string, Record<string, unknown>];
+    expect(patch).toMatchObject({
+      gross_minor: null,
+      currency: null,
+      earnings: null,
+      earnings_computed_at: null,
+    });
+  });
+
+  it('LOSES THE RACE cleanly: status changed between read and write -> no snapshot, house-style error', async () => {
+    // D1's surface with money attached: a clock-out roll-up re-opened the
+    // week after `assertActionable` passed. The conditional update matches
+    // zero rows, and the approve must fail exactly as a stale status does.
+    const timesheetRepo = makeApprovingRepo({
+      approveSubmittedWithEarnings: mock(async () => null),
+    });
+    const svc = new TimesheetCommandService(
+      makeTimeEntryRepo(),
+      timesheetRepo,
+      makeParentMemberRepo(),
+      makeHouseholdRepo(),
+      makeShiftRepo(),
+      makeQueries(),
+      makeUserService(),
+      makePush(),
+      makeEarnings()
+    );
+
+    await expect(svc.approve('parent-1', 'ts1')).rejects.toBeInstanceOf(
+      TimesheetNotActionableError
+    );
+    expect(timesheetRepo.update).not.toHaveBeenCalled();
+    expect(timesheetRepo.approveSubmittedWithEarnings).toHaveBeenCalledTimes(1);
+  });
+
+  it('never computes or writes anything when the pre-check already rejects the status', async () => {
+    const timesheetRepo = makeApprovingRepo();
+    const earnings = makeEarnings();
+    const svc = new TimesheetCommandService(
+      makeTimeEntryRepo(),
+      timesheetRepo,
+      makeParentMemberRepo(),
+      makeHouseholdRepo(),
+      makeShiftRepo(),
+      makeQueries({
+        getOwnedTimesheet: mock(async () => ({
+          ...timesheet,
+          status: 'approved',
+        })),
+      }),
+      makeUserService(),
+      makePush(),
+      earnings
+    );
+
+    await expect(svc.approve('parent-1', 'ts1')).rejects.toBeInstanceOf(
+      TimesheetNotActionableError
+    );
+    expect(earnings.computeForWeek).not.toHaveBeenCalled();
+    expect(timesheetRepo.approveSubmittedWithEarnings).not.toHaveBeenCalled();
+  });
+
+  it('never computes earnings for a non-parent — role first, money second', async () => {
+    const earnings = makeEarnings();
+    const svc = new TimesheetCommandService(
+      makeTimeEntryRepo(),
+      makeApprovingRepo(),
+      makeMemberRepo(),
+      makeHouseholdRepo(),
+      makeShiftRepo(),
+      makeQueries(),
+      makeUserService(),
+      makePush(),
+      earnings
+    );
+
+    await expect(svc.approve('carer-1', 'ts1')).rejects.toBeInstanceOf(
+      NotATimesheetParentError
+    );
+    expect(earnings.computeForWeek).not.toHaveBeenCalled();
+  });
+});
+
+// =============================================================================
+// The D1 reopen path, now with money: reverting the status must clear the
+// snapshot in the SAME write (docs/11-MONEY.md §3, migration 042's header).
+// =============================================================================
+
+describe('TimesheetCommandService.rollUpIntoTimesheet — reopen clears the earnings snapshot (D1)', () => {
+  it('nulls all four snapshot columns in the SAME update that reverts an approved week', async () => {
+    const timeEntryRepo = makeTimeEntryRepo({
+      listForCarerWeek: mock(async () => [finishedEntryA, finishedEntryB]),
+    });
+    const timesheetRepo = makeTimesheetRepo({
+      findByWeek: mock(async () => ({
+        ...timesheet,
+        status: 'approved',
+        approved_by: 'parent-1',
+        approved_at: '2026-08-01T20:28:24.000Z',
+        gross_minor: 14_800,
+        currency: 'GBP',
+        earnings: computedEarnings,
+        earnings_computed_at: '2026-08-01T20:28:24.000Z',
+      })),
+    });
+    const svc = new TimesheetCommandService(
+      timeEntryRepo,
+      timesheetRepo,
+      makeMemberRepo(),
+      makeHouseholdRepo(),
+      makeShiftRepo(),
+      makeQueries(),
+      makeUserService()
+    );
+
+    await svc.clockOut('carer-1', 't1', {});
+
+    expect(timesheetRepo.update).toHaveBeenCalledTimes(1);
+    expect(timesheetRepo.update).toHaveBeenCalledWith('ts1', {
+      total_minutes: 750,
+      status: 'submitted',
+      approved_by: null,
+      approved_at: null,
+      gross_minor: null,
+      currency: null,
+      earnings: null,
+      earnings_computed_at: null,
+    });
+  });
+
+  it('clears the snapshot when a QUERIED week reopens too', async () => {
+    const timeEntryRepo = makeTimeEntryRepo({
+      listForCarerWeek: mock(async () => [finishedEntryA]),
+    });
+    const timesheetRepo = makeTimesheetRepo({
+      findByWeek: mock(async () => ({
+        ...timesheet,
+        status: 'queried',
+        query_note: 'Query Thursday',
+      })),
+    });
+    const svc = new TimesheetCommandService(
+      timeEntryRepo,
+      timesheetRepo,
+      makeMemberRepo(),
+      makeHouseholdRepo(),
+      makeShiftRepo(),
+      makeQueries(),
+      makeUserService()
+    );
+
+    await svc.clockOut('carer-1', 't1', {});
+
+    expect(timesheetRepo.update).toHaveBeenCalledWith(
+      'ts1',
+      expect.objectContaining({
+        gross_minor: null,
+        currency: null,
+        earnings: null,
+        earnings_computed_at: null,
+      })
+    );
+  });
+
+  it('leaves the snapshot columns alone on an ordinary submitted-week roll-up — nothing to clear', async () => {
+    const timeEntryRepo = makeTimeEntryRepo({
+      listForCarerWeek: mock(async () => [finishedEntryA]),
+    });
+    const timesheetRepo = makeTimesheetRepo({
+      findByWeek: mock(async () => ({ ...timesheet, status: 'submitted' })),
+    });
+    const svc = new TimesheetCommandService(
+      timeEntryRepo,
+      timesheetRepo,
+      makeMemberRepo(),
+      makeHouseholdRepo(),
+      makeShiftRepo(),
+      makeQueries(),
+      makeUserService()
+    );
+
+    await svc.clockOut('carer-1', 't1', {});
+
+    expect(timesheetRepo.update).toHaveBeenCalledWith('ts1', {
+      total_minutes: 450,
+      status: 'submitted',
+    });
   });
 });
