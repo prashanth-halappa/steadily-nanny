@@ -42,7 +42,6 @@
     "backdatingHint": "Weeks that are already approved keep their approved totals.",
     "midWeekConsequence": "This week will be paid at two rates: {{oldRate}} up to {{oldUntil}}, then {{newRate}} from {{newFrom}}.",
     "overtimeAfterLabel": "Overtime after",
-    "overtimeAfterUnit": "hours",
     "overtimePaidAtLabel": "Paid at",
     "overtimeHint": "Leave blank if there's no overtime rate.",
     "guaranteedHoursFieldLabel": "Guaranteed hours a week",

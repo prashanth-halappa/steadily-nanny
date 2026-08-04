@@ -119,9 +119,12 @@ mock.module('@/src/api/endpoints/household', () => ({
 mock.module('@/src/api/endpoints/user', () => ({
   userApi: { listMemberships: membershipsListMock },
 }));
+const payCurrentMock = mock<(...args: unknown[]) => Promise<unknown>>(() =>
+  Promise.resolve(null)
+);
 mock.module('@/src/api/endpoints/payArrangements', () => ({
   payArrangementApi: {
-    getCurrent: mock(() => Promise.resolve(null)),
+    getCurrent: payCurrentMock,
     getHistory: mock(() => Promise.resolve([])),
     create: payCreateMock,
   },
@@ -136,6 +139,7 @@ beforeEach(() => {
   listMembersMock.mockReset();
   membershipsListMock.mockReset();
   payCreateMock.mockReset();
+  payCurrentMock.mockReset();
   routerBack.mockClear();
 
   listMock.mockImplementation(() => Promise.resolve([baseHousehold]));
@@ -145,6 +149,7 @@ beforeEach(() => {
   membershipsListMock.mockImplementation(() =>
     Promise.resolve([parentMembership])
   );
+  payCurrentMock.mockImplementation(() => Promise.resolve(null));
   payCreateMock.mockImplementation(
     (_h: string, carerId: string, input: unknown) =>
       Promise.resolve({ id: 'arr-1', carer_id: carerId, ...(input as object) })
@@ -183,6 +188,61 @@ describe('PaySetupScreen', () => {
       )
     );
     expect(getByTestId('pay-setup-date-input').props.value).toBe('2026-07-01');
+  });
+
+  describe('review finding 9: the joined-date default only applies when there is genuinely no current arrangement yet', () => {
+    it('when a current arrangement already exists for this carer, defaults to TODAY instead of the joined date', async () => {
+      payCurrentMock.mockImplementation(() =>
+        Promise.resolve({
+          id: 'arr-existing',
+          household_id: HOUSEHOLD_ID,
+          carer_id: NANNY_ID,
+          rate_minor: 1500,
+          bill_rate_minor: null,
+          currency: 'GBP',
+          overtime_threshold_minutes: null,
+          overtime_multiplier: 1.5,
+          guaranteed_minutes_per_week: null,
+          pto_entitlement_minutes_per_year: null,
+          mileage_rate_per_mile_minor: null,
+          cancellation_paid_within_hours: null,
+          valid_from: '2026-05-01',
+          carer_display_name: 'Priya',
+          note: null,
+          created_by: PARENT_USER_ID,
+          created_at: now,
+        })
+      );
+
+      const { getByTestId, queryByTestId } = renderWithProviders(
+        <PaySetupScreen />
+      );
+
+      await waitFor(() =>
+        expect(getByTestId('pay-setup-chip-today').props.variant).toBe(
+          'default'
+        )
+      );
+      expect(getByTestId('pay-setup-chip-earlier').props.variant).toBe(
+        'outline'
+      );
+      expect(queryByTestId('pay-setup-date-input')).toBeNull();
+    });
+
+    it('with no current arrangement, still defaults to the joined date (unchanged behaviour)', async () => {
+      payCurrentMock.mockImplementation(() => Promise.resolve(null));
+
+      const { getByTestId } = renderWithProviders(<PaySetupScreen />);
+
+      await waitFor(() =>
+        expect(getByTestId('pay-setup-chip-earlier').props.variant).toBe(
+          'default'
+        )
+      );
+      expect(getByTestId('pay-setup-date-input').props.value).toBe(
+        '2026-07-01'
+      );
+    });
   });
 
   it('the cancellation choice starts unselected — Save stays disabled until one is picked', async () => {

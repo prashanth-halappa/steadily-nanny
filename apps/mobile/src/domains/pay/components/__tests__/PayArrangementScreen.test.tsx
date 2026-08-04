@@ -125,15 +125,20 @@ const payCreateMock = mock((_h: string, _c: string, input: unknown) =>
   Promise.resolve({ ...arrangementFor(_c), ...(input as object) })
 );
 const routerPush = mock();
+const routerBack = mock();
+// Mutable so individual tests can simulate navigating to a specific carer's
+// detail view (`/settings/pay/[carerId]`) without a real router — the
+// existing suite only ever exercises the picker/no-carerId path.
+let searchParams: { carerId?: string } = {};
 
 mock.module('expo-router', () => ({
   useRouter: () => ({
     push: routerPush,
     replace: mock(),
-    back: mock(),
+    back: routerBack,
     navigate: mock(),
   }),
-  useLocalSearchParams: mock(() => ({})),
+  useLocalSearchParams: () => searchParams,
   useSegments: mock(() => []),
   usePathname: mock(() => ''),
   useFocusEffect: mock(() => {}),
@@ -170,6 +175,8 @@ beforeEach(() => {
   payHistoryMock.mockReset();
   payCreateMock.mockReset();
   routerPush.mockClear();
+  routerBack.mockClear();
+  searchParams = {};
 
   listMock.mockImplementation(() => Promise.resolve([baseHousehold]));
   listMembersMock.mockImplementation(() =>
@@ -301,5 +308,163 @@ describe('PayArrangementScreen', () => {
 
     await waitFor(() => expect(getByTestId('pay-not-available')).toBeTruthy());
     expect(queryByTestId('pay-current-terms-card')).toBeNull();
+  });
+
+  describe('review finding 7: the picker rate label while its own rate query is pending', () => {
+    it('renders nothing — never "Not set" — until the query settles', async () => {
+      listMembersMock.mockImplementation(() =>
+        Promise.resolve([
+          nannyMember(NANNY_A_ID, 'Priya'),
+          nannyMember(NANNY_B_ID, 'Amara'),
+        ])
+      );
+      // Never resolves — keeps every picker row's own useCurrentPayArrangement
+      // pending for the life of the test.
+      payCurrentMock.mockImplementation(() => new Promise(() => {}));
+
+      const { getByTestId, queryByText } = renderWithProviders(
+        <PayArrangementScreen />
+      );
+
+      await waitFor(() => expect(getByTestId('pay-carer-picker')).toBeTruthy());
+      await waitFor(() =>
+        expect(getByTestId(`pay-carer-picker-${NANNY_A_ID}`)).toBeTruthy()
+      );
+      expect(queryByText('notSet')).toBeNull();
+    });
+  });
+
+  describe('review finding 8: carer name resolution never falls to the generic role label while a real name is known', () => {
+    it("the picker row shows the arrangement's carer_display_name when the member has no display_name_override", async () => {
+      listMembersMock.mockImplementation(() =>
+        Promise.resolve([
+          nannyMember(NANNY_A_ID, 'Priya'),
+          { ...nannyMember(NANNY_B_ID, 'Amara'), display_name_override: null },
+        ])
+      );
+      payCurrentMock.mockImplementation((_h: string, carerId: string) =>
+        Promise.resolve(
+          carerId === NANNY_B_ID
+            ? {
+                ...arrangementFor(NANNY_B_ID),
+                carer_display_name: 'Real Amara',
+              }
+            : null
+        )
+      );
+
+      const { getByTestId, queryByText } = renderWithProviders(
+        <PayArrangementScreen />
+      );
+
+      await waitFor(() =>
+        expect(getByTestId(`pay-carer-picker-${NANNY_B_ID}`)).toBeTruthy()
+      );
+      await waitFor(() => expect(queryByText('Real Amara')).toBeTruthy());
+      expect(queryByText('role.nanny')).toBeNull();
+    });
+
+    it("the current-terms header (2+ nannies) shows the arrangement's carer_display_name when no override is set", async () => {
+      listMembersMock.mockImplementation(() =>
+        Promise.resolve([
+          nannyMember(NANNY_A_ID, 'Priya'),
+          { ...nannyMember(NANNY_B_ID, 'Amara'), display_name_override: null },
+        ])
+      );
+      payCurrentMock.mockImplementation((_h: string, carerId: string) =>
+        Promise.resolve(
+          carerId === NANNY_B_ID
+            ? {
+                ...arrangementFor(NANNY_B_ID),
+                carer_display_name: 'Real Amara',
+              }
+            : null
+        )
+      );
+      searchParams = { carerId: NANNY_B_ID };
+
+      const { getByTestId } = renderWithProviders(<PayArrangementScreen />);
+
+      await waitFor(() => expect(getByTestId('pay-carer-name')).toBeTruthy());
+      expect(getByTestId('pay-carer-name').props.children).toBe('Real Amara');
+    });
+
+    it('falls back to the role label only when neither an override nor an arrangement name exists', async () => {
+      listMembersMock.mockImplementation(() =>
+        Promise.resolve([
+          nannyMember(NANNY_A_ID, 'Priya'),
+          { ...nannyMember(NANNY_B_ID, 'Amara'), display_name_override: null },
+        ])
+      );
+      payCurrentMock.mockImplementation(() => Promise.resolve(null));
+      searchParams = { carerId: NANNY_B_ID };
+
+      const { getByTestId } = renderWithProviders(<PayArrangementScreen />);
+
+      await waitFor(() => expect(getByTestId('pay-carer-name')).toBeTruthy());
+      expect(getByTestId('pay-carer-name').props.children).toBe('role.nanny');
+    });
+  });
+
+  describe('review finding 10: accessibility props on the back row and carer-picker rows', () => {
+    it('the back row exposes accessibilityRole/Label/hitSlop and calls router.back() on press', async () => {
+      const { getByTestId } = renderWithProviders(<PayArrangementScreen />);
+
+      await waitFor(() => expect(getByTestId('pay-back')).toBeTruthy());
+      const back = getByTestId('pay-back');
+      expect(back.props.accessibilityRole).toBe('button');
+      expect(back.props.accessibilityLabel).toBe('back');
+      expect(back.props.hitSlop).toBe(8);
+
+      fireEvent.press(back);
+      expect(routerBack).toHaveBeenCalled();
+    });
+
+    it('the not-available back row exposes the same accessibility props', async () => {
+      membershipsListMock.mockImplementation(() =>
+        Promise.resolve([
+          {
+            ...parentMembership,
+            id: 'member-nanny',
+            user_id: NANNY_A_ID,
+            role: 'nanny',
+          },
+        ])
+      );
+      useAuthStore.setState({
+        session: { user: { id: NANNY_A_ID } } as unknown as never,
+        user: { id: NANNY_A_ID } as unknown as never,
+        isInitialized: true,
+      } as never);
+
+      const { getByTestId } = renderWithProviders(<PayArrangementScreen />);
+
+      await waitFor(() =>
+        expect(getByTestId('pay-not-available-back')).toBeTruthy()
+      );
+      const back = getByTestId('pay-not-available-back');
+      expect(back.props.accessibilityRole).toBe('button');
+      expect(back.props.accessibilityLabel).toBe('back');
+      expect(back.props.hitSlop).toBe(8);
+    });
+
+    it('a carer-picker row exposes accessibilityRole/Label/hitSlop', async () => {
+      listMembersMock.mockImplementation(() =>
+        Promise.resolve([
+          nannyMember(NANNY_A_ID, 'Priya'),
+          nannyMember(NANNY_B_ID, 'Amara'),
+        ])
+      );
+
+      const { getByTestId } = renderWithProviders(<PayArrangementScreen />);
+
+      await waitFor(() =>
+        expect(getByTestId(`pay-carer-picker-${NANNY_A_ID}`)).toBeTruthy()
+      );
+      const row = getByTestId(`pay-carer-picker-${NANNY_A_ID}`);
+      expect(row.props.accessibilityRole).toBe('button');
+      expect(row.props.accessibilityLabel).toBe('Priya');
+      expect(row.props.hitSlop).toBe(8);
+    });
   });
 });

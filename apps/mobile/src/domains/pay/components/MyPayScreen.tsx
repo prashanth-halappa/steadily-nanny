@@ -15,6 +15,7 @@
  */
 
 import type { Household } from '@steadily-nanny/shared-types/schemas/household.schema';
+import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ScrollView, View } from 'react-native';
@@ -36,6 +37,7 @@ import { useAuthStore } from '@/src/store/auth';
 import { formatDisplayDateWithYear } from '../utils/payArrangementForm';
 import { buildTermRows } from '../utils/termRows';
 import { AmountRow } from './AmountRow';
+import { BackRow } from './BackRow';
 
 function MyPayHouseholdCard({
   household,
@@ -128,13 +130,25 @@ function MyPayHouseholdCard({
 
 export function MyPayScreen() {
   const { t } = useTranslation('pay');
+  const { t: tCommon } = useTranslation('common');
+  const router = useRouter();
   const onboarding = useIsOnboarded();
   const households = useHouseholds();
   const userId = useAuthStore(s => s.user?.id ?? null);
 
+  // A back affordance in EVERY state, including the transient loading one —
+  // this screen is reachable straight from settings with no other way out
+  // while it's still resolving (review finding 5).
   if (onboarding.status === 'loading') {
     return (
       <View testID="my-pay-screen" className="flex-1 bg-background">
+        <View className="px-6 pt-8">
+          <BackRow
+            testID="my-pay-loading-back"
+            onPress={() => router.back()}
+            label={tCommon('back')}
+          />
+        </View>
         <LoadingIndicator testID="my-pay-loading" />
       </View>
     );
@@ -143,11 +157,20 @@ export function MyPayScreen() {
   if (onboarding.role !== SETUP_ROLES.NANNY) {
     return (
       <View testID="my-pay-not-available" className="flex-1 bg-background">
-        <EmptyState
-          variant="inline"
-          title={t('myPay.notAvailableTitle')}
-          description={t('myPay.notAvailableDescription')}
-        />
+        <View className="px-6 pt-8">
+          <BackRow
+            testID="my-pay-not-available-back"
+            onPress={() => router.back()}
+            label={tCommon('back')}
+          />
+        </View>
+        <View className="mt-8 px-6">
+          <EmptyState
+            variant="inline"
+            title={t('myPay.notAvailableTitle')}
+            description={t('myPay.notAvailableDescription')}
+          />
+        </View>
       </View>
     );
   }
@@ -158,7 +181,12 @@ export function MyPayScreen() {
       className="flex-1 bg-background"
       contentContainerStyle={SCREEN_CONTENT_STYLE}
     >
-      <H1>{t('myPay.title')}</H1>
+      <BackRow
+        testID="my-pay-back"
+        onPress={() => router.back()}
+        label={tCommon('back')}
+      />
+      <H1 className="mt-2">{t('myPay.title')}</H1>
       <Small className="mt-1 text-muted-foreground">
         {t('myPay.subtitle')}
       </Small>

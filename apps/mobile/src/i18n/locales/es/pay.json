@@ -42,7 +42,6 @@
     "backdatingHint": "Las semanas ya aprobadas conservan sus totales aprobados.",
     "midWeekConsequence": "Esta semana se pagará a dos tarifas: {{oldRate}} hasta el {{oldUntil}}, luego {{newRate}} desde el {{newFrom}}.",
     "overtimeAfterLabel": "Horas extra después de",
-    "overtimeAfterUnit": "horas",
     "overtimePaidAtLabel": "Se paga a",
     "overtimeHint": "Déjalo en blanco si no hay tarifa de horas extra.",
     "guaranteedHoursFieldLabel": "Horas garantizadas a la semana",

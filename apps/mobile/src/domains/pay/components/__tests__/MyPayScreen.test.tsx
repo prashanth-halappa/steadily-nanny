@@ -22,6 +22,26 @@ mock.module('@/src/components/ui/loading-indicator', () => {
   };
 });
 
+// Captured (not the preload's fresh-mock-per-call default) so tests can
+// assert router.back() was actually invoked — review finding 5.
+const routerBack = mock();
+mock.module('expo-router', () => ({
+  useRouter: () => ({
+    push: mock(),
+    replace: mock(),
+    back: routerBack,
+    navigate: mock(),
+  }),
+  useLocalSearchParams: mock(() => ({})),
+  useSegments: mock(() => []),
+  usePathname: mock(() => ''),
+  useFocusEffect: mock(() => {}),
+  Link: 'Link',
+  Redirect: 'Redirect',
+  Stack: { Screen: 'StackScreen' },
+  Tabs: { Screen: 'TabsScreen' },
+}));
+
 const NANNY_ID = 'nanny-1';
 const HOUSEHOLD_A = 'household-a';
 const HOUSEHOLD_B = 'household-b';
@@ -113,6 +133,7 @@ beforeEach(() => {
   listMock.mockReset();
   membershipsListMock.mockReset();
   payCurrentMock.mockReset();
+  routerBack.mockClear();
 
   listMock.mockImplementation(() => Promise.resolve([householdA, householdB]));
   membershipsListMock.mockImplementation(() =>
@@ -172,5 +193,53 @@ describe('MyPayScreen', () => {
       expect(getByTestId('my-pay-not-available')).toBeTruthy()
     );
     expect(queryByTestId(`my-pay-household-${HOUSEHOLD_A}`)).toBeNull();
+  });
+
+  describe('review finding 5: a back affordance in every state, including loading and not-available', () => {
+    it('the loading state has a back control that calls router.back() on press', () => {
+      const { getByTestId } = renderWithProviders(<MyPayScreen />);
+
+      // Synchronous — react-query hooks start pending on the very first
+      // render, before any awaited settle.
+      const back = getByTestId('my-pay-loading-back');
+      expect(back.props.accessibilityRole).toBe('button');
+      expect(back.props.accessibilityLabel).toBe('back');
+      expect(back.props.hitSlop).toBe(8);
+
+      fireEvent.press(back);
+      expect(routerBack).toHaveBeenCalled();
+    });
+
+    it('the not-available state has a back control that calls router.back() on press', async () => {
+      membershipsListMock.mockImplementation(() =>
+        Promise.resolve([{ ...nannyMembership(HOUSEHOLD_A), role: 'owner' }])
+      );
+
+      const { getByTestId } = renderWithProviders(<MyPayScreen />);
+
+      await waitFor(() =>
+        expect(getByTestId('my-pay-not-available-back')).toBeTruthy()
+      );
+      const back = getByTestId('my-pay-not-available-back');
+      expect(back.props.accessibilityRole).toBe('button');
+      expect(back.props.accessibilityLabel).toBe('back');
+      expect(back.props.hitSlop).toBe(8);
+
+      fireEvent.press(back);
+      expect(routerBack).toHaveBeenCalled();
+    });
+
+    it('the main loaded state has a back control that calls router.back() on press', async () => {
+      const { getByTestId } = renderWithProviders(<MyPayScreen />);
+
+      await waitFor(() => expect(getByTestId('my-pay-back')).toBeTruthy());
+      const back = getByTestId('my-pay-back');
+      expect(back.props.accessibilityRole).toBe('button');
+      expect(back.props.accessibilityLabel).toBe('back');
+      expect(back.props.hitSlop).toBe(8);
+
+      fireEvent.press(back);
+      expect(routerBack).toHaveBeenCalled();
+    });
   });
 });

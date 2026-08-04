@@ -24,6 +24,17 @@ mock.module('@/lib/useColorScheme', () => ({
   }),
 }));
 
+// Mutable so individual tests can simulate "today" advancing (e.g. midnight
+// passing) while a sheet stays open with no re-render — review finding 11.
+let mockToday = '2026-08-04';
+mock.module('@/src/lib/localDate', () => {
+  const actual = require('@/src/lib/localDate');
+  return {
+    ...actual,
+    localDateInZone: (..._args: unknown[]) => mockToday,
+  };
+});
+
 const TODAY_ISO = '2026-08-04'; // a Tuesday
 
 const currentArrangement: PayArrangement = {
@@ -59,6 +70,7 @@ function renderSheet(
       currentArrangement={currentArrangement}
       householdCancellationDefaultHours={0}
       todayISO={TODAY_ISO}
+      householdTimezone="UTC"
       {...overrides}
     />
   );
@@ -157,5 +169,50 @@ describe('PayChangeSheet', () => {
     // this sheet itself never clears state on its own — it stays mounted with
     // the typed value regardless of what onSubmit's caller does.
     expect(getByTestId('pay-change-rate-input').props.value).toBe('22.00');
+  });
+
+  describe('review finding 11: the submitted date is computed at submit time, not frozen at render time', () => {
+    it('submits the LATER date when "today" rolls over (e.g. past midnight) while the sheet stays open with no re-render', () => {
+      mockToday = '2026-08-04';
+      const { getByTestId, onSubmit } = renderSheet({ todayISO: '2026-08-04' });
+
+      // Simulate the sheet sitting open across midnight: nothing re-renders
+      // (no state change happens), but the real "today" has moved on.
+      mockToday = '2026-08-05';
+      fireEvent.press(getByTestId('pay-change-submit'));
+
+      expect(onSubmit).toHaveBeenCalledWith(
+        expect.objectContaining({ valid_from: '2026-08-05' })
+      );
+    });
+  });
+
+  describe('review finding 14: currency prefix uses the arrangement currency, not a hardcoded £', () => {
+    it('shows € for a EUR arrangement', () => {
+      const { getByTestId } = renderSheet({
+        currentArrangement: { ...currentArrangement, currency: 'EUR' },
+      });
+      expect(getByTestId('pay-change-currency-prefix').props.children).toBe(
+        '€'
+      );
+    });
+
+    it('shows $ for a USD arrangement', () => {
+      const { getByTestId } = renderSheet({
+        currentArrangement: { ...currentArrangement, currency: 'USD' },
+      });
+      expect(getByTestId('pay-change-currency-prefix').props.children).toBe(
+        '$'
+      );
+    });
+
+    it('falls back to the bare code for an unmapped currency, never blank', () => {
+      const { getByTestId } = renderSheet({
+        currentArrangement: { ...currentArrangement, currency: 'AUD' },
+      });
+      expect(getByTestId('pay-change-currency-prefix').props.children).toBe(
+        'AUD'
+      );
+    });
   });
 });

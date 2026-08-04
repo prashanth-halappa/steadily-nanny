@@ -18,7 +18,7 @@ import type { HouseholdMember } from '@steadily-nanny/shared-types/schemas/house
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Pressable, ScrollView, View } from 'react-native';
+import { ScrollView, View } from 'react-native';
 import { AnimatedPressable } from '@/lib/animations';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { ErrorState } from '@/src/components/custom/ErrorState';
@@ -42,6 +42,7 @@ import { useElevation } from '~/lib/design-tokens/elevation';
 import { formatDisplayDateWithYear } from '../utils/payArrangementForm';
 import { buildTermRows } from '../utils/termRows';
 import { AmountRow } from './AmountRow';
+import { BackRow } from './BackRow';
 import { PayChangeSheet } from './PayChangeSheet';
 
 function normalizeParam(
@@ -51,47 +52,52 @@ function normalizeParam(
   return Array.isArray(value) ? value[0] : value;
 }
 
+/**
+ * Fallback chain: the member's own override -> the arrangement's
+ * server-stored `carer_display_name` (real, profile-derived — never the
+ * generic role label while an arrangement exists) -> the role label as a
+ * last resort (review finding 8). `useHouseholdMembers` carries no
+ * profile-derived name field beyond `display_name_override`, so the
+ * arrangement is the only other honest source available here.
+ */
 function resolveCarerName(
   member: HouseholdMember | undefined,
-  fallbackName: string | undefined,
+  arrangementCarerDisplayName: string | undefined,
   roleFallback: string
 ): string {
   return (
-    fallbackName?.trim() ||
     member?.display_name_override?.trim() ||
+    arrangementCarerDisplayName?.trim() ||
     roleFallback
-  );
-}
-
-function BackRow({ onPress, label }: { onPress: () => void; label: string }) {
-  return (
-    <Pressable onPress={onPress} className="self-start">
-      <Body className="text-primary">{`< ${label}`}</Body>
-    </Pressable>
   );
 }
 
 function CarerPickerRow({
   householdId,
   carer,
-  name,
+  roleFallbackLabel,
   onPress,
 }: {
   householdId: string;
   carer: HouseholdMember;
-  name: string;
+  roleFallbackLabel: string;
   onPress: () => void;
 }) {
   const elevation = useElevation();
   const current = useCurrentPayArrangement(householdId, carer.user_id);
   const { t } = useTranslation('pay');
-  const rateLabel = current.data
-    ? formatRate(current.data.rate_minor, current.data.currency)
-    : t('notSet');
+  const name = resolveCarerName(
+    carer,
+    current.data?.carer_display_name,
+    roleFallbackLabel
+  );
 
   return (
     <AnimatedPressable
       testID={`pay-carer-picker-${carer.user_id}`}
+      accessibilityRole="button"
+      accessibilityLabel={name}
+      hitSlop={8}
       onPress={onPress}
     >
       <View
@@ -99,9 +105,16 @@ function CarerPickerRow({
         style={elevation.row}
       >
         <Body className="flex-1 text-primary">{name}</Body>
-        <Small className="text-muted-foreground" tabular>
-          {rateLabel}
-        </Small>
+        {/* While the rate query is pending, render nothing rather than a
+         * misleading "Not set" (review finding 7) — the PaySetupPromptCard's
+         * isPending -> null discipline, applied to this rate label too. */}
+        {current.isPending ? null : (
+          <Small className="text-muted-foreground" tabular>
+            {current.data
+              ? formatRate(current.data.rate_minor, current.data.currency)
+              : t('notSet')}
+          </Small>
+        )}
       </View>
     </AnimatedPressable>
   );
@@ -112,7 +125,12 @@ interface CarerPayDetailProps {
   householdTimezone: string;
   householdCancellationDefaultHours: number;
   carerId: string;
-  carerName: string;
+  /** The carer's own household-membership row, when resolved — the first
+   * link in the display-name fallback chain (review finding 8). */
+  carerMember: HouseholdMember | undefined;
+  /** The role label to fall back to when neither the member's own override
+   * nor the arrangement's stored name are available. */
+  roleFallbackLabel: string;
   /** Only true when reached via the 2+ nanny picker — a single-nanny
    * household infers the carer from context, so repeating her name would be
    * redundant noise on an already-titled screen. */
@@ -125,7 +143,8 @@ function CarerPayDetail({
   householdTimezone,
   householdCancellationDefaultHours,
   carerId,
-  carerName,
+  carerMember,
+  roleFallbackLabel,
   showCarerName,
   members,
 }: CarerPayDetailProps) {
@@ -152,6 +171,14 @@ function CarerPayDetail({
   }
 
   const arrangement = current.data;
+  // Resolved only once `current` has settled — the arrangement's stored
+  // `carer_display_name` is the second link in the fallback chain (review
+  // finding 8), and it isn't known any earlier than this.
+  const carerName = resolveCarerName(
+    carerMember,
+    arrangement?.carer_display_name,
+    roleFallbackLabel
+  );
   const todayISO = localDateInZone(householdTimezone);
 
   const handleSubmit = (
@@ -267,6 +294,7 @@ function CarerPayDetail({
             householdCancellationDefaultHours={
               householdCancellationDefaultHours
             }
+            householdTimezone={householdTimezone}
             todayISO={todayISO}
           />
         </>
@@ -308,7 +336,11 @@ export function PayArrangementScreen() {
     return (
       <View testID="pay-not-available" className="flex-1 bg-background">
         <ScrollView contentContainerStyle={SCREEN_CONTENT_STYLE}>
-          <BackRow onPress={() => router.back()} label={tCommon('back')} />
+          <BackRow
+            testID="pay-not-available-back"
+            onPress={() => router.back()}
+            label={tCommon('back')}
+          />
           <View className="mt-8">
             <EmptyState
               variant="inline"
@@ -339,11 +371,6 @@ export function PayArrangementScreen() {
   const resolvedCarerMember = resolvedCarerId
     ? nannies.find(m => m.user_id === resolvedCarerId)
     : undefined;
-  const carerName = resolveCarerName(
-    resolvedCarerMember,
-    undefined,
-    tSettings('role.nanny')
-  );
   const household = activeHousehold.household;
 
   return (
@@ -352,7 +379,11 @@ export function PayArrangementScreen() {
       className="flex-1 bg-background"
       contentContainerStyle={SCREEN_CONTENT_STYLE}
     >
-      <BackRow onPress={() => router.back()} label={tCommon('back')} />
+      <BackRow
+        testID="pay-back"
+        onPress={() => router.back()}
+        label={tCommon('back')}
+      />
       <H1 testID="pay-title" className="mt-2">
         {t('title')}
       </H1>
@@ -376,11 +407,7 @@ export function PayArrangementScreen() {
                 key={member.id}
                 householdId={householdId}
                 carer={member}
-                name={resolveCarerName(
-                  member,
-                  undefined,
-                  tSettings('role.nanny')
-                )}
+                roleFallbackLabel={tSettings('role.nanny')}
                 onPress={() => router.push(`/settings/pay/${member.user_id}`)}
               />
             ))}
@@ -394,7 +421,8 @@ export function PayArrangementScreen() {
             household?.cancellation_paid_within_hours ?? 0
           }
           carerId={resolvedCarerId}
-          carerName={carerName}
+          carerMember={resolvedCarerMember}
+          roleFallbackLabel={tSettings('role.nanny')}
           showCarerName={nannies.length > 1}
           members={members.data ?? []}
         />

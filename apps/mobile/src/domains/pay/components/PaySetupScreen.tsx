@@ -29,6 +29,7 @@ import { SetupScreenShell } from '@/src/domains/setup/components/SetupScreenShel
 import { isParentEditorRole } from '@/src/domains/setup/types';
 import { useCreatePayArrangement } from '@/src/hooks/mutations/useCreatePayArrangement';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
+import { useCurrentPayArrangement } from '@/src/hooks/queries/useCurrentPayArrangement';
 import { useHouseholdMembers } from '@/src/hooks/queries/useHouseholdMembers';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 import { localDateInZone } from '@/src/lib/localDate';
@@ -59,6 +60,15 @@ export function PaySetupScreen() {
   const householdId = activeHousehold.householdId;
   const household = activeHousehold.household;
   const members = useHouseholdMembers(householdId);
+  // Whether a current arrangement already exists for this carer — if it
+  // does, this screen was reached a second time (e.g. the prompt-card link
+  // stayed reachable after someone else already set her terms), and seeding
+  // the day she joined would silently backdate a change she may not intend.
+  // Default to today instead in that case (review finding 9).
+  const currentArrangement = useCurrentPayArrangement(
+    householdId,
+    carerId ?? null
+  );
   const createArrangement = useCreatePayArrangement(
     householdId ?? '',
     carerId ?? ''
@@ -95,10 +105,21 @@ export function PaySetupScreen() {
   // never clobbers what the parent is mid-typing.
   const hasSeededRef = useRef(false);
   useEffect(() => {
-    if (hasSeededRef.current || !member || !household) return;
+    if (
+      hasSeededRef.current ||
+      !member ||
+      !household ||
+      currentArrangement.isPending
+    ) {
+      return;
+    }
     hasSeededRef.current = true;
+    // Only seed the joined-date default when there is genuinely no current
+    // arrangement yet — the first-time-setup case the screen is named for.
+    // A current arrangement already existing means "today" (the initial
+    // state) is the honest default (review finding 9).
     const joinedDateISO = localDateInZone(timezone, new Date(member.joined_at));
-    if (joinedDateISO < todayISO) {
+    if (!currentArrangement.data && joinedDateISO < todayISO) {
       setEffectiveChoice('earlier');
       setEarlierDateText(joinedDateISO);
     }
@@ -113,6 +134,8 @@ export function PaySetupScreen() {
     timezone,
     todayISO,
     householdCancellationDefaultHours,
+    currentArrangement.isPending,
+    currentArrangement.data,
   ]);
 
   if (onboarding.status === 'loading' || activeHousehold.isLoading) {
@@ -149,7 +172,12 @@ export function PaySetupScreen() {
     );
   }
 
-  if (!householdId || !carerId || members.isPending) {
+  if (
+    !householdId ||
+    !carerId ||
+    members.isPending ||
+    currentArrangement.isPending
+  ) {
     return (
       <View testID="pay-setup-screen" className="flex-1 bg-background">
         <LoadingIndicator testID="pay-loading" />
@@ -172,6 +200,12 @@ export function PaySetupScreen() {
     cancellationChoice,
     cancellationHoursText,
     note,
+    // Almost always undefined here (this screen is the FIRST arrangement,
+    // where 1.5 is the right blank-threshold default) — but if a current
+    // arrangement does exist (review finding 9's re-entry case), carry its
+    // multiplier through unchanged too, same discipline as PayChangeSheet
+    // (review finding 6).
+    currentOvertimeMultiplier: currentArrangement.data?.overtime_multiplier,
   };
   const request = buildCreatePayArrangementRequest(formState);
 

@@ -38,7 +38,9 @@ import { LoadingButton } from '@/src/components/ui/loading-button';
 import { Text } from '@/src/components/ui/text';
 import { Textarea } from '@/src/components/ui/textarea';
 import { Body, H4, Label, Small } from '@/src/components/ui/typography';
+import { localDateInZone } from '@/src/lib/localDate';
 import { parseMajorToMinor } from '@/src/lib/money';
+import { currencySymbol } from '../utils/currencySymbol';
 import {
   buildCreatePayArrangementRequest,
   buildMidWeekConsequence,
@@ -59,8 +61,14 @@ interface PayChangeSheetProps {
   /** For the cancellation-hours default when the current arrangement has no
    * per-nanny window set — the household's fallback column. */
   householdCancellationDefaultHours: number;
-  /** Household-local today, "yyyy-mm-dd" — injectable for tests. */
+  /** Household-local today, "yyyy-mm-dd" — injectable for tests. Used for
+   * the chip label and the render-time enable/disable check; the ACTUAL
+   * submitted date is recomputed fresh at submit time from
+   * `householdTimezone` (review finding 11 — see `handleSubmit`). */
   todayISO: string;
+  /** IANA timezone — recomputes "today" at submit time so a sheet left open
+   * across midnight never submits a stale date (review finding 11). */
+  householdTimezone: string;
 }
 
 function EffectiveDateChip({
@@ -96,6 +104,7 @@ export function PayChangeSheet({
   currentArrangement,
   householdCancellationDefaultHours,
   todayISO,
+  householdTimezone,
 }: PayChangeSheetProps) {
   const { t } = useTranslation('pay');
 
@@ -197,12 +206,28 @@ export function PayChangeSheet({
     cancellationChoice,
     cancellationHoursText,
     note,
+    currentOvertimeMultiplier: currentArrangement.overtime_multiplier,
   };
+  // Render-time only — drives the chip variants and the submit button's
+  // enabled state. The chip label is allowed to stay render-time (review
+  // finding 11's own carve-out); this value must NOT be what gets submitted.
   const request = buildCreatePayArrangementRequest(formState);
 
   const handleSubmit = () => {
-    if (!request) return;
-    onSubmit(request);
+    // Recomputed HERE, not read from the `todayISO` prop closed over at
+    // render time: a sheet left open across midnight must submit today's
+    // real date, not whatever "today" was when it was opened (review
+    // finding 11).
+    const submitTodayISO = localDateInZone(householdTimezone);
+    const submitState: PayTermsFormState = {
+      ...formState,
+      effectiveDateISO:
+        effectiveChoice === 'today' ? submitTodayISO : earlierDateText,
+      todayISO: submitTodayISO,
+    };
+    const submitRequest = buildCreatePayArrangementRequest(submitState);
+    if (!submitRequest) return;
+    onSubmit(submitRequest);
   };
 
   return (
@@ -220,8 +245,11 @@ export function PayChangeSheet({
         <View className="gap-2">
           <Label>{t('changeSheet.rateLabel')}</Label>
           <View className="flex-row items-center gap-2">
-            <Body className="text-muted-foreground">
-              {currentArrangement.currency === 'GBP' ? '£' : ''}
+            <Body
+              testID="pay-change-currency-prefix"
+              className="text-muted-foreground"
+            >
+              {currencySymbol(currentArrangement.currency)}
             </Body>
             <Input
               testID="pay-change-rate-input"

@@ -200,6 +200,38 @@ describe('buildCreatePayArrangementRequest', () => {
       })
     ).toBeNull();
   });
+
+  describe('review finding 6: blank-threshold multiplier', () => {
+    it('carries the CURRENT arrangement multiplier through unchanged on a rate-only change, never hardcoding 1.5', () => {
+      const result = buildCreatePayArrangementRequest({
+        ...baseState,
+        rateText: '19.00',
+        overtimeThresholdHoursText: '',
+        overtimeMultiplierText: '1.50', // stale/irrelevant typed text, threshold blank
+        currentOvertimeMultiplier: 2.0,
+      });
+      expect(result?.overtime_multiplier).toBe(2.0);
+      expect(result?.overtime_threshold_minutes).toBeNull();
+    });
+
+    it('defaults to 1.5 when there is no current arrangement at all (first-ever setup)', () => {
+      const result = buildCreatePayArrangementRequest({
+        ...baseState,
+        overtimeThresholdHoursText: '',
+      });
+      expect(result?.overtime_multiplier).toBe(1.5);
+    });
+
+    it('a typed threshold still uses the typed multiplier, current arrangement or not', () => {
+      const result = buildCreatePayArrangementRequest({
+        ...baseState,
+        overtimeThresholdHoursText: '40',
+        overtimeMultiplierText: '1.75',
+        currentOvertimeMultiplier: 2.0,
+      });
+      expect(result?.overtime_multiplier).toBe(1.75);
+    });
+  });
 });
 
 describe('buildMidWeekConsequence', () => {

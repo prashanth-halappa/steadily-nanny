@@ -151,6 +151,16 @@ export interface PayTermsFormState {
   cancellationChoice: 'window' | 'none' | null;
   cancellationHoursText: string;
   note: string;
+  /**
+   * The CURRENT arrangement's `overtime_multiplier` — carried through
+   * unchanged when the threshold field is blank (review finding 6), so a
+   * rate-only change never silently rewrites a non-default stored
+   * multiplier back to the 1.5 default. Omit (leave `undefined`) only when
+   * there IS no current arrangement yet — `PaySetupScreen`'s first-ever
+   * arrangement — where 1.5 is genuinely the correct blank-threshold
+   * default.
+   */
+  currentOvertimeMultiplier?: number;
 }
 
 /**
@@ -170,7 +180,11 @@ export function buildCreatePayArrangementRequest(
   if (state.effectiveDateISO > state.todayISO) return null;
 
   let overtimeThresholdMinutes: number | null = null;
-  let overtimeMultiplier = 1.5;
+  // Blank threshold: carry the current arrangement's multiplier through
+  // unchanged rather than hardcoding 1.5 (review finding 6) — there is no
+  // current arrangement only on the first-ever setup screen, where 1.5 is
+  // the correct default.
+  let overtimeMultiplier = state.currentOvertimeMultiplier ?? 1.5;
   const thresholdTrimmed = state.overtimeThresholdHoursText.trim();
   if (thresholdTrimmed !== '') {
     const minutes = parseHoursToMinutes(thresholdTrimmed);
