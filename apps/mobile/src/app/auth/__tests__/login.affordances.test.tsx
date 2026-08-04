@@ -7,6 +7,10 @@ import { join } from 'node:path';
 
 const LOGIN = readFileSync(join(import.meta.dir, '../login.tsx'), 'utf8');
 const REGISTER = readFileSync(join(import.meta.dir, '../register.tsx'), 'utf8');
+const FORGOT = readFileSync(
+  join(import.meta.dir, '../forgot-password.tsx'),
+  'utf8'
+);
 const LAYOUT = readFileSync(join(import.meta.dir, '../_layout.tsx'), 'utf8');
 
 describe('Login/Register affordances (Pattern A)', () => {
@@ -24,9 +28,19 @@ describe('Login/Register affordances (Pattern A)', () => {
     expect(REGISTER).toContain('LoadingButton');
   });
 
-  it('clears a persisted auth error when Login mounts', () => {
+  it('clears a persisted auth error when Login or Register mounts', () => {
     expect(LOGIN).toContain('clearError()');
     expect(LOGIN).toMatch(/useEffect\([\s\S]*clearError/);
+    // Without this, login's "Create account" carries the failed sign-in error
+    // over and paints both Register fields destructive-red while still empty.
+    expect(REGISTER).toContain('clearError()');
+    expect(REGISTER).toMatch(/useEffect\([\s\S]*clearError/);
+  });
+
+  it('wires the Input error border to the auth error on every form', () => {
+    for (const source of [LOGIN, REGISTER, FORGOT]) {
+      expect(source).toContain('error={Boolean(error)}');
+    }
   });
 
   it('wraps forms in KeyboardAvoidingView and shows a stack back header', () => {

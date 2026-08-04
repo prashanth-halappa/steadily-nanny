@@ -1,5 +1,5 @@
 import { useRouter } from 'expo-router';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   KeyboardAvoidingView,
@@ -30,8 +30,16 @@ export default function Register() {
   const [passwordVisible, setPasswordVisible] = useState(false);
   const passwordRef = useRef<TextInput>(null);
   const signUp = useAuthStore(s => s.signUp);
+  const clearError = useAuthStore(s => s.clearError);
   const error = useAuthStore(s => s.error);
   const isLoading = useAuthStore(s => s.isLoading);
+
+  // A failed sign-in leaves `error` set in the store; without this, arriving
+  // here from login's "Create account" renders both fields destructive-red
+  // with the stale login message before anything is typed. Same as login.tsx.
+  useEffect(() => {
+    clearError();
+  }, [clearError]);
 
   return (
     <SafeAreaView
@@ -51,6 +59,7 @@ export default function Register() {
             value={email}
             onChangeText={setEmail}
             placeholder={t('email')}
+            error={Boolean(error)}
             autoCapitalize="none"
             keyboardType="email-address"
             textContentType="username"
@@ -66,6 +75,7 @@ export default function Register() {
               value={password}
               onChangeText={setPassword}
               placeholder={t('password')}
+              error={Boolean(error)}
               secureTextEntry={!passwordVisible}
               textContentType="newPassword"
               autoComplete="new-password"

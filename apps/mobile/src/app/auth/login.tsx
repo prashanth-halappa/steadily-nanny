@@ -51,6 +51,7 @@ export default function Login() {
             value={email}
             onChangeText={setEmail}
             placeholder={t('email')}
+            error={Boolean(error)}
             autoCapitalize="none"
             keyboardType="email-address"
             textContentType="username"
@@ -66,6 +67,7 @@ export default function Login() {
               value={password}
               onChangeText={setPassword}
               placeholder={t('password')}
+              error={Boolean(error)}
               secureTextEntry={!passwordVisible}
               textContentType="password"
               autoComplete="password"

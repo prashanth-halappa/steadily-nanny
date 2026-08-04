@@ -4,9 +4,10 @@ import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button } from '@/src/components/ui/button';
+import { InlineError } from '@/src/components/ui/inline-error';
 import { Input } from '@/src/components/ui/input';
 import { Text } from '@/src/components/ui/text';
-import { Body, H1, Small } from '@/src/components/ui/typography';
+import { Body, H1 } from '@/src/components/ui/typography';
 import { useAuthStore } from '@/src/store/auth';
 
 export default function ForgotPassword() {
@@ -52,17 +53,13 @@ export default function ForgotPassword() {
               value={email}
               onChangeText={setEmail}
               placeholder={t('email')}
+              error={Boolean(error)}
               autoCapitalize="none"
               keyboardType="email-address"
               autoComplete="email"
             />
             {error ? (
-              <Small
-                testID="forgot-password-error"
-                className="text-destructive"
-              >
-                {error}
-              </Small>
+              <InlineError testID="forgot-password-error" message={error} />
             ) : null}
             <Button
               testID="forgot-password-submit"
