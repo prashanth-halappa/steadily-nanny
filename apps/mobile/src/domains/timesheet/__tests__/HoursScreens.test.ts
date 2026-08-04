@@ -114,8 +114,18 @@ describe('ParentWeekView', () => {
     expect(parentWeekViewSource).not.toContain('waitingForSubmit');
   });
 
-  it('approval is a single tap — no confirmation dialog wrapping it', () => {
-    expect(parentWeekViewSource).not.toMatch(/AlertDialog/);
+  // SUPERSEDED by TIER0-CX-SPEC.md §4.3: approving now freezes a gross
+  // figure alongside the hours, so the tap opens `ApproveWeekDialog` (an
+  // `AlertDialog`, GOLDEN-FIXES #1) instead of calling the mutation
+  // directly. The button press only opens the dialog; the mutation call
+  // itself still lives in `handleApprove` (asserted below), reached from the
+  // dialog's confirm action.
+  it('approve is behind a confirmation dialog (ApproveWeekDialog), not a direct tap', () => {
+    expect(parentWeekViewSource).toContain('ApproveWeekDialog');
+    expect(parentWeekViewSource).toContain('isApproveDialogOpen');
+    expect(parentWeekViewSource).toMatch(
+      /onPress=\{\(\) => setIsApproveDialogOpen\(true\)\}/
+    );
   });
 
   it('shows ErrorState when the week queries fail — never a silent zero-hour week', () => {

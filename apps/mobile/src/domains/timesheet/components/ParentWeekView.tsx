@@ -1,8 +1,10 @@
 /**
  * @module domains/timesheet/components/ParentWeekView
  * A parent's view of their carer's week: the same per-day hours as the
- * nanny sees, plus "Approve the week" (one tap) and a "Query" escape hatch
- * that takes a note instead of silently withholding approval.
+ * nanny sees, plus "Approve the week" (behind a confirmation dialog,
+ * TIER0-CX-SPEC.md §4.3 — approving freezes the gross figure alongside the
+ * hours) and a "Query" escape hatch that takes a note instead of silently
+ * withholding approval.
  */
 import { FlashList } from '@shopify/flash-list';
 import { useMemo, useState } from 'react';
@@ -21,11 +23,20 @@ import { useQueryTimesheet } from '@/src/hooks/mutations/useQueryTimesheet';
 import { useHouseholdMembers } from '@/src/hooks/queries/useHouseholdMembers';
 import { useWeekTimeEntries } from '@/src/hooks/queries/useWeekTimeEntries';
 import { useWeekTimesheet } from '@/src/hooks/queries/useWeekTimesheet';
+import { localDateInZone } from '@/src/lib/localDate';
+import { formatMoney } from '@/src/lib/money';
 import { showSuccessToast } from '@/src/lib/toast';
 import { useAuthStore } from '@/src/store/auth';
 import { TIMESHEET_STATUSES, type TimeEntry } from '../types';
 import { formatDuration, formatOvertimeDelta } from '../utils/duration';
+import {
+  formatEarningsDuration,
+  formatEarningsLongDate,
+} from '../utils/earningsFormat';
 import { sumEntryMinutes } from '../utils/entryMinutes';
+import { useReopenedNotice } from '../utils/reopenedNotice';
+import { ApproveWeekDialog } from './ApproveWeekDialog';
+import { EarningsBreakdownSheet } from './EarningsBreakdownSheet';
 import { QueryNoteSheet } from './QueryNoteSheet';
 import { TimeEntryDayRow } from './TimeEntryDayRow';
 import { WeekTotal } from './WeekTotal';
@@ -79,6 +90,12 @@ export function ParentWeekView({
   const approveTimesheet = useApproveTimesheet();
   const queryTimesheet = useQueryTimesheet();
   const [isQuerySheetVisible, setIsQuerySheetVisible] = useState(false);
+  const [isApproveDialogOpen, setIsApproveDialogOpen] = useState(false);
+  const [isBreakdownVisible, setIsBreakdownVisible] = useState(false);
+  const reopened = useReopenedNotice(
+    timesheetQuery.data?.id,
+    timesheetQuery.data?.status
+  );
 
   const membersByUserId = useMemo(
     () =>
@@ -101,20 +118,26 @@ export function ParentWeekView({
     return <LoadingIndicator testID="hours-loading" />;
   }
 
-  if (entriesQuery.isError || timesheetQuery.isError) {
+  // Hours (`entriesQuery`) failing blanks the whole screen — there is
+  // nothing honest left to show without the record itself. A timesheet-only
+  // failure is different: TIER0-CX-SPEC.md §4.5 "Earnings error (hours OK)"
+  // requires the day rows to keep rendering, degrading only the money line
+  // to a retry affordance (`earningsError` below) — approve/query simply
+  // have nothing to act on without the timesheet row, which the `!timesheet`
+  // guards already in this component handle the same as "not yet loaded".
+  if (entriesQuery.isError) {
     return (
       <ErrorState
         variant="network"
-        onRetry={() => {
-          void entriesQuery.refetch();
-          void timesheetQuery.refetch();
-        }}
+        onRetry={() => void entriesQuery.refetch()}
       />
     );
   }
 
   const entries = entriesQuery.data ?? [];
-  const timesheet = timesheetQuery.data ?? null;
+  const timesheet = timesheetQuery.isError
+    ? null
+    : (timesheetQuery.data ?? null);
   const totalMinutes = sumEntryMinutes(entries, nowMs);
   const overtimeLabel = formatOvertimeDelta(
     totalMinutes,
@@ -157,6 +180,25 @@ export function ParentWeekView({
     entries: entries.filter(entry => entry.local_date === date),
   }));
 
+  // TIER0-CX-SPEC.md §4 — the money surface. `earnings` is `undefined` only
+  // when there is no timesheet row at all yet (nothing clocked out this
+  // week); `WeekTotal` renders no money line in that case.
+  const earnings = timesheet?.earnings;
+  // Narrowed via a fresh binding, not a separately-named boolean — TS only
+  // narrows `earnings` itself from a check performed directly on it.
+  const earningsOk = earnings && earnings.status === 'ok' ? earnings : null;
+  const approvedDateLabel =
+    isApproved && timesheet?.approved_at
+      ? formatEarningsLongDate(
+          localDateInZone(timeZone, new Date(timesheet.approved_at))
+        )
+      : null;
+  const grossLabel = earningsOk
+    ? formatMoney(earningsOk.gross_minor, earningsOk.currency)
+    : null;
+  const approveDialogCarerName =
+    carerName ?? timesheet?.carer_display_name ?? tSchedule('detail.someone');
+
   // `.mutateAsync(...).then(onFulfilled)` with no rejection handler left a
   // failure's promise entirely unhandled (an "Uncaught (in promise)" in
   // metro.log, the same defect class as the clock-in double-tap bug) even
@@ -170,6 +212,15 @@ export function ParentWeekView({
       return;
     }
     showSuccessToast(t('approvedToast'));
+  };
+
+  // Closing the dialog is explicit here (not relied on from the primitive's
+  // own auto-close) — same discipline as `ManageHouseholdScreen`'s timezone
+  // confirmation, which sets its own `isTimezoneConfirmOpen` to false before
+  // calling its mutation.
+  const handleConfirmApprove = () => {
+    setIsApproveDialogOpen(false);
+    void handleApprove();
   };
 
   const handleQuerySubmit = async (note: string) => {
@@ -211,6 +262,15 @@ export function ParentWeekView({
             carerName={carerName}
             timesheetStatus={timesheet?.status ?? null}
             showPayBoundary
+            totalMinutes={totalMinutes}
+            earnings={earnings}
+            earningsRole="parent"
+            earningsCarerId={timesheet?.carer_id ?? null}
+            earningsCarerDisplayName={timesheet?.carer_display_name ?? ''}
+            onPressEarnings={() => setIsBreakdownVisible(true)}
+            earningsReopened={reopened}
+            earningsError={timesheetQuery.isError}
+            onRetryEarnings={() => void timesheetQuery.refetch()}
           />
         }
         ListFooterComponent={
@@ -239,7 +299,7 @@ export function ParentWeekView({
                   testID="hours-approve-button"
                   className="mt-6"
                   disabled={!isActionable || approveTimesheet.isPending}
-                  onPress={() => void handleApprove()}
+                  onPress={() => setIsApproveDialogOpen(true)}
                 >
                   <Text>{isApproved ? t('approved') : t('approveWeek')}</Text>
                 </Button>
@@ -273,6 +333,27 @@ export function ParentWeekView({
         placeholder={t('queryNotePlaceholder')}
         submitLabel={t('querySubmit')}
       />
+
+      <ApproveWeekDialog
+        open={isApproveDialogOpen}
+        onOpenChange={setIsApproveDialogOpen}
+        onConfirm={handleConfirmApprove}
+        isSubmitting={approveTimesheet.isPending}
+        weekRangeLabel={weekRangeLabel}
+        hoursLabel={formatEarningsDuration(totalMinutes)}
+        grossLabel={grossLabel}
+        carerName={approveDialogCarerName}
+      />
+
+      {earningsOk ? (
+        <EarningsBreakdownSheet
+          visible={isBreakdownVisible}
+          onDismiss={() => setIsBreakdownVisible(false)}
+          earnings={earningsOk}
+          weekRangeLabel={weekRangeLabel}
+          approvedDateLabel={approvedDateLabel}
+        />
+      ) : null}
     </>
   );
 }

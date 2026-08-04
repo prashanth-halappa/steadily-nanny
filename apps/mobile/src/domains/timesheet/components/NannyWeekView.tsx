@@ -24,9 +24,13 @@ import {
 import { useUpdateTimeEntry } from '@/src/hooks/mutations/useUpdateTimeEntry';
 import { useWeekTimeEntries } from '@/src/hooks/queries/useWeekTimeEntries';
 import { useWeekTimesheet } from '@/src/hooks/queries/useWeekTimesheet';
+import { localDateInZone } from '@/src/lib/localDate';
 import type { TimeEntry } from '../types';
 import { formatDuration, formatOvertimeDelta } from '../utils/duration';
+import { formatEarningsLongDate } from '../utils/earningsFormat';
 import { sumEntryMinutes } from '../utils/entryMinutes';
+import { useReopenedNotice } from '../utils/reopenedNotice';
+import { EarningsBreakdownSheet } from './EarningsBreakdownSheet';
 import { TimeEntryDayRow } from './TimeEntryDayRow';
 import { WeekTotal } from './WeekTotal';
 
@@ -72,6 +76,11 @@ export function NannyWeekView({
   const timesheetQuery = useWeekTimesheet(householdId, weekStartISO);
   const updateEntry = useUpdateTimeEntry();
   const [editing, setEditing] = useState<TimeEntry | null>(null);
+  const [isBreakdownVisible, setIsBreakdownVisible] = useState(false);
+  const reopened = useReopenedNotice(
+    timesheetQuery.data?.id,
+    timesheetQuery.data?.status
+  );
 
   const handleSaveCorrection = ({
     breakMinutes,
@@ -100,14 +109,14 @@ export function NannyWeekView({
     return <LoadingIndicator testID="hours-loading" />;
   }
 
-  if (entriesQuery.isError || timesheetQuery.isError) {
+  // Same split as `ParentWeekView`: hours failing blanks the screen; a
+  // timesheet-only failure keeps the day rows and degrades only the money
+  // line (TIER0-CX-SPEC.md §4.5 "Earnings error (hours OK)").
+  if (entriesQuery.isError) {
     return (
       <ErrorState
         variant="network"
-        onRetry={() => {
-          void entriesQuery.refetch();
-          void timesheetQuery.refetch();
-        }}
+        onRetry={() => void entriesQuery.refetch()}
       />
     );
   }
@@ -123,6 +132,19 @@ export function NannyWeekView({
     date,
     entries: entries.filter(entry => entry.local_date === date),
   }));
+
+  const timesheet = timesheetQuery.isError
+    ? null
+    : (timesheetQuery.data ?? null);
+  const earnings = timesheet?.earnings;
+  const earningsOk = earnings && earnings.status === 'ok' ? earnings : null;
+  const isApproved = timesheet?.status === 'approved';
+  const approvedDateLabel =
+    isApproved && timesheet?.approved_at
+      ? formatEarningsLongDate(
+          localDateInZone(timeZone, new Date(timesheet.approved_at))
+        )
+      : null;
 
   return (
     <>
@@ -151,6 +173,15 @@ export function NannyWeekView({
             onNextWeek={onNextWeek}
             isNextDisabled={isNextWeekDisabled}
             isPreviousDisabled={isPreviousWeekDisabled}
+            timesheetStatus={timesheet?.status ?? null}
+            showStatusPill={false}
+            totalMinutes={totalMinutes}
+            earnings={earnings}
+            earningsRole="nanny"
+            earningsCarerId={timesheet?.carer_id ?? null}
+            earningsCarerDisplayName={timesheet?.carer_display_name ?? ''}
+            onPressEarnings={() => setIsBreakdownVisible(true)}
+            earningsReopened={reopened}
           />
         }
         contentContainerStyle={{
@@ -176,6 +207,16 @@ export function NannyWeekView({
         initialBreakMinutes={editing?.break_minutes ?? 0}
         initialNote={editing?.note ?? ''}
       />
+
+      {earningsOk ? (
+        <EarningsBreakdownSheet
+          visible={isBreakdownVisible}
+          onDismiss={() => setIsBreakdownVisible(false)}
+          earnings={earningsOk}
+          weekRangeLabel={weekRangeLabel}
+          approvedDateLabel={approvedDateLabel}
+        />
+      ) : null}
     </>
   );
 }

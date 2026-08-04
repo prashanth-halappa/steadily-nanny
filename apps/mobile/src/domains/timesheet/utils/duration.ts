@@ -54,11 +54,19 @@ export function formatElapsedClock(startIso: string, nowMs: number): string {
 }
 
 /**
- * "+14 min" / "-40 min" against a scheduled figure, or `null` when there is
- * nothing to compare against (no scheduled shift) or the two match exactly
- * (nothing worth stating). Deliberately minutes-only, unlike
- * `formatDuration` — an overtime delta reads better as a single unit than a
- * mixed "0h 14m".
+ * "2h over scheduled" / "40 min under scheduled" against a scheduled figure,
+ * or `null` when there is nothing to compare against (no scheduled shift) or
+ * the two match exactly (nothing worth stating).
+ *
+ * TIER0-CX-SPEC.md §4.2 amendment: once `WeekEarningsLine` can render an
+ * "Overtime pay" row on the SAME card, this delta must never read as a
+ * second overtime figure. The previous copy ("+14 min" / "-40 min") never
+ * literally said "overtime", but a bare signed number sitting next to a paid
+ * "Overtime pay" line invites exactly that misreading — the fix is the
+ * explicit "vs scheduled" framing the spec's own example uses ("2h over
+ * scheduled"), not a word swap. Magnitude formatting is delegated to
+ * `formatDuration` (so an hour-plus delta reads "2h", not "120 min") — same
+ * duration-rendering rule, just no longer minutes-only.
  */
 export function formatOvertimeDelta(
   actualMinutes: number,
@@ -67,8 +75,8 @@ export function formatOvertimeDelta(
   if (scheduledMinutes === null) return null;
   const delta = Math.round(actualMinutes - scheduledMinutes);
   if (delta === 0) return null;
-  const sign = delta > 0 ? '+' : '-';
-  return `${sign}${Math.abs(delta)} min`;
+  const direction = delta > 0 ? 'over' : 'under';
+  return `${formatDuration(Math.abs(delta))} ${direction} scheduled`;
 }
 
 /**

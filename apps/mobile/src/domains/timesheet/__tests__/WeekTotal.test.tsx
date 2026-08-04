@@ -113,6 +113,48 @@ describe('WeekTotal', () => {
     expect(prevButton.props.accessibilityState?.disabled).toBe(true);
   });
 
+  it('does not render a money line when earnings is omitted (undefined)', () => {
+    const { queryByTestId } = render(
+      <WeekTotal
+        testID="hours-week-total"
+        weekRangeLabel="3 Aug – 9 Aug"
+        totalLabel="9h 14m"
+        overtimeLabel={null}
+      />
+    );
+    expect(queryByTestId('hours-earnings-line')).toBeNull();
+  });
+
+  it('wires earnings through to WeekEarningsLine when earnings is provided', () => {
+    const { getByTestId } = render(
+      <WeekTotal
+        testID="hours-week-total"
+        weekRangeLabel="3 Aug – 9 Aug"
+        totalLabel="41h 0m"
+        overtimeLabel={null}
+        totalMinutes={2460}
+        timesheetStatus="submitted"
+        earningsRole="parent"
+        earningsCarerId="carer-1"
+        earnings={{
+          status: 'ok',
+          week_start: '2026-08-03',
+          currency: 'GBP',
+          lines: [],
+          gross_minor: 23612,
+          reimbursements_minor: 0,
+          worked_minutes: 2460,
+          payable_minutes: 2460,
+          guaranteed_minutes_per_week: null,
+        }}
+      />
+    );
+    expect(getByTestId('hours-earnings-line')).toBeTruthy();
+    expect(getByTestId('hours-earnings-line-amount').props.children).toBe(
+      '£236.12'
+    );
+  });
+
   it('renders carer name and timesheet status pill above the total', () => {
     const { getByTestId } = render(
       <WeekTotal

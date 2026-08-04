@@ -11,25 +11,43 @@
 import type {
   QueryTimesheetInput,
   Timesheet,
+  TimesheetWeek,
 } from '@steadily-nanny/shared-types/schemas/timesheet.schema';
 import {
   QueryTimesheetSchema,
   TimesheetListResponseSchema,
   TimesheetSchema,
+  TimesheetWeekSchema,
 } from '@steadily-nanny/shared-types/schemas/timesheet.schema';
 import { z } from 'zod';
 import { apiClient } from '@/src/api/client';
 
-export type { TimesheetStatus } from '@steadily-nanny/shared-types/schemas/timesheet.schema';
-export { TIMESHEET_STATUSES } from '@steadily-nanny/shared-types/schemas/timesheet.schema';
+export type {
+  EarningsLine,
+  EarningsLineKind,
+  HoursOnlyReason,
+  TimesheetStatus,
+  WeekEarnings,
+  WeekEarningsOk,
+  WeekEarningsStateResult,
+} from '@steadily-nanny/shared-types/schemas/timesheet.schema';
+export {
+  EARNINGS_LINE_KINDS,
+  EARNINGS_LINE_ORDER,
+  EARNINGS_RESULT_STATUSES,
+  HOURS_ONLY_REASONS,
+  TIMESHEET_STATUSES,
+  WEEK_EARNINGS_STATES,
+} from '@steadily-nanny/shared-types/schemas/timesheet.schema';
 // Re-exported so domain-internal imports (`@/src/api/endpoints/timesheets`)
 // stay stable regardless of where the wire contract itself lives.
-export type { QueryTimesheetInput, Timesheet };
+export type { QueryTimesheetInput, Timesheet, TimesheetWeek };
 
 // --- Endpoint URLs ----------------------------------------------------------
 export const timesheetEndpoints = {
   listForHousehold: (householdId: string) =>
     `/v1/households/${householdId}/timesheets`,
+  getWeek: (timesheetId: string) => `/v1/timesheets/${timesheetId}`,
   approve: (timesheetId: string) => `/v1/timesheets/${timesheetId}/approve`,
   query: (timesheetId: string) => `/v1/timesheets/${timesheetId}/query`,
 } as const;
@@ -52,17 +70,40 @@ export const timesheetApi = {
   },
 
   /**
-   * One week's timesheet for a household, or null if none exists yet (no
-   * row is created until the first clock-out of that week —
-   * `timesheetCommandService.clockOut`). Filters the full list client-side;
-   * see `list`'s doc comment for why there's no server-side week param here.
+   * One week's timesheet for a household, WITH its earnings attached, or
+   * null if no timesheet row exists yet (no row is created until the first
+   * clock-out of that week — `timesheetCommandService.clockOut`). Filters
+   * the full list client-side to find the id; see `list`'s doc comment for
+   * why there's no server-side week param here. The earnings themselves come
+   * from a second call to `getById` — `GET /timesheets/:id` is where the
+   * server decides live-vs-frozen (`timesheetQueryService.getWeekWithEarnings`),
+   * and that decision must never be made twice or made here.
    */
   getWeek: async (
     householdId: string,
     weekStart: string
-  ): Promise<Timesheet | null> => {
+  ): Promise<TimesheetWeek | null> => {
     const timesheets = await timesheetApi.list(householdId);
-    return timesheets.find(t => t.week_start === weekStart) ?? null;
+    const match = timesheets.find(t => t.week_start === weekStart);
+    if (!match) return null;
+    return timesheetApi.getById(match.id);
+  },
+
+  /**
+   * `GET /timesheets/:id` — one week with its earnings attached, live or
+   * frozen (`docs/11-MONEY.md` §3). Any active household member may call
+   * this (a nanny must be able to see what she is owed); only a parent may
+   * approve/query.
+   */
+  getById: async (timesheetId: string): Promise<TimesheetWeek> => {
+    const response = await apiClient.get(
+      timesheetEndpoints.getWeek(timesheetId)
+    );
+    const parsed = z
+      .object({ timesheet: TimesheetWeekSchema })
+      .safeParse(response.data.data);
+    if (!parsed.success) throw parsed.error;
+    return parsed.data.timesheet;
   },
 
   /** Approve a week in one tap. Parents only — enforced server-side. */

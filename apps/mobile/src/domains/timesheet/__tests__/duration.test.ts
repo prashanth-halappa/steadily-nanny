@@ -75,12 +75,22 @@ describe('formatElapsedClock', () => {
 });
 
 describe('formatOvertimeDelta', () => {
-  it('formats a positive delta against the scheduled minutes', () => {
-    expect(formatOvertimeDelta(554, 540)).toBe('+14 min');
+  // TIER0-CX-SPEC.md §4.2 amendment: once paid overtime exists on the same
+  // card (`WeekEarningsLine`'s "Overtime pay" row), this delta must stop
+  // using the word "overtime" anywhere a reader could construe it as a SECOND
+  // overtime figure. It never said the word to begin with ("+14 min" carried
+  // no label at all) — the fix is the missing "vs scheduled" framing, e.g.
+  // "2h over scheduled" (spec's own example), not a swapped-out word.
+  it('formats a positive delta against the scheduled minutes as "vs scheduled"', () => {
+    expect(formatOvertimeDelta(554, 540)).toBe('14m over scheduled');
   });
 
-  it('formats a negative delta (finished early)', () => {
-    expect(formatOvertimeDelta(500, 540)).toBe('-40 min');
+  it('formats a negative delta (finished early) as "vs scheduled"', () => {
+    expect(formatOvertimeDelta(500, 540)).toBe('40m under scheduled');
+  });
+
+  it('formats a delta of an hour or more using formatDuration, not raw minutes', () => {
+    expect(formatOvertimeDelta(660, 540)).toBe('2h over scheduled');
   });
 
   it('returns null when actual matches scheduled exactly', () => {
