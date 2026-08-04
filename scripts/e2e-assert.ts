@@ -21,9 +21,16 @@
  *   bun run scripts/e2e-assert.ts all
  *
  * Flows: household, children, invite, membership, availability, pattern,
- *        shifts, anonymity
+ *        shifts, anonymity, rls-parity
  *
  * Exits non-zero on the first failed assertion, so it can gate a CI step.
+ *
+ * The rls-parity section is the one part that cannot go through PostgREST:
+ * `pg_policies` / `pg_proc` live in `pg_catalog`, which is not an exposed
+ * schema. It therefore needs a direct Postgres connection and reads
+ * SUPABASE_DB_URL (Supabase dashboard → Project Settings → Database →
+ * Connection string) from apps/api/.env. Without it that section SKIPs;
+ * everything else runs unchanged.
  *
  * @module scripts/e2e-assert
  */
@@ -31,6 +38,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createClient } from '@supabase/supabase-js';
+import { SQL } from 'bun';
 
 const PARENT_EMAIL = 'parent@steadilynanny.test';
 const NANNY_EMAIL = 'nanny@steadilynanny.test';
@@ -411,6 +419,141 @@ async function assertAnonymity(
   );
 }
 
+/**
+ * Migration 040: RLS semantic predicates.
+ *
+ * 040 is a pure refactor — every policy that called
+ * `private.is_household_member` / `private.is_household_parent` now calls the
+ * semantic wrapper `private.can_read_household` / `private.can_write_household`
+ * instead. `apps/api/tests/unit/migration040PolicyParity.test.ts` proves the
+ * migration FILE is faithful; only a live database can prove it was actually
+ * applied and that the grants landed.
+ *
+ * The grant assertions are not ceremony. A policy expression is evaluated with
+ * the CALLER's privileges — SECURITY DEFINER changes who the function runs AS
+ * once entered, it does not grant the right to enter it. A wrapper that
+ * `authenticated` cannot EXECUTE turns every ordinary read into
+ * `42501: permission denied for function can_read_household`: a 500, not an
+ * empty result. That is the 012 incident (GOLDEN-FIXES.md #16), and repeating
+ * it with new function names is exactly the way this refactor could go wrong.
+ */
+async function assertRlsSemanticParity(): Promise<void> {
+  console.log('\nFlow: RLS semantic predicates (migration 040)');
+
+  // Same source as every other credential this script uses: apps/api/.env.
+  const dbUrl = env.SUPABASE_DB_URL;
+  if (!dbUrl) {
+    console.log(
+      '  SKIP  pg_catalog assertions — no SUPABASE_DB_URL to connect with.'
+    );
+    console.log(
+      '        pg_policies/pg_proc are not reachable through PostgREST. Add'
+    );
+    console.log(
+      '        SUPABASE_DB_URL=<Project Settings → Database → Connection string>'
+    );
+    console.log('        to apps/api/.env to make these assertions run.');
+    return;
+  }
+
+  interface WrapperRow {
+    proname: string;
+    prosecdef: boolean;
+    provolatile: string;
+    proconfig: string[] | null;
+    anon_can_execute: boolean;
+    authenticated_can_execute: boolean;
+    service_role_can_execute: boolean;
+  }
+  interface StalePolicyRow {
+    schemaname: string;
+    tablename: string;
+    policyname: string;
+  }
+
+  const sql = new SQL(dbUrl);
+  try {
+    const wrappers = (await sql`
+      select p.proname,
+             p.prosecdef,
+             p.provolatile,
+             p.proconfig,
+             has_function_privilege('anon', p.oid, 'execute')
+               as anon_can_execute,
+             has_function_privilege('authenticated', p.oid, 'execute')
+               as authenticated_can_execute,
+             has_function_privilege('service_role', p.oid, 'execute')
+               as service_role_can_execute
+        from pg_proc p
+        join pg_namespace n on n.oid = p.pronamespace
+       where n.nspname = 'private'
+         and p.proname in ('can_read_household', 'can_write_household')
+    `) as WrapperRow[];
+
+    for (const name of ['can_read_household', 'can_write_household']) {
+      const fn = wrappers.find(w => w.proname === name);
+      check(`private.${name} exists`, !!fn);
+      if (!fn) continue;
+
+      check(`private.${name} is SECURITY DEFINER`, fn.prosecdef === true);
+      // 'i' immutable, 's' stable, 'v' volatile — 009's house style is stable.
+      check(`private.${name} is STABLE`, fn.provolatile === 's');
+      check(
+        `private.${name} pins search_path to ''`,
+        (fn.proconfig ?? []).includes('search_path='),
+        `proconfig: ${JSON.stringify(fn.proconfig)}`
+      );
+      check(
+        `private.${name} is EXECUTEable by anon/authenticated/service_role`,
+        fn.anon_can_execute &&
+          fn.authenticated_can_execute &&
+          fn.service_role_can_execute,
+        `anon=${fn.anon_can_execute} authenticated=${fn.authenticated_can_execute} service_role=${fn.service_role_can_execute}`
+      );
+    }
+
+    const stale = (await sql`
+      select schemaname, tablename, policyname
+        from pg_policies
+       where coalesce(qual, '') || ' ' || coalesce(with_check, '')
+             like any (array['%is_household_member%', '%is_household_parent%'])
+       order by tablename, policyname
+    `) as StalePolicyRow[];
+
+    check(
+      'no policy still calls is_household_member/is_household_parent directly',
+      stale.length === 0,
+      stale.length
+        ? stale.map(p => `${p.tablename}."${p.policyname}"`).join(', ')
+        : undefined
+    );
+
+    // The mirror image: 040 must have left the repointed policies in place, not
+    // merely dropped them. A dropped-and-not-recreated policy is a silent
+    // lockout, and "zero rows" reads as "no data yet" in the UI.
+    const repointed = (await sql`
+      select count(*)::int as n
+        from pg_policies
+       where coalesce(qual, '') || ' ' || coalesce(with_check, '')
+             like any (array['%can_read_household%', '%can_write_household%'])
+    `) as { n: number }[];
+    const repointedCount = repointed[0]?.n ?? 0;
+    check(
+      'all 38 household-scoped policies call a semantic wrapper',
+      repointedCount === 38,
+      `found ${repointedCount}`
+    );
+  } catch (error) {
+    check(
+      'pg_catalog assertions ran',
+      false,
+      error instanceof Error ? error.message : String(error)
+    );
+  } finally {
+    await sql.end();
+  }
+}
+
 // ---------------------------------------------------------------------------
 // runner
 // ---------------------------------------------------------------------------
@@ -418,6 +561,10 @@ async function assertAnonymity(
 async function main(): Promise<void> {
   const flow = process.argv[2] ?? 'all';
   console.log(`e2e database assertions — ${flow}\n${'='.repeat(48)}`);
+
+  // Schema-level, fixture-independent — runs before the early return below so
+  // it is asserted even on a project with no seeded flow data.
+  await assertRlsSemanticParity();
 
   const householdId = await assertHousehold();
   if (!householdId) {
