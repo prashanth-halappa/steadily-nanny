@@ -469,6 +469,12 @@ in the week — summed separately, excluded from gross and overtime (decision 7)
 
 ## Cross-cutting rules (every phase)
 
+- **CX is specified, not improvised**: `docs/TIER0-CX-SPEC.md` is the binding
+  design source for every screen, string, and state in Phases 1–4 — routes,
+  layout, en-GB microcopy, empty/error states, and edge-case rendering all come
+  from there. Its §10 open questions block only the pieces they name; agents
+  implement the spec's stated defaults until the owner rules otherwise.
+
 - **Tests**: written red-first per the execution model above, `bun:test` only;
   service tests `mock.module()` inside `beforeAll` before any dynamic import
   (`docs/09-TESTING.md`); mobile component tests in `__tests__/`, never
