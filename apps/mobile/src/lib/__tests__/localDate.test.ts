@@ -10,8 +10,7 @@
  */
 import { describe, expect, it } from 'bun:test';
 import * as localDate from '../localDate';
-import { currentWeekRange } from '../localDate';
-import { utcIsoToWallClockHHMM } from '../wallClock';
+import { currentWeekRange, utcIsoToWallClockHHMM } from '../wallClock';
 
 describe('localDate exports', () => {
   it('does not export twoWeekRange (deleted — device-zone Monday trap)', () => {

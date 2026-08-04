@@ -3,6 +3,7 @@
  * Convert a nominal local wall-clock date+time in an IANA zone to a UTC ISO
  * instant — same double-conversion technique as recurrenceExpander (D23).
  */
+import { addWeeks, getWeekStartISO } from '@/src/domains/timesheet/utils/week';
 import { addLocalDays } from '@/src/lib/localDate';
 
 function offsetMinutesAt(utcMillis: number, timeZone: string): number {
@@ -71,6 +72,35 @@ export function shiftInstantsFromWallClock(
   return {
     starts_at: wallClockToUtcIso(localDate, startTime, timeZone),
     ends_at: wallClockToUtcIso(endDate, endTime, timeZone),
+  };
+}
+
+/**
+ * Monday-first week range [from, to) as UTC instants for the shift API,
+ * resolved in `timeZone` — the HOUSEHOLD's zone, never the device's. This
+ * used to resolve Monday off `now.getDay()` (the device's zone), the same
+ * bug class as GOLDEN-FIXES #21: two people in different zones would see
+ * DIFFERENT shifts for "this week" at the same instant. Reuses
+ * `domains/timesheet/utils/week.ts`'s Monday resolution
+ * (`getWeekStartISO`/`addWeeks`) and `wallClockToUtcIso`'s DST-safe
+ * local->UTC conversion rather than re-deriving either, so there's exactly
+ * one mechanism for "what week is it" in this codebase.
+ *
+ * Lives here, not in `lib/localDate`, because importing `wallClockToUtcIso`
+ * from there made `wallClock <-> localDate` a require cycle.
+ */
+export function currentWeekRange(
+  timeZone: string,
+  now: Date = new Date()
+): {
+  from: string;
+  to: string;
+} {
+  const weekStartISO = getWeekStartISO(now, timeZone);
+  const weekEndISO = addWeeks(weekStartISO, 1);
+  return {
+    from: wallClockToUtcIso(weekStartISO, '00:00', timeZone),
+    to: wallClockToUtcIso(weekEndISO, '00:00', timeZone),
   };
 }
 

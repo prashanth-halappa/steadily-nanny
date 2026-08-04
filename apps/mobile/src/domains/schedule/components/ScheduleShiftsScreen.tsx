@@ -33,7 +33,7 @@ import {
   useShiftsRange,
 } from '@/src/hooks/queries/useShiftsRange';
 import { useUserProfile } from '@/src/hooks/queries/useUserProfile';
-import { currentWeekRange } from '@/src/lib/localDate';
+import { currentWeekRange } from '@/src/lib/wallClock';
 import { CALENDAR_VIEWS } from '@/src/store/calendarViewStore';
 
 type ScheduleShiftsScreenProps = {
