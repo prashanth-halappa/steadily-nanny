@@ -420,7 +420,8 @@ async function assertAnonymity(
 }
 
 /**
- * Migration 040: RLS semantic predicates.
+ * Migrations 040 and 041: RLS semantic predicates, and the money-table read
+ * rule that is the first thing built on top of them.
  *
  * 040 is a pure refactor — every policy that called
  * `private.is_household_member` / `private.is_household_parent` now calls the
@@ -436,9 +437,13 @@ async function assertAnonymity(
  * `42501: permission denied for function can_read_household`: a 500, not an
  * empty result. That is the 012 incident (GOLDEN-FIXES.md #16), and repeating
  * it with new function names is exactly the way this refactor could go wrong.
+ *
+ * The 041 block at the end asserts the pay_arrangements read rule for the same
+ * reason, one level up: a static test can only prove the migration FILE is
+ * right, and the row a nanny must not see is not protected by a file.
  */
 async function assertRlsSemanticParity(): Promise<void> {
-  console.log('\nFlow: RLS semantic predicates (migration 040)');
+  console.log('\nFlow: RLS semantic predicates (migrations 040, 041)');
 
   // Same source as every other credential this script uses: apps/api/.env.
   const dbUrl = env.SUPABASE_DB_URL;
@@ -543,6 +548,98 @@ async function assertRlsSemanticParity(): Promise<void> {
       repointedCount === 38,
       `found ${repointedCount}`
     );
+
+    // -----------------------------------------------------------------
+    // Migration 041: pay_arrangements RLS.
+    //
+    // `migration041PayArrangements.test.ts` proves the FILE says the right
+    // thing. Only the live catalog proves the file was applied and that the
+    // policy Postgres actually stored is the one that was written — the
+    // planner rewrites a qual on the way in, so "the SQL is right" and "the
+    // policy is right" are two different claims.
+    //
+    // What this pins is a product rule, not a style: pay is readable by
+    // parents/owners and by the carer for HER OWN rows. A helper, or a
+    // second nanny, must not be able to read a rate straight off PostgREST
+    // with her own JWT — `payArrangementQueryService` refuses her, and a
+    // wider policy would make that refusal cosmetic. `can_read_household`
+    // (every active member) and `is_household_member` are therefore
+    // asserted ABSENT, not merely "not preferred".
+    //
+    // SKIPped, not failed, when the table isn't there yet: 041 is unapplied
+    // on this branch, and a red line for "not deployed yet" trains people
+    // to ignore the summary.
+    // -----------------------------------------------------------------
+    interface PolicyRow {
+      policyname: string;
+      cmd: string;
+      qual: string | null;
+      with_check: string | null;
+      rls_enabled: boolean;
+    }
+
+    const payPolicies = (await sql`
+      select p.policyname,
+             p.cmd,
+             p.qual,
+             p.with_check,
+             c.relrowsecurity as rls_enabled
+        from pg_class c
+        join pg_namespace n on n.oid = c.relnamespace
+        left join pg_policies p
+               on p.schemaname = n.nspname and p.tablename = c.relname
+       where n.nspname = 'public'
+         and c.relname = 'pay_arrangements'
+    `) as PolicyRow[];
+
+    if (payPolicies.length === 0) {
+      console.log(
+        '  SKIP  pay_arrangements RLS — table not present; 041 is not applied here.'
+      );
+    } else {
+      check(
+        'pay_arrangements has row level security enabled',
+        payPolicies[0]?.rls_enabled === true
+      );
+
+      const policies = payPolicies.filter(p => !!p.policyname);
+      check(
+        'pay_arrangements has exactly one policy (select-only, service-role writes)',
+        policies.length === 1,
+        policies.length
+          ? policies.map(p => `${p.cmd} "${p.policyname}"`).join(', ')
+          : 'none'
+      );
+
+      const policy = policies[0];
+      check('that policy is a SELECT policy', policy?.cmd === 'SELECT');
+      check(
+        'that policy has no WITH CHECK clause (nothing writes through RLS)',
+        !policy?.with_check
+      );
+
+      const qual = policy?.qual ?? '';
+      check(
+        'pay read qual grants parents/owners via can_write_household',
+        qual.includes('can_write_household'),
+        `qual: ${qual || '(none)'}`
+      );
+      check(
+        'pay read qual carries the carer self-arm (carer_id = auth.uid())',
+        qual.includes('carer_id') && qual.includes('auth.uid()'),
+        `qual: ${qual || '(none)'}`
+      );
+      check(
+        'pay read qual does NOT grant every member via can_read_household',
+        !qual.includes('can_read_household'),
+        `qual: ${qual || '(none)'}`
+      );
+      check(
+        'pay read qual does NOT call the pre-040 is_household_member helper',
+        !qual.includes('is_household_member'),
+        `qual: ${qual || '(none)'}`
+      );
+    }
   } catch (error) {
     check(
       'pg_catalog assertions ran',

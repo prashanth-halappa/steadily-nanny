@@ -68,6 +68,46 @@ describe('payArrangement.schema', () => {
       ).toBe(false);
     });
 
+    // A length check alone let "ab1", "gbp" and "£  " through, all of which
+    // are three characters and none of which is an ISO-4217 code. The code
+    // is not decoration: `formatMoney` feeds it straight to
+    // `Intl.NumberFormat`, and the DB check constraint in
+    // 041_pay_arrangements.sql now pins the same shape, so a row that parses
+    // here is a row that can be stored and rendered.
+    it('accepts a well-formed uppercase ISO-4217 code', () => {
+      for (const currency of ['GBP', 'EUR', 'USD']) {
+        expect(
+          PayArrangementSchema.safeParse({ ...validArrangement, currency })
+            .success
+        ).toBe(true);
+      }
+    });
+
+    it('rejects a currency code containing a digit', () => {
+      expect(
+        PayArrangementSchema.safeParse({ ...validArrangement, currency: 'ab1' })
+          .success
+      ).toBe(false);
+      expect(
+        PayArrangementSchema.safeParse({ ...validArrangement, currency: 'GB1' })
+          .success
+      ).toBe(false);
+    });
+
+    it('rejects a lowercase currency code rather than silently upcasing it', () => {
+      expect(
+        PayArrangementSchema.safeParse({ ...validArrangement, currency: 'gbp' })
+          .success
+      ).toBe(false);
+    });
+
+    it('rejects three non-letter characters', () => {
+      expect(
+        PayArrangementSchema.safeParse({ ...validArrangement, currency: '   ' })
+          .success
+      ).toBe(false);
+    });
+
     it('rejects a zero cancellation_paid_within_hours — a window of zero hours is not a valid agreement, only null is', () => {
       expect(
         PayArrangementSchema.safeParse({
@@ -199,6 +239,37 @@ describe('payArrangement.schema', () => {
         CreatePayArrangementRequestSchema.safeParse({
           ...minimalRequest,
           overtime_multiplier: 0.5,
+        }).success
+      ).toBe(false);
+    });
+
+    // Same ISO-4217 shape as the entity schema — the write side is where a
+    // bad code would actually get stored, so it is the half that matters
+    // most. Uppercase only: the client sends what the DB check constraint
+    // accepts, rather than relying on a server-side upcast that does not
+    // exist.
+    it('accepts a well-formed uppercase ISO-4217 code', () => {
+      const result = CreatePayArrangementRequestSchema.safeParse({
+        ...minimalRequest,
+        currency: 'EUR',
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it('rejects a currency code containing a digit', () => {
+      expect(
+        CreatePayArrangementRequestSchema.safeParse({
+          ...minimalRequest,
+          currency: 'ab1',
+        }).success
+      ).toBe(false);
+    });
+
+    it('rejects a lowercase currency code', () => {
+      expect(
+        CreatePayArrangementRequestSchema.safeParse({
+          ...minimalRequest,
+          currency: 'gbp',
         }).success
       ).toBe(false);
     });

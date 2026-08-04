@@ -4,7 +4,7 @@
  *
  * `pay_arrangements` is the first money table in the schema, so it sets the
  * precedent every later one copies (`042` earnings, `043` pto_ledger, `044`
- * expenses). Four properties of that precedent are load-bearing and silent when
+ * expenses). Five properties of that precedent are load-bearing and silent when
  * broken, so they are pinned here rather than left to review:
  *
  *   1. **Append-only.** No `updated_at` column and no update trigger. A
@@ -22,10 +22,18 @@
  *      write policy would let a caller bypass every service-enforced rule —
  *      no-future-dating, the D12-class membership assertion — with nothing more
  *      than the anon key and her own JWT.
- *   4. **The 040 semantic predicate, bare.** `private.can_read_household(...)`,
- *      never `private.is_household_member(...)` (the whole point of 040) and
- *      never wrapped in a sub-select (040's trap 2 — the initplan optimisation
- *      lives inside the helper, which takes a per-row `household_id`).
+ *   4. **The read is parents plus the carer's own rows** (review finding 2) —
+ *      `private.can_write_household(household_id) or carer_id = (select
+ *      auth.uid())`, NOT `can_read_household`, which is every active member
+ *      and would hand a helper (or a second nanny) the rate that
+ *      `payArrangementQueryService` already refuses them. The household
+ *      helper is 040's semantic wrapper called BARE (040's trap 2 — the
+ *      initplan optimisation lives inside the helper, which takes a per-row
+ *      `household_id`); the `auth.uid()` self-arm takes 018's `(select ...)`
+ *      form, where the wrapper IS the optimisation.
+ *   5. **`currency` is checked to ISO-4217 shape**, not merely `char(3)`
+ *      (review finding 4): a malformed code makes `Intl.NumberFormat` throw
+ *      on the phone.
  *
  * The SQL parsing below is quote- and dollar-quote-aware, adapted from
  * `migration040PolicyParity.test.ts` (unchanged there — the helpers are not
@@ -207,7 +215,13 @@ const EXPECTED_COLUMNS: ReadonlyArray<readonly [string, readonly string[]]> = [
   // column with no floor is a trap for whoever wakes it (argued deviation
   // from the plan sketch, which spells out no check for this one column).
   ['bill_rate_minor', ['integer', 'check (bill_rate_minor >= 0)']],
-  ['currency', ['char(3)', 'not null', "default 'gbp'"]],
+  // ISO-4217 shape, not just three characters (review finding 4): `char(3)`
+  // alone stored 'ab1' and '   ' happily, and a bad code makes
+  // `Intl.NumberFormat` throw on the phone.
+  [
+    'currency',
+    ['char(3)', 'not null', "default 'gbp'", "check (currency ~ '^[a-z]{3}$')"],
+  ],
   [
     'overtime_threshold_minutes',
     ['integer', 'check (overtime_threshold_minutes > 0)'],
@@ -297,6 +311,14 @@ describe('041_pay_arrangements.sql — table shape', () => {
     }
     expect(columns.get('currency')).toContain('char(3)');
   });
+
+  // The parsed column map is lowercased so that layout and keyword case stay
+  // free, which would let `~ '^[a-z]{3}$'` pass the fragment check above —
+  // the exact opposite constraint, accepting only lowercase codes no client
+  // sends. The character class is therefore pinned against the RAW SQL.
+  it('pins the currency check to UPPERCASE letters, verbatim in the raw SQL', () => {
+    expect(migrationSql).toContain("check (currency ~ '^[A-Z]{3}$')");
+  });
 });
 
 describe('041_pay_arrangements.sql — append-only', () => {
@@ -351,12 +373,24 @@ describe('041_pay_arrangements.sql — RLS is select-only', () => {
     expect(policyStatements()).toHaveLength(1);
   });
 
-  it('makes that policy a SELECT policy on can_read_household(household_id)', () => {
+  // The qual is pinned VERBATIM rather than by fragments: this policy is the
+  // product rule, and every arm of it was chosen against a specific person
+  // who must not see a rate (review finding 2). A fragment check would pass
+  // a policy that had quietly gained an `or private.can_read_household(...)`
+  // third arm and re-opened it to helpers.
+  it('makes that policy a SELECT policy for parents plus the carer’s own rows', () => {
     const [policy] = policyStatements();
     expect(policy?.toLowerCase()).toContain('on public.pay_arrangements');
     expect(policy?.toLowerCase()).toContain(
-      'for select using (private.can_read_household(household_id))'
+      'for select using (private.can_write_household(household_id) or carer_id = (select auth.uid()))'
     );
+  });
+
+  // `can_read_household` is every ACTIVE MEMBER — helpers and a second nanny
+  // included. `payArrangementQueryService` denies both; a policy that grants
+  // them is a wider door than the product rule, and PostgREST is a door.
+  it('does not grant read to every member via can_read_household', () => {
+    expect(executable).not.toContain('can_read_household');
   });
 
   it('creates no insert, update, delete or ALL policy — writes are service-role only', () => {
@@ -379,8 +413,21 @@ describe('041_pay_arrangements.sql — RLS is select-only', () => {
     expect(executable).not.toContain('private.is_household_parent');
   });
 
-  it('does not wrap the predicate in a sub-select (040 trap 2)', () => {
+  // 040's trap 2 applies to the HELPER call only. `(select auth.uid())` in
+  // the self-arm is the opposite: 018's house form, and the one place the
+  // sub-select wrapper is correct (auth.uid() takes no per-row argument, so
+  // it hoists into an initplan).
+  it('does not wrap the household helper in a sub-select (040 trap 2)', () => {
+    expect(executable).not.toContain('(select private.can_write_household');
     expect(executable).not.toContain('(select private.can_read_household');
+  });
+
+  it('uses 018’s (select auth.uid()) form for the carer self-arm', () => {
+    const [policy] = policyStatements();
+    expect(policy?.toLowerCase()).toContain('(select auth.uid())');
+    // The bare form 018 exists to remove: `carer_id = auth.uid()`.
+    expect(policy?.toLowerCase()).not.toContain('= auth.uid()');
+    expect(policy?.toLowerCase()).not.toContain('auth.uid() =');
   });
 });
 
@@ -397,6 +444,13 @@ describe('041_pay_arrangements.sql — documentation contract', () => {
     // Why RLS is select-only (review finding 3).
     'service role',
     'no-future-dates',
+    // Who may read (review finding 2): NOT every member. The header must
+    // carry the rule the policy encodes, because the next money table (043,
+    // 044) is written by copying this one.
+    'helpers and other carers',
+    'her own rows',
+    // The ISO-4217 check constraint (review finding 4).
+    'intl.numberformat',
     // cancellation_paid_within_hours null semantics (owner decision 5).
     'null means no cancellation pay',
     'households.cancellation_paid_within_hours',

@@ -77,6 +77,33 @@ describe('formatMoney', () => {
       expect(formatMoney(99999999, 'GBP')).toBe('£999,999.99');
     });
   });
+
+  // A `currency` value arrives from a stored row, not from a picker, so a
+  // corrupt or hand-edited code reaches this function. `Intl.NumberFormat`
+  // throws a RangeError on anything that isn't a well-formed ISO-4217 code,
+  // and an uncaught throw inside a render blanks the nanny's pay screen —
+  // the amount she came to check. A bad code must degrade to inert text.
+  describe('invalid stored currency code', () => {
+    it('does not throw on a malformed code', () => {
+      expect(() => formatMoney(1850, 'AB1')).not.toThrow();
+    });
+
+    it('falls back to "<code> <amount>" so the row renders inert instead of crashing', () => {
+      expect(formatMoney(1850, 'AB1')).toBe('AB1 18.50');
+    });
+
+    it('keeps grouping in the invalid-code fallback', () => {
+      expect(formatMoney(99999999, 'AB1')).toBe('AB1 999,999.99');
+    });
+
+    it('does not throw on an empty currency code', () => {
+      expect(() => formatMoney(1850, '')).not.toThrow();
+    });
+
+    it('formatRate degrades the same way rather than throwing', () => {
+      expect(formatRate(1850, 'AB1')).toBe('AB1 18.50/hr');
+    });
+  });
 });
 
 describe('formatRate', () => {
@@ -127,6 +154,73 @@ describe('parseMajorToMinor', () => {
 
   it('strips a leading currency symbol, mirroring formatMoney output', () => {
     expect(parseMajorToMinor('£18.50')).toBe(1850);
+  });
+
+  it('strips a leading currency symbol followed by a space', () => {
+    expect(parseMajorToMinor('£ 18.50')).toBe(1850);
+    expect(parseMajorToMinor('€ 18.50')).toBe(1850);
+    expect(parseMajorToMinor('$18.50')).toBe(1850);
+  });
+
+  // The corruption class this parser exists to prevent (review finding 1):
+  // a "strip every leading non-digit" clean-up ate the decimal POINT itself,
+  // so ".45" parsed as 45 major units — £45.00 written into a pay record
+  // where £0.45 was typed. A leading dot is not a number this app accepts;
+  // it is rejected, never reinterpreted.
+  it('rejects a bare leading decimal point rather than reading it as whole units', () => {
+    expect(parseMajorToMinor('.45')).toBeNull();
+    expect(parseMajorToMinor('.5')).toBeNull();
+    expect(parseMajorToMinor('.')).toBeNull();
+  });
+
+  it('rejects a leading decimal point behind a currency symbol', () => {
+    expect(parseMajorToMinor('£.45')).toBeNull();
+  });
+
+  // Letters are not a currency symbol. Stripping them turned typed noise
+  // into a confident number.
+  it('rejects leading letters instead of stripping them', () => {
+    expect(parseMajorToMinor('abc18.50')).toBeNull();
+    expect(parseMajorToMinor('GBP18.50')).toBeNull();
+  });
+
+  it('rejects trailing junk after the number', () => {
+    expect(parseMajorToMinor('18.50abc')).toBeNull();
+    expect(parseMajorToMinor('18.50 ')).toBe(1850); // outer whitespace only
+  });
+
+  // Commas are thousands grouping or nothing — an unvalidated `replace(/,/g)`
+  // turned "1,2,3" into 123 and "18,5" into 185.
+  it('rejects commas that are not valid thousands grouping', () => {
+    expect(parseMajorToMinor('1,2,3')).toBeNull();
+    expect(parseMajorToMinor('18,5')).toBeNull();
+    expect(parseMajorToMinor('1,23,456')).toBeNull();
+    expect(parseMajorToMinor(',123')).toBeNull();
+    expect(parseMajorToMinor('1,')).toBeNull();
+  });
+
+  it('accepts multi-group thousands separators', () => {
+    expect(parseMajorToMinor('1,234.56')).toBe(123456);
+    expect(parseMajorToMinor('12,345')).toBe(1234500);
+  });
+
+  it('rejects a second currency symbol', () => {
+    expect(parseMajorToMinor('££18.50')).toBeNull();
+    expect(parseMajorToMinor('£$18.50')).toBeNull();
+  });
+
+  // Upper bound (review nit 13): the largest amount the rest of the stack
+  // renders and round-trips is £999,999.99. Anything above it is a typo (a
+  // stray extra digit), and accepting it would write a nonsense rate.
+  it('accepts the documented maximum, £999,999.99', () => {
+    expect(parseMajorToMinor('999999.99')).toBe(99999999);
+    expect(parseMajorToMinor('999,999.99')).toBe(99999999);
+  });
+
+  it('rejects an amount above £999,999.99', () => {
+    expect(parseMajorToMinor('1000000')).toBeNull();
+    expect(parseMajorToMinor('1,000,000.00')).toBeNull();
+    expect(parseMajorToMinor('999999.999')).toBeNull();
   });
 
   it('round-trips through formatMoney (symbol and thousands separators stripped)', () => {

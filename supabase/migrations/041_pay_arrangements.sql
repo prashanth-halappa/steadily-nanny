@@ -72,7 +72,15 @@ create table if not exists public.pay_arrangements (
   -- non-negative floor as every other amount here so it cannot be woken up
   -- holding nonsense.
   bill_rate_minor             integer check (bill_rate_minor >= 0),
-  currency                    char(3) not null default 'GBP',
+  -- ISO-4217: three UPPERCASE letters, checked, not merely three characters
+  -- (review finding 4). `char(3)` alone accepted 'ab1' and '   ', and the
+  -- code is not decoration — the phone hands it to Intl.NumberFormat, which
+  -- throws a RangeError on a malformed code. formatMoney now degrades to
+  -- inert text rather than blanking the pay screen, but a bad code should
+  -- never reach a row in the first place. The same shape is pinned on the
+  -- wire in packages/shared-types/src/schemas/payArrangement.schema.ts.
+  currency                    char(3) not null default 'GBP'
+                                check (currency ~ '^[A-Z]{3}$'),
   -- Weekly overtime threshold; null = this arrangement has no overtime. V1
   -- ships a weekly threshold + multiplier deliberately: US state rules (CA
   -- daily overtime and friends) become presets that POPULATE these fields
@@ -144,32 +152,49 @@ comment on table public.pay_arrangements is
 -- Those rules are only real because the service layer is the only way in; RLS
 -- here is the backstop against a misbehaving client, not the check.
 --
--- Read is every active member, including the carer whose terms these are —
--- deliberate, and the reason there is no carer-specific OR-arm as on
--- time_entries: she is a member of the household, and opaque pay is the disease
--- this feature treats.
+-- WHO CAN READ: parents and owners, plus the carer reading HER OWN ROWS.
+-- HELPERS AND OTHER CARERS ARE DENIED (review finding 2). An earlier draft used
+-- `private.can_read_household` — every active member — which was wider than the
+-- product rule in docs/TIER0-CX-SPEC.md and wider than the service that already
+-- implements it (`payArrangementQueryService`: a helper never sees pay, and one
+-- nanny never sees another's rate). PostgREST is a real door: a policy looser
+-- than the service is not "belt and braces", it is the hole the service was
+-- written to close.
 --
--- The predicate is 040's semantic wrapper `private.can_read_household`, never
--- 009's `private.is_household_member` — the point of 040 is that widening reads
--- (an agency coordinator, later) is one function body, not N policies. It is
--- called BARE: `(select private.can_read_household(household_id))` is a form
--- that has never existed in this repo (040's trap 2). The initplan optimisation
--- lives inside the helper, and a helper taking a per-row household_id cannot be
--- hoisted into an initplan anyway.
+-- Two arms, and both are deliberate:
+--   * `private.can_write_household(household_id)` — 040's semantic wrapper for
+--     "parent or owner". Write-capability is the right predicate for reading
+--     pay: the people who may SET the terms are exactly the people who may see
+--     everyone's. Never 009's `private.is_household_parent` — the point of 040
+--     is that widening this later (an agency coordinator) is one function body,
+--     not N policies. It is called BARE: `(select private.can_write_household(
+--     household_id))` is a form that has never existed in this repo (040's trap
+--     2). The initplan optimisation lives inside the helper, and a helper
+--     taking a per-row household_id cannot be hoisted into an initplan anyway.
+--   * `carer_id = (select auth.uid())` — the carer's own rows, and the reason
+--     opaque pay is not the outcome here: she can always see her own terms.
+--     Same shape and same sub-select form as 017's time_entries self-arm (018),
+--     where `(select auth.uid())` IS correct — auth.uid() takes no per-row
+--     argument, so Postgres hoists it into a once-per-scan initplan.
+--
+-- The two arms are not redundant: a carer is not a writer, and a parent is not
+-- the carer_id on anyone's row.
 --
 -- GRANTS: none needed here, and none given — same as 017 and 035. Supabase's
 -- stock grants already give anon/authenticated table privileges on the public
 -- schema, so PostgREST access to this table is gated by the policy below alone.
 -- The grants that ARE load-bearing are EXECUTE on the private helpers, and 040
 -- (and 009 before it) already issued those to anon, authenticated and
--- service_role; a caller who cannot enter can_read_household gets a 500, not an
--- empty result (GOLDEN-FIXES.md #16).
+-- service_role; a caller who cannot enter can_write_household gets a 500, not
+-- an empty result (GOLDEN-FIXES.md #16).
 
 alter table public.pay_arrangements enable row level security;
 
-drop policy if exists "Members can view pay arrangements" on public.pay_arrangements;
-create policy "Members can view pay arrangements" on public.pay_arrangements
-  for select using (private.can_read_household(household_id));
+drop policy if exists "Parents and the carer can view pay arrangements" on public.pay_arrangements;
+create policy "Parents and the carer can view pay arrangements" on public.pay_arrangements
+  for select using (
+    private.can_write_household(household_id) or carer_id = (select auth.uid())
+  );
 
 -- No updated_at trigger, deliberately: there is no updated_at column and no
 -- update path. See the APPEND-ONLY section of the header.

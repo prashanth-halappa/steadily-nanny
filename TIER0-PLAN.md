@@ -365,11 +365,24 @@ the migration header, implement it in exactly one repository method, and put
 the same-day-correction case in `effectiveOn`'s red-first case table.
 
 RLS (**house pattern for API-mediated money tables — select-only**, review
-finding 3): select via `private.can_read_household(household_id)` — called
-**bare, never `(select ...)`-wrapped** (040's rule: the initplan optimisation
-lives inside the helper; the wrapped form has never existed in this repo) —
-the carer is a member, so she can always see her own terms (deliberate: opaque
-pay is the disease). **No insert/update/delete policies at all** — writes go
+finding 3): one select policy,
+
+```sql
+using (private.can_write_household(household_id) or carer_id = (select auth.uid()))
+```
+
+— **parents and owners, plus the carer reading her OWN rows; helpers and other
+carers are denied** (Phase 1 adversarial review, finding 2). Not
+`can_read_household`: that is every active member, which is wider than the CX
+spec and wider than `payArrangementQueryService`, which already refuses a
+helper and refuses nanny B asking about nanny A. PostgREST is a real door, so a
+policy looser than the service makes the service's refusal cosmetic. The
+household helper is called **bare, never `(select ...)`-wrapped** (040's rule:
+the initplan optimisation lives inside the helper; the wrapped form has never
+existed in this repo); the `auth.uid()` self-arm takes 018's `(select ...)`
+form, where the wrapper *is* the optimisation. The carer can always see her own
+terms (deliberate: opaque pay is the disease). **No insert/update/delete
+policies at all** — writes go
 through the API under the service role, exactly like `shifts` (015) and
 `time_entries` (017). A client-exercisable insert policy would let a parent
 bypass every service-enforced rule (the no-future-dates check, the D12-class
@@ -382,7 +395,10 @@ absence of any update/delete path anywhere in the stack.
 `PayArrangementSchema`, `CreatePayArrangementRequestSchema` (no id/created
 fields, `valid_from` as ISO date string), `PayArrangementListResponseSchema`.
 House Zod style (review finding 14): `z.int().min(0)` for amounts, `z.uuid()`,
-`z.iso.date()`, `z.string().length(3)` for currency — match
+`z.iso.date()`, `z.string().regex(/^[A-Z]{3}$/)` for currency (tightened from
+`.length(3)` by the Phase 1 review, finding 4: `"ab1"` is three characters and
+not a currency, and a bad code throws inside `Intl.NumberFormat` on the phone;
+041 carries the identical CHECK) — match
 `timesheet.schema.ts`, not generic Zod idioms. Document the minor-units rule
 in the module JSDoc mirroring that file's style.
 
@@ -592,8 +608,11 @@ pto_ledger
   -- household, enforced by the DB, not by two concurrent taps agreeing.
 ```
 
-Append-only. RLS: **select-only** via `can_read_household` — no write
-policies; writes are service-role only, same stance as 041 (finding 3). The
+Append-only. RLS: **select-only**, and the same read rule as 041 — parents and
+owners via `can_write_household(household_id)`, plus the carer's own rows via
+`carer_id = (select auth.uid())`; helpers and other carers denied (Phase 1
+review, finding 2). No write policies; writes are service-role only, same
+stance as 041 (finding 3). The
 `time_off_id` FK is the *only* place a household-scoped row references a
 cross-household time-off row; the anonymity analysis is: the household can
 already see this time-off's existence via impact counts, and the FK reveals
@@ -669,7 +688,9 @@ expenses
 Mileage amount is computed at **approval** (miles × the arrangement's
 `mileage_rate_per_mile_minor` effective on `local_date`) and written into
 `amount_minor` — frozen, same discipline as everything else. RLS:
-**select-only** via `can_read_household`; no write policies (finding 3 — a
+**select-only**, 041's read rule again — `can_write_household(household_id) or
+carer_id = (select auth.uid())`, so a helper never sees another person's money
+(Phase 1 review, finding 2); no write policies (finding 3 — a
 carer-self insert policy would let a client insert `status='approved'` rows
 with arbitrary amounts, self-approving money; the nanny writes through the
 API like every other mutation in this app, and the service enforces

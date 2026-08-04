@@ -22,6 +22,22 @@
 
 import { z } from 'zod';
 
+/**
+ * ISO-4217: exactly three UPPERCASE letters. A bare `.length(3)` accepted
+ * `"ab1"`, `"gbp"` and `"   "` — none of them a currency, all of them
+ * storable (review finding 4). The code is load-bearing, not decoration:
+ * `apps/mobile/src/lib/money.ts`'s `formatMoney` hands it straight to
+ * `Intl.NumberFormat`, which throws a RangeError on a malformed code. That
+ * function now degrades to inert text rather than crashing the pay screen,
+ * but the fix belongs here too — a bad code should never reach a row.
+ * `041_pay_arrangements.sql` pins the identical shape as a CHECK constraint,
+ * so wire and table agree.
+ *
+ * Uppercase only, deliberately: nothing in the stack upcases on the way in,
+ * so accepting `"gbp"` here would store a code the DB constraint rejects.
+ */
+const CurrencyCodeSchema = z.string().regex(/^[A-Z]{3}$/);
+
 /** The persisted entity as returned to clients. */
 export const PayArrangementSchema = z.object({
   id: z.uuid(),
@@ -33,7 +49,7 @@ export const PayArrangementSchema = z.object({
   rate_minor: z.int().min(0),
   // Dormant until Tier 2 invoicing — stored now, priced later.
   bill_rate_minor: z.int().min(0).nullable(),
-  currency: z.string().length(3),
+  currency: CurrencyCodeSchema,
   // Null = no overtime for this arrangement.
   overtime_threshold_minutes: z.int().min(1).nullable(),
   overtime_multiplier: z.number().min(1),
@@ -74,7 +90,7 @@ export const PayArrangementSchema = z.object({
  */
 export const CreatePayArrangementRequestSchema = z.object({
   rate_minor: z.int().min(0),
-  currency: z.string().length(3).default('GBP'),
+  currency: CurrencyCodeSchema.default('GBP'),
   overtime_threshold_minutes: z.int().min(1).nullable().optional(),
   overtime_multiplier: z.number().min(1).default(1.5),
   guaranteed_minutes_per_week: z.int().min(0).nullable().optional(),

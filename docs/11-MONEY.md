@@ -25,20 +25,50 @@ conventions rather than generic Zod idioms:
 
 ```ts
 rate_minor: z.int().min(0),
-currency: z.string().length(3),
+currency: z.string().regex(/^[A-Z]{3}$/),
 ```
+
+`currency` is a **regex, not `.length(3)`** (Phase 1 review, finding 4).
+`"ab1"`, `"gbp"` and `"   "` are all three characters and none is a currency,
+and the code is not decoration: `formatMoney` hands it to
+`Intl.NumberFormat`, which throws a `RangeError` on a malformed code. Every
+money table carries the matching DB check, `check (currency ~ '^[A-Z]{3}$')`,
+so wire and table accept the same set. Uppercase only — nothing in the stack
+upcases on the way in.
 
 No `Money` object crosses the wire — a minor-units integer plus a sibling
 `currency` string, always two fields, never packed into one.
 
 **The display-major/store-minor conversion lives in exactly one util.**
-`apps/mobile/src/lib/money.ts` (planned — lands with Phase 1) is the only
-place that multiplies or divides by 100: `formatMoney(minor, currency)`,
-`formatRate(minor, currency)`, `parseMajorToMinor(text)`. `parseMajorToMinor`
-works on the **string**, never `Math.round(x * 100)` on a parsed float — that
-reintroduces the exact bug integer storage exists to avoid. Every call site
-imports this util; nobody hand-rolls `* 100`/`/ 100` elsewhere. Property-test
-it at `0`, `1p`, `£999,999.99`.
+`apps/mobile/src/lib/money.ts` is the only place that multiplies or divides
+by 100: `formatMoney(minor, currency)`, `formatRate(minor, currency)`,
+`parseMajorToMinor(text)`. `parseMajorToMinor` works on the **string**, never
+`Math.round(x * 100)` on a parsed float — that reintroduces the exact bug
+integer storage exists to avoid. Every call site imports this util; nobody
+hand-rolls `* 100`/`/ 100` elsewhere. Property-test it at `0`, `1p`,
+`£999,999.99`.
+
+**Both functions are total, and `parseMajorToMinor` validates rather than
+cleans** (Phase 1 review, finding 1). The original *stripped* every leading
+non-digit and then parsed whatever survived, which ate the decimal point:
+`".45"` became `4500` — £45.00 written into a pay record where 45p was typed.
+The rule now is whole-string:
+
+- at most **one** leading currency symbol (`£ € $`) plus an optional space is
+  removed — never letters, never a dot;
+- the remainder must **fully match** `^\d+(\.\d{1,2})?$` or the grouped form
+  `^\d{1,3}(,\d{3})+(\.\d{1,2})?$` — commas are thousands grouping or the
+  input is rejected, so `"1,2,3"` is `null`, not `12300`;
+- the result is capped at **`99_999_999` minor (£999,999.99)**; above that
+  every realistic input is a stray extra digit;
+- anything else returns `null`. The caller shows "enter a valid amount"; the
+  parser never guesses, for the same reason `parseWallClockInput` doesn't.
+
+`formatMoney` never throws, even on a corrupt stored code: the
+`Intl.NumberFormat` construction is wrapped, and a bad code degrades to
+`"<code> <amount>"` (e.g. `"AB1 18.50"`). Money renders on the screen a nanny
+opens to check what she is owed — a throw there blanks the number she came
+for, so inert-but-visible beats correct-or-crash.
 
 ---
 
@@ -202,13 +232,35 @@ these definitions exactly, not an approximation:
 ## 8. RLS on money tables: select-only, service-role writes
 
 `pay_arrangements`, `pto_ledger`, and `expenses` all follow one RLS stance:
-a **select** policy via `private.can_read_household(household_id)` — called
-bare, never `(select ...)`-wrapped; migration 040's rule is that the initplan
-optimisation lives *inside* the helpers, and the wrapped form has never
-existed in this repo — every member, including the carer whose own terms they
-are, can read —
-and **no insert/update/delete policy at all**. Every write goes through the
-API under the service role, exactly like `shifts` and `time_entries`.
+a single **select** policy, and **no insert/update/delete policy at all**.
+Every write goes through the API under the service role, exactly like
+`shifts` and `time_entries`.
+
+The select policy is the same on all three:
+
+```sql
+using (private.can_write_household(household_id) or carer_id = (select auth.uid()))
+```
+
+**Parents and owners, plus the carer reading her own rows. Helpers and other
+carers are denied.** That is the product rule (`docs/TIER0-CX-SPEC.md`) and it
+is what the query services already enforce: a helper never sees pay, and one
+nanny never sees another's rate. An earlier draft used
+`private.can_read_household` — *every active member* — which was wider than
+both. PostgREST is a real door: a policy looser than the service does not make
+the service's refusal safer, it makes it cosmetic. The carer can always read
+her own terms, because opaque pay is the disease this feature treats.
+
+Two notes on the form, both load-bearing:
+
+- `can_write_household` is called **bare, never `(select ...)`-wrapped** —
+  migration 040's rule is that the initplan optimisation lives *inside* the
+  helpers, and the wrapped form has never existed in this repo. Write-
+  capability is the right predicate for reading money: the people who may set
+  the terms are exactly the people who may see everyone's.
+- The self-arm uses `(select auth.uid())`, 018's house form, where the
+  sub-select *is* the optimisation — `auth.uid()` takes no per-row argument,
+  so Postgres hoists it into one evaluation per scan.
 
 **Why this isn't "tighten it later":** a client-exercisable write policy on
 a money table would let a caller bypass every service-enforced rule — the
