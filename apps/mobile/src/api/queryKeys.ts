@@ -162,6 +162,18 @@ export const queryKeys = {
       [...queryKeys.me.all, 'changeRequests', from, to] as const,
   },
 
+  // Pay arrangements: the effective-dated hourly rate + terms for one carer
+  // in one household. Both `current` and `history` take the same
+  // (householdId, carerId) pair — the arrangement is meaningless outside
+  // that pair (docs/11-MONEY.md §2) — so a create must invalidate both.
+  pay: {
+    all: ['pay'] as const,
+    current: (householdId?: string, carerId?: string) =>
+      [...queryKeys.pay.all, 'current', householdId, carerId] as const,
+    history: (householdId?: string, carerId?: string) =>
+      [...queryKeys.pay.all, 'history', householdId, carerId] as const,
+  },
+
   // Pending-work inbox aggregates (approvals list; other sources reuse
   // schedulePattern / shift / timesheet keys above).
   inbox: {
