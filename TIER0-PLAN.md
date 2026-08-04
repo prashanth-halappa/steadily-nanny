@@ -129,7 +129,11 @@ the CX spec where they conflict:
    fallback when no arrangement exists (flagged for deprecation, not dropped).
 6. **Mileage rate is per-nanny, set during setup** — confirmed; this is
    already where the plan put it (a column on the arrangement).
-7. **Nanny pay setup flow is in Phase 1 scope.** A full-form "Set up pay for
+7. **Guaranteed-hours top-up pays only for household-closure shortfalls**
+   (ruled 2026-08-04 after the independent review): a week with no closure
+   days never tops up; the amount is capped at the scheduled minutes actually
+   lost to closure days. Full definition in Phase 2's engine section.
+8. **Nanny pay setup flow is in Phase 1 scope.** A full-form "Set up pay for
    {name}" flow — rate, effective date, overtime, guaranteed hours, PTO
    entitlement/yr, cancellation policy, mileage rate — reachable from (a) a
    prompt card parents see whenever an active nanny has no arrangement and
@@ -484,16 +488,26 @@ Output line items:
 - (Phases 3–4 append `pto` and `reimbursements` lines here; the engine's
   output shape includes them from day one, empty.)
 
-**Topup eligibility — the one open owner ruling (review finding 4).** As
-first drafted the formula paid out for *any* shortfall, including
-nanny-caused ones (her unpaid week off would earn a full-week topup).
-Recommended rule, pending the owner's word: **days on which the carer has
-time off reduce the guarantee pro-rata** (guaranteed minutes × scheduled days
-she was available ÷ scheduled days), so household closures and family
-under-booking still trigger the topup — the guarantee's actual purpose — but
-the nanny's own absence never does. Alternative if simpler is wanted: topup
-only for household-closure shortfalls. Phase 2 does not start the engine until
-this is ruled.
+**Topup eligibility — RULED by the owner, 2026-08-04: top-up only when the
+shortfall is on household-closure days.** The implementable definition:
+
+- For each household-closure day in the week, **lost minutes** = the scheduled
+  minutes of the carer's shifts on that day that did not become payable
+  (not worked, not `cancellation_paid`). A closure-cancelled shift already
+  paid under the cancellation window counts in payable and therefore reduces
+  the topup — no double pay by construction.
+- `guaranteed_topup = min(total lost minutes, max(0, guaranteed − payable))`.
+- A closure day with **no materialized shifts contributes nothing** — no
+  schedule, no loss; the honest record doesn't invent hours. (Case table:
+  closure beyond the materialization horizon.)
+- A week with **no closure days never tops up**, whatever the shortfall —
+  nanny-caused absence and family under-booking alike are outside the v1
+  guarantee. The engine's carer-time-off input is therefore dropped.
+
+Case table additions: closure day with paid-cancellation shifts (no double
+pay), closure day with no shifts, closure week + overtime earlier in the same
+week, partial-week closure with the shortfall exceeding closure-day lost
+minutes (topup caps at lost minutes).
 
 Missing arrangement → the engine returns a typed `no_arrangement` result, not
 zeros (decision 5).

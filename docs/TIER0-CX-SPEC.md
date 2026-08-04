@@ -493,8 +493,8 @@ appears in the same visual block as gross.
 | Case | Required behaviour |
 |---|---|
 | **Mid-week rate change** | Breakdown splits `regular` into two rows, each with its date span and rate (§4.2). The money line shows one total. The change sheet warned about this at authoring time (§2). Never average the two rates. |
-| **Overtime and top-up in one week** | Top-up compares against *payable* minutes, so both lines can never both be positive; if the engine ever emits both, render both and let the number be visibly odd rather than hiding one. |
-| **Guaranteed top-up in a zero-hours closure week** | Money line renders even with `0m` hours; breakdown's only line is "Guaranteed hours top-up — 40h 00m to reach the agreed 40h", sub-line "Your family was away this week." |
+| **Overtime and top-up in one week** | Legitimately coexist under the closure-only rule (overtime Mon–Thu, closure Friday): render both rows; the top-up sub-line carries the closure attribution. |
+| **Guaranteed top-up in a zero-hours closure week** | Money line renders even with `0m` hours; breakdown's only line is "Guaranteed hours top-up — 40h 00m to reach the agreed 40h", sub-line "Your family was away this week." (Owner ruling: the top-up exists *only* for closure-day shortfalls, and only up to the scheduled hours those closure days lost.) |
 | **Currency** | One currency per week, asserted server-side. If a week spans a currency change the API returns the error arm: money line reads **"This week spans a currency change — ask your family to check the terms."**, no number. Symbols always via `formatMoney`, never a hardcoded `£`. |
 | **Queried timesheet** | §4.5. Estimated, caption "Queried — the total may change", approve disabled with the existing `waitingAfterQuery` sentence. |
 | **Approved week that reopens** | Label reverts to "Estimated gross". Add `Small` muted **"Hours changed after approval, so this week is being worked out again."** |
