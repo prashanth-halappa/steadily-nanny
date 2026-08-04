@@ -174,6 +174,26 @@ describe('shift.schema', () => {
       expect(result.success).toBe(false);
     });
 
+    it('compares instants, not lexicographic ISO strings across offsets', () => {
+      // Lexicographic: "…T11:00:00-01:00" < "…T12:00:00+00:00" is false
+      // ( '-' < '+' is false), but as instants 11:00-01:00 == 12:00Z — equal,
+      // so ends must be after. Use a later end that sorts "wrong" as text.
+      expect(
+        CreateShiftSchema.safeParse({
+          starts_at: '2026-08-10T12:00:00+00:00',
+          ends_at: '2026-08-10T11:30:00-01:00', // 12:30Z — after start
+          timezone: 'Europe/London',
+        }).success
+      ).toBe(true);
+      expect(
+        CreateShiftSchema.safeParse({
+          starts_at: '2026-08-10T12:00:00+00:00',
+          ends_at: '2026-08-10T10:30:00-01:00', // 11:30Z — before start
+          timezone: 'Europe/London',
+        }).success
+      ).toBe(false);
+    });
+
     it('rejects a missing timezone', () => {
       const result = CreateShiftSchema.safeParse({
         starts_at: NOW,
@@ -280,6 +300,23 @@ describe('shift.schema', () => {
         proposed_ends_at: NOW,
       });
       expect(result.success).toBe(false);
+    });
+
+    it('compares proposed instants, not lexicographic ISO strings across offsets', () => {
+      expect(
+        CreateShiftChangeRequestSchema.safeParse({
+          kind: 'time_change',
+          proposed_starts_at: '2026-08-10T12:00:00+00:00',
+          proposed_ends_at: '2026-08-10T11:30:00-01:00', // 12:30Z — after
+        }).success
+      ).toBe(true);
+      expect(
+        CreateShiftChangeRequestSchema.safeParse({
+          kind: 'time_change',
+          proposed_starts_at: '2026-08-10T12:00:00+00:00',
+          proposed_ends_at: '2026-08-10T10:30:00-01:00', // 11:30Z — before
+        }).success
+      ).toBe(false);
     });
   });
 

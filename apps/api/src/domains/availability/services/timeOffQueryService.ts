@@ -10,10 +10,8 @@ import { TimeOffNotFoundError } from '../errors/availabilityErrors';
 import { CarerTimeOffRepository } from '../repositories/carerTimeOffRepository';
 import type { CarerTimeOff } from '../types';
 
-const CARER_ROLES = new Set<string>([
-  HOUSEHOLD_ROLES.NANNY,
-  HOUSEHOLD_ROLES.HELPER,
-]);
+/** Nanny only — matches timesheet/shift/schedule; helpers are read-only sitters. */
+const CARER_ROLES = new Set<string>([HOUSEHOLD_ROLES.NANNY]);
 
 export class TimeOffQueryService {
   constructor(
@@ -27,7 +25,7 @@ export class TimeOffQueryService {
   }
 
   /**
-   * List time-off for carers (nanny/helper) who are active members of
+   * List time-off for carers (nanny) who are active members of
    * `householdId`. Caller must be an active member of that household.
    * The carer id list is household-scoped; returned rows are each carer's
    * full personal time-off calendar (they are unavailable to every family),

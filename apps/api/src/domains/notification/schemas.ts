@@ -3,6 +3,10 @@
  *
  * @module domains/notification/schemas
  */
+import {
+  NotificationPrefsSchema,
+  UpdateNotificationPrefsSchema,
+} from '@steadily-nanny/shared-types';
 import { z } from 'zod';
 
 /**
@@ -27,3 +31,10 @@ export const RegisterDeviceSchema = z.object({
 
 /** Validated body of a device-registration request. */
 export type RegisterDeviceInput = z.infer<typeof RegisterDeviceSchema>;
+
+export type {
+  NotificationPrefs,
+  UpdateNotificationPrefsInput,
+} from '@steadily-nanny/shared-types';
+/** Re-export shared prefs schemas for route validation. */
+export { NotificationPrefsSchema, UpdateNotificationPrefsSchema };

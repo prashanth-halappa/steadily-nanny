@@ -8,6 +8,7 @@
 import { Router } from 'express';
 import {
   availabilityRoutes,
+  householdClosureRoutes,
   householdTimeOffRoutes,
   timeOffRoutes,
 } from '../domains/availability';
@@ -16,6 +17,7 @@ import childRoutes from '../domains/child/routes/childRoutes';
 import { handoffRoutes, householdHandoffRoutes } from '../domains/handoff';
 import { householdApprovalRoutes } from '../domains/household';
 import householdRoutes from '../domains/household/routes/householdRoutes';
+import { meRoutes } from '../domains/me';
 import notificationsRoutes from '../domains/notification/routes/notificationsRoutes';
 import {
   householdSchedulePatternRoutes,
@@ -38,6 +40,7 @@ import usersRoutes from './usersRoutes';
 const router = Router();
 
 router.use('/users', usersRoutes);
+router.use('/me', meRoutes);
 router.use('/notifications', notificationsRoutes);
 router.use('/households', householdRoutes);
 router.use('/households/:householdId/children', childRoutes);
@@ -55,6 +58,7 @@ router.use('/commitments', commitmentRoutes);
 router.use('/availability', availabilityRoutes);
 router.use('/time-off', timeOffRoutes);
 router.use('/households/:householdId/time-off', householdTimeOffRoutes);
+router.use('/households/:householdId/closures', householdClosureRoutes);
 
 // Schedule patterns are split deliberately: create/list are household-nested
 // (you propose a week TO a household), while acting on an existing pattern is

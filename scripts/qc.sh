@@ -47,8 +47,20 @@ strip_ansi() {
     sed 's/\x1b\[[0-9;]*m//g'
 }
 
-APPS=("mobile" "api")
+# Apps live under apps/; packages (e.g. shared-types) under packages/.
+APPS=("mobile" "api" "shared-types")
 CHECKS=("test" "lint" "format:check" "typecheck")
+
+resolve_app_dir() {
+    local name="$1"
+    if [ -d "$ROOT_DIR/apps/$name" ]; then
+        echo "$ROOT_DIR/apps/$name"
+    elif [ -d "$ROOT_DIR/packages/$name" ]; then
+        echo "$ROOT_DIR/packages/$name"
+    else
+        echo ""
+    fi
+}
 
 echo -e "${BLUE}${BOLD}📋 Running QC checks in parallel...${NC}\n"
 
@@ -57,14 +69,19 @@ OVERALL_START=$(get_ms)
 # Create a temp directory for all output files
 TMP_DIR=$(mktemp -d)
 
-# Launch all 8 subshells in parallel (2 apps × 4 checks)
+# Launch all checks in parallel (N apps × 4 checks)
 for app in "${APPS[@]}"; do
+    APP_DIR="$(resolve_app_dir "$app")"
+    if [ -z "$APP_DIR" ]; then
+        echo -e "${RED}Unknown app/package: $app${NC}" >&2
+        exit 1
+    fi
     for check in "${CHECKS[@]}"; do
         (
             START=$(get_ms)
             # Check names may contain a colon (format:check) — sanitise for filenames.
             SAFE="${check//:/_}"
-            cd "$ROOT_DIR/apps/$app" && bun run --silent "$check" > "$TMP_DIR/${app}_${SAFE}.out" 2>&1
+            cd "$APP_DIR" && bun run --silent "$check" > "$TMP_DIR/${app}_${SAFE}.out" 2>&1
             echo $? > "$TMP_DIR/${app}_${SAFE}.exit"
             END=$(get_ms)
             echo $((END - START)) > "$TMP_DIR/${app}_${SAFE}.time"
@@ -72,7 +89,16 @@ for app in "${APPS[@]}"; do
     done
 done
 
-# Wait for all 8 jobs to finish
+# Root scripts/*.test.ts — previously invisible to every runner (Wave 1 item 3).
+(
+    START=$(get_ms)
+    bash "$ROOT_DIR/scripts/run-root-script-tests.sh" > "$TMP_DIR/scripts_test.out" 2>&1
+    echo $? > "$TMP_DIR/scripts_test.exit"
+    END=$(get_ms)
+    echo $((END - START)) > "$TMP_DIR/scripts_test.time"
+) &
+
+# Wait for all jobs to finish
 wait
 
 OVERALL_END=$(get_ms)
@@ -82,8 +108,8 @@ OVERALL_TIME=$((OVERALL_END - OVERALL_START))
 OVERALL_PASS=true
 
 # Display results per-app
-APP_ICONS=("📱" "⚙️ ")
-APP_LABELS=("MOBILE" "API")
+APP_ICONS=("📱" "⚙️ " "📦")
+APP_LABELS=("MOBILE" "API" "SHARED-TYPES")
 
 for i in "${!APPS[@]}"; do
     app="${APPS[$i]}"
@@ -172,6 +198,33 @@ for i in "${!APPS[@]}"; do
 
     echo ""
 done
+
+# Scripts row (test-only)
+echo -e "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo -e "${CYAN}${BOLD}📜 SCRIPTS${NC}"
+echo -e "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+SCRIPTS_EXIT=$(cat "$TMP_DIR/scripts_test.exit")
+SCRIPTS_TIME=$(cat "$TMP_DIR/scripts_test.time")
+SCRIPTS_OUT=$(cat "$TMP_DIR/scripts_test.out")
+SCRIPTS_CLEAN=$(echo "$SCRIPTS_OUT" | strip_ansi)
+SCRIPTS_PASS=$(echo "$SCRIPTS_CLEAN" | grep -oE '[0-9]+ pass' | awk '{sum += $1} END {print sum+0}')
+SCRIPTS_FAIL=$(echo "$SCRIPTS_CLEAN" | grep -oE '[0-9]+ fail' | awk '{sum += $1} END {print sum+0}')
+[ -z "$SCRIPTS_PASS" ] && SCRIPTS_PASS="0"
+[ -z "$SCRIPTS_FAIL" ] && SCRIPTS_FAIL="0"
+SCRIPTS_METRIC="${SCRIPTS_PASS} pass, ${SCRIPTS_FAIL} fail"
+SCRIPTS_TIME_STR=$(format_time "$SCRIPTS_TIME")
+if [ "$SCRIPTS_EXIT" -eq 0 ]; then
+    printf "  ${GREEN}✅${NC} ${BOLD}%-10s${NC} %-36s ${DIM}%s${NC}\n" "Tests     " "$SCRIPTS_METRIC" "$SCRIPTS_TIME_STR"
+else
+    OVERALL_PASS=false
+    printf "  ${RED}❌${NC} ${BOLD}%-10s${NC} %-36s ${DIM}%s${NC}\n" "Tests     " "$SCRIPTS_METRIC" "$SCRIPTS_TIME_STR"
+    if [ -n "$SCRIPTS_OUT" ]; then
+        echo -e "  ${DIM}─── output ──────────────────────────────────────${NC}"
+        echo "$SCRIPTS_OUT" | sed 's/^/  /'
+        echo -e "  ${DIM}─────────────────────────────────────────────────${NC}"
+    fi
+fi
+echo ""
 
 # Cleanup temp files
 rm -rf "$TMP_DIR"

@@ -15,6 +15,7 @@
 import { z } from 'zod';
 
 export type {
+  AmendSchedulePatternInput,
   CreateSchedulePatternDayChildInput,
   CreateSchedulePatternDayInput,
   CreateSchedulePatternInput,
@@ -29,6 +30,7 @@ export type {
   UpdateSchedulePatternInput,
 } from '@steadily-nanny/shared-types/schemas/schedule.schema';
 export {
+  AmendSchedulePatternSchema,
   CreateSchedulePatternDayChildSchema,
   CreateSchedulePatternDaySchema,
   CreateSchedulePatternSchema,

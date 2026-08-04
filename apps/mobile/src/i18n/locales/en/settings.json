@@ -27,6 +27,7 @@
     "helper": "Helper"
   },
   "notifications": "Notifications",
+  "inbox": "Needs attention",
   "household": "Household",
   "deleteAccount": "Delete account",
   "deleteAccountConfirmTitle": "Delete your account?",
@@ -81,5 +82,36 @@
     "body": "Enable notifications in Settings to get reminders and updates.",
     "notNow": "Not now",
     "openSettings": "Open Settings"
+  },
+  "notificationPrefs": {
+    "title": "Notifications",
+    "subtitle": "Choose which updates you get and when quiet hours apply. Time-sensitive requests still come through during quiet hours.",
+    "back": "Back",
+    "saveButton": "Save",
+    "savedToast": "Notification preferences saved",
+    "quietHoursLabel": "Quiet hours",
+    "quietHoursHint": "Mute non-urgent pushes overnight. Shift confirmations and change requests still deliver.",
+    "quietHoursStart": "Starts",
+    "quietHoursEnd": "Ends",
+    "typesHeading": "Push types",
+    "typesHint": "Turn off types you do not want. System permission is managed separately below.",
+    "openOsSettings": "Device notification settings",
+    "openOsSettingsHint": "Control whether Steadily can alert you at the OS level.",
+    "types": {
+      "clock_out_reminder": "Clock-out reminder",
+      "timesheet_submitted": "Timesheet submitted",
+      "timesheet_queried": "Timesheet queried",
+      "schedule_pattern_sent": "Schedule pattern sent",
+      "schedule_pattern_responded": "Schedule pattern response",
+      "schedule_pattern_amended": "Schedule pattern amended",
+      "shift_change_requested": "Shift change requested",
+      "change_request_accepted": "Change request accepted",
+      "change_request_declined": "Change request declined",
+      "change_request_withdrawn": "Change request withdrawn",
+      "extra_shift_proposed": "Extra shift proposed",
+      "shift_cancelled": "Shift cancelled",
+      "shift_needs_reconfirm": "Shift needs reconfirm",
+      "carer_time_off_conflict": "Time-off conflict"
+    }
   }
 }

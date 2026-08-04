@@ -1,0 +1,39 @@
+{
+  "screenTitle": "Requiere atención",
+  "screenSubtitle": "Pendientes que te esperan.",
+  "loading": "Cargando…",
+  "emptyTitle": "Todo al día",
+  "emptyBody": "No hay solicitudes de cambio, aprobaciones, patrones ni semanas consultadas que necesiten tu respuesta.",
+  "items": {
+    "changeRequest": {
+      "title": "Responder a {{kind}}",
+      "subtitle": "Un cambio de horario espera tu respuesta.",
+      "kind": {
+        "time_change": "cambio de horario",
+        "cancel": "cancelación",
+        "counter_offer": "contraoferta",
+        "split": "división",
+        "handover": "traspaso"
+      }
+    },
+    "approval": {
+      "title": "Aprobación de co-padre/madre: {{action}}",
+      "subtitle": "Se aprueba automáticamente después del {{when}} si no respondes.",
+      "action": {
+        "short_notice_change": "cambio de corto aviso",
+        "cancel": "cancelación",
+        "extra_shift": "turno extra",
+        "other": "cambio"
+      }
+    },
+    "pendingPattern": {
+      "title": "Responder al horario propuesto",
+      "subtitle": "La semana que empieza el {{start}} te espera."
+    },
+    "queriedWeek": {
+      "title": "Semana consultada del {{week}}",
+      "subtitle": "Un padre/madre preguntó por las horas de esta semana.",
+      "subtitleWithNote": "{{note}}"
+    }
+  }
+}

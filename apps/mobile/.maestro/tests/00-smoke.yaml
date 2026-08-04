@@ -1,0 +1,13 @@
+# Smoke — launches the app and asserts the (unauthenticated) welcome wall.
+# clearState: true so a prior session cannot skip past welcome.
+# Prefer testID over translated copy (docs/09-TESTING.md §7).
+appId: com.jetto.steadily.nanny
+tags:
+  - critical
+---
+- launchApp:
+    clearState: true
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'welcome-screen'
+- takeScreenshot: smoke-welcome

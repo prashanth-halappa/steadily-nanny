@@ -20,7 +20,9 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "for f in tests/*.test.ts; do [ -f \"$f\" ] && (bun test \"$f\" || exit 1); done"
+    "test": "bash ../../apps/api/scripts/run-tests-one-file.sh tests",
+    "lint": "biome check src tests",
+    "format:check": "biome format src tests"
   },
   "peerDependencies": {
     "zod": "^4.3.6"

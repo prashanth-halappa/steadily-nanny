@@ -170,6 +170,28 @@ describe('ShiftCommandService.update', () => {
     expect(shiftRepo.applyParentEdit).not.toHaveBeenCalled();
   });
 
+  it('compares the effective range chronologically, not as strings', async () => {
+    // Stored times come back from PostgREST in `+00:00` form, client edits
+    // arrive in `.000Z` form; a string compare of the two serialisations of
+    // the SAME instant wrongly lets this zero-length range through.
+    const shiftRepo = makeShiftRepo();
+    const svc = new ShiftCommandService(
+      shiftRepo,
+      makeMemberRepo(),
+      makeQueries({
+        getOwned: mock(async () => ({
+          ...shift,
+          starts_at: '2026-08-03T08:00:00+00:00',
+        })),
+      })
+    );
+
+    await expect(
+      svc.update('parent-1', 's1', { ends_at: '2026-08-03T08:00:00.000Z' })
+    ).rejects.toBeInstanceOf(ValidationError);
+    expect(shiftRepo.applyParentEdit).not.toHaveBeenCalled();
+  });
+
   it('rejects a nanny (non-parent) trying to edit', async () => {
     const shiftRepo = makeShiftRepo();
     const svc = new ShiftCommandService(

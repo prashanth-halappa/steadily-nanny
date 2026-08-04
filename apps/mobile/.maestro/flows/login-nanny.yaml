@@ -1,0 +1,37 @@
+# Reusable nanny email login.
+# Credentials: NANNY_EMAIL / NANNY_PASSWORD from apps/mobile/.env.maestro
+# (see .env.maestro.example). Seed via scripts/seed-test-users.ts.
+#
+# Same session-preserve rules as login.yaml (parent). Prefer logout.yaml
+# before switching roles on a shared simulator.
+appId: com.jetto.steadily.nanny
+---
+- launchApp:
+    clearState: false
+
+- runFlow:
+    when:
+      visible:
+        id: 'welcome-screen'
+    commands:
+      - tapOn:
+          id: 'welcome-sign-in-email'
+      - assertVisible:
+          id: 'login-screen'
+      - tapOn:
+          id: 'login-email'
+      - inputText: ${NANNY_EMAIL}
+      - tapOn:
+          id: 'login-password'
+      - inputText: ${NANNY_PASSWORD}
+      - hideKeyboard
+      - tapOn:
+          id: 'login-submit'
+      - extendedWaitUntil:
+          notVisible:
+            id: 'welcome-screen'
+          timeout: 20000
+      - assertNotVisible:
+          id: 'login-screen'
+
+- waitForAnimationToEnd

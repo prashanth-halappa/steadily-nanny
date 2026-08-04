@@ -4,21 +4,22 @@
  * Calendar view 2d — 14-day morning/afternoon/evening dots for a nanny
  * with 2+ households. Non-active households are ALWAYS labelled "Other
  * family" — household.name must never appear in the UI for them.
+ *
+ * Shifts come from GET /me/shifts (one cross-household call) rather than
+ * N parallel household range queries.
  */
 
 import type { Household } from '@steadily-nanny/shared-types/schemas/household.schema';
-import type { Shift } from '@steadily-nanny/shared-types/schemas/shift.schema';
-import { useQueries } from '@tanstack/react-query';
+import type { MeShift } from '@steadily-nanny/shared-types/schemas/me.schema';
 import { useTranslation } from 'react-i18next';
 import { ScrollView, View } from 'react-native';
 import { useThemeColors } from '@/lib/design-tokens';
-import { shiftApi } from '@/src/api/endpoints/shifts';
-import { queryKeys } from '@/src/api/queryKeys';
 import { Body, H3 } from '@/src/components/ui/typography';
 import {
   type DayPeriod,
   shiftPeriod,
 } from '@/src/domains/schedule/utils/shiftGrouping';
+import { useMeShifts } from '@/src/hooks/queries/useMeShifts';
 import {
   addLocalDays,
   localDateInZone,
@@ -57,30 +58,24 @@ export function CrossFamilyRhythmView({
   const startDate = localDateInZone(timeZone);
   const dates = localDateRange(startDate, 14);
 
-  // Fetch EXACTLY the window we render. `twoWeekRange()` anchored the query
-  // to the most recent Monday while the grid always starts at *today* in the
-  // household's zone, so up to six of the fourteen rendered days were never
-  // fetched at all and their dots read as "no shifts". Deriving [from, to)
-  // from `dates` itself makes the two impossible to drift apart. The one-day
-  // pad on each side absorbs the UTC/local offset (the render filter is an
-  // exact `s.local_date === date` match, so extra rows are inert).
+  // Fetch EXACTLY the window we render. Deriving [from, to) from `dates`
+  // itself makes the query and the grid impossible to drift apart. The
+  // one-day pad on each side absorbs the UTC/local offset.
   const rangeStart = dates[0] ?? startDate;
   const rangeEnd = dates[13] ?? startDate;
   const from = `${addLocalDays(rangeStart, -1)}T00:00:00.000Z`;
   const to = `${addLocalDays(rangeEnd, 2)}T00:00:00.000Z`;
 
-  const shiftQueries = useQueries({
-    queries: households.map(h => ({
-      queryKey: queryKeys.shift.range(h.id, from, to),
-      queryFn: () => shiftApi.range(h.id, from, to),
-      staleTime: 60_000,
-    })),
-  });
+  const meShifts = useMeShifts(from, to);
 
-  const shiftsByHousehold = new Map<string, Shift[]>();
-  households.forEach((h, i) => {
-    shiftsByHousehold.set(h.id, shiftQueries[i]?.data ?? []);
-  });
+  const shiftsByHousehold = new Map<string, MeShift[]>();
+  for (const h of households) {
+    shiftsByHousehold.set(h.id, []);
+  }
+  for (const shift of meShifts.data ?? []) {
+    const list = shiftsByHousehold.get(shift.household_id);
+    if (list) list.push(shift);
+  }
 
   const isActive = (householdId: string) => householdId === activeHouseholdId;
 

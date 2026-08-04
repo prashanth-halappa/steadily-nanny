@@ -69,14 +69,21 @@ describe('SettingsScreen', () => {
     expect(screenSource).toContain('settings-terms');
   });
 
-  it('puts Account above Language and wires the Notifications row to OS settings', () => {
+  it('puts Account above Language and wires Notifications to the in-app prefs screen', () => {
     const accountIdx = screenSource.indexOf('settings-account-section');
     const languageIdx = screenSource.indexOf('settings-language-section');
     expect(accountIdx).toBeGreaterThan(-1);
     expect(languageIdx).toBeGreaterThan(accountIdx);
     expect(screenSource).toContain('settings-notifications');
-    expect(screenSource).toContain('Linking.openSettings');
+    expect(screenSource).toContain('/settings/notifications');
     expect(screenSource).toContain("t('settings:notifications')");
+  });
+
+  it('keeps the inbox Settings link and shows a count badge from useInboxItems', () => {
+    expect(screenSource).toContain('settings-inbox');
+    expect(screenSource).toContain('useInboxItems');
+    expect(screenSource).toContain('inboxBadge');
+    expect(screenSource).toContain("router.push('/inbox'");
   });
 
   it('groups navigable rows with elevation.row surfaces', () => {

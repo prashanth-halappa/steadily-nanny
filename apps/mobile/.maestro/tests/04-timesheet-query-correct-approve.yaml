@@ -1,0 +1,84 @@
+# Scenario — parent queries a timesheet week → nanny corrects an entry → parent approves.
+#
+# Prerequisites (.env.maestro):
+#   PARENT_* / NANNY_* credentials
+#   TIME_ENTRY_ID — a submitted (editable) entry in an actionable week
+#   HOURS_DEEPLINK_WEEK_START — Monday ISO of that week (also used by flow 05)
+#
+# Role dance: parent query → logout → nanny correct via ClockOutSheet edit mode
+# → logout → parent approve. Deep-link to Hours with weekStart so both roles
+# land on the same pay week (regression surface shared with flow 05).
+appId: com.jetto.steadily.nanny
+tags:
+  - timesheet
+---
+# --- Parent: query week ---
+- runFlow: ../flows/login.yaml
+- openLink: steadilynanny:///(private)/(tabs)/hours?weekStart=${HOURS_DEEPLINK_WEEK_START}
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'hours-screen'
+- assertVisible:
+    id: 'hours-active-week-${HOURS_DEEPLINK_WEEK_START}'
+- tapOn:
+    id: 'hours-query-button'
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'hours-query-sheet'
+- tapOn:
+    id: 'hours-query-note-input'
+- inputText: 'Please check Tuesday clock-out'
+- hideKeyboard
+- tapOn:
+    id: 'hours-query-submit'
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'hours-query-note'
+- takeScreenshot: parent-queried-week
+
+# --- Nanny: correct entry ---
+- runFlow: ../flows/logout.yaml
+- runFlow: ../flows/login-nanny.yaml
+- openLink: steadilynanny:///(private)/(tabs)/hours?weekStart=${HOURS_DEEPLINK_WEEK_START}
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'hours-screen'
+- tapOn:
+    id: 'hours-edit-entry-${TIME_ENTRY_ID}'
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'clockout-sheet'
+- tapOn:
+    id: 'clockout-finish-time'
+- eraseText
+- inputText: '17:45'
+- hideKeyboard
+- tapOn:
+    id: 'clockout-confirm'
+- waitForAnimationToEnd
+# ClockOutSheet only dismisses on a SUCCESSFUL save (NannyWeekView keeps it
+# open with the typed correction on a rejection) — a real post-condition
+# that the mutation actually landed, not just a screenshot.
+- assertNotVisible:
+    id: 'clockout-sheet'
+- takeScreenshot: nanny-corrected-entry
+
+# --- Parent: approve ---
+- runFlow: ../flows/logout.yaml
+- runFlow: ../flows/login.yaml
+- openLink: steadilynanny:///(private)/(tabs)/hours?weekStart=${HOURS_DEEPLINK_WEEK_START}
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'hours-screen'
+- tapOn:
+    id: 'hours-approve-button'
+- waitForAnimationToEnd
+# hours-approve-button renders (and is merely `disabled`) regardless of
+# actionability, and hours-timesheet-status always renders — neither proves
+# the approve actually landed. `isActionable` (submitted-only) flips false
+# once the timesheet is approved, which re-disables this same button
+# server-side; assert that instead of the tautological pair above.
+- assertVisible:
+    id: 'hours-approve-button'
+    enabled: false
+- takeScreenshot: parent-approved-week

@@ -18,6 +18,7 @@ import { z } from 'zod';
 export type {
   ClockInInput,
   ClockOutInput,
+  CreateRetroactiveTimeEntryInput,
   QueryTimesheetInput,
   TimeEntry,
   TimeEntryKind,
@@ -31,6 +32,7 @@ export type {
 export {
   ClockInSchema,
   ClockOutSchema,
+  CreateRetroactiveTimeEntrySchema,
   QueryTimesheetSchema,
   TIME_ENTRY_KINDS,
   TIME_ENTRY_STATUSES,

@@ -53,6 +53,28 @@ export class TimesheetController {
     }
   }
 
+  /** POST /time-entries/retroactive — forgotten clock-in recovery. */
+  static async createRetroactiveEntry(
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ) {
+    try {
+      const time_entry = await timesheetCommandService.createRetroactiveEntry(
+        getAuthUserId(req),
+        req.body
+      );
+      return sendSuccessResponse(
+        res,
+        'Retroactive time entry created',
+        { time_entry },
+        201
+      );
+    } catch (error) {
+      return next(error);
+    }
+  }
+
   /** GET /time-entries/running — the caller's open entry, or null. */
   static async getRunning(req: Request, res: Response, next: NextFunction) {
     try {

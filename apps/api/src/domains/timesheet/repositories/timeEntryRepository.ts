@@ -14,7 +14,10 @@ import type { TimeEntry } from '@steadily-nanny/shared-types/schemas/timesheet.s
 import { supabaseService } from '../../../config/supabase';
 import { DatabaseError } from '../../../errors';
 import { BaseRepository } from '../../../shared/repositories/baseRepository';
-import { AlreadyClockedInError } from '../errors/timesheetErrors';
+import {
+  AlreadyClockedInError,
+  CancellationPaidAlreadyRecordedError,
+} from '../errors/timesheetErrors';
 
 /** Postgres unique_violation error code. */
 const UNIQUE_VIOLATION = '23505';
@@ -32,6 +35,26 @@ export interface NewTimeEntryData {
   timezone: string;
   kind: TimeEntry['kind'];
   status: TimeEntry['status'];
+}
+
+/**
+ * A finished entry written in one shot — retroactive worked sessions and
+ * cancellation-pay rows. Both land `submitted` (never `running`), so they
+ * never contend with `time_entries_one_running_per_carer`.
+ */
+export interface NewSubmittedTimeEntryData {
+  household_id: string;
+  carer_id: string;
+  carer_display_name: string;
+  shift_id: string | null;
+  clock_in_at: string;
+  clock_out_at: string;
+  break_minutes: number;
+  scheduled_minutes: number | null;
+  timezone: string;
+  kind: TimeEntry['kind'];
+  status: 'submitted';
+  note?: string | null;
 }
 
 export class TimeEntryRepository extends BaseRepository<TimeEntry> {
@@ -63,6 +86,69 @@ export class TimeEntryRepository extends BaseRepository<TimeEntry> {
       });
     }
     return created as TimeEntry;
+  }
+
+  /**
+   * Insert a finished (already clocked-out) entry. Used by forgotten-clock-in
+   * recovery and cancellation-pay recording — neither path has a `running`
+   * phase, so this does not share `clockIn`'s one-running-per-carer 23505
+   * translation.
+   *
+   * For `kind = 'cancellation_paid'`, a 23505 on
+   * `time_entries_one_cancellation_paid_per_shift` becomes
+   * `CancellationPaidAlreadyRecordedError` so
+   * `recordCancellationPaidEntry` can re-fetch the winner after a race.
+   */
+  async createSubmitted(data: NewSubmittedTimeEntryData): Promise<TimeEntry> {
+    const { data: created, error } = await supabaseService
+      .from(this.table)
+      .insert(data)
+      .select()
+      .single();
+
+    if (error) {
+      if (
+        error.code === UNIQUE_VIOLATION &&
+        data.kind === 'cancellation_paid' &&
+        data.shift_id
+      ) {
+        throw new CancellationPaidAlreadyRecordedError(data.shift_id);
+      }
+      throw new DatabaseError(
+        'Failed to create submitted time entry',
+        'DATABASE_ERROR',
+        {
+          details: error.message,
+          code: error.code,
+        }
+      );
+    }
+    return created as TimeEntry;
+  }
+
+  /**
+   * The existing `cancellation_paid` entry for a shift, if any. Find-first
+   * optimisation for `recordCancellationPaidEntry` — the partial unique
+   * index (039) is the source of truth under concurrent accepts.
+   */
+  async findCancellationPaidForShift(
+    shiftId: string
+  ): Promise<TimeEntry | null> {
+    const { data, error } = await supabaseService
+      .from(this.table)
+      .select('*')
+      .eq('shift_id', shiftId)
+      .eq('kind', 'cancellation_paid')
+      .maybeSingle();
+
+    if (error) {
+      throw new DatabaseError(
+        'Failed to look up cancellation-paid time entry',
+        'DATABASE_ERROR',
+        { details: error.message, shiftId }
+      );
+    }
+    return data as TimeEntry | null;
   }
 
   /** The caller's own open (running) entry, or null. At most one can exist per carer. */

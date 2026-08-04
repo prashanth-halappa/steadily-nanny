@@ -28,12 +28,17 @@
  * @module domains/timesheet/services/timesheetCommandService
  */
 
+import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types/schemas/notification.schema';
 import {
   HOUSEHOLD_ROLES,
   HouseholdMemberRepository,
   HouseholdRepository,
 } from '../../household';
-import { notifyHouseholdParents } from '../../notification';
+import {
+  notifyHouseholdParents,
+  notifyUser,
+} from '../../notification/services/householdPush';
+import type { PushPayload } from '../../notification/types';
 import {
   SHIFT_STATUSES,
   ShiftNotFoundError,
@@ -43,6 +48,7 @@ import type { ShiftWithChildren } from '../../shift/repositories/shiftRepository
 import { UserService } from '../../user';
 import {
   AlreadyClockedInError,
+  CancellationPaidAlreadyRecordedError,
   InvalidClockTimesError,
   NotACarerError,
   NotATimesheetParentError,
@@ -55,6 +61,7 @@ import { TimesheetRepository } from '../repositories/timesheetRepository';
 import type {
   ClockInInput,
   ClockOutInput,
+  CreateRetroactiveTimeEntryInput,
   QueryTimesheetInput,
   TimeEntry,
   Timesheet,
@@ -65,6 +72,28 @@ import {
   type TimesheetQueryService,
   timesheetQueryService,
 } from './timesheetQueryService';
+
+/**
+ * Minimal shift shape the cancellation-pay helper needs. Deliberately not the
+ * full `ShiftWithChildren` type — the orchestrator (or 1A accept path) can
+ * pass the post-accept shift row without dragging the shift domain into this
+ * module's public surface.
+ */
+export interface CancellationPaidShiftInput {
+  id: string;
+  household_id: string;
+  carer_id: string | null;
+  starts_at: string;
+  ends_at: string;
+  timezone: string;
+  cancellation_paid: boolean;
+}
+
+/** Injectable push seam — defaults to the fire-and-forget household helpers. */
+export interface TimesheetPushNotifier {
+  notifyUser: (userId: string, payload: PushPayload) => void;
+  notifyHouseholdParents: (householdId: string, payload: PushPayload) => void;
+}
 
 /**
  * Auto-match window for an ad-hoc clock-in (no client-supplied `shift_id`):
@@ -170,7 +199,11 @@ export class TimesheetCommandService {
     private readonly userService: Pick<
       typeof UserService,
       'getProfileById'
-    > = UserService
+    > = UserService,
+    private readonly push: TimesheetPushNotifier = {
+      notifyUser,
+      notifyHouseholdParents,
+    }
   ) {}
 
   /**
@@ -302,6 +335,187 @@ export class TimesheetCommandService {
   }
 
   /**
+   * Forgotten clock-in recovery: create a finished `worked` entry in one
+   * shot. Lands `submitted` immediately (there is no separate submit step —
+   * same honesty as clock-out) and rolls into the week total via
+   * `rollUpIntoTimesheet`.
+   *
+   * Constraints mirror the correction path:
+   * - `assertClockOrder` (out after in, not in the future)
+   * - both ends must fall in the same household-local week (roll-up only
+   *   recomputes one week)
+   * - blocked once that week is `approved` (same policy as
+   *   `recordCancellationPaidEntry` — never silently un-approve via roll-up)
+   * - written as `submitted`, never `running`, so it never contends with
+   *   `time_entries_one_running_per_carer` even if the carer is currently
+   *   clocked in on a different session
+   */
+  async createRetroactiveEntry(
+    userId: string,
+    input: CreateRetroactiveTimeEntryInput
+  ): Promise<TimeEntry> {
+    const membership = await this.memberRepo.findActiveMembership(
+      input.household_id,
+      userId
+    );
+    if (!membership || !CARER_ROLES.has(membership.role)) {
+      throw new NotACarerError(input.household_id, membership?.role ?? 'none');
+    }
+
+    const { clockInAt, clockOutAt } = this.assertClockOrder(
+      input.clock_in_at,
+      input.clock_out_at
+    );
+
+    const household = await this.householdRepo.findById(input.household_id);
+    const timeZone = household?.timezone ?? 'UTC';
+    const weekStart = weekStartOf(new Date(clockInAt), timeZone);
+    if (weekStartOf(new Date(clockOutAt), timeZone) !== weekStart) {
+      throw new InvalidClockTimesError('CLOCK_CROSSES_WEEK', {
+        weekStart,
+        clockInAt,
+        clockOutAt,
+      });
+    }
+
+    const timesheet = await this.timesheetRepo.findByWeek(
+      input.household_id,
+      userId,
+      weekStart
+    );
+    if (timesheet?.status === 'approved') {
+      throw new TimeEntryNotEditableError('new', 'week_approved');
+    }
+
+    let shiftId: string | null = null;
+    let scheduledMinutes: number | null = null;
+    if (input.shift_id) {
+      await this.assertShiftBelongsToCarer(
+        input.shift_id,
+        input.household_id,
+        userId
+      );
+      shiftId = input.shift_id;
+      scheduledMinutes = await this.freezeScheduledMinutes(shiftId);
+    }
+
+    const carerDisplayName = await this.resolveCarerDisplayName(userId);
+    const created = await this.timeEntryRepo.createSubmitted({
+      household_id: input.household_id,
+      carer_id: userId,
+      carer_display_name: carerDisplayName,
+      shift_id: shiftId,
+      clock_in_at: clockInAt,
+      clock_out_at: clockOutAt,
+      break_minutes: input.break_minutes ?? 0,
+      scheduled_minutes: scheduledMinutes,
+      timezone: timeZone,
+      kind: 'worked',
+      status: 'submitted',
+      note: input.note ?? null,
+    });
+    await this.rollUpIntoTimesheet(created, userId);
+    return created;
+  }
+
+  /**
+   * Record hours owed under a short-notice cancellation. Idempotent on
+   * `shift_id`: a second call for the same paid cancellation returns the
+   * existing `cancellation_paid` entry without inserting another.
+   *
+   * Find-first is an optimisation; the partial unique index
+   * `time_entries_one_cancellation_paid_per_shift` (039) is the source of
+   * truth under concurrent accepts — a 23505 loses the race, re-fetches,
+   * and returns the winner.
+   *
+   * Span validation is `ends_at > starts_at` ONLY. Do NOT route through
+   * `assertClockOrder`: paid-cancel accepts happen before the shift starts,
+   * so `ends_at` is intentionally in the future — the future-bound that
+   * protects real clock-outs would throw `CLOCK_OUT_IN_FUTURE` and (via the
+   * shift accept path swallowing the error) leave the carer owed money with
+   * no entry.
+   *
+   * Approved-week policy matches `createRetroactiveEntry`: block the write
+   * with `TimeEntryNotEditableError` rather than inserting and letting
+   * `rollUpIntoTimesheet` silently un-approve the week.
+   *
+   * Exported at module scope as `recordCancellationPaidEntry` for the
+   * orchestrator to wire into shift paid-cancel accept — do not duplicate
+   * this write in the shift domain.
+   */
+  async recordCancellationPaidEntry(
+    shift: CancellationPaidShiftInput
+  ): Promise<TimeEntry | null> {
+    if (!shift.cancellation_paid || !shift.carer_id) {
+      return null;
+    }
+
+    const existing = await this.timeEntryRepo.findCancellationPaidForShift(
+      shift.id
+    );
+    if (existing) {
+      return existing;
+    }
+
+    this.assertCancellationPaidSpan(shift.starts_at, shift.ends_at);
+
+    // Approved-week boundary is household-local Monday — same as roll-ups /
+    // createRetroactiveEntry. `shift.timezone` can disagree and mis-file the
+    // guard into the wrong week (money path).
+    const household = await this.householdRepo.findById(shift.household_id);
+    const weekStart = weekStartOf(
+      new Date(shift.starts_at),
+      household?.timezone ?? 'UTC'
+    );
+    const timesheet = await this.timesheetRepo.findByWeek(
+      shift.household_id,
+      shift.carer_id,
+      weekStart
+    );
+    if (timesheet?.status === 'approved') {
+      throw new TimeEntryNotEditableError('new', 'week_approved');
+    }
+
+    const scheduledMinutes = Math.round(
+      (new Date(shift.ends_at).getTime() -
+        new Date(shift.starts_at).getTime()) /
+        60_000
+    );
+    const carerDisplayName = await this.resolveCarerDisplayName(shift.carer_id);
+
+    let created: TimeEntry;
+    try {
+      created = await this.timeEntryRepo.createSubmitted({
+        household_id: shift.household_id,
+        carer_id: shift.carer_id,
+        carer_display_name: carerDisplayName,
+        shift_id: shift.id,
+        clock_in_at: shift.starts_at,
+        clock_out_at: shift.ends_at,
+        break_minutes: 0,
+        scheduled_minutes: scheduledMinutes,
+        timezone: shift.timezone,
+        kind: 'cancellation_paid',
+        status: 'submitted',
+        note: null,
+      });
+    } catch (err) {
+      if (err instanceof CancellationPaidAlreadyRecordedError) {
+        const raced = await this.timeEntryRepo.findCancellationPaidForShift(
+          shift.id
+        );
+        if (raced) {
+          return raced;
+        }
+      }
+      throw err;
+    }
+
+    await this.rollUpIntoTimesheet(created, shift.carer_id);
+    return created;
+  }
+
+  /**
    * Correct an already-clocked-out entry — the carer's own fix for a wrong
    * time, a missed break, or a forgotten clock-out she only noticed later
    * (Daylight UX P0-2). Carer-only, via the same `getOwnedTimeEntry` gate as
@@ -386,6 +600,9 @@ export class TimesheetCommandService {
    *
    * Returns the pair it validated so callers get the non-null narrowing for
    * free rather than re-asserting it.
+   *
+   * Not for `recordCancellationPaidEntry` — paid-cancel spans are often
+   * still in the future; use `assertCancellationPaidSpan` instead.
    */
   private assertClockOrder(
     clockInAt: string | null,
@@ -406,6 +623,22 @@ export class TimesheetCommandService {
       throw new InvalidClockTimesError('CLOCK_OUT_IN_FUTURE', { clockOutAt });
     }
     return { clockInAt, clockOutAt };
+  }
+
+  /**
+   * Paid-cancel span check: `ends_at` must be after `starts_at`, matching
+   * the DB's `time_entries_clock_order`. Deliberately omits the
+   * "not in the future" bound — see `recordCancellationPaidEntry`.
+   */
+  private assertCancellationPaidSpan(startsAt: string, endsAt: string): void {
+    const startMs = new Date(startsAt).getTime();
+    const endMs = new Date(endsAt).getTime();
+    if (!(endMs > startMs)) {
+      throw new InvalidClockTimesError('CLOCK_OUT_BEFORE_CLOCK_IN', {
+        clockInAt: startsAt,
+        clockOutAt: endsAt,
+      });
+    }
   }
 
   /** Owner/parent only. Requires submitted hours to act on. */
@@ -432,10 +665,32 @@ export class TimesheetCommandService {
     await this.assertWriteMember(userId, timesheet.household_id);
     this.assertActionable(timesheet);
 
-    return this.timesheetRepo.update(timesheetId, {
+    const updated = await this.timesheetRepo.update(timesheetId, {
       status: 'queried',
       query_note: input.note,
     });
+
+    // Carer currently only learns of a queried week by opening Hours — push
+    // her so she can respond. Fire-and-forget: a push failure must never
+    // fail the query write the parent already completed.
+    if (updated.carer_id) {
+      try {
+        this.push.notifyUser(updated.carer_id, {
+          title: 'Hours queried',
+          body: 'A parent has a question about your hours this week.',
+          data: {
+            type: PUSH_NOTIFICATION_TYPES.TIMESHEET_QUERIED,
+            timesheetId: updated.id,
+            householdId: updated.household_id,
+            weekStart: updated.week_start,
+          },
+        });
+      } catch {
+        // notifyUser is sync fire-and-forget; swallow any unexpected throw
+      }
+    }
+
+    return updated;
   }
 
   /**
@@ -619,11 +874,11 @@ export class TimesheetCommandService {
         total_minutes: totalMinutes,
         status: 'submitted',
       });
-      notifyHouseholdParents(entry.household_id, {
+      this.push.notifyHouseholdParents(entry.household_id, {
         title: 'Hours submitted',
         body: `${entry.carer_display_name ?? 'Your carer'} logged hours for this week.`,
         data: {
-          type: 'timesheet_submitted',
+          type: PUSH_NOTIFICATION_TYPES.TIMESHEET_SUBMITTED,
           householdId: entry.household_id,
           weekStart,
         },
@@ -645,11 +900,11 @@ export class TimesheetCommandService {
       ...(reopening ? { approved_by: null, approved_at: null } : {}),
     });
     if (newlySubmitted || reopening) {
-      notifyHouseholdParents(entry.household_id, {
+      this.push.notifyHouseholdParents(entry.household_id, {
         title: 'Hours submitted',
         body: `${entry.carer_display_name ?? 'Your carer'} logged hours for this week.`,
         data: {
-          type: 'timesheet_submitted',
+          type: PUSH_NOTIFICATION_TYPES.TIMESHEET_SUBMITTED,
           householdId: entry.household_id,
           weekStart,
           timesheetId: existing.id,
@@ -683,3 +938,14 @@ export class TimesheetCommandService {
 
 // Singleton for controllers/routes that don't need DI.
 export const timesheetCommandService = new TimesheetCommandService();
+
+/**
+ * Orchestrator seam: wire into shift paid-cancel accept. Idempotent — safe
+ * to call from a retried accept path. Returns null when the shift is not
+ * cancellation-paid (or has no carer).
+ */
+export function recordCancellationPaidEntry(
+  shift: CancellationPaidShiftInput
+): Promise<TimeEntry | null> {
+  return timesheetCommandService.recordCancellationPaidEntry(shift);
+}

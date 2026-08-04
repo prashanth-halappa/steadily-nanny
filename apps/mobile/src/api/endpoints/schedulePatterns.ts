@@ -15,6 +15,10 @@
  * before validating the payload with Zod.
  */
 import {
+  type ClashWarning,
+  ClashWarningSchema,
+} from '@steadily-nanny/shared-types/schemas/me.schema';
+import {
   type CreateSchedulePatternInput,
   CreateSchedulePatternSchema,
   type SchedulePattern,
@@ -27,6 +31,16 @@ import {
 } from '@steadily-nanny/shared-types/schemas/schedule.schema';
 import { z } from 'zod';
 import { apiClient } from '@/src/api/client';
+
+/** Write responses may attach non-blocking clash warnings alongside the pattern. */
+const SchedulePatternWriteEnvelopeSchema = z.object({
+  schedule_pattern: SchedulePatternSchema,
+  warnings: z.array(ClashWarningSchema).default([]),
+});
+export type SchedulePatternWriteResult = {
+  schedule_pattern: SchedulePattern;
+  warnings: ClashWarning[];
+};
 
 // --- Endpoint URLs ----------------------------------------------------------
 export const schedulePatternEndpoints = {
@@ -202,22 +216,22 @@ export const schedulePatternApi = {
   },
 
   /** draft -> pending. Fails server-side if there's no carer yet. */
-  send: async (patternId: string): Promise<SchedulePattern> => {
+  send: async (patternId: string): Promise<SchedulePatternWriteResult> => {
     const response = await apiClient.post(
       schedulePatternEndpoints.send(patternId)
     );
-    const parsed = z
-      .object({ schedule_pattern: SchedulePatternSchema })
-      .safeParse(response.data.data);
+    const parsed = SchedulePatternWriteEnvelopeSchema.safeParse(
+      response.data.data
+    );
     if (!parsed.success) throw parsed.error;
-    return parsed.data.schedule_pattern;
+    return parsed.data;
   },
 
   /** The carer accepts or declines. Accepting materialises shifts server-side. */
   respond: async (
     patternId: string,
     input: RespondToSchedulePatternInput
-  ): Promise<SchedulePattern> => {
+  ): Promise<SchedulePatternWriteResult> => {
     const validated = RespondToSchedulePatternInputSchema.safeParse(input);
     if (!validated.success) throw validated.error;
 
@@ -225,11 +239,11 @@ export const schedulePatternApi = {
       schedulePatternEndpoints.respond(patternId),
       validated.data
     );
-    const parsed = z
-      .object({ schedule_pattern: SchedulePatternSchema })
-      .safeParse(response.data.data);
+    const parsed = SchedulePatternWriteEnvelopeSchema.safeParse(
+      response.data.data
+    );
     if (!parsed.success) throw parsed.error;
-    return parsed.data.schedule_pattern;
+    return parsed.data;
   },
 
   /** pending -> withdrawn (parent pulls back a not-yet-answered proposal). */

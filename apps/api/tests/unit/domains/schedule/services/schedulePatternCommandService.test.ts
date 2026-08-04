@@ -1,4 +1,5 @@
 import { describe, expect, it, mock } from 'bun:test';
+import type { Shift } from '@steadily-nanny/shared-types/schemas/shift.schema';
 import { ChildNotFoundError } from '../../../../../src/domains/child';
 import { NotAHouseholdParentError } from '../../../../../src/domains/household';
 import {
@@ -6,13 +7,45 @@ import {
   InvalidPatternChildError,
   NotThePatternCarerError,
   PatternMissingCarerError,
+  PatternNotAcceptedError,
   PatternNotDraftError,
   PatternNotEditableError,
   PatternNotPendingError,
 } from '../../../../../src/domains/schedule/errors/scheduleErrors';
+import type {
+  ConflictEventRepository,
+  MaterialisationShiftRepository,
+  TimeEntryExistenceRepository,
+} from '../../../../../src/domains/schedule/services/scheduleMaterialisationService';
+import { ScheduleMaterialisationService } from '../../../../../src/domains/schedule/services/scheduleMaterialisationService';
 import { SchedulePatternCommandService } from '../../../../../src/domains/schedule/services/schedulePatternCommandService';
+import { ValidationError } from '../../../../../src/errors';
 
 const household = { id: 'h1', name: 'The Smiths', timezone: 'Europe/London' };
+
+/**
+ * Fixed clock for amend / horizon tests. Materialisation reconciles "future"
+ * against this instant (not the wall clock), so fixture dates never time-bomb.
+ */
+const NOW = new Date('2026-08-03T12:00:00.000Z');
+
+/** Thursday on/after NOW+28d — matches `defaultDays` weekday 4. */
+function futureThursdayExdate(from: Date = NOW, minDaysAhead = 28): string {
+  const startMs = from.getTime() + minDaysAhead * 24 * 60 * 60 * 1000;
+  const d = new Date(
+    Date.UTC(
+      new Date(startMs).getUTCFullYear(),
+      new Date(startMs).getUTCMonth(),
+      new Date(startMs).getUTCDate()
+    )
+  );
+  while (d.getUTCDay() !== 4) {
+    d.setUTCDate(d.getUTCDate() + 1);
+  }
+  return d.toISOString().slice(0, 10);
+}
+
+const FUTURE_EXDATE = futureThursdayExdate();
 
 function patternFor(overrides: Record<string, unknown> = {}) {
   return {
@@ -629,9 +662,60 @@ describe('SchedulePatternCommandService.materialiseForHorizon', () => {
       materialisation
     );
 
-    await svc.materialiseForHorizon(patternFor() as any, 30);
+    await svc.materialiseForHorizon(patternFor() as any, 30, NOW);
 
     expect(materialisation.materialise).toHaveBeenCalledTimes(1);
+    expect(materialisation.materialise.mock.calls[0][2]).toEqual(NOW);
+  });
+
+  it('marks accepted pattern ended when until is past in the pattern timezone', async () => {
+    // UTC still 2026-08-03; Pacific/Auckland is already 2026-08-04.
+    const now = new Date('2026-08-03T12:00:00.000Z');
+    const pattern = patternFor({
+      status: 'accepted',
+      timezone: 'Pacific/Auckland',
+      until: '2026-08-03',
+    });
+    const patternRepo = makePatternRepo();
+    const svc = new SchedulePatternCommandService(
+      patternRepo,
+      makeDayRepo(),
+      makeDayChildRepo(),
+      makeMemberRepo('owner'),
+      makeHouseholdRepo(),
+      makeQueries(pattern),
+      makeMaterialisation()
+    );
+
+    await svc.materialiseForHorizon(pattern as any, 30, now);
+
+    expect(patternRepo.update).toHaveBeenCalledWith('p1', {
+      status: 'ended',
+    });
+  });
+
+  it('does not mark ended when until equals today in the zone even though UTC has rolled', async () => {
+    // UTC already 2026-08-04; America/Los_Angeles is still 2026-08-03.
+    const now = new Date('2026-08-04T06:00:00.000Z');
+    const pattern = patternFor({
+      status: 'accepted',
+      timezone: 'America/Los_Angeles',
+      until: '2026-08-03',
+    });
+    const patternRepo = makePatternRepo();
+    const svc = new SchedulePatternCommandService(
+      patternRepo,
+      makeDayRepo(),
+      makeDayChildRepo(),
+      makeMemberRepo('owner'),
+      makeHouseholdRepo(),
+      makeQueries(pattern),
+      makeMaterialisation()
+    );
+
+    await svc.materialiseForHorizon(pattern as any, 30, now);
+
+    expect(patternRepo.update).not.toHaveBeenCalled();
   });
 });
 
@@ -667,5 +751,335 @@ describe('SchedulePatternCommandService.withdraw', () => {
     await expect(svc.withdraw('u1', 'p1')).rejects.toBeInstanceOf(
       PatternNotPendingError
     );
+  });
+});
+
+function baseShiftForAmend(overrides: Partial<Shift> = {}): Shift {
+  return {
+    id: 'shift-1',
+    household_id: 'h1',
+    carer_id: 'carer-1',
+    starts_at: `${FUTURE_EXDATE}T07:00:00.000Z`,
+    ends_at: `${FUTURE_EXDATE}T16:00:00.000Z`,
+    timezone: 'Europe/London',
+    local_date: FUTURE_EXDATE,
+    kind: 'recurring',
+    status: 'confirmed',
+    source_pattern_id: 'p1',
+    origin: 'system_generated',
+    is_short_notice: false,
+    note: null,
+    reason: null,
+    cancelled_at: null,
+    cancelled_by: null,
+    cancellation_paid: false,
+    cancellation_message: null,
+    ical_uid: `pattern-uid::${FUTURE_EXDATE}`,
+    sequence: 0,
+    created_by: null,
+    created_at: '2026-01-01T00:00:00.000Z',
+    updated_at: '2026-01-01T00:00:00.000Z',
+    ...overrides,
+  };
+}
+
+function makeShiftRepo(
+  overrides: Partial<MaterialisationShiftRepository> = {}
+): MaterialisationShiftRepository {
+  return {
+    findByPatternAndDate: mock(async () => null),
+    findActiveByPattern: mock(async () => []),
+    hasChangeRequests: mock(async () => false),
+    create: mock(async () => baseShiftForAmend()),
+    update: mock(async () => baseShiftForAmend()),
+    delete: mock(async () => undefined),
+    replaceChildren: mock(async () => undefined),
+    ...overrides,
+  };
+}
+
+function makeTimeEntryRepo(
+  overrides: Partial<TimeEntryExistenceRepository> = {}
+): TimeEntryExistenceRepository {
+  return {
+    hasTimeEntries: mock(async () => false),
+    ...overrides,
+  };
+}
+
+function makeEventRepo(
+  overrides: Partial<ConflictEventRepository> = {}
+): ConflictEventRepository {
+  return {
+    listEventKeysForDate: mock(async () => new Set<string>()),
+    insertMany: mock(async () => undefined),
+    ...overrides,
+  };
+}
+
+describe('SchedulePatternCommandService.amend', () => {
+  it('adding exdate to accepted pattern deletes untouched future shift', async () => {
+    const accepted = patternFor({ status: 'accepted', exdates: [] });
+    const orphan = baseShiftForAmend({ id: 'shift-to-exclude' });
+    const shiftRepo = makeShiftRepo({
+      findActiveByPattern: mock(async () => [orphan]),
+    });
+    const materialisation = new ScheduleMaterialisationService(
+      shiftRepo,
+      makeTimeEntryRepo(),
+      makeEventRepo()
+    );
+    const patternRepo = makePatternRepo({
+      update: mock(async (id: string, data: Record<string, unknown>) => ({
+        ...accepted,
+        id,
+        ...data,
+      })),
+    });
+    const svc = new SchedulePatternCommandService(
+      patternRepo,
+      makeDayRepo(),
+      makeDayChildRepo(),
+      makeMemberRepo('owner'),
+      makeHouseholdRepo(),
+      makeQueries(accepted),
+      materialisation
+    );
+
+    await svc.amend('u1', 'p1', { exdates: [FUTURE_EXDATE] }, NOW);
+
+    expect(patternRepo.update).toHaveBeenCalledWith(
+      'p1',
+      expect.objectContaining({ exdates: [FUTURE_EXDATE] })
+    );
+    expect(shiftRepo.delete).toHaveBeenCalledWith('shift-to-exclude');
+  });
+
+  it('preserves a shift with time entries in an excluded range', async () => {
+    const accepted = patternFor({ status: 'accepted', exdates: [] });
+    const paidOrphan = baseShiftForAmend({ id: 'shift-paid' });
+    const shiftRepo = makeShiftRepo({
+      findActiveByPattern: mock(async () => [paidOrphan]),
+    });
+    const timeEntryRepo = makeTimeEntryRepo({
+      hasTimeEntries: mock(async () => true),
+    });
+    const materialisation = new ScheduleMaterialisationService(
+      shiftRepo,
+      timeEntryRepo,
+      makeEventRepo()
+    );
+    const patternRepo = makePatternRepo({
+      update: mock(async (id: string, data: Record<string, unknown>) => ({
+        ...accepted,
+        id,
+        ...data,
+      })),
+    });
+    const svc = new SchedulePatternCommandService(
+      patternRepo,
+      makeDayRepo(),
+      makeDayChildRepo(),
+      makeMemberRepo('owner'),
+      makeHouseholdRepo(),
+      makeQueries(accepted),
+      materialisation
+    );
+
+    await svc.amend('u1', 'p1', { exdates: [FUTURE_EXDATE] }, NOW);
+
+    expect(shiftRepo.delete).not.toHaveBeenCalled();
+    expect(shiftRepo.update).not.toHaveBeenCalled();
+  });
+
+  it('cancels a manually-touched shift with a pattern_conflict event', async () => {
+    const accepted = patternFor({ status: 'accepted', exdates: [] });
+    const touched = baseShiftForAmend({
+      id: 'shift-touched',
+      origin: 'nanny_countered',
+    });
+    const shiftRepo = makeShiftRepo({
+      findActiveByPattern: mock(async () => [touched]),
+    });
+    const eventRepo = makeEventRepo();
+    const materialisation = new ScheduleMaterialisationService(
+      shiftRepo,
+      makeTimeEntryRepo(),
+      eventRepo
+    );
+    const patternRepo = makePatternRepo({
+      update: mock(async (id: string, data: Record<string, unknown>) => ({
+        ...accepted,
+        id,
+        ...data,
+      })),
+    });
+    const svc = new SchedulePatternCommandService(
+      patternRepo,
+      makeDayRepo(),
+      makeDayChildRepo(),
+      makeMemberRepo('owner'),
+      makeHouseholdRepo(),
+      makeQueries(accepted),
+      materialisation
+    );
+
+    await svc.amend('u1', 'p1', { exdates: [FUTURE_EXDATE] }, NOW);
+
+    expect(shiftRepo.delete).not.toHaveBeenCalled();
+    expect(shiftRepo.update).toHaveBeenCalledWith(
+      'shift-touched',
+      expect.objectContaining({
+        status: 'cancelled',
+        reason: 'pattern_changed',
+      })
+    );
+    expect(eventRepo.insertMany).toHaveBeenCalledWith([
+      expect.objectContaining({
+        shift_id: 'shift-touched',
+        event_type: 'pattern_conflict',
+        local_date: FUTURE_EXDATE,
+      }),
+    ]);
+  });
+
+  it('flips status to ended when until is before today in the pattern timezone', async () => {
+    // UTC still 2026-08-03; Pacific/Auckland is already 2026-08-04 — UTC
+    // cutoff would leave the pattern accepted ~13h late.
+    const now = new Date('2026-08-03T12:00:00.000Z');
+    const accepted = patternFor({
+      status: 'accepted',
+      timezone: 'Pacific/Auckland',
+      dtstart: '2026-02-02',
+      until: null,
+    });
+    const patternRepo = makePatternRepo({
+      update: mock(async (id: string, data: Record<string, unknown>) => ({
+        ...accepted,
+        id,
+        ...data,
+      })),
+    });
+    const svc = new SchedulePatternCommandService(
+      patternRepo,
+      makeDayRepo(),
+      makeDayChildRepo(),
+      makeMemberRepo('owner'),
+      makeHouseholdRepo(),
+      makeQueries(accepted),
+      makeMaterialisation()
+    );
+
+    await svc.amend('u1', 'p1', { until: '2026-08-03' }, now);
+
+    expect(patternRepo.update).toHaveBeenCalledWith(
+      'p1',
+      expect.objectContaining({
+        until: '2026-08-03',
+        status: 'ended',
+      })
+    );
+  });
+
+  it('does not end when until equals today in the pattern timezone', async () => {
+    const now = new Date('2026-08-03T12:00:00.000Z');
+    const accepted = patternFor({
+      status: 'accepted',
+      timezone: 'Pacific/Auckland',
+      dtstart: '2026-02-02',
+      until: null,
+    });
+    const patternRepo = makePatternRepo({
+      update: mock(async (id: string, data: Record<string, unknown>) => ({
+        ...accepted,
+        id,
+        ...data,
+      })),
+    });
+    const svc = new SchedulePatternCommandService(
+      patternRepo,
+      makeDayRepo(),
+      makeDayChildRepo(),
+      makeMemberRepo('owner'),
+      makeHouseholdRepo(),
+      makeQueries(accepted),
+      makeMaterialisation()
+    );
+
+    await svc.amend('u1', 'p1', { until: '2026-08-04' }, now);
+
+    expect(patternRepo.update).toHaveBeenCalledWith(
+      'p1',
+      expect.objectContaining({ until: '2026-08-04' })
+    );
+    expect(patternRepo.update).toHaveBeenCalledWith(
+      'p1',
+      expect.not.objectContaining({ status: 'ended' })
+    );
+  });
+
+  it('rejects until before dtstart with ValidationError', async () => {
+    const accepted = patternFor({
+      status: 'accepted',
+      dtstart: '2026-02-02',
+    });
+    const svc = new SchedulePatternCommandService(
+      makePatternRepo(),
+      makeDayRepo(),
+      makeDayChildRepo(),
+      makeMemberRepo('owner'),
+      makeHouseholdRepo(),
+      makeQueries(accepted),
+      makeMaterialisation()
+    );
+
+    await expect(
+      svc.amend('u1', 'p1', { until: '2026-01-01' }, NOW)
+    ).rejects.toBeInstanceOf(ValidationError);
+  });
+
+  it('rejects amending a draft pattern', async () => {
+    const svc = new SchedulePatternCommandService(
+      makePatternRepo(),
+      makeDayRepo(),
+      makeDayChildRepo(),
+      makeMemberRepo('owner'),
+      makeHouseholdRepo(),
+      makeQueries(patternFor({ status: 'draft' })),
+      makeMaterialisation()
+    );
+    await expect(
+      svc.amend('u1', 'p1', { exdates: [FUTURE_EXDATE] })
+    ).rejects.toBeInstanceOf(PatternNotAcceptedError);
+  });
+
+  it('rejects amending a withdrawn pattern', async () => {
+    const svc = new SchedulePatternCommandService(
+      makePatternRepo(),
+      makeDayRepo(),
+      makeDayChildRepo(),
+      makeMemberRepo('owner'),
+      makeHouseholdRepo(),
+      makeQueries(patternFor({ status: 'withdrawn' })),
+      makeMaterialisation()
+    );
+    await expect(
+      svc.amend('u1', 'p1', { until: '2026-12-01' })
+    ).rejects.toBeInstanceOf(PatternNotAcceptedError);
+  });
+
+  it('rejects a non-parent caller', async () => {
+    const svc = new SchedulePatternCommandService(
+      makePatternRepo(),
+      makeDayRepo(),
+      makeDayChildRepo(),
+      makeMemberRepo('nanny'),
+      makeHouseholdRepo(),
+      makeQueries(patternFor({ status: 'accepted' })),
+      makeMaterialisation()
+    );
+    await expect(
+      svc.amend('u1', 'p1', { exdates: [FUTURE_EXDATE] })
+    ).rejects.toBeInstanceOf(NotAHouseholdParentError);
   });
 });

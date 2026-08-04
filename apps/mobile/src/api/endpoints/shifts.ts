@@ -9,6 +9,10 @@
  * shape (starts_at / ends_at / note only).
  */
 import {
+  type ClashWarning,
+  ClashWarningSchema,
+} from '@steadily-nanny/shared-types/schemas/me.schema';
+import {
   type Shift,
   type ShiftEvent,
   ShiftEventListResponseSchema,
@@ -23,6 +27,7 @@ export const shiftEndpoints = {
     `/v1/households/${householdId}/shifts?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
   getById: (shiftId: string) => `/v1/shifts/${shiftId}`,
   update: (shiftId: string) => `/v1/shifts/${shiftId}`,
+  accept: (shiftId: string) => `/v1/shifts/${shiftId}/accept`,
   events: (householdId: string, shiftId: string) =>
     `/v1/households/${householdId}/shifts/${shiftId}/events`,
   dayThread: (householdId: string, localDate: string) =>
@@ -41,6 +46,16 @@ const ParentEditShiftSchema = z
 export type ParentEditShiftInput = z.infer<typeof ParentEditShiftSchema>;
 
 const ShiftEnvelopeSchema = z.object({ shift: ShiftSchema });
+
+/** Write responses may attach non-blocking clash warnings alongside the shift. */
+const ShiftWriteEnvelopeSchema = z.object({
+  shift: ShiftSchema,
+  warnings: z.array(ClashWarningSchema).default([]),
+});
+export type ShiftWriteResult = {
+  shift: Shift;
+  warnings: ClashWarning[];
+};
 
 export const shiftApi = {
   /** Materialised shifts for a household in a `[from, to)` ISO-datetime range. */
@@ -67,7 +82,7 @@ export const shiftApi = {
   update: async (
     shiftId: string,
     input: ParentEditShiftInput
-  ): Promise<Shift> => {
+  ): Promise<ShiftWriteResult> => {
     const validated = ParentEditShiftSchema.safeParse(input);
     if (!validated.success) throw validated.error;
 
@@ -75,9 +90,17 @@ export const shiftApi = {
       shiftEndpoints.update(shiftId),
       validated.data
     );
-    const parsed = ShiftEnvelopeSchema.safeParse(response.data.data);
+    const parsed = ShiftWriteEnvelopeSchema.safeParse(response.data.data);
     if (!parsed.success) throw parsed.error;
-    return parsed.data.shift;
+    return parsed.data;
+  },
+
+  /** Carer-only: pending → confirmed. Body-less POST. */
+  accept: async (shiftId: string): Promise<ShiftWriteResult> => {
+    const response = await apiClient.post(shiftEndpoints.accept(shiftId));
+    const parsed = ShiftWriteEnvelopeSchema.safeParse(response.data.data);
+    if (!parsed.success) throw parsed.error;
+    return parsed.data;
   },
 
   listEvents: async (

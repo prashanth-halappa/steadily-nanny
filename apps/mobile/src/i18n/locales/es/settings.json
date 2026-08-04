@@ -27,6 +27,7 @@
     "helper": "Ayudante"
   },
   "notifications": "Notificaciones",
+  "inbox": "Requiere atención",
   "household": "Hogar",
   "deleteAccount": "Eliminar cuenta",
   "deleteAccountConfirmTitle": "¿Eliminar tu cuenta?",
@@ -81,5 +82,36 @@
     "body": "Activa las notificaciones en Ajustes para recibir recordatorios y novedades.",
     "notNow": "Ahora no",
     "openSettings": "Abrir Ajustes"
+  },
+  "notificationPrefs": {
+    "title": "Notificaciones",
+    "subtitle": "Elige qué actualizaciones recibes y cuándo aplican las horas de silencio. Las solicitudes urgentes siguen llegando durante esas horas.",
+    "back": "Atrás",
+    "saveButton": "Guardar",
+    "savedToast": "Preferencias de notificación guardadas",
+    "quietHoursLabel": "Horas de silencio",
+    "quietHoursHint": "Silencia avisos no urgentes por la noche. Las confirmaciones de turno y los cambios siguen llegando.",
+    "quietHoursStart": "Empieza",
+    "quietHoursEnd": "Termina",
+    "typesHeading": "Tipos de aviso",
+    "typesHint": "Desactiva los tipos que no quieras. El permiso del sistema se gestiona aparte abajo.",
+    "openOsSettings": "Ajustes de notificación del dispositivo",
+    "openOsSettingsHint": "Controla si Steadily puede avisarte a nivel del sistema.",
+    "types": {
+      "clock_out_reminder": "Recordatorio de salida",
+      "timesheet_submitted": "Hoja de horas enviada",
+      "timesheet_queried": "Hoja de horas consultada",
+      "schedule_pattern_sent": "Patrón de horario enviado",
+      "schedule_pattern_responded": "Respuesta al patrón de horario",
+      "schedule_pattern_amended": "Patrón de horario modificado",
+      "shift_change_requested": "Cambio de turno solicitado",
+      "change_request_accepted": "Cambio aceptado",
+      "change_request_declined": "Cambio rechazado",
+      "change_request_withdrawn": "Cambio retirado",
+      "extra_shift_proposed": "Turno extra propuesto",
+      "shift_cancelled": "Turno cancelado",
+      "shift_needs_reconfirm": "Turno necesita reconfirmación",
+      "carer_time_off_conflict": "Conflicto de ausencia"
+    }
   }
 }

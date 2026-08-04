@@ -15,7 +15,7 @@
  * depends on it is imported).
  */
 import { beforeAll, describe, expect, it, mock } from 'bun:test';
-import { render } from '@testing-library/react-native';
+import { fireEvent, render } from '@testing-library/react-native';
 
 // LoadingIndicator's require('@/assets/splash.png') breaks bundling under
 // bun:test (see loading-indicator.test.tsx's header comment) — mock it out
@@ -26,6 +26,23 @@ mock.module('@/src/components/ui/loading-indicator', () => {
     LoadingIndicator: (props?: { testID?: string }) =>
       React.createElement('View', {
         testID: props?.testID ?? 'loading-indicator-container',
+      }),
+  };
+});
+
+mock.module('@/src/components/custom/ErrorState', () => {
+  const React = require('react');
+  return {
+    ErrorState: (props: { variant?: string; onRetry?: () => void }) =>
+      React.createElement('View', {
+        testID: 'error-state',
+        accessibilityLabel: props.variant ?? 'generic',
+        children: props.onRetry
+          ? React.createElement('View', {
+              testID: 'error-state-retry',
+              onPress: props.onRetry,
+            })
+          : null,
       }),
   };
 });
@@ -43,6 +60,7 @@ let ScheduleShiftsScreen: typeof import('../components/ScheduleShiftsScreen').Sc
 let mockUseShiftsRange: ReturnType<typeof mock>;
 let mockUseActiveHousehold: ReturnType<typeof mock>;
 let mockIsShiftsRouteUnavailable: ReturnType<typeof mock>;
+let mockUseIsOnboarded: ReturnType<typeof mock>;
 
 const HOUSEHOLD_ID = '11111111-1111-4111-8111-111111111111';
 
@@ -90,6 +108,7 @@ beforeAll(async () => {
     isLoading: false,
   }));
   mockIsShiftsRouteUnavailable = mock(() => false);
+  mockUseIsOnboarded = mock(() => ({ role: 'parent', status: 'onboarded' }));
 
   mock.module('@/src/hooks/queries/useShiftsRange', () => ({
     useShiftsRange: mockUseShiftsRange,
@@ -105,7 +124,7 @@ beforeAll(async () => {
     })),
   }));
   mock.module('@/src/hooks/queries/useIsOnboarded', () => ({
-    useIsOnboarded: mock(() => ({ role: 'parent', status: 'onboarded' })),
+    useIsOnboarded: mockUseIsOnboarded,
   }));
 
   const mod = await import('../components/ScheduleShiftsScreen');
@@ -190,6 +209,7 @@ describe('ScheduleShiftsScreen', () => {
       isLoading: false,
       isError: true,
       error: notFoundError,
+      refetch: mock(() => Promise.resolve()),
     }));
     mockIsShiftsRouteUnavailable.mockImplementation(
       (error: unknown) => error === notFoundError
@@ -201,6 +221,30 @@ describe('ScheduleShiftsScreen', () => {
     expect(getByTestId('schedule-shifts-unavailable')).toBeTruthy();
     expect(queryByTestId('schedule-shifts-empty')).toBeNull();
     expect(queryByTestId('schedule-shifts-list')).toBeNull();
+    expect(queryByTestId('schedule-shifts-error')).toBeNull();
+  });
+
+  it('offers retry via ErrorState when the shifts query errors for a non-404 reason', () => {
+    const networkError = { response: { status: 500 } };
+    const refetch = mock(() => Promise.resolve());
+    mockUseShiftsRange.mockImplementation(() => ({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      error: networkError,
+      refetch,
+    }));
+    mockIsShiftsRouteUnavailable.mockImplementation(() => false);
+
+    const { getByTestId, queryByTestId } = render(<ScheduleShiftsScreen />);
+
+    expect(getByTestId('schedule-shifts-error')).toBeTruthy();
+    expect(getByTestId('error-state')).toBeTruthy();
+    expect(queryByTestId('schedule-shifts-unavailable')).toBeNull();
+    expect(queryByTestId('schedule-shifts-empty')).toBeNull();
+
+    fireEvent.press(getByTestId('error-state-retry'));
+    expect(refetch).toHaveBeenCalled();
   });
 
   it('does not crash and still renders the screen root while onboarding/household resolution is loading', () => {
@@ -247,5 +291,39 @@ describe('ScheduleShiftsScreen', () => {
     const { queryByTestId } = render(<ScheduleShiftsScreen showBack={false} />);
 
     expect(queryByTestId('schedule-shifts-back')).toBeNull();
+  });
+
+  it('shows Add a one-off shift for parent roles', () => {
+    mockUseIsOnboarded.mockImplementation(() => ({
+      role: 'parent',
+      status: 'onboarded',
+    }));
+    mockUseShiftsRange.mockImplementation(() => ({
+      data: [],
+      isLoading: false,
+      isError: false,
+      error: null,
+    }));
+
+    const { getByTestId } = render(<ScheduleShiftsScreen />);
+
+    expect(getByTestId('schedule-shifts-add-extra')).toBeTruthy();
+  });
+
+  it('hides Add a one-off shift for nannies', () => {
+    mockUseIsOnboarded.mockImplementation(() => ({
+      role: 'nanny',
+      status: 'onboarded',
+    }));
+    mockUseShiftsRange.mockImplementation(() => ({
+      data: [],
+      isLoading: false,
+      isError: false,
+      error: null,
+    }));
+
+    const { queryByTestId } = render(<ScheduleShiftsScreen />);
+
+    expect(queryByTestId('schedule-shifts-add-extra')).toBeNull();
   });
 });

@@ -44,6 +44,10 @@ export interface UseActiveHouseholdResult {
   /** True while the households query has not yet resolved (TanStack
    * `isPending` — includes pending+idle, not only in-flight fetches). */
   isLoading: boolean;
+  /** True when the underlying households list query failed — callers that
+   * treat an empty list as "no households" must OR this in so a network
+   * failure does not collapse to empty-success. */
+  isError: boolean;
 }
 
 export function useActiveHousehold(): UseActiveHouseholdResult {
@@ -87,5 +91,6 @@ export function useActiveHousehold(): UseActiveHouseholdResult {
     // "not loading" as "list is known" would briefly see an empty household
     // list and mis-route. isPending covers that gap.
     isLoading: householdsQuery.isPending,
+    isError: householdsQuery.isError,
   };
 }

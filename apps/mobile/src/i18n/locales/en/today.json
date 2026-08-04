@@ -43,6 +43,10 @@
   "screenTitle": "Today",
   "emptyTitle": "Your week will appear here",
   "emptyDescription": "Once you add a schedule, upcoming shifts and updates will show up on this screen.",
+  "needsAttention": {
+    "title": "Needs attention ({{count}})",
+    "body": "Pending work is waiting on you."
+  },
   "handoff": {
     "morningTitle": "Morning handoff",
     "eveningTitle": "Evening handoff",

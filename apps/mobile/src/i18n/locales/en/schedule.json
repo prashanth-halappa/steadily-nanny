@@ -115,6 +115,10 @@
     "awayBand": "Away",
     "awaySummary": "Your carer has time off this week — see Agenda for details."
   },
+  "clash": {
+    "busyOverlap": "This overlaps another commitment — you can still continue.",
+    "outsideAvailability": "Outside marked availability — you can still continue."
+  },
   "detail": {
     "title": "Shift",
     "missingTitle": "Shift not found",
@@ -134,6 +138,10 @@
       "gap_raised": "Coverage gap"
     },
     "cancelShift": "Request cancel",
+    "accept": "Accept",
+    "acceptedToast": "Shift confirmed",
+    "freshProposal": "A parent proposed this new shift — accept or counter-offer to confirm.",
+    "needsReconfirm": "A parent changed these times — accept or counter-offer to confirm.",
     "counterOffer": "Counter with these times",
     "changesTitle": "Changes",
     "requestMessageLabel": "Message",
@@ -180,7 +188,6 @@
   "calendarViews": {
     "agenda": "Agenda",
     "week_ribbon": "Week",
-    "coverage_lanes": "Coverage",
     "cross_family": "Rhythm"
   },
   "calendarSync": {

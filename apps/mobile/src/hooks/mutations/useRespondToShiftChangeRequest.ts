@@ -22,6 +22,7 @@ export function useRespondToShiftChangeRequest() {
     }) => changeRequestApi.respond(changeRequestId, input),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.shift.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.me.all });
       showSuccessToast(t('schedule:change.respondedToast'));
     },
     onSettled: () => {

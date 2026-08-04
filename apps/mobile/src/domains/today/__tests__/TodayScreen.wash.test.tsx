@@ -48,6 +48,9 @@ mock.module('@/src/domains/schedule', () => ({
   PendingScheduleCard: () => null,
   ThisWeeksShiftsCard: () => null,
 }));
+mock.module('@/src/domains/inbox', () => ({
+  NeedsAttentionCard: () => null,
+}));
 mock.module('@/src/domains/today/components/ClockInCard', () => ({
   ClockInCard: () => null,
 }));

@@ -50,6 +50,24 @@ export class AlreadyClockedInError extends ConflictError {
   }
 }
 
+/**
+ * 409 — a `cancellation_paid` entry already exists for this shift. Translated
+ * from the DB's `time_entries_one_cancellation_paid_per_shift` partial unique
+ * index (23505). `recordCancellationPaidEntry` catches this on a race past
+ * its find-first check and re-fetches the winner — callers outside that
+ * path should not see it.
+ */
+export class CancellationPaidAlreadyRecordedError extends ConflictError {
+  constructor(shiftId: string) {
+    super(
+      'Cancellation-paid hours already recorded for this shift',
+      'CANCELLATION_PAID_ALREADY_RECORDED',
+      { shiftId }
+    );
+    this.name = 'CancellationPaidAlreadyRecordedError';
+  }
+}
+
 /** 409 — clock-out was called on an entry that isn't `running` (already clocked out, or not a worked entry). */
 export class TimeEntryNotRunningError extends ConflictError {
   constructor(timeEntryId: string, status: string) {

@@ -29,7 +29,7 @@ import type {
   ShiftChild,
 } from '@steadily-nanny/shared-types/schemas/shift.schema';
 import { supabaseService } from '../../../config/supabase';
-import { DatabaseError } from '../../../errors';
+import { DatabaseError, ValidationError } from '../../../errors';
 import { BaseRepository } from '../../../shared/repositories/baseRepository';
 // Import the repository file DIRECTLY — never the timesheet domain barrel,
 // whose services import this one back. Same narrow, read-only cross-domain
@@ -84,6 +84,42 @@ export class ShiftRepository extends BaseRepository<Shift> {
     if (await this.timeEntryRepo.hasTimeEntries(shiftId)) {
       throw new ShiftImmutableError(shiftId, shift.status, 'has_time_entries');
     }
+  }
+
+  /**
+   * CAS pending → confirmed for carer accept. `assertMutable` is a soft
+   * preflight (no row lock); this update requires `status = 'pending'` so a
+   * concurrent cancel/demote/accept cannot silently confirm a non-pending
+   * row. Change-request accept serialises via `accept_shift_change_request`
+   * FOR UPDATE instead — see migration 029.
+   */
+  async confirmPending(shiftId: string): Promise<Shift> {
+    await this.assertMutable(shiftId);
+    const { data, error } = await supabaseService
+      .from(this.table)
+      .update({ status: 'confirmed' })
+      .eq('id', shiftId)
+      .eq('status', 'pending')
+      .select()
+      .maybeSingle();
+
+    if (error) {
+      throw new DatabaseError(
+        'Failed to confirm pending shift',
+        'DATABASE_ERROR',
+        { details: error.message, shiftId }
+      );
+    }
+    if (!data) {
+      // Lost the pending race (concurrent accept/cancel/edit) after preflight.
+      throw new ValidationError(
+        'Only a pending shift can be accepted',
+        'SHIFT_NOT_PENDING',
+        400,
+        { shiftId }
+      );
+    }
+    return data as Shift;
   }
 
   /**

@@ -150,6 +150,8 @@ let mockUseWeekTimesheet: ReturnType<typeof mock>;
 let mockUseApproveTimesheet: ReturnType<typeof mock>;
 let mockUseQueryTimesheet: ReturnType<typeof mock>;
 let mockUseUpdateTimeEntry: ReturnType<typeof mock>;
+let mockUseLocalSearchParams: ReturnType<typeof mock>;
+let mockSetParams: ReturnType<typeof mock>;
 
 beforeAll(async () => {
   mockUseActiveHousehold = mock(() => ({
@@ -178,6 +180,10 @@ beforeAll(async () => {
     role: 'nanny',
     householdId: HOUSEHOLD_ID,
   }));
+  // Mutable deep-link params — `hoursHref` emits weekStart; the screen must
+  // land on that week, not merely receive the string on the URL.
+  mockUseLocalSearchParams = mock(() => ({}));
+  mockSetParams = mock(() => {});
 
   mock.module('@/src/hooks/queries/useIsOnboarded', () => ({
     useIsOnboarded: mockUseIsOnboarded,
@@ -203,6 +209,37 @@ beforeAll(async () => {
   mock.module('@/src/hooks/mutations/useUpdateTimeEntry', () => ({
     useUpdateTimeEntry: mockUseUpdateTimeEntry,
   }));
+  mock.module('expo-router', () => {
+    const React = require('react');
+    // Stable router identity — a fresh object per useRouter() call would
+    // re-fire the weekStart consume effect on every render via its deps.
+    const routerApi = {
+      push: mock(),
+      replace: mock(),
+      back: mock(),
+      navigate: mock(),
+      setParams: mockSetParams,
+    };
+    return {
+      useRouter: mock(() => routerApi),
+      useLocalSearchParams: mockUseLocalSearchParams,
+      useSegments: mock(() => []),
+      usePathname: mock(() => ''),
+      // Real focus/blur lifecycle so leave-tab cleanup (reset to current week)
+      // is exercised under bun:test, not a no-op stub.
+      useFocusEffect: (effect: () => undefined | (() => void)) => {
+        React.useEffect(() => {
+          const cleanup = effect();
+          return typeof cleanup === 'function' ? cleanup : undefined;
+        }, [effect]);
+      },
+      router: routerApi,
+      Link: 'Link',
+      Redirect: 'Redirect',
+      Stack: { Screen: 'StackScreen' },
+      Tabs: { Screen: 'TabsScreen' },
+    };
+  });
 
   const mod = await import('../components/HoursScreen');
   HoursScreen = mod.HoursScreen;
@@ -214,8 +251,10 @@ beforeEach(() => {
     role: 'nanny',
     householdId: HOUSEHOLD_ID,
   }));
+  mockUseLocalSearchParams.mockImplementation(() => ({}));
   mockUseWeekTimeEntries.mockClear();
   mockUseWeekTimesheet.mockClear();
+  mockSetParams.mockClear();
 });
 
 describe('HoursScreen — nanny with multiple households (Wave B)', () => {
@@ -253,6 +292,98 @@ describe('HoursScreen — nanny with multiple households (Wave B)', () => {
       setActiveHouseholdId: mock(),
       isLoading: false,
     }));
+  });
+});
+
+describe('HoursScreen — deep-link weekStart (Gap 3)', () => {
+  // The bug: `hoursHref` for timesheet_queried emits `?weekStart=…` but
+  // HoursScreen ignored search params and always opened weekOffset=0. Assert
+  // the DESTINATION week (query arg / displayed weekStart), not the href shape.
+  it('lands on the deep-linked weekStart three weeks back, not the current week', () => {
+    const currentWeekStart = getWeekStartISO(new Date(), TIMEZONE);
+    const threeWeeksBack = addWeeks(currentWeekStart, -3);
+    mockUseLocalSearchParams.mockImplementation(() => ({
+      householdId: HOUSEHOLD_ID,
+      weekStart: threeWeeksBack,
+      timesheetId: 'ts-queried-1',
+    }));
+
+    const { getByTestId } = render(<HoursScreen />);
+
+    const lastCall = mockUseWeekTimeEntries.mock.calls.at(-1) as
+      | [string, string]
+      | undefined;
+    expect(lastCall?.[1]).toBe(threeWeeksBack);
+    expect(lastCall?.[1]).not.toBe(currentWeekStart);
+    // Next must be enabled — we're not on the current week anymore.
+    expect(getByTestId('hours-week-next').props.disabled).toBe(false);
+  });
+
+  it('defaults to the current week when weekStart is absent from search params', () => {
+    const currentWeekStart = getWeekStartISO(new Date(), TIMEZONE);
+    mockUseLocalSearchParams.mockImplementation(() => ({}));
+
+    render(<HoursScreen />);
+
+    const lastCall = mockUseWeekTimeEntries.mock.calls.at(-1) as
+      | [string, string]
+      | undefined;
+    expect(lastCall?.[1]).toBe(currentWeekStart);
+  });
+
+  // Wave 2B: weekStart must be one-shot. The Hours tab stays mounted across
+  // blur (`unmountOnBlur` is off), so a sticky search param would reopen the
+  // deep-linked week on every later visit. Consume → clear → leave → return
+  // without the param must land on the current week.
+  it('treats weekStart as one-shot — clear + remount without param shows current week', () => {
+    const currentWeekStart = getWeekStartISO(new Date(), TIMEZONE);
+    const threeWeeksBack = addWeeks(currentWeekStart, -3);
+    mockUseLocalSearchParams.mockImplementation(() => ({
+      weekStart: threeWeeksBack,
+    }));
+
+    const { unmount } = render(<HoursScreen />);
+
+    const deepLinkedCall = mockUseWeekTimeEntries.mock.calls.at(-1) as
+      | [string, string]
+      | undefined;
+    expect(deepLinkedCall?.[1]).toBe(threeWeeksBack);
+    expect(mockSetParams).toHaveBeenCalledWith(
+      expect.objectContaining({ weekStart: undefined })
+    );
+
+    unmount();
+    mockUseLocalSearchParams.mockImplementation(() => ({}));
+    mockUseWeekTimeEntries.mockClear();
+
+    render(<HoursScreen />);
+
+    const returnCall = mockUseWeekTimeEntries.mock.calls.at(-1) as
+      | [string, string]
+      | undefined;
+    expect(returnCall?.[1]).toBe(currentWeekStart);
+  });
+
+  it('keeps prev/next paging after weekStart is consumed and cleared', () => {
+    const currentWeekStart = getWeekStartISO(new Date(), TIMEZONE);
+    const threeWeeksBack = addWeeks(currentWeekStart, -3);
+    const fourWeeksBack = addWeeks(currentWeekStart, -4);
+    mockUseLocalSearchParams.mockImplementation(() => ({
+      weekStart: threeWeeksBack,
+    }));
+
+    const { getByTestId, rerender } = render(<HoursScreen />);
+    // Simulate the router honouring setParams — param gone, consumed offset kept.
+    mockUseLocalSearchParams.mockImplementation(() => ({}));
+    rerender(<HoursScreen />);
+    mockUseWeekTimeEntries.mockClear();
+
+    fireEvent.press(getByTestId('hours-week-prev'));
+
+    const lastCall = mockUseWeekTimeEntries.mock.calls.at(-1) as
+      | [string, string]
+      | undefined;
+    expect(lastCall?.[1]).toBe(fourWeeksBack);
   });
 });
 

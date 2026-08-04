@@ -26,6 +26,7 @@ export function useCreateShiftChangeRequest() {
         queryKey: queryKeys.shift.changeRequests(vars.shiftId),
       });
       queryClient.invalidateQueries({ queryKey: queryKeys.shift.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.me.all });
       if (result.status === 'pending_approval') {
         showSuccessToast(t('schedule:change.pendingApprovalToast'));
       } else {

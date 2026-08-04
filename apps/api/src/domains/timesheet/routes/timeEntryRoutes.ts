@@ -16,6 +16,7 @@ import { TimesheetController } from '../controllers/timesheetController';
 import {
   ClockInSchema,
   ClockOutSchema,
+  CreateRetroactiveTimeEntrySchema,
   TimeEntryIdParamSchema,
   UpdateTimeEntrySchema,
 } from '../schemas';
@@ -46,6 +47,13 @@ router.post(
   '/clock-in',
   ...authWithValidation(ClockInSchema, 'body'),
   asyncHandler(TimesheetController.clockIn)
+);
+
+// Forgotten clock-in recovery — literal segment before /:id.
+router.post(
+  '/retroactive',
+  ...authWithValidation(CreateRetroactiveTimeEntrySchema, 'body'),
+  asyncHandler(TimesheetController.createRetroactiveEntry)
 );
 
 router.post(

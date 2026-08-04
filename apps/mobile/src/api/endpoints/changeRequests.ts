@@ -4,6 +4,7 @@
  * Shift change requests (flows 1d/1e): cancel, time_change, counter_offer,
  * plus parent-proposed extra shifts.
  */
+import { ClashWarningSchema } from '@steadily-nanny/shared-types/schemas/me.schema';
 import {
   type CreateShiftChangeRequestInput,
   CreateShiftChangeRequestSchema,
@@ -45,6 +46,7 @@ const CreateExtraResultSchema = z.discriminatedUnion('status', [
   z.object({
     status: z.literal('created'),
     shift: ShiftSchema,
+    warnings: z.array(ClashWarningSchema).default([]),
   }),
   PendingApprovalResultSchema,
 ]);

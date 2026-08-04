@@ -2,6 +2,7 @@ import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 
 let TimeEntryRepository: any;
 let AlreadyClockedInError: any;
+let CancellationPaidAlreadyRecordedError: any;
 let mockSupabaseService: any;
 
 function createMockQueryChain(
@@ -37,9 +38,12 @@ beforeAll(async () => {
     '../../../../../src/domains/timesheet/repositories/timeEntryRepository'
   );
   TimeEntryRepository = mod.TimeEntryRepository;
-  AlreadyClockedInError = (
-    await import('../../../../../src/domains/timesheet/errors/timesheetErrors')
-  ).AlreadyClockedInError;
+  const errors = await import(
+    '../../../../../src/domains/timesheet/errors/timesheetErrors'
+  );
+  AlreadyClockedInError = errors.AlreadyClockedInError;
+  CancellationPaidAlreadyRecordedError =
+    errors.CancellationPaidAlreadyRecordedError;
   mockSupabaseService = (await import('../../../../../src/config/supabase'))
     .supabaseService;
 });
@@ -94,6 +98,34 @@ describe('TimeEntryRepository.clockIn', () => {
         status: 'running',
       })
     ).rejects.toBeInstanceOf(AlreadyClockedInError);
+  });
+});
+
+describe('TimeEntryRepository.createSubmitted', () => {
+  it('translates a cancellation_paid 23505 into CancellationPaidAlreadyRecordedError', async () => {
+    mockSupabaseService.from.mockImplementation(() =>
+      createMockQueryChain({
+        data: null,
+        error: { code: '23505', message: 'duplicate key' },
+      })
+    );
+    const repo = new TimeEntryRepository();
+    await expect(
+      repo.createSubmitted({
+        household_id: 'h1',
+        carer_id: 'carer-1',
+        carer_display_name: 'Nia Rowe',
+        shift_id: 's1',
+        clock_in_at: '2026-08-03T09:00:00.000Z',
+        clock_out_at: '2026-08-03T17:00:00.000Z',
+        break_minutes: 0,
+        scheduled_minutes: 480,
+        timezone: 'Europe/London',
+        kind: 'cancellation_paid',
+        status: 'submitted',
+        note: null,
+      })
+    ).rejects.toBeInstanceOf(CancellationPaidAlreadyRecordedError);
   });
 });
 

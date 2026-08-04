@@ -11,6 +11,7 @@
 export type {
   ClockInInput,
   ClockOutInput,
+  CreateRetroactiveTimeEntryInput,
   HouseholdIdParam,
   QueryTimesheetInput,
   TimeEntry,

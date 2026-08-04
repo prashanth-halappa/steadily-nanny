@@ -1,0 +1,50 @@
+# Scenario — timesheet push / inbox href lands on the correct Hours week.
+#
+# Regression for Wave 2B weekStart one-shot + inbox `hoursHref`:
+#   /(private)/(tabs)/hours?weekStart=<Monday>
+# (see notificationRouteMap TIMESHEET_QUERIED / TIMESHEET_SUBMITTED and
+# InboxScreen queried_week rows).
+#
+# Push injection is not reliable on Simulator, so we simulate the deep link
+# the push/inbox tap would open via openLink (custom scheme). Assert the
+# hours-active-week-<ISO> marker HoursScreen exposes after consuming weekStart.
+#
+# Optional second half: Settings → Inbox → queried_week row, when a queried
+# timesheet fixture exists (inbox-item-queried_week-<id>).
+appId: com.jetto.steadily.nanny
+tags:
+  - timesheet
+  - critical
+---
+- runFlow: ../flows/login.yaml
+
+# Simulate TIMESHEET_QUERIED / inbox hoursHref (not a live APNs payload).
+- openLink: steadilynanny:///(private)/(tabs)/hours?weekStart=${HOURS_DEEPLINK_WEEK_START}
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'hours-screen'
+- assertVisible:
+    id: 'hours-active-week-${HOURS_DEEPLINK_WEEK_START}'
+- assertVisible:
+    id: 'hours-week-label'
+- takeScreenshot: hours-deeplink-week
+
+# One-shot: leave Hours, return without weekStart → current week (not stuck).
+- tapOn:
+    id: 'tab-today'
+- waitForAnimationToEnd
+- tapOn:
+    id: 'tab-hours'
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'hours-screen'
+# After blur, weekStart was cleared; current week marker must NOT still be the
+# deep-linked Monday when that Monday is in the past. This is the regression
+# itself, so it must be unconditional: wrapping it in `when: notVisible: ...`
+# makes the block a no-op (and the flow green) exactly when the bug is
+# present and the id is still stuck on screen.
+- assertNotVisible:
+    id: 'hours-active-week-${HOURS_DEEPLINK_WEEK_START}'
+- assertVisible:
+    id: 'hours-week-label'
+- takeScreenshot: hours-after-oneshot-blur

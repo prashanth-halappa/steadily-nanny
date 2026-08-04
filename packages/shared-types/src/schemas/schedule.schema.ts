@@ -70,12 +70,11 @@ export const SchedulePatternSchema = z.object({
 });
 
 /**
- * POST body — what a client sends to sketch/create one. `timezone` is
- * deliberately absent: it is copied server-side from the household so that a
- * later change to the household's zone can never retroactively move an
- * already-agreed schedule.
+ * Shared write fields for create/update. Kept as a plain ZodObject so
+ * Update can `.extend().partial()` — Create wraps this with the
+ * until>=dtstart refine (mirrors DB `schedule_patterns_date_order`).
  */
-export const CreateSchedulePatternSchema = z.object({
+const SchedulePatternWriteFieldsSchema = z.object({
   carer_id: z.uuid().optional(),
   rrule: z.string().min(1, 'rrule is required'),
   dtstart: z.iso.date(),
@@ -85,14 +84,53 @@ export const CreateSchedulePatternSchema = z.object({
   note: z.string().optional(),
 });
 
+/**
+ * POST body — what a client sends to sketch/create one. `timezone` is
+ * deliberately absent: it is copied server-side from the household so that a
+ * later change to the household's zone can never retroactively move an
+ * already-agreed schedule.
+ */
+export const CreateSchedulePatternSchema =
+  SchedulePatternWriteFieldsSchema.refine(
+    data => data.until === undefined || data.until >= data.dtstart,
+    { message: 'until must be on or after dtstart', path: ['until'] }
+  );
+
 /** PATCH body — every field optional, but at least one must be present. */
-export const UpdateSchedulePatternSchema = CreateSchedulePatternSchema.extend({
-  status: z.enum(Object.values(SCHEDULE_PATTERN_STATUSES)).optional(),
-})
-  .partial()
+export const UpdateSchedulePatternSchema =
+  SchedulePatternWriteFieldsSchema.extend({
+    status: z.enum(Object.values(SCHEDULE_PATTERN_STATUSES)).optional(),
+  })
+    .partial()
+    .refine(data => Object.keys(data).length > 0, {
+      message: 'at least one field is required',
+    })
+    .refine(
+      data =>
+        data.until === undefined ||
+        data.dtstart === undefined ||
+        data.until >= data.dtstart,
+      { message: 'until must be on or after dtstart', path: ['until'] }
+    );
+
+/**
+ * POST body for amending an *accepted* pattern — holiday skips, term-time
+ * pauses, and end date only. Day/time reopen stays a new draft proposal.
+ * `until >= dtstart` is enforced in the command service against the
+ * persisted pattern's `dtstart` (this body has no `dtstart` field).
+ */
+export const AmendSchedulePatternSchema = z
+  .object({
+    until: z.iso.date().nullable().optional(),
+    exdates: z.array(z.iso.date()).optional(),
+    pause_ranges: z.array(PauseRangeSchema).optional(),
+  })
   .refine(data => Object.keys(data).length > 0, {
     message: 'at least one field is required',
   });
+export type AmendSchedulePatternInput = z.infer<
+  typeof AmendSchedulePatternSchema
+>;
 
 /** URL param validation for /schedule-patterns/:patternId routes. */
 export const SchedulePatternIdParamSchema = z.object({

@@ -53,6 +53,28 @@ describe('HoursScreen', () => {
     );
   });
 
+  it('reads weekStart from useLocalSearchParams and derives weekOffset (Gap 3)', () => {
+    expect(hoursScreenSource).toContain('useLocalSearchParams');
+    expect(hoursScreenSource).toContain('weekStartFromRoute');
+    expect(hoursScreenSource).toContain('weeksBetween');
+    // Typed search params on Hours are weekStart-only — schedule deep-link
+    // fields must not be declared here (they belong on schedule routes).
+    expect(hoursScreenSource).toMatch(/useLocalSearchParams<\{\s*weekStart\?:/);
+  });
+
+  it('consumes weekStart as a one-shot (Wave 2B) — apply, clear param, reset on blur', () => {
+    expect(hoursScreenSource).toContain('router.setParams');
+    expect(hoursScreenSource).toMatch(
+      /setParams\(\{\s*weekStart:\s*undefined\s*\}\)/
+    );
+    expect(hoursScreenSource).toContain('useFocusEffect');
+    // Must not wipe the consumed offset when the param disappears — that
+    // would snap back to the current week on the same visit.
+    expect(hoursScreenSource).not.toMatch(
+      /prevRouteWeekStart[\s\S]*setUserWeekOffset\(null\)/
+    );
+  });
+
   it('forks nanny vs parent views by isParentEditorRole (covers co-parents)', () => {
     expect(hoursScreenSource).toContain('isParentEditorRole');
     expect(hoursScreenSource).toContain('ParentWeekView');
@@ -71,9 +93,11 @@ describe('NannyWeekView', () => {
 });
 
 describe('ParentWeekView', () => {
-  it('explains why Approve is disabled when the week is not actionable', () => {
+  it('explains why Approve is disabled with honest clock-out submit copy (no fake submit button)', () => {
     expect(parentWeekViewSource).toContain('hours-approve-waiting');
-    expect(parentWeekViewSource).toContain('waitingForSubmit');
+    expect(parentWeekViewSource).toContain('waitingForHours');
+    expect(parentWeekViewSource).toContain('waitingAfterQuery');
+    expect(parentWeekViewSource).not.toContain('waitingForSubmit');
   });
 
   it('approval is a single tap — no confirmation dialog wrapping it', () => {

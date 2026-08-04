@@ -34,10 +34,11 @@ export const queryKeys = {
     status: () => [...queryKeys.appConfig.all, 'status'] as const,
   },
 
-  // Push device registrations
+  // Push device registrations + per-user prefs (opt-outs / quiet hours)
   notifications: {
     all: ['notifications'] as const,
     devices: () => [...queryKeys.notifications.all, 'devices'] as const,
+    prefs: () => [...queryKeys.notifications.all, 'prefs'] as const,
   },
 
   // Households, membership, invites
@@ -141,6 +142,23 @@ export const queryKeys = {
       [...queryKeys.timesheet.all, 'list', householdId] as const,
     week: (householdId?: string, weekStart?: string) =>
       [...queryKeys.timesheet.all, 'week', householdId, weekStart] as const,
+  },
+
+  // Cross-household "me" reads (carer's own shifts + pending change requests).
+  me: {
+    all: ['me'] as const,
+    shifts: (from?: string, to?: string) =>
+      [...queryKeys.me.all, 'shifts', from, to] as const,
+    changeRequests: (from?: string, to?: string) =>
+      [...queryKeys.me.all, 'changeRequests', from, to] as const,
+  },
+
+  // Pending-work inbox aggregates (approvals list; other sources reuse
+  // schedulePattern / shift / timesheet keys above).
+  inbox: {
+    all: ['inbox'] as const,
+    approvals: (householdId?: string) =>
+      [...queryKeys.inbox.all, 'approvals', householdId] as const,
   },
 } as const;
 

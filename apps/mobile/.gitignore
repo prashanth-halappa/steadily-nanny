@@ -10,6 +10,7 @@ android/
 .env
 .env.*
 !.env.example
+!.env.maestro.example
 google-services.json
 GoogleService-Info.plist
 *.keystore
@@ -33,3 +34,6 @@ coverage/
 
 expo-env.d.ts
 # @end expo-cli
+# Maestro screenshot output — regenerable by running the walkthrough,
+# ~10MB of binaries that would otherwise live in git forever.
+.maestro/screenshots/

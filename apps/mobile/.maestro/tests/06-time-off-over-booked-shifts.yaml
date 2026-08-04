@@ -1,0 +1,95 @@
+# Scenario — nanny time off overlapping booked shifts notifies the parent.
+#
+# Product path: TimeOffRequestForm conflict dialog → API creates time off and
+# emits CARER_TIME_OFF_CONFLICT push (notificationRouteMap → schedule/shifts).
+#
+# Push cannot be delivered into Simulator reliably. After the nanny confirms
+# the overlap dialog we:
+#   1. Assert the request succeeded (row appears / form clears)
+#   2. Switch to parent and openLink the same href the push would open
+#   3. Assert schedule shifts / away UI is reachable
+#
+# Prerequisites: NANNY_* + PARENT_* ; household with at least one confirmed/
+# pending shift overlapping the dates the nanny picks in the date picker.
+# Date picking is device-calendar UI — if the picker blocks automation, set
+# dates via a pre-seeded draft and skip to conflict confirm (documented below).
+#
+# MANUAL — excluded from every `test:e2e*` script via --exclude-tags=manual.
+# The conflict path this flow exists to exercise is entirely conditional on
+# two things static authoring cannot guarantee: an overlapping shift actually
+# seeded for whatever dates the nanny picks, and a native OS date-range
+# picker driven reliably by fuzzy text ('Confirm' varies by OS/locale). As
+# written this flow can complete end-to-end with zero overlap, zero conflict
+# dialog and zero notification and still report green — negative value, not
+# a regression net. Run it by hand after seeding an overlapping range and
+# confirming the picker interaction on a real device/simulator:
+#   cd apps/mobile && bash scripts/run-maestro.sh .maestro/tests/06-time-off-over-booked-shifts.yaml
+appId: com.jetto.steadily.nanny
+tags:
+  - scheduling
+  - manual
+---
+# --- Nanny: request time off that overlaps booked shifts ---
+- runFlow: ../flows/login-nanny.yaml
+- tapOn:
+    id: 'tab-settings'
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'settings-screen'
+- tapOn:
+    id: 'settings-request-time-off'
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'time-off-screen'
+- assertVisible:
+    id: 'time-off-request-form'
+# Date range: tap the picker (native UI). Operators may need to adjust dates
+# so the range overlaps a booked shift; conflict dialog is the gate.
+- tapOn:
+    id: 'time-off-request-dates'
+- waitForAnimationToEnd
+# Dismiss / confirm native date UI if shown — fuzzy labels vary by OS.
+- runFlow:
+    when:
+      visible: 'Confirm'
+    commands:
+      - tapOn: 'Confirm'
+- tapOn:
+    id: 'time-off-request-message'
+- inputText: 'Family travel — overlaps Tuesday shift'
+- hideKeyboard
+- tapOn:
+    id: 'time-off-request-submit'
+- waitForAnimationToEnd
+# Overlap path: confirm the conflict dialog (notifies parents server-side).
+- runFlow:
+    when:
+      visible:
+        id: 'time-off-conflict-confirm'
+    commands:
+      - tapOn:
+          id: 'time-off-conflict-confirm'
+      - waitForAnimationToEnd
+- assertVisible:
+    id: 'time-off-list'
+- takeScreenshot: nanny-time-off-submitted
+
+# --- Parent: land where CARER_TIME_OFF_CONFLICT push would deep-link ---
+# Pop back to a tab first — logout.yaml is wrapped in `when: visible:
+# tab-settings`, and this screen (a pushed /(private)/settings/time-off
+# route outside (tabs)) has no tab bar, so logout would silently no-op and
+# the parent leg below would run as the still-signed-in nanny.
+- back
+- waitForAnimationToEnd
+- runFlow: ../flows/logout.yaml
+- runFlow: ../flows/login.yaml
+- openLink: steadilynanny:///(private)/schedule/shifts
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'schedule-shifts-screen'
+# NOT asserting schedule-away-summary here: with no seeded overlap (see the
+# MANUAL note above) it never renders, and a `when visible: X / assertVisible:
+# X` pair is self-referential — it only ever runs when it would trivially
+# pass. Making this a real assertion needs the deterministic overlap fixture
+# this flow doesn't have yet.
+- takeScreenshot: parent-schedule-after-time-off-conflict

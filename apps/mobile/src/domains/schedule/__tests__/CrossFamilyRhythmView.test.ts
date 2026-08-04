@@ -36,10 +36,10 @@ describe('CrossFamilyRhythmView source', () => {
     expect(groupingSource).not.toContain(LEAKCANARY);
   });
 
-  it('fetches shifts per household for anonymised rhythm dots', () => {
-    expect(viewSource).toContain('useQueries');
-    expect(viewSource).toContain('shiftApi.range');
+  it('fetches cross-household shifts via GET /me/shifts for anonymised rhythm dots', () => {
+    expect(viewSource).toContain('useMeShifts');
     expect(viewSource).toContain('localDateRange(startDate, 14)');
+    expect(viewSource).not.toContain('shiftApi.range');
   });
 
   it('REGRESSION: fetches the SAME window it renders', () => {
@@ -50,6 +50,6 @@ describe('CrossFamilyRhythmView source', () => {
     expect(viewSource).toContain('dates[13]');
     expect(viewSource).toMatch(/const from = .*rangeStart/);
     expect(viewSource).toMatch(/const to = .*rangeEnd/);
-    expect(viewSource).toContain('queryKeys.shift.range(h.id, from, to)');
+    expect(viewSource).toContain('useMeShifts(from, to)');
   });
 });

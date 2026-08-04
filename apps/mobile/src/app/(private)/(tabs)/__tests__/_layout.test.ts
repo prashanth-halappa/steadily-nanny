@@ -26,7 +26,10 @@ describe('TabsLayout', () => {
   });
 
   it('does not hide the Schedule tab via href: null (role fork lives in schedule.tsx)', () => {
-    expect(layoutSource).not.toMatch(/href:/);
+    // Tab bar buttons strip Expo Router's `href` prop for Pressable typing —
+    // that is not a tab-visibility gate. The bug this guards is options-level
+    // `href: null` hiding Schedule for some roles.
+    expect(layoutSource).not.toMatch(/href:\s*null/);
     expect(layoutSource).not.toContain('canViewParentSchedule');
   });
 

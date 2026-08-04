@@ -4,6 +4,24 @@
  * @module domains/notification/constants
  */
 
+import {
+  PUSH_NOTIFICATION_TYPES,
+  type PushNotificationType,
+} from '@steadily-nanny/shared-types';
+
+/**
+ * Push types that must still deliver during quiet hours — they carry a
+ * response deadline (reconfirm / change-request / co-parent approval paths
+ * that auto-approve on timeout). Opt-out still wins over this list.
+ */
+export const QUIET_HOURS_EXEMPT_TYPES: ReadonlySet<PushNotificationType> =
+  new Set([
+    PUSH_NOTIFICATION_TYPES.SHIFT_NEEDS_RECONFIRM,
+    PUSH_NOTIFICATION_TYPES.SHIFT_CHANGE_REQUESTED,
+    // Co-parent approval for `extra_shift` parks then proposes to the carer.
+    PUSH_NOTIFICATION_TYPES.EXTRA_SHIFT_PROPOSED,
+  ]);
+
 /**
  * Permission states a device may be PUSHED to.
  *

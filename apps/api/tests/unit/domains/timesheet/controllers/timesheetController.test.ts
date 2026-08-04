@@ -6,6 +6,7 @@ let listForHouseholdWeek: any;
 let listTimesheetsForHousehold: any;
 let clockIn: any;
 let clockOut: any;
+let createRetroactiveEntry: any;
 let approve: any;
 let queryTimesheet: any;
 
@@ -15,6 +16,10 @@ beforeAll(async () => {
   listTimesheetsForHousehold = mock(async () => [{ id: 'ts1' }]);
   clockIn = mock(async () => ({ id: 't-new', status: 'running' }));
   clockOut = mock(async () => ({ id: 't1', status: 'submitted' }));
+  createRetroactiveEntry = mock(async () => ({
+    id: 't-retro',
+    status: 'submitted',
+  }));
   approve = mock(async () => ({ id: 'ts1', status: 'approved' }));
   queryTimesheet = mock(async () => ({ id: 'ts1', status: 'queried' }));
 
@@ -34,6 +39,7 @@ beforeAll(async () => {
       timesheetCommandService: {
         clockIn,
         clockOut,
+        createRetroactiveEntry,
         approve,
         query: queryTimesheet,
       },
@@ -67,6 +73,7 @@ beforeEach(() => {
     listTimesheetsForHousehold,
     clockIn,
     clockOut,
+    createRetroactiveEntry,
     approve,
     queryTimesheet,
   ]) {
@@ -105,6 +112,25 @@ describe('TimesheetController', () => {
     });
     expect(res.body.data).toEqual({
       time_entry: { id: 't1', status: 'submitted' },
+    });
+  });
+
+  it('createRetroactiveEntry responds 201 with the submitted entry', async () => {
+    const res = mockRes();
+    const body = {
+      household_id: 'h1',
+      clock_in_at: '2026-08-04T08:00:00.000Z',
+      clock_out_at: '2026-08-04T16:00:00.000Z',
+    };
+    await TimesheetController.createRetroactiveEntry(
+      { user: { id: 'carer-1' }, body } as any,
+      res,
+      mock()
+    );
+    expect(createRetroactiveEntry).toHaveBeenCalledWith('carer-1', body);
+    expect(res.statusCode).toBe(201);
+    expect(res.body.data).toEqual({
+      time_entry: { id: 't-retro', status: 'submitted' },
     });
   });
 

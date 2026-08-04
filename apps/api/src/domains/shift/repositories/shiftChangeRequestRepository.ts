@@ -98,6 +98,34 @@ export class ShiftChangeRequestRepository extends BaseRepository<ShiftChangeRequ
   }
 
   /**
+   * Pending change requests whose `shift_id` is in `shiftIds`, newest first.
+   * Empty input short-circuits — PostgREST `.in()` with `[]` is awkward.
+   */
+  async listPendingByShiftIds(
+    shiftIds: string[]
+  ): Promise<ShiftChangeRequest[]> {
+    if (shiftIds.length === 0) {
+      return [];
+    }
+
+    const { data, error } = await supabaseService
+      .from(this.table)
+      .select('*')
+      .in('shift_id', shiftIds)
+      .eq('status', SHIFT_CHANGE_REQUEST_STATUSES.PENDING)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      throw new DatabaseError(
+        'Failed to list pending shift change requests',
+        'DATABASE_ERROR',
+        { details: error.message, shiftCount: shiftIds.length }
+      );
+    }
+    return (data ?? []) as ShiftChangeRequest[];
+  }
+
+  /**
    * Atomically accept a pending request, supersede siblings, and apply the
    * shift mutation — all under one shift-row lock (migration 024).
    */

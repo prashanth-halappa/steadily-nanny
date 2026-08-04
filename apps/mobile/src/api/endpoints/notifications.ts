@@ -1,12 +1,19 @@
 // File: src/api/endpoints/notifications.ts
-// API endpoint for registering/refreshing the caller's push device.
+// API endpoints for device registration and notification preferences.
 
+import {
+  NotificationPrefsSchema,
+  type UpdateNotificationPrefsInput,
+  UpdateNotificationPrefsSchema,
+} from '@steadily-nanny/shared-types';
 import { z } from 'zod';
 import { apiClient } from '@/src/api/client';
 
 export const notificationEndpoints = {
   // API-CONTRACT: POST registers/refreshes the caller's device (push, timezone).
   devices: '/v1/notifications/devices',
+  // API-CONTRACT: GET/PATCH per-user push prefs (opt-outs + quiet hours).
+  prefs: '/v1/notifications/prefs',
 } as const;
 
 // Device registration payload — validated client-side before the request.
@@ -33,6 +40,13 @@ export type DeviceRegistrationInput = z.infer<
   typeof DeviceRegistrationInputSchema
 >;
 
+// API-CONTRACT: GET/PATCH `/v1/notifications/prefs` returns `{ prefs }` in data.
+const PrefsEnvelopeSchema = z.object({
+  prefs: NotificationPrefsSchema,
+});
+
+export type { UpdateNotificationPrefsInput };
+
 export const notificationsApi = {
   /**
    * Register (or refresh) the caller's device for push + timezone tracking.
@@ -43,5 +57,26 @@ export const notificationsApi = {
     const validated = DeviceRegistrationInputSchema.safeParse(info);
     if (!validated.success) throw validated.error;
     await apiClient.post(notificationEndpoints.devices, validated.data);
+  },
+
+  /** GET /v1/notifications/prefs — defaults when no row exists. */
+  getPrefs: async () => {
+    const response = await apiClient.get(notificationEndpoints.prefs);
+    const parsed = PrefsEnvelopeSchema.safeParse(response.data.data);
+    if (!parsed.success) throw parsed.error;
+    return parsed.data.prefs;
+  },
+
+  /** PATCH /v1/notifications/prefs — partial upsert. */
+  updatePrefs: async (input: UpdateNotificationPrefsInput) => {
+    const validated = UpdateNotificationPrefsSchema.safeParse(input);
+    if (!validated.success) throw validated.error;
+    const response = await apiClient.patch(
+      notificationEndpoints.prefs,
+      validated.data
+    );
+    const parsed = PrefsEnvelopeSchema.safeParse(response.data.data);
+    if (!parsed.success) throw parsed.error;
+    return parsed.data.prefs;
   },
 };

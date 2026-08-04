@@ -46,10 +46,22 @@ function makeQueries(overrides: Record<string, unknown> = {}): any {
   };
 }
 
+function makeOverlapRepo(
+  shifts: { id: string; household_id: string }[] = []
+): any {
+  return {
+    listConfirmedForCarerInRange: mock(async () => shifts),
+  };
+}
+
 describe('TimeOffCommandService.create', () => {
   it('creates a time-off row for the caller', async () => {
     const timeOffRepo = makeTimeOffRepo();
-    const svc = new TimeOffCommandService(timeOffRepo, makeQueries());
+    const svc = new TimeOffCommandService(
+      timeOffRepo,
+      makeQueries(),
+      makeOverlapRepo()
+    );
 
     const result = await svc.create('u1', {
       starts_at: '2026-08-10T00:00:00Z',
@@ -65,7 +77,8 @@ describe('TimeOffCommandService.create', () => {
         all_day: true,
       })
     );
-    expect(result.id).toBe('t-new');
+    expect(result.carer_time_off.id).toBe('t-new');
+    expect(result.affected_shift_count).toBe(0);
   });
 });
 
@@ -73,7 +86,11 @@ describe('TimeOffCommandService.cancel', () => {
   it("soft-cancels the caller's own row — the repository is called with status: 'cancelled', never a hard delete", async () => {
     const timeOffRepo = makeTimeOffRepo();
     const queries = makeQueries();
-    const svc = new TimeOffCommandService(timeOffRepo, queries);
+    const svc = new TimeOffCommandService(
+      timeOffRepo,
+      queries,
+      makeOverlapRepo()
+    );
 
     const result = await svc.cancel('u1', 't1');
 
@@ -89,7 +106,11 @@ describe('TimeOffCommandService.cancel', () => {
         throw new TimeOffNotFoundError('t1');
       }),
     });
-    const svc = new TimeOffCommandService(timeOffRepo, queries);
+    const svc = new TimeOffCommandService(
+      timeOffRepo,
+      queries,
+      makeOverlapRepo()
+    );
 
     await expect(svc.cancel('someone-else', 't1')).rejects.toBeInstanceOf(
       TimeOffNotFoundError
@@ -102,7 +123,11 @@ describe('TimeOffCommandService.update', () => {
   it('updates dates and message on an active row owned by the caller', async () => {
     const timeOffRepo = makeTimeOffRepo();
     const queries = makeQueries();
-    const svc = new TimeOffCommandService(timeOffRepo, queries);
+    const svc = new TimeOffCommandService(
+      timeOffRepo,
+      queries,
+      makeOverlapRepo()
+    );
 
     const result = await svc.update('u1', 't1', {
       starts_at: '2026-08-11T00:00:00Z',
@@ -117,7 +142,8 @@ describe('TimeOffCommandService.update', () => {
       message: 'Extended by a day',
       sequence: 1,
     });
-    expect(result.message).toBe('Extended by a day');
+    expect(result.carer_time_off.message).toBe('Extended by a day');
+    expect(result.affected_shift_count).toBe(0);
   });
 
   it("throws TimeOffNotFoundError and never calls update when the row isn't the caller's own", async () => {
@@ -127,7 +153,11 @@ describe('TimeOffCommandService.update', () => {
         throw new TimeOffNotFoundError('t1');
       }),
     });
-    const svc = new TimeOffCommandService(timeOffRepo, queries);
+    const svc = new TimeOffCommandService(
+      timeOffRepo,
+      queries,
+      makeOverlapRepo()
+    );
 
     await expect(
       svc.update('someone-else', 't1', { message: 'nope' })
@@ -137,7 +167,11 @@ describe('TimeOffCommandService.update', () => {
 
   it('validates the resulting range when only starts_at is patched', async () => {
     const timeOffRepo = makeTimeOffRepo();
-    const svc = new TimeOffCommandService(timeOffRepo, makeQueries());
+    const svc = new TimeOffCommandService(
+      timeOffRepo,
+      makeQueries(),
+      makeOverlapRepo()
+    );
 
     await expect(
       svc.update('u1', 't1', { starts_at: '2026-08-13T00:00:00Z' })
@@ -150,7 +184,11 @@ describe('TimeOffCommandService.update', () => {
     const queries = makeQueries({
       getOwned: mock(async () => ({ ...row, status: 'cancelled' })),
     });
-    const svc = new TimeOffCommandService(timeOffRepo, queries);
+    const svc = new TimeOffCommandService(
+      timeOffRepo,
+      queries,
+      makeOverlapRepo()
+    );
 
     await expect(
       svc.update('u1', 't1', { message: 'too late' })
@@ -160,7 +198,11 @@ describe('TimeOffCommandService.update', () => {
 
   it('rejects status changes via PATCH — cancel stays on DELETE', async () => {
     const timeOffRepo = makeTimeOffRepo();
-    const svc = new TimeOffCommandService(timeOffRepo, makeQueries());
+    const svc = new TimeOffCommandService(
+      timeOffRepo,
+      makeQueries(),
+      makeOverlapRepo()
+    );
 
     await expect(
       svc.update('u1', 't1', { status: 'cancelled' })
@@ -192,7 +234,11 @@ describe('TimeOffCommandService.update', () => {
     const queries = makeQueries({
       getOwned: mock(async () => storedRow),
     });
-    const svc = new TimeOffCommandService(timeOffRepo, queries);
+    const svc = new TimeOffCommandService(
+      timeOffRepo,
+      queries,
+      makeOverlapRepo()
+    );
 
     await expect(
       svc.update('u1', 't1', { starts_at: '2026-08-11T20:00:00-08:00' })
@@ -216,7 +262,11 @@ describe('TimeOffCommandService.update', () => {
     const queries = makeQueries({
       getOwned: mock(async () => storedRow),
     });
-    const svc = new TimeOffCommandService(timeOffRepo, queries);
+    const svc = new TimeOffCommandService(
+      timeOffRepo,
+      queries,
+      makeOverlapRepo()
+    );
 
     const result = await svc.update('u1', 't1', {
       ends_at: '2026-08-11T20:30:00-08:00',
@@ -229,7 +279,7 @@ describe('TimeOffCommandService.update', () => {
         sequence: 1,
       })
     );
-    expect(result.ends_at).toBe('2026-08-11T20:30:00-08:00');
+    expect(result.carer_time_off.ends_at).toBe('2026-08-11T20:30:00-08:00');
   });
 
   it('rejects edits to past time off (ends_at already before now)', async () => {
@@ -241,7 +291,11 @@ describe('TimeOffCommandService.update', () => {
         ends_at: '2020-01-05T00:00:00Z',
       })),
     });
-    const svc = new TimeOffCommandService(timeOffRepo, queries);
+    const svc = new TimeOffCommandService(
+      timeOffRepo,
+      queries,
+      makeOverlapRepo()
+    );
 
     await expect(
       svc.update('u1', 't1', { message: 'too late' })
@@ -255,7 +309,11 @@ describe('TimeOffCommandService.update', () => {
     const queries = makeQueries({
       getOwned: mock(async () => storedRow),
     });
-    const svc = new TimeOffCommandService(timeOffRepo, queries);
+    const svc = new TimeOffCommandService(
+      timeOffRepo,
+      queries,
+      makeOverlapRepo()
+    );
 
     await svc.update('u1', 't1', { message: 'note' });
 

@@ -29,6 +29,7 @@ import { EmptyState } from '@/src/components/ui/empty-state';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { Body, H1 } from '@/src/components/ui/typography';
 import { HouseholdSwitcher } from '@/src/domains/household';
+import { NeedsAttentionCard } from '@/src/domains/inbox';
 import {
   PendingScheduleCard,
   ThisWeeksShiftsCard,
@@ -133,6 +134,11 @@ export function TodayScreen() {
                 role={onboarding.role}
               />
             ) : null}
+
+            {/* Renders nothing unless pending work exists — deliberately not
+                an empty state. Keeps inbox reachable without burying it in
+                Settings alone. */}
+            <NeedsAttentionCard />
 
             {/* Renders nothing unless a week is genuinely waiting for this
                 person — deliberately not an empty state. A card announcing its

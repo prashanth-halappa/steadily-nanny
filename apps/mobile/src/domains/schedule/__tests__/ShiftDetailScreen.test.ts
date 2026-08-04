@@ -88,4 +88,22 @@ describe('ShiftDetailScreen source', () => {
     expect(source).toContain('response_message');
     expect(source).toContain('shiftChangeRequestStatusLabelKey');
   });
+
+  it('wires carer Accept (useAcceptShift) next to counter-offer on pending shifts', () => {
+    expect(source).toContain('useAcceptShift');
+    expect(source).toContain('shift-detail-accept');
+    expect(source).toContain('detail.accept');
+  });
+
+  it('discriminates fresh-extra proposal copy from demoted re-confirm copy', () => {
+    expect(source).toContain('parent_proposed');
+    expect(source).toContain('isFreshExtraProposal');
+    // Case (c): sequence===0 gates brand-new extras from migration-034
+    // demotions that keep kind=extra + source_pattern_id=null.
+    expect(source).toContain('shift.sequence === 0');
+    expect(source).toContain('shift-detail-fresh-proposal');
+    expect(source).toContain('detail.freshProposal');
+    expect(source).toContain('shift-detail-needs-reconfirm');
+    expect(source).toContain('detail.needsReconfirm');
+  });
 });
