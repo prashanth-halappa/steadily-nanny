@@ -264,4 +264,101 @@ describe('WeekTotal', () => {
       expect(getByTestId('hours-reopen-button').props.disabled).toBe(true);
     });
   });
+
+  // Cold-mount reopen reason — wire `earningsReopenReason` through to the
+  // existing `-reopened-note` slot (no ephemeral transition needed).
+  describe('earningsReopenReason', () => {
+    const earnings = {
+      status: 'ok' as const,
+      week_start: '2026-08-03',
+      currency: 'GBP',
+      lines: [],
+      gross_minor: 23612,
+      reimbursements_minor: 0,
+      worked_minutes: 2460,
+      payable_minutes: 2460,
+      guaranteed_minutes_per_week: null,
+    };
+
+    it('shows the reopened note from a wire reason on a non-approved week', () => {
+      const { getByTestId } = render(
+        <WeekTotal
+          testID="hours-week-total"
+          weekRangeLabel="3 Aug – 9 Aug"
+          totalLabel="41h 0m"
+          overtimeLabel={null}
+          totalMinutes={2460}
+          timesheetStatus="submitted"
+          earnings={earnings}
+          earningsReopenReason="Thursday hours were wrong"
+        />
+      );
+      expect(getByTestId('hours-earnings-line-reopened-note')).toBeTruthy();
+    });
+
+    it('does not show a stale wire reason on an approved week', () => {
+      const { queryByTestId } = render(
+        <WeekTotal
+          testID="hours-week-total"
+          weekRangeLabel="3 Aug – 9 Aug"
+          totalLabel="41h 0m"
+          overtimeLabel={null}
+          totalMinutes={2460}
+          timesheetStatus="approved"
+          earnings={earnings}
+          earningsReopenReason="Thursday hours were wrong"
+        />
+      );
+      expect(queryByTestId('hours-earnings-line-reopened-note')).toBeNull();
+    });
+
+    // The reason is a timesheet-status fact, not an earnings fact — it must
+    // survive every early return inside WeekEarningsLine (no arrangement,
+    // hours-only, zero-hours, earnings null). These cases failed when the
+    // note lived only in the `ok` earnings arm.
+    it('shows the wire reason on a no_arrangement week (earnings arm never reaches ok)', () => {
+      const { getByTestId, getByText } = render(
+        <WeekTotal
+          testID="hours-week-total"
+          weekRangeLabel="3 Aug – 9 Aug"
+          totalLabel="41h 0m"
+          overtimeLabel={null}
+          totalMinutes={2460}
+          timesheetStatus="submitted"
+          earnings={{
+            status: 'no_arrangement',
+            week_start: '2026-08-03',
+            unpriced_dates: ['2026-08-03'],
+          }}
+          earningsRole="parent"
+          earningsCarerId="carer-1"
+          earningsReopenReason="Thursday hours were wrong"
+        />
+      );
+      expect(getByText('earningsNoArrangementParent')).toBeTruthy();
+      expect(getByTestId('hours-earnings-line-reopened-note')).toBeTruthy();
+    });
+
+    it('shows the wire reason on a zero-hours week (earnings line itself is omitted)', () => {
+      const { getByTestId, queryByTestId } = render(
+        <WeekTotal
+          testID="hours-week-total"
+          weekRangeLabel="3 Aug – 9 Aug"
+          totalLabel="0m"
+          overtimeLabel={null}
+          totalMinutes={0}
+          timesheetStatus="submitted"
+          earnings={{
+            ...earnings,
+            gross_minor: 0,
+            worked_minutes: 0,
+            payable_minutes: 0,
+          }}
+          earningsReopenReason="Thursday hours were wrong"
+        />
+      );
+      expect(queryByTestId('hours-earnings-line')).toBeNull();
+      expect(getByTestId('hours-earnings-line-reopened-note')).toBeTruthy();
+    });
+  });
 });

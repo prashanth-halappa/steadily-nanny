@@ -78,6 +78,7 @@ const timesheet = {
   approved_by: null,
   approved_at: null,
   query_note: null,
+  reopen_reason: null,
   created_at: 't',
   updated_at: 't',
 };
@@ -674,7 +675,10 @@ describe('TimesheetCommandService.clockIn — auto-match to a confirmed shift', 
 // Fixed, known finished entries used to assert EXACT derived totals below —
 // never `expect.any(Number)`, since the whole point of this suite is
 // proving the total is a real sum, not just "a number".
+// `id: 't1'` matches the running entry clockOut is finishing — assertNoOverlap
+// excludes self via that id (same mechanism updateEntry uses).
 const finishedEntryA = {
+  id: 't1',
   clock_in_at: '2026-08-03T08:00:00.000Z',
   clock_out_at: '2026-08-03T16:00:00.000Z', // 480 min
   break_minutes: 30, // -> 450
@@ -2794,9 +2798,11 @@ describe('TimesheetCommandService.reopen', () => {
         currency: null,
         earnings: null,
         earnings_computed_at: null,
+        reopen_reason: 'Thursday hours were wrong',
       })
     );
-    // The reason lives ONLY in the audit event, never on `query_note` — that
+    // Display state on the row (so a cold-start carer sees why pay moved)
+    // AND permanent audit in the day-thread. Never on `query_note` — that
     // column means "a parent queried this week" and ParentWeekView renders
     // it unconditionally as "Queried: {{note}}"; writing a reopen reason
     // there mislabels an undo-approve as an open dispute (review finding).
@@ -2821,6 +2827,192 @@ describe('TimesheetCommandService.reopen', () => {
       't1',
       expect.objectContaining({ break_minutes: 0 })
     );
+  });
+
+  it('pushes the carer once with TIMESHEET_REOPENED when a week is reopened', async () => {
+    const push = makePush();
+    const timesheetRepo = makeTimesheetRepo({
+      update: mock(async (_id: string, patch: Record<string, unknown>) => ({
+        ...approvedTimesheet,
+        ...patch,
+      })),
+    });
+    const svc = new TimesheetCommandService(
+      makeTimeEntryRepo(),
+      timesheetRepo,
+      makeParentMemberRepo(),
+      makeHouseholdRepo(),
+      makeShiftRepo(),
+      makeQueries({
+        getOwnedTimesheet: mock(async () => approvedTimesheet),
+      }),
+      makeUserService(),
+      push,
+      makeEarnings(),
+      { insertMany: mock(async () => undefined) }
+    );
+
+    await svc.reopen('parent-1', 'ts1', { reason: 'missed break' });
+
+    expect(push.notifyUser).toHaveBeenCalledTimes(1);
+    expect(push.notifyUser).toHaveBeenCalledWith(
+      'carer-1',
+      expect.objectContaining({
+        data: expect.objectContaining({
+          type: PUSH_NOTIFICATION_TYPES.TIMESHEET_REOPENED,
+          timesheetId: 'ts1',
+          householdId: 'h1',
+          weekStart: '2026-08-03',
+        }),
+      })
+    );
+    expect(push.notifyHouseholdParents).not.toHaveBeenCalled();
+  });
+
+  it('still returns the reopened timesheet when the carer push throws', async () => {
+    const push = makePush({
+      notifyUser: mock(() => {
+        throw new Error('expo down');
+      }),
+    });
+    const timesheetRepo = makeTimesheetRepo({
+      update: mock(async (_id: string, patch: Record<string, unknown>) => ({
+        ...approvedTimesheet,
+        ...patch,
+      })),
+    });
+    const svc = new TimesheetCommandService(
+      makeTimeEntryRepo(),
+      timesheetRepo,
+      makeParentMemberRepo(),
+      makeHouseholdRepo(),
+      makeShiftRepo(),
+      makeQueries({
+        getOwnedTimesheet: mock(async () => approvedTimesheet),
+      }),
+      makeUserService(),
+      push,
+      makeEarnings(),
+      { insertMany: mock(async () => undefined) }
+    );
+
+    const result = await svc.reopen('parent-1', 'ts1', {
+      reason: 'missed break',
+    });
+    expect(result.status).toBe('submitted');
+  });
+
+  it('two reopens produce two append-only audit rows', async () => {
+    const eventRepo = {
+      insertMany: mock(async () => undefined),
+    };
+    // Both reads return approved — models parent re-approving between the
+    // two undos. Each reopen appends its own day-thread row.
+    const timesheetRepo = makeTimesheetRepo({
+      update: mock(async (_id: string, patch: Record<string, unknown>) => ({
+        ...approvedTimesheet,
+        ...patch,
+      })),
+    });
+    const svc = new TimesheetCommandService(
+      makeTimeEntryRepo(),
+      timesheetRepo,
+      makeParentMemberRepo(),
+      makeHouseholdRepo(),
+      makeShiftRepo(),
+      makeQueries({
+        getOwnedTimesheet: mock(async () => approvedTimesheet),
+      }),
+      makeUserService(),
+      makePush(),
+      makeEarnings(),
+      eventRepo
+    );
+
+    await svc.reopen('parent-1', 'ts1', { reason: 'first' });
+    await svc.reopen('parent-1', 'ts1', { reason: 'second' });
+
+    expect(eventRepo.insertMany).toHaveBeenCalledTimes(2);
+    // `mock()` with no declared args types `.mock.calls` as an empty tuple,
+    // so the hop through `unknown` is the only way to read the recorded
+    // argument back out — same reason the compiler suggests it.
+    type ReopenEventArg = Array<{ payload: { reason: string } }>;
+    const [first] = eventRepo.insertMany.mock.calls[0] as unknown as [
+      ReopenEventArg,
+    ];
+    const [second] = eventRepo.insertMany.mock.calls[1] as unknown as [
+      ReopenEventArg,
+    ];
+    expect(first[0]?.payload.reason).toBe('first');
+    expect(second[0]?.payload.reason).toBe('second');
+  });
+
+  // THE TEST THAT MATTERS MOST: display state vs permanent audit.
+  // Re-approving clears `reopen_reason` (so a cold-start UI stops showing
+  // "why was this undone") but must NEVER touch the day-thread rows — those
+  // are the permanent record that the week was un-approved, twice if twice.
+  it('re-approving a reopened week clears reopen_reason and leaves audit events untouched', async () => {
+    const eventRepo = {
+      insertMany: mock(async () => undefined),
+    };
+    const timesheetRepo = makeApprovingRepo({
+      update: mock(async (_id: string, patch: Record<string, unknown>) => ({
+        ...approvedTimesheet,
+        ...patch,
+      })),
+    });
+    const svc = new TimesheetCommandService(
+      makeTimeEntryRepo(),
+      timesheetRepo,
+      makeParentMemberRepo(),
+      makeHouseholdRepo(),
+      makeShiftRepo(),
+      makeQueries({
+        getOwnedTimesheet: mock(async () => approvedTimesheet),
+      }),
+      makeUserService(),
+      makePush(),
+      makeEarnings(),
+      eventRepo
+    );
+
+    await svc.reopen('parent-1', 'ts1', { reason: 'Thursday was wrong' });
+    expect(eventRepo.insertMany).toHaveBeenCalledTimes(1);
+    expect(timesheetRepo.update).toHaveBeenCalledWith(
+      'ts1',
+      expect.objectContaining({
+        reopen_reason: 'Thursday was wrong',
+      })
+    );
+
+    // Parent re-approves the (now submitted) week. The owned read after
+    // reopen must look submitted with the display reason still set.
+    const reopenedRow = {
+      ...timesheet,
+      status: 'submitted' as const,
+      reopen_reason: 'Thursday was wrong',
+      updated_at: '2026-08-04T19:00:00.000Z',
+    };
+    const approveSvc = new TimesheetCommandService(
+      makeTimeEntryRepo(),
+      timesheetRepo,
+      makeParentMemberRepo(),
+      makeHouseholdRepo(),
+      makeShiftRepo(),
+      makeQueries({
+        getOwnedTimesheet: mock(async () => reopenedRow),
+      }),
+      makeUserService(),
+      makePush(),
+      makeEarnings(),
+      eventRepo
+    );
+    await approveSvc.approve('parent-1', 'ts1');
+
+    expect(timesheetRepo.approveSubmittedWithEarnings).toHaveBeenCalledTimes(1);
+    // Audit rows are append-only — approve must not insert, update, or
+    // delete any timesheet_reopened event.
+    expect(eventRepo.insertMany).toHaveBeenCalledTimes(1);
   });
 
   it('rejects a nanny trying to reopen', async () => {
@@ -2972,5 +3164,103 @@ describe('TimesheetCommandService — entry overlap', () => {
         clock_out_at: '2026-08-03T15:00:00.000Z',
       })
     ).rejects.toBeInstanceOf(TimeEntryOverlapError);
+  });
+
+  // -------------------------------------------------------------------------
+  // clockOut overlap hole: assertNoOverlap was called from createRetroactive
+  // and updateEntry but NOT clockOut, and it skips running entries. Reachable
+  // path — edit a completed finish into a running session's span, then clock
+  // out the runner — double-counted those minutes in total_minutes and the
+  // frozen gross. Guard must use the RESOLVED clockOutAt (server clock when
+  // omitted) and exclude the running row's own id.
+  // -------------------------------------------------------------------------
+  it('rejects a clock-out whose span overlaps a different completed entry', async () => {
+    // E1 completed 08:00–10:00; running E2 (t1) started 09:30; clocking out
+    // at 11:00 would overlap E1 by 30 minutes.
+    const otherCompleted = {
+      id: 't-other',
+      clock_in_at: '2026-08-03T08:00:00.000Z',
+      clock_out_at: '2026-08-03T10:00:00.000Z',
+      break_minutes: 0,
+    };
+    const runningLater = {
+      ...runningEntry,
+      clock_in_at: '2026-08-03T09:30:00.000Z',
+    };
+    const timeEntryRepo = makeTimeEntryRepo({
+      listForCarerWeek: mock(async () => [otherCompleted, runningLater]),
+      update: mock(async () => {
+        throw new Error('update must not be called on overlap');
+      }),
+    });
+    const svc = new TimesheetCommandService(
+      timeEntryRepo,
+      makeTimesheetRepo(),
+      makeMemberRepo(),
+      makeHouseholdRepo(),
+      makeShiftRepo(),
+      makeQueries({
+        getOwnedTimeEntry: mock(async () => runningLater),
+      }),
+      makeUserService()
+    );
+
+    await expect(
+      svc.clockOut('carer-1', 't1', {
+        clock_out_at: '2026-08-03T11:00:00.000Z',
+      })
+    ).rejects.toBeInstanceOf(TimeEntryOverlapError);
+    expect(timeEntryRepo.update).not.toHaveBeenCalled();
+  });
+
+  it('allows a non-overlapping clock-out next to a completed entry', async () => {
+    // Touching end-to-start is allowed — back-to-back sessions are ordinary.
+    const priorCompleted = {
+      id: 't-other',
+      clock_in_at: '2026-08-03T08:00:00.000Z',
+      clock_out_at: '2026-08-03T12:00:00.000Z',
+      break_minutes: 0,
+    };
+    const runningAfter = {
+      ...runningEntry,
+      clock_in_at: '2026-08-03T12:00:00.000Z',
+    };
+    const finishedAfter = {
+      ...runningAfter,
+      id: 't1',
+      clock_out_at: '2026-08-03T16:00:00.000Z',
+      break_minutes: 0,
+      status: 'submitted',
+    };
+    const timeEntryRepo = makeTimeEntryRepo({
+      listForCarerWeek: mock(async () => [priorCompleted, finishedAfter]),
+      update: mock(async (_id: string, patch: Record<string, unknown>) => ({
+        ...runningAfter,
+        ...patch,
+      })),
+    });
+    const svc = new TimesheetCommandService(
+      timeEntryRepo,
+      makeTimesheetRepo(),
+      makeMemberRepo(),
+      makeHouseholdRepo(),
+      makeShiftRepo(),
+      makeQueries({
+        getOwnedTimeEntry: mock(async () => runningAfter),
+      }),
+      makeUserService()
+    );
+
+    const result = await svc.clockOut('carer-1', 't1', {
+      clock_out_at: '2026-08-03T16:00:00.000Z',
+    });
+    expect(result.clock_out_at).toBe('2026-08-03T16:00:00.000Z');
+    expect(timeEntryRepo.update).toHaveBeenCalledWith(
+      't1',
+      expect.objectContaining({
+        clock_out_at: '2026-08-03T16:00:00.000Z',
+        status: 'submitted',
+      })
+    );
   });
 });

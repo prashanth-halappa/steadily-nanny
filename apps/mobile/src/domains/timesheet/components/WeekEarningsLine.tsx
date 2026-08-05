@@ -25,6 +25,9 @@
  *   tops up) is captured by checking `gross_minor`, not `worked_minutes`
  *   alone — a topup line is the only way gross can be non-zero on a
  *   zero-hours week.
+ *
+ * The reopen-reason caption is NOT rendered here — it is a timesheet-status
+ * fact owned by `WeekTotal`, so it survives every early return above.
  */
 import { useRouter } from 'expo-router';
 import { ChevronRight } from 'lucide-react-native';
@@ -75,8 +78,6 @@ interface WeekEarningsLineProps {
   /** Opens the breakdown sheet — only wired when the line is actually
    * tappable (the `ok` arm). */
   onPress?: () => void;
-  /** §8 "Approved week that reopens" — see `utils/reopenedNotice.ts`. */
-  reopened?: boolean;
 }
 
 export function WeekEarningsLine({
@@ -90,7 +91,6 @@ export function WeekEarningsLine({
   earningsError = false,
   onRetryEarnings,
   onPress,
-  reopened = false,
 }: WeekEarningsLineProps) {
   const { t } = useTranslation('hours');
   const router = useRouter();
@@ -226,14 +226,6 @@ export function WeekEarningsLine({
           className="text-muted-foreground"
         >
           {t('earningsQueriedNote')}
-        </Small>
-      ) : null}
-      {reopened ? (
-        <Small
-          testID={`${testID}-reopened-note`}
-          className="text-muted-foreground"
-        >
-          {t('earningsReopenedNote')}
         </Small>
       ) : null}
     </View>

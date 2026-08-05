@@ -23,6 +23,8 @@ mock.module('@/src/components/ui/loading-indicator', () => {
   };
 });
 
+// ApproveWeekDialog still uses AlertDialog; ReopenWeekDialog uses
+// BottomSheetBase (keyboard-aware). Both must be mocked for this screen.
 mock.module('@rn-primitives/alert-dialog', () => {
   const R = require('react');
   const Ctx = R.createContext({ open: false, setOpen: (_o: boolean) => {} });
@@ -128,6 +130,21 @@ mock.module('@rn-primitives/alert-dialog', () => {
       );
     },
     useRootContext: () => R.useContext(Ctx),
+  };
+});
+
+mock.module('@/src/components/custom/BottomSheetBase', () => {
+  const R = require('react');
+  return {
+    BottomSheetBase: ({
+      visible,
+      children,
+      testID,
+    }: {
+      visible: boolean;
+      children: React.ReactNode;
+      testID?: string;
+    }) => (visible ? R.createElement('View', { testID }, children) : null),
   };
 });
 

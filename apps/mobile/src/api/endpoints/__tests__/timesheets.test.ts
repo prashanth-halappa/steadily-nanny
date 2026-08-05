@@ -21,6 +21,7 @@ const validTimesheet = {
   approved_by: null,
   approved_at: null,
   query_note: null,
+  reopen_reason: null,
   created_at: now,
   updated_at: now,
 };

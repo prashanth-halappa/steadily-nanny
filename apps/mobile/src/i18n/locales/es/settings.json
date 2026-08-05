@@ -101,6 +101,7 @@
       "clock_out_reminder": "Recordatorio de salida",
       "timesheet_submitted": "Hoja de horas enviada",
       "timesheet_queried": "Hoja de horas consultada",
+      "timesheet_reopened": "Hoja de horas reabierta",
       "schedule_pattern_sent": "Patrón de horario enviado",
       "schedule_pattern_responded": "Respuesta al patrón de horario",
       "schedule_pattern_amended": "Patrón de horario modificado",
@@ -112,7 +113,8 @@
       "shift_cancelled": "Turno cancelado",
       "shift_needs_reconfirm": "Turno necesita reconfirmación",
       "carer_time_off_conflict": "Conflicto de ausencia",
-      "pay_terms_set": "Condiciones de pago actualizadas"
+      "pay_terms_set": "Condiciones de pago actualizadas",
+      "pto_usage_reversed": "Uso de ausencia revertido"
     }
   }
 }

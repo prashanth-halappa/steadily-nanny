@@ -330,7 +330,31 @@ export class TimesheetCommandService {
 
     const scheduledMinutes = await this.freezeScheduledMinutes(entry.shift_id);
     const clockOutAt = input.clock_out_at ?? new Date().toISOString();
-    this.assertClockOrder(entry.clock_in_at, clockOutAt);
+    const { clockInAt } = this.assertClockOrder(entry.clock_in_at, clockOutAt);
+
+    // Overlap guard on the RESOLVED finish — never `input.clock_out_at`,
+    // which is omitted on the ordinary "tap Clock out" path that uses the
+    // server clock. `excludeEntryId` is the running row itself (already in
+    // the table); without it the span would overlap its own clock_in.
+    // Week boundary comes from the household timezone so this agrees with
+    // `rollUpIntoTimesheet` / `updateEntry` / `createRetroactiveEntry`.
+    //
+    // ponytail: read-then-write TOCTOU — another completed entry could land
+    // between the list and the update. Unreachable for a single carer today
+    // because `time_entries_one_running_per_carer` admits only one runner;
+    // upgrade to a btree_gist exclusion constraint if concurrent clock-outs
+    // across carers (or a future multi-device path) ever race here.
+    const household = await this.householdRepo.findById(entry.household_id);
+    const timeZone = household?.timezone ?? 'UTC';
+    const weekStart = weekStartOf(new Date(clockInAt), timeZone);
+    await this.assertNoOverlap(
+      entry.household_id,
+      userId,
+      weekStart,
+      clockInAt,
+      clockOutAt,
+      timeEntryId
+    );
 
     const patch: Partial<TimeEntry> = {
       clock_out_at: clockOutAt,
@@ -889,14 +913,15 @@ export class TimesheetCommandService {
    *
    * Snapshot clear reuses `CLEARED_EARNINGS_SNAPSHOT` — the same literal
    * `rollUpIntoTimesheet` writes — so approve and reopen cannot drift on
-   * which columns null out. The caller-supplied reason is recorded as an
-   * append-only day-thread event — reopening is a money-visible act and must
-   * not be silent — deliberately NOT on `query_note`: that column means "a
-   * parent queried this week", and `ParentWeekView` renders it as
-   * "Queried: {{note}}" whenever the status is 'queried'. Writing a reopen
-   * reason there would mislabel an undo-approve as an open dispute the next
-   * time anyone reads the row. The two are different facts about a week and
-   * must not share a column.
+   * which columns null out. The caller-supplied reason is written BOTH as
+   * display state on the timesheet row (`reopen_reason`, cleared on the
+   * next approve) AND as an append-only day-thread event — reopening is a
+   * money-visible act and must not be silent. Deliberately NOT on
+   * `query_note`: that column means "a parent queried this week", and
+   * `ParentWeekView` renders it as "Queried: {{note}}" whenever the status
+   * is 'queried'. Writing a reopen reason there would mislabel an
+   * undo-approve as an open dispute the next time anyone reads the row.
+   * The two are different facts about a week and must not share a column.
    */
   async reopen(
     userId: string,
@@ -913,6 +938,7 @@ export class TimesheetCommandService {
       status: 'submitted',
       approved_by: null,
       approved_at: null,
+      reopen_reason: input.reason,
       ...CLEARED_EARNINGS_SNAPSHOT,
     });
 
@@ -933,6 +959,26 @@ export class TimesheetCommandService {
     } catch {
       // Day-thread append is best-effort audit: the reopen write already
       // succeeded and must not be rolled back for a logging failure.
+    }
+
+    // Carer currently only learns of a reopened week by opening Hours — push
+    // her so she knows her pay is no longer final. Fire-and-forget: a push
+    // failure must never fail the reopen write the parent already completed.
+    if (updated.carer_id) {
+      try {
+        this.push.notifyUser(updated.carer_id, {
+          title: 'Hours reopened',
+          body: 'A parent has reopened your hours this week.',
+          data: {
+            type: PUSH_NOTIFICATION_TYPES.TIMESHEET_REOPENED,
+            timesheetId: updated.id,
+            householdId: updated.household_id,
+            weekStart: updated.week_start,
+          },
+        });
+      } catch {
+        // notifyUser is sync fire-and-forget; swallow any unexpected throw
+      }
     }
 
     return toWireTimesheet(updated);

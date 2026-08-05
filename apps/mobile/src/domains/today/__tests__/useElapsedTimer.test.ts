@@ -66,9 +66,12 @@ describe('useElapsedTimer', () => {
   });
 
   it('returns a formatted elapsed string once running', () => {
-    const { result } = renderHook(() =>
-      useElapsedTimer('2026-08-01T07:58:00.000Z')
-    );
+    // Relative to now, not a fixed instant: this previously hard-coded
+    // 2026-08-01 and asserted two-digit hours, so it passed for a few days
+    // and then started rendering "103:10:59" as the calendar moved on. A
+    // clock-in two hours ago is what the hook is actually for.
+    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+    const { result } = renderHook(() => useElapsedTimer(twoHoursAgo));
     expect(typeof result.current).toBe('string');
     expect(result.current).toMatch(/^\d{2}:\d{2}:\d{2}$/);
   });

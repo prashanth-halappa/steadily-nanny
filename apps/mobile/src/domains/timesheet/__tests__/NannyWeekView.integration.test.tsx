@@ -638,3 +638,62 @@ describe('NannyWeekView — expenses & the statement (Phase 4)', () => {
     expect(queryAllByText('£0.00')).toHaveLength(0);
   });
 });
+
+describe('NannyWeekView — cold-mount reopen reason', () => {
+  // Parent reopened Tuesday; carer opens the app Thursday. No approved→
+  // submitted transition was watched on this mount — only `reopen_reason`
+  // on the timesheet row can surface the caption.
+  it('shows the reopened note from reopen_reason on a submitted week without a watched transition', async () => {
+    getByIdMock.mockImplementation(() =>
+      Promise.resolve(
+        makeTimesheetWeek({
+          status: 'submitted',
+          approved_at: null,
+          reopen_reason: 'Thursday hours were wrong',
+        })
+      )
+    );
+    listTimesheetsMock.mockImplementation(() =>
+      Promise.resolve([
+        makeTimesheet({
+          status: 'submitted',
+          reopen_reason: 'Thursday hours were wrong',
+        }),
+      ])
+    );
+
+    const { getByTestId } = renderNannyView();
+
+    await waitFor(() =>
+      expect(getByTestId('hours-earnings-line-reopened-note')).toBeTruthy()
+    );
+  });
+
+  it('does not show a stale reopen_reason on an approved week', async () => {
+    getByIdMock.mockImplementation(() =>
+      Promise.resolve(
+        makeTimesheetWeek({
+          status: 'approved',
+          approved_at: '2026-08-10T09:00:00.000Z',
+          reopen_reason: 'Thursday hours were wrong',
+        })
+      )
+    );
+    listTimesheetsMock.mockImplementation(() =>
+      Promise.resolve([
+        makeTimesheet({
+          status: 'approved',
+          approved_at: '2026-08-10T09:00:00.000Z',
+          reopen_reason: 'Thursday hours were wrong',
+        }),
+      ])
+    );
+
+    const { queryByTestId, getByTestId } = renderNannyView();
+
+    await waitFor(() =>
+      expect(getByTestId('hours-earnings-line')).toBeTruthy()
+    );
+    expect(queryByTestId('hours-earnings-line-reopened-note')).toBeNull();
+  });
+});

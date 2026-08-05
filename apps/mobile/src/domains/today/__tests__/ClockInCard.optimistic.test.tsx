@@ -62,7 +62,7 @@ beforeEach(() => {
 
 describe('ClockInCard — A1 unconfirmed optimistic clock-in', () => {
   it('does not dispatch clock-out while the optimistic running entry is unconfirmed', async () => {
-    const { getByTestId } = renderWithProviders(
+    const { getByTestId, queryByTestId } = renderWithProviders(
       <ClockInCard householdId={HOUSEHOLD_ID} timeZone="UTC" />
     );
 
@@ -75,7 +75,11 @@ describe('ClockInCard — A1 unconfirmed optimistic clock-in', () => {
     fireEvent.press(getByTestId('today-clock-out'));
     await new Promise(resolve => setTimeout(resolve, 0));
 
-    expect(getByTestId('clockout-sheet').props.visible).toBe(false);
+    // The sheet is mounted only while open (its draft is seeded from refs
+    // frozen at open time, so an always-mounted sheet would seed from a
+    // null entry). "Not shown" is therefore absence, not `visible={false}`
+    // — same guarantee, asserted against the current structure.
+    expect(queryByTestId('clockout-sheet')).toBeNull();
     expect(clockOutMock).not.toHaveBeenCalled();
   });
 });
