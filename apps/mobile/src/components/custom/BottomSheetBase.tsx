@@ -34,11 +34,12 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useReducedMotion } from '@/lib/animations';
-import { useThemeColors } from '@/lib/design-tokens';
+import { spacing, useThemeColors } from '@/lib/design-tokens';
 import { useSheetDragToDismiss } from '@/src/components/custom/useSheetDragToDismiss';
 import { useBottomSheetStore } from '@/src/store/bottomSheetStore';
 
 const SHEET_HEADER_HEIGHT = 52;
+const SHEET_HANDLE_HEIGHT = 4;
 
 export interface BottomSheetBaseProps {
   /** Unique ID for this sheet (used for mutual exclusion). */
@@ -168,8 +169,8 @@ export function BottomSheetBase({
                       testID="bottom-sheet-handle"
                       style={{
                         width: 36,
-                        height: 4,
-                        borderRadius: 2,
+                        height: SHEET_HANDLE_HEIGHT,
+                        borderRadius: spacing.radiusFull,
                         backgroundColor: `${themeColors.scrim}33`,
                       }}
                     />
@@ -200,7 +201,7 @@ export function BottomSheetBase({
                         alignItems: 'center',
                         justifyContent: 'center',
                         backgroundColor: themeColors.muted,
-                        borderRadius: 8,
+                        borderRadius: spacing.radiusSm,
                       }}
                       hitSlop={8}
                       accessibilityRole="button"

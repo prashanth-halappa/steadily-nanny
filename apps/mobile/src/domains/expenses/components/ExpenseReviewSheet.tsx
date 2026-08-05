@@ -39,9 +39,10 @@ import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
 import { BottomSheetBase } from '@/src/components/custom/BottomSheetBase';
 import { Button } from '@/src/components/ui/button';
+import { Card } from '@/src/components/ui/card';
 import { Text } from '@/src/components/ui/text';
 import { Textarea } from '@/src/components/ui/textarea';
-import { Body, H4, Small } from '@/src/components/ui/typography';
+import { Body, Figure, H4, Small } from '@/src/components/ui/typography';
 import { formatEarningsSpanDate } from '@/src/domains/timesheet/utils/earningsFormat';
 import { formatMoney } from '@/src/lib/money';
 import type { Expense } from '../types';
@@ -98,23 +99,22 @@ function ReviewCard({
       ? t('reviewSheet.milesValue', { miles: expense.miles })
       : formatMoney(expense.amount_minor ?? 0, expense.currency);
 
+  const AmountDisplay = expense.kind === 'mileage' ? Body : Figure;
+
   return (
-    <View
-      testID={`expense-review-card-${expense.id}`}
-      className="gap-2 rounded-cell bg-card p-4"
-    >
+    <Card testID={`expense-review-card-${expense.id}`} className="gap-2 p-4">
       <Small className="text-muted-foreground">
         {formatEarningsSpanDate(expense.local_date)}
       </Small>
       <View className="flex-row items-baseline justify-between gap-3">
         <Body className="flex-1">{expense.description}</Body>
-        <Body
+        <AmountDisplay
           testID={`expense-review-card-${expense.id}-amount`}
-          className="flex-shrink-0 font-medium"
-          tabular
+          className="flex-shrink-0"
+          weight={expense.kind === 'mileage' ? undefined : 'medium'}
         >
           {amountLabel}
-        </Body>
+        </AmountDisplay>
       </View>
 
       {showMileageRateError ? (
@@ -201,7 +201,7 @@ function ReviewCard({
           </Button>
         </View>
       )}
-    </View>
+    </Card>
   );
 }
 

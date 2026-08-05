@@ -10,10 +10,10 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
 import { Card } from '@/src/components/ui/card';
+import { FieldError } from '@/src/components/ui/field-error';
+import { FieldLabel } from '@/src/components/ui/field-label';
 import { Input } from '@/src/components/ui/input';
-import { Label } from '@/src/components/ui/label';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
-import { Text } from '@/src/components/ui/text';
 import { Body, H3 } from '@/src/components/ui/typography';
 import { SetupScreenShell } from '@/src/domains/setup/components/SetupScreenShell';
 import { getSetupStepRoute, SETUP_STEPS } from '@/src/domains/setup/types';
@@ -61,7 +61,7 @@ export function CodeEntryScreen() {
       onCta={preview.data ? onJoin : onCheckCode}
     >
       <View className="gap-2">
-        <Label>{t('onboarding.code.inviteCodeLabel')}</Label>
+        <FieldLabel>{t('onboarding.code.inviteCodeLabel')}</FieldLabel>
         <Input
           testID="code-input"
           accessibilityLabel={t('onboarding.code.inviteCodeLabel')}
@@ -79,29 +79,27 @@ export function CodeEntryScreen() {
       {preview.isFetching ? <LoadingIndicator /> : null}
 
       {preview.isError ? (
-        <Body testID="code-error" className="text-destructive">
+        <FieldError testID="code-error">
           {t('onboarding.code.invalidError')}
-        </Body>
+        </FieldError>
       ) : null}
 
       {preview.data ? (
         <Card testID="code-preview-card" className="gap-2 p-5.5">
           <H3 testID="code-preview-household">{preview.data.household_name}</H3>
           {preview.data.children_first_names.length > 0 ? (
-            <Text
+            <Body
               testID="code-preview-children"
               className="text-muted-foreground"
             >
               {preview.data.children_first_names.join(', ')}
-            </Text>
+            </Body>
           ) : null}
         </Card>
       ) : null}
 
       {redeemInvite.isError ? (
-        <Body className="text-destructive">
-          {t('onboarding.code.redeemError')}
-        </Body>
+        <FieldError>{t('onboarding.code.redeemError')}</FieldError>
       ) : null}
     </SetupScreenShell>
   );

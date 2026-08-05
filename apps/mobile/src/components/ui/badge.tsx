@@ -4,8 +4,14 @@ import { View, type ViewProps } from 'react-native';
 import { cn } from '@/lib/utils';
 import { TextClassContext } from '@/src/components/ui/text';
 
+/** Vertical padding shared by Badge and StatusPill filled chips. */
+const FILLED_CHIP_PADDING_Y = 'py-[5px]';
+
+/** Inline borderRadius matching tailwind `rounded-chip` (Animated.View cannot use className). */
+const CHIP_BORDER_RADIUS = 999;
+
 const badgeVariants = cva(
-  'web:inline-flex items-center rounded-chip px-3 py-[5px] web:transition-colors web:focus:outline-none web:focus:ring-2 web:focus:ring-ring web:focus:ring-offset-2',
+  `web:inline-flex items-center rounded-chip px-3 ${FILLED_CHIP_PADDING_Y} web:transition-colors web:focus:outline-none web:focus:ring-2 web:focus:ring-ring web:focus:ring-offset-2`,
   {
     variants: {
       variant: {
@@ -55,4 +61,10 @@ function Badge({ className, variant, asChild, ...props }: BadgeProps) {
 }
 
 export type { BadgeProps };
-export { Badge, badgeTextVariants, badgeVariants };
+export {
+  Badge,
+  badgeTextVariants,
+  badgeVariants,
+  CHIP_BORDER_RADIUS,
+  FILLED_CHIP_PADDING_Y,
+};

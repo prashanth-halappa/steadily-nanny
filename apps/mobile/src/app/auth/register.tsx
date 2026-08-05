@@ -9,12 +9,13 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { Button } from '@/src/components/ui/button';
 import { InlineError } from '@/src/components/ui/inline-error';
 import { Input } from '@/src/components/ui/input';
 import { LoadingButton } from '@/src/components/ui/loading-button';
 import { Text } from '@/src/components/ui/text';
-import { Body, H1, Small } from '@/src/components/ui/typography';
+import { H1, Small } from '@/src/components/ui/typography';
 import { appIdentity } from '@/src/config/appIdentity';
 import { useAuthStore } from '@/src/store/auth';
 import { openExternalUrl } from '@/src/utils/openExternalUrl';
@@ -51,7 +52,14 @@ export default function Register() {
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        <View className="flex-1 justify-center gap-3 px-6">
+        <View
+          style={{
+            flex: 1,
+            paddingHorizontal: SCREEN_CONTENT_STYLE.padding,
+            paddingBottom: SCREEN_CONTENT_STYLE.padding,
+          }}
+          className="justify-start gap-3 pt-16"
+        >
           <H1>{t('createAccount')}</H1>
           <Input
             testID="register-email"
@@ -97,10 +105,7 @@ export default function Register() {
               </Small>
             </Pressable>
           </View>
-          <Body
-            testID="register-legal"
-            className="text-muted-foreground text-sm"
-          >
+          <Small testID="register-legal" className="text-muted-foreground">
             {t('legalPrefix')}{' '}
             <Text
               className="text-primary"
@@ -116,7 +121,7 @@ export default function Register() {
               {t('privacyPolicy')}
             </Text>
             {t('legalSuffix')}
-          </Body>
+          </Small>
           {error ? (
             <InlineError testID="register-error" message={error} />
           ) : null}

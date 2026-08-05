@@ -38,6 +38,7 @@ import {
   AlertDialogTitle,
 } from '@/src/components/ui/alert-dialog';
 import { Button } from '@/src/components/ui/button';
+import { FieldLabel } from '@/src/components/ui/field-label';
 import { Text } from '@/src/components/ui/text';
 import { Textarea } from '@/src/components/ui/textarea';
 import { Body } from '@/src/components/ui/typography';
@@ -187,26 +188,28 @@ export function TimeOffRequestForm({
   return (
     <View
       testID={isEditMode ? 'time-off-edit-form' : 'time-off-request-form'}
-      className="mb-6 gap-4"
+      className="gap-4"
     >
-      <Body className="font-medium">
-        {t(isEditMode ? 'editTitle' : 'requestTitle')}
-      </Body>
+      {isEditMode ? <Body weight="medium">{t('editTitle')}</Body> : null}
       <TimeOffDateRangePicker
         testID="time-off-request-dates"
         start={startDate}
         end={endDate}
         onChange={handleDateChange}
       />
-      <Textarea
-        testID="time-off-request-message"
-        accessibilityLabel={t('messageLabel')}
-        placeholder={t('messagePlaceholder')}
-        value={message}
-        onChangeText={setMessage}
-      />
-      <View className="flex-row gap-2">
-        {isEditMode ? (
+      <View className="gap-1">
+        <FieldLabel>{t('messageLabel')}</FieldLabel>
+        <Textarea
+          testID="time-off-request-message"
+          accessibilityLabel={t('messageLabel')}
+          placeholder={t('messagePlaceholder')}
+          value={message}
+          onChangeText={setMessage}
+          className="border-input bg-card"
+        />
+      </View>
+      {isEditMode ? (
+        <View className="flex-row gap-2">
           <Button
             testID="time-off-edit-cancel"
             variant="outline"
@@ -215,17 +218,25 @@ export function TimeOffRequestForm({
           >
             <Text>{t('editCancel')}</Text>
           </Button>
-        ) : null}
+          <Button
+            testID="time-off-edit-submit"
+            className="flex-1"
+            disabled={activeMutation?.isPending ?? false}
+            onPress={() => void handleSubmit()}
+          >
+            <Text>{t('editSubmit')}</Text>
+          </Button>
+        </View>
+      ) : (
         <Button
-          testID={
-            isEditMode ? 'time-off-edit-submit' : 'time-off-request-submit'
-          }
+          testID="time-off-request-submit"
+          className="w-full"
           disabled={activeMutation?.isPending ?? false}
           onPress={() => void handleSubmit()}
         >
-          <Text>{t(isEditMode ? 'editSubmit' : 'requestSubmit')}</Text>
+          <Text>{t('requestSubmit')}</Text>
         </Button>
-      </View>
+      )}
 
       <AlertDialog open={conflictOpen} onOpenChange={setConflictOpen}>
         <AlertDialogContent>

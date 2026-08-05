@@ -54,12 +54,9 @@ import {
 import { Button, buttonVariants } from '@/src/components/ui/button';
 import { EmptyState } from '@/src/components/ui/empty-state';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
-import {
-  StatusPill,
-  type StatusPillProps,
-} from '@/src/components/ui/status-pill';
 import { Text } from '@/src/components/ui/text';
 import { Body, H1, Small } from '@/src/components/ui/typography';
+import { PatternStatusIndicator } from '@/src/domains/schedule/components/PatternStatusIndicator';
 import { SchedulePatternPreview } from '@/src/domains/schedule/components/SchedulePatternPreview';
 import { parseWeeklyRruleInterval } from '@/src/domains/schedule/utils';
 import { resolveMemberDisplayName } from '@/src/domains/schedule/utils/memberDisplayName';
@@ -179,29 +176,20 @@ export function SchedulePendingScreen() {
 
   const isLoading = onboarding.status === 'loading' || patterns.isLoading;
 
-  const statusVariant = (): NonNullable<StatusPillProps['variant']> => {
+  const patternStatus = ():
+    | 'pending'
+    | 'accepted'
+    | 'declined'
+    | 'withdrawn' => {
     switch (pattern?.status) {
       case 'accepted':
-        return 'confirmed';
+        return 'accepted';
       case 'declined':
         return 'declined';
       case 'withdrawn':
-        return 'cancelled';
+        return 'withdrawn';
       default:
         return 'pending';
-    }
-  };
-
-  const statusLabel = (): string => {
-    switch (pattern?.status) {
-      case 'accepted':
-        return t('pending.statusAccepted');
-      case 'declined':
-        return t('pending.statusDeclined');
-      case 'withdrawn':
-        return t('pending.statusWithdrawn');
-      default:
-        return t('pending.statusPending');
     }
   };
 
@@ -238,7 +226,7 @@ export function SchedulePendingScreen() {
         </View>
       ) : pattern.status === 'draft' ? (
         <View testID="schedule-pending-draft" className="mt-6 gap-4">
-          <Body className="font-semibold">{t('pending.draftTitle')}</Body>
+          <Body weight="semibold">{t('pending.draftTitle')}</Body>
           <Body className="text-muted-foreground">
             {t('pending.draftBody')}
           </Body>
@@ -259,10 +247,9 @@ export function SchedulePendingScreen() {
         </View>
       ) : (
         <View className="mt-6 gap-4">
-          <StatusPill
+          <PatternStatusIndicator
             testID="schedule-pending-status"
-            variant={statusVariant()}
-            label={statusLabel()}
+            status={patternStatus()}
           />
           <Small
             testID="schedule-pending-subject"
@@ -302,9 +289,7 @@ export function SchedulePendingScreen() {
               className="gap-1 rounded-row bg-card p-4"
               style={elevation.row}
             >
-              <Body className="font-medium">
-                {t('pending.declineReasonLabel')}
-              </Body>
+              <Body weight="medium">{t('pending.declineReasonLabel')}</Body>
               <Body className="text-muted-foreground">
                 {pattern.decline_message}
               </Body>

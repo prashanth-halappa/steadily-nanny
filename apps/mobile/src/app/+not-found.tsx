@@ -1,6 +1,7 @@
 import { type Href, Link, Stack } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
+import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { Body, H2 } from '@/src/components/ui/typography';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 
@@ -23,7 +24,11 @@ export default function NotFound() {
       <Stack.Screen options={{ title: t('notFoundTitle') }} />
       <View
         testID="not-found-screen"
-        className="flex-1 items-center justify-center gap-4 bg-background px-6"
+        style={{
+          flex: 1,
+          paddingHorizontal: SCREEN_CONTENT_STYLE.padding,
+        }}
+        className="items-center justify-center gap-4 bg-background"
       >
         <H2 className="text-center">{t('notFoundBody')}</H2>
         <Link href={homeHref} testID="not-found-go-home">

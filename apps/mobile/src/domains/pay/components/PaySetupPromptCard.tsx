@@ -49,7 +49,7 @@ export function PaySetupPromptCard({
   return (
     <Card testID={`pay-setup-prompt-${carerId}`} className="mb-3">
       <CardContent className="gap-3">
-        <Body className="font-medium">
+        <Body weight="medium">
           {t('promptCard.title', { name: carerName })}
         </Body>
         <Small className="text-muted-foreground">

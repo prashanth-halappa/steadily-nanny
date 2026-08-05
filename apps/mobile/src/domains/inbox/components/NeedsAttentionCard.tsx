@@ -28,7 +28,7 @@ export function NeedsAttentionCard() {
       accessibilityRole="button"
     >
       <Card className="gap-1 p-5.5">
-        <Body className="font-semibold">
+        <Body weight="semibold">
           {t('today:needsAttention.title', { count: items.length })}
         </Body>
         <Body className="text-muted-foreground">

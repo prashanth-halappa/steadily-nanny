@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { Button } from '@/src/components/ui/button';
 import { InlineError } from '@/src/components/ui/inline-error';
 import { Input } from '@/src/components/ui/input';
@@ -36,7 +37,14 @@ export default function ForgotPassword() {
       className="bg-background"
       testID="forgot-password-screen"
     >
-      <View className="flex-1 justify-center gap-3 px-6">
+      <View
+        style={{
+          flex: 1,
+          paddingHorizontal: SCREEN_CONTENT_STYLE.padding,
+          paddingBottom: SCREEN_CONTENT_STYLE.padding,
+        }}
+        className="justify-start gap-3 pt-16"
+      >
         <H1>{t('forgotPasswordTitle')}</H1>
         <Body className="text-muted-foreground">
           {t('forgotPasswordSubtitle')}

@@ -99,62 +99,66 @@ export function InboxScreen() {
     <ScrollView
       testID="inbox-screen"
       className="flex-1 bg-background"
-      contentContainerStyle={SCREEN_CONTENT_STYLE}
+      contentContainerStyle={{ ...SCREEN_CONTENT_STYLE, flexGrow: 1 }}
     >
-      <Pressable
-        testID="inbox-back"
-        accessibilityRole="button"
-        accessibilityLabel={tCommon('back')}
-        onPress={() => router.back()}
-        hitSlop={8}
-        className="mb-2 self-start"
-      >
-        <Body className="text-primary">{`< ${tCommon('back')}`}</Body>
-      </Pressable>
+      <View className="min-h-full flex-1 gap-8">
+        <View className="gap-1">
+          <Pressable
+            testID="inbox-back"
+            accessibilityRole="button"
+            accessibilityLabel={tCommon('back')}
+            onPress={() => router.back()}
+            hitSlop={8}
+            className="mb-2 self-start"
+          >
+            <Body className="text-primary">{`< ${tCommon('back')}`}</Body>
+          </Pressable>
 
-      <H1>{t('screenTitle')}</H1>
-      <Small className="mt-1 text-muted-foreground">
-        {t('screenSubtitle')}
-      </Small>
+          <H1>{t('screenTitle')}</H1>
+          <Small className="text-muted-foreground">{t('screenSubtitle')}</Small>
+        </View>
 
-      {isLoading ? (
-        <LoadingIndicator messages={[t('loading')]} />
-      ) : isError ? (
-        <View testID="inbox-error" className="mt-6">
-          <ErrorState
-            variant="network"
-            onRetry={() => {
-              refetch();
-            }}
-          />
+        <View className="flex-1 justify-center pb-12">
+          {isLoading ? (
+            <LoadingIndicator messages={[t('loading')]} />
+          ) : isError ? (
+            <View testID="inbox-error">
+              <ErrorState
+                variant="network"
+                onRetry={() => {
+                  refetch();
+                }}
+              />
+            </View>
+          ) : items.length === 0 ? (
+            <View testID="inbox-empty">
+              <EmptyState
+                variant="inline"
+                title={t('emptyTitle')}
+                description={t('emptyBody')}
+              />
+            </View>
+          ) : (
+            <View testID="inbox-list" className="gap-3">
+              {items.map(item => (
+                <Pressable
+                  key={`${item.kind}-${item.id}`}
+                  testID={`inbox-item-${item.kind}-${item.id}`}
+                  accessibilityRole="button"
+                  onPress={() => router.push(hrefForItem(item))}
+                  className="gap-1 rounded-row bg-card p-4"
+                  style={elevation.row}
+                >
+                  <Body weight="semibold">{titleForItem(item, t)}</Body>
+                  <Small className="text-muted-foreground">
+                    {subtitleForItem(item, t, timeZone)}
+                  </Small>
+                </Pressable>
+              ))}
+            </View>
+          )}
         </View>
-      ) : items.length === 0 ? (
-        <View testID="inbox-empty" className="mt-6">
-          <EmptyState
-            variant="inline"
-            title={t('emptyTitle')}
-            description={t('emptyBody')}
-          />
-        </View>
-      ) : (
-        <View testID="inbox-list" className="mt-6 gap-3">
-          {items.map(item => (
-            <Pressable
-              key={`${item.kind}-${item.id}`}
-              testID={`inbox-item-${item.kind}-${item.id}`}
-              accessibilityRole="button"
-              onPress={() => router.push(hrefForItem(item))}
-              className="gap-1 rounded-row bg-card p-4"
-              style={elevation.row}
-            >
-              <Body className="font-semibold">{titleForItem(item, t)}</Body>
-              <Small className="text-muted-foreground">
-                {subtitleForItem(item, t, timeZone)}
-              </Small>
-            </Pressable>
-          ))}
-        </View>
-      )}
+      </View>
     </ScrollView>
   );
 }

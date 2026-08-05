@@ -8,10 +8,11 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
+import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { BottomSheetBase } from '@/src/components/custom/BottomSheetBase';
 import { Button } from '@/src/components/ui/button';
+import { FieldLabel } from '@/src/components/ui/field-label';
 import { Input } from '@/src/components/ui/input';
-import { Label } from '@/src/components/ui/label';
 import { Text } from '@/src/components/ui/text';
 import { Textarea } from '@/src/components/ui/textarea';
 import { H3 } from '@/src/components/ui/typography';
@@ -81,7 +82,10 @@ export function ChildFormSheet({
       fitContent
       testID="child-form-sheet"
     >
-      <View className="gap-3 px-6 pb-4">
+      <View
+        className="gap-3 pb-4"
+        style={{ paddingHorizontal: SCREEN_CONTENT_STYLE.padding }}
+      >
         <H3>
           {initialValues
             ? t('children.formEditTitle')
@@ -89,7 +93,7 @@ export function ChildFormSheet({
         </H3>
 
         <View className="gap-2">
-          <Label>{t('children.formNameLabel')}</Label>
+          <FieldLabel>{t('children.formNameLabel')}</FieldLabel>
           <Input
             testID="child-form-name"
             accessibilityLabel={t('children.formNameLabel')}
@@ -101,7 +105,7 @@ export function ChildFormSheet({
         </View>
 
         <View className="gap-2">
-          <Label>{t('children.formAgeLabel')}</Label>
+          <FieldLabel>{t('children.formAgeLabel')}</FieldLabel>
           <Input
             testID="child-form-age"
             accessibilityLabel={t('children.formAgeLabel')}
@@ -113,7 +117,7 @@ export function ChildFormSheet({
         </View>
 
         <View className="gap-2">
-          <Label>{t('children.formNotesLabel')}</Label>
+          <FieldLabel>{t('children.formNotesLabel')}</FieldLabel>
           <Textarea
             testID="child-form-notes"
             accessibilityLabel={t('children.formNotesLabel')}

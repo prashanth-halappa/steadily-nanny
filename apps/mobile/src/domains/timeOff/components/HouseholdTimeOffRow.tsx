@@ -132,7 +132,7 @@ export function HouseholdTimeOffRow({
           className="gap-1 rounded-row bg-card px-4 py-3"
           style={[elevation.row, { minHeight: spacing.minTouchTarget }]}
         >
-          <Body className="font-medium">
+          <Body weight="medium">
             {formatDisplayDate(timeOff.starts_at.slice(0, 10))}
             {' – '}
             {formatDisplayDate(timeOff.ends_at.slice(0, 10))}

@@ -20,14 +20,12 @@ function InlineError({ message, testID, style }: InlineErrorProps) {
     <View
       testID={testID}
       accessibilityRole="alert"
+      className="rounded-cell px-3 py-2"
       style={[
         {
           backgroundColor: colors.errorInline.bg,
           borderColor: colors.errorInline.border,
           borderWidth: 1,
-          borderRadius: 12,
-          paddingHorizontal: 12,
-          paddingVertical: 10,
         },
         style,
       ]}

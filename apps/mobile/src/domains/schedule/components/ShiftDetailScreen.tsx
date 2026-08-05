@@ -24,6 +24,7 @@ import { useTranslation } from 'react-i18next';
 import { ScrollView, View } from 'react-native';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { Button } from '@/src/components/ui/button';
+import { FieldLabel } from '@/src/components/ui/field-label';
 import { Input } from '@/src/components/ui/input';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import {
@@ -270,25 +271,27 @@ export function ShiftDetailScreen() {
 
       {isParent ? (
         <View className="mt-6 gap-4" testID="shift-detail-edit">
-          <Body className="font-medium">{t('detail.startLabel')}</Body>
+          <FieldLabel>{t('detail.startLabel')}</FieldLabel>
           <Input
             testID="shift-detail-start"
             value={startTime}
             onChangeText={setStartTime}
+            placeholder={t('detail.timePlaceholder')}
             accessibilityLabel={t('detail.startLabel')}
             autoCapitalize="none"
             autoCorrect={false}
           />
-          <Body className="font-medium">{t('detail.endLabel')}</Body>
+          <FieldLabel>{t('detail.endLabel')}</FieldLabel>
           <Input
             testID="shift-detail-end"
             value={endTime}
             onChangeText={setEndTime}
+            placeholder={t('detail.timePlaceholder')}
             accessibilityLabel={t('detail.endLabel')}
             autoCapitalize="none"
             autoCorrect={false}
           />
-          <Body className="font-medium">{t('detail.noteLabel')}</Body>
+          <FieldLabel>{t('detail.noteLabel')}</FieldLabel>
           <Textarea
             testID="shift-detail-note"
             value={note}
@@ -327,20 +330,22 @@ export function ShiftDetailScreen() {
           {shift.note ? <Body>{shift.note}</Body> : null}
           {isNanny ? (
             <View className="mt-4 gap-3" testID="shift-detail-counter-form">
-              <Body className="font-medium">{t('detail.startLabel')}</Body>
+              <FieldLabel>{t('detail.startLabel')}</FieldLabel>
               <Input
                 testID="shift-detail-counter-start"
                 value={startTime}
                 onChangeText={setStartTime}
+                placeholder={t('detail.timePlaceholder')}
                 accessibilityLabel={t('detail.startLabel')}
                 autoCapitalize="none"
                 autoCorrect={false}
               />
-              <Body className="font-medium">{t('detail.endLabel')}</Body>
+              <FieldLabel>{t('detail.endLabel')}</FieldLabel>
               <Input
                 testID="shift-detail-counter-end"
                 value={endTime}
                 onChangeText={setEndTime}
+                placeholder={t('detail.timePlaceholder')}
                 accessibilityLabel={t('detail.endLabel')}
                 autoCapitalize="none"
                 autoCorrect={false}
@@ -397,7 +402,7 @@ export function ShiftDetailScreen() {
               className="gap-2 rounded-row bg-card p-3"
               style={elevation.row}
             >
-              <Body className="font-medium">
+              <Body weight="medium">
                 {t(shiftChangeRequestKindLabelKey(req.kind), {
                   defaultValue: req.kind,
                 })}
@@ -525,7 +530,7 @@ function EventRow({
       className="rounded-row bg-card p-3"
       style={elevation.row}
     >
-      <Body className="font-medium">
+      <Body weight="medium">
         {known
           ? t(`detail.eventType.${event.event_type}`, {
               defaultValue: event.event_type,

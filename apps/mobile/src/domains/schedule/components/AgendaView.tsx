@@ -182,7 +182,7 @@ export function AgendaView({
                 testID={`schedule-away-${item.localDate}`}
                 className="mx-6 mb-2 rounded-row bg-muted px-3 py-2"
               >
-                <Body className="font-medium text-muted-foreground">
+                <Body weight="medium" className="text-muted-foreground">
                   {t('shifts.awayBand')}
                 </Body>
                 {item.message ? (

@@ -11,11 +11,11 @@ import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { PostHogProvider } from 'posthog-react-native';
-import { useEffect, useState } from 'react';
+import { type ComponentProps, useEffect, useMemo, useState } from 'react';
 import { View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
-import ToastManager from 'toastify-react-native';
+import ToastManager, { BaseToast } from 'toastify-react-native';
 import { useThemeColors } from '@/lib/design-tokens';
 import { queryClient } from '@/src/api/queryClient';
 import {
@@ -52,10 +52,43 @@ setupNetworkManagers();
 
 const analyticsPlugins = createDefaultPlugins();
 
+type DaylightToastProps = ComponentProps<typeof BaseToast>;
+
+function createDaylightToastConfig(colors: ReturnType<typeof useThemeColors>) {
+  const base = {
+    backgroundColor: colors.card,
+    textColor: colors.foreground,
+    closeIconColor: colors.mutedForeground,
+    theme: 'light' as const,
+    style: { borderRadius: 20 },
+  };
+
+  const themed = (accentColor: string) => (props: DaylightToastProps) => (
+    <BaseToast
+      {...props}
+      {...base}
+      iconColor={props.iconColor ?? accentColor}
+      progressBarColor={props.progressBarColor ?? accentColor}
+    />
+  );
+
+  return {
+    success: themed(colors.success),
+    error: themed(colors.destructive),
+    warn: themed(colors.warning),
+    info: themed(colors.foreground),
+    default: themed(colors.foreground),
+  };
+}
+
 function RootLayout() {
   const initializeAuth = useAuthStore(s => s.initializeAuth);
   const cleanupAuth = useAuthStore(s => s.cleanupAuth);
   const themeColors = useThemeColors();
+  const toastConfig = useMemo(
+    () => createDaylightToastConfig(themeColors),
+    [themeColors]
+  );
   const [splashDone, setSplashDone] = useState(false);
 
   useEffect(() => {
@@ -86,7 +119,10 @@ function RootLayout() {
                     </SafeAreaView>
                   </AppGate>
                   <PortalHost />
-                  <ToastManager />
+                  <ToastManager
+                    config={toastConfig}
+                    textStyle={{ fontSize: 16, fontWeight: '400' }}
+                  />
                   {/* Inside QueryClientProvider so AnimatedSplash can read
                       useIsOnboarded and hold until routing is decidable. */}
                   {splashDone ? null : (

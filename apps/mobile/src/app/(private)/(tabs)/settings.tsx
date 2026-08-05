@@ -370,24 +370,27 @@ export default function SettingsScreen() {
         fitContent
         showCloseButton
       >
-        <View className="gap-4 px-6 pb-4">
+        <View
+          className="gap-4 pb-4"
+          style={{ paddingHorizontal: SCREEN_CONTENT_STYLE.padding }}
+        >
           <H4>{t('settings:deleteAccountConfirmTitle')}</H4>
           <Body className="text-muted-foreground">
             {t('settings:deleteAccountConfirmBody')}
           </Body>
           <View className="gap-1">
-            <Body className="text-sm text-muted-foreground">
+            <Small className="text-muted-foreground">
               • {t('settings:deleteAccountConsequenceAccount')}
-            </Body>
-            <Body className="text-sm text-muted-foreground">
+            </Small>
+            <Small className="text-muted-foreground">
               • {t('settings:deleteAccountConsequenceKeeps')}
-            </Body>
+            </Small>
           </View>
           {accountEmail ? (
             <View className="gap-2">
-              <Body className="text-sm text-muted-foreground">
+              <Small className="text-muted-foreground">
                 {t('settings:deleteAccountTypeEmail')}
-              </Body>
+              </Small>
               <Input
                 testID="settings-delete-confirm-email"
                 accessibilityLabel={t('settings:deleteAccountTypeEmail')}

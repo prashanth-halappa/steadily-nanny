@@ -196,11 +196,14 @@ export function NannyWeekView({
     totalMinutes,
     scheduledMinutesFor(entries)
   );
+  const todayISO = localDateInZone(timeZone, new Date(nowMs));
 
-  const dayRows = weekDates.map(date => ({
-    date,
-    entries: entries.filter(entry => entry.local_date === date),
-  }));
+  const dayRows = weekDates
+    .map(date => ({
+      date,
+      entries: entries.filter(entry => entry.local_date === date),
+    }))
+    .filter(row => row.entries.length > 0 || row.date === todayISO);
 
   const timesheet = timesheetQuery.isError
     ? null
@@ -224,7 +227,6 @@ export function NannyWeekView({
     earningsOk?.currency ?? arrangementQuery.data?.currency ?? 'GBP';
   const mileageRateMinor =
     arrangementQuery.data?.mileage_rate_per_mile_minor ?? null;
-  const todayISO = localDateInZone(timeZone);
 
   return (
     <>

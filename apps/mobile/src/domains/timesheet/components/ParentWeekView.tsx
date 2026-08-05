@@ -283,10 +283,16 @@ export function ParentWeekView({
   // verified against the live API (api-timesheet's reply, 2026-08-01).
   const isActionable = timesheet?.status === TIMESHEET_STATUSES.SUBMITTED;
 
-  const dayRows = weekDates.map(date => ({
-    date,
-    entries: entries.filter(entry => entry.local_date === date),
-  }));
+  const dayRows = weekDates
+    .map(date => ({
+      date,
+      entries: entries.filter(entry => entry.local_date === date),
+    }))
+    .filter(
+      row =>
+        row.entries.length > 0 ||
+        row.date === localDateInZone(timeZone, new Date(nowMs))
+    );
 
   // TIER0-CX-SPEC.md §4 — the money surface. `earnings` is `undefined` only
   // when there is no timesheet row at all yet (nothing clocked out this

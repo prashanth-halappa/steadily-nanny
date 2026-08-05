@@ -60,7 +60,7 @@ export function PendingScheduleCard() {
 
   return (
     <Card testID="today-pending-schedule-card" className="gap-2 p-5.5">
-      <Body className="font-semibold">{t('todayCard.pendingTitle')}</Body>
+      <Body weight="semibold">{t('todayCard.pendingTitle')}</Body>
       <Body className="text-muted-foreground" tabular>
         {t('todayCard.pendingBody', { count: days.length, hours: totalHours })}
       </Body>

@@ -9,6 +9,7 @@ import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Pressable, View } from 'react-native';
 import { Card } from '@/src/components/ui/card';
+import { LiveDot } from '@/src/components/ui/live-dot';
 import { Body } from '@/src/components/ui/typography';
 import { resolveMemberDisplayName } from '@/src/domains/schedule/utils/memberDisplayName';
 import {
@@ -190,13 +191,8 @@ export function NannyLiveStatusCard({
     >
       <Card live={live} className="gap-1 p-5.5">
         <View className="flex-row items-center gap-2">
-          {live ? (
-            <View
-              testID="today-nanny-live-dot"
-              className="h-[10px] w-[10px] rounded-full bg-highlight"
-            />
-          ) : null}
-          <Body className="font-semibold">{title}</Body>
+          {live ? <LiveDot testID="today-nanny-live-dot" /> : null}
+          <Body weight="semibold">{title}</Body>
         </View>
         <Body className="text-muted-foreground">{body}</Body>
       </Card>

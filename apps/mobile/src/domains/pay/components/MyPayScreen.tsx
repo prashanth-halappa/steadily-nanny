@@ -36,6 +36,7 @@ import { usePtoBalance } from '@/src/hooks/queries/usePtoBalance';
 import { localDateInZone } from '@/src/lib/localDate';
 import { formatMoney, formatRate } from '@/src/lib/money';
 import { useAuthStore } from '@/src/store/auth';
+import { useElevation } from '~/lib/design-tokens/elevation';
 import { formatDisplayDateWithYear } from '../utils/payArrangementForm';
 import { buildTermRows } from '../utils/termRows';
 import { AmountRow } from './AmountRow';
@@ -52,6 +53,7 @@ function MyPayHouseholdCard({
   const current = useCurrentPayArrangement(household.id, carerId);
   const history = usePayArrangementHistory(household.id, carerId);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const elevation = useElevation();
 
   // This household's own local year — each card is per-family, so the
   // year the balance covers is THAT family's calendar, not the device's.
@@ -66,7 +68,7 @@ function MyPayHouseholdCard({
   return (
     <Card testID={`my-pay-household-${household.id}`}>
       <CardContent className="gap-3">
-        <Body className="font-medium">{household.name}</Body>
+        <Body weight="medium">{household.name}</Body>
         {current.isPending ? (
           <LoadingIndicator testID="my-pay-loading" />
         ) : !current.data ? (
@@ -116,8 +118,9 @@ function MyPayHouseholdCard({
                     key={row.id}
                     testID={`my-pay-history-row-${row.id}`}
                     className="gap-1 rounded-row bg-card px-4 py-3"
+                    style={elevation.row}
                   >
-                    <Body className="font-medium" tabular>
+                    <Body weight="medium" tabular>
                       {formatRate(row.rate_minor, row.currency)}
                     </Body>
                     <Small className="text-muted-foreground">

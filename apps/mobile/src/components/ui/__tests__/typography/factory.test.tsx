@@ -65,6 +65,22 @@ beforeAll(async () => {
   TextClassContext = (await import('../../text')).TextClassContext;
 });
 
+function flattenStyle(style: unknown): Record<string, unknown> | undefined {
+  if (!style) return undefined;
+  if (Array.isArray(style)) {
+    return Object.assign(
+      {},
+      ...style
+        .filter(Boolean)
+        .map(s => (typeof s === 'object' && s !== null ? s : {}))
+    );
+  }
+  if (typeof style === 'object') {
+    return style as Record<string, unknown>;
+  }
+  return undefined;
+}
+
 function getProps(
   tree: ReactTestRendererJSON | ReactTestRendererJSON[] | null
 ): Record<string, unknown> | undefined {
@@ -137,5 +153,54 @@ describe('createTypographyComponent — TextClassContext resolution', () => {
     const { toJSON } = render(<Sample>label</Sample>);
     const className = getProps(toJSON())?.className;
     expect(className).toBe('text-muted-foreground web:select-text');
+  });
+});
+
+describe('createTypographyComponent — resolved inline style', () => {
+  beforeEach(() => {
+    cleanup();
+  });
+
+  it('applies token fontSize, lineHeight, and fontWeight from inline style', () => {
+    const Sample = createTypographyComponent(token, 'Sample');
+    const { toJSON } = render(<Sample>label</Sample>);
+    const flat = flattenStyle(getProps(toJSON())?.style);
+    expect(flat?.fontSize).toBe(16);
+    expect(flat?.lineHeight).toBe(24);
+    expect(flat?.fontWeight).toBe('600');
+  });
+
+  it('applies Figtree via inline fontFamily', () => {
+    const Sample = createTypographyComponent(token, 'Sample');
+    const { toJSON } = render(<Sample>label</Sample>);
+    const flat = flattenStyle(getProps(toJSON())?.style);
+    expect(flat?.fontFamily).toBe('Figtree');
+  });
+
+  it('lets weight prop override token fontWeight in resolved style', () => {
+    const Sample = createTypographyComponent(token, 'Sample');
+    const { toJSON } = render(<Sample weight="bold">label</Sample>);
+    const flat = flattenStyle(getProps(toJSON())?.style);
+    expect(flat?.fontWeight).toBe('700');
+    expect(flat?.fontSize).toBe(16);
+  });
+
+  it('keeps token fontWeight when weight prop is omitted', () => {
+    const Sample = createTypographyComponent(token, 'Sample');
+    const { toJSON } = render(<Sample className="font-light">label</Sample>);
+    const flat = flattenStyle(getProps(toJSON())?.style);
+    // className font-light is dead — token weight must still render
+    expect(flat?.fontWeight).toBe('600');
+  });
+
+  it('lets explicit style prop win over weight prop', () => {
+    const Sample = createTypographyComponent(token, 'Sample');
+    const { toJSON } = render(
+      <Sample weight="bold" style={{ fontWeight: '300' }}>
+        label
+      </Sample>
+    );
+    const flat = flattenStyle(getProps(toJSON())?.style);
+    expect(flat?.fontWeight).toBe('300');
   });
 });

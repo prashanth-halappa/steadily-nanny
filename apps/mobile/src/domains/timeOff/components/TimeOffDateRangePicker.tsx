@@ -34,7 +34,8 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
-import { Text } from '@/src/components/ui/text';
+import { FieldError } from '@/src/components/ui/field-error';
+import { FieldLabel } from '@/src/components/ui/field-label';
 import { useThemeColors } from '~/lib/design-tokens/useThemeColors';
 import {
   formatDate,
@@ -94,42 +95,37 @@ export function TimeOffDateRangePicker({
     <View testID={baseTestID}>
       <View className="flex-row items-center gap-3">
         <View className="flex-1">
-          <Text className="mb-1 font-medium text-muted-foreground text-xs">
-            {t('dateRange.start')}
-          </Text>
-          <DateTimePicker
-            testID={`${baseTestID}-start`}
-            value={parseDate(start)}
-            mode="date"
-            onChange={handleStartChange}
-            accentColor={colors.primary}
-            textColor={colors.foreground}
-            themeVariant="light"
-          />
+          <FieldLabel>{t('dateRange.start')}</FieldLabel>
+          <View className="native:h-12 items-center justify-center rounded-lg border border-input bg-card px-2">
+            <DateTimePicker
+              testID={`${baseTestID}-start`}
+              value={parseDate(start)}
+              mode="date"
+              onChange={handleStartChange}
+              accentColor={colors.primary}
+              textColor={colors.foreground}
+              themeVariant="light"
+            />
+          </View>
         </View>
         <View className="flex-1">
-          <Text className="mb-1 font-medium text-muted-foreground text-xs">
-            {t('dateRange.end')}
-          </Text>
-          <DateTimePicker
-            testID={`${baseTestID}-end`}
-            value={parseDate(end)}
-            mode="date"
-            onChange={handleEndChange}
-            accentColor={colors.primary}
-            textColor={colors.foreground}
-            themeVariant="light"
-          />
+          <FieldLabel>{t('dateRange.end')}</FieldLabel>
+          <View className="native:h-12 items-center justify-center rounded-lg border border-input bg-card px-2">
+            <DateTimePicker
+              testID={`${baseTestID}-end`}
+              value={parseDate(end)}
+              mode="date"
+              onChange={handleEndChange}
+              accentColor={colors.primary}
+              textColor={colors.foreground}
+              themeVariant="light"
+            />
+          </View>
         </View>
       </View>
-      {showError && (
-        <Text
-          testID={`${baseTestID}-error`}
-          className="mt-2 text-destructive text-xs"
-        >
-          {t('dateRange.endBeforeStart')}
-        </Text>
-      )}
+      <FieldError testID={`${baseTestID}-error`}>
+        {showError ? t('dateRange.endBeforeStart') : null}
+      </FieldError>
     </View>
   );
 }

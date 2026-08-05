@@ -1,5 +1,6 @@
 {
   "screenTitle": "Time off",
+  "filterLabel": "Filter by status",
   "requestTitle": "Book time off",
   "editTitle": "Edit time off",
   "messageLabel": "Note for the family (optional)",

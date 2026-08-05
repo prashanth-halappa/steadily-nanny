@@ -1,4 +1,8 @@
 const { hairlineWidth } = require('nativewind/theme');
+const {
+  FONT_FAMILY,
+  typographyFontSize,
+} = require('./lib/design-tokens/typography-scale');
 
 /** @type {import('tailwindcss').Config} */
 module.exports = {
@@ -27,26 +31,10 @@ module.exports = {
   presets: [require('nativewind/preset')],
   theme: {
     extend: {
-      fontSize: {
-        // Design system typography scale.
-        // Body text minimum 16px for readability.
-        xs: ['12px', { lineHeight: '16px' }],
-        sm: ['14px', { lineHeight: '21px' }], // Caption, label (1.5x line height)
-        base: ['16px', { lineHeight: '24px' }], // Body default (MINIMUM)
-        lg: ['18px', { lineHeight: '27px' }], // Body large
-        xl: ['20px', { lineHeight: '30px' }], // H3
-        '2xl': ['24px', { lineHeight: '36px' }], // H2
-        '3xl': ['28px', { lineHeight: '42px' }], // H1
-        '4xl': ['32px', { lineHeight: '48px' }], // Display
-        // Semantic aliases for design tokens
-        body: ['16px', { lineHeight: '24px' }],
-        'body-lg': ['18px', { lineHeight: '27px' }],
-        'body-sm': ['14px', { lineHeight: '21px' }],
-        caption: ['14px', { lineHeight: '21px' }],
-        label: ['14px', { lineHeight: '21px', fontWeight: '500' }],
-        button: ['16px', { lineHeight: '24px', fontWeight: '500' }],
-        display: ['32px', { lineHeight: '48px', fontWeight: '600' }],
+      fontFamily: {
+        sans: [FONT_FAMILY],
       },
+      fontSize: typographyFontSize,
       spacing: {
         // Design system 8pt grid — use these instead of arbitrary values.
         0.5: '2px',

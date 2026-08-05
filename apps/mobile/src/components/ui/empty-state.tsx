@@ -17,6 +17,7 @@ import { Icon } from '@/lib/icons/iconWithClassName';
 import { cn } from '@/lib/utils';
 import { Button } from '@/src/components/ui/button';
 import { Text } from '@/src/components/ui/text';
+import { spacing } from '~/lib/design-tokens/spacing';
 
 interface EmptyStateProps {
   icon?: LucideIcon;
@@ -109,13 +110,14 @@ export function EmptyState({
                 ? {
                     width: 160,
                     height: 160,
-                    borderRadius: 6,
+                    // 6px has no Daylight token — nearest is rounded-sm (8px).
+                    borderRadius: spacing.radiusSm,
                     marginBottom: 16,
                   }
                 : {
                     width: 240,
                     height: 240,
-                    borderRadius: 8,
+                    borderRadius: spacing.radiusSm,
                     marginBottom: 16,
                   }
             }

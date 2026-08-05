@@ -60,11 +60,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button } from '@/src/components/ui/button';
 import { ChildChip } from '@/src/components/ui/child-chip';
 import { EmptyState } from '@/src/components/ui/empty-state';
+import { FieldLabel } from '@/src/components/ui/field-label';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { StatusPill } from '@/src/components/ui/status-pill';
 import { Text } from '@/src/components/ui/text';
 import { TimeRangePicker } from '@/src/components/ui/time-range-picker';
-import { Body } from '@/src/components/ui/typography';
+import { Body, Caption } from '@/src/components/ui/typography';
 import { WeekStrip } from '@/src/components/ui/week-strip';
 import { useHouseholdCarers } from '@/src/domains/schedule/hooks/useHouseholdCarers';
 import { SetupScreenShell } from '@/src/domains/setup/components/SetupScreenShell';
@@ -498,7 +499,7 @@ export function ScheduleBuildScreen({
                 return (
                   <View key={day} className="gap-2">
                     <View className="flex-row items-center justify-between gap-2">
-                      <Body className="font-medium">{t(`weekday.${day}`)}</Body>
+                      <Body weight="medium">{t(`weekday.${day}`)}</Body>
                       {outsideAvailability ? (
                         <StatusPill
                           variant="outside-hours"
@@ -508,9 +509,9 @@ export function ScheduleBuildScreen({
                       ) : null}
                     </View>
                     {outsideAvailability ? (
-                      <Body className="text-warning text-xs">
+                      <Caption className="text-warning">
                         {t('build.outsideHoursNote')}
-                      </Body>
+                      </Caption>
                     ) : null}
                     <TimeRangePicker
                       testID={`schedule-build-time-range-${day}`}
@@ -523,9 +524,7 @@ export function ScheduleBuildScreen({
                         }))
                       }
                     />
-                    <Body className="text-muted-foreground text-xs">
-                      {t('build.childrenLabel')}
-                    </Body>
+                    <FieldLabel>{t('build.childrenLabel')}</FieldLabel>
                     <View className="flex-row flex-wrap gap-2">
                       {(children.data ?? []).map(child => (
                         <ChildChip
@@ -605,7 +604,7 @@ export function ScheduleBuildScreen({
               .filter(day => selectedDays.includes(day))
               .map(day => (
                 <View key={day} className="gap-1">
-                  <Body className="font-medium" tabular>
+                  <Body weight="medium" tabular>
                     {t(`weekday.${day}`)} —{' '}
                     {dayTimes[day]?.start ?? DEFAULT_START}
                     {'–'}

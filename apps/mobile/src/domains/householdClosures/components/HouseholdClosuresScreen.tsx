@@ -92,7 +92,14 @@ export function HouseholdClosuresScreen() {
     return (
       <View testID="household-closures-screen" className="flex-1 bg-background">
         <SafeAreaView style={{ flex: 1 }} className="bg-background">
-          <View className="px-6 pt-4">{backHeader}</View>
+          <View
+            style={{
+              paddingHorizontal: SCREEN_CONTENT_STYLE.padding,
+              paddingTop: 16,
+            }}
+          >
+            {backHeader}
+          </View>
           <LoadingIndicator testID="household-closures-loading" />
         </SafeAreaView>
       </View>
@@ -103,8 +110,19 @@ export function HouseholdClosuresScreen() {
     return (
       <View testID="household-closures-screen" className="flex-1 bg-background">
         <SafeAreaView style={{ flex: 1 }} className="bg-background">
-          <View className="px-6 pt-4">{backHeader}</View>
-          <View testID="household-closures-not-available" className="mt-8">
+          <View
+            style={{
+              paddingHorizontal: SCREEN_CONTENT_STYLE.padding,
+              paddingTop: 16,
+            }}
+          >
+            {backHeader}
+          </View>
+          <View
+            testID="household-closures-not-available"
+            className="mt-8"
+            style={{ paddingHorizontal: SCREEN_CONTENT_STYLE.padding }}
+          >
             <EmptyState
               variant="inline"
               title={t('closures.notAvailableTitle')}
@@ -192,7 +210,7 @@ export function HouseholdClosuresScreen() {
                 {t('closures.screenSubtitle')}
               </Small>
               <View testID="household-closures-form" className="mb-6 gap-4">
-                <Body className="font-medium">{t('closures.formTitle')}</Body>
+                <Body weight="medium">{t('closures.formTitle')}</Body>
                 <TimeOffDateRangePicker
                   testID="household-closures-dates"
                   start={startDate}

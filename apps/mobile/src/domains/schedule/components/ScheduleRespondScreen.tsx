@@ -45,6 +45,7 @@ import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { BottomSheetBase } from '@/src/components/custom/BottomSheetBase';
 import { Button } from '@/src/components/ui/button';
 import { ChildChip } from '@/src/components/ui/child-chip';
+import { FieldLabel } from '@/src/components/ui/field-label';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { StatusPill } from '@/src/components/ui/status-pill';
 import { Text } from '@/src/components/ui/text';
@@ -176,7 +177,7 @@ export function ScheduleRespondScreen({
                 style={elevation.row}
               >
                 <View className="gap-2">
-                  <Body className="font-semibold" tabular>
+                  <Body weight="semibold" tabular>
                     {t(`weekday.${day.weekday}`)} ·{' '}
                     {formatWallClockTime(day.start_time)}–
                     {formatWallClockTime(day.end_time)}
@@ -192,9 +193,7 @@ export function ScheduleRespondScreen({
 
                 {day.children.length > 0 ? (
                   <View className="gap-1.5">
-                    <Body className="text-muted-foreground text-xs">
-                      {t('respond.childrenLabel')}
-                    </Body>
+                    <FieldLabel>{t('respond.childrenLabel')}</FieldLabel>
                     <View className="flex-row flex-wrap gap-2">
                       {day.children.map(dayChild => {
                         const child = childrenById.get(dayChild.child_id);
@@ -221,11 +220,7 @@ export function ScheduleRespondScreen({
         className="gap-3 bg-background px-6 pb-6 pt-4"
         style={elevation.row}
       >
-        <Body
-          testID="schedule-respond-total-hours"
-          className="font-semibold"
-          tabular
-        >
+        <Body testID="schedule-respond-total-hours" weight="semibold" tabular>
           {t('respond.totalHours', { hours: totalHours })}
         </Body>
 

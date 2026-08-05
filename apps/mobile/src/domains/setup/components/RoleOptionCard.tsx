@@ -10,8 +10,7 @@
 import { View } from 'react-native';
 import { AnimatedPressable } from '@/lib/animations';
 import { cn } from '@/lib/utils';
-import { Text } from '@/src/components/ui/text';
-import { Body } from '@/src/components/ui/typography';
+import { Body, H4 } from '@/src/components/ui/typography';
 
 interface RoleOptionCardProps {
   title: string;
@@ -41,14 +40,7 @@ export function RoleOptionCard({
       )}
     >
       <View className="gap-1">
-        <Text
-          className={cn(
-            'font-semibold text-lg',
-            selected ? 'text-primary' : 'text-foreground'
-          )}
-        >
-          {title}
-        </Text>
+        <H4 className={selected ? 'text-primary' : undefined}>{title}</H4>
         <Body className="text-muted-foreground">{description}</Body>
       </View>
     </AnimatedPressable>

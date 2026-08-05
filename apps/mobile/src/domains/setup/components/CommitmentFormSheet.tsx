@@ -11,10 +11,11 @@ import {
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
+import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { BottomSheetBase } from '@/src/components/custom/BottomSheetBase';
 import { Button } from '@/src/components/ui/button';
+import { FieldLabel } from '@/src/components/ui/field-label';
 import { Input } from '@/src/components/ui/input';
-import { Label } from '@/src/components/ui/label';
 import { Switch } from '@/src/components/ui/switch';
 import { Text } from '@/src/components/ui/text';
 import { TimeRangePicker } from '@/src/components/ui/time-range-picker';
@@ -104,11 +105,14 @@ export function CommitmentFormSheet({
       fitContent
       testID="commitment-form-sheet"
     >
-      <View className="gap-3 px-6 pb-4">
+      <View
+        className="gap-3 pb-4"
+        style={{ paddingHorizontal: SCREEN_CONTENT_STYLE.padding }}
+      >
         <H3>{t('commitments.form.title', { childName })}</H3>
 
         <View className="gap-2">
-          <Label>{t('commitments.form.kindLabel')}</Label>
+          <FieldLabel>{t('commitments.form.kindLabel')}</FieldLabel>
           <View
             className="flex-row flex-wrap gap-2"
             testID="commitment-kind-row"
@@ -130,7 +134,7 @@ export function CommitmentFormSheet({
         </View>
 
         <View className="gap-2">
-          <Label>{t('commitments.form.labelLabel')}</Label>
+          <FieldLabel>{t('commitments.form.labelLabel')}</FieldLabel>
           <Input
             testID="commitment-form-label"
             accessibilityLabel={t('commitments.form.labelA11y')}
@@ -141,7 +145,7 @@ export function CommitmentFormSheet({
         </View>
 
         <View className="gap-2">
-          <Label>{t('commitments.form.daysLabel')}</Label>
+          <FieldLabel>{t('commitments.form.daysLabel')}</FieldLabel>
           <WeekStrip
             testID="commitment-form-days"
             selected={days}
@@ -150,7 +154,7 @@ export function CommitmentFormSheet({
         </View>
 
         <View className="gap-2">
-          <Label>{t('commitments.form.timeLabel')}</Label>
+          <FieldLabel>{t('commitments.form.timeLabel')}</FieldLabel>
           <TimeRangePicker
             testID="commitment-form-time"
             start={startTime}
@@ -163,7 +167,9 @@ export function CommitmentFormSheet({
         </View>
 
         <View className="flex-row items-center justify-between gap-3">
-          <Label>{t('commitments.form.excludedLabel')}</Label>
+          <FieldLabel className="mb-0">
+            {t('commitments.form.excludedLabel')}
+          </FieldLabel>
           <Switch
             testID="commitment-form-excluded"
             checked={excludedFromCover}

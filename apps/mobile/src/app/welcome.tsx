@@ -3,11 +3,12 @@ import { type Href, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { Platform, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { Button } from '@/src/components/ui/button';
 import { InlineError } from '@/src/components/ui/inline-error';
 import { LoadingButton } from '@/src/components/ui/loading-button';
 import { Text } from '@/src/components/ui/text';
-import { Body, Display, H1 } from '@/src/components/ui/typography';
+import { Body, Display, Small } from '@/src/components/ui/typography';
 import { appIdentity } from '@/src/config/appIdentity';
 import { useAuthStore } from '@/src/store/auth';
 import { openExternalUrl } from '@/src/utils/openExternalUrl';
@@ -29,14 +30,27 @@ export default function Welcome() {
       className="bg-background"
       testID="welcome-screen"
     >
-      <View className="flex-1 justify-between gap-3 px-6 pb-12 pt-8">
-        <View className="gap-3">
-          <H1 testID="welcome-brand">{appIdentity.name}</H1>
+      <View
+        style={{
+          flex: 1,
+          paddingHorizontal: SCREEN_CONTENT_STYLE.padding,
+          paddingBottom: SCREEN_CONTENT_STYLE.padding,
+        }}
+        className="gap-6"
+      >
+        <View className="flex-1 justify-center gap-3">
+          <Body
+            testID="welcome-brand"
+            weight="semibold"
+            className="text-muted-foreground"
+          >
+            {appIdentity.name}
+          </Body>
           <Display>{t('welcome:title')}</Display>
           <Body className="text-muted-foreground">{t('welcome:subtitle')}</Body>
         </View>
 
-        <View className="gap-3">
+        <View className="shrink-0 gap-3">
           {error ? (
             <InlineError testID="welcome-error" message={error} />
           ) : null}
@@ -82,10 +96,7 @@ export default function Welcome() {
             <Text>{t('auth:signInWithEmail')}</Text>
           </Button>
 
-          <Body
-            testID="welcome-legal"
-            className="text-muted-foreground text-sm"
-          >
+          <Small testID="welcome-legal" className="text-muted-foreground">
             {t('auth:legalPrefix')}{' '}
             <Text
               className="text-primary"
@@ -101,7 +112,7 @@ export default function Welcome() {
               {t('auth:privacyPolicy')}
             </Text>
             {t('auth:legalSuffix')}
-          </Body>
+          </Small>
         </View>
       </View>
     </SafeAreaView>

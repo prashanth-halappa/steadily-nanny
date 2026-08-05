@@ -23,7 +23,7 @@ import { ChevronRight } from 'lucide-react-native';
 import { useTranslation } from 'react-i18next';
 import { Pressable, View } from 'react-native';
 import { Icon } from '@/lib/icons/iconWithClassName';
-import { Body, Small } from '@/src/components/ui/typography';
+import { Body, Figure, Small } from '@/src/components/ui/typography';
 import { formatMoney } from '@/src/lib/money';
 import { useElevation } from '~/lib/design-tokens/elevation';
 import type { Expense } from '../types';
@@ -78,9 +78,13 @@ export function PendingExpensesRow({
           {t('pendingRow.count', { count: pendingExpenses.length })}
         </Body>
         {amountLabel !== null ? (
-          <Body testID={`${testID}-amount`} className="flex-shrink-0" tabular>
+          <Figure
+            testID={`${testID}-amount`}
+            className="flex-shrink-0"
+            weight="medium"
+          >
             {amountLabel}
-          </Body>
+          </Figure>
         ) : null}
         <Icon icon={ChevronRight} size={20} className="text-muted-foreground" />
       </View>

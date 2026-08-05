@@ -24,6 +24,8 @@ import { Text } from '@/src/components/ui/text';
 import { Body, H1 } from '@/src/components/ui/typography';
 import { SlimProgressBar } from './SlimProgressBar';
 
+const SCREEN_GUTTER = SCREEN_CONTENT_STYLE.padding;
+
 interface SetupScreenShellProps {
   /** Flow progress 0..1 (omit to hide the bar). */
   progress?: number;
@@ -63,7 +65,7 @@ export function SetupScreenShell({
       {__DEV__ ? <View style={{ height: 48 }} /> : null}
 
       {onBack ? (
-        <View className="px-6 pb-1">
+        <View style={{ paddingHorizontal: SCREEN_GUTTER }} className="pb-1">
           <Pressable
             testID={`${testID}-back`}
             accessibilityRole="button"
@@ -77,23 +79,31 @@ export function SetupScreenShell({
       ) : null}
 
       {typeof progress === 'number' ? (
-        <View className="px-6 pt-4">
+        <View style={{ paddingHorizontal: SCREEN_GUTTER }} className="pt-4">
           <SlimProgressBar ratio={progress} />
         </View>
       ) : null}
 
       <ScrollView
         style={{ flex: 1 }}
-        contentContainerStyle={{ ...SCREEN_CONTENT_STYLE, paddingBottom: 120 }}
+        contentContainerStyle={{
+          flexGrow: 1,
+          padding: SCREEN_GUTTER,
+          paddingBottom: 120,
+        }}
       >
-        <H1>{title}</H1>
-        {subtitle ? (
-          <Body className="mt-2 text-muted-foreground">{subtitle}</Body>
+        <View>
+          <H1>{title}</H1>
+          {subtitle ? (
+            <Body className="mt-2 text-muted-foreground">{subtitle}</Body>
+          ) : null}
+        </View>
+        {children ? (
+          <View className="mt-8 flex-1 justify-center gap-4">{children}</View>
         ) : null}
-        {children ? <View className="mt-6 gap-4">{children}</View> : null}
       </ScrollView>
 
-      <View className="gap-3 px-6 pb-8">
+      <View className="gap-3 pb-8" style={{ paddingHorizontal: SCREEN_GUTTER }}>
         <Button testID={`${testID}-cta`} onPress={onCta} disabled={ctaDisabled}>
           <Text>{ctaLabel}</Text>
         </Button>

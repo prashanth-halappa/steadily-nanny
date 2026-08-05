@@ -32,7 +32,7 @@ import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { cn } from '@/lib/utils';
 import { EmptyState } from '@/src/components/ui/empty-state';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
-import { Body, H1, Small } from '@/src/components/ui/typography';
+import { Body, H1, MetadataLabel, Small } from '@/src/components/ui/typography';
 import { SETUP_ROLES } from '@/src/domains/setup/types';
 import { useCancelTimeOff } from '@/src/hooks/mutations/useCancelTimeOff';
 import { useUpdateTimeOff } from '@/src/hooks/mutations/useUpdateTimeOff';
@@ -110,7 +110,7 @@ export function TimeOffScreen() {
     return (
       <View testID="time-off-screen" className="flex-1 bg-background">
         <SafeAreaView style={{ flex: 1 }} className="bg-background">
-          <View className="px-6 pt-4">{backHeader}</View>
+          <View className="px-5.5 pt-4">{backHeader}</View>
           <LoadingIndicator testID="time-off-loading" />
         </SafeAreaView>
       </View>
@@ -121,7 +121,7 @@ export function TimeOffScreen() {
     return (
       <View testID="time-off-screen" className="flex-1 bg-background">
         <SafeAreaView style={{ flex: 1 }} className="bg-background">
-          <View className="px-6 pt-4">{backHeader}</View>
+          <View className="px-5.5 pt-4">{backHeader}</View>
           <View testID="time-off-not-available" className="mt-8">
             <EmptyState
               variant="inline"
@@ -169,31 +169,33 @@ export function TimeOffScreen() {
               ) : (
                 <TimeOffRequestForm />
               )}
-              <View
-                testID="time-off-status-filters"
-                className="mt-4 flex-row flex-wrap gap-2"
-              >
-                {FILTERS.map(filter => (
-                  <Pressable
-                    key={filter}
-                    testID={`time-off-filter-${filter}`}
-                    accessibilityRole="button"
-                    onPress={() => setStatusFilter(filter)}
-                  >
-                    <Small
-                      className={cn(
-                        'rounded-chip border px-3 py-1.5',
-                        statusFilter === filter
-                          ? 'border-primary bg-primary/10 text-primary'
-                          : 'border-border text-foreground'
-                      )}
+              <View testID="time-off-status-filters" className="mt-4 gap-2">
+                <MetadataLabel className="text-muted-foreground">
+                  {t('filterLabel')}
+                </MetadataLabel>
+                <View className="flex-row flex-wrap gap-2">
+                  {FILTERS.map(filter => (
+                    <Pressable
+                      key={filter}
+                      testID={`time-off-filter-${filter}`}
+                      accessibilityRole="button"
+                      onPress={() => setStatusFilter(filter)}
                     >
-                      {filter === 'all'
-                        ? t('filterAll')
-                        : t(`status.${filter}`)}
-                    </Small>
-                  </Pressable>
-                ))}
+                      <Small
+                        className={cn(
+                          'rounded-chip border px-3 py-2',
+                          statusFilter === filter
+                            ? 'border-primary bg-primary/10 text-primary'
+                            : 'border-border text-foreground'
+                        )}
+                      >
+                        {filter === 'all'
+                          ? t('filterAll')
+                          : t(`status.${filter}`)}
+                      </Small>
+                    </Pressable>
+                  ))}
+                </View>
               </View>
             </View>
           }

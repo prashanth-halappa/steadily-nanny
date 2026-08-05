@@ -64,9 +64,7 @@ export default function CarerAvailabilityScreen() {
               testID={`carer-availability-${row.id}`}
               className="rounded-row bg-card px-4 py-3"
             >
-              <Body className="font-medium">
-                {tSchedule(`weekday.${row.weekday}`)}
-              </Body>
+              <Body weight="medium">{tSchedule(`weekday.${row.weekday}`)}</Body>
               <Small className="text-muted-foreground" tabular>
                 {(row.earliest_start ?? '—').toString().slice(0, 5)}–
                 {(row.latest_finish ?? '—').toString().slice(0, 5)}

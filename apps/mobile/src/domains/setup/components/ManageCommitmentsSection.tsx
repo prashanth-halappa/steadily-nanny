@@ -11,7 +11,7 @@ import { Pressable, View } from 'react-native';
 import { Icon } from '@/lib/icons/iconWithClassName';
 import { Button } from '@/src/components/ui/button';
 import { Text } from '@/src/components/ui/text';
-import { Body, H3 } from '@/src/components/ui/typography';
+import { Body, H3, Small } from '@/src/components/ui/typography';
 import {
   buildWeeklyRrule,
   CommitmentFormSheet,
@@ -46,11 +46,11 @@ function CommitmentRow({
   return (
     <View
       testID={`commitment-row-${commitment.id}`}
-      className="flex-row items-center justify-between rounded-lg bg-muted p-3"
+      className="flex-row items-center justify-between rounded-row bg-muted p-3"
     >
-      <View className="flex-1 gap-0.5">
-        <Body className="font-medium">{commitment.label}</Body>
-        <Body className="text-xs text-muted-foreground">
+      <View className="flex-1 gap-1">
+        <Body weight="medium">{commitment.label}</Body>
+        <Small className="text-muted-foreground">
           {t(commitmentKindLabelKey(commitment.kind), {
             defaultValue: commitment.kind,
           })}{' '}
@@ -60,7 +60,7 @@ function CommitmentRow({
           {commitment.excluded_from_cover
             ? t('commitments.rowExcludedFromCover')
             : ''}
-        </Body>
+        </Small>
       </View>
       <Pressable
         testID={`commitment-delete-${commitment.id}`}
@@ -105,12 +105,12 @@ export function ManageCommitmentsSection({
   return (
     <View
       testID={`manage-commitments-${childId}`}
-      className="gap-2 rounded-lg border border-border p-3"
+      className="gap-2 rounded-row border border-border p-3"
     >
-      <H3 className="text-base">{t('commitments.sectionTitle')}</H3>
-      <Body className="text-xs text-muted-foreground">
+      <H3>{t('commitments.sectionTitle')}</H3>
+      <Small className="text-muted-foreground">
         {t('commitments.sectionBody')}
-      </Body>
+      </Small>
 
       {(commitments.data ?? []).map(c => (
         <CommitmentRow

@@ -26,6 +26,7 @@
  */
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
+import { Card, CardContent } from '@/src/components/ui/card';
 import { H4, Small } from '@/src/components/ui/typography';
 import { AmountRow } from '@/src/domains/pay/components/AmountRow';
 import { formatEarningsSpanDate } from '@/src/domains/timesheet/utils/earningsFormat';
@@ -55,47 +56,49 @@ export function ReimbursementsCard({
   if (approvedExpenses.length === 0) return null;
 
   return (
-    <View testID={testID} className="mt-4 gap-3 rounded-cell bg-card p-4">
-      <H4>{t('reimbursements.title')}</H4>
+    <Card testID={testID} className="mt-4">
+      <CardContent className="gap-3">
+        <H4>{t('reimbursements.title')}</H4>
 
-      <View className="gap-3">
-        {approvedExpenses.map(expense => (
-          <AmountRow
-            key={expense.id}
-            testID={`${testID}-line-${expense.id}`}
-            label={expense.description}
-            value={
-              expense.amount_minor !== null
-                ? formatMoney(expense.amount_minor, currency)
-                : null
-            }
-            subLine={formatEarningsSpanDate(expense.local_date)}
-          />
-        ))}
-      </View>
-
-      {totalMinor !== null ? (
-        <View className="flex-row items-baseline justify-between gap-3 rounded-cell bg-muted px-4 py-3">
-          <H4>{t('reimbursements.totalLabel')}</H4>
-          <H4 testID={`${testID}-total`} tabular>
-            {formatMoney(totalMinor, currency)}
-          </H4>
+        <View className="gap-3">
+          {approvedExpenses.map(expense => (
+            <AmountRow
+              key={expense.id}
+              testID={`${testID}-line-${expense.id}`}
+              label={expense.description}
+              value={
+                expense.amount_minor !== null
+                  ? formatMoney(expense.amount_minor, currency)
+                  : null
+              }
+              subLine={formatEarningsSpanDate(expense.local_date)}
+            />
+          ))}
         </View>
-      ) : (
-        <View
-          testID={`${testID}-total-unavailable`}
-          className="rounded-cell bg-muted px-4 py-3"
-        >
-          <Small className="text-muted-foreground">
-            {t('reimbursements.totalUnavailable')}
-          </Small>
-        </View>
-      )}
 
-      <Small testID={`${testID}-note`} className="text-muted-foreground">
-        {t('reimbursements.note')}
-      </Small>
-    </View>
+        {totalMinor !== null ? (
+          <View className="flex-row items-baseline justify-between gap-3 rounded-cell bg-muted px-4 py-3">
+            <H4>{t('reimbursements.totalLabel')}</H4>
+            <H4 testID={`${testID}-total`} tabular>
+              {formatMoney(totalMinor, currency)}
+            </H4>
+          </View>
+        ) : (
+          <View
+            testID={`${testID}-total-unavailable`}
+            className="rounded-cell bg-muted px-4 py-3"
+          >
+            <Small className="text-muted-foreground">
+              {t('reimbursements.totalUnavailable')}
+            </Small>
+          </View>
+        )}
+
+        <Small testID={`${testID}-note`} className="text-muted-foreground">
+          {t('reimbursements.note')}
+        </Small>
+      </CardContent>
+    </Card>
   );
 }
 

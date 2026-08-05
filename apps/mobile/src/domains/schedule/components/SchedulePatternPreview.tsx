@@ -56,7 +56,7 @@ export function SchedulePatternPreview({
 
   return (
     <Card testID={testID} className="gap-3 p-5.5">
-      <Body testID={`${testID}-hours`} className="font-semibold" tabular>
+      <Body testID={`${testID}-hours`} weight="semibold" tabular>
         {t('pending.previewHoursTotal', { hours: totalHours })}
       </Body>
       {until ? (
@@ -88,7 +88,7 @@ export function SchedulePatternPreview({
       ) : null}
       {ordered.map(day => (
         <View key={day.id} className="gap-1">
-          <Body className="font-medium" tabular>
+          <Body weight="medium" tabular>
             {t(`weekday.${day.weekday}`)} ·{' '}
             {formatWallClockTime(day.start_time)}–
             {formatWallClockTime(day.end_time)}

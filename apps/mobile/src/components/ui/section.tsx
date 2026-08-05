@@ -1,5 +1,5 @@
 /**
- * Section wrapper component — extracts the repeated px-[22px] mt-8 + H2 heading
+ * Section wrapper component — extracts the repeated px-5.5 mt-8 + H2 heading
  * pattern into a reusable layout primitive for screen sections.
  */
 
@@ -41,7 +41,7 @@ export function Section({
     <View
       testID={testID}
       className={cn(
-        !noPadding && 'px-[22px]',
+        !noPadding && 'px-5.5',
         !noTopMargin && 'mt-8',
         gapMap[gap],
         className

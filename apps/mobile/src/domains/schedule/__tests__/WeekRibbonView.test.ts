@@ -123,6 +123,18 @@ describe('WeekRibbonView source', () => {
     expect(viewSource).toContain('paddingBottom: tabBarScrollPadding');
   });
 
+  it('REGRESSION: bounds the visible hour grid to working hours, expanding when shifts fall outside the default window', () => {
+    expect(viewSource).toContain('WEEK_RIBBON_DEFAULT_START_HOUR');
+    expect(viewSource).toContain('WEEK_RIBBON_DEFAULT_END_HOUR');
+    expect(viewSource).toContain('computeVisibleHours');
+    expect(viewSource).not.toContain('length: 24');
+  });
+
+  it('REGRESSION: uses the 22px screen gutter via SCREEN_CONTENT_STYLE, not px-4', () => {
+    expect(viewSource).toContain('SCREEN_CONTENT_STYLE.padding');
+    expect(viewSource).not.toContain('px-4');
+  });
+
   // The away band is covered for real in `WeekRibbonView.render.test.tsx` —
   // a source grep cannot tell a rendered band from an unreachable one.
 });

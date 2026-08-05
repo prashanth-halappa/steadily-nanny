@@ -161,6 +161,10 @@ const config = {
     // could not add this automatically because this config is dynamic (.js);
     // it must be listed here or the native module is missing at runtime.
     '@react-native-community/datetimepicker',
+    // Figtree Variable — a single embedded font file covering the whole
+    // wght axis (300-900), so numeric fontWeight keeps working (see
+    // GOLDEN-FIXES.md #3). Never add per-weight static font files back.
+    ['expo-font', { fonts: ['./assets/fonts/Figtree.ttf'] }],
     [
       'expo-build-properties',
       {

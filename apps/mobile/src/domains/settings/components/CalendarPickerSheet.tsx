@@ -10,6 +10,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
 import { AnimatedPressable } from '@/lib/animations';
+import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { BottomSheetBase } from '@/src/components/custom/BottomSheetBase';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { Body, H3, Small } from '@/src/components/ui/typography';
@@ -92,7 +93,10 @@ export function CalendarPickerSheet({
       fitContent
       testID="calendar-picker-sheet"
     >
-      <View className="gap-3 px-6 pb-4">
+      <View
+        className="gap-3 pb-4"
+        style={{ paddingHorizontal: SCREEN_CONTENT_STYLE.padding }}
+      >
         <H3>{t('settings:time.calendarSync.pickerTitle')}</H3>
 
         {loading ? (
@@ -103,7 +107,7 @@ export function CalendarPickerSheet({
 
         {showEmptyPrompt ? (
           <View testID="calendar-picker-empty" className="gap-3">
-            <Body className="font-medium">
+            <Body weight="medium">
               {t('settings:time.calendarSync.emptyTitle')}
             </Body>
             <Small className="text-muted-foreground">

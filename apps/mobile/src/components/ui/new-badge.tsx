@@ -39,7 +39,7 @@ export function NewBadge({ size = 'sm', label = 'New' }: NewBadgeProps) {
   }));
 
   const sizeClasses =
-    size === 'sm' ? 'px-1.5 py-0.5 text-[10px]' : 'px-2 py-1 text-xs';
+    size === 'sm' ? 'px-1.5 py-0.5 text-xs' : 'px-2 py-1 text-xs';
 
   return (
     <Animated.View style={animatedStyle}>

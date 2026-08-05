@@ -65,11 +65,10 @@ describe('SchedulePendingScreen', () => {
     expect(screenSource).not.toMatch(/<Modal\b/);
   });
 
-  it('maps the accepted pattern status to the confirmed StatusPill variant', () => {
-    const acceptedIndex = screenSource.indexOf("'accepted'");
-    const confirmedIndex = screenSource.indexOf("'confirmed'");
-    expect(acceptedIndex).toBeGreaterThan(-1);
-    expect(confirmedIndex).toBeGreaterThan(-1);
+  it('maps the accepted pattern status to PatternStatusIndicator, not a shift StatusPill', () => {
+    expect(screenSource).toContain('PatternStatusIndicator');
+    expect(screenSource).toContain('status={patternStatus()}');
+    expect(screenSource).not.toContain('StatusPill');
   });
 
   it('REGRESSION: withdraw is never a bare .mutateAsync() with no rejection handler', () => {

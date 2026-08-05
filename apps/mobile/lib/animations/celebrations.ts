@@ -17,6 +17,10 @@ import Animated, {
   withSequence,
   withTiming,
 } from 'react-native-reanimated';
+import {
+  type ThemeColors,
+  useThemeColors,
+} from '@/lib/design-tokens/useThemeColors';
 
 import { HAPTIC_PATTERNS } from './haptics';
 
@@ -25,16 +29,18 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 /** Number of confetti particles */
 const PARTICLE_COUNT = 20;
 
-/** Confetti particle colors — Daylight palette */
-const CONFETTI_COLORS = [
-  '#5B3E5D', // Primary (plum)
-  '#4A7A5C', // Success
-  '#6A4C77', // Category accent 1
-  '#4C7A6A', // Category accent 2
-  '#A85E6E', // Category accent 3
-  '#C08A3E', // Warning
-  '#E8823C', // Highlight (apricot)
-];
+/** Confetti particle colors — Daylight semantic palette (theme-aware). */
+function confettiColorsFromTheme(colors: ThemeColors): readonly string[] {
+  return [
+    colors.primary,
+    colors.success,
+    colors.category.accent1,
+    colors.category.accent2,
+    colors.category.accent3,
+    colors.warning,
+    colors.highlight,
+  ];
+}
 
 /** Confetti particle shapes */
 type ParticleShape = 'square' | 'circle';
@@ -54,13 +60,14 @@ interface ParticleConfig {
 /**
  * Generate random particle configurations.
  */
-function generateParticles(): ParticleConfig[] {
+function generateParticles(palette: readonly string[]): ParticleConfig[] {
+  const defaultColor = palette[0];
+  if (!defaultColor) return [];
+
   return Array.from({ length: PARTICLE_COUNT }, (_, i) => ({
     id: i,
     x: Math.random() * SCREEN_WIDTH,
-    color:
-      CONFETTI_COLORS[Math.floor(Math.random() * CONFETTI_COLORS.length)] ??
-      '#5B3E5D',
+    color: palette[Math.floor(Math.random() * palette.length)] ?? defaultColor,
     size: 6 + Math.random() * 8,
     shape: (Math.random() > 0.5 ? 'square' : 'circle') as ParticleShape,
     delay: Math.random() * 400,
@@ -133,7 +140,7 @@ function ConfettiParticle({
         width: config.size,
         height: config.size,
         backgroundColor: config.color,
-        borderRadius: config.shape === 'circle' ? config.size / 2 : 2,
+        borderRadius: config.shape === 'circle' ? config.size / 2 : 0,
       },
       animatedStyle,
     ],
@@ -160,7 +167,15 @@ export function ConfettiOverlay({
   isActive,
   onComplete,
 }: ConfettiOverlayProps) {
-  const particles = useMemo(() => generateParticles(), []);
+  const themeColors = useThemeColors();
+  const confettiPalette = useMemo(
+    () => confettiColorsFromTheme(themeColors),
+    [themeColors]
+  );
+  const particles = useMemo(
+    () => generateParticles(confettiPalette),
+    [confettiPalette]
+  );
 
   useEffect(() => {
     if (isActive && onComplete) {

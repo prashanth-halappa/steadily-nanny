@@ -155,6 +155,7 @@ function CarerPayDetail({
   const history = usePayArrangementHistory(householdId, carerId);
   const createArrangement = useCreatePayArrangement(householdId, carerId);
   const [sheetOpen, setSheetOpen] = useState(false);
+  const elevation = useElevation();
 
   // Household-local "today"'s year — called unconditionally (rules of
   // hooks), BEFORE `current` is known to have settled. `hasEntitlement`
@@ -273,8 +274,9 @@ function CarerPayDetail({
                   key={row.id}
                   testID={`pay-history-${row.id}`}
                   className="gap-2 rounded-row bg-card px-4 py-3"
+                  style={elevation.row}
                 >
-                  <Body className="font-medium" tabular>
+                  <Body weight="medium" tabular>
                     {formatRate(row.rate_minor, row.currency)}
                   </Body>
                   <Small className="text-muted-foreground">

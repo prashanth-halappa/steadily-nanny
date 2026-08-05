@@ -9,6 +9,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useThemeColors } from '@/lib/design-tokens/useThemeColors';
 import { cn } from '@/lib/utils';
+import { CHIP_BORDER_RADIUS } from '@/src/components/ui/badge';
 
 function SwitchWeb({
   className,
@@ -66,7 +67,7 @@ function SwitchNative({
         {
           height: 32,
           width: 46,
-          borderRadius: 999,
+          borderRadius: CHIP_BORDER_RADIUS,
           opacity: props.disabled ? 0.6 : 1,
         },
         animatedRootStyle,

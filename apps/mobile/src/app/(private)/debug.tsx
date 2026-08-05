@@ -68,7 +68,10 @@ export default function DebugScreen() {
 
   if (!__DEV__) {
     return (
-      <View className="flex-1 items-center justify-center bg-background p-6">
+      <View
+        className="flex-1 items-center justify-center bg-background"
+        style={{ padding: SCREEN_CONTENT_STYLE.padding }}
+      >
         <Body className="text-muted-foreground">
           Debug tools are only available in development.
         </Body>
@@ -179,12 +182,12 @@ export default function DebugScreen() {
         title="5. Raw /app/status"
         assertion="Shows the current remote-config payload held in appConfigStore."
       >
-        <View className="rounded-xl bg-muted p-3">
-          <Text testID="debug-app-status" className="text-xs">
+        <View className="rounded-cell bg-muted p-3">
+          <Small testID="debug-app-status">
             {status
               ? JSON.stringify(status, null, 2)
               : 'No status fetched yet.'}
-          </Text>
+          </Small>
         </View>
       </DebugRow>
     </ScrollView>

@@ -1,11 +1,9 @@
 /**
  * Typography Design Tokens — Daylight
  *
- * Platform face (omit fontFamily). Weight is load-bearing via numeric
- * `fontWeight` on the system font — SF Pro / Roboto handle this correctly.
- *
- * We removed Sora because per-file weight families made numeric `fontWeight`
- * a no-op on iOS; with the platform face, weight works again.
+ * Figtree Variable — one family, weight via numeric `fontWeight` (300–800).
+ * `FONT_FAMILY` is the single string passed to RN and Tailwind; flip it here
+ * if the embedded font's PostScript name differs (e.g. 'Figtree-Light').
  *
  * Key Principles:
  * - Minimum 16px for body text (WCAG AA requirement)
@@ -13,6 +11,9 @@
  * - Optical sizing: lighter at large sizes, heavier at small sizes
  * - Tabular numerals via factory `tabular` option (not a NativeWind class)
  */
+
+/** PostScript / family name for the embedded Figtree Variable font. */
+export const FONT_FAMILY = 'Figtree';
 
 export const typography = {
   // Display — For hero sections and major headings only

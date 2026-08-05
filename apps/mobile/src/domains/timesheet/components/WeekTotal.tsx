@@ -40,7 +40,7 @@ import { Button } from '@/src/components/ui/button';
 import { Card, CardContent } from '@/src/components/ui/card';
 import { StatusPill } from '@/src/components/ui/status-pill';
 import { Text } from '@/src/components/ui/text';
-import { Body, H1, Small } from '@/src/components/ui/typography';
+import { Body, Display, Small } from '@/src/components/ui/typography';
 import { WeekNavHeader } from '@/src/components/ui/week-nav-header';
 import type { TimesheetStatus, WeekEarningsStateResult } from '../types';
 import type { EarningsRole } from './WeekEarningsLine';
@@ -194,9 +194,9 @@ export function WeekTotal({
           </View>
         ) : null}
         <View className="flex-row items-baseline gap-2">
-          <H1 testID="hours-total" tabular>
+          <Display testID="hours-total" tabular>
             {totalLabel}
-          </H1>
+          </Display>
           {overtimeLabel ? (
             <Body className="text-muted-foreground" tabular>
               {overtimeLabel}

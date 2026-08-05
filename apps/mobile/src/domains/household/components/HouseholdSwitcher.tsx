@@ -20,7 +20,7 @@ import { View } from 'react-native';
 import { AnimatedPressable } from '@/lib/animations';
 import { Icon } from '@/lib/icons/iconWithClassName';
 import { BottomSheetBase } from '@/src/components/custom/BottomSheetBase';
-import { Body, H3 } from '@/src/components/ui/typography';
+import { Body, H3, Small } from '@/src/components/ui/typography';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
 
 export function HouseholdSwitcher() {
@@ -49,11 +49,11 @@ export function HouseholdSwitcher() {
       >
         <View
           testID="household-switcher"
-          className="flex-row items-center gap-1.5 self-start rounded-chip border border-border bg-card px-3 py-1.5"
+          className="flex-row items-center gap-1 self-start rounded-chip border border-border bg-card px-3 py-1"
         >
-          <Body testID="household-switcher-current-name" className="text-sm">
+          <Small testID="household-switcher-current-name">
             {household.name}
-          </Body>
+          </Small>
           <Icon
             icon={ChevronDown}
             size={16}

@@ -44,6 +44,7 @@ import { useTranslation } from 'react-i18next';
 import { Pressable, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { AnimatedPressable } from '@/lib/animations';
+import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { cn } from '@/lib/utils';
 import {
   AlertDialog,
@@ -56,8 +57,8 @@ import {
   AlertDialogTitle,
 } from '@/src/components/ui/alert-dialog';
 import { EmptyState } from '@/src/components/ui/empty-state';
+import { FieldLabel } from '@/src/components/ui/field-label';
 import { Input } from '@/src/components/ui/input';
-import { Label } from '@/src/components/ui/label';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { Text } from '@/src/components/ui/text';
 import { Body, Small } from '@/src/components/ui/typography';
@@ -182,7 +183,10 @@ export function ManageHouseholdScreen() {
         className="flex-1 bg-background"
       >
         <SafeAreaView style={{ flex: 1 }} className="bg-background">
-          <View className="px-6 pt-4">
+          <View
+            style={{ paddingHorizontal: SCREEN_CONTENT_STYLE.padding }}
+            className="pt-4"
+          >
             <Pressable
               testID="manage-household-not-available-back"
               accessibilityRole="button"
@@ -194,7 +198,10 @@ export function ManageHouseholdScreen() {
               <Body className="text-primary">{`< ${tCommon('back')}`}</Body>
             </Pressable>
           </View>
-          <View className="mt-8 px-6">
+          <View
+            className="mt-8"
+            style={{ paddingHorizontal: SCREEN_CONTENT_STYLE.padding }}
+          >
             <EmptyState
               variant="inline"
               title={t('householdSettings.notAvailableTitle')}
@@ -305,7 +312,7 @@ export function ManageHouseholdScreen() {
       ) : null}
 
       <View className="gap-2">
-        <Label>{t('householdSettings.nameLabel')}</Label>
+        <FieldLabel>{t('householdSettings.nameLabel')}</FieldLabel>
         <Input
           testID="household-name-input"
           accessibilityLabel={t('householdSettings.nameLabel')}
@@ -316,7 +323,7 @@ export function ManageHouseholdScreen() {
       </View>
 
       <View className="gap-2">
-        <Label>{t('householdSettings.addressLabel')}</Label>
+        <FieldLabel>{t('householdSettings.addressLabel')}</FieldLabel>
         <Input
           testID="household-address-input"
           accessibilityLabel={t('householdSettings.addressLabel')}
@@ -327,7 +334,7 @@ export function ManageHouseholdScreen() {
       </View>
 
       <View className="gap-2">
-        <Label>{t('householdSettings.timezoneLabel')}</Label>
+        <FieldLabel>{t('householdSettings.timezoneLabel')}</FieldLabel>
         <AnimatedPressable
           testID="household-timezone-trigger"
           onPress={() => setIsTimezoneSheetOpen(true)}
@@ -345,7 +352,7 @@ export function ManageHouseholdScreen() {
       </View>
 
       <View className="gap-2">
-        <Label>{t('householdSettings.approvalModeLabel')}</Label>
+        <FieldLabel>{t('householdSettings.approvalModeLabel')}</FieldLabel>
         <View className="flex-row flex-wrap gap-2">
           {APPROVAL_MODE_OPTIONS.map(mode => (
             <AnimatedPressable
@@ -369,7 +376,7 @@ export function ManageHouseholdScreen() {
       </View>
 
       <View className="gap-2">
-        <Label>{t('householdSettings.approvalScopeLabel')}</Label>
+        <FieldLabel>{t('householdSettings.approvalScopeLabel')}</FieldLabel>
         <View className="flex-row flex-wrap gap-2">
           {APPROVAL_SCOPE_OPTIONS.map(scope => (
             <AnimatedPressable
@@ -393,7 +400,7 @@ export function ManageHouseholdScreen() {
       </View>
 
       <View className="gap-2">
-        <Label>{t('householdSettings.approvalTimeoutLabel')}</Label>
+        <FieldLabel>{t('householdSettings.approvalTimeoutLabel')}</FieldLabel>
         <Input
           testID="household-approval-timeout-input"
           accessibilityLabel={t('householdSettings.approvalTimeoutLabel')}
@@ -404,7 +411,7 @@ export function ManageHouseholdScreen() {
       </View>
 
       <View className="gap-2">
-        <Label>{t('householdSettings.shortNoticeHoursLabel')}</Label>
+        <FieldLabel>{t('householdSettings.shortNoticeHoursLabel')}</FieldLabel>
         <Input
           testID="household-short-notice-hours-input"
           accessibilityLabel={t('householdSettings.shortNoticeHoursLabel')}
@@ -415,7 +422,9 @@ export function ManageHouseholdScreen() {
       </View>
 
       <View className="gap-2">
-        <Label>{t('householdSettings.cancellationPaidWithinHoursLabel')}</Label>
+        <FieldLabel>
+          {t('householdSettings.cancellationPaidWithinHoursLabel')}
+        </FieldLabel>
         <Input
           testID="household-cancellation-paid-within-hours-input"
           accessibilityLabel={t(

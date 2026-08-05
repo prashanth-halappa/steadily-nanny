@@ -14,6 +14,7 @@
 import { useEffect } from 'react';
 import { StyleSheet } from 'react-native';
 import Animated, { FadeOut } from 'react-native-reanimated';
+import { useThemeColors } from '@/lib/design-tokens/useThemeColors';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 import { useAuthStore } from '@/src/store/auth';
 
@@ -24,6 +25,7 @@ let hasCompletedSplash = false;
 const SAFETY_TIMEOUT_MS = 4000;
 
 export function AnimatedSplash({ onFinish }: { onFinish: () => void }) {
+  const { background } = useThemeColors();
   const isInitialized = useAuthStore(s => s.isInitialized);
   const session = useAuthStore(s => s.session);
   const onboarding = useIsOnboarded();
@@ -65,7 +67,7 @@ export function AnimatedSplash({ onFinish }: { onFinish: () => void }) {
       testID="animated-splash"
       exiting={FadeOut.duration(200)}
       pointerEvents="none"
-      style={[StyleSheet.absoluteFill, { backgroundColor: '#F5F1F2' }]}
+      style={[StyleSheet.absoluteFill, { backgroundColor: background }]}
     />
   );
 }

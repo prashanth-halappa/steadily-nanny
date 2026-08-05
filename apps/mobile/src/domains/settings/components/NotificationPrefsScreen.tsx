@@ -15,9 +15,9 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Linking, View } from 'react-native';
 import { AnimatedPressable } from '@/lib/animations';
+import { useElevation } from '@/lib/design-tokens/elevation';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { Switch } from '@/src/components/ui/switch';
-import { Text } from '@/src/components/ui/text';
 import { Body, Small } from '@/src/components/ui/typography';
 import { SetupScreenShell } from '@/src/domains/setup/components/SetupScreenShell';
 import { useUpdateNotificationPrefs } from '@/src/hooks/mutations/useUpdateNotificationPrefs';
@@ -33,6 +33,7 @@ const QUIET_END_OPTIONS = ['06:00', '07:00', '08:00'] as const;
 
 export function NotificationPrefsScreen() {
   const router = useRouter();
+  const elevation = useElevation();
   const { t } = useTranslation('settings');
   const prefsQuery = useNotificationPrefs();
   const updatePrefs = useUpdateNotificationPrefs();
@@ -108,7 +109,7 @@ export function NotificationPrefsScreen() {
         <View className="gap-3">
           <View className="flex-row items-center justify-between gap-3">
             <View className="flex-1 gap-1">
-              <Body className="font-medium">
+              <Body weight="medium">
                 {t('notificationPrefs.quietHoursLabel')}
               </Body>
               <Small className="text-muted-foreground">
@@ -187,9 +188,7 @@ export function NotificationPrefsScreen() {
         </View>
 
         <View className="gap-3">
-          <Body className="font-medium">
-            {t('notificationPrefs.typesHeading')}
-          </Body>
+          <Body weight="medium">{t('notificationPrefs.typesHeading')}</Body>
           <Small className="text-muted-foreground">
             {t('notificationPrefs.typesHint')}
           </Small>
@@ -217,14 +216,15 @@ export function NotificationPrefsScreen() {
         <AnimatedPressable
           testID="notification-prefs-os-settings"
           onPress={() => void Linking.openSettings()}
-          className="rounded-lg border border-border px-4 py-3"
         >
-          <Text className="text-primary">
-            {t('notificationPrefs.openOsSettings')}
-          </Text>
-          <Small className="mt-1 text-muted-foreground">
-            {t('notificationPrefs.openOsSettingsHint')}
-          </Small>
+          <View className="rounded-row bg-card px-4 py-3" style={elevation.row}>
+            <Body className="text-primary">
+              {t('notificationPrefs.openOsSettings')}
+            </Body>
+            <Small className="mt-1 text-muted-foreground">
+              {t('notificationPrefs.openOsSettingsHint')}
+            </Small>
+          </View>
         </AnimatedPressable>
       </View>
     </SetupScreenShell>

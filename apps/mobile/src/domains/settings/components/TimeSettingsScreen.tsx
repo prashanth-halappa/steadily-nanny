@@ -10,6 +10,7 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Linking, View } from 'react-native';
 import { AnimatedPressable } from '@/lib/animations';
+import { useElevation } from '@/lib/design-tokens/elevation';
 import { cn } from '@/lib/utils';
 import {
   AlertDialog,
@@ -50,6 +51,7 @@ function calendarLabelFor(cal: WritableCalendar): string {
 
 export function TimeSettingsScreen() {
   const router = useRouter();
+  const elevation = useElevation();
   const { t } = useTranslation(['settings', 'schedule']);
   const { t: tCommon } = useTranslation('common');
   const profile = useUserProfile();
@@ -176,15 +178,17 @@ export function TimeSettingsScreen() {
     >
       <View className="gap-6">
         <View className="gap-2">
-          <Body className="font-medium">
-            {t('settings:time.timezoneLabel')}
-          </Body>
+          <Body weight="medium">{t('settings:time.timezoneLabel')}</Body>
           <AnimatedPressable
             testID="time-settings-timezone"
             onPress={() => setSheetOpen(true)}
-            className="rounded-lg border border-border bg-muted px-4 py-3"
           >
-            <Body>{timezoneLabel}</Body>
+            <View
+              className="rounded-row bg-card px-4 py-3"
+              style={elevation.row}
+            >
+              <Body>{timezoneLabel}</Body>
+            </View>
           </AnimatedPressable>
           <Small className="text-muted-foreground">
             {t('settings:time.timezoneHint')}
@@ -192,9 +196,7 @@ export function TimeSettingsScreen() {
         </View>
 
         <View className="gap-2">
-          <Body className="font-medium">
-            {t('settings:time.weekStartsLabel')}
-          </Body>
+          <Body weight="medium">{t('settings:time.weekStartsLabel')}</Body>
           <View className="flex-row flex-wrap gap-2">
             {WEEK_START_OPTIONS.map(day => (
               <AnimatedPressable
@@ -222,7 +224,7 @@ export function TimeSettingsScreen() {
 
         <View className="gap-2" testID="time-settings-calendar-sync">
           <View className="flex-row items-center justify-between gap-3">
-            <Body className="flex-1 font-medium">
+            <Body className="flex-1" weight="medium">
               {t('settings:time.calendarSync.toggleLabel')}
             </Body>
             <Switch
@@ -255,13 +257,17 @@ export function TimeSettingsScreen() {
             <AnimatedPressable
               testID="time-settings-chosen-calendar"
               onPress={() => setPickerOpen(true)}
-              className="rounded-lg border border-border bg-muted px-4 py-3"
             >
-              <Body>
-                {t('settings:time.calendarSync.chosenCalendar', {
-                  label: calendarLabel,
-                })}
-              </Body>
+              <View
+                className="rounded-row bg-card px-4 py-3"
+                style={elevation.row}
+              >
+                <Body>
+                  {t('settings:time.calendarSync.chosenCalendar', {
+                    label: calendarLabel,
+                  })}
+                </Body>
+              </View>
             </AnimatedPressable>
           ) : null}
         </View>

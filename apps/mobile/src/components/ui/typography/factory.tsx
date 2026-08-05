@@ -2,17 +2,31 @@
  * Typography component factory for generating standard typography components.
  *
  * Eliminates boilerplate by creating components from token style objects.
- * Emits fontWeight (load-bearing on the platform face). Omits fontFamily so
- * RN uses the system face. Optional tabular numerals via fontVariant.
+ * Emits fontFamily + fontWeight inline (className size/weight overrides are dead
+ * in nativewind 4.2.6 — use `weight` prop for emphasis). Optional tabular
+ * numerals via fontVariant.
  */
 
 import * as Slot from '@rn-primitives/slot';
 import * as React from 'react';
 import type { Role, TextStyle } from 'react-native';
 import { Text as RNText } from 'react-native';
+import { FONT_FAMILY } from '@/lib/design-tokens/typography';
 import { cn } from '@/lib/utils';
 import { TextClassContext } from '@/src/components/ui/text';
-import type { TypographyProps } from './types';
+import type { TypographyProps, TypographyWeight } from './types';
+
+export const TYPOGRAPHY_WEIGHTS: Record<
+  TypographyWeight,
+  NonNullable<TextStyle['fontWeight']>
+> = {
+  light: '300',
+  regular: '400',
+  medium: '500',
+  semibold: '600',
+  bold: '700',
+  extrabold: '800',
+};
 
 export interface TypographyToken {
   size: number;
@@ -20,6 +34,7 @@ export interface TypographyToken {
   weight: TextStyle['fontWeight'];
   letterSpacing: number;
   fontStyle?: TextStyle['fontStyle'];
+  fontFamily?: string;
 }
 
 interface FactoryOptions {
@@ -43,6 +58,7 @@ export function tokenToStyle(
     fontSize: token.size,
     lineHeight: token.lineHeight,
     fontWeight: token.weight,
+    fontFamily: token.fontFamily ?? FONT_FAMILY,
     letterSpacing: token.letterSpacing,
   };
   if (token.fontStyle) {
@@ -68,6 +84,7 @@ export function createTypographyComponent(
     asChild = false,
     style,
     tabular,
+    weight,
     ...props
   }: TypographyProps) {
     // Publish channel a container (e.g. Button) uses to override text color —
@@ -76,11 +93,20 @@ export function createTypographyComponent(
     const textClass = React.useContext(TextClassContext);
     const Component = asChild ? Slot.Text : RNText;
     const useTabular = alwaysTabular || tabular === true;
+    const weightStyle =
+      weight !== undefined
+        ? { fontWeight: TYPOGRAPHY_WEIGHTS[weight] }
+        : undefined;
     return (
       <Component
         role={options?.role}
         aria-level={options?.ariaLevel}
-        style={[baseStyle, useTabular ? tabularStyle : null, style]}
+        style={[
+          baseStyle,
+          weightStyle,
+          useTabular ? tabularStyle : null,
+          style,
+        ]}
         className={cn(baseClassName, textClass, className)}
         {...props}
       />

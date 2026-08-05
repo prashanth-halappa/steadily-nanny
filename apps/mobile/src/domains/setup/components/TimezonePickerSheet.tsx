@@ -9,6 +9,7 @@ import { Check } from 'lucide-react-native';
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
 import { AnimatedPressable } from '@/lib/animations';
+import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { BottomSheetBase } from '@/src/components/custom/BottomSheetBase';
 import { Body, H3 } from '@/src/components/ui/typography';
 import { COMMON_TIMEZONES } from '@/src/domains/setup/utils/timezones';
@@ -36,7 +37,10 @@ export function TimezonePickerSheet({
       fitContent
       testID="timezone-picker-sheet"
     >
-      <View className="gap-3 px-6 pb-4">
+      <View
+        className="gap-3 pb-4"
+        style={{ paddingHorizontal: SCREEN_CONTENT_STYLE.padding }}
+      >
         <H3>{t('householdSettings.pickerTitle')}</H3>
 
         {COMMON_TIMEZONES.map(zone => {

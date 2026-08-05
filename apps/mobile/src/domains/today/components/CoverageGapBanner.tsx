@@ -51,7 +51,9 @@ export function CoverageGapBanner({
 
   return (
     <View testID="coverage-gap-banner" className="rounded-lg bg-warning/15 p-3">
-      <Body className="font-medium text-warning">{t('coverageGap.title')}</Body>
+      <Body weight="medium" className="text-warning">
+        {t('coverageGap.title')}
+      </Body>
       {gaps.map(gap => (
         <Body
           key={gap.id}

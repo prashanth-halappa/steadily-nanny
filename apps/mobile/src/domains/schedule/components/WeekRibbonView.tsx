@@ -1,7 +1,7 @@
 /**
  * @module domains/schedule/components/WeekRibbonView
  *
- * Calendar week ribbon — full day hours 0–23, cells coloured by shift status
+ * Calendar week ribbon — bounded working-hour grid with short weekday headers
  * (Daylight UX #13: do not paint Pending as Confirmed green). Occupied cells
  * open shift detail so a Week preference is not a read-only dead end.
  * Away days (carer time off) are marked on the weekday header.
@@ -12,9 +12,9 @@ import { type Href, useRouter } from 'expo-router';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Pressable, ScrollView, View } from 'react-native';
-import { useThemeColors } from '@/lib/design-tokens';
+import { SCREEN_CONTENT_STYLE, useThemeColors } from '@/lib/design-tokens';
 import { useTabBarScrollPadding } from '@/lib/layout/useTabBarScrollPadding';
-import { Body, Small } from '@/src/components/ui/typography';
+import { Caption, Label, Small } from '@/src/components/ui/typography';
 import {
   hourCellOccupied,
   localDateToWeekday,
@@ -23,7 +23,36 @@ import {
 import { timeOffCoversLocalDate } from '@/src/domains/schedule/utils/timeOffOverlap';
 import { getWeekdayOrder } from '@/src/lib/weekdayOrder';
 
-const HOURS = Array.from({ length: 24 }, (_, i) => i); // 0..23
+/** First hour row shown when no shifts fall earlier (typical day start). */
+const WEEK_RIBBON_DEFAULT_START_HOUR = 6;
+/** Last hour row shown when no shifts fall later (inclusive). */
+const WEEK_RIBBON_DEFAULT_END_HOUR = 20;
+/** Extra hour rows above/below occupied cells so edge shifts stay visible. */
+const WEEK_RIBBON_HOUR_PADDING = 1;
+
+function computeVisibleHours(
+  shifts: Shift[],
+  displayTimeZone?: string | null
+): number[] {
+  let start = WEEK_RIBBON_DEFAULT_START_HOUR;
+  let end = WEEK_RIBBON_DEFAULT_END_HOUR;
+
+  for (const shift of shifts) {
+    const startMin = minutesInZone(shift.starts_at, displayTimeZone);
+    const endMin = minutesInZone(shift.ends_at, displayTimeZone);
+    for (let hour = 0; hour < 24; hour++) {
+      if (hourCellOccupied(startMin, endMin, hour)) {
+        start = Math.min(start, hour);
+        end = Math.max(end, hour);
+      }
+    }
+  }
+
+  start = Math.max(0, start - WEEK_RIBBON_HOUR_PADDING);
+  end = Math.min(23, end + WEEK_RIBBON_HOUR_PADDING);
+
+  return Array.from({ length: end - start + 1 }, (_, i) => start + i);
+}
 
 interface WeekRibbonViewProps {
   shifts: Shift[];
@@ -93,6 +122,11 @@ export function WeekRibbonView({
   const tabBarScrollPadding = useTabBarScrollPadding();
   const displayOrder = getWeekdayOrder(weekStartsOn);
 
+  const visibleHours = useMemo(
+    () => computeVisibleHours(shifts, displayTimeZone),
+    [shifts, displayTimeZone]
+  );
+
   const awayByDow = useMemo(() => {
     const map = new Map<number, boolean>();
     for (const localDate of weekDates) {
@@ -108,8 +142,11 @@ export function WeekRibbonView({
   return (
     <ScrollView
       testID="calendar-week-ribbon-view"
-      className="flex-1 px-4"
-      contentContainerStyle={{ paddingBottom: tabBarScrollPadding }}
+      className="flex-1"
+      contentContainerStyle={{
+        paddingHorizontal: SCREEN_CONTENT_STYLE.padding,
+        paddingBottom: tabBarScrollPadding,
+      }}
     >
       <View className="flex-row pb-2">
         <View className="w-8" />
@@ -118,9 +155,9 @@ export function WeekRibbonView({
             {/* Short form ("Mon") — seven full weekday names ("Monday")
                 don't fit this column width and wrap mid-word ("Monda / y")
                 even on the widest phones. */}
-            <Body className="text-xs font-medium" numberOfLines={1}>
+            <Label weight="medium" numberOfLines={1}>
               {t(`weekdayShort.${dow}`)}
-            </Body>
+            </Label>
             {awayByDow.get(dow) ? (
               <Small
                 testID={`week-ribbon-away-${dow}`}
@@ -132,11 +169,11 @@ export function WeekRibbonView({
           </View>
         ))}
       </View>
-      {HOURS.map(hour => (
+      {visibleHours.map(hour => (
         <View key={hour} className="flex-row items-center py-0.5">
-          <Body className="w-8 text-xs text-muted-foreground" tabular>
+          <Caption className="w-8 text-muted-foreground" tabular>
             {hour}
-          </Body>
+          </Caption>
           {displayOrder.map(dow => {
             const shift = densestShift(shifts, dow, hour, displayTimeZone);
             const status = shift?.status;

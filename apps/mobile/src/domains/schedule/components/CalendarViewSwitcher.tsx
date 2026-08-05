@@ -8,7 +8,7 @@
 import { useTranslation } from 'react-i18next';
 import { Pressable, View } from 'react-native';
 import { cn } from '@/lib/utils';
-import { Text } from '@/src/components/ui/text';
+import { Caption } from '@/src/components/ui/typography';
 import { SETUP_ROLES } from '@/src/domains/setup/types';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
@@ -71,14 +71,14 @@ export function CalendarViewSwitcher({
             value === opt.id ? 'bg-primary' : 'bg-transparent'
           )}
         >
-          <Text
+          <Caption
             className={cn(
-              'text-xs font-medium',
               value === opt.id ? 'text-primary-foreground' : 'text-foreground'
             )}
+            weight="medium"
           >
             {t(`calendarViews.${opt.id}`)}
-          </Text>
+          </Caption>
         </Pressable>
       ))}
     </View>

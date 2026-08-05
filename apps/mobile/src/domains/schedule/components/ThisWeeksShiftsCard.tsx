@@ -60,7 +60,7 @@ export function ThisWeeksShiftsCard() {
       className="gap-2 p-5.5"
       style={elevation.card}
     >
-      <Body className="font-semibold">{t('todayCard.nextUpTitle')}</Body>
+      <Body weight="semibold">{t('todayCard.nextUpTitle')}</Body>
       {nextShifts.length === 0 ? (
         <Small className="text-muted-foreground">
           {t('todayCard.nextUpEmpty')}

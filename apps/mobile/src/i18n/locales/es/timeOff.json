@@ -1,5 +1,6 @@
 {
   "screenTitle": "Tiempo libre",
+  "filterLabel": "Filtrar por estado",
   "requestTitle": "Reservar tiempo libre",
   "editTitle": "Editar tiempo libre",
   "messageLabel": "Nota para la familia (opcional)",

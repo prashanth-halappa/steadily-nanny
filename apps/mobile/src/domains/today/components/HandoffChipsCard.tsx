@@ -16,7 +16,7 @@ import { Button } from '@/src/components/ui/button';
 import { Card } from '@/src/components/ui/card';
 import { Input } from '@/src/components/ui/input';
 import { Text } from '@/src/components/ui/text';
-import { Body, H3, Small } from '@/src/components/ui/typography';
+import { Caption, H3, Small } from '@/src/components/ui/typography';
 import { SETUP_ROLES, type SetupRole } from '@/src/domains/setup/types';
 import {
   chipsForPhase,
@@ -56,14 +56,12 @@ function ChipToggle({
         selected ? 'bg-primary' : 'bg-secondary'
       )}
     >
-      <Text
-        className={cn(
-          'text-sm font-medium',
-          selected ? 'text-primary-foreground' : 'text-foreground'
-        )}
+      <Caption
+        weight="medium"
+        className={selected ? 'text-primary-foreground' : 'text-foreground'}
       >
         {label}
-      </Text>
+      </Caption>
     </Pressable>
   );
 }
@@ -148,7 +146,7 @@ function HandoffPhaseEditor({
 
   return (
     <View testID={`handoff-editor-${phase}`} className="gap-2">
-      <H3 className="text-base">{title}</H3>
+      <H3>{title}</H3>
       <View className="flex-row flex-wrap gap-2">
         {suggestions.map(chip => (
           <ChipToggle
@@ -262,14 +260,14 @@ export function HandoffChipsCard({
           testID="handoff-save-moment-section"
           className="gap-2 border-t border-border pt-3"
         >
-          <Body className="text-sm text-muted-foreground">
+          <Small className="text-muted-foreground">
             {t('handoff.eveningRecap')}
-          </Body>
+          </Small>
           <View className="flex-row flex-wrap gap-1">
             {eveningNote.chips.map(chip => (
-              <Body key={chip} className="text-sm">
+              <Small key={chip}>
                 {t(handoffChipLabelKey(chip), { defaultValue: chip })}
-              </Body>
+              </Small>
             ))}
           </View>
           <Button

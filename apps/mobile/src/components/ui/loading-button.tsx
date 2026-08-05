@@ -23,6 +23,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { useReducedMotion } from '@/lib/animations/useReducedMotion';
+import { spacing } from '@/lib/design-tokens/spacing';
 import { useThemeColors } from '@/lib/design-tokens/useThemeColors';
 // Import from the typography sub-file (not the barrel) so tests that mock the
 // typography barrel still render the real button-styled label.
@@ -83,7 +84,7 @@ function LoadingDot({ delay, animate }: { delay: number; animate: boolean }) {
           height: DOT_SIZE,
           borderRadius: DOT_SIZE / 2,
           backgroundColor: themeColors.primaryForeground,
-          marginHorizontal: 3,
+          marginHorizontal: spacing.xs,
         },
         animatedStyle,
       ]}

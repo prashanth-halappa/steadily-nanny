@@ -13,7 +13,7 @@ import { Button } from '@/src/components/ui/button';
 import { Card } from '@/src/components/ui/card';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { Text } from '@/src/components/ui/text';
-import { Body } from '@/src/components/ui/typography';
+import { Body, Display } from '@/src/components/ui/typography';
 
 interface InviteCodeCardProps {
   code: string | null;
@@ -31,13 +31,14 @@ export function InviteCodeCard({
   return (
     <Card className="items-center gap-4 p-5.5">
       {code ? (
-        <Text
+        <Display
           testID="invite-code-value"
           selectable
-          className="font-bold text-3xl tracking-widest text-primary"
+          className="text-primary"
+          style={{ letterSpacing: 3.2 }}
         >
           {code}
-        </Text>
+        </Display>
       ) : (
         <LoadingIndicator />
       )}

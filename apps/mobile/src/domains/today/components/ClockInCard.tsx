@@ -25,13 +25,13 @@
  * scheduled finish instead of "now". `useClockOutReminder` is the other
  * half, for the carer whose phone is in her pocket.
  */
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
 import { Card } from '@/src/components/ui/card';
+import { LiveDot } from '@/src/components/ui/live-dot';
 import { LoadingButton } from '@/src/components/ui/loading-button';
-import { Text } from '@/src/components/ui/text';
-import { Body, Small, Timer } from '@/src/components/ui/typography';
+import { Body, Caption, Small, Timer } from '@/src/components/ui/typography';
 import { formatClockTime } from '@/src/domains/timesheet/utils/duration';
 import { formatEarningsSpanDate } from '@/src/domains/timesheet/utils/earningsFormat';
 import { isOptimisticTimeEntry } from '@/src/hooks/mutations/timeEntryMutationUtils';
@@ -39,8 +39,11 @@ import { useClockIn } from '@/src/hooks/mutations/useClockIn';
 import { useClockOut } from '@/src/hooks/mutations/useClockOut';
 import { useRunningTimeEntry } from '@/src/hooks/queries/useRunningTimeEntry';
 import { useShift } from '@/src/hooks/queries/useShift';
-import { localDateInZone } from '@/src/lib/localDate';
+import { useShiftsRange } from '@/src/hooks/queries/useShiftsRange';
+import { addLocalDays, localDateInZone } from '@/src/lib/localDate';
 import { showErrorToast } from '@/src/lib/toast';
+import { wallClockToUtcIso } from '@/src/lib/wallClock';
+import { useAuthStore } from '@/src/store/auth';
 import { useClockOutReminder } from '../hooks/useClockOutReminder';
 import { useElapsedTimer } from '../hooks/useElapsedTimer';
 import {
@@ -61,9 +64,17 @@ interface ClockInCardProps {
   timeZone: string;
 }
 
+const ARRIVING_WINDOW_MS = 60 * 60 * 1000;
+
+type OffClockShiftState =
+  | { kind: 'scheduled'; start: string; end: string }
+  | { kind: 'arriving'; start: string }
+  | { kind: 'none' };
+
 export function ClockInCard({ householdId, timeZone }: ClockInCardProps) {
   const { t } = useTranslation('today');
   const { t: tErrors } = useTranslation('errors');
+  const currentUserId = useAuthStore(s => s.user?.id ?? null);
   const running = useRunningTimeEntry();
   const clockIn = useClockIn();
   const clockOut = useClockOut();
@@ -78,6 +89,45 @@ export function ClockInCard({ householdId, timeZone }: ClockInCardProps) {
   const shift = useShift(entry?.shift_id);
   const shiftEndsAt = shift.data?.ends_at ?? null;
   const clockInAt = entry?.clock_in_at ?? null;
+
+  const today = useMemo(() => localDateInZone(timeZone), [timeZone]);
+  const tomorrow = useMemo(() => addLocalDays(today, 1), [today]);
+  const from = useMemo(
+    () => wallClockToUtcIso(today, '00:00', timeZone),
+    [today, timeZone]
+  );
+  const to = useMemo(
+    () => wallClockToUtcIso(tomorrow, '00:00', timeZone),
+    [tomorrow, timeZone]
+  );
+  const shifts = useShiftsRange(householdId, from, to);
+
+  const offClockShift: OffClockShiftState = useMemo(() => {
+    const todayShifts = (shifts.data ?? [])
+      .filter(
+        s =>
+          s.local_date === today &&
+          s.status !== 'cancelled' &&
+          s.carer_id === currentUserId
+      )
+      .sort((a, b) => a.starts_at.localeCompare(b.starts_at));
+    const next = todayShifts[0];
+    if (!next) return { kind: 'none' };
+
+    const startMs = new Date(next.starts_at).getTime();
+    const now = Date.now();
+    if (now < startMs && startMs - now <= ARRIVING_WINDOW_MS) {
+      return {
+        kind: 'arriving',
+        start: formatClockTime(next.starts_at, timeZone),
+      };
+    }
+    return {
+      kind: 'scheduled',
+      start: formatClockTime(next.starts_at, timeZone),
+      end: formatClockTime(next.ends_at, timeZone),
+    };
+  }, [shifts.data, today, timeZone, currentUserId]);
 
   useClockOutReminder(clockInAt, shiftEndsAt);
 
@@ -219,13 +269,10 @@ export function ClockInCard({ householdId, timeZone }: ClockInCardProps) {
       {entry ? (
         <>
           <View className="flex-row items-center gap-2">
-            <View
-              testID="today-live-dot"
-              className="h-[10px] w-[10px] rounded-full bg-highlight"
-            />
-            <Text className="text-[13px] font-semibold text-highlight">
+            <LiveDot testID="today-live-dot" />
+            <Caption weight="semibold" className="text-highlight">
               {overdue ? t('stillOnTheClockTitle') : t('onTheClock')}
-            </Text>
+            </Caption>
           </View>
           <Timer testID="today-live-timer">{elapsed}</Timer>
           {entry.clock_in_at ? (
@@ -253,7 +300,34 @@ export function ClockInCard({ householdId, timeZone }: ClockInCardProps) {
         </>
       ) : (
         <>
-          <Body className="font-semibold">{t('notOnTheClock')}</Body>
+          <Body weight="semibold">{t('notOnTheClock')}</Body>
+          {offClockShift.kind === 'scheduled' ? (
+            <Body
+              testID="today-off-clock-scheduled"
+              weight="semibold"
+              className="text-foreground"
+            >
+              {t('nannyScheduledBody', {
+                start: offClockShift.start,
+                end: offClockShift.end,
+              })}
+            </Body>
+          ) : offClockShift.kind === 'arriving' ? (
+            <Body
+              testID="today-off-clock-arriving"
+              weight="semibold"
+              className="text-foreground"
+            >
+              {t('nannyArrivingBody', { start: offClockShift.start })}
+            </Body>
+          ) : (
+            <Small
+              testID="today-off-clock-none"
+              className="text-muted-foreground"
+            >
+              {t('nannyNoShiftBody')}
+            </Small>
+          )}
           <Body className="text-muted-foreground">{t('clockInHint')}</Body>
           <LoadingButton
             testID="today-clock-in"

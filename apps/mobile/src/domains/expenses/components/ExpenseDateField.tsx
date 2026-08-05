@@ -30,7 +30,8 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
-import { Text } from '@/src/components/ui/text';
+import { FieldError } from '@/src/components/ui/field-error';
+import { FieldLabel } from '@/src/components/ui/field-label';
 import { useThemeColors } from '~/lib/design-tokens/useThemeColors';
 import {
   formatDate,
@@ -78,9 +79,7 @@ export function ExpenseDateField({
 
   return (
     <View testID={baseTestID}>
-      <Text className="mb-1 font-medium text-muted-foreground text-xs">
-        {t('addSheet.dateLabel')}
-      </Text>
+      <FieldLabel>{t('addSheet.dateLabel')}</FieldLabel>
       <DateTimePicker
         testID={`${baseTestID}-picker`}
         value={parseDate(value)}
@@ -91,14 +90,11 @@ export function ExpenseDateField({
         textColor={colors.foreground}
         themeVariant="light"
       />
-      {showError && (
-        <Text
-          testID={`${baseTestID}-error`}
-          className="mt-2 text-destructive text-xs"
-        >
+      {showError ? (
+        <FieldError testID={`${baseTestID}-error`}>
           {t('addSheet.dateFutureError')}
-        </Text>
-      )}
+        </FieldError>
+      ) : null}
     </View>
   );
 }

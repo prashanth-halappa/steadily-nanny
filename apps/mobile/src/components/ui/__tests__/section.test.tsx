@@ -57,14 +57,14 @@ describe('Section', () => {
     expect(getByText('Label text')).toBeTruthy();
   });
 
-  it('applies px-[22px] by default and removes it when noPadding is true', () => {
+  it('applies px-5.5 by default and removes it when noPadding is true', () => {
     const { getByTestId, rerender } = render(
       <Section testID="section">
         <Text>Content</Text>
       </Section>
     );
 
-    expect(getByTestId('section').props.className).toContain('px-[22px]');
+    expect(getByTestId('section').props.className).toContain('px-5.5');
 
     rerender(
       <Section testID="section" noPadding>
@@ -72,7 +72,7 @@ describe('Section', () => {
       </Section>
     );
 
-    expect(getByTestId('section').props.className).not.toContain('px-[22px]');
+    expect(getByTestId('section').props.className).not.toContain('px-5.5');
   });
 
   it('applies mt-8 by default and removes it when noTopMargin is true', () => {

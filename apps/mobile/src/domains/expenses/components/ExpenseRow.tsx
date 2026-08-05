@@ -20,7 +20,7 @@ import { View } from 'react-native';
 import { Button } from '@/src/components/ui/button';
 import { StatusPill } from '@/src/components/ui/status-pill';
 import { Text } from '@/src/components/ui/text';
-import { Body, Small } from '@/src/components/ui/typography';
+import { Body, Figure, Small } from '@/src/components/ui/typography';
 import { formatMoney } from '@/src/lib/money';
 import type { Expense } from '../types';
 
@@ -62,6 +62,7 @@ export function ExpenseRow({
         : t('list.statusPending');
 
   const isPending = expense.status === 'pending';
+  const AmountDisplay = expense.amount_minor !== null ? Figure : Body;
 
   return (
     <View testID={testID} className="gap-1 py-2">
@@ -69,13 +70,13 @@ export function ExpenseRow({
         <Body testID={`${testID}-description`} className="flex-1">
           {expense.description}
         </Body>
-        <Body
+        <AmountDisplay
           testID={`${testID}-amount`}
-          className="flex-shrink-0 font-medium"
-          tabular
+          className="flex-shrink-0"
+          weight={expense.amount_minor !== null ? 'medium' : undefined}
         >
           {amountLabel}
-        </Body>
+        </AmountDisplay>
       </View>
       <StatusPill
         testID={`${testID}-status`}

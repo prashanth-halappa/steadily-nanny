@@ -17,6 +17,7 @@ import { type ReactNode, useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Pressable, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { ErrorState } from '@/src/components/custom/ErrorState';
 import { Button } from '@/src/components/ui/button';
 import { EmptyState } from '@/src/components/ui/empty-state';
@@ -153,7 +154,7 @@ export function ScheduleShiftsScreen({
         <View
           style={{
             gap: 8,
-            paddingHorizontal: 22,
+            paddingHorizontal: SCREEN_CONTENT_STYLE.padding,
             paddingTop: 16,
             paddingBottom: 8,
           }}

@@ -91,15 +91,16 @@ export function TimeEntryDayRow({
     <View
       testID={testID}
       className={cn(
-        'mb-2 flex-row items-center justify-between rounded-row px-3',
-        isEmpty ? 'bg-transparent py-2.5' : 'bg-card py-3'
+        'mb-2 flex-row items-center justify-between rounded-row px-3 py-3',
+        isEmpty ? 'bg-transparent' : 'bg-card'
       )}
       style={isEmpty ? undefined : elevation.row}
     >
       <View className="gap-1">
         <View className="flex-row items-center gap-2">
           <Body
-            className={cn('font-medium', isEmpty && 'text-muted-foreground')}
+            weight={isEmpty ? 'regular' : 'medium'}
+            className={isEmpty ? 'text-muted-foreground' : undefined}
           >
             {`${t(`schedule:weekday.${weekdayDow(date)}`)} ${formatDisplayDate(date)}`}
           </Body>
@@ -135,9 +136,10 @@ export function TimeEntryDayRow({
             const label = (
               <Small
                 testID={isZeroDuration ? 'hours-zero-duration-flag' : undefined}
+                weight={isZeroDuration ? 'medium' : 'regular'}
                 className={cn(
                   'text-muted-foreground',
-                  isZeroDuration && 'font-medium text-warning'
+                  isZeroDuration && 'text-warning'
                 )}
                 tabular
               >
@@ -185,8 +187,8 @@ export function TimeEntryDayRow({
         )}
       </View>
       <Body
+        weight={isEmpty ? 'regular' : 'semibold'}
         className={cn(
-          'font-medium',
           isRunning
             ? 'text-primary'
             : isEmpty

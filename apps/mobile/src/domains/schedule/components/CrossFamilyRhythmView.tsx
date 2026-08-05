@@ -13,9 +13,9 @@ import type { Household } from '@steadily-nanny/shared-types/schemas/household.s
 import type { MeShift } from '@steadily-nanny/shared-types/schemas/me.schema';
 import { useTranslation } from 'react-i18next';
 import { ScrollView, View } from 'react-native';
-import { useThemeColors } from '@/lib/design-tokens';
+import { SCREEN_CONTENT_STYLE, useThemeColors } from '@/lib/design-tokens';
 import { useTabBarScrollPadding } from '@/lib/layout/useTabBarScrollPadding';
-import { Body, H3 } from '@/src/components/ui/typography';
+import { Caption, H3, Small } from '@/src/components/ui/typography';
 import {
   type DayPeriod,
   shiftPeriod,
@@ -110,19 +110,22 @@ export function CrossFamilyRhythmView({
   return (
     <ScrollView
       testID="calendar-cross-family-view"
-      className="flex-1 px-4"
-      contentContainerStyle={{ paddingBottom: tabBarScrollPadding }}
+      className="flex-1"
+      contentContainerStyle={{
+        paddingHorizontal: SCREEN_CONTENT_STYLE.padding,
+        paddingBottom: tabBarScrollPadding,
+      }}
     >
-      <Body className="mb-3 text-sm text-muted-foreground">
+      <Small className="mb-3 text-muted-foreground">
         {t('crossFamily.header')}
-      </Body>
+      </Small>
       {households.map(h => (
         <View
           key={h.id}
           testID={`cross-family-row-${h.id}`}
           className="mb-4 rounded-lg bg-muted p-3"
         >
-          <H3 testID={`cross-family-label-${h.id}`} className="mb-2 text-base">
+          <H3 testID={`cross-family-label-${h.id}`} className="mb-2">
             {labelFor(h.id)}
           </H3>
           {dates.map(date => (
@@ -131,9 +134,9 @@ export function CrossFamilyRhythmView({
               testID={`cross-family-day-${h.id}-${date}`}
               className="mb-1 flex-row items-center gap-2"
             >
-              <Body className="w-16 text-xs text-muted-foreground" tabular>
+              <Caption className="w-16 text-muted-foreground" tabular>
                 {date.slice(5)}
-              </Body>
+              </Caption>
               <View className="flex-row">
                 {PERIODS.map(period => (
                   <PeriodDot
@@ -143,9 +146,9 @@ export function CrossFamilyRhythmView({
                   />
                 ))}
               </View>
-              <Body className="text-xs text-muted-foreground">
+              <Caption className="text-muted-foreground">
                 {PERIODS.map(period => t(`period.${period}`)).join('/')}
-              </Body>
+              </Caption>
             </View>
           ))}
         </View>

@@ -168,9 +168,14 @@ describe('MyPayScreen', () => {
       expect(getByTestId(`my-pay-household-${HOUSEHOLD_A}`)).toBeTruthy()
     );
     expect(getByTestId(`my-pay-household-${HOUSEHOLD_B}`)).toBeTruthy();
-    expect(
-      getByTestId(`my-pay-term-${HOUSEHOLD_A}-cancellations`)
-    ).toBeTruthy();
+    // The card appears as soon as the household list resolves, but its terms
+    // come from a separate `payCurrent` query — await that too rather than
+    // racing it.
+    await waitFor(() =>
+      expect(
+        getByTestId(`my-pay-term-${HOUSEHOLD_A}-cancellations`)
+      ).toBeTruthy()
+    );
 
     await waitFor(() =>
       expect(getByTestId(`my-pay-empty-${HOUSEHOLD_B}`)).toBeTruthy()

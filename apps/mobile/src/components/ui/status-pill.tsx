@@ -11,10 +11,11 @@
 import { cva, type VariantProps } from 'class-variance-authority';
 import { View } from 'react-native';
 import { cn } from '@/lib/utils';
+import { FILLED_CHIP_PADDING_Y } from '@/src/components/ui/badge';
 import { Text } from '@/src/components/ui/text';
 
 const statusPillVariants = cva(
-  'flex-row items-center self-start rounded-chip px-3 py-[5px]',
+  `flex-row items-center self-start rounded-chip px-3 ${FILLED_CHIP_PADDING_Y}`,
   {
     variants: {
       variant: {
