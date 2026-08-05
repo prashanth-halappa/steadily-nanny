@@ -39,7 +39,7 @@ import { Text } from '@/src/components/ui/text';
 import { Textarea } from '@/src/components/ui/textarea';
 import { Body, H4, Label, Small } from '@/src/components/ui/typography';
 import { localDateInZone } from '@/src/lib/localDate';
-import { parseMajorToMinor } from '@/src/lib/money';
+import { minorToMajorText, parseMajorToMinor } from '@/src/lib/money';
 import { currencySymbol } from '../utils/currencySymbol';
 import {
   buildCreatePayArrangementRequest,
@@ -131,7 +131,7 @@ export function PayChangeSheet({
   // re-seed-on-`visible` pattern (it stays mounted between openings).
   useEffect(() => {
     if (!visible) return;
-    setRateText((currentArrangement.rate_minor / 100).toFixed(2));
+    setRateText(minorToMajorText(currentArrangement.rate_minor));
     setEffectiveChoice('today');
     setEarlierDateText('');
     setOvertimeThresholdHoursText(
@@ -153,7 +153,7 @@ export function PayChangeSheet({
     setMileageRateText(
       currentArrangement.mileage_rate_per_mile_minor === null
         ? ''
-        : (currentArrangement.mileage_rate_per_mile_minor / 100).toFixed(2)
+        : minorToMajorText(currentArrangement.mileage_rate_per_mile_minor)
     );
     setCancellationChoice(
       currentArrangement.cancellation_paid_within_hours === null
@@ -258,7 +258,7 @@ export function PayChangeSheet({
               onChangeText={setRateText}
               onBlur={() => {
                 const minor = parseMajorToMinor(rateText);
-                if (minor !== null) setRateText((minor / 100).toFixed(2));
+                if (minor !== null) setRateText(minorToMajorText(minor));
               }}
               keyboardType="decimal-pad"
               className="flex-1"

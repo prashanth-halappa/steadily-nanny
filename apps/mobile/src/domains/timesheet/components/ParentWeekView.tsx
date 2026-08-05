@@ -28,7 +28,10 @@ import { Body } from '@/src/components/ui/typography';
 import { ExpenseReviewSheet } from '@/src/domains/expenses/components/ExpenseReviewSheet';
 import { PendingExpensesRow } from '@/src/domains/expenses/components/PendingExpensesRow';
 import { ReimbursementsCard } from '@/src/domains/expenses/components/ReimbursementsCard';
-import { reviewErrorReason } from '@/src/domains/expenses/utils/reviewErrorReason';
+import {
+  isTypedReviewError,
+  reviewErrorReason,
+} from '@/src/domains/expenses/utils/reviewErrorReason';
 import { resolveMemberDisplayName } from '@/src/domains/schedule/utils/memberDisplayName';
 import { resolveWeekCarerHeaderName } from '@/src/domains/timesheet/utils/weekCarerHeaderName';
 import { useApproveTimesheet } from '@/src/hooks/mutations/useApproveTimesheet';
@@ -122,6 +125,9 @@ export function ParentWeekView({
   const [mileageRateErrorId, setMileageRateErrorId] = useState<string | null>(
     null
   );
+  // Phase 3+4 adversarial review, finding 6 — see ExpenseReviewSheet's
+  // GENERIC TYPED-ERROR ARM doc and the TODO in handleApproveExpense below.
+  const [genericErrorId, setGenericErrorId] = useState<string | null>(null);
   const reopened = useReopenedNotice(
     timesheetQuery.data?.id,
     timesheetQuery.data?.status
@@ -132,6 +138,7 @@ export function ParentWeekView({
   const handleApproveExpense = async (expenseId: string) => {
     setSubmittingExpenseId(expenseId);
     setMileageRateErrorId(null);
+    setGenericErrorId(null);
     try {
       await reviewExpense.mutateAsync({
         expenseId,
@@ -140,6 +147,17 @@ export function ParentWeekView({
     } catch (error) {
       if (reviewErrorReason(error) === 'NO_MILEAGE_RATE') {
         setMileageRateErrorId(expenseId);
+      } else if (isTypedReviewError(error)) {
+        // TODO(mobile): the API agent is deciding whether reviewing an
+        // expense into an already-approved week is BLOCKED with a typed
+        // error or the week is silently REOPENED (Finding 6). Once they
+        // report the exact code, branch on `reviewErrorReason(error)` here
+        // — same shape as the NO_MILEAGE_RATE arm above — and swap this
+        // generic-but-persistent-and-per-card fallback for copy naming the
+        // actual situation. Until then, any OTHER typed 4xx refusal lands
+        // here instead of only the ambient generic toast, which names
+        // neither the claim nor the reason.
+        setGenericErrorId(expenseId);
       }
       setSubmittingExpenseId(null);
       return;
@@ -150,12 +168,18 @@ export function ParentWeekView({
 
   const handleRejectExpense = async (expenseId: string, note: string) => {
     setSubmittingExpenseId(expenseId);
+    setGenericErrorId(null);
     try {
       await reviewExpense.mutateAsync({
         expenseId,
         input: { status: 'rejected', ...(note ? { review_note: note } : {}) },
       });
-    } catch {
+    } catch (error) {
+      // Reject has no mileage-rate arm, but the SAME already-approved-week
+      // refusal can plausibly hit a reject too — see the TODO above.
+      if (isTypedReviewError(error)) {
+        setGenericErrorId(expenseId);
+      }
       setSubmittingExpenseId(null);
       return;
     }
@@ -363,7 +387,7 @@ export function ParentWeekView({
                 read-only so it renders for a helper too. */}
             <ReimbursementsCard
               approvedExpenses={approvedExpenses}
-              totalMinor={earningsOk?.reimbursements_minor ?? 0}
+              totalMinor={earningsOk ? earningsOk.reimbursements_minor : null}
               currency={expensesCurrency}
             />
             {timesheet?.query_note ? (
@@ -379,7 +403,6 @@ export function ParentWeekView({
                 {/* §6.2 — above the approve actions. */}
                 <PendingExpensesRow
                   pendingExpenses={pendingExpenses}
-                  currency={expensesCurrency}
                   onPress={() => setIsExpenseReviewVisible(true)}
                 />
                 {!isActionable && !isApproved ? (
@@ -462,6 +485,7 @@ export function ParentWeekView({
           onReject={(id, note) => void handleRejectExpense(id, note)}
           submittingId={submittingExpenseId}
           mileageRateErrorId={mileageRateErrorId}
+          genericErrorId={genericErrorId}
           onSetRatePress={handleSetRatePress}
         />
       )}

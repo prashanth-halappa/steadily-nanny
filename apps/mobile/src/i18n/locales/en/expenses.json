@@ -35,7 +35,10 @@
   },
   "pendingRow": {
     "count_one": "{{count}} expense to review",
-    "count_other": "{{count}} expenses to review"
+    "count_other": "{{count}} expenses to review",
+    "mileageToPrice_one": "{{count}} with mileage to price",
+    "mileageToPrice_other": "{{count}} with mileage to price",
+    "mixedCurrencies": "In different currencies — open to review each."
   },
   "reviewSheet": {
     "title": "Review expenses",
@@ -47,11 +50,13 @@
     "approvedToast": "Approved",
     "rejectedToast": "Not approved",
     "noMileageRateError": "Set a mileage rate before approving mileage.",
-    "setRateAction": "Set a rate"
+    "setRateAction": "Set a rate",
+    "reviewFailedGeneric": "This claim couldn't be reviewed right now. Check with your family if it keeps happening."
   },
   "reimbursements": {
     "title": "Reimbursements",
     "totalLabel": "Total to reimburse",
+    "totalUnavailable": "Total unavailable for this week",
     "note": "Paid back in full — not wages, and not part of gross pay."
   }
 }

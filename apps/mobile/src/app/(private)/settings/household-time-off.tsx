@@ -72,6 +72,7 @@ export default function HouseholdTimeOffScreen() {
                   householdId={active.householdId as string}
                   carerName={nameForCarer(row.user_id)}
                   canMarkPaid={canMarkPaid}
+                  householdTimezone={active.household?.timezone ?? 'UTC'}
                 />
               ))
             : null}

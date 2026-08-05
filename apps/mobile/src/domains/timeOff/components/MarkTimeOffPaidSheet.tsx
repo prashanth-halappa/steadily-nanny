@@ -74,10 +74,36 @@ export interface MarkTimeOffPaidSheetProps {
   existingUsageEntry: PtoLedgerEntry | null;
 }
 
+/** Plain decimal hours: `8`, `7.5`, `0.25`. No sign, no scientific notation,
+ * no grouping — the same whole-string-match discipline `src/lib/money.ts`'s
+ * `parseMajorToMinor` uses, applied to hours instead of money (Phase 3+4
+ * adversarial review, finding 13). Bare `Number()` accepted `"2e1"` as `20`
+ * (scientific notation nobody typed on purpose) and let `0.004` — a real,
+ * non-zero-looking input — round to `0` minutes and submit anyway,
+ * guaranteeing the server's `.min(1)` check rejects it with a 400 the
+ * parent gets to interpret with no context. */
+const HOURS_PATTERN = /^\d+(?:\.\d+)?$/;
+
 function parseHoursToMinutes(text: string): number | null {
-  const hours = Number(text);
-  if (!Number.isFinite(hours) || hours <= 0) return null;
-  return Math.round(hours * 60);
+  const trimmed = text.trim();
+  if (trimmed === '' || !HOURS_PATTERN.test(trimmed)) return null;
+
+  const hours = Number(trimmed);
+  if (!Number.isFinite(hours) || hours < 0) return null;
+
+  const minutes = Math.round(hours * 60);
+  // Exactly 0 is VALID and meaningful: the server reads a total of 0 as
+  // "reverse this marking entirely", which is the only way to un-pay a time
+  // off that was marked by mistake. Without this the two halves of the
+  // Phase 3/4 review fixes contradict each other — the API gained the
+  // reversal semantics while the client refused to express them.
+  if (hours === 0) return 0;
+
+  // A POSITIVE number of hours that still rounds to 0 minutes (e.g. 0.004h)
+  // is different: it is real input the server would reject as 0, and
+  // silently treating it as a full reversal would un-pay her by accident.
+  // Refuse it with a message instead.
+  return minutes > 0 ? minutes : null;
 }
 
 export function MarkTimeOffPaidSheet({
@@ -108,6 +134,7 @@ export function MarkTimeOffPaidSheet({
   }, [visible, existingUsageEntry]);
 
   const enteredMinutes = parseHoursToMinutes(hoursText);
+  const hoursInvalid = hoursText.trim() !== '' && enteredMinutes === null;
   const beforeMinutes = balance?.balance_minutes ?? null;
   const afterMinutes =
     beforeMinutes !== null && enteredMinutes !== null
@@ -170,11 +197,21 @@ export function MarkTimeOffPaidSheet({
                 accessibilityLabel={t('markPaidSheet.hoursLabel')}
                 value={hoursText}
                 onChangeText={setHoursText}
-                keyboardType="number-pad"
+                keyboardType="decimal-pad"
+                error={hoursInvalid}
               />
-              <Small className="text-muted-foreground">
-                {t('markPaidSheet.hoursHint')}
-              </Small>
+              {hoursInvalid ? (
+                <Small
+                  testID="pto-mark-paid-hours-error"
+                  className="text-destructive"
+                >
+                  {t('markPaidSheet.hoursError')}
+                </Small>
+              ) : (
+                <Small className="text-muted-foreground">
+                  {t('markPaidSheet.hoursHint')}
+                </Small>
+              )}
             </View>
 
             {beforeMinutes !== null ? (

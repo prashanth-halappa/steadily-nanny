@@ -92,6 +92,25 @@ export function formatRate(minor: number, currency: string): string {
 }
 
 /**
+ * Minor units -> the plain (no currency symbol, no grouping) 2dp string an
+ * EDITABLE amount input seeds/re-normalises to, e.g.
+ * `minorToMajorText(1850)` -> `"18.50"`. This is `parseMajorToMinor`'s
+ * display-side inverse for the specific "pre-fill or re-normalise-on-blur a
+ * rate/amount field" shape — `PayChangeSheet` and `ExpenseAddSheet` both
+ * need exactly this, and docs/11-MONEY.md §1's one-util rule means neither
+ * gets to hand-roll `(minor / 100).toFixed(2)` itself (Phase 3+4 review,
+ * finding 14).
+ *
+ * Deliberately NOT `formatMoney`: that function adds a currency symbol via
+ * `Intl.NumberFormat`, which is right for read-only display but wrong for
+ * an editable text input's value (the field already renders its own
+ * currency prefix/adornment beside it).
+ */
+export function minorToMajorText(minor: number): string {
+  return (minor / 100).toFixed(2);
+}
+
+/**
  * The largest amount this app accepts, in minor units: £999,999.99. It is the
  * same ceiling the format/parse round-trip is pinned at, and above it every
  * realistic input is a typo — a stray extra digit on an hourly rate. Rejecting

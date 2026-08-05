@@ -597,4 +597,44 @@ describe('NannyWeekView — expenses & the statement (Phase 4)', () => {
       expect.objectContaining({ kind: 'expense', amount_minor: 1200 })
     );
   });
+
+  // Phase 3+4 adversarial review, finding 7 (nanny half): a no_arrangement
+  // week has no server-computed `reimbursements_minor` — the OLD `?? 0`
+  // fallback rendered a fabricated "£0.00" above her real approved claim.
+  it('finding 7: no_arrangement week — real approved expense, but NO fabricated £0.00 total', async () => {
+    listExpensesForWeekMock.mockImplementation(() =>
+      Promise.resolve([
+        makeExpense({
+          id: 'expense-approved',
+          status: 'approved',
+          amount_minor: 1200,
+        }),
+      ])
+    );
+    getByIdMock.mockImplementation(() =>
+      Promise.resolve(
+        makeTimesheetWeek(
+          {},
+          {
+            status: 'no_arrangement',
+            week_start: WEEK_START,
+            unpriced_dates: [WEEK_START],
+          }
+        )
+      )
+    );
+
+    const { getByTestId, queryByTestId, queryAllByText } = renderNannyView();
+
+    await waitFor(() =>
+      expect(getByTestId('reimbursements-card')).toBeTruthy()
+    );
+    expect(
+      getByTestId('reimbursements-card-line-expense-approved-value').props
+        .children
+    ).toBe('£12.00');
+    expect(queryByTestId('reimbursements-card-total')).toBeNull();
+    expect(getByTestId('reimbursements-card-total-unavailable')).toBeTruthy();
+    expect(queryAllByText('£0.00')).toHaveLength(0);
+  });
 });

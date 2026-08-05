@@ -95,4 +95,40 @@ describe('ReimbursementsCard', () => {
     );
     expect(getByTestId('reimbursements-card-note')).toBeTruthy();
   });
+
+  // Phase 3+4 adversarial review, finding 7: `?? 0` at the call site turned
+  // "the server has no total to give" into a fabricated "£0.00" rendered
+  // above real, non-zero itemised amounts. `totalMinor={null}` must never
+  // render £0.00 — the items still list, only the subtotal is withheld.
+  it('finding 7: totalMinor=null renders the items with NO total row and NEVER "£0.00"', () => {
+    const { getByTestId, queryByTestId, queryAllByText } = render(
+      <ReimbursementsCard
+        testID="reimbursements-card"
+        approvedExpenses={[
+          makeExpense({ id: 'expense-1', amount_minor: 1200 }),
+          makeExpense({
+            id: 'expense-2',
+            kind: 'mileage',
+            amount_minor: 2280,
+            miles: 12.4,
+          }),
+        ]}
+        totalMinor={null}
+        currency="GBP"
+      />
+    );
+
+    // The real itemised amounts still render.
+    expect(
+      getByTestId('reimbursements-card-line-expense-1-value').props.children
+    ).toBe('£12.00');
+    expect(
+      getByTestId('reimbursements-card-line-expense-2-value').props.children
+    ).toBe('£22.80');
+
+    // No total row, and nowhere on the card does a fabricated £0.00 appear.
+    expect(queryByTestId('reimbursements-card-total')).toBeNull();
+    expect(getByTestId('reimbursements-card-total-unavailable')).toBeTruthy();
+    expect(queryAllByText('£0.00')).toHaveLength(0);
+  });
 });

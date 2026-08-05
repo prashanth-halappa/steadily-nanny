@@ -5,7 +5,12 @@
  * edge set from `TIER0-PLAN.md`: 0, 1p, £999,999.99.
  */
 import { afterEach, describe, expect, it } from 'bun:test';
-import { formatMoney, formatRate, parseMajorToMinor } from '../money';
+import {
+  formatMoney,
+  formatRate,
+  minorToMajorText,
+  parseMajorToMinor,
+} from '../money';
 
 describe('formatMoney', () => {
   it('formats zero', () => {
@@ -229,6 +234,24 @@ describe('parseMajorToMinor', () => {
       const formatted = formatMoney(minor, 'GBP');
       const stripped = formatted.replace(/^£/, '');
       expect(parseMajorToMinor(stripped)).toBe(minor);
+    }
+  });
+});
+
+describe('minorToMajorText', () => {
+  // Phase 3+4 adversarial review, finding 14: the one util an editable
+  // amount input seeds/re-normalises from, so `ExpenseAddSheet`/
+  // `PayChangeSheet`/`PaySetupScreen` never hand-roll `(minor / 100).toFixed(2)`.
+  it('formats minor units as a plain 2dp string, no currency symbol', () => {
+    expect(minorToMajorText(0)).toBe('0.00');
+    expect(minorToMajorText(1)).toBe('0.01');
+    expect(minorToMajorText(1850)).toBe('18.50');
+    expect(minorToMajorText(99999999)).toBe('999999.99');
+  });
+
+  it('round-trips through parseMajorToMinor', () => {
+    for (const minor of [0, 1, 1850, 99999999]) {
+      expect(parseMajorToMinor(minorToMajorText(minor))).toBe(minor);
     }
   });
 });

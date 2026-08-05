@@ -21,7 +21,12 @@ import { showErrorToast } from '@/src/lib/toast';
  * (household, carer, year) — a new ledger row changes both — AND the
  * household's time-off list, since `household-time-off.tsx`'s paid marker
  * ("8h paid" / "Not marked paid") reads from that list, not the ledger
- * directly (TIER0-CX-SPEC.md §5.1).
+ * directly (TIER0-CX-SPEC.md §5.1). ALSO the whole `timesheet` cache
+ * (Phase 3+4 adversarial review, finding 10): marking (or adjusting) paid
+ * PTO changes the week's `pto` line and its gross, same as every expense
+ * mutation hook (`useCreateExpense`/`useReviewExpense`/`useWithdrawExpense`/
+ * `useUpdateExpense`) already invalidates `queryKeys.timesheet.all` for —
+ * without it the Hours views keep showing the stale pre-mark figure.
  */
 export function useMarkTimeOffPaid(
   householdId: string,
@@ -42,6 +47,9 @@ export function useMarkTimeOffPaid(
       });
       queryClient.invalidateQueries({
         queryKey: queryKeys.timeOff.forHousehold(householdId),
+      });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.timesheet.all,
       });
     },
     onError: error => {

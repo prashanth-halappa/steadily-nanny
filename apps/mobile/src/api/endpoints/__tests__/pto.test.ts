@@ -178,10 +178,30 @@ describe('ptoApi.markPaid', () => {
     );
   });
 
-  it('rejects zero/negative minutes client-side without calling the API', async () => {
+  it('rejects negative minutes client-side without calling the API', async () => {
     await expect(
-      ptoApi.markPaid(HOUSEHOLD_ID, { time_off_id: TIME_OFF_ID, minutes: 0 })
+      ptoApi.markPaid(HOUSEHOLD_ID, { time_off_id: TIME_OFF_ID, minutes: -10 })
     ).rejects.toThrow();
     expect(apiClient.post).not.toHaveBeenCalled();
+  });
+
+  // Zero is NOT invalid — the Phase 3/4 review moved mark-paid to a
+  // total-not-delta model, where a requested total of 0 means "reverse this
+  // marking entirely". It is the only way to un-pay a mis-marked time off,
+  // so the client must send it rather than reject it.
+  it('sends a zero total, the full-reversal instruction, to the API', async () => {
+    apiClient.post.mockResolvedValue({
+      data: { data: { pto_ledger_entry: validLedgerEntry } },
+    });
+
+    await ptoApi.markPaid(HOUSEHOLD_ID, {
+      time_off_id: TIME_OFF_ID,
+      minutes: 0,
+    });
+
+    expect(apiClient.post).toHaveBeenCalledWith(
+      `/v1/households/${HOUSEHOLD_ID}/pto/mark-paid`,
+      { time_off_id: TIME_OFF_ID, minutes: 0 }
+    );
   });
 });

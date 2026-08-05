@@ -20,6 +20,16 @@
  * `useReviewExpense`, tracks which row is submitting, and — for the
  * no-mileage-rate typed error — which row to show the inline "Set a
  * mileage rate before approving mileage." arm on.
+ *
+ * GENERIC TYPED-ERROR ARM (Phase 3+4 adversarial review, finding 6):
+ * `genericErrorId` covers every OTHER deliberate, server-coded refusal —
+ * concretely, reviewing an expense into a week that's already `approved`.
+ * The API side is still deciding whether that lands as a typed error or a
+ * silent week-reopen (see `ParentWeekView`'s TODO for the exact code this
+ * will branch on once known); until then, ANY typed 4xx refusal that isn't
+ * the recognised `NO_MILEAGE_RATE` arm surfaces here instead of leaving the
+ * parent with only the ambient generic toast, which names neither the
+ * claim nor the reason.
  */
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -45,6 +55,10 @@ interface ExpenseReviewSheetProps {
   /** The expense id whose most recent approve attempt hit
    * `ExpenseValidationError` (`reason: 'NO_MILEAGE_RATE'`). */
   mileageRateErrorId?: string | null;
+  /** The expense id whose most recent approve/reject attempt hit a typed
+   * 4xx refusal that ISN'T the recognised `NO_MILEAGE_RATE` arm (see the
+   * module doc's GENERIC TYPED-ERROR ARM). */
+  genericErrorId?: string | null;
   onSetRatePress?: () => void;
   testID?: string;
 }
@@ -55,6 +69,7 @@ function ReviewCard({
   onReject,
   isSubmitting,
   showMileageRateError,
+  showGenericError,
   onSetRatePress,
 }: {
   expense: Expense;
@@ -62,6 +77,7 @@ function ReviewCard({
   onReject: (note: string) => void;
   isSubmitting: boolean;
   showMileageRateError: boolean;
+  showGenericError: boolean;
   onSetRatePress?: () => void;
 }) {
   const { t } = useTranslation('expenses');
@@ -111,6 +127,21 @@ function ReviewCard({
             </Text>
           </Button>
         </View>
+      ) : null}
+
+      {showGenericError ? (
+        // TODO(mobile): the API agent is deciding whether reviewing an
+        // expense into an already-approved week is BLOCKED with a typed
+        // error or the week is silently REOPENED (Finding 6). Once they
+        // land it, branch on its `metadata.reason` here — same shape as
+        // the NO_MILEAGE_RATE arm above — and swap this generic fallback
+        // for copy naming the actual situation. Do not guess the code.
+        <Small
+          testID={`expense-review-card-${expense.id}-error`}
+          className="text-destructive"
+        >
+          {t('reviewSheet.reviewFailedGeneric')}
+        </Small>
       ) : null}
 
       {isRejecting ? (
@@ -164,6 +195,7 @@ export function ExpenseReviewSheet({
   onReject,
   submittingId = null,
   mileageRateErrorId = null,
+  genericErrorId = null,
   onSetRatePress,
   testID = 'expense-review-sheet',
 }: ExpenseReviewSheetProps) {
@@ -187,6 +219,7 @@ export function ExpenseReviewSheet({
               expense={expense}
               isSubmitting={submittingId === expense.id}
               showMileageRateError={mileageRateErrorId === expense.id}
+              showGenericError={genericErrorId === expense.id}
               onApprove={() => onApprove(expense.id)}
               onReject={note => onReject(expense.id, note)}
               onSetRatePress={onSetRatePress}

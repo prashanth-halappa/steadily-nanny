@@ -6,9 +6,15 @@
  * tapping opens `MarkTimeOffPaidSheet`. Mutation failure keeps the sheet
  * open with the typed values (the `ClockOutSheet` discipline) — verified
  * here since the row owns the mutation, the sheet only owns the form.
+ *
+ * Phase 3+4 adversarial review findings 2 and 15: paid-ness must be NETTED
+ * against reversing `adjustment` rows (not just "does a usage row exist"),
+ * and the PTO year must resolve against the household's LOCAL date, never
+ * UTC.
  */
 import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 import { fireEvent, waitFor } from '@testing-library/react-native';
+import { queryKeys } from '@/src/api/queryKeys';
 import { useAuthStore } from '@/src/store/auth';
 import { renderWithProviders } from '@/src/test-utils';
 
@@ -123,6 +129,7 @@ describe('HouseholdTimeOffRow', () => {
         householdId={HOUSEHOLD_ID}
         carerName="Amara"
         canMarkPaid
+        householdTimezone="UTC"
       />
     );
 
@@ -143,6 +150,7 @@ describe('HouseholdTimeOffRow', () => {
         householdId={HOUSEHOLD_ID}
         carerName="Amara"
         canMarkPaid
+        householdTimezone="UTC"
       />
     );
 
@@ -152,6 +160,146 @@ describe('HouseholdTimeOffRow', () => {
     expect(queryByText('confirmed')).toBeNull();
   });
 
+  it('FULLY reversed (cancellation reversing adjustment): shows "Not marked paid", never a stale paid pill', async () => {
+    // The ledger is append-only — the usage row never disappears — so the
+    // reversing adjustment carries the SAME time_off_id
+    // (ptoCommandService.reconcileCancelledTimeOff) and exactly mirrors it.
+    getLedgerMock.mockImplementation(() =>
+      Promise.resolve([
+        usageEntry,
+        {
+          id: 'entry-2',
+          household_id: HOUSEHOLD_ID,
+          carer_id: CARER_ID,
+          kind: 'adjustment',
+          minutes: 480,
+          effective_date: '2026-08-26',
+          time_off_id: TIME_OFF_ID,
+          carer_display_name: 'Amara',
+          note: 'Reversed automatically',
+          created_by: null,
+          created_at: '2026-08-27T10:00:00.000Z',
+        },
+      ])
+    );
+
+    const { getByText, queryByText, queryClient } = renderWithProviders(
+      <HouseholdTimeOffRow
+        timeOff={timeOff as never}
+        householdId={HOUSEHOLD_ID}
+        carerName="Amara"
+        canMarkPaid
+        householdTimezone="UTC"
+      />
+    );
+
+    // The expected end-state ("not marked paid") is the SAME text as the
+    // pre-fetch default — so waiting on that text alone would pass before
+    // the ledger fetch (and the netting) ever ran. Wait on the query's
+    // actual settled state instead, so this genuinely exercises the netted
+    // result rather than the loading placeholder.
+    await waitFor(() => {
+      const state = queryClient.getQueryState(
+        queryKeys.pto.ledger(HOUSEHOLD_ID, CARER_ID, 2026)
+      );
+      expect(state?.status).toBe('success');
+    });
+
+    expect(getByText('householdTimeOff.notMarkedPaid')).toBeTruthy();
+    expect(queryByText('householdTimeOff.paidBadge')).toBeNull();
+  });
+
+  it('PARTIALLY reversed: still shows the paid pill, at the remainder', async () => {
+    getLedgerMock.mockImplementation(() =>
+      Promise.resolve([
+        usageEntry,
+        {
+          id: 'entry-2',
+          household_id: HOUSEHOLD_ID,
+          carer_id: CARER_ID,
+          kind: 'adjustment',
+          minutes: 240, // reverses half of the 480-minute usage row
+          effective_date: '2026-08-26',
+          time_off_id: TIME_OFF_ID,
+          carer_display_name: 'Amara',
+          note: 'Partial correction',
+          created_by: null,
+          created_at: '2026-08-27T10:00:00.000Z',
+        },
+      ])
+    );
+
+    const { getByText, queryByText } = renderWithProviders(
+      <HouseholdTimeOffRow
+        timeOff={timeOff as never}
+        householdId={HOUSEHOLD_ID}
+        carerName="Amara"
+        canMarkPaid
+        householdTimezone="UTC"
+      />
+    );
+
+    // Here the expected end-state ("paid") DIFFERS from the pre-fetch
+    // default ("not marked paid"), so waiting for it genuinely proves the
+    // fetch resolved and the netting ran (same reasoning as the existing
+    // "already marked" test above).
+    await waitFor(() =>
+      expect(getByText('householdTimeOff.paidBadge')).toBeTruthy()
+    );
+    expect(queryByText('householdTimeOff.notMarkedPaid')).toBeNull();
+  });
+
+  it('never marked: still shows "Not marked paid" (no ledger rows at all)', async () => {
+    getLedgerMock.mockImplementation(() => Promise.resolve([]));
+
+    const { getByTestId, getByText } = renderWithProviders(
+      <HouseholdTimeOffRow
+        timeOff={timeOff as never}
+        householdId={HOUSEHOLD_ID}
+        carerName="Amara"
+        canMarkPaid
+        householdTimezone="UTC"
+      />
+    );
+
+    await waitFor(() =>
+      expect(
+        getByTestId(`household-time-off-status-${TIME_OFF_ID}`)
+      ).toBeTruthy()
+    );
+    expect(getByText('householdTimeOff.notMarkedPaid')).toBeTruthy();
+  });
+
+  it('finding 15: resolves the PTO year against the HOUSEHOLD-LOCAL date, not UTC', async () => {
+    // 31 Dec 23:00 UTC is already 1 Jan LOCALLY for a household east of
+    // UTC — Pacific/Auckland is UTC+13 in southern-hemisphere summer, so
+    // this instant is local 2027-01-01 12:00, year 2027, not the UTC
+    // year 2026.
+    const nzTimeOff = {
+      ...timeOff,
+      starts_at: '2026-12-31T23:00:00.000Z',
+      ends_at: '2027-01-02T23:00:00.000Z',
+    };
+
+    renderWithProviders(
+      <HouseholdTimeOffRow
+        timeOff={nzTimeOff as never}
+        householdId={HOUSEHOLD_ID}
+        carerName="Amara"
+        canMarkPaid
+        householdTimezone="Pacific/Auckland"
+      />
+    );
+
+    await waitFor(() => expect(getLedgerMock).toHaveBeenCalled());
+    expect(getLedgerMock).toHaveBeenCalledWith(HOUSEHOLD_ID, CARER_ID, 2027);
+    expect(getLedgerMock).not.toHaveBeenCalledWith(
+      HOUSEHOLD_ID,
+      CARER_ID,
+      2026
+    );
+  });
+
   it('tapping the row opens the mark-paid sheet', async () => {
     const { getByTestId } = renderWithProviders(
       <HouseholdTimeOffRow
@@ -159,6 +307,7 @@ describe('HouseholdTimeOffRow', () => {
         householdId={HOUSEHOLD_ID}
         carerName="Amara"
         canMarkPaid
+        householdTimezone="UTC"
       />
     );
 
@@ -176,6 +325,7 @@ describe('HouseholdTimeOffRow', () => {
         householdId={HOUSEHOLD_ID}
         carerName="Amara"
         canMarkPaid={false}
+        householdTimezone="UTC"
       />
     );
 
@@ -190,6 +340,7 @@ describe('HouseholdTimeOffRow', () => {
         householdId={HOUSEHOLD_ID}
         carerName="Amara"
         canMarkPaid
+        householdTimezone="UTC"
       />
     );
 
@@ -222,6 +373,7 @@ describe('HouseholdTimeOffRow', () => {
         householdId={HOUSEHOLD_ID}
         carerName="Amara"
         canMarkPaid
+        householdTimezone="UTC"
       />
     );
 

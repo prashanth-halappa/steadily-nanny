@@ -11,6 +11,23 @@
  * data-owning component, not lifted state in the parent list) so a list of
  * several carers' time off doesn't have to coordinate N carers' worth of
  * balances in one place.
+ *
+ * PAID-NESS IS NETTED, NOT PRESENCE-BASED (Phase 3+4 adversarial review,
+ * finding 2): `pto_ledger` is append-only — cancelling a time off that was
+ * already marked paid never deletes the `usage` row, it inserts a
+ * REVERSING `adjustment` row carrying the same `time_off_id`
+ * (`ptoCommandService.reconcileCancelledTimeOff`). A "paid" pill driven by
+ * "does a usage row exist" therefore keeps reading paid forever, even after
+ * a full reversal. `netPaidMinutesForTimeOff` nets every usage/adjustment
+ * row for this time off before deciding — see that module's doc for the
+ * fully/partially-reversed cases.
+ *
+ * YEAR IS HOUSEHOLD-LOCAL, NOT UTC (finding 15): the ledger/balance/mutation
+ * are keyed by calendar YEAR, and a time off starting near midnight UTC can
+ * be a different local calendar year for a household away from UTC (a 31
+ * Dec 23:00Z start is already 1 Jan locally for anything east of UTC+1).
+ * `localDateInZone` — the same household-local-date utility every other
+ * money/timesheet surface uses — resolves the year, never `getUTCFullYear`.
  */
 import type { CarerTimeOff } from '@steadily-nanny/shared-types/schemas/availability.schema';
 import type { MarkTimeOffPaidRequest } from '@steadily-nanny/shared-types/schemas/pto.schema';
@@ -26,7 +43,9 @@ import { formatDisplayDate } from '@/src/domains/timesheet/utils/week';
 import { useMarkTimeOffPaid } from '@/src/hooks/mutations/useMarkTimeOffPaid';
 import { usePtoBalance } from '@/src/hooks/queries/usePtoBalance';
 import { usePtoLedger } from '@/src/hooks/queries/usePtoLedger';
+import { localDateInZone } from '@/src/lib/localDate';
 import { showSuccessToast } from '@/src/lib/toast';
+import { netPaidMinutesForTimeOff } from '../utils/ptoNet';
 import { formatTimeOffRangeLabel } from '../utils/timeOffDate';
 import { MarkTimeOffPaidSheet } from './MarkTimeOffPaidSheet';
 
@@ -42,6 +61,9 @@ interface HouseholdTimeOffRowProps {
    * gate). A non-parent still sees the row and its paid status, just can't
    * open the mark-paid sheet. */
   canMarkPaid: boolean;
+  /** IANA timezone — resolves the PTO calendar year against the
+   * household's LOCAL date, never UTC (finding 15; see the module doc). */
+  householdTimezone: string;
 }
 
 export function HouseholdTimeOffRow({
@@ -49,12 +71,15 @@ export function HouseholdTimeOffRow({
   householdId,
   carerName,
   canMarkPaid,
+  householdTimezone,
 }: HouseholdTimeOffRowProps) {
   const { t } = useTranslation('pay');
   const elevation = useElevation();
   const [sheetOpen, setSheetOpen] = useState(false);
 
-  const year = new Date(timeOff.starts_at).getUTCFullYear();
+  const year = Number(
+    localDateInZone(householdTimezone, new Date(timeOff.starts_at)).slice(0, 4)
+  );
   const ledger = usePtoLedger(householdId, timeOff.user_id, year);
   const balance = usePtoBalance(householdId, timeOff.user_id, year);
   const markPaid = useMarkTimeOffPaid(householdId, timeOff.user_id, year);
@@ -63,7 +88,16 @@ export function HouseholdTimeOffRow({
     (ledger.data ?? []).find(
       entry => entry.kind === 'usage' && entry.time_off_id === timeOff.id
     ) ?? null;
-  const paidHours = usageEntry ? Math.abs(usageEntry.minutes) / 60 : 0;
+  // Netted against any reversing `adjustment` rows (finding 2) — NOT just
+  // "does a usage row exist". `existingUsageEntry` below is still the raw
+  // usage row (unrelated concern: it drives the sheet's read-only/"Adjust"
+  // flow, which is append-only regardless of the net remainder).
+  const netPaidMinutes = netPaidMinutesForTimeOff(
+    ledger.data ?? [],
+    timeOff.id
+  );
+  const isPaid = netPaidMinutes > 0;
+  const paidHours = netPaidMinutes / 60;
 
   const rangeLabel = formatTimeOffRangeLabel(
     timeOff.starts_at,
@@ -105,9 +139,9 @@ export function HouseholdTimeOffRow({
           </Body>
           <StatusPill
             testID={`household-time-off-status-${timeOff.id}`}
-            variant={usageEntry ? 'confirmed' : 'pending'}
+            variant={isPaid ? 'confirmed' : 'pending'}
             label={
-              usageEntry
+              isPaid
                 ? t('householdTimeOff.paidBadge', { hours: paidHours })
                 : t('householdTimeOff.notMarkedPaid')
             }

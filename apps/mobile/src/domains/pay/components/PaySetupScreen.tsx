@@ -33,7 +33,7 @@ import { useCurrentPayArrangement } from '@/src/hooks/queries/useCurrentPayArran
 import { useHouseholdMembers } from '@/src/hooks/queries/useHouseholdMembers';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 import { localDateInZone } from '@/src/lib/localDate';
-import { parseMajorToMinor } from '@/src/lib/money';
+import { minorToMajorText, parseMajorToMinor } from '@/src/lib/money';
 import { showSuccessToast } from '@/src/lib/toast';
 import {
   buildCreatePayArrangementRequest,
@@ -241,7 +241,7 @@ export function PaySetupScreen() {
           onChangeText={setRateText}
           onBlur={() => {
             const minor = parseMajorToMinor(rateText);
-            if (minor !== null) setRateText((minor / 100).toFixed(2));
+            if (minor !== null) setRateText(minorToMajorText(minor));
           }}
           keyboardType="decimal-pad"
         />

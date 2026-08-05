@@ -95,6 +95,7 @@
     "subtitle": "{{name}}, {{range}}",
     "hoursLabel": "Horas a pagar",
     "hoursHint": "Sugerido a partir de sus horas habituales esa semana. Cámbialo si acordasteis otra cosa.",
+    "hoursError": "Introduce un número de horas, como 8 o 7,5.",
     "balanceBeforeAfter": "Saldo {{before}} ahora → {{after}} después",
     "overBalanceWarning": "Esto supera su saldo restante. Aun así puedes pagarlo — el saldo mostrará {{after}}.",
     "noteLabel": "Nota (opcional)",

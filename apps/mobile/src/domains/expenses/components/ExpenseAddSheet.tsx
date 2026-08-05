@@ -36,7 +36,11 @@ import { Text } from '@/src/components/ui/text';
 import { Body, H4, Label, Small } from '@/src/components/ui/typography';
 import { currencySymbol } from '@/src/domains/pay/utils/currencySymbol';
 import { localDateInZone } from '@/src/lib/localDate';
-import { formatMoney, parseMajorToMinor } from '@/src/lib/money';
+import {
+  formatMoney,
+  minorToMajorText,
+  parseMajorToMinor,
+} from '@/src/lib/money';
 import { buildExpenseRequest } from '../utils/buildExpenseRequest';
 import { parseMilesInput } from '../utils/miles';
 import { ExpenseDateField } from './ExpenseDateField';
@@ -113,7 +117,7 @@ export function ExpenseAddSheet({
       setDescription(initialExpense.description);
       setAmountText(
         initialExpense.amount_minor !== null
-          ? (initialExpense.amount_minor / 100).toFixed(2)
+          ? minorToMajorText(initialExpense.amount_minor)
           : ''
       );
       setMilesText(
@@ -232,7 +236,7 @@ export function ExpenseAddSheet({
                 onChangeText={setAmountText}
                 onBlur={() => {
                   const minor = parseMajorToMinor(amountText);
-                  if (minor !== null) setAmountText((minor / 100).toFixed(2));
+                  if (minor !== null) setAmountText(minorToMajorText(minor));
                 }}
                 keyboardType="decimal-pad"
                 className="flex-1"

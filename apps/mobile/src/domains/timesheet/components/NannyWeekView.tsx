@@ -272,7 +272,7 @@ export function NannyWeekView({
                 never rendered when the week has no approved claims. */}
             <ReimbursementsCard
               approvedExpenses={approvedExpenses}
-              totalMinor={earningsOk?.reimbursements_minor ?? 0}
+              totalMinor={earningsOk ? earningsOk.reimbursements_minor : null}
               currency={expensesCurrency}
             />
             <Button

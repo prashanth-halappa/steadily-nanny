@@ -16,6 +16,16 @@
  * depends on that discipline holding all the way down, which is why a
  * dedicated source-inspection test in this domain's `__tests__/` folder
  * asserts this file never dereferences that display-label field at all.
+ *
+ * PAID-NESS IS NETTED, NOT PRESENCE-BASED (Phase 3+4 adversarial review,
+ * finding 2): counting a household as "paid this time off" from the mere
+ * PRESENCE of a `usage` row keeps counting it forever, even after the
+ * carer cancels the time off and the server writes a reversing
+ * `adjustment` row (the ledger is append-only — see `netPaidMinutesForTimeOff`'s
+ * doc). This hook nets each household's ledger per time-off id before
+ * counting it, so a fully-reversed family drops out of the count and a
+ * partially-reversed one still counts (she IS still paid, for the
+ * remainder).
  */
 import type { CarerTimeOff } from '@steadily-nanny/shared-types/schemas/availability.schema';
 import { useQueries } from '@tanstack/react-query';
@@ -23,6 +33,7 @@ import { ptoApi } from '@/src/api/endpoints/pto';
 import { queryKeys } from '@/src/api/queryKeys';
 import { useHouseholds } from '@/src/hooks/queries/useHouseholds';
 import { useAuthStore } from '@/src/store/auth';
+import { netPaidMinutesForTimeOff } from '../utils/ptoNet';
 
 function yearOf(startsAtIso: string): number {
   return new Date(startsAtIso).getUTCFullYear();
@@ -73,14 +84,19 @@ export function usePaidFamilyCounts(
   ledgerQueries.forEach((query, index) => {
     const pair = pairs[index];
     if (!pair || !query.data) return;
-    const paidTimeOffIds = new Set(
-      query.data
-        .filter(entry => entry.kind === 'usage' && entry.time_off_id)
-        .map(entry => entry.time_off_id as string)
-    );
-    paidTimeOffIds.forEach(timeOffId => {
-      counts.set(timeOffId, (counts.get(timeOffId) ?? 0) + 1);
-    });
+    // Bounded to the time-off rows that actually fall in this query's year
+    // — netting is per (household, year) ledger, and a reversing
+    // adjustment always shares its usage row's `effective_date` (so its
+    // year), never a different one.
+    const timeOffIdsThisYear = timeOffRows
+      .filter(row => yearOf(row.starts_at) === pair.year)
+      .map(row => row.id);
+    for (const timeOffId of timeOffIdsThisYear) {
+      const netMinutes = netPaidMinutesForTimeOff(query.data, timeOffId);
+      if (netMinutes > 0) {
+        counts.set(timeOffId, (counts.get(timeOffId) ?? 0) + 1);
+      }
+    }
   });
 
   const isLoading =

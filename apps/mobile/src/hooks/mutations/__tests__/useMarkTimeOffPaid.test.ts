@@ -74,4 +74,28 @@ describe('useMarkTimeOffPaid', () => {
       queryKey: queryKeys.timeOff.forHousehold(HOUSEHOLD_ID),
     });
   });
+
+  // Phase 3+4 adversarial review, finding 10: marking time off paid changes
+  // the week's `pto` line and its gross — every OTHER expense mutation hook
+  // already invalidates `queryKeys.timesheet.all` for exactly this reason
+  // (see useCreateExpense/useReviewExpense/useWithdrawExpense/useUpdateExpense);
+  // this one must too, or the Hours views keep the stale cached figure.
+  it('finding 10: also invalidates the whole timesheet cache', async () => {
+    const { result, queryClient } = renderHookWithProviders(() =>
+      useMarkTimeOffPaid(HOUSEHOLD_ID, CARER_ID, YEAR)
+    );
+    const invalidateSpy = spyOn(queryClient, 'invalidateQueries');
+
+    await act(async () => {
+      await result.current.mutateAsync({
+        time_off_id: TIME_OFF_ID,
+        minutes: 480,
+      });
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: queryKeys.timesheet.all,
+    });
+  });
 });

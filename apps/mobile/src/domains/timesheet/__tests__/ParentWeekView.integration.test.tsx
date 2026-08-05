@@ -796,6 +796,78 @@ describe('ParentWeekView — expenses & the statement (Phase 4)', () => {
     expect(routerPush).toHaveBeenCalledWith(`/settings/pay/${CARER_ID}`);
   });
 
+  // Phase 3+4 adversarial review, finding 6: an UNRECOGNISED typed 4xx
+  // refusal (e.g. the still-undecided "already-approved week" case) must
+  // surface something specific to the card, not leave the parent with only
+  // the ambient generic toast. This deliberately uses a made-up reason
+  // code — the point is that ANY unmatched typed reason falls into the
+  // generic arm, not a specific one this test would be pre-guessing.
+  it('finding 6: an unrecognised typed review failure surfaces the generic per-card error, not just a toast', async () => {
+    listPendingExpensesMock.mockImplementation(() =>
+      Promise.resolve([makeExpense()])
+    );
+    reviewExpenseMock.mockImplementation(() =>
+      Promise.reject(
+        Object.assign(new Error('conflict'), {
+          response: {
+            status: 409,
+            data: {
+              error: {
+                code: 'CONFLICT',
+                metadata: { reason: 'SOME_FUTURE_REASON' },
+              },
+            },
+          },
+        })
+      )
+    );
+
+    const { getByTestId, queryByTestId } = renderParentView();
+
+    await waitFor(() =>
+      expect(getByTestId('expenses-pending-row')).toBeTruthy()
+    );
+    fireEvent.press(getByTestId('expenses-pending-row'));
+    await waitFor(() =>
+      expect(getByTestId('expense-review-card-expense-1-approve')).toBeTruthy()
+    );
+    fireEvent.press(getByTestId('expense-review-card-expense-1-approve'));
+
+    await waitFor(() =>
+      expect(getByTestId('expense-review-card-expense-1-error')).toBeTruthy()
+    );
+    // The mileage-rate-specific arm must NOT also fire for an unrelated code.
+    expect(
+      queryByTestId('expense-review-card-expense-1-mileage-error')
+    ).toBeNull();
+  });
+
+  it('a plain network failure (no typed code) shows neither inline error arm', async () => {
+    listPendingExpensesMock.mockImplementation(() =>
+      Promise.resolve([makeExpense()])
+    );
+    reviewExpenseMock.mockImplementation(() =>
+      Promise.reject(new Error('Network Error'))
+    );
+
+    const { getByTestId, queryByTestId } = renderParentView();
+
+    await waitFor(() =>
+      expect(getByTestId('expenses-pending-row')).toBeTruthy()
+    );
+    fireEvent.press(getByTestId('expenses-pending-row'));
+    await waitFor(() =>
+      expect(getByTestId('expense-review-card-expense-1-approve')).toBeTruthy()
+    );
+    fireEvent.press(getByTestId('expense-review-card-expense-1-approve'));
+
+    await waitFor(() => expect(reviewExpenseMock).toHaveBeenCalledTimes(1));
+    expect(queryByTestId('expense-review-card-expense-1-error')).toBeNull();
+    expect(
+      queryByTestId('expense-review-card-expense-1-mileage-error')
+    ).toBeNull();
+  });
+
   it('renders the Reimbursements card for an approved expense this week, excluding a pending one from the total', async () => {
     listExpensesForWeekMock.mockImplementation(() =>
       Promise.resolve([
@@ -824,5 +896,88 @@ describe('ParentWeekView — expenses & the statement (Phase 4)', () => {
     expect(
       queryByTestId('reimbursements-card-line-expense-pending-value')
     ).toBeNull();
+  });
+
+  // Phase 3+4 adversarial review, finding 7: a week whose earnings are NOT
+  // the `ok` arm has no server-computed `reimbursements_minor` at all — the
+  // OLD `?? 0` fallback rendered a fabricated "£0.00" above real, non-zero
+  // approved expenses. One arm per test, each proving the same thing: no
+  // total row (or the explicit "unavailable" line), and never a literal
+  // "£0.00" anywhere on the card.
+  it.each([
+    [
+      'no_arrangement',
+      { status: 'no_arrangement', week_start: WEEK_START, unpriced_dates: [] },
+    ],
+    [
+      'currency_change',
+      {
+        status: 'currency_change',
+        week_start: WEEK_START,
+        currencies: ['GBP', 'EUR'],
+      },
+    ],
+    [
+      'legacy hours_only',
+      {
+        status: 'hours_only',
+        week_start: WEEK_START,
+        reason: 'legacy_approval',
+      },
+    ],
+  ])('finding 7 — %s week: real approved expenses, but NO fabricated £0.00 total', async (_label, earnings) => {
+    listExpensesForWeekMock.mockImplementation(() =>
+      Promise.resolve([
+        makeExpense({
+          id: 'expense-approved',
+          status: 'approved',
+          amount_minor: 1200,
+        }),
+      ])
+    );
+    getByIdMock.mockImplementation(() =>
+      Promise.resolve(makeTimesheetWeek({}, earnings))
+    );
+
+    const { getByTestId, queryByTestId, queryAllByText } = renderParentView();
+
+    await waitFor(() =>
+      expect(getByTestId('reimbursements-card')).toBeTruthy()
+    );
+    // The real item still shows its real amount.
+    expect(
+      getByTestId('reimbursements-card-line-expense-approved-value').props
+        .children
+    ).toBe('£12.00');
+    // No total row claiming a figure the server never computed.
+    expect(queryByTestId('reimbursements-card-total')).toBeNull();
+    expect(getByTestId('reimbursements-card-total-unavailable')).toBeTruthy();
+    expect(queryAllByText('£0.00')).toHaveLength(0);
+  });
+
+  it('finding 7 — earnings fetch error: real approved expenses, but NO fabricated £0.00 total', async () => {
+    listExpensesForWeekMock.mockImplementation(() =>
+      Promise.resolve([
+        makeExpense({
+          id: 'expense-approved',
+          status: 'approved',
+          amount_minor: 1200,
+        }),
+      ])
+    );
+    getByIdMock.mockImplementation(() => Promise.reject(new Error('boom')));
+
+    const { getByTestId, queryByTestId, queryAllByText } = renderParentView();
+
+    await waitFor(() =>
+      expect(getByTestId('reimbursements-card')).toBeTruthy()
+    );
+    expect(
+      getByTestId('reimbursements-card-line-expense-approved-value').props
+        .children
+    ).toBe('£12.00');
+    expect(queryByTestId('reimbursements-card-total')).toBeNull();
+    expect(getByTestId('reimbursements-card-total-unavailable')).toBeTruthy();
+    expect(queryAllByText('£0.00')).toHaveLength(0);
   });
 });

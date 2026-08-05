@@ -7,6 +7,14 @@
  * Owner ruling: never shows an indicative money figure derived from pending
  * mileage — the count·amount label only sums EXPENSE-kind pending rows'
  * `amount_minor` (which is always present), not mileage's null amount.
+ *
+ * Phase 3+4 adversarial review, finding 12: an ALL-mileage pending set
+ * summed `amount_minor ?? 0` to a fabricated "£0.00" for claims that will
+ * definitely pay out — the fix withholds the money total whenever there is
+ * nothing priced (or the priced rows span more than one currency — this
+ * list is HOUSEHOLD-WIDE, not week-scoped, so a currency change can put
+ * different currencies in the same queue) and shows a count/mileage note
+ * instead.
  */
 import { beforeAll, describe, expect, it, mock } from 'bun:test';
 import type { Expense } from '@steadily-nanny/shared-types/schemas/expense.schema';
@@ -47,7 +55,6 @@ describe('PendingExpensesRow', () => {
       <PendingExpensesRow
         testID="expenses-pending-row"
         pendingExpenses={[]}
-        currency="GBP"
         onPress={() => {}}
       />
     );
@@ -60,7 +67,6 @@ describe('PendingExpensesRow', () => {
       <PendingExpensesRow
         testID="expenses-pending-row"
         pendingExpenses={[makeExpense()]}
-        currency="GBP"
         onPress={onPress}
       />
     );
@@ -84,7 +90,6 @@ describe('PendingExpensesRow', () => {
             miles: 12.4,
           }),
         ]}
-        currency="GBP"
         onPress={() => {}}
       />
     );
@@ -92,5 +97,82 @@ describe('PendingExpensesRow', () => {
     expect(getByTestId('expenses-pending-row-amount').props.children).toBe(
       '£12.00'
     );
+    // A note about the one still-unpriced mileage claim, not a silent drop.
+    expect(getByTestId('expenses-pending-row-mileage-note')).toBeTruthy();
+  });
+
+  // finding 12's headline defect.
+  it('ALL-mileage pending set: NO money total at all, never a fabricated "£0.00"', () => {
+    const { getByTestId, queryByTestId, queryAllByText } = render(
+      <PendingExpensesRow
+        testID="expenses-pending-row"
+        pendingExpenses={[
+          makeExpense({
+            id: 'expense-1',
+            kind: 'mileage',
+            amount_minor: null,
+            miles: 12.4,
+          }),
+          makeExpense({
+            id: 'expense-2',
+            kind: 'mileage',
+            amount_minor: null,
+            miles: 8.0,
+          }),
+        ]}
+        onPress={() => {}}
+      />
+    );
+
+    expect(queryByTestId('expenses-pending-row-amount')).toBeNull();
+    expect(getByTestId('expenses-pending-row-mileage-note')).toBeTruthy();
+    expect(queryAllByText('£0.00')).toHaveLength(0);
+  });
+
+  it('mixed-currency priced rows: suppresses the total rather than mislabelling it', () => {
+    const { queryByTestId, getByTestId } = render(
+      <PendingExpensesRow
+        testID="expenses-pending-row"
+        pendingExpenses={[
+          makeExpense({
+            id: 'expense-gbp',
+            amount_minor: 1200,
+            currency: 'GBP',
+          }),
+          makeExpense({
+            id: 'expense-eur',
+            amount_minor: 1500,
+            currency: 'EUR',
+          }),
+        ]}
+        onPress={() => {}}
+      />
+    );
+
+    expect(queryByTestId('expenses-pending-row-amount')).toBeNull();
+    expect(
+      getByTestId('expenses-pending-row-mixed-currency-note')
+    ).toBeTruthy();
+  });
+
+  it('every row priced, single currency: shows the total, no notes', () => {
+    const { getByTestId, queryByTestId } = render(
+      <PendingExpensesRow
+        testID="expenses-pending-row"
+        pendingExpenses={[
+          makeExpense({ id: 'expense-1', amount_minor: 1200 }),
+          makeExpense({ id: 'expense-2', amount_minor: 2200 }),
+        ]}
+        onPress={() => {}}
+      />
+    );
+
+    expect(getByTestId('expenses-pending-row-amount').props.children).toBe(
+      '£34.00'
+    );
+    expect(queryByTestId('expenses-pending-row-mileage-note')).toBeNull();
+    expect(
+      queryByTestId('expenses-pending-row-mixed-currency-note')
+    ).toBeNull();
   });
 });

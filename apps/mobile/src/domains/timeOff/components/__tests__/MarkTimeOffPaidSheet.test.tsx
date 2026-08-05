@@ -86,14 +86,46 @@ describe('MarkTimeOffPaidSheet', () => {
     expect(getByTestId('pto-mark-paid-submit').props.disabled).toBeFalsy();
   });
 
-  it('the submit button is disabled until a positive number of hours is entered', () => {
+  it('the submit button is disabled until hours are entered', () => {
     const { getByTestId } = renderWithProviders(
       <MarkTimeOffPaidSheet {...baseProps()} />
     );
 
     expect(getByTestId('pto-mark-paid-submit').props.disabled).toBe(true);
 
+    fireEvent.changeText(getByTestId('pto-mark-paid-hours-input'), 'abc');
+    expect(getByTestId('pto-mark-paid-submit').props.disabled).toBe(true);
+  });
+
+  // The API's mark-paid is total-not-delta (Phase 3/4 review, blocker 3), so
+  // a requested total of 0 is the ONLY way to un-pay a mis-marked time off.
+  // The client must be able to express it — an earlier fix that rejected
+  // everything rounding to zero minutes had made the reversal unreachable.
+  it('accepts an explicit 0 as the full-reversal instruction', () => {
+    const onSubmit = mock();
+    const { getByTestId } = renderWithProviders(
+      <MarkTimeOffPaidSheet {...baseProps({ onSubmit })} />
+    );
+
     fireEvent.changeText(getByTestId('pto-mark-paid-hours-input'), '0');
+    expect(getByTestId('pto-mark-paid-submit').props.disabled).toBe(false);
+
+    fireEvent.press(getByTestId('pto-mark-paid-submit'));
+    expect(onSubmit).toHaveBeenCalledWith({
+      time_off_id: TIME_OFF_ID,
+      minutes: 0,
+    });
+  });
+
+  // Distinct from an explicit 0: real positive input that rounds away to
+  // nothing must still be refused, or a fat-fingered 0.004 would silently
+  // un-pay her instead of paying a few minutes.
+  it('still refuses positive hours that round to zero minutes', () => {
+    const { getByTestId } = renderWithProviders(
+      <MarkTimeOffPaidSheet {...baseProps()} />
+    );
+
+    fireEvent.changeText(getByTestId('pto-mark-paid-hours-input'), '0.004');
     expect(getByTestId('pto-mark-paid-submit').props.disabled).toBe(true);
   });
 
@@ -180,6 +212,54 @@ describe('MarkTimeOffPaidSheet', () => {
 
     fireEvent.press(getByTestId('pto-mark-paid-adjust'));
     expect(getByTestId('pto-mark-paid-hours-input')).toBeTruthy();
+  });
+
+  // Phase 3+4 adversarial review, finding 13: bare `Number()` accepted
+  // scientific notation nobody typed on purpose, and let a real positive
+  // number of hours round to 0 minutes without any client-side refusal.
+  it('finding 13: rejects scientific notation ("2e1") rather than treating it as 20', () => {
+    const onSubmit = mock();
+    const { getByTestId } = renderWithProviders(
+      <MarkTimeOffPaidSheet {...baseProps({ onSubmit })} />
+    );
+
+    fireEvent.changeText(getByTestId('pto-mark-paid-hours-input'), '2e1');
+
+    expect(getByTestId('pto-mark-paid-submit').props.disabled).toBe(true);
+    expect(getByTestId('pto-mark-paid-hours-error')).toBeTruthy();
+    fireEvent.press(getByTestId('pto-mark-paid-submit'));
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it('finding 13: rejects an amount of hours that rounds to 0 minutes (0.004h)', () => {
+    const onSubmit = mock();
+    const { getByTestId } = renderWithProviders(
+      <MarkTimeOffPaidSheet {...baseProps({ onSubmit })} />
+    );
+
+    fireEvent.changeText(getByTestId('pto-mark-paid-hours-input'), '0.004');
+
+    expect(getByTestId('pto-mark-paid-submit').props.disabled).toBe(true);
+    expect(getByTestId('pto-mark-paid-hours-error')).toBeTruthy();
+    fireEvent.press(getByTestId('pto-mark-paid-submit'));
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it('finding 13: accepts a plain decimal number of hours (7.5 -> 450 minutes)', () => {
+    const onSubmit = mock();
+    const { getByTestId, queryByTestId } = renderWithProviders(
+      <MarkTimeOffPaidSheet {...baseProps({ onSubmit })} />
+    );
+
+    fireEvent.changeText(getByTestId('pto-mark-paid-hours-input'), '7.5');
+
+    expect(queryByTestId('pto-mark-paid-hours-error')).toBeNull();
+    expect(getByTestId('pto-mark-paid-submit').props.disabled).toBeFalsy();
+    fireEvent.press(getByTestId('pto-mark-paid-submit'));
+    expect(onSubmit).toHaveBeenCalledWith({
+      time_off_id: TIME_OFF_ID,
+      minutes: 450,
+    });
   });
 
   it('re-seeds to blank every time the sheet re-opens', () => {
