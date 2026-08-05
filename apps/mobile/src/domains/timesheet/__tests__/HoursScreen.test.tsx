@@ -188,6 +188,7 @@ let mockUseWeekTimeEntries: ReturnType<typeof mock>;
 let mockUseWeekTimesheet: ReturnType<typeof mock>;
 let mockUseApproveTimesheet: ReturnType<typeof mock>;
 let mockUseQueryTimesheet: ReturnType<typeof mock>;
+let mockUseReopenTimesheet: ReturnType<typeof mock>;
 let mockUseUpdateTimeEntry: ReturnType<typeof mock>;
 let mockUseLocalSearchParams: ReturnType<typeof mock>;
 let mockSetParams: ReturnType<typeof mock>;
@@ -207,6 +208,10 @@ beforeAll(async () => {
     isPending: false,
   }));
   mockUseQueryTimesheet = mock(() => ({
+    mutateAsync: mock(() => Promise.resolve()),
+    isPending: false,
+  }));
+  mockUseReopenTimesheet = mock(() => ({
     mutateAsync: mock(() => Promise.resolve()),
     isPending: false,
   }));
@@ -241,6 +246,10 @@ beforeAll(async () => {
   }));
   mock.module('@/src/hooks/mutations/useQueryTimesheet', () => ({
     useQueryTimesheet: mockUseQueryTimesheet,
+  }));
+  // The approved week's undo — same reason as the two above.
+  mock.module('@/src/hooks/mutations/useReopenTimesheet', () => ({
+    useReopenTimesheet: mockUseReopenTimesheet,
   }));
   // The nanny week's correction path (Daylight UX P0-2) — mocked for the
   // same reason as the two above: a real `useMutation` needs a

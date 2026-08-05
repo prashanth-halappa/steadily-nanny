@@ -174,4 +174,19 @@ export class TimesheetController {
       return next(error);
     }
   }
+
+  /** POST /timesheets/:id/reopen — parents only. Undo for approve. */
+  static async reopen(req: Request, res: Response, next: NextFunction) {
+    try {
+      const id = req.params.id as string;
+      const timesheet = await timesheetCommandService.reopen(
+        getAuthUserId(req),
+        id,
+        req.body
+      );
+      return sendSuccessResponse(res, 'Timesheet reopened', { timesheet });
+    } catch (error) {
+      return next(error);
+    }
+  }
 }

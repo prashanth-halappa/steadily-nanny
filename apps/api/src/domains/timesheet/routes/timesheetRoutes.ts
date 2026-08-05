@@ -9,7 +9,11 @@ import { authWithOwnership } from '../../../middlewares/presets';
 import { validate } from '../../../middlewares/validator';
 import { asyncHandler } from '../../../utils/asyncHandler';
 import { TimesheetController } from '../controllers/timesheetController';
-import { QueryTimesheetSchema, TimesheetIdParamSchema } from '../schemas';
+import {
+  QueryTimesheetSchema,
+  ReopenTimesheetSchema,
+  TimesheetIdParamSchema,
+} from '../schemas';
 import { timesheetQueryService } from '../services/timesheetQueryService';
 import type { Timesheet } from '../types';
 
@@ -27,7 +31,7 @@ const timesheetOwnership = {
 
 // The week read. Same ownership guard as the actions below — any active
 // member may READ a week's earnings (a nanny must be able to see what she is
-// owed); only a parent may approve or query it.
+// owed); only a parent may approve, query, or reopen it.
 router.get(
   '/:id',
   ...authWithOwnership(TimesheetIdParamSchema, timesheetOwnership),
@@ -45,6 +49,13 @@ router.post(
   ...authWithOwnership(TimesheetIdParamSchema, timesheetOwnership),
   validate(QueryTimesheetSchema, 'body'),
   asyncHandler(TimesheetController.query)
+);
+
+router.post(
+  '/:id/reopen',
+  ...authWithOwnership(TimesheetIdParamSchema, timesheetOwnership),
+  validate(ReopenTimesheetSchema, 'body'),
+  asyncHandler(TimesheetController.reopen)
 );
 
 export default router;

@@ -256,9 +256,12 @@ export interface MidWeekConsequence {
 }
 
 /**
- * `null` when the effective date IS a Monday (no split — the ordinary case)
- * or isn't a valid date yet. TIER0-CX-SPEC.md §2: "Whenever the chosen date
- * is not a Monday" — never averaged, always the two full figures.
+ * `null` when the effective date IS a Monday (no split — the ordinary case),
+ * isn't a valid date yet, or the rate+currency are unchanged from the
+ * previous arrangement (pre-fill is not a split). TIER0-CX-SPEC.md §2:
+ * "Whenever the chosen date is not a Monday" — never averaged, always the
+ * two full figures. Rate-specific copy only; other mid-week term changes
+ * stay silent here by design.
  */
 export function buildMidWeekConsequence(
   effectiveDateISO: string,
@@ -269,6 +272,9 @@ export function buildMidWeekConsequence(
 ): MidWeekConsequence | null {
   if (!isValidCalendarDate(effectiveDateISO)) return null;
   if (isMonday(effectiveDateISO)) return null;
+  if (previousRateMinor === newRateMinor && previousCurrency === newCurrency) {
+    return null;
+  }
   const untilDateISO = addLocalDays(effectiveDateISO, -1);
   return {
     oldRateLabel: formatMoney(previousRateMinor, previousCurrency),

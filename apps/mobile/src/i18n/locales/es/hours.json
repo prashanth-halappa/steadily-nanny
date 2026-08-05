@@ -27,6 +27,7 @@
   "overScheduled": "{{duration}} por encima de lo previsto",
   "underScheduled": "{{duration}} por debajo de lo previsto",
   "inProgress": "en curso",
+  "nextDayMarker": "+1",
   "edited": "corregido",
   "editEntry": "Corregir este registro",
   "statusNotSubmitted": "Aún se están registrando horas",
@@ -71,5 +72,13 @@
   "approveDialogBody": "Vas a aprobar {{hours}} y {{gross}} en bruto para {{name}}. Aprobar fija ambas cifras — si las horas cambian después, la semana se reabre y el total se vuelve a calcular.",
   "approveDialogBodyNoArrangement": "Vas a aprobar {{hours}} para {{name}}. No hay una tarifa establecida, así que Steadily no puede totalizar el sueldo de esta semana.",
   "approveDialogCancel": "Todavía no",
-  "approveDialogConfirm": "Aprobar la semana"
+  "approveDialogConfirm": "Aprobar la semana",
+  "reopenWeek": "Reabrir la semana",
+  "reopenDialogTitle": "¿Reabrir {{range}}?",
+  "reopenDialogBody": "El total aprobado dejará de ser definitivo — se podrán corregir las horas y la cifra puede cambiar.",
+  "reopenDialogReasonPlaceholder": "p. ej. Las horas del jueves estaban mal",
+  "reopenDialogReasonHint": "Obligatorio — se guarda en el registro de tu hogar.",
+  "reopenDialogCancel": "Todavía no",
+  "reopenDialogConfirm": "Reabrir la semana",
+  "reopenedToast": "Semana reabierta"
 }

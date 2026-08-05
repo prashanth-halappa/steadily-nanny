@@ -101,6 +101,18 @@ export class TimeEntryNotEditableError extends ConflictError {
 }
 
 /**
+ * 409 — a new or edited span intersects another completed entry for the
+ * same carer. There is no DB exclusion constraint on `time_entries`, so the
+ * service layer is the only guard against double-counting the same hours.
+ */
+export class TimeEntryOverlapError extends ConflictError {
+  constructor(metadata?: ErrorMetadata) {
+    super('This time overlaps another entry', 'TIME_ENTRY_OVERLAPS', metadata);
+    this.name = 'TimeEntryOverlapError';
+  }
+}
+
+/**
  * 400 — the supplied clock times don't describe a possible session: out
  * before in, or out in the future. Mirrors the DB's
  * `time_entries_clock_order` check so a bad edit reads as a validation

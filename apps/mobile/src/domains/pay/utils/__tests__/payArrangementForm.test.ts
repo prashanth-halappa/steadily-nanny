@@ -256,4 +256,10 @@ describe('buildMidWeekConsequence', () => {
       newFromLabel: 'Friday 4 September',
     });
   });
+
+  it('is null when rate and currency are unchanged (pre-fill is not a split)', () => {
+    expect(
+      buildMidWeekConsequence('2026-08-04', 1850, 'GBP', 1850, 'GBP')
+    ).toBeNull();
+  });
 });

@@ -27,6 +27,7 @@
   "overScheduled": "{{duration}} over scheduled",
   "underScheduled": "{{duration}} under scheduled",
   "inProgress": "in progress",
+  "nextDayMarker": "+1",
   "edited": "edited",
   "editEntry": "Fix this entry",
   "statusNotSubmitted": "Hours still coming in",
@@ -71,5 +72,13 @@
   "approveDialogBody": "You're approving {{hours}} and {{gross}} gross for {{name}}. Approving locks both figures — if hours change later, the week reopens and the total is worked out again.",
   "approveDialogBodyNoArrangement": "You're approving {{hours}} for {{name}}. No pay rate is set, so Steadily can't total the pay for this week.",
   "approveDialogCancel": "Not yet",
-  "approveDialogConfirm": "Approve the week"
+  "approveDialogConfirm": "Approve the week",
+  "reopenWeek": "Reopen the week",
+  "reopenDialogTitle": "Reopen {{range}}?",
+  "reopenDialogBody": "The approved total will stop being final — hours can be corrected and the figure can change.",
+  "reopenDialogReasonPlaceholder": "e.g. Thursday hours were wrong",
+  "reopenDialogReasonHint": "Required — kept on your household's record.",
+  "reopenDialogCancel": "Not yet",
+  "reopenDialogConfirm": "Reopen the week",
+  "reopenedToast": "Week reopened"
 }

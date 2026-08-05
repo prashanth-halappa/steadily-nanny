@@ -4,7 +4,11 @@
  * nanny sees, plus "Approve the week" (behind a confirmation dialog,
  * TIER0-CX-SPEC.md §4.3 — approving freezes the gross figure alongside the
  * hours) and a "Query" escape hatch that takes a note instead of silently
- * withholding approval.
+ * withholding approval. An approved week also offers "Reopen the week" —
+ * the opposite of approve — so a frozen past week can be corrected without
+ * a manual DB write. Reopen's own `hours-reopen-button` renders inside
+ * `WeekTotal` (the FlashList header), not this footer — see that module's
+ * doc comment for why it needs to be above the fold.
  *
  * TIER0-CX-SPEC.md §6.2/§6.3/§7 (Phase 4, additive): the footer also carries
  * the pending-expenses review affordance (action-gated behind `!readOnly`,
@@ -36,6 +40,7 @@ import { resolveMemberDisplayName } from '@/src/domains/schedule/utils/memberDis
 import { resolveWeekCarerHeaderName } from '@/src/domains/timesheet/utils/weekCarerHeaderName';
 import { useApproveTimesheet } from '@/src/hooks/mutations/useApproveTimesheet';
 import { useQueryTimesheet } from '@/src/hooks/mutations/useQueryTimesheet';
+import { useReopenTimesheet } from '@/src/hooks/mutations/useReopenTimesheet';
 import { useReviewExpense } from '@/src/hooks/mutations/useReviewExpense';
 import { useHouseholdMembers } from '@/src/hooks/queries/useHouseholdMembers';
 import { usePendingExpenses } from '@/src/hooks/queries/usePendingExpenses';
@@ -57,6 +62,7 @@ import { useReopenedNotice } from '../utils/reopenedNotice';
 import { ApproveWeekDialog } from './ApproveWeekDialog';
 import { EarningsBreakdownSheet } from './EarningsBreakdownSheet';
 import { QueryNoteSheet } from './QueryNoteSheet';
+import { ReopenWeekDialog } from './ReopenWeekDialog';
 import { TimeEntryDayRow } from './TimeEntryDayRow';
 import { WeekTotal } from './WeekTotal';
 
@@ -114,9 +120,11 @@ export function ParentWeekView({
   const pendingExpensesQuery = usePendingExpenses(householdId);
   const approveTimesheet = useApproveTimesheet();
   const queryTimesheet = useQueryTimesheet();
+  const reopenTimesheet = useReopenTimesheet();
   const reviewExpense = useReviewExpense();
   const [isQuerySheetVisible, setIsQuerySheetVisible] = useState(false);
   const [isApproveDialogOpen, setIsApproveDialogOpen] = useState(false);
+  const [isReopenDialogOpen, setIsReopenDialogOpen] = useState(false);
   const [isBreakdownVisible, setIsBreakdownVisible] = useState(false);
   const [isExpenseReviewVisible, setIsExpenseReviewVisible] = useState(false);
   const [submittingExpenseId, setSubmittingExpenseId] = useState<string | null>(
@@ -332,6 +340,21 @@ export function ParentWeekView({
     void handleApprove();
   };
 
+  const handleReopen = async (reason: string) => {
+    if (!timesheet || !isApproved || reopenTimesheet.isPending) return;
+    try {
+      await reopenTimesheet.mutateAsync({ timesheetId: timesheet.id, reason });
+    } catch {
+      return;
+    }
+    showSuccessToast(t('reopenedToast'));
+  };
+
+  const handleConfirmReopen = (reason: string) => {
+    setIsReopenDialogOpen(false);
+    void handleReopen(reason);
+  };
+
   const handleQuerySubmit = async (note: string) => {
     if (!timesheet || !isActionable || queryTimesheet.isPending) return;
     try {
@@ -380,6 +403,15 @@ export function ParentWeekView({
             earningsReopened={reopened}
             earningsError={timesheetQuery.isError}
             onRetryEarnings={() => void timesheetQuery.refetch()}
+            // Walkthrough fix 1 — the reopen affordance lives in the
+            // summary card, next to the status pill/gross, not below the
+            // day rows. `readOnly` (a helper) never gets a handler, so a
+            // helper never sees `hours-reopen-button` even on an approved
+            // week.
+            onReopenPress={
+              readOnly ? undefined : () => setIsReopenDialogOpen(true)
+            }
+            isReopenPending={reopenTimesheet.isPending}
           />
         }
         ListFooterComponent={
@@ -391,7 +423,16 @@ export function ParentWeekView({
               totalMinor={earningsOk ? earningsOk.reimbursements_minor : null}
               currency={expensesCurrency}
             />
-            {timesheet?.query_note ? (
+            {/* Gated on status, not just a truthy note: `query_note` only
+                means "queried" while status is genuinely 'queried'. The API
+                never writes a reopen reason here (it lives in the day-thread
+                audit event instead — see timesheetCommandService.reopen's
+                doc comment), but this stays status-gated as the same
+                belt-and-braces `buildInboxItems` already applies, so a
+                stale or future-mistaken note can never mislabel a
+                reopened/approved week as an open dispute. */}
+            {timesheet?.status === TIMESHEET_STATUSES.QUERIED &&
+            timesheet.query_note ? (
               <Body
                 testID="hours-query-note"
                 className="mt-4 text-muted-foreground"
@@ -464,6 +505,14 @@ export function ParentWeekView({
         hoursLabel={formatEarningsDuration(totalMinutes)}
         grossLabel={grossLabel}
         carerName={approveDialogCarerName}
+      />
+
+      <ReopenWeekDialog
+        open={isReopenDialogOpen}
+        onOpenChange={setIsReopenDialogOpen}
+        onConfirm={handleConfirmReopen}
+        isSubmitting={reopenTimesheet.isPending}
+        weekRangeLabel={weekRangeLabel}
       />
 
       {earningsOk ? (

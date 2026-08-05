@@ -10,6 +10,7 @@ let clockOut: any;
 let createRetroactiveEntry: any;
 let approve: any;
 let queryTimesheet: any;
+let reopen: any;
 
 beforeAll(async () => {
   getRunning = mock(async () => null);
@@ -28,6 +29,7 @@ beforeAll(async () => {
   }));
   approve = mock(async () => ({ id: 'ts1', status: 'approved' }));
   queryTimesheet = mock(async () => ({ id: 'ts1', status: 'queried' }));
+  reopen = mock(async () => ({ id: 'ts1', status: 'submitted' }));
 
   mock.module(
     '../../../../../src/domains/timesheet/services/timesheetQueryService',
@@ -49,6 +51,7 @@ beforeAll(async () => {
         createRetroactiveEntry,
         approve,
         query: queryTimesheet,
+        reopen,
       },
     })
   );
@@ -84,6 +87,7 @@ beforeEach(() => {
     createRetroactiveEntry,
     approve,
     queryTimesheet,
+    reopen,
   ]) {
     m.mockClear?.();
   }
@@ -205,6 +209,25 @@ describe('TimesheetController', () => {
     );
     expect(queryTimesheet).toHaveBeenCalledWith('parent-1', 'ts1', {
       note: 'Query Thursday',
+    });
+  });
+
+  it('reopen passes the id param and reason through', async () => {
+    const res = mockRes();
+    await TimesheetController.reopen(
+      {
+        user: { id: 'parent-1' },
+        params: { id: 'ts1' },
+        body: { reason: 'Thursday hours were wrong' },
+      } as any,
+      res,
+      mock()
+    );
+    expect(reopen).toHaveBeenCalledWith('parent-1', 'ts1', {
+      reason: 'Thursday hours were wrong',
+    });
+    expect(res.body.data).toEqual({
+      timesheet: { id: 'ts1', status: 'submitted' },
     });
   });
 

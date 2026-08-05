@@ -15,6 +15,10 @@
  *
  * Parent CX: day label includes the calendar date; "Today" marker; future
  * empty days say "Not yet"; zero-entry days drop elevation.
+ *
+ * Overnight finishes append a quiet "+1" when the clock-out's household-zone
+ * local date is later than the day row — otherwise "11:53 PM – 10:26 PM"
+ * reads as a backwards same-day shift.
  */
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -120,6 +124,12 @@ export function TimeEntryDayRow({
             // and is NOT flagged.
             const entryMinutes = computeEntryMinutes(entry, nowMs);
             const isZeroDuration = !!entry.clock_out_at && entryMinutes === 0;
+            // Compare finish to the ROW date in the household zone — never
+            // the device zone (GOLDEN-FIXES #21). A later local date means
+            // the range spans midnight and needs the quiet "+1" clarifier.
+            const finishesNextDay =
+              !!entry.clock_out_at &&
+              localDateInZone(timeZone, new Date(entry.clock_out_at)) > date;
             const canEdit =
               !!onEditEntry && isEntryEditable(entry, timesheetStatus);
             const label = (
@@ -138,6 +148,7 @@ export function TimeEntryDayRow({
                 {entry.clock_out_at
                   ? formatClockTime(entry.clock_out_at, timeZone)
                   : t('inProgress')}
+                {finishesNextDay ? ` ${t('nextDayMarker')}` : ''}
                 {isZeroDuration ? ` – ${t('flaggedCheckEntry')}` : ''}
                 {wasEntryEdited(entry) ? ` · ${t('edited')}` : ''}
               </Small>

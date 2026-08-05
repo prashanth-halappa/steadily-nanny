@@ -10,6 +10,7 @@ import {
   NotATimesheetParentError,
   TimeEntryNotEditableError,
   TimeEntryNotRunningError,
+  TimeEntryOverlapError,
   TimesheetNotActionableError,
 } from '../../../../../src/domains/timesheet/errors/timesheetErrors';
 import {
@@ -705,7 +706,10 @@ describe('TimesheetCommandService.clockOut', () => {
       makeUserService()
     );
 
-    await svc.clockOut('carer-1', 't1', { break_minutes: 30 });
+    await svc.clockOut('carer-1', 't1', {
+      break_minutes: 30,
+      clock_out_at: '2026-08-03T16:00:00.000Z',
+    });
 
     expect(timeEntryRepo.update).toHaveBeenCalledWith(
       't1',
@@ -760,7 +764,10 @@ describe('TimesheetCommandService.clockOut', () => {
       userService
     );
 
-    await svc.clockOut('carer-1', 't1', { break_minutes: 30 });
+    await svc.clockOut('carer-1', 't1', {
+      break_minutes: 30,
+      clock_out_at: '2026-08-03T16:00:00.000Z',
+    });
 
     expect(userService.getProfileById).not.toHaveBeenCalled();
     expect(timesheetRepo.create).toHaveBeenCalledWith(
@@ -788,7 +795,10 @@ describe('TimesheetCommandService.clockOut', () => {
       makeUserService()
     );
 
-    await svc.clockOut('carer-1', 't1', { break_minutes: 30 });
+    await svc.clockOut('carer-1', 't1', {
+      break_minutes: 30,
+      clock_out_at: '2026-08-03T16:00:00.000Z',
+    });
 
     // No shift to freeze from, so freezeScheduledMinutes never even needs to
     // look one up.
@@ -822,7 +832,9 @@ describe('TimesheetCommandService.clockOut', () => {
       makeUserService()
     );
 
-    await svc.clockOut('carer-1', 't1', {});
+    await svc.clockOut('carer-1', 't1', {
+      clock_out_at: '2026-08-03T16:00:00.000Z',
+    });
 
     expect(timesheetRepo.create).not.toHaveBeenCalled();
     expect(timesheetRepo.update).toHaveBeenCalledWith(
@@ -852,7 +864,9 @@ describe('TimesheetCommandService.clockOut', () => {
       makeUserService()
     );
 
-    await svc.clockOut('carer-1', 't1', {});
+    await svc.clockOut('carer-1', 't1', {
+      clock_out_at: '2026-08-03T16:00:00.000Z',
+    });
 
     expect(timesheetRepo.create).toHaveBeenCalledWith(
       expect.objectContaining({ total_minutes: 810 }) // 450 + 300 + 60
@@ -880,8 +894,12 @@ describe('TimesheetCommandService.clockOut', () => {
       makeUserService()
     );
 
-    await svc.clockOut('carer-1', 't1', {});
-    await svc.clockOut('carer-1', 't1', {});
+    await svc.clockOut('carer-1', 't1', {
+      clock_out_at: '2026-08-03T16:00:00.000Z',
+    });
+    await svc.clockOut('carer-1', 't1', {
+      clock_out_at: '2026-08-03T16:00:00.000Z',
+    });
 
     expect(timesheetRepo.update).toHaveBeenCalledTimes(2);
     for (const call of timesheetRepo.update.mock.calls) {
@@ -906,7 +924,9 @@ describe('TimesheetCommandService.clockOut', () => {
       makeUserService()
     );
 
-    await svc.clockOut('carer-1', 't1', {});
+    await svc.clockOut('carer-1', 't1', {
+      clock_out_at: '2026-08-03T16:00:00.000Z',
+    });
 
     expect(timesheetRepo.update).toHaveBeenCalledWith(
       'ts1',
@@ -939,7 +959,9 @@ describe('TimesheetCommandService.clockOut', () => {
       makeUserService()
     );
 
-    await svc.clockOut('carer-1', 't1', {});
+    await svc.clockOut('carer-1', 't1', {
+      clock_out_at: '2026-08-03T16:00:00.000Z',
+    });
 
     expect(timesheetRepo.update).toHaveBeenCalledWith(
       'ts1',
@@ -973,7 +995,9 @@ describe('TimesheetCommandService.clockOut', () => {
       makeUserService()
     );
 
-    await svc.clockOut('carer-1', 't1', {});
+    await svc.clockOut('carer-1', 't1', {
+      clock_out_at: '2026-08-03T16:00:00.000Z',
+    });
 
     expect(timesheetRepo.update).toHaveBeenCalledWith(
       'ts1',
@@ -1003,9 +1027,11 @@ describe('TimesheetCommandService.clockOut', () => {
       makeUserService()
     );
 
-    await expect(svc.clockOut('carer-1', 't1', {})).rejects.toBeInstanceOf(
-      TimeEntryNotRunningError
-    );
+    await expect(
+      svc.clockOut('carer-1', 't1', {
+        clock_out_at: '2026-08-03T16:00:00.000Z',
+      })
+    ).rejects.toBeInstanceOf(TimeEntryNotRunningError);
     expect(timeEntryRepo.update).not.toHaveBeenCalled();
   });
 });
@@ -1288,7 +1314,8 @@ describe('TimesheetCommandService.updateEntry (P0-2)', () => {
     return new TimesheetCommandService(
       overrides.timeEntryRepo ??
         makeTimeEntryRepo({
-          listForCarerWeek: mock(async () => [finishedEntryA]),
+          // Include the entry's own id so assertNoOverlap can exclude self.
+          listForCarerWeek: mock(async () => [{ ...finishedEntryA, id: 't1' }]),
           update: mock(async (_id: string, patch: Record<string, unknown>) => ({
             ...submittedEntry,
             ...patch,
@@ -1311,9 +1338,11 @@ describe('TimesheetCommandService.updateEntry (P0-2)', () => {
   it('applies the correction and re-derives the week total from the corrected entries', async () => {
     const timeEntryRepo = makeTimeEntryRepo({
       // The week as it stands AFTER the correction — the roll-up derives
-      // from this list rather than adjusting a stored total.
+      // from this list rather than adjusting a stored total. Same list is
+      // also the overlap check's view; id 't1' matches the edited row so
+      // self is excluded.
       listForCarerWeek: mock(async () => [
-        { ...finishedEntryA, break_minutes: 0 }, // 480, was 450
+        { ...finishedEntryA, id: 't1', break_minutes: 0 }, // 480, was 450
       ]),
       update: mock(async (_id: string, patch: Record<string, unknown>) => ({
         ...submittedEntry,
@@ -1339,7 +1368,7 @@ describe('TimesheetCommandService.updateEntry (P0-2)', () => {
 
   it('leaves untouched fields alone — an omitted field is not a null', async () => {
     const timeEntryRepo = makeTimeEntryRepo({
-      listForCarerWeek: mock(async () => [finishedEntryA]),
+      listForCarerWeek: mock(async () => [{ ...finishedEntryA, id: 't1' }]),
       update: mock(async (_id: string, patch: Record<string, unknown>) => ({
         ...submittedEntry,
         ...patch,
@@ -1395,15 +1424,55 @@ describe('TimesheetCommandService.updateEntry (P0-2)', () => {
       })
     ).rejects.toBeInstanceOf(InvalidClockTimesError);
   });
+
+  it('rejects a clock-out edit that finishes in the following week', async () => {
+    // Entry already sits on the last Sunday of its week so a short overnight
+    // finish can cross Monday without tripping the 16h span ceiling — and
+    // both ends are in the past so CLOCK_OUT_IN_FUTURE cannot fire first.
+    const sundayEntry = {
+      ...submittedEntry,
+      clock_in_at: '2026-07-26T10:00:00.000Z',
+      clock_out_at: '2026-07-26T16:00:00.000Z',
+      local_date: '2026-07-26',
+    };
+    const svc = makeEditableSvc({
+      entry: sundayEntry,
+      timeEntryRepo: makeTimeEntryRepo({
+        listForCarerWeek: mock(async () => [{ ...sundayEntry, id: 't1' }]),
+        update: mock(async (_id: string, patch: Record<string, unknown>) => ({
+          ...sundayEntry,
+          ...patch,
+        })),
+      }),
+      timesheetRepo: makeTimesheetRepo({
+        findByWeek: mock(async () => ({
+          ...timesheet,
+          week_start: '2026-07-20',
+          status: 'submitted',
+        })),
+      }),
+    });
+
+    // Sunday evening → Monday morning in Europe/London: clock-in stays in
+    // the original week (Mon 20 Jul), finish lands in the next.
+    await expect(
+      svc.updateEntry('carer-1', 't1', {
+        clock_in_at: '2026-07-26T20:00:00.000Z',
+        clock_out_at: '2026-07-27T07:00:00.000Z',
+      })
+    ).rejects.toBeInstanceOf(InvalidClockTimesError);
+  });
 });
 
 describe('TimesheetCommandService.createRetroactiveEntry', () => {
   // Same week as `timesheet` (Mon 2026-08-03), clearly in the past so
   // assertClockOrder's future bound never flakes on wall-clock drift.
+  // Starts at finishedEntryA's finish (16:00) — touching end-to-start is
+  // allowed; overlapping 08:00–16:00 is not.
   const retroInput = {
     household_id: 'h1',
-    clock_in_at: '2026-08-03T09:00:00.000Z',
-    clock_out_at: '2026-08-03T17:00:00.000Z', // 480 min
+    clock_in_at: '2026-08-03T16:00:00.000Z',
+    clock_out_at: '2026-08-04T00:00:00.000Z', // 480 min
     break_minutes: 30, // -> 450
   };
 
@@ -1417,6 +1486,15 @@ describe('TimesheetCommandService.createRetroactiveEntry', () => {
     status: 'submitted',
     kind: 'worked',
   };
+
+  /** Overlap check runs before create; roll-up after — two distinct views. */
+  function listForCarerWeekCreateThenRollup(afterCreate: unknown[]) {
+    let calls = 0;
+    return mock(async () => {
+      calls += 1;
+      return calls === 1 ? [finishedEntryA] : afterCreate;
+    });
+  }
 
   function makeRetroSvc(
     overrides: {
@@ -1436,7 +1514,7 @@ describe('TimesheetCommandService.createRetroactiveEntry', () => {
             ...created,
             ...data,
           })),
-          listForCarerWeek: mock(async () => [
+          listForCarerWeek: listForCarerWeekCreateThenRollup([
             finishedEntryA,
             {
               clock_in_at: retroInput.clock_in_at,
@@ -1465,7 +1543,7 @@ describe('TimesheetCommandService.createRetroactiveEntry', () => {
         ...data,
       })),
       // Week after create: prior finishedEntryA (450) + this retro (450) = 900
-      listForCarerWeek: mock(async () => [
+      listForCarerWeek: listForCarerWeekCreateThenRollup([
         finishedEntryA,
         {
           clock_in_at: retroInput.clock_in_at,
@@ -1531,7 +1609,7 @@ describe('TimesheetCommandService.createRetroactiveEntry', () => {
         ...createdRetroEntry,
         ...data,
       })),
-      listForCarerWeek: mock(async () => [
+      listForCarerWeek: listForCarerWeekCreateThenRollup([
         {
           clock_in_at: retroInput.clock_in_at,
           clock_out_at: retroInput.clock_out_at,
@@ -2162,7 +2240,9 @@ describe('TimesheetCommandService.rollUpIntoTimesheet — reopen clears the earn
       makeUserService()
     );
 
-    await svc.clockOut('carer-1', 't1', {});
+    await svc.clockOut('carer-1', 't1', {
+      clock_out_at: '2026-08-03T16:00:00.000Z',
+    });
 
     expect(timesheetRepo.update).toHaveBeenCalledTimes(1);
     expect(timesheetRepo.update).toHaveBeenCalledWith('ts1', {
@@ -2198,7 +2278,9 @@ describe('TimesheetCommandService.rollUpIntoTimesheet — reopen clears the earn
       makeUserService()
     );
 
-    await svc.clockOut('carer-1', 't1', {});
+    await svc.clockOut('carer-1', 't1', {
+      clock_out_at: '2026-08-03T16:00:00.000Z',
+    });
 
     expect(timesheetRepo.update).toHaveBeenCalledWith(
       'ts1',
@@ -2234,7 +2316,9 @@ describe('TimesheetCommandService.rollUpIntoTimesheet — reopen clears the earn
       makeUserService()
     );
 
-    await svc.clockOut('carer-1', 't1', {});
+    await svc.clockOut('carer-1', 't1', {
+      clock_out_at: '2026-08-03T16:00:00.000Z',
+    });
 
     expect(timesheetRepo.update).toHaveBeenCalledWith('ts1', {
       total_minutes: 450,
@@ -2423,7 +2507,9 @@ describe('TimesheetCommandService.rollUpIntoTimesheet — any revert to submitte
       makeUserService()
     );
 
-    await svc.clockOut('carer-1', 't1', {});
+    await svc.clockOut('carer-1', 't1', {
+      clock_out_at: '2026-08-03T16:00:00.000Z',
+    });
 
     expect(timesheetRepo.update).toHaveBeenCalledWith('ts1', {
       total_minutes: 450,
@@ -2454,7 +2540,9 @@ describe('TimesheetCommandService.rollUpIntoTimesheet — any revert to submitte
       makeUserService()
     );
 
-    await svc.clockOut('carer-1', 't1', {});
+    await svc.clockOut('carer-1', 't1', {
+      clock_out_at: '2026-08-03T16:00:00.000Z',
+    });
 
     expect(timesheetRepo.update).toHaveBeenCalledWith(
       'ts1',
@@ -2491,7 +2579,9 @@ describe('TimesheetCommandService.rollUpIntoTimesheet — any revert to submitte
       makeUserService()
     );
 
-    await svc.clockOut('carer-1', 't1', {});
+    await svc.clockOut('carer-1', 't1', {
+      clock_out_at: '2026-08-03T16:00:00.000Z',
+    });
 
     const [, patch] = timesheetRepo.update.mock.calls[0] as [
       string,
@@ -2569,5 +2659,318 @@ describe('TimesheetCommandService — mutation responses carry no snapshot colum
     for (const key of SNAPSHOT_KEYS) {
       expect(queried).not.toHaveProperty(key);
     }
+  });
+});
+
+// =============================================================================
+// Max session span — assertClockOrder hard ceiling (above the mobile 10h
+// MAX_UNSCHEDULED_SHIFT_MS reminder). A forgotten clock-out that "finishes
+// next day" must not bank a 22h paycheck.
+// =============================================================================
+describe('TimesheetCommandService — max session span', () => {
+  function makeSpanSvc(entryOverrides: Record<string, unknown> = {}) {
+    return new TimesheetCommandService(
+      makeTimeEntryRepo({
+        listForCarerWeek: mock(async () => []),
+        update: mock(async (_id: string, patch: Record<string, unknown>) => ({
+          ...runningEntry,
+          ...entryOverrides,
+          ...patch,
+          status: 'submitted',
+        })),
+        createSubmitted: mock(async (data: Record<string, unknown>) => ({
+          ...submittedEntry,
+          ...data,
+          id: 't-span',
+        })),
+      }),
+      makeTimesheetRepo({
+        findByWeek: mock(async () => ({ ...timesheet, status: 'submitted' })),
+      }),
+      makeMemberRepo(),
+      makeHouseholdRepo(),
+      makeShiftRepo(),
+      makeQueries({
+        getOwnedTimeEntry: mock(async () => ({
+          ...runningEntry,
+          ...entryOverrides,
+        })),
+      }),
+      makeUserService()
+    );
+  }
+
+  it('rejects a 17h span — above the 16h hard ceiling', async () => {
+    const svc = makeSpanSvc({
+      clock_in_at: '2026-08-03T06:00:00.000Z',
+    });
+
+    await expect(
+      svc.clockOut('carer-1', 't1', {
+        clock_out_at: '2026-08-03T23:00:00.000Z', // 17h
+      })
+    ).rejects.toBeInstanceOf(InvalidClockTimesError);
+  });
+
+  it('accepts a 15h span — under the 16h hard ceiling', async () => {
+    const svc = makeSpanSvc({
+      clock_in_at: '2026-08-03T08:00:00.000Z',
+    });
+
+    const result = await svc.clockOut('carer-1', 't1', {
+      clock_out_at: '2026-08-03T23:00:00.000Z', // 15h
+    });
+
+    expect(result.clock_out_at).toBe('2026-08-03T23:00:00.000Z');
+  });
+});
+
+// =============================================================================
+// Reopen — parent undo for an approved week. Clears the frozen earnings
+// snapshot (same CLEARED_EARNINGS_SNAPSHOT write as rollUpIntoTimesheet) and
+// returns the week to submitted so corrections can land again.
+// =============================================================================
+describe('TimesheetCommandService.reopen', () => {
+  const approvedTimesheet = {
+    ...timesheet,
+    status: 'approved',
+    approved_by: 'parent-1',
+    approved_at: '2026-08-04T18:00:00.000Z',
+    gross_minor: 14_800,
+    currency: 'GBP',
+    earnings: { status: 'ok', gross_minor: 14_800 },
+    earnings_computed_at: '2026-08-04T18:00:00.000Z',
+  };
+
+  it('reopens an approved week: clears the snapshot and accepts corrections again', async () => {
+    const timesheetRepo = makeTimesheetRepo({
+      update: mock(async (_id: string, patch: Record<string, unknown>) => ({
+        ...approvedTimesheet,
+        ...patch,
+      })),
+      findByWeek: mock(async () => ({
+        ...timesheet,
+        status: 'submitted',
+      })),
+    });
+    const timeEntryRepo = makeTimeEntryRepo({
+      listForCarerWeek: mock(async () => [{ ...finishedEntryA, id: 't1' }]),
+      update: mock(async (_id: string, patch: Record<string, unknown>) => ({
+        ...submittedEntry,
+        ...patch,
+      })),
+    });
+    const eventRepo = {
+      insertMany: mock(async () => undefined),
+    };
+    const svc = new TimesheetCommandService(
+      timeEntryRepo,
+      timesheetRepo,
+      makeParentMemberRepo(),
+      makeHouseholdRepo(),
+      makeShiftRepo(),
+      makeQueries({
+        getOwnedTimesheet: mock(async () => approvedTimesheet),
+        getOwnedTimeEntry: mock(async () => submittedEntry),
+      }),
+      makeUserService(),
+      makePush(),
+      makeEarnings(),
+      eventRepo
+    );
+
+    const reopened = await svc.reopen('parent-1', 'ts1', {
+      reason: 'Thursday hours were wrong',
+    });
+
+    expect(reopened.status).toBe('submitted');
+    expect(timesheetRepo.update).toHaveBeenCalledWith(
+      'ts1',
+      expect.objectContaining({
+        status: 'submitted',
+        approved_by: null,
+        approved_at: null,
+        gross_minor: null,
+        currency: null,
+        earnings: null,
+        earnings_computed_at: null,
+      })
+    );
+    // The reason lives ONLY in the audit event, never on `query_note` — that
+    // column means "a parent queried this week" and ParentWeekView renders
+    // it unconditionally as "Queried: {{note}}"; writing a reopen reason
+    // there mislabels an undo-approve as an open dispute (review finding).
+    const [, patch] = (timesheetRepo.update as ReturnType<typeof mock>).mock
+      .calls[0] as [string, Record<string, unknown>];
+    expect(patch).not.toHaveProperty('query_note');
+    expect(eventRepo.insertMany).toHaveBeenCalledWith([
+      expect.objectContaining({
+        event_type: 'timesheet_reopened',
+        local_date: '2026-08-03',
+        actor_id: 'parent-1',
+        payload: expect.objectContaining({
+          reason: 'Thursday hours were wrong',
+          timesheetId: 'ts1',
+        }),
+      }),
+    ]);
+
+    // Corrections must be accepted again after reopen.
+    await svc.updateEntry('carer-1', 't1', { break_minutes: 0 });
+    expect(timeEntryRepo.update).toHaveBeenCalledWith(
+      't1',
+      expect.objectContaining({ break_minutes: 0 })
+    );
+  });
+
+  it('rejects a nanny trying to reopen', async () => {
+    const svc = new TimesheetCommandService(
+      makeTimeEntryRepo(),
+      makeTimesheetRepo(),
+      makeMemberRepo(), // nanny
+      makeHouseholdRepo(),
+      makeShiftRepo(),
+      makeQueries({
+        getOwnedTimesheet: mock(async () => approvedTimesheet),
+      }),
+      makeUserService()
+    );
+
+    await expect(
+      svc.reopen('carer-1', 'ts1', { reason: 'please' })
+    ).rejects.toBeInstanceOf(NotATimesheetParentError);
+  });
+
+  it('rejects reopening a week that is not approved', async () => {
+    const svc = new TimesheetCommandService(
+      makeTimeEntryRepo(),
+      makeTimesheetRepo(),
+      makeParentMemberRepo(),
+      makeHouseholdRepo(),
+      makeShiftRepo(),
+      makeQueries({
+        getOwnedTimesheet: mock(async () => ({
+          ...timesheet,
+          status: 'submitted',
+        })),
+      }),
+      makeUserService()
+    );
+
+    await expect(
+      svc.reopen('parent-1', 'ts1', { reason: 'changed my mind' })
+    ).rejects.toBeInstanceOf(TimesheetNotActionableError);
+  });
+});
+
+// =============================================================================
+// Overlap guard — two completed entries for one carer must not intersect.
+// Editing an entry against itself is not an overlap.
+// =============================================================================
+describe('TimesheetCommandService — entry overlap', () => {
+  const existingCompleted = {
+    ...submittedEntry,
+    id: 't-existing',
+    clock_in_at: '2026-08-03T08:00:00.000Z',
+    clock_out_at: '2026-08-03T16:00:00.000Z',
+  };
+
+  it('rejects a retroactive entry that overlaps another completed entry for the same carer', async () => {
+    const timeEntryRepo = makeTimeEntryRepo({
+      createSubmitted: mock(async () => {
+        throw new Error('createSubmitted must not be called on overlap');
+      }),
+      listForCarerWeek: mock(async () => [existingCompleted]),
+    });
+    const svc = new TimesheetCommandService(
+      timeEntryRepo,
+      makeTimesheetRepo({
+        findByWeek: mock(async () => ({ ...timesheet, status: 'submitted' })),
+      }),
+      makeMemberRepo(),
+      makeHouseholdRepo(),
+      makeShiftRepo(),
+      makeQueries(),
+      makeUserService()
+    );
+
+    await expect(
+      svc.createRetroactiveEntry('carer-1', {
+        household_id: 'h1',
+        // Overlaps existing 08:00–16:00
+        clock_in_at: '2026-08-03T12:00:00.000Z',
+        clock_out_at: '2026-08-03T18:00:00.000Z',
+      })
+    ).rejects.toBeInstanceOf(TimeEntryOverlapError);
+    expect(timeEntryRepo.createSubmitted).not.toHaveBeenCalled();
+  });
+
+  it('allows editing an entry against itself — self is not an overlap', async () => {
+    const timeEntryRepo = makeTimeEntryRepo({
+      listForCarerWeek: mock(async () => [
+        { ...submittedEntry, break_minutes: 0 },
+      ]),
+      update: mock(async (_id: string, patch: Record<string, unknown>) => ({
+        ...submittedEntry,
+        ...patch,
+      })),
+    });
+    const svc = new TimesheetCommandService(
+      timeEntryRepo,
+      makeTimesheetRepo({
+        findByWeek: mock(async () => ({ ...timesheet, status: 'submitted' })),
+      }),
+      makeMemberRepo(),
+      makeHouseholdRepo(),
+      makeShiftRepo(),
+      makeQueries({
+        getOwnedTimeEntry: mock(async () => submittedEntry),
+      }),
+      makeUserService()
+    );
+
+    // Same span as the entry itself — must not count as overlapping self.
+    const result = await svc.updateEntry('carer-1', 't1', {
+      clock_in_at: '2026-08-03T08:00:00.000Z',
+      clock_out_at: '2026-08-03T16:00:00.000Z',
+    });
+
+    expect(result.clock_out_at).toBe('2026-08-03T16:00:00.000Z');
+    expect(timeEntryRepo.update).toHaveBeenCalled();
+  });
+
+  it('rejects an edit whose new span overlaps a different completed entry', async () => {
+    const other = {
+      ...submittedEntry,
+      id: 't-other',
+      clock_in_at: '2026-08-03T14:00:00.000Z',
+      clock_out_at: '2026-08-03T20:00:00.000Z',
+    };
+    const timeEntryRepo = makeTimeEntryRepo({
+      listForCarerWeek: mock(async () => [submittedEntry, other]),
+      update: mock(async () => {
+        throw new Error('update must not be called on overlap');
+      }),
+    });
+    const svc = new TimesheetCommandService(
+      timeEntryRepo,
+      makeTimesheetRepo({
+        findByWeek: mock(async () => ({ ...timesheet, status: 'submitted' })),
+      }),
+      makeMemberRepo(),
+      makeHouseholdRepo(),
+      makeShiftRepo(),
+      makeQueries({
+        getOwnedTimeEntry: mock(async () => submittedEntry),
+      }),
+      makeUserService()
+    );
+
+    await expect(
+      svc.updateEntry('carer-1', 't1', {
+        // Extend finish into the other entry's span
+        clock_out_at: '2026-08-03T15:00:00.000Z',
+      })
+    ).rejects.toBeInstanceOf(TimeEntryOverlapError);
   });
 });

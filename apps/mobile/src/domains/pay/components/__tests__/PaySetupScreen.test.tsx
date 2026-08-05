@@ -95,11 +95,12 @@ const payCreateMock = mock((_h: string, carerId: string, input: unknown) =>
   Promise.resolve({ id: 'arr-1', carer_id: carerId, ...(input as object) })
 );
 const routerBack = mock();
+const routerReplace = mock();
 
 mock.module('expo-router', () => ({
   useRouter: () => ({
     push: mock(),
-    replace: mock(),
+    replace: routerReplace,
     back: routerBack,
     navigate: mock(),
   }),
@@ -141,6 +142,7 @@ beforeEach(() => {
   payCreateMock.mockReset();
   payCurrentMock.mockReset();
   routerBack.mockClear();
+  routerReplace.mockClear();
 
   listMock.mockImplementation(() => Promise.resolve([baseHousehold]));
   listMembersMock.mockImplementation(() =>
@@ -191,7 +193,7 @@ describe('PaySetupScreen', () => {
   });
 
   describe('review finding 9: the joined-date default only applies when there is genuinely no current arrangement yet', () => {
-    it('when a current arrangement already exists for this carer, defaults to TODAY instead of the joined date', async () => {
+    it('when a current arrangement already exists for this carer, redirects to /settings/pay and does not render the form', async () => {
       payCurrentMock.mockImplementation(() =>
         Promise.resolve({
           id: 'arr-existing',
@@ -214,19 +216,12 @@ describe('PaySetupScreen', () => {
         })
       );
 
-      const { getByTestId, queryByTestId } = renderWithProviders(
-        <PaySetupScreen />
-      );
+      const { queryByTestId } = renderWithProviders(<PaySetupScreen />);
 
       await waitFor(() =>
-        expect(getByTestId('pay-setup-chip-today').props.variant).toBe(
-          'default'
-        )
+        expect(routerReplace).toHaveBeenCalledWith('/settings/pay')
       );
-      expect(getByTestId('pay-setup-chip-earlier').props.variant).toBe(
-        'outline'
-      );
-      expect(queryByTestId('pay-setup-date-input')).toBeNull();
+      expect(queryByTestId('pay-setup-rate-input')).toBeNull();
     });
 
     it('with no current arrangement, still defaults to the joined date (unchanged behaviour)', async () => {

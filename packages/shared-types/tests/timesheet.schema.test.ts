@@ -4,6 +4,7 @@ import {
   ClockOutSchema,
   CreateRetroactiveTimeEntrySchema,
   QueryTimesheetSchema,
+  ReopenTimesheetSchema,
   TIME_ENTRY_KINDS,
   TIME_ENTRY_STATUSES,
   TIMESHEET_STATUSES,
@@ -179,6 +180,19 @@ describe('timesheet.schema', () => {
       expect(QueryTimesheetSchema.safeParse({ note: '' }).success).toBe(false);
       expect(
         QueryTimesheetSchema.safeParse({ note: 'Query Thursday' }).success
+      ).toBe(true);
+    });
+  });
+
+  describe('ReopenTimesheetSchema', () => {
+    it('requires a non-empty reason', () => {
+      expect(ReopenTimesheetSchema.safeParse({ reason: '' }).success).toBe(
+        false
+      );
+      expect(
+        ReopenTimesheetSchema.safeParse({
+          reason: 'Thursday hours were wrong',
+        }).success
       ).toBe(true);
     });
   });

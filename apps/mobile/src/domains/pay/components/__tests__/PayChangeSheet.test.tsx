@@ -147,6 +147,14 @@ describe('PayChangeSheet', () => {
     expect(getByTestId('pay-change-midweek-consequence')).toBeTruthy();
   });
 
+  it('no mid-week line on a non-Monday when the rate is unchanged from the pre-fill', () => {
+    const { queryByTestId } = renderSheet();
+
+    // Default Today (Tuesday) + pre-filled current rate — no rate change, so
+    // there is no two-rate split to warn about.
+    expect(queryByTestId('pay-change-midweek-consequence')).toBeNull();
+  });
+
   it('no mid-week line when the effective date IS a Monday', () => {
     const mondayArrangement = { ...currentArrangement };
     const { getByTestId, queryByTestId } = renderSheet({
