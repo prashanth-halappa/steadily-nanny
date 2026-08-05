@@ -20,6 +20,9 @@
  */
 import { beforeEach, describe, expect, it, mock } from 'bun:test';
 import { fireEvent, waitFor } from '@testing-library/react-native';
+import { formatClockTime } from '@/src/domains/timesheet/utils/duration';
+import { formatEarningsSpanDate } from '@/src/domains/timesheet/utils/earningsFormat';
+import { localDateInZone } from '@/src/lib/localDate';
 import { useAuthStore } from '@/src/store/auth';
 import { renderWithProviders } from '@/src/test-utils';
 import { ClockInCard } from '../components/ClockInCard';
@@ -37,7 +40,10 @@ mock.module('@/lib/useColorScheme', () => ({
 }));
 
 const HOUSEHOLD_ID = 'household-1';
-const OVERLAPPING_ENTRY_ID = 'entry-overlap-42';
+const OVERLAPPING_ENTRY_ID = '635fc59a-72a6-4a76-b4a7-25255ede4152';
+const OVERLAPPING_CLOCK_IN_AT = '2026-08-03T08:00:00.000Z';
+const OVERLAPPING_CLOCK_OUT_AT = '2026-08-03T16:00:00.000Z';
+const TIME_ZONE = 'UTC';
 // Two hours ago, relative to the real clock. NOT a hardcoded instant: the
 // card's forgotten-clock-out state (Daylight UX #7) triggers off elapsed
 // time, so a fixed past date would silently drift into "overdue" and change
@@ -61,6 +67,8 @@ const TIME_ENTRY_OVERLAPS_ERROR = {
         metadata: {
           reason: 'TIME_ENTRY_OVERLAPS',
           overlappingEntryId: OVERLAPPING_ENTRY_ID,
+          overlappingClockInAt: OVERLAPPING_CLOCK_IN_AT,
+          overlappingClockOutAt: OVERLAPPING_CLOCK_OUT_AT,
         },
       },
     },
@@ -208,13 +216,18 @@ describe('ClockInCard — D20 break minutes at clock-out', () => {
     expect(clockOutMock).toHaveBeenCalledTimes(1);
   });
 
-  it('a 409 TIME_ENTRY_OVERLAPS toast names the conflicting entry and keeps the sheet open with the typed draft', async () => {
+  it('a 409 TIME_ENTRY_OVERLAPS toast names the conflicting entry by day/range and keeps the sheet open with the typed draft', async () => {
     clockOutMock.mockImplementationOnce(() =>
       Promise.reject(TIME_ENTRY_OVERLAPS_ERROR)
     );
 
+    const expectedDay = formatEarningsSpanDate(
+      localDateInZone(TIME_ZONE, new Date(OVERLAPPING_CLOCK_IN_AT))
+    );
+    const expectedRange = `${formatClockTime(OVERLAPPING_CLOCK_IN_AT, TIME_ZONE)}–${formatClockTime(OVERLAPPING_CLOCK_OUT_AT, TIME_ZONE)}`;
+
     const { getByTestId } = renderWithProviders(
-      <ClockInCard householdId={HOUSEHOLD_ID} timeZone="UTC" />
+      <ClockInCard householdId={HOUSEHOLD_ID} timeZone={TIME_ZONE} />
     );
 
     await waitFor(() => expect(getByTestId('today-clock-out')).toBeTruthy());
@@ -226,13 +239,13 @@ describe('ClockInCard — D20 break minutes at clock-out', () => {
     fireEvent.press(getByTestId('clockout-confirm'));
 
     await waitFor(() => expect(clockOutMock).toHaveBeenCalledTimes(1));
-    await waitFor(() =>
-      expect(
-        showErrorToastMock.mock.calls.some(call =>
-          String(call[0] ?? '').includes(OVERLAPPING_ENTRY_ID)
-        )
-      ).toBe(true)
-    );
+    await waitFor(() => {
+      const toast = showErrorToastMock.mock.calls
+        .map(call => String(call[0] ?? ''))
+        .find(msg => msg.includes(expectedDay) && msg.includes(expectedRange));
+      expect(toast).toBeDefined();
+      expect(toast).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-/);
+    });
 
     // Sheet stays open — only success closes it — and the typed break/note
     // survive the optimistic clear + refusal (otherwise she'd retype mid-shift).
@@ -269,7 +282,7 @@ describe('ClockInCard — D20 break minutes at clock-out', () => {
 
     expect(
       showErrorToastMock.mock.calls.some(call =>
-        String(call[0] ?? '').includes(OVERLAPPING_ENTRY_ID)
+        /[0-9a-f]{8}-[0-9a-f]{4}-/.test(String(call[0] ?? ''))
       )
     ).toBe(false);
     expect(getByTestId('clockout-sheet')).toBeTruthy();

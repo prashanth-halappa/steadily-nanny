@@ -755,6 +755,8 @@ export class TimesheetCommandService {
           clockInAt,
           clockOutAt,
           overlappingEntryId: other.id,
+          overlappingClockInAt: other.clock_in_at,
+          overlappingClockOutAt: other.clock_out_at,
         });
       }
     }

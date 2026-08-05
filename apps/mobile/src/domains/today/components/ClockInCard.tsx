@@ -33,11 +33,13 @@ import { LoadingButton } from '@/src/components/ui/loading-button';
 import { Text } from '@/src/components/ui/text';
 import { Body, Small, Timer } from '@/src/components/ui/typography';
 import { formatClockTime } from '@/src/domains/timesheet/utils/duration';
+import { formatEarningsSpanDate } from '@/src/domains/timesheet/utils/earningsFormat';
 import { isOptimisticTimeEntry } from '@/src/hooks/mutations/timeEntryMutationUtils';
 import { useClockIn } from '@/src/hooks/mutations/useClockIn';
 import { useClockOut } from '@/src/hooks/mutations/useClockOut';
 import { useRunningTimeEntry } from '@/src/hooks/queries/useRunningTimeEntry';
 import { useShift } from '@/src/hooks/queries/useShift';
+import { localDateInZone } from '@/src/lib/localDate';
 import { showErrorToast } from '@/src/lib/toast';
 import { useClockOutReminder } from '../hooks/useClockOutReminder';
 import { useElapsedTimer } from '../hooks/useElapsedTimer';
@@ -47,7 +49,7 @@ import {
 } from '../utils/clockOutReminder';
 import {
   formatTimeEntryOverlapMessage,
-  getOverlappingEntryId,
+  getOverlappingEntry,
 } from '../utils/timeEntryOverlapError';
 import { ClockOutSheet, type ClockOutSheetSubmitInput } from './ClockOutSheet';
 
@@ -186,14 +188,17 @@ export function ClockInCard({ householdId, timeZone }: ClockInCardProps) {
       .then(() => setShowClockOutSheet(false))
       .catch((error: unknown) => {
         // Overlap is more than a generic conflict: the entry stays running
-        // and she can't clock in again. Name the conflicting entry so she
-        // can find it on Hours. useClockOut still toasts the generic
-        // conflict copy; this is the actionable one that carries the id.
-        const overlappingEntryId = getOverlappingEntryId(error);
-        if (overlappingEntryId) {
-          showErrorToast(
-            formatTimeEntryOverlapMessage(tErrors, overlappingEntryId)
+        // and she can't clock in again. Name the conflicting entry by day
+        // and time range (household zone — GOLDEN-FIXES #21) so she can
+        // find it on Hours. useClockOut still toasts the generic conflict
+        // copy; this is the actionable one.
+        const overlapping = getOverlappingEntry(error);
+        if (overlapping) {
+          const day = formatEarningsSpanDate(
+            localDateInZone(timeZone, new Date(overlapping.clockInAt))
           );
+          const range = `${formatClockTime(overlapping.clockInAt, timeZone)}–${formatClockTime(overlapping.clockOutAt, timeZone)}`;
+          showErrorToast(formatTimeEntryOverlapMessage(tErrors, day, range));
         }
       })
       .finally(() => {

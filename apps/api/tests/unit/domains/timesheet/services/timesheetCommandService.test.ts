@@ -3086,14 +3086,19 @@ describe('TimesheetCommandService — entry overlap', () => {
       makeUserService()
     );
 
-    await expect(
-      svc.createRetroactiveEntry('carer-1', {
+    const err = await svc
+      .createRetroactiveEntry('carer-1', {
         household_id: 'h1',
         // Overlaps existing 08:00–16:00
         clock_in_at: '2026-08-03T12:00:00.000Z',
         clock_out_at: '2026-08-03T18:00:00.000Z',
       })
-    ).rejects.toBeInstanceOf(TimeEntryOverlapError);
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(TimeEntryOverlapError);
+    expect((err as TimeEntryOverlapError).metadata).toMatchObject({
+      overlappingClockInAt: existingCompleted.clock_in_at,
+      overlappingClockOutAt: existingCompleted.clock_out_at,
+    });
     expect(timeEntryRepo.createSubmitted).not.toHaveBeenCalled();
   });
 
@@ -3158,12 +3163,17 @@ describe('TimesheetCommandService — entry overlap', () => {
       makeUserService()
     );
 
-    await expect(
-      svc.updateEntry('carer-1', 't1', {
+    const err = await svc
+      .updateEntry('carer-1', 't1', {
         // Extend finish into the other entry's span
         clock_out_at: '2026-08-03T15:00:00.000Z',
       })
-    ).rejects.toBeInstanceOf(TimeEntryOverlapError);
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(TimeEntryOverlapError);
+    expect((err as TimeEntryOverlapError).metadata).toMatchObject({
+      overlappingClockInAt: other.clock_in_at,
+      overlappingClockOutAt: other.clock_out_at,
+    });
   });
 
   // -------------------------------------------------------------------------
@@ -3205,11 +3215,16 @@ describe('TimesheetCommandService — entry overlap', () => {
       makeUserService()
     );
 
-    await expect(
-      svc.clockOut('carer-1', 't1', {
+    const err = await svc
+      .clockOut('carer-1', 't1', {
         clock_out_at: '2026-08-03T11:00:00.000Z',
       })
-    ).rejects.toBeInstanceOf(TimeEntryOverlapError);
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(TimeEntryOverlapError);
+    expect((err as TimeEntryOverlapError).metadata).toMatchObject({
+      overlappingClockInAt: otherCompleted.clock_in_at,
+      overlappingClockOutAt: otherCompleted.clock_out_at,
+    });
     expect(timeEntryRepo.update).not.toHaveBeenCalled();
   });
 
