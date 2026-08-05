@@ -114,7 +114,23 @@
       "shift_needs_reconfirm": "Shift needs reconfirm",
       "carer_time_off_conflict": "Time-off conflict",
       "pay_terms_set": "Pay terms updated",
-      "pto_usage_reversed": "Time-off usage reversed"
+      "pto_usage_reversed": "Time-off usage reversed",
+      "timesheet_approved": "Timesheet approved",
+      "timesheet_awaiting_approval": "Timesheet awaiting approval",
+      "expense_submitted": "Expense submitted",
+      "expense_approved": "Expense approved",
+      "expense_rejected": "Expense rejected",
+      "pto_marked_paid": "Time off marked paid",
+      "shift_confirmed": "Shift confirmed",
+      "shift_reminder": "Shift reminder",
+      "coverage_gap_detected": "Coverage gap",
+      "household_closure_changed": "Household closure changed",
+      "time_off_requested": "Time off requested",
+      "invite_redeemed": "New member joined",
+      "co_parent_approval_requested": "Approval needed",
+      "co_parent_approval_resolved": "Approval answered",
+      "approval_expiring": "Approval expiring",
+      "handoff_note_added": "New handoff note"
     }
   }
 }

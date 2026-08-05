@@ -822,6 +822,27 @@ export class TimesheetCommandService {
     if (!approved) {
       throw new TimesheetNotActionableError(timesheetId, 'changed_since_read');
     }
+
+    // Carer currently only learns of an approved week by opening Hours — push
+    // her so she knows her pay is final for the week. Fire-and-forget: a push
+    // failure must never fail the approval write the parent already completed.
+    if (approved.carer_id) {
+      try {
+        this.push.notifyUser(approved.carer_id, {
+          title: 'Hours approved',
+          body: 'A parent approved your hours this week.',
+          data: {
+            type: PUSH_NOTIFICATION_TYPES.TIMESHEET_APPROVED,
+            timesheetId: approved.id,
+            householdId: approved.household_id,
+            weekStart: approved.week_start,
+          },
+        });
+      } catch {
+        // notifyUser is sync fire-and-forget; swallow any unexpected throw
+      }
+    }
+
     return toWireTimesheet(approved);
   }
 

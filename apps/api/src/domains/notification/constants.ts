@@ -20,6 +20,10 @@ export const QUIET_HOURS_EXEMPT_TYPES: ReadonlySet<PushNotificationType> =
     PUSH_NOTIFICATION_TYPES.SHIFT_CHANGE_REQUESTED,
     // Co-parent approval for `extra_shift` parks then proposes to the carer.
     PUSH_NOTIFICATION_TYPES.EXTRA_SHIFT_PROPOSED,
+    // Co-parent approval auto-approves by silence — quiet hours would hide the
+    // deadline-bearing nudge and let silence become consent.
+    PUSH_NOTIFICATION_TYPES.CO_PARENT_APPROVAL_REQUESTED,
+    PUSH_NOTIFICATION_TYPES.APPROVAL_EXPIRING,
   ]);
 
 /**

@@ -9,6 +9,7 @@
 import { beforeAll, describe, expect, it, mock } from 'bun:test';
 import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types/schemas/notification.schema';
 import type { CarerTimeOff } from '../../../../../src/domains/availability/types';
+import type { HouseholdMember } from '../../../../../src/domains/household/types';
 
 const row: CarerTimeOff = {
   id: 't1',
@@ -71,6 +72,12 @@ function makeOverlapRepo(shifts: { id: string; household_id: string }[]) {
   };
 }
 
+function makeMemberRepo(memberships: HouseholdMember[] = []) {
+  return {
+    listActiveByUser: mock(async () => memberships),
+  };
+}
+
 describe('TimeOffCommandService.create — conflict scan', () => {
   it('creates over 3 booked shifts in 2 households → 2 pushes with per-household counts, no cross-household leak', async () => {
     const shifts = [
@@ -84,7 +91,9 @@ describe('TimeOffCommandService.create — conflict scan', () => {
       makeTimeOffRepo() as never,
       makeQueries() as never,
       overlapRepo as never,
-      notify
+      notify,
+      async () => undefined,
+      makeMemberRepo() as never
     );
 
     const result = await svc.create('nanny-1', {
@@ -139,14 +148,16 @@ describe('TimeOffCommandService.create — conflict scan', () => {
     }
   });
 
-  it('creates with no overlapping shifts → no push, affected_shift_count 0', async () => {
+  it('creates with no overlapping shifts → no conflict push, affected_shift_count 0', async () => {
     const notify = mock(() => undefined);
     const overlapRepo = makeOverlapRepo([]);
     const svc = new TimeOffCommandService(
       makeTimeOffRepo() as never,
       makeQueries() as never,
       overlapRepo as never,
-      notify
+      notify,
+      async () => undefined,
+      makeMemberRepo() as never
     );
 
     const result = await svc.create('nanny-1', {
@@ -167,7 +178,9 @@ describe('TimeOffCommandService.create — conflict scan', () => {
       makeTimeOffRepo() as never,
       makeQueries() as never,
       overlapRepo as never,
-      notify
+      notify,
+      async () => undefined,
+      makeMemberRepo() as never
     );
 
     const result = await svc.create('nanny-1', {
@@ -190,7 +203,9 @@ describe('TimeOffCommandService.create — conflict scan', () => {
       makeTimeOffRepo() as never,
       makeQueries() as never,
       overlapRepo as never,
-      notify
+      notify,
+      async () => undefined,
+      makeMemberRepo() as never
     );
 
     const result = await svc.create('nanny-1', {
@@ -215,7 +230,9 @@ describe('TimeOffCommandService.update — conflict scan', () => {
       makeTimeOffRepo() as never,
       makeQueries() as never,
       overlapRepo as never,
-      notify
+      notify,
+      async () => undefined,
+      makeMemberRepo() as never
     );
 
     const result = await svc.update('nanny-1', 't1', {

@@ -1093,6 +1093,109 @@ describe('TimesheetCommandService.approve', () => {
     );
   });
 
+  it('pushes the carer once with TIMESHEET_APPROVED when a week is approved', async () => {
+    const push = makePush();
+    const timesheetRepo = makeTimesheetRepo({
+      approveSubmittedWithEarnings: mock(
+        async (_id: string, patch: Record<string, unknown>) => ({
+          ...timesheet,
+          status: 'approved',
+          ...patch,
+        })
+      ),
+    });
+    const svc = new TimesheetCommandService(
+      makeTimeEntryRepo(),
+      timesheetRepo,
+      makeMemberRepo({
+        findActiveMembership: mock(async () => ({
+          id: 'm3',
+          household_id: 'h1',
+          user_id: 'parent-1',
+          role: 'parent',
+        })),
+      }),
+      makeHouseholdRepo(),
+      makeShiftRepo(),
+      makeQueries(),
+      makeUserService(),
+      push,
+      {
+        computeForWeek: mock(
+          async (): Promise<WeekEarnings> => ({
+            status: 'no_arrangement',
+            week_start: '2026-08-03',
+            unpriced_dates: [],
+          })
+        ),
+      }
+    );
+
+    await svc.approve('parent-1', 'ts1');
+
+    expect(push.notifyUser).toHaveBeenCalledTimes(1);
+    expect(push.notifyUser).toHaveBeenCalledWith(
+      'carer-1',
+      expect.objectContaining({
+        data: expect.objectContaining({
+          type: PUSH_NOTIFICATION_TYPES.TIMESHEET_APPROVED,
+          timesheetId: 'ts1',
+          householdId: 'h1',
+          weekStart: '2026-08-03',
+        }),
+      })
+    );
+    expect(push.notifyHouseholdParents).not.toHaveBeenCalled();
+  });
+
+  it('still returns the approved timesheet when the carer push throws', async () => {
+    const push = makePush({
+      notifyUser: mock(() => {
+        throw new Error('expo down');
+      }),
+    });
+    const timesheetRepo = makeTimesheetRepo({
+      approveSubmittedWithEarnings: mock(
+        async (_id: string, patch: Record<string, unknown>) => ({
+          ...timesheet,
+          status: 'approved',
+          ...patch,
+        })
+      ),
+    });
+    const svc = new TimesheetCommandService(
+      makeTimeEntryRepo(),
+      timesheetRepo,
+      makeMemberRepo({
+        findActiveMembership: mock(async () => ({
+          id: 'm3',
+          household_id: 'h1',
+          user_id: 'parent-1',
+          role: 'parent',
+        })),
+      }),
+      makeHouseholdRepo(),
+      makeShiftRepo(),
+      makeQueries(),
+      makeUserService(),
+      push,
+      {
+        computeForWeek: mock(
+          async (): Promise<WeekEarnings> => ({
+            status: 'no_arrangement',
+            week_start: '2026-08-03',
+            unpriced_dates: [],
+          })
+        ),
+      }
+    );
+
+    const approved = await svc.approve('parent-1', 'ts1');
+
+    expect(approved.status).toBe('approved');
+    expect(timesheetRepo.approveSubmittedWithEarnings).toHaveBeenCalledTimes(1);
+  });
+
   it('rejects a carer (non-parent) trying to approve', async () => {
     const svc = new TimesheetCommandService(
       makeTimeEntryRepo(),

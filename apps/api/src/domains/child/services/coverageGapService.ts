@@ -28,6 +28,8 @@
 // Import the repository file DIRECTLY — never the shift domain barrel.
 // `../../shift` re-exports services that import from `../../child`, which
 // would create a TDZ cycle when this module's singleton initialises.
+import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types/schemas/notification.schema';
+import { notifyHouseholdParents } from '../../notification';
 import { ShiftEventRepository } from '../../shift/repositories/shiftEventRepository';
 
 // =============================================================================
@@ -436,6 +438,21 @@ export class CoverageGapService {
         },
       }))
     );
+
+    // One summary push per batch — only for gaps that passed the pre-insert
+    // key filter (insertMany does not return which rows were created).
+    try {
+      notifyHouseholdParents(householdId, {
+        title: 'Coverage gap',
+        body: 'Someone is not covered on the schedule.',
+        data: {
+          type: PUSH_NOTIFICATION_TYPES.COVERAGE_GAP_DETECTED,
+          householdId,
+        },
+      });
+    } catch {
+      // notifyHouseholdParents is sync fire-and-forget; swallow any unexpected throw.
+    }
 
     return toInsert;
   }

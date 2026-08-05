@@ -7,6 +7,8 @@
  *
  * @module domains/household/services/householdCommandService
  */
+import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types/schemas/notification.schema';
+import { notifyHouseholdParents } from '../../notification';
 import {
   AlreadyMemberError,
   InviteAlreadyAcceptedError,
@@ -166,6 +168,27 @@ export class HouseholdCommandService {
       accepted_by: userId,
       accepted_at: new Date().toISOString(),
     });
+
+    const roleLabel =
+      invite.role === HOUSEHOLD_ROLES.NANNY
+        ? 'nanny'
+        : invite.role === HOUSEHOLD_ROLES.PARENT
+          ? 'parent'
+          : invite.role === HOUSEHOLD_ROLES.HELPER
+            ? 'helper'
+            : invite.role;
+    try {
+      notifyHouseholdParents(invite.household_id, {
+        title: 'Someone joined your household',
+        body: `Your invite was redeemed — a new ${roleLabel} joined the household.`,
+        data: {
+          type: PUSH_NOTIFICATION_TYPES.INVITE_REDEEMED,
+          householdId: invite.household_id,
+        },
+      });
+    } catch {
+      // notifyHouseholdParents is sync fire-and-forget; swallow any unexpected throw
+    }
 
     return membership;
   }

@@ -8,11 +8,15 @@
  *
  * @module domains/handoff/services/handoffCommandService
  */
+import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types/schemas/notification.schema';
+import { logger } from '../../../middlewares/logger';
 import {
   HOUSEHOLD_ROLES,
   type HouseholdQueryService,
   householdQueryService,
 } from '../../household';
+import { HouseholdMemberRepository } from '../../household/repositories/householdMemberRepository';
+import { notifyHouseholdParents, notifyUser } from '../../notification';
 import { NotHandoffNoteAuthorOrParentError } from '../errors/handoffErrors';
 import { HandoffNoteRepository } from '../repositories/handoffNoteRepository';
 import type {
@@ -30,11 +34,29 @@ const PARENT_ROLES: ReadonlySet<string> = new Set([
   HOUSEHOLD_ROLES.PARENT,
 ]);
 
+/** Nanny only — matches schedule/shift carer resolution. */
+const CARER_ROLES: ReadonlySet<string> = new Set([HOUSEHOLD_ROLES.NANNY]);
+
+function authorRoleLabel(role: string): string {
+  switch (role) {
+    case HOUSEHOLD_ROLES.NANNY:
+      return 'nanny';
+    case HOUSEHOLD_ROLES.HELPER:
+      return 'helper';
+    case HOUSEHOLD_ROLES.OWNER:
+    case HOUSEHOLD_ROLES.PARENT:
+      return 'parent';
+    default:
+      return 'household member';
+  }
+}
+
 export class HandoffCommandService {
   constructor(
     private readonly repo: HandoffNoteRepository = new HandoffNoteRepository(),
     private readonly households: HouseholdQueryService = householdQueryService,
-    private readonly queries: HandoffQueryService = handoffQueryService
+    private readonly queries: HandoffQueryService = handoffQueryService,
+    private readonly memberRepo: HouseholdMemberRepository = new HouseholdMemberRepository()
   ) {}
 
   /** Create a handoff note. Any active household member; the caller is always stamped as author. */
@@ -43,8 +65,8 @@ export class HandoffCommandService {
     householdId: string,
     input: CreateHandoffNoteInput
   ): Promise<HandoffNote> {
-    await this.households.getMembership(userId, householdId);
-    return this.repo.create({
+    const membership = await this.households.getMembership(userId, householdId);
+    const note = await this.repo.create({
       household_id: householdId,
       local_date: input.local_date,
       phase: input.phase,
@@ -52,6 +74,8 @@ export class HandoffCommandService {
       body: input.body ?? null,
       author_id: userId,
     });
+    this.notifyOtherPartyHandoffNote(householdId, membership.role, note.phase);
+    return note;
   }
 
   /**
@@ -98,6 +122,57 @@ export class HandoffCommandService {
     if (!isAuthor && !isParent) {
       throw new NotHandoffNoteAuthorOrParentError(note.id, role);
     }
+  }
+
+  /** Handoff is the only two-way message surface — ping the other party. */
+  private notifyOtherPartyHandoffNote(
+    householdId: string,
+    authorRole: string,
+    phase: HandoffNote['phase']
+  ): void {
+    const phaseLabel = phase === 'morning' ? 'morning' : 'evening';
+    if (CARER_ROLES.has(authorRole)) {
+      try {
+        notifyHouseholdParents(householdId, {
+          title: 'New handoff note',
+          body: `New ${phaseLabel} handoff note from your nanny.`,
+          data: {
+            type: PUSH_NOTIFICATION_TYPES.HANDOFF_NOTE_ADDED,
+            householdId,
+          },
+        });
+      } catch {
+        // notifyHouseholdParents is sync fire-and-forget; swallow any unexpected throw
+      }
+      return;
+    }
+
+    const roleLabel = authorRoleLabel(authorRole);
+    void this.memberRepo
+      .listActiveByHousehold(householdId)
+      .then(members => {
+        const carers = members.filter(m => CARER_ROLES.has(m.role));
+        for (const carer of carers) {
+          try {
+            notifyUser(carer.user_id, {
+              title: 'New handoff note',
+              body: `New ${phaseLabel} handoff note from a ${roleLabel}.`,
+              data: {
+                type: PUSH_NOTIFICATION_TYPES.HANDOFF_NOTE_ADDED,
+                householdId,
+              },
+            });
+          } catch {
+            // notifyUser is sync fire-and-forget; swallow any unexpected throw
+          }
+        }
+      })
+      .catch(error => {
+        logger.error('Failed to notify carers of handoff note', {
+          householdId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
   }
 }
 

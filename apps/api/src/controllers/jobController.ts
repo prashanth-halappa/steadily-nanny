@@ -7,6 +7,7 @@
  * @module controllers/jobController
  */
 import { runExampleMaintenanceJob } from '../jobs/exampleMaintenanceJob';
+import { runReminderJob } from '../jobs/reminderJob';
 import { runScheduleHorizonJob } from '../jobs/scheduleHorizonJob';
 import { createTrackedJobHandler } from './jobHandlerFactory';
 
@@ -28,6 +29,21 @@ export const JobController = {
         totalProcessed: result.patternsProcessed,
         successCount: result.successCount,
         errorCount: result.errorCount,
+      }),
+    }
+  ),
+
+  /** POST /api/jobs/reminders */
+  runReminders: createTrackedJobHandler(
+    'reminders',
+    runReminderJob,
+    'Reminders job completed',
+    {
+      mapForJobRun: result => ({
+        errorCount: result.errorCount,
+        shiftReminder: result.shiftReminder,
+        timesheetAwaitingApproval: result.timesheetAwaitingApproval,
+        approvalExpiring: result.approvalExpiring,
       }),
     }
   ),

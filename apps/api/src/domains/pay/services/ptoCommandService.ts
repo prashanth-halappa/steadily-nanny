@@ -117,7 +117,10 @@ import {
   HouseholdRepository,
   NotAHouseholdParentError,
 } from '../../household';
-import { notifyHouseholdParents } from '../../notification/services/householdPush';
+import {
+  notifyHouseholdParents,
+  notifyUser,
+} from '../../notification/services/householdPush';
 import type { PushPayload } from '../../notification/types';
 import { UserService } from '../../user';
 import {
@@ -132,6 +135,7 @@ import { localDatesCovered } from '../utils/localDateSpan';
 /** Injectable push seam — defaults to the fire-and-forget household helper. */
 export interface PtoPushNotifier {
   notifyHouseholdParents: (householdId: string, payload: PushPayload) => void;
+  notifyUser: (userId: string, payload: PushPayload) => void;
 }
 
 /** Roles allowed to mark PTO paid — the household write roles, unchanged. */
@@ -213,7 +217,10 @@ export class PtoCommandService {
       typeof UserService,
       'getProfileById'
     > = UserService,
-    private readonly push: PtoPushNotifier = { notifyHouseholdParents }
+    private readonly push: PtoPushNotifier = {
+      notifyHouseholdParents,
+      notifyUser,
+    }
   ) {}
 
   /**
@@ -254,7 +261,7 @@ export class PtoCommandService {
         // used to give a zero-minute request.
         throw new PtoNothingToAdjustError(householdId, timeOff.id);
       }
-      return this.writeFirstMarking(
+      const marked = await this.writeFirstMarking(
         callerId,
         householdId,
         timeOff,
@@ -263,6 +270,8 @@ export class PtoCommandService {
         requestedMinutes,
         request.note ?? null
       );
+      this.notifyCarerMarkedPaid(householdId, timeOff.user_id);
+      return marked;
     }
 
     if (requestedMinutes === paidMinutes) {
@@ -277,7 +286,7 @@ export class PtoCommandService {
       }
     }
 
-    return this.writeCorrection(
+    const corrected = await this.writeCorrection(
       callerId,
       householdId,
       timeOff.id,
@@ -287,6 +296,8 @@ export class PtoCommandService {
       requestedMinutes,
       request.note ?? null
     );
+    this.notifyCarerMarkedPaid(householdId, timeOff.user_id);
+    return corrected;
   }
 
   /**
@@ -658,6 +669,21 @@ export class PtoCommandService {
    * unexpected SYNCHRONOUS throw, matching
    * `payArrangementCommandService.notifyCarerOfNewTerms`'s identical guard.
    */
+  private notifyCarerMarkedPaid(householdId: string, carerId: string): void {
+    try {
+      this.push.notifyUser(carerId, {
+        title: 'Time off marked paid',
+        body: 'A parent marked your time off as paid.',
+        data: {
+          type: PUSH_NOTIFICATION_TYPES.PTO_MARKED_PAID,
+          householdId,
+        },
+      });
+    } catch {
+      // notifyUser is sync fire-and-forget; swallow any unexpected throw
+    }
+  }
+
   private notifyReversal(householdId: string): void {
     try {
       this.push.notifyHouseholdParents(householdId, {

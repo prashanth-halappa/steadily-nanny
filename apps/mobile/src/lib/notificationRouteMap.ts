@@ -85,6 +85,13 @@ export const NOTIFICATION_ROUTE_MAP: NotificationRouteMap &
   [PUSH_NOTIFICATION_TYPES.TIMESHEET_SUBMITTED]: hoursHref,
   [PUSH_NOTIFICATION_TYPES.TIMESHEET_QUERIED]: hoursHref,
   [PUSH_NOTIFICATION_TYPES.TIMESHEET_REOPENED]: hoursHref,
+  [PUSH_NOTIFICATION_TYPES.TIMESHEET_APPROVED]: hoursHref,
+  [PUSH_NOTIFICATION_TYPES.TIMESHEET_AWAITING_APPROVAL]: hoursHref,
+
+  // Expenses render inside the Hours tab — no dedicated expense route.
+  [PUSH_NOTIFICATION_TYPES.EXPENSE_SUBMITTED]: hoursHref,
+  [PUSH_NOTIFICATION_TYPES.EXPENSE_APPROVED]: hoursHref,
+  [PUSH_NOTIFICATION_TYPES.EXPENSE_REJECTED]: hoursHref,
 
   [PUSH_NOTIFICATION_TYPES.SCHEDULE_PATTERN_SENT]: patternRespondHref,
   [PUSH_NOTIFICATION_TYPES.SCHEDULE_PATTERN_RESPONDED]: scheduleTabHref,
@@ -97,8 +104,13 @@ export const NOTIFICATION_ROUTE_MAP: NotificationRouteMap &
   [PUSH_NOTIFICATION_TYPES.EXTRA_SHIFT_PROPOSED]: shiftDetailHref,
   [PUSH_NOTIFICATION_TYPES.SHIFT_CANCELLED]: shiftDetailHref,
   [PUSH_NOTIFICATION_TYPES.SHIFT_NEEDS_RECONFIRM]: shiftDetailHref,
+  [PUSH_NOTIFICATION_TYPES.SHIFT_CONFIRMED]: shiftDetailHref,
+  [PUSH_NOTIFICATION_TYPES.SHIFT_REMINDER]: shiftDetailHref,
 
   [PUSH_NOTIFICATION_TYPES.CARER_TIME_OFF_CONFLICT]: shiftsCalendarHref,
+  [PUSH_NOTIFICATION_TYPES.COVERAGE_GAP_DETECTED]: shiftsCalendarHref,
+
+  [PUSH_NOTIFICATION_TYPES.HOUSEHOLD_CLOSURE_CHANGED]: scheduleTabHref,
 
   // Static destination — the nanny's own read-only pay screen fetches every
   // household she belongs to itself, so no query params are needed here.
@@ -111,4 +123,21 @@ export const NOTIFICATION_ROUTE_MAP: NotificationRouteMap &
   // per-time-off.
   [PUSH_NOTIFICATION_TYPES.PTO_USAGE_REVERSED]: () =>
     '/(private)/settings/household-time-off',
+
+  [PUSH_NOTIFICATION_TYPES.PTO_MARKED_PAID]: () => '/(private)/settings/my-pay',
+
+  [PUSH_NOTIFICATION_TYPES.TIME_OFF_REQUESTED]: () =>
+    '/(private)/settings/household-time-off',
+
+  [PUSH_NOTIFICATION_TYPES.INVITE_REDEEMED]: () =>
+    '/(private)/settings/household',
+
+  [PUSH_NOTIFICATION_TYPES.CO_PARENT_APPROVAL_REQUESTED]: () =>
+    '/(private)/inbox',
+  [PUSH_NOTIFICATION_TYPES.CO_PARENT_APPROVAL_RESOLVED]: () =>
+    '/(private)/inbox',
+  [PUSH_NOTIFICATION_TYPES.APPROVAL_EXPIRING]: () => '/(private)/inbox',
+
+  // Handoff notes render inside Today — no dedicated handoff route.
+  [PUSH_NOTIFICATION_TYPES.HANDOFF_NOTE_ADDED]: () => '/(private)/(tabs)/home',
 };

@@ -51,8 +51,13 @@ import {
   type ReviewExpenseRequest,
   type UpdateExpenseRequest,
 } from '@steadily-nanny/shared-types/schemas/expense.schema';
+import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types/schemas/notification.schema';
 import type { PayArrangement } from '@steadily-nanny/shared-types/schemas/payArrangement.schema';
 import { HOUSEHOLD_ROLES, HouseholdMemberRepository } from '../../household';
+import {
+  notifyHouseholdParents,
+  notifyUser,
+} from '../../notification/services/householdPush';
 import { TimesheetRepository } from '../../timesheet/repositories/timesheetRepository';
 import { weekStartOfLocalDate } from '../../timesheet/utils/weekStart';
 import { UserService } from '../../user';
@@ -197,6 +202,25 @@ export class ExpenseCommandService {
       review_note: null,
       carer_display_name: carerDisplayName,
     });
+
+    // Parents need to review a new claim before it becomes money owed.
+    try {
+      notifyHouseholdParents(created.household_id, {
+        title: 'New expense claim',
+        body:
+          created.kind === EXPENSE_KINDS.MILEAGE
+            ? 'Your nanny submitted a mileage claim.'
+            : 'Your nanny submitted an expense.',
+        data: {
+          type: PUSH_NOTIFICATION_TYPES.EXPENSE_SUBMITTED,
+          householdId: created.household_id,
+          weekStart: weekStartOfLocalDate(created.local_date),
+        },
+      });
+    } catch {
+      // notifyHouseholdParents is sync fire-and-forget; swallow any unexpected throw
+    }
+
     return created;
   }
 
@@ -301,6 +325,44 @@ export class ExpenseCommandService {
       // this write.
       throw new ExpenseNotEditableError(expenseId, 'not_pending');
     }
+
+    // @see TIER0-PLAN.md:786 — carer learns the outcome of her claim here.
+    if (reviewed.carer_id) {
+      try {
+        const expensePushData = {
+          householdId: reviewed.household_id,
+          weekStart: weekStartOfLocalDate(reviewed.local_date),
+        };
+        if (reviewed.status === EXPENSE_STATUSES.APPROVED) {
+          notifyUser(reviewed.carer_id, {
+            title: 'Expense approved',
+            body:
+              reviewed.kind === EXPENSE_KINDS.MILEAGE
+                ? 'A parent approved your mileage claim.'
+                : 'A parent approved your expense.',
+            data: {
+              type: PUSH_NOTIFICATION_TYPES.EXPENSE_APPROVED,
+              ...expensePushData,
+            },
+          });
+        } else if (reviewed.status === EXPENSE_STATUSES.REJECTED) {
+          notifyUser(reviewed.carer_id, {
+            title: 'Expense rejected',
+            body:
+              reviewed.kind === EXPENSE_KINDS.MILEAGE
+                ? 'A parent rejected your mileage claim.'
+                : 'A parent rejected your expense.',
+            data: {
+              type: PUSH_NOTIFICATION_TYPES.EXPENSE_REJECTED,
+              ...expensePushData,
+            },
+          });
+        }
+      } catch {
+        // notifyUser is sync fire-and-forget; swallow any unexpected throw
+      }
+    }
+
     return reviewed;
   }
 

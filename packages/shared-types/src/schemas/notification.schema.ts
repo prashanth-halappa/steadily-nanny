@@ -49,6 +49,36 @@ export const PUSH_NOTIFICATION_TYPES = {
   // same fact. Carer-targeted: she is the one whose pay just stopped being
   // final, and she may not open the app for days.
   TIMESHEET_REOPENED: 'timesheet_reopened',
+
+  // Money leg — carer gets approval/payment outcomes; parents get submissions.
+  EXPENSE_APPROVED: 'expense_approved',
+  EXPENSE_REJECTED: 'expense_rejected',
+  EXPENSE_SUBMITTED: 'expense_submitted',
+  PTO_MARKED_PAID: 'pto_marked_paid',
+  TIMESHEET_APPROVED: 'timesheet_approved',
+
+  // Shift / schedule leg — parents get coverage gaps, shift confirmations, and
+  // time-off requests; the carer gets closure changes, since a closure moves
+  // her paid days.
+  COVERAGE_GAP_DETECTED: 'coverage_gap_detected',
+  HOUSEHOLD_CLOSURE_CHANGED: 'household_closure_changed',
+  SHIFT_CONFIRMED: 'shift_confirmed',
+  TIME_OFF_REQUESTED: 'time_off_requested',
+
+  // Household / consent leg — approval types are parent-to-parent (requested
+  // goes to the other parent, resolved back to the requester) and invites go to
+  // parents. Handoff notes go to whichever side did not write the note.
+  CO_PARENT_APPROVAL_REQUESTED: 'co_parent_approval_requested',
+  CO_PARENT_APPROVAL_RESOLVED: 'co_parent_approval_resolved',
+  HANDOFF_NOTE_ADDED: 'handoff_note_added',
+  INVITE_REDEEMED: 'invite_redeemed',
+
+  // Scheduled reminders (emitted by the reminder cron job, not by a write) —
+  // parents get the approval-expiring nudge and the unapproved-week nudge; the
+  // carer gets tomorrow's shift reminder.
+  APPROVAL_EXPIRING: 'approval_expiring',
+  SHIFT_REMINDER: 'shift_reminder',
+  TIMESHEET_AWAITING_APPROVAL: 'timesheet_awaiting_approval',
 } as const;
 
 export type PushNotificationType =

@@ -26,7 +26,7 @@ import {
   HouseholdMemberRepository,
   NotAHouseholdParentError,
 } from '../../household';
-import { notifyUser } from '../../notification';
+import { notifyHouseholdParents, notifyUser } from '../../notification';
 import { ShiftNotFoundError } from '../errors/shiftErrors';
 import { ShiftEventRepository } from '../repositories/shiftEventRepository';
 import { ShiftRepository } from '../repositories/shiftRepository';
@@ -109,6 +109,21 @@ export class ShiftCommandService {
           error: error instanceof Error ? error.message : String(error),
         }
       );
+    }
+
+    // Parents need to know the nanny accepted — they cannot see this from the carer app.
+    try {
+      notifyHouseholdParents(shift.household_id, {
+        title: 'Shift confirmed',
+        body: 'The nanny confirmed a pending shift.',
+        data: {
+          type: PUSH_NOTIFICATION_TYPES.SHIFT_CONFIRMED,
+          shiftId: updated.id,
+          householdId: shift.household_id,
+        },
+      });
+    } catch {
+      // notifyHouseholdParents is sync fire-and-forget; swallow any unexpected throw.
     }
 
     return updated;

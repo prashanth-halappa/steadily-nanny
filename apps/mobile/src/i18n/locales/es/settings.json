@@ -114,7 +114,23 @@
       "shift_needs_reconfirm": "Turno necesita reconfirmación",
       "carer_time_off_conflict": "Conflicto de ausencia",
       "pay_terms_set": "Condiciones de pago actualizadas",
-      "pto_usage_reversed": "Uso de ausencia revertido"
+      "pto_usage_reversed": "Uso de ausencia revertido",
+      "timesheet_approved": "Hoja de horas aprobada",
+      "timesheet_awaiting_approval": "Hoja de horas pendiente de aprobación",
+      "expense_submitted": "Gasto enviado",
+      "expense_approved": "Gasto aprobado",
+      "expense_rejected": "Gasto rechazado",
+      "pto_marked_paid": "Ausencia marcada como pagada",
+      "shift_confirmed": "Turno confirmado",
+      "shift_reminder": "Recordatorio de turno",
+      "coverage_gap_detected": "Hueco de cobertura",
+      "household_closure_changed": "Cierre del hogar modificado",
+      "time_off_requested": "Ausencia solicitada",
+      "invite_redeemed": "Nuevo miembro incorporado",
+      "co_parent_approval_requested": "Aprobación necesaria",
+      "co_parent_approval_resolved": "Aprobación respondida",
+      "approval_expiring": "Aprobación por vencer",
+      "handoff_note_added": "Nueva nota de traspaso"
     }
   }
 }

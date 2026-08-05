@@ -8,9 +8,12 @@
  *
  * @module domains/availability/services/timeOffCommandService
  */
+
+import { HOUSEHOLD_ROLES } from '@steadily-nanny/shared-types/schemas/household.schema';
 import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types/schemas/notification.schema';
 import { ValidationError } from '../../../errors';
 import { logger } from '../../../middlewares/logger';
+import { HouseholdMemberRepository } from '../../household';
 import { notifyHouseholdParents, type PushPayload } from '../../notification';
 import { ptoCommandService } from '../../pay/services/ptoCommandService';
 import { CarerTimeOffRepository } from '../repositories/carerTimeOffRepository';
@@ -61,7 +64,8 @@ export class TimeOffCommandService {
     // imports this domain's repositories, so barrel-to-barrel would cycle.
     // Same convention as the timesheet domain's weekEarningsService import.
     private readonly reconcilePtoUsage: ReconcilePtoUsageFn = timeOffId =>
-      ptoCommandService.reconcileCancelledTimeOff(timeOffId)
+      ptoCommandService.reconcileCancelledTimeOff(timeOffId),
+    private readonly memberRepo: HouseholdMemberRepository = new HouseholdMemberRepository()
   ) {}
 
   /** Create a time-off row for the caller; scan + notify on overlaps. */
@@ -78,6 +82,7 @@ export class TimeOffCommandService {
       carer_time_off.starts_at,
       carer_time_off.ends_at
     );
+    this.notifyTimeOffRequested(userId);
     return { carer_time_off, affected_shift_count };
   }
 
@@ -256,6 +261,45 @@ export class TimeOffCommandService {
     }
 
     return shifts.length;
+  }
+
+  /**
+   * Parents of every household where the carer is an active nanny need to
+   * know about a new request — time off is person-scoped, so a multi-family
+   * carer fans out one push per household. Complements the conflict push when
+   * shifts overlap; both are intentional (request vs overlap detail).
+   */
+  private notifyTimeOffRequested(carerId: string): void {
+    void this.memberRepo
+      .listActiveByUser(carerId)
+      .then(memberships => {
+        const householdIds = new Set(
+          memberships
+            .filter(m => m.role === HOUSEHOLD_ROLES.NANNY)
+            .map(m => m.household_id)
+        );
+        for (const householdId of householdIds) {
+          const payload: PushPayload = {
+            title: 'Time off requested',
+            body: 'Your nanny has requested time off — open Time off to review.',
+            data: {
+              type: PUSH_NOTIFICATION_TYPES.TIME_OFF_REQUESTED,
+              householdId,
+            },
+          };
+          try {
+            this.notifyParents(householdId, payload);
+          } catch {
+            // notifyParents is sync fire-and-forget; swallow any unexpected throw
+          }
+        }
+      })
+      .catch(error => {
+        logger.error('Failed to notify parents of time-off request', {
+          carerId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
   }
 }
 

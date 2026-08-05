@@ -46,12 +46,14 @@ const pendingShift: ShiftWithChildren = {
 
 let ShiftCommandService: typeof import('../../../../../src/domains/shift/services/shiftCommandService').ShiftCommandService;
 let notifyUser: ReturnType<typeof mock>;
+let notifyHouseholdParents: ReturnType<typeof mock>;
 
 beforeAll(async () => {
   notifyUser = mock(() => undefined);
+  notifyHouseholdParents = mock(() => undefined);
   mock.module('../../../../../src/domains/notification', () => ({
     notifyUser,
-    notifyHouseholdParents: mock(() => undefined),
+    notifyHouseholdParents,
   }));
 
   ({ ShiftCommandService } = await import(
@@ -61,6 +63,7 @@ beforeAll(async () => {
 
 beforeEach(() => {
   notifyUser.mockClear();
+  notifyHouseholdParents.mockClear();
 });
 
 function makeShiftRepo(overrides: Record<string, unknown> = {}): any {
@@ -181,6 +184,65 @@ describe('ShiftCommandService.accept', () => {
 
     expect(result.status).toBe('confirmed');
     expect(shiftRepo.confirmPending).toHaveBeenCalledWith('s1');
+  });
+
+  it('pushes household parents with shift_confirmed after a successful accept', async () => {
+    const shiftRepo = makeShiftRepo();
+    const eventRepo = makeEventRepo();
+    const memberRepo = makeMemberRepo({
+      findActiveMembership: mock(async () => ({
+        id: 'm2',
+        household_id: 'h1',
+        user_id: 'carer-1',
+        role: 'nanny',
+      })),
+    });
+    const svc = new ShiftCommandService(
+      shiftRepo,
+      memberRepo,
+      makeQueries(pendingShift),
+      eventRepo
+    );
+
+    await svc.accept('carer-1', 's1');
+
+    expect(notifyHouseholdParents).toHaveBeenCalledTimes(1);
+    expect(notifyHouseholdParents).toHaveBeenCalledWith(
+      'h1',
+      expect.objectContaining({
+        title: 'Shift confirmed',
+        data: expect.objectContaining({
+          type: PUSH_NOTIFICATION_TYPES.SHIFT_CONFIRMED,
+          shiftId: 's1',
+          householdId: 'h1',
+        }),
+      })
+    );
+  });
+
+  it('push failure never fails accept', async () => {
+    notifyHouseholdParents.mockImplementation(() => {
+      throw new Error('push boom');
+    });
+    const shiftRepo = makeShiftRepo();
+    const memberRepo = makeMemberRepo({
+      findActiveMembership: mock(async () => ({
+        id: 'm2',
+        household_id: 'h1',
+        user_id: 'carer-1',
+        role: 'nanny',
+      })),
+    });
+    const svc = new ShiftCommandService(
+      shiftRepo,
+      memberRepo,
+      makeQueries(pendingShift),
+      makeEventRepo()
+    );
+
+    const result = await svc.accept('carer-1', 's1');
+
+    expect(result.status).toBe('confirmed');
   });
 
   it('rejects a non-carer with the same not-found-shaped error as a missing shift', async () => {

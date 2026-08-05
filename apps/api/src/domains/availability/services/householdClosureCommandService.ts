@@ -3,13 +3,18 @@
  *
  * @module domains/availability/services/householdClosureCommandService
  */
+
+import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types/schemas/notification.schema';
 import { ValidationError } from '../../../errors';
+import { logger } from '../../../middlewares/logger';
 import { NotAHouseholdParentError } from '../../household/errors/householdErrors';
+import { HouseholdMemberRepository } from '../../household/repositories/householdMemberRepository';
 import { HOUSEHOLD_ROLES } from '../../household/schemas';
 import {
   type HouseholdQueryService,
   householdQueryService,
 } from '../../household/services/householdQueryService';
+import { notifyUser } from '../../notification';
 import { HouseholdClosureRepository } from '../repositories/householdClosureRepository';
 import type {
   CreateHouseholdClosureInput,
@@ -26,11 +31,26 @@ const WRITE_ROLES: ReadonlySet<string> = new Set([
   HOUSEHOLD_ROLES.PARENT,
 ]);
 
+/** Nanny only — matches schedule/shift carer resolution. */
+const CARER_ROLES: ReadonlySet<string> = new Set([HOUSEHOLD_ROLES.NANNY]);
+
+type ClosureChangeVerb = 'added' | 'changed' | 'removed';
+
+const CLOSURE_CHANGE_BODY: Record<ClosureChangeVerb, string> = {
+  added:
+    'The family added a household closure — open Schedule to see your updated days.',
+  changed:
+    'A household closure was updated — open Schedule to see your updated days.',
+  removed:
+    'A household closure was removed — open Schedule to see your updated days.',
+};
+
 export class HouseholdClosureCommandService {
   constructor(
     private readonly repo: HouseholdClosureRepository = new HouseholdClosureRepository(),
     private readonly households: HouseholdQueryService = householdQueryService,
-    private readonly queries: HouseholdClosureQueryService = householdClosureQueryService
+    private readonly queries: HouseholdClosureQueryService = householdClosureQueryService,
+    private readonly memberRepo: HouseholdMemberRepository = new HouseholdMemberRepository()
   ) {}
 
   /** Create a household closure. Owner/parent only. */
@@ -40,12 +60,14 @@ export class HouseholdClosureCommandService {
     input: CreateHouseholdClosureInput
   ): Promise<HouseholdClosure> {
     await this.assertWriteRole(userId, householdId);
-    return this.repo.create({
+    const closure = await this.repo.create({
       ...input,
       household_id: householdId,
       created_by: userId,
       message: input.message ?? null,
     });
+    this.notifyCarersClosureChanged(householdId, 'added');
+    return closure;
   }
 
   /** Update dates/message on a closure. Owner/parent only. */
@@ -69,7 +91,9 @@ export class HouseholdClosureCommandService {
       );
     }
 
-    return this.repo.update(closureId, input);
+    const closure = await this.repo.update(closureId, input);
+    this.notifyCarersClosureChanged(householdId, 'changed');
+    return closure;
   }
 
   /** Hard-delete a closure. Owner/parent only. */
@@ -81,6 +105,7 @@ export class HouseholdClosureCommandService {
     await this.assertWriteRole(userId, householdId);
     await this.queries.getOwned(userId, householdId, closureId);
     await this.repo.delete(closureId);
+    this.notifyCarersClosureChanged(householdId, 'removed');
   }
 
   private async assertWriteRole(
@@ -91,6 +116,39 @@ export class HouseholdClosureCommandService {
     if (!WRITE_ROLES.has(membership.role)) {
       throw new NotAHouseholdParentError(householdId, membership.role);
     }
+  }
+
+  /** Carers need to know when family closures move their paid days. */
+  private notifyCarersClosureChanged(
+    householdId: string,
+    change: ClosureChangeVerb
+  ): void {
+    void this.memberRepo
+      .listActiveByHousehold(householdId)
+      .then(members => {
+        const carers = members.filter(m => CARER_ROLES.has(m.role));
+        for (const carer of carers) {
+          try {
+            notifyUser(carer.user_id, {
+              title: 'Household closure changed',
+              body: CLOSURE_CHANGE_BODY[change],
+              data: {
+                type: PUSH_NOTIFICATION_TYPES.HOUSEHOLD_CLOSURE_CHANGED,
+                householdId,
+              },
+            });
+          } catch {
+            // notifyUser is sync fire-and-forget; swallow any unexpected throw
+          }
+        }
+      })
+      .catch(error => {
+        logger.error('Failed to notify carers of household closure change', {
+          householdId,
+          change,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
   }
 }
 

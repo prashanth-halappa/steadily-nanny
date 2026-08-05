@@ -156,6 +156,7 @@ function adjustmentRow(
 function makePush(overrides: Record<string, unknown> = {}): any {
   return {
     notifyHouseholdParents: mock(() => {}),
+    notifyUser: mock(() => {}),
     ...overrides,
   };
 }
@@ -434,6 +435,84 @@ describe('PtoCommandService.markTimeOffPaid — the written row', () => {
     const svc = service({ ptoRepo, userService: makeUserService(null) });
     await svc.markTimeOffPaid('parent-1', 'h1', request());
     expect(ptoRepo.create.mock.calls[0][0].carer_display_name).toBe('Carer');
+  });
+});
+
+describe('PtoCommandService.markTimeOffPaid — carer push', () => {
+  it('notifies the carer via PTO_MARKED_PAID when time off is first marked paid', async () => {
+    const push = makePush();
+    const svc = service({ push });
+    await svc.markTimeOffPaid('parent-1', 'h1', request({ minutes: 480 }));
+
+    expect(push.notifyUser).toHaveBeenCalledTimes(1);
+    expect(push.notifyUser).toHaveBeenCalledWith(
+      'carer-1',
+      expect.objectContaining({
+        data: expect.objectContaining({
+          type: PUSH_NOTIFICATION_TYPES.PTO_MARKED_PAID,
+          householdId: 'h1',
+        }),
+      })
+    );
+    expect(push.notifyHouseholdParents).not.toHaveBeenCalled();
+  });
+
+  it('notifies the carer when an existing marking is corrected', async () => {
+    const ptoRepo = makePtoRepo({
+      listForHouseholdTimeOff: mock(async () => [
+        {
+          ...createdUsageRow,
+          minutes: -480,
+          effective_date: '2026-08-24',
+        },
+      ]),
+    });
+    const push = makePush();
+    const svc = service({ ptoRepo, push });
+    await svc.markTimeOffPaid('parent-1', 'h1', request({ minutes: 360 }));
+
+    expect(push.notifyUser).toHaveBeenCalledTimes(1);
+    expect(push.notifyUser).toHaveBeenCalledWith(
+      'carer-1',
+      expect.objectContaining({
+        data: expect.objectContaining({
+          type: PUSH_NOTIFICATION_TYPES.PTO_MARKED_PAID,
+          householdId: 'h1',
+        }),
+      })
+    );
+  });
+
+  it('does not notify on a no-op re-submission of the same total', async () => {
+    const ptoRepo = makePtoRepo({
+      listForHouseholdTimeOff: mock(async () => [
+        {
+          ...createdUsageRow,
+          minutes: -480,
+          effective_date: '2026-08-24',
+        },
+      ]),
+    });
+    const push = makePush();
+    const svc = service({ ptoRepo, push });
+    await svc.markTimeOffPaid('parent-1', 'h1', request({ minutes: 480 }));
+
+    expect(push.notifyUser).not.toHaveBeenCalled();
+  });
+
+  it('a push failure never fails the marking write', async () => {
+    const push = makePush({
+      notifyUser: mock(() => {
+        throw new Error('expo down');
+      }),
+    });
+    const svc = service({ push });
+    const created = await svc.markTimeOffPaid(
+      'parent-1',
+      'h1',
+      request({ minutes: 480 })
+    );
+    expect(created.id).toBe('ptl-new');
   });
 });
 

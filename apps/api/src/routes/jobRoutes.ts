@@ -37,5 +37,6 @@ router.post(
   jobHandler(JobController.runExampleMaintenance)
 );
 router.post('/schedule-horizon', jobHandler(JobController.runScheduleHorizon));
+router.post('/reminders', jobHandler(JobController.runReminders));
 
 export default router;
