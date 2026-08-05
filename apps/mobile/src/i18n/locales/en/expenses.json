@@ -50,6 +50,7 @@
     "approvedToast": "Approved",
     "rejectedToast": "Not approved",
     "noMileageRateError": "Set a mileage rate before approving mileage.",
+    "weekLockedError": "That week has already been approved, so this claim can't be added to it. You can still turn it down, or ask about it directly.",
     "setRateAction": "Set a rate",
     "reviewFailedGeneric": "This claim couldn't be reviewed right now. Check with your family if it keeps happening."
   },

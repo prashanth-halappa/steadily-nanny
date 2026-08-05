@@ -126,7 +126,10 @@ export function ParentWeekView({
     null
   );
   // Phase 3+4 adversarial review, finding 6 — see ExpenseReviewSheet's
-  // GENERIC TYPED-ERROR ARM doc and the TODO in handleApproveExpense below.
+  // WEEK-LOCKED and GENERIC TYPED-ERROR ARM docs.
+  const [weekLockedErrorId, setWeekLockedErrorId] = useState<string | null>(
+    null
+  );
   const [genericErrorId, setGenericErrorId] = useState<string | null>(null);
   const reopened = useReopenedNotice(
     timesheetQuery.data?.id,
@@ -138,6 +141,7 @@ export function ParentWeekView({
   const handleApproveExpense = async (expenseId: string) => {
     setSubmittingExpenseId(expenseId);
     setMileageRateErrorId(null);
+    setWeekLockedErrorId(null);
     setGenericErrorId(null);
     try {
       await reviewExpense.mutateAsync({
@@ -145,18 +149,15 @@ export function ParentWeekView({
         input: { status: 'approved' },
       });
     } catch (error) {
-      if (reviewErrorReason(error) === 'NO_MILEAGE_RATE') {
+      const reason = reviewErrorReason(error);
+      if (reason === 'NO_MILEAGE_RATE') {
         setMileageRateErrorId(expenseId);
+      } else if (reason === 'EXPENSE_WEEK_LOCKED') {
+        // Finding 6, decided API-side: the claim's week is already
+        // approved and reimbursements must not un-approve it. Naming that
+        // matters — the generic copy invites a retry that cannot succeed.
+        setWeekLockedErrorId(expenseId);
       } else if (isTypedReviewError(error)) {
-        // TODO(mobile): the API agent is deciding whether reviewing an
-        // expense into an already-approved week is BLOCKED with a typed
-        // error or the week is silently REOPENED (Finding 6). Once they
-        // report the exact code, branch on `reviewErrorReason(error)` here
-        // — same shape as the NO_MILEAGE_RATE arm above — and swap this
-        // generic-but-persistent-and-per-card fallback for copy naming the
-        // actual situation. Until then, any OTHER typed 4xx refusal lands
-        // here instead of only the ambient generic toast, which names
-        // neither the claim nor the reason.
         setGenericErrorId(expenseId);
       }
       setSubmittingExpenseId(null);
@@ -485,6 +486,7 @@ export function ParentWeekView({
           onReject={(id, note) => void handleRejectExpense(id, note)}
           submittingId={submittingExpenseId}
           mileageRateErrorId={mileageRateErrorId}
+          weekLockedErrorId={weekLockedErrorId}
           genericErrorId={genericErrorId}
           onSetRatePress={handleSetRatePress}
         />

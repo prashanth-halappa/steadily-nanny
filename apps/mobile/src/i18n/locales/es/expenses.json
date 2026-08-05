@@ -50,6 +50,7 @@
     "approvedToast": "Aprobado",
     "rejectedToast": "No aprobado",
     "noMileageRateError": "Fija una tarifa por milla antes de aprobar kilometraje.",
+    "weekLockedError": "Esa semana ya está aprobada, así que este gasto no puede añadirse. Puedes rechazarlo o comentarlo directamente.",
     "setRateAction": "Fijar una tarifa",
     "reviewFailedGeneric": "No se pudo revisar esta reclamación en este momento. Consulta con tu familia si sigue ocurriendo."
   },

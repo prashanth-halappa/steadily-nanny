@@ -796,6 +796,54 @@ describe('ParentWeekView — expenses & the statement (Phase 4)', () => {
     expect(routerPush).toHaveBeenCalledWith(`/settings/pay/${CARER_ID}`);
   });
 
+  // Phase 3+4 adversarial review, finding 6 — now DECIDED on the API side:
+  // approving a claim into an already-approved week is REFUSED (409,
+  // reason EXPENSE_WEEK_LOCKED) rather than silently reopening the week,
+  // because reimbursements are not wages and must not un-approve a
+  // signed-off payroll week. The parent needs to be told that specifically:
+  // the generic "couldn't be reviewed right now" invites a retry that will
+  // fail identically forever.
+  it('an EXPENSE_WEEK_LOCKED approve failure names the locked week rather than showing the generic retry copy', async () => {
+    listPendingExpensesMock.mockImplementation(() =>
+      Promise.resolve([makeExpense({ kind: 'expense', amount_minor: 1200 })])
+    );
+    reviewExpenseMock.mockImplementation(() =>
+      Promise.reject(
+        Object.assign(new Error('conflict'), {
+          response: {
+            status: 409,
+            data: {
+              error: {
+                code: 'CONFLICT',
+                metadata: { reason: 'EXPENSE_WEEK_LOCKED' },
+              },
+            },
+          },
+        })
+      )
+    );
+
+    const { getByTestId, queryByTestId } = renderParentView();
+
+    await waitFor(() =>
+      expect(getByTestId('expenses-pending-row')).toBeTruthy()
+    );
+    fireEvent.press(getByTestId('expenses-pending-row'));
+    await waitFor(() =>
+      expect(getByTestId('expense-review-card-expense-1-approve')).toBeTruthy()
+    );
+    fireEvent.press(getByTestId('expense-review-card-expense-1-approve'));
+
+    await waitFor(() =>
+      expect(
+        getByTestId('expense-review-card-expense-1-week-locked-error')
+      ).toBeTruthy()
+    );
+    // The generic fallback must NOT also fire — two error lines on one card
+    // is worse than none.
+    expect(queryByTestId('expense-review-card-expense-1-error')).toBeNull();
+  });
+
   // Phase 3+4 adversarial review, finding 6: an UNRECOGNISED typed 4xx
   // refusal (e.g. the still-undecided "already-approved week" case) must
   // surface something specific to the card, not leave the parent with only

@@ -21,15 +21,18 @@
  * no-mileage-rate typed error — which row to show the inline "Set a
  * mileage rate before approving mileage." arm on.
  *
- * GENERIC TYPED-ERROR ARM (Phase 3+4 adversarial review, finding 6):
- * `genericErrorId` covers every OTHER deliberate, server-coded refusal —
- * concretely, reviewing an expense into a week that's already `approved`.
- * The API side is still deciding whether that lands as a typed error or a
- * silent week-reopen (see `ParentWeekView`'s TODO for the exact code this
- * will branch on once known); until then, ANY typed 4xx refusal that isn't
- * the recognised `NO_MILEAGE_RATE` arm surfaces here instead of leaving the
- * parent with only the ambient generic toast, which names neither the
- * claim nor the reason.
+ * WEEK-LOCKED ARM (Phase 3+4 adversarial review, finding 6, decided):
+ * approving a claim dated inside an already-approved week is REFUSED by the
+ * API (409, `reason: 'EXPENSE_WEEK_LOCKED'`) rather than silently reopening
+ * the week — reimbursements are not wages, so one must never un-approve a
+ * signed-off payroll week. `weekLockedErrorId` names that row so the parent
+ * is told the actual situation; the generic copy would invite a retry that
+ * fails identically forever. Rejecting is still allowed, so there is always
+ * an action available.
+ *
+ * GENERIC TYPED-ERROR ARM: `genericErrorId` catches every OTHER deliberate,
+ * server-coded 4xx refusal, so an unrecognised one still names the claim
+ * rather than leaving only the ambient toast.
  */
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -55,8 +58,12 @@ interface ExpenseReviewSheetProps {
   /** The expense id whose most recent approve attempt hit
    * `ExpenseValidationError` (`reason: 'NO_MILEAGE_RATE'`). */
   mileageRateErrorId?: string | null;
+  /** The expense id whose most recent approve hit `ExpenseWeekLockedError`
+   * (409, `reason: 'EXPENSE_WEEK_LOCKED'`) — the claim's week is already
+   * approved, so it cannot be approved into it. */
+  weekLockedErrorId?: string | null;
   /** The expense id whose most recent approve/reject attempt hit a typed
-   * 4xx refusal that ISN'T the recognised `NO_MILEAGE_RATE` arm (see the
+   * 4xx refusal that isn't one of the recognised arms above (see the
    * module doc's GENERIC TYPED-ERROR ARM). */
   genericErrorId?: string | null;
   onSetRatePress?: () => void;
@@ -69,6 +76,7 @@ function ReviewCard({
   onReject,
   isSubmitting,
   showMileageRateError,
+  showWeekLockedError,
   showGenericError,
   onSetRatePress,
 }: {
@@ -77,6 +85,7 @@ function ReviewCard({
   onReject: (note: string) => void;
   isSubmitting: boolean;
   showMileageRateError: boolean;
+  showWeekLockedError: boolean;
   showGenericError: boolean;
   onSetRatePress?: () => void;
 }) {
@@ -129,13 +138,22 @@ function ReviewCard({
         </View>
       ) : null}
 
+      {showWeekLockedError ? (
+        // Finding 6, decided: the API REFUSES a review into an
+        // already-approved week (409, EXPENSE_WEEK_LOCKED) rather than
+        // reopening it — reimbursements are not wages and must not
+        // un-approve a signed-off payroll week. Say so plainly: the
+        // generic copy below invites a retry that fails identically
+        // forever. Rejecting still works, so the parent keeps an action.
+        <Small
+          testID={`expense-review-card-${expense.id}-week-locked-error`}
+          className="text-destructive"
+        >
+          {t('reviewSheet.weekLockedError')}
+        </Small>
+      ) : null}
+
       {showGenericError ? (
-        // TODO(mobile): the API agent is deciding whether reviewing an
-        // expense into an already-approved week is BLOCKED with a typed
-        // error or the week is silently REOPENED (Finding 6). Once they
-        // land it, branch on its `metadata.reason` here — same shape as
-        // the NO_MILEAGE_RATE arm above — and swap this generic fallback
-        // for copy naming the actual situation. Do not guess the code.
         <Small
           testID={`expense-review-card-${expense.id}-error`}
           className="text-destructive"
@@ -195,6 +213,7 @@ export function ExpenseReviewSheet({
   onReject,
   submittingId = null,
   mileageRateErrorId = null,
+  weekLockedErrorId = null,
   genericErrorId = null,
   onSetRatePress,
   testID = 'expense-review-sheet',
@@ -219,6 +238,7 @@ export function ExpenseReviewSheet({
               expense={expense}
               isSubmitting={submittingId === expense.id}
               showMileageRateError={mileageRateErrorId === expense.id}
+              showWeekLockedError={weekLockedErrorId === expense.id}
               showGenericError={genericErrorId === expense.id}
               onApprove={() => onApprove(expense.id)}
               onReject={note => onReject(expense.id, note)}
