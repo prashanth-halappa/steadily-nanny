@@ -39,6 +39,8 @@
   "earningsApprovedGross": "Sueldo bruto aprobado",
   "earningsQueriedNote": "Consultada — el total puede cambiar.",
   "earningsReopenedNote": "Las horas cambiaron después de la aprobación, así que esta semana se está recalculando.",
+  "earningsReopenedWithReasonNanny": "Tu familia reabrió esta semana: {{reason}}",
+  "earningsReopenedWithReasonParent": "Reabriste esta semana: {{reason}}",
   "earningsCouldntCompute": "No se pudo calcular el total en este momento.",
   "earningsRetry": "Reintentar",
   "earningsNoArrangementParent": "No hay tarifa establecida — Steadily no puede totalizar esta semana.",

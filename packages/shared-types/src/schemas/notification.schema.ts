@@ -43,6 +43,12 @@ export const PUSH_NOTIFICATION_TYPES = {
 
   // PTO ledger (TIER0-PLAN.md Phase 3)
   PTO_USAGE_REVERSED: 'pto_usage_reversed',
+
+  // A parent un-approved an already-approved week. Reuses the
+  // `shift_events.event_type` string so the push and the audit row name the
+  // same fact. Carer-targeted: she is the one whose pay just stopped being
+  // final, and she may not open the app for days.
+  TIMESHEET_REOPENED: 'timesheet_reopened',
 } as const;
 
 export type PushNotificationType =

@@ -110,6 +110,7 @@ describe('TimesheetRepository.approveSubmittedWithEarnings', () => {
     expect(chain.update).toHaveBeenCalledWith({
       status: 'approved',
       query_note: null,
+      reopen_reason: null,
       approved_by: 'parent-1',
       approved_at: '2026-08-10T09:00:00.000Z',
       gross_minor: 14_800,
@@ -117,6 +118,21 @@ describe('TimesheetRepository.approveSubmittedWithEarnings', () => {
       earnings: { status: 'ok', gross_minor: 14_800 },
       earnings_computed_at: '2026-08-10T09:00:00.000Z',
     });
+  });
+
+  it('clears reopen_reason on approval — display state, not the audit trail', async () => {
+    const chain = createMockQueryChain({
+      data: { id: 'ts1', status: 'approved', reopen_reason: null },
+      error: null,
+    });
+    mockSupabaseService.from.mockImplementation(() => chain);
+
+    const repo = new TimesheetRepository();
+    await repo.approveSubmittedWithEarnings('ts1', snapshotPatch, READ_VERSION);
+
+    const [patch] = chain.update.mock.calls[0] as [Record<string, unknown>];
+    expect(patch.reopen_reason).toBeNull();
+    expect(patch.query_note).toBeNull();
   });
 
   it("constrains the update with `where status = 'submitted'` — the status arm of the CAS", async () => {

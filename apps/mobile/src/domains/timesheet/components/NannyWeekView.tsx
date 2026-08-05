@@ -262,6 +262,7 @@ export function NannyWeekView({
             earningsCarerDisplayName={timesheet?.carer_display_name ?? ''}
             onPressEarnings={() => setIsBreakdownVisible(true)}
             earningsReopened={reopened}
+            earningsReopenReason={timesheet?.reopen_reason ?? null}
             earningsError={timesheetQuery.isError}
             onRetryEarnings={() => void timesheetQuery.refetch()}
           />

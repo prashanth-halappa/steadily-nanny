@@ -84,6 +84,8 @@ interface WeekTotalProps {
   onPressEarnings?: () => void;
   /** TIER0-CX-SPEC.md §8 "Approved week that reopens" — see `utils/reopenedNotice.ts`. */
   earningsReopened?: boolean;
+  /** Wire `reopen_reason` — cold-mount caption; see `WeekEarningsLine`. */
+  earningsReopenReason?: string | null;
   /** Parent-only "undo approve" — renders `hours-reopen-button` in this
    * card, next to the status pill/gross, when `timesheetStatus` is
    * `'approved'`. Omit to render nothing (helper `readOnly` view,
@@ -131,6 +133,7 @@ export function WeekTotal({
   onRetryEarnings,
   onPressEarnings,
   earningsReopened = false,
+  earningsReopenReason = null,
   onReopenPress,
   isReopenPending = false,
 }: WeekTotalProps) {
@@ -203,6 +206,7 @@ export function WeekTotal({
             onRetryEarnings={onRetryEarnings}
             onPress={onPressEarnings}
             reopened={earningsReopened}
+            reopenReason={earningsReopenReason}
           />
         ) : null}
         {timesheetStatus === 'approved' && onReopenPress ? (

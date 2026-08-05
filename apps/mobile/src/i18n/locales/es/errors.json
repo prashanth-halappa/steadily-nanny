@@ -14,6 +14,7 @@
   "cancelViaDelete": "Cancela el tiempo libre utilizando la opción de eliminar en su lugar.",
   "entryNotEditable": "Este registro ya no se puede cambiar — la semana ya fue aprobada. Pide a tu familia que la consulte.",
   "invalidClockTimes": "Esas horas no funcionan. La salida debe ser posterior a la entrada y no puede estar en el futuro.",
+  "timeEntryOverlaps": "Esa salida se solapa con otro registro ({{entryId}}). Todavía tienes la entrada abierta — abre Horas, acorta ese registro y vuelve a fichar la salida.",
   "tryAgain": "Inténtalo de nuevo",
   "goBack": "Volver",
   "states": {

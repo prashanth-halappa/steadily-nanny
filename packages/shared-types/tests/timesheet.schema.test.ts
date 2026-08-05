@@ -153,6 +153,7 @@ describe('timesheet.schema', () => {
       approved_by: null,
       approved_at: null,
       query_note: null,
+      reopen_reason: null,
       created_at: NOW,
       updated_at: NOW,
     };

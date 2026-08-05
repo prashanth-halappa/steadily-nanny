@@ -42,6 +42,7 @@ const timesheet: Timesheet = {
   approved_by: null,
   approved_at: null,
   query_note: null,
+  reopen_reason: null,
   created_at: 't',
   updated_at: 't',
 };

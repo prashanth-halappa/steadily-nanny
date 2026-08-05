@@ -38,12 +38,17 @@ import { useClockIn } from '@/src/hooks/mutations/useClockIn';
 import { useClockOut } from '@/src/hooks/mutations/useClockOut';
 import { useRunningTimeEntry } from '@/src/hooks/queries/useRunningTimeEntry';
 import { useShift } from '@/src/hooks/queries/useShift';
+import { showErrorToast } from '@/src/lib/toast';
 import { useClockOutReminder } from '../hooks/useClockOutReminder';
 import { useElapsedTimer } from '../hooks/useElapsedTimer';
 import {
   isOverdue as isEntryOverdue,
   resolveDefaultClockOutAt,
 } from '../utils/clockOutReminder';
+import {
+  formatTimeEntryOverlapMessage,
+  getOverlappingEntryId,
+} from '../utils/timeEntryOverlapError';
 import { ClockOutSheet, type ClockOutSheetSubmitInput } from './ClockOutSheet';
 
 interface ClockInCardProps {
@@ -56,6 +61,7 @@ interface ClockInCardProps {
 
 export function ClockInCard({ householdId, timeZone }: ClockInCardProps) {
   const { t } = useTranslation('today');
+  const { t: tErrors } = useTranslation('errors');
   const running = useRunningTimeEntry();
   const clockIn = useClockIn();
   const clockOut = useClockOut();
@@ -91,6 +97,13 @@ export function ClockInCard({ householdId, timeZone }: ClockInCardProps) {
   const clockInInFlightRef = useRef(false);
   const clockOutInFlightRef = useRef(false);
   const [showClockOutSheet, setShowClockOutSheet] = useState(false);
+  // Frozen when the sheet opens so the optimistic clear (and a 409 overlap
+  // invalidate) can null the running cache without remounting the sheet or
+  // reseeding its draft from shifting props.
+  const sheetClockInAtRef = useRef<string | null>(null);
+  const sheetEntryIdRef = useRef<string | null>(null);
+  const sheetDefaultClockOutAtRef = useRef<string | undefined>(undefined);
+  const sheetShowOverdueHintRef = useRef(false);
 
   const clockOutBlocked =
     !entry ||
@@ -124,6 +137,13 @@ export function ClockInCard({ householdId, timeZone }: ClockInCardProps) {
     ) {
       return;
     }
+    sheetClockInAtRef.current = entry.clock_in_at;
+    sheetEntryIdRef.current = entry.id;
+    sheetDefaultClockOutAtRef.current =
+      overdue && clockInAt
+        ? resolveDefaultClockOutAt(clockInAt, shiftEndsAt, nowMs)
+        : undefined;
+    sheetShowOverdueHintRef.current = overdue && Boolean(shiftEndsAt);
     setShowClockOutSheet(true);
   };
 
@@ -132,19 +152,27 @@ export function ClockInCard({ householdId, timeZone }: ClockInCardProps) {
     note,
     clockOutAt,
   }: ClockOutSheetSubmitInput) => {
+    // Prefer the live entry; fall back to the ids stashed when the sheet
+    // opened so a retry still works while the optimistic clear has left
+    // `running` briefly null (overlap 409 path invalidates rather than
+    // rolling back immediately).
+    const entryId =
+      entry && !isOptimisticTimeEntry(entry)
+        ? entry.id
+        : sheetEntryIdRef.current;
     if (
-      !entry ||
-      isOptimisticTimeEntry(entry) ||
+      !entryId ||
       clockIn.isPending ||
       clockInInFlightRef.current ||
-      clockOutInFlightRef.current
+      clockOutInFlightRef.current ||
+      (entry !== null && isOptimisticTimeEntry(entry))
     ) {
       return;
     }
     clockOutInFlightRef.current = true;
     clockOut
       .mutateAsync({
-        entryId: entry.id,
+        entryId,
         ...(breakMinutes > 0 ? { break_minutes: breakMinutes } : {}),
         ...(note ? { note } : {}),
         // Absent unless the carer set a finish — the server's own clock is
@@ -152,16 +180,30 @@ export function ClockInCard({ householdId, timeZone }: ClockInCardProps) {
         ...(clockOutAt ? { clock_out_at: clockOutAt } : {}),
       })
       // Only close the sheet on success — useClockOut's onError already
-      // shows a toast, and leaving the sheet open on failure means the
-      // nanny's entered break/note aren't lost and retrying is one tap.
+      // shows a toast for generic failures, and leaving the sheet open on
+      // failure means the nanny's entered break/note aren't lost and
+      // retrying is one tap.
       .then(() => setShowClockOutSheet(false))
-      // Same double-tap-escaping-as-unhandled-rejection rationale as
-      // handleClockIn above.
-      .catch(() => undefined)
+      .catch((error: unknown) => {
+        // Overlap is more than a generic conflict: the entry stays running
+        // and she can't clock in again. Name the conflicting entry so she
+        // can find it on Hours. useClockOut still toasts the generic
+        // conflict copy; this is the actionable one that carries the id.
+        const overlappingEntryId = getOverlappingEntryId(error);
+        if (overlappingEntryId) {
+          showErrorToast(
+            formatTimeEntryOverlapMessage(tErrors, overlappingEntryId)
+          );
+        }
+      })
       .finally(() => {
         clockOutInFlightRef.current = false;
       });
   };
+
+  const sheetClockInAt = sheetClockInAtRef.current;
+  const sheetDefaultClockOutAt = sheetDefaultClockOutAtRef.current;
+  const sheetShowOverdueHint = sheetShowOverdueHintRef.current;
 
   return (
     <Card
@@ -203,24 +245,6 @@ export function ClockInCard({ householdId, timeZone }: ClockInCardProps) {
             disabled={clockOutBlocked}
             onPress={handleClockOutPress}
           />
-          <ClockOutSheet
-            visible={showClockOutSheet}
-            onDismiss={() => setShowClockOutSheet(false)}
-            onSubmit={handleConfirmClockOut}
-            isSubmitting={clockOut.isPending}
-            clockInAt={entry.clock_in_at}
-            timeZone={timeZone}
-            // Only pre-filled once overdue. Left undefined for an ordinary
-            // clock-out on purpose: the sheet then sends no finish at all
-            // and the server's own clock records it, keeping the
-            // second-level precision a typed HH:MM would round away.
-            defaultClockOutAt={
-              overdue && clockInAt
-                ? resolveDefaultClockOutAt(clockInAt, shiftEndsAt, nowMs)
-                : undefined
-            }
-            showOverdueHint={overdue && Boolean(shiftEndsAt)}
-          />
         </>
       ) : (
         <>
@@ -234,6 +258,28 @@ export function ClockInCard({ householdId, timeZone }: ClockInCardProps) {
           />
         </>
       )}
+      {/*
+        Mounted while the sheet is open (including across useClockOut's
+        optimistic clear) so a 409 TIME_ENTRY_OVERLAPS — which invalidates
+        rather than rolling back — cannot wipe the typed break/note. Unmounted
+        once closed so success still clears `clockout-sheet` from the tree.
+      */}
+      {showClockOutSheet ? (
+        <ClockOutSheet
+          visible={showClockOutSheet}
+          onDismiss={() => setShowClockOutSheet(false)}
+          onSubmit={handleConfirmClockOut}
+          isSubmitting={clockOut.isPending}
+          clockInAt={sheetClockInAt}
+          timeZone={timeZone}
+          // Only pre-filled once overdue. Left undefined for an ordinary
+          // clock-out on purpose: the sheet then sends no finish at all
+          // and the server's own clock records it, keeping the
+          // second-level precision a typed HH:MM would round away.
+          defaultClockOutAt={sheetDefaultClockOutAt}
+          showOverdueHint={sheetShowOverdueHint}
+        />
+      ) : null}
     </Card>
   );
 }

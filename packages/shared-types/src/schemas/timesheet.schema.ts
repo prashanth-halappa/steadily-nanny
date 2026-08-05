@@ -178,6 +178,13 @@ export const TimesheetSchema = z.object({
   approved_at: z.iso.datetime({ offset: true }).nullable(),
   // "Query Thursday" — an approval escape hatch that names the disagreement.
   query_note: z.string().nullable(),
+  // Why a parent un-approved this week, carried on the row so it survives a
+  // cold start — the in-memory "reopened" caption only fires for a component
+  // that WATCHED the transition, so a carer opening the app two days later
+  // saw nothing at all. Display state, not the record: it is cleared on
+  // re-approval, while the append-only `timesheet_reopened` shift_event
+  // remains the permanent audit. Two facts, two places (docs/11-MONEY.md §3).
+  reopen_reason: z.string().nullable(),
   created_at: z.iso.datetime({ offset: true }),
   updated_at: z.iso.datetime({ offset: true }),
 });

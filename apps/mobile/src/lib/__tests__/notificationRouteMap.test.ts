@@ -42,22 +42,29 @@ describe('NOTIFICATION_ROUTE_MAP resolvers', () => {
   });
 
   it('routes timesheet pushes to Hours with payload ids', () => {
-    expect(
-      resolve(PUSH_NOTIFICATION_TYPES.TIMESHEET_SUBMITTED, {
-        householdId: 'hh-1',
-        weekStart: '2026-08-03',
-        timesheetId: 'ts-1',
-      })
-    ).toBe(
-      '/(private)/(tabs)/hours?householdId=hh-1&weekStart=2026-08-03&timesheetId=ts-1'
-    );
-    const queried = resolve(PUSH_NOTIFICATION_TYPES.TIMESHEET_QUERIED, {
+    const timesheetPayload = {
       householdId: 'hh-1',
       weekStart: '2026-08-03',
       timesheetId: 'ts-1',
-    });
+    };
+    const hoursHref =
+      '/(private)/(tabs)/hours?householdId=hh-1&weekStart=2026-08-03&timesheetId=ts-1';
+
+    expect(
+      resolve(PUSH_NOTIFICATION_TYPES.TIMESHEET_SUBMITTED, timesheetPayload)
+    ).toBe(hoursHref);
+
+    const queried = resolve(
+      PUSH_NOTIFICATION_TYPES.TIMESHEET_QUERIED,
+      timesheetPayload
+    );
     expect(queried).toContain('/(private)/(tabs)/hours?');
     expect(queried).toContain('timesheetId=ts-1');
+
+    // Reopen reuses the same Hours deep-link keys the API emits on reopen.
+    expect(
+      resolve(PUSH_NOTIFICATION_TYPES.TIMESHEET_REOPENED, timesheetPayload)
+    ).toBe(hoursHref);
   });
 
   it('routes pattern-sent to the respond screen via patternId', () => {

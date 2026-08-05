@@ -77,6 +77,13 @@ interface WeekEarningsLineProps {
   onPress?: () => void;
   /** §8 "Approved week that reopens" — see `utils/reopenedNotice.ts`. */
   reopened?: boolean;
+  /**
+   * Wire reason from `TimesheetSchema.reopen_reason`. Survives a cold mount
+   * (unlike the ephemeral `reopened` flag). Belt-and-braces: only rendered
+   * while the week is not approved — same status gate as `query_note` in
+   * `ParentWeekView`.
+   */
+  reopenReason?: string | null;
 }
 
 export function WeekEarningsLine({
@@ -91,9 +98,11 @@ export function WeekEarningsLine({
   onRetryEarnings,
   onPress,
   reopened = false,
+  reopenReason = null,
 }: WeekEarningsLineProps) {
   const { t } = useTranslation('hours');
   const router = useRouter();
+  const isParentViewer = viewerRole === 'parent';
 
   if (earningsError) {
     return (
@@ -228,7 +237,28 @@ export function WeekEarningsLine({
           {t('earningsQueriedNote')}
         </Small>
       ) : null}
-      {reopened ? (
+      {/* Cold-mount: prefer the wire reason. Same-session: fall back to the
+          ephemeral `reopened` flag from `useReopenedNotice`. Never on an
+          approved week — a stale reason must not outlive re-approval. */}
+      {timesheetStatus !== 'approved' && reopenReason ? (
+        <Small
+          testID={`${testID}-reopened-note`}
+          className="text-muted-foreground"
+        >
+          {/* Key chosen from a boolean, not an inline `viewerRole ===
+              'parent'` comparison: the locale-key extractor takes the first
+              string literal inside `t(` as the key, so the comparison's
+              own 'parent' looked like an unresolvable key and failed the
+              resolution test. Keeping real keys first keeps that check
+              honest instead of silencing it with a variable. */}
+          {t(
+            isParentViewer
+              ? 'earningsReopenedWithReasonParent'
+              : 'earningsReopenedWithReasonNanny',
+            { reason: reopenReason }
+          )}
+        </Small>
+      ) : timesheetStatus !== 'approved' && reopened ? (
         <Small
           testID={`${testID}-reopened-note`}
           className="text-muted-foreground"

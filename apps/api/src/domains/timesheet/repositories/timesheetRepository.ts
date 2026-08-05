@@ -158,7 +158,11 @@ export class TimesheetRepository extends BaseRepository<TimesheetRow> {
    * repository inventing a second one.
    *
    * `query_note` is cleared here as it always was on approval: an approved
-   * week has no outstanding question.
+   * week has no outstanding question. `reopen_reason` is cleared the same
+   * way — it is display state ("why does this week look undone right now"),
+   * not the audit trail; the append-only `timesheet_reopened` shift_events
+   * rows stay forever. Omitting the clear recreates the stale-note bug
+   * class in a new column.
    */
   async approveSubmittedWithEarnings(
     timesheetId: string,
@@ -170,6 +174,7 @@ export class TimesheetRepository extends BaseRepository<TimesheetRow> {
       .update({
         status: 'approved',
         query_note: null,
+        reopen_reason: null,
         approved_by: patch.approved_by,
         approved_at: patch.approved_at,
         gross_minor: patch.gross_minor,

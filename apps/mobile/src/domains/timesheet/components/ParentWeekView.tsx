@@ -401,6 +401,7 @@ export function ParentWeekView({
             earningsCarerDisplayName={timesheet?.carer_display_name ?? ''}
             onPressEarnings={() => setIsBreakdownVisible(true)}
             earningsReopened={reopened}
+            earningsReopenReason={timesheet?.reopen_reason ?? null}
             earningsError={timesheetQuery.isError}
             onRetryEarnings={() => void timesheetQuery.refetch()}
             // Walkthrough fix 1 — the reopen affordance lives in the

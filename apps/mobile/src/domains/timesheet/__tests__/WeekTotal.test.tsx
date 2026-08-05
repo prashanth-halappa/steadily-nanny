@@ -264,4 +264,52 @@ describe('WeekTotal', () => {
       expect(getByTestId('hours-reopen-button').props.disabled).toBe(true);
     });
   });
+
+  // Cold-mount reopen reason — wire `earningsReopenReason` through to the
+  // existing `-reopened-note` slot (no ephemeral transition needed).
+  describe('earningsReopenReason', () => {
+    const earnings = {
+      status: 'ok' as const,
+      week_start: '2026-08-03',
+      currency: 'GBP',
+      lines: [],
+      gross_minor: 23612,
+      reimbursements_minor: 0,
+      worked_minutes: 2460,
+      payable_minutes: 2460,
+      guaranteed_minutes_per_week: null,
+    };
+
+    it('shows the reopened note from a wire reason on a non-approved week', () => {
+      const { getByTestId } = render(
+        <WeekTotal
+          testID="hours-week-total"
+          weekRangeLabel="3 Aug – 9 Aug"
+          totalLabel="41h 0m"
+          overtimeLabel={null}
+          totalMinutes={2460}
+          timesheetStatus="submitted"
+          earnings={earnings}
+          earningsReopenReason="Thursday hours were wrong"
+        />
+      );
+      expect(getByTestId('hours-earnings-line-reopened-note')).toBeTruthy();
+    });
+
+    it('does not show a stale wire reason on an approved week', () => {
+      const { queryByTestId } = render(
+        <WeekTotal
+          testID="hours-week-total"
+          weekRangeLabel="3 Aug – 9 Aug"
+          totalLabel="41h 0m"
+          overtimeLabel={null}
+          totalMinutes={2460}
+          timesheetStatus="approved"
+          earnings={earnings}
+          earningsReopenReason="Thursday hours were wrong"
+        />
+      );
+      expect(queryByTestId('hours-earnings-line-reopened-note')).toBeNull();
+    });
+  });
 });

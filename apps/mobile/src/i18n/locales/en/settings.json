@@ -101,6 +101,7 @@
       "clock_out_reminder": "Clock-out reminder",
       "timesheet_submitted": "Timesheet submitted",
       "timesheet_queried": "Timesheet queried",
+      "timesheet_reopened": "Timesheet reopened",
       "schedule_pattern_sent": "Schedule pattern sent",
       "schedule_pattern_responded": "Schedule pattern response",
       "schedule_pattern_amended": "Schedule pattern amended",
@@ -112,7 +113,8 @@
       "shift_cancelled": "Shift cancelled",
       "shift_needs_reconfirm": "Shift needs reconfirm",
       "carer_time_off_conflict": "Time-off conflict",
-      "pay_terms_set": "Pay terms updated"
+      "pay_terms_set": "Pay terms updated",
+      "pto_usage_reversed": "Time-off usage reversed"
     }
   }
 }

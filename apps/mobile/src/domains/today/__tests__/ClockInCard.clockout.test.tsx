@@ -12,6 +12,11 @@
  * real entered values through to the real network call, not a mocked
  * callback standing in for the component (the standard this run was
  * burned by once on D15, per the team-lead brief).
+ *
+ * Overlap refusal (409 TIME_ENTRY_OVERLAPS): clock-out can now fail with the
+ * entry still `running`. The toast must name the conflicting entry id so the
+ * carer can find it on Hours, and the sheet must stay open with the typed
+ * break/note intact (optimistic clear must not wipe the draft).
  */
 import { beforeEach, describe, expect, it, mock } from 'bun:test';
 import { fireEvent, waitFor } from '@testing-library/react-native';
@@ -32,6 +37,7 @@ mock.module('@/lib/useColorScheme', () => ({
 }));
 
 const HOUSEHOLD_ID = 'household-1';
+const OVERLAPPING_ENTRY_ID = 'entry-overlap-42';
 // Two hours ago, relative to the real clock. NOT a hardcoded instant: the
 // card's forgotten-clock-out state (Daylight UX #7) triggers off elapsed
 // time, so a fixed past date would silently drift into "overdue" and change
@@ -45,10 +51,27 @@ const RUNNING_ENTRY = {
   status: 'running',
 };
 
+const TIME_ENTRY_OVERLAPS_ERROR = {
+  isAxiosError: true,
+  response: {
+    status: 409,
+    data: {
+      error: {
+        code: 'CONFLICT',
+        metadata: {
+          reason: 'TIME_ENTRY_OVERLAPS',
+          overlappingEntryId: OVERLAPPING_ENTRY_ID,
+        },
+      },
+    },
+  },
+};
+
 const getRunningMock = mock(() => Promise.resolve<unknown>(RUNNING_ENTRY));
 const clockOutMock = mock(() =>
   Promise.resolve({ ...RUNNING_ENTRY, status: 'submitted' })
 );
+const showErrorToastMock = mock((..._args: unknown[]) => {});
 
 mock.module('@/src/api/endpoints/timeEntries', () => ({
   timeEntryApi: {
@@ -57,10 +80,18 @@ mock.module('@/src/api/endpoints/timeEntries', () => ({
     clockOut: clockOutMock,
   },
 }));
+mock.module('@/src/lib/toast', () => ({
+  showErrorToast: showErrorToastMock,
+  showSuccessToast: mock(),
+  showInfoToast: mock(),
+  showWarningToast: mock(),
+  useToast: () => ({ show: mock() }),
+}));
 
 beforeEach(() => {
   getRunningMock.mockReset();
   clockOutMock.mockReset();
+  showErrorToastMock.mockReset();
   getRunningMock.mockImplementation(() => Promise.resolve(RUNNING_ENTRY));
   clockOutMock.mockImplementation(() =>
     Promise.resolve({ ...RUNNING_ENTRY, status: 'submitted' })
@@ -175,5 +206,74 @@ describe('ClockInCard — D20 break minutes at clock-out', () => {
     await waitFor(() => expect(clockOutMock).toHaveBeenCalledTimes(1));
     await new Promise(resolve => setTimeout(resolve, 0));
     expect(clockOutMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('a 409 TIME_ENTRY_OVERLAPS toast names the conflicting entry and keeps the sheet open with the typed draft', async () => {
+    clockOutMock.mockImplementationOnce(() =>
+      Promise.reject(TIME_ENTRY_OVERLAPS_ERROR)
+    );
+
+    const { getByTestId } = renderWithProviders(
+      <ClockInCard householdId={HOUSEHOLD_ID} timeZone="UTC" />
+    );
+
+    await waitFor(() => expect(getByTestId('today-clock-out')).toBeTruthy());
+    fireEvent.press(getByTestId('today-clock-out'));
+
+    await waitFor(() => expect(getByTestId('clockout-break-30')).toBeTruthy());
+    fireEvent.press(getByTestId('clockout-break-30'));
+    fireEvent.changeText(getByTestId('clockout-note'), 'covered pickup');
+    fireEvent.press(getByTestId('clockout-confirm'));
+
+    await waitFor(() => expect(clockOutMock).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(
+        showErrorToastMock.mock.calls.some(call =>
+          String(call[0] ?? '').includes(OVERLAPPING_ENTRY_ID)
+        )
+      ).toBe(true)
+    );
+
+    // Sheet stays open — only success closes it — and the typed break/note
+    // survive the optimistic clear + refusal (otherwise she'd retype mid-shift).
+    expect(getByTestId('clockout-sheet')).toBeTruthy();
+    expect(getByTestId('clockout-break-custom').props.value).toBe('30');
+    expect(getByTestId('clockout-note').props.value).toBe('covered pickup');
+  });
+
+  it('a generic clock-out failure still leaves the sheet open with the typed draft, without an overlap toast', async () => {
+    clockOutMock.mockImplementationOnce(() =>
+      Promise.reject({
+        isAxiosError: true,
+        response: {
+          status: 500,
+          data: { error: { code: 'INTERNAL_ERROR' } },
+        },
+      })
+    );
+
+    const { getByTestId } = renderWithProviders(
+      <ClockInCard householdId={HOUSEHOLD_ID} timeZone="UTC" />
+    );
+
+    await waitFor(() => expect(getByTestId('today-clock-out')).toBeTruthy());
+    fireEvent.press(getByTestId('today-clock-out'));
+
+    await waitFor(() => expect(getByTestId('clockout-break-15')).toBeTruthy());
+    fireEvent.press(getByTestId('clockout-break-15'));
+    fireEvent.changeText(getByTestId('clockout-note'), 'late handover');
+    fireEvent.press(getByTestId('clockout-confirm'));
+
+    await waitFor(() => expect(clockOutMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(showErrorToastMock).toHaveBeenCalled());
+
+    expect(
+      showErrorToastMock.mock.calls.some(call =>
+        String(call[0] ?? '').includes(OVERLAPPING_ENTRY_ID)
+      )
+    ).toBe(false);
+    expect(getByTestId('clockout-sheet')).toBeTruthy();
+    expect(getByTestId('clockout-break-custom').props.value).toBe('15');
+    expect(getByTestId('clockout-note').props.value).toBe('late handover');
   });
 });

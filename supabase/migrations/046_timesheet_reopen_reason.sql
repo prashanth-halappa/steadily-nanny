@@ -1,0 +1,44 @@
+-- 046 Timesheet reopen_reason — display state for why a parent un-approved
+--
+-- One nullable text column on the already-existing `public.timesheets`. No
+-- new table, no new policy, no trigger change. Binding sources:
+-- docs/11-MONEY.md §3 and the shared `TimesheetSchema.reopen_reason` wire
+-- contract.
+--
+-- WHY THIS COLUMN EXISTS
+-- A parent reopening an approved week must type a reason. That reason was
+-- already recorded as an append-only `shift_events` day-thread row
+-- (`event_type: 'timesheet_reopened'`) — the permanent audit. Nothing in
+-- the mobile app reads the day-thread for this, so a carer whose pay just
+-- stopped being final saw nothing on a cold start: the in-memory "reopened"
+-- caption only fires for a component that WATCHED the transition. Carrying
+-- the reason on the timesheet row lets Hours render it the way `query_note`
+-- already surfaces a queried week.
+--
+-- DISPLAY STATE, NOT THE RECORD
+-- This column is cleared on re-approval (alongside `query_note`, in
+-- `approveSubmittedWithEarnings`). The day-thread rows are never touched —
+-- clearing the display must never erase the history. Two facts, two places:
+-- the column is "why does this week look undone right now"; the events are
+-- "this week was un-approved, with this reason, at this time".
+--
+-- NEVER reuse `query_note`. That column means "a parent queried this week",
+-- and ParentWeekView renders it as "Queried: {{note}}" whenever status is
+-- 'queried'. Writing a reopen reason there would mislabel an undo-approve
+-- as an open dispute.
+--
+-- NO RLS WORK
+-- Same stance as migration 042's earnings columns: a new column on an
+-- existing row is just more data on a row a member could already see. The
+-- carer self-arm in migration 040 already grants her SELECT on her own
+-- timesheet row (`carer_id = auth.uid()`), and the household-member SELECT
+-- from 017 / 018 / 040 covers parents. No insert/update/delete policy is
+-- added either — writes stay service-role, as every timesheet write already
+-- is. A policy change here would be decorative and easy to get wrong.
+--
+-- THE COLUMN
+--   * `reopen_reason` — text, nullable. Set by `timesheetCommandService.reopen`
+--     from the caller-supplied reason; cleared on the next approve.
+
+alter table public.timesheets
+  add column if not exists reopen_reason text;
