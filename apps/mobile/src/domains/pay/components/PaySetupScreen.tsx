@@ -18,6 +18,7 @@ import { type Href, useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Pressable, View } from 'react-native';
+import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { Button } from '@/src/components/ui/button';
 import { EmptyState } from '@/src/components/ui/empty-state';
 import { Input } from '@/src/components/ui/input';
@@ -161,7 +162,12 @@ export function PaySetupScreen() {
   if (!isParentEditorRole(onboarding.role)) {
     return (
       <View testID="pay-setup-not-available" className="flex-1 bg-background">
-        <View className="px-6 pt-8">
+        <View
+          style={{
+            paddingHorizontal: SCREEN_CONTENT_STYLE.padding,
+            paddingTop: SCREEN_CONTENT_STYLE.padding,
+          }}
+        >
           <Pressable
             testID="pay-setup-not-available-back"
             accessibilityRole="button"
@@ -173,7 +179,10 @@ export function PaySetupScreen() {
             <Body className="text-primary">{`< ${tCommon('back')}`}</Body>
           </Pressable>
         </View>
-        <View className="mt-8 px-6">
+        <View
+          className="mt-8"
+          style={{ paddingHorizontal: SCREEN_CONTENT_STYLE.padding }}
+        >
           <EmptyState
             variant="inline"
             title={t('notAvailableTitle')}

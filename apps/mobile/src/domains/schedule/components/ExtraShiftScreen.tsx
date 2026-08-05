@@ -9,7 +9,6 @@ import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Pressable, ScrollView, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { Button } from '@/src/components/ui/button';
 import { ChildChip } from '@/src/components/ui/child-chip';
@@ -106,28 +105,37 @@ export function ExtraShiftScreen() {
   // the client happily rendered the form and only failed on submit.
   if (!isParentEditorRole(onboarding.role)) {
     return (
-      <View testID="schedule-extra-shift-not-available" style={{ flex: 1 }}>
-        <SafeAreaView style={{ flex: 1 }} className="bg-background">
-          <View className="px-6 pt-4">
-            <Pressable
-              testID="schedule-extra-shift-not-available-back"
-              accessibilityRole="button"
-              accessibilityLabel={tCommon('back')}
-              onPress={() => router.back()}
-              hitSlop={8}
-              className="self-start"
-            >
-              <Body className="text-primary">{`< ${tCommon('back')}`}</Body>
-            </Pressable>
-          </View>
-          <View className="mt-8 px-6">
-            <EmptyState
-              variant="inline"
-              title={t('shifts.extraNotAvailableTitle')}
-              description={t('shifts.extraNotAvailableDescription')}
-            />
-          </View>
-        </SafeAreaView>
+      <View
+        testID="schedule-extra-shift-not-available"
+        className="flex-1 bg-background"
+      >
+        <View
+          style={{
+            paddingHorizontal: SCREEN_CONTENT_STYLE.padding,
+            paddingTop: SCREEN_CONTENT_STYLE.padding,
+          }}
+        >
+          <Pressable
+            testID="schedule-extra-shift-not-available-back"
+            accessibilityRole="button"
+            accessibilityLabel={tCommon('back')}
+            onPress={() => router.back()}
+            hitSlop={8}
+            className="self-start"
+          >
+            <Body className="text-primary">{`< ${tCommon('back')}`}</Body>
+          </Pressable>
+        </View>
+        <View
+          className="mt-8"
+          style={{ paddingHorizontal: SCREEN_CONTENT_STYLE.padding }}
+        >
+          <EmptyState
+            variant="inline"
+            title={t('shifts.extraNotAvailableTitle')}
+            description={t('shifts.extraNotAvailableDescription')}
+          />
+        </View>
       </View>
     );
   }

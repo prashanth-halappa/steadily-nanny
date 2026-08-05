@@ -20,6 +20,7 @@
 import { type Href, Stack, useRouter } from 'expo-router';
 import { useEffect } from 'react';
 import { View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 
@@ -35,7 +36,11 @@ export default function OnboardingLayout() {
 
   // Confirmed new / incomplete user — show the wizard.
   if (!onboarding.membershipsError && onboarding.status === 'not-onboarded') {
-    return <Stack screenOptions={{ headerShown: false }} />;
+    return (
+      <SafeAreaView style={{ flex: 1 }} edges={['top']}>
+        <Stack screenOptions={{ headerShown: false }} />
+      </SafeAreaView>
+    );
   }
 
   // loading, onboarded (redirect in flight), or membershipsError — never paint

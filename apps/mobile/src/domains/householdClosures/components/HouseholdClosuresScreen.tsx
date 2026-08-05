@@ -30,7 +30,6 @@ import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Pressable, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { Button } from '@/src/components/ui/button';
 import { Card } from '@/src/components/ui/card';
@@ -91,17 +90,15 @@ export function HouseholdClosuresScreen() {
   if (onboarding.status === 'loading') {
     return (
       <View testID="household-closures-screen" className="flex-1 bg-background">
-        <SafeAreaView style={{ flex: 1 }} className="bg-background">
-          <View
-            style={{
-              paddingHorizontal: SCREEN_CONTENT_STYLE.padding,
-              paddingTop: 16,
-            }}
-          >
-            {backHeader}
-          </View>
-          <LoadingIndicator testID="household-closures-loading" />
-        </SafeAreaView>
+        <View
+          style={{
+            paddingHorizontal: SCREEN_CONTENT_STYLE.padding,
+            paddingTop: SCREEN_CONTENT_STYLE.padding,
+          }}
+        >
+          {backHeader}
+        </View>
+        <LoadingIndicator testID="household-closures-loading" />
       </View>
     );
   }
@@ -109,27 +106,25 @@ export function HouseholdClosuresScreen() {
   if (onboarding.role !== SETUP_ROLES.PARENT) {
     return (
       <View testID="household-closures-screen" className="flex-1 bg-background">
-        <SafeAreaView style={{ flex: 1 }} className="bg-background">
-          <View
-            style={{
-              paddingHorizontal: SCREEN_CONTENT_STYLE.padding,
-              paddingTop: 16,
-            }}
-          >
-            {backHeader}
-          </View>
-          <View
-            testID="household-closures-not-available"
-            className="mt-8"
-            style={{ paddingHorizontal: SCREEN_CONTENT_STYLE.padding }}
-          >
-            <EmptyState
-              variant="inline"
-              title={t('closures.notAvailableTitle')}
-              description={t('closures.notAvailableDescription')}
-            />
-          </View>
-        </SafeAreaView>
+        <View
+          style={{
+            paddingHorizontal: SCREEN_CONTENT_STYLE.padding,
+            paddingTop: SCREEN_CONTENT_STYLE.padding,
+          }}
+        >
+          {backHeader}
+        </View>
+        <View
+          testID="household-closures-not-available"
+          className="mt-8"
+          style={{ paddingHorizontal: SCREEN_CONTENT_STYLE.padding }}
+        >
+          <EmptyState
+            variant="inline"
+            title={t('closures.notAvailableTitle')}
+            description={t('closures.notAvailableDescription')}
+          />
+        </View>
       </View>
     );
   }
@@ -163,96 +158,92 @@ export function HouseholdClosuresScreen() {
 
   return (
     <View testID="household-closures-screen" className="flex-1 bg-background">
-      <SafeAreaView style={{ flex: 1 }} className="bg-background">
-        <FlashList
-          testID="household-closures-list"
-          data={closures.data ?? []}
-          keyExtractor={(row: HouseholdClosure) => row.id}
-          renderItem={({ item }: { item: HouseholdClosure }) => {
-            const isPast = isPastTimeOff(item.ends_at);
-            return (
-              <Card
-                testID={`household-closures-row-${item.id}`}
-                className="mb-3 gap-1 p-4"
+      <FlashList
+        testID="household-closures-list"
+        data={closures.data ?? []}
+        keyExtractor={(row: HouseholdClosure) => row.id}
+        renderItem={({ item }: { item: HouseholdClosure }) => {
+          const isPast = isPastTimeOff(item.ends_at);
+          return (
+            <Card
+              testID={`household-closures-row-${item.id}`}
+              className="mb-3 gap-1 p-4"
+            >
+              <Body>
+                {formatTimeOffRangeLabel(item.starts_at, item.ends_at)}
+              </Body>
+              {item.message ? (
+                <Small className="text-muted-foreground">{item.message}</Small>
+              ) : null}
+              {isPast ? null : (
+                <View className="mt-2 flex-row">
+                  <Button
+                    testID={`household-closures-delete-${item.id}`}
+                    variant="ghost"
+                    disabled={deleteClosure.isPending}
+                    onPress={() => void handleDelete(item.id)}
+                  >
+                    <Text className="text-destructive">
+                      {t('closures.deleteButton')}
+                    </Text>
+                  </Button>
+                </View>
+              )}
+            </Card>
+          );
+        }}
+        ListHeaderComponent={
+          <View className="mb-2 gap-1">
+            {backHeader}
+            <H1 testID="household-closures-header">
+              {t('closures.screenTitle')}
+            </H1>
+            <Small className="mb-2 text-muted-foreground">
+              {t('closures.screenSubtitle')}
+            </Small>
+            <View testID="household-closures-form" className="mb-6 gap-4">
+              <Body weight="medium">{t('closures.formTitle')}</Body>
+              <TimeOffDateRangePicker
+                testID="household-closures-dates"
+                start={startDate}
+                end={endDate}
+                onChange={(start, end) => {
+                  setStartDate(start);
+                  setEndDate(end);
+                }}
+              />
+              <Textarea
+                testID="household-closures-message"
+                accessibilityLabel={t('closures.messageLabel')}
+                placeholder={t('closures.messagePlaceholder')}
+                value={message}
+                onChangeText={setMessage}
+              />
+              <Button
+                testID="household-closures-submit"
+                disabled={createClosure.isPending}
+                onPress={() => void handleSubmit()}
               >
-                <Body>
-                  {formatTimeOffRangeLabel(item.starts_at, item.ends_at)}
-                </Body>
-                {item.message ? (
-                  <Small className="text-muted-foreground">
-                    {item.message}
-                  </Small>
-                ) : null}
-                {isPast ? null : (
-                  <View className="mt-2 flex-row">
-                    <Button
-                      testID={`household-closures-delete-${item.id}`}
-                      variant="ghost"
-                      disabled={deleteClosure.isPending}
-                      onPress={() => void handleDelete(item.id)}
-                    >
-                      <Text className="text-destructive">
-                        {t('closures.deleteButton')}
-                      </Text>
-                    </Button>
-                  </View>
-                )}
-              </Card>
-            );
-          }}
-          ListHeaderComponent={
-            <View className="mb-2 gap-1">
-              {backHeader}
-              <H1 testID="household-closures-header">
-                {t('closures.screenTitle')}
-              </H1>
-              <Small className="mb-2 text-muted-foreground">
-                {t('closures.screenSubtitle')}
-              </Small>
-              <View testID="household-closures-form" className="mb-6 gap-4">
-                <Body weight="medium">{t('closures.formTitle')}</Body>
-                <TimeOffDateRangePicker
-                  testID="household-closures-dates"
-                  start={startDate}
-                  end={endDate}
-                  onChange={(start, end) => {
-                    setStartDate(start);
-                    setEndDate(end);
-                  }}
-                />
-                <Textarea
-                  testID="household-closures-message"
-                  accessibilityLabel={t('closures.messageLabel')}
-                  placeholder={t('closures.messagePlaceholder')}
-                  value={message}
-                  onChangeText={setMessage}
-                />
-                <Button
-                  testID="household-closures-submit"
-                  disabled={createClosure.isPending}
-                  onPress={() => void handleSubmit()}
-                >
-                  <Text>{t('closures.submitButton')}</Text>
-                </Button>
-              </View>
+                <Text>{t('closures.submitButton')}</Text>
+              </Button>
             </View>
-          }
-          ListEmptyComponent={
-            closures.isLoading ? (
-              <LoadingIndicator testID="household-closures-loading" />
-            ) : (
-              <View testID="household-closures-empty">
-                <EmptyState
-                  variant="inline"
-                  title={t('closures.emptyTitle')}
-                  description={t('closures.emptyDescription')}
-                />
-              </View>
-            )
-          }
-          contentContainerStyle={SCREEN_CONTENT_STYLE}
-        />
-      </SafeAreaView>
+          </View>
+        }
+        ListEmptyComponent={
+          closures.isLoading ? (
+            <LoadingIndicator testID="household-closures-loading" />
+          ) : (
+            <View testID="household-closures-empty">
+              <EmptyState
+                variant="inline"
+                title={t('closures.emptyTitle')}
+                description={t('closures.emptyDescription')}
+              />
+            </View>
+          )
+        }
+        contentContainerStyle={SCREEN_CONTENT_STYLE}
+      />
     </View>
   );
 }

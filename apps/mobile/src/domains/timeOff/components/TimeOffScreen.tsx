@@ -27,7 +27,6 @@ import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Pressable, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { cn } from '@/lib/utils';
 import { EmptyState } from '@/src/components/ui/empty-state';
@@ -109,10 +108,15 @@ export function TimeOffScreen() {
   if (onboarding.status === 'loading') {
     return (
       <View testID="time-off-screen" className="flex-1 bg-background">
-        <SafeAreaView style={{ flex: 1 }} className="bg-background">
-          <View className="px-5.5 pt-4">{backHeader}</View>
-          <LoadingIndicator testID="time-off-loading" />
-        </SafeAreaView>
+        <View
+          style={{
+            paddingHorizontal: SCREEN_CONTENT_STYLE.padding,
+            paddingTop: SCREEN_CONTENT_STYLE.padding,
+          }}
+        >
+          {backHeader}
+        </View>
+        <LoadingIndicator testID="time-off-loading" />
       </View>
     );
   }
@@ -120,101 +124,108 @@ export function TimeOffScreen() {
   if (onboarding.role !== SETUP_ROLES.NANNY) {
     return (
       <View testID="time-off-screen" className="flex-1 bg-background">
-        <SafeAreaView style={{ flex: 1 }} className="bg-background">
-          <View className="px-5.5 pt-4">{backHeader}</View>
-          <View testID="time-off-not-available" className="mt-8">
-            <EmptyState
-              variant="inline"
-              title={t('notAvailableTitle')}
-              description={t('notAvailableDescription')}
-            />
-          </View>
-        </SafeAreaView>
+        <View
+          style={{
+            paddingHorizontal: SCREEN_CONTENT_STYLE.padding,
+            paddingTop: SCREEN_CONTENT_STYLE.padding,
+          }}
+        >
+          {backHeader}
+        </View>
+        <View
+          testID="time-off-not-available"
+          className="mt-8"
+          style={{ paddingHorizontal: SCREEN_CONTENT_STYLE.padding }}
+        >
+          <EmptyState
+            variant="inline"
+            title={t('notAvailableTitle')}
+            description={t('notAvailableDescription')}
+          />
+        </View>
       </View>
     );
   }
 
   return (
     <View testID="time-off-screen" className="flex-1 bg-background">
-      <SafeAreaView style={{ flex: 1 }} className="bg-background">
-        <FlashList
-          testID="time-off-list"
-          data={rows}
-          keyExtractor={row => row.id}
-          renderItem={({ item }) => (
-            <TimeOffRow
-              timeOff={item}
-              onCancel={id => void handleCancel(id)}
-              onEdit={handleEdit}
-              isCancelling={cancelTimeOff.isPending}
-              isEditing={updateTimeOff.isPending}
-              paidFamilyCount={
-                paidFamilyCounts.isLoading
-                  ? undefined
-                  : (paidFamilyCounts.counts.get(item.id) ?? 0)
-              }
-            />
-          )}
-          ListHeaderComponent={
-            <View className="mb-2 gap-1">
-              {backHeader}
-              <H1 testID="time-off-header">{t('screenTitle')}</H1>
-              {editingTimeOff ? (
-                <TimeOffRequestForm
-                  key={editingTimeOff.id}
-                  editTimeOff={editingTimeOff}
-                  onEditDismiss={() => setEditingTimeOff(null)}
-                  updateTimeOff={updateTimeOff}
-                />
-              ) : (
-                <TimeOffRequestForm />
-              )}
-              <View testID="time-off-status-filters" className="mt-4 gap-2">
-                <MetadataLabel className="text-muted-foreground">
-                  {t('filterLabel')}
-                </MetadataLabel>
-                <View className="flex-row flex-wrap gap-2">
-                  {FILTERS.map(filter => (
-                    <Pressable
-                      key={filter}
-                      testID={`time-off-filter-${filter}`}
-                      accessibilityRole="button"
-                      onPress={() => setStatusFilter(filter)}
+      <FlashList
+        testID="time-off-list"
+        data={rows}
+        keyExtractor={row => row.id}
+        renderItem={({ item }) => (
+          <TimeOffRow
+            timeOff={item}
+            onCancel={id => void handleCancel(id)}
+            onEdit={handleEdit}
+            isCancelling={cancelTimeOff.isPending}
+            isEditing={updateTimeOff.isPending}
+            paidFamilyCount={
+              paidFamilyCounts.isLoading
+                ? undefined
+                : (paidFamilyCounts.counts.get(item.id) ?? 0)
+            }
+          />
+        )}
+        ListHeaderComponent={
+          <View className="mb-2 gap-1">
+            {backHeader}
+            <H1 testID="time-off-header">{t('screenTitle')}</H1>
+            {editingTimeOff ? (
+              <TimeOffRequestForm
+                key={editingTimeOff.id}
+                editTimeOff={editingTimeOff}
+                onEditDismiss={() => setEditingTimeOff(null)}
+                updateTimeOff={updateTimeOff}
+              />
+            ) : (
+              <TimeOffRequestForm />
+            )}
+            <View testID="time-off-status-filters" className="mt-4 gap-2">
+              <MetadataLabel className="text-muted-foreground">
+                {t('filterLabel')}
+              </MetadataLabel>
+              <View className="flex-row flex-wrap gap-2">
+                {FILTERS.map(filter => (
+                  <Pressable
+                    key={filter}
+                    testID={`time-off-filter-${filter}`}
+                    accessibilityRole="button"
+                    onPress={() => setStatusFilter(filter)}
+                  >
+                    <Small
+                      className={cn(
+                        'rounded-chip border px-3 py-2',
+                        statusFilter === filter
+                          ? 'border-primary bg-primary/10 text-primary'
+                          : 'border-border text-foreground'
+                      )}
                     >
-                      <Small
-                        className={cn(
-                          'rounded-chip border px-3 py-2',
-                          statusFilter === filter
-                            ? 'border-primary bg-primary/10 text-primary'
-                            : 'border-border text-foreground'
-                        )}
-                      >
-                        {filter === 'all'
-                          ? t('filterAll')
-                          : t(`status.${filter}`)}
-                      </Small>
-                    </Pressable>
-                  ))}
-                </View>
+                      {filter === 'all'
+                        ? t('filterAll')
+                        : t(`status.${filter}`)}
+                    </Small>
+                  </Pressable>
+                ))}
               </View>
             </View>
-          }
-          ListEmptyComponent={
-            timeOff.isLoading ? (
-              <LoadingIndicator testID="time-off-loading" />
-            ) : (
-              <View testID="time-off-empty">
-                <EmptyState
-                  variant="inline"
-                  title={t('emptyTitle')}
-                  description={t('emptyDescription')}
-                />
-              </View>
-            )
-          }
-          contentContainerStyle={SCREEN_CONTENT_STYLE}
-        />
-      </SafeAreaView>
+          </View>
+        }
+        ListEmptyComponent={
+          timeOff.isLoading ? (
+            <LoadingIndicator testID="time-off-loading" />
+          ) : (
+            <View testID="time-off-empty">
+              <EmptyState
+                variant="inline"
+                title={t('emptyTitle')}
+                description={t('emptyDescription')}
+              />
+            </View>
+          )
+        }
+        contentContainerStyle={SCREEN_CONTENT_STYLE}
+      />
     </View>
   );
 }

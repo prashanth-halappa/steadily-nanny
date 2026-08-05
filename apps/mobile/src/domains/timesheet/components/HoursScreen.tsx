@@ -249,7 +249,7 @@ export function HoursScreen() {
       <View
         style={{
           paddingHorizontal: SCREEN_CONTENT_STYLE.padding,
-          paddingTop: 8,
+          paddingTop: SCREEN_CONTENT_STYLE.padding,
         }}
       >
         <H4 testID="hours-title">{t('title')}</H4>

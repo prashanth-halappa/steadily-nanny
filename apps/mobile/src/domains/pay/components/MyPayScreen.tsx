@@ -158,7 +158,12 @@ export function MyPayScreen() {
   if (onboarding.status === 'loading') {
     return (
       <View testID="my-pay-screen" className="flex-1 bg-background">
-        <View className="px-6 pt-8">
+        <View
+          style={{
+            paddingHorizontal: SCREEN_CONTENT_STYLE.padding,
+            paddingTop: SCREEN_CONTENT_STYLE.padding,
+          }}
+        >
           <BackRow
             testID="my-pay-loading-back"
             onPress={() => router.back()}
@@ -173,14 +178,22 @@ export function MyPayScreen() {
   if (onboarding.role !== SETUP_ROLES.NANNY) {
     return (
       <View testID="my-pay-not-available" className="flex-1 bg-background">
-        <View className="px-6 pt-8">
+        <View
+          style={{
+            paddingHorizontal: SCREEN_CONTENT_STYLE.padding,
+            paddingTop: SCREEN_CONTENT_STYLE.padding,
+          }}
+        >
           <BackRow
             testID="my-pay-not-available-back"
             onPress={() => router.back()}
             label={tCommon('back')}
           />
         </View>
-        <View className="mt-8 px-6">
+        <View
+          className="mt-8"
+          style={{ paddingHorizontal: SCREEN_CONTENT_STYLE.padding }}
+        >
           <EmptyState
             variant="inline"
             title={t('myPay.notAvailableTitle')}

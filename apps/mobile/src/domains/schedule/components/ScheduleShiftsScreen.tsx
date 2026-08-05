@@ -16,7 +16,6 @@ import { type Href, useRouter } from 'expo-router';
 import { type ReactNode, useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Pressable, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { ErrorState } from '@/src/components/custom/ErrorState';
 import { Button } from '@/src/components/ui/button';
@@ -150,138 +149,133 @@ export function ScheduleShiftsScreen({
       style={{ flex: 1 }}
       className="bg-background"
     >
-      <SafeAreaView style={{ flex: 1 }} className="bg-background">
-        <View
-          style={{
-            gap: 8,
-            paddingHorizontal: SCREEN_CONTENT_STYLE.padding,
-            paddingTop: 16,
-            paddingBottom: 8,
-          }}
-        >
-          {showBack ? (
-            <Pressable
-              testID="schedule-shifts-back"
-              accessibilityRole="button"
-              accessibilityLabel={tCommon('back')}
-              onPress={() => router.back()}
-              hitSlop={8}
-              className="self-start"
+      <View
+        style={{
+          gap: 8,
+          paddingHorizontal: SCREEN_CONTENT_STYLE.padding,
+          paddingTop: SCREEN_CONTENT_STYLE.padding,
+          paddingBottom: 8,
+        }}
+      >
+        {showBack ? (
+          <Pressable
+            testID="schedule-shifts-back"
+            accessibilityRole="button"
+            accessibilityLabel={tCommon('back')}
+            onPress={() => router.back()}
+            hitSlop={8}
+            className="self-start"
+          >
+            <Body className="text-primary">{`< ${tCommon('back')}`}</Body>
+          </Pressable>
+        ) : null}
+        <View className="flex-row items-center justify-between gap-2">
+          <H1>{t('shifts.screenTitle')}</H1>
+          {canAddExtra ? (
+            <Button
+              testID="schedule-shifts-add-extra"
+              variant="ghost"
+              size="sm"
+              onPress={() =>
+                router.push('/(private)/schedule/shifts/extra' as Href)
+              }
             >
-              <Body className="text-primary">{`< ${tCommon('back')}`}</Body>
-            </Pressable>
+              <Text className="text-primary">{t('shifts.addExtra')}</Text>
+            </Button>
           ) : null}
-          <View className="flex-row items-center justify-between gap-2">
-            <H1>{t('shifts.screenTitle')}</H1>
-            {canAddExtra ? (
-              <Button
-                testID="schedule-shifts-add-extra"
-                variant="ghost"
-                size="sm"
-                onPress={() =>
-                  router.push('/(private)/schedule/shifts/extra' as Href)
-                }
-              >
-                <Text className="text-primary">{t('shifts.addExtra')}</Text>
-              </Button>
-            ) : null}
-          </View>
-          {patternBanner}
-          <WeekNavHeader
-            label={weekRangeLabel}
-            onPreviousWeek={handlePreviousWeek}
-            onNextWeek={handleNextWeek}
-            previousAccessibilityLabel={t('shifts.previousWeek')}
-            nextAccessibilityLabel={t('shifts.nextWeek')}
-            isPreviousDisabled={weekOffset <= -MAX_WEEKS_BACK}
-            isNextDisabled={weekOffset >= MAX_WEEKS_FORWARD}
-            previousTestID="schedule-week-prev"
-            nextTestID="schedule-week-next"
-            labelTestID="schedule-week-label"
-          />
-          <CalendarViewSwitcher
-            value={calendarView}
-            onChange={setCalendarView}
+        </View>
+        {patternBanner}
+        <WeekNavHeader
+          label={weekRangeLabel}
+          onPreviousWeek={handlePreviousWeek}
+          onNextWeek={handleNextWeek}
+          previousAccessibilityLabel={t('shifts.previousWeek')}
+          nextAccessibilityLabel={t('shifts.nextWeek')}
+          isPreviousDisabled={weekOffset <= -MAX_WEEKS_BACK}
+          isNextDisabled={weekOffset >= MAX_WEEKS_FORWARD}
+          previousTestID="schedule-week-prev"
+          nextTestID="schedule-week-next"
+          labelTestID="schedule-week-label"
+        />
+        <CalendarViewSwitcher value={calendarView} onChange={setCalendarView} />
+      </View>
+
+      {isLoading ? (
+        <View style={{ flex: 1 }} className="items-center justify-center">
+          <LoadingIndicator />
+        </View>
+      ) : null}
+
+      {showUnavailable ? (
+        <View testID="schedule-shifts-unavailable" style={{ flex: 1 }}>
+          <EmptyState
+            variant="default"
+            title={t('shifts.screenTitle')}
+            description={t('shifts.unavailable')}
           />
         </View>
+      ) : null}
 
-        {isLoading ? (
-          <View style={{ flex: 1 }} className="items-center justify-center">
-            <LoadingIndicator />
-          </View>
-        ) : null}
+      {showQueryError ? (
+        <View testID="schedule-shifts-error" style={{ flex: 1 }}>
+          <ErrorState
+            variant="network"
+            onRetry={() => {
+              void shiftsQuery.refetch();
+            }}
+          />
+        </View>
+      ) : null}
 
-        {showUnavailable ? (
-          <View testID="schedule-shifts-unavailable" style={{ flex: 1 }}>
-            <EmptyState
-              variant="default"
-              title={t('shifts.screenTitle')}
-              description={t('shifts.unavailable')}
-            />
-          </View>
-        ) : null}
+      {showEmpty && calendarView !== CALENDAR_VIEWS.CROSS_FAMILY ? (
+        <View testID="schedule-shifts-empty" style={{ flex: 1 }}>
+          <EmptyState
+            variant="default"
+            title={t('shifts.empty')}
+            description=""
+          />
+        </View>
+      ) : null}
 
-        {showQueryError ? (
-          <View testID="schedule-shifts-error" style={{ flex: 1 }}>
-            <ErrorState
-              variant="network"
-              onRetry={() => {
-                void shiftsQuery.refetch();
-              }}
-            />
-          </View>
-        ) : null}
+      {showContent && calendarView === CALENDAR_VIEWS.AGENDA ? (
+        <AgendaView
+          shifts={shifts}
+          displayTimeZone={profile.data?.timezone}
+          timeOff={timeOff}
+          householdTimeZone={timeZone}
+          weekDates={weekDates}
+        />
+      ) : null}
 
-        {showEmpty && calendarView !== CALENDAR_VIEWS.CROSS_FAMILY ? (
-          <View testID="schedule-shifts-empty" style={{ flex: 1 }}>
-            <EmptyState
-              variant="default"
-              title={t('shifts.empty')}
-              description=""
-            />
-          </View>
-        ) : null}
-
-        {showContent && calendarView === CALENDAR_VIEWS.AGENDA ? (
-          <AgendaView
+      {showContent && calendarView === CALENDAR_VIEWS.WEEK_RIBBON ? (
+        <>
+          {weekHasAway ? (
+            <Small
+              testID="schedule-away-summary"
+              className="px-6 pb-2 text-muted-foreground"
+            >
+              {t('shifts.awaySummary')}
+            </Small>
+          ) : null}
+          <WeekRibbonView
             shifts={shifts}
-            displayTimeZone={profile.data?.timezone}
+            displayTimeZone={
+              activeHousehold.household?.timezone ?? profile.data?.timezone
+            }
+            weekStartsOn={profile.data?.week_starts_on}
             timeOff={timeOff}
             householdTimeZone={timeZone}
             weekDates={weekDates}
           />
-        ) : null}
+        </>
+      ) : null}
 
-        {showContent && calendarView === CALENDAR_VIEWS.WEEK_RIBBON ? (
-          <>
-            {weekHasAway ? (
-              <Small
-                testID="schedule-away-summary"
-                className="px-6 pb-2 text-muted-foreground"
-              >
-                {t('shifts.awaySummary')}
-              </Small>
-            ) : null}
-            <WeekRibbonView
-              shifts={shifts}
-              displayTimeZone={
-                activeHousehold.household?.timezone ?? profile.data?.timezone
-              }
-              weekStartsOn={profile.data?.week_starts_on}
-              timeOff={timeOff}
-              householdTimeZone={timeZone}
-              weekDates={weekDates}
-            />
-          </>
-        ) : null}
-
-        {showCrossFamily && activeHousehold.householdId ? (
-          <CrossFamilyRhythmView
-            households={activeHousehold.households}
-            activeHouseholdId={activeHousehold.householdId}
-          />
-        ) : null}
-      </SafeAreaView>
+      {showCrossFamily && activeHousehold.householdId ? (
+        <CrossFamilyRhythmView
+          households={activeHousehold.households}
+          activeHouseholdId={activeHousehold.householdId}
+        />
+      ) : null}
     </View>
   );
 }

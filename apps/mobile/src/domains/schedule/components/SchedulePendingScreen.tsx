@@ -37,7 +37,6 @@ import { type Href, useRouter } from 'expo-router';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Pressable, ScrollView, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { useTabBarScrollPadding } from '@/lib/layout/useTabBarScrollPadding';
 import {
@@ -137,27 +136,33 @@ export function SchedulePendingScreen() {
         testID="schedule-pending-not-available"
         className="flex-1 bg-background"
       >
-        <SafeAreaView style={{ flex: 1 }} className="bg-background">
-          <View className="px-6 pt-4">
-            <Pressable
-              testID="schedule-pending-not-available-back"
-              accessibilityRole="button"
-              accessibilityLabel={tCommon('back')}
-              onPress={() => router.back()}
-              hitSlop={8}
-              className="self-start"
-            >
-              <Body className="text-primary">{`< ${tCommon('back')}`}</Body>
-            </Pressable>
-          </View>
-          <View className="mt-8 px-6">
-            <EmptyState
-              variant="inline"
-              title={t('pending.notAvailableTitle')}
-              description={t('pending.notAvailableDescription')}
-            />
-          </View>
-        </SafeAreaView>
+        <View
+          style={{
+            paddingHorizontal: SCREEN_CONTENT_STYLE.padding,
+            paddingTop: SCREEN_CONTENT_STYLE.padding,
+          }}
+        >
+          <Pressable
+            testID="schedule-pending-not-available-back"
+            accessibilityRole="button"
+            accessibilityLabel={tCommon('back')}
+            onPress={() => router.back()}
+            hitSlop={8}
+            className="self-start"
+          >
+            <Body className="text-primary">{`< ${tCommon('back')}`}</Body>
+          </Pressable>
+        </View>
+        <View
+          className="mt-8"
+          style={{ paddingHorizontal: SCREEN_CONTENT_STYLE.padding }}
+        >
+          <EmptyState
+            variant="inline"
+            title={t('pending.notAvailableTitle')}
+            description={t('pending.notAvailableDescription')}
+          />
+        </View>
       </View>
     );
   }

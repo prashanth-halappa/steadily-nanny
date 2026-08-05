@@ -179,6 +179,8 @@ return (
 );
 ```
 
+**Top safe-area ownership:** `(private)/_layout.tsx` is the sole owner of the top inset for every authenticated screen. Child screens must **not** wrap themselves in a full-edge `SafeAreaView` — that stacks a second ~44pt gap above the title. Use `SCREEN_CONTENT_STYLE` (22px gutters) for content padding instead; see `src/domains/inbox/components/InboxScreen.tsx` as the reference pushed-screen pattern. `SetupScreenShell` applies `edges={['bottom','left','right']}` only; onboarding routes get their top inset from `src/app/onboarding/_layout.tsx`.
+
 ---
 
 ## 3. API client (axios + single-flight 401 refresh)

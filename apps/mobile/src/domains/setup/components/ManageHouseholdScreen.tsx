@@ -42,7 +42,6 @@ import { useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Pressable, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { AnimatedPressable } from '@/lib/animations';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { cn } from '@/lib/utils';
@@ -182,33 +181,33 @@ export function ManageHouseholdScreen() {
         testID="manage-household-not-available"
         className="flex-1 bg-background"
       >
-        <SafeAreaView style={{ flex: 1 }} className="bg-background">
-          <View
-            style={{ paddingHorizontal: SCREEN_CONTENT_STYLE.padding }}
-            className="pt-4"
+        <View
+          style={{
+            paddingHorizontal: SCREEN_CONTENT_STYLE.padding,
+            paddingTop: SCREEN_CONTENT_STYLE.padding,
+          }}
+        >
+          <Pressable
+            testID="manage-household-not-available-back"
+            accessibilityRole="button"
+            accessibilityLabel={tCommon('back')}
+            onPress={() => router.back()}
+            hitSlop={8}
+            className="self-start"
           >
-            <Pressable
-              testID="manage-household-not-available-back"
-              accessibilityRole="button"
-              accessibilityLabel={tCommon('back')}
-              onPress={() => router.back()}
-              hitSlop={8}
-              className="self-start"
-            >
-              <Body className="text-primary">{`< ${tCommon('back')}`}</Body>
-            </Pressable>
-          </View>
-          <View
-            className="mt-8"
-            style={{ paddingHorizontal: SCREEN_CONTENT_STYLE.padding }}
-          >
-            <EmptyState
-              variant="inline"
-              title={t('householdSettings.notAvailableTitle')}
-              description={t('householdSettings.notAvailableDescription')}
-            />
-          </View>
-        </SafeAreaView>
+            <Body className="text-primary">{`< ${tCommon('back')}`}</Body>
+          </Pressable>
+        </View>
+        <View
+          className="mt-8"
+          style={{ paddingHorizontal: SCREEN_CONTENT_STYLE.padding }}
+        >
+          <EmptyState
+            variant="inline"
+            title={t('householdSettings.notAvailableTitle')}
+            description={t('householdSettings.notAvailableDescription')}
+          />
+        </View>
       </View>
     );
   }

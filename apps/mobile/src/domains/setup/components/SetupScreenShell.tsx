@@ -59,7 +59,12 @@ export function SetupScreenShell({
   testID,
 }: SetupScreenShellProps) {
   return (
-    <SafeAreaView style={{ flex: 1 }} className="bg-background" testID={testID}>
+    <SafeAreaView
+      style={{ flex: 1 }}
+      className="bg-background"
+      edges={['bottom', 'left', 'right']}
+      testID={testID}
+    >
       {/* Clears the Expo dev-client's quick-access gear (top-right) so it
           never overlaps the H1. Dev-only — production must not ship the band. */}
       {__DEV__ ? <View style={{ height: 48 }} /> : null}
