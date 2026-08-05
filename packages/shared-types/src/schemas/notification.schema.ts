@@ -40,6 +40,9 @@ export const PUSH_NOTIFICATION_TYPES = {
 
   // Pay (TIER0-PLAN.md Phase 2)
   PAY_TERMS_SET: 'pay_terms_set',
+
+  // PTO ledger (TIER0-PLAN.md Phase 3)
+  PTO_USAGE_REVERSED: 'pto_usage_reversed',
 } as const;
 
 export type PushNotificationType =

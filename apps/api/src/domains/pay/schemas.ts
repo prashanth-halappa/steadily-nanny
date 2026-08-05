@@ -38,3 +38,20 @@ export const HouseholdCarerParamSchema = z.object({
   carerId: z.uuid(),
 });
 export type HouseholdCarerParam = z.infer<typeof HouseholdCarerParamSchema>;
+
+/**
+ * Query param validation for the PTO reads
+ * (.../carers/:carerId/pto/balance and .../pto/ledger) — the PTO year is the
+ * calendar year for v1 (owner decision 3), so both routes require the
+ * client to name one explicitly rather than defaulting server-side. The
+ * wire contract for the PTO domain itself
+ * (`PtoLedgerEntrySchema`/`PtoBalanceSchema`/`MarkTimeOffPaidRequestSchema`)
+ * lives in `@steadily-nanny/shared-types/schemas/pto.schema` and is imported
+ * directly by `ptoRoutes.ts`/`ptoController.ts` — not re-exported here,
+ * since nothing else in this file needs it (same "server-only schemas live
+ * alongside the re-export" rule as `HouseholdCarerParamSchema` above).
+ */
+export const PtoYearQuerySchema = z.object({
+  year: z.coerce.number().int().min(2000).max(2100),
+});
+export type PtoYearQuery = z.infer<typeof PtoYearQuerySchema>;

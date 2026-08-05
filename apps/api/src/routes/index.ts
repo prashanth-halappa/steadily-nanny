@@ -23,6 +23,7 @@ import {
   expenseIdRoutes,
   expenseRoutes,
   payArrangementRoutes,
+  ptoRoutes,
 } from '../domains/pay';
 import {
   householdSchedulePatternRoutes,
@@ -109,6 +110,14 @@ router.use(
 // gate lives in the service. See docs/11-MONEY.md §6, §8.
 router.use('/households/:householdId/expenses', expenseRoutes);
 router.use('/expenses', expenseIdRoutes);
+
+// Paid time off (Phase 3). A PREFIX mount, unlike its siblings above: balance
+// and ledger are carer-nested (`/carers/:carerId/pto/...`) while mark-paid is
+// household-only (`/pto/mark-paid`), so one router owns both shapes under the
+// household prefix. Safe alongside the other `/households/:householdId/...`
+// routers because an Express Router used as middleware calls next() when none
+// of its own routes match, so non-PTO paths fall through untouched.
+router.use('/households/:householdId', ptoRoutes);
 
 // Daily handoff notes (design flow 1i): chip-based parent<->nanny notes for
 // a household's local date, plus the evening recap. Same nested-then-flat

@@ -117,6 +117,46 @@ describe('TimeOffCommandService.cancel', () => {
     );
     expect(timeOffRepo.cancelById).not.toHaveBeenCalled();
   });
+
+  // Phase 3: a household may already have marked this time off as paid PTO.
+  // Cancelling it must reverse that ledger usage, or the carer keeps a paid
+  // day she is no longer taking and the balance silently drifts.
+  it('reconciles any paid-PTO usage after cancelling', async () => {
+    const timeOffRepo = makeTimeOffRepo();
+    const reconcile = mock(async () => undefined);
+    const svc = new TimeOffCommandService(
+      timeOffRepo,
+      makeQueries(),
+      makeOverlapRepo(),
+      undefined,
+      reconcile
+    );
+
+    await svc.cancel('u1', 't1');
+
+    expect(reconcile).toHaveBeenCalledWith('t1');
+  });
+
+  // Fire-and-forget: the cancellation is the carer's, and a bookkeeping
+  // failure downstream must never make her unable to cancel her own time off.
+  it('still cancels when reconciliation throws', async () => {
+    const timeOffRepo = makeTimeOffRepo();
+    const reconcile = mock(async () => {
+      throw new Error('ledger unavailable');
+    });
+    const svc = new TimeOffCommandService(
+      timeOffRepo,
+      makeQueries(),
+      makeOverlapRepo(),
+      undefined,
+      reconcile
+    );
+
+    const result = await svc.cancel('u1', 't1');
+
+    expect(result.status).toBe('cancelled');
+    expect(timeOffRepo.cancelById).toHaveBeenCalledWith('t1');
+  });
 });
 
 describe('TimeOffCommandService.update', () => {

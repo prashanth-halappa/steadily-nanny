@@ -12,6 +12,7 @@ import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types/schemas/no
 import { ValidationError } from '../../../errors';
 import { logger } from '../../../middlewares/logger';
 import { notifyHouseholdParents, type PushPayload } from '../../notification';
+import { ptoCommandService } from '../../pay/services/ptoCommandService';
 import { CarerTimeOffRepository } from '../repositories/carerTimeOffRepository';
 import {
   type OverlappingBookedShift,
@@ -44,12 +45,23 @@ export type NotifyHouseholdParentsFn = (
   payload: PushPayload
 ) => void;
 
+/**
+ * Reverse any paid-PTO usage recorded against a cancelled time off —
+ * injectable for tests. Fire-and-forget at the call site.
+ */
+export type ReconcilePtoUsageFn = (timeOffId: string) => Promise<void>;
+
 export class TimeOffCommandService {
   constructor(
     private readonly timeOffRepo: CarerTimeOffRepository = new CarerTimeOffRepository(),
     private readonly queries: TimeOffQueryService = timeOffQueryService,
     private readonly overlapRepo: OverlappingShiftLookup = new OverlappingShiftRepository(),
-    private readonly notifyParents: NotifyHouseholdParentsFn = notifyHouseholdParents
+    private readonly notifyParents: NotifyHouseholdParentsFn = notifyHouseholdParents,
+    // Imported by concrete path, not through the pay barrel: the pay domain
+    // imports this domain's repositories, so barrel-to-barrel would cycle.
+    // Same convention as the timesheet domain's weekEarningsService import.
+    private readonly reconcilePtoUsage: ReconcilePtoUsageFn = (timeOffId) =>
+      ptoCommandService.reconcileCancelledTimeOff(timeOffId)
   ) {}
 
   /** Create a time-off row for the caller; scan + notify on overlaps. */
@@ -78,7 +90,24 @@ export class TimeOffCommandService {
    */
   async cancel(userId: string, timeOffId: string): Promise<CarerTimeOff> {
     await this.queries.getOwned(userId, timeOffId);
-    return this.timeOffRepo.cancelById(timeOffId);
+    const cancelled = await this.timeOffRepo.cancelById(timeOffId);
+
+    // A household may already have marked this time off as paid PTO. Leaving
+    // that usage row behind would keep a paid day the carer is no longer
+    // taking, and the balance drifts silently — so reverse it with an
+    // append-only adjustment (never a delete; the ledger is evidence).
+    //
+    // Fire-and-forget on purpose: the cancellation is the carer's own, and a
+    // bookkeeping failure downstream must never leave her unable to cancel.
+    // The reconcile itself is idempotent, so a retry is safe.
+    void this.reconcilePtoUsage(timeOffId).catch((error: unknown) => {
+      logger.error('Failed to reconcile PTO usage after time-off cancel', {
+        timeOffId,
+        error,
+      });
+    });
+
+    return cancelled;
   }
 
   /**
