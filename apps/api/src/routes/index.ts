@@ -20,6 +20,12 @@ import householdRoutes from '../domains/household/routes/householdRoutes';
 import { meRoutes } from '../domains/me';
 import notificationsRoutes from '../domains/notification/routes/notificationsRoutes';
 import {
+  expenseIdRoutes,
+  expenseRoutes,
+  payArrangementRoutes,
+  ptoRoutes,
+} from '../domains/pay';
+import {
   householdSchedulePatternRoutes,
   schedulePatternRoutes,
 } from '../domains/schedule';
@@ -84,6 +90,34 @@ router.use('/households/:householdId/time-entries', householdTimeEntryRoutes);
 router.use('/time-entries', timeEntryRoutes);
 router.use('/households/:householdId/timesheets', householdTimesheetRoutes);
 router.use('/timesheets', timesheetRoutes);
+
+// Pay arrangements — effective-dated terms for one carer in one household.
+// Carer-nested ONLY: an arrangement is meaningless outside that pair, so there
+// is no flat id-scoped router, and no PATCH/DELETE anywhere (the table is
+// append-only — a change is a new row). See docs/11-MONEY.md §2.
+router.use(
+  '/households/:householdId/carers/:carerId/pay-arrangements',
+  payArrangementRoutes
+);
+
+// Expenses and mileage (Phase 4). Nested-then-flat, the same split as shifts
+// and time entries: the household scopes listing and creation, then a flat
+// id-scoped router for the carer editing/withdrawing her own pending row and
+// for a parent reviewing it. Deliberately `authWithValidation` throughout
+// rather than `authWithOwnership` — an expense id has two different "may
+// write" meanings depending on the route (owning carer vs. parent of the
+// household), which the generic ownership cache cannot express, so every
+// gate lives in the service. See docs/11-MONEY.md §6, §8.
+router.use('/households/:householdId/expenses', expenseRoutes);
+router.use('/expenses', expenseIdRoutes);
+
+// Paid time off (Phase 3). A PREFIX mount, unlike its siblings above: balance
+// and ledger are carer-nested (`/carers/:carerId/pto/...`) while mark-paid is
+// household-only (`/pto/mark-paid`), so one router owns both shapes under the
+// household prefix. Safe alongside the other `/households/:householdId/...`
+// routers because an Express Router used as middleware calls next() when none
+// of its own routes match, so non-PTO paths fall through untouched.
+router.use('/households/:householdId', ptoRoutes);
 
 // Daily handoff notes (design flow 1i): chip-based parent<->nanny notes for
 // a household's local date, plus the evening recap. Same nested-then-flat

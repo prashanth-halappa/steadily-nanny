@@ -33,7 +33,14 @@ export const HOUSEHOLD_APPROVAL_SCOPES = {
 export type HouseholdApprovalScope =
   (typeof HOUSEHOLD_APPROVAL_SCOPES)[keyof typeof HOUSEHOLD_APPROVAL_SCOPES];
 
-/** household_members.role */
+/**
+ * household_members.role
+ *
+ * MATCHED PAIR: this const-map and the CHECK constraint in
+ * supabase/migrations/009_households.sql only ever change together — one
+ * migration widens the constraint, the same change widens this map (the
+ * planned path for agency roles; see TIER0-PLAN.md Phase 0-B).
+ */
 export const HOUSEHOLD_ROLES = {
   OWNER: 'owner',
   PARENT: 'parent',

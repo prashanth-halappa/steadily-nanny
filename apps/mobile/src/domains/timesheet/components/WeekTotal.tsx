@@ -1,14 +1,20 @@
 /**
  * @module domains/timesheet/components/WeekTotal
- * The week's total hours plus a plainly-stated overtime delta, e.g.
- * "9h 14m, +14 min" against what was scheduled — and, when the caller
- * supplies `onPreviousWeek`/`onNextWeek` (D15), the previous/next week
- * navigation controls flanking the week-range label. Nav is optional so
+ * The week's total hours plus a plainly-stated "vs scheduled" delta, e.g.
+ * "9h 14m, 14m over scheduled" against what was scheduled — and, when the
+ * caller supplies `onPreviousWeek`/`onNextWeek` (D15), the previous/next
+ * week navigation controls flanking the week-range label. Nav is optional so
  * existing callers that don't wire it up keep behaving exactly as before.
  *
  * Parent CX: optional carer name + timesheet StatusPill sit above the
- * total so approval state is above the fold; pay-boundary copy states
- * that money settles outside the app.
+ * total so approval state is above the fold.
+ *
+ * Money (TIER0-CX-SPEC.md §4.1): `WeekEarningsLine` renders immediately
+ * below `hours-total` and above `payBoundary` — same card, `CardContent`'s
+ * existing `gap-1` plus the line's own `mt-1`, no extra card, no divider
+ * (Daylight separates by light). `earnings === undefined`/`null` renders
+ * nothing (no data yet, or no timesheet row exists for this week) —
+ * `WeekEarningsLine`'s own header comment has the full state table.
  */
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
@@ -16,7 +22,9 @@ import { Card, CardContent } from '@/src/components/ui/card';
 import { StatusPill } from '@/src/components/ui/status-pill';
 import { Body, H1, Small } from '@/src/components/ui/typography';
 import { WeekNavHeader } from '@/src/components/ui/week-nav-header';
-import type { TimesheetStatus } from '../types';
+import type { TimesheetStatus, WeekEarningsStateResult } from '../types';
+import type { EarningsRole } from './WeekEarningsLine';
+import { WeekEarningsLine } from './WeekEarningsLine';
 
 interface WeekTotalProps {
   totalLabel: string;
@@ -32,10 +40,36 @@ interface WeekTotalProps {
   isPreviousDisabled?: boolean;
   /** Whose hours these are — Small muted line under the week nav. */
   carerName?: string | null;
-  /** Timesheet approval state — StatusPill under the week nav. */
+  /** Timesheet approval state — StatusPill under the week nav (when
+   * `showStatusPill` allows it), and the "Estimated"/"Approved" label on
+   * `WeekEarningsLine` regardless. */
   timesheetStatus?: TimesheetStatus | null;
+  /** Explicit override for the carer-name/StatusPill block's visibility.
+   * Defaults to the pre-money-line heuristic (`carerName` present OR
+   * `timesheetStatus` supplied at all) so existing callers are unaffected.
+   * `NannyWeekView` needs `timesheetStatus` supplied for the money line's
+   * label WITHOUT also turning on a StatusPill nobody asked her screen to
+   * show — that's what this override is for. */
+  showStatusPill?: boolean;
   /** When true, show the "hours only — pay outside" boundary line. */
   showPayBoundary?: boolean;
+  /** Total worked minutes this week — the raw number `WeekEarningsLine`
+   * needs for the zero-hours omission rule; `totalLabel` is the pre-formatted
+   * display string, not enough on its own. */
+  totalMinutes?: number;
+  /** Omit entirely to render no money line at all (money is opt-in per
+   * caller, not every `WeekTotal` render needs it). */
+  earnings?: WeekEarningsStateResult | null;
+  earningsRole?: EarningsRole;
+  /** The timesheet's carer — for the parent no-arrangement nudge's deep link. */
+  earningsCarerId?: string | null;
+  /** For the departed-carer caption. */
+  earningsCarerDisplayName?: string;
+  earningsError?: boolean;
+  onRetryEarnings?: () => void;
+  onPressEarnings?: () => void;
+  /** TIER0-CX-SPEC.md §8 "Approved week that reopens" — see `utils/reopenedNotice.ts`. */
+  earningsReopened?: boolean;
 }
 
 function timesheetPillVariant(
@@ -66,10 +100,22 @@ export function WeekTotal({
   isPreviousDisabled = false,
   carerName,
   timesheetStatus,
+  showStatusPill,
   showPayBoundary = false,
+  totalMinutes = 0,
+  earnings,
+  earningsRole = 'nanny',
+  earningsCarerId = null,
+  earningsCarerDisplayName = '',
+  earningsError = false,
+  onRetryEarnings,
+  onPressEarnings,
+  earningsReopened = false,
 }: WeekTotalProps) {
   const { t } = useTranslation('hours');
   const hasNav = !!onPreviousWeek && !!onNextWeek;
+  const shouldShowStatusPillBlock =
+    showStatusPill ?? (!!carerName || timesheetStatus !== undefined);
 
   return (
     <Card testID={testID} className="mb-4">
@@ -89,7 +135,7 @@ export function WeekTotal({
             {weekRangeLabel}
           </Small>
         )}
-        {carerName || timesheetStatus !== undefined ? (
+        {shouldShowStatusPillBlock ? (
           <View className="mt-1 gap-1">
             {carerName ? (
               <Small
@@ -122,6 +168,20 @@ export function WeekTotal({
           <Small testID="hours-empty-week" className="text-muted-foreground">
             {t('emptyWeek')}
           </Small>
+        ) : null}
+        {earnings !== undefined || earningsError ? (
+          <WeekEarningsLine
+            earnings={earnings ?? null}
+            timesheetStatus={timesheetStatus}
+            viewerRole={earningsRole}
+            carerId={earningsCarerId}
+            carerDisplayName={earningsCarerDisplayName}
+            totalMinutes={totalMinutes}
+            earningsError={earningsError}
+            onRetryEarnings={onRetryEarnings}
+            onPress={onPressEarnings}
+            reopened={earningsReopened}
+          />
         ) : null}
         {showPayBoundary ? (
           <Small testID="hours-pay-boundary" className="text-muted-foreground">

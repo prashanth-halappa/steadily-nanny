@@ -43,6 +43,7 @@ The contract between apps lives in `shared-types`: the API validates requests wi
 | 08 | [CONVENTIONS](./08-CONVENTIONS.md) | TypeScript non-negotiables, naming, file organization, which Biome rule enforces what |
 | 09 | [TESTING](./09-TESTING.md) | `bun:test`, one-file-per-process + why, coverage baselines, API `mock.module` pattern, mobile Pattern A/B, Maestro E2E |
 | 10 | [NEW-APP-CHECKLIST](./10-NEW-APP-CHECKLIST.md) | Step-by-step build order from empty folder to first end-to-end feature |
+| 11 | [MONEY](./11-MONEY.md) | Minor-unit + currency-column convention, pay arrangements (effective-dated, append-only), compute-live/freeze-at-approval, no-arrangement-never-zero, PTO ledger, reimbursements-are-not-wages, money-table RLS stance |
 
 **If you're an AI agent building a new feature:** read 01–02 for the toolchain, 03 for the shared contract, then 04/05 (API) and 06/07 (mobile) for the layer you're working in, with 08/09 always in effect. Follow 10 as the execution order for a brand-new app built from this pattern.
 

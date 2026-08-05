@@ -127,6 +127,25 @@ export class TimesheetController {
     }
   }
 
+  /**
+   * GET /timesheets/:id — one week with its earnings attached.
+   *
+   * Live or frozen is decided in the service, never here and never on the
+   * client (`timesheetQueryService.getWeekWithEarnings`).
+   */
+  static async getWeek(req: Request, res: Response, next: NextFunction) {
+    try {
+      const id = req.params.id as string;
+      const timesheet = await timesheetQueryService.getWeekWithEarnings(
+        getAuthUserId(req),
+        id
+      );
+      return sendSuccessResponse(res, 'Timesheet week fetched', { timesheet });
+    } catch (error) {
+      return next(error);
+    }
+  }
+
   /** POST /timesheets/:id/approve — parents only. */
   static async approve(req: Request, res: Response, next: NextFunction) {
     try {

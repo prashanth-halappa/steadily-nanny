@@ -195,3 +195,262 @@ export const TimesheetListResponseSchema = z.object({
 export type Timesheet = z.infer<typeof TimesheetSchema>;
 export type QueryTimesheetInput = z.infer<typeof QueryTimesheetSchema>;
 export type TimesheetListResponse = z.infer<typeof TimesheetListResponseSchema>;
+
+// =============================================================================
+// earnings — the priced week (Tier 0 Phase 2)
+// =============================================================================
+//
+// The output of `apps/api/src/domains/pay/services/earningsService.ts`, and
+// the shape frozen into `timesheets.earnings` at approval (migration 042).
+// Read `docs/11-MONEY.md` §3 and §7 plus `docs/TIER0-CX-SPEC.md` §4.2 before
+// changing anything here: the breakdown sheet renders these rows verbatim and
+// its total must visibly equal their sum.
+//
+// Money is integer minor units + a sibling ISO-4217 code, never a float
+// (`docs/11-MONEY.md` §1). There is no `Money` object on the wire.
+
+/**
+ * The kinds of line the breakdown can carry.
+ *
+ * `PTO` and `REIMBURSEMENTS` exist from day one and are emitted by nothing
+ * yet — Phase 3 fills PTO, Phase 4 fills reimbursements. The shape lands now
+ * on purpose (TIER0-PLAN.md Phase 2) so the mobile contract does not change
+ * under a shipped client later.
+ *
+ * Note there is deliberately NO `manual_adjustment` line kind, even though
+ * `docs/TIER0-CX-SPEC.md` §4.2's table lists an "Adjustment" row: a
+ * `manual_adjustment` time entry is a *correction of worked time*, so its
+ * minutes fold into `regular`/`overtime` exactly like `worked` minutes
+ * (TIER0-PLAN.md's "worked minutes" definition). Pricing it as its own line
+ * would double-count it. The CX row, if it is ever wanted, is an entry-level
+ * annotation, not an earnings line.
+ */
+export const EARNINGS_LINE_KINDS = {
+  REGULAR: 'regular',
+  OVERTIME: 'overtime',
+  CANCELLATION_PAID: 'cancellation_paid',
+  GUARANTEED_TOPUP: 'guaranteed_topup',
+  PTO: 'pto',
+  REIMBURSEMENTS: 'reimbursements',
+} as const;
+export type EarningsLineKind =
+  (typeof EARNINGS_LINE_KINDS)[keyof typeof EARNINGS_LINE_KINDS];
+
+/**
+ * The order lines are emitted (and rendered) in — `docs/TIER0-CX-SPEC.md`
+ * §4.2's fixed table order, which is NOT the declaration order of the
+ * const-map above (the spec puts `pto` before `guaranteed_topup`; the plan's
+ * prose lists them the other way round — the spec wins because it is what the
+ * reader sees). `reimbursements` sorts last because it renders *below* the
+ * gross total, never inside it (`docs/11-MONEY.md` §6).
+ */
+export const EARNINGS_LINE_ORDER = [
+  EARNINGS_LINE_KINDS.REGULAR,
+  EARNINGS_LINE_KINDS.OVERTIME,
+  EARNINGS_LINE_KINDS.CANCELLATION_PAID,
+  EARNINGS_LINE_KINDS.PTO,
+  EARNINGS_LINE_KINDS.GUARANTEED_TOPUP,
+  EARNINGS_LINE_KINDS.REIMBURSEMENTS,
+] as const satisfies readonly EarningsLineKind[];
+
+/** The three arms of a week's earnings result. */
+export const EARNINGS_RESULT_STATUSES = {
+  OK: 'ok',
+  /** No effective arrangement covers some day the week needs priced. */
+  NO_ARRANGEMENT: 'no_arrangement',
+  /** The week spans an arrangement currency change — one currency per week. */
+  CURRENCY_CHANGE: 'currency_change',
+} as const;
+export type EarningsResultStatus =
+  (typeof EARNINGS_RESULT_STATUSES)[keyof typeof EARNINGS_RESULT_STATUSES];
+
+/**
+ * ISO-4217: exactly three UPPERCASE letters, the same regex
+ * `payArrangement.schema.ts` pins (and the same DB check). Not `.length(3)` —
+ * `"gbp"` and `"ab1"` are three characters and neither is a currency, and
+ * `formatMoney` hands this straight to `Intl.NumberFormat`.
+ */
+const EarningsCurrencyCodeSchema = z.string().regex(/^[A-Z]{3}$/);
+
+/**
+ * One row of the breakdown sheet.
+ *
+ * `minutes` × `rate_minor` ÷ 60, rounded HALF-UP exactly once, is
+ * `amount_minor` — so the row reproduces its own amount and the total is the
+ * visible sum of the rows (`docs/TIER0-CX-SPEC.md` §4.2).
+ *
+ * `rate_minor` is the rate *as displayed on this row*: for an `overtime` line
+ * that is the already-multiplied hourly rate (base × `multiplier`, itself
+ * rounded half-up to minor units), so the sub-line "3h 00m at £27.75 (1.5×)"
+ * is self-consistent.
+ *
+ * `from_date`/`to_date` are the inclusive household-local span the line
+ * covers. They are what makes the mid-week-raise split renderable ("12h 00m
+ * at £18.50 (to Wed 3 Sep)"); a single-day line has them equal, and a
+ * `guaranteed_topup` line spans the whole week.
+ */
+export const EarningsLineSchema = z.object({
+  kind: z.enum(Object.values(EARNINGS_LINE_KINDS)),
+  minutes: z.int().min(0),
+  rate_minor: z.int().min(0),
+  /** Overtime only; null on every other kind. Never below 1. */
+  multiplier: z.number().min(1).nullable(),
+  amount_minor: z.int().min(0),
+  from_date: z.iso.date(),
+  to_date: z.iso.date(),
+  /**
+   * The arrangement that priced this line — the audit trail that makes a
+   * frozen snapshot self-describing after the arrangement changes. Nullable
+   * for lines no arrangement priced (none today; Phase 4 reimbursements).
+   */
+  arrangement_id: z.uuid().nullable(),
+});
+
+/**
+ * A week's earnings — a discriminated union, never a nullable total.
+ *
+ * The two non-`ok` arms deliberately carry NO money fields at all. A `0`
+ * where a rate is missing is indistinguishable from "correctly computed to
+ * nothing", and a silently wrong zero is the worst output a pay feature can
+ * produce (`docs/11-MONEY.md` §4).
+ */
+export const WeekEarningsSchema = z.discriminatedUnion('status', [
+  z.object({
+    status: z.literal(EARNINGS_RESULT_STATUSES.OK),
+    week_start: z.iso.date(),
+    currency: EarningsCurrencyCodeSchema,
+    /** In `EARNINGS_LINE_ORDER`, then chronological. Empty lines are omitted. */
+    lines: z.array(EarningsLineSchema),
+    /** Sum of every line EXCEPT `reimbursements` — wages only. */
+    gross_minor: z.int().min(0),
+    /** Summed separately and never part of gross (`docs/11-MONEY.md` §6). */
+    reimbursements_minor: z.int().min(0),
+    /** `worked` + `manual_adjustment`. The only basis for overtime. */
+    worked_minutes: z.int().min(0),
+    /** worked + `cancellation_paid` + PTO usage — the guaranteed-hours basis. */
+    payable_minutes: z.int().min(0),
+    /** Echoed so the top-up sub-line can read "to reach the agreed 40h". */
+    guaranteed_minutes_per_week: z.int().min(0).nullable(),
+  }),
+  z.object({
+    status: z.literal(EARNINGS_RESULT_STATUSES.NO_ARRANGEMENT),
+    week_start: z.iso.date(),
+    /** The household-local dates with no effective arrangement, ascending. */
+    unpriced_dates: z.array(z.iso.date()),
+  }),
+  z.object({
+    status: z.literal(EARNINGS_RESULT_STATUSES.CURRENCY_CHANGE),
+    week_start: z.iso.date(),
+    /** Distinct codes in the order the week meets them. Two or more, always. */
+    currencies: z.array(EarningsCurrencyCodeSchema).min(2),
+  }),
+]);
+
+export type EarningsLine = z.infer<typeof EarningsLineSchema>;
+export type WeekEarnings = z.infer<typeof WeekEarningsSchema>;
+export type WeekEarningsOk = Extract<WeekEarnings, { status: 'ok' }>;
+
+// =============================================================================
+// the week response — a timesheet with its earnings attached
+// =============================================================================
+//
+// What `GET /timesheets/:id` returns, and what the Hours screen renders. The
+// server decides between LIVE and FROZEN here so the client never can:
+// open/submitted/queried weeks carry a freshly computed `WeekEarnings`, an
+// approved week carries the snapshot frozen into `timesheets.earnings` at
+// approval, and neither is distinguishable from the other by shape — the
+// `status` word beside the amount comes from `timesheets.status`
+// (`docs/11-MONEY.md` §3, "state labels are mandatory").
+
+/**
+ * The one state the ENGINE can never produce: this week shows hours and no
+ * money, permanently.
+ *
+ * It exists because a week `approved` before migration 042 has a NULL
+ * snapshot and is never backfilled. Recomputing it live would print today's
+ * arrangement under an "Approved" label — the exact silent substitution
+ * `docs/11-MONEY.md` §3 forbids. Returning `null` instead would be worse
+ * still: every client would have to reinvent this decision, and one of them
+ * would eventually get it wrong. So the server names the state.
+ */
+export const WEEK_EARNINGS_STATES = {
+  ...EARNINGS_RESULT_STATUSES,
+  HOURS_ONLY: 'hours_only',
+} as const;
+export type WeekEarningsState =
+  (typeof WEEK_EARNINGS_STATES)[keyof typeof WEEK_EARNINGS_STATES];
+
+/**
+ * Why a week is hours-only. The arms render similarly; they are
+ * distinguished because they mean very different things to whoever is
+ * debugging — and because `carer_removed` needs its own copy on screen.
+ *
+ * - `legacy_approval` — approved before migration 042, so the snapshot is
+ *   NULL and always will be. Expected, permanent, not a defect.
+ * - `unreadable_snapshot` — a frozen jsonb that failed `WeekEarningsSchema`.
+ *   A real data defect worth finding, which the read path degrades around
+ *   rather than crashing on: a nanny opening Hours must not get a blank
+ *   screen because one row is malformed.
+ * - `carer_removed` — the timesheet's `carer_id` is NULL (the carer deleted
+ *   her account; 033 keeps the payroll record). There is no carer to resolve
+ *   an arrangement against, and per `docs/11-MONEY.md` §4 the parent must NOT
+ *   be shown a "set a pay rate" nudge they cannot complete.
+ */
+export const HOURS_ONLY_REASONS = {
+  LEGACY_APPROVAL: 'legacy_approval',
+  UNREADABLE_SNAPSHOT: 'unreadable_snapshot',
+  CARER_REMOVED: 'carer_removed',
+} as const;
+export type HoursOnlyReason =
+  (typeof HOURS_ONLY_REASONS)[keyof typeof HOURS_ONLY_REASONS];
+
+/** Hours, no money, ever. Carries no amount fields — by construction, not by convention. */
+export const WeekEarningsHoursOnlySchema = z.object({
+  status: z.literal(WEEK_EARNINGS_STATES.HOURS_ONLY),
+  week_start: z.iso.date(),
+  reason: z.enum(Object.values(HOURS_ONLY_REASONS)),
+});
+
+/**
+ * Every arm of `WeekEarningsSchema`, plus `hours_only`.
+ *
+ * Built by spreading `WeekEarningsSchema.options` rather than re-listing the
+ * arms, so the engine's output type and the wire's state type can never drift
+ * apart: a fourth engine arm added later lands here automatically.
+ */
+export const WeekEarningsStateSchema = z.discriminatedUnion('status', [
+  ...WeekEarningsSchema.options,
+  WeekEarningsHoursOnlySchema,
+]);
+
+/**
+ * A timesheet as the week screen reads it: every existing `TimesheetSchema`
+ * field, plus a REQUIRED `earnings` state.
+ *
+ * Required, not optional-or-null: "we have no earnings for this week" is
+ * always one of the named states above, and an absent field would reopen the
+ * ambiguity the union exists to close.
+ *
+ * The four raw snapshot columns (`gross_minor`, `currency`, `earnings`,
+ * `earnings_computed_at`) are deliberately NOT on the wire. They are storage,
+ * and `earnings` here is the same data already parsed and state-tagged —
+ * shipping both would let a client read the frozen jsonb without the
+ * legacy/corrupt handling the server just did on its behalf.
+ */
+export const TimesheetWeekSchema = TimesheetSchema.extend({
+  earnings: WeekEarningsStateSchema,
+});
+
+/**
+ * `GET /timesheets/:id` / the week read envelope. `timesheet` is nullable
+ * because no `timesheets` row exists until the week's first clock-out
+ * (`timesheetCommandService.rollUpIntoTimesheet` creates it).
+ */
+export const TimesheetWeekResponseSchema = z.object({
+  timesheet: TimesheetWeekSchema.nullable(),
+});
+
+export type WeekEarningsHoursOnly = z.infer<typeof WeekEarningsHoursOnlySchema>;
+export type WeekEarningsStateResult = z.infer<typeof WeekEarningsStateSchema>;
+export type TimesheetWeek = z.infer<typeof TimesheetWeekSchema>;
+export type TimesheetWeekResponse = z.infer<typeof TimesheetWeekResponseSchema>;

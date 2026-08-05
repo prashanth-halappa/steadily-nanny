@@ -2,6 +2,7 @@
  * G4 — serialised accept/open via RPC. Strict TDD companion to the main service tests.
  */
 import { describe, expect, it, mock } from 'bun:test';
+import type { PayArrangement } from '@steadily-nanny/shared-types/schemas/payArrangement.schema';
 import {
   SHIFT_CHANGE_REQUEST_KINDS,
   SHIFT_ORIGINS,
@@ -142,6 +143,37 @@ function makeShiftQueries(overrides: Record<string, unknown> = {}): any {
   return { getOwned: mock(async () => shift), ...overrides };
 }
 
+// Arm 3 by default (no arrangement) — matches this file's pre-existing
+// behaviour, which never sets up a pay arrangement.
+function makePayArrangementRepo(overrides: Record<string, unknown> = {}): any {
+  return { effectiveOn: mock(async () => null), ...overrides };
+}
+
+function arrangementFor(
+  overrides: Partial<PayArrangement> = {}
+): PayArrangement {
+  return {
+    id: 'arr1',
+    household_id: 'h1',
+    carer_id: 'carer-1',
+    rate_minor: 1500,
+    bill_rate_minor: null,
+    currency: 'GBP',
+    overtime_threshold_minutes: null,
+    overtime_multiplier: 1.5,
+    guaranteed_minutes_per_week: null,
+    pto_entitlement_minutes_per_year: null,
+    mileage_rate_per_mile_minor: null,
+    cancellation_paid_within_hours: 24,
+    valid_from: '2026-01-01',
+    carer_display_name: 'Nanny',
+    note: null,
+    created_by: null,
+    created_at: 't',
+    ...overrides,
+  };
+}
+
 function makeSvc(overrides: Record<string, unknown> = {}) {
   return new ShiftChangeRequestCommandService(
     (overrides.changeRequestRepo ?? makeChangeRequestRepo()) as any,
@@ -156,7 +188,8 @@ function makeSvc(overrides: Record<string, unknown> = {}) {
     }) as any,
     (overrides.children ?? {
       getOwned: mock(async () => ({ id: 'child-1' })),
-    }) as any
+    }) as any,
+    (overrides.payArrangementRepo ?? makePayArrangementRepo()) as any
   );
 }
 
@@ -167,6 +200,7 @@ describe('planAcceptedChange', () => {
       pendingRequest,
       shift,
       household as any,
+      null,
       null
     );
 
@@ -194,6 +228,7 @@ describe('planAcceptedChange', () => {
       timeRequest,
       shift,
       household as any,
+      null,
       'ok'
     );
 
@@ -219,6 +254,7 @@ describe('planAcceptedChange', () => {
       counter,
       shift,
       household as any,
+      null,
       null
     );
     expect(plan.rpcArgs.p_origin).toBe(SHIFT_ORIGINS.NANNY_COUNTERED);
@@ -230,7 +266,7 @@ describe('planAcceptedChange', () => {
       kind: SHIFT_CHANGE_REQUEST_KINDS.SPLIT,
     };
     expect(() =>
-      planAcceptedChange('carer-1', split, shift, household as any, null)
+      planAcceptedChange('carer-1', split, shift, household as any, null, null)
     ).toThrow(ValidationError);
   });
 
@@ -240,8 +276,129 @@ describe('planAcceptedChange', () => {
       kind: SHIFT_CHANGE_REQUEST_KINDS.TIME_CHANGE,
     };
     expect(() =>
-      planAcceptedChange('carer-1', bad, shift, household as any, null)
+      planAcceptedChange('carer-1', bad, shift, household as any, null, null)
     ).toThrow(ValidationError);
+  });
+});
+
+describe('planAcceptedChange — cancellation-pay three-arm rule (owner decision 5)', () => {
+  // household.cancellation_paid_within_hours is deliberately different from
+  // every arrangement window used below, so a test passing only proves the
+  // arrangement governed if the household's answer would have differed.
+  const soonShift: ShiftWithChildren = {
+    ...shift,
+    starts_at: new Date(Date.now() + 3_600_000).toISOString(), // 1h away
+  };
+  const farShift: ShiftWithChildren = {
+    ...shift,
+    starts_at: new Date(Date.now() + 48 * 3_600_000).toISOString(), // 48h away
+  };
+
+  it('arm 1 — arrangement window (24h) governs and pays when the cancellation is inside it', () => {
+    const arrangement = arrangementFor({ cancellation_paid_within_hours: 24 });
+    const householdNeverPays = {
+      ...household,
+      cancellation_paid_within_hours: 0,
+    };
+    const plan = planAcceptedChange(
+      'carer-1',
+      pendingRequest,
+      soonShift,
+      householdNeverPays as any,
+      arrangement,
+      null
+    );
+    expect(plan.rpcArgs.p_cancellation_paid).toBe(true);
+  });
+
+  it('arm 1 — arrangement window (24h) governs and does NOT pay when outside it, even though household would', () => {
+    const arrangement = arrangementFor({ cancellation_paid_within_hours: 24 });
+    const householdAlwaysPays = {
+      ...household,
+      cancellation_paid_within_hours: 999,
+    };
+    const plan = planAcceptedChange(
+      'carer-1',
+      pendingRequest,
+      farShift,
+      householdAlwaysPays as any,
+      arrangement,
+      null
+    );
+    expect(plan.rpcArgs.p_cancellation_paid).toBe(false);
+  });
+
+  it('arm 2 — arrangement window explicitly null is NOT paid, even inside the household 24h window', () => {
+    const arrangement = arrangementFor({
+      cancellation_paid_within_hours: null,
+    });
+    const householdWouldPay = {
+      ...household,
+      cancellation_paid_within_hours: 24,
+    };
+    const plan = planAcceptedChange(
+      'carer-1',
+      pendingRequest,
+      soonShift,
+      householdWouldPay as any,
+      arrangement,
+      null
+    );
+    expect(plan.rpcArgs.p_cancellation_paid).toBe(false);
+  });
+
+  it('arm 3 — no arrangement: household window (24h) governs and pays inside it', () => {
+    const householdWindow24 = {
+      ...household,
+      cancellation_paid_within_hours: 24,
+    };
+    const plan = planAcceptedChange(
+      'carer-1',
+      pendingRequest,
+      soonShift,
+      householdWindow24 as any,
+      null,
+      null
+    );
+    expect(plan.rpcArgs.p_cancellation_paid).toBe(true);
+  });
+
+  it('arm 3 — no arrangement: household window 0 means no cancellation pay (legacy semantics preserved)', () => {
+    const householdWindow0 = {
+      ...household,
+      cancellation_paid_within_hours: 0,
+    };
+    const plan = planAcceptedChange(
+      'carer-1',
+      pendingRequest,
+      soonShift,
+      householdWindow0 as any,
+      null,
+      null
+    );
+    expect(plan.rpcArgs.p_cancellation_paid).toBe(false);
+  });
+
+  it('date-basis pin: the arrangement effective on the shift date governs even when a later one exists as of accept time', () => {
+    // Simulates a rate/window change effective between the shift's date and
+    // "today" (the accept date): the caller is responsible for resolving
+    // `effectiveOn` against the SHIFT's local date, and this pure function
+    // must honour whatever arrangement it is handed — proving the shift-date
+    // arrangement (paid) wins over what a same-day-as-accept arrangement
+    // (unpaid) would have produced.
+    const shiftDateArrangement = arrangementFor({
+      id: 'arr-old',
+      cancellation_paid_within_hours: 24,
+    });
+    const plan = planAcceptedChange(
+      'carer-1',
+      pendingRequest,
+      soonShift,
+      household as any,
+      shiftDateArrangement,
+      null
+    );
+    expect(plan.rpcArgs.p_cancellation_paid).toBe(true);
   });
 });
 

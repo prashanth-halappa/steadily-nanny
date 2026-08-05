@@ -29,6 +29,8 @@
  */
 
 import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types/schemas/notification.schema';
+import type { WeekEarnings } from '@steadily-nanny/shared-types/schemas/timesheet.schema';
+import { EARNINGS_RESULT_STATUSES } from '@steadily-nanny/shared-types/schemas/timesheet.schema';
 import {
   HOUSEHOLD_ROLES,
   HouseholdMemberRepository,
@@ -39,6 +41,10 @@ import {
   notifyUser,
 } from '../../notification/services/householdPush';
 import type { PushPayload } from '../../notification/types';
+import {
+  type WeekEarningsComputer,
+  weekEarningsService,
+} from '../../pay/services/weekEarningsService';
 import {
   SHIFT_STATUSES,
   ShiftNotFoundError,
@@ -57,7 +63,11 @@ import {
   TimesheetNotActionableError,
 } from '../errors/timesheetErrors';
 import { TimeEntryRepository } from '../repositories/timeEntryRepository';
-import { TimesheetRepository } from '../repositories/timesheetRepository';
+import {
+  CLEARED_EARNINGS_SNAPSHOT,
+  type TimesheetEarningsSnapshot,
+  TimesheetRepository,
+} from '../repositories/timesheetRepository';
 import type {
   ClockInInput,
   ClockOutInput,
@@ -67,7 +77,9 @@ import type {
   Timesheet,
   UpdateTimeEntryInput,
 } from '../types';
+import { toWireTimesheet } from '../utils/toWireTimesheet';
 import { weekEndExclusive, weekStartOf } from '../utils/weekStart';
+import { computeWorkedMinutes, sumWorkedMinutes } from '../utils/workedMinutes';
 import {
   type TimesheetQueryService,
   timesheetQueryService,
@@ -150,41 +162,14 @@ const ACTIONABLE_STATUSES: ReadonlySet<string> = new Set(['submitted']);
  */
 const TERMINAL_STATUSES: ReadonlySet<string> = new Set(['approved', 'queried']);
 
-/** Minutes actually worked: clocked span minus the break, never negative. */
-export function computeWorkedMinutes(
-  clockInAt: string,
-  clockOutAt: string,
-  breakMinutes: number
-): number {
-  const rawMinutes = Math.round(
-    (new Date(clockOutAt).getTime() - new Date(clockInAt).getTime()) / 60_000
-  );
-  return Math.max(0, rawMinutes - breakMinutes);
-}
-
 /**
- * A week's total worked minutes, DERIVED fresh from its entries rather than
- * accumulated. Summing the same list twice always yields the same total —
- * that's what makes `rollUpIntoTimesheet` idempotent under a retried,
- * duplicated, or replayed clock-out, and lets the total self-heal if an
- * entry is later corrected or deleted. A still-running entry (no
- * `clock_out_at` yet) contributes 0 rather than throwing.
+ * Re-exported, not defined here: both now live in the dependency-free leaf
+ * `../utils/workedMinutes` so `domains/pay/services/weekEarningsService` can
+ * price a week with the SAME arithmetic the roll-up totals it with, without
+ * importing this module and closing an import cycle. Every existing
+ * `from '.../timesheetCommandService'` import keeps resolving.
  */
-export function sumWorkedMinutes(entries: readonly TimeEntry[]): number {
-  return entries.reduce((total, entry) => {
-    if (!entry.clock_in_at || !entry.clock_out_at) {
-      return total;
-    }
-    return (
-      total +
-      computeWorkedMinutes(
-        entry.clock_in_at,
-        entry.clock_out_at,
-        entry.break_minutes
-      )
-    );
-  }, 0);
-}
+export { computeWorkedMinutes, sumWorkedMinutes };
 
 export class TimesheetCommandService {
   constructor(
@@ -203,7 +188,11 @@ export class TimesheetCommandService {
     private readonly push: TimesheetPushNotifier = {
       notifyUser,
       notifyHouseholdParents,
-    }
+    },
+    // The earnings engine's impure wrapper. Only `approve` uses it — this is
+    // the single point in the app where a computed figure becomes a stored
+    // one (`docs/11-MONEY.md` §3).
+    private readonly earnings: WeekEarningsComputer = weekEarningsService
   ) {}
 
   /**
@@ -641,18 +630,110 @@ export class TimesheetCommandService {
     }
   }
 
-  /** Owner/parent only. Requires submitted hours to act on. */
+  /**
+   * Owner/parent only. Requires submitted hours to act on.
+   *
+   * THE MOMENT MONEY STOPS BEING DERIVED. Three steps, and the ordering of
+   * the last two is the whole design (TIER0-PLAN.md Phase 2, review finding
+   * 13, Phase 2 review finding 1, `docs/11-MONEY.md` §3):
+   *
+   * 1. Gate on role and status, as this method always has — and remember the
+   *    VERSION of the row that gating was done against (`updated_at`).
+   * 2. Compute the week's earnings from the entries as they stand right now.
+   * 3. Write the snapshot AND the status flip in ONE conditional update
+   *    (`... where status = 'submitted' and updated_at = <that version>`).
+   *
+   * Between 1 and 3 a concurrent clock-out can roll new hours into this week
+   * — that is D1's exact surface, and here it would freeze a gross figure
+   * that no longer describes the hours on the row.
+   *
+   * The status half of the predicate catches the roll-up that RE-OPENS an
+   * approved or queried week. It does not catch the far more ordinary one:
+   * `rollUpIntoTimesheet` writing new `total_minutes` onto a week that was
+   * already `submitted` leaves the status untouched, so a status-only
+   * predicate would still match and would stamp `approved` — with the OLD
+   * gross — over the new hours. The version half closes that: `updated_at` is
+   * bumped by the `set_timesheets_updated_at` trigger on every write to the
+   * row, so any roll-up at all invalidates this approve.
+   *
+   * The version is read BEFORE the compute rather than after, deliberately.
+   * The engine's own reads happen inside step 2, so a roll-up landing
+   * mid-compute must also invalidate the result; anchoring on the earlier
+   * value is the conservative choice, and its only cost is an occasional
+   * spurious retry.
+   *
+   * Either way there is no interleaving that produces a snapshot without an
+   * approval, an approval without its snapshot, or an approval covering hours
+   * nobody looked at.
+   *
+   * The lost-race failure is `TimesheetNotActionableError` — the same error
+   * `assertActionable` raises for a stale status, because it is the same
+   * situation, just noticed a few milliseconds later. Both raises live in
+   * this method's flow so they cannot drift apart. The parent simply approves
+   * again, this time against the hours that are actually there.
+   */
   async approve(userId: string, timesheetId: string): Promise<Timesheet> {
     const timesheet = await this.queries.getOwnedTimesheet(userId, timesheetId);
     await this.assertWriteMember(userId, timesheet.household_id);
     this.assertActionable(timesheet);
 
-    return this.timesheetRepo.update(timesheetId, {
-      status: 'approved',
-      approved_by: userId,
-      approved_at: new Date().toISOString(),
-      query_note: null,
-    });
+    // One instant for the approval and the snapshot: they describe the same
+    // event, and two `new Date()` calls would let them disagree.
+    const at = new Date().toISOString();
+    const snapshot = await this.computeSnapshot(timesheet, at);
+
+    const approved = await this.timesheetRepo.approveSubmittedWithEarnings(
+      timesheetId,
+      { approved_by: userId, approved_at: at, ...snapshot },
+      timesheet.updated_at
+    );
+    if (!approved) {
+      throw new TimesheetNotActionableError(timesheetId, 'changed_since_read');
+    }
+    return toWireTimesheet(approved);
+  }
+
+  /**
+   * The four snapshot columns for a week about to be approved.
+   *
+   * A carer-less week (`carer_id` NULL after account deletion — 033) gets an
+   * EMPTY snapshot rather than a computed one: there is nobody to resolve an
+   * arrangement against, and the read path renders it hours-only anyway. The
+   * approval of the HOURS still stands; only the money is absent.
+   *
+   * A non-`ok` engine arm (`no_arrangement`, `currency_change`) freezes its
+   * jsonb but leaves `gross_minor`/`currency` NULL. Migration 042's header
+   * describes the four columns as populated "together"; that prose assumes a
+   * priceable week. Writing `0` here to satisfy it would be exactly the
+   * silently-wrong zero `docs/11-MONEY.md` §4 forbids, so the jsonb carries
+   * the honest reason and the amount columns stay empty.
+   */
+  private async computeSnapshot(
+    timesheet: Timesheet,
+    computedAt: string
+  ): Promise<TimesheetEarningsSnapshot> {
+    if (!timesheet.carer_id) {
+      return CLEARED_EARNINGS_SNAPSHOT;
+    }
+    const earnings: WeekEarnings = await this.earnings.computeForWeek(
+      timesheet.household_id,
+      timesheet.carer_id,
+      timesheet.week_start
+    );
+    if (earnings.status !== EARNINGS_RESULT_STATUSES.OK) {
+      return {
+        gross_minor: null,
+        currency: null,
+        earnings,
+        earnings_computed_at: computedAt,
+      };
+    }
+    return {
+      gross_minor: earnings.gross_minor,
+      currency: earnings.currency,
+      earnings,
+      earnings_computed_at: computedAt,
+    };
   }
 
   /** Owner/parent only. "Query Thursday" — names the disagreement rather than silently withholding payment. */
@@ -690,7 +771,7 @@ export class TimesheetCommandService {
       }
     }
 
-    return updated;
+    return toWireTimesheet(updated);
   }
 
   /**
@@ -892,12 +973,48 @@ export class TimesheetCommandService {
     // must never absorb new minutes silently. Re-open it to 'submitted' —
     // clearing the approval — so the parent is forced to look again rather
     // than being recorded as having approved hours they never saw.
+    //
+    // The earnings snapshot goes with it, in the SAME update. A frozen gross
+    // figure that outlived the hours it was computed from is the identical
+    // class of bug D1 fixed for `approved_by`/`approved_at`, and strictly
+    // worse: it is a number someone gets paid against
+    // (`docs/11-MONEY.md` §3, migration 042's header). One update, so there
+    // is no window in which the row claims a settled amount for hours that
+    // have already changed.
+    //
+    // THE CLEAR IS UNCONDITIONAL, not gated on "was it terminal?" (Phase 2
+    // review, finding 1). `existing.status` is a PRE-READ, and an approve
+    // landing between that read and this write would make it lie: the flag
+    // would say `submitted` → nothing to clear, while the row the write
+    // actually lands on is `approved` with a frozen gross and an approver on
+    // it. The result is a `submitted` row wearing a settled amount — exactly
+    // the invariant 042's header says these columns keep, broken by a race.
+    //
+    // Stating it unconditionally is not a wider write, it is the invariant
+    // itself: EVERY write here sets `status = 'submitted'`, and a submitted
+    // week has no snapshot and no approver, full stop. Writing nulls over
+    // nulls is idempotent and depends on nothing that was read earlier, so
+    // there is no window left to race. The alternatives both only narrow the
+    // window rather than closing it — a re-read is still a separate statement
+    // from the write (the same TOCTOU one level down), and CASing this write
+    // would turn a clock-out into something that can FAIL because a parent
+    // tapped Approve, which it must never be: the hours happened and have to
+    // be recorded.
+    //
+    // `query_note` is still preserved (D1): it records what was disputed,
+    // which is not a stale approval claim.
+    //
+    // `reopening`/`newlySubmitted` survive only to decide whether to push.
+    // A best-effort notification may be judged on a pre-read; a money column
+    // may not.
     const reopening = TERMINAL_STATUSES.has(existing.status);
     const newlySubmitted = existing.status !== 'submitted';
     await this.timesheetRepo.update(existing.id, {
       total_minutes: totalMinutes,
       status: 'submitted',
-      ...(reopening ? { approved_by: null, approved_at: null } : {}),
+      approved_by: null,
+      approved_at: null,
+      ...CLEARED_EARNINGS_SNAPSHOT,
     });
     if (newlySubmitted || reopening) {
       this.push.notifyHouseholdParents(entry.household_id, {

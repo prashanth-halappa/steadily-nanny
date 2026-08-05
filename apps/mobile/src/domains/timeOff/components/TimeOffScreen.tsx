@@ -39,6 +39,7 @@ import { useUpdateTimeOff } from '@/src/hooks/mutations/useUpdateTimeOff';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 import { useTimeOff } from '@/src/hooks/queries/useTimeOff';
 import { showSuccessToast } from '@/src/lib/toast';
+import { usePaidFamilyCounts } from '../hooks/usePaidFamilyCounts';
 import { TimeOffRequestForm } from './TimeOffRequestForm';
 import { TimeOffRow } from './TimeOffRow';
 
@@ -99,6 +100,11 @@ export function TimeOffScreen() {
         : allRows.filter(row => row.status === statusFilter),
     [allRows, statusFilter]
   );
+  // Anonymised cross-family paid-marker counts (TIER0-CX-SPEC.md §5.2) —
+  // computed once for the whole visible list; a household id or name never
+  // leaves `usePaidFamilyCounts` itself. While loading, every row's marker
+  // is omitted (`undefined`) rather than guessing "not marked paid".
+  const paidFamilyCounts = usePaidFamilyCounts(allRows);
 
   if (onboarding.status === 'loading') {
     return (
@@ -142,6 +148,11 @@ export function TimeOffScreen() {
               onEdit={handleEdit}
               isCancelling={cancelTimeOff.isPending}
               isEditing={updateTimeOff.isPending}
+              paidFamilyCount={
+                paidFamilyCounts.isLoading
+                  ? undefined
+                  : (paidFamilyCounts.counts.get(item.id) ?? 0)
+              }
             />
           )}
           ListHeaderComponent={

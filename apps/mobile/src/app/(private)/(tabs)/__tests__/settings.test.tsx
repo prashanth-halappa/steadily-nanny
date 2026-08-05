@@ -112,6 +112,21 @@ describe('SettingsScreen', () => {
     expect(screenSource).toContain('/settings/household-time-off');
   });
 
+  // TIER0-CX-SPEC.md §2/§3: parent gets "Pay & terms", nanny gets "My pay",
+  // helper gets NEITHER — a helper has no access to pay at all.
+  it('wires a parent-only "Pay & terms" row', () => {
+    expect(screenSource).toContain('settings-pay');
+    expect(screenSource).toContain("router.push('/settings/pay'");
+    expect(screenSource).toContain("t('pay:title')");
+  });
+
+  it('wires a nanny-only "My pay" row, gated on the exact role (not the shared nanny/helper branch)', () => {
+    expect(screenSource).toContain('settings-my-pay');
+    expect(screenSource).toContain("router.push('/settings/my-pay'");
+    expect(screenSource).toContain("t('pay:myPay.title')");
+    expect(screenSource).toContain('onboarding.role === SETUP_ROLES.NANNY');
+  });
+
   // REGRESSION: the floating tab bar overlays this screen's content instead
   // of reserving its own layout space, so the last rows sat at y≈882–926
   // while the bar started at y≈873 — tapping "Nanny time off" landed on the

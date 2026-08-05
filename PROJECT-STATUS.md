@@ -65,7 +65,7 @@ One-line summary of each flow/view:
 | Calendar views | Build all four (2a–2d), with a switcher, for both roles |
 | Subscriptions | Stripped entirely — no RevenueCat, no paywalls, no entitlement gating |
 | AI | None for now; Vertex plumbing left dormant (boot-time var only, no features wired) |
-| Notifications | No push/email/SMS delivery yet — events written to a `notification_outbox` table and shown in-app only |
+| Notifications | Expo push only, fire-and-forget, nothing persisted — no outbox table, no in-app history, no email/SMS. See §5 |
 | Locale | en-GB, 24-hour clock, dates as `Mon 4 Aug`, Monday-first week |
 | Time | UTC `timestamptz` is the only source of truth; per-user and per-household IANA timezones layered on top for display |
 | Calendar sync | Device write via `expo-calendar` shipped (Settings → Time & calendar). Server-side OAuth / seam tables (`016_calendar_seams`) stay dormant |
@@ -228,13 +228,12 @@ verified by this agent; treat anything not listed as unverified.
     unilateral change to a cross-app wire contract. **It now has no reader on
     the client.** Retiring it is an open decision, not an oversight — see §9.
 - **Widget example removal** — DONE, both apps, plus `008_widgets.sql`.
-  Residual mentions are comments only, and one worth knowing about: the JSDoc
-  in `apps/mobile/src/lib/pushNotification.ts` still uses `widget_ready` as its
-  worked example of a `NOTIFICATION_ROUTE_MAP` entry — which is precisely the
-  extension point a developer copies from. Replace it with a real push type
-  (e.g. `shift_reminder`) when the first notification lands. Same for the
-  fixture in its test and the doc-comment example in
-  `src/lib/analytics/plugins/validationPlugin.ts`.
+  Residual mentions are comments only. The one flagged here previously — the
+  JSDoc in `apps/mobile/src/lib/pushNotification.ts` using `widget_ready` as
+  its worked example of a `NOTIFICATION_ROUTE_MAP` entry — is now fixed: it
+  (and the fixture in its test) use `pay_terms_set`, the real type TIER0-PLAN
+  Phase 2 added for "pay terms set → nanny". `src/lib/analytics/plugins/validationPlugin.ts`'s
+  doc-comment example no longer references `widget_ready` either.
 - **Delete-account UI** — DONE, and it closes a real App Store blocker.
   `REVIEW-CHECKLIST.md` §8 recorded that `DELETE /api/v1/users/me` and
   `userApi.deleteAccount()` both existed but no UI called them, which fails
@@ -751,11 +750,27 @@ instructive thing to come out of the whole sweep:
 
 ## 5. Deliberate omissions
 
-- **Push/email/SMS delivery** — events land in a `notification_outbox` table
-  and are shown in-app only. To turn on: wire a delivery worker (Expo push
-  for mobile, Resend for email — `RESEND_API_KEY`/`RESEND_WEBHOOK_SECRET` are
-  already in the API env schema, just unset) that drains the outbox and
-  respects the per-person channel/quiet-hours settings from flow 1k.
+- **Email/SMS delivery, and any stored notification history** — neither
+  exists. There is **no `notification_outbox` table** (an earlier revision of
+  this doc claimed one; there never was one, in this repo or its schema) and
+  no in-app notification inbox: nothing about a notification is persisted
+  anywhere. What the app actually has is **fire-and-forget Expo push**, and
+  only that. A domain service calls `notifyUser` / `notifyHouseholdParents`
+  (`apps/api/src/domains/notification/services/householdPush.ts`) with a
+  payload tagged by a `PUSH_NOTIFICATION_TYPES` entry — see
+  `timesheetCommandService` for the two live examples (`TIMESHEET_SUBMITTED`,
+  `TIMESHEET_QUERIED`). That goes through `pushDispatchService.sendToUser`,
+  which applies the per-user opt-out and quiet-hours settings from flow 1k
+  (`notification_prefs`, migration 038), resolves the recipient's Expo tokens
+  from `user_device_info` (003), and hands them to
+  `notificationSender.sendToTokens`. Failures are logged, never thrown — a
+  push must never fail the write that triggered it. Adding a notification
+  type therefore means adding a `PUSH_NOTIFICATION_TYPES` entry and a call
+  site, not writing a row. To turn on the parts that are genuinely missing:
+  an email path (Resend — `RESEND_API_KEY`/`RESEND_WEBHOOK_SECRET` are
+  already in the API env schema, just unset), SMS, and, if an in-app
+  notification list is ever wanted, a table to hold the history that today is
+  simply not kept.
 - **Server-side Google/Apple Calendar OAuth** — not built. Device-local
   one-way write via `expo-calendar` *is* shipped (Settings → Time & calendar;
   marker-in-notes diff; no `calendar_event_links` rows). Seam tables in

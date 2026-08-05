@@ -179,6 +179,11 @@ function makeSvc(overrides: Record<string, unknown> = {}) {
     }) as any,
     (overrides.children ?? {
       getOwned: mock(async () => ({ id: 'child-1' })),
+    }) as any,
+    // Arm 3 (no arrangement) — this file's pushes/recorder focus never
+    // exercises the cancellation-window resolution itself.
+    (overrides.payArrangementRepo ?? {
+      effectiveOn: mock(async () => null),
     }) as any
   );
 }

@@ -186,6 +186,72 @@ describe('TimeOffRow', () => {
     ).toBe(true);
   });
 
+  describe('TIER0-CX-SPEC.md §5.2: anonymised cross-family paid marker', () => {
+    it('no family has paid: shows "Not marked paid"', () => {
+      const { getByTestId } = render(
+        <TimeOffRow
+          timeOff={makeTimeOff()}
+          onCancel={() => {}}
+          isCancelling={false}
+          paidFamilyCount={0}
+        />
+      );
+
+      expect(
+        getByTestId('time-off-paid-marker-22222222-2222-4222-8222-222222222222')
+          .props.children
+      ).toBe('crossFamily.notMarkedPaid');
+    });
+
+    it('exactly one family paid: shows the singular form, never a name or amount', () => {
+      const { getByTestId } = render(
+        <TimeOffRow
+          timeOff={makeTimeOff()}
+          onCancel={() => {}}
+          isCancelling={false}
+          paidFamilyCount={1}
+        />
+      );
+
+      expect(
+        getByTestId('time-off-paid-marker-22222222-2222-4222-8222-222222222222')
+          .props.children
+      ).toBe('crossFamily.paidByFamilies');
+    });
+
+    it('two or more families paid: still the same key (i18next plural suffixing happens for real, not in this key-echo test)', () => {
+      const { getByTestId } = render(
+        <TimeOffRow
+          timeOff={makeTimeOff()}
+          onCancel={() => {}}
+          isCancelling={false}
+          paidFamilyCount={2}
+        />
+      );
+
+      expect(
+        getByTestId('time-off-paid-marker-22222222-2222-4222-8222-222222222222')
+          .props.children
+      ).toBe('crossFamily.paidByFamilies');
+    });
+
+    it('omitted paidFamilyCount (prop not wired) renders nothing, never crashes', () => {
+      const { queryByTestId } = render(
+        <TimeOffRow
+          timeOff={makeTimeOff()}
+          onCancel={() => {}}
+          isCancelling={false}
+        />
+      );
+
+      expect(
+        queryByTestId(
+          'time-off-paid-marker-22222222-2222-4222-8222-222222222222'
+        )
+      ).toBeNull();
+    });
+  });
+
   it('hides Edit and Cancel for past time off — the exclusive ends_at is already before now', () => {
     const { queryByTestId } = render(
       <TimeOffRow

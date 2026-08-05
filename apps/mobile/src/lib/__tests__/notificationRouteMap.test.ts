@@ -122,6 +122,14 @@ describe('NOTIFICATION_ROUTE_MAP resolvers', () => {
     ).toBe('/(private)/schedule/shifts?householdId=hh-1');
   });
 
+  it('routes pay_terms_set to the nanny My pay screen', () => {
+    expect(
+      resolve(PUSH_NOTIFICATION_TYPES.PAY_TERMS_SET, {
+        householdId: 'hh-1',
+      })
+    ).toBe('/(private)/settings/my-pay');
+  });
+
   it('is usable as the injected NotificationRouteMap type', () => {
     const map: NotificationRouteMap = NOTIFICATION_ROUTE_MAP;
     expect(Object.keys(map).length).toBe(ALL_PUSH_NOTIFICATION_TYPES.length);

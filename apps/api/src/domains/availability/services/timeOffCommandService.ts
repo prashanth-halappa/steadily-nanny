@@ -12,6 +12,7 @@ import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types/schemas/no
 import { ValidationError } from '../../../errors';
 import { logger } from '../../../middlewares/logger';
 import { notifyHouseholdParents, type PushPayload } from '../../notification';
+import { ptoCommandService } from '../../pay/services/ptoCommandService';
 import { CarerTimeOffRepository } from '../repositories/carerTimeOffRepository';
 import {
   type OverlappingBookedShift,
@@ -44,12 +45,23 @@ export type NotifyHouseholdParentsFn = (
   payload: PushPayload
 ) => void;
 
+/**
+ * Reverse any paid-PTO usage recorded against a cancelled time off —
+ * injectable for tests. Fire-and-forget at the call site.
+ */
+export type ReconcilePtoUsageFn = (timeOffId: string) => Promise<void>;
+
 export class TimeOffCommandService {
   constructor(
     private readonly timeOffRepo: CarerTimeOffRepository = new CarerTimeOffRepository(),
     private readonly queries: TimeOffQueryService = timeOffQueryService,
     private readonly overlapRepo: OverlappingShiftLookup = new OverlappingShiftRepository(),
-    private readonly notifyParents: NotifyHouseholdParentsFn = notifyHouseholdParents
+    private readonly notifyParents: NotifyHouseholdParentsFn = notifyHouseholdParents,
+    // Imported by concrete path, not through the pay barrel: the pay domain
+    // imports this domain's repositories, so barrel-to-barrel would cycle.
+    // Same convention as the timesheet domain's weekEarningsService import.
+    private readonly reconcilePtoUsage: ReconcilePtoUsageFn = timeOffId =>
+      ptoCommandService.reconcileCancelledTimeOff(timeOffId)
   ) {}
 
   /** Create a time-off row for the caller; scan + notify on overlaps. */
@@ -75,10 +87,45 @@ export class TimeOffCommandService {
    * "missing" and "not yours"), then sets `status = 'cancelled'` — NEVER a
    * hard delete, since the partial index `carer_time_off_user_range_idx
    * ... where status <> 'cancelled'` implies cancelled rows persist.
+   *
+   * IDEMPOTENT (Phase 3/4 review, BLOCKER 1). `getOwned` checks ownership
+   * only, so cancelling an already-cancelled time off used to "succeed" and
+   * re-run everything below it. `cancelById` is now conditional on the row
+   * not already being cancelled and returns `null` when it changed nothing;
+   * that `null` is the signal to skip the reconciliation entirely, because
+   * the row was already cancelled and whatever reversal it needed has
+   * already happened. The caller still gets a success and the row as it
+   * stands — a second DELETE is not an error.
    */
   async cancel(userId: string, timeOffId: string): Promise<CarerTimeOff> {
-    await this.queries.getOwned(userId, timeOffId);
-    return this.timeOffRepo.cancelById(timeOffId);
+    const existing = await this.queries.getOwned(userId, timeOffId);
+    const cancelled = await this.timeOffRepo.cancelById(timeOffId);
+    if (!cancelled) {
+      // Already cancelled — nothing transitioned, so nothing to reconcile.
+      return existing;
+    }
+
+    // A household may already have marked this time off as paid PTO. Leaving
+    // that usage row behind would keep a paid day the carer is no longer
+    // taking, and the balance drifts silently — so reverse it with an
+    // append-only adjustment (never a delete; the ledger is evidence).
+    //
+    // Fire-and-forget on purpose: the cancellation is the carer's own, and a
+    // bookkeeping failure downstream must never leave her unable to cancel.
+    // Retries are therefore guaranteed, and TWO things make one safe: the
+    // conditional cancel above means a retried DELETE never reaches this
+    // line at all, and `reconcileCancelledTimeOff` itself writes only the
+    // difference between what a household has paid and what it has already
+    // reversed — a second run against a reversed ledger nets to zero and
+    // writes nothing.
+    void this.reconcilePtoUsage(timeOffId).catch((error: unknown) => {
+      logger.error('Failed to reconcile PTO usage after time-off cancel', {
+        timeOffId,
+        error,
+      });
+    });
+
+    return cancelled;
   }
 
   /**

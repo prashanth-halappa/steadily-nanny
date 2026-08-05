@@ -1,0 +1,63 @@
+{
+  "addButton": "Add an expense",
+  "addSheet": {
+    "titleAdd": "Add an expense",
+    "titleEdit": "Edit expense",
+    "kindExpense": "Expense",
+    "kindMileage": "Mileage",
+    "dateLabel": "Date",
+    "dateFutureError": "Choose today or an earlier date.",
+    "descriptionLabel": "What was it for",
+    "descriptionPlaceholderExpense": "e.g. Soft play tickets",
+    "descriptionPlaceholderMileage": "e.g. Nursery run",
+    "amountLabel": "Amount",
+    "milesLabel": "Miles",
+    "milesSuffix": "miles",
+    "mileageRateHint": "Worked out at {{rate}} a mile when your family approves it.",
+    "mileageRateMissingHint": "Your family hasn't set a mileage rate yet. You can still log the miles.",
+    "milesPrecisionError": "Enter miles to one decimal place, e.g. 12.4.",
+    "amountError": "Enter a valid amount.",
+    "submitButton": "Send for approval",
+    "saveButton": "Save changes",
+    "sentToast": "Sent to your family",
+    "savedToast": "Expense updated"
+  },
+  "list": {
+    "title": "Expenses",
+    "milesValue": "{{miles}} miles",
+    "statusPending": "Awaiting review",
+    "statusApproved": "Approved",
+    "statusRejected": "Not approved",
+    "rejectedNote": "Not approved: {{note}}",
+    "editButton": "Edit",
+    "withdrawButton": "Withdraw",
+    "withdrawnToast": "Expense withdrawn"
+  },
+  "pendingRow": {
+    "count_one": "{{count}} expense to review",
+    "count_other": "{{count}} expenses to review",
+    "mileageToPrice_one": "{{count}} with mileage to price",
+    "mileageToPrice_other": "{{count}} with mileage to price",
+    "mixedCurrencies": "In different currencies — open to review each."
+  },
+  "reviewSheet": {
+    "title": "Review expenses",
+    "milesValue": "{{miles}} miles",
+    "approveButton": "Approve",
+    "rejectButton": "Not this one",
+    "noteLabel": "Tell her why (optional)",
+    "sendButton": "Send",
+    "approvedToast": "Approved",
+    "rejectedToast": "Not approved",
+    "noMileageRateError": "Set a mileage rate before approving mileage.",
+    "weekLockedError": "That week has already been approved, so this claim can't be added to it. You can still turn it down, or ask about it directly.",
+    "setRateAction": "Set a rate",
+    "reviewFailedGeneric": "This claim couldn't be reviewed right now. Check with your family if it keeps happening."
+  },
+  "reimbursements": {
+    "title": "Reimbursements",
+    "totalLabel": "Total to reimburse",
+    "totalUnavailable": "Total unavailable for this week",
+    "note": "Paid back in full — not wages, and not part of gross pay."
+  }
+}

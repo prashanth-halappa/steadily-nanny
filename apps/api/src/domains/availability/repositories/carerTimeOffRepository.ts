@@ -62,14 +62,27 @@ export class CarerTimeOffRepository extends BaseRepository<CarerTimeOff> {
    * 'cancelled'` implies cancelled rows persist (see
    * supabase/migrations/011_availability.sql). Ownership is verified by the
    * caller (service layer) before this runs.
+   *
+   * CONDITIONAL ON THE ROW NOT ALREADY BEING CANCELLED, and returns `null`
+   * when nothing matched (Phase 3/4 review, BLOCKER 1). This write is a
+   * STATE TRANSITION, not an assignment, because a real side effect hangs
+   * off it: `timeOffCommandService.cancel` fires the PTO reconciliation
+   * afterwards. Without the guard, a retried cancel — the client times out
+   * and taps again, which is the normal case, not the exotic one —
+   * "succeeded" a second time and re-fired that reconciliation against a
+   * ledger that had already been corrected. `null` is how the service learns
+   * it changed nothing and must not reconcile again; the same shape as
+   * `timesheetRepository.approveSubmittedWithEarnings` and
+   * `shiftRepository.confirmPending`.
    */
-  async cancelById(id: string): Promise<CarerTimeOff> {
+  async cancelById(id: string): Promise<CarerTimeOff | null> {
     const { data, error } = await supabaseService
       .from(this.table)
       .update({ status: CARER_TIME_OFF_STATUSES.CANCELLED })
       .eq('id', id)
+      .neq('status', CARER_TIME_OFF_STATUSES.CANCELLED)
       .select()
-      .single();
+      .maybeSingle();
 
     if (error) {
       throw new DatabaseError(
@@ -78,6 +91,6 @@ export class CarerTimeOffRepository extends BaseRepository<CarerTimeOff> {
         { details: error.message, id }
       );
     }
-    return data as CarerTimeOff;
+    return data as CarerTimeOff | null;
   }
 }

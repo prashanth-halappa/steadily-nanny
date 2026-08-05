@@ -96,3 +96,51 @@ describe('settings/household-closures route', () => {
     expect(source).toContain('export default function');
   });
 });
+
+describe('settings/pay/index route', () => {
+  let source: string;
+  beforeAll(async () => {
+    source = await readRoute('../pay/index.tsx');
+  });
+
+  it('delegates to PayArrangementScreen', () => {
+    expect(source).toContain('PayArrangementScreen');
+    expect(source).toContain('export default function');
+  });
+});
+
+describe('settings/pay/[carerId] route', () => {
+  let source: string;
+  beforeAll(async () => {
+    source = await readRoute('../pay/[carerId].tsx');
+  });
+
+  it('delegates to PayArrangementScreen', () => {
+    expect(source).toContain('PayArrangementScreen');
+    expect(source).toContain('export default function');
+  });
+});
+
+describe('settings/pay/setup/[carerId] route', () => {
+  let source: string;
+  beforeAll(async () => {
+    source = await readRoute('../pay/setup/[carerId].tsx');
+  });
+
+  it('delegates to PaySetupScreen', () => {
+    expect(source).toContain('PaySetupScreen');
+    expect(source).toContain('export default function');
+  });
+});
+
+describe('settings/my-pay route', () => {
+  let source: string;
+  beforeAll(async () => {
+    source = await readRoute('../my-pay.tsx');
+  });
+
+  it('delegates to MyPayScreen', () => {
+    expect(source).toContain('MyPayScreen');
+    expect(source).toContain('export default function');
+  });
+});

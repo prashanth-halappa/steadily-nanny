@@ -30,18 +30,18 @@ beforeAll(async () => {
 });
 
 const routeMap: NotificationRouteMap = {
-  widget_ready: data =>
-    typeof data.widgetId === 'string' ? `/widget/${data.widgetId}` : null,
+  pay_terms_set: data =>
+    typeof data.householdId === 'string' ? '/settings/my-pay' : null,
   announcement: () => '/(tabs)/home',
 };
 
 describe('resolveNotificationHref', () => {
   it('resolves via routeMap keyed on data.type', () => {
     const href = resolveNotificationHref(
-      { type: 'widget_ready', widgetId: 'w-1' },
+      { type: 'pay_terms_set', householdId: 'hh-1' },
       routeMap
     );
-    expect(href).toBe('/widget/w-1');
+    expect(href).toBe('/settings/my-pay');
   });
 
   it('reads data.triggerType when data.type is absent', () => {
@@ -53,7 +53,7 @@ describe('resolveNotificationHref', () => {
   });
 
   it('returns null when the resolver returns null (missing required param)', () => {
-    const href = resolveNotificationHref({ type: 'widget_ready' }, routeMap);
+    const href = resolveNotificationHref({ type: 'pay_terms_set' }, routeMap);
     expect(href).toBeNull();
   });
 

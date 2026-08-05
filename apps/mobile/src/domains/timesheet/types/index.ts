@@ -22,8 +22,22 @@ export {
   TIME_ENTRY_STATUSES,
 } from '@/src/api/endpoints/timeEntries';
 export type {
+  EarningsLine,
+  EarningsLineKind,
+  HoursOnlyReason,
   QueryTimesheetInput,
   Timesheet,
   TimesheetStatus,
+  TimesheetWeek,
+  WeekEarnings,
+  WeekEarningsOk,
+  WeekEarningsStateResult,
 } from '@/src/api/endpoints/timesheets';
-export { TIMESHEET_STATUSES } from '@/src/api/endpoints/timesheets';
+export {
+  EARNINGS_LINE_KINDS,
+  EARNINGS_LINE_ORDER,
+  EARNINGS_RESULT_STATUSES,
+  HOURS_ONLY_REASONS,
+  TIMESHEET_STATUSES,
+  WEEK_EARNINGS_STATES,
+} from '@/src/api/endpoints/timesheets';

@@ -178,6 +178,15 @@ function makeChildren(overrides: Record<string, unknown> = {}): any {
   };
 }
 
+// Arm 3 by default (no arrangement) — the pre-existing household-fallback
+// behaviour every non-cancellation-focused test in this file relies on.
+function makePayArrangementRepo(overrides: Record<string, unknown> = {}): any {
+  return {
+    effectiveOn: mock(async () => null),
+    ...overrides,
+  };
+}
+
 function makeSvc(
   overrides: {
     changeRequestRepo?: any;
@@ -189,6 +198,7 @@ function makeSvc(
     shiftQueries?: any;
     gate?: any;
     children?: any;
+    payArrangementRepo?: any;
   } = {}
 ) {
   return new ShiftChangeRequestCommandService(
@@ -200,7 +210,8 @@ function makeSvc(
     overrides.queries ?? makeQueries(),
     overrides.shiftQueries ?? makeShiftQueries(),
     overrides.gate ?? makeGate(),
-    overrides.children ?? makeChildren()
+    overrides.children ?? makeChildren(),
+    overrides.payArrangementRepo ?? makePayArrangementRepo()
   );
 }
 
@@ -718,6 +729,194 @@ describe('ShiftChangeRequestCommandService.respond', () => {
     await expect(
       svc.respond('carer-1', 'cr1', { status: 'declined' })
     ).rejects.toBeInstanceOf(ChangeRequestNotPendingError);
+  });
+});
+
+describe('ShiftChangeRequestCommandService.respond — cancellation window repoint', () => {
+  // Owner decision 5 / review finding 10: the effective arrangement is
+  // selected by the SHIFT's household-local start date, never the accept
+  // date. A rate/window change landing between the two must not leak into
+  // this cancellation.
+  it('fetches the arrangement effective on the SHIFT start date, not today/accept date, and that arrangement governs', async () => {
+    const shiftDateArrangement = {
+      id: 'arr-old',
+      household_id: 'h1',
+      carer_id: 'carer-1',
+      cancellation_paid_within_hours: 240,
+    };
+    // A later arrangement effective as of "today" (the accept date) with a
+    // deliberately different answer (unpaid) — if the service wrongly asked
+    // for "today" instead of the shift's local date, this is what it would
+    // wrongly get back.
+    const acceptDateArrangement = {
+      id: 'arr-new',
+      household_id: 'h1',
+      carer_id: 'carer-1',
+      cancellation_paid_within_hours: null,
+    };
+    // Five days out, under a ten-day window: still paid, and the shift's
+    // household-local day is unambiguously NOT today's, whenever this runs.
+    // (The fixture used to pin `local_date` to a fixed past date while
+    // `starts_at` was an hour away — a combination the 015 trigger could
+    // never produce. Now that the service derives the day from `starts_at`
+    // and the household's zone, the two have to agree.)
+    const startsAt = new Date(Date.now() + 5 * 86_400_000).toISOString();
+    const inHousehold = (instant: string) =>
+      new Intl.DateTimeFormat('en-CA', {
+        timeZone: household.timezone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      }).format(new Date(instant));
+    const shiftDate = inHousehold(startsAt);
+    expect(shiftDate).not.toBe(inHousehold(new Date().toISOString()));
+
+    const payArrangementRepo = makePayArrangementRepo({
+      effectiveOn: mock(async (_h: string, _c: string, date: string) =>
+        date === shiftDate ? shiftDateArrangement : acceptDateArrangement
+      ),
+    });
+    const soonShift: ShiftWithChildren = {
+      ...shift,
+      local_date: shiftDate,
+      starts_at: startsAt,
+    };
+    const changeRequestRepo = makeChangeRequestRepo();
+    const svc = makeSvc({
+      changeRequestRepo,
+      payArrangementRepo,
+      shiftQueries: makeShiftQueries({ getOwned: mock(async () => soonShift) }),
+    });
+
+    await svc.respond('carer-1', 'cr1', { status: 'accepted' });
+
+    expect(payArrangementRepo.effectiveOn).toHaveBeenCalledWith(
+      'h1',
+      'carer-1',
+      shiftDate
+    );
+    // Governed by the shift-date arrangement's window (240h, and the shift
+    // is five days away) — NOT the accept-date arrangement's null window,
+    // which would have produced `false`.
+    expect(changeRequestRepo.acceptAndApply).toHaveBeenCalledWith(
+      expect.objectContaining({ p_cancellation_paid: true })
+    );
+  });
+
+  // ---------------------------------------------------------------------
+  // Phase 2 review, finding 8. "The shift's household-local start date" is
+  // NOT `shifts.local_date`: migration 015's `sync_shift_local_date` derives
+  // that column from the shift's OWN `timezone` column — the zone the shift
+  // was AUTHORED in, deliberately frozen there so the original wall-clock
+  // intent survives the household moving (015's header). Two supported
+  // product actions make the two disagree:
+  //   * `PATCH /households/:id { timezone }` — the household moves, and
+  //     every already-materialised shift keeps the old authoring zone.
+  //   * `POST .../shifts/extra` takes a client-supplied `timezone`
+  //     (`CreateExtraShiftSchema`: `z.string().min(1)`, never checked
+  //     against the household's).
+  // Whichever date is used has to be the one arrangements are keyed on, and
+  // arrangements are household-scoped: `payArrangementCommandService` and
+  // `weekEarningsService` both resolve dates with
+  // `localDateOf(instant, household.timezone)`.
+  // ---------------------------------------------------------------------
+  it('resolves the arrangement date in the HOUSEHOLD timezone, not the shift authoring timezone', async () => {
+    const payArrangementRepo = makePayArrangementRepo();
+    // 20:00 UTC is 21:00 on the 3rd in London (BST) and 08:00 on the 4th in
+    // Auckland (NZST) — a shift authored in Auckland for a London household,
+    // or a London household that used to be in Auckland.
+    const authoredElsewhere: ShiftWithChildren = {
+      ...shift,
+      starts_at: '2026-08-03T20:00:00.000Z',
+      ends_at: '2026-08-04T04:00:00.000Z',
+      timezone: 'Pacific/Auckland',
+      local_date: '2026-08-04', // what the 015 trigger stamps
+    };
+    const svc = makeSvc({
+      payArrangementRepo,
+      shiftQueries: makeShiftQueries({
+        getOwned: mock(async () => authoredElsewhere),
+      }),
+    });
+
+    await svc.respond('carer-1', 'cr1', { status: 'accepted' });
+
+    expect(payArrangementRepo.effectiveOn).toHaveBeenCalledWith(
+      'h1',
+      'carer-1',
+      '2026-08-03'
+    );
+  });
+
+  it('pays the nanny under the arrangement in force on the household-local day', async () => {
+    // The same divergence, now worth money: exactly 24h between the two
+    // zones, so the household-local day is always the day before the shift's
+    // own `local_date`, whenever this test happens to run.
+    const startsAt = new Date(Date.now() + 3_600_000).toISOString();
+    const localDateIn = (timeZone: string) =>
+      new Intl.DateTimeFormat('en-CA', {
+        timeZone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      }).format(new Date(startsAt));
+    const householdTz = 'Etc/GMT+11'; // UTC-11
+    const shiftTz = 'Etc/GMT-13'; // UTC+13
+    const householdDate = localDateIn(householdTz);
+    const shiftDate = localDateIn(shiftTz);
+    expect(shiftDate).not.toBe(householdDate);
+
+    const payArrangementRepo = makePayArrangementRepo({
+      effectiveOn: mock(async (_h: string, _c: string, date: string) =>
+        date === householdDate
+          ? { id: 'arr-household-day', cancellation_paid_within_hours: 24 }
+          : { id: 'arr-shift-day', cancellation_paid_within_hours: null }
+      ),
+    });
+    const changeRequestRepo = makeChangeRequestRepo();
+    const svc = makeSvc({
+      changeRequestRepo,
+      payArrangementRepo,
+      householdRepo: makeHouseholdRepo({
+        findById: mock(async () => ({ ...household, timezone: householdTz })),
+      }),
+      shiftQueries: makeShiftQueries({
+        getOwned: mock(async () => ({
+          ...shift,
+          starts_at: startsAt,
+          timezone: shiftTz,
+          local_date: shiftDate,
+        })),
+      }),
+    });
+
+    await svc.respond('carer-1', 'cr1', { status: 'accepted' });
+
+    // Cancelling an hour before the start, under a 24h window: paid. Asking
+    // on the shift's own authoring day would have found the null-window
+    // arrangement and quietly paid her nothing.
+    expect(changeRequestRepo.acceptAndApply).toHaveBeenCalledWith(
+      expect.objectContaining({ p_cancellation_paid: true })
+    );
+  });
+
+  it('does not look up an arrangement for a non-cancel accepted kind', async () => {
+    const counterRequest = {
+      ...pendingRequest,
+      requested_by: 'carer-1',
+      kind: 'counter_offer' as const,
+      proposed_starts_at: '2026-08-03T09:00:00.000Z',
+      proposed_ends_at: '2026-08-03T18:00:00.000Z',
+    };
+    const payArrangementRepo = makePayArrangementRepo();
+    const svc = makeSvc({
+      queries: makeQueries({ getOwned: mock(async () => counterRequest) }),
+      payArrangementRepo,
+    });
+
+    await svc.respond('parent-2', 'cr1', { status: 'accepted' });
+
+    expect(payArrangementRepo.effectiveOn).not.toHaveBeenCalled();
   });
 });
 

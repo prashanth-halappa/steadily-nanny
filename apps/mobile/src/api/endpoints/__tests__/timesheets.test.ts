@@ -62,14 +62,35 @@ describe('timesheetApi.list', () => {
 });
 
 describe('timesheetApi.getWeek', () => {
-  it('finds the matching week by filtering the full list client-side (no server week filter on this route)', async () => {
+  it('finds the matching week by filtering the full list client-side, THEN fetches its earnings by id', async () => {
     const otherWeek = {
       ...validTimesheet,
       id: '55555555-5555-4555-8555-555555555555',
       week_start: '2026-08-03',
     };
-    apiClient.get.mockResolvedValue({
-      data: { data: { timesheets: [otherWeek, validTimesheet] } },
+    const weekWithEarnings = {
+      ...validTimesheet,
+      earnings: {
+        status: 'hours_only',
+        week_start: '2026-07-27',
+        reason: 'legacy_approval',
+      },
+    };
+    // Both calls go through the SAME `apiClient.get` mock (`list` and
+    // `getById` are both GETs) — branch on the URL, matching what the two
+    // real endpoints actually receive.
+    apiClient.get.mockImplementation((url: string) => {
+      if (url === `/v1/households/${validTimesheet.household_id}/timesheets`) {
+        return Promise.resolve({
+          data: { data: { timesheets: [otherWeek, validTimesheet] } },
+        });
+      }
+      if (url === `/v1/timesheets/${validTimesheet.id}`) {
+        return Promise.resolve({
+          data: { data: { timesheet: weekWithEarnings } },
+        });
+      }
+      throw new Error(`unexpected URL: ${url}`);
     });
 
     const result = await timesheetApi.getWeek(
@@ -77,15 +98,20 @@ describe('timesheetApi.getWeek', () => {
       '2026-07-27'
     );
 
-    // No week_start param — GET /households/:id/timesheets has no server-side
-    // week filter (see apps/api/.../householdTimesheetRoutes.ts).
+    // No week_start param on the list call — GET /households/:id/timesheets
+    // has no server-side week filter (see
+    // apps/api/.../householdTimesheetRoutes.ts).
     expect(apiClient.get).toHaveBeenCalledWith(
       `/v1/households/${validTimesheet.household_id}/timesheets`
     );
+    expect(apiClient.get).toHaveBeenCalledWith(
+      `/v1/timesheets/${validTimesheet.id}`
+    );
     expect(result?.week_start).toBe('2026-07-27');
+    expect(result?.earnings.status).toBe('hours_only');
   });
 
-  it('returns null when no timesheet exists for that week yet', async () => {
+  it('returns null when no timesheet exists for that week yet, WITHOUT calling getById', async () => {
     apiClient.get.mockResolvedValue({ data: { data: { timesheets: [] } } });
 
     const result = await timesheetApi.getWeek(
@@ -94,6 +120,30 @@ describe('timesheetApi.getWeek', () => {
     );
 
     expect(result).toBeNull();
+    expect(apiClient.get).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('timesheetApi.getById', () => {
+  it('GETs /timesheets/:id and returns the week WITH its earnings attached', async () => {
+    const weekWithEarnings = {
+      ...validTimesheet,
+      earnings: {
+        status: 'no_arrangement',
+        week_start: validTimesheet.week_start,
+        unpriced_dates: [validTimesheet.week_start],
+      },
+    };
+    apiClient.get.mockResolvedValue({
+      data: { data: { timesheet: weekWithEarnings } },
+    });
+
+    const result = await timesheetApi.getById(validTimesheet.id);
+
+    expect(apiClient.get).toHaveBeenCalledWith(
+      `/v1/timesheets/${validTimesheet.id}`
+    );
+    expect(result.earnings.status).toBe('no_arrangement');
   });
 });
 

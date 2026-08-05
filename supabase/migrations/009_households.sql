@@ -74,6 +74,10 @@ create table if not exists public.household_members (
   -- exists first" ordering (GOLDEN-FIXES.md #7).
   user_id              uuid not null references public.user_profiles(user_id)
                          on delete cascade,
+  -- MATCHED PAIR: this CHECK and HOUSEHOLD_ROLES in
+  -- packages/shared-types/src/schemas/household.schema.ts only ever change
+  -- together, in one migration + one shared-types change (planned widening
+  -- path for agency roles — see TIER0-PLAN.md Phase 0-B).
   role                 text not null
                          check (role in ('owner', 'parent', 'nanny', 'helper')),
   -- Denormalised from role so a parent can grant/revoke edit rights to a helper

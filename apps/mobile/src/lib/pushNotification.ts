@@ -39,12 +39,13 @@ export type NotificationRouteMap = Record<string, NotificationRouteResolver>;
  * Falls back to a ready-made `data.url` when present, else null. PURE — unit-test
  * it directly and reuse it for deferred (logged-out) replay.
  *
- * Example routeMap (inject from your app — these routes are illustrative):
+ * Example routeMap (inject from your app — see the real one at
+ * `src/lib/notificationRouteMap.ts` for the full product map):
  * ```ts
  * const routeMap: NotificationRouteMap = {
  *   // Deep-link to a detail screen when the payload carries an id.
- *   widget_ready: data =>
- *     typeof data.widgetId === 'string' ? `/widget/${data.widgetId}` : null,
+ *   pay_terms_set: data =>
+ *     typeof data.householdId === 'string' ? '/settings/my-pay' : null,
  *   // A simple static destination.
  *   announcement: () => '/(tabs)/home',
  * };

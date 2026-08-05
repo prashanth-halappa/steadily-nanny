@@ -98,4 +98,16 @@ export const NOTIFICATION_ROUTE_MAP: NotificationRouteMap &
   [PUSH_NOTIFICATION_TYPES.SHIFT_NEEDS_RECONFIRM]: shiftDetailHref,
 
   [PUSH_NOTIFICATION_TYPES.CARER_TIME_OFF_CONFLICT]: shiftsCalendarHref,
+
+  // Static destination — the nanny's own read-only pay screen fetches every
+  // household she belongs to itself, so no query params are needed here.
+  [PUSH_NOTIFICATION_TYPES.PAY_TERMS_SET]: () => '/(private)/settings/my-pay',
+
+  // A carer cancelled time off a parent had already marked paid;
+  // `ptoCommandService.reconcileCancelledTimeOff` notifies that household's
+  // parents so they see the corrected balance — same static-destination
+  // shape as PAY_TERMS_SET, since the recipient is household-scoped, not
+  // per-time-off.
+  [PUSH_NOTIFICATION_TYPES.PTO_USAGE_REVERSED]: () =>
+    '/(private)/settings/household-time-off',
 };

@@ -1,4 +1,5 @@
 import { describe, expect, it, mock } from 'bun:test';
+import type { WeekEarnings } from '@steadily-nanny/shared-types/schemas/timesheet.schema';
 import {
   TimeEntryNotFoundError,
   TimesheetNotFoundError,
@@ -208,5 +209,396 @@ describe('TimesheetQueryService.listTimesheetsForHousehold', () => {
     expect(await svc.listTimesheetsForHousehold('u1', 'h1')).toEqual([
       timesheet,
     ]);
+  });
+});
+
+// =============================================================================
+// The week read — LIVE vs FROZEN (TIER0-PLAN.md Phase 2 "Wiring",
+// docs/11-MONEY.md §3). This is the decision the client must never make.
+// =============================================================================
+
+const ARRANGEMENT_ID = '11111111-1111-4111-8111-111111111101';
+
+const okEarnings: WeekEarnings = {
+  status: 'ok',
+  week_start: '2026-08-03',
+  currency: 'GBP',
+  lines: [
+    {
+      kind: 'regular',
+      minutes: 480,
+      rate_minor: 1850,
+      multiplier: null,
+      amount_minor: 14_800,
+      from_date: '2026-08-03',
+      to_date: '2026-08-03',
+      arrangement_id: ARRANGEMENT_ID,
+    },
+  ],
+  gross_minor: 14_800,
+  reimbursements_minor: 0,
+  worked_minutes: 480,
+  payable_minutes: 480,
+  guaranteed_minutes_per_week: null,
+};
+
+/** What a live compute would say AFTER a post-approval raise — deliberately different. */
+const raisedEarnings: WeekEarnings = {
+  ...okEarnings,
+  status: 'ok',
+  currency: 'GBP',
+  lines: [
+    {
+      kind: 'regular',
+      minutes: 480,
+      rate_minor: 2500,
+      multiplier: null,
+      amount_minor: 20_000,
+      from_date: '2026-08-03',
+      to_date: '2026-08-03',
+      arrangement_id: ARRANGEMENT_ID,
+    },
+  ],
+  gross_minor: 20_000,
+  reimbursements_minor: 0,
+  worked_minutes: 480,
+  payable_minutes: 480,
+  guaranteed_minutes_per_week: null,
+};
+
+const approvedTimesheet = {
+  ...timesheet,
+  status: 'approved',
+  approved_by: 'parent-1',
+  approved_at: '2026-08-10T09:00:00.000Z',
+  gross_minor: 14_800,
+  currency: 'GBP',
+  earnings: okEarnings,
+  earnings_computed_at: '2026-08-10T09:00:00.000Z',
+};
+
+function makeEarnings(overrides: Record<string, unknown> = {}): any {
+  return {
+    computeForWeek: mock(async () => okEarnings),
+    ...overrides,
+  };
+}
+
+describe('TimesheetQueryService.getWeekWithEarnings — live weeks', () => {
+  for (const status of ['open', 'submitted', 'queried'] as const) {
+    it(`computes earnings live for a ${status} week, scoped to its household/carer/week`, async () => {
+      const earnings = makeEarnings();
+      const svc = new TimesheetQueryService(
+        makeTimeEntryRepo(),
+        makeTimesheetRepo({
+          findById: mock(async () => ({ ...timesheet, status })),
+        }),
+        makeMemberRepo(),
+        makeHouseholdRepo(),
+        earnings
+      );
+
+      const week = await svc.getWeekWithEarnings('u1', 'ts1');
+
+      expect(earnings.computeForWeek).toHaveBeenCalledWith(
+        'h1',
+        'carer-1',
+        '2026-08-03'
+      );
+      expect(week.earnings).toEqual(okEarnings);
+      expect(week.status).toBe(status);
+    });
+  }
+
+  it('writes NOTHING while reading a live week — no snapshot columns, ever', async () => {
+    const timesheetRepo = makeTimesheetRepo({
+      update: mock(async () => timesheet),
+      create: mock(async () => timesheet),
+    });
+    const svc = new TimesheetQueryService(
+      makeTimeEntryRepo(),
+      timesheetRepo,
+      makeMemberRepo(),
+      makeHouseholdRepo(),
+      makeEarnings()
+    );
+
+    await svc.getWeekWithEarnings('u1', 'ts1');
+
+    expect(timesheetRepo.update).not.toHaveBeenCalled();
+    expect(timesheetRepo.create).not.toHaveBeenCalled();
+  });
+
+  it('passes the no_arrangement arm straight through to the week response', async () => {
+    const noArrangement: WeekEarnings = {
+      status: 'no_arrangement',
+      week_start: '2026-08-03',
+      unpriced_dates: ['2026-08-03'],
+    };
+    const svc = new TimesheetQueryService(
+      makeTimeEntryRepo(),
+      makeTimesheetRepo(),
+      makeMemberRepo(),
+      makeHouseholdRepo(),
+      makeEarnings({ computeForWeek: mock(async () => noArrangement) })
+    );
+
+    const week = await svc.getWeekWithEarnings('u1', 'ts1');
+
+    expect(week.earnings).toEqual(noArrangement);
+  });
+
+  it('renders hours-only for a departed carer — there is no carer to price against', async () => {
+    const earnings = makeEarnings();
+    const svc = new TimesheetQueryService(
+      makeTimeEntryRepo(),
+      makeTimesheetRepo({
+        findById: mock(async () => ({ ...timesheet, carer_id: null })),
+      }),
+      makeMemberRepo(),
+      makeHouseholdRepo(),
+      earnings
+    );
+
+    const week = await svc.getWeekWithEarnings('u1', 'ts1');
+
+    expect(week.earnings).toEqual({
+      status: 'hours_only',
+      week_start: '2026-08-03',
+      reason: 'carer_removed',
+    });
+    expect(earnings.computeForWeek).not.toHaveBeenCalled();
+  });
+
+  it('enforces membership before pricing anything', async () => {
+    const earnings = makeEarnings();
+    const svc = new TimesheetQueryService(
+      makeTimeEntryRepo(),
+      makeTimesheetRepo(),
+      makeMemberRepo({ findActiveMembership: mock(async () => null) }),
+      makeHouseholdRepo(),
+      earnings
+    );
+
+    await expect(svc.getWeekWithEarnings('u2', 'ts1')).rejects.toBeInstanceOf(
+      TimesheetNotFoundError
+    );
+    expect(earnings.computeForWeek).not.toHaveBeenCalled();
+  });
+});
+
+describe('TimesheetQueryService.getWeekWithEarnings — approved weeks are FROZEN', () => {
+  it('returns the snapshot and never recomputes', async () => {
+    const earnings = makeEarnings();
+    const svc = new TimesheetQueryService(
+      makeTimeEntryRepo(),
+      makeTimesheetRepo({ findById: mock(async () => approvedTimesheet) }),
+      makeMemberRepo(),
+      makeHouseholdRepo(),
+      earnings
+    );
+
+    const week = await svc.getWeekWithEarnings('u1', 'ts1');
+
+    expect(week.earnings).toEqual(okEarnings);
+    expect(earnings.computeForWeek).not.toHaveBeenCalled();
+  });
+
+  it('keeps the frozen figure after the arrangement changes — a raise never rewrites a signed week', async () => {
+    // The live engine now says £200.00; the approved week must still say
+    // £148.00 (docs/11-MONEY.md §3).
+    const svc = new TimesheetQueryService(
+      makeTimeEntryRepo(),
+      makeTimesheetRepo({ findById: mock(async () => approvedTimesheet) }),
+      makeMemberRepo(),
+      makeHouseholdRepo(),
+      makeEarnings({ computeForWeek: mock(async () => raisedEarnings) })
+    );
+
+    const week = await svc.getWeekWithEarnings('u1', 'ts1');
+
+    expect(week.earnings.status === 'ok' && week.earnings.gross_minor).toBe(
+      14_800
+    );
+  });
+
+  it('round-trips the stored jsonb through WeekEarningsSchema rather than trusting it', async () => {
+    // Stored with an extra column the schema does not know about; the parsed
+    // result must be the schema's shape, not the raw row.
+    const svc = new TimesheetQueryService(
+      makeTimeEntryRepo(),
+      makeTimesheetRepo({
+        findById: mock(async () => ({
+          ...approvedTimesheet,
+          earnings: { ...okEarnings, legacy_field: 'ignored' },
+        })),
+      }),
+      makeMemberRepo(),
+      makeHouseholdRepo(),
+      makeEarnings()
+    );
+
+    const week = await svc.getWeekWithEarnings('u1', 'ts1');
+
+    expect(week.earnings).toEqual(okEarnings);
+  });
+
+  it('carries a frozen no_arrangement snapshot through unchanged', async () => {
+    const frozenNoArrangement: WeekEarnings = {
+      status: 'no_arrangement',
+      week_start: '2026-08-03',
+      unpriced_dates: ['2026-08-03'],
+    };
+    const svc = new TimesheetQueryService(
+      makeTimeEntryRepo(),
+      makeTimesheetRepo({
+        findById: mock(async () => ({
+          ...approvedTimesheet,
+          gross_minor: null,
+          currency: null,
+          earnings: frozenNoArrangement,
+        })),
+      }),
+      makeMemberRepo(),
+      makeHouseholdRepo(),
+      makeEarnings()
+    );
+
+    expect((await svc.getWeekWithEarnings('u1', 'ts1')).earnings).toEqual(
+      frozenNoArrangement
+    );
+  });
+});
+
+describe('TimesheetQueryService.getWeekWithEarnings — the legacy arm', () => {
+  it('renders hours-only for a week approved before migration 042 (NULL snapshot)', async () => {
+    const earnings = makeEarnings();
+    const svc = new TimesheetQueryService(
+      makeTimeEntryRepo(),
+      makeTimesheetRepo({
+        findById: mock(async () => ({
+          ...approvedTimesheet,
+          gross_minor: null,
+          currency: null,
+          earnings: null,
+          earnings_computed_at: null,
+        })),
+      }),
+      makeMemberRepo(),
+      makeHouseholdRepo(),
+      earnings
+    );
+
+    const week = await svc.getWeekWithEarnings('u1', 'ts1');
+
+    expect(week.earnings).toEqual({
+      status: 'hours_only',
+      week_start: '2026-08-03',
+      reason: 'legacy_approval',
+    });
+  });
+
+  it('NEVER live-computes a legacy approved week — no live number under an Approved label', async () => {
+    const earnings = makeEarnings();
+    const svc = new TimesheetQueryService(
+      makeTimeEntryRepo(),
+      makeTimesheetRepo({
+        findById: mock(async () => ({
+          ...approvedTimesheet,
+          earnings: null,
+        })),
+      }),
+      makeMemberRepo(),
+      makeHouseholdRepo(),
+      earnings
+    );
+
+    await svc.getWeekWithEarnings('u1', 'ts1');
+
+    expect(earnings.computeForWeek).not.toHaveBeenCalled();
+  });
+
+  it('degrades a CORRUPT snapshot to hours-only rather than crashing the screen', async () => {
+    const earnings = makeEarnings();
+    const svc = new TimesheetQueryService(
+      makeTimeEntryRepo(),
+      makeTimesheetRepo({
+        findById: mock(async () => ({
+          ...approvedTimesheet,
+          earnings: { status: 'ok', gross_minor: 'lots' },
+        })),
+      }),
+      makeMemberRepo(),
+      makeHouseholdRepo(),
+      earnings
+    );
+
+    const week = await svc.getWeekWithEarnings('u1', 'ts1');
+
+    expect(week.earnings).toEqual({
+      status: 'hours_only',
+      week_start: '2026-08-03',
+      reason: 'unreadable_snapshot',
+    });
+    expect(earnings.computeForWeek).not.toHaveBeenCalled();
+  });
+
+  it('treats a non-object snapshot (string, number) as unreadable too', async () => {
+    const svc = new TimesheetQueryService(
+      makeTimeEntryRepo(),
+      makeTimesheetRepo({
+        findById: mock(async () => ({ ...approvedTimesheet, earnings: 'ok' })),
+      }),
+      makeMemberRepo(),
+      makeHouseholdRepo(),
+      makeEarnings()
+    );
+
+    expect((await svc.getWeekWithEarnings('u1', 'ts1')).earnings).toMatchObject(
+      { status: 'hours_only', reason: 'unreadable_snapshot' }
+    );
+  });
+});
+
+describe('TimesheetQueryService — the raw snapshot columns never reach the wire', () => {
+  it('strips them from the list, exactly as the week read does', async () => {
+    const svc = new TimesheetQueryService(
+      makeTimeEntryRepo(),
+      makeTimesheetRepo({
+        listForHousehold: mock(async () => [approvedTimesheet]),
+      }),
+      makeMemberRepo(),
+      makeHouseholdRepo(),
+      makeEarnings()
+    );
+
+    const [row] = await svc.listTimesheetsForHousehold('u1', 'h1');
+
+    for (const column of [
+      'gross_minor',
+      'currency',
+      'earnings',
+      'earnings_computed_at',
+    ]) {
+      expect(row && column in row).toBe(false);
+    }
+    // ...while every real timesheet field survives.
+    expect(row?.total_minutes).toBe(480);
+    expect(row?.status).toBe('approved');
+  });
+
+  it('strips them from the week read too', async () => {
+    const svc = new TimesheetQueryService(
+      makeTimeEntryRepo(),
+      makeTimesheetRepo({ findById: mock(async () => approvedTimesheet) }),
+      makeMemberRepo(),
+      makeHouseholdRepo(),
+      makeEarnings()
+    );
+
+    const week = await svc.getWeekWithEarnings('u1', 'ts1');
+
+    expect('gross_minor' in week).toBe(false);
+    expect('earnings_computed_at' in week).toBe(false);
   });
 });

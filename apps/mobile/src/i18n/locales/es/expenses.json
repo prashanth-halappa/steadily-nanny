@@ -1,0 +1,63 @@
+{
+  "addButton": "Añadir un gasto",
+  "addSheet": {
+    "titleAdd": "Añadir un gasto",
+    "titleEdit": "Editar gasto",
+    "kindExpense": "Gasto",
+    "kindMileage": "Kilometraje",
+    "dateLabel": "Fecha",
+    "dateFutureError": "Elige hoy o una fecha anterior.",
+    "descriptionLabel": "¿Para qué fue?",
+    "descriptionPlaceholderExpense": "p. ej. Entradas al parque infantil",
+    "descriptionPlaceholderMileage": "p. ej. Trayecto a la guardería",
+    "amountLabel": "Importe",
+    "milesLabel": "Millas",
+    "milesSuffix": "millas",
+    "mileageRateHint": "Se calcula a {{rate}} por milla cuando tu familia lo apruebe.",
+    "mileageRateMissingHint": "Tu familia todavía no ha fijado una tarifa por milla. Puedes registrar las millas igualmente.",
+    "milesPrecisionError": "Introduce las millas con un decimal, p. ej. 12.4.",
+    "amountError": "Introduce un importe válido.",
+    "submitButton": "Enviar para aprobación",
+    "saveButton": "Guardar cambios",
+    "sentToast": "Enviado a tu familia",
+    "savedToast": "Gasto actualizado"
+  },
+  "list": {
+    "title": "Gastos",
+    "milesValue": "{{miles}} millas",
+    "statusPending": "Pendiente de revisión",
+    "statusApproved": "Aprobado",
+    "statusRejected": "No aprobado",
+    "rejectedNote": "No aprobado: {{note}}",
+    "editButton": "Editar",
+    "withdrawButton": "Retirar",
+    "withdrawnToast": "Gasto retirado"
+  },
+  "pendingRow": {
+    "count_one": "{{count}} gasto por revisar",
+    "count_other": "{{count}} gastos por revisar",
+    "mileageToPrice_one": "{{count}} con kilometraje por tasar",
+    "mileageToPrice_other": "{{count}} con kilometraje por tasar",
+    "mixedCurrencies": "En monedas diferentes — ábrelo para revisar cada uno."
+  },
+  "reviewSheet": {
+    "title": "Revisar gastos",
+    "milesValue": "{{miles}} millas",
+    "approveButton": "Aprobar",
+    "rejectButton": "Este no",
+    "noteLabel": "Explícale por qué (opcional)",
+    "sendButton": "Enviar",
+    "approvedToast": "Aprobado",
+    "rejectedToast": "No aprobado",
+    "noMileageRateError": "Fija una tarifa por milla antes de aprobar kilometraje.",
+    "weekLockedError": "Esa semana ya está aprobada, así que este gasto no puede añadirse. Puedes rechazarlo o comentarlo directamente.",
+    "setRateAction": "Fijar una tarifa",
+    "reviewFailedGeneric": "No se pudo revisar esta reclamación en este momento. Consulta con tu familia si sigue ocurriendo."
+  },
+  "reimbursements": {
+    "title": "Reembolsos",
+    "totalLabel": "Total a reembolsar",
+    "totalUnavailable": "Total no disponible para esta semana",
+    "note": "Reembolsado en su totalidad — no es salario ni forma parte del salario bruto."
+  }
+}

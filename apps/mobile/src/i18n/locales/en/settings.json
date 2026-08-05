@@ -111,7 +111,8 @@
       "extra_shift_proposed": "Extra shift proposed",
       "shift_cancelled": "Shift cancelled",
       "shift_needs_reconfirm": "Shift needs reconfirm",
-      "carer_time_off_conflict": "Time-off conflict"
+      "carer_time_off_conflict": "Time-off conflict",
+      "pay_terms_set": "Pay terms updated"
     }
   }
 }

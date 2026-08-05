@@ -5,7 +5,8 @@
  * team-lead's brief: "unit-test the duration formatting and the timer
  * cleanup directly, those are pure and worth real tests").
  */
-import { describe, expect, it } from 'bun:test';
+import { afterEach, describe, expect, it } from 'bun:test';
+import i18n from '@/src/i18n';
 import {
   formatClockTime,
   formatDuration,
@@ -75,12 +76,22 @@ describe('formatElapsedClock', () => {
 });
 
 describe('formatOvertimeDelta', () => {
-  it('formats a positive delta against the scheduled minutes', () => {
-    expect(formatOvertimeDelta(554, 540)).toBe('+14 min');
+  // TIER0-CX-SPEC.md §4.2 amendment: once paid overtime exists on the same
+  // card (`WeekEarningsLine`'s "Overtime pay" row), this delta must stop
+  // using the word "overtime" anywhere a reader could construe it as a SECOND
+  // overtime figure. It never said the word to begin with ("+14 min" carried
+  // no label at all) — the fix is the missing "vs scheduled" framing, e.g.
+  // "2h over scheduled" (spec's own example), not a swapped-out word.
+  it('formats a positive delta against the scheduled minutes as "vs scheduled"', () => {
+    expect(formatOvertimeDelta(554, 540)).toBe('14m over scheduled');
   });
 
-  it('formats a negative delta (finished early)', () => {
-    expect(formatOvertimeDelta(500, 540)).toBe('-40 min');
+  it('formats a negative delta (finished early) as "vs scheduled"', () => {
+    expect(formatOvertimeDelta(500, 540)).toBe('40m under scheduled');
+  });
+
+  it('formats a delta of an hour or more using formatDuration, not raw minutes', () => {
+    expect(formatOvertimeDelta(660, 540)).toBe('2h over scheduled');
   });
 
   it('returns null when actual matches scheduled exactly', () => {
@@ -89,6 +100,28 @@ describe('formatOvertimeDelta', () => {
 
   it('returns null when there is nothing scheduled to compare against', () => {
     expect(formatOvertimeDelta(540, null)).toBeNull();
+  });
+
+  // review finding 5a: this copy was hardcoded English ("over scheduled" /
+  // "under scheduled"), so a Spanish-language user read English words in the
+  // middle of an otherwise-translated screen. Routed through the app's real
+  // i18n instance (the house pattern for pure, non-component modules — see
+  // `domains/schedule/utils/calendarSyncNative.ts`), asserted against the
+  // REAL Spanish resource bundle, not the component-level key-echo mock.
+  describe('i18n (review finding 5a)', () => {
+    afterEach(async () => {
+      await i18n.changeLanguage('en');
+    });
+
+    it('renders in Spanish when the app language is es', async () => {
+      await i18n.changeLanguage('es');
+      expect(formatOvertimeDelta(554, 540)).toBe(
+        '14m por encima de lo previsto'
+      );
+      expect(formatOvertimeDelta(500, 540)).toBe(
+        '40m por debajo de lo previsto'
+      );
+    });
   });
 });
 
