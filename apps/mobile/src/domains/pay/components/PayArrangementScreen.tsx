@@ -19,6 +19,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ScrollView, View } from 'react-native';
+import { illustrations } from '@/assets/illustrations';
 import { AnimatedPressable } from '@/lib/animations';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { ErrorState } from '@/src/components/custom/ErrorState';
@@ -218,6 +219,7 @@ function CarerPayDetail({
         <View testID="pay-empty-no-arrangement">
           <EmptyState
             variant="inline"
+            image={illustrations.emptyPay}
             title={t('noArrangementTitle')}
             description={t('noArrangementDescription')}
             action={() => router.push(`/settings/pay/setup/${carerId}`)}
@@ -412,6 +414,7 @@ export function PayArrangementScreen() {
           <View className="mt-4" testID="pay-empty-no-carer">
             <EmptyState
               variant="inline"
+              image={illustrations.emptyNoCarer}
               title={t('noCarerTitle')}
               description={t('noCarerDescription')}
               action={() => router.push('/settings/invite')}

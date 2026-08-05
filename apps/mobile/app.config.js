@@ -91,7 +91,7 @@ const config = {
     // SETUP: add ./google-services.json (from Firebase) for native Google Sign-In.
     adaptiveIcon: {
       foregroundImage: './assets/adaptive-icon.png',
-      backgroundColor: '#ffffff',
+      backgroundColor: '#F5F1F2',
     },
     blockedPermissions: ['com.google.android.gms.permission.AD_ID'],
     intentFilters: [
@@ -121,7 +121,7 @@ const config = {
         image: './assets/splash.png',
         imageWidth: 200,
         resizeMode: 'contain',
-        backgroundColor: '#ffffff',
+        backgroundColor: '#F5F1F2',
       },
     ],
     [

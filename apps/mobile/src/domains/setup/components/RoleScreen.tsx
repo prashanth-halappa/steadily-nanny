@@ -8,6 +8,7 @@
 import { type Href, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { illustrations } from '@/assets/illustrations';
 import type { SetupRole } from '@/src/domains/setup/types';
 import {
   getSetupStepRoute,
@@ -37,6 +38,7 @@ export function RoleScreen() {
   return (
     <SetupScreenShell
       testID="role-screen"
+      heroImage={illustrations.onboardingRole}
       title={t('onboarding.role.title')}
       subtitle={t('onboarding.role.subtitle')}
       ctaLabel={t('common:continue')}

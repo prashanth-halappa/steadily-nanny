@@ -10,6 +10,7 @@
 import { type Href, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { Pressable, ScrollView, View } from 'react-native';
+import { illustrations } from '@/assets/illustrations';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { ErrorState } from '@/src/components/custom/ErrorState';
 import { EmptyState } from '@/src/components/ui/empty-state';
@@ -134,6 +135,7 @@ export function InboxScreen() {
             <View testID="inbox-empty">
               <EmptyState
                 variant="inline"
+                image={illustrations.emptyInbox}
                 title={t('emptyTitle')}
                 description={t('emptyBody')}
               />

@@ -27,6 +27,7 @@ import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Pressable, View } from 'react-native';
+import { illustrations } from '@/assets/illustrations';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { cn } from '@/lib/utils';
 import { EmptyState } from '@/src/components/ui/empty-state';
@@ -218,6 +219,7 @@ export function TimeOffScreen() {
             <View testID="time-off-empty">
               <EmptyState
                 variant="inline"
+                image={illustrations.emptyTimeOff}
                 title={t('emptyTitle')}
                 description={t('emptyDescription')}
               />

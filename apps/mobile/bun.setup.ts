@@ -1,5 +1,8 @@
 import { mock } from 'bun:test';
 import React from 'react';
+import { mockIllustrationsModule } from '@/lib/test/mockIllustrations';
+
+mockIllustrationsModule();
 
 // -----------------------------------------------------------------------------
 // Global environment shims (bun has no RN/DOM runtime)

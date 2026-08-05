@@ -30,6 +30,7 @@ import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Pressable, View } from 'react-native';
+import { illustrations } from '@/assets/illustrations';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { Button } from '@/src/components/ui/button';
 import { Card } from '@/src/components/ui/card';
@@ -236,6 +237,7 @@ export function HouseholdClosuresScreen() {
             <View testID="household-closures-empty">
               <EmptyState
                 variant="inline"
+                image={illustrations.emptyHousehold}
                 title={t('closures.emptyTitle')}
                 description={t('closures.emptyDescription')}
               />

@@ -22,6 +22,7 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTranslation } from 'react-i18next';
 import { ScrollView, StyleSheet, View } from 'react-native';
+import { illustrations } from '@/assets/illustrations';
 import { SCREEN_CONTENT_STYLE, washGradient } from '@/lib/design-tokens';
 import { useTabBarScrollPadding } from '@/lib/layout/useTabBarScrollPadding';
 import { useColorScheme } from '@/lib/useColorScheme';
@@ -163,6 +164,7 @@ export function TodayScreen() {
           <View className="mt-8" testID="today-empty">
             <EmptyState
               variant="inline"
+              image={illustrations.emptyToday}
               title={t('emptyTitle')}
               description={t('emptyDescription')}
             />

@@ -16,6 +16,7 @@ import { type Href, useRouter } from 'expo-router';
 import { type ReactNode, useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Pressable, View } from 'react-native';
+import { illustrations } from '@/assets/illustrations';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { ErrorState } from '@/src/components/custom/ErrorState';
 import { Button } from '@/src/components/ui/button';
@@ -231,6 +232,7 @@ export function ScheduleShiftsScreen({
         <View testID="schedule-shifts-empty" style={{ flex: 1 }}>
           <EmptyState
             variant="default"
+            image={illustrations.emptySchedule}
             title={t('shifts.empty')}
             description=""
           />

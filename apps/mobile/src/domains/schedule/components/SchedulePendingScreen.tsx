@@ -37,6 +37,7 @@ import { type Href, useRouter } from 'expo-router';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Pressable, ScrollView, View } from 'react-native';
+import { illustrations } from '@/assets/illustrations';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { useTabBarScrollPadding } from '@/lib/layout/useTabBarScrollPadding';
 import {
@@ -215,6 +216,7 @@ export function SchedulePendingScreen() {
         <View testID="schedule-pending-empty" className="mt-6 gap-4">
           <EmptyState
             variant="inline"
+            image={illustrations.emptyPending}
             title={t('pending.emptyTitle')}
             description={t('pending.emptyBody')}
           />

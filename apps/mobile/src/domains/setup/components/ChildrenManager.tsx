@@ -10,6 +10,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
+import { illustrations } from '@/assets/illustrations';
 import { Button } from '@/src/components/ui/button';
 import { EmptyState } from '@/src/components/ui/empty-state';
 import { Text } from '@/src/components/ui/text';
@@ -104,6 +105,7 @@ export function ChildrenManager({ householdId }: ChildrenManagerProps) {
       {children.isSuccess && children.data.length === 0 ? (
         <EmptyState
           variant="inline"
+          image={illustrations.emptyChildren}
           title={t('children.emptyTitle')}
           description={t('children.emptyDescription')}
         />

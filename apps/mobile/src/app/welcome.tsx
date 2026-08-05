@@ -1,8 +1,9 @@
 import * as AppleAuthentication from 'expo-apple-authentication';
 import { type Href, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
-import { Platform, View } from 'react-native';
+import { Image, Platform, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { illustrations } from '@/assets/illustrations';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { Button } from '@/src/components/ui/button';
 import { InlineError } from '@/src/components/ui/inline-error';
@@ -39,6 +40,18 @@ export default function Welcome() {
         className="gap-6"
       >
         <View className="flex-1 justify-center gap-3">
+          <Image
+            testID="welcome-hero"
+            source={illustrations.welcomeHero}
+            accessibilityElementsHidden
+            style={{
+              width: 280,
+              height: 280,
+              alignSelf: 'center',
+              marginBottom: 8,
+            }}
+            resizeMode="contain"
+          />
           <Body
             testID="welcome-brand"
             weight="semibold"

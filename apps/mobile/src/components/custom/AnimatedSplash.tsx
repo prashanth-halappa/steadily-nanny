@@ -12,11 +12,13 @@
  * Reanimated Animated.View (className would overflow its parent).
  */
 import { useEffect } from 'react';
-import { StyleSheet } from 'react-native';
+import { Image, StyleSheet } from 'react-native';
 import Animated, { FadeOut } from 'react-native-reanimated';
 import { useThemeColors } from '@/lib/design-tokens/useThemeColors';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 import { useAuthStore } from '@/src/store/auth';
+
+const splashLogo = require('@/assets/splash.png');
 
 // Module-level flag survives expo-router remounts so the splash doesn't replay.
 let hasCompletedSplash = false;
@@ -67,8 +69,22 @@ export function AnimatedSplash({ onFinish }: { onFinish: () => void }) {
       testID="animated-splash"
       exiting={FadeOut.duration(200)}
       pointerEvents="none"
-      style={[StyleSheet.absoluteFill, { backgroundColor: background }]}
-    />
+      style={[
+        StyleSheet.absoluteFill,
+        {
+          backgroundColor: background,
+          alignItems: 'center',
+          justifyContent: 'center',
+        },
+      ]}
+    >
+      <Image
+        source={splashLogo}
+        accessibilityElementsHidden
+        style={{ width: 200, height: 200 }}
+        resizeMode="contain"
+      />
+    </Animated.View>
   );
 }
 

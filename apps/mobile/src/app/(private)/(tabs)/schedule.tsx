@@ -10,6 +10,7 @@
 import { type Href, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { Pressable, View } from 'react-native';
+import { illustrations } from '@/assets/illustrations';
 import { ErrorState } from '@/src/components/custom/ErrorState';
 import { EmptyState } from '@/src/components/ui/empty-state';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
@@ -47,6 +48,7 @@ export default function ScheduleRoute() {
       <View testID="schedule-tab-empty" style={{ flex: 1 }}>
         <EmptyState
           variant="inline"
+          image={illustrations.emptySchedule}
           title={t('tab.emptyTitle')}
           description={t('tab.emptyDescription')}
         />

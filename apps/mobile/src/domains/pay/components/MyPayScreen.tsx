@@ -19,6 +19,7 @@ import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ScrollView, View } from 'react-native';
+import { illustrations } from '@/assets/illustrations';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { ErrorState } from '@/src/components/custom/ErrorState';
 import { Button } from '@/src/components/ui/button';
@@ -75,6 +76,7 @@ function MyPayHouseholdCard({
           <View testID={`my-pay-empty-${household.id}`}>
             <EmptyState
               variant="inline"
+              image={illustrations.emptyHours}
               title={t('myPay.emptyTitle')}
               description={t('myPay.emptyDescription')}
             />

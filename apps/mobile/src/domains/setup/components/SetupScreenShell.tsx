@@ -16,7 +16,13 @@
  * chrome component.
  */
 import type { ReactNode } from 'react';
-import { Pressable, ScrollView, View } from 'react-native';
+import {
+  Image,
+  type ImageSourcePropType,
+  Pressable,
+  ScrollView,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { Button } from '@/src/components/ui/button';
@@ -31,6 +37,8 @@ interface SetupScreenShellProps {
   progress?: number;
   title: string;
   subtitle?: string;
+  /** Optional hero illustration above the title (onboarding). */
+  heroImage?: ImageSourcePropType;
   children?: ReactNode;
   ctaLabel: string;
   onCta: () => void;
@@ -48,6 +56,7 @@ export function SetupScreenShell({
   progress,
   title,
   subtitle,
+  heroImage,
   children,
   ctaLabel,
   onCta,
@@ -98,6 +107,19 @@ export function SetupScreenShell({
         }}
       >
         <View>
+          {heroImage ? (
+            <Image
+              source={heroImage}
+              accessibilityElementsHidden
+              style={{
+                width: 200,
+                height: 200,
+                alignSelf: 'center',
+                marginBottom: 16,
+              }}
+              resizeMode="contain"
+            />
+          ) : null}
           <H1>{title}</H1>
           {subtitle ? (
             <Body className="mt-2 text-muted-foreground">{subtitle}</Body>
