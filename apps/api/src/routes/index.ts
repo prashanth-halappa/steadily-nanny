@@ -19,7 +19,11 @@ import { householdApprovalRoutes } from '../domains/household';
 import householdRoutes from '../domains/household/routes/householdRoutes';
 import { meRoutes } from '../domains/me';
 import notificationsRoutes from '../domains/notification/routes/notificationsRoutes';
-import { payArrangementRoutes } from '../domains/pay';
+import {
+  expenseIdRoutes,
+  expenseRoutes,
+  payArrangementRoutes,
+} from '../domains/pay';
 import {
   householdSchedulePatternRoutes,
   schedulePatternRoutes,
@@ -94,6 +98,17 @@ router.use(
   '/households/:householdId/carers/:carerId/pay-arrangements',
   payArrangementRoutes
 );
+
+// Expenses and mileage (Phase 4). Nested-then-flat, the same split as shifts
+// and time entries: the household scopes listing and creation, then a flat
+// id-scoped router for the carer editing/withdrawing her own pending row and
+// for a parent reviewing it. Deliberately `authWithValidation` throughout
+// rather than `authWithOwnership` — an expense id has two different "may
+// write" meanings depending on the route (owning carer vs. parent of the
+// household), which the generic ownership cache cannot express, so every
+// gate lives in the service. See docs/11-MONEY.md §6, §8.
+router.use('/households/:householdId/expenses', expenseRoutes);
+router.use('/expenses', expenseIdRoutes);
 
 // Daily handoff notes (design flow 1i): chip-based parent<->nanny notes for
 // a household's local date, plus the evening recap. Same nested-then-flat
