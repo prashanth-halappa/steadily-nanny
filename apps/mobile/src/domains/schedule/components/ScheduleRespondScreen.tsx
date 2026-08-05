@@ -11,9 +11,11 @@
  * clash check itself is delegated to the pure, tested `isOutsideAvailability`
  * helper in `../utils`, never re-derived inline.
  *
- * Decline goes through a confirm step via the shared `AlertDialog` family
- * (never a bare RN Modal component — GOLDEN-FIXES.md #1). Accept is a
- * single tap, no confirm dialog needed.
+ * Decline goes through a confirm sheet via `BottomSheetBase` (hosts an
+ * optional message Textarea — AlertDialog has no keyboard avoidance and
+ * buries confirm under the keyboard on device; same migration as
+ * ReopenWeekDialog). Accept is a single tap, no confirm needed. GOLDEN:
+ * never a bare RN Modal (GOLDEN-FIXES.md #1).
  *
  * DOUBLE-TAP / STUCK-AFTER-ACCEPT: a successful respond re-fetches the
  * pattern (via the mutation's own cache invalidation) but this screen's own
@@ -40,24 +42,14 @@ import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ScrollView, View } from 'react-native';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from '@/src/components/ui/alert-dialog';
-import { Button, buttonVariants } from '@/src/components/ui/button';
+import { BottomSheetBase } from '@/src/components/custom/BottomSheetBase';
+import { Button } from '@/src/components/ui/button';
 import { ChildChip } from '@/src/components/ui/child-chip';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { StatusPill } from '@/src/components/ui/status-pill';
 import { Text } from '@/src/components/ui/text';
 import { Textarea } from '@/src/components/ui/textarea';
-import { Body, H1 } from '@/src/components/ui/typography';
+import { Body, H1, H4 } from '@/src/components/ui/typography';
 import { useRespondToSchedulePattern } from '@/src/hooks/mutations/useRespondToSchedulePattern';
 import { useAvailability } from '@/src/hooks/queries/useAvailability';
 import { useChildren } from '@/src/hooks/queries/useChildren';
@@ -92,6 +84,7 @@ export function ScheduleRespondScreen({
 
   const hasRespondedRef = useRef(false);
   const [hasResponded, setHasResponded] = useState(false);
+  const [declineOpen, setDeclineOpen] = useState(false);
   const [declineMessage, setDeclineMessage] = useState('');
 
   // `AvailabilityRow` mirrors the shared `CarerAvailability` wire type
@@ -244,22 +237,26 @@ export function ScheduleRespondScreen({
           <Text>{t('respond.accept')}</Text>
         </Button>
 
-        <AlertDialog>
-          <AlertDialogTrigger
-            testID="schedule-respond-decline"
-            className="items-center justify-center py-2"
-          >
-            <Body className="text-destructive">{t('respond.decline')}</Body>
-          </AlertDialogTrigger>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>
-                {t('respond.declineConfirmTitle')}
-              </AlertDialogTitle>
-              <AlertDialogDescription>
-                {t('respond.declineConfirmBody')}
-              </AlertDialogDescription>
-            </AlertDialogHeader>
+        <Button
+          testID="schedule-respond-decline"
+          variant="ghost"
+          disabled={respond.isPending || hasResponded}
+          onPress={() => setDeclineOpen(true)}
+        >
+          <Text className="text-destructive">{t('respond.decline')}</Text>
+        </Button>
+        <BottomSheetBase
+          sheetId="schedule-respond-decline"
+          visible={declineOpen}
+          onDismiss={() => setDeclineOpen(false)}
+          fitContent
+          showCloseButton
+        >
+          <View className="gap-4 px-6 pb-4">
+            <H4>{t('respond.declineConfirmTitle')}</H4>
+            <Body className="text-muted-foreground">
+              {t('respond.declineConfirmBody')}
+            </Body>
             <Textarea
               testID="schedule-respond-decline-message"
               accessibilityLabel={t('respond.declineMessageLabel')}
@@ -268,23 +265,21 @@ export function ScheduleRespondScreen({
               placeholder={t('respond.declineMessagePlaceholder')}
               className="min-h-[80px]"
             />
-            <AlertDialogFooter>
-              <AlertDialogCancel>
+            <View className="gap-2">
+              <Button variant="outline" onPress={() => setDeclineOpen(false)}>
                 <Text>{t('respond.declineConfirmCancel')}</Text>
-              </AlertDialogCancel>
-              <AlertDialogAction
+              </Button>
+              <Button
                 testID="schedule-respond-decline-confirm"
-                className={buttonVariants({ variant: 'destructive' })}
+                variant="destructive"
                 disabled={respond.isPending || hasResponded}
                 onPress={() => void handleDecline()}
               >
-                <Text className="text-destructive-foreground">
-                  {t('respond.declineConfirmConfirm')}
-                </Text>
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+                <Text>{t('respond.declineConfirmConfirm')}</Text>
+              </Button>
+            </View>
+          </View>
+        </BottomSheetBase>
       </View>
     </View>
   );

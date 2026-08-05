@@ -13,18 +13,8 @@ import { SCREEN_CONTENT_STYLE, spacing } from '@/lib/design-tokens';
 import { Icon } from '@/lib/icons/iconWithClassName';
 import { useTabBarScrollPadding } from '@/lib/layout/useTabBarScrollPadding';
 import { cn } from '@/lib/utils';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from '@/src/components/ui/alert-dialog';
-import { Button, buttonVariants } from '@/src/components/ui/button';
+import { BottomSheetBase } from '@/src/components/custom/BottomSheetBase';
+import { Button } from '@/src/components/ui/button';
 import { Input } from '@/src/components/ui/input';
 import { Text } from '@/src/components/ui/text';
 import { Body, H1, H4, Small } from '@/src/components/ui/typography';
@@ -128,6 +118,7 @@ export default function SettingsScreen() {
   const profile = useUserProfile();
   const savedName = profile.data?.name ?? '';
 
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteConfirmEmail, setDeleteConfirmEmail] = useState('');
   const accountEmail = user?.email ?? '';
   const deleteUnlocked =
@@ -359,71 +350,73 @@ export default function SettingsScreen() {
         <Text>{t('settings:signOut')}</Text>
       </Button>
 
-      <AlertDialog>
-        <AlertDialogTrigger asChild>
-          <Button
-            testID="settings-delete-account"
-            variant="ghost"
-            className="mt-4"
-          >
-            <Text className="text-destructive">
-              {t('settings:deleteAccount')}
-            </Text>
-          </Button>
-        </AlertDialogTrigger>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {t('settings:deleteAccountConfirmTitle')}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {t('settings:deleteAccountConfirmBody')}
-            </AlertDialogDescription>
-            <View className="mt-2 gap-1">
+      {/* Delete-account confirm hosts a required email Input — must use
+          BottomSheetBase (keyboard-aware), never AlertDialog. AlertDialog
+          has no KeyboardAvoidingView/ScrollView; on device the keyboard
+          covers Cancel + confirm and the flow is uncompletable (App Store
+          Guideline 5.1.1(v)). Same migration as ReopenWeekDialog. */}
+      <Button
+        testID="settings-delete-account"
+        variant="ghost"
+        className="mt-4"
+        onPress={() => setDeleteOpen(true)}
+      >
+        <Text className="text-destructive">{t('settings:deleteAccount')}</Text>
+      </Button>
+      <BottomSheetBase
+        sheetId="settings-delete-account"
+        visible={deleteOpen}
+        onDismiss={() => setDeleteOpen(false)}
+        fitContent
+        showCloseButton
+      >
+        <View className="gap-4 px-6 pb-4">
+          <H4>{t('settings:deleteAccountConfirmTitle')}</H4>
+          <Body className="text-muted-foreground">
+            {t('settings:deleteAccountConfirmBody')}
+          </Body>
+          <View className="gap-1">
+            <Body className="text-sm text-muted-foreground">
+              • {t('settings:deleteAccountConsequenceAccount')}
+            </Body>
+            <Body className="text-sm text-muted-foreground">
+              • {t('settings:deleteAccountConsequenceKeeps')}
+            </Body>
+          </View>
+          {accountEmail ? (
+            <View className="gap-2">
               <Body className="text-sm text-muted-foreground">
-                • {t('settings:deleteAccountConsequenceAccount')}
+                {t('settings:deleteAccountTypeEmail')}
               </Body>
-              <Body className="text-sm text-muted-foreground">
-                • {t('settings:deleteAccountConsequenceKeeps')}
-              </Body>
+              <Input
+                testID="settings-delete-confirm-email"
+                accessibilityLabel={t('settings:deleteAccountTypeEmail')}
+                autoCapitalize="none"
+                keyboardType="email-address"
+                value={deleteConfirmEmail}
+                onChangeText={setDeleteConfirmEmail}
+                placeholder={accountEmail}
+              />
             </View>
-            {accountEmail ? (
-              <View className="mt-3 gap-2">
-                <Body className="text-sm text-muted-foreground">
-                  {t('settings:deleteAccountTypeEmail')}
-                </Body>
-                <Input
-                  testID="settings-delete-confirm-email"
-                  accessibilityLabel={t('settings:deleteAccountTypeEmail')}
-                  autoCapitalize="none"
-                  keyboardType="email-address"
-                  value={deleteConfirmEmail}
-                  onChangeText={setDeleteConfirmEmail}
-                  placeholder={accountEmail}
-                />
-              </View>
-            ) : null}
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>
+          ) : null}
+          <View className="gap-2">
+            <Button variant="outline" onPress={() => setDeleteOpen(false)}>
               <Text>{t('settings:deleteAccountCancel')}</Text>
-            </AlertDialogCancel>
-            <AlertDialogAction
+            </Button>
+            <Button
               testID="settings-delete-account-confirm"
-              className={buttonVariants({ variant: 'destructive' })}
+              variant="destructive"
               disabled={
                 isDeletingAccount ||
                 (accountEmail.length > 0 && !deleteUnlocked)
               }
               onPress={() => void confirmDeleteAccount()}
             >
-              <Text className="text-destructive-foreground">
-                {t('settings:deleteAccountConfirm')}
-              </Text>
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+              <Text>{t('settings:deleteAccountConfirm')}</Text>
+            </Button>
+          </View>
+        </View>
+      </BottomSheetBase>
 
       {/* Dev-only entry point to the verification cockpit. */}
       {__DEV__ ? (

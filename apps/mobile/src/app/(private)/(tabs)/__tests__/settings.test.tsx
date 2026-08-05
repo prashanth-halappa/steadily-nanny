@@ -2,9 +2,11 @@
  * @module app/(private)/(tabs)/__tests__/settings.test
  *
  * Source-inspection test for the settings route (Pattern A, docs/09-TESTING.md
- * §5) — settings.tsx pulls in native-heavy deps (AlertDialog primitives), so we
- * assert architectural markers instead of rendering. Covers the delete-account
- * row required by REVIEW-CHECKLIST.md §8 (App Store Guideline 5.1.1(v)).
+ * §5) — settings.tsx pulls in native-heavy deps (BottomSheetBase / sheets), so
+ * we assert architectural markers instead of rendering. Covers the
+ * delete-account row required by REVIEW-CHECKLIST.md §8 (App Store Guideline
+ * 5.1.1(v)). Keyboard occlusion cannot be simulated under bun:test, so the
+ * structural contract is asserted instead (same as ReopenWeekDialog.test.tsx).
  */
 
 import { beforeAll, describe, expect, it } from 'bun:test';
@@ -26,8 +28,17 @@ describe('SettingsScreen', () => {
     expect(screenSource).toContain('useDeleteAccount');
   });
 
-  it('confirms via AlertDialog, never a bare RN Modal (GOLDEN-FIX #1)', () => {
-    expect(screenSource).toContain('AlertDialog');
+  it('uses BottomSheetBase (keyboard-aware), never AlertDialog', () => {
+    // Render tests cannot reproduce software-keyboard occlusion of the
+    // confirm button. Assert the structural fix that ReopenWeekDialog /
+    // QueryNoteSheet already use: BottomSheetBase owns KeyboardAvoidingView
+    // + ScrollView. Doc comments may name AlertDialog as the rejected
+    // precedent — ban the import, not the substring.
+    expect(screenSource).toContain('BottomSheetBase');
+    expect(screenSource).not.toMatch(
+      /from\s+'@\/src\/components\/ui\/alert-dialog'/
+    );
+    expect(screenSource).toContain('fitContent');
     expect(screenSource).not.toMatch(/<Modal\b/);
   });
 

@@ -23,23 +23,23 @@ import { fireEvent, waitFor } from '@testing-library/react-native';
 import { useAuthStore } from '@/src/store/auth';
 import { renderWithProviders } from '@/src/test-utils';
 
-// Same alert-dialog gap as ManageHouseholdScreen.test.tsx — settings.tsx's
-// delete-account flow uses the real `AlertDialog`, whose `.mjs` distribution
-// isn't pre-compiled JSX and crashes bun:test outright. This test never
-// exercises that flow (it's about the language chips), so a minimal
-// pass-through stand-in is enough — no open/close state machinery needed.
-mock.module('@rn-primitives/alert-dialog', () => ({
-  Root: ({ children }: { children: unknown }) => children,
-  Trigger: ({ children }: { children: unknown }) => children,
-  Portal: ({ children }: { children: unknown }) => children,
-  Overlay: () => null,
-  Content: ({ children }: { children: unknown }) => children,
-  Title: ({ children }: { children: unknown }) => children,
-  Description: ({ children }: { children: unknown }) => children,
-  Cancel: ({ children }: { children: unknown }) => children,
-  Action: ({ children }: { children: unknown }) => children,
-  useRootContext: () => ({ open: false }),
-}));
+// Delete-account confirm is a BottomSheetBase (keyboard-aware) — same mock
+// shape as ReopenWeekDialog.test.tsx. This test never exercises that flow
+// (it's about the language chips); a visible=false stub is enough.
+mock.module('@/src/components/custom/BottomSheetBase', () => {
+  const R = require('react');
+  return {
+    BottomSheetBase: ({
+      visible,
+      children,
+      testID,
+    }: {
+      visible: boolean;
+      children: React.ReactNode;
+      testID?: string;
+    }) => (visible ? R.createElement('View', { testID }, children) : null),
+  };
+});
 
 const PARENT_USER_ID = 'parent-user-1';
 
@@ -91,9 +91,8 @@ mock.module('@/src/api/endpoints/user', () => ({
   },
 }));
 
-// Declared, not statically imported — see ManageHouseholdScreen.test.tsx for
-// why (a static import resolves the alert-dialog import chain before the
-// mocks above ever run).
+// Declared, not statically imported — mock.module must register before the
+// subject (and its BottomSheetBase import) is resolved.
 let SettingsScreen: typeof import('../settings').default;
 
 beforeAll(async () => {

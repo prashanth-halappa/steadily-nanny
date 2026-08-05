@@ -2,12 +2,10 @@
  * @module domains/schedule/__tests__/ScheduleRespondScreen.test
  *
  * Source-inspection tests (docs/09-TESTING.md §5 Pattern A) — NOT a render
- * test. ScheduleRespondScreen uses `AlertDialog`
- * (`@rn-primitives/alert-dialog`), which is not mocked in
- * `apps/mobile/bun.setup.ts`'s global preload — the exact precedent is
- * `apps/mobile/src/app/(private)/(tabs)/settings.tsx`, also tested via
- * source-inspection only (see `settings.test.tsx`). We assert architectural
- * markers instead of rendering.
+ * test. Decline confirm hosts a Textarea, so it must live in BottomSheetBase
+ * (keyboard-aware), not AlertDialog — same structural contract as
+ * ReopenWeekDialog / settings delete-account. Keyboard occlusion cannot be
+ * simulated under bun:test, so we assert architectural markers instead.
  */
 import { beforeAll, describe, expect, it } from 'bun:test';
 import { join } from 'node:path';
@@ -87,8 +85,15 @@ describe('ScheduleRespondScreen source', () => {
     expect(source).toContain('testID="schedule-respond-decline-confirm"');
   });
 
-  it('confirms decline via AlertDialog, never a bare RN Modal (GOLDEN-FIX #1)', () => {
-    expect(source).toContain('AlertDialog');
+  it('uses BottomSheetBase (keyboard-aware), never AlertDialog', () => {
+    // Render tests cannot reproduce software-keyboard occlusion of the
+    // confirm button. Assert the structural fix that ReopenWeekDialog /
+    // QueryNoteSheet already use: BottomSheetBase owns KeyboardAvoidingView
+    // + ScrollView. Doc comments may name AlertDialog as the rejected
+    // precedent — ban the import, not the substring.
+    expect(source).toContain('BottomSheetBase');
+    expect(source).not.toMatch(/from\s+'@\/src\/components\/ui\/alert-dialog'/);
+    expect(source).toContain('fitContent');
     expect(source).not.toMatch(/<Modal\b/);
   });
 
@@ -135,7 +140,7 @@ describe('ScheduleRespondScreen source', () => {
       /disabled={respond\.isPending \|\| hasResponded}/
     );
     const declineConfirmBlockMatch = source.match(
-      /testID="schedule-respond-decline-confirm"[\s\S]{0,500}?(?:<\/AlertDialogAction>|\/>)/
+      /testID="schedule-respond-decline-confirm"[\s\S]{0,500}?(?:<\/Button>|\/>)/
     );
     expect(declineConfirmBlockMatch?.[0]).toMatch(
       /disabled={respond\.isPending \|\| hasResponded}/
