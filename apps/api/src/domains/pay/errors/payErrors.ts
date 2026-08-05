@@ -229,12 +229,16 @@ export class PtoTimeOffNotConfirmedError extends ValidationError {
 }
 
 /**
- * 409 — translated from the `pto_ledger_one_usage_per_time_off_idx` partial
- * unique index (23505, 043's header): this exact time off is ALREADY marked
- * paid in this household. Two concurrent "Mark as paid" taps race the
- * database, not the service's find-first check, into being the source of
- * truth under a race — this is that race surfaced as a typed error instead
- * of a raw 500.
+ * 409 — translated from the `pto_ledger_one_usage_per_time_off_day_idx`
+ * partial unique index (23505; 043's header as amended by migration 045):
+ * this DAY of this time off is ALREADY marked paid in this household. Two
+ * concurrent "Mark as paid" taps race the database, not the service's
+ * find-first check, into being the source of truth under a race — this is
+ * that race surfaced as a typed error instead of a raw 500.
+ *
+ * A SEQUENTIAL retry never reaches this: by then the first attempt's rows
+ * are visible and `markTimeOffPaid` takes its delta path instead (review
+ * BLOCKER 3). Only genuinely simultaneous first marks collide.
  */
 export class PtoAlreadyMarkedPaidError extends ConflictError {
   constructor(householdId: string, timeOffId: string) {

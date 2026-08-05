@@ -222,10 +222,25 @@ Three rules follow, and all three are load-bearing:
   different number of hours appends an `adjustment` for the difference
   (8h → 6h writes `+120`); re-submitting the same number writes nothing and
   succeeds; submitting `0` fully reverses. Nothing is ever updated or
-  deleted, and there is no second `usage` row — the partial unique index
-  `pto_ledger_one_usage_per_time_off_idx` stands, and the delta path is what
-  makes a correction possible under it. This is the ONLY way to fix a
-  mis-marked figure; do not add an update path.
+  deleted, and no second `usage` row is written for a day already marked —
+  the partial unique index (per `(household, time_off, day)` since migration
+  045) stands, and the delta path is what makes a correction possible under
+  it. This is the ONLY way to fix a mis-marked figure; do not add an update
+  path.
+- **A marking is one row PER COVERED DAY, and the days sum to the total
+  exactly.** A multi-day time off used to record its whole total on the start
+  date, so a fortnight marked 80h paid priced 80h in week one and nothing in
+  week two — and approving week one froze it (§3). The days counted are every
+  **calendar** day the time off covers, not the carer's scheduled days:
+  holidays are booked months ahead of the materialisation horizon, so a
+  schedule-based split would silently fall back to calendar days exactly when
+  it matters, and `carer_time_off` is cross-household so the same marking
+  would take a different shape per family. **Known limitation, stated not
+  hidden:** a holiday spanning a weekend attributes minutes to days she would
+  not have worked; the total, the balance and each week's sum stay exact, and
+  a parent can correct the shape. Splitting is `allocateMinutes`, the one
+  place minutes are divided — largest-remainder, so no minute is ever lost or
+  invented.
 - **Reversal is netted, so it is idempotent.** Cancelling a time off writes
   the reversal of what is *still outstanding*, so a retry (the reconcile is
   fire-and-forget, so retries are guaranteed) writes nothing and a
@@ -238,7 +253,21 @@ Three rules follow, and all three are load-bearing:
   the engine takes priced facts, and `kind`/sign/`time_off_id` are ledger
   storage. Feeding it raw `usage` rows made a day that was marked paid,
   cancelled, and then actually worked price BOTH a `pto` and a `regular`
-  line: double pay, frozen at approval.
+  line: double pay, frozen at approval. The netting is per `time_off_id` AND
+  per date — a multi-day marking spans weeks, so collapsing a group onto one
+  date would re-create the misattribution above.
+
+**System-written `note` values are stable machine keys, never English**
+(`PTO_LEDGER_NOTE_KEYS` in `pto.schema.ts`). `pto_ledger` is append-only and
+permanent, so prose stored today can never be re-keyed: localising the ledger
+history later would orphan every row already written. Wave 5's handoff chips
+made exactly this mistake with English display labels in `handoff_notes.chips`
+and the fix was stable snake_case keys — the same shape is used here, down to
+the "render an unknown value verbatim" fallback. No parameters are stored,
+because the row already carries them (the grant's year is its
+`effective_date`; a correction's size is its own `minutes`). A note the
+**parent typed** is user content and is stored verbatim — it is simply an
+unknown key to the renderer.
 
 **Only the household-local CURRENT year is lazily granted** (Phase 3/4
 review, finding 4). Reading any other year — a nanny booking January makes

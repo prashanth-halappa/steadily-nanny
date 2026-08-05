@@ -34,6 +34,48 @@ export const PTO_LEDGER_KINDS = {
 export type PtoLedgerKind =
   (typeof PTO_LEDGER_KINDS)[keyof typeof PTO_LEDGER_KINDS];
 
+/**
+ * `pto_ledger.note` values the SERVER writes — stable machine keys, never
+ * English prose (Phase 3/4 review, finding 16a).
+ *
+ * WHY KEYS. The ledger is append-only and permanent: a row written today is
+ * still there in five years and can never be re-written. Store the sentence
+ * "2026 annual PTO grant" and you have stored English in data — the day the
+ * ledger history is localised, every row already written is orphaned, because
+ * there is no path back from prose to a translatable key. This repo has
+ * already paid for exactly this once: Wave 5's handoff chips stored English
+ * display labels as row values (`handoff_notes.chips`), and the fix was
+ * stable snake_case keys for precisely this reason (see PROJECT-STATUS.md's
+ * Wave 5 notes and `domains/today/constants/handoffChips.ts`). The shape here
+ * is that one, deliberately.
+ *
+ * NO PARAMETERS ARE STORED, because none are needed: the row itself already
+ * carries everything a renderer wants. The grant's year is
+ * `effective_date`'s year; a correction's size is its own `minutes`; the
+ * direction is that value's sign. A key plus the row is a complete sentence
+ * in any language.
+ *
+ * RENDERING (client side, not this package's job): look the key up in the
+ * relevant i18n namespace and fall back to the raw value, the way
+ * `handoffChipLabelKey` callers pass `{ defaultValue: chip }`. That fallback
+ * is also what keeps user content readable: a note a PARENT typed on a
+ * mark-paid is stored VERBATIM — it is user content, not system copy, and
+ * the server never replaces it with a key — so it is simply an unknown
+ * "key" and renders as itself.
+ */
+export const PTO_LEDGER_NOTE_KEYS = {
+  /** The lazy annual grant (`ptoQueryService.ensureYearGranted`). */
+  ANNUAL_GRANT: 'annual_grant',
+  /** A parent changed the minutes already marked paid for a time off. */
+  MARKED_PAID_ADJUSTED: 'marked_paid_adjusted',
+  /** The carer cancelled a time off that had been marked paid. */
+  CANCELLED_TIME_OFF_REVERSED: 'cancelled_time_off_reversed',
+  /** The cancel landed WHILE the marking was being written (the SERIOUS 8 race). */
+  CANCELLED_DURING_MARKING_REVERSED: 'cancelled_during_marking_reversed',
+} as const;
+export type PtoLedgerNoteKey =
+  (typeof PTO_LEDGER_NOTE_KEYS)[keyof typeof PTO_LEDGER_NOTE_KEYS];
+
 // =============================================================================
 // pto_ledger
 // =============================================================================
@@ -70,6 +112,12 @@ export const PtoLedgerEntrySchema = z.object({
   // Snapshotted at insert time from the carer's profile — never derived on
   // read, so the name survives the profile being deleted.
   carer_display_name: z.string(),
+  // EITHER one of `PTO_LEDGER_NOTE_KEYS` (a system-written row) OR a note a
+  // parent typed herself (user content, stored verbatim). Left as a plain
+  // string rather than a union: the ledger is append-only, so a row written
+  // by an older or newer server must still parse — narrowing this to the
+  // current key set would make yesterday's rows unreadable the day a key is
+  // added. Renderers translate a known key and show anything else as-is.
   note: z.string().nullable(),
   created_by: z.uuid().nullable(),
   created_at: z.iso.datetime({ offset: true }),

@@ -1,5 +1,8 @@
 import { describe, expect, it, mock } from 'bun:test';
-import { PTO_LEDGER_KINDS } from '@steadily-nanny/shared-types/schemas/pto.schema';
+import {
+  PTO_LEDGER_KINDS,
+  PTO_LEDGER_NOTE_KEYS,
+} from '@steadily-nanny/shared-types/schemas/pto.schema';
 import {
   PtoAccrualGrantRaceError,
   PtoNotFoundError,
@@ -203,8 +206,25 @@ describe('PtoQueryService.balance — the lazy annual grant', () => {
       effective_date: '2026-01-01',
       time_off_id: null,
       carer_display_name: 'Nia Rowe',
-      note: expect.any(String),
+      note: PTO_LEDGER_NOTE_KEYS.ANNUAL_GRANT,
       created_by: null,
+    });
+  });
+
+  // Phase 3/4 review, finding 16a. The grant note used to be the English
+  // prose "2026 annual PTO grant". `pto_ledger` is append-only and
+  // permanent, so prose written today can never be re-keyed later —
+  // localising the ledger history would orphan every row already written.
+  // Wave 5's handoff chips paid for exactly this (PROJECT-STATUS.md): the
+  // fix there was stable snake_case keys, and it is the fix here.
+  it('writes a stable machine KEY as the note, never English prose', () => {
+    const ptoRepo = makePtoRepo();
+    const svc = service({ 'parent-1': PARENT }, ptoRepo);
+    return svc.balance('parent-1', 'h1', 'carer-1', 2026, NOW).then(() => {
+      const note = ptoRepo.create.mock.calls[0][0].note as string;
+      expect(note).toBe('annual_grant');
+      expect(note).not.toMatch(/\s/); // no prose, no spaces
+      expect(note).not.toContain('2026'); // the year is already effective_date
     });
   });
 

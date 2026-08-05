@@ -1,5 +1,6 @@
 import { describe, expect, it, mock } from 'bun:test';
 import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types/schemas/notification.schema';
+import { PTO_LEDGER_NOTE_KEYS } from '@steadily-nanny/shared-types/schemas/pto.schema';
 import { NotAHouseholdParentError } from '../../../../../src/domains/household/errors/householdErrors';
 import {
   PtoAlreadyMarkedPaidError,
@@ -23,6 +24,12 @@ const createdUsageRow = {
   created_at: '2026-08-04T09:00:00.000Z',
 };
 
+/**
+ * A SINGLE-day time off — the common case, and the default here so the rest
+ * of the suite keeps asserting one written row. `ends_at` is EXCLUSIVE (local
+ * midnight of the day after the last covered day, the app's all-day
+ * convention), so this covers only 2026-08-24.
+ */
 function timeOff(
   overrides: Record<string, unknown> = {}
 ): Record<string, unknown> {
@@ -30,7 +37,7 @@ function timeOff(
     id: 'to-1',
     user_id: 'carer-1',
     starts_at: '2026-08-24T00:00:00.000Z',
-    ends_at: '2026-08-27T00:00:00.000Z',
+    ends_at: '2026-08-25T00:00:00.000Z',
     all_day: true,
     message: null,
     status: 'confirmed',
@@ -40,6 +47,24 @@ function timeOff(
     updated_at: '2026-08-01T00:00:00.000Z',
     ...overrides,
   };
+}
+
+/**
+ * A time off spanning `days` covered days from Mon 2026-08-24 — the shape
+ * Phase 3/4 review finding 15b is about. A 14-day span crosses a week
+ * boundary (2026-08-24 is a Monday, so days 8-14 fall in the next timesheet
+ * week), which is exactly where the money used to be misattributed.
+ */
+function multiDayTimeOff(
+  days: number,
+  overrides: Record<string, unknown> = {}
+): Record<string, unknown> {
+  const endDay = 24 + days; // exclusive
+  return timeOff({
+    starts_at: '2026-08-24T00:00:00.000Z',
+    ends_at: `2026-${endDay > 31 ? '09' : '08'}-${String(endDay > 31 ? endDay - 31 : endDay).padStart(2, '0')}T00:00:00.000Z`,
+    ...overrides,
+  });
 }
 
 function member(
@@ -95,7 +120,9 @@ function makePtoRepo(overrides: Record<string, unknown> = {}): any {
 }
 
 /** A `usage` ledger row as stored — minutes NEGATIVE (043's sign convention). */
-function usageRow(overrides: Record<string, unknown> = {}) {
+function usageRow(
+  overrides: Record<string, unknown> = {}
+): Record<string, unknown> {
   return {
     id: 'ptl-1',
     household_id: 'h1',
@@ -113,7 +140,9 @@ function usageRow(overrides: Record<string, unknown> = {}) {
 }
 
 /** An `adjustment` ledger row — a correction against the same time off. */
-function adjustmentRow(overrides: Record<string, unknown> = {}) {
+function adjustmentRow(
+  overrides: Record<string, unknown> = {}
+): Record<string, unknown> {
   return {
     ...usageRow(),
     id: 'ptl-adj',
@@ -812,5 +841,504 @@ describe('PtoCommandService.reconcileCancelledTimeOff', () => {
       (call: unknown[]) => (call[0] as Record<string, unknown>).household_id
     );
     expect(attempted.sort()).toEqual(['h1', 'h2', 'h3']);
+  });
+});
+
+// =============================================================================
+// Multi-day time off spreads across the days it covers (Phase 3/4 review,
+// finding 15b).
+//
+// One usage row on the START date put a fortnight's 80h into week one: week
+// one showed an 80h PTO line and an inflated gross, week two showed nothing,
+// and approving week one froze the wrong split. The marking is now one row
+// per covered day.
+// =============================================================================
+
+describe('PtoCommandService.markTimeOffPaid — spreading a multi-day marking', () => {
+  it('a SINGLE-day time off still writes exactly one row (no change to the common case)', async () => {
+    const ptoRepo = makePtoRepo();
+    const svc = service({ ptoRepo, timeOffRepo: makeTimeOffRepo(timeOff()) });
+    await svc.markTimeOffPaid('parent-1', 'h1', request({ minutes: 480 }));
+
+    expect(ptoRepo.create).toHaveBeenCalledTimes(1);
+    expect(ptoRepo.create.mock.calls[0][0]).toMatchObject({
+      kind: 'usage',
+      minutes: -480,
+      effective_date: '2026-08-24',
+    });
+  });
+
+  it('a three-day time off writes one usage row PER DAY', async () => {
+    const ptoRepo = makePtoRepo();
+    const svc = service({
+      ptoRepo,
+      timeOffRepo: makeTimeOffRepo(multiDayTimeOff(3)),
+    });
+    await svc.markTimeOffPaid('parent-1', 'h1', request({ minutes: 1440 }));
+
+    expect(ptoRepo.create).toHaveBeenCalledTimes(3);
+    const written = ptoRepo.create.mock.calls.map(
+      (call: unknown[]) => call[0] as Record<string, unknown>
+    );
+    expect(
+      written.map((row: Record<string, unknown>) => row.effective_date)
+    ).toEqual(['2026-08-24', '2026-08-25', '2026-08-26']);
+    expect(written.map((row: Record<string, unknown>) => row.minutes)).toEqual([
+      -480, -480, -480,
+    ]);
+    expect(
+      written.every((row: Record<string, unknown>) => row.kind === 'usage')
+    ).toBe(true);
+    expect(
+      written.every(
+        (row: Record<string, unknown>) => row.time_off_id === 'to-1'
+      )
+    ).toBe(true);
+  });
+
+  it('a fortnight lands its minutes in BOTH weeks, not all in week one', async () => {
+    const ptoRepo = makePtoRepo();
+    const svc = service({
+      ptoRepo,
+      timeOffRepo: makeTimeOffRepo(multiDayTimeOff(14)),
+    });
+    // 80 hours across 14 days.
+    await svc.markTimeOffPaid('parent-1', 'h1', request({ minutes: 4800 }));
+
+    const written = ptoRepo.create.mock.calls.map(
+      (call: unknown[]) => call[0] as Record<string, unknown>
+    );
+    expect(written).toHaveLength(14);
+    const weekOne = written
+      .filter(
+        (row: Record<string, unknown>) =>
+          (row.effective_date as string) < '2026-08-31'
+      )
+      .reduce(
+        (total: number, row: Record<string, unknown>) =>
+          total + (row.minutes as number),
+        0
+      );
+    const weekTwo = written
+      .filter(
+        (row: Record<string, unknown>) =>
+          (row.effective_date as string) >= '2026-08-31'
+      )
+      .reduce(
+        (total: number, row: Record<string, unknown>) =>
+          total + (row.minutes as number),
+        0
+      );
+    // Mon 24 Aug .. Sun 30 Aug is week one; Mon 31 Aug .. Sun 6 Sep is week two.
+    // 4800 over 14 days is 342.857/day, so the two weeks cannot be exactly
+    // equal — they must be within a minute of each other and sum to the
+    // whole. Rounding a week's share is fine; losing a minute is not.
+    expect(weekOne + weekTwo).toBe(-4800);
+    expect(Math.abs(weekOne + 2400)).toBeLessThanOrEqual(1);
+    expect(Math.abs(weekTwo + 2400)).toBeLessThanOrEqual(1);
+  });
+
+  it('NEVER loses or invents a minute when the total does not divide evenly', async () => {
+    const ptoRepo = makePtoRepo();
+    const svc = service({
+      ptoRepo,
+      timeOffRepo: makeTimeOffRepo(multiDayTimeOff(3)),
+    });
+    await svc.markTimeOffPaid('parent-1', 'h1', request({ minutes: 100 }));
+
+    const minutes = ptoRepo.create.mock.calls.map(
+      (call: unknown[]) =>
+        (call[0] as Record<string, unknown>).minutes as number
+    );
+    expect(minutes.reduce((total: number, m: number) => total + m, 0)).toBe(
+      -100
+    );
+    expect(minutes).toEqual([-34, -33, -33]);
+  });
+
+  it('writes no zero-minute row when the total is smaller than the day count', async () => {
+    const ptoRepo = makePtoRepo();
+    const svc = service({
+      ptoRepo,
+      timeOffRepo: makeTimeOffRepo(multiDayTimeOff(5)),
+    });
+    await svc.markTimeOffPaid('parent-1', 'h1', request({ minutes: 2 }));
+
+    // `check (minutes <> 0)`: a day allocated nothing gets no row at all.
+    expect(ptoRepo.create).toHaveBeenCalledTimes(2);
+    const minutes = ptoRepo.create.mock.calls.map(
+      (call: unknown[]) =>
+        (call[0] as Record<string, unknown>).minutes as number
+    );
+    expect(minutes).toEqual([-1, -1]);
+  });
+
+  it('returns the EARLIEST row written, so the response names a real anchor', async () => {
+    const ptoRepo = makePtoRepo();
+    const svc = service({
+      ptoRepo,
+      timeOffRepo: makeTimeOffRepo(multiDayTimeOff(3)),
+    });
+    const created = await svc.markTimeOffPaid(
+      'parent-1',
+      'h1',
+      request({ minutes: 1440 })
+    );
+    expect(created.effective_date).toBe('2026-08-24');
+  });
+});
+
+describe('PtoCommandService.markTimeOffPaid — correcting a multi-day marking', () => {
+  /** Three days already marked at 480 each. */
+  function threeDayRows(): Record<string, unknown>[] {
+    return [
+      usageRow({ id: 'u1', effective_date: '2026-08-24', minutes: -480 }),
+      usageRow({ id: 'u2', effective_date: '2026-08-25', minutes: -480 }),
+      usageRow({ id: 'u3', effective_date: '2026-08-26', minutes: -480 }),
+    ];
+  }
+
+  it('spreads a DOWNWARD correction across the same days, keeping each week honest', async () => {
+    const ptoRepo = makePtoRepo({
+      listForHouseholdTimeOff: mock(async () => threeDayRows()),
+    });
+    const svc = service({
+      ptoRepo,
+      timeOffRepo: makeTimeOffRepo(multiDayTimeOff(3)),
+    });
+    // 24h marked, corrected to 18h.
+    await svc.markTimeOffPaid('parent-1', 'h1', request({ minutes: 1080 }));
+
+    const written = ptoRepo.create.mock.calls.map(
+      (call: unknown[]) => call[0] as Record<string, unknown>
+    );
+    expect(written).toHaveLength(3);
+    expect(
+      written.every((row: Record<string, unknown>) => row.kind === 'adjustment')
+    ).toBe(true);
+    expect(
+      written.map((row: Record<string, unknown>) => row.effective_date)
+    ).toEqual(['2026-08-24', '2026-08-25', '2026-08-26']);
+    expect(written.map((row: Record<string, unknown>) => row.minutes)).toEqual([
+      120, 120, 120,
+    ]);
+  });
+
+  it('an UPWARD correction is exact even when it does not divide evenly', async () => {
+    const rows = threeDayRows();
+    const ptoRepo = makePtoRepo({
+      listForHouseholdTimeOff: mock(async () => rows),
+      create: mock(async (row: Record<string, unknown>) => {
+        rows.push(row);
+        return { ...createdUsageRow, ...row };
+      }),
+    });
+    const svc = service({
+      ptoRepo,
+      timeOffRepo: makeTimeOffRepo(multiDayTimeOff(3)),
+    });
+    await svc.markTimeOffPaid('parent-1', 'h1', request({ minutes: 1450 }));
+
+    expect(rows.reduce((t, r) => t + (r.minutes as number), 0)).toBe(-1450);
+  });
+
+  it('reversing a multi-day marking to zero clears EVERY day', async () => {
+    const rows = threeDayRows();
+    const ptoRepo = makePtoRepo({
+      listForHouseholdTimeOff: mock(async () => rows),
+      create: mock(async (row: Record<string, unknown>) => {
+        rows.push(row);
+        return { ...createdUsageRow, ...row };
+      }),
+    });
+    const svc = service({
+      ptoRepo,
+      timeOffRepo: makeTimeOffRepo(multiDayTimeOff(3)),
+    });
+    await svc.markTimeOffPaid('parent-1', 'h1', request({ minutes: 0 }));
+
+    const written = ptoRepo.create.mock.calls.map(
+      (call: unknown[]) => call[0] as Record<string, unknown>
+    );
+    expect(written.map((row: Record<string, unknown>) => row.minutes)).toEqual([
+      480, 480, 480,
+    ]);
+    // Every DAY nets to zero, not merely the total.
+    for (const date of ['2026-08-24', '2026-08-25', '2026-08-26']) {
+      const perDay = rows
+        .filter((row: Record<string, unknown>) => row.effective_date === date)
+        .reduce(
+          (total: number, row: Record<string, unknown>) =>
+            total + (row.minutes as number),
+          0
+        );
+      expect(perDay).toBe(0);
+    }
+  });
+
+  it('re-submitting the same multi-day total writes nothing', async () => {
+    const ptoRepo = makePtoRepo({
+      listForHouseholdTimeOff: mock(async () => threeDayRows()),
+    });
+    const svc = service({
+      ptoRepo,
+      timeOffRepo: makeTimeOffRepo(multiDayTimeOff(3)),
+    });
+    const result = await svc.markTimeOffPaid(
+      'parent-1',
+      'h1',
+      request({ minutes: 1440 })
+    );
+    expect(ptoRepo.create).not.toHaveBeenCalled();
+    expect(result.id).toBe('u1');
+  });
+
+  it('a retry after a PARTIAL write fills in the MISSING DAYS, not just the total', async () => {
+    // The first attempt wrote day one and then the connection dropped. A
+    // retry must reach 1440 by covering days two and three — topping day one
+    // up to 1440 would put the whole marking back on one date, which is the
+    // very defect 15b fixes.
+    const rows = [
+      usageRow({ id: 'u1', effective_date: '2026-08-24', minutes: -480 }),
+    ];
+    const ptoRepo = makePtoRepo({
+      listForHouseholdTimeOff: mock(async () => [...rows]),
+      create: mock(async (row: Record<string, unknown>) => {
+        rows.push(row);
+        return { ...createdUsageRow, ...row };
+      }),
+    });
+    const svc = service({
+      ptoRepo,
+      timeOffRepo: makeTimeOffRepo(multiDayTimeOff(3)),
+    });
+    await svc.markTimeOffPaid('parent-1', 'h1', request({ minutes: 1440 }));
+
+    expect(rows.reduce((t, r) => t + (r.minutes as number), 0)).toBe(-1440);
+    for (const date of ['2026-08-24', '2026-08-25', '2026-08-26']) {
+      const perDay = rows
+        .filter((row: Record<string, unknown>) => row.effective_date === date)
+        .reduce(
+          (total: number, row: Record<string, unknown>) =>
+            total + (row.minutes as number),
+          0
+        );
+      expect(perDay).toBe(-480);
+    }
+  });
+
+  it('a day the time off NO LONGER covers is taken back to zero', async () => {
+    // The carer shortened her time off after it was marked paid: the ledger
+    // still holds a day that is not part of the leave any more, and leaving
+    // it standing would pay for a day she is working.
+    const rows = [
+      usageRow({ id: 'u1', effective_date: '2026-08-24', minutes: -480 }),
+      usageRow({ id: 'u2', effective_date: '2026-08-25', minutes: -480 }),
+    ];
+    const ptoRepo = makePtoRepo({
+      listForHouseholdTimeOff: mock(async () => [...rows]),
+      create: mock(async (row: Record<string, unknown>) => {
+        rows.push(row);
+        return { ...createdUsageRow, ...row };
+      }),
+    });
+    const svc = service({
+      ptoRepo,
+      // Now a one-day time off, covering 2026-08-24 only.
+      timeOffRepo: makeTimeOffRepo(multiDayTimeOff(1)),
+    });
+    await svc.markTimeOffPaid('parent-1', 'h1', request({ minutes: 480 }));
+
+    const dayTwo = rows
+      .filter(
+        (row: Record<string, unknown>) => row.effective_date === '2026-08-25'
+      )
+      .reduce(
+        (total: number, row: Record<string, unknown>) =>
+          total + (row.minutes as number),
+        0
+      );
+    expect(dayTwo).toBe(0);
+    expect(rows.reduce((t, r) => t + (r.minutes as number), 0)).toBe(-480);
+  });
+});
+
+describe('PtoCommandService.reconcileCancelledTimeOff — multi-day markings', () => {
+  it('reverses EVERY day of a multi-day marking, day by day', async () => {
+    const ptoRepo = makePtoRepo({
+      listAllForTimeOff: mock(async () => [
+        usageRow({ id: 'u1', effective_date: '2026-08-24', minutes: -480 }),
+        usageRow({ id: 'u2', effective_date: '2026-09-01', minutes: -480 }),
+      ]),
+    });
+    const svc = service({ ptoRepo });
+    await svc.reconcileCancelledTimeOff('to-1');
+
+    const written = ptoRepo.create.mock.calls.map(
+      (call: unknown[]) => call[0] as Record<string, unknown>
+    );
+    expect(written).toHaveLength(2);
+    expect(
+      written.map((row: Record<string, unknown>) => row.effective_date)
+    ).toEqual(['2026-08-24', '2026-09-01']);
+    expect(written.map((row: Record<string, unknown>) => row.minutes)).toEqual([
+      480, 480,
+    ]);
+  });
+
+  it('still notifies the household only ONCE for a multi-day reversal', async () => {
+    const ptoRepo = makePtoRepo({
+      listAllForTimeOff: mock(async () => [
+        usageRow({ id: 'u1', effective_date: '2026-08-24', minutes: -480 }),
+        usageRow({ id: 'u2', effective_date: '2026-08-25', minutes: -480 }),
+      ]),
+    });
+    const push = makePush();
+    const svc = service({ ptoRepo, push });
+    await svc.reconcileCancelledTimeOff('to-1');
+    expect(push.notifyHouseholdParents).toHaveBeenCalledTimes(1);
+  });
+
+  it('is still idempotent per DAY — a day already reversed is left alone', async () => {
+    const ptoRepo = makePtoRepo({
+      listAllForTimeOff: mock(async () => [
+        usageRow({ id: 'u1', effective_date: '2026-08-24', minutes: -480 }),
+        adjustmentRow({
+          id: 'a1',
+          effective_date: '2026-08-24',
+          minutes: 480,
+        }),
+        usageRow({ id: 'u2', effective_date: '2026-08-25', minutes: -480 }),
+      ]),
+    });
+    const svc = service({ ptoRepo });
+    await svc.reconcileCancelledTimeOff('to-1');
+
+    expect(ptoRepo.create).toHaveBeenCalledTimes(1);
+    expect(ptoRepo.create.mock.calls[0][0]).toMatchObject({
+      effective_date: '2026-08-25',
+      minutes: 480,
+    });
+  });
+});
+
+// =============================================================================
+// Ledger notes are stable machine KEYS, not English prose (Phase 3/4 review,
+// finding 16a).
+//
+// `pto_ledger` is append-only and permanent. Prose written today can never be
+// re-keyed later, so localising the ledger history would orphan every row
+// already written — the precise mistake Wave 5's handoff chips made
+// (PROJECT-STATUS.md: English display labels stored as row values, fixed to
+// stable snake_case keys). A note a HUMAN typed is different: that is user
+// content, not system copy, and it is stored verbatim.
+// =============================================================================
+
+describe('PtoCommandService — ledger notes are machine keys', () => {
+  it('a correction with no parent note stores a KEY, not a sentence', async () => {
+    const ptoRepo = makePtoRepo({
+      listForHouseholdTimeOff: mock(async () => [usageRow({ minutes: -480 })]),
+    });
+    const svc = service({ ptoRepo });
+    await svc.markTimeOffPaid('parent-1', 'h1', request({ minutes: 360 }));
+
+    const note = ptoRepo.create.mock.calls[0][0].note as string;
+    expect(note).toBe(PTO_LEDGER_NOTE_KEYS.MARKED_PAID_ADJUSTED);
+    expect(note).not.toMatch(/\s/);
+  });
+
+  it('the cancel reversal stores a KEY', async () => {
+    const ptoRepo = makePtoRepo({
+      listAllForTimeOff: mock(async () => [usageRow()]),
+    });
+    const svc = service({ ptoRepo });
+    await svc.reconcileCancelledTimeOff('to-1');
+
+    const note = ptoRepo.create.mock.calls[0][0].note as string;
+    expect(note).toBe(PTO_LEDGER_NOTE_KEYS.CANCELLED_TIME_OFF_REVERSED);
+    expect(note).not.toMatch(/\s/);
+  });
+
+  it('the lost-race reversal stores its OWN key, distinguishable from a cancel', async () => {
+    const rows: Record<string, unknown>[] = [];
+    let findCalls = 0;
+    const ptoRepo = makePtoRepo({
+      listForHouseholdTimeOff: mock(async () => [...rows]),
+      create: mock(async (row: Record<string, unknown>) => {
+        rows.push(row);
+        return { ...createdUsageRow, ...row };
+      }),
+    });
+    const timeOffRepo = {
+      findById: mock(async () => {
+        findCalls += 1;
+        return timeOff({ status: findCalls === 1 ? 'confirmed' : 'cancelled' });
+      }),
+    };
+    const svc = service({ ptoRepo, timeOffRepo });
+
+    await expect(
+      svc.markTimeOffPaid('parent-1', 'h1', request({ minutes: 480 }))
+    ).rejects.toBeInstanceOf(PtoTimeOffNotConfirmedError);
+
+    expect(rows[1]?.note).toBe(
+      PTO_LEDGER_NOTE_KEYS.CANCELLED_DURING_MARKING_REVERSED
+    );
+    expect(PTO_LEDGER_NOTE_KEYS.CANCELLED_DURING_MARKING_REVERSED).not.toBe(
+      PTO_LEDGER_NOTE_KEYS.CANCELLED_TIME_OFF_REVERSED
+    );
+  });
+
+  it("a PARENT'S OWN typed note is stored verbatim — user content is never keyed", async () => {
+    const ptoRepo = makePtoRepo();
+    const svc = service({ ptoRepo });
+    await svc.markTimeOffPaid(
+      'parent-1',
+      'h1',
+      request({ note: 'agreed with Nia over text on Tuesday' })
+    );
+    expect(ptoRepo.create.mock.calls[0][0].note).toBe(
+      'agreed with Nia over text on Tuesday'
+    );
+  });
+
+  it("a parent's note wins over the correction key on an adjustment too", async () => {
+    const ptoRepo = makePtoRepo({
+      listForHouseholdTimeOff: mock(async () => [usageRow({ minutes: -480 })]),
+    });
+    const svc = service({ ptoRepo });
+    await svc.markTimeOffPaid(
+      'parent-1',
+      'h1',
+      request({ minutes: 360, note: 'she left early on the Friday' })
+    );
+    expect(ptoRepo.create.mock.calls[0][0].note).toBe(
+      'she left early on the Friday'
+    );
+  });
+
+  it('EVERY system-written note is one of the declared keys — no ad-hoc prose anywhere', async () => {
+    const declared = new Set<string>(Object.values(PTO_LEDGER_NOTE_KEYS));
+    const written: (string | null)[] = [];
+    const rows: Record<string, unknown>[] = [];
+    const ptoRepo = makePtoRepo({
+      listForHouseholdTimeOff: mock(async () => [...rows]),
+      listAllForTimeOff: mock(async () => [...rows]),
+      create: mock(async (row: Record<string, unknown>) => {
+        rows.push(row);
+        written.push(row.note as string | null);
+        return { ...createdUsageRow, ...row };
+      }),
+    });
+    const svc = service({ ptoRepo });
+
+    await svc.markTimeOffPaid('parent-1', 'h1', request({ minutes: 480 }));
+    await svc.markTimeOffPaid('parent-1', 'h1', request({ minutes: 300 }));
+    await svc.reconcileCancelledTimeOff('to-1');
+
+    for (const note of written) {
+      if (note === null) continue; // the usage row's own note is user text
+      expect(declared.has(note)).toBe(true);
+    }
   });
 });

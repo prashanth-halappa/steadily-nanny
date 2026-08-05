@@ -55,6 +55,7 @@ import type {
   PtoBalance,
   PtoLedgerEntry,
 } from '@steadily-nanny/shared-types/schemas/pto.schema';
+import { PTO_LEDGER_NOTE_KEYS } from '@steadily-nanny/shared-types/schemas/pto.schema';
 import {
   HOUSEHOLD_ROLES,
   HouseholdMemberRepository,
@@ -247,7 +248,12 @@ export class PtoQueryService {
         // lookup; it is itself frozen at the arrangement's insert time, the
         // same snapshot discipline this row inherits.
         carer_display_name: arrangement.carer_display_name,
-        note: `${year} annual PTO grant`,
+        // A stable machine KEY, never prose (review finding 16a): the ledger
+        // is append-only and permanent, so "2026 annual PTO grant" written
+        // today could never be re-keyed when this history is localised. The
+        // year is not a parameter — the row's own `effective_date` carries
+        // it. See `PTO_LEDGER_NOTE_KEYS`.
+        note: PTO_LEDGER_NOTE_KEYS.ANNUAL_GRANT,
         created_by: null,
       });
     } catch (err) {

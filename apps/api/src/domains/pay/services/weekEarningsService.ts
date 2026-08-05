@@ -35,12 +35,14 @@ import { HouseholdClosureRepository } from '../../availability/repositories/hous
 import { HouseholdRepository } from '../../household';
 import { ShiftRepository } from '../../shift/repositories/shiftRepository';
 import { TimeEntryRepository } from '../../timesheet/repositories/timeEntryRepository';
-import { localDateOf, weekEndExclusive } from '../../timesheet/utils/weekStart';
+import { weekEndExclusive } from '../../timesheet/utils/weekStart';
 import { computeWorkedMinutes } from '../../timesheet/utils/workedMinutes';
 import { ExpenseRepository } from '../repositories/expenseRepository';
 import { PayArrangementRepository } from '../repositories/payArrangementRepository';
 import { PtoLedgerRepository } from '../repositories/ptoLedgerRepository';
 import type { PayArrangement } from '../types';
+import { allocateMinutes } from '../utils/allocateMinutes';
+import { addDays, localDatesCovered } from '../utils/localDateSpan';
 import {
   type ApprovedExpenseInput,
   type ClosureDayShiftInput,
@@ -50,7 +52,6 @@ import {
   type PtoUsageInput,
 } from './earningsService';
 
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const DAYS_PER_WEEK = 7;
 
 /**
@@ -70,37 +71,16 @@ const SCHEDULED_SHIFT_STATUSES: ReadonlySet<string> = new Set([
   SHIFT_STATUSES.COMPLETED,
 ]);
 
-/** Pure `YYYY-MM-DD` arithmetic, UTC-anchored — the house convention (`utils/weekStart.ts`). */
-function addDays(dateStr: string, days: number): string {
-  const [y, m, d] = dateStr.split('-').map(Number);
-  const dt = new Date(
-    Date.UTC(y ?? 0, (m ?? 1) - 1, d ?? 1) + days * MS_PER_DAY
-  );
-  const yy = dt.getUTCFullYear();
-  const mm = String(dt.getUTCMonth() + 1).padStart(2, '0');
-  const dd = String(dt.getUTCDate()).padStart(2, '0');
-  return `${yy}-${mm}-${dd}`;
-}
-
 /**
  * The household-local dates in `[weekStart, weekStart+7)` that a closure
  * covers, ascending and deduped.
  *
- * `household_closures.ends_at` is EXCLUSIVE — the all-day convention the
- * client writes (`toAllDayRange` in
- * `apps/mobile/src/domains/timeOff/utils/timeOffDate.ts`: local midnight of
- * the day AFTER the last selected day). So the covered span is
- * `[localDate(starts_at), localDate(ends_at))`.
- *
- * One deliberate softening: a sub-day closure (both instants on the same
- * local date, so the half-open range is empty) still counts as ONE closure
- * date. Dropping it would silently make a real closure invisible to the
- * top-up; counting it can at most let a partly-closed day contribute its
- * unworked scheduled minutes, which is what a closure day means anyway.
- *
- * Resolved in the HOUSEHOLD's timezone, never UTC — the same reason
- * `weekStartOf` exists: 23:30 UTC is already tomorrow east of UTC, and a
- * closure filed on the wrong day moves money.
+ * The span rule itself — `ends_at` EXCLUSIVE, a sub-day span still counting
+ * as one date, resolved in the household's timezone — lives in
+ * `localDatesCovered` (`utils/localDateSpan.ts`), because a PTO marking now
+ * needs the identical answer for a time off (Phase 3/4 review, finding 15b)
+ * and two copies of a date rule this subtle drift apart. This function is
+ * only the week window on top of it.
  */
 export function closureDatesInWeek(
   closures: readonly HouseholdClosure[],
@@ -110,10 +90,11 @@ export function closureDatesInWeek(
   const weekEnd = addDays(weekStart, DAYS_PER_WEEK); // exclusive
   const dates = new Set<string>();
   for (const closure of closures) {
-    const first = localDateOf(new Date(closure.starts_at), timeZone);
-    const endExclusive = localDateOf(new Date(closure.ends_at), timeZone);
-    const last = endExclusive > first ? endExclusive : addDays(first, 1);
-    for (let date = first; date < last; date = addDays(date, 1)) {
+    for (const date of localDatesCovered(
+      closure.starts_at,
+      closure.ends_at,
+      timeZone
+    )) {
       if (date >= weekStart && date < weekEnd) {
         dates.add(date);
       }
@@ -200,7 +181,11 @@ function netPtoUsage(
   weekStart: string,
   weekEnd: string
 ): PtoUsageInput[] {
-  const groups = new Map<string, { localDate: string | null; net: number }>();
+  const groups = new Map<
+    string,
+    { perDate: Map<string, number>; total: number }
+  >();
+
   for (const row of rows) {
     if (!row.time_off_id) {
       continue; // accrual, or a free-standing balance correction
@@ -211,30 +196,63 @@ function netPtoUsage(
     ) {
       continue;
     }
-    const group = groups.get(row.time_off_id) ?? { localDate: null, net: 0 };
-    group.net += row.minutes;
+    const group = groups.get(row.time_off_id) ?? {
+      perDate: new Map<string, number>(),
+      total: 0,
+    };
+    // Stored negative (accrual +, usage −, `043_pto_ledger.sql`); the
+    // engine's `PtoUsageInput.minutes` must be POSITIVE to price (see
+    // `pto_usage`'s doc on `ComputeWeekEarningsInput`). Negating here is the
+    // ENTIRE sign conversion — get it backwards and the engine either prices
+    // negative PTO or, after its own `Math.max(0, …)` clamp, silently prices
+    // nothing at all.
+    group.total -= row.minutes;
     if (row.kind === PTO_LEDGER_KINDS.USAGE) {
-      group.localDate = row.effective_date;
+      // Only a USAGE row declares that leave was taken on a date. An
+      // adjustment contributes to the total but never invents a new day: a
+      // correction filed on a date with no usage is bookkeeping, not a day
+      // off, and pricing it would pay for a day nobody took.
+      group.perDate.set(
+        row.effective_date,
+        (group.perDate.get(row.effective_date) ?? 0) - row.minutes
+      );
+    } else if (group.perDate.has(row.effective_date)) {
+      group.perDate.set(
+        row.effective_date,
+        (group.perDate.get(row.effective_date) ?? 0) - row.minutes
+      );
     }
     groups.set(row.time_off_id, group);
   }
 
   const usage: PtoUsageInput[] = [];
-  for (const { localDate, net } of groups.values()) {
-    if (localDate === null || localDate < weekStart || localDate > weekEnd) {
-      continue;
+  for (const group of groups.values()) {
+    const dates = [...group.perDate.keys()].sort();
+    if (dates.length === 0) {
+      continue; // adjustments only — no day to price them on
     }
-    // Stored negative (accrual +, usage −, `043_pto_ledger.sql`); the
-    // engine's `PtoUsageInput.minutes` must be POSITIVE to price (see
-    // `pto_usage`'s doc on `ComputeWeekEarningsInput`). Negating is the
-    // ENTIRE sign conversion — get it backwards and the engine either
-    // prices negative PTO or, after its own `Math.max(0, …)` clamp,
-    // silently prices nothing at all.
-    const minutes = -net;
-    if (minutes <= 0) {
+    const total = Math.max(0, group.total);
+    if (total === 0) {
       continue; // fully reversed, or over-reversed — no PTO to price
     }
-    usage.push({ local_date: localDate, minutes });
+    // The group's NETTED total is the unit of truth (`docs/11-MONEY.md` §5);
+    // the per-date figures are how it is attributed. Allocating the total
+    // across the dates by those figures makes the two agree exactly: when
+    // every adjustment matched a usage date (everything this service writes)
+    // the weights already sum to the total and each date keeps its own
+    // number; when one did not — a hand-written correction dated elsewhere —
+    // the total still wins and is spread proportionally rather than ignored.
+    const allocated = allocateMinutes(
+      total,
+      dates.map(date => Math.max(0, group.perDate.get(date) ?? 0))
+    );
+    for (const [index, date] of dates.entries()) {
+      const minutes = allocated[index] ?? 0;
+      if (minutes <= 0 || date < weekStart || date > weekEnd) {
+        continue;
+      }
+      usage.push({ local_date: date, minutes });
+    }
   }
   return usage.sort((a, b) => a.local_date.localeCompare(b.local_date));
 }

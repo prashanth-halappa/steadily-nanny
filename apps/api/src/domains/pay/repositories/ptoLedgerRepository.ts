@@ -156,14 +156,18 @@ export class PtoLedgerRepository extends BaseRepository<PtoLedgerEntry> {
 
   /**
    * Append one ledger row. Translates the table's two partial unique
-   * indexes (043's header) into typed domain errors instead of a raw 500 —
+   * indexes (043's header, as amended by 045) into typed domain errors
+   * instead of a raw 500 —
    * disambiguated by `row.kind`, since each index only ever guards inserts
    * of ONE kind:
    *
-   * - `kind: 'usage'` hitting `pto_ledger_one_usage_per_time_off_idx` means
-   *   this exact time off is ALREADY marked paid in this household —
+   * - `kind: 'usage'` hitting `pto_ledger_one_usage_per_time_off_day_idx`
+   *   (045; 043's per-time-off index until then) means this DAY of this time
+   *   off is ALREADY marked paid in this household —
    *   `PtoAlreadyMarkedPaidError`, which `ptoCommandService.markTimeOffPaid`
-   *   surfaces to the caller rather than double-paying.
+   *   surfaces to the caller rather than double-paying. Per-day since 045,
+   *   because a multi-day marking is one usage row per covered day (review
+   *   finding 15b); two concurrent taps still collide, on the first day.
    * - `kind: 'accrual'` hitting `pto_ledger_one_accrual_per_year_idx` means a
    *   concurrent reader raced this one to the lazy annual grant —
    *   `PtoAccrualGrantRaceError`, which `ptoQueryService` catches and

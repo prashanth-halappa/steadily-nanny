@@ -688,6 +688,161 @@ describe('buildWeekEarningsInput', () => {
     expect(built.pto_usage).toEqual([]);
   });
 
+  // ===========================================================================
+  // Multi-day markings (Phase 3/4 review, finding 15b) — one `time_off_id`
+  // now carries one usage row PER COVERED DAY, so the netting must stay
+  // per-date. Collapsing a group onto one date is the very bug 15b fixes.
+  // ===========================================================================
+
+  it('prices only the days of a multi-day marking that fall INSIDE this week', () => {
+    // A fortnight from Mon 2026-08-03: days 1-7 are this week, 8-14 the next.
+    const rows = Array.from({ length: 14 }, (_, index) => {
+      const day = 3 + index;
+      const date = `2026-08-${String(day).padStart(2, '0')}`;
+      return ptoLedgerRow({
+        id: `usage-${index}`,
+        effective_date: date,
+        minutes: -343,
+        time_off_id: 'to-1',
+      });
+    });
+    const built = buildWeekEarningsInput({
+      weekStart: WEEK_START,
+      entries: [],
+      arrangements: [arrangement()],
+      closureDates: [],
+      closureDayShifts: [],
+      ptoLedgerRows: rows,
+      approvedExpenses: [],
+    });
+    const priced = built.pto_usage ?? [];
+    expect(priced).toHaveLength(7);
+    expect(priced.reduce((total, entry) => total + entry.minutes, 0)).toBe(
+      343 * 7
+    );
+    expect(priced[0]).toEqual({
+      local_date: '2026-08-03',
+      minutes: 343,
+    });
+  });
+
+  it('nets a per-DAY correction against ITS day, not across the whole marking', () => {
+    const built = buildWeekEarningsInput({
+      weekStart: WEEK_START,
+      entries: [],
+      arrangements: [arrangement()],
+      closureDates: [],
+      closureDayShifts: [],
+      ptoLedgerRows: [
+        ptoLedgerRow({
+          id: 'u1',
+          effective_date: '2026-08-03',
+          minutes: -480,
+          time_off_id: 'to-1',
+        }),
+        ptoLedgerRow({
+          id: 'u2',
+          effective_date: '2026-08-04',
+          minutes: -480,
+          time_off_id: 'to-1',
+        }),
+        ptoLedgerRow({
+          id: 'a1',
+          kind: 'adjustment',
+          effective_date: '2026-08-04',
+          minutes: 120,
+          time_off_id: 'to-1',
+        }),
+      ],
+      approvedExpenses: [],
+    });
+    expect(built.pto_usage).toEqual([
+      { local_date: '2026-08-03', minutes: 480 },
+      { local_date: '2026-08-04', minutes: 360 },
+    ]);
+  });
+
+  it('a fully reversed multi-day marking prices nothing on any day', () => {
+    const built = buildWeekEarningsInput({
+      weekStart: WEEK_START,
+      entries: [],
+      arrangements: [arrangement()],
+      closureDates: [],
+      closureDayShifts: [],
+      ptoLedgerRows: [
+        ptoLedgerRow({
+          id: 'u1',
+          effective_date: '2026-08-03',
+          minutes: -480,
+          time_off_id: 'to-1',
+        }),
+        ptoLedgerRow({
+          id: 'u2',
+          effective_date: '2026-08-04',
+          minutes: -480,
+          time_off_id: 'to-1',
+        }),
+        ptoLedgerRow({
+          id: 'a1',
+          kind: 'adjustment',
+          effective_date: '2026-08-03',
+          minutes: 480,
+          time_off_id: 'to-1',
+        }),
+        ptoLedgerRow({
+          id: 'a2',
+          kind: 'adjustment',
+          effective_date: '2026-08-04',
+          minutes: 480,
+          time_off_id: 'to-1',
+        }),
+      ],
+      approvedExpenses: [],
+    });
+    expect(built.pto_usage).toEqual([]);
+  });
+
+  it('an out-of-week reversal still cancels the whole marking, spread across its days', () => {
+    // A hand-written correction that does not match any usage date reduces
+    // the marking as a whole rather than being ignored — the group's netted
+    // total stays the unit of truth (docs/11-MONEY.md 5).
+    const built = buildWeekEarningsInput({
+      weekStart: WEEK_START,
+      entries: [],
+      arrangements: [arrangement()],
+      closureDates: [],
+      closureDayShifts: [],
+      ptoLedgerRows: [
+        ptoLedgerRow({
+          id: 'u1',
+          effective_date: '2026-08-03',
+          minutes: -480,
+          time_off_id: 'to-1',
+        }),
+        ptoLedgerRow({
+          id: 'u2',
+          effective_date: '2026-08-04',
+          minutes: -480,
+          time_off_id: 'to-1',
+        }),
+        ptoLedgerRow({
+          id: 'late',
+          kind: 'adjustment',
+          effective_date: '2026-08-30',
+          minutes: 480,
+          time_off_id: 'to-1',
+        }),
+      ],
+      approvedExpenses: [],
+    });
+    const priced = built.pto_usage ?? [];
+    expect(priced.reduce((total, entry) => total + entry.minutes, 0)).toBe(480);
+    expect(priced.map(entry => entry.local_date)).toEqual([
+      '2026-08-03',
+      '2026-08-04',
+    ]);
+  });
+
   it('an adjustment whose usage row is not in the fetched set prices nothing on its own', () => {
     const built = buildWeekEarningsInput({
       weekStart: WEEK_START,

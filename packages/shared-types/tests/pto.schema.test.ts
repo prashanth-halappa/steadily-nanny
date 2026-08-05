@@ -2,6 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import {
   MarkTimeOffPaidRequestSchema,
   PTO_LEDGER_KINDS,
+  PTO_LEDGER_NOTE_KEYS,
   PtoBalanceSchema,
   PtoLedgerEntrySchema,
   PtoLedgerListResponseSchema,
@@ -221,5 +222,34 @@ describe('pto.schema', () => {
         }).success
       ).toBe(true);
     });
+  });
+});
+
+// Phase 3/4 review, finding 16a: `pto_ledger` is append-only and permanent,
+// so a system-written `note` must be a stable machine key — English prose
+// stored today could never be re-keyed when the ledger history is localised,
+// and every existing row would be orphaned. Wave 5's handoff chips are the
+// precedent (PROJECT-STATUS.md); the shape is theirs: bare snake_case keys,
+// with an unknown value rendered verbatim so a parent's own typed note (user
+// content, never keyed) still reads as itself.
+describe('PTO_LEDGER_NOTE_KEYS', () => {
+  it('declares a key for every note the server writes', () => {
+    expect(PTO_LEDGER_NOTE_KEYS).toEqual({
+      ANNUAL_GRANT: 'annual_grant',
+      MARKED_PAID_ADJUSTED: 'marked_paid_adjusted',
+      CANCELLED_TIME_OFF_REVERSED: 'cancelled_time_off_reversed',
+      CANCELLED_DURING_MARKING_REVERSED: 'cancelled_during_marking_reversed',
+    });
+  });
+
+  it('every value is stable snake_case — no prose, no punctuation, no locale', () => {
+    for (const key of Object.values(PTO_LEDGER_NOTE_KEYS)) {
+      expect(key).toMatch(/^[a-z][a-z0-9_]*$/);
+    }
+  });
+
+  it('the values are unique, so a renderer can switch on them', () => {
+    const values = Object.values(PTO_LEDGER_NOTE_KEYS);
+    expect(new Set(values).size).toBe(values.length);
   });
 });
