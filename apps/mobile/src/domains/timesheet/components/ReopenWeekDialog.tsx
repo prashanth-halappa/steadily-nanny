@@ -1,10 +1,14 @@
 /**
  * @module domains/timesheet/components/ReopenWeekDialog
  *
- * The undo for ApproveWeekDialog — same controlled AlertDialog pattern
- * (`open`/`onOpenChange` owned by the caller), same testID naming shape,
- * plus a required reason field the API records. Body states plainly that
- * the approved total stops being final and the figure can change.
+ * The undo for ApproveWeekDialog — required reason field the API records.
+ * Body states plainly that the approved total stops being final and the
+ * figure can change.
+ *
+ * Uses `BottomSheetBase` (same as QueryNoteSheet), not `AlertDialog`: the
+ * reason Textarea meets the software keyboard, and AlertDialog has no
+ * keyboard avoidance or scroll — on device the keyboard covers confirm and
+ * every escape route fails. GOLDEN: never a bare RN Modal (GOLDEN-FIXES #1).
  *
  * Walkthrough fix 3: the reason is compelled but, before this, nothing told
  * the parent where it goes — and `apps/mobile/src` has no surface that
@@ -18,23 +22,18 @@
  * other real destructive confirms (`settings-delete-account-confirm`,
  * `ScheduleRespondScreen`'s decline confirm) — reopening un-approves a
  * week of pay, and looking like an ordinary primary button undersells that.
+ *
+ * Caller API stays `open`/`onOpenChange` (ParentWeekView owns the flag);
+ * gating (approved week + parent only) stays in the caller.
  */
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/src/components/ui/alert-dialog';
-import { buttonVariants } from '@/src/components/ui/button';
+import { View } from 'react-native';
+import { BottomSheetBase } from '@/src/components/custom/BottomSheetBase';
+import { Button } from '@/src/components/ui/button';
 import { Text } from '@/src/components/ui/text';
 import { Textarea } from '@/src/components/ui/textarea';
-import { Small } from '@/src/components/ui/typography';
+import { Body, H4, Small } from '@/src/components/ui/typography';
 
 interface ReopenWeekDialogProps {
   open: boolean;
@@ -69,16 +68,24 @@ export function ReopenWeekDialog({
   };
 
   return (
-    <AlertDialog open={open} onOpenChange={handleOpenChange}>
-      <AlertDialogContent testID="hours-reopen-dialog">
-        <AlertDialogHeader>
-          <AlertDialogTitle testID="hours-reopen-dialog-title">
-            {t('reopenDialogTitle', { range: weekRangeLabel })}
-          </AlertDialogTitle>
-          <AlertDialogDescription testID="hours-reopen-dialog-body">
-            {t('reopenDialogBody')}
-          </AlertDialogDescription>
-        </AlertDialogHeader>
+    <BottomSheetBase
+      sheetId="hours-reopen"
+      visible={open}
+      onDismiss={() => handleOpenChange(false)}
+      testID="hours-reopen-dialog"
+      fitContent
+      showCloseButton
+    >
+      <View className="gap-4 px-6 pb-4">
+        <H4 testID="hours-reopen-dialog-title">
+          {t('reopenDialogTitle', { range: weekRangeLabel })}
+        </H4>
+        <Body
+          testID="hours-reopen-dialog-body"
+          className="text-muted-foreground"
+        >
+          {t('reopenDialogBody')}
+        </Body>
         <Textarea
           testID="hours-reopen-dialog-reason"
           accessibilityLabel={t('reopenDialogReasonPlaceholder')}
@@ -92,22 +99,24 @@ export function ReopenWeekDialog({
         >
           {t('reopenDialogReasonHint')}
         </Small>
-        <AlertDialogFooter>
-          <AlertDialogCancel testID="hours-reopen-dialog-cancel">
+        <View className="gap-2">
+          <Button
+            testID="hours-reopen-dialog-cancel"
+            variant="outline"
+            onPress={() => handleOpenChange(false)}
+          >
             <Text>{t('reopenDialogCancel')}</Text>
-          </AlertDialogCancel>
-          <AlertDialogAction
+          </Button>
+          <Button
             testID="hours-reopen-dialog-confirm"
-            className={buttonVariants({ variant: 'destructive' })}
+            variant="destructive"
             disabled={!canConfirm}
             onPress={handleConfirm}
           >
-            <Text className="text-destructive-foreground">
-              {t('reopenDialogConfirm')}
-            </Text>
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+            <Text>{t('reopenDialogConfirm')}</Text>
+          </Button>
+        </View>
+      </View>
+    </BottomSheetBase>
   );
 }

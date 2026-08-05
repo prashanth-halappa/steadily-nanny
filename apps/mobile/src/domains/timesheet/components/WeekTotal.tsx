@@ -27,6 +27,12 @@
  * button beside it in the footer, which is not destructive. Omit
  * `onReopenPress` to render nothing at all (a helper's `readOnly` view, or
  * `NannyWeekView`, which never reopens).
+ *
+ * The reopen *reason* caption is also owned here — it is a timesheet-status
+ * fact ("this week was un-approved, and here is why"), not an earnings
+ * fact. Rendering it inside `WeekEarningsLine`'s `ok` arm silently dropped
+ * it on no-arrangement / hours-only / zero-hours / earnings-null weeks.
+ * Keep `testID="hours-earnings-line-reopened-note"` stable for Maestro.
  */
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
@@ -84,7 +90,8 @@ interface WeekTotalProps {
   onPressEarnings?: () => void;
   /** TIER0-CX-SPEC.md §8 "Approved week that reopens" — see `utils/reopenedNotice.ts`. */
   earningsReopened?: boolean;
-  /** Wire `reopen_reason` — cold-mount caption; see `WeekEarningsLine`. */
+  /** Wire `reopen_reason` — cold-mount caption; rendered here (not in
+   * `WeekEarningsLine`) so every earnings state still surfaces it. */
   earningsReopenReason?: string | null;
   /** Parent-only "undo approve" — renders `hours-reopen-button` in this
    * card, next to the status pill/gross, when `timesheetStatus` is
@@ -141,6 +148,13 @@ export function WeekTotal({
   const hasNav = !!onPreviousWeek && !!onNextWeek;
   const shouldShowStatusPillBlock =
     showStatusPill ?? (!!carerName || timesheetStatus !== undefined);
+  // Locale-key extractor reads the first string literal inside `t(` as the
+  // key — an inline `earningsRole === 'parent'` comparison makes it think
+  // 'parent' is a key. Choose the key from a boolean instead.
+  const isParentViewer = earningsRole === 'parent';
+  const showReopenedNote =
+    timesheetStatus !== 'approved' &&
+    (!!earningsReopenReason || earningsReopened);
 
   return (
     <Card testID={testID} className="mb-4">
@@ -205,9 +219,25 @@ export function WeekTotal({
             earningsError={earningsError}
             onRetryEarnings={onRetryEarnings}
             onPress={onPressEarnings}
-            reopened={earningsReopened}
-            reopenReason={earningsReopenReason}
           />
+        ) : null}
+        {/* Status-gated, earnings-independent. Prefer the wire reason;
+            fall back to the ephemeral same-session `useReopenedNotice`
+            caption. Never on an approved week. */}
+        {showReopenedNote ? (
+          <Small
+            testID="hours-earnings-line-reopened-note"
+            className="text-muted-foreground"
+          >
+            {earningsReopenReason
+              ? t(
+                  isParentViewer
+                    ? 'earningsReopenedWithReasonParent'
+                    : 'earningsReopenedWithReasonNanny',
+                  { reason: earningsReopenReason }
+                )
+              : t('earningsReopenedNote')}
+          </Small>
         ) : null}
         {timesheetStatus === 'approved' && onReopenPress ? (
           <Button

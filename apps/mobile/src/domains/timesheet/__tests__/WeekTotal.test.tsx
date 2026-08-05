@@ -311,5 +311,54 @@ describe('WeekTotal', () => {
       );
       expect(queryByTestId('hours-earnings-line-reopened-note')).toBeNull();
     });
+
+    // The reason is a timesheet-status fact, not an earnings fact — it must
+    // survive every early return inside WeekEarningsLine (no arrangement,
+    // hours-only, zero-hours, earnings null). These cases failed when the
+    // note lived only in the `ok` earnings arm.
+    it('shows the wire reason on a no_arrangement week (earnings arm never reaches ok)', () => {
+      const { getByTestId, getByText } = render(
+        <WeekTotal
+          testID="hours-week-total"
+          weekRangeLabel="3 Aug – 9 Aug"
+          totalLabel="41h 0m"
+          overtimeLabel={null}
+          totalMinutes={2460}
+          timesheetStatus="submitted"
+          earnings={{
+            status: 'no_arrangement',
+            week_start: '2026-08-03',
+            unpriced_dates: ['2026-08-03'],
+          }}
+          earningsRole="parent"
+          earningsCarerId="carer-1"
+          earningsReopenReason="Thursday hours were wrong"
+        />
+      );
+      expect(getByText('earningsNoArrangementParent')).toBeTruthy();
+      expect(getByTestId('hours-earnings-line-reopened-note')).toBeTruthy();
+    });
+
+    it('shows the wire reason on a zero-hours week (earnings line itself is omitted)', () => {
+      const { getByTestId, queryByTestId } = render(
+        <WeekTotal
+          testID="hours-week-total"
+          weekRangeLabel="3 Aug – 9 Aug"
+          totalLabel="0m"
+          overtimeLabel={null}
+          totalMinutes={0}
+          timesheetStatus="submitted"
+          earnings={{
+            ...earnings,
+            gross_minor: 0,
+            worked_minutes: 0,
+            payable_minutes: 0,
+          }}
+          earningsReopenReason="Thursday hours were wrong"
+        />
+      );
+      expect(queryByTestId('hours-earnings-line')).toBeNull();
+      expect(getByTestId('hours-earnings-line-reopened-note')).toBeTruthy();
+    });
   });
 });

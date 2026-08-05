@@ -90,20 +90,8 @@ describe('WeekEarningsLine', () => {
     expect(getByTestId('hours-earnings-line-queried-note')).toBeTruthy();
   });
 
-  it('reopened: adds the "hours changed after approval" caption', () => {
-    const { getByTestId } = render(
-      <WeekEarningsLine
-        earnings={okEarnings}
-        timesheetStatus="submitted"
-        viewerRole="parent"
-        carerId="carer-1"
-        carerDisplayName="Amara"
-        totalMinutes={2460}
-        reopened
-      />
-    );
-    expect(getByTestId('hours-earnings-line-reopened-note')).toBeTruthy();
-  });
+  // Ephemeral / wire reopen captions live on `WeekTotal` now — see
+  // `WeekTotal.reopenReason.test.tsx` and `WeekTotal.test.tsx`.
 
   it('hours-only/legacy_approval: renders nothing at all', () => {
     const { queryByTestId } = render(

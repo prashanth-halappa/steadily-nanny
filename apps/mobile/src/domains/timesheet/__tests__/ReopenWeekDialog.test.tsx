@@ -1,118 +1,29 @@
 /**
  * @module domains/timesheet/__tests__/ReopenWeekDialog.test
  *
- * Confirmation for parent reopen — mirrors ApproveWeekDialog's AlertDialog
- * structure and testID naming, plus a required reason field.
+ * Confirmation for parent reopen — BottomSheetBase (QueryNoteSheet sibling),
+ * required reason, destructive confirm. Keyboard occlusion cannot be
+ * simulated meaningfully under bun:test / RN Testing Library, so the
+ * structural contract is asserted instead: this surface must host inside
+ * BottomSheetBase (keyboard-aware + scroll), not AlertDialog.
  */
 import { beforeAll, describe, expect, it, mock } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { fireEvent, render } from '@testing-library/react-native';
 
-mock.module('@rn-primitives/alert-dialog', () => {
-  const React = require('react');
-  const Ctx = React.createContext({
-    open: false,
-    setOpen: (_open: boolean) => {},
-  });
-
+mock.module('@/src/components/custom/BottomSheetBase', () => {
+  const R = require('react');
   return {
-    Root: ({
+    BottomSheetBase: ({
+      visible,
       children,
-      open,
-      onOpenChange,
+      testID,
     }: {
+      visible: boolean;
       children: React.ReactNode;
-      open?: boolean;
-      onOpenChange?: (open: boolean) => void;
-    }) => {
-      const setOpen = (next: boolean) => onOpenChange?.(next);
-      return React.createElement(
-        Ctx.Provider,
-        { value: { open: open ?? false, setOpen } },
-        children
-      );
-    },
-    Trigger: ({ children }: { children: React.ReactNode }) => children,
-    Portal: ({ children }: { children: React.ReactNode }) => children,
-    Overlay: ({
-      children,
-      ...props
-    }: {
-      children?: React.ReactNode;
-      [key: string]: unknown;
-    }) => {
-      const { open } = React.useContext(Ctx);
-      return open ? React.createElement('View', props, children) : null;
-    },
-    Content: ({
-      children,
-      ...props
-    }: {
-      children?: React.ReactNode;
-      [key: string]: unknown;
-    }) => React.createElement('View', props, children),
-    Title: ({
-      children,
-      ...props
-    }: {
-      children?: React.ReactNode;
-      [key: string]: unknown;
-    }) => React.createElement('Text', props, children),
-    Description: ({
-      children,
-      ...props
-    }: {
-      children?: React.ReactNode;
-      [key: string]: unknown;
-    }) => React.createElement('Text', props, children),
-    Cancel: ({
-      children,
-      onPress,
-      ...props
-    }: {
-      children?: React.ReactNode;
-      onPress?: (e: unknown) => void;
-      [key: string]: unknown;
-    }) => {
-      const { setOpen } = React.useContext(Ctx);
-      return React.createElement(
-        'Pressable',
-        {
-          ...props,
-          onPress: (e: unknown) => {
-            onPress?.(e);
-            setOpen(false);
-          },
-        },
-        children
-      );
-    },
-    Action: ({
-      children,
-      onPress,
-      disabled,
-      ...props
-    }: {
-      children?: React.ReactNode;
-      onPress?: (e: unknown) => void;
-      disabled?: boolean;
-      [key: string]: unknown;
-    }) => {
-      const { setOpen } = React.useContext(Ctx);
-      return React.createElement(
-        'Pressable',
-        {
-          ...props,
-          disabled,
-          onPress: (e: unknown) => {
-            if (disabled) return;
-            onPress?.(e);
-            setOpen(false);
-          },
-        },
-        children
-      );
-    },
-    useRootContext: () => React.useContext(Ctx),
+      testID?: string;
+    }) => (visible ? R.createElement('View', { testID }, children) : null),
   };
 });
 
@@ -123,7 +34,43 @@ beforeAll(async () => {
     .ReopenWeekDialog;
 });
 
+const reopenWeekDialogSource = readFileSync(
+  join(__dirname, '../components/ReopenWeekDialog.tsx'),
+  'utf8'
+);
+
 describe('ReopenWeekDialog', () => {
+  it('uses BottomSheetBase (keyboard-aware), never AlertDialog', () => {
+    // Render tests cannot reproduce software-keyboard occlusion of the
+    // confirm button. Assert the structural fix that QueryNoteSheet already
+    // uses: BottomSheetBase owns KeyboardAvoidingView + ScrollView.
+    // Doc comments may name AlertDialog as the rejected precedent — ban the
+    // import, not the substring (same shape as HoursScreens QueryNoteSheet).
+    expect(reopenWeekDialogSource).toContain('BottomSheetBase');
+    expect(reopenWeekDialogSource).not.toMatch(
+      /from\s+'@\/src\/components\/ui\/alert-dialog'/
+    );
+    expect(reopenWeekDialogSource).toContain('fitContent');
+  });
+
+  it('hosts the confirm control inside the BottomSheetBase tree', () => {
+    const { getByTestId } = render(
+      <ReopenWeekDialog
+        open
+        onOpenChange={() => {}}
+        onConfirm={() => {}}
+        isSubmitting={false}
+        weekRangeLabel="3 – 9 August"
+      />
+    );
+
+    // testID is on BottomSheetBase itself (same as QueryNoteSheet) — if this
+    // still used AlertDialog, the BottomSheetBase mock would not own it.
+    const sheet = getByTestId('hours-reopen-dialog');
+    expect(sheet).toBeTruthy();
+    expect(getByTestId('hours-reopen-dialog-confirm')).toBeTruthy();
+  });
+
   it('shows the reopen body and collects a reason before confirm fires', () => {
     const onConfirm = mock();
     const { getByTestId, getByText } = render(
@@ -200,5 +147,23 @@ describe('ReopenWeekDialog', () => {
     );
 
     expect(queryByTestId('hours-reopen-dialog-title')).toBeNull();
+  });
+
+  it('cancel dismisses via onOpenChange without confirming', () => {
+    const onOpenChange = mock();
+    const onConfirm = mock();
+    const { getByTestId } = render(
+      <ReopenWeekDialog
+        open
+        onOpenChange={onOpenChange}
+        onConfirm={onConfirm}
+        isSubmitting={false}
+        weekRangeLabel="3 – 9 August"
+      />
+    );
+
+    fireEvent.press(getByTestId('hours-reopen-dialog-cancel'));
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+    expect(onConfirm).not.toHaveBeenCalled();
   });
 });
