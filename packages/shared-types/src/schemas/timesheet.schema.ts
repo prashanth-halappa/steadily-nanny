@@ -187,6 +187,24 @@ export const QueryTimesheetSchema = z.object({
   note: z.string().min(1, 'note is required'),
 });
 
+/**
+ * POST /timesheets/:id/reopen body — the undo for `approve`.
+ *
+ * An approved week that is no longer the current week is otherwise frozen
+ * for good: every correction path (`updateEntry`, `createRetroactiveEntry`,
+ * `recordCancellationPaidEntry`) rejects it, and even the parent's own
+ * `query` action is refused because only `submitted` is actionable. Without
+ * this the sole remediation for a wrong approved total is a manual DB write.
+ *
+ * Reopening returns the week to `submitted` and clears the frozen earnings
+ * snapshot, so the figure is recomputed from whatever the entries then say.
+ * Parent-only, and money-visible — hence the required reason, which is
+ * recorded rather than being a confirm-dialog nicety.
+ */
+export const ReopenTimesheetSchema = z.object({
+  reason: z.string().min(1, 'reason is required'),
+});
+
 /** List response envelope. */
 export const TimesheetListResponseSchema = z.object({
   timesheets: z.array(TimesheetSchema),
@@ -194,6 +212,7 @@ export const TimesheetListResponseSchema = z.object({
 
 export type Timesheet = z.infer<typeof TimesheetSchema>;
 export type QueryTimesheetInput = z.infer<typeof QueryTimesheetSchema>;
+export type ReopenTimesheetInput = z.infer<typeof ReopenTimesheetSchema>;
 export type TimesheetListResponse = z.infer<typeof TimesheetListResponseSchema>;
 
 // =============================================================================

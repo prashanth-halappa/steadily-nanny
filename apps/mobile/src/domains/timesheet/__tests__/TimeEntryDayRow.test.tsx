@@ -338,3 +338,44 @@ describe('TimeEntryDayRow — dated labels (parent CX H1)', () => {
     expect(getByText('noHoursLogged')).toBeTruthy();
   });
 });
+
+describe('TimeEntryDayRow — overnight next-day marker', () => {
+  // Europe/London is BST (UTC+1) in August. An overnight shift filed under
+  // 2026-08-01 that clocks out the next local evening must not read as a
+  // backwards same-day range ("11:53 PM – 10:26 PM").
+  it('marks a finish that falls on a later local date than the row', () => {
+    const entry = makeEntry({
+      clock_in_at: '2026-08-01T22:53:00.000Z', // 23:53 London
+      clock_out_at: '2026-08-02T21:26:00.000Z', // 22:26 London next day
+      local_date: '2026-08-01',
+    });
+    const { getByText } = render(
+      <TimeEntryDayRow
+        date="2026-08-01"
+        entries={[entry]}
+        nowMs={NOW_MS}
+        timeZone="Europe/London"
+      />
+    );
+
+    expect(getByText(/nextDayMarker/)).toBeTruthy();
+  });
+
+  it('does not mark a same-local-date finish', () => {
+    const entry = makeEntry({
+      clock_in_at: '2026-08-01T07:58:00.000Z',
+      clock_out_at: '2026-08-01T09:58:00.000Z',
+      local_date: '2026-08-01',
+    });
+    const { queryByText } = render(
+      <TimeEntryDayRow
+        date="2026-08-01"
+        entries={[entry]}
+        nowMs={NOW_MS}
+        timeZone="Europe/London"
+      />
+    );
+
+    expect(queryByText(/nextDayMarker/)).toBeNull();
+  });
+});

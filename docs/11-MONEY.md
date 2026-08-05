@@ -152,6 +152,28 @@ nulls every time simply restates the invariant, and is idempotent. Never CAS
 the *revert*: a clock-out must never fail because a parent tapped Approve;
 the hours happened and must be recorded.
 
+**A parent can also reopen a week deliberately, not just via D1's roll-up
+path.** `POST /timesheets/:id/reopen` (`timesheetCommandService.reopen`,
+parent/owner only, approved weeks only) is the same undo, triggered by a
+person instead of a clock-out: it clears the snapshot exactly like D1's path
+and requires a reason. That reason is recorded ONLY as an append-only
+`shift_events` day-thread row (`event_type: 'timesheet_reopened'`) — never on
+`timesheets.query_note`. `query_note` means one specific thing, "a parent
+queried this week" (§ above), and `ParentWeekView` renders it as
+"Queried: {{note}}" whenever status is 'queried' (a belt-and-braces status
+gate — `buildInboxItems` already applies the same one when deciding whether
+a week belongs in the nanny's inbox); writing a reopen reason into the same
+column would relabel an undo-approve as an open dispute the next time anyone
+reads the row. The two facts about a week are kept in two places on purpose, and no new
+migration was needed to do it — the day-thread table already exists and
+already carries a nullable `shift_id` for exactly this kind of week/day-level
+(non-shift) event. A dedicated `reopen_reason` column on `timesheets` (wired
+through the shared `TimesheetSchema` wire contract) would let the reason
+surface in the UI the way `query_note` does today; nothing currently reads
+the day-thread audit trail for this, so that surfacing is a real product
+decision to make deliberately, not a gap to patch quietly — if you build it,
+it needs a migration, not a second reuse of `query_note`.
+
 **A frozen week refuses new money, rather than silently reopening.**
 Approving an expense or mileage claim dated inside an already-`approved`
 week is refused with a typed 409 (`ExpenseWeekLockedError`, reason

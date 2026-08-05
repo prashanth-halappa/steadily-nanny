@@ -14,7 +14,7 @@
  *    where silence breeds the dispute" (spec). Save stays disabled until one
  *    is tapped.
  */
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { type Href, useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Pressable, View } from 'react-native';
@@ -138,6 +138,18 @@ export function PaySetupScreen() {
     currentArrangement.data,
   ]);
 
+  // Setup is first-time only. An existing arrangement means we were reached
+  // via a stale stack or deep link — bounce to the pay hub before a blank
+  // form can append a destructive half-null row. PayChangeSheet owns edits.
+  // A `useEffect`, not a call during render: every other redirect in this
+  // codebase (`app/index.tsx`, `(private)/_layout.tsx`) fires from an
+  // effect, never synchronously while rendering.
+  useEffect(() => {
+    if (currentArrangement.data) {
+      router.replace('/settings/pay' as Href);
+    }
+  }, [currentArrangement.data, router]);
+
   if (onboarding.status === 'loading' || activeHousehold.isLoading) {
     return (
       <View testID="pay-setup-screen" className="flex-1 bg-background">
@@ -185,6 +197,21 @@ export function PaySetupScreen() {
     );
   }
 
+  // Setup is first-time only. An existing arrangement means we were reached
+  // via a stale stack or deep link — bounce to the pay hub before a blank
+  // form can append a destructive half-null row. PayChangeSheet owns edits.
+  // The render-time check below only decides WHAT to render (never call a
+  // router method during render — every other redirect in this codebase,
+  // e.g. `app/index.tsx` and `(private)/_layout.tsx`, fires from a
+  // `useEffect`); the actual `router.replace` call lives in the effect above.
+  if (currentArrangement.data) {
+    return (
+      <View testID="pay-setup-screen" className="flex-1 bg-background">
+        <LoadingIndicator testID="pay-loading" />
+      </View>
+    );
+  }
+
   const effectiveDateISO =
     effectiveChoice === 'today' ? todayISO : earlierDateText;
   const formState: PayTermsFormState = {
@@ -200,12 +227,13 @@ export function PaySetupScreen() {
     cancellationChoice,
     cancellationHoursText,
     note,
-    // Almost always undefined here (this screen is the FIRST arrangement,
-    // where 1.5 is the right blank-threshold default) — but if a current
-    // arrangement does exist (review finding 9's re-entry case), carry its
-    // multiplier through unchanged too, same discipline as PayChangeSheet
-    // (review finding 6).
-    currentOvertimeMultiplier: currentArrangement.data?.overtime_multiplier,
+    // Deliberately absent: the redirect above means there is no current
+    // arrangement by the time this renders, so 1.5 (the blank-threshold
+    // default in `buildCreatePayArrangementRequest`) is always right here.
+    // This used to carry `currentArrangement.data?.overtime_multiplier`
+    // through for review finding 9's re-entry case — the redirect replaces
+    // that half-measure, and TypeScript narrowed the read to `never` to
+    // say so. Editing an existing arrangement is PayChangeSheet's job.
   };
   const request = buildCreatePayArrangementRequest(formState);
 

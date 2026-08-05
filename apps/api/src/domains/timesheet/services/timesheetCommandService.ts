@@ -50,6 +50,10 @@ import {
   ShiftNotFoundError,
   ShiftRepository,
 } from '../../shift';
+import {
+  type NewShiftEventInput,
+  ShiftEventRepository,
+} from '../../shift/repositories/shiftEventRepository';
 import type { ShiftWithChildren } from '../../shift/repositories/shiftRepository';
 import { UserService } from '../../user';
 import {
@@ -60,6 +64,7 @@ import {
   NotATimesheetParentError,
   TimeEntryNotEditableError,
   TimeEntryNotRunningError,
+  TimeEntryOverlapError,
   TimesheetNotActionableError,
 } from '../errors/timesheetErrors';
 import { TimeEntryRepository } from '../repositories/timeEntryRepository';
@@ -73,6 +78,7 @@ import type {
   ClockOutInput,
   CreateRetroactiveTimeEntryInput,
   QueryTimesheetInput,
+  ReopenTimesheetInput,
   TimeEntry,
   Timesheet,
   UpdateTimeEntryInput,
@@ -148,6 +154,22 @@ const UNNAMED_CARER_DISPLAY_NAME = 'Carer';
  */
 const CLOCK_SKEW_TOLERANCE_MS = 60_000;
 
+/**
+ * Hard ceiling on a single worked session span (`clock_out - clock_in`).
+ *
+ * Soft counterpart on mobile: `MAX_UNSCHEDULED_SHIFT_MS` in
+ * `apps/mobile/src/domains/today/utils/clockOutReminder.ts` (10h reminder).
+ * This hard reject must stay ABOVE that reminder so the client warns before
+ * the server refuses — same concept, two thresholds.
+ *
+ * Service-layer, not a DB constraint: a live-in or split arrangement may
+ * legitimately need a higher bound later without a migration.
+ *
+ * ponytail: calibration knob, not a law of physics — raise if a real
+ * household's longest legitimate session sits above 16h.
+ */
+const MAX_SESSION_SPAN_MS = 16 * 60 * 60 * 1000;
+
 const CARER_ROLES: ReadonlySet<string> = new Set([HOUSEHOLD_ROLES.NANNY]);
 const WRITE_ROLES: ReadonlySet<string> = new Set([
   HOUSEHOLD_ROLES.OWNER,
@@ -192,7 +214,13 @@ export class TimesheetCommandService {
     // The earnings engine's impure wrapper. Only `approve` uses it — this is
     // the single point in the app where a computed figure becomes a stored
     // one (`docs/11-MONEY.md` §3).
-    private readonly earnings: WeekEarningsComputer = weekEarningsService
+    private readonly earnings: WeekEarningsComputer = weekEarningsService,
+    // Day-thread append for money-visible reopen audits. Default instance
+    // keeps existing callers/tests on the nine-arg constructor working.
+    private readonly eventRepo: Pick<
+      ShiftEventRepository,
+      'insertMany'
+    > = new ShiftEventRepository()
   ) {}
 
   /**
@@ -376,6 +404,14 @@ export class TimesheetCommandService {
       throw new TimeEntryNotEditableError('new', 'week_approved');
     }
 
+    await this.assertNoOverlap(
+      input.household_id,
+      userId,
+      weekStart,
+      clockInAt,
+      clockOutAt
+    );
+
     let shiftId: string | null = null;
     let scheduledMinutes: number | null = null;
     if (input.shift_id) {
@@ -536,7 +572,7 @@ export class TimesheetCommandService {
     if (!originalClockInAt) {
       throw new InvalidClockTimesError('MISSING_CLOCK_TIME', { timeEntryId });
     }
-    const { clockInAt } = this.assertClockOrder(
+    const { clockInAt, clockOutAt } = this.assertClockOrder(
       input.clock_in_at ?? originalClockInAt,
       input.clock_out_at ?? entry.clock_out_at
     );
@@ -545,15 +581,24 @@ export class TimesheetCommandService {
     const timeZone = household?.timezone ?? 'UTC';
     const weekStart = weekStartOf(new Date(originalClockInAt), timeZone);
 
-    // ponytail: a clock-in edit that crosses a week boundary is rejected
+    // ponytail: a clock edit that crosses a week boundary is rejected
     // rather than handled — `rollUpIntoTimesheet` recomputes ONE week, so
     // moving an entry out of this one would leave the week it left behind
-    // overstated. Teach the roll-up to take both weeks if overnight
-    // corrections across a Monday ever turn out to matter.
+    // overstated. Both ends must stay in the original week: checking only
+    // clock-in let a finish land on the following Sunday and still price
+    // entirely into the original week. Teach the roll-up to take both weeks
+    // if overnight corrections across a Monday ever turn out to matter.
     if (weekStartOf(new Date(clockInAt), timeZone) !== weekStart) {
       throw new InvalidClockTimesError('CLOCK_IN_CHANGES_WEEK', {
         timeEntryId,
         weekStart,
+      });
+    }
+    if (weekStartOf(new Date(clockOutAt), timeZone) !== weekStart) {
+      throw new InvalidClockTimesError('CLOCK_OUT_CHANGES_WEEK', {
+        timeEntryId,
+        weekStart,
+        clockOutAt,
       });
     }
 
@@ -565,6 +610,15 @@ export class TimesheetCommandService {
     if (timesheet?.status === 'approved') {
       throw new TimeEntryNotEditableError(timeEntryId, 'week_approved');
     }
+
+    await this.assertNoOverlap(
+      entry.household_id,
+      userId,
+      weekStart,
+      clockInAt,
+      clockOutAt,
+      timeEntryId
+    );
 
     const patch: Partial<TimeEntry> = {};
     if (input.clock_in_at !== undefined) patch.clock_in_at = input.clock_in_at;
@@ -583,15 +637,18 @@ export class TimesheetCommandService {
    * Reject clock times that can't describe a real session. Mirrors the DB's
    * `time_entries_clock_order` check (017_time_tracking.sql) so a bad edit
    * comes back as a 400 the client can render, instead of a constraint
-   * violation surfacing as a 500 — and adds the bound the DB cannot know
-   * about: a finish may not be in the future. Both `clockOut` and
-   * `updateEntry` route through here, so neither can drift from the other.
+   * violation surfacing as a 500 — and adds the bounds the DB cannot know
+   * about: a finish may not be in the future, and a single session may not
+   * exceed `MAX_SESSION_SPAN_MS`. `clockOut`, `createRetroactiveEntry`, and
+   * `updateEntry` all route through here, so one guard covers every write
+   * path that invents worked hours.
    *
    * Returns the pair it validated so callers get the non-null narrowing for
    * free rather than re-asserting it.
    *
    * Not for `recordCancellationPaidEntry` — paid-cancel spans are often
-   * still in the future; use `assertCancellationPaidSpan` instead.
+   * still in the future and are already bounded by the shift; use
+   * `assertCancellationPaidSpan` instead.
    */
   private assertClockOrder(
     clockInAt: string | null,
@@ -606,6 +663,13 @@ export class TimesheetCommandService {
       throw new InvalidClockTimesError('CLOCK_OUT_BEFORE_CLOCK_IN', {
         clockInAt,
         clockOutAt,
+      });
+    }
+    if (outMs - inMs > MAX_SESSION_SPAN_MS) {
+      throw new InvalidClockTimesError('CLOCK_SPAN_TOO_LONG', {
+        clockInAt,
+        clockOutAt,
+        maxSpanMs: MAX_SESSION_SPAN_MS,
       });
     }
     if (outMs > Date.now() + CLOCK_SKEW_TOLERANCE_MS) {
@@ -627,6 +691,48 @@ export class TimesheetCommandService {
         clockInAt: startsAt,
         clockOutAt: endsAt,
       });
+    }
+  }
+
+  /**
+   * Reject a span that intersects another COMPLETED entry for the same
+   * carer in the same week. Running entries are ignored: they have no
+   * finish yet, and `time_entries_one_running_per_carer` already bounds
+   * them. `excludeEntryId` lets `updateEntry` ignore the row being edited
+   * so a no-op (or in-place) correction does not count as overlapping itself.
+   *
+   * Half-open intersection: `[a,b)` overlaps `[c,d)` iff `a < d && c < b`.
+   * Touching end-to-start (out === other.in) is allowed — back-to-back
+   * sessions are ordinary.
+   */
+  private async assertNoOverlap(
+    householdId: string,
+    carerId: string,
+    weekStart: string,
+    clockInAt: string,
+    clockOutAt: string,
+    excludeEntryId?: string
+  ): Promise<void> {
+    const weekEntries = await this.timeEntryRepo.listForCarerWeek(
+      householdId,
+      carerId,
+      weekStart,
+      weekEndExclusive(weekStart)
+    );
+    const inMs = new Date(clockInAt).getTime();
+    const outMs = new Date(clockOutAt).getTime();
+    for (const other of weekEntries) {
+      if (excludeEntryId && other.id === excludeEntryId) continue;
+      if (!other.clock_in_at || !other.clock_out_at) continue;
+      const otherIn = new Date(other.clock_in_at).getTime();
+      const otherOut = new Date(other.clock_out_at).getTime();
+      if (inMs < otherOut && otherIn < outMs) {
+        throw new TimeEntryOverlapError({
+          clockInAt,
+          clockOutAt,
+          overlappingEntryId: other.id,
+        });
+      }
     }
   }
 
@@ -769,6 +875,64 @@ export class TimesheetCommandService {
       } catch {
         // notifyUser is sync fire-and-forget; swallow any unexpected throw
       }
+    }
+
+    return toWireTimesheet(updated);
+  }
+
+  /**
+   * Owner/parent only. Undo for `approve`: return an approved week to
+   * `submitted` and clear the frozen earnings snapshot so corrections can
+   * land again. Without this, an approved week that is no longer the current
+   * week is permanently frozen — every write path rejects it, and even
+   * `query` is refused because only `submitted` is actionable.
+   *
+   * Snapshot clear reuses `CLEARED_EARNINGS_SNAPSHOT` — the same literal
+   * `rollUpIntoTimesheet` writes — so approve and reopen cannot drift on
+   * which columns null out. The caller-supplied reason is recorded as an
+   * append-only day-thread event — reopening is a money-visible act and must
+   * not be silent — deliberately NOT on `query_note`: that column means "a
+   * parent queried this week", and `ParentWeekView` renders it as
+   * "Queried: {{note}}" whenever the status is 'queried'. Writing a reopen
+   * reason there would mislabel an undo-approve as an open dispute the next
+   * time anyone reads the row. The two are different facts about a week and
+   * must not share a column.
+   */
+  async reopen(
+    userId: string,
+    timesheetId: string,
+    input: ReopenTimesheetInput
+  ): Promise<Timesheet> {
+    const timesheet = await this.queries.getOwnedTimesheet(userId, timesheetId);
+    await this.assertWriteMember(userId, timesheet.household_id);
+    if (timesheet.status !== 'approved') {
+      throw new TimesheetNotActionableError(timesheetId, timesheet.status);
+    }
+
+    const updated = await this.timesheetRepo.update(timesheetId, {
+      status: 'submitted',
+      approved_by: null,
+      approved_at: null,
+      ...CLEARED_EARNINGS_SNAPSHOT,
+    });
+
+    const auditEvent: NewShiftEventInput = {
+      household_id: timesheet.household_id,
+      shift_id: null,
+      local_date: timesheet.week_start,
+      actor_id: userId,
+      event_type: 'timesheet_reopened',
+      payload: {
+        timesheetId,
+        reason: input.reason,
+        weekStart: timesheet.week_start,
+      },
+    };
+    try {
+      await this.eventRepo.insertMany([auditEvent]);
+    } catch {
+      // Day-thread append is best-effort audit: the reopen write already
+      // succeeded and must not be rolled back for a logging failure.
     }
 
     return toWireTimesheet(updated);

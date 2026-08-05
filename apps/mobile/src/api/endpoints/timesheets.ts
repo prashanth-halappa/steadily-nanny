@@ -10,11 +10,13 @@
 
 import type {
   QueryTimesheetInput,
+  ReopenTimesheetInput,
   Timesheet,
   TimesheetWeek,
 } from '@steadily-nanny/shared-types/schemas/timesheet.schema';
 import {
   QueryTimesheetSchema,
+  ReopenTimesheetSchema,
   TimesheetListResponseSchema,
   TimesheetSchema,
   TimesheetWeekSchema,
@@ -41,7 +43,12 @@ export {
 } from '@steadily-nanny/shared-types/schemas/timesheet.schema';
 // Re-exported so domain-internal imports (`@/src/api/endpoints/timesheets`)
 // stay stable regardless of where the wire contract itself lives.
-export type { QueryTimesheetInput, Timesheet, TimesheetWeek };
+export type {
+  QueryTimesheetInput,
+  ReopenTimesheetInput,
+  Timesheet,
+  TimesheetWeek,
+};
 
 // --- Endpoint URLs ----------------------------------------------------------
 export const timesheetEndpoints = {
@@ -50,6 +57,7 @@ export const timesheetEndpoints = {
   getWeek: (timesheetId: string) => `/v1/timesheets/${timesheetId}`,
   approve: (timesheetId: string) => `/v1/timesheets/${timesheetId}/approve`,
   query: (timesheetId: string) => `/v1/timesheets/${timesheetId}/query`,
+  reopen: (timesheetId: string) => `/v1/timesheets/${timesheetId}/reopen`,
 } as const;
 
 // --- API --------------------------------------------------------------------
@@ -128,6 +136,29 @@ export const timesheetApi = {
 
     const response = await apiClient.post(
       timesheetEndpoints.query(timesheetId),
+      validated.data
+    );
+    const parsed = z
+      .object({ timesheet: TimesheetSchema })
+      .safeParse(response.data.data);
+    if (!parsed.success) throw parsed.error;
+    return parsed.data.timesheet;
+  },
+
+  /**
+   * Reopen an approved week — the undo for approve. Parents only; requires a
+   * recorded reason. Returns the week to `submitted` and clears the frozen
+   * earnings snapshot so the figure can change again.
+   */
+  reopen: async (
+    timesheetId: string,
+    input: ReopenTimesheetInput
+  ): Promise<Timesheet> => {
+    const validated = ReopenTimesheetSchema.safeParse(input);
+    if (!validated.success) throw validated.error;
+
+    const response = await apiClient.post(
+      timesheetEndpoints.reopen(timesheetId),
       validated.data
     );
     const parsed = z

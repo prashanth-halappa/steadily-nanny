@@ -94,7 +94,7 @@
     "title": "Pay this time off?",
     "subtitle": "{{name}}, {{range}}",
     "hoursLabel": "Hours to pay",
-    "hoursHint": "Suggested from her usual hours that week. Change it if you agreed something else.",
+    "hoursHint": "How many hours of these days you're paying.",
     "hoursError": "Enter a number of hours, like 8 or 7.5.",
     "balanceBeforeAfter": "Balance {{before}} now → {{after}} after",
     "overBalanceWarning": "This is more than her remaining balance. You can still pay it — the balance will show as {{after}}.",

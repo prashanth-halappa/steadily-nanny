@@ -20,6 +20,7 @@ export type {
   ClockOutInput,
   CreateRetroactiveTimeEntryInput,
   QueryTimesheetInput,
+  ReopenTimesheetInput,
   TimeEntry,
   TimeEntryKind,
   TimeEntryListResponse,
@@ -34,6 +35,7 @@ export {
   ClockOutSchema,
   CreateRetroactiveTimeEntrySchema,
   QueryTimesheetSchema,
+  ReopenTimesheetSchema,
   TIME_ENTRY_KINDS,
   TIME_ENTRY_STATUSES,
   TIMESHEET_STATUSES,
@@ -56,7 +58,7 @@ export const TimeEntryIdParamSchema = z.object({
 });
 export type TimeEntryIdParam = z.infer<typeof TimeEntryIdParamSchema>;
 
-/** URL param validation for /timesheets/:id/approve and /timesheets/:id/query. */
+/** URL param validation for /timesheets/:id/approve, /query, and /reopen. */
 export const TimesheetIdParamSchema = z.object({
   id: z.uuid(),
 });

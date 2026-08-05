@@ -14,6 +14,7 @@ export type {
   CreateRetroactiveTimeEntryInput,
   HouseholdIdParam,
   QueryTimesheetInput,
+  ReopenTimesheetInput,
   TimeEntry,
   TimeEntryIdParam,
   TimeEntryKind,
