@@ -174,6 +174,27 @@ export const queryKeys = {
       [...queryKeys.pay.all, 'history', householdId, carerId] as const,
   },
 
+  // Paid time off (Phase 3). Balance is per calendar year — the year is part
+  // of the key so switching years refetches rather than showing last year's
+  // figure under this year's heading.
+  pto: {
+    all: ['pto'] as const,
+    balance: (householdId?: string, carerId?: string, year?: number) =>
+      [...queryKeys.pto.all, 'balance', householdId, carerId, year] as const,
+    ledger: (householdId?: string, carerId?: string, year?: number) =>
+      [...queryKeys.pto.all, 'ledger', householdId, carerId, year] as const,
+  },
+
+  // Expenses and mileage (Phase 4). `week` is keyed by the household-local
+  // week start, matching how timesheet keys its weeks.
+  expenses: {
+    all: ['expenses'] as const,
+    week: (householdId?: string, weekStart?: string) =>
+      [...queryKeys.expenses.all, 'week', householdId, weekStart] as const,
+    pending: (householdId?: string) =>
+      [...queryKeys.expenses.all, 'pending', householdId] as const,
+  },
+
   // Pending-work inbox aggregates (approvals list; other sources reuse
   // schedulePattern / shift / timesheet keys above).
   inbox: {
