@@ -352,6 +352,7 @@ export function ParentWeekView({
           earnings={earningsOk}
           weekRangeLabel={weekRangeLabel}
           approvedDateLabel={approvedDateLabel}
+          earningsRole="parent"
         />
       ) : null}
     </>

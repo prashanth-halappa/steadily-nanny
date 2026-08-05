@@ -127,6 +127,20 @@ export function WeekEarningsLine({
   }
 
   if (earnings.status === WEEK_EARNINGS_STATES.NO_ARRANGEMENT) {
+    // review finding 3: an approved week is FROZEN — a backdated arrangement
+    // recomputes nothing (approved weeks never recompute), so the "Set a pay
+    // rate" CTA's promise is unkeepable here. Render the mandatory
+    // Approved/Estimated state word instead, and drop the nudge/CTA
+    // entirely for both roles (the parent's own CTA included).
+    if (timesheetStatus === 'approved') {
+      return (
+        <View testID={testID} className="mt-1">
+          <Small className="text-muted-foreground">
+            {t('earningsNoArrangementApproved')}
+          </Small>
+        </View>
+      );
+    }
     return (
       <View testID={testID} className="mt-1 gap-1">
         <Small className="text-muted-foreground">
@@ -149,10 +163,17 @@ export function WeekEarningsLine({
   }
 
   if (earnings.status === WEEK_EARNINGS_STATES.CURRENCY_CHANGE) {
+    // review finding 3: the live caption ("ask your family to check the
+    // terms") promises an ongoing fix that a frozen approved week can never
+    // receive — an approved timesheet never recomputes. Swap in copy that
+    // states the outcome instead of an unkeepable ask, carrying the
+    // mandatory "Approved" state word.
     return (
       <View testID={testID} className="mt-1">
         <Small className="text-muted-foreground">
-          {t('earningsCurrencyChange')}
+          {timesheetStatus === 'approved'
+            ? t('earningsCurrencyChangeApproved')
+            : t('earningsCurrencyChange')}
         </Small>
       </View>
     );

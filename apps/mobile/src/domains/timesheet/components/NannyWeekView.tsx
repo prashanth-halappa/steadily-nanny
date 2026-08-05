@@ -182,6 +182,8 @@ export function NannyWeekView({
             earningsCarerDisplayName={timesheet?.carer_display_name ?? ''}
             onPressEarnings={() => setIsBreakdownVisible(true)}
             earningsReopened={reopened}
+            earningsError={timesheetQuery.isError}
+            onRetryEarnings={() => void timesheetQuery.refetch()}
           />
         }
         contentContainerStyle={{
@@ -215,6 +217,7 @@ export function NannyWeekView({
           earnings={earningsOk}
           weekRangeLabel={weekRangeLabel}
           approvedDateLabel={approvedDateLabel}
+          earningsRole="nanny"
         />
       ) : null}
     </>

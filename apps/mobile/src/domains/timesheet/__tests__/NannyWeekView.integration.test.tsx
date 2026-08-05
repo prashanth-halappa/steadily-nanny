@@ -386,3 +386,49 @@ describe('NannyWeekView — earnings arms', () => {
     );
   });
 });
+
+describe('NannyWeekView — earnings error (review finding 4)', () => {
+  // TIER0-CX-SPEC.md §4.5 "Earnings error (hours OK)": a timesheet-fetch
+  // failure must degrade only the money line to a retry affordance, never
+  // silently drop it — the nanny is the person the number is FOR.
+  // `ParentWeekView` already wires `earningsError`/`onRetryEarnings`
+  // through to `WeekTotal`; `NannyWeekView` never did.
+  it('shows the retry caption + control when the timesheet fetch fails, and hours still render', async () => {
+    listTimesheetsMock.mockImplementation(() =>
+      Promise.reject(new Error('network down'))
+    );
+
+    const { getByTestId, queryByTestId } = renderNannyView();
+
+    await waitFor(() =>
+      expect(getByTestId('hours-earnings-line-retry')).toBeTruthy()
+    );
+    expect(queryByTestId('hours-earnings-line-amount')).toBeNull();
+    // Hours must still render — a money failure never blanks the record.
+    expect(getByTestId(`hours-day-${WEEK_START}`)).toBeTruthy();
+  });
+
+  it('retry re-fetches the timesheet', async () => {
+    listTimesheetsMock.mockImplementation(() =>
+      Promise.reject(new Error('network down'))
+    );
+
+    const { getByTestId } = renderNannyView();
+
+    await waitFor(() =>
+      expect(getByTestId('hours-earnings-line-retry')).toBeTruthy()
+    );
+    const callsBeforeRetry = listTimesheetsMock.mock.calls.length;
+
+    listTimesheetsMock.mockImplementation(() =>
+      Promise.resolve([makeTimesheet()])
+    );
+    fireEvent.press(getByTestId('hours-earnings-line-retry'));
+
+    await waitFor(() =>
+      expect(listTimesheetsMock.mock.calls.length).toBeGreaterThan(
+        callsBeforeRetry
+      )
+    );
+  });
+});

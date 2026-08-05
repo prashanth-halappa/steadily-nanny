@@ -197,6 +197,46 @@ describe('WeekEarningsLine', () => {
     });
   });
 
+  describe('no_arrangement — approved & frozen (review finding 3)', () => {
+    const noArrangement = {
+      status: 'no_arrangement' as const,
+      week_start: '2026-08-03',
+      unpriced_dates: ['2026-08-03'],
+    };
+
+    it('parent: an approved week never shows the unkeepable "Set a pay rate" CTA', () => {
+      const { getByTestId, getByText, queryByTestId } = render(
+        <WeekEarningsLine
+          earnings={noArrangement}
+          timesheetStatus="approved"
+          viewerRole="parent"
+          carerId="carer-42"
+          carerDisplayName="Amara"
+          totalMinutes={2460}
+        />
+      );
+      expect(getByTestId('hours-earnings-line')).toBeTruthy();
+      expect(queryByTestId('hours-earnings-line-set-rate')).toBeNull();
+      // The mandatory Approved/Estimated state word must still be present.
+      expect(getByText('earningsNoArrangementApproved')).toBeTruthy();
+    });
+
+    it('nanny: an approved week keeps the sentence-only treatment (no control either way)', () => {
+      const { getByTestId, queryByTestId } = render(
+        <WeekEarningsLine
+          earnings={noArrangement}
+          timesheetStatus="approved"
+          viewerRole="nanny"
+          carerId="carer-42"
+          carerDisplayName="Amara"
+          totalMinutes={2460}
+        />
+      );
+      expect(getByTestId('hours-earnings-line')).toBeTruthy();
+      expect(queryByTestId('hours-earnings-line-set-rate')).toBeNull();
+    });
+  });
+
   it('currency_change arm: renders its sentence, no number', () => {
     const { getByTestId, queryByTestId } = render(
       <WeekEarningsLine
@@ -214,6 +254,24 @@ describe('WeekEarningsLine', () => {
     );
     expect(getByTestId('hours-earnings-line')).toBeTruthy();
     expect(queryByTestId('hours-earnings-line-amount')).toBeNull();
+  });
+
+  it('currency_change arm, approved & frozen: distinct copy, no forever-unfixable "ask your family" caption (review finding 3)', () => {
+    const { getByText } = render(
+      <WeekEarningsLine
+        earnings={{
+          status: 'currency_change',
+          week_start: '2026-08-03',
+          currencies: ['GBP', 'EUR'],
+        }}
+        timesheetStatus="approved"
+        viewerRole="parent"
+        carerId="carer-1"
+        carerDisplayName="Amara"
+        totalMinutes={2460}
+      />
+    );
+    expect(getByText('earningsCurrencyChangeApproved')).toBeTruthy();
   });
 
   it('zero hours + zero gross: renders nothing (never £0.00)', () => {

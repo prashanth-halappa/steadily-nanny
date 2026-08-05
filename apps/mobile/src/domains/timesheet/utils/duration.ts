@@ -5,6 +5,7 @@
  * follows the device locale's 12h/24h preference while staying in the
  * household IANA zone (GOLDEN-FIXES #21).
  */
+import i18n from '@/src/i18n';
 import {
   formatInstantDisplay,
   utcIsoToWallClockHHMM,
@@ -67,6 +68,12 @@ export function formatElapsedClock(startIso: string, nowMs: number): string {
  * scheduled"), not a word swap. Magnitude formatting is delegated to
  * `formatDuration` (so an hour-plus delta reads "2h", not "120 min") — same
  * duration-rendering rule, just no longer minutes-only.
+ *
+ * i18n (review finding 5a): this is a pure module with no `t` in scope (no
+ * React tree to pull `useTranslation` from), so it calls the shared `i18n`
+ * instance directly — the same house pattern as
+ * `domains/schedule/utils/calendarSyncNative.ts`'s `resolveEventLabels`,
+ * rather than inventing a translator-injection parameter.
  */
 export function formatOvertimeDelta(
   actualMinutes: number,
@@ -75,8 +82,10 @@ export function formatOvertimeDelta(
   if (scheduledMinutes === null) return null;
   const delta = Math.round(actualMinutes - scheduledMinutes);
   if (delta === 0) return null;
-  const direction = delta > 0 ? 'over' : 'under';
-  return `${formatDuration(Math.abs(delta))} ${direction} scheduled`;
+  const duration = formatDuration(Math.abs(delta));
+  return delta > 0
+    ? i18n.t('hours:overScheduled', { duration })
+    : i18n.t('hours:underScheduled', { duration });
 }
 
 /**

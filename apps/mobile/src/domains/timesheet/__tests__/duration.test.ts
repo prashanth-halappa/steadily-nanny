@@ -5,7 +5,8 @@
  * team-lead's brief: "unit-test the duration formatting and the timer
  * cleanup directly, those are pure and worth real tests").
  */
-import { describe, expect, it } from 'bun:test';
+import { afterEach, describe, expect, it } from 'bun:test';
+import i18n from '@/src/i18n';
 import {
   formatClockTime,
   formatDuration,
@@ -99,6 +100,28 @@ describe('formatOvertimeDelta', () => {
 
   it('returns null when there is nothing scheduled to compare against', () => {
     expect(formatOvertimeDelta(540, null)).toBeNull();
+  });
+
+  // review finding 5a: this copy was hardcoded English ("over scheduled" /
+  // "under scheduled"), so a Spanish-language user read English words in the
+  // middle of an otherwise-translated screen. Routed through the app's real
+  // i18n instance (the house pattern for pure, non-component modules — see
+  // `domains/schedule/utils/calendarSyncNative.ts`), asserted against the
+  // REAL Spanish resource bundle, not the component-level key-echo mock.
+  describe('i18n (review finding 5a)', () => {
+    afterEach(async () => {
+      await i18n.changeLanguage('en');
+    });
+
+    it('renders in Spanish when the app language is es', async () => {
+      await i18n.changeLanguage('es');
+      expect(formatOvertimeDelta(554, 540)).toBe(
+        '14m por encima de lo previsto'
+      );
+      expect(formatOvertimeDelta(500, 540)).toBe(
+        '40m por debajo de lo previsto'
+      );
+    });
   });
 });
 

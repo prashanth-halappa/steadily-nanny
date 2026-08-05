@@ -39,8 +39,10 @@ import { EARNINGS_LINE_KINDS } from '../types';
 import { formatDuration } from '../utils/duration';
 import {
   formatEarningsDuration,
+  formatEarningsMultiplier,
   formatEarningsSpanDate,
 } from '../utils/earningsFormat';
+import type { EarningsRole } from './WeekEarningsLine';
 
 interface EarningsBreakdownSheetProps {
   visible: boolean;
@@ -51,6 +53,14 @@ interface EarningsBreakdownSheetProps {
   /** When set, the sheet reads "… · Approved {date}" instead of "… ·
    * Estimated" — the frozen-snapshot arm. `null`/omitted means estimated. */
   approvedDateLabel?: string | null;
+  /** Who is reading this sheet — drives the cancellation-paid subline's
+   * voice (review finding 9b): "paid under your cancellation policy" reads
+   * fine from the parent (her own family's policy) but wrongly parent-voiced
+   * when the SAME sheet is opened by the nanny read-only. Defaults to
+   * `'parent'` for backwards compatibility with any caller that predates
+   * this prop — every real caller (`ParentWeekView`/`NannyWeekView`) passes
+   * it explicitly. */
+  earningsRole?: EarningsRole;
   testID?: string;
 }
 
@@ -71,6 +81,7 @@ export function EarningsBreakdownSheet({
   earnings,
   weekRangeLabel,
   approvedDateLabel,
+  earningsRole = 'parent',
   testID = 'hours-earnings-breakdown',
 }: EarningsBreakdownSheetProps) {
   const { t } = useTranslation('hours');
@@ -126,23 +137,38 @@ export function EarningsBreakdownSheet({
             testID={`${testID}-line-overtime`}
             label={t('earningsLineOvertime')}
             value={amount}
+            // review finding 9a: `multiplier` below is a LOCALE-FORMATTED
+            // STRING (comma decimal in Spanish), never the raw JS number —
+            // interpolating the number as-is put the period-decimal English
+            // form mid-sentence for every other locale.
             subLine={t('earningsLineOvertimeSubline', {
               duration,
               rate,
-              multiplier: line.multiplier ?? 1,
+              multiplier: formatEarningsMultiplier(line.multiplier ?? 1),
             })}
           />
         );
-      case EARNINGS_LINE_KINDS.CANCELLATION_PAID:
+      case EARNINGS_LINE_KINDS.CANCELLATION_PAID: {
+        // review finding 9b: "paid under your cancellation policy" is
+        // parent-voiced (her own family's policy) — wrong when this same
+        // sheet is opened by the nanny read-only. Resolved to a plain
+        // variable, not inline in the `t()` call, so a locale-key-resolution
+        // guardrail scanning call sites for string literals can't mistake
+        // the `earningsRole === 'parent'` comparison for a translation key.
+        const cancellationSublineKey =
+          earningsRole === 'parent'
+            ? 'earningsLineCancellationSublineParent'
+            : 'earningsLineCancellationSublineNanny';
         return (
           <AmountRow
             key={key}
             testID={`${testID}-line-cancellation`}
             label={t('earningsLineCancellation')}
             value={amount}
-            subLine={t('earningsLineCancellationSubline', { duration, rate })}
+            subLine={t(cancellationSublineKey, { duration, rate })}
           />
         );
+      }
       case EARNINGS_LINE_KINDS.PTO:
         return (
           <AmountRow

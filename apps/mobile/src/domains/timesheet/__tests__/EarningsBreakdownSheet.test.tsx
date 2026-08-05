@@ -8,6 +8,26 @@ import { render } from '@testing-library/react-native';
 import { EarningsBreakdownSheet } from '../components/EarningsBreakdownSheet';
 import type { WeekEarningsOk } from '../types';
 
+function cancellationEarnings(): WeekEarningsOk {
+  return baseEarnings({
+    lines: [
+      {
+        kind: 'cancellation_paid',
+        minutes: 240,
+        rate_minor: 1850,
+        multiplier: null,
+        amount_minor: 7400,
+        from_date: '2026-08-08',
+        to_date: '2026-08-08',
+        arrangement_id: 'arr-1',
+      },
+    ],
+    gross_minor: 7400,
+    worked_minutes: 240,
+    payable_minutes: 240,
+  });
+}
+
 function baseEarnings(overrides: Partial<WeekEarningsOk> = {}): WeekEarningsOk {
   return {
     status: 'ok',
@@ -228,5 +248,39 @@ describe('EarningsBreakdownSheet', () => {
       />
     );
     expect(getByText('earningsFooterNote')).toBeTruthy();
+  });
+
+  // review finding 9b: "paid under your cancellation policy" is
+  // parent-voiced copy ("your" = the policy the reader set) but the SAME
+  // sheet is shown to the nanny read-only, in her own breakdown. The two
+  // roles now get their own key/voice — `EarningsBreakdownSheet` already
+  // knows the role (`earningsRole`, same prop shape as `WeekEarningsLine`).
+  describe('cancellation subline — role voice (review finding 9b)', () => {
+    it('parent: "paid under your cancellation policy" (her own family policy)', () => {
+      const { getByText } = render(
+        <EarningsBreakdownSheet
+          visible
+          onDismiss={() => {}}
+          earnings={cancellationEarnings()}
+          weekRangeLabel="3 Aug – 9 Aug"
+          earningsRole="parent"
+        />
+      );
+      expect(getByText('earningsLineCancellationSublineParent')).toBeTruthy();
+    });
+
+    it('nanny: a distinct key — never the parent-voiced "your cancellation policy"', () => {
+      const { getByText, queryByText } = render(
+        <EarningsBreakdownSheet
+          visible
+          onDismiss={() => {}}
+          earnings={cancellationEarnings()}
+          weekRangeLabel="3 Aug – 9 Aug"
+          earningsRole="nanny"
+        />
+      );
+      expect(getByText('earningsLineCancellationSublineNanny')).toBeTruthy();
+      expect(queryByText('earningsLineCancellationSublineParent')).toBeNull();
+    });
   });
 });
