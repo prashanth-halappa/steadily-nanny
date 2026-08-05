@@ -130,14 +130,16 @@ export interface ApprovedExpenseInput {
  * 2), so a paid-PTO week both pays for the PTO on its own `pto` line AND
  * correctly suppresses a top-up for the same minutes — no double pay, and
  * critically, no more "suppresses the top-up and pays nothing at all,"
- * which is what happened before this line existed and why the one
- * production caller (`weekEarningsService.buildWeekEarningsInput`) hard-
- * zeroed the input rather than wire the ledger through.
+ * which is what happened before this line existed and why
+ * `weekEarningsService.buildWeekEarningsInput` used to hard-zero the input
+ * rather than wire the ledger through.
  *
- * **`pto_usage_minutes`** is now a DEPRECATED fallback, kept rather than
- * deleted because that same production caller still passes it (as a
- * hard-coded `0`, pending its own Phase 3 update — this module cannot make
- * that caller pass real minutes, only make it SAFE to). When `pto_usage` is
+ * **`pto_usage_minutes`** is a DEPRECATED fallback with ZERO production
+ * callers as of the Phase 3 wiring — `buildWeekEarningsInput` now passes
+ * dated `pto_usage` rows (converting the ledger's stored-negative usage
+ * minutes to positive) and no longer sets this field at all. It survives
+ * only so an out-of-tree caller cannot break on removal; deleting it is a
+ * safe follow-up. When `pto_usage` is
  * omitted entirely, a non-zero `pto_usage_minutes` prices as ONE line
  * spanning the whole week at the arrangement effective on the week's LAST
  * DAY — the same "the week is one unit" convention the top-up and the
