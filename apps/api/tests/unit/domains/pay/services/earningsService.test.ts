@@ -76,6 +76,14 @@ function closureShift(
   return { local_date, scheduled_minutes, became_payable };
 }
 
+function pto(local_date: string, minutes: number) {
+  return { local_date, minutes };
+}
+
+function expense(local_date: string, amount_minor: number, currency = 'GBP') {
+  return { local_date, amount_minor, currency };
+}
+
 function input(
   over: Partial<ComputeWeekEarningsInput>
 ): ComputeWeekEarningsInput {
@@ -688,6 +696,342 @@ describe('earningsService.computeWeekEarnings', () => {
         week_start: WEEK_START,
         currencies: ['GBP', 'EUR'],
       });
+      expect(WeekEarningsSchema.safeParse(result).success).toBe(true);
+    });
+  });
+
+  describe('pto', () => {
+    it('prices a dated PTO day at the week’s single effective rate', () => {
+      const result = ok(
+        computeWeekEarnings(input({ pto_usage: [pto(WED, 240)] }))
+      );
+
+      expect(result.lines).toEqual([
+        {
+          kind: 'pto',
+          minutes: 240,
+          rate_minor: 1850,
+          multiplier: null,
+          amount_minor: 7400,
+          from_date: WED,
+          to_date: WED,
+          arrangement_id: ARR_ID_A,
+        },
+      ]);
+      expect(result.gross_minor).toBe(7400);
+      expect(result.worked_minutes).toBe(0);
+      expect(result.payable_minutes).toBe(240);
+    });
+
+    it('prices PTO per-day across a mid-week rate change, one line per rate', () => {
+      const raise = [
+        arrangement(),
+        arrangement({
+          id: ARR_ID_B,
+          rate_minor: 1950,
+          valid_from: WED,
+          created_at: '2026-08-01T09:00:00.000Z',
+        }),
+      ];
+
+      const result = ok(
+        computeWeekEarnings(
+          input({
+            arrangements: raise,
+            pto_usage: [pto(TUE, 120), pto(WED, 120)],
+          })
+        )
+      );
+
+      expect(result.lines).toEqual([
+        {
+          kind: 'pto',
+          minutes: 120,
+          rate_minor: 1850,
+          multiplier: null,
+          amount_minor: 3700,
+          from_date: TUE,
+          to_date: TUE,
+          arrangement_id: ARR_ID_A,
+        },
+        {
+          kind: 'pto',
+          minutes: 120,
+          rate_minor: 1950,
+          multiplier: null,
+          amount_minor: 3900,
+          from_date: WED,
+          to_date: WED,
+          arrangement_id: ARR_ID_B,
+        },
+      ]);
+      expect(result.gross_minor).toBe(7600);
+      expect(result.payable_minutes).toBe(240);
+    });
+
+    it('sums PTO and worked minutes correctly in gross', () => {
+      const result = ok(
+        computeWeekEarnings(
+          input({
+            entries: [worked(MON, 480)],
+            pto_usage: [pto(TUE, 480)],
+          })
+        )
+      );
+
+      expect(result.lines.map(l => [l.kind, l.minutes])).toEqual([
+        ['regular', 480],
+        ['pto', 480],
+      ]);
+      expect(result.worked_minutes).toBe(480);
+      expect(result.payable_minutes).toBe(960);
+      expect(result.gross_minor).toBe(29600);
+    });
+
+    it('PTO suppresses a guaranteed top-up while ALSO paying its own line — the hazard case', () => {
+      // Without the pto line, payable_minutes would have been 1920 (worked
+      // only), the closure-day shortfall would be 480, and the topup would
+      // pay it. WITH the pto line, the same 480 PTO minutes count toward
+      // payable_minutes (suppressing the topup to zero) AND are themselves
+      // paid on a `pto` line — no double pay, and no more "suppresses
+      // without paying."
+      const result = ok(
+        computeWeekEarnings(
+          input({
+            arrangements: [
+              arrangement({
+                overtime_threshold_minutes: null,
+                guaranteed_minutes_per_week: 2400,
+              }),
+            ],
+            entries: [MON, TUE, WED, THU].map(d => worked(d, 480)),
+            pto_usage: [pto(FRI, 480)],
+            closure_dates: [FRI],
+            closure_day_shifts: [closureShift(FRI, 480)],
+          })
+        )
+      );
+
+      expect(result.lines.map(l => l.kind)).toEqual(['regular', 'pto']);
+      const ptoLine = result.lines.find(l => l.kind === 'pto');
+      expect(ptoLine?.minutes).toBe(480);
+      expect(ptoLine?.amount_minor).toBe(14800);
+      expect(result.payable_minutes).toBe(2400);
+      expect(result.gross_minor).toBe(74000);
+    });
+
+    it('returns the no_arrangement arm for a PTO day with no effective arrangement', () => {
+      const result = computeWeekEarnings(
+        input({ arrangements: [], pto_usage: [pto(MON, 240)] })
+      );
+
+      expect(result).toEqual({
+        status: 'no_arrangement',
+        week_start: WEEK_START,
+        unpriced_dates: [MON, SUN],
+      });
+    });
+
+    describe('the deprecated undated pto_usage_minutes fallback', () => {
+      it('stays a no-op at zero — the existing caller’s hard-zero is unaffected', () => {
+        const result = ok(
+          computeWeekEarnings(
+            input({
+              entries: [worked(MON, 480)],
+              pto_usage_minutes: 0,
+            })
+          )
+        );
+
+        expect(result.lines.map(l => l.kind)).toEqual(['regular']);
+        expect(result.payable_minutes).toBe(480);
+      });
+
+      it('prices a non-zero legacy count as ONE week-spanning line at the last day’s rate', () => {
+        const raise = [
+          arrangement(),
+          arrangement({
+            id: ARR_ID_B,
+            rate_minor: 1950,
+            valid_from: WED,
+            created_at: '2026-08-01T09:00:00.000Z',
+          }),
+        ];
+
+        const result = ok(
+          computeWeekEarnings(
+            input({ arrangements: raise, pto_usage_minutes: 120 })
+          )
+        );
+
+        expect(result.lines).toEqual([
+          {
+            kind: 'pto',
+            minutes: 120,
+            rate_minor: 1950,
+            multiplier: null,
+            amount_minor: 3900,
+            from_date: WEEK_START,
+            to_date: SUN,
+            arrangement_id: ARR_ID_B,
+          },
+        ]);
+        expect(result.payable_minutes).toBe(120);
+      });
+
+      it('is ignored whenever pto_usage is provided, even as an empty array', () => {
+        const result = ok(
+          computeWeekEarnings(input({ pto_usage: [], pto_usage_minutes: 480 }))
+        );
+
+        expect(result.lines).toEqual([]);
+        expect(result.payable_minutes).toBe(0);
+      });
+    });
+
+    it('emits a pto line the shared wire schema accepts', () => {
+      const result = computeWeekEarnings(input({ pto_usage: [pto(MON, 240)] }));
+      expect(WeekEarningsSchema.safeParse(result).success).toBe(true);
+    });
+  });
+
+  describe('reimbursements', () => {
+    it('renders alongside a zero-hours week — gross 0, reimbursements > 0, both present', () => {
+      const result = ok(
+        computeWeekEarnings(input({ reimbursements: [expense(WED, 3480)] }))
+      );
+
+      expect(result.lines).toEqual([
+        {
+          kind: 'reimbursements',
+          minutes: 0,
+          rate_minor: 0,
+          multiplier: null,
+          amount_minor: 3480,
+          from_date: WED,
+          to_date: WED,
+          arrangement_id: null,
+        },
+      ]);
+      expect(result.gross_minor).toBe(0);
+      expect(result.reimbursements_minor).toBe(3480);
+      expect(result.worked_minutes).toBe(0);
+      expect(result.payable_minutes).toBe(0);
+    });
+
+    it('never counts toward the overtime threshold — a week just under threshold stays out of overtime', () => {
+      const result = ok(
+        computeWeekEarnings(
+          input({
+            entries: [MON, TUE, WED, THU, FRI].map(d => worked(d, 470)), // 2350 < 2400 threshold
+            reimbursements: [expense(FRI, 100000)],
+          })
+        )
+      );
+
+      expect(result.lines.map(l => l.kind)).toEqual([
+        'regular',
+        'reimbursements',
+      ]);
+      expect(result.worked_minutes).toBe(2350);
+      expect(result.payable_minutes).toBe(2350);
+      const regularLine = result.lines.find(l => l.kind === 'regular');
+      if (!regularLine) {
+        throw new Error('expected a regular line');
+      }
+      expect(result.gross_minor).toBe(regularLine.amount_minor);
+      expect(result.reimbursements_minor).toBe(100000);
+    });
+
+    it('is excluded from gross — gross equals the wage lines only', () => {
+      const result = ok(
+        computeWeekEarnings(
+          input({
+            entries: [worked(MON, 480)],
+            reimbursements: [expense(MON, 5000)],
+          })
+        )
+      );
+
+      expect(result.lines.map(l => l.kind)).toEqual([
+        'regular',
+        'reimbursements',
+      ]);
+      expect(result.gross_minor).toBe(14800); // NOT 19800
+      expect(result.reimbursements_minor).toBe(5000);
+    });
+
+    it('gross still equals the sum of the wage lines when overtime, and reimbursements, all coexist', () => {
+      const result = ok(
+        computeWeekEarnings(
+          input({
+            entries: [
+              ...[MON, TUE, WED, THU, FRI].map(d => worked(d, 480)),
+              worked(SAT, 240),
+            ],
+            reimbursements: [expense(SUN, 2500)],
+          })
+        )
+      );
+
+      expect(result.lines.map(l => l.kind)).toEqual([
+        'regular',
+        'overtime',
+        'reimbursements',
+      ]);
+      const wageTotal = result.lines
+        .filter(l => l.kind !== 'reimbursements')
+        .reduce((sum, l) => sum + l.amount_minor, 0);
+      expect(result.gross_minor).toBe(wageTotal);
+      expect(result.gross_minor).toBe(85100);
+      expect(result.reimbursements_minor).toBe(2500);
+    });
+
+    it('returns the currency_change arm rather than silently summing a mismatched expense currency', () => {
+      const result = computeWeekEarnings(
+        input({
+          entries: [worked(MON, 480)],
+          reimbursements: [expense(MON, 5000, 'EUR')],
+        })
+      );
+
+      expect(result).toEqual({
+        status: 'currency_change',
+        week_start: WEEK_START,
+        currencies: ['GBP', 'EUR'],
+      });
+    });
+
+    it('ignores an approved expense dated outside the week, same convention as closure_dates', () => {
+      const result = ok(
+        computeWeekEarnings(
+          input({
+            entries: [worked(MON, 480)],
+            reimbursements: [expense('2026-07-31', 999)],
+          })
+        )
+      );
+
+      expect(result.lines.map(l => l.kind)).toEqual(['regular']);
+      expect(result.reimbursements_minor).toBe(0);
+    });
+
+    it('sorts reimbursement lines chronologically regardless of input order', () => {
+      const result = ok(
+        computeWeekEarnings(
+          input({
+            reimbursements: [expense(FRI, 100), expense(MON, 200)],
+          })
+        )
+      );
+
+      expect(result.lines.map(l => l.from_date)).toEqual([MON, FRI]);
+    });
+
+    it('emits a reimbursements line the shared wire schema accepts', () => {
+      const result = computeWeekEarnings(
+        input({ reimbursements: [expense(MON, 100)] })
+      );
       expect(WeekEarningsSchema.safeParse(result).success).toBe(true);
     });
   });

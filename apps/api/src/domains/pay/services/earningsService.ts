@@ -75,6 +75,35 @@ export interface ClosureDayShiftInput {
 }
 
 /**
+ * One day's paid-time-off usage, dated like a worked entry so PTO prices at
+ * the arrangement effective on THAT day — the same rule as `time_entries`
+ * (`docs/11-MONEY.md` §5/§7), and the reason this replaces the old undated
+ * `pto_usage_minutes` count (see `ComputeWeekEarningsInput`'s doc below).
+ * Minutes are clamped at 0, the same defensive convention `sumByDate`
+ * already applies to time entries.
+ */
+export interface PtoUsageInput {
+  local_date: string;
+  minutes: number;
+}
+
+/**
+ * One APPROVED expense or mileage claim, already priced. `amount_minor` is
+ * the figure frozen at approval — a mileage row freezes `miles ×
+ * mileage_rate_per_mile_minor` at that moment (044's approval write); the
+ * earnings engine never prices miles itself, it only reads what was already
+ * frozen. `currency` travels with each item so the engine can catch a
+ * mismatch against the week's resolved currency (see
+ * `ComputeWeekEarningsInput`'s doc) instead of silently summing across
+ * currencies.
+ */
+export interface ApprovedExpenseInput {
+  local_date: string;
+  amount_minor: number;
+  currency: string;
+}
+
+/**
  * Everything the engine needs, and nothing it does not.
  *
  * `arrangements` may be passed in ANY order and may contain the carer's whole
@@ -89,10 +118,53 @@ export interface ClosureDayShiftInput {
  * shifts on non-closure days — only shifts on a closure date are counted, so
  * the wrapper can hand over the week's shifts wholesale.
  *
- * `pto_usage_minutes` is Phase 3's input, wired into `payable_minutes` now so
- * a paid-PTO week already suppresses the top-up (`docs/11-MONEY.md` §7). No
- * `pto` LINE is emitted in Phase 2 — Phase 3 adds it, priced, at which point
- * the minutes counted here start being paid for too.
+ * **`pto_usage`** (Phase 3, `docs/11-MONEY.md` §5/§7): dated, one entry per
+ * day of paid time off, priced exactly like a worked entry — the arrangement
+ * effective on THAT day, never a single week-wide rate. This is the fix for
+ * a hazard the old undated `pto_usage_minutes` count could not avoid: a bare
+ * minute total has no date to resolve a rate against, so it could only ever
+ * be priced at one rate for the whole week — silently wrong for a week that
+ * spans a rate change, which is exactly the case a dated `time_entries`
+ * input already handles correctly. Each day's minutes ALSO fold into
+ * `payable_minutes` (the guaranteed-hours comparison, unchanged from Phase
+ * 2), so a paid-PTO week both pays for the PTO on its own `pto` line AND
+ * correctly suppresses a top-up for the same minutes — no double pay, and
+ * critically, no more "suppresses the top-up and pays nothing at all,"
+ * which is what happened before this line existed and why the one
+ * production caller (`weekEarningsService.buildWeekEarningsInput`) hard-
+ * zeroed the input rather than wire the ledger through.
+ *
+ * **`pto_usage_minutes`** is now a DEPRECATED fallback, kept rather than
+ * deleted because that same production caller still passes it (as a
+ * hard-coded `0`, pending its own Phase 3 update — this module cannot make
+ * that caller pass real minutes, only make it SAFE to). When `pto_usage` is
+ * omitted entirely, a non-zero `pto_usage_minutes` prices as ONE line
+ * spanning the whole week at the arrangement effective on the week's LAST
+ * DAY — the same "the week is one unit" convention the top-up and the
+ * overtime terms already use, because a flat count has no other date to
+ * price against and that is precisely the imprecision the dated field
+ * exists to fix. `pto_usage` wins whenever it is provided at all, EVEN AS
+ * AN EMPTY ARRAY (a caller stating "no PTO this week" in the dated form is
+ * different from "I only have the undated count"). New callers should pass
+ * `pto_usage` and leave this field unset; it is a compatibility shim for a
+ * caller that has not migrated, not a second correct way to price PTO.
+ *
+ * **`reimbursements`** (Phase 4, `docs/11-MONEY.md` §6): the week's
+ * APPROVED expenses. These are NOT wages: excluded from `gross_minor`, from
+ * `payable_minutes`, and from the overtime threshold entirely — they never
+ * touch a `regular`/`overtime`/`cancellation_paid`/`guaranteed_topup`/`pto`
+ * line, and sum into `reimbursements_minor` instead of `gross_minor`. An
+ * expense dated outside `[week_start, week_start+6]` is ignored rather than
+ * trusted, the same convention `closure_dates` already uses.
+ *
+ * Currency: an approved expense whose currency differs from the week's
+ * resolved currency is NOT silently summed. Rather than invent a second,
+ * quieter "exclude and flag" failure mode, the engine reuses the existing
+ * `currency_change` result arm: a mismatched expense currency and a
+ * mismatched arrangement currency are the same underlying problem ("this
+ * week cannot be honestly expressed in one currency"), so both get the
+ * same loud, whole-week answer — no numbers at all, never a partial total
+ * with the mismatched item quietly dropped.
  */
 export interface ComputeWeekEarningsInput {
   /** Monday, household-local (`timesheets.week_start`). */
@@ -101,7 +173,12 @@ export interface ComputeWeekEarningsInput {
   arrangements: readonly PayArrangement[];
   closure_dates: readonly string[];
   closure_day_shifts: readonly ClosureDayShiftInput[];
+  /** Dated PTO usage — preferred. See the doc above. */
+  pto_usage?: readonly PtoUsageInput[];
+  /** @deprecated Undated fallback — see the doc above. Prefer `pto_usage`. */
   pto_usage_minutes?: number;
+  /** The week's approved expenses/mileage. See the doc above. */
+  reimbursements?: readonly ApprovedExpenseInput[];
 }
 
 // =============================================================================
@@ -314,6 +391,24 @@ const CANCELLATION_KINDS: ReadonlySet<string> = new Set([
   TIME_ENTRY_KINDS.CANCELLATION_PAID,
 ]);
 
+/**
+ * Generic version of `sumByDate` for inputs with no `kind` to filter by —
+ * `pto_usage` today. Minutes are clamped at 0, the same defensive
+ * convention `sumByDate` applies to time entries.
+ */
+function sumMinutesByDate(
+  items: readonly { local_date: string; minutes: number }[]
+): Map<string, number> {
+  const byDate = new Map<string, number>();
+  for (const item of items) {
+    byDate.set(
+      item.local_date,
+      (byDate.get(item.local_date) ?? 0) + Math.max(0, item.minutes)
+    );
+  }
+  return byDate;
+}
+
 function sortedDates(byDate: ReadonlyMap<string, number>): string[] {
   return [...byDate.keys()].sort();
 }
@@ -353,13 +448,35 @@ export function computeWeekEarnings(
   const workedByDate = sumByDate(input.entries, WORKED_KINDS);
   const cancelledByDate = sumByDate(input.entries, CANCELLATION_KINDS);
 
-  // Dates the week must be able to price. Every entry's date needs a rate, and
-  // so does the week's LAST DAY: it governs the overtime terms, the guaranteed
-  // minutes, and the rate a top-up pays at, so a week with no arrangement on
-  // or before it cannot be priced at all — including a zero-hours closure week
-  // with no entries whatsoever.
+  // `pto_usage` wins over the deprecated `pto_usage_minutes` whenever it is
+  // PROVIDED AT ALL, even an empty array — see `ComputeWeekEarningsInput`'s
+  // doc. An empty array is a caller stating "no PTO this week" in the dated
+  // form, which is different from "I only have the undated count."
+  const usingDatedPto = input.pto_usage !== undefined;
+  const ptoByDate = usingDatedPto
+    ? sumMinutesByDate(input.pto_usage ?? [])
+    : new Map<string, number>();
+
+  // Reimbursements dated outside the week are ignored rather than trusted —
+  // the same convention `closure_dates` already uses.
+  const weekExpenses = (input.reimbursements ?? []).filter(
+    expense => expense.local_date >= weekStart && expense.local_date <= weekEnd
+  );
+
+  // Dates the week must be able to price. Every entry's date needs a rate, so
+  // does every dated PTO usage day (it prices at its own day's rate too), and
+  // so does the week's LAST DAY: it governs the overtime terms, the
+  // guaranteed minutes, and the rate a top-up (or an undated legacy PTO line)
+  // pays at, so a week with no arrangement on or before it cannot be priced
+  // at all — including a zero-hours closure week with no entries whatsoever.
+  // Reimbursement dates do NOT need to resolve to an arrangement — their
+  // amount is already frozen, not priced by this engine.
   const requiredDates = [
-    ...new Set([...input.entries.map(entry => entry.local_date), weekEnd]),
+    ...new Set([
+      ...input.entries.map(entry => entry.local_date),
+      ...ptoByDate.keys(),
+      weekEnd,
+    ]),
   ].sort();
 
   const resolved = new Map<string, PayArrangement>();
@@ -385,12 +502,21 @@ export function computeWeekEarnings(
   }
 
   // Distinct currencies in the order the week meets them, so the client can
-  // say "GBP → EUR" rather than an arbitrary set.
+  // say "GBP → EUR" rather than an arbitrary set. An approved expense in a
+  // different currency joins the SAME check — a reimbursement is money too,
+  // and "one currency per week, never summed across" applies to it exactly
+  // as it applies to a mid-week arrangement currency change
+  // (`docs/11-MONEY.md` §6, `ComputeWeekEarningsInput`'s doc).
   const currencies: string[] = [];
   for (const date of requiredDates) {
     const currency = resolved.get(date)?.currency;
     if (currency && !currencies.includes(currency)) {
       currencies.push(currency);
+    }
+  }
+  for (const expense of weekExpenses) {
+    if (!currencies.includes(expense.currency)) {
+      currencies.push(expense.currency);
     }
   }
   if (currencies.length > 1) {
@@ -464,6 +590,74 @@ export function computeWeekEarnings(
     }));
 
   // ---------------------------------------------------------------------
+  // PTO — priced like worked/cancellation_paid segments when dated (Phase 3,
+  // `docs/11-MONEY.md` §5/§7): each day's minutes price at the arrangement
+  // effective on THAT day, so a week spanning a rate change splits into one
+  // line per rate exactly like `regular` does. The deprecated undated
+  // fallback has no date to do that with, so it prices as one week-spanning
+  // line at the LAST DAY's arrangement instead — see
+  // `ComputeWeekEarningsInput`'s doc for why that is the correct trade-off
+  // for a caller that has not migrated, not a second correct way to price
+  // PTO.
+  // ---------------------------------------------------------------------
+  const ptoSegments: Segment[] = usingDatedPto
+    ? sortedDates(ptoByDate)
+        .filter(date => (ptoByDate.get(date) ?? 0) > 0)
+        .map(date => ({
+          date,
+          minutes: ptoByDate.get(date) ?? 0,
+          arrangement: resolved.get(date) as PayArrangement,
+        }))
+    : [];
+  const legacyPtoMinutes = usingDatedPto
+    ? 0
+    : Math.max(0, input.pto_usage_minutes ?? 0);
+  const legacyPtoLines: EarningsLine[] =
+    legacyPtoMinutes > 0
+      ? [
+          {
+            kind: EARNINGS_LINE_KINDS.PTO,
+            minutes: legacyPtoMinutes,
+            rate_minor: lastDayArrangement.rate_minor,
+            multiplier: null,
+            amount_minor: priceMinutes(
+              legacyPtoMinutes,
+              lastDayArrangement.rate_minor
+            ),
+            // Like the top-up, a property of the WEEK, not of any one day —
+            // the legacy input carries no date to attribute it to.
+            from_date: weekStart,
+            to_date: weekEnd,
+            arrangement_id: lastDayArrangement.id,
+          },
+        ]
+      : [];
+  const ptoUsageMinutes = usingDatedPto ? total(ptoByDate) : legacyPtoMinutes;
+
+  // Reimbursements are NOT priced by the engine — mileage was already priced
+  // (and a plain expense was always a flat amount) at expense approval,
+  // frozen into `amount_minor`. One line per approved item, chronological,
+  // so the frozen weekly snapshot stays as self-describing as every other
+  // line (`042_timesheet_earnings.sql`'s header comment). `minutes` and
+  // `rate_minor` are 0 rather than invented — a reimbursement is not time,
+  // and forcing a fictitious duration on it to satisfy the "minutes × rate =
+  // amount" shape the other lines share would be a lie the breakdown sheet
+  // would then render.
+  const reimbursementLines: EarningsLine[] = weekExpenses
+    .slice()
+    .sort((a, b) => a.local_date.localeCompare(b.local_date))
+    .map(expense => ({
+      kind: EARNINGS_LINE_KINDS.REIMBURSEMENTS,
+      minutes: 0,
+      rate_minor: 0,
+      multiplier: null,
+      amount_minor: expense.amount_minor,
+      from_date: expense.local_date,
+      to_date: expense.local_date,
+      arrangement_id: null,
+    }));
+
+  // ---------------------------------------------------------------------
   // Guaranteed top-up — closure-day shortfalls ONLY (owner ruling
   // 2026-08-04, `docs/11-MONEY.md` §7). Three properties this code must keep:
   //   1. No closure days ⇒ no top-up, whatever the shortfall.
@@ -489,7 +683,6 @@ export function computeWeekEarnings(
   );
 
   const workedMinutes = total(workedByDate);
-  const ptoUsageMinutes = Math.max(0, input.pto_usage_minutes ?? 0);
   const payableMinutes =
     workedMinutes + total(cancelledByDate) + ptoUsageMinutes;
 
@@ -522,8 +715,9 @@ export function computeWeekEarnings(
       : [];
 
   // Emitted in `EARNINGS_LINE_ORDER` — the CX spec's fixed render order —
-  // with empty kinds omitted. `pto` and `reimbursements` are structurally
-  // present and always empty until Phases 3 and 4 fill them.
+  // with empty kinds omitted. `pto` (priced usage) and `reimbursements`
+  // (approved expenses) are populated from Phase 3/4 on; both are still
+  // structurally present and empty whenever their input is empty.
   const byKind: Record<EarningsLineKind, EarningsLine[]> = {
     [EARNINGS_LINE_KINDS.REGULAR]: toLines(
       regularSegments,
@@ -540,9 +734,11 @@ export function computeWeekEarnings(
       EARNINGS_LINE_KINDS.CANCELLATION_PAID,
       null
     ),
-    [EARNINGS_LINE_KINDS.PTO]: [],
+    [EARNINGS_LINE_KINDS.PTO]: usingDatedPto
+      ? toLines(ptoSegments, EARNINGS_LINE_KINDS.PTO, null)
+      : legacyPtoLines,
     [EARNINGS_LINE_KINDS.GUARANTEED_TOPUP]: topupLines,
-    [EARNINGS_LINE_KINDS.REIMBURSEMENTS]: [],
+    [EARNINGS_LINE_KINDS.REIMBURSEMENTS]: reimbursementLines,
   };
   const lines = EARNINGS_LINE_ORDER.flatMap(kind => byKind[kind]);
 
