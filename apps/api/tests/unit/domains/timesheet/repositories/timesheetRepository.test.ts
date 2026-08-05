@@ -92,6 +92,9 @@ const snapshotPatch = {
   earnings_computed_at: '2026-08-10T09:00:00.000Z',
 };
 
+/** The `updated_at` of the row the service read BEFORE computing earnings. */
+const READ_VERSION = '2026-08-10T08:59:12.123456+00:00';
+
 describe('TimesheetRepository.approveSubmittedWithEarnings', () => {
   it('sets the status AND all four snapshot columns in a single update', async () => {
     const chain = createMockQueryChain({
@@ -101,7 +104,7 @@ describe('TimesheetRepository.approveSubmittedWithEarnings', () => {
     mockSupabaseService.from.mockImplementation(() => chain);
 
     const repo = new TimesheetRepository();
-    await repo.approveSubmittedWithEarnings('ts1', snapshotPatch);
+    await repo.approveSubmittedWithEarnings('ts1', snapshotPatch, READ_VERSION);
 
     expect(chain.update).toHaveBeenCalledTimes(1);
     expect(chain.update).toHaveBeenCalledWith({
@@ -116,16 +119,47 @@ describe('TimesheetRepository.approveSubmittedWithEarnings', () => {
     });
   });
 
-  it("constrains the update with `where status = 'submitted'` — the CAS predicate", async () => {
+  it("constrains the update with `where status = 'submitted'` — the status arm of the CAS", async () => {
     const chain = createMockQueryChain({ data: { id: 'ts1' }, error: null });
     mockSupabaseService.from.mockImplementation(() => chain);
 
     const repo = new TimesheetRepository();
-    await repo.approveSubmittedWithEarnings('ts1', snapshotPatch);
+    await repo.approveSubmittedWithEarnings('ts1', snapshotPatch, READ_VERSION);
 
     expect(chain.eq).toHaveBeenCalledWith('id', 'ts1');
     expect(chain.eq).toHaveBeenCalledWith('status', 'submitted');
-    expect(chain.eq).toHaveBeenCalledTimes(2);
+  });
+
+  // -------------------------------------------------------------------------
+  // Phase 2 review, finding 1 (SHIP-BLOCKER). Status alone is not a version.
+  // `rollUpIntoTimesheet` bumps `total_minutes` on an already-`submitted` week
+  // WITHOUT touching `status`, so a status-only predicate cannot see it: the
+  // parent approves 20h/£370.00, the nanny's clock-out lands 8h more, and the
+  // CAS still matches and stamps `approved` over 28h of hours with the 20h
+  // figure frozen on the row. The row version has to be in the predicate too.
+  // -------------------------------------------------------------------------
+  it('ALSO constrains the update on the row version the earnings were computed from', async () => {
+    const chain = createMockQueryChain({ data: { id: 'ts1' }, error: null });
+    mockSupabaseService.from.mockImplementation(() => chain);
+
+    const repo = new TimesheetRepository();
+    await repo.approveSubmittedWithEarnings('ts1', snapshotPatch, READ_VERSION);
+
+    expect(chain.eq).toHaveBeenCalledWith('updated_at', READ_VERSION);
+    // id + status + updated_at, and nothing else.
+    expect(chain.eq).toHaveBeenCalledTimes(3);
+  });
+
+  it('never writes the version predicate as a COLUMN — it is a where, not a set', async () => {
+    const chain = createMockQueryChain({ data: { id: 'ts1' }, error: null });
+    mockSupabaseService.from.mockImplementation(() => chain);
+
+    const repo = new TimesheetRepository();
+    await repo.approveSubmittedWithEarnings('ts1', snapshotPatch, READ_VERSION);
+
+    const [patch] = chain.update.mock.calls[0] as [Record<string, unknown>];
+    expect(patch).not.toHaveProperty('updated_at');
+    expect(patch).not.toHaveProperty('expectedUpdatedAt');
   });
 
   it('returns null when zero rows matched — the week changed under the approve', async () => {
@@ -134,7 +168,11 @@ describe('TimesheetRepository.approveSubmittedWithEarnings', () => {
     );
     const repo = new TimesheetRepository();
     expect(
-      await repo.approveSubmittedWithEarnings('ts1', snapshotPatch)
+      await repo.approveSubmittedWithEarnings(
+        'ts1',
+        snapshotPatch,
+        READ_VERSION
+      )
     ).toBeNull();
   });
 
@@ -144,7 +182,7 @@ describe('TimesheetRepository.approveSubmittedWithEarnings', () => {
     );
     const repo = new TimesheetRepository();
     await expect(
-      repo.approveSubmittedWithEarnings('ts1', snapshotPatch)
+      repo.approveSubmittedWithEarnings('ts1', snapshotPatch, READ_VERSION)
     ).rejects.toThrow('Failed to approve timesheet with earnings');
   });
 });

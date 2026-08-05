@@ -835,3 +835,83 @@ describe('earningsService.computeWeekEarnings', () => {
     });
   });
 });
+
+// =============================================================================
+// The overtime rate is money, so it is rounded in INTEGERS (Phase 2 review,
+// finding 2 / `docs/11-MONEY.md` §1).
+//
+// `Math.floor(rate_minor * multiplier + 0.5)` looks like half-up and is not:
+// `multiplier` is a `numeric(3,2)` that almost never has an exact binary
+// form, so the product lands a hair BELOW its exact decimal value and the
+// half-up step silently truncates. Verified exhaustively over
+// rate_minor 1..20000 x multiplier 1.00..9.99: 16,337 (rate, multiplier)
+// pairs round low, and NOT ONE rounds high — every error is a penny off the
+// nanny's hourly overtime rate, in the same direction, forever.
+//
+// The week below is built so the arithmetic is impossible to misread: the
+// threshold is 60 minutes and exactly 120 are worked, so there are exactly 60
+// overtime minutes and `amount_minor === rate_minor` for the overtime line.
+// =============================================================================
+
+/** The overtime line of a week with exactly 60 overtime minutes at `rate`x`multiplier`. */
+function overtimeLineFor(rate_minor: number, overtime_multiplier: number) {
+  const result = ok(
+    computeWeekEarnings(
+      input({
+        entries: [worked(MON, 120)],
+        arrangements: [
+          arrangement({
+            rate_minor,
+            overtime_multiplier,
+            overtime_threshold_minutes: 60,
+          }),
+        ],
+      })
+    )
+  );
+  const line = result.lines.find(l => l.kind === 'overtime');
+  if (!line) {
+    throw new Error('expected an overtime line');
+  }
+  return line;
+}
+
+describe('earningsService — the overtime rate rounds half-up in integers', () => {
+  // Each row: [rate_minor, multiplier, the exact half-up minor amount].
+  // Every one of these has an EXACT decimal product ending in .5 — the case
+  // half-up exists for — and every one is priced a penny low by the float
+  // form.
+  const cases: ReadonlyArray<readonly [number, number, number]> = [
+    [1290, 1.15, 1484], // 12.90 x 1.15 = 14.835 -> 1483.5 minor
+    [1250, 1.13, 1413], // 12.50 x 1.13 = 14.125 -> 1412.5 minor
+    [1075, 1.38, 1484], // 10.75 x 1.38 = 14.835 -> 1483.5 minor
+    [850, 2.05, 1743], //   8.50 x 2.05 = 17.425 -> 1742.5 minor
+  ];
+
+  for (const [rate_minor, multiplier, expected] of cases) {
+    it(`prices ${rate_minor} x ${multiplier} as ${expected} minor, not ${expected - 1}`, () => {
+      const line = overtimeLineFor(rate_minor, multiplier);
+      expect(line.rate_minor).toBe(expected);
+      // 60 overtime minutes at an hourly rate IS that rate, so the amount
+      // pins the same defect a second way — a wrong rate cannot hide behind
+      // a coincidentally-right total.
+      expect(line.amount_minor).toBe(expected);
+    });
+  }
+
+  it('is unchanged where the float form already happened to be right', () => {
+    // 1230 x 1.15: the exact product is 1414.5 and the double rounds to
+    // exactly 1414.5 too (the representation error is under half an ulp at
+    // this magnitude), so this case was never wrong. Pinned so the integer
+    // rewrite is proved to be a fix, not a different answer.
+    expect(overtimeLineFor(1230, 1.15).rate_minor).toBe(1415);
+    // No fractional part at all — the boring majority of real arrangements.
+    expect(overtimeLineFor(1850, 1.5).rate_minor).toBe(2775);
+    expect(overtimeLineFor(1850, 1.25).rate_minor).toBe(2313); // 2312.5 -> up
+  });
+
+  it('rounds a strictly-below-half product DOWN — half-up, not always-up', () => {
+    // 1000 x 1.234 is impossible (numeric(3,2)); 1010 x 1.02 = 1030.2.
+    expect(overtimeLineFor(1010, 1.02).rate_minor).toBe(1030);
+  });
+});

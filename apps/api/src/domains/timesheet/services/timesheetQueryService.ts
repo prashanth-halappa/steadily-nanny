@@ -44,6 +44,7 @@ import {
   type TimesheetRow,
 } from '../repositories/timesheetRepository';
 import type { TimeEntry, Timesheet } from '../types';
+import { toWireTimesheet } from '../utils/toWireTimesheet';
 import { weekEndExclusive, weekStartOf } from '../utils/weekStart';
 
 export class TimesheetQueryService {
@@ -129,7 +130,7 @@ export class TimesheetQueryService {
   ): Promise<Timesheet[]> {
     await this.assertMember(userId, householdId);
     const rows = await this.timesheetRepo.listForHousehold(householdId);
-    return rows.map(row => this.toWireTimesheet(row));
+    return rows.map(row => toWireTimesheet(row));
   }
 
   /**
@@ -169,7 +170,7 @@ export class TimesheetQueryService {
   ): Promise<TimesheetWeek> {
     const row = await this.loadOwnedRow(userId, timesheetId);
     return {
-      ...this.toWireTimesheet(row),
+      ...toWireTimesheet(row),
       earnings: await this.earningsFor(row),
     };
   }
@@ -206,23 +207,6 @@ export class TimesheetQueryService {
       week_start: row.week_start,
       reason,
     };
-  }
-
-  /**
-   * Drop the four snapshot columns on the way out. They are storage: the
-   * parsed, state-tagged `earnings` field is what the wire carries, and
-   * shipping the raw jsonb alongside it would hand a client the chance to
-   * read a frozen figure without the legacy/corrupt handling above.
-   */
-  private toWireTimesheet(row: TimesheetRow): Timesheet {
-    const {
-      gross_minor: _gross,
-      currency: _currency,
-      earnings: _earnings,
-      earnings_computed_at: _computedAt,
-      ...timesheet
-    } = row;
-    return timesheet;
   }
 
   /** Shared load + membership gate for every by-id timesheet read. */

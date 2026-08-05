@@ -117,14 +117,40 @@ export class TimesheetRepository extends BaseRepository<TimesheetRow> {
    * COMPARE-AND-SET `submitted` → `approved`, freezing the earnings snapshot
    * in the SAME statement.
    *
-   * THE `.eq('status', 'submitted')` IS THE WHOLE POINT (review finding 13,
-   * `docs/11-MONEY.md` §3). The service computes earnings from the week's
-   * entries and then writes them; between those two moments a concurrent
-   * clock-out roll-up can land new hours and re-open the week — D1's exact
-   * surface, now with money attached. Without the status predicate this
-   * UPDATE would happily stamp an approval, and a gross figure, onto a week
-   * that had changed underneath it. With it, the statement matches zero rows
-   * and nothing is written: no snapshot, no approval, no half-state.
+   * THE TWO-PART PREDICATE IS THE WHOLE POINT (review finding 13, Phase 2
+   * review finding 1, `docs/11-MONEY.md` §3). The service computes earnings
+   * from the week's entries and then writes them; between those two moments a
+   * concurrent clock-out roll-up can land new hours — D1's exact surface, now
+   * with money attached.
+   *
+   * `status` alone does NOT cover that. `rollUpIntoTimesheet` writes
+   * `total_minutes` on an already-`submitted` week and leaves `status` where
+   * it is, so a status-only predicate is blind to the one interleaving that
+   * matters most:
+   *
+   *   parent approves       → the engine prices 20h at £370.00
+   *   nanny clocks out 8h   → roll-up sets total_minutes = 28h, still submitted
+   *   status-only CAS       → matches, stamps `approved`, freezes £370.00
+   *
+   * 28h of hours signed off at a 20h price, on a row that looks internally
+   * consistent forever. So the predicate also pins `updated_at` to the value
+   * the service read BEFORE it computed: `expectedUpdatedAt`. `timesheets`
+   * carries `updated_at` maintained by the `set_timesheets_updated_at` trigger
+   * (017 → `public.set_updated_at`, `before update ... for each row`), which
+   * fires on EVERY update of the row including the roll-up's, so it is a true
+   * row version and needs no new column. Its precision is Postgres's
+   * transaction timestamp at microseconds; the roll-up and the approve are
+   * separate requests and therefore separate transactions, so they can never
+   * share one.
+   *
+   * The predicate is deliberately conservative in one direction: a roll-up
+   * that rewrote the row with identical values still bumps `updated_at` and
+   * still fails the approve. That costs the parent one extra tap and buys the
+   * guarantee that no approval can ever outrun the hours it covers — the
+   * right side to err on for a number people get paid against.
+   *
+   * `expectedUpdatedAt` is a WHERE, never a SET: the trigger owns that column,
+   * and writing it here would both fight the trigger and destroy the version.
    *
    * Same shape as `shiftRepository.confirmPending` — one guarded UPDATE,
    * `maybeSingle()`, and `null` for "lost the race". The caller turns that
@@ -136,7 +162,8 @@ export class TimesheetRepository extends BaseRepository<TimesheetRow> {
    */
   async approveSubmittedWithEarnings(
     timesheetId: string,
-    patch: ApproveWithEarningsPatch
+    patch: ApproveWithEarningsPatch,
+    expectedUpdatedAt: string
   ): Promise<TimesheetRow | null> {
     const { data, error } = await supabaseService
       .from(this.table)
@@ -152,6 +179,7 @@ export class TimesheetRepository extends BaseRepository<TimesheetRow> {
       })
       .eq('id', timesheetId)
       .eq('status', APPROVABLE_FROM)
+      .eq('updated_at', expectedUpdatedAt)
       .select()
       .maybeSingle();
 

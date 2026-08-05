@@ -122,19 +122,35 @@ arrangement path — cut entirely, not deferred.
 Earnings are **derived**, not stored, while a timesheet is `open`,
 `submitted`, or `queried`: minutes × the arrangement effective on each
 entry's `local_date`, computed fresh on every read. At approval — inside the
-same conditional update that flips status (`... where status = 'submitted'`,
-so a concurrent clock-out can't slip hours in between compute and freeze) —
-the computed breakdown is **snapshotted** onto the timesheet row
-(`gross_minor`, `currency`, `earnings` jsonb, `earnings_computed_at`). From
-then the approved figure is read from the snapshot, never recomputed, even
-if the arrangement later changes.
+same conditional update that flips status (`... where status = 'submitted'
+and updated_at = <the row version read before computing>`) — the computed
+breakdown is **snapshotted** onto the timesheet row (`gross_minor`,
+`currency`, `earnings` jsonb, `earnings_computed_at`). From then the
+approved figure is read from the snapshot, never recomputed, even if the
+arrangement later changes.
 
-**Reopen clears the snapshot.** The existing D1 reopen path — new hours
-landing in an approved week flips it back to `submitted` — must null out all
-four snapshot columns in the same transaction. Skipping this leaves a frozen
-number on screen that no longer matches the now-mutated hours: the same
-class of stale-authoritative-number bug D1 fixed for status, worse here
-because it's a number people get paid against.
+**Both halves of that predicate are load-bearing** (Phase 2 review, finding
+1). The status arm only catches a roll-up that *re-opens* an approved week.
+It misses the commoner case: a clock-out rolling new `total_minutes` onto a
+week that is **already `submitted`** leaves the status untouched, so a
+status-only guard still matches and freezes the pre-clock-out gross over
+hours nobody signed off. The `updated_at` arm closes it — the row's
+`set_updated_at` trigger fires on every write, so any roll-up at all
+invalidates the approve and the parent re-approves against the real hours.
+
+**Reopen clears the snapshot, unconditionally.** The existing D1 reopen path
+— new hours landing in an approved week flips it back to `submitted` — must
+null out all four snapshot columns in the same write. Skipping this leaves a
+frozen number on screen that no longer matches the now-mutated hours: the
+same class of stale-authoritative-number bug D1 fixed for status, worse here
+because it's a number people get paid against. The clear is **not** gated on
+a "was this week terminal?" flag read before the write: an approve landing in
+between makes that flag lie, leaving a `submitted` row wearing a frozen gross
+and an approver. Every roll-up write sets `status = 'submitted'`, and a
+submitted week has no snapshot and no approver by definition — so writing the
+nulls every time simply restates the invariant, and is idempotent. Never CAS
+the *revert*: a clock-out must never fail because a parent tapped Approve;
+the hours happened and must be recorded.
 
 **Legacy weeks render hours-only.** A timesheet `approved` before the
 earnings columns existed has a `NULL` snapshot forever, never backfilled.

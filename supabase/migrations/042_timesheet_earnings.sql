@@ -14,10 +14,22 @@
 -- `apps/api/src/domains/pay/services/earningsService.ts`. All four columns
 -- below are NULL WHILE a week is open — there is nothing to freeze yet. At
 -- approval, inside the same conditional update that flips `status` (`...
--- where status = 'submitted'`, so a concurrent clock-out roll-up cannot slip
--- hours in between compute and freeze), the computed breakdown is
--- SNAPSHOTTED onto this row. From then the approved figure is read from the
--- snapshot, never recomputed, even if the arrangement later changes.
+-- where status = 'submitted' and updated_at = <the version the service read
+-- before it computed>`), the computed breakdown is SNAPSHOTTED onto this row.
+-- From then the approved figure is read from the snapshot, never recomputed,
+-- even if the arrangement later changes.
+--
+-- BOTH HALVES OF THAT PREDICATE ARE LOAD-BEARING (Phase 2 review, finding 1).
+-- The status arm catches a roll-up that RE-OPENS an approved/queried week.
+-- It does not catch the commoner case: `rollUpIntoTimesheet` writing new
+-- `total_minutes` onto a week that is ALREADY `submitted` leaves `status`
+-- untouched, so a status-only predicate still matches and stamps `approved`
+-- — with the pre-clock-out gross — over hours nobody signed off on. The
+-- `updated_at` arm closes it: `set_timesheets_updated_at` (017 ->
+-- `public.set_updated_at`) fires on every update of the row, so it is a
+-- genuine row version and any roll-up at all invalidates the approve. Zero
+-- rows matched raises the same `TimesheetNotActionableError` a stale status
+-- does; the parent re-approves against the hours that are really there.
 --
 -- REOPEN CLEARS THE SNAPSHOT (D1)
 -- The existing D1 reopen path — new hours landing in an approved week flip
@@ -29,6 +41,14 @@
 -- is a number people get paid against. That behaviour lives in
 -- `timesheetCommandService`, not in this migration — this migration only
 -- adds the columns and documents the contract they must honour.
+--
+-- The clear is UNCONDITIONAL, not gated on "was the week terminal?" (Phase 2
+-- review, finding 1). That flag can only be read before the write, and an
+-- approve landing in between makes it lie — leaving a `submitted` row
+-- wearing a frozen gross and an approver, i.e. this very invariant broken by
+-- a race. Every roll-up write sets `status = 'submitted'`, and a submitted
+-- week has no snapshot and no approver by definition, so writing the nulls
+-- every time simply restates the invariant and is idempotent.
 --
 -- THE LEGACY ARM
 -- A timesheet approved before this migration renders hours-only; never backfilled.

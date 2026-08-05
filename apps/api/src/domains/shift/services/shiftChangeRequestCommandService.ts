@@ -44,6 +44,9 @@ import {
 } from '../../household';
 import { notifyHouseholdParents, notifyUser } from '../../notification';
 import { PayArrangementRepository } from '../../pay/repositories/payArrangementRepository';
+// Dependency-free leaf (no timesheet-domain load-time coupling) — the same
+// direct import `payArrangementCommandService` uses for the same reason.
+import { localDateOf } from '../../timesheet/utils/weekStart';
 import {
   ChangeRequestNotPendingError,
   InvalidChangeRequestKindForRoleError,
@@ -143,7 +146,9 @@ function isCancellationPaid(
 /**
  * The three-arm cancellation-pay rule (owner decision 5, review finding 10).
  * `arrangement` is the carer's pay arrangement effective on the SHIFT's
- * household-local start date — never the accept date, never today — fetched
+ * household-local start date — never the accept date, never today, and never
+ * the shift's own `local_date`, which migration 015 derives from the shift's
+ * authoring timezone rather than the household's (see `respond`) — fetched
  * by the caller (`respond`) before `planAcceptedChange` runs, so this stays
  * pure and synchronous:
  *
@@ -710,12 +715,28 @@ export class ShiftChangeRequestCommandService {
       // the accept date, since a rate/window change can land between the two
       // (owner decision 5, review finding 10). Skip the lookup for other
       // kinds and for an unassigned shift, where no arrangement can exist.
+      //
+      // "Household-local" is computed here rather than read off
+      // `shift.local_date` (Phase 2 review, finding 8). That column is
+      // derived by migration 015's `sync_shift_local_date` from the shift's
+      // OWN `timezone` — the zone the shift was AUTHORED in, which 015 keeps
+      // frozen on purpose so the original wall-clock intent survives the
+      // household moving. Two supported actions make the two disagree:
+      // `PATCH /households/:id { timezone }` (every already-materialised
+      // shift keeps the old zone), and `POST .../shifts/extra`, whose
+      // `timezone` is client-supplied and never checked against the
+      // household's. Arrangements are household-scoped and every other date
+      // in the pay domain is resolved with `localDateOf(instant,
+      // household.timezone)` — `payArrangementCommandService`'s no-future
+      // check and `weekEarningsService`'s closure days both — so this one
+      // has to be too, or a cancellation gets priced against a day the
+      // arrangement history was never keyed on.
       const arrangement =
         request.kind === SHIFT_CHANGE_REQUEST_KINDS.CANCEL && shift.carer_id
           ? await this.payArrangementRepo.effectiveOn(
               shift.household_id,
               shift.carer_id,
-              shift.local_date
+              localDateOf(new Date(shift.starts_at), household.timezone)
             )
           : null;
       const { rpcArgs, events: applyEvents } = planAcceptedChange(

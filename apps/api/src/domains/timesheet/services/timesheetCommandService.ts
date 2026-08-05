@@ -77,6 +77,7 @@ import type {
   Timesheet,
   UpdateTimeEntryInput,
 } from '../types';
+import { toWireTimesheet } from '../utils/toWireTimesheet';
 import { weekEndExclusive, weekStartOf } from '../utils/weekStart';
 import { computeWorkedMinutes, sumWorkedMinutes } from '../utils/workedMinutes';
 import {
@@ -634,26 +635,42 @@ export class TimesheetCommandService {
    *
    * THE MOMENT MONEY STOPS BEING DERIVED. Three steps, and the ordering of
    * the last two is the whole design (TIER0-PLAN.md Phase 2, review finding
-   * 13, `docs/11-MONEY.md` §3):
+   * 13, Phase 2 review finding 1, `docs/11-MONEY.md` §3):
    *
-   * 1. Gate on role and status, as this method always has.
+   * 1. Gate on role and status, as this method always has — and remember the
+   *    VERSION of the row that gating was done against (`updated_at`).
    * 2. Compute the week's earnings from the entries as they stand right now.
    * 3. Write the snapshot AND the status flip in ONE conditional update
-   *    (`... where status = 'submitted'`).
+   *    (`... where status = 'submitted' and updated_at = <that version>`).
    *
-   * Between 2 and 3 a concurrent clock-out can roll new hours into this week
-   * and re-open it — that is D1's exact surface, and here it would freeze a
-   * gross figure that no longer describes the hours on the row. The
-   * conditional update makes that unrepresentable: the week either is still
-   * `submitted`, in which case one statement approves it and freezes the
-   * figure computed from those very hours, or it is not, in which case zero
-   * rows match and NOTHING is written. There is no interleaving that produces
-   * a snapshot without an approval, or an approval without its snapshot.
+   * Between 1 and 3 a concurrent clock-out can roll new hours into this week
+   * — that is D1's exact surface, and here it would freeze a gross figure
+   * that no longer describes the hours on the row.
+   *
+   * The status half of the predicate catches the roll-up that RE-OPENS an
+   * approved or queried week. It does not catch the far more ordinary one:
+   * `rollUpIntoTimesheet` writing new `total_minutes` onto a week that was
+   * already `submitted` leaves the status untouched, so a status-only
+   * predicate would still match and would stamp `approved` — with the OLD
+   * gross — over the new hours. The version half closes that: `updated_at` is
+   * bumped by the `set_timesheets_updated_at` trigger on every write to the
+   * row, so any roll-up at all invalidates this approve.
+   *
+   * The version is read BEFORE the compute rather than after, deliberately.
+   * The engine's own reads happen inside step 2, so a roll-up landing
+   * mid-compute must also invalidate the result; anchoring on the earlier
+   * value is the conservative choice, and its only cost is an occasional
+   * spurious retry.
+   *
+   * Either way there is no interleaving that produces a snapshot without an
+   * approval, an approval without its snapshot, or an approval covering hours
+   * nobody looked at.
    *
    * The lost-race failure is `TimesheetNotActionableError` — the same error
    * `assertActionable` raises for a stale status, because it is the same
    * situation, just noticed a few milliseconds later. Both raises live in
-   * this method's flow so they cannot drift apart.
+   * this method's flow so they cannot drift apart. The parent simply approves
+   * again, this time against the hours that are actually there.
    */
   async approve(userId: string, timesheetId: string): Promise<Timesheet> {
     const timesheet = await this.queries.getOwnedTimesheet(userId, timesheetId);
@@ -667,12 +684,13 @@ export class TimesheetCommandService {
 
     const approved = await this.timesheetRepo.approveSubmittedWithEarnings(
       timesheetId,
-      { approved_by: userId, approved_at: at, ...snapshot }
+      { approved_by: userId, approved_at: at, ...snapshot },
+      timesheet.updated_at
     );
     if (!approved) {
       throw new TimesheetNotActionableError(timesheetId, 'changed_since_read');
     }
-    return approved;
+    return toWireTimesheet(approved);
   }
 
   /**
@@ -753,7 +771,7 @@ export class TimesheetCommandService {
       }
     }
 
-    return updated;
+    return toWireTimesheet(updated);
   }
 
   /**
@@ -963,18 +981,40 @@ export class TimesheetCommandService {
     // (`docs/11-MONEY.md` §3, migration 042's header). One update, so there
     // is no window in which the row claims a settled amount for hours that
     // have already changed.
+    //
+    // THE CLEAR IS UNCONDITIONAL, not gated on "was it terminal?" (Phase 2
+    // review, finding 1). `existing.status` is a PRE-READ, and an approve
+    // landing between that read and this write would make it lie: the flag
+    // would say `submitted` → nothing to clear, while the row the write
+    // actually lands on is `approved` with a frozen gross and an approver on
+    // it. The result is a `submitted` row wearing a settled amount — exactly
+    // the invariant 042's header says these columns keep, broken by a race.
+    //
+    // Stating it unconditionally is not a wider write, it is the invariant
+    // itself: EVERY write here sets `status = 'submitted'`, and a submitted
+    // week has no snapshot and no approver, full stop. Writing nulls over
+    // nulls is idempotent and depends on nothing that was read earlier, so
+    // there is no window left to race. The alternatives both only narrow the
+    // window rather than closing it — a re-read is still a separate statement
+    // from the write (the same TOCTOU one level down), and CASing this write
+    // would turn a clock-out into something that can FAIL because a parent
+    // tapped Approve, which it must never be: the hours happened and have to
+    // be recorded.
+    //
+    // `query_note` is still preserved (D1): it records what was disputed,
+    // which is not a stale approval claim.
+    //
+    // `reopening`/`newlySubmitted` survive only to decide whether to push.
+    // A best-effort notification may be judged on a pre-read; a money column
+    // may not.
     const reopening = TERMINAL_STATUSES.has(existing.status);
     const newlySubmitted = existing.status !== 'submitted';
     await this.timesheetRepo.update(existing.id, {
       total_minutes: totalMinutes,
       status: 'submitted',
-      ...(reopening
-        ? {
-            approved_by: null,
-            approved_at: null,
-            ...CLEARED_EARNINGS_SNAPSHOT,
-          }
-        : {}),
+      approved_by: null,
+      approved_at: null,
+      ...CLEARED_EARNINGS_SNAPSHOT,
     });
     if (newlySubmitted || reopening) {
       this.push.notifyHouseholdParents(entry.household_id, {

@@ -111,6 +111,8 @@ export interface ComputeWeekEarningsInput {
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const DAYS_PER_WEEK = 7;
 const MINUTES_PER_HOUR = 60;
+/** `overtime_multiplier` is `numeric(3,2)` — ×100 is exactly an integer. */
+const PERCENT = 100;
 
 /**
  * Pure calendar arithmetic on `YYYY-MM-DD`, UTC-anchored, never a real
@@ -151,9 +153,38 @@ function priceMinutes(minutes: number, rateMinor: number): number {
   );
 }
 
-/** Half-up on a value that is genuinely fractional (the overtime multiplier). */
-function roundHalfUp(value: number): number {
-  return Math.floor(value + 0.5);
+/**
+ * The overtime hourly rate in minor units: `rate_minor × multiplier`, half-up,
+ * and — like `priceMinutes` — computed WITHOUT ever holding a fractional
+ * value.
+ *
+ * `Math.floor(rate_minor * multiplier + 0.5)` was the obvious spelling and it
+ * is wrong (Phase 2 review, finding 2). `overtime_multiplier` is a
+ * `numeric(3,2)`, and almost no two-decimal value has an exact binary form, so
+ * the product lands a hair BELOW its exact decimal value and the `+ 0.5` step
+ * then truncates instead of rounding up: `1250 × 1.13` is exactly `1412.5` in
+ * decimal but `1412.4999999999998` as a double, so an £12.50/h nanny was
+ * priced £14.12 an overtime hour instead of £14.13. Exhaustively over
+ * `rate_minor` 1..20000 × `multiplier` 1.00..9.99 that is 16,337 wrong pairs —
+ * and every single one rounds LOW. A float error that always favoured the
+ * same party is not a rounding choice, it is the bug integer minor units exist
+ * to prevent (`docs/11-MONEY.md` §1).
+ *
+ * In integers instead. `multiplier` is `numeric(3,2)`, so `m = k / 100` for an
+ * integer `k` in [100, 999]; `Math.round(multiplier * 100)` recovers that `k`
+ * exactly (the representation error is ~1e-13, nowhere near ½). Then
+ *
+ *   half-up(rate × k / 100) = floor(rate × k / 100 + ½) = floor((rate × k + 50) / 100)
+ *
+ * where `rate × k + 50` is an exact integer (< 10⁹ for any realistic rate, far
+ * inside 2⁵³) and the final division is exact wherever the quotient is a whole
+ * number, and otherwise at least 1/100 away from one — thousands of ulps at
+ * this magnitude, so `floor` cannot be misled. Verified against exact BigInt
+ * arithmetic across the whole domain.
+ */
+function overtimeRateMinor(rateMinor: number, multiplier: number): number {
+  const hundredths = Math.round(multiplier * PERCENT);
+  return Math.floor((rateMinor * hundredths + PERCENT / 2) / PERCENT);
 }
 
 // =============================================================================
@@ -229,7 +260,7 @@ function toLines(
           // rate the sub-line displays ("at £27.75 (1.5×)") is exactly the one
           // that produced the amount. Rounding after would let the row fail to
           // reproduce its own total.
-          roundHalfUp(segment.arrangement.rate_minor * multiplier);
+          overtimeRateMinor(segment.arrangement.rate_minor, multiplier);
     const previous = lines[lines.length - 1];
     if (previous && previous.arrangement_id === segment.arrangement.id) {
       previous.minutes += segment.minutes;
