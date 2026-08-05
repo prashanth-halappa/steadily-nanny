@@ -162,13 +162,18 @@ describe('pto.schema', () => {
       ).toBe(true);
     });
 
-    it('rejects zero minutes', () => {
+    // Phase 3/4 review, BLOCKER 3: the request states the TOTAL minutes this
+    // household is paying for the time off, not a delta, so zero is the
+    // meaningful "unpay it entirely" instruction — a full reversal. It is not
+    // a zero-minute ledger row (the SQL still forbids those); the service
+    // turns it into an adjustment cancelling the netted total.
+    it('accepts ZERO minutes — a full reversal of an existing marking', () => {
       expect(
         MarkTimeOffPaidRequestSchema.safeParse({
           time_off_id: VALID_UUID,
           minutes: 0,
         }).success
-      ).toBe(false);
+      ).toBe(true);
     });
 
     it('rejects negative minutes', () => {

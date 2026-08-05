@@ -85,37 +85,42 @@ export class PtoLedgerRepository extends BaseRepository<PtoLedgerEntry> {
   }
 
   /**
-   * The (at most one, per `pto_ledger_one_usage_per_time_off_idx`) `usage`
-   * row THIS household holds for one time off — the find-first check
-   * `markTimeOffPaid` runs before writing. Scoped by `household_id` because
-   * a nanny working two families could have a `usage` row for the SAME
-   * `time_off_id` in each household independently; this returns only the
+   * EVERY row THIS household holds against one time off — the `usage` row
+   * and all of its `adjustment` corrections. Scoped by `household_id`
+   * because a nanny working two families can have an independent marking of
+   * the SAME `time_off_id` in each household; this returns only the
    * caller's own.
+   *
+   * DELIBERATELY UNFILTERED BY `kind` (Phase 3/4 review, BLOCKER 3). What
+   * every caller actually needs is the NETTED total this household has paid
+   * for the time off — `-sum(minutes)` across usage and adjustments alike.
+   * The usage row alone is not that number the moment a correction exists,
+   * and reading only the usage row is what let a second mark-paid attempt
+   * collide with `pto_ledger_one_usage_per_time_off_idx` instead of
+   * appending a delta.
    */
-  async findUsageForTimeOff(
+  async listForHouseholdTimeOff(
     householdId: string,
     timeOffId: string
-  ): Promise<PtoLedgerEntry | null> {
+  ): Promise<PtoLedgerEntry[]> {
     const { data, error } = await supabaseService
       .from(this.table)
       .select('*')
       .eq('household_id', householdId)
-      .eq('time_off_id', timeOffId)
-      .eq('kind', PTO_LEDGER_KINDS.USAGE)
-      .maybeSingle();
+      .eq('time_off_id', timeOffId);
 
     if (error) {
       throw new DatabaseError(
-        'Failed to look up PTO usage for time off',
+        'Failed to look up PTO ledger rows for time off',
         'DATABASE_ERROR',
         { details: error.message, householdId, timeOffId }
       );
     }
-    return data as PtoLedgerEntry | null;
+    return (data ?? []) as PtoLedgerEntry[];
   }
 
   /**
-   * EVERY household's `usage` row for one time off, deliberately UNSCOPED by
+   * EVERY household's rows for one time off, deliberately UNSCOPED by
    * `household_id` — the one exception to this repository's "filter both
    * ids" rule, and it exists for a structural reason, not carelessness:
    * `reconcileCancelledTimeOff` is invoked with only a `timeOffId` (the
@@ -124,19 +129,24 @@ export class PtoLedgerRepository extends BaseRepository<PtoLedgerEntry> {
    * have been marked paid by MULTIPLE households independently (a nanny with
    * two families, each paying its own PTO) — every one of them must be
    * reversed, not just the first found. This never leaks across households:
-   * the rows returned here are fed straight back into THEIR OWN
-   * household-scoped `adjustment` inserts, never rendered to a client.
+   * the rows returned here are grouped by `household_id` and fed straight
+   * back into THEIR OWN household-scoped `adjustment` inserts, never
+   * rendered to a client.
+   *
+   * Like `listForHouseholdTimeOff`, this is UNFILTERED BY `kind`: reconcile
+   * has to see the corrections to know what is still outstanding. Filtering
+   * to `usage` was the whole of BLOCKER 1(b) — it made every retry of the
+   * fire-and-forget reconciliation write another full reversal.
    */
-  async findAllUsageForTimeOff(timeOffId: string): Promise<PtoLedgerEntry[]> {
+  async listAllForTimeOff(timeOffId: string): Promise<PtoLedgerEntry[]> {
     const { data, error } = await supabaseService
       .from(this.table)
       .select('*')
-      .eq('time_off_id', timeOffId)
-      .eq('kind', PTO_LEDGER_KINDS.USAGE);
+      .eq('time_off_id', timeOffId);
 
     if (error) {
       throw new DatabaseError(
-        'Failed to look up PTO usage across households for time off',
+        'Failed to look up PTO ledger rows across households for time off',
         'DATABASE_ERROR',
         { details: error.message, timeOffId }
       );

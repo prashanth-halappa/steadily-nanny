@@ -152,6 +152,20 @@ nulls every time simply restates the invariant, and is idempotent. Never CAS
 the *revert*: a clock-out must never fail because a parent tapped Approve;
 the hours happened and must be recorded.
 
+**A frozen week refuses new money, rather than silently reopening.**
+Approving an expense or mileage claim dated inside an already-`approved`
+week is refused with a typed 409 (`ExpenseWeekLockedError`, reason
+`EXPENSE_WEEK_LOCKED`) — Phase 3/4 review, finding 6. The reimbursement
+section lives inside the frozen `earnings` snapshot, so a claim approved
+after the freeze is money on a row that appears on no statement: owed,
+invisible, and found months later. The alternative — reopening the week the
+way new hours do — is deliberately rejected: the reopen path exists for
+*facts about work that happened and must be recorded whatever it costs the
+sign-off*, and a reimbursement is not wages at all (§6). Letting one
+un-approve a payroll week both parties agreed would give a non-wage item
+authority over the wage record. **Rejecting** a claim in a frozen week stays
+allowed — it moves no money, so the parent is never left without an action.
+
 **Legacy weeks render hours-only.** A timesheet `approved` before the
 earnings columns existed has a `NULL` snapshot forever, never backfilled.
 **A live-computed number must never appear under an "Approved" label** — that
@@ -197,6 +211,41 @@ time-off id via FK. Balance is the signed sum of that household's ledger
 rows (`accrual` +, `usage` −, `adjustment` either). This also just works for
 a nanny with two families, one paying PTO and the other not — each
 household's ledger is independent and neither can see the other's.
+
+**The unit of truth is the NETTED total per `(household, time_off)`, never
+"the usage row"** (Phase 3/4 review, findings 1–3). What a household has paid
+for one time off is `-sum(minutes)` over EVERY row it holds against that
+`time_off_id` — the `usage` row and all of its `adjustment` corrections.
+Three rules follow, and all three are load-bearing:
+
+- **Marking paid is a TOTAL, and every write is a delta.** Re-submitting a
+  different number of hours appends an `adjustment` for the difference
+  (8h → 6h writes `+120`); re-submitting the same number writes nothing and
+  succeeds; submitting `0` fully reverses. Nothing is ever updated or
+  deleted, and there is no second `usage` row — the partial unique index
+  `pto_ledger_one_usage_per_time_off_idx` stands, and the delta path is what
+  makes a correction possible under it. This is the ONLY way to fix a
+  mis-marked figure; do not add an update path.
+- **Reversal is netted, so it is idempotent.** Cancelling a time off writes
+  the reversal of what is *still outstanding*, so a retry (the reconcile is
+  fire-and-forget, so retries are guaranteed) writes nothing and a
+  part-corrected marking gets only the remainder. Do NOT add a partial unique
+  index on `(household_id, time_off_id) where kind = 'adjustment'` to express
+  this: it directly contradicts the delta rule above, which needs unlimited
+  adjustment rows per pair.
+- **The engine sees the netted minutes, not the usage rows.** The netting
+  happens in `weekEarningsService.buildWeekEarningsInput`, not the engine —
+  the engine takes priced facts, and `kind`/sign/`time_off_id` are ledger
+  storage. Feeding it raw `usage` rows made a day that was marked paid,
+  cancelled, and then actually worked price BOTH a `pto` and a `regular`
+  line: double pay, frozen at approval.
+
+**Only the household-local CURRENT year is lazily granted** (Phase 3/4
+review, finding 4). Reading any other year — a nanny booking January makes
+the client read next year — returns the balance but mints no `accrual` row.
+A grant is frozen at today's entitlement and un-re-grantable, so minting
+2027's grant in August 2026 writes a number that is wrong the moment the
+terms change and correctable only by hand.
 
 The FK from a household-scoped ledger row to a cross-household time-off row
 is the **only** place a household-scoped table references a row outside its

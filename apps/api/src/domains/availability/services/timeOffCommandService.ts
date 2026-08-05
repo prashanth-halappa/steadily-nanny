@@ -87,10 +87,23 @@ export class TimeOffCommandService {
    * "missing" and "not yours"), then sets `status = 'cancelled'` — NEVER a
    * hard delete, since the partial index `carer_time_off_user_range_idx
    * ... where status <> 'cancelled'` implies cancelled rows persist.
+   *
+   * IDEMPOTENT (Phase 3/4 review, BLOCKER 1). `getOwned` checks ownership
+   * only, so cancelling an already-cancelled time off used to "succeed" and
+   * re-run everything below it. `cancelById` is now conditional on the row
+   * not already being cancelled and returns `null` when it changed nothing;
+   * that `null` is the signal to skip the reconciliation entirely, because
+   * the row was already cancelled and whatever reversal it needed has
+   * already happened. The caller still gets a success and the row as it
+   * stands — a second DELETE is not an error.
    */
   async cancel(userId: string, timeOffId: string): Promise<CarerTimeOff> {
-    await this.queries.getOwned(userId, timeOffId);
+    const existing = await this.queries.getOwned(userId, timeOffId);
     const cancelled = await this.timeOffRepo.cancelById(timeOffId);
+    if (!cancelled) {
+      // Already cancelled — nothing transitioned, so nothing to reconcile.
+      return existing;
+    }
 
     // A household may already have marked this time off as paid PTO. Leaving
     // that usage row behind would keep a paid day the carer is no longer
@@ -99,7 +112,12 @@ export class TimeOffCommandService {
     //
     // Fire-and-forget on purpose: the cancellation is the carer's own, and a
     // bookkeeping failure downstream must never leave her unable to cancel.
-    // The reconcile itself is idempotent, so a retry is safe.
+    // Retries are therefore guaranteed, and TWO things make one safe: the
+    // conditional cancel above means a retried DELETE never reaches this
+    // line at all, and `reconcileCancelledTimeOff` itself writes only the
+    // difference between what a household has paid and what it has already
+    // reversed — a second run against a reversed ledger nets to zero and
+    // writes nothing.
     void this.reconcilePtoUsage(timeOffId).catch((error: unknown) => {
       logger.error('Failed to reconcile PTO usage after time-off cancel', {
         timeOffId,

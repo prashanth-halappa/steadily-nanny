@@ -127,6 +127,40 @@ export class ExpenseNotEditableError extends ConflictError {
   }
 }
 
+/**
+ * 409 — the claim is dated inside a week whose timesheet is already
+ * `approved`, so APPROVING it would strand the money (Phase 3/4 review,
+ * SERIOUS 6).
+ *
+ * An approved week's `earnings` snapshot — reimbursement section included —
+ * is frozen and never recomputed (`docs/11-MONEY.md` §3). An expense approved
+ * after that freeze exists on the row and appears on NO statement: real money
+ * the nanny is owed, invisible to both parties. The alternative, silently
+ * re-opening the week, is refused deliberately: only new HOURS reopen an
+ * approved week (§3, the D1 path), and reimbursements are not wages (§6) — a
+ * non-wage item must not be able to un-approve a payroll week both sides
+ * signed off.
+ *
+ * REJECTING a claim in a frozen week is still allowed: it moves no money, so
+ * the parent always has an action. `metadata` names the week and the
+ * timesheet's status so the client can say WHICH week is locked.
+ */
+export class ExpenseWeekLockedError extends ConflictError {
+  constructor(
+    expenseId: string,
+    householdId: string,
+    weekStart: string,
+    timesheetStatus: string
+  ) {
+    super(
+      'That week has already been approved, so this claim cannot be approved into it',
+      'EXPENSE_WEEK_LOCKED',
+      { expenseId, householdId, weekStart, timesheetStatus }
+    );
+    this.name = 'ExpenseWeekLockedError';
+  }
+}
+
 // =============================================================================
 // PTO ledger (TIER0-PLAN.md Phase 3, docs/11-MONEY.md §5/§8/§9)
 // =============================================================================
@@ -210,6 +244,30 @@ export class PtoAlreadyMarkedPaidError extends ConflictError {
       { householdId, timeOffId }
     );
     this.name = 'PtoAlreadyMarkedPaidError';
+  }
+}
+
+/**
+ * 400 — a mark-paid request asked for ZERO minutes on a time off this
+ * household has never marked paid (Phase 3/4 review, BLOCKER 3).
+ *
+ * The request states the TOTAL minutes this household is paying, so zero
+ * means "unpay it entirely" — a full reversal of the netted total. With
+ * nothing marked there is no total to reverse and nothing to record: the
+ * ledger is append-only and forbids zero-minute rows
+ * (`check (minutes <> 0)`), so inventing a row would be a lie and returning
+ * one is impossible. It is refused with the same 400 the wire schema used to
+ * give a zero-minute request, so no client behaviour changes.
+ */
+export class PtoNothingToAdjustError extends ValidationError {
+  constructor(householdId: string, timeOffId: string) {
+    super(
+      'This time off has not been marked paid, so there is nothing to adjust',
+      'PTO_NOTHING_TO_ADJUST',
+      400,
+      { householdId, timeOffId }
+    );
+    this.name = 'PtoNothingToAdjustError';
   }
 }
 

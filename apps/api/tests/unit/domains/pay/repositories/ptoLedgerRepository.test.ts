@@ -245,65 +245,104 @@ describe('PtoLedgerRepository.listForCarerYear', () => {
   });
 });
 
-describe('PtoLedgerRepository.findUsageForTimeOff', () => {
-  it('finds this household’s usage row for the time off', async () => {
-    withRows([usageRow()]);
+describe('PtoLedgerRepository.listForHouseholdTimeOff', () => {
+  it('returns EVERY kind of row this household holds for the time off — usage AND its corrections', async () => {
+    withRows([
+      usageRow(),
+      usageRow({ id: 'ptl-adj', kind: 'adjustment', minutes: 120 }),
+    ]);
     const repo = new PtoLedgerRepository();
-    const found = await repo.findUsageForTimeOff('h1', 'to-1');
-    expect(found?.id).toBe('ptl-1');
+    const rows = await repo.listForHouseholdTimeOff('h1', 'to-1');
+    expect(rows.map((r: FakeRow) => r.id).sort()).toEqual(['ptl-1', 'ptl-adj']);
   });
 
-  it('returns null when this household never marked it paid', async () => {
+  it('returns [] when this household never marked it paid', async () => {
     withRows([]);
     const repo = new PtoLedgerRepository();
-    expect(await repo.findUsageForTimeOff('h1', 'to-1')).toBeNull();
+    expect(await repo.listForHouseholdTimeOff('h1', 'to-1')).toEqual([]);
   });
 
-  it("never crosses into another household's usage row for the SAME time off", async () => {
+  it("never crosses into another household's rows for the SAME time off", async () => {
     withRows([usageRow({ id: 'theirs', household_id: 'h2' })]);
     const repo = new PtoLedgerRepository();
-    expect(await repo.findUsageForTimeOff('h1', 'to-1')).toBeNull();
+    expect(await repo.listForHouseholdTimeOff('h1', 'to-1')).toEqual([]);
   });
 
-  it('ignores accrual/adjustment rows — usage kind only', async () => {
-    withRows([accrualRow({ time_off_id: 'to-1' })]);
+  it('filters household_id AND time_off_id explicitly (no RLS backstop here)', async () => {
+    withRows([usageRow()]);
     const repo = new PtoLedgerRepository();
-    expect(await repo.findUsageForTimeOff('h1', 'to-1')).toBeNull();
+    await repo.listForHouseholdTimeOff('h1', 'to-1');
+    const eqPairs = lastCalls
+      .filter(call => call.method === 'eq')
+      .map(call => [call.args[0], call.args[1]]);
+    expect(eqPairs).toContainEqual(['household_id', 'h1']);
+    expect(eqPairs).toContainEqual(['time_off_id', 'to-1']);
+  });
+
+  it('does NOT filter by kind — the netted total needs the corrections too', async () => {
+    withRows([usageRow()]);
+    const repo = new PtoLedgerRepository();
+    await repo.listForHouseholdTimeOff('h1', 'to-1');
+    expect(
+      lastCalls.some(call => call.method === 'eq' && call.args[0] === 'kind')
+    ).toBe(false);
   });
 
   it('throws a DatabaseError when the query fails', async () => {
     withRows([], { message: 'boom' });
     const repo = new PtoLedgerRepository();
-    await expect(repo.findUsageForTimeOff('h1', 'to-1')).rejects.toThrow();
+    await expect(repo.listForHouseholdTimeOff('h1', 'to-1')).rejects.toThrow();
   });
 });
 
-describe('PtoLedgerRepository.findAllUsageForTimeOff — cross-household, for reconcile', () => {
-  it('returns EVERY household’s usage row for one shared time off', async () => {
+describe('PtoLedgerRepository.listAllForTimeOff — cross-household, for reconcile', () => {
+  it('returns EVERY household’s rows for one shared time off', async () => {
     withRows([
       usageRow({ id: 'u1', household_id: 'h1' }),
       usageRow({ id: 'u2', household_id: 'h2' }),
     ]);
     const repo = new PtoLedgerRepository();
-    const rows = await repo.findAllUsageForTimeOff('to-1');
+    const rows = await repo.listAllForTimeOff('to-1');
     expect(rows.map((r: FakeRow) => r.id).sort()).toEqual(['u1', 'u2']);
   });
 
   it('returns [] when nobody marked it paid', async () => {
     withRows([]);
     const repo = new PtoLedgerRepository();
-    expect(await repo.findAllUsageForTimeOff('to-1')).toEqual([]);
+    expect(await repo.listAllForTimeOff('to-1')).toEqual([]);
   });
 
   it('does NOT filter by household_id (the one deliberate exception)', async () => {
     withRows([usageRow()]);
     const repo = new PtoLedgerRepository();
-    await repo.findAllUsageForTimeOff('to-1');
+    await repo.listAllForTimeOff('to-1');
     expect(
       lastCalls.some(
         call => call.method === 'eq' && call.args[0] === 'household_id'
       )
     ).toBe(false);
+  });
+
+  // Phase 3/4 review, BLOCKER 1(b): reconcile has to see the ADJUSTMENT rows
+  // too, or it cannot tell an already-reversed marking from an un-reversed
+  // one and double-reverses on every retry.
+  it('does NOT filter by kind — adjustment rows are what make reconcile idempotent', async () => {
+    withRows([
+      usageRow({ id: 'u1' }),
+      usageRow({ id: 'adj1', kind: 'adjustment', minutes: 480 }),
+    ]);
+    const repo = new PtoLedgerRepository();
+    const rows = await repo.listAllForTimeOff('to-1');
+    expect(rows.map((r: FakeRow) => r.id).sort()).toEqual(['adj1', 'u1']);
+    expect(
+      lastCalls.some(call => call.method === 'eq' && call.args[0] === 'kind')
+    ).toBe(false);
+  });
+
+  it('throws a DatabaseError when the query fails', async () => {
+    withRows([], { message: 'boom' });
+    const repo = new PtoLedgerRepository();
+    await expect(repo.listAllForTimeOff('to-1')).rejects.toThrow();
   });
 });
 

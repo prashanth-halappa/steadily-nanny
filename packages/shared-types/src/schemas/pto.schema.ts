@@ -103,18 +103,33 @@ export const PtoBalanceSchema = z.object({
 });
 
 /**
- * POST .../time-off/:timeOffId/mark-paid body. `household_id`/`carer_id`
- * come from the URL, same as `CreatePayArrangementRequestSchema`.
+ * POST /households/:householdId/pto/mark-paid body. `household_id` comes
+ * from the URL and the carer is DERIVED from the time off's `user_id`, never
+ * accepted as a param — see `ptoRoutes.ts`, which is the authority on the
+ * address. (An earlier version of this comment named a
+ * `.../time-off/:timeOffId/mark-paid` route that has never existed; the
+ * `time_off_id` travels in the body, below.)
  *
- * Minutes are freely chosen by the parent — an over-balance is a warning,
- * never a hard cap (TIER0-PLAN.md Phase 3, review finding 16) — so the only
- * shape constraint is "a positive number of minutes", `.min(1)`, not an
- * upper bound tied to the balance (that check is service-side, since it
- * depends on data this schema has no access to).
+ * `minutes` is the TOTAL this household pays for the time off, not a delta:
+ * re-submitting a different number appends a correcting `adjustment` row for
+ * the difference, and the ledger's netted sum is what balance and the
+ * earnings engine both read (`ptoCommandService.markTimeOffPaid`).
+ *
+ * ZERO IS VALID and means "unpay this entirely" — a full reversal of the
+ * netted total (TIER0-PLAN.md Phase 3/4 review, BLOCKER 3). It is not a
+ * zero-minute ledger row: the SQL still carries `check (minutes <> 0)` and
+ * the service writes the reversing amount, never a zero. `.min(0)` rather
+ * than the old `.min(1)` is what lets the mark-paid sheet's own "remove"
+ * path reach the server at all.
+ *
+ * Minutes are otherwise freely chosen by the parent — an over-balance is a
+ * warning, never a hard cap (TIER0-PLAN.md Phase 3, review finding 16) — so
+ * there is no upper bound tied to the balance (that check is service-side,
+ * since it depends on data this schema has no access to).
  */
 export const MarkTimeOffPaidRequestSchema = z.object({
   time_off_id: z.uuid(),
-  minutes: z.int().min(1),
+  minutes: z.int().min(0),
   note: z.string().optional(),
 });
 

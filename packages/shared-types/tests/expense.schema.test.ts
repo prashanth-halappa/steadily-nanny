@@ -195,6 +195,41 @@ describe('expense.schema', () => {
       ).toBe(true);
     });
 
+    // Phase 3/4 review, MINOR 11: `miles` had no upper bound at all, so
+    // `123456.7` passed the wire schema and died in Postgres as a
+    // `numeric(6,1)` overflow — a 500 on a typo. numeric(6,1) holds six
+    // significant digits with one after the point, so 99999.9 is the largest
+    // storable value and the wire now says so.
+    it('accepts the numeric(6,1) maximum, 99999.9', () => {
+      expect(
+        CreateExpenseRequestSchema.safeParse({
+          kind: EXPENSE_KINDS.MILEAGE,
+          local_date: '2026-08-01',
+          description: 'School run',
+          miles: 99999.9,
+        }).success
+      ).toBe(true);
+    });
+
+    it('rejects miles beyond numeric(6,1) rather than 500ing on overflow', () => {
+      expect(
+        CreateExpenseRequestSchema.safeParse({
+          kind: EXPENSE_KINDS.MILEAGE,
+          local_date: '2026-08-01',
+          description: 'School run',
+          miles: 123456.7,
+        }).success
+      ).toBe(false);
+      expect(
+        CreateExpenseRequestSchema.safeParse({
+          kind: EXPENSE_KINDS.MILEAGE,
+          local_date: '2026-08-01',
+          description: 'School run',
+          miles: 100000,
+        }).success
+      ).toBe(false);
+    });
+
     it('rejects an empty description', () => {
       expect(
         CreateExpenseRequestSchema.safeParse({

@@ -55,9 +55,20 @@ const CurrencyCodeSchema = z.string().regex(/^[A-Z]{3}$/);
  * the original value is a reliable-enough precision check without pulling in
  * a decimal library for a single form field.
  */
+const MAX_MILES = 99_999.9;
+
 const MilesSchema = z
   .number()
   .positive()
+  // numeric(6,1) is SIX significant digits with one after the point, so
+  // 99999.9 is the largest storable value. Without this bound `123456.7`
+  // passed the wire schema and died in Postgres as a numeric field overflow
+  // — a 500 on a typo, where the honest answer is a 400 at the edge (Phase
+  // 3/4 review, MINOR 11). The same reasoning as the precision refine below:
+  // the wire accepts exactly what the column can hold, no more.
+  .max(MAX_MILES, {
+    message: 'miles must be at most 99999.9 (numeric(6,1))',
+  })
   .refine(miles => Number(miles.toFixed(1)) === miles, {
     message: 'miles must have at most one decimal place (numeric(6,1))',
   });

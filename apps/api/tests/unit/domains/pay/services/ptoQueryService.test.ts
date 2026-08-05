@@ -217,22 +217,75 @@ describe('PtoQueryService.balance — the lazy annual grant', () => {
     expect(ptoRepo.create).not.toHaveBeenCalled();
   });
 
-  it('the grant amount comes from the arrangement effective AT GRANT TIME (household-local today), not the requested year', async () => {
+  it("the grant amount comes from the arrangement effective on the household's LOCAL today", async () => {
     const ptoRepo = makePtoRepo();
     const payRepo = makePayRepo({
       ...arrangementWithEntitlement,
       pto_entitlement_minutes_per_year: 9600,
     });
     const svc = service({ 'parent-1': PARENT }, ptoRepo, payRepo);
-    // Requesting a PAST year (2024) still grants using TODAY's arrangement.
-    await svc.balance('parent-1', 'h1', 'carer-1', 2024, NOW);
+    await svc.balance('parent-1', 'h1', 'carer-1', 2026, NOW);
     expect(payRepo.effectiveOn).toHaveBeenCalledWith(
       'h1',
       'carer-1',
       '2026-08-04'
     );
     expect(ptoRepo.create.mock.calls[0][0].minutes).toBe(9600);
-    expect(ptoRepo.create.mock.calls[0][0].effective_date).toBe('2024-01-01');
+    expect(ptoRepo.create.mock.calls[0][0].effective_date).toBe('2026-01-01');
+  });
+
+  // -------------------------------------------------------------------------
+  // Phase 3/4 review, SERIOUS 4. `PtoYearQuerySchema` accepts any year
+  // 2000–2100 and the lazy grant minted THAT year at TODAY's arrangement,
+  // frozen. A nanny booking January time off (the client reads next year's
+  // balance) wrote next year's grant NOW, at this year's entitlement, and it
+  // can never be re-granted — only corrected by hand. Only the
+  // household-LOCAL current year is grantable; every other year stays
+  // readable and mints nothing.
+  // -------------------------------------------------------------------------
+  it('NEVER grants a FUTURE year — it stays readable, with no accrual row minted', async () => {
+    const ptoRepo = makePtoRepo();
+    const svc = service({ 'parent-1': PARENT }, ptoRepo);
+    const balance = await svc.balance('parent-1', 'h1', 'carer-1', 2027, NOW);
+    expect(ptoRepo.create).not.toHaveBeenCalled();
+    expect(balance.accrued_minutes).toBe(0);
+    // The entitlement still reports, so the client can render "not granted yet".
+    expect(balance.entitlement_minutes).toBe(16800);
+  });
+
+  it('NEVER grants a PAST year either — a year that was never granted stays ungranted', async () => {
+    const ptoRepo = makePtoRepo();
+    const svc = service({ 'parent-1': PARENT }, ptoRepo);
+    await svc.balance('parent-1', 'h1', 'carer-1', 2024, NOW);
+    expect(ptoRepo.create).not.toHaveBeenCalled();
+  });
+
+  it('the grantable year is the HOUSEHOLD-LOCAL one, not UTC — 31 Dec 23:00 UTC is already the new year in Auckland', async () => {
+    const ptoRepo = makePtoRepo();
+    const svc = service(
+      { 'parent-1': PARENT },
+      ptoRepo,
+      makePayRepo(),
+      'Pacific/Auckland'
+    );
+    const newYearsEveUtc = () => new Date('2026-12-31T23:00:00.000Z');
+
+    // Local date is 2027-01-01 in Auckland, so 2027 is the grantable year...
+    await svc.balance('parent-1', 'h1', 'carer-1', 2027, newYearsEveUtc);
+    expect(ptoRepo.create).toHaveBeenCalledTimes(1);
+    expect(ptoRepo.create.mock.calls[0][0].effective_date).toBe('2027-01-01');
+
+    // ...and 2026, the UTC year, is not.
+    ptoRepo.create.mockClear();
+    await svc.balance('parent-1', 'h1', 'carer-1', 2026, newYearsEveUtc);
+    expect(ptoRepo.create).not.toHaveBeenCalled();
+  });
+
+  it('the ledger read applies the same rule as balance', async () => {
+    const ptoRepo = makePtoRepo();
+    const svc = service({ 'parent-1': PARENT }, ptoRepo);
+    await svc.ledger('parent-1', 'h1', 'carer-1', 2030, NOW);
+    expect(ptoRepo.create).not.toHaveBeenCalled();
   });
 
   it('RACE: a duplicate-key error on the grant insert is swallowed, not thrown, and the winner is re-read', async () => {

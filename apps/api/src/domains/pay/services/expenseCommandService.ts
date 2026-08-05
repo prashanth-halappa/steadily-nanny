@@ -26,14 +26,20 @@
  *    the repository's own WHERE clause (so a race that reviews the row
  *    between this read and that write cannot slip through either).
  * 3. `review` — PARENT-gated (single parent suffices, same as
- *    `payArrangementCommandService`, owner decision 1). Approving a
- *    `mileage` row computes `amount_minor = round(miles x
+ *    `payArrangementCommandService`, owner decision 1); a caller who may not
+ *    review gets the SAME 404 as a caller naming an expense that does not
+ *    exist, so no uuid can be probed for existence (Phase 3/4 review, MINOR
+ *    9 — the collapse `loadOwnedPending` already applies). Approving a
+ *    `mileage` row RE-ASSERTS the effective arrangement's currency (review
+ *    SERIOUS 5) and then computes `amount_minor = round(miles x
  *    mileage_rate_per_mile_minor)` — half-up, integer arithmetic only, see
  *    `priceMileage` — and freezes it into the SAME update as the status
  *    flip. No mileage rate on the effective arrangement is a typed error,
  *    never a zero amount (`docs/11-MONEY.md` §4's no-arrangement-no-zero
  *    rule). Approving an `expense` row, and rejecting either kind, computes
- *    nothing.
+ *    nothing. APPROVING anything into a week whose timesheet is already
+ *    `approved` is refused with `ExpenseWeekLockedError` — see
+ *    `assertWeekNotFrozen` for why blocking beats reopening.
  *
  * @module domains/pay/services/expenseCommandService
  */
@@ -46,16 +52,15 @@ import {
   type UpdateExpenseRequest,
 } from '@steadily-nanny/shared-types/schemas/expense.schema';
 import type { PayArrangement } from '@steadily-nanny/shared-types/schemas/payArrangement.schema';
-import {
-  HOUSEHOLD_ROLES,
-  HouseholdMemberRepository,
-  NotAHouseholdParentError,
-} from '../../household';
+import { HOUSEHOLD_ROLES, HouseholdMemberRepository } from '../../household';
+import { TimesheetRepository } from '../../timesheet/repositories/timesheetRepository';
+import { weekStartOfLocalDate } from '../../timesheet/utils/weekStart';
 import { UserService } from '../../user';
 import {
   ExpenseNotEditableError,
   ExpenseNotFoundError,
   ExpenseValidationError,
+  ExpenseWeekLockedError,
 } from '../errors/payErrors';
 import {
   ExpenseRepository,
@@ -84,6 +89,25 @@ const UNNAMED_CARER_DISPLAY_NAME = 'Carer';
  * `earningsService.priceMinutes` uses for `minutes / 60`.
  */
 const MILES_SCALE = 10;
+
+/** The one timesheet status whose earnings are frozen (`docs/11-MONEY.md` §3). */
+const APPROVED_TIMESHEET_STATUS = 'approved';
+
+/**
+ * Only the week lookup this service needs, declared as an interface rather
+ * than the class for the same reason `WeekEarningsComputer` is: it keeps the
+ * pay domain's dependency on the timesheet domain one function wide and lets
+ * a caller's tests supply a stub. READ-ONLY, deliberately — this service
+ * asks whether a week is frozen; it never reopens one (see
+ * `assertWeekNotFrozen`).
+ */
+export interface ExpenseWeekTimesheetLookup {
+  findByWeek: (
+    householdId: string,
+    carerId: string,
+    weekStart: string
+  ) => Promise<{ status: string } | null>;
+}
 
 /**
  * THE mileage-pricing rule: `round(miles x rateMinorPerMile)`, half-up
@@ -128,7 +152,8 @@ export class ExpenseCommandService {
     private readonly userService: Pick<
       typeof UserService,
       'getProfileById'
-    > = UserService
+    > = UserService,
+    private readonly timesheetRepo: ExpenseWeekTimesheetLookup = new TimesheetRepository()
   ) {}
 
   /** Gate 1 — see the module doc. Submit a new claim, always `pending`. */
@@ -240,9 +265,13 @@ export class ExpenseCommandService {
     if (!existing) {
       throw new ExpenseNotFoundError(expenseId, { reason: 'not_found' });
     }
-    await this.assertReviewRole(callerId, existing.household_id);
+    await this.assertReviewRole(callerId, existing.household_id, expenseId);
     if (existing.status !== EXPENSE_STATUSES.PENDING) {
       throw new ExpenseNotEditableError(expenseId, 'not_pending');
+    }
+
+    if (request.status === EXPENSE_STATUSES.APPROVED) {
+      await this.assertWeekNotFrozen(existing);
     }
 
     const patch: ReviewPatch = {
@@ -290,6 +319,25 @@ export class ExpenseCommandService {
           existing.local_date
         )
       : null;
+
+    // RE-ASSERT THE CURRENCY BEFORE PRICING (Phase 3/4 review, SERIOUS 5).
+    // `create` checked the claim's currency against the effective
+    // arrangement, but the arrangement effective on `local_date` can CHANGE
+    // between submission and review without any date moving: a same-day
+    // correcting row supersedes the one it fixes via the `created_at desc`
+    // tie-break (`docs/11-MONEY.md` §2), and that is the documented,
+    // only mechanism for fixing a mistyped arrangement. If the correction
+    // changed the currency, pricing here would derive an amount from a USD
+    // rate and freeze it onto a row that says GBP — a wrong number wearing
+    // the right label, which is the one failure mode §1 exists to prevent.
+    // Rejecting is unaffected: it prices nothing, so it never gets here.
+    this.assertCurrencyMatches(
+      arrangement,
+      existing.currency,
+      existing.household_id,
+      existing.carer_id ?? ''
+    );
+
     const rateMinor = arrangement?.mileage_rate_per_mile_minor;
     if (!arrangement || rateMinor === null || rateMinor === undefined) {
       throw new ExpenseValidationError('NO_MILEAGE_RATE', {
@@ -352,19 +400,78 @@ export class ExpenseCommandService {
     return membership;
   }
 
-  /** Gate 3's role check — a single parent/owner suffices (owner decision 1). */
+  /**
+   * Gate 3's role check — a single parent/owner suffices (owner decision 1).
+   *
+   * REFUSES WITH THE SAME 404 AS "no such expense" (Phase 3/4 review, MINOR
+   * 9). This used to raise `NotAHouseholdParentError` (403), which told a
+   * caller holding a random uuid that the row EXISTS and merely belongs to
+   * someone else's household — precisely the enumeration the house collapse
+   * rule closes, and which `loadOwnedPending` two methods up already
+   * follows. The discriminating detail stays in `metadata.reason`.
+   */
   private async assertReviewRole(
     callerId: string,
-    householdId: string
+    householdId: string,
+    expenseId: string
   ): Promise<void> {
     const membership = await this.memberRepo.findActiveMembership(
       householdId,
       callerId
     );
     if (!membership || !REVIEW_ROLES.has(membership.role)) {
-      throw new NotAHouseholdParentError(
+      throw new ExpenseNotFoundError(expenseId, {
+        reason: 'caller_cannot_review_this_expense',
         householdId,
-        membership?.role ?? 'none'
+      });
+    }
+  }
+
+  /**
+   * Refuse to APPROVE a claim into a week whose timesheet is already
+   * `approved` (Phase 3/4 review, SERIOUS 6).
+   *
+   * An approved week's earnings — reimbursement section included — are
+   * frozen at approval and NEVER recomputed (`docs/11-MONEY.md` §3). Approve
+   * an expense after that and the money exists on the row while appearing on
+   * no statement anyone reads: real money owed, silently stranded.
+   *
+   * REOPENING THE WEEK WAS THE ALTERNATIVE, AND IS REFUSED. The reopen path
+   * exists (§3, the D1 rule) but it is triggered by NEW HOURS — a fact about
+   * work that happened and must be recorded whatever it costs the parent's
+   * sign-off. A reimbursement is not that: it is not wages at all (§6), it
+   * never touches gross, and letting one silently un-approve a payroll week
+   * both parties agreed would give a non-wage item authority over the wage
+   * record. So the parent is told, in the moment, instead of a signed-off
+   * week quietly reverting under her.
+   *
+   * REJECTING is deliberately still allowed — it moves no money, so the
+   * parent always has an action and the claim never becomes un-actionable.
+   *
+   * A carer-less row (`carer_id` null, 033's account-deletion discipline)
+   * skips the check: her timesheets keyed by that id are equally carer-less,
+   * there is no week to strand money in, and the review is bookkeeping.
+   */
+  private async assertWeekNotFrozen(existing: Expense): Promise<void> {
+    if (!existing.carer_id) {
+      return;
+    }
+    // `local_date` was resolved in the household's timezone when the claim
+    // was written, so its week is pure calendar arithmetic — no second
+    // timezone conversion (which is how a Sunday claim lands in the wrong
+    // week).
+    const weekStart = weekStartOfLocalDate(existing.local_date);
+    const timesheet = await this.timesheetRepo.findByWeek(
+      existing.household_id,
+      existing.carer_id,
+      weekStart
+    );
+    if (timesheet?.status === APPROVED_TIMESHEET_STATUS) {
+      throw new ExpenseWeekLockedError(
+        existing.id,
+        existing.household_id,
+        weekStart,
+        timesheet.status
       );
     }
   }

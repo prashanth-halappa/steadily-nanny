@@ -3,6 +3,7 @@ import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types/schemas/no
 import { NotAHouseholdParentError } from '../../../../../src/domains/household/errors/householdErrors';
 import {
   PtoAlreadyMarkedPaidError,
+  PtoNothingToAdjustError,
   PtoTimeOffNotConfirmedError,
   PtoTimeOffNotFoundError,
 } from '../../../../../src/domains/pay/errors/payErrors';
@@ -85,7 +86,40 @@ function makePtoRepo(overrides: Record<string, unknown> = {}): any {
       ...createdUsageRow,
       ...row,
     })),
-    findAllUsageForTimeOff: mock(async () => []),
+    /** Every kind of row for this time off, across households (reconcile). */
+    listAllForTimeOff: mock(async () => []),
+    /** Every kind of row for ONE household's marking of this time off. */
+    listForHouseholdTimeOff: mock(async () => []),
+    ...overrides,
+  };
+}
+
+/** A `usage` ledger row as stored — minutes NEGATIVE (043's sign convention). */
+function usageRow(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'ptl-1',
+    household_id: 'h1',
+    carer_id: 'carer-1',
+    kind: 'usage',
+    minutes: -480,
+    effective_date: '2026-08-24',
+    time_off_id: 'to-1',
+    carer_display_name: 'Nia Rowe',
+    note: null,
+    created_by: 'parent-1',
+    created_at: '2026-08-04T09:00:00.000Z',
+    ...overrides,
+  };
+}
+
+/** An `adjustment` ledger row — a correction against the same time off. */
+function adjustmentRow(overrides: Record<string, unknown> = {}) {
+  return {
+    ...usageRow(),
+    id: 'ptl-adj',
+    kind: 'adjustment',
+    minutes: 480,
+    created_by: null,
     ...overrides,
   };
 }
@@ -374,10 +408,209 @@ describe('PtoCommandService.markTimeOffPaid — the written row', () => {
   });
 });
 
+// =============================================================================
+// markTimeOffPaid — the ADJUST flow (Phase 3/4 review, BLOCKER 3).
+//
+// The mark-paid sheet advertises that re-submitting a different number of
+// hours appends a correction. It never could: the method always inserted a
+// second `kind='usage'` row and the partial unique index 409'd it, so a
+// parent who marked 8h and then realised it should be 6h had NO way to
+// correct it anywhere in the app. A second mark is now a DELTA `adjustment`
+// row against the netted total, keeping the ledger append-only.
+// =============================================================================
+
+describe('PtoCommandService.markTimeOffPaid — adjusting an existing marking', () => {
+  it('the FIRST mark still writes a usage row (nothing to adjust yet)', async () => {
+    const ptoRepo = makePtoRepo({
+      listForHouseholdTimeOff: mock(async () => []),
+    });
+    const svc = service({ ptoRepo });
+    await svc.markTimeOffPaid('parent-1', 'h1', request({ minutes: 480 }));
+
+    expect(ptoRepo.create).toHaveBeenCalledTimes(1);
+    expect(ptoRepo.create.mock.calls[0][0]).toMatchObject({
+      kind: 'usage',
+      minutes: -480,
+    });
+  });
+
+  it('adjusting DOWN (8h marked, 6h meant) appends a POSITIVE adjustment for the delta — never a second usage row', async () => {
+    const ptoRepo = makePtoRepo({
+      listForHouseholdTimeOff: mock(async () => [usageRow({ minutes: -480 })]),
+    });
+    const svc = service({ ptoRepo });
+    await svc.markTimeOffPaid('parent-1', 'h1', request({ minutes: 360 }));
+
+    expect(ptoRepo.create).toHaveBeenCalledTimes(1);
+    const written = ptoRepo.create.mock.calls[0][0];
+    expect(written.kind).toBe('adjustment');
+    expect(written.minutes).toBe(120); // 480 paid -> 360 paid = +120 back
+    expect(written.time_off_id).toBe('to-1');
+    // Dated with the usage row it corrects, so it nets in the same week.
+    expect(written.effective_date).toBe('2026-08-24');
+  });
+
+  it('adjusting UP (6h marked, 8h meant) appends a NEGATIVE adjustment for the delta', async () => {
+    const ptoRepo = makePtoRepo({
+      listForHouseholdTimeOff: mock(async () => [usageRow({ minutes: -360 })]),
+    });
+    const svc = service({ ptoRepo });
+    await svc.markTimeOffPaid('parent-1', 'h1', request({ minutes: 480 }));
+
+    expect(ptoRepo.create).toHaveBeenCalledTimes(1);
+    expect(ptoRepo.create.mock.calls[0][0]).toMatchObject({
+      kind: 'adjustment',
+      minutes: -120,
+    });
+  });
+
+  it('re-submitting the SAME total is an idempotent no-op — no row written, success returned', async () => {
+    const existing = usageRow({ minutes: -480 });
+    const ptoRepo = makePtoRepo({
+      listForHouseholdTimeOff: mock(async () => [existing]),
+    });
+    const svc = service({ ptoRepo });
+    const result = await svc.markTimeOffPaid(
+      'parent-1',
+      'h1',
+      request({ minutes: 480 })
+    );
+
+    expect(ptoRepo.create).not.toHaveBeenCalled();
+    expect(result.id).toBe(existing.id);
+  });
+
+  it('adjusting to ZERO is a FULL reversal — one adjustment cancelling the netted total', async () => {
+    const ptoRepo = makePtoRepo({
+      listForHouseholdTimeOff: mock(async () => [usageRow({ minutes: -480 })]),
+    });
+    const svc = service({ ptoRepo });
+    await svc.markTimeOffPaid('parent-1', 'h1', request({ minutes: 0 }));
+
+    expect(ptoRepo.create).toHaveBeenCalledTimes(1);
+    expect(ptoRepo.create.mock.calls[0][0]).toMatchObject({
+      kind: 'adjustment',
+      minutes: 480,
+    });
+  });
+
+  it('adjusts against the NETTED total, not the original usage row', async () => {
+    // 8h marked, then corrected down to 6h. Asking for 8h again must append
+    // −120 (6h → 8h), not 0 and not −480.
+    const ptoRepo = makePtoRepo({
+      listForHouseholdTimeOff: mock(async () => [
+        usageRow({ minutes: -480 }),
+        adjustmentRow({ minutes: 120 }),
+      ]),
+    });
+    const svc = service({ ptoRepo });
+    await svc.markTimeOffPaid('parent-1', 'h1', request({ minutes: 480 }));
+
+    expect(ptoRepo.create.mock.calls[0][0]).toMatchObject({
+      kind: 'adjustment',
+      minutes: -120,
+    });
+  });
+
+  it('the ledger rows always sum to MINUS the requested total — what balance and the engine both read', async () => {
+    const rows: Record<string, unknown>[] = [usageRow({ minutes: -480 })];
+    const ptoRepo = makePtoRepo({
+      listForHouseholdTimeOff: mock(async () => rows),
+      create: mock(async (row: Record<string, unknown>) => {
+        rows.push(row);
+        return { ...createdUsageRow, ...row };
+      }),
+    });
+    const svc = service({ ptoRepo });
+
+    await svc.markTimeOffPaid('parent-1', 'h1', request({ minutes: 300 }));
+    expect(rows.reduce((t, r) => t + (r.minutes as number), 0)).toBe(-300);
+
+    await svc.markTimeOffPaid('parent-1', 'h1', request({ minutes: 615 }));
+    expect(rows.reduce((t, r) => t + (r.minutes as number), 0)).toBe(-615);
+
+    await svc.markTimeOffPaid('parent-1', 'h1', request({ minutes: 0 }));
+    expect(rows.reduce((t, r) => t + (r.minutes as number), 0)).toBe(0);
+  });
+
+  it('never updates or deletes a ledger row — the repository exposes neither', async () => {
+    const ptoRepo = makePtoRepo({
+      listForHouseholdTimeOff: mock(async () => [usageRow()]),
+    });
+    const svc = service({ ptoRepo });
+    await svc.markTimeOffPaid('parent-1', 'h1', request({ minutes: 60 }));
+    expect(ptoRepo.update).toBeUndefined();
+    expect(ptoRepo.delete).toBeUndefined();
+  });
+
+  it('asking for zero on a time off nobody ever marked paid is refused, not a phantom row', async () => {
+    const ptoRepo = makePtoRepo({
+      listForHouseholdTimeOff: mock(async () => []),
+    });
+    const svc = service({ ptoRepo });
+    await expect(
+      svc.markTimeOffPaid('parent-1', 'h1', request({ minutes: 0 }))
+    ).rejects.toBeInstanceOf(PtoNothingToAdjustError);
+    expect(ptoRepo.create).not.toHaveBeenCalled();
+  });
+});
+
+// =============================================================================
+// markTimeOffPaid vs cancel — the race (Phase 3/4 review, SERIOUS 8).
+//
+// The status guard reads `carer_time_off`, then inserts. A cancel committing
+// in between leaves a `usage` row on a cancelled time off that
+// `reconcileCancelledTimeOff` has ALREADY run past, so nothing ever reverses
+// it. The insert is re-checked afterwards and loses gracefully.
+// =============================================================================
+
+describe('PtoCommandService.markTimeOffPaid — cancel racing the insert', () => {
+  function racingTimeOffRepo(): any {
+    let calls = 0;
+    return {
+      findById: mock(async () => {
+        calls += 1;
+        // First read (the status gate): still confirmed. Second read (after
+        // the insert): the carer's cancel committed in between.
+        return timeOff({ status: calls === 1 ? 'confirmed' : 'cancelled' });
+      }),
+    };
+  }
+
+  it('reverses its own usage row and refuses when the time off was cancelled mid-write', async () => {
+    const rows: Record<string, unknown>[] = [];
+    const ptoRepo = makePtoRepo({
+      listForHouseholdTimeOff: mock(async () => [...rows]),
+      create: mock(async (row: Record<string, unknown>) => {
+        rows.push(row);
+        return { ...createdUsageRow, ...row };
+      }),
+    });
+    const svc = service({ ptoRepo, timeOffRepo: racingTimeOffRepo() });
+
+    await expect(
+      svc.markTimeOffPaid('parent-1', 'h1', request({ minutes: 480 }))
+    ).rejects.toBeInstanceOf(PtoTimeOffNotConfirmedError);
+
+    // The usage row was written, then reversed — append-only, and the
+    // household's netted total for this time off is back to zero.
+    expect(ptoRepo.create).toHaveBeenCalledTimes(2);
+    expect(rows.reduce((t, r) => t + (r.minutes as number), 0)).toBe(0);
+    expect(rows[1]).toMatchObject({ kind: 'adjustment', minutes: 480 });
+  });
+
+  it('does not re-check for nothing: an uncontested mark writes exactly one row', async () => {
+    const ptoRepo = makePtoRepo();
+    const svc = service({ ptoRepo });
+    await svc.markTimeOffPaid('parent-1', 'h1', request({ minutes: 480 }));
+    expect(ptoRepo.create).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('PtoCommandService.reconcileCancelledTimeOff', () => {
   it('is a no-op when nobody ever marked this time off paid', async () => {
     const ptoRepo = makePtoRepo({
-      findAllUsageForTimeOff: mock(async () => []),
+      listAllForTimeOff: mock(async () => []),
     });
     const push = makePush();
     const svc = service({ ptoRepo, push });
@@ -387,21 +620,8 @@ describe('PtoCommandService.reconcileCancelledTimeOff', () => {
   });
 
   it('inserts a REVERSING adjustment row for the household that marked it paid', async () => {
-    const usage = {
-      id: 'ptl-1',
-      household_id: 'h1',
-      carer_id: 'carer-1',
-      kind: 'usage',
-      minutes: -480,
-      effective_date: '2026-08-24',
-      time_off_id: 'to-1',
-      carer_display_name: 'Nia Rowe',
-      note: null,
-      created_by: 'parent-1',
-      created_at: '2026-08-04T09:00:00.000Z',
-    };
     const ptoRepo = makePtoRepo({
-      findAllUsageForTimeOff: mock(async () => [usage]),
+      listAllForTimeOff: mock(async () => [usageRow()]),
     });
     const svc = service({ ptoRepo });
     await svc.reconcileCancelledTimeOff('to-1');
@@ -422,21 +642,8 @@ describe('PtoCommandService.reconcileCancelledTimeOff', () => {
   });
 
   it('never deletes or mutates the original usage row (append-only)', async () => {
-    const usage = {
-      id: 'ptl-1',
-      household_id: 'h1',
-      carer_id: 'carer-1',
-      kind: 'usage',
-      minutes: -480,
-      effective_date: '2026-08-24',
-      time_off_id: 'to-1',
-      carer_display_name: 'Nia Rowe',
-      note: null,
-      created_by: 'parent-1',
-      created_at: '2026-08-04T09:00:00.000Z',
-    };
     const ptoRepo = makePtoRepo({
-      findAllUsageForTimeOff: mock(async () => [usage]),
+      listAllForTimeOff: mock(async () => [usageRow()]),
     });
     const svc = service({ ptoRepo });
     await svc.reconcileCancelledTimeOff('to-1');
@@ -445,27 +652,11 @@ describe('PtoCommandService.reconcileCancelledTimeOff', () => {
   });
 
   it('reverses EVERY household that marked the same shared time off paid', async () => {
-    const usageH1 = {
-      id: 'ptl-1',
-      household_id: 'h1',
-      carer_id: 'carer-1',
-      kind: 'usage',
-      minutes: -480,
-      effective_date: '2026-08-24',
-      time_off_id: 'to-1',
-      carer_display_name: 'Nia Rowe',
-      note: null,
-      created_by: 'parent-1',
-      created_at: '2026-08-04T09:00:00.000Z',
-    };
-    const usageH2 = {
-      ...usageH1,
-      id: 'ptl-2',
-      household_id: 'h2',
-      minutes: -240,
-    };
     const ptoRepo = makePtoRepo({
-      findAllUsageForTimeOff: mock(async () => [usageH1, usageH2]),
+      listAllForTimeOff: mock(async () => [
+        usageRow(),
+        usageRow({ id: 'ptl-2', household_id: 'h2', minutes: -240 }),
+      ]),
     });
     const push = makePush();
     const svc = service({ ptoRepo, push });
@@ -484,21 +675,8 @@ describe('PtoCommandService.reconcileCancelledTimeOff', () => {
   });
 
   it('notifies the household parents via the PTO_USAGE_REVERSED push type, fire-and-forget', async () => {
-    const usage = {
-      id: 'ptl-1',
-      household_id: 'h1',
-      carer_id: 'carer-1',
-      kind: 'usage',
-      minutes: -480,
-      effective_date: '2026-08-24',
-      time_off_id: 'to-1',
-      carer_display_name: 'Nia Rowe',
-      note: null,
-      created_by: 'parent-1',
-      created_at: '2026-08-04T09:00:00.000Z',
-    };
     const ptoRepo = makePtoRepo({
-      findAllUsageForTimeOff: mock(async () => [usage]),
+      listAllForTimeOff: mock(async () => [usageRow()]),
     });
     const push = makePush();
     const svc = service({ ptoRepo, push });
@@ -514,21 +692,8 @@ describe('PtoCommandService.reconcileCancelledTimeOff', () => {
   });
 
   it('a push failure never fails the reconciliation write', async () => {
-    const usage = {
-      id: 'ptl-1',
-      household_id: 'h1',
-      carer_id: 'carer-1',
-      kind: 'usage',
-      minutes: -480,
-      effective_date: '2026-08-24',
-      time_off_id: 'to-1',
-      carer_display_name: 'Nia Rowe',
-      note: null,
-      created_by: 'parent-1',
-      created_at: '2026-08-04T09:00:00.000Z',
-    };
     const ptoRepo = makePtoRepo({
-      findAllUsageForTimeOff: mock(async () => [usage]),
+      listAllForTimeOff: mock(async () => [usageRow()]),
     });
     const push = makePush({
       notifyHouseholdParents: mock(() => {
@@ -543,21 +708,8 @@ describe('PtoCommandService.reconcileCancelledTimeOff', () => {
   });
 
   it('a DB failure on the reversing insert propagates (this write is the correction, not decorative)', async () => {
-    const usage = {
-      id: 'ptl-1',
-      household_id: 'h1',
-      carer_id: 'carer-1',
-      kind: 'usage',
-      minutes: -480,
-      effective_date: '2026-08-24',
-      time_off_id: 'to-1',
-      carer_display_name: 'Nia Rowe',
-      note: null,
-      created_by: 'parent-1',
-      created_at: '2026-08-04T09:00:00.000Z',
-    };
     const ptoRepo = makePtoRepo({
-      findAllUsageForTimeOff: mock(async () => [usage]),
+      listAllForTimeOff: mock(async () => [usageRow()]),
       create: mock(async () => {
         throw new Error('db is down');
       }),
@@ -566,5 +718,99 @@ describe('PtoCommandService.reconcileCancelledTimeOff', () => {
     await expect(svc.reconcileCancelledTimeOff('to-1')).rejects.toThrow(
       'db is down'
     );
+  });
+
+  // ---------------------------------------------------------------------
+  // Phase 3/4 review, BLOCKER 1(b): reconcile inserted a +minutes
+  // adjustment for EVERY usage row it found, with no check for an existing
+  // reversal. It is called fire-and-forget, so retries are guaranteed —
+  // two +480 rows leave the balance permanently 8h high in an append-only
+  // ledger that cannot be edited back.
+  // ---------------------------------------------------------------------
+  it('IDEMPOTENT: writes nothing when this household is already fully reversed', async () => {
+    const ptoRepo = makePtoRepo({
+      listAllForTimeOff: mock(async () => [
+        usageRow({ minutes: -480 }),
+        adjustmentRow({ minutes: 480 }),
+      ]),
+    });
+    const push = makePush();
+    const svc = service({ ptoRepo, push });
+    await svc.reconcileCancelledTimeOff('to-1');
+
+    expect(ptoRepo.create).not.toHaveBeenCalled();
+    expect(push.notifyHouseholdParents).not.toHaveBeenCalled();
+  });
+
+  it('IDEMPOTENT across two runs against the same growing ledger', async () => {
+    const rows: Record<string, unknown>[] = [usageRow({ minutes: -480 })];
+    const ptoRepo = makePtoRepo({
+      listAllForTimeOff: mock(async () => [...rows]),
+      create: mock(async (row: Record<string, unknown>) => {
+        rows.push(row);
+        return { ...createdUsageRow, ...row };
+      }),
+    });
+    const svc = service({ ptoRepo });
+
+    await svc.reconcileCancelledTimeOff('to-1');
+    await svc.reconcileCancelledTimeOff('to-1');
+
+    expect(ptoRepo.create).toHaveBeenCalledTimes(1);
+    expect(rows.reduce((t, r) => t + (r.minutes as number), 0)).toBe(0);
+  });
+
+  it('reverses only the REMAINDER when the marking was already adjusted down', async () => {
+    const ptoRepo = makePtoRepo({
+      listAllForTimeOff: mock(async () => [
+        usageRow({ minutes: -480 }),
+        adjustmentRow({ minutes: 120 }), // corrected 8h -> 6h before the cancel
+      ]),
+    });
+    const svc = service({ ptoRepo });
+    await svc.reconcileCancelledTimeOff('to-1');
+
+    expect(ptoRepo.create).toHaveBeenCalledTimes(1);
+    expect(ptoRepo.create.mock.calls[0][0].minutes).toBe(360);
+  });
+
+  it('reverses the full netted total when the marking was adjusted UP', async () => {
+    const ptoRepo = makePtoRepo({
+      listAllForTimeOff: mock(async () => [
+        usageRow({ minutes: -480 }),
+        adjustmentRow({ minutes: -120 }), // corrected 8h -> 10h
+      ]),
+    });
+    const svc = service({ ptoRepo });
+    await svc.reconcileCancelledTimeOff('to-1');
+
+    expect(ptoRepo.create.mock.calls[0][0].minutes).toBe(600);
+  });
+
+  // ---------------------------------------------------------------------
+  // Phase 3/4 review, mid-loop failure: the loop reversed household A and
+  // then threw, leaving B un-reversed forever (there is no retry — the
+  // caller is fire-and-forget).
+  // ---------------------------------------------------------------------
+  it('one household failing never strands the others — every household is still attempted', async () => {
+    const ptoRepo = makePtoRepo({
+      listAllForTimeOff: mock(async () => [
+        usageRow({ household_id: 'h1' }),
+        usageRow({ id: 'ptl-2', household_id: 'h2', minutes: -240 }),
+        usageRow({ id: 'ptl-3', household_id: 'h3', minutes: -60 }),
+      ]),
+      create: mock(async (row: Record<string, unknown>) => {
+        if (row.household_id === 'h1') throw new Error('db is down');
+        return { ...createdUsageRow, ...row };
+      }),
+    });
+    const svc = service({ ptoRepo });
+
+    await expect(svc.reconcileCancelledTimeOff('to-1')).rejects.toThrow();
+
+    const attempted = ptoRepo.create.mock.calls.map(
+      (call: unknown[]) => (call[0] as Record<string, unknown>).household_id
+    );
+    expect(attempted.sort()).toEqual(['h1', 'h2', 'h3']);
   });
 });

@@ -9,6 +9,7 @@ function createMockQueryChain(
   const chain: any = {
     select: mock(() => chain),
     eq: mock(() => chain),
+    neq: mock(() => chain),
     order: mock(() => Promise.resolve(finalResponse)),
     update: mock(() => chain),
     single: mock(() => Promise.resolve(finalResponse)),
@@ -84,5 +85,30 @@ describe('CarerTimeOffRepository.cancelById', () => {
     );
     const repo = new CarerTimeOffRepository();
     await expect(repo.cancelById('t1')).rejects.toThrow();
+  });
+
+  // -------------------------------------------------------------------------
+  // Phase 3/4 review, BLOCKER 1(a). The cancel write must be CONDITIONAL on
+  // the row not already being cancelled, and must report whether it actually
+  // transitioned anything — `timeOffCommandService.cancel` fires the PTO
+  // reconciliation off the back of it, and a second cancel that "succeeded"
+  // against an already-cancelled row re-fires that reconciliation.
+  // -------------------------------------------------------------------------
+  it('guards the update with status <> cancelled, so an already-cancelled row matches no rows', async () => {
+    const chain = createMockQueryChain({ data: null, error: null });
+    mockSupabaseService.from.mockImplementation(() => chain);
+
+    const repo = new CarerTimeOffRepository();
+    await repo.cancelById('t1');
+
+    expect(chain.neq).toHaveBeenCalledWith('status', 'cancelled');
+  });
+
+  it('returns null (not a row) when the conditional update matched nothing', async () => {
+    mockSupabaseService.from.mockImplementation(() =>
+      createMockQueryChain({ data: null, error: null })
+    );
+    const repo = new CarerTimeOffRepository();
+    expect(await repo.cancelById('t1')).toBeNull();
   });
 });

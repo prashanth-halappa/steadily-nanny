@@ -157,6 +157,61 @@ describe('TimeOffCommandService.cancel', () => {
     expect(result.status).toBe('cancelled');
     expect(timeOffRepo.cancelById).toHaveBeenCalledWith('t1');
   });
+
+  // ---------------------------------------------------------------------
+  // Phase 3/4 review, BLOCKER 1(a): cancel had NO status guard, so a
+  // retried cancel (the client times out, taps again) "succeeded" a second
+  // time and re-fired the fire-and-forget reconciliation. With the
+  // conditional update in place, a second cancel matches no rows and must
+  // NOT reconcile again — the reversal, if any, already happened.
+  // ---------------------------------------------------------------------
+  it('does NOT re-fire reconciliation when the row was already cancelled (conditional update matched nothing)', async () => {
+    const timeOffRepo = makeTimeOffRepo({
+      cancelById: mock(async () => null),
+    });
+    const reconcile = mock(async () => undefined);
+    const svc = new TimeOffCommandService(
+      timeOffRepo,
+      makeQueries({
+        getOwned: mock(async () => ({ ...row, status: 'cancelled' })),
+      }),
+      makeOverlapRepo(),
+      undefined,
+      reconcile
+    );
+
+    const result = await svc.cancel('u1', 't1');
+
+    expect(timeOffRepo.cancelById).toHaveBeenCalledWith('t1');
+    expect(reconcile).not.toHaveBeenCalled();
+    // Still a success — cancelling an already-cancelled time off is
+    // idempotent, and the caller gets the row as it stands.
+    expect(result.status).toBe('cancelled');
+  });
+
+  it('reconciles exactly ONCE across two cancels of the same time off', async () => {
+    let cancelled = false;
+    const timeOffRepo = makeTimeOffRepo({
+      cancelById: mock(async (id: string) => {
+        if (cancelled) return null;
+        cancelled = true;
+        return { ...row, id, status: 'cancelled' };
+      }),
+    });
+    const reconcile = mock(async () => undefined);
+    const svc = new TimeOffCommandService(
+      timeOffRepo,
+      makeQueries(),
+      makeOverlapRepo(),
+      undefined,
+      reconcile
+    );
+
+    await svc.cancel('u1', 't1');
+    await svc.cancel('u1', 't1');
+
+    expect(reconcile).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('TimeOffCommandService.update', () => {

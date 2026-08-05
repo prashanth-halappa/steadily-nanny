@@ -12,6 +12,7 @@ import { describe, expect, it } from 'bun:test';
 import {
   weekEndExclusive,
   weekStartOf,
+  weekStartOfLocalDate,
 } from '../../../../../src/domains/timesheet/utils/weekStart';
 
 describe('weekStartOf', () => {
@@ -59,5 +60,44 @@ describe('weekEndExclusive', () => {
 
   it('crosses a year boundary correctly', () => {
     expect(weekEndExclusive('2025-12-29')).toBe('2026-01-05');
+  });
+});
+
+// Phase 3/4 review, SERIOUS 6: an expense's `local_date` is ALREADY a
+// household-local calendar date, so mapping it to its week needs pure date
+// arithmetic and no timezone at all — passing it through `weekStartOf` would
+// mean inventing an instant and a zone, the classic way a date slips a day.
+describe('weekStartOfLocalDate', () => {
+  it('returns a Monday unchanged', () => {
+    expect(weekStartOfLocalDate('2026-08-03')).toBe('2026-08-03');
+  });
+
+  it('maps a mid-week date to its Monday', () => {
+    expect(weekStartOfLocalDate('2026-08-06')).toBe('2026-08-03');
+  });
+
+  it('maps SUNDAY back to the Monday that started its week, never forward', () => {
+    expect(weekStartOfLocalDate('2026-08-09')).toBe('2026-08-03');
+  });
+
+  it('crosses a month boundary', () => {
+    expect(weekStartOfLocalDate('2026-09-01')).toBe('2026-08-31');
+  });
+
+  it('crosses a year boundary', () => {
+    expect(weekStartOfLocalDate('2026-01-01')).toBe('2025-12-29');
+  });
+
+  it('agrees with weekStartOf for the same calendar date in UTC', () => {
+    for (const date of [
+      '2026-08-03',
+      '2026-08-06',
+      '2026-08-09',
+      '2026-02-29'.replace('29', '28'),
+    ]) {
+      expect(weekStartOfLocalDate(date)).toBe(
+        weekStartOf(new Date(`${date}T12:00:00.000Z`), 'UTC')
+      );
+    }
   });
 });

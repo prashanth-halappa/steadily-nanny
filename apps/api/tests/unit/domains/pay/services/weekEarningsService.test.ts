@@ -470,7 +470,14 @@ describe('buildWeekEarningsInput', () => {
     expect(built.pto_usage).toEqual([]);
   });
 
-  it("excludes accrual and adjustment ledger rows — only kind='usage' prices as PTO", () => {
+  // UPDATED by the Phase 3/4 review (BLOCKER 2). The original version of this
+  // test pinned "adjustment rows never reach the engine" as correct for ALL
+  // adjustment rows. It is correct only for FREE-STANDING ones (no
+  // `time_off_id`): an accrual is a grant, and an untied adjustment is a
+  // balance correction — neither is time taken. An adjustment that carries a
+  // `time_off_id` is the reversal (or re-pricing) of THAT time off's usage
+  // row, and excluding it made a cancelled-then-worked day pay twice.
+  it('excludes accrual rows and FREE-STANDING adjustment rows — neither is time taken', () => {
     const built = buildWeekEarningsInput({
       weekStart: WEEK_START,
       entries: [],
@@ -491,6 +498,210 @@ describe('buildWeekEarningsInput', () => {
           minutes: -30,
           effective_date: '2026-08-05',
           time_off_id: null,
+        }),
+      ],
+      approvedExpenses: [],
+    });
+    expect(built.pto_usage).toEqual([]);
+  });
+
+  // ===========================================================================
+  // PTO netting (Phase 3/4 review, BLOCKER 2) — the reversal must reach the
+  // engine, or a cancelled-then-worked day prices BOTH a `pto` line and a
+  // `regular` line for the same eight hours and freezes at approval.
+  // ===========================================================================
+
+  it('nets a FULL reversing adjustment against its usage row — a cancelled paid day prices no PTO at all', () => {
+    const built = buildWeekEarningsInput({
+      weekStart: WEEK_START,
+      entries: [],
+      arrangements: [arrangement()],
+      closureDates: [],
+      closureDayShifts: [],
+      ptoLedgerRows: [
+        ptoLedgerRow({
+          id: 'usage',
+          minutes: -480,
+          effective_date: '2026-08-03',
+          time_off_id: 'to-1',
+        }),
+        ptoLedgerRow({
+          id: 'reversal',
+          kind: 'adjustment',
+          minutes: 480,
+          effective_date: '2026-08-03',
+          time_off_id: 'to-1',
+        }),
+      ],
+      approvedExpenses: [],
+    });
+    expect(built.pto_usage).toEqual([]);
+  });
+
+  it('nets a PARTIAL reversal to the REMAINDER — not to zero, and never negative', () => {
+    const built = buildWeekEarningsInput({
+      weekStart: WEEK_START,
+      entries: [],
+      arrangements: [arrangement()],
+      closureDates: [],
+      closureDayShifts: [],
+      ptoLedgerRows: [
+        ptoLedgerRow({
+          id: 'usage',
+          minutes: -480,
+          effective_date: '2026-08-03',
+          time_off_id: 'to-1',
+        }),
+        ptoLedgerRow({
+          id: 'partial',
+          kind: 'adjustment',
+          minutes: 120, // 8h marked, corrected down to 6h
+          effective_date: '2026-08-03',
+          time_off_id: 'to-1',
+        }),
+      ],
+      approvedExpenses: [],
+    });
+    expect(built.pto_usage).toEqual([
+      { local_date: '2026-08-03', minutes: 360 },
+    ]);
+  });
+
+  it('nets an UPWARD adjustment too — a marking corrected 6h → 8h prices 8h', () => {
+    const built = buildWeekEarningsInput({
+      weekStart: WEEK_START,
+      entries: [],
+      arrangements: [arrangement()],
+      closureDates: [],
+      closureDayShifts: [],
+      ptoLedgerRows: [
+        ptoLedgerRow({
+          id: 'usage',
+          minutes: -360,
+          effective_date: '2026-08-03',
+          time_off_id: 'to-1',
+        }),
+        ptoLedgerRow({
+          id: 'topup',
+          kind: 'adjustment',
+          minutes: -120,
+          effective_date: '2026-08-03',
+          time_off_id: 'to-1',
+        }),
+      ],
+      approvedExpenses: [],
+    });
+    expect(built.pto_usage).toEqual([
+      { local_date: '2026-08-03', minutes: 480 },
+    ]);
+  });
+
+  it('an over-reversal clamps at zero — never negative PTO minutes', () => {
+    const built = buildWeekEarningsInput({
+      weekStart: WEEK_START,
+      entries: [],
+      arrangements: [arrangement()],
+      closureDates: [],
+      closureDayShifts: [],
+      ptoLedgerRows: [
+        ptoLedgerRow({
+          id: 'usage',
+          minutes: -480,
+          effective_date: '2026-08-03',
+          time_off_id: 'to-1',
+        }),
+        ptoLedgerRow({
+          id: 'over',
+          kind: 'adjustment',
+          minutes: 600,
+          effective_date: '2026-08-03',
+          time_off_id: 'to-1',
+        }),
+      ],
+      approvedExpenses: [],
+    });
+    expect(built.pto_usage).toEqual([]);
+  });
+
+  it('nets PER time_off_id — one reversed booking never cancels another week-mate', () => {
+    const built = buildWeekEarningsInput({
+      weekStart: WEEK_START,
+      entries: [],
+      arrangements: [arrangement()],
+      closureDates: [],
+      closureDayShifts: [],
+      ptoLedgerRows: [
+        ptoLedgerRow({
+          id: 'usage-a',
+          minutes: -480,
+          effective_date: '2026-08-03',
+          time_off_id: 'to-a',
+        }),
+        ptoLedgerRow({
+          id: 'reversal-a',
+          kind: 'adjustment',
+          minutes: 480,
+          effective_date: '2026-08-03',
+          time_off_id: 'to-a',
+        }),
+        ptoLedgerRow({
+          id: 'usage-b',
+          minutes: -240,
+          effective_date: '2026-08-05',
+          time_off_id: 'to-b',
+        }),
+      ],
+      approvedExpenses: [],
+    });
+    expect(built.pto_usage).toEqual([
+      { local_date: '2026-08-05', minutes: 240 },
+    ]);
+  });
+
+  it('an adjustment dated OUTSIDE the week still nets its in-week usage row', () => {
+    // A reversal written days later carries the usage row's effective_date in
+    // practice, but a hand-written correction need not — the group is dated
+    // by the USAGE row, so the netting cannot be dodged by the date.
+    const built = buildWeekEarningsInput({
+      weekStart: WEEK_START,
+      entries: [],
+      arrangements: [arrangement()],
+      closureDates: [],
+      closureDayShifts: [],
+      ptoLedgerRows: [
+        ptoLedgerRow({
+          id: 'usage',
+          minutes: -480,
+          effective_date: '2026-08-03',
+          time_off_id: 'to-1',
+        }),
+        ptoLedgerRow({
+          id: 'late-reversal',
+          kind: 'adjustment',
+          minutes: 480,
+          effective_date: '2026-08-20',
+          time_off_id: 'to-1',
+        }),
+      ],
+      approvedExpenses: [],
+    });
+    expect(built.pto_usage).toEqual([]);
+  });
+
+  it('an adjustment whose usage row is not in the fetched set prices nothing on its own', () => {
+    const built = buildWeekEarningsInput({
+      weekStart: WEEK_START,
+      entries: [],
+      arrangements: [arrangement()],
+      closureDates: [],
+      closureDayShifts: [],
+      ptoLedgerRows: [
+        ptoLedgerRow({
+          id: 'orphan',
+          kind: 'adjustment',
+          minutes: -240,
+          effective_date: '2026-08-04',
+          time_off_id: 'to-elsewhere',
         }),
       ],
       approvedExpenses: [],

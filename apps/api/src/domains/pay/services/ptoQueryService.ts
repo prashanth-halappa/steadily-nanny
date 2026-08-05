@@ -20,12 +20,18 @@
  *
  * LAZY ANNUAL GRANT — `balance` and `ledger` both perform a WRITE on a read,
  * DELIBERATELY (TIER0-PLAN.md Phase 3, migration 043's header "V1 GRANT
- * MODEL"): the first read of a calendar year with no `accrual` row yet for
- * this (household, carer) inserts one, dated 1 Jan of THAT year, for
+ * MODEL"): the first read of the CURRENT calendar year with no `accrual` row
+ * yet for this (household, carer) inserts one, dated 1 Jan of that year, for
  * whatever `pay_arrangements.pto_entitlement_minutes_per_year` the EFFECTIVE
  * arrangement carries AT THE MOMENT OF THE GRANT — i.e. resolved against the
- * household-LOCAL "today", never the requested year's own start. Two v1
- * simplifications, both intentional (review finding 20):
+ * household-LOCAL "today".
+ *
+ * ONLY THE HOUSEHOLD-LOCAL CURRENT YEAR IS GRANTABLE (Phase 3/4 review,
+ * SERIOUS 4). Any other year — a nanny booking January time off makes the
+ * client read next year — is readable but mints nothing; see
+ * `ensureYearGranted` for the full argument.
+ *
+ * Two v1 simplifications, both intentional (review finding 20):
  *   - no pro-rating for a carer who joins mid-year — she is lazily granted
  *     the FULL annual amount the first time her year is read;
  *   - a mid-year change to `pto_entitlement_minutes_per_year` does NOT
@@ -101,12 +107,18 @@ export class PtoQueryService {
     now: () => Date = () => new Date()
   ): Promise<PtoBalance> {
     await this.assertCanReadPto(callerId, householdId, carerId);
-    const arrangement = await this.effectiveArrangementToday(
+    const { arrangement, today } = await this.effectiveArrangementToday(
       householdId,
       carerId,
       now
     );
-    await this.ensureYearGranted(householdId, carerId, year, arrangement);
+    await this.ensureYearGranted(
+      householdId,
+      carerId,
+      year,
+      arrangement,
+      today
+    );
     const rows = await this.ptoRepo.listForCarerYear(
       householdId,
       carerId,
@@ -139,24 +151,38 @@ export class PtoQueryService {
     now: () => Date = () => new Date()
   ): Promise<PtoLedgerEntry[]> {
     await this.assertCanReadPto(callerId, householdId, carerId);
-    const arrangement = await this.effectiveArrangementToday(
+    const { arrangement, today } = await this.effectiveArrangementToday(
       householdId,
       carerId,
       now
     );
-    await this.ensureYearGranted(householdId, carerId, year, arrangement);
+    await this.ensureYearGranted(
+      householdId,
+      carerId,
+      year,
+      arrangement,
+      today
+    );
     return this.ptoRepo.listForCarerYear(householdId, carerId, year);
   }
 
-  /** The arrangement effective on the household-LOCAL today, or null. */
+  /**
+   * The arrangement effective on the household-LOCAL today, plus that local
+   * date itself — both derived from ONE household read, and both needed:
+   * the arrangement sets the grant amount, the date sets which year is
+   * grantable at all.
+   */
   private async effectiveArrangementToday(
     householdId: string,
     carerId: string,
     now: () => Date
-  ): Promise<PayArrangement | null> {
+  ): Promise<{ arrangement: PayArrangement | null; today: string }> {
     const household = await this.householdRepo.findById(householdId);
     const today = localDateOf(now(), household?.timezone ?? 'UTC');
-    return this.payRepo.effectiveOn(householdId, carerId, today);
+    return {
+      arrangement: await this.payRepo.effectiveOn(householdId, carerId, today),
+      today,
+    };
   }
 
   /**
@@ -164,13 +190,36 @@ export class PtoQueryService {
    * section for the full rule. Skips entirely (no read, no write) when the
    * effective arrangement sets no entitlement, so a carer with no PTO term
    * never accumulates a year's worth of empty accrual rows.
+   *
+   * ONLY THE HOUSEHOLD-LOCAL CURRENT YEAR IS GRANTABLE (Phase 3/4 review,
+   * SERIOUS 4). `PtoYearQuerySchema` accepts any year from 2000 to 2100, and
+   * this method used to grant WHATEVER year it was handed, at TODAY's
+   * arrangement, frozen. A nanny booking January time off makes the client
+   * read next year's balance, which minted next year's grant NOW at THIS
+   * year's entitlement — a number that is wrong the moment her terms change
+   * and, because the grant is frozen and the partial unique index makes it
+   * un-re-grantable, correctable only by a hand-written adjustment row. Past
+   * years are refused for the mirror reason: a year that was never granted
+   * while it was current must not be back-filled today at terms that did not
+   * exist then. Other years stay fully READABLE — they simply mint nothing,
+   * and a client can tell the difference because `entitlement_minutes` still
+   * reports while `accrued_minutes` reads zero.
+   *
+   * "Current" is the household's LOCAL year, from the same `localDateOf`
+   * conversion `valid_from` validation uses: at 23:00 UTC on 31 December it
+   * is already next year in Auckland, and granting the UTC year there would
+   * be the same off-by-a-timezone bug in a costlier place.
    */
   private async ensureYearGranted(
     householdId: string,
     carerId: string,
     year: number,
-    arrangement: PayArrangement | null
+    arrangement: PayArrangement | null,
+    localToday: string
   ): Promise<void> {
+    if (year !== Number(localToday.slice(0, 4))) {
+      return;
+    }
     if (!arrangement || arrangement.pto_entitlement_minutes_per_year === null) {
       return;
     }

@@ -60,7 +60,23 @@ export function localDateOf(instant: Date, timeZone: string): string {
  * belongs in `timesheets.week_start`.
  */
 export function weekStartOf(instant: Date, timeZone: string): string {
-  const epoch = toEpochDay(parseDateOnly(localDateOf(instant, timeZone)));
+  return weekStartOfLocalDate(localDateOf(instant, timeZone));
+}
+
+/**
+ * Monday of the week containing an ALREADY-LOCAL `YYYY-MM-DD` calendar date.
+ *
+ * The sibling of `weekStartOf` for the (common) case where the caller holds a
+ * household-local date rather than an instant — `expenses.local_date`,
+ * `time_entries.local_date`, `pto_ledger.effective_date`. Those columns were
+ * resolved in the household's timezone when they were written, so converting
+ * them back through an instant + a timezone would mean inventing a
+ * time-of-day and re-applying a zone offset to a value that has already had
+ * one applied: the classic way a date slips a day. This is pure calendar
+ * arithmetic and takes no timezone at all, deliberately.
+ */
+export function weekStartOfLocalDate(localDate: string): string {
+  const epoch = toEpochDay(parseDateOnly(localDate));
   const dow = weekdayOf(epoch); // 0=Sun..6=Sat
   const daysSinceMonday = (dow + 6) % 7; // Mon=0,...,Sun=6
   return formatDateOnly(epoch - daysSinceMonday * MS_PER_DAY);

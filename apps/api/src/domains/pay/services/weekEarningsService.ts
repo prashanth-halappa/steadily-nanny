@@ -135,11 +135,13 @@ export interface WeekEarningsSources {
   /**
    * THIS carer's PTO ledger rows (`ptoLedgerRepo.listForCarerYear`, already
    * household- AND carer-scoped by its own arguments) for the calendar
-   * year(s) the week falls in — EVERY kind, unfiltered by date. Deliberately
-   * raw: `buildWeekEarningsInput` is where the narrowing to `usage` rows
-   * dated inside `[weekStart, weekStart+6]`, and the ledger's
-   * negative-minutes-to-positive-minutes conversion, happen — see the doc
-   * there.
+   * year(s) the week falls in — EVERY kind, unfiltered by date, and that
+   * breadth is load-bearing: the reversing `adjustment` rows are what stop a
+   * cancelled-then-worked day pricing twice. Deliberately raw:
+   * `buildWeekEarningsInput` is where the netting per `time_off_id`, the
+   * narrowing to `[weekStart, weekStart+6]`, and the ledger's
+   * negative-minutes-to-positive-minutes conversion all happen — see
+   * `netPtoUsage`.
    */
   ptoLedgerRows: readonly PtoLedgerEntry[];
   /**
@@ -155,9 +157,92 @@ export interface WeekEarningsSources {
 }
 
 /**
+ * The week's PTO, netted per `time_off_id` — one priced entry per time off
+ * that this household is still paying for, dated on the day the leave was
+ * taken.
+ *
+ * WHY NETTING LIVES HERE AND NOT IN THE ENGINE (Phase 3/4 review, BLOCKER
+ * 2). The bug it fixes: `markTimeOffPaid` records a `usage` row and a
+ * cancellation (or a downward correction) records a reversing `adjustment`
+ * row against the same `time_off_id`; this function fed the engine ONLY the
+ * usage rows, so a day that was marked paid, cancelled, and then actually
+ * worked priced a `pto` line AND a `regular` line for the same eight hours —
+ * double pay, frozen on approval.
+ *
+ * The netting belongs in this wrapper because the engine is pure and takes
+ * priced FACTS ("this many PTO minutes on this date"), not storage. `kind`,
+ * the negative-minutes convention, the FK that ties a correction to the
+ * usage row it corrects — all of that is `pto_ledger`'s shape, and this
+ * module is already the one place that translates it (the sign conversion
+ * and the week window live here too). Teaching the engine about ledger rows
+ * would widen its input from facts to storage and give the same rule two
+ * homes.
+ *
+ * The rules, each pinned by a test:
+ * - Rows GROUP by `time_off_id`; `accrual` rows and free-standing
+ *   `adjustment` rows (no `time_off_id`) are excluded outright — a grant is
+ *   not time taken and an untied correction is a balance adjustment, not a
+ *   day off.
+ * - A group's DATE comes from its `usage` row, never from an adjustment: the
+ *   reversal is bookkeeping that can be filed any day, while the usage row
+ *   records when the leave actually was. That is also why a group with no
+ *   usage row in the fetched set prices nothing — there is no day to price
+ *   it on, and its usage row (if any) belongs to another week's calculation.
+ * - The netted minutes are `-sum(group)`, so a partial reversal prices the
+ *   REMAINDER and an upward correction prices the increase, clamped at zero
+ *   so an over-reversal can never price negative PTO (which would silently
+ *   reduce `payable_minutes` and manufacture a guaranteed-hours top-up).
+ * - The week filter applies to the GROUP's date, after netting — so a
+ *   reversal filed weeks later still cancels its in-week usage row.
+ */
+function netPtoUsage(
+  rows: readonly PtoLedgerEntry[],
+  weekStart: string,
+  weekEnd: string
+): PtoUsageInput[] {
+  const groups = new Map<string, { localDate: string | null; net: number }>();
+  for (const row of rows) {
+    if (!row.time_off_id) {
+      continue; // accrual, or a free-standing balance correction
+    }
+    if (
+      row.kind !== PTO_LEDGER_KINDS.USAGE &&
+      row.kind !== PTO_LEDGER_KINDS.ADJUSTMENT
+    ) {
+      continue;
+    }
+    const group = groups.get(row.time_off_id) ?? { localDate: null, net: 0 };
+    group.net += row.minutes;
+    if (row.kind === PTO_LEDGER_KINDS.USAGE) {
+      group.localDate = row.effective_date;
+    }
+    groups.set(row.time_off_id, group);
+  }
+
+  const usage: PtoUsageInput[] = [];
+  for (const { localDate, net } of groups.values()) {
+    if (localDate === null || localDate < weekStart || localDate > weekEnd) {
+      continue;
+    }
+    // Stored negative (accrual +, usage −, `043_pto_ledger.sql`); the
+    // engine's `PtoUsageInput.minutes` must be POSITIVE to price (see
+    // `pto_usage`'s doc on `ComputeWeekEarningsInput`). Negating is the
+    // ENTIRE sign conversion — get it backwards and the engine either
+    // prices negative PTO or, after its own `Math.max(0, …)` clamp,
+    // silently prices nothing at all.
+    const minutes = -net;
+    if (minutes <= 0) {
+      continue; // fully reversed, or over-reversed — no PTO to price
+    }
+    usage.push({ local_date: localDate, minutes });
+  }
+  return usage.sort((a, b) => a.local_date.localeCompare(b.local_date));
+}
+
+/**
  * Rows in, `ComputeWeekEarningsInput` out. Pure, so the mapping — including
- * the PTO sign conversion and the reimbursement status filter below — is
- * directly assertable.
+ * the PTO netting and sign conversion and the reimbursement status filter
+ * below — is directly assertable.
  */
 export function buildWeekEarningsInput(
   sources: WeekEarningsSources
@@ -208,30 +293,14 @@ export function buildWeekEarningsInput(
   // worse, silently count toward `payable_minutes`.
   const weekEnd = addDays(sources.weekStart, DAYS_PER_WEEK - 1);
 
-  // PTO USAGE — was a hard-coded zero (the "Phase 3 hazard"); now real.
-  //
-  // `pto_ledger` stores a `usage` row's minutes NEGATIVE (accrual +, usage
-  // −, `043_pto_ledger.sql`); the engine's `PtoUsageInput.minutes` must be
-  // POSITIVE to price (see `pto_usage`'s doc on `ComputeWeekEarningsInput`
-  // in `earningsService.ts`). Negating is the ENTIRE sign conversion — get
-  // it backwards and the engine either prices negative PTO or, after the
-  // engine's own `Math.max(0, …)` clamp, silently prices nothing at all,
-  // which is exactly the old hazard this replaces. `accrual`/`adjustment`
-  // rows are excluded outright: only a `usage` row represents time actually
-  // taken, and the deliberate consequence of always passing `pto_usage`
-  // (even as `[]`) rather than falling back to the deprecated
-  // `pto_usage_minutes` is that "no PTO this week" is stated, not implied.
-  const ptoUsage: PtoUsageInput[] = sources.ptoLedgerRows
-    .filter(
-      row =>
-        row.kind === PTO_LEDGER_KINDS.USAGE &&
-        row.effective_date >= sources.weekStart &&
-        row.effective_date <= weekEnd
-    )
-    .map(row => ({
-      local_date: row.effective_date,
-      minutes: -row.minutes,
-    }));
+  // PTO USAGE — was a hard-coded zero (the "Phase 3 hazard"), then raw
+  // `usage` rows (which double-paid a cancelled-then-worked day); now the
+  // NETTED total per time off.
+  const ptoUsage = netPtoUsage(
+    sources.ptoLedgerRows,
+    sources.weekStart,
+    weekEnd
+  );
 
   // REIMBURSEMENTS — was never passed at all; now the week's APPROVED
   // expenses/mileage. `status === 'approved'` is re-checked here even though

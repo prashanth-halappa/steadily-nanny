@@ -1,9 +1,9 @@
 import { describe, expect, it, mock } from 'bun:test';
-import { NotAHouseholdParentError } from '../../../../../src/domains/household/errors/householdErrors';
 import {
   ExpenseNotEditableError,
   ExpenseNotFoundError,
   ExpenseValidationError,
+  ExpenseWeekLockedError,
 } from '../../../../../src/domains/pay/errors/payErrors';
 import { ExpenseCommandService } from '../../../../../src/domains/pay/services/expenseCommandService';
 
@@ -133,11 +133,37 @@ function makeUserService(name: string | null = 'Nia Rowe'): any {
   };
 }
 
+/**
+ * The week-lock lookup (Phase 3/4 review, SERIOUS 6). Defaults to "no
+ * timesheet for that week yet", which is the common case and unlocked.
+ */
+function makeTimesheetRepo(
+  row: Record<string, unknown> | null = null,
+  overrides: Record<string, unknown> = {}
+): any {
+  return {
+    findByWeek: mock(async () => row),
+    ...overrides,
+  };
+}
+
+function timesheetRow(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'ts-1',
+    household_id: 'h1',
+    carer_id: 'carer-1',
+    week_start: '2026-08-03',
+    status: 'submitted',
+    ...overrides,
+  };
+}
+
 interface ServiceParts {
   members?: Record<string, unknown>;
   expenseRepo?: any;
   arrangementRepo?: any;
   userService?: any;
+  timesheetRepo?: any;
 }
 
 function service(parts: ServiceParts = {}): any {
@@ -145,7 +171,8 @@ function service(parts: ServiceParts = {}): any {
     parts.expenseRepo ?? makeExpenseRepo(),
     parts.arrangementRepo ?? makeArrangementRepo(),
     makeMemberRepo(parts.members ?? { 'carer-1': NANNY }),
-    parts.userService ?? makeUserService()
+    parts.userService ?? makeUserService(),
+    parts.timesheetRepo ?? makeTimesheetRepo()
   );
 }
 
@@ -471,12 +498,15 @@ describe('ExpenseCommandService.review — parent gate', () => {
     expect(expenseRepo.reviewPending).toHaveBeenCalledTimes(1);
   });
 
-  it('the CARER cannot review her own expense', async () => {
+  // Phase 3/4 review, MINOR 9: review answered 404 for "missing" but 403 for
+  // "exists, just not yours", which is the enumeration leak the house collapse
+  // rule exists to close — and which `loadOwnedPending` already follows.
+  it('the CARER cannot review her own expense — collapsed into the SAME 404 as "no such expense"', async () => {
     const expenseRepo = makeExpenseRepo();
     const svc = service({ expenseRepo, members: { 'carer-1': NANNY } });
     await expect(
       svc.review('carer-1', 'exp-1', { status: 'approved' })
-    ).rejects.toBeInstanceOf(NotAHouseholdParentError);
+    ).rejects.toBeInstanceOf(ExpenseNotFoundError);
     expect(expenseRepo.reviewPending).not.toHaveBeenCalled();
   });
 
@@ -485,7 +515,15 @@ describe('ExpenseCommandService.review — parent gate', () => {
     const svc = service({ expenseRepo, members: { 'helper-1': HELPER } });
     await expect(
       svc.review('helper-1', 'exp-1', { status: 'approved' })
-    ).rejects.toBeInstanceOf(NotAHouseholdParentError);
+    ).rejects.toBeInstanceOf(ExpenseNotFoundError);
+  });
+
+  it('a non-member reviewing another household’s expense is refused', async () => {
+    const expenseRepo = makeExpenseRepo();
+    const svc = service({ expenseRepo, members: {} });
+    await expect(
+      svc.review('stranger', 'exp-1', { status: 'approved' })
+    ).rejects.toBeInstanceOf(ExpenseNotFoundError);
   });
 
   it('a non-existent expense 404s before the role gate leaks anything', async () => {
@@ -494,6 +532,22 @@ describe('ExpenseCommandService.review — parent gate', () => {
     await expect(
       svc.review('parent-1', 'nope', { status: 'approved' })
     ).rejects.toBeInstanceOf(ExpenseNotFoundError);
+  });
+
+  it('MISSING and NOT-YOURS are indistinguishable — same error, same message', async () => {
+    const missing = service({
+      expenseRepo: makeExpenseRepo({ findById: mock(async () => null) }),
+      members: { 'parent-1': PARENT },
+    })
+      .review('parent-1', 'exp-1', { status: 'approved' })
+      .catch((err: unknown) => err);
+    const notYours = service({ members: {} })
+      .review('stranger', 'exp-1', { status: 'approved' })
+      .catch((err: unknown) => err);
+    const [a, b] = await Promise.all([missing, notYours]);
+    expect(a).toBeInstanceOf(ExpenseNotFoundError);
+    expect(b).toBeInstanceOf(ExpenseNotFoundError);
+    expect((a as Error).message).toBe((b as Error).message);
   });
 });
 
@@ -663,5 +717,234 @@ describe('ExpenseCommandService.review — approving MILEAGE freezes the compute
     expect(patch.status).toBe('rejected');
     expect(patch).not.toHaveProperty('amount_minor');
     expect(arrangementRepo.effectiveOn).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// review — the arrangement's CURRENCY is re-asserted before mileage is priced
+// (Phase 3/4 review, SERIOUS 5). `create` asserts the claim's currency
+// against the effective arrangement, but `review` priced with
+// `effectiveOn(local_date)` and never re-checked it. A same-day corrective
+// arrangement — the documented tie-break mechanism (docs/11-MONEY.md §2) — in
+// a different currency froze, say, a USD-rate amount onto a row labelled GBP.
+// ---------------------------------------------------------------------------
+
+describe('ExpenseCommandService.review — mileage approval re-asserts currency', () => {
+  it('refuses to price a GBP mileage row against a USD arrangement', async () => {
+    const expenseRepo = makeExpenseRepo({
+      findById: mock(async () =>
+        expenseRow({
+          kind: 'mileage',
+          miles: 10,
+          amount_minor: null,
+          currency: 'GBP',
+        })
+      ),
+    });
+    const arrangementRepo = makeArrangementRepo({
+      effectiveOn: mock(async () =>
+        arrangement({ currency: 'USD', mileage_rate_per_mile_minor: 67 })
+      ),
+    });
+    const svc = service({
+      expenseRepo,
+      arrangementRepo,
+      members: { 'parent-1': PARENT },
+    });
+
+    await expect(
+      svc.review('parent-1', 'exp-1', { status: 'approved' })
+    ).rejects.toBeInstanceOf(ExpenseValidationError);
+    expect(expenseRepo.reviewPending).not.toHaveBeenCalled();
+  });
+
+  it('reports the mismatch as CURRENCY_MISMATCH, naming both codes', async () => {
+    const expenseRepo = makeExpenseRepo({
+      findById: mock(async () =>
+        expenseRow({
+          kind: 'mileage',
+          miles: 10,
+          amount_minor: null,
+          currency: 'GBP',
+        })
+      ),
+    });
+    const arrangementRepo = makeArrangementRepo({
+      effectiveOn: mock(async () =>
+        arrangement({ currency: 'USD', mileage_rate_per_mile_minor: 67 })
+      ),
+    });
+    const svc = service({
+      expenseRepo,
+      arrangementRepo,
+      members: { 'parent-1': PARENT },
+    });
+
+    const err = await svc
+      .review('parent-1', 'exp-1', { status: 'approved' })
+      .catch((error: unknown) => error);
+    expect(
+      (err as { metadata?: Record<string, unknown> }).metadata
+    ).toMatchObject({
+      reason: 'CURRENCY_MISMATCH',
+      expectedCurrency: 'USD',
+      submittedCurrency: 'GBP',
+    });
+  });
+
+  it('a matching currency still prices and freezes as before', async () => {
+    const expenseRepo = makeExpenseRepo({
+      findById: mock(async () =>
+        expenseRow({
+          kind: 'mileage',
+          miles: 10,
+          amount_minor: null,
+          currency: 'GBP',
+        })
+      ),
+    });
+    const svc = service({ expenseRepo, members: { 'parent-1': PARENT } });
+    await svc.review('parent-1', 'exp-1', { status: 'approved' });
+    expect(expenseRepo.reviewPending.mock.calls[0][2].amount_minor).toBe(450);
+  });
+
+  it('REJECTING a mileage row never re-asserts currency — nothing is being priced', async () => {
+    const expenseRepo = makeExpenseRepo({
+      findById: mock(async () =>
+        expenseRow({ kind: 'mileage', miles: 10, amount_minor: null })
+      ),
+    });
+    const arrangementRepo = makeArrangementRepo({
+      effectiveOn: mock(async () => arrangement({ currency: 'USD' })),
+    });
+    const svc = service({
+      expenseRepo,
+      arrangementRepo,
+      members: { 'parent-1': PARENT },
+    });
+    await svc.review('parent-1', 'exp-1', { status: 'rejected' });
+    expect(expenseRepo.reviewPending).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// review — approving into an APPROVED (frozen) week is refused
+// (Phase 3/4 review, SERIOUS 6). The week's `earnings` snapshot froze at
+// approval and is never recomputed (docs/11-MONEY.md §3), so an expense
+// approved afterwards is money that exists on the row and appears on NO
+// statement. Blocking is visible; stranding is silent.
+// ---------------------------------------------------------------------------
+
+describe('ExpenseCommandService.review — an approved week is locked', () => {
+  it('refuses to APPROVE a claim dated inside an already-approved week', async () => {
+    const expenseRepo = makeExpenseRepo({
+      findById: mock(async () => expenseRow({ local_date: '2026-08-04' })),
+    });
+    const timesheetRepo = makeTimesheetRepo(
+      timesheetRow({ status: 'approved' })
+    );
+    const svc = service({
+      expenseRepo,
+      timesheetRepo,
+      members: { 'parent-1': PARENT },
+    });
+
+    await expect(
+      svc.review('parent-1', 'exp-1', { status: 'approved' })
+    ).rejects.toBeInstanceOf(ExpenseWeekLockedError);
+    expect(expenseRepo.reviewPending).not.toHaveBeenCalled();
+  });
+
+  it('looks the week up by the CLAIM’s local date, Monday-anchored', async () => {
+    const expenseRepo = makeExpenseRepo({
+      findById: mock(async () => expenseRow({ local_date: '2026-08-09' })), // Sunday
+    });
+    const timesheetRepo = makeTimesheetRepo();
+    const svc = service({
+      expenseRepo,
+      timesheetRepo,
+      members: { 'parent-1': PARENT },
+    });
+    await svc.review('parent-1', 'exp-1', { status: 'approved' });
+    expect(timesheetRepo.findByWeek).toHaveBeenCalledWith(
+      'h1',
+      'carer-1',
+      '2026-08-03'
+    );
+  });
+
+  it('carries the week and status in the error so the client can say WHICH week', async () => {
+    const expenseRepo = makeExpenseRepo({
+      findById: mock(async () => expenseRow({ local_date: '2026-08-04' })),
+    });
+    const svc = service({
+      expenseRepo,
+      timesheetRepo: makeTimesheetRepo(timesheetRow({ status: 'approved' })),
+      members: { 'parent-1': PARENT },
+    });
+    const err = await svc
+      .review('parent-1', 'exp-1', { status: 'approved' })
+      .catch((error: unknown) => error);
+    expect((err as { statusCode?: number }).statusCode).toBe(409);
+    expect((err as { code?: string }).code).toBe('CONFLICT');
+    expect(
+      (err as { metadata?: Record<string, unknown> }).metadata
+    ).toMatchObject({
+      reason: 'EXPENSE_WEEK_LOCKED',
+      weekStart: '2026-08-03',
+      timesheetStatus: 'approved',
+    });
+  });
+
+  it('REJECTING into an approved week is still allowed — it moves no money', async () => {
+    const expenseRepo = makeExpenseRepo({
+      findById: mock(async () => expenseRow({ local_date: '2026-08-04' })),
+    });
+    const svc = service({
+      expenseRepo,
+      timesheetRepo: makeTimesheetRepo(timesheetRow({ status: 'approved' })),
+      members: { 'parent-1': PARENT },
+    });
+    await svc.review('parent-1', 'exp-1', { status: 'rejected' });
+    expect(expenseRepo.reviewPending).toHaveBeenCalledTimes(1);
+  });
+
+  it('a submitted (still open) week approves normally', async () => {
+    const expenseRepo = makeExpenseRepo();
+    const svc = service({
+      expenseRepo,
+      timesheetRepo: makeTimesheetRepo(timesheetRow({ status: 'submitted' })),
+      members: { 'parent-1': PARENT },
+    });
+    await svc.review('parent-1', 'exp-1', { status: 'approved' });
+    expect(expenseRepo.reviewPending).toHaveBeenCalledTimes(1);
+  });
+
+  it('no timesheet for that week at all approves normally', async () => {
+    const expenseRepo = makeExpenseRepo();
+    const svc = service({
+      expenseRepo,
+      timesheetRepo: makeTimesheetRepo(null),
+      members: { 'parent-1': PARENT },
+    });
+    await svc.review('parent-1', 'exp-1', { status: 'approved' });
+    expect(expenseRepo.reviewPending).toHaveBeenCalledTimes(1);
+  });
+
+  it('a departed carer (carer_id null) has no week to strand money in — no lookup, no block', async () => {
+    const expenseRepo = makeExpenseRepo({
+      findById: mock(async () => expenseRow({ carer_id: null })),
+    });
+    const timesheetRepo = makeTimesheetRepo(
+      timesheetRow({ status: 'approved' })
+    );
+    const svc = service({
+      expenseRepo,
+      timesheetRepo,
+      members: { 'parent-1': PARENT },
+    });
+    await svc.review('parent-1', 'exp-1', { status: 'approved' });
+    expect(timesheetRepo.findByWeek).not.toHaveBeenCalled();
+    expect(expenseRepo.reviewPending).toHaveBeenCalledTimes(1);
   });
 });
