@@ -1,5 +1,8 @@
 /**
- * Parent read-only list of household carers' time off.
+ * Parent view of household carers' time off — TIER0-CX-SPEC.md §5.1's
+ * "Mark N hours paid" entry point. Each row shows a real paid-status
+ * `StatusPill` (never the raw `row.status` string) and, for a parent
+ * editor, opens `MarkTimeOffPaidSheet` on tap.
  */
 import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
@@ -8,9 +11,12 @@ import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { EmptyState } from '@/src/components/ui/empty-state';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { Body, H1, Small } from '@/src/components/ui/typography';
-import { formatDisplayDate } from '@/src/domains/timesheet/utils/week';
+import { isParentEditorRole } from '@/src/domains/setup/types';
+import { HouseholdTimeOffRow } from '@/src/domains/timeOff/components/HouseholdTimeOffRow';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
+import { useHouseholdMembers } from '@/src/hooks/queries/useHouseholdMembers';
 import { useHouseholdTimeOff } from '@/src/hooks/queries/useHouseholdTimeOff';
+import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 
 export default function HouseholdTimeOffScreen() {
   const { t } = useTranslation('settings');
@@ -18,8 +24,20 @@ export default function HouseholdTimeOffScreen() {
   const router = useRouter();
   const active = useActiveHousehold();
   const timeOff = useHouseholdTimeOff(active.householdId);
+  const members = useHouseholdMembers(active.householdId);
+  const onboarding = useIsOnboarded();
+
+  // Defense in depth — the server is the real gate (D12-class assertion in
+  // `ptoCommandService.markTimeOffPaid`). A non-parent still sees the list
+  // and its paid status, exactly as before; she just can't open the sheet.
+  const canMarkPaid = isParentEditorRole(onboarding.role);
 
   const rows = (timeOff.data ?? []).filter(r => r.status !== 'cancelled');
+
+  const nameForCarer = (userId: string): string =>
+    (members.data ?? [])
+      .find(m => m.user_id === userId)
+      ?.display_name_override?.trim() || t('role.nanny');
 
   return (
     <ScrollView
@@ -46,23 +64,17 @@ export default function HouseholdTimeOffScreen() {
         </View>
       ) : (
         <View className="mt-4 gap-2">
-          {rows.map(row => (
-            <View
-              key={row.id}
-              testID={`household-time-off-${row.id}`}
-              className="rounded-row bg-card px-4 py-3"
-            >
-              <Body className="font-medium">
-                {formatDisplayDate(row.starts_at.slice(0, 10))}
-                {' – '}
-                {formatDisplayDate(row.ends_at.slice(0, 10))}
-              </Body>
-              <Small className="text-muted-foreground">{row.status}</Small>
-              {row.message ? (
-                <Small className="text-muted-foreground">{row.message}</Small>
-              ) : null}
-            </View>
-          ))}
+          {active.householdId
+            ? rows.map(row => (
+                <HouseholdTimeOffRow
+                  key={row.id}
+                  timeOff={row}
+                  householdId={active.householdId as string}
+                  carerName={nameForCarer(row.user_id)}
+                  canMarkPaid={canMarkPaid}
+                />
+              ))
+            : null}
         </View>
       )}
     </ScrollView>

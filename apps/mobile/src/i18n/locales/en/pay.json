@@ -28,7 +28,9 @@
     "cancellationsValue": "Paid if within {{hours}}h of the start",
     "mileageLabel": "Mileage",
     "mileageValue": "{{amount}} a mile",
-    "ptoBalanceLabel": "PTO balance"
+    "ptoBalanceLabel": "PTO balance",
+    "ptoBalanceValue": "{{amount}} left this year",
+    "ptoBalanceCaption": "1 Jan – 31 Dec {{year}}"
   },
   "changeSheet": {
     "title": "Change terms",
@@ -78,5 +80,28 @@
     "emptyDescription": "This family hasn't set your rate in Steadily yet. Your hours are still being recorded.",
     "notAvailableTitle": "Not available",
     "notAvailableDescription": "My pay is for nannies — you're not signed in as one on this account."
+  },
+  "householdTimeOff": {
+    "paidBadge": "{{hours}}h paid",
+    "notMarkedPaid": "Not marked paid"
+  },
+  "crossFamily": {
+    "notMarkedPaid": "Not marked paid",
+    "paidByFamilies_one": "Paid by {{count}} family",
+    "paidByFamilies_other": "Paid by {{count}} families"
+  },
+  "markPaidSheet": {
+    "title": "Pay this time off?",
+    "subtitle": "{{name}}, {{range}}",
+    "hoursLabel": "Hours to pay",
+    "hoursHint": "Suggested from her usual hours that week. Change it if you agreed something else.",
+    "balanceBeforeAfter": "Balance {{before}} now → {{after}} after",
+    "overBalanceWarning": "This is more than her remaining balance. You can still pay it — the balance will show as {{after}}.",
+    "noteLabel": "Note (optional)",
+    "confirmButton": "Mark as paid",
+    "savedToast": "Marked as paid",
+    "alreadyPaid": "Marked as paid on {{date}} — {{hours}}h.",
+    "adjustButton": "Adjust",
+    "adjustHint": "Corrections are added as a new line, so the history stays true."
   }
 }

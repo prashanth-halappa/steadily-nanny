@@ -8,6 +8,7 @@
  * reachable read-only) rather than repeating every arm twice.
  */
 import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
+import type { Expense } from '@steadily-nanny/shared-types/schemas/expense.schema';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
 import type React from 'react';
@@ -218,6 +219,47 @@ const listEntriesMock = mock(() => Promise.resolve([makeEntry()]));
 const listTimesheetsMock = mock(() => Promise.resolve([makeTimesheet()]));
 const getByIdMock = mock(() => Promise.resolve(makeTimesheetWeek()));
 const updateEntryMock = mock(() => Promise.resolve(makeEntry()));
+// Phase 4 (additive): the week's own expense/mileage claims + her pay
+// arrangement (read only for the add sheet's mileage-rate hint). Mocked so
+// this pre-existing suite never makes a real network call now that
+// `NannyWeekView` fetches both.
+const listExpensesForWeekMock = mock(
+  (): Promise<Expense[]> => Promise.resolve([])
+);
+const createExpenseMock = mock(() =>
+  Promise.resolve({ id: 'expense-new', status: 'pending' })
+);
+const updateExpenseMock = mock(() =>
+  Promise.resolve({ id: 'expense-1', status: 'pending' })
+);
+const withdrawExpenseMock = mock(() => Promise.resolve(undefined));
+const getCurrentArrangementMock = mock(() => Promise.resolve(null));
+
+mock.module('@/src/api/endpoints/expenses', () => {
+  const shared = require('@steadily-nanny/shared-types/schemas/expense.schema');
+  return {
+    ...shared,
+    expenseApi: {
+      listForWeek: listExpensesForWeekMock,
+      listPending: mock(() => Promise.resolve([])),
+      create: createExpenseMock,
+      update: updateExpenseMock,
+      withdraw: withdrawExpenseMock,
+      review: mock(),
+    },
+  };
+});
+mock.module('@/src/api/endpoints/payArrangements', () => {
+  const shared = require('@steadily-nanny/shared-types/schemas/payArrangement.schema');
+  return {
+    ...shared,
+    payArrangementApi: {
+      getCurrent: getCurrentArrangementMock,
+      getHistory: mock(() => Promise.resolve([])),
+      create: mock(),
+    },
+  };
+});
 
 mock.module('@/src/api/endpoints/timeEntries', () => {
   const shared = require('@steadily-nanny/shared-types/schemas/timesheet.schema');
@@ -290,6 +332,11 @@ beforeEach(() => {
   listTimesheetsMock.mockReset();
   getByIdMock.mockReset();
   updateEntryMock.mockReset();
+  listExpensesForWeekMock.mockReset();
+  createExpenseMock.mockReset();
+  updateExpenseMock.mockReset();
+  withdrawExpenseMock.mockReset();
+  getCurrentArrangementMock.mockReset();
   routerPush.mockClear();
 
   listEntriesMock.mockImplementation(() => Promise.resolve([makeEntry()]));
@@ -297,6 +344,15 @@ beforeEach(() => {
     Promise.resolve([makeTimesheet()])
   );
   getByIdMock.mockImplementation(() => Promise.resolve(makeTimesheetWeek()));
+  listExpensesForWeekMock.mockImplementation(() => Promise.resolve([]));
+  createExpenseMock.mockImplementation(() =>
+    Promise.resolve({ id: 'expense-new', status: 'pending' })
+  );
+  updateExpenseMock.mockImplementation(() =>
+    Promise.resolve({ id: 'expense-1', status: 'pending' })
+  );
+  withdrawExpenseMock.mockImplementation(() => Promise.resolve(undefined));
+  getCurrentArrangementMock.mockImplementation(() => Promise.resolve(null));
 
   useAuthStore.setState({
     session: { user: { id: NANNY_ID } } as unknown as never,
@@ -429,6 +485,116 @@ describe('NannyWeekView — earnings error (review finding 4)', () => {
       expect(listTimesheetsMock.mock.calls.length).toBeGreaterThan(
         callsBeforeRetry
       )
+    );
+  });
+});
+
+function makeExpense(overrides: Partial<Expense> = {}): Expense {
+  return {
+    id: 'expense-1',
+    household_id: HOUSEHOLD_ID,
+    carer_id: NANNY_ID,
+    local_date: WEEK_START,
+    kind: 'expense',
+    description: 'Soft play tickets',
+    amount_minor: 1200,
+    miles: null,
+    currency: 'GBP',
+    status: 'approved',
+    reviewed_by: 'parent-1',
+    reviewed_at: '2026-08-04T00:00:00.000Z',
+    review_note: null,
+    carer_display_name: 'Amara',
+    created_at: now,
+    updated_at: now,
+    ...overrides,
+  };
+}
+
+describe('NannyWeekView — expenses & the statement (Phase 4)', () => {
+  it('the "Add an expense" button opens the add sheet', async () => {
+    const { getByTestId } = renderNannyView();
+
+    await waitFor(() => expect(getByTestId('expenses-add')).toBeTruthy());
+    fireEvent.press(getByTestId('expenses-add'));
+
+    await waitFor(() => expect(getByTestId('expense-add-sheet')).toBeTruthy());
+  });
+
+  it('no Reimbursements card when the week has no approved expenses', async () => {
+    const { getByTestId, queryByTestId } = renderNannyView();
+
+    await waitFor(() =>
+      expect(getByTestId('hours-earnings-line-amount')).toBeTruthy()
+    );
+    expect(queryByTestId('reimbursements-card')).toBeNull();
+  });
+
+  it('renders the Reimbursements card for an approved expense, excluding pending/rejected rows', async () => {
+    listExpensesForWeekMock.mockImplementation(() =>
+      Promise.resolve([
+        makeExpense({ id: 'expense-approved', status: 'approved' }),
+        makeExpense({
+          id: 'expense-pending',
+          status: 'pending',
+          description: 'Nursery run',
+        }),
+        makeExpense({
+          id: 'expense-rejected',
+          status: 'rejected',
+          description: 'Taxi',
+          review_note: 'Already paid in cash',
+        }),
+      ])
+    );
+    getByIdMock.mockImplementation(() =>
+      Promise.resolve(
+        makeTimesheetWeek({}, { ...okEarnings, reimbursements_minor: 1200 })
+      )
+    );
+
+    const { getByTestId, queryByTestId } = renderNannyView();
+
+    await waitFor(() =>
+      expect(getByTestId('reimbursements-card')).toBeTruthy()
+    );
+    expect(getByTestId('reimbursements-card-total').props.children).toBe(
+      '£12.00'
+    );
+    expect(
+      getByTestId('reimbursements-card-line-expense-approved-value')
+    ).toBeTruthy();
+    expect(
+      queryByTestId('reimbursements-card-line-expense-pending-value')
+    ).toBeNull();
+    expect(
+      queryByTestId('reimbursements-card-line-expense-rejected-value')
+    ).toBeNull();
+  });
+
+  it('her own expenses list shows every status, and submitting the add sheet creates a new claim', async () => {
+    listExpensesForWeekMock.mockImplementation(() =>
+      Promise.resolve([makeExpense({ status: 'pending' })])
+    );
+
+    const { getByTestId } = renderNannyView();
+
+    await waitFor(() => expect(getByTestId('expenses-list')).toBeTruthy());
+
+    fireEvent.press(getByTestId('expenses-add'));
+    await waitFor(() => expect(getByTestId('expense-add-sheet')).toBeTruthy());
+
+    fireEvent.changeText(
+      getByTestId('expense-add-description-input'),
+      'Soft play tickets'
+    );
+    fireEvent.changeText(getByTestId('expense-add-amount-input'), '12.00');
+    fireEvent.press(getByTestId('expense-add-submit'));
+
+    await waitFor(() => expect(createExpenseMock).toHaveBeenCalledTimes(1));
+    expect(createExpenseMock).toHaveBeenCalledWith(
+      HOUSEHOLD_ID,
+      expect.objectContaining({ kind: 'expense', amount_minor: 1200 })
     );
   });
 });

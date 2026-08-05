@@ -32,6 +32,8 @@ import { useCurrentPayArrangement } from '@/src/hooks/queries/useCurrentPayArran
 import { useHouseholds } from '@/src/hooks/queries/useHouseholds';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 import { usePayArrangementHistory } from '@/src/hooks/queries/usePayArrangementHistory';
+import { usePtoBalance } from '@/src/hooks/queries/usePtoBalance';
+import { localDateInZone } from '@/src/lib/localDate';
 import { formatMoney, formatRate } from '@/src/lib/money';
 import { useAuthStore } from '@/src/store/auth';
 import { formatDisplayDateWithYear } from '../utils/payArrangementForm';
@@ -50,6 +52,16 @@ function MyPayHouseholdCard({
   const current = useCurrentPayArrangement(household.id, carerId);
   const history = usePayArrangementHistory(household.id, carerId);
   const [historyOpen, setHistoryOpen] = useState(false);
+
+  // This household's own local year — each card is per-family, so the
+  // year the balance covers is THAT family's calendar, not the device's.
+  const currentYear = Number(localDateInZone(household.timezone).slice(0, 4));
+  const hasEntitlement = current.data?.pto_entitlement_minutes_per_year != null;
+  const balance = usePtoBalance(
+    household.id,
+    carerId,
+    hasEntitlement ? currentYear : undefined
+  );
 
   return (
     <Card testID={`my-pay-household-${household.id}`}>
@@ -74,13 +86,14 @@ function MyPayHouseholdCard({
               <Body className="text-muted-foreground">/hr</Body>
             </View>
             <View className="gap-3">
-              {buildTermRows(current.data, t).map(row => (
+              {buildTermRows(current.data, t, balance.data).map(row => (
                 <AmountRow
                   key={row.key}
                   testID={`my-pay-term-${household.id}-${row.key}`}
                   label={row.label}
                   value={row.value}
                   valueWhenNull={row.valueWhenNull}
+                  subLine={row.subLine}
                 />
               ))}
             </View>

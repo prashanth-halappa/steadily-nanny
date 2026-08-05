@@ -1,0 +1,57 @@
+{
+  "addButton": "Añadir un gasto",
+  "addSheet": {
+    "titleAdd": "Añadir un gasto",
+    "titleEdit": "Editar gasto",
+    "kindExpense": "Gasto",
+    "kindMileage": "Kilometraje",
+    "dateLabel": "Fecha",
+    "dateFutureError": "Elige hoy o una fecha anterior.",
+    "descriptionLabel": "¿Para qué fue?",
+    "descriptionPlaceholderExpense": "p. ej. Entradas al parque infantil",
+    "descriptionPlaceholderMileage": "p. ej. Trayecto a la guardería",
+    "amountLabel": "Importe",
+    "milesLabel": "Millas",
+    "milesSuffix": "millas",
+    "mileageRateHint": "Se calcula a {{rate}} por milla cuando tu familia lo apruebe.",
+    "mileageRateMissingHint": "Tu familia todavía no ha fijado una tarifa por milla. Puedes registrar las millas igualmente.",
+    "milesPrecisionError": "Introduce las millas con un decimal, p. ej. 12.4.",
+    "amountError": "Introduce un importe válido.",
+    "submitButton": "Enviar para aprobación",
+    "saveButton": "Guardar cambios",
+    "sentToast": "Enviado a tu familia",
+    "savedToast": "Gasto actualizado"
+  },
+  "list": {
+    "title": "Gastos",
+    "milesValue": "{{miles}} millas",
+    "statusPending": "Pendiente de revisión",
+    "statusApproved": "Aprobado",
+    "statusRejected": "No aprobado",
+    "rejectedNote": "No aprobado: {{note}}",
+    "editButton": "Editar",
+    "withdrawButton": "Retirar",
+    "withdrawnToast": "Gasto retirado"
+  },
+  "pendingRow": {
+    "count_one": "{{count}} gasto por revisar",
+    "count_other": "{{count}} gastos por revisar"
+  },
+  "reviewSheet": {
+    "title": "Revisar gastos",
+    "milesValue": "{{miles}} millas",
+    "approveButton": "Aprobar",
+    "rejectButton": "Este no",
+    "noteLabel": "Explícale por qué (opcional)",
+    "sendButton": "Enviar",
+    "approvedToast": "Aprobado",
+    "rejectedToast": "No aprobado",
+    "noMileageRateError": "Fija una tarifa por milla antes de aprobar kilometraje.",
+    "setRateAction": "Fijar una tarifa"
+  },
+  "reimbursements": {
+    "title": "Reembolsos",
+    "totalLabel": "Total a reembolsar",
+    "note": "Reembolsado en su totalidad — no es salario ni forma parte del salario bruto."
+  }
+}

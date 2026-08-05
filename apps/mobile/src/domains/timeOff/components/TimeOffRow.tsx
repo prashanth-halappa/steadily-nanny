@@ -3,6 +3,15 @@
  *
  * One time-off booking: date range, StatusPill, optional note, Edit/Cancel.
  * Past rows hide both Edit and Cancel. Cancelled rows stay visible, dimmed.
+ *
+ * TIER0-CX-SPEC.md §5.2 — `paidFamilyCount` adds one `Small` line under the
+ * StatusPill on THIS surface only (`/settings/time-off`, person-scoped,
+ * cross-family): "Not marked paid" / "Paid by 1 family" / "Paid by N
+ * families" — NEVER a household name and NEVER a per-family amount, on
+ * pain of leaking one family's payroll detail to another. `undefined`
+ * (the count hasn't resolved yet) renders nothing at all, distinct from a
+ * resolved `0` — same "omit while loading, never fabricate a placeholder"
+ * discipline as the PTO balance row (`domains/pay/utils/termRows.ts`).
  */
 import type { CarerTimeOff } from '@steadily-nanny/shared-types/schemas/availability.schema';
 import { CARER_TIME_OFF_STATUSES } from '@steadily-nanny/shared-types/schemas/availability.schema';
@@ -21,6 +30,10 @@ interface TimeOffRowProps {
   onEdit?: (id: string) => void;
   isCancelling: boolean;
   isEditing?: boolean;
+  /** Number of DISTINCT households whose `pto_ledger` marks this time off
+   * paid — `undefined` while unresolved (renders nothing), a resolved
+   * number renders the anonymised marker (TIER0-CX-SPEC.md §5.2). */
+  paidFamilyCount?: number;
 }
 
 export function TimeOffRow({
@@ -29,8 +42,10 @@ export function TimeOffRow({
   onEdit,
   isCancelling,
   isEditing = false,
+  paidFamilyCount,
 }: TimeOffRowProps) {
   const { t } = useTranslation('timeOff');
+  const { t: tPay } = useTranslation('pay');
   const isCancelled = timeOff.status === CARER_TIME_OFF_STATUSES.CANCELLED;
   const isPast = isPastTimeOff(timeOff.ends_at);
   const isEditable = !isCancelled && !isPast;
@@ -48,6 +63,16 @@ export function TimeOffRow({
         variant={pillVariant}
         label={t(`status.${timeOff.status}`)}
       />
+      {paidFamilyCount === undefined ? null : (
+        <Small
+          testID={`time-off-paid-marker-${timeOff.id}`}
+          className="text-muted-foreground"
+        >
+          {paidFamilyCount === 0
+            ? tPay('crossFamily.notMarkedPaid')
+            : tPay('crossFamily.paidByFamilies', { count: paidFamilyCount })}
+        </Small>
+      )}
       {timeOff.message ? (
         <Small className="text-muted-foreground">{timeOff.message}</Small>
       ) : null}

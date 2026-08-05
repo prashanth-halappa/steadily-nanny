@@ -5,8 +5,17 @@
  * TIER0-CX-SPEC.md §4.3 — approving freezes the gross figure alongside the
  * hours) and a "Query" escape hatch that takes a note instead of silently
  * withholding approval.
+ *
+ * TIER0-CX-SPEC.md §6.2/§6.3/§7 (Phase 4, additive): the footer also carries
+ * the pending-expenses review affordance (action-gated behind `!readOnly`,
+ * same as approve/query — a helper sees the statement but never reviews)
+ * and, per §7's fixed order (item 3), the read-only Reimbursements card —
+ * visible to a helper too, since it is informational, not an action.
  */
+
 import { FlashList } from '@shopify/flash-list';
+import type { Href } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
@@ -16,11 +25,18 @@ import { Button } from '@/src/components/ui/button';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { Text } from '@/src/components/ui/text';
 import { Body } from '@/src/components/ui/typography';
+import { ExpenseReviewSheet } from '@/src/domains/expenses/components/ExpenseReviewSheet';
+import { PendingExpensesRow } from '@/src/domains/expenses/components/PendingExpensesRow';
+import { ReimbursementsCard } from '@/src/domains/expenses/components/ReimbursementsCard';
+import { reviewErrorReason } from '@/src/domains/expenses/utils/reviewErrorReason';
 import { resolveMemberDisplayName } from '@/src/domains/schedule/utils/memberDisplayName';
 import { resolveWeekCarerHeaderName } from '@/src/domains/timesheet/utils/weekCarerHeaderName';
 import { useApproveTimesheet } from '@/src/hooks/mutations/useApproveTimesheet';
 import { useQueryTimesheet } from '@/src/hooks/mutations/useQueryTimesheet';
+import { useReviewExpense } from '@/src/hooks/mutations/useReviewExpense';
 import { useHouseholdMembers } from '@/src/hooks/queries/useHouseholdMembers';
+import { usePendingExpenses } from '@/src/hooks/queries/usePendingExpenses';
+import { useWeekExpenses } from '@/src/hooks/queries/useWeekExpenses';
 import { useWeekTimeEntries } from '@/src/hooks/queries/useWeekTimeEntries';
 import { useWeekTimesheet } from '@/src/hooks/queries/useWeekTimesheet';
 import { localDateInZone } from '@/src/lib/localDate';
@@ -80,6 +96,8 @@ export function ParentWeekView({
 }: ParentWeekViewProps) {
   const { t } = useTranslation('hours');
   const { t: tSchedule } = useTranslation('schedule');
+  const { t: tExpenses } = useTranslation('expenses');
+  const router = useRouter();
   // Same tab-bar dead-zone fix as Settings (BUG1) — the Hours tab's
   // FlashList needs the same real clearance a fixed magic number can't give.
   const tabBarScrollPadding = useTabBarScrollPadding();
@@ -87,15 +105,72 @@ export function ParentWeekView({
   const membersQuery = useHouseholdMembers(householdId);
   const entriesQuery = useWeekTimeEntries(householdId, weekStartISO);
   const timesheetQuery = useWeekTimesheet(householdId, weekStartISO);
+  const weekExpensesQuery = useWeekExpenses(householdId, weekStartISO);
+  // Household-wide, not week-scoped — the review inbox spans every week
+  // that has a still-`pending` claim (TIER0-CX-SPEC.md §6.2).
+  const pendingExpensesQuery = usePendingExpenses(householdId);
   const approveTimesheet = useApproveTimesheet();
   const queryTimesheet = useQueryTimesheet();
+  const reviewExpense = useReviewExpense();
   const [isQuerySheetVisible, setIsQuerySheetVisible] = useState(false);
   const [isApproveDialogOpen, setIsApproveDialogOpen] = useState(false);
   const [isBreakdownVisible, setIsBreakdownVisible] = useState(false);
+  const [isExpenseReviewVisible, setIsExpenseReviewVisible] = useState(false);
+  const [submittingExpenseId, setSubmittingExpenseId] = useState<string | null>(
+    null
+  );
+  const [mileageRateErrorId, setMileageRateErrorId] = useState<string | null>(
+    null
+  );
   const reopened = useReopenedNotice(
     timesheetQuery.data?.id,
     timesheetQuery.data?.status
   );
+
+  const pendingExpenses = pendingExpensesQuery.data ?? [];
+
+  const handleApproveExpense = async (expenseId: string) => {
+    setSubmittingExpenseId(expenseId);
+    setMileageRateErrorId(null);
+    try {
+      await reviewExpense.mutateAsync({
+        expenseId,
+        input: { status: 'approved' },
+      });
+    } catch (error) {
+      if (reviewErrorReason(error) === 'NO_MILEAGE_RATE') {
+        setMileageRateErrorId(expenseId);
+      }
+      setSubmittingExpenseId(null);
+      return;
+    }
+    setSubmittingExpenseId(null);
+    showSuccessToast(tExpenses('reviewSheet.approvedToast'));
+  };
+
+  const handleRejectExpense = async (expenseId: string, note: string) => {
+    setSubmittingExpenseId(expenseId);
+    try {
+      await reviewExpense.mutateAsync({
+        expenseId,
+        input: { status: 'rejected', ...(note ? { review_note: note } : {}) },
+      });
+    } catch {
+      setSubmittingExpenseId(null);
+      return;
+    }
+    setSubmittingExpenseId(null);
+    showSuccessToast(tExpenses('reviewSheet.rejectedToast'));
+  };
+
+  const handleSetRatePress = () => {
+    const erroring = pendingExpenses.find(e => e.id === mileageRateErrorId);
+    const carerId = erroring?.carer_id ?? null;
+    setIsExpenseReviewVisible(false);
+    router.push(
+      (carerId ? `/settings/pay/${carerId}` : '/settings/pay') as Href
+    );
+  };
 
   const membersByUserId = useMemo(
     () =>
@@ -199,6 +274,15 @@ export function ParentWeekView({
   const approveDialogCarerName =
     carerName ?? timesheet?.carer_display_name ?? tSchedule('detail.someone');
 
+  // TIER0-CX-SPEC.md §6.3/§7: approved-only, this week's currency.
+  // `currency` is deliberately NOT on the wire `Timesheet` (only inside
+  // `earnings.currency`, per `TimesheetWeekSchema`'s doc comment), so the
+  // fallback below reads an approved expense's own currency instead.
+  const weekExpenses = weekExpensesQuery.data ?? [];
+  const approvedExpenses = weekExpenses.filter(e => e.status === 'approved');
+  const expensesCurrency =
+    earningsOk?.currency ?? approvedExpenses[0]?.currency ?? 'GBP';
+
   // `.mutateAsync(...).then(onFulfilled)` with no rejection handler left a
   // failure's promise entirely unhandled (an "Uncaught (in promise)" in
   // metro.log, the same defect class as the clock-in double-tap bug) even
@@ -275,6 +359,13 @@ export function ParentWeekView({
         }
         ListFooterComponent={
           <>
+            {/* §7 fixed order item 3 — after day rows, approved-only,
+                read-only so it renders for a helper too. */}
+            <ReimbursementsCard
+              approvedExpenses={approvedExpenses}
+              totalMinor={earningsOk?.reimbursements_minor ?? 0}
+              currency={expensesCurrency}
+            />
             {timesheet?.query_note ? (
               <Body
                 testID="hours-query-note"
@@ -285,6 +376,12 @@ export function ParentWeekView({
             ) : null}
             {readOnly ? null : (
               <>
+                {/* §6.2 — above the approve actions. */}
+                <PendingExpensesRow
+                  pendingExpenses={pendingExpenses}
+                  currency={expensesCurrency}
+                  onPress={() => setIsExpenseReviewVisible(true)}
+                />
                 {!isActionable && !isApproved ? (
                   <Body
                     testID="hours-approve-waiting"
@@ -355,6 +452,19 @@ export function ParentWeekView({
           earningsRole="parent"
         />
       ) : null}
+
+      {readOnly ? null : (
+        <ExpenseReviewSheet
+          visible={isExpenseReviewVisible}
+          onDismiss={() => setIsExpenseReviewVisible(false)}
+          expenses={pendingExpenses}
+          onApprove={id => void handleApproveExpense(id)}
+          onReject={(id, note) => void handleRejectExpense(id, note)}
+          submittingId={submittingExpenseId}
+          mileageRateErrorId={mileageRateErrorId}
+          onSetRatePress={handleSetRatePress}
+        />
+      )}
     </>
   );
 }

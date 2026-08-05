@@ -22,6 +22,8 @@ function fakeT(key: string, params?: Record<string, unknown>): string {
     'terms.mileageLabel': 'Mileage',
     'terms.mileageValue': `${params?.amount} a mile`,
     'terms.ptoBalanceLabel': 'PTO balance',
+    'terms.ptoBalanceValue': `${params?.amount} left this year`,
+    'terms.ptoBalanceCaption': `1 Jan – 31 Dec ${params?.year}`,
     noCancellationPay: 'No cancellation pay',
   };
   return templates[key] ?? key;
@@ -95,10 +97,61 @@ describe('buildTermRows', () => {
     expect(cancellations?.valueWhenNull).toBe('No cancellation pay');
   });
 
-  it('the PTO balance row is always "Not set" in Phase 1 — no ledger to read yet', () => {
-    const rows = buildTermRows(fullArrangement, fakeT as never);
+  it('no entitlement set: the PTO balance row reads "Not set" — an agreement, not a gap', () => {
+    const rows = buildTermRows(emptyArrangement, fakeT as never, {
+      carer_id: 'carer-1',
+      household_id: 'hh-1',
+      year: 2026,
+      entitlement_minutes: null,
+      accrued_minutes: 0,
+      used_minutes: 0,
+      balance_minutes: 0,
+    });
     const ptoBalance = rows.find(r => r.key === 'ptoBalance');
     expect(ptoBalance?.value).toBeNull();
     expect(ptoBalance?.valueWhenNull).toBeUndefined();
+    expect(ptoBalance?.subLine).toBeUndefined();
+  });
+
+  it('balance still loading (undefined): the row is blank, never "Not set" and never "0h"', () => {
+    const rows = buildTermRows(fullArrangement, fakeT as never, undefined);
+    const ptoBalance = rows.find(r => r.key === 'ptoBalance');
+    expect(ptoBalance?.value).toBe('');
+    expect(ptoBalance?.subLine).toBeUndefined();
+  });
+
+  it('balance ready: renders the hours-left figure plus the "1 Jan – 31 Dec" caption', () => {
+    const rows = buildTermRows(fullArrangement, fakeT as never, {
+      carer_id: 'carer-1',
+      household_id: 'hh-1',
+      year: 2026,
+      entitlement_minutes: 8400,
+      accrued_minutes: 8400,
+      used_minutes: 2880,
+      balance_minutes: 5520,
+    });
+    const ptoBalance = rows.find(r => r.key === 'ptoBalance');
+    expect(ptoBalance?.value).toBe('92h left this year');
+    expect(ptoBalance?.subLine).toBe('1 Jan – 31 Dec 2026');
+  });
+
+  it('a NEGATIVE balance renders honestly, with a leading minus — never clamped to zero', () => {
+    const rows = buildTermRows(fullArrangement, fakeT as never, {
+      carer_id: 'carer-1',
+      household_id: 'hh-1',
+      year: 2026,
+      entitlement_minutes: 8400,
+      accrued_minutes: 8400,
+      used_minutes: 9000,
+      balance_minutes: -600,
+    });
+    const ptoBalance = rows.find(r => r.key === 'ptoBalance');
+    expect(ptoBalance?.value).toBe('-10h left this year');
+  });
+
+  it('entitlement is set but the API reports no balance record: still "Not set", not a crash', () => {
+    const rows = buildTermRows(fullArrangement, fakeT as never, null);
+    const ptoBalance = rows.find(r => r.key === 'ptoBalance');
+    expect(ptoBalance?.value).toBeNull();
   });
 });

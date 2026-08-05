@@ -291,6 +291,13 @@ beforeAll(async () => {
   mock.module('@/src/hooks/queries/useBusyBlocks', () => ({
     useBusyBlocks: mockUseBusyBlocks,
   }));
+  // TIER0-CX-SPEC.md §5.2's cross-family paid-marker counts — a separate,
+  // dedicated hook test (`usePaidFamilyCounts.test.ts`) covers its real
+  // aggregation logic; this Pattern-B isolated screen test only needs it
+  // out of the way, same as every other data hook mocked above.
+  mock.module('@/src/domains/timeOff/hooks/usePaidFamilyCounts', () => ({
+    usePaidFamilyCounts: () => ({ counts: new Map(), isLoading: false }),
+  }));
 
   const mod = await import('../components/TimeOffScreen');
   TimeOffScreen = mod.TimeOffScreen;

@@ -35,6 +35,7 @@ import { useCurrentPayArrangement } from '@/src/hooks/queries/useCurrentPayArran
 import { useHouseholdMembers } from '@/src/hooks/queries/useHouseholdMembers';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 import { usePayArrangementHistory } from '@/src/hooks/queries/usePayArrangementHistory';
+import { usePtoBalance } from '@/src/hooks/queries/usePtoBalance';
 import { localDateInZone } from '@/src/lib/localDate';
 import { formatMoney, formatRate } from '@/src/lib/money';
 import { showSuccessToast } from '@/src/lib/toast';
@@ -155,6 +156,21 @@ function CarerPayDetail({
   const createArrangement = useCreatePayArrangement(householdId, carerId);
   const [sheetOpen, setSheetOpen] = useState(false);
 
+  // Household-local "today"'s year — called unconditionally (rules of
+  // hooks), BEFORE `current` is known to have settled. `hasEntitlement`
+  // reads `current.data` directly (not the later `arrangement` const, which
+  // doesn't exist yet at this point in the render) so the balance query
+  // only turns on once there is an entitlement to compute against
+  // (TIER0-CX-SPEC.md §5.2: "no entitlement -> no balance is computed").
+  const todayISO = localDateInZone(householdTimezone);
+  const currentYear = Number(todayISO.slice(0, 4));
+  const hasEntitlement = current.data?.pto_entitlement_minutes_per_year != null;
+  const balance = usePtoBalance(
+    householdId,
+    carerId,
+    hasEntitlement ? currentYear : undefined
+  );
+
   if (current.isPending || history.isPending) {
     return <LoadingIndicator testID="pay-loading" />;
   }
@@ -179,7 +195,6 @@ function CarerPayDetail({
     arrangement?.carer_display_name,
     roleFallbackLabel
   );
-  const todayISO = localDateInZone(householdTimezone);
 
   const handleSubmit = (
     input: Parameters<typeof createArrangement.mutateAsync>[0]
@@ -224,13 +239,14 @@ function CarerPayDetail({
                 <Body className="text-muted-foreground">/hr</Body>
               </View>
               <View className="gap-3">
-                {buildTermRows(arrangement, t).map(row => (
+                {buildTermRows(arrangement, t, balance.data).map(row => (
                   <AmountRow
                     key={row.key}
                     testID={`pay-term-${row.key}`}
                     label={row.label}
                     value={row.value}
                     valueWhenNull={row.valueWhenNull}
+                    subLine={row.subLine}
                   />
                 ))}
               </View>

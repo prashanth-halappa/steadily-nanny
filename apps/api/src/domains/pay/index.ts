@@ -27,12 +27,12 @@ export {
 } from './routes/expenseRoutes';
 export { default as payArrangementRoutes } from './routes/payArrangementRoutes';
 export { default as ptoRoutes } from './routes/ptoRoutes';
-export * from './services/expenseCommandService';
-export * from './services/expenseQueryService';
-export * from './services/ptoCommandService';
-export * from './services/ptoQueryService';
 export * from './schemas';
 export * from './services/earningsService';
+export * from './services/expenseCommandService';
+export * from './services/expenseQueryService';
 export * from './services/payArrangementCommandService';
 export * from './services/payArrangementQueryService';
+export * from './services/ptoCommandService';
+export * from './services/ptoQueryService';
 export * from './services/weekEarningsService';

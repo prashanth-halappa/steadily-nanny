@@ -9,6 +9,13 @@
  * `ClockOutSheet` in edit mode rather than growing a second sheet: the live
  * summary that shows the recorded total before it's written must have one
  * implementation.
+ *
+ * TIER0-CX-SPEC.md §6.1/§7 (Phase 4, additive): the footer also carries her
+ * "Add an expense" quick-add + own status list, and — before that, per §7's
+ * fixed statement order (item 3, after day rows) — the Reimbursements card
+ * when the week has approved claims. Reimbursements are NOT wages
+ * (docs/11-MONEY.md §6): they render in their own card, visually and
+ * semantically separate from the money line above.
  */
 import { FlashList } from '@shopify/flash-list';
 import { useState } from 'react';
@@ -16,15 +23,31 @@ import { useTranslation } from 'react-i18next';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { useTabBarScrollPadding } from '@/lib/layout/useTabBarScrollPadding';
 import { ErrorState } from '@/src/components/custom/ErrorState';
+import { Button } from '@/src/components/ui/button';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
+import { Text } from '@/src/components/ui/text';
+import { ExpenseAddSheet } from '@/src/domains/expenses/components/ExpenseAddSheet';
+import { ExpensesListCard } from '@/src/domains/expenses/components/ExpensesListCard';
+import { ReimbursementsCard } from '@/src/domains/expenses/components/ReimbursementsCard';
+import type {
+  CreateExpenseRequest,
+  Expense,
+} from '@/src/domains/expenses/types';
 import {
   ClockOutSheet,
   type ClockOutSheetSubmitInput,
 } from '@/src/domains/today/components/ClockOutSheet';
+import { useCreateExpense } from '@/src/hooks/mutations/useCreateExpense';
+import { useUpdateExpense } from '@/src/hooks/mutations/useUpdateExpense';
 import { useUpdateTimeEntry } from '@/src/hooks/mutations/useUpdateTimeEntry';
+import { useWithdrawExpense } from '@/src/hooks/mutations/useWithdrawExpense';
+import { useCurrentPayArrangement } from '@/src/hooks/queries/useCurrentPayArrangement';
+import { useWeekExpenses } from '@/src/hooks/queries/useWeekExpenses';
 import { useWeekTimeEntries } from '@/src/hooks/queries/useWeekTimeEntries';
 import { useWeekTimesheet } from '@/src/hooks/queries/useWeekTimesheet';
 import { localDateInZone } from '@/src/lib/localDate';
+import { showSuccessToast } from '@/src/lib/toast';
+import { useAuthStore } from '@/src/store/auth';
 import type { TimeEntry } from '../types';
 import { formatDuration, formatOvertimeDelta } from '../utils/duration';
 import { formatEarningsLongDate } from '../utils/earningsFormat';
@@ -69,18 +92,64 @@ export function NannyWeekView({
   isPreviousWeekDisabled,
 }: NannyWeekViewProps) {
   const { t } = useTranslation('hours');
+  const { t: tExpenses } = useTranslation('expenses');
   // Same tab-bar dead-zone fix as Settings (BUG1) — the Hours tab's
   // FlashList needs the same real clearance a fixed magic number can't give.
   const tabBarScrollPadding = useTabBarScrollPadding();
+  const currentUserId = useAuthStore(s => s.user?.id ?? null);
   const entriesQuery = useWeekTimeEntries(householdId, weekStartISO);
   const timesheetQuery = useWeekTimesheet(householdId, weekStartISO);
+  const expensesQuery = useWeekExpenses(householdId, weekStartISO);
+  // Her own arrangement — only read here for the add sheet's mileage-rate
+  // hint (TIER0-CX-SPEC.md §6.1); the money line above already covers the
+  // rest of what an arrangement is for.
+  const arrangementQuery = useCurrentPayArrangement(householdId, currentUserId);
   const updateEntry = useUpdateTimeEntry();
+  const createExpense = useCreateExpense(householdId);
+  const updateExpense = useUpdateExpense();
+  const withdrawExpense = useWithdrawExpense();
   const [editing, setEditing] = useState<TimeEntry | null>(null);
   const [isBreakdownVisible, setIsBreakdownVisible] = useState(false);
+  const [isAddExpenseVisible, setIsAddExpenseVisible] = useState(false);
+  const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
   const reopened = useReopenedNotice(
     timesheetQuery.data?.id,
     timesheetQuery.data?.status
   );
+
+  const handleOpenAddExpense = () => {
+    setEditingExpense(null);
+    setIsAddExpenseVisible(true);
+  };
+  const handleEditExpense = (expense: Expense) => {
+    setEditingExpense(expense);
+    setIsAddExpenseVisible(true);
+  };
+  const handleDismissExpenseSheet = () => {
+    setIsAddExpenseVisible(false);
+    setEditingExpense(null);
+  };
+  const handleSubmitExpense = (input: CreateExpenseRequest) => {
+    const mutation = editingExpense
+      ? updateExpense.mutateAsync({ expenseId: editingExpense.id, input })
+      : createExpense.mutateAsync(input);
+    mutation
+      .then(() => {
+        handleDismissExpenseSheet();
+        showSuccessToast(
+          editingExpense
+            ? tExpenses('addSheet.savedToast')
+            : tExpenses('addSheet.sentToast')
+        );
+      })
+      .catch(() => undefined);
+  };
+  const handleWithdrawExpense = (expenseId: string) => {
+    withdrawExpense
+      .mutateAsync(expenseId)
+      .then(() => showSuccessToast(tExpenses('list.withdrawnToast')))
+      .catch(() => undefined);
+  };
 
   const handleSaveCorrection = ({
     breakMinutes,
@@ -146,6 +215,17 @@ export function NannyWeekView({
         )
       : null;
 
+  // TIER0-CX-SPEC.md §6.3/§7: the Reimbursements card is approved-only and
+  // shares the week's currency — `earningsOk.currency` when a timesheet
+  // exists, else her own arrangement's currency, else the house default.
+  const weekExpenses = expensesQuery.data ?? [];
+  const approvedExpenses = weekExpenses.filter(e => e.status === 'approved');
+  const expensesCurrency =
+    earningsOk?.currency ?? arrangementQuery.data?.currency ?? 'GBP';
+  const mileageRateMinor =
+    arrangementQuery.data?.mileage_rate_per_mile_minor ?? null;
+  const todayISO = localDateInZone(timeZone);
+
   return (
     <>
       <FlashList
@@ -186,6 +266,30 @@ export function NannyWeekView({
             onRetryEarnings={() => void timesheetQuery.refetch()}
           />
         }
+        ListFooterComponent={
+          <>
+            {/* §7 fixed order item 3 — after day rows, approved-only,
+                never rendered when the week has no approved claims. */}
+            <ReimbursementsCard
+              approvedExpenses={approvedExpenses}
+              totalMinor={earningsOk?.reimbursements_minor ?? 0}
+              currency={expensesCurrency}
+            />
+            <Button
+              testID="expenses-add"
+              variant="outline"
+              className="mt-4"
+              onPress={handleOpenAddExpense}
+            >
+              <Text className="text-foreground">{tExpenses('addButton')}</Text>
+            </Button>
+            <ExpensesListCard
+              expenses={weekExpenses}
+              onEdit={handleEditExpense}
+              onWithdraw={handleWithdrawExpense}
+            />
+          </>
+        }
         contentContainerStyle={{
           ...SCREEN_CONTENT_STYLE,
           paddingBottom: tabBarScrollPadding,
@@ -220,6 +324,18 @@ export function NannyWeekView({
           earningsRole="nanny"
         />
       ) : null}
+
+      <ExpenseAddSheet
+        visible={isAddExpenseVisible}
+        onDismiss={handleDismissExpenseSheet}
+        onSubmit={handleSubmitExpense}
+        isSubmitting={createExpense.isPending || updateExpense.isPending}
+        todayISO={todayISO}
+        householdTimezone={timeZone}
+        currency={expensesCurrency}
+        mileageRateMinor={mileageRateMinor}
+        initialExpense={editingExpense}
+      />
     </>
   );
 }

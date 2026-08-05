@@ -28,7 +28,9 @@
     "cancellationsValue": "Se paga si es dentro de {{hours}}h del inicio",
     "mileageLabel": "Kilometraje",
     "mileageValue": "{{amount}} por milla",
-    "ptoBalanceLabel": "Saldo de tiempo libre pagado"
+    "ptoBalanceLabel": "Saldo de tiempo libre pagado",
+    "ptoBalanceValue": "{{amount}} restantes este año",
+    "ptoBalanceCaption": "1 ene – 31 dic {{year}}"
   },
   "changeSheet": {
     "title": "Cambiar condiciones",
@@ -78,5 +80,28 @@
     "emptyDescription": "Esta familia aún no ha establecido tu tarifa en Steadily. Tus horas se siguen registrando.",
     "notAvailableTitle": "No disponible",
     "notAvailableDescription": "Mi sueldo es para niñeras — no has iniciado sesión como tal en esta cuenta."
+  },
+  "householdTimeOff": {
+    "paidBadge": "{{hours}}h pagadas",
+    "notMarkedPaid": "No marcado como pagado"
+  },
+  "crossFamily": {
+    "notMarkedPaid": "No marcado como pagado",
+    "paidByFamilies_one": "Pagado por {{count}} familia",
+    "paidByFamilies_other": "Pagado por {{count}} familias"
+  },
+  "markPaidSheet": {
+    "title": "¿Pagar esta ausencia?",
+    "subtitle": "{{name}}, {{range}}",
+    "hoursLabel": "Horas a pagar",
+    "hoursHint": "Sugerido a partir de sus horas habituales esa semana. Cámbialo si acordasteis otra cosa.",
+    "balanceBeforeAfter": "Saldo {{before}} ahora → {{after}} después",
+    "overBalanceWarning": "Esto supera su saldo restante. Aun así puedes pagarlo — el saldo mostrará {{after}}.",
+    "noteLabel": "Nota (opcional)",
+    "confirmButton": "Marcar como pagado",
+    "savedToast": "Marcado como pagado",
+    "alreadyPaid": "Marcado como pagado el {{date}} — {{hours}}h.",
+    "adjustButton": "Ajustar",
+    "adjustHint": "Las correcciones se añaden como una nueva línea, para que el historial siga siendo fiel."
   }
 }

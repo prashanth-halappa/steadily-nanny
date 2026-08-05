@@ -10,6 +10,7 @@
  * vs-scheduled delta; and the D1-reopen caption.
  */
 import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
+import type { Expense } from '@steadily-nanny/shared-types/schemas/expense.schema';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import type React from 'react';
@@ -248,6 +249,34 @@ const queryMock = mock(() =>
   Promise.resolve(makeTimesheet({ status: 'queried' }))
 );
 const listMembersMock = mock(() => Promise.resolve([householdMember]));
+// Phase 4 (additive): the week's own approved-expenses read + the
+// household-wide pending-review inbox + the review mutation. Mocked so this
+// pre-existing suite never makes a real network call now that
+// `ParentWeekView` fetches all three.
+const listExpensesForWeekMock = mock(
+  (): Promise<Expense[]> => Promise.resolve([])
+);
+const listPendingExpensesMock = mock(
+  (): Promise<Expense[]> => Promise.resolve([])
+);
+const reviewExpenseMock = mock(() =>
+  Promise.resolve({ id: 'expense-1', status: 'approved' })
+);
+
+mock.module('@/src/api/endpoints/expenses', () => {
+  const shared = require('@steadily-nanny/shared-types/schemas/expense.schema');
+  return {
+    ...shared,
+    expenseApi: {
+      listForWeek: listExpensesForWeekMock,
+      listPending: listPendingExpensesMock,
+      create: mock(),
+      update: mock(),
+      withdraw: mock(),
+      review: reviewExpenseMock,
+    },
+  };
+});
 
 mock.module('@/src/api/endpoints/timeEntries', () => {
   const shared = require('@steadily-nanny/shared-types/schemas/timesheet.schema');
@@ -328,8 +357,16 @@ beforeEach(() => {
   approveMock.mockReset();
   queryMock.mockReset();
   listMembersMock.mockReset();
+  listExpensesForWeekMock.mockReset();
+  listPendingExpensesMock.mockReset();
+  reviewExpenseMock.mockReset();
   routerPush.mockClear();
 
+  listExpensesForWeekMock.mockImplementation(() => Promise.resolve([]));
+  listPendingExpensesMock.mockImplementation(() => Promise.resolve([]));
+  reviewExpenseMock.mockImplementation(() =>
+    Promise.resolve({ id: 'expense-1', status: 'approved' })
+  );
   listEntriesMock.mockImplementation(() => Promise.resolve([makeEntry()]));
   listTimesheetsMock.mockImplementation(() =>
     Promise.resolve([makeTimesheet()])
@@ -605,5 +642,187 @@ describe('ParentWeekView — reopen after approval (D1)', () => {
       ).toContain('earningsEstimatedGross')
     );
     expect(getByTestId('hours-earnings-line-reopened-note')).toBeTruthy();
+  });
+});
+
+function makeExpense(overrides: Partial<Expense> = {}): Expense {
+  return {
+    id: 'expense-1',
+    household_id: HOUSEHOLD_ID,
+    carer_id: CARER_ID,
+    local_date: WEEK_START,
+    kind: 'expense',
+    description: 'Soft play tickets',
+    amount_minor: 1200,
+    miles: null,
+    currency: 'GBP',
+    status: 'pending',
+    reviewed_by: null,
+    reviewed_at: null,
+    review_note: null,
+    carer_display_name: 'Amara',
+    created_at: now,
+    updated_at: now,
+    ...overrides,
+  };
+}
+
+describe('ParentWeekView — expenses & the statement (Phase 4)', () => {
+  it('no pending-expenses row and no Reimbursements card when there is nothing to review', async () => {
+    const { getByTestId, queryByTestId } = renderParentView();
+
+    await waitFor(() => expect(getByTestId('hours-total')).toBeTruthy());
+    expect(queryByTestId('expenses-pending-row')).toBeNull();
+    expect(queryByTestId('reimbursements-card')).toBeNull();
+  });
+
+  it('the pending-expenses row opens the review sheet; approving calls the review mutation', async () => {
+    listPendingExpensesMock.mockImplementation(() =>
+      Promise.resolve([makeExpense()])
+    );
+
+    const { getByTestId } = renderParentView();
+
+    await waitFor(() =>
+      expect(getByTestId('expenses-pending-row')).toBeTruthy()
+    );
+    fireEvent.press(getByTestId('expenses-pending-row'));
+
+    await waitFor(() =>
+      expect(getByTestId('expense-review-card-expense-1-approve')).toBeTruthy()
+    );
+    fireEvent.press(getByTestId('expense-review-card-expense-1-approve'));
+
+    await waitFor(() => expect(reviewExpenseMock).toHaveBeenCalledTimes(1));
+    expect(reviewExpenseMock).toHaveBeenCalledWith('expense-1', {
+      status: 'approved',
+    });
+  });
+
+  it('rejecting sends the trimmed note through the review mutation', async () => {
+    listPendingExpensesMock.mockImplementation(() =>
+      Promise.resolve([makeExpense()])
+    );
+
+    const { getByTestId } = renderParentView();
+
+    await waitFor(() =>
+      expect(getByTestId('expenses-pending-row')).toBeTruthy()
+    );
+    fireEvent.press(getByTestId('expenses-pending-row'));
+    await waitFor(() =>
+      expect(getByTestId('expense-review-card-expense-1-reject')).toBeTruthy()
+    );
+    fireEvent.press(getByTestId('expense-review-card-expense-1-reject'));
+    fireEvent.changeText(
+      getByTestId('expense-review-card-expense-1-note-input'),
+      'Already paid in cash'
+    );
+    fireEvent.press(getByTestId('expense-review-card-expense-1-send'));
+
+    await waitFor(() => expect(reviewExpenseMock).toHaveBeenCalledTimes(1));
+    expect(reviewExpenseMock).toHaveBeenCalledWith('expense-1', {
+      status: 'rejected',
+      review_note: 'Already paid in cash',
+    });
+  });
+
+  it('pending mileage in the review sheet shows miles only, never a computed amount', async () => {
+    listPendingExpensesMock.mockImplementation(() =>
+      Promise.resolve([
+        makeExpense({
+          kind: 'mileage',
+          amount_minor: null,
+          miles: 12.4,
+        }),
+      ])
+    );
+
+    const { getByTestId } = renderParentView();
+
+    await waitFor(() =>
+      expect(getByTestId('expenses-pending-row')).toBeTruthy()
+    );
+    fireEvent.press(getByTestId('expenses-pending-row'));
+
+    await waitFor(() =>
+      expect(getByTestId('expense-review-card-expense-1-amount')).toBeTruthy()
+    );
+    const amount = getByTestId('expense-review-card-expense-1-amount').props
+      .children;
+    expect(amount).not.toContain('£');
+  });
+
+  it('a NO_MILEAGE_RATE approve failure shows the inline error and "Set a rate" routes to that carer\'s pay screen', async () => {
+    listPendingExpensesMock.mockImplementation(() =>
+      Promise.resolve([
+        makeExpense({ kind: 'mileage', amount_minor: null, miles: 12.4 }),
+      ])
+    );
+    reviewExpenseMock.mockImplementation(() =>
+      Promise.reject(
+        Object.assign(new Error('validation'), {
+          response: {
+            status: 400,
+            data: {
+              error: {
+                code: 'VALIDATION_ERROR',
+                metadata: { reason: 'NO_MILEAGE_RATE' },
+              },
+            },
+          },
+        })
+      )
+    );
+
+    const { getByTestId } = renderParentView();
+
+    await waitFor(() =>
+      expect(getByTestId('expenses-pending-row')).toBeTruthy()
+    );
+    fireEvent.press(getByTestId('expenses-pending-row'));
+    await waitFor(() =>
+      expect(getByTestId('expense-review-card-expense-1-approve')).toBeTruthy()
+    );
+    fireEvent.press(getByTestId('expense-review-card-expense-1-approve'));
+
+    await waitFor(() =>
+      expect(
+        getByTestId('expense-review-card-expense-1-mileage-error')
+      ).toBeTruthy()
+    );
+
+    fireEvent.press(getByTestId('expense-review-card-expense-1-set-rate'));
+    expect(routerPush).toHaveBeenCalledWith(`/settings/pay/${CARER_ID}`);
+  });
+
+  it('renders the Reimbursements card for an approved expense this week, excluding a pending one from the total', async () => {
+    listExpensesForWeekMock.mockImplementation(() =>
+      Promise.resolve([
+        makeExpense({ id: 'expense-approved', status: 'approved' }),
+        makeExpense({
+          id: 'expense-pending',
+          status: 'pending',
+          description: 'Nursery run',
+        }),
+      ])
+    );
+    getByIdMock.mockImplementation(() =>
+      Promise.resolve(
+        makeTimesheetWeek({}, { ...okEarnings, reimbursements_minor: 1200 })
+      )
+    );
+
+    const { getByTestId, queryByTestId } = renderParentView();
+
+    await waitFor(() =>
+      expect(getByTestId('reimbursements-card')).toBeTruthy()
+    );
+    expect(getByTestId('reimbursements-card-total').props.children).toBe(
+      '£12.00'
+    );
+    expect(
+      queryByTestId('reimbursements-card-line-expense-pending-value')
+    ).toBeNull();
   });
 });

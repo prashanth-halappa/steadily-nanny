@@ -124,6 +124,12 @@ mock.module('@/src/api/endpoints/payArrangements', () => ({
     create: mock(),
   },
 }));
+const ptoBalanceMock = mock<() => Promise<unknown>>(() =>
+  Promise.resolve(null)
+);
+mock.module('@/src/api/endpoints/pto', () => ({
+  ptoApi: { getBalance: ptoBalanceMock },
+}));
 
 beforeAll(async () => {
   MyPayScreen = (await import('../MyPayScreen')).MyPayScreen;
@@ -133,8 +139,10 @@ beforeEach(() => {
   listMock.mockReset();
   membershipsListMock.mockReset();
   payCurrentMock.mockReset();
+  ptoBalanceMock.mockReset();
   routerBack.mockClear();
 
+  ptoBalanceMock.mockImplementation(() => Promise.resolve(null));
   listMock.mockImplementation(() => Promise.resolve([householdA, householdB]));
   membershipsListMock.mockImplementation(() =>
     Promise.resolve([nannyMembership(HOUSEHOLD_A)])
@@ -167,6 +175,54 @@ describe('MyPayScreen', () => {
     await waitFor(() =>
       expect(getByTestId(`my-pay-empty-${HOUSEHOLD_B}`)).toBeTruthy()
     );
+  });
+
+  it('an entitlement is set: fetches and renders the real per-family PTO balance', async () => {
+    payCurrentMock.mockImplementation((householdId: string) =>
+      Promise.resolve(
+        householdId === HOUSEHOLD_A
+          ? {
+              ...arrangementFor(HOUSEHOLD_A),
+              pto_entitlement_minutes_per_year: 8400,
+            }
+          : null
+      )
+    );
+    ptoBalanceMock.mockImplementation(() =>
+      Promise.resolve({
+        carer_id: NANNY_ID,
+        household_id: HOUSEHOLD_A,
+        year: 2026,
+        entitlement_minutes: 8400,
+        accrued_minutes: 8400,
+        used_minutes: 2880,
+        balance_minutes: 5520,
+      })
+    );
+
+    const { getByTestId } = renderWithProviders(<MyPayScreen />);
+
+    await waitFor(() =>
+      expect(ptoBalanceMock).toHaveBeenCalledWith(HOUSEHOLD_A, NANNY_ID, 2026)
+    );
+    await waitFor(() =>
+      expect(
+        getByTestId(`my-pay-term-${HOUSEHOLD_A}-ptoBalance-value`).props
+          .children
+      ).toBe('terms.ptoBalanceValue')
+    );
+  });
+
+  it('no entitlement set: the balance row reads "Not set" and never fetches a balance', async () => {
+    const { getByTestId } = renderWithProviders(<MyPayScreen />);
+
+    await waitFor(() =>
+      expect(
+        getByTestId(`my-pay-term-${HOUSEHOLD_A}-ptoBalance-value`).props
+          .children
+      ).toBe('notSet')
+    );
+    expect(ptoBalanceMock).not.toHaveBeenCalled();
   });
 
   it('"See history" expands the inline history list', async () => {

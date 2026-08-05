@@ -61,6 +61,45 @@ mock.module('@/src/hooks/queries/useHouseholdMembers', () => ({
   }),
 }));
 
+// Phase 4 (additive): both role views now call real `useQuery`/`useMutation`
+// expense hooks unconditionally in their footer — mocked for the same
+// "a real hook needs a QueryClientProvider this screen test deliberately
+// doesn't stand up" reason as `useApproveTimesheet`/`useQueryTimesheet`
+// above.
+mock.module('@/src/hooks/queries/useWeekExpenses', () => ({
+  useWeekExpenses: () => ({ data: [], isLoading: false }),
+}));
+mock.module('@/src/hooks/queries/usePendingExpenses', () => ({
+  usePendingExpenses: () => ({ data: [], isLoading: false }),
+}));
+mock.module('@/src/hooks/queries/useCurrentPayArrangement', () => ({
+  useCurrentPayArrangement: () => ({ data: null, isLoading: false }),
+}));
+mock.module('@/src/hooks/mutations/useCreateExpense', () => ({
+  useCreateExpense: () => ({
+    mutateAsync: mock(() => Promise.resolve({})),
+    isPending: false,
+  }),
+}));
+mock.module('@/src/hooks/mutations/useUpdateExpense', () => ({
+  useUpdateExpense: () => ({
+    mutateAsync: mock(() => Promise.resolve({})),
+    isPending: false,
+  }),
+}));
+mock.module('@/src/hooks/mutations/useWithdrawExpense', () => ({
+  useWithdrawExpense: () => ({
+    mutateAsync: mock(() => Promise.resolve()),
+    isPending: false,
+  }),
+}));
+mock.module('@/src/hooks/mutations/useReviewExpense', () => ({
+  useReviewExpense: () => ({
+    mutateAsync: mock(() => Promise.resolve({})),
+    isPending: false,
+  }),
+}));
+
 // TimeEntryDayRow now hosts a flagged-entry AlertDialog (Wave 4 CX).
 mock.module('@rn-primitives/alert-dialog', () => {
   const React = require('react');

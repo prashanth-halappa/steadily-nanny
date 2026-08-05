@@ -60,7 +60,7 @@ export class TimeOffCommandService {
     // Imported by concrete path, not through the pay barrel: the pay domain
     // imports this domain's repositories, so barrel-to-barrel would cycle.
     // Same convention as the timesheet domain's weekEarningsService import.
-    private readonly reconcilePtoUsage: ReconcilePtoUsageFn = (timeOffId) =>
+    private readonly reconcilePtoUsage: ReconcilePtoUsageFn = timeOffId =>
       ptoCommandService.reconcileCancelledTimeOff(timeOffId)
   ) {}
 

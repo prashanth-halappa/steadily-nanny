@@ -161,6 +161,12 @@ mock.module('@/src/api/endpoints/payArrangements', () => ({
     create: payCreateMock,
   },
 }));
+const ptoBalanceMock = mock<() => Promise<unknown>>(() =>
+  Promise.resolve(null)
+);
+mock.module('@/src/api/endpoints/pto', () => ({
+  ptoApi: { getBalance: ptoBalanceMock },
+}));
 
 beforeAll(async () => {
   PayArrangementScreen = (await import('../PayArrangementScreen'))
@@ -174,10 +180,12 @@ beforeEach(() => {
   payCurrentMock.mockReset();
   payHistoryMock.mockReset();
   payCreateMock.mockReset();
+  ptoBalanceMock.mockReset();
   routerPush.mockClear();
   routerBack.mockClear();
   searchParams = {};
 
+  ptoBalanceMock.mockImplementation(() => Promise.resolve(null));
   listMock.mockImplementation(() => Promise.resolve([baseHousehold]));
   listMembersMock.mockImplementation(() =>
     Promise.resolve([nannyMember(NANNY_A_ID, 'Priya')])
@@ -235,6 +243,59 @@ describe('PayArrangementScreen', () => {
     expect(getByTestId('pay-term-mileage')).toBeTruthy();
     expect(getByTestId('pay-term-ptoBalance')).toBeTruthy();
     expect(getByTestId(`pay-history-arr-${NANNY_A_ID}`)).toBeTruthy();
+  });
+
+  it('an entitlement is set: fetches and renders the real PTO balance figure + caption, not the placeholder', async () => {
+    payCurrentMock.mockImplementation(() =>
+      Promise.resolve({
+        ...arrangementFor(NANNY_A_ID),
+        pto_entitlement_minutes_per_year: 8400,
+      })
+    );
+    ptoBalanceMock.mockImplementation(() =>
+      Promise.resolve({
+        carer_id: NANNY_A_ID,
+        household_id: HOUSEHOLD_ID,
+        year: 2026,
+        entitlement_minutes: 8400,
+        accrued_minutes: 8400,
+        used_minutes: 2880,
+        balance_minutes: 5520,
+      })
+    );
+
+    const { getByTestId } = renderWithProviders(<PayArrangementScreen />);
+
+    await waitFor(() =>
+      expect(ptoBalanceMock).toHaveBeenCalledWith(
+        HOUSEHOLD_ID,
+        NANNY_A_ID,
+        2026
+      )
+    );
+    // react-i18next is key-echo-mocked, so a REAL figure ("terms.ptoBalanceValue")
+    // is distinguishable from the "Not set" placeholder ("notSet") purely by
+    // which key rendered.
+    await waitFor(() =>
+      expect(getByTestId('pay-term-ptoBalance-value').props.children).toBe(
+        'terms.ptoBalanceValue'
+      )
+    );
+  });
+
+  it('no entitlement set: the balance row reads "Not set" and never fetches a balance', async () => {
+    payCurrentMock.mockImplementation(() =>
+      Promise.resolve(arrangementFor(NANNY_A_ID))
+    );
+
+    const { getByTestId } = renderWithProviders(<PayArrangementScreen />);
+
+    await waitFor(() =>
+      expect(getByTestId('pay-term-ptoBalance-value').props.children).toBe(
+        'notSet'
+      )
+    );
+    expect(ptoBalanceMock).not.toHaveBeenCalled();
   });
 
   it('opens the change sheet and submits a new arrangement through the real mutation', async () => {
