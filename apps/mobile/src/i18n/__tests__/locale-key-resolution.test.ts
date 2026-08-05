@@ -1,18 +1,31 @@
 /**
- * Guardrail: every static `t('…')` / `t("…")` call site under `apps/mobile/src`
- * resolves to a real key in `locales/en` with correct namespace awareness.
+ * Guardrail: every static `t('…')` / `t("…")` / `t(\`…\`)` call site under
+ * `apps/mobile/src` resolves to a real key in BOTH `locales/en` and
+ * `locales/es`, with correct namespace awareness.
  *
- * Sibling to locale-parity.test.ts — parity checks en/es symmetry; this catches
- * keys referenced in source that are missing from BOTH locale files.
+ * Sibling to locale-parity.test.ts — parity checks en/es symmetry of the
+ * locale files themselves; this catches keys referenced in source that are
+ * missing from one or both locale files (the previously-shipped
+ * `notificationPrefs.types.pto_usage_reversed` bug was missing from both).
+ *
+ * Template-literal `t()` sites must be declared in TEMPLATE_KEY_DECLARATIONS
+ * with value sets independent of the locale files — otherwise the check is a
+ * tautology (reading keys from the file, then asserting they exist there).
  */
 import { describe, expect, it } from 'bun:test';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
+import {
+  ALL_PUSH_NOTIFICATION_TYPES,
+  CARER_TIME_OFF_STATUSES,
+  CO_PARENT_APPROVAL_ACTIONS,
+  HOUSEHOLD_ROLES,
+  SHIFT_CHANGE_REQUEST_KINDS,
+} from '@steadily-nanny/shared-types';
 import i18n from '../index';
 
 const srcRoot = join(import.meta.dir, '../..');
 const localesRoot = join(import.meta.dir, '../locales');
-const enDir = join(localesRoot, 'en');
 
 const DEFAULT_NS = 'common';
 const ERROR_VARIANTS = [
@@ -23,17 +36,160 @@ const ERROR_VARIANTS = [
   'generic',
 ] as const;
 
-type ResolvedKey = { file: string; key: string; namespace: string };
+const WEEKDAY_VALUES = ['0', '1', '2', '3', '4', '5', '6'] as const;
+const PERIOD_VALUES = ['morning', 'afternoon', 'evening'] as const;
+const CALENDAR_VIEW_VALUES = ['agenda', 'week_ribbon', 'cross_family'] as const;
+const EVENT_TYPE_VALUES = [
+  'shift_updated',
+  'pattern_conflict',
+  'gap_raised',
+] as const;
+const INVITE_ROLE_VALUES = ['nanny', 'parent', 'helper'] as const;
+const APPROVAL_MODE_VALUES = ['either', 'ask_other', 'owner_only'] as const;
+const APPROVAL_SCOPE_VALUES = [
+  'all',
+  'short_notice_and_cancellations',
+] as const;
+const SETUP_ROLE_VALUES = ['parent', 'nanny', 'helper'] as const;
+const CLASH_WARNING_KEYS = [
+  'clash.busyOverlap',
+  'clash.outsideAvailability',
+] as const;
 
-function loadEnNamespaces(): Record<string, Record<string, unknown>> {
-  const namespaces: Record<string, Record<string, unknown>> = {};
-  for (const file of readdirSync(enDir).filter(f => f.endsWith('.json'))) {
+type LocaleCode = 'en' | 'es';
+type NamespaceMap = Record<string, Record<string, unknown>>;
+type LocalesMap = Record<LocaleCode, NamespaceMap>;
+
+type ResolvedKey = { file: string; key: string; namespace: string };
+type UndeclaredTemplate = { file: string; templateBody: string };
+type MissingKey = ResolvedKey & { missingIn: LocaleCode[] };
+
+interface TemplateKeyDeclaration {
+  /** Matches the full template body (contents between backticks). */
+  pattern: RegExp;
+  /** Independent interpolated values — NEVER derived from locale JSON. */
+  values: readonly string[];
+  /**
+   * Build each candidate key. `$1` = value, `$2` = first capture group
+   * (static trailing suffix after the interpolation, when present).
+   */
+  keyPattern: string;
+}
+
+/**
+ * Declaration table for every template-literal `t()` / `tSchedule()` site.
+ * A NEW undeclared template fails the suite — that is the permanent gap close.
+ */
+const TEMPLATE_KEY_DECLARATIONS: readonly TemplateKeyDeclaration[] = [
+  {
+    pattern: /^notificationPrefs\.types\.\$\{[^}]+\}$/,
+    values: ALL_PUSH_NOTIFICATION_TYPES,
+    keyPattern: 'notificationPrefs.types.$1',
+  },
+  {
+    pattern: /^schedule:weekday\.\$\{[^}]+\}$/,
+    values: WEEKDAY_VALUES,
+    keyPattern: 'schedule:weekday.$1',
+  },
+  {
+    pattern: /^weekday\.\$\{[^}]+\}$/,
+    values: WEEKDAY_VALUES,
+    keyPattern: 'weekday.$1',
+  },
+  {
+    pattern: /^weekdayShort\.\$\{[^}]+\}$/,
+    values: WEEKDAY_VALUES,
+    keyPattern: 'weekdayShort.$1',
+  },
+  {
+    pattern: /^period\.\$\{[^}]+\}$/,
+    values: PERIOD_VALUES,
+    keyPattern: 'period.$1',
+  },
+  {
+    pattern: /^calendarViews\.\$\{[^}]+\}$/,
+    values: CALENDAR_VIEW_VALUES,
+    keyPattern: 'calendarViews.$1',
+  },
+  {
+    pattern: /^detail\.roleFallback\.\$\{[^}]+\}$/,
+    values: Object.values(HOUSEHOLD_ROLES),
+    keyPattern: 'detail.roleFallback.$1',
+  },
+  {
+    pattern: /^schedule:detail\.roleFallback\.\$\{[^}]+\}$/,
+    values: Object.values(HOUSEHOLD_ROLES),
+    keyPattern: 'schedule:detail.roleFallback.$1',
+  },
+  {
+    pattern: /^detail\.eventType\.\$\{[^}]+\}$/,
+    values: EVENT_TYPE_VALUES,
+    keyPattern: 'detail.eventType.$1',
+  },
+  {
+    pattern: /^items\.changeRequest\.kind\.\$\{[^}]+\}$/,
+    values: Object.values(SHIFT_CHANGE_REQUEST_KINDS),
+    keyPattern: 'items.changeRequest.kind.$1',
+  },
+  {
+    pattern: /^items\.approval\.action\.\$\{[^}]+\}$/,
+    values: Object.values(CO_PARENT_APPROVAL_ACTIONS),
+    keyPattern: 'items.approval.action.$1',
+  },
+  {
+    pattern: /^invite\.roles\.\$\{[^}]+\}\.(title|description)$/,
+    values: INVITE_ROLE_VALUES,
+    keyPattern: 'invite.roles.$1.$2',
+  },
+  {
+    pattern: /^householdSettings\.approvalMode\.\$\{[^}]+\}$/,
+    values: APPROVAL_MODE_VALUES,
+    keyPattern: 'householdSettings.approvalMode.$1',
+  },
+  {
+    pattern: /^householdSettings\.approvalScope\.\$\{[^}]+\}$/,
+    values: APPROVAL_SCOPE_VALUES,
+    keyPattern: 'householdSettings.approvalScope.$1',
+  },
+  {
+    pattern: /^status\.\$\{[^}]+\}$/,
+    values: Object.values(CARER_TIME_OFF_STATUSES),
+    keyPattern: 'status.$1',
+  },
+  {
+    pattern: /^settings:role\.\$\{[^}]+\}$/,
+    values: SETUP_ROLE_VALUES,
+    keyPattern: 'settings:role.$1',
+  },
+  {
+    pattern: /^states\.\$\{[^}]+\}\.(title|message)$/,
+    values: ERROR_VARIANTS,
+    keyPattern: 'errors:states.$1.$2',
+  },
+  {
+    pattern: /^schedule:\$\{[^}]+\}$/,
+    values: CLASH_WARNING_KEYS,
+    keyPattern: 'schedule:$1',
+  },
+];
+
+function loadLocaleNamespaces(locale: LocaleCode): NamespaceMap {
+  const dir = join(localesRoot, locale);
+  const namespaces: NamespaceMap = {};
+  for (const file of readdirSync(dir).filter(f => f.endsWith('.json'))) {
     const ns = file.replace(/\.json$/, '');
     namespaces[ns] = JSON.parse(
-      readFileSync(join(enDir, file), 'utf8')
+      readFileSync(join(dir, file), 'utf8')
     ) as Record<string, unknown>;
   }
   return namespaces;
+}
+
+function loadLocales(): LocalesMap {
+  return {
+    en: loadLocaleNamespaces('en'),
+    es: loadLocaleNamespaces('es'),
+  };
 }
 
 function getNestedValue(
@@ -55,28 +211,6 @@ function getNestedValue(
   return current;
 }
 
-function listLeafKeysUnderPrefix(
-  obj: Record<string, unknown>,
-  prefix: string
-): string[] {
-  const base = getNestedValue(obj, prefix);
-  if (base === null || typeof base !== 'object' || Array.isArray(base)) {
-    return prefix ? [prefix] : [];
-  }
-  const record = base as Record<string, unknown>;
-  const keys: string[] = [];
-  for (const key of Object.keys(record)) {
-    const path = prefix ? `${prefix}.${key}` : key;
-    const child = record[key];
-    if (child !== null && typeof child === 'object' && !Array.isArray(child)) {
-      keys.push(...listLeafKeysUnderPrefix(obj, path));
-    } else {
-      keys.push(path);
-    }
-  }
-  return keys;
-}
-
 function keyExistsInNamespace(
   nsObj: Record<string, unknown>,
   keyPath: string
@@ -91,7 +225,7 @@ function keyExistsInNamespace(
 }
 
 function resolveQualifiedKey(
-  namespaces: Record<string, Record<string, unknown>>,
+  namespaces: NamespaceMap,
   qualified: string,
   fallbackNamespaces: string | string[]
 ): boolean {
@@ -117,6 +251,56 @@ function resolveQualifiedKey(
     if (!nsObj) return false;
     return keyExistsInNamespace(nsObj, keyPath);
   });
+}
+
+/**
+ * Expand a template-literal body into candidate keys, or `null` if the
+ * template is not in TEMPLATE_KEY_DECLARATIONS (undeclared → fail the suite).
+ * Distinguishes "unrecognised" (`null`) from "recognised, expands to nothing"
+ * (`[]`) — the silent `[]` default was the original defect.
+ */
+function expandTemplateLiteralKey(templateBody: string): string[] | null {
+  for (const decl of TEMPLATE_KEY_DECLARATIONS) {
+    const match = templateBody.match(decl.pattern);
+    if (!match) continue;
+    const trailing = match[1] ?? '';
+    return decl.values.map(value =>
+      decl.keyPattern.replaceAll('$1', value).replaceAll('$2', trailing)
+    );
+  }
+  return null;
+}
+
+function formatUndeclaredMessage(entry: UndeclaredTemplate): string {
+  return (
+    `Undeclared template-literal t() key in ${entry.file}: \`${entry.templateBody}\`\n` +
+    'Add it to TEMPLATE_KEY_DECLARATIONS in this file.'
+  );
+}
+
+/** Report which locales are missing a resolved key (checks BOTH en and es). */
+function findMissingLocalesForKey(
+  locales: LocalesMap,
+  key: string,
+  fallbackNamespaces: string | string[]
+): LocaleCode[] {
+  const missing: LocaleCode[] = [];
+  if (!resolveQualifiedKey(locales.en, key, fallbackNamespaces)) {
+    missing.push('en');
+  }
+  if (!resolveQualifiedKey(locales.es, key, fallbackNamespaces)) {
+    missing.push('es');
+  }
+  return missing;
+}
+
+function collectUndeclaredFromExpansion(
+  file: string,
+  templateBody: string,
+  expanded: string[] | null
+): UndeclaredTemplate | null {
+  if (expanded !== null) return null;
+  return { file, templateBody };
 }
 
 function walkSourceFiles(dir: string): string[] {
@@ -178,53 +362,21 @@ function extractStringLiteralsFromCallArgs(args: string): string[] {
   return keys;
 }
 
-function expandTemplateLiteralKey(
-  templateBody: string,
-  namespaces: Record<string, Record<string, unknown>>,
-  fallbackNamespaces: string | string[]
-): string[] {
-  const candidates = Array.isArray(fallbackNamespaces)
-    ? fallbackNamespaces
-    : [fallbackNamespaces];
-
-  // `schedule:weekday.${weekdayDow(date)}`
-  if (/^schedule:weekday\.\$\{/.test(templateBody)) {
-    const weekdayKeys = listLeafKeysUnderPrefix(
-      namespaces.schedule ?? {},
-      'weekday'
-    );
-    return weekdayKeys.map(k => `schedule:${k}`);
-  }
-
-  // `status.${filter}` / `status.${timeOff.status}`
-  if (/^status\.\$\{/.test(templateBody)) {
-    return candidates.flatMap(ns =>
-      listLeafKeysUnderPrefix(namespaces[ns] ?? {}, 'status').map(
-        k => `${ns}:${k}`
-      )
-    );
-  }
-
-  // `states.${variant}.title|message`
-  const statesMatch = templateBody.match(
-    /^states\.\$\{[^}]+\}\.(title|message)$/
-  );
-  if (statesMatch?.[1]) {
-    const suffix = statesMatch[1];
-    return ERROR_VARIANTS.map(v => `errors:states.${v}.${suffix}`);
-  }
-
-  return [];
+function stripComments(source: string): string {
+  return source
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^|[^:])\/\/.*$/gm, '$1');
 }
 
 function extractKeysFromSource(
   filePath: string,
-  source: string,
-  namespaces: Record<string, Record<string, unknown>>
-): ResolvedKey[] {
+  source: string
+): { keys: ResolvedKey[]; undeclared: UndeclaredTemplate[] } {
   const relFile = relative(srcRoot, filePath);
-  const bindings = parseTranslationBindings(source);
+  const code = stripComments(source);
+  const bindings = parseTranslationBindings(code);
   const resolved: ResolvedKey[] = [];
+  const undeclared: UndeclaredTemplate[] = [];
 
   const addKey = (fnName: string, key: string) => {
     const nsBinding = bindings.get(fnName);
@@ -252,7 +404,7 @@ function extractKeysFromSource(
   };
 
   // Simple and ternary string literals: t('key'), t("key"), t(a ? 'k1' : 'k2')
-  for (const match of source.matchAll(
+  for (const match of code.matchAll(
     /\b(t\w*)\(\s*([^);`]+(?:\([^)]*\)[^);`]*)*)\s*(?:,|\))/g
   )) {
     const fnName = match[1];
@@ -264,17 +416,22 @@ function extractKeysFromSource(
   }
 
   // Template literals: t(`status.${x}`), t(`schedule:weekday.${d}`)
-  for (const match of source.matchAll(/\b(t\w*)\(\s*`([^`]+)`/g)) {
+  for (const match of code.matchAll(/\b(t\w*)\(\s*`([^`]+)`/g)) {
     const fnName = match[1];
     const templateBody = match[2];
     if (!fnName || !templateBody) continue;
-    const nsBinding = bindings.get(fnName) ?? DEFAULT_NS;
-    for (const expanded of expandTemplateLiteralKey(
+    const expanded = expandTemplateLiteralKey(templateBody);
+    const undeclaredEntry = collectUndeclaredFromExpansion(
+      relFile,
       templateBody,
-      namespaces,
-      nsBinding
-    )) {
-      addKey(fnName, expanded);
+      expanded
+    );
+    if (undeclaredEntry) {
+      undeclared.push(undeclaredEntry);
+      continue;
+    }
+    for (const key of expanded ?? []) {
+      addKey(fnName, key);
     }
   }
 
@@ -283,7 +440,7 @@ function extractKeysFromSource(
   // silently drops the (unqualified) key. Only `store/auth.ts` and
   // `lib/pushNotification.ts` use this call shape today; without this pass a
   // regression there (e.g. a typo'd key) goes completely uncaught.
-  for (const match of source.matchAll(
+  for (const match of code.matchAll(
     /\b(?:\w+\.)?t\(\s*(['"])([^'"]+)\1\s*,\s*\{\s*ns:\s*(['"])([^'"]+)\3\s*,?\s*\}\s*\)/g
   )) {
     const key = match[2];
@@ -293,6 +450,8 @@ function extractKeysFromSource(
   }
 
   // errorLocalization ERROR_CODE_TO_I18N_KEY values (passed to t() at runtime).
+  // Scan the raw source (not comment-stripped) — these live in a const map
+  // whose entries are string literals, not t() call sites.
   if (relFile === 'lib/errorLocalization.ts') {
     for (const match of source.matchAll(/:\s*'([^']+:[^']+)'/g)) {
       const key = match[1];
@@ -302,14 +461,17 @@ function extractKeysFromSource(
     }
   }
 
-  return resolved;
+  return { keys: resolved, undeclared };
 }
 
-function collectUnresolvedKeys(
-  namespaces: Record<string, Record<string, unknown>>
-): ResolvedKey[] {
-  const unresolved: ResolvedKey[] = [];
+function collectLocaleKeyIssues(locales: LocalesMap): {
+  unresolved: MissingKey[];
+  undeclared: UndeclaredTemplate[];
+} {
+  const unresolved: MissingKey[] = [];
+  const undeclared: UndeclaredTemplate[] = [];
   const seen = new Set<string>();
+  const seenUndeclared = new Set<string>();
 
   for (const filePath of walkSourceFiles(srcRoot)) {
     const source = readFileSync(filePath, 'utf8');
@@ -327,32 +489,92 @@ function collectUnresolvedKeys(
       }
     }
 
-    for (const entry of extractKeysFromSource(filePath, source, namespaces)) {
+    const extracted = extractKeysFromSource(filePath, source);
+    for (const entry of extracted.undeclared) {
+      const dedupe = `${entry.file}::${entry.templateBody}`;
+      if (seenUndeclared.has(dedupe)) continue;
+      seenUndeclared.add(dedupe);
+      undeclared.push(entry);
+    }
+
+    for (const entry of extracted.keys) {
       const dedupe = `${entry.namespace}::${entry.key}::${entry.file}`;
       if (seen.has(dedupe)) continue;
       seen.add(dedupe);
 
-      // entry.namespace is already resolved (qualified `ns:key` keys carry
-      // their own namespace; unqualified keys carry their useTranslation()
-      // binding) — resolveQualifiedKey's fallback param is just that.
-      const fallback = entry.namespace;
-
-      if (!resolveQualifiedKey(namespaces, entry.key, fallback)) {
-        unresolved.push(entry);
+      const missingIn = findMissingLocalesForKey(
+        locales,
+        entry.key,
+        entry.namespace
+      );
+      if (missingIn.length > 0) {
+        unresolved.push({ ...entry, missingIn });
       }
     }
   }
 
-  return unresolved.sort(
-    (a, b) => a.key.localeCompare(b.key) || a.file.localeCompare(b.file)
-  );
+  return {
+    unresolved: unresolved.sort(
+      (a, b) => a.key.localeCompare(b.key) || a.file.localeCompare(b.file)
+    ),
+    undeclared: undeclared.sort(
+      (a, b) =>
+        a.file.localeCompare(b.file) ||
+        a.templateBody.localeCompare(b.templateBody)
+    ),
+  };
 }
 
-describe('en locale key resolution from source', () => {
-  it('every extracted t() key resolves in locales/en with namespace awareness', () => {
-    const namespaces = loadEnNamespaces();
-    const unresolved = collectUnresolvedKeys(namespaces);
+describe('locale key resolution self-tests (fixtures)', () => {
+  it('reports an undeclared template-literal t() key', () => {
+    const body = 'baz.${qux}';
+    const expanded = expandTemplateLiteralKey(body);
+    expect(expanded).toBeNull();
 
+    const undeclared = collectUndeclaredFromExpansion(
+      'domains/foo/Bar.tsx',
+      body,
+      expanded
+    );
+    expect(undeclared).toEqual({
+      file: 'domains/foo/Bar.tsx',
+      templateBody: body,
+    });
+    expect(formatUndeclaredMessage(undeclared as UndeclaredTemplate)).toBe(
+      'Undeclared template-literal t() key in domains/foo/Bar.tsx: `baz.${qux}`\n' +
+        'Add it to TEMPLATE_KEY_DECLARATIONS in this file.'
+    );
+  });
+
+  it('reports a key missing from ONE locale', () => {
+    const locales: LocalesMap = {
+      en: { common: { hello: 'Hello' } },
+      es: { common: {} },
+    };
+    const missingIn = findMissingLocalesForKey(locales, 'hello', 'common');
+    expect(missingIn).toEqual(['es']);
+  });
+
+  it('reports a key missing from BOTH locales', () => {
+    const locales: LocalesMap = {
+      en: { common: {} },
+      es: { common: {} },
+    };
+    const missingIn = findMissingLocalesForKey(
+      locales,
+      'missing.key',
+      'common'
+    );
+    expect(missingIn).toEqual(['en', 'es']);
+  });
+});
+
+describe('en/es locale key resolution from source', () => {
+  it('every extracted t() key resolves in locales/en and locales/es', () => {
+    const locales = loadLocales();
+    const { unresolved, undeclared } = collectLocaleKeyIssues(locales);
+
+    expect(undeclared.map(formatUndeclaredMessage)).toEqual([]);
     expect(unresolved).toEqual([]);
   });
 
