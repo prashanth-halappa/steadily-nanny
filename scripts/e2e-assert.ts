@@ -503,9 +503,15 @@ async function assertRlsSemanticParity(): Promise<void> {
       check(`private.${name} is SECURITY DEFINER`, fn.prosecdef === true);
       // 'i' immutable, 's' stable, 'v' volatile — 009's house style is stable.
       check(`private.${name} is STABLE`, fn.provolatile === 's');
+      // Postgres stores `SET search_path = ''` as the array element
+      // `search_path=""` (quoted empty), not the bare `search_path=` a naive
+      // includes() check would look for. Match either form so this does not
+      // false-fail against a correctly-pinned helper.
       check(
         `private.${name} pins search_path to ''`,
-        (fn.proconfig ?? []).includes('search_path='),
+        (fn.proconfig ?? []).some(
+          c => c === 'search_path=""' || c === 'search_path='
+        ),
         `proconfig: ${JSON.stringify(fn.proconfig)}`
       );
       check(
@@ -542,10 +548,14 @@ async function assertRlsSemanticParity(): Promise<void> {
        where coalesce(qual, '') || ' ' || coalesce(with_check, '')
              like any (array['%can_read_household%', '%can_write_household%'])
     `) as { n: number }[];
+    // 040 repointed 38 policies. 041/043/044 each add one more that calls
+    // can_write_household (pay_arrangements / pto_ledger / expenses), so a
+    // fully-applied stack has 41. Assert the floor, not an exact count — a
+    // later money table that also uses the wrappers must not red this check.
     const repointedCount = repointed[0]?.n ?? 0;
     check(
-      'all 38 household-scoped policies call a semantic wrapper',
-      repointedCount === 38,
+      'at least the 38 household-scoped policies from 040 call a semantic wrapper',
+      repointedCount >= 38,
       `found ${repointedCount}`
     );
 
