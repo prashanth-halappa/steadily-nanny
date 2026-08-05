@@ -77,6 +77,7 @@
   "reopenDialogTitle": "¿Reabrir {{range}}?",
   "reopenDialogBody": "El total aprobado dejará de ser definitivo — se podrán corregir las horas y la cifra puede cambiar.",
   "reopenDialogReasonPlaceholder": "p. ej. Las horas del jueves estaban mal",
+  "reopenDialogReasonHint": "Obligatorio — se guarda en el registro de tu hogar.",
   "reopenDialogCancel": "Todavía no",
   "reopenDialogConfirm": "Reabrir la semana",
   "reopenedToast": "Semana reabierta"

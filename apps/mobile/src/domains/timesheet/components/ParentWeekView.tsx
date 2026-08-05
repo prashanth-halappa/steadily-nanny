@@ -6,7 +6,9 @@
  * hours) and a "Query" escape hatch that takes a note instead of silently
  * withholding approval. An approved week also offers "Reopen the week" —
  * the opposite of approve — so a frozen past week can be corrected without
- * a manual DB write.
+ * a manual DB write. Reopen's own `hours-reopen-button` renders inside
+ * `WeekTotal` (the FlashList header), not this footer — see that module's
+ * doc comment for why it needs to be above the fold.
  *
  * TIER0-CX-SPEC.md §6.2/§6.3/§7 (Phase 4, additive): the footer also carries
  * the pending-expenses review affordance (action-gated behind `!readOnly`,
@@ -401,6 +403,15 @@ export function ParentWeekView({
             earningsReopened={reopened}
             earningsError={timesheetQuery.isError}
             onRetryEarnings={() => void timesheetQuery.refetch()}
+            // Walkthrough fix 1 — the reopen affordance lives in the
+            // summary card, next to the status pill/gross, not below the
+            // day rows. `readOnly` (a helper) never gets a handler, so a
+            // helper never sees `hours-reopen-button` even on an approved
+            // week.
+            onReopenPress={
+              readOnly ? undefined : () => setIsReopenDialogOpen(true)
+            }
+            isReopenPending={reopenTimesheet.isPending}
           />
         }
         ListFooterComponent={
@@ -454,17 +465,6 @@ export function ParentWeekView({
                 >
                   <Text>{isApproved ? t('approved') : t('approveWeek')}</Text>
                 </Button>
-                {isApproved ? (
-                  <Button
-                    testID="hours-reopen-button"
-                    variant="ghost"
-                    className="mt-2"
-                    disabled={reopenTimesheet.isPending}
-                    onPress={() => setIsReopenDialogOpen(true)}
-                  >
-                    <Text>{t('reopenWeek')}</Text>
-                  </Button>
-                ) : null}
                 <Button
                   testID="hours-query-button"
                   variant="ghost"

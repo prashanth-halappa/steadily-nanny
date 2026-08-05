@@ -142,6 +142,13 @@ describe('ReopenWeekDialog', () => {
     expect(getByTestId('hours-reopen-dialog-body').props.children).toBe(
       'reopenDialogBody'
     );
+    // Walkthrough fix 3: the dialog compels a reason and must say plainly
+    // what happens to it (nothing in mobile reads the reopen audit event —
+    // it is kept on the household's record) and make the requirement
+    // legible on its own, not just via the confirm button's disabled state.
+    expect(getByTestId('hours-reopen-dialog-reason-hint').props.children).toBe(
+      'reopenDialogReasonHint'
+    );
     expect(getByText('reopenDialogCancel')).toBeTruthy();
     expect(getByText('reopenDialogConfirm')).toBeTruthy();
 

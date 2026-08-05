@@ -15,11 +15,25 @@
  * (Daylight separates by light). `earnings === undefined`/`null` renders
  * nothing (no data yet, or no timesheet row exists for this week) —
  * `WeekEarningsLine`'s own header comment has the full state table.
+ *
+ * Reopen (walkthrough fix, 2026-08): the "undo approve" affordance lives
+ * here, right after the gross figure, rather than in `ParentWeekView`'s
+ * FlashList footer — that buried it below every day row and the
+ * reimbursements card, invisible on first load for the exact moment a
+ * parent doubts an approved total. `variant="destructive"` gives it the
+ * same solid, high-weight treatment as the app's other real destructive
+ * confirms (`settings-delete-account-confirm`, the shift decline confirm in
+ * `ScheduleRespondScreen`) — deliberately heavier than the `ghost` Query
+ * button beside it in the footer, which is not destructive. Omit
+ * `onReopenPress` to render nothing at all (a helper's `readOnly` view, or
+ * `NannyWeekView`, which never reopens).
  */
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
+import { Button } from '@/src/components/ui/button';
 import { Card, CardContent } from '@/src/components/ui/card';
 import { StatusPill } from '@/src/components/ui/status-pill';
+import { Text } from '@/src/components/ui/text';
 import { Body, H1, Small } from '@/src/components/ui/typography';
 import { WeekNavHeader } from '@/src/components/ui/week-nav-header';
 import type { TimesheetStatus, WeekEarningsStateResult } from '../types';
@@ -70,6 +84,12 @@ interface WeekTotalProps {
   onPressEarnings?: () => void;
   /** TIER0-CX-SPEC.md §8 "Approved week that reopens" — see `utils/reopenedNotice.ts`. */
   earningsReopened?: boolean;
+  /** Parent-only "undo approve" — renders `hours-reopen-button` in this
+   * card, next to the status pill/gross, when `timesheetStatus` is
+   * `'approved'`. Omit to render nothing (helper `readOnly` view,
+   * `NannyWeekView`, or any non-approved week). */
+  onReopenPress?: () => void;
+  isReopenPending?: boolean;
 }
 
 function timesheetPillVariant(
@@ -111,6 +131,8 @@ export function WeekTotal({
   onRetryEarnings,
   onPressEarnings,
   earningsReopened = false,
+  onReopenPress,
+  isReopenPending = false,
 }: WeekTotalProps) {
   const { t } = useTranslation('hours');
   const hasNav = !!onPreviousWeek && !!onNextWeek;
@@ -182,6 +204,18 @@ export function WeekTotal({
             onPress={onPressEarnings}
             reopened={earningsReopened}
           />
+        ) : null}
+        {timesheetStatus === 'approved' && onReopenPress ? (
+          <Button
+            testID="hours-reopen-button"
+            variant="destructive"
+            size="sm"
+            className="mt-1 self-start"
+            disabled={isReopenPending}
+            onPress={onReopenPress}
+          >
+            <Text>{t('reopenWeek')}</Text>
+          </Button>
         ) : null}
         {showPayBoundary ? (
           <Small testID="hours-pay-boundary" className="text-muted-foreground">

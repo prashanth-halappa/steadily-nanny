@@ -172,4 +172,96 @@ describe('WeekTotal', () => {
     expect(getByTestId('hours-timesheet-status')).toBeTruthy();
     expect(getByTestId('hours-pay-boundary')).toBeTruthy();
   });
+
+  // Walkthrough fix 1: the reopen affordance was buried in the FlashList
+  // footer, below the day rows and reimbursements card — invisible on
+  // first load for an approved week. It now lives in the summary card
+  // itself, next to the status pill and gross, so a parent who doubts an
+  // approved total sees it immediately.
+  describe('reopen affordance', () => {
+    it('renders hours-reopen-button in the summary card on an approved week when onReopenPress is supplied', () => {
+      const onReopenPress = mock(() => {});
+      const { getByTestId } = render(
+        <WeekTotal
+          testID="hours-week-total"
+          weekRangeLabel="3 Aug – 9 Aug"
+          totalLabel="41h 0m"
+          overtimeLabel={null}
+          timesheetStatus="approved"
+          onReopenPress={onReopenPress}
+        />
+      );
+
+      const button = getByTestId('hours-reopen-button');
+      expect(button).toBeTruthy();
+      button.props.onPress?.();
+      expect(onReopenPress).toHaveBeenCalledTimes(1);
+    });
+
+    it('gives the reopen control more visual weight than a plain ghost button, so it reads as distinct from Query', () => {
+      const { getByTestId } = render(
+        <WeekTotal
+          testID="hours-week-total"
+          weekRangeLabel="3 Aug – 9 Aug"
+          totalLabel="41h 0m"
+          overtimeLabel={null}
+          timesheetStatus="approved"
+          onReopenPress={() => {}}
+        />
+      );
+
+      // "destructive" is the app's existing high-weight treatment for a
+      // consequential action (settings-delete-account-confirm,
+      // shift-detail's decline confirm) — a solid, tinted button, not the
+      // quiet `ghost` variant Query still uses.
+      expect(getByTestId('hours-reopen-button').props.variant).toBe(
+        'destructive'
+      );
+    });
+
+    it('does not render the reopen control when the week is not approved, even if a handler is supplied', () => {
+      const { queryByTestId } = render(
+        <WeekTotal
+          testID="hours-week-total"
+          weekRangeLabel="3 Aug – 9 Aug"
+          totalLabel="41h 0m"
+          overtimeLabel={null}
+          timesheetStatus="submitted"
+          onReopenPress={() => {}}
+        />
+      );
+
+      expect(queryByTestId('hours-reopen-button')).toBeNull();
+    });
+
+    it('does not render the reopen control when no handler is supplied (helper/read-only view)', () => {
+      const { queryByTestId } = render(
+        <WeekTotal
+          testID="hours-week-total"
+          weekRangeLabel="3 Aug – 9 Aug"
+          totalLabel="41h 0m"
+          overtimeLabel={null}
+          timesheetStatus="approved"
+        />
+      );
+
+      expect(queryByTestId('hours-reopen-button')).toBeNull();
+    });
+
+    it('disables the reopen control while a reopen is already in flight', () => {
+      const { getByTestId } = render(
+        <WeekTotal
+          testID="hours-week-total"
+          weekRangeLabel="3 Aug – 9 Aug"
+          totalLabel="41h 0m"
+          overtimeLabel={null}
+          timesheetStatus="approved"
+          onReopenPress={() => {}}
+          isReopenPending
+        />
+      );
+
+      expect(getByTestId('hours-reopen-button').props.disabled).toBe(true);
+    });
+  });
 });
