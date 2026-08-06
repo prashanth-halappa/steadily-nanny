@@ -8,6 +8,7 @@
 import type { AxiosError, InternalAxiosRequestConfig } from 'axios';
 import axios from 'axios';
 import { Platform } from 'react-native';
+import { appIdentity } from '@/src/config/appIdentity';
 import { env } from '@/src/config/env';
 
 // Android emulator reaches the host machine's localhost via 10.0.2.2.
@@ -33,7 +34,13 @@ export const GENERATION_REQUEST_TIMEOUT_MS = 90_000;
 export const apiClient = axios.create({
   baseURL: API_URL,
   timeout: DEFAULT_REQUEST_TIMEOUT_MS,
-  headers: { 'Content-Type': 'application/json' },
+  headers: {
+    'Content-Type': 'application/json',
+    // ponytail: log-only for now — server-side minimum-version rejection is
+    // the upgrade path once a version floor actually needs enforcing.
+    'X-App-Version': appIdentity.version,
+    'X-App-Runtime-Version': appIdentity.runtimeVersion,
+  },
 });
 
 // ---------------------------------------------------------------------------

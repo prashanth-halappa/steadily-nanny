@@ -34,14 +34,27 @@ export const coreEnvSchema = z.object({
   SUPABASE_ANON_KEY: z.string().min(1, 'SUPABASE_ANON_KEY is required'),
   SUPABASE_SERVICE_KEY: z.string().min(1, 'SUPABASE_SERVICE_KEY is required'),
 
-  // ── LLM via Vertex AI (required for AI features) ─────────────────────────────
+  // ── LLM via Vertex AI (optional at boot; required only once a call is made) ──
   // Auth is Application Default Credentials (ADC) — no API key in env.
-  GOOGLE_VERTEX_PROJECT: z.string().min(1, 'GOOGLE_VERTEX_PROJECT is required'),
+  // No domain currently calls into `llmProvider` (see its module doc), so this
+  // stays optional at boot — `llmProvider` throws a clear error naming this var
+  // if it's unset when a model factory is actually invoked. Empty string (an
+  // env block value left blank) is treated the same as unset — same trap as
+  // SENTRY_DSN below.
+  GOOGLE_VERTEX_PROJECT: z.preprocess(
+    val => (val === '' ? undefined : val),
+    z.string().min(1).optional()
+  ),
   GOOGLE_VERTEX_LOCATION: z.string().min(1).default('us-central1'),
 
   // ── Monitoring (optional; production-recommended) ────────────────────────────
-  SENTRY_DSN: z.string().url().optional(),
-  POSTHOG_API_KEY: z.string().optional(),
+  // `.env.example` ships `SENTRY_DSN=` (empty) — bun loads that as "", which
+  // z.string().url() rejects outright. Treat empty as unset so a verbatim
+  // .env.example copy boots instead of hard-failing with "Invalid URL".
+  SENTRY_DSN: z.preprocess(
+    val => (val === '' ? undefined : val),
+    z.string().url().optional()
+  ),
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
 
   // ── Background jobs (optional; production-required) ──────────────────────────

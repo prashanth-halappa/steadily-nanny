@@ -15,6 +15,10 @@
  */
 
 import { z } from 'zod';
+// One money ceiling for the whole wire, defined and justified in
+// payArrangement.schema.ts — not restated here, for the same reason
+// MATERIALISATION_HORIZON_WEEKS is derived rather than retyped.
+import { MAX_MONEY_MINOR } from './payArrangement.schema';
 
 // =============================================================================
 // Const-maps — mirror the SQL `check` constraints exactly.
@@ -97,7 +101,7 @@ export const ExpenseSchema = z.object({
   description: z.string().min(1),
   // Entered directly on 'expense' rows; null on a 'mileage' row until
   // approval, when the server computes and freezes it (see module JSDoc).
-  amount_minor: z.int().min(0).nullable(),
+  amount_minor: z.int().min(0).max(MAX_MONEY_MINOR).nullable(),
   miles: MilesSchema.nullable(),
   currency: CurrencyCodeSchema,
   status: z.enum(Object.values(EXPENSE_STATUSES)),
@@ -141,7 +145,7 @@ export const CreateExpenseRequestSchema = z.discriminatedUnion('kind', [
       kind: z.literal(EXPENSE_KINDS.EXPENSE),
       local_date: z.iso.date(),
       description: z.string().min(1),
-      amount_minor: z.int().min(0),
+      amount_minor: z.int().min(0).max(MAX_MONEY_MINOR),
       currency: CurrencyCodeSchema.default('GBP'),
     })
     .strict(),

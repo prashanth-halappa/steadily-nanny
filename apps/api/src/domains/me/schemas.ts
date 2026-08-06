@@ -30,8 +30,13 @@ export const MeShiftRangeQuerySchema = z
     from: z.iso.datetime({ offset: true }),
     to: z.iso.datetime({ offset: true }),
   })
-  .refine(data => data.to > data.from, {
-    message: 'to must be after from',
-    path: ['to'],
-  });
+  .refine(
+    // Instant compare — lexicographic ISO strings break across offsets
+    // (e.g. `…T11:00:00-01:00` vs `…T12:00:00+00:00`).
+    data => Date.parse(data.to) > Date.parse(data.from),
+    {
+      message: 'to must be after from',
+      path: ['to'],
+    }
+  );
 export type MeShiftRangeQuery = z.infer<typeof MeShiftRangeQuerySchema>;

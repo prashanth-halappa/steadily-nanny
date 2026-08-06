@@ -3,6 +3,10 @@
  * Pure worked-minutes derivation from a time entry.
  */
 import { describe, expect, it } from 'bun:test';
+import {
+  CANCELLATION_VECTORS,
+  MINUTE_VECTORS,
+} from '@steadily-nanny/shared-types/testVectors/minuteVectors';
 import type { TimeEntry } from '../types';
 import {
   computeEntryMinutes,
@@ -157,4 +161,35 @@ describe('sumEntryMinutes', () => {
   it('returns 0 for an empty list', () => {
     expect(sumEntryMinutes([], Date.now())).toBe(0);
   });
+});
+
+// Shared with apps/api/tests/unit/domains/timesheet/utils/workedMinutes.test.ts
+// (I-11): these vectors pin the exact numbers both sides must agree on.
+describe('computeWorkedMinutesFromInstants — shared golden vectors (I-11)', () => {
+  for (const vector of MINUTE_VECTORS) {
+    it(vector.name, () => {
+      const endMs = Date.parse(vector.clock_out_at);
+      expect(
+        computeWorkedMinutesFromInstants(
+          vector.clock_in_at,
+          endMs,
+          vector.break_minutes
+        )
+      ).toBe(vector.expected);
+    });
+  }
+});
+
+describe('computeEntryMinutes — shared cancellation golden vectors (I-11)', () => {
+  for (const vector of CANCELLATION_VECTORS) {
+    it(vector.name, () => {
+      const fragment = makeEntry({
+        kind: 'cancellation_paid',
+        clock_in_at: vector.clock_in_at,
+        clock_out_at: vector.clock_out_at,
+        scheduled_minutes: vector.scheduled_minutes,
+      });
+      expect(computeEntryMinutes(fragment, Date.now())).toBe(vector.expected);
+    });
+  }
 });

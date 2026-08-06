@@ -14,6 +14,7 @@ import { appIdentity } from '../config/appIdentity';
 import { env } from '../config/env';
 import i18n from '../i18n';
 import { getLocalizedAuthErrorMessage } from '../lib/errorLocalization';
+import { clearUserContext, setUserContext } from '../lib/sentryBreadcrumbs';
 import { supabase } from '../lib/supabase';
 import { createPersistedStore } from './createPersistedStore';
 import { resetUserScopedStores } from './resetStores';
@@ -134,18 +135,20 @@ export const useAuthStore = createPersistedStore<AuthState>(
         if (currentUser) await GoogleSignin.signOut();
 
         const { error } = await supabase.auth.signOut();
-        if (error) {
-          set({ error: authErrorMessage(error) });
-          throw error;
-        }
-        // Wipe cached state so the next login can't mount another user's data.
-        clearAuthToken();
-        await clearAppState();
-        // Session nulling handled by the SIGNED_OUT listener.
+        if (error) set({ error: authErrorMessage(error) });
       } catch (error) {
         set({ error: authErrorMessage(error) });
       } finally {
-        set({ isLoading: false });
+        // Unconditional: supabase-js only emits SIGNED_OUT for success or a
+        // 401/403/404 signOut error — a network blip/outage resolves
+        // signOut() with a different error and NO event, so the listener
+        // never fires. Clear local state (and Sentry) here too, or both
+        // keep attributing to the now-stale, supposedly-signed-out user.
+        clearAuthToken();
+        await clearAppState();
+        clearUserContext();
+        previousSignedInUserId = null;
+        set({ session: null, user: null, isLoading: false });
       }
     },
 
@@ -302,6 +305,12 @@ export const useAuthStore = createPersistedStore<AuthState>(
             await supabase.auth.signOut();
           } catch (error) {
             if (__DEV__) console.error('[Auth] Error during sign out:', error);
+          } finally {
+            // Same reasoning as signOut() above: signOut() can fail without
+            // ever emitting SIGNED_OUT, so clear local state unconditionally.
+            clearUserContext();
+            previousSignedInUserId = null;
+            set({ session: null, user: null });
           }
           router.replace('/welcome' as Href);
         },
@@ -318,12 +327,14 @@ export const useAuthStore = createPersistedStore<AuthState>(
               const { data, error } = await supabase.auth.refreshSession();
               if (error) {
                 await clearAppState();
+                clearUserContext();
                 set({ session: null, user: null, isInitialized: true });
                 return;
               }
               if (data.session) return; // fires another event with the new session
             } catch {
               await clearAppState();
+              clearUserContext();
               set({ session: null, user: null, isInitialized: true });
               return;
             }
@@ -351,6 +362,7 @@ export const useAuthStore = createPersistedStore<AuthState>(
               await clearAppState();
               await supabase.auth.signOut();
               clearAuthToken();
+              clearUserContext();
               previousSignedInUserId = null;
               set({ session: null, user: null, isInitialized: true });
               router.replace('/welcome' as Href);
@@ -367,6 +379,8 @@ export const useAuthStore = createPersistedStore<AuthState>(
             await clearAppState();
           }
           previousSignedInUserId = userId;
+          if (userId) setUserContext({ id: userId });
+          else clearUserContext();
           set({ session, user: session?.user ?? null, isInitialized: true });
         } else if (event === 'SIGNED_IN') {
           reset401Handler();
@@ -398,6 +412,7 @@ export const useAuthStore = createPersistedStore<AuthState>(
             router.replace('/' as Href);
           }
           previousSignedInUserId = userId;
+          if (userId) setUserContext({ id: userId });
           set({ session, user: session?.user ?? null, isInitialized: true });
         } else if (event === 'TOKEN_REFRESHED') {
           // Keep the persisted session fresh for consumers reading access_token.
@@ -408,6 +423,7 @@ export const useAuthStore = createPersistedStore<AuthState>(
         } else if (event === 'SIGNED_OUT') {
           previousSignedInUserId = null;
           clearAuthToken();
+          clearUserContext();
           set({ session: null, user: null });
         }
       });

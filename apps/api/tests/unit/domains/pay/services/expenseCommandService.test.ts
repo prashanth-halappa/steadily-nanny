@@ -1,5 +1,7 @@
 import { describe, expect, it, mock } from 'bun:test';
+import { MAX_MONEY_MINOR } from '@steadily-nanny/shared-types/schemas/payArrangement.schema';
 import {
+  ExpenseAmountTooLargeError,
   ExpenseNotEditableError,
   ExpenseNotFoundError,
   ExpenseValidationError,
@@ -1133,5 +1135,103 @@ describe('ExpenseCommandService — a removed carer may not mutate her old claim
     const svc = service({ expenseRepo, members: { 'carer-1': NANNY } });
     await svc.update('carer-1', 'exp-1', expenseRequest());
     expect(expenseRepo.updateOwnedPending).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Capped inputs do not bound their PRODUCT (adversarial review REOPEN).
+//
+// `miles` and `mileage_rate_per_mile_minor` are each individually legal at
+// their maximum, and their product is not: 10 miles at the schema-legal max
+// rate is 999_999_990, ten times over migration 063's
+// `expenses_amount_minor_upper`. Without a pre-flight bound the CHECK is
+// still the backstop, but it fires as a generic DatabaseError in the middle
+// of an approval — a parent tapping Approve gets a 500 and no idea why. These
+// tests pin the CLEAN failure: a typed 400 raised before any write is
+// attempted, and money never clamped down to fit (docs/11-MONEY.md §1 — a
+// clamped reimbursement is a wrong number wearing the right label).
+// ---------------------------------------------------------------------------
+
+describe('ExpenseCommandService.review — a mileage product over the money cap', () => {
+  /** A mileage row + arrangement whose product is whatever the caller needs. */
+  function mileageAt(miles: number, rateMinorPerMile: number) {
+    const expenseRepo = makeExpenseRepo({
+      findById: mock(async () =>
+        expenseRow({ kind: 'mileage', miles, amount_minor: null })
+      ),
+    });
+    const arrangementRepo = makeArrangementRepo({
+      effectiveOn: mock(async () =>
+        arrangement({ mileage_rate_per_mile_minor: rateMinorPerMile })
+      ),
+    });
+    return {
+      expenseRepo,
+      svc: service({
+        expenseRepo,
+        arrangementRepo,
+        members: { 'parent-1': PARENT },
+      }),
+    };
+  }
+
+  it('refuses the approval with a typed error and attempts NO write', async () => {
+    // 10 x 99_999_999 = 999_999_990 — both inputs legal, product is not.
+    const { svc, expenseRepo } = mileageAt(10, MAX_MONEY_MINOR);
+
+    const err = await svc
+      .review('parent-1', 'exp-1', { status: 'approved' })
+      .catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(ExpenseAmountTooLargeError);
+    expect(expenseRepo.reviewPending).not.toHaveBeenCalled();
+  });
+
+  it('names the computed amount and the cap, so the refusal is diagnosable', async () => {
+    const { svc } = mileageAt(10, MAX_MONEY_MINOR);
+
+    const err = (await svc
+      .review('parent-1', 'exp-1', { status: 'approved' })
+      .catch((e: unknown) => e)) as {
+      statusCode?: number;
+      metadata?: { amountMinor?: number; maxMinor?: number };
+    };
+
+    expect(err.statusCode).toBe(400);
+    expect(err.metadata?.amountMinor).toBe(999_999_990);
+    expect(err.metadata?.maxMinor).toBe(MAX_MONEY_MINOR);
+  });
+
+  it('never CLAMPS to the cap — a clamped reimbursement is a wrong paycheck', async () => {
+    const { svc, expenseRepo } = mileageAt(10, MAX_MONEY_MINOR);
+
+    await svc
+      .review('parent-1', 'exp-1', { status: 'approved' })
+      .catch(() => undefined);
+
+    // The refusal must be total: no write carrying a trimmed-to-fit amount.
+    expect(expenseRepo.reviewPending).not.toHaveBeenCalled();
+  });
+
+  it('BOUNDARY: a product landing exactly ON the cap approves normally', async () => {
+    // 1.0 mile x 99_999_999 = exactly MAX_MONEY_MINOR. The guard must be
+    // `>` and not `>=`, or the largest legal reimbursement becomes illegal.
+    const { svc, expenseRepo } = mileageAt(1, MAX_MONEY_MINOR);
+
+    await svc.review('parent-1', 'exp-1', { status: 'approved' });
+
+    const patch = expenseRepo.reviewPending.mock.calls[0][2];
+    expect(patch.amount_minor).toBe(MAX_MONEY_MINOR);
+    expect(patch.status).toBe('approved');
+  });
+
+  it('REJECTING an over-cap claim still works — it prices nothing', async () => {
+    // The guard must sit on the pricing path only. A parent must always be
+    // able to dispose of a claim, and rejection moves no money.
+    const { svc, expenseRepo } = mileageAt(10, MAX_MONEY_MINOR);
+
+    await svc.review('parent-1', 'exp-1', { status: 'rejected' });
+
+    expect(expenseRepo.reviewPending).toHaveBeenCalledTimes(1);
   });
 });

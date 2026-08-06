@@ -8,7 +8,12 @@
 import { describe, expect, it } from 'bun:test';
 import type { TimeEntry } from '@steadily-nanny/shared-types/schemas/timesheet.schema';
 import {
+  CANCELLATION_VECTORS,
+  MINUTE_VECTORS,
+} from '@steadily-nanny/shared-types/testVectors/minuteVectors';
+import {
   computeWorkedMinutes,
+  entryMinutes,
   sumWorkedMinutes,
 } from '../../../../../src/domains/timesheet/utils/workedMinutes';
 
@@ -147,4 +152,34 @@ describe('sumWorkedMinutes — cancellation pay is scheduled_minutes-authoritati
 
     expect(sumWorkedMinutes([legacy])).toBe(50);
   });
+});
+
+// Shared with apps/mobile/src/domains/timesheet/__tests__/entryMinutes.test.ts
+// (I-11): these vectors pin the exact numbers both sides must agree on.
+describe('computeWorkedMinutes — shared golden vectors (I-11)', () => {
+  for (const vector of MINUTE_VECTORS) {
+    it(vector.name, () => {
+      expect(
+        computeWorkedMinutes(
+          vector.clock_in_at,
+          vector.clock_out_at,
+          vector.break_minutes
+        )
+      ).toBe(vector.expected);
+    });
+  }
+});
+
+describe('entryMinutes — shared cancellation golden vectors (I-11)', () => {
+  for (const vector of CANCELLATION_VECTORS) {
+    it(vector.name, () => {
+      const fragment = entry({
+        kind: 'cancellation_paid',
+        clock_in_at: vector.clock_in_at,
+        clock_out_at: vector.clock_out_at,
+        scheduled_minutes: vector.scheduled_minutes,
+      });
+      expect(entryMinutes(fragment)).toBe(vector.expected);
+    });
+  }
 });

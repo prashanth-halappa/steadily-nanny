@@ -42,8 +42,19 @@ function createFakeQuery(rows: FakeRow[], error: unknown = null): any {
       out = [...out].sort((a, b) => {
         const left = String(a[key]);
         const right = String(b[key]);
-        if (left === right) return 0;
-        return (left < right ? -1 : 1) * (ascending ? 1 : -1);
+        // Postgres orders timestamptz by INSTANT, so two serialisations of the
+        // same moment ('+00:00' vs '.000Z') compare equal and differing offsets
+        // compare chronologically — a raw string compare here models a database
+        // that does not exist (GOLDEN-FIXES #25). Fall back to string compare
+        // only for non-date values (uuids, plain dates are order-equivalent).
+        const leftMs = Date.parse(left);
+        const rightMs = Date.parse(right);
+        const [l, r] =
+          Number.isNaN(leftMs) || Number.isNaN(rightMs)
+            ? [left, right]
+            : [leftMs, rightMs];
+        if (l === r) return 0;
+        return (l < r ? -1 : 1) * (ascending ? 1 : -1);
       });
     }
     if (rowLimit !== null) out = out.slice(0, rowLimit);

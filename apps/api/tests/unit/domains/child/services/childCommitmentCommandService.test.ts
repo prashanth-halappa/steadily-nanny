@@ -2,6 +2,14 @@ import { describe, expect, it, mock } from 'bun:test';
 import { ChildCommitmentCommandService } from '../../../../../src/domains/child/services/childCommitmentCommandService';
 import { NotAHouseholdParentError } from '../../../../../src/domains/household/errors/householdErrors';
 
+/**
+ * Times are `HH:MM:SS` everywhere in this file — the shape the DB column and
+ * the wire both carry. `z.iso.time()` also accepts `HH:MM`, so a fixture can
+ * silently drift to the short form, and MIXING the two is a hazard:
+ * `CreateChildCommitmentSchema`'s `end_time > start_time` refine is a STRING
+ * compare, so `start_time: '09:30'` with `end_time: '09:30:00'` — the same
+ * instant — passes it. Keep every fixture here in one shape.
+ */
 const commitment = {
   id: 'cm1',
   child_id: 'c1',
@@ -77,14 +85,14 @@ describe('ChildCommitmentCommandService.create', () => {
     const result = await svc.create('u1', 'h1', 'c1', {
       label: 'Preschool',
       rrule: 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH',
-      start_time: '09:00',
-      end_time: '12:00',
-    } as any);
+      start_time: '09:00:00',
+      end_time: '12:00:00',
+    });
     expect(repo.create).toHaveBeenCalledWith({
       label: 'Preschool',
       rrule: 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH',
-      start_time: '09:00',
-      end_time: '12:00',
+      start_time: '09:00:00',
+      end_time: '12:00:00',
       child_id: 'c1',
       household_id: 'h1',
     });
@@ -102,9 +110,9 @@ describe('ChildCommitmentCommandService.create', () => {
       svc.create('u1', 'h1', 'c1', {
         label: 'Preschool',
         rrule: 'FREQ=WEEKLY',
-        start_time: '09:00',
-        end_time: '12:00',
-      } as any)
+        start_time: '09:00:00',
+        end_time: '12:00:00',
+      })
     ).rejects.toBeInstanceOf(NotAHouseholdParentError);
   });
 
@@ -124,9 +132,9 @@ describe('ChildCommitmentCommandService.create', () => {
       svc.create('u1', 'h1', 'c-other', {
         label: 'Preschool',
         rrule: 'FREQ=WEEKLY',
-        start_time: '09:00',
-        end_time: '12:00',
-      } as any)
+        start_time: '09:00:00',
+        end_time: '12:00:00',
+      })
     ).rejects.toThrow('CHILD_NOT_FOUND');
   });
 });
@@ -140,7 +148,7 @@ describe('ChildCommitmentCommandService.update', () => {
       makeChildren(),
       makeQueries()
     );
-    const result = await svc.update('u1', 'cm1', { label: 'Nursery' } as any);
+    const result = await svc.update('u1', 'cm1', { label: 'Nursery' });
     expect(repo.update).toHaveBeenCalledWith('cm1', { label: 'Nursery' });
     expect(result.label).toBe('Nursery');
   });
@@ -153,7 +161,7 @@ describe('ChildCommitmentCommandService.update', () => {
       makeQueries()
     );
     await expect(
-      svc.update('u1', 'cm1', { label: 'Nursery' } as any)
+      svc.update('u1', 'cm1', { label: 'Nursery' })
     ).rejects.toBeInstanceOf(NotAHouseholdParentError);
   });
 });

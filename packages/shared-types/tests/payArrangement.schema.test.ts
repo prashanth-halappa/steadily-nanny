@@ -293,6 +293,197 @@ describe('payArrangement.schema', () => {
     });
   });
 
+  // F-B2-6 — every money field needs an upper bound, not just a `.min(0)`.
+  // 99_999_999 minor (£999,999.99) is the ceiling mobile's `parseMajorToMinor`
+  // already refuses to exceed and migration 063 pins as a DB CHECK; the wire
+  // has to agree with both or a fat-fingered rate sails past the edge and
+  // fails at the bottom of the stack. See the schema's own comment.
+  describe('money caps (F-B2-6)', () => {
+    const MAX_MINOR = 99_999_999;
+
+    const cappedEntityFields = [
+      'rate_minor',
+      'bill_rate_minor',
+      'mileage_rate_per_mile_minor',
+    ] as const;
+
+    const baseArrangement = {
+      id: VALID_UUID,
+      household_id: VALID_UUID,
+      carer_id: VALID_UUID,
+      rate_minor: 1850,
+      bill_rate_minor: null,
+      currency: 'GBP',
+      overtime_threshold_minutes: null,
+      overtime_multiplier: 1.5,
+      guaranteed_minutes_per_week: null,
+      pto_entitlement_minutes_per_year: null,
+      mileage_rate_per_mile_minor: null,
+      cancellation_paid_within_hours: null,
+      valid_from: '2026-08-01',
+      carer_display_name: 'Nia Rowe',
+      note: null,
+      created_by: VALID_UUID,
+      created_at: NOW,
+    };
+
+    for (const field of cappedEntityFields) {
+      it(`PayArrangementSchema accepts ${field} at the cap, 99_999_999`, () => {
+        expect(
+          PayArrangementSchema.safeParse({
+            ...baseArrangement,
+            [field]: MAX_MINOR,
+          }).success
+        ).toBe(true);
+      });
+
+      it(`PayArrangementSchema rejects ${field} above the cap, 100_000_000`, () => {
+        expect(
+          PayArrangementSchema.safeParse({
+            ...baseArrangement,
+            [field]: MAX_MINOR + 1,
+          }).success
+        ).toBe(false);
+      });
+    }
+
+    const cappedRequestFields = [
+      'rate_minor',
+      'mileage_rate_per_mile_minor',
+    ] as const;
+
+    for (const field of cappedRequestFields) {
+      it(`CreatePayArrangementRequestSchema accepts ${field} at the cap, 99_999_999`, () => {
+        expect(
+          CreatePayArrangementRequestSchema.safeParse({
+            rate_minor: 1850,
+            valid_from: '2026-08-01',
+            [field]: MAX_MINOR,
+          }).success
+        ).toBe(true);
+      });
+
+      it(`CreatePayArrangementRequestSchema rejects ${field} above the cap, 100_000_000`, () => {
+        expect(
+          CreatePayArrangementRequestSchema.safeParse({
+            rate_minor: 1850,
+            valid_from: '2026-08-01',
+            [field]: MAX_MINOR + 1,
+          }).success
+        ).toBe(false);
+      });
+    }
+
+    // Minutes are not money. A year's PTO entitlement or a guaranteed week is
+    // measured in minutes and has no business borrowing money's ceiling.
+    it('does not cap the minutes fields', () => {
+      expect(
+        PayArrangementSchema.safeParse({
+          ...baseArrangement,
+          guaranteed_minutes_per_week: MAX_MINOR + 1,
+          pto_entitlement_minutes_per_year: MAX_MINOR + 1,
+        }).success
+      ).toBe(true);
+    });
+  });
+
+  // The column is `numeric(3, 2)` (041_pay_arrangements.sql:89) with only a
+  // `>= 1` check — no upper bound anywhere. So the wire was the last chance to
+  // catch both halves: a value too big for the column (Postgres answers with an
+  // untyped "numeric field overflow", a 500), and a value too precise for it
+  // (Postgres silently ROUNDS 1.555 to 1.56 — a pay multiplier changing itself
+  // behind the client's back, which is exactly what docs/11-MONEY.md §1 forbids
+  // for money).
+  describe('overtime_multiplier bounds', () => {
+    const baseArrangement = {
+      id: VALID_UUID,
+      household_id: VALID_UUID,
+      carer_id: VALID_UUID,
+      rate_minor: 1850,
+      bill_rate_minor: null,
+      currency: 'GBP',
+      overtime_threshold_minutes: null,
+      overtime_multiplier: 1.5,
+      guaranteed_minutes_per_week: null,
+      pto_entitlement_minutes_per_year: null,
+      mileage_rate_per_mile_minor: null,
+      cancellation_paid_within_hours: null,
+      valid_from: '2026-08-01',
+      carer_display_name: 'Nia Rowe',
+      note: null,
+      created_by: VALID_UUID,
+      created_at: NOW,
+    };
+
+    const minimalRequest = { rate_minor: 1850, valid_from: '2026-08-01' };
+
+    const accepted = [1, 1.5, 1.25, 8.88, 9.99];
+    const rejected = [1e9, 10, 1.555, 1.001, 0.99];
+
+    for (const overtime_multiplier of accepted) {
+      it(`PayArrangementSchema accepts ${overtime_multiplier}`, () => {
+        expect(
+          PayArrangementSchema.safeParse({
+            ...baseArrangement,
+            overtime_multiplier,
+          }).success
+        ).toBe(true);
+      });
+
+      it(`CreatePayArrangementRequestSchema accepts ${overtime_multiplier}`, () => {
+        expect(
+          CreatePayArrangementRequestSchema.safeParse({
+            ...minimalRequest,
+            overtime_multiplier,
+          }).success
+        ).toBe(true);
+      });
+    }
+
+    for (const overtime_multiplier of rejected) {
+      it(`PayArrangementSchema rejects ${overtime_multiplier}`, () => {
+        expect(
+          PayArrangementSchema.safeParse({
+            ...baseArrangement,
+            overtime_multiplier,
+          }).success
+        ).toBe(false);
+      });
+
+      it(`CreatePayArrangementRequestSchema rejects ${overtime_multiplier}`, () => {
+        expect(
+          CreatePayArrangementRequestSchema.safeParse({
+            ...minimalRequest,
+            overtime_multiplier,
+          }).success
+        ).toBe(false);
+      });
+    }
+
+    // 8.88 is the reason the precision check is an epsilon comparison and not
+    // `z.multipleOf(0.01)`: 8.88 / 0.01 is 887.9999999999999 in binary floating
+    // point, so `multipleOf` rejects a perfectly storable two-decimal
+    // multiplier. It is in the accepted list above; this pins WHY.
+    it('accepts 8.88, which a naive multipleOf(0.01) check would reject', () => {
+      expect(Number.isInteger(8.88 / 0.01)).toBe(false);
+      expect(
+        CreatePayArrangementRequestSchema.safeParse({
+          ...minimalRequest,
+          overtime_multiplier: 8.88,
+        }).success
+      ).toBe(true);
+    });
+
+    it('still defaults overtime_multiplier to 1.5', () => {
+      const result =
+        CreatePayArrangementRequestSchema.safeParse(minimalRequest);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.overtime_multiplier).toBe(1.5);
+      }
+    });
+  });
+
   describe('PayArrangementListResponseSchema', () => {
     it('parses an empty list', () => {
       expect(

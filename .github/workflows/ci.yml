@@ -1,8 +1,9 @@
 name: CI
 
-# One job per (app × check), plus shared-types (typecheck + test), a
-# root scripts/*.test.ts job, and the Docker-backed migrations + RLS job.
-# 2 apps × 4 checks + 2 shared-types + 1 scripts + 1 db = 12 jobs.
+# One job per (app × check), plus shared-types (typecheck + test + lint +
+# format), a root scripts/*.test.ts job, and the Docker-backed migrations +
+# RLS job.
+# 2 apps × 4 checks + 4 shared-types + 1 scripts + 1 db = 14 jobs.
 # Each job: checkout → setup-bun → install (frozen) → run the check in the app dir.
 # Duplicate/remove a block of four jobs to add/remove an app.
 
@@ -73,13 +74,10 @@ jobs:
         run: bun install --frozen-lockfile
         working-directory: .
       - name: Run tests
-        # Run each test file in its own process (required for mock.module isolation).
-        # Use a bash loop instead of xargs to avoid exit code 123 issues on Ubuntu.
-        run: |
-          set -e
-          for f in $(find tests/unit -name '*.test.ts' | sort); do
-            bun test "$f"
-          done
+        # Canonical one-file-per-process runner (mock.module isolation) — see
+        # docs/09-TESTING.md. tests/integration (e.g. rls.integration.test.ts)
+        # is intentionally out of scope here; it runs in the db-migrations job.
+        run: bash scripts/run-tests-one-file.sh tests/unit
         env:
           NODE_ENV: test
       - name: Fetch main for coverage gate diff
@@ -230,6 +228,44 @@ jobs:
         run: bun run test
         env:
           NODE_ENV: test
+
+  shared-types-lint:
+    name: Shared Types - Lint
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/shared-types
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3.9'
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+        working-directory: .
+      - name: Run lint
+        run: bun run lint
+
+  shared-types-format:
+    name: Shared Types - Format Check
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/shared-types
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3.9'
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+        working-directory: .
+      - name: Check formatting
+        run: bun run format:check
 
   # ============================================
   # Root scripts/*.test.ts — invisible to `turbo run test` since scripts/

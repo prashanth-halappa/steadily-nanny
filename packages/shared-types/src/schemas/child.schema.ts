@@ -111,20 +111,52 @@ const ChildCommitmentInputSchema = z.object({
 });
 
 /**
+ * Wall-clock 'HH:MM' | 'HH:MM:SS' | 'HH:MM:SS.frac' — every shape
+ * `z.iso.time()` accepts — as milliseconds since midnight, so two spellings of
+ * the same time compare equal.
+ *
+ * A string compare cannot do that: `'09:30:00' > '09:30'` is true, so a
+ * zero-length commitment written with mixed shapes read as a valid one. Same
+ * family as the ISO-instant comparisons elsewhere in this package
+ * (GOLDEN-FIXES #25) — one moment, several serialisations, compared as text.
+ * Pinning an arbitrary date makes `Date.parse` do the normalising rather than
+ * hand-rolling a pad-and-compare that would still have to special-case the
+ * fractional part.
+ */
+const wallClockMs = (time: string): number => Date.parse(`1970-01-01T${time}Z`);
+
+/**
  * POST body — what a client sends to create one. child_id comes from the
  * route. The end > start guard here is a light client-side mirror of the DB's
  * `child_commitments_time_order` check — the database remains authoritative.
  */
 export const CreateChildCommitmentSchema = ChildCommitmentInputSchema.refine(
-  data => data.end_time > data.start_time,
+  data => wallClockMs(data.end_time) > wallClockMs(data.start_time),
   { message: 'end_time must be after start_time', path: ['end_time'] }
 );
 
-/** PATCH body — every field optional, but at least one must be present. */
-export const UpdateChildCommitmentSchema =
-  ChildCommitmentInputSchema.partial().refine(
-    data => Object.keys(data).length > 0,
-    { message: 'at least one field is required' }
+/**
+ * PATCH body — every field optional, but at least one must be present, and if
+ * BOTH times are present they must be ordered.
+ *
+ * Optional-guarded like `ParentEditShiftSchema` in the API's shift domain: a
+ * PATCH carrying only one time is edited against a stored counterpart this
+ * schema cannot see, so there is nothing here to compare it to and the DB's
+ * `child_commitments_time_order` check remains the authority. Only the
+ * both-present case is decidable at the wire, and it was previously not
+ * decided at all — every ordering bug `CreateChildCommitmentSchema` rejects
+ * could still be written by editing an existing commitment instead.
+ */
+export const UpdateChildCommitmentSchema = ChildCommitmentInputSchema.partial()
+  .refine(data => Object.keys(data).length > 0, {
+    message: 'at least one field is required',
+  })
+  .refine(
+    data =>
+      data.start_time === undefined ||
+      data.end_time === undefined ||
+      wallClockMs(data.end_time) > wallClockMs(data.start_time),
+    { message: 'end_time must be after start_time', path: ['end_time'] }
   );
 
 /** URL param validation for /child-commitments/:commitmentId routes. */

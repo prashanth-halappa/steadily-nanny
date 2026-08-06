@@ -1,6 +1,7 @@
 import { describe, expect, it, mock } from 'bun:test';
 import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types/schemas/notification.schema';
 import type { WeekEarnings } from '@steadily-nanny/shared-types/schemas/timesheet.schema';
+import { WeekEarningsService } from '../../../../../src/domains/pay/services/weekEarningsService';
 import { ShiftNotFoundError } from '../../../../../src/domains/shift';
 import {
   AlreadyClockedInError,
@@ -11,6 +12,7 @@ import {
   TimeEntryNotEditableError,
   TimeEntryNotRunningError,
   TimeEntryOverlapError,
+  TimesheetGrossTooLargeError,
   TimesheetNotActionableError,
 } from '../../../../../src/domains/timesheet/errors/timesheetErrors';
 import {
@@ -2317,6 +2319,356 @@ describe('TimesheetCommandService.approve — freezing the earnings snapshot', (
       NotATimesheetParentError
     );
     expect(earnings.computeForWeek).not.toHaveBeenCalled();
+  });
+});
+
+// =============================================================================
+// Capped inputs do not bound their PRODUCT (adversarial review REOPEN).
+//
+// `rate_minor` is capped at MAX_MONEY_MINOR and hours are capped by the week,
+// and neither cap says anything about `hours x rate`. 40 hours at the
+// schema-legal maximum rate computes 3_999_999_960 — not merely over
+// migration 063's `timesheets_gross_minor_upper`, but over int4 itself, so
+// the approve used to die on a raw Postgres "value out of range" with no
+// typed error and no readable message for the parent who tapped Approve.
+//
+// These pin the CLEAN failure: the guard sits where the ok-arm's gross is
+// first known, so it fires BEFORE the CAS write. The gross is never clamped
+// to fit — `docs/11-MONEY.md` §1, a trimmed gross is a wrong paycheck that
+// would actually be paid.
+// =============================================================================
+
+describe('TimesheetCommandService.approve — a computed gross over the money cap', () => {
+  const MAX_GROSS_MINOR = 99_999_999;
+
+  /**
+   * The engine's ok arm, priced at whatever gross the caller needs. Only
+   * `gross_minor` moves — the guard reads the WEEK TOTAL and nothing else, so
+   * restating the line items would be fixture noise pretending to be coverage.
+   */
+  function earningsGrossing(grossMinor: number): any {
+    // `computedEarnings` is annotated as the whole `WeekEarnings` union, and
+    // only the `ok` arm has a `gross_minor` to move — narrow to it so the
+    // override is type-checked against a PRICED week, not the union.
+    const okWeek = computedEarnings as Extract<WeekEarnings, { status: 'ok' }>;
+    const priced = { ...okWeek, gross_minor: grossMinor };
+    return makeEarnings({ computeForWeek: mock(async () => priced) });
+  }
+
+  function approvingSvc(earnings: any, timesheetRepo: any) {
+    return new TimesheetCommandService(
+      makeTimeEntryRepo(),
+      timesheetRepo,
+      makeParentMemberRepo(),
+      makeHouseholdRepo(),
+      makeShiftRepo(),
+      makeQueries(),
+      makeUserService(),
+      makePush(),
+      earnings
+    );
+  }
+
+  it('refuses the approval with a typed error and never reaches the CAS write', async () => {
+    const timesheetRepo = makeApprovingRepo();
+    // 40h at the schema-legal max rate — both inputs legal, product is not.
+    const svc = approvingSvc(earningsGrossing(3_999_999_960), timesheetRepo);
+
+    await expect(svc.approve('parent-1', 'ts1')).rejects.toBeInstanceOf(
+      TimesheetGrossTooLargeError
+    );
+    expect(timesheetRepo.approveSubmittedWithEarnings).not.toHaveBeenCalled();
+  });
+
+  it('names the computed gross and the cap, so the refusal is diagnosable', async () => {
+    const svc = approvingSvc(
+      earningsGrossing(3_999_999_960),
+      makeApprovingRepo()
+    );
+
+    const err = (await svc
+      .approve('parent-1', 'ts1')
+      .catch((e: unknown) => e)) as {
+      statusCode?: number;
+      metadata?: { grossMinor?: number; maxMinor?: number };
+    };
+
+    expect(err.statusCode).toBe(400);
+    expect(err.metadata?.grossMinor).toBe(3_999_999_960);
+    expect(err.metadata?.maxMinor).toBe(MAX_GROSS_MINOR);
+  });
+
+  it('never CLAMPS the gross down to the cap — that would be a wrong paycheck', async () => {
+    const timesheetRepo = makeApprovingRepo();
+    const svc = approvingSvc(earningsGrossing(3_999_999_960), timesheetRepo);
+
+    await svc.approve('parent-1', 'ts1').catch(() => undefined);
+
+    // Total refusal: no write at all, let alone one carrying a trimmed gross.
+    expect(timesheetRepo.approveSubmittedWithEarnings).not.toHaveBeenCalled();
+  });
+
+  it('BOUNDARY: a gross landing exactly ON the cap approves normally', async () => {
+    // The guard must be `>` and not `>=`, or the largest legal week becomes
+    // unapprovable.
+    const timesheetRepo = makeApprovingRepo();
+    const svc = approvingSvc(earningsGrossing(MAX_GROSS_MINOR), timesheetRepo);
+
+    await svc.approve('parent-1', 'ts1');
+
+    const [, patch] = timesheetRepo.approveSubmittedWithEarnings.mock
+      .calls[0] as [string, Record<string, unknown>];
+    expect(patch.gross_minor).toBe(MAX_GROSS_MINOR);
+  });
+
+  it('a NON-ok engine arm is untouched by the guard — it freezes a NULL gross, not a big one', async () => {
+    // The unpriceable arms (`no_arrangement`, `currency_change`) write
+    // `gross_minor: null` by design. A guard reading the wrong field would
+    // turn every one of those into a spurious 400.
+    const timesheetRepo = makeApprovingRepo();
+    const svc = approvingSvc(
+      makeEarnings({
+        computeForWeek: mock(async () => ({
+          status: 'no_arrangement',
+          week_start: '2026-08-03',
+        })),
+      }),
+      timesheetRepo
+    );
+
+    await svc.approve('parent-1', 'ts1');
+
+    const [, patch] = timesheetRepo.approveSubmittedWithEarnings.mock
+      .calls[0] as [string, Record<string, unknown>];
+    expect(patch.gross_minor).toBeNull();
+  });
+});
+
+// =============================================================================
+// F-B10-4: approve freezes figures the REAL earnings engine computed.
+//
+// Every test above injects a stubbed `computeForWeek`, so the frozen
+// `gross_minor` is a literal that appears on both sides of the assertion and
+// nothing actually prices anything. That leaves the most expensive integration
+// in the app — "the number the parent approves is the number the engine
+// produced from the hours on file" — completely unpinned: the whole engine
+// could be replaced with `() => 0` and every approve test would stay green.
+//
+// This block wires a REAL `WeekEarningsService` over in-memory repositories
+// into `TimesheetCommandService`'s ninth constructor argument. The expected
+// figure below is hand-computed from rule I-15, NOT copied from the engine's
+// output — copying it would only prove the engine equals itself.
+// =============================================================================
+
+/** A `pay_arrangements` row (041). */
+function payArrangement(over: Record<string, unknown> = {}): any {
+  return {
+    id: ARRANGEMENT_ID,
+    household_id: 'h1',
+    carer_id: 'carer-1',
+    rate_minor: 1850,
+    bill_rate_minor: null,
+    currency: 'GBP',
+    overtime_threshold_minutes: null,
+    overtime_multiplier: 1.5,
+    guaranteed_minutes_per_week: null,
+    pto_entitlement_minutes_per_year: null,
+    mileage_rate_per_mile_minor: null,
+    cancellation_paid_within_hours: null,
+    valid_from: '2026-07-01',
+    carer_display_name: 'Nia Rowe',
+    note: null,
+    created_by: null,
+    // JS spelling. Its predecessor below carries the PostgREST one — the
+    // engine's tie-break `Date.parse`es both, and a fixture set written in one
+    // style proves nothing about that (GOLDEN-FIXES #25).
+    created_at: '2026-06-20T09:00:00.000Z',
+    ...over,
+  };
+}
+
+const SUPERSEDED_ARRANGEMENT_ID = '11111111-1111-4111-8111-111111111102';
+
+/** A worked `time_entries` row (017) for the real engine to price. */
+function workedEntry(over: Record<string, unknown> = {}): any {
+  return {
+    ...runningEntry,
+    id: 'te-real-1',
+    shift_id: null,
+    kind: 'worked',
+    status: 'submitted',
+    clock_in_at: '2026-08-03T08:00:00.000Z',
+    clock_out_at: '2026-08-03T16:00:00.000Z',
+    break_minutes: 0,
+    local_date: '2026-08-03',
+    ...over,
+  };
+}
+
+/**
+ * The seven repositories `WeekEarningsService` fetches through, all in
+ * memory. Same shape as the fakes in `weekEarningsService.test.ts`.
+ */
+function makeRealEarnings(
+  entries: any[],
+  arrangements: any[],
+  expenses: any[] = []
+): any {
+  return new WeekEarningsService(
+    { listForCarerWeek: mock(async () => entries) } as any,
+    { listForCarer: mock(async () => arrangements) } as any,
+    { listByHousehold: mock(async () => []) },
+    { findByHouseholdAndLocalDate: mock(async () => []) },
+    { findById: mock(async () => household) } as any,
+    { listForCarerYear: mock(async () => []) },
+    { listApprovedForWeek: mock(async () => expenses) }
+  );
+}
+
+describe('TimesheetCommandService.approve — freezes figures computed by the REAL earnings engine (F-B10-4)', () => {
+  it('freezes a gross the engine derived from the week’s actual entries, half-up at the exact .5 boundary', async () => {
+    // The week (Mon 2026-08-03): two worked entries for one carer.
+    //   Mon  08:00Z -> 16:00Z, 0 break  = 480 min
+    //   Tue  09:00Z -> 10:33Z, 30 break =  63 min   (93 span - 30 break)
+    //                                    -------
+    //                                     543 min
+    // Both price at the arrangement in force on their own date. Two
+    // arrangements are on file and BOTH are in force on this week (valid_from
+    // 2026-01-01 and 2026-07-01), so the engine has to actually resolve —
+    // greatest valid_from wins — and pick 1850, not the superseded 1500.
+    // They merge into ONE regular line (same arrangement id), which is what
+    // makes the rounding land on the total rather than per day.
+    //
+    // HAND-COMPUTED, rule I-15: priceMinutes(m, r) = floor((2mr + 60) / 120)
+    //   543 x 1850                  = 1_004_550           (exact, integer)
+    //   (2 x 1_004_550 + 60) / 120  = 2_009_160 / 120
+    //                               = 16_743.0            (floor -> 16_743)
+    // Cross-check in decimal: 1_004_550 / 60 = 16_742.5 exactly — the half
+    // case, so half-UP is the whole difference between 16_743 and 16_742.
+    // £167.43 for 9h03m at £18.50/h.
+    //
+    // The approved expense is £12.75 and must NOT join gross (I-27): it lands
+    // on its own reimbursements line and in `reimbursements_minor`.
+    const timesheetRepo = makeApprovingRepo();
+    const svc = new TimesheetCommandService(
+      makeTimeEntryRepo(),
+      timesheetRepo,
+      makeParentMemberRepo(),
+      makeHouseholdRepo(),
+      makeShiftRepo(),
+      makeQueries(),
+      makeUserService(),
+      makePush(),
+      makeRealEarnings(
+        [
+          workedEntry(),
+          workedEntry({
+            id: 'te-real-2',
+            clock_in_at: '2026-08-04T09:00:00.000Z',
+            clock_out_at: '2026-08-04T10:33:00.000Z',
+            break_minutes: 30,
+            local_date: '2026-08-04',
+          }),
+        ],
+        [
+          payArrangement(),
+          payArrangement({
+            id: SUPERSEDED_ARRANGEMENT_ID,
+            rate_minor: 1500,
+            valid_from: '2026-01-01',
+            // PostgREST spelling — see `payArrangement`'s note.
+            created_at: '2026-01-01T09:00:00+00:00',
+          }),
+        ],
+        [
+          {
+            id: 'exp-real-1',
+            household_id: 'h1',
+            carer_id: 'carer-1',
+            local_date: '2026-08-05',
+            kind: 'expense',
+            description: 'Soft play entry',
+            amount_minor: 1275,
+            miles: null,
+            currency: 'GBP',
+            status: 'approved',
+          },
+        ]
+      )
+    );
+
+    await svc.approve('parent-1', 'ts1');
+
+    const [, patch] = timesheetRepo.approveSubmittedWithEarnings.mock
+      .calls[0] as [string, Record<string, unknown>];
+
+    expect(patch.gross_minor).toBe(16_743);
+    expect(patch.currency).toBe('GBP');
+    expect(patch.earnings_computed_at).toBe(patch.approved_at);
+    expect(patch.earnings_computed_at).toEqual(expect.any(String));
+
+    const frozen = patch.earnings as WeekEarnings;
+    expect(frozen.status).toBe('ok');
+    if (frozen.status !== 'ok') return;
+    // Reimbursements are money, but not WAGES — a separate total, never
+    // folded into gross (I-27, docs/11-MONEY.md §6).
+    expect(frozen.reimbursements_minor).toBe(1275);
+    expect(frozen.gross_minor).toBe(16_743);
+    expect(frozen.worked_minutes).toBe(543);
+    expect(frozen.payable_minutes).toBe(543);
+    expect(frozen.lines).toEqual([
+      {
+        kind: 'regular',
+        minutes: 543,
+        rate_minor: 1850,
+        multiplier: null,
+        amount_minor: 16_743,
+        from_date: '2026-08-03',
+        to_date: '2026-08-04',
+        arrangement_id: ARRANGEMENT_ID,
+      },
+      {
+        kind: 'reimbursements',
+        minutes: 0,
+        rate_minor: 0,
+        multiplier: null,
+        amount_minor: 1275,
+        from_date: '2026-08-05',
+        to_date: '2026-08-05',
+        arrangement_id: null,
+      },
+    ]);
+  });
+
+  it('freezes the engine’s no_arrangement arm — not a £0.00 — when the carer has no pay terms on file', async () => {
+    // Same wiring, arrangements empty. Proves the arm the approve path writes
+    // is the engine's own verdict rather than anything this test decided:
+    // gross and currency stay NULL and the week's last day is named as
+    // unpriceable (docs/11-MONEY.md §4).
+    const timesheetRepo = makeApprovingRepo();
+    const svc = new TimesheetCommandService(
+      makeTimeEntryRepo(),
+      timesheetRepo,
+      makeParentMemberRepo(),
+      makeHouseholdRepo(),
+      makeShiftRepo(),
+      makeQueries(),
+      makeUserService(),
+      makePush(),
+      makeRealEarnings([workedEntry()], [])
+    );
+
+    await svc.approve('parent-1', 'ts1');
+
+    const [, patch] = timesheetRepo.approveSubmittedWithEarnings.mock
+      .calls[0] as [string, Record<string, unknown>];
+    expect(patch.gross_minor).toBeNull();
+    expect(patch.currency).toBeNull();
+    expect(patch.earnings).toEqual({
+      status: 'no_arrangement',
+      week_start: '2026-08-03',
+      unpriced_dates: ['2026-08-03', '2026-08-09'],
+    });
   });
 });
 

@@ -34,6 +34,14 @@ export const shiftEndpoints = {
     `/v1/households/${householdId}/day-thread?local_date=${encodeURIComponent(localDate)}`,
 } as const;
 
+/**
+ * API TWIN: `apps/api/src/domains/shift/schemas.ts`'s `ParentEditShiftSchema`.
+ * Hand-copied rather than imported because that schema is server-only (URL and
+ * narrow-body validation lives in the API domain, not in `shared-types`, which
+ * is kept to wire shapes) — so the two must be kept in step by hand, and this
+ * copy had already drifted: it never grew the ordering refine, which meant an
+ * inverted edit was posted to the server just to be rejected on the round trip.
+ */
 const ParentEditShiftSchema = z
   .object({
     starts_at: z.iso.datetime({ offset: true }).optional(),
@@ -42,7 +50,16 @@ const ParentEditShiftSchema = z
   })
   .refine(data => Object.keys(data).length > 0, {
     message: 'at least one field is required',
-  });
+  })
+  .refine(
+    // Instant compare — lexicographic ISO strings break across offsets
+    // (e.g. `…T11:00:00-01:00` vs `…T12:00:00+00:00`).
+    data =>
+      data.starts_at === undefined ||
+      data.ends_at === undefined ||
+      Date.parse(data.ends_at) > Date.parse(data.starts_at),
+    { message: 'ends_at must be after starts_at', path: ['ends_at'] }
+  );
 export type ParentEditShiftInput = z.infer<typeof ParentEditShiftSchema>;
 
 const ShiftEnvelopeSchema = z.object({ shift: ShiftSchema });

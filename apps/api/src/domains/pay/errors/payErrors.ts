@@ -105,6 +105,39 @@ export class ExpenseValidationError extends ValidationError {
 }
 
 /**
+ * 400 — the amount this approval WORKED OUT TO is larger than any amount this
+ * system can record (`MAX_MONEY_MINOR`, migration 063's cap).
+ *
+ * WHY THIS IS NOT AN `ExpenseValidationError`: nothing the carer submitted is
+ * invalid. `miles` is legal, the arrangement's `mileage_rate_per_mile_minor`
+ * is legal — capping each INPUT never capped their PRODUCT (the
+ * caps-don't-bound-products class, adversarial review REOPEN). This names the
+ * one thing that actually went wrong, and its message says so in words a
+ * parent tapping Approve can act on, rather than implying she was sent a bad
+ * claim.
+ *
+ * A `ValidationError` (400) and not a 409: retrying changes nothing, so this
+ * is not a race or a lost update — the request as stated cannot be satisfied.
+ * `metadata` carries the computed amount and the cap so the refusal can be
+ * diagnosed without re-deriving the arithmetic.
+ *
+ * THE AMOUNT IS NEVER CLAMPED TO FIT. `docs/11-MONEY.md` §1: a trimmed
+ * reimbursement is a wrong number wearing the right label, and it would be
+ * paid. Refusing is the only honest option.
+ */
+export class ExpenseAmountTooLargeError extends ValidationError {
+  constructor(expenseId: string, amountMinor: number, maxMinor: number) {
+    super(
+      'That claim works out to more than the largest amount we can record',
+      'EXPENSE_AMOUNT_TOO_LARGE',
+      400,
+      { expenseId, amountMinor, maxMinor }
+    );
+    this.name = 'ExpenseAmountTooLargeError';
+  }
+}
+
+/**
  * 409 — the expense can no longer be changed the way this request asks.
  * Covers two related but distinct situations, both in `metadata.reason`:
  * - `already_reviewed` — a carer tried to edit or withdraw a row a parent

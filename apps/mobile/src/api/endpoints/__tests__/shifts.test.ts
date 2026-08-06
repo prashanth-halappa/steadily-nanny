@@ -135,6 +135,51 @@ describe('shiftApi.update', () => {
     await expect(shiftApi.update(shiftId, {})).rejects.toThrow();
     expect(apiClient.patch).not.toHaveBeenCalled();
   });
+
+  // This module hand-copies the API's ParentEditShiftSchema, and the copy had
+  // drifted: it never grew the ordering refine, so an inverted edit was sent to
+  // the server for the API to reject on the round trip.
+  it('rejects an inverted edit without calling the API', async () => {
+    await expect(
+      shiftApi.update(shiftId, {
+        starts_at: '2026-01-07T13:00:00Z',
+        ends_at: '2026-01-07T08:00:00Z',
+      })
+    ).rejects.toThrow();
+    expect(apiClient.patch).not.toHaveBeenCalled();
+  });
+
+  // GOLDEN-FIXES #25 — the refine must compare instants, not text.
+  it('rejects an edit inverted by instant but ordered as text', async () => {
+    await expect(
+      shiftApi.update(shiftId, {
+        starts_at: '2026-01-07T11:00:00-01:00', // 12:00Z
+        ends_at: '2026-01-07T11:30:00+00:00', // 11:30Z
+      })
+    ).rejects.toThrow();
+    expect(apiClient.patch).not.toHaveBeenCalled();
+  });
+
+  it('sends an edit that is ordered by instant but inverted as text', async () => {
+    apiClient.patch.mockResolvedValue({
+      data: { data: { shift: validShift, warnings: [] } },
+    });
+    await shiftApi.update(shiftId, {
+      starts_at: '2026-01-07T11:00:00+00:00', // 11:00Z
+      ends_at: '2026-01-07T10:30:00-02:00', // 12:30Z
+    });
+    expect(apiClient.patch).toHaveBeenCalled();
+  });
+
+  // Optional-guarded like its API twin — a one-sided edit has no counterpart
+  // here to compare against.
+  it('still sends a one-sided time edit', async () => {
+    apiClient.patch.mockResolvedValue({
+      data: { data: { shift: validShift, warnings: [] } },
+    });
+    await shiftApi.update(shiftId, { ends_at: '2026-01-07T08:00:00Z' });
+    expect(apiClient.patch).toHaveBeenCalled();
+  });
 });
 
 describe('shiftApi.listEvents', () => {

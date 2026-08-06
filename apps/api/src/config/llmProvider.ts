@@ -17,23 +17,42 @@ import { env } from './env';
 
 // Vertex AI provider — ADC auth, not an API key. Same Gemini model ids as the
 // AI Studio provider.
-const vertex = createVertex({
-  project: env.GOOGLE_VERTEX_PROJECT,
-  location: env.GOOGLE_VERTEX_LOCATION,
-});
+//
+// GOOGLE_VERTEX_PROJECT is optional at boot (env.core.ts) since no domain
+// currently calls into this module. Built lazily, on first model-factory call,
+// so a missing project fails with a clear error naming the var right here —
+// not an opaque SDK failure (createVertex silently falls back to reading
+// GOOGLE_VERTEX_PROJECT off process.env itself when the passed value is
+// undefined, which would otherwise mask a misconfigured deploy).
+let vertex: ReturnType<typeof createVertex> | undefined;
+
+function getVertex(): ReturnType<typeof createVertex> {
+  if (!vertex) {
+    if (!env.GOOGLE_VERTEX_PROJECT) {
+      throw new Error(
+        'GOOGLE_VERTEX_PROJECT is required to use LLM features — set it in your environment before calling an llmProvider model factory.'
+      );
+    }
+    vertex = createVertex({
+      project: env.GOOGLE_VERTEX_PROJECT,
+      location: env.GOOGLE_VERTEX_LOCATION,
+    });
+  }
+  return vertex;
+}
 
 // ── Tiers — pick the cheapest model that meets the task's accuracy/latency bar.
 /** Cheapest + fastest; trivial, high-volume generations. */
 export const flashLiteModel = (): LanguageModel =>
-  vertex('gemini-2.5-flash-lite');
+  getVertex()('gemini-2.5-flash-lite');
 /** Default workhorse; fast + cheap for latency-sensitive, moderate-accuracy work. */
-export const flashModel = (): LanguageModel => vertex('gemini-2.5-flash');
+export const flashModel = (): LanguageModel => getVertex()('gemini-2.5-flash');
 /** Slower + pricier; reserved for complex/high-stakes synthesis or classification. */
-export const proModel = (): LanguageModel => vertex('gemini-2.5-pro');
+export const proModel = (): LanguageModel => getVertex()('gemini-2.5-pro');
 
 /** Embedding model for semantic-similarity features. */
 export const embeddingModel = () =>
-  vertex.embeddingModel('gemini-embedding-001');
+  getVertex().embeddingModel('gemini-embedding-001');
 
 // ── Centralized LLM call configuration ───────────────────────────────────────
 

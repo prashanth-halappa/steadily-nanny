@@ -1,4 +1,5 @@
 import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
+import { appIdentity } from '@/src/config/appIdentity';
 
 // Capture the interceptor callbacks by mocking axios before importing client.
 type Rejector = (err: unknown) => Promise<unknown>;
@@ -34,7 +35,14 @@ class FakeAxiosError extends Error {
   }
 }
 
-const axiosDefault = { create: () => fakeInstance, AxiosError: FakeAxiosError };
+let capturedCreateConfig: { headers?: Record<string, unknown> } | undefined;
+const axiosDefault = {
+  create: (config: { headers?: Record<string, unknown> }) => {
+    capturedCreateConfig = config;
+    return fakeInstance;
+  },
+  AxiosError: FakeAxiosError,
+};
 mock.module('axios', () => ({
   default: axiosDefault,
   AxiosError: FakeAxiosError,
@@ -49,6 +57,15 @@ beforeAll(async () => {
 beforeEach(() => {
   client.reset401Handler();
   client.clearAuthToken();
+});
+
+describe('api client instance', () => {
+  it('carries the app version headers from appIdentity (F-B11-5)', () => {
+    expect(capturedCreateConfig?.headers).toMatchObject({
+      'X-App-Version': appIdentity.version,
+      'X-App-Runtime-Version': appIdentity.runtimeVersion,
+    });
+  });
 });
 
 describe('api client interceptors', () => {

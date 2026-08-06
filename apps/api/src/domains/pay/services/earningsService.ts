@@ -282,8 +282,12 @@ function overtimeRateMinor(rateMinor: number, multiplier: number): number {
  * same-day rate typo under append-only, no-future-dating terms
  * (`docs/11-MONEY.md` §2). If that rule ever changes it must change in both
  * places at once — there is a test here that pins it.
+ *
+ * Exported for the cross-implementation parity test (F-B10-7) — see
+ * `apps/api/tests/unit/domains/pay/services/effectiveOnParity.test.ts`, which
+ * runs one vector table through BOTH this and the repository's SQL.
  */
-function effectiveOn(
+export function effectiveOn(
   arrangements: readonly PayArrangement[],
   date: string
 ): PayArrangement | null {
