@@ -120,6 +120,26 @@ export class InvalidPatternCarerError extends NotFoundError {
 }
 
 /**
+ * 409 — migration 062's `shifts_recurring_window_unique` refused an insert:
+ * a live `recurring` shift already exists for this exact
+ * (household, carer, starts_at, ends_at). The schedule domain's analogue of
+ * the shift domain's `ExtraShiftAlreadyExistsError`, and used the same way —
+ * `scheduleMaterialisationService` catches it and ADOPTS the existing row
+ * rather than failing the materialisation run. It only ever reaches an HTTP
+ * caller if the row the index says exists cannot then be found.
+ */
+export class RecurringShiftAlreadyExistsError extends ConflictError {
+  constructor(metadata: ErrorMetadata) {
+    super(
+      'A shift already exists for this exact window',
+      'RECURRING_SHIFT_ALREADY_EXISTS',
+      metadata
+    );
+    this.name = 'RecurringShiftAlreadyExistsError';
+  }
+}
+
+/**
  * 404 — a `child_id` in `replaceDays()` is not an active child of the
  * pattern's OWN household. Deliberately NOT the same opaque error as the
  * child domain's `ChildNotFoundError`: the caller here is always a parent

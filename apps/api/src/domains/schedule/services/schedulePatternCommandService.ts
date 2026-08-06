@@ -290,15 +290,20 @@ export class SchedulePatternCommandService {
     const nextUntil = input.until !== undefined ? input.until : pattern.until;
     const ended = nextUntil !== null && nextUntil < today;
 
-    const updated = await this.patternRepo.update(patternId, {
+    const patch = {
       ...(input.exdates !== undefined ? { exdates: input.exdates } : {}),
       ...(input.pause_ranges !== undefined
         ? { pause_ranges: input.pause_ranges }
         : {}),
       ...(input.until !== undefined ? { until: input.until } : {}),
       sequence: pattern.sequence + 1,
-      ...(ended ? { status: 'ended' as const } : {}),
-    });
+    };
+    // An amend that pushes `until` into the past ENDS the pattern — and an
+    // ended pattern must not leave its future shifts on the calendar, so it
+    // goes through `endPattern` rather than writing `status` here.
+    const updated = ended
+      ? await this.endPattern(patternId, now, patch)
+      : await this.patternRepo.update(patternId, patch);
 
     await this.materialiseAccepted(userId, updated, now);
 
@@ -334,7 +339,8 @@ export class SchedulePatternCommandService {
   async respond(
     userId: string,
     patternId: string,
-    input: RespondToSchedulePatternInput
+    input: RespondToSchedulePatternInput,
+    now: Date = new Date()
   ): Promise<SchedulePattern> {
     const pattern = await this.queries.getOwned(userId, patternId);
     if (pattern.carer_id !== userId) {
@@ -353,13 +359,17 @@ export class SchedulePatternCommandService {
 
     const updated = await this.patternRepo.update(patternId, {
       status: input.status,
-      responded_at: new Date().toISOString(),
+      responded_at: now.toISOString(),
       decline_message:
         input.status === 'declined' ? input.message?.trim() || null : null,
     });
 
     if (input.status === 'accepted') {
-      await this.materialiseAccepted(userId, updated);
+      // Supersede BEFORE materialising: the prior pattern's identical future
+      // shifts are cancelled first, so migration 062's unique index has
+      // nothing live to collide with when this pattern inserts its own rows.
+      await this.supersedePriorAccepted(updated, now);
+      await this.materialiseAccepted(userId, updated, now);
     }
 
     notifyHouseholdParents(pattern.household_id, {
@@ -387,6 +397,65 @@ export class SchedulePatternCommandService {
       throw new PatternNotPendingError(patternId, pattern.status);
     }
     return this.patternRepo.update(patternId, { status: 'withdrawn' });
+  }
+
+  /**
+   * The ONE place a pattern becomes `ended`: flips the status AND withdraws
+   * the future shifts it already materialised (see
+   * `scheduleMaterialisationService.cancelFutureShiftsForEndedPattern`).
+   * Every path that ends a pattern routes through here — supersede-on-accept,
+   * `amend`'s until-in-the-past, and the horizon job via
+   * `materialiseForHorizon` — because the leak this closes is per-path
+   * otherwise: an ended pattern whose shifts stay on the calendar has no live
+   * pattern behind them, and nothing else ever cleans them up
+   * (`scheduleHorizonJob` only iterates `listAccepted`).
+   *
+   * `extraPatch` lets `amend` write its own fields in the SAME update rather
+   * than a second round trip.
+   */
+  private async endPattern(
+    patternId: string,
+    now: Date,
+    extraPatch: Partial<SchedulePattern> = {}
+  ): Promise<SchedulePattern> {
+    const updated = await this.patternRepo.update(patternId, {
+      ...extraPatch,
+      status: 'ended',
+    });
+    await this.materialisation.cancelFutureShiftsForEndedPattern(
+      patternId,
+      now
+    );
+    return updated;
+  }
+
+  /**
+   * One accepted usual week per (household, carer) — migration 014's header
+   * always defined `ended` as "superseded or past its `until` date", but only
+   * the second half was ever implemented. Accepting a new pattern ENDS every
+   * other accepted pattern for the same carer (and withdraws their future
+   * shifts, via `endPattern`). Without this, each accepted pattern
+   * materialised the same days independently — `findByPatternAndDate` is
+   * scoped to `source_pattern_id` and cannot see another pattern's row at the
+   * identical instant — and the family got byte-identical duplicate shifts.
+   *
+   * Scoped to the accepting pattern's OWN carer: another carer's accepted
+   * week in the same household is a different job, not a superseded one.
+   */
+  private async supersedePriorAccepted(
+    accepted: SchedulePattern,
+    now: Date
+  ): Promise<void> {
+    const priors = await this.patternRepo.listAcceptedByHouseholdAndCarer(
+      accepted.household_id,
+      accepted.carer_id
+    );
+    for (const prior of priors) {
+      if (prior.id === accepted.id) {
+        continue;
+      }
+      await this.endPattern(prior.id, now);
+    }
   }
 
   private async materialiseAccepted(
@@ -434,7 +503,7 @@ export class SchedulePatternCommandService {
       pattern.until !== null &&
       pattern.until < today
     ) {
-      await this.patternRepo.update(pattern.id, { status: 'ended' });
+      await this.endPattern(pattern.id, now);
     }
     return result;
   }

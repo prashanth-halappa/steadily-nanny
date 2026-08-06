@@ -77,6 +77,7 @@ function makeRepo(
   return {
     findByPatternAndDate: mock(async () => null),
     findActiveByPattern: mock(async () => []),
+    findRecurringInWindow: mock(async () => null),
     hasChangeRequests: mock(async () => false),
     create: mock(async () => baseShift()),
     update: mock(async () => baseShift()),

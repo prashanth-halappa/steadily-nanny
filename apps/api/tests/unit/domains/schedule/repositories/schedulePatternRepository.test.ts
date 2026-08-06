@@ -9,6 +9,7 @@ function createMockQueryChain(
   const chain: any = {
     select: mock(() => chain),
     eq: mock(() => chain),
+    is: mock(() => chain),
     order: mock(() => chain),
     insert: mock(() => chain),
     update: mock(() => chain),
@@ -58,5 +59,35 @@ describe('SchedulePatternRepository.listForHousehold', () => {
     );
     const repo = new SchedulePatternRepository();
     expect(await repo.listForHousehold('h1')).toEqual([]);
+  });
+});
+
+describe('SchedulePatternRepository.listAcceptedByHouseholdAndCarer', () => {
+  it('matches an assigned carer with eq', async () => {
+    const chain = createMockQueryChain({ data: [{ id: 'p0' }], error: null });
+    mockSupabaseService.from.mockImplementation(() => chain);
+    const repo = new SchedulePatternRepository();
+
+    expect(await repo.listAcceptedByHouseholdAndCarer('h1', 'carer-1')).toEqual(
+      [{ id: 'p0' }]
+    );
+    expect(chain.eq).toHaveBeenCalledWith('carer_id', 'carer-1');
+    expect(chain.eq).toHaveBeenCalledWith('status', 'accepted');
+    expect(chain.is).not.toHaveBeenCalled();
+  });
+
+  // A null-carer pattern is a real shape (014: a parent sketching a usual
+  // week during onboarding). `eq('carer_id', null)` would match nothing, so
+  // the null branch has to use `is`, exactly like
+  // `shiftRepository.findExtraShiftInWindow`.
+  it('matches an unassigned pattern with is(null), never eq(null)', async () => {
+    const chain = createMockQueryChain({ data: [], error: null });
+    mockSupabaseService.from.mockImplementation(() => chain);
+    const repo = new SchedulePatternRepository();
+
+    await repo.listAcceptedByHouseholdAndCarer('h1', null);
+
+    expect(chain.is).toHaveBeenCalledWith('carer_id', null);
+    expect(chain.eq).not.toHaveBeenCalledWith('carer_id', null);
   });
 });

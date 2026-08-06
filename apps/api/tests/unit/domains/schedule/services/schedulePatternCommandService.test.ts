@@ -87,6 +87,9 @@ function makePatternRepo(overrides: Record<string, unknown> = {}): any {
       id,
       ...data,
     })),
+    // Supersede-on-accept's lookup — no prior accepted pattern by default.
+    // Its own behaviour is covered in `schedulePatternSupersede.test.ts`.
+    listAcceptedByHouseholdAndCarer: mock(async () => []),
     ...overrides,
   };
 }
@@ -195,6 +198,10 @@ function makeMaterialisation(overrides: Record<string, unknown> = {}): any {
       cancelled: 0,
       conflicts: [],
     })),
+    // Every path that ends a pattern withdraws its future shifts through
+    // here — covered in `scheduleMaterialisationDedupe.test.ts` /
+    // `schedulePatternSupersede.test.ts`.
+    cancelFutureShiftsForEndedPattern: mock(async () => 0),
     ...overrides,
   };
 }
@@ -860,6 +867,7 @@ function makeShiftRepo(
   return {
     findByPatternAndDate: mock(async () => null),
     findActiveByPattern: mock(async () => []),
+    findRecurringInWindow: mock(async () => null),
     hasChangeRequests: mock(async () => false),
     create: mock(async () => baseShiftForAmend()),
     update: mock(async () => baseShiftForAmend()),
