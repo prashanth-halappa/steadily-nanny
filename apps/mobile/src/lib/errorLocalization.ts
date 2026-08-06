@@ -34,6 +34,8 @@ export const ERROR_CODE_TO_I18N_KEY: Record<string, string> = {
 interface ErrorLike {
   message?: string;
   name?: string;
+  /** Supabase AuthError's stable code, e.g. `weak_password`. */
+  code?: string;
   isAxiosError?: boolean;
   response?: { status?: number; data?: { error?: { code?: string } } };
 }
@@ -143,6 +145,14 @@ export function getLocalizedAuthErrorMessage(
     message.includes('too many requests')
   ) {
     return t('auth:errors.rateLimited');
+  }
+  // Sign-up's most common rejection (422). Falling through to `unknown` here is
+  // what made the form unusable: nothing on screen said the password was short.
+  if (
+    err.code === 'weak_password' ||
+    message.includes('password should be at least')
+  ) {
+    return t('auth:errors.passwordTooShort');
   }
   if (message.includes('user already registered')) {
     return t('auth:errors.emailTaken');

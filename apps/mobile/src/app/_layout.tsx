@@ -105,10 +105,7 @@ function RootLayout() {
         <GestureHandlerRootView style={{ flex: 1 }}>
           <SafeAreaProvider>
             <QueryClientProvider client={queryClient}>
-              <PostHogProvider
-                client={posthogClient ?? undefined}
-                autocapture={false}
-              >
+              <PostHogProvider client={posthogClient} autocapture={false}>
                 <AnalyticsProvider plugins={analyticsPlugins}>
                   {/* AppSyncSlot — generic remote-config / push / billing sync.
                       EXTEND-HERE: add product headless sync components here. */}

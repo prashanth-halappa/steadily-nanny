@@ -96,7 +96,12 @@ export function EmptyState({
   const resolvedActionLabel = actionLabel || 'Get started';
 
   return (
-    <Animated.View style={animatedStyle}>
+    // `flex: 1` belongs here, not on the child: the default variant's container
+    // is flex-1, and a flex-1 child of a content-sized parent collapses to
+    // nothing — the 240px illustration then paints half its height above the
+    // box. Inline stays content-sized (it lives in ScrollViews and list empty
+    // slots). Inline style, never a className — GOLDEN-FIXES #2.
+    <Animated.View style={[isInline ? null : { flex: 1 }, animatedStyle]}>
       <View
         className={cn(styles.container, className)}
         accessibilityRole="text"

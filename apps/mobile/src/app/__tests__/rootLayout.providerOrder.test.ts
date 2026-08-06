@@ -34,6 +34,12 @@ describe('root layout provider order', () => {
     }
   });
 
+  it('always hands PostHogProvider a client', () => {
+    // Left to build its own from a missing key, the SDK console.errors; so does
+    // usePostHog() when the context holds no client. See analytics/client.ts.
+    expect(source).toContain('<PostHogProvider client={posthogClient}');
+  });
+
   it('imports polyfills first and hardens Sentry PII off', () => {
     expect(source.indexOf("import '@/polyfills'")).toBe(0);
     expect(source).toContain('sendDefaultPii: false');

@@ -6,23 +6,31 @@
  * (`ManageInviteScreen`) render identical UI. Deliberately holds no mutation
  * state of its own — both callers wait for an explicit "Generate" tap (see
  * InviteScreen's header for why the wizard no longer auto-fires on mount),
- * so `code`/`isError`/`onRetry` are passed in.
+ * so the minted invite plus `isError`/`onRetry` are passed in.
+ *
+ * D6a: takes the whole invite row, not just its code. The role picker is gone
+ * by the time this renders, so two codes generated back to back (nanny, then
+ * co-parent) were indistinguishable — the card states which role it grants
+ * and when it expires, both already on the wire.
  */
+import type { HouseholdInvite } from '@steadily-nanny/shared-types/schemas/household.schema';
 import { useTranslation } from 'react-i18next';
+import { View } from 'react-native';
 import { Button } from '@/src/components/ui/button';
 import { Card } from '@/src/components/ui/card';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { Text } from '@/src/components/ui/text';
 import { Body, Display } from '@/src/components/ui/typography';
+import { formatDateShort } from '@/src/utils/dateFormatting';
 
 interface InviteCodeCardProps {
-  code: string | null;
+  invite: HouseholdInvite | null;
   isError: boolean;
   onRetry: () => void;
 }
 
 export function InviteCodeCard({
-  code,
+  invite,
   isError,
   onRetry,
 }: InviteCodeCardProps) {
@@ -30,15 +38,23 @@ export function InviteCodeCard({
 
   return (
     <Card className="items-center gap-4 p-5.5">
-      {code ? (
-        <Display
-          testID="invite-code-value"
-          selectable
-          className="text-primary"
-          style={{ letterSpacing: 3.2 }}
-        >
-          {code}
-        </Display>
+      {invite ? (
+        <View className="items-center gap-1">
+          <Display
+            testID="invite-code-value"
+            selectable
+            className="text-primary"
+            style={{ letterSpacing: 3.2 }}
+          >
+            {invite.code}
+          </Display>
+          <Body testID="invite-code-meta" className="text-muted-foreground">
+            {t('invite.codeMeta', {
+              role: t(`invite.roles.${invite.role}.title`),
+              date: formatDateShort(invite.expires_at),
+            })}
+          </Body>
+        </View>
       ) : (
         <LoadingIndicator />
       )}

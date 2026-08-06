@@ -22,6 +22,27 @@ describe('getLocalizedAuthErrorMessage', () => {
     ).toBe('t:auth:errors.rateLimited');
   });
 
+  // Supabase rejects a short password with 422 "Password should be at least 6
+  // characters." — the most common signup failure there is. Mapped to real copy
+  // instead of "An unknown error occurred", which tells the user nothing.
+  it('maps a too-short password by message', () => {
+    expect(
+      getLocalizedAuthErrorMessage(
+        { message: 'Password should be at least 6 characters.' },
+        t
+      )
+    ).toBe('t:auth:errors.passwordTooShort');
+  });
+
+  it('maps a too-short password by supabase error code', () => {
+    expect(
+      getLocalizedAuthErrorMessage(
+        { code: 'weak_password', message: 'Password is too weak' },
+        t
+      )
+    ).toBe('t:auth:errors.passwordTooShort');
+  });
+
   it('falls back to auth unknown rather than raw message', () => {
     expect(
       getLocalizedAuthErrorMessage(

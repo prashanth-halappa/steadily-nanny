@@ -19,7 +19,7 @@ import { HOUSEHOLD_INVITE_ROLES } from '@steadily-nanny/shared-types/schemas/hou
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Share } from 'react-native';
+import { Share, View } from 'react-native';
 import { Button } from '@/src/components/ui/button';
 import { Text } from '@/src/components/ui/text';
 import { InviteCodeCard } from '@/src/domains/setup/components/InviteCodeCard';
@@ -41,7 +41,8 @@ export function ManageInviteScreen() {
     HOUSEHOLD_INVITE_ROLES.NANNY
   );
 
-  const code = createInvite.data?.code ?? null;
+  const invite = createInvite.data ?? null;
+  const code = invite?.code ?? null;
 
   const onGenerate = () => {
     setHasStarted(true);
@@ -64,9 +65,11 @@ export function ManageInviteScreen() {
       backLabel={tCommon('back')}
     >
       {hasStarted ? (
-        <>
+        // See InviteScreen: the shell centres its children, which left a void
+        // above the code card once the picker was replaced by it.
+        <View className="flex-1 justify-start gap-4">
           <InviteCodeCard
-            code={code}
+            invite={invite}
             isError={createInvite.isError}
             onRetry={onGenerate}
           />
@@ -78,7 +81,7 @@ export function ManageInviteScreen() {
           >
             <Text>{t('invite.shareButton')}</Text>
           </Button>
-        </>
+        </View>
       ) : (
         <>
           <InviteRolePicker

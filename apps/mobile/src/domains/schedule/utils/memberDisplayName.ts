@@ -24,6 +24,10 @@ export function resolveMemberDisplayName(
   const member = membersByUserId.get(userId);
   const override = member?.display_name_override?.trim();
   if (override) return override;
+  // The joined profile name (members-list reads only) beats the role label:
+  // two nannies with no override are otherwise the same word twice.
+  const profileName = member?.profile_name?.trim();
+  if (profileName) return profileName;
   if (member) return labels.roleFallback(member.role);
   return labels.someone;
 }

@@ -168,6 +168,25 @@ describe('household.schema', () => {
       expect(HouseholdMemberSchema.safeParse(validMember).success).toBe(true);
     });
 
+    // Joined from `user_profiles` by the members-list read, so it is absent
+    // on every other producer of a member row (redeem, patch) and null for a
+    // member whose profile row is gone.
+    it('KEEPS a joined profile_name through parse — an unknown key would be stripped', () => {
+      const parsed = HouseholdMemberSchema.parse({
+        ...validMember,
+        profile_name: 'Bea',
+      });
+      expect(parsed.profile_name).toBe('Bea');
+    });
+
+    it('accepts a null profile_name (departed member) and its absence', () => {
+      expect(
+        HouseholdMemberSchema.safeParse({ ...validMember, profile_name: null })
+          .success
+      ).toBe(true);
+      expect(HouseholdMemberSchema.safeParse(validMember).success).toBe(true);
+    });
+
     it('rejects an invalid role', () => {
       expect(
         HouseholdMemberSchema.safeParse({ ...validMember, role: 'grandparent' })

@@ -20,7 +20,7 @@ import { HOUSEHOLD_INVITE_ROLES } from '@steadily-nanny/shared-types/schemas/hou
 import { type Href, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Share } from 'react-native';
+import { Share, View } from 'react-native';
 import { Button } from '@/src/components/ui/button';
 import { Text } from '@/src/components/ui/text';
 import { InviteCodeCard } from '@/src/domains/setup/components/InviteCodeCard';
@@ -39,7 +39,8 @@ export function InviteScreen() {
     HOUSEHOLD_INVITE_ROLES.NANNY
   );
 
-  const code = createInvite.data?.code ?? null;
+  const invite = createInvite.data ?? null;
+  const code = invite?.code ?? null;
 
   // One tap = one code. Changing the role selection never mints anything on
   // its own, so the picker stays free of duplicate-code side effects.
@@ -73,9 +74,11 @@ export function InviteScreen() {
       onCta={onDone}
     >
       {hasStarted ? (
-        <>
+        // flex-1 + justify-start defeats the shell's vertical centring, which
+        // stranded the code card mid-screen under a void of empty space.
+        <View className="flex-1 justify-start gap-4">
           <InviteCodeCard
-            code={code}
+            invite={invite}
             isError={createInvite.isError}
             onRetry={onGenerate}
           />
@@ -87,7 +90,7 @@ export function InviteScreen() {
           >
             <Text>{t('invite.shareButton')}</Text>
           </Button>
-        </>
+        </View>
       ) : (
         <>
           <InviteRolePicker

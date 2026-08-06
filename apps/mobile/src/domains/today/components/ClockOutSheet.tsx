@@ -194,8 +194,14 @@ export function ClockOutSheet({
    * it already rolls a finish at or before the start onto the next day,
    * which is exactly an overnight shift — the case a carer is most likely
    * to have forgotten to clock out of.
+   *
+   * EQUALITY is the one finish that isn't overnight: the same minute in and
+   * out is a zero-length session, and rolling it forward previewed a 24-hour
+   * shift the server would refuse anyway (16h cap). Collapsed here rather
+   * than in `shiftInstantsFromWallClock`, whose other callers are shift
+   * editing, where an end equal to the start is a different question.
    */
-  const instants =
+  const rolledInstants =
     clockInAt && parsedInTime && parsedOutTime
       ? shiftInstantsFromWallClock(
           localDateInZone(timeZone, new Date(clockInAt)),
@@ -204,6 +210,10 @@ export function ClockOutSheet({
           timeZone
         )
       : null;
+  const instants =
+    rolledInstants && parsedInTime === parsedOutTime
+      ? { ...rolledInstants, ends_at: rolledInstants.starts_at }
+      : rolledInstants;
 
   const effectiveClockInAt = instants?.starts_at ?? clockInAt;
   const effectiveClockOutMs = instants

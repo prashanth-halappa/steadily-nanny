@@ -302,8 +302,12 @@ export function ManageHouseholdScreen() {
               key={nanny.id}
               householdId={household.id}
               carerId={nanny.user_id}
+              // Override -> profile name -> role label. Without the middle
+              // link two un-renamed nannies rendered identical cards.
               carerName={
-                nanny.display_name_override?.trim() || tSettings('role.nanny')
+                nanny.display_name_override?.trim() ||
+                nanny.profile_name?.trim() ||
+                tSettings('role.nanny')
               }
             />
           ))}

@@ -169,6 +169,27 @@ describe('ClockOutSheet', () => {
       expect(getByTestId('clockout-summary-total').props.children).toBe('0m');
     });
 
+    it('reads a same-minute finish as 0m, not a 24-hour shift', () => {
+      // The finish field rolls an end at or before the start onto the next
+      // day so an overnight session works. Typing the START time back is the
+      // one case that is not overnight — it is a zero-length session, and
+      // 24h is not even submittable (the server caps a session at 16h).
+      const { getByTestId } = renderSheet();
+
+      fireEvent.changeText(getByTestId('clockout-finish-time'), '08:15');
+
+      expect(getByTestId('clockout-summary-total').props.children).toBe('0m');
+    });
+
+    it('still rolls a genuinely earlier finish onto the next day (overnight)', () => {
+      const { getByTestId } = renderSheet();
+
+      fireEvent.changeText(getByTestId('clockout-finish-time'), '02:15');
+
+      // 08:15 -> 02:15 the following morning is 18 hours.
+      expect(getByTestId('clockout-summary-total').props.children).toBe('18h');
+    });
+
     it('omits the summary entirely when there is no clock-in instant (data anomaly)', () => {
       const { queryByTestId } = renderSheet({ clockInAt: null });
 

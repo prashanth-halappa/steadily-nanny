@@ -43,10 +43,17 @@ describe('Login/Register affordances (Pattern A)', () => {
     }
   });
 
-  it('wraps forms in KeyboardAvoidingView and shows a stack back header', () => {
+  it('wraps forms in KeyboardAvoidingView', () => {
     expect(LOGIN).toContain('KeyboardAvoidingView');
     expect(REGISTER).toContain('KeyboardAvoidingView');
-    expect(LAYOUT).toContain('headerShown: true');
+  });
+
+  // The native header painted a white band over the cream background; it is
+  // off, so every screen that can be backed out of must say so in-content.
+  it('hides the native header and keeps an in-content way back', () => {
+    expect(LAYOUT).toContain('headerShown: false');
+    expect(REGISTER).toContain('backToSignIn');
+    expect(FORGOT).toContain('backToSignIn');
   });
 
   it('gives login a password visibility toggle', () => {

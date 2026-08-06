@@ -14,6 +14,11 @@ import type { HouseholdMember } from '../types';
 /** Postgres unique_violation error code. */
 const UNIQUE_VIOLATION = '23505';
 
+/** A member row as PostgREST returns it with the profile embed attached. */
+type MemberRowWithProfile = HouseholdMember & {
+  user_profiles?: { name: string | null } | null;
+};
+
 export class HouseholdMemberRepository extends BaseRepository<HouseholdMember> {
   constructor() {
     super('household_members');
@@ -69,11 +74,18 @@ export class HouseholdMemberRepository extends BaseRepository<HouseholdMember> {
     return data as HouseholdMember | null;
   }
 
-  /** All active members of a household, oldest-joined first. */
+  /**
+   * All active members of a household, oldest-joined first, each carrying the
+   * member's profile name as `profile_name`. `household_members` has no name
+   * column, so without the embed two nannies with no `display_name_override`
+   * are indistinguishable everywhere the roster is shown. The embed rides the
+   * `user_id -> user_profiles(user_id)` FK (migration 009), same shape as
+   * `shiftRepository`'s `shift_children` reads.
+   */
   async listActiveByHousehold(householdId: string): Promise<HouseholdMember[]> {
     const { data, error } = await supabaseService
       .from(this.table)
-      .select('*')
+      .select('*, user_profiles(name)')
       .eq('household_id', householdId)
       .eq('status', 'active')
       .order('joined_at', { ascending: true });
@@ -85,7 +97,12 @@ export class HouseholdMemberRepository extends BaseRepository<HouseholdMember> {
         { details: error.message, householdId }
       );
     }
-    return (data ?? []) as HouseholdMember[];
+    return ((data ?? []) as MemberRowWithProfile[]).map(
+      ({ user_profiles, ...member }) => ({
+        ...member,
+        profile_name: user_profiles?.name ?? null,
+      })
+    );
   }
 
   /**

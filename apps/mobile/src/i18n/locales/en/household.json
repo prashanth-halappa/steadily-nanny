@@ -52,7 +52,8 @@
         "title": "Helper",
         "description": "Can view the schedule and hours — read-only, no editing."
       }
-    }
+    },
+    "codeMeta": "{{role}} invite · expires {{date}}"
   },
   "availability": {
     "wizardTitle": "When are you available?",

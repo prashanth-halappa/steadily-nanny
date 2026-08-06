@@ -129,3 +129,58 @@ describe('HouseholdMemberRepository.listActiveByUser', () => {
     expect(await repo.listActiveByUser('u1')).toEqual([]);
   });
 });
+
+describe('HouseholdMemberRepository.listActiveByHousehold', () => {
+  // Two nannies with no `display_name_override` were indistinguishable on
+  // every member surface, because `household_members` has no name column and
+  // the payload offered nothing to fall back on but the role label.
+  it('joins the profile name onto each row as profile_name', async () => {
+    const rows = [
+      {
+        id: 'm1',
+        household_id: 'h1',
+        user_id: 'u1',
+        role: 'nanny',
+        user_profiles: { name: 'Amara' },
+      },
+      {
+        id: 'm2',
+        household_id: 'h1',
+        user_id: 'u2',
+        role: 'nanny',
+        user_profiles: { name: 'Bea' },
+      },
+    ];
+    let selectArg = '';
+    mockSupabaseService.from.mockImplementation(() => {
+      const chain = createMockQueryChain({ data: rows, error: null });
+      chain.select = mock((arg: string) => {
+        selectArg = arg;
+        return chain;
+      });
+      return chain;
+    });
+    const repo = new HouseholdMemberRepository();
+    const result = await repo.listActiveByHousehold('h1');
+
+    expect(selectArg).toContain('user_profiles');
+    expect(result.map((row: any) => row.profile_name)).toEqual([
+      'Amara',
+      'Bea',
+    ]);
+    // The nested embed is an implementation detail of the join, not wire shape.
+    expect(result[0]).not.toHaveProperty('user_profiles');
+  });
+
+  it('leaves profile_name null when the member has no profile row', async () => {
+    mockSupabaseService.from.mockImplementation(() =>
+      createMockQueryChain({
+        data: [{ id: 'm1', household_id: 'h1', user_id: 'u1', role: 'nanny' }],
+        error: null,
+      })
+    );
+    const repo = new HouseholdMemberRepository();
+    const result = await repo.listActiveByHousehold('h1');
+    expect(result[0].profile_name).toBeNull();
+  });
+});

@@ -11,12 +11,14 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { Button } from '@/src/components/ui/button';
+import { FieldError } from '@/src/components/ui/field-error';
 import { InlineError } from '@/src/components/ui/inline-error';
 import { Input } from '@/src/components/ui/input';
 import { LoadingButton } from '@/src/components/ui/loading-button';
 import { Text } from '@/src/components/ui/text';
 import { H1, Small } from '@/src/components/ui/typography';
 import { appIdentity } from '@/src/config/appIdentity';
+import { isPasswordTooShort } from '@/src/lib/passwordPolicy';
 import { useAuthStore } from '@/src/store/auth';
 import { openExternalUrl } from '@/src/utils/openExternalUrl';
 
@@ -29,6 +31,7 @@ export default function Register() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [passwordVisible, setPasswordVisible] = useState(false);
+  const [attemptedSubmit, setAttemptedSubmit] = useState(false);
   const passwordRef = useRef<TextInput>(null);
   const signUp = useAuthStore(s => s.signUp);
   const clearError = useAuthStore(s => s.clearError);
@@ -41,6 +44,19 @@ export default function Register() {
   useEffect(() => {
     clearError();
   }, [clearError]);
+
+  // Supabase rejects a short password with a 422 the user can't see coming.
+  // Catch it here so the only round trip they make is one that can succeed.
+  // Held back until the first submit — nobody wants to be told their password
+  // is too short while typing its second character.
+  const passwordTooShort = isPasswordTooShort(password);
+  const showPasswordError = attemptedSubmit && passwordTooShort;
+
+  const submit = () => {
+    setAttemptedSubmit(true);
+    if (isPasswordTooShort(password)) return;
+    void signUp(email, password);
+  };
 
   return (
     <SafeAreaView
@@ -83,13 +99,18 @@ export default function Register() {
               value={password}
               onChangeText={setPassword}
               placeholder={t('password')}
-              error={Boolean(error)}
+              error={Boolean(error) || showPasswordError}
               secureTextEntry={!passwordVisible}
               textContentType="newPassword"
               autoComplete="new-password"
               returnKeyType="go"
-              onSubmitEditing={() => void signUp(email, password)}
+              onSubmitEditing={submit}
             />
+            {showPasswordError ? (
+              <FieldError testID="register-password-error">
+                {t('errors.passwordTooShort')}
+              </FieldError>
+            ) : null}
             <Pressable
               testID="register-password-toggle"
               accessibilityRole="button"
@@ -130,7 +151,7 @@ export default function Register() {
             label={t('createAccountCta')}
             isLoading={isLoading}
             disabled={isLoading}
-            onPress={() => void signUp(email, password)}
+            onPress={submit}
           />
           <Button variant="ghost" onPress={() => router.back()}>
             <Text>{t('backToSignIn')}</Text>

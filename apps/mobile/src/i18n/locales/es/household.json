@@ -52,7 +52,8 @@
         "title": "Ayudante",
         "description": "Puede ver el horario y las horas — solo lectura, sin editar."
       }
-    }
+    },
+    "codeMeta": "Invitación de {{role}} · caduca el {{date}}"
   },
   "availability": {
     "wizardTitle": "¿Cuándo estás disponible?",

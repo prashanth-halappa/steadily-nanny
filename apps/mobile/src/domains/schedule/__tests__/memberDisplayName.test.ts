@@ -44,6 +44,14 @@ describe('resolveMemberDisplayName', () => {
     expect(resolveMemberDisplayName(id, 'other', map, labels)).toBe('Sam');
   });
 
+  it('uses the joined profile name before the role label', () => {
+    const id = '55555555-5555-4555-8555-555555555555';
+    const map = new Map([
+      [id, member({ user_id: id, role: 'nanny', profile_name: 'Amara' })],
+    ]);
+    expect(resolveMemberDisplayName(id, 'other', map, labels)).toBe('Amara');
+  });
+
   it('falls back to a role label when there is no override', () => {
     const id = '33333333-3333-4333-8333-333333333333';
     const map = new Map([[id, member({ user_id: id, role: 'nanny' })]]);

@@ -147,6 +147,10 @@ export const HouseholdMemberSchema = z.object({
   can_edit: z.boolean(),
   status: z.enum(Object.values(HOUSEHOLD_MEMBER_STATUSES)),
   display_name_override: z.string().nullable(),
+  // Joined from `user_profiles` by the members-list read only — absent on
+  // rows produced by redeem/patch, and null when the profile row is gone.
+  // Clients resolve a label as override -> profile_name -> role fallback.
+  profile_name: z.string().nullable().optional(),
   colour: z.string().nullable(),
   joined_at: z.iso.datetime({ offset: true }),
   created_at: z.iso.datetime({ offset: true }),
