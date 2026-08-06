@@ -20,6 +20,7 @@
 import type { Shift } from '@steadily-nanny/shared-types/schemas/shift.schema';
 import { supabaseService } from '../../../config/supabase';
 import { DatabaseError } from '../../../errors';
+import { RecurringShiftAlreadyExistsError } from '../errors/scheduleErrors';
 
 export interface NewShiftData {
   household_id: string;
@@ -39,6 +40,30 @@ export interface NewShiftChildData {
   child_id: string;
   starts_at: string | null;
   ends_at: string | null;
+}
+
+const UNIQUE_VIOLATION = '23505';
+/** Migration 062's partial unique index — the name the 23505 is matched on. */
+const RECURRING_WINDOW_UNIQUE_INDEX = 'shifts_recurring_window_unique';
+
+/**
+ * Whether a Postgres error is 062's duplicate-recurring-window collision.
+ * Matched on the CONSTRAINT NAME, not the bare code — `shifts` has other
+ * unique keys (`ical_uid`, 059's extra-shift index), and mistranslating one of
+ * those would send the materialiser hunting for a duplicate that does not
+ * exist. Same shape as `shiftRepository.isExtraWindowCollision`.
+ */
+function isRecurringWindowCollision(error: {
+  code?: string;
+  message: string;
+  details?: string | null;
+}): boolean {
+  return (
+    error.code === UNIQUE_VIOLATION &&
+    `${error.message} ${error.details ?? ''}`.includes(
+      RECURRING_WINDOW_UNIQUE_INDEX
+    )
+  );
 }
 
 export class ScheduleShiftRepository {
@@ -102,6 +127,48 @@ export class ScheduleShiftRepository {
     return (count ?? 0) > 0;
   }
 
+  /**
+   * A live `recurring` shift with exactly this carer and window, whatever
+   * pattern produced it — the lookup behind the materialiser's
+   * adopt-on-collision path. Cross-pattern by design: that is the whole point,
+   * since `findByPatternAndDate` is blind to another pattern's row at the same
+   * instant, which is how the duplicates got created in the first place.
+   */
+  async findRecurringInWindow(
+    householdId: string,
+    carerId: string | null,
+    startsAt: string,
+    endsAt: string
+  ): Promise<Shift | null> {
+    const base = supabaseService
+      .from(this.table)
+      .select('*')
+      .eq('household_id', householdId)
+      .eq('kind', 'recurring')
+      .eq('starts_at', startsAt)
+      .eq('ends_at', endsAt)
+      .neq('status', 'cancelled');
+    const { data, error } = await (carerId
+      ? base.eq('carer_id', carerId)
+      : base.is('carer_id', null)
+    ).limit(1);
+
+    if (error) {
+      throw new DatabaseError(
+        'Failed to look for an existing recurring shift',
+        'DATABASE_ERROR',
+        { details: error.message, householdId, startsAt, endsAt }
+      );
+    }
+    return (data?.[0] as Shift | undefined) ?? null;
+  }
+
+  /**
+   * Translates 062's `shifts_recurring_window_unique` violation (23505) into
+   * `RecurringShiftAlreadyExistsError` so the materialiser can adopt the
+   * existing row instead of failing the whole run — same precedent as
+   * `shiftRepository.createShift` and 059.
+   */
   async create(data: NewShiftData): Promise<Shift> {
     const { data: created, error } = await supabaseService
       .from(this.table)
@@ -110,6 +177,14 @@ export class ScheduleShiftRepository {
       .single();
 
     if (error) {
+      if (isRecurringWindowCollision(error)) {
+        throw new RecurringShiftAlreadyExistsError({
+          householdId: data.household_id,
+          carerId: data.carer_id,
+          startsAt: data.starts_at,
+          endsAt: data.ends_at,
+        });
+      }
       throw new DatabaseError('Failed to create shift', 'DATABASE_ERROR', {
         details: error.message,
         code: error.code,

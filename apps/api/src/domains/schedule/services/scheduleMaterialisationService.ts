@@ -55,6 +55,7 @@ import {
   ShiftEventRepository,
 } from '../../shift/repositories/shiftEventRepository';
 import { TimeEntryRepository } from '../../timesheet/repositories/timeEntryRepository';
+import { RecurringShiftAlreadyExistsError } from '../errors/scheduleErrors';
 import {
   type NewShiftChildData,
   type NewShiftData,
@@ -98,6 +99,12 @@ export interface MaterialisationShiftRepository {
     localDate: string
   ): Promise<Shift | null>;
   findActiveByPattern(patternId: string): Promise<Shift[]>;
+  findRecurringInWindow(
+    householdId: string,
+    carerId: string | null,
+    startsAt: string,
+    endsAt: string
+  ): Promise<Shift | null>;
   hasChangeRequests(shiftId: string): Promise<boolean>;
   create(data: NewShiftData): Promise<Shift>;
   update(id: string, data: Partial<Shift>): Promise<Shift>;
@@ -202,19 +209,28 @@ export class ScheduleMaterialisationService {
       if (new Date(occ.startsAt).getTime() <= now.getTime()) {
         return;
       }
-      const created = await this.shiftRepo.create({
-        household_id: pattern.householdId,
-        carer_id: pattern.carerId,
-        starts_at: occ.startsAt,
-        ends_at: occ.endsAt,
-        timezone: pattern.timezone,
-        kind: 'recurring',
-        status: 'confirmed',
-        source_pattern_id: pattern.id,
-        origin: 'system_generated',
-        note: pattern.note,
-        ical_uid: deriveOccurrenceIcalUid(pattern.icalUid, occ.localDate),
-      });
+      let created: Shift;
+      try {
+        created = await this.shiftRepo.create({
+          household_id: pattern.householdId,
+          carer_id: pattern.carerId,
+          starts_at: occ.startsAt,
+          ends_at: occ.endsAt,
+          timezone: pattern.timezone,
+          kind: 'recurring',
+          status: 'confirmed',
+          source_pattern_id: pattern.id,
+          origin: 'system_generated',
+          note: pattern.note,
+          ical_uid: deriveOccurrenceIcalUid(pattern.icalUid, occ.localDate),
+        });
+      } catch (error) {
+        if (!(error instanceof RecurringShiftAlreadyExistsError)) {
+          throw error;
+        }
+        await this.adoptExistingWindow(pattern, occ, result, error);
+        return;
+      }
       await this.shiftRepo.replaceChildren(created.id, toChildData(occ));
       result.created++;
       return;
@@ -255,6 +271,89 @@ export class ScheduleMaterialisationService {
     });
     await this.shiftRepo.replaceChildren(updated.id, toChildData(occ));
     result.updated++;
+  }
+
+  /**
+   * 062's index refused the insert because a live `recurring` shift already
+   * covers this exact (household, carer, window). Adopt it: re-point it at
+   * THIS pattern so the next run finds it by pattern+date and stops
+   * colliding, and treat it as an update rather than 500ing the carer who
+   * just accepted. Same adopt-the-winner precedent as
+   * `shiftChangeRequestCommandService.insertExtraShift` on 059.
+   *
+   * `ical_uid` is deliberately NOT re-keyed: it is the marker already sitting
+   * in someone's device calendar (`calendarSync.ts`, GOLDEN-FIXES #16), and
+   * rewriting it would orphan that event. Nothing reads the derived uid back —
+   * it is only ever computed at create time.
+   */
+  private async adoptExistingWindow(
+    pattern: PatternForMaterialisation,
+    occ: ExpandedOccurrence,
+    result: MaterialiseResult,
+    collision: RecurringShiftAlreadyExistsError
+  ): Promise<void> {
+    const winner = await this.shiftRepo.findRecurringInWindow(
+      pattern.householdId,
+      pattern.carerId,
+      occ.startsAt,
+      occ.endsAt
+    );
+    if (!winner) {
+      // The index says it exists, the lookup says it does not. Adopting
+      // nothing would silently drop the occurrence; surface the conflict.
+      throw collision;
+    }
+    const adopted = await this.shiftRepo.update(winner.id, {
+      source_pattern_id: pattern.id,
+      note: pattern.note,
+      sequence: winner.sequence + 1,
+    });
+    await this.shiftRepo.replaceChildren(adopted.id, toChildData(occ));
+    result.updated++;
+  }
+
+  /**
+   * Withdraw what an ENDED pattern already put on the calendar: cancel its
+   * FUTURE system-generated shifts. Every path that ends a pattern routes
+   * through `schedulePatternCommandService.endPattern`, which calls this —
+   * without it, a superseded or past-its-`until` pattern's shifts stayed on
+   * the calendar forever with no live pattern behind them (and, for a
+   * superseded pattern, sitting on top of the new pattern's identical rows).
+   *
+   * The exclusions mirror this service's existing policy table: past shifts
+   * are reality and are never rewritten, `completed`/`cancelled` are finished
+   * business, a clocked-into shift is paid-for reality (017), and a
+   * manually-authored shift is not the pattern's to withdraw.
+   *
+   * Returns how many rows it cancelled.
+   */
+  async cancelFutureShiftsForEndedPattern(
+    patternId: string,
+    now: Date = new Date()
+  ): Promise<number> {
+    const shifts = await this.shiftRepo.findActiveByPattern(patternId);
+    let cancelled = 0;
+    for (const shift of shifts) {
+      if (NEVER_TOUCH_STATUSES.has(shift.status)) {
+        continue;
+      }
+      if (shift.origin !== 'system_generated') {
+        continue;
+      }
+      if (new Date(shift.starts_at).getTime() <= now.getTime()) {
+        continue;
+      }
+      if (await this.timeEntryRepo.hasTimeEntries(shift.id)) {
+        continue;
+      }
+      await this.shiftRepo.update(shift.id, {
+        status: 'cancelled',
+        reason: 'pattern_ended',
+        cancelled_at: now.toISOString(),
+      });
+      cancelled++;
+    }
+    return cancelled;
   }
 
   private async reconcileOrphan(
