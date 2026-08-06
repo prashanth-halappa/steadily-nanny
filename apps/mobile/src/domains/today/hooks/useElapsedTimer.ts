@@ -15,8 +15,9 @@ const TICK_MS = 1000;
 
 /**
  * Returns the live elapsed string since `startIso` (an ISO instant with
- * offset), ticking once a second as `HH:MM:SS`, or `null` when `startIso`
- * is `null` (not clocked in) — no interval runs in that case.
+ * offset), ticking once a second and rendered as `HH:MM` (never seconds —
+ * product decision: no user-visible time shows seconds), or `null` when
+ * `startIso` is `null` (not clocked in) — no interval runs in that case.
  */
 export function useElapsedTimer(startIso: string | null): string | null {
   const [nowMs, setNowMs] = useState(() => Date.now());

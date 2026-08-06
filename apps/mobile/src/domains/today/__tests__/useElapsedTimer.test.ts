@@ -73,6 +73,6 @@ describe('useElapsedTimer', () => {
     const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
     const { result } = renderHook(() => useElapsedTimer(twoHoursAgo));
     expect(typeof result.current).toBe('string');
-    expect(result.current).toMatch(/^\d{2}:\d{2}:\d{2}$/);
+    expect(result.current).toMatch(/^\d{2}:\d{2}$/);
   });
 });

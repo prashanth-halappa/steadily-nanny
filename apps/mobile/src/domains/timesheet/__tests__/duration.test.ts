@@ -56,22 +56,22 @@ describe('formatElapsedSince', () => {
 });
 
 describe('formatElapsedClock', () => {
-  it('formats elapsed time as zero-padded HH:MM:SS', () => {
+  it('formats elapsed time as zero-padded HH:MM, never seconds', () => {
     const start = '2026-08-01T07:58:00.000Z';
     const now = new Date('2026-08-01T11:40:17.000Z').getTime();
-    expect(formatElapsedClock(start, now)).toBe('03:42:17');
+    expect(formatElapsedClock(start, now)).toBe('03:42');
   });
 
-  it('shows seconds in the first minute (not a frozen 0m)', () => {
+  it('floors down to the minute within the first minute (no seconds shown)', () => {
     const start = '2026-08-01T07:58:00.000Z';
     const now = new Date('2026-08-01T07:58:30.000Z').getTime();
-    expect(formatElapsedClock(start, now)).toBe('00:00:30');
+    expect(formatElapsedClock(start, now)).toBe('00:00');
   });
 
-  it('clamps negative skew to 00:00:00', () => {
+  it('clamps negative skew to 00:00', () => {
     const start = '2026-08-01T07:58:00.000Z';
     const now = new Date('2026-08-01T07:57:00.000Z').getTime();
-    expect(formatElapsedClock(start, now)).toBe('00:00:00');
+    expect(formatElapsedClock(start, now)).toBe('00:00');
   });
 });
 
