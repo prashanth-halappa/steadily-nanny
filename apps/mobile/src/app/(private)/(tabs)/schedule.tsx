@@ -2,21 +2,23 @@
  * @module app/(private)/(tabs)/schedule
  *
  * Role-aware Schedule tab. Nannies always land on the week calendar.
- * Parents/helpers with an accepted usual week also land on the calendar
- * (pattern status is a banner); otherwise SchedulePendingScreen covers
- * empty / draft / pending / declined.
+ * Parents/helpers ALSO always land on the calendar now — pattern status
+ * (none / draft / pending / declined / withdrawn / accepted) is a banner
+ * above it, never a full-screen takeover. A full-screen
+ * `SchedulePendingScreen` used to hide the calendar (and any still-live
+ * shifts, one-off shifts, and the "Add a one-off shift" button) for every
+ * state except `accepted` — see `SchedulePatternBanner` for the per-state
+ * banner and `/(private)/schedule/usual-week` for the pushed detail screen.
  */
 
-import { type Href, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
-import { Pressable, View } from 'react-native';
+import { View } from 'react-native';
 import { illustrations } from '@/assets/illustrations';
 import { ErrorState } from '@/src/components/custom/ErrorState';
 import { EmptyState } from '@/src/components/ui/empty-state';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
-import { Body, Small } from '@/src/components/ui/typography';
 import {
-  SchedulePendingScreen,
+  SchedulePatternBanner,
   ScheduleShiftsScreen,
 } from '@/src/domains/schedule';
 import { SETUP_ROLES } from '@/src/domains/setup/types';
@@ -25,7 +27,6 @@ import { useSchedulePatterns } from '@/src/hooks/queries/useSchedulePatterns';
 
 export default function ScheduleRoute() {
   const { t } = useTranslation('schedule');
-  const router = useRouter();
   const onboarding = useIsOnboarded();
   const patterns = useSchedulePatterns(
     onboarding.role !== SETUP_ROLES.NANNY ? onboarding.householdId : null
@@ -62,32 +63,16 @@ export default function ScheduleRoute() {
 
   const pattern = (patterns.data ?? []).find(p => p.status !== 'ended') ?? null;
 
-  if (pattern?.status === 'accepted') {
-    return (
-      <ScheduleShiftsScreen
-        showBack={false}
-        patternBanner={
-          <View
-            testID="schedule-pattern-banner"
-            className="flex-row items-center justify-between gap-2 rounded-row bg-card px-3 py-2"
-          >
-            <Small className="flex-1 text-muted-foreground">
-              {t('pending.patternBannerAccepted')}
-            </Small>
-            <Pressable
-              testID="schedule-pattern-banner-change"
-              accessibilityRole="button"
-              onPress={() => router.push('/(private)/schedule/build' as Href)}
-            >
-              <Body className="text-primary">
-                {t('pending.patternBannerChange')}
-              </Body>
-            </Pressable>
-          </View>
-        }
-      />
-    );
-  }
-
-  return <SchedulePendingScreen />;
+  return (
+    <ScheduleShiftsScreen
+      showBack={false}
+      patternBanner={
+        <SchedulePatternBanner
+          pattern={pattern}
+          householdId={onboarding.householdId}
+          isLoading={patterns.isLoading}
+        />
+      }
+    />
+  );
 }

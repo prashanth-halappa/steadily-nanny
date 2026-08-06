@@ -1,8 +1,10 @@
 /**
  * @module domains/schedule/components/SchedulePendingScreen
  *
- * Parent-facing landing screen at `/schedule` (index). Shows the household's
- * current schedule-pattern state and the next action for it:
+ * Usual-week detail screen, pushed from the Schedule tab's pattern banner
+ * (`/(private)/schedule/usual-week`) — NOT the Schedule tab root; the
+ * calendar (`ScheduleShiftsScreen`) is. Shows the household's current
+ * schedule-pattern state and the next action for it:
  *
  *  - no pattern at all           -> empty state with a "build one" CTA
  *  - `draft` (started, not sent) -> prompt to continue building
@@ -208,6 +210,16 @@ export function SchedulePendingScreen() {
         paddingBottom: tabBarScrollPadding,
       }}
     >
+      <Pressable
+        testID="schedule-pending-back"
+        accessibilityRole="button"
+        accessibilityLabel={tCommon('back')}
+        onPress={() => router.back()}
+        hitSlop={8}
+        className="self-start mb-2"
+      >
+        <Body className="text-primary">{`< ${tCommon('back')}`}</Body>
+      </Pressable>
       <H1>{t('pending.screenTitle')}</H1>
 
       {isLoading ? (

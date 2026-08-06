@@ -72,7 +72,16 @@
     "pauseRangeLine": "Paused {{from}}–{{to}}",
     "acceptedMeansShifts": "{{name}} accepted this week. Individual shifts may still show as Pending on the calendar until each is confirmed.",
     "patternBannerAccepted": "Your usual week is accepted",
-    "patternBannerChange": "Change it"
+    "patternBannerChange": "Change it",
+    "patternBannerPending": "Your usual week is with {{name}}",
+    "patternBannerPendingAction": "See it",
+    "patternBannerDraft": "Your usual week isn't sent yet",
+    "patternBannerDraftAction": "Finish it",
+    "patternBannerDeclined": "{{name}} declined your usual week",
+    "patternBannerDeclinedAction": "See why",
+    "patternBannerWithdrawn": "You withdrew your usual week",
+    "patternBannerNone": "No usual week yet",
+    "patternBannerBuildAction": "Build one"
   },
   "respond": {
     "screenTitle": "Review your week",

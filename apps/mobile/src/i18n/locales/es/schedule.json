@@ -72,7 +72,16 @@
     "pauseRangeLine": "Pausa {{from}}–{{to}}",
     "acceptedMeansShifts": "{{name}} aceptó esta semana. Los turnos individuales pueden seguir apareciendo como Pendientes en el calendario hasta que cada uno se confirme.",
     "patternBannerAccepted": "Tu semana habitual está aceptada",
-    "patternBannerChange": "Cambiarla"
+    "patternBannerChange": "Cambiarla",
+    "patternBannerPending": "Tu semana habitual está con {{name}}",
+    "patternBannerPendingAction": "Verla",
+    "patternBannerDraft": "Tu semana habitual aún no se ha enviado",
+    "patternBannerDraftAction": "Terminarla",
+    "patternBannerDeclined": "{{name}} rechazó tu semana habitual",
+    "patternBannerDeclinedAction": "Ver por qué",
+    "patternBannerWithdrawn": "Retiraste tu semana habitual",
+    "patternBannerNone": "Aún no hay semana habitual",
+    "patternBannerBuildAction": "Crear una"
   },
   "respond": {
     "screenTitle": "Revisa tu semana",

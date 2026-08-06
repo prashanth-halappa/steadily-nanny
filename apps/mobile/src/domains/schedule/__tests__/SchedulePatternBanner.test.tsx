@@ -1,0 +1,195 @@
+/**
+ * @module domains/schedule/__tests__/SchedulePatternBanner.test
+ *
+ * Per-state message/action/navigation for the Schedule tab's pattern
+ * banner (WS-G). `useIsOnboarded` / `useHouseholdMembers` / `useAuthStore`
+ * / `expo-router` are mocked via `mock.module()` in `beforeAll`, before the
+ * dynamic import of the component under test.
+ *
+ * The global preload's `react-i18next` mock echoes the key and drops
+ * interpolation, so it is re-mocked here to splice `{{name}}` in — the
+ * carer name reaching the rendered message (pending/declined states) is
+ * part of what's under test.
+ */
+import { beforeAll, describe, expect, it, mock } from 'bun:test';
+import type { SchedulePattern } from '@steadily-nanny/shared-types/schemas/schedule.schema';
+import { render } from '@testing-library/react-native';
+
+const HOUSEHOLD_ID = '11111111-1111-4111-8111-111111111111';
+const CARER_USER_ID = '22222222-2222-4222-8222-222222222222';
+const CURRENT_USER_ID = '33333333-3333-4333-8333-333333333333';
+const PATTERN_ID = '44444444-4444-4444-8444-444444444444';
+
+let SchedulePatternBanner: typeof import('../components/SchedulePatternBanner').SchedulePatternBanner;
+let mockUseIsOnboarded: ReturnType<typeof mock>;
+let mockUseHouseholdMembers: ReturnType<typeof mock>;
+let mockPush: ReturnType<typeof mock>;
+
+beforeAll(async () => {
+  mockUseIsOnboarded = mock(() => ({ role: 'parent' as const }));
+  mockUseHouseholdMembers = mock(() => ({
+    data: [
+      {
+        user_id: CARER_USER_ID,
+        role: 'nanny',
+        display_name_override: 'Priya',
+        profile_name: null,
+      },
+    ],
+  }));
+  mockPush = mock();
+
+  mock.module('@/src/hooks/queries/useIsOnboarded', () => ({
+    useIsOnboarded: mockUseIsOnboarded,
+  }));
+  mock.module('@/src/hooks/queries/useHouseholdMembers', () => ({
+    useHouseholdMembers: mockUseHouseholdMembers,
+  }));
+  mock.module('@/src/store/auth', () => ({
+    useAuthStore: (selector: (s: unknown) => unknown) =>
+      selector({ user: { id: CURRENT_USER_ID } }),
+  }));
+  mock.module('expo-router', () => ({
+    useRouter: () => ({ push: mockPush }),
+  }));
+  mock.module('react-i18next', () => ({
+    useTranslation: () => ({
+      t: (key: string, opts?: { name?: string }) =>
+        opts?.name === undefined ? key : `${key}(${opts.name})`,
+      i18n: { language: 'en', changeLanguage: mock(() => Promise.resolve()) },
+    }),
+  }));
+
+  const mod = await import('../components/SchedulePatternBanner');
+  SchedulePatternBanner = mod.SchedulePatternBanner;
+});
+
+function makePattern(overrides: Partial<SchedulePattern>): SchedulePattern {
+  return {
+    id: PATTERN_ID,
+    household_id: HOUSEHOLD_ID,
+    carer_id: CARER_USER_ID,
+    status: 'pending',
+    rrule: 'FREQ=WEEKLY;INTERVAL=1;BYDAY=MO',
+    dtstart: '2026-08-05',
+    until: null,
+    exdates: [],
+    pause_ranges: [],
+    timezone: 'Europe/London',
+    note: null,
+    decline_message: null,
+    created_at: '2026-08-01T00:00:00.000Z',
+    updated_at: '2026-08-01T00:00:00.000Z',
+    ...overrides,
+  } as SchedulePattern;
+}
+
+describe('SchedulePatternBanner', () => {
+  it('renders null while the owning patterns query is loading (no flash of "No usual week yet")', () => {
+    const { toJSON } = render(
+      <SchedulePatternBanner
+        pattern={null}
+        householdId={HOUSEHOLD_ID}
+        isLoading
+      />
+    );
+    expect(toJSON()).toBeNull();
+  });
+
+  it('accepted: message + "Change it" pushes /schedule/build?patternId=', () => {
+    const pattern = makePattern({ status: 'accepted' });
+    const { getByTestId, getByText } = render(
+      <SchedulePatternBanner pattern={pattern} householdId={HOUSEHOLD_ID} />
+    );
+
+    expect(getByTestId('schedule-pattern-banner-status').children[0]).toBe(
+      'pending.patternBannerAccepted'
+    );
+    expect(getByText('pending.patternBannerChange')).toBeTruthy();
+    const action = getByTestId('schedule-pattern-banner-action');
+    action.props.onPress?.();
+    expect(mockPush).toHaveBeenCalledWith(
+      `/(private)/schedule/build?patternId=${PATTERN_ID}`
+    );
+  });
+
+  it('pending: "Your usual week is with {{name}}" + "See it" pushes /schedule/usual-week', () => {
+    const pattern = makePattern({ status: 'pending' });
+    const { getByTestId } = render(
+      <SchedulePatternBanner pattern={pattern} householdId={HOUSEHOLD_ID} />
+    );
+
+    expect(getByTestId('schedule-pattern-banner-status').children[0]).toBe(
+      'pending.patternBannerPending(Priya)'
+    );
+    getByTestId('schedule-pattern-banner-action').props.onPress?.();
+    expect(mockPush).toHaveBeenCalledWith('/(private)/schedule/usual-week');
+  });
+
+  it('draft: "isn\'t sent yet" + "Finish it" pushes /schedule/build?patternId=', () => {
+    const pattern = makePattern({ status: 'draft' });
+    const { getByTestId } = render(
+      <SchedulePatternBanner pattern={pattern} householdId={HOUSEHOLD_ID} />
+    );
+
+    expect(getByTestId('schedule-pattern-banner-status').children[0]).toBe(
+      'pending.patternBannerDraft'
+    );
+    getByTestId('schedule-pattern-banner-action').props.onPress?.();
+    expect(mockPush).toHaveBeenCalledWith(
+      `/(private)/schedule/build?patternId=${PATTERN_ID}`
+    );
+  });
+
+  it('declined: "{{name}} declined" + "See why" pushes /schedule/usual-week', () => {
+    const pattern = makePattern({ status: 'declined' });
+    const { getByTestId } = render(
+      <SchedulePatternBanner pattern={pattern} householdId={HOUSEHOLD_ID} />
+    );
+
+    expect(getByTestId('schedule-pattern-banner-status').children[0]).toBe(
+      'pending.patternBannerDeclined(Priya)'
+    );
+    getByTestId('schedule-pattern-banner-action').props.onPress?.();
+    expect(mockPush).toHaveBeenCalledWith('/(private)/schedule/usual-week');
+  });
+
+  it('withdrawn: "You withdrew" + "Build one" pushes /schedule/build with NO patternId', () => {
+    const pattern = makePattern({ status: 'withdrawn' });
+    const { getByTestId } = render(
+      <SchedulePatternBanner pattern={pattern} householdId={HOUSEHOLD_ID} />
+    );
+
+    expect(getByTestId('schedule-pattern-banner-status').children[0]).toBe(
+      'pending.patternBannerWithdrawn'
+    );
+    getByTestId('schedule-pattern-banner-action').props.onPress?.();
+    expect(mockPush).toHaveBeenCalledWith('/(private)/schedule/build');
+  });
+
+  it('no pattern (null): "No usual week yet" + "Build one" pushes /schedule/build with NO patternId', () => {
+    const { getByTestId } = render(
+      <SchedulePatternBanner pattern={null} householdId={HOUSEHOLD_ID} />
+    );
+
+    expect(getByTestId('schedule-pattern-banner-status').children[0]).toBe(
+      'pending.patternBannerNone'
+    );
+    getByTestId('schedule-pattern-banner-action').props.onPress?.();
+    expect(mockPush).toHaveBeenCalledWith('/(private)/schedule/build');
+  });
+
+  it('helper (non-editor) role: message renders with NO action Pressable, in every state', () => {
+    mockUseIsOnboarded.mockImplementation(() => ({ role: 'helper' as const }));
+
+    const pattern = makePattern({ status: 'pending' });
+    const { getByTestId, queryByTestId } = render(
+      <SchedulePatternBanner pattern={pattern} householdId={HOUSEHOLD_ID} />
+    );
+
+    expect(getByTestId('schedule-pattern-banner-status')).toBeTruthy();
+    expect(queryByTestId('schedule-pattern-banner-action')).toBeNull();
+
+    mockUseIsOnboarded.mockImplementation(() => ({ role: 'parent' as const }));
+  });
+});
