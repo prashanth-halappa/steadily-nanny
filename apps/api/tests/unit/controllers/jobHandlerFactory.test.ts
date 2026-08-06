@@ -27,6 +27,7 @@ beforeAll(async () => {
       start: mock(async () => 'run-1'),
       complete: mock(async () => undefined),
       fail: mock(async () => undefined),
+      hasFreshRunningRun: mock(async () => false),
     },
   }));
   mock.module('../../../src/middlewares/logger', () => ({
@@ -54,6 +55,8 @@ beforeEach(() => {
   JobRunService.start.mockClear?.();
   JobRunService.complete.mockClear?.();
   JobRunService.fail.mockClear?.();
+  JobRunService.hasFreshRunningRun.mockClear?.();
+  JobRunService.hasFreshRunningRun.mockImplementation(async () => false);
   logger.error.mockClear?.();
 });
 
@@ -192,5 +195,48 @@ describe('createTrackedJobHandler — F-B9-9: errorCount > 0 fails loudly', () =
     expect(JobRunService.fail).toHaveBeenCalledTimes(1);
     expect(JobRunService.complete).not.toHaveBeenCalled();
     expect(error).toBeInstanceOf(Error);
+  });
+});
+
+describe('createTrackedJobHandler — F-B4-10: in-flight guard', () => {
+  test('a fresh running row for the same job blocks the run with 409', async () => {
+    JobRunService.hasFreshRunningRun.mockImplementation(
+      async (jobName: string) => jobName === 'guarded-job'
+    );
+    const jobFn = mock(async () => ({ successCount: 1, errorCount: 0 }));
+    const handler = createTrackedJobHandler('guarded-job', jobFn, 'done');
+    const { res, error } = await invoke(handler);
+
+    expect(jobFn).not.toHaveBeenCalled();
+    expect(JobRunService.start).not.toHaveBeenCalled();
+    expect(res.body).toBeUndefined();
+    expect(error).toBeInstanceOf(Error);
+    expect((error as { statusCode?: number }).statusCode).toBe(409);
+    expect((error as { code?: string }).code).toBe('CONFLICT');
+    expect((error as Error).message).toContain('guarded-job');
+  });
+
+  test('a stale/no running row lets the job run normally', async () => {
+    JobRunService.hasFreshRunningRun.mockImplementation(async () => false);
+    const jobFn = mock(async () => ({ successCount: 1, errorCount: 0 }));
+    const handler = createTrackedJobHandler('unguarded-job', jobFn, 'done');
+    const { res, error } = await invoke(handler);
+
+    expect(jobFn).toHaveBeenCalledTimes(1);
+    expect(JobRunService.start).toHaveBeenCalledTimes(1);
+    expect(error).toBeUndefined();
+    expect(res.body.success).toBe(true);
+  });
+
+  test('a running row for a different job name does not block this one', async () => {
+    JobRunService.hasFreshRunningRun.mockImplementation(
+      async (jobName: string) => jobName === 'other-job'
+    );
+    const jobFn = mock(async () => ({ successCount: 1, errorCount: 0 }));
+    const handler = createTrackedJobHandler('this-job', jobFn, 'done');
+    const { error } = await invoke(handler);
+
+    expect(jobFn).toHaveBeenCalledTimes(1);
+    expect(error).toBeUndefined();
   });
 });

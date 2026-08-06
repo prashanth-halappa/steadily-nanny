@@ -603,3 +603,185 @@ describe('ScheduleMaterialisationService — wall-clock -> UTC uses the PATTERN 
     }
   });
 });
+
+// F-B6-4 remaining half: a no-op nightly horizon run must not rewrite every
+// shift it re-expands. `applyUpdates` used to run `update` +
+// `replaceChildrenMany` for every paired occurrence, clean or dirty — bumping
+// `sequence` on every row (the mobile ShiftDetailScreen's copy switches on
+// `sequence === 0`, and the calendar seam treats a higher sequence as "needs
+// push") and counting every row as `updated`, on a run where literally
+// nothing changed.
+describe('ScheduleMaterialisationService — a no-op re-run does not rewrite unchanged shifts', () => {
+  /** An existing shift that already matches `pattern` and `unchangedOcc` byte-for-byte, modulo serialisation. */
+  const unchangedShift = (overrides: Partial<Shift> = {}): Shift => ({
+    ...shiftFromRow(
+      {
+        household_id: 'household-1',
+        carer_id: 'carer-1',
+        // PostgREST's `+00:00` — deliberately NOT the `.000Z` the occurrence
+        // below is built with (GOLDEN-FIXES #25).
+        starts_at: '2026-06-02T07:00:00+00:00',
+        ends_at: '2026-06-02T16:00:00+00:00',
+        timezone: 'Europe/London',
+        kind: 'recurring',
+        status: 'confirmed',
+        source_pattern_id: 'pattern-1',
+        origin: 'system_generated',
+        note: 'The usual week', // matches `pattern.note` — see top-of-file fixture
+        ical_uid: 'pattern-ical-uid::2026-06-02',
+      },
+      'shift-1'
+    ),
+    local_date: '2026-06-02',
+    sequence: 0,
+    ...overrides,
+  });
+
+  const unchangedOcc: ExpandedOccurrence = {
+    localDate: '2026-06-02',
+    weekday: 2,
+    startsAt: '2026-06-02T07:00:00.000Z',
+    endsAt: '2026-06-02T16:00:00.000Z',
+    children: [],
+  };
+
+  it('performs zero update calls and zero replaceChildrenMany calls when nothing about the shift changed', async () => {
+    const shiftRepo = makeCountingRepo({
+      findActiveByPattern: mock(async () => [unchangedShift()]),
+    });
+    const svc = new ScheduleMaterialisationService(
+      shiftRepo,
+      makeTimeEntryRepo(),
+      makeEventRepo()
+    );
+
+    const result = await svc.materialise(pattern, [unchangedOcc], NOW);
+
+    expect(shiftRepo.update).not.toHaveBeenCalled();
+    expect(shiftRepo.replaceChildrenMany).not.toHaveBeenCalled();
+    expect(result.updated).toBe(0);
+  });
+
+  it('still updates, demotes confirmed to pending, and bumps sequence when the time moved', async () => {
+    const shiftRepo = makeCountingRepo({
+      findActiveByPattern: mock(async () => [unchangedShift()]),
+    });
+    const svc = new ScheduleMaterialisationService(
+      shiftRepo,
+      makeTimeEntryRepo(),
+      makeEventRepo()
+    );
+
+    const moved: ExpandedOccurrence = {
+      ...unchangedOcc,
+      startsAt: '2026-06-02T08:00:00.000Z',
+    };
+    const result = await svc.materialise(pattern, [moved], NOW);
+
+    expect(shiftRepo.update).toHaveBeenCalledWith(
+      'shift-1',
+      expect.objectContaining({
+        status: 'pending',
+        starts_at: moved.startsAt,
+        sequence: 1,
+      })
+    );
+    expect(shiftRepo.replaceChildrenMany).toHaveBeenCalledTimes(1);
+    expect(result.updated).toBe(1);
+  });
+
+  it('updates without demoting status when only the note changed', async () => {
+    const shiftRepo = makeCountingRepo({
+      findActiveByPattern: mock(async () => [unchangedShift()]),
+    });
+    const svc = new ScheduleMaterialisationService(
+      shiftRepo,
+      makeTimeEntryRepo(),
+      makeEventRepo()
+    );
+
+    const amendedPattern: PatternForMaterialisation = {
+      ...pattern,
+      note: 'New note for the household',
+    };
+    const result = await svc.materialise(amendedPattern, [unchangedOcc], NOW);
+
+    expect(shiftRepo.update).toHaveBeenCalledWith(
+      'shift-1',
+      expect.objectContaining({
+        status: 'confirmed',
+        note: 'New note for the household',
+        sequence: 1,
+      })
+    );
+    expect(result.updated).toBe(1);
+  });
+
+  it('in a mixed batch, only the dirty pair is updated — the clean pair is left alone', async () => {
+    const dirtyOcc: ExpandedOccurrence = {
+      localDate: '2026-06-04',
+      weekday: 4,
+      startsAt: '2026-06-04T07:00:00.000Z',
+      endsAt: '2026-06-04T16:00:00.000Z',
+      children: [],
+    };
+    const dirtyShift = unchangedShift({
+      id: 'shift-2',
+      local_date: '2026-06-04',
+      // Moved from what `dirtyOcc` now produces.
+      starts_at: '2026-06-04T09:00:00+00:00',
+      ends_at: '2026-06-04T16:00:00+00:00',
+      ical_uid: 'pattern-ical-uid::2026-06-04',
+    });
+    const shiftRepo = makeCountingRepo({
+      findActiveByPattern: mock(async () => [unchangedShift(), dirtyShift]),
+    });
+    const svc = new ScheduleMaterialisationService(
+      shiftRepo,
+      makeTimeEntryRepo(),
+      makeEventRepo()
+    );
+
+    const result = await svc.materialise(
+      pattern,
+      [unchangedOcc, dirtyOcc],
+      NOW
+    );
+
+    expect(shiftRepo.update).toHaveBeenCalledTimes(1);
+    expect(shiftRepo.update).toHaveBeenCalledWith(
+      'shift-2',
+      expect.objectContaining({ status: 'pending' })
+    );
+    expect(shiftRepo.replaceChildrenMany).toHaveBeenCalledTimes(1);
+    expect(shiftRepo.replaceChildrenMany).toHaveBeenCalledWith([
+      { shiftId: 'shift-2', children: [] },
+    ]);
+    expect(result.updated).toBe(1);
+  });
+
+  it('reads as clean when the stored instant and the expanded occurrence use different offset serialisations for BOTH edges', async () => {
+    // Stored with a non-Z, non-`+00:00` numeric offset that is still the same
+    // instant as the `.000Z` occurrence below — a stricter mix than
+    // `unchangedShift`'s `+00:00`, so a naive string compare on either edge
+    // would misfire here specifically.
+    const shiftRepo = makeCountingRepo({
+      findActiveByPattern: mock(async () => [
+        unchangedShift({
+          starts_at: '2026-06-02T08:00:00+01:00', // == 07:00Z
+          ends_at: '2026-06-02T17:00:00+01:00', // == 16:00Z
+        }),
+      ]),
+    });
+    const svc = new ScheduleMaterialisationService(
+      shiftRepo,
+      makeTimeEntryRepo(),
+      makeEventRepo()
+    );
+
+    const result = await svc.materialise(pattern, [unchangedOcc], NOW);
+
+    expect(shiftRepo.update).not.toHaveBeenCalled();
+    expect(result.updated).toBe(0);
+  });
+});

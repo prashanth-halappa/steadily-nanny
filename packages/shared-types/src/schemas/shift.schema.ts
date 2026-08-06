@@ -68,13 +68,22 @@ export const CREATE_SHIFT_CHANGE_REQUEST_KINDS = {
   COUNTER_OFFER: SHIFT_CHANGE_REQUEST_KINDS.COUNTER_OFFER,
 } as const;
 
-/** shift_change_requests.status */
+/**
+ * shift_change_requests.status
+ *
+ * `EXPIRED` is written only by the 7-day sweep in `scheduleHorizonJob`
+ * (migration 064, finding F-B5-5) and is deliberately NOT `WITHDRAWN`:
+ * withdrawn means the requester changed their mind, and on a table the
+ * family reads back as an audit trail, saying that of someone who simply
+ * never got an answer is a lie.
+ */
 export const SHIFT_CHANGE_REQUEST_STATUSES = {
   PENDING: 'pending',
   ACCEPTED: 'accepted',
   DECLINED: 'declined',
   WITHDRAWN: 'withdrawn',
   SUPERSEDED: 'superseded',
+  EXPIRED: 'expired',
 } as const;
 export type ShiftChangeRequestStatus =
   (typeof SHIFT_CHANGE_REQUEST_STATUSES)[keyof typeof SHIFT_CHANGE_REQUEST_STATUSES];

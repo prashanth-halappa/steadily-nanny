@@ -95,9 +95,13 @@ export class ScheduleShiftRepository {
   }
 
   /**
-   * Which of `shiftIds` have EVER had a change request opened against them
-   * (any status) — one round trip for a whole materialisation run, replacing
-   * the per-shift `hasChangeRequests` probe.
+   * Which of `shiftIds` have EVER had a change request opened against them —
+   * any status EXCEPT `expired`. Withdrawn/declined still count: a human
+   * engaged with the shift. `expired` (migration 064, F-B5-5) means "nobody
+   * answered for 7 days" and must NOT freeze the shift from
+   * re-materialisation forever — see `scheduleMaterialisationService.ts`'s
+   * module doc. One round trip for a whole materialisation run, replacing the
+   * per-shift `hasChangeRequests` probe.
    */
   async shiftIdsWithChangeRequests(shiftIds: string[]): Promise<Set<string>> {
     if (shiftIds.length === 0) {
@@ -106,7 +110,8 @@ export class ScheduleShiftRepository {
     const { data, error } = await supabaseService
       .from(this.changeRequestsTable)
       .select('shift_id')
-      .in('shift_id', shiftIds);
+      .in('shift_id', shiftIds)
+      .neq('status', 'expired');
 
     if (error) {
       throw new DatabaseError(

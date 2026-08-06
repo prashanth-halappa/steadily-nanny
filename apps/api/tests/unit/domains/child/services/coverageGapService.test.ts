@@ -327,7 +327,10 @@ describe('CoverageGapService.raiseGapsOnce', () => {
   function makeEventRepo(overrides: Record<string, unknown> = {}): any {
     return {
       listEventKeysForDate: mock(async () => new Set<string>()),
-      insertMany: mock(async () => undefined),
+      // Default: everything submitted was genuinely created (no concurrent
+      // race) — mirrors `ShiftEventRepository.insertMany`'s
+      // `ON CONFLICT DO NOTHING RETURNING` contract (F-B6-5).
+      insertMany: mock(async (rows: unknown[]) => rows),
       ...overrides,
     };
   }

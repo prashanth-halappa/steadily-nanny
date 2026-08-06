@@ -356,6 +356,104 @@ describe('response-leg pushes', () => {
   });
 });
 
+describe('open-leg push on the co-parent-approved path (D1)', () => {
+  /** The approval `approvalApplierRegistry` hands back once the co-parent signs off. */
+  const approval = {
+    id: 'ap1',
+    household_id: 'h1',
+    requested_by: 'parent-1',
+    action: 'short_notice_change' as const,
+    payload: {
+      shift_id: 's1',
+      kind: 'time_change',
+      proposed_starts_at: '2026-08-03T09:00:00.000Z',
+      proposed_ends_at: '2026-08-03T18:00:00.000Z',
+      message: 'Running late',
+    },
+    status: 'approved' as const,
+    timeout_at: '2026-08-02T08:00:00.000Z',
+    responded_by: 'parent-2',
+    responded_at: '2026-08-02T07:00:00.000Z',
+    created_at: 't',
+    updated_at: 't',
+  };
+
+  it('tells the nanny when an approved short-notice change opens a request on her shift', async () => {
+    // D1: the gated path opened the request silently. Three of the four
+    // `openChangeRequest` call sites notify; this one did not, so a nanny
+    // whose shift was changed via co-parent approval learned about it only by
+    // opening the app — the one path where the ask was DELAYED, and so the one
+    // where a push matters most.
+    const svc = makeSvc();
+
+    await svc.applyApprovedChangeRequest(approval as any);
+
+    expect(notifyUser).toHaveBeenCalledTimes(1);
+    expect(notifyUser).toHaveBeenCalledWith(
+      'carer-1',
+      expect.objectContaining({
+        data: expect.objectContaining({
+          type: PUSH_NOTIFICATION_TYPES.SHIFT_CHANGE_REQUESTED,
+          shiftId: 's1',
+          householdId: 'h1',
+          changeRequestId: 'cr-new',
+        }),
+      })
+    );
+  });
+
+  it('stays silent while the co-parent has not approved yet', async () => {
+    // The negative half of the same invariant: `create` returning
+    // `pending_approval` has opened NOTHING, so notifying the nanny there
+    // would announce an ask that may still be declined. The push belongs to
+    // the open, not to the request for permission.
+    const svc = makeSvc({
+      gate: {
+        assertApprovalAllows: mock(async () => ({
+          needsApproval: true,
+          approval,
+        })),
+      },
+    });
+
+    const result = await svc.create('parent-1', 's1', {
+      kind: 'cancel',
+      message: 'Cannot make it',
+    });
+
+    expect(result.status).toBe('pending_approval');
+    expect(notifyUser).not.toHaveBeenCalled();
+    expect(notifyHouseholdParents).not.toHaveBeenCalled();
+  });
+
+  it('opens the request without a push when the shift has no carer', async () => {
+    // Mirrors the sibling call site's guard: an unassigned shift is a real
+    // state, and there is nobody to tell.
+    const svc = makeSvc({
+      shiftQueries: {
+        getOwned: mock(async () => ({ ...shift, carer_id: null })),
+      },
+    });
+
+    await svc.applyApprovedChangeRequest(approval as any);
+
+    expect(notifyUser).not.toHaveBeenCalled();
+  });
+
+  it('still returns the opened request when the push throws', async () => {
+    // Fire-and-forget, same as every sibling: `safeNotify` swallows.
+    notifyUser.mockImplementation(() => {
+      throw new Error('push boom');
+    });
+    const svc = makeSvc();
+
+    const result = await svc.applyApprovedChangeRequest(approval as any);
+
+    expect(result.id).toBe('cr-new');
+    notifyUser.mockImplementation(() => undefined);
+  });
+});
+
 describe('paid-cancel recorder', () => {
   it('calls the recorder with the updated shift on paid cancel accept', async () => {
     const recorder = mock(async () => null);

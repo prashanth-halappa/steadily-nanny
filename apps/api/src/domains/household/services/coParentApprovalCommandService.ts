@@ -15,6 +15,7 @@ import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types/schemas/no
 import { logger } from '../../../middlewares/logger';
 import { notifyUser } from '../../notification';
 import {
+  ApprovalApplyFailedError,
   ApprovalNotFoundError,
   ApprovalNotPendingError,
   SelfApprovalNotAllowedError,
@@ -31,6 +32,7 @@ import { assertHouseholdWriteRole } from '../utils/assertHouseholdRole';
 import {
   approvalApplierRegistry,
   failureCostsAttempt,
+  notifyRequesterApplyFailed,
 } from './approvalApplierRegistry';
 import {
   type HouseholdQueryService,
@@ -148,7 +150,19 @@ export class CoParentApprovalCommandService {
         await this.clearApplyMarkers(responded);
       } catch (error) {
         await this.recordFailedApply(responded, error);
-        throw error;
+        // O2: the raw internal applier message (e.g. a missing-payload-key
+        // error) must never reach the responding parent — log it in full
+        // here, then surface a clean, typed error instead. The revert to
+        // `pending` above is unchanged; only what's thrown back changes.
+        logger.error(
+          "Co-parent approval applier failed on respond; reverted to 'pending'",
+          {
+            approvalId: responded.id,
+            householdId: responded.household_id,
+            error: error instanceof Error ? error.message : String(error),
+          }
+        );
+        throw new ApprovalApplyFailedError(responded.id);
       }
     }
 
@@ -169,12 +183,18 @@ export class CoParentApprovalCommandService {
   ): Promise<void> {
     const reason = cause instanceof Error ? cause.message : String(cause);
     try {
-      await this.approvalRepo.recordFailedApply(
+      const outcome = await this.approvalRepo.recordFailedApply(
         approval,
         CO_PARENT_APPROVAL_STATUSES.APPROVED,
         reason,
         failureCostsAttempt(cause)
       );
+      // D3: exhausted retries on the respond-path — same terminal push as the
+      // expiry sweep's `applyAllSettled` (`approvalApplierRegistry`), so a
+      // failed apply never vanishes silently regardless of which path hit it.
+      if (outcome === 'failed') {
+        notifyRequesterApplyFailed(approval);
+      }
     } catch (error) {
       logger.error('Failed to record an approval whose applier threw', {
         approvalId: approval.id,

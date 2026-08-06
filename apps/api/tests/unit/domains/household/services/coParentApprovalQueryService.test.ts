@@ -14,6 +14,12 @@ import type {
  */
 const recordFailedApply = mock(async () => 'retrying' as const);
 
+// D3/D4: a successful or terminally-failed timeout apply now pushes to the
+// requester (`approvalApplierRegistry.applyAllSettled`), so `notifyUser` must
+// be mocked before the registry is imported below — a unit test must never
+// place a real push.
+const notifyUser = mock(() => undefined);
+
 let CoParentApprovalQueryService: any;
 let approvalApplierRegistry: any;
 
@@ -26,6 +32,10 @@ beforeAll(async () => {
       },
     })
   );
+  mock.module('../../../../../src/domains/notification', () => ({
+    notifyUser,
+    notifyHouseholdParents: mock(() => undefined),
+  }));
 
   ({ CoParentApprovalQueryService } = await import(
     '../../../../../src/domains/household/services/coParentApprovalQueryService'

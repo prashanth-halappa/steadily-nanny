@@ -1,5 +1,6 @@
 import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 import { ChangeRequestNotPendingError } from '../../../../../src/domains/shift/errors/shiftErrors';
+import { DatabaseError } from '../../../../../src/errors';
 
 let ShiftChangeRequestRepository: any;
 let mockSupabaseService: any;
@@ -11,6 +12,7 @@ function createMockQueryChain(
     select: mock(() => chain),
     eq: mock(() => chain),
     neq: mock(() => chain),
+    lt: mock(() => chain),
     in: mock(() => chain),
     order: mock(() => chain),
     update: mock(() => chain),
@@ -124,6 +126,74 @@ describe('ShiftChangeRequestRepository.withdraw', () => {
     const repo = new ShiftChangeRequestRepository();
     await expect(repo.withdraw('cr1')).rejects.toBeInstanceOf(
       ChangeRequestNotPendingError
+    );
+  });
+});
+
+describe('ShiftChangeRequestRepository.expirePendingOlderThan', () => {
+  const CUTOFF = '2026-07-30T00:00:00.000Z';
+
+  it('flips only pending rows created before the cutoff, and returns them', async () => {
+    const flipped = [
+      { id: 'cr1', status: 'expired', shift_id: 's1' },
+      { id: 'cr2', status: 'expired', shift_id: 's2' },
+    ];
+    const chain = createMockQueryChain({ data: flipped, error: null });
+    mockSupabaseService.from.mockImplementation(() => chain);
+    const repo = new ShiftChangeRequestRepository();
+
+    const result = await repo.expirePendingOlderThan(CUTOFF);
+
+    expect(chain.update).toHaveBeenCalledWith({ status: 'expired' });
+    // CAS on pending: an accepted/declined/withdrawn row is settled and must
+    // never be reopened as `expired` by a sweep that happens to run later.
+    expect(chain.eq).toHaveBeenCalledWith('status', 'pending');
+    expect(chain.lt).toHaveBeenCalledWith('created_at', CUTOFF);
+    expect(chain.select).toHaveBeenCalled();
+    expect(result).toEqual(flipped);
+  });
+
+  it('never stamps responded_by or responded_at — nobody responded', async () => {
+    const chain = createMockQueryChain({ data: [], error: null });
+    mockSupabaseService.from.mockImplementation(() => chain);
+    const repo = new ShiftChangeRequestRepository();
+
+    await repo.expirePendingOlderThan(CUTOFF);
+
+    const patch = chain.update.mock.calls[0][0];
+    expect(patch).not.toHaveProperty('responded_by');
+    expect(patch).not.toHaveProperty('responded_at');
+  });
+
+  it('returns [] when nothing is stale — an empty sweep is not an error', async () => {
+    // Unlike `withdraw`/`respond`, matching no row is the NORMAL case here:
+    // most runs find nothing. Throwing ChangeRequestNotPendingError the way
+    // the single-row CAS paths do would fail the job every quiet day.
+    mockSupabaseService.from.mockImplementation(() =>
+      createMockQueryChain({ data: [], error: null })
+    );
+    const repo = new ShiftChangeRequestRepository();
+
+    await expect(repo.expirePendingOlderThan(CUTOFF)).resolves.toEqual([]);
+  });
+
+  it('returns [] when the driver hands back a null body', async () => {
+    mockSupabaseService.from.mockImplementation(() =>
+      createMockQueryChain({ data: null, error: null })
+    );
+    const repo = new ShiftChangeRequestRepository();
+
+    await expect(repo.expirePendingOlderThan(CUTOFF)).resolves.toEqual([]);
+  });
+
+  it('throws DatabaseError when the update fails', async () => {
+    mockSupabaseService.from.mockImplementation(() =>
+      createMockQueryChain({ data: null, error: { message: 'boom' } })
+    );
+    const repo = new ShiftChangeRequestRepository();
+
+    await expect(repo.expirePendingOlderThan(CUTOFF)).rejects.toBeInstanceOf(
+      DatabaseError
     );
   });
 });

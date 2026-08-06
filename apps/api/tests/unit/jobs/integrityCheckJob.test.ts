@@ -27,6 +27,8 @@ beforeAll(async () => {
   }));
   mock.module('../../../src/domains/job/services/jobRunService', () => ({
     JobRunService: {
+      // No fresh in-flight run — the F-B4-10 guard must let the job proceed.
+      hasFreshRunningRun: mock(async () => false),
       start: mock(async () => 'run-1'),
       complete: mock(async () => undefined),
       fail: mock(async () => undefined),

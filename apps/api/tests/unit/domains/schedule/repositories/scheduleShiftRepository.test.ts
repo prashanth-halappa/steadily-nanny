@@ -138,6 +138,21 @@ describe('ScheduleShiftRepository batch reads and writes', () => {
     expect(chain.in).toHaveBeenCalledWith('shift_id', ['s1', 's2', 's3']);
   });
 
+  // F-B6-4/expiry follow-up: `expired` means "nobody answered for 7 days"
+  // (migration 064, F-B5-5), not "a human touched this shift" — unlike
+  // withdrawn/declined, which DO represent human engagement and must keep
+  // freezing the shift from re-materialisation (scheduleMaterialisationService.ts's
+  // module doc).
+  it('shiftIdsWithChangeRequests excludes expired requests from the probe', async () => {
+    const chain = createMockQueryChain({ data: [], error: null });
+    mockSupabaseService.from.mockImplementation(() => chain);
+
+    const repo = new ScheduleShiftRepository();
+    await repo.shiftIdsWithChangeRequests(['s1']);
+
+    expect(chain.neq).toHaveBeenCalledWith('status', 'expired');
+  });
+
   it('shiftIdsWithChangeRequests short-circuits on an empty list', async () => {
     const repo = new ScheduleShiftRepository();
     expect(await repo.shiftIdsWithChangeRequests([])).toEqual(new Set());

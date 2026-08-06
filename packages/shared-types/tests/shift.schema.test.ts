@@ -72,7 +72,14 @@ describe('shift.schema', () => {
     it('SHIFT_CHANGE_REQUEST_STATUSES matches shift_change_requests.status', () => {
       const values: string[] = Object.values(SHIFT_CHANGE_REQUEST_STATUSES);
       expect(values.sort()).toEqual(
-        ['pending', 'accepted', 'declined', 'withdrawn', 'superseded'].sort()
+        [
+          'pending',
+          'accepted',
+          'declined',
+          'withdrawn',
+          'superseded',
+          'expired',
+        ].sort()
       );
     });
   });
@@ -283,6 +290,18 @@ describe('shift.schema', () => {
           kind: 'reminder',
         }).success
       ).toBe(false);
+    });
+
+    it('parses an expired change request', () => {
+      // F-B5-5: the 7-day sweep flips stale pending rows to `expired`, a
+      // status no client has ever been sent before. `responded_by` stays null
+      // — nobody responded, the clock ran out.
+      expect(
+        ShiftChangeRequestSchema.safeParse({
+          ...validRequest,
+          status: 'expired',
+        }).success
+      ).toBe(true);
     });
   });
 

@@ -461,7 +461,7 @@ export class ShiftChangeRequestCommandService {
 
     await this.shiftRepo.assertMutable(payload.shift_id);
 
-    return this.openChangeRequest(shift, requestedBy, {
+    const changeRequest = await this.openChangeRequest(shift, requestedBy, {
       kind: payload.kind as CreateShiftChangeRequestInput['kind'],
       proposed_starts_at:
         typeof payload.proposed_starts_at === 'string'
@@ -474,6 +474,12 @@ export class ShiftChangeRequestCommandService {
       message:
         typeof payload.message === 'string' ? payload.message : undefined,
     });
+    // D1: this open was as real as `create`'s, and the nanny was never told.
+    // It is also the one path where the ask was DELAYED — parked while the
+    // co-parent decided — so she has less reason than anywhere else to be
+    // watching the app for it.
+    this.notifyChangeRequestOpened(shift, requestedBy, changeRequest.id);
+    return changeRequest;
   }
 
   /**

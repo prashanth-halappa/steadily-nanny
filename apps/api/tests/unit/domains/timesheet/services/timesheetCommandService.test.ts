@@ -3225,7 +3225,7 @@ describe('TimesheetCommandService.reopen', () => {
       })),
     });
     const eventRepo = {
-      insertMany: mock(async () => undefined),
+      insertMany: mock(async () => []),
     };
     const svc = new TimesheetCommandService(
       timeEntryRepo,
@@ -3309,7 +3309,7 @@ describe('TimesheetCommandService.reopen', () => {
       makeUserService(),
       push,
       makeEarnings(),
-      { insertMany: mock(async () => undefined) }
+      { insertMany: mock(async () => []) }
     );
 
     await svc.reopen('parent-1', 'ts1', { reason: 'missed break' });
@@ -3353,7 +3353,7 @@ describe('TimesheetCommandService.reopen', () => {
       makeUserService(),
       push,
       makeEarnings(),
-      { insertMany: mock(async () => undefined) }
+      { insertMany: mock(async () => []) }
     );
 
     const result = await svc.reopen('parent-1', 'ts1', {
@@ -3364,7 +3364,7 @@ describe('TimesheetCommandService.reopen', () => {
 
   it('two reopens produce two append-only audit rows', async () => {
     const eventRepo = {
-      insertMany: mock(async () => undefined),
+      insertMany: mock(async () => []),
     };
     // Both reads return approved — models parent re-approving between the
     // two undos. Each reopen appends its own day-thread row.
@@ -3413,7 +3413,7 @@ describe('TimesheetCommandService.reopen', () => {
   // are the permanent record that the week was un-approved, twice if twice.
   it('re-approving a reopened week clears reopen_reason and leaves audit events untouched', async () => {
     const eventRepo = {
-      insertMany: mock(async () => undefined),
+      insertMany: mock(async () => []),
     };
     const timesheetRepo = makeApprovingRepo({
       update: mock(async (_id: string, patch: Record<string, unknown>) => ({

@@ -22,6 +22,15 @@
  * horizon is this job's real purpose and must not depend on the approval sweep
  * succeeding.
  *
+ * And ages out `shift_change_requests` nobody answered (F-B5-5, migration
+ * 064). That table had five statuses and no clock — four reached by somebody
+ * DOING something, none by nobody doing anything — so an unanswered request
+ * stayed `pending` long after the shift it was about. `EXPIRY_DAYS` days after
+ * `created_at` the sweep flips it to `expired`, which is deliberately not
+ * `withdrawn`: withdrawn means the requester acted. Same logged-and-swallowed
+ * isolation as the approval sweep, and isolated from that sweep too — one
+ * unreachable table is not a reason to skip the other.
+ *
  * SETUP: scheduled daily via pg_cron in migration
  * `026_schedule_horizon_cron.sql` (POST `/api/jobs/schedule-horizon`). Requires
  * Vault secrets `cron_api_base_url` and `cron_job_api_key` (see migration 007).
@@ -39,13 +48,26 @@ import {
   schedulePatternCommandService,
 } from '../domains/schedule/services/schedulePatternCommandService';
 import type { SchedulePattern } from '../domains/schedule/types';
+import { ShiftChangeRequestRepository } from '../domains/shift/repositories/shiftChangeRequestRepository';
 import { logger } from '../middlewares/logger';
+
+/**
+ * How long a change request may sit unanswered before the sweep calls it
+ * `expired` (F-B5-5, migration 064).
+ *
+ * ponytail: a product default picked during the audit closeout, not a derived
+ * constant — the owner can tune it here without a migration. Per-household
+ * configuration is the upgrade path if families ever disagree about it, and
+ * `households.short_notice_hours` is the precedent for how that would look.
+ */
+const EXPIRY_DAYS = 7;
 
 export interface ScheduleHorizonJobResult {
   patternsProcessed: number;
   successCount: number;
   errorCount: number;
   coParentApprovalsExpired: number;
+  changeRequestsExpired: number;
   message: string;
 }
 
@@ -66,10 +88,17 @@ export type HorizonApprovalExpiryService = Pick<
   'expirePendingApprovals'
 >;
 
+/** The narrow change-request-expiry contract this job depends on, for injecting a fake in tests. */
+export type HorizonChangeRequestExpiryRepository = Pick<
+  ShiftChangeRequestRepository,
+  'expirePendingOlderThan'
+>;
+
 export async function runScheduleHorizonJob(
   patternRepo: AcceptedPatternRepository = new SchedulePatternRepository(),
   commandService: HorizonMaterialisationService = schedulePatternCommandService,
-  approvals: HorizonApprovalExpiryService = coParentApprovalQueryService
+  approvals: HorizonApprovalExpiryService = coParentApprovalQueryService,
+  changeRequests: HorizonChangeRequestExpiryRepository = new ShiftChangeRequestRepository()
 ): Promise<ScheduleHorizonJobResult> {
   const patterns = await patternRepo.listAccepted();
 
@@ -91,12 +120,14 @@ export async function runScheduleHorizonJob(
 
   const coParentApprovalsExpired =
     await expireStaleCoParentApprovals(approvals);
+  const changeRequestsExpired = await expireStaleChangeRequests(changeRequests);
 
   return {
     patternsProcessed: patterns.length,
     successCount,
     errorCount,
     coParentApprovalsExpired,
+    changeRequestsExpired,
     message: `Rolled the materialisation horizon forward for ${successCount}/${patterns.length} accepted schedule pattern(s)`,
   };
 }
@@ -124,6 +155,43 @@ async function expireStaleCoParentApprovals(
     return expired.length;
   } catch (error) {
     logger.error('Schedule horizon job: co_parent_approvals expiry failed', {
+      error,
+    });
+    return 0;
+  }
+}
+
+/**
+ * Age out `shift_change_requests` nobody ever answered (F-B5-5). Global for
+ * the same reason as the approvals sweep, and keyed off `created_at` rather
+ * than the shift's start: a request about a shift six weeks out is just as
+ * stale on day eight as one about tomorrow, and a request can outlive the
+ * shift it was about entirely.
+ *
+ * Isolated from the approvals sweep as well as from the horizon work — the two
+ * read different tables and neither is a reason to skip the other. The
+ * repository compare-and-sets on `pending`, so a request answered between the
+ * cutoff being computed and the update landing is left alone.
+ *
+ * ponytail: no push to the requester. `notifyChangeRequestOpened` and friends
+ * live on `shiftChangeRequestCommandService` and every push type is a member
+ * of `PUSH_NOTIFICATION_TYPES`, which `notificationRouteMap` consumes as an
+ * exhaustive `Record` — so telling the requester costs a new notification
+ * type, a mobile route, and copy in both locales, not a function call. Worth
+ * doing; deliberately not smuggled into this job. Until then a requester finds
+ * out by looking, which is the same as today.
+ */
+async function expireStaleChangeRequests(
+  changeRequests: HorizonChangeRequestExpiryRepository
+): Promise<number> {
+  try {
+    const cutoff = new Date(
+      Date.now() - EXPIRY_DAYS * 24 * 60 * 60 * 1000
+    ).toISOString();
+    const expired = await changeRequests.expirePendingOlderThan(cutoff);
+    return expired.length;
+  } catch (error) {
+    logger.error('Schedule horizon job: shift_change_requests expiry failed', {
       error,
     });
     return 0;
