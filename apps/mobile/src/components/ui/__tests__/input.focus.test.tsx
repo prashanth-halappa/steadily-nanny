@@ -16,6 +16,20 @@ mock.module('@/lib/useColorScheme', () => ({
 }));
 
 describe('Input focus and error', () => {
+  it('uses bg-card and the visible border-border-strong at rest', () => {
+    const { getByTestId } = render(
+      <Input
+        testID="field"
+        accessibilityLabel="Email"
+        value=""
+        onChangeText={() => {}}
+      />
+    );
+    const className = getByTestId('field').props.className as string;
+    expect(className).toContain('bg-card');
+    expect(className).toContain('border-border-strong');
+  });
+
   it('exposes an error prop that applies error-inline border treatment', () => {
     const { getByTestId } = render(
       <Input

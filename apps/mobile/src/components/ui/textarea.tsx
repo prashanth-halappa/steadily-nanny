@@ -1,4 +1,5 @@
 import type * as React from 'react';
+import { useState } from 'react';
 import { TextInput, type TextInputProps } from 'react-native';
 import { typography } from '@/lib/design-tokens/typography';
 import { cn } from '@/lib/utils';
@@ -18,11 +19,16 @@ function Textarea({
   placeholderClassName,
   style,
   accessibilityLabel,
+  onFocus,
+  onBlur,
   ...props
 }: TextareaProps) {
+  const [focused, setFocused] = useState(false);
+
   return (
     <TextInput
       accessibilityLabel={accessibilityLabel}
+      {...props}
       style={[
         {
           fontSize: typography.body.size,
@@ -33,7 +39,8 @@ function Textarea({
         style,
       ]}
       className={cn(
-        'web:flex min-h-[80px] w-full rounded-lg border border-input bg-background px-3 py-2 text-foreground web:ring-offset-background web:focus-visible:outline-none web:focus-visible:ring-2 web:focus-visible:ring-ring web:focus-visible:ring-offset-2',
+        'web:flex min-h-[80px] w-full rounded-lg border bg-card px-3 py-2 text-foreground web:ring-offset-background web:focus-visible:outline-none web:focus-visible:ring-2 web:focus-visible:ring-ring web:focus-visible:ring-offset-2',
+        focused ? 'border-ring border-1.5' : 'border-border-strong',
         props.editable === false && 'opacity-50 web:cursor-not-allowed',
         className
       )}
@@ -41,7 +48,14 @@ function Textarea({
       multiline={multiline}
       numberOfLines={numberOfLines}
       textAlignVertical="top"
-      {...props}
+      onFocus={event => {
+        setFocused(true);
+        onFocus?.(event);
+      }}
+      onBlur={event => {
+        setFocused(false);
+        onBlur?.(event);
+      }}
     />
   );
 }

@@ -87,7 +87,7 @@ function ShiftRow({
       onPress={() =>
         router.push(`/(private)/schedule/shifts/${shift.id}` as Href)
       }
-      className="mx-6 mb-2 flex-row items-center justify-between gap-2 rounded-row bg-card p-3"
+      className="mx-5.5 mb-2 flex-row items-center justify-between gap-2 rounded-row bg-card p-3"
       style={elevation.row}
     >
       <View className="gap-1">
@@ -228,7 +228,7 @@ export function AgendaView({
         renderItem={({ item }) => {
           if (item.type === 'header') {
             return (
-              <View className="px-6 pt-4 pb-1">
+              <View className="px-5.5 pt-4 pb-1">
                 <DayGroup>{item.label}</DayGroup>
               </View>
             );
@@ -237,7 +237,7 @@ export function AgendaView({
             return (
               <View
                 testID={`schedule-away-${item.localDate}`}
-                className="mx-6 mb-2 rounded-row bg-muted px-3 py-2"
+                className="mx-5.5 mb-2 rounded-row bg-muted px-3 py-2"
               >
                 <Body weight="medium" className="text-muted-foreground">
                   {t('shifts.awayBand')}

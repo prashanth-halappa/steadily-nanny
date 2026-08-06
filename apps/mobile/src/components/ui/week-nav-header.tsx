@@ -7,6 +7,7 @@
 import { ChevronLeft, ChevronRight } from 'lucide-react-native';
 import { View } from 'react-native';
 import { AnimatedPressable } from '@/lib/animations';
+import { spacing } from '@/lib/design-tokens/spacing';
 import { Icon } from '@/lib/icons/iconWithClassName';
 import { Small } from '@/src/components/ui/typography';
 
@@ -47,6 +48,13 @@ export function WeekNavHeader({
         haptic={isPreviousDisabled ? 'none' : 'light'}
         scaleIntensity="subtle"
         onPress={onPreviousWeek}
+        hitSlop={12}
+        style={{
+          minWidth: spacing.minTouchTarget,
+          minHeight: spacing.minTouchTarget,
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
         className={isPreviousDisabled ? 'opacity-40' : undefined}
       >
         <Icon icon={ChevronLeft} size={20} className="text-foreground" />
@@ -63,6 +71,13 @@ export function WeekNavHeader({
         haptic={isNextDisabled ? 'none' : 'light'}
         scaleIntensity="subtle"
         onPress={onNextWeek}
+        hitSlop={12}
+        style={{
+          minWidth: spacing.minTouchTarget,
+          minHeight: spacing.minTouchTarget,
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
         className={isNextDisabled ? 'opacity-40' : undefined}
       >
         <Icon icon={ChevronRight} size={20} className="text-foreground" />

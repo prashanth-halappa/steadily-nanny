@@ -55,8 +55,9 @@ import type { HouseholdMember } from '@steadily-nanny/shared-types/schemas/house
 import { type Href, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Pressable, View } from 'react-native';
+import { View } from 'react-native';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
+import { BackButton } from '@/src/components/ui/back-button';
 import { Button } from '@/src/components/ui/button';
 import { ChildChip } from '@/src/components/ui/child-chip';
 import { EmptyState } from '@/src/components/ui/empty-state';
@@ -371,16 +372,11 @@ export function ScheduleBuildScreen({
             paddingTop: SCREEN_CONTENT_STYLE.padding,
           }}
         >
-          <Pressable
+          <BackButton
             testID="schedule-build-not-available-back"
-            accessibilityRole="button"
-            accessibilityLabel={tCommon('back')}
             onPress={cancelWizard}
-            hitSlop={8}
-            className="self-start"
-          >
-            <Body className="text-primary">{`< ${tCommon('back')}`}</Body>
-          </Pressable>
+            label={tCommon('back')}
+          />
         </View>
         <View
           className="mt-8"

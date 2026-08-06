@@ -6,11 +6,12 @@
  */
 import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
-import { Pressable, ScrollView, View } from 'react-native';
+import { ScrollView, View } from 'react-native';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
+import { BackButton } from '@/src/components/ui/back-button';
 import { EmptyState } from '@/src/components/ui/empty-state';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
-import { Body, H1, Small } from '@/src/components/ui/typography';
+import { H1, Small } from '@/src/components/ui/typography';
 import { resolveCarerName } from '@/src/domains/schedule/utils/memberDisplayName';
 import { isParentEditorRole } from '@/src/domains/setup/types';
 import { HouseholdTimeOffRow } from '@/src/domains/timeOff/components/HouseholdTimeOffRow';
@@ -47,10 +48,8 @@ export default function HouseholdTimeOffScreen() {
       className="flex-1 bg-background"
       contentContainerStyle={SCREEN_CONTENT_STYLE}
     >
-      <Pressable onPress={() => router.back()} className="self-start">
-        <Body className="text-primary">{`< ${tCommon('back')}`}</Body>
-      </Pressable>
-      <H1 className="mt-2">{t('carerTimeOff')}</H1>
+      <BackButton onPress={() => router.back()} label={tCommon('back')} />
+      <H1 className="mt-1">{t('carerTimeOff')}</H1>
       <Small className="mt-1 text-muted-foreground">
         {t('carerTimeOffHint')}
       </Small>

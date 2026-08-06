@@ -475,7 +475,7 @@ describe('PayArrangementScreen', () => {
       const back = getByTestId('pay-back');
       expect(back.props.accessibilityRole).toBe('button');
       expect(back.props.accessibilityLabel).toBe('back');
-      expect(back.props.hitSlop).toBe(8);
+      expect(back.props.hitSlop).toBe(12);
 
       fireEvent.press(back);
       expect(routerBack).toHaveBeenCalled();
@@ -506,7 +506,7 @@ describe('PayArrangementScreen', () => {
       const back = getByTestId('pay-not-available-back');
       expect(back.props.accessibilityRole).toBe('button');
       expect(back.props.accessibilityLabel).toBe('back');
-      expect(back.props.hitSlop).toBe(8);
+      expect(back.props.hitSlop).toBe(12);
     });
 
     it('a carer-picker row exposes accessibilityRole/Label/hitSlop', async () => {

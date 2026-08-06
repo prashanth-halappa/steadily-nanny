@@ -67,7 +67,7 @@ export function CalendarViewSwitcher({
           accessibilityState={{ selected: value === opt.id }}
           onPress={() => onChange(opt.id)}
           className={cn(
-            'flex-1 items-center rounded-chip px-3 py-2',
+            'flex-1 items-center rounded-chip px-3 py-3',
             value === opt.id ? 'bg-primary' : 'bg-transparent'
           )}
         >

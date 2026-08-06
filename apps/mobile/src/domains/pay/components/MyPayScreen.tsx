@@ -217,7 +217,7 @@ export function MyPayScreen() {
         onPress={() => router.back()}
         label={tCommon('back')}
       />
-      <H1 className="mt-2">{t('myPay.title')}</H1>
+      <H1 className="mt-1">{t('myPay.title')}</H1>
       <Small className="mt-1 text-muted-foreground">
         {t('myPay.subtitle')}
       </Small>

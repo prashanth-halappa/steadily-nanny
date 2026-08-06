@@ -35,6 +35,7 @@ export function NotificationPrefsScreen() {
   const router = useRouter();
   const elevation = useElevation();
   const { t } = useTranslation('settings');
+  const { t: tCommon } = useTranslation('common');
   const prefsQuery = useNotificationPrefs();
   const updatePrefs = useUpdateNotificationPrefs();
 
@@ -103,7 +104,7 @@ export function NotificationPrefsScreen() {
       onCta={() => void handleSave()}
       ctaDisabled={updatePrefs.isPending}
       onBack={() => router.back()}
-      backLabel={t('notificationPrefs.back')}
+      backLabel={tCommon('back')}
     >
       <View className="gap-8">
         <View className="gap-3">

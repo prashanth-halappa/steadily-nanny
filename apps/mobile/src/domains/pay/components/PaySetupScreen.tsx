@@ -17,15 +17,16 @@
 import { type Href, useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Pressable, View } from 'react-native';
+import { View } from 'react-native';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
+import { BackButton } from '@/src/components/ui/back-button';
 import { Button } from '@/src/components/ui/button';
 import { EmptyState } from '@/src/components/ui/empty-state';
 import { Input } from '@/src/components/ui/input';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { Text } from '@/src/components/ui/text';
 import { Textarea } from '@/src/components/ui/textarea';
-import { Body, Label, Small } from '@/src/components/ui/typography';
+import { Label, Small } from '@/src/components/ui/typography';
 import { resolveCarerName } from '@/src/domains/schedule/utils/memberDisplayName';
 import { SetupScreenShell } from '@/src/domains/setup/components/SetupScreenShell';
 import { isParentEditorRole } from '@/src/domains/setup/types';
@@ -168,16 +169,11 @@ export function PaySetupScreen() {
             paddingTop: SCREEN_CONTENT_STYLE.padding,
           }}
         >
-          <Pressable
+          <BackButton
             testID="pay-setup-not-available-back"
-            accessibilityRole="button"
-            accessibilityLabel={tCommon('back')}
             onPress={() => router.back()}
-            hitSlop={8}
-            className="self-start"
-          >
-            <Body className="text-primary">{`< ${tCommon('back')}`}</Body>
-          </Pressable>
+            label={tCommon('back')}
+          />
         </View>
         <View
           className="mt-8"

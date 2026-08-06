@@ -86,7 +86,6 @@
   "notificationPrefs": {
     "title": "Notifications",
     "subtitle": "Choose which updates you get and when quiet hours apply. Time-sensitive requests still come through during quiet hours.",
-    "back": "Back",
     "saveButton": "Save",
     "savedToast": "Notification preferences saved",
     "quietHoursLabel": "Quiet hours",

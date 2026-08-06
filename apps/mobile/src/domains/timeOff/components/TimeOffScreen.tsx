@@ -30,9 +30,10 @@ import { Pressable, View } from 'react-native';
 import { illustrations } from '@/assets/illustrations';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { cn } from '@/lib/utils';
+import { BackButton } from '@/src/components/ui/back-button';
 import { EmptyState } from '@/src/components/ui/empty-state';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
-import { Body, H1, MetadataLabel, Small } from '@/src/components/ui/typography';
+import { H1, MetadataLabel, Small } from '@/src/components/ui/typography';
 import { SETUP_ROLES } from '@/src/domains/setup/types';
 import { useCancelTimeOff } from '@/src/hooks/mutations/useCancelTimeOff';
 import { useUpdateTimeOff } from '@/src/hooks/mutations/useUpdateTimeOff';
@@ -80,16 +81,11 @@ export function TimeOffScreen() {
   };
 
   const backHeader = (
-    <Pressable
+    <BackButton
       testID="time-off-back"
-      accessibilityRole="button"
-      accessibilityLabel={tCommon('back')}
       onPress={() => router.back()}
-      hitSlop={8}
-      className="mb-2 self-start"
-    >
-      <Body className="text-primary">{`< ${tCommon('back')}`}</Body>
-    </Pressable>
+      label={tCommon('back')}
+    />
   );
 
   const allRows = timeOff.data ?? [];

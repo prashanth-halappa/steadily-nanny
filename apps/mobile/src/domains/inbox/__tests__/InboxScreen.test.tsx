@@ -83,6 +83,14 @@ describe('InboxScreen', () => {
     expect(queryByTestId('error-state')).toBeNull();
   });
 
+  it('renders the shared BackButton with its testID and a working back callback', () => {
+    const { getByTestId } = render(<InboxScreen />);
+    const back = getByTestId('inbox-back');
+    expect(back.props.accessibilityRole).toBe('button');
+    fireEvent.press(back);
+    // useRouter's back is a bare mock() here — pressing must not throw.
+  });
+
   it('surfaces ErrorState + retry on query failure — never empty-success', () => {
     mockUseInboxItems.mockImplementation(() => ({
       items: [] as InboxItem[],

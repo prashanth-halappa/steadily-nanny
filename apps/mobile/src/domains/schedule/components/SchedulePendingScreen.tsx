@@ -42,7 +42,7 @@
 import { type Href, useRouter } from 'expo-router';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Pressable, ScrollView, View } from 'react-native';
+import { ScrollView, View } from 'react-native';
 import { illustrations } from '@/assets/illustrations';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { useTabBarScrollPadding } from '@/lib/layout/useTabBarScrollPadding';
@@ -57,6 +57,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/src/components/ui/alert-dialog';
+import { BackButton } from '@/src/components/ui/back-button';
 import { Button, buttonVariants } from '@/src/components/ui/button';
 import { EmptyState } from '@/src/components/ui/empty-state';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
@@ -149,16 +150,11 @@ export function SchedulePendingScreen() {
             paddingTop: SCREEN_CONTENT_STYLE.padding,
           }}
         >
-          <Pressable
+          <BackButton
             testID="schedule-pending-not-available-back"
-            accessibilityRole="button"
-            accessibilityLabel={tCommon('back')}
             onPress={() => router.back()}
-            hitSlop={8}
-            className="self-start"
-          >
-            <Body className="text-primary">{`< ${tCommon('back')}`}</Body>
-          </Pressable>
+            label={tCommon('back')}
+          />
         </View>
         <View
           className="mt-8"

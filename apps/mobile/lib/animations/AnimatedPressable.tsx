@@ -42,6 +42,7 @@ export function AnimatedPressableComponent({
   haptic = 'light',
   scaleIntensity = 'subtle',
   animated = true,
+  style,
   ...props
 }: AnimatedPressableProps) {
   const reducedMotion = useReducedMotion();
@@ -115,7 +116,10 @@ export function AnimatedPressableComponent({
 
   return (
     <AnimatedPressable
-      style={shouldAnimate ? animatedStyle : undefined}
+      // Array-merged so a caller-supplied `style` (e.g. sizing a min touch
+      // target) doesn't get silently dropped when `{...props}` spreads
+      // after this — it used to overwrite the animated transform outright.
+      style={[shouldAnimate ? animatedStyle : undefined, style]}
       onPressIn={handlePressIn}
       onPressOut={handlePressOut}
       onPress={handlePress}
