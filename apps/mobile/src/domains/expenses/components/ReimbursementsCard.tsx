@@ -42,6 +42,10 @@ interface ReimbursementsCardProps {
    * `null` when the week has no server total to show (see module doc). */
   totalMinor: number | null;
   currency: string;
+  /** Whose reimbursements these are — the parent's multi-carer week needs
+   * this above the itemised list; a nanny viewing her own card never passes
+   * it. Not repeated per line — one caption under the title is enough. */
+  carerName?: string;
   testID?: string;
 }
 
@@ -49,6 +53,7 @@ export function ReimbursementsCard({
   approvedExpenses,
   totalMinor,
   currency,
+  carerName,
   testID = 'reimbursements-card',
 }: ReimbursementsCardProps) {
   const { t } = useTranslation('expenses');
@@ -59,6 +64,14 @@ export function ReimbursementsCard({
     <Card testID={testID} className="mt-4">
       <CardContent className="gap-3">
         <H4>{t('reimbursements.title')}</H4>
+        {carerName ? (
+          <Small
+            testID={`${testID}-carer-name`}
+            className="text-muted-foreground"
+          >
+            {carerName}
+          </Small>
+        ) : null}
 
         <View className="gap-3">
           {approvedExpenses.map(expense => (

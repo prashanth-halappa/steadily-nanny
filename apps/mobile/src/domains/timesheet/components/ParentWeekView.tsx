@@ -22,14 +22,16 @@ import type { Href } from 'expo-router';
 import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { View } from 'react-native';
+import { Pressable, View } from 'react-native';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
+import { useThemeColors } from '@/lib/design-tokens/useThemeColors';
 import { useTabBarScrollPadding } from '@/lib/layout/useTabBarScrollPadding';
+import { cn } from '@/lib/utils';
 import { ErrorState } from '@/src/components/custom/ErrorState';
 import { Button } from '@/src/components/ui/button';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { Text } from '@/src/components/ui/text';
-import { Body } from '@/src/components/ui/typography';
+import { Body, Caption } from '@/src/components/ui/typography';
 import { ExpenseReviewSheet } from '@/src/domains/expenses/components/ExpenseReviewSheet';
 import { PendingExpensesRow } from '@/src/domains/expenses/components/PendingExpensesRow';
 import { ReimbursementsCard } from '@/src/domains/expenses/components/ReimbursementsCard';
@@ -112,6 +114,7 @@ export function ParentWeekView({
   // Same tab-bar dead-zone fix as Settings (BUG1) — the Hours tab's
   // FlashList needs the same real clearance a fixed magic number can't give.
   const tabBarScrollPadding = useTabBarScrollPadding();
+  const colors = useThemeColors();
   const currentUserId = useAuthStore(s => s.user?.id ?? null);
   const membersQuery = useHouseholdMembers(householdId);
   const entriesQuery = useWeekTimeEntries(householdId, weekStartISO);
@@ -447,25 +450,51 @@ export function ParentWeekView({
             {weekCarerIds.length > 1 ? (
               <View
                 testID="hours-carer-switcher"
-                className="mb-3 flex-row flex-wrap gap-2"
+                className="mb-3 flex-row rounded-chip bg-muted p-1"
               >
-                {weekCarerIds.map(id => (
-                  <Button
-                    key={id}
-                    testID={`hours-carer-tab-${id}`}
-                    size="sm"
-                    variant={id === selectedCarerId ? 'default' : 'outline'}
-                    onPress={() => setPickedCarerId(id)}
-                  >
-                    <Text
-                      className={
-                        id === selectedCarerId ? '' : 'text-foreground'
-                      }
+                {weekCarerIds.map(id => {
+                  const isSelected = id === selectedCarerId;
+                  // Unselected + her timesheet is 'submitted' — a nudge that
+                  // another carer's week is waiting on this parent, without
+                  // naming it (a status word here would fight the segmented
+                  // control's one-line label). Never on the selected segment
+                  // — she already sees the full StatusPill on the card below.
+                  const hasPendingApproval =
+                    !isSelected &&
+                    weekTimesheets.find(t => carerKeyOf(t) === id)?.status ===
+                      TIMESHEET_STATUSES.SUBMITTED;
+                  return (
+                    <Pressable
+                      key={id}
+                      testID={`hours-carer-tab-${id}`}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: isSelected }}
+                      onPress={() => setPickedCarerId(id)}
+                      className={cn(
+                        'flex-1 flex-row items-center justify-center gap-1.5 rounded-chip px-3 py-3',
+                        isSelected ? 'bg-primary' : 'bg-transparent'
+                      )}
                     >
-                      {carerSnapshotName(id)}
-                    </Text>
-                  </Button>
-                ))}
+                      <Caption
+                        className={
+                          isSelected
+                            ? 'text-primary-foreground'
+                            : 'text-foreground'
+                        }
+                        weight="medium"
+                      >
+                        {carerSnapshotName(id).split(' ')[0]}
+                      </Caption>
+                      {hasPendingApproval ? (
+                        <View
+                          testID={`hours-carer-tab-${id}-pending-dot`}
+                          className="h-2 w-2 rounded-full"
+                          style={{ backgroundColor: colors.warning }}
+                        />
+                      ) : null}
+                    </Pressable>
+                  );
+                })}
               </View>
             ) : null}
             <WeekTotal
@@ -510,6 +539,7 @@ export function ParentWeekView({
               approvedExpenses={approvedExpenses}
               totalMinor={earningsOk ? earningsOk.reimbursements_minor : null}
               currency={expensesCurrency}
+              carerName={carerName ?? undefined}
             />
             {/* Gated on status, not just a truthy note: `query_note` only
                 means "queried" while status is genuinely 'queried'. The API

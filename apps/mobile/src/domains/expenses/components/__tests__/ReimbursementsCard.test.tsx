@@ -84,6 +84,33 @@ describe('ReimbursementsCard', () => {
     );
   });
 
+  it('renders the carer name under the title when the caller supplies it', () => {
+    const { getByTestId } = render(
+      <ReimbursementsCard
+        testID="reimbursements-card"
+        approvedExpenses={[makeExpense()]}
+        totalMinor={1200}
+        currency="GBP"
+        carerName="Amara Diallo"
+      />
+    );
+    expect(getByTestId('reimbursements-card-carer-name').props.children).toBe(
+      'Amara Diallo'
+    );
+  });
+
+  it('omits the carer-name caption when the prop is not supplied', () => {
+    const { queryByTestId } = render(
+      <ReimbursementsCard
+        testID="reimbursements-card"
+        approvedExpenses={[makeExpense()]}
+        totalMinor={1200}
+        currency="GBP"
+      />
+    );
+    expect(queryByTestId('reimbursements-card-carer-name')).toBeNull();
+  });
+
   it('mandatory "not wages" note is present', () => {
     const { getByTestId } = render(
       <ReimbursementsCard

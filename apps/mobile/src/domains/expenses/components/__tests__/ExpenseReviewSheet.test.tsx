@@ -72,6 +72,21 @@ describe('ExpenseReviewSheet', () => {
     ).toBe('£12.00');
   });
 
+  it('shows the carer name alongside the date, on the same line', () => {
+    const { getByText } = render(
+      <ExpenseReviewSheet
+        visible
+        onDismiss={() => {}}
+        expenses={[makeExpense({ carer_display_name: 'Amara Diallo' })]}
+        onApprove={() => {}}
+        onReject={() => {}}
+      />
+    );
+
+    // formatEarningsSpanDate('2026-08-03') -> 'Mon 3 Aug'.
+    expect(getByText('Mon 3 Aug · Amara Diallo')).toBeTruthy();
+  });
+
   it('pending mileage shows MILES ONLY — never a computed money amount', () => {
     const { getByTestId } = render(
       <ExpenseReviewSheet

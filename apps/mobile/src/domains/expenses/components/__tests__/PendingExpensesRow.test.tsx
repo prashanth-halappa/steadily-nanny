@@ -20,6 +20,25 @@ import { beforeAll, describe, expect, it, mock } from 'bun:test';
 import type { Expense } from '@steadily-nanny/shared-types/schemas/expense.schema';
 import { fireEvent, render } from '@testing-library/react-native';
 
+// Override the global key-echo i18n mock so `{{name}}`/`{{names}}` actually
+// land in the tree — same pattern as WeekTotal.reopenReason.test.tsx.
+mock.module('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string, options?: Record<string, unknown>) => {
+      if (options && typeof options.name === 'string') {
+        return `${key}::${options.name}`;
+      }
+      if (options && typeof options.names === 'string') {
+        return `${key}::${options.names}`;
+      }
+      return key;
+    },
+    i18n: { language: 'en', changeLanguage: mock(() => Promise.resolve()) },
+  }),
+  Trans: ({ children }: { children: unknown }) => children,
+  initReactI18next: { type: '3rdParty', init: mock() },
+}));
+
 let PendingExpensesRow: typeof import('../PendingExpensesRow').PendingExpensesRow;
 
 beforeAll(async () => {
@@ -153,6 +172,61 @@ describe('PendingExpensesRow', () => {
     expect(
       getByTestId('expenses-pending-row-mixed-currency-note')
     ).toBeTruthy();
+  });
+
+  it('one distinct carer across pending claims: shows her full name', () => {
+    const { getByTestId } = render(
+      <PendingExpensesRow
+        testID="expenses-pending-row"
+        pendingExpenses={[
+          makeExpense({ id: 'expense-1', carer_display_name: 'Amara Diallo' }),
+          makeExpense({ id: 'expense-2', carer_display_name: 'Amara Diallo' }),
+        ]}
+        onPress={() => {}}
+      />
+    );
+
+    expect(getByTestId('expenses-pending-row-from-carer').props.children).toBe(
+      'pendingRow.fromCarer::Amara Diallo'
+    );
+  });
+
+  it('more than one carer across pending claims: joins their FIRST names', () => {
+    const { getByTestId } = render(
+      <PendingExpensesRow
+        testID="expenses-pending-row"
+        pendingExpenses={[
+          makeExpense({ id: 'expense-1', carer_display_name: 'Amara Diallo' }),
+          makeExpense({ id: 'expense-2', carer_display_name: 'Bea Nkomo' }),
+        ]}
+        onPress={() => {}}
+      />
+    );
+
+    expect(getByTestId('expenses-pending-row-from-carer').props.children).toBe(
+      'pendingRow.fromCarers::Amara, Bea'
+    );
+  });
+
+  it('carer line still renders alongside the mileage note when both apply', () => {
+    const { getByTestId } = render(
+      <PendingExpensesRow
+        testID="expenses-pending-row"
+        pendingExpenses={[
+          makeExpense({
+            id: 'expense-1',
+            kind: 'mileage',
+            amount_minor: null,
+            miles: 12.4,
+            carer_display_name: 'Amara Diallo',
+          }),
+        ]}
+        onPress={() => {}}
+      />
+    );
+
+    expect(getByTestId('expenses-pending-row-from-carer')).toBeTruthy();
+    expect(getByTestId('expenses-pending-row-mileage-note')).toBeTruthy();
   });
 
   it('every row priced, single currency: shows the total, no notes', () => {

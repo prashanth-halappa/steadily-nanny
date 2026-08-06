@@ -1170,6 +1170,100 @@ describe('ParentWeekView — two carers in one household (F-B1-3)', () => {
     expect(queryByTestId('hours-carer-switcher')).toBeNull();
     expect(getByTestId('hours-total').props.children).toBe('8h');
   });
+
+  it('labels a segment with the carer FIRST name only, even when her snapshot has a surname', async () => {
+    listEntriesMock.mockImplementation(() =>
+      Promise.resolve([
+        makeEntry({ carer_display_name: 'Amara Diallo' }),
+        makeCarerBEntry(),
+      ])
+    );
+    listTimesheetsMock.mockImplementation(() =>
+      Promise.resolve([
+        makeTimesheet({ carer_display_name: 'Amara Diallo' }),
+        makeCarerBTimesheet({ carer_display_name: 'Bea Nkomo' }),
+      ])
+    );
+
+    const { getByTestId } = renderParentView();
+
+    await waitFor(() =>
+      expect(getByTestId(`hours-carer-tab-${CARER_ID}`)).toBeTruthy()
+    );
+    expect(
+      within(getByTestId(`hours-carer-tab-${CARER_ID}`)).getByText('Amara')
+    ).toBeTruthy();
+    expect(
+      within(getByTestId(`hours-carer-tab-${CARER_B_ID}`)).getByText('Bea')
+    ).toBeTruthy();
+  });
+
+  // Segmented-control carer switcher, mirroring CalendarViewSwitcher's
+  // pattern — plus the pending-approval dot for an unselected carer whose
+  // own timesheet is 'submitted'.
+  describe('carer switcher pending-approval dot', () => {
+    it("shows a dot on Bea's UNSELECTED tab while her timesheet is submitted", async () => {
+      const { getByTestId, queryByTestId } = renderParentView();
+
+      await waitFor(() =>
+        expect(getByTestId(`hours-carer-tab-${CARER_ID}`)).toBeTruthy()
+      );
+
+      // Amara (Amara's own default fixture id) is selected by default; her
+      // own tab never carries the dot.
+      expect(
+        queryByTestId(`hours-carer-tab-${CARER_ID}-pending-dot`)
+      ).toBeNull();
+      // Bea is unselected and submitted — dot shows.
+      expect(
+        getByTestId(`hours-carer-tab-${CARER_B_ID}-pending-dot`)
+      ).toBeTruthy();
+    });
+
+    it('moves the dot off a carer once her tab becomes the selected one', async () => {
+      const { getByTestId, queryByTestId } = renderParentView();
+
+      await waitFor(() =>
+        expect(getByTestId(`hours-carer-tab-${CARER_B_ID}`)).toBeTruthy()
+      );
+      fireEvent.press(getByTestId(`hours-carer-tab-${CARER_B_ID}`));
+
+      await waitFor(() =>
+        expect(
+          queryByTestId(`hours-carer-tab-${CARER_B_ID}-pending-dot`)
+        ).toBeNull()
+      );
+      // Amara is now the unselected, still-submitted carer.
+      expect(
+        getByTestId(`hours-carer-tab-${CARER_ID}-pending-dot`)
+      ).toBeTruthy();
+    });
+
+    it('never shows the dot for an approved (not submitted) unselected carer', async () => {
+      // `getWeek` (see the module mock above) enriches every row through
+      // `getByIdMock`, not `listTimesheetsMock` — that's what
+      // `weekTimesheets`'s own `status` field actually comes from.
+      getByIdMock.mockImplementation((timesheetId?: string) =>
+        Promise.resolve(
+          timesheetId === TIMESHEET_B_ID
+            ? {
+                ...makeCarerBTimesheet({ status: 'approved' }),
+                earnings: { ...okEarnings, gross_minor: 4440 },
+              }
+            : makeTimesheetWeek()
+        )
+      );
+
+      const { getByTestId, queryByTestId } = renderParentView();
+
+      await waitFor(() =>
+        expect(getByTestId(`hours-carer-tab-${CARER_B_ID}`)).toBeTruthy()
+      );
+      expect(
+        queryByTestId(`hours-carer-tab-${CARER_B_ID}-pending-dot`)
+      ).toBeNull();
+    });
+  });
 });
 
 // F-B1-3, second reachable path. `033_preserve_payroll_on_carer_deletion.sql`

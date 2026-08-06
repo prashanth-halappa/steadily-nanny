@@ -38,7 +38,9 @@
     "count_other": "{{count}} expenses to review",
     "mileageToPrice_one": "{{count}} with mileage to price",
     "mileageToPrice_other": "{{count}} with mileage to price",
-    "mixedCurrencies": "In different currencies — open to review each."
+    "mixedCurrencies": "In different currencies — open to review each.",
+    "fromCarer": "From {{name}}",
+    "fromCarers": "From {{names}}"
   },
   "reviewSheet": {
     "title": "Review expenses",

@@ -173,6 +173,101 @@ describe('WeekTotal', () => {
     expect(getByTestId('hours-pay-boundary')).toBeTruthy();
   });
 
+  // Declutter pass: the carer name is promoted to the primary color and
+  // shares one row with the pill instead of stacking above it.
+  describe('identity row declutter', () => {
+    function flatStyle(node: { props: { style?: unknown } }) {
+      const style = node.props.style;
+      return Array.isArray(style)
+        ? Object.assign({}, ...style.filter(Boolean))
+        : (style ?? {});
+    }
+
+    it('promotes the carer name to semibold default-foreground text, single line, sharing a row with the pill', () => {
+      const { getByTestId } = render(
+        <WeekTotal
+          testID="hours-week-total"
+          weekRangeLabel="3 Aug – 9 Aug"
+          totalLabel="5h 34m"
+          overtimeLabel={null}
+          carerName="Maria Lopez"
+          timesheetStatus="submitted"
+        />
+      );
+
+      const name = getByTestId('hours-carer-name');
+      expect(flatStyle(name).fontWeight).toBe('600');
+      expect(name.props.numberOfLines).toBe(1);
+      expect(name.props.className).not.toContain('text-muted-foreground');
+      expect(getByTestId('hours-timesheet-status')).toBeTruthy();
+    });
+
+    it('demotes the over-scheduled delta to Small typography (was Body)', () => {
+      const { getByText } = render(
+        <WeekTotal
+          testID="hours-week-total"
+          weekRangeLabel="3 Aug – 9 Aug"
+          totalLabel="9h 14m"
+          overtimeLabel="14m over scheduled"
+        />
+      );
+
+      const node = getByText('14m over scheduled');
+      expect(flatStyle(node).fontSize).toBe(14);
+    });
+
+    it('demotes the payBoundary explainer to MetadataLabel with more top margin', () => {
+      const { getByTestId } = render(
+        <WeekTotal
+          testID="hours-week-total"
+          weekRangeLabel="3 Aug – 9 Aug"
+          totalLabel="5h 34m"
+          overtimeLabel={null}
+          showPayBoundary
+        />
+      );
+
+      const node = getByTestId('hours-pay-boundary');
+      expect(node.props.className).toContain('mt-3');
+      expect(flatStyle(node).fontSize).toBe(13);
+    });
+
+    it('folds the carer name into the money row accessibilityLabel, never the visible label', () => {
+      const { getByTestId } = render(
+        <WeekTotal
+          testID="hours-week-total"
+          weekRangeLabel="3 Aug – 9 Aug"
+          totalLabel="41h 0m"
+          overtimeLabel={null}
+          totalMinutes={2460}
+          timesheetStatus="submitted"
+          carerName="Maria Lopez"
+          earningsRole="parent"
+          earningsCarerId="carer-1"
+          earnings={{
+            status: 'ok',
+            week_start: '2026-08-03',
+            currency: 'GBP',
+            lines: [],
+            gross_minor: 23612,
+            reimbursements_minor: 0,
+            worked_minutes: 2460,
+            payable_minutes: 2460,
+            guaranteed_minutes_per_week: null,
+          }}
+        />
+      );
+
+      expect(
+        getByTestId('hours-earnings-line-pressable').props.accessibilityLabel
+      ).toBe('Maria Lopez: earningsEstimatedGross £236.12');
+      // The visible label itself must not carry the carer name.
+      expect(getByTestId('hours-earnings-line-amount').props.children).toBe(
+        '£236.12'
+      );
+    });
+  });
+
   // Walkthrough fix 1: the reopen affordance was buried in the FlashList
   // footer, below the day rows and reimbursements card — invisible on
   // first load for an approved week. It now lives in the summary card

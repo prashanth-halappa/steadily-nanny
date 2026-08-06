@@ -64,6 +64,17 @@ export function PendingExpensesRow({
       : null;
   const showMixedCurrencyNote =
     !canShowTotal && pricedExpenses.length > 0 && pricedCurrencies.size > 1;
+  // Household-wide list — a parent with more than one carer needs to know
+  // whose claims these are before opening the sheet. One name -> hers in
+  // full; several -> first names only, joined, so the line stays one line.
+  const carerNames = [
+    ...new Set(pendingExpenses.map(e => e.carer_display_name)),
+  ];
+  const carerFirstNames = carerNames.map(name => name.split(' ')[0]).join(', ');
+  const fromCarerLabel =
+    carerNames.length === 1
+      ? t('pendingRow.fromCarer', { name: carerNames[0] ?? '' })
+      : t('pendingRow.fromCarers', { names: carerFirstNames });
 
   return (
     <Pressable
@@ -88,6 +99,9 @@ export function PendingExpensesRow({
         ) : null}
         <Icon icon={ChevronRight} size={20} className="text-muted-foreground" />
       </View>
+      <Small testID={`${testID}-from-carer`} className="text-muted-foreground">
+        {fromCarerLabel}
+      </Small>
       {showMixedCurrencyNote ? (
         <Small
           testID={`${testID}-mixed-currency-note`}
