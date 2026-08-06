@@ -1,9 +1,10 @@
 /**
  * @module domains/timesheet/utils/duration
  * Pure duration formatting for clock in/out and the hours screen. en-GB
- * style ("6h 12m") for totals; live timer uses H:MM:SS. Clock *display*
- * follows the device locale's 12h/24h preference while staying in the
- * household IANA zone (GOLDEN-FIXES #21).
+ * style ("6h 12m") for totals; live timer uses HH:MM — no user-visible time
+ * or duration in this app shows seconds. Clock *display* follows the device
+ * locale's 12h/24h preference while staying in the household IANA zone
+ * (GOLDEN-FIXES #21).
  */
 import i18n from '@/src/i18n';
 import {
@@ -41,17 +42,17 @@ export function formatElapsedSince(startIso: string, nowMs: number): string {
 }
 
 /**
- * Live elapsed clock `HH:MM:SS` (zero-padded). Used by the Today timer so
- * the first minute visibly ticks — `formatDuration` bottoms out at minutes.
+ * Live elapsed clock `HH:MM` (zero-padded, floored down to the minute).
+ * Used by the Today timer — never renders seconds (product decision: no
+ * user-visible time ever shows seconds, hh:mm only).
  */
 export function formatElapsedClock(startIso: string, nowMs: number): string {
   const startMs = new Date(startIso).getTime();
   const elapsedSec = Math.max(0, Math.floor((nowMs - startMs) / 1000));
   const hours = Math.floor(elapsedSec / 3600);
   const minutes = Math.floor((elapsedSec % 3600) / 60);
-  const seconds = elapsedSec % 60;
   const pad = (n: number) => String(n).padStart(2, '0');
-  return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
+  return `${pad(hours)}:${pad(minutes)}`;
 }
 
 /**
