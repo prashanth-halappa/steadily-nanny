@@ -165,10 +165,21 @@ them is the owner's call: wipe the household, or roll up the two January weeks a
 the 3-minute week. Until then the daily run will keep failing, which is correct — a failing
 integrity run means the data is wrong, not that the check is.
 
-One incident worth recording: an early RLS-test run hit **production** rather than the local
-stack, because `bun` auto-loads `apps/api/.env`. It created and then fully deleted 3 users
-and 2 households; cleanup was verified, and RLS passed there too. The localhost guard in
-`rls.integration.test.ts` exists because of that run.
+**The `.env` trap bit three times in one session, and that is the pattern worth keeping.**
+Two tools default to the production `.env` unless every variable is explicitly exported:
+
+1. An early RLS-test run hit **production** rather than the local stack, because `bun`
+   auto-loads `apps/api/.env`. It created and then fully deleted 3 users and 2 households;
+   cleanup was verified, and RLS passed there too. The localhost guard in
+   `rls.integration.test.ts` exists because of that run.
+2. The same mechanism, caught before it did anything.
+3. During the mobile pass, a **stale Metro from Aug 5 was found serving PRODUCTION
+   Supabase** — no `EXPO_PUBLIC_*` overrides in its environment, so it had fallen back to
+   `apps/mobile/.env`. Killed. A long-lived dev server is the dangerous case: nothing
+   re-reads its environment, so it keeps serving whatever it started with, and the
+   simulator gives no indication which backend it is talking to.
+
+Written up as `GOLDEN-FIXES.md` #26 — three occurrences is a pattern, not bad luck.
 
 ### Live API validation
 
@@ -180,14 +191,33 @@ both overnight splits conserved exactly, F-B9-9 proved out composed (seeded viol
 500 **and** a `job_runs` row of `failed|1`), and a final `run_integrity_checks()` over
 everything the run had created returned **zero violations**.
 
-One area was deliberately **not** exercised at runtime: **co-parent approvals**, which would
-have required sitting inside the short-notice window. It is the only remediation-adjacent
-surface still resting on unit tests alone.
+### Mobile CX validation
+
+A second pass then drove the **mobile app itself** — real simulator, dev build, local
+stack — which is the only evidence class that sees what a carer or parent actually reads.
+Every remediation item was confirmed **on screen**:
+
+- **The C1 S0 renders correctly.** Two same-named departed Emmas produce **two tabs**, with
+  the header, the approve dialog and the approved total each bound to the tab on screen.
+  The live card names the snapshot carer rather than `"Someone"`.
+- **Split fragments render under their own days**, with **no false "edited" badge** on
+  fragment A — the `endsAtLocalMidnight` suppression working as designed.
+- **Cancellation rows show the authoritative figure** — 480 stored minutes render as `8h`,
+  not a re-derived span — and a legitimate **0m fragment shows no zero-duration warning**
+  (C12's exemption, seen rather than reasoned about).
+- **F-B8-6 renders in household time**, not device time.
+- **Approve froze £573.81, penny-exact against the database.** The one number in this app
+  that must never be approximately right.
+
+**Co-parent approvals were not exercised in this pass either** — the same short-notice-window
+constraint. It is now the only remediation-adjacent surface unvalidated at runtime across
+**both** passes, which promotes it from a gap to the single most valuable probe left.
 
 ### Open items found during validation
 
-Not defects in the remediation work — things the run surfaced by driving the API as a client
-would. None is filed as a numbered finding yet.
+Not defects in the remediation work — things the two runs surfaced by driving the API and
+the app as a user would. **D2–D6b** come from the mobile pass; none is filed as a numbered
+audit finding yet.
 
 | Observation | Why it matters |
 |---|---|
@@ -196,6 +226,12 @@ would. None is filed as a numbered finding yet.
 | **PTO balance/ledger and `/me/change-requests` return a bare 400 on a missing query param**, with no indication which one. | Ordinary API ergonomics; costs an integrator a round of guessing. |
 | **The PTO accrued/used split reads oddly after a correction** — the balance itself is correct, the two components it is presented as are not intuitive. | Presentation, not arithmetic. Worth a look before a parent reads it. |
 | **There is no timesheet submit route** — a week goes `open` → `approve` directly, with no `submitted` transition exposed. | The `submitted` status exists in the schema and the approve CAS keys on it. **Needs confirming as intended** rather than as a missing route. |
+| **D2 — retroactive entries are falsely badged "· edited".** `wasEntryEdited` (`apps/mobile/src/domains/timesheet/utils/entryEdited.ts:38`) infers an edit from `updated_at > clock_out_at + slack`. A retroactive entry is *written* after the work happened, so the predicate is true on a row nobody ever edited. | Tells a parent a carer amended hours she did not amend — the badge exists to flag exactly that, so a false one is worse than none. **RESOLVED** — `entryEdited.ts:44-47` now compares `updated_at` against `max(clock_out_at, created_at)`: an ordinary session is born at clock-IN and settled by the clock-out write, a retroactive entry is born complete, so the later of the two is the row's real settling point. Red first — the retro fixture returned `true` against the old predicate (11 pass / 1 fail). Two pins matter: the **ordinary-session pin is what killed the naive `created_at`-only fix**, whose two timestamps are a whole shift apart by design and which would have badged every normal session instead; and an ordering check confirming the fragment-A midnight exemption still short-circuits ahead of the new comparison. **Residual:** the badge is still a two-timestamp heuristic — any future bulk server write to `time_entries` badges every row it touches. Upgrade path is a `time_entry_edits` table; the first disputed correction pays for it. |
+| **D3 — signup swallows Supabase's 422 password error and clears the field.** | The user is told nothing and retypes blind. A rejected password is the one signup error that must say why. |
+| **D4 — `empty-pending.png` has a transparency checkerboard baked into the pixels** (SchedulePendingScreen). | Ships a visible grey grid where an empty state should be. Asset defect, not code. |
+| **D5 — create-account screen shows a white header band against the cream background.** | Visible seam on the first screen a new user sees. |
+| **D6a — the invite screen shows neither role nor expiry for a generated code.** | A parent cannot tell whether they generated a nanny or co-parent code, or how long it lasts, before sending it. Compounds C9 (no revoke path): wrong code sent, no way to take it back. |
+| **D6b — an empty-string `EXPO_PUBLIC_POSTHOG_API_KEY` triggers a dev LogBox error.** | Dev-only noise, but it trains people to ignore LogBox. Treat empty-string as absent. |
 
 ### D1 — onboarding 500s for a caller with no `user_profiles` row — **RESOLVED**
 

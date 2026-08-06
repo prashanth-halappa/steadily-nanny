@@ -11,10 +11,9 @@ import type { TimeEntry, TimesheetStatus } from '../types';
 import { endsAtLocalMidnight } from './splitFragment';
 
 /**
- * Clock-out writes `clock_out_at` and `updated_at` in the same statement, so
- * they land within milliseconds of each other. A minute of slack separates
- * "that's just the write" from "someone came back and changed this", without
- * needing a column to record it.
+ * A minute of slack separates "that's just the write that finished the row"
+ * from "someone came back and changed this", without needing a column to
+ * record it.
  *
  * The one exception is the first fragment of a session the server split at
  * local midnight — see `endsAtLocalMidnight`, which `wasEntryEdited` skips.
@@ -33,9 +32,19 @@ export function wasEntryEdited(entry: TimeEntry): boolean {
   if (!entry.clock_out_at) return false;
   if (endsAtLocalMidnight(entry)) return false;
   const clockOutMs = new Date(entry.clock_out_at).getTime();
+  const createdMs = new Date(entry.created_at).getTime();
   const updatedMs = new Date(entry.updated_at).getTime();
   if (!Number.isFinite(clockOutMs) || !Number.isFinite(updatedMs)) return false;
-  return updatedMs > clockOutMs + EDIT_DETECTION_SLACK_MS;
+  // The row settles at whichever came LAST: an ordinary session is born at
+  // clock-IN and finished by the clock-out write, while a retroactive entry
+  // is born complete with its clock-out already in the past. Comparing
+  // against clock-out alone brands every retro entry as edited from birth;
+  // against created_at alone brands every ordinary session, whose two
+  // timestamps are a whole shift apart by design.
+  const settledMs = Number.isFinite(createdMs)
+    ? Math.max(clockOutMs, createdMs)
+    : clockOutMs;
+  return updatedMs > settledMs + EDIT_DETECTION_SLACK_MS;
 }
 
 /**

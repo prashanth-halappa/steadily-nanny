@@ -112,3 +112,41 @@ describe('isEntryEditable', () => {
     );
   });
 });
+
+describe('wasEntryEdited — a retroactive entry is not an edited one', () => {
+  // Forgotten-clock-in recovery lands complete in ONE insert, so its
+  // clock-out is already in the past when the row is born. Comparing
+  // `updated_at` to it says "edited" from birth, on a row nobody touched.
+  const retro = {
+    clock_in_at: '2026-08-01T08:00:00.000Z',
+    clock_out_at: '2026-08-01T16:00:00.000Z',
+    created_at: '2026-08-03T19:30:00.000Z',
+    updated_at: '2026-08-03T19:30:00.000Z',
+  };
+
+  it('is false for a retro entry filed days after the hours', () => {
+    expect(wasEntryEdited(makeEntry(retro))).toBe(false);
+  });
+
+  it('is true once that retro entry is genuinely corrected', () => {
+    expect(
+      wasEntryEdited(
+        makeEntry({ ...retro, updated_at: '2026-08-03T19:35:00.000Z' })
+      )
+    ).toBe(true);
+  });
+
+  it('stays false for an ordinary session, whose row is born at clock-IN', () => {
+    // The pin against "compare to created_at instead": an ordinary entry is
+    // inserted when she clocks in and updated when she clocks out, so its
+    // two timestamps are a whole shift apart with nothing edited at all.
+    expect(
+      wasEntryEdited(
+        makeEntry({
+          created_at: '2026-08-01T08:00:00.000Z',
+          updated_at: '2026-08-01T16:00:00.000Z',
+        })
+      )
+    ).toBe(false);
+  });
+});

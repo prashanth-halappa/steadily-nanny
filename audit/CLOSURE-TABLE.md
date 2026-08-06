@@ -252,7 +252,19 @@ Distinct from everything above, and from the unit suite. After the code was comm
 - **Negative authorization held**, including cross-household isolation returning a 404-shaped response rather than leaking existence.
 - **A final `run_integrity_checks()` over everything the run had created returned ZERO violations.** The eight checks were pointed at data this session had just built through the real API, and found nothing — which is what makes the three findings on production data (above) credible as *data* problems rather than check problems.
 
-**Not exercised: co-parent approvals.** Deliberately skipped — driving them means sitting inside the short-notice window. F-B4-8 and F-B5-3 live on that surface and both were round-2 reopens, so it is the most valuable remaining runtime probe.
+### Evidence class: mobile CX run, 2026-08-06
+
+A third class, and the only one that sees what a user reads: the **app itself**, on a real simulator against a dev build and the local stack. A green API response and a correct row do not prove the screen renders them.
+
+- **The C1 S0 is fixed on screen, not just in the data.** Two same-named departed Emmas render **two tabs**, with header, approve dialog and total each bound to the tab in front of the parent; the live card names the snapshot carer rather than `"Someone"`. This is the defect that would have had a parent approve one carer's money under another's name, so rendering is the only proof that counts.
+- **Split fragments appear under their own days with no false "edited" badge** — C10's `endsAtLocalMidnight` suppression, observed.
+- **Cancellation rows show the authoritative stored figure** (480 minutes → `8h`, not a re-derived span), and a legitimate **0m fragment shows no zero-duration warning** — C12's exemption seen rather than argued.
+- **F-B8-6 renders in household time**, not device time.
+- **Approve froze £573.81, penny-exact against the database.** End to end, through the engine, the freeze, the wire and the screen.
+
+**Not exercised in EITHER pass: co-parent approvals.** Deliberately skipped both times — driving them means sitting inside the short-notice window. F-B4-8 and F-B5-3 live on that surface and both were round-2 reopens, so it is now unambiguously the most valuable remaining probe, and the only remediation-adjacent surface still resting on unit tests alone.
+
+**Found by the mobile pass:** six issues, none of them in the remediation work — **D2** (retroactive entries falsely badged "· edited"), **D3** (signup swallows Supabase's 422 password error and clears the field), **D4**, **D5**, **D6a**, **D6b**. All in [`OPEN-ITEMS.md`](./OPEN-ITEMS.md) → *Open items found during validation*. Same lesson as the API pass, one class further out: **each new evidence class found defects the previous one could not see.** Unit tests missed what the API run caught; the API run missed what the screen showed.
 
 **Found by the run, not by the fixes:** one pre-existing defect (**D1** — onboarding 500s when the caller has no `user_profiles` row; the parent path was guarded client-side only, the nanny redeem path nowhere at all) and five API-ergonomics observations. Both are recorded in [`OPEN-ITEMS.md`](./OPEN-ITEMS.md) → *2026-08-06*. D1 is now **RESOLVED** — `UserService.ensureProfile` (`user_id`-only payload, `ignoreDuplicates`) called from both `create` and `redeemInvite` — with a live clobber check (`d1-clobber.ts` 2/2) proving an existing profile survives, and a stated residual: the same 23503 class remains open for device registration, whose real fix is a trigger on `auth.users`. Worth stating plainly: **the validation run's most valuable output was a defect none of the remediation work would have found**, which is the argument for this evidence class in one line.
 
