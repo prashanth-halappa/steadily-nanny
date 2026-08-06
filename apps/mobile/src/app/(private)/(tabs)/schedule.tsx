@@ -77,7 +77,11 @@ export default function ScheduleRoute() {
             <Pressable
               testID="schedule-pattern-banner-change"
               accessibilityRole="button"
-              onPress={() => router.push('/(private)/schedule/build' as Href)}
+              onPress={() =>
+                router.push(
+                  `/(private)/schedule/build?patternId=${pattern.id}` as Href
+                )
+              }
             >
               <Body className="text-primary">
                 {t('pending.patternBannerChange')}

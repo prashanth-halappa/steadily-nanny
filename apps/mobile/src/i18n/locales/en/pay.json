@@ -12,7 +12,7 @@
   "notAvailableTitle": "Not available",
   "notAvailableDescription": "Pay & terms is managed by a parent on this household.",
   "noCarerTitle": "No nanny yet",
-  "noCarerDescription": "Invite your nanny, then set her pay terms here.",
+  "noCarerDescription": "Invite your nanny, then set their pay terms here.",
   "inviteAction": "Invite",
   "noArrangementTitle": "No pay terms set yet",
   "noArrangementDescription": "Set an hourly rate and Steadily can total the week for both of you.",
@@ -62,14 +62,14 @@
   },
   "setup": {
     "title": "Set up pay for {{name}}",
-    "subtitle": "What you've agreed. {{name}} can see her own terms, and Steadily can total each week for both of you.",
+    "subtitle": "What you've agreed. {{name}} can see their own terms, and Steadily can total each week for both of you.",
     "submitButton": "Save pay terms",
     "savedToast": "Pay terms saved",
     "cancellationRequiredHint": "Choose one — this is the one term with no blank state."
   },
   "promptCard": {
     "title": "Finish setting up {{name}}",
-    "description": "Add her pay terms so weeks can be totalled.",
+    "description": "Add their pay terms so weeks can be totalled.",
     "action": "Set up pay"
   },
   "myPay": {
@@ -97,7 +97,7 @@
     "hoursHint": "How many hours of these days you're paying.",
     "hoursError": "Enter a number of hours, like 8 or 7.5.",
     "balanceBeforeAfter": "Balance {{before}} now → {{after}} after",
-    "overBalanceWarning": "This is more than her remaining balance. You can still pay it — the balance will show as {{after}}.",
+    "overBalanceWarning": "This is more than their remaining balance. You can still pay it — the balance will show as {{after}}.",
     "noteLabel": "Note (optional)",
     "confirmButton": "Mark as paid",
     "savedToast": "Marked as paid",

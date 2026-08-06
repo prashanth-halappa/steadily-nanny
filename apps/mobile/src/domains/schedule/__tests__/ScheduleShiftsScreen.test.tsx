@@ -56,6 +56,13 @@ mock.module('@/src/hooks/queries/useHouseholdTimeOff', () => ({
   }),
 }));
 
+// AgendaView resolves carer names off this — an empty household keeps its
+// existing single-carer-shaped assertions below unaffected (showCarerNames
+// only flips true at 2+ nanny/helper members).
+mock.module('@/src/hooks/queries/useHouseholdMembers', () => ({
+  useHouseholdMembers: () => ({ data: [], isLoading: false }),
+}));
+
 let ScheduleShiftsScreen: typeof import('../components/ScheduleShiftsScreen').ScheduleShiftsScreen;
 let mockUseShiftsRange: ReturnType<typeof mock>;
 let mockUseActiveHousehold: ReturnType<typeof mock>;

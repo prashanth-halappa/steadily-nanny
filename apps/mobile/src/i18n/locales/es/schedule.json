@@ -19,7 +19,7 @@
     "carerPickerSubtitle": "Elige qué cuidadora recibirá esta semana.",
     "carerPickerCta": "Siguiente: días",
     "carerFallbackName": "Tu niñera",
-    "daysTitle": "¿Qué días suele trabajar?",
+    "daysTitle": "¿Qué días suele trabajar {{name}}?",
     "daysSubtitle": "Toca los días que quieras programar.",
     "daysCta": "Siguiente: horario",
     "hoursTitle": "Establece el horario",
@@ -119,7 +119,9 @@
     "statusCompleted": "Completado",
     "shortNotice": "Última hora",
     "awayBand": "Ausente",
-    "awaySummary": "Tu cuidador tiene tiempo libre esta semana — mira Agenda para los detalles."
+    "awaySummary": "Tu cuidador tiene tiempo libre esta semana — mira Agenda para los detalles.",
+    "axisTime": "Hora",
+    "legendMultiCarer": "Toca un bloque para ver quién lo cubre."
   },
   "clash": {
     "busyOverlap": "Esto se solapa con otro compromiso — aún puedes continuar.",

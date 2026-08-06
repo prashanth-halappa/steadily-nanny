@@ -137,4 +137,29 @@ describe('WeekRibbonView source', () => {
 
   // The away band is covered for real in `WeekRibbonView.render.test.tsx` —
   // a source grep cannot tell a rendered band from an unreachable one.
+
+  it('REGRESSION: the hour axis is zero-padded ("08:00"), not a bare digit users misread', () => {
+    expect(viewSource).toContain("padStart(2, '0')");
+    expect(viewSource).toContain('MetadataLabel');
+  });
+
+  it('REGRESSION: the header corner cell names the axis instead of sitting empty', () => {
+    expect(viewSource).toContain("t('shifts.axisTime')");
+  });
+
+  it('REGRESSION: filled/empty cells are told apart by colour, not by a near-invisible opacity/border trick', () => {
+    expect(viewSource).not.toContain('opacity: filled ? 0.85 : 0.15');
+    expect(viewSource).toContain('opacity: 1');
+    expect(viewSource).toContain('borderWidth: 0');
+    expect(viewSource).toContain('themeColors.muted');
+  });
+
+  it('renders a status legend after the grid, with a 4th item gated on 2+ distinct carers', () => {
+    expect(viewSource).toContain('testID="week-ribbon-legend"');
+    expect(viewSource).toContain("t('shifts.statusConfirmed')");
+    expect(viewSource).toContain("t('shifts.statusPending')");
+    expect(viewSource).toContain("t('shifts.statusCancelled')");
+    expect(viewSource).toContain('showMultiCarerLegend');
+    expect(viewSource).toContain("t('shifts.legendMultiCarer')");
+  });
 });
