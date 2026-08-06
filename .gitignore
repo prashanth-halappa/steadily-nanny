@@ -75,3 +75,4 @@ apps/mobile/*.png
 # Design staging area — icon concepts, not shipped assets (audit F-B11-10)
 apps/mobile/assets/_staging/
 supabase/.branches/
+.claude/worktrees/
