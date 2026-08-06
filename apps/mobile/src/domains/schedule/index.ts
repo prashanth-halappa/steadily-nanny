@@ -9,6 +9,7 @@
 export { CalendarViewSwitcher } from './components/CalendarViewSwitcher';
 export { PendingScheduleCard } from './components/PendingScheduleCard';
 export { ScheduleBuildScreen } from './components/ScheduleBuildScreen';
+export { SchedulePatternBanner } from './components/SchedulePatternBanner';
 export { SchedulePendingScreen } from './components/SchedulePendingScreen';
 export { ScheduleRespondScreen } from './components/ScheduleRespondScreen';
 export { ScheduleShiftsScreen } from './components/ScheduleShiftsScreen';

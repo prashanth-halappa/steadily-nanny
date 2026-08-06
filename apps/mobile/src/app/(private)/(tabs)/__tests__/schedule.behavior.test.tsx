@@ -88,6 +88,24 @@ mock.module('@/src/domains/schedule', () => {
         },
         patternBanner
       ),
+    // A thin stand-in mirroring the real banner's per-state message, so
+    // this file can assert the message text without pulling in the real
+    // component's own hooks (useHouseholdMembers etc.) — those are covered
+    // by SchedulePatternBanner.test.tsx.
+    SchedulePatternBanner: ({
+      pattern,
+      isLoading,
+    }: {
+      pattern: { status: string } | null;
+      isLoading?: boolean;
+    }) =>
+      isLoading
+        ? null
+        : React.createElement(
+            'Text',
+            { testID: 'schedule-pattern-banner-status' },
+            pattern?.status ?? 'none'
+          ),
   };
 });
 
@@ -194,7 +212,21 @@ describe('ScheduleRoute — role fork (Wave A3 + role === null triage)', () => {
     expect(queryByTestId('schedule-pending-screen-mock')).toBeNull();
   });
 
-  it('routes parent role to SchedulePendingScreen when no accepted pattern', () => {
+  // REGRESSION (WS-G): a full-screen SchedulePendingScreen used to fork on
+  // pattern status — only `accepted` got the calendar, every other state
+  // (pending/draft/declined/withdrawn/none) hid it, along with any
+  // still-live shifts from a previously accepted pattern, one-off shifts
+  // (which exist WITHOUT any pattern at all), and the "Add a one-off
+  // shift" button. The calendar (ScheduleShiftsScreen) now renders for
+  // EVERY pattern state — only the banner above it changes.
+  it.each([
+    ['pending', { status: 'pending' }],
+    ['draft', { status: 'draft' }],
+    ['declined', { status: 'declined' }],
+    ['withdrawn', { status: 'withdrawn' }],
+    ['accepted', { status: 'accepted' }],
+    ['no pattern at all', null],
+  ])('parent role always renders the calendar (pattern state: %s), never the full-screen pending takeover', (_label, pattern) => {
     mockUseIsOnboarded.mockImplementation(() => ({
       status: 'onboarded' as const,
       role: 'parent' as const,
@@ -203,37 +235,22 @@ describe('ScheduleRoute — role fork (Wave A3 + role === null triage)', () => {
       retryMemberships: mockRetryMemberships,
     }));
     mockUseSchedulePatterns.mockImplementation(() => ({
-      data: [{ status: 'pending' }],
-    }));
-
-    const { getByTestId, queryByTestId } = render(<ScheduleRoute />);
-
-    expect(getByTestId('schedule-pending-screen-mock')).toBeTruthy();
-    expect(queryByTestId('schedule-shifts-screen-mock')).toBeNull();
-  });
-
-  it('routes parent with accepted pattern to ScheduleShiftsScreen (calendar root)', () => {
-    mockUseIsOnboarded.mockImplementation(() => ({
-      status: 'onboarded' as const,
-      role: 'parent' as const,
-      householdId: 'h1',
-      membershipsError: false,
-      retryMemberships: mockRetryMemberships,
-    }));
-    mockUseSchedulePatterns.mockImplementation(() => ({
-      data: [{ status: 'accepted' }],
+      data: pattern ? [pattern] : [],
     }));
 
     const { getByTestId, queryByTestId } = render(<ScheduleRoute />);
 
     expect(getByTestId('schedule-shifts-screen-mock')).toBeTruthy();
     expect(queryByTestId('schedule-pending-screen-mock')).toBeNull();
+
+    const banner = getByTestId('schedule-pattern-banner-status');
+    expect(banner.children[0]).toBe(pattern?.status ?? 'none');
   });
 
-  it('REGRESSION: the "Change it" banner resumes the accepted pattern by id, instead of starting a fresh (orphaned) draft', () => {
-    // The bug: the banner pushed the bare build route with no `?patternId=`,
-    // so ScheduleBuildScreen always started a NEW wizard/pattern instead of
-    // resuming the one the parent is already looking at.
+  // NOTE: the accepted-banner "Change it resumes by ?patternId=" regression
+  // (previously a route-level test here) now lives in
+  // SchedulePatternBanner.test.tsx, where the real banner's routing runs.
+  it('one-off shift with NO pattern at all: calendar still renders (source_pattern_id is nullable, origin parent_proposed)', () => {
     mockUseIsOnboarded.mockImplementation(() => ({
       status: 'onboarded' as const,
       role: 'parent' as const,
@@ -241,20 +258,19 @@ describe('ScheduleRoute — role fork (Wave A3 + role === null triage)', () => {
       membershipsError: false,
       retryMemberships: mockRetryMemberships,
     }));
-    mockUseSchedulePatterns.mockImplementation(() => ({
-      data: [{ status: 'accepted', id: 'pattern-789' }],
-    }));
 
-    const { getByTestId } = render(<ScheduleRoute />);
+    mockUseSchedulePatterns.mockImplementation(() => ({ data: [] }));
 
-    fireEvent.press(getByTestId('schedule-pattern-banner-change'));
+    const { getByTestId, queryByTestId } = render(<ScheduleRoute />);
 
-    expect(mockPush).toHaveBeenCalledWith(
-      '/(private)/schedule/build?patternId=pattern-789'
-    );
+    // ScheduleShiftsScreen owns the shift list/one-off button internally —
+    // this file only needs to prove the calendar shell mounts (not hidden
+    // behind SchedulePendingScreen) when there's no pattern to speak of.
+    expect(getByTestId('schedule-shifts-screen-mock')).toBeTruthy();
+    expect(queryByTestId('schedule-pending-screen-mock')).toBeNull();
   });
 
-  it('routes helper role to SchedulePendingScreen when no accepted pattern', () => {
+  it('routes helper role to the calendar too, never the full-screen pending takeover', () => {
     mockUseIsOnboarded.mockImplementation(() => ({
       status: 'onboarded' as const,
       role: 'helper' as const,
@@ -265,7 +281,7 @@ describe('ScheduleRoute — role fork (Wave A3 + role === null triage)', () => {
 
     const { getByTestId, queryByTestId } = render(<ScheduleRoute />);
 
-    expect(getByTestId('schedule-pending-screen-mock')).toBeTruthy();
-    expect(queryByTestId('schedule-shifts-screen-mock')).toBeNull();
+    expect(getByTestId('schedule-shifts-screen-mock')).toBeTruthy();
+    expect(queryByTestId('schedule-pending-screen-mock')).toBeNull();
   });
 });

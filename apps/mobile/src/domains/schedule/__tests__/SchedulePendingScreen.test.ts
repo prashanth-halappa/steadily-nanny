@@ -123,4 +123,28 @@ describe('SchedulePendingScreen', () => {
     expect(screenSource).toContain('useTabBarScrollPadding');
     expect(screenSource).toContain('paddingBottom: tabBarScrollPadding');
   });
+
+  it('WS-G: the pushed usual-week detail screen has a back affordance above the title, wired to router.back()', () => {
+    // The screen used to be the Schedule tab's own root (`/schedule` index),
+    // which never needed its own back button — the tab bar was the way out.
+    // Now it's pushed from the pattern banner
+    // (`/(private)/schedule/usual-week`), one level deep, so it needs the
+    // same back affordance every other pushed schedule screen has.
+    expect(screenSource).toContain('testID="schedule-pending-back"');
+    const returnBlock = screenSource.slice(
+      screenSource.indexOf('return (\n    <ScrollView')
+    );
+    const backIndex = returnBlock.indexOf('testID="schedule-pending-back"');
+    const titleIndex = returnBlock.indexOf("t('pending.screenTitle')");
+    expect(backIndex).toBeGreaterThan(-1);
+    expect(titleIndex).toBeGreaterThan(-1);
+    expect(backIndex).toBeLessThan(titleIndex);
+    const backButtonBlock = returnBlock.slice(backIndex, titleIndex);
+    expect(backButtonBlock).toContain('onPress={() => router.back()}');
+  });
+
+  it("WS-G: the module doc no longer claims this is the '/schedule (index)' tab landing screen", () => {
+    expect(screenSource).not.toContain('/schedule` (index)');
+    expect(screenSource).toContain('usual-week');
+  });
 });
