@@ -6,10 +6,38 @@
  *
  * @module controllers/jobController
  */
+import type { CancellationPayReconcileResult } from '../jobs/cancellationPayReconcileJob';
+import { runCancellationPayReconcileJob } from '../jobs/cancellationPayReconcileJob';
 import { runExampleMaintenanceJob } from '../jobs/exampleMaintenanceJob';
+import { runIntegrityCheckJob } from '../jobs/integrityCheckJob';
 import { runReminderJob } from '../jobs/reminderJob';
 import { runScheduleHorizonJob } from '../jobs/scheduleHorizonJob';
 import { createTrackedJobHandler } from './jobHandlerFactory';
+
+/**
+ * Fold `needsHumanCount` into `errorCount` — and only that one.
+ *
+ * `needsHumanCount` is pay owed on an already-approved week: deterministically
+ * unrepairable, no retry settles it, so it should fail the run and page.
+ *
+ * `stillUnpaidCount` is deliberately NOT folded. Its common cause is a carer
+ * clocked in across the cancelled window — the remainder computes to empty
+ * until she clocks out, then settles itself. Folding it fired a failed run, a
+ * 500 and a Sentry event on every hourly pass of an overnight session, roughly
+ * sixteen pages for a state that was never wrong. The genuinely stuck version
+ * is caught by migration 056's `cancellation_unsettled` check, which waits two
+ * hours and reports once a day. Both counts stay in the summary either way, so
+ * the `job_runs` row still says which kind of outcome it was.
+ */
+export function mapReconcileForJobRun(result: CancellationPayReconcileResult) {
+  return {
+    totalProcessed: result.checked,
+    successCount: result.repaired,
+    errorCount: result.errorCount + result.needsHumanCount,
+    needsHumanCount: result.needsHumanCount,
+    stillUnpaidCount: result.stillUnpaidCount,
+  };
+}
 
 export const JobController = {
   /** POST /api/jobs/example-maintenance */
@@ -46,5 +74,25 @@ export const JobController = {
         approvalExpiring: result.approvalExpiring,
       }),
     }
+  ),
+
+  /**
+   * POST /api/jobs/integrity-checks
+   *
+   * No `mapForJobRun`: the job's own `errorCount` is already the violation
+   * total, which is exactly what must fail the run.
+   */
+  runIntegrityChecks: createTrackedJobHandler(
+    'integrity-checks',
+    runIntegrityCheckJob,
+    'Integrity checks completed'
+  ),
+
+  /** POST /api/jobs/cancellation-pay-reconcile */
+  runCancellationPayReconcile: createTrackedJobHandler(
+    'cancellation-pay-reconcile',
+    runCancellationPayReconcileJob,
+    'Cancellation pay reconcile job completed',
+    { mapForJobRun: mapReconcileForJobRun }
   ),
 };

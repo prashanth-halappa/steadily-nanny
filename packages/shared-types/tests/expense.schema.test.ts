@@ -10,6 +10,8 @@ import {
 } from '../src/schemas/expense.schema';
 
 const VALID_UUID = '11111111-1111-4111-8111-111111111111';
+/** A `household_members.id` — deliberately different from the carer's id. */
+const MEMBER_UUID = '22222222-2222-4222-8222-222222222222';
 const NOW = '2026-08-01T08:00:00Z';
 
 describe('expense.schema', () => {
@@ -67,6 +69,29 @@ describe('expense.schema', () => {
       expect(
         ExpenseSchema.safeParse({ ...validExpense, currency: 'gbp' }).success
       ).toBe(false);
+    });
+
+    // Migration 058 — the same per-membership bucket key the timesheet and
+    // time-entry rows carry. The parent's Hours screen filters approved
+    // expenses by the SAME carer key it uses for the hours, so an expense row
+    // that loses the key would fall out of a departed carer's statement.
+    it('carries household_member_id through to the parsed row', () => {
+      const parsed = ExpenseSchema.parse({
+        ...validExpense,
+        household_member_id: MEMBER_UUID,
+      });
+      expect(parsed.household_member_id).toBe(MEMBER_UUID);
+    });
+
+    it('accepts a row with no household_member_id at all (pre-058 data)', () => {
+      expect(ExpenseSchema.safeParse(validExpense).success).toBe(true);
+    });
+
+    it('accepts a null household_member_id', () => {
+      expect(
+        ExpenseSchema.safeParse({ ...validExpense, household_member_id: null })
+          .success
+      ).toBe(true);
     });
 
     it('rejects a status outside the const-map', () => {

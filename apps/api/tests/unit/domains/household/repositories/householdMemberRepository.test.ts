@@ -76,6 +76,37 @@ describe('HouseholdMemberRepository.createMembership', () => {
   });
 });
 
+describe('HouseholdMemberRepository.findMembershipAnyStatus', () => {
+  it('filters on household and user only — a removed row must still be found', async () => {
+    const removed = {
+      id: 'm1',
+      household_id: 'h1',
+      user_id: 'u1',
+      role: 'nanny',
+      status: 'removed',
+    };
+    const chain = createMockQueryChain({ data: removed, error: null });
+    mockSupabaseService.from.mockImplementation(() => chain);
+    const repo = new HouseholdMemberRepository();
+
+    const result = await repo.findMembershipAnyStatus('h1', 'u1');
+
+    expect(result).toEqual(removed);
+    expect(chain.eq.mock.calls).toEqual([
+      ['household_id', 'h1'],
+      ['user_id', 'u1'],
+    ]);
+  });
+
+  it('returns null when the user has never been a member', async () => {
+    mockSupabaseService.from.mockImplementation(() =>
+      createMockQueryChain({ data: null, error: null })
+    );
+    const repo = new HouseholdMemberRepository();
+    expect(await repo.findMembershipAnyStatus('h1', 'u1')).toBeNull();
+  });
+});
+
 describe('HouseholdMemberRepository.listActiveByUser', () => {
   it('returns every active membership row for the user, across households', async () => {
     const rows = [

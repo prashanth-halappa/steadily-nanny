@@ -9,6 +9,8 @@ import {
 } from '../src/schemas/pto.schema';
 
 const VALID_UUID = '11111111-1111-4111-8111-111111111111';
+/** A `household_members.id` — deliberately different from the carer's id. */
+const MEMBER_UUID = '22222222-2222-4222-8222-222222222222';
 const NOW = '2026-08-01T08:00:00Z';
 
 describe('pto.schema', () => {
@@ -56,6 +58,22 @@ describe('pto.schema', () => {
       expect(
         PtoLedgerEntrySchema.safeParse({ ...validAccrual, minutes: 0 }).success
       ).toBe(false);
+    });
+
+    // F4 (C1 round 2). Migration 058 stamps `household_member_id` on
+    // `pto_ledger` too, but a schema that does not declare it STRIPS it —
+    // so these rows silently degraded to name-merging while the timesheet
+    // and expense rows beside them kept their per-membership identity.
+    it('carries household_member_id through to the parsed row', () => {
+      const parsed = PtoLedgerEntrySchema.parse({
+        ...validAccrual,
+        household_member_id: MEMBER_UUID,
+      });
+      expect(parsed.household_member_id).toBe(MEMBER_UUID);
+    });
+
+    it('accepts a row with no household_member_id (pre-058 data)', () => {
+      expect(PtoLedgerEntrySchema.safeParse(validAccrual).success).toBe(true);
     });
 
     it('accepts a null carer_id (carer account deleted, ledger history preserved)', () => {

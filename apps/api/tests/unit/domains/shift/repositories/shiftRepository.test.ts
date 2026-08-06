@@ -8,6 +8,7 @@ let ShiftRepository: any;
 let mockSupabaseService: any;
 let ShiftImmutableError: any;
 let ShiftNotFoundError: any;
+let ExtraShiftAlreadyExistsError: any;
 let DatabaseError: any;
 
 function createMockQueryChain(
@@ -46,6 +47,7 @@ beforeAll(async () => {
   );
   ShiftImmutableError = errors.ShiftImmutableError;
   ShiftNotFoundError = errors.ShiftNotFoundError;
+  ExtraShiftAlreadyExistsError = errors.ExtraShiftAlreadyExistsError;
   DatabaseError = (await import('../../../../../src/errors')).DatabaseError;
   mockSupabaseService = (await import('../../../../../src/config/supabase'))
     .supabaseService;
@@ -420,5 +422,116 @@ describe('ShiftRepository.findExtraShiftInWindow', () => {
         window.ends_at
       )
     ).rejects.toThrow(DatabaseError);
+  });
+});
+
+/**
+ * `createShift` insert chain: `.insert(...).select().single()`. Captures the
+ * inserted row so the happy path can assert what actually went to the table.
+ */
+function createInsertChain(response: { data: unknown; error: unknown }): any {
+  const chain: any = {
+    inserted: null as unknown,
+    insert: mock((row: unknown) => {
+      chain.inserted = row;
+      return chain;
+    }),
+    select: mock(() => chain),
+    single: mock(() => Promise.resolve(response)),
+  };
+  return chain;
+}
+
+/**
+ * Migration 059 put a partial unique index behind `insertExtraShift`'s
+ * check-then-act guard. The race it closes only produces a usable outcome if
+ * the 23505 arrives at the service as a TYPED error it can adopt the winner
+ * on — a raw DatabaseError is indistinguishable from a real failure and would
+ * 500 the parent who double-tapped.
+ */
+describe('ShiftRepository.createShift', () => {
+  const input = {
+    household_id: 'h1',
+    carer_id: 'carer-1',
+    starts_at: '2026-08-04T08:00:00.000Z',
+    ends_at: '2026-08-04T12:00:00.000Z',
+    timezone: 'Europe/London',
+    kind: 'extra' as const,
+    status: 'pending' as const,
+    origin: 'parent_proposed' as const,
+    created_by: 'user-1',
+  };
+
+  function createWith(response: { data: unknown; error: unknown }): {
+    chain: any;
+    result: Promise<unknown>;
+  } {
+    const chain = createInsertChain(response);
+    mockSupabaseService.from.mockImplementation(() => chain);
+    return { chain, result: new ShiftRepository().createShift(input) };
+  }
+
+  it('returns the created row and defaults the untouched columns', async () => {
+    const row = { id: 's-new', ...input };
+    const { chain, result } = createWith({ data: row, error: null });
+    expect(await result).toEqual(row);
+    expect(mockSupabaseService.from).toHaveBeenCalledWith('shifts');
+    expect(chain.inserted).toMatchObject({
+      household_id: 'h1',
+      carer_id: 'carer-1',
+      kind: 'extra',
+      source_pattern_id: null,
+      is_short_notice: false,
+      cancellation_paid: false,
+      sequence: 0,
+      note: null,
+      reason: null,
+    });
+  });
+
+  it('translates 059’s unique violation into ExtraShiftAlreadyExistsError', async () => {
+    const { result } = createWith({
+      data: null,
+      error: {
+        code: '23505',
+        message:
+          'duplicate key value violates unique constraint "shifts_extra_window_unique"',
+        details:
+          'Key (household_id, carer_id, starts_at, ends_at)=(...) already exists.',
+      },
+    });
+    await expect(result).rejects.toBeInstanceOf(ExtraShiftAlreadyExistsError);
+    await expect(result).rejects.toMatchObject({
+      name: 'ExtraShiftAlreadyExistsError',
+      statusCode: 409,
+      metadata: { reason: 'EXTRA_SHIFT_ALREADY_EXISTS' },
+    });
+  });
+
+  // The shifts table carries other unique keys (materialisation dedupe). A
+  // code-only check would mistranslate those into "already exists" and the
+  // service would then hunt for a winner that does not exist.
+  it('leaves a 23505 from a DIFFERENT constraint as a DatabaseError', async () => {
+    const { result } = createWith({
+      data: null,
+      error: {
+        code: '23505',
+        message:
+          'duplicate key value violates unique constraint "shifts_pattern_slot_unique"',
+        details: '',
+      },
+    });
+    await expect(result).rejects.toBeInstanceOf(DatabaseError);
+    await expect(result).rejects.not.toBeInstanceOf(
+      ExtraShiftAlreadyExistsError
+    );
+  });
+
+  it('leaves any other DB error as a DatabaseError', async () => {
+    const { result } = createWith({
+      data: null,
+      error: { code: '23503', message: 'fk violation', details: '' },
+    });
+    await expect(result).rejects.toBeInstanceOf(DatabaseError);
   });
 });

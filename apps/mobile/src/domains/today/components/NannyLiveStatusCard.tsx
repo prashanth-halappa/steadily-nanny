@@ -12,6 +12,7 @@ import { Card } from '@/src/components/ui/card';
 import { LiveDot } from '@/src/components/ui/live-dot';
 import { Body } from '@/src/components/ui/typography';
 import { resolveMemberDisplayName } from '@/src/domains/schedule/utils/memberDisplayName';
+import { carerKeyOf } from '@/src/domains/timesheet/utils/carerKey';
 import {
   formatClockTime,
   formatDuration,
@@ -36,6 +37,8 @@ type TodayShiftState =
       kind: 'finished';
       clockOutAt: string;
       carerId: string | null;
+      /** The row's own snapshot — the only name a departed carer still has. */
+      carerDisplayName: string;
       durationLabel: string;
     }
   | { kind: 'arriving'; start: string; carerId: string | null }
@@ -119,24 +122,19 @@ export function NannyLiveStatusCard({
     if (finishedToday?.clock_out_at) {
       // Only THIS carer's entries — `finishedToday` names one carer, so the
       // duration next to her name must be hers alone, never every carer's
-      // hours for the day summed under one name (F-B1-3-sibling). `carer_id`
-      // goes NULL for a deleted account (033_preserve_payroll_on_carer_
-      // deletion.sql) but keeps the row, so `carer_id === null` alone would
-      // match every departed carer collectively — fall back to the durable
-      // `carer_display_name` snapshot to keep two different departed
-      // carers' hours apart.
+      // hours for the day summed under one name (F-B1-3-sibling). `carerKeyOf`
+      // is the same identity rule the parent's week screen buckets tabs and
+      // totals with, deliberately shared: a card that merges two carers the
+      // week screen splits reports a day's hours under the wrong name.
+      const finishedKey = carerKeyOf(finishedToday);
       const todayEntries = (entries.data ?? []).filter(
-        e =>
-          e.local_date === today &&
-          (finishedToday.carer_id !== null
-            ? e.carer_id === finishedToday.carer_id
-            : e.carer_id === null &&
-              e.carer_display_name === finishedToday.carer_display_name)
+        e => e.local_date === today && carerKeyOf(e) === finishedKey
       );
       return {
         kind: 'finished',
         clockOutAt: finishedToday.clock_out_at,
         carerId: finishedToday.carer_id,
+        carerDisplayName: finishedToday.carer_display_name,
         durationLabel: formatDuration(sumEntryMinutes(todayEntries, nowMs)),
       };
     }
@@ -164,7 +162,17 @@ export function NannyLiveStatusCard({
     };
   }, [entries.data, shifts.data, today, timeZone]);
 
-  const name = state.kind === 'none' ? '' : nameFor(state.carerId);
+  // A departed carer has no user id left to resolve against the member list,
+  // so `nameFor` would say "Someone" over hours the card has just correctly
+  // attributed to her. Her row's snapshot is the name she still has. Only the
+  // finished arm can carry one: a running entry needs a logged-in account, and
+  // a shift names a member.
+  const name =
+    state.kind === 'none'
+      ? ''
+      : state.kind === 'finished' && state.carerId === null
+        ? state.carerDisplayName
+        : nameFor(state.carerId);
 
   const live = state.kind === 'running';
   const title =

@@ -6,6 +6,7 @@ import { ChildNotFoundError } from '../../../../../src/domains/child/errors/chil
 import { NotAHouseholdParentError } from '../../../../../src/domains/household';
 import {
   ChangeRequestNotPendingError,
+  ExtraShiftAlreadyExistsError,
   InvalidChangeRequestKindForRoleError,
   NotTheChangeRequestRequesterError,
   NotTheChangeRequestResponderError,
@@ -413,6 +414,125 @@ describe('ShiftChangeRequestCommandService.createExtraShift', () => {
     expect(shiftRepo.createShift).not.toHaveBeenCalled();
     expect(shiftRepo.insertChildren).not.toHaveBeenCalled();
     expect(eventRepo.insertMany).not.toHaveBeenCalled();
+  });
+
+  // Migration 059's unique index is what makes the check-then-act guard above
+  // actually hold under a double-tap: both taps read an empty window, both
+  // insert, and the DB refuses the loser with a 23505. Without adoption the
+  // loser's parent sees a 500 for a shift that DID get created.
+  it('adopts the winner when a concurrent create lost the 059 race', async () => {
+    const winner = {
+      ...shift,
+      id: 's-winner',
+      kind: 'extra' as const,
+      status: 'pending' as const,
+      shift_children: [],
+    };
+    let lookups = 0;
+    const shiftRepo = makeShiftRepo({
+      findExtraShiftInWindow: mock(async () => {
+        lookups += 1;
+        // First call is the pre-check, which loses the race and sees nothing.
+        return lookups === 1 ? null : winner;
+      }),
+      createShift: mock(async () => {
+        throw new ExtraShiftAlreadyExistsError({
+          householdId: 'h1',
+          startsAt: extraInput.starts_at,
+          endsAt: extraInput.ends_at,
+          carerId: 'carer-1',
+        });
+      }),
+    });
+    const eventRepo = makeEventRepo();
+    const svc = makeSvc({ shiftRepo, eventRepo });
+
+    const result = await svc.createExtraShift('parent-1', 'h1', extraInput);
+
+    expect(result.status).toBe('created');
+    if (result.status === 'created') {
+      expect(result.shift.id).toBe('s-winner');
+    }
+    // The winner's own call wrote the children and the day-thread event.
+    // Writing them again would double the child rows and post the shift to the
+    // thread twice.
+    expect(shiftRepo.insertChildren).not.toHaveBeenCalled();
+    expect(eventRepo.insertMany).not.toHaveBeenCalled();
+  });
+
+  // Same adoption, reached through the approval applier — the other caller of
+  // insertExtraShift. A re-driven approval racing itself must not 500 either.
+  it('adopts the winner on the approved-applier path too', async () => {
+    const winner = {
+      ...shift,
+      id: 's-winner',
+      kind: 'extra' as const,
+      status: 'pending' as const,
+      shift_children: [],
+    };
+    let lookups = 0;
+    const shiftRepo = makeShiftRepo({
+      findExtraShiftInWindow: mock(async () => {
+        lookups += 1;
+        return lookups === 1 ? null : winner;
+      }),
+      createShift: mock(async () => {
+        throw new ExtraShiftAlreadyExistsError({
+          householdId: 'h1',
+          startsAt: extraInput.starts_at,
+          endsAt: extraInput.ends_at,
+          carerId: 'carer-1',
+        });
+      }),
+    });
+    const eventRepo = makeEventRepo();
+    const svc = makeSvc({ shiftRepo, eventRepo });
+
+    const result = await svc.applyApprovedExtraShift({
+      id: 'a-extra',
+      household_id: 'h1',
+      requested_by: 'parent-1',
+      action: 'extra_shift',
+      payload: {
+        starts_at: extraInput.starts_at,
+        ends_at: extraInput.ends_at,
+        timezone: extraInput.timezone,
+        carer_id: 'carer-1',
+        child_ids: ['child-1'],
+        note: null,
+        reason: 'Date night',
+      },
+      status: 'approved',
+      timeout_at: '2999-01-01T00:00:00Z',
+      responded_by: 'parent-2',
+      responded_at: 't',
+      created_at: 't',
+      updated_at: 't',
+    } as any);
+
+    expect(result.id).toBe('s-winner');
+    expect(eventRepo.insertMany).not.toHaveBeenCalled();
+  });
+
+  // Adoption only makes sense if a winner is actually there. If the re-read
+  // comes back empty the DB and the lookup disagree — swallowing that would
+  // return a shift nobody can see, so the conflict must surface.
+  it('rethrows when the 23505 winner cannot be found on re-read', async () => {
+    const shiftRepo = makeShiftRepo({
+      createShift: mock(async () => {
+        throw new ExtraShiftAlreadyExistsError({
+          householdId: 'h1',
+          startsAt: extraInput.starts_at,
+          endsAt: extraInput.ends_at,
+          carerId: 'carer-1',
+        });
+      }),
+    });
+    const svc = makeSvc({ shiftRepo });
+
+    await expect(
+      svc.createExtraShift('parent-1', 'h1', extraInput)
+    ).rejects.toBeInstanceOf(ExtraShiftAlreadyExistsError);
   });
 
   it('rejects a nanny proposing an extra shift before consulting the gate', async () => {

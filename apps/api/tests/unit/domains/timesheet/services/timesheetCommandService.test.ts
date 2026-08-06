@@ -19,6 +19,7 @@ import {
   sumWorkedMinutes,
   TimesheetCommandService,
 } from '../../../../../src/domains/timesheet/services/timesheetCommandService';
+import { localDateOf } from '../../../../../src/domains/timesheet/utils/weekStart';
 
 const runningEntry = {
   id: 't1',
@@ -3460,11 +3461,20 @@ describe('TimesheetCommandService.rollUpIntoTimesheet — bucket by the frozen l
       clock_in_at: '2026-08-02T22:00:00.000Z',
       local_date: '2026-08-02', // frozen under Europe/London -> week 2026-07-27
     };
+    // This session also crosses Monday in its FROZEN zone, so it splits (C6)
+    // — which is the point: fragment A must still bucket by the entry's own
+    // `local_date`, not by the household's new timezone.
     const timeEntryRepo = makeTimeEntryRepo({
       listForCarerWeek: mock(async () => []),
       update: mock(async (_id: string, patch: Record<string, unknown>) => ({
         ...frozen,
         ...patch,
+      })),
+      createSubmitted: mock(async (data: Record<string, unknown>) => ({
+        ...frozen,
+        ...data,
+        id: 't-fragment-b',
+        local_date: '2026-08-03',
       })),
     });
     const timesheetRepo = makeTimesheetRepo();
@@ -4147,6 +4157,10 @@ describe('recordCancellationPaidEntry — split remainder (053)', () => {
         kind: 'cancellation_paid',
         clock_in_at: at('08'),
         clock_out_at: at('11'),
+        // What the write path actually stores for this fragment. Inheriting
+        // `submittedEntry`'s 480 would claim the whole window for three
+        // hours, and C7's budget arithmetic reads this column.
+        scheduled_minutes: 180,
       },
     ]);
 
@@ -4511,5 +4525,945 @@ describe('TimesheetCommandService.clockIn — a cancellation is not time on the 
       .clockIn('carer-1', { household_id: 'h1' }, at12)
       .catch((e: unknown) => e);
     expect(err).toBeInstanceOf(TimeEntryOverlapError);
+  });
+});
+
+describe('recordCancellationPaidEntry — round ONCE against the window (C7)', () => {
+  // The window is booked in whole minutes; the worked block inside it is not.
+  // Rounding each piece independently loses or invents up to a minute per
+  // boundary — the drift the old ponytail comment measured at ~£0.25/shift.
+  // Now the window is rounded once and the LAST fragment carries the
+  // residual, so `worked + Σ fragments === booked` exactly.
+  const paidSpanShift = {
+    id: 's-cancel',
+    household_id: 'h1',
+    carer_id: 'carer-1',
+    starts_at: '2026-08-03T08:00:00.000Z',
+    ends_at: '2026-08-03T16:00:00.000Z', // 480 booked minutes
+    timezone: 'Europe/London',
+    cancellation_paid: true,
+  };
+
+  function repoWith(candidates: unknown[]) {
+    return makeTimeEntryRepo({
+      listOverlapCandidatesForCarer: mock(async () => candidates),
+      listForCarerWeek: mock(async () => []),
+      createSubmitted: mock(async (data: Record<string, unknown>) => ({
+        ...submittedEntry,
+        ...data,
+      })),
+    });
+  }
+
+  function makeSvc(timeEntryRepo: any) {
+    return new TimesheetCommandService(
+      timeEntryRepo,
+      makeTimesheetRepo({
+        findByWeek: mock(async () => ({ ...timesheet, status: 'submitted' })),
+      }),
+      makeMemberRepo(),
+      makeHouseholdRepo(),
+      makeShiftRepo(),
+      makeQueries(),
+      makeUserService(),
+      makePush()
+    );
+  }
+
+  function worked(clockInAt: string, clockOutAt: string | null) {
+    return {
+      ...submittedEntry,
+      id: 't-worked',
+      break_minutes: 0,
+      scheduled_minutes: null,
+      clock_in_at: clockInAt,
+      clock_out_at: clockOutAt,
+    };
+  }
+
+  /** Presence + every fragment written, in the banked (C7) formula. */
+  function banked(created: readonly any[], workedMinutes: number): number {
+    return created.reduce(
+      (total, entry) => total + (entry.scheduled_minutes as number),
+      workedMinutes
+    );
+  }
+
+  it('conserves the booked window when a MIDDLE block rounds DOWN (the 479 case)', async () => {
+    // 11:00:20-12:00:40 worked -> 60. Independently rounded, the two
+    // remainders give 180 + 239 = 419, and 60 + 419 = 479 for a 480 window.
+    const timeEntryRepo = repoWith([
+      worked('2026-08-03T11:00:20.000Z', '2026-08-03T12:00:40.000Z'),
+    ]);
+
+    const created =
+      await makeSvc(timeEntryRepo).recordCancellationPaidEntry(paidSpanShift);
+
+    expect(created.map(e => e.scheduled_minutes)).toEqual([180, 240]);
+    expect(banked(created, 60)).toBe(480);
+  });
+
+  it('conserves the booked window when a MIDDLE block rounds UP (the 481 case)', async () => {
+    // 11:00:31-12:00:29 worked -> 60; independent rounding gives 181 + 240.
+    const timeEntryRepo = repoWith([
+      worked('2026-08-03T11:00:31.000Z', '2026-08-03T12:00:29.000Z'),
+    ]);
+
+    const created =
+      await makeSvc(timeEntryRepo).recordCancellationPaidEntry(paidSpanShift);
+
+    expect(created.map(e => e.scheduled_minutes)).toEqual([181, 239]);
+    expect(banked(created, 60)).toBe(480);
+  });
+
+  it('conserves the booked window on the half-minute tie (the 08:00:00-09:00:30 case)', async () => {
+    // Math.round goes half-up on BOTH sides: 60.5 -> 61 worked and 419.5 ->
+    // 420 remaining, i.e. 481 for a 480 window. The single fragment is the
+    // last one, so it carries the whole residual.
+    const timeEntryRepo = repoWith([
+      worked('2026-08-03T08:00:00.000Z', '2026-08-03T09:00:30.000Z'),
+    ]);
+
+    const created =
+      await makeSvc(timeEntryRepo).recordCancellationPaidEntry(paidSpanShift);
+
+    expect(created.map(e => e.scheduled_minutes)).toEqual([419]);
+    expect(banked(created, 61)).toBe(480);
+  });
+
+  it('gives a retry the SAME residual a full run would have written', async () => {
+    // The reconcile job re-runs after fragment 1 committed and fragment 2
+    // did not. The surviving row's STORED minutes are what make this
+    // deterministic: re-deriving them from its span would hand the rewritten
+    // fragment a different number than the full run produced.
+    const timeEntryRepo = repoWith([
+      worked('2026-08-03T11:00:20.000Z', '2026-08-03T12:00:40.000Z'),
+      {
+        ...submittedEntry,
+        id: 't-cancel-1',
+        kind: 'cancellation_paid',
+        break_minutes: 0,
+        clock_in_at: '2026-08-03T08:00:00.000Z',
+        clock_out_at: '2026-08-03T11:00:20.000Z',
+        scheduled_minutes: 180,
+      },
+    ]);
+
+    const created =
+      await makeSvc(timeEntryRepo).recordCancellationPaidEntry(paidSpanShift);
+
+    expect(created.map(e => e.scheduled_minutes)).toEqual([240]);
+    expect(banked(created, 60) + 180).toBe(480);
+  });
+
+  it('gives the SAME first fragment back when it is the RESIDUAL row that survived', async () => {
+    // Mirror of the above: fragment 2 (the residual carrier, 240) survived
+    // and fragment 1 is missing. Re-rounding the survivor's span would give
+    // 239 here and hand fragment 1 a 181 it never had.
+    const timeEntryRepo = repoWith([
+      worked('2026-08-03T11:00:20.000Z', '2026-08-03T12:00:40.000Z'),
+      {
+        ...submittedEntry,
+        id: 't-cancel-2',
+        kind: 'cancellation_paid',
+        break_minutes: 0,
+        clock_in_at: '2026-08-03T12:00:40.000Z',
+        clock_out_at: '2026-08-03T16:00:00.000Z',
+        scheduled_minutes: 240,
+      },
+    ]);
+
+    const created =
+      await makeSvc(timeEntryRepo).recordCancellationPaidEntry(paidSpanShift);
+
+    expect(created.map(e => e.scheduled_minutes)).toEqual([180]);
+    expect(banked(created, 60) + 240).toBe(480);
+  });
+
+  it('never over-assigns when several sub-minute gaps each round up', async () => {
+    // Found by the randomized conservation sweep. Four 31-second gaps each
+    // round to a minute on their own — more than the window has left once the
+    // four 31-second worked blocks have taken their own rounded minutes. Left
+    // uncapped, the first three fragments claim a minute each and the last is
+    // handed a negative it clamps to zero, paying the window twice over.
+    const second = (n: number) =>
+      new Date(Date.UTC(2026, 7, 3, 8, 0, n)).toISOString();
+    const shiftSpan = {
+      ...paidSpanShift,
+      starts_at: second(0),
+      ends_at: second(248), // 4 booked minutes
+    };
+    const timeEntryRepo = repoWith([
+      { ...worked(second(31), second(62)), id: 'w1' },
+      { ...worked(second(93), second(124)), id: 'w2' },
+      { ...worked(second(155), second(186)), id: 'w3' },
+      { ...worked(second(217), second(248)), id: 'w4' },
+    ]);
+
+    const created =
+      await makeSvc(timeEntryRepo).recordCancellationPaidEntry(shiftSpan);
+
+    // Presence rounds to 4 minutes, which is the whole booked window: there
+    // is nothing left to compensate.
+    expect(created).toHaveLength(4);
+    expect(created.map(e => e.scheduled_minutes)).toEqual([0, 0, 0, 0]);
+  });
+
+  it("does not pay a worked entry's unpaid break as cancellation time", async () => {
+    // Presence is the SPAN, not span-minus-break: she was there for the whole
+    // hour, so only the 420 minutes she was absent were cancelled. Topping up
+    // her break would be money nobody agreed to.
+    const timeEntryRepo = repoWith([
+      {
+        ...worked('2026-08-03T08:00:00.000Z', '2026-08-03T09:00:00.000Z'),
+        break_minutes: 15,
+      },
+    ]);
+
+    const created =
+      await makeSvc(timeEntryRepo).recordCancellationPaidEntry(paidSpanShift);
+
+    expect(created.map(e => e.scheduled_minutes)).toEqual([420]);
+  });
+});
+
+describe('TimesheetCommandService.clockOut — a session that crosses Monday splits (C6)', () => {
+  // A Sunday-night session that finishes on Monday is two weeks' work. Filing
+  // all of it under the clock-IN's week overstates one timesheet and leaves
+  // the other empty — and a parent approves a week that never contained
+  // those hours. `rollUpIntoTimesheet` recomputes ONE week, so the split has
+  // to happen at the write, not at the read.
+  const CARER = 'carer-1';
+
+  function running(over: Record<string, unknown> = {}) {
+    return {
+      ...runningEntry,
+      id: 't1',
+      shift_id: null,
+      break_minutes: 0,
+      clock_in_at: '2026-01-11T23:00:00.000Z', // Sun 23:00 London (GMT)
+      local_date: '2026-01-11',
+      timezone: 'Europe/London',
+      ...over,
+    };
+  }
+
+  function makeSvc(entry: Record<string, unknown>, repoOverrides: any = {}) {
+    // `local_date` is trigger-derived from `clock_in_at` + `timezone`
+    // (017_time_tracking.sql). The fake has to do the same or the roll-up
+    // buckets the new fragment into the week it was written FROM.
+    const timeEntryRepo = makeTimeEntryRepo({
+      listOverlapCandidatesForCarer: mock(async () => [entry]),
+      listForCarerWeek: mock(async () => []),
+      update: mock(async (_id: string, patch: Record<string, unknown>) => ({
+        ...entry,
+        ...patch,
+      })),
+      createSubmitted: mock(async (data: Record<string, unknown>) => ({
+        ...entry,
+        ...data,
+        id: 't-fragment-b',
+        local_date: localDateOf(
+          new Date(data.clock_in_at as string),
+          data.timezone as string
+        ),
+      })),
+      ...repoOverrides,
+    });
+    const svc = new TimesheetCommandService(
+      timeEntryRepo,
+      makeTimesheetRepo(),
+      makeMemberRepo(),
+      makeHouseholdRepo(),
+      makeShiftRepo({ findById: mock(async () => null) }),
+      makeQueries({ getOwnedTimeEntry: mock(async () => entry) }),
+      makeUserService(),
+      makePush()
+    );
+    return { svc, timeEntryRepo };
+  }
+
+  it('splits at London-local Monday midnight in GMT', async () => {
+    const entry = running({ shift_id: 'shift-x' });
+    const { svc, timeEntryRepo } = makeSvc(entry);
+
+    const returned = await svc.clockOut(CARER, 't1', {
+      clock_out_at: '2026-01-12T02:00:00.000Z',
+    });
+
+    // Fragment B is inserted first, complete and submitted, keeping the shift.
+    expect(timeEntryRepo.createSubmitted).toHaveBeenCalledTimes(1);
+    expect(timeEntryRepo.createSubmitted).toHaveBeenCalledWith(
+      expect.objectContaining({
+        clock_in_at: '2026-01-12T00:00:00.000Z',
+        clock_out_at: '2026-01-12T02:00:00.000Z',
+        kind: 'worked',
+        status: 'submitted',
+        shift_id: 'shift-x',
+        household_id: 'h1',
+      })
+    );
+    // Fragment A is the running row itself, closed at the boundary — it keeps
+    // its id, so the client's reference stays valid.
+    expect(timeEntryRepo.update).toHaveBeenCalledWith(
+      't1',
+      expect.objectContaining({
+        clock_out_at: '2026-01-12T00:00:00.000Z',
+        status: 'submitted',
+      })
+    );
+    expect(returned.id).toBe('t1');
+    expect(returned.clock_out_at).toBe('2026-01-12T00:00:00.000Z');
+  });
+
+  it('rolls up BOTH weeks, not just the clock-in week', async () => {
+    const entry = running();
+    const { svc, timeEntryRepo } = makeSvc(entry);
+
+    await svc.clockOut(CARER, 't1', {
+      clock_out_at: '2026-01-12T02:00:00.000Z',
+    });
+
+    expect(timeEntryRepo.listForCarerWeek).toHaveBeenCalledTimes(2);
+    expect(timeEntryRepo.listForCarerWeek).toHaveBeenNthCalledWith(
+      1,
+      'h1',
+      CARER,
+      '2026-01-05',
+      '2026-01-12'
+    );
+    expect(timeEntryRepo.listForCarerWeek).toHaveBeenNthCalledWith(
+      2,
+      'h1',
+      CARER,
+      '2026-01-12',
+      '2026-01-19'
+    );
+  });
+
+  it('splits at 23:00Z when London is on BST', async () => {
+    // Sun 2026-07-12 22:00Z is 23:00 local. Local Monday midnight is 23:00Z,
+    // an hour before UTC midnight — a UTC-midnight boundary would file the
+    // first local hour of Monday into Sunday's week.
+    const entry = running({
+      clock_in_at: '2026-07-12T22:00:00.000Z',
+      local_date: '2026-07-12',
+    });
+    const { svc, timeEntryRepo } = makeSvc(entry);
+
+    await svc.clockOut(CARER, 't1', {
+      clock_out_at: '2026-07-13T01:00:00.000Z',
+    });
+
+    expect(timeEntryRepo.createSubmitted).toHaveBeenCalledWith(
+      expect.objectContaining({
+        clock_in_at: '2026-07-12T23:00:00.000Z',
+        clock_out_at: '2026-07-13T01:00:00.000Z',
+      })
+    );
+    expect(timeEntryRepo.update).toHaveBeenCalledWith(
+      't1',
+      expect.objectContaining({ clock_out_at: '2026-07-12T23:00:00.000Z' })
+    );
+  });
+
+  it('does NOT split a session that finishes exactly at midnight', async () => {
+    // Half-open: a session ending at the boundary is entirely in week A, and
+    // a second fragment would be a zero-length row.
+    const entry = running();
+    const { svc, timeEntryRepo } = makeSvc(entry);
+
+    await svc.clockOut(CARER, 't1', {
+      clock_out_at: '2026-01-12T00:00:00.000Z',
+    });
+
+    expect(timeEntryRepo.createSubmitted).not.toHaveBeenCalled();
+    expect(timeEntryRepo.listForCarerWeek).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves an ordinary same-week clock-out exactly as it was', async () => {
+    const entry = running({
+      clock_in_at: '2026-01-08T09:00:00.000Z',
+      local_date: '2026-01-08',
+    });
+    const { svc, timeEntryRepo } = makeSvc(entry);
+
+    const returned = await svc.clockOut(CARER, 't1', {
+      clock_out_at: '2026-01-08T17:00:00.000Z',
+    });
+
+    expect(timeEntryRepo.createSubmitted).not.toHaveBeenCalled();
+    expect(timeEntryRepo.update).toHaveBeenCalledWith(
+      't1',
+      expect.objectContaining({
+        clock_out_at: '2026-01-08T17:00:00.000Z',
+        status: 'submitted',
+      })
+    );
+    expect(returned.id).toBe('t1');
+  });
+
+  it('conserves worked minutes and the break across the split', async () => {
+    // Real seconds on both ends, so each fragment rounds independently and
+    // the pair must still add up to the session the carer actually worked.
+    const entry = running({ clock_in_at: '2026-01-11T23:00:20.000Z' });
+    const { svc, timeEntryRepo } = makeSvc(entry);
+
+    await svc.clockOut(CARER, 't1', {
+      clock_out_at: '2026-01-12T01:00:40.000Z',
+      break_minutes: 30,
+    });
+
+    const fragmentA = timeEntryRepo.update.mock.calls[0][1];
+    const fragmentB = timeEntryRepo.createSubmitted.mock.calls[0][0];
+    const minutesA = computeWorkedMinutes(
+      entry.clock_in_at as string,
+      fragmentA.clock_out_at,
+      fragmentA.break_minutes
+    );
+    const minutesB = computeWorkedMinutes(
+      fragmentB.clock_in_at,
+      fragmentB.clock_out_at,
+      fragmentB.break_minutes
+    );
+
+    // 59m40s + 60m40s each round UP while the 120m20s whole rounds DOWN, so
+    // the pair is a minute long. The drift is folded into the break total —
+    // 31 recorded across two rows for a 30-minute break — because the minutes
+    // she is PAID for are the number that must not move.
+    expect(fragmentA.break_minutes + fragmentB.break_minutes).toBe(31);
+    expect(minutesA + minutesB).toBe(
+      computeWorkedMinutes(
+        entry.clock_in_at as string,
+        '2026-01-12T01:00:40.000Z',
+        30
+      )
+    );
+  });
+
+  it('splits a frozen scheduled_minutes across the two fragments', async () => {
+    const entry = running({ shift_id: 'shift-x' });
+    const { svc, timeEntryRepo } = makeSvc(entry, {});
+    // 3h session, a 180-minute booking: 60 to A, 120 to B, sum preserved.
+    const svcWithShift = new TimesheetCommandService(
+      timeEntryRepo,
+      makeTimesheetRepo(),
+      makeMemberRepo(),
+      makeHouseholdRepo(),
+      makeShiftRepo({
+        findById: mock(async () => ({
+          ...shift,
+          starts_at: '2026-01-11T23:00:00.000Z',
+          ends_at: '2026-01-12T02:00:00.000Z',
+        })),
+      }),
+      makeQueries({ getOwnedTimeEntry: mock(async () => entry) }),
+      makeUserService(),
+      makePush()
+    );
+    void svc;
+
+    await svcWithShift.clockOut(CARER, 't1', {
+      clock_out_at: '2026-01-12T02:00:00.000Z',
+    });
+
+    expect(timeEntryRepo.update.mock.calls[0][1].scheduled_minutes).toBe(60);
+    expect(
+      timeEntryRepo.createSubmitted.mock.calls[0][0].scheduled_minutes
+    ).toBe(120);
+  });
+
+  it('adopts a fragment B left behind by a crashed attempt instead of duplicating it', async () => {
+    // Crash between the insert and the close: the carer taps Clock out again.
+    // Inserting a second B would double-pay Monday morning.
+    const entry = running();
+    // PostgREST serializes timestamptz as `+00:00`, never `.000Z` — the
+    // orphan comes back from the DB in that shape, and matching it as a
+    // STRING against our own ISO output silently never fires.
+    const orphan = {
+      ...submittedEntry,
+      id: 't-orphan-b',
+      household_id: 'h1',
+      kind: 'worked',
+      break_minutes: 0,
+      clock_in_at: '2026-01-12T00:00:00+00:00',
+      clock_out_at: '2026-01-12T02:00:00+00:00',
+      local_date: '2026-01-12',
+    };
+    const { svc, timeEntryRepo } = makeSvc(entry, {
+      listOverlapCandidatesForCarer: mock(async () => [entry, orphan]),
+    });
+
+    const returned = await svc.clockOut(CARER, 't1', {
+      clock_out_at: '2026-01-12T02:00:00.000Z',
+    });
+
+    expect(timeEntryRepo.createSubmitted).not.toHaveBeenCalled();
+    expect(timeEntryRepo.update).toHaveBeenCalledWith(
+      't1',
+      expect.objectContaining({ clock_out_at: '2026-01-12T00:00:00.000Z' })
+    );
+    expect(returned.id).toBe('t1');
+    expect(timeEntryRepo.listForCarerWeek).toHaveBeenCalledTimes(2);
+  });
+
+  it('adopts an orphan written with our own .000Z formatting too', async () => {
+    const entry = running();
+    const orphan = {
+      ...submittedEntry,
+      id: 't-orphan-b',
+      household_id: 'h1',
+      kind: 'worked',
+      break_minutes: 0,
+      clock_in_at: '2026-01-12T00:00:00.000Z',
+      clock_out_at: '2026-01-12T02:00:00.000Z',
+      local_date: '2026-01-12',
+    };
+    const { svc, timeEntryRepo } = makeSvc(entry, {
+      listOverlapCandidatesForCarer: mock(async () => [entry, orphan]),
+    });
+
+    await svc.clockOut(CARER, 't1', {
+      clock_out_at: '2026-01-12T02:00:00.000Z',
+    });
+
+    expect(timeEntryRepo.createSubmitted).not.toHaveBeenCalled();
+  });
+
+  it('does not trip the overlap guard on its own two adjacent fragments', async () => {
+    // The running row is in the candidate list (it is a real row), and A ends
+    // exactly where B starts. Neither may be read as a collision.
+    const entry = running();
+    const { svc } = makeSvc(entry);
+
+    await expect(
+      svc.clockOut(CARER, 't1', { clock_out_at: '2026-01-12T02:00:00.000Z' })
+    ).resolves.toBeTruthy();
+  });
+});
+
+describe('recordCancellationPaidEntry — an overnight window splits at Monday too (C6)', () => {
+  // A cancelled window is pure payout, so filing all of it under the START's
+  // week is the same defect C6 fixed for worked sessions, with none of the
+  // "at least she was there" ambiguity: minutes are priced at the wrong
+  // week's arrangement and counted toward the wrong week's overtime.
+  const overnight = {
+    id: 's-overnight',
+    household_id: 'h1',
+    carer_id: 'carer-1',
+    starts_at: '2026-01-11T22:00:00.000Z', // Sun 22:00 London (GMT)
+    ends_at: '2026-01-12T06:00:00.000Z', // Mon 06:00 London
+    timezone: 'Europe/London',
+    cancellation_paid: true,
+  };
+
+  function repoWith(candidates: unknown[]) {
+    return makeTimeEntryRepo({
+      listOverlapCandidatesForCarer: mock(async () => candidates),
+      listForCarerWeek: mock(async () => []),
+      createSubmitted: mock(async (data: Record<string, unknown>) => ({
+        ...submittedEntry,
+        ...data,
+        local_date: localDateOf(
+          new Date(data.clock_in_at as string),
+          data.timezone as string
+        ),
+      })),
+    });
+  }
+
+  function makeSvc(timeEntryRepo: any, weekStatus: (w: string) => string) {
+    return new TimesheetCommandService(
+      timeEntryRepo,
+      makeTimesheetRepo({
+        findByWeek: mock(async (_h: string, _c: string, week: string) => ({
+          ...timesheet,
+          status: weekStatus(week),
+        })),
+      }),
+      makeMemberRepo(),
+      makeHouseholdRepo(),
+      makeShiftRepo(),
+      makeQueries(),
+      makeUserService(),
+      makePush()
+    );
+  }
+
+  it('writes one row per week, each with its own local_date', async () => {
+    const timeEntryRepo = repoWith([]);
+
+    const created = await makeSvc(
+      timeEntryRepo,
+      () => 'submitted'
+    ).recordCancellationPaidEntry(overnight);
+
+    expect(created).toHaveLength(2);
+    expect(
+      created.map(e => [e.clock_in_at, e.scheduled_minutes, e.local_date])
+    ).toEqual([
+      ['2026-01-11T22:00:00.000Z', 120, '2026-01-11'],
+      ['2026-01-12T00:00:00.000Z', 360, '2026-01-12'],
+    ]);
+    // The booked window is still conserved across the week split.
+    expect(created.reduce((t, e) => t + (e.scheduled_minutes ?? 0), 0)).toBe(
+      480
+    );
+  });
+
+  it('rolls up BOTH weeks', async () => {
+    const timeEntryRepo = repoWith([]);
+
+    await makeSvc(timeEntryRepo, () => 'submitted').recordCancellationPaidEntry(
+      overnight
+    );
+
+    expect(timeEntryRepo.listForCarerWeek).toHaveBeenCalledTimes(2);
+    expect(timeEntryRepo.listForCarerWeek).toHaveBeenNthCalledWith(
+      1,
+      'h1',
+      'carer-1',
+      '2026-01-05',
+      '2026-01-12'
+    );
+    expect(timeEntryRepo.listForCarerWeek).toHaveBeenNthCalledWith(
+      2,
+      'h1',
+      'carer-1',
+      '2026-01-12',
+      '2026-01-19'
+    );
+  });
+
+  it('REFUSES when the MONDAY week is already approved', async () => {
+    // Guarding only each remainder's start week never consulted the Monday
+    // week at all, so the write landed and `rollUpIntoTimesheet` silently
+    // un-approved a week a parent had signed off, nulling the frozen gross.
+    const timeEntryRepo = repoWith([]);
+    const svc = makeSvc(timeEntryRepo, week =>
+      week === '2026-01-12' ? 'approved' : 'submitted'
+    );
+
+    await expect(
+      svc.recordCancellationPaidEntry(overnight)
+    ).rejects.toBeInstanceOf(TimeEntryNotEditableError);
+    expect(timeEntryRepo.createSubmitted).not.toHaveBeenCalled();
+  });
+});
+
+describe('recordCancellationPaidEntry — the residual is spread, not dumped on one row', () => {
+  it('keeps every fragment within a minute of its own span', async () => {
+    // Nine gaps of 30m30s separated by eight blocks of 10m30s: every piece
+    // rounds UP, so a residual carried entirely by the last fragment leaves
+    // it eight minutes short of the span printed next to it on the carer's
+    // screen. Conservation was never the problem; the optics of one row
+    // disagreeing with its own clock times are.
+    const startMs = Date.UTC(2026, 0, 5, 8, 0, 0);
+    const gapMs = 30 * 60_000 + 30_000;
+    const blockMs = 10 * 60_000 + 30_000;
+    const rows: unknown[] = [];
+    let cursor = startMs;
+    for (let i = 0; i < 8; i++) {
+      cursor += gapMs;
+      rows.push({
+        ...submittedEntry,
+        id: `w${i}`,
+        break_minutes: 0,
+        scheduled_minutes: null,
+        timezone: 'UTC',
+        clock_in_at: new Date(cursor).toISOString(),
+        clock_out_at: new Date(cursor + blockMs).toISOString(),
+      });
+      cursor += blockMs;
+    }
+    const endMs = cursor + gapMs;
+
+    const timeEntryRepo = makeTimeEntryRepo({
+      listOverlapCandidatesForCarer: mock(async () => rows),
+      listForCarerWeek: mock(async () => []),
+      createSubmitted: mock(async (data: Record<string, unknown>) => ({
+        ...submittedEntry,
+        ...data,
+      })),
+    });
+    const svc = new TimesheetCommandService(
+      timeEntryRepo,
+      makeTimesheetRepo({
+        findByWeek: mock(async () => ({ ...timesheet, status: 'submitted' })),
+      }),
+      makeMemberRepo(),
+      makeHouseholdRepo({
+        findById: mock(async () => ({ id: 'h1', timezone: 'UTC' })),
+      }),
+      makeShiftRepo(),
+      makeQueries(),
+      makeUserService(),
+      makePush()
+    );
+
+    const created = await svc.recordCancellationPaidEntry({
+      id: 's-many',
+      household_id: 'h1',
+      carer_id: 'carer-1',
+      starts_at: new Date(startMs).toISOString(),
+      ends_at: new Date(endMs).toISOString(),
+      timezone: 'UTC',
+      cancellation_paid: true,
+    });
+
+    expect(created).toHaveLength(9);
+    for (const fragment of created) {
+      const span = computeWorkedMinutes(
+        fragment.clock_in_at ?? '',
+        fragment.clock_out_at ?? '',
+        0
+      );
+      expect(Math.abs((fragment.scheduled_minutes ?? 0) - span)).toBeLessThan(
+        2
+      );
+    }
+    // Still exact overall.
+    const presence = 8 * 11;
+    expect(
+      created.reduce((t, e) => t + (e.scheduled_minutes ?? 0), presence)
+    ).toBe(Math.round((endMs - startMs) / 60_000));
+  });
+});
+
+describe('TimesheetCommandService.updateEntry — cancellation pay is not carer-editable', () => {
+  it('refuses to edit a cancellation_paid fragment', async () => {
+    // Since C7 the fragment's PAY is its stored `scheduled_minutes`, computed
+    // once against the whole cancelled window. Letting the carer move its
+    // clock times decouples the two silently — the row would read as three
+    // hours and still bank four — and it corrupts the presence arithmetic the
+    // next reconcile run does over the same window.
+    const fragment = {
+      ...submittedEntry,
+      id: 't-cancel',
+      kind: 'cancellation_paid',
+      scheduled_minutes: 419,
+    };
+    const timeEntryRepo = makeTimeEntryRepo();
+    const svc = new TimesheetCommandService(
+      timeEntryRepo,
+      makeTimesheetRepo(),
+      makeMemberRepo(),
+      makeHouseholdRepo(),
+      makeShiftRepo(),
+      makeQueries({ getOwnedTimeEntry: mock(async () => fragment) }),
+      makeUserService(),
+      makePush()
+    );
+
+    await expect(
+      svc.updateEntry('carer-1', 't-cancel', {
+        clock_out_at: '2026-08-03T12:00:00.000Z',
+      })
+    ).rejects.toBeInstanceOf(TimeEntryNotEditableError);
+    expect(timeEntryRepo.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('recordCancellationPaidEntry — a freed sliver is paid as a sliver (NEW-9)', () => {
+  it('pays only what the gap has left when part of it is already banked', async () => {
+    // Reachable end to end: reconcile pays 08:00-11:00 and 12:00-16:00 around
+    // a worked 11:00-12:00; the carer then SHORTENS that worked entry to
+    // 11:00-11:30 (legal — it touches, never overlaps); the nightly reconcile
+    // re-runs and finds a freed [11:30, 12:00) sliver. Handing that sliver the
+    // whole gap's share banks 270 minutes for 30 minutes of window — a stable,
+    // permanently wrong paycheck.
+    const at = (hhmm: string) => `2026-08-03T${hhmm}:00.000Z`;
+    const timeEntryRepo = makeTimeEntryRepo({
+      listForCarerWeek: mock(async () => []),
+      createSubmitted: mock(async (data: Record<string, unknown>) => ({
+        ...submittedEntry,
+        ...data,
+      })),
+      listOverlapCandidatesForCarer: mock(async () => [
+        {
+          ...submittedEntry,
+          id: 't-worked',
+          break_minutes: 0,
+          scheduled_minutes: null,
+          clock_in_at: at('11:00'),
+          clock_out_at: at('11:30'), // shortened by the carer
+        },
+        {
+          ...submittedEntry,
+          id: 't-cancel-1',
+          kind: 'cancellation_paid',
+          break_minutes: 0,
+          clock_in_at: at('08:00'),
+          clock_out_at: at('11:00'),
+          scheduled_minutes: 180,
+        },
+        {
+          ...submittedEntry,
+          id: 't-cancel-2',
+          kind: 'cancellation_paid',
+          break_minutes: 0,
+          clock_in_at: at('12:00'),
+          clock_out_at: at('16:00'),
+          scheduled_minutes: 240,
+        },
+      ]),
+    });
+    const svc = new TimesheetCommandService(
+      timeEntryRepo,
+      makeTimesheetRepo({
+        findByWeek: mock(async () => ({ ...timesheet, status: 'submitted' })),
+      }),
+      makeMemberRepo(),
+      makeHouseholdRepo(),
+      makeShiftRepo(),
+      makeQueries(),
+      makeUserService(),
+      makePush()
+    );
+
+    const created = await svc.recordCancellationPaidEntry({
+      id: 's-cancel',
+      household_id: 'h1',
+      carer_id: 'carer-1',
+      starts_at: at('08:00'),
+      ends_at: at('16:00'),
+      timezone: 'Europe/London',
+      cancellation_paid: true,
+    });
+
+    expect(created.map(e => [e.clock_in_at, e.scheduled_minutes])).toEqual([
+      [at('11:30'), 30],
+    ]);
+    // The whole window still adds up: 180 + 240 + 30 banked, 30 present.
+    expect(180 + 240 + 30 + 30).toBe(480);
+  });
+});
+
+describe('updateEntry — a worked entry cannot GROW into paid cancellation time', () => {
+  it('refuses the edit rather than double-banking the overlap', async () => {
+    // The mirror of the freed-sliver case. Shortening a worked entry frees
+    // window (handled by the reconciler); LENGTHENING it into a fragment the
+    // household has already paid for would bank the same minutes twice, and
+    // nothing rewrites the existing fragment. The overlap guard already
+    // refuses it — pinned here because the cancellation arithmetic relies on
+    // it: a persisted fragment never overlaps presence.
+    const at = (hhmm: string) => `2026-08-03T${hhmm}:00.000Z`;
+    const worked = {
+      ...submittedEntry,
+      id: 't-worked',
+      break_minutes: 0,
+      clock_in_at: at('11:00'),
+      clock_out_at: at('12:00'),
+    };
+    const timeEntryRepo = makeTimeEntryRepo({
+      listOverlapCandidatesForCarer: mock(async () => [
+        worked,
+        {
+          ...submittedEntry,
+          id: 't-cancel-2',
+          kind: 'cancellation_paid',
+          break_minutes: 0,
+          clock_in_at: at('12:00'),
+          clock_out_at: at('16:00'),
+          scheduled_minutes: 240,
+        },
+      ]),
+    });
+    const svc = new TimesheetCommandService(
+      timeEntryRepo,
+      makeTimesheetRepo({
+        findByWeek: mock(async () => ({ ...timesheet, status: 'submitted' })),
+      }),
+      makeMemberRepo(),
+      makeHouseholdRepo(),
+      makeShiftRepo(),
+      makeQueries({ getOwnedTimeEntry: mock(async () => worked) }),
+      makeUserService(),
+      makePush()
+    );
+
+    await expect(
+      svc.updateEntry('carer-1', 't-worked', { clock_out_at: at('13:00') })
+    ).rejects.toBeInstanceOf(TimeEntryOverlapError);
+    expect(timeEntryRepo.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('recordCancellationPaidEntry — a neighbouring window is not this window (NEW-10)', () => {
+  // `listOverlapCandidatesForCarer` filters INCLUSIVELY at both ends, and 055
+  // permits touching ranges, so the adjacent cancelled shift's fragment comes
+  // back as a candidate. Counting it as "already banked" pays the second
+  // window nothing at all.
+  const at = (hhmm: string) => `2026-08-03T${hhmm}:00.000Z`;
+
+  function svcWith(candidates: unknown[]) {
+    const timeEntryRepo = makeTimeEntryRepo({
+      listOverlapCandidatesForCarer: mock(async () => candidates),
+      listForCarerWeek: mock(async () => []),
+      createSubmitted: mock(async (data: Record<string, unknown>) => ({
+        ...submittedEntry,
+        ...data,
+      })),
+    });
+    return new TimesheetCommandService(
+      timeEntryRepo,
+      makeTimesheetRepo({
+        findByWeek: mock(async () => ({ ...timesheet, status: 'submitted' })),
+      }),
+      makeMemberRepo(),
+      makeHouseholdRepo(),
+      makeShiftRepo(),
+      makeQueries(),
+      makeUserService(),
+      makePush()
+    );
+  }
+
+  function fragment(id: string, from: string, to: string, minutes: number) {
+    return {
+      ...submittedEntry,
+      id,
+      kind: 'cancellation_paid',
+      break_minutes: 0,
+      clock_in_at: at(from),
+      clock_out_at: at(to),
+      scheduled_minutes: minutes,
+    };
+  }
+
+  function window(id: string, from: string, to: string) {
+    return {
+      id,
+      household_id: 'h1',
+      carer_id: 'carer-1',
+      starts_at: at(from),
+      ends_at: at(to),
+      timezone: 'Europe/London',
+      cancellation_paid: true,
+    };
+  }
+
+  it('pays the afternoon window in full when the morning one is already banked', async () => {
+    const created = await svcWith([
+      fragment('t-morning', '08:00', '16:00', 480),
+    ]).recordCancellationPaidEntry(window('s-afternoon', '16:00', '20:00'));
+
+    expect(created.map(e => e.scheduled_minutes)).toEqual([240]);
+  });
+
+  it('pays the morning window in full when the afternoon one is already banked', async () => {
+    const created = await svcWith([
+      fragment('t-afternoon', '16:00', '20:00', 240),
+    ]).recordCancellationPaidEntry(window('s-morning', '08:00', '16:00'));
+
+    expect(created.map(e => e.scheduled_minutes)).toEqual([480]);
+  });
+
+  it('ignores an earlier neighbour that ends where this window starts', async () => {
+    const created = await svcWith([
+      fragment('t-earlier', '06:00', '08:00', 120),
+    ]).recordCancellationPaidEntry(window('s-morning', '08:00', '16:00'));
+
+    expect(created.map(e => e.scheduled_minutes)).toEqual([480]);
   });
 });

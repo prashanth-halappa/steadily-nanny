@@ -86,6 +86,18 @@ function makeHouseholdRepo(overrides: Record<string, unknown> = {}): any {
   };
 }
 
+function acceptedInvite(
+  minutesAgo: number,
+  overrides: Partial<HouseholdInvite> = {}
+): HouseholdInvite {
+  return pendingInvite({
+    status: 'accepted',
+    accepted_by: 'u9',
+    accepted_at: new Date(Date.now() - minutesAgo * 60_000).toISOString(),
+    ...overrides,
+  });
+}
+
 function makeMemberRepo(overrides: Record<string, unknown> = {}): any {
   return {
     createMembership: mock(async (data: Record<string, unknown>) => ({
@@ -98,6 +110,7 @@ function makeMemberRepo(overrides: Record<string, unknown> = {}): any {
       ...data,
     })),
     findActiveMembership: mock(async () => null),
+    findMembershipAnyStatus: mock(async () => null),
     ...overrides,
   };
 }
@@ -501,7 +514,9 @@ describe('HouseholdCommandService.redeemInvite', () => {
     await expect(svc.redeemInvite('u2', { code: 'ABC-234' })).rejects.toThrow(
       'connection reset'
     );
-    expect(inviteRepo.releaseClaim).toHaveBeenCalledWith('i1', 'u2');
+    // Third argument is the accepted_at of the claim THIS request won, so the
+    // release cannot free a claim taken after it.
+    expect(inviteRepo.releaseClaim).toHaveBeenCalledWith('i1', 'u2', 't');
   });
 
   it('releases the claim for the removed-member case too, where createMembership hits the unique constraint', async () => {
@@ -524,7 +539,7 @@ describe('HouseholdCommandService.redeemInvite', () => {
     await expect(
       svc.redeemInvite('u2', { code: 'ABC-234' })
     ).rejects.toBeInstanceOf(AlreadyMemberError);
-    expect(inviteRepo.releaseClaim).toHaveBeenCalledWith('i1', 'u2');
+    expect(inviteRepo.releaseClaim).toHaveBeenCalledWith('i1', 'u2', 't');
   });
 
   it('does not mask the membership error when the release itself fails', async () => {
@@ -562,6 +577,276 @@ describe('HouseholdCommandService.redeemInvite', () => {
     await svc.redeemInvite('u2', { code: 'ABC-234' });
 
     expect(inviteRepo.releaseClaim).not.toHaveBeenCalled();
+  });
+
+  it('heals a claim stranded by a crash: accepted 20 minutes ago with no membership row is re-claimable', async () => {
+    // A process that dies between the claim and the membership insert leaves
+    // the invite `accepted` with nobody in the household — the compensation in
+    // the catch never runs, so today the code is burned for good.
+    const stranded = acceptedInvite(20);
+    const memberRepo = makeMemberRepo();
+    const inviteRepo = makeInviteRepo({
+      findByCode: mock(async () => stranded),
+    });
+    const svc = new HouseholdCommandService(
+      makeHouseholdRepo(),
+      memberRepo,
+      inviteRepo,
+      makeQueries()
+    );
+
+    const membership = await svc.redeemInvite('u2', { code: 'ABC-234' });
+
+    expect(inviteRepo.releaseClaim).toHaveBeenCalledWith(
+      'i1',
+      'u9',
+      stranded.accepted_at
+    );
+    expect(inviteRepo.claimPending).toHaveBeenCalledWith('i1', 'u2');
+    expect(memberRepo.createMembership).toHaveBeenCalledWith(
+      expect.objectContaining({ household_id: 'h1', user_id: 'u2' })
+    );
+    expect(membership.role).toBe('nanny');
+  });
+
+  it('refuses a claim accepted 5 minutes ago — the claimer may still be mid-insert', async () => {
+    const inviteRepo = makeInviteRepo({
+      findByCode: mock(async () => acceptedInvite(5)),
+    });
+    const svc = new HouseholdCommandService(
+      makeHouseholdRepo(),
+      makeMemberRepo(),
+      inviteRepo,
+      makeQueries()
+    );
+
+    await expect(
+      svc.redeemInvite('u2', { code: 'ABC-234' })
+    ).rejects.toBeInstanceOf(InviteAlreadyAcceptedError);
+    expect(inviteRepo.releaseClaim).not.toHaveBeenCalled();
+  });
+
+  it('refuses to heal when the claimer has a REMOVED membership row — a consumed code must not resurrect', async () => {
+    const memberRepo = makeMemberRepo({
+      findMembershipAnyStatus: mock(async () => ({
+        ...membershipFor('nanny'),
+        user_id: 'u9',
+        status: 'removed',
+      })),
+    });
+    const inviteRepo = makeInviteRepo({
+      findByCode: mock(async () => acceptedInvite(20)),
+    });
+    const svc = new HouseholdCommandService(
+      makeHouseholdRepo(),
+      memberRepo,
+      inviteRepo,
+      makeQueries()
+    );
+
+    await expect(
+      svc.redeemInvite('u2', { code: 'ABC-234' })
+    ).rejects.toBeInstanceOf(InviteAlreadyAcceptedError);
+    expect(inviteRepo.releaseClaim).not.toHaveBeenCalled();
+  });
+
+  it('refuses to heal when the claimer is an active member — the redeem actually completed', async () => {
+    const memberRepo = makeMemberRepo({
+      findMembershipAnyStatus: mock(async () => ({
+        ...membershipFor('nanny'),
+        user_id: 'u9',
+      })),
+    });
+    const inviteRepo = makeInviteRepo({
+      findByCode: mock(async () => acceptedInvite(20)),
+    });
+    const svc = new HouseholdCommandService(
+      makeHouseholdRepo(),
+      memberRepo,
+      inviteRepo,
+      makeQueries()
+    );
+
+    await expect(
+      svc.redeemInvite('u2', { code: 'ABC-234' })
+    ).rejects.toBeInstanceOf(InviteAlreadyAcceptedError);
+    expect(inviteRepo.releaseClaim).not.toHaveBeenCalled();
+  });
+
+  it('releases the ORIGINAL claimer, checks THEIR membership, and only then claims for the new caller', async () => {
+    const order: string[] = [];
+    const memberRepo = makeMemberRepo({
+      findMembershipAnyStatus: mock(
+        async (householdId: string, userId: string) => {
+          order.push(`membership-lookup:${householdId}:${userId}`);
+          return null;
+        }
+      ),
+    });
+    const inviteRepo = makeInviteRepo({
+      findByCode: mock(async () => acceptedInvite(20)),
+      releaseClaim: mock(async (id: string, acceptedBy: string) => {
+        order.push(`release:${id}:${acceptedBy}`);
+      }),
+      claimPending: mock(async (id: string, acceptedBy: string) => {
+        order.push(`claim:${id}:${acceptedBy}`);
+        return pendingInvite({
+          id,
+          status: 'accepted',
+          accepted_by: acceptedBy,
+        });
+      }),
+    });
+    const svc = new HouseholdCommandService(
+      makeHouseholdRepo(),
+      memberRepo,
+      inviteRepo,
+      makeQueries()
+    );
+
+    await svc.redeemInvite('u2', { code: 'ABC-234' });
+
+    expect(order).toEqual([
+      'membership-lookup:h1:u9',
+      'release:i1:u9',
+      'claim:i1:u2',
+    ]);
+  });
+
+  it('does not resurrect a code that was re-claimed between the read and the release', async () => {
+    // The window: this caller reads the 20-minute-old stranded claim, and
+    // before it releases, the original claimer's own retry heals, re-claims and
+    // joins. Releasing on (accepted, accepted_by) alone matches that FRESH
+    // claim — the single-use code goes back to `pending` and this caller, who
+    // was never invited by anyone still holding it, joins the household.
+    // Keying the release to the accepted_at we OBSERVED makes it match 0 rows.
+    const observed = acceptedInvite(20);
+    const live: HouseholdInvite = {
+      ...observed,
+      accepted_at: new Date().toISOString(),
+    };
+    const memberRepo = makeMemberRepo();
+    const inviteRepo = makeInviteRepo({
+      findByCode: mock(async () => observed),
+      // Models the real SQL: each argument is one `.eq()` predicate, and an
+      // argument the service never passes is a predicate that isn't there.
+      releaseClaim: mock(
+        async (id: string, acceptedBy: string, acceptedAt?: string) => {
+          const matched =
+            live.id === id &&
+            live.status === 'accepted' &&
+            live.accepted_by === acceptedBy &&
+            (acceptedAt === undefined || live.accepted_at === acceptedAt);
+          if (matched) {
+            live.status = 'pending';
+            live.accepted_by = null;
+            live.accepted_at = null;
+          }
+        }
+      ),
+      claimPending: mock(async (id: string, acceptedBy: string) => {
+        if (live.status !== 'pending') {
+          return null;
+        }
+        live.status = 'accepted';
+        live.accepted_by = acceptedBy;
+        return { ...live, id };
+      }),
+    });
+    const svc = new HouseholdCommandService(
+      makeHouseholdRepo(),
+      memberRepo,
+      inviteRepo,
+      makeQueries()
+    );
+
+    await expect(
+      svc.redeemInvite('uStranger', { code: 'ABC-234' })
+    ).rejects.toBeInstanceOf(InviteAlreadyAcceptedError);
+    expect(live.status).toBe('accepted');
+    expect(live.accepted_by).toBe('u9');
+    expect(memberRepo.createMembership).not.toHaveBeenCalled();
+  });
+
+  it('refuses to heal when the claimer account is gone (accepted_by nulled by the FK)', async () => {
+    // `accepted_by` is `on delete set null` (009:125) and membership rows
+    // cascade away with the account, so a deleted claimer leaves NO evidence
+    // the code was consumed. This null guard, not the membership lookup, is
+    // what stops that code being handed to the next person who types it.
+    const memberRepo = makeMemberRepo();
+    const inviteRepo = makeInviteRepo({
+      findByCode: mock(async () => acceptedInvite(20, { accepted_by: null })),
+    });
+    const svc = new HouseholdCommandService(
+      makeHouseholdRepo(),
+      memberRepo,
+      inviteRepo,
+      makeQueries()
+    );
+
+    await expect(
+      svc.redeemInvite('u2', { code: 'ABC-234' })
+    ).rejects.toBeInstanceOf(InviteAlreadyAcceptedError);
+    expect(inviteRepo.releaseClaim).not.toHaveBeenCalled();
+    expect(memberRepo.findMembershipAnyStatus).not.toHaveBeenCalled();
+  });
+
+  it('refuses to heal an accepted invite with no accepted_at to age', async () => {
+    const inviteRepo = makeInviteRepo({
+      findByCode: mock(async () => acceptedInvite(20, { accepted_at: null })),
+    });
+    const svc = new HouseholdCommandService(
+      makeHouseholdRepo(),
+      makeMemberRepo(),
+      inviteRepo,
+      makeQueries()
+    );
+
+    await expect(
+      svc.redeemInvite('u2', { code: 'ABC-234' })
+    ).rejects.toBeInstanceOf(InviteAlreadyAcceptedError);
+    expect(inviteRepo.releaseClaim).not.toHaveBeenCalled();
+  });
+
+  it('rejects a stranded but EXPIRED invite without releasing it', async () => {
+    // Healing first would wipe accepted_by/accepted_at — the record of who
+    // consumed the code — for an invite nobody can redeem anyway.
+    const inviteRepo = makeInviteRepo({
+      findByCode: mock(async () =>
+        acceptedInvite(20, { expires_at: '2000-01-01T00:00:00Z' })
+      ),
+    });
+    const svc = new HouseholdCommandService(
+      makeHouseholdRepo(),
+      makeMemberRepo(),
+      inviteRepo,
+      makeQueries()
+    );
+
+    await expect(
+      svc.redeemInvite('u2', { code: 'ABC-234' })
+    ).rejects.toBeInstanceOf(InviteExpiredError);
+    expect(inviteRepo.releaseClaim).not.toHaveBeenCalled();
+  });
+
+  it('surfaces a failed release during self-heal instead of silently claiming anyway', async () => {
+    const inviteRepo = makeInviteRepo({
+      findByCode: mock(async () => acceptedInvite(20)),
+      releaseClaim: mock(async () => {
+        throw new Error('database unreachable');
+      }),
+    });
+    const svc = new HouseholdCommandService(
+      makeHouseholdRepo(),
+      makeMemberRepo(),
+      inviteRepo,
+      makeQueries()
+    );
+
+    await expect(svc.redeemInvite('u2', { code: 'ABC-234' })).rejects.toThrow(
+      'database unreachable'
+    );
+    expect(inviteRepo.claimPending).not.toHaveBeenCalled();
   });
 
   it('surfaces the repository AlreadyMemberError (concurrent double-redeem) without a 500', async () => {

@@ -51,6 +51,50 @@ describe('wasEntryEdited', () => {
   });
 });
 
+describe('wasEntryEdited — a session the server split at midnight (C6)', () => {
+  // The API splits a Sunday->Monday session into two rows. The FIRST keeps
+  // its id and has `clock_out_at` rewritten back to local midnight, while
+  // `updated_at` records the real clock-out hours later. Nobody edited it.
+  it('is false for the first fragment of a BST split session', () => {
+    expect(
+      wasEntryEdited(
+        makeEntry({
+          clock_in_at: '2026-08-09T22:00:00.000Z', // Sun 23:00 London
+          clock_out_at: '2026-08-09T23:00:00.000Z', // Mon 00:00 London
+          updated_at: '2026-08-10T01:00:00.000Z', // she really stopped at 02:00
+        })
+      )
+    ).toBe(false);
+  });
+
+  it('is false for the first fragment of a GMT split session', () => {
+    expect(
+      wasEntryEdited(
+        makeEntry({
+          clock_in_at: '2026-01-11T23:00:00.000Z', // Sun 23:00 London
+          clock_out_at: '2026-01-12T00:00:00.000Z', // Mon 00:00 London
+          updated_at: '2026-01-12T02:00:00.000Z',
+        })
+      )
+    ).toBe(false);
+  });
+
+  it("reads midnight in the ENTRY's own zone, not UTC", () => {
+    // Midnight UTC is 20:00 the previous evening in New York — an ordinary
+    // finish, so a record that moved hours later really was edited.
+    expect(
+      wasEntryEdited(
+        makeEntry({
+          timezone: 'America/New_York',
+          clock_in_at: '2026-08-09T20:00:00.000Z',
+          clock_out_at: '2026-08-10T00:00:00.000Z', // Sun 20:00 New York
+          updated_at: '2026-08-10T03:00:00.000Z',
+        })
+      )
+    ).toBe(true);
+  });
+});
+
 describe('isEntryEditable', () => {
   it('allows a submitted entry in an unapproved week', () => {
     expect(isEntryEditable(makeEntry(), 'submitted')).toBe(true);

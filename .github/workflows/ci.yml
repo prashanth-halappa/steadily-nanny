@@ -1,8 +1,8 @@
 name: CI
 
-# One job per (app × check), plus shared-types (typecheck + test) and a
-# root scripts/*.test.ts job.
-# 2 apps × 4 checks + 2 shared-types + 1 scripts = 11 jobs.
+# One job per (app × check), plus shared-types (typecheck + test), a
+# root scripts/*.test.ts job, and the Docker-backed migrations + RLS job.
+# 2 apps × 4 checks + 2 shared-types + 1 scripts + 1 db = 12 jobs.
 # Each job: checkout → setup-bun → install (frozen) → run the check in the app dir.
 # Duplicate/remove a block of four jobs to add/remove an app.
 
@@ -249,5 +249,52 @@ jobs:
         run: bun install --frozen-lockfile
       - name: Run tests
         run: bash scripts/run-root-script-tests.sh
+        env:
+          NODE_ENV: test
+
+  # ============================================
+  # Migrations + RLS against a real Postgres 15.
+  # The only job that needs Docker, and the only place the migration set is
+  # actually EXECUTED rather than grepped: `db reset` replays supabase/migrations
+  # in order onto an empty database, so any broken SQL fails the job (F-B11-2).
+  # It then runs the RLS probe with real user JWTs (F-B10-2) — `bun run test`
+  # sweeps tests/unit only, so tests/integration never runs without a database.
+  # ============================================
+  db-migrations-and-rls:
+    name: DB - Migrations + RLS
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3.9'
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: 2.95.4
+      - name: Start local stack (db + kong + rest + auth only)
+        # Excluded names are the ones `supabase start -x` accepts on 2.95.4 —
+        # `inbucket` was renamed `mailpit` and `analytics` `logflare`. What is
+        # left running matches the dev machine's set; auth must stay up, the
+        # RLS test mints real JWTs through it.
+        run: supabase start -x studio,storage-api,imgproxy,realtime,edge-runtime,logflare,vector,supavisor,mailpit
+      - name: Apply every migration to a fresh database
+        run: supabase db reset --local
+      - name: Export local stack credentials
+        run: |
+          supabase status -o env \
+            | sed 's/"//g' \
+            | grep -E '^(API_URL|ANON_KEY|SERVICE_ROLE_KEY)=' \
+            | sed -e 's/^API_URL=/SUPABASE_URL=/' \
+                  -e 's/^ANON_KEY=/SUPABASE_ANON_KEY=/' \
+                  -e 's/^SERVICE_ROLE_KEY=/SUPABASE_SERVICE_KEY=/' \
+            >> "$GITHUB_ENV"
+      - name: RLS integration test
+        run: bun test tests/integration/rls.integration.test.ts
+        working-directory: apps/api
         env:
           NODE_ENV: test

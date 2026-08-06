@@ -53,6 +53,7 @@ import { formatMoney } from '@/src/lib/money';
 import { showSuccessToast } from '@/src/lib/toast';
 import { useAuthStore } from '@/src/store/auth';
 import { TIMESHEET_STATUSES, type TimeEntry } from '../types';
+import { carerKeyOf } from '../utils/carerKey';
 import { formatDuration, formatOvertimeDelta } from '../utils/duration';
 import {
   formatEarningsDuration,
@@ -147,15 +148,15 @@ export function ParentWeekView({
   //
   // Migration 033 preserves a departed carer's hours and pay with `carer_id`
   // NULLed and `carer_display_name` kept NOT NULL — so the id alone is not
-  // an identity. Bucketing on `carer_id ?? carer_display_name` keeps every
-  // carer, departed or not, in her own bucket; treating a null id as "no
-  // filter" summed an ex-carer into the active carer's card and approved her
-  // row, and bucketing all nulls together did the same to two ex-carers.
+  // an identity. `carerKeyOf` (see its module doc) is the one rule for which
+  // rows are one carer; treating a null id as "no filter" summed an ex-carer
+  // into the active carer's card and approved her row, and bucketing all
+  // nulls together did the same to two ex-carers.
   // `undefined` — and only `undefined` — means "hasn't picked a tab yet".
   //
-  // ponytail: two departed carers who shared a display name still collapse.
-  // No worse than two same-named active carers, and telling them apart needs
-  // an identity the deleted account no longer has.
+  // ponytail: since 058 stamps a per-membership id at insert, only rows whose
+  // carer_id was ALREADY null before that migration ran still collapse on a
+  // shared display name — there is no membership left to backfill them from.
   const [pickedCarerId, setPickedCarerId] = useState<string | undefined>(
     undefined
   );
@@ -163,10 +164,6 @@ export function ParentWeekView({
   const weekTimesheets = timesheetQuery.isError
     ? []
     : (timesheetQuery.data ?? []);
-  const carerKeyOf = (row: {
-    carer_id: string | null;
-    carer_display_name: string;
-  }) => row.carer_id ?? row.carer_display_name;
   const carerSnapshotName = (key: string) =>
     allEntries.find(e => carerKeyOf(e) === key)?.carer_display_name ??
     weekTimesheets.find(t => carerKeyOf(t) === key)?.carer_display_name ??
@@ -296,15 +293,17 @@ export function ParentWeekView({
     totalMinutes,
     scheduledMinutesFor(entries)
   );
-  const entryCarerName =
-    entries.find(e => e.carer_display_name)?.carer_display_name ?? null;
-  const entryCarerIds = [
-    ...new Set(
-      entries
-        .map(e => e.carer_id)
-        .filter((id): id is string => typeof id === 'string' && id.length > 0)
-    ),
-  ];
+  // The selected TAB is the identity — not `carer_id`, which is NULL on every
+  // row of a departed carer's tab. Reading raw ids here left this empty for
+  // her, and `resolveWeekCarerHeaderName`'s no-entries branch then named the
+  // household's sole remaining nanny above her hours (and, through
+  // `approveDialogCarerName` below, in the approve dialog too). Passing the
+  // key we already bucketed by keeps the header and the total describing the
+  // same person, which is the whole point of the tab.
+  const entryCarerIds = selectedCarerId ? [selectedCarerId] : [];
+  const entryCarerName = selectedCarerId
+    ? carerSnapshotName(selectedCarerId) || null
+    : null;
   const carerMemberIds = (membersQuery.data ?? [])
     .filter(m => m.role === 'nanny' || m.role === 'helper')
     .map(m => m.user_id);

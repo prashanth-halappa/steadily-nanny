@@ -58,6 +58,33 @@ export class ShiftImmutableError extends ConflictError {
   }
 }
 
+/**
+ * 409 — an EXTRA shift for this exact `(household, carer, starts_at, ends_at)`
+ * already exists and is not cancelled. Raised wherever migration 059's
+ * `shifts_extra_window_unique` index rejects a write (23505):
+ * `ShiftRepository.createShift`, when a concurrent create won the race that
+ * `insertExtraShift`'s check-then-act pre-check cannot see; and
+ * `ShiftRepository.applyParentEdit`, when a parent re-times an extra shift
+ * onto another live one's exact window.
+ *
+ * It is not usually rendered to a user: `insertExtraShift` catches it and
+ * adopts the winner, so a double-tap reads as "created" for both taps. It
+ * exists so that path can tell "someone else already made this shift" apart
+ * from a genuine insert failure, which must still 500. Same shape and same
+ * purpose as `CancellationPaidAlreadyRecordedError` in the timesheet domain.
+ */
+export class ExtraShiftAlreadyExistsError extends ConflictError {
+  /** Metadata is free-form: the insert path knows the window, the edit path only the shift id. */
+  constructor(metadata: ErrorMetadata) {
+    super(
+      'An extra shift already exists for this window',
+      'EXTRA_SHIFT_ALREADY_EXISTS',
+      metadata
+    );
+    this.name = 'ExtraShiftAlreadyExistsError';
+  }
+}
+
 /** 409 — respond/withdraw was attempted on a request that is not `pending`. */
 export class ChangeRequestNotPendingError extends ConflictError {
   constructor(changeRequestId: string, status: string) {

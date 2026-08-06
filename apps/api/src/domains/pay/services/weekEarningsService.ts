@@ -7,9 +7,9 @@
  * module is that something, and NOTHING ELSE. It fetches, it maps, it calls
  * the engine. It performs no pricing arithmetic of its own — the only
  * numbers it computes are minutes, and both of those computations are
- * borrowed rather than rewritten (`computeWorkedMinutes` from the timesheet
- * domain's leaf util, so a week's money can never disagree with the same
- * week's `total_minutes`).
+ * borrowed rather than rewritten (`entryMinutes` from the timesheet domain's
+ * leaf util, so a week's money can never disagree with the same week's
+ * `total_minutes`).
  *
  * SCOPING (D12): every repository here uses the service-role client and so
  * bypasses RLS. Each query below therefore carries its own
@@ -36,7 +36,7 @@ import { HouseholdRepository } from '../../household';
 import { ShiftRepository } from '../../shift/repositories/shiftRepository';
 import { TimeEntryRepository } from '../../timesheet/repositories/timeEntryRepository';
 import { weekEndExclusive } from '../../timesheet/utils/weekStart';
-import { computeWorkedMinutes } from '../../timesheet/utils/workedMinutes';
+import { entryMinutes } from '../../timesheet/utils/workedMinutes';
 import { ExpenseRepository } from '../repositories/expenseRepository';
 import { PayArrangementRepository } from '../repositories/payArrangementRepository';
 import { PtoLedgerRepository } from '../repositories/ptoLedgerRepository';
@@ -269,20 +269,19 @@ export function buildWeekEarningsInput(
   const entries: EarningsTimeEntryInput[] = [];
 
   for (const entry of sources.entries) {
-    // A running entry has no minutes yet. Skipped rather than treated as
-    // zero-length, exactly as `sumWorkedMinutes` skips it, so the priced
-    // week and `total_minutes` agree on which entries count.
-    if (!entry.clock_in_at || !entry.clock_out_at) {
+    // A running entry has no minutes yet — `entryMinutes` returns null for
+    // it, and it is skipped rather than treated as zero-length, exactly as
+    // `sumWorkedMinutes` skips it, so the priced week and `total_minutes`
+    // agree on which entries count AND on what each one is worth (including
+    // the C7 `scheduled_minutes` branch for cancellation fragments).
+    const minutes = entryMinutes(entry);
+    if (minutes === null) {
       continue;
     }
     entries.push({
       kind: entry.kind,
       local_date: entry.local_date,
-      minutes: computeWorkedMinutes(
-        entry.clock_in_at,
-        entry.clock_out_at,
-        entry.break_minutes
-      ),
+      minutes,
     });
     if (entry.shift_id) {
       // This shift produced payable minutes (worked, or a paid cancellation),

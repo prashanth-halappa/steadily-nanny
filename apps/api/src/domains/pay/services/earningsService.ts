@@ -65,8 +65,10 @@ export interface EarningsTimeEntryInput {
  * shift. A payable shift is already in `payable_minutes`, so it must NOT also
  * count as lost: that is where "no double pay" is enforced, structurally.
  *
- * `scheduled_minutes` is the frozen figure from `shifts`, not a recomputed
- * span — the same discipline as `time_entries.scheduled_minutes`.
+ * `scheduled_minutes` is the shift's own span, rounded once by
+ * `buildWeekEarningsInput` — a closure-day shift never became a time entry,
+ * so there is no frozen figure to read and the booking itself is the only
+ * record of what was promised.
  */
 export interface ClosureDayShiftInput {
   local_date: string;

@@ -173,6 +173,28 @@ describe('HouseholdInviteRepository.releaseClaim', () => {
     expect(chain.eq).toHaveBeenCalledWith('accepted_by', 'u2');
   });
 
+  it('releases nothing once the claim has been re-taken — the accepted_at predicate', async () => {
+    // Same id, same claimer, different claim. Without `accepted_at` in the CAS
+    // a caller holding a stale snapshot un-claims the FRESH claim and puts a
+    // consumed single-use code back into circulation.
+    const row = invite({
+      status: 'accepted',
+      accepted_by: 'u2',
+      accepted_at: '2026-08-06T10:00:00Z',
+    });
+    withRows([row]);
+    const repo = new HouseholdInviteRepository();
+
+    await repo.releaseClaim('i1', 'u2', '2026-08-06T09:00:00Z');
+
+    const chain = lastChain;
+    expect(chain.eq).toHaveBeenCalledWith(
+      'accepted_at',
+      '2026-08-06T09:00:00Z'
+    );
+    expect(row.status).toBe('accepted');
+  });
+
   it('throws a DatabaseError when the release fails', async () => {
     withRows([invite({ status: 'accepted', accepted_by: 'u2' })], {
       message: 'boom',

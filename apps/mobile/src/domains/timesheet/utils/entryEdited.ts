@@ -8,12 +8,16 @@
  * Daylight UX P0-2.
  */
 import type { TimeEntry, TimesheetStatus } from '../types';
+import { endsAtLocalMidnight } from './splitFragment';
 
 /**
  * Clock-out writes `clock_out_at` and `updated_at` in the same statement, so
  * they land within milliseconds of each other. A minute of slack separates
  * "that's just the write" from "someone came back and changed this", without
  * needing a column to record it.
+ *
+ * The one exception is the first fragment of a session the server split at
+ * local midnight — see `endsAtLocalMidnight`, which `wasEntryEdited` skips.
  */
 const EDIT_DETECTION_SLACK_MS = 60_000;
 
@@ -27,6 +31,7 @@ const EDIT_DETECTION_SLACK_MS = 60_000;
  */
 export function wasEntryEdited(entry: TimeEntry): boolean {
   if (!entry.clock_out_at) return false;
+  if (endsAtLocalMidnight(entry)) return false;
   const clockOutMs = new Date(entry.clock_out_at).getTime();
   const updatedMs = new Date(entry.updated_at).getTime();
   if (!Number.isFinite(clockOutMs) || !Number.isFinite(updatedMs)) return false;

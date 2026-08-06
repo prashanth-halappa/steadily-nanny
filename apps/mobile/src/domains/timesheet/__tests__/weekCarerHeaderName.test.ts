@@ -69,6 +69,23 @@ describe('resolveWeekCarerHeaderName', () => {
     ).toBe('Ada');
   });
 
+  // F1 (C1 round 2). The caller now passes the SELECTED TAB's carer key, not
+  // a raw `carer_id`, so a departed carer arrives here as her
+  // `household_member_id` — an id that is deliberately in no member list.
+  // This is the branch that has to win: naming her from her own snapshot
+  // rather than falling through to the sole-member fallback below, which is
+  // exactly what printed the wrong carer's name over her pay record.
+  it('names a departed carer from her snapshot, never the sole remaining member', () => {
+    expect(
+      resolveWeekCarerHeaderName({
+        entryCarerIds: ['55555555-5555-4555-8555-555555555555'],
+        entryCarerDisplayName: 'Emma',
+        carerMemberIds: ['carer-a'],
+        resolveMemberName,
+      })
+    ).toBe('Emma');
+  });
+
   it('falls back to the sole carer on a week with no entries', () => {
     // The empty-week case: nothing logged yet, but "whose week is this?"
     // still has one unambiguous answer.

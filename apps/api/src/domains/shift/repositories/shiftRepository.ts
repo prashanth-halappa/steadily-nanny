@@ -36,7 +36,11 @@ import { BaseRepository } from '../../../shared/repositories/baseRepository';
 // dependency `scheduleMaterialisationService` already takes on
 // `hasTimeEntries`.
 import { TimeEntryRepository } from '../../timesheet/repositories/timeEntryRepository';
-import { ShiftImmutableError, ShiftNotFoundError } from '../errors/shiftErrors';
+import {
+  ExtraShiftAlreadyExistsError,
+  ShiftImmutableError,
+  ShiftNotFoundError,
+} from '../errors/shiftErrors';
 
 /** A shift joined with its `shift_children` rows — the shape the Supabase nested select (`*, shift_children(*)`) returns. */
 export interface ShiftWithChildren extends Shift {
@@ -46,6 +50,30 @@ export interface ShiftWithChildren extends Shift {
 /** The narrow contract behind "has anyone clocked into this shift?" — see `TimeEntryRepository.hasTimeEntries`. */
 export interface ShiftTimeEntryExistenceRepository {
   hasTimeEntries(shiftId: string): Promise<boolean>;
+}
+
+const UNIQUE_VIOLATION = '23505';
+/** Migration 059's partial unique index — the name the 23505 is matched on. */
+const EXTRA_WINDOW_UNIQUE_INDEX = 'shifts_extra_window_unique';
+
+/**
+ * Whether a Postgres error is 059's extra-shift window collision. Matched on
+ * the CONSTRAINT NAME, not the bare code: the table has other unique keys, and
+ * mistranslating one of those would tell the caller a duplicate exists when it
+ * does not. Both the insert (`createShift`) and the update (`applyParentEdit`,
+ * via the RPC) can raise it — 059's index constrains both.
+ */
+function isExtraWindowCollision(error: {
+  code?: string;
+  message: string;
+  details?: string | null;
+}): boolean {
+  return (
+    error.code === UNIQUE_VIOLATION &&
+    `${error.message} ${error.details ?? ''}`.includes(
+      EXTRA_WINDOW_UNIQUE_INDEX
+    )
+  );
 }
 
 /** Finished business: a shift in one of these statuses is never mutated again. */
@@ -236,7 +264,18 @@ export class ShiftRepository extends BaseRepository<Shift> {
     return data as ShiftWithChildren | null;
   }
 
-  /** Create one shift row (extra-shift proposals, change-request outcomes). */
+  /**
+   * Create one shift row (extra-shift proposals, change-request outcomes).
+   *
+   * Inserts directly rather than via `BaseRepository.create` so migration
+   * 059's `shifts_extra_window_unique` violation (23505) can be translated
+   * into `ExtraShiftAlreadyExistsError` — `create` folds the Postgres code
+   * into an opaque DatabaseError, and the whole point of the index is that
+   * `insertExtraShift` can adopt the winner instead of 500ing the parent who
+   * double-tapped. Matched on the CONSTRAINT NAME, not the bare code: the
+   * table has other unique keys, and mistranslating one of those would send
+   * the service hunting for a duplicate that does not exist.
+   */
   async createShift(data: {
     household_id: string;
     carer_id: string | null;
@@ -251,23 +290,44 @@ export class ShiftRepository extends BaseRepository<Shift> {
     created_by?: string | null;
     is_short_notice?: boolean;
   }): Promise<Shift> {
-    return this.create({
-      household_id: data.household_id,
-      carer_id: data.carer_id,
-      starts_at: data.starts_at,
-      ends_at: data.ends_at,
-      timezone: data.timezone,
-      kind: data.kind,
-      status: data.status,
-      source_pattern_id: null,
-      origin: data.origin,
-      is_short_notice: data.is_short_notice ?? false,
-      note: data.note ?? null,
-      reason: data.reason ?? null,
-      created_by: data.created_by ?? null,
-      cancellation_paid: false,
-      sequence: 0,
-    });
+    const { data: created, error } = await supabaseService
+      .from(this.table)
+      .insert({
+        household_id: data.household_id,
+        carer_id: data.carer_id,
+        starts_at: data.starts_at,
+        ends_at: data.ends_at,
+        timezone: data.timezone,
+        kind: data.kind,
+        status: data.status,
+        source_pattern_id: null,
+        origin: data.origin,
+        is_short_notice: data.is_short_notice ?? false,
+        note: data.note ?? null,
+        reason: data.reason ?? null,
+        created_by: data.created_by ?? null,
+        cancellation_paid: false,
+        sequence: 0,
+      })
+      .select()
+      .single();
+
+    if (error) {
+      if (isExtraWindowCollision(error)) {
+        throw new ExtraShiftAlreadyExistsError({
+          householdId: data.household_id,
+          startsAt: data.starts_at,
+          endsAt: data.ends_at,
+          carerId: data.carer_id,
+        });
+      }
+      throw new DatabaseError('Failed to create shifts', 'DATABASE_ERROR', {
+        operation: 'create',
+        details: error.message,
+        code: error.code,
+      });
+    }
+    return created as Shift;
   }
 
   /**
@@ -276,11 +336,11 @@ export class ShiftRepository extends BaseRepository<Shift> {
    * excluded on purpose: proposing a replacement for one that was called off
    * is a new shift, not a duplicate of it.
    *
-   * ponytail: check-then-act, so two SIMULTANEOUS creates can still both miss.
-   * The retry path this guards is sequential (a bounded re-drive after a
-   * failure), so that race is not the failure mode in play. A partial unique
-   * index on `(household_id, carer_id, starts_at, ends_at) where kind = 'extra'
-   * and status <> 'cancelled'` is the real fix — it needs a migration.
+   * Check-then-act, so two SIMULTANEOUS creates can both miss it. That is
+   * fine: this is the cheap fast path, not the guard. The guard is migration
+   * 059's `shifts_extra_window_unique`, which refuses the loser's insert, and
+   * `insertExtraShift` catches the resulting `ExtraShiftAlreadyExistsError`
+   * and re-reads through here to adopt the winner.
    */
   async findExtraShiftInWindow(
     householdId: string,
@@ -367,6 +427,12 @@ export class ShiftRepository extends BaseRepository<Shift> {
     );
 
     if (error || !data) {
+      // 059's index constrains UPDATEs too: re-timing an extra shift onto
+      // another live one's exact window is refused here. That refusal is
+      // correct, but it is the parent's conflict to resolve, not a 500.
+      if (error && isExtraWindowCollision(error)) {
+        throw new ExtraShiftAlreadyExistsError({ shiftId: args.shiftId });
+      }
       throw new DatabaseError(
         'Failed to apply parent shift edit',
         'DATABASE_ERROR',

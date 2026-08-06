@@ -107,10 +107,11 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
 
   async function denyCheck(label: string, table: string): Promise<void> {
     const start = performance.now();
-    const { error } = await anon.from(table).select('*').limit(1);
+    const { data, error } = await anon.from(table).select('*').limit(1);
     const ms = Math.round(performance.now() - start);
     // Owner-only RLS: an anon SELECT must return no rows OR an error — never data.
-    const ok = error !== null || true; // RLS returns [] for anon; treat as pass
+    const rows = data ?? [];
+    const ok = error !== null || rows.length === 0;
     results.push({
       domain: 'rls',
       method: 'SELECT',
@@ -118,7 +119,11 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
       status: error ? 403 : 200,
       ok,
       ms,
-      note: error ? 'denied' : 'no rows (RLS enforced)',
+      note: error
+        ? 'denied'
+        : rows.length === 0
+          ? 'no rows (RLS enforced)'
+          : `LEAK: ${rows.length} row(s) readable by anon`,
     });
   }
 

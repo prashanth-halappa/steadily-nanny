@@ -13,6 +13,8 @@ import {
 } from '../src/schemas/timesheet.schema';
 
 const VALID_UUID = '11111111-1111-4111-8111-111111111111';
+/** A `household_members.id` — deliberately different from the carer's id. */
+const MEMBER_UUID = '22222222-2222-4222-8222-222222222222';
 const NOW = '2026-08-01T08:00:00Z';
 const LATER = '2026-08-01T17:00:00Z';
 
@@ -106,6 +108,42 @@ describe('timesheet.schema', () => {
         TimeEntrySchema.safeParse({ ...rest, carer_id: null }).success
       ).toBe(false);
     });
+
+    // Migration 058. `carer_id` alone stops being an identity the moment the
+    // account is deleted, and two departed carers who shared a display name
+    // then merge into one bucket on every parent surface. The membership id
+    // is stamped at insert and survives the deletion — but only if it
+    // actually reaches the client, and a zod object STRIPS what it does not
+    // declare.
+    it('carries household_member_id through to the parsed row', () => {
+      const parsed = TimeEntrySchema.parse({
+        ...validEntry,
+        household_member_id: MEMBER_UUID,
+      });
+      expect(parsed.household_member_id).toBe(MEMBER_UUID);
+    });
+
+    it('accepts a row with no household_member_id at all (pre-058 data)', () => {
+      expect(TimeEntrySchema.safeParse(validEntry).success).toBe(true);
+    });
+
+    it('accepts a null household_member_id (inserted with no carer)', () => {
+      expect(
+        TimeEntrySchema.safeParse({
+          ...validEntry,
+          household_member_id: null,
+        }).success
+      ).toBe(true);
+    });
+
+    it('rejects a household_member_id that is not a uuid', () => {
+      expect(
+        TimeEntrySchema.safeParse({
+          ...validEntry,
+          household_member_id: 'member-1',
+        }).success
+      ).toBe(false);
+    });
   });
 
   describe('ClockInSchema', () => {
@@ -173,6 +211,21 @@ describe('timesheet.schema', () => {
       expect(
         TimesheetSchema.safeParse({ ...validTimesheet, carer_id: null }).success
       ).toBe(true);
+    });
+
+    // Migration 058 — see TimeEntrySchema's twin above. The week screen picks
+    // its carer from the TIMESHEET rows as well as the entries, so the key
+    // has to survive on both or the two sides bucket differently.
+    it('carries household_member_id through to the parsed row', () => {
+      const parsed = TimesheetSchema.parse({
+        ...validTimesheet,
+        household_member_id: MEMBER_UUID,
+      });
+      expect(parsed.household_member_id).toBe(MEMBER_UUID);
+    });
+
+    it('accepts a timesheet with no household_member_id (pre-058 data)', () => {
+      expect(TimesheetSchema.safeParse(validTimesheet).success).toBe(true);
     });
   });
 

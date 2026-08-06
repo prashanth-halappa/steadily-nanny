@@ -12,7 +12,13 @@
 import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 import type { Expense } from '@steadily-nanny/shared-types/schemas/expense.schema';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
+import {
+  act,
+  fireEvent,
+  render,
+  waitFor,
+  within,
+} from '@testing-library/react-native';
 import type React from 'react';
 import { useAuthStore } from '@/src/store/auth';
 
@@ -232,7 +238,9 @@ const householdMember = {
   role: 'nanny',
   can_edit: false,
   status: 'active',
-  display_name_override: null,
+  // Widened: F1's fixture overrides this with a real name, and the mock's
+  // element type is inferred from this object.
+  display_name_override: null as string | null,
   colour: null,
   joined_at: now,
   created_at: now,
@@ -1380,6 +1388,236 @@ describe('ParentWeekView — two departed carers in one week (F-B1-3)', () => {
     fireEvent.press(getByTestId('hours-approve-button'));
     fireEvent.press(getByTestId('hours-approve-dialog-confirm'));
     await waitFor(() => expect(approveMock).toHaveBeenCalledWith('ts-cleo'));
+  });
+});
+
+// C1 / migration 058. The describe above tells two departed carers apart by
+// display name, which is all 033 left behind — so two departed carers who
+// SHARED a name still collapsed into one tab, one summed total, and one
+// approve button pointed at whichever timesheet sorted first. 058 stamps
+// `household_member_id` from `household_members.id` at INSERT time, long
+// before the account is deleted, so the rows keep a per-membership identity
+// the deletion cannot take with it.
+describe('ParentWeekView — two departed carers who shared a display name (C1)', () => {
+  // Real `household_members.id` values: the wire schema pins them as uuids,
+  // and a fixture with 'member-1' would describe a row the DB cannot hold.
+  const MEMBER_EMMA_A = '55555555-5555-4555-8555-555555555555';
+  const MEMBER_EMMA_B = '66666666-6666-4666-8666-666666666666';
+
+  function makeEmma(
+    memberId: string | null | undefined,
+    timesheetId: string,
+    mins: number,
+    date: string,
+    clockIn: string,
+    clockOut: string
+  ) {
+    const memberField =
+      memberId === undefined ? {} : { household_member_id: memberId };
+    return {
+      entry: makeEntry({
+        id: `entry-${timesheetId}`,
+        carer_id: null,
+        carer_display_name: 'Emma',
+        clock_in_at: `${date}T${clockIn}:00.000Z`,
+        clock_out_at: `${date}T${clockOut}:00.000Z`,
+        scheduled_minutes: null,
+        local_date: date,
+        ...memberField,
+      }),
+      timesheet: makeTimesheet({
+        id: timesheetId,
+        carer_id: null,
+        carer_display_name: 'Emma',
+        total_minutes: mins,
+        ...memberField,
+      }),
+    };
+  }
+
+  // Both left; both were called Emma. 4h and 2h, on different days.
+  const emmaA = makeEmma(
+    MEMBER_EMMA_A,
+    'ts-emma-a',
+    240,
+    '2026-08-04',
+    '08:00',
+    '12:00'
+  );
+  const emmaB = makeEmma(
+    MEMBER_EMMA_B,
+    'ts-emma-b',
+    120,
+    '2026-08-05',
+    '08:00',
+    '10:00'
+  );
+
+  // The household's ONE remaining active nanny. She is the whole of F1: with
+  // no active carer id on a departed carer's rows, the header fell through to
+  // "the household has exactly one nanny, it must be her".
+  const nadia = {
+    ...householdMember,
+    id: 'member-nadia',
+    user_id: 'carer-nadia',
+    display_name_override: 'Nadia',
+  };
+
+  function seed(rows: ReturnType<typeof makeEmma>[]) {
+    listMembersMock.mockImplementation(() => Promise.resolve([nadia]));
+    listEntriesMock.mockImplementation(() =>
+      Promise.resolve(rows.map(r => r.entry))
+    );
+    listTimesheetsMock.mockImplementation(() =>
+      Promise.resolve(rows.map(r => r.timesheet))
+    );
+    getByIdMock.mockImplementation((timesheetId?: string) => {
+      const match = rows.find(r => r.timesheet.id === timesheetId) ?? rows[0];
+      return Promise.resolve({
+        ...makeTimesheet(match?.timesheet),
+        earnings: {
+          status: 'hours_only',
+          week_start: WEEK_START,
+          reason: 'carer_removed',
+        },
+      });
+    });
+  }
+
+  it('gives each departed Emma her own tab rather than merging them', async () => {
+    seed([emmaA, emmaB]);
+
+    const { getByTestId } = renderParentView();
+
+    await waitFor(() =>
+      expect(getByTestId(`hours-carer-tab-${MEMBER_EMMA_A}`)).toBeTruthy()
+    );
+    expect(getByTestId(`hours-carer-tab-${MEMBER_EMMA_B}`)).toBeTruthy();
+    // EXACTLY two — a third tab would mean the key split one carer's rows.
+    expect(getByTestId('hours-carer-switcher').props.children).toHaveLength(2);
+    // ...and both read "Emma". The tab label is the human's name; the uuid is
+    // only the key underneath it, and must never surface as the label.
+    expect(
+      within(getByTestId(`hours-carer-tab-${MEMBER_EMMA_A}`)).getByText('Emma')
+    ).toBeTruthy();
+    expect(
+      within(getByTestId(`hours-carer-tab-${MEMBER_EMMA_B}`)).getByText('Emma')
+    ).toBeTruthy();
+    // The first Emma's 4h alone, never the merged 6h.
+    expect(getByTestId('hours-total').props.children).toBe('4h');
+  });
+
+  // F1 (S0). Aggregation was fixed; ATTRIBUTION was not. `entryCarerIds` was
+  // built from raw `e.carer_id` with nulls filtered out, so on a departed
+  // carer's tab it came back EMPTY — and `resolveWeekCarerHeaderName`'s
+  // no-entries branch then names the household's sole nanny. The header above
+  // Emma's 4h read "Nadia", and `approveDialogCarerName` (`carerName ??
+  // timesheet.carer_display_name`) never reached the correct snapshot either,
+  // so the confirm dialog named Nadia over Emma's timesheet.
+  it('F1: names the departed carer whose hours are on screen, not the sole active nanny', async () => {
+    seed([emmaA, emmaB]);
+
+    const { getByTestId } = renderParentView();
+
+    await waitFor(() => expect(getByTestId('hours-carer-name')).toBeTruthy());
+    expect(getByTestId('hours-carer-name').props.children).toBe('Emma');
+  });
+
+  it('F1: still names the active carer on her own tab', async () => {
+    // The regression guard for the fix: an active carer must keep resolving
+    // through the member list (her household display-name override), not
+    // silently switch to whatever snapshot her rows carry.
+    listMembersMock.mockImplementation(() =>
+      Promise.resolve([householdMember])
+    );
+    listEntriesMock.mockImplementation(() => Promise.resolve([makeEntry()]));
+    listTimesheetsMock.mockImplementation(() =>
+      Promise.resolve([makeTimesheet()])
+    );
+    getByIdMock.mockImplementation(() => Promise.resolve(makeTimesheetWeek()));
+
+    const { getByTestId } = renderParentView();
+
+    await waitFor(() => expect(getByTestId('hours-carer-name')).toBeTruthy());
+    expect(getByTestId('hours-carer-name').props.children).toBe('Amara');
+  });
+
+  it('approves the timesheet of the Emma actually on screen', async () => {
+    seed([emmaA, emmaB]);
+
+    const { getByTestId } = renderParentView();
+
+    await waitFor(() =>
+      expect(getByTestId('hours-approve-button')).toBeTruthy()
+    );
+    fireEvent.press(getByTestId('hours-approve-button'));
+    fireEvent.press(getByTestId('hours-approve-dialog-confirm'));
+    await waitFor(() => expect(approveMock).toHaveBeenCalledWith('ts-emma-a'));
+
+    fireEvent.press(getByTestId(`hours-carer-tab-${MEMBER_EMMA_B}`));
+    await waitFor(() =>
+      expect(getByTestId('hours-total').props.children).toBe('2h')
+    );
+    fireEvent.press(getByTestId('hours-approve-button'));
+    fireEvent.press(getByTestId('hours-approve-dialog-confirm'));
+    await waitFor(() => expect(approveMock).toHaveBeenCalledWith('ts-emma-b'));
+  });
+
+  it('one membership, two weeks-worth of rows: still ONE carer, hours summed', async () => {
+    // The other direction — the key must not split a single carer's own rows.
+    const shiftOne = makeEmma(
+      MEMBER_EMMA_A,
+      'ts-emma-a',
+      360,
+      '2026-08-04',
+      '08:00',
+      '12:00'
+    );
+    const shiftTwo = makeEmma(
+      MEMBER_EMMA_A,
+      'ts-emma-a',
+      360,
+      '2026-08-05',
+      '08:00',
+      '10:00'
+    );
+    seed([shiftOne, shiftTwo]);
+
+    const { getByTestId, queryByTestId } = renderParentView();
+
+    await waitFor(() => expect(getByTestId('hours-total')).toBeTruthy());
+    expect(queryByTestId('hours-carer-switcher')).toBeNull();
+    expect(getByTestId('hours-total').props.children).toBe('6h');
+  });
+
+  it('pre-058 rows carry no member id and keep the display-name fallback', async () => {
+    // Rows whose carer_id was NULLed before 058 ran cannot be backfilled —
+    // the membership is gone. Today's behaviour is what they keep: merged
+    // under the shared name. Pinned so the fallback is not quietly dropped.
+    const legacyA = makeEmma(
+      undefined,
+      'ts-legacy-a',
+      240,
+      '2026-08-04',
+      '08:00',
+      '12:00'
+    );
+    const legacyB = makeEmma(
+      undefined,
+      'ts-legacy-b',
+      120,
+      '2026-08-05',
+      '08:00',
+      '10:00'
+    );
+    seed([legacyA, legacyB]);
+
+    const { getByTestId, queryByTestId } = renderParentView();
+
+    await waitFor(() => expect(getByTestId('hours-total')).toBeTruthy());
+    expect(queryByTestId('hours-carer-switcher')).toBeNull();
+    // 4h + 2h under one name — the accepted forward-only ceiling.
+    expect(getByTestId('hours-total').props.children).toBe('6h');
   });
 });
 

@@ -6,6 +6,7 @@
  */
 import { beforeEach, describe, expect, it, mock } from 'bun:test';
 import { fireEvent, waitFor } from '@testing-library/react-native';
+import { queryKeys } from '@/src/api/queryKeys';
 import { useAuthStore } from '@/src/store/auth';
 import { renderWithProviders } from '@/src/test-utils';
 import { ClockInCard } from '../components/ClockInCard';
@@ -81,5 +82,23 @@ describe('ClockInCard — A1 unconfirmed optimistic clock-in', () => {
     // — same guarantee, asserted against the current structure.
     expect(queryByTestId('clockout-sheet')).toBeNull();
     expect(clockOutMock).not.toHaveBeenCalled();
+  });
+
+  // F-B8-6: the card already knows the household's zone (it renders every
+  // clock time in it) — the unconfirmed row must be filed under that zone's
+  // day too, not the travelling carer's device day.
+  it('files the unconfirmed row under the household zone the card renders in', async () => {
+    const { getByTestId, queryClient } = renderWithProviders(
+      <ClockInCard householdId={HOUSEHOLD_ID} timeZone="Pacific/Auckland" />
+    );
+
+    await waitFor(() => expect(getByTestId('today-clock-in')).toBeTruthy());
+    fireEvent.press(getByTestId('today-clock-in'));
+
+    await waitFor(() => {
+      expect(
+        queryClient.getQueryData(queryKeys.timeEntry.running())
+      ).toMatchObject({ timezone: 'Pacific/Auckland' });
+    });
   });
 });

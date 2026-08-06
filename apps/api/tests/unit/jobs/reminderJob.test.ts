@@ -25,8 +25,23 @@ const APPROVAL_ID = 'appr-11111111-1111-1111-1111-111111111111';
 /** 2026-08-05 18:00 in America/Los_Angeles (PDT, UTC-7). */
 const LA_18_00 = new Date('2026-08-06T01:00:00.000Z');
 
-/** Same instant is 11:00 in America/New_York (EDT, UTC-4). */
-const NY_11_00_SAME_INSTANT = LA_18_00;
+/** Same local day, later in the send window (F-B6-2). */
+const LA_19_00 = new Date('2026-08-06T02:00:00.000Z');
+const LA_20_00 = new Date('2026-08-06T03:00:00.000Z');
+/** One hour past the window end — too late to be worth waking someone. */
+const LA_22_00 = new Date('2026-08-06T05:00:00.000Z');
+/** Before the window opens. */
+const LA_17_00 = new Date('2026-08-06T00:00:00.000Z');
+
+/**
+ * The SAME instant is 11:00 the next morning in Australia/Sydney (AEST,
+ * UTC+10) — the point being that the gate reads the recipient's wall clock,
+ * not the server's. This used to name America/New_York and claim 11:00, but
+ * that instant is 21:00 in New York; the label was wrong and the assertion
+ * only held because the gate was an equality on 18:00. Under the F-B6-2
+ * window 21:00 legitimately sends, which is what exposed it.
+ */
+const SYDNEY_11_00_SAME_INSTANT = LA_18_00;
 
 function emptyCandidates(): ReminderCandidateSource {
   return {
@@ -41,6 +56,8 @@ function alwaysClaims(): ReminderLogClaim {
   return {
     claim: mock(async () => true),
     release: mock(async () => {}),
+    confirm: mock(async () => {}),
+    sweepStaleClaims: mock(async () => {}),
   };
 }
 
@@ -53,21 +70,38 @@ function alwaysClaims(): ReminderLogClaim {
 function statefulLog(): {
   log: ReminderLogClaim;
   claims: Set<string>;
+  /** Unconfirmed claims are the ones a crashed run leaves behind (C3). */
+  confirmed: Set<string>;
+  /** Operation names in the order the job called them. */
+  order: string[];
 } {
   const claims = new Set<string>();
+  const confirmed = new Set<string>();
+  const order: string[] = [];
   const key = (userId: string, reminderKey: string) =>
     `${userId}::${reminderKey}`;
   return {
     claims,
+    confirmed,
+    order,
     log: {
       claim: mock(async (userId: string, reminderKey: string) => {
+        order.push('claim');
         const k = key(userId, reminderKey);
         if (claims.has(k)) return false;
         claims.add(k);
         return true;
       }),
       release: mock(async (userId: string, reminderKey: string) => {
+        order.push('release');
         claims.delete(key(userId, reminderKey));
+      }),
+      confirm: mock(async (userId: string, reminderKey: string) => {
+        order.push('confirm');
+        confirmed.add(key(userId, reminderKey));
+      }),
+      sweepStaleClaims: mock(async () => {
+        order.push('sweep');
       }),
     },
   };
@@ -101,7 +135,7 @@ function shiftStartingTomorrowLa(): ShiftReminderCandidate {
 }
 
 describe('runReminderJob', () => {
-  it('sends a shift reminder at 18:00 local and skips at 11:00 local for the same instant', async () => {
+  it('gates on the recipient’s local hour: 18:00 sends, 11:00 elsewhere does not', async () => {
     const shift = shiftStartingTomorrowLa();
     const candidates: ReminderCandidateSource = {
       ...emptyCandidates(),
@@ -133,14 +167,106 @@ describe('runReminderJob', () => {
     const at11 = await runReminderJob(
       candidates,
       log,
-      { resolve: mock(async () => 'America/New_York') },
+      { resolve: mock(async () => 'Australia/Sydney') },
       { listParentUserIds: mock(async () => []) },
       push11,
-      { now: () => NY_11_00_SAME_INSTANT }
+      { now: () => SYDNEY_11_00_SAME_INSTANT }
     );
 
     expect(at11.shiftReminder.sent).toBe(0);
     expect(sent11).toHaveLength(0);
+  });
+
+  // F-B6-2. The hour gate was an equality on 18:00 local, so a single missed
+  // or late hourly run — a deploy, a pg_cron hiccup, an outage — dropped that
+  // evening's shift reminders entirely and nothing ever retried them. The gate
+  // is a window now; the ledger key (`shift_reminder:<id>`, no date segment)
+  // is what keeps a wider window from re-sending.
+  it.each([
+    ['18:00, the window opens', LA_18_00],
+    ['19:00, mid-window', LA_19_00],
+    ['20:00, late in the window', LA_20_00],
+  ])('sends a shift reminder at %s', async (_label, instant) => {
+    const candidates: ReminderCandidateSource = {
+      ...emptyCandidates(),
+      listShiftReminders: mock(async () => [shiftStartingTomorrowLa()]),
+    };
+    const { push, sent } = capturingPush();
+
+    const result = await runReminderJob(
+      candidates,
+      alwaysClaims(),
+      { resolve: mock(async () => 'America/Los_Angeles') },
+      { listParentUserIds: mock(async () => []) },
+      push,
+      { now: () => instant }
+    );
+
+    expect(result.shiftReminder.sent).toBe(1);
+    expect(sent).toHaveLength(1);
+  });
+
+  it.each([
+    ['17:00, before the window opens', LA_17_00],
+    ['22:00, after the window closes', LA_22_00],
+  ])('does not send a shift reminder at %s', async (_label, instant) => {
+    const candidates: ReminderCandidateSource = {
+      ...emptyCandidates(),
+      listShiftReminders: mock(async () => [shiftStartingTomorrowLa()]),
+    };
+    const log = alwaysClaims();
+    const { push, sent } = capturingPush();
+
+    const result = await runReminderJob(
+      candidates,
+      log,
+      { resolve: mock(async () => 'America/Los_Angeles') },
+      { listParentUserIds: mock(async () => []) },
+      push,
+      { now: () => instant }
+    );
+
+    expect(result.shiftReminder.sent).toBe(0);
+    expect(sent).toHaveLength(0);
+    expect(log.claim).not.toHaveBeenCalled();
+  });
+
+  it('does not double-send across the widened window — the claim is dateless', async () => {
+    const candidates: ReminderCandidateSource = {
+      ...emptyCandidates(),
+      listShiftReminders: mock(async () => [shiftStartingTomorrowLa()]),
+    };
+    const { log, claims } = statefulLog();
+    const timezone = { resolve: mock(async () => 'America/Los_Angeles') };
+    const parents = { listParentUserIds: mock(async () => []) };
+    const { push, sent } = capturingPush();
+
+    const first = await runReminderJob(
+      candidates,
+      log,
+      timezone,
+      parents,
+      push,
+      {
+        now: () => LA_18_00,
+      }
+    );
+    const second = await runReminderJob(
+      candidates,
+      log,
+      timezone,
+      parents,
+      push,
+      { now: () => LA_19_00 }
+    );
+
+    expect(first.shiftReminder.sent).toBe(1);
+    expect(second.shiftReminder.sent).toBe(0);
+    expect(second.shiftReminder.skipped).toBe(1);
+    expect(sent).toHaveLength(1);
+    // One claim row, still held — the key has no date segment, so every hour
+    // of the window collides with the send that already happened.
+    expect(claims.size).toBe(1);
   });
 
   it('dedupes: a second run skips when claim returns false', async () => {
@@ -156,6 +282,8 @@ describe('runReminderJob', () => {
         return claimCalls === 1;
       }),
       release: mock(async () => {}),
+      confirm: mock(async () => {}),
+      sweepStaleClaims: mock(async () => {}),
     };
     const { push, sent } = capturingPush();
     const timezone = { resolve: mock(async () => 'America/Los_Angeles') };
@@ -397,6 +525,88 @@ describe('runReminderJob', () => {
 
     expect(secondRun.shiftReminder.sent).toBe(1);
     expect(sent).toHaveLength(1);
+  });
+
+  // C3 — the crash window 047's header called unrecoverable. A process killed
+  // between the claim commit and the send returning leaves a claim standing
+  // for a reminder nobody got, and the claim IS the dedupe key, so it is
+  // suppressed forever. Confirm-after-send plus a sweep of unconfirmed claims
+  // is the two-phase ledger that closes it.
+  it('confirms the claim after a send that actually reached a device', async () => {
+    const candidates: ReminderCandidateSource = {
+      ...emptyCandidates(),
+      listShiftReminders: mock(async () => [shiftStartingTomorrowLa()]),
+    };
+    const { log, claims, confirmed, order } = statefulLog();
+    const { push } = capturingPush();
+
+    const result = await runReminderJob(
+      candidates,
+      log,
+      { resolve: mock(async () => 'America/Los_Angeles') },
+      { listParentUserIds: mock(async () => []) },
+      push,
+      { now: () => LA_18_00 }
+    );
+
+    expect(result.shiftReminder.sent).toBe(1);
+    expect(claims.size).toBe(1);
+    expect(confirmed.size).toBe(1);
+    // Confirm comes AFTER the claim, never instead of it — a confirm-first
+    // ledger would not dedupe overlapping runs at all.
+    expect(order).toEqual(['sweep', 'claim', 'confirm']);
+  });
+
+  it('sweeps stale claims once, before anything is claimed', async () => {
+    const candidates: ReminderCandidateSource = {
+      ...emptyCandidates(),
+      listShiftReminders: mock(async () => [shiftStartingTomorrowLa()]),
+    };
+    const { log, order } = statefulLog();
+    const { push } = capturingPush();
+
+    await runReminderJob(
+      candidates,
+      log,
+      { resolve: mock(async () => 'America/Los_Angeles') },
+      { listParentUserIds: mock(async () => []) },
+      push,
+      { now: () => LA_18_00 }
+    );
+
+    expect(log.sweepStaleClaims).toHaveBeenCalledTimes(1);
+    expect(order[0]).toBe('sweep');
+  });
+
+  it('does not send a delivered reminder into the release path when confirm fails', async () => {
+    const candidates: ReminderCandidateSource = {
+      ...emptyCandidates(),
+      listShiftReminders: mock(async () => [shiftStartingTomorrowLa()]),
+    };
+    const log: ReminderLogClaim = {
+      ...alwaysClaims(),
+      confirm: mock(async () => {
+        throw new Error('confirm write failed');
+      }),
+    };
+    const { push, sent } = capturingPush();
+
+    const result = await runReminderJob(
+      candidates,
+      log,
+      { resolve: mock(async () => 'America/Los_Angeles') },
+      { listParentUserIds: mock(async () => []) },
+      push,
+      { now: () => LA_18_00 }
+    );
+
+    // The push DID go out. Releasing the claim here would guarantee a
+    // duplicate on the next run to fix a bookkeeping failure that costs at
+    // most one duplicate after the sweep horizon.
+    expect(sent).toHaveLength(1);
+    expect(result.shiftReminder.sent).toBe(1);
+    expect(result.shiftReminder.errors).toBe(0);
+    expect(log.release).not.toHaveBeenCalled();
   });
 
   it('releases the claim and records an error when the send throws', async () => {

@@ -26,6 +26,7 @@ import {
   WEEK_EARNINGS_STATES,
   WeekEarningsSchema,
 } from '@steadily-nanny/shared-types/schemas/timesheet.schema';
+import { logger } from '../../../middlewares/logger';
 import {
   HouseholdMemberRepository,
   HouseholdRepository,
@@ -224,9 +225,24 @@ export class TimesheetQueryService {
       return this.hoursOnly(row, HOURS_ONLY_REASONS.LEGACY_APPROVAL);
     }
     const parsed = WeekEarningsSchema.safeParse(row.earnings);
-    return parsed.success
-      ? parsed.data
-      : this.hoursOnly(row, HOURS_ONLY_REASONS.UNREADABLE_SNAPSHOT);
+    if (parsed.success) {
+      return parsed.data;
+    }
+    // Hours-only is the right thing to RENDER — the alternatives blank the
+    // screen or print a live number under an Approved label — but on screen
+    // it is indistinguishable from a legacy approval, so on its own it
+    // degrades the week silently and permanently. Say so where someone will
+    // see it: error level auto-forwards to Sentry via the transport.
+    logger.error('Frozen earnings snapshot unreadable', {
+      timesheetId: row.id,
+      householdId: row.household_id,
+      weekStart: row.week_start,
+      issues: parsed.error.issues.map(issue => ({
+        path: issue.path.join('.'),
+        code: issue.code,
+      })),
+    });
+    return this.hoursOnly(row, HOURS_ONLY_REASONS.UNREADABLE_SNAPSHOT);
   }
 
   private hoursOnly(

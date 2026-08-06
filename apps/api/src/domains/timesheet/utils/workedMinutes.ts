@@ -32,6 +32,49 @@ export function computeWorkedMinutes(
 }
 
 /**
+ * The minutes ONE entry banks — the single formula `total_minutes` and the
+ * paycheck both read (`sumWorkedMinutes` below, and
+ * `weekEarningsService.buildWeekEarningsInput`). Null for an entry with no
+ * finish yet: a running session has no minutes, and that is different from
+ * having zero.
+ *
+ * `cancellation_paid` is the one kind whose stored `scheduled_minutes` is
+ * AUTHORITATIVE (C7). A cancelled window is rounded once, against the window,
+ * and the residual is written onto the last fragment
+ * (`timesheetCommandService.recordCancellationPaidEntry`) — so re-rounding
+ * that fragment's own span here would hand back the ±1 drift the residual
+ * exists to remove. Legacy rows with no stored value fall back to the span.
+ * Every other kind ignores `scheduled_minutes` completely: on a `worked` row
+ * it is the SHIFT's booking frozen at clock-out, i.e. what she was rostered
+ * for, and paying that instead of the clock would bill the roster.
+ *
+ * SQL TWIN: `public.run_integrity_checks()` re-expresses this exact formula
+ * to find timesheets whose total has drifted. The operative copy is the
+ * `create or replace` in
+ * `supabase/migrations/061_integrity_checks_departed_carers.sql`, including
+ * the `greatest(0, …)` that matches the clamp below; 056 introduced the
+ * function and is superseded. The two must move together — 061's contract
+ * test greps both branches of it.
+ */
+export function entryMinutes(entry: TimeEntry): number | null {
+  if (!entry.clock_in_at || !entry.clock_out_at) {
+    return null;
+  }
+  if (entry.kind === 'cancellation_paid' && entry.scheduled_minutes !== null) {
+    // Floored like `computeWorkedMinutes`, so "no entry ever banks negative
+    // minutes" stays a guarantee rather than a convention that happened to
+    // hold on every other path. Nothing writes a negative today; the column
+    // has no check constraint saying so.
+    return Math.max(0, entry.scheduled_minutes);
+  }
+  return computeWorkedMinutes(
+    entry.clock_in_at,
+    entry.clock_out_at,
+    entry.break_minutes
+  );
+}
+
+/**
  * A week's total worked minutes, DERIVED fresh from its entries rather than
  * accumulated. Summing the same list twice always yields the same total —
  * that's what makes `rollUpIntoTimesheet` idempotent under a retried,
@@ -40,17 +83,8 @@ export function computeWorkedMinutes(
  * `clock_out_at` yet) contributes 0 rather than throwing.
  */
 export function sumWorkedMinutes(entries: readonly TimeEntry[]): number {
-  return entries.reduce((total, entry) => {
-    if (!entry.clock_in_at || !entry.clock_out_at) {
-      return total;
-    }
-    return (
-      total +
-      computeWorkedMinutes(
-        entry.clock_in_at,
-        entry.clock_out_at,
-        entry.break_minutes
-      )
-    );
-  }, 0);
+  return entries.reduce(
+    (total, entry) => total + (entryMinutes(entry) ?? 0),
+    0
+  );
 }

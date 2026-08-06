@@ -247,6 +247,42 @@ describe('useClockIn', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
   });
 
+  // F-B8-6: the household zone the caller already holds must reach the
+  // optimistic row, or a carer clocking in from elsewhere sees her own row
+  // filed under the device's day until the server answers.
+  it('stamps the optimistic entry with the household zone it was given', async () => {
+    let resolve!: (value: { id: string; status: string }) => void;
+    clockInMock.mockImplementationOnce(
+      () =>
+        new Promise<{ id: string; status: string }>(r => {
+          resolve = r;
+        })
+    );
+
+    const { result, queryClient } = renderHookWithProviders(
+      () => useClockIn('Pacific/Auckland'),
+      { queryClient: createClockMutationTestClient() }
+    );
+
+    let mutationPromise!: Promise<unknown>;
+    await act(async () => {
+      mutationPromise = result.current.mutateAsync({
+        household_id: HOUSEHOLD_ID,
+      });
+    });
+
+    await waitFor(() => {
+      expect(
+        queryClient.getQueryData(queryKeys.timeEntry.running())
+      ).toMatchObject({ timezone: 'Pacific/Auckland' });
+    });
+
+    await act(async () => {
+      resolve({ id: 'entry-1', status: 'running' });
+      await mutationPromise;
+    });
+  });
+
   it('G20: rolls back the optimistic running entry on a non-409 error', async () => {
     const runningKey = queryKeys.timeEntry.running();
     const previousEntry = {

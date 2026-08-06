@@ -101,6 +101,12 @@ export const PtoLedgerEntrySchema = z.object({
   // the household's PTO history — same ON DELETE SET NULL discipline as
   // pay_arrangements/timesheets (033_preserve_payroll_on_carer_deletion.sql).
   carer_id: z.uuid().nullable(),
+  // The `household_members.id` this ledger row belongs to — stamped at insert
+  // by 058's trigger, no foreign key, so it outlives the membership. See
+  // `timesheet.schema.ts`'s `TimeEntrySchema.household_member_id`: same key,
+  // same optional/nullable meaning. Declared here because 058 stamps this
+  // table too, and an undeclared field is a stripped one.
+  household_member_id: z.uuid().nullable().optional(),
   kind: z.enum(Object.values(PTO_LEDGER_KINDS)),
   minutes: z.int().refine(minutes => minutes !== 0, {
     message: 'minutes must not be 0 — see the check (minutes <> 0) constraint',

@@ -45,6 +45,18 @@ const WRITE_ROLES: ReadonlySet<string> = new Set([
   HOUSEHOLD_ROLES.PARENT,
 ]);
 
+/**
+ * Crash-recovery window: how long an `accepted` invite with no membership row
+ * must sit before a later redeemer is allowed to release the claim. A genuine
+ * in-flight accept finishes in seconds — anything this stale is a process that
+ * died between the claim and the membership insert.
+ *
+ * ponytail: heals on read only, so a stranded code is unusable until someone
+ * retries it after this window — and one nobody ever retries stays burned.
+ * That harms nobody; add a sweep only if support tickets say otherwise.
+ */
+const STRANDED_CLAIM_MS = 15 * 60 * 1000;
+
 export class HouseholdCommandService {
   constructor(
     private readonly householdRepo: HouseholdRepository = new HouseholdRepository(),
@@ -145,11 +157,16 @@ export class HouseholdCommandService {
     if (invite.status === HOUSEHOLD_INVITE_STATUSES.REVOKED) {
       throw new InviteRevokedError(code);
     }
-    if (invite.status === HOUSEHOLD_INVITE_STATUSES.ACCEPTED) {
-      throw new InviteAlreadyAcceptedError(code);
-    }
+    // Expiry before the heal: releasing wipes `accepted_by`/`accepted_at`, and
+    // an expired code is unredeemable anyway — no reason to lose the record of
+    // who consumed it.
     if (new Date(invite.expires_at).getTime() < Date.now()) {
       throw new InviteExpiredError(code);
+    }
+    if (invite.status === HOUSEHOLD_INVITE_STATUSES.ACCEPTED) {
+      // Either genuinely used, or stranded by a crash — the latter is healable
+      // and falls through to a fresh claim below.
+      await this.releaseStrandedClaim(invite, code);
     }
 
     const existingMembership = await this.memberRepo.findActiveMembership(
@@ -175,7 +192,7 @@ export class HouseholdCommandService {
         status: HOUSEHOLD_MEMBER_STATUSES.ACTIVE,
       });
     } catch (error) {
-      await this.releaseInviteClaim(invite.id, userId);
+      await this.releaseInviteClaim(claimed.id, userId, claimed.accepted_at);
       throw error;
     }
 
@@ -220,20 +237,71 @@ export class HouseholdCommandService {
    * too: `findActiveMembership` can't see a `removed` row, so that user sails
    * past the pre-check and trips the unique constraint here instead.
    *
-   * ponytail: compensation only, so a process that dies between the claim and
-   * the insert still strands the code. A claim-expiry sweep would close that;
-   * not worth it until it happens.
+   * A process that dies before this catch runs is covered by the on-read
+   * self-heal in `releaseStrandedClaim` instead.
+   *
+   * `acceptedAt` comes from the row `claimPending` just returned — the claim
+   * this request actually won — so a release can never free a later one.
    */
   private async releaseInviteClaim(
     inviteId: string,
-    userId: string
+    userId: string,
+    acceptedAt: string | null
   ): Promise<void> {
+    if (!acceptedAt) {
+      return;
+    }
     try {
-      await this.inviteRepo.releaseClaim(inviteId, userId);
+      await this.inviteRepo.releaseClaim(inviteId, userId, acceptedAt);
     } catch {
       // The membership error is already on its way to the caller; a failed
       // release must not replace it.
     }
+  }
+
+  /**
+   * On-read self-heal for an invite left `accepted` by a process that died
+   * between the claim and the membership insert: the code is burned but nobody
+   * ever joined, and the compensation in `redeemInvite`'s catch never ran.
+   * Releases the claim so the caller can re-claim it; throws the ordinary
+   * already-used error in every other case.
+   *
+   * Released only when the claim names a claimer, is older than the
+   * crash-recovery window, and that claimer has NO membership row of ANY status
+   * — any-status deliberately, so a removed ex-member's consumed code is never
+   * resurrected. The `claimedBy` null check is load-bearing on its own: `009`
+   * declares `accepted_by ... on delete set null` and membership rows cascade
+   * away with the account, so a DELETED claimer leaves an accepted invite with
+   * no claimer and no membership — indistinguishable from a crash by every
+   * other check here. Refuse it.
+   *
+   * The release is CAS'd on the `accepted_at` we read, so a claim re-taken
+   * between that read and this write is never freed, and a failed release
+   * surfaces rather than letting the caller claim over someone else's invite.
+   */
+  private async releaseStrandedClaim(
+    invite: HouseholdInvite,
+    code: string
+  ): Promise<void> {
+    const claimedBy = invite.accepted_by;
+    const claimedAt = invite.accepted_at;
+    if (
+      !claimedBy ||
+      !claimedAt ||
+      Date.now() - new Date(claimedAt).getTime() < STRANDED_CLAIM_MS
+    ) {
+      throw new InviteAlreadyAcceptedError(code);
+    }
+
+    const claimerMembership = await this.memberRepo.findMembershipAnyStatus(
+      invite.household_id,
+      claimedBy
+    );
+    if (claimerMembership) {
+      throw new InviteAlreadyAcceptedError(code);
+    }
+
+    await this.inviteRepo.releaseClaim(invite.id, claimedBy, claimedAt);
   }
 
   /** Best-effort cleanup; a rollback failure must never mask the original error. */

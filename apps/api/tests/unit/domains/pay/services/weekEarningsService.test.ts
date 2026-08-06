@@ -338,6 +338,51 @@ describe('buildWeekEarningsInput', () => {
     ]);
   });
 
+  it('prices a cancellation fragment from its stored scheduled_minutes, not its span (C7)', () => {
+    // The residual the round-once rule writes. The paycheck and
+    // `total_minutes` must read the SAME number — the twin assertion lives in
+    // `workedMinutes.test.ts`.
+    const built = buildWeekEarningsInput({
+      weekStart: WEEK_START,
+      entries: [
+        entry({
+          id: 'te-frag',
+          kind: 'cancellation_paid',
+          local_date: '2026-08-04',
+          clock_in_at: '2026-08-04T12:00:40.000Z',
+          clock_out_at: '2026-08-04T19:00:20.000Z', // rounds to 420 on its own
+          scheduled_minutes: 419,
+        }),
+        entry({
+          id: 'te-legacy',
+          kind: 'cancellation_paid',
+          local_date: '2026-08-05',
+          clock_in_at: '2026-08-05T09:00:00.000Z',
+          clock_out_at: '2026-08-05T12:00:00.000Z',
+          scheduled_minutes: null,
+        }),
+        // A worked row's scheduled_minutes is the roster, never the pay.
+        entry({
+          id: 'te-worked',
+          local_date: '2026-08-06',
+          clock_in_at: '2026-08-06T09:00:00.000Z',
+          clock_out_at: '2026-08-06T13:00:00.000Z',
+          scheduled_minutes: 480,
+        }),
+      ],
+      arrangements: [arrangement()],
+      closureDates: [],
+      closureDayShifts: [],
+      ptoLedgerRows: [],
+      approvedExpenses: [],
+    });
+    expect(built.entries).toEqual([
+      { kind: 'cancellation_paid', local_date: '2026-08-04', minutes: 419 },
+      { kind: 'cancellation_paid', local_date: '2026-08-05', minutes: 180 },
+      { kind: 'worked', local_date: '2026-08-06', minutes: 240 },
+    ]);
+  });
+
   it('skips a still-running entry rather than throwing — it has no minutes yet', () => {
     const built = buildWeekEarningsInput({
       weekStart: WEEK_START,

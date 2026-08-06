@@ -121,12 +121,21 @@ export function getTimeEntryEditErrorKey(error: unknown): string | undefined {
   return undefined;
 }
 
+/**
+ * `householdTimezone` is the household's IANA zone (GOLDEN-FIXES #21) — with
+ * the device's as a fallback for callers that have no household context. A
+ * carer clocking in from another timezone would otherwise get an optimistic
+ * row in the wrong day bucket, invisible in week views, until the server row
+ * (which resolves the zone itself) replaces it.
+ */
 export function buildOptimisticRunningEntry(
-  input: ClockInInput
+  input: ClockInInput,
+  householdTimezone?: string
 ): OptimisticTimeEntry {
   const now = new Date();
   const clockInAt = now.toISOString();
-  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const timezone =
+    householdTimezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
   return {
     id: Crypto.randomUUID(),
     household_id: input.household_id,

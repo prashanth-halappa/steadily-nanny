@@ -41,6 +41,7 @@ import type { TimeEntry, TimesheetStatus } from '../types';
 import { formatClockTime, formatDuration } from '../utils/duration';
 import { isEntryEditable, wasEntryEdited } from '../utils/entryEdited';
 import { computeEntryMinutes } from '../utils/entryMinutes';
+import { endsAtLocalMidnight } from '../utils/splitFragment';
 import { formatDisplayDate } from '../utils/week';
 
 interface TimeEntryDayRowProps {
@@ -122,9 +123,18 @@ export function TimeEntryDayRow({
             // letting it sit indistinguishable from a genuinely short
             // shift in a list of real hours (team-lead callout, 2026-08-01).
             // A still-running entry with 0 elapsed is normal (just started)
-            // and is NOT flagged.
+            // and is NOT flagged. Neither is the first fragment of a session
+            // the server split at midnight: clocking in at 23:59:40 leaves it
+            // 20 seconds long, which is the split working, not a misfire.
             const entryMinutes = computeEntryMinutes(entry, nowMs);
-            const isZeroDuration = !!entry.clock_out_at && entryMinutes === 0;
+            // A cancellation fragment that rounded to nothing is exempt too:
+            // its minutes are the window's residual, and zero is a legitimate
+            // outcome of paying the window exactly once.
+            const isZeroDuration =
+              !!entry.clock_out_at &&
+              entryMinutes === 0 &&
+              entry.kind !== 'cancellation_paid' &&
+              !endsAtLocalMidnight(entry);
             // Compare finish to the ROW date in the household zone — never
             // the device zone (GOLDEN-FIXES #21). A later local date means
             // the range spans midnight and needs the quiet "+1" clarifier.

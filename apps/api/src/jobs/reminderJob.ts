@@ -19,10 +19,12 @@
  * that never went out. `claimAndSend` shrinks that window as far as this
  * schema allows — the send result is checked and, on total failure (0
  * devices reached, or a thrown error), the claim is released again so the
- * next run retries — but a hard process kill inside that narrow window is
- * unrecoverable without a two-phase (reserve/confirm) ledger, which would
- * need a schema change this job doesn't have. Given the choice, that's the
- * right side to fail on: an occasional duplicate reminder from an
+ * next run retries. A hard process kill inside that window used to be
+ * unrecoverable; migration 060 added the `confirmed_at` column that makes
+ * the ledger two-phase, so the claim is only a RESERVATION until the send
+ * confirms it, and `sweepStaleClaims` at the top of every run deletes
+ * reservations older than two hours that nothing ever confirmed. Given the
+ * choice the bias is unchanged: an occasional duplicate reminder from an
  * overlapping-run race is a minor annoyance, a permanently swallowed one
  * (the bug this replaced) is a missed shift or an unpaid timesheet nobody
  * finds out about.
@@ -52,7 +54,28 @@ import type { PushPayload } from '../domains/notification/types';
 import { DatabaseError } from '../errors';
 import { logger } from '../middlewares/logger';
 
+/**
+ * Shift reminders go out in the local-hour window `[18:00, 22:00)`, not at
+ * 18:00 exactly.
+ *
+ * The job runs hourly, so an equality gate meant one missed run — a deploy, a
+ * pg_cron blip, an API outage across the 18:00 slot — silently dropped that
+ * evening's reminders for every carer in that timezone, with nothing to retry
+ * them: by the next run the hour no longer matched. A window turns a missed
+ * run into a late reminder instead of no reminder.
+ *
+ * Widening is only safe because the shift claim key
+ * (`shift_reminder:<shiftId>`) carries NO date segment, so the ledger row from
+ * the first successful send blocks every later hour in the window. A key with
+ * a date segment would re-send once per hour instead (see
+ * `TIMESHEET_NUDGE_HOUR` below).
+ *
+ * 22:00 is the cutoff because a reminder for tomorrow stops being worth a late
+ * buzz — quiet hours in `canDeliver` may suppress it anyway, and that is the
+ * right side to lose on.
+ */
 const SHIFT_REMINDER_HOUR = 18;
+const SHIFT_REMINDER_WINDOW_END = 22;
 const TIMESHEET_NUDGE_HOUR = 9;
 const TIMESHEET_SUBMITTED_DAYS = 3;
 const APPROVAL_EXPIRING_HOURS = 6;
@@ -119,6 +142,10 @@ export interface ReminderLogClaim {
   claim(userId: string, reminderKey: string): Promise<boolean>;
   /** Undo a claim after a send that turned out not to deliver anything. */
   release(userId: string, reminderKey: string): Promise<void>;
+  /** Promote a claim to a recorded delivery (migration 060). */
+  confirm(userId: string, reminderKey: string): Promise<void>;
+  /** Drop unconfirmed claims left behind by a crashed run. */
+  sweepStaleClaims(): Promise<void>;
 }
 
 export interface UserTimezoneResolver {
@@ -403,6 +430,21 @@ async function claimAndSend(
       return;
     }
     stats.sent++;
+
+    // Phase two (C3): the claim was a reservation until now. Isolated from
+    // the send's try/catch on purpose — the push HAS gone out, so letting a
+    // bookkeeping failure fall into the release path below would guarantee a
+    // duplicate on the next run in order to fix a problem that costs at most
+    // one duplicate after the sweep horizon. Warn and move on.
+    try {
+      await deps.log.confirm(userId, reminderKey);
+    } catch (error) {
+      logger.warn('Failed to confirm a delivered reminder claim', {
+        userId,
+        reminderKey,
+        error,
+      });
+    }
   } catch (error) {
     await deps.log.release(userId, reminderKey);
     throw error;
@@ -437,7 +479,10 @@ async function processShiftReminders(
         continue;
       }
 
-      if (clock.hour !== SHIFT_REMINDER_HOUR) {
+      if (
+        clock.hour < SHIFT_REMINDER_HOUR ||
+        clock.hour >= SHIFT_REMINDER_WINDOW_END
+      ) {
         stats.skipped++;
         continue;
       }
@@ -518,6 +563,10 @@ async function processTimesheetReminders(
             continue;
           }
 
+          // Stays an equality, unlike the shift gate above: this key IS date
+          // segmented, so a window would re-nudge every hour of it rather
+          // than once a day. Changing that is a cadence decision, not a
+          // reliability fix.
           if (clock.hour !== TIMESHEET_NUDGE_HOUR) {
             stats.skipped++;
             continue;
@@ -642,6 +691,12 @@ export async function runReminderJob(
   clock: ReminderJobClock = defaultClock
 ): Promise<ReminderJobResult> {
   const now = clock.now();
+
+  // Before anything is claimed: drop the unconfirmed claims a previous run
+  // died holding, so the reminders they suppress become claimable again on
+  // this pass rather than never (C3). Best-effort in the repository — a
+  // failed sweep must not stop this run from sending anything.
+  await log.sweepStaleClaims();
 
   const [shiftCandidates, timesheetCandidates, approvalCandidates] =
     await Promise.all([

@@ -63,12 +63,26 @@ export const TimeEntrySchema = z.object({
   // Snapshotted at record-creation time from the carer's profile — never
   // derived on read, so the name survives the profile being deleted.
   carer_display_name: z.string(),
+  // The `household_members.id` this row was written under, stamped at insert
+  // by 058's trigger and carrying NO foreign key, so it outlives the
+  // membership row that account deletion cascades away. It is the identity
+  // `carer_id` stops being and `carer_display_name` never was: two departed
+  // carers who shared a name are still two people here.
+  //
+  // Optional AND nullable, both meaning "no bucket key": optional for a row
+  // written before 058, null for a row inserted with no `carer_id` to resolve
+  // a membership from. Consumers fall back to the display name for either.
+  household_member_id: z.uuid().nullable().optional(),
   // Nullable: a carer can clock in on a day with no scheduled shift.
   shift_id: z.uuid().nullable(),
   clock_in_at: z.iso.datetime({ offset: true }).nullable(),
   clock_out_at: z.iso.datetime({ offset: true }).nullable(),
   break_minutes: z.int().min(0),
-  // Frozen at clock-out — must not drift if the shift is later edited.
+  // For worked rows: frozen at clock-out, informational — must not drift if
+  // the shift is later edited. For `cancellation_paid` rows it is the
+  // AUTHORITATIVE paid minutes (may carry a rounding residual, so it can
+  // differ from the row's own span by a minute) — both totals and earnings
+  // read it via `entryMinutes` on each side of the wire.
   scheduled_minutes: z.int().nullable(),
   kind: z.enum(Object.values(TIME_ENTRY_KINDS)),
   note: z.string().nullable(),
@@ -170,6 +184,10 @@ export const TimesheetSchema = z.object({
   // Snapshotted at record-creation time from the carer's profile — never
   // derived on read, so the name survives the profile being deleted.
   carer_display_name: z.string(),
+  // See `TimeEntrySchema.household_member_id` — same 058 stamp, same
+  // optional/nullable meaning. The week screen buckets entries and timesheets
+  // with one key, so it has to be on both or the two sides disagree.
+  household_member_id: z.uuid().nullable().optional(),
   // Monday, in the household's timezone — en-GB weeks start Monday.
   week_start: z.iso.date(),
   total_minutes: z.int(),

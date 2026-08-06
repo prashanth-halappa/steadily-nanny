@@ -23,6 +23,9 @@ const HOUSEHOLD_ID = '11111111-1111-4111-8111-111111111111';
 const PARENT_ID = '22222222-2222-4222-8222-222222222222';
 const AMARA_ID = '33333333-3333-4333-8333-333333333333';
 const BEA_ID = '44444444-4444-4444-8444-444444444444';
+/** `household_members.id` values — 058's per-membership bucket key. */
+const EMMA_A_MEMBER_ID = '55555555-5555-4555-8555-555555555555';
+const EMMA_B_MEMBER_ID = '66666666-6666-4666-8666-666666666666';
 const TIME_ZONE = 'UTC';
 const TODAY = localDateInZone(TIME_ZONE);
 
@@ -194,5 +197,126 @@ describe('NannyLiveStatusCard finished arm', () => {
 
     expect(getByText(/"duration":"8h"/)).toBeTruthy();
     expect(queryByText(/"duration":"14h"/)).toBeNull();
+  });
+
+  // C1 / migration 058 — the mirror of ParentWeekView's case. The
+  // display-name fallback above tells two departed carers apart only while
+  // their names differ; two Emmas merge, and the card reports one Emma's day
+  // as the sum of both. 058's `household_member_id` is stamped at insert, so
+  // it is still on the row after the account is gone.
+  it('two departed carers who SHARED a name are kept apart by their membership ids', () => {
+    mockUseWeekTimeEntries.mockReturnValue({
+      data: [
+        makeEntry({
+          id: 'entry-emma-a',
+          carer_id: null,
+          carer_display_name: 'Emma',
+          household_member_id: EMMA_A_MEMBER_ID,
+          clock_in_at: `${TODAY}T08:00:00.000Z`,
+          clock_out_at: `${TODAY}T16:00:00.000Z`, // last out -> named
+        }),
+        makeEntry({
+          id: 'entry-emma-b',
+          carer_id: null,
+          carer_display_name: 'Emma',
+          household_member_id: EMMA_B_MEMBER_ID,
+          clock_in_at: `${TODAY}T08:00:00.000Z`,
+          clock_out_at: `${TODAY}T14:00:00.000Z`,
+        }),
+      ],
+    });
+
+    const { getByText, queryByText } = render(
+      <NannyLiveStatusCard householdId={HOUSEHOLD_ID} timeZone={TIME_ZONE} />
+    );
+
+    expect(getByText(/"duration":"8h"/)).toBeTruthy();
+    expect(queryByText(/"duration":"14h"/)).toBeNull();
+  });
+
+  // F2 (C1 round 2). The duration was hers; the NAME was not. `nameFor` takes
+  // a user id, and a departed carer has none — so the card read "Someone has
+  // finished — 8h today" while her own display-name snapshot sat unread on
+  // every one of those rows.
+  it('F2: names a departed carer from her snapshot rather than "Someone"', () => {
+    mockUseWeekTimeEntries.mockReturnValue({
+      data: [
+        makeEntry({
+          id: 'entry-emma',
+          carer_id: null,
+          carer_display_name: 'Emma',
+          household_member_id: EMMA_A_MEMBER_ID,
+          clock_in_at: `${TODAY}T08:00:00.000Z`,
+          clock_out_at: `${TODAY}T16:00:00.000Z`,
+        }),
+      ],
+    });
+
+    const { getByText } = render(
+      <NannyLiveStatusCard householdId={HOUSEHOLD_ID} timeZone={TIME_ZONE} />
+    );
+
+    expect(getByText(/"name":"Emma"/)).toBeTruthy();
+    expect(getByText(/"duration":"8h"/)).toBeTruthy();
+  });
+
+  it('one departed carer, two sessions in a day: still summed under her own id', () => {
+    // The other direction — the membership key must not split one person.
+    mockUseWeekTimeEntries.mockReturnValue({
+      data: [
+        makeEntry({
+          id: 'entry-emma-morning',
+          carer_id: null,
+          carer_display_name: 'Emma',
+          household_member_id: EMMA_A_MEMBER_ID,
+          clock_in_at: `${TODAY}T08:00:00.000Z`,
+          clock_out_at: `${TODAY}T12:00:00.000Z`,
+        }),
+        makeEntry({
+          id: 'entry-emma-afternoon',
+          carer_id: null,
+          carer_display_name: 'Emma',
+          household_member_id: EMMA_A_MEMBER_ID,
+          clock_in_at: `${TODAY}T13:00:00.000Z`,
+          clock_out_at: `${TODAY}T17:00:00.000Z`,
+        }),
+      ],
+    });
+
+    const { getByText } = render(
+      <NannyLiveStatusCard householdId={HOUSEHOLD_ID} timeZone={TIME_ZONE} />
+    );
+
+    expect(getByText(/"duration":"8h"/)).toBeTruthy();
+  });
+
+  it('pre-058 rows (no membership id) keep the display-name fallback', () => {
+    // Rows NULLed before 058 ran cannot be backfilled — their memberships
+    // were cascade-deleted. They keep today's behaviour: told apart by name,
+    // merged when the name is shared. Pinned so the fallback is not dropped.
+    mockUseWeekTimeEntries.mockReturnValue({
+      data: [
+        makeEntry({
+          id: 'entry-legacy-1',
+          carer_id: null,
+          carer_display_name: 'Departed Carer 1',
+          clock_in_at: `${TODAY}T08:00:00.000Z`,
+          clock_out_at: `${TODAY}T16:00:00.000Z`,
+        }),
+        makeEntry({
+          id: 'entry-legacy-2',
+          carer_id: null,
+          carer_display_name: 'Departed Carer 2',
+          clock_in_at: `${TODAY}T08:00:00.000Z`,
+          clock_out_at: `${TODAY}T14:00:00.000Z`,
+        }),
+      ],
+    });
+
+    const { getByText } = render(
+      <NannyLiveStatusCard householdId={HOUSEHOLD_ID} timeZone={TIME_ZONE} />
+    );
+
+    expect(getByText(/"duration":"8h"/)).toBeTruthy();
   });
 });

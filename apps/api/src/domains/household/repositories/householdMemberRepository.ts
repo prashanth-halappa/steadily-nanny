@@ -42,6 +42,33 @@ export class HouseholdMemberRepository extends BaseRepository<HouseholdMember> {
     return data as HouseholdMember | null;
   }
 
+  /**
+   * The user's membership row for a household whatever its status — including
+   * `removed`. Used to tell "this invite was redeemed and the membership
+   * exists (or existed)" from "the redeem never landed at all"; the active-only
+   * lookup can't, because a removed member looks identical to a stranger.
+   */
+  async findMembershipAnyStatus(
+    householdId: string,
+    userId: string
+  ): Promise<HouseholdMember | null> {
+    const { data, error } = await supabaseService
+      .from(this.table)
+      .select('*')
+      .eq('household_id', householdId)
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (error) {
+      throw new DatabaseError(
+        'Failed to look up household membership',
+        'DATABASE_ERROR',
+        { details: error.message, householdId, userId }
+      );
+    }
+    return data as HouseholdMember | null;
+  }
+
   /** All active members of a household, oldest-joined first. */
   async listActiveByHousehold(householdId: string): Promise<HouseholdMember[]> {
     const { data, error } = await supabaseService

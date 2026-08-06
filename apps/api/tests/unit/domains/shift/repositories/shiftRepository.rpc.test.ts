@@ -6,6 +6,7 @@
  * `shiftChangeRequestRepository.rpc.test.ts`.
  */
 import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
+import { ExtraShiftAlreadyExistsError } from '../../../../../src/domains/shift/errors/shiftErrors';
 import { DatabaseError } from '../../../../../src/errors';
 import { MockSupabase } from '../../../../helpers/mockSupabase';
 
@@ -87,6 +88,42 @@ describe('ShiftRepository.applyParentEdit', () => {
   it('throws DatabaseError when the RPC errors', async () => {
     mockSupabaseService.rpc.mockImplementation(async () =>
       MockSupabase.createErrorResponse('boom')
+    );
+    const repo = new ShiftRepository();
+
+    await expect(repo.applyParentEdit(editArgs)).rejects.toBeInstanceOf(
+      DatabaseError
+    );
+  });
+
+  // 059's index constrains UPDATEs too: re-timing an extra shift onto another
+  // live extra shift's exact window is refused by the DB. The refusal is
+  // right; a 500 for it is not — the parent gets "something broke" for a
+  // conflict they can see and fix.
+  it('translates 059’s unique violation into a 409, not a 500', async () => {
+    mockSupabaseService.rpc.mockImplementation(async () =>
+      MockSupabase.createErrorResponse(
+        'duplicate key value violates unique constraint "shifts_extra_window_unique"',
+        '23505'
+      )
+    );
+    const repo = new ShiftRepository();
+
+    await expect(repo.applyParentEdit(editArgs)).rejects.toBeInstanceOf(
+      ExtraShiftAlreadyExistsError
+    );
+    await expect(repo.applyParentEdit(editArgs)).rejects.toMatchObject({
+      statusCode: 409,
+      metadata: { reason: 'EXTRA_SHIFT_ALREADY_EXISTS', shiftId: 's1' },
+    });
+  });
+
+  it('leaves a 23505 from a DIFFERENT constraint as a DatabaseError', async () => {
+    mockSupabaseService.rpc.mockImplementation(async () =>
+      MockSupabase.createErrorResponse(
+        'duplicate key value violates unique constraint "shifts_ical_uid_key"',
+        '23505'
+      )
     );
     const repo = new ShiftRepository();
 

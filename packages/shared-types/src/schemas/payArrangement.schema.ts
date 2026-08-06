@@ -46,6 +46,12 @@ export const PayArrangementSchema = z.object({
   // the household's payroll record — same ON DELETE SET NULL discipline as
   // timesheets/time_entries (033_preserve_payroll_on_carer_deletion.sql).
   carer_id: z.uuid().nullable(),
+  // The `household_members.id` this arrangement was agreed under — stamped at
+  // insert by 058's trigger, no foreign key, so it outlives the membership.
+  // See `timesheet.schema.ts`'s `TimeEntrySchema.household_member_id`: same
+  // key, same optional/nullable meaning. Declared here because 058 stamps
+  // this table too, and an undeclared field is a stripped one.
+  household_member_id: z.uuid().nullable().optional(),
   rate_minor: z.int().min(0),
   // Dormant until Tier 2 invoicing — stored now, priced later.
   bill_rate_minor: z.int().min(0).nullable(),

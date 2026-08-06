@@ -297,6 +297,19 @@ describe('ExpenseRepository.listForWeek', () => {
       repo.listForWeek('h1', '2026-08-03', '2026-08-10')
     ).rejects.toThrow();
   });
+
+  // C1 (058) — see the twins in timeEntryRepository/timesheetRepository tests.
+  // `household_member_id` is named nowhere in apps/api/src; it survives to the
+  // wire purely because this read selects every column. The parent's statement
+  // buckets approved expenses by the same carer key as the hours, so a
+  // narrowed select here would quietly drop a departed carer's claims off her
+  // own statement.
+  it('C1: keeps household_member_id on the rows it returns', async () => {
+    withRows([expense({ household_member_id: 'member-1' })]);
+    const repo = new ExpenseRepository();
+    const rows = await repo.listForWeek('h1', '2026-08-03', '2026-08-10');
+    expect(rows[0].household_member_id).toBe('member-1');
+  });
 });
 
 describe('ExpenseRepository.listPending', () => {

@@ -85,6 +85,13 @@ export const ExpenseSchema = z.object({
   // the household's expense record — same ON DELETE SET NULL discipline as
   // pay_arrangements/pto_ledger (033_preserve_payroll_on_carer_deletion.sql).
   carer_id: z.uuid().nullable(),
+  // The `household_members.id` this claim was filed under — stamped at insert
+  // by 058's trigger, no foreign key, so it survives the membership row the
+  // account deletion cascades away. See
+  // `timesheet.schema.ts`'s `TimeEntrySchema.household_member_id`: same key,
+  // same optional/nullable meaning, and the parent's statement filters
+  // approved expenses by exactly the carer key it uses for the hours.
+  household_member_id: z.uuid().nullable().optional(),
   local_date: z.iso.date(),
   kind: z.enum(Object.values(EXPENSE_KINDS)),
   description: z.string().min(1),

@@ -379,3 +379,85 @@ describe('TimeEntryDayRow — overnight next-day marker', () => {
     expect(queryByText(/nextDayMarker/)).toBeNull();
   });
 });
+
+describe('TimeEntryDayRow — the first fragment of a split session (C6)', () => {
+  // A session that crosses household-local Monday midnight is stored as two
+  // rows. The first ends AT midnight and can be seconds long, and its
+  // `updated_at` is the real clock-out hours later — neither is a fault, so
+  // neither "check entry" nor "edited" belongs on it.
+  const fragmentA = {
+    clock_in_at: '2026-08-09T22:59:40.000Z', // Sun 23:59:40 London (BST)
+    clock_out_at: '2026-08-09T23:00:00.000Z', // Mon 00:00 London
+    updated_at: '2026-08-10T01:00:00.000Z', // she really stopped at 02:00
+    local_date: '2026-08-09',
+  };
+
+  it('does not flag a 20-second first fragment as zero-duration', () => {
+    const { queryByTestId } = render(
+      <TimeEntryDayRow
+        date="2026-08-09"
+        entries={[makeEntry(fragmentA)]}
+        nowMs={NOW_MS}
+        timeZone="Europe/London"
+      />
+    );
+
+    expect(queryByTestId('hours-zero-duration-flag')).toBeNull();
+  });
+
+  it('does not mark it as edited', () => {
+    const { queryByText } = render(
+      <TimeEntryDayRow
+        date="2026-08-09"
+        entries={[makeEntry(fragmentA)]}
+        nowMs={NOW_MS}
+        timeZone="Europe/London"
+      />
+    );
+
+    expect(queryByText(/edited/)).toBeNull();
+  });
+
+  it('still marks a genuinely corrected ordinary entry as edited', () => {
+    const { getByText } = render(
+      <TimeEntryDayRow
+        date="2026-08-01"
+        entries={[
+          makeEntry({
+            clock_out_at: '2026-08-01T09:58:00.000Z',
+            updated_at: '2026-08-02T09:12:00.000Z',
+          }),
+        ]}
+        nowMs={NOW_MS}
+        timeZone="Europe/London"
+      />
+    );
+
+    expect(getByText(/edited/)).toBeTruthy();
+  });
+});
+
+describe('TimeEntryDayRow — a zero-paid cancellation fragment (C7)', () => {
+  // The round-once rule can leave the last fragment of a cancelled window
+  // with nothing left to pay. That is bookkeeping over a real hour, not an
+  // accidental clock-in/out, and the parent must not be told to check it.
+  it('does not flag a cancellation fragment whose residual came to 0', () => {
+    const { queryByTestId } = render(
+      <TimeEntryDayRow
+        date="2026-08-01"
+        entries={[
+          makeEntry({
+            kind: 'cancellation_paid',
+            clock_in_at: '2026-08-01T08:00:00.000Z',
+            clock_out_at: '2026-08-01T09:00:00.000Z',
+            scheduled_minutes: 0,
+          }),
+        ]}
+        nowMs={NOW_MS}
+        timeZone="Europe/London"
+      />
+    );
+
+    expect(queryByTestId('hours-zero-duration-flag')).toBeNull();
+  });
+});

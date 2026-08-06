@@ -62,6 +62,42 @@ describe('computeEntryMinutes', () => {
   });
 });
 
+describe('computeEntryMinutes — cancellation pay banks its stored minutes', () => {
+  // The server rounds a cancelled window ONCE and writes the residual onto a
+  // fragment's `scheduled_minutes`, which is then what it pays and what
+  // `total_minutes` carries. Re-rounding the fragment's own span here puts a
+  // different number on the same screen as the API's.
+  it('uses scheduled_minutes over the span for a cancellation fragment', () => {
+    const fragment = makeEntry({
+      kind: 'cancellation_paid',
+      clock_in_at: '2026-08-01T12:00:40.000Z',
+      clock_out_at: '2026-08-01T19:00:20.000Z', // 419m40s -> spans to 420
+      scheduled_minutes: 419,
+      break_minutes: 0,
+    });
+    expect(computeEntryMinutes(fragment, Date.now())).toBe(419);
+  });
+
+  it('falls back to the span for a legacy fragment with no stored minutes', () => {
+    const legacy = makeEntry({
+      kind: 'cancellation_paid',
+      clock_in_at: '2026-08-01T08:00:00.000Z',
+      clock_out_at: '2026-08-01T15:00:00.000Z',
+      scheduled_minutes: null,
+    });
+    expect(computeEntryMinutes(legacy, Date.now())).toBe(420);
+  });
+
+  it('ignores scheduled_minutes on a worked entry — that is the roster, not the clock', () => {
+    const worked = makeEntry({
+      clock_in_at: '2026-08-01T08:00:00.000Z',
+      clock_out_at: '2026-08-01T12:00:00.000Z',
+      scheduled_minutes: 480,
+    });
+    expect(computeEntryMinutes(worked, Date.now())).toBe(240);
+  });
+});
+
 describe('computeWorkedMinutesFromInstants', () => {
   // Mirrors the server's `computeWorkedMinutes`
   // (apps/api/src/domains/timesheet/services/timesheetCommandService.ts) —

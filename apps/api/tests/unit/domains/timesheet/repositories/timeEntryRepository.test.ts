@@ -198,6 +198,27 @@ describe('TimeEntryRepository.listForHouseholdWeek', () => {
       await repo.listForHouseholdWeek('h1', '2026-08-03', '2026-08-10')
     ).toEqual([]);
   });
+
+  // C1 (058). `household_member_id` appears NOWHERE in apps/api/src: it
+  // reaches the parent's screen only because this read is `select('*')` and
+  // nothing in between picks columns. That makes it silently droppable — a
+  // future narrowed select here would leave two departed carers merging on
+  // the client again, with no API test going red. This is that test.
+  it('C1: keeps household_member_id on the rows it returns, and selects every column', async () => {
+    const chain = createMockQueryChain({
+      data: [{ id: 't1', household_id: 'h1', household_member_id: 'member-1' }],
+      error: null,
+    });
+    mockSupabaseService.from.mockImplementation(() => chain);
+    const repo = new TimeEntryRepository();
+    const result = await repo.listForHouseholdWeek(
+      'h1',
+      '2026-08-03',
+      '2026-08-10'
+    );
+    expect(result[0].household_member_id).toBe('member-1');
+    expect(chain.select).toHaveBeenCalledWith('*');
+  });
 });
 
 describe('TimeEntryRepository.listForCarerWeek', () => {

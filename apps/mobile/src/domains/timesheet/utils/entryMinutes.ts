@@ -23,7 +23,9 @@ const MS_PER_MINUTE = 60 * 1000;
  *
  * Split out from `computeEntryMinutes` below so a PREVIEW (no `TimeEntry`
  * yet — e.g. the clock-out sheet's live total before confirming) can use
- * the exact same arithmetic without a real entry object.
+ * the exact same arithmetic without a real entry object. It is the SPAN rule
+ * only: a real entry can also bank stored minutes instead — see the
+ * `cancellation_paid` branch in `computeEntryMinutes`.
  */
 export function computeWorkedMinutesFromInstants(
   clockInAt: string,
@@ -39,9 +41,21 @@ export function computeWorkedMinutesFromInstants(
  * Minutes worked for one entry. A finished entry (`clock_out_at` set) uses
  * its real clock-out; a still-running entry uses `nowMs` so "today so far"
  * is visible before the shift ends.
+ *
+ * `cancellation_paid` is the one kind whose stored `scheduled_minutes` wins:
+ * the server rounds a cancelled window ONCE and writes the residual onto the
+ * last fragment, so re-rounding that fragment's own span here would show a
+ * total a minute off the API's on the same screen. Twin of `entryMinutes` in
+ * apps/api/src/domains/timesheet/utils/workedMinutes.ts — if either side's
+ * rule changes, the other must change with it by hand. Every other kind
+ * ignores `scheduled_minutes`: on a worked row it is the SHIFT's booking, i.e.
+ * what she was rostered for, not what she did.
  */
 export function computeEntryMinutes(entry: TimeEntry, nowMs: number): number {
   if (!entry.clock_in_at) return 0;
+  if (entry.kind === 'cancellation_paid' && entry.scheduled_minutes !== null) {
+    return entry.scheduled_minutes;
+  }
   const endMs = entry.clock_out_at
     ? new Date(entry.clock_out_at).getTime()
     : nowMs;

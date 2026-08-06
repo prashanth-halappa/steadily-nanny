@@ -76,6 +76,23 @@ describe('TimesheetRepository.listForHousehold', () => {
     const repo = new TimesheetRepository();
     expect(await repo.listForHousehold('h1')).toEqual([]);
   });
+
+  // C1 (058) — see the twin in timeEntryRepository.test.ts. The column has no
+  // named mention anywhere in apps/api/src; `select('*')` is the entire reason
+  // the parent's week screen can tell two departed carers apart.
+  it('C1: keeps household_member_id on the rows it returns, and selects every column', async () => {
+    const chain = createMockQueryChain({
+      data: [
+        { id: 'ts1', household_id: 'h1', household_member_id: 'member-1' },
+      ],
+      error: null,
+    });
+    mockSupabaseService.from.mockImplementation(() => chain);
+    const repo = new TimesheetRepository();
+    const rows = await repo.listForHousehold('h1');
+    expect(rows[0].household_member_id).toBe('member-1');
+    expect(chain.select).toHaveBeenCalledWith('*');
+  });
 });
 
 // =============================================================================

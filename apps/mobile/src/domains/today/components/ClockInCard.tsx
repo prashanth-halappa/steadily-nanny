@@ -76,7 +76,7 @@ export function ClockInCard({ householdId, timeZone }: ClockInCardProps) {
   const { t: tErrors } = useTranslation('errors');
   const currentUserId = useAuthStore(s => s.user?.id ?? null);
   const running = useRunningTimeEntry();
-  const clockIn = useClockIn();
+  const clockIn = useClockIn(timeZone);
   const clockOut = useClockOut();
 
   const entry = running.data ?? null;

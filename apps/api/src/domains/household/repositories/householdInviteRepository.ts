@@ -71,10 +71,17 @@ export class HouseholdInviteRepository extends BaseRepository<HouseholdInvite> {
   /**
    * Undo a claim whose membership insert failed, so a transient database error
    * doesn't burn a single-use code and lock the invitee out for good. CAS'd on
-   * BOTH the accepted status and `accepted_by`, so it can only ever release the
-   * claim this caller won — never the one a different racer legitimately took.
+   * the accepted status, `accepted_by` AND `accepted_at`: the caller passes the
+   * claim it actually OBSERVED, so once anyone re-claims the invite —
+   * including the same user on a retry — `accepted_at` has moved and a stale
+   * caller matches zero rows. Without that third predicate a release can free a
+   * claim taken seconds ago and put a consumed single-use code back in play.
    */
-  async releaseClaim(id: string, acceptedBy: string): Promise<void> {
+  async releaseClaim(
+    id: string,
+    acceptedBy: string,
+    acceptedAt: string
+  ): Promise<void> {
     const { error } = await supabaseService
       .from(this.table)
       .update({
@@ -84,7 +91,8 @@ export class HouseholdInviteRepository extends BaseRepository<HouseholdInvite> {
       })
       .eq('id', id)
       .eq('status', HOUSEHOLD_INVITE_STATUSES.ACCEPTED)
-      .eq('accepted_by', acceptedBy);
+      .eq('accepted_by', acceptedBy)
+      .eq('accepted_at', acceptedAt);
 
     if (error) {
       throw new DatabaseError(

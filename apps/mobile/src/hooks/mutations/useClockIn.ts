@@ -55,7 +55,11 @@ function isAlreadyClockedInError(error: unknown): boolean {
   );
 }
 
-export function useClockIn() {
+/**
+ * `householdTimezone` (the household's IANA zone — GOLDEN-FIXES #21) only
+ * shapes the optimistic row; the server resolves the zone for the real one.
+ */
+export function useClockIn(householdTimezone?: string) {
   const queryClient = useQueryClient();
   const { t } = useTranslation('errors');
   const isOnline = useIsOnline();
@@ -73,7 +77,7 @@ export function useClockIn() {
       );
       queryClient.setQueryData(
         queryKeys.timeEntry.running(),
-        buildOptimisticRunningEntry(input)
+        buildOptimisticRunningEntry(input, householdTimezone)
       );
       if (!isOnline) {
         showErrorToast(

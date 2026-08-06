@@ -1,0 +1,54 @@
+-- 059 One live extra shift per (household, carer, window)
+--
+-- `insertExtraShift` (shiftChangeRequestCommandService) dedupes by reading
+-- `findExtraShiftInWindow` and inserting when it finds nothing. That is
+-- check-then-act: two SIMULTANEOUS creates both read empty and both insert.
+-- It happens two ways in production — a double-tapped "Add extra shift", and
+-- a co-parent approval re-drive racing the attempt it is repairing (the shift
+-- row commits first, so a failure in the three writes that follow leaves the
+-- shift behind and the approval is retried). The result is two identical
+-- bookings for one window, which the family sees, the carer sees, and payroll
+-- eventually pays twice for. The `ponytail:` comment on
+-- `shiftRepository.findExtraShiftInWindow` names this index as the fix.
+--
+-- THE IDENTITY: (household_id, carer_id, starts_at, ends_at) — the exact
+-- natural key the lookup already queries on, so the database refuses precisely
+-- the rows the app-side pre-check was trying to refuse, and the app can adopt
+-- the winner on 23505 instead of erroring. Product decision: EXACT duplicates
+-- are collapsed; near-duplicates (window shifted by a minute, different carer)
+-- are genuinely different proposals and stay untouched.
+--
+-- THE NULL TRAP: `carer_id` is nullable — an unassigned extra shift is a real,
+-- supported shape (`findExtraShiftInWindow` has an `is('carer_id', null)`
+-- branch for it). In a plain unique index Postgres treats NULLs as DISTINCT,
+-- so two unassigned duplicates would dedupe against nothing and the hole would
+-- stay wide open for exactly the shape the pre-check does handle.
+-- `nulls not distinct` closes it; PG15 supports it and `supabase/config.toml`
+-- pins `major_version = 15`. Same reasoning, same precedent, as 053.
+--
+-- THE PREDICATE mirrors `findExtraShiftInWindow`'s filters character for
+-- character. `kind = 'extra'` keeps materialised pattern shifts
+-- (`kind = 'regular'`) out of it — those legitimately repeat a window across
+-- re-materialisation and catching them would break the schedule horizon job.
+-- `status <> 'cancelled'` keeps replacements out — proposing a new shift for a
+-- window that was called off is a new shift, not a duplicate of it.
+--
+-- WHAT THIS DOES NOT CLOSE: near-duplicate proposals (08:00-16:00 vs
+-- 08:00-16:01) are still two rows. No index can tell those apart from two
+-- deliberate back-to-back bookings; that is a product judgement and the user
+-- chose to refuse exact duplicates only.
+--
+-- BEFORE APPLYING TO A LIVE DATABASE: `create unique index` FAILS outright if
+-- the table already holds duplicate rows under this key. Check first, and
+-- resolve (cancel the surplus rows) before running:
+--
+--   select household_id, carer_id, starts_at, ends_at, count(*), array_agg(id)
+--     from public.shifts
+--    where kind = 'extra' and status <> 'cancelled'
+--    group by 1, 2, 3, 4
+--   having count(*) > 1;
+
+create unique index if not exists shifts_extra_window_unique
+  on public.shifts (household_id, carer_id, starts_at, ends_at)
+  nulls not distinct
+  where kind = 'extra' and status <> 'cancelled';

@@ -49,6 +49,7 @@ import { PayArrangementRepository } from '../../pay/repositories/payArrangementR
 import { localDateOf } from '../../timesheet/utils/weekStart';
 import {
   ChangeRequestNotPendingError,
+  ExtraShiftAlreadyExistsError,
   InvalidChangeRequestKindForRoleError,
   NotTheChangeRequestRequesterError,
   NotTheChangeRequestResponderError,
@@ -583,19 +584,51 @@ export class ShiftChangeRequestCommandService {
       return existing;
     }
 
-    const shift = await this.shiftRepo.createShift({
-      household_id: householdId,
-      carer_id: input.carer_id ?? null,
-      starts_at: input.starts_at,
-      ends_at: input.ends_at,
-      timezone: input.timezone,
-      kind: SHIFT_KINDS.EXTRA,
-      status: SHIFT_STATUSES.PENDING,
-      origin: SHIFT_ORIGINS.PARENT_PROPOSED,
-      note: input.note ?? null,
-      reason: input.reason ?? null,
-      created_by: createdBy,
-    });
+    let shift: Shift;
+    try {
+      shift = await this.shiftRepo.createShift({
+        household_id: householdId,
+        carer_id: input.carer_id ?? null,
+        starts_at: input.starts_at,
+        ends_at: input.ends_at,
+        timezone: input.timezone,
+        kind: SHIFT_KINDS.EXTRA,
+        status: SHIFT_STATUSES.PENDING,
+        origin: SHIFT_ORIGINS.PARENT_PROPOSED,
+        note: input.note ?? null,
+        reason: input.reason ?? null,
+        created_by: createdBy,
+      });
+    } catch (error) {
+      if (!(error instanceof ExtraShiftAlreadyExistsError)) {
+        throw error;
+      }
+      // The pre-check above is check-then-act, so a SIMULTANEOUS create can
+      // still slip between the read and the insert — a double-tapped button,
+      // or an approval re-drive racing the attempt it is repairing. Migration
+      // 059's unique index catches that, and the answer the caller wants is
+      // the shift that did get made, not a 409 for a booking that exists.
+      // ponytail: if the winner is CANCELLED between the 23505 and this
+      // re-read, the loser gets a 409 for a booking that could now legitimately
+      // be made. Degrades safely (never a duplicate) and a retry succeeds;
+      // upgrade path is a single retry loop if support tickets ever show it.
+      const winner = await this.shiftRepo.findExtraShiftInWindow(
+        householdId,
+        input.carer_id ?? null,
+        input.starts_at,
+        input.ends_at
+      );
+      if (!winner) {
+        // The index says it exists, the lookup says it does not. Adopting
+        // nothing would return a shift nobody can see; surface the conflict.
+        throw error;
+      }
+      // The children and the day-thread event belong to the winner's own call.
+      // Re-writing them here would double the child rows and post the shift to
+      // the thread twice; a winner that crashed BEFORE writing them is repaired
+      // by the same approval re-drive that repairs it today.
+      return winner;
+    }
 
     if (input.child_ids?.length) {
       await this.shiftRepo.insertChildren(shift.id, input.child_ids);

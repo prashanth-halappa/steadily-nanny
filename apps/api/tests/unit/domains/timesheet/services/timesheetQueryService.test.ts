@@ -1,5 +1,18 @@
 import { describe, expect, it, mock } from 'bun:test';
 import type { WeekEarnings } from '@steadily-nanny/shared-types/schemas/timesheet.schema';
+
+// The house logger, stubbed so the degraded-snapshot path's `logger.error`
+// is assertable. Registered before the service is imported below.
+const mockLogger = {
+  info: mock(() => undefined),
+  warn: mock(() => undefined),
+  error: mock(() => undefined),
+  debug: mock(() => undefined),
+};
+mock.module('../../../../../src/middlewares/logger', () => ({
+  logger: mockLogger,
+}));
+
 import {
   TimeEntryNotFoundError,
   TimesheetNotFoundError,
@@ -545,6 +558,32 @@ describe('TimesheetQueryService.getWeekWithEarnings — the legacy arm', () => {
       reason: 'unreadable_snapshot',
     });
     expect(earnings.computeForWeek).not.toHaveBeenCalled();
+  });
+
+  it('LOGS the corrupt snapshot — a silently degraded week is one nobody fixes', async () => {
+    // hours-only is the right thing to render, but it is also indistinguishable
+    // from a legacy approval on screen. Without a log, a snapshot that stopped
+    // parsing (a schema change, a bad write) degrades every affected week
+    // quietly and forever. `logger.error` reaches Sentry via the transport.
+    const svc = new TimesheetQueryService(
+      makeTimeEntryRepo(),
+      makeTimesheetRepo({
+        findById: mock(async () => ({
+          ...approvedTimesheet,
+          earnings: { status: 'ok', gross_minor: 'lots' },
+        })),
+      }),
+      makeMemberRepo(),
+      makeHouseholdRepo(),
+      makeEarnings()
+    );
+
+    await svc.getWeekWithEarnings('u1', 'ts1');
+
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ timesheetId: 'ts1' })
+    );
   });
 
   it('treats a non-object snapshot (string, number) as unreadable too', async () => {
