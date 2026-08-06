@@ -203,7 +203,12 @@ export function hydrateDraftPattern(
   const dayTimes: Record<number, { start: string; end: string }> = {};
   const dayChildren: Record<number, string[]> = {};
   for (const day of pattern.days) {
-    dayTimes[day.weekday] = { start: day.start_time, end: day.end_time };
+    // Postgres `time` serialises as HH:MM:SS; the wizard renders these
+    // verbatim, and no user-visible time ever shows seconds.
+    dayTimes[day.weekday] = {
+      start: day.start_time.slice(0, 5),
+      end: day.end_time.slice(0, 5),
+    };
     dayChildren[day.weekday] = day.children.map(child => child.child_id);
   }
   return {

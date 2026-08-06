@@ -138,6 +138,25 @@ describe('hydrateDraftPattern', () => {
     expect(hydrated.intervalWeeks).toBe(1);
   });
 
+  it('truncates Postgres HH:MM:SS times to HH:MM (the wizard renders these verbatim — no user-visible seconds)', () => {
+    const hydrated = hydrateDraftPattern({
+      carer_id: 'carer-1',
+      rrule: 'FREQ=WEEKLY;INTERVAL=1',
+      days: [
+        {
+          weekday: 2,
+          start_time: '09:00:00',
+          end_time: '17:00:00',
+          children: [],
+        },
+      ],
+    });
+
+    expect(hydrated.dayTimes).toEqual({
+      2: { start: '09:00', end: '17:00' },
+    });
+  });
+
   it('carries a null carer_id through unchanged (a draft may not have a carer picked yet)', () => {
     const hydrated = hydrateDraftPattern({
       carer_id: null,
