@@ -36,11 +36,14 @@ let engineEffectiveOn: (
 
 /**
  * Minimal PostgREST emulator — adapted from `payArrangementRepository.test.ts`
- * (which is where this pattern comes from), with ONE deliberate difference.
+ * (which is where this pattern comes from).
  *
- * THE DIFFERENCE, and why it matters here: that file's `order` compares values
- * as STRINGS. For `valid_from` (a `date` column, always `YYYY-MM-DD`) that is
- * indistinguishable from a real comparison. For `created_at` it is NOT —
+ * WHY BOTH COPIES COMPARE INSTANTS: the sibling file's `order` originally
+ * compared values as STRINGS — writing these vectors is what exposed it, and
+ * it has since been fixed there too (`payArrangementRepository.test.ts:63-79`),
+ * so the two emulators now agree. Do not "restore" a string compare in either.
+ * For `valid_from` (a `date` column, always `YYYY-MM-DD`) the two are
+ * indistinguishable. For `created_at` they are NOT —
  * `timestamptz` is ordered by INSTANT in Postgres, and the same instant has
  * two legal ISO-8601 spellings (`+00:00` from PostgREST, `.000Z` from
  * `toISOString()`; GOLDEN-FIXES #25). A string sort therefore models a
