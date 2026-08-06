@@ -68,15 +68,11 @@ const UserProfileSchema = z.object({
   additional_data: z.record(z.string(), z.unknown()).nullable().optional(),
 });
 
-// API-CONTRACT: GET /v1/users/me and PATCH return `{ user: UserProfile }`
-// inside the success envelope's `data`.
-const UserEnvelopeSchema = z.object({ user: UserProfileSchema });
-
-// API-CONTRACT: POST /v1/users/profile returns the `UserProfileResponse` DTO
-// (`{ message, user }`) inside the success envelope's `data`.
-const UserProfileResponseSchema = z.object({
-  message: z.string(),
-  user: UserProfileSchema,
+// API-CONTRACT: GET /v1/users/me, POST /v1/users/profile, and PATCH return
+// `{ user: UserProfile | null }` inside the success envelope's `data`.
+// (`message` lives on the outer envelope, not inside `data`.)
+const UserEnvelopeSchema = z.object({
+  user: UserProfileSchema.nullable(),
 });
 
 // API-CONTRACT: DELETE /v1/users returns the `UserDeleteAccountResponse` DTO
@@ -123,7 +119,7 @@ export const userApi = {
   /**
    * Fetch the authenticated user's profile.
    */
-  getProfile: async (): Promise<UserProfile> => {
+  getProfile: async (): Promise<UserProfile | null> => {
     const response = await apiClient.get(userEndpoints.getProfile);
     // API-CONTRACT: GET /users/me returns `{ user }` inside data.data.
     const parsed = UserEnvelopeSchema.safeParse(response.data.data);
@@ -143,9 +139,12 @@ export const userApi = {
       userEndpoints.upsertProfile,
       validated.data
     );
-    // API-CONTRACT: data.data is the UserProfileResponse DTO `{ message, user }`.
-    const parsed = UserProfileResponseSchema.safeParse(response.data.data);
+    // API-CONTRACT: data.data is `{ user }` — same envelope as GET /users/me.
+    const parsed = UserEnvelopeSchema.safeParse(response.data.data);
     if (!parsed.success) throw parsed.error;
+    if (!parsed.data.user) {
+      throw new Error('Profile upsert succeeded but returned no user');
+    }
     return parsed.data.user;
   },
 

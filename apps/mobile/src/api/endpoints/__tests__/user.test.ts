@@ -88,6 +88,16 @@ describe('userApi', () => {
       expect(result.timezone).toBeNull();
     });
 
+    it('returns null when the user has no profile row yet', async () => {
+      (apiClient.get as any).mockResolvedValue({
+        data: { data: { user: null } },
+      });
+
+      const result = await userApi.getProfile();
+
+      expect(result).toBeNull();
+    });
+
     it('throws when the response fails validation', async () => {
       (apiClient.get as any).mockResolvedValue({
         data: { data: { user: { name: 'missing user_id' } } },
@@ -105,20 +115,17 @@ describe('userApi', () => {
 
   describe('upsertProfile', () => {
     const req = { name: 'Sam', city: 'Oslo', country: 'Norway' };
-    const validResponse = {
-      message: 'ok',
-      user: {
-        user_id: 'user-9',
-        name: 'Sam',
-        city: 'Oslo',
-        country: 'Norway',
-        additional_data: null,
-      },
+    const validUser = {
+      user_id: 'user-9',
+      name: 'Sam',
+      city: 'Oslo',
+      country: 'Norway',
+      additional_data: null,
     };
 
     it('POSTs /v1/users/profile and returns the upserted user', async () => {
       (apiClient.post as any).mockResolvedValue({
-        data: { data: validResponse },
+        data: { data: { user: validUser } },
       });
 
       const result = await userApi.upsertProfile(req);
@@ -132,9 +139,8 @@ describe('userApi', () => {
       (apiClient.post as any).mockResolvedValue({
         data: {
           data: {
-            message: 'ok',
             user: {
-              ...validResponse.user,
+              ...validUser,
               timezone: 'America/Los_Angeles',
             },
           },
@@ -161,7 +167,15 @@ describe('userApi', () => {
 
     it('throws when the response fails validation', async () => {
       (apiClient.post as any).mockResolvedValue({
-        data: { data: { message: 'ok', user: { name: 'missing user_id' } } },
+        data: { data: { user: { name: 'missing user_id' } } },
+      });
+
+      await expect(userApi.upsertProfile(req)).rejects.toThrow();
+    });
+
+    it('throws when upsert returns a null user', async () => {
+      (apiClient.post as any).mockResolvedValue({
+        data: { data: { user: null } },
       });
 
       await expect(userApi.upsertProfile(req)).rejects.toThrow();
@@ -180,7 +194,7 @@ describe('userApi', () => {
       },
     };
 
-    it('PATCHes /v1/users/me with only preferred_locale and returns the updated user (different envelope shape than upsertProfile)', async () => {
+    it('PATCHes /v1/users/me with only preferred_locale and returns the updated user', async () => {
       (apiClient.patch as any).mockResolvedValue({
         data: { data: validResponse },
       });

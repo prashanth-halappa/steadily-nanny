@@ -27,6 +27,8 @@ describe('ChildrenScreen (wizard)', () => {
 
   it('still auto-creates a household on first entry', () => {
     expect(source).toContain('useCreateHousehold');
+    expect(source).toContain('useUpsertProfile');
+    expect(source).toContain('buildBootstrapProfileRequest');
   });
 
   it('still gates Continue on at least one child and advances to INVITE', () => {

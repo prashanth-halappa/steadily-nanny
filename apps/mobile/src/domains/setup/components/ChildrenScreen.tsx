@@ -15,22 +15,29 @@ import { ChildrenManager } from '@/src/domains/setup/components/ChildrenManager'
 import { SetupScreenShell } from '@/src/domains/setup/components/SetupScreenShell';
 import { getSetupStepRoute, SETUP_STEPS } from '@/src/domains/setup/types';
 import { useCreateHousehold } from '@/src/hooks/mutations/useCreateHousehold';
+import { useUpsertProfile } from '@/src/hooks/mutations/useUpsertProfile';
 import { useChildren } from '@/src/hooks/queries/useChildren';
 import { useHouseholds } from '@/src/hooks/queries/useHouseholds';
+import { useUserProfile } from '@/src/hooks/queries/useUserProfile';
+import { buildBootstrapProfileRequest } from '@/src/lib/bootstrapUserProfile';
+import { useAuthStore } from '@/src/store/auth';
 import { useSetupProgressStore } from '@/src/store/setupProgress';
 
 const DEFAULT_HOUSEHOLD_NAME = 'Our household';
 
 export function ChildrenScreen() {
   const router = useRouter();
+  const session = useAuthStore(s => s.session);
   const setCurrentStep = useSetupProgressStore(s => s.setCurrentStep);
   const cachedHouseholdId = useSetupProgressStore(s => s.householdId);
 
   const setHouseholdId = useSetupProgressStore(s => s.setHouseholdId);
   const households = useHouseholds();
+  const profile = useUserProfile();
+  const upsertProfile = useUpsertProfile();
   const createHousehold = useCreateHousehold();
-  // Guard so an in-flight create isn't fired twice while the mutation settles.
-  const hasRequestedHouseholdCreate = useRef(false);
+  // Guard so bootstrap runs at most once per mount (reset only on full failure).
+  const bootstrapStartedRef = useRef(false);
 
   const householdId = households.data?.[0]?.id ?? cachedHouseholdId ?? null;
 
@@ -38,10 +45,33 @@ export function ChildrenScreen() {
     if (!households.isSuccess) return;
 
     if (households.data.length === 0) {
-      if (!hasRequestedHouseholdCreate.current) {
-        hasRequestedHouseholdCreate.current = true;
-        createHousehold.mutate({ name: DEFAULT_HOUSEHOLD_NAME });
+      const authUser = session?.user;
+      if (!authUser) return;
+      if (
+        bootstrapStartedRef.current ||
+        createHousehold.isPending ||
+        upsertProfile.isPending
+      ) {
+        return;
       }
+      if (profile.isPending) return;
+
+      const profileExists = Boolean(profile.data?.user_id);
+
+      bootstrapStartedRef.current = true;
+
+      void (async () => {
+        try {
+          if (!profileExists) {
+            await upsertProfile.mutateAsync(
+              buildBootstrapProfileRequest(authUser)
+            );
+          }
+          await createHousehold.mutateAsync({ name: DEFAULT_HOUSEHOLD_NAME });
+        } catch {
+          bootstrapStartedRef.current = false;
+        }
+      })();
       return;
     }
 
@@ -58,9 +88,15 @@ export function ChildrenScreen() {
   }, [
     households.isSuccess,
     households.data,
-    createHousehold,
     cachedHouseholdId,
     setHouseholdId,
+    session?.user,
+    profile.isPending,
+    profile.data,
+    createHousehold.isPending,
+    createHousehold.mutateAsync,
+    upsertProfile.isPending,
+    upsertProfile.mutateAsync,
   ]);
 
   const children = useChildren(householdId);
