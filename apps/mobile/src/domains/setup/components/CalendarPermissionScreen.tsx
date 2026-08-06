@@ -12,6 +12,7 @@
 import { type Href, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { illustrations } from '@/assets/illustrations';
 import {
   enableDefaultCalendarSync,
   requestCalendarPermissions,
@@ -61,6 +62,7 @@ export function CalendarPermissionScreen() {
 
   return (
     <SetupScreenShell
+      heroImage={illustrations.onboardingCalendar}
       testID="calendar-permission-screen"
       progress={getStepProgress(role, SETUP_STEPS.CALENDAR_PERMISSION)}
       title={t('onboarding.calendar.title')}

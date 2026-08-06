@@ -5,6 +5,8 @@
 export const illustrations = {
   welcomeHero: require('./welcome-hero.png'),
   onboardingRole: require('./onboarding-role.png'),
+  onboardingNotifications: require('./onboarding-notifications.png'),
+  onboardingCalendar: require('./onboarding-calendar.png'),
   emptySchedule: require('./empty-schedule.png'),
   emptyInbox: require('./empty-inbox.png'),
   emptyHours: require('./empty-hours.png'),

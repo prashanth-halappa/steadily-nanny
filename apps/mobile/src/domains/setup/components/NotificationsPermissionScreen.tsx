@@ -17,6 +17,7 @@
 import { type Href, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { illustrations } from '@/assets/illustrations';
 import {
   getNextSetupStep,
   getSetupStepRoute,
@@ -67,6 +68,7 @@ export function NotificationsPermissionScreen() {
 
   return (
     <SetupScreenShell
+      heroImage={illustrations.onboardingNotifications}
       testID="notifications-permission-screen"
       progress={getStepProgress(role, SETUP_STEPS.NOTIFICATIONS_PERMISSION)}
       title={t('onboarding.notifications.title')}
