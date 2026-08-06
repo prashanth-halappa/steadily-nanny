@@ -71,3 +71,6 @@ supabase/.temp/
 # Maestro `takeScreenshot` writes <name>.png into the cwd it was run from.
 # apps/mobile has no legitimate root-level images (they live in assets/).
 apps/mobile/*.png
+
+# Design staging area — icon concepts, not shipped assets (audit F-B11-10)
+apps/mobile/assets/_staging/

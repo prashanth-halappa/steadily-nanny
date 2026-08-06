@@ -15,8 +15,10 @@ interface FakeRow {
 }
 
 let ExpenseRepository: any;
+let ExpenseValidationError: any;
 let mockSupabaseService: any;
 let lastCalls: { method: string; args: unknown[] }[] = [];
+let rpcCalls: { name: string; args: Record<string, unknown> }[] = [];
 
 function createFakeQuery(rows: FakeRow[], error: unknown = null): any {
   const eqFilters: [string, unknown][] = [];
@@ -24,6 +26,7 @@ function createFakeQuery(rows: FakeRow[], error: unknown = null): any {
   const ltFilters: [string, unknown][] = [];
   const orderKeys: [string, boolean][] = [];
   let updatePatch: Record<string, unknown> | null = null;
+  let insertRow: Record<string, unknown> | null = null;
   let isDelete = false;
 
   const record = (method: string, ...args: unknown[]) => {
@@ -77,6 +80,15 @@ function createFakeQuery(rows: FakeRow[], error: unknown = null): any {
       record('update', patch);
       updatePatch = patch;
       return chain;
+    }),
+    insert: mock((row: Record<string, unknown>) => {
+      record('insert', row);
+      insertRow = row;
+      return chain;
+    }),
+    single: mock(async () => {
+      if (error) return { data: null, error };
+      return { data: insertRow ?? resolveRows()[0] ?? null, error: null };
     }),
     delete: mock(() => {
       record('delete');
@@ -132,9 +144,93 @@ function withRows(rows: FakeRow[], error: unknown = null): void {
   );
 }
 
+/**
+ * A STATEFUL stand-in for `public.review_pending_expense` (migration 051) —
+ * it really evaluates the timesheet lock and the `status = 'pending'` CAS
+ * against in-memory rows, for the same reason the PostgREST chain above does:
+ * a recording-only fake would pass even if the repository forgot to pass the
+ * week lock at all, which is exactly the F-B4-1 defect.
+ */
+function withRpc(expenses: FakeRow[], timesheets: FakeRow[] = []): void {
+  mockSupabaseService.rpc.mockImplementation(
+    async (name: string, args: Record<string, unknown>) => {
+      rpcCalls.push({ name, args });
+      if (name !== 'review_pending_expense') {
+        return { data: null, error: { message: `no such function: ${name}` } };
+      }
+
+      let timesheet: FakeRow | undefined;
+      if (args.p_week_start != null && args.p_carer_id != null) {
+        timesheet = timesheets.find(
+          row =>
+            row.household_id === args.p_household_id &&
+            row.carer_id === args.p_carer_id &&
+            row.week_start === args.p_week_start
+        );
+        if (timesheet?.status === 'approved') {
+          return {
+            data: {
+              outcome: 'week_locked',
+              week_start: args.p_week_start,
+              timesheet_status: timesheet.status,
+            },
+            error: null,
+          };
+        }
+      }
+
+      const row = expenses.find(
+        candidate =>
+          candidate.id === args.p_expense_id &&
+          candidate.household_id === args.p_household_id &&
+          candidate.status === 'pending'
+      );
+      if (!row) {
+        return { data: { outcome: 'not_pending' }, error: null };
+      }
+      Object.assign(row, {
+        status: args.p_status,
+        reviewed_by: args.p_reviewed_by,
+        reviewed_at: args.p_reviewed_at,
+        review_note: args.p_review_note,
+        amount_minor: args.p_amount_minor ?? row.amount_minor,
+      });
+      if (timesheet) {
+        timesheet.updated_at = 'touched-by-review';
+      }
+      return {
+        data: { outcome: 'reviewed', expense: { ...row } },
+        error: null,
+      };
+    }
+  );
+}
+
+function timesheet(overrides: FakeRow = {}): FakeRow {
+  return {
+    id: 'ts-1',
+    household_id: 'h1',
+    carer_id: 'carer-1',
+    week_start: '2026-08-03',
+    status: 'submitted',
+    updated_at: '2026-08-04T09:00:00.000Z',
+    ...overrides,
+  };
+}
+
+const REVIEW_PATCH = {
+  status: 'approved' as const,
+  reviewed_by: 'parent-1',
+  reviewed_at: '2026-08-04T10:00:00.000Z',
+  review_note: null,
+};
+
 beforeAll(async () => {
   mock.module('../../../../../src/config/supabase', () => {
-    const obj = { from: mock(() => createFakeQuery([])) };
+    const obj = {
+      from: mock(() => createFakeQuery([])),
+      rpc: mock(async () => ({ data: null, error: null })),
+    };
     return { supabase: obj, supabaseService: obj };
   });
 
@@ -143,13 +239,18 @@ beforeAll(async () => {
       '../../../../../src/domains/pay/repositories/expenseRepository'
     )
   ).ExpenseRepository;
+  ExpenseValidationError = (
+    await import('../../../../../src/domains/pay/errors/payErrors')
+  ).ExpenseValidationError;
   mockSupabaseService = (await import('../../../../../src/config/supabase'))
     .supabaseService;
 });
 
 beforeEach(() => {
   lastCalls = [];
+  rpcCalls = [];
   mockSupabaseService.from.mockClear?.();
+  mockSupabaseService.rpc.mockClear?.();
 });
 
 describe('ExpenseRepository.listForWeek', () => {
@@ -325,20 +426,16 @@ describe('ExpenseRepository.deleteOwnedPending', () => {
 
 describe('ExpenseRepository.reviewPending', () => {
   it('applies the review patch when the row is pending in this household', async () => {
-    withRows([expense({ id: 'exp-1', household_id: 'h1', status: 'pending' })]);
+    withRpc([expense({ id: 'exp-1', household_id: 'h1', status: 'pending' })]);
     const repo = new ExpenseRepository();
-    const reviewed = await repo.reviewPending('exp-1', 'h1', {
-      status: 'approved',
-      reviewed_by: 'parent-1',
-      reviewed_at: '2026-08-04T10:00:00.000Z',
-      review_note: null,
-    });
-    expect(reviewed?.status).toBe('approved');
-    expect(reviewed?.reviewed_by).toBe('parent-1');
+    const result = await repo.reviewPending('exp-1', 'h1', REVIEW_PATCH, null);
+    expect(result.outcome).toBe('reviewed');
+    expect(result.expense.status).toBe('approved');
+    expect(result.expense.reviewed_by).toBe('parent-1');
   });
 
   it('freezes amount_minor on a mileage approval in the SAME update', async () => {
-    withRows([
+    withRpc([
       expense({
         id: 'exp-mileage',
         household_id: 'h1',
@@ -349,40 +446,187 @@ describe('ExpenseRepository.reviewPending', () => {
       }),
     ]);
     const repo = new ExpenseRepository();
-    const reviewed = await repo.reviewPending('exp-mileage', 'h1', {
-      status: 'approved',
-      reviewed_by: 'parent-1',
-      reviewed_at: '2026-08-04T10:00:00.000Z',
-      review_note: null,
-      amount_minor: 554,
-    });
-    expect(reviewed?.amount_minor).toBe(554);
-    expect(reviewed?.status).toBe('approved');
+    const result = await repo.reviewPending(
+      'exp-mileage',
+      'h1',
+      { ...REVIEW_PATCH, amount_minor: 554 },
+      null
+    );
+    expect(result.expense.amount_minor).toBe(554);
+    expect(result.expense.status).toBe('approved');
   });
 
-  it('returns null when the row is already reviewed (lost race / re-review)', async () => {
-    withRows([
-      expense({ id: 'exp-1', household_id: 'h1', status: 'approved' }),
-    ]);
+  it('leaves amount_minor alone when the patch carries none', async () => {
+    withRpc([expense({ id: 'exp-1', household_id: 'h1', amount_minor: 1200 })]);
     const repo = new ExpenseRepository();
-    const reviewed = await repo.reviewPending('exp-1', 'h1', {
-      status: 'rejected',
-      reviewed_by: 'parent-1',
-      reviewed_at: '2026-08-04T10:00:00.000Z',
-      review_note: null,
-    });
-    expect(reviewed).toBeNull();
+    const result = await repo.reviewPending(
+      'exp-1',
+      'h1',
+      { ...REVIEW_PATCH, status: 'rejected' },
+      null
+    );
+    expect(result.expense.amount_minor).toBe(1200);
   });
 
-  it('returns null for a different household', async () => {
-    withRows([expense({ id: 'exp-1', household_id: 'h2', status: 'pending' })]);
+  it('reports not_pending when the row is already reviewed (lost race)', async () => {
+    withRpc([expense({ id: 'exp-1', household_id: 'h1', status: 'approved' })]);
     const repo = new ExpenseRepository();
-    const reviewed = await repo.reviewPending('exp-1', 'h1', {
-      status: 'approved',
-      reviewed_by: 'parent-1',
-      reviewed_at: '2026-08-04T10:00:00.000Z',
-      review_note: null,
+    const result = await repo.reviewPending(
+      'exp-1',
+      'h1',
+      { ...REVIEW_PATCH, status: 'rejected' },
+      null
+    );
+    expect(result.outcome).toBe('not_pending');
+  });
+
+  it('reports not_pending for a different household', async () => {
+    withRpc([expense({ id: 'exp-1', household_id: 'h2', status: 'pending' })]);
+    const repo = new ExpenseRepository();
+    const result = await repo.reviewPending('exp-1', 'h1', REVIEW_PATCH, null);
+    expect(result.outcome).toBe('not_pending');
+  });
+
+  it('throws a DatabaseError when the RPC itself fails', async () => {
+    mockSupabaseService.rpc.mockImplementation(async () => ({
+      data: null,
+      error: { message: 'boom' },
+    }));
+    const repo = new ExpenseRepository();
+    await expect(
+      repo.reviewPending('exp-1', 'h1', REVIEW_PATCH, null)
+    ).rejects.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// F-B4-1 — the freeze guard lives in the WRITE, not a pre-check.
+//
+// The service's `assertWeekNotFrozen` is a plain read; the write it guards
+// used to be a CAS on `status = 'pending'` alone, so a timesheet approve that
+// landed between the two froze a week's earnings without this reimbursement
+// and the expense still committed `approved`. `reviewPending` now routes
+// through `review_pending_expense` (051), which locks the week's timesheet row
+// FOR UPDATE before it touches the expense.
+// ---------------------------------------------------------------------------
+
+describe('ExpenseRepository.reviewPending — the week freeze is IN the write', () => {
+  it('refuses the approval when the locked week is already approved', async () => {
+    const rows = [expense({ id: 'exp-1', household_id: 'h1' })];
+    withRpc(rows, [timesheet({ status: 'approved' })]);
+    const repo = new ExpenseRepository();
+    const result = await repo.reviewPending('exp-1', 'h1', REVIEW_PATCH, {
+      carerId: 'carer-1',
+      weekStart: '2026-08-03',
     });
-    expect(reviewed).toBeNull();
+    expect(result.outcome).toBe('week_locked');
+    expect(result.timesheetStatus).toBe('approved');
+    expect(result.weekStart).toBe('2026-08-03');
+    // The row is untouched — nothing was approved into the frozen week.
+    expect(rows[0]?.status).toBe('pending');
+  });
+
+  it('passes the household, carer and week to the lock so the RIGHT row is locked', async () => {
+    withRpc([expense({ id: 'exp-1', household_id: 'h1' })], [timesheet()]);
+    const repo = new ExpenseRepository();
+    await repo.reviewPending('exp-1', 'h1', REVIEW_PATCH, {
+      carerId: 'carer-1',
+      weekStart: '2026-08-03',
+    });
+    expect(rpcCalls[0]?.name).toBe('review_pending_expense');
+    expect(rpcCalls[0]?.args).toMatchObject({
+      p_expense_id: 'exp-1',
+      p_household_id: 'h1',
+      p_carer_id: 'carer-1',
+      p_week_start: '2026-08-03',
+      p_status: 'approved',
+    });
+  });
+
+  it('BUMPS the week’s timesheet so an in-flight approve’s updated_at CAS loses', async () => {
+    const weeks = [timesheet({ status: 'submitted' })];
+    withRpc([expense({ id: 'exp-1', household_id: 'h1' })], weeks);
+    const repo = new ExpenseRepository();
+    const result = await repo.reviewPending('exp-1', 'h1', REVIEW_PATCH, {
+      carerId: 'carer-1',
+      weekStart: '2026-08-03',
+    });
+    expect(result.outcome).toBe('reviewed');
+    expect(weeks[0]?.updated_at).not.toBe('2026-08-04T09:00:00.000Z');
+  });
+
+  it('an unfrozen week approves normally — the lock costs the happy path nothing', async () => {
+    withRpc(
+      [expense({ id: 'exp-1', household_id: 'h1' })],
+      [timesheet({ status: 'submitted' })]
+    );
+    const repo = new ExpenseRepository();
+    const result = await repo.reviewPending('exp-1', 'h1', REVIEW_PATCH, {
+      carerId: 'carer-1',
+      weekStart: '2026-08-03',
+    });
+    expect(result.outcome).toBe('reviewed');
+    expect(result.expense.status).toBe('approved');
+  });
+
+  it('no timesheet for that week at all approves normally', async () => {
+    withRpc([expense({ id: 'exp-1', household_id: 'h1' })], []);
+    const repo = new ExpenseRepository();
+    const result = await repo.reviewPending('exp-1', 'h1', REVIEW_PATCH, {
+      carerId: 'carer-1',
+      weekStart: '2026-08-03',
+    });
+    expect(result.outcome).toBe('reviewed');
+  });
+
+  it('a null week lock (rejection / carer-less row) skips the lock entirely', async () => {
+    withRpc(
+      [expense({ id: 'exp-1', household_id: 'h1' })],
+      [timesheet({ status: 'approved' })]
+    );
+    const repo = new ExpenseRepository();
+    const result = await repo.reviewPending(
+      'exp-1',
+      'h1',
+      { ...REVIEW_PATCH, status: 'rejected' },
+      null
+    );
+    expect(result.outcome).toBe('reviewed');
+    expect(rpcCalls[0]?.args.p_week_start).toBeNull();
+    expect(rpcCalls[0]?.args.p_carer_id).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// F-B4-6 — a double-tapped POST used to create two payable rows.
+// ---------------------------------------------------------------------------
+
+describe('ExpenseRepository.create — pending-claim dedupe', () => {
+  it('inserts the claim normally', async () => {
+    withRows([]);
+    const repo = new ExpenseRepository();
+    const created = await repo.create(expense({ id: undefined }));
+    expect(created.description).toBe('Nappies');
+  });
+
+  it('translates the 23505 from expenses_one_pending_claim_idx into a typed error', async () => {
+    withRows([], {
+      code: '23505',
+      message:
+        'duplicate key value violates unique constraint "expenses_one_pending_claim_idx"',
+    });
+    const repo = new ExpenseRepository();
+    const err = await repo.create(expense()).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ExpenseValidationError);
+    expect((err as { metadata?: { reason?: string } }).metadata?.reason).toBe(
+      'DUPLICATE_PENDING_CLAIM'
+    );
+  });
+
+  it('leaves any OTHER database error as a DatabaseError', async () => {
+    withRows([], { code: '23503', message: 'fk violation' });
+    const repo = new ExpenseRepository();
+    const err = await repo.create(expense()).catch((e: unknown) => e);
+    expect(err).not.toBeInstanceOf(ExpenseValidationError);
   });
 });

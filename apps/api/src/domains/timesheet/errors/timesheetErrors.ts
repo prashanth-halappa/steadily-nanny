@@ -51,11 +51,11 @@ export class AlreadyClockedInError extends ConflictError {
 }
 
 /**
- * 409 — a `cancellation_paid` entry already exists for this shift. Translated
- * from the DB's `time_entries_one_cancellation_paid_per_shift` partial unique
- * index (23505). `recordCancellationPaidEntry` catches this on a race past
- * its find-first check and re-fetches the winner — callers outside that
- * path should not see it.
+ * 409 — a `cancellation_paid` entry already exists for this SPAN of a shift.
+ * Translated from the DB's `time_entries_one_cancellation_paid_per_span`
+ * partial unique index (053, keyed on `(shift_id, clock_in_at)`).
+ * `recordCancellationPaidEntry` catches this per fragment and re-fetches that
+ * fragment's winner by span — callers outside that path should not see it.
  */
 export class CancellationPaidAlreadyRecordedError extends ConflictError {
   constructor(shiftId: string) {

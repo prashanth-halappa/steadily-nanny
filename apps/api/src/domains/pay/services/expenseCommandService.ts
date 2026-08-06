@@ -20,7 +20,10 @@
  *    is built field-by-field per `kind`, so a stray client field cannot
  *    reach the row even if it slipped past the wire schema's `.strict()`
  *    union.
- * 2. `update`/`withdraw` — OWNING-CARER-gated, `status = 'pending'` only.
+ * 2. `update`/`withdraw` — OWNING-CARER-gated, `status = 'pending'` only, and
+ *    the caller must STILL be an active `nanny` member (F-B3b-3: owning the
+ *    row was never enough — a removed carer could edit `amount_minor` on a
+ *    claim she left behind; see `loadOwnedPending`).
  *    Reviewed rows are immutable (migration 044's header): the guard is
  *    enforced TWICE — once here (so the right error fires) and once inside
  *    the repository's own WHERE clause (so a race that reviews the row
@@ -39,7 +42,10 @@
  *    rule). Approving an `expense` row, and rejecting either kind, computes
  *    nothing. APPROVING anything into a week whose timesheet is already
  *    `approved` is refused with `ExpenseWeekLockedError` — see
- *    `assertWeekNotFrozen` for why blocking beats reopening.
+ *    `assertWeekNotFrozen` for why blocking beats reopening, and
+ *    `expenseRepository.reviewPending` for why that refusal ALSO travels into
+ *    the write itself as a week lock (F-B4-1: the pre-check alone cannot see
+ *    a timesheet approve that lands between it and the commit).
  *
  * @module domains/pay/services/expenseCommandService
  */
@@ -69,6 +75,7 @@ import {
 } from '../errors/payErrors';
 import {
   ExpenseRepository,
+  type ExpenseWeekLock,
   type ReviewPatch,
 } from '../repositories/expenseRepository';
 import { PayArrangementRepository } from '../repositories/payArrangementRepository';
@@ -294,6 +301,16 @@ export class ExpenseCommandService {
       throw new ExpenseNotEditableError(expenseId, 'not_pending');
     }
 
+    // The week lock this review's WRITE must carry (F-B4-1). Only an APPROVAL
+    // moves money into a week, and only a row with a carer has a week at all.
+    const weekLock: ExpenseWeekLock | null =
+      request.status === EXPENSE_STATUSES.APPROVED && existing.carer_id
+        ? {
+            carerId: existing.carer_id,
+            weekStart: weekStartOfLocalDate(existing.local_date),
+          }
+        : null;
+
     if (request.status === EXPENSE_STATUSES.APPROVED) {
       await this.assertWeekNotFrozen(existing);
     }
@@ -315,16 +332,29 @@ export class ExpenseCommandService {
       patch.amount_minor = await this.priceMileageApproval(existing);
     }
 
-    const reviewed = await this.expenseRepo.reviewPending(
+    const result = await this.expenseRepo.reviewPending(
       expenseId,
       existing.household_id,
-      patch
+      patch,
+      weekLock
     );
-    if (!reviewed) {
+    if (result.outcome === 'week_locked') {
+      // The week froze between `assertWeekNotFrozen` above and this write —
+      // the exact interleaving the pre-check alone cannot see (F-B4-1). Same
+      // error the pre-check raises, so the client's handling is unchanged.
+      throw new ExpenseWeekLockedError(
+        expenseId,
+        existing.household_id,
+        result.weekStart,
+        result.timesheetStatus
+      );
+    }
+    if (result.outcome !== 'reviewed') {
       // Lost the race: another review landed between the read above and
       // this write.
       throw new ExpenseNotEditableError(expenseId, 'not_pending');
     }
+    const reviewed = result.expense;
 
     // @see TIER0-PLAN.md:786 — carer learns the outcome of her claim here.
     if (reviewed.carer_id) {
@@ -422,6 +452,15 @@ export class ExpenseCommandService {
    * "Exists, is hers, but already reviewed" is a DIFFERENT error
    * (`ExpenseNotEditableError`) because that is not an existence leak — she
    * already knows her own claim was reviewed.
+   *
+   * OWNING THE ROW IS NOT ENOUGH — SHE MUST STILL BE AN ACTIVE NANNY HERE
+   * (audit finding F-B3b-3). This used to check `carer_id` and status only,
+   * so a carer whose membership had been REMOVED could still edit
+   * `amount_minor` on a claim she left behind. `create` has always asserted
+   * active-nanny membership (`assertActiveNanny`, gate 1); this is the same
+   * assertion, on the same table, made consistent. It runs BEFORE the status
+   * check and collapses into the SAME 404 as "not yours", so a removed member
+   * learns neither that the row exists nor what state it is in.
    */
   private async loadOwnedPending(
     callerId: string,
@@ -429,6 +468,15 @@ export class ExpenseCommandService {
   ): Promise<Expense> {
     const existing = await this.expenseRepo.findById(expenseId);
     if (!existing || existing.carer_id !== callerId) {
+      throw new ExpenseNotFoundError(expenseId, {
+        reason: 'not_found_or_not_yours',
+      });
+    }
+    const membership = await this.memberRepo.findActiveMembership(
+      existing.household_id,
+      callerId
+    );
+    if (!membership || membership.role !== HOUSEHOLD_ROLES.NANNY) {
       throw new ExpenseNotFoundError(expenseId, {
         reason: 'not_found_or_not_yours',
       });

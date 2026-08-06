@@ -143,6 +143,16 @@ export class ShiftCommandService {
     const shift = await this.queries.getOwned(userId, shiftId);
     await this.assertWriteMember(userId, shift.household_id);
 
+    // `applyParentEdit` is an RPC, so it bypasses the repository's guarded
+    // `update()` and its settled-reality check with it. Without this, a parent
+    // could rewrite the span of a shift the carer is CLOCKED INTO: clock-out
+    // then freezes `scheduled_minutes` from the edited times
+    // (`timesheetCommandService.freezeScheduledMinutes`) and the consent trail
+    // records an edit to a shift that was already being worked. Same soft
+    // preflight as `accept` — the hard serialisation would have to live inside
+    // the RPC, under its FOR UPDATE lock.
+    await this.shiftRepo.assertMutable(shiftId);
+
     const effectiveStarts = input.starts_at ?? shift.starts_at;
     const effectiveEnds = input.ends_at ?? shift.ends_at;
     // Parse both sides: the stored field comes back as `+00:00`, a client edit

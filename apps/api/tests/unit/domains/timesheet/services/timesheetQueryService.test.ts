@@ -155,10 +155,13 @@ describe('TimesheetQueryService.listForHouseholdWeek', () => {
       makeHouseholdRepo()
     );
     await svc.listForHouseholdWeek('u1', 'h1', '2026-08-03');
+    // Fourth arg is the optional carer filter — undefined here means "every
+    // carer", the household-wide view this endpoint has always served.
     expect(timeEntryRepo.listForHouseholdWeek).toHaveBeenCalledWith(
       'h1',
       '2026-08-03',
-      '2026-08-10'
+      '2026-08-10',
+      undefined
     );
   });
 
@@ -601,5 +604,84 @@ describe('TimesheetQueryService — the raw snapshot columns never reach the wir
 
     expect('gross_minor' in week).toBe(false);
     expect('earnings_computed_at' in week).toBe(false);
+  });
+});
+
+// =============================================================================
+// F-B1-3 (API half) — nothing was scoped by carer, so a two-carer household
+// summed every carer's hours into whichever timesheet came back first.
+// F-B3b-3 (timesheet half) — a removed nanny kept write access, because the
+// entry gate checked ownership and never membership.
+// =============================================================================
+
+describe('TimesheetQueryService.listForHouseholdWeek — carer scoping (F-B1-3)', () => {
+  it('passes the carer filter through to the entry query', async () => {
+    const timeEntryRepo = makeTimeEntryRepo();
+    const svc = new TimesheetQueryService(
+      timeEntryRepo,
+      makeTimesheetRepo(),
+      makeMemberRepo(),
+      makeHouseholdRepo()
+    );
+
+    await svc.listForHouseholdWeek('u1', 'h1', '2026-08-03', 'carer-1');
+
+    expect(timeEntryRepo.listForHouseholdWeek).toHaveBeenCalledWith(
+      'h1',
+      '2026-08-03',
+      '2026-08-10',
+      'carer-1'
+    );
+  });
+});
+
+describe('TimesheetQueryService.listTimesheetsForHousehold — carer scoping (F-B1-3)', () => {
+  it('passes the carer filter through to the timesheet query', async () => {
+    const timesheetRepo = makeTimesheetRepo();
+    const svc = new TimesheetQueryService(
+      makeTimeEntryRepo(),
+      timesheetRepo,
+      makeMemberRepo(),
+      makeHouseholdRepo()
+    );
+
+    await svc.listTimesheetsForHousehold('u1', 'h1', 'carer-1');
+
+    expect(timesheetRepo.listForHousehold).toHaveBeenCalledWith(
+      'h1',
+      'carer-1'
+    );
+  });
+});
+
+describe('TimesheetQueryService.getOwnedTimeEntry — membership, not just ownership (F-B3b-3)', () => {
+  it('throws TimeEntryNotFoundError once the carer membership is no longer active', async () => {
+    const svc = new TimesheetQueryService(
+      makeTimeEntryRepo(),
+      makeTimesheetRepo(),
+      makeMemberRepo({ findActiveMembership: mock(async () => null) }),
+      makeHouseholdRepo()
+    );
+
+    await expect(svc.getOwnedTimeEntry('carer-1', 't1')).rejects.toBeInstanceOf(
+      TimeEntryNotFoundError
+    );
+  });
+
+  it('checks membership against the ENTRY household, not one the caller supplied', async () => {
+    const memberRepo = makeMemberRepo();
+    const svc = new TimesheetQueryService(
+      makeTimeEntryRepo(),
+      makeTimesheetRepo(),
+      memberRepo,
+      makeHouseholdRepo()
+    );
+
+    await svc.getOwnedTimeEntry('carer-1', 't1');
+
+    expect(memberRepo.findActiveMembership).toHaveBeenCalledWith(
+      'h1',
+      'carer-1'
+    );
   });
 });

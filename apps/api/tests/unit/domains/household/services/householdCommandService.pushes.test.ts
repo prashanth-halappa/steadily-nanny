@@ -62,6 +62,9 @@ function makeMemberRepo() {
 function makeInviteRepo(overrides: Record<string, unknown> = {}) {
   return {
     findByCode: mock(async () => pendingInvite()),
+    claimPending: mock(async (id: string, acceptedBy: string) =>
+      pendingInvite({ id, status: 'accepted', accepted_by: acceptedBy })
+    ),
     update: mock(async (id: string, data: Record<string, unknown>) => ({
       ...pendingInvite(),
       id,

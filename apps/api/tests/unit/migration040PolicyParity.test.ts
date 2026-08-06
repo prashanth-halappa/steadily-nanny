@@ -51,8 +51,32 @@ const SOURCE_MIGRATIONS = [
 
 const TARGET_MIGRATION = '040_rls_semantic_predicates.sql';
 
-/** Policies calling a household helper, counted across SOURCE_MIGRATIONS. */
+/**
+ * Policies calling a household helper, counted across SOURCE_MIGRATIONS.
+ *
+ * This is a HISTORICAL count — the number of policies that existed when 040
+ * ran and therefore had to be repointed by it. It is deliberately NOT the
+ * number of such policies live in the schema today, and a later migration that
+ * only DROPS policies must not move it. `049_lock_client_writes.sql` drops ten
+ * of these thirty-eight; the count stays 38 because 040 really did recreate
+ * thirty-eight, and lowering it to 28 would both falsify that and break the
+ * "adds no policy that was not already in the migration history" check below —
+ * the ten would suddenly read as policies 040 invented. What the lockdowns
+ * removed is pinned by the cross-check at the bottom of this file, and the
+ * resulting select-only end states by `migration049LockClientWrites.test.ts`
+ * and `migration052LockRemainingClientWrites.test.ts`.
+ */
 const EXPECTED_REPOINTED_POLICY_COUNT = 38;
+
+/**
+ * Drop-only migrations that have since removed some of the 38. 049 drops ten,
+ * 052 drops nine of the remaining household-scoped ones (its tenth, carer_time
+ * _off's "Write own time off", is person-scoped and was never in the 38).
+ */
+const LOCKDOWN_MIGRATIONS = [
+  '049_lock_client_writes.sql',
+  '052_lock_remaining_client_writes.sql',
+] as const;
 
 const HELPER_CALL = /private\.is_household_(member|parent)\(/;
 
@@ -286,6 +310,51 @@ describe('040_rls_semantic_predicates.sql — policy parity', () => {
       .map(p => policyKey(p.table, p.name));
 
     expect(stillDirect).toEqual([]);
+  });
+});
+
+describe('lockdown migrations — drop only policies that actually existed', () => {
+  /**
+   * Every policy ever created by a file this test knows about, UNFILTERED —
+   * unlike `latestSourcePolicies()`, which keeps only the household-helper
+   * ones. The wider set is what a drop must be checked against: 052 drops
+   * `carer_time_off`'s "Write own time off", which is person-scoped, never
+   * called a household helper, and so never passed through 040 at all.
+   */
+  function everCreated(): Set<string> {
+    const keys = new Set<string>();
+    for (const file of [...SOURCE_MIGRATIONS, TARGET_MIGRATION]) {
+      for (const policy of parsePolicies(readMigration(file), file)) {
+        keys.add(policyKey(policy.table, policy.name));
+      }
+    }
+    return keys;
+  }
+
+  // A `drop policy if exists` naming a policy that never existed is a SILENT
+  // no-op: PostgreSQL accepts it, and the hole the migration was written to
+  // close stays wide open with no error anywhere. The end-state replays in the
+  // 049/052 contract tests catch that as a surviving policy; this catches it as
+  // what it is — a name that matches nothing — which is the far better message.
+  for (const lockdown of LOCKDOWN_MIGRATIONS) {
+    it(`${lockdown} names, in every drop, a policy that existed`, () => {
+      const created = everCreated();
+      const unknown = [...parseDroppedPolicies(readMigration(lockdown))]
+        .filter(key => !created.has(key))
+        .sort();
+
+      expect(unknown).toEqual([]);
+    });
+
+    it(`${lockdown} is drop-only`, () => {
+      expect(readMigration(lockdown)).not.toMatch(/create\s+policy/i);
+    });
+  }
+
+  it('leaves the historical repointed count untouched', () => {
+    // Guards the constant's docstring: the lockdowns are drop-only, so the
+    // number of policies 040 had to repoint cannot have changed.
+    expect(latestSourcePolicies().length).toBe(EXPECTED_REPOINTED_POLICY_COUNT);
   });
 });
 

@@ -110,6 +110,15 @@ function makeInviteRepo(overrides: Record<string, unknown> = {}): any {
       ...data,
       id: 'i-new',
     })),
+    claimPending: mock(async (id: string, acceptedBy: string) =>
+      pendingInvite({
+        id,
+        status: 'accepted',
+        accepted_by: acceptedBy,
+        accepted_at: 't',
+      })
+    ),
+    releaseClaim: mock(async () => {}),
     update: mock(async (id: string, data: Record<string, unknown>) => ({
       ...pendingInvite(),
       id,
@@ -289,10 +298,7 @@ describe('HouseholdCommandService.redeemInvite', () => {
         status: 'active',
       })
     );
-    expect(inviteRepo.update).toHaveBeenCalledWith(
-      'i1',
-      expect.objectContaining({ status: 'accepted', accepted_by: 'u2' })
-    );
+    expect(inviteRepo.claimPending).toHaveBeenCalledWith('i1', 'u2');
     expect(membership.role).toBe('nanny');
   });
 
@@ -418,6 +424,144 @@ describe('HouseholdCommandService.redeemInvite', () => {
       svc.redeemInvite('u1', { code: 'ABC-234' })
     ).rejects.toBeInstanceOf(AlreadyMemberError);
     expect(memberRepo.createMembership).not.toHaveBeenCalled();
+  });
+
+  it('claims the invite with a conditional write BEFORE creating the membership', async () => {
+    // The claim is what makes the code single-use, so it has to happen first:
+    // claiming after the membership insert means both racers already have a
+    // membership by the time either one loses.
+    const order: string[] = [];
+    const inviteRepo = makeInviteRepo({
+      claimPending: mock(async (id: string, acceptedBy: string) => {
+        order.push('claim');
+        return pendingInvite({
+          id,
+          status: 'accepted',
+          accepted_by: acceptedBy,
+        });
+      }),
+    });
+    const memberRepo = makeMemberRepo({
+      createMembership: mock(async (data: Record<string, unknown>) => {
+        order.push('membership');
+        return { id: 'm-new', ...data };
+      }),
+    });
+    const svc = new HouseholdCommandService(
+      makeHouseholdRepo(),
+      memberRepo,
+      inviteRepo,
+      makeQueries()
+    );
+
+    await svc.redeemInvite('u2', { code: 'ABC-234' });
+
+    expect(inviteRepo.claimPending).toHaveBeenCalledWith('i1', 'u2');
+    expect(order).toEqual(['claim', 'membership']);
+  });
+
+  it('refuses the loser when a DIFFERENT user has already claimed the same code', async () => {
+    // Two different users redeeming one code both pass every in-memory check
+    // and the unique constraint on (household_id, user_id) does NOT catch it —
+    // only the conditional write decides who wins.
+    const memberRepo = makeMemberRepo();
+    const inviteRepo = makeInviteRepo({
+      claimPending: mock(async () => null),
+    });
+    const svc = new HouseholdCommandService(
+      makeHouseholdRepo(),
+      memberRepo,
+      inviteRepo,
+      makeQueries()
+    );
+
+    await expect(
+      svc.redeemInvite('u3', { code: 'ABC-234' })
+    ).rejects.toBeInstanceOf(InviteAlreadyAcceptedError);
+    expect(memberRepo.createMembership).not.toHaveBeenCalled();
+  });
+
+  it('releases the claim when the membership insert fails, so a transient error does not burn the code', async () => {
+    // Claim-then-create is the right order, but it means a failed membership
+    // insert leaves the invite `accepted` with no membership: the same user
+    // retrying would hit InviteAlreadyAcceptedError and be locked out for good.
+    const inviteRepo = makeInviteRepo();
+    const memberRepo = makeMemberRepo({
+      createMembership: mock(async () => {
+        throw new Error('connection reset');
+      }),
+    });
+    const svc = new HouseholdCommandService(
+      makeHouseholdRepo(),
+      memberRepo,
+      inviteRepo,
+      makeQueries()
+    );
+
+    await expect(svc.redeemInvite('u2', { code: 'ABC-234' })).rejects.toThrow(
+      'connection reset'
+    );
+    expect(inviteRepo.releaseClaim).toHaveBeenCalledWith('i1', 'u2');
+  });
+
+  it('releases the claim for the removed-member case too, where createMembership hits the unique constraint', async () => {
+    // `findActiveMembership` only sees ACTIVE rows, so a user with a `removed`
+    // membership sails past the pre-check and trips 23505 instead. The code
+    // must survive that.
+    const inviteRepo = makeInviteRepo();
+    const memberRepo = makeMemberRepo({
+      createMembership: mock(async () => {
+        throw new AlreadyMemberError('h1');
+      }),
+    });
+    const svc = new HouseholdCommandService(
+      makeHouseholdRepo(),
+      memberRepo,
+      inviteRepo,
+      makeQueries()
+    );
+
+    await expect(
+      svc.redeemInvite('u2', { code: 'ABC-234' })
+    ).rejects.toBeInstanceOf(AlreadyMemberError);
+    expect(inviteRepo.releaseClaim).toHaveBeenCalledWith('i1', 'u2');
+  });
+
+  it('does not mask the membership error when the release itself fails', async () => {
+    const inviteRepo = makeInviteRepo({
+      releaseClaim: mock(async () => {
+        throw new Error('database unreachable');
+      }),
+    });
+    const memberRepo = makeMemberRepo({
+      createMembership: mock(async () => {
+        throw new Error('connection reset');
+      }),
+    });
+    const svc = new HouseholdCommandService(
+      makeHouseholdRepo(),
+      memberRepo,
+      inviteRepo,
+      makeQueries()
+    );
+
+    await expect(svc.redeemInvite('u2', { code: 'ABC-234' })).rejects.toThrow(
+      'connection reset'
+    );
+  });
+
+  it('releases nothing on the happy path', async () => {
+    const inviteRepo = makeInviteRepo();
+    const svc = new HouseholdCommandService(
+      makeHouseholdRepo(),
+      makeMemberRepo(),
+      inviteRepo,
+      makeQueries()
+    );
+
+    await svc.redeemInvite('u2', { code: 'ABC-234' });
+
+    expect(inviteRepo.releaseClaim).not.toHaveBeenCalled();
   });
 
   it('surfaces the repository AlreadyMemberError (concurrent double-redeem) without a 500', async () => {

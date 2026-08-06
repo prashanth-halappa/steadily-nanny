@@ -9,6 +9,7 @@ import {
   PtoTimeOffNotFoundError,
 } from '../../../../../src/domains/pay/errors/payErrors';
 import { PtoCommandService } from '../../../../../src/domains/pay/services/ptoCommandService';
+import { ConflictError } from '../../../../../src/errors';
 
 const createdUsageRow = {
   id: 'ptl-new',
@@ -106,7 +107,7 @@ function makeTimeOffRepo(row: Record<string, unknown> | null = timeOff()): any {
 }
 
 function makePtoRepo(overrides: Record<string, unknown> = {}): any {
-  return {
+  const repo: any = {
     create: mock(async (row: Record<string, unknown>) => ({
       ...createdUsageRow,
       ...row,
@@ -117,6 +118,21 @@ function makePtoRepo(overrides: Record<string, unknown> = {}): any {
     listForHouseholdTimeOff: mock(async () => []),
     ...overrides,
   };
+  // Migration 050's serialised correction/reversal seam. The fake applies
+  // each row through this same repo's `create` mock ON PURPOSE: every
+  // assertion in this suite about WHAT a correction or a reversal writes
+  // then keeps working unchanged, because the rows still land in
+  // `create.mock.calls` in the order the service ordered them. Only the
+  // concurrency behaviour — `expected`, `stale`, the retry — is asserted
+  // against `applyCorrection` itself.
+  repo.applyCorrection ??= mock(async (args: Record<string, unknown>) => {
+    const written: unknown[] = [];
+    for (const row of args.rows as Record<string, unknown>[]) {
+      written.push(await repo.create(row));
+    }
+    return written;
+  });
+  return repo;
 }
 
 /** A `usage` ledger row as stored — minutes NEGATIVE (043's sign convention). */
@@ -666,45 +682,44 @@ describe('PtoCommandService.markTimeOffPaid — adjusting an existing marking', 
 // =============================================================================
 // markTimeOffPaid vs cancel — the race (Phase 3/4 review, SERIOUS 8).
 //
-// The status guard reads `carer_time_off`, then inserts. A cancel committing
-// in between leaves a `usage` row on a cancelled time off that
-// `reconcileCancelledTimeOff` has ALREADY run past, so nothing ever reverses
-// it. The insert is re-checked afterwards and loses gracefully.
+// The status guard read `carer_time_off` and the insert happened afterwards,
+// so a cancel committing in between left a `usage` row on a cancelled time
+// off that `reconcileCancelledTimeOff` had ALREADY run past — never reversed
+// by anyone. That used to be handled by re-reading AFTER the write and
+// compensating. It is now handled BEFORE the write instead: the status is
+// checked against the `carer_time_off` row that migration 050 holds locked,
+// and a cancel racing a marking either waits for the marking's lock (and is
+// then reversed by its own awaited reconciliation, F-B9-2) or gets there
+// first and the marking writes nothing at all. Refusing beats compensating.
 // =============================================================================
 
 describe('PtoCommandService.markTimeOffPaid — cancel racing the insert', () => {
-  function racingTimeOffRepo(): any {
-    let calls = 0;
-    return {
-      findById: mock(async () => {
-        calls += 1;
-        // First read (the status gate): still confirmed. Second read (after
-        // the insert): the carer's cancel committed in between.
-        return timeOff({ status: calls === 1 ? 'confirmed' : 'cancelled' });
-      }),
-    };
-  }
-
-  it('reverses its own usage row and refuses when the time off was cancelled mid-write', async () => {
-    const rows: Record<string, unknown>[] = [];
+  it('writes NOTHING when the cancel reached the lock first', async () => {
     const ptoRepo = makePtoRepo({
-      listForHouseholdTimeOff: mock(async () => [...rows]),
-      create: mock(async (row: Record<string, unknown>) => {
-        rows.push(row);
-        return { ...createdUsageRow, ...row };
+      // What the repository maps the RPC's `not_confirmed` outcome to.
+      applyCorrection: mock(async () => {
+        throw new PtoTimeOffNotConfirmedError('to-1', 'cancelled');
       }),
     });
-    const svc = service({ ptoRepo, timeOffRepo: racingTimeOffRepo() });
+    const svc = service({ ptoRepo });
 
     await expect(
       svc.markTimeOffPaid('parent-1', 'h1', request({ minutes: 480 }))
     ).rejects.toBeInstanceOf(PtoTimeOffNotConfirmedError);
 
-    // The usage row was written, then reversed — append-only, and the
-    // household's netted total for this time off is back to zero.
-    expect(ptoRepo.create).toHaveBeenCalledTimes(2);
-    expect(rows.reduce((t, r) => t + (r.minutes as number), 0)).toBe(0);
-    expect(rows[1]).toMatchObject({ kind: 'adjustment', minutes: 480 });
+    // Nothing to compensate, because nothing was written — the old
+    // write-then-reverse dance is gone along with the window it covered.
+    expect(ptoRepo.create).not.toHaveBeenCalled();
+  });
+
+  it('never re-reads the time off after writing — the locked read already ruled', async () => {
+    const timeOffRepo = makeTimeOffRepo();
+    const svc = service({ timeOffRepo });
+    await svc.markTimeOffPaid('parent-1', 'h1', request({ minutes: 480 }));
+
+    // One read: the status gate. A second, unlocked one would be strictly
+    // weaker than the check migration 050 makes under the lock.
+    expect(timeOffRepo.findById).toHaveBeenCalledTimes(1);
   });
 
   it('does not re-check for nothing: an uncontested mark writes exactly one row', async () => {
@@ -712,6 +727,308 @@ describe('PtoCommandService.markTimeOffPaid — cancel racing the insert', () =>
     const svc = service({ ptoRepo });
     await svc.markTimeOffPaid('parent-1', 'h1', request({ minutes: 480 }));
     expect(ptoRepo.create).toHaveBeenCalledTimes(1);
+  });
+});
+
+// =============================================================================
+// Corrections and reversals are SERIALISED (F-B4-2, migration 050).
+//
+// The FIRST marking was never the problem: 045's
+// `pto_ledger_one_usage_per_time_off_day_idx` already turns two concurrent
+// first marks into one winner and one typed 409, and nothing below weakens
+// it. CORRECTIONS are the problem. `writeCorrection` reads the netted
+// per-day total, computes a delta, and inserts — with no lock in between, so
+// two parents correcting 8h -> 6h at the same instant both read 8h, both
+// write +120, and the ledger lands at 4h. Real money owed, silently wrong,
+// in a table nobody can edit back.
+//
+// The fix is 024/027's shape: a plpgsql function that locks the
+// `carer_time_off` row FOR UPDATE, re-derives the per-day state, and refuses
+// with `stale` if it moved since the caller read it. The caller re-reads and
+// re-applies, so the LAST writer wins with a correct delta instead of both
+// writers landing somewhere neither asked for.
+// =============================================================================
+
+describe('PtoCommandService — corrections are serialised', () => {
+  /**
+   * A ledger holding one 8h day, where a RIVAL correction to 7h commits the
+   * instant this caller first tries to write — whichever seam it writes
+   * through. Modelled on `racingTimeOffRepo` above: the mock's behaviour
+   * changes between calls.
+   */
+  function contendedLedger(): {
+    repo: any;
+    netted: () => number;
+  } {
+    const rows: Record<string, unknown>[] = [usageRow({ minutes: -480 })];
+    let firstWrite = true;
+    const rivalCommits = (): boolean => {
+      const wasFirst = firstWrite;
+      if (firstWrite) {
+        firstWrite = false;
+        rows.push(adjustmentRow({ id: 'a-rival', minutes: 60 }));
+      }
+      return wasFirst;
+    };
+
+    const repo: any = {
+      listAllForTimeOff: mock(async () => [...rows]),
+      listForHouseholdTimeOff: mock(async () => [...rows]),
+      create: mock(async (row: Record<string, unknown>) => {
+        rivalCommits();
+        rows.push(row);
+        return { ...createdUsageRow, ...row };
+      }),
+      applyCorrection: mock(async (args: Record<string, unknown>) => {
+        // The rival's row lands under the lock this call is waiting on, so
+        // the caller's `expected` no longer matches: refuse, don't write.
+        if (rivalCommits()) {
+          return null;
+        }
+        const batch = args.rows as Record<string, unknown>[];
+        rows.push(...batch);
+        return batch.map(row => ({ ...createdUsageRow, ...row }));
+      }),
+    };
+
+    return {
+      repo,
+      netted: () => rows.reduce((t, r) => t + (r.minutes as number), 0),
+    };
+  }
+
+  it('a correction that loses the race re-reads and applies its OWN delta — no lost update', async () => {
+    const { repo, netted } = contendedLedger();
+    const svc = service({ ptoRepo: repo });
+
+    // 8h on the ledger; this parent means 6h. A rival correction to 7h
+    // commits in between. The answer is 6h — the last writer's stated total,
+    // reached from the rival's state — never 5h from a stale delta.
+    await svc.markTimeOffPaid('parent-1', 'h1', request({ minutes: 360 }));
+
+    expect(netted()).toBe(-360);
+    expect(repo.applyCorrection).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not retry for nothing: an uncontested correction applies in exactly one attempt', async () => {
+    const ptoRepo = makePtoRepo({
+      listForHouseholdTimeOff: mock(async () => [usageRow({ minutes: -480 })]),
+    });
+    const svc = service({ ptoRepo });
+    await svc.markTimeOffPaid('parent-1', 'h1', request({ minutes: 360 }));
+
+    expect(ptoRepo.applyCorrection).toHaveBeenCalledTimes(1);
+    expect(ptoRepo.applyCorrection.mock.calls[0][0].rows).toHaveLength(1);
+  });
+
+  it('sends the per-day state it computed the delta FROM, so the write is a compare-and-set', async () => {
+    const ptoRepo = makePtoRepo({
+      listForHouseholdTimeOff: mock(async () => [
+        usageRow({ effective_date: '2026-08-24', minutes: -480 }),
+      ]),
+    });
+    const svc = service({ ptoRepo });
+    await svc.markTimeOffPaid('parent-1', 'h1', request({ minutes: 360 }));
+
+    expect(ptoRepo.applyCorrection.mock.calls[0][0]).toMatchObject({
+      householdId: 'h1',
+      timeOffId: 'to-1',
+      // POSITIVE paid minutes per day — the same figure the delta came from.
+      expected: { '2026-08-24': 480 },
+      requireConfirmed: true,
+    });
+  });
+
+  it('gives up rather than write a delta it can never trust', async () => {
+    const ptoRepo = makePtoRepo({
+      listForHouseholdTimeOff: mock(async () => [usageRow({ minutes: -480 })]),
+      // Permanently contended: every attempt is refused.
+      applyCorrection: mock(async () => null),
+    });
+    const svc = service({ ptoRepo });
+
+    await expect(
+      svc.markTimeOffPaid('parent-1', 'h1', request({ minutes: 360 }))
+    ).rejects.toBeInstanceOf(ConflictError);
+    expect(ptoRepo.create).not.toHaveBeenCalled();
+  });
+
+  it('drops the post-write status re-read on the correction path — the lock already ruled on it', async () => {
+    // `assertStillConfirmedAfterWrite` reads `carer_time_off` a second time
+    // AFTER writing, and compensates. Under the 050 lock the status is
+    // checked BEFORE the insert, so a second unlocked read here would be
+    // both redundant and weaker. The gate's own read is the only one left.
+    const timeOffRepo = makeTimeOffRepo();
+    const ptoRepo = makePtoRepo({
+      listForHouseholdTimeOff: mock(async () => [usageRow({ minutes: -480 })]),
+    });
+    const svc = service({ ptoRepo, timeOffRepo });
+    await svc.markTimeOffPaid('parent-1', 'h1', request({ minutes: 360 }));
+
+    expect(timeOffRepo.findById).toHaveBeenCalledTimes(1);
+  });
+
+  it('the cancel reversal is serialised too, and does NOT require a confirmed time off', async () => {
+    // It is called precisely because the time off was cancelled — requiring
+    // `confirmed` here would refuse every reversal it exists to write.
+    const ptoRepo = makePtoRepo({
+      listAllForTimeOff: mock(async () => [usageRow({ minutes: -480 })]),
+    });
+    const svc = service({ ptoRepo });
+    await svc.reconcileCancelledTimeOff('to-1');
+
+    expect(ptoRepo.applyCorrection).toHaveBeenCalledTimes(1);
+    expect(ptoRepo.applyCorrection.mock.calls[0][0]).toMatchObject({
+      householdId: 'h1',
+      timeOffId: 'to-1',
+      expected: { '2026-08-24': 480 },
+      requireConfirmed: false,
+    });
+  });
+
+  it('a reversal that loses the race re-reads and reverses only what is STILL outstanding', async () => {
+    const { repo, netted } = contendedLedger();
+    const svc = service({ ptoRepo: repo });
+    await svc.reconcileCancelledTimeOff('to-1');
+
+    // 8h paid, a rival correction to 7h lands mid-reversal: the retry must
+    // take back 7h, not the 8h it first computed.
+    expect(netted()).toBe(0);
+    expect(repo.applyCorrection).toHaveBeenCalledTimes(2);
+  });
+});
+
+// =============================================================================
+// A FIRST MARKING IS ATOMIC TOO (F-B4-2, reopened).
+//
+// Serialising corrections was not enough while the first marking still wrote
+// one `usage` row per covered day as SEPARATE statements outside the lock.
+// Two parents on one 5-day time off, A marking 480 and B marking 360:
+//
+//   1. A inserts usage on d1, d2, d3. Loop still running.
+//   2. B reads three rows, so B takes the CORRECTION branch — the branch is
+//      decided from an unlocked read, which is the root cause.
+//   3. B's compare-and-set matches (those three rows really are there), so B
+//      writes +24 on d1-d3 and -72 on d4, d5. Ledger correct at 360.
+//   4. A resumes and inserts usage on d4, d5. 045's index is partial on
+//      `kind = 'usage'` and B wrote ADJUSTMENT rows there, so no 23505.
+//
+// Final ledger 552 — neither 480 nor 360, both callers told they succeeded.
+// A double-tap on a flaky connection is enough to trigger it.
+// =============================================================================
+
+describe('PtoCommandService.markTimeOffPaid — a marking is one atomic batch', () => {
+  /**
+   * A ledger that enforces migration 050's compare-and-set the way the real
+   * function does, so a caller whose read went stale is actually refused,
+   * and `runRival` commits a competing marking the instant the caller under
+   * test first tries to write — through EITHER seam, since the whole point
+   * is that the unlocked per-day loop must stop being one of them.
+   */
+  function casLedger(): {
+    repo: any;
+    paid: () => number;
+    onFirstWrite: (rival: () => Promise<unknown>) => void;
+  } {
+    const rows: Record<string, unknown>[] = [];
+    let rival: (() => Promise<unknown>) | null = null;
+    let creates = 0;
+    /**
+     * Let the rival commit once the caller is THREE days into its write —
+     * the interleaving as filed. A batched write has no "three days in", so
+     * there it fires on the single call instead.
+     */
+    const fireRival = async (batched: boolean): Promise<void> => {
+      creates += batched ? 0 : 1;
+      if (!batched && creates < 3) {
+        return;
+      }
+      const pending = rival;
+      rival = null;
+      if (pending) {
+        await pending();
+      }
+    };
+    const paidByDate = (): Record<string, number> => {
+      const byDate: Record<string, number> = {};
+      for (const row of rows) {
+        const date = row.effective_date as string;
+        byDate[date] = (byDate[date] ?? 0) - (row.minutes as number);
+      }
+      return byDate;
+    };
+
+    const repo: any = {
+      listAllForTimeOff: mock(async () => [...rows]),
+      listForHouseholdTimeOff: mock(async () => [...rows]),
+      create: mock(async (row: Record<string, unknown>) => {
+        rows.push(row);
+        // AFTER the row lands: the rival reads three days, exactly as filed.
+        await fireRival(false);
+        return { ...createdUsageRow, ...row };
+      }),
+      applyCorrection: mock(async (args: Record<string, unknown>) => {
+        await fireRival(true);
+        // The real function re-derives this map under the row lock and
+        // refuses if it moved since the caller read it.
+        if (
+          JSON.stringify(paidByDate()) !== JSON.stringify(args.expected ?? {})
+        ) {
+          return null;
+        }
+        const batch = args.rows as Record<string, unknown>[];
+        rows.push(...batch);
+        return batch.map(row => ({ ...createdUsageRow, ...row }));
+      }),
+    };
+
+    return {
+      repo,
+      paid: () => -rows.reduce((t, r) => t + (r.minutes as number), 0),
+      onFirstWrite: fn => {
+        rival = fn;
+      },
+    };
+  }
+
+  it('a rival marking committing mid-write can never leave a total NEITHER parent asked for', async () => {
+    const { repo, paid, onFirstWrite } = casLedger();
+    const parts = {
+      ptoRepo: repo,
+      timeOffRepo: makeTimeOffRepo(multiDayTimeOff(5)),
+    };
+    const parentA = service(parts);
+    const parentB = service(parts);
+
+    onFirstWrite(() =>
+      parentB.markTimeOffPaid('parent-1', 'h1', request({ minutes: 360 }))
+    );
+    await parentA.markTimeOffPaid('parent-1', 'h1', request({ minutes: 480 }));
+
+    // Whichever of them lands last owns the total. A blend of the two is the
+    // one answer that is always wrong.
+    expect(paid()).not.toBe(552);
+    expect([360, 480]).toContain(paid());
+  });
+
+  it('the whole marking goes out as ONE locked batch, never a row at a time', async () => {
+    const ptoRepo = makePtoRepo();
+    const svc = service({
+      ptoRepo,
+      timeOffRepo: makeTimeOffRepo(multiDayTimeOff(5)),
+    });
+    await svc.markTimeOffPaid('parent-1', 'h1', request({ minutes: 480 }));
+
+    expect(ptoRepo.applyCorrection).toHaveBeenCalledTimes(1);
+    const { rows, expected, requireConfirmed } =
+      ptoRepo.applyCorrection.mock.calls[0][0];
+    expect(rows).toHaveLength(5);
+    expect(
+      rows.every((row: Record<string, unknown>) => row.kind === 'usage')
+    ).toBe(true);
+    // An empty ledger IS the state it computed from — the CAS has to see it.
+    expect(expected).toEqual({});
+    expect(requireConfirmed).toBe(true);
   });
 });
 
@@ -1338,35 +1655,12 @@ describe('PtoCommandService — ledger notes are machine keys', () => {
     expect(note).not.toMatch(/\s/);
   });
 
-  it('the lost-race reversal stores its OWN key, distinguishable from a cancel', async () => {
-    const rows: Record<string, unknown>[] = [];
-    let findCalls = 0;
-    const ptoRepo = makePtoRepo({
-      listForHouseholdTimeOff: mock(async () => [...rows]),
-      create: mock(async (row: Record<string, unknown>) => {
-        rows.push(row);
-        return { ...createdUsageRow, ...row };
-      }),
-    });
-    const timeOffRepo = {
-      findById: mock(async () => {
-        findCalls += 1;
-        return timeOff({ status: findCalls === 1 ? 'confirmed' : 'cancelled' });
-      }),
-    };
-    const svc = service({ ptoRepo, timeOffRepo });
-
-    await expect(
-      svc.markTimeOffPaid('parent-1', 'h1', request({ minutes: 480 }))
-    ).rejects.toBeInstanceOf(PtoTimeOffNotConfirmedError);
-
-    expect(rows[1]?.note).toBe(
-      PTO_LEDGER_NOTE_KEYS.CANCELLED_DURING_MARKING_REVERSED
-    );
-    expect(PTO_LEDGER_NOTE_KEYS.CANCELLED_DURING_MARKING_REVERSED).not.toBe(
-      PTO_LEDGER_NOTE_KEYS.CANCELLED_TIME_OFF_REVERSED
-    );
-  });
+  // `CANCELLED_DURING_MARKING_REVERSED` had exactly one writer: the
+  // compensating reversal a marking wrote when the post-write status re-read
+  // found a cancel had beaten it. Migration 050 refuses that marking before
+  // it writes anything, so there is no longer a self-reversal to label and no
+  // way to produce a row carrying that key. The key itself now has no writer
+  // — it lives in `pto.schema.ts`, which this unit does not own.
 
   it("a PARENT'S OWN typed note is stored verbatim — user content is never keyed", async () => {
     const ptoRepo = makePtoRepo();

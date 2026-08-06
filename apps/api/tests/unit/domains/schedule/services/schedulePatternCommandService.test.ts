@@ -348,6 +348,56 @@ describe('SchedulePatternCommandService.update', () => {
       svc.update('u1', 'p1', { note: 'Updated' })
     ).rejects.toBeInstanceOf(PatternNotEditableError);
   });
+
+  // F-B3b-1 / F-B7-2 (S0): the schema no longer carries `status`, but the
+  // service must ALSO never forward one to the repository — belt and
+  // braces, since the schema alone isn't the thing that writes. `as any`
+  // simulates a stray key that reached the service despite validation
+  // (e.g. a future schema regression), so this stays red if either layer
+  // regresses on its own.
+  it('never forwards a status field to the repository, even if one reaches the service', async () => {
+    const patternRepo = makePatternRepo();
+    const svc = new SchedulePatternCommandService(
+      patternRepo,
+      makeDayRepo(),
+      makeDayChildRepo(),
+      makeMemberRepo('owner'),
+      makeHouseholdRepo(),
+      makeQueries(),
+      makeMaterialisation()
+    );
+    await svc.update('u1', 'p1', {
+      note: 'Updated',
+      status: 'accepted',
+    } as any);
+    const patch = patternRepo.update.mock.calls[0][1];
+    expect(patch).not.toHaveProperty('status');
+    expect(patch).toEqual({ note: 'Updated' });
+  });
+
+  // Reviewer follow-up on F-B3b-1: `create` validates carer_id via
+  // assertCarerRole (:115-117); `update` forwarded it unvalidated. A parent
+  // could PATCH carer_id to their own id, then send + respond(accepted) as
+  // "the carer" — same forced-accept outcome, one column over. Closing this
+  // at `update` closes the whole chain: send/respond can never run once
+  // this rejects.
+  it('rejects a carer_id that is not an active nanny member — closes the self-assign-then-accept chain', async () => {
+    const patternRepo = makePatternRepo();
+    const svc = new SchedulePatternCommandService(
+      patternRepo,
+      makeDayRepo(),
+      makeDayChildRepo(),
+      makeMemberRepoFor({ 'parent-1': 'parent' }),
+      makeHouseholdRepo(),
+      makeQueries(patternFor({ carer_id: null, status: 'draft' })),
+      makeMaterialisation()
+    );
+
+    await expect(
+      svc.update('parent-1', 'p1', { carer_id: 'parent-1' })
+    ).rejects.toBeInstanceOf(InvalidPatternCarerError);
+    expect(patternRepo.update).not.toHaveBeenCalled();
+  });
 });
 
 describe('SchedulePatternCommandService.replaceDays', () => {
@@ -605,6 +655,27 @@ describe('SchedulePatternCommandService.respond', () => {
     );
     await expect(
       svc.respond('u1', 'p1', { status: 'accepted' })
+    ).rejects.toBeInstanceOf(NotThePatternCarerError);
+  });
+
+  // Reviewer follow-up on F-B3b-1: respond() checked identity
+  // (pattern.carer_id === userId) but never the caller's role, unlike its
+  // exact analogue `shiftCommandService.accept` (:68-72). If carer_id was
+  // ever set to a non-carer's id (e.g. via the update() gap above, before
+  // that was closed), that member could still self-accept. Same error as
+  // the identity mismatch, mirroring `accept`'s "same error either way".
+  it('rejects a non-carer member responding, even when carer_id happens to match their own id', async () => {
+    const svc = new SchedulePatternCommandService(
+      makePatternRepo(),
+      makeDayRepo(),
+      makeDayChildRepo(),
+      makeMemberRepoFor({ 'parent-1': 'parent' }),
+      makeHouseholdRepo(),
+      makeQueries(patternFor({ status: 'pending', carer_id: 'parent-1' })),
+      makeMaterialisation()
+    );
+    await expect(
+      svc.respond('parent-1', 'p1', { status: 'accepted' })
     ).rejects.toBeInstanceOf(NotThePatternCarerError);
   });
 

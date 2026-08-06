@@ -27,6 +27,10 @@ import type { Expense } from '@steadily-nanny/shared-types/schemas/expense.schem
 import { supabaseService } from '../../../config/supabase';
 import { DatabaseError } from '../../../errors';
 import { BaseRepository } from '../../../shared/repositories/baseRepository';
+import { ExpenseValidationError } from '../errors/payErrors';
+
+/** Postgres unique_violation error code. */
+const UNIQUE_VIOLATION = '23505';
 
 /** The five columns a review write ever sets — never a blind `Partial<Expense>`. */
 export interface ReviewPatch {
@@ -43,9 +47,76 @@ export interface ReviewPatch {
   amount_minor?: number;
 }
 
+/**
+ * The week whose timesheet the review write must lock and find un-frozen
+ * before it commits (migration 051). `null` means "no week to lock": a
+ * REJECTION moves no money into the week, and a carer-less row (033's
+ * account-deletion discipline) has no week to strand money in.
+ */
+export interface ExpenseWeekLock {
+  carerId: string;
+  weekStart: string;
+}
+
+/**
+ * What `review_pending_expense` answers with. Three outcomes, because the two
+ * ways a review can fail need DIFFERENT errors: losing the status CAS is
+ * `ExpenseNotEditableError`, while the week freezing under the write is
+ * `ExpenseWeekLockedError` (which names the week so the client can say which).
+ */
+export type ReviewOutcome =
+  | { outcome: 'reviewed'; expense: Expense }
+  | { outcome: 'not_pending' }
+  | { outcome: 'week_locked'; weekStart: string; timesheetStatus: string };
+
+/** The raw jsonb shape 051's function returns. */
+interface ReviewRpcPayload {
+  outcome: 'reviewed' | 'not_pending' | 'week_locked';
+  expense?: Expense;
+  week_start?: string;
+  timesheet_status?: string;
+}
+
 export class ExpenseRepository extends BaseRepository<Expense> {
   constructor() {
     super('expenses');
+  }
+
+  /**
+   * Submit a claim, translating the `expenses_one_pending_claim_idx` unique
+   * violation (051) into a typed error instead of a raw 500 — the same shape
+   * `ptoLedgerRepository.create` and `householdMemberRepository.
+   * createMembership` use.
+   *
+   * The index is PARTIAL on `status = 'pending'` and keyed on the claim's own
+   * identity (household, carer, date, kind, description, currency, amount or
+   * miles), so what this catches is a DOUBLE-TAPPED submission — the same
+   * claim filed twice before either is reviewed, which a parent approving both
+   * would pay twice. A carer filing a genuinely separate identical claim tells
+   * them apart with a word in the description, and the identity frees up
+   * entirely as soon as the first one is reviewed (051's header).
+   */
+  async create(data: Partial<Expense>): Promise<Expense> {
+    const { data: created, error } = await supabaseService
+      .from(this.table)
+      .insert(data)
+      .select()
+      .single();
+
+    if (error) {
+      if (error.code === UNIQUE_VIOLATION) {
+        throw new ExpenseValidationError('DUPLICATE_PENDING_CLAIM', {
+          householdId: data.household_id,
+          carerId: data.carer_id,
+          localDate: data.local_date,
+        });
+      }
+      throw new DatabaseError('Failed to create expense', 'DATABASE_ERROR', {
+        details: error.message,
+        code: error.code,
+      });
+    }
+    return created as Expense;
   }
 
   /**
@@ -206,20 +277,41 @@ export class ExpenseRepository extends BaseRepository<Expense> {
    * freezes the computed amount in the SAME statement as the status flip —
    * there is no separate "then set the amount" write, so no reader can ever
    * observe `status = 'approved'` with a stale or absent amount.
+   *
+   * IT GOES THROUGH AN RPC BECAUSE THE FREEZE GUARD BELONGS IN THE WRITE
+   * (migration 051, audit finding F-B4-1). The service still pre-checks
+   * whether the week's timesheet is approved, but a pre-check is a plain read:
+   * a timesheet approve landing between it and this write froze a week's
+   * earnings without this reimbursement while this CAS — which knew nothing
+   * about timesheets — still matched `pending` and committed. That is money
+   * owed and on no statement (`docs/11-MONEY.md` §3). `review_pending_expense`
+   * locks the week's timesheet row FOR UPDATE first, refuses if it is already
+   * approved, and bumps its `updated_at` on success so an in-flight approve
+   * loses its own CAS and recomputes. Passing `weekLock: null` skips all of
+   * that — see `ExpenseWeekLock`.
    */
   async reviewPending(
     expenseId: string,
     householdId: string,
-    patch: ReviewPatch
-  ): Promise<Expense | null> {
-    const { data, error } = await supabaseService
-      .from(this.table)
-      .update(patch)
-      .eq('id', expenseId)
-      .eq('household_id', householdId)
-      .eq('status', 'pending')
-      .select()
-      .maybeSingle();
+    patch: ReviewPatch,
+    weekLock: ExpenseWeekLock | null
+  ): Promise<ReviewOutcome> {
+    const { data, error } = await supabaseService.rpc(
+      'review_pending_expense',
+      {
+        p_expense_id: expenseId,
+        p_household_id: householdId,
+        p_status: patch.status,
+        p_reviewed_by: patch.reviewed_by,
+        p_reviewed_at: patch.reviewed_at,
+        p_review_note: patch.review_note,
+        // Only a mileage approval computes one; null means "leave the column
+        // as it stands", which is what 051's `coalesce` does with it.
+        p_amount_minor: patch.amount_minor ?? null,
+        p_carer_id: weekLock?.carerId ?? null,
+        p_week_start: weekLock?.weekStart ?? null,
+      }
+    );
 
     if (error) {
       throw new DatabaseError('Failed to review expense', 'DATABASE_ERROR', {
@@ -227,6 +319,18 @@ export class ExpenseRepository extends BaseRepository<Expense> {
         expenseId,
       });
     }
-    return data as Expense | null;
+
+    const payload = data as ReviewRpcPayload;
+    if (payload.outcome === 'reviewed' && payload.expense) {
+      return { outcome: 'reviewed', expense: payload.expense };
+    }
+    if (payload.outcome === 'week_locked') {
+      return {
+        outcome: 'week_locked',
+        weekStart: payload.week_start ?? weekLock?.weekStart ?? '',
+        timesheetStatus: payload.timesheet_status ?? 'approved',
+      };
+    }
+    return { outcome: 'not_pending' };
   }
 }

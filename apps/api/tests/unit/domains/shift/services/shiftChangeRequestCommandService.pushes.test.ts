@@ -147,6 +147,8 @@ function makeShiftRepo(overrides: Record<string, unknown> = {}): any {
       ...data,
     })),
     assertMutable: mock(async () => undefined),
+    // Retry guard for `insertExtraShift` — nothing pre-existing by default.
+    findExtraShiftInWindow: mock(async () => null),
     ...overrides,
   };
 }
@@ -405,7 +407,12 @@ describe('paid-cancel recorder', () => {
     expect(recorder).not.toHaveBeenCalled();
   });
 
-  it('swallows recorder throw + logs — accept still succeeds', async () => {
+  // F-B2-5 / F-B5-1 / F-B9-1. The cancel RPC has already committed
+  // `cancellation_paid = true`; if the payable row then fails to write, a 200
+  // tells the carer her hours were banked when no `time_entries` row exists.
+  // There is no retry path and nothing user-visible — silent underpay. The
+  // accept must fail loudly instead.
+  it('fails the accept when the paid-cancel entry cannot be written', async () => {
     const recorder = mock(async () => {
       throw new Error('payroll boom');
     });
@@ -413,15 +420,38 @@ describe('paid-cancel recorder', () => {
 
     // Default acceptAndApply already returns cancellation_paid: true.
     const svc = makeSvc();
-    const result = await svc.respond('carer-1', 'cr1', { status: 'accepted' });
 
-    expect(result.shift_change_request.status).toBe('accepted');
+    await expect(
+      svc.respond('carer-1', 'cr1', { status: 'accepted' })
+    ).rejects.toThrow('payroll boom');
     expect(recorder).toHaveBeenCalledTimes(1);
     expect(loggerError).toHaveBeenCalledWith(
       'Failed to record cancellation_paid time entry',
       expect.objectContaining({
         shiftId: 's1',
         error: 'payroll boom',
+      })
+    );
+  });
+
+  // The cancellation itself is committed and irreversible by the time the
+  // recorder runs, so the household still has to hear about it — the throw
+  // reports the missing pay entry, it does not retract the cancellation.
+  it('still pushes the cancellation before failing on a recorder throw', async () => {
+    setCancellationPaidEntryRecorder(async () => {
+      throw new Error('payroll boom');
+    });
+    const svc = makeSvc();
+
+    await expect(
+      svc.respond('carer-1', 'cr1', { status: 'accepted' })
+    ).rejects.toThrow('payroll boom');
+    expect(notifyHouseholdParents).toHaveBeenCalledWith(
+      'h1',
+      expect.objectContaining({
+        data: expect.objectContaining({
+          type: PUSH_NOTIFICATION_TYPES.SHIFT_CANCELLED,
+        }),
       })
     );
   });

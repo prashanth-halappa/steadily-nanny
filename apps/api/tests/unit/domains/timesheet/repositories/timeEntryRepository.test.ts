@@ -227,3 +227,255 @@ describe('TimeEntryRepository.listForCarerWeek', () => {
     ).toEqual([]);
   });
 });
+
+/**
+ * The overlap and carer-scoping queries run against a STATEFUL fake chain that
+ * actually evaluates eq/gte/lte/or against in-memory rows — a recording-only
+ * chain passes even with an inverted predicate or a missing carer filter,
+ * which is exactly what these tests exist to catch (F-B1-1, F-B1-3).
+ */
+interface FakeRow {
+  [key: string]: unknown;
+}
+
+function matchesOrTerm(row: FakeRow, term: string): boolean {
+  const [column, op, ...rest] = term.split('.');
+  const value = rest.join('.');
+  const actual = row[column as string];
+  if (op === 'is') return value === 'null' ? actual === null : false;
+  if (op === 'gte') return actual !== null && String(actual) >= value;
+  if (op === 'lte') return actual !== null && String(actual) <= value;
+  return false;
+}
+
+function createStatefulQuery(rows: FakeRow[], error: unknown = null): any {
+  const predicates: ((row: FakeRow) => boolean)[] = [];
+  const chain: any = {
+    select: mock(() => chain),
+    eq: mock((key: string, value: unknown) => {
+      predicates.push(row => row[key] === value);
+      return chain;
+    }),
+    gte: mock((key: string, value: unknown) => {
+      predicates.push(row => String(row[key]) >= String(value));
+      return chain;
+    }),
+    lte: mock((key: string, value: unknown) => {
+      predicates.push(row => String(row[key]) <= String(value));
+      return chain;
+    }),
+    lt: mock((key: string, value: unknown) => {
+      predicates.push(row => String(row[key]) < String(value));
+      return chain;
+    }),
+    or: mock((expression: string) => {
+      const terms = expression.split(',');
+      predicates.push(row => terms.some(term => matchesOrTerm(row, term)));
+      return chain;
+    }),
+    order: mock(() => chain),
+    // biome-ignore lint/suspicious/noThenProperty: intentional thenable for the mock
+    then: (resolve: (value: unknown) => unknown) =>
+      Promise.resolve(
+        error
+          ? { data: null, error }
+          : {
+              data: rows.filter(row => predicates.every(p => p(row))),
+              error: null,
+            }
+      ).then(resolve),
+  };
+  return chain;
+}
+
+const overnightPriorWeek: FakeRow = {
+  id: 't-overnight',
+  household_id: 'h1',
+  carer_id: 'carer-1',
+  clock_in_at: '2026-08-02T22:00:00.000Z',
+  clock_out_at: '2026-08-03T05:00:00.000Z',
+  local_date: '2026-08-02',
+  status: 'submitted',
+};
+const mondayDay: FakeRow = {
+  id: 't-monday',
+  household_id: 'h1',
+  carer_id: 'carer-1',
+  clock_in_at: '2026-08-03T08:00:00.000Z',
+  clock_out_at: '2026-08-03T16:00:00.000Z',
+  local_date: '2026-08-03',
+  status: 'submitted',
+};
+const stillRunning: FakeRow = {
+  id: 't-running',
+  household_id: 'h1',
+  carer_id: 'carer-1',
+  clock_in_at: '2026-08-04T09:00:00.000Z',
+  clock_out_at: null,
+  local_date: '2026-08-04',
+  status: 'running',
+};
+const otherCarer: FakeRow = {
+  ...mondayDay,
+  id: 't-other-carer',
+  carer_id: 'carer-2',
+};
+const otherHousehold: FakeRow = {
+  ...mondayDay,
+  id: 't-other-household',
+  household_id: 'h2',
+};
+
+const allRows = [
+  overnightPriorWeek,
+  mondayDay,
+  stillRunning,
+  otherCarer,
+  otherHousehold,
+];
+
+describe('TimeEntryRepository.listOverlapCandidatesForCarer', () => {
+  it('finds an entry filed under the PREVIOUS week whose clock span still reaches into this one', async () => {
+    mockSupabaseService.from.mockImplementation(() =>
+      createStatefulQuery(allRows)
+    );
+    const repo = new TimeEntryRepository();
+
+    const result = await repo.listOverlapCandidatesForCarer(
+      'carer-1',
+      '2026-08-03T01:00:00.000Z',
+      '2026-08-03T03:00:00.000Z'
+    );
+
+    expect(result.map((r: FakeRow) => r.id)).toEqual(['t-overnight']);
+  });
+
+  it('catches an entry that STARTED before the window and ends inside it', async () => {
+    // The half-covered case: `clock_in_at <= to` alone would miss nothing
+    // here, but an inverted `clock_out_at` bound would — the finish sits
+    // between `from` and `to`, not past either end.
+    mockSupabaseService.from.mockImplementation(() =>
+      createStatefulQuery(allRows)
+    );
+    const repo = new TimeEntryRepository();
+
+    const result = await repo.listOverlapCandidatesForCarer(
+      'carer-1',
+      '2026-08-03T04:00:00.000Z',
+      '2026-08-03T09:00:00.000Z'
+    );
+
+    // t-overnight ends 05:00 (inside the window); t-monday starts 08:00
+    // (inside it too) — both genuinely collide with 04:00-09:00. The
+    // other-household row is this same carer, so it collides as well.
+    expect(result.map((r: FakeRow) => r.id).sort()).toEqual([
+      't-monday',
+      't-other-household',
+      't-overnight',
+    ]);
+  });
+
+  it('includes a still-running entry — it has no finish, so it is never filtered out by one', async () => {
+    mockSupabaseService.from.mockImplementation(() =>
+      createStatefulQuery(allRows)
+    );
+    const repo = new TimeEntryRepository();
+
+    const result = await repo.listOverlapCandidatesForCarer(
+      'carer-1',
+      '2026-08-04T10:00:00.000Z',
+      '2026-08-04T11:00:00.000Z'
+    );
+
+    expect(result.map((r: FakeRow) => r.id)).toEqual(['t-running']);
+  });
+
+  it('never returns another CARER rows', async () => {
+    mockSupabaseService.from.mockImplementation(() =>
+      createStatefulQuery(allRows)
+    );
+    const repo = new TimeEntryRepository();
+
+    const result = await repo.listOverlapCandidatesForCarer(
+      'carer-1',
+      '2026-08-03T09:00:00.000Z',
+      '2026-08-03T10:00:00.000Z'
+    );
+
+    expect(result.map((r: FakeRow) => r.id)).not.toContain('t-other-carer');
+  });
+
+  it('DOES return this carer rows in another household — she cannot be in two places at once', async () => {
+    // `time_entries_one_running_per_carer` is keyed on carer_id with no
+    // household predicate, so the DB already treats "on the clock" as
+    // carer-global. Scoping overlap to one household would let the same hour
+    // be double-booked across two families.
+    mockSupabaseService.from.mockImplementation(() =>
+      createStatefulQuery(allRows)
+    );
+    const repo = new TimeEntryRepository();
+
+    const result = await repo.listOverlapCandidatesForCarer(
+      'carer-1',
+      '2026-08-03T09:00:00.000Z',
+      '2026-08-03T10:00:00.000Z'
+    );
+
+    expect(result.map((r: FakeRow) => r.id).sort()).toEqual([
+      't-monday',
+      't-other-household',
+    ]);
+  });
+
+  it('returns [] when nothing intersects the span', async () => {
+    mockSupabaseService.from.mockImplementation(() =>
+      createStatefulQuery(allRows)
+    );
+    const repo = new TimeEntryRepository();
+
+    expect(
+      await repo.listOverlapCandidatesForCarer(
+        'carer-1',
+        '2026-08-03T06:00:00.000Z',
+        '2026-08-03T07:00:00.000Z'
+      )
+    ).toEqual([]);
+  });
+});
+
+describe('TimeEntryRepository.listForHouseholdWeek — optional carer filter (F-B1-3)', () => {
+  it('returns only the named carer entries when a carer is given', async () => {
+    mockSupabaseService.from.mockImplementation(() =>
+      createStatefulQuery(allRows)
+    );
+    const repo = new TimeEntryRepository();
+
+    const result = await repo.listForHouseholdWeek(
+      'h1',
+      '2026-08-03',
+      '2026-08-10',
+      'carer-2'
+    );
+
+    expect(result.map((r: FakeRow) => r.id)).toEqual(['t-other-carer']);
+  });
+
+  it('returns every carer entries when no carer is given — unchanged behaviour', async () => {
+    mockSupabaseService.from.mockImplementation(() =>
+      createStatefulQuery(allRows)
+    );
+    const repo = new TimeEntryRepository();
+
+    const result = await repo.listForHouseholdWeek(
+      'h1',
+      '2026-08-03',
+      '2026-08-10'
+    );
+
+    expect(result.map((r: FakeRow) => r.id)).toEqual([
+      't-monday',
+      't-running',
+      't-other-carer',
+    ]);
+  });
+});

@@ -1,4 +1,4 @@
-import { describe, expect, it, mock } from 'bun:test';
+import { beforeEach, describe, expect, it, mock } from 'bun:test';
 import {
   ApprovalNotFoundError,
   ApprovalNotPendingError,
@@ -57,6 +57,8 @@ function makeApprovalRepo(overrides: Record<string, unknown> = {}): any {
       responded_by: respondedBy,
       responded_at: 't',
     })),
+    recordFailedApply: mock(async () => 'retrying'),
+    clearApplyMarkers: mock(async () => {}),
     ...overrides,
   };
 }
@@ -70,6 +72,13 @@ function makeHouseholds(
     ...overrides,
   };
 }
+
+// An approve with no registered applier is a failure now, not a silent
+// success, so every test that approves needs one. Tests that want a different
+// applier register it in their own body, which runs after this.
+beforeEach(() => {
+  approvalApplierRegistry.register('cancel', async () => {});
+});
 
 describe('CoParentApprovalCommandService.create', () => {
   it('opens a pending approval with a timeout_at derived from timeoutMinutes', async () => {
@@ -261,5 +270,125 @@ describe('CoParentApprovalCommandService.respond — applying the gated mutation
     await expect(
       svc.respond('u1', 'h1', 'a1', { status: 'approved' })
     ).rejects.toThrow('shift is gone');
+  });
+
+  it('records the failed apply against the claimed row instead of leaving it settled', async () => {
+    // `respond` commits `approved` in its own CAS statement before the applier
+    // runs. Without this the row is stuck terminally approved with nothing
+    // applied, and a retry is impossible because the second respond fails the
+    // `status = pending` CAS.
+    approvalApplierRegistry.register('cancel', async () => {
+      throw new Error('shift is gone');
+    });
+    const approvalRepo = makeApprovalRepo();
+
+    const svc = new CoParentApprovalCommandService(
+      approvalRepo,
+      makeHouseholds('parent')
+    );
+    await expect(
+      svc.respond('u1', 'h1', 'a1', { status: 'approved' })
+    ).rejects.toThrow('shift is gone');
+
+    expect(approvalRepo.recordFailedApply).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'a1' }),
+      'approved',
+      'shift is gone',
+      // A real applier failure MAY have half-written, so it spends an attempt.
+      true
+    );
+  });
+
+  it('still surfaces the applier error when recording the failure itself fails', async () => {
+    approvalApplierRegistry.register('cancel', async () => {
+      throw new Error('shift is gone');
+    });
+    const approvalRepo = makeApprovalRepo({
+      recordFailedApply: mock(async () => {
+        throw new Error('database unreachable');
+      }),
+    });
+
+    const svc = new CoParentApprovalCommandService(
+      approvalRepo,
+      makeHouseholds('parent')
+    );
+    await expect(
+      svc.respond('u1', 'h1', 'a1', { status: 'approved' })
+    ).rejects.toThrow('shift is gone');
+  });
+
+  it('records nothing when the applier succeeds — the uncontested path costs nothing', async () => {
+    approvalApplierRegistry.register('cancel', async () => {});
+    const approvalRepo = makeApprovalRepo();
+
+    const svc = new CoParentApprovalCommandService(
+      approvalRepo,
+      makeHouseholds('parent')
+    );
+    const result = await svc.respond('u1', 'h1', 'a1', { status: 'approved' });
+
+    expect(approvalRepo.recordFailedApply).not.toHaveBeenCalled();
+    expect(result.status).toBe('approved');
+  });
+
+  it('records nothing on a decline', async () => {
+    approvalApplierRegistry.register('cancel', async () => {
+      throw new Error('shift is gone');
+    });
+    const approvalRepo = makeApprovalRepo();
+
+    const svc = new CoParentApprovalCommandService(
+      approvalRepo,
+      makeHouseholds('parent')
+    );
+    await svc.respond('u1', 'h1', 'a1', { status: 'declined' });
+
+    expect(approvalRepo.recordFailedApply).not.toHaveBeenCalled();
+  });
+
+  it('treats an action with NO registered applier as a failure, not a silent success', async () => {
+    // The original flow-1f defect: an approval that settles `approved` and
+    // then does nothing at all. `other` has no applier registered by anyone.
+    const approvalRepo = makeApprovalRepo({
+      findById: mock(async () => pendingApproval({ action: 'other' })),
+      respond: mock(async (id: string, status: string) => ({
+        ...pendingApproval({ action: 'other' }),
+        id,
+        status,
+      })),
+    });
+
+    const svc = new CoParentApprovalCommandService(
+      approvalRepo,
+      makeHouseholds('parent')
+    );
+    await expect(
+      svc.respond('u1', 'h1', 'a1', { status: 'approved' })
+    ).rejects.toThrow();
+
+    expect(approvalRepo.recordFailedApply).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'a1' }),
+      'approved',
+      expect.any(String),
+      // A missing applier costs no attempt: it wrote nothing, and burning
+      // attempts would withdraw the mutation for good over a deploy bug.
+      false
+    );
+  });
+
+  it('clears stale apply markers when the applier finally succeeds', async () => {
+    approvalApplierRegistry.register('cancel', async () => {});
+    const approvalRepo = makeApprovalRepo();
+
+    const svc = new CoParentApprovalCommandService(
+      approvalRepo,
+      makeHouseholds('parent')
+    );
+    await svc.respond('u1', 'h1', 'a1', { status: 'approved' });
+
+    expect(approvalRepo.clearApplyMarkers).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'a1' })
+    );
   });
 });

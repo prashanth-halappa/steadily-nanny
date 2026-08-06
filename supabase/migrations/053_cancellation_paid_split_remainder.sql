@@ -1,0 +1,74 @@
+-- 053 Allow a split cancellation remainder — relax 039 from shift to span
+--
+-- 039 pinned "at most one cancellation_paid entry per shift" with a partial
+-- unique index on `(shift_id)`. That is right for the common shapes and too
+-- strong for one of them.
+--
+-- When a shift is cancelled-with-pay but the carer already worked part of the
+-- window, she is owed the REMAINDER, not the whole booking (writing the whole
+-- booking double-pays: `sumWorkedMinutes` and the earnings engine both add
+-- `worked` and `cancellation_paid`). Worked time at the front or back trims to
+-- a single interval and fits one row. Worked time in the MIDDLE does not: an
+-- 08:00-16:00 cancelled shift with 11:00-12:00 worked leaves two disjoint
+-- remainders, 08:00-11:00 and 12:00-16:00, and 039 permits only one row.
+--
+-- `recordCancellationPaidEntry` refuses that case outright today
+-- (`TimeEntryOverlapError`, reason `CANCELLATION_REMAINDER_FRAGMENTED`) rather
+-- than writing the larger fragment and silently underpaying her for the
+-- smaller — which would be the exact defect the trimming exists to fix. This
+-- migration removes the constraint that made the honest answer unrepresentable.
+--
+-- THE IDENTITY: (shift_id, clock_in_at)
+-- 039 exists to stop a double-tapped accept writing two IDENTICAL payable rows
+-- for one shift. Two fragments of one remainder are disjoint by construction,
+-- so they never share a `clock_in_at`; the composite key admits them while
+-- still collapsing a genuine double-tap, which recomputes the same remainder
+-- and therefore the same `clock_in_at`. The narrower thing 039 was defending
+-- is still defended.
+--
+-- `(shift_id, clock_in_at, clock_out_at)` was considered and rejected as
+-- strictly WEAKER. Adding a column to a unique key only ever admits more rows,
+-- and the rows it would admit here share a `clock_in_at` and differ in
+-- `clock_out_at` — not a second fragment, but two overlapping rows paying for
+-- the same minutes twice. The two-column key forbids exactly that.
+--
+-- THE NULL TRAP
+-- `clock_in_at` is nullable (017_time_tracking.sql — a cancellation row has no
+-- live shift, and the column is shared with clock-in recovery). In a plain
+-- unique index Postgres treats NULLs as DISTINCT, so cancellation rows with a
+-- null `clock_in_at` would dedupe against nothing and reopen 039's hole for
+-- that shape, silently. `nulls not distinct` closes it; PG15 supports it and
+-- `supabase/config.toml` pins `major_version = 15`. Today's sole writer always
+-- sets `clock_in_at`, but "the only writer today" is not a constraint.
+--
+-- WHAT THIS DOES NOT CLOSE
+-- Two accepts that compute DIFFERENT remainders for the same shift — she
+-- clocks in between the two reads — still produce two non-identical, possibly
+-- overlapping rows, and this index cannot see that. Forbidding it properly
+-- needs an overlap exclusion constraint:
+--   exclude using gist (shift_id with =,
+--                       tstzrange(clock_in_at, clock_out_at) with &&)
+-- which needs the `btree_gist` extension this database does not install.
+-- Adding an extension is out of scope for relaxing an index; it is the
+-- documented upgrade path if that race is ever observed.
+--
+-- APP-SIDE CHANGES THIS MIGRATION OBLIGES (not made here — other units own
+-- these files, and the migration is safe to apply before them because nothing
+-- writes a second row until `recordCancellationPaidEntry` is taught to):
+--   - `timeEntryRepository.findCancellationPaidForShift` uses `.maybeSingle()`,
+--     which ERRORS on more than one row. Once a shift has two fragments, every
+--     call for that shift throws — the find-first at
+--     `recordCancellationPaidEntry`, its post-23505 race recovery, and the
+--     reconcile job's settled-check alike. It has to return a list.
+--   - The 23505 translation to `CancellationPaidAlreadyRecordedError` is now
+--     span-scoped, not shift-scoped: the loser must re-fetch by
+--     (shift_id, clock_in_at), not "the winner" for the shift.
+--   - `cancellationPayReconcileJob` treats "an entry exists" as settled. With
+--     fragments, a shift whose first fragment committed and whose second
+--     failed looks settled and is never repaired.
+
+drop index if exists public.time_entries_one_cancellation_paid_per_shift;
+
+create unique index if not exists time_entries_one_cancellation_paid_per_span
+  on public.time_entries (shift_id, clock_in_at) nulls not distinct
+  where kind = 'cancellation_paid' and shift_id is not null;

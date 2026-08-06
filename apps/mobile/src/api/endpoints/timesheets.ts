@@ -78,23 +78,35 @@ export const timesheetApi = {
   },
 
   /**
-   * One week's timesheet for a household, WITH its earnings attached, or
-   * null if no timesheet row exists yet (no row is created until the first
-   * clock-out of that week — `timesheetCommandService.clockOut`). Filters
-   * the full list client-side to find the id; see `list`'s doc comment for
+   * EVERY carer's timesheet for one household week, each WITH its earnings
+   * attached — empty when no row exists yet (no row is created until the
+   * first clock-out of that week — `timesheetCommandService.clockOut`).
+   * Filters the full list client-side by week; see `list`'s doc comment for
    * why there's no server-side week param here. The earnings themselves come
-   * from a second call to `getById` — `GET /timesheets/:id` is where the
+   * from a call to `getById` per row — `GET /timesheets/:id` is where the
    * server decides live-vs-frozen (`timesheetQueryService.getWeekWithEarnings`),
    * and that decision must never be made twice or made here.
+   *
+   * Returns a LIST, not one row (F-B1-3): a timesheet is identified by
+   * `(household_id, carer_id, week_start)`, never by the week alone, and the
+   * server orders by `week_start` only — so `find(t => t.week_start === …)`
+   * in a two-carer household binds to whichever carer sorted first. Callers
+   * pick their own carer's row. This also keeps the React Query cache
+   * honest: `queryKeys.timesheet.week(householdId, weekStart)` names a
+   * household week, and that is now exactly what the entry holds — no carer
+   * can be served another's cached row.
+   *
+   * ponytail: one `getById` per carer row (1–2 in practice). Add a
+   * server-side `?week_start=` + embedded earnings if a household ever has
+   * enough carers for the fan-out to matter.
    */
   getWeek: async (
     householdId: string,
     weekStart: string
-  ): Promise<TimesheetWeek | null> => {
+  ): Promise<TimesheetWeek[]> => {
     const timesheets = await timesheetApi.list(householdId);
-    const match = timesheets.find(t => t.week_start === weekStart);
-    if (!match) return null;
-    return timesheetApi.getById(match.id);
+    const matches = timesheets.filter(t => t.week_start === weekStart);
+    return Promise.all(matches.map(t => timesheetApi.getById(t.id)));
   },
 
   /**

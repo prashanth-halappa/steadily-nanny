@@ -161,7 +161,7 @@ export class ScheduleMaterialisationService {
     const producedDates = new Set(occurrences.map(occ => occ.localDate));
 
     for (const occ of occurrences) {
-      await this.materialiseOne(pattern, occ, result);
+      await this.materialiseOne(pattern, occ, result, now);
     }
 
     const existingForPattern = await this.shiftRepo.findActiveByPattern(
@@ -180,7 +180,8 @@ export class ScheduleMaterialisationService {
   private async materialiseOne(
     pattern: PatternForMaterialisation,
     occ: ExpandedOccurrence,
-    result: MaterialiseResult
+    result: MaterialiseResult,
+    now: Date
   ): Promise<void> {
     const existing = await this.shiftRepo.findByPatternAndDate(
       pattern.id,
@@ -188,6 +189,19 @@ export class ScheduleMaterialisationService {
     );
 
     if (!existing) {
+      // F-B6-3: a horizon catch-up run (e.g. after the job was down for
+      // days) re-expands from `dtstart` and can produce occurrences that
+      // have already started. `occ.startsAt` is already an absolute UTC
+      // instant (computed from the pattern's own timezone by
+      // `expandRecurrence`), so comparing it straight against `now` is
+      // correct regardless of the pattern's or server's timezone — no
+      // separate zone conversion needed here. Never backfill one of these
+      // as a brand-new `confirmed` shift nobody could ever have clocked
+      // into; an occurrence that already has a row is untouched by this
+      // guard and still flows through the normal update path below.
+      if (new Date(occ.startsAt).getTime() <= now.getTime()) {
+        return;
+      }
       const created = await this.shiftRepo.create({
         household_id: pattern.householdId,
         carer_id: pattern.carerId,

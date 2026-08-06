@@ -9,7 +9,15 @@
  * `amount_minor`, the no-rate hint arm, and edit-mode seeding.
  */
 
-import { beforeAll, describe, expect, it, mock } from 'bun:test';
+import {
+  afterAll,
+  beforeAll,
+  describe,
+  expect,
+  it,
+  mock,
+  setSystemTime,
+} from 'bun:test';
 import type { CreateExpenseRequest } from '@steadily-nanny/shared-types/schemas/expense.schema';
 import { fireEvent, render } from '@testing-library/react-native';
 
@@ -52,6 +60,17 @@ let ExpenseAddSheet: typeof import('../ExpenseAddSheet').ExpenseAddSheet;
 
 beforeAll(async () => {
   ExpenseAddSheet = (await import('../ExpenseAddSheet')).ExpenseAddSheet;
+
+  // Freeze the clock inside `DEFAULT_PROPS.todayISO`'s UTC calendar day.
+  // `handleSubmit` recomputes "today" live via `localDateInZone` (so a sheet
+  // left open across midnight submits the real date, not a stale one) —
+  // without a frozen clock these submit-payload assertions flake at the UTC
+  // midnight boundary instead of testing the payload shape.
+  setSystemTime(new Date('2026-08-05T12:00:00Z'));
+});
+
+afterAll(() => {
+  setSystemTime();
 });
 
 const DEFAULT_PROPS = {

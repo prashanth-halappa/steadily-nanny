@@ -103,6 +103,7 @@ export function SetupScreenShell({
         contentContainerStyle={{
           flexGrow: 1,
           padding: SCREEN_GUTTER,
+          paddingTop: heroImage ? 8 : SCREEN_GUTTER,
           paddingBottom: 120,
         }}
       >
@@ -112,10 +113,10 @@ export function SetupScreenShell({
               source={heroImage}
               accessibilityElementsHidden
               style={{
-                width: 200,
-                height: 200,
+                width: 160,
+                height: 160,
                 alignSelf: 'center',
-                marginBottom: 16,
+                marginBottom: 12,
               }}
               resizeMode="contain"
             />
@@ -126,7 +127,15 @@ export function SetupScreenShell({
           ) : null}
         </View>
         {children ? (
-          <View className="mt-8 flex-1 justify-center gap-4">{children}</View>
+          <View
+            className={
+              heroImage
+                ? 'mt-6 flex-1 justify-start gap-4'
+                : 'mt-8 flex-1 justify-center gap-4'
+            }
+          >
+            {children}
+          </View>
         ) : null}
       </ScrollView>
 

@@ -112,10 +112,20 @@ export function NannyWeekView({
   const [isBreakdownVisible, setIsBreakdownVisible] = useState(false);
   const [isAddExpenseVisible, setIsAddExpenseVisible] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
-  const reopened = useReopenedNotice(
-    timesheetQuery.data?.id,
-    timesheetQuery.data?.status
-  );
+  // F-B1-3: BOTH household week reads are household-wide, not self-scoped —
+  // in a two-carer household the entries list carries the other carer's
+  // hours and the timesheet list carries her pay. Everything below is
+  // narrowed to `currentUserId` before a single figure is computed from it.
+  const weekTimesheets = timesheetQuery.isError
+    ? []
+    : (timesheetQuery.data ?? []);
+  // Guarded, not just `find`: with no user id, `carer_id === currentUserId`
+  // would match a DEPARTED carer's row (`carer_id` NULL, 033) and show her
+  // pay here. Fails closed, same as the entries filter below.
+  const timesheet = currentUserId
+    ? (weekTimesheets.find(t => t.carer_id === currentUserId) ?? null)
+    : null;
+  const reopened = useReopenedNotice(timesheet?.id, timesheet?.status);
 
   const handleOpenAddExpense = () => {
     setEditingExpense(null);
@@ -190,7 +200,12 @@ export function NannyWeekView({
     );
   }
 
-  const entries = entriesQuery.data ?? [];
+  const allEntries = entriesQuery.data ?? [];
+  // Fails CLOSED with no user id: showing the household's summed hours under
+  // "Your week" is worse than showing nothing.
+  const entries = currentUserId
+    ? allEntries.filter(e => e.carer_id === currentUserId)
+    : [];
   const totalMinutes = sumEntryMinutes(entries, nowMs);
   const overtimeLabel = formatOvertimeDelta(
     totalMinutes,
@@ -205,9 +220,6 @@ export function NannyWeekView({
     }))
     .filter(row => row.entries.length > 0 || row.date === todayISO);
 
-  const timesheet = timesheetQuery.isError
-    ? null
-    : (timesheetQuery.data ?? null);
   const earnings = timesheet?.earnings;
   const earningsOk = earnings && earnings.status === 'ok' ? earnings : null;
   const isApproved = timesheet?.status === 'approved';
@@ -242,7 +254,7 @@ export function NannyWeekView({
             nowMs={nowMs}
             timeZone={timeZone}
             onEditEntry={setEditing}
-            timesheetStatus={timesheetQuery.data?.status ?? null}
+            timesheetStatus={timesheet?.status ?? null}
           />
         )}
         ListHeaderComponent={

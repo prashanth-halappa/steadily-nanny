@@ -96,12 +96,16 @@ export const CreateSchedulePatternSchema =
     { message: 'until must be on or after dtstart', path: ['until'] }
   );
 
-/** PATCH body — every field optional, but at least one must be present. */
+/**
+ * PATCH body — every field optional, but at least one must be present.
+ * `status` is deliberately NOT one of these fields — accepting a pattern
+ * must only ever happen through `respond()` (carer-only, requires
+ * `pending`, and drives materialisation). Zod strips unknown keys by
+ * default, so a client-sent `status` is silently dropped here rather than
+ * reaching the command service.
+ */
 export const UpdateSchedulePatternSchema =
-  SchedulePatternWriteFieldsSchema.extend({
-    status: z.enum(Object.values(SCHEDULE_PATTERN_STATUSES)).optional(),
-  })
-    .partial()
+  SchedulePatternWriteFieldsSchema.partial()
     .refine(data => Object.keys(data).length > 0, {
       message: 'at least one field is required',
     })

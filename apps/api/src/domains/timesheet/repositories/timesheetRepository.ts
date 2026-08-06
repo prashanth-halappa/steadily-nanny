@@ -95,13 +95,26 @@ export class TimesheetRepository extends BaseRepository<TimesheetRow> {
     return data as TimesheetRow | null;
   }
 
-  /** A household's timesheets, most recent week first. */
-  async listForHousehold(householdId: string): Promise<TimesheetRow[]> {
-    const { data, error } = await supabaseService
+  /**
+   * A household's timesheets, most recent week first. `carerId` narrows to ONE
+   * carer — omit it and every carer's every week comes back, which a caller
+   * that then picks "the row for this week" resolves by week alone and binds
+   * to whichever carer sorted first (F-B1-3).
+   */
+  async listForHousehold(
+    householdId: string,
+    carerId?: string
+  ): Promise<TimesheetRow[]> {
+    let query = supabaseService
       .from(this.table)
       .select('*')
-      .eq('household_id', householdId)
-      .order('week_start', { ascending: false });
+      .eq('household_id', householdId);
+    if (carerId) {
+      query = query.eq('carer_id', carerId);
+    }
+    const { data, error } = await query.order('week_start', {
+      ascending: false,
+    });
 
     if (error) {
       throw new DatabaseError(

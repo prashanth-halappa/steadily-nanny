@@ -1,4 +1,4 @@
-/** @module hooks/queries/useWeekTimesheet — one week's approval roll-up for a household. */
+/** @module hooks/queries/useWeekTimesheet — one week's approval roll-ups for a household. */
 import { useQuery } from '@tanstack/react-query';
 import { timesheetApi } from '@/src/api/endpoints/timesheets';
 import { queryKeys } from '@/src/api/queryKeys';
@@ -6,8 +6,15 @@ import { isValidId, QUERY_TIMING } from '@/src/hooks/queries/utils';
 import { useAuthStore } from '@/src/store/auth';
 
 /**
- * The timesheet for one household + week (Monday `weekStart`), or `null`
- * when no row exists yet (nothing has been clocked out for that week).
+ * EVERY carer's timesheet for one household + week (Monday `weekStart`),
+ * each with its earnings attached — empty when no row exists yet (nothing
+ * has been clocked out for that week).
+ *
+ * A list, not one row (F-B1-3): a timesheet is identified by
+ * `(household_id, carer_id, week_start)`, so callers select their own
+ * carer's row. That is also what keeps this key honest — it names a
+ * household week and holds exactly that, so no carer can be served
+ * another's cached row.
  */
 export function useWeekTimesheet(
   householdId: string | null | undefined,

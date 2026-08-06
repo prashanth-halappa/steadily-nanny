@@ -6,6 +6,7 @@ const listMembershipsForUser = mock(async () => [
   { id: 'm1', household_id: 'h1', role: 'owner' },
   { id: 'm2', household_id: 'h2', role: 'nanny' },
 ]);
+const deleteUser = mock(async () => undefined);
 
 mock.module(
   '../../../../../src/domains/household/services/householdQueryService',
@@ -13,6 +14,10 @@ mock.module(
     householdQueryService: { listMembershipsForUser },
   })
 );
+
+mock.module('../../../../../src/domains/user/services/userService', () => ({
+  UserService: { deleteUser },
+}));
 
 const { UserController } = await import(
   '../../../../../src/domains/user/controllers/userController'
@@ -33,6 +38,7 @@ function mockRes(): any {
 
 beforeEach(() => {
   listMembershipsForUser.mockClear?.();
+  deleteUser.mockClear?.();
 });
 
 describe('UserController.listMemberships', () => {
@@ -65,5 +71,37 @@ describe('UserController.listMemberships', () => {
       next
     );
     expect(next).toHaveBeenCalled();
+  });
+});
+
+describe('UserController.deleteAccount', () => {
+  it('F-B7-1: puts the message on the envelope only — data is just { success: true }, never { success, message }', async () => {
+    const res = mockRes();
+    await UserController.deleteAccount(
+      { user: { id: 'u1' } } as any,
+      res,
+      mock()
+    );
+
+    expect(deleteUser).toHaveBeenCalledWith('u1');
+    expect(res.statusCode).toBe(200);
+    expect(res.body.message).toBe('Account deleted');
+    expect(res.body.data).toEqual({ success: true });
+    expect(res.body.data).not.toHaveProperty('message');
+  });
+
+  it('forwards service errors to next() without sending a response', async () => {
+    deleteUser.mockImplementationOnce(async () => {
+      throw new Error('boom');
+    });
+    const res = mockRes();
+    const next = mock();
+    await UserController.deleteAccount(
+      { user: { id: 'u1' } } as any,
+      res,
+      next
+    );
+    expect(next).toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
   });
 });

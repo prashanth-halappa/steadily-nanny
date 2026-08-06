@@ -22,6 +22,7 @@ import type { Href } from 'expo-router';
 import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { View } from 'react-native';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { useTabBarScrollPadding } from '@/lib/layout/useTabBarScrollPadding';
 import { ErrorState } from '@/src/components/custom/ErrorState';
@@ -139,10 +140,58 @@ export function ParentWeekView({
     null
   );
   const [genericErrorId, setGenericErrorId] = useState<string | null>(null);
-  const reopened = useReopenedNotice(
-    timesheetQuery.data?.id,
-    timesheetQuery.data?.status
+  // F-B1-3 (S0): both household week reads are household-wide. Which carer
+  // this screen is ABOUT is decided once, here, and everything below —
+  // total, money line, reimbursements, approve/query/reopen — is derived
+  // from that one carer.
+  //
+  // Migration 033 preserves a departed carer's hours and pay with `carer_id`
+  // NULLed and `carer_display_name` kept NOT NULL — so the id alone is not
+  // an identity. Bucketing on `carer_id ?? carer_display_name` keeps every
+  // carer, departed or not, in her own bucket; treating a null id as "no
+  // filter" summed an ex-carer into the active carer's card and approved her
+  // row, and bucketing all nulls together did the same to two ex-carers.
+  // `undefined` — and only `undefined` — means "hasn't picked a tab yet".
+  //
+  // ponytail: two departed carers who shared a display name still collapse.
+  // No worse than two same-named active carers, and telling them apart needs
+  // an identity the deleted account no longer has.
+  const [pickedCarerId, setPickedCarerId] = useState<string | undefined>(
+    undefined
   );
+  const allEntries = entriesQuery.data ?? [];
+  const weekTimesheets = timesheetQuery.isError
+    ? []
+    : (timesheetQuery.data ?? []);
+  const carerKeyOf = (row: {
+    carer_id: string | null;
+    carer_display_name: string;
+  }) => row.carer_id ?? row.carer_display_name;
+  const carerSnapshotName = (key: string) =>
+    allEntries.find(e => carerKeyOf(e) === key)?.carer_display_name ??
+    weekTimesheets.find(t => carerKeyOf(t) === key)?.carer_display_name ??
+    '';
+  // Sorted by name, not arrival order: a refetch that reorders entries (an
+  // edited `clock_in_at`) must not move the parent onto another carer. Ties
+  // break on the key so two same-named carers still sort stably.
+  const weekCarerIds = [
+    ...new Set([
+      ...allEntries.map(carerKeyOf),
+      ...weekTimesheets.map(carerKeyOf),
+    ]),
+  ].sort(
+    (a, b) =>
+      carerSnapshotName(a).localeCompare(carerSnapshotName(b)) ||
+      a.localeCompare(b)
+  );
+  const selectedCarerId =
+    pickedCarerId !== undefined && weekCarerIds.includes(pickedCarerId)
+      ? pickedCarerId
+      : (weekCarerIds[0] ?? null);
+  const entries = allEntries.filter(e => carerKeyOf(e) === selectedCarerId);
+  const timesheet =
+    weekTimesheets.find(t => carerKeyOf(t) === selectedCarerId) ?? null;
+  const reopened = useReopenedNotice(timesheet?.id, timesheet?.status);
 
   const pendingExpenses = pendingExpensesQuery.data ?? [];
 
@@ -242,10 +291,6 @@ export function ParentWeekView({
     );
   }
 
-  const entries = entriesQuery.data ?? [];
-  const timesheet = timesheetQuery.isError
-    ? null
-    : (timesheetQuery.data ?? null);
   const totalMinutes = sumEntryMinutes(entries, nowMs);
   const overtimeLabel = formatOvertimeDelta(
     totalMinutes,
@@ -317,8 +362,13 @@ export function ParentWeekView({
   // `currency` is deliberately NOT on the wire `Timesheet` (only inside
   // `earnings.currency`, per `TimesheetWeekSchema`'s doc comment), so the
   // fallback below reads an approved expense's own currency instead.
+  // Carer-scoped for the same reason as the hours: the total under the card
+  // comes from THIS carer's `earnings.reimbursements_minor`, so the lines
+  // above it must be this carer's claims and no one else's.
   const weekExpenses = weekExpensesQuery.data ?? [];
-  const approvedExpenses = weekExpenses.filter(e => e.status === 'approved');
+  const approvedExpenses = weekExpenses.filter(
+    e => e.status === 'approved' && carerKeyOf(e) === selectedCarerId
+  );
   const expensesCurrency =
     earningsOk?.currency ?? approvedExpenses[0]?.currency ?? 'GBP';
 
@@ -388,38 +438,70 @@ export function ParentWeekView({
           />
         )}
         ListHeaderComponent={
-          <WeekTotal
-            testID="hours-week-total"
-            weekRangeLabel={weekRangeLabel}
-            totalLabel={formatDuration(totalMinutes)}
-            overtimeLabel={overtimeLabel}
-            onPreviousWeek={onPreviousWeek}
-            onNextWeek={onNextWeek}
-            isNextDisabled={isNextWeekDisabled}
-            isPreviousDisabled={isPreviousWeekDisabled}
-            carerName={carerName}
-            timesheetStatus={timesheet?.status ?? null}
-            showPayBoundary
-            totalMinutes={totalMinutes}
-            earnings={earnings}
-            earningsRole="parent"
-            earningsCarerId={timesheet?.carer_id ?? null}
-            earningsCarerDisplayName={timesheet?.carer_display_name ?? ''}
-            onPressEarnings={() => setIsBreakdownVisible(true)}
-            earningsReopened={reopened}
-            earningsReopenReason={timesheet?.reopen_reason ?? null}
-            earningsError={timesheetQuery.isError}
-            onRetryEarnings={() => void timesheetQuery.refetch()}
-            // Walkthrough fix 1 — the reopen affordance lives in the
-            // summary card, next to the status pill/gross, not below the
-            // day rows. `readOnly` (a helper) never gets a handler, so a
-            // helper never sees `hours-reopen-button` even on an approved
-            // week.
-            onReopenPress={
-              readOnly ? undefined : () => setIsReopenDialogOpen(true)
-            }
-            isReopenPending={reopenTimesheet.isPending}
-          />
+          <>
+            {/* F-B1-3: two carers, two pay records, two approvals. One
+                carer at a time, so the figure on the card is always the
+                figure the button below approves. A departed carer gets a
+                tab like anyone else — hiding her is what let her hours be
+                summed into someone else's. Hidden entirely when the week
+                has one carer: the single-carer screen is unchanged. */}
+            {weekCarerIds.length > 1 ? (
+              <View
+                testID="hours-carer-switcher"
+                className="mb-3 flex-row flex-wrap gap-2"
+              >
+                {weekCarerIds.map(id => (
+                  <Button
+                    key={id}
+                    testID={`hours-carer-tab-${id}`}
+                    size="sm"
+                    variant={id === selectedCarerId ? 'default' : 'outline'}
+                    onPress={() => setPickedCarerId(id)}
+                  >
+                    <Text
+                      className={
+                        id === selectedCarerId ? '' : 'text-foreground'
+                      }
+                    >
+                      {carerSnapshotName(id)}
+                    </Text>
+                  </Button>
+                ))}
+              </View>
+            ) : null}
+            <WeekTotal
+              testID="hours-week-total"
+              weekRangeLabel={weekRangeLabel}
+              totalLabel={formatDuration(totalMinutes)}
+              overtimeLabel={overtimeLabel}
+              onPreviousWeek={onPreviousWeek}
+              onNextWeek={onNextWeek}
+              isNextDisabled={isNextWeekDisabled}
+              isPreviousDisabled={isPreviousWeekDisabled}
+              carerName={carerName}
+              timesheetStatus={timesheet?.status ?? null}
+              showPayBoundary
+              totalMinutes={totalMinutes}
+              earnings={earnings}
+              earningsRole="parent"
+              earningsCarerId={timesheet?.carer_id ?? null}
+              earningsCarerDisplayName={timesheet?.carer_display_name ?? ''}
+              onPressEarnings={() => setIsBreakdownVisible(true)}
+              earningsReopened={reopened}
+              earningsReopenReason={timesheet?.reopen_reason ?? null}
+              earningsError={timesheetQuery.isError}
+              onRetryEarnings={() => void timesheetQuery.refetch()}
+              // Walkthrough fix 1 — the reopen affordance lives in the
+              // summary card, next to the status pill/gross, not below the
+              // day rows. `readOnly` (a helper) never gets a handler, so a
+              // helper never sees `hours-reopen-button` even on an approved
+              // week.
+              onReopenPress={
+                readOnly ? undefined : () => setIsReopenDialogOpen(true)
+              }
+              isReopenPending={reopenTimesheet.isPending}
+            />
+          </>
         }
         ListFooterComponent={
           <>

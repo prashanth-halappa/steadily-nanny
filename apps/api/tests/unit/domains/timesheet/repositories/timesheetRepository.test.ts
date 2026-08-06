@@ -216,3 +216,67 @@ describe('CLEARED_EARNINGS_SNAPSHOT', () => {
     });
   });
 });
+
+/**
+ * Stateful fake chain — a recording-only chain would pass with a carer filter
+ * that never reaches the query, which is the whole point of F-B1-3.
+ */
+interface FakeTimesheetRow {
+  [key: string]: unknown;
+}
+
+function createStatefulQuery(rows: FakeTimesheetRow[]): any {
+  const predicates: ((row: FakeTimesheetRow) => boolean)[] = [];
+  const chain: any = {
+    select: mock(() => chain),
+    eq: mock((key: string, value: unknown) => {
+      predicates.push(row => row[key] === value);
+      return chain;
+    }),
+    order: mock(() => chain),
+    // biome-ignore lint/suspicious/noThenProperty: intentional thenable for the mock
+    then: (resolve: (value: unknown) => unknown) =>
+      Promise.resolve({
+        data: rows.filter(row => predicates.every(p => p(row))),
+        error: null,
+      }).then(resolve),
+  };
+  return chain;
+}
+
+const carerOneWeek: FakeTimesheetRow = {
+  id: 'ts1',
+  household_id: 'h1',
+  carer_id: 'carer-1',
+  week_start: '2026-08-03',
+};
+const carerTwoWeek: FakeTimesheetRow = {
+  id: 'ts2',
+  household_id: 'h1',
+  carer_id: 'carer-2',
+  week_start: '2026-08-03',
+};
+
+describe('TimesheetRepository.listForHousehold — optional carer filter (F-B1-3)', () => {
+  it('returns only the named carer weeks when a carer is given', async () => {
+    mockSupabaseService.from.mockImplementation(() =>
+      createStatefulQuery([carerOneWeek, carerTwoWeek])
+    );
+    const repo = new TimesheetRepository();
+
+    const result = await repo.listForHousehold('h1', 'carer-2');
+
+    expect(result.map((r: FakeTimesheetRow) => r.id)).toEqual(['ts2']);
+  });
+
+  it('returns every carer weeks when no carer is given — unchanged behaviour', async () => {
+    mockSupabaseService.from.mockImplementation(() =>
+      createStatefulQuery([carerOneWeek, carerTwoWeek])
+    );
+    const repo = new TimesheetRepository();
+
+    const result = await repo.listForHousehold('h1');
+
+    expect(result.map((r: FakeTimesheetRow) => r.id)).toEqual(['ts1', 'ts2']);
+  });
+});

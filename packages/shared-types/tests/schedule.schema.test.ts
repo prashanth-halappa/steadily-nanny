@@ -135,10 +135,29 @@ describe('schedule.schema', () => {
       expect(UpdateSchedulePatternSchema.safeParse({}).success).toBe(false);
     });
 
-    it('accepts a status-only update', () => {
+    // F-B3b-1 / F-B7-2 (S0): `status` used to be part of the generic PATCH
+    // body, which let a parent force-accept a pattern without carer
+    // consent — bypassing `respond()`'s carer-only check and its
+    // materialisation call. `status` is now absent from the write-fields
+    // schema entirely, so Zod's default "strip unknown keys" behaviour
+    // removes it. A status-only body therefore parses down to `{}`, which
+    // the "at least one field" refine rejects — accept must only ever
+    // happen through `respond()`.
+    it('rejects a status-only update — status is stripped, leaving nothing', () => {
       expect(
         UpdateSchedulePatternSchema.safeParse({ status: 'withdrawn' }).success
-      ).toBe(true);
+      ).toBe(false);
+    });
+
+    it('strips a status field even alongside a legitimate field, rather than applying it', () => {
+      const result = UpdateSchedulePatternSchema.safeParse({
+        note: 'Updated',
+        status: 'accepted',
+      });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data).toEqual({ note: 'Updated' });
+      }
     });
 
     it('rejects until before dtstart when both are present', () => {

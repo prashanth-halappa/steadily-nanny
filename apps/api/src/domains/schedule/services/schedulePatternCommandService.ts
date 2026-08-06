@@ -134,7 +134,21 @@ export class SchedulePatternCommandService {
     });
   }
 
-  /** Edit a draft pattern's own fields. Owner/parent only, draft only. */
+  /**
+   * Edit a draft pattern's own fields. Owner/parent only, draft only.
+   *
+   * Explicitly whitelists the fields forwarded to the repository — belt and
+   * braces alongside `UpdateSchedulePatternSchema` dropping `status`: the
+   * schema stops a client-sent `status` at the door, this stops it (or any
+   * other stray key) from ever reaching a write even if it somehow got
+   * past validation. Accepting a pattern must only ever happen through
+   * `respond()`, never this generic PATCH — see `NotThePatternCarerError` /
+   * `PatternNotPendingError` there for the carer-only, pending-only gate.
+   *
+   * `carer_id`, like on `create`, is validated with `assertCarerRole` — a
+   * caller cannot PATCH it to an arbitrary uuid (including their own) and
+   * then walk `send` + `respond` to a self-accepted pattern.
+   */
   async update(
     userId: string,
     patternId: string,
@@ -143,7 +157,20 @@ export class SchedulePatternCommandService {
     const pattern = await this.queries.getOwned(userId, patternId);
     await this.assertWriteMember(userId, pattern.household_id);
     this.assertDraft(pattern);
-    return this.patternRepo.update(patternId, input);
+    if (input.carer_id) {
+      await this.assertCarerRole(pattern.household_id, input.carer_id);
+    }
+    return this.patternRepo.update(patternId, {
+      ...(input.carer_id !== undefined ? { carer_id: input.carer_id } : {}),
+      ...(input.rrule !== undefined ? { rrule: input.rrule } : {}),
+      ...(input.dtstart !== undefined ? { dtstart: input.dtstart } : {}),
+      ...(input.until !== undefined ? { until: input.until } : {}),
+      ...(input.exdates !== undefined ? { exdates: input.exdates } : {}),
+      ...(input.pause_ranges !== undefined
+        ? { pause_ranges: input.pause_ranges }
+        : {}),
+      ...(input.note !== undefined ? { note: input.note } : {}),
+    });
   }
 
   /**
@@ -291,7 +318,16 @@ export class SchedulePatternCommandService {
   }
 
   /**
-   * The carer accepts or declines. Only the assigned carer may respond.
+   * The carer accepts or declines. Only the assigned carer may respond —
+   * checked two ways, mirroring `shiftCommandService.accept`: identity
+   * (`carer_id === userId`) AND the caller's current household role is
+   * still a carer role. The role check matters even though `carer_id` can
+   * now only ever be set to a genuine carer (see `assertCarerRole` on
+   * `create`/`update`) — a carer who has since left the household, or any
+   * future path that sets `carer_id` less carefully, must not still be able
+   * to accept. Same error either way, exactly like `accept` reusing
+   * `ShiftNotFoundError` for both its checks — a caller must not be able to
+   * distinguish "wrong person" from "right id, wrong role" by probing.
    * Accepting materialises shifts from the pattern (see
    * `scheduleMaterialisationService`); declining does not.
    */
@@ -302,6 +338,13 @@ export class SchedulePatternCommandService {
   ): Promise<SchedulePattern> {
     const pattern = await this.queries.getOwned(userId, patternId);
     if (pattern.carer_id !== userId) {
+      throw new NotThePatternCarerError(patternId);
+    }
+    const membership = await this.memberRepo.findActiveMembership(
+      pattern.household_id,
+      userId
+    );
+    if (!membership || !CARER_ROLES.has(membership.role)) {
       throw new NotThePatternCarerError(patternId);
     }
     if (pattern.status !== 'pending') {

@@ -62,11 +62,19 @@ export class TimesheetQueryService {
   }
 
   /**
-   * Fetch one time entry, enforcing that it belongs to the caller. Throws
-   * TimeEntryNotFoundError for both "doesn't exist" and "exists but isn't
-   * yours" — the SAME error for both, exactly like the household domain's
-   * `HouseholdNotFoundError` — so existence is never leaked. This is the
-   * `lookup` the ownership middleware calls on /time-entries/:id routes.
+   * Fetch one time entry, enforcing that it belongs to the caller AND that the
+   * caller is still an active member of the entry's household. Throws
+   * TimeEntryNotFoundError for all three of "doesn't exist", "exists but isn't
+   * yours", and "was yours but you've been removed" — the SAME error for each,
+   * exactly like the household domain's `HouseholdNotFoundError` — so
+   * existence is never leaked. This is the `lookup` the ownership middleware
+   * calls on /time-entries/:id routes.
+   *
+   * Ownership alone is NOT the gate (F-B3b-3): this is what stands between a
+   * `removed` nanny and `clockOut`/`updateEntry`, both of which rewrite hours
+   * a household pays against. Same shape as `loadOwnedRow` below, and as
+   * `timesheetCommandService.createRetroactiveEntry`, which has always
+   * required an active membership.
    */
   async getOwnedTimeEntry(
     userId: string,
@@ -76,6 +84,13 @@ export class TimesheetQueryService {
     if (!entry || entry.carer_id !== userId) {
       throw new TimeEntryNotFoundError(timeEntryId);
     }
+    const membership = await this.memberRepo.findActiveMembership(
+      entry.household_id,
+      userId
+    );
+    if (!membership) {
+      throw new TimeEntryNotFoundError(timeEntryId);
+    }
     return entry;
   }
 
@@ -83,11 +98,17 @@ export class TimesheetQueryService {
    * A household's entries for one week. `weekStart` defaults to the CURRENT
    * week, computed in the household's timezone (see `utils/weekStart.ts`) —
    * never UTC, or the boundary entries land on the wrong week.
+   *
+   * `carerId` narrows to ONE carer's hours. Optional and unfiltered by
+   * default so the household-wide view keeps working, but any caller adding
+   * these entries up must pass it: in a two-carer household the unscoped list
+   * sums both nannies' minutes into one figure (F-B1-3).
    */
   async listForHouseholdWeek(
     userId: string,
     householdId: string,
-    weekStart?: string
+    weekStart?: string,
+    carerId?: string
   ): Promise<TimeEntry[]> {
     await this.assertMember(userId, householdId);
     const resolvedWeekStart =
@@ -95,7 +116,8 @@ export class TimesheetQueryService {
     return this.timeEntryRepo.listForHouseholdWeek(
       householdId,
       resolvedWeekStart,
-      weekEndExclusive(resolvedWeekStart)
+      weekEndExclusive(resolvedWeekStart),
+      carerId
     );
   }
 
@@ -123,13 +145,22 @@ export class TimesheetQueryService {
    * (`getWeekWithEarnings`) — which is also the only path with the
    * legacy/corrupt handling. The raw snapshot columns are stripped here for
    * that exact reason.
+   *
+   * `carerId` narrows to ONE carer. A caller resolving "the row for this
+   * week" out of the unscoped list picks by week alone and binds to whichever
+   * carer's row sorted first — see F-B1-3; the pair that identifies a
+   * timesheet is `(household_id, carer_id, week_start)`, never the week alone.
    */
   async listTimesheetsForHousehold(
     userId: string,
-    householdId: string
+    householdId: string,
+    carerId?: string
   ): Promise<Timesheet[]> {
     await this.assertMember(userId, householdId);
-    const rows = await this.timesheetRepo.listForHousehold(householdId);
+    const rows = await this.timesheetRepo.listForHousehold(
+      householdId,
+      carerId
+    );
     return rows.map(row => toWireTimesheet(row));
   }
 

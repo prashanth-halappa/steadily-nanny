@@ -1,11 +1,39 @@
-import { describe, expect, it, mock } from 'bun:test';
+import { beforeAll, describe, expect, it, mock } from 'bun:test';
 import { NotAHouseholdParentError } from '../../../../../src/domains/household/errors/householdErrors';
-import { approvalApplierRegistry } from '../../../../../src/domains/household/services/approvalApplierRegistry';
-import { CoParentApprovalQueryService } from '../../../../../src/domains/household/services/coParentApprovalQueryService';
 import type {
   CoParentApproval,
   HouseholdMember,
 } from '../../../../../src/domains/household/types';
+
+/**
+ * The registry's own compensating revert (a timed-out row whose applier threw
+ * goes back to `pending` so the next sweep retries it) default-constructs a
+ * `CoParentApprovalRepository`. That must never become a real Supabase call
+ * from a unit test, so the repository module is mocked before the query
+ * service — and with it the registry — is imported.
+ */
+const recordFailedApply = mock(async () => 'retrying' as const);
+
+let CoParentApprovalQueryService: any;
+let approvalApplierRegistry: any;
+
+beforeAll(async () => {
+  mock.module(
+    '../../../../../src/domains/household/repositories/coParentApprovalRepository',
+    () => ({
+      CoParentApprovalRepository: class {
+        recordFailedApply = recordFailedApply;
+      },
+    })
+  );
+
+  ({ CoParentApprovalQueryService } = await import(
+    '../../../../../src/domains/household/services/coParentApprovalQueryService'
+  ));
+  ({ approvalApplierRegistry } = await import(
+    '../../../../../src/domains/household/services/approvalApplierRegistry'
+  ));
+});
 
 function membershipFor(role: HouseholdMember['role']): HouseholdMember {
   return {
@@ -108,9 +136,12 @@ describe('CoParentApprovalQueryService.expirePendingApprovals — auto-approve b
     // a silent phone must not leave a day uncovered, so the gated mutation
     // still has to happen.
     const applied: string[] = [];
-    approvalApplierRegistry.register('cancel', async approval => {
-      applied.push(approval.id);
-    });
+    approvalApplierRegistry.register(
+      'cancel',
+      async (approval: CoParentApproval) => {
+        applied.push(approval.id);
+      }
+    );
     const timedOut = [
       approvalFor({ id: 'a1', status: 'timed_out' }),
       approvalFor({ id: 'a2', status: 'timed_out' }),
@@ -125,15 +156,21 @@ describe('CoParentApprovalQueryService.expirePendingApprovals — auto-approve b
     expect(applied).toEqual(['a1', 'a2']);
   });
 
-  it('steps over a row whose applier throws and still applies the rest', async () => {
-    // One unappliable row must never strand a whole sweep.
+  it('steps over a row whose applier throws, records the failure, and still applies the rest', async () => {
+    // One unappliable row must never strand a whole sweep — but the sweep has
+    // already committed `timed_out` on it, so stepping over it also has to
+    // record the failed apply, or it settles terminally with nothing applied.
+    recordFailedApply.mockClear();
     const applied: string[] = [];
-    approvalApplierRegistry.register('cancel', async approval => {
-      if (approval.id === 'a-bad') {
-        throw new Error('shift is gone');
+    approvalApplierRegistry.register(
+      'cancel',
+      async (approval: CoParentApproval) => {
+        if (approval.id === 'a-bad') {
+          throw new Error('shift is gone');
+        }
+        applied.push(approval.id);
       }
-      applied.push(approval.id);
-    });
+    );
     const timedOut = [
       approvalFor({ id: 'a-bad', status: 'timed_out' }),
       approvalFor({ id: 'a-good', status: 'timed_out' }),
@@ -147,6 +184,12 @@ describe('CoParentApprovalQueryService.expirePendingApprovals — auto-approve b
 
     expect(applied).toEqual(['a-good']);
     expect(result).toEqual(timedOut);
+    expect(recordFailedApply).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'a-bad' }),
+      'timed_out',
+      'shift is gone',
+      true
+    );
   });
 });
 

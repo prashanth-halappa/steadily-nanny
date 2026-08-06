@@ -27,6 +27,8 @@ import { BaseRepository } from '../../../shared/repositories/baseRepository';
 import {
   PtoAccrualGrantRaceError,
   PtoAlreadyMarkedPaidError,
+  PtoTimeOffNotConfirmedError,
+  PtoTimeOffNotFoundError,
 } from '../errors/payErrors';
 
 /** Postgres unique_violation error code. */
@@ -43,6 +45,30 @@ export interface NewPtoLedgerRow {
   carer_display_name: string;
   note: string | null;
   created_by: string | null;
+}
+
+/**
+ * What ONE household has paid for one time off, per household-local day, in
+ * POSITIVE minutes (`-sum(minutes)`) — the state a correction's deltas were
+ * computed from, and what migration 050 compares against under its lock.
+ */
+export type PtoPaidByDate = Readonly<Record<string, number>>;
+
+/** The arguments of the `apply_pto_correction` RPC, in TS naming. */
+export interface ApplyPtoCorrectionArgs {
+  householdId: string;
+  timeOffId: string;
+  expected: PtoPaidByDate;
+  rows: readonly NewPtoLedgerRow[];
+  /** Refuse (rather than write) unless the time off is still `confirmed`. */
+  requireConfirmed: boolean;
+}
+
+/** The RPC's outcome envelope — see `050_serialise_pto_corrections.sql`. */
+interface ApplyPtoCorrectionPayload {
+  outcome: 'applied' | 'stale' | 'not_confirmed' | 'time_off_not_found';
+  rows?: PtoLedgerEntry[];
+  current_status?: string;
 }
 
 export class PtoLedgerRepository extends BaseRepository<PtoLedgerEntry> {
@@ -207,5 +233,82 @@ export class PtoLedgerRepository extends BaseRepository<PtoLedgerEntry> {
       );
     }
     return data as PtoLedgerEntry;
+  }
+
+  /**
+   * Append a batch of `adjustment` rows under migration 050's row lock —
+   * the ONLY way a correction or a reversal is written (F-B4-2).
+   *
+   * Sends the caller's INTENT plus the per-day state it computed that intent
+   * from. `apply_pto_correction` locks the `carer_time_off` row FOR UPDATE,
+   * re-derives that state, and writes only if it still matches — so two
+   * parents correcting 8h → 6h at the same instant can no longer both
+   * subtract 2h from the same stale 8h and land on 4h. Same shape as
+   * `shiftChangeRequestRepository.acceptAndApply`'s: the RPC returns an
+   * outcome envelope, and the typed domain errors are mapped here.
+   *
+   * Returns the rows written, or `null` when the ledger MOVED under the lock
+   * — not an error, a signal: the caller must re-read, recompute its deltas
+   * from the new state and call again. Writing nothing is a legitimate
+   * `applied` result (an empty array), and is how re-submitting an unchanged
+   * total stays a no-op.
+   *
+   * `create` above is deliberately left alone and still writes the FIRST
+   * marking's `usage` rows: those are already serialised by 045's per-day
+   * partial unique index, which this changes in no way.
+   */
+  async applyCorrection(
+    args: ApplyPtoCorrectionArgs
+  ): Promise<PtoLedgerEntry[] | null> {
+    const { data, error } = await supabaseService.rpc('apply_pto_correction', {
+      p_household_id: args.householdId,
+      p_time_off_id: args.timeOffId,
+      p_expected: args.expected,
+      // household_id, kind and time_off_id are ignored by the function —
+      // it takes them from the locked parameters (050's header).
+      p_rows: args.rows,
+      p_require_confirmed: args.requireConfirmed,
+    });
+
+    if (error || !data) {
+      throw new DatabaseError(
+        'Failed to apply PTO correction',
+        'DATABASE_ERROR',
+        {
+          details: error?.message,
+          householdId: args.householdId,
+          timeOffId: args.timeOffId,
+        }
+      );
+    }
+
+    const payload = data as ApplyPtoCorrectionPayload;
+    if (payload.outcome === 'applied') {
+      return payload.rows ?? [];
+    }
+    if (payload.outcome === 'stale') {
+      return null;
+    }
+    if (payload.outcome === 'not_confirmed') {
+      throw new PtoTimeOffNotConfirmedError(
+        args.timeOffId,
+        payload.current_status ?? 'unknown'
+      );
+    }
+    if (payload.outcome === 'time_off_not_found') {
+      throw new PtoTimeOffNotFoundError(args.householdId, args.timeOffId, {
+        reason: 'time_off_not_found',
+      });
+    }
+
+    throw new DatabaseError(
+      'Unexpected outcome from apply_pto_correction',
+      'DATABASE_ERROR',
+      {
+        outcome: payload.outcome,
+        householdId: args.householdId,
+        timeOffId: args.timeOffId,
+      }
+    );
   }
 }

@@ -15,6 +15,8 @@ import {
   Router,
 } from 'express';
 import { JobController } from '../controllers/jobController';
+import { createTrackedJobHandler } from '../controllers/jobHandlerFactory';
+import { runCancellationPayReconcileJob } from '../jobs/cancellationPayReconcileJob';
 import { validateJobApiKey } from '../middlewares/jobAuth';
 
 // Adapt an async handler into an Express handler that fire-and-forgets.
@@ -38,5 +40,17 @@ router.post(
 );
 router.post('/schedule-horizon', jobHandler(JobController.runScheduleHorizon));
 router.post('/reminders', jobHandler(JobController.runReminders));
+// Built inline rather than in `JobController` only because that file was not
+// mine to touch this pass — move it there for consistency when convenient.
+router.post(
+  '/cancellation-pay-reconcile',
+  jobHandler(
+    createTrackedJobHandler(
+      'cancellation-pay-reconcile',
+      runCancellationPayReconcileJob,
+      'Cancellation pay reconcile job completed'
+    )
+  )
+);
 
 export default router;

@@ -9,6 +9,7 @@
  * @module domains/timesheet/types
  */
 export type {
+  CarerQuery,
   ClockInInput,
   ClockOutInput,
   CreateRetroactiveTimeEntryInput,

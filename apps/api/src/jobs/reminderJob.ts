@@ -6,6 +6,27 @@
  * rule on the recipient's local wall-clock hour; `push_reminder_log` (047)
  * makes overlapping runs idempotent.
  *
+ * CLAIM ORDER: `claimAndSend` below checks `push.canDeliver` (prefs + quiet
+ * hours + at least one live token) BEFORE claiming, so a reminder that would
+ * be suppressed anyway never touches the ledger — that's the common case
+ * (opt-out, quiet hours, no registered device) handled without ever writing
+ * a row. For the candidates that pass, the claim INSERT still happens BEFORE
+ * the send, not after: this job can have overlapping runs (see above), and
+ * "send, then claim" would let two overlapping runs both pass the "not yet
+ * claimed" check and both deliver before either claim landed. Claiming first
+ * trades that off for a narrow crash window: if the process dies between the
+ * claim commit and the send completing, the claim now stands for a reminder
+ * that never went out. `claimAndSend` shrinks that window as far as this
+ * schema allows — the send result is checked and, on total failure (0
+ * devices reached, or a thrown error), the claim is released again so the
+ * next run retries — but a hard process kill inside that narrow window is
+ * unrecoverable without a two-phase (reserve/confirm) ledger, which would
+ * need a schema change this job doesn't have. Given the choice, that's the
+ * right side to fail on: an occasional duplicate reminder from an
+ * overlapping-run race is a minor annoyance, a permanently swallowed one
+ * (the bug this replaced) is a missed shift or an unpaid timesheet nobody
+ * finds out about.
+ *
  * SETUP: scheduled hourly via pg_cron in migration `048_reminders_cron.sql`
  * (POST `/api/jobs/reminders`). Requires Vault secrets `cron_api_base_url` and
  * `cron_job_api_key` (see migration 007).
@@ -22,10 +43,11 @@ import { HouseholdMemberRepository } from '../domains/household/repositories/hou
 import { HOUSEHOLD_ROLES } from '../domains/household/schemas';
 import { NotificationPrefsRepository } from '../domains/notification/repositories/notificationPrefsRepository';
 import { ReminderLogRepository } from '../domains/notification/repositories/reminderLogRepository';
+import { notifyHouseholdParents } from '../domains/notification/services/householdPush';
 import {
-  notifyHouseholdParents,
-  notifyUser,
-} from '../domains/notification/services/householdPush';
+  hasDeliverableTarget,
+  sendToUser,
+} from '../domains/notification/services/pushDispatchService';
 import type { PushPayload } from '../domains/notification/types';
 import { DatabaseError } from '../errors';
 import { logger } from '../middlewares/logger';
@@ -95,6 +117,8 @@ export interface ReminderCandidateSource {
 
 export interface ReminderLogClaim {
   claim(userId: string, reminderKey: string): Promise<boolean>;
+  /** Undo a claim after a send that turned out not to deliver anything. */
+  release(userId: string, reminderKey: string): Promise<void>;
 }
 
 export interface UserTimezoneResolver {
@@ -106,7 +130,15 @@ export interface ReminderParentLister {
 }
 
 export interface ReminderPushService {
-  notifyUser(userId: string, payload: PushPayload): Promise<void>;
+  /**
+   * Whether a send to this user/payload would actually deliver — prefs
+   * (opt-out, quiet hours) and at least one live device token. Callers
+   * check this BEFORE claiming an idempotency slot so a suppressed
+   * reminder is never claimed at all.
+   */
+  canDeliver(userId: string, payload: PushPayload): Promise<boolean>;
+  /** Awaits the real send and reports how many devices actually got it. */
+  notifyUser(userId: string, payload: PushPayload): Promise<{ sent: number }>;
   notifyHouseholdParents(
     householdId: string,
     payload: PushPayload
@@ -318,8 +350,11 @@ class DefaultReminderParentLister implements ReminderParentLister {
 }
 
 const defaultPushService: ReminderPushService = {
-  async notifyUser(userId, payload) {
-    notifyUser(userId, payload);
+  canDeliver(userId, payload) {
+    return hasDeliverableTarget(userId, payload);
+  },
+  notifyUser(userId, payload) {
+    return sendToUser(userId, payload);
   },
   async notifyHouseholdParents(householdId, payload) {
     notifyHouseholdParents(householdId, payload);
@@ -329,6 +364,50 @@ const defaultPushService: ReminderPushService = {
 const defaultClock: ReminderJobClock = {
   now: () => new Date(),
 };
+
+/**
+ * Claim a reminder slot and send it, releasing the claim again if nothing
+ * was actually delivered — so a candidate that is suppressed, has no
+ * tokens, or hits a total Expo failure is retried on a later run instead of
+ * being silently dropped forever (see the header comment in
+ * `reminderLogRepository.ts` for the full crash-window analysis).
+ *
+ * Mutates `stats` in place; throws on a send exception (after releasing the
+ * claim) so the caller's existing per-candidate try/catch records the error.
+ */
+async function claimAndSend(
+  deps: { log: ReminderLogClaim; push: ReminderPushService },
+  userId: string,
+  reminderKey: string,
+  payload: PushPayload,
+  stats: ReminderRuleStats
+): Promise<void> {
+  const deliverable = await deps.push.canDeliver(userId, payload);
+  if (!deliverable) {
+    stats.skipped++;
+    return;
+  }
+
+  const claimed = await deps.log.claim(userId, reminderKey);
+  if (!claimed) {
+    stats.skipped++;
+    return;
+  }
+  stats.claimed++;
+
+  try {
+    const result = await deps.push.notifyUser(userId, payload);
+    if (result.sent === 0) {
+      await deps.log.release(userId, reminderKey);
+      stats.skipped++;
+      return;
+    }
+    stats.sent++;
+  } catch (error) {
+    await deps.log.release(userId, reminderKey);
+    throw error;
+  }
+}
 
 async function processShiftReminders(
   candidates: ShiftReminderCandidate[],
@@ -378,23 +457,21 @@ async function processShiftReminders(
       }
 
       const reminderKey = buildShiftReminderKey(shift.id);
-      const claimed = await deps.log.claim(carerId, reminderKey);
-      if (!claimed) {
-        stats.skipped++;
-        continue;
-      }
-      stats.claimed++;
-
-      await deps.push.notifyUser(carerId, {
-        title: 'Shift tomorrow',
-        body: 'You have a confirmed shift starting tomorrow.',
-        data: {
-          type: PUSH_NOTIFICATION_TYPES.SHIFT_REMINDER,
-          shiftId: shift.id,
-          householdId: shift.household_id,
+      await claimAndSend(
+        deps,
+        carerId,
+        reminderKey,
+        {
+          title: 'Shift tomorrow',
+          body: 'You have a confirmed shift starting tomorrow.',
+          data: {
+            type: PUSH_NOTIFICATION_TYPES.SHIFT_REMINDER,
+            shiftId: shift.id,
+            householdId: shift.household_id,
+          },
         },
-      });
-      stats.sent++;
+        stats
+      );
     } catch (error) {
       stats.errors++;
       logger.error('Reminder job failed to send shift reminder', {
@@ -450,24 +527,22 @@ async function processTimesheetReminders(
             timesheet.id,
             clock.date
           );
-          const claimed = await deps.log.claim(parentId, reminderKey);
-          if (!claimed) {
-            stats.skipped++;
-            continue;
-          }
-          stats.claimed++;
-
-          await deps.push.notifyUser(parentId, {
-            title: 'Hours awaiting approval',
-            body: 'A timesheet has been waiting for your approval.',
-            data: {
-              type: PUSH_NOTIFICATION_TYPES.TIMESHEET_AWAITING_APPROVAL,
-              timesheetId: timesheet.id,
-              householdId: timesheet.household_id,
-              weekStart: timesheet.week_start,
+          await claimAndSend(
+            deps,
+            parentId,
+            reminderKey,
+            {
+              title: 'Hours awaiting approval',
+              body: 'A timesheet has been waiting for your approval.',
+              data: {
+                type: PUSH_NOTIFICATION_TYPES.TIMESHEET_AWAITING_APPROVAL,
+                timesheetId: timesheet.id,
+                householdId: timesheet.household_id,
+                weekStart: timesheet.week_start,
+              },
             },
-          });
-          stats.sent++;
+            stats
+          );
         } catch (error) {
           stats.errors++;
           logger.error(
@@ -520,22 +595,20 @@ async function processApprovalExpiring(
       for (const responderId of responders) {
         try {
           const reminderKey = buildApprovalExpiringKey(approval.id);
-          const claimed = await deps.log.claim(responderId, reminderKey);
-          if (!claimed) {
-            stats.skipped++;
-            continue;
-          }
-          stats.claimed++;
-
-          await deps.push.notifyUser(responderId, {
-            title: 'Approval expiring soon',
-            body: 'A co-parent approval request is about to time out.',
-            data: {
-              type: PUSH_NOTIFICATION_TYPES.APPROVAL_EXPIRING,
-              householdId: approval.household_id,
+          await claimAndSend(
+            deps,
+            responderId,
+            reminderKey,
+            {
+              title: 'Approval expiring soon',
+              body: 'A co-parent approval request is about to time out.',
+              data: {
+                type: PUSH_NOTIFICATION_TYPES.APPROVAL_EXPIRING,
+                householdId: approval.household_id,
+              },
             },
-          });
-          stats.sent++;
+            stats
+          );
         } catch (error) {
           stats.errors++;
           logger.error(

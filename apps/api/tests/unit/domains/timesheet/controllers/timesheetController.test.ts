@@ -157,7 +157,27 @@ describe('TimesheetController', () => {
     expect(res.body.data).toEqual({ time_entry: null });
   });
 
-  it('listForHouseholdWeek reads week_start from validatedQuery', async () => {
+  it('listForHouseholdWeek reads week_start and carer_id from validatedQuery', async () => {
+    const res = mockRes();
+    await TimesheetController.listForHouseholdWeek(
+      {
+        user: { id: 'u1' },
+        params: { householdId: 'h1' },
+        validatedQuery: { week_start: '2026-08-03', carer_id: 'carer-1' },
+      } as any,
+      res,
+      mock()
+    );
+    expect(listForHouseholdWeek).toHaveBeenCalledWith(
+      'u1',
+      'h1',
+      '2026-08-03',
+      'carer-1'
+    );
+    expect(res.body.data).toEqual({ time_entries: [{ id: 't1' }] });
+  });
+
+  it('listForHouseholdWeek leaves the carer filter undefined when it is absent', async () => {
     const res = mockRes();
     await TimesheetController.listForHouseholdWeek(
       {
@@ -168,19 +188,49 @@ describe('TimesheetController', () => {
       res,
       mock()
     );
-    expect(listForHouseholdWeek).toHaveBeenCalledWith('u1', 'h1', '2026-08-03');
-    expect(res.body.data).toEqual({ time_entries: [{ id: 't1' }] });
+    expect(listForHouseholdWeek).toHaveBeenCalledWith(
+      'u1',
+      'h1',
+      '2026-08-03',
+      undefined
+    );
   });
 
-  it('listTimesheetsForHousehold responds with the household timesheets', async () => {
+  it('listTimesheetsForHousehold responds with the household timesheets, scoped to the carer when asked', async () => {
     const res = mockRes();
     await TimesheetController.listTimesheetsForHousehold(
-      { user: { id: 'u1' }, params: { householdId: 'h1' } } as any,
+      {
+        user: { id: 'u1' },
+        params: { householdId: 'h1' },
+        validatedQuery: { carer_id: 'carer-1' },
+      } as any,
       res,
       mock()
     );
-    expect(listTimesheetsForHousehold).toHaveBeenCalledWith('u1', 'h1');
+    expect(listTimesheetsForHousehold).toHaveBeenCalledWith(
+      'u1',
+      'h1',
+      'carer-1'
+    );
     expect(res.body.data).toEqual({ timesheets: [{ id: 'ts1' }] });
+  });
+
+  it('listTimesheetsForHousehold serves every carer when no filter is given', async () => {
+    const res = mockRes();
+    await TimesheetController.listTimesheetsForHousehold(
+      {
+        user: { id: 'u1' },
+        params: { householdId: 'h1' },
+        validatedQuery: {},
+      } as any,
+      res,
+      mock()
+    );
+    expect(listTimesheetsForHousehold).toHaveBeenCalledWith(
+      'u1',
+      'h1',
+      undefined
+    );
   });
 
   it('approve passes the id param through', async () => {

@@ -241,7 +241,11 @@ const householdMember = {
 
 const listEntriesMock = mock(() => Promise.resolve([makeEntry()]));
 const listTimesheetsMock = mock(() => Promise.resolve([makeTimesheet()]));
-const getByIdMock = mock(() => Promise.resolve(makeTimesheetWeek()));
+// Takes the id the real `getWeek` passes it, so a two-carer week can hand
+// back a DIFFERENT week per timesheet row (F-B1-3).
+const getByIdMock = mock((_timesheetId?: string) =>
+  Promise.resolve(makeTimesheetWeek())
+);
 const approveMock = mock(() =>
   Promise.resolve(makeTimesheet({ status: 'approved' }))
 );
@@ -295,13 +299,14 @@ mock.module('@/src/api/endpoints/timesheets', () => {
     timesheetApi: {
       list: listTimesheetsMock,
       getById: getByIdMock,
+      // Mirrors the real endpoint: every carer's row for that week, each
+      // resolved to its own earnings-bearing week (F-B1-3).
       getWeek: async (_householdId: string, weekStart: string) => {
         const all = await listTimesheetsMock();
-        const match = (all as { week_start: string; id: string }[]).find(
+        const matches = (all as { week_start: string; id: string }[]).filter(
           t => t.week_start === weekStart
         );
-        if (!match) return null;
-        return getByIdMock();
+        return Promise.all(matches.map(t => getByIdMock(t.id)));
       },
       approve: approveMock,
       query: queryMock,
@@ -503,6 +508,12 @@ describe('ParentWeekView — earnings arms', () => {
   });
 
   it('departed-carer arm: hours-only caption, never the set-a-rate nudge', async () => {
+    // 033 sets `carer_id` NULL on time_entries AND timesheets — the entry
+    // has to lose its id too, or this fixture describes a state the
+    // database cannot produce.
+    listEntriesMock.mockImplementation(() =>
+      Promise.resolve([makeEntry({ carer_id: null })])
+    );
     getByIdMock.mockImplementation(() =>
       Promise.resolve(
         makeTimesheetWeek(
@@ -1027,6 +1038,391 @@ describe('ParentWeekView — expenses & the statement (Phase 4)', () => {
     expect(queryByTestId('reimbursements-card-total')).toBeNull();
     expect(getByTestId('reimbursements-card-total-unavailable')).toBeTruthy();
     expect(queryAllByText('£0.00')).toHaveLength(0);
+  });
+});
+
+// F-B1-3 (S0): the household week read returns EVERY carer's entries and
+// EVERY carer's timesheet row. Summing them all into one total while binding
+// approve to whichever row happened to sort first means a parent approves a
+// figure they were never shown. The screen must be carer-scoped: the total
+// on the card is the total the button approves.
+describe('ParentWeekView — two carers in one household (F-B1-3)', () => {
+  const CARER_B_ID = 'carer-bea';
+  const TIMESHEET_B_ID = 'ts-2';
+
+  const carerBMember = {
+    ...householdMember,
+    id: 'member-carer-b',
+    user_id: CARER_B_ID,
+  };
+
+  function makeCarerBEntry() {
+    return makeEntry({
+      id: 'entry-2',
+      carer_id: CARER_B_ID,
+      carer_display_name: 'Bea',
+      clock_in_at: '2026-08-04T08:00:00.000Z',
+      clock_out_at: '2026-08-04T12:00:00.000Z',
+      scheduled_minutes: null,
+      local_date: '2026-08-04',
+    });
+  }
+
+  function makeCarerBTimesheet(overrides: Record<string, unknown> = {}) {
+    return makeTimesheet({
+      id: TIMESHEET_B_ID,
+      carer_id: CARER_B_ID,
+      carer_display_name: 'Bea',
+      total_minutes: 240,
+      ...overrides,
+    });
+  }
+
+  beforeEach(() => {
+    // Amara: 08:00–16:00 Mon = 480 min. Bea: 08:00–12:00 Tue = 240 min.
+    listEntriesMock.mockImplementation(() =>
+      Promise.resolve([makeEntry(), makeCarerBEntry()])
+    );
+    listTimesheetsMock.mockImplementation(() =>
+      Promise.resolve([makeTimesheet(), makeCarerBTimesheet()])
+    );
+    getByIdMock.mockImplementation((timesheetId?: string) =>
+      Promise.resolve(
+        timesheetId === TIMESHEET_B_ID
+          ? {
+              ...makeCarerBTimesheet(),
+              earnings: { ...okEarnings, gross_minor: 4440 },
+            }
+          : makeTimesheetWeek()
+      )
+    );
+    listMembersMock.mockImplementation(() =>
+      Promise.resolve([householdMember, carerBMember])
+    );
+  });
+
+  it("shows ONE carer's hours in the week total, never the household sum", async () => {
+    const { getByTestId } = renderParentView();
+
+    await waitFor(() => expect(getByTestId('hours-total')).toBeTruthy());
+    // 8h (Amara alone), never 12h (Amara + Bea).
+    expect(getByTestId('hours-total').props.children).toBe('8h');
+  });
+
+  it('approves the timesheet of the carer whose hours are on screen, before and after switching', async () => {
+    const { getByTestId } = renderParentView();
+
+    await waitFor(() =>
+      expect(getByTestId(`hours-carer-tab-${CARER_ID}`)).toBeTruthy()
+    );
+    fireEvent.press(getByTestId('hours-approve-button'));
+    fireEvent.press(getByTestId('hours-approve-dialog-confirm'));
+    await waitFor(() => expect(approveMock).toHaveBeenCalledWith(TIMESHEET_ID));
+
+    // Switch to Bea: the total, and what approve acts on, must move together.
+    fireEvent.press(getByTestId(`hours-carer-tab-${CARER_B_ID}`));
+    await waitFor(() =>
+      expect(getByTestId('hours-total').props.children).toBe('4h')
+    );
+
+    fireEvent.press(getByTestId('hours-approve-button'));
+    fireEvent.press(getByTestId('hours-approve-dialog-confirm'));
+    await waitFor(() =>
+      expect(approveMock).toHaveBeenCalledWith(TIMESHEET_B_ID)
+    );
+  });
+
+  it("shows the selected carer's gross, not another carer's", async () => {
+    const { getByTestId } = renderParentView();
+
+    await waitFor(() =>
+      expect(getByTestId('hours-earnings-line-amount')).toBeTruthy()
+    );
+    expect(getByTestId('hours-earnings-line-amount').props.children).toBe(
+      '£236.12'
+    );
+
+    fireEvent.press(getByTestId(`hours-carer-tab-${CARER_B_ID}`));
+    await waitFor(() =>
+      expect(getByTestId('hours-earnings-line-amount').props.children).toBe(
+        '£44.40'
+      )
+    );
+  });
+
+  it('renders no carer switcher at all when only one carer worked the week', async () => {
+    listEntriesMock.mockImplementation(() => Promise.resolve([makeEntry()]));
+    listTimesheetsMock.mockImplementation(() =>
+      Promise.resolve([makeTimesheet()])
+    );
+
+    const { getByTestId, queryByTestId } = renderParentView();
+
+    await waitFor(() => expect(getByTestId('hours-total')).toBeTruthy());
+    expect(queryByTestId('hours-carer-switcher')).toBeNull();
+    expect(getByTestId('hours-total').props.children).toBe('8h');
+  });
+});
+
+// F-B1-3, second reachable path. `033_preserve_payroll_on_carer_deletion.sql`
+// makes `carer_id` NULLABLE with `on delete set null` on BOTH `time_entries`
+// and `timesheets`, keeping `carer_display_name` as a NOT NULL snapshot — so
+// a carer who deletes her account leaves a week's hours and pay behind with
+// no id. Dropping nulls when building the carer set makes her INVISIBLE to
+// the switcher while her rows still sit in the totals: the handover week
+// sums an ex-carer into the active carer's card and approves the ex-carer's
+// timesheet.
+describe('ParentWeekView — a departed carer alongside an active one (F-B1-3)', () => {
+  const TIMESHEET_BEA_ID = 'ts-bea';
+
+  function makeDepartedEntry() {
+    return makeEntry({
+      id: 'entry-bea',
+      carer_id: null,
+      carer_display_name: 'Bea',
+      clock_in_at: '2026-08-04T08:00:00.000Z',
+      clock_out_at: '2026-08-04T12:00:00.000Z',
+      scheduled_minutes: null,
+      local_date: '2026-08-04',
+    });
+  }
+
+  function makeDepartedTimesheet() {
+    return makeTimesheet({
+      id: TIMESHEET_BEA_ID,
+      carer_id: null,
+      carer_display_name: 'Bea',
+      total_minutes: 240,
+    });
+  }
+
+  beforeEach(() => {
+    // Amara active, 8h. Bea worked 4h the same week, then deleted her
+    // account: rows preserved, carer_id nulled, name snapshot kept.
+    listEntriesMock.mockImplementation(() =>
+      Promise.resolve([makeEntry(), makeDepartedEntry()])
+    );
+    listTimesheetsMock.mockImplementation(() =>
+      Promise.resolve([makeTimesheet(), makeDepartedTimesheet()])
+    );
+    getByIdMock.mockImplementation((timesheetId?: string) =>
+      Promise.resolve(
+        timesheetId === TIMESHEET_BEA_ID
+          ? {
+              ...makeDepartedTimesheet(),
+              earnings: {
+                status: 'hours_only',
+                week_start: WEEK_START,
+                reason: 'carer_removed',
+              },
+            }
+          : makeTimesheetWeek()
+      )
+    );
+  });
+
+  it("does not sum the departed carer into the active carer's total", async () => {
+    const { getByTestId } = renderParentView();
+
+    await waitFor(() => expect(getByTestId('hours-total')).toBeTruthy());
+    // 8h (Amara alone), never 12h.
+    expect(getByTestId('hours-total').props.children).toBe('8h');
+  });
+
+  it('surfaces the departed carer as her own tab rather than hiding her', async () => {
+    const { getByTestId } = renderParentView();
+
+    await waitFor(() =>
+      expect(getByTestId('hours-carer-switcher')).toBeTruthy()
+    );
+    expect(getByTestId('hours-carer-tab-Bea')).toBeTruthy();
+  });
+
+  it("approves the ACTIVE carer's week, never the departed carer's row", async () => {
+    const { getByTestId } = renderParentView();
+
+    await waitFor(() =>
+      expect(getByTestId('hours-approve-button')).toBeTruthy()
+    );
+    fireEvent.press(getByTestId('hours-approve-button'));
+    fireEvent.press(getByTestId('hours-approve-dialog-confirm'));
+
+    await waitFor(() => expect(approveMock).toHaveBeenCalledWith(TIMESHEET_ID));
+    expect(approveMock).not.toHaveBeenCalledWith(TIMESHEET_BEA_ID);
+  });
+
+  it("shows the departed carer's own 4h under her own tab", async () => {
+    const { getByTestId } = renderParentView();
+
+    await waitFor(() =>
+      expect(getByTestId('hours-carer-tab-Bea')).toBeTruthy()
+    );
+    fireEvent.press(getByTestId('hours-carer-tab-Bea'));
+
+    await waitFor(() =>
+      expect(getByTestId('hours-total').props.children).toBe('4h')
+    );
+  });
+
+  it('a week worked ONLY by a since-departed carer still renders her hours, no switcher', async () => {
+    listEntriesMock.mockImplementation(() =>
+      Promise.resolve([makeDepartedEntry()])
+    );
+    listTimesheetsMock.mockImplementation(() =>
+      Promise.resolve([makeDepartedTimesheet()])
+    );
+
+    const { getByTestId, queryByTestId } = renderParentView();
+
+    await waitFor(() => expect(getByTestId('hours-total')).toBeTruthy());
+    expect(getByTestId('hours-total').props.children).toBe('4h');
+    expect(queryByTestId('hours-carer-switcher')).toBeNull();
+  });
+});
+
+// Two carers who BOTH deleted their accounts share `carer_id === null`.
+// Bucketing on the id alone collapses them into one tab: the card sums both
+// while approve fires one of their timesheets, freezing a pay record against
+// a number that isn't its own. `carer_display_name` is NOT NULL and
+// preserved by 033, so it tells them apart.
+describe('ParentWeekView — two departed carers in one week (F-B1-3)', () => {
+  // Clock times spelled out, never computed. Building an ISO string with
+  // arithmetic yields `T9:00:00.000Z` for a 1h shift — Invalid Date, NaN
+  // minutes, and every assertion silently passing for the wrong reason.
+  function makeDeparted(
+    name: string,
+    id: string,
+    mins: number,
+    date: string,
+    clockIn: string,
+    clockOut: string
+  ) {
+    return {
+      entry: makeEntry({
+        id: `entry-${name}`,
+        carer_id: null,
+        carer_display_name: name,
+        clock_in_at: `${date}T${clockIn}:00.000Z`,
+        clock_out_at: `${date}T${clockOut}:00.000Z`,
+        scheduled_minutes: null,
+        local_date: date,
+      }),
+      timesheet: makeTimesheet({
+        id,
+        carer_id: null,
+        carer_display_name: name,
+        total_minutes: mins,
+      }),
+    };
+  }
+
+  const bea = makeDeparted(
+    'Bea',
+    'ts-bea',
+    240,
+    '2026-08-04',
+    '08:00',
+    '12:00'
+  );
+  const cleo = makeDeparted(
+    'Cleo',
+    'ts-cleo',
+    120,
+    '2026-08-05',
+    '08:00',
+    '10:00'
+  );
+
+  beforeEach(() => {
+    listEntriesMock.mockImplementation(() =>
+      Promise.resolve([bea.entry, cleo.entry])
+    );
+    listTimesheetsMock.mockImplementation(() =>
+      Promise.resolve([bea.timesheet, cleo.timesheet])
+    );
+    getByIdMock.mockImplementation((timesheetId?: string) =>
+      Promise.resolve({
+        ...(timesheetId === 'ts-cleo' ? cleo.timesheet : bea.timesheet),
+        earnings: {
+          status: 'hours_only',
+          week_start: WEEK_START,
+          reason: 'carer_removed',
+        },
+      })
+    );
+  });
+
+  it('gives each departed carer her own tab rather than summing them', async () => {
+    const { getByTestId } = renderParentView();
+
+    await waitFor(() =>
+      expect(getByTestId('hours-carer-tab-Bea')).toBeTruthy()
+    );
+    expect(getByTestId('hours-carer-tab-Cleo')).toBeTruthy();
+    // Bea's 4h alone, never 6h.
+    expect(getByTestId('hours-total').props.children).toBe('4h');
+  });
+
+  it('approves the timesheet of the departed carer actually on screen', async () => {
+    const { getByTestId } = renderParentView();
+
+    await waitFor(() =>
+      expect(getByTestId('hours-approve-button')).toBeTruthy()
+    );
+    fireEvent.press(getByTestId('hours-approve-button'));
+    fireEvent.press(getByTestId('hours-approve-dialog-confirm'));
+    await waitFor(() => expect(approveMock).toHaveBeenCalledWith('ts-bea'));
+
+    fireEvent.press(getByTestId('hours-carer-tab-Cleo'));
+    await waitFor(() =>
+      expect(getByTestId('hours-total').props.children).toBe('2h')
+    );
+    fireEvent.press(getByTestId('hours-approve-button'));
+    fireEvent.press(getByTestId('hours-approve-dialog-confirm'));
+    await waitFor(() => expect(approveMock).toHaveBeenCalledWith('ts-cleo'));
+  });
+});
+
+// The default tab must not depend on the order the server happened to return
+// entries in — `useUpdateTimeEntry` correcting a `clock_in_at` earlier
+// reorders the list, and a default that follows arrival order would silently
+// move the parent onto a different carer's figures.
+describe('ParentWeekView — default carer is order-independent', () => {
+  const CARER_B_ID = 'carer-bea';
+
+  function makeBeaEntry() {
+    return makeEntry({
+      id: 'entry-2',
+      carer_id: CARER_B_ID,
+      carer_display_name: 'Bea',
+      clock_in_at: '2026-08-04T08:00:00.000Z',
+      clock_out_at: '2026-08-04T12:00:00.000Z',
+      scheduled_minutes: null,
+      local_date: '2026-08-04',
+    });
+  }
+
+  it('picks the same carer whichever order the week arrives in', async () => {
+    listTimesheetsMock.mockImplementation(() =>
+      Promise.resolve([
+        makeTimesheet(),
+        makeTimesheet({
+          id: 'ts-2',
+          carer_id: CARER_B_ID,
+          carer_display_name: 'Bea',
+        }),
+      ])
+    );
+    // Bea's entry FIRST — arrival order reversed relative to the other tests.
+    listEntriesMock.mockImplementation(() =>
+      Promise.resolve([makeBeaEntry(), makeEntry()])
+    );
+
+    const { getByTestId } = renderParentView();
+
+    await waitFor(() => expect(getByTestId('hours-total')).toBeTruthy());
+    // Amara (8h) is still the default, not Bea (4h).
+    expect(getByTestId('hours-total').props.children).toBe('8h');
   });
 });
 

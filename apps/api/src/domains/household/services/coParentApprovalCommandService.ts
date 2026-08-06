@@ -28,7 +28,10 @@ import type {
   RespondToCoParentApprovalInput,
 } from '../types';
 import { assertHouseholdWriteRole } from '../utils/assertHouseholdRole';
-import { approvalApplierRegistry } from './approvalApplierRegistry';
+import {
+  approvalApplierRegistry,
+  failureCostsAttempt,
+} from './approvalApplierRegistry';
 import {
   type HouseholdQueryService,
   householdQueryService,
@@ -108,7 +111,10 @@ export class CoParentApprovalCommandService {
    * On approval the gated mutation is re-driven through
    * `approvalApplierRegistry`; an applier failure propagates rather than being
    * swallowed, because a silent no-op here is indistinguishable to the user
-   * from the change having been applied.
+   * from the change having been applied. `respond` has already CAS'd the row
+   * to `approved` by then, so a failure ALSO reverts that claim — otherwise
+   * the row is terminally approved with the payload never applied and no
+   * retry possible (the second `respond` would fail the `pending` CAS).
    */
   async respond(
     userId: string,
@@ -137,12 +143,56 @@ export class CoParentApprovalCommandService {
     );
 
     if (responded.status === CO_PARENT_APPROVAL_STATUSES.APPROVED) {
-      await approvalApplierRegistry.apply(responded);
+      try {
+        await approvalApplierRegistry.apply(responded);
+        await this.clearApplyMarkers(responded);
+      } catch (error) {
+        await this.recordFailedApply(responded, error);
+        throw error;
+      }
     }
 
     this.notifyRequesterApprovalResolved(responded);
 
     return responded;
+  }
+
+  /**
+   * Best-effort bookkeeping for the `approved` claim after a failed apply, so
+   * the request goes back to awaiting a response (or settles as terminally
+   * failed) instead of sitting approved with nothing applied. A failure here
+   * must never mask the applier error the caller is about to see.
+   */
+  private async recordFailedApply(
+    approval: CoParentApproval,
+    cause: unknown
+  ): Promise<void> {
+    const reason = cause instanceof Error ? cause.message : String(cause);
+    try {
+      await this.approvalRepo.recordFailedApply(
+        approval,
+        CO_PARENT_APPROVAL_STATUSES.APPROVED,
+        reason,
+        failureCostsAttempt(cause)
+      );
+    } catch (error) {
+      logger.error('Failed to record an approval whose applier threw', {
+        approvalId: approval.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  /** Best-effort; a stale marker must never fail an apply that just succeeded. */
+  private async clearApplyMarkers(approval: CoParentApproval): Promise<void> {
+    try {
+      await this.approvalRepo.clearApplyMarkers(approval);
+    } catch (error) {
+      logger.error('Failed to clear approval apply markers', {
+        approvalId: approval.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   /** The other parent must respond before silence auto-approves the request. */

@@ -152,7 +152,12 @@ function withInsertResult(
 
 beforeAll(async () => {
   mock.module('../../../../../src/config/supabase', () => {
-    const obj = { from: mock(() => createFakeQuery([])) };
+    const obj = {
+      from: mock(() => createFakeQuery([])),
+      // Migration 050's `apply_pto_correction` — the outcome envelope is
+      // injected per test by `withRpcResult`.
+      rpc: mock(async () => ({ data: null, error: null })),
+    };
     return { supabase: obj, supabaseService: obj };
   });
 
@@ -174,7 +179,36 @@ beforeAll(async () => {
 beforeEach(() => {
   lastCalls = [];
   mockSupabaseService.from.mockClear?.();
+  mockSupabaseService.rpc.mockClear?.();
 });
+
+/** Inject one `apply_pto_correction` outcome envelope (migration 050). */
+function withRpcResult(
+  data: unknown,
+  error: { message?: string } | null = null
+): void {
+  mockSupabaseService.rpc.mockImplementation(async () => ({ data, error }));
+}
+
+const CORRECTION = {
+  householdId: 'h1',
+  timeOffId: 'to-1',
+  expected: { '2026-08-01': 480 },
+  rows: [
+    {
+      household_id: 'h1',
+      carer_id: 'carer-1',
+      kind: 'adjustment' as const,
+      minutes: 120,
+      effective_date: '2026-08-01',
+      time_off_id: 'to-1',
+      carer_display_name: 'Nia Rowe',
+      note: 'marked_paid_adjusted',
+      created_by: 'parent-1',
+    },
+  ],
+  requireConfirmed: true,
+};
 
 describe('PtoLedgerRepository.listForCarerYear', () => {
   it('returns every row for the carer within the calendar year window', async () => {
@@ -435,5 +469,93 @@ describe('PtoLedgerRepository.create', () => {
         created_by: 'parent-1',
       })
     ).rejects.not.toBeInstanceOf(PtoAlreadyMarkedPaidError);
+  });
+});
+
+// =============================================================================
+// applyCorrection — migration 050's serialised correction/reversal seam
+// (F-B4-2). Every `adjustment` row in the system goes through here; `create`
+// above is left to the FIRST marking's `usage` rows, which 045's per-day
+// partial unique index already serialises.
+// =============================================================================
+
+describe('PtoLedgerRepository.applyCorrection', () => {
+  it('sends the intent AND the state it was computed from, so the function can compare', async () => {
+    withRpcResult({ outcome: 'applied', rows: [] });
+    const repo = new PtoLedgerRepository();
+    await repo.applyCorrection(CORRECTION);
+
+    expect(mockSupabaseService.rpc).toHaveBeenCalledWith(
+      'apply_pto_correction',
+      {
+        p_household_id: 'h1',
+        p_time_off_id: 'to-1',
+        p_expected: { '2026-08-01': 480 },
+        p_rows: CORRECTION.rows,
+        p_require_confirmed: true,
+      }
+    );
+  });
+
+  it('returns the rows the function wrote', async () => {
+    const written = [
+      usageRow({ id: 'adj-1', kind: 'adjustment', minutes: 120 }),
+    ];
+    withRpcResult({ outcome: 'applied', rows: written });
+    const repo = new PtoLedgerRepository();
+
+    expect(await repo.applyCorrection(CORRECTION)).toEqual(written);
+  });
+
+  it('an `applied` outcome that wrote nothing is an empty array, NOT a failure', async () => {
+    // Re-submitting an unchanged total has to stay a true no-op.
+    withRpcResult({ outcome: 'applied' });
+    const repo = new PtoLedgerRepository();
+
+    expect(await repo.applyCorrection(CORRECTION)).toEqual([]);
+  });
+
+  it('a `stale` outcome is null — the signal to re-read, never an error', async () => {
+    withRpcResult({ outcome: 'stale', current: { '2026-08-01': 420 } });
+    const repo = new PtoLedgerRepository();
+
+    expect(await repo.applyCorrection(CORRECTION)).toBeNull();
+  });
+
+  it('`not_confirmed` becomes the typed 400, carrying the status the lock saw', async () => {
+    withRpcResult({ outcome: 'not_confirmed', current_status: 'cancelled' });
+    const repo = new PtoLedgerRepository();
+
+    await expect(repo.applyCorrection(CORRECTION)).rejects.toMatchObject({
+      name: 'PtoTimeOffNotConfirmedError',
+      metadata: expect.objectContaining({ status: 'cancelled' }),
+    });
+  });
+
+  it('`time_off_not_found` becomes the D12-class 404', async () => {
+    withRpcResult({ outcome: 'time_off_not_found' });
+    const repo = new PtoLedgerRepository();
+
+    await expect(repo.applyCorrection(CORRECTION)).rejects.toMatchObject({
+      name: 'PtoTimeOffNotFoundError',
+    });
+  });
+
+  it('a transport error is a DatabaseError, never a silent no-op', async () => {
+    withRpcResult(null, { message: 'connection reset' });
+    const repo = new PtoLedgerRepository();
+
+    await expect(repo.applyCorrection(CORRECTION)).rejects.toMatchObject({
+      name: 'DatabaseError',
+    });
+  });
+
+  it('an outcome nobody declared is a DatabaseError, not an assumed success', async () => {
+    withRpcResult({ outcome: 'who_knows' });
+    const repo = new PtoLedgerRepository();
+
+    await expect(repo.applyCorrection(CORRECTION)).rejects.toMatchObject({
+      name: 'DatabaseError',
+    });
   });
 });

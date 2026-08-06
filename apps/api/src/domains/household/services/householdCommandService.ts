@@ -121,12 +121,17 @@ export class HouseholdCommandService {
   }
 
   /**
-   * Redeem an invite for the caller. Idempotent-safe: a pending invite
-   * already consumed by the time this runs fails cleanly at the status check
-   * below (never a 500), and a genuinely concurrent double-redeem is caught
-   * by the repository's unique-constraint translation (see
-   * `householdMemberRepository.createMembership`) rather than surfacing as
-   * one.
+   * Redeem an invite for the caller. A code is SINGLE-USE, and the only thing
+   * that can enforce that is the conditional write: the status checks below
+   * are read-then-act, so two people redeeming the same code concurrently both
+   * pass them. `inviteRepo.claimPending` compare-and-sets on
+   * `status = 'pending'` and runs BEFORE the membership insert, so exactly one
+   * racer proceeds and the losers get a clean `InviteAlreadyAcceptedError`.
+   *
+   * The unique constraint on `(household_id, user_id)` — translated to
+   * `AlreadyMemberError` by `householdMemberRepository.createMembership` —
+   * only ever catches the SAME user redeeming twice, never two different
+   * people racing for one code.
    */
   async redeemInvite(
     userId: string,
@@ -155,19 +160,24 @@ export class HouseholdCommandService {
       throw new AlreadyMemberError(invite.household_id);
     }
 
-    const membership = await this.memberRepo.createMembership({
-      household_id: invite.household_id,
-      user_id: userId,
-      role: invite.role,
-      can_edit: false,
-      status: HOUSEHOLD_MEMBER_STATUSES.ACTIVE,
-    });
+    const claimed = await this.inviteRepo.claimPending(invite.id, userId);
+    if (!claimed) {
+      throw new InviteAlreadyAcceptedError(code);
+    }
 
-    await this.inviteRepo.update(invite.id, {
-      status: HOUSEHOLD_INVITE_STATUSES.ACCEPTED,
-      accepted_by: userId,
-      accepted_at: new Date().toISOString(),
-    });
+    let membership: HouseholdMember;
+    try {
+      membership = await this.memberRepo.createMembership({
+        household_id: invite.household_id,
+        user_id: userId,
+        role: invite.role,
+        can_edit: false,
+        status: HOUSEHOLD_MEMBER_STATUSES.ACTIVE,
+      });
+    } catch (error) {
+      await this.releaseInviteClaim(invite.id, userId);
+      throw error;
+    }
 
     const roleLabel =
       invite.role === HOUSEHOLD_ROLES.NANNY
@@ -199,6 +209,30 @@ export class HouseholdCommandService {
   ): void {
     if (!WRITE_ROLES.has(membership.role)) {
       throw new NotAHouseholdParentError(householdId, membership.role);
+    }
+  }
+
+  /**
+   * Best-effort un-claim after a failed membership insert. Without it the
+   * invite is left `accepted` with nobody in the household, and the same user
+   * retrying hits `InviteAlreadyAcceptedError` — a transient database error
+   * would cost them the code permanently. Reachable on the removed-member path
+   * too: `findActiveMembership` can't see a `removed` row, so that user sails
+   * past the pre-check and trips the unique constraint here instead.
+   *
+   * ponytail: compensation only, so a process that dies between the claim and
+   * the insert still strands the code. A claim-expiry sweep would close that;
+   * not worth it until it happens.
+   */
+  private async releaseInviteClaim(
+    inviteId: string,
+    userId: string
+  ): Promise<void> {
+    try {
+      await this.inviteRepo.releaseClaim(inviteId, userId);
+    } catch {
+      // The membership error is already on its way to the caller; a failed
+      // release must not replace it.
     }
   }
 

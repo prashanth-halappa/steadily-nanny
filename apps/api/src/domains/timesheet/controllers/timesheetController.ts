@@ -7,7 +7,7 @@ import { getAuthUserId } from '../../../utils/asyncHandler';
 import { sendSuccessResponse } from '../../../utils/responseHelpers';
 import { timesheetCommandService } from '../services/timesheetCommandService';
 import { timesheetQueryService } from '../services/timesheetQueryService';
-import type { WeekQuery } from '../types';
+import type { CarerQuery, WeekQuery } from '../types';
 
 export class TimesheetController {
   /** POST /time-entries/clock-in. */
@@ -87,7 +87,7 @@ export class TimesheetController {
     }
   }
 
-  /** GET /households/:householdId/time-entries?week_start=. */
+  /** GET /households/:householdId/time-entries?week_start=&carer_id=. */
   static async listForHouseholdWeek(
     req: Request,
     res: Response,
@@ -95,11 +95,13 @@ export class TimesheetController {
   ) {
     try {
       const householdId = req.params.householdId as string;
-      const { week_start } = req.validatedQuery as unknown as WeekQuery;
+      const { week_start, carer_id } =
+        req.validatedQuery as unknown as WeekQuery;
       const time_entries = await timesheetQueryService.listForHouseholdWeek(
         getAuthUserId(req),
         householdId,
-        week_start
+        week_start,
+        carer_id
       );
       return sendSuccessResponse(res, 'Time entries fetched', {
         time_entries,
@@ -109,7 +111,7 @@ export class TimesheetController {
     }
   }
 
-  /** GET /households/:householdId/timesheets. */
+  /** GET /households/:householdId/timesheets?carer_id=. */
   static async listTimesheetsForHousehold(
     req: Request,
     res: Response,
@@ -117,9 +119,11 @@ export class TimesheetController {
   ) {
     try {
       const householdId = req.params.householdId as string;
+      const { carer_id } = req.validatedQuery as unknown as CarerQuery;
       const timesheets = await timesheetQueryService.listTimesheetsForHousehold(
         getAuthUserId(req),
-        householdId
+        householdId,
+        carer_id
       );
       return sendSuccessResponse(res, 'Timesheets fetched', { timesheets });
     } catch (error) {

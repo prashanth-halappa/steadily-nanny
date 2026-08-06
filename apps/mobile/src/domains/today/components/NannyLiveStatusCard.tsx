@@ -117,8 +117,21 @@ export function NannyLiveStatusCard({
         (b.clock_out_at ?? '').localeCompare(a.clock_out_at ?? '')
       )[0];
     if (finishedToday?.clock_out_at) {
+      // Only THIS carer's entries — `finishedToday` names one carer, so the
+      // duration next to her name must be hers alone, never every carer's
+      // hours for the day summed under one name (F-B1-3-sibling). `carer_id`
+      // goes NULL for a deleted account (033_preserve_payroll_on_carer_
+      // deletion.sql) but keeps the row, so `carer_id === null` alone would
+      // match every departed carer collectively — fall back to the durable
+      // `carer_display_name` snapshot to keep two different departed
+      // carers' hours apart.
       const todayEntries = (entries.data ?? []).filter(
-        e => e.local_date === today
+        e =>
+          e.local_date === today &&
+          (finishedToday.carer_id !== null
+            ? e.carer_id === finishedToday.carer_id
+            : e.carer_id === null &&
+              e.carer_display_name === finishedToday.carer_display_name)
       );
       return {
         kind: 'finished',

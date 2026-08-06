@@ -89,7 +89,11 @@ describe('TimeOffCommandService.cancel', () => {
     const svc = new TimeOffCommandService(
       timeOffRepo,
       queries,
-      makeOverlapRepo()
+      makeOverlapRepo(),
+      undefined,
+      // The reconcile is AWAITED now (F-B9-2), so the seam has to be
+      // injected here rather than left as the real, network-bound default.
+      mock(async () => undefined)
     );
 
     const result = await svc.cancel('u1', 't1');
@@ -137,9 +141,19 @@ describe('TimeOffCommandService.cancel', () => {
     expect(reconcile).toHaveBeenCalledWith('t1');
   });
 
-  // Fire-and-forget: the cancellation is the carer's, and a bookkeeping
-  // failure downstream must never make her unable to cancel her own time off.
-  it('still cancels when reconciliation throws', async () => {
+  // ---------------------------------------------------------------------
+  // F-B9-2: the cancel used to commit, fire the PTO reversal and return 200
+  // WITHOUT waiting for it. A failed reversal left paid usage standing on a
+  // cancelled time off — real money on the ledger for a day nobody is
+  // taking — and it could never be repaired, because the conditional cancel
+  // made a retried DELETE short-circuit before reaching the reconcile.
+  //
+  // The reversal is now awaited and its failure is surfaced, and it runs on
+  // EVERY cancel rather than only the transitioning one, so the retry that
+  // the 503 asks for is the thing that finishes the job. Running it twice is
+  // free: `reconcileCancelledTimeOff` writes only what is still outstanding.
+  // ---------------------------------------------------------------------
+  it('surfaces a retryable failure instead of returning success with a broken ledger', async () => {
     const timeOffRepo = makeTimeOffRepo();
     const reconcile = mock(async () => {
       throw new Error('ledger unavailable');
@@ -152,21 +166,18 @@ describe('TimeOffCommandService.cancel', () => {
       reconcile
     );
 
-    const result = await svc.cancel('u1', 't1');
-
-    expect(result.status).toBe('cancelled');
+    await expect(svc.cancel('u1', 't1')).rejects.toMatchObject({
+      statusCode: 503,
+    });
+    // The row IS cancelled — only the bookkeeping failed, which is exactly
+    // what the retry has to finish.
     expect(timeOffRepo.cancelById).toHaveBeenCalledWith('t1');
   });
 
-  // ---------------------------------------------------------------------
-  // Phase 3/4 review, BLOCKER 1(a): cancel had NO status guard, so a
-  // retried cancel (the client times out, taps again) "succeeded" a second
-  // time and re-fired the fire-and-forget reconciliation. With the
-  // conditional update in place, a second cancel matches no rows and must
-  // NOT reconcile again — the reversal, if any, already happened.
-  // ---------------------------------------------------------------------
-  it('does NOT re-fire reconciliation when the row was already cancelled (conditional update matched nothing)', async () => {
+  it('reconciles on a RETRIED cancel too, so a failed reversal can still be repaired', async () => {
     const timeOffRepo = makeTimeOffRepo({
+      // The row already transitioned on the first (failed) attempt, so the
+      // conditional update matches nothing this time.
       cancelById: mock(async () => null),
     });
     const reconcile = mock(async () => undefined);
@@ -182,25 +193,40 @@ describe('TimeOffCommandService.cancel', () => {
 
     const result = await svc.cancel('u1', 't1');
 
-    expect(timeOffRepo.cancelById).toHaveBeenCalledWith('t1');
-    expect(reconcile).not.toHaveBeenCalled();
+    expect(reconcile).toHaveBeenCalledWith('t1');
     // Still a success — cancelling an already-cancelled time off is
     // idempotent, and the caller gets the row as it stands.
     expect(result.status).toBe('cancelled');
   });
 
-  it('reconciles exactly ONCE across two cancels of the same time off', async () => {
-    let cancelled = false;
-    const timeOffRepo = makeTimeOffRepo({
-      cancelById: mock(async (id: string) => {
-        if (cancelled) return null;
-        cancelled = true;
-        return { ...row, id, status: 'cancelled' };
-      }),
+  it('a second cancel whose reversal also fails still fails loudly', async () => {
+    const timeOffRepo = makeTimeOffRepo({ cancelById: mock(async () => null) });
+    const reconcile = mock(async () => {
+      throw new Error('ledger still unavailable');
     });
-    const reconcile = mock(async () => undefined);
     const svc = new TimeOffCommandService(
       timeOffRepo,
+      makeQueries({
+        getOwned: mock(async () => ({ ...row, status: 'cancelled' })),
+      }),
+      makeOverlapRepo(),
+      undefined,
+      reconcile
+    );
+
+    await expect(svc.cancel('u1', 't1')).rejects.toMatchObject({
+      statusCode: 503,
+    });
+  });
+
+  it('waits for the reversal before returning — never reports success on an unfinished one', async () => {
+    let settled = false;
+    const reconcile = mock(async () => {
+      await new Promise(resolve => setTimeout(resolve, 5));
+      settled = true;
+    });
+    const svc = new TimeOffCommandService(
+      makeTimeOffRepo(),
       makeQueries(),
       makeOverlapRepo(),
       undefined,
@@ -208,9 +234,8 @@ describe('TimeOffCommandService.cancel', () => {
     );
 
     await svc.cancel('u1', 't1');
-    await svc.cancel('u1', 't1');
 
-    expect(reconcile).toHaveBeenCalledTimes(1);
+    expect(settled).toBe(true);
   });
 });
 

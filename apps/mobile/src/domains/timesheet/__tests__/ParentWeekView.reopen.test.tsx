@@ -300,13 +300,14 @@ mock.module('@/src/api/endpoints/timesheets', () => {
     timesheetApi: {
       list: listTimesheetsMock,
       getById: getByIdMock,
+      // Mirrors the real endpoint: every carer's row for that week, each
+      // resolved to its own earnings-bearing week (F-B1-3).
       getWeek: async (_householdId: string, weekStart: string) => {
         const all = await listTimesheetsMock();
-        const match = (all as { week_start: string; id: string }[]).find(
+        const matches = (all as { week_start: string; id: string }[]).filter(
           t => t.week_start === weekStart
         );
-        if (!match) return null;
-        return getByIdMock();
+        return Promise.all(matches.map(() => getByIdMock()));
       },
       approve: approveMock,
       query: queryMock,

@@ -13,6 +13,12 @@ import { ApprovalNotPendingError } from '../errors/approvalErrors';
 import { CO_PARENT_APPROVAL_STATUSES } from '../schemas';
 import type { CoParentApproval } from '../types';
 
+/** How many times a parked payload may be applied before the approval gives up. */
+const MAX_APPLY_ATTEMPTS = 2;
+
+/** How long a retried approval waits before a sweep may pick it up again. */
+const APPLY_RETRY_DELAY_MS = 15 * 60_000;
+
 export class CoParentApprovalRepository extends BaseRepository<CoParentApproval> {
   constructor() {
     super('co_parent_approvals');
@@ -72,6 +78,123 @@ export class CoParentApprovalRepository extends BaseRepository<CoParentApproval>
       throw new ApprovalNotPendingError(id, 'unknown');
     }
     return data as CoParentApproval;
+  }
+
+  /**
+   * Compensating write for a row this process CLAIMED (CAS'd to `approved` in
+   * `respond`, or to `timed_out` in `expireTimedOut`) whose applier then threw,
+   * leaving the parked payload unapplied.
+   *
+   * The first failure goes back to `pending` so the payload is retried; the
+   * last one settles TERMINALLY as `withdrawn`, marked with the error. Bounded
+   * on purpose: the appliers are not idempotent (an `extra_shift` applier that
+   * fails after its `createShift` leaves a real shift behind), so an unbounded
+   * retry multiplies rows on a family's schedule every time anyone opens the
+   * approvals list. Two attempts covers a transient blip; a payload that
+   * genuinely can't apply stops instead of looping.
+   *
+   * `timeout_at` is pushed forward on a retry — leaving it in the past means
+   * the next on-read expiry re-applies immediately, which is the loop itself.
+   * That does hand the approval a fresh silence window, deliberately: an
+   * attempt is only spent when something might have half-written, so the clock
+   * can be extended at most `MAX_APPLY_ATTEMPTS` times before the row settles.
+   * The one unbounded case is `countsAttempt = false`, where waiting for a
+   * deploy is exactly the point.
+   *
+   * `countsAttempt` is false when nothing could have been written — today,
+   * an action with no registered applier. Spending attempts there would turn a
+   * registration bug into permanently `withdrawn` mutations two taps later,
+   * and there is no partial state to protect against.
+   *
+   * The outcome comes from the row the CAS actually returned, never from the
+   * counter we intended to write: if the row moved on (a concurrent sweep or
+   * respond), the update lands on nothing, `apply_attempts` is never
+   * persisted, and reporting anything but `missed` would both mislead the log
+   * and let the next failure restart the count from one.
+   *
+   * ponytail: the attempt count and error live in the existing `payload` jsonb
+   * (appliers read their own keys and ignore these); real columns would need a
+   * migration. Same reason `withdrawn` is the terminal marker — the status
+   * check constraint has no `apply_failed`.
+   */
+  async recordFailedApply(
+    approval: Pick<CoParentApproval, 'id' | 'payload'>,
+    fromStatus: 'approved' | 'timed_out',
+    reason: string,
+    countsAttempt = true
+  ): Promise<'retrying' | 'failed' | 'missed'> {
+    const previous = approval.payload.apply_attempts;
+    const spent = typeof previous === 'number' ? previous : 0;
+    const attempts = countsAttempt ? spent + 1 : spent;
+    const retrying = !countsAttempt || attempts < MAX_APPLY_ATTEMPTS;
+    const payload = {
+      ...approval.payload,
+      apply_attempts: attempts,
+      apply_error: reason,
+    };
+
+    const { data, error } = await supabaseService
+      .from(this.table)
+      .update(
+        retrying
+          ? {
+              status: CO_PARENT_APPROVAL_STATUSES.PENDING,
+              responded_by: null,
+              responded_at: null,
+              timeout_at: new Date(
+                Date.now() + APPLY_RETRY_DELAY_MS
+              ).toISOString(),
+              payload,
+            }
+          : { status: CO_PARENT_APPROVAL_STATUSES.WITHDRAWN, payload }
+      )
+      .eq('id', approval.id)
+      .eq('status', fromStatus)
+      .select()
+      .maybeSingle();
+
+    if (error) {
+      throw new DatabaseError(
+        'Failed to record a failed approval apply',
+        'DATABASE_ERROR',
+        { details: error.message, id: approval.id }
+      );
+    }
+    if (!data) return 'missed';
+    return retrying ? 'retrying' : 'failed';
+  }
+
+  /**
+   * Drop the bookkeeping `recordFailedApply` parked in `payload` once an apply
+   * finally succeeds, so a stale error string doesn't outlive the failure it
+   * describes. No-ops when there is nothing to clear, which is the normal path.
+   */
+  async clearApplyMarkers(
+    approval: Pick<CoParentApproval, 'id' | 'payload'>
+  ): Promise<void> {
+    if (
+      approval.payload.apply_attempts === undefined &&
+      approval.payload.apply_error === undefined
+    ) {
+      return;
+    }
+
+    const payload = { ...approval.payload };
+    delete payload.apply_attempts;
+    delete payload.apply_error;
+
+    const { error } = await supabaseService
+      .from(this.table)
+      .update({ payload })
+      .eq('id', approval.id);
+
+    if (error) {
+      throw new DatabaseError(
+        'Failed to clear approval apply markers',
+        'DATABASE_ERROR',
+        { details: error.message, id: approval.id }
+      );
+    }
   }
 
   /**

@@ -19,7 +19,7 @@ import { Input } from '@/src/components/ui/input';
 import { Switch } from '@/src/components/ui/switch';
 import { Text } from '@/src/components/ui/text';
 import { TimeRangePicker } from '@/src/components/ui/time-range-picker';
-import { H3 } from '@/src/components/ui/typography';
+import { H3, Small } from '@/src/components/ui/typography';
 import { WeekStrip } from '@/src/components/ui/week-strip';
 import { commitmentKindLabelKey } from '@/src/domains/setup/constants/commitmentKinds';
 import {
@@ -166,10 +166,15 @@ export function CommitmentFormSheet({
           />
         </View>
 
-        <View className="flex-row items-center justify-between gap-3">
-          <FieldLabel className="mb-0">
-            {t('commitments.form.excludedLabel')}
-          </FieldLabel>
+        <View className="flex-row items-start justify-between gap-3">
+          <View className="flex-1 gap-1">
+            <FieldLabel className="mb-0">
+              {t('commitments.form.excludedLabel')}
+            </FieldLabel>
+            <Small className="text-muted-foreground">
+              {t('commitments.form.excludedHelper')}
+            </Small>
+          </View>
           <Switch
             testID="commitment-form-excluded"
             checked={excludedFromCover}

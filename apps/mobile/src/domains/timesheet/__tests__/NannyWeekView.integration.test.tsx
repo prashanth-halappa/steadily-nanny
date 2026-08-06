@@ -217,7 +217,11 @@ function makeTimesheetWeek(
 
 const listEntriesMock = mock(() => Promise.resolve([makeEntry()]));
 const listTimesheetsMock = mock(() => Promise.resolve([makeTimesheet()]));
-const getByIdMock = mock(() => Promise.resolve(makeTimesheetWeek()));
+// Takes the id the real `getWeek` passes it, so a two-carer week can hand
+// back a DIFFERENT week per timesheet row (F-B1-3).
+const getByIdMock = mock((_timesheetId?: string) =>
+  Promise.resolve(makeTimesheetWeek())
+);
 const updateEntryMock = mock(() => Promise.resolve(makeEntry()));
 // Phase 4 (additive): the week's own expense/mileage claims + her pay
 // arrangement (read only for the add sheet's mileage-rate hint). Mocked so
@@ -275,13 +279,14 @@ mock.module('@/src/api/endpoints/timesheets', () => {
     timesheetApi: {
       list: listTimesheetsMock,
       getById: getByIdMock,
+      // Mirrors the real endpoint: every carer's row for that week, each
+      // resolved to its own earnings-bearing week (F-B1-3).
       getWeek: async (_householdId: string, weekStart: string) => {
         const all = await listTimesheetsMock();
-        const match = (all as { week_start: string; id: string }[]).find(
+        const matches = (all as { week_start: string; id: string }[]).filter(
           t => t.week_start === weekStart
         );
-        if (!match) return null;
-        return getByIdMock();
+        return Promise.all(matches.map(t => getByIdMock(t.id)));
       },
       approve: mock(),
       query: mock(),
@@ -439,6 +444,128 @@ describe('NannyWeekView — earnings arms', () => {
       expect(
         getByTestId('hours-earnings-breakdown-subheader').props.children
       ).toContain('earningsBreakdownApproved')
+    );
+  });
+});
+
+// F-B1-3 (S0): `GET /households/:id/time-entries` and
+// `GET /households/:id/timesheets` are household-wide, not self-scoped — a
+// second carer's hours and a second carer's pay both come back on this
+// nanny's own week read. "Your week" must mean HERS.
+describe('NannyWeekView — a second carer in the same household (F-B1-3)', () => {
+  const OTHER_CARER_ID = 'carer-bea';
+  const OTHER_TIMESHEET_ID = 'ts-2';
+
+  beforeEach(() => {
+    listEntriesMock.mockImplementation(() =>
+      Promise.resolve([
+        makeEntry(),
+        makeEntry({
+          id: 'entry-2',
+          carer_id: OTHER_CARER_ID,
+          carer_display_name: 'Bea',
+          clock_in_at: '2026-08-04T08:00:00.000Z',
+          clock_out_at: '2026-08-04T12:00:00.000Z',
+          scheduled_minutes: null,
+          local_date: '2026-08-04',
+        }),
+      ])
+    );
+    // Bea's row sorts FIRST — today's find-by-week picks it.
+    listTimesheetsMock.mockImplementation(() =>
+      Promise.resolve([
+        makeTimesheet({
+          id: OTHER_TIMESHEET_ID,
+          carer_id: OTHER_CARER_ID,
+          carer_display_name: 'Bea',
+          total_minutes: 240,
+        }),
+        makeTimesheet(),
+      ])
+    );
+    getByIdMock.mockImplementation((timesheetId?: string) =>
+      Promise.resolve(
+        timesheetId === OTHER_TIMESHEET_ID
+          ? {
+              ...makeTimesheet({
+                id: OTHER_TIMESHEET_ID,
+                carer_id: OTHER_CARER_ID,
+                carer_display_name: 'Bea',
+                total_minutes: 240,
+              }),
+              earnings: { ...okEarnings, gross_minor: 4440 },
+            }
+          : makeTimesheetWeek()
+      )
+    );
+  });
+
+  it('totals only her own hours, never the household', async () => {
+    const { getByTestId } = renderNannyView();
+
+    await waitFor(() => expect(getByTestId('hours-total')).toBeTruthy());
+    expect(getByTestId('hours-total').props.children).toBe('8h');
+  });
+
+  // Fails CLOSED: with no signed-in user id there is no carer to scope to,
+  // and the household's summed hours under "Your week" is worse than nothing.
+  it('shows nothing rather than the household sum when there is no user id', async () => {
+    useAuthStore.setState({
+      session: { user: { id: NANNY_ID } } as unknown as never,
+      user: null,
+      isInitialized: true,
+    } as never);
+
+    const { getByTestId, queryByTestId } = renderNannyView();
+
+    await waitFor(() => expect(getByTestId('hours-total')).toBeTruthy());
+    expect(getByTestId('hours-total').props.children).toBe('0m');
+    // …and no money either: `find(t => t.carer_id === undefined-ish)` must
+    // not land on a DEPARTED carer's row (carer_id null) and show her pay.
+    expect(queryByTestId('hours-earnings-line-amount')).toBeNull();
+  });
+
+  it("never falls onto a departed carer's earnings when there is no user id", async () => {
+    listTimesheetsMock.mockImplementation(() =>
+      Promise.resolve([
+        makeTimesheet({
+          id: 'ts-departed',
+          carer_id: null,
+          carer_display_name: 'Bea',
+          total_minutes: 240,
+        }),
+      ])
+    );
+    getByIdMock.mockImplementation(() =>
+      Promise.resolve({
+        ...makeTimesheet({
+          id: 'ts-departed',
+          carer_id: null,
+          carer_display_name: 'Bea',
+        }),
+        earnings: { ...okEarnings, gross_minor: 4440 },
+      })
+    );
+    useAuthStore.setState({
+      session: { user: { id: NANNY_ID } } as unknown as never,
+      user: null,
+      isInitialized: true,
+    } as never);
+
+    const { getByTestId, queryByTestId } = renderNannyView();
+
+    await waitFor(() => expect(getByTestId('hours-total')).toBeTruthy());
+    expect(queryByTestId('hours-earnings-line-amount')).toBeNull();
+  });
+
+  it("shows her own gross, never the other carer's", async () => {
+    const { getByTestId } = renderNannyView();
+
+    await waitFor(() =>
+      expect(getByTestId('hours-earnings-line-amount')).toBeTruthy()
+    );
+    expect(getByTestId('hours-earnings-line-amount').props.children).toBe(
+      '£148.00'
     );
   });
 });

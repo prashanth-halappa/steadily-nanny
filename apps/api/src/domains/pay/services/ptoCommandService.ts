@@ -47,8 +47,8 @@
  *      c. **Status guard.** Only `status = 'confirmed'` time off is
  *         markable (TIER0-PLAN.md Phase 3, review finding 9) —
  *         `PtoTimeOffNotConfirmedError` for `requested`/`cancelled`.
- *    THE FIRST MARK WRITES `usage` ROWS; EVERY LATER ONE WRITES
- *    `adjustment` ROWS FOR THE DELTA (review BLOCKER 3). The mark-paid sheet
+ *    A DAY'S FIRST MARK WRITES A `usage` ROW; EVERY LATER ONE WRITES AN
+ *    `adjustment` ROW FOR THE DELTA (review BLOCKER 3). The mark-paid sheet
  *    always advertised that re-submitting appends a correction, and it
  *    never could: this method always inserted `kind='usage'`, so 043's
  *    per-time-off partial unique index 409'd the second one and a parent who
@@ -63,15 +63,14 @@
  *    complete history of what was decided and when. ONE row still crosses
  *    the wire in the response (the earliest written) — see `anchorOf`.
  *
- *    `PtoAlreadyMarkedPaidError` remains reachable and is deliberately NOT
- *    caught: two parents tapping "mark paid" on an UNMARKED time off at the
- *    same instant both compute the same covered-day set, both see no usage
- *    rows and both insert; 045's `(household_id, time_off_id,
- *    effective_date)` index is the source of truth under that race and the
- *    loser gets a clean typed 409 on the first day instead of a second set
- *    of usage rows. A sequential retry never reaches it — by then the rows
- *    are visible and the delta path takes over, filling in only what is
- *    missing.
+ *    `PtoAlreadyMarkedPaidError` is now a backstop rather than a live path.
+ *    045's `(household_id, time_off_id, effective_date)` index still stands
+ *    and `ptoLedgerRepository.create` still translates its 23505, but two
+ *    simultaneous marks no longer reach it: they serialise on the lock, and
+ *    the loser's compare-and-set fails, so it re-reads and appends its delta
+ *    against what the winner wrote instead of colliding. The only remaining
+ *    writer of `usage` rows through `create` is the lazy annual accrual
+ *    grant, which the index does not cover.
  *
  *    OVER-BALANCE IS DELIBERATELY ALLOWED, NEVER BLOCKED (review finding
  *    16, the CX spec's warn-never-block stance): minutes are the parent's
@@ -80,12 +79,28 @@
  *    warning; this service does not compute or enforce one.
  *
  *    THE CANCEL RACE (review SERIOUS 8): the status guard reads
- *    `carer_time_off` and the insert happens afterwards, so a cancel
- *    committing in between leaves a usage row on a cancelled time off that
- *    `reconcileCancelledTimeOff` has ALREADY run past — never reversed by
- *    anyone. The time off is therefore re-read AFTER the insert, and a
- *    marking that lost the race reverses itself (the same netted reversal
- *    reconcile uses) before refusing.
+ *    `carer_time_off` and the insert used to happen afterwards, so a cancel
+ *    committing in between left a usage row on a cancelled time off that
+ *    `reconcileCancelledTimeOff` had ALREADY run past — never reversed by
+ *    anyone. The status is now checked against the row migration 050 holds
+ *    LOCKED, before anything is written, so the loser writes nothing rather
+ *    than writing and compensating.
+ *
+ *    ONE LOCKED BATCH, NO BRANCH (F-B4-2). There is deliberately no
+ *    "first marking or correction?" decision left in this file. There was,
+ *    it was taken from an unlocked read, and that was the defect: two
+ *    parents on a 5-day time off, A marking 480 and B marking 360, could
+ *    disagree about which branch they were in — A inserted d1..d3 as
+ *    separate statements, B read those three rows and legitimately corrected
+ *    the whole span to 360, then A's loop resumed and added `usage` on d4
+ *    and d5, which 045's index does not stop because it is partial on
+ *    `kind = 'usage'` and B had written `adjustment` rows there. The ledger
+ *    settled on 552 minutes and both parents were told they succeeded.
+ *    Every write — marking, correction and reversal alike — is now one
+ *    `applyPerDayTarget` call: one batch, one statement, inside migration
+ *    050's `carer_time_off` row lock, with the per-day KIND decided from the
+ *    same read the compare-and-set vouches for. A caller whose read went
+ *    stale is refused and recomputes against what actually landed.
  *
  * 2. `reconcileCancelledTimeOff` — called (by the availability domain, NOT
  *    from within this domain — see its own doc) when a carer cancels time
@@ -108,6 +123,7 @@ import type {
   PtoLedgerEntry,
 } from '@steadily-nanny/shared-types/schemas/pto.schema';
 import { PTO_LEDGER_NOTE_KEYS } from '@steadily-nanny/shared-types/schemas/pto.schema';
+import { ConflictError } from '../../../errors';
 import { logger } from '../../../middlewares/logger';
 import { CarerTimeOffRepository } from '../../availability/repositories/carerTimeOffRepository';
 import type { CarerTimeOff } from '../../availability/types';
@@ -154,6 +170,15 @@ const MARKABLE_STATUS = 'confirmed';
  * across the payroll record.
  */
 const UNNAMED_CARER_DISPLAY_NAME = 'Carer';
+
+/**
+ * How many times a correction re-reads and re-applies after losing
+ * migration 050's compare-and-set. Two writers on one time off in one
+ * household is already the rare case; three consecutive losses is not
+ * something the app produces, so this is a bound on a pathology, not a
+ * tuning knob.
+ */
+const MAX_CORRECTION_ATTEMPTS = 3;
 
 /** The signed sum of a set of ledger rows — the balance rule, in one place. */
 function sumMinutes(rows: readonly PtoLedgerEntry[]): number {
@@ -254,24 +279,11 @@ export class PtoCommandService {
     // time off moves that total (043's sign convention).
     const paidMinutes = -sumMinutes(existingRows);
 
-    if (paidPerDay.size === 0) {
-      if (requestedMinutes === 0) {
-        // Nothing marked and nothing asked for: there is no total to reverse
-        // and no row to return. Refused with the same 400 the wire schema
-        // used to give a zero-minute request.
-        throw new PtoNothingToAdjustError(householdId, timeOff.id);
-      }
-      const marked = await this.writeFirstMarking(
-        callerId,
-        householdId,
-        timeOff,
-        membership,
-        coveredDates,
-        requestedMinutes,
-        request.note ?? null
-      );
-      this.notifyCarerMarkedPaid(householdId, timeOff.user_id);
-      return marked;
+    if (paidPerDay.size === 0 && requestedMinutes === 0) {
+      // Nothing marked and nothing asked for: there is no total to reverse
+      // and no row to return. Refused with the same 400 the wire schema
+      // used to give a zero-minute request.
+      throw new PtoNothingToAdjustError(householdId, timeOff.id);
     }
 
     if (requestedMinutes === paidMinutes) {
@@ -286,136 +298,18 @@ export class PtoCommandService {
       }
     }
 
-    const corrected = await this.writeCorrection(
-      callerId,
-      householdId,
-      timeOff.id,
-      existingRows,
-      paidPerDay,
-      coveredDates,
-      requestedMinutes,
-      request.note ?? null
-    );
-    this.notifyCarerMarkedPaid(householdId, timeOff.user_id);
-    return corrected;
-  }
-
-  /**
-   * The first marking: one `usage` row PER DAY the time off covers.
-   *
-   * WHY PER DAY (review finding 15b). A marking used to be a single row on
-   * the time off's START date, so a fortnight marked 80h paid put all 4800
-   * minutes in week one — an 80h PTO line and an inflated gross there, and
-   * nothing in week two — and approving week one froze it (§3: approved
-   * weeks never recompute). Money in the wrong week is a wrong number in a
-   * weekly-paid product.
-   *
-   * WHICH DAYS COUNT: every CALENDAR day the time off covers, not the
-   * carer's scheduled/working days. The scheduled-day split would be more
-   * faithful when the schedule exists, and that is exactly the problem —
-   * holidays are booked months ahead, beyond the materialisation horizon,
-   * so for the common case there ARE no shifts to split by and the rule
-   * would silently fall back to calendar days precisely when it matters
-   * most. A rule that changes shape with how far ahead the schedule happens
-   * to be materialised is not a rule a parent can predict or an auditor can
-   * check. `carer_time_off` is also cross-household by construction
-   * (011_availability.sql), so a schedule-based split would give the same
-   * marking a different shape in each family. The KNOWN LIMITATION, stated
-   * rather than hidden: a holiday spanning a weekend attributes some minutes
-   * to days she would not have worked, so a week's PTO line need not match
-   * her working pattern. The TOTAL, the balance and every week's sum stay
-   * exactly right, and a parent who wants a different shape can correct it —
-   * this is an attribution default, not a derived fact.
-   *
-   * A day allocated zero minutes gets NO row: `pto_ledger` carries
-   * `check (minutes <> 0)`, and a zero row would record nothing anyway.
-   */
-  private async writeFirstMarking(
-    callerId: string,
-    householdId: string,
-    timeOff: CarerTimeOff,
-    membership: { display_name_override: string | null },
-    dates: readonly string[],
-    requestedMinutes: number,
-    note: string | null
-  ): Promise<PtoLedgerEntry> {
-    const carerDisplayName = await this.resolveCarerDisplayName(
-      timeOff.user_id,
-      membership.display_name_override
-    );
-    const perDay = allocateMinutes(
-      requestedMinutes,
-      dates.map(() => 1)
-    );
-
-    const written: PtoLedgerEntry[] = [];
-    for (const [index, date] of dates.entries()) {
-      const minutes = perDay[index] ?? 0;
-      if (minutes === 0) {
-        continue;
-      }
-      // Written field-by-field, never by spreading `request`: minutes is
-      // negated here (the wire request is a positive count of minutes to
-      // pay), and every other field is server-derived.
-      written.push(
-        await this.ptoRepo.create({
-          household_id: householdId,
-          carer_id: timeOff.user_id,
-          kind: 'usage',
-          minutes: -minutes,
-          effective_date: date,
-          time_off_id: timeOff.id,
-          carer_display_name: carerDisplayName,
-          // A note the PARENT typed is user content and is stored verbatim
-          // (never a key, review finding 16a) — on every day of the marking,
-          // so each row is self-describing when the ledger is read a row at
-          // a time.
-          note,
-          created_by: callerId,
-        })
-      );
-    }
-
-    await this.assertStillConfirmedAfterWrite(householdId, timeOff.id);
-    return this.anchorOf(written, householdId, timeOff.id);
-  }
-
-  /**
-   * A correction to an existing marking: one `adjustment` row per day whose
-   * netted total has to move.
-   *
-   * The new total is re-spread evenly across the days the time off covers —
-   * the same shape a fresh marking would have — and each day's ADJUSTMENT is
-   * the difference between that target and what the day currently holds.
-   * Because `allocateMinutes` is exact the days still sum to the requested
-   * total, to the minute, and a per-day delta of zero writes nothing, which
-   * is what makes re-submitting the same total a true no-op.
-   *
-   * A PARTIALLY WRITTEN MARKING HEALS ITSELF HERE: if the first attempt
-   * wrote three of five days and then failed, a retry sees three days'
-   * worth of netted total, computes the shortfall per day, and fills in the
-   * rest. That is the same property that makes the reversal idempotent, and
-   * it is why the writes below do not need a transaction they cannot have.
-   */
-  private async writeCorrection(
-    callerId: string,
-    householdId: string,
-    timeOffId: string,
-    existingRows: readonly PtoLedgerEntry[],
-    paidPerDay: Map<string, number>,
-    coveredDates: readonly string[],
-    requestedMinutes: number,
-    note: string | null
-  ): Promise<PtoLedgerEntry> {
-    // The TARGET shape is the same one a fresh marking would have: the
-    // requested total, spread evenly across the days the time off covers
-    // TODAY. Weighting by what each day currently holds was the obvious
-    // alternative and is wrong in the two cases that matter — a retry after a
-    // partial write would top the one written day up to the whole total
-    // (re-creating 15b), and a time off shortened after it was marked would
-    // leave a paid day standing outside the leave. Re-spreading converges to
-    // the documented rule ("the total, evenly over the covered days") from
-    // any starting state.
+    // The TARGET shape is the same whether this is the first marking or the
+    // fifth correction: the requested total, spread evenly across the days
+    // the time off covers TODAY. Weighting by what each day currently holds
+    // was the obvious alternative and is wrong in the two cases that matter —
+    // a retry after a partial write would top the one written day up to the
+    // whole total (re-creating 15b), and a time off shortened after it was
+    // marked would leave a paid day standing outside the leave. Re-spreading
+    // converges to the documented rule from any starting state.
+    //
+    // Days the ledger touches but the leave no longer covers are NOT listed
+    // here; `applyPerDayTarget` adds them with an implicit target of zero, so
+    // they are reversed rather than orphaned.
     const targetPerDay = new Map<string, number>();
     const even = allocateMinutes(
       requestedMinutes,
@@ -425,39 +319,154 @@ export class PtoCommandService {
       targetPerDay.set(date, even[index] ?? 0);
     }
 
-    // Days the ledger touches but the leave no longer covers get a target of
-    // ZERO, so they are reversed rather than orphaned.
-    const dates = [...new Set([...coveredDates, ...paidPerDay.keys()])].sort();
+    const written = await this.applyPerDayTarget({
+      householdId,
+      timeOffId: timeOff.id,
+      targetPerDay,
+      knownRows: existingRows,
+      carer: {
+        id: timeOff.user_id,
+        displayName: await this.resolveCarerDisplayName(
+          timeOff.user_id,
+          membership.display_name_override
+        ),
+      },
+      note: request.note ?? null,
+      adjustmentNote: PTO_LEDGER_NOTE_KEYS.MARKED_PAID_ADJUSTED,
+      createdBy: callerId,
+      requireConfirmed: true,
+    });
+    this.notifyCarerMarkedPaid(householdId, timeOff.user_id);
+    return this.anchorOf(written, householdId, timeOff.id);
+  }
 
-    const written: PtoLedgerEntry[] = [];
-    for (const date of dates) {
-      const delta = (targetPerDay.get(date) ?? 0) - (paidPerDay.get(date) ?? 0);
-      if (delta === 0) {
-        continue;
+  /**
+   * Move ONE household's ledger for ONE time off to an absolute per-day
+   * target, in a single locked batch — the whole of a marking, a correction
+   * (target = the requested total, spread) and a reversal (target = nothing,
+   * so every day goes back to zero).
+   *
+   * SERIALISED, because the read and the write are otherwise a lost update
+   * waiting to happen (F-B4-2). The deltas are computed HERE, from a read
+   * that is not under any lock; `ptoRepo.applyCorrection` sends them together
+   * with the per-day state they came from, and migration 050's function locks
+   * the `carer_time_off` row, re-derives that state and refuses to write if
+   * it moved. A refusal is not an error — it is "someone else wrote between
+   * your read and your write": re-read, recompute against what they left, and
+   * apply again, so the LAST writer's stated total wins instead of two
+   * writers landing on a figure neither asked for.
+   *
+   * The arithmetic deliberately stays here rather than moving into plpgsql:
+   * `allocateMinutes`, the covered-day span and the note keys are the money
+   * rules, and they are testable in this shape and unreachable in the other.
+   *
+   * THE KIND IS DECIDED PER DAY, FROM THE SAME READ THE COMPARE-AND-SET
+   * VALIDATES. A day with no `usage` row yet is being marked for the first
+   * time and gets one; a day that already has one gets an `adjustment`. That
+   * decision used to live one level up, as a branch over the whole request
+   * taken from an unlocked read — which is what let two parents on a 5-day
+   * time off disagree about which branch they were in and settle the ledger
+   * on 552 minutes when one asked for 480 and the other for 360. Deciding it
+   * here means the CAS vouches for it: if the ledger moved, the deltas AND
+   * the kinds are recomputed together against what actually landed.
+   *
+   * A target of zero deltas skips the round trip entirely. Writing nothing is
+   * always safe regardless of what else committed, and it is what keeps
+   * re-submitting an unchanged total, and re-running an already-complete
+   * reversal, true no-ops.
+   */
+  private async applyPerDayTarget(args: {
+    householdId: string;
+    timeOffId: string;
+    targetPerDay: ReadonlyMap<string, number>;
+    /** The caller's own read — used for the first attempt only. */
+    knownRows: readonly PtoLedgerEntry[];
+    /**
+     * Who to name on a day that has no row yet. Absent on the reversal path,
+     * which only ever touches days that already have one — and its absence is
+     * also what keeps a reversal from ever writing a `usage` row.
+     */
+    carer?: { id: string; displayName: string };
+    /** The PARENT's own note — user content, stored verbatim on a `usage` row. */
+    note: string | null;
+    /** The key an `adjustment` row carries when the parent typed nothing. */
+    adjustmentNote: string;
+    createdBy: string | null;
+    requireConfirmed: boolean;
+  }): Promise<PtoLedgerEntry[]> {
+    let rows = args.knownRows;
+
+    for (let attempt = 0; attempt < MAX_CORRECTION_ATTEMPTS; attempt += 1) {
+      const paidPerDay = paidMinutesByDate(rows);
+      const dates = [
+        ...new Set([...args.targetPerDay.keys(), ...paidPerDay.keys()]),
+      ].sort();
+
+      const pending = dates.flatMap(date => {
+        const delta =
+          (args.targetPerDay.get(date) ?? 0) - (paidPerDay.get(date) ?? 0);
+        if (delta === 0) {
+          return [];
+        }
+        const anchor = rowForDate(rows, date);
+        const firstMarkingOfDay = args.carer !== undefined && !anchor;
+        return [
+          {
+            household_id: args.householdId,
+            carer_id: anchor?.carer_id ?? args.carer?.id ?? null,
+            kind: firstMarkingOfDay
+              ? ('usage' as const)
+              : ('adjustment' as const),
+            // Ledger sign: paying MORE is more negative.
+            minutes: -delta,
+            // Dated with the day it corrects, so it nets inside the week that
+            // day belongs to, and carrying that day's name snapshot so the
+            // correction reads identically to what it corrects.
+            effective_date: date,
+            time_off_id: args.timeOffId,
+            carer_display_name:
+              anchor?.carer_display_name ??
+              args.carer?.displayName ??
+              UNNAMED_CARER_DISPLAY_NAME,
+            note: firstMarkingOfDay
+              ? args.note
+              : (args.note ?? args.adjustmentNote),
+            created_by: args.createdBy,
+          },
+        ];
+      });
+
+      if (pending.length === 0) {
+        return [];
       }
-      const anchor = rowForDate(existingRows, date);
-      written.push(
-        await this.ptoRepo.create({
-          household_id: householdId,
-          carer_id: anchor?.carer_id ?? null,
-          kind: 'adjustment',
-          // Ledger sign: paying MORE is more negative.
-          minutes: -delta,
-          // Dated with the day it corrects, so it nets inside the week that
-          // day belongs to, and carrying that day's name snapshot so the
-          // correction reads identically to what it corrects.
-          effective_date: date,
-          time_off_id: timeOffId,
-          carer_display_name:
-            anchor?.carer_display_name ?? UNNAMED_CARER_DISPLAY_NAME,
-          note: note ?? PTO_LEDGER_NOTE_KEYS.MARKED_PAID_ADJUSTED,
-          created_by: callerId,
-        })
+
+      const written = await this.ptoRepo.applyCorrection({
+        householdId: args.householdId,
+        timeOffId: args.timeOffId,
+        expected: Object.fromEntries(paidPerDay),
+        rows: pending,
+        requireConfirmed: args.requireConfirmed,
+      });
+      if (written) {
+        return written;
+      }
+
+      // Lost the compare-and-set: re-read what the winner left behind.
+      rows = await this.ptoRepo.listForHouseholdTimeOff(
+        args.householdId,
+        args.timeOffId
       );
     }
 
-    await this.assertStillConfirmedAfterWrite(householdId, timeOffId);
-    return this.anchorOf(written, householdId, timeOffId);
+    // Sustained contention on ONE time off in ONE household is not a state
+    // this app reaches honestly, so refusing beats looping: nothing has been
+    // written, the ledger is exactly as the last winner left it, and the
+    // client can simply try again.
+    throw new ConflictError(
+      'Another change to this time off got in first — please try again',
+      'PTO_CORRECTION_RACE',
+      { householdId: args.householdId, timeOffId: args.timeOffId }
+    );
   }
 
   /** The household-local days a time off covers (`utils/localDateSpan.ts`). */
@@ -499,42 +508,6 @@ export class PtoCommandService {
       throw new PtoNothingToAdjustError(householdId, timeOffId);
     }
     return existing;
-  }
-
-  /**
-   * SERIOUS 8's guard: re-read the time off AFTER the write and undo it if a
-   * cancel committed in between.
-   *
-   * A CONDITIONAL INSERT would be the textbook answer, and is not available
-   * here: the condition lives in another domain's table (`carer_time_off`,
-   * which carries no household reference at all, `011_availability.sql`), so
-   * expressing it in SQL would mean a new RPC that reaches across that
-   * boundary inside the database — a wider, less reviewable change than the
-   * defect. The re-check costs one read, writes only append-only rows, and
-   * heals the loser inside its own request instead of hoping a
-   * fire-and-forget reconciliation that has ALREADY RUN somehow runs again.
-   *
-   * The compensation is `reverseNettedUsage`, the same netted reversal
-   * reconcile uses, so a reconciliation racing this one cannot double-
-   * reverse: whichever reads second sees the other's row and computes zero.
-   */
-  private async assertStillConfirmedAfterWrite(
-    householdId: string,
-    timeOffId: string
-  ): Promise<void> {
-    const current = await this.timeOffRepo.findById(timeOffId);
-    if (current && current.status === MARKABLE_STATUS) {
-      return;
-    }
-    await this.reverseNettedUsage(
-      householdId,
-      timeOffId,
-      PTO_LEDGER_NOTE_KEYS.CANCELLED_DURING_MARKING_REVERSED
-    );
-    throw new PtoTimeOffNotConfirmedError(
-      timeOffId,
-      current?.status ?? 'missing'
-    );
   }
 
   /**
@@ -612,8 +585,21 @@ export class PtoCommandService {
    * directly contradict the adjust flow above, which needs UNLIMITED
    * adjustment rows against the same `(household, time_off)` so a parent can
    * correct 8h → 6h → 7h. The two requirements cannot both hold, and
-   * correctability of a live pay figure beats a race window on a
-   * compensating write. No new migration; nothing about 043 changes.
+   * correctability of a live pay figure beats a constraint on a compensating
+   * write. The race window that reasoning accepted is now closed the other
+   * way, by serialising the read-then-write itself
+   * (`applyPerDayTarget`, migration 050) — 043's indexes are untouched.
+   *
+   * PER DAY, not per marking (review finding 15b): a multi-day marking is
+   * several usage rows in (possibly) several weeks, and one lump reversal
+   * dated on the first of them would zero week one's PTO line while leaving
+   * week two's standing. Each day is taken back where it was given — an
+   * empty target does exactly that, since every day the ledger touches is
+   * then a day whose target is zero.
+   *
+   * NEVER `requireConfirmed`: this runs precisely BECAUSE the time off was
+   * cancelled, so demanding a confirmed row would refuse every reversal it
+   * exists to write.
    *
    * `known` lets the caller pass rows it has already fetched (the
    * reconciliation reads every household in one query) instead of
@@ -625,41 +611,21 @@ export class PtoCommandService {
     note: string,
     known?: readonly PtoLedgerEntry[]
   ): Promise<boolean> {
-    const rows =
-      known ??
-      (await this.ptoRepo.listForHouseholdTimeOff(householdId, timeOffId));
-    // PER DAY, not per marking (review finding 15b): a multi-day marking is
-    // several usage rows in (possibly) several weeks, and one lump reversal
-    // dated on the first of them would zero week one's PTO line while
-    // leaving week two's standing. Each day is taken back where it was
-    // given.
-    const outstandingPerDay = paidMinutesByDate(rows);
-
-    let wroteAnything = false;
-    for (const date of [...outstandingPerDay.keys()].sort()) {
-      const outstanding = outstandingPerDay.get(date) ?? 0;
-      if (outstanding === 0) {
-        continue; // Already reversed (or corrected to nothing) — no-op.
-      }
-      const anchor = rowForDate(rows, date);
-      await this.ptoRepo.create({
-        household_id: householdId,
-        carer_id: anchor?.carer_id ?? null,
-        kind: 'adjustment',
-        // The exact mirror of what is STILL outstanding on this day — the
-        // ledger nets back to what it was before the paid marking, without
-        // ever touching the original row.
-        minutes: outstanding,
-        effective_date: date,
-        time_off_id: timeOffId,
-        carer_display_name:
-          anchor?.carer_display_name ?? UNNAMED_CARER_DISPLAY_NAME,
-        note,
-        created_by: null,
-      });
-      wroteAnything = true;
-    }
-    return wroteAnything;
+    const written = await this.applyPerDayTarget({
+      householdId,
+      timeOffId,
+      targetPerDay: new Map(),
+      knownRows:
+        known ??
+        (await this.ptoRepo.listForHouseholdTimeOff(householdId, timeOffId)),
+      // No `carer`: a reversal only ever touches days that already carry a
+      // row, so it inherits their snapshot and can never write a `usage` row.
+      note: null,
+      adjustmentNote: note,
+      createdBy: null,
+      requireConfirmed: false,
+    });
+    return written.length > 0;
   }
 
   /**

@@ -16,7 +16,11 @@ export interface UserProfileResponse {
   user: UserProfile;
 }
 
+// F-B7-1: matches the API's `data` payload exactly — the human-readable
+// message lives on the response envelope (`sendSuccessResponse`'s message
+// arg), never duplicated inside `data`. See every other controller in this
+// repo (e.g. `expenseController.ts`'s `'Expense withdrawn'` + `{}`) for the
+// same split.
 export interface UserDeleteAccountResponse {
   success: boolean;
-  message: string;
 }

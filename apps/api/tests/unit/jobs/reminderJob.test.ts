@@ -36,14 +36,54 @@ function emptyCandidates(): ReminderCandidateSource {
   };
 }
 
+/** A log whose `claim` always wins, for tests that don't care about dedupe. */
+function alwaysClaims(): ReminderLogClaim {
+  return {
+    claim: mock(async () => true),
+    release: mock(async () => {}),
+  };
+}
+
+/**
+ * A log backed by an in-memory set, so `claim`/`release` behave like the
+ * real `(user_id, reminder_key)` ledger — a claim wins once, a release frees
+ * it for a later run to claim again. Used to prove the fix end to end rather
+ * than just asserting the right mock was called.
+ */
+function statefulLog(): {
+  log: ReminderLogClaim;
+  claims: Set<string>;
+} {
+  const claims = new Set<string>();
+  const key = (userId: string, reminderKey: string) =>
+    `${userId}::${reminderKey}`;
+  return {
+    claims,
+    log: {
+      claim: mock(async (userId: string, reminderKey: string) => {
+        const k = key(userId, reminderKey);
+        if (claims.has(k)) return false;
+        claims.add(k);
+        return true;
+      }),
+      release: mock(async (userId: string, reminderKey: string) => {
+        claims.delete(key(userId, reminderKey));
+      }),
+    },
+  };
+}
+
+/** `canDeliver` always true, `notifyUser` always reports one device reached. */
 function capturingPush(): {
   push: ReminderPushService;
   sent: Array<{ userId: string; payload: unknown }>;
 } {
   const sent: Array<{ userId: string; payload: unknown }> = [];
   const push: ReminderPushService = {
+    canDeliver: mock(async () => true),
     notifyUser: mock(async (userId, payload) => {
       sent.push({ userId, payload });
+      return { sent: 1 };
     }),
     notifyHouseholdParents: mock(async () => {}),
   };
@@ -67,8 +107,7 @@ describe('runReminderJob', () => {
       ...emptyCandidates(),
       listShiftReminders: mock(async () => [shift]),
     };
-    const claim = mock(async () => true);
-    const log: ReminderLogClaim = { claim };
+    const log: ReminderLogClaim = alwaysClaims();
     const { push, sent } = capturingPush();
 
     const at18 = await runReminderJob(
@@ -116,6 +155,7 @@ describe('runReminderJob', () => {
         claimCalls++;
         return claimCalls === 1;
       }),
+      release: mock(async () => {}),
     };
     const { push, sent } = capturingPush();
     const timezone = { resolve: mock(async () => 'America/Los_Angeles') };
@@ -135,7 +175,7 @@ describe('runReminderJob', () => {
       ...emptyCandidates(),
       listShiftReminders: mock(async () => [shift]),
     };
-    const log: ReminderLogClaim = { claim: mock(async () => true) };
+    const log: ReminderLogClaim = alwaysClaims();
     const { push } = capturingPush();
 
     const result = await runReminderJob(
@@ -161,7 +201,7 @@ describe('runReminderJob', () => {
       ...emptyCandidates(),
       listTimesheetAwaitingApproval: mock(async () => [timesheet]),
     };
-    const log: ReminderLogClaim = { claim: mock(async () => true) };
+    const log: ReminderLogClaim = alwaysClaims();
     const { push, sent } = capturingPush();
 
     /** 2026-08-05 09:00 in Europe/London (BST). */
@@ -198,7 +238,7 @@ describe('runReminderJob', () => {
       ...emptyCandidates(),
       listApprovalExpiring: mock(async () => [approval]),
     };
-    const log: ReminderLogClaim = { claim: mock(async () => true) };
+    const log: ReminderLogClaim = alwaysClaims();
     const { push, sent } = capturingPush();
 
     /** 03:00 local would block hour-gated rules — must not block this one. */
@@ -240,14 +280,16 @@ describe('runReminderJob', () => {
       ...emptyCandidates(),
       listShiftReminders: mock(async () => [shiftA, shiftB]),
     };
-    const log: ReminderLogClaim = { claim: mock(async () => true) };
+    const log: ReminderLogClaim = alwaysClaims();
     const timezone = { resolve: mock(async () => 'America/Los_Angeles') };
     const parents = { listParentUserIds: mock(async () => []) };
     const push: ReminderPushService = {
+      canDeliver: mock(async () => true),
       notifyUser: mock(async (userId: string) => {
         if (userId === shiftA.carer_id) {
           throw new Error('push transport down');
         }
+        return { sent: 1 };
       }),
       notifyHouseholdParents: mock(async () => {}),
     };
@@ -264,5 +306,125 @@ describe('runReminderJob', () => {
     expect(result.shiftReminder.sent).toBe(1);
     expect(result.shiftReminder.errors).toBe(1);
     expect(result.errorCount).toBe(1);
+
+    // The throwing carer's claim is released so a later run retries it; the
+    // other carer's claim is untouched — one user's failure can't suppress
+    // another user's reminder.
+    expect(log.release).toHaveBeenCalledWith(
+      shiftA.carer_id,
+      expect.stringContaining(shiftA.id)
+    );
+    expect(log.release).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not claim a reminder that would be suppressed (quiet hours / opt-out / no devices)', async () => {
+    const shift = shiftStartingTomorrowLa();
+    const candidates: ReminderCandidateSource = {
+      ...emptyCandidates(),
+      listShiftReminders: mock(async () => [shift]),
+    };
+    const log = alwaysClaims();
+    const push: ReminderPushService = {
+      canDeliver: mock(async () => false),
+      notifyUser: mock(async () => {
+        throw new Error('must not be called when canDeliver is false');
+      }),
+      notifyHouseholdParents: mock(async () => {}),
+    };
+
+    const result = await runReminderJob(
+      candidates,
+      log,
+      { resolve: mock(async () => 'America/Los_Angeles') },
+      { listParentUserIds: mock(async () => []) },
+      push,
+      { now: () => LA_18_00 }
+    );
+
+    expect(log.claim).not.toHaveBeenCalled();
+    expect(push.notifyUser).not.toHaveBeenCalled();
+    expect(result.shiftReminder.sent).toBe(0);
+    expect(result.shiftReminder.errors).toBe(0);
+  });
+
+  it('releases the claim when the send reaches zero devices, so a later run retries', async () => {
+    const shift = shiftStartingTomorrowLa();
+    const candidates: ReminderCandidateSource = {
+      ...emptyCandidates(),
+      listShiftReminders: mock(async () => [shift]),
+    };
+    const { log, claims } = statefulLog();
+    const timezone = { resolve: mock(async () => 'America/Los_Angeles') };
+    const parents = { listParentUserIds: mock(async () => []) };
+    const clock = { now: () => LA_18_00 };
+
+    // First run: passes the pre-check but Expo delivers to nobody (e.g.
+    // every token went invalid between the check and the send).
+    const failingPush: ReminderPushService = {
+      canDeliver: mock(async () => true),
+      notifyUser: mock(async () => ({ sent: 0 })),
+      notifyHouseholdParents: mock(async () => {}),
+    };
+    const firstRun = await runReminderJob(
+      candidates,
+      log,
+      timezone,
+      parents,
+      failingPush,
+      clock
+    );
+
+    expect(firstRun.shiftReminder.sent).toBe(0);
+    expect(firstRun.shiftReminder.errors).toBe(0);
+    expect(log.release).toHaveBeenCalledWith(
+      CARER_ID,
+      expect.stringContaining(SHIFT_ID)
+    );
+    // The claim was released, not left dangling — the ledger has no row for
+    // this reminder, so a second run is free to claim it again.
+    expect(claims.size).toBe(0);
+
+    // Second run: the token issue is gone, the send succeeds.
+    const { push: workingPush, sent } = capturingPush();
+    const secondRun = await runReminderJob(
+      candidates,
+      log,
+      timezone,
+      parents,
+      workingPush,
+      clock
+    );
+
+    expect(secondRun.shiftReminder.sent).toBe(1);
+    expect(sent).toHaveLength(1);
+  });
+
+  it('releases the claim and records an error when the send throws', async () => {
+    const shift = shiftStartingTomorrowLa();
+    const candidates: ReminderCandidateSource = {
+      ...emptyCandidates(),
+      listShiftReminders: mock(async () => [shift]),
+    };
+    const { log, claims } = statefulLog();
+    const push: ReminderPushService = {
+      canDeliver: mock(async () => true),
+      notifyUser: mock(async () => {
+        throw new Error('Expo request failed');
+      }),
+      notifyHouseholdParents: mock(async () => {}),
+    };
+
+    const result = await runReminderJob(
+      candidates,
+      log,
+      { resolve: mock(async () => 'America/Los_Angeles') },
+      { listParentUserIds: mock(async () => []) },
+      push,
+      { now: () => LA_18_00 }
+    );
+
+    expect(result.shiftReminder.sent).toBe(0);
+    expect(result.shiftReminder.errors).toBe(1);
+    expect(claims.size).toBe(0);
   });
 });

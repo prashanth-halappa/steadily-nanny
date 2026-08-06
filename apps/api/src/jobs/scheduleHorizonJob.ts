@@ -15,9 +15,12 @@
  * Also sweeps past-due `co_parent_approvals` across every household (flow 1f
  * — see `supabase/migrations/022_co_parent_approvals.sql`). Timing out means
  * auto-approve-by-silence, so each expired row's parked mutation is re-driven
- * through `approvalApplierRegistry`. A failure there is logged and swallowed
- * rather than failing the whole job: rolling the schedule horizon is this
- * job's real purpose and must not depend on the approval sweep succeeding.
+ * through `approvalApplierRegistry`. A row whose applier fails is put BACK to
+ * `pending` by the registry so the next sweep retries it — it never settles as
+ * `timed_out` with nothing applied. A hard failure of the sweep itself is
+ * logged and swallowed rather than failing the whole job: rolling the schedule
+ * horizon is this job's real purpose and must not depend on the approval sweep
+ * succeeding.
  *
  * SETUP: scheduled daily via pg_cron in migration
  * `026_schedule_horizon_cron.sql` (POST `/api/jobs/schedule-horizon`). Requires
@@ -105,8 +108,11 @@ export async function runScheduleHorizonJob(
  * a family where nobody looks would never resolve a pending change at all.
  *
  * Expiry is auto-approve-by-silence: `expirePendingApprovals` re-drives each
- * expired row's gated mutation through `approvalApplierRegistry`, and logs and
- * steps over any row it cannot apply. A hard failure here is logged and
+ * expired row's gated mutation through `approvalApplierRegistry`, which logs a
+ * row it cannot apply and reverts it to `pending` so this sweep picks it up
+ * again tomorrow instead of leaving it terminally `timed_out` with the payload
+ * never applied. `coParentApprovalsExpired` counts the rows this run flipped,
+ * including any that were reverted. A hard failure here is logged and
  * swallowed rather than failing the schedule-horizon work above, which is this
  * job's real purpose.
  */

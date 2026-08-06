@@ -274,21 +274,20 @@ describe('userApi', () => {
   });
 
   describe('deleteAccount', () => {
-    it('DELETEs /v1/users/me and returns the validated result', async () => {
+    it('DELETEs /v1/users/me and returns the validated result (F-B7-1: real API shape has no message in data — the envelope message lives outside data, per house convention)', async () => {
       (apiClient.delete as any).mockResolvedValue({
-        data: { data: { success: true, message: 'deleted' } },
+        data: { data: { success: true } },
       });
 
       const result = await userApi.deleteAccount();
 
       expect(apiClient.delete).toHaveBeenCalledWith('/v1/users/me');
       expect(result.success).toBe(true);
-      expect(result.message).toBe('deleted');
     });
 
     it('throws when the response fails validation', async () => {
       (apiClient.delete as any).mockResolvedValue({
-        data: { data: { message: 'missing success flag' } },
+        data: { data: { notSuccess: true } },
       });
 
       await expect(userApi.deleteAccount()).rejects.toThrow();

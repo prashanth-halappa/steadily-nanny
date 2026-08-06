@@ -4,6 +4,7 @@
  */
 import { describe, expect, it, mock } from 'bun:test';
 import { NotAHouseholdParentError } from '../../../../../src/domains/household';
+import { ShiftImmutableError } from '../../../../../src/domains/shift/errors/shiftErrors';
 import type { ShiftWithChildren } from '../../../../../src/domains/shift/repositories/shiftRepository';
 import { ShiftCommandService } from '../../../../../src/domains/shift/services/shiftCommandService';
 import { ValidationError } from '../../../../../src/errors';
@@ -47,6 +48,10 @@ function makeShiftRepo(overrides: Record<string, unknown> = {}): any {
       origin: args.origin,
       sequence: shift.sequence + 1,
     })),
+    // Settled-reality guard. `applyParentEdit` is an RPC, so it bypasses the
+    // repository's guarded `update()` — the service has to ask. Open by
+    // default in these fakes.
+    assertMutable: mock(async () => undefined),
     ...overrides,
   };
 }
@@ -211,5 +216,39 @@ describe('ShiftCommandService.update', () => {
       svc.update('carer-1', 's1', { note: 'Can I change this?' })
     ).rejects.toBeInstanceOf(NotAHouseholdParentError);
     expect(shiftRepo.applyParentEdit).not.toHaveBeenCalled();
+  });
+
+  // F-B5-2. PATCH /shifts/:id reached the RPC without ever asking whether the
+  // carer had clocked in. Rewriting the span mid-shift corrupts the consent
+  // trail and freezes `scheduled_minutes` from the EDITED times on clock-out.
+  it('refuses a time edit once someone has clocked into the shift', async () => {
+    const shiftRepo = makeShiftRepo({
+      assertMutable: mock(async () => {
+        throw new ShiftImmutableError('s1', 'confirmed', 'has_time_entries');
+      }),
+    });
+    const svc = new ShiftCommandService(
+      shiftRepo,
+      makeMemberRepo(),
+      makeQueries()
+    );
+
+    await expect(
+      svc.update('parent-1', 's1', { ends_at: '2026-08-03T15:00:00.000Z' })
+    ).rejects.toBeInstanceOf(ShiftImmutableError);
+    expect(shiftRepo.applyParentEdit).not.toHaveBeenCalled();
+  });
+
+  it('asks the settled-reality guard before every edit, note-only included', async () => {
+    const shiftRepo = makeShiftRepo();
+    const svc = new ShiftCommandService(
+      shiftRepo,
+      makeMemberRepo(),
+      makeQueries()
+    );
+
+    await svc.update('parent-1', 's1', { note: 'Running 15 min late' });
+
+    expect(shiftRepo.assertMutable).toHaveBeenCalledWith('s1');
   });
 });

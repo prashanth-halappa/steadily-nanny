@@ -147,12 +147,18 @@ export default function SettingsScreen() {
 
   // REVIEW-CHECKLIST.md §8 / App Store Guideline 5.1.1(v): the account must be
   // deletable in-app. On success, sign out and return to /welcome — a deleted
-  // account has no session to keep around. On failure the mutation's onError
-  // already surfaced a toast, so just stop here without signing out.
+  // account has no session to keep around. On failure `useDeleteAccount`'s own
+  // `onError` already toasts the user (see settings.deleteAccount.test.tsx —
+  // fires on ANY mutateAsync rejection, network/5xx/timeout/contract-drift
+  // alike, not just the F-B7-1 case) — don't ALSO toast here, that would
+  // double up. Just stop before sign-out/nav, which belong to a genuine
+  // success only. `signOut()` below can't itself throw and strand the
+  // redirect — it swallows its own errors (see store/auth.ts's signOut).
   const confirmDeleteAccount = async () => {
     try {
       await deleteAccount();
-    } catch {
+    } catch (error) {
+      if (__DEV__) console.error('[Settings] Account delete failed:', error);
       return;
     }
     await signOut();

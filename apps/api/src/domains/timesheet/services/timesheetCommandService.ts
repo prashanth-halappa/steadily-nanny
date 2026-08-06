@@ -31,6 +31,7 @@
 import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types/schemas/notification.schema';
 import type { WeekEarnings } from '@steadily-nanny/shared-types/schemas/timesheet.schema';
 import { EARNINGS_RESULT_STATUSES } from '@steadily-nanny/shared-types/schemas/timesheet.schema';
+import { logger } from '../../../middlewares/logger';
 import {
   HOUSEHOLD_ROLES,
   HouseholdMemberRepository,
@@ -84,7 +85,11 @@ import type {
   UpdateTimeEntryInput,
 } from '../types';
 import { toWireTimesheet } from '../utils/toWireTimesheet';
-import { weekEndExclusive, weekStartOf } from '../utils/weekStart';
+import {
+  weekEndExclusive,
+  weekStartOf,
+  weekStartOfLocalDate,
+} from '../utils/weekStart';
 import { computeWorkedMinutes, sumWorkedMinutes } from '../utils/workedMinutes';
 import {
   type TimesheetQueryService,
@@ -193,6 +198,99 @@ const TERMINAL_STATUSES: ReadonlySet<string> = new Set(['approved', 'queried']);
  */
 export { computeWorkedMinutes, sumWorkedMinutes };
 
+/**
+ * Do two clock spans collide? A null end means "no finish yet" — a running
+ * entry, or a clock-in being started right now.
+ *
+ * Both finished: the ordinary half-open intersection, `[a,b)` overlaps
+ * `[c,d)` iff `a < d && c < b`. Touching end-to-start is allowed —
+ * back-to-back sessions are ordinary, and a carer clocking in the moment a
+ * paid-cancellation span ends is exactly that.
+ *
+ * One unfinished: it is OPEN-ENDED, `[in, ∞)` — not an instant. A session
+ * with no finish will still be running at every later moment, so anything
+ * ending after it started collides with it. The single exception is a span
+ * that FINISHED at or before it began, which is the ordinary
+ * forgotten-clock-in recovery for earlier work and must stay legal.
+ *
+ * Treating an open end as a zero-length instant instead (`in <= other.in`)
+ * admits every span that starts after the clock-in — e.g. she clocks in at
+ * 09:00, forgets, then files 14:00–17:00. That write lands, and afterwards
+ * EVERY clock-out of the 09:00 row throws, stranding it. Since
+ * `time_entries_one_running_per_carer` is keyed on `carer_id` with no
+ * household predicate, one stranded row locks her out of clocking in for
+ * every household she works for, and neither `updateEntry` (submitted-only)
+ * nor any route can clear it. Refusing the write is the only state that
+ * stays recoverable.
+ *
+ * Both unfinished is unreachable for one carer — that index admits a single
+ * runner — and is not an overlap either way.
+ */
+function spansOverlap(
+  aIn: number,
+  aOut: number | null,
+  bIn: number,
+  bOut: number | null
+): boolean {
+  if (aOut !== null && bOut !== null) return aIn < bOut && bIn < aOut;
+  if (aOut !== null) return aOut > bIn;
+  if (bOut !== null) return bOut > aIn;
+  return false;
+}
+
+/**
+ * `[startMs, endMs)` minus every span the carer already has — the parts of a
+ * cancelled window that nobody was actually working.
+ *
+ * Cancellation pay means she is paid for the time that WAS cancelled, so a
+ * shift she had already partly worked owes her the remainder, not nothing
+ * (which silently underpaid her) and not the whole window (which banked the
+ * same minutes twice — `sumWorkedMinutes` and the earnings engine both add
+ * `worked` and `cancellation_paid` kinds).
+ *
+ * A RUNNING entry consumes `[in, ∞)`, the same open-ended reading
+ * `spansOverlap` uses: her finish is unknown, and ending the remainder where
+ * she clocked in is the only choice that stays correct for every clock-out
+ * she might eventually make.
+ *
+ * Returns the gaps in order. Empty means she worked the whole window; more
+ * than one means the worked time sits in the MIDDLE, and since 053 every
+ * fragment is paid rather than the shape being refused.
+ *
+ * ASSUMES `endMs > startMs`. A backwards window would return OVERLAPPING
+ * gaps and overpay the inverted stretch rather than crash. Unreachable
+ * today — `017_time_tracking.sql` has `check (clock_out_at > clock_in_at)`
+ * and `assertCancellationPaidSpan` rejects it before this is called — but
+ * the safety lives in those two places, not in here.
+ */
+function remainingSpans(
+  startMs: number,
+  endMs: number,
+  existing: TimeEntry[]
+): { from: number; to: number }[] {
+  const busy: { from: number; to: number }[] = [];
+  for (const entry of existing) {
+    if (!entry.clock_in_at) continue;
+    const from = new Date(entry.clock_in_at).getTime();
+    const to = entry.clock_out_at
+      ? new Date(entry.clock_out_at).getTime()
+      : Number.POSITIVE_INFINITY;
+    // Drop anything outside the window — an entry starting after it ends
+    // would otherwise open a gap running past `endMs`.
+    if (to > startMs && from < endMs) busy.push({ from, to });
+  }
+  busy.sort((a, b) => a.from - b.from);
+
+  const gaps: { from: number; to: number }[] = [];
+  let cursor = startMs;
+  for (const { from, to } of busy) {
+    if (from > cursor) gaps.push({ from: cursor, to: from });
+    cursor = Math.max(cursor, to);
+  }
+  if (cursor < endMs) gaps.push({ from: cursor, to: endMs });
+  return gaps;
+}
+
 export class TimesheetCommandService {
   constructor(
     private readonly timeEntryRepo: TimeEntryRepository = new TimeEntryRepository(),
@@ -261,6 +359,19 @@ export class TimesheetCommandService {
     }
 
     const clockInAt = now();
+    // A clock-in landing INSIDE an existing completed entry — most often a
+    // paid-cancellation span, which covers the whole shift — can never be
+    // clocked out: every clock-out fails the overlap check, and the stranded
+    // `running` row then blocks every future clock-in via
+    // `time_entries_one_running_per_carer`. Refuse the start instead of
+    // creating a row with no way out (F-B2-4).
+    await this.assertNoOverlap(
+      input.household_id,
+      userId,
+      clockInAt.toISOString(),
+      null
+    );
+
     let shiftId: string | null;
     if (input.shift_id) {
       await this.assertShiftBelongsToCarer(
@@ -336,21 +447,29 @@ export class TimesheetCommandService {
     // which is omitted on the ordinary "tap Clock out" path that uses the
     // server clock. `excludeEntryId` is the running row itself (already in
     // the table); without it the span would overlap its own clock_in.
-    // Week boundary comes from the household timezone so this agrees with
-    // `rollUpIntoTimesheet` / `updateEntry` / `createRetroactiveEntry`.
+    // The guard is span-based, so a finish that lands in the following week
+    // is checked against the entries that are actually there rather than
+    // against one week's worth (F-B1-1b).
     //
     // ponytail: read-then-write TOCTOU — another completed entry could land
     // between the list and the update. Unreachable for a single carer today
     // because `time_entries_one_running_per_carer` admits only one runner;
     // upgrade to a btree_gist exclusion constraint if concurrent clock-outs
     // across carers (or a future multi-device path) ever race here.
-    const household = await this.householdRepo.findById(entry.household_id);
-    const timeZone = household?.timezone ?? 'UTC';
-    const weekStart = weekStartOf(new Date(clockInAt), timeZone);
+    //
+    // ponytail: unlike `createRetroactiveEntry` and `updateEntry`, this path
+    // deliberately has NO week-crossing guard. Ceiling: a Sun->Mon session
+    // files ALL its minutes into the clock-IN's week, because `local_date` is
+    // frozen at the clock-in day and `rollUpIntoTimesheet` recomputes one
+    // week. That is consistent, just coarse. Rejecting the clock-out instead
+    // would strand the `running` row with no way to close it — the exact
+    // stuck-entry class F-B2-4 exists to remove, and the hours already
+    // happened, so this write must never fail. Upgrade path: teach
+    // `rollUpIntoTimesheet` to recompute BOTH weeks (and rewrite
+    // `local_date`) if overnight sessions across a Monday ever need to split.
     await this.assertNoOverlap(
       entry.household_id,
       userId,
-      weekStart,
       clockInAt,
       clockOutAt,
       timeEntryId
@@ -431,7 +550,6 @@ export class TimesheetCommandService {
     await this.assertNoOverlap(
       input.household_id,
       userId,
-      weekStart,
       clockInAt,
       clockOutAt
     );
@@ -468,14 +586,22 @@ export class TimesheetCommandService {
   }
 
   /**
-   * Record hours owed under a short-notice cancellation. Idempotent on
-   * `shift_id`: a second call for the same paid cancellation returns the
-   * existing `cancellation_paid` entry without inserting another.
+   * Record hours owed under a short-notice cancellation, trimmed to the parts
+   * of the window she did NOT already work. Returns the fragments THIS CALL
+   * wrote — `[]` means nothing was owed, which is what
+   * `cancellationPayReconcileJob` reads as "settled".
    *
-   * Find-first is an optimisation; the partial unique index
-   * `time_entries_one_cancellation_paid_per_shift` (039) is the source of
-   * truth under concurrent accepts — a 23505 loses the race, re-fetches,
-   * and returns the winner.
+   * Idempotent, but NOT on `shift_id` — since 053 a window can be several
+   * rows and "one exists" is the wrong question (it reads a half-written
+   * remainder as done). Idempotency is structural instead: rows already
+   * written come back from the overlap query and are subtracted from the
+   * remainder, so a second call computes no gaps and returns `[]`.
+   *
+   * `time_entries_one_cancellation_paid_per_span` (053, keyed on
+   * `(shift_id, clock_in_at)`) is the source of truth under concurrent
+   * accepts — a 23505 loses the race for THAT FRAGMENT and re-fetches by
+   * span. Only the raced fragment's winner comes back; the others are this
+   * call's own inserts.
    *
    * Span validation is `ends_at > starts_at` ONLY. Do NOT route through
    * `assertClockOrder`: paid-cancel accepts happen before the shift starts,
@@ -494,74 +620,177 @@ export class TimesheetCommandService {
    */
   async recordCancellationPaidEntry(
     shift: CancellationPaidShiftInput
-  ): Promise<TimeEntry | null> {
+  ): Promise<TimeEntry[]> {
     if (!shift.cancellation_paid || !shift.carer_id) {
-      return null;
+      return [];
     }
 
-    const existing = await this.timeEntryRepo.findCancellationPaidForShift(
-      shift.id
-    );
-    if (existing) {
-      return existing;
-    }
-
+    // No shift-wide find-first any more. Since 053 a cancelled window can be
+    // SEVERAL rows, and "one of them exists" is the wrong question — it would
+    // return early after a partial write and never write the missing
+    // fragment. Idempotency now falls out of the arithmetic instead: rows
+    // already written are candidates below, so they are subtracted from the
+    // remainder and a re-call writes only what is genuinely missing.
     this.assertCancellationPaidSpan(shift.starts_at, shift.ends_at);
 
-    // Approved-week boundary is household-local Monday — same as roll-ups /
-    // createRetroactiveEntry. `shift.timezone` can disagree and mis-file the
-    // guard into the wrong week (money path).
     const household = await this.householdRepo.findById(shift.household_id);
-    const weekStart = weekStartOf(
-      new Date(shift.starts_at),
-      household?.timezone ?? 'UTC'
+    const timeZone = household?.timezone ?? 'UTC';
+
+    // Pay for the parts of the window that were ACTUALLY cancelled. Writing
+    // the whole booked span over time she already worked is wrong twice over:
+    // - across a RUNNING session it leaves no valid clock-out at all —
+    //   `assertClockOrder` needs a finish after the clock-in, and every such
+    //   finish would land inside the span — stranding the row permanently
+    //   and, via the carer-global `time_entries_one_running_per_carer`,
+    //   blocking clock-ins in every household she works for;
+    // - across COMPLETED worked time it double-pays: `sumWorkedMinutes` and
+    //   the earnings engine both add `worked` and `cancellation_paid` kinds,
+    //   so the same minutes are banked twice.
+    //
+    // Writing nothing is equally wrong — it silently underpays her for every
+    // hour that genuinely was cancelled. So pay the remainder, all of it:
+    // worked time in the MIDDLE leaves two disjoint fragments and she is owed
+    // both. Migration 053 keys the unique index on `(shift_id, clock_in_at)`
+    // precisely so both can exist; before it, only one row per shift was
+    // representable and this refused the shape outright.
+    const alreadyBooked =
+      await this.timeEntryRepo.listOverlapCandidatesForCarer(
+        shift.carer_id,
+        shift.starts_at,
+        shift.ends_at
+      );
+    // THIS household's rows only. The cancelling household owes the window IT
+    // booked; hours she worked for another family are not this household's
+    // credit to take, and subtracting them made her pay depend on when the
+    // reconcile job happened to run. The query is carer-global because the
+    // OTHER question it serves (`assertNoOverlap`) has to be — one filter
+    // here is cheaper than a second query.
+    const remainders = remainingSpans(
+      new Date(shift.starts_at).getTime(),
+      new Date(shift.ends_at).getTime(),
+      alreadyBooked.filter(row => row.household_id === shift.household_id)
     );
-    const timesheet = await this.timesheetRepo.findByWeek(
-      shift.household_id,
-      shift.carer_id,
-      weekStart
-    );
-    if (timesheet?.status === 'approved') {
-      throw new TimeEntryNotEditableError('new', 'week_approved');
+
+    // Approved-week guard, AFTER the arithmetic and against EVERY fragment's
+    // own week — household-local Monday, same as roll-ups /
+    // createRetroactiveEntry. Checking only the window's start week was safe
+    // while a cancellation was one row; since 053 an overnight window splits
+    // across a Monday, and `rollUpIntoTimesheet` un-approves whatever week it
+    // lands on UNCONDITIONALLY — nulling the frozen gross a parent signed off.
+    // The guard has to cover every week a fragment can reach, and it refuses
+    // BEFORE anything is written so a partial write cannot leave one fragment
+    // banked against a refusal.
+    for (const weekStart of new Set(
+      remainders.map(span => weekStartOf(new Date(span.from), timeZone))
+    )) {
+      const existing = await this.timesheetRepo.findByWeek(
+        shift.household_id,
+        shift.carer_id,
+        weekStart
+      );
+      if (existing?.status === 'approved') {
+        throw new TimeEntryNotEditableError('new', 'week_approved');
+      }
     }
 
-    const scheduledMinutes = Math.round(
-      (new Date(shift.ends_at).getTime() -
-        new Date(shift.starts_at).getTime()) /
-        60_000
-    );
+    // ponytail: minute conservation drifts +/-1 on a MIDDLE split, accepted
+    // deliberately. Each piece is rounded independently by
+    // `computeWorkedMinutes`, and a middle split has two boundaries and three
+    // pieces, so `worked + sum(cancellation)` need not equal the booked span:
+    // 11:00:20-12:00:40 -> 60 + 419 = 479; 11:00:31-12:00:29 -> 60 + 421 =
+    // 481; 08:00:00-09:00:30 -> 61 + 420 = 481 (the .5 tie, Math.round goes
+    // half-up on both sides). ~£0.25/shift at £15/h. Upgrade path: round ONCE
+    // against the window and give the last fragment the residual — exact, at
+    // the cost of a special case in arithmetic that is currently uniform.
     const carerDisplayName = await this.resolveCarerDisplayName(shift.carer_id);
+    const created: TimeEntry[] = [];
+    for (const span of remainders) {
+      created.push(
+        await this.writeCancellationFragment(shift, {
+          carerId: shift.carer_id,
+          clockInAt: new Date(span.from).toISOString(),
+          clockOutAt: new Date(span.to).toISOString(),
+          carerDisplayName,
+          timezone: timeZone,
+        })
+      );
+    }
 
-    let created: TimeEntry;
+    // Roll up per fragment rather than once at the end: the roll-up is
+    // idempotent and recomputes a whole week, and two fragments of an
+    // overnight window can land in different weeks.
+    for (const entry of created) {
+      await this.rollUpIntoTimesheet(entry, shift.carer_id);
+    }
+    return created;
+  }
+
+  /**
+   * Insert ONE fragment of a cancelled window, recovering the winner if a
+   * concurrent accept got there first.
+   *
+   * The 23505 recovery is span-scoped, matching 053's
+   * `(shift_id, clock_in_at)` unique index. A shift-wide re-fetch would be
+   * ambiguous now that a window can be several rows — it could return a
+   * different fragment than the one whose insert just lost.
+   */
+  private async writeCancellationFragment(
+    shift: CancellationPaidShiftInput,
+    fragment: {
+      carerId: string;
+      clockInAt: string;
+      clockOutAt: string;
+      carerDisplayName: string;
+      timezone: string;
+    }
+  ): Promise<TimeEntry> {
     try {
-      created = await this.timeEntryRepo.createSubmitted({
+      return await this.timeEntryRepo.createSubmitted({
         household_id: shift.household_id,
-        carer_id: shift.carer_id,
-        carer_display_name: carerDisplayName,
+        carer_id: fragment.carerId,
+        carer_display_name: fragment.carerDisplayName,
         shift_id: shift.id,
-        clock_in_at: shift.starts_at,
-        clock_out_at: shift.ends_at,
+        clock_in_at: fragment.clockInAt,
+        clock_out_at: fragment.clockOutAt,
         break_minutes: 0,
-        scheduled_minutes: scheduledMinutes,
-        timezone: shift.timezone,
+        // This fragment's own span, never the shift's original booking — a
+        // row claiming 480 scheduled while its clock times cover 180 would
+        // misreport against itself.
+        scheduled_minutes: Math.round(
+          (new Date(fragment.clockOutAt).getTime() -
+            new Date(fragment.clockInAt).getTime()) /
+            60_000
+        ),
+        // HOUSEHOLD zone, not `shift.timezone`. `local_date` is trigger-derived
+        // from THIS column (017_time_tracking.sql) and every week read filters
+        // on `local_date`, so a shift zone that disagrees files these paid
+        // minutes into a week nobody sums.
+        timezone: fragment.timezone,
         kind: 'cancellation_paid',
         status: 'submitted',
         note: null,
       });
     } catch (err) {
       if (err instanceof CancellationPaidAlreadyRecordedError) {
-        const raced = await this.timeEntryRepo.findCancellationPaidForShift(
-          shift.id
+        const winner = await this.timeEntryRepo.findCancellationPaidForSpan(
+          shift.id,
+          fragment.clockInAt
         );
-        if (raced) {
-          return raced;
+        if (winner) {
+          return winner;
         }
+        // The violation says a row exists; the re-fetch says it does not, so
+        // the winner's transaction rolled back in between. Nothing was
+        // written and nothing is owed to anyone yet — surfacing beats
+        // returning null, which dropped the fragment with no error, no log
+        // and no roll-up, and left the shift reading as settled.
+        logger.error('Cancellation fragment lost its 23505 winner', {
+          shiftId: shift.id,
+          clockInAt: fragment.clockInAt,
+        });
       }
       throw err;
     }
-
-    await this.rollUpIntoTimesheet(created, shift.carer_id);
-    return created;
   }
 
   /**
@@ -601,8 +830,16 @@ export class TimesheetCommandService {
       input.clock_out_at ?? entry.clock_out_at
     );
 
-    const household = await this.householdRepo.findById(entry.household_id);
-    const timeZone = household?.timezone ?? 'UTC';
+    // The ROW's own frozen zone, not the household's current one. `local_date`
+    // was derived from this column when the row was written and nothing
+    // rewrites it, so the household PATCHing its timezone would otherwise
+    // make this guard check one week while `rollUpIntoTimesheet` rewrites
+    // another — an edit on an approved week would slip straight through
+    // (F-B1-4, same family). Anchoring here keeps guard, week-crossing check
+    // and roll-up bucket on one source: `weekStartOf(clock_in, entry.timezone)`
+    // is by construction `weekStartOfLocalDate(entry.local_date)`, and the
+    // trigger recomputes `local_date` from this same unchanged column.
+    const timeZone = entry.timezone;
     const weekStart = weekStartOf(new Date(originalClockInAt), timeZone);
 
     // ponytail: a clock edit that crosses a week boundary is rejected
@@ -638,7 +875,6 @@ export class TimesheetCommandService {
     await this.assertNoOverlap(
       entry.household_id,
       userId,
-      weekStart,
       clockInAt,
       clockOutAt,
       timeEntryId
@@ -719,46 +955,70 @@ export class TimesheetCommandService {
   }
 
   /**
-   * Reject a span that intersects another COMPLETED entry for the same
-   * carer in the same week. Running entries are ignored: they have no
-   * finish yet, and `time_entries_one_running_per_carer` already bounds
-   * them. `excludeEntryId` lets `updateEntry` ignore the row being edited
-   * so a no-op (or in-place) correction does not count as overlapping itself.
+   * Reject a span that intersects another entry for the same carer — ANY
+   * other entry, in any week, running or finished.
    *
-   * Half-open intersection: `[a,b)` overlaps `[c,d)` iff `a < d && c < b`.
-   * Touching end-to-start (out === other.in) is allowed — back-to-back
-   * sessions are ordinary.
+   * Candidates come from `listOverlapCandidatesForCarer`, which asks about
+   * CLOCK INSTANTS, not `local_date`. The week-filtered lookup this used to
+   * do had three holes, all of them ways to bank the same minutes twice or
+   * to strand a row nobody can clock out (F-B1-1, F-B2-4):
+   * - an entry on the other side of Monday is filed under the previous week
+   *   and was simply invisible — and a legitimate overnight session is well
+   *   inside `MAX_SESSION_SPAN_MS`, so this is ordinary, not exotic;
+   * - `clockOut` derived the week from the clock-IN alone, so a finish
+   *   landing in the next week was checked against the wrong week entirely;
+   * - a RUNNING entry was skipped outright, in every week.
+   *
+   * `clockOutAt` is null for a clock-IN: there is no finish yet, so the
+   * prospective entry is the instant it starts (see `spansOverlap`).
+   * `excludeEntryId` lets `updateEntry`/`clockOut` ignore the row being
+   * written so it never counts as overlapping itself.
+   *
+   * There is no DB backstop — no exclusion constraint exists on this table
+   * (see `listOverlapCandidatesForCarer`'s ponytail note), so this check is
+   * the only thing between a carer and two entries claiming the same hour.
    */
   private async assertNoOverlap(
     householdId: string,
     carerId: string,
-    weekStart: string,
     clockInAt: string,
-    clockOutAt: string,
+    clockOutAt: string | null,
     excludeEntryId?: string
   ): Promise<void> {
-    const weekEntries = await this.timeEntryRepo.listForCarerWeek(
-      householdId,
-      carerId,
-      weekStart,
-      weekEndExclusive(weekStart)
-    );
     const inMs = new Date(clockInAt).getTime();
-    const outMs = new Date(clockOutAt).getTime();
-    for (const other of weekEntries) {
+    const outMs = clockOutAt === null ? null : new Date(clockOutAt).getTime();
+    const candidates = await this.timeEntryRepo.listOverlapCandidatesForCarer(
+      carerId,
+      clockInAt,
+      clockOutAt ?? clockInAt
+    );
+    for (const other of candidates) {
       if (excludeEntryId && other.id === excludeEntryId) continue;
-      if (!other.clock_in_at || !other.clock_out_at) continue;
+      if (!other.clock_in_at) continue;
       const otherIn = new Date(other.clock_in_at).getTime();
-      const otherOut = new Date(other.clock_out_at).getTime();
-      if (inMs < otherOut && otherIn < outMs) {
-        throw new TimeEntryOverlapError({
-          clockInAt,
-          clockOutAt,
-          overlappingEntryId: other.id,
-          overlappingClockInAt: other.clock_in_at,
-          overlappingClockOutAt: other.clock_out_at,
-        });
+      const otherOut = other.clock_out_at
+        ? new Date(other.clock_out_at).getTime()
+        : null;
+      if (!spansOverlap(inMs, outMs, otherIn, otherOut)) continue;
+      // Every caller writes WORKED time, so two clauses decide it:
+      //   other is worked      -> refuse, she cannot be in two places at once
+      //   same household       -> refuse, that is the within-household
+      //                           double-bank (`sumWorkedMinutes` and the
+      //                           earnings engine add both kinds together)
+      // Anything else is another household's `cancellation_paid`, which is
+      // compensation for time deliberately NOT worked and therefore does not
+      // occupy the clock. She may work for B inside a window A is paying her
+      // to have free.
+      if (other.kind !== 'worked' && other.household_id !== householdId) {
+        continue;
       }
+      throw new TimeEntryOverlapError({
+        clockInAt,
+        clockOutAt,
+        overlappingEntryId: other.id,
+        overlappingClockInAt: other.clock_in_at,
+        overlappingClockOutAt: other.clock_out_at,
+      });
     }
   }
 
@@ -1157,11 +1417,14 @@ export class TimesheetCommandService {
       return; // defensive — clockOut always sets both before calling this
     }
 
-    const household = await this.householdRepo.findById(entry.household_id);
-    const weekStart = weekStartOf(
-      new Date(entry.clock_in_at),
-      household?.timezone ?? 'UTC'
-    );
+    // Bucket from the entry's OWN frozen `local_date`, never by re-deriving a
+    // week from the current household timezone. `listForCarerWeek` filters on
+    // `local_date`, and nothing rewrites that column when a household PATCHes
+    // its timezone (the trigger fires only on clock/timezone column updates),
+    // so deriving the bucket the other way makes the sum and the filter
+    // disagree and drops entries out of the recomputed total. Same date, one
+    // source — see `weekStartOfLocalDate`.
+    const weekStart = weekStartOfLocalDate(entry.local_date);
 
     const weekEntries = await this.timeEntryRepo.listForCarerWeek(
       entry.household_id,
@@ -1296,6 +1559,6 @@ export const timesheetCommandService = new TimesheetCommandService();
  */
 export function recordCancellationPaidEntry(
   shift: CancellationPaidShiftInput
-): Promise<TimeEntry | null> {
+): Promise<TimeEntry[]> {
   return timesheetCommandService.recordCancellationPaidEntry(shift);
 }

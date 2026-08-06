@@ -79,7 +79,6 @@ function member(
 const PARENT = member('parent', 'parent-1');
 const OWNER = member('owner', 'owner-1');
 const NANNY = member('nanny', 'carer-1');
-const OTHER_NANNY = member('nanny', 'carer-2');
 const HELPER = member('helper', 'helper-1');
 
 function makeExpenseRepo(overrides: Record<string, unknown> = {}): any {
@@ -102,12 +101,26 @@ function makeExpenseRepo(overrides: Record<string, unknown> = {}): any {
       })
     ),
     deleteOwnedPending: mock(async () => true),
+    // Since 051 the review write is the `review_pending_expense` RPC, so the
+    // repository answers with an OUTCOME rather than a row-or-null: the week
+    // freeze is now evaluated inside the write and has to be distinguishable
+    // from a plain lost status race (F-B4-1).
     reviewPending: mock(
       async (_id: string, _h: string, patch: Record<string, unknown>) => ({
-        ...expenseRow(),
-        ...patch,
+        outcome: 'reviewed',
+        expense: { ...expenseRow(), ...patch },
       })
     ),
+    ...overrides,
+  };
+}
+
+/** The repository outcome for "the week froze under this write". */
+function weekLockedOutcome(overrides: Record<string, unknown> = {}) {
+  return {
+    outcome: 'week_locked',
+    weekStart: '2026-08-03',
+    timesheetStatus: 'approved',
     ...overrides,
   };
 }
@@ -596,7 +609,7 @@ describe('ExpenseCommandService.review — approving a plain expense row', () =>
   it('surfaces a lost race as not-editable', async () => {
     const expenseRepo = makeExpenseRepo({
       findById: mock(async () => expenseRow({ kind: 'expense' })),
-      reviewPending: mock(async () => null),
+      reviewPending: mock(async () => ({ outcome: 'not_pending' })),
     });
     const svc = service({ expenseRepo, members: { 'parent-1': PARENT } });
     await expect(
@@ -946,5 +959,179 @@ describe('ExpenseCommandService.review — an approved week is locked', () => {
     await svc.review('parent-1', 'exp-1', { status: 'approved' });
     expect(timesheetRepo.findByWeek).not.toHaveBeenCalled();
     expect(expenseRepo.reviewPending).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// F-B4-1 — the freeze pre-check cannot see the race it guards.
+//
+// `assertWeekNotFrozen` is a plain READ; the write it guards used to be a CAS
+// on `status = 'pending'` alone. Between the two, a timesheet approve can
+// compute its earnings snapshot (pulling approved expenses), commit
+// `approved`, and freeze — and this expense's CAS still matches `pending` and
+// still commits `approved`. The result is a reimbursement that is owed, sits
+// on a row, and appears on NO statement (`docs/11-MONEY.md` §3: approved weeks
+// never recompute). So the not-frozen condition has to travel INTO the guarded
+// write, which is what the week lock argument is.
+// ---------------------------------------------------------------------------
+
+describe('ExpenseCommandService.review — the week freeze travels into the write', () => {
+  it('hands the write the carer and week so the guard can be evaluated there', async () => {
+    const expenseRepo = makeExpenseRepo({
+      findById: mock(async () => expenseRow({ local_date: '2026-08-04' })),
+    });
+    const svc = service({
+      expenseRepo,
+      timesheetRepo: makeTimesheetRepo(timesheetRow({ status: 'submitted' })),
+      members: { 'parent-1': PARENT },
+    });
+    await svc.review('parent-1', 'exp-1', { status: 'approved' });
+    expect(expenseRepo.reviewPending.mock.calls[0][3]).toEqual({
+      carerId: 'carer-1',
+      weekStart: '2026-08-03',
+    });
+  });
+
+  it('THE RACE: the pre-check reads "submitted", the write reports the week froze', async () => {
+    // Exactly the interleaving: read submitted -> timesheet approve commits
+    // with a frozen earnings snapshot -> this write arrives. Before the guard
+    // moved into the write, this approved anyway.
+    const timesheetRepo = makeTimesheetRepo(
+      timesheetRow({ status: 'submitted' })
+    );
+    const expenseRepo = makeExpenseRepo({
+      findById: mock(async () => expenseRow({ local_date: '2026-08-04' })),
+      reviewPending: mock(async () => weekLockedOutcome()),
+    });
+    const svc = service({
+      expenseRepo,
+      timesheetRepo,
+      members: { 'parent-1': PARENT },
+    });
+
+    const err = await svc
+      .review('parent-1', 'exp-1', { status: 'approved' })
+      .catch((error: unknown) => error);
+    expect(err).toBeInstanceOf(ExpenseWeekLockedError);
+    expect(
+      (err as { metadata?: Record<string, unknown> }).metadata
+    ).toMatchObject({
+      reason: 'EXPENSE_WEEK_LOCKED',
+      weekStart: '2026-08-03',
+      timesheetStatus: 'approved',
+    });
+  });
+
+  it('a lost STATUS race is still the not-editable error, not the week error', async () => {
+    const expenseRepo = makeExpenseRepo({
+      findById: mock(async () => expenseRow()),
+      reviewPending: mock(async () => ({ outcome: 'not_pending' })),
+    });
+    const svc = service({ expenseRepo, members: { 'parent-1': PARENT } });
+    await expect(
+      svc.review('parent-1', 'exp-1', { status: 'approved' })
+    ).rejects.toBeInstanceOf(ExpenseNotEditableError);
+  });
+
+  it('a REJECTION passes NO week lock — it moves no money into the week', async () => {
+    const expenseRepo = makeExpenseRepo();
+    const svc = service({ expenseRepo, members: { 'parent-1': PARENT } });
+    await svc.review('parent-1', 'exp-1', { status: 'rejected' });
+    expect(expenseRepo.reviewPending.mock.calls[0][3]).toBeNull();
+  });
+
+  it('a carer-less row passes NO week lock — there is no week to freeze', async () => {
+    const expenseRepo = makeExpenseRepo({
+      findById: mock(async () => expenseRow({ carer_id: null })),
+    });
+    const svc = service({ expenseRepo, members: { 'parent-1': PARENT } });
+    await svc.review('parent-1', 'exp-1', { status: 'approved' });
+    expect(expenseRepo.reviewPending.mock.calls[0][3]).toBeNull();
+  });
+
+  it('THE UNCONTESTED PATH COSTS NOTHING: one write, one row back, no retry', async () => {
+    const expenseRepo = makeExpenseRepo();
+    const svc = service({ expenseRepo, members: { 'parent-1': PARENT } });
+    const reviewed = await svc.review('parent-1', 'exp-1', {
+      status: 'approved',
+    });
+    expect(expenseRepo.reviewPending).toHaveBeenCalledTimes(1);
+    expect(reviewed.status).toBe('approved');
+    expect(reviewed.id).toBe('exp-1');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// F-B3b-3 (expense half) — a REMOVED nanny could still mutate her pending
+// claims. `loadOwnedPending` checked `carer_id === callerId` and the status,
+// and never asked whether the caller is still an ACTIVE member — while
+// `create` (via `assertActiveNanny`) always has. Membership is checked BEFORE
+// the status check and collapses into the SAME 404 as "not yours", so a
+// removed member learns neither that the row exists nor what state it is in.
+// ---------------------------------------------------------------------------
+
+describe('ExpenseCommandService — a removed carer may not mutate her old claims', () => {
+  it('a REMOVED nanny cannot edit her own still-pending claim', async () => {
+    const expenseRepo = makeExpenseRepo();
+    const svc = service({ expenseRepo, members: {} });
+    await expect(
+      svc.update('carer-1', 'exp-1', expenseRequest({ amount_minor: 999_999 }))
+    ).rejects.toBeInstanceOf(ExpenseNotFoundError);
+    expect(expenseRepo.updateOwnedPending).not.toHaveBeenCalled();
+  });
+
+  it('a REMOVED nanny cannot withdraw her own still-pending claim', async () => {
+    const expenseRepo = makeExpenseRepo();
+    const svc = service({ expenseRepo, members: {} });
+    await expect(svc.withdraw('carer-1', 'exp-1')).rejects.toBeInstanceOf(
+      ExpenseNotFoundError
+    );
+    expect(expenseRepo.deleteOwnedPending).not.toHaveBeenCalled();
+  });
+
+  it('a member demoted away from nanny cannot edit either', async () => {
+    const expenseRepo = makeExpenseRepo();
+    const svc = service({
+      expenseRepo,
+      members: { 'carer-1': member('helper', 'carer-1') },
+    });
+    await expect(
+      svc.update('carer-1', 'exp-1', expenseRequest())
+    ).rejects.toBeInstanceOf(ExpenseNotFoundError);
+    expect(expenseRepo.updateOwnedPending).not.toHaveBeenCalled();
+  });
+
+  it('REMOVED is indistinguishable from NOT-YOURS — same error, same message', async () => {
+    const removed = service({ members: {} })
+      .update('carer-1', 'exp-1', expenseRequest())
+      .catch((err: unknown) => err);
+    const notYours = service({
+      expenseRepo: makeExpenseRepo({
+        findById: mock(async () => expenseRow({ carer_id: 'carer-2' })),
+      }),
+    })
+      .update('carer-1', 'exp-1', expenseRequest())
+      .catch((err: unknown) => err);
+    const [a, b] = await Promise.all([removed, notYours]);
+    expect(a).toBeInstanceOf(ExpenseNotFoundError);
+    expect(b).toBeInstanceOf(ExpenseNotFoundError);
+    expect((a as Error).message).toBe((b as Error).message);
+  });
+
+  it('membership is checked BEFORE status — a removed carer learns no review state', async () => {
+    const expenseRepo = makeExpenseRepo({
+      findById: mock(async () => expenseRow({ status: 'approved' })),
+    });
+    const svc = service({ expenseRepo, members: {} });
+    await expect(
+      svc.update('carer-1', 'exp-1', expenseRequest())
+    ).rejects.toBeInstanceOf(ExpenseNotFoundError);
+  });
+
+  it('the ACTIVE nanny is unaffected — she still edits her own pending row', async () => {
+    const expenseRepo = makeExpenseRepo();
+    const svc = service({ expenseRepo, members: { 'carer-1': NANNY } });
+    await svc.update('carer-1', 'exp-1', expenseRequest());
+    expect(expenseRepo.updateOwnedPending).toHaveBeenCalledTimes(1);
   });
 });

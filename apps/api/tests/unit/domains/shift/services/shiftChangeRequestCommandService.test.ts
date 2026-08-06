@@ -9,6 +9,7 @@ import {
   InvalidChangeRequestKindForRoleError,
   NotTheChangeRequestRequesterError,
   NotTheChangeRequestResponderError,
+  ShiftImmutableError,
 } from '../../../../../src/domains/shift/errors/shiftErrors';
 import type { ShiftWithChildren } from '../../../../../src/domains/shift/repositories/shiftRepository';
 import { ShiftChangeRequestCommandService } from '../../../../../src/domains/shift/services/shiftChangeRequestCommandService';
@@ -120,6 +121,8 @@ function makeShiftRepo(overrides: Record<string, unknown> = {}): any {
     // Settled-reality guard: completed/cancelled shifts and shifts with time
     // entries are immutable. Open by default in these fakes.
     assertMutable: mock(async () => undefined),
+    // Retry guard for `insertExtraShift` — nothing pre-existing by default.
+    findExtraShiftInWindow: mock(async () => null),
     ...overrides,
   };
 }
@@ -478,6 +481,44 @@ describe('ShiftChangeRequestCommandService.applyApprovedExtraShift', () => {
     expect(result.id).toBe('s-extra');
   });
 
+  // `insertExtraShift` is four sequential writes and the shift row commits
+  // first. A throw anywhere after it leaves the shift behind, the approval
+  // recorded as failed, and U5's bounded retry then re-drives the whole
+  // sequence — creating a SECOND extra shift for one approval.
+  it('does not create a second extra shift when a retried approval re-runs after a partial failure', async () => {
+    const created: Record<string, unknown>[] = [];
+    let childrenCalls = 0;
+    const shiftRepo = makeShiftRepo({
+      createShift: mock(async (data: Record<string, unknown>) => {
+        const row = { ...shift, ...data, id: `s-extra-${created.length + 1}` };
+        created.push(row);
+        return row;
+      }),
+      insertChildren: mock(async () => {
+        childrenCalls += 1;
+        if (childrenCalls === 1) {
+          throw new Error('db blip');
+        }
+      }),
+      findExtraShiftInWindow: mock(async () =>
+        created.length ? { ...created[0], shift_children: [] } : null
+      ),
+      findByIdWithChildren: mock(async (id: string) => {
+        const row = created.find(s => s.id === id);
+        return row ? { ...row, shift_children: [] } : null;
+      }),
+    });
+    const svc = makeSvc({ shiftRepo });
+
+    await expect(svc.applyApprovedExtraShift(approvalFor())).rejects.toThrow(
+      'db blip'
+    );
+    const retried = await svc.applyApprovedExtraShift(approvalFor());
+
+    expect(created).toHaveLength(1);
+    expect(retried.id).toBe('s-extra-1');
+  });
+
   it('uses the same createShift shape as the ungated createExtraShift path (anti-drift)', async () => {
     const shiftRepoGated = makeShiftRepo();
     const shiftRepoUngated = makeShiftRepo();
@@ -715,6 +756,81 @@ describe('ShiftChangeRequestCommandService.respond', () => {
     await expect(
       svc.respond('parent-2', 'cr1', { status: 'accepted' })
     ).rejects.toBeInstanceOf(NotTheChangeRequestResponderError);
+  });
+
+  // The state that made the request valid at `create` time can change before
+  // anyone responds. The S0 chain: parent opens a cancel at 07:00 on a
+  // confirmed 08:00–16:00 shift (`create` runs assertMutable, no entries yet);
+  // the carer clocks in at 08:00 and `matchConfirmedShift` attaches the shift;
+  // she accepts the cancel at 08:30. Without a re-check the RPC commits and
+  // the paid-cancel entry lands ON TOP of her running one — after which every
+  // clock-out time overlaps it, and the carer-global running-entry index locks
+  // her out of clocking in for every household she works for.
+  it('refuses to accept a change request on a shift someone has clocked into', async () => {
+    const changeRequestRepo = makeChangeRequestRepo();
+    const svc = makeSvc({
+      changeRequestRepo,
+      shiftRepo: makeShiftRepo({
+        assertMutable: mock(async () => {
+          throw new ShiftImmutableError('s1', 'confirmed', 'has_time_entries');
+        }),
+      }),
+    });
+
+    await expect(
+      svc.respond('carer-1', 'cr1', { status: 'accepted' })
+    ).rejects.toBeInstanceOf(ShiftImmutableError);
+    expect(changeRequestRepo.acceptAndApply).not.toHaveBeenCalled();
+  });
+
+  // The escape hatch that keeps the refusal above from stranding the request:
+  // declining touches the request only, never the shift, so the carer working
+  // the shift can always clear the pending row herself.
+  it('still lets the carer decline a request on a shift she has clocked into', async () => {
+    const changeRequestRepo = makeChangeRequestRepo();
+    const svc = makeSvc({
+      changeRequestRepo,
+      shiftRepo: makeShiftRepo({
+        assertMutable: mock(async () => {
+          throw new ShiftImmutableError('s1', 'confirmed', 'has_time_entries');
+        }),
+      }),
+    });
+
+    const result = await svc.respond('carer-1', 'cr1', { status: 'declined' });
+
+    expect(result.shift_change_request.status).toBe('declined');
+    expect(changeRequestRepo.respond).toHaveBeenCalled();
+  });
+
+  // `if (shift.carer_id && shift.carer_id !== userId)` short-circuits on an
+  // UNASSIGNED shift, so the identity check never ran and any active nanny in
+  // the household could answer a parent's request on a shift she has nothing
+  // to do with — cancelling it, or rewriting its times.
+  it('refuses a nanny who is not the assigned carer on an unassigned shift', async () => {
+    const changeRequestRepo = makeChangeRequestRepo();
+    const payArrangementRepo = makePayArrangementRepo();
+    const svc = makeSvc({
+      changeRequestRepo,
+      payArrangementRepo,
+      memberRepo: makeMemberRepo({
+        findActiveMembership: mock(async (_h: string, userId: string) => {
+          if (userId === 'carer-2') return membershipFor('nanny', 'carer-2');
+          if (userId === 'parent-1') return membershipFor('parent', 'parent-1');
+          return membershipFor('parent', userId);
+        }),
+      }),
+      shiftQueries: makeShiftQueries({
+        getOwned: mock(async () => ({ ...shift, carer_id: null })),
+      }),
+    });
+
+    await expect(
+      svc.respond('carer-2', 'cr1', { status: 'accepted' })
+    ).rejects.toBeInstanceOf(NotTheChangeRequestResponderError);
+    // Nothing reaches pricing or the shift mutation.
+    expect(changeRequestRepo.acceptAndApply).not.toHaveBeenCalled();
+    expect(payArrangementRepo.effectiveOn).not.toHaveBeenCalled();
   });
 
   it('rejects respond on a non-pending request', async () => {

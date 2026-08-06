@@ -105,10 +105,13 @@ function makeExpenseRepo(overrides: Record<string, unknown> = {}): any {
       id: 'exp-new',
     })),
     findById: mock(async () => expenseRow()),
+    // Since 051 the review write answers with an OUTCOME, not a row-or-null —
+    // the week freeze is evaluated inside the write and has to be told apart
+    // from a lost status race (F-B4-1).
     reviewPending: mock(
       async (_id: string, _h: string, patch: Record<string, unknown>) => ({
-        ...expenseRow(),
-        ...patch,
+        outcome: 'reviewed',
+        expense: { ...expenseRow(), ...patch },
       })
     ),
     ...overrides,
@@ -226,9 +229,8 @@ describe('ExpenseCommandService.review — push', () => {
     const expenseRepo = makeExpenseRepo({
       reviewPending: mock(
         async (_id: string, _h: string, patch: Record<string, unknown>) => ({
-          ...expenseRow(),
-          ...patch,
-          status: 'approved',
+          outcome: 'reviewed',
+          expense: { ...expenseRow(), ...patch, status: 'approved' },
         })
       ),
     });
@@ -254,9 +256,12 @@ describe('ExpenseCommandService.review — push', () => {
     const expenseRepo = makeExpenseRepo({
       reviewPending: mock(
         async (_id: string, _h: string, patch: Record<string, unknown>) => ({
-          ...expenseRow({ kind: 'mileage', miles: 10, amount_minor: null }),
-          ...patch,
-          status: 'rejected',
+          outcome: 'reviewed',
+          expense: {
+            ...expenseRow({ kind: 'mileage', miles: 10, amount_minor: null }),
+            ...patch,
+            status: 'rejected',
+          },
         })
       ),
     });
@@ -284,9 +289,8 @@ describe('ExpenseCommandService.review — push', () => {
     const expenseRepo = makeExpenseRepo({
       reviewPending: mock(
         async (_id: string, _h: string, patch: Record<string, unknown>) => ({
-          ...expenseRow(),
-          ...patch,
-          status: 'approved',
+          outcome: 'reviewed',
+          expense: { ...expenseRow(), ...patch, status: 'approved' },
         })
       ),
     });

@@ -181,6 +181,41 @@ export class ShiftRepository extends BaseRepository<Shift> {
     return (data ?? []) as ShiftWithChildren[];
   }
 
+  /**
+   * Cancelled shifts flagged `cancellation_paid` and starting on/after
+   * `since` — the reconcile job's candidate set (`cancellationPayReconcileJob`).
+   * The `status` filter is belt-and-braces on a money path: only the cancel
+   * RPC sets the flag today, so it already implies `cancelled`, but this
+   * query feeds a write that creates a PAYABLE, and a live shift must never
+   * reach it.
+   *
+   * Unassigned shifts are excluded for the same reason: an unassigned shift
+   * can still carry the flag (cancellation pricing falls back to the household
+   * window when there is no carer to look an arrangement up for), but
+   * `recordCancellationPaidEntry` returns `[]` early for a null carer — nobody
+   * is owed anything. Fetching them would make the sweep report a repair it
+   * never performed, on every run, forever.
+   */
+  async listCancellationPaidSince(since: string): Promise<Shift[]> {
+    const { data, error } = await supabaseService
+      .from(this.table)
+      .select('*')
+      .eq('cancellation_paid', true)
+      .eq('status', 'cancelled')
+      .not('carer_id', 'is', null)
+      .gte('starts_at', since)
+      .order('starts_at', { ascending: true });
+
+    if (error) {
+      throw new DatabaseError(
+        'Failed to list cancellation-paid shifts',
+        'DATABASE_ERROR',
+        { details: error.message, since }
+      );
+    }
+    return (data ?? []) as Shift[];
+  }
+
   /** One shift with its `shift_children`, or null. */
   async findByIdWithChildren(
     shiftId: string
@@ -233,6 +268,47 @@ export class ShiftRepository extends BaseRepository<Shift> {
       cancellation_paid: false,
       sequence: 0,
     });
+  }
+
+  /**
+   * An existing live EXTRA shift with exactly this carer and window — the
+   * natural key behind `insertExtraShift`'s retry guard. Cancelled shifts are
+   * excluded on purpose: proposing a replacement for one that was called off
+   * is a new shift, not a duplicate of it.
+   *
+   * ponytail: check-then-act, so two SIMULTANEOUS creates can still both miss.
+   * The retry path this guards is sequential (a bounded re-drive after a
+   * failure), so that race is not the failure mode in play. A partial unique
+   * index on `(household_id, carer_id, starts_at, ends_at) where kind = 'extra'
+   * and status <> 'cancelled'` is the real fix — it needs a migration.
+   */
+  async findExtraShiftInWindow(
+    householdId: string,
+    carerId: string | null,
+    startsAt: string,
+    endsAt: string
+  ): Promise<ShiftWithChildren | null> {
+    const base = supabaseService
+      .from(this.table)
+      .select('*, shift_children(*)')
+      .eq('household_id', householdId)
+      .eq('kind', 'extra')
+      .eq('starts_at', startsAt)
+      .eq('ends_at', endsAt)
+      .neq('status', 'cancelled');
+    const { data, error } = await (carerId
+      ? base.eq('carer_id', carerId)
+      : base.is('carer_id', null)
+    ).limit(1);
+
+    if (error) {
+      throw new DatabaseError(
+        'Failed to look for an existing extra shift',
+        'DATABASE_ERROR',
+        { details: error.message, householdId, startsAt, endsAt }
+      );
+    }
+    return (data?.[0] as ShiftWithChildren | undefined) ?? null;
   }
 
   /** Attach whole-shift child coverage rows (null start/end). */

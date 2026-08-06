@@ -76,10 +76,13 @@ const UserEnvelopeSchema = z.object({
 });
 
 // API-CONTRACT: DELETE /v1/users returns the `UserDeleteAccountResponse` DTO
-// (`{ success, message }`) inside the success envelope's `data`.
+// (`{ success }`) inside the success envelope's `data`. The human-readable
+// message ("Account deleted") lives on the envelope itself, not in `data` —
+// same split every other endpoint in this module uses (see `UserEnvelopeSchema`
+// above). F-B7-1: `data` never carried `message`, so requiring it here made
+// every successful delete look like a validation failure.
 const UserDeleteAccountResponseSchema = z.object({
   success: z.boolean(),
-  message: z.string(),
 });
 
 // Outgoing profile upsert payload — validated client-side before the request.
@@ -163,6 +166,9 @@ export const userApi = {
     );
     const parsed = UserEnvelopeSchema.safeParse(response.data.data);
     if (!parsed.success) throw parsed.error;
+    if (!parsed.data.user) {
+      throw new Error('Locale update succeeded but returned no user');
+    }
     return parsed.data.user;
   },
 
@@ -179,6 +185,9 @@ export const userApi = {
     );
     const parsed = UserEnvelopeSchema.safeParse(response.data.data);
     if (!parsed.success) throw parsed.error;
+    if (!parsed.data.user) {
+      throw new Error('Name update succeeded but returned no user');
+    }
     return parsed.data.user;
   },
 
@@ -198,6 +207,9 @@ export const userApi = {
     );
     const parsed = UserEnvelopeSchema.safeParse(response.data.data);
     if (!parsed.success) throw parsed.error;
+    if (!parsed.data.user) {
+      throw new Error('Time settings update succeeded but returned no user');
+    }
     return parsed.data.user;
   },
 

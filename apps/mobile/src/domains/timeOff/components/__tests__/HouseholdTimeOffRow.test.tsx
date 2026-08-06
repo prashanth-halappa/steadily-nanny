@@ -17,6 +17,7 @@ import { fireEvent, waitFor } from '@testing-library/react-native';
 import { queryKeys } from '@/src/api/queryKeys';
 import { useAuthStore } from '@/src/store/auth';
 import { renderWithProviders } from '@/src/test-utils';
+import { toAllDayRange } from '../../utils/timeOffDate';
 
 mock.module('@/lib/animations/useReducedMotion', () => ({
   useReducedMotion: mock(() => false),
@@ -122,6 +123,38 @@ beforeEach(() => {
 });
 
 describe('HouseholdTimeOffRow', () => {
+  it('F-B8-4: renders the inclusive Mon–Wed date range, not the raw exclusive ends_at boundary', async () => {
+    // Mon 10 Aug – Wed 12 Aug, stored with an EXCLUSIVE end (local midnight
+    // Thu 13 Aug) same as every other all-day time-off surface
+    // (`toAllDayRange`, the same builder `TimeOffRow`'s sibling data goes
+    // through). A `.slice(0, 10)` UTC truncation of the raw `starts_at`/
+    // `ends_at` renders "10 Aug – 13 Aug" — both a day too long (the
+    // exclusive boundary leaks into the label) and vulnerable to a
+    // timezone slip. The fix must match `TimeOffRow`'s
+    // `formatTimeOffRangeLabel` output exactly.
+    const range = toAllDayRange('2026-08-10', '2026-08-12');
+    const monWedTimeOff = {
+      ...timeOff,
+      starts_at: range.starts_at,
+      ends_at: range.ends_at,
+    };
+
+    const { getByText, queryByText } = renderWithProviders(
+      <HouseholdTimeOffRow
+        timeOff={monWedTimeOff as never}
+        householdId={HOUSEHOLD_ID}
+        carerName="Amara"
+        canMarkPaid
+        householdTimezone="UTC"
+      />
+    );
+
+    await waitFor(() =>
+      expect(getByText('Mon 10 Aug – Wed 12 Aug')).toBeTruthy()
+    );
+    expect(queryByText('10 Aug – 13 Aug')).toBeNull();
+  });
+
   it('not yet marked: shows the "Not marked paid" pill', async () => {
     const { getByTestId, getByText } = renderWithProviders(
       <HouseholdTimeOffRow

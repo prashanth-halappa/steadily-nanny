@@ -554,11 +554,16 @@ describe('HoursScreen — parent, historical weeks stay non-actionable', () => {
 
   it('an already-approved past week renders approved and non-actionable — no re-approval of history', () => {
     mockUseWeekTimesheet.mockImplementation(() => ({
-      data: {
-        id: '4359148e-d5ee-4515-9fca-3396b29ee48d',
-        status: 'approved',
-        query_note: null,
-      },
+      // `useWeekTimesheet` returns EVERY carer's row for the week (F-B1-3).
+      data: [
+        {
+          id: '4359148e-d5ee-4515-9fca-3396b29ee48d',
+          carer_id: null,
+          carer_display_name: 'Amara',
+          status: 'approved',
+          query_note: null,
+        },
+      ],
       isLoading: false,
     }));
 
@@ -573,11 +578,15 @@ describe('HoursScreen — parent, historical weeks stay non-actionable', () => {
 
   it('a submitted past week stays actionable (approve/query still work on history that needs it)', () => {
     mockUseWeekTimesheet.mockImplementation(() => ({
-      data: {
-        id: '4359148e-d5ee-4515-9fca-3396b29ee48d',
-        status: 'submitted',
-        query_note: null,
-      },
+      data: [
+        {
+          id: '4359148e-d5ee-4515-9fca-3396b29ee48d',
+          carer_id: null,
+          carer_display_name: 'Amara',
+          status: 'submitted',
+          query_note: null,
+        },
+      ],
       isLoading: false,
     }));
 

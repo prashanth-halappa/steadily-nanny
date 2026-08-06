@@ -64,6 +64,7 @@ describe('timesheetApi.list', () => {
 
 describe('timesheetApi.getWeek', () => {
   it('finds the matching week by filtering the full list client-side, THEN fetches its earnings by id', async () => {
+    // Only one carer here — the list still comes back as a list.
     const otherWeek = {
       ...validTimesheet,
       id: '55555555-5555-4555-8555-555555555555',
@@ -108,11 +109,63 @@ describe('timesheetApi.getWeek', () => {
     expect(apiClient.get).toHaveBeenCalledWith(
       `/v1/timesheets/${validTimesheet.id}`
     );
-    expect(result?.week_start).toBe('2026-07-27');
-    expect(result?.earnings.status).toBe('hours_only');
+    expect(result).toHaveLength(1);
+    expect(result[0].week_start).toBe('2026-07-27');
+    expect(result[0].earnings.status).toBe('hours_only');
   });
 
-  it('returns null when no timesheet exists for that week yet, WITHOUT calling getById', async () => {
+  // F-B1-3: a timesheet is identified by (household_id, carer_id,
+  // week_start). Picking the FIRST row whose week matches binds the screen to
+  // an arbitrary carer in a two-carer household, because the server orders by
+  // week_start alone. The week read must carry every carer's row and let the
+  // caller pick its own.
+  it('two carers, one week: returns BOTH rows with earnings, never just the first match', async () => {
+    const hoursOnly = {
+      status: 'hours_only',
+      week_start: '2026-07-27',
+      reason: 'legacy_approval',
+    };
+    const carerB = {
+      ...validTimesheet,
+      id: '66666666-6666-4666-8666-666666666666',
+      carer_id: '77777777-7777-4777-8777-777777777777',
+      carer_display_name: 'Bea Nowak',
+    };
+    apiClient.get.mockImplementation((url: string) => {
+      if (url === `/v1/households/${validTimesheet.household_id}/timesheets`) {
+        return Promise.resolve({
+          data: { data: { timesheets: [validTimesheet, carerB] } },
+        });
+      }
+      if (url === `/v1/timesheets/${validTimesheet.id}`) {
+        return Promise.resolve({
+          data: {
+            data: { timesheet: { ...validTimesheet, earnings: hoursOnly } },
+          },
+        });
+      }
+      if (url === `/v1/timesheets/${carerB.id}`) {
+        return Promise.resolve({
+          data: { data: { timesheet: { ...carerB, earnings: hoursOnly } } },
+        });
+      }
+      throw new Error(`unexpected URL: ${url}`);
+    });
+
+    const result = await timesheetApi.getWeek(
+      validTimesheet.household_id,
+      '2026-07-27'
+    );
+
+    expect(result).toHaveLength(2);
+    expect(result.map((t: { carer_id: string }) => t.carer_id)).toEqual([
+      validTimesheet.carer_id,
+      carerB.carer_id,
+    ]);
+    expect(apiClient.get).toHaveBeenCalledWith(`/v1/timesheets/${carerB.id}`);
+  });
+
+  it('returns an empty list when no timesheet exists for that week yet, WITHOUT calling getById', async () => {
     apiClient.get.mockResolvedValue({ data: { data: { timesheets: [] } } });
 
     const result = await timesheetApi.getWeek(
@@ -120,7 +173,7 @@ describe('timesheetApi.getWeek', () => {
       '2026-08-03'
     );
 
-    expect(result).toBeNull();
+    expect(result).toEqual([]);
     expect(apiClient.get).toHaveBeenCalledTimes(1);
   });
 });

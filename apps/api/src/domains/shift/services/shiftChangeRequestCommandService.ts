@@ -566,6 +566,23 @@ export class ShiftChangeRequestCommandService {
     householdId: string,
     input: CreateExtraShiftInput
   ): Promise<ShiftWithChildren> {
+    // These are four sequential writes and the shift row commits FIRST, so a
+    // throw in any of the other three leaves the shift behind. The approval is
+    // then recorded as failed and re-driven, which without this would create a
+    // SECOND shift for one approval. Keyed on the natural key rather than the
+    // approval id, because that needs a column this table does not have — and
+    // this way the ungated `createExtraShift` double-tap is covered too, which
+    // an approval-id key would have missed.
+    const existing = await this.shiftRepo.findExtraShiftInWindow(
+      householdId,
+      input.carer_id ?? null,
+      input.starts_at,
+      input.ends_at
+    );
+    if (existing) {
+      return existing;
+    }
+
     const shift = await this.shiftRepo.createShift({
       household_id: householdId,
       carer_id: input.carer_id ?? null,
@@ -709,6 +726,19 @@ export class ShiftChangeRequestCommandService {
     let updatedRequest: ShiftChangeRequest;
 
     if (input.status === SHIFT_CHANGE_REQUEST_STATUSES.ACCEPTED) {
+      // Re-check what `create` already checked (:330). The shift was mutable
+      // when the request was OPENED; it need not still be when it is ANSWERED.
+      // The chain that matters: parent opens a cancel at 07:00, the carer
+      // clocks into the 08:00 shift, she accepts at 08:30 — the accept applies
+      // to a shift being worked, and the paid-cancel entry lands on top of her
+      // running one, after which no clock-out time is free of it.
+      //
+      // Deliberately inside the ACCEPT branch, not at the top of `respond`:
+      // declining touches the request only, never the shift, so the carer
+      // working the shift can always clear the pending row rather than being
+      // stranded with a request she can neither accept nor dismiss.
+      await this.shiftRepo.assertMutable(shift.id);
+
       const household = await this.requireHousehold(shift.household_id);
       // Only the cancel branch reads the arrangement, and it must be the one
       // effective on the SHIFT's household-local start date — not today, not
@@ -774,22 +804,6 @@ export class ShiftChangeRequestCommandService {
         shift_children: shift.shift_children,
       };
 
-      if (
-        request.kind === SHIFT_CHANGE_REQUEST_KINDS.CANCEL &&
-        applied.shift.cancellation_paid
-      ) {
-        // ORCH: cancellation_paid entry — timesheet owns the write; never
-        // fail the accept if rollup fails.
-        try {
-          await cancellationPaidEntryRecorder(updatedShift);
-        } catch (error) {
-          logger.error('Failed to record cancellation_paid time entry', {
-            shiftId: updatedShift.id,
-            error: error instanceof Error ? error.message : String(error),
-          });
-        }
-      }
-
       if (request.kind === SHIFT_CHANGE_REQUEST_KINDS.CANCEL) {
         // Household parents get SHIFT_CANCELLED. If the requester is the
         // carer they are not in that fan-out — ping them with ACCEPTED.
@@ -808,6 +822,40 @@ export class ShiftChangeRequestCommandService {
           request,
           PUSH_NOTIFICATION_TYPES.CHANGE_REQUEST_ACCEPTED
         );
+      }
+
+      if (
+        request.kind === SHIFT_CHANGE_REQUEST_KINDS.CANCEL &&
+        applied.shift.cancellation_paid
+      ) {
+        // ORCH: cancellation_paid entry — timesheet owns the write. The cancel
+        // RPC has already committed `cancellation_paid = true`, so a swallowed
+        // failure here returns 200 on a shift that is flagged as paid with no
+        // `time_entries` row behind it: the carer is owed the hours, nothing is
+        // user-visible, and no retry path exists. Silent underpay on a money
+        // path — fail the request instead, and leave the flag standing as the
+        // durable claim `cancellationPayReconcileJob` sweeps up and settles.
+        // The repair is safe to re-run: since migration 053 a cancelled window
+        // can pay out as several fragments, so idempotency is no longer a
+        // find-first on `shift_id` — rows already written come back from
+        // `recordCancellationPaidEntry`'s overlap query and are subtracted out
+        // of the remainder, so a re-call writes only the genuinely missing
+        // gaps. Clearing the flag would make the row
+        // self-consistent by DELETING the only evidence she is owed anything —
+        // and the sweep would then have nothing to find.
+        //
+        // Runs after the pushes on purpose: the cancellation itself is
+        // committed and irreversible, so the household still has to hear about
+        // it. The throw reports the missing pay entry, not a failed cancel.
+        try {
+          await cancellationPaidEntryRecorder(updatedShift);
+        } catch (error) {
+          logger.error('Failed to record cancellation_paid time entry', {
+            shiftId: updatedShift.id,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          throw error;
+        }
       }
     } else {
       events.push({
@@ -935,7 +983,14 @@ export class ShiftChangeRequestCommandService {
       if (!CARER_ROLES.has(responderMembership.role)) {
         throw new NotTheChangeRequestResponderError(request.id);
       }
-      if (shift.carer_id && shift.carer_id !== userId) {
+      // Identity, not just role — same shape as `shiftCommandService.accept`.
+      // This used to read `shift.carer_id && shift.carer_id !== userId`, which
+      // short-circuited on an UNASSIGNED shift and let ANY active nanny in the
+      // household answer for it. An unassigned shift has no counterparty: no
+      // one's consent is needed to change times nobody is working, and no one
+      // is owed cancellation pay for a shift they were never assigned. So it
+      // has no valid responder at all, exactly as `accept` already treats it.
+      if (shift.carer_id !== userId) {
         throw new NotTheChangeRequestResponderError(request.id);
       }
       return;

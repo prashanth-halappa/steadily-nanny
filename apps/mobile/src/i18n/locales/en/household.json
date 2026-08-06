@@ -114,11 +114,11 @@
     "emptyDescription": "Dates you add will appear here."
   },
   "commitments": {
-    "sectionTitle": "Commitments",
-    "sectionBody": "Fixed times like preschool or naps — gaps are raised when cover is missing.",
-    "addButton": "Add commitment",
+    "sectionTitle": "Regular times",
+    "sectionBody": "Fixed slots like preschool or nap time. Only these hours affect nanny care — nothing else is assumed for the rest of the day.",
+    "addButton": "Add a time",
     "deleteLabel": "Delete {{label}}",
-    "rowExcludedFromCover": " · excluded from cover",
+    "rowExcludedFromCover": " · nanny not needed",
     "dayCount_one": "{{count}} day",
     "dayCount_other": "{{count}} days",
     "kind": {
@@ -129,15 +129,16 @@
       "other": "Other"
     },
     "form": {
-      "title": "Add commitment for {{childName}}",
-      "kindLabel": "Kind",
+      "title": "Add a time for {{childName}}",
+      "kindLabel": "Type",
       "labelLabel": "Label",
       "labelPlaceholder": "e.g. Preschool drop-off",
-      "labelA11y": "Commitment label",
+      "labelA11y": "Time label",
       "daysLabel": "Days",
       "timeLabel": "Time",
-      "excludedLabel": "Excluded from cover",
-      "submit": "Add commitment"
+      "excludedLabel": "Nanny not needed",
+      "excludedHelper": "On when your child doesn't need care during this time — for example at preschool or napping. Turn off if your nanny is still responsible, like on a supervised outing.",
+      "submit": "Add time"
     }
   }
 }

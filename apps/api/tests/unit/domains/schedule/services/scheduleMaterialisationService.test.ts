@@ -146,6 +146,78 @@ describe('ScheduleMaterialisationService — new occurrence', () => {
   });
 });
 
+// F-B6-3 (S1): a multi-day horizon-job outage means the catch-up run's
+// `expandRecurrence` re-expansion produces occurrences whose `startsAt` is
+// already in the past. Without a guard, `materialiseOne` created these as
+// brand-new `confirmed` shifts nobody could ever have clocked into.
+describe('ScheduleMaterialisationService — horizon catch-up must not backfill past occurrences', () => {
+  it('does not create a shift for an occurrence that has already started and has no existing row', async () => {
+    const repo = makeRepo();
+    const svc = new ScheduleMaterialisationService(
+      repo,
+      makeTimeEntryRepo(),
+      makeEventRepo()
+    );
+
+    // NOW is 2026-06-01T00:00:00Z — this occurrence started 2026-05-28,
+    // days before the horizon job caught back up (the D85-89 scenario).
+    const occ = occurrence({
+      localDate: '2026-05-28',
+      startsAt: '2026-05-28T07:00:00.000Z',
+      endsAt: '2026-05-28T16:00:00.000Z',
+    });
+    const result = await svc.materialise(pattern, [occ], NOW);
+
+    expect(repo.create).not.toHaveBeenCalled();
+    expect(result.created).toBe(0);
+  });
+
+  it('still creates a shift for an occurrence later today that has not started yet', async () => {
+    const repo = makeRepo();
+    const svc = new ScheduleMaterialisationService(
+      repo,
+      makeTimeEntryRepo(),
+      makeEventRepo()
+    );
+
+    // NOW is 2026-06-01T00:00:00Z — this occurrence starts later the same day.
+    const occ = occurrence({
+      localDate: '2026-06-01',
+      startsAt: '2026-06-01T18:00:00.000Z',
+      endsAt: '2026-06-01T20:00:00.000Z',
+    });
+    const result = await svc.materialise(pattern, [occ], NOW);
+
+    expect(repo.create).toHaveBeenCalledTimes(1);
+    expect(result.created).toBe(1);
+  });
+
+  it('still updates an already-existing row for a started occurrence — the guard only blocks NEW creation', async () => {
+    const existing = baseShift({ status: 'draft' });
+    const repo = makeRepo({
+      findByPatternAndDate: mock(async () => existing),
+    });
+    const svc = new ScheduleMaterialisationService(
+      repo,
+      makeTimeEntryRepo(),
+      makeEventRepo()
+    );
+
+    // now is well after this occurrence's start — but a row already exists
+    // for it, so the normal forward-looking update path must still run.
+    const later = new Date('2026-06-10T00:00:00.000Z');
+    const occ = occurrence({
+      startsAt: existing.starts_at,
+      endsAt: existing.ends_at,
+    });
+    const result = await svc.materialise(pattern, [occ], later);
+
+    expect(repo.create).not.toHaveBeenCalled();
+    expect(repo.update).toHaveBeenCalledTimes(1);
+    expect(result.updated).toBe(1);
+  });
+});
+
 describe('ScheduleMaterialisationService — existing shift, untouched, draft/pending', () => {
   it('overwrites times, children, and note; status is left alone', async () => {
     const existing = baseShift({ status: 'draft', note: 'old note' });

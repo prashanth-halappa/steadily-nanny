@@ -114,11 +114,11 @@
     "emptyDescription": "Las fechas que añadas aparecerán aquí."
   },
   "commitments": {
-    "sectionTitle": "Compromisos",
-    "sectionBody": "Horarios fijos como guardería o siestas — se avisa cuando falta cobertura.",
-    "addButton": "Añadir compromiso",
+    "sectionTitle": "Horarios fijos",
+    "sectionBody": "Bloques como guardería o siesta. Solo estas horas afectan el cuidado de la niñera; el resto del día no se programa automáticamente.",
+    "addButton": "Añadir horario",
     "deleteLabel": "Eliminar {{label}}",
-    "rowExcludedFromCover": " · excluido de la cobertura",
+    "rowExcludedFromCover": " · niñera no necesaria",
     "dayCount_one": "{{count}} día",
     "dayCount_other": "{{count}} días",
     "kind": {
@@ -129,15 +129,16 @@
       "other": "Otro"
     },
     "form": {
-      "title": "Añadir compromiso para {{childName}}",
+      "title": "Añadir horario para {{childName}}",
       "kindLabel": "Tipo",
       "labelLabel": "Etiqueta",
       "labelPlaceholder": "p. ej. Entrega en la guardería",
-      "labelA11y": "Etiqueta del compromiso",
+      "labelA11y": "Etiqueta del horario",
       "daysLabel": "Días",
       "timeLabel": "Horario",
-      "excludedLabel": "Excluido de la cobertura",
-      "submit": "Añadir compromiso"
+      "excludedLabel": "No se necesita niñera",
+      "excludedHelper": "Actívalo cuando el niño no necesita cuidado en ese horario — por ejemplo en la guardería o durmiendo. Desactívalo si la niñera sigue responsable, como en una salida supervisada.",
+      "submit": "Añadir horario"
     }
   }
 }

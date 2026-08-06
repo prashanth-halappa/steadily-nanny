@@ -39,7 +39,6 @@ import { spacing } from '@/lib/design-tokens';
 import { useElevation } from '@/lib/design-tokens/elevation';
 import { StatusPill } from '@/src/components/ui/status-pill';
 import { Body, Small } from '@/src/components/ui/typography';
-import { formatDisplayDate } from '@/src/domains/timesheet/utils/week';
 import { useMarkTimeOffPaid } from '@/src/hooks/mutations/useMarkTimeOffPaid';
 import { usePtoBalance } from '@/src/hooks/queries/usePtoBalance';
 import { usePtoLedger } from '@/src/hooks/queries/usePtoLedger';
@@ -132,11 +131,7 @@ export function HouseholdTimeOffRow({
           className="gap-1 rounded-row bg-card px-4 py-3"
           style={[elevation.row, { minHeight: spacing.minTouchTarget }]}
         >
-          <Body weight="medium">
-            {formatDisplayDate(timeOff.starts_at.slice(0, 10))}
-            {' – '}
-            {formatDisplayDate(timeOff.ends_at.slice(0, 10))}
-          </Body>
+          <Body weight="medium">{rangeLabel}</Body>
           <StatusPill
             testID={`household-time-off-status-${timeOff.id}`}
             variant={isPaid ? 'confirmed' : 'pending'}

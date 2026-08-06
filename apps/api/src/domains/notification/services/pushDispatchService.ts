@@ -14,6 +14,18 @@ import type { PushPayload, SendResult } from '../types';
 import { shouldDeliverPush } from './notificationPrefsService';
 import { sendToTokens } from './notificationSender';
 
+/** Prefs-gated token lookup shared by `sendToUser` and `hasDeliverableTarget`. */
+async function resolveDeliverableTokens(
+  userId: string,
+  payload: PushPayload
+): Promise<string[]> {
+  const deliver = await shouldDeliverPush(userId, payload);
+  if (!deliver) {
+    return [];
+  }
+  return DeviceRepository.getDeliverableTokensForUser(userId);
+}
+
 /**
  * Send a push to every deliverable device a user has, after prefs gating.
  *
@@ -25,12 +37,7 @@ export async function sendToUser(
   userId: string,
   payload: PushPayload
 ): Promise<SendResult> {
-  const deliver = await shouldDeliverPush(userId, payload);
-  if (!deliver) {
-    return { sent: 0, invalidTokens: [] };
-  }
-
-  const tokens = await DeviceRepository.getDeliverableTokensForUser(userId);
+  const tokens = await resolveDeliverableTokens(userId, payload);
   if (tokens.length === 0) {
     return { sent: 0, invalidTokens: [] };
   }
@@ -43,4 +50,20 @@ export async function sendToUser(
   }
 
   return result;
+}
+
+/**
+ * Whether `sendToUser` would attempt Expo delivery for this payload — prefs
+ * (opt-out, quiet hours) pass AND at least one deliverable token exists.
+ *
+ * For callers that pay an idempotency cost per send attempt (e.g. the
+ * reminders job's claim ledger), check this BEFORE spending that cost so a
+ * push that would be suppressed anyway never claims a slot it can't fill.
+ */
+export async function hasDeliverableTarget(
+  userId: string,
+  payload: PushPayload
+): Promise<boolean> {
+  const tokens = await resolveDeliverableTokens(userId, payload);
+  return tokens.length > 0;
 }
