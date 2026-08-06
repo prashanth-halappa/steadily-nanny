@@ -40,7 +40,12 @@ import { Button } from '@/src/components/ui/button';
 import { Card, CardContent } from '@/src/components/ui/card';
 import { StatusPill } from '@/src/components/ui/status-pill';
 import { Text } from '@/src/components/ui/text';
-import { Body, Display, Small } from '@/src/components/ui/typography';
+import {
+  Body,
+  Display,
+  MetadataLabel,
+  Small,
+} from '@/src/components/ui/typography';
 import { WeekNavHeader } from '@/src/components/ui/week-nav-header';
 import type { TimesheetStatus, WeekEarningsStateResult } from '../types';
 import type { EarningsRole } from './WeekEarningsLine';
@@ -175,32 +180,36 @@ export function WeekTotal({
           </Small>
         )}
         {shouldShowStatusPillBlock ? (
-          <View className="mt-1 gap-1">
+          <View className="mt-1 flex-row items-center justify-between gap-2">
             {carerName ? (
-              <Small
+              <Body
                 testID="hours-carer-name"
-                className="text-muted-foreground"
+                weight="semibold"
+                className="flex-1"
+                numberOfLines={1}
               >
                 {carerName}
-              </Small>
+              </Body>
             ) : null}
             {timesheetStatus !== undefined ? (
-              <StatusPill
-                testID="hours-timesheet-status"
-                variant={timesheetPillVariant(timesheetStatus)}
-                label={timesheetPillLabel(timesheetStatus, t)}
-              />
+              <View className="flex-shrink-0">
+                <StatusPill
+                  testID="hours-timesheet-status"
+                  variant={timesheetPillVariant(timesheetStatus)}
+                  label={timesheetPillLabel(timesheetStatus, t)}
+                />
+              </View>
             ) : null}
           </View>
         ) : null}
-        <View className="flex-row items-baseline gap-2">
+        <View className="mt-2 flex-row items-baseline gap-2">
           <Display testID="hours-total" tabular>
             {totalLabel}
           </Display>
           {overtimeLabel ? (
-            <Body className="text-muted-foreground" tabular>
+            <Small className="text-muted-foreground" tabular>
               {overtimeLabel}
-            </Body>
+            </Small>
           ) : null}
         </View>
         {totalLabel === '0m' ? (
@@ -215,6 +224,7 @@ export function WeekTotal({
             viewerRole={earningsRole}
             carerId={earningsCarerId}
             carerDisplayName={earningsCarerDisplayName}
+            carerName={carerName}
             totalMinutes={totalMinutes}
             earningsError={earningsError}
             onRetryEarnings={onRetryEarnings}
@@ -252,9 +262,12 @@ export function WeekTotal({
           </Button>
         ) : null}
         {showPayBoundary ? (
-          <Small testID="hours-pay-boundary" className="text-muted-foreground">
+          <MetadataLabel
+            testID="hours-pay-boundary"
+            className="mt-3 text-muted-foreground"
+          >
             {t('payBoundary')}
-          </Small>
+          </MetadataLabel>
         ) : null}
       </CardContent>
     </Card>

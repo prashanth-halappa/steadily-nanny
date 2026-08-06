@@ -104,7 +104,7 @@ function ReviewCard({
   return (
     <Card testID={`expense-review-card-${expense.id}`} className="gap-2 p-4">
       <Small className="text-muted-foreground">
-        {formatEarningsSpanDate(expense.local_date)}
+        {`${formatEarningsSpanDate(expense.local_date)} · ${expense.carer_display_name}`}
       </Small>
       <View className="flex-row items-baseline justify-between gap-3">
         <Body className="flex-1">{expense.description}</Body>

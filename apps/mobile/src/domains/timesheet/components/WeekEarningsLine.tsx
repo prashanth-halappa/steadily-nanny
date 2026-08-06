@@ -67,6 +67,11 @@ interface WeekEarningsLineProps {
   carerId: string | null;
   /** For the departed-carer caption (`hours_only`/`carer_removed`). */
   carerDisplayName: string;
+  /** Whose hours this line is — folded into the `ok` arm's
+   * `accessibilityLabel` ONLY (`"${carerName}: ${label} ${amount}"`), never
+   * into the visible label text (deliberate — the visible row stays
+   * carer-agnostic; `WeekTotal`'s identity row already names her). */
+  carerName?: string | null;
   /** Hours actually recorded this week — drives the zero-hours omission
    * rule together with `gross_minor` (see module header). */
   totalMinutes: number;
@@ -87,6 +92,7 @@ export function WeekEarningsLine({
   viewerRole,
   carerId,
   carerDisplayName,
+  carerName = null,
   totalMinutes,
   earningsError = false,
   onRetryEarnings,
@@ -97,7 +103,7 @@ export function WeekEarningsLine({
 
   if (earningsError) {
     return (
-      <View testID={testID} className="mt-1 gap-1">
+      <View testID={testID} className="mt-3 gap-1">
         <Small className="text-muted-foreground">
           {t('earningsCouldntCompute')}
         </Small>
@@ -118,7 +124,7 @@ export function WeekEarningsLine({
   if (earnings.status === WEEK_EARNINGS_STATES.HOURS_ONLY) {
     if (earnings.reason !== HOURS_ONLY_REASONS.CARER_REMOVED) return null;
     return (
-      <View testID={testID} className="mt-1">
+      <View testID={testID} className="mt-3">
         <Small className="text-muted-foreground">
           {t('earningsDepartedCarer', { name: carerDisplayName })}
         </Small>
@@ -134,7 +140,7 @@ export function WeekEarningsLine({
     // entirely for both roles (the parent's own CTA included).
     if (timesheetStatus === 'approved') {
       return (
-        <View testID={testID} className="mt-1">
+        <View testID={testID} className="mt-3">
           <Small className="text-muted-foreground">
             {t('earningsNoArrangementApproved')}
           </Small>
@@ -142,7 +148,7 @@ export function WeekEarningsLine({
       );
     }
     return (
-      <View testID={testID} className="mt-1 gap-1">
+      <View testID={testID} className="mt-3 gap-1">
         <Small className="text-muted-foreground">
           {viewerRole === 'parent'
             ? t('earningsNoArrangementParent')
@@ -169,7 +175,7 @@ export function WeekEarningsLine({
     // states the outcome instead of an unkeepable ask, carrying the
     // mandatory "Approved" state word.
     return (
-      <View testID={testID} className="mt-1">
+      <View testID={testID} className="mt-3">
         <Small className="text-muted-foreground">
           {timesheetStatus === 'approved'
             ? t('earningsCurrencyChangeApproved')
@@ -188,13 +194,18 @@ export function WeekEarningsLine({
     isApproved ? 'earningsApprovedGross' : 'earningsEstimatedGross'
   );
   const amount = formatMoney(earnings.gross_minor, earnings.currency);
+  // Carer name goes in the a11y label only — never the visible label text
+  // (deliberate; see `carerName`'s doc comment above).
+  const accessibilityLabel = carerName
+    ? `${carerName}: ${label} ${amount}`
+    : `${label} ${amount}`;
 
   return (
-    <View testID={testID} className="mt-1 gap-1">
+    <View testID={testID} className="mt-3 gap-1">
       <AnimatedPressable
         testID={`${testID}-pressable`}
         accessibilityRole="button"
-        accessibilityLabel={`${label} ${amount}`}
+        accessibilityLabel={accessibilityLabel}
         hitSlop={8}
         onPress={onPress}
       >

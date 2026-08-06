@@ -38,7 +38,9 @@
     "count_other": "{{count}} gastos por revisar",
     "mileageToPrice_one": "{{count}} con kilometraje por tasar",
     "mileageToPrice_other": "{{count}} con kilometraje por tasar",
-    "mixedCurrencies": "En monedas diferentes — ábrelo para revisar cada uno."
+    "mixedCurrencies": "En monedas diferentes — ábrelo para revisar cada uno.",
+    "fromCarer": "De {{name}}",
+    "fromCarers": "De {{names}}"
   },
   "reviewSheet": {
     "title": "Revisar gastos",

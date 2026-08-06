@@ -295,6 +295,39 @@ describe('WeekEarningsLine', () => {
     expect(getByTestId('hours-earnings-line')).toBeTruthy();
   });
 
+  it('carerName folds into the accessibilityLabel only, never the visible label', () => {
+    const { getByTestId } = render(
+      <WeekEarningsLine
+        earnings={okEarnings}
+        timesheetStatus="submitted"
+        viewerRole="parent"
+        carerId="carer-1"
+        carerDisplayName="Amara"
+        carerName="Amara"
+        totalMinutes={2460}
+      />
+    );
+    expect(
+      getByTestId('hours-earnings-line-pressable').props.accessibilityLabel
+    ).toBe('Amara: earningsEstimatedGross £236.12');
+  });
+
+  it('without a carerName, the accessibilityLabel is unchanged (backwards compatible)', () => {
+    const { getByTestId } = render(
+      <WeekEarningsLine
+        earnings={okEarnings}
+        timesheetStatus="submitted"
+        viewerRole="parent"
+        carerId="carer-1"
+        carerDisplayName="Amara"
+        totalMinutes={2460}
+      />
+    );
+    expect(
+      getByTestId('hours-earnings-line-pressable').props.accessibilityLabel
+    ).toBe('earningsEstimatedGross £236.12');
+  });
+
   it('earnings error: hours-independent — shows the retry caption, not the amount', () => {
     const onRetry = mock();
     const { getByTestId, queryByTestId } = render(
