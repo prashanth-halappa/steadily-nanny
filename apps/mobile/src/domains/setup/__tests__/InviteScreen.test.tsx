@@ -66,9 +66,10 @@ describe('InviteScreen (wizard)', () => {
     expect(source).toContain('onRetry={onGenerate}');
   });
 
-  it('still gates Done on having a code and returns to Home', () => {
+  it('still gates Continue on having a code, and advances to notifications instead of finishing onboarding', () => {
     expect(source).toContain('ctaDisabled={!code}');
-    expect(source).toContain('/(private)/(tabs)/home');
+    expect(source).toContain('SETUP_STEPS.NOTIFICATIONS_PERMISSION');
+    expect(source).not.toContain('/(private)/(tabs)/home');
   });
 
   it('keeps its wizard testID and share button', () => {

@@ -13,7 +13,12 @@ import { useTranslation } from 'react-i18next';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { ChildrenManager } from '@/src/domains/setup/components/ChildrenManager';
 import { SetupScreenShell } from '@/src/domains/setup/components/SetupScreenShell';
-import { getSetupStepRoute, SETUP_STEPS } from '@/src/domains/setup/types';
+import {
+  getSetupStepRoute,
+  getStepProgress,
+  SETUP_ROLES,
+  SETUP_STEPS,
+} from '@/src/domains/setup/types';
 import { useCreateHousehold } from '@/src/hooks/mutations/useCreateHousehold';
 import { useUpsertProfile } from '@/src/hooks/mutations/useUpsertProfile';
 import { useChildren } from '@/src/hooks/queries/useChildren';
@@ -118,7 +123,7 @@ export function ChildrenScreen() {
   return (
     <SetupScreenShell
       testID="children-screen"
-      progress={1 / 3}
+      progress={getStepProgress(SETUP_ROLES.PARENT, SETUP_STEPS.CHILDREN)}
       title={t('children.wizardTitle')}
       subtitle={t('children.wizardSubtitle')}
       ctaLabel={t('children.continueButton')}

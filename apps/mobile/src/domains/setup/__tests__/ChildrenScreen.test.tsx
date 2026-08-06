@@ -36,8 +36,10 @@ describe('ChildrenScreen (wizard)', () => {
     expect(source).toContain('SETUP_STEPS.INVITE');
   });
 
-  it('keeps its wizard testID and progress bar', () => {
+  it('keeps its wizard testID and derives progress from the step sequence', () => {
     expect(source).toContain('children-screen');
-    expect(source).toContain('progress={1 / 3}');
+    expect(source).toContain(
+      'progress={getStepProgress(SETUP_ROLES.PARENT, SETUP_STEPS.CHILDREN)}'
+    );
   });
 });

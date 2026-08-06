@@ -25,9 +25,10 @@ describe('AvailabilityScreen (wizard)', () => {
     expect(source).toContain('AvailabilityEditor');
   });
 
-  it('still gates Finish on at least one selected day and returns to Home', () => {
+  it('still gates Finish on at least one selected day, and advances to notifications instead of finishing onboarding', () => {
     expect(source).toContain('selectedDays.length === 0');
-    expect(source).toContain('/(private)/(tabs)/home');
+    expect(source).toContain('SETUP_STEPS.NOTIFICATIONS_PERMISSION');
+    expect(source).not.toContain('/(private)/(tabs)/home');
   });
 
   it('keeps its wizard testID', () => {

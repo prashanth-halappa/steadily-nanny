@@ -166,3 +166,41 @@ describe('CodeEntryScreen — nanny name (GAP 1)', () => {
     );
   });
 });
+
+describe('CodeEntryScreen — role branch (WS-F)', () => {
+  it('a nanny membership advances to AVAILABILITY and sets the local role to nanny', async () => {
+    redeemInviteMock.mockImplementationOnce(() => {
+      callOrder.push('redeemInvite');
+      return Promise.resolve({ ...MEMBERSHIP, role: 'nanny' });
+    });
+    const screen = renderWithProviders(<CodeEntryScreen />);
+
+    await enterCode(screen);
+    fireEvent.press(screen.getByTestId('code-screen-cta'));
+
+    await waitFor(() => expect(redeemInviteMock).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(useSetupProgressStore.getState().currentStep).toBe('AVAILABILITY')
+    );
+    expect(useSetupProgressStore.getState().role).toBe('nanny');
+  });
+
+  it('a helper membership skips availability entirely and advances straight to NOTIFICATIONS_PERMISSION', async () => {
+    redeemInviteMock.mockImplementationOnce(() => {
+      callOrder.push('redeemInvite');
+      return Promise.resolve({ ...MEMBERSHIP, role: 'helper' });
+    });
+    const screen = renderWithProviders(<CodeEntryScreen />);
+
+    await enterCode(screen);
+    fireEvent.press(screen.getByTestId('code-screen-cta'));
+
+    await waitFor(() => expect(redeemInviteMock).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(useSetupProgressStore.getState().currentStep).toBe(
+        'NOTIFICATIONS_PERMISSION'
+      )
+    );
+    expect(useSetupProgressStore.getState().role).toBe('helper');
+  });
+});
