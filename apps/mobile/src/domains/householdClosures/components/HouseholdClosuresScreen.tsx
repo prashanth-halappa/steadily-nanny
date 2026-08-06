@@ -29,9 +29,10 @@ import type { HouseholdClosure } from '@steadily-nanny/shared-types/schemas/avai
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Pressable, View } from 'react-native';
+import { View } from 'react-native';
 import { illustrations } from '@/assets/illustrations';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
+import { BackButton } from '@/src/components/ui/back-button';
 import { Button } from '@/src/components/ui/button';
 import { Card } from '@/src/components/ui/card';
 import { EmptyState } from '@/src/components/ui/empty-state';
@@ -76,16 +77,11 @@ export function HouseholdClosuresScreen() {
   const [message, setMessage] = useState('');
 
   const backHeader = (
-    <Pressable
+    <BackButton
       testID="household-closures-back"
-      accessibilityRole="button"
-      accessibilityLabel={tCommon('back')}
       onPress={() => router.back()}
-      hitSlop={8}
-      className="mb-2 self-start"
-    >
-      <Body className="text-primary">{`< ${tCommon('back')}`}</Body>
-    </Pressable>
+      label={tCommon('back')}
+    />
   );
 
   if (onboarding.status === 'loading') {

@@ -404,7 +404,7 @@ export function PayArrangementScreen() {
         onPress={() => router.back()}
         label={tCommon('back')}
       />
-      <H1 testID="pay-title" className="mt-2">
+      <H1 testID="pay-title" className="mt-1">
         {t('title')}
       </H1>
       <Small className="mt-1 text-muted-foreground">{t('subtitle')}</Small>

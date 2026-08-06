@@ -265,7 +265,7 @@ describe('MyPayScreen', () => {
       const back = getByTestId('my-pay-loading-back');
       expect(back.props.accessibilityRole).toBe('button');
       expect(back.props.accessibilityLabel).toBe('back');
-      expect(back.props.hitSlop).toBe(8);
+      expect(back.props.hitSlop).toBe(12);
 
       fireEvent.press(back);
       expect(routerBack).toHaveBeenCalled();
@@ -284,7 +284,7 @@ describe('MyPayScreen', () => {
       const back = getByTestId('my-pay-not-available-back');
       expect(back.props.accessibilityRole).toBe('button');
       expect(back.props.accessibilityLabel).toBe('back');
-      expect(back.props.hitSlop).toBe(8);
+      expect(back.props.hitSlop).toBe(12);
 
       fireEvent.press(back);
       expect(routerBack).toHaveBeenCalled();
@@ -297,7 +297,7 @@ describe('MyPayScreen', () => {
       const back = getByTestId('my-pay-back');
       expect(back.props.accessibilityRole).toBe('button');
       expect(back.props.accessibilityLabel).toBe('back');
-      expect(back.props.hitSlop).toBe(8);
+      expect(back.props.hitSlop).toBe(12);
 
       fireEvent.press(back);
       expect(routerBack).toHaveBeenCalled();

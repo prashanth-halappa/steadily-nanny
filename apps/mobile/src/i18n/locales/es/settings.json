@@ -86,7 +86,6 @@
   "notificationPrefs": {
     "title": "Notificaciones",
     "subtitle": "Elige qué actualizaciones recibes y cuándo aplican las horas de silencio. Las solicitudes urgentes siguen llegando durante esas horas.",
-    "back": "Atrás",
     "saveButton": "Guardar",
     "savedToast": "Preferencias de notificación guardadas",
     "quietHoursLabel": "Horas de silencio",

@@ -13,6 +13,7 @@ import { Pressable, ScrollView, View } from 'react-native';
 import { illustrations } from '@/assets/illustrations';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { ErrorState } from '@/src/components/custom/ErrorState';
+import { BackButton } from '@/src/components/ui/back-button';
 import { EmptyState } from '@/src/components/ui/empty-state';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { Body, H1, Small } from '@/src/components/ui/typography';
@@ -104,16 +105,11 @@ export function InboxScreen() {
     >
       <View className="min-h-full flex-1 gap-8">
         <View className="gap-1">
-          <Pressable
+          <BackButton
             testID="inbox-back"
-            accessibilityRole="button"
-            accessibilityLabel={tCommon('back')}
             onPress={() => router.back()}
-            hitSlop={8}
-            className="mb-2 self-start"
-          >
-            <Body className="text-primary">{`< ${tCommon('back')}`}</Body>
-          </Pressable>
+            label={tCommon('back')}
+          />
 
           <H1>{t('screenTitle')}</H1>
           <Small className="text-muted-foreground">{t('screenSubtitle')}</Small>

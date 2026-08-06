@@ -4,8 +4,9 @@
 import { useRouter } from 'expo-router';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Pressable, ScrollView, View } from 'react-native';
+import { ScrollView, View } from 'react-native';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
+import { BackButton } from '@/src/components/ui/back-button';
 import { EmptyState } from '@/src/components/ui/empty-state';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { Body, H1, Small } from '@/src/components/ui/typography';
@@ -34,10 +35,8 @@ export default function CarerAvailabilityScreen() {
       className="flex-1 bg-background"
       contentContainerStyle={SCREEN_CONTENT_STYLE}
     >
-      <Pressable onPress={() => router.back()} className="self-start">
-        <Body className="text-primary">{`< ${tCommon('back')}`}</Body>
-      </Pressable>
-      <H1 className="mt-2">{t('carerAvailability')}</H1>
+      <BackButton onPress={() => router.back()} label={tCommon('back')} />
+      <H1 className="mt-1">{t('carerAvailability')}</H1>
       {members.isLoading || availability.isLoading ? (
         <LoadingIndicator />
       ) : !nannyId ? (

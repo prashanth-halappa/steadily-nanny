@@ -41,7 +41,7 @@ import {
 import { useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Pressable, View } from 'react-native';
+import { View } from 'react-native';
 import { AnimatedPressable } from '@/lib/animations';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { cn } from '@/lib/utils';
@@ -55,6 +55,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/src/components/ui/alert-dialog';
+import { BackButton } from '@/src/components/ui/back-button';
 import { EmptyState } from '@/src/components/ui/empty-state';
 import { FieldLabel } from '@/src/components/ui/field-label';
 import { Input } from '@/src/components/ui/input';
@@ -187,16 +188,11 @@ export function ManageHouseholdScreen() {
             paddingTop: SCREEN_CONTENT_STYLE.padding,
           }}
         >
-          <Pressable
+          <BackButton
             testID="manage-household-not-available-back"
-            accessibilityRole="button"
-            accessibilityLabel={tCommon('back')}
             onPress={() => router.back()}
-            hitSlop={8}
-            className="self-start"
-          >
-            <Body className="text-primary">{`< ${tCommon('back')}`}</Body>
-          </Pressable>
+            label={tCommon('back')}
+          />
         </View>
         <View
           className="mt-8"

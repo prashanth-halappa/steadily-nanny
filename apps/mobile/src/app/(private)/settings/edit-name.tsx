@@ -4,12 +4,13 @@
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Pressable, ScrollView, View } from 'react-native';
+import { ScrollView, View } from 'react-native';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
+import { BackButton } from '@/src/components/ui/back-button';
 import { Button } from '@/src/components/ui/button';
 import { Input } from '@/src/components/ui/input';
 import { Text } from '@/src/components/ui/text';
-import { Body, H1 } from '@/src/components/ui/typography';
+import { H1 } from '@/src/components/ui/typography';
 import { useUpdateName } from '@/src/hooks/mutations/useUpdateName';
 import { useUserProfile } from '@/src/hooks/queries/useUserProfile';
 import { showSuccessToast } from '@/src/lib/toast';
@@ -40,10 +41,8 @@ export default function EditNameScreen() {
       className="flex-1 bg-background"
       contentContainerStyle={SCREEN_CONTENT_STYLE}
     >
-      <Pressable onPress={() => router.back()} className="self-start">
-        <Body className="text-primary">{`< ${tCommon('back')}`}</Body>
-      </Pressable>
-      <H1 className="mt-2">{t('name.label')}</H1>
+      <BackButton onPress={() => router.back()} label={tCommon('back')} />
+      <H1 className="mt-1">{t('name.label')}</H1>
       <View className="mt-4 gap-3">
         <Input
           testID="settings-name-input"

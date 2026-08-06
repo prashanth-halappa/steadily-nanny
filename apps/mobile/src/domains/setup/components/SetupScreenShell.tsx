@@ -19,12 +19,12 @@ import type { ReactNode } from 'react';
 import {
   Image,
   type ImageSourcePropType,
-  Pressable,
   ScrollView,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
+import { BackButton } from '@/src/components/ui/back-button';
 import { Button } from '@/src/components/ui/button';
 import { Text } from '@/src/components/ui/text';
 import { Body, H1 } from '@/src/components/ui/typography';
@@ -80,15 +80,11 @@ export function SetupScreenShell({
 
       {onBack ? (
         <View style={{ paddingHorizontal: SCREEN_GUTTER }} className="pb-1">
-          <Pressable
+          <BackButton
             testID={`${testID}-back`}
-            accessibilityRole="button"
-            accessibilityLabel={backLabel}
             onPress={onBack}
-            hitSlop={8}
-          >
-            <Body className="text-primary">{`< ${backLabel}`}</Body>
-          </Pressable>
+            label={backLabel}
+          />
         </View>
       ) : null}
 

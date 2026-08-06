@@ -15,15 +15,16 @@ import { MATERIALISATION_HORIZON_WEEKS } from '@steadily-nanny/shared-types';
 import { type Href, useRouter } from 'expo-router';
 import { type ReactNode, useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Pressable, View } from 'react-native';
+import { View } from 'react-native';
 import { illustrations } from '@/assets/illustrations';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { ErrorState } from '@/src/components/custom/ErrorState';
+import { BackButton } from '@/src/components/ui/back-button';
 import { Button } from '@/src/components/ui/button';
 import { EmptyState } from '@/src/components/ui/empty-state';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { Text } from '@/src/components/ui/text';
-import { Body, H1, Small } from '@/src/components/ui/typography';
+import { H1, Small } from '@/src/components/ui/typography';
 import { WeekNavHeader } from '@/src/components/ui/week-nav-header';
 import { AgendaView } from '@/src/domains/schedule/components/AgendaView';
 import {
@@ -159,16 +160,11 @@ export function ScheduleShiftsScreen({
         }}
       >
         {showBack ? (
-          <Pressable
+          <BackButton
             testID="schedule-shifts-back"
-            accessibilityRole="button"
-            accessibilityLabel={tCommon('back')}
             onPress={() => router.back()}
-            hitSlop={8}
-            className="self-start"
-          >
-            <Body className="text-primary">{`< ${tCommon('back')}`}</Body>
-          </Pressable>
+            label={tCommon('back')}
+          />
         ) : null}
         <View className="flex-row items-center justify-between gap-2">
           <H1>{t('shifts.screenTitle')}</H1>
@@ -254,7 +250,7 @@ export function ScheduleShiftsScreen({
           {weekHasAway ? (
             <Small
               testID="schedule-away-summary"
-              className="px-6 pb-2 text-muted-foreground"
+              className="px-5.5 pb-2 text-muted-foreground"
             >
               {t('shifts.awaySummary')}
             </Small>

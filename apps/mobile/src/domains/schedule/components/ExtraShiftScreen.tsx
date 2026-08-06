@@ -10,12 +10,13 @@ import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Pressable, ScrollView, View } from 'react-native';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
+import { BackButton } from '@/src/components/ui/back-button';
 import { Button } from '@/src/components/ui/button';
 import { ChildChip } from '@/src/components/ui/child-chip';
 import { EmptyState } from '@/src/components/ui/empty-state';
 import { Text } from '@/src/components/ui/text';
 import { TimeRangePicker } from '@/src/components/ui/time-range-picker';
-import { Body, H1, Small } from '@/src/components/ui/typography';
+import { H1, Small } from '@/src/components/ui/typography';
 import { useHouseholdCarers } from '@/src/domains/schedule/hooks/useHouseholdCarers';
 import { isExtraShiftFormValid } from '@/src/domains/schedule/utils/extraShiftForm';
 import { isParentEditorRole } from '@/src/domains/setup/types';
@@ -115,16 +116,11 @@ export function ExtraShiftScreen() {
             paddingTop: SCREEN_CONTENT_STYLE.padding,
           }}
         >
-          <Pressable
+          <BackButton
             testID="schedule-extra-shift-not-available-back"
-            accessibilityRole="button"
-            accessibilityLabel={tCommon('back')}
             onPress={() => router.back()}
-            hitSlop={8}
-            className="self-start"
-          >
-            <Body className="text-primary">{`< ${tCommon('back')}`}</Body>
-          </Pressable>
+            label={tCommon('back')}
+          />
         </View>
         <View
           className="mt-8"
@@ -146,15 +142,12 @@ export function ExtraShiftScreen() {
       className="flex-1 bg-background"
       contentContainerStyle={SCREEN_CONTENT_STYLE}
     >
-      <Pressable
+      <BackButton
         testID="schedule-extra-back"
-        accessibilityRole="button"
         onPress={() => router.back()}
-        className="self-start"
-      >
-        <Body className="text-primary">{`< ${tCommon('back')}`}</Body>
-      </Pressable>
-      <H1 className="mt-2">{t('shifts.extraScreenTitle')}</H1>
+        label={tCommon('back')}
+      />
+      <H1 className="mt-1">{t('shifts.extraScreenTitle')}</H1>
       <View className="mt-4 gap-3">
         <Small className="text-muted-foreground">
           {t('shifts.extraDateLabel')}
