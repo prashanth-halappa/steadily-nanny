@@ -18,6 +18,7 @@ import { TimeRangePicker } from '@/src/components/ui/time-range-picker';
 import { Body, H1, Small } from '@/src/components/ui/typography';
 import { useHouseholdCarers } from '@/src/domains/schedule/hooks/useHouseholdCarers';
 import { isExtraShiftFormValid } from '@/src/domains/schedule/utils/extraShiftForm';
+import { resolveCarerName } from '@/src/domains/schedule/utils/memberDisplayName';
 import { isParentEditorRole } from '@/src/domains/setup/types';
 import {
   formatDate,
@@ -182,9 +183,10 @@ export function ExtraShiftScreen() {
         <View className="flex-row flex-wrap gap-2">
           {(carers.data ?? []).map(member => {
             const selected = member.user_id === carerId;
-            const label =
-              member.display_name_override?.trim() ||
-              t('build.carerFallbackName');
+            const label = resolveCarerName(
+              member,
+              t('build.carerFallbackName')
+            );
             return (
               <Pressable
                 key={member.user_id}

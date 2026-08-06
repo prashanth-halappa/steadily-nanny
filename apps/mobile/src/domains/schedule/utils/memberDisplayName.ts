@@ -13,6 +13,36 @@ export interface MemberDisplayLabels {
   roleFallback: (role: HouseholdMember['role']) => string;
 }
 
+/**
+ * The ONE name chain for a carer: what this household calls her
+ * (`display_name_override`) -> her own profile name (joined onto the
+ * members-list read) -> the name a payroll/agreement row snapshotted at
+ * insert (`carer_display_name` — the only name a DEPARTED carer still has,
+ * her membership row being gone) -> a caller-supplied last-resort label.
+ *
+ * `fallback` is passed in rather than hardcoded so each surface keeps its own
+ * translated label ("Your nanny", "Carer", a role word) — the chain is
+ * shared, the wording is not. Every screen that shows a carer's name routes
+ * through here: hand-rolled `display_name_override?.trim() || label` chains
+ * skipped the middle two links and rendered two un-renamed nannies as the
+ * same word twice.
+ */
+export function resolveCarerName(
+  member:
+    | Pick<HouseholdMember, 'display_name_override' | 'profile_name'>
+    | null
+    | undefined,
+  fallback: string,
+  snapshotName?: string | null
+): string {
+  return (
+    member?.display_name_override?.trim() ||
+    member?.profile_name?.trim() ||
+    snapshotName?.trim() ||
+    fallback
+  );
+}
+
 export function resolveMemberDisplayName(
   userId: string | null | undefined,
   currentUserId: string | null | undefined,
@@ -22,12 +52,8 @@ export function resolveMemberDisplayName(
   if (!userId) return labels.someone;
   if (currentUserId && userId === currentUserId) return labels.you;
   const member = membersByUserId.get(userId);
-  const override = member?.display_name_override?.trim();
-  if (override) return override;
-  // The joined profile name (members-list reads only) beats the role label:
-  // two nannies with no override are otherwise the same word twice.
-  const profileName = member?.profile_name?.trim();
-  if (profileName) return profileName;
-  if (member) return labels.roleFallback(member.role);
-  return labels.someone;
+  if (!member) return labels.someone;
+  // The role label is this surface's last resort only — audit lines ("raised
+  // by A parent") read better with a role than with a bare "Carer".
+  return resolveCarerName(member, labels.roleFallback(member.role));
 }

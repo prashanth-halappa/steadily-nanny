@@ -62,6 +62,7 @@ import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { Text } from '@/src/components/ui/text';
 import { Body, Small } from '@/src/components/ui/typography';
 import { PaySetupPromptCard } from '@/src/domains/pay/components/PaySetupPromptCard';
+import { resolveCarerName } from '@/src/domains/schedule/utils/memberDisplayName';
 import { isParentEditorRole } from '@/src/domains/setup/types';
 import { findTimezoneOption } from '@/src/domains/setup/utils/timezones';
 import { useUpdateHousehold } from '@/src/hooks/mutations/useUpdateHousehold';
@@ -304,11 +305,7 @@ export function ManageHouseholdScreen() {
               carerId={nanny.user_id}
               // Override -> profile name -> role label. Without the middle
               // link two un-renamed nannies rendered identical cards.
-              carerName={
-                nanny.display_name_override?.trim() ||
-                nanny.profile_name?.trim() ||
-                tSettings('role.nanny')
-              }
+              carerName={resolveCarerName(nanny, tSettings('role.nanny'))}
             />
           ))}
         </View>

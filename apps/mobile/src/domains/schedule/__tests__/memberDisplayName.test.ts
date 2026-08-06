@@ -3,7 +3,10 @@
  */
 import { describe, expect, it } from 'bun:test';
 import type { HouseholdMember } from '@steadily-nanny/shared-types/schemas/household.schema';
-import { resolveMemberDisplayName } from '../utils/memberDisplayName';
+import {
+  resolveCarerName,
+  resolveMemberDisplayName,
+} from '../utils/memberDisplayName';
 
 const labels = {
   you: 'You',
@@ -29,6 +32,54 @@ function member(
     ...overrides,
   };
 }
+
+describe('resolveCarerName', () => {
+  const id = '77777777-7777-4777-8777-777777777777';
+
+  it('prefers the household override over every other source', () => {
+    expect(
+      resolveCarerName(
+        member({
+          user_id: id,
+          display_name_override: 'Bea',
+          profile_name: 'Beatriz',
+        }),
+        'Carer',
+        'Snapshot Bea'
+      )
+    ).toBe('Bea');
+  });
+
+  it('falls back to the profile name when there is no override', () => {
+    expect(
+      resolveCarerName(
+        member({ user_id: id, profile_name: 'Beatriz' }),
+        'Carer',
+        'Snapshot Bea'
+      )
+    ).toBe('Beatriz');
+  });
+
+  it('falls back to a row snapshot when the member carries no name', () => {
+    // A departed carer has no membership row left — her payroll rows'
+    // `carer_display_name` is the only name she still has.
+    expect(resolveCarerName(undefined, 'Carer', 'Emma')).toBe('Emma');
+    expect(resolveCarerName(member({ user_id: id }), 'Carer', 'Emma')).toBe(
+      'Emma'
+    );
+  });
+
+  it('falls back to the caller-supplied label last, ignoring blank names', () => {
+    expect(
+      resolveCarerName(
+        member({ user_id: id, display_name_override: '  ', profile_name: ' ' }),
+        'Carer',
+        '  '
+      )
+    ).toBe('Carer');
+    expect(resolveCarerName(undefined, 'Carer')).toBe('Carer');
+  });
+});
 
 describe('resolveMemberDisplayName', () => {
   it('returns You when the id is the current user', () => {

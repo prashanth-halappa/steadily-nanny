@@ -31,6 +31,7 @@ const TODAY = localDateInZone(TIME_ZONE);
 
 let NannyLiveStatusCard: typeof import('../components/NannyLiveStatusCard').NannyLiveStatusCard;
 let mockUseWeekTimeEntries: ReturnType<typeof mock>;
+let mockUseShiftsRange: ReturnType<typeof mock>;
 
 function makeEntry(overrides: Partial<TimeEntry>): TimeEntry {
   return {
@@ -106,8 +107,9 @@ beforeAll(async () => {
       ],
     })),
   }));
+  mockUseShiftsRange = mock(() => ({ data: [] as unknown[] }));
   mock.module('@/src/hooks/queries/useShiftsRange', () => ({
-    useShiftsRange: mock(() => ({ data: [] })),
+    useShiftsRange: mockUseShiftsRange,
   }));
   mockUseWeekTimeEntries = mock(() => ({ data: [] as TimeEntry[] }));
   mock.module('@/src/hooks/queries/useWeekTimeEntries', () => ({
@@ -119,10 +121,9 @@ beforeAll(async () => {
 });
 
 describe('NannyLiveStatusCard finished arm', () => {
-  it('F-B1-3-sibling: names the last carer to clock out but sums ONLY her own entries, not the whole household', () => {
-    // Amara: 08:00-16:00 (8h), clocks out LAST -> she is the named carer.
-    // Bea: 08:00-12:00 (4h), clocks out earlier, a DIFFERENT carer's hours.
-    // Buggy sum: 8h + 4h = 12h attributed to Amara. Correct: 8h, hers alone.
+  it('F-B1-3-sibling: gives each carer her OWN duration, never the household sum', () => {
+    // Amara: 08:00-16:00 (8h). Bea: 08:00-12:00 (4h).
+    // The old single-winner card named Amara and summed both: 12h.
     mockUseWeekTimeEntries.mockReturnValue({
       data: [
         makeEntry({
@@ -144,8 +145,10 @@ describe('NannyLiveStatusCard finished arm', () => {
       <NannyLiveStatusCard householdId={HOUSEHOLD_ID} timeZone={TIME_ZONE} />
     );
 
-    expect(getByText(/"name":"Amara"/)).toBeTruthy();
+    expect(getByText('Amara')).toBeTruthy();
+    expect(getByText('Bea')).toBeTruthy();
     expect(getByText(/"duration":"8h"/)).toBeTruthy();
+    expect(getByText(/"duration":"4h"/)).toBeTruthy();
     expect(queryByText(/"duration":"12h"/)).toBeNull();
   });
 
@@ -165,7 +168,7 @@ describe('NannyLiveStatusCard finished arm', () => {
       <NannyLiveStatusCard householdId={HOUSEHOLD_ID} timeZone={TIME_ZONE} />
     );
 
-    expect(getByText(/"name":"Amara"/)).toBeTruthy();
+    expect(getByText('Amara')).toBeTruthy();
     expect(getByText(/"duration":"6h"/)).toBeTruthy();
   });
 
@@ -256,7 +259,7 @@ describe('NannyLiveStatusCard finished arm', () => {
       <NannyLiveStatusCard householdId={HOUSEHOLD_ID} timeZone={TIME_ZONE} />
     );
 
-    expect(getByText(/"name":"Emma"/)).toBeTruthy();
+    expect(getByText('Emma')).toBeTruthy();
     expect(getByText(/"duration":"8h"/)).toBeTruthy();
   });
 
@@ -318,5 +321,107 @@ describe('NannyLiveStatusCard finished arm', () => {
     );
 
     expect(getByText(/"duration":"8h"/)).toBeTruthy();
+  });
+});
+
+describe("NannyLiveStatusCard Today's cover rows", () => {
+  it('renders one row per carer: the live one first, the finished one after', () => {
+    mockUseWeekTimeEntries.mockReturnValue({
+      data: [
+        // Bea finished earlier today; Amara is still on the clock. Sorted by
+        // state, Amara (live) must come first however the rows arrive.
+        makeEntry({
+          id: 'entry-bea',
+          carer_id: BEA_ID,
+          carer_display_name: 'Bea',
+          clock_in_at: `${TODAY}T06:00:00.000Z`,
+          clock_out_at: `${TODAY}T10:00:00.000Z`,
+        }),
+        makeEntry({
+          id: 'entry-amara',
+          carer_id: AMARA_ID,
+          carer_display_name: 'Amara',
+          status: 'running',
+          clock_in_at: `${TODAY}T11:00:00.000Z`,
+          clock_out_at: null,
+        }),
+      ],
+    });
+
+    const { getByTestId, getAllByTestId, getByText } = render(
+      <NannyLiveStatusCard householdId={HOUSEHOLD_ID} timeZone={TIME_ZONE} />
+    );
+
+    expect(getByText('todayCoverTitle')).toBeTruthy();
+    const rows = getAllByTestId(/^today-cover-row-/);
+    expect(rows).toHaveLength(2);
+    expect(rows[0]?.props.testID).toBe(`today-cover-row-${AMARA_ID}`);
+    expect(rows[1]?.props.testID).toBe(`today-cover-row-${BEA_ID}`);
+    // The apricot live dot belongs to the live row only.
+    expect(getByTestId(`today-cover-live-dot-${AMARA_ID}`)).toBeTruthy();
+    expect(getByText(/stateLive::/)).toBeTruthy();
+    expect(getByText(/stateFinished::.*"duration":"4h"/)).toBeTruthy();
+  });
+
+  it("gives a scheduled carer her own row when she hasn't clocked in yet", () => {
+    mockUseWeekTimeEntries.mockReturnValue({
+      data: [
+        makeEntry({
+          id: 'entry-amara',
+          carer_id: AMARA_ID,
+          carer_display_name: 'Amara',
+          status: 'running',
+          clock_in_at: `${TODAY}T08:00:00.000Z`,
+          clock_out_at: null,
+        }),
+      ],
+    });
+    mockUseShiftsRange.mockReturnValue({
+      data: [
+        // Bea's evening shift — far enough out to read as "scheduled".
+        {
+          id: 'shift-bea',
+          household_id: HOUSEHOLD_ID,
+          carer_id: BEA_ID,
+          local_date: TODAY,
+          status: 'confirmed',
+          starts_at: `${TODAY}T18:00:00.000Z`,
+          ends_at: `${TODAY}T22:00:00.000Z`,
+        },
+        // Amara is already on the clock — her shift must NOT add a second row.
+        {
+          id: 'shift-amara',
+          household_id: HOUSEHOLD_ID,
+          carer_id: AMARA_ID,
+          local_date: TODAY,
+          status: 'confirmed',
+          starts_at: `${TODAY}T08:00:00.000Z`,
+          ends_at: `${TODAY}T16:00:00.000Z`,
+        },
+      ],
+    });
+
+    const { getAllByTestId, getByText } = render(
+      <NannyLiveStatusCard householdId={HOUSEHOLD_ID} timeZone={TIME_ZONE} />
+    );
+
+    const rows = getAllByTestId(/^today-cover-row-/);
+    expect(rows).toHaveLength(2);
+    expect(rows[0]?.props.testID).toBe(`today-cover-row-${AMARA_ID}`);
+    expect(getByText('Bea')).toBeTruthy();
+    expect(getByText(/stateScheduled::/)).toBeTruthy();
+  });
+
+  it('falls back to the no-cover copy when nothing is on today', () => {
+    mockUseWeekTimeEntries.mockReturnValue({ data: [] });
+    mockUseShiftsRange.mockReturnValue({ data: [] });
+
+    const { getByText, queryAllByTestId } = render(
+      <NannyLiveStatusCard householdId={HOUSEHOLD_ID} timeZone={TIME_ZONE} />
+    );
+
+    expect(queryAllByTestId(/^today-cover-row-/)).toHaveLength(0);
+    expect(getByText('nannyNoShiftTitle')).toBeTruthy();
+    expect(getByText('nannyNoShiftBody')).toBeTruthy();
   });
 });

@@ -26,6 +26,7 @@ import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { Text } from '@/src/components/ui/text';
 import { Textarea } from '@/src/components/ui/textarea';
 import { Body, Label, Small } from '@/src/components/ui/typography';
+import { resolveCarerName } from '@/src/domains/schedule/utils/memberDisplayName';
 import { SetupScreenShell } from '@/src/domains/setup/components/SetupScreenShell';
 import { isParentEditorRole } from '@/src/domains/setup/types';
 import { useCreatePayArrangement } from '@/src/hooks/mutations/useCreatePayArrangement';
@@ -76,8 +77,7 @@ export function PaySetupScreen() {
   );
 
   const member = (members.data ?? []).find(m => m.user_id === carerId);
-  const carerName =
-    member?.display_name_override?.trim() || tSettings('role.nanny');
+  const carerName = resolveCarerName(member, tSettings('role.nanny'));
   const timezone = household?.timezone ?? 'UTC';
   const todayISO = localDateInZone(timezone);
   const householdCancellationDefaultHours =

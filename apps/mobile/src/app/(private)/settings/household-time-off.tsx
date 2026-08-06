@@ -11,6 +11,7 @@ import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { EmptyState } from '@/src/components/ui/empty-state';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { Body, H1, Small } from '@/src/components/ui/typography';
+import { resolveCarerName } from '@/src/domains/schedule/utils/memberDisplayName';
 import { isParentEditorRole } from '@/src/domains/setup/types';
 import { HouseholdTimeOffRow } from '@/src/domains/timeOff/components/HouseholdTimeOffRow';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
@@ -35,9 +36,10 @@ export default function HouseholdTimeOffScreen() {
   const rows = (timeOff.data ?? []).filter(r => r.status !== 'cancelled');
 
   const nameForCarer = (userId: string): string =>
-    (members.data ?? [])
-      .find(m => m.user_id === userId)
-      ?.display_name_override?.trim() || t('role.nanny');
+    resolveCarerName(
+      (members.data ?? []).find(m => m.user_id === userId),
+      t('role.nanny')
+    );
 
   return (
     <ScrollView

@@ -29,6 +29,7 @@ import { EmptyState } from '@/src/components/ui/empty-state';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { Text } from '@/src/components/ui/text';
 import { Body, H1, H4, Small } from '@/src/components/ui/typography';
+import { resolveCarerName } from '@/src/domains/schedule/utils/memberDisplayName';
 import { isParentEditorRole } from '@/src/domains/setup/types';
 import { useCreatePayArrangement } from '@/src/hooks/mutations/useCreatePayArrangement';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
@@ -54,26 +55,6 @@ function normalizeParam(
   return Array.isArray(value) ? value[0] : value;
 }
 
-/**
- * Fallback chain: the member's own override -> the arrangement's
- * server-stored `carer_display_name` (real, profile-derived — never the
- * generic role label while an arrangement exists) -> the role label as a
- * last resort (review finding 8). `useHouseholdMembers` carries no
- * profile-derived name field beyond `display_name_override`, so the
- * arrangement is the only other honest source available here.
- */
-function resolveCarerName(
-  member: HouseholdMember | undefined,
-  arrangementCarerDisplayName: string | undefined,
-  roleFallback: string
-): string {
-  return (
-    member?.display_name_override?.trim() ||
-    arrangementCarerDisplayName?.trim() ||
-    roleFallback
-  );
-}
-
 function CarerPickerRow({
   householdId,
   carer,
@@ -90,8 +71,8 @@ function CarerPickerRow({
   const { t } = useTranslation('pay');
   const name = resolveCarerName(
     carer,
-    current.data?.carer_display_name,
-    roleFallbackLabel
+    roleFallbackLabel,
+    current.data?.carer_display_name
   );
 
   return (
@@ -194,8 +175,8 @@ function CarerPayDetail({
   // finding 8), and it isn't known any earlier than this.
   const carerName = resolveCarerName(
     carerMember,
-    arrangement?.carer_display_name,
-    roleFallbackLabel
+    roleFallbackLabel,
+    arrangement?.carer_display_name
   );
 
   const handleSubmit = (
@@ -270,7 +251,10 @@ function CarerPayDetail({
               const setByMember = row.created_by
                 ? members.find(m => m.user_id === row.created_by)
                 : undefined;
-              const setByName = setByMember?.display_name_override?.trim();
+              // Empty fallback on purpose: an unnamed setter drops to the
+              // no-name copy branch below rather than reading "Carer set
+              // this rate". The resolver still adds her profile name.
+              const setByName = resolveCarerName(setByMember, '');
               return (
                 <View
                   key={row.id}

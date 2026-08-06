@@ -68,6 +68,7 @@ import { TimeRangePicker } from '@/src/components/ui/time-range-picker';
 import { Body, Caption } from '@/src/components/ui/typography';
 import { WeekStrip } from '@/src/components/ui/week-strip';
 import { useHouseholdCarers } from '@/src/domains/schedule/hooks/useHouseholdCarers';
+import { resolveCarerName } from '@/src/domains/schedule/utils/memberDisplayName';
 import { SetupScreenShell } from '@/src/domains/setup/components/SetupScreenShell';
 import { SETUP_ROLES } from '@/src/domains/setup/types';
 import { useCreateSchedulePattern } from '@/src/hooks/mutations/useCreateSchedulePattern';
@@ -276,7 +277,7 @@ export function ScheduleBuildScreen({
   // — NEVER a UI step title (that was the bug: an un-namespaced `t()` call
   // rendered the raw key "carerPickerTitle" as the carer's name).
   const carerDisplayName = (member: HouseholdMember) =>
-    member.display_name_override ?? t('build.carerFallbackName');
+    resolveCarerName(member, t('build.carerFallbackName'));
 
   const cancelWizard = () => router.back();
   const cancelProps = {

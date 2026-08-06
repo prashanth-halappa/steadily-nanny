@@ -1,17 +1,23 @@
 /**
  * @module domains/today/components/NannyLiveStatusCard
  *
- * Parent Today: answers "who is with my children today" — names the carer,
- * shows duration when finished, and opens Hours on tap.
+ * Parent Today — "Today's cover": who is with my children today, ONE ROW PER
+ * CARER. It used to pick a single winner state and name one carer, so the
+ * second carer of a two-carer day was simply not mentioned; worse, the winning
+ * row's name sat next to a duration the parent could not attribute. Rows are
+ * derived per carer, sorted live -> finished -> arriving -> scheduled, and each
+ * duration covers that carer's entries alone. Tapping opens Hours.
  */
+import type { Shift } from '@steadily-nanny/shared-types/schemas/shift.schema';
 import { type Href, useRouter } from 'expo-router';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Pressable, View } from 'react-native';
 import { Card } from '@/src/components/ui/card';
 import { LiveDot } from '@/src/components/ui/live-dot';
-import { Body } from '@/src/components/ui/typography';
-import { resolveMemberDisplayName } from '@/src/domains/schedule/utils/memberDisplayName';
+import { Body, Small } from '@/src/components/ui/typography';
+import { resolveCarerName } from '@/src/domains/schedule/utils/memberDisplayName';
+import type { TimeEntry } from '@/src/domains/timesheet/types';
 import { carerKeyOf } from '@/src/domains/timesheet/utils/carerKey';
 import {
   formatClockTime,
@@ -24,31 +30,30 @@ import { useShiftsRange } from '@/src/hooks/queries/useShiftsRange';
 import { useWeekTimeEntries } from '@/src/hooks/queries/useWeekTimeEntries';
 import { addLocalDays, localDateInZone } from '@/src/lib/localDate';
 import { wallClockToUtcIso } from '@/src/lib/wallClock';
-import { useAuthStore } from '@/src/store/auth';
 
 interface NannyLiveStatusCardProps {
   householdId: string;
   timeZone: string;
 }
 
-type TodayShiftState =
-  | { kind: 'running'; clockInAt: string; carerId: string | null }
-  | {
-      kind: 'finished';
-      clockOutAt: string;
-      carerId: string | null;
-      /** The row's own snapshot — the only name a departed carer still has. */
-      carerDisplayName: string;
-      durationLabel: string;
-    }
-  | { kind: 'arriving'; start: string; carerId: string | null }
-  | {
-      kind: 'scheduled';
-      start: string;
-      end: string;
-      carerId: string | null;
-    }
-  | { kind: 'none' };
+type CoverKind = 'live' | 'finished' | 'arriving' | 'scheduled';
+
+interface CoverRow {
+  /** The carer's bucket key — stable across refetches, so rows don't jump. */
+  key: string;
+  name: string;
+  kind: CoverKind;
+  /** The already-translated state line under the name. */
+  detail: string;
+}
+
+/** Row order: what is happening now, then what happened, then what's coming. */
+const KIND_ORDER: Record<CoverKind, number> = {
+  live: 0,
+  finished: 1,
+  arriving: 2,
+  scheduled: 3,
+};
 
 const ARRIVING_WINDOW_MS = 60 * 60 * 1000;
 
@@ -57,9 +62,7 @@ export function NannyLiveStatusCard({
   timeZone,
 }: NannyLiveStatusCardProps) {
   const { t } = useTranslation('today');
-  const { t: tSchedule } = useTranslation('schedule');
   const router = useRouter();
-  const currentUserId = useAuthStore(s => s.user?.id ?? null);
   const membersQuery = useHouseholdMembers(householdId);
   const weekStart = useMemo(
     () => getWeekStartISO(new Date(), timeZone),
@@ -86,123 +89,132 @@ export function NannyLiveStatusCard({
       ),
     [membersQuery.data]
   );
-  const memberLabels = useMemo(
-    () => ({
-      you: tSchedule('detail.you'),
-      someone: tSchedule('detail.someone'),
-      roleFallback: (role: 'owner' | 'parent' | 'nanny' | 'helper') =>
-        tSchedule(`detail.roleFallback.${role}`),
-    }),
-    [tSchedule]
-  );
-  const nameFor = (userId: string | null | undefined) =>
-    resolveMemberDisplayName(
-      userId,
-      currentUserId,
-      membersByUserId,
-      memberLabels
-    );
 
-  const state: TodayShiftState = useMemo(() => {
+  const rows: CoverRow[] = useMemo(() => {
     const nowMs = Date.now();
-    const running = (entries.data ?? []).find(e => e.status === 'running');
-    if (running?.clock_in_at) {
-      return {
-        kind: 'running',
-        clockInAt: running.clock_in_at,
-        carerId: running.carer_id,
-      };
-    }
-
-    const finishedToday = (entries.data ?? [])
-      .filter(e => e.local_date === today && e.clock_out_at)
-      .sort((a, b) =>
-        (b.clock_out_at ?? '').localeCompare(a.clock_out_at ?? '')
-      )[0];
-    if (finishedToday?.clock_out_at) {
-      // Only THIS carer's entries — `finishedToday` names one carer, so the
-      // duration next to her name must be hers alone, never every carer's
-      // hours for the day summed under one name (F-B1-3-sibling). `carerKeyOf`
-      // is the same identity rule the parent's week screen buckets tabs and
-      // totals with, deliberately shared: a card that merges two carers the
-      // week screen splits reports a day's hours under the wrong name.
-      const finishedKey = carerKeyOf(finishedToday);
-      const todayEntries = (entries.data ?? []).filter(
-        e => e.local_date === today && carerKeyOf(e) === finishedKey
+    const fallbackName = t('carerFallback');
+    /**
+     * Override -> profile name -> the row's own `carer_display_name`. That
+     * last link is the only name a DEPARTED carer still has: her membership
+     * row is gone, so a member lookup would render "Carer" over hours the
+     * card has just correctly attributed to her.
+     */
+    const nameFor = (carerId: string | null, snapshot?: string | null) =>
+      resolveCarerName(
+        carerId ? membersByUserId.get(carerId) : undefined,
+        fallbackName,
+        snapshot
       );
-      return {
+
+    // Bucket by the SAME identity rule the parent's week screen uses
+    // (`carerKeyOf`) — a card that merges two carers Hours splits would
+    // report one carer's day under the other's name. A running entry counts
+    // whatever its local_date says, because "on the clock" is about now.
+    const buckets = new Map<string, TimeEntry[]>();
+    for (const entry of entries.data ?? []) {
+      if (entry.local_date !== today && entry.status !== 'running') continue;
+      const key = carerKeyOf(entry);
+      const bucket = buckets.get(key);
+      if (bucket) {
+        bucket.push(entry);
+      } else {
+        buckets.set(key, [entry]);
+      }
+    }
+
+    const result: CoverRow[] = [];
+    /** Carers already described by their own entries — their shift adds nothing. */
+    const covered = new Set<string>();
+
+    for (const [key, bucket] of buckets) {
+      const first = bucket[0];
+      if (!first) continue;
+      if (first.carer_id) covered.add(first.carer_id);
+      const name = nameFor(first.carer_id, first.carer_display_name);
+
+      const running = bucket.find(
+        entry => entry.status === 'running' && entry.clock_in_at
+      );
+      if (running?.clock_in_at) {
+        result.push({
+          key,
+          name,
+          kind: 'live',
+          detail: t('stateLive', {
+            time: formatClockTime(running.clock_in_at, timeZone),
+          }),
+        });
+        continue;
+      }
+
+      const lastOut = bucket
+        .filter(entry => entry.clock_out_at)
+        .sort((a, b) =>
+          (b.clock_out_at ?? '').localeCompare(a.clock_out_at ?? '')
+        )[0];
+      if (!lastOut?.clock_out_at) continue;
+      result.push({
+        key,
+        name,
         kind: 'finished',
-        clockOutAt: finishedToday.clock_out_at,
-        carerId: finishedToday.carer_id,
-        carerDisplayName: finishedToday.carer_display_name,
-        durationLabel: formatDuration(sumEntryMinutes(todayEntries, nowMs)),
-      };
+        detail: t('stateFinished', {
+          time: formatClockTime(lastOut.clock_out_at, timeZone),
+          // HER entries for today only — never every carer's hours summed
+          // under one name (F-B1-3-sibling).
+          duration: formatDuration(
+            sumEntryMinutes(
+              bucket.filter(entry => entry.local_date === today),
+              nowMs
+            )
+          ),
+        }),
+      });
     }
 
-    const todayShifts = (shifts.data ?? [])
-      .filter(s => s.local_date === today && s.status !== 'cancelled')
-      .sort((a, b) => a.starts_at.localeCompare(b.starts_at));
-    const next = todayShifts[0];
-    if (!next) return { kind: 'none' };
-
-    const startMs = new Date(next.starts_at).getTime();
-    const now = Date.now();
-    if (now < startMs && startMs - now <= ARRIVING_WINDOW_MS) {
-      return {
-        kind: 'arriving',
-        start: formatClockTime(next.starts_at, timeZone),
-        carerId: next.carer_id,
-      };
+    // Today's shifts fill in the carers who have not clocked anything yet.
+    const shiftBuckets = new Map<string, Shift[]>();
+    for (const shift of shifts.data ?? []) {
+      if (shift.local_date !== today || shift.status === 'cancelled') continue;
+      if (shift.carer_id && covered.has(shift.carer_id)) continue;
+      const key = `shift-${shift.carer_id ?? 'unassigned'}`;
+      const bucket = shiftBuckets.get(key);
+      if (bucket) {
+        bucket.push(shift);
+      } else {
+        shiftBuckets.set(key, [shift]);
+      }
     }
-    return {
-      kind: 'scheduled',
-      start: formatClockTime(next.starts_at, timeZone),
-      end: formatClockTime(next.ends_at, timeZone),
-      carerId: next.carer_id,
-    };
-  }, [entries.data, shifts.data, today, timeZone]);
 
-  // A departed carer has no user id left to resolve against the member list,
-  // so `nameFor` would say "Someone" over hours the card has just correctly
-  // attributed to her. Her row's snapshot is the name she still has. Only the
-  // finished arm can carry one: a running entry needs a logged-in account, and
-  // a shift names a member.
-  const name =
-    state.kind === 'none'
-      ? ''
-      : state.kind === 'finished' && state.carerId === null
-        ? state.carerDisplayName
-        : nameFor(state.carerId);
+    for (const [key, bucket] of shiftBuckets) {
+      const next = [...bucket].sort((a, b) =>
+        a.starts_at.localeCompare(b.starts_at)
+      )[0];
+      if (!next) continue;
+      const name = nameFor(next.carer_id);
+      const startMs = new Date(next.starts_at).getTime();
+      const arriving = nowMs < startMs && startMs - nowMs <= ARRIVING_WINDOW_MS;
+      result.push({
+        key,
+        name,
+        kind: arriving ? 'arriving' : 'scheduled',
+        detail: arriving
+          ? t('stateArriving', {
+              start: formatClockTime(next.starts_at, timeZone),
+            })
+          : t('stateScheduled', {
+              start: formatClockTime(next.starts_at, timeZone),
+              end: formatClockTime(next.ends_at, timeZone),
+            }),
+      });
+    }
 
-  const live = state.kind === 'running';
-  const title =
-    state.kind === 'running'
-      ? t('nannyLiveTitle', { name })
-      : state.kind === 'finished'
-        ? t('nannyFinishedTitle', { name })
-        : state.kind === 'arriving'
-          ? t('nannyArrivingTitle', { name })
-          : state.kind === 'scheduled'
-            ? t('nannyScheduledTitle', { name })
-            : t('nannyNoShiftTitle');
-  const body =
-    state.kind === 'running'
-      ? t('nannyLiveBody', {
-          time: formatClockTime(state.clockInAt, timeZone),
-        })
-      : state.kind === 'finished'
-        ? t('nannyFinishedBody', {
-            time: formatClockTime(state.clockOutAt, timeZone),
-            duration: state.durationLabel,
-          })
-        : state.kind === 'arriving'
-          ? t('nannyArrivingBody', { start: state.start })
-          : state.kind === 'scheduled'
-            ? t('nannyScheduledBody', {
-                start: state.start,
-                end: state.end,
-              })
-            : t('nannyNoShiftBody');
+    return result.sort(
+      (a, b) =>
+        KIND_ORDER[a.kind] - KIND_ORDER[b.kind] || a.name.localeCompare(b.name)
+    );
+  }, [entries.data, shifts.data, membersByUserId, today, timeZone, t]);
+
+  const anyLive = rows.some(row => row.kind === 'live');
 
   return (
     <Pressable
@@ -210,12 +222,34 @@ export function NannyLiveStatusCard({
       accessibilityRole="button"
       onPress={() => router.push('/(private)/(tabs)/hours' as Href)}
     >
-      <Card live={live} className="gap-1 p-5.5">
-        <View className="flex-row items-center gap-2">
-          {live ? <LiveDot testID="today-nanny-live-dot" /> : null}
-          <Body weight="semibold">{title}</Body>
-        </View>
-        <Body className="text-muted-foreground">{body}</Body>
+      <Card live={anyLive} className="gap-3 p-5.5">
+        <Small className="text-muted-foreground">{t('todayCoverTitle')}</Small>
+        {rows.length === 0 ? (
+          <View className="gap-0.5">
+            <Body weight="semibold">{t('nannyNoShiftTitle')}</Body>
+            <Small className="text-muted-foreground">
+              {t('nannyNoShiftBody')}
+            </Small>
+          </View>
+        ) : (
+          rows.map(row => (
+            <View
+              key={row.key}
+              testID={`today-cover-row-${row.key}`}
+              className="gap-0.5"
+            >
+              <View className="flex-row items-center gap-2">
+                {row.kind === 'live' ? (
+                  <LiveDot testID={`today-cover-live-dot-${row.key}`} />
+                ) : null}
+                <Body weight="semibold" numberOfLines={1}>
+                  {row.name}
+                </Body>
+              </View>
+              <Small className="text-muted-foreground">{row.detail}</Small>
+            </View>
+          ))
+        )}
       </Card>
     </Pressable>
   );
