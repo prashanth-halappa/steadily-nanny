@@ -71,29 +71,13 @@ export class ScheduleShiftRepository {
   private readonly childrenTable = 'shift_children';
   private readonly changeRequestsTable = 'shift_change_requests';
 
-  /** The materialised shift for one pattern occurrence, or null if never created. */
-  async findByPatternAndDate(
-    patternId: string,
-    localDate: string
-  ): Promise<Shift | null> {
-    const { data, error } = await supabaseService
-      .from(this.table)
-      .select('*')
-      .eq('source_pattern_id', patternId)
-      .eq('local_date', localDate)
-      .maybeSingle();
-
-    if (error) {
-      throw new DatabaseError(
-        'Failed to find shift by pattern and date',
-        'DATABASE_ERROR',
-        { details: error.message, patternId, localDate }
-      );
-    }
-    return data as Shift | null;
-  }
-
-  /** Every shift ever tied to this pattern, any status — the reconciliation set. */
+  /**
+   * Every shift ever tied to this pattern, any status — the reconciliation
+   * set, AND (since it already carries `local_date`) the occurrence lookup
+   * the materialiser indexes in memory. There used to be a
+   * `findByPatternAndDate` called once per occurrence; on a hosted DB that
+   * was one ~150ms round trip per day of the horizon.
+   */
   async findActiveByPattern(patternId: string): Promise<Shift[]> {
     const { data, error } = await supabaseService
       .from(this.table)
@@ -110,21 +94,30 @@ export class ScheduleShiftRepository {
     return (data ?? []) as Shift[];
   }
 
-  /** True if the shift has EVER had a change request opened against it (any status). */
-  async hasChangeRequests(shiftId: string): Promise<boolean> {
-    const { count, error } = await supabaseService
+  /**
+   * Which of `shiftIds` have EVER had a change request opened against them
+   * (any status) — one round trip for a whole materialisation run, replacing
+   * the per-shift `hasChangeRequests` probe.
+   */
+  async shiftIdsWithChangeRequests(shiftIds: string[]): Promise<Set<string>> {
+    if (shiftIds.length === 0) {
+      return new Set();
+    }
+    const { data, error } = await supabaseService
       .from(this.changeRequestsTable)
-      .select('id', { count: 'exact', head: true })
-      .eq('shift_id', shiftId);
+      .select('shift_id')
+      .in('shift_id', shiftIds);
 
     if (error) {
       throw new DatabaseError(
         'Failed to check shift change requests',
         'DATABASE_ERROR',
-        { details: error.message, shiftId }
+        { details: error.message, count: shiftIds.length }
       );
     }
-    return (count ?? 0) > 0;
+    return new Set(
+      (data ?? []).map(row => (row as { shift_id: string }).shift_id)
+    );
   }
 
   /**
@@ -193,6 +186,39 @@ export class ScheduleShiftRepository {
     return created as Shift;
   }
 
+  /**
+   * Insert a whole horizon's worth of occurrences in ONE statement.
+   *
+   * Returns `null` — never throws `RecurringShiftAlreadyExistsError` — when
+   * 062's window index refuses one of the rows: a multi-row insert is a single
+   * statement, so the violation aborts the lot and PostgREST cannot say WHICH
+   * row lost. Nothing was written, so the caller retries row by row through
+   * `create` (below), where the collision is attributable and the existing
+   * shift can be adopted. Collisions are rare — supersede-on-accept cancels
+   * the prior pattern's rows before this runs (GOLDEN-FIXES #27).
+   */
+  async createMany(rows: NewShiftData[]): Promise<Shift[] | null> {
+    if (rows.length === 0) {
+      return [];
+    }
+    const { data: created, error } = await supabaseService
+      .from(this.table)
+      .insert(rows)
+      .select();
+
+    if (error) {
+      if (isRecurringWindowCollision(error)) {
+        return null;
+      }
+      throw new DatabaseError('Failed to create shifts', 'DATABASE_ERROR', {
+        details: error.message,
+        code: error.code,
+        count: rows.length,
+      });
+    }
+    return (created ?? []) as Shift[];
+  }
+
   async update(id: string, data: Partial<Shift>): Promise<Shift> {
     const { data: updated, error } = await supabaseService
       .from(this.table)
@@ -210,51 +236,86 @@ export class ScheduleShiftRepository {
     return updated as Shift;
   }
 
-  async delete(id: string): Promise<void> {
+  /**
+   * Apply the SAME patch to many shifts in one statement. Only ever used for
+   * patches that are identical by construction (the cancel patches); a
+   * per-shift patch still goes through `update`.
+   */
+  async updateMany(ids: string[], data: Partial<Shift>): Promise<void> {
+    if (ids.length === 0) {
+      return;
+    }
     const { error } = await supabaseService
       .from(this.table)
-      .delete()
-      .eq('id', id);
+      .update(data)
+      .in('id', ids);
 
     if (error) {
-      throw new DatabaseError('Failed to delete shift', 'DATABASE_ERROR', {
+      throw new DatabaseError('Failed to update shifts', 'DATABASE_ERROR', {
         details: error.message,
-        id,
+        count: ids.length,
       });
     }
   }
 
-  /** Clients (and the re-materialiser) replace a shift's children wholesale. */
-  async replaceChildren(
-    shiftId: string,
-    children: NewShiftChildData[]
+  async deleteMany(ids: string[]): Promise<void> {
+    if (ids.length === 0) {
+      return;
+    }
+    const { error } = await supabaseService
+      .from(this.table)
+      .delete()
+      .in('id', ids);
+
+    if (error) {
+      throw new DatabaseError('Failed to delete shifts', 'DATABASE_ERROR', {
+        details: error.message,
+        count: ids.length,
+      });
+    }
+  }
+
+  /**
+   * Replace the children of many shifts wholesale: one delete for every
+   * shift_id, one insert for every child row. Two round trips for a whole
+   * horizon instead of two per occurrence.
+   */
+  async replaceChildrenMany(
+    entries: { shiftId: string; children: NewShiftChildData[] }[]
   ): Promise<void> {
+    if (entries.length === 0) {
+      return;
+    }
+    const shiftIds = entries.map(entry => entry.shiftId);
     const { error: deleteError } = await supabaseService
       .from(this.childrenTable)
       .delete()
-      .eq('shift_id', shiftId);
+      .in('shift_id', shiftIds);
 
     if (deleteError) {
       throw new DatabaseError(
         'Failed to clear shift children',
         'DATABASE_ERROR',
-        { details: deleteError.message, shiftId }
+        { details: deleteError.message, count: shiftIds.length }
       );
     }
 
-    if (children.length === 0) {
+    const rows = entries.flatMap(entry =>
+      entry.children.map(child => ({ shift_id: entry.shiftId, ...child }))
+    );
+    if (rows.length === 0) {
       return;
     }
 
     const { error: insertError } = await supabaseService
       .from(this.childrenTable)
-      .insert(children.map(child => ({ shift_id: shiftId, ...child })));
+      .insert(rows);
 
     if (insertError) {
       throw new DatabaseError(
         'Failed to insert shift children',
         'DATABASE_ERROR',
-        { details: insertError.message, shiftId }
+        { details: insertError.message, count: rows.length }
       );
     }
   }

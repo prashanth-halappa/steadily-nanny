@@ -18,6 +18,7 @@
  */
 import { describe, expect, it, mock } from 'bun:test';
 import type { Shift } from '@steadily-nanny/shared-types/schemas/shift.schema';
+import type { NewShiftData } from '../../../../../src/domains/schedule/repositories/scheduleShiftRepository';
 import type { MaterialisationShiftRepository } from '../../../../../src/domains/schedule/services/scheduleMaterialisationService';
 import { ScheduleMaterialisationService } from '../../../../../src/domains/schedule/services/scheduleMaterialisationService';
 import { SchedulePatternCommandService } from '../../../../../src/domains/schedule/services/schedulePatternCommandService';
@@ -134,16 +135,21 @@ function makeShiftRepo(
   overrides: Partial<MaterialisationShiftRepository> = {}
 ): MaterialisationShiftRepository {
   return {
-    findByPatternAndDate: mock(async () => null),
     findActiveByPattern: mock(
       async (patternId: string) => shiftsByPattern[patternId] ?? []
     ),
     findRecurringInWindow: mock(async () => null),
-    hasChangeRequests: mock(async () => false),
+    shiftIdsWithChangeRequests: mock(async () => new Set<string>()),
     create: mock(async () => shiftFor({ id: 'shift-new' })),
     update: mock(async (id: string) => shiftFor({ id })),
-    delete: mock(async () => undefined),
-    replaceChildren: mock(async () => undefined),
+    createMany: mock(async (rows: NewShiftData[]) =>
+      rows.map((row, index) =>
+        shiftFor({ id: `shift-${index + 1}`, ical_uid: row.ical_uid })
+      )
+    ),
+    updateMany: mock(async () => undefined),
+    deleteMany: mock(async () => undefined),
+    replaceChildrenMany: mock(async () => undefined),
     ...overrides,
   };
 }
@@ -154,7 +160,11 @@ function makeMaterialisation(
 ): ScheduleMaterialisationService {
   return new ScheduleMaterialisationService(
     shiftRepo,
-    { hasTimeEntries: mock(async () => hasTimeEntries) },
+    {
+      shiftIdsWithTimeEntries: mock(async (ids: string[]) =>
+        hasTimeEntries ? new Set(ids) : new Set<string>()
+      ),
+    },
     {
       listEventKeysForDate: mock(async () => new Set<string>()),
       insertMany: mock(async () => undefined),
@@ -204,13 +214,15 @@ describe('respond(accepted) supersedes prior accepted patterns', () => {
     );
     expect(patternRepo.update).toHaveBeenCalledWith('p0', { status: 'ended' });
 
+    // Cancelling is now ONE bulk statement per ended pattern, so the ids
+    // arrive as an array rather than one call per shift.
     const touchedShiftIds = (
-      shiftRepo.update as ReturnType<typeof mock>
-    ).mock.calls.map((call: unknown[]) => call[0]);
+      shiftRepo.updateMany as ReturnType<typeof mock>
+    ).mock.calls.flatMap((call: unknown[]) => call[0] as string[]);
     expect(touchedShiftIds).toContain('shift-future');
     expect(touchedShiftIds).not.toContain('shift-past');
-    expect(shiftRepo.update).toHaveBeenCalledWith(
-      'shift-future',
+    expect(shiftRepo.updateMany).toHaveBeenCalledWith(
+      ['shift-future'],
       expect.objectContaining({ status: 'cancelled' })
     );
   });
@@ -237,9 +249,11 @@ describe('respond(accepted) supersedes prior accepted patterns', () => {
       (call: unknown[]) => call[0]
     );
     expect(endedIds).not.toContain('p-other');
+    // Cancelling is now ONE bulk statement per ended pattern, so the ids
+    // arrive as an array rather than one call per shift.
     const touchedShiftIds = (
-      shiftRepo.update as ReturnType<typeof mock>
-    ).mock.calls.map((call: unknown[]) => call[0]);
+      shiftRepo.updateMany as ReturnType<typeof mock>
+    ).mock.calls.flatMap((call: unknown[]) => call[0] as string[]);
     expect(touchedShiftIds).not.toContain('shift-other-carer');
   });
 
@@ -257,6 +271,24 @@ describe('respond(accepted) supersedes prior accepted patterns', () => {
     expect(patternRepo.update).not.toHaveBeenCalledWith('p1', {
       status: 'ended',
     });
+  });
+
+  // WS-J: `respond` already holds the pattern and has already run its carer +
+  // membership gate, so `getWithDays` re-read both for nothing — two hosted-DB
+  // round trips on the path that measured 26s.
+  it('does not re-read the pattern (or re-check membership) it already holds', async () => {
+    const queries = makeQueries(patternFor({ status: 'pending' }));
+    const svc = makeService(
+      makePatternRepo(),
+      queries,
+      makeMaterialisation(makeShiftRepo())
+    );
+
+    await svc.respond('carer-1', 'p1', { status: 'accepted' }, NOW);
+
+    expect(queries.getDaysForPattern).toHaveBeenCalledWith('p1');
+    expect(queries.getWithDays).not.toHaveBeenCalled();
+    expect(queries.getOwned).toHaveBeenCalledTimes(1);
   });
 
   it('declining supersedes nothing', async () => {
@@ -301,8 +333,8 @@ describe('every path that ends a pattern cleans up its future shifts', () => {
       'p1',
       expect.objectContaining({ status: 'ended', until: '2026-07-01' })
     );
-    expect(shiftRepo.update).toHaveBeenCalledWith(
-      'shift-future',
+    expect(shiftRepo.updateMany).toHaveBeenCalledWith(
+      ['shift-future'],
       expect.objectContaining({ status: 'cancelled' })
     );
   });
@@ -325,8 +357,8 @@ describe('every path that ends a pattern cleans up its future shifts', () => {
     expect(patternRepo.update).toHaveBeenCalledWith('p1', {
       status: 'ended',
     });
-    expect(shiftRepo.update).toHaveBeenCalledWith(
-      'shift-future',
+    expect(shiftRepo.updateMany).toHaveBeenCalledWith(
+      ['shift-future'],
       expect.objectContaining({ status: 'cancelled' })
     );
   });

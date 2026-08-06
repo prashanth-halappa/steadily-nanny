@@ -12,6 +12,7 @@
 import { describe, expect, it, mock } from 'bun:test';
 import type { Shift } from '@steadily-nanny/shared-types/schemas/shift.schema';
 import { RecurringShiftAlreadyExistsError } from '../../../../../src/domains/schedule/errors/scheduleErrors';
+import type { NewShiftData } from '../../../../../src/domains/schedule/repositories/scheduleShiftRepository';
 import type { ExpandedOccurrence } from '../../../../../src/domains/schedule/services/recurrenceExpander';
 import type {
   ConflictEventRepository,
@@ -78,14 +79,19 @@ function makeRepo(
   overrides: Partial<MaterialisationShiftRepository> = {}
 ): MaterialisationShiftRepository {
   return {
-    findByPatternAndDate: mock(async () => null),
     findActiveByPattern: mock(async () => []),
     findRecurringInWindow: mock(async () => null),
-    hasChangeRequests: mock(async () => false),
+    shiftIdsWithChangeRequests: mock(async () => new Set<string>()),
     create: mock(async () => baseShift()),
     update: mock(async () => baseShift()),
-    delete: mock(async () => undefined),
-    replaceChildren: mock(async () => undefined),
+    createMany: mock(async (rows: NewShiftData[]) =>
+      rows.map((row, index) =>
+        baseShift({ id: `shift-${index + 1}`, ical_uid: row.ical_uid })
+      )
+    ),
+    updateMany: mock(async () => undefined),
+    deleteMany: mock(async () => undefined),
+    replaceChildrenMany: mock(async () => undefined),
     ...overrides,
   };
 }
@@ -94,7 +100,7 @@ function makeTimeEntryRepo(
   overrides: Partial<TimeEntryExistenceRepository> = {}
 ): TimeEntryExistenceRepository {
   return {
-    hasTimeEntries: mock(async () => false),
+    shiftIdsWithTimeEntries: mock(async () => new Set<string>()),
     ...overrides,
   };
 }
@@ -106,6 +112,10 @@ function makeEventRepo(): ConflictEventRepository {
   };
 }
 
+// The horizon goes in as ONE insert, which Postgres aborts wholesale on a
+// unique violation without saying which row lost — so `createMany` answers
+// `null` ("nothing written, retry per row") and the per-row `create` is where
+// the collision becomes attributable and adoptable.
 describe('ScheduleMaterialisationService — 062 duplicate-window collision', () => {
   it('adopts the existing identical shift when the unique index refuses the insert', async () => {
     const winner = baseShift({
@@ -114,6 +124,7 @@ describe('ScheduleMaterialisationService — 062 duplicate-window collision', ()
       ical_uid: 'other-pattern-uid::2026-06-04',
     });
     const repo = makeRepo({
+      createMany: mock(async () => null),
       create: mock(async () => {
         throw new RecurringShiftAlreadyExistsError({
           householdId: 'household-1',
@@ -148,16 +159,16 @@ describe('ScheduleMaterialisationService — 062 duplicate-window collision', ()
     );
     const patch = (repo.update as ReturnType<typeof mock>).mock.calls[0]?.[1];
     expect(patch).not.toHaveProperty('ical_uid');
-    expect(repo.replaceChildren).toHaveBeenCalledWith(
-      'shift-from-other-pattern',
-      []
-    );
+    expect(repo.replaceChildrenMany).toHaveBeenCalledWith([
+      { shiftId: 'shift-from-other-pattern', children: [] },
+    ]);
     expect(result.updated).toBe(1);
     expect(result.created).toBe(0);
   });
 
   it('rethrows when the index says a duplicate exists but no live row can be found', async () => {
     const repo = makeRepo({
+      createMany: mock(async () => null),
       create: mock(async () => {
         throw new RecurringShiftAlreadyExistsError({
           householdId: 'household-1',
@@ -203,8 +214,9 @@ describe('ScheduleMaterialisationService.cancelFutureShiftsForEndedPattern', () 
     );
 
     expect(cancelled).toBe(1);
-    expect(repo.update).toHaveBeenCalledWith(
-      'shift-future',
+    // ONE statement for the whole set, not one per shift.
+    expect(repo.updateMany).toHaveBeenCalledWith(
+      ['shift-future'],
       expect.objectContaining({
         status: 'cancelled',
         reason: 'pattern_ended',
@@ -228,7 +240,7 @@ describe('ScheduleMaterialisationService.cancelFutureShiftsForEndedPattern', () 
     expect(await svc.cancelFutureShiftsForEndedPattern('pattern-1', NOW)).toBe(
       0
     );
-    expect(repo.update).not.toHaveBeenCalled();
+    expect(repo.updateMany).not.toHaveBeenCalled();
   });
 
   it('never touches a completed or already-cancelled shift', async () => {
@@ -248,9 +260,9 @@ describe('ScheduleMaterialisationService.cancelFutureShiftsForEndedPattern', () 
     expect(await svc.cancelFutureShiftsForEndedPattern('pattern-1', NOW)).toBe(
       1
     );
-    expect(repo.update).toHaveBeenCalledTimes(1);
-    expect(repo.update).toHaveBeenCalledWith(
-      'shift-future',
+    expect(repo.updateMany).toHaveBeenCalledTimes(1);
+    expect(repo.updateMany).toHaveBeenCalledWith(
+      ['shift-future'],
       expect.objectContaining({ status: 'cancelled' })
     );
   });
@@ -261,14 +273,16 @@ describe('ScheduleMaterialisationService.cancelFutureShiftsForEndedPattern', () 
     });
     const svc = new ScheduleMaterialisationService(
       repo,
-      makeTimeEntryRepo({ hasTimeEntries: mock(async () => true) }),
+      makeTimeEntryRepo({
+        shiftIdsWithTimeEntries: mock(async (ids: string[]) => new Set(ids)),
+      }),
       makeEventRepo()
     );
 
     expect(await svc.cancelFutureShiftsForEndedPattern('pattern-1', NOW)).toBe(
       0
     );
-    expect(repo.update).not.toHaveBeenCalled();
+    expect(repo.updateMany).not.toHaveBeenCalled();
   });
 
   it('leaves a manually-authored shift alone — it is no longer the pattern to withdraw', async () => {
@@ -286,6 +300,6 @@ describe('ScheduleMaterialisationService.cancelFutureShiftsForEndedPattern', () 
     expect(await svc.cancelFutureShiftsForEndedPattern('pattern-1', NOW)).toBe(
       0
     );
-    expect(repo.update).not.toHaveBeenCalled();
+    expect(repo.updateMany).not.toHaveBeenCalled();
   });
 });

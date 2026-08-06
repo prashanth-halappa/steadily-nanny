@@ -12,6 +12,7 @@ import {
   PatternNotEditableError,
   PatternNotPendingError,
 } from '../../../../../src/domains/schedule/errors/scheduleErrors';
+import type { NewShiftData } from '../../../../../src/domains/schedule/repositories/scheduleShiftRepository';
 import type {
   ConflictEventRepository,
   MaterialisationShiftRepository,
@@ -865,14 +866,19 @@ function makeShiftRepo(
   overrides: Partial<MaterialisationShiftRepository> = {}
 ): MaterialisationShiftRepository {
   return {
-    findByPatternAndDate: mock(async () => null),
     findActiveByPattern: mock(async () => []),
     findRecurringInWindow: mock(async () => null),
-    hasChangeRequests: mock(async () => false),
+    shiftIdsWithChangeRequests: mock(async () => new Set<string>()),
     create: mock(async () => baseShiftForAmend()),
     update: mock(async () => baseShiftForAmend()),
-    delete: mock(async () => undefined),
-    replaceChildren: mock(async () => undefined),
+    createMany: mock(async (rows: NewShiftData[]) =>
+      rows.map((row, index) =>
+        baseShiftForAmend({ id: `shift-${index + 1}`, ical_uid: row.ical_uid })
+      )
+    ),
+    updateMany: mock(async () => undefined),
+    deleteMany: mock(async () => undefined),
+    replaceChildrenMany: mock(async () => undefined),
     ...overrides,
   };
 }
@@ -881,7 +887,7 @@ function makeTimeEntryRepo(
   overrides: Partial<TimeEntryExistenceRepository> = {}
 ): TimeEntryExistenceRepository {
   return {
-    hasTimeEntries: mock(async () => false),
+    shiftIdsWithTimeEntries: mock(async () => new Set<string>()),
     ...overrides,
   };
 }
@@ -931,7 +937,7 @@ describe('SchedulePatternCommandService.amend', () => {
       'p1',
       expect.objectContaining({ exdates: [FUTURE_EXDATE] })
     );
-    expect(shiftRepo.delete).toHaveBeenCalledWith('shift-to-exclude');
+    expect(shiftRepo.deleteMany).toHaveBeenCalledWith(['shift-to-exclude']);
   });
 
   it('preserves a shift with time entries in an excluded range', async () => {
@@ -941,7 +947,7 @@ describe('SchedulePatternCommandService.amend', () => {
       findActiveByPattern: mock(async () => [paidOrphan]),
     });
     const timeEntryRepo = makeTimeEntryRepo({
-      hasTimeEntries: mock(async () => true),
+      shiftIdsWithTimeEntries: mock(async (ids: string[]) => new Set(ids)),
     });
     const materialisation = new ScheduleMaterialisationService(
       shiftRepo,
@@ -967,8 +973,9 @@ describe('SchedulePatternCommandService.amend', () => {
 
     await svc.amend('u1', 'p1', { exdates: [FUTURE_EXDATE] }, NOW);
 
-    expect(shiftRepo.delete).not.toHaveBeenCalled();
+    expect(shiftRepo.deleteMany).not.toHaveBeenCalled();
     expect(shiftRepo.update).not.toHaveBeenCalled();
+    expect(shiftRepo.updateMany).not.toHaveBeenCalled();
   });
 
   it('cancels a manually-touched shift with a pattern_conflict event', async () => {
@@ -1005,9 +1012,9 @@ describe('SchedulePatternCommandService.amend', () => {
 
     await svc.amend('u1', 'p1', { exdates: [FUTURE_EXDATE] }, NOW);
 
-    expect(shiftRepo.delete).not.toHaveBeenCalled();
-    expect(shiftRepo.update).toHaveBeenCalledWith(
-      'shift-touched',
+    expect(shiftRepo.deleteMany).not.toHaveBeenCalled();
+    expect(shiftRepo.updateMany).toHaveBeenCalledWith(
+      ['shift-touched'],
       expect.objectContaining({
         status: 'cancelled',
         reason: 'pattern_changed',

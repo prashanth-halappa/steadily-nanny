@@ -305,7 +305,7 @@ export class SchedulePatternCommandService {
       ? await this.endPattern(patternId, now, patch)
       : await this.patternRepo.update(patternId, patch);
 
-    await this.materialiseAccepted(userId, updated, now);
+    await this.materialiseAccepted(updated, now);
 
     if (updated.carer_id) {
       notifyUser(updated.carer_id, {
@@ -369,7 +369,7 @@ export class SchedulePatternCommandService {
       // shifts are cancelled first, so migration 062's unique index has
       // nothing live to collide with when this pattern inserts its own rows.
       await this.supersedePriorAccepted(updated, now);
-      await this.materialiseAccepted(userId, updated, now);
+      await this.materialiseAccepted(updated, now);
     }
 
     notifyHouseholdParents(pattern.household_id, {
@@ -458,15 +458,21 @@ export class SchedulePatternCommandService {
     }
   }
 
+  /**
+   * `getDaysForPattern`, not `getWithDays`: both callers (`respond`, `amend`)
+   * have already fetched the pattern AND run their own membership/role gate,
+   * so `getWithDays` would re-read the pattern row and re-check the same
+   * membership — two hosted-DB round trips for answers we already hold. Same
+   * "the caller is the trust boundary" reasoning as `materialiseForHorizon`.
+   */
   private async materialiseAccepted(
-    userId: string,
     pattern: SchedulePattern,
     now: Date = new Date()
   ): Promise<void> {
-    const withDays = await this.queries.getWithDays(userId, pattern.id);
+    const days = await this.queries.getDaysForPattern(pattern.id);
     await this.runMaterialisation(
       pattern,
-      withDays.days,
+      days,
       DEFAULT_MATERIALISATION_HORIZON_DAYS,
       now
     );

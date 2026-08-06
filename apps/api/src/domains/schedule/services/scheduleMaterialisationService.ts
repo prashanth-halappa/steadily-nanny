@@ -36,6 +36,25 @@
  * `payload.key`. The in-memory `result.conflicts` warning is still returned
  * on every run — only the persisted day-thread row is de-duplicated.
  *
+ * BATCHED, NOT PER-DAY. A hosted Postgres is ~50-150ms away, so the shape of
+ * this service is set by round-trip COUNT, not by row count. The first version
+ * asked the DB a question per occurrence (find-by-date, then time-entries,
+ * then change-requests, then insert, then two more for children) and one
+ * `respond` over the 84-day horizon measured **26 seconds** — ~170 sequential
+ * round trips. Everything here is therefore keyed on "one statement per KIND
+ * of work, not per day":
+ *   - one `findActiveByPattern` read, indexed by `local_date` in memory, is
+ *     the occurrence lookup (it was already being read for reconciliation);
+ *   - one `shiftIdsWithTimeEntries` and one `shiftIdsWithChangeRequests` probe
+ *     cover every shift either branch might touch;
+ *   - new occurrences go in through `createMany` + `replaceChildrenMany`;
+ *   - orphans leave through one `deleteMany` and one `updateMany` (their
+ *     cancel patch is identical by construction).
+ * The only per-shift statement left is the times-moved `update`, whose patch
+ * genuinely differs per row — it runs with bounded concurrency.
+ * When you add a branch here, add it to a partition + a batch call. Do not
+ * reintroduce an `await` inside a loop over occurrences.
+ *
  * The time_entries check is injected as a narrow `TimeEntryExistenceRepository`
  * (defaulting to the timesheet domain's `TimeEntryRepository`) rather than
  * added to `MaterialisationShiftRepository` — `time_entries` isn't a shift
@@ -94,10 +113,6 @@ export interface MaterialiseResult {
 
 /** The narrow repository contract this service depends on — see `ScheduleShiftRepository` for the production implementation. */
 export interface MaterialisationShiftRepository {
-  findByPatternAndDate(
-    patternId: string,
-    localDate: string
-  ): Promise<Shift | null>;
   findActiveByPattern(patternId: string): Promise<Shift[]>;
   findRecurringInWindow(
     householdId: string,
@@ -105,19 +120,22 @@ export interface MaterialisationShiftRepository {
     startsAt: string,
     endsAt: string
   ): Promise<Shift | null>;
-  hasChangeRequests(shiftId: string): Promise<boolean>;
+  shiftIdsWithChangeRequests(shiftIds: string[]): Promise<Set<string>>;
+  /** Single-row insert — only the per-row retry after a `createMany` collision. */
   create(data: NewShiftData): Promise<Shift>;
+  /** `null` means 062's window index refused a row and nothing was written — retry per row. */
+  createMany(rows: NewShiftData[]): Promise<Shift[] | null>;
   update(id: string, data: Partial<Shift>): Promise<Shift>;
-  delete(id: string): Promise<void>;
-  replaceChildren(
-    shiftId: string,
-    children: NewShiftChildData[]
+  updateMany(ids: string[], data: Partial<Shift>): Promise<void>;
+  deleteMany(ids: string[]): Promise<void>;
+  replaceChildrenMany(
+    entries: { shiftId: string; children: NewShiftChildData[] }[]
   ): Promise<void>;
 }
 
-/** The narrow contract this service needs to ask "has anyone clocked into this shift?" — see the module doc for why this isn't folded into `MaterialisationShiftRepository`. */
+/** The narrow contract this service needs to ask "has anyone clocked into these shifts?" — see the module doc for why this isn't folded into `MaterialisationShiftRepository`. */
 export interface TimeEntryExistenceRepository {
-  hasTimeEntries(shiftId: string): Promise<boolean>;
+  shiftIdsWithTimeEntries(shiftIds: string[]): Promise<Set<string>>;
 }
 
 /** The idempotent bulk-append pair this service raises `pattern_conflict` through — see `ShiftEventRepository`. */
@@ -136,6 +154,22 @@ const NEVER_TOUCH_STATUSES: ReadonlySet<Shift['status']> = new Set([
 ]);
 
 const PATTERN_CONFLICT = 'pattern_conflict';
+
+/**
+ * How many times-moved `update`s run at once. Their patches differ per row, so
+ * unlike every other write here they cannot collapse into one statement.
+ * ponytail: bounded concurrency, not a bulk upsert — an upsert would have to
+ * round-trip every column of every row to avoid nulling one, and this path is
+ * empty on the accept that motivated the batching (a brand-new pattern has no
+ * existing shifts). Revisit if an amend over a long horizon still drags.
+ */
+const UPDATE_CONCURRENCY = 8;
+
+/** One shift the run decided to preserve-and-warn about, awaiting its day-thread row. */
+interface PendingConflict {
+  shift: Shift;
+  localDate: string;
+}
 
 /** Deterministic per-occurrence UID: stable across re-materialisations of the same pattern+date. */
 export function deriveOccurrenceIcalUid(
@@ -165,112 +199,227 @@ export class ScheduleMaterialisationService {
       conflicts: [],
     };
 
-    const producedDates = new Set(occurrences.map(occ => occ.localDate));
-
-    for (const occ of occurrences) {
-      await this.materialiseOne(pattern, occ, result, now);
-    }
-
+    // ONE read of everything this pattern owns. `local_date` is on the row, so
+    // this doubles as the per-occurrence lookup the old code paid a round trip
+    // for on every day of the horizon.
     const existingForPattern = await this.shiftRepo.findActiveByPattern(
       pattern.id
     );
+    const byDate = new Map<string, Shift>();
     for (const shift of existingForPattern) {
-      if (producedDates.has(shift.local_date)) {
-        continue; // still produced this run — handled in the loop above
+      if (!byDate.has(shift.local_date)) {
+        byDate.set(shift.local_date, shift);
       }
-      await this.reconcileOrphan(pattern, shift, now, result);
     }
+    const producedDates = new Set(occurrences.map(occ => occ.localDate));
+
+    const toCreate: ExpandedOccurrence[] = [];
+    const paired: { occ: ExpandedOccurrence; shift: Shift }[] = [];
+    for (const occ of occurrences) {
+      const existing = byDate.get(occ.localDate);
+      if (!existing) {
+        // F-B6-3: a horizon catch-up run (e.g. after the job was down for
+        // days) re-expands from `dtstart` and can produce occurrences that
+        // have already started. `occ.startsAt` is already an absolute UTC
+        // instant (computed from the pattern's own timezone by
+        // `expandRecurrence`), so comparing it straight against `now` is
+        // correct regardless of the pattern's or server's timezone — no
+        // separate zone conversion needed here. Never backfill one of these
+        // as a brand-new `confirmed` shift nobody could ever have clocked
+        // into; an occurrence that already has a row is untouched by this
+        // guard and still flows through the normal update path below.
+        if (new Date(occ.startsAt).getTime() > now.getTime()) {
+          toCreate.push(occ);
+        }
+        continue;
+      }
+      if (NEVER_TOUCH_STATUSES.has(existing.status)) {
+        continue; // completed/cancelled — never touched, full stop
+      }
+      paired.push({ occ, shift: existing });
+    }
+
+    const orphans = existingForPattern.filter(
+      shift =>
+        !producedDates.has(shift.local_date) &&
+        !NEVER_TOUCH_STATUSES.has(shift.status)
+    );
+
+    // Two probes for the whole run, covering every shift either branch below
+    // might rewrite — this is what used to be four questions per occurrence.
+    const isTouched = await this.touchedPredicate([
+      ...paired.map(p => p.shift),
+      ...orphans,
+    ]);
+
+    const conflicts: PendingConflict[] = [];
+
+    await this.createBatch(pattern, toCreate, result);
+
+    const toUpdate: { occ: ExpandedOccurrence; shift: Shift }[] = [];
+    for (const { occ, shift } of paired) {
+      if (isTouched.paid(shift)) {
+        continue; // past and paid-for reality is immutable — see time_entries (017)
+      }
+      if (isTouched.manually(shift)) {
+        conflicts.push({ shift, localDate: occ.localDate });
+        result.conflicts.push({
+          shiftId: shift.id,
+          localDate: occ.localDate,
+          reason: 'manually_edited',
+        });
+        continue;
+      }
+      toUpdate.push({ occ, shift });
+    }
+    await this.applyUpdates(pattern, toUpdate, result);
+
+    await this.reconcileOrphans(orphans, isTouched, now, result, conflicts);
+    await this.raiseConflictsOnce(pattern, conflicts);
 
     return result;
   }
 
-  private async materialiseOne(
+  /**
+   * Batch both existence probes into one round trip each and hand back the
+   * two questions the policy table asks of a shift. `manually` is only ever
+   * asked of shifts that survived `paid`, so the change-request probe is
+   * narrowed to the same set the per-shift version would have asked about.
+   */
+  private async touchedPredicate(shifts: Shift[]): Promise<{
+    paid: (shift: Shift) => boolean;
+    manually: (shift: Shift) => boolean;
+  }> {
+    const paidIds = await this.timeEntryRepo.shiftIdsWithTimeEntries(
+      shifts.map(shift => shift.id)
+    );
+    // A non-system origin is already "manually touched" with no query needed —
+    // only system-generated, unpaid shifts need the change-request lookup.
+    const changeRequestIds = await this.shiftRepo.shiftIdsWithChangeRequests(
+      shifts
+        .filter(
+          shift => shift.origin === 'system_generated' && !paidIds.has(shift.id)
+        )
+        .map(shift => shift.id)
+    );
+    return {
+      paid: shift => paidIds.has(shift.id),
+      manually: shift =>
+        shift.origin !== 'system_generated' || changeRequestIds.has(shift.id),
+    };
+  }
+
+  /** Every brand-new occurrence in one insert, with all their children in one more. */
+  private async createBatch(
+    pattern: PatternForMaterialisation,
+    occurrences: ExpandedOccurrence[],
+    result: MaterialiseResult
+  ): Promise<void> {
+    if (occurrences.length === 0) {
+      return;
+    }
+    const rows = occurrences.map(occ => newShiftRow(pattern, occ));
+    const created = await this.shiftRepo.createMany(rows);
+
+    if (created === null) {
+      // 062's index refused one of the rows and aborted the whole statement,
+      // so nothing was written and PostgREST cannot say which row lost. Redo
+      // it row by row: the loser then raises an attributable collision and
+      // adopts the shift already sitting in its window.
+      for (const occ of occurrences) {
+        await this.createOne(pattern, occ, result);
+      }
+      return;
+    }
+
+    // Match created rows back to their occurrence by the deterministic uid
+    // rather than by array position — RETURNING order is not a contract.
+    const byUid = new Map(
+      occurrences.map(occ => [
+        deriveOccurrenceIcalUid(pattern.icalUid, occ.localDate),
+        occ,
+      ])
+    );
+    await this.shiftRepo.replaceChildrenMany(
+      created.flatMap(shift => {
+        const occ = byUid.get(shift.ical_uid);
+        return occ ? [{ shiftId: shift.id, children: toChildData(occ) }] : [];
+      })
+    );
+    result.created += created.length;
+  }
+
+  /** The per-row retry `createBatch` falls back to, where a collision is attributable. */
+  private async createOne(
     pattern: PatternForMaterialisation,
     occ: ExpandedOccurrence,
-    result: MaterialiseResult,
-    now: Date
+    result: MaterialiseResult
   ): Promise<void> {
-    const existing = await this.shiftRepo.findByPatternAndDate(
-      pattern.id,
-      occ.localDate
+    let created: Shift;
+    try {
+      created = await this.shiftRepo.create(newShiftRow(pattern, occ));
+    } catch (error) {
+      if (!(error instanceof RecurringShiftAlreadyExistsError)) {
+        throw error;
+      }
+      await this.adoptExistingWindow(pattern, occ, result, error);
+      return;
+    }
+    await this.shiftRepo.replaceChildrenMany([
+      { shiftId: created.id, children: toChildData(occ) },
+    ]);
+    result.created++;
+  }
+
+  /**
+   * Overwrite times, children and note on existing untouched shifts. Children
+   * go in one batch; the shift patches differ per row (times, and the
+   * confirmed -> pending revert) so they run with bounded concurrency — see
+   * `UPDATE_CONCURRENCY`.
+   */
+  private async applyUpdates(
+    pattern: PatternForMaterialisation,
+    pairs: { occ: ExpandedOccurrence; shift: Shift }[],
+    result: MaterialiseResult
+  ): Promise<void> {
+    if (pairs.length === 0) {
+      return;
+    }
+    await this.shiftRepo.replaceChildrenMany(
+      pairs.map(({ occ, shift }) => ({
+        shiftId: shift.id,
+        children: toChildData(occ),
+      }))
     );
 
-    if (!existing) {
-      // F-B6-3: a horizon catch-up run (e.g. after the job was down for
-      // days) re-expands from `dtstart` and can produce occurrences that
-      // have already started. `occ.startsAt` is already an absolute UTC
-      // instant (computed from the pattern's own timezone by
-      // `expandRecurrence`), so comparing it straight against `now` is
-      // correct regardless of the pattern's or server's timezone — no
-      // separate zone conversion needed here. Never backfill one of these
-      // as a brand-new `confirmed` shift nobody could ever have clocked
-      // into; an occurrence that already has a row is untouched by this
-      // guard and still flows through the normal update path below.
-      if (new Date(occ.startsAt).getTime() <= now.getTime()) {
-        return;
-      }
-      let created: Shift;
-      try {
-        created = await this.shiftRepo.create({
-          household_id: pattern.householdId,
-          carer_id: pattern.carerId,
-          starts_at: occ.startsAt,
-          ends_at: occ.endsAt,
-          timezone: pattern.timezone,
-          kind: 'recurring',
-          status: 'confirmed',
-          source_pattern_id: pattern.id,
-          origin: 'system_generated',
-          note: pattern.note,
-          ical_uid: deriveOccurrenceIcalUid(pattern.icalUid, occ.localDate),
-        });
-      } catch (error) {
-        if (!(error instanceof RecurringShiftAlreadyExistsError)) {
-          throw error;
-        }
-        await this.adoptExistingWindow(pattern, occ, result, error);
-        return;
-      }
-      await this.shiftRepo.replaceChildren(created.id, toChildData(occ));
-      result.created++;
-      return;
+    for (let i = 0; i < pairs.length; i += UPDATE_CONCURRENCY) {
+      await Promise.all(
+        pairs.slice(i, i + UPDATE_CONCURRENCY).map(({ occ, shift }) => {
+          // Instants, not strings: `shift.*` came back from PostgREST as
+          // `+00:00` and `occ.*` was built in JS as `.000Z`, so a string
+          // compare reports "moved" for every unchanged shift and silently
+          // reverts the carer's accepted week to `pending` on every horizon
+          // run (GOLDEN-FIXES #25).
+          const timesMoved =
+            new Date(shift.starts_at).getTime() !==
+              new Date(occ.startsAt).getTime() ||
+            new Date(shift.ends_at).getTime() !==
+              new Date(occ.endsAt).getTime();
+          return this.shiftRepo.update(shift.id, {
+            starts_at: occ.startsAt,
+            ends_at: occ.endsAt,
+            timezone: pattern.timezone,
+            status:
+              shift.status === 'confirmed' && timesMoved
+                ? 'pending'
+                : shift.status,
+            note: pattern.note,
+            sequence: shift.sequence + 1,
+          });
+        })
+      );
     }
-
-    if (NEVER_TOUCH_STATUSES.has(existing.status)) {
-      return; // completed/cancelled — never touched, full stop
-    }
-
-    if (await this.timeEntryRepo.hasTimeEntries(existing.id)) {
-      return; // past and paid-for reality is immutable — see time_entries (017)
-    }
-
-    if (await this.isManuallyTouched(existing)) {
-      await this.raiseConflictOnce(pattern, existing, occ.localDate);
-      result.conflicts.push({
-        shiftId: existing.id,
-        localDate: occ.localDate,
-        reason: 'manually_edited',
-      });
-      return;
-    }
-
-    const timesMoved =
-      existing.starts_at !== occ.startsAt || existing.ends_at !== occ.endsAt;
-    const nextStatus =
-      existing.status === 'confirmed' && timesMoved
-        ? 'pending'
-        : existing.status;
-
-    const updated = await this.shiftRepo.update(existing.id, {
-      starts_at: occ.startsAt,
-      ends_at: occ.endsAt,
-      timezone: pattern.timezone,
-      status: nextStatus,
-      note: pattern.note,
-      sequence: existing.sequence + 1,
-    });
-    await this.shiftRepo.replaceChildren(updated.id, toChildData(occ));
-    result.updated++;
+    result.updated += pairs.length;
   }
 
   /**
@@ -308,7 +457,9 @@ export class ScheduleMaterialisationService {
       note: pattern.note,
       sequence: winner.sequence + 1,
     });
-    await this.shiftRepo.replaceChildren(adopted.id, toChildData(occ));
+    await this.shiftRepo.replaceChildrenMany([
+      { shiftId: adopted.id, children: toChildData(occ) },
+    ]);
     result.updated++;
   }
 
@@ -331,63 +482,86 @@ export class ScheduleMaterialisationService {
     patternId: string,
     now: Date = new Date()
   ): Promise<number> {
-    const shifts = await this.shiftRepo.findActiveByPattern(patternId);
-    let cancelled = 0;
-    for (const shift of shifts) {
-      if (NEVER_TOUCH_STATUSES.has(shift.status)) {
-        continue;
-      }
-      if (shift.origin !== 'system_generated') {
-        continue;
-      }
-      if (new Date(shift.starts_at).getTime() <= now.getTime()) {
-        continue;
-      }
-      if (await this.timeEntryRepo.hasTimeEntries(shift.id)) {
-        continue;
-      }
-      await this.shiftRepo.update(shift.id, {
-        status: 'cancelled',
-        reason: 'pattern_ended',
-        cancelled_at: now.toISOString(),
-      });
-      cancelled++;
+    const candidates = (
+      await this.shiftRepo.findActiveByPattern(patternId)
+    ).filter(
+      shift =>
+        !NEVER_TOUCH_STATUSES.has(shift.status) &&
+        shift.origin === 'system_generated' &&
+        new Date(shift.starts_at).getTime() > now.getTime()
+    );
+    if (candidates.length === 0) {
+      return 0;
     }
-    return cancelled;
-  }
-
-  private async reconcileOrphan(
-    pattern: PatternForMaterialisation,
-    shift: Shift,
-    now: Date,
-    result: MaterialiseResult
-  ): Promise<void> {
-    if (NEVER_TOUCH_STATUSES.has(shift.status)) {
-      return; // completed/cancelled — never touched, full stop
+    const paidIds = await this.timeEntryRepo.shiftIdsWithTimeEntries(
+      candidates.map(shift => shift.id)
+    );
+    const ids = candidates
+      .filter(shift => !paidIds.has(shift.id))
+      .map(shift => shift.id);
+    if (ids.length === 0) {
+      return 0;
     }
-
-    if (await this.timeEntryRepo.hasTimeEntries(shift.id)) {
-      return; // past and paid-for reality is immutable — see time_entries (017)
-    }
-
-    const touched = await this.isManuallyTouched(shift);
-    const isFuture = new Date(shift.starts_at).getTime() > now.getTime();
-
-    if (!touched && isFuture) {
-      await this.shiftRepo.delete(shift.id);
-      result.deleted++;
-      return;
-    }
-
-    await this.shiftRepo.update(shift.id, {
+    await this.shiftRepo.updateMany(ids, {
       status: 'cancelled',
-      reason: 'pattern_changed',
+      reason: 'pattern_ended',
       cancelled_at: now.toISOString(),
     });
-    result.cancelled++;
+    return ids.length;
+  }
 
-    if (touched) {
-      await this.raiseConflictOnce(pattern, shift, shift.local_date);
+  /**
+   * Rows an amended pattern no longer produces: one bulk delete for the
+   * future+untouched set, one bulk update for the rest (their cancel patch is
+   * identical by construction, so it collapses into a single statement).
+   */
+  private async reconcileOrphans(
+    orphans: Shift[],
+    isTouched: {
+      paid: (shift: Shift) => boolean;
+      manually: (shift: Shift) => boolean;
+    },
+    now: Date,
+    result: MaterialiseResult,
+    conflicts: PendingConflict[]
+  ): Promise<void> {
+    const toDelete: string[] = [];
+    const toCancel: Shift[] = [];
+    for (const shift of orphans) {
+      if (isTouched.paid(shift)) {
+        continue; // past and paid-for reality is immutable — see time_entries (017)
+      }
+      const isFuture = new Date(shift.starts_at).getTime() > now.getTime();
+      if (!isTouched.manually(shift) && isFuture) {
+        toDelete.push(shift.id);
+        continue;
+      }
+      toCancel.push(shift);
+    }
+
+    if (toDelete.length > 0) {
+      await this.shiftRepo.deleteMany(toDelete);
+      result.deleted += toDelete.length;
+    }
+
+    if (toCancel.length === 0) {
+      return;
+    }
+    await this.shiftRepo.updateMany(
+      toCancel.map(shift => shift.id),
+      {
+        status: 'cancelled',
+        reason: 'pattern_changed',
+        cancelled_at: now.toISOString(),
+      }
+    );
+    result.cancelled += toCancel.length;
+
+    for (const shift of toCancel) {
+      if (!isTouched.manually(shift)) {
+        continue;
+      }
+      conflicts.push({ shift, localDate: shift.local_date });
       result.conflicts.push({
         shiftId: shift.id,
         localDate: shift.local_date,
@@ -397,35 +571,65 @@ export class ScheduleMaterialisationService {
   }
 
   /**
-   * Append a `pattern_conflict` day-thread row for this (pattern, shift,
-   * local_date) unless one is already there — see the module header for why
-   * a plain append grows without bound.
+   * Append a `pattern_conflict` day-thread row per (pattern, shift,
+   * local_date) unless one is already there — see the module header for why a
+   * plain append grows without bound. One key read per DISTINCT date and one
+   * insert for the whole run; a run with no conflicts (the normal case) asks
+   * the DB nothing at all.
    */
-  private async raiseConflictOnce(
+  private async raiseConflictsOnce(
     pattern: PatternForMaterialisation,
-    shift: Shift,
-    localDate: string
+    conflicts: PendingConflict[]
   ): Promise<void> {
-    const key = conflictKey(pattern.id, shift.id, localDate);
-    const existingKeys = await this.eventRepo.listEventKeysForDate(
-      pattern.householdId,
-      localDate,
-      PATTERN_CONFLICT
-    );
-    if (existingKeys.has(key)) {
+    if (conflicts.length === 0) {
       return;
     }
-    await this.eventRepo.insertMany([
-      conflictEvent(pattern, shift, localDate, key),
-    ]);
-  }
+    const dates = [...new Set(conflicts.map(conflict => conflict.localDate))];
+    const keysByDate = new Map<string, Set<string>>();
+    await Promise.all(
+      dates.map(async date => {
+        keysByDate.set(
+          date,
+          await this.eventRepo.listEventKeysForDate(
+            pattern.householdId,
+            date,
+            PATTERN_CONFLICT
+          )
+        );
+      })
+    );
 
-  private async isManuallyTouched(shift: Shift): Promise<boolean> {
-    if (shift.origin !== 'system_generated') {
-      return true;
+    const rows = conflicts.flatMap(({ shift, localDate }) => {
+      const key = conflictKey(pattern.id, shift.id, localDate);
+      if (keysByDate.get(localDate)?.has(key)) {
+        return [];
+      }
+      return [conflictEvent(pattern, shift, localDate, key)];
+    });
+    if (rows.length > 0) {
+      await this.eventRepo.insertMany(rows);
     }
-    return this.shiftRepo.hasChangeRequests(shift.id);
   }
+}
+
+/** The `shifts` row one brand-new occurrence becomes. */
+function newShiftRow(
+  pattern: PatternForMaterialisation,
+  occ: ExpandedOccurrence
+): NewShiftData {
+  return {
+    household_id: pattern.householdId,
+    carer_id: pattern.carerId,
+    starts_at: occ.startsAt,
+    ends_at: occ.endsAt,
+    timezone: pattern.timezone,
+    kind: 'recurring',
+    status: 'confirmed',
+    source_pattern_id: pattern.id,
+    origin: 'system_generated',
+    note: pattern.note,
+    ical_uid: deriveOccurrenceIcalUid(pattern.icalUid, occ.localDate),
+  };
 }
 
 function toChildData(occ: ExpandedOccurrence): NewShiftChildData[] {

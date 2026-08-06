@@ -14,6 +14,7 @@ function createMockQueryChain(
   const chain: any = {
     select: mock(() => chain),
     eq: mock(() => chain),
+    in: mock(() => chain),
     gte: mock(() => chain),
     lt: mock(() => chain),
     order: mock(() => chain),
@@ -171,6 +172,56 @@ describe('TimeEntryRepository.hasTimeEntries', () => {
     );
     const repo = new TimeEntryRepository();
     expect(await repo.hasTimeEntries('shift-1')).toBe(false);
+  });
+});
+
+// The batched form the schedule domain's materialiser asks once per run
+// instead of once per occurrence — see WS-J / scheduleMaterialisationService.
+describe('TimeEntryRepository.shiftIdsWithTimeEntries', () => {
+  it('returns the set of shift ids that have entries, deduped, in one query', async () => {
+    const chain = createMockQueryChain({
+      data: [
+        { shift_id: 'shift-1' },
+        { shift_id: 'shift-1' },
+        { shift_id: 'shift-3' },
+      ],
+      error: null,
+    });
+    mockSupabaseService.from.mockImplementation(() => chain);
+    const repo = new TimeEntryRepository();
+
+    const result = await repo.shiftIdsWithTimeEntries([
+      'shift-1',
+      'shift-2',
+      'shift-3',
+    ]);
+
+    expect([...result].sort()).toEqual(['shift-1', 'shift-3']);
+    expect(chain.in).toHaveBeenCalledWith('shift_id', [
+      'shift-1',
+      'shift-2',
+      'shift-3',
+    ]);
+  });
+
+  it('drops the null shift_id of a shiftless entry rather than poisoning the set', async () => {
+    mockSupabaseService.from.mockImplementation(() =>
+      createMockQueryChain({
+        data: [{ shift_id: null }, { shift_id: 'shift-1' }],
+        error: null,
+      })
+    );
+    const repo = new TimeEntryRepository();
+    expect(await repo.shiftIdsWithTimeEntries(['shift-1'])).toEqual(
+      new Set(['shift-1'])
+    );
+  });
+
+  it('asks the DB nothing for an empty list', async () => {
+    mockSupabaseService.from.mockClear();
+    const repo = new TimeEntryRepository();
+    expect(await repo.shiftIdsWithTimeEntries([])).toEqual(new Set());
+    expect(mockSupabaseService.from).not.toHaveBeenCalled();
   });
 });
 

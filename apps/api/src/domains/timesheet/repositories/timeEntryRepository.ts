@@ -339,10 +339,39 @@ export class TimeEntryRepository extends BaseRepository<TimeEntry> {
   }
 
   /**
+   * Which of `shiftIds` have EVER had a time entry recorded against them —
+   * the "paid-for reality is immutable" probe `scheduleMaterialisationService`
+   * runs ONCE for a whole materialisation run. Asking per shift meant one
+   * hosted-DB round trip per day of the horizon; the `time_entries_shift_idx`
+   * index serves the `IN` form just as well.
+   */
+  async shiftIdsWithTimeEntries(shiftIds: string[]): Promise<Set<string>> {
+    if (shiftIds.length === 0) {
+      return new Set();
+    }
+    const { data, error } = await supabaseService
+      .from(this.table)
+      .select('shift_id')
+      .in('shift_id', shiftIds);
+
+    if (error) {
+      throw new DatabaseError(
+        'Failed to check time entries for shifts',
+        'DATABASE_ERROR',
+        { details: error.message, count: shiftIds.length }
+      );
+    }
+    return new Set(
+      (data ?? [])
+        .map(row => (row as { shift_id: string | null }).shift_id)
+        .filter((id): id is string => id !== null)
+    );
+  }
+
+  /**
    * Whether ANY time entry has ever been recorded against `shiftId` — the
-   * lookup `scheduleMaterialisationService` asks on every occurrence it
-   * considers rewriting, so this must stay cheap (see `time_entries_shift_idx`,
-   * sized for exactly this query).
+   * single-shift form, used by `shiftRepository`'s delete guard (see
+   * `time_entries_shift_idx`, sized for exactly this query).
    */
   async hasTimeEntries(shiftId: string): Promise<boolean> {
     const { count, error } = await supabaseService
