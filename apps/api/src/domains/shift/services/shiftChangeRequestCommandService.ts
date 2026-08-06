@@ -125,8 +125,26 @@ export type CreateChangeRequestResult =
   | { status: 'pending_approval'; approval: CoParentApproval };
 
 export type CreateExtraShiftResult =
-  | { status: 'created'; shift: ShiftWithChildren }
+  | {
+      status: 'created';
+      shift: ShiftWithChildren;
+      /**
+       * True when this call did NOT write the shift — it found one already
+       * matching the window and returned that instead (a double-tap, or an
+       * approval re-drive repairing its own earlier attempt). The wire shape
+       * is identical either way, which is exactly why the flag has to be
+       * explicit: the client cannot otherwise tell "I just booked this" from
+       * "this was already booked", and neither can the push helper.
+       */
+      adopted: boolean;
+    }
   | { status: 'pending_approval'; approval: CoParentApproval };
+
+/** What `insertExtraShift` answers with — see `CreateExtraShiftResult.adopted`. */
+interface InsertedExtraShift {
+  shift: ShiftWithChildren;
+  adopted: boolean;
+}
 
 /** Hours from now until `startsAt` — negative if the shift already started. */
 function hoursUntilStart(startsAt: string): number {
@@ -521,9 +539,15 @@ export class ShiftChangeRequestCommandService {
       return { status: 'pending_approval', approval: gateResult.approval };
     }
 
-    const shift = await this.insertExtraShift(userId, householdId, input);
-    this.notifyExtraShiftProposed(shift);
-    return { status: 'created', shift };
+    const { shift, adopted } = await this.insertExtraShift(
+      userId,
+      householdId,
+      input
+    );
+    // An adopted shift was pushed for by whoever actually created it. Pushing
+    // again is a second "Extra shift proposed" for one shift.
+    if (!adopted) this.notifyExtraShiftProposed(shift);
+    return { status: 'created', shift, adopted };
   }
 
   /**
@@ -572,7 +596,7 @@ export class ShiftChangeRequestCommandService {
     createdBy: string,
     householdId: string,
     input: CreateExtraShiftInput
-  ): Promise<ShiftWithChildren> {
+  ): Promise<InsertedExtraShift> {
     // These are four sequential writes and the shift row commits FIRST, so a
     // throw in any of the other three leaves the shift behind. The approval is
     // then recorded as failed and re-driven, which without this would create a
@@ -587,7 +611,7 @@ export class ShiftChangeRequestCommandService {
       input.ends_at
     );
     if (existing) {
-      return existing;
+      return { shift: existing, adopted: true };
     }
 
     let shift: Shift;
@@ -633,7 +657,7 @@ export class ShiftChangeRequestCommandService {
       // Re-writing them here would double the child rows and post the shift to
       // the thread twice; a winner that crashed BEFORE writing them is repaired
       // by the same approval re-drive that repairs it today.
-      return winner;
+      return { shift: winner, adopted: true };
     }
 
     if (input.child_ids?.length) {
@@ -655,7 +679,10 @@ export class ShiftChangeRequestCommandService {
     ]);
 
     const withChildren = await this.shiftRepo.findByIdWithChildren(shift.id);
-    return withChildren ?? { ...shift, shift_children: [] };
+    return {
+      shift: withChildren ?? { ...shift, shift_children: [] },
+      adopted: false,
+    };
   }
 
   /**
@@ -732,12 +759,14 @@ export class ShiftChangeRequestCommandService {
       approval.household_id,
       input
     );
-    const shift = await this.insertExtraShift(
+    const { shift, adopted } = await this.insertExtraShift(
       requestedBy,
       approval.household_id,
       input
     );
-    this.notifyExtraShiftProposed(shift);
+    // Same dedupe as `createExtraShift`: a re-driven approval that adopts the
+    // shift its own earlier attempt already made must not push a second time.
+    if (!adopted) this.notifyExtraShiftProposed(shift);
     return shift;
   }
 

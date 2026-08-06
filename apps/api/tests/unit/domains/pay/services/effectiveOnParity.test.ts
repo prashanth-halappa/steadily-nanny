@@ -58,6 +58,7 @@ function createFakeQuery(rows: FakeRow[], error: unknown = null): any {
   const lteFilters: [string, string][] = [];
   const orderKeys: [string, boolean][] = [];
   let rowLimit: number | null = null;
+  const orGroups: { column: string; op: string; value?: string }[][] = [];
 
   const compare = (left: string, right: string): number => {
     const leftMs = Date.parse(left);
@@ -73,7 +74,14 @@ function createFakeQuery(rows: FakeRow[], error: unknown = null): any {
     let out = rows.filter(
       row =>
         eqFilters.every(([key, value]) => row[key] === value) &&
-        lteFilters.every(([key, value]) => String(row[key]) <= value)
+        lteFilters.every(([key, value]) => String(row[key]) <= value) &&
+        orGroups.every(branches =>
+          branches.some(({ column, op, value }) =>
+            op === 'is'
+              ? (row[column] ?? null) === null
+              : row[column] != null && String(row[column]) >= String(value)
+          )
+        )
     );
     for (const [key, ascending] of [...orderKeys].reverse()) {
       out = [...out].sort(
@@ -100,6 +108,16 @@ function createFakeQuery(rows: FakeRow[], error: unknown = null): any {
     }),
     limit: mock((count: number) => {
       rowLimit = count;
+      return chain;
+    }),
+    // 065's exclusion: `.or('valid_to.is.null,valid_to.gte.<date>')`.
+    or: mock((expression: string) => {
+      orGroups.push(
+        expression.split(',').map(branch => {
+          const [column = '', op = '', value] = branch.split('.');
+          return { column, op, value };
+        })
+      );
       return chain;
     }),
     maybeSingle: mock(async () => {
@@ -140,6 +158,60 @@ interface Vector {
 }
 
 const VECTORS: Vector[] = [
+  // --- 065: an arrangement ended by member removal ---
+  {
+    name: '065: an arrangement that ended is not in force after its valid_to',
+    rows: [
+      row({ id: 'pa-ended', valid_from: '2026-01-01', valid_to: '2026-06-30' }),
+    ],
+    date: '2026-08-04',
+    expected: null,
+  },
+  {
+    // THE load-bearing case: a March week must keep pricing at March's rate
+    // after a July removal, on BOTH sides — the engine prices historical
+    // weeks from one unfiltered fetch of the whole history.
+    name: '065: an ended arrangement still prices a date before the end',
+    rows: [
+      row({ id: 'pa-ended', valid_from: '2026-01-01', valid_to: '2026-06-30' }),
+    ],
+    date: '2026-03-15',
+    expected: 'pa-ended',
+  },
+  {
+    name: '065: valid_to is inclusive — the end date itself still prices',
+    rows: [
+      row({ id: 'pa-ended', valid_from: '2026-01-01', valid_to: '2026-06-30' }),
+    ],
+    date: '2026-06-30',
+    expected: 'pa-ended',
+  },
+  {
+    name: '065: new terms after a rejoin supersede the ended ones',
+    rows: [
+      row({ id: 'pa-ended', valid_from: '2026-01-01', valid_to: '2026-06-30' }),
+      row({
+        id: 'pa-rejoin',
+        valid_from: '2026-09-01',
+        created_at: '2026-09-01T09:00:00.000Z',
+      }),
+    ],
+    date: '2026-09-15',
+    expected: 'pa-rejoin',
+  },
+  {
+    name: '065: between the end and the new terms, nothing is in force',
+    rows: [
+      row({ id: 'pa-ended', valid_from: '2026-01-01', valid_to: '2026-06-30' }),
+      row({
+        id: 'pa-rejoin',
+        valid_from: '2026-09-01',
+        created_at: '2026-09-01T09:00:00.000Z',
+      }),
+    ],
+    date: '2026-08-04',
+    expected: null,
+  },
   {
     name: 'no arrangements at all resolves to nothing',
     rows: [],

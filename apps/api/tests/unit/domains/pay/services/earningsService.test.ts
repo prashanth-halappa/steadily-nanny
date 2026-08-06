@@ -48,6 +48,8 @@ function arrangement(over: Partial<PayArrangement> = {}): PayArrangement {
     mileage_rate_per_mile_minor: null,
     cancellation_paid_within_hours: null,
     valid_from: '2026-01-01',
+    // 065: null = these terms are still live (set only on member removal).
+    valid_to: null,
     carer_display_name: 'Nia Rowe',
     note: null,
     created_by: uuid(92),

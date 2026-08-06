@@ -210,8 +210,11 @@ export function ClockOutSheet({
           timeZone
         )
       : null;
+  const isZeroLength = Boolean(
+    parsedInTime && parsedOutTime && parsedInTime === parsedOutTime
+  );
   const instants =
-    rolledInstants && parsedInTime === parsedOutTime
+    rolledInstants && isZeroLength
       ? { ...rolledInstants, ends_at: rolledInstants.starts_at }
       : rolledInstants;
 
@@ -239,7 +242,7 @@ export function ClockOutSheet({
   };
 
   const handleSubmit = () => {
-    if (!timesAreValid) return;
+    if (!timesAreValid || isZeroLength) return;
     onSubmit({
       breakMinutes,
       note: note.trim(),
@@ -311,6 +314,15 @@ export function ClockOutSheet({
         {clockInAt && !timesAreValid ? (
           <Small testID="clockout-time-error" className="text-destructive">
             {t('invalidTime')}
+          </Small>
+        ) : null}
+
+        {clockInAt && timesAreValid && isZeroLength ? (
+          <Small
+            testID="clockout-zero-length-error"
+            className="text-destructive"
+          >
+            {t('zeroLengthFinishError')}
           </Small>
         ) : null}
 
@@ -401,7 +413,7 @@ export function ClockOutSheet({
           testID="clockout-confirm"
           label={mode === 'edit' ? t('saveCorrection') : t('clockOut')}
           isLoading={isSubmitting}
-          disabled={!timesAreValid}
+          disabled={!timesAreValid || isZeroLength}
           onPress={handleSubmit}
         />
       </View>

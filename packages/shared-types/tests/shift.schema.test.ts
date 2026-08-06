@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'bun:test';
+import { z } from 'zod';
 import {
+  CreatedExtraShiftResultSchema,
+  CreateExtraShiftResultSchema,
   CreateShiftChangeRequestSchema,
   CreateShiftChildSchema,
   CreateShiftSchema,
@@ -390,6 +393,96 @@ describe('shift.schema', () => {
         created_at: NOW,
       });
       expect(result.success).toBe(false);
+    });
+  });
+
+  // POST /households/:id/shifts/extra used to have its response union defined
+  // ONLY in the mobile client, which meant the server could change the shape
+  // and nothing in this package would notice.
+  describe('CreateExtraShiftResultSchema', () => {
+    const createdShift = {
+      id: VALID_UUID,
+      household_id: VALID_UUID,
+      carer_id: VALID_UUID,
+      starts_at: NOW,
+      ends_at: LATER,
+      timezone: 'Europe/London',
+      local_date: '2026-08-01',
+      kind: 'extra',
+      status: 'pending',
+      source_pattern_id: null,
+      origin: 'parent_proposed',
+      is_short_notice: false,
+      note: null,
+      reason: null,
+      cancelled_at: null,
+      cancelled_by: null,
+      cancellation_paid: false,
+      cancellation_message: null,
+      ical_uid: 'extra-1@steadilynanny.app',
+      sequence: 0,
+      created_by: VALID_UUID,
+      created_at: NOW,
+      updated_at: NOW,
+    };
+
+    it('parses the created arm carrying adopted', () => {
+      const result = CreateExtraShiftResultSchema.safeParse({
+        status: 'created',
+        shift: createdShift,
+        adopted: true,
+      });
+      expect(result.success).toBe(true);
+      if (result.success && result.data.status === 'created') {
+        expect(result.data.adopted).toBe(true);
+      }
+    });
+
+    // A server that predates `adopted` still answers without it. Defaulting to
+    // false keeps a mid-rollout client parsing, and false is the safe reading:
+    // treat it as a real create rather than silently swallowing a toast.
+    it('defaults adopted to false when the response predates the field', () => {
+      const result = CreateExtraShiftResultSchema.safeParse({
+        status: 'created',
+        shift: createdShift,
+      });
+      expect(result.success).toBe(true);
+      if (result.success && result.data.status === 'created') {
+        expect(result.data.adopted).toBe(false);
+      }
+    });
+
+    it('parses the pending_approval arm', () => {
+      const result = CreateExtraShiftResultSchema.safeParse({
+        status: 'pending_approval',
+        approval: { id: 'approval-1' },
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it('rejects an unknown status', () => {
+      expect(
+        CreateExtraShiftResultSchema.safeParse({
+          status: 'created_maybe',
+          shift: createdShift,
+        }).success
+      ).toBe(false);
+    });
+
+    // The mobile client extends this arm with `warnings` — `ClashWarningSchema`
+    // lives in me.schema, which imports THIS module, so pulling it in here
+    // would close an import cycle (verified: it TDZ-throws either way round).
+    it('exposes the created arm on its own so a client can add warnings', () => {
+      const withWarnings = CreatedExtraShiftResultSchema.extend({
+        warnings: z.array(z.object({ kind: z.string() })).default([]),
+      });
+      const result = withWarnings.safeParse({
+        status: 'created',
+        shift: createdShift,
+        adopted: false,
+        warnings: [{ kind: 'busy_overlap' }],
+      });
+      expect(result.success).toBe(true);
     });
   });
 });

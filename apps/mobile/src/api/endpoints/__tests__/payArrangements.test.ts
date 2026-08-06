@@ -28,6 +28,7 @@ const validArrangement = {
   mileage_rate_per_mile_minor: null,
   cancellation_paid_within_hours: 24,
   valid_from: '2026-08-01',
+  valid_to: null,
   carer_display_name: 'Ines Ferreira',
   note: null,
   created_by: '55555555-5555-4555-8555-555555555555',
@@ -101,6 +102,7 @@ describe('payArrangementApi.create', () => {
     currency: 'GBP',
     overtime_multiplier: 1.5,
     valid_from: '2026-08-04',
+    valid_to: null,
   };
 
   it('POSTs the validated body and returns the created arrangement', async () => {

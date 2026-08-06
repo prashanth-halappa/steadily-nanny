@@ -217,6 +217,10 @@ const updateMock = mock((_id: string, input: unknown) =>
 const listMembersMock = mock<() => Promise<unknown[]>>(() =>
   Promise.resolve([])
 );
+const updateMemberMock = mock(
+  (_householdId: string, memberId: string, input: unknown) =>
+    Promise.resolve({ id: memberId, ...(input as object) })
+);
 const childrenListMock = mock(() =>
   Promise.resolve([{ id: 'child-1', name: 'Ada', age: 4 }])
 );
@@ -248,6 +252,7 @@ mock.module('@/src/api/endpoints/household', () => ({
     list: listMock,
     update: updateMock,
     listMembers: listMembersMock,
+    updateMember: updateMemberMock,
   },
 }));
 mock.module('@/src/api/endpoints/children', () => ({
@@ -273,10 +278,15 @@ beforeEach(() => {
   listMock.mockReset();
   updateMock.mockReset();
   listMembersMock.mockReset();
+  updateMemberMock.mockReset();
   childrenListMock.mockReset();
   membershipsListMock.mockReset();
   payCurrentMock.mockReset();
   listMembersMock.mockImplementation(() => Promise.resolve([]));
+  updateMemberMock.mockImplementation(
+    (_householdId: string, memberId: string, input: unknown) =>
+      Promise.resolve({ id: memberId, ...(input as object) })
+  );
   payCurrentMock.mockImplementation(() => Promise.resolve(null));
   listMock.mockImplementation(() => Promise.resolve([baseHousehold]));
   updateMock.mockImplementation((_id: string, input: unknown) =>
@@ -516,6 +526,144 @@ describe('ManageHouseholdScreen', () => {
       expect(
         queryByTestId(`pay-setup-prompt-${activeNannyMember.user_id}`)
       ).toBeNull();
+    });
+  });
+
+  // D3: remove member.
+  describe('member removal', () => {
+    const ownerMember = {
+      id: 'member-owner',
+      household_id: HOUSEHOLD_ID,
+      user_id: PARENT_USER_ID,
+      role: 'owner',
+      can_edit: true,
+      status: 'active',
+      display_name_override: null,
+      colour: null,
+      joined_at: now,
+      created_at: now,
+      updated_at: now,
+    };
+    const removableNanny = {
+      id: 'member-nanny',
+      household_id: HOUSEHOLD_ID,
+      user_id: NANNY_USER_ID,
+      role: 'nanny',
+      can_edit: false,
+      status: 'active',
+      display_name_override: 'Priya',
+      colour: null,
+      joined_at: now,
+      created_at: now,
+      updated_at: now,
+    };
+    const COPARENT_USER_ID = 'coparent-user-1';
+    const coparentMember = {
+      id: 'member-coparent',
+      household_id: HOUSEHOLD_ID,
+      user_id: COPARENT_USER_ID,
+      role: 'parent',
+      can_edit: true,
+      status: 'active',
+      display_name_override: null,
+      colour: null,
+      joined_at: now,
+      created_at: now,
+      updated_at: now,
+    };
+
+    it('shows Remove on a nanny card but hides it on the owner card, for the owner viewer', async () => {
+      listMembersMock.mockImplementation(() =>
+        Promise.resolve([ownerMember, removableNanny])
+      );
+
+      const { getByTestId, queryByTestId } = renderWithProviders(
+        <ManageHouseholdScreen />
+      );
+
+      await waitFor(() =>
+        expect(getByTestId('household-name-input')).toBeTruthy()
+      );
+      expect(
+        getByTestId(`household-member-remove-${removableNanny.id}`)
+      ).toBeTruthy();
+      expect(
+        queryByTestId(`household-member-remove-${ownerMember.id}`)
+      ).toBeNull();
+    });
+
+    it("hides Remove on the viewer's own card even for a non-owner parent", async () => {
+      useAuthStore.setState({
+        session: { user: { id: COPARENT_USER_ID } } as unknown as never,
+        isInitialized: true,
+      } as never);
+      membershipsListMock.mockImplementation(() =>
+        Promise.resolve([coparentMember])
+      );
+      listMembersMock.mockImplementation(() =>
+        Promise.resolve([ownerMember, removableNanny, coparentMember])
+      );
+
+      const { getByTestId, queryByTestId } = renderWithProviders(
+        <ManageHouseholdScreen />
+      );
+
+      await waitFor(() =>
+        expect(getByTestId('household-name-input')).toBeTruthy()
+      );
+      expect(
+        getByTestId(`household-member-remove-${removableNanny.id}`)
+      ).toBeTruthy();
+      expect(
+        queryByTestId(`household-member-remove-${coparentMember.id}`)
+      ).toBeNull();
+      expect(
+        queryByTestId(`household-member-remove-${ownerMember.id}`)
+      ).toBeNull();
+    });
+
+    it('presses Remove, confirms, and calls useRemoveMember through to householdApi.updateMember', async () => {
+      listMembersMock.mockImplementation(() =>
+        Promise.resolve([ownerMember, removableNanny])
+      );
+
+      const { getByTestId } = renderWithProviders(<ManageHouseholdScreen />);
+
+      await waitFor(() =>
+        expect(getByTestId('household-name-input')).toBeTruthy()
+      );
+
+      fireEvent.press(
+        getByTestId(`household-member-remove-${removableNanny.id}`)
+      );
+      fireEvent.press(getByTestId('household-member-remove-confirm'));
+
+      await waitFor(() =>
+        expect(updateMemberMock).toHaveBeenCalledWith(
+          HOUSEHOLD_ID,
+          removableNanny.id,
+          { status: 'removed' }
+        )
+      );
+    });
+
+    it('never calls the mutation if the confirm dialog is cancelled', async () => {
+      listMembersMock.mockImplementation(() =>
+        Promise.resolve([ownerMember, removableNanny])
+      );
+
+      const { getByTestId } = renderWithProviders(<ManageHouseholdScreen />);
+
+      await waitFor(() =>
+        expect(getByTestId('household-name-input')).toBeTruthy()
+      );
+
+      fireEvent.press(
+        getByTestId(`household-member-remove-${removableNanny.id}`)
+      );
+      fireEvent.press(getByTestId('household-member-remove-cancel'));
+
+      expect(updateMemberMock).not.toHaveBeenCalled();
     });
   });
 });

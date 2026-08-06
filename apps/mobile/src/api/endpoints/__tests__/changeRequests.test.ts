@@ -117,6 +117,68 @@ describe('changeRequestApi', () => {
     expect(result.status).toBe('created');
     if (result.status === 'created') {
       expect(result.shift.kind).toBe('extra');
+      // A response with no `adopted` (an older server) reads as a real create.
+      expect(result.adopted).toBe(false);
+      expect(result.warnings).toEqual([]);
+    }
+  });
+
+  // The server returns the same envelope whether it created the shift or
+  // adopted one already in the window; `adopted` is the only thing that says
+  // which, and it has to survive the parse for the caller to act on it.
+  it('preserves adopted: true on a created response the server adopted', async () => {
+    postMock.mockImplementationOnce(() =>
+      Promise.resolve({
+        data: {
+          data: {
+            status: 'created',
+            adopted: true,
+            warnings: [{ kind: 'busy_overlap' }],
+            shift: {
+              id: '44444444-4444-4444-8444-444444444444',
+              household_id: '55555555-5555-4555-8555-555555555555',
+              carer_id: null,
+              starts_at: '2026-08-05T09:00:00.000Z',
+              ends_at: '2026-08-05T17:00:00.000Z',
+              timezone: 'Europe/London',
+              local_date: '2026-08-05',
+              kind: 'extra',
+              status: 'pending',
+              source_pattern_id: null,
+              origin: 'parent_proposed',
+              is_short_notice: false,
+              note: null,
+              reason: null,
+              cancelled_at: null,
+              cancelled_by: null,
+              cancellation_paid: false,
+              cancellation_message: null,
+              ical_uid: 'extra-1@steadilynanny.app',
+              sequence: 0,
+              created_by: '33333333-3333-4333-8333-333333333333',
+              created_at: '2026-08-01T10:00:00Z',
+              updated_at: '2026-08-01T10:00:00Z',
+              shift_children: [],
+            },
+          },
+        },
+      })
+    );
+
+    const { changeRequestApi } = await import('../changeRequests');
+    const result = await changeRequestApi.createExtra(
+      '55555555-5555-4555-8555-555555555555',
+      {
+        starts_at: '2026-08-05T09:00:00.000Z',
+        ends_at: '2026-08-05T17:00:00.000Z',
+        timezone: 'Europe/London',
+      }
+    );
+
+    expect(result.status).toBe('created');
+    if (result.status === 'created') {
+      expect(result.adopted).toBe(true);
+      expect(result.warnings).toEqual([{ kind: 'busy_overlap' }]);
     }
   });
 

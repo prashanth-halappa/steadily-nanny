@@ -22,6 +22,7 @@
   "startLabel": "Started",
   "finishLabel": "Finished",
   "invalidTime": "Enter a time as HH:MM.",
+  "zeroLengthFinishError": "Finish time must be after start time.",
   "editEntryTitle": "Fix this entry",
   "editEntryHint": "Change the times or the break — your household sees the corrected hours.",
   "saveCorrection": "Save changes",

@@ -166,6 +166,8 @@ function arrangementFor(
     mileage_rate_per_mile_minor: null,
     cancellation_paid_within_hours: 24,
     valid_from: '2026-01-01',
+    // 065: null = these terms are still live (set only on member removal).
+    valid_to: null,
     carer_display_name: 'Nanny',
     note: null,
     created_by: null,

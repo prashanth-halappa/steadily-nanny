@@ -197,6 +197,29 @@ describe('ClockOutSheet', () => {
     });
   });
 
+  describe('zero-length clock-out (Daylight audit — block at submit, not just at the server)', () => {
+    it('blocks the submit and shows an inline message when the finish time equals the start time', () => {
+      const { getByTestId, onSubmit } = renderSheet();
+
+      fireEvent.changeText(getByTestId('clockout-finish-time'), '08:15');
+      fireEvent.press(getByTestId('clockout-confirm'));
+
+      expect(onSubmit).not.toHaveBeenCalled();
+      expect(getByTestId('clockout-zero-length-error').props.children).toBe(
+        'zeroLengthFinishError'
+      );
+    });
+
+    it('still submits the ordinary overnight case (finish before start by wall clock, rolls to next day)', () => {
+      const { getByTestId, onSubmit } = renderSheet();
+
+      fireEvent.changeText(getByTestId('clockout-finish-time'), '02:15');
+      fireEvent.press(getByTestId('clockout-confirm'));
+
+      expect(onSubmit).toHaveBeenCalled();
+    });
+  });
+
   describe('summary block wiring (source inspection — proves zone-awareness independent of the key-echo i18n mock)', () => {
     let sheetSource: string;
 

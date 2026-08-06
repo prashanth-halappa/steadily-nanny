@@ -11,6 +11,8 @@ let create: any;
 let update: any;
 let createInvite: any;
 let redeemInvite: any;
+let removeMember: any;
+let revokeInvite: any;
 
 beforeAll(async () => {
   listForUser = mock(async () => [{ id: 'h1' }]);
@@ -25,6 +27,8 @@ beforeAll(async () => {
   update = mock(async () => ({ id: 'h1', name: 'Updated' }));
   createInvite = mock(async () => ({ id: 'i1', code: 'ABC-234' }));
   redeemInvite = mock(async () => ({ id: 'm-new', role: 'nanny' }));
+  removeMember = mock(async () => ({ id: 'm-target', status: 'removed' }));
+  revokeInvite = mock(async () => ({ id: 'i1', status: 'revoked' }));
 
   mock.module(
     '../../../../../src/domains/household/services/householdQueryService',
@@ -40,7 +44,14 @@ beforeAll(async () => {
   mock.module(
     '../../../../../src/domains/household/services/householdCommandService',
     () => ({
-      householdCommandService: { create, update, createInvite, redeemInvite },
+      householdCommandService: {
+        create,
+        update,
+        createInvite,
+        redeemInvite,
+        removeMember,
+        revokeInvite,
+      },
     })
   );
 
@@ -74,6 +85,8 @@ beforeEach(() => {
     update,
     createInvite,
     redeemInvite,
+    removeMember,
+    revokeInvite,
   ]) {
     m.mockClear?.();
   }
@@ -175,6 +188,73 @@ describe('HouseholdController', () => {
       children_first_names: ['Maya'],
       role: 'nanny',
     });
+  });
+
+  it("updateMember removes the member when the body says status: 'removed'", async () => {
+    const res = mockRes();
+    await HouseholdController.updateMember(
+      {
+        user: { id: 'u1' },
+        params: { householdId: 'h1', memberId: 'm-target' },
+        body: { status: 'removed' },
+      } as any,
+      res,
+      mock()
+    );
+    expect(removeMember).toHaveBeenCalledWith('u1', 'h1', 'm-target');
+    expect(res.body.data).toEqual({
+      household_member: { id: 'm-target', status: 'removed' },
+    });
+  });
+
+  it("updateMember forwards a 400 for status: 'active' without touching the service", async () => {
+    // Reactivation is redeem-only: a parent flipping a member back to active
+    // would hand out household access without a single-use code.
+    const res = mockRes();
+    const next = mock();
+    await HouseholdController.updateMember(
+      {
+        user: { id: 'u1' },
+        params: { householdId: 'h1', memberId: 'm-target' },
+        body: { status: 'active' },
+      } as any,
+      res,
+      next
+    );
+    expect(removeMember).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalled();
+    expect(next.mock.calls[0]?.[0]).toMatchObject({ statusCode: 400 });
+  });
+
+  it('updateMember forwards a 400 for a body with no status at all', async () => {
+    const res = mockRes();
+    const next = mock();
+    await HouseholdController.updateMember(
+      {
+        user: { id: 'u1' },
+        params: { householdId: 'h1', memberId: 'm-target' },
+        body: { colour: '#fff' },
+      } as any,
+      res,
+      next
+    );
+    expect(removeMember).not.toHaveBeenCalled();
+    expect(next.mock.calls[0]?.[0]).toMatchObject({ statusCode: 400 });
+  });
+
+  it('updateInvite revokes the invite', async () => {
+    const res = mockRes();
+    await HouseholdController.updateInvite(
+      {
+        user: { id: 'u1' },
+        params: { householdId: 'h1', inviteId: 'i1' },
+        body: { status: 'revoked' },
+      } as any,
+      res,
+      mock()
+    );
+    expect(revokeInvite).toHaveBeenCalledWith('u1', 'h1', 'i1');
+    expect(res.body.data).toEqual({ invite: { id: 'i1', status: 'revoked' } });
   });
 
   it('forwards service errors to next()', async () => {

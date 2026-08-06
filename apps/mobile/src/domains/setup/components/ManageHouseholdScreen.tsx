@@ -27,16 +27,26 @@
  * authored in, so nothing already recorded is reinterpreted), but "which
  * week is 'this week'" for any NEW schedule or the Hours screen's default
  * view changes the moment this saves. The copy says exactly that, not more.
+ *
+ * D3: member removal reuses the same `AlertDialog` confirm pattern for its
+ * own destructive action (unlike delete-account's `BottomSheetBase` — there
+ * is no text input here, so no keyboard to avoid). The Remove action is
+ * gated per-row rather than by a separate role check: this whole screen is
+ * already parent-only, so it only has to hide on the owner's own row (the
+ * un-removable last-parent) and on the viewer's own row (removing yourself
+ * is a different feature — "leave household" — not this PATCH).
  */
 
 import type {
   HouseholdApprovalMode,
   HouseholdApprovalScope,
+  HouseholdMember,
   UpdateHouseholdInput,
 } from '@steadily-nanny/shared-types/schemas/household.schema';
 import {
   HOUSEHOLD_APPROVAL_MODES,
   HOUSEHOLD_APPROVAL_SCOPES,
+  HOUSEHOLD_ROLES,
 } from '@steadily-nanny/shared-types/schemas/household.schema';
 import { useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
@@ -56,6 +66,7 @@ import {
   AlertDialogTitle,
 } from '@/src/components/ui/alert-dialog';
 import { BackButton } from '@/src/components/ui/back-button';
+import { buttonVariants } from '@/src/components/ui/button';
 import { EmptyState } from '@/src/components/ui/empty-state';
 import { FieldLabel } from '@/src/components/ui/field-label';
 import { Input } from '@/src/components/ui/input';
@@ -66,11 +77,13 @@ import { PaySetupPromptCard } from '@/src/domains/pay/components/PaySetupPromptC
 import { resolveCarerName } from '@/src/domains/schedule/utils/memberDisplayName';
 import { isParentEditorRole } from '@/src/domains/setup/types';
 import { findTimezoneOption } from '@/src/domains/setup/utils/timezones';
+import { useRemoveMember } from '@/src/hooks/mutations/useRemoveMember';
 import { useUpdateHousehold } from '@/src/hooks/mutations/useUpdateHousehold';
 import { useHouseholdMembers } from '@/src/hooks/queries/useHouseholdMembers';
 import { useHouseholds } from '@/src/hooks/queries/useHouseholds';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 import { showSuccessToast } from '@/src/lib/toast';
+import { useAuthStore } from '@/src/store/auth';
 import { SetupScreenShell } from './SetupScreenShell';
 import { TimezonePickerSheet } from './TimezonePickerSheet';
 
@@ -103,6 +116,7 @@ export function ManageHouseholdScreen() {
   const onboarding = useIsOnboarded();
   const households = useHouseholds();
   const updateHousehold = useUpdateHousehold();
+  const currentUserId = useAuthStore(s => s.session?.user?.id);
 
   const household =
     households.data?.find(h => h.id === onboarding.householdId) ?? null;
@@ -114,6 +128,11 @@ export function ManageHouseholdScreen() {
   const members = useHouseholdMembers(household?.id ?? null);
   const activeNannies = (members.data ?? []).filter(
     m => m.role === 'nanny' && m.status === 'active'
+  );
+  const activeMembers = (members.data ?? []).filter(m => m.status === 'active');
+  const removeMember = useRemoveMember(household?.id ?? '');
+  const [memberToRemove, setMemberToRemove] = useState<HouseholdMember | null>(
+    null
   );
 
   const [name, setName] = useState('');
@@ -264,6 +283,29 @@ export function ManageHouseholdScreen() {
     } catch {
       // useUpdateHousehold's onError already surfaces a toast.
     }
+  };
+
+  const canRemoveMember = (member: HouseholdMember): boolean =>
+    member.role !== HOUSEHOLD_ROLES.OWNER && member.user_id !== currentUserId;
+
+  // Captures the display name BEFORE clearing `memberToRemove` and firing the
+  // mutation: once removal succeeds the members query refetches without that
+  // row, so there is nothing left to read the name from at that point.
+  const handleConfirmRemove = () => {
+    if (!memberToRemove) return;
+    const memberId = memberToRemove.id;
+    const name = resolveCarerName(
+      memberToRemove,
+      t(`settings:role.${memberToRemove.role}`)
+    );
+    setMemberToRemove(null);
+    removeMember.mutate(memberId, {
+      onSuccess: () => {
+        showSuccessToast(
+          t('householdSettings.removeMemberSuccessToast', { name })
+        );
+      },
+    });
   };
 
   const selectedTimezoneLabel = findTimezoneOption(timezone)?.label ?? timezone;
@@ -431,6 +473,86 @@ export function ManageHouseholdScreen() {
           keyboardType="number-pad"
         />
       </View>
+
+      <View className="gap-2" testID="household-members-section">
+        <FieldLabel>{t('householdSettings.membersSectionTitle')}</FieldLabel>
+        <View className="gap-2">
+          {activeMembers.map(member => (
+            <View
+              key={member.id}
+              testID={`household-member-row-${member.id}`}
+              className="flex-row items-center justify-between rounded-row border border-border bg-background px-4 py-3"
+            >
+              <View className="flex-1 gap-0.5">
+                <Body>
+                  {resolveCarerName(member, t(`settings:role.${member.role}`))}
+                </Body>
+                <Small className="text-muted-foreground">
+                  {t(`settings:role.${member.role}`)}
+                </Small>
+              </View>
+              {canRemoveMember(member) ? (
+                <AnimatedPressable
+                  testID={`household-member-remove-${member.id}`}
+                  accessibilityLabel={t('householdSettings.removeMemberLabel', {
+                    name: resolveCarerName(
+                      member,
+                      t(`settings:role.${member.role}`)
+                    ),
+                  })}
+                  onPress={() => setMemberToRemove(member)}
+                >
+                  <Small className="text-destructive">
+                    {t('householdSettings.removeMemberButton')}
+                  </Small>
+                </AnimatedPressable>
+              ) : null}
+            </View>
+          ))}
+        </View>
+      </View>
+
+      {/* Controlled, no Trigger — opened programmatically from a per-row
+          Remove tap above. No text input here (unlike delete-account), so
+          AlertDialog's lack of keyboard-avoidance never comes into play. */}
+      <AlertDialog
+        open={memberToRemove !== null}
+        onOpenChange={open => {
+          if (!open) setMemberToRemove(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {t('householdSettings.removeMemberConfirmTitle', {
+                name: memberToRemove
+                  ? resolveCarerName(
+                      memberToRemove,
+                      t(`settings:role.${memberToRemove.role}`)
+                    )
+                  : '',
+              })}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('householdSettings.removeMemberConfirmBody')}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel testID="household-member-remove-cancel">
+              <Text>{t('householdSettings.removeMemberConfirmCancel')}</Text>
+            </AlertDialogCancel>
+            <AlertDialogAction
+              testID="household-member-remove-confirm"
+              className={buttonVariants({ variant: 'destructive' })}
+              onPress={handleConfirmRemove}
+            >
+              <Text className="text-destructive-foreground">
+                {t('householdSettings.removeMemberConfirmConfirm')}
+              </Text>
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Controlled, no Trigger — opened programmatically from the shell's
           pinned CTA (`handleCta`) only when the diff includes a timezone

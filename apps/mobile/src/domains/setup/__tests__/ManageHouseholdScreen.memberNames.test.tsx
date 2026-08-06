@@ -12,7 +12,7 @@
  * `ManageHouseholdScreen.test.tsx` keeps rendering the real card.
  */
 import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
-import { waitFor } from '@testing-library/react-native';
+import { waitFor, within } from '@testing-library/react-native';
 import { useAuthStore } from '@/src/store/auth';
 import { renderWithProviders } from '@/src/test-utils';
 
@@ -163,13 +163,18 @@ describe('ManageHouseholdScreen — member names', () => {
       Promise.resolve([nanny('nanny-a', 'Amara'), nanny('nanny-b', 'Bea')])
     );
 
-    const { getByTestId, getByText } = renderWithProviders(
-      <ManageHouseholdScreen />
-    );
+    const { getByTestId } = renderWithProviders(<ManageHouseholdScreen />);
 
     await waitFor(() => expect(getByTestId('pay-setup-prompt-nanny-a')));
-    expect(getByText('Amara')).toBeTruthy();
-    expect(getByText('Bea')).toBeTruthy();
+    // Scoped to the prompt card: the same name now ALSO appears in the D3
+    // members list this screen renders, so an unscoped `getByText` matches
+    // both and throws "multiple elements found".
+    expect(
+      within(getByTestId('pay-setup-prompt-nanny-a')).getByText('Amara')
+    ).toBeTruthy();
+    expect(
+      within(getByTestId('pay-setup-prompt-nanny-b')).getByText('Bea')
+    ).toBeTruthy();
   });
 
   it('still falls back to the role label when there is no name at all', async () => {
@@ -177,9 +182,13 @@ describe('ManageHouseholdScreen — member names', () => {
       Promise.resolve([nanny('nanny-c', null)])
     );
 
-    const { getByText } = renderWithProviders(<ManageHouseholdScreen />);
+    const { getByTestId } = renderWithProviders(<ManageHouseholdScreen />);
 
-    await waitFor(() => expect(getByText('role.nanny')).toBeTruthy());
+    await waitFor(() =>
+      expect(
+        within(getByTestId('pay-setup-prompt-nanny-c')).getByText('role.nanny')
+      ).toBeTruthy()
+    );
   });
 
   it('keeps the household override ahead of the profile name', async () => {
@@ -189,8 +198,12 @@ describe('ManageHouseholdScreen — member names', () => {
       ])
     );
 
-    const { getByText } = renderWithProviders(<ManageHouseholdScreen />);
+    const { getByTestId } = renderWithProviders(<ManageHouseholdScreen />);
 
-    await waitFor(() => expect(getByText('Bea')).toBeTruthy());
+    await waitFor(() =>
+      expect(
+        within(getByTestId('pay-setup-prompt-nanny-d')).getByText('Bea')
+      ).toBeTruthy()
+    );
   });
 });

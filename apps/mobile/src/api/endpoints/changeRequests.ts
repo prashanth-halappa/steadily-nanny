@@ -6,14 +6,15 @@
  */
 import { ClashWarningSchema } from '@steadily-nanny/shared-types/schemas/me.schema';
 import {
+  CreatedExtraShiftResultSchema,
   type CreateShiftChangeRequestInput,
   CreateShiftChangeRequestSchema,
+  PendingApprovalResultSchema,
   type RespondToShiftChangeRequestInput,
   RespondToShiftChangeRequestSchema,
   type ShiftChangeRequest,
   ShiftChangeRequestListResponseSchema,
   ShiftChangeRequestSchema,
-  ShiftSchema,
 } from '@steadily-nanny/shared-types/schemas/shift.schema';
 import { z } from 'zod';
 import { apiClient } from '@/src/api/client';
@@ -29,11 +30,6 @@ export const changeRequestEndpoints = {
     `/v1/households/${householdId}/shifts/extra`,
 } as const;
 
-const PendingApprovalResultSchema = z.object({
-  status: z.literal('pending_approval'),
-  approval: z.record(z.string(), z.unknown()),
-});
-
 const CreateResultSchema = z.discriminatedUnion('status', [
   z.object({
     status: z.literal('pending'),
@@ -42,10 +38,12 @@ const CreateResultSchema = z.discriminatedUnion('status', [
   PendingApprovalResultSchema,
 ]);
 
+// The created arm comes from shared-types (so a server-side shape change
+// breaks a test in this repo rather than a phone at runtime); `warnings` is
+// added here because `ClashWarningSchema` lives in `me.schema`, which imports
+// `shift.schema` — defining it there would close an import cycle.
 const CreateExtraResultSchema = z.discriminatedUnion('status', [
-  z.object({
-    status: z.literal('created'),
-    shift: ShiftSchema,
+  CreatedExtraShiftResultSchema.extend({
     warnings: z.array(ClashWarningSchema).default([]),
   }),
   PendingApprovalResultSchema,

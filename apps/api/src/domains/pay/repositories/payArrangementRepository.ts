@@ -40,6 +40,11 @@ export class PayArrangementRepository extends BaseRepository<PayArrangement> {
    *
    * `date` is a household-LOCAL `YYYY-MM-DD` (see `localDateOf` in
    * `domains/timesheet/utils/weekStart`), never a UTC instant.
+   *
+   * 065 adds one clause: a row is also skipped once `valid_to` is behind the
+   * date. `valid_to` is INCLUSIVE and only ever set by member removal, so a
+   * rejoined carer resolves to null (terms must be re-confirmed) while every
+   * date they actually worked still resolves to the terms of the day.
    */
   async effectiveOn(
     householdId: string,
@@ -52,6 +57,7 @@ export class PayArrangementRepository extends BaseRepository<PayArrangement> {
       .eq('household_id', householdId)
       .eq('carer_id', carerId)
       .lte('valid_from', date)
+      .or(`valid_to.is.null,valid_to.gte.${date}`)
       .order('valid_from', { ascending: false })
       .order('created_at', { ascending: false })
       .limit(1)
@@ -65,6 +71,50 @@ export class PayArrangementRepository extends BaseRepository<PayArrangement> {
       );
     }
     return data as PayArrangement | null;
+  }
+
+  /**
+   * End-date every LIVE arrangement for one carer in one household — the
+   * write side of 065. Called when a member is removed, so a later rejoin has
+   * no live terms and a parent must re-confirm them (docs/11-MONEY.md §10).
+   *
+   * The ONLY update path on this table, and it touches one lifecycle column:
+   * 041's append-only rule is about the money fields (rate, overtime,
+   * guarantees), none of which are writable here or anywhere else.
+   *
+   * `valid_to is null` in the predicate makes this idempotent and keeps an
+   * already-ended window frozen: remove → rejoin → remove again must not drag
+   * the first end date forward over history that has already been priced.
+   * `valid_from <= endOn` skips a future-dated row rather than letting the
+   * `valid_to >= valid_from` CHECK turn a removal into a 500 — v1 never writes
+   * one (041's header), so this is belt-and-braces, not a live case.
+   *
+   * `endOn` is a household-LOCAL `YYYY-MM-DD` and is INCLUSIVE: terms still
+   * price for the whole of the removal day, so a morning already worked is
+   * still paid.
+   */
+  async endForCarer(
+    householdId: string,
+    carerId: string,
+    endOn: string
+  ): Promise<PayArrangement[]> {
+    const { data, error } = await supabaseService
+      .from(this.table)
+      .update({ valid_to: endOn })
+      .eq('household_id', householdId)
+      .eq('carer_id', carerId)
+      .is('valid_to', null)
+      .lte('valid_from', endOn)
+      .select();
+
+    if (error) {
+      throw new DatabaseError(
+        'Failed to end pay arrangements for carer',
+        'DATABASE_ERROR',
+        { details: error.message, householdId, carerId, endOn }
+      );
+    }
+    return (data ?? []) as PayArrangement[];
   }
 
   /**

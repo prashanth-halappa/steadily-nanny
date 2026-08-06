@@ -44,13 +44,33 @@ function makeExpenseRepo(overrides: Record<string, unknown> = {}): any {
   };
 }
 
-function member(role: string, userId: string): Record<string, unknown> {
-  return { id: `m-${userId}`, household_id: 'h1', user_id: userId, role };
+function member(
+  role: string,
+  userId: string,
+  status = 'active'
+): Record<string, unknown> {
+  return {
+    id: `m-${userId}`,
+    household_id: 'h1',
+    user_id: userId,
+    role,
+    status,
+  };
 }
 
-function makeMemberRepo(byUserId: Record<string, unknown>): any {
+/**
+ * Both lookups, behaving like the real repository: the active-only one hides
+ * a `removed` row, the any-status one returns it. A gate still calling
+ * `findActiveMembership` therefore fails the removed-member cases for the
+ * same reason production would.
+ */
+function makeMemberRepo(byUserId: Record<string, any>): any {
   return {
-    findActiveMembership: mock(
+    findActiveMembership: mock(async (_householdId: string, userId: string) => {
+      const row = byUserId[userId];
+      return row && row.status !== 'removed' ? row : null;
+    }),
+    findMembershipAnyStatus: mock(
       async (_householdId: string, userId: string) => byUserId[userId] ?? null
     ),
   };
@@ -65,6 +85,11 @@ const OWNER = member('owner', 'owner-1');
 const NANNY = member('nanny', 'carer-1');
 const OTHER_NANNY = member('nanny', 'carer-2');
 const HELPER = member('helper', 'helper-1');
+const REMOVED_NANNY = member('nanny', 'carer-1', 'removed');
+const REMOVED_OTHER_NANNY = member('nanny', 'carer-2', 'removed');
+const REMOVED_PARENT = member('parent', 'parent-1', 'removed');
+const REMOVED_OWNER = member('owner', 'owner-1', 'removed');
+const REMOVED_HELPER = member('helper', 'helper-1', 'removed');
 
 interface ServiceParts {
   members?: Record<string, unknown>;
@@ -221,5 +246,77 @@ describe('ExpenseQueryService.listApprovedForWeek — read gating', () => {
     await expect(
       svc.listApprovedForWeek('helper-1', 'h1', '2026-08-03', NOW)
     ).rejects.toBeInstanceOf(ExpenseNotFoundError);
+  });
+});
+
+// =============================================================================
+// PAYROLL AUDIT TRAIL — a `removed` member keeps READ access to the money,
+// with the SAME role scoping as an active one. A nanny who has left must
+// still be able to see what she claimed and was owed; the parents who paid
+// keep the household-wide view. Writes stay active-only (the command service
+// is untouched).
+// =============================================================================
+
+describe('ExpenseQueryService — removed members keep READ access', () => {
+  it('a removed nanny still reads her OWN claims', async () => {
+    const svc = service({
+      members: { 'carer-1': REMOVED_NANNY, 'carer-2': OTHER_NANNY },
+    });
+    const rows = await svc.listForWeek('carer-1', 'h1', '2026-08-03', NOW);
+    expect(rows.map((r: any) => r.id)).toEqual(['mine']);
+  });
+
+  it("a removed nanny still cannot reach another carer's claims", async () => {
+    const svc = service({
+      members: { 'carer-2': REMOVED_OTHER_NANNY, 'carer-1': NANNY },
+    });
+    const rows = await svc.listForWeek('carer-2', 'h1', '2026-08-03', NOW);
+    expect(rows.map((r: any) => r.id)).toEqual(['theirs']);
+  });
+
+  it('a removed nanny still reads her own pending and approved claims', async () => {
+    const svc = service({ members: { 'carer-1': REMOVED_NANNY } });
+    expect(
+      (await svc.listPending('carer-1', 'h1')).map((r: any) => r.id)
+    ).toEqual(['p-mine']);
+    expect(
+      (await svc.listApprovedForWeek('carer-1', 'h1', '2026-08-03', NOW)).map(
+        (r: any) => r.id
+      )
+    ).toEqual(['a-mine']);
+  });
+
+  it('a removed parent still reads every carer’s claims — they paid the money', async () => {
+    const svc = service({ members: { 'parent-1': REMOVED_PARENT } });
+    const rows = await svc.listForWeek('parent-1', 'h1', '2026-08-03', NOW);
+    expect(rows.map((r: any) => r.id).sort()).toEqual(['mine', 'theirs']);
+  });
+
+  it('a removed owner keeps the household-wide pending queue', async () => {
+    const svc = service({ members: { 'owner-1': REMOVED_OWNER } });
+    const rows = await svc.listPending('owner-1', 'h1');
+    expect(rows.map((r: any) => r.id).sort()).toEqual(['p-mine', 'p-theirs']);
+  });
+
+  it('a removed HELPER stays denied — no pay surface, active or not', async () => {
+    const svc = service({ members: { 'helper-1': REMOVED_HELPER } });
+    await expect(
+      svc.listForWeek('helper-1', 'h1', '2026-08-03', NOW)
+    ).rejects.toBeInstanceOf(ExpenseNotFoundError);
+  });
+
+  it('the gate uses the any-status lookup, never the active-only one', async () => {
+    const memberRepo = makeMemberRepo({ 'carer-1': REMOVED_NANNY });
+    const svc = new ExpenseQueryService(
+      makeExpenseRepo(),
+      memberRepo,
+      makeHouseholdRepo()
+    );
+    await svc.listForWeek('carer-1', 'h1', '2026-08-03', NOW);
+    expect(memberRepo.findMembershipAnyStatus).toHaveBeenCalledWith(
+      'h1',
+      'carer-1'
+    );
+    expect(memberRepo.findActiveMembership).not.toHaveBeenCalled();
   });
 });

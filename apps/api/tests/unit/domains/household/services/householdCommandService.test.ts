@@ -1,10 +1,15 @@
 import { describe, expect, it, mock } from 'bun:test';
 import {
   AlreadyMemberError,
+  CannotRemoveOwnerError,
+  CannotRemoveSelfError,
   InviteAlreadyAcceptedError,
   InviteExpiredError,
   InviteNotFoundError,
+  InviteNotPendingError,
   InviteRevokedError,
+  MemberHasRunningEntryError,
+  MemberNotFoundError,
   NotAHouseholdParentError,
 } from '../../../../../src/domains/household/errors/householdErrors';
 import { HouseholdCommandService } from '../../../../../src/domains/household/services/householdCommandService';
@@ -81,6 +86,7 @@ function makeHouseholdRepo(overrides: Record<string, unknown> = {}): any {
       ...data,
     })),
     delete: mock(async () => {}),
+    findById: mock(async () => household),
     findByIds: mock(async () => [household]),
     listActiveChildFirstNames: mock(async () => []),
     ...overrides,
@@ -112,13 +118,59 @@ function makeMemberRepo(overrides: Record<string, unknown> = {}): any {
     })),
     findActiveMembership: mock(async () => null),
     findMembershipAnyStatus: mock(async () => null),
+    findById: mock(async () => null),
+    removeMembership: mock(async (id: string) => ({
+      ...membershipFor('nanny'),
+      id,
+      status: 'removed',
+    })),
+    reactivateMembership: mock(async (id: string, role: string) => ({
+      ...membershipFor('nanny'),
+      id,
+      role,
+      can_edit: false,
+      status: 'active',
+    })),
     ...overrides,
   };
 }
 
+/** The removal target: a nanny in h1, distinct from the caller. */
+function targetMember(
+  overrides: Partial<HouseholdMember> = {}
+): HouseholdMember {
+  return {
+    ...membershipFor('nanny'),
+    id: 'm-target',
+    user_id: 'u-nanny',
+    ...overrides,
+  };
+}
+
+function makeTimeEntries(overrides: Record<string, unknown> = {}): any {
+  return {
+    findRunningInHousehold: mock(async () => null),
+    ...overrides,
+  };
+}
+
+function makePayArrangements(overrides: Record<string, unknown> = {}): any {
+  return {
+    endForCarer: mock(async () => []),
+    ...overrides,
+  };
+}
+
+/** Fixed instant for the household-local date assertions below. */
+const AT_NOON_UTC = () => new Date('2026-07-01T12:00:00.000Z');
+
 function makeInviteRepo(overrides: Record<string, unknown> = {}): any {
   return {
     findByCode: mock(async () => pendingInvite()),
+    findById: mock(async () => pendingInvite()),
+    revokePending: mock(async (id: string) =>
+      pendingInvite({ id, status: 'revoked' })
+    ),
     create: mock(async (data: Record<string, unknown>) => ({
       ...pendingInvite(),
       ...data,
@@ -537,14 +589,18 @@ describe('HouseholdCommandService.redeemInvite', () => {
     ).rejects.toBeInstanceOf(InviteExpiredError);
   });
 
-  it('throws AlreadyMemberError when the caller is already an active member (self-redeem)', async () => {
+  it('throws AlreadyMemberError when the caller is already an active member (self-redeem), BEFORE claiming the code', async () => {
+    // The pre-check reads ANY status now, so it must distinguish active (refuse)
+    // from removed (reactivate). Refusing after the claim would burn a
+    // single-use code on a no-op.
     const memberRepo = makeMemberRepo({
-      findActiveMembership: mock(async () => membershipFor('owner')),
+      findMembershipAnyStatus: mock(async () => membershipFor('owner')),
     });
+    const inviteRepo = makeInviteRepo();
     const svc = new HouseholdCommandService(
       makeHouseholdRepo(),
       memberRepo,
-      makeInviteRepo(),
+      inviteRepo,
       makeQueries(),
       stubUsers
     );
@@ -552,6 +608,7 @@ describe('HouseholdCommandService.redeemInvite', () => {
       svc.redeemInvite('u1', { code: 'ABC-234' })
     ).rejects.toBeInstanceOf(AlreadyMemberError);
     expect(memberRepo.createMembership).not.toHaveBeenCalled();
+    expect(inviteRepo.claimPending).not.toHaveBeenCalled();
   });
 
   it('claims the invite with a conditional write BEFORE creating the membership', async () => {
@@ -637,10 +694,9 @@ describe('HouseholdCommandService.redeemInvite', () => {
     expect(inviteRepo.releaseClaim).toHaveBeenCalledWith('i1', 'u2', 't');
   });
 
-  it('releases the claim for the removed-member case too, where createMembership hits the unique constraint', async () => {
-    // `findActiveMembership` only sees ACTIVE rows, so a user with a `removed`
-    // membership sails past the pre-check and trips 23505 instead. The code
-    // must survive that.
+  it('releases the claim when createMembership hits the unique constraint', async () => {
+    // The same user redeeming twice concurrently: both pass the pre-check,
+    // one insert wins and the other trips 23505. The loser's code must survive.
     const inviteRepo = makeInviteRepo();
     const memberRepo = makeMemberRepo({
       createMembership: mock(async () => {
@@ -832,9 +888,12 @@ describe('HouseholdCommandService.redeemInvite', () => {
 
     await svc.redeemInvite('u2', { code: 'ABC-234' });
 
+    // The second lookup is the redeemer's own pre-check (active -> refuse,
+    // removed -> reactivate), which now runs on the same any-status read.
     expect(order).toEqual([
       'membership-lookup:h1:u9',
       'release:i1:u9',
+      'membership-lookup:h1:u2',
       'claim:i1:u2',
     ]);
   });
@@ -996,5 +1055,589 @@ describe('HouseholdCommandService.redeemInvite', () => {
     await expect(
       svc.redeemInvite('u2', { code: 'ABC-234' })
     ).rejects.toBeInstanceOf(AlreadyMemberError);
+  });
+});
+
+/** A membership this user already had and lost — the reactivation subject. */
+function removedMembership(
+  overrides: Partial<HouseholdMember> = {}
+): HouseholdMember {
+  return {
+    ...membershipFor('nanny'),
+    id: 'm-old',
+    user_id: 'u2',
+    status: 'removed',
+    ...overrides,
+  };
+}
+
+describe('HouseholdCommandService.redeemInvite — removed member rejoining', () => {
+  it('reactivates the existing row on the new invite role instead of inserting a second one', async () => {
+    // The unique (household_id, user_id) constraint makes a fresh insert
+    // impossible for someone who was removed: without reactivation the only
+    // outcome is a 409 the parent cannot get past.
+    const memberRepo = makeMemberRepo({
+      findMembershipAnyStatus: mock(async () => removedMembership()),
+    });
+    const inviteRepo = makeInviteRepo({
+      findByCode: mock(async () => pendingInvite({ role: 'parent' })),
+    });
+    const svc = new HouseholdCommandService(
+      makeHouseholdRepo(),
+      memberRepo,
+      inviteRepo,
+      makeQueries(),
+      stubUsers
+    );
+
+    const membership = await svc.redeemInvite('u2', { code: 'ABC-234' });
+
+    expect(memberRepo.reactivateMembership).toHaveBeenCalledWith(
+      'm-old',
+      'parent'
+    );
+    expect(memberRepo.createMembership).not.toHaveBeenCalled();
+    expect(membership).toMatchObject({
+      id: 'm-old',
+      role: 'parent',
+      status: 'active',
+      can_edit: false,
+    });
+  });
+
+  it('consumes the code with claimPending BEFORE reactivating, so the invite stays single-use', async () => {
+    const order: string[] = [];
+    const memberRepo = makeMemberRepo({
+      findMembershipAnyStatus: mock(async () => removedMembership()),
+      reactivateMembership: mock(async (id: string, role: string) => {
+        order.push('reactivate');
+        return { ...removedMembership(), id, role, status: 'active' };
+      }),
+    });
+    const inviteRepo = makeInviteRepo({
+      claimPending: mock(async (id: string, acceptedBy: string) => {
+        order.push('claim');
+        return pendingInvite({
+          id,
+          status: 'accepted',
+          accepted_by: acceptedBy,
+          accepted_at: 't',
+        });
+      }),
+    });
+    const svc = new HouseholdCommandService(
+      makeHouseholdRepo(),
+      memberRepo,
+      inviteRepo,
+      makeQueries(),
+      stubUsers
+    );
+
+    await svc.redeemInvite('u2', { code: 'ABC-234' });
+
+    expect(order).toEqual(['claim', 'reactivate']);
+    expect(inviteRepo.claimPending).toHaveBeenCalledWith('i1', 'u2');
+  });
+
+  it('releases the claim with the OBSERVED accepted_at when the reactivation CAS loses', async () => {
+    // Two devices redeeming two codes at once: the other one reactivated the
+    // row first, so this claim bought nothing and must go back — keyed to the
+    // accepted_at THIS request won, never a later one.
+    const memberRepo = makeMemberRepo({
+      findMembershipAnyStatus: mock(async () => removedMembership()),
+      reactivateMembership: mock(async () => null),
+    });
+    const inviteRepo = makeInviteRepo();
+    const svc = new HouseholdCommandService(
+      makeHouseholdRepo(),
+      memberRepo,
+      inviteRepo,
+      makeQueries(),
+      stubUsers
+    );
+
+    await expect(
+      svc.redeemInvite('u2', { code: 'ABC-234' })
+    ).rejects.toBeInstanceOf(AlreadyMemberError);
+    expect(inviteRepo.releaseClaim).toHaveBeenCalledWith('i1', 'u2', 't');
+  });
+
+  it('still refuses a revoked code to a removed member', async () => {
+    const memberRepo = makeMemberRepo({
+      findMembershipAnyStatus: mock(async () => removedMembership()),
+    });
+    const svc = new HouseholdCommandService(
+      makeHouseholdRepo(),
+      memberRepo,
+      makeInviteRepo({
+        findByCode: mock(async () => pendingInvite({ status: 'revoked' })),
+      }),
+      makeQueries(),
+      stubUsers
+    );
+
+    await expect(
+      svc.redeemInvite('u2', { code: 'ABC-234' })
+    ).rejects.toBeInstanceOf(InviteRevokedError);
+    expect(memberRepo.reactivateMembership).not.toHaveBeenCalled();
+  });
+
+  it('still refuses an expired code to a removed member', async () => {
+    const memberRepo = makeMemberRepo({
+      findMembershipAnyStatus: mock(async () => removedMembership()),
+    });
+    const svc = new HouseholdCommandService(
+      makeHouseholdRepo(),
+      memberRepo,
+      makeInviteRepo({
+        findByCode: mock(async () =>
+          pendingInvite({ expires_at: '2000-01-01T00:00:00Z' })
+        ),
+      }),
+      makeQueries(),
+      stubUsers
+    );
+
+    await expect(
+      svc.redeemInvite('u2', { code: 'ABC-234' })
+    ).rejects.toBeInstanceOf(InviteExpiredError);
+    expect(memberRepo.reactivateMembership).not.toHaveBeenCalled();
+  });
+});
+
+describe('HouseholdCommandService.removeMember', () => {
+  it('removes an active nanny for a parent caller', async () => {
+    const memberRepo = makeMemberRepo({
+      findById: mock(async () => targetMember()),
+    });
+    const svc = new HouseholdCommandService(
+      makeHouseholdRepo(),
+      memberRepo,
+      makeInviteRepo(),
+      makeQueries('parent'),
+      stubUsers,
+      makeTimeEntries(),
+      makePayArrangements()
+    );
+
+    const removed = await svc.removeMember('u1', 'h1', 'm-target');
+
+    expect(memberRepo.removeMembership).toHaveBeenCalledWith('m-target');
+    expect(removed.status).toBe('removed');
+  });
+
+  it('rejects a nanny caller with NotAHouseholdParentError', async () => {
+    const memberRepo = makeMemberRepo({
+      findById: mock(async () => targetMember()),
+    });
+    const svc = new HouseholdCommandService(
+      makeHouseholdRepo(),
+      memberRepo,
+      makeInviteRepo(),
+      makeQueries('nanny'),
+      stubUsers,
+      makeTimeEntries(),
+      makePayArrangements()
+    );
+
+    await expect(
+      svc.removeMember('u1', 'h1', 'm-target')
+    ).rejects.toBeInstanceOf(NotAHouseholdParentError);
+    expect(memberRepo.removeMembership).not.toHaveBeenCalled();
+  });
+
+  it('refuses to remove the owner — which is also what keeps a household from losing its last parent', async () => {
+    const memberRepo = makeMemberRepo({
+      findById: mock(async () =>
+        targetMember({ role: 'owner', user_id: 'u-owner' })
+      ),
+    });
+    const svc = new HouseholdCommandService(
+      makeHouseholdRepo(),
+      memberRepo,
+      makeInviteRepo(),
+      makeQueries('parent'),
+      stubUsers,
+      makeTimeEntries(),
+      makePayArrangements()
+    );
+
+    await expect(
+      svc.removeMember('u1', 'h1', 'm-target')
+    ).rejects.toBeInstanceOf(CannotRemoveOwnerError);
+    expect(memberRepo.removeMembership).not.toHaveBeenCalled();
+  });
+
+  it('refuses to remove yourself — leaving a household is a separate feature', async () => {
+    const memberRepo = makeMemberRepo({
+      findById: mock(async () => targetMember({ user_id: 'u1' })),
+    });
+    const svc = new HouseholdCommandService(
+      makeHouseholdRepo(),
+      memberRepo,
+      makeInviteRepo(),
+      makeQueries('parent'),
+      stubUsers,
+      makeTimeEntries(),
+      makePayArrangements()
+    );
+
+    await expect(
+      svc.removeMember('u1', 'h1', 'm-target')
+    ).rejects.toBeInstanceOf(CannotRemoveSelfError);
+    expect(memberRepo.removeMembership).not.toHaveBeenCalled();
+  });
+
+  it('refuses to remove a carer who is still clocked in', async () => {
+    // Removing mid-shift strands a running entry nobody can clock out: the
+    // carer loses the household, and the hours never land on a timesheet.
+    const memberRepo = makeMemberRepo({
+      findById: mock(async () => targetMember()),
+    });
+    const timeEntries = makeTimeEntries({
+      findRunningInHousehold: mock(async () => ({
+        id: 'te1',
+        household_id: 'h1',
+        status: 'running',
+      })),
+    });
+    const svc = new HouseholdCommandService(
+      makeHouseholdRepo(),
+      memberRepo,
+      makeInviteRepo(),
+      makeQueries('parent'),
+      stubUsers,
+      timeEntries,
+      makePayArrangements()
+    );
+
+    await expect(
+      svc.removeMember('u1', 'h1', 'm-target')
+    ).rejects.toBeInstanceOf(MemberHasRunningEntryError);
+    expect(memberRepo.removeMembership).not.toHaveBeenCalled();
+  });
+
+  it('removes a nanny who is clocked in at a DIFFERENT family', async () => {
+    // A nanny works for several households. Their shift at Family B is none of
+    // Family A's business: blocking on it strands A's removal AND discloses
+    // that the nanny is currently working somewhere else. The household-scoped
+    // lookup returns null here.
+    const memberRepo = makeMemberRepo({
+      findById: mock(async () => targetMember()),
+    });
+    const timeEntries = makeTimeEntries();
+    const svc = new HouseholdCommandService(
+      makeHouseholdRepo(),
+      memberRepo,
+      makeInviteRepo(),
+      makeQueries('parent'),
+      stubUsers,
+      timeEntries,
+      makePayArrangements()
+    );
+
+    const removed = await svc.removeMember('u1', 'h1', 'm-target');
+
+    expect(removed.status).toBe('removed');
+    expect(timeEntries.findRunningInHousehold).toHaveBeenCalledWith(
+      'h1',
+      'u-nanny'
+    );
+  });
+
+  it('checks the running entry for the TARGET carer, scoped to THIS household', async () => {
+    const memberRepo = makeMemberRepo({
+      findById: mock(async () => targetMember()),
+    });
+    const timeEntries = makeTimeEntries();
+    const svc = new HouseholdCommandService(
+      makeHouseholdRepo(),
+      memberRepo,
+      makeInviteRepo(),
+      makeQueries('parent'),
+      stubUsers,
+      timeEntries,
+      makePayArrangements()
+    );
+
+    await svc.removeMember('u1', 'h1', 'm-target');
+
+    expect(timeEntries.findRunningInHousehold).toHaveBeenCalledWith(
+      'h1',
+      'u-nanny'
+    );
+  });
+
+  it('404s a member id belonging to ANOTHER household, without revealing it exists', async () => {
+    const memberRepo = makeMemberRepo({
+      findById: mock(async () => targetMember({ household_id: 'h-other' })),
+    });
+    const timeEntries = makeTimeEntries();
+    const svc = new HouseholdCommandService(
+      makeHouseholdRepo(),
+      memberRepo,
+      makeInviteRepo(),
+      makeQueries('parent'),
+      stubUsers,
+      timeEntries,
+      makePayArrangements()
+    );
+
+    await expect(
+      svc.removeMember('u1', 'h1', 'm-target')
+    ).rejects.toBeInstanceOf(MemberNotFoundError);
+    expect(memberRepo.removeMembership).not.toHaveBeenCalled();
+    expect(timeEntries.findRunningInHousehold).not.toHaveBeenCalled();
+  });
+
+  it('404s an unknown member id', async () => {
+    const svc = new HouseholdCommandService(
+      makeHouseholdRepo(),
+      makeMemberRepo({ findById: mock(async () => null) }),
+      makeInviteRepo(),
+      makeQueries('parent'),
+      stubUsers,
+      makeTimeEntries(),
+      makePayArrangements()
+    );
+
+    await expect(svc.removeMember('u1', 'h1', 'm-gone')).rejects.toBeInstanceOf(
+      MemberNotFoundError
+    );
+  });
+
+  it('404s when the CAS matches nothing — the member was already removed', async () => {
+    const memberRepo = makeMemberRepo({
+      findById: mock(async () => targetMember()),
+      removeMembership: mock(async () => null),
+    });
+    const svc = new HouseholdCommandService(
+      makeHouseholdRepo(),
+      memberRepo,
+      makeInviteRepo(),
+      makeQueries('parent'),
+      stubUsers,
+      makeTimeEntries(),
+      makePayArrangements()
+    );
+
+    await expect(
+      svc.removeMember('u1', 'h1', 'm-target')
+    ).rejects.toBeInstanceOf(MemberNotFoundError);
+  });
+});
+
+describe('HouseholdCommandService.revokeInvite', () => {
+  it('revokes a pending invite for a parent caller', async () => {
+    const inviteRepo = makeInviteRepo();
+    const svc = new HouseholdCommandService(
+      makeHouseholdRepo(),
+      makeMemberRepo(),
+      inviteRepo,
+      makeQueries('parent'),
+      stubUsers,
+      makeTimeEntries(),
+      makePayArrangements()
+    );
+
+    const invite = await svc.revokeInvite('u1', 'h1', 'i1');
+
+    expect(inviteRepo.revokePending).toHaveBeenCalledWith('i1', 'h1');
+    expect(invite.status).toBe('revoked');
+  });
+
+  it('rejects a nanny caller with NotAHouseholdParentError', async () => {
+    const inviteRepo = makeInviteRepo();
+    const svc = new HouseholdCommandService(
+      makeHouseholdRepo(),
+      makeMemberRepo(),
+      inviteRepo,
+      makeQueries('nanny'),
+      stubUsers,
+      makeTimeEntries(),
+      makePayArrangements()
+    );
+
+    await expect(svc.revokeInvite('u1', 'h1', 'i1')).rejects.toBeInstanceOf(
+      NotAHouseholdParentError
+    );
+    expect(inviteRepo.revokePending).not.toHaveBeenCalled();
+  });
+
+  it('409s an invite that has already been accepted', async () => {
+    const inviteRepo = makeInviteRepo({
+      revokePending: mock(async () => null),
+      findById: mock(async () => pendingInvite({ status: 'accepted' })),
+    });
+    const svc = new HouseholdCommandService(
+      makeHouseholdRepo(),
+      makeMemberRepo(),
+      inviteRepo,
+      makeQueries('parent'),
+      stubUsers,
+      makeTimeEntries(),
+      makePayArrangements()
+    );
+
+    await expect(svc.revokeInvite('u1', 'h1', 'i1')).rejects.toBeInstanceOf(
+      InviteNotPendingError
+    );
+  });
+
+  it('404s an invite id from ANOTHER household, same as an unknown one', async () => {
+    // Distinguishing the two would let a parent probe other families' invite
+    // ids — the household is inside the CAS for exactly this reason.
+    const inviteRepo = makeInviteRepo({
+      revokePending: mock(async () => null),
+      findById: mock(async () => pendingInvite({ household_id: 'h-other' })),
+    });
+    const svc = new HouseholdCommandService(
+      makeHouseholdRepo(),
+      makeMemberRepo(),
+      inviteRepo,
+      makeQueries('parent'),
+      stubUsers,
+      makeTimeEntries(),
+      makePayArrangements()
+    );
+
+    await expect(svc.revokeInvite('u1', 'h1', 'i1')).rejects.toBeInstanceOf(
+      InviteNotFoundError
+    );
+  });
+
+  it('404s an unknown invite id', async () => {
+    const inviteRepo = makeInviteRepo({
+      revokePending: mock(async () => null),
+      findById: mock(async () => null),
+    });
+    const svc = new HouseholdCommandService(
+      makeHouseholdRepo(),
+      makeMemberRepo(),
+      inviteRepo,
+      makeQueries('parent'),
+      stubUsers,
+      makeTimeEntries(),
+      makePayArrangements()
+    );
+
+    await expect(svc.revokeInvite('u1', 'h1', 'i-gone')).rejects.toBeInstanceOf(
+      InviteNotFoundError
+    );
+  });
+});
+
+describe('HouseholdCommandService.removeMember — pay arrangement (065)', () => {
+  function svcWith(
+    householdRepo: any,
+    payArrangements: any,
+    memberRepo = makeMemberRepo({ findById: mock(async () => targetMember()) })
+  ) {
+    return new HouseholdCommandService(
+      householdRepo,
+      memberRepo,
+      makeInviteRepo(),
+      makeQueries('parent'),
+      stubUsers,
+      makeTimeEntries(),
+      payArrangements
+    );
+  }
+
+  it('end-dates the carer pay arrangement, so a rejoin has no live terms', async () => {
+    // Owner decision: rejoining re-confirms terms. Without this the
+    // arrangement live at removal is still what `effectiveOn` resolves months
+    // later, at the old rate, silently (docs/11-MONEY.md §10).
+    const payArrangements = makePayArrangements();
+    const svc = svcWith(makeHouseholdRepo(), payArrangements);
+
+    await svc.removeMember('u1', 'h1', 'm-target', AT_NOON_UTC);
+
+    expect(payArrangements.endForCarer).toHaveBeenCalledWith(
+      'h1',
+      'u-nanny',
+      '2026-07-01'
+    );
+  });
+
+  it('ends on the HOUSEHOLD-LOCAL date, not server UTC', async () => {
+    // Noon UTC on 1 July is already 2 July in Auckland. Ending on the UTC date
+    // would cut the terms a day short and leave that day's shift unpriced —
+    // the same trap 041's header records for `valid_from`.
+    const payArrangements = makePayArrangements();
+    const svc = svcWith(
+      makeHouseholdRepo({
+        findById: mock(async () => ({
+          ...household,
+          timezone: 'Pacific/Auckland',
+        })),
+      }),
+      payArrangements
+    );
+
+    await svc.removeMember('u1', 'h1', 'm-target', AT_NOON_UTC);
+
+    expect(payArrangements.endForCarer).toHaveBeenCalledWith(
+      'h1',
+      'u-nanny',
+      '2026-07-02'
+    );
+  });
+
+  it('end-dates BEFORE flipping the membership — the ordering that cannot strand', async () => {
+    // Either order can fail halfway. Membership-first leaves a removed member
+    // with live terms (the exact bug) if the end-date throws. End-date-first
+    // cannot strand: every other refusal has already run, so the only way the
+    // CAS then fails is that someone else removed them — in which case the
+    // end-date was correct anyway.
+    const order: string[] = [];
+    const payArrangements = makePayArrangements({
+      endForCarer: mock(async () => {
+        order.push('end-arrangement');
+        return [];
+      }),
+    });
+    const memberRepo = makeMemberRepo({
+      findById: mock(async () => targetMember()),
+      removeMembership: mock(async (id: string) => {
+        order.push('remove-membership');
+        return { ...targetMember(), id, status: 'removed' };
+      }),
+    });
+    const svc = svcWith(makeHouseholdRepo(), payArrangements, memberRepo);
+
+    await svc.removeMember('u1', 'h1', 'm-target', AT_NOON_UTC);
+
+    expect(order).toEqual(['end-arrangement', 'remove-membership']);
+  });
+
+  it('refuses the whole removal when the end-date write fails, rather than half-removing', async () => {
+    const payArrangements = makePayArrangements({
+      endForCarer: mock(async () => {
+        throw new DatabaseError('boom', 'DATABASE_ERROR');
+      }),
+    });
+    const memberRepo = makeMemberRepo({
+      findById: mock(async () => targetMember()),
+    });
+    const svc = svcWith(makeHouseholdRepo(), payArrangements, memberRepo);
+
+    await expect(
+      svc.removeMember('u1', 'h1', 'm-target', AT_NOON_UTC)
+    ).rejects.toThrow('boom');
+    expect(memberRepo.removeMembership).not.toHaveBeenCalled();
+  });
+
+  it('does not touch pay when the removal is refused for any other reason', async () => {
+    const payArrangements = makePayArrangements();
+    const memberRepo = makeMemberRepo({
+      findById: mock(async () => targetMember({ role: 'owner' })),
+    });
+    const svc = svcWith(makeHouseholdRepo(), payArrangements, memberRepo);
+
+    await expect(
+      svc.removeMember('u1', 'h1', 'm-target', AT_NOON_UTC)
+    ).rejects.toBeInstanceOf(CannotRemoveOwnerError);
+    expect(payArrangements.endForCarer).not.toHaveBeenCalled();
   });
 });

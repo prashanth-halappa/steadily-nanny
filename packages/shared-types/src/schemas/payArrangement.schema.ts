@@ -135,6 +135,11 @@ export const PayArrangementSchema = z.object({
   // here; see CreatePayArrangementRequestSchema's comment for why the shape
   // here stays permissive.
   valid_from: z.iso.date(),
+  // Household-local INCLUSIVE last day these terms price; null = still live.
+  // Set ONLY when a member is removed, so a rejoin must re-confirm terms
+  // (migration 065, docs/11-MONEY.md §10). A lifecycle column, not a money
+  // field — there is still no update schema and no client write path.
+  valid_to: z.iso.date().nullable(),
   // Snapshotted at insert time from the carer's profile — never derived on
   // read, so the name survives the profile being deleted.
   carer_display_name: z.string(),

@@ -115,6 +115,10 @@ export class ShiftChangeRequestController {
         status: result.status,
         shift,
         warnings,
+        // The created and adopted responses are otherwise identical, and the
+        // client needs to tell them apart to avoid a second "proposed" toast
+        // for one shift.
+        adopted: result.adopted,
       });
     } catch (error) {
       return next(error);

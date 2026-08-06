@@ -26,6 +26,11 @@ export function useCreateExtraShift(householdId: string | null | undefined) {
     onSuccess: result => {
       queryClient.invalidateQueries({ queryKey: queryKeys.shift.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.me.all });
+      // An adopted result means a double-tap/race found an existing shift
+      // rather than making a new one — the shift already got its toast (and
+      // its clash warnings) the first time, so re-showing both here would be
+      // noise, not news. Caches still get invalidated above either way.
+      if (result.status === 'created' && result.adopted) return;
       showSuccessToast(t('schedule:shifts.extraCreatedToast'));
       if (result.status === 'created') {
         showClashWarningToasts(result.warnings, t);

@@ -342,6 +342,132 @@ describe('response-leg pushes', () => {
     );
   });
 
+  // Adoption returns the shift somebody ELSE's call already created — and
+  // that call already pushed for it. Pushing again is a second "Extra shift
+  // proposed" for one shift, which is what a parent's double-tap produced.
+  it('does not re-fire extra_shift_proposed when the pre-check adopted an existing shift', async () => {
+    const existing = {
+      ...shift,
+      id: 's-existing',
+      kind: 'extra' as const,
+      status: 'pending' as const,
+    };
+    const svc = makeSvc({
+      shiftRepo: makeShiftRepo({
+        findExtraShiftInWindow: mock(async () => existing),
+      }),
+    });
+
+    await svc.createExtraShift('parent-1', 'h1', {
+      starts_at: '2026-08-04T08:00:00.000Z',
+      ends_at: '2026-08-04T12:00:00.000Z',
+      timezone: 'Europe/London',
+      carer_id: 'carer-1',
+    });
+
+    expect(notifyUser).not.toHaveBeenCalled();
+  });
+
+  it('does not re-fire extra_shift_proposed when the 059 race adopted the winner', async () => {
+    const winner = {
+      ...shift,
+      id: 's-winner',
+      kind: 'extra' as const,
+      status: 'pending' as const,
+    };
+    let lookups = 0;
+    const { ExtraShiftAlreadyExistsError } = await import(
+      '../../../../../src/domains/shift/errors/shiftErrors'
+    );
+    const svc = makeSvc({
+      shiftRepo: makeShiftRepo({
+        findExtraShiftInWindow: mock(async () => {
+          lookups += 1;
+          return lookups === 1 ? null : winner;
+        }),
+        createShift: mock(async () => {
+          throw new ExtraShiftAlreadyExistsError({
+            householdId: 'h1',
+            startsAt: '2026-08-04T08:00:00.000Z',
+            endsAt: '2026-08-04T12:00:00.000Z',
+            carerId: 'carer-1',
+          });
+        }),
+      }),
+    });
+
+    await svc.createExtraShift('parent-1', 'h1', {
+      starts_at: '2026-08-04T08:00:00.000Z',
+      ends_at: '2026-08-04T12:00:00.000Z',
+      timezone: 'Europe/London',
+      carer_id: 'carer-1',
+    });
+
+    expect(notifyUser).not.toHaveBeenCalled();
+  });
+
+  // The approval applier is the OTHER caller of `insertExtraShift`, and a
+  // re-driven approval is the likeliest way to reach adoption at all.
+  it('does not re-fire extra_shift_proposed when the approved applier adopted', async () => {
+    const existing = {
+      ...shift,
+      id: 's-existing',
+      kind: 'extra' as const,
+      status: 'pending' as const,
+    };
+    const svc = makeSvc({
+      shiftRepo: makeShiftRepo({
+        findExtraShiftInWindow: mock(async () => existing),
+      }),
+    });
+
+    await svc.applyApprovedExtraShift({
+      id: 'a-extra',
+      household_id: 'h1',
+      requested_by: 'parent-1',
+      action: 'extra_shift',
+      payload: {
+        starts_at: '2026-08-04T08:00:00.000Z',
+        ends_at: '2026-08-04T12:00:00.000Z',
+        timezone: 'Europe/London',
+        carer_id: 'carer-1',
+      },
+      status: 'approved',
+      timeout_at: '2999-01-01T00:00:00Z',
+      responded_by: 'parent-2',
+      responded_at: 't',
+      created_at: 't',
+      updated_at: 't',
+    } as never);
+
+    expect(notifyUser).not.toHaveBeenCalled();
+  });
+
+  it('still fires extra_shift_proposed once when the applier really created', async () => {
+    const svc = makeSvc();
+
+    await svc.applyApprovedExtraShift({
+      id: 'a-extra',
+      household_id: 'h1',
+      requested_by: 'parent-1',
+      action: 'extra_shift',
+      payload: {
+        starts_at: '2026-08-04T08:00:00.000Z',
+        ends_at: '2026-08-04T12:00:00.000Z',
+        timezone: 'Europe/London',
+        carer_id: 'carer-1',
+      },
+      status: 'approved',
+      timeout_at: '2999-01-01T00:00:00Z',
+      responded_by: 'parent-2',
+      responded_at: 't',
+      created_at: 't',
+      updated_at: 't',
+    } as never);
+
+    expect(notifyUser).toHaveBeenCalledTimes(1);
+  });
+
   it('push failure never fails respond HTTP path', async () => {
     notifyUser.mockImplementation(() => {
       throw new Error('push boom');

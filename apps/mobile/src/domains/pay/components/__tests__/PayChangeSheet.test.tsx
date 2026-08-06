@@ -51,6 +51,8 @@ const currentArrangement: PayArrangement = {
   mileage_rate_per_mile_minor: null,
   cancellation_paid_within_hours: null,
   valid_from: '2026-04-01',
+  // 065: null = still live; set only when a member is removed.
+  valid_to: null,
   carer_display_name: 'Priya',
   note: null,
   created_by: 'parent-1',

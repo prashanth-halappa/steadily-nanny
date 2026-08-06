@@ -220,6 +220,64 @@ describe('householdApi.previewInvite', () => {
   });
 });
 
+describe('householdApi.updateMember', () => {
+  it('PATCHes /v1/households/:id/members/:memberId and returns the updated member', async () => {
+    const removed = { ...validMembership, status: 'removed' };
+    apiClient.patch.mockResolvedValue({
+      data: { data: { household_member: removed } },
+    });
+
+    const result = await householdApi.updateMember(
+      validHousehold.id,
+      validMembership.id,
+      { status: 'removed' }
+    );
+
+    expect(apiClient.patch).toHaveBeenCalledWith(
+      `/v1/households/${validHousehold.id}/members/${validMembership.id}`,
+      { status: 'removed' }
+    );
+    expect(result.status).toBe('removed');
+  });
+
+  it('rejects an empty diff without calling the API', async () => {
+    await expect(
+      householdApi.updateMember(validHousehold.id, validMembership.id, {})
+    ).rejects.toThrow();
+    expect(apiClient.patch).not.toHaveBeenCalled();
+  });
+});
+
+describe('householdApi.updateInvite', () => {
+  it('PATCHes /v1/households/:id/invites/:inviteId and returns the updated invite', async () => {
+    const revoked = { ...validInvite, status: 'revoked' };
+    apiClient.patch.mockResolvedValue({
+      data: { data: { invite: revoked } },
+    });
+
+    const result = await householdApi.updateInvite(
+      validHousehold.id,
+      validInvite.id,
+      { status: 'revoked' }
+    );
+
+    expect(apiClient.patch).toHaveBeenCalledWith(
+      `/v1/households/${validHousehold.id}/invites/${validInvite.id}`,
+      { status: 'revoked' }
+    );
+    expect(result.status).toBe('revoked');
+  });
+
+  it('rejects a status other than revoked without calling the API', async () => {
+    await expect(
+      householdApi.updateInvite(validHousehold.id, validInvite.id, {
+        status: 'accepted',
+      })
+    ).rejects.toThrow();
+    expect(apiClient.patch).not.toHaveBeenCalled();
+  });
+});
+
 describe('householdApi.redeemInvite', () => {
   it('POSTs the code and returns the resulting membership', async () => {
     apiClient.post.mockResolvedValue({

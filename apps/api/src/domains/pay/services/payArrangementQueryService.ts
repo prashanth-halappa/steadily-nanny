@@ -5,11 +5,17 @@
  *
  * | caller                                   | allowed |
  * |------------------------------------------|---------|
- * | active `owner`/`parent` of the household | yes     |
- * | the carer herself (`callerId === carerId`, active `nanny`) | yes |
+ * | `owner`/`parent` of the household        | yes     |
+ * | the carer herself (`callerId === carerId`, a `nanny`) | yes |
  * | another `nanny` of the same household    | no      |
  * | `helper`                                 | no      |
  * | non-member                               | no      |
+ *
+ * MEMBERSHIP STATUS IS NOT PART OF THAT TABLE — a `removed` member reads
+ * exactly what her role always let her read. The terms she worked under are
+ * an audit trail she does not stop being entitled to when the badge is
+ * revoked, and the parents who paid keep their view. Every WRITE
+ * (`payArrangementCommandService`) still requires an ACTIVE membership.
  *
  * The carer's own arm is deliberate, not a concession: opaque pay is the
  * disease this feature treats, and migration 041's SELECT policy lets every
@@ -90,13 +96,18 @@ export class PayArrangementQueryService {
    * The single read gate for this domain (see the module doc's table). Kept
    * private and called at the top of every method so no future read can
    * accidentally ship without it.
+   *
+   * ANY-STATUS ON PURPOSE: a `removed` member keeps her role's read scope.
+   * The role arms below do all the narrowing — a removed nanny still has to
+   * satisfy `callerId === carerId`, so she reaches her own terms and no one
+   * else's.
    */
   private async assertCanReadPay(
     callerId: string,
     householdId: string,
     carerId: string
   ): Promise<void> {
-    const membership = await this.memberRepo.findActiveMembership(
+    const membership = await this.memberRepo.findMembershipAnyStatus(
       householdId,
       callerId
     );

@@ -8,11 +8,17 @@
  *
  * | caller                                   | allowed |
  * |------------------------------------------|---------|
- * | active `owner`/`parent` of the household | yes     |
- * | the carer herself (`callerId === carerId`, active `nanny`) | yes |
+ * | `owner`/`parent` of the household        | yes     |
+ * | the carer herself (`callerId === carerId`, a `nanny`) | yes |
  * | another `nanny` of the same household    | no      |
  * | `helper`                                 | no      |
  * | non-member                                | no      |
+ *
+ * MEMBERSHIP STATUS IS NOT PART OF THAT TABLE — a `removed` member reads
+ * exactly what her role always let her read, because the PTO she accrued and
+ * used is payroll history she does not stop being entitled to see. What a
+ * removed member does NOT get is the lazy grant below: that is a write, and
+ * writes stay active-only.
  *
  * Every denial — and "no such household", "not your carer" — raises the SAME
  * `PtoNotFoundError`, so a caller learns nothing about carers who aren't
@@ -57,7 +63,9 @@ import type {
 } from '@steadily-nanny/shared-types/schemas/pto.schema';
 import { PTO_LEDGER_NOTE_KEYS } from '@steadily-nanny/shared-types/schemas/pto.schema';
 import {
+  HOUSEHOLD_MEMBER_STATUSES,
   HOUSEHOLD_ROLES,
+  type HouseholdMember,
   HouseholdMemberRepository,
   HouseholdRepository,
 } from '../../household';
@@ -107,7 +115,11 @@ export class PtoQueryService {
     year: number,
     now: () => Date = () => new Date()
   ): Promise<PtoBalance> {
-    await this.assertCanReadPto(callerId, householdId, carerId);
+    const membership = await this.assertCanReadPto(
+      callerId,
+      householdId,
+      carerId
+    );
     const { arrangement, today } = await this.effectiveArrangementToday(
       householdId,
       carerId,
@@ -118,7 +130,8 @@ export class PtoQueryService {
       carerId,
       year,
       arrangement,
-      today
+      today,
+      membership
     );
     const rows = await this.ptoRepo.listForCarerYear(
       householdId,
@@ -151,7 +164,11 @@ export class PtoQueryService {
     year: number,
     now: () => Date = () => new Date()
   ): Promise<PtoLedgerEntry[]> {
-    await this.assertCanReadPto(callerId, householdId, carerId);
+    const membership = await this.assertCanReadPto(
+      callerId,
+      householdId,
+      carerId
+    );
     const { arrangement, today } = await this.effectiveArrangementToday(
       householdId,
       carerId,
@@ -162,7 +179,8 @@ export class PtoQueryService {
       carerId,
       year,
       arrangement,
-      today
+      today,
+      membership
     );
     return this.ptoRepo.listForCarerYear(householdId, carerId, year);
   }
@@ -210,14 +228,23 @@ export class PtoQueryService {
    * conversion `valid_from` validation uses: at 23:00 UTC on 31 December it
    * is already next year in Auckland, and granting the UTC year there would
    * be the same off-by-a-timezone bug in a costlier place.
+   *
+   * A `removed` caller mints nothing. Payroll history is readable after
+   * removal, but this is the one read that WRITES, and a nanny who left in
+   * March must not hand herself the full year's entitlement by opening the
+   * screen. Her already-granted rows still read normally.
    */
   private async ensureYearGranted(
     householdId: string,
     carerId: string,
     year: number,
     arrangement: PayArrangement | null,
-    localToday: string
+    localToday: string,
+    caller: HouseholdMember
   ): Promise<void> {
+    if (caller.status !== HOUSEHOLD_MEMBER_STATUSES.ACTIVE) {
+      return;
+    }
     if (year !== Number(localToday.slice(0, 4))) {
       return;
     }
@@ -272,13 +299,22 @@ export class PtoQueryService {
    * The single read gate for this domain (see the module doc's table). Kept
    * private and called at the top of every method so no future read can
    * accidentally ship without it.
+   *
+   * ANY-STATUS ON PURPOSE: a `removed` member keeps her role's read scope.
+   * The role arms below do all the narrowing — a removed nanny still has to
+   * satisfy `callerId === carerId`, so she reaches her own ledger and no one
+   * else's.
+   *
+   * Returns the membership row rather than void because its STATUS decides
+   * whether the lazy grant may run: `balance`/`ledger` write on a read, and
+   * that write is active-only.
    */
   private async assertCanReadPto(
     callerId: string,
     householdId: string,
     carerId: string
-  ): Promise<void> {
-    const membership = await this.memberRepo.findActiveMembership(
+  ): Promise<HouseholdMember> {
+    const membership = await this.memberRepo.findMembershipAnyStatus(
       householdId,
       callerId
     );
@@ -288,10 +324,10 @@ export class PtoQueryService {
       });
     }
     if (PTO_READ_ROLES.has(membership.role)) {
-      return;
+      return membership;
     }
     if (callerId === carerId && membership.role === HOUSEHOLD_ROLES.NANNY) {
-      return;
+      return membership;
     }
     throw new PtoNotFoundError(householdId, carerId, {
       reason: 'pto_not_visible_to_role',

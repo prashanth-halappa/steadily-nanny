@@ -22,6 +22,7 @@
   "startLabel": "Entrada",
   "finishLabel": "Salida",
   "invalidTime": "Introduce una hora con formato HH:MM.",
+  "zeroLengthFinishError": "La hora de salida debe ser posterior a la de entrada.",
   "editEntryTitle": "Corregir este registro",
   "editEntryHint": "Cambia las horas o el descanso — tu familia verá las horas corregidas.",
   "saveCorrection": "Guardar cambios",

@@ -161,6 +161,33 @@ export class ExpenseNotEditableError extends ConflictError {
 }
 
 /**
+ * 409 — translated from the `expenses_one_pending_claim_idx` partial unique
+ * index (migration 051): this EXACT claim is already sitting unreviewed in
+ * this household. A double-tapped submit, in other words — two identical
+ * pending rows a parent approving both would pay twice.
+ *
+ * A CONFLICT and not an `ExpenseValidationError` (400), which is what this
+ * used to be: nothing the carer typed is wrong. The claim is well-formed and
+ * would be accepted on its own; it is refused only because an identical one
+ * got there first, which is a state collision, the same shape as
+ * `ExpenseNotEditableError` and `PtoAlreadyMarkedPaidError`. A 400 told the
+ * carer to check what she entered, and there was nothing to fix.
+ *
+ * The `DUPLICATE_PENDING_CLAIM` discriminator is unchanged and still rides in
+ * `metadata.reason`, so anything branching on it keeps working.
+ */
+export class DuplicatePendingClaimError extends ConflictError {
+  constructor(metadata?: ErrorMetadata) {
+    super(
+      'You have already submitted this claim and it is still awaiting review',
+      'DUPLICATE_PENDING_CLAIM',
+      metadata
+    );
+    this.name = 'DuplicatePendingClaimError';
+  }
+}
+
+/**
  * 409 — the claim is dated inside a week whose timesheet is already
  * `approved`, so APPROVING it would strand the money (Phase 3/4 review,
  * SERIOUS 6).

@@ -12,6 +12,11 @@
  * by the time this renders, so two codes generated back to back (nanny, then
  * co-parent) were indistinguishable — the card states which role it grants
  * and when it expires, both already on the wire.
+ *
+ * D3: `onRevoke` is optional and presentational-only, same as `onRetry` — the
+ * caller owns `useRevokeInvite` and decides what happens on success (clear
+ * the invite it's holding). Rendered only once a code exists; there is
+ * nothing to revoke while one is still minting.
  */
 import type { HouseholdInvite } from '@steadily-nanny/shared-types/schemas/household.schema';
 import { useTranslation } from 'react-i18next';
@@ -27,12 +32,16 @@ interface InviteCodeCardProps {
   invite: HouseholdInvite | null;
   isError: boolean;
   onRetry: () => void;
+  onRevoke?: () => void;
+  isRevoking?: boolean;
 }
 
 export function InviteCodeCard({
   invite,
   isError,
   onRetry,
+  onRevoke,
+  isRevoking,
 }: InviteCodeCardProps) {
   const { t } = useTranslation('household');
 
@@ -58,6 +67,16 @@ export function InviteCodeCard({
       ) : (
         <LoadingIndicator />
       )}
+      {invite && onRevoke ? (
+        <Button
+          testID="invite-revoke-button"
+          variant="ghost"
+          disabled={isRevoking}
+          onPress={onRevoke}
+        >
+          <Text className="text-destructive">{t('invite.revokeButton')}</Text>
+        </Button>
+      ) : null}
       {isError ? (
         <>
           <Body className="text-center text-destructive">

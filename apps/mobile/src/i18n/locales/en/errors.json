@@ -15,6 +15,7 @@
   "entryNotEditable": "This entry can't be changed any more — the week has already been approved. Ask your household to query it.",
   "invalidClockTimes": "Those times don't work. The finish must be after the start, and can't be in the future.",
   "timeEntryOverlaps": "That finish overlaps another entry on {{day}} ({{range}}). You're still on the clock — open Hours, shorten that entry, then clock out again.",
+  "memberHasRunningEntry": "This person is clocked in on a shift. Ask them to clock out first, then try removing them again.",
   "tryAgain": "Try again",
   "goBack": "Go back",
   "states": {

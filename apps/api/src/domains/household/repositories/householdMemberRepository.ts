@@ -149,6 +149,63 @@ export class HouseholdMemberRepository extends BaseRepository<HouseholdMember> {
   }
 
   /**
+   * Soft-remove a membership. Compare-and-set on `status = 'active'`, so a
+   * second remove — a retry, or the other parent tapping at the same moment —
+   * matches zero rows and returns null instead of reporting a fresh removal.
+   * The row is never deleted: `time_entries` and `shifts` reference the member,
+   * and their history has to survive the person leaving.
+   */
+  async removeMembership(memberId: string): Promise<HouseholdMember | null> {
+    const { data, error } = await supabaseService
+      .from(this.table)
+      .update({ status: 'removed' })
+      .eq('id', memberId)
+      .eq('status', 'active')
+      .select()
+      .maybeSingle();
+
+    if (error) {
+      throw new DatabaseError(
+        'Failed to remove household member',
+        'DATABASE_ERROR',
+        { details: error.message, memberId }
+      );
+    }
+    return data as HouseholdMember | null;
+  }
+
+  /**
+   * Bring a removed membership back, on the role the new invite grants — the
+   * row already exists, so the unique `(household_id, user_id)` constraint
+   * makes a fresh insert impossible. `can_edit` resets to false deliberately:
+   * a returning member starts from the same baseline a first-time redeem
+   * produces, never whatever rights they held before being removed.
+   *
+   * CAS'd on `status = 'removed'` so a concurrent reactivation loses.
+   */
+  async reactivateMembership(
+    memberId: string,
+    role: string
+  ): Promise<HouseholdMember | null> {
+    const { data, error } = await supabaseService
+      .from(this.table)
+      .update({ status: 'active', role, can_edit: false })
+      .eq('id', memberId)
+      .eq('status', 'removed')
+      .select()
+      .maybeSingle();
+
+    if (error) {
+      throw new DatabaseError(
+        'Failed to reactivate household member',
+        'DATABASE_ERROR',
+        { details: error.message, memberId }
+      );
+    }
+    return data as HouseholdMember | null;
+  }
+
+  /**
    * Insert a membership row, translating the `(user_id, household_id)` unique
    * constraint into a clean AlreadyMemberError instead of a raw 500 — the
    * defence against a concurrent double-redeem racing past the service-level

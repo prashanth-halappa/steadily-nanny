@@ -69,13 +69,31 @@ function usageRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function member(role: string, userId: string): Record<string, unknown> {
-  return { id: `m-${userId}`, household_id: 'h1', user_id: userId, role };
+function member(
+  role: string,
+  userId: string,
+  status = 'active'
+): Record<string, unknown> {
+  return {
+    id: `m-${userId}`,
+    household_id: 'h1',
+    user_id: userId,
+    role,
+    status,
+  };
 }
 
-function makeMemberRepo(byUserId: Record<string, unknown>): any {
+/**
+ * Both lookups, with the real repository's semantics: the active-only one
+ * hides a `removed` row, the any-status one returns it.
+ */
+function makeMemberRepo(byUserId: Record<string, any>): any {
   return {
-    findActiveMembership: mock(
+    findActiveMembership: mock(async (_householdId: string, userId: string) => {
+      const row = byUserId[userId];
+      return row && row.status !== 'removed' ? row : null;
+    }),
+    findMembershipAnyStatus: mock(
       async (_householdId: string, userId: string) => byUserId[userId] ?? null
     ),
   };
@@ -107,6 +125,11 @@ const OWNER = member('owner', 'owner-1');
 const NANNY = member('nanny', 'carer-1');
 const OTHER_NANNY = member('nanny', 'carer-2');
 const HELPER = member('helper', 'helper-1');
+const REMOVED_NANNY = member('nanny', 'carer-1', 'removed');
+const REMOVED_OTHER_NANNY = member('nanny', 'carer-2', 'removed');
+const REMOVED_PARENT = member('parent', 'parent-1', 'removed');
+const REMOVED_OWNER = member('owner', 'owner-1', 'removed');
+const REMOVED_HELPER = member('helper', 'helper-1', 'removed');
 
 function service(
   members: Record<string, unknown>,
@@ -406,5 +429,139 @@ describe('PtoQueryService.ledger', () => {
       'carer-1',
       2026
     );
+  });
+});
+
+// =============================================================================
+// PAYROLL AUDIT TRAIL — a `removed` member keeps READ access to the PTO she
+// accrued and used, with the SAME role scoping as an active one. The lazy
+// annual grant, which is a WRITE riding on a read, stays active-only.
+// =============================================================================
+
+describe('PtoQueryService — removed members keep READ access', () => {
+  it('a removed nanny still reads her OWN balance and ledger', async () => {
+    const ptoRepo = makePtoRepo({
+      listForCarerYear: mock(async () => [accrualRow(), usageRow()]),
+    });
+    const svc = service({ 'carer-1': REMOVED_NANNY }, ptoRepo);
+    const balance = await svc.balance('carer-1', 'h1', 'carer-1', 2026, NOW);
+    expect(balance.balance_minutes).toBe(16320);
+    expect(
+      await svc.ledger('carer-1', 'h1', 'carer-1', 2026, NOW)
+    ).toHaveLength(2);
+  });
+
+  it("a removed nanny is STILL denied another carer's PTO", async () => {
+    const svc = service({ 'carer-2': REMOVED_OTHER_NANNY, 'carer-1': NANNY });
+    await expect(
+      svc.balance('carer-2', 'h1', 'carer-1', 2026, NOW)
+    ).rejects.toBeInstanceOf(PtoNotFoundError);
+  });
+
+  it('a removed parent still reads any carer’s balance', async () => {
+    const svc = service({ 'parent-1': REMOVED_PARENT });
+    await expect(
+      svc.balance('parent-1', 'h1', 'carer-1', 2026, NOW)
+    ).resolves.toBeDefined();
+  });
+
+  it('a removed owner still reads the ledger', async () => {
+    const svc = service({ 'owner-1': REMOVED_OWNER });
+    await expect(
+      svc.ledger('owner-1', 'h1', 'carer-1', 2026, NOW)
+    ).resolves.toBeDefined();
+  });
+
+  it('a removed HELPER stays denied — no pay surface, active or not', async () => {
+    const svc = service({ 'helper-1': REMOVED_HELPER });
+    await expect(
+      svc.balance('helper-1', 'h1', 'carer-1', 2026, NOW)
+    ).rejects.toBeInstanceOf(PtoNotFoundError);
+  });
+
+  it('a removed member’s read NEVER mints the lazy annual grant — reads stay reads', async () => {
+    // The grant is a write. Opening the read to removed members must not open
+    // a write with it: a nanny who left in March would otherwise hand herself
+    // a full year's entitlement just by opening the screen.
+    const ptoRepo = makePtoRepo();
+    const svc = service({ 'carer-1': REMOVED_NANNY }, ptoRepo);
+    await svc.balance('carer-1', 'h1', 'carer-1', 2026, NOW);
+    await svc.ledger('carer-1', 'h1', 'carer-1', 2026, NOW);
+    expect(ptoRepo.create).not.toHaveBeenCalled();
+  });
+
+  it('an ACTIVE member’s read still grants — the skip is status-scoped, not a removal of the feature', async () => {
+    const ptoRepo = makePtoRepo();
+    const svc = service({ 'carer-1': NANNY }, ptoRepo);
+    await svc.balance('carer-1', 'h1', 'carer-1', 2026, NOW);
+    expect(ptoRepo.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('the gate uses the any-status lookup, never the active-only one', async () => {
+    const memberRepo = makeMemberRepo({ 'carer-1': REMOVED_NANNY });
+    const svc = new PtoQueryService(
+      makePtoRepo(),
+      makePayRepo(),
+      memberRepo,
+      makeHouseholdRepo()
+    );
+    await svc.balance('carer-1', 'h1', 'carer-1', 2026, NOW);
+    expect(memberRepo.findMembershipAnyStatus).toHaveBeenCalledWith(
+      'h1',
+      'carer-1'
+    );
+    expect(memberRepo.findActiveMembership).not.toHaveBeenCalled();
+  });
+});
+
+describe('PtoQueryService — what a rejoin does to the balance (rejoin review, decision 2)', () => {
+  // The review asked for a fix to "a rejoin in a new calendar year grants a
+  // fresh full year ON TOP of the old leftover". These two tests pin what the
+  // code actually does, because that stacking cannot happen here: the ledger
+  // read is YEAR-WINDOWED (`effective_date` between Jan 1 and Dec 31), so a
+  // previous year's leftover is not in the new year's balance to be stacked
+  // on. Nothing was changed; if either behaviour ever moves, this goes red.
+  it('a rejoin in the SAME year does not re-grant — the existing balance is kept', async () => {
+    const rows = [
+      {
+        id: 'ptl-grant',
+        kind: 'accrual',
+        minutes: 1200,
+        effective_date: '2026-01-01',
+      },
+      {
+        id: 'ptl-used',
+        kind: 'usage',
+        minutes: -300,
+        effective_date: '2026-04-02',
+      },
+    ];
+    const ptoRepo = makePtoRepo({ listForCarerYear: mock(async () => rows) });
+    const svc = service({ 'parent-1': PARENT, 'carer-1': NANNY }, ptoRepo);
+
+    const balance = await svc.balance('parent-1', 'h1', 'carer-1', 2026, NOW);
+
+    // Short-circuited on the existing accrual row: no second grant.
+    expect(ptoRepo.create).not.toHaveBeenCalled();
+    expect(balance.accrued_minutes).toBe(1200);
+    expect(balance.balance_minutes).toBe(900);
+  });
+
+  it('a NEW calendar year grants once and carries nothing forward — nothing to stack on', async () => {
+    // Exactly what a continuously-employed carer gets each January. The
+    // previous year's leftover is outside this year's window, so the fresh
+    // grant is the whole balance rather than an addition to it.
+    const ptoRepo = makePtoRepo();
+    const svc = service({ 'parent-1': PARENT, 'carer-1': NANNY }, ptoRepo);
+
+    const balance = await svc.balance('parent-1', 'h1', 'carer-1', 2026, NOW);
+
+    expect(ptoRepo.create).toHaveBeenCalledTimes(1);
+    expect(ptoRepo.listForCarerYear).toHaveBeenCalledWith(
+      'h1',
+      'carer-1',
+      2026
+    );
+    expect(balance.accrued_minutes).toBe(0); // the re-read mock returns []
   });
 });

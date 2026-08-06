@@ -69,6 +69,37 @@ export class HouseholdInviteRepository extends BaseRepository<HouseholdInvite> {
   }
 
   /**
+   * Revoke a still-`pending` invite. `household_id` is IN the compare-and-set,
+   * not checked afterwards, so an invite id from another family matches zero
+   * rows and reads as not-found — a parent can never revoke, or learn the
+   * existence of, an invite outside their own household. The
+   * `status = 'pending'` predicate is what makes revoking a race-safe no-op
+   * against a redeem landing at the same instant: whoever writes first wins,
+   * and the loser gets null.
+   */
+  async revokePending(
+    id: string,
+    householdId: string
+  ): Promise<HouseholdInvite | null> {
+    const { data, error } = await supabaseService
+      .from(this.table)
+      .update({ status: HOUSEHOLD_INVITE_STATUSES.REVOKED })
+      .eq('id', id)
+      .eq('household_id', householdId)
+      .eq('status', HOUSEHOLD_INVITE_STATUSES.PENDING)
+      .select()
+      .maybeSingle();
+
+    if (error) {
+      throw new DatabaseError('Failed to revoke invite', 'DATABASE_ERROR', {
+        details: error.message,
+        id,
+      });
+    }
+    return data as HouseholdInvite | null;
+  }
+
+  /**
    * Undo a claim whose membership insert failed, so a transient database error
    * doesn't burn a single-use code and lock the invitee out for good. CAS'd on
    * the accepted status, `accepted_by` AND `accepted_at`: the caller passes the
