@@ -20,6 +20,7 @@ import type {
   NewShiftData,
 } from '../../../../../src/domains/schedule/repositories/scheduleShiftRepository';
 import type { ExpandedOccurrence } from '../../../../../src/domains/schedule/services/recurrenceExpander';
+import { expandRecurrence } from '../../../../../src/domains/schedule/services/recurrenceExpander';
 import type {
   ConflictEventRepository,
   MaterialisationShiftRepository,
@@ -508,5 +509,97 @@ describe('ScheduleMaterialisationService — times-moved compares instants, not 
       'shift-1',
       expect.objectContaining({ status: 'pending' })
     );
+  });
+});
+
+/**
+ * WS-M. The batched path was reported as converting a pattern's wall-clock
+ * times to UTC in the SERVER's timezone instead of the household's. It does
+ * not: the conversion happens exactly once, in `expandRecurrence`, from
+ * `pattern.timezone`, and the batch only copies the instant it produced.
+ *
+ * The reason that had to be checked by hand is that NOTHING above would have
+ * noticed if it were true. Every test in this file (and in
+ * `scheduleMaterialisationService.test.ts`) hands `materialise` hand-written
+ * occurrence literals — `${localDate}T07:00:00.000Z` — so the fixtures never
+ * cross a timezone and a server-local implementation would satisfy them
+ * byte-for-byte. This block closes that gap: the REAL expander drives the REAL
+ * batch, the absolute UTC instants are pinned, and the process timezone is
+ * deliberately set to one that is NOT the pattern's, so a conversion that ever
+ * reads the process zone fails here instead of shipping.
+ *
+ * Both DST halves are covered — 09:00 London is 08:00Z in August (BST) and
+ * 09:00Z in January (GMT) — because a fixed-offset shortcut passes one and
+ * fails the other. See GOLDEN-FIXES #21/#29 and `recurrenceExpander`'s header.
+ */
+describe('ScheduleMaterialisationService — wall-clock -> UTC uses the PATTERN zone, not the process zone', () => {
+  /** A Monday 09:00-17:00 London usual week — the shape behind the WS-M report. */
+  const mondayNineToFive = {
+    rrule: 'FREQ=WEEKLY;INTERVAL=1',
+    exdates: [],
+    pauseRanges: [],
+    timezone: 'Europe/London',
+    days: [{ weekday: 1, startTime: '09:00:00', endTime: '17:00:00' }],
+  };
+
+  /** The row `createMany` is handed for one real expanded occurrence. */
+  async function rowFor(localDate: string, now: Date): Promise<NewShiftData> {
+    const shiftRepo = makeCountingRepo();
+    const svc = new ScheduleMaterialisationService(
+      shiftRepo,
+      makeTimeEntryRepo(),
+      makeEventRepo()
+    );
+    const occurrences = expandRecurrence(
+      { ...mondayNineToFive, dtstart: localDate, until: localDate },
+      localDate
+    );
+    expect(occurrences).toHaveLength(1);
+    await svc.materialise(pattern, occurrences, now);
+
+    const [rows] = (shiftRepo.createMany as ReturnType<typeof mock>).mock
+      .calls[0] as [NewShiftData[]];
+    const row = rows[0];
+    if (!row) {
+      throw new Error('the occurrence was never handed to createMany');
+    }
+    return row;
+  }
+
+  /** Run `fn` with the process timezone pinned, then restore it. */
+  async function withProcessTz<T>(
+    timeZone: string,
+    fn: () => Promise<T>
+  ): Promise<T> {
+    const original = process.env.TZ;
+    process.env.TZ = timeZone;
+    try {
+      return await fn();
+    } finally {
+      process.env.TZ = original;
+    }
+  }
+
+  it('summer (BST): 09:00 London materialises to 08:00Z, whatever the server zone', async () => {
+    // 16:00Z would be 09:00 America/Los_Angeles — i.e. what a server-local
+    // conversion writes on the dev machine this was reported from.
+    for (const serverZone of ['America/Los_Angeles', 'Asia/Tokyo', 'UTC']) {
+      const row = await withProcessTz(serverZone, () =>
+        rowFor('2026-08-10', new Date('2026-08-01T00:00:00.000Z'))
+      );
+      expect(row.starts_at).toBe('2026-08-10T08:00:00.000Z');
+      expect(row.ends_at).toBe('2026-08-10T16:00:00.000Z');
+      expect(row.timezone).toBe('Europe/London');
+    }
+  });
+
+  it('winter (GMT): the SAME 09:00 wall clock materialises to 09:00Z — the offset is re-derived per date', async () => {
+    for (const serverZone of ['America/Los_Angeles', 'Asia/Tokyo', 'UTC']) {
+      const row = await withProcessTz(serverZone, () =>
+        rowFor('2027-01-11', new Date('2027-01-01T00:00:00.000Z'))
+      );
+      expect(row.starts_at).toBe('2027-01-11T09:00:00.000Z');
+      expect(row.ends_at).toBe('2027-01-11T17:00:00.000Z');
+    }
   });
 });
