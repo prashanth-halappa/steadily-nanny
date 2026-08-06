@@ -14,7 +14,15 @@
  * render.test.tsx), since the duration leaking across carers is only
  * observable through the interpolated value.
  */
-import { beforeAll, describe, expect, it, mock } from 'bun:test';
+import {
+  afterAll,
+  beforeAll,
+  describe,
+  expect,
+  it,
+  mock,
+  setSystemTime,
+} from 'bun:test';
 import type { TimeEntry } from '@steadily-nanny/shared-types/schemas/timesheet.schema';
 import { render } from '@testing-library/react-native';
 import { localDateInZone } from '@/src/lib/localDate';
@@ -26,6 +34,12 @@ const BEA_ID = '44444444-4444-4444-8444-444444444444';
 /** `household_members.id` values — 058's per-membership bucket key. */
 const EMMA_A_MEMBER_ID = '55555555-5555-4555-8555-555555555555';
 const EMMA_B_MEMBER_ID = '66666666-6666-4666-8666-666666666666';
+// Pin the wall clock: fixtures below use absolute times on "today", and the
+// card's arriving-vs-scheduled split depends on now (ARRIVING_WINDOW_MS) —
+// unpinned, this file goes red in the hour before an 18:00Z fixture starts.
+setSystemTime(new Date('2026-08-06T12:00:00Z'));
+afterAll(() => setSystemTime());
+
 const TIME_ZONE = 'UTC';
 const TODAY = localDateInZone(TIME_ZONE);
 
