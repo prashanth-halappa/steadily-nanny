@@ -55,6 +55,12 @@ export function computeWorkedMinutes(
  * the `greatest(0, …)` that matches the clamp below; 056 introduced the
  * function and is superseded. The two must move together — 061's contract
  * test greps both branches of it.
+ *
+ * MOBILE TWIN: `apps/mobile/src/domains/timesheet/utils/entryMinutes.ts`
+ * mirrors the cancellation rule (including this clamp) so the week the carer
+ * sees sums to the week the server banks. Twins on the cancellation branch
+ * ONLY — mobile deliberately shows elapsed time for a running entry where
+ * this returns null.
  */
 export function entryMinutes(entry: TimeEntry): number | null {
   if (!entry.clock_in_at || !entry.clock_out_at) {

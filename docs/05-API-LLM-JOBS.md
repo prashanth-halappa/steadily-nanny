@@ -171,7 +171,7 @@ SELECT cron.schedule('widget-digest', '0 6 * * *',   -- daily 6 AM UTC
 
 - Cross-cutting jobs: `apps/api/src/jobs/` (the shipped example: `exampleMaintenanceJob.ts`).
 - Domain-owned jobs: `apps/api/src/domains/<feature>/jobs/` (the shipped example: `domains/widget/jobs/widgetDigestJob.ts`).
-- `JobController` (`apps/api/src/controllers/jobController.ts`) imports the job functions and wraps each with logging/timing/run-tracking using the shared factory helpers `createTrackedJobHandler` / `createSimpleJobHandler` (`apps/api/src/controllers/jobHandlerFactory.ts`) — `createTrackedJobHandler` records each run into the `job_runs` table, `createSimpleJobHandler` doesn't.
+- `JobController` (`apps/api/src/controllers/jobController.ts`) imports the job functions and wraps each with logging/timing/run-tracking using the shared factory helpers `createTrackedJobHandler` / `createSimpleJobHandler` (`apps/api/src/controllers/jobHandlerFactory.ts`) — `createTrackedJobHandler` records each run into the `job_runs` table, `createSimpleJobHandler` doesn't. `createTrackedJobHandler` also reads `errorCount` off the summary it just recorded: a non-zero count still completes the `job_runs` row (so the numbers are never lost) and *then* logs at `error` and forwards a `JobCompletedWithErrorsError`, so the response is a failure and Sentry sees it (`jobHandlerFactory.ts:81-93`).
 
 ### 5.3 The shipped jobs
 
@@ -179,6 +179,7 @@ SELECT cron.schedule('widget-digest', '0 6 * * *',   -- daily 6 AM UTC
 |---|---|---|
 | `POST /api/jobs/example-maintenance` | A cross-cutting maintenance stub — replace its body with your own periodic work. | your choice |
 | `POST /api/jobs/widget-digest` | Counts widgets created in the last 24h and returns a summary the tracked-job handler records into `job_runs` (`domains/widget/jobs/widgetDigestJob.ts`). | daily |
+| `POST /api/jobs/integrity-checks` | Production data-integrity sweep (`jobs/integrityCheckJob.ts`). Calls `run_integrity_checks()` (migration `056_integrity_checks.sql`, rekeyed for departed carers by `061_integrity_checks_departed_carers.sql`), which runs eight read-only checks — `timesheet_total_mismatch`, `approved_snapshot_mismatch`, `pto_net_negative`, `expense_pending_dup`, `cancellation_unsettled`, `entry_overlap`, `stuck_runner`, `orphan_week` — and returns one row per violation. The job logs one `logger.error` per class (max 5 sample ids) and returns `errorCount = violations`, which makes the run **fail** via `createTrackedJobHandler` (§5.2) and page through Sentry. It never repairs anything. | daily 04:10 UTC (`057_integrity_checks_cron.sql`) |
 
 ### 5.4 Batch-job design notes (for when you build one)
 

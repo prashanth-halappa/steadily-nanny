@@ -88,6 +88,14 @@ describe('computeEntryMinutes — cancellation pay banks its stored minutes', ()
     expect(computeEntryMinutes(legacy, Date.now())).toBe(420);
   });
 
+  it('clamps a negative stored figure to 0, exactly as the server does', () => {
+    const corrupt = makeEntry({
+      kind: 'cancellation_paid',
+      scheduled_minutes: -30,
+    });
+    expect(computeEntryMinutes(corrupt, Date.now())).toBe(0);
+  });
+
   it('ignores scheduled_minutes on a worked entry — that is the roster, not the clock', () => {
     const worked = makeEntry({
       clock_in_at: '2026-08-01T08:00:00.000Z',

@@ -75,6 +75,32 @@ describe('UserService.getProfileById', () => {
   });
 });
 
+describe('UserService.ensureProfile', () => {
+  it('inserts only the anchor row and ignores an existing one, so nothing is clobbered', async () => {
+    const chain = createMockQueryChain({ data: null, error: null });
+    mockSupabaseService.from.mockImplementation(() => chain);
+
+    await UserService.ensureProfile('u1');
+
+    expect(mockSupabaseService.from).toHaveBeenCalledWith('user_profiles');
+    // Only user_id: a name/city/timezone in this payload would overwrite what
+    // the user set earlier, every time they create a household.
+    expect(chain.upsert).toHaveBeenCalledWith(
+      { user_id: 'u1' },
+      { onConflict: 'user_id', ignoreDuplicates: true }
+    );
+  });
+
+  it('throws a DatabaseError when the insert fails', async () => {
+    mockSupabaseService.from.mockImplementation(() =>
+      createMockQueryChain({ data: null, error: { message: 'boom' } })
+    );
+    await expect(UserService.ensureProfile('u1')).rejects.toThrow(
+      'Failed to ensure user profile'
+    );
+  });
+});
+
 describe('UserService.upsertProfile', () => {
   it('includes timezone in the upsert payload when the caller supplies one', async () => {
     const chain = createMockQueryChain({

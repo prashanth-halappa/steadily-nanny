@@ -82,7 +82,8 @@ describe('HouseholdCommandService.redeemInvite — invite_redeemed', () => {
       makeInviteRepo({
         findByCode: mock(async () => pendingInvite({ role: 'parent' })),
       }) as never,
-      { getMembership: mock() } as never
+      { getMembership: mock() } as never,
+      { ensureProfile: mock(async () => {}) } as never
     );
 
     await svc.redeemInvite('u2', { code: 'ABC-234' });
@@ -108,7 +109,8 @@ describe('HouseholdCommandService.redeemInvite — invite_redeemed', () => {
         makeInviteRepo({
           findByCode: mock(async () => pendingInvite({ role })),
         }) as never,
-        { getMembership: mock() } as never
+        { getMembership: mock() } as never,
+        { ensureProfile: mock(async () => {}) } as never
       );
 
       await svc.redeemInvite('u2', { code: 'ABC-234' });
@@ -133,7 +135,8 @@ describe('HouseholdCommandService.redeemInvite — invite_redeemed', () => {
       { create: mock(), update: mock(), delete: mock() } as never,
       makeMemberRepo() as never,
       makeInviteRepo() as never,
-      { getMembership: mock() } as never
+      { getMembership: mock() } as never,
+      { ensureProfile: mock(async () => {}) } as never
     );
 
     await expect(

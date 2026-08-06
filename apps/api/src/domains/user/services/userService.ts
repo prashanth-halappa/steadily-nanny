@@ -18,6 +18,35 @@ import type {
 import { invalidateUserTokenCache } from '../../../utils/cache';
 
 export class UserService {
+  /**
+   * Create the anchor row if it isn't there, and do nothing at all if it is.
+   * Nothing else creates it — there is no trigger on `auth.users` — so any
+   * write whose FK points here (households.created_by, household_members.
+   * user_id, user_device_info) 23503s for a user who has never PUT their
+   * profile. `ignoreDuplicates` makes this `on conflict do nothing`, so it can
+   * never overwrite a name or timezone the user already set.
+   */
+  static async ensureProfile(userId: string): Promise<void> {
+    const { error } = await supabaseService
+      .from('user_profiles')
+      .upsert(
+        { user_id: userId },
+        { onConflict: 'user_id', ignoreDuplicates: true }
+      );
+
+    if (error) {
+      logger.error('Error ensuring user profile:', error);
+      throw new DatabaseError(
+        'Failed to ensure user profile',
+        'DATABASE_ERROR',
+        {
+          userId,
+          dbError: error.message,
+        }
+      );
+    }
+  }
+
   static async upsertProfile(
     userId: string,
     profileData: UpsertProfileInput

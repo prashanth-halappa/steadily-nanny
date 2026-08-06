@@ -13,6 +13,7 @@ import type {
   HouseholdInvite,
   HouseholdMember,
 } from '../../../../../src/domains/household/types';
+import { DatabaseError } from '../../../../../src/errors';
 
 const household: Household = {
   id: 'h1',
@@ -141,6 +142,49 @@ function makeInviteRepo(overrides: Record<string, unknown> = {}): any {
   };
 }
 
+/**
+ * A caller with no `user_profiles` row, the way Postgres sees one: every FK
+ * that points at it (households.created_by, household_members.user_id) raises
+ * 23503 until the row exists. `ensureProfile` is what creates it.
+ */
+function makeProfileWorld() {
+  const profiles = new Set<string>();
+  const fk = (userId: string, constraint: string): void => {
+    if (!profiles.has(userId)) {
+      throw new DatabaseError(
+        'insert or update violates foreign key constraint',
+        'DATABASE_ERROR',
+        {
+          code: '23503',
+          constraint,
+        }
+      );
+    }
+  };
+  return {
+    profiles,
+    users: {
+      ensureProfile: mock(async (userId: string) => {
+        profiles.add(userId);
+      }),
+    } as any,
+    householdRepo: makeHouseholdRepo({
+      create: mock(async (data: Record<string, unknown>) => {
+        fk(String(data.created_by), 'households_created_by_fkey');
+        return { ...household, ...data, id: 'h-new' };
+      }),
+    }),
+    memberRepo: makeMemberRepo({
+      createMembership: mock(async (data: Record<string, unknown>) => {
+        fk(String(data.user_id), 'household_members_user_id_fkey');
+        return { id: 'm-new', ...data };
+      }),
+    }),
+  };
+}
+
+const stubUsers: any = { ensureProfile: mock(async () => {}) };
+
 function makeQueries(
   role: HouseholdMember['role'] = 'owner',
   overrides: Record<string, unknown> = {}
@@ -159,7 +203,8 @@ describe('HouseholdCommandService.create', () => {
       householdRepo,
       memberRepo,
       makeInviteRepo(),
-      makeQueries()
+      makeQueries(),
+      stubUsers
     );
 
     const result = await svc.create('u1', { name: 'The Smiths' });
@@ -191,13 +236,68 @@ describe('HouseholdCommandService.create', () => {
       householdRepo,
       memberRepo,
       makeInviteRepo(),
-      makeQueries()
+      makeQueries(),
+      stubUsers
     );
 
     await expect(svc.create('u1', { name: 'The Smiths' })).rejects.toThrow(
       'insert failed'
     );
     expect(householdRepo.delete).toHaveBeenCalledWith('h-new');
+  });
+});
+
+describe('HouseholdCommandService onboarding without a user_profiles row', () => {
+  // Nothing creates the profile row: there is no trigger on auth.users, and the
+  // client-side bootstrap added in 2ae309c only covers the parent flow. A nanny
+  // redeeming an invite has no bootstrap on that path at all.
+  it('creates the profile row before the household, so a fresh auth user can onboard', async () => {
+    const world = makeProfileWorld();
+    const svc = new HouseholdCommandService(
+      world.householdRepo,
+      world.memberRepo,
+      makeInviteRepo(),
+      makeQueries(),
+      world.users
+    );
+
+    const result = await svc.create('u-fresh', { name: 'The Smiths' });
+
+    expect(world.users.ensureProfile).toHaveBeenCalledWith('u-fresh');
+    expect(result.id).toBe('h-new');
+    expect(world.householdRepo.delete).not.toHaveBeenCalled();
+  });
+
+  it('creates the profile row before redeeming an invite, so a fresh nanny can join', async () => {
+    const world = makeProfileWorld();
+    const svc = new HouseholdCommandService(
+      world.householdRepo,
+      world.memberRepo,
+      makeInviteRepo(),
+      makeQueries(),
+      world.users
+    );
+
+    const membership = await svc.redeemInvite('u-fresh', { code: 'ABC-234' });
+
+    expect(world.users.ensureProfile).toHaveBeenCalledWith('u-fresh');
+    expect(membership.user_id).toBe('u-fresh');
+  });
+
+  it('leaves an existing profile alone — ensure is called, never a field-bearing upsert', async () => {
+    const world = makeProfileWorld();
+    world.profiles.add('u-existing');
+    const svc = new HouseholdCommandService(
+      world.householdRepo,
+      world.memberRepo,
+      makeInviteRepo(),
+      makeQueries(),
+      world.users
+    );
+
+    await svc.create('u-existing', { name: 'The Smiths' });
+
+    expect(world.users.ensureProfile.mock.calls).toEqual([['u-existing']]);
   });
 });
 
@@ -208,7 +308,8 @@ describe('HouseholdCommandService.update', () => {
       householdRepo,
       makeMemberRepo(),
       makeInviteRepo(),
-      makeQueries('parent')
+      makeQueries('parent'),
+      stubUsers
     );
     const result = await svc.update('u1', 'h1', { name: 'New name' });
     expect(householdRepo.update).toHaveBeenCalledWith('h1', {
@@ -222,7 +323,8 @@ describe('HouseholdCommandService.update', () => {
       makeHouseholdRepo(),
       makeMemberRepo(),
       makeInviteRepo(),
-      makeQueries('nanny')
+      makeQueries('nanny'),
+      stubUsers
     );
     await expect(
       svc.update('u1', 'h1', { name: 'New name' })
@@ -234,7 +336,8 @@ describe('HouseholdCommandService.update', () => {
       makeHouseholdRepo(),
       makeMemberRepo(),
       makeInviteRepo(),
-      makeQueries('helper')
+      makeQueries('helper'),
+      stubUsers
     );
     await expect(
       svc.update('u1', 'h1', { name: 'New name' })
@@ -249,7 +352,8 @@ describe('HouseholdCommandService.createInvite', () => {
       makeHouseholdRepo(),
       makeMemberRepo(),
       inviteRepo,
-      makeQueries('owner')
+      makeQueries('owner'),
+      stubUsers
     );
     const invite = await svc.createInvite('u1', 'h1', { role: 'nanny' });
 
@@ -270,7 +374,8 @@ describe('HouseholdCommandService.createInvite', () => {
       makeHouseholdRepo(),
       makeMemberRepo(),
       makeInviteRepo(),
-      makeQueries('nanny')
+      makeQueries('nanny'),
+      stubUsers
     );
     await expect(
       svc.createInvite('u1', 'h1', { role: 'nanny' })
@@ -282,7 +387,8 @@ describe('HouseholdCommandService.createInvite', () => {
       makeHouseholdRepo(),
       makeMemberRepo(),
       makeInviteRepo(),
-      makeQueries('helper')
+      makeQueries('helper'),
+      stubUsers
     );
     await expect(
       svc.createInvite('u1', 'h1', { role: 'nanny' })
@@ -298,7 +404,8 @@ describe('HouseholdCommandService.redeemInvite', () => {
       makeHouseholdRepo(),
       memberRepo,
       inviteRepo,
-      makeQueries()
+      makeQueries(),
+      stubUsers
     );
 
     const membership = await svc.redeemInvite('u2', { code: 'abc-234' });
@@ -324,7 +431,8 @@ describe('HouseholdCommandService.redeemInvite', () => {
       makeHouseholdRepo(),
       memberRepo,
       inviteRepo,
-      makeQueries()
+      makeQueries(),
+      stubUsers
     );
 
     const membership = await svc.redeemInvite('u2', { code: 'ABC-234' });
@@ -344,7 +452,8 @@ describe('HouseholdCommandService.redeemInvite', () => {
       makeHouseholdRepo(),
       memberRepo,
       inviteRepo,
-      makeQueries()
+      makeQueries(),
+      stubUsers
     );
 
     const membership = await svc.redeemInvite('u2', { code: 'ABC-234' });
@@ -361,7 +470,8 @@ describe('HouseholdCommandService.redeemInvite', () => {
       makeHouseholdRepo(),
       makeMemberRepo(),
       inviteRepo,
-      makeQueries()
+      makeQueries(),
+      stubUsers
     );
     await svc.redeemInvite('u2', { code: '  abc-234  ' });
     expect(inviteRepo.findByCode).toHaveBeenCalledWith('ABC-234');
@@ -372,7 +482,8 @@ describe('HouseholdCommandService.redeemInvite', () => {
       makeHouseholdRepo(),
       makeMemberRepo(),
       makeInviteRepo({ findByCode: mock(async () => null) }),
-      makeQueries()
+      makeQueries(),
+      stubUsers
     );
     await expect(
       svc.redeemInvite('u2', { code: 'ZZZ-999' })
@@ -386,7 +497,8 @@ describe('HouseholdCommandService.redeemInvite', () => {
       makeInviteRepo({
         findByCode: mock(async () => pendingInvite({ status: 'revoked' })),
       }),
-      makeQueries()
+      makeQueries(),
+      stubUsers
     );
     await expect(
       svc.redeemInvite('u2', { code: 'ABC-234' })
@@ -400,7 +512,8 @@ describe('HouseholdCommandService.redeemInvite', () => {
       makeInviteRepo({
         findByCode: mock(async () => pendingInvite({ status: 'accepted' })),
       }),
-      makeQueries()
+      makeQueries(),
+      stubUsers
     );
     await expect(
       svc.redeemInvite('u2', { code: 'ABC-234' })
@@ -416,7 +529,8 @@ describe('HouseholdCommandService.redeemInvite', () => {
           pendingInvite({ expires_at: '2000-01-01T00:00:00Z' })
         ),
       }),
-      makeQueries()
+      makeQueries(),
+      stubUsers
     );
     await expect(
       svc.redeemInvite('u2', { code: 'ABC-234' })
@@ -431,7 +545,8 @@ describe('HouseholdCommandService.redeemInvite', () => {
       makeHouseholdRepo(),
       memberRepo,
       makeInviteRepo(),
-      makeQueries()
+      makeQueries(),
+      stubUsers
     );
     await expect(
       svc.redeemInvite('u1', { code: 'ABC-234' })
@@ -464,7 +579,8 @@ describe('HouseholdCommandService.redeemInvite', () => {
       makeHouseholdRepo(),
       memberRepo,
       inviteRepo,
-      makeQueries()
+      makeQueries(),
+      stubUsers
     );
 
     await svc.redeemInvite('u2', { code: 'ABC-234' });
@@ -485,7 +601,8 @@ describe('HouseholdCommandService.redeemInvite', () => {
       makeHouseholdRepo(),
       memberRepo,
       inviteRepo,
-      makeQueries()
+      makeQueries(),
+      stubUsers
     );
 
     await expect(
@@ -508,7 +625,8 @@ describe('HouseholdCommandService.redeemInvite', () => {
       makeHouseholdRepo(),
       memberRepo,
       inviteRepo,
-      makeQueries()
+      makeQueries(),
+      stubUsers
     );
 
     await expect(svc.redeemInvite('u2', { code: 'ABC-234' })).rejects.toThrow(
@@ -533,7 +651,8 @@ describe('HouseholdCommandService.redeemInvite', () => {
       makeHouseholdRepo(),
       memberRepo,
       inviteRepo,
-      makeQueries()
+      makeQueries(),
+      stubUsers
     );
 
     await expect(
@@ -557,7 +676,8 @@ describe('HouseholdCommandService.redeemInvite', () => {
       makeHouseholdRepo(),
       memberRepo,
       inviteRepo,
-      makeQueries()
+      makeQueries(),
+      stubUsers
     );
 
     await expect(svc.redeemInvite('u2', { code: 'ABC-234' })).rejects.toThrow(
@@ -571,7 +691,8 @@ describe('HouseholdCommandService.redeemInvite', () => {
       makeHouseholdRepo(),
       makeMemberRepo(),
       inviteRepo,
-      makeQueries()
+      makeQueries(),
+      stubUsers
     );
 
     await svc.redeemInvite('u2', { code: 'ABC-234' });
@@ -592,7 +713,8 @@ describe('HouseholdCommandService.redeemInvite', () => {
       makeHouseholdRepo(),
       memberRepo,
       inviteRepo,
-      makeQueries()
+      makeQueries(),
+      stubUsers
     );
 
     const membership = await svc.redeemInvite('u2', { code: 'ABC-234' });
@@ -617,7 +739,8 @@ describe('HouseholdCommandService.redeemInvite', () => {
       makeHouseholdRepo(),
       makeMemberRepo(),
       inviteRepo,
-      makeQueries()
+      makeQueries(),
+      stubUsers
     );
 
     await expect(
@@ -641,7 +764,8 @@ describe('HouseholdCommandService.redeemInvite', () => {
       makeHouseholdRepo(),
       memberRepo,
       inviteRepo,
-      makeQueries()
+      makeQueries(),
+      stubUsers
     );
 
     await expect(
@@ -664,7 +788,8 @@ describe('HouseholdCommandService.redeemInvite', () => {
       makeHouseholdRepo(),
       memberRepo,
       inviteRepo,
-      makeQueries()
+      makeQueries(),
+      stubUsers
     );
 
     await expect(
@@ -701,7 +826,8 @@ describe('HouseholdCommandService.redeemInvite', () => {
       makeHouseholdRepo(),
       memberRepo,
       inviteRepo,
-      makeQueries()
+      makeQueries(),
+      stubUsers
     );
 
     await svc.redeemInvite('u2', { code: 'ABC-234' });
@@ -757,7 +883,8 @@ describe('HouseholdCommandService.redeemInvite', () => {
       makeHouseholdRepo(),
       memberRepo,
       inviteRepo,
-      makeQueries()
+      makeQueries(),
+      stubUsers
     );
 
     await expect(
@@ -781,7 +908,8 @@ describe('HouseholdCommandService.redeemInvite', () => {
       makeHouseholdRepo(),
       memberRepo,
       inviteRepo,
-      makeQueries()
+      makeQueries(),
+      stubUsers
     );
 
     await expect(
@@ -799,7 +927,8 @@ describe('HouseholdCommandService.redeemInvite', () => {
       makeHouseholdRepo(),
       makeMemberRepo(),
       inviteRepo,
-      makeQueries()
+      makeQueries(),
+      stubUsers
     );
 
     await expect(
@@ -820,7 +949,8 @@ describe('HouseholdCommandService.redeemInvite', () => {
       makeHouseholdRepo(),
       makeMemberRepo(),
       inviteRepo,
-      makeQueries()
+      makeQueries(),
+      stubUsers
     );
 
     await expect(
@@ -840,7 +970,8 @@ describe('HouseholdCommandService.redeemInvite', () => {
       makeHouseholdRepo(),
       makeMemberRepo(),
       inviteRepo,
-      makeQueries()
+      makeQueries(),
+      stubUsers
     );
 
     await expect(svc.redeemInvite('u2', { code: 'ABC-234' })).rejects.toThrow(
@@ -859,7 +990,8 @@ describe('HouseholdCommandService.redeemInvite', () => {
       makeHouseholdRepo(),
       memberRepo,
       makeInviteRepo(),
-      makeQueries()
+      makeQueries(),
+      stubUsers
     );
     await expect(
       svc.redeemInvite('u2', { code: 'ABC-234' })

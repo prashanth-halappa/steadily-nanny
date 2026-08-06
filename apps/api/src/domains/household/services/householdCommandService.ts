@@ -9,6 +9,7 @@
  */
 import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types/schemas/notification.schema';
 import { notifyHouseholdParents } from '../../notification';
+import { UserService } from '../../user/services/userService';
 import {
   AlreadyMemberError,
   InviteAlreadyAcceptedError,
@@ -62,7 +63,11 @@ export class HouseholdCommandService {
     private readonly householdRepo: HouseholdRepository = new HouseholdRepository(),
     private readonly memberRepo: HouseholdMemberRepository = new HouseholdMemberRepository(),
     private readonly inviteRepo: HouseholdInviteRepository = new HouseholdInviteRepository(),
-    private readonly queries: HouseholdQueryService = householdQueryService
+    private readonly queries: HouseholdQueryService = householdQueryService,
+    private readonly users: Pick<
+      typeof UserService,
+      'ensureProfile'
+    > = UserService
   ) {}
 
   /**
@@ -77,6 +82,10 @@ export class HouseholdCommandService {
     userId: string,
     input: CreateHouseholdInput
   ): Promise<Household> {
+    // `created_by` and the owner membership both FK to user_profiles, and
+    // nothing else creates that row on this path.
+    await this.users.ensureProfile(userId);
+
     const household = await this.householdRepo.create({
       ...input,
       created_by: userId,
@@ -149,6 +158,10 @@ export class HouseholdCommandService {
     userId: string,
     input: RedeemHouseholdInviteInput
   ): Promise<HouseholdMember> {
+    // Same FK as `create`, and this path has no client-side bootstrap at all:
+    // a nanny's first ever API call can be this one.
+    await this.users.ensureProfile(userId);
+
     const code = input.code.trim().toUpperCase();
     const invite = await this.inviteRepo.findByCode(code);
     if (!invite) {

@@ -54,7 +54,10 @@ export function computeWorkedMinutesFromInstants(
 export function computeEntryMinutes(entry: TimeEntry, nowMs: number): number {
   if (!entry.clock_in_at) return 0;
   if (entry.kind === 'cancellation_paid' && entry.scheduled_minutes !== null) {
-    return entry.scheduled_minutes;
+    // Clamped like every other path here and on the server — no entry ever
+    // banks negative minutes. Nothing writes one today; the column has no
+    // check constraint saying so.
+    return Math.max(0, entry.scheduled_minutes);
   }
   const endMs = entry.clock_out_at
     ? new Date(entry.clock_out_at).getTime()
