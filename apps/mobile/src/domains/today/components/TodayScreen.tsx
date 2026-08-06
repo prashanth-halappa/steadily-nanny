@@ -17,6 +17,11 @@
  * "parent proposes, nanny accepts" was only reachable by hand-typing a deep
  * link, which means it was not really shipped. It renders NOTHING when there is
  * no pending week, so it costs an ordinary day nothing.
+ *
+ * For the same reason it, and `NeedsAttentionCard`, come FIRST: a card that is
+ * invisible unless it needs action costs nothing at the top and is useless at
+ * the bottom. Below the routine cards the respond CTA rendered past the end of
+ * the scroll viewport, so a nanny with a week waiting saw no call to action.
  */
 
 import { LinearGradient } from 'expo-linear-gradient';
@@ -117,6 +122,17 @@ export function TodayScreen() {
               </View>
             ) : null}
 
+            {/* Both of these render nothing unless something is genuinely
+                waiting on this person — deliberately not empty states. A card
+                announcing its own absence is noise on the screen people open
+                most, which is exactly why they can sit ABOVE the routine cards
+                for free: on an ordinary day there is nothing here to scroll
+                past. Order is load-bearing — behind the routine cards the
+                respond CTA fell below the fold, and it is the only route into
+                the accept flow. See TodayScreen.cardOrder.test.tsx. */}
+            <NeedsAttentionCard />
+            <PendingScheduleCard />
+
             {canViewParentSchedule(onboarding.role) ? (
               <NannyLiveStatusCard
                 householdId={household.id}
@@ -143,16 +159,6 @@ export function TodayScreen() {
                 role={onboarding.role}
               />
             ) : null}
-
-            {/* Renders nothing unless pending work exists — deliberately not
-                an empty state. Keeps inbox reachable without burying it in
-                Settings alone. */}
-            <NeedsAttentionCard />
-
-            {/* Renders nothing unless a week is genuinely waiting for this
-                person — deliberately not an empty state. A card announcing its
-                own absence is noise on the screen people open most. */}
-            <PendingScheduleCard />
 
             <ThisWeeksShiftsCard />
           </View>
