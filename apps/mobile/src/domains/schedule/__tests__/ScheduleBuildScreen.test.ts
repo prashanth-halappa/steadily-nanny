@@ -102,15 +102,52 @@ describe('ScheduleBuildScreen source', () => {
     // has NO `catch` — `finally` runs but does not swallow the exception, so
     // a failure still propagates out of `onSend`, and `onCta={() => void
     // onSend()}` discards that rejection with no handler — an unhandled
-    // promise rejection, the same defect class as D7's clock-in bug. Each
-    // underlying mutation already shows its own toast via `onError`, so the
-    // fix is simply to stop the rejection from escaping, not to add new UI.
+    // promise rejection, the same defect class as D7's clock-in bug.
     const onSendMatch = source.match(
       /const onSend = async \(\) => \{[\s\S]*?\n {2}\};/
     );
     expect(onSendMatch).not.toBeNull();
     const onSendBody = onSendMatch?.[0] ?? '';
-    expect(onSendBody).toMatch(/\}\s*catch\s*\{/);
+    expect(onSendBody).toMatch(/\}\s*catch\s*\(error\)\s*\{/);
+    // `setIsSending(false)` must run unconditionally on every path
+    // (success, failure, or an early `return` above the try) — it lives in
+    // `finally`, not duplicated per-branch.
+    expect(onSendBody).toContain('setIsSending(false);');
+  });
+
+  it('WS-K REGRESSION: a failed send OWNS its own error surface — never just assumes a nested mutation already toasted', () => {
+    // The bug: a failed send on a changed ACCEPTED week (the 409 this whole
+    // fix exists to avoid) showed no toast in two live reproductions, even
+    // though `useReplaceSchedulePatternDays`'s `onError` is supposed to fire
+    // one — three hops away from the CTA is too fragile a place to trust
+    // blindly. `onSend`'s `catch` now surfaces the error directly, so a
+    // failed "Send" is loud regardless of whether anything nested also
+    // fires.
+    const onSendMatch = source.match(
+      /const onSend = async \(\) => \{[\s\S]*?\n {2}\};/
+    );
+    const onSendBody = onSendMatch?.[0] ?? '';
+    expect(onSendBody).toContain('showErrorToast(');
+    expect(onSendBody).toContain('getLocalizedErrorMessage(error, tErrors)');
+    expect(source).toContain("from '@/src/lib/toast'");
+    expect(source).toContain("from '@/src/lib/errorLocalization'");
+    expect(source).toContain("useTranslation('errors')");
+  });
+
+  it("WS-K REGRESSION: send threads the resumed pattern's status into sendScheduleWeek — an id alone never implies it's editable", () => {
+    // The bug: `SchedulePatternBanner`'s accepted arm routes
+    // `?patternId=<accepted id>` into this wizard (so "Change it"
+    // pre-fills), but `sendScheduleWeek` only checked "is patternId set",
+    // so it PUT days straight onto the accepted pattern — the API 409s
+    // (`PATTERN_NOT_EDITABLE`) by design, since an accepted pattern has
+    // already been offered to and answered by the carer.
+    const onSendMatch = source.match(
+      /const onSend = async \(\) => \{[\s\S]*?\n {2}\};/
+    );
+    const onSendBody = onSendMatch?.[0] ?? '';
+    expect(onSendBody).toMatch(
+      /patternStatus:\s*existingPattern\.data\?\.status/
+    );
   });
 
   it('REGRESSION: the carer-name fallback is a translated placeholder, never an un-namespaced UI title string', () => {

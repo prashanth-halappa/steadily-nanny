@@ -418,7 +418,7 @@ describe('sendScheduleWeek', () => {
     expect(sendPattern.mock.calls[0]?.[0].patternId).not.toBeUndefined();
   });
 
-  it('reuses an existing patternId and does not call createPattern again', async () => {
+  it('reuses an existing DRAFT patternId and does not call createPattern again', async () => {
     const createPattern = mock(() => Promise.resolve({ id: 'ignored' }));
     const replaceDays = mock(
       (_args: { patternId: string; days: typeof days }) => Promise.resolve()
@@ -429,6 +429,7 @@ describe('sendScheduleWeek', () => {
 
     const result = await sendScheduleWeek({
       patternId: 'existing-pattern-id',
+      patternStatus: 'draft',
       carerId: 'carer-1',
       rrule: 'FREQ=WEEKLY;INTERVAL=1;BYDAY=WE',
       dtstart: '2026-08-05',
@@ -447,6 +448,119 @@ describe('sendScheduleWeek', () => {
       patternId: 'existing-pattern-id',
     });
     expect(result).toBe('existing-pattern-id');
+  });
+
+  // WS-K: an id alone is not enough to justify editing a pattern in place —
+  // only a KNOWN 'draft' status is. `SchedulePatternBanner`'s accepted arm
+  // routes `?patternId=<accepted id>` into this same wizard (so "Change it"
+  // pre-fills), but the API's `assertDraft` 409s (PATTERN_NOT_EDITABLE) on a
+  // PUT to an accepted pattern's days — by design, it's already been
+  // answered. Changing an accepted week must create a BRAND NEW pattern; the
+  // server's supersede-on-accept ends the old one once the carer accepts the
+  // new one.
+  describe('WS-K — resuming a non-draft pattern creates a new one instead of editing in place', () => {
+    it('resumed ACCEPTED pattern: creates a new pattern and never calls replaceDays/sendPattern on the accepted id', async () => {
+      const createPattern = mock(() =>
+        Promise.resolve({ id: 'new-pattern-id' })
+      );
+      const replaceDays = mock(
+        (_args: { patternId: string; days: typeof days }) => Promise.resolve()
+      );
+      const sendPattern = mock((_args: { patternId: string }) =>
+        Promise.resolve()
+      );
+
+      const result = await sendScheduleWeek({
+        patternId: 'accepted-pattern-id',
+        patternStatus: 'accepted',
+        carerId: 'carer-1',
+        rrule: 'FREQ=WEEKLY;INTERVAL=1;BYDAY=WE',
+        dtstart: '2026-08-05',
+        days,
+        createPattern,
+        replaceDays,
+        sendPattern,
+      });
+
+      expect(createPattern).toHaveBeenCalledTimes(1);
+      expect(replaceDays).toHaveBeenCalledWith({
+        patternId: 'new-pattern-id',
+        days,
+      });
+      expect(sendPattern).toHaveBeenCalledWith({
+        patternId: 'new-pattern-id',
+      });
+      expect(result).toBe('new-pattern-id');
+
+      // Never a PUT to the accepted id — that's the 409 this whole fix
+      // exists to avoid.
+      expect(replaceDays.mock.calls[0]?.[0].patternId).not.toBe(
+        'accepted-pattern-id'
+      );
+      expect(sendPattern.mock.calls[0]?.[0].patternId).not.toBe(
+        'accepted-pattern-id'
+      );
+    });
+
+    it('any other/unrecognised resumed status (never expected to route here) also creates new rather than crashing or PUTting', async () => {
+      const createPattern = mock(() =>
+        Promise.resolve({ id: 'new-pattern-id-2' })
+      );
+      const replaceDays = mock(
+        (_args: { patternId: string; days: typeof days }) => Promise.resolve()
+      );
+      const sendPattern = mock((_args: { patternId: string }) =>
+        Promise.resolve()
+      );
+
+      const result = await sendScheduleWeek({
+        patternId: 'declined-pattern-id',
+        patternStatus: 'declined',
+        carerId: 'carer-1',
+        rrule: 'FREQ=WEEKLY;INTERVAL=1;BYDAY=WE',
+        dtstart: '2026-08-05',
+        days,
+        createPattern,
+        replaceDays,
+        sendPattern,
+      });
+
+      expect(createPattern).toHaveBeenCalledTimes(1);
+      expect(replaceDays).toHaveBeenCalledWith({
+        patternId: 'new-pattern-id-2',
+        days,
+      });
+      expect(result).toBe('new-pattern-id-2');
+    });
+
+    it('an unknown status (undefined — e.g. hydration never confirmed one) also creates new, never assumes draft', async () => {
+      const createPattern = mock(() =>
+        Promise.resolve({ id: 'new-pattern-id-3' })
+      );
+      const replaceDays = mock(
+        (_args: { patternId: string; days: typeof days }) => Promise.resolve()
+      );
+      const sendPattern = mock((_args: { patternId: string }) =>
+        Promise.resolve()
+      );
+
+      await sendScheduleWeek({
+        patternId: 'some-existing-id',
+        patternStatus: undefined,
+        carerId: 'carer-1',
+        rrule: 'FREQ=WEEKLY;INTERVAL=1;BYDAY=WE',
+        dtstart: '2026-08-05',
+        days,
+        createPattern,
+        replaceDays,
+        sendPattern,
+      });
+
+      expect(createPattern).toHaveBeenCalledTimes(1);
+      expect(replaceDays.mock.calls[0]?.[0].patternId).not.toBe(
+        'some-existing-id'
+      );
+    });
   });
 
   // D11: if `createPattern` succeeds but a later step fails, the created id
@@ -560,6 +674,8 @@ describe('sendScheduleWeek', () => {
 
       const result = await sendScheduleWeek({
         patternId: persistedPatternId,
+        // A pattern this function just created is always a fresh draft.
+        patternStatus: 'draft',
         carerId: 'carer-1',
         rrule: 'FREQ=WEEKLY;INTERVAL=1;BYDAY=WE',
         dtstart: '2026-08-05',
@@ -619,6 +735,7 @@ describe('sendScheduleWeek', () => {
 
       await sendScheduleWeek({
         patternId: 'already-exists',
+        patternStatus: 'draft',
         carerId: 'carer-1',
         rrule: 'FREQ=WEEKLY;INTERVAL=1;BYDAY=WE',
         dtstart: '2026-08-05',

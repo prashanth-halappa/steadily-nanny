@@ -29,11 +29,19 @@
  *
  * DRAFT RESUME: an optional `patternId` prop (from the build route's
  * `?patternId=` search param — see SchedulePendingScreen's "Continue
- * building" CTA) resumes an existing draft instead of starting a fresh
+ * building" CTA for a draft, and SchedulePatternBanner's "Change it" for an
+ * ACCEPTED pattern) resumes an existing pattern instead of starting a fresh
  * wizard. Two things make this safe:
  *  1. `patternId` local state is seeded from the prop, so `sendScheduleWeek`
- *     (whose `!patternId` check decides whether to call `createPattern`)
- *     never creates a SECOND draft for a pattern that already exists.
+ *     never creates a SECOND draft for a pattern that already exists — but
+ *     (WS-K) it only REUSES that id via `replaceDays` when the resumed
+ *     pattern's `status` (threaded through as `patternStatus`, from
+ *     `existingPattern.data`) is a known `'draft'`. A resumed ACCEPTED (or
+ *     any other non-draft) pattern instead makes `sendScheduleWeek` create a
+ *     BRAND NEW pattern — the API's `assertDraft` 409s on a PUT to a
+ *     pattern that's already been answered, and the server's
+ *     supersede-on-accept ends the old one once the carer accepts the new
+ *     one. See `sendScheduleWeek`'s own header/`patternStatus` doc comments.
  *  2. Once the draft's days load (`useSchedulePattern`), `hydrateDraftPattern`
  *     (`../utils` — a pure, independently-unit-tested function) derives the
  *     carer/days/times/children/interval selections from them, so the
@@ -81,6 +89,8 @@ import { useChildren } from '@/src/hooks/queries/useChildren';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 import { useSchedulePattern } from '@/src/hooks/queries/useSchedulePattern';
 import { useUserProfile } from '@/src/hooks/queries/useUserProfile';
+import { getLocalizedErrorMessage } from '@/src/lib/errorLocalization';
+import { showErrorToast } from '@/src/lib/toast';
 import { getWeekdayOrder } from '@/src/lib/weekdayOrder';
 import {
   buildWeeklyRrule,
@@ -121,6 +131,7 @@ export function ScheduleBuildScreen({
   const router = useRouter();
   const { t } = useTranslation('schedule');
   const { t: tCommon } = useTranslation('common');
+  const { t: tErrors } = useTranslation('errors');
   const onboarding = useIsOnboarded();
   const activeHousehold = useActiveHousehold();
   const householdId = activeHousehold.householdId;
@@ -303,6 +314,11 @@ export function ScheduleBuildScreen({
       // by the time they're called in this same handler pass).
       const resolvedPatternId = await sendScheduleWeek({
         patternId,
+        // WS-K: only a KNOWN 'draft' is safe to edit in place — an accepted
+        // (or any other non-draft) resumed pattern must get a brand NEW one
+        // instead of a PUT the API will 409 (`PATTERN_NOT_EDITABLE`). See
+        // `sendScheduleWeek`'s own `patternStatus` doc comment.
+        patternStatus: existingPattern.data?.status,
         carerId: selectedCarerId,
         rrule: buildWeeklyRrule(selectedDays, intervalWeeks),
         dtstart: todayIsoDate(),
@@ -331,11 +347,16 @@ export function ScheduleBuildScreen({
       setPatternId(resolvedPatternId);
 
       router.replace('/(private)/schedule' as Href);
-    } catch {
-      // Each underlying mutation (createPattern/replaceDays/sendPattern)
-      // already shows its own toast via onError — a bare `finally` here
-      // would still let the rejection escape past `onCta={() => void
-      // onSend()}` with nothing to catch it, an unhandled promise rejection.
+    } catch (error) {
+      // WS-K: the primary CTA on this screen OWNS its failure surface —
+      // it does not just trust that some nested mutation's onError already
+      // fired one. A bare `finally` here (no `catch` at all) would let the
+      // rejection escape past `onCta={() => void onSend()}` with nothing to
+      // catch it, an unhandled promise rejection — the same defect class as
+      // D7's clock-in bug. A silent failure on a primary "Send" CTA must be
+      // impossible, so this is unconditional and explicit rather than
+      // implicit and three hops away.
+      showErrorToast(getLocalizedErrorMessage(error, tErrors));
     } finally {
       setIsSending(false);
     }
