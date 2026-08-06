@@ -236,9 +236,29 @@ export interface SendDayInput {
 }
 
 interface SendScheduleWeekArgs {
-  /** Existing draft pattern id, if the build screen already created one on
-   * an earlier pass (e.g. retrying after a failed send). */
+  /** Existing pattern id, if the build screen already created one on an
+   * earlier pass (e.g. retrying after a failed send) OR is resuming a
+   * pattern from a previous wizard run (`?patternId=` — see
+   * `patternStatus`). */
   patternId: string | undefined;
+  /**
+   * WS-K: the resumed pattern's status (from `useSchedulePattern`), when
+   * `patternId` points at a pattern this call did NOT just create itself.
+   * Only a known `'draft'` is safe to edit in place via `replaceDays` — the
+   * API's `assertDraft` 409s (`PATTERN_NOT_EDITABLE`) for anything else, by
+   * design: an accepted pattern has already been offered to and answered by
+   * the carer, so "editing" it would rewrite history under their feet.
+   * `SchedulePatternBanner`'s accepted arm routes `?patternId=<accepted
+   * id>` into this same wizard (so "Change it" pre-fills) — changing that
+   * week must create a BRAND NEW pattern instead; the server's
+   * supersede-on-accept ends the old one once the carer accepts the new
+   * one. Leave `undefined` for a fresh wizard (no resumed pattern, so
+   * `patternId` is `undefined` too). Any status other than `'draft'` —
+   * including `undefined` when it SHOULD have been known — falls through to
+   * creating new, never to a PUT that risks a 409 against a pattern that
+   * may no longer be editable.
+   */
+  patternStatus?: string;
   carerId: string;
   rrule: string;
   dtstart: string;
@@ -261,7 +281,9 @@ interface SendScheduleWeekArgs {
    * left the created id trapped inside this function: the caller's own
    * `patternId` state never learned it, so a retry called `createPattern`
    * again and littered the household with orphaned drafts. Never called
-   * when an existing `patternId` was passed in (nothing new was created).
+   * when an existing DRAFT `patternId` was reused in place (nothing new was
+   * created) — but IS called when a resumed non-draft pattern (e.g.
+   * accepted) causes this function to create a fresh replacement instead.
    */
   onPatternCreated?: (patternId: string) => void;
 }
@@ -292,7 +314,14 @@ interface SendScheduleWeekArgs {
 export async function sendScheduleWeek(
   args: SendScheduleWeekArgs
 ): Promise<string> {
-  let patternId = args.patternId;
+  // Reuse the resumed id ONLY when it's a known draft — see
+  // `patternStatus`'s own doc comment. Anything else (accepted, declined,
+  // an unrecognised/undefined status) is NOT safe to PUT days onto, so it
+  // falls straight through to creating a brand new pattern below, exactly
+  // like the fresh-wizard (`patternId === undefined`) path.
+  const canEditInPlace =
+    args.patternId !== undefined && args.patternStatus === 'draft';
+  let patternId = canEditInPlace ? args.patternId : undefined;
   if (!patternId) {
     const created = await args.createPattern({
       carer_id: args.carerId,
