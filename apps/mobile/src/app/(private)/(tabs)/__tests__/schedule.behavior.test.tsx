@@ -73,24 +73,38 @@ mock.module('@/src/domains/schedule', () => {
   return {
     SchedulePendingScreen: () =>
       React.createElement('View', { testID: 'schedule-pending-screen-mock' }),
-    ScheduleShiftsScreen: ({ showBack }: { showBack?: boolean }) =>
-      React.createElement('View', {
-        testID: 'schedule-shifts-screen-mock',
-        accessibilityLabel: showBack === false ? 'no-back' : 'with-back',
-      }),
+    ScheduleShiftsScreen: ({
+      showBack,
+      patternBanner,
+    }: {
+      showBack?: boolean;
+      patternBanner?: unknown;
+    }) =>
+      React.createElement(
+        'View',
+        {
+          testID: 'schedule-shifts-screen-mock',
+          accessibilityLabel: showBack === false ? 'no-back' : 'with-back',
+        },
+        patternBanner
+      ),
   };
 });
 
 const mockUseSchedulePatterns = mock(
-  (): { data: Array<{ status: string }> | undefined } => ({ data: undefined })
+  (): { data: Array<{ status: string; id?: string }> | undefined } => ({
+    data: undefined,
+  })
 );
 
 mock.module('@/src/hooks/queries/useSchedulePatterns', () => ({
   useSchedulePatterns: mockUseSchedulePatterns,
 }));
 
+const mockPush = mock(() => {});
+
 mock.module('expo-router', () => ({
-  useRouter: () => ({ push: mock(() => {}) }),
+  useRouter: () => ({ push: mockPush }),
 }));
 
 let ScheduleRoute: typeof import('../schedule').default;
@@ -111,6 +125,7 @@ beforeEach(() => {
   mockRetryMemberships.mockReset();
   mockUseSchedulePatterns.mockReset();
   mockUseSchedulePatterns.mockImplementation(() => ({ data: undefined }));
+  mockPush.mockReset();
 });
 
 describe('ScheduleRoute — role fork (Wave A3 + role === null triage)', () => {
@@ -213,6 +228,30 @@ describe('ScheduleRoute — role fork (Wave A3 + role === null triage)', () => {
 
     expect(getByTestId('schedule-shifts-screen-mock')).toBeTruthy();
     expect(queryByTestId('schedule-pending-screen-mock')).toBeNull();
+  });
+
+  it('REGRESSION: the "Change it" banner resumes the accepted pattern by id, instead of starting a fresh (orphaned) draft', () => {
+    // The bug: the banner pushed the bare build route with no `?patternId=`,
+    // so ScheduleBuildScreen always started a NEW wizard/pattern instead of
+    // resuming the one the parent is already looking at.
+    mockUseIsOnboarded.mockImplementation(() => ({
+      status: 'onboarded' as const,
+      role: 'parent' as const,
+      householdId: 'h1',
+      membershipsError: false,
+      retryMemberships: mockRetryMemberships,
+    }));
+    mockUseSchedulePatterns.mockImplementation(() => ({
+      data: [{ status: 'accepted', id: 'pattern-789' }],
+    }));
+
+    const { getByTestId } = render(<ScheduleRoute />);
+
+    fireEvent.press(getByTestId('schedule-pattern-banner-change'));
+
+    expect(mockPush).toHaveBeenCalledWith(
+      '/(private)/schedule/build?patternId=pattern-789'
+    );
   });
 
   it('routes helper role to SchedulePendingScreen when no accepted pattern', () => {

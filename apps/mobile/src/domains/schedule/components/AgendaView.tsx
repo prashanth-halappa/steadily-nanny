@@ -16,12 +16,15 @@ import {
   type StatusPillProps,
 } from '@/src/components/ui/status-pill';
 import { Body, DayGroup, Small } from '@/src/components/ui/typography';
+import { resolveMemberDisplayName } from '@/src/domains/schedule/utils/memberDisplayName';
 import {
   formatShiftTime,
   localDateToWeekday,
 } from '@/src/domains/schedule/utils/shiftGrouping';
 import { timeOffRowsForLocalDate } from '@/src/domains/schedule/utils/timeOffOverlap';
 import { formatDisplayDate } from '@/src/domains/timesheet/utils/week';
+import { useHouseholdMembers } from '@/src/hooks/queries/useHouseholdMembers';
+import { useAuthStore } from '@/src/store/auth';
 import { useElevation } from '~/lib/design-tokens/elevation';
 
 type ShiftStatusVariant = NonNullable<StatusPillProps['variant']>;
@@ -51,6 +54,8 @@ interface AgendaViewProps {
   householdTimeZone?: string;
   /** Local calendar dates in the visible week — used for Away-only days. */
   weekDates?: string[];
+  /** Used to resolve carer first names once the household has 2+ carers. */
+  householdId?: string | null;
 }
 
 type AgendaItem =
@@ -61,9 +66,14 @@ type AgendaItem =
 function ShiftRow({
   shift,
   displayTimeZone,
+  carerName,
 }: {
   shift: Shift;
   displayTimeZone?: string | null;
+  /** First name of the assigned carer — only passed once the household has
+   * 2+ nanny/helper members (see `AgendaView`'s `showCarerNames`); a
+   * single-carer household leaves this row exactly as it was before. */
+  carerName?: string | null;
 }) {
   const { t } = useTranslation('schedule');
   const router = useRouter();
@@ -77,7 +87,7 @@ function ShiftRow({
       onPress={() =>
         router.push(`/(private)/schedule/shifts/${shift.id}` as Href)
       }
-      className="mx-6 mb-2 flex-row items-center justify-between rounded-row bg-card p-3"
+      className="mx-6 mb-2 flex-row items-center justify-between gap-2 rounded-row bg-card p-3"
       style={elevation.row}
     >
       <View className="gap-1">
@@ -86,6 +96,15 @@ function ShiftRow({
           {formatShiftTime(shift.ends_at, displayTimeZone)}
         </Body>
       </View>
+      {carerName ? (
+        <Small
+          testID={`schedule-shift-carer-${shift.id}`}
+          className="flex-1 text-muted-foreground"
+          numberOfLines={1}
+        >
+          {carerName}
+        </Small>
+      ) : null}
       <View className="flex-row items-center gap-2">
         {shift.is_short_notice ? (
           <StatusPill
@@ -110,12 +129,50 @@ export function AgendaView({
   timeOff = [],
   householdTimeZone = 'UTC',
   weekDates = [],
+  householdId,
 }: AgendaViewProps) {
   const { t } = useTranslation('schedule');
   // Same tab-bar dead-zone fix as Settings (BUG1) — this is one of the
   // Schedule tab's own scrollable views, so it needs the same real
   // clearance a fixed magic number can't give.
   const tabBarScrollPadding = useTabBarScrollPadding();
+  const currentUserId = useAuthStore(s => s.session?.user?.id ?? null);
+  const membersQuery = useHouseholdMembers(householdId);
+  const membersByUserId = useMemo(
+    () =>
+      new Map(
+        (membersQuery.data ?? []).map(member => [member.user_id, member])
+      ),
+    [membersQuery.data]
+  );
+  const memberLabels = useMemo(
+    () => ({
+      you: t('detail.you'),
+      someone: t('detail.someone'),
+      roleFallback: (role: 'owner' | 'parent' | 'nanny' | 'helper') =>
+        t(`detail.roleFallback.${role}`),
+    }),
+    [t]
+  );
+  // A single carer is unambiguous — no name needed on the row. 2+ active
+  // nanny/helper members is when "who's covering this?" stops being
+  // obvious at a glance.
+  const showCarerNames =
+    new Set(
+      (membersQuery.data ?? [])
+        .filter(member => member.role === 'nanny' || member.role === 'helper')
+        .map(member => member.user_id)
+    ).size >= 2;
+  const carerFirstName = (carerId: string | null): string | undefined => {
+    if (!carerId) return undefined;
+    const fullName = resolveMemberDisplayName(
+      carerId,
+      currentUserId,
+      membersByUserId,
+      memberLabels
+    );
+    return fullName.split(' ')[0];
+  };
   const items = useMemo(() => {
     const byDate = new Map<string, Shift[]>();
     for (const shift of shifts) {
@@ -194,7 +251,13 @@ export function AgendaView({
             );
           }
           return (
-            <ShiftRow shift={item.shift} displayTimeZone={displayTimeZone} />
+            <ShiftRow
+              shift={item.shift}
+              displayTimeZone={displayTimeZone}
+              carerName={
+                showCarerNames ? carerFirstName(item.shift.carer_id) : null
+              }
+            />
           );
         }}
       />

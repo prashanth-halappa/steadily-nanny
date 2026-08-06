@@ -14,7 +14,7 @@ import { useTranslation } from 'react-i18next';
 import { Pressable, ScrollView, View } from 'react-native';
 import { SCREEN_CONTENT_STYLE, useThemeColors } from '@/lib/design-tokens';
 import { useTabBarScrollPadding } from '@/lib/layout/useTabBarScrollPadding';
-import { Caption, Label, Small } from '@/src/components/ui/typography';
+import { Label, MetadataLabel, Small } from '@/src/components/ui/typography';
 import {
   hourCellOccupied,
   localDateToWeekday,
@@ -139,6 +139,14 @@ export function WeekRibbonView({
     return map;
   }, [weekDates, timeOff, householdTimeZone]);
 
+  // A colour-only legend can't tell a parent "which block is whose" once
+  // more than one carer is on the calendar — the 4th legend item only earns
+  // its place then.
+  const showMultiCarerLegend =
+    new Set(
+      shifts.map(s => s.carer_id).filter((id): id is string => Boolean(id))
+    ).size >= 2;
+
   return (
     <ScrollView
       testID="calendar-week-ribbon-view"
@@ -149,7 +157,11 @@ export function WeekRibbonView({
       }}
     >
       <View className="flex-row pb-2">
-        <View className="w-8" />
+        <View className="w-12 items-end pr-2">
+          <MetadataLabel className="text-muted-foreground">
+            {t('shifts.axisTime')}
+          </MetadataLabel>
+        </View>
         {displayOrder.map(dow => (
           <View key={dow} className="flex-1 items-center">
             {/* Short form ("Mon") — seven full weekday names ("Monday")
@@ -171,9 +183,11 @@ export function WeekRibbonView({
       </View>
       {visibleHours.map(hour => (
         <View key={hour} className="flex-row items-center py-0.5">
-          <Caption className="w-8 text-muted-foreground" tabular>
-            {hour}
-          </Caption>
+          <View className="w-12 items-end pr-2">
+            <MetadataLabel className="text-muted-foreground" tabular>
+              {`${String(hour).padStart(2, '0')}:00`}
+            </MetadataLabel>
+          </View>
           {displayOrder.map(dow => {
             const shift = densestShift(shifts, dow, hour, displayTimeZone);
             const status = shift?.status;
@@ -186,10 +200,9 @@ export function WeekRibbonView({
                 accessibilityLabel={status ?? 'empty'}
                 className="mx-0.5 h-4 flex-1 rounded-full"
                 style={{
-                  backgroundColor: filled ? colour : 'transparent',
-                  opacity: filled ? 0.85 : 0.15,
-                  borderWidth: 1,
-                  borderColor: filled ? colour : themeColors.border,
+                  backgroundColor: filled ? colour : themeColors.muted,
+                  opacity: 1,
+                  borderWidth: 0,
                 }}
               />
             );
@@ -216,6 +229,46 @@ export function WeekRibbonView({
           })}
         </View>
       ))}
+      <View
+        testID="week-ribbon-legend"
+        className="flex-row flex-wrap items-center gap-4 pt-4"
+      >
+        <View className="flex-row items-center gap-2">
+          <View
+            className="h-3 w-3 rounded-full"
+            style={{ backgroundColor: themeColors.success }}
+          />
+          <MetadataLabel className="text-muted-foreground">
+            {t('shifts.statusConfirmed')}
+          </MetadataLabel>
+        </View>
+        <View className="flex-row items-center gap-2">
+          <View
+            className="h-3 w-3 rounded-full"
+            style={{ backgroundColor: themeColors.warning }}
+          />
+          <MetadataLabel className="text-muted-foreground">
+            {t('shifts.statusPending')}
+          </MetadataLabel>
+        </View>
+        <View className="flex-row items-center gap-2">
+          <View
+            className="h-3 w-3 rounded-full"
+            style={{ backgroundColor: themeColors.mutedForeground }}
+          />
+          <MetadataLabel className="text-muted-foreground">
+            {t('shifts.statusCancelled')}
+          </MetadataLabel>
+        </View>
+        {showMultiCarerLegend ? (
+          <MetadataLabel
+            testID="week-ribbon-legend-multi-carer"
+            className="text-muted-foreground"
+          >
+            {t('shifts.legendMultiCarer')}
+          </MetadataLabel>
+        ) : null}
+      </View>
     </ScrollView>
   );
 }

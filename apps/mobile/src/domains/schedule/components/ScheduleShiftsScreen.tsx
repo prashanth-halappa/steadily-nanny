@@ -246,6 +246,7 @@ export function ScheduleShiftsScreen({
           timeOff={timeOff}
           householdTimeZone={timeZone}
           weekDates={weekDates}
+          householdId={activeHousehold.householdId}
         />
       ) : null}
 

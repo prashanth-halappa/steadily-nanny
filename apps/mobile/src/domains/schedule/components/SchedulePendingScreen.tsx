@@ -28,10 +28,16 @@
  * `?patternId=` on the build route, so `ScheduleBuildScreen` resumes THAT
  * pattern (see its own header comment) instead of starting a fresh wizard
  * and — via `sendScheduleWeek`'s `!patternId` branch — creating a second,
- * orphaned draft on send. Every OTHER CTA that lands on the build screen
- * (empty state, accepted "change the week", declined/withdrawn "build a new
- * week") deliberately omits `patternId`: each of those starts a genuinely
- * NEW pattern, since there is no draft to resume in those states.
+ * orphaned draft on send. The accepted-pattern "Change it" banner (rendered
+ * by `app/(private)/(tabs)/schedule.tsx`, not this screen — an accepted
+ * pattern routes straight to `ScheduleShiftsScreen` and never reaches here)
+ * does the same: it resumes the accepted pattern by id rather than starting
+ * fresh, since editing and re-sending an accepted week no longer needs to
+ * orphan it into a second pattern — the API supersedes the prior accepted
+ * pattern on accept instead. Only the empty-state and declined/withdrawn
+ * "build a new week" CTAs below still omit `patternId`: each of those
+ * starts a genuinely NEW pattern, since there is no draft to resume in
+ * those states.
  */
 import { type Href, useRouter } from 'expo-router';
 import { useMemo } from 'react';

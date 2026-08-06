@@ -201,6 +201,17 @@ describe('ScheduleBuildScreen source', () => {
     expect(onSendBody).toMatch(/onPatternCreated:\s*setPatternId/);
   });
 
+  it('REGRESSION: the "days" step title names the carer instead of assuming "she", falling back to the translated placeholder when none is selected yet', () => {
+    // The bug: `t('build.daysTitle')` was the ungendered-but-still-wrong
+    // "Which days does she usually work?" — hardcoding a pronoun for every
+    // nanny regardless of who they actually are.
+    expect(source).toContain("t('build.daysTitle', {");
+    expect(source).toMatch(
+      /daysTitle',\s*\{\s*name:\s*selectedCarer[\s\S]{0,80}carerDisplayName\(selectedCarer\)[\s\S]{0,40}t\('build\.carerFallbackName'\)/
+    );
+    expect(source).not.toContain("t('build.daysTitle')");
+  });
+
   it('REGRESSION: a non-parent role sees an honest not-available state with a back affordance, never a bare null', () => {
     // The bug: `if (onboarding.role !== SETUP_ROLES.PARENT) { return null; }`
     // left a deep-linked nanny/helper staring at a blank screen — no

@@ -45,7 +45,7 @@
     "milesValue": "{{miles}} miles",
     "approveButton": "Approve",
     "rejectButton": "Not this one",
-    "noteLabel": "Tell her why (optional)",
+    "noteLabel": "Tell them why (optional)",
     "sendButton": "Send",
     "approvedToast": "Approved",
     "rejectedToast": "Not approved",

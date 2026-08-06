@@ -458,7 +458,11 @@ export function ScheduleBuildScreen({
         <SetupScreenShell
           testID="schedule-build-days"
           progress={0.4}
-          title={t('build.daysTitle')}
+          title={t('build.daysTitle', {
+            name: selectedCarer
+              ? carerDisplayName(selectedCarer)
+              : t('build.carerFallbackName'),
+          })}
           subtitle={t('build.daysSubtitle')}
           ctaLabel={t('build.daysCta')}
           ctaDisabled={selectedDays.length === 0}

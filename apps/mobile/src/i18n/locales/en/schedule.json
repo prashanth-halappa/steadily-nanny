@@ -19,7 +19,7 @@
     "carerPickerSubtitle": "Choose which carer will receive this week.",
     "carerPickerCta": "Next: days",
     "carerFallbackName": "Your nanny",
-    "daysTitle": "Which days does she usually work?",
+    "daysTitle": "Which days does {{name}} usually work?",
     "daysSubtitle": "Tap the days you'd like to schedule.",
     "daysCta": "Next: hours",
     "hoursTitle": "Set the hours",
@@ -119,7 +119,9 @@
     "statusCompleted": "Completed",
     "shortNotice": "Short notice",
     "awayBand": "Away",
-    "awaySummary": "Your carer has time off this week — see Agenda for details."
+    "awaySummary": "Your carer has time off this week — see Agenda for details.",
+    "axisTime": "Time",
+    "legendMultiCarer": "Tap a block to see who's covering it."
   },
   "clash": {
     "busyOverlap": "This overlaps another commitment — you can still continue.",
