@@ -138,6 +138,26 @@ export type WritableCalendar = {
   allowsModifications: boolean;
 };
 
+/**
+ * Turns sync on against the first writable calendar found, without the
+ * manual picker `TimeSettingsScreen.handleToggle` offers — used by the
+ * onboarding calendar step, where asking someone to pick among calendars
+ * before they've seen the feature work is a step too many. Settings lets
+ * them switch to a different calendar afterward. Assumes permission is
+ * already granted (call after `requestCalendarPermissions()` succeeds).
+ */
+export async function enableDefaultCalendarSync(): Promise<boolean> {
+  const calendars = await listWritableCalendars();
+  const first = calendars[0];
+  if (!first) return false;
+  useCalendarSyncStore
+    .getState()
+    .setCalendar(first.id, `${first.sourceName} · ${first.title}`);
+  useCalendarSyncStore.getState().setEnabled(true);
+  void runDefaultCalendarSync();
+  return true;
+}
+
 export async function listWritableCalendars(): Promise<WritableCalendar[]> {
   const calendars = await Calendar.getCalendarsAsync(
     Calendar.EntityTypes.EVENT

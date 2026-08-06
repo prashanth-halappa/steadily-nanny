@@ -13,6 +13,10 @@
  * what was picked, and the `hasRequestedInvite` ref blocked any later
  * re-mint. Same shape as `ManageInviteScreen` now: pick a role, then
  * generate, and one tap mints exactly one code.
+ *
+ * NOT the last wizard step — advances to NOTIFICATIONS_PERMISSION, same
+ * pattern as CodeEntryScreen advancing to AVAILABILITY. See
+ * `getNextSetupStep` in `domains/setup/types`.
  */
 
 import type { HouseholdInviteRole } from '@steadily-nanny/shared-types/schemas/household.schema';
@@ -26,6 +30,12 @@ import { Text } from '@/src/components/ui/text';
 import { InviteCodeCard } from '@/src/domains/setup/components/InviteCodeCard';
 import { InviteRolePicker } from '@/src/domains/setup/components/InviteRolePicker';
 import { SetupScreenShell } from '@/src/domains/setup/components/SetupScreenShell';
+import {
+  getSetupStepRoute,
+  getStepProgress,
+  SETUP_ROLES,
+  SETUP_STEPS,
+} from '@/src/domains/setup/types';
 import { useCreateInvite } from '@/src/hooks/mutations/useCreateInvite';
 import { useSetupProgressStore } from '@/src/store/setupProgress';
 
@@ -33,6 +43,7 @@ export function InviteScreen() {
   const router = useRouter();
   const { t } = useTranslation('household');
   const householdId = useSetupProgressStore(s => s.householdId);
+  const setCurrentStep = useSetupProgressStore(s => s.setCurrentStep);
   const createInvite = useCreateInvite(householdId ?? '');
   const [hasStarted, setHasStarted] = useState(false);
   const [selectedRole, setSelectedRole] = useState<HouseholdInviteRole>(
@@ -55,23 +66,22 @@ export function InviteScreen() {
     void Share.share({ message: t('invite.shareMessage', { code }) });
   };
 
-  const onDone = () => {
-    // No local "complete" flag to flip — useIsOnboarded is server-derived and
-    // will already read this parent as onboarded (household + >= 1 child
-    // exist by the time this screen is reachable; ChildrenScreen's CTA
-    // requires it).
-    router.replace('/(private)/(tabs)/home' as Href);
+  const onContinue = () => {
+    setCurrentStep(SETUP_STEPS.NOTIFICATIONS_PERMISSION);
+    router.push(
+      getSetupStepRoute(SETUP_STEPS.NOTIFICATIONS_PERMISSION) as Href
+    );
   };
 
   return (
     <SetupScreenShell
       testID="invite-screen"
-      progress={1}
+      progress={getStepProgress(SETUP_ROLES.PARENT, SETUP_STEPS.INVITE)}
       title={t('invite.wizardTitle')}
       subtitle={t('invite.wizardSubtitle')}
-      ctaLabel={t('invite.doneButton')}
+      ctaLabel={t('invite.continueButton')}
       ctaDisabled={!code}
-      onCta={onDone}
+      onCta={onContinue}
     >
       {hasStarted ? (
         // flex-1 + justify-start defeats the shell's vertical centring, which

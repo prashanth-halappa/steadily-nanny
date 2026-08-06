@@ -16,9 +16,18 @@
  * Also locks the paint gate: Stack (and therefore RoleScreen) must only
  * mount for a confirmed `not-onboarded` verdict — loading / onboarded show
  * a spinner so a transient mis-route never flashes "Who are you?".
+ *
+ * WS-F addition: the server `onboarded` predicate now flips true partway
+ * through the wizard (first child added, or an invite redeemed) — well
+ * before the wizard's true last step (calendar permission / notifications
+ * for a helper). Once the local step machine has engaged
+ * (`setupProgress.role` set), this layout must NOT auto-bounce — the
+ * terminal screen's own CTA owns completion instead. See this file's
+ * "wizard actively engaged" describe block below.
  */
 import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 import { render } from '@testing-library/react-native';
+import { useSetupProgressStore } from '@/src/store/setupProgress';
 
 type SetupRoleValue = 'parent' | 'nanny' | 'helper';
 
@@ -77,6 +86,7 @@ beforeEach(() => {
   };
   mockReplace.mockClear();
   mockRetryMemberships.mockClear();
+  useSetupProgressStore.getState().reset();
 });
 
 describe('OnboardingLayout — already-onboarded bounce', () => {
@@ -152,6 +162,43 @@ describe('OnboardingLayout — already-onboarded bounce', () => {
       membershipsError: false,
     };
     rerender(<OnboardingLayout />);
+
+    expect(mockReplace).toHaveBeenCalledWith('/(private)/(tabs)/home');
+    expect(queryByTestId('onboarding-stack-mock')).toBeNull();
+  });
+});
+
+describe('OnboardingLayout — wizard actively engaged (WS-F)', () => {
+  it('keeps the wizard mounted and does NOT auto-bounce once onboarded early, while the local step machine has engaged', () => {
+    // Mirrors reality: a parent picks a role (setupProgress.role set),
+    // then adds their first child — the server predicate flips to
+    // `onboarded` right there, well before Invite/Notifications/Calendar.
+    useSetupProgressStore.getState().setRole('parent');
+    onboardingState = {
+      status: 'onboarded',
+      role: 'parent',
+      householdId: 'h1',
+      membershipsError: false,
+    };
+
+    const { getByTestId, queryByTestId } = render(<OnboardingLayout />);
+
+    expect(mockReplace).not.toHaveBeenCalled();
+    expect(getByTestId('onboarding-stack-mock')).toBeTruthy();
+    expect(queryByTestId('onboarding-layout-loading')).toBeNull();
+  });
+
+  it('still bounces home once onboarded if the local wizard was never engaged this session', () => {
+    // role stays null (reset in beforeEach) — the original stranded-user
+    // repro must keep working.
+    onboardingState = {
+      status: 'onboarded',
+      role: 'nanny',
+      householdId: 'h1',
+      membershipsError: false,
+    };
+
+    const { queryByTestId } = render(<OnboardingLayout />);
 
     expect(mockReplace).toHaveBeenCalledWith('/(private)/(tabs)/home');
     expect(queryByTestId('onboarding-stack-mock')).toBeNull();

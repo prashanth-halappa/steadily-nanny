@@ -34,6 +34,7 @@
     "manageTitle": "Invite someone",
     "manageSubtitle": "Generate an invite code to add a nanny, co-parent, or helper.",
     "doneButton": "Done",
+    "continueButton": "Continue",
     "generateButton": "Generate invite code",
     "shareButton": "Share code",
     "shareMessage": "Join our household on Steadily Nanny — use invite code {{code}} when you sign in.",

@@ -29,7 +29,8 @@ export function canViewParentSchedule(role: SetupRole | null): boolean {
 
 /**
  * Ordered step id per role. `ROLE` is shared; the two paths diverge after
- * that (parent: children -> invite; nanny: code -> availability).
+ * that (parent: children -> invite; nanny: code -> availability), and every
+ * role rejoins for the two permission-priming steps at the end.
  */
 export const SETUP_STEPS = {
   ROLE: 'ROLE',
@@ -37,6 +38,8 @@ export const SETUP_STEPS = {
   INVITE: 'INVITE',
   CODE: 'CODE',
   AVAILABILITY: 'AVAILABILITY',
+  NOTIFICATIONS_PERMISSION: 'NOTIFICATIONS_PERMISSION',
+  CALENDAR_PERMISSION: 'CALENDAR_PERMISSION',
 } as const;
 export type SetupStep = (typeof SETUP_STEPS)[keyof typeof SETUP_STEPS];
 
@@ -47,18 +50,42 @@ export const SETUP_STEP_ROUTES: Record<SetupStep, string> = {
   INVITE: '/onboarding/invite',
   CODE: '/onboarding/code',
   AVAILABILITY: '/onboarding/availability',
+  NOTIFICATIONS_PERMISSION: '/onboarding/notifications',
+  CALENDAR_PERMISSION: '/onboarding/calendar',
 };
 
-/** The ordered step sequence for a given role (role step included). */
+/**
+ * The ordered step sequence for a given role (role step included).
+ *
+ * Helper never sees calendar sync (nothing to schedule around as a
+ * read-only viewer) or availability (that's a nanny-only commitment), but
+ * still gets asked about notifications like everyone else.
+ */
 export function stepsForRole(role: SetupRole | null): SetupStep[] {
   if (role === SETUP_ROLES.PARENT) {
-    return [SETUP_STEPS.ROLE, SETUP_STEPS.CHILDREN, SETUP_STEPS.INVITE];
+    return [
+      SETUP_STEPS.ROLE,
+      SETUP_STEPS.CHILDREN,
+      SETUP_STEPS.INVITE,
+      SETUP_STEPS.NOTIFICATIONS_PERMISSION,
+      SETUP_STEPS.CALENDAR_PERMISSION,
+    ];
   }
   if (role === SETUP_ROLES.NANNY) {
-    return [SETUP_STEPS.ROLE, SETUP_STEPS.CODE, SETUP_STEPS.AVAILABILITY];
+    return [
+      SETUP_STEPS.ROLE,
+      SETUP_STEPS.CODE,
+      SETUP_STEPS.AVAILABILITY,
+      SETUP_STEPS.NOTIFICATIONS_PERMISSION,
+      SETUP_STEPS.CALENDAR_PERMISSION,
+    ];
   }
   if (role === SETUP_ROLES.HELPER) {
-    return [SETUP_STEPS.ROLE, SETUP_STEPS.CODE];
+    return [
+      SETUP_STEPS.ROLE,
+      SETUP_STEPS.CODE,
+      SETUP_STEPS.NOTIFICATIONS_PERMISSION,
+    ];
   }
   return [SETUP_STEPS.ROLE];
 }
@@ -77,4 +104,19 @@ export function getNextSetupStep(
   const index = steps.indexOf(current);
   if (index < 0 || index >= steps.length - 1) return null;
   return steps[index + 1] ?? null;
+}
+
+/**
+ * Wizard progress-bar fraction (0..1) for `step` within `role`'s sequence.
+ * The last step of every role's sequence always reports 1 (full bar) —
+ * screens no longer hardcode an approximate literal per step.
+ */
+export function getStepProgress(
+  role: SetupRole | null,
+  step: SetupStep
+): number {
+  const steps = stepsForRole(role);
+  const index = steps.indexOf(step);
+  if (index < 0) return 1;
+  return (index + 1) / steps.length;
 }

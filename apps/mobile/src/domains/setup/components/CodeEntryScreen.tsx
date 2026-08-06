@@ -8,13 +8,20 @@
  * The name lives here rather than on its own screen because the parent flow
  * has no name step either — it derives one from auth metadata during the
  * `ChildrenScreen` bootstrap. Same derivation pre-fills this field, so the
- * nanny confirms or corrects a name instead of typing one cold, and the flow
- * keeps its three steps (role -> code -> availability).
+ * nanny confirms or corrects a name instead of typing one cold.
  *
  * ORDER MATTERS: the profile write runs BEFORE `redeemInvite`. Joining
  * snapshots the member's display name, and a null one renders as the 'Carer'
  * fallback on every money surface her family sees.
+ *
+ * The invitee never explicitly picks "I'm a helper" — RoleScreen's
+ * non-parent fork just leads here. Which household role they actually got
+ * (nanny vs. helper) is only known once the invite is redeemed, so THIS is
+ * where the local wizard role is resolved and set — `stepsForRole` then
+ * branches correctly for the remaining steps (helper skips availability and
+ * calendar sync; nanny gets both).
  */
+import { HOUSEHOLD_ROLES } from '@steadily-nanny/shared-types/schemas/household.schema';
 import { type Href, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -26,7 +33,13 @@ import { Input } from '@/src/components/ui/input';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { Body, H3 } from '@/src/components/ui/typography';
 import { SetupScreenShell } from '@/src/domains/setup/components/SetupScreenShell';
-import { getSetupStepRoute, SETUP_STEPS } from '@/src/domains/setup/types';
+import {
+  getNextSetupStep,
+  getSetupStepRoute,
+  getStepProgress,
+  SETUP_ROLES,
+  SETUP_STEPS,
+} from '@/src/domains/setup/types';
 import { useRedeemInvite } from '@/src/hooks/mutations/useRedeemInvite';
 import { useUpdateName } from '@/src/hooks/mutations/useUpdateName';
 import { useUpsertProfile } from '@/src/hooks/mutations/useUpsertProfile';
@@ -42,6 +55,7 @@ import { useSetupProgressStore } from '@/src/store/setupProgress';
 export function CodeEntryScreen() {
   const { t } = useTranslation('auth');
   const router = useRouter();
+  const setRole = useSetupProgressStore(s => s.setRole);
   const setCurrentStep = useSetupProgressStore(s => s.setCurrentStep);
   const authUser = useAuthStore(s => s.session?.user) ?? null;
   const [code, setCode] = useState('');
@@ -89,9 +103,17 @@ export function CodeEntryScreen() {
             name: trimmedName,
           });
         }
-        await redeemInvite.mutateAsync(submittedCode);
-        setCurrentStep(SETUP_STEPS.AVAILABILITY);
-        router.push(getSetupStepRoute(SETUP_STEPS.AVAILABILITY) as Href);
+        const membership = await redeemInvite.mutateAsync(submittedCode);
+        const resolvedRole =
+          membership.role === HOUSEHOLD_ROLES.HELPER
+            ? SETUP_ROLES.HELPER
+            : SETUP_ROLES.NANNY;
+        setRole(resolvedRole);
+        const next =
+          getNextSetupStep(resolvedRole, SETUP_STEPS.CODE) ??
+          SETUP_STEPS.NOTIFICATIONS_PERMISSION;
+        setCurrentStep(next);
+        router.push(getSetupStepRoute(next) as Href);
       } catch {
         // Each mutation toasts its own failure; redeem also renders inline.
       }
@@ -104,7 +126,7 @@ export function CodeEntryScreen() {
   return (
     <SetupScreenShell
       testID="code-screen"
-      progress={0.5}
+      progress={getStepProgress(SETUP_ROLES.NANNY, SETUP_STEPS.CODE)}
       title={t('onboarding.code.title')}
       subtitle={t('onboarding.code.subtitle')}
       ctaLabel={
