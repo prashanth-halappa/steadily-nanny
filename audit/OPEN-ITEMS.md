@@ -224,9 +224,10 @@ constraint. It is now the only remediation-adjacent surface unvalidated at runti
 
 ### Open items found during validation
 
-Not defects in the remediation work — things the two runs surfaced by driving the API and
-the app as a user would. **D2–D6b** come from the mobile pass; none is filed as a numbered
-audit finding yet.
+Not defects in the remediation work — things the runs surfaced by driving the API and the
+app as a user would. **D2–D6b** come from round 2's mobile pass; **D7–D10** from round 3's
+first device pass and **D11** from the adversarial review of D8's fix. None is filed as a
+numbered audit finding.
 
 | Observation | Why it matters |
 |---|---|
@@ -241,6 +242,11 @@ audit finding yet.
 | **D5 — create-account screen shows a white header band against the cream background.** | **RESOLVED** — the band was the native iOS stack header painting white over the cream background; `auth/_layout.tsx` now hides it for the auth stack, and create-account renders identically to sign-in (verified on-screen, same title y-position). |
 | **D6a — the invite screen shows neither role nor expiry for a generated code.** | **RESOLVED** — role and `expires_at` were already on the wire; `InviteCodeCard` now renders "Nanny invite · expires Sep 5" (verified on-screen for both roles). Still compounds C9: a wrong code can be identified now, but not revoked. |
 | **D6b — an empty-string `EXPO_PUBLIC_POSTHOG_API_KEY` triggers a dev LogBox error.** | **RESOLVED, two rounds** — skipping the provider only moved the `console.error` into `usePostHog`'s own `warnIfNoClient` (posthog-react-native 4.54.4). The shipped shape always constructs a client, `disabled: true` when unconfigured; on-device sink-verified that the disabled client sends **zero** requests and the enabled client captures and flushes. |
+| **D7 — both destructive confirm buttons in the app were INERT** (remove-a-member, withdraw-a-pattern). Found on device, in work that had already passed unit tests **and** adversarial review. `AlertDialogAction` forwarded the caller's *button* class string into the *label's* class context, so the `<Text>` got `active:opacity-90`, css-interop attached press handlers to it, RN set `isPressable`, and responder negotiation — deepest-first — let the label steal the tap from the `Pressable` beneath. | A parent could not remove a member and a carer could not withdraw a pattern; the dialog opened and the button did nothing. **RESOLVED** at `apps/mobile/src/components/ui/alert-dialog.tsx:159-163` — the label context is `buttonTextVariants()` with no caller string, the caller's class goes only to the box. Fixes all **eight** call sites across six screens at once. Now `GOLDEN-FIXES.md` **#33**. The reason it shipped green is a ceiling in its own right: `bun.setup.ts:536-537` stubs `buttonVariants`/`buttonTextVariants` to `''`, so **no test in this repo can observe a button class** (**C32–C44** → C38). The new test re-mocks with a real `cva` rather than trusting the global stub. |
+| **D8 — a removed member had NO route to her own pay.** `GET /v1/households` returned only active households, so every mobile payroll surface — all of which take their household id from `useActiveHousehold` — had nothing to point at. This is **C18**, met on screen. | The API read gates round 3 built were serving correctly to a client that could not ask. **RESOLVED** — `listByUserAnyStatus` (`householdMemberRepository.ts:134`) behind `GET /v1/users/me/memberships`, `isPastMember` derived at `useIsOnboarded.ts:178`, and a Past-households section plus a Past badge in `HouseholdSwitcher`. **Read the next row before treating this one as closed by its first fix.** |
+| **D9 — `scripts/seed-test-users.ts` and two siblings read `apps/api/.env`, which points at PRODUCTION** — and `docs/DAYLIGHT-VISUAL-QA.md` told people to run them. A documented QA step that creates real auth users and writes real rows with a service-role key. | Third occurrence of the `GOLDEN-FIXES.md` **#26** class, and the first where a doc actively pointed at the loaded gun. **RESOLVED** — `scripts/localSupabaseGuard.ts`'s `assertLocalSupabaseUrl` runs before the client is constructed in all three scripts, with **no flag to bypass it**, and `DAYLIGHT-VISUAL-QA.md:27` now states the refusal and the `supabase start` prerequisite. Pinned as a class, not a fix: `every service-role seed script guards its client`. |
+| **D10 — a FUTURE clock-out finish time was rejected silently.** The sheet refused to submit and said nothing about why. | The carer retypes blind — same shape as D3. **RESOLVED** — `ClockOutSheet.tsx:244`, with a 60-second tolerance (`:76`) so the client and the eventual server 400 agree on what "future" means, a rendered message and a disabled CTA. The pin that matters is the one protecting the legitimate case: `does NOT flag the overnight roll as a future finish, even though the rolled instant lands after this test's nowMs`. |
+| **D11 — time-off create, cancel and update had NO membership gate at all.** A removed member got **201**, and cancel appended adjustment rows to a past household's `pto_ledger`. Found by the adversarial review of D8's fix, not by the device pass. | **A money write by a non-member** — the most serious thing this round found, and the device pass walked past it because the screen looked right. **RESOLVED** — all three route through `assertActiveMember` (`timeOffCommandService.ts:85`, `:136`, `:175`), pinned by `refuses a cancel from a caller with no active membership and attempts NO pto_ledger write` and four siblings. The gate is deliberately "holds **any** active membership" rather than "active here", because `carer_time_off` carries no `household_id`; reasoning and consequences at ceiling **C37**. |
 | **Fixed in the same round, found by the re-validation itself:** `EmptyState`'s `default` variant collapsed (no flex on its `Animated.View` root — GOLDEN-FIXES #2 class) painting the Schedule empty state over the segmented control, now `flex:1` inline-style with only the two `variant="default"` call sites affected; the clock-out sheet previewed **and would have submitted** a 24h session when finish equalled start (the overnight wall-clock roll's `<=`), now collapsed to 0m at equality with the overnight case pinned; household member cards showed two identical "Finish setting up Nanny" labels — `profile_name` now rides the member payload (PostgREST embed) with the override → profile → role-label chain in the shared resolver. Five single-carer inline copies of that chain remain (Pay/Schedule screens, listed in the setup-lane report) — same class, lower stakes, they show "Nanny" for one person rather than merging two. |
 
 ### D1 — onboarding 500s for a caller with no `user_profiles` row — **RESOLVED**
@@ -289,10 +295,11 @@ F-B11-4, F-B11-6, F-B11-7, F-B11-9, F-B11-10, F-B11-11. Partly: F-B11-5. Closed 
 infeasible: F-B10-9 / F-B11-8. Three migrations shipped — `063` money upper bounds, `064`
 change-request expiry, `065` pay-arrangement end-on-removal.
 
-### The three evidence classes
+### The four evidence classes
 
 Round 2 established that each new evidence class finds defects the previous one cannot see.
-Round 3 ran three, and that held again.
+Round 3 ran four, and that held again — most sharply in the fourth, which was added after
+everything below was already committed.
 
 1. **The unit suites.** Final `bun run qc` green: mobile **2078**, API **2455**,
    shared-types **389**, scripts **24**. Useful, and the weakest of the three — most of the
@@ -311,6 +318,48 @@ Round 3 ran three, and that held again.
    at 6d23h untouched); all five of 063's CHECKs convalidated and biting; both computed
    money guards firing before any write; and a final `run_integrity_checks()` over
    everything the run created returning **zero violations**.
+4. **Two device passes — the app on a simulator against a dev build (wave 6).** The
+   strongest instrument this effort has used, and the last one it reached for. Pass 1
+   found **four** defects (**D7–D10** above), every one of them in work that had already
+   passed unit tests *and* adversarial review. Pass 2 was the gate and confirmed all four
+   on screen with the database checked behind each. Full account in
+   [`CLOSURE-TABLE.md`](./CLOSURE-TABLE.md) → *Evidence class: the mobile CX device
+   passes*; the thirteen ceilings it accepted are **C32–C44** in
+   [`RESIDUAL-RISK.md`](./RESIDUAL-RISK.md) §1.3.
+
+### The device passes, and the one thing they still could not see
+
+**Three of the four defects in pass 1 were invisible to every test in this repo**, and one
+of them structurally so: `bun.setup.ts:536-537` stubs `buttonVariants` and
+`buttonTextVariants` to `''`, so no mobile test can assert a button class — which is exactly
+how two inert destructive confirm buttons (D7) passed a suite and a review. The unit suite
+was not weak there; it was blind, and it is still blind, because fixing the stub means
+re-checking every test that touches a class string in one pass. That is ceiling **C38**, and
+it is the one in this batch most likely to cost something again.
+
+**Then the review of a fix found the fix was dead code.** D8's first cut keyed on an
+`isPastMember` flag that was **permanently false** — it derived from
+`GET /v1/users/me/memberships`, which filtered to active rows, so nothing could set it and
+the removed nanny was still routed into the signup wizard. Its tests passed by mocking a
+payload the server could not emit. Same family as `findAbandonedFragment`'s string compare
+and the coverage-gap `ignoreDuplicates` premise: the test and the code shared an assumption
+about a payload neither had seen. The same review then found **D11** — time-off writes with
+no membership gate at all, a money write by a non-member — which the device pass had walked
+straight past, because the screen looked right.
+
+So the ordering is the finding, not either instrument on its own. The unit suite missed what
+the API run caught; the API run missed what the screen showed; **and the screen missed what a
+review of its own fix caught.** A device pass cannot read a filter in a repository method and
+a review cannot see an inert button. What closed this round was running both, in that order,
+and letting the second audit the first.
+
+Pass 2 is also worth reading for *how* it asserted rather than what it found. Absence of a
+write affordance was proven **A/B against an active nanny who does get the Clock in card** —
+an absence on its own proves nothing, the contrast does. Disabled CTAs were asserted as
+`enabled=false` in the view hierarchy rather than eyeballed. And the clock-out refusals were
+proven in the same pass as the legitimate overnight roll that must still submit (clock_in
+`2026-08-06 19:00Z` → clock_out `2026-08-07 04:46Z`, read back from the row), which is the
+only way to know a new guard is a guard and not a regression.
 
 ### The co-parent gap is closed
 
@@ -360,6 +409,16 @@ implementer rather than the reviewer. That is a property of the process worth pr
 the person with the most context on a change is the one being told what to do, and a
 workflow where they cannot push back loses exactly the objections that matter.
 
+**And a fifth, in wave 6.** An implementer was told to rewrite a set of green mobile tests
+into other green tests. He declined, and argued the case rather than the instruction: the
+tests as written were not wrong, the rewrite would produce a differently-shaped green, and
+the only honest **red** available lived on the API side, where the behaviour actually was
+unpinned. The reviewer, working independently, judged the call correct. Five for five, the
+correction has come from the implementer — and this is the first one that was not about
+whether the specified behaviour existed but about **where the evidence should come from**,
+which is a harder objection to raise and an easier one to overrule. Full account in
+[`RESIDUAL-RISK.md`](./RESIDUAL-RISK.md) §4.
+
 ### Two things I was told that the code did not support
 
 Recorded because the ledger's own rule is that a claim is checked against the tree, not
@@ -393,6 +452,17 @@ Four things, stated plainly so nobody reads the counts above as "finished":
    `"TODO-SET-BEFORE-BUILD"`. A production build ships today with mobile crash reporting
    off. Owner to supply; **do not cut a production build until it is set.**
 
-Plus the seventeen newly accepted ceilings C15–C31 in
-[`RESIDUAL-RISK.md`](./RESIDUAL-RISK.md) §1.3, three of which (C24, C26, C30) were found by
-verifying this round's own work rather than by the work itself.
+Plus the **thirty** newly accepted ceilings C15–C44 in
+[`RESIDUAL-RISK.md`](./RESIDUAL-RISK.md) §1.3 — seventeen from the waves above, three of
+which (C24, C26, C30) were found by verifying this round's own work rather than by the work
+itself, and **thirteen more (C32–C44) from the two device passes**. That last number is the
+honest measure of this round: pointing a person at the running app for two afternoons
+produced almost as many known-and-accepted limits as four waves of code review did, and none
+of the thirteen was reachable by any instrument used before it.
+
+Two of the thirteen should not sit in a table unread. **C38** — the `bun.setup.ts`
+button-class stub — is a standing false-green generator, and it is the reason D7 shipped.
+**C41** is the single probe this round leaves genuinely unrun: whether a non-owner parent
+sees a Remove control on the owner's card, which the device fixture could not show because
+it collapsed the owner and the signed-in user into one person. One SQL insert of a second
+active parent membership closes it, and it is the cheapest open item in this ledger.

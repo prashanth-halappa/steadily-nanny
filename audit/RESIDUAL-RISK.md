@@ -116,6 +116,35 @@ one layer further out.
 | C30 | **The app-version "gate" is advisory, and its platform header is never sent.** F-B11-5's headers exist, but nothing rejects an under-version request — `appStatusRoutes` returns an `updateRequired` flag the client chooses to honour (`client.ts:39-40` says so outright). Separately, the server reads `x-app-platform` (`:50`) which **no mobile code sends**, so `platform` always defaults to `'ios'`. | None directly. The visible consequence is that an Android user on a forced update is shown the **iOS** store URL and cannot act on it. | Any Android force-update. | The platform default is a genuine bug with a one-line fix on the client, left only because it belongs with whoever decides whether the advisory should become a real gate. Server-side minimum-version rejection is the named upgrade path; do both at once. No test covers the header-reading route today, only `compareVersions`. |
 | C31 | **Two session-drop paths clear Sentry and store state but keep the API bearer token.** The refresh-failure branches (`auth.ts:329-340`) call `clearUserContext()` and reset the store, but unlike `signOut()` (`:147,150`) and the revoked-user path (`:364,366`) they do not call `clearAuthToken()` or null `previousSignedInUserId`. | None known — the token is already expired, which is why the refresh failed. | A session whose refresh fails rather than being explicitly signed out. | Found while verifying F-B9-6's cleanup, outside that finding's scope. The asymmetry is the concern more than the token: five drop paths do one thing and two do another, and the next person to add a path will copy whichever they read first. Fold the whole teardown into one function every path calls. |
 
+#### C32–C44 — accepted from the device passes (wave 6)
+
+Numbering continues. These are separated from C15–C31 above because they come from a
+different instrument: the app running on a simulator, driven by hand, rather than a suite or
+an API client. Almost every row is a **surface** ceiling — a screen that renders the wrong
+thing, or renders a control the server will then correctly refuse. That is the shape a
+device pass finds, and none of the previous evidence classes could see any of them.
+
+Two rows are worth reading first even if you skip the rest. **C38** is a standing false-green
+generator, not a one-off; and **C32** is the highest-value follow-up in the group, because a
+write that silently does nothing is worse for the person doing it than a write that is
+refused out loud.
+
+| # | Ceiling | Money impact | Trigger | Upgrade path |
+|---|---|---|---|---|
+| C32 | **The handoff-note editor is un-gated for a removed member AND fails silently.** `HandoffChipsCard` (`apps/mobile/src/domains/today/components/HandoffChipsCard.tsx`) renders and accepts input under a past household; tapping Save fires `POST /v1/households/:householdId/handoff-notes` (mounted `routes/index.ts:126`), the server correctly refuses `404 HOUSEHOLD_NOT_FOUND`, and **the UI shows nothing at all** — the chip stays selected, the Save affordance stays, no toast, no error line. | None. No data is written and no authorization is bypassed; the server ruling is correct. | A removed member opening Today on a past household and trying to leave a note. | **The silent failure is the worse half, and it is the cheaper half to fix** — the gate is a nicety, an error surface is not. Highest-value follow-up of this group: render the refusal, then decide whether the editor should have been reachable at all. |
+| C33 | **Time-off copy for a removed nanny renders the PARENT branch.** She is shown "Time off is managed by the nanny on this household" — addressed as if she were the family. The form itself is correctly absent (`TimeOffScreen.tsx:123` gates on `role !== NANNY \|\| isPastMember`), so the only defect is which of the two absent-form messages she reads. | None. | Any removed nanny opening Time off on a past household. | One branch: the screen collapses "not a nanny" and "no longer a nanny here" into a single else-arm. Split them and write the second string. Cosmetic, but it is the app telling a person it has forgotten who she is. |
+| C34 | **Settings → Availability is a full editable form under a past household, and the write SUCCEEDS.** Correctly, as it turns out: `carer_availability` is keyed on `user_id` with **no household column** (`011_availability.sql:33-35`), so the row she edits is her own global record, not this family's. `PUT /v1/availability/me` (`availabilityRoutes.ts:54`) is validated but carries no membership assert — the one ungated write left in that domain, and legitimately so: self-scoped, no household fan-out, no notification, no ledger touch. | None. | Any removed carer opening Settings → Availability. | **Confusingly placed, not a hole.** Nothing to close server-side. If it is worth changing, the change is on the screen: move availability out from under a household-scoped Settings tree, or label it as global. Do not add a membership gate to `PUT /availability/me` — a carer with no households at all still needs to edit her own availability. |
+| C35 | **`ExtraShiftScreen` is role-gated but not past-member-gated on its deep-link path.** It reads no `isPastMember` at all (verified: zero references in `apps/mobile/src/domains/schedule/components/ExtraShiftScreen.tsx`), so a removed member reaching it by deep link gets the whole form. The server refuses the submit — `POST /v1/households/:householdId/shifts/extra` (`householdShiftRoutes.ts:38`) gates on active membership. | None. The write is refused. | A deep link, or any navigation that skips the gated entry point. | Same one-line `isPastMember` check the other gated screens use. Left because the server is the authority and it holds; this is a wasted-effort ceiling, not a safety one. Note the failure mode differs from C32 — here the refusal is surfaced. |
+| C36 | **Six screens are deliberately left un-gated for past members.** `ShiftDetailScreen`, `ScheduleRespondScreen`, `SchedulePendingScreen`, `ScheduleBuildScreen`, `ExtraShiftScreen` (C35) and the inbox — none reads `isPastMember`. The server refuses each write, so the failure mode is an error toast rather than a wrong row. | None. | A removed member navigating anywhere in the schedule surface. | **Accepted as a set rather than fixed one at a time**, because the right fix is one gate at the navigation layer, not six copies of the same condition — and that needs the product answer C18's past-households listing was also waiting on: what a departed member should be able to *see*, as distinct from what she can do. Gating them individually now would have to be undone by that decision. |
+| C37 | **The time-off gate is "holds ANY active membership", because `carer_time_off` has no `household_id`.** One row means "unavailable to every family" (`011_availability.sql:69-71` — `user_id` only), so `assertActiveMember` (`timeOffQueryService.ts:91`) checks that the caller is active *somewhere*, not here. Create, cancel and update all route through it (`timeOffCommandService.ts:85`, `:136`, `:175`). | None wrong, but money moves: a cancel can reverse a `pto_ledger` entry in a household the caller has left. | Two consequences, both intended. A nanny active in A **may create time off while removed from B** — correct, it applies to A, and B cannot see her anyway since `listForHousehold` enumerates active members only. And cancelling a row B marked paid **still reverses B's ledger** — correct: reversing money B recorded is the honest correction, not a write by a stranger. | Only a `household_id` on `carer_time_off` would let the gate be per-household, and that is the wrong data model — a person is either free on a day or she is not. The ceiling is that the gate is coarser than every other write gate in the app, and a reader who assumes house convention will read it as a bug. It is documented at the assertion; leave it. |
+| C38 | **`bun.setup.ts` stubs `buttonVariants` and `buttonTextVariants` to `mock(() => '')` — a standing false-green generator.** `apps/mobile/bun.setup.ts:536-537`. **No mobile test in this repo can observe a button class**, which is exactly how the inert destructive confirm (GOLDEN-FIXES **#33**) shipped green through unit tests *and* adversarial review. The stub also publishes no `TextClassContext` and does not make `disabled` block a press, so neither is assertable either. | None today. | Any future defect whose signal is a class string on a button. | **Cost is prospective, not current** — 14 of 290 mobile test files assert on class strings and exactly one touches button classes (`components/ui/__tests__/alert-dialog.action.test.tsx`, which re-mocks the module with a real `cva` at `:53-57` and is the correct pattern). Fixing the global stub means re-checking every one of those files in a single pass, which is the same trade C11 made about `TZ=UTC`. Until then: **re-mock locally, as that test does, whenever a class is the thing under test.** |
+| C39 | **Two components share the class-leak shape that made the confirm inert, and both are currently callerless.** `ui/toggle.tsx:63-79` threads one `className` into **both** the `TextClassContext` value and the box — the exact `AlertDialogAction` defect, un-fixed; and `ui/badge.tsx:19-23` puts `active:opacity-80` on a plain `View`, which react-native-css-interop upgrades to a pressable. | None. | A first caller. | Verified callerless: `<Badge>` and `<Toggle>`/`<ToggleGroup>` have **zero** call sites in `apps/mobile/src` — the badge module is imported twice, but only for the `FILLED_CHIP_PADDING_Y` and `CHIP_BORDER_RADIUS` constants (`status-pill.tsx:14`, `switch.tsx:12`). So this is dormant, not live. Two options, and deleting them is the better one: unused shadcn scaffolding that carries a known-inert-button bug is a trap for whoever reaches for it first. If they are kept, apply the `alert-dialog.tsx:154-165` shape to both. |
+| C40 | **The committed Maestro flows are fragile: `hideKeyboard` lands on "Create account".** `apps/mobile/.maestro/flows/login.yaml:27` and `login-nanny.yaml:27` — on the login screen the tap coordinate `hideKeyboard` resolves to reliably hits the "Create account" link, so the flow leaves the screen it was logging in on. Dropping the step works every time. | None. | Running either committed login flow. | One line out of two files. Not done here because these flows were not otherwise touched this round and a committed E2E flow is the sort of thing another lane may be mid-edit on. Note the second file: the observation came in naming `login.yaml` only, and `login-nanny.yaml` has the identical step. |
+| C41 | **UNPROBED: whether a non-owner parent sees a Remove control on the owner's card.** The removal service refuses it — the owner is un-removable (`householdCommandService.ts:325`) — but whether the *button* is hidden for a second parent was never driven, because the device fixture collapsed the owner and the signed-in user into one person. | None. The server holds regardless. | A household with two parent memberships. | **One SQL insert of a second active parent membership closes it**, and it is the cheapest open probe in this ledger. Recorded as unprobed rather than passed: the pass verified a control the fixture could never have shown. |
+| C42 | **The on-the-clock card is not scoped to the selected household.** Carried from the earlier passes, unchanged. The card renders a running entry without checking which household is selected. | None known — display only. | A carer on the clock for one household while another is selected. | **Whether a clock-out taken from the wrong household writes correctly is unprobed**, and that is the part that would matter. Probe it before deciding the fix: if the write follows the entry rather than the selection, this stays cosmetic. |
+| C43 | **Members with null profile names all read "Nanny", with no email tiebreak.** Carried forward. Two unnamed members are indistinguishable on the member list. | None. | Any household where more than one member has never set a profile name — which is every household with more than one nanny, since nanny onboarding never collects a name (C9b). | Falling back to the account email would separate them at no product cost. Sits downstream of C9b: the real fix is collecting the name, and this is what to do until then. |
+| C44 | **Household selection resets to a default on every sign-in rather than last-used.** Carried forward. | None. | Every sign-in for a multi-household user. | Persist the selected household id across sessions. Small, and it interacts with C18/C36: whatever decides how past households are listed also decides what a stale persisted id should do when the household is no longer active. |
+
 ---
 
 ## 2. The verification gap — and why QA only closes half of it
@@ -242,19 +271,33 @@ exists and what is left of it.
    run then covered the whole new removal/rejoin surface, ~150 checks, ending in a
    `run_integrity_checks()` over everything it created that returned zero
    violations.
-   **What is left:** nothing named. Every surface this audit touched has now been
-   exercised at runtime by something other than its own unit tests. That is not the
-   same as saying the system is probed — it says the *audited* surface is, and the
-   value of each pass has been in what it found **around** the fixes rather than in
-   them, which argues for keeping the habit rather than declaring it finished.
+   **✅ And a fifth class after that: the app on a device (wave 6).** Two simulator
+   passes against a dev build. The first found **four** defects in work that had
+   already passed unit tests *and* adversarial review, three of which no test in
+   this repo could have observed; the second confirmed all four fixes on screen and
+   became the gate. Written up in [`CLOSURE-TABLE.md`](./CLOSURE-TABLE.md) →
+   *Evidence class: the mobile CX device passes*, with the ceilings at
+   [C32–C44](#c32c44--accepted-from-the-device-passes-wave-6).
+   **What is left:** one named probe — [C41](#c32c44--accepted-from-the-device-passes-wave-6),
+   whether a non-owner parent sees a Remove control on the owner's card, which the
+   fixture could not show because it collapsed the owner and the signed-in user into
+   one person. One SQL insert closes it. Beyond that, nothing named. Every surface
+   this audit touched has now been exercised at runtime by something other than its
+   own unit tests. That is not the same as saying the system is probed — it says the
+   *audited* surface is, and the value of each pass has been in what it found
+   **around** the fixes rather than in them, which argues for keeping the habit
+   rather than declaring it finished.
 
 Beyond those four, the named gaps that remain are C8–C14 in [§1.2](#12-newly-accepted-ceilings-round-2),
-C15–C31 in [§1.3](#13-newly-accepted-ceilings-round-3--audit-closeout), and the untouched
+C15–C44 in [§1.3](#13-newly-accepted-ceilings-round-3--audit-closeout), and the untouched
 rows in [`OPEN-ITEMS.md`](./OPEN-ITEMS.md) — **2 of the original 35 findings are still open**
 (F-B10-1's controller layer and F-B8-7's client-derived surfaces), one is stale, one is
 closed as infeasible, and none has ever regressed. The ledger being nearly empty is not the
-same as the system being nearly safe: C15–C31 are seventeen things that are *known* and
-accepted, and the count of what is unknown has not moved.
+same as the system being nearly safe: C15–C44 are **thirty** things that are *known* and
+accepted, and the count of what is unknown has not moved. Thirteen of the thirty were added
+by pointing a person at the running app for two afternoons, which is the most direct
+available measure of how much a ledger can miss while being scrupulous about everything it
+can see.
 
 ---
 
@@ -358,6 +401,35 @@ compares as strings. It did, which is why the parity test found the bug; it now
 the next reader to "fix" a file that is already correct — the same class as the five stale
 comments in [`CLOSURE-TABLE.md`](./CLOSURE-TABLE.md) → *Stale documentation*, and evidence
 that a fix reliably outruns the prose describing it.
+
+### Wave 6 — a fifth refusal, and a review that found the fix was the dead code
+
+**The fifth refusal.** An implementer was told to rewrite a set of green mobile tests into
+other green tests. He declined, and argued the case rather than the instruction: the tests
+as written were not wrong, the rewrite would produce a differently-shaped green, and the
+only honest **red** available lived on the API side, where the behaviour actually was
+unpinned. The reviewer, working independently, reached the same judgement. Five for five,
+the correction has come from the implementer — and this one is the first where the objection
+was about *where the evidence should come from* rather than about whether the specified
+behaviour existed.
+
+**And the review found that a fix was itself dead code**, which is the sharper half of this
+round. Device pass 1 found that a removed member had no route to her own pay, because
+`GET /v1/households` returns only active households. A fix shipped, keyed on an
+`isPastMember` flag. Adversarial review of that fix then established the flag was
+**permanently false**: it derives from `GET /v1/users/me/memberships`, which filtered to
+active rows, so nothing could ever set it and the removed nanny was still routed into the
+signup wizard. Its tests passed by mocking a payload the server could not emit — the same
+family as `findAbandonedFragment`'s string compare (round 2) and the coverage-gap premise
+(round 3): **the test and the code shared an assumption about a payload neither of them had
+seen.** `listByUserAnyStatus` (`householdMemberRepository.ts:134`) is what makes the flag
+reachable, and `useIsOnboarded.ts:178` is where it is now derived.
+
+The same review found something the device pass had not looked for: **time-off create,
+cancel and update had no membership gate at all.** A removed member got 201, and cancel
+appended adjustment rows to a past household's `pto_ledger` — a money write by a non-member.
+That is now `assertActiveMember` on all three paths (`timeOffCommandService.ts:85`, `:136`,
+`:175`), with the coarseness of the gate recorded as [C37](#c32c44--accepted-from-the-device-passes-wave-6).
 
 The general lesson matches the effort's central finding: **a passing test is not
 evidence that a defect is closed.** Several fixes here passed their own tests
