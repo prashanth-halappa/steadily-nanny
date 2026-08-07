@@ -177,6 +177,37 @@ export class TimesheetGrossTooLargeError extends ValidationError {
   }
 }
 
+/**
+ * 409 — `GET /timesheets/:id/export.csv` on a week whose figures are not
+ * FROZEN, so there is nothing honest to hand a payroll provider.
+ *
+ * Two refusals wear this one error, and both are the same rule:
+ *
+ * - the week is not `approved` — its amount is a live estimate that changes
+ *   with the next clock-out or a backdated raise (`docs/11-MONEY.md` §3);
+ * - the week IS approved but its earnings resolve to `hours_only` — a legacy
+ *   pre-042 approval, an unreadable snapshot, or a carer who deleted her
+ *   account. `getWeekWithEarnings` degrades those to hours-with-no-money ON
+ *   SCREEN, deliberately, because blanking the screen a nanny opened to check
+ *   her pay is worse. A FILE is not that: a spreadsheet with wrong or missing
+ *   money in it gets forwarded, filed, and paid against long after the caveat
+ *   on the screen is forgotten. So the export refuses where the view degrades.
+ *
+ * `exportReason` carries which of those it was (`not_approved`,
+ * `legacy_approval`, `unreadable_snapshot`, `carer_removed`, or an engine
+ * status) so support can answer "why won't it download" without a repro.
+ */
+export class TimesheetNotExportableError extends ConflictError {
+  constructor(timesheetId: string, status: string, exportReason: string) {
+    super(
+      'This week cannot be exported until it is approved',
+      'TIMESHEET_NOT_EXPORTABLE',
+      { timesheetId, status, exportReason }
+    );
+    this.name = 'TimesheetNotExportableError';
+  }
+}
+
 /** 409 — approve/query was called on a timesheet with no submitted hours to act on. */
 export class TimesheetNotActionableError extends ConflictError {
   constructor(timesheetId: string, status: string) {

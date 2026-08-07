@@ -150,6 +150,40 @@ export class TimesheetController {
     }
   }
 
+  /**
+   * GET /timesheets/:id/export.csv — the payroll handoff file.
+   *
+   * The ONE timesheet response that is not the house JSON envelope: a
+   * download, so it answers with `text/csv` and a `Content-Disposition`
+   * filename instead of `sendSuccessResponse`. Everything else — the read
+   * gate, the approved-only refusal, the bytes — is decided in the service
+   * (`timesheetQueryService.exportWeekCsv`); this layer only dresses it as a
+   * file. A refusal throws and lands in the usual JSON error handler, so a
+   * client never receives a 409 body that looks like a spreadsheet.
+   *
+   * The filename is interpolated into a quoted header value, which is safe
+   * because `carerSlug` reduces the carer's name to `[a-z0-9-]` and
+   * `week_start` is a validated ISO date — no quote or newline can reach the
+   * header (see `utils/weekExportCsv.ts`).
+   */
+  static async exportCsv(req: Request, res: Response, next: NextFunction) {
+    try {
+      const id = req.params.id as string;
+      const { filename, csv } = await timesheetQueryService.exportWeekCsv(
+        getAuthUserId(req),
+        id
+      );
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="${filename}"`
+      );
+      return res.send(csv);
+    } catch (error) {
+      return next(error);
+    }
+  }
+
   /** POST /timesheets/:id/approve — parents only. */
   static async approve(req: Request, res: Response, next: NextFunction) {
     try {

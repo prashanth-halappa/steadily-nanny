@@ -21,6 +21,11 @@
  * gets to make that call, and no client gets the raw snapshot columns to make
  * it with.
  *
+ * THE EXPORT IS STRICTER THAN THE VIEW. `exportWeekCsv` serves the same week
+ * as a payroll CSV and refuses everything `getWeekWithEarnings` merely
+ * degrades: a screen may honestly show hours with no money, a file handed to a
+ * payroll provider may not.
+ *
  * @module domains/timesheet/services/timesheetQueryService
  */
 import type {
@@ -41,12 +46,16 @@ import {
   HouseholdMemberRepository,
   HouseholdRepository,
 } from '../../household';
+// Concrete cross-domain import, never the pay barrel — the same rule
+// `paymentQueryService` follows importing this domain's repository.
+import { PaymentRepository } from '../../pay/repositories/paymentRepository';
 import {
   type WeekEarningsComputer,
   weekEarningsService,
 } from '../../pay/services/weekEarningsService';
 import {
   TimeEntryNotFoundError,
+  TimesheetNotExportableError,
   TimesheetNotFoundError,
 } from '../errors/timesheetErrors';
 import { TimeEntryRepository } from '../repositories/timeEntryRepository';
@@ -56,6 +65,10 @@ import {
 } from '../repositories/timesheetRepository';
 import type { TimeEntry, Timesheet } from '../types';
 import { toWireTimesheet } from '../utils/toWireTimesheet';
+import {
+  renderWeekExportCsv,
+  type WeekExportCsv,
+} from '../utils/weekExportCsv';
 import { weekEndExclusive, weekStartOf } from '../utils/weekStart';
 
 /** Roles that read the WHOLE household's payroll, active or removed. */
@@ -72,13 +85,23 @@ type PayrollReadScope =
   | { kind: 'household' }
   | { kind: 'own'; carerId: string };
 
+/**
+ * The one thing this service needs from the pay domain's payments table: what
+ * a week has been settled for. Narrowed to a single method rather than taking
+ * the repository type, so the dependency stays a read and stays injectable.
+ */
+export interface WeekPaymentTotalReader {
+  sumForTimesheet(timesheetId: string): Promise<number>;
+}
+
 export class TimesheetQueryService {
   constructor(
     private readonly timeEntryRepo: TimeEntryRepository = new TimeEntryRepository(),
     private readonly timesheetRepo: TimesheetRepository = new TimesheetRepository(),
     private readonly memberRepo: HouseholdMemberRepository = new HouseholdMemberRepository(),
     private readonly householdRepo: HouseholdRepository = new HouseholdRepository(),
-    private readonly earnings: WeekEarningsComputer = weekEarningsService
+    private readonly earnings: WeekEarningsComputer = weekEarningsService,
+    private readonly payments: WeekPaymentTotalReader = new PaymentRepository()
   ) {}
 
   /** The caller's own open (running) entry, or null. No membership check — this is always the caller's own data. */
@@ -283,6 +306,69 @@ export class TimesheetQueryService {
       ...toWireTimesheet(row),
       earnings: await this.earningsFor(row),
     };
+  }
+
+  /**
+   * THE PAYROLL HANDOFF: one APPROVED week, serialised to CSV for HomePay /
+   * Nannytax / an accountant. The app's whole tax position is "we compute,
+   * your payroll provider files" (AGENCY-ROADMAP Tier 1.2), and this is the
+   * artifact that makes that sentence true.
+   *
+   * READ GATE: `getReadableTimesheet` — byte-identical to the week read's, on
+   * purpose. A carer needs her OWN export (it is the record of what she is
+   * owed), and a carer removed from the household keeps it for exactly as long
+   * as she keeps the week read, by the same argument
+   * (`assertPayrollReader`: payroll is an audit trail). There is no new gate
+   * here to drift from that one.
+   *
+   * WHAT IT REFUSES, and why the refusals are stricter than the SCREEN's:
+   * `getWeekWithEarnings` degrades a week it cannot price into `hours_only`
+   * rather than blanking the display. A FILE cannot degrade — it is forwarded,
+   * filed and paid against long after any on-screen caveat is gone — so every
+   * state that is not a readable FROZEN snapshot is a refusal here
+   * (`TimesheetNotExportableError`, 409): a week that is not `approved` (its
+   * amount is still live), a pre-042 legacy approval, an unreadable snapshot,
+   * a carer who deleted her account.
+   *
+   * NOTHING IS RECOMPUTED. The status check happens BEFORE `earningsFor`, so
+   * the only branch this can reach in there is the frozen-snapshot one — a
+   * live estimate can never end up in an exported file.
+   *
+   * `paid_to_date_minor` comes from the payments table. Note this discloses a
+   * settlement total to any active member the week read already shows the
+   * frozen gross to — a wider audience than `paymentQueryService`'s own gate
+   * (parents + the week's own carer). That is deliberate and bounded: the
+   * export is the same artifact as the week read, in a different container,
+   * and giving it a second, narrower gate would mean a carer or parent could
+   * see a figure on screen that her own download silently omits.
+   */
+  async exportWeekCsv(
+    userId: string,
+    timesheetId: string
+  ): Promise<WeekExportCsv> {
+    const row = await this.getReadableTimesheet(userId, timesheetId);
+    if (row.status !== TIMESHEET_STATUSES.APPROVED) {
+      throw new TimesheetNotExportableError(
+        timesheetId,
+        row.status,
+        'not_approved'
+      );
+    }
+    const earnings = await this.earningsFor(row);
+    if (earnings.status !== WEEK_EARNINGS_STATES.OK) {
+      throw new TimesheetNotExportableError(
+        timesheetId,
+        row.status,
+        earnings.status === WEEK_EARNINGS_STATES.HOURS_ONLY
+          ? earnings.reason
+          : earnings.status
+      );
+    }
+    return renderWeekExportCsv({
+      timesheet: toWireTimesheet(row),
+      earnings,
+      paidToDateMinor: await this.payments.sumForTimesheet(timesheetId),
+    });
   }
 
   /** The earnings state for one row — the live/frozen decision, and nothing else. */

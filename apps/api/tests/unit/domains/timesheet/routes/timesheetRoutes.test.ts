@@ -60,6 +60,7 @@ let baseUrl: string;
 let getWeekWithEarningsMock: ReturnType<typeof mock>;
 let getOwnedTimesheetMock: ReturnType<typeof mock>;
 let approveMock: ReturnType<typeof mock>;
+let exportWeekCsvMock: ReturnType<typeof mock>;
 
 beforeAll(async () => {
   // The removed-member state: the read gate (inside getWeekWithEarnings) lets
@@ -74,6 +75,10 @@ beforeAll(async () => {
     throw new TimesheetNotFoundError(TIMESHEET_ID);
   });
   approveMock = mock(async (..._args: unknown[]) => ({ id: TIMESHEET_ID }));
+  exportWeekCsvMock = mock(async (..._args: unknown[]) => ({
+    filename: 'steadily-week-2026-08-03-nia-rowe.csv',
+    csv: 'date,description,kind,minutes,rate_minor,amount_minor,currency\r\n',
+  }));
 
   mock.module('../../../../../src/middlewares/auth', () => ({
     requireAuth: (req: any, _res: any, next: any) => {
@@ -92,6 +97,7 @@ beforeAll(async () => {
           getOwnedTimesheetMock(...args),
         getWeekWithEarnings: (...args: unknown[]) =>
           getWeekWithEarningsMock(...args),
+        exportWeekCsv: (...args: unknown[]) => exportWeekCsvMock(...args),
       },
     })
   );
@@ -138,6 +144,7 @@ beforeEach(() => {
   getWeekWithEarningsMock.mockClear();
   getOwnedTimesheetMock.mockClear();
   approveMock.mockClear();
+  exportWeekCsvMock.mockClear();
 });
 
 const ACTION_BODIES = {
@@ -192,6 +199,54 @@ describe('POST /timesheets/:id/{approve,query,reopen} — actions stay ACTIVE-on
       expect(approveMock).not.toHaveBeenCalled();
     });
   }
+});
+
+describe('GET /timesheets/:id/export.csv — the payroll handoff, same gate as the read', () => {
+  const EXPORT_ID = 'cccccccc-cccc-4ccc-8ccc-ccccccccccc5';
+
+  it('serves the CSV with download headers for a removed member', async () => {
+    const res = await fetch(`${baseUrl}/timesheets/${EXPORT_ID}/export.csv`);
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toBe('text/csv; charset=utf-8');
+    expect(res.headers.get('content-disposition')).toBe(
+      'attachment; filename="steadily-week-2026-08-03-nia-rowe.csv"'
+    );
+    expect(await res.text()).toBe(
+      'date,description,kind,minutes,rate_minor,amount_minor,currency\r\n'
+    );
+    expect(exportWeekCsvMock).toHaveBeenCalledWith(AUTH_USER_ID, EXPORT_ID);
+    // Same reason as the week read: the ACTIVE-only lookup must never be
+    // consulted here, or its (userId, resourceId) cache entry leaks into the
+    // actions.
+    expect(getOwnedTimesheetMock).not.toHaveBeenCalled();
+  });
+
+  it('rejects a non-uuid id with 400 before the controller runs', async () => {
+    const res = await fetch(`${baseUrl}/timesheets/not-a-uuid/export.csv`);
+
+    expect(res.status).toBe(400);
+    expect(exportWeekCsvMock).not.toHaveBeenCalled();
+  });
+
+  it('surfaces a service refusal as its own status, not as a CSV body', async () => {
+    const refusedId = 'cccccccc-cccc-4ccc-8ccc-ccccccccccc6';
+    exportWeekCsvMock.mockImplementationOnce(async () => {
+      const { TimesheetNotExportableError } = await import(
+        '../../../../../src/domains/timesheet/errors/timesheetErrors'
+      );
+      throw new TimesheetNotExportableError(
+        refusedId,
+        'submitted',
+        'not_approved'
+      );
+    });
+
+    const res = await fetch(`${baseUrl}/timesheets/${refusedId}/export.csv`);
+
+    expect(res.status).toBe(409);
+    expect(res.headers.get('content-type')).toContain('application/json');
+  });
 });
 
 describe('the read must not prime the ownership cache for the actions', () => {
