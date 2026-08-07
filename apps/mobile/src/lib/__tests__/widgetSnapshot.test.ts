@@ -19,6 +19,7 @@ import {
   buildNannyWeekPayload,
   buildNextShiftPayload,
   buildParentWeekPayload,
+  buildRedirectPayload,
   buildTodaysCoverPayload,
   type CoverShiftInput,
   formatNameList,
@@ -770,12 +771,57 @@ describe('week hours widgets (N3 / P2)', () => {
   });
 });
 
+describe('buildRedirectPayload (wrong persona)', () => {
+  it('carries only the redirect copy, so every body takes its guard branch', () => {
+    const { props, timeline } = buildRedirectPayload({
+      nowMs: NOW,
+      timeZone: ZONE,
+      role: 'parent',
+    });
+
+    expect(props.fallbackTitle).toBe('For parents');
+    expect(props.fallbackBody).toContain('Next Shift · Nanny');
+    // No root prop of ANY widget: `!props.state` / `!props.rows` /
+    // `!props.hours` all have to hold, or the body reads past the guard.
+    expect(props).not.toHaveProperty('state');
+    expect(props).not.toHaveProperty('rows');
+    expect(props).not.toHaveProperty('hours');
+    expect(props.deepLink).toBe('steadilynanny:///home');
+    expect(timeline).toEqual([]);
+  });
+
+  it('names the parent widget when a nanny widget is on a parent phone', () => {
+    const { props } = buildRedirectPayload({
+      nowMs: NOW,
+      timeZone: ZONE,
+      role: 'nanny',
+    });
+
+    expect(props.fallbackTitle).toBe('For nannies');
+    expect(props.fallbackBody).toContain("Today's Cover · Parent");
+  });
+});
+
 describe('Spanish copy', () => {
   beforeAll(async () => {
     await i18n.changeLanguage('es');
   });
   afterAll(async () => {
     await i18n.changeLanguage('en');
+  });
+
+  it('localises the redirect copy but keeps the English gallery names', () => {
+    const { props } = buildRedirectPayload({
+      nowMs: NOW,
+      timeZone: ZONE,
+      role: 'nanny',
+    });
+
+    expect(props.fallbackTitle).toBe('Para niñeras');
+    // The gallery strings come from app.config.js's Info.plist entries, which
+    // the plugin cannot localize — so the Spanish body points at the English
+    // name the user actually sees in the widget gallery.
+    expect(props.fallbackBody).toContain("Today's Cover · Parent");
   });
 
   it('localises the cover rows, including the duration convention', () => {

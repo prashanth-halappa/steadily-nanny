@@ -184,11 +184,21 @@ const config = {
       'expo-widgets',
       {
         groupIdentifier: 'group.com.jetto.steadily.nanny',
+        // iOS shows EVERY widget in this list to every user — the gallery
+        // cannot be filtered by role — so `displayName` carries the role and
+        // `description` says what the user would see. `name` is the target
+        // identifier (createWidgetSafe / registerWidgetTargets / App Group
+        // keys) and must never change; only the two display strings do.
+        // These strings are static English: the plugin generates them into the
+        // extension's Info.plist with no localization hook, so a Spanish user
+        // sees English in the gallery (accepted — the widget BODIES are
+        // localized via the snapshot).
         widgets: [
           {
             name: 'NextShift',
-            displayName: 'Next shift',
-            description: 'Nanny: next scheduled shift.',
+            displayName: 'Next Shift · Nanny',
+            description:
+              "Your next shift: the day, the hours and whose family it's with.",
             supportedFamilies: [
               'systemSmall',
               'systemMedium',
@@ -198,8 +208,9 @@ const config = {
           },
           {
             name: 'TodaysCover',
-            displayName: "Today's cover",
-            description: 'Parent: who is with the kids right now.',
+            displayName: "Today's Cover · Parent",
+            description:
+              "Who's with the kids today, updating as they clock in and out.",
             supportedFamilies: [
               'systemSmall',
               'systemMedium',
@@ -208,8 +219,9 @@ const config = {
           },
           {
             name: 'NannyWeek',
-            displayName: 'This week',
-            description: 'Nanny: hours worked this week.',
+            displayName: 'My Week · Nanny',
+            description:
+              'Your hours so far this week and where the timesheet stands.',
             supportedFamilies: [
               'systemSmall',
               'systemMedium',
@@ -218,8 +230,8 @@ const config = {
           },
           {
             name: 'ParentWeek',
-            displayName: 'This week',
-            description: 'Parent: hours booked this week.',
+            displayName: 'Family Week · Parent',
+            description: "Your family's childcare hours this week at a glance.",
             supportedFamilies: ['systemSmall', 'systemMedium'],
           },
         ],

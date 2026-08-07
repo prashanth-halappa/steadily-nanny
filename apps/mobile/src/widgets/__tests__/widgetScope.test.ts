@@ -140,6 +140,14 @@ for (const [file, source] of SOURCES) {
           body.indexOf(guard) + guard.indexOf('props.')
         );
         expect(body).toContain('Open Steadily to get started');
+        // …and yields to the wrong-persona redirect's pre-localized copy when
+        // the snapshot carries it (`buildRedirectPayload`). Truthiness, never
+        // `=== undefined`: absent keys and empty strings both mean "no
+        // override".
+        expect(body).toContain(
+          "{props.fallbackTitle ? props.fallbackTitle : 'Steadily'}"
+        );
+        expect(body).toContain('props.fallbackBody');
       });
     }
   });

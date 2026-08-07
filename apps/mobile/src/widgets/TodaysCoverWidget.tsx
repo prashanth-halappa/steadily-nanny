@@ -113,8 +113,10 @@ function TodaysCoverWidgetView(
   // No snapshot has ever reached this widget: never signed in, or a parent
   // added it to a nanny's phone (nobody feeds the other persona's widgets —
   // see `useWidgetSnapshotSync`'s header). Every prop is `undefined` here, so
-  // this guard comes before any of them is read. English literal on purpose:
-  // the localized copy travels IN the snapshot, and there isn't one.
+  // this guard comes before any of them is read. English literal unless the snapshot
+  // is a wrong-persona REDIRECT, which carries pre-localized
+  // `fallbackTitle`/`fallbackBody` — the only localized copy that reaches
+  // this branch, since the widget has no i18n runtime.
   if (!props.rows) {
     // `systemSmall` only, and the copy reserves a gutter: `offset` does not
     // affect layout, so without one the text sets across the illustration.
@@ -133,12 +135,22 @@ function TodaysCoverWidgetView(
           modifiers={[
             font({ size: 11, weight: 'semibold' }),
             foregroundStyle(MUTED),
+            lineLimit(1),
           ]}
         >
-          Steadily
+          {props.fallbackTitle ? props.fallbackTitle : 'Steadily'}
         </Text>
-        <Text modifiers={[font({ size: 13 }), foregroundStyle(MUTED)]}>
-          Open Steadily to get started
+        <Text
+          modifiers={[
+            font({ size: 13 }),
+            foregroundStyle(MUTED),
+            lineLimit(6),
+            minimumScaleFactor(0.8),
+          ]}
+        >
+          {props.fallbackBody
+            ? props.fallbackBody
+            : 'Open Steadily to get started'}
         </Text>
       </VStack>
     );

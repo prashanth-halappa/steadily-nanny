@@ -45,6 +45,7 @@ const EVENT_TYPE_VALUES = [
   'gap_raised',
 ] as const;
 const INVITE_ROLE_VALUES = ['nanny', 'parent', 'helper'] as const;
+const WIDGET_REDIRECT_ROLES = ['nanny', 'parent'] as const;
 const APPROVAL_MODE_VALUES = ['either', 'ask_other', 'owner_only'] as const;
 const APPROVAL_SCOPE_VALUES = [
   'all',
@@ -170,6 +171,13 @@ const TEMPLATE_KEY_DECLARATIONS: readonly TemplateKeyDeclaration[] = [
     pattern: /^schedule:\$\{[^}]+\}$/,
     values: CLASH_WARNING_KEYS,
     keyPattern: 'schedule:$1',
+  },
+  {
+    // `buildRedirectPayload` — the wrong-persona widget card, keyed by whose
+    // widget it is.
+    pattern: /^today:widgets\.redirect\.\$\{[^}]+\}\.(title|body)$/,
+    values: WIDGET_REDIRECT_ROLES,
+    keyPattern: 'today:widgets.redirect.$1.$2',
   },
 ];
 

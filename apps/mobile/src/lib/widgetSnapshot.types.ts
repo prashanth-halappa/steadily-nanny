@@ -57,6 +57,25 @@ export interface WidgetSnapshotBase {
    */
   artLightUri: string | null;
   artDarkUri: string | null;
+  /**
+   * Overrides for the never-synced fallback branch every widget body opens
+   * with. Present ONLY on a redirect payload (see `WidgetRedirectProps`);
+   * absent everywhere else, where the body keeps its English literal.
+   */
+  fallbackTitle?: string;
+  fallbackBody?: string;
+}
+
+/**
+ * The wrong-persona payload: base shell, no root data, and the two strings
+ * the fallback branch renders instead of "Open Steadily to get started".
+ * Written by the snapshot sync to the OTHER role's widgets once the app knows
+ * which role the signed-in user is — iOS cannot hide them from the gallery, so
+ * a parent who adds a nanny widget gets told what it is and how to remove it.
+ */
+export interface WidgetRedirectProps extends WidgetSnapshotBase {
+  fallbackTitle: string;
+  fallbackBody: string;
 }
 
 /** A scheduled future rendering of a widget. `dateIso` is the transition instant. */
@@ -214,16 +233,17 @@ export type ParentWeekWidgetProps = WeekHoursBase;
 // ---------------------------------------------------------------------------
 
 /**
- * Role-partitioned: a nanny gets `nextShift` + `nannyWeek`, a parent gets
- * `todaysCover` + `parentWeek`. A missing key means "nothing to say right now"
- * — the apply layer LEAVES the existing snapshot alone rather than clearing
- * it, so a GC'd query cache never blanks a correct widget.
+ * Role-partitioned: a nanny gets real data in `nextShift` + `nannyWeek` and a
+ * `WidgetRedirectProps` payload in the other two, a parent the mirror image. A
+ * missing key means "nothing to say right now" — the apply layer LEAVES the
+ * existing snapshot alone rather than clearing it, so a GC'd query cache never
+ * blanks a correct widget.
  */
 export interface WidgetSnapshotSet {
-  nextShift?: WidgetPayload<NextShiftWidgetProps>;
-  todaysCover?: WidgetPayload<TodaysCoverWidgetProps>;
-  nannyWeek?: WidgetPayload<NannyWeekWidgetProps>;
-  parentWeek?: WidgetPayload<ParentWeekWidgetProps>;
+  nextShift?: WidgetPayload<NextShiftWidgetProps | WidgetRedirectProps>;
+  todaysCover?: WidgetPayload<TodaysCoverWidgetProps | WidgetRedirectProps>;
+  nannyWeek?: WidgetPayload<NannyWeekWidgetProps | WidgetRedirectProps>;
+  parentWeek?: WidgetPayload<ParentWeekWidgetProps | WidgetRedirectProps>;
 }
 
 /**

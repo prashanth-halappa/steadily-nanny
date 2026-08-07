@@ -388,13 +388,30 @@ Two things about building it that cost real time to discover:
   ```
   xcodebuild -workspace ios/SteadilyNanny.xcworkspace -scheme SteadilyNanny \
     -configuration Debug -sdk iphonesimulator \
-    -destination 'platform=iOS Simulator,id=<SIM_UDID>' \
-    -derivedDataPath ios/build CODE_SIGNING_ALLOWED=NO build
+    -destination 'platform=iOS Simulator,id=<SIM_UDID>' build
   ```
+- **Do NOT pass `CODE_SIGNING_ALLOWED=NO`** (an earlier revision of this recipe
+  did). It suppresses the ad-hoc "Sign to Run Locally" step, and entitlements
+  ride along with the signature — `codesign -d --entitlements - <app>` comes
+  back empty, so the app has **no App Group and no keychain**. The app then
+  hangs forever on its loading gate (the auth store persists with
+  `secure: true`, so the session cannot be read, and `src/app/index.tsx`
+  deliberately routes nowhere until it resolves), `expo-notifications` logs
+  `Keychain access failed: A required entitlement isn't present`, and every
+  widget snapshot write goes nowhere because
+  `group.com.jetto.steadily.nanny` is unreachable. Without the flag the same
+  build signs ad-hoc and `xcrun simctl get_app_container <udid> <bundle id>
+  groups` resolves the App Group container. Verify with that command, not by
+  eye — the failure looks exactly like a slow API.
 - `buildReactNativeFromSource: true` is set, so the first build compiles React
-  Native from source and takes 45-90 minutes. Subsequent builds are incremental.
+  Native from source and takes 45-90 minutes. Subsequent builds are incremental
+  **as long as you keep the default DerivedData**
+  (`~/Library/Developer/Xcode/DerivedData/SteadilyNanny-*`) — that is where the
+  warm cache lives; `-derivedDataPath ios/build` starts cold.
   A config-only change (e.g. the Google URL scheme in `Info.plist`) is a fast
-  relink — but only if you re-run `expo prebuild` WITHOUT `--clean`.
+  relink. Note that `expo prebuild` deletes and regenerates `ios/` even
+  WITHOUT `--clean` (it prints "Clearing ios code"), so the pod graph is
+  re-installed and the next build is a partial, not a relink.
 
 **Maestro.** Flows live in `apps/mobile/.maestro/`. Maestro 2.0.10 works, but it
 **must be run outside a sandboxed shell**: on first run it `chmod`s

@@ -75,6 +75,16 @@
       "emptyBody": "Nothing on the schedule for today yet.",
       "more_one": "+{{count}} more",
       "more_other": "+{{count}} more"
+    },
+    "redirect": {
+      "nanny": {
+        "title": "For nannies",
+        "body": "This shows a nanny's own schedule. Press and hold to remove it, then add Today's Cover · Parent."
+      },
+      "parent": {
+        "title": "For parents",
+        "body": "This shows the family's side. Press and hold to remove it, then add Next Shift · Nanny."
+      }
     }
   },
   "liveActivity": {

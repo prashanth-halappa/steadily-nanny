@@ -75,6 +75,16 @@
       "emptyBody": "Aún no hay nada en el horario de hoy.",
       "more_one": "+{{count}} más",
       "more_other": "+{{count}} más"
+    },
+    "redirect": {
+      "nanny": {
+        "title": "Para niñeras",
+        "body": "Muestra el horario de la niñera. Mantén pulsado para quitarlo y añade Today's Cover · Parent."
+      },
+      "parent": {
+        "title": "Para familias",
+        "body": "Muestra el lado de la familia. Mantén pulsado para quitarlo y añade Next Shift · Nanny."
+      }
     }
   },
   "liveActivity": {

@@ -47,6 +47,7 @@ import type {
   TodaysCoverWidgetProps,
   WeekStatusTone,
   WidgetPayload,
+  WidgetRedirectProps,
   WidgetSnapshotBase,
   WidgetSnapshotSet,
   WidgetTargets,
@@ -761,6 +762,32 @@ export function buildNannyWeekPayload(
             approved: formatDuration(timesheet.total_minutes),
           })
         : null,
+    },
+    timeline: [],
+  };
+}
+
+/**
+ * The other persona's widget. `role` is whose widget this is — a nanny widget
+ * sitting on a parent's home screen gets `'nanny'` — and the copy names the
+ * widget they should have added instead. No root prop, so every body falls
+ * into its never-synced branch and renders these two strings there.
+ */
+export function buildRedirectPayload(input: {
+  nowMs: number;
+  timeZone: string;
+  role: 'nanny' | 'parent';
+}): WidgetPayload<WidgetRedirectProps> {
+  const generatedAtIso = new Date(input.nowMs).toISOString();
+  return {
+    props: {
+      generatedAtIso,
+      deepLink: WIDGET_DEEP_LINKS.home,
+      asOfLabel: asOfLabel(generatedAtIso, input.timeZone),
+      artLightUri: null,
+      artDarkUri: null,
+      fallbackTitle: i18n.t(`today:widgets.redirect.${input.role}.title`),
+      fallbackBody: i18n.t(`today:widgets.redirect.${input.role}.body`),
     },
     timeline: [],
   };

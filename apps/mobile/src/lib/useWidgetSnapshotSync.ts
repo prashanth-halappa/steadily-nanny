@@ -13,9 +13,10 @@
  * subscription would re-implement all three and drift from them.
  *
  * Role decides what gets written: a nanny feeds NextShift + NannyWeek, a
- * parent feeds TodaysCover + ParentWeek. Nobody feeds the other persona's
- * widgets, so a parent who adds the nanny widget sees its never-synced state
- * rather than someone else's hours.
+ * parent feeds TodaysCover + ParentWeek. Neither ever feeds the other
+ * persona's widget with DATA — instead it gets a redirect payload (root prop
+ * absent, `fallbackTitle`/`fallbackBody` set), because iOS shows all four in
+ * the gallery to everyone and a permanently blank card looks broken.
  */
 
 import type { Shift } from '@steadily-nanny/shared-types/schemas/shift.schema';
@@ -44,6 +45,7 @@ import {
   buildNannyWeekPayload,
   buildNextShiftPayload,
   buildParentWeekPayload,
+  buildRedirectPayload,
   buildTodaysCoverPayload,
   type CoverShiftInput,
   type NannyShiftInput,
@@ -186,6 +188,19 @@ export function useWidgetSnapshotSync(): void {
             sheet => myKey !== null && carerKeyOf(sheet) === myKey
           ) ?? null,
       });
+
+      // iOS shows every widget to every user, so she can add a parent one.
+      // Say what it is instead of leaving her a card that never fills in.
+      set.todaysCover = buildRedirectPayload({
+        nowMs,
+        timeZone,
+        role: 'parent',
+      });
+      set.parentWeek = buildRedirectPayload({
+        nowMs,
+        timeZone,
+        role: 'parent',
+      });
     }
 
     if (isParent) {
@@ -241,6 +256,9 @@ export function useWidgetSnapshotSync(): void {
         entries: entries ?? [],
         timesheet: (timesheets ?? [])[0] ?? null,
       });
+
+      set.nextShift = buildRedirectPayload({ nowMs, timeZone, role: 'nanny' });
+      set.nannyWeek = buildRedirectPayload({ nowMs, timeZone, role: 'nanny' });
     }
 
     applyWidgetSnapshots(set);
