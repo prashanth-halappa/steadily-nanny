@@ -1,5 +1,89 @@
 # Live Activity + Widgets + No-Show Alert — Validation Run
 
+## Redesign round — visual redesign validation (2026-08-07, round 6/final)
+
+Local Supabase (`127.0.0.1:54321`), API `:8080`, Metro `:8081`. Same two simulators (`6DEE8AD2` 17 Pro Max = nanny, `3DE35533` 16 Pro = parent). Synthetic shifts tagged `note='widget-redesign-verify*'` seeded fresh for this round (a long "nowspan" shift for the LA receipt/DI cycle, later cancelled; a fresh overdue-test shift `fe71be60` ending 6:09 PM local with +30min grace).
+
+### Priority verdicts
+
+| # | Item | Verdict | Evidence |
+|---|---|---|---|
+| 1 | LA receipt after clock-out | **CONFIRMED, INTERMITTENT** — fails 5/6 clean cycles, succeeds 1/6 | See below |
+| 2 | DI compact/expanded time scalar | **PASS** (with a caveat) | `redesign-la-dynamicisland-compact-nanny-17promax.png`, `redesign-la-dynamicisland-expanded-nanny-17promax.png` |
+| 3 | LA overdue full amber card | **FIX CONFIRMED END-TO-END** (`pokeOverdueRedraw`, root-caused first) | `redesign-la-overdue-lockscreen-nanny-17promax.png`, `redesign-la-overdue-dynamicisland-compact-nanny-17promax.png`, `redesign-la-overdue-dynamicisland-expanded-nanny-17promax.png` |
+| 4 | NextShift states | **PASS**, plus one hybrid-state finding | `redesign-nextshift-pending-homescreen-nanny-17promax.png`, `redesign-nextshift-medium-pending-preview-nanny-17promax.png`, `defect-nextshift-pending-onclock-hybrid-nanny-17promax.png` |
+| 5 | Parent side (TodaysCover / ParentWeek) | **PASS** for small family + in-app card; medium family not captured | `redesign-todayscover-live-parentweek-homescreen-parent-16pro.png`, `redesign-todayscover-neutral-parentweek-small-homescreen-parent-16pro.png`, `redesign-parent-today-nannylivestatuscard-live-parent-16pro.png` |
+| 6 | NannyWeek | **PASS**, no truncation | `redesign-nannyweek-small-preview-nanny-17promax.png`, `redesign-nannyweek-medium-preview-nanny-17promax.png` |
+| 7 | Cold start both devices | **PASS**, no redbox | `redesign-coldstart-nanny-17promax.png`, `redesign-coldstart-parent-16pro.png` |
+
+### 1. LA receipt — confirmed real, and intermittent (not a tooling artifact)
+
+Six independent clock-in/out cycles were run against this mechanism this round. Two were confounded by `stream3-redesign`'s own concurrent device verification on the same `nanny@steadilynanny.test` account (since confirmed idle) — `defect-la-receipt-missing-round1-nanny-17promax.png`, `defect-la-receipt-missing-round2-nanny-17promax.png` + `defect-la-receipt-missing-lockscreen-nanny-17promax.png`. Three more were run on a confirmed-uncontended account: one after the first overdue observation (clock out 17:54:01 UTC, checked at +15s and +86s — `defect-la-receipt-missing-clean-15s-nanny-17promax.png`, `defect-la-receipt-missing-clean-86s-nanny-17promax.png`), one on a maximally clean, minimal-history cycle (fresh app kill, single clock-in/out, no shift match, no prior activities — `defect-la-receipt-missing-minimal-history-nanny-17promax.png`), and one immediately after the confirmed overdue-fix capture (clock out 19:14 UTC — `defect-la-receipt-missing-postoverdue-nanny-17promax.png`): all three still showed **zero receipt content**, confirmed via `inspect_view_hierarchy` (DI container renders with no glyph/text, no `com.apple.chrono.WidgetRenderer-Activities` element) and via `xcrun simctl io <exact-udid> screenshot` (UDID-direct, does not go through Maestro's driver at all — immune to the `--udid` pinning trap in the GOLDEN-FIXES entry below).
+
+Against that: `redesign-la-receipt-nc-nanny-17promax.png` (stream1-match's capture, "✓ Clocked out at 7:11 PM · 2m recorded") is a genuine, well-formed receipt on the same mechanism, at a later timestamp the same day. The mechanism can and does work — it just doesn't work reliably. **5 of 6 cycles this round failed, 1 succeeded.** Code trace: `completeWithReceipt`/`endIfStillRunning`'s `receiptEndsAtMs` phase-guard (`apps/mobile/src/lib/liveActivity.ts`) reads as structurally correct, and no `reportWidgetFailure` call fired for `la:receipt`/`la:end` in any of the six cycles — nothing throws in JS. `stream1-match` traced a specific, plausible root cause independently: `endIfStillRunning` nulls its tracked handle, awaits the lazy `getFactory()` import, then ends *every* instance `getInstances()` returns — a clock-in landing inside that await window starts an activity the sweep cannot distinguish from an orphan, and kills it with `'immediate'` seconds after clock-IN (so by clock-out there is nothing left to become a receipt). That explains automated-fast-clock-in failures vs. a slow manual clock-in succeeding, which matches this round's pattern exactly. They report a fix (a synchronous generation counter checked by the sweep) with a deterministic regression test and a green full mobile suite — not independently re-verified by this validation pass, but the mechanism and the match to observed symptoms both check out on inspection.
+
+### 2. DI compact/expanded scalar — PASS, with a timezone-registration nuance
+
+First clock-in cycle: DI compact showed "2:26 PM" (device/PDT time) while the lock-screen banner showed "Scheduled finish 10:26 PM" (household/BST time) for the identical instant — a disagreement. `OnTheClock.tsx`'s own header comment documents this exact bug as already fixed by routing the DI scalar through `finishTimeShort` (household-zone, same value the banner uses), and `liveActivity.ts:158` does set `finishTimeShort: finishTime` correctly, so the source is not wrong. After a full app relaunch and fresh clock-in (`redesign-la-dynamicisland-compact-nanny-17promax.png`, `redesign-la-dynamicisland-expanded-nanny-17promax.png`, `redesign-la-lockscreen-running-nanny-17promax.png`), the DI trailing scalar and the banner's "Scheduled finish" **agreed** ("10:26 PM" both places). Read this as the first activity having been registered before a relevant reload rather than a current-source defect — but it's a real on-device observation, so a second pair of eyes re-confirming post a clean native rebuild would be worth it before fully closing the loop.
+
+Illustration confirmed on the running LA banner (lit-window house, top-trailing, plum/apricot) — matches spec §8 table row 1. Corroborated independently: `stream1-match`'s own device captures (household-tz "10:26 PM" agreeing on both the DI and the banner) show the identical result — not included as separate files since they duplicate what's already captured here.
+
+### 3. LA overdue full amber card — root-caused, fixed, and confirmed end-to-end
+
+Seeded a shift ending 6:09 PM local (grace flips to overdue at 6:39:45 PM local = 17:39:45 UTC), clocked in matched at 16:46:48 UTC. Checked the lock screen repeatedly past the threshold, forcing redraws via lock/unlock each time:
+
+| Check | Time | Minutes past threshold | State shown |
+|---|---|---|---|
+| 1 | 10:42:24 PDT | +2.6 min | Running (apricot), unchanged |
+| 2 | 10:43:10 PDT (after Home+Lock) | +3.4 min | Running (apricot), unchanged |
+| 3 | 10:52:14 PDT (after 4 more min + another Home+Lock) | +12.5 min | Running (apricot), still unchanged |
+
+`redesign-la-overdue-lockscreen-nanny-17promax.png` is the last of these — 12.5 minutes past the overdue instant, still showing "You're on the clock" / apricot ground, progress bar maxed (correctly reflecting elapsed time) but the `overdue` boolean never flipped. Meanwhile the **in-app** `ClockInCard` (a normal React component, not a frozen native snapshot) correctly showed "Still on the clock? / This shift has run past its scheduled finish..." at the same moment — `redesign-inapp-overdue-vs-la-frozen-nanny-17promax.png`. The overdue *logic* is right; only the Live Activity's rendering of it is stuck.
+
+**Root cause** (confirmed via source investigation, not guesswork): `expo-widgets` hardcodes `staleDate: nil` on every `ActivityContent` it constructs (both the `.start()` path in `LiveActivityFactory.swift` and the `.update()`/`.end()` paths in `LiveActivity.swift`) and never exposes `staleDate` anywhere in its JS API (`Widgets.types.ts`'s `start(props, url?)` / `update(props)` take no such parameter). `staleDate` is ActivityKit's only native mechanism to guarantee a redraw at a specific future instant while the app is backgrounded or dead. Without it, the `'widget'`-directive JS closure that computes `Date.now() >= overdueAtIso` (`OnTheClock.tsx:197-198`) only re-runs whenever WidgetKit feels like it — and `updateOnShiftMatch` (`liveActivity.ts:246-270`) fires that closure exactly once per shift match by design, then freezes. `OnTheClock.tsx`'s own header comment ("no push and no running app — only a re-render, which iOS performs whenever it draws the activity") is incorrect for this dependency — confirmed against Apple's actual ActivityKit behavior (only `Text(timerInterval:)`-style views auto-update at the OS layer; everything else is a static snapshot until the next real content push).
+
+Also checked whether the existing "arm the local reminder" notification (same `resolveOverdueAtMs` rule, `apps/mobile/src/domains/today/hooks/useClockOutReminder.ts`) could be repurposed to push a fresh `.update()` at the right instant — dead end: it only listens for notification **tap** (`addNotificationResponseReceivedListener`), never delivery, and iOS gives a plain local notification no background execution window to run JS regardless.
+
+**Fixed since, by a different route than a native patch**: a follow-up fix stream added `pokeOverdueRedraw()` (`apps/mobile/src/lib/liveActivity.ts`) — an app-driven re-push of the activity's own unchanged props, purely to force the extension to re-run its layout closure and re-evaluate `overdue`. `useLiveActivitySync` now schedules it via `setTimeout` at the computed `overdueAtMs`; backgrounding suspends JS timers rather than cancelling them, so if the app was backgrounded through the threshold, the poke fires late on the next foreground instead of never. This sidesteps the `staleDate: nil` ceiling entirely rather than removing it — the card still won't flip while the app stays backgrounded and unopened, but "the next time she looks" now actually works, which it did not before.
+
+**End-to-end proof, confirmed**: seeded a second shift (`866192f1`, ends 6:34:35 PM local, grace to 7:04:35 PM local = 19:04:35 UTC), clocked in matched at 18:33:31 UTC, backgrounded the app for the full ~31-minute wait. (A concurrent Metro restart from another stream signed the app out mid-wait — recovered by signing back in; the underlying time entry and OS-level Live Activity were unaffected, confirmed independently on the lock screen before touching the app again.) Foregrounded the app after the threshold: the in-app `ClockInCard` correctly showed "Still on the clock? / This shift has run past its scheduled finish" (the poke's trigger condition), and immediately after, the Live Activity flipped:
+- Lock screen: `redesign-la-overdue-lockscreen-nanny-17promax.png` — "Past 7:34 PM — still working?" on solid amber (`#E0B061`), exclamation-mark-circle glyph, dark ink throughout, no wash, no illustration, full-width inverted "Clock out" (dark background) — matches spec §3.2 exactly.
+- DI compact: `redesign-la-overdue-dynamicisland-compact-nanny-17promax.png` — amber exclamation glyph leading, "7:34 PM" trailing.
+- DI expanded: `redesign-la-overdue-dynamicisland-expanded-nanny-17promax.png` — "Bramble House" + "7:34 PM" on the top row, "Past 7:34 PM — still working?" / "Clock out when you're done." / Clock out button below, no wrapping.
+
+The fix works. Recommend a GOLDEN-FIXES entry regardless of this success, since the underlying `staleDate: nil` ceiling in `expo-widgets` is still real — this poke only fires on the next foreground, so a shift that goes overdue while she never reopens the app still won't flip, and the next person building a different LA-driven flip will hit the same wall.
+
+### 4. NextShift — one hybrid-state finding
+
+`pending` (a banner for a *different*, still-unresponded shift) and `state.kind === 'onClock'` (the nanny's current live session) are independent flags in `NextShiftWidget.tsx`. When both are simultaneously true — genuinely reachable, since a nanny can be on the clock for shift A while shift B still needs a response — the card renders a hybrid: **amber pending ground + pending's kicker ("Needs your response") + onClock's hero content** ("Since 5:46 PM · Bramble House"), dropping the pending shift's own day/time detail from the small family entirely (medium recovers it in the right column). See `defect-nextshift-pending-onclock-hybrid-nanny-17promax.png` (small) vs `redesign-nextshift-medium-pending-preview-nanny-17promax.png` (medium, right column shows "Sun 9:30 AM–3:00 PM"). Not a crash, and arguably a defensible priority call (pending-response outranks status), but the small-family card currently gives no indication *when* the pending shift is, which the medium family does — worth a design decision, not obviously a bug.
+
+Pending-flip amber card (no onClock overlap) also confirmed clean on the home screen: `redesign-nextshift-pending-homescreen-nanny-17promax.png`, plus a second, non-overlapping capture of the same clean pending state from stream3's device work: `redesign-nextshift-pending-hero-small-nanny-17promax.png` — same amber ground, kicker, and hero, no onClock mixing, corroborating that the hybrid above is specific to the overlap condition and not a general pending-state defect.
+
+**Not captured**: `startingSoon` (with illustration) and a clean `onClock` (without a simultaneous pending banner) — both would have required clocking out during the priority-3 overdue wait, which was prioritized higher. `nextShift` multi-row state also not separately captured this round (the account had no non-overlapping upcoming shift free of the pending/onClock states); the medium two-row layout was verified in round 4/5 captures (`nannyweek-nextshift-widgets-homescreen-nanny-17promax.png` era) and the code path is unchanged.
+
+### 5. Parent side
+
+Small family, both states confirmed on the real home screen:
+- Neutral/stale: `redesign-todayscover-neutral-parentweek-small-homescreen-parent-16pro.png` — white ground, "Test Nanny finished at 5:14 PM · 1h 59m".
+- Live: `redesign-todayscover-live-parentweek-homescreen-parent-16pro.png` — warm apricot ground + wash, apricot dot in kicker, "Test Nanny is here / On the clock since 5:46 PM". Matches `NannyLiveStatusCard`'s in-app identity (`redesign-parent-today-nannylivestatuscard-live-parent-16pro.png`) exactly, which was the whole point of the redesign.
+- ParentWeek small confirmed in both captures above: plain-text status, no pill, no money ("Sent Friday · awaiting approval · today" in muted text).
+
+**Not captured**: TodaysCover/ParentWeek medium two-column family. The widget-gallery "Add Widget" flow was reachable and used successfully on the *nanny* device (pinned Maestro driver), but on the parent device (driven via the non-pinned `maestro --udid` CLI workaround) the jiggle-mode → Edit → Add Widget sequence repeatedly dropped out of edit mode before the gallery opened, for reasons not fully diagnosed within the time budget. Small-family + in-app evidence is solid; medium column is architecturally identical code to NannyWeek's (already verified medium, `redesign-nannyweek-medium-preview-nanny-17promax.png`) so risk is low, but it is not directly confirmed.
+
+### 6. NannyWeek — no truncation, matches spec exactly
+
+`redesign-nannyweek-small-preview-nanny-17promax.png`: "11h 58m / of 50h 50m scheduled / Sent Friday · awaiting approval · today" — fully legible, two-line wrap, no ellipsis (the round-4 defect this was built to fix). `redesign-nannyweek-medium-preview-nanny-17promax.png`: hero in left column, status text in right column, also untruncated. Pending/muted tone renders as plain text per spec (no chip) in both families. Terminal-state pill (green/terracotta) not independently re-verified this round — no seedable submitted/approved timesheet in the window available — but the alpha-channel fix (`#RRGGBBAA`) was verified in round 5 and the code is unchanged.
+
+### 7. Cold start — clean on both devices
+
+`redesign-coldstart-nanny-17promax.png` / `redesign-coldstart-parent-16pro.png`: both devices killed via `simctl terminate` and relaunched via `simctl launch`, both rendered fully with no redbox. Notably the nanny device's running clock-in state (`00:14`, "Since 5:46 PM") survived the kill/relaunch correctly — confirms the LA/time-entry adoption path (`adoptLiveInstance`) works across a cold start, not just the earlier `endIfStillRunning` orphan path.
+
+### Other screenshots this round
+
+`redesign-nextshift-pending-homescreen-nanny-17promax.png` doubles as the pending-flip capture referenced above. All filenames follow `redesign-<surface>-<state>-<device>.png` for passes and `defect-<surface>-<issue>-<device>.png` for findings, per the existing convention.
+
+---
+
 Date: 2026-08-07 (round 4, final). Local Supabase (`127.0.0.1:54321`), API `:8080`, Metro `:8081`.
 
 ## Final summary table

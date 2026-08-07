@@ -15,6 +15,7 @@
  * the component cannot be rendered outside WidgetKit.
  */
 import { describe, expect, it } from 'bun:test';
+import { liveCardBackground } from '@/lib/design-tokens/elevation';
 import { palette } from '@/lib/design-tokens/palette';
 
 const source = await Bun.file(
@@ -29,6 +30,7 @@ const INLINED_COLOURS = {
   APRICOT: 'highlight',
   OCHRE: 'warning',
   GREEN: 'success',
+  CARD: 'card',
 } as const;
 
 describe('OnTheClock inlined palette', () => {
@@ -38,6 +40,16 @@ describe('OnTheClock inlined palette', () => {
       expect(source).toContain(`const ${local} = '${hex}';`);
     });
   }
+
+  // The running banner's ground is `liveCardBackground('dark')` — the same
+  // fill the in-app live card uses, so the lock screen and the app agree on
+  // what "she is on the clock right now" looks like. Pinned to the function,
+  // not to a hand-copied hex.
+  it('CARD_LIVE still equals liveCardBackground(dark)', () => {
+    expect(source).toContain(
+      `const CARD_LIVE = '${liveCardBackground('dark')}';`
+    );
+  });
 
   it('pulls in nothing the widget extension cannot resolve', () => {
     // The only identifiers the serialized function can reach are the

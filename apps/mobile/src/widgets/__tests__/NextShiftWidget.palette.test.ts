@@ -9,6 +9,7 @@
  * outside WidgetKit.
  */
 import { describe, expect, it } from 'bun:test';
+import { liveCardBackground } from '@/lib/design-tokens/elevation';
 import { palette } from '@/lib/design-tokens/palette';
 
 const source = await Bun.file(
@@ -43,6 +44,27 @@ describe('NextShiftWidget inlined palette', () => {
   it('OCHRE_FG (text-on-ochre) follows palette.dark.background / palette.light.foreground', () => {
     expect(source).toContain(
       `const OCHRE_FG = dark ? '${palette.dark.background.hex}' : '${palette.light.foreground.hex}';`
+    );
+  });
+
+  it('PLUM follows palette.{light,dark}.primary', () => {
+    expect(source).toContain(
+      `const PLUM = dark ? '${palette.dark.primary.hex}' : '${palette.light.primary.hex}';`
+    );
+  });
+
+  it('APRICOT follows palette.{light,dark}.highlight', () => {
+    expect(source).toContain(
+      `const APRICOT = dark ? '${palette.dark.highlight.hex}' : '${palette.light.highlight.hex}';`
+    );
+  });
+
+  // The `onClock` ground must be the same fill `NannyLiveStatusCard` uses
+  // in-app, so it is pinned to the function that computes it rather than to a
+  // hand-copied hex.
+  it('CARD_LIVE follows liveCardBackground()', () => {
+    expect(source).toContain(
+      `const CARD_LIVE = dark ? '${liveCardBackground('dark')}' : '${liveCardBackground('light')}';`
     );
   });
 

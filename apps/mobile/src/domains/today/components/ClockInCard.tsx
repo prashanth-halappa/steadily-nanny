@@ -41,7 +41,6 @@ import { useClockOut } from '@/src/hooks/mutations/useClockOut';
 import { useRunningTimeEntry } from '@/src/hooks/queries/useRunningTimeEntry';
 import { useShift } from '@/src/hooks/queries/useShift';
 import { useShiftsRange } from '@/src/hooks/queries/useShiftsRange';
-import { updateOnShiftMatch } from '@/src/lib/liveActivity';
 import { addLocalDays, localDateInZone } from '@/src/lib/localDate';
 import { showErrorToast } from '@/src/lib/toast';
 import { wallClockToUtcIso } from '@/src/lib/wallClock';
@@ -265,15 +264,6 @@ export function ClockInCard({
         clockOutInFlightRef.current = false;
       });
   };
-
-  // The shift the clock-in matched has finished loading. The Live Activity
-  // started without it (the clock-in response carries only a `shift_id`),
-  // so this is where it gains its scheduled finish and progress bar. The
-  // module ignores every later call — the finish is frozen once set.
-  useEffect(() => {
-    if (!clockInAt || !shift.data) return;
-    void updateOnShiftMatch(shift.data, clockInAt, timeZone);
-  }, [clockInAt, shift.data, timeZone]);
 
   // Arrived from the Live Activity's "Clock out" deep link. Routed through
   // the same handler as the on-screen button, so the forgotten-clock-out

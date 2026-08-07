@@ -22,6 +22,18 @@ describe('ParentWeekWidget inlined palette', () => {
     );
   });
 
+  it('CARD follows palette.{light,dark}.card', () => {
+    expect(source).toContain(
+      `const CARD = dark ? '${palette.dark.card.hex}' : '${palette.light.card.hex}';`
+    );
+  });
+
+  it('PLUM follows palette.{light,dark}.primary', () => {
+    expect(source).toContain(
+      `const PLUM = dark ? '${palette.dark.primary.hex}' : '${palette.light.primary.hex}';`
+    );
+  });
+
   it('pulls in nothing the widget extension cannot resolve', () => {
     const valueImports = [
       ...source.matchAll(/^import (?!type )[\s\S]*?from '([^']+)';/gm),

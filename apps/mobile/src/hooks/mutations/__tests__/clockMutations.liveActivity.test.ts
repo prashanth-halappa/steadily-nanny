@@ -16,18 +16,31 @@
 import { beforeEach, describe, expect, it, mock } from 'bun:test';
 import { onlineManager } from '@tanstack/react-query';
 import { act, waitFor } from '@testing-library/react-native';
-import { renderHookWithProviders } from '@/src/test-utils';
+import { queryKeys } from '@/src/api/queryKeys';
+import {
+  createTestQueryClient,
+  renderHookWithProviders,
+} from '@/src/test-utils';
 
 const HOUSEHOLD_ID = '00000000-0000-4000-8000-000000000001';
+const SHIFT_ID = '00000000-0000-4000-8000-0000000000a1';
+const SHIFT = {
+  id: SHIFT_ID,
+  household_id: HOUSEHOLD_ID,
+  starts_at: '2026-08-06T07:00:00.000Z',
+  ends_at: '2026-08-06T16:00:00.000Z',
+};
 const RUNNING_ENTRY = {
   id: 'entry-1',
   household_id: HOUSEHOLD_ID,
+  shift_id: null,
   clock_in_at: '2026-08-06T07:12:00.000Z',
   clock_out_at: null,
   break_minutes: 0,
   timezone: 'Europe/London',
   status: 'running',
 };
+const MATCHED_ENTRY = { ...RUNNING_ENTRY, shift_id: SHIFT_ID };
 const FINISHED_ENTRY = {
   ...RUNNING_ENTRY,
   clock_out_at: '2026-08-06T16:04:00.000Z',
@@ -88,13 +101,73 @@ describe('useClockIn', () => {
 
     await waitFor(() => expect(startOnTheClock).toHaveBeenCalledTimes(1));
     // Never the optimistic row: it has a fabricated id and no server-resolved
-    // shift match. `null` for the shift because the clock-in response carries
-    // only a `shift_id` — the window arrives later, via updateOnShiftMatch.
+    // shift match. No window here because this clock-in matched no shift.
     expect(startOnTheClock).toHaveBeenCalledWith(
       RUNNING_ENTRY,
       null,
       'Patel household'
     );
+  });
+
+  /**
+   * The clock-in response carries only a `shift_id`, so the activity used to
+   * start unmatched ALWAYS — "No scheduled shift today." on the lock screen
+   * of a nanny who had one, until a screen that happened to be mounted
+   * corrected it. The shift is already cached by whoever clocked her in, so
+   * the matched window costs a cache read rather than a request.
+   */
+  it('starts already matched when the shift the server matched is in the cache', async () => {
+    clockInMock.mockImplementation(() => Promise.resolve(MATCHED_ENTRY));
+    const queryClient = createTestQueryClient();
+    queryClient.setQueryData(
+      queryKeys.shift.range(HOUSEHOLD_ID, 'from', 'to'),
+      [SHIFT]
+    );
+
+    const { result } = renderHookWithProviders(
+      () => useClockIn('Europe/London', 'Patel household'),
+      { queryClient }
+    );
+    await act(async () => {
+      await result.current.mutateAsync({ household_id: HOUSEHOLD_ID });
+    });
+
+    await waitFor(() => expect(startOnTheClock).toHaveBeenCalledTimes(1));
+    expect(startOnTheClock).toHaveBeenCalledWith(
+      MATCHED_ENTRY,
+      SHIFT,
+      'Patel household'
+    );
+  });
+
+  it("also finds it among the carer's own cross-household shifts", async () => {
+    clockInMock.mockImplementation(() => Promise.resolve(MATCHED_ENTRY));
+    const queryClient = createTestQueryClient();
+    queryClient.setQueryData(queryKeys.me.shifts('from', 'to'), [SHIFT]);
+
+    const { result } = renderHookWithProviders(() => useClockIn(), {
+      queryClient,
+    });
+    await act(async () => {
+      await result.current.mutateAsync({ household_id: HOUSEHOLD_ID });
+    });
+
+    await waitFor(() => expect(startOnTheClock).toHaveBeenCalledTimes(1));
+    expect(startOnTheClock).toHaveBeenCalledWith(MATCHED_ENTRY, SHIFT, '');
+  });
+
+  it('starts unmatched when the matched shift is nowhere in the cache', async () => {
+    clockInMock.mockImplementation(() => Promise.resolve(MATCHED_ENTRY));
+    const { result } = renderHookWithProviders(() => useClockIn());
+
+    await act(async () => {
+      await result.current.mutateAsync({ household_id: HOUSEHOLD_ID });
+    });
+
+    // Not a failure: `useLiveActivitySync` fills the window in once the
+    // shift query resolves.
+    await waitFor(() => expect(startOnTheClock).toHaveBeenCalledTimes(1));
+    expect(startOnTheClock).toHaveBeenCalledWith(MATCHED_ENTRY, null, '');
   });
 
   it('does not start one when the clock-in failed', async () => {

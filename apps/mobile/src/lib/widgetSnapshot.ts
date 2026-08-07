@@ -34,6 +34,7 @@ import {
 import i18n from '@/src/i18n';
 import { reportWidgetFailure } from '@/src/lib/expoWidgets';
 import { addLocalDays, localDateInZone } from '@/src/lib/localDate';
+import { widgetArtUri } from '@/src/lib/widgetArt';
 import type {
   CoverRowKind,
   CoverRowProps,
@@ -46,6 +47,7 @@ import type {
   TodaysCoverWidgetProps,
   WeekStatusTone,
   WidgetPayload,
+  WidgetSnapshotBase,
   WidgetSnapshotSet,
   WidgetTargets,
   WidgetTimelineEntry,
@@ -291,6 +293,30 @@ function pendingBannerFor(
   };
 }
 
+/**
+ * NextShift is the one surface whose art changes with its state, so the
+ * payload picks the file and the body just renders whatever it is handed.
+ * Mirrors the widget's own `showArt` condition — keep the two in step.
+ */
+function nextShiftArt(
+  kind: NextShiftState['kind']
+): Pick<WidgetSnapshotBase, 'artLightUri' | 'artDarkUri'> {
+  if (kind === 'startingSoon') {
+    return {
+      artLightUri: widgetArtUri('startingsoon-light'),
+      artDarkUri: widgetArtUri('startingsoon-dark'),
+    };
+  }
+  if (kind === 'empty' || kind === 'neverSynced') {
+    return {
+      artLightUri: widgetArtUri('empty-light'),
+      artDarkUri: widgetArtUri('empty-dark'),
+    };
+  }
+  // Data-dense and state-colored states stay typographic, per spec §8.
+  return { artLightUri: null, artDarkUri: null };
+}
+
 export function buildNextShiftPayload(
   input: NextShiftInput
 ): WidgetPayload<NextShiftWidgetProps> {
@@ -307,6 +333,7 @@ export function buildNextShiftPayload(
     return {
       props: {
         ...base,
+        ...nextShiftArt('neverSynced'),
         pending: null,
         state: {
           kind: 'neverSynced',
@@ -327,6 +354,7 @@ export function buildNextShiftPayload(
     return {
       props: {
         ...base,
+        ...nextShiftArt('onClock'),
         pending,
         state: {
           kind: 'onClock',
@@ -341,11 +369,15 @@ export function buildNextShiftPayload(
     };
   }
 
-  const propsAt = (atMs: number): NextShiftWidgetProps => ({
-    ...base,
-    pending: pendingBannerFor(shifts, atMs, todayLocalDate),
-    state: scheduleStateAt(shifts, atMs, todayLocalDate),
-  });
+  const propsAt = (atMs: number): NextShiftWidgetProps => {
+    const state = scheduleStateAt(shifts, atMs, todayLocalDate);
+    return {
+      ...base,
+      ...nextShiftArt(state.kind),
+      pending: pendingBannerFor(shifts, atMs, todayLocalDate),
+      state,
+    };
+  };
 
   return {
     props: propsAt(nowMs),
@@ -597,6 +629,10 @@ export function buildTodaysCoverPayload(
       generatedAtIso,
       deepLink: WIDGET_DEEP_LINKS.hours,
       asOfLabel: asOfLabel(generatedAtIso, timeZone),
+      // Only ever rendered on this widget's fallback/empty state, so the
+      // dusk illustration is the only one it can need.
+      artLightUri: widgetArtUri('empty-light'),
+      artDarkUri: widgetArtUri('empty-dark'),
       title: i18n.t('today:widgets.cover.title'),
       householdName,
       rows,
@@ -676,6 +712,9 @@ function weekBase(input: WeekHoursInput) {
     generatedAtIso,
     deepLink: WIDGET_DEEP_LINKS.hours,
     asOfLabel: asOfLabel(generatedAtIso, timeZone),
+    // As TodaysCover: the week widgets show art on their fallback state only.
+    artLightUri: widgetArtUri('empty-light'),
+    artDarkUri: widgetArtUri('empty-dark'),
     title: i18n.t('hours:widgets.title'),
     householdName,
     hours: formatDuration(sumEntryMinutes(entries, nowMs)),

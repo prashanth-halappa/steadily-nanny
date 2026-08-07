@@ -8,6 +8,8 @@
  * if the app process is killed before the paused mutation completes, the
  * queued clock-in is lost — there is no persistence layer (Wave 2I / G20).
  */
+import type { Shift } from '@steadily-nanny/shared-types/schemas/shift.schema';
+import type { QueryClient } from '@tanstack/react-query';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import type { ClockInInput, TimeEntry } from '@/src/api/endpoints/timeEntries';
@@ -56,6 +58,42 @@ function isAlreadyClockedInError(error: unknown): boolean {
   );
 }
 
+function isShift(value: unknown, shiftId: string): value is Shift {
+  const shift = value as Shift | null | undefined;
+  return (
+    !!shift &&
+    shift.id === shiftId &&
+    typeof shift.starts_at === 'string' &&
+    typeof shift.ends_at === 'string'
+  );
+}
+
+/**
+ * The window the server just matched, out of whatever is already cached —
+ * no request. The clock-in response carries only a `shift_id`, but by the
+ * time anyone can press "Clock in" the shift itself is nearly always in
+ * hand: `ClockInCard` holds today's range (`useShiftsRange`) and
+ * `AppBootstrap` holds the carer's own upcoming shifts (`useMeShifts`),
+ * which is why both prefixes are searched. A miss is not a failure — the
+ * activity starts unmatched and `updateOnShiftMatch` fills it in — it just
+ * costs a visible "No scheduled shift today." flash on the lock screen.
+ */
+function findCachedShift(
+  queryClient: QueryClient,
+  shiftId: string | null | undefined
+): Shift | null {
+  if (!shiftId) return null;
+  for (const queryKey of [queryKeys.shift.all, queryKeys.me.all]) {
+    for (const [, data] of queryClient.getQueriesData({ queryKey })) {
+      const found = Array.isArray(data)
+        ? (data as unknown[]).find(row => isShift(row, shiftId))
+        : data;
+      if (isShift(found, shiftId)) return found;
+    }
+  }
+  return null;
+}
+
 /**
  * `householdTimezone` (the household's IANA zone — GOLDEN-FIXES #21) only
  * shapes the optimistic row; the server resolves the zone for the real one.
@@ -97,7 +135,11 @@ export function useClockIn(householdTimezone?: string, householdName?: string) {
       // Wired here rather than in the card so ANY future clock-in call site
       // gets the Live Activity for free. Deliberately not awaited: the
       // activity is decoration, and it swallows its own failures.
-      void startOnTheClock(data, null, householdName ?? '');
+      void startOnTheClock(
+        data,
+        findCachedShift(queryClient, data.shift_id),
+        householdName ?? ''
+      );
     },
     onError: (error, _variables, context) => {
       if (context?.previous !== undefined) {

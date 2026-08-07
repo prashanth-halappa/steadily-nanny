@@ -44,6 +44,19 @@ export interface WidgetSnapshotBase {
   deepLink: string;
   /** Pre-localized "As of 08:02" — shown only past `SNAPSHOT_AS_OF_MS`. */
   asOfLabel: string;
+  /**
+   * `file://` URIs of the illustration for this state, one per appearance —
+   * the widget body picks with `env.colorScheme`. Both null means "no image",
+   * which is the FALLBACK, not an error: illustrations carry zero
+   * information, so every layout reads correctly with them absent and skips
+   * the `Image` entirely. Only the states in the redesign spec's §8 table
+   * ever get a non-null URI; every other state sends null.
+   *
+   * `uiImage` is a synchronous read on the render path, so each file stays
+   * under ~150KB.
+   */
+  artLightUri: string | null;
+  artDarkUri: string | null;
 }
 
 /** A scheduled future rendering of a widget. `dateIso` is the transition instant. */

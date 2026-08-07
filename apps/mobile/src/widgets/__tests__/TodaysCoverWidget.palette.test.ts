@@ -3,6 +3,7 @@
  * See `NextShiftWidget.palette.test.ts` for why this file exists.
  */
 import { describe, expect, it } from 'bun:test';
+import { liveCardBackground } from '@/lib/design-tokens/elevation';
 import { palette } from '@/lib/design-tokens/palette';
 import {
   SNAPSHOT_AS_OF_MS,
@@ -35,6 +36,28 @@ describe('TodaysCoverWidget inlined palette', () => {
   it('APRICOT follows palette.{light,dark}.highlight', () => {
     expect(source).toContain(
       `const APRICOT = dark ? '${palette.dark.highlight.hex}' : '${palette.light.highlight.hex}';`
+    );
+  });
+
+  it('CARD follows palette.{light,dark}.card', () => {
+    expect(source).toContain(
+      `const CARD = dark ? '${palette.dark.card.hex}' : '${palette.light.card.hex}';`
+    );
+  });
+
+  it('PLUM follows palette.{light,dark}.primary', () => {
+    expect(source).toContain(
+      `const PLUM = dark ? '${palette.dark.primary.hex}' : '${palette.light.primary.hex}';`
+    );
+  });
+
+  // The live ground is the whole point of the redesign for this widget: warm
+  // card = someone is with the kids right now. It must be the SAME fill
+  // `NannyLiveStatusCard` uses in-app, so it is pinned to the function that
+  // computes it rather than to a hand-copied hex.
+  it('CARD_LIVE follows liveCardBackground()', () => {
+    expect(source).toContain(
+      `const CARD_LIVE = dark ? '${liveCardBackground('dark')}' : '${liveCardBackground('light')}';`
     );
   });
 

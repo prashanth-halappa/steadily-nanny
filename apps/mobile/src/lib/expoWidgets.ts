@@ -82,6 +82,24 @@ export function createWidgetSafe<Props extends object>(
   }
 }
 
+/**
+ * The App Group container (a `file://` URI) that the app and both extensions
+ * can all read — the only filesystem they share, and so the only place an
+ * illustration passed to `uiImage` can live. `null` when the native module is
+ * missing or the App Group is not configured (the constant is `String?`
+ * natively, so this really can come back empty).
+ */
+export function widgetsDirectorySafe(): string | null {
+  const api = widgets();
+  if (!api) return null;
+  try {
+    return api.widgetsDirectory || null;
+  } catch (error) {
+    reportWidgetFailure('widgetsDirectory', error);
+    return null;
+  }
+}
+
 /** `createLiveActivity`, same deal. */
 export function createLiveActivitySafe<Props extends object>(
   name: string,
