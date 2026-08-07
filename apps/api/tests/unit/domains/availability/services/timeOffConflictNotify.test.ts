@@ -62,6 +62,7 @@ function makeTimeOffRepo(overrides: Record<string, unknown> = {}) {
 function makeQueries(overrides: Record<string, unknown> = {}) {
   return {
     getOwned: mock(async () => row),
+    assertActiveMember: mock(async () => undefined),
     ...overrides,
   };
 }

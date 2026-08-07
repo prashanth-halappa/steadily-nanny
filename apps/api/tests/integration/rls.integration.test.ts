@@ -55,7 +55,10 @@ const SUPABASE_SERVICE_KEY = requireEnv(
 // not already export, and that file points at the REMOTE project — so running
 // this without exporting the local stack's env silently seeds and deletes rows
 // in production. Refuse anything that is not loopback.
-const host = new URL(SUPABASE_URL).hostname;
+// `URL.hostname` keeps the brackets on an IPv6 literal, so `http://[::1]:54321`
+// arrives as `[::1]` and would fail a bare `=== '::1'` — i.e. the guard would
+// refuse a loopback host. Strip them before comparing.
+const host = new URL(SUPABASE_URL).hostname.replace(/^\[|\]$/g, '');
 if (host !== '127.0.0.1' && host !== 'localhost' && host !== '::1') {
   throw new Error(
     `rls.integration.test.ts refuses to run against ${host}: it creates users and writes rows.\n` +

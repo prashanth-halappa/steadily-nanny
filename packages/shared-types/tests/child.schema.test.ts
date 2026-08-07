@@ -170,6 +170,54 @@ describe('child.schema', () => {
       });
       expect(result.success).toBe(false);
     });
+
+    // `z.iso.time()` accepts 'HH:MM', 'HH:MM:SS' and 'HH:MM:SS.frac', so the
+    // SAME wall-clock time has several spellings — and a string compare reads
+    // the longer spelling as the later time. GOLDEN-FIXES #25 in miniature:
+    // one instant, two serialisations, compared as text. A zero-length
+    // commitment slipped straight through the wire to the DB's
+    // `child_commitments_time_order` check.
+    const sameTimeDifferentSpellings = [
+      ['09:30', '09:30:00'],
+      ['09:30:00', '09:30'],
+      ['09:30:00', '09:30:00.000'],
+      ['09:30:00.5', '09:30:00.500'],
+    ] as const;
+
+    for (const [start_time, end_time] of sameTimeDifferentSpellings) {
+      it(`rejects the zero-length commitment ${start_time} → ${end_time} (same wall clock, different spelling)`, () => {
+        expect(
+          CreateChildCommitmentSchema.safeParse({
+            label: 'Preschool',
+            rrule: 'FREQ=WEEKLY;BYDAY=MO',
+            start_time,
+            end_time,
+          }).success
+        ).toBe(false);
+      });
+    }
+
+    // The mirror: mixed shapes that ARE correctly ordered must keep parsing.
+    // Normalising the compare must not cost existing clients their sub-minute
+    // or seconds-bearing payloads.
+    const mixedShapeValidPairs = [
+      ['09:30', '09:30:00.001'],
+      ['09:30:00.10', '09:30:00.9'],
+      ['09:30:00', '17:00'],
+    ] as const;
+
+    for (const [start_time, end_time] of mixedShapeValidPairs) {
+      it(`accepts the correctly-ordered mixed-shape pair ${start_time} → ${end_time}`, () => {
+        expect(
+          CreateChildCommitmentSchema.safeParse({
+            label: 'Preschool',
+            rrule: 'FREQ=WEEKLY;BYDAY=MO',
+            start_time,
+            end_time,
+          }).success
+        ).toBe(true);
+      });
+    }
   });
 
   describe('UpdateChildCommitmentSchema', () => {
@@ -180,6 +228,51 @@ describe('child.schema', () => {
     it('accepts a single field', () => {
       expect(
         UpdateChildCommitmentSchema.safeParse({ label: 'Nursery' }).success
+      ).toBe(true);
+    });
+
+    // The PATCH half had a non-empty check and nothing else, so every ordering
+    // bug the create schema rejects could still be written by editing an
+    // existing commitment instead of making a new one.
+    it('rejects an inverted time update', () => {
+      expect(
+        UpdateChildCommitmentSchema.safeParse({
+          start_time: '12:00',
+          end_time: '09:00',
+        }).success
+      ).toBe(false);
+    });
+
+    it('rejects a zero-length time update spelled two ways', () => {
+      expect(
+        UpdateChildCommitmentSchema.safeParse({
+          start_time: '09:30',
+          end_time: '09:30:00',
+        }).success
+      ).toBe(false);
+    });
+
+    it('accepts a correctly-ordered time update', () => {
+      expect(
+        UpdateChildCommitmentSchema.safeParse({
+          start_time: '09:00',
+          end_time: '12:00:00',
+        }).success
+      ).toBe(true);
+    });
+
+    // Optional-guarded, exactly like ParentEditShiftSchema: a PATCH carrying
+    // one time edits against a stored counterpart this schema cannot see, so
+    // there is nothing here to compare it to. The DB check still catches it.
+    it('accepts a one-sided time update (end_time only)', () => {
+      expect(
+        UpdateChildCommitmentSchema.safeParse({ end_time: '09:00' }).success
+      ).toBe(true);
+    });
+
+    it('accepts a one-sided time update (start_time only)', () => {
+      expect(
+        UpdateChildCommitmentSchema.safeParse({ start_time: '23:00' }).success
       ).toBe(true);
     });
   });

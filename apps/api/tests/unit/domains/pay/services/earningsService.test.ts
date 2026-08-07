@@ -48,6 +48,8 @@ function arrangement(over: Partial<PayArrangement> = {}): PayArrangement {
     mileage_rate_per_mile_minor: null,
     cancellation_paid_within_hours: null,
     valid_from: '2026-01-01',
+    // 065: null = these terms are still live (set only on member removal).
+    valid_to: null,
     carer_display_name: 'Nia Rowe',
     note: null,
     created_by: uuid(92),
@@ -786,6 +788,81 @@ describe('earningsService.computeWeekEarnings', () => {
       expect(result.worked_minutes).toBe(480);
       expect(result.payable_minutes).toBe(960);
       expect(result.gross_minor).toBe(29600);
+    });
+
+    it('prices worked minutes AND PTO on the SAME local_date — additively, never one instead of the other (F-B10-5)', () => {
+      // The half-day case: four hours of booked leave, then she comes in for
+      // the afternoon anyway (or the morning was leave and the shift moved).
+      // Both are owed, and the engine keeps them in SEPARATE buckets —
+      // `sumByDate(entries, WORKED_KINDS)` and `sumMinutesByDate(pto_usage)`
+      // never see each other — so a shared date cannot make one swallow the
+      // other. The same-date collision is the whole point: every other pto
+      // test above puts the leave on a different day from the work.
+      //
+      // Hand-computed, rule I-15 `priceMinutes(m, r) = floor((2mr + 60) / 120)`:
+      //   regular 480 @ 1850 -> (2*480*1850 + 60)/120 = 1_776_060/120
+      //                       = 14_800.5 -> floor 14_800   (8h x £18.50)
+      //   pto     240 @ 1850 -> (2*240*1850 + 60)/120 =   888_060/120
+      //                       =  7_400.5 -> floor  7_400   (4h x £18.50)
+      //   gross = 14_800 + 7_400 = 22_200
+      const result = ok(
+        computeWeekEarnings(
+          input({
+            entries: [worked(MON, 480)],
+            pto_usage: [pto(MON, 240)],
+          })
+        )
+      );
+
+      expect(result.lines).toEqual([
+        {
+          kind: 'regular',
+          minutes: 480,
+          rate_minor: 1850,
+          multiplier: null,
+          amount_minor: 14_800,
+          from_date: MON,
+          to_date: MON,
+          arrangement_id: ARR_ID_A,
+        },
+        {
+          kind: 'pto',
+          minutes: 240,
+          rate_minor: 1850,
+          multiplier: null,
+          amount_minor: 7400,
+          from_date: MON,
+          to_date: MON,
+          arrangement_id: ARR_ID_A,
+        },
+      ]);
+      expect(result.gross_minor).toBe(22_200);
+      // PTO minutes are payable but NOT worked — they must never inflate
+      // `worked_minutes` (which is what the overtime split consumes).
+      expect(result.worked_minutes).toBe(480);
+      expect(result.payable_minutes).toBe(720);
+    });
+
+    it('never counts same-date PTO toward the overtime threshold — only worked minutes do (F-B10-5)', () => {
+      // 2400 worked minutes sits exactly ON the default threshold, so nothing
+      // is overtime. Adding 480 PTO minutes on the last worked day pushes
+      // `payable_minutes` to 2880 — and must still produce no overtime line,
+      // because the split reads `workedByDate` alone. If PTO ever leaked into
+      // that bucket, this week would pay 480 minutes at 1.5x it does not owe.
+      const result = ok(
+        computeWeekEarnings(
+          input({
+            entries: [MON, TUE, WED, THU, FRI].map(d => worked(d, 480)),
+            pto_usage: [pto(FRI, 480)],
+          })
+        )
+      );
+
+      expect(result.lines.map(l => l.kind)).toEqual(['regular', 'pto']);
+      expect(result.worked_minutes).toBe(2400);
+      expect(result.payable_minutes).toBe(2880);
+      // 2400 @ 1850 = 74_000, plus 480 @ 1850 = 14_800.
+      expect(result.gross_minor).toBe(88_800);
     });
 
     it('PTO suppresses a guaranteed top-up while ALSO paying its own line — the hazard case', () => {

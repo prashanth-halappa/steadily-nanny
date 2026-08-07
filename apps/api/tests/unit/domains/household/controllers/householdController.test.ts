@@ -4,6 +4,7 @@ import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 // the HTTP shaping (status code + envelope payload) and error forwarding.
 let HouseholdController: any;
 let listForUser: any;
+let listPastForUser: any;
 let getOwned: any;
 let listMembers: any;
 let previewInvite: any;
@@ -11,9 +12,12 @@ let create: any;
 let update: any;
 let createInvite: any;
 let redeemInvite: any;
+let removeMember: any;
+let revokeInvite: any;
 
 beforeAll(async () => {
   listForUser = mock(async () => [{ id: 'h1' }]);
+  listPastForUser = mock(async () => []);
   getOwned = mock(async () => ({ id: 'h1', name: 'The Smiths' }));
   listMembers = mock(async () => [{ id: 'm1' }]);
   previewInvite = mock(async () => ({
@@ -25,12 +29,15 @@ beforeAll(async () => {
   update = mock(async () => ({ id: 'h1', name: 'Updated' }));
   createInvite = mock(async () => ({ id: 'i1', code: 'ABC-234' }));
   redeemInvite = mock(async () => ({ id: 'm-new', role: 'nanny' }));
+  removeMember = mock(async () => ({ id: 'm-target', status: 'removed' }));
+  revokeInvite = mock(async () => ({ id: 'i1', status: 'revoked' }));
 
   mock.module(
     '../../../../../src/domains/household/services/householdQueryService',
     () => ({
       householdQueryService: {
         listForUser,
+        listPastForUser,
         getOwned,
         listMembers,
         previewInvite,
@@ -40,7 +47,14 @@ beforeAll(async () => {
   mock.module(
     '../../../../../src/domains/household/services/householdCommandService',
     () => ({
-      householdCommandService: { create, update, createInvite, redeemInvite },
+      householdCommandService: {
+        create,
+        update,
+        createInvite,
+        redeemInvite,
+        removeMember,
+        revokeInvite,
+      },
     })
   );
 
@@ -67,6 +81,7 @@ function mockRes(): any {
 beforeEach(() => {
   for (const m of [
     listForUser,
+    listPastForUser,
     getOwned,
     listMembers,
     previewInvite,
@@ -74,18 +89,42 @@ beforeEach(() => {
     update,
     createInvite,
     redeemInvite,
+    removeMember,
+    revokeInvite,
   ]) {
     m.mockClear?.();
   }
 });
 
 describe('HouseholdController', () => {
-  it('list responds 200 with households', async () => {
+  // REGRESSION PIN. `households` is the key every shipped client reads; its
+  // value must not move when `past_households` is bolted alongside it. The
+  // added key is additive-only — Zod object schemas are non-strict, so a
+  // client parsing the old shape strips it (proved in the mobile endpoint
+  // test).
+  it('list responds 200 with households unchanged, plus an empty past_households for an active-only member', async () => {
     const res = mockRes();
     await HouseholdController.list({ user: { id: 'u1' } } as any, res, mock());
     expect(listForUser).toHaveBeenCalledWith('u1');
+    expect(listPastForUser).toHaveBeenCalledWith('u1');
     expect(res.statusCode).toBe(200);
-    expect(res.body.data).toEqual({ households: [{ id: 'h1' }] });
+    expect(res.body.data.households).toEqual([{ id: 'h1' }]);
+    expect(res.body.data).toEqual({
+      households: [{ id: 'h1' }],
+      past_households: [],
+    });
+  });
+
+  // The removed nanny's only route back to the money she is owed: her old
+  // household has to come down the wire, distinguishable from a live one.
+  it('list includes the households the caller was removed from', async () => {
+    listPastForUser.mockImplementationOnce(async () => [{ id: 'h9' }]);
+    const res = mockRes();
+    await HouseholdController.list({ user: { id: 'u1' } } as any, res, mock());
+    expect(res.body.data).toEqual({
+      households: [{ id: 'h1' }],
+      past_households: [{ id: 'h9' }],
+    });
   });
 
   it('create responds 201', async () => {
@@ -175,6 +214,73 @@ describe('HouseholdController', () => {
       children_first_names: ['Maya'],
       role: 'nanny',
     });
+  });
+
+  it("updateMember removes the member when the body says status: 'removed'", async () => {
+    const res = mockRes();
+    await HouseholdController.updateMember(
+      {
+        user: { id: 'u1' },
+        params: { householdId: 'h1', memberId: 'm-target' },
+        body: { status: 'removed' },
+      } as any,
+      res,
+      mock()
+    );
+    expect(removeMember).toHaveBeenCalledWith('u1', 'h1', 'm-target');
+    expect(res.body.data).toEqual({
+      household_member: { id: 'm-target', status: 'removed' },
+    });
+  });
+
+  it("updateMember forwards a 400 for status: 'active' without touching the service", async () => {
+    // Reactivation is redeem-only: a parent flipping a member back to active
+    // would hand out household access without a single-use code.
+    const res = mockRes();
+    const next = mock();
+    await HouseholdController.updateMember(
+      {
+        user: { id: 'u1' },
+        params: { householdId: 'h1', memberId: 'm-target' },
+        body: { status: 'active' },
+      } as any,
+      res,
+      next
+    );
+    expect(removeMember).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalled();
+    expect(next.mock.calls[0]?.[0]).toMatchObject({ statusCode: 400 });
+  });
+
+  it('updateMember forwards a 400 for a body with no status at all', async () => {
+    const res = mockRes();
+    const next = mock();
+    await HouseholdController.updateMember(
+      {
+        user: { id: 'u1' },
+        params: { householdId: 'h1', memberId: 'm-target' },
+        body: { colour: '#fff' },
+      } as any,
+      res,
+      next
+    );
+    expect(removeMember).not.toHaveBeenCalled();
+    expect(next.mock.calls[0]?.[0]).toMatchObject({ statusCode: 400 });
+  });
+
+  it('updateInvite revokes the invite', async () => {
+    const res = mockRes();
+    await HouseholdController.updateInvite(
+      {
+        user: { id: 'u1' },
+        params: { householdId: 'h1', inviteId: 'i1' },
+        body: { status: 'revoked' },
+      } as any,
+      res,
+      mock()
+    );
+    expect(revokeInvite).toHaveBeenCalledWith('u1', 'h1', 'i1');
+    expect(res.body.data).toEqual({ invite: { id: 'i1', status: 'revoked' } });
   });
 
   it('forwards service errors to next()', async () => {

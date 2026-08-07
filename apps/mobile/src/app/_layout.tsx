@@ -10,6 +10,7 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
+import * as Updates from 'expo-updates';
 import { PostHogProvider } from 'posthog-react-native';
 import { type ComponentProps, useEffect, useMemo, useState } from 'react';
 import { View } from 'react-native';
@@ -24,6 +25,7 @@ import {
   AppGate,
   RootErrorBoundary,
 } from '@/src/components/custom';
+import { appIdentity } from '@/src/config/appIdentity';
 import { env, validateEnv } from '@/src/config/env';
 import {
   AnalyticsProvider,
@@ -37,6 +39,16 @@ import { useAuthStore } from '@/src/store/auth';
 // Module-scope init — runs before the component tree mounts.
 Sentry.init({
   dsn: env.sentryDsn,
+  // __DEV__ is false in EVERY built artifact, so a preview EAS build would
+  // otherwise misreport itself as "production". Updates.channel carries the
+  // build profile (development/preview/production, see eas.json) instead;
+  // it's null in Expo Go / a dev client, where __DEV__ covers it.
+  environment: Updates.channel ?? (__DEV__ ? 'development' : 'production'),
+  release: `steadilynanny-mobile@${appIdentity.version}`,
+  // dist omitted: appIdentity.runtimeVersion currently equals appIdentity.version
+  // (both "1.0.0"), so it would carry no signal beyond what release already
+  // encodes. Add it once runtime/version diverge (e.g. an OTA update bumps one
+  // but not the other) and it's actually disambiguating a build.
   // Never send PII (IPs, auth headers). Mask replays.
   sendDefaultPii: false,
   replaysSessionSampleRate: 0,

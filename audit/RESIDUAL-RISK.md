@@ -37,8 +37,23 @@ plainly; the upgrade path is in a `ponytail:` comment at the cited location.
 to remove a household member (no service path writes `'removed'`, no route
 exists), so every removed-carer guard built in this effort is currently
 unreachable except by a manual DB edit; and a previously-removed member cannot
-rejoin. See `CLOSURE-TABLE.md` → *Product gaps surfaced*. **Still true**, and
+rejoin. See `CLOSURE-TABLE.md` → *Product gaps surfaced*. ~~**Still true**~~, and
 round 2 found it has a sibling — see C9 below.
+
+> **CLOSED in round 3 (2026-08-06), along with C9.** All three gaps shipped together,
+> which was the right grouping — removal without revoke or without a way back is worse
+> product than none of them. Removal is a soft status flip CAS'd on `active`
+> (`householdMemberRepository.ts:158`), with the owner un-removable, no self-removal, and
+> no removal while clocked in; revoke is the CAS on `pending` that C9 specified
+> (`householdInviteRepository.ts:80`); and a rejoin **reactivates the existing row**
+> (`:186`) rather than inserting a second one, which is what makes removal reversible.
+> Every removed-carer guard this effort built is now reachable by a product path rather
+> than a manual DB edit — and the guards that had never run turned out to need company:
+> round 3 added the payroll **read** gates that let a removed member's history survive
+> her membership, and migration `065`, which end-dates her pay terms so a rejoin cannot
+> silently resurrect the rate she left on. Details in
+> [`CLOSURE-TABLE.md`](./CLOSURE-TABLE.md) → *Round 3*; the ceilings this created are
+> C16–C19 in [§1.3](#13-newly-accepted-ceilings-round-3--audit-closeout).
 
 ### 1.1 What closed C1–C7, and what replaced each
 
@@ -70,6 +85,65 @@ Numbering continues from C7.
 | C12 | **The mobile zero-duration warning has two documented exemptions.** It does not fire on a fragment-A row that ends at local midnight (C10's helper), nor on a `cancellation_paid` row. A genuinely zero-length entry of either shape is therefore unflagged on the client. | None — the server-side figures are unaffected; this is a display warning. | A real zero-length midnight fragment, or a real zero-length cancellation row. | Both exemptions exist because the alternative is a false warning on the *normal* case, which is worse. Narrow them only with a positive signal (a `scheduled_minutes === 0` test) rather than by removing the exemption. |
 | C13 | **Rows with `carer_id` AND `household_member_id` both null stay excluded from the carer-grouped integrity checks.** 061 replaced 056's `carer_id is not null` filter with `coalesce(carer_id, household_member_id)`, which recovers post-058 departed carers — but pre-058 departed rows have neither key and cannot be grouped at all. | None directly — those rows are simply unchecked, not miscounted. | A carer who departed before 058 was applied. | The same forward-only limit as C1; it lifts only if those historical rows are given an identity, which the deleted account no longer has. |
 | C14 | **The widened reminder window can deliver near 22:00 after an outage.** F-B6-2's fix replaced `hour !== 18` with `18 ≤ hour < 22`, so a job that has been down since 18:00 will send a shift reminder at, say, 21:50 local. | None. | An outage spanning the 18:00 run. | Chosen deliberately over the alternative, which is silence: a late reminder is worse than a prompt one and much better than none. Narrow the window only if late-evening pushes turn out to annoy people more than missed shifts cost them. |
+
+### 1.3 Newly accepted ceilings (round 3 — audit closeout)
+
+Same rule again. Numbering continues from C14.
+
+**One row below is not an accepted ceiling: C26 is an open release blocker**, listed here
+only so it sits beside the work that created it. Everything else was found, understood, and
+deliberately left. Three of the seventeen — C24, C26 and C30 — were found by *verifying this
+round's own output* rather than by the work itself, which is the same lesson as §4 arriving
+one layer further out.
+
+| # | Ceiling | Money impact | Trigger | Upgrade path |
+|---|---|---|---|---|
+| C15 | **The job in-flight guard is check-then-act, so three simultaneous POSTs all execute.** `jobHandlerFactory.ts:83-91` reads for a fresh `running` row and then inserts, with no database reservation between the two — reproduced 5/5 with concurrent requests. A **genuinely in-flight** run *is* refused with 409; only true simultaneity slips through. | Depends on the job. The horizon and reconcile jobs are idempotent by their own arithmetic, so a double run writes nothing twice; a future non-idempotent job would not be so lucky. | Three or more requests hitting one job endpoint inside the same read window. Cron cadence here is hourly or slower, so this needs a manual trigger or a misconfigured scheduler. | **Deliberately accepted rather than fixed with the obvious tool.** A partial unique index on `job_runs(job_name) where status='running'` would close it and introduce something worse: staleness lives in the *read* (`STALE_RUNNING_MS`, 15 min), so a single crashed run would hold the index entry and wedge that job's schedule permanently. `JobRunService.startWithIdempotencyKey` (`jobRunService.ts:254`) is the real upgrade — a CAS reclaim that can time a dead run out. It exists, is tested by nothing, and has **zero callers**; wire it the first time a job cannot tolerate a double run. |
+| C16 | **A same-day remove-then-rejoin leaves the old rate live for the rest of that day.** `065`'s `valid_to` is a DATE and is **inclusive** — the removal day still prices at the old terms — so terms re-confirmed the same day cannot take effect until tomorrow. | Real but tiny and bounded: at most one day at the old rate, and only when a removal and a rejoin land on the same household-local date. | Remove and rejoin the same member on the same day, then set a new rate that day. | Self-heals overnight, and terms dated today already win on precedence, so the exposure is the remainder of one day. Closing it means an `ended_at timestamptz` instead of a `valid_to date`, which `065`'s header argues against at length: a date is what a person agrees to and what a payslip is derived from, and future-dated terms are refused by design precisely so nobody can pre-date a rate change. Not worth a timestamptz. |
+| C17 | **A rejoin can change a member's ROLE silently, and nothing records who did it.** Reactivation applies the new invite's role (`householdMemberRepository.ts:186`, `.update({ status: 'active', role, can_edit: false })`), so re-inviting a departed nanny as a parent promotes her with no trace. Invite-redeem is now the **only** role-mutation path — 049 removed the client one — which is the good half; the bad half is that there is no household-scoped audit table anywhere, so the change leaves no record at all. | None directly. It is an access-control change with no attribution, which matters after the fact rather than at the time. | Any rejoin issued on a different role than the member left with. | A household-scoped audit table — who changed what, when — which nothing in this system has yet. That is a larger piece of product than this ceiling justifies on its own, but it is the first concrete demand for one, and C22's silent-schema-change class and the role change here would share it. |
+| C18 | **A removed member's household vanishes from `GET /households`, so mobile cannot reach the payroll reads the API now serves.** The read gates deliberately keep serving a removed parent or nanny her own historical payroll (`assertPayrollReader`, `timesheetQueryService.ts:392`), but `listActiveHouseholdIds` (`householdMemberRepository.ts:132`) and `listActiveByUser` are both active-only, and every mobile payroll surface takes its household id from `useActiveHousehold`, which only honours a persisted id that appears in the fetched list. No deep link accepts a household or timesheet id either. | None — the data is served correctly and simply cannot be navigated to. | Any removal. | A past-households listing, which the gate names in its own comment (`timesheetQueryService.ts:384-390`: *"API contract only … the upgrade path is a past-households listing"*). Deliberately not built here: the API contract is the part that had to be right at removal time, and shipping a UI for it without a product decision about what a departed nanny should see would have been guessing. |
+| C19 | **PTO leftovers vanish at 31 December for everyone.** Balances are year-scoped by construction — `ptoLedgerRepository.listForCarerYear:88` reads one calendar year and the lazy grant refuses any non-current year (`ptoQueryService.ts:245-250`) — so unused entitlement does not carry over and is not surfaced before it disappears. | Potentially real, and it is a **product** question rather than a defect: whether unused PTO should carry, expire, or be paid out is a policy nobody has decided. | Every carer, every 31 December. | **Pre-existing and unrelated to the rejoin work** — surfaced by it, because a rejoiner's carried balance made the year-scoping visible for the first time. It also protects a rejoiner (see §4, round 3), so it is not simply a limitation. Worth its own product decision before the first December, not a code change now. |
+| C20 | **`makeOwnershipValidator` caches on `(userId, resourceId)` with no lookup identity — LATENT privilege escalation.** The cache key (`validateResourceOwnership.ts:85` → `cache.ts:45-49`) omits the `lookup` function entirely, and the cache is a process-wide `NodeCache` with a **one-hour** positive TTL (`cache.ts:22`). Pair a wide read lookup and a narrow write lookup on one URL param and the read's positive entry short-circuits the write's check. | None today; potentially total where it bites — reproduced during this round as a **removed parent approving a timesheet** after one permitted GET. | Any *future* route that mounts `makeOwnershipValidator` with two different lookups on the same param. | Latent, not live: the payroll read deliberately carries **no** ownership middleware (`timesheetRoutes.ts:42-53`) and gates inside the service instead, pinned by `a permitted GET followed by approve on the SAME id still 404s`. The real fix is one discriminator argument folded into `getRelationshipKey` plus a value at each call site. Left undone because doing it now means touching every ownership-validated route to close a hazard no shipped route has; do it the moment a second route pair needs the middleware. Now `GOLDEN-FIXES.md` #32. |
+| C21 | **A children-only pattern amend rides the next time/note change.** F-B6-4's dirty check (`scheduleMaterialisationService.ts:423-446`) compares times, timezone and note, and deliberately **not** children — so amending only which children a recurring shift covers does not rewrite `shift_children` until the next run that also moves a time or a note. | None — coverage rows lag, no figure is wrong. | A pattern amend that changes children and nothing else. | Documented in place (`:401-409`). Closing it means a second batched read of `shift_children` per run, purely to diff, which is exactly the per-run round trip GOLDEN-FIXES #28 was written to eliminate. Add a batched children read mirroring `findActiveByPattern` if the lag ever needs to close sooner. |
+| C22 | **`064`'s status-CHECK drop targets a hardcoded constraint name.** `064:52-53` is `drop constraint if exists shift_change_requests_status_check` — the name Postgres generates for `015`'s inline unnamed check. Verified correct against `015_shifts.sql:161-163`, and the migration admits the assumption in its own header. | None. | A constraint renamed, or a table that already carried another status check, so Postgres autonamed this one `..._check1`. | Reproduced: under a differing name the `drop … if exists` is a silent no-op. It then **fails safe rather than silently** — the subsequent `add constraint` errors on the duplicate name — so the migration refuses to apply rather than leaving two checks live. That is the good failure direction, which is why it was left. Name constraints explicitly in new migrations so their successors have something stable to drop. |
+| C23 | **`changeRequestsExpired` under-reports above PostgREST's `max_rows`.** `shiftChangeRequestRepository.ts:282-296` is one `UPDATE … WHERE … .select()`; the UPDATE flips **every** matching row server-side, but the `RETURNING` projection is capped at Supabase's default `db-max-rows` of 1000, and the count is `expired.length` (`scheduleHorizonJob.ts:192`). | None — no code branches on the number, and the next run's `.eq('status','pending')` naturally sees fewer rows. | More than 1000 stale pending requests in one sweep. **This matters exactly once:** `064`'s first production sweep ages out the entire historical backlog in a single run. | Cosmetic by design. If the number ever needs to be exact, take it from a `count` query rather than the returned rows, or page the select. Do not "fix" it by chunking the UPDATE — the single statement is what makes the sweep atomic. |
+| C24 | **The pre-existing approvals sweep has the identical `max_rows` shape, and there it is NOT cosmetic.** `coParentApprovalRepository.ts:207-233` uses the same `.update(...).eq(...).lt(...).select()`, but `coParentApprovalQueryService.expirePendingApprovals` (`:61-70`) feeds the **returned rows** into `approvalApplierRegistry.applyAllSettled`. Rows truncated by the 1000-row cap are flipped to `timed_out` in the database while their parked mutation is never applied on that pass. | Real. A timed-out approval whose applier never ran is precisely the F-B5-3 class — a terminal status with nothing behind it. | More than 1000 pending co-parent approvals expiring in one sweep. Not currently reachable at this app's scale. | **Found while verifying C23, not by the work that created it, and it is older than this round.** Genuinely fixable: page the select, or drive the appliers off a separate bounded query rather than the UPDATE's `RETURNING`. Left because it needs its own change to a surface round 3 did not otherwise touch, and the scale that triggers it does not exist yet. It should be the first thing fixed if the approvals surface is reopened. |
+| C25 | **Neither expiry count reaches `job_runs`.** `jobController.ts:51-62`'s `mapForJobRun` forwards `totalProcessed`, `successCount` and `errorCount` only, so `changeRequestsExpired` and `coParentApprovalsExpired` are dropped before `JobRunService.complete`. Both still appear in the HTTP response. | None. | Every horizon run. | Symmetric with the pre-existing approvals sweep, which is why it was left: adding one and not the other would be the odd choice. Add both to the summary map together if the expiry rates ever need a history. |
+| C26 | **⚠️ NOT A CEILING — AN OPEN RELEASE BLOCKER.** `apps/mobile/eas.json:33` is `"EXPO_PUBLIC_SENTRY_DSN": "TODO-SET-BEFORE-BUILD"`. A production build cut today ships with mobile crash reporting silently off. | None until a crash happens, then total loss of visibility on the surface F-B9-6 just instrumented. | Cutting any production build. | The owner supplies the DSN. Note `SENTRY_ALLOW_FAILURE: "false"` (`:38`) does **not** catch this — it fails a build on a broken source-map *upload*, not on a DSN that was never set, so the build goes green. Listed in this table only so it sits beside F-B9-6's work; it is tracked as a blocker in [`OPEN-ITEMS.md`](./OPEN-ITEMS.md), not as something accepted. |
+| C27 | **`063` caps the total but not the rate, so a legal rate can still multiply past the cap.** Per-hour and per-mile rates reuse `MAX_MONEY_MINOR` (99,999,999) — the *total-amount* cap — as their own ceiling, because there is no separate rate bound. A rate well inside its cap, times enough hours or miles, exceeds the amount cap. | None any more: the computed guards (`ExpenseAmountTooLargeError`, `TimesheetGrossTooLargeError`) refuse cleanly before any write, and `063`'s `timesheets_gross_minor_upper` backs them at the database. The outcome is a clean refusal, not a wrong number. | A rate high enough that a plausible week's hours crosses 99,999,999 minor units. | **An open product question, recorded rather than answered:** what a sane maximum hourly rate actually is. Until someone decides, the total-amount cap is doing double duty and the failure is loud rather than unreachable. Pick real rate bounds when the answer exists; the schema and the migration are both one line each at that point. |
+| C28 | **Four mobile fixtures now model a wire shape the API cannot produce.** They omit `valid_to`, which `065` made a required member of the pay-arrangement wire type, and they mock **above** the schema layer so nothing validates them. | None — test-only. | Reading those fixtures as documentation of the wire format. | The general shape is the risk, not these four rows: a fixture that mocks above its own schema is a second, unversioned definition of the contract. Fix them the next time that file is opened; better, move the mock below the schema boundary so the shared type enforces it. |
+| C29 | **Two mobile test-coverage nits on the manage-household UI.** The revoke-disabled state is unpinned (nothing fails if the button becomes pressable when it should not be), and the reset-both-flags fix is pinned by source inspection rather than by an interaction test. | None. | A refactor of the manage screen. | Both are cheap and both were deliberately skipped in favour of the runtime probe, which found more. Worth noting the second is the weaker of the two: "verified by reading" is the exact standard this audit exists to distrust, and it is recorded here rather than counted as coverage. |
+| C30 | **The app-version "gate" is advisory, and its platform header is never sent.** F-B11-5's headers exist, but nothing rejects an under-version request — `appStatusRoutes` returns an `updateRequired` flag the client chooses to honour (`client.ts:39-40` says so outright). Separately, the server reads `x-app-platform` (`:50`) which **no mobile code sends**, so `platform` always defaults to `'ios'`. | None directly. The visible consequence is that an Android user on a forced update is shown the **iOS** store URL and cannot act on it. | Any Android force-update. | The platform default is a genuine bug with a one-line fix on the client, left only because it belongs with whoever decides whether the advisory should become a real gate. Server-side minimum-version rejection is the named upgrade path; do both at once. No test covers the header-reading route today, only `compareVersions`. |
+| C31 | **Two session-drop paths clear Sentry and store state but keep the API bearer token.** The refresh-failure branches (`auth.ts:329-340`) call `clearUserContext()` and reset the store, but unlike `signOut()` (`:147,150`) and the revoked-user path (`:364,366`) they do not call `clearAuthToken()` or null `previousSignedInUserId`. | None known — the token is already expired, which is why the refresh failed. | A session whose refresh fails rather than being explicitly signed out. | Found while verifying F-B9-6's cleanup, outside that finding's scope. The asymmetry is the concern more than the token: five drop paths do one thing and two do another, and the next person to add a path will copy whichever they read first. Fold the whole teardown into one function every path calls. |
+
+#### C32–C44 — accepted from the device passes (wave 6)
+
+Numbering continues. These are separated from C15–C31 above because they come from a
+different instrument: the app running on a simulator, driven by hand, rather than a suite or
+an API client. Almost every row is a **surface** ceiling — a screen that renders the wrong
+thing, or renders a control the server will then correctly refuse. That is the shape a
+device pass finds, and none of the previous evidence classes could see any of them.
+
+Two rows are worth reading first even if you skip the rest. **C38** is a standing false-green
+generator, not a one-off; and **C32** is the highest-value follow-up in the group, because a
+write that silently does nothing is worse for the person doing it than a write that is
+refused out loud.
+
+| # | Ceiling | Money impact | Trigger | Upgrade path |
+|---|---|---|---|---|
+| C32 | **The handoff-note editor is un-gated for a removed member AND fails silently.** `HandoffChipsCard` (`apps/mobile/src/domains/today/components/HandoffChipsCard.tsx`) renders and accepts input under a past household; tapping Save fires `POST /v1/households/:householdId/handoff-notes` (mounted `routes/index.ts:126`), the server correctly refuses `404 HOUSEHOLD_NOT_FOUND`, and **the UI shows nothing at all** — the chip stays selected, the Save affordance stays, no toast, no error line. | None. No data is written and no authorization is bypassed; the server ruling is correct. | A removed member opening Today on a past household and trying to leave a note. | **The silent failure is the worse half, and it is the cheaper half to fix** — the gate is a nicety, an error surface is not. Highest-value follow-up of this group: render the refusal, then decide whether the editor should have been reachable at all. |
+| C33 | **Time-off copy for a removed nanny renders the PARENT branch.** She is shown "Time off is managed by the nanny on this household" — addressed as if she were the family. The form itself is correctly absent (`TimeOffScreen.tsx:123` gates on `role !== NANNY \|\| isPastMember`), so the only defect is which of the two absent-form messages she reads. | None. | Any removed nanny opening Time off on a past household. | One branch: the screen collapses "not a nanny" and "no longer a nanny here" into a single else-arm. Split them and write the second string. Cosmetic, but it is the app telling a person it has forgotten who she is. |
+| C34 | **Settings → Availability is a full editable form under a past household, and the write SUCCEEDS.** Correctly, as it turns out: `carer_availability` is keyed on `user_id` with **no household column** (`011_availability.sql:33-35`), so the row she edits is her own global record, not this family's. `PUT /v1/availability/me` (`availabilityRoutes.ts:54`) is validated but carries no membership assert — the one ungated write left in that domain, and legitimately so: self-scoped, no household fan-out, no notification, no ledger touch. | None. | Any removed carer opening Settings → Availability. | **Confusingly placed, not a hole.** Nothing to close server-side. If it is worth changing, the change is on the screen: move availability out from under a household-scoped Settings tree, or label it as global. Do not add a membership gate to `PUT /availability/me` — a carer with no households at all still needs to edit her own availability. |
+| C35 | **`ExtraShiftScreen` is role-gated but not past-member-gated on its deep-link path.** It reads no `isPastMember` at all (verified: zero references in `apps/mobile/src/domains/schedule/components/ExtraShiftScreen.tsx`), so a removed member reaching it by deep link gets the whole form. The server refuses the submit — `POST /v1/households/:householdId/shifts/extra` (`householdShiftRoutes.ts:38`) gates on active membership. | None. The write is refused. | A deep link, or any navigation that skips the gated entry point. | Same one-line `isPastMember` check the other gated screens use. Left because the server is the authority and it holds; this is a wasted-effort ceiling, not a safety one. Note the failure mode differs from C32 — here the refusal is surfaced. |
+| C36 | **Six screens are deliberately left un-gated for past members.** `ShiftDetailScreen`, `ScheduleRespondScreen`, `SchedulePendingScreen`, `ScheduleBuildScreen`, `ExtraShiftScreen` (C35) and the inbox — none reads `isPastMember`. The server refuses each write, so the failure mode is an error toast rather than a wrong row. | None. | A removed member navigating anywhere in the schedule surface. | **Accepted as a set rather than fixed one at a time**, because the right fix is one gate at the navigation layer, not six copies of the same condition — and that needs the product answer C18's past-households listing was also waiting on: what a departed member should be able to *see*, as distinct from what she can do. Gating them individually now would have to be undone by that decision. |
+| C37 | **The time-off gate is "holds ANY active membership", because `carer_time_off` has no `household_id`.** One row means "unavailable to every family" (`011_availability.sql:69-71` — `user_id` only), so `assertActiveMember` (`timeOffQueryService.ts:91`) checks that the caller is active *somewhere*, not here. Create, cancel and update all route through it (`timeOffCommandService.ts:85`, `:136`, `:175`). | None wrong, but money moves: a cancel can reverse a `pto_ledger` entry in a household the caller has left. | Two consequences, both intended. A nanny active in A **may create time off while removed from B** — correct, it applies to A, and B cannot see her anyway since `listForHousehold` enumerates active members only. And cancelling a row B marked paid **still reverses B's ledger** — correct: reversing money B recorded is the honest correction, not a write by a stranger. | Only a `household_id` on `carer_time_off` would let the gate be per-household, and that is the wrong data model — a person is either free on a day or she is not. The ceiling is that the gate is coarser than every other write gate in the app, and a reader who assumes house convention will read it as a bug. It is documented at the assertion; leave it. |
+| C38 | **`bun.setup.ts` stubs `buttonVariants` and `buttonTextVariants` to `mock(() => '')` — a standing false-green generator.** `apps/mobile/bun.setup.ts:536-537`. **No mobile test in this repo can observe a button class**, which is exactly how the inert destructive confirm (GOLDEN-FIXES **#33**) shipped green through unit tests *and* adversarial review. The stub also publishes no `TextClassContext` and does not make `disabled` block a press, so neither is assertable either. | None today. | Any future defect whose signal is a class string on a button. | **Cost is prospective, not current** — 14 of 290 mobile test files assert on class strings and exactly one touches button classes (`components/ui/__tests__/alert-dialog.action.test.tsx`, which re-mocks the module with a real `cva` at `:53-57` and is the correct pattern). Fixing the global stub means re-checking every one of those files in a single pass, which is the same trade C11 made about `TZ=UTC`. Until then: **re-mock locally, as that test does, whenever a class is the thing under test.** |
+| C39 | **Two components share the class-leak shape that made the confirm inert, and both are currently callerless.** `ui/toggle.tsx:63-79` threads one `className` into **both** the `TextClassContext` value and the box — the exact `AlertDialogAction` defect, un-fixed; and `ui/badge.tsx:19-23` puts `active:opacity-80` on a plain `View`, which react-native-css-interop upgrades to a pressable. | None. | A first caller. | Verified callerless: `<Badge>` and `<Toggle>`/`<ToggleGroup>` have **zero** call sites in `apps/mobile/src` — the badge module is imported twice, but only for the `FILLED_CHIP_PADDING_Y` and `CHIP_BORDER_RADIUS` constants (`status-pill.tsx:14`, `switch.tsx:12`). So this is dormant, not live. Two options, and deleting them is the better one: unused shadcn scaffolding that carries a known-inert-button bug is a trap for whoever reaches for it first. If they are kept, apply the `alert-dialog.tsx:154-165` shape to both. |
+| C40 | **The committed Maestro flows are fragile: `hideKeyboard` lands on "Create account".** `apps/mobile/.maestro/flows/login.yaml:27` and `login-nanny.yaml:27` — on the login screen the tap coordinate `hideKeyboard` resolves to reliably hits the "Create account" link, so the flow leaves the screen it was logging in on. Dropping the step works every time. | None. | Running either committed login flow. | One line out of two files. Not done here because these flows were not otherwise touched this round and a committed E2E flow is the sort of thing another lane may be mid-edit on. Note the second file: the observation came in naming `login.yaml` only, and `login-nanny.yaml` has the identical step. |
+| C41 | **UNPROBED: whether a non-owner parent sees a Remove control on the owner's card.** The removal service refuses it — the owner is un-removable (`householdCommandService.ts:325`) — but whether the *button* is hidden for a second parent was never driven, because the device fixture collapsed the owner and the signed-in user into one person. | None. The server holds regardless. | A household with two parent memberships. | **One SQL insert of a second active parent membership closes it**, and it is the cheapest open probe in this ledger. Recorded as unprobed rather than passed: the pass verified a control the fixture could never have shown. |
+| C42 | **The on-the-clock card is not scoped to the selected household.** Carried from the earlier passes, unchanged. The card renders a running entry without checking which household is selected. | None known — display only. | A carer on the clock for one household while another is selected. | **Whether a clock-out taken from the wrong household writes correctly is unprobed**, and that is the part that would matter. Probe it before deciding the fix: if the write follows the entry rather than the selection, this stays cosmetic. |
+| C43 | **Members with null profile names all read "Nanny", with no email tiebreak.** Carried forward. Two unnamed members are indistinguishable on the member list. | None. | Any household where more than one member has never set a profile name — which is every household with more than one nanny, since nanny onboarding never collects a name (C9b). | Falling back to the account email would separate them at no product cost. Sits downstream of C9b: the real fix is collecting the name, and this is what to do until then. |
+| C44 | **Household selection resets to a default on every sign-in rather than last-used.** Carried forward. | None. | Every sign-in for a multi-household user. | Persist the selected household id across sessions. Small, and it interacts with C18/C36: whatever decides how past households are listed also decides what a stale persisted id should do when the household is no longer active. |
 
 ---
 
@@ -188,15 +262,42 @@ exists and what is left of it.
    onboarding 500s for a caller with no `user_profiles` row, the nanny redeem
    path unguarded anywhere). Both lists are in
    [`OPEN-ITEMS.md`](./OPEN-ITEMS.md) → *2026-08-06*.
-   **What is left:** **co-parent approvals** were deliberately not exercised —
-   doing so means sitting inside the short-notice window — so that surface still
-   rests on unit tests alone. Given that F-B4-8 and F-B5-3 both live there, and
-   that both were round-2 reopens in the first pass, it is the most valuable
-   remaining runtime probe on this list.
+   **✅ The co-parent gap is now closed too (round 3).** It was the one surface both
+   prior passes skipped, and this section called it the most valuable remaining
+   probe on that basis. It has been driven: **7 probes, all OK, the state machine
+   sound.** F-B4-8 and F-B5-3 both held. The findings were peripheral rather than
+   structural — a missing nanny push on the approved-cancel path, a boot trap, and
+   silent terminal failures — all three fixed in the same round. A third live API
+   run then covered the whole new removal/rejoin surface, ~150 checks, ending in a
+   `run_integrity_checks()` over everything it created that returned zero
+   violations.
+   **✅ And a fifth class after that: the app on a device (wave 6).** Two simulator
+   passes against a dev build. The first found **four** defects in work that had
+   already passed unit tests *and* adversarial review, three of which no test in
+   this repo could have observed; the second confirmed all four fixes on screen and
+   became the gate. Written up in [`CLOSURE-TABLE.md`](./CLOSURE-TABLE.md) →
+   *Evidence class: the mobile CX device passes*, with the ceilings at
+   [C32–C44](#c32c44--accepted-from-the-device-passes-wave-6).
+   **What is left:** one named probe — [C41](#c32c44--accepted-from-the-device-passes-wave-6),
+   whether a non-owner parent sees a Remove control on the owner's card, which the
+   fixture could not show because it collapsed the owner and the signed-in user into
+   one person. One SQL insert closes it. Beyond that, nothing named. Every surface
+   this audit touched has now been exercised at runtime by something other than its
+   own unit tests. That is not the same as saying the system is probed — it says the
+   *audited* surface is, and the value of each pass has been in what it found
+   **around** the fixes rather than in them, which argues for keeping the habit
+   rather than declaring it finished.
 
-Beyond those four, the named gaps that remain are C8–C14 in [§1.2](#12-newly-accepted-ceilings-round-2)
-and the untouched rows in [`OPEN-ITEMS.md`](./OPEN-ITEMS.md) — 27 of the original
-35 findings are still open, none of them regressions.
+Beyond those four, the named gaps that remain are C8–C14 in [§1.2](#12-newly-accepted-ceilings-round-2),
+C15–C44 in [§1.3](#13-newly-accepted-ceilings-round-3--audit-closeout), and the untouched
+rows in [`OPEN-ITEMS.md`](./OPEN-ITEMS.md) — **2 of the original 35 findings are still open**
+(F-B10-1's controller layer and F-B8-7's client-derived surfaces), one is stale, one is
+closed as infeasible, and none has ever regressed. The ledger being nearly empty is not the
+same as the system being nearly safe: C15–C44 are **thirty** things that are *known* and
+accepted, and the count of what is unknown has not moved. Thirteen of the thirty were added
+by pointing a person at the running app for two afternoons, which is the most direct
+available measure of how much a ledger can miss while being scrupulous about everything it
+can see.
 
 ---
 
@@ -252,6 +353,83 @@ Both belong to the same family as the round-1 `manual_adjustment` catch: the
 defect is invisible to the test that was written for it, because the test and the
 code share the author's assumption. The only thing that found any of the four was
 a second reader with permission to disagree.
+
+### Round 3 — a refused instruction, and two claims that did not survive
+
+**The instruction that was refused, and should have been.** The orchestrator specified a
+gate on carried-over PTO at rejoin, to fix a "stacking bug" where a returning member would
+inherit her old balance on top of a new annual grant. **There is no such bug.** Balances are
+year-scoped: `ptoLedgerRepository.listForCarerYear:88` reads exactly one
+`${year}-01-01` … `${year}-12-31` window, and the lazy grant refuses any year that is not
+the current one (`ptoQueryService.ts:245-250`). Nothing stacks, because nothing crosses a
+year boundary. Building the gate as specified would have denied a member who rejoins in
+January the annual grant she is entitled to — a fix whose only effect is the harm it was
+written to prevent, on a real person's leave. The implementer said so instead of building
+it. What shipped instead is the modest true thing: the leftover balance is **named** in the
+rejoin push (`householdCommandService.ts:441`), zero suppressed, the whole lookup wrapped so
+a failure cannot cost the rejoin.
+
+This is the **fourth** correction in this effort's record, and the pattern is now specific
+enough to state: all four came from the *implementer*, not the reviewer. The person told
+what to do had the most context on the change, and in every case the objection was
+available only to someone reading the actual code rather than the specification of it. A
+process that treats the implementer as the party to be checked, rather than a party that
+checks, loses precisely these.
+
+**Two claims handed to this ledger did not survive being checked**, and are recorded
+because the alternative is a ledger that launders its own reports:
+
+- **"F-B3b-3 re-verified across 36 call sites."** No 36 exists anywhere in the tree.
+  `findActiveMembership` (`householdMemberRepository.ts:28`) has **28** direct call sites,
+  one of which is itself called at 19 more — 46 distinct authorization points. The claim's
+  *substance* held, and is what matters: exactly three services gate on any-status
+  membership, all three are payroll reads, and every write resolves through an active-only
+  helper. A precise-sounding number nobody can reproduce is worse than "every write path",
+  which is checkable.
+- **"The new week renders hours-only with gross NULL, not 0."** Right behaviour, wrong
+  names, in a way that matters for anyone implementing against it. The status is
+  `no_arrangement`, a distinct member of `WEEK_EARNINGS_STATES` from `hours_only`, and
+  `WeekEarningsSchema` (`timesheet.schema.ts:365-400`) is a discriminated union whose
+  non-`ok` arms carry **no money fields at all**. The gross is structurally absent. A client
+  written to check `gross_minor === null` would be checking for a state this wire format
+  cannot express.
+
+**And one stale comment created by this round's own work**, left visible rather than tidied
+away in prose: `effectiveOnParity.test.ts:38-50` still says the sibling repository test
+compares as strings. It did, which is why the parity test found the bug; it now
+`Date.parse`es both sides (`payArrangementRepository.test.ts:63-79`). The comment would send
+the next reader to "fix" a file that is already correct — the same class as the five stale
+comments in [`CLOSURE-TABLE.md`](./CLOSURE-TABLE.md) → *Stale documentation*, and evidence
+that a fix reliably outruns the prose describing it.
+
+### Wave 6 — a fifth refusal, and a review that found the fix was the dead code
+
+**The fifth refusal.** An implementer was told to rewrite a set of green mobile tests into
+other green tests. He declined, and argued the case rather than the instruction: the tests
+as written were not wrong, the rewrite would produce a differently-shaped green, and the
+only honest **red** available lived on the API side, where the behaviour actually was
+unpinned. The reviewer, working independently, reached the same judgement. Five for five,
+the correction has come from the implementer — and this one is the first where the objection
+was about *where the evidence should come from* rather than about whether the specified
+behaviour existed.
+
+**And the review found that a fix was itself dead code**, which is the sharper half of this
+round. Device pass 1 found that a removed member had no route to her own pay, because
+`GET /v1/households` returns only active households. A fix shipped, keyed on an
+`isPastMember` flag. Adversarial review of that fix then established the flag was
+**permanently false**: it derives from `GET /v1/users/me/memberships`, which filtered to
+active rows, so nothing could ever set it and the removed nanny was still routed into the
+signup wizard. Its tests passed by mocking a payload the server could not emit — the same
+family as `findAbandonedFragment`'s string compare (round 2) and the coverage-gap premise
+(round 3): **the test and the code shared an assumption about a payload neither of them had
+seen.** `listByUserAnyStatus` (`householdMemberRepository.ts:134`) is what makes the flag
+reachable, and `useIsOnboarded.ts:178` is where it is now derived.
+
+The same review found something the device pass had not looked for: **time-off create,
+cancel and update had no membership gate at all.** A removed member got 201, and cancel
+appended adjustment rows to a past household's `pto_ledger` — a money write by a non-member.
+That is now `assertActiveMember` on all three paths (`timeOffCommandService.ts:85`, `:136`,
+`:175`), with the coarseness of the gate recorded as [C37](#c32c44--accepted-from-the-device-passes-wave-6).
 
 The general lesson matches the effort's central finding: **a passing test is not
 evidence that a defect is closed.** Several fixes here passed their own tests

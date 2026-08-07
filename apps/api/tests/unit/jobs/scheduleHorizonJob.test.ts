@@ -37,6 +37,24 @@ function noApprovals() {
   return { expirePendingApprovals: mock(async () => []) };
 }
 
+/** A change-request repository that finds nothing stale. */
+function noChangeRequests() {
+  return { expirePendingOlderThan: mock(async (_cutoffIso: string) => []) };
+}
+
+/** A no-op materialiser, for the tests that only care about the sweeps. */
+function noOpMaterialiser() {
+  return {
+    materialiseForHorizon: mock(async () => ({
+      created: 0,
+      updated: 0,
+      deleted: 0,
+      cancelled: 0,
+      conflicts: [],
+    })),
+  };
+}
+
 describe('runScheduleHorizonJob', () => {
   it('materialises every accepted pattern the repository lists', async () => {
     const patterns = [patternFor({ id: 'p1' }), patternFor({ id: 'p2' })];
@@ -53,7 +71,8 @@ describe('runScheduleHorizonJob', () => {
     const result = await runScheduleHorizonJob(
       patternRepo,
       commandService,
-      noApprovals()
+      noApprovals(),
+      noChangeRequests()
     );
 
     expect(materialiseForHorizon).toHaveBeenCalledTimes(2);
@@ -78,7 +97,8 @@ describe('runScheduleHorizonJob', () => {
     const result = await runScheduleHorizonJob(
       patternRepo,
       commandService,
-      noApprovals()
+      noApprovals(),
+      noChangeRequests()
     );
 
     expect(materialiseForHorizon).not.toHaveBeenCalled();
@@ -110,7 +130,8 @@ describe('runScheduleHorizonJob', () => {
     const result = await runScheduleHorizonJob(
       patternRepo,
       commandService,
-      noApprovals()
+      noApprovals(),
+      noChangeRequests()
     );
 
     expect(materialiseForHorizon).toHaveBeenCalledTimes(3);
@@ -133,7 +154,12 @@ describe('runScheduleHorizonJob', () => {
     }));
     const commandService = { materialiseForHorizon };
 
-    await runScheduleHorizonJob(patternRepo, commandService, noApprovals());
+    await runScheduleHorizonJob(
+      patternRepo,
+      commandService,
+      noApprovals(),
+      noChangeRequests()
+    );
 
     expect(patternRepo.listAccepted).toHaveBeenCalledTimes(1);
     expect(patternRepo.listAccepted).toHaveBeenCalledWith();
@@ -162,7 +188,8 @@ describe('runScheduleHorizonJob', () => {
     const result = await runScheduleHorizonJob(
       patternRepo,
       commandService,
-      approvals
+      approvals,
+      noChangeRequests()
     );
 
     expect(approvals.expirePendingApprovals).toHaveBeenCalledWith();
@@ -188,10 +215,122 @@ describe('runScheduleHorizonJob', () => {
     const result = await runScheduleHorizonJob(
       patternRepo,
       commandService,
-      approvals
+      approvals,
+      noChangeRequests()
     );
 
     expect(result.successCount).toBe(1);
     expect(result.coParentApprovalsExpired).toBe(0);
+  });
+});
+
+describe('runScheduleHorizonJob — stale change-request sweep (F-B5-5)', () => {
+  const DAY_MS = 24 * 60 * 60 * 1000;
+
+  it('expires pending change requests older than 7 days and reports how many', async () => {
+    const patternRepo = { listAccepted: mock(async () => []) };
+    const changeRequests = {
+      expirePendingOlderThan: mock(async (_cutoffIso: string) => [
+        { id: 'cr1' },
+        { id: 'cr2' },
+        { id: 'cr3' },
+      ]) as unknown as ReturnType<
+        typeof noChangeRequests
+      >['expirePendingOlderThan'],
+    };
+
+    const before = Date.now();
+    const result = await runScheduleHorizonJob(
+      patternRepo,
+      noOpMaterialiser(),
+      noApprovals(),
+      changeRequests
+    );
+    const after = Date.now();
+
+    expect(changeRequests.expirePendingOlderThan).toHaveBeenCalledTimes(1);
+    const [firstCall] = changeRequests.expirePendingOlderThan.mock.calls;
+    // `?? ''` parses to NaN, which fails both bounds below — so a missing
+    // call can never pass this test by accident.
+    const cutoff = Date.parse(firstCall?.[0] ?? '');
+    // Compared as instants, not strings: the cutoff is 7 days back from
+    // whenever the run started, so it can only land inside this window.
+    expect(cutoff).toBeGreaterThanOrEqual(before - 7 * DAY_MS);
+    expect(cutoff).toBeLessThanOrEqual(after - 7 * DAY_MS);
+    expect(result.changeRequestsExpired).toBe(3);
+  });
+
+  it('sweeps globally — no household argument', async () => {
+    // Same reasoning as the approvals sweep above: scoping to one household
+    // means a request only ages out for a family that happens to open the
+    // screen, and the families who stopped looking are exactly the ones with
+    // rotting pending rows.
+    const patternRepo = { listAccepted: mock(async () => []) };
+    const changeRequests = noChangeRequests();
+
+    await runScheduleHorizonJob(
+      patternRepo,
+      noOpMaterialiser(),
+      noApprovals(),
+      changeRequests
+    );
+
+    expect(changeRequests.expirePendingOlderThan.mock.calls[0]).toHaveLength(1);
+  });
+
+  it('reports 0 and still completes the horizon work when the sweep throws', async () => {
+    const patternRepo = { listAccepted: mock(async () => [patternFor()]) };
+    const materialiseForHorizon = mock(async () => ({
+      created: 1,
+      updated: 0,
+      deleted: 0,
+      cancelled: 0,
+      conflicts: [],
+    }));
+    const changeRequests = {
+      expirePendingOlderThan: mock(async () => {
+        throw new Error('shift_change_requests unreachable');
+      }) as unknown as ReturnType<
+        typeof noChangeRequests
+      >['expirePendingOlderThan'],
+    };
+
+    const result = await runScheduleHorizonJob(
+      patternRepo,
+      { materialiseForHorizon },
+      noApprovals(),
+      changeRequests
+    );
+
+    expect(result.successCount).toBe(1);
+    expect(result.changeRequestsExpired).toBe(0);
+  });
+
+  it('still sweeps change requests when the approvals sweep throws', async () => {
+    // The two sweeps are isolated from each other, not just from the horizon
+    // work. One unreachable table must not silently stop the other sweep.
+    const patternRepo = { listAccepted: mock(async () => []) };
+    const approvals = {
+      expirePendingApprovals: mock(async () => {
+        throw new Error('approvals table unreachable');
+      }) as unknown as ReturnType<typeof noApprovals>['expirePendingApprovals'],
+    };
+    const changeRequests = {
+      expirePendingOlderThan: mock(async (_cutoffIso: string) => [
+        { id: 'cr1' },
+      ]) as unknown as ReturnType<
+        typeof noChangeRequests
+      >['expirePendingOlderThan'],
+    };
+
+    const result = await runScheduleHorizonJob(
+      patternRepo,
+      noOpMaterialiser(),
+      approvals,
+      changeRequests
+    );
+
+    expect(result.coParentApprovalsExpired).toBe(0);
+    expect(result.changeRequestsExpired).toBe(1);
   });
 });

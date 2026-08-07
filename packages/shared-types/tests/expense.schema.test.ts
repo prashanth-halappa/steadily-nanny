@@ -363,6 +363,71 @@ describe('expense.schema', () => {
     });
   });
 
+  // F-B2-6 — `amount_minor` had a floor and no ceiling. 99_999_999 minor
+  // (£999,999.99) is the same bound mobile's `parseMajorToMinor` enforces and
+  // migration 063 pins as a DB CHECK. Same reasoning as `MAX_MILES` above: the
+  // wire accepts exactly what the rest of the stack can hold, no more.
+  describe('amount_minor cap (F-B2-6)', () => {
+    const MAX_MINOR = 99_999_999;
+
+    const validExpense = {
+      id: VALID_UUID,
+      household_id: VALID_UUID,
+      carer_id: VALID_UUID,
+      local_date: '2026-08-01',
+      kind: EXPENSE_KINDS.EXPENSE,
+      description: 'Museum tickets',
+      amount_minor: 1200,
+      miles: null,
+      currency: 'GBP',
+      status: EXPENSE_STATUSES.PENDING,
+      reviewed_by: null,
+      reviewed_at: null,
+      review_note: null,
+      carer_display_name: 'Nia Rowe',
+      created_at: NOW,
+      updated_at: NOW,
+    };
+
+    it('ExpenseSchema accepts amount_minor at the cap, 99_999_999', () => {
+      expect(
+        ExpenseSchema.safeParse({ ...validExpense, amount_minor: MAX_MINOR })
+          .success
+      ).toBe(true);
+    });
+
+    it('ExpenseSchema rejects amount_minor above the cap, 100_000_000', () => {
+      expect(
+        ExpenseSchema.safeParse({
+          ...validExpense,
+          amount_minor: MAX_MINOR + 1,
+        }).success
+      ).toBe(false);
+    });
+
+    it('CreateExpenseRequestSchema accepts amount_minor at the cap, 99_999_999', () => {
+      expect(
+        CreateExpenseRequestSchema.safeParse({
+          kind: EXPENSE_KINDS.EXPENSE,
+          local_date: '2026-08-01',
+          description: 'Museum tickets',
+          amount_minor: MAX_MINOR,
+        }).success
+      ).toBe(true);
+    });
+
+    it('CreateExpenseRequestSchema rejects amount_minor above the cap, 100_000_000', () => {
+      expect(
+        CreateExpenseRequestSchema.safeParse({
+          kind: EXPENSE_KINDS.EXPENSE,
+          local_date: '2026-08-01',
+          description: 'Museum tickets',
+          amount_minor: MAX_MINOR + 1,
+        }).success
+      ).toBe(false);
+    });
+  });
+
   describe('ExpenseListResponseSchema', () => {
     it('parses an empty list', () => {
       expect(

@@ -98,7 +98,12 @@ export function TodayScreen() {
         ) : household ? (
           <View className="mt-2 gap-4">
             <HouseholdSwitcher />
-            {activeHousehold.households.length <= 1 ? (
+            {/* Mirrors HouseholdSwitcher's own bail-out — this is the plain
+                name it falls back to, and rendering both would print the
+                household twice. */}
+            {activeHousehold.households.length +
+              activeHousehold.pastHouseholds.length <=
+              1 && !activeHousehold.isPastHousehold ? (
               <Body
                 testID="today-household-name"
                 className="text-muted-foreground"
@@ -140,7 +145,10 @@ export function TodayScreen() {
               />
             ) : null}
 
-            {onboarding.role === SETUP_ROLES.NANNY ? (
+            {/* Not on a household she was REMOVED from: every write there is
+                refused server-side, so the button would only ever fail. */}
+            {onboarding.role === SETUP_ROLES.NANNY &&
+            !onboarding.isPastMember ? (
               <ClockInCard
                 householdId={household.id}
                 timeZone={household.timezone}

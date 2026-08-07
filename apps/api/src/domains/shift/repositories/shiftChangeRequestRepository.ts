@@ -262,6 +262,40 @@ export class ShiftChangeRequestRepository extends BaseRepository<ShiftChangeRequ
     return data as ShiftChangeRequest;
   }
 
+  /**
+   * Bulk `pending -> expired` for every request opened before `cutoffIso`
+   * (F-B5-5, migration 064). Returns the rows this call actually flipped.
+   *
+   * Compare-and-set on `pending` like `withdraw`, and for the same reason: a
+   * settled row must never be reopened as `expired` by a sweep that reads it
+   * a moment after someone answered. Unlike `withdraw`, matching NOTHING is
+   * the normal outcome — most sweeps find no stale rows — so this returns an
+   * empty array where the single-row paths throw.
+   *
+   * No `responded_by` / `responded_at`: nobody responded, that is the whole
+   * point of the status. Stamping a responder here would put a name against
+   * an answer that was never given.
+   */
+  async expirePendingOlderThan(
+    cutoffIso: string
+  ): Promise<ShiftChangeRequest[]> {
+    const { data, error } = await supabaseService
+      .from(this.table)
+      .update({ status: SHIFT_CHANGE_REQUEST_STATUSES.EXPIRED })
+      .eq('status', SHIFT_CHANGE_REQUEST_STATUSES.PENDING)
+      .lt('created_at', cutoffIso)
+      .select();
+
+    if (error) {
+      throw new DatabaseError(
+        'Failed to expire stale shift change requests',
+        'DATABASE_ERROR',
+        { details: error.message, cutoffIso }
+      );
+    }
+    return (data ?? []) as ShiftChangeRequest[];
+  }
+
   private handleAcceptOutcome(
     changeRequestId: string,
     payload: RpcOutcomePayload

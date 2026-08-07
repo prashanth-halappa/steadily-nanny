@@ -32,6 +32,7 @@ import { SETUP_ROLES } from '@/src/domains/setup/types';
 import { useCurrentPayArrangement } from '@/src/hooks/queries/useCurrentPayArrangement';
 import { useHouseholds } from '@/src/hooks/queries/useHouseholds';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
+import { usePastHouseholds } from '@/src/hooks/queries/usePastHouseholds';
 import { usePayArrangementHistory } from '@/src/hooks/queries/usePayArrangementHistory';
 import { usePtoBalance } from '@/src/hooks/queries/usePtoBalance';
 import { localDateInZone } from '@/src/lib/localDate';
@@ -152,6 +153,14 @@ export function MyPayScreen() {
   const router = useRouter();
   const onboarding = useIsOnboarded();
   const households = useHouseholds();
+  // Households she was REMOVED from belong here too: the pay she is still
+  // owed by a family she left is exactly what this screen exists to show.
+  // Read-only by nature — this screen offers no writes to gate.
+  const pastHouseholds = usePastHouseholds();
+  const payableHouseholds = [
+    ...(households.data ?? []),
+    ...(pastHouseholds.data ?? []),
+  ];
   const userId = useAuthStore(s => s.user?.id ?? null);
 
   // A back affordance in EVERY state, including the transient loading one —
@@ -228,7 +237,7 @@ export function MyPayScreen() {
         <ErrorState variant="network" onRetry={() => households.refetch()} />
       ) : !userId ? null : (
         <View className="mt-4 gap-3">
-          {households.data?.map(household => (
+          {payableHouseholds.map(household => (
             <MyPayHouseholdCard
               key={household.id}
               household={household}

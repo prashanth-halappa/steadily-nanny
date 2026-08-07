@@ -5,16 +5,31 @@
 import type { NextFunction, Request, Response } from 'express';
 import { getAuthUserId } from '../../../utils/asyncHandler';
 import { sendSuccessResponse } from '../../../utils/responseHelpers';
+import { UnsupportedMemberUpdateError } from '../errors/householdErrors';
+import { HOUSEHOLD_MEMBER_STATUSES } from '../schemas';
 import { householdCommandService } from '../services/householdCommandService';
 import { householdQueryService } from '../services/householdQueryService';
+import type { UpdateHouseholdMemberInput } from '../types';
 
 export class HouseholdController {
+  /**
+   * `past_households` is ADDITIVE, never a change to `households`: the
+   * active list is byte-for-byte what it always was, and a client parsing
+   * the old envelope drops the new key (Zod objects are non-strict). Past
+   * households are the ones the caller was removed from — she still reads
+   * the hours and pay she accrued there, so the app needs a route to them.
+   */
   static async list(req: Request, res: Response, next: NextFunction) {
     try {
-      const households = await householdQueryService.listForUser(
-        getAuthUserId(req)
-      );
-      return sendSuccessResponse(res, 'Households fetched', { households });
+      const userId = getAuthUserId(req);
+      const [households, past_households] = await Promise.all([
+        householdQueryService.listForUser(userId),
+        householdQueryService.listPastForUser(userId),
+      ]);
+      return sendSuccessResponse(res, 'Households fetched', {
+        households,
+        past_households,
+      });
     } catch (error) {
       return next(error);
     }
@@ -83,6 +98,53 @@ export class HouseholdController {
         req.body
       );
       return sendSuccessResponse(res, 'Invite created', { invite }, 201);
+    } catch (error) {
+      return next(error);
+    }
+  }
+
+  /**
+   * The member PATCH accepts exactly one transition: `status: 'removed'`.
+   * `UpdateHouseholdMemberSchema` is broader (role, can_edit, colour,
+   * display_name_override), and none of those are wired to anything yet — a
+   * schema-valid body naming one has to 400 rather than be silently dropped.
+   *
+   * `status: 'active'` is refused for a stronger reason than "unbuilt":
+   * reactivation is redeem-only by design, so household access always costs a
+   * single-use invite code rather than a parent flipping a field.
+   */
+  static async updateMember(req: Request, res: Response, next: NextFunction) {
+    try {
+      const householdId = req.params.householdId as string;
+      const memberId = req.params.memberId as string;
+      const { status } = req.body as UpdateHouseholdMemberInput;
+      if (status !== HOUSEHOLD_MEMBER_STATUSES.REMOVED) {
+        throw new UnsupportedMemberUpdateError();
+      }
+      const household_member = await householdCommandService.removeMember(
+        getAuthUserId(req),
+        householdId,
+        memberId
+      );
+      return sendSuccessResponse(res, 'Household member removed', {
+        household_member,
+      });
+    } catch (error) {
+      return next(error);
+    }
+  }
+
+  /** PATCH an invite. The schema allows only `status: 'revoked'`. */
+  static async updateInvite(req: Request, res: Response, next: NextFunction) {
+    try {
+      const householdId = req.params.householdId as string;
+      const inviteId = req.params.inviteId as string;
+      const invite = await householdCommandService.revokeInvite(
+        getAuthUserId(req),
+        householdId,
+        inviteId
+      );
+      return sendSuccessResponse(res, 'Invite revoked', { invite });
     } catch (error) {
       return next(error);
     }

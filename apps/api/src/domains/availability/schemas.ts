@@ -77,11 +77,28 @@ export type CarerIdParam = z.infer<typeof CarerIdParamSchema>;
  * URL validation, not a wire shape duplicate of AnonymisedBusyBlockSchema —
  * belongs here alongside the re-export, exactly like InviteCodeParamSchema in
  * the household domain's schemas.ts.
+ *
+ * The `to > from` refine is not optional garnish. Without it an inverted range
+ * reached `busyBlockRepository.listForCarer`, whose overlap predicate is
+ * `starts_at < to AND ends_at > from`; reversed, that quietly stops meaning
+ * "overlaps the window" and starts meaning "spans the reversed window" — a
+ * plausible-looking answer to a question nobody asked, with no error anywhere.
+ * Its sibling range queries (shift, me) both refine; this one was the gap.
  */
-export const BusyBlocksQuerySchema = z.object({
-  from: z.iso.datetime({ offset: true }),
-  to: z.iso.datetime({ offset: true }),
-});
+export const BusyBlocksQuerySchema = z
+  .object({
+    from: z.iso.datetime({ offset: true }),
+    to: z.iso.datetime({ offset: true }),
+  })
+  .refine(
+    // Instant compare — lexicographic ISO strings break across offsets
+    // (e.g. `…T11:00:00-01:00` vs `…T12:00:00+00:00`).
+    data => Date.parse(data.to) > Date.parse(data.from),
+    {
+      message: 'to must be after from',
+      path: ['to'],
+    }
+  );
 export type BusyBlocksQuery = z.infer<typeof BusyBlocksQuerySchema>;
 
 /**

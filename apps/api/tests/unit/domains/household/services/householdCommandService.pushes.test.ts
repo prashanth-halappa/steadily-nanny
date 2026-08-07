@@ -44,7 +44,7 @@ beforeEach(() => {
   notifyHouseholdParents.mockClear();
 });
 
-function makeMemberRepo() {
+function makeMemberRepo(overrides: Record<string, unknown> = {}) {
   return {
     createMembership: mock(async (data: Record<string, unknown>) => ({
       id: 'm-new',
@@ -56,6 +56,16 @@ function makeMemberRepo() {
       ...data,
     })),
     findActiveMembership: mock(async () => null),
+    findMembershipAnyStatus: mock(async () => null),
+    reactivateMembership: mock(async (id: string, role: string) => ({
+      id,
+      role,
+      household_id: 'h1',
+      user_id: 'u2',
+      can_edit: false,
+      status: 'active',
+    })),
+    ...overrides,
   };
 }
 
@@ -71,6 +81,20 @@ function makeInviteRepo(overrides: Record<string, unknown> = {}) {
       ...data,
     })),
     ...overrides,
+  };
+}
+
+/** A rejoiner's still-live PTO for the current year: 20h granted, 5h used. */
+function makePtoRepo(rows: Record<string, unknown>[] = []) {
+  return { listForCarerYear: mock(async () => rows) };
+}
+
+function makeHouseholdRepo() {
+  return {
+    create: mock(),
+    update: mock(),
+    delete: mock(),
+    findById: mock(async () => ({ id: 'h1', timezone: 'Europe/London' })),
   };
 }
 
@@ -127,6 +151,41 @@ describe('HouseholdCommandService.redeemInvite — invite_redeemed', () => {
     }
   });
 
+  it('notifies parents when a REMOVED member rejoins, not just on a first-time join', async () => {
+    // Reactivation is a join as far as the household is concerned: the parents
+    // who did not send the invite still need to know someone regained access.
+    const svc = new HouseholdCommandService(
+      { create: mock(), update: mock(), delete: mock() } as never,
+      makeMemberRepo({
+        findMembershipAnyStatus: mock(async () => ({
+          id: 'm-old',
+          household_id: 'h1',
+          user_id: 'u2',
+          role: 'nanny',
+          status: 'removed',
+        })),
+      }) as never,
+      makeInviteRepo() as never,
+      { getMembership: mock() } as never,
+      { ensureProfile: mock(async () => {}) } as never
+    );
+
+    await svc.redeemInvite('u2', { code: 'ABC-234' });
+
+    expect(notifyHouseholdParents).toHaveBeenCalledWith(
+      'h1',
+      expect.objectContaining({
+        // Distinct wording, same push type: "rejoined", not "a new nanny".
+        title: expect.stringContaining('rejoined'),
+        body: expect.stringContaining('nanny rejoined'),
+        data: {
+          type: PUSH_NOTIFICATION_TYPES.INVITE_REDEEMED,
+          householdId: 'h1',
+        },
+      })
+    );
+  });
+
   it('push failure does not fail the redeem', async () => {
     notifyHouseholdParents.mockImplementation(() => {
       throw new Error('expo down');
@@ -142,5 +201,81 @@ describe('HouseholdCommandService.redeemInvite — invite_redeemed', () => {
     await expect(
       svc.redeemInvite('u2', { code: 'ABC-234' })
     ).resolves.toMatchObject({ role: 'nanny' });
+  });
+});
+
+describe('HouseholdCommandService.redeemInvite — carried-over PTO in the rejoin push', () => {
+  const removedMember = {
+    id: 'm-old',
+    household_id: 'h1',
+    user_id: 'u2',
+    role: 'nanny',
+    status: 'removed',
+  };
+
+  function svcWith(ptoRepo: any) {
+    return new HouseholdCommandService(
+      makeHouseholdRepo() as never,
+      makeMemberRepo({
+        findMembershipAnyStatus: mock(async () => removedMember),
+      }) as never,
+      makeInviteRepo() as never,
+      { getMembership: mock() } as never,
+      { ensureProfile: mock(async () => {}) } as never,
+      { findRunningInHousehold: mock(async () => null) } as never,
+      { endForCarer: mock(async () => []) } as never,
+      ptoRepo as never
+    );
+  }
+
+  it('names the leftover PTO balance so a parent can correct it', async () => {
+    // The balance survives the removal (owner decision: keep, do not forfeit),
+    // so the parents who see the rejoin are the people who can adjust it — a
+    // PTO correction already exists as a feature.
+    const svc = svcWith(
+      makePtoRepo([
+        { kind: 'accrual', minutes: 1200, effective_date: '2026-01-01' },
+        { kind: 'usage', minutes: -300, effective_date: '2026-04-02' },
+      ])
+    );
+
+    await svc.redeemInvite('u2', { code: 'ABC-234' });
+
+    expect(notifyHouseholdParents).toHaveBeenCalledWith(
+      'h1',
+      expect.objectContaining({
+        body: expect.stringContaining('15 hours'),
+        data: expect.objectContaining({
+          type: PUSH_NOTIFICATION_TYPES.INVITE_REDEEMED,
+        }),
+      })
+    );
+  });
+
+  it('says nothing about PTO when there is no balance to carry', async () => {
+    // A rejoin in a new calendar year, or a carer nobody ever read a balance
+    // for: "0 hours carried over" is noise, not information.
+    const svc = svcWith(makePtoRepo([]));
+
+    await svc.redeemInvite('u2', { code: 'ABC-234' });
+
+    const [, payload] = notifyHouseholdParents.mock.calls[0] as [
+      string,
+      { body: string },
+    ];
+    expect(payload.body).not.toContain('carried over');
+  });
+
+  it('still completes the rejoin when the PTO lookup fails', async () => {
+    // A push detail must never cost the carer their household access.
+    const svc = svcWith({
+      listForCarerYear: mock(async () => {
+        throw new Error('pto down');
+      }),
+    });
+
+    await expect(
+      svc.redeemInvite('u2', { code: 'ABC-234' })
+    ).resolves.toMatchObject({ status: 'active' });
   });
 });

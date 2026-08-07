@@ -2,7 +2,7 @@ import { describe, expect, it, mock } from 'bun:test';
 import { TimeOffNotFoundError } from '../../../../../src/domains/availability/errors/availabilityErrors';
 import { TimeOffCommandService } from '../../../../../src/domains/availability/services/timeOffCommandService';
 import type { CarerTimeOff } from '../../../../../src/domains/availability/types';
-import { ValidationError } from '../../../../../src/errors';
+import { AuthorizationError, ValidationError } from '../../../../../src/errors';
 
 const row: CarerTimeOff = {
   id: 't1',
@@ -42,6 +42,10 @@ function makeTimeOffRepo(overrides: Record<string, unknown> = {}): any {
 function makeQueries(overrides: Record<string, unknown> = {}): any {
   return {
     getOwned: mock(async () => row),
+    // Default: the caller still actively belongs to a household. Every write
+    // path asserts this before touching a row — see the gate describe block at
+    // the bottom of this file for why.
+    assertActiveMember: mock(async () => undefined),
     ...overrides,
   };
 }
@@ -441,5 +445,128 @@ describe('TimeOffCommandService.update', () => {
       message: 'note',
       sequence: 4,
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// BLOCKER 2 — the time-off write paths had NO membership gate at all.
+// `create` was a bare insert (no household in the URL, the body, or a check),
+// and `cancel`/`update` checked `user_id` ownership only. A nanny removed from
+// every household she worked for got a 201 on POST, and her DELETE drove
+// `reconcileCancelledTimeOff` into a past household's `pto_ledger` — a money
+// write by someone who is no longer a member. Pre-existing, but making past
+// households selectable in the picker turned it from theoretical into
+// reachable. The API uses the service-role key and migration 049 dropped the
+// client write policies: this gate is the only one there is.
+//
+// `carer_time_off` is person-scoped (no household_id on the row), so there is
+// no per-household signal to gate on — the honest gate is "does this caller
+// still actively belong to ANY household". See the ceiling note on
+// `TimeOffQueryService.assertActiveMember`.
+// ---------------------------------------------------------------------------
+function makeRemovedCallerQueries(
+  overrides: Record<string, unknown> = {}
+): any {
+  return makeQueries({
+    assertActiveMember: mock(async () => {
+      throw new AuthorizationError(
+        'You are no longer a member of any household',
+        'NOT_AN_ACTIVE_MEMBER'
+      );
+    }),
+    ...overrides,
+  });
+}
+
+describe('TimeOffCommandService — active-membership gate', () => {
+  it('refuses a create from a caller with no active membership, and writes nothing', async () => {
+    const timeOffRepo = makeTimeOffRepo();
+    const svc = new TimeOffCommandService(
+      timeOffRepo,
+      makeRemovedCallerQueries(),
+      makeOverlapRepo()
+    );
+
+    await expect(
+      svc.create('removed-nanny', {
+        starts_at: '2026-08-10T00:00:00Z',
+        ends_at: '2026-08-12T00:00:00Z',
+        all_day: true,
+      })
+    ).rejects.toBeInstanceOf(AuthorizationError);
+    expect(timeOffRepo.create).not.toHaveBeenCalled();
+  });
+
+  // The load-bearing half: the gate must run BEFORE the reconcile, or a
+  // removed member's DELETE still appends adjustment rows to a past
+  // household's money ledger on its way to failing.
+  it('refuses a cancel from a caller with no active membership and attempts NO pto_ledger write', async () => {
+    const timeOffRepo = makeTimeOffRepo();
+    const reconcile = mock(async () => undefined);
+    const svc = new TimeOffCommandService(
+      timeOffRepo,
+      makeRemovedCallerQueries(),
+      makeOverlapRepo(),
+      undefined,
+      reconcile
+    );
+
+    await expect(svc.cancel('removed-nanny', 't1')).rejects.toBeInstanceOf(
+      AuthorizationError
+    );
+    expect(reconcile).not.toHaveBeenCalled();
+    expect(timeOffRepo.cancelById).not.toHaveBeenCalled();
+  });
+
+  it('refuses an update from a caller with no active membership', async () => {
+    const timeOffRepo = makeTimeOffRepo();
+    const svc = new TimeOffCommandService(
+      timeOffRepo,
+      makeRemovedCallerQueries(),
+      makeOverlapRepo()
+    );
+
+    await expect(
+      svc.update('removed-nanny', 't1', { message: 'nope' })
+    ).rejects.toBeInstanceOf(AuthorizationError);
+    expect(timeOffRepo.update).not.toHaveBeenCalled();
+  });
+
+  // Regression pins. A gate that refuses everyone passes all three cases above
+  // and takes time off away from every working nanny in the app.
+  it('leaves an ACTIVE member able to create', async () => {
+    const timeOffRepo = makeTimeOffRepo();
+    const queries = makeQueries();
+    const svc = new TimeOffCommandService(
+      timeOffRepo,
+      queries,
+      makeOverlapRepo()
+    );
+
+    await svc.create('u1', {
+      starts_at: '2026-08-10T00:00:00Z',
+      ends_at: '2026-08-12T00:00:00Z',
+      all_day: true,
+    });
+
+    expect(queries.assertActiveMember).toHaveBeenCalledWith('u1');
+    expect(timeOffRepo.create).toHaveBeenCalled();
+  });
+
+  it('leaves an ACTIVE member able to cancel, reconcile included', async () => {
+    const timeOffRepo = makeTimeOffRepo();
+    const reconcile = mock(async () => undefined);
+    const svc = new TimeOffCommandService(
+      timeOffRepo,
+      makeQueries(),
+      makeOverlapRepo(),
+      undefined,
+      reconcile
+    );
+
+    await svc.cancel('u1', 't1');
+
+    expect(timeOffRepo.cancelById).toHaveBeenCalledWith('t1');
+    expect(reconcile).toHaveBeenCalledWith('t1');
   });
 });

@@ -69,11 +69,20 @@ export class TimeOffCommandService {
     private readonly memberRepo: HouseholdMemberRepository = new HouseholdMemberRepository()
   ) {}
 
-  /** Create a time-off row for the caller; scan + notify on overlaps. */
+  /**
+   * Create a time-off row for the caller; scan + notify on overlaps.
+   *
+   * Gated on the caller STILL actively belonging to a household. There is no
+   * household in the URL or the body to check against — `carer_time_off` is
+   * person-scoped — so without this a removed nanny got a clean 201. See
+   * `TimeOffQueryService.assertActiveMember` for the full reasoning and the
+   * limits of a membership-anywhere gate.
+   */
   async create(
     userId: string,
     input: CreateCarerTimeOffInput
   ): Promise<CarerTimeOffMutationResponse> {
+    await this.queries.assertActiveMember(userId);
     const carer_time_off = await this.timeOffRepo.create({
       ...input,
       user_id: userId,
@@ -120,6 +129,11 @@ export class TimeOffCommandService {
    * reversed, so a second run against a reversed ledger writes nothing.
    */
   async cancel(userId: string, timeOffId: string): Promise<CarerTimeOff> {
+    // FIRST, ahead of the ownership lookup and well ahead of the reconcile:
+    // the PTO reversal below appends adjustment rows to every household that
+    // paid for this time off, so a removed member reaching it writes to a past
+    // household's money ledger on her way to being refused.
+    await this.queries.assertActiveMember(userId);
     const existing = await this.queries.getOwned(userId, timeOffId);
     const cancelled = await this.timeOffRepo.cancelById(timeOffId);
 
@@ -156,6 +170,9 @@ export class TimeOffCommandService {
     timeOffId: string,
     input: UpdateCarerTimeOffInput
   ): Promise<CarerTimeOffMutationResponse> {
+    // Same gate as create/cancel — PATCH is a write too, and shipping the
+    // other two without it would leave the hole open on a sibling route.
+    await this.queries.assertActiveMember(userId);
     const row = await this.queries.getOwned(userId, timeOffId);
 
     if (row.status === CARER_TIME_OFF_STATUSES.CANCELLED) {

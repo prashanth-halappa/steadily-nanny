@@ -37,7 +37,18 @@ export const TIME_ENTRY_STATUSES = {
 export type TimeEntryStatus =
   (typeof TIME_ENTRY_STATUSES)[keyof typeof TIME_ENTRY_STATUSES];
 
-/** timesheets.status */
+/**
+ * timesheets.status
+ *
+ * PRODUCT DECISION (owner, 2026-08-06, audit closeout): there is deliberately
+ * NO carer-facing submit step. `rollUpIntoTimesheet` births every timesheet as
+ * 'submitted' the moment hours land and re-writes 'submitted' on every entry
+ * change (un-approving an approved week and re-notifying the parent). A parent
+ * may approve mid-week; later hours auto-reopen. 'open' is therefore a dead
+ * value — 017's column default that no code path ever writes — kept only so
+ * the DB CHECK and this enum stay aligned with the schema. Do not "fix" the
+ * missing submit route; an explicit submit model was considered and declined.
+ */
 export const TIMESHEET_STATUSES = {
   OPEN: 'open',
   SUBMITTED: 'submitted',

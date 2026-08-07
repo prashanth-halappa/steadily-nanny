@@ -24,7 +24,7 @@ So the screenshots are the deliverable, not a formality.
 | App ID | `com.jetto.steadily.nanny` |
 | Existing flows | `apps/mobile/.maestro/00-smoke.yaml`, `apps/mobile/.maestro/01-sign-in-parent.yaml` |
 | Maestro config | `apps/mobile/.maestro/config.yaml` (`screenshotDirectory: screenshots`, `assertTimeout: 10000`) |
-| Test users | `parent@steadilynanny.test` and `nanny@steadilynanny.test` — password `SteadilyTest!2026` (see `scripts/seed-test-users.ts`; run `bun run seed` if they don't exist) |
+| Test users | `parent@steadilynanny.test` and `nanny@steadilynanny.test` — password `SteadilyTest!2026` (see `scripts/seed-test-users.ts`; run `bun run seed` if they don't exist). **Local stack only** — the script refuses to run against anything but `127.0.0.1`/`localhost`/`::1`, since `apps/api/.env` (which it reads for `SUPABASE_URL`) points at production. Start the local stack first (`supabase start`) and export its URL before running `bun run seed`. |
 | Dev server | `cd apps/mobile && bun run dev` — tails to `apps/mobile/logs/dev.log` |
 
 **Save screenshots to `docs/screenshots/daylight-2026-08/`.** Create it. Do **not** write into `apps/mobile/screenshots/` (gitignored, and Maestro's own scratch dir) and do **not** overwrite the existing `docs/screenshots/*.png` — those are pre-Daylight captures that `PROJECT-STATUS.md` still references as historical.

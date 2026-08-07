@@ -422,7 +422,7 @@ export class CoverageGapService {
       return [];
     }
 
-    await this.eventRepo.insertMany(
+    const created = await this.eventRepo.insertMany(
       toInsert.map(gap => ({
         household_id: householdId,
         shift_id: null,
@@ -439,8 +439,23 @@ export class CoverageGapService {
       }))
     );
 
-    // One summary push per batch — only for gaps that passed the pre-insert
-    // key filter (insertMany does not return which rows were created).
+    // F-B6-5: `ignoreDuplicates` silently no-ops a row a concurrent run
+    // already inserted between the key filter above and this call — only
+    // report (and push for) the gaps THIS call genuinely created, not
+    // everything that passed the pre-insert filter.
+    const createdKeys = new Set(
+      created
+        .map(row => row.payload?.key)
+        .filter((key): key is string => typeof key === 'string')
+    );
+    const actuallyInserted = toInsert.filter(gap =>
+      createdKeys.has(gapKey(gap))
+    );
+    if (actuallyInserted.length === 0) {
+      return [];
+    }
+
+    // One summary push per batch — only for gaps this call actually created.
     try {
       notifyHouseholdParents(householdId, {
         title: 'Coverage gap',
@@ -454,7 +469,7 @@ export class CoverageGapService {
       // notifyHouseholdParents is sync fire-and-forget; swallow any unexpected throw.
     }
 
-    return toInsert;
+    return actuallyInserted;
   }
 }
 

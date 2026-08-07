@@ -201,6 +201,31 @@ describe('buildCreatePayArrangementRequest', () => {
     ).toBeNull();
   });
 
+  describe('multiplier bounds mirror OvertimeMultiplierSchema (numeric(3,2))', () => {
+    const withMultiplier = (overtimeMultiplierText: string) =>
+      buildCreatePayArrangementRequest({
+        ...baseState,
+        overtimeThresholdHoursText: '40',
+        overtimeMultiplierText,
+      });
+
+    it('rejects a multiplier above the numeric(3,2) ceiling before the network call', () => {
+      expect(withMultiplier('50')).toBeNull();
+    });
+
+    it('rejects a three-decimal multiplier the column would silently round', () => {
+      expect(withMultiplier('1.555')).toBeNull();
+    });
+
+    it('accepts the ceiling itself, 9.99', () => {
+      expect(withMultiplier('9.99')?.overtime_multiplier).toBe(9.99);
+    });
+
+    it('accepts 8.88, which a naive multipleOf(0.01) check would reject', () => {
+      expect(withMultiplier('8.88')?.overtime_multiplier).toBe(8.88);
+    });
+  });
+
   describe('review finding 6: blank-threshold multiplier', () => {
     it('carries the CURRENT arrangement multiplier through unchanged on a rate-only change, never hardcoding 1.5', () => {
       const result = buildCreatePayArrangementRequest({

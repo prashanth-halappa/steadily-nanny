@@ -5,11 +5,19 @@
  *
  * | caller                                   | sees                        |
  * |-------------------------------------------|-----------------------------|
- * | active `owner`/`parent` of the household | every carer's claims        |
+ * | `owner`/`parent` of the household        | every carer's claims        |
  * | the carer herself (`callerId === carer_id of a row`) | her OWN rows only |
  * | another `nanny` of the same household    | denied entirely             |
  * | `helper`                                 | denied entirely             |
  * | non-member                               | denied entirely             |
+ *
+ * MEMBERSHIP STATUS IS NOT PART OF THAT TABLE — a `removed` member reads
+ * exactly what her role always let her read. Payroll is an audit trail: a
+ * nanny who has left must still be able to see what she claimed and was
+ * owed, and the parents who paid keep the household-wide view. Only the read
+ * side is any-status; every WRITE (`expenseCommandService`) still resolves an
+ * ACTIVE membership, so a removed member can look but never file, edit, or
+ * approve a claim.
  *
  * Same shape as `payArrangementQueryService`'s table (`docs/11-MONEY.md`
  * §8): a helper never sees money, and one nanny never sees another's claims.
@@ -121,12 +129,17 @@ export class ExpenseQueryService {
    * The single read gate for this domain (see the module doc's table).
    * Returns the SCOPE the caller is entitled to rather than a boolean, so
    * every read method narrows its rows the same way.
+   *
+   * ANY-STATUS ON PURPOSE: a `removed` member keeps her role's read scope
+   * (module doc). The role arms below already do all the narrowing that
+   * needs doing — a removed nanny lands on the `own` arm exactly like an
+   * active one, so she can never reach carer-2's rows.
    */
   private async assertCanRead(
     callerId: string,
     householdId: string
   ): Promise<ReadScope> {
-    const membership = await this.memberRepo.findActiveMembership(
+    const membership = await this.memberRepo.findMembershipAnyStatus(
       householdId,
       callerId
     );

@@ -342,6 +342,132 @@ describe('response-leg pushes', () => {
     );
   });
 
+  // Adoption returns the shift somebody ELSE's call already created — and
+  // that call already pushed for it. Pushing again is a second "Extra shift
+  // proposed" for one shift, which is what a parent's double-tap produced.
+  it('does not re-fire extra_shift_proposed when the pre-check adopted an existing shift', async () => {
+    const existing = {
+      ...shift,
+      id: 's-existing',
+      kind: 'extra' as const,
+      status: 'pending' as const,
+    };
+    const svc = makeSvc({
+      shiftRepo: makeShiftRepo({
+        findExtraShiftInWindow: mock(async () => existing),
+      }),
+    });
+
+    await svc.createExtraShift('parent-1', 'h1', {
+      starts_at: '2026-08-04T08:00:00.000Z',
+      ends_at: '2026-08-04T12:00:00.000Z',
+      timezone: 'Europe/London',
+      carer_id: 'carer-1',
+    });
+
+    expect(notifyUser).not.toHaveBeenCalled();
+  });
+
+  it('does not re-fire extra_shift_proposed when the 059 race adopted the winner', async () => {
+    const winner = {
+      ...shift,
+      id: 's-winner',
+      kind: 'extra' as const,
+      status: 'pending' as const,
+    };
+    let lookups = 0;
+    const { ExtraShiftAlreadyExistsError } = await import(
+      '../../../../../src/domains/shift/errors/shiftErrors'
+    );
+    const svc = makeSvc({
+      shiftRepo: makeShiftRepo({
+        findExtraShiftInWindow: mock(async () => {
+          lookups += 1;
+          return lookups === 1 ? null : winner;
+        }),
+        createShift: mock(async () => {
+          throw new ExtraShiftAlreadyExistsError({
+            householdId: 'h1',
+            startsAt: '2026-08-04T08:00:00.000Z',
+            endsAt: '2026-08-04T12:00:00.000Z',
+            carerId: 'carer-1',
+          });
+        }),
+      }),
+    });
+
+    await svc.createExtraShift('parent-1', 'h1', {
+      starts_at: '2026-08-04T08:00:00.000Z',
+      ends_at: '2026-08-04T12:00:00.000Z',
+      timezone: 'Europe/London',
+      carer_id: 'carer-1',
+    });
+
+    expect(notifyUser).not.toHaveBeenCalled();
+  });
+
+  // The approval applier is the OTHER caller of `insertExtraShift`, and a
+  // re-driven approval is the likeliest way to reach adoption at all.
+  it('does not re-fire extra_shift_proposed when the approved applier adopted', async () => {
+    const existing = {
+      ...shift,
+      id: 's-existing',
+      kind: 'extra' as const,
+      status: 'pending' as const,
+    };
+    const svc = makeSvc({
+      shiftRepo: makeShiftRepo({
+        findExtraShiftInWindow: mock(async () => existing),
+      }),
+    });
+
+    await svc.applyApprovedExtraShift({
+      id: 'a-extra',
+      household_id: 'h1',
+      requested_by: 'parent-1',
+      action: 'extra_shift',
+      payload: {
+        starts_at: '2026-08-04T08:00:00.000Z',
+        ends_at: '2026-08-04T12:00:00.000Z',
+        timezone: 'Europe/London',
+        carer_id: 'carer-1',
+      },
+      status: 'approved',
+      timeout_at: '2999-01-01T00:00:00Z',
+      responded_by: 'parent-2',
+      responded_at: 't',
+      created_at: 't',
+      updated_at: 't',
+    } as never);
+
+    expect(notifyUser).not.toHaveBeenCalled();
+  });
+
+  it('still fires extra_shift_proposed once when the applier really created', async () => {
+    const svc = makeSvc();
+
+    await svc.applyApprovedExtraShift({
+      id: 'a-extra',
+      household_id: 'h1',
+      requested_by: 'parent-1',
+      action: 'extra_shift',
+      payload: {
+        starts_at: '2026-08-04T08:00:00.000Z',
+        ends_at: '2026-08-04T12:00:00.000Z',
+        timezone: 'Europe/London',
+        carer_id: 'carer-1',
+      },
+      status: 'approved',
+      timeout_at: '2999-01-01T00:00:00Z',
+      responded_by: 'parent-2',
+      responded_at: 't',
+      created_at: 't',
+      updated_at: 't',
+    } as never);
+
+    expect(notifyUser).toHaveBeenCalledTimes(1);
+  });
+
   it('push failure never fails respond HTTP path', async () => {
     notifyUser.mockImplementation(() => {
       throw new Error('push boom');
@@ -353,6 +479,104 @@ describe('response-leg pushes', () => {
 
     const result = await svc.respond('carer-1', 'cr1', { status: 'declined' });
     expect(result.shift_change_request.status).toBe('declined');
+  });
+});
+
+describe('open-leg push on the co-parent-approved path (D1)', () => {
+  /** The approval `approvalApplierRegistry` hands back once the co-parent signs off. */
+  const approval = {
+    id: 'ap1',
+    household_id: 'h1',
+    requested_by: 'parent-1',
+    action: 'short_notice_change' as const,
+    payload: {
+      shift_id: 's1',
+      kind: 'time_change',
+      proposed_starts_at: '2026-08-03T09:00:00.000Z',
+      proposed_ends_at: '2026-08-03T18:00:00.000Z',
+      message: 'Running late',
+    },
+    status: 'approved' as const,
+    timeout_at: '2026-08-02T08:00:00.000Z',
+    responded_by: 'parent-2',
+    responded_at: '2026-08-02T07:00:00.000Z',
+    created_at: 't',
+    updated_at: 't',
+  };
+
+  it('tells the nanny when an approved short-notice change opens a request on her shift', async () => {
+    // D1: the gated path opened the request silently. Three of the four
+    // `openChangeRequest` call sites notify; this one did not, so a nanny
+    // whose shift was changed via co-parent approval learned about it only by
+    // opening the app — the one path where the ask was DELAYED, and so the one
+    // where a push matters most.
+    const svc = makeSvc();
+
+    await svc.applyApprovedChangeRequest(approval as any);
+
+    expect(notifyUser).toHaveBeenCalledTimes(1);
+    expect(notifyUser).toHaveBeenCalledWith(
+      'carer-1',
+      expect.objectContaining({
+        data: expect.objectContaining({
+          type: PUSH_NOTIFICATION_TYPES.SHIFT_CHANGE_REQUESTED,
+          shiftId: 's1',
+          householdId: 'h1',
+          changeRequestId: 'cr-new',
+        }),
+      })
+    );
+  });
+
+  it('stays silent while the co-parent has not approved yet', async () => {
+    // The negative half of the same invariant: `create` returning
+    // `pending_approval` has opened NOTHING, so notifying the nanny there
+    // would announce an ask that may still be declined. The push belongs to
+    // the open, not to the request for permission.
+    const svc = makeSvc({
+      gate: {
+        assertApprovalAllows: mock(async () => ({
+          needsApproval: true,
+          approval,
+        })),
+      },
+    });
+
+    const result = await svc.create('parent-1', 's1', {
+      kind: 'cancel',
+      message: 'Cannot make it',
+    });
+
+    expect(result.status).toBe('pending_approval');
+    expect(notifyUser).not.toHaveBeenCalled();
+    expect(notifyHouseholdParents).not.toHaveBeenCalled();
+  });
+
+  it('opens the request without a push when the shift has no carer', async () => {
+    // Mirrors the sibling call site's guard: an unassigned shift is a real
+    // state, and there is nobody to tell.
+    const svc = makeSvc({
+      shiftQueries: {
+        getOwned: mock(async () => ({ ...shift, carer_id: null })),
+      },
+    });
+
+    await svc.applyApprovedChangeRequest(approval as any);
+
+    expect(notifyUser).not.toHaveBeenCalled();
+  });
+
+  it('still returns the opened request when the push throws', async () => {
+    // Fire-and-forget, same as every sibling: `safeNotify` swallows.
+    notifyUser.mockImplementation(() => {
+      throw new Error('push boom');
+    });
+    const svc = makeSvc();
+
+    const result = await svc.applyApprovedChangeRequest(approval as any);
+
+    expect(result.id).toBe('cr-new');
+    notifyUser.mockImplementation(() => undefined);
   });
 });
 

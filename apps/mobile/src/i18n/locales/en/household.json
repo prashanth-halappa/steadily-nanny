@@ -1,7 +1,9 @@
 {
   "switcher": {
     "triggerLabel": "Switch household",
-    "sheetTitle": "Choose a household"
+    "sheetTitle": "Choose a household",
+    "pastSectionTitle": "Past households",
+    "pastBadge": "Past"
   },
   "children": {
     "wizardTitle": "Who are the children?",
@@ -40,6 +42,7 @@
     "shareMessage": "Join our household on Steadily Nanny — use invite code {{code}} when you sign in.",
     "errorTitle": "Couldn't generate an invite code.",
     "retryButton": "Try again",
+    "revokeButton": "Revoke code",
     "roles": {
       "nanny": {
         "title": "Nanny",
@@ -97,7 +100,15 @@
     },
     "approvalTimeoutLabel": "Approval timeout (minutes)",
     "shortNoticeHoursLabel": "Short-notice window (hours)",
-    "cancellationPaidWithinHoursLabel": "Cancellation still paid within (hours)"
+    "cancellationPaidWithinHoursLabel": "Cancellation still paid within (hours)",
+    "membersSectionTitle": "Household members",
+    "removeMemberButton": "Remove",
+    "removeMemberLabel": "Remove {{name}}",
+    "removeMemberConfirmTitle": "Remove {{name}}?",
+    "removeMemberConfirmBody": "They'll lose access to this household right away. You can invite them again later if you change your mind.",
+    "removeMemberConfirmCancel": "Cancel",
+    "removeMemberConfirmConfirm": "Remove",
+    "removeMemberSuccessToast": "{{name}} removed from the household"
   },
   "closures": {
     "manageTitle": "We're away",

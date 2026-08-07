@@ -217,6 +217,19 @@ export class JobRunService {
     return (data || []) as JobRun[];
   }
 
+  /**
+   * True when `jobName` has a 'running' row that isn't stale yet. The seam
+   * `createTrackedJobHandler` checks before starting a new run — an
+   * overlapping cron invocation (pg_net retry, manual POST) sees `true` and
+   * bails without touching job_runs; a crashed run's stale 'running' row
+   * must not block forever, so it reads as `false` here.
+   */
+  static async hasFreshRunningRun(jobName: string): Promise<boolean> {
+    const running = await JobRunService.getHistory(jobName, 1, 'running');
+    const latest = running[0];
+    return latest !== undefined && !JobRunService.isRunStale(latest);
+  }
+
   static async findByIdempotencyKey(
     idempotencyKey: string
   ): Promise<JobRun | null> {

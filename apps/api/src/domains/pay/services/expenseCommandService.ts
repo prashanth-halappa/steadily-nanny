@@ -58,7 +58,10 @@ import {
   type UpdateExpenseRequest,
 } from '@steadily-nanny/shared-types/schemas/expense.schema';
 import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types/schemas/notification.schema';
-import type { PayArrangement } from '@steadily-nanny/shared-types/schemas/payArrangement.schema';
+import {
+  MAX_MONEY_MINOR,
+  type PayArrangement,
+} from '@steadily-nanny/shared-types/schemas/payArrangement.schema';
 import { HOUSEHOLD_ROLES, HouseholdMemberRepository } from '../../household';
 import {
   notifyHouseholdParents,
@@ -68,6 +71,7 @@ import { TimesheetRepository } from '../../timesheet/repositories/timesheetRepos
 import { weekStartOfLocalDate } from '../../timesheet/utils/weekStart';
 import { UserService } from '../../user';
 import {
+  ExpenseAmountTooLargeError,
   ExpenseNotEditableError,
   ExpenseNotFoundError,
   ExpenseValidationError,
@@ -441,7 +445,30 @@ export class ExpenseCommandService {
     }
     // `miles` is NOT NULL for a mileage row (044's `expenses_mileage_has_miles`
     // check) — the `?? 0` is unreachable defensive coverage, never a real value.
-    return priceMileage(existing.miles ?? 0, rateMinor);
+    const amountMinor = priceMileage(existing.miles ?? 0, rateMinor);
+
+    // INDIVIDUALLY-CAPPED INPUTS MULTIPLY INTO UNBOUNDED COMPUTED MONEY — the
+    // DB CHECK is the backstop, this guard is the clean failure.
+    // `miles` and `mileage_rate_per_mile_minor` are each bounded on their own
+    // (041/063, and the Zod schemas), and neither bound says anything about
+    // their product: 10 miles at the schema-legal maximum rate computes
+    // 999_999_990, ten times over migration 063's
+    // `expenses_amount_minor_upper`. Without this the constraint still catches
+    // it, but as a raw 23514 surfacing as a generic DatabaseError in the
+    // middle of an approval — the parent gets a 500 for a claim that is not
+    // her fault and not diagnosable. Refusing here makes it a readable 400
+    // before any write is attempted.
+    //
+    // NOT CLAMPED, deliberately (`docs/11-MONEY.md` §1): a reimbursement
+    // trimmed to fit is a wrong number that would actually be paid.
+    if (amountMinor > MAX_MONEY_MINOR) {
+      throw new ExpenseAmountTooLargeError(
+        existing.id,
+        amountMinor,
+        MAX_MONEY_MINOR
+      );
+    }
+    return amountMinor;
   }
 
   /**

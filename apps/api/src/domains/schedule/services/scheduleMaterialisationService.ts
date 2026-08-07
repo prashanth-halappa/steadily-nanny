@@ -26,8 +26,13 @@
  *
  * PATTERN_CONFLICT EVENTS ARE RAISED AT MOST ONCE per (pattern, shift,
  * local_date). `isManuallyTouched` is true for any shift with a
- * `shift_change_requests` row — including withdrawn/declined ones — and the
- * horizon job re-expands every pattern from `dtstart` on every run, so a
+ * `shift_change_requests` row — including withdrawn/declined ones (a human
+ * engaged with the shift) — but NOT an `expired` one: `expired` (migration
+ * 064, F-B5-5) means the 7-day sweep closed it because nobody ever answered,
+ * which is not human engagement and must not freeze the shift from
+ * re-materialisation forever (see `ScheduleShiftRepository.
+ * shiftIdsWithChangeRequests`). The horizon job re-expands every pattern from
+ * `dtstart` on every run, so a
  * plain append would add an identical `pattern_conflict` row to the
  * append-only `shift_events` table every night, forever. The conflict is
  * therefore written through the shift domain's idempotent bulk-append pair
@@ -138,14 +143,25 @@ export interface TimeEntryExistenceRepository {
   shiftIdsWithTimeEntries(shiftIds: string[]): Promise<Set<string>>;
 }
 
-/** The idempotent bulk-append pair this service raises `pattern_conflict` through — see `ShiftEventRepository`. */
+/**
+ * The idempotent bulk-append pair this service raises `pattern_conflict`
+ * through — see `ShiftEventRepository`. `insertMany`'s return value is unused
+ * here (`raiseConflictsOnce` doesn't need to know which rows landed, unlike
+ * `coverageGapService.raiseGapsOnce` — F-B6-5); typed as `Promise<unknown>`
+ * rather than `void` purely so the concrete `ShiftEventRepository` (which DOES
+ * return the created rows) stays structurally assignable — `Promise<void>`
+ * does NOT get the bare-`void` bivariance special-case TypeScript gives sync
+ * `() => void` functions. `unknown`, not `unknown[]`, so existing fakes that
+ * resolve `undefined` (every `insertMany` mock in this file's sibling test
+ * files) stay valid too.
+ */
 export interface ConflictEventRepository {
   listEventKeysForDate(
     householdId: string,
     localDate: string,
     eventType: string
   ): Promise<Set<string>>;
-  insertMany(events: NewShiftEventInput[]): Promise<void>;
+  insertMany(events: NewShiftEventInput[]): Promise<unknown>;
 }
 
 const NEVER_TOUCH_STATUSES: ReadonlySet<Shift['status']> = new Set([
@@ -372,10 +388,28 @@ export class ScheduleMaterialisationService {
   }
 
   /**
-   * Overwrite times, children and note on existing untouched shifts. Children
-   * go in one batch; the shift patches differ per row (times, and the
-   * confirmed -> pending revert) so they run with bounded concurrency — see
-   * `UPDATE_CONCURRENCY`.
+   * Overwrite times, children and note on existing untouched shifts — but
+   * ONLY the ones that actually changed. A nightly horizon run re-expands
+   * every pattern from `dtstart`, so `pairs` here is normally the SAME
+   * occurrences as last night: without this filter every row got an `update`
+   * (bumping `sequence` and counting as `updated`) and a `replaceChildrenMany`
+   * entry even when nothing about it differs. `sequence` isn't cosmetic — the
+   * mobile ShiftDetailScreen's copy switches on `sequence === 0`, and the
+   * calendar seam treats a higher sequence as "needs push".
+   *
+   * "Changed" is: the time instant moved, the timezone changed, or the note
+   * changed. Children are deliberately NOT part of the dirty check: the
+   * existing `shift_children` rows aren't loaded by the one `findActiveByPattern`
+   * read this run is keyed on, and adding a second batched read just to diff
+   * children would be exactly the per-run round-trip #28 was written to avoid.
+   * ponytail: a children-only amend (time/note/timezone all unchanged) won't
+   * rewrite `shift_children` until the next run that also touches one of the
+   * three — add a batched children read (mirroring `findActiveByPattern`) if
+   * that lag needs to close sooner.
+   *
+   * Children for the dirty subset go in one batch; the shift patches differ
+   * per row (times, and the confirmed -> pending revert) so they run with
+   * bounded concurrency — see `UPDATE_CONCURRENCY`.
    */
   private async applyUpdates(
     pattern: PatternForMaterialisation,
@@ -385,41 +419,60 @@ export class ScheduleMaterialisationService {
     if (pairs.length === 0) {
       return;
     }
+
+    const dirty: {
+      occ: ExpandedOccurrence;
+      shift: Shift;
+      timesMoved: boolean;
+    }[] = [];
+    for (const { occ, shift } of pairs) {
+      // Instants, not strings: `shift.*` came back from PostgREST as
+      // `+00:00` and `occ.*` was built in JS as `.000Z`, so a string compare
+      // reports "moved" for every unchanged shift and silently reverts the
+      // carer's accepted week to `pending` on every horizon run
+      // (GOLDEN-FIXES #25).
+      const timesMoved =
+        new Date(shift.starts_at).getTime() !==
+          new Date(occ.startsAt).getTime() ||
+        new Date(shift.ends_at).getTime() !== new Date(occ.endsAt).getTime();
+      const timezoneChanged = shift.timezone !== pattern.timezone;
+      const noteChanged = shift.note !== pattern.note;
+      if (!timesMoved && !timezoneChanged && !noteChanged) {
+        continue; // byte-for-byte identical to what's already stored — skip
+      }
+      dirty.push({ occ, shift, timesMoved });
+    }
+    if (dirty.length === 0) {
+      return;
+    }
+
     await this.shiftRepo.replaceChildrenMany(
-      pairs.map(({ occ, shift }) => ({
+      dirty.map(({ occ, shift }) => ({
         shiftId: shift.id,
         children: toChildData(occ),
       }))
     );
 
-    for (let i = 0; i < pairs.length; i += UPDATE_CONCURRENCY) {
+    for (let i = 0; i < dirty.length; i += UPDATE_CONCURRENCY) {
       await Promise.all(
-        pairs.slice(i, i + UPDATE_CONCURRENCY).map(({ occ, shift }) => {
-          // Instants, not strings: `shift.*` came back from PostgREST as
-          // `+00:00` and `occ.*` was built in JS as `.000Z`, so a string
-          // compare reports "moved" for every unchanged shift and silently
-          // reverts the carer's accepted week to `pending` on every horizon
-          // run (GOLDEN-FIXES #25).
-          const timesMoved =
-            new Date(shift.starts_at).getTime() !==
-              new Date(occ.startsAt).getTime() ||
-            new Date(shift.ends_at).getTime() !==
-              new Date(occ.endsAt).getTime();
-          return this.shiftRepo.update(shift.id, {
-            starts_at: occ.startsAt,
-            ends_at: occ.endsAt,
-            timezone: pattern.timezone,
-            status:
-              shift.status === 'confirmed' && timesMoved
-                ? 'pending'
-                : shift.status,
-            note: pattern.note,
-            sequence: shift.sequence + 1,
-          });
-        })
+        dirty
+          .slice(i, i + UPDATE_CONCURRENCY)
+          .map(({ occ, shift, timesMoved }) =>
+            this.shiftRepo.update(shift.id, {
+              starts_at: occ.startsAt,
+              ends_at: occ.endsAt,
+              timezone: pattern.timezone,
+              status:
+                shift.status === 'confirmed' && timesMoved
+                  ? 'pending'
+                  : shift.status,
+              note: pattern.note,
+              sequence: shift.sequence + 1,
+            })
+          )
       );
     }
-    result.updated += pairs.length;
+    result.updated += dirty.length;
   }
 
   /**

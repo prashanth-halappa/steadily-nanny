@@ -72,10 +72,15 @@ export const ShiftRangeQuerySchema = z
     from: z.iso.datetime({ offset: true }),
     to: z.iso.datetime({ offset: true }),
   })
-  .refine(data => data.to > data.from, {
-    message: 'to must be after from',
-    path: ['to'],
-  });
+  .refine(
+    // Instant compare — lexicographic ISO strings break across offsets
+    // (e.g. `…T11:00:00-01:00` vs `…T12:00:00+00:00`).
+    data => Date.parse(data.to) > Date.parse(data.from),
+    {
+      message: 'to must be after from',
+      path: ['to'],
+    }
+  );
 export type ShiftRangeQuery = z.infer<typeof ShiftRangeQuerySchema>;
 
 /**
@@ -96,10 +101,12 @@ export const ParentEditShiftSchema = z
     message: 'at least one field is required',
   })
   .refine(
+    // Instant compare — lexicographic ISO strings break across offsets
+    // (e.g. `…T11:00:00-01:00` vs `…T12:00:00+00:00`).
     data =>
       data.starts_at === undefined ||
       data.ends_at === undefined ||
-      data.ends_at > data.starts_at,
+      Date.parse(data.ends_at) > Date.parse(data.starts_at),
     { message: 'ends_at must be after starts_at', path: ['ends_at'] }
   );
 export type ParentEditShiftInput = z.infer<typeof ParentEditShiftSchema>;
@@ -119,8 +126,13 @@ export const CreateExtraShiftSchema = z
     note: z.string().optional(),
     reason: z.string().optional(),
   })
-  .refine(data => data.ends_at > data.starts_at, {
-    message: 'ends_at must be after starts_at',
-    path: ['ends_at'],
-  });
+  .refine(
+    // Instant compare — lexicographic ISO strings break across offsets
+    // (e.g. `…T11:00:00-01:00` vs `…T12:00:00+00:00`).
+    data => Date.parse(data.ends_at) > Date.parse(data.starts_at),
+    {
+      message: 'ends_at must be after starts_at',
+      path: ['ends_at'],
+    }
+  );
 export type CreateExtraShiftInput = z.infer<typeof CreateExtraShiftSchema>;

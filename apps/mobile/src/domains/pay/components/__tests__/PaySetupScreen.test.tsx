@@ -261,6 +261,21 @@ describe('PaySetupScreen', () => {
     expect(getByTestId('pay-setup-screen-cta').props.disabled).toBe(false);
   });
 
+  it('a REMOVED parent (past member) gets "not available", never the pay form', async () => {
+    membershipsListMock.mockImplementation(() =>
+      Promise.resolve([{ ...parentMembership, status: 'removed' }])
+    );
+
+    const { getByTestId, queryByTestId } = renderWithProviders(
+      <PaySetupScreen />
+    );
+
+    await waitFor(() =>
+      expect(getByTestId('pay-setup-not-available')).toBeTruthy()
+    );
+    expect(queryByTestId('pay-setup-rate-input')).toBeNull();
+  });
+
   it('saves through the real mutation and returns on success', async () => {
     const { getByTestId } = renderWithProviders(<PaySetupScreen />);
 

@@ -15,6 +15,7 @@
   "entryNotEditable": "Este registro ya no se puede cambiar — la semana ya fue aprobada. Pide a tu familia que la consulte.",
   "invalidClockTimes": "Esas horas no funcionan. La salida debe ser posterior a la entrada y no puede estar en el futuro.",
   "timeEntryOverlaps": "Esa salida se solapa con otro registro del {{day}} ({{range}}). Todavía tienes la entrada abierta — abre Horas, acorta ese registro y vuelve a fichar la salida.",
+  "memberHasRunningEntry": "Esta persona tiene la entrada fichada en un turno. Pídele que fiche la salida primero e inténtalo de nuevo.",
   "tryAgain": "Inténtalo de nuevo",
   "goBack": "Volver",
   "states": {

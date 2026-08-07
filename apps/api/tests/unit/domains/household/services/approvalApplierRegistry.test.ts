@@ -1,6 +1,28 @@
-import { describe, expect, it, mock } from 'bun:test';
-import { approvalApplierRegistry } from '../../../../../src/domains/household/services/approvalApplierRegistry';
+import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 import type { CoParentApproval } from '../../../../../src/domains/household/types';
+
+// `approvalApplierRegistry` now pushes to the requester on the sweep's
+// terminal-failure and successful-timeout-apply paths (D3/D4), so
+// `notifyUser` must be mocked BEFORE the dynamic import below — see
+// docs/09-TESTING.md's mock.module boilerplate.
+let approvalApplierRegistry: typeof import('../../../../../src/domains/household/services/approvalApplierRegistry').approvalApplierRegistry;
+let notifyUser: ReturnType<typeof mock>;
+
+beforeAll(async () => {
+  notifyUser = mock(() => undefined);
+  mock.module('../../../../../src/domains/notification', () => ({
+    notifyUser,
+    notifyHouseholdParents: mock(() => undefined),
+  }));
+
+  ({ approvalApplierRegistry } = await import(
+    '../../../../../src/domains/household/services/approvalApplierRegistry'
+  ));
+});
+
+beforeEach(() => {
+  notifyUser.mockClear();
+});
 
 function timedOut(overrides: Partial<CoParentApproval> = {}): CoParentApproval {
   return {
@@ -122,5 +144,97 @@ describe('ApprovalApplierRegistry.applyAllSettled', () => {
     );
 
     expect(count).toBe(1);
+  });
+
+  describe('D3 — a terminally-failed timeout apply must not vanish silently', () => {
+    it('notifies the requester once the row is exhausted (terminal `failed`)', async () => {
+      approvalApplierRegistry.register('cancel', async () => {
+        throw new Error('shift already started');
+      });
+      const repo = makeClaimRepo({
+        recordFailedApply: mock(async () => 'failed' as const),
+      });
+
+      await approvalApplierRegistry.applyAllSettled(
+        [timedOut({ id: 'a-bad', requested_by: 'u2' })],
+        repo
+      );
+
+      expect(notifyUser).toHaveBeenCalledTimes(1);
+      expect(notifyUser).toHaveBeenCalledWith(
+        'u2',
+        expect.objectContaining({
+          body: expect.stringMatching(/couldn.t be completed/i),
+        })
+      );
+    });
+
+    it('does NOT notify the requester on a first, still-retrying failure', async () => {
+      approvalApplierRegistry.register('cancel', async () => {
+        throw new Error('shift already started');
+      });
+      const repo = makeClaimRepo({
+        recordFailedApply: mock(async () => 'retrying' as const),
+      });
+
+      await approvalApplierRegistry.applyAllSettled(
+        [timedOut({ id: 'a-bad' })],
+        repo
+      );
+
+      expect(notifyUser).not.toHaveBeenCalled();
+    });
+
+    it('does NOT notify when the row was missed (moved on to a concurrent sweep/respond)', async () => {
+      approvalApplierRegistry.register('cancel', async () => {
+        throw new Error('shift already started');
+      });
+      const repo = makeClaimRepo({
+        recordFailedApply: mock(async () => 'missed' as const),
+      });
+
+      await approvalApplierRegistry.applyAllSettled(
+        [timedOut({ id: 'a-bad' })],
+        repo
+      );
+
+      expect(notifyUser).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('D4 — a timeout auto-approval must resolve for the requester, not just apply silently', () => {
+    it('notifies the requester when a timed-out row applies successfully', async () => {
+      approvalApplierRegistry.register('cancel', async () => {});
+      const repo = makeClaimRepo();
+
+      await approvalApplierRegistry.applyAllSettled(
+        [timedOut({ id: 'a1', requested_by: 'u2' })],
+        repo
+      );
+
+      expect(notifyUser).toHaveBeenCalledTimes(1);
+      expect(notifyUser).toHaveBeenCalledWith(
+        'u2',
+        expect.objectContaining({
+          title: expect.stringContaining('approved'),
+        })
+      );
+    });
+
+    it('does NOT send a resolved notification when the applier fails (D3 handles the terminal case)', async () => {
+      approvalApplierRegistry.register('cancel', async () => {
+        throw new Error('shift already started');
+      });
+      const repo = makeClaimRepo({
+        recordFailedApply: mock(async () => 'retrying' as const),
+      });
+
+      await approvalApplierRegistry.applyAllSettled(
+        [timedOut({ id: 'a-bad' })],
+        repo
+      );
+
+      expect(notifyUser).not.toHaveBeenCalled();
+    });
   });
 });

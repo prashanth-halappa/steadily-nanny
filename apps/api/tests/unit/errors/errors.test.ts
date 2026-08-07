@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { ZodError } from 'zod';
+import { ZodError, z } from 'zod';
 import {
   AuthenticationError,
   AuthorizationError,
@@ -42,6 +42,68 @@ describe('error → generic ErrorCode mapping', () => {
     const e = ValidationError.fromZodError(zerr);
     expect(e.code).toBe('VALIDATION_ERROR');
     expect(e.statusCode).toBe(400);
+  });
+});
+
+// A bare 'Validation failed' tells an integrator (and a log reader) nothing
+// about WHICH field failed — the per-field `details` were already there, but
+// the message is what a human reads first and what most tooling surfaces.
+describe('ValidationError.fromZodError — the message names the fields', () => {
+  test('folds one failing path and its reason into the message', () => {
+    const e = ValidationError.fromZodError(
+      new ZodError([
+        {
+          code: 'invalid_type',
+          message: 'Invalid input: expected number, received undefined',
+          path: ['year'],
+          expected: 'number',
+        },
+      ])
+    );
+    expect(e.message).toBe(
+      'Validation failed: year (Invalid input: expected number, received undefined)'
+    );
+  });
+
+  test('joins multiple paths, capped at the first 3 issues', () => {
+    const e = ValidationError.fromZodError(
+      new ZodError(
+        ['a', 'b', 'c', 'd'].map(p => ({
+          code: 'custom' as const,
+          message: `bad ${p}`,
+          path: [p],
+        }))
+      )
+    );
+    expect(e.message).toBe(
+      'Validation failed: a (bad a), b (bad b), c (bad c) (+1 more)'
+    );
+  });
+
+  test('a root-level issue with no path still reads sensibly', () => {
+    const e = ValidationError.fromZodError(
+      new ZodError([{ code: 'custom', message: 'nope', path: [] }])
+    );
+    expect(e.message).toBe('Validation failed: (root) (nope)');
+  });
+
+  test('leaves the per-field details untouched', () => {
+    const e = ValidationError.fromZodError(
+      new ZodError([{ code: 'custom', message: 'bad', path: ['field'] }])
+    );
+    expect(e.metadata?.details).toEqual([
+      { path: 'field', message: 'bad', code: 'custom' },
+    ]);
+  });
+
+  test('a missing required query param names it — PtoYearQuerySchema shape', () => {
+    const parsed = z
+      .object({ year: z.coerce.number().int().min(2000).max(2100) })
+      .safeParse({});
+    expect(parsed.success).toBe(false);
+    const e = ValidationError.fromZodError(parsed.error as ZodError);
+    expect(e.message).toContain('year');
+    expect(e.message).not.toBe('Validation failed');
   });
 });
 

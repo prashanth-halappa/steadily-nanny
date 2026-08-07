@@ -17,6 +17,8 @@ const arrangement: PayArrangement = {
   mileage_rate_per_mile_minor: null,
   cancellation_paid_within_hours: null,
   valid_from: '2026-01-01',
+  // 065: null = these terms are still live (set only on member removal).
+  valid_to: null,
   carer_display_name: 'Nia Rowe',
   note: null,
   created_by: 'parent-1',
@@ -28,6 +30,8 @@ const olderArrangement: PayArrangement = {
   id: 'pa-0',
   rate_minor: 1400,
   valid_from: '2025-06-01',
+  // 065: null = these terms are still live (set only on member removal).
+  valid_to: null,
   created_at: '2025-05-20T09:00:00.000Z',
 };
 
@@ -39,14 +43,32 @@ function makePayRepo(overrides: Record<string, unknown> = {}): any {
   };
 }
 
-function member(role: string, userId: string): Record<string, unknown> {
-  return { id: `m-${userId}`, household_id: 'h1', user_id: userId, role };
+function member(
+  role: string,
+  userId: string,
+  status = 'active'
+): Record<string, unknown> {
+  return {
+    id: `m-${userId}`,
+    household_id: 'h1',
+    user_id: userId,
+    role,
+    status,
+  };
 }
 
-/** Membership lookup keyed by user id, so caller and carer resolve separately. */
-function makeMemberRepo(byUserId: Record<string, unknown>): any {
+/**
+ * Membership lookup keyed by user id, so caller and carer resolve separately.
+ * Both repository methods are stubbed with the real ones' semantics: the
+ * active-only lookup hides a `removed` row, the any-status one returns it.
+ */
+function makeMemberRepo(byUserId: Record<string, any>): any {
   return {
-    findActiveMembership: mock(
+    findActiveMembership: mock(async (_householdId: string, userId: string) => {
+      const row = byUserId[userId];
+      return row && row.status !== 'removed' ? row : null;
+    }),
+    findMembershipAnyStatus: mock(
       async (_householdId: string, userId: string) => byUserId[userId] ?? null
     ),
   };
@@ -61,6 +83,11 @@ const OWNER = member('owner', 'owner-1');
 const NANNY = member('nanny', 'carer-1');
 const OTHER_NANNY = member('nanny', 'carer-2');
 const HELPER = member('helper', 'helper-1');
+const REMOVED_NANNY = member('nanny', 'carer-1', 'removed');
+const REMOVED_OTHER_NANNY = member('nanny', 'carer-2', 'removed');
+const REMOVED_PARENT = member('parent', 'parent-1', 'removed');
+const REMOVED_OWNER = member('owner', 'owner-1', 'removed');
+const REMOVED_HELPER = member('helper', 'helper-1', 'removed');
 
 function service(
   members: Record<string, unknown>,
@@ -192,5 +219,69 @@ describe('PayArrangementQueryService.getHistory', () => {
       makePayRepo({ listForCarer: mock(async () => []) })
     );
     expect(await svc.getHistory('parent-1', 'h1', 'carer-1')).toEqual([]);
+  });
+});
+
+// =============================================================================
+// PAYROLL AUDIT TRAIL — a `removed` member keeps READ access to the terms she
+// worked under, with the SAME role scoping as an active one. Writes
+// (payArrangementCommandService) stay active-only.
+// =============================================================================
+
+describe('PayArrangementQueryService — removed members keep READ access', () => {
+  it('a removed nanny still reads her OWN terms and history', async () => {
+    const svc = service({ 'carer-1': REMOVED_NANNY });
+    expect(await svc.getCurrent('carer-1', 'h1', 'carer-1')).toEqual(
+      arrangement
+    );
+    expect(
+      (await svc.getHistory('carer-1', 'h1', 'carer-1')).map(
+        (row: PayArrangement) => row.id
+      )
+    ).toEqual(['pa-1', 'pa-0']);
+  });
+
+  it("a removed nanny is STILL denied another carer's terms", async () => {
+    const svc = service({ 'carer-2': REMOVED_OTHER_NANNY, 'carer-1': NANNY });
+    await expect(
+      svc.getCurrent('carer-2', 'h1', 'carer-1')
+    ).rejects.toBeInstanceOf(PayArrangementNotFoundError);
+  });
+
+  it('a removed parent still reads any carer’s terms — they paid the money', async () => {
+    const svc = service({ 'parent-1': REMOVED_PARENT });
+    expect(await svc.getCurrent('parent-1', 'h1', 'carer-1')).toEqual(
+      arrangement
+    );
+  });
+
+  it('a removed owner keeps the history read too', async () => {
+    const svc = service({ 'owner-1': REMOVED_OWNER });
+    expect(await svc.getHistory('owner-1', 'h1', 'carer-1')).toEqual([
+      arrangement,
+      olderArrangement,
+    ]);
+  });
+
+  it('a removed HELPER stays denied — no pay surface, active or not', async () => {
+    const svc = service({ 'helper-1': REMOVED_HELPER });
+    await expect(
+      svc.getCurrent('helper-1', 'h1', 'carer-1')
+    ).rejects.toBeInstanceOf(PayArrangementNotFoundError);
+  });
+
+  it('the gate uses the any-status lookup, never the active-only one', async () => {
+    const memberRepo = makeMemberRepo({ 'carer-1': REMOVED_NANNY });
+    const svc = new PayArrangementQueryService(
+      makePayRepo(),
+      memberRepo,
+      makeHouseholdRepo()
+    );
+    await svc.getCurrent('carer-1', 'h1', 'carer-1');
+    expect(memberRepo.findMembershipAnyStatus).toHaveBeenCalledWith(
+      'h1',
+      'carer-1'
+    );
+    expect(memberRepo.findActiveMembership).not.toHaveBeenCalled();
   });
 });

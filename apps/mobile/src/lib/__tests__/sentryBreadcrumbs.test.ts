@@ -39,3 +39,19 @@ describe('setUserContext — Sentry email removal', () => {
     expect(setUserArgs).toContain('id');
   });
 });
+
+describe('clearUserContext', () => {
+  let source: string;
+
+  beforeAll(async () => {
+    const sourcePath = `${process.cwd()}/src/lib/sentryBreadcrumbs.ts`;
+    source = await Bun.file(sourcePath).text();
+  });
+
+  it('is exported and clears Sentry user via setUser(null)', () => {
+    expect(source).toContain('export function clearUserContext');
+    const fnStart = source.indexOf('export function clearUserContext');
+    const fnBody = source.slice(fnStart, source.indexOf('}', fnStart) + 1);
+    expect(fnBody).toContain('Sentry.setUser(null)');
+  });
+});

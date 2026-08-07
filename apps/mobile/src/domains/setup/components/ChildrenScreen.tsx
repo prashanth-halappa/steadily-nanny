@@ -8,8 +8,9 @@
  * default name the parent can rename later from settings.
  */
 import { type Href, useRouter } from 'expo-router';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { ErrorState } from '@/src/components/custom/ErrorState';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { ChildrenManager } from '@/src/domains/setup/components/ChildrenManager';
 import { SetupScreenShell } from '@/src/domains/setup/components/SetupScreenShell';
@@ -43,6 +44,10 @@ export function ChildrenScreen() {
   const createHousehold = useCreateHousehold();
   // Guard so bootstrap runs at most once per mount (reset only on full failure).
   const bootstrapStartedRef = useRef(false);
+  // Surfaced on bootstrap failure so the parent isn't stranded on an infinite
+  // spinner with no way forward; `retryBootstrap` clears it, which — being in
+  // the effect's deps — re-triggers the attempt.
+  const [bootstrapFailed, setBootstrapFailed] = useState(false);
 
   const householdId = households.data?.[0]?.id ?? cachedHouseholdId ?? null;
 
@@ -52,6 +57,13 @@ export function ChildrenScreen() {
     if (households.data.length === 0) {
       const authUser = session?.user;
       if (!authUser) return;
+      // `bootstrapFailed` MUST be read here in the body, not just listed as a
+      // dep: retry works by clearing it, and an unused ("extra") dependency is
+      // exactly what `biome check --unsafe` — which `bun run format` runs —
+      // deletes. The first version of this retry relied on the extra dep and
+      // was silently broken by the format pass; the failed state also means
+      // we deliberately hold the attempt while the error screen is up.
+      if (bootstrapFailed) return;
       if (
         bootstrapStartedRef.current ||
         createHousehold.isPending ||
@@ -75,6 +87,7 @@ export function ChildrenScreen() {
           await createHousehold.mutateAsync({ name: DEFAULT_HOUSEHOLD_NAME });
         } catch {
           bootstrapStartedRef.current = false;
+          setBootstrapFailed(true);
         }
       })();
       return;
@@ -102,6 +115,7 @@ export function ChildrenScreen() {
     createHousehold.mutateAsync,
     upsertProfile.isPending,
     upsertProfile.mutateAsync,
+    bootstrapFailed,
   ]);
 
   const children = useChildren(householdId);
@@ -110,6 +124,11 @@ export function ChildrenScreen() {
   const onContinue = () => {
     setCurrentStep(SETUP_STEPS.INVITE);
     router.push(getSetupStepRoute(SETUP_STEPS.INVITE) as Href);
+  };
+
+  const retryBootstrap = () => {
+    bootstrapStartedRef.current = false;
+    setBootstrapFailed(false);
   };
 
   const isLoadingHousehold = !householdId;
@@ -130,7 +149,9 @@ export function ChildrenScreen() {
       ctaDisabled={isLoadingHousehold || !hasAtLeastOneChild}
       onCta={onContinue}
     >
-      {isLoadingHousehold ? (
+      {bootstrapFailed ? (
+        <ErrorState variant="generic" onRetry={retryBootstrap} />
+      ) : isLoadingHousehold ? (
         <LoadingIndicator />
       ) : (
         <ChildrenManager householdId={householdId} />

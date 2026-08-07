@@ -152,6 +152,42 @@ describe('HouseholdInviteRepository.claimPending', () => {
   });
 });
 
+describe('HouseholdInviteRepository.revokePending', () => {
+  it('flips a pending invite to revoked and returns the updated row', async () => {
+    withRows([invite()]);
+    const repo = new HouseholdInviteRepository();
+
+    const revoked = await repo.revokePending('i1', 'h1');
+
+    expect(revoked).toMatchObject({ id: 'i1', status: 'revoked' });
+  });
+
+  it('returns null for an invite belonging to ANOTHER household', async () => {
+    // household_id is inside the CAS, not checked after the fact: a parent of
+    // household A guessing an id from household B must read as not-found, not
+    // revoke someone else's invite.
+    withRows([invite({ household_id: 'h-other' })]);
+    const repo = new HouseholdInviteRepository();
+
+    expect(await repo.revokePending('i1', 'h1')).toBeNull();
+  });
+
+  it('returns null when the invite is no longer pending — the CAS predicate', async () => {
+    withRows([invite({ status: 'accepted', accepted_by: 'u2' })]);
+    const repo = new HouseholdInviteRepository();
+
+    expect(await repo.revokePending('i1', 'h1')).toBeNull();
+  });
+
+  it('throws a DatabaseError when the update fails', async () => {
+    withRows([invite()], { message: 'boom' });
+    const repo = new HouseholdInviteRepository();
+    await expect(repo.revokePending('i1', 'h1')).rejects.toThrow(
+      'Failed to revoke invite'
+    );
+  });
+});
+
 describe('HouseholdInviteRepository.releaseClaim', () => {
   it('puts an invite this user claimed back to pending', async () => {
     const rows = [invite({ status: 'accepted', accepted_by: 'u2' })];

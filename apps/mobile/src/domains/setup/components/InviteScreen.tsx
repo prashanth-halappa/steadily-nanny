@@ -37,6 +37,7 @@ import {
   SETUP_STEPS,
 } from '@/src/domains/setup/types';
 import { useCreateInvite } from '@/src/hooks/mutations/useCreateInvite';
+import { useRevokeInvite } from '@/src/hooks/mutations/useRevokeInvite';
 import { useSetupProgressStore } from '@/src/store/setupProgress';
 
 export function InviteScreen() {
@@ -45,6 +46,7 @@ export function InviteScreen() {
   const householdId = useSetupProgressStore(s => s.householdId);
   const setCurrentStep = useSetupProgressStore(s => s.setCurrentStep);
   const createInvite = useCreateInvite(householdId ?? '');
+  const revokeInvite = useRevokeInvite(householdId ?? '');
   const [hasStarted, setHasStarted] = useState(false);
   const [selectedRole, setSelectedRole] = useState<HouseholdInviteRole>(
     HOUSEHOLD_INVITE_ROLES.NANNY
@@ -64,6 +66,20 @@ export function InviteScreen() {
   const onShare = () => {
     if (!code) return;
     void Share.share({ message: t('invite.shareMessage', { code }) });
+  };
+
+  // Clears BOTH the mutation state InviteCodeCard reads (`createInvite`'s
+  // `data`) and the local `hasStarted` flag — resetting only the former
+  // leaves the card stuck on its loading spinner instead of returning to
+  // the role picker so the parent can mint a fresh code.
+  const onRevoke = () => {
+    if (!invite) return;
+    revokeInvite.mutate(invite.id, {
+      onSuccess: () => {
+        createInvite.reset();
+        setHasStarted(false);
+      },
+    });
   };
 
   const onContinue = () => {
@@ -91,6 +107,8 @@ export function InviteScreen() {
             invite={invite}
             isError={createInvite.isError}
             onRetry={onGenerate}
+            onRevoke={onRevoke}
+            isRevoking={revokeInvite.isPending}
           />
           <Button
             testID="invite-share-button"

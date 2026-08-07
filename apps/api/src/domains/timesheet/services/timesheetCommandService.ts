@@ -29,6 +29,7 @@
  */
 
 import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types/schemas/notification.schema';
+import { MAX_MONEY_MINOR } from '@steadily-nanny/shared-types/schemas/payArrangement.schema';
 import type { WeekEarnings } from '@steadily-nanny/shared-types/schemas/timesheet.schema';
 import { EARNINGS_RESULT_STATUSES } from '@steadily-nanny/shared-types/schemas/timesheet.schema';
 import { logger } from '../../../middlewares/logger';
@@ -67,6 +68,7 @@ import {
   TimeEntryNotEditableError,
   TimeEntryNotRunningError,
   TimeEntryOverlapError,
+  TimesheetGrossTooLargeError,
   TimesheetNotActionableError,
 } from '../errors/timesheetErrors';
 import { TimeEntryRepository } from '../repositories/timeEntryRepository';
@@ -1561,6 +1563,29 @@ export class TimesheetCommandService {
         earnings_computed_at: computedAt,
       };
     }
+    // INDIVIDUALLY-CAPPED INPUTS MULTIPLY INTO UNBOUNDED COMPUTED MONEY — the
+    // DB CHECK is the backstop, this guard is the clean failure.
+    // `rate_minor` is capped at MAX_MONEY_MINOR (041/063 and the Zod schema)
+    // and a week bounds the hours, and neither bound says anything about
+    // `hours x rate`: 40 hours at the schema-legal maximum rate computes
+    // 3_999_999_960, past migration 063's `timesheets_gross_minor_upper` AND
+    // past int4, so the approve write below died on a raw Postgres "value out
+    // of range" — a 500 for the parent, unattributable in the logs. Refusing
+    // here, where the ok-arm's gross is first known and before the CAS, makes
+    // it a readable 400 with the offending figure attached.
+    //
+    // NOT CLAMPED, deliberately (`docs/11-MONEY.md` §1): a gross trimmed to
+    // fit is a wrong figure a parent would sign off and a nanny would be paid.
+    // Only the `ok` arm reaches here — the unpriceable arms returned NULL
+    // above and have no product to bound.
+    if (earnings.gross_minor > MAX_MONEY_MINOR) {
+      throw new TimesheetGrossTooLargeError(
+        timesheet.id,
+        earnings.gross_minor,
+        MAX_MONEY_MINOR
+      );
+    }
+
     return {
       gross_minor: earnings.gross_minor,
       currency: earnings.currency,

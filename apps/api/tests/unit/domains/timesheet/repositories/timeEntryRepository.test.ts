@@ -149,6 +149,50 @@ describe('TimeEntryRepository.findRunningForCarer', () => {
   });
 });
 
+describe('TimeEntryRepository.findRunningInHousehold', () => {
+  it('scopes the running lookup to ONE household', async () => {
+    // `findRunningForCarer` is global (one running entry per carer, anywhere),
+    // which is right for the clock-in guard and wrong for member removal:
+    // without this predicate Family A cannot remove a nanny clocked in at
+    // Family B, and is told "This person is clocked in" about another family.
+    const chain = createMockQueryChain({ data: null, error: null });
+    mockSupabaseService.from.mockImplementation(() => chain);
+    const repo = new TimeEntryRepository();
+
+    await repo.findRunningInHousehold('h1', 'carer-1');
+
+    expect(chain.eq.mock.calls).toEqual([
+      ['household_id', 'h1'],
+      ['carer_id', 'carer-1'],
+      ['status', 'running'],
+    ]);
+  });
+
+  it('returns the entry when the carer is running in THIS household', async () => {
+    const running = {
+      id: 't1',
+      household_id: 'h1',
+      carer_id: 'carer-1',
+      status: 'running',
+    };
+    mockSupabaseService.from.mockImplementation(() =>
+      createMockQueryChain({ data: running, error: null })
+    );
+    const repo = new TimeEntryRepository();
+    expect(await repo.findRunningInHousehold('h1', 'carer-1')).toEqual(running);
+  });
+
+  it('throws a DatabaseError when the lookup fails', async () => {
+    mockSupabaseService.from.mockImplementation(() =>
+      createMockQueryChain({ data: null, error: { message: 'boom' } })
+    );
+    const repo = new TimeEntryRepository();
+    await expect(repo.findRunningInHousehold('h1', 'carer-1')).rejects.toThrow(
+      'Failed to look up running time entry'
+    );
+  });
+});
+
 describe('TimeEntryRepository.hasTimeEntries', () => {
   it('returns true when at least one entry exists for the shift', async () => {
     mockSupabaseService.from.mockImplementation(() =>

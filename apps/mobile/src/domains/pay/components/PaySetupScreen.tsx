@@ -160,7 +160,7 @@ export function PaySetupScreen() {
     );
   }
 
-  if (!isParentEditorRole(onboarding.role)) {
+  if (!isParentEditorRole(onboarding.role) || onboarding.isPastMember) {
     return (
       <View testID="pay-setup-not-available" className="flex-1 bg-background">
         <View

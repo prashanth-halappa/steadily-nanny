@@ -49,4 +49,11 @@ describe('ManageInviteScreen', () => {
   it('returns the parent to where they came from, never forward through the wizard', () => {
     expect(source).toContain('router.back()');
   });
+
+  it('D3: wires useRevokeInvite through to InviteCodeCard, clearing the invite on success', () => {
+    expect(source).toContain('useRevokeInvite');
+    expect(source).toContain('onRevoke=');
+    expect(source).toContain('createInvite.reset()');
+    expect(source).toContain('setHasStarted(false)');
+  });
 });

@@ -30,7 +30,9 @@ export const userEndpoints = {
   updateProfile: '/v1/users/me',
   // API-CONTRACT: DELETE removes the caller's account and all associated data.
   deleteAccount: '/v1/users/me',
-  // API-CONTRACT: GET returns every active membership row for the caller.
+  // API-CONTRACT: GET returns EVERY membership row for the caller, including
+  // `status: 'removed'` ones — `useIsOnboarded` needs those to tell a removed
+  // member from a brand-new user and to drive its read-only write gate.
   listMemberships: '/v1/users/me/memberships',
 } as const;
 

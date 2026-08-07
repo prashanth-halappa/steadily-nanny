@@ -16,6 +16,9 @@ interface FakeRow {
 
 let ExpenseRepository: any;
 let ExpenseValidationError: any;
+let DuplicatePendingClaimError: any;
+let ConflictError: any;
+let DatabaseError: any;
 let mockSupabaseService: any;
 let lastCalls: { method: string; args: unknown[] }[] = [];
 let rpcCalls: { name: string; args: Record<string, unknown> }[] = [];
@@ -239,9 +242,12 @@ beforeAll(async () => {
       '../../../../../src/domains/pay/repositories/expenseRepository'
     )
   ).ExpenseRepository;
-  ExpenseValidationError = (
-    await import('../../../../../src/domains/pay/errors/payErrors')
-  ).ExpenseValidationError;
+  ({ ExpenseValidationError, DuplicatePendingClaimError } = await import(
+    '../../../../../src/domains/pay/errors/payErrors'
+  ));
+  ({ ConflictError, DatabaseError } = await import(
+    '../../../../../src/errors'
+  ));
   mockSupabaseService = (await import('../../../../../src/config/supabase'))
     .supabaseService;
 });
@@ -622,7 +628,11 @@ describe('ExpenseRepository.create — pending-claim dedupe', () => {
     expect(created.description).toBe('Nappies');
   });
 
-  it('translates the 23505 from expenses_one_pending_claim_idx into a typed error', async () => {
+  // A double-tap is a RACE, not bad input: the same claim, filed twice before
+  // either was reviewed. Nothing about the request is malformed, so a 400
+  // ("check what you typed") mislabels it — 409 is the honest status, and the
+  // retry-after-refresh advice it carries is the right advice.
+  it('translates the 23505 from expenses_one_pending_claim_idx into a 409 conflict', async () => {
     withRows([], {
       code: '23505',
       message:
@@ -630,7 +640,12 @@ describe('ExpenseRepository.create — pending-claim dedupe', () => {
     });
     const repo = new ExpenseRepository();
     const err = await repo.create(expense()).catch((e: unknown) => e);
-    expect(err).toBeInstanceOf(ExpenseValidationError);
+    expect(err).toBeInstanceOf(DuplicatePendingClaimError);
+    expect(err).toBeInstanceOf(ConflictError);
+    expect(err).not.toBeInstanceOf(ExpenseValidationError);
+    expect((err as { statusCode?: number }).statusCode).toBe(409);
+    expect((err as { code?: string }).code).toBe('CONFLICT');
+    // The discriminator survives the status change, so nothing greps dead.
     expect((err as { metadata?: { reason?: string } }).metadata?.reason).toBe(
       'DUPLICATE_PENDING_CLAIM'
     );
@@ -640,6 +655,7 @@ describe('ExpenseRepository.create — pending-claim dedupe', () => {
     withRows([], { code: '23503', message: 'fk violation' });
     const repo = new ExpenseRepository();
     const err = await repo.create(expense()).catch((e: unknown) => e);
-    expect(err).not.toBeInstanceOf(ExpenseValidationError);
+    expect(err).not.toBeInstanceOf(DuplicatePendingClaimError);
+    expect(err).toBeInstanceOf(DatabaseError);
   });
 });

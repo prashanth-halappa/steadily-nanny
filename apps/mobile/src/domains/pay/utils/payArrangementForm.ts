@@ -190,7 +190,17 @@ export function buildCreatePayArrangementRequest(
     const minutes = parseHoursToMinutes(thresholdTrimmed);
     if (minutes === null || minutes <= 0) return null;
     const multiplier = Number(state.overtimeMultiplierText.trim());
-    if (!Number.isFinite(multiplier) || multiplier < 1) return null;
+    // API TWIN: OvertimeMultiplierSchema (shared-types payArrangement.schema)
+    // — numeric(3,2) column: max 9.99, at most two decimals. The epsilon form
+    // avoids multipleOf(0.01)'s float false negatives (8.88 / 0.01 !== 888).
+    if (
+      !Number.isFinite(multiplier) ||
+      multiplier < 1 ||
+      multiplier > 9.99 ||
+      Math.abs(multiplier * 100 - Math.round(multiplier * 100)) >= 1e-9
+    ) {
+      return null;
+    }
     overtimeThresholdMinutes = minutes;
     overtimeMultiplier = multiplier;
   }

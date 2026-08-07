@@ -59,6 +59,26 @@ export class SelfApprovalNotAllowedError extends AuthorizationError {
 }
 
 /**
+ * 409 — an applier threw while re-driving an approved mutation during
+ * `respond()`. The approval was reverted to `pending` so it can be retried
+ * (see `coParentApprovalCommandService.respond`) — this is a transient
+ * conflict, not the responding parent's fault, so the raw internal applier
+ * message (e.g. "Approval payload is missing the extra shift it was gating")
+ * must never reach them. The underlying cause is logged in full by the
+ * caller before this is thrown (O2).
+ */
+export class ApprovalApplyFailedError extends ConflictError {
+  constructor(approvalId: string) {
+    super(
+      "This change couldn't be applied. It's been returned to pending so it can be tried again.",
+      'APPROVAL_APPLY_FAILED',
+      { approvalId }
+    );
+    this.name = 'ApprovalApplyFailedError';
+  }
+}
+
+/**
  * 403 — the household's `approval_mode` is `owner_only` and the caller is an
  * active member but not the owner.
  */

@@ -7,6 +7,14 @@
  * shift domains — see `../../household`, imported READ-ONLY for
  * `HouseholdMemberRepository`/`HouseholdRepository`.
  *
+ * THE MEMBERSHIP GATES SPLIT IN TWO, and the split is the point:
+ * `assertPayrollReader` (reads) accepts a `removed` member with her role's
+ * scope, because payroll is an audit trail; `loadOwnedRow`/`getOwnedTimeEntry`
+ * (the lookups behind every ACTION) still require an ACTIVE membership, which
+ * is what keeps F-B3b-3 closed. `getOwnedTimesheet` and `getReadableTimesheet`
+ * load the same row through those two different gates on purpose — do not
+ * collapse them.
+ *
  * THE WEEK READ IS WHERE LIVE AND FROZEN MONEY DIVERGE. `getWeekWithEarnings`
  * decides, once, on the server, whether a week's amount is computed now or
  * read from the snapshot frozen at approval — see its doc comment. No client
@@ -28,6 +36,8 @@ import {
 } from '@steadily-nanny/shared-types/schemas/timesheet.schema';
 import { logger } from '../../../middlewares/logger';
 import {
+  HOUSEHOLD_MEMBER_STATUSES,
+  HOUSEHOLD_ROLES,
   HouseholdMemberRepository,
   HouseholdRepository,
 } from '../../household';
@@ -47,6 +57,20 @@ import {
 import type { TimeEntry, Timesheet } from '../types';
 import { toWireTimesheet } from '../utils/toWireTimesheet';
 import { weekEndExclusive, weekStartOf } from '../utils/weekStart';
+
+/** Roles that read the WHOLE household's payroll, active or removed. */
+const PAYROLL_HOUSEHOLD_READ_ROLES: ReadonlySet<string> = new Set([
+  HOUSEHOLD_ROLES.OWNER,
+  HOUSEHOLD_ROLES.PARENT,
+]);
+
+/**
+ * What `assertPayrollReader` resolved: every carer's rows, or one carer's.
+ * Same shape and same purpose as `expenseQueryService`'s `ReadScope`.
+ */
+type PayrollReadScope =
+  | { kind: 'household' }
+  | { kind: 'own'; carerId: string };
 
 export class TimesheetQueryService {
   constructor(
@@ -103,7 +127,8 @@ export class TimesheetQueryService {
    * `carerId` narrows to ONE carer's hours. Optional and unfiltered by
    * default so the household-wide view keeps working, but any caller adding
    * these entries up must pass it: in a two-carer household the unscoped list
-   * sums both nannies' minutes into one figure (F-B1-3).
+   * sums both nannies' minutes into one figure (F-B1-3). A removed nanny's
+   * read overrides it with her own id — see `assertPayrollReader`.
    */
   async listForHouseholdWeek(
     userId: string,
@@ -111,14 +136,14 @@ export class TimesheetQueryService {
     weekStart?: string,
     carerId?: string
   ): Promise<TimeEntry[]> {
-    await this.assertMember(userId, householdId);
+    const scope = await this.assertPayrollReader(userId, householdId);
     const resolvedWeekStart =
       weekStart ?? (await this.currentWeekStart(householdId));
     return this.timeEntryRepo.listForHouseholdWeek(
       householdId,
       resolvedWeekStart,
       weekEndExclusive(resolvedWeekStart),
-      carerId
+      scope.kind === 'own' ? scope.carerId : carerId
     );
   }
 
@@ -136,8 +161,58 @@ export class TimesheetQueryService {
   }
 
   /**
-   * A household's timesheets, most recent week first. Caller must be an
-   * active member.
+   * Fetch one timesheet for READING. Same load as `loadOwnedRow`, but gated
+   * by `assertPayrollReader` instead of an active membership, so a member
+   * removed from the household can still open the week she worked (or, as a
+   * departed parent, the week she paid for). A removed nanny additionally has
+   * to own the row.
+   *
+   * This gates `GET /timesheets/:id` (via `getWeekWithEarnings`) and nothing
+   * else. Every ACTION on a timesheet — approve, query, reopen — keeps
+   * `getOwnedTimesheet`: reading a signed week and signing one are not the
+   * same permission, and a removed parent must not be able to approve.
+   *
+   * Do NOT wire this into `makeOwnershipValidator` on the read route to
+   * "match" the actions. That validator caches by `(userId, resourceId)` with
+   * no lookup identity, so a permitted read would leave a positive entry the
+   * ACTIONS then reuse — the wider gate silently replacing the stricter one
+   * on the same id. See `routes/timesheetRoutes.ts` and its route test.
+   */
+  async getReadableTimesheet(
+    userId: string,
+    timesheetId: string
+  ): Promise<TimesheetRow> {
+    const timesheet = await this.timesheetRepo.findById(timesheetId);
+    if (!timesheet) {
+      throw new TimesheetNotFoundError(timesheetId);
+    }
+    // EVERY denial past this point must be byte-identical to the "no such
+    // row" throw above, metadata included: `toClientJSON` serialises
+    // `metadata` for any sub-500 status, so letting the gate's richer
+    // `reason` reach the wire here would tell a stranger which timesheet ids
+    // are real. The gate keeps that reason for the household-scoped LIST
+    // reads, where the caller supplied the household id and there is nothing
+    // to leak. A non-NotFound failure (a dead database) is rethrown as-is —
+    // collapsing that into a 404 would hide an outage.
+    const scope = await this.assertPayrollReader(
+      userId,
+      timesheet.household_id
+    ).catch((error: unknown) => {
+      if (error instanceof TimesheetNotFoundError) {
+        throw new TimesheetNotFoundError(timesheetId);
+      }
+      throw error;
+    });
+    if (scope.kind === 'own' && timesheet.carer_id !== scope.carerId) {
+      throw new TimesheetNotFoundError(timesheetId);
+    }
+    return timesheet;
+  }
+
+  /**
+   * A household's timesheets, most recent week first. Caller must be a
+   * member — active, or removed with a payroll read scope
+   * (`assertPayrollReader`).
    *
    * Deliberately NOT earnings-bearing: pricing every week in a household's
    * whole history on every list read would be several queries per row, and
@@ -157,10 +232,10 @@ export class TimesheetQueryService {
     householdId: string,
     carerId?: string
   ): Promise<Timesheet[]> {
-    await this.assertMember(userId, householdId);
+    const scope = await this.assertPayrollReader(userId, householdId);
     const rows = await this.timesheetRepo.listForHousehold(
       householdId,
-      carerId
+      scope.kind === 'own' ? scope.carerId : carerId
     );
     return rows.map(row => toWireTimesheet(row));
   }
@@ -170,11 +245,14 @@ export class TimesheetQueryService {
    *
    * The decision, in full (`docs/11-MONEY.md` §3, TIER0-PLAN.md Phase 2):
    *
-   * - **No carer** (`carer_id` NULL — she deleted her account, and 033 kept
+   * - **No carer** (`carer_id` NULL — she deleted her ACCOUNT, and 033 kept
    *   the household's payroll record). Nothing to resolve an arrangement
    *   against, so hours-only with `carer_removed`. Deliberately not the
    *   "set a pay rate" nudge: the command service requires an active member
-   *   to write an arrangement, so that CTA could never succeed (§4).
+   *   to write an arrangement, so that CTA could never succeed (§4). Note
+   *   this branch keys on a NULL carer_id, NOT on membership status: a nanny
+   *   REMOVED from the household keeps her carer_id, so her weeks keep
+   *   pricing normally (live or frozen) and she can still read them.
    * - **Not approved** (`open`/`submitted`/`queried`). Computed fresh, every
    *   read, from the entries and the arrangements effective on their dates.
    *   Nothing is written — a read that wrote a snapshot would freeze a figure
@@ -200,7 +278,7 @@ export class TimesheetQueryService {
     userId: string,
     timesheetId: string
   ): Promise<TimesheetWeek> {
-    const row = await this.loadOwnedRow(userId, timesheetId);
+    const row = await this.getReadableTimesheet(userId, timesheetId);
     return {
       ...toWireTimesheet(row),
       earnings: await this.earningsFor(row),
@@ -281,12 +359,41 @@ export class TimesheetQueryService {
     return weekStartOf(new Date(), household?.timezone ?? 'UTC');
   }
 
-  /** Membership check shared by every household-scoped read above. */
-  private async assertMember(
+  /**
+   * THE PAYROLL READ GATE, shared by every read above — and the ONLY gate in
+   * this service that accepts a `removed` membership.
+   *
+   * | caller                        | scope                          |
+   * |-------------------------------|--------------------------------|
+   * | any ACTIVE member, any role   | household (today's behaviour)  |
+   * | removed `owner`/`parent`      | household — they paid the money|
+   * | removed `nanny`               | her OWN carer rows, forced     |
+   * | removed `helper`, non-member  | not found                      |
+   *
+   * A nanny who has left must still be able to see the hours she worked and
+   * the pay she was owed; payroll is an audit trail, not a live surface that
+   * disappears with the badge. Everything else about a removed member stays
+   * shut: the write gates below (`loadOwnedRow`, `getOwnedTimeEntry`) still
+   * resolve an ACTIVE membership, so she can read her week and change nothing
+   * in it — and neither can a removed parent approve one.
+   *
+   * The `own` scope is FORCED, never merely offered: `listForHouseholdWeek`
+   * and `listTimesheetsForHousehold` take a client-supplied `carerId` filter,
+   * and a removed nanny handed carer-2's id would otherwise read carer-2's
+   * hours. Same enforcement point as `expenseQueryService.scopeRows`.
+   *
+   * ponytail: API contract only — nothing in the mobile app can reach these
+   * routes for a removed member yet, because `GET /households` lists
+   * ACTIVE memberships (`listActiveByUser`) and a removed member's household
+   * vanishes from it. The upgrade path is a past-households listing; the gate
+   * is deliberately landed first so the client has something correct to
+   * call when it exists.
+   */
+  private async assertPayrollReader(
     userId: string,
     householdId: string
-  ): Promise<void> {
-    const membership = await this.memberRepo.findActiveMembership(
+  ): Promise<PayrollReadScope> {
+    const membership = await this.memberRepo.findMembershipAnyStatus(
       householdId,
       userId
     );
@@ -295,6 +402,19 @@ export class TimesheetQueryService {
         reason: 'household_not_accessible',
       });
     }
+    if (membership.status === HOUSEHOLD_MEMBER_STATUSES.ACTIVE) {
+      return { kind: 'household' };
+    }
+    if (PAYROLL_HOUSEHOLD_READ_ROLES.has(membership.role)) {
+      return { kind: 'household' };
+    }
+    if (membership.role === HOUSEHOLD_ROLES.NANNY) {
+      return { kind: 'own', carerId: userId };
+    }
+    // A removed helper — she never had a payroll surface to keep.
+    throw new TimesheetNotFoundError(householdId, {
+      reason: 'household_not_accessible',
+    });
   }
 }
 

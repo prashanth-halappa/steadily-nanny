@@ -53,8 +53,7 @@ export abstract class BaseRepository<T> {
   async create(data: Partial<T>): Promise<T> {
     const { data: created, error } = await supabaseService
       .from(this.table)
-      // biome-ignore lint/suspicious/noExplicitAny: generic base class; callers provide type safety
-      .insert(data as any)
+      .insert(data as Record<string, unknown>)
       .select()
       .single();
 
@@ -74,8 +73,7 @@ export abstract class BaseRepository<T> {
   async update(id: string, data: Partial<T>): Promise<T> {
     const { data: updated, error } = await supabaseService
       .from(this.table)
-      // biome-ignore lint/suspicious/noExplicitAny: generic base class; callers provide type safety
-      .update(data as any)
+      .update(data as Record<string, unknown>)
       .eq('id', id)
       .select()
       .single();

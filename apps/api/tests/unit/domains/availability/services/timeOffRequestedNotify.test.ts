@@ -81,7 +81,10 @@ describe('TimeOffCommandService.create — time_off_requested', () => {
     };
     const svc = new TimeOffCommandService(
       makeTimeOffRepo() as never,
-      { getOwned: mock(async () => row) } as never,
+      {
+        getOwned: mock(async () => row),
+        assertActiveMember: mock(async () => undefined),
+      } as never,
       makeOverlapRepo() as never,
       notify,
       async () => undefined,
@@ -127,7 +130,10 @@ describe('TimeOffCommandService.create — time_off_requested', () => {
     };
     const svc = new TimeOffCommandService(
       makeTimeOffRepo() as never,
-      { getOwned: mock(async () => row) } as never,
+      {
+        getOwned: mock(async () => row),
+        assertActiveMember: mock(async () => undefined),
+      } as never,
       overlapRepo as never,
       notify,
       async () => undefined,
@@ -156,7 +162,10 @@ describe('TimeOffCommandService.create — time_off_requested', () => {
     };
     const svc = new TimeOffCommandService(
       makeTimeOffRepo() as never,
-      { getOwned: mock(async () => row) } as never,
+      {
+        getOwned: mock(async () => row),
+        assertActiveMember: mock(async () => undefined),
+      } as never,
       makeOverlapRepo() as never,
       notify,
       async () => undefined,

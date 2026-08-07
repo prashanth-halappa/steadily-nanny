@@ -45,6 +45,18 @@ describe('root layout provider order', () => {
     expect(source).toContain('sendDefaultPii: false');
   });
 
+  it('tags Sentry events with an EAS-channel environment and a versioned release', () => {
+    // __DEV__ is false in every built artifact, so a preview/production EAS
+    // build must use the build-time channel (eas.json), not __DEV__, or a
+    // preview build would misreport itself as "production".
+    expect(source).toContain(
+      "environment: Updates.channel ?? (__DEV__ ? 'development' : 'production')"
+    );
+    expect(source).toContain(
+      'release: `steadilynanny-mobile@${appIdentity.version}`'
+    );
+  });
+
   it('places AnimatedSplash inside QueryClientProvider (needs useIsOnboarded)', () => {
     const queryIdx = source.indexOf('<QueryClientProvider');
     const splashIdx = source.indexOf('<AnimatedSplash');

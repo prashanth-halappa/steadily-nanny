@@ -383,7 +383,35 @@ describe('ShiftChangeRequestCommandService.createExtraShift', () => {
     expect(result.status).toBe('created');
     if (result.status === 'created') {
       expect(result.shift.id).toBe('s-extra');
+      // A genuine create — the client may safely say "proposed" and the carer
+      // has been pushed.
+      expect(result.adopted).toBe(false);
     }
+  });
+
+  // The pre-check early-return path: nothing new was written, so the caller
+  // must be able to tell this apart from a create without diffing ids.
+  it('flags adopted when the pre-check found the shift already there', async () => {
+    const existing = {
+      ...shift,
+      id: 's-existing',
+      kind: 'extra' as const,
+      status: 'pending' as const,
+      shift_children: [],
+    };
+    const shiftRepo = makeShiftRepo({
+      findExtraShiftInWindow: mock(async () => existing),
+    });
+    const svc = makeSvc({ shiftRepo });
+
+    const result = await svc.createExtraShift('parent-1', 'h1', extraInput);
+
+    expect(result.status).toBe('created');
+    if (result.status === 'created') {
+      expect(result.shift.id).toBe('s-existing');
+      expect(result.adopted).toBe(true);
+    }
+    expect(shiftRepo.createShift).not.toHaveBeenCalled();
   });
 
   it('returns pending_approval without writing a shift when the gate requires co-parent sign-off', async () => {
@@ -452,6 +480,7 @@ describe('ShiftChangeRequestCommandService.createExtraShift', () => {
     expect(result.status).toBe('created');
     if (result.status === 'created') {
       expect(result.shift.id).toBe('s-winner');
+      expect(result.adopted).toBe(true);
     }
     // The winner's own call wrote the children and the day-thread event.
     // Writing them again would double the child rows and post the shift to the

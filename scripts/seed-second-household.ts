@@ -27,6 +27,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createClient } from '@supabase/supabase-js';
+import { assertLocalSupabaseUrl } from './localSupabaseGuard';
 
 const NANNY_EMAIL = 'nanny@steadilynanny.test';
 const OTHER_PARENT_EMAIL = 'otherparent@steadilynanny.test';
@@ -59,16 +60,22 @@ function loadEnvFile(path: string): Record<string, string> {
 }
 
 const repoRoot = join(import.meta.dir, '..');
-const env = loadEnvFile(join(repoRoot, 'apps/api/.env'));
-const url = env.SUPABASE_URL;
-const serviceKey = env.SUPABASE_SERVICE_KEY;
+// An EXPORTED value wins over the file: `apps/api/.env` points at PRODUCTION
+// (GOLDEN-FIXES #26), so reading the file alone would make the loopback guard
+// below refuse every run. Export the local stack's values instead
+// (`supabase status -o env`).
+const fileEnv = loadEnvFile(join(repoRoot, 'apps/api/.env'));
+const url = process.env.SUPABASE_URL ?? fileEnv.SUPABASE_URL;
+const serviceKey =
+  process.env.SUPABASE_SERVICE_KEY ?? fileEnv.SUPABASE_SERVICE_KEY;
 
 if (!url || !serviceKey || serviceKey.startsWith('SET-ME')) {
   console.error(
-    'Missing or placeholder SUPABASE_URL / SUPABASE_SERVICE_KEY in apps/api/.env'
+    'Missing or placeholder SUPABASE_URL / SUPABASE_SERVICE_KEY — export them (see `supabase status -o env`) or set them in apps/api/.env'
   );
   process.exit(1);
 }
+assertLocalSupabaseUrl(url);
 
 const db = createClient(url, serviceKey, {
   auth: { persistSession: false, autoRefreshToken: false },

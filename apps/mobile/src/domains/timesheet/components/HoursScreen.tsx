@@ -210,6 +210,11 @@ export function HoursScreen() {
       return next === current ? offset : next;
     });
   }, [routeWeekOffset]);
+  // A household she was REMOVED from: the API still serves her the hours and
+  // pay she accrued there, and refuses every write. The screen must say the
+  // same thing — offering a write it knows will 403 is a lie.
+  const isReadOnly = onboarding.isPastMember;
+
   const isNextWeekDisabled = weekOffset >= 0;
   const isPreviousWeekDisabled = weekOffset <= -MAX_WEEKS_BACK;
 
@@ -266,7 +271,7 @@ export function HoursScreen() {
           onNextWeek={handleNextWeek}
           isNextWeekDisabled={isNextWeekDisabled}
           isPreviousWeekDisabled={isPreviousWeekDisabled}
-          readOnly={!isParentEditorRole(onboarding.role)}
+          readOnly={!isParentEditorRole(onboarding.role) || isReadOnly}
         />
       ) : (
         <NannyWeekView
@@ -280,6 +285,7 @@ export function HoursScreen() {
           onNextWeek={handleNextWeek}
           isNextWeekDisabled={isNextWeekDisabled}
           isPreviousWeekDisabled={isPreviousWeekDisabled}
+          readOnly={isReadOnly}
         />
       )}
     </View>

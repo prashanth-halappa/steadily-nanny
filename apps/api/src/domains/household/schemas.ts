@@ -12,6 +12,11 @@
  *
  * @module domains/household/schemas
  */
+import {
+  HouseholdIdParamSchema as HouseholdIdParam,
+  HouseholdInviteIdParamSchema as InviteIdParam,
+  HouseholdMemberIdParamSchema as MemberIdParam,
+} from '@steadily-nanny/shared-types/schemas/household.schema';
 import { z } from 'zod';
 
 // --- Co-parent approval queue (design flow 1f) ---
@@ -91,6 +96,26 @@ export const InvitePreviewSchema = z.object({
   role: z.enum(['parent', 'nanny', 'helper']),
 });
 export type InvitePreview = z.infer<typeof InvitePreviewSchema>;
+
+/**
+ * URL params for the household-nested member and invite routes.
+ *
+ * These exist because `validate(schema, 'params')` writes the PARSED object
+ * back over `req.params`, and Zod strips unknown keys — so validating with the
+ * single-id `HouseholdMemberIdParamSchema` deletes `householdId` and the
+ * ownership middleware that runs next 404s every request with "Resource id
+ * (householdId) not provided". Composed from the shared single-id schemas
+ * rather than re-declaring the uuid rules.
+ */
+export const HouseholdMemberParamSchema = HouseholdIdParam.extend(
+  MemberIdParam.shape
+);
+export type HouseholdMemberParam = z.infer<typeof HouseholdMemberParamSchema>;
+
+export const HouseholdInviteParamSchema = HouseholdIdParam.extend(
+  InviteIdParam.shape
+);
+export type HouseholdInviteParam = z.infer<typeof HouseholdInviteParamSchema>;
 
 /** URL param validation for /households/:householdId/approvals/:approvalId routes. */
 export const HouseholdApprovalIdParamSchema = z.object({

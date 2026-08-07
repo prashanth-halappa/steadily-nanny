@@ -76,4 +76,14 @@ describe('InviteScreen (wizard)', () => {
     expect(source).toContain('invite-screen');
     expect(source).toContain('invite-share-button');
   });
+
+  it('D3: wires useRevokeInvite through to InviteCodeCard, clearing the invite on success', () => {
+    expect(source).toContain('useRevokeInvite');
+    expect(source).toContain('onRevoke=');
+    // On success it must clear BOTH the mutation state InviteCodeCard reads
+    // (createInvite.reset()) and the local hasStarted flag, or the card is
+    // left showing a stuck spinner instead of returning to the role picker.
+    expect(source).toContain('createInvite.reset()');
+    expect(source).toContain('setHasStarted(false)');
+  });
 });

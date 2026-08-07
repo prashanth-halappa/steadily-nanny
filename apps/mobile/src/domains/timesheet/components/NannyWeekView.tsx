@@ -71,6 +71,11 @@ interface NannyWeekViewProps {
   onNextWeek: () => void;
   isNextWeekDisabled: boolean;
   isPreviousWeekDisabled: boolean;
+  /** Her membership in this household is `removed` — she keeps the hours and
+   * pay she accrued here, but every write is gone: no correction sheet, no
+   * expense add/edit/withdraw. Owned by `HoursScreen`, which reads
+   * `useIsOnboarded().isPastMember`. */
+  readOnly?: boolean;
 }
 
 function scheduledMinutesFor(entries: TimeEntry[]): number | null {
@@ -90,6 +95,7 @@ export function NannyWeekView({
   onNextWeek,
   isNextWeekDisabled,
   isPreviousWeekDisabled,
+  readOnly = false,
 }: NannyWeekViewProps) {
   const { t } = useTranslation('hours');
   const { t: tExpenses } = useTranslation('expenses');
@@ -253,7 +259,7 @@ export function NannyWeekView({
             entries={item.entries}
             nowMs={nowMs}
             timeZone={timeZone}
-            onEditEntry={setEditing}
+            onEditEntry={readOnly ? undefined : setEditing}
             timesheetStatus={timesheet?.status ?? null}
           />
         )}
@@ -290,18 +296,22 @@ export function NannyWeekView({
               totalMinor={earningsOk ? earningsOk.reimbursements_minor : null}
               currency={expensesCurrency}
             />
-            <Button
-              testID="expenses-add"
-              variant="outline"
-              className="mt-4"
-              onPress={handleOpenAddExpense}
-            >
-              <Text className="text-foreground">{tExpenses('addButton')}</Text>
-            </Button>
+            {readOnly ? null : (
+              <Button
+                testID="expenses-add"
+                variant="outline"
+                className="mt-4"
+                onPress={handleOpenAddExpense}
+              >
+                <Text className="text-foreground">
+                  {tExpenses('addButton')}
+                </Text>
+              </Button>
+            )}
             <ExpensesListCard
               expenses={weekExpenses}
-              onEdit={handleEditExpense}
-              onWithdraw={handleWithdrawExpense}
+              onEdit={readOnly ? undefined : handleEditExpense}
+              onWithdraw={readOnly ? undefined : handleWithdrawExpense}
             />
           </>
         }

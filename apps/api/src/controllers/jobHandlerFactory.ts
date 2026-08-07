@@ -47,6 +47,19 @@ export class JobCompletedWithErrorsError extends BaseError {
 }
 
 /**
+ * A second invocation landed while this job was still running (pg_net retry,
+ * manual POST overlapping a slow run). Refused before touching job_runs at
+ * all — cheap, not perfect: see the in-flight guard comment below.
+ */
+export class JobAlreadyRunningError extends BaseError {
+  constructor(jobName: string) {
+    super(`Job ${jobName} is already running`, 'CONFLICT', 409, true, {
+      job: jobName,
+    });
+  }
+}
+
+/**
  * Handler that tracks the run lifecycle via JobRunService.
  */
 export function createTrackedJobHandler<T extends AnyResult>(
@@ -67,6 +80,16 @@ export function createTrackedJobHandler<T extends AnyResult>(
   ): Promise<void> => {
     let runId: string | null = null;
     try {
+      // ponytail: check-then-act, not a DB reservation — two simultaneous
+      // POSTs can both pass this read before either inserts a row. The cron
+      // cadence here is hourly+, so that window is irrelevant in practice;
+      // `JobRunService.startWithIdempotencyKey` (CAS-guarded reclaim) is the
+      // upgrade path if a job ever needs a real reservation.
+      if (await JobRunService.hasFreshRunningRun(jobName)) {
+        next(new JobAlreadyRunningError(jobName));
+        return;
+      }
+
       runId = await JobRunService.start(jobName);
       logger.info('Job started', { job: jobName, runId });
 

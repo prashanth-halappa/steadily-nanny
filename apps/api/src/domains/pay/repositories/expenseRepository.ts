@@ -27,7 +27,7 @@ import type { Expense } from '@steadily-nanny/shared-types/schemas/expense.schem
 import { supabaseService } from '../../../config/supabase';
 import { DatabaseError } from '../../../errors';
 import { BaseRepository } from '../../../shared/repositories/baseRepository';
-import { ExpenseValidationError } from '../errors/payErrors';
+import { DuplicatePendingClaimError } from '../errors/payErrors';
 
 /** Postgres unique_violation error code. */
 const UNIQUE_VIOLATION = '23505';
@@ -105,7 +105,7 @@ export class ExpenseRepository extends BaseRepository<Expense> {
 
     if (error) {
       if (error.code === UNIQUE_VIOLATION) {
-        throw new ExpenseValidationError('DUPLICATE_PENDING_CLAIM', {
+        throw new DuplicatePendingClaimError({
           householdId: data.household_id,
           carerId: data.carer_id,
           localDate: data.local_date,

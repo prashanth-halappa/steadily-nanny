@@ -12,9 +12,9 @@
  * while the code is still minting); `InviteCodeCard.test.tsx` covers which
  * values are interpolated into it.
  */
-import { describe, expect, it } from 'bun:test';
+import { describe, expect, it, mock } from 'bun:test';
 import type { HouseholdInvite } from '@steadily-nanny/shared-types/schemas/household.schema';
-import { render } from '@testing-library/react-native';
+import { fireEvent, render } from '@testing-library/react-native';
 import { InviteCodeCard } from '../components/InviteCodeCard';
 
 const INVITE = {
@@ -57,5 +57,57 @@ describe('InviteCodeCard — role + expiry (D6a)', () => {
     );
 
     expect(getByTestId('invite-retry-button')).toBeTruthy();
+  });
+});
+
+describe('InviteCodeCard — revoke (D3)', () => {
+  it('shows a revoke button once a code is minted, when onRevoke is supplied', () => {
+    const { getByTestId } = render(
+      <InviteCodeCard
+        invite={INVITE}
+        isError={false}
+        onRetry={() => {}}
+        onRevoke={() => {}}
+      />
+    );
+
+    expect(getByTestId('invite-revoke-button')).toBeTruthy();
+  });
+
+  it('calls onRevoke when pressed', () => {
+    const onRevoke = mock(() => {});
+    const { getByTestId } = render(
+      <InviteCodeCard
+        invite={INVITE}
+        isError={false}
+        onRetry={() => {}}
+        onRevoke={onRevoke}
+      />
+    );
+
+    fireEvent.press(getByTestId('invite-revoke-button'));
+
+    expect(onRevoke).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders no revoke button while the code is still minting (no invite yet)', () => {
+    const { queryByTestId } = render(
+      <InviteCodeCard
+        invite={null}
+        isError={false}
+        onRetry={() => {}}
+        onRevoke={() => {}}
+      />
+    );
+
+    expect(queryByTestId('invite-revoke-button')).toBeNull();
+  });
+
+  it('renders no revoke button when the caller does not pass onRevoke', () => {
+    const { queryByTestId } = render(
+      <InviteCodeCard invite={INVITE} isError={false} onRetry={() => {}} />
+    );
+
+    expect(queryByTestId('invite-revoke-button')).toBeNull();
   });
 });

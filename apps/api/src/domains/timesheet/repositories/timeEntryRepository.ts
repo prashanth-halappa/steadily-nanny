@@ -213,6 +213,36 @@ export class TimeEntryRepository extends BaseRepository<TimeEntry> {
   }
 
   /**
+   * The carer's open entry IN ONE HOUSEHOLD, or null. Distinct from
+   * `findRunningForCarer`, which is global on purpose (the clock-in guard and
+   * "my current shift" both want any-household). A caller asking on behalf of
+   * ONE family must use this: a nanny works for several households, so the
+   * global answer both blocks Family A on a shift at Family B and discloses
+   * that the nanny is working elsewhere.
+   */
+  async findRunningInHousehold(
+    householdId: string,
+    carerId: string
+  ): Promise<TimeEntry | null> {
+    const { data, error } = await supabaseService
+      .from(this.table)
+      .select('*')
+      .eq('household_id', householdId)
+      .eq('carer_id', carerId)
+      .eq('status', 'running')
+      .maybeSingle();
+
+    if (error) {
+      throw new DatabaseError(
+        'Failed to look up running time entry',
+        'DATABASE_ERROR',
+        { details: error.message, householdId, carerId }
+      );
+    }
+    return data as TimeEntry | null;
+  }
+
+  /**
    * Every entry for this carer whose CLOCK SPAN could intersect
    * `[fromInclusive, toInclusive]` — the overlap check's source, deliberately
    * NOT `listForCarerWeek`.

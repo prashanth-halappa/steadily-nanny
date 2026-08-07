@@ -16,6 +16,13 @@ interface FakeRow {
   [key: string]: unknown;
 }
 
+/** One branch of a PostgREST `.or(...)` expression. */
+interface OrBranch {
+  column: string;
+  op: 'is' | 'gte';
+  value?: string;
+}
+
 let PayArrangementRepository: any;
 let mockSupabaseService: any;
 /** Call log of the last chain built, so query shape can be asserted too. */
@@ -29,21 +36,46 @@ let lastCalls: { method: string; args: unknown[] }[] = [];
 function createFakeQuery(rows: FakeRow[], error: unknown = null): any {
   const eqFilters: [string, unknown][] = [];
   const lteFilters: [string, string][] = [];
+  const isFilters: [string, unknown][] = [];
+  const orGroups: OrBranch[][] = [];
   const orderKeys: [string, boolean][] = [];
   let rowLimit: number | null = null;
+  let updatePatch: Record<string, unknown> | null = null;
 
   const resolveRows = (): FakeRow[] => {
     let out = rows.filter(
       row =>
         eqFilters.every(([key, value]) => row[key] === value) &&
-        lteFilters.every(([key, value]) => String(row[key]) <= value)
+        lteFilters.every(([key, value]) => String(row[key]) <= value) &&
+        isFilters.every(([key, value]) => (row[key] ?? null) === value) &&
+        orGroups.every(branches =>
+          branches.some(({ column, op, value }) =>
+            op === 'is'
+              ? (row[column] ?? null) === null
+              : row[column] != null && String(row[column]) >= String(value)
+          )
+        )
     );
+    if (updatePatch) {
+      for (const row of out) Object.assign(row, updatePatch);
+    }
     for (const [key, ascending] of [...orderKeys].reverse()) {
       out = [...out].sort((a, b) => {
         const left = String(a[key]);
         const right = String(b[key]);
-        if (left === right) return 0;
-        return (left < right ? -1 : 1) * (ascending ? 1 : -1);
+        // Postgres orders timestamptz by INSTANT, so two serialisations of the
+        // same moment ('+00:00' vs '.000Z') compare equal and differing offsets
+        // compare chronologically — a raw string compare here models a database
+        // that does not exist (GOLDEN-FIXES #25). Fall back to string compare
+        // only for non-date values (uuids, plain dates are order-equivalent).
+        const leftMs = Date.parse(left);
+        const rightMs = Date.parse(right);
+        const [l, r] =
+          Number.isNaN(leftMs) || Number.isNaN(rightMs)
+            ? [left, right]
+            : [leftMs, rightMs];
+        if (l === r) return 0;
+        return (l < r ? -1 : 1) * (ascending ? 1 : -1);
       });
     }
     if (rowLimit !== null) out = out.slice(0, rowLimit);
@@ -77,6 +109,32 @@ function createFakeQuery(rows: FakeRow[], error: unknown = null): any {
     limit: mock((count: number) => {
       record('limit', count);
       rowLimit = count;
+      return chain;
+    }),
+    // PostgREST `.or('a.is.null,a.gte.X')` — a row matches if ANY branch does.
+    // Only the two operators 065 uses are modelled; anything else throws
+    // rather than silently passing.
+    or: mock((expression: string) => {
+      record('or', expression);
+      orGroups.push(
+        expression.split(',').map(branch => {
+          const [column, op, value] = branch.split('.');
+          if (op !== 'is' && op !== 'gte') {
+            throw new Error(`fake chain: unsupported or() operator ${op}`);
+          }
+          return { column, op, value } as OrBranch;
+        })
+      );
+      return chain;
+    }),
+    is: mock((key: string, value: unknown) => {
+      record('is', key, value);
+      isFilters.push([key, value]);
+      return chain;
+    }),
+    update: mock((patch: Record<string, unknown>) => {
+      record('update', patch);
+      updatePatch = patch;
       return chain;
     }),
     maybeSingle: mock(async () => {
@@ -285,6 +343,19 @@ describe('PayArrangementRepository.listForCarer', () => {
     expect(history).toHaveLength(1);
   });
 
+  // 065's load-bearing invariant, and the one mistake its header warns against.
+  // `endForCarer` ends an arrangement when a member is removed; the engine
+  // prices HISTORICAL weeks from this very list (weekEarningsService feeds
+  // `listForCarer` into the in-memory resolver). Filter ended rows out HERE and
+  // every week worked before the removal silently re-prices to nothing — the
+  // per-date exclusion belongs in `effectiveOn`, never in the history read.
+  it('includes ENDED rows — a removal must not erase the terms that priced past weeks', async () => {
+    withRows([arrangement({ id: 'pa-ended', valid_to: '2026-06-30' })]);
+    const repo = new PayArrangementRepository();
+    const history = await repo.listForCarer('h1', 'carer-1');
+    expect(history).toHaveLength(1);
+  });
+
   it("scopes to this household's carer only", async () => {
     withRows([
       arrangement({ id: 'pa-mine' }),
@@ -305,5 +376,126 @@ describe('PayArrangementRepository.listForCarer', () => {
     withRows([], { message: 'boom' });
     const repo = new PayArrangementRepository();
     await expect(repo.listForCarer('h1', 'carer-1')).rejects.toThrow();
+  });
+});
+
+describe('PayArrangementRepository.effectiveOn — ended arrangements (065)', () => {
+  // Removal end-dates the arrangement so a rejoined carer has no live terms
+  // and a parent must re-confirm them (docs/11-MONEY.md §10).
+  it('ignores an arrangement that ended before the date — a rejoined carer has no terms', async () => {
+    withRows([
+      arrangement({ valid_from: '2026-01-01', valid_to: '2026-03-31' }),
+    ]);
+    const repo = new PayArrangementRepository();
+
+    expect(await repo.effectiveOn('h1', 'carer-1', '2026-07-01')).toBeNull();
+  });
+
+  // THE load-bearing case: a week worked in March must keep pricing at March's
+  // rate after a July removal, or every past timesheet re-prices to nothing.
+  it('still resolves the arrangement for a date BEFORE the end — history keeps pricing', async () => {
+    withRows([
+      arrangement({ valid_from: '2026-01-01', valid_to: '2026-06-30' }),
+    ]);
+    const repo = new PayArrangementRepository();
+
+    const found = await repo.effectiveOn('h1', 'carer-1', '2026-03-15');
+
+    expect(found).toMatchObject({ id: 'pa-1', rate_minor: 1500 });
+  });
+
+  it('resolves the arrangement ON its valid_to — the end is inclusive, so the removal day is paid', async () => {
+    withRows([
+      arrangement({ valid_from: '2026-01-01', valid_to: '2026-06-30' }),
+    ]);
+    const repo = new PayArrangementRepository();
+
+    expect(await repo.effectiveOn('h1', 'carer-1', '2026-06-30')).toMatchObject(
+      {
+        id: 'pa-1',
+      }
+    );
+  });
+
+  it('still resolves a live row — valid_to null is every arrangement that predates 065', async () => {
+    withRows([arrangement({ valid_to: null })]);
+    const repo = new PayArrangementRepository();
+
+    expect(await repo.effectiveOn('h1', 'carer-1', '2026-07-01')).toMatchObject(
+      {
+        id: 'pa-1',
+      }
+    );
+  });
+
+  it('picks the live row over an ended one for a current date', async () => {
+    withRows([
+      arrangement({
+        id: 'pa-old',
+        valid_from: '2026-01-01',
+        valid_to: '2026-03-31',
+      }),
+      arrangement({
+        id: 'pa-new',
+        valid_from: '2026-04-01',
+        valid_to: null,
+        created_at: '2026-04-01T09:00:00.000Z',
+      }),
+    ]);
+    const repo = new PayArrangementRepository();
+
+    expect(await repo.effectiveOn('h1', 'carer-1', '2026-07-01')).toMatchObject(
+      {
+        id: 'pa-new',
+      }
+    );
+  });
+});
+
+describe('PayArrangementRepository.endForCarer (065)', () => {
+  it('end-dates the live arrangement and returns what it ended', async () => {
+    const row = arrangement({ valid_to: null });
+    withRows([row]);
+    const repo = new PayArrangementRepository();
+
+    const ended = await repo.endForCarer('h1', 'carer-1', '2026-07-01');
+
+    expect(row.valid_to).toBe('2026-07-01');
+    expect(ended).toHaveLength(1);
+  });
+
+  it('leaves an ALREADY-ended row alone — the end date must not move on a re-removal', async () => {
+    // Remove -> rejoin -> remove again, or a retry: rewriting valid_to would
+    // reopen or re-close a window that history has already been priced against.
+    const row = arrangement({ valid_to: '2026-03-31' });
+    withRows([row]);
+    const repo = new PayArrangementRepository();
+
+    const ended = await repo.endForCarer('h1', 'carer-1', '2026-07-01');
+
+    expect(row.valid_to).toBe('2026-03-31');
+    expect(ended).toHaveLength(0);
+  });
+
+  it('scopes the write to this household and carer, and only to live rows', async () => {
+    withRows([arrangement({ valid_to: null })]);
+    const repo = new PayArrangementRepository();
+
+    await repo.endForCarer('h1', 'carer-1', '2026-07-01');
+
+    const eqs = lastCalls.filter(call => call.method === 'eq').map(c => c.args);
+    expect(eqs).toContainEqual(['household_id', 'h1']);
+    expect(eqs).toContainEqual(['carer_id', 'carer-1']);
+    expect(
+      lastCalls.some(c => c.method === 'is' && c.args[0] === 'valid_to')
+    ).toBe(true);
+  });
+
+  it('throws a DatabaseError when the write fails', async () => {
+    withRows([arrangement({ valid_to: null })], { message: 'boom' });
+    const repo = new PayArrangementRepository();
+    await expect(
+      repo.endForCarer('h1', 'carer-1', '2026-07-01')
+    ).rejects.toThrow('Failed to end pay arrangements for carer');
   });
 });

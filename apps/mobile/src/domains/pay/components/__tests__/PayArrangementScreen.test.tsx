@@ -371,6 +371,19 @@ describe('PayArrangementScreen', () => {
     expect(queryByTestId('pay-current-terms-card')).toBeNull();
   });
 
+  it('a REMOVED parent (past member) sees the not-available state, never the form', async () => {
+    membershipsListMock.mockImplementation(() =>
+      Promise.resolve([{ ...parentMembership, status: 'removed' }])
+    );
+
+    const { getByTestId, queryByTestId } = renderWithProviders(
+      <PayArrangementScreen />
+    );
+
+    await waitFor(() => expect(getByTestId('pay-not-available')).toBeTruthy());
+    expect(queryByTestId('pay-current-terms-card')).toBeNull();
+  });
+
   describe('review finding 7: the picker rate label while its own rate query is pending', () => {
     it('renders nothing — never "Not set" — until the query settles', async () => {
       listMembersMock.mockImplementation(() =>

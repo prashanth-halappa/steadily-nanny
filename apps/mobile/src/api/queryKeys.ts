@@ -45,6 +45,9 @@ export const queryKeys = {
   household: {
     all: ['household'] as const,
     list: () => [...queryKeys.household.all, 'list'] as const,
+    // Households the caller was REMOVED from — read-only history only, kept
+    // off `list` so nothing that gates a write ever sees one.
+    past: () => [...queryKeys.household.all, 'past'] as const,
     detail: (householdId?: string) =>
       [...queryKeys.household.all, 'detail', householdId] as const,
     members: (householdId?: string) =>

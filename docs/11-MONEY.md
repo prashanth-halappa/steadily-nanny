@@ -412,3 +412,37 @@ who is an active member of the calling household. A `carer_id`/
 shape of `assertShiftBelongsToCarer` (D12's fix) rather than inventing a new
 pattern — this is the one check every money write shares, and it belongs at
 the top of the command service method.
+
+## 10. Removal is soft, and rejoining resumes the old money state
+
+Removing a member (`householdCommandService.removeMember`, `PATCH
+/households/:householdId/members/:memberId` with `status: 'removed'`) flips
+`household_members.status` to `removed` and touches nothing else. The row is
+never deleted — `time_entries` and `shifts` reference it, and their history
+has to survive the person leaving.
+
+Rejoining is redeem-only: a removed member who redeems a fresh invite has
+their existing row flipped back to `active`
+(`householdMemberRepository.reactivateMembership`), because the unique
+`(household_id, user_id)` constraint makes a second row impossible. **The
+same row coming back is what makes this a money question:**
+
+- **The pay arrangement is not end-dated on removal, and not re-derived on
+  rejoin.** Arrangements are effective-dated and append-only per
+  `(household, carer)` (§2), so the one that was live when the carer left is
+  still the one that resolves after they return — at the old rate, with no
+  gap recorded. Nobody is prompted to write a new row.
+- **The PTO balance is not reset or re-derived.** It is a household-side
+  ledger (§5), so accrual and usage from the previous stint carry straight
+  over into the new one.
+- **A rejoin can change role silently.** Invite redemption is the ONLY path
+  that mutates a membership's role — the member PATCH rejects everything but
+  `status: 'removed'` — so re-inviting a former nanny on a `parent` invite
+  reactivates them as a parent, and `can_edit` resets to `false` regardless
+  of what they held before.
+
+None of this is a decision that has been made; it is what the code does
+today because reactivation reuses the row. Whether a rejoin should end-date
+the arrangement, snapshot or reset the PTO balance, or refuse a role change
+is an **open owner decision** — see `audit/RESIDUAL-RISK.md`. Do not add
+money-side behaviour to the rejoin path before that lands.

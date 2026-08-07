@@ -76,6 +76,8 @@ function makeApprovalRepo(overrides: Record<string, unknown> = {}) {
       responded_by: respondedBy,
       responded_at: 't',
     })),
+    recordFailedApply: mock(async () => 'retrying' as const),
+    clearApplyMarkers: mock(async () => {}),
     ...overrides,
   };
 }
@@ -181,5 +183,68 @@ describe('CoParentApprovalCommandService.respond — co_parent_approval_resolved
         },
       })
     );
+  });
+});
+
+describe('CoParentApprovalCommandService.respond — D3 terminal apply-failure push', () => {
+  it('notifies the requester once the respond-path apply is exhausted (terminal `failed`)', async () => {
+    approvalApplierRegistry.register('cancel', async () => {
+      throw new Error('shift already started');
+    });
+    const svc = new CoParentApprovalCommandService(
+      makeApprovalRepo({
+        recordFailedApply: mock(async () => 'failed' as const),
+      }) as never,
+      makeHouseholds('parent') as never,
+      { listActiveByHousehold: mock(async () => []) } as never
+    );
+
+    await expect(
+      svc.respond('parent-2', 'h1', 'a1', { status: 'approved' })
+    ).rejects.toThrow();
+
+    expect(notifyUser).toHaveBeenCalledTimes(1);
+    expect(notifyUser).toHaveBeenCalledWith(
+      'parent-1',
+      expect.objectContaining({
+        body: expect.stringMatching(/couldn.t be completed/i),
+      })
+    );
+  });
+
+  it('does NOT notify the requester on a first, still-retrying failure', async () => {
+    approvalApplierRegistry.register('cancel', async () => {
+      throw new Error('shift already started');
+    });
+    const svc = new CoParentApprovalCommandService(
+      makeApprovalRepo({
+        recordFailedApply: mock(async () => 'retrying' as const),
+      }) as never,
+      makeHouseholds('parent') as never,
+      { listActiveByHousehold: mock(async () => []) } as never
+    );
+
+    await expect(
+      svc.respond('parent-2', 'h1', 'a1', { status: 'approved' })
+    ).rejects.toThrow();
+
+    expect(notifyUser).not.toHaveBeenCalled();
+  });
+
+  it('does NOT send a terminal-failure push when the applier succeeds', async () => {
+    approvalApplierRegistry.register('cancel', async () => undefined);
+    const svc = new CoParentApprovalCommandService(
+      makeApprovalRepo() as never,
+      makeHouseholds('parent') as never,
+      { listActiveByHousehold: mock(async () => []) } as never
+    );
+
+    await svc.respond('parent-2', 'h1', 'a1', { status: 'approved' });
+
+    for (const call of notifyUser.mock.calls) {
+      expect(call[1]).not.toMatchObject({
+        body: expect.stringMatching(/couldn.t be completed/i),
+      });
+    }
   });
 });

@@ -19,10 +19,67 @@
  *
  * @module domains/household/services/approvalApplierRegistry
  */
+import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types/schemas/notification.schema';
 import { logger } from '../../../middlewares/logger';
+import { notifyUser } from '../../notification';
 import { CoParentApprovalRepository } from '../repositories/coParentApprovalRepository';
 import { CO_PARENT_APPROVAL_STATUSES } from '../schemas';
 import type { CoParentApproval, CoParentApprovalAction } from '../types';
+
+/**
+ * Best-effort push to the requester about how their parked mutation
+ * concluded. Shared by both sweep outcomes (D3 terminal failure, D4
+ * successful timeout-apply) — `respond()`'s own manual-approve/decline push
+ * (`notifyRequesterApprovalResolved`) is separate and unaffected, since it
+ * never runs `applyAllSettled`.
+ */
+function notifyRequester(
+  approval: Pick<CoParentApproval, 'requested_by' | 'household_id'>,
+  title: string,
+  body: string
+): void {
+  const requestedBy = approval.requested_by;
+  if (!requestedBy) return;
+  try {
+    notifyUser(requestedBy, {
+      title,
+      body,
+      data: {
+        type: PUSH_NOTIFICATION_TYPES.CO_PARENT_APPROVAL_RESOLVED,
+        householdId: approval.household_id,
+      },
+    });
+  } catch {
+    // notifyUser is sync fire-and-forget; swallow any unexpected throw
+  }
+}
+
+/**
+ * D3: the request was exhausted (terminally `withdrawn`) with nothing
+ * applied. Exported so `coParentApprovalCommandService.respond`'s own
+ * exhaustion path (single-row, not through `applyAllSettled`) reuses the same
+ * push instead of a second copy of it.
+ */
+export function notifyRequesterApplyFailed(
+  approval: Pick<CoParentApproval, 'requested_by' | 'household_id'>
+): void {
+  notifyRequester(
+    approval,
+    "Request couldn't be completed",
+    "Your request couldn't be completed — please try again."
+  );
+}
+
+/** D4: the timeout sweep auto-approved by silence; `respond()` never ran, so nobody told the requester it went through. */
+function notifyRequesterAppliedByTimeout(
+  approval: Pick<CoParentApproval, 'requested_by' | 'household_id'>
+): void {
+  notifyRequester(
+    approval,
+    'Request approved',
+    "Your co-parent didn't respond in time, so your request was automatically approved."
+  );
+}
 
 /**
  * Re-drives the mutation described by `approval.payload`. Throwing is
@@ -117,6 +174,7 @@ class ApprovalApplierRegistry {
         await this.apply(approval);
         applied++;
         await this.clearMarkers(approval, approvalRepo);
+        notifyRequesterAppliedByTimeout(approval);
       } catch (error) {
         logger.error('Failed to apply timed-out co-parent approval', {
           action: approval.action,
@@ -153,6 +211,7 @@ class ApprovalApplierRegistry {
             reason,
           }
         );
+        notifyRequesterApplyFailed(approval);
       }
       if (outcome === 'missed') {
         logger.warn(

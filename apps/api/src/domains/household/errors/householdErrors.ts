@@ -6,6 +6,7 @@ import {
   AuthorizationError,
   ConflictError,
   NotFoundError,
+  ValidationError,
 } from '../../../errors';
 import type { ErrorMetadata } from '../../../errors/BaseError';
 
@@ -41,11 +42,100 @@ export class NotAHouseholdParentError extends AuthorizationError {
   }
 }
 
-/** 404 — no invite exists with this code. */
+/**
+ * 404 — no invite matches. `identifier` is the code on the redeem/preview
+ * paths and the invite id on the revoke path, where it ALSO covers "belongs to
+ * another household": collapsing missing and not-yours is what stops a parent
+ * probing other families' invite ids.
+ */
 export class InviteNotFoundError extends NotFoundError {
-  constructor(code: string) {
-    super('Invite not found', 'INVITE_NOT_FOUND', { code });
+  constructor(identifier: string) {
+    super('Invite not found', 'INVITE_NOT_FOUND', { identifier });
     this.name = 'InviteNotFoundError';
+  }
+}
+
+/** 409 — the invite exists in this household but is already accepted, revoked or expired, so there is nothing to revoke. */
+export class InviteNotPendingError extends ConflictError {
+  constructor(inviteId: string, status: string) {
+    super('Only a pending invite can be revoked', 'INVITE_NOT_PENDING', {
+      inviteId,
+      status,
+    });
+    this.name = 'InviteNotPendingError';
+  }
+}
+
+/**
+ * 404 — the membership does not exist, belongs to another household, or was
+ * already removed. One error for all three, same reasoning as
+ * HouseholdNotFoundError: a parent must not be able to probe membership ids
+ * outside their own household.
+ */
+export class MemberNotFoundError extends NotFoundError {
+  constructor(memberId: string) {
+    super('Household member not found', 'MEMBER_NOT_FOUND', { memberId });
+    this.name = 'MemberNotFoundError';
+  }
+}
+
+/**
+ * 403 — the owner cannot be removed. This doubles as the last-parent rule:
+ * every household has exactly one owner membership created with it, so an
+ * un-removable owner is a household that can never be left parentless.
+ */
+export class CannotRemoveOwnerError extends AuthorizationError {
+  constructor(householdId: string) {
+    super('The household owner cannot be removed', 'CANNOT_REMOVE_OWNER', {
+      householdId,
+    });
+    this.name = 'CannotRemoveOwnerError';
+  }
+}
+
+/** 400 — removing yourself is not this endpoint; leaving a household is its own feature. */
+export class CannotRemoveSelfError extends ValidationError {
+  constructor(householdId: string) {
+    super(
+      'You cannot remove yourself from a household',
+      'CANNOT_REMOVE_SELF',
+      400,
+      { householdId }
+    );
+    this.name = 'CannotRemoveSelfError';
+  }
+}
+
+/**
+ * 409 — the member is clocked in. Removing them would strand a running time
+ * entry that nobody can close: they lose access to the household, and the
+ * hours never reach a timesheet.
+ */
+export class MemberHasRunningEntryError extends ConflictError {
+  constructor(memberId: string) {
+    super(
+      'This person is clocked in — ask them to clock out first',
+      'MEMBER_HAS_RUNNING_ENTRY',
+      { memberId }
+    );
+    this.name = 'MemberHasRunningEntryError';
+  }
+}
+
+/**
+ * 400 — the member PATCH only accepts `status: 'removed'`. Reactivating a
+ * removed member is deliberately NOT a field a parent can set: it happens by
+ * the person redeeming a fresh invite, so the single-use code stays the one
+ * thing that grants household access.
+ */
+export class UnsupportedMemberUpdateError extends ValidationError {
+  constructor() {
+    super(
+      "The only supported member update is status: 'removed' — to bring someone back, send them a new invite",
+      'UNSUPPORTED_MEMBER_UPDATE',
+      400
+    );
+    this.name = 'UnsupportedMemberUpdateError';
   }
 }
 

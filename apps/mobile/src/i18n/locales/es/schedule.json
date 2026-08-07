@@ -243,6 +243,7 @@
     "accepted": "Aceptado",
     "declined": "Rechazado",
     "withdrawn": "Retirado",
-    "superseded": "Reemplazado"
+    "superseded": "Reemplazado",
+    "expired": "Caducado"
   }
 }

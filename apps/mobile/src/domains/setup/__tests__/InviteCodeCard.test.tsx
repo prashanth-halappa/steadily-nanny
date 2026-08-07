@@ -30,6 +30,14 @@ describe('InviteCodeCard', () => {
     expect(source).toContain('invite-retry-button');
   });
 
+  it('D3: takes an optional onRevoke prop and wires a revoke testID, staying presentational', () => {
+    expect(source).toContain('onRevoke?:');
+    expect(source).toContain('invite-revoke-button');
+    expect(source).not.toContain(
+      "from '@/src/hooks/mutations/useRevokeInvite'"
+    );
+  });
+
   it('localizes its copy through the household namespace', () => {
     expect(source).toContain("useTranslation('household')");
   });

@@ -111,12 +111,36 @@ export class HouseholdMemberRepository extends BaseRepository<HouseholdMember> {
    * re-listing each household's full member roster.
    */
   async listActiveByUser(userId: string): Promise<HouseholdMember[]> {
-    const { data, error } = await supabaseService
+    return this.listRowsByUser(userId, 'active');
+  }
+
+  /**
+   * EVERY membership row for the user whatever its status — including
+   * `removed`. This is what `GET /v1/users/me/memberships` serves, and the
+   * distinction is load-bearing: the client decides "am I onboarded" and "may
+   * I write in this household" from these rows, and it cannot gate on a row it
+   * never receives. Served through the active-only sibling, a removed nanny
+   * arrived at the app indistinguishable from a stranger — reported as a fresh
+   * signup, and routed into the wizard away from the pay she is still owed.
+   *
+   * Use `listActiveByUser` for anything that decides a WRITE is permitted.
+   */
+  async listByUser(userId: string): Promise<HouseholdMember[]> {
+    return this.listRowsByUser(userId);
+  }
+
+  private async listRowsByUser(
+    userId: string,
+    status?: 'active' | 'removed'
+  ): Promise<HouseholdMember[]> {
+    const base = supabaseService
       .from(this.table)
       .select('*')
-      .eq('user_id', userId)
-      .eq('status', 'active')
-      .order('joined_at', { ascending: true });
+      .eq('user_id', userId);
+    const { data, error } = await (status
+      ? base.eq('status', status)
+      : base
+    ).order('joined_at', { ascending: true });
 
     if (error) {
       throw new DatabaseError(
@@ -130,11 +154,32 @@ export class HouseholdMemberRepository extends BaseRepository<HouseholdMember> {
 
   /** Every household id the user actively belongs to. */
   async listActiveHouseholdIds(userId: string): Promise<string[]> {
+    return this.listHouseholdIdsByStatus(userId, 'active');
+  }
+
+  /**
+   * Every household id the user was REMOVED from. A removed nanny keeps
+   * read-only access to the hours, expenses and pay history she accrued
+   * there (the read gates already allow it) — without this list the app has
+   * no route to any of it, because the household disappears from her picker
+   * the moment the parent removes her.
+   *
+   * Disjoint from `listActiveHouseholdIds` by construction: the table holds
+   * at most one row per `(household_id, user_id)`.
+   */
+  async listRemovedHouseholdIds(userId: string): Promise<string[]> {
+    return this.listHouseholdIdsByStatus(userId, 'removed');
+  }
+
+  private async listHouseholdIdsByStatus(
+    userId: string,
+    status: 'active' | 'removed'
+  ): Promise<string[]> {
     const { data, error } = await supabaseService
       .from(this.table)
       .select('household_id')
       .eq('user_id', userId)
-      .eq('status', 'active');
+      .eq('status', status);
 
     if (error) {
       throw new DatabaseError(
@@ -146,6 +191,63 @@ export class HouseholdMemberRepository extends BaseRepository<HouseholdMember> {
     return ((data ?? []) as { household_id: string }[]).map(
       row => row.household_id
     );
+  }
+
+  /**
+   * Soft-remove a membership. Compare-and-set on `status = 'active'`, so a
+   * second remove — a retry, or the other parent tapping at the same moment —
+   * matches zero rows and returns null instead of reporting a fresh removal.
+   * The row is never deleted: `time_entries` and `shifts` reference the member,
+   * and their history has to survive the person leaving.
+   */
+  async removeMembership(memberId: string): Promise<HouseholdMember | null> {
+    const { data, error } = await supabaseService
+      .from(this.table)
+      .update({ status: 'removed' })
+      .eq('id', memberId)
+      .eq('status', 'active')
+      .select()
+      .maybeSingle();
+
+    if (error) {
+      throw new DatabaseError(
+        'Failed to remove household member',
+        'DATABASE_ERROR',
+        { details: error.message, memberId }
+      );
+    }
+    return data as HouseholdMember | null;
+  }
+
+  /**
+   * Bring a removed membership back, on the role the new invite grants — the
+   * row already exists, so the unique `(household_id, user_id)` constraint
+   * makes a fresh insert impossible. `can_edit` resets to false deliberately:
+   * a returning member starts from the same baseline a first-time redeem
+   * produces, never whatever rights they held before being removed.
+   *
+   * CAS'd on `status = 'removed'` so a concurrent reactivation loses.
+   */
+  async reactivateMembership(
+    memberId: string,
+    role: string
+  ): Promise<HouseholdMember | null> {
+    const { data, error } = await supabaseService
+      .from(this.table)
+      .update({ status: 'active', role, can_edit: false })
+      .eq('id', memberId)
+      .eq('status', 'removed')
+      .select()
+      .maybeSingle();
+
+    if (error) {
+      throw new DatabaseError(
+        'Failed to reactivate household member',
+        'DATABASE_ERROR',
+        { details: error.message, memberId }
+      );
+    }
+    return data as HouseholdMember | null;
   }
 
   /**

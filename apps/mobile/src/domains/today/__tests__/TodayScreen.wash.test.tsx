@@ -82,6 +82,8 @@ beforeAll(async () => {
     },
     householdId: HOUSEHOLD_ID,
     households: [{ id: HOUSEHOLD_ID, name: 'Wash Household', timezone: 'UTC' }],
+    pastHouseholds: [],
+    isPastHousehold: false,
     setActiveHouseholdId: mock(),
     isLoading: false,
   }));

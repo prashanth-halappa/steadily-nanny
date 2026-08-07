@@ -1,6 +1,26 @@
 import type { ZodError } from 'zod';
 import { BaseError, type ErrorMetadata } from './BaseError';
 
+/** How many failing fields the top-level message names before it truncates. */
+const MAX_SUMMARISED_ISSUES = 3;
+
+/**
+ * Fold the failing paths into one readable line. The message used to be the
+ * bare constant `Validation failed`, which named no field at all — the
+ * per-field `details` were already in the metadata, but the message is what a
+ * log line, a Sentry title and an integrator's console show FIRST, so a 400
+ * was effectively hintless. Capped so a large body's rejection stays one line.
+ */
+function summarise(issues: { path: string; message: string }[]): string {
+  if (issues.length === 0) return 'Validation failed';
+  const named = issues
+    .slice(0, MAX_SUMMARISED_ISSUES)
+    .map(issue => `${issue.path || '(root)'} (${issue.message})`)
+    .join(', ');
+  const hidden = issues.length - MAX_SUMMARISED_ISSUES;
+  return `Validation failed: ${named}${hidden > 0 ? ` (+${hidden} more)` : ''}`;
+}
+
 /**
  * 400 — request validation failed. Generic code is always `VALIDATION_ERROR`.
  * `reason` is a free-form label kept in metadata.
@@ -25,9 +45,12 @@ export class ValidationError extends BaseError {
       code: error.code,
     }));
 
-    return new ValidationError('Validation failed', 'VALIDATION_ERROR', 400, {
-      details: formattedErrors,
-    });
+    return new ValidationError(
+      summarise(formattedErrors),
+      'VALIDATION_ERROR',
+      400,
+      { details: formattedErrors }
+    );
   }
 
   static missingParameter(

@@ -26,6 +26,7 @@ import { InviteCodeCard } from '@/src/domains/setup/components/InviteCodeCard';
 import { InviteRolePicker } from '@/src/domains/setup/components/InviteRolePicker';
 import { SetupScreenShell } from '@/src/domains/setup/components/SetupScreenShell';
 import { useCreateInvite } from '@/src/hooks/mutations/useCreateInvite';
+import { useRevokeInvite } from '@/src/hooks/mutations/useRevokeInvite';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 
 export function ManageInviteScreen() {
@@ -36,6 +37,7 @@ export function ManageInviteScreen() {
   const householdId = onboarding.householdId ?? '';
 
   const createInvite = useCreateInvite(householdId);
+  const revokeInvite = useRevokeInvite(householdId);
   const [hasStarted, setHasStarted] = useState(false);
   const [selectedRole, setSelectedRole] = useState<HouseholdInviteRole>(
     HOUSEHOLD_INVITE_ROLES.NANNY
@@ -52,6 +54,19 @@ export function ManageInviteScreen() {
   const onShare = () => {
     if (!code) return;
     void Share.share({ message: t('invite.shareMessage', { code }) });
+  };
+
+  // See InviteScreen: both the mutation state InviteCodeCard reads and the
+  // local `hasStarted` flag must clear, or the card is stuck on its loading
+  // spinner instead of returning to the role picker.
+  const onRevoke = () => {
+    if (!invite) return;
+    revokeInvite.mutate(invite.id, {
+      onSuccess: () => {
+        createInvite.reset();
+        setHasStarted(false);
+      },
+    });
   };
 
   return (
@@ -72,6 +87,8 @@ export function ManageInviteScreen() {
             invite={invite}
             isError={createInvite.isError}
             onRetry={onGenerate}
+            onRevoke={onRevoke}
+            isRevoking={revokeInvite.isPending}
           />
           <Button
             testID="invite-share-button"

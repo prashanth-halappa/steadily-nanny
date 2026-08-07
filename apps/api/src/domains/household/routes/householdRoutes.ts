@@ -19,8 +19,12 @@ import {
   CreateHouseholdInviteSchema,
   CreateHouseholdSchema,
   HouseholdIdParamSchema,
+  HouseholdInviteParamSchema,
+  HouseholdMemberParamSchema,
   InviteCodeParamSchema,
   RedeemHouseholdInviteSchema,
+  UpdateHouseholdInviteSchema,
+  UpdateHouseholdMemberSchema,
   UpdateHouseholdSchema,
 } from '../schemas';
 import { householdQueryService } from '../services/householdQueryService';
@@ -92,6 +96,23 @@ router.post(
   ...authWithOwnership(HouseholdIdParamSchema, householdOwnership),
   validate(CreateHouseholdInviteSchema, 'body'),
   asyncHandler(HouseholdController.createInvite)
+);
+
+// Remove a member — parents only (role check in the command service). The
+// controller accepts only `status: 'removed'`; see its doc comment.
+router.patch(
+  '/:householdId/members/:memberId',
+  ...authWithOwnership(HouseholdMemberParamSchema, householdOwnership),
+  validate(UpdateHouseholdMemberSchema, 'body'),
+  asyncHandler(HouseholdController.updateMember)
+);
+
+// Revoke a pending invite — parents only (role check in the command service).
+router.patch(
+  '/:householdId/invites/:inviteId',
+  ...authWithOwnership(HouseholdInviteParamSchema, householdOwnership),
+  validate(UpdateHouseholdInviteSchema, 'body'),
+  asyncHandler(HouseholdController.updateInvite)
 );
 
 export default router;

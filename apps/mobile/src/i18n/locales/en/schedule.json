@@ -243,6 +243,7 @@
     "accepted": "Accepted",
     "declined": "Declined",
     "withdrawn": "Withdrawn",
-    "superseded": "Superseded"
+    "superseded": "Superseded",
+    "expired": "Expired"
   }
 }

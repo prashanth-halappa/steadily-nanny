@@ -256,6 +256,22 @@ describe('household-time-off route (parent mark-paid entry point)', () => {
     expect(queryByTestId('pto-mark-paid-hours-input')).toBeNull();
   });
 
+  it('a REMOVED parent (past member) sees the rows but cannot open the mark-paid sheet', async () => {
+    membershipsListMock.mockImplementation(() =>
+      Promise.resolve([{ ...parentMembership, status: 'removed' }])
+    );
+
+    const { getByTestId, queryByTestId } = renderWithProviders(
+      <HouseholdTimeOffScreen />
+    );
+
+    await waitFor(() =>
+      expect(getByTestId(`household-time-off-${TIME_OFF_ID}`)).toBeTruthy()
+    );
+    fireEvent.press(getByTestId(`household-time-off-${TIME_OFF_ID}`));
+    expect(queryByTestId('pto-mark-paid-hours-input')).toBeNull();
+  });
+
   it('empty: shows the empty state', async () => {
     listForHouseholdMock.mockImplementation(() => Promise.resolve([]));
 

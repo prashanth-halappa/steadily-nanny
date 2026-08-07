@@ -700,6 +700,36 @@ describe('TimeOffScreen — nanny', () => {
   });
 });
 
+describe('TimeOffScreen — removed nanny (read-only past member)', () => {
+  it('renders "not available", never the request form, for a REMOVED nanny', () => {
+    mockUseIsOnboarded.mockImplementation(() => ({
+      status: 'onboarded',
+      role: 'nanny',
+      householdId: '5d4b0b70-edd9-4218-b7df-a28d234f7e06',
+      isPastMember: true,
+    }));
+
+    const { getByTestId, queryByTestId } = render(<TimeOffScreen />);
+
+    expect(getByTestId('time-off-not-available')).toBeTruthy();
+    expect(queryByTestId('time-off-request-form')).toBeNull();
+  });
+
+  it('still renders the request form for an ACTIVE nanny', () => {
+    mockUseIsOnboarded.mockImplementation(() => ({
+      status: 'onboarded',
+      role: 'nanny',
+      householdId: '5d4b0b70-edd9-4218-b7df-a28d234f7e06',
+      isPastMember: false,
+    }));
+
+    const { getByTestId, queryByTestId } = render(<TimeOffScreen />);
+
+    expect(getByTestId('time-off-request-form')).toBeTruthy();
+    expect(queryByTestId('time-off-not-available')).toBeNull();
+  });
+});
+
 describe('TimeOffScreen — parent (no entry point exists, but a direct deep link must stay honest)', () => {
   it('renders "not available", never the nanny request form, for a parent', () => {
     mockUseIsOnboarded.mockImplementation(() => ({

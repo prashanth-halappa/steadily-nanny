@@ -70,7 +70,9 @@ function makeMemberRepo(overrides: Record<string, unknown> = {}): any {
     findActiveMembership: mock(async () => membership),
     listActiveByHousehold: mock(async () => [membership]),
     listActiveHouseholdIds: mock(async () => ['h1']),
+    listRemovedHouseholdIds: mock(async () => []),
     listActiveByUser: mock(async () => [membership]),
+    listByUser: mock(async () => [membership]),
     ...overrides,
   };
 }
@@ -101,6 +103,45 @@ describe('HouseholdQueryService.listForUser', () => {
     );
     expect(await svc.listForUser('u1')).toEqual([]);
     expect(householdRepo.findByIds).not.toHaveBeenCalled();
+  });
+});
+
+describe('HouseholdQueryService.listPastForUser', () => {
+  const pastHousehold: Household = {
+    ...household,
+    id: 'h9',
+    name: 'The Joneses',
+  };
+
+  it('returns the households the caller was removed from', async () => {
+    const svc = new HouseholdQueryService(
+      makeHouseholdRepo({ findByIds: mock(async () => [pastHousehold]) }),
+      makeMemberRepo({ listRemovedHouseholdIds: mock(async () => ['h9']) }),
+      makeInviteRepo()
+    );
+    expect(await svc.listPastForUser('u1')).toEqual([pastHousehold]);
+  });
+
+  it('returns [] without querying households when the caller was never removed', async () => {
+    const householdRepo = makeHouseholdRepo();
+    const svc = new HouseholdQueryService(
+      householdRepo,
+      makeMemberRepo(),
+      makeInviteRepo()
+    );
+    expect(await svc.listPastForUser('u1')).toEqual([]);
+    expect(householdRepo.findByIds).not.toHaveBeenCalled();
+  });
+
+  it('never returns a household the caller is still active in', async () => {
+    const memberRepo = makeMemberRepo();
+    const svc = new HouseholdQueryService(
+      makeHouseholdRepo(),
+      memberRepo,
+      makeInviteRepo()
+    );
+    expect(await svc.listPastForUser('u1')).toEqual([]);
+    expect(memberRepo.listActiveHouseholdIds).not.toHaveBeenCalled();
   });
 });
 
@@ -191,13 +232,39 @@ describe('HouseholdQueryService.listMembershipsForUser', () => {
       makeInviteRepo()
     );
     expect(await svc.listMembershipsForUser('u1')).toEqual([membership]);
-    expect(memberRepo.listActiveByUser).toHaveBeenCalledWith('u1');
+    expect(memberRepo.listByUser).toHaveBeenCalledWith('u1');
+  });
+
+  // THE contract this endpoint owes the client. `GET /v1/users/me/memberships`
+  // is the only source mobile has for "what am I in each household", and
+  // `useIsOnboarded` reads `status === 'removed'` off these rows to decide
+  // both that a removed nanny is still onboarded (not a fresh signup) and
+  // that every write affordance must be suppressed. Filtering removed rows out
+  // here made that gate permanently false and routed a past-only nanny into
+  // the signup wizard, putting the pay she is owed out of reach.
+  it('returns REMOVED rows too — the client cannot gate on what it never receives', async () => {
+    const removed: HouseholdMember = {
+      ...membership,
+      id: 'm2',
+      household_id: 'h2',
+      role: 'nanny',
+      status: 'removed',
+    };
+    const svc = new HouseholdQueryService(
+      makeHouseholdRepo(),
+      makeMemberRepo({ listByUser: mock(async () => [membership, removed]) }),
+      makeInviteRepo()
+    );
+    expect(await svc.listMembershipsForUser('u1')).toEqual([
+      membership,
+      removed,
+    ]);
   });
 
   it('returns [] when the caller belongs to no households', async () => {
     const svc = new HouseholdQueryService(
       makeHouseholdRepo(),
-      makeMemberRepo({ listActiveByUser: mock(async () => []) }),
+      makeMemberRepo({ listByUser: mock(async () => []) }),
       makeInviteRepo()
     );
     expect(await svc.listMembershipsForUser('u2')).toEqual([]);

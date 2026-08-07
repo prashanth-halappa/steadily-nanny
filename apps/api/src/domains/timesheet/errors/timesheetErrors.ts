@@ -147,6 +147,36 @@ export class NotATimesheetParentError extends AuthorizationError {
   }
 }
 
+/**
+ * 400 — the week's gross WORKED OUT TO more than any amount this system can
+ * record (`MAX_MONEY_MINOR`, migration 063's `timesheets_gross_minor_upper`).
+ *
+ * Nothing submitted is invalid: the hours are real and the pay arrangement's
+ * `rate_minor` is inside its own cap. Capping each INPUT never capped their
+ * PRODUCT — 40 hours at the schema-legal maximum rate is 3_999_999_960, past
+ * the cap and past int4 as well. Refusing here, before the approve write,
+ * turns what was a raw Postgres "value out of range" into something a parent
+ * can read and an engineer can trace.
+ *
+ * A `ValidationError` (400), not a 409: retrying is not the remedy — the
+ * arrangement's rate has to change. `metadata` carries the computed gross and
+ * the cap so the refusal needs no re-derivation to understand.
+ *
+ * THE GROSS IS NEVER CLAMPED TO FIT (`docs/11-MONEY.md` §1). A trimmed gross
+ * is a wrong figure that a parent would sign off and a nanny would be paid.
+ */
+export class TimesheetGrossTooLargeError extends ValidationError {
+  constructor(timesheetId: string, grossMinor: number, maxMinor: number) {
+    super(
+      "That week's pay works out to more than the largest amount we can record",
+      'TIMESHEET_GROSS_TOO_LARGE',
+      400,
+      { timesheetId, grossMinor, maxMinor }
+    );
+    this.name = 'TimesheetGrossTooLargeError';
+  }
+}
+
 /** 409 — approve/query was called on a timesheet with no submitted hours to act on. */
 export class TimesheetNotActionableError extends ConflictError {
   constructor(timesheetId: string, status: string) {

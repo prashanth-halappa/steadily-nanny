@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it, mock } from 'bun:test';
+import { beforeEach, describe, expect, it, mock, spyOn } from 'bun:test';
 import {
+  ApprovalApplyFailedError,
   ApprovalNotFoundError,
   ApprovalNotPendingError,
   SelfApprovalNotAllowedError,
@@ -8,6 +9,7 @@ import { NotAHouseholdParentError } from '../../../../../src/domains/household/e
 import { approvalApplierRegistry } from '../../../../../src/domains/household/services/approvalApplierRegistry';
 import { CoParentApprovalCommandService } from '../../../../../src/domains/household/services/coParentApprovalCommandService';
 import type { HouseholdMember } from '../../../../../src/domains/household/types';
+import { logger } from '../../../../../src/middlewares/logger';
 
 function membershipFor(role: HouseholdMember['role']): HouseholdMember {
   return {
@@ -258,7 +260,8 @@ describe('CoParentApprovalCommandService.respond — applying the gated mutation
 
   it('surfaces an applier failure rather than reporting a silent success', async () => {
     // A swallowed failure here is indistinguishable to the approving parent
-    // from the change having been applied.
+    // from the change having been applied. O2: the raw internal message must
+    // NOT reach the responding parent — it's wrapped in a clean, typed error.
     approvalApplierRegistry.register('cancel', async () => {
       throw new Error('shift is gone');
     });
@@ -269,7 +272,43 @@ describe('CoParentApprovalCommandService.respond — applying the gated mutation
     );
     await expect(
       svc.respond('u1', 'h1', 'a1', { status: 'approved' })
-    ).rejects.toThrow('shift is gone');
+    ).rejects.toBeInstanceOf(ApprovalApplyFailedError);
+  });
+
+  it('logs the raw applier error while surfacing only the clean, typed error (O2)', async () => {
+    const errorSpy = spyOn(logger, 'error').mockImplementation(() => logger);
+    approvalApplierRegistry.register('cancel', async () => {
+      throw new Error(
+        'Approval payload is missing the extra shift it was gating'
+      );
+    });
+
+    const svc = new CoParentApprovalCommandService(
+      makeApprovalRepo(),
+      makeHouseholds('parent')
+    );
+
+    let caught: unknown;
+    try {
+      await svc.respond('u1', 'h1', 'a1', { status: 'approved' });
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(ApprovalApplyFailedError);
+    expect((caught as Error).message).not.toContain(
+      'Approval payload is missing the extra shift it was gating'
+    );
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        approvalId: 'a1',
+        error: expect.stringContaining(
+          'Approval payload is missing the extra shift it was gating'
+        ),
+      })
+    );
+    errorSpy.mockRestore();
   });
 
   it('records the failed apply against the claimed row instead of leaving it settled', async () => {
@@ -288,7 +327,7 @@ describe('CoParentApprovalCommandService.respond — applying the gated mutation
     );
     await expect(
       svc.respond('u1', 'h1', 'a1', { status: 'approved' })
-    ).rejects.toThrow('shift is gone');
+    ).rejects.toBeInstanceOf(ApprovalApplyFailedError);
 
     expect(approvalRepo.recordFailedApply).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'a1' }),
@@ -299,7 +338,7 @@ describe('CoParentApprovalCommandService.respond — applying the gated mutation
     );
   });
 
-  it('still surfaces the applier error when recording the failure itself fails', async () => {
+  it('still fails with the typed error when recording the failure itself also fails', async () => {
     approvalApplierRegistry.register('cancel', async () => {
       throw new Error('shift is gone');
     });
@@ -315,7 +354,7 @@ describe('CoParentApprovalCommandService.respond — applying the gated mutation
     );
     await expect(
       svc.respond('u1', 'h1', 'a1', { status: 'approved' })
-    ).rejects.toThrow('shift is gone');
+    ).rejects.toBeInstanceOf(ApprovalApplyFailedError);
   });
 
   it('records nothing when the applier succeeds — the uncontested path costs nothing', async () => {

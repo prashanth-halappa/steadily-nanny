@@ -1,7 +1,9 @@
 {
   "switcher": {
     "triggerLabel": "Cambiar de hogar",
-    "sheetTitle": "Elige un hogar"
+    "sheetTitle": "Elige un hogar",
+    "pastSectionTitle": "Hogares anteriores",
+    "pastBadge": "Anterior"
   },
   "children": {
     "wizardTitle": "¿Quiénes son los niños?",
@@ -40,6 +42,7 @@
     "shareMessage": "Únete a nuestro hogar en Steadily Nanny — usa el código de invitación {{code}} al iniciar sesión.",
     "errorTitle": "No se pudo generar un código de invitación.",
     "retryButton": "Intentar de nuevo",
+    "revokeButton": "Revocar código",
     "roles": {
       "nanny": {
         "title": "Niñera",
@@ -97,7 +100,15 @@
     },
     "approvalTimeoutLabel": "Tiempo límite de aprobación (minutos)",
     "shortNoticeHoursLabel": "Ventana de última hora (horas)",
-    "cancellationPaidWithinHoursLabel": "Cancelación aún pagada dentro de (horas)"
+    "cancellationPaidWithinHoursLabel": "Cancelación aún pagada dentro de (horas)",
+    "membersSectionTitle": "Miembros del hogar",
+    "removeMemberButton": "Eliminar",
+    "removeMemberLabel": "Eliminar a {{name}}",
+    "removeMemberConfirmTitle": "¿Eliminar a {{name}}?",
+    "removeMemberConfirmBody": "Perderá el acceso a este hogar de inmediato. Puedes volver a invitarle más adelante si cambias de opinión.",
+    "removeMemberConfirmCancel": "Cancelar",
+    "removeMemberConfirmConfirm": "Eliminar",
+    "removeMemberSuccessToast": "{{name}} eliminado del hogar"
   },
   "closures": {
     "manageTitle": "Estamos de viaje",

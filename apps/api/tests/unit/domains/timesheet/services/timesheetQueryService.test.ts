@@ -65,6 +65,7 @@ const membership = {
   household_id: 'h1',
   user_id: 'u1',
   role: 'parent',
+  status: 'active',
 };
 
 const household = { id: 'h1', timezone: 'Europe/London' };
@@ -89,8 +90,36 @@ function makeTimesheetRepo(overrides: Record<string, unknown> = {}): any {
 function makeMemberRepo(overrides: Record<string, unknown> = {}): any {
   return {
     findActiveMembership: mock(async () => membership),
+    findMembershipAnyStatus: mock(async () => membership),
     ...overrides,
   };
+}
+
+/** Neither lookup finds anything — a stranger to this household. */
+function makeNonMemberRepo(): any {
+  return makeMemberRepo({
+    findActiveMembership: mock(async () => null),
+    findMembershipAnyStatus: mock(async () => null),
+  });
+}
+
+/**
+ * A `removed` member: invisible to the active-only lookup, returned by the
+ * any-status one — exactly what the real repository does. Every read gate
+ * that still calls `findActiveMembership` therefore refuses her, and every
+ * one that has moved to `findMembershipAnyStatus` sees her role.
+ */
+function makeRemovedMemberRepo(role: string, userId: string): any {
+  return makeMemberRepo({
+    findActiveMembership: mock(async () => null),
+    findMembershipAnyStatus: mock(async () => ({
+      ...membership,
+      id: `m-${userId}`,
+      user_id: userId,
+      role,
+      status: 'removed',
+    })),
+  });
 }
 
 function makeHouseholdRepo(overrides: Record<string, unknown> = {}): any {
@@ -182,7 +211,7 @@ describe('TimesheetQueryService.listForHouseholdWeek', () => {
     const svc = new TimesheetQueryService(
       makeTimeEntryRepo(),
       makeTimesheetRepo(),
-      makeMemberRepo({ findActiveMembership: mock(async () => null) }),
+      makeNonMemberRepo(),
       makeHouseholdRepo()
     );
     await expect(
@@ -206,7 +235,7 @@ describe('TimesheetQueryService.getOwnedTimesheet', () => {
     const svc = new TimesheetQueryService(
       makeTimeEntryRepo(),
       makeTimesheetRepo(),
-      makeMemberRepo({ findActiveMembership: mock(async () => null) }),
+      makeNonMemberRepo(),
       makeHouseholdRepo()
     );
     await expect(svc.getOwnedTimesheet('u2', 'ts1')).rejects.toBeInstanceOf(
@@ -392,7 +421,7 @@ describe('TimesheetQueryService.getWeekWithEarnings — live weeks', () => {
     const svc = new TimesheetQueryService(
       makeTimeEntryRepo(),
       makeTimesheetRepo(),
-      makeMemberRepo({ findActiveMembership: mock(async () => null) }),
+      makeNonMemberRepo(),
       makeHouseholdRepo(),
       earnings
     );
@@ -698,7 +727,7 @@ describe('TimesheetQueryService.getOwnedTimeEntry — membership, not just owner
     const svc = new TimesheetQueryService(
       makeTimeEntryRepo(),
       makeTimesheetRepo(),
-      makeMemberRepo({ findActiveMembership: mock(async () => null) }),
+      makeRemovedMemberRepo('nanny', 'carer-1'),
       makeHouseholdRepo()
     );
 
@@ -722,5 +751,393 @@ describe('TimesheetQueryService.getOwnedTimeEntry — membership, not just owner
       'h1',
       'carer-1'
     );
+  });
+});
+
+// =============================================================================
+// PAYROLL AUDIT TRAIL — a `removed` member keeps READ access to hours and pay,
+// role-scoped: a removed parent/owner keeps the household-wide view, a removed
+// nanny is pinned to her OWN carer scope, a removed helper gets nothing. Every
+// WRITE gate (getOwnedTimesheet / loadOwnedRow / getOwnedTimeEntry, and the
+// command service behind them) stays ACTIVE-ONLY — F-B3b-3 must stay closed.
+// =============================================================================
+
+describe('TimesheetQueryService.listForHouseholdWeek — removed members', () => {
+  it('a removed parent keeps the household-wide entry list', async () => {
+    const timeEntryRepo = makeTimeEntryRepo();
+    const svc = new TimesheetQueryService(
+      timeEntryRepo,
+      makeTimesheetRepo(),
+      makeRemovedMemberRepo('parent', 'parent-1'),
+      makeHouseholdRepo()
+    );
+
+    await svc.listForHouseholdWeek('parent-1', 'h1', '2026-08-03');
+
+    expect(timeEntryRepo.listForHouseholdWeek).toHaveBeenCalledWith(
+      'h1',
+      '2026-08-03',
+      '2026-08-10',
+      undefined
+    );
+  });
+
+  it('a removed nanny is FORCED to her own carer scope', async () => {
+    const timeEntryRepo = makeTimeEntryRepo();
+    const svc = new TimesheetQueryService(
+      timeEntryRepo,
+      makeTimesheetRepo(),
+      makeRemovedMemberRepo('nanny', 'carer-1'),
+      makeHouseholdRepo()
+    );
+
+    await svc.listForHouseholdWeek('carer-1', 'h1', '2026-08-03');
+
+    expect(timeEntryRepo.listForHouseholdWeek).toHaveBeenCalledWith(
+      'h1',
+      '2026-08-03',
+      '2026-08-10',
+      'carer-1'
+    );
+  });
+
+  it("a removed nanny's client-passed carer_id is IGNORED, never honoured", async () => {
+    // The filter is a client input. Without the override a removed nanny reads
+    // carer-2's hours by asking for them.
+    const timeEntryRepo = makeTimeEntryRepo();
+    const svc = new TimesheetQueryService(
+      timeEntryRepo,
+      makeTimesheetRepo(),
+      makeRemovedMemberRepo('nanny', 'carer-1'),
+      makeHouseholdRepo()
+    );
+
+    await svc.listForHouseholdWeek('carer-1', 'h1', '2026-08-03', 'carer-2');
+
+    expect(timeEntryRepo.listForHouseholdWeek).toHaveBeenCalledWith(
+      'h1',
+      '2026-08-03',
+      '2026-08-10',
+      'carer-1'
+    );
+  });
+
+  it('a removed HELPER is denied — no payroll surface, active or not', async () => {
+    const svc = new TimesheetQueryService(
+      makeTimeEntryRepo(),
+      makeTimesheetRepo(),
+      makeRemovedMemberRepo('helper', 'helper-1'),
+      makeHouseholdRepo()
+    );
+
+    await expect(
+      svc.listForHouseholdWeek('helper-1', 'h1', '2026-08-03')
+    ).rejects.toBeInstanceOf(TimesheetNotFoundError);
+  });
+
+  it('an ACTIVE nanny still gets the household-wide list — status, not role, is what narrows', async () => {
+    const timeEntryRepo = makeTimeEntryRepo();
+    const svc = new TimesheetQueryService(
+      timeEntryRepo,
+      makeTimesheetRepo(),
+      makeMemberRepo({
+        findMembershipAnyStatus: mock(async () => ({
+          ...membership,
+          role: 'nanny',
+        })),
+      }),
+      makeHouseholdRepo()
+    );
+
+    await svc.listForHouseholdWeek('carer-1', 'h1', '2026-08-03');
+
+    expect(timeEntryRepo.listForHouseholdWeek).toHaveBeenCalledWith(
+      'h1',
+      '2026-08-03',
+      '2026-08-10',
+      undefined
+    );
+  });
+});
+
+describe('TimesheetQueryService.listTimesheetsForHousehold — removed members', () => {
+  it('a removed parent keeps the household-wide timesheet list', async () => {
+    const timesheetRepo = makeTimesheetRepo();
+    const svc = new TimesheetQueryService(
+      makeTimeEntryRepo(),
+      timesheetRepo,
+      makeRemovedMemberRepo('parent', 'parent-1'),
+      makeHouseholdRepo()
+    );
+
+    await svc.listTimesheetsForHousehold('parent-1', 'h1');
+
+    expect(timesheetRepo.listForHousehold).toHaveBeenCalledWith(
+      'h1',
+      undefined
+    );
+  });
+
+  it("a removed nanny's list is forced to her own rows, client filter ignored", async () => {
+    const timesheetRepo = makeTimesheetRepo();
+    const svc = new TimesheetQueryService(
+      makeTimeEntryRepo(),
+      timesheetRepo,
+      makeRemovedMemberRepo('nanny', 'carer-1'),
+      makeHouseholdRepo()
+    );
+
+    await svc.listTimesheetsForHousehold('carer-1', 'h1', 'carer-2');
+
+    expect(timesheetRepo.listForHousehold).toHaveBeenCalledWith(
+      'h1',
+      'carer-1'
+    );
+  });
+
+  it('a removed helper is denied', async () => {
+    const svc = new TimesheetQueryService(
+      makeTimeEntryRepo(),
+      makeTimesheetRepo(),
+      makeRemovedMemberRepo('helper', 'helper-1'),
+      makeHouseholdRepo()
+    );
+
+    await expect(
+      svc.listTimesheetsForHousehold('helper-1', 'h1')
+    ).rejects.toBeInstanceOf(TimesheetNotFoundError);
+  });
+});
+
+describe('TimesheetQueryService.getReadableTimesheet — the READ-ONLY by-id gate', () => {
+  it('a removed nanny reads her OWN week', async () => {
+    const svc = new TimesheetQueryService(
+      makeTimeEntryRepo(),
+      makeTimesheetRepo(),
+      makeRemovedMemberRepo('nanny', 'carer-1'),
+      makeHouseholdRepo()
+    );
+
+    expect(await svc.getReadableTimesheet('carer-1', 'ts1')).toMatchObject({
+      id: 'ts1',
+      carer_id: 'carer-1',
+    });
+  });
+
+  it("a removed nanny is refused ANOTHER carer's week", async () => {
+    const svc = new TimesheetQueryService(
+      makeTimeEntryRepo(),
+      makeTimesheetRepo({
+        findById: mock(async () => ({ ...timesheet, carer_id: 'carer-2' })),
+      }),
+      makeRemovedMemberRepo('nanny', 'carer-1'),
+      makeHouseholdRepo()
+    );
+
+    await expect(
+      svc.getReadableTimesheet('carer-1', 'ts1')
+    ).rejects.toBeInstanceOf(TimesheetNotFoundError);
+  });
+
+  it('a removed parent reads any carer’s week — they paid the money', async () => {
+    const svc = new TimesheetQueryService(
+      makeTimeEntryRepo(),
+      makeTimesheetRepo({
+        findById: mock(async () => ({ ...timesheet, carer_id: 'carer-2' })),
+      }),
+      makeRemovedMemberRepo('parent', 'parent-1'),
+      makeHouseholdRepo()
+    );
+
+    expect(await svc.getReadableTimesheet('parent-1', 'ts1')).toMatchObject({
+      id: 'ts1',
+    });
+  });
+
+  it('a removed helper is refused', async () => {
+    const svc = new TimesheetQueryService(
+      makeTimeEntryRepo(),
+      makeTimesheetRepo(),
+      makeRemovedMemberRepo('helper', 'helper-1'),
+      makeHouseholdRepo()
+    );
+
+    await expect(
+      svc.getReadableTimesheet('helper-1', 'ts1')
+    ).rejects.toBeInstanceOf(TimesheetNotFoundError);
+  });
+
+  it('a non-member is refused with the SAME error as a missing row', async () => {
+    // Byte-for-byte identical, not merely the same class: `toClientJSON`
+    // serialises `metadata` for any sub-500 status, so a denial carrying
+    // `reason: 'household_not_accessible'` while a missing row carries
+    // `reason: 'TIMESHEET_NOT_FOUND'` is an existence oracle — a stranger
+    // learns which timesheet ids are real by reading the 404 body.
+    const existing = new TimesheetQueryService(
+      makeTimeEntryRepo(),
+      makeTimesheetRepo(),
+      makeNonMemberRepo(),
+      makeHouseholdRepo()
+    );
+    const missing = new TimesheetQueryService(
+      makeTimeEntryRepo(),
+      makeTimesheetRepo({ findById: mock(async () => null) }),
+      makeNonMemberRepo(),
+      makeHouseholdRepo()
+    );
+
+    const notYours = (await existing
+      .getReadableTimesheet('stranger', 'ts1')
+      .catch((error: unknown) => error)) as TimesheetNotFoundError;
+    const noSuchRow = (await missing
+      .getReadableTimesheet('stranger', 'ts1')
+      .catch((error: unknown) => error)) as TimesheetNotFoundError;
+
+    expect(notYours).toBeInstanceOf(TimesheetNotFoundError);
+    expect(noSuchRow).toBeInstanceOf(TimesheetNotFoundError);
+    expect(notYours.toClientJSON()).toEqual(noSuchRow.toClientJSON());
+  });
+
+  it('a missing timesheet throws before any membership lookup happens', async () => {
+    const memberRepo = makeMemberRepo();
+    const svc = new TimesheetQueryService(
+      makeTimeEntryRepo(),
+      makeTimesheetRepo({ findById: mock(async () => null) }),
+      memberRepo,
+      makeHouseholdRepo()
+    );
+
+    await expect(
+      svc.getReadableTimesheet('u1', 'missing')
+    ).rejects.toBeInstanceOf(TimesheetNotFoundError);
+    expect(memberRepo.findMembershipAnyStatus).not.toHaveBeenCalled();
+  });
+
+  it('an active member reads it exactly as before', async () => {
+    const svc = new TimesheetQueryService(
+      makeTimeEntryRepo(),
+      makeTimesheetRepo(),
+      makeMemberRepo(),
+      makeHouseholdRepo()
+    );
+
+    expect(await svc.getReadableTimesheet('u1', 'ts1')).toMatchObject(
+      timesheet
+    );
+  });
+});
+
+describe('TimesheetQueryService.getWeekWithEarnings — removed members', () => {
+  it("a removed nanny's own week still serves EARNINGS, not the hours-only fallback", async () => {
+    // `carer_removed` keys on a NULL carer_id (account deletion, migration
+    // 033). A status removal keeps the carer_id, so her week prices normally.
+    const earnings = makeEarnings();
+    const svc = new TimesheetQueryService(
+      makeTimeEntryRepo(),
+      makeTimesheetRepo(),
+      makeRemovedMemberRepo('nanny', 'carer-1'),
+      makeHouseholdRepo(),
+      earnings
+    );
+
+    const week = await svc.getWeekWithEarnings('carer-1', 'ts1');
+
+    expect(week.earnings).toEqual(okEarnings);
+    expect(earnings.computeForWeek).toHaveBeenCalledWith(
+      'h1',
+      'carer-1',
+      '2026-08-03'
+    );
+  });
+
+  it('an APPROVED week reads its frozen snapshot for a removed nanny too', async () => {
+    const earnings = makeEarnings();
+    const svc = new TimesheetQueryService(
+      makeTimeEntryRepo(),
+      makeTimesheetRepo({ findById: mock(async () => approvedTimesheet) }),
+      makeRemovedMemberRepo('nanny', 'carer-1'),
+      makeHouseholdRepo(),
+      earnings
+    );
+
+    const week = await svc.getWeekWithEarnings('carer-1', 'ts1');
+
+    expect(week.earnings).toEqual(okEarnings);
+    expect(earnings.computeForWeek).not.toHaveBeenCalled();
+  });
+
+  it("a removed nanny cannot price another carer's week", async () => {
+    const earnings = makeEarnings();
+    const svc = new TimesheetQueryService(
+      makeTimeEntryRepo(),
+      makeTimesheetRepo({
+        findById: mock(async () => ({ ...timesheet, carer_id: 'carer-2' })),
+      }),
+      makeRemovedMemberRepo('nanny', 'carer-1'),
+      makeHouseholdRepo(),
+      earnings
+    );
+
+    await expect(
+      svc.getWeekWithEarnings('carer-1', 'ts1')
+    ).rejects.toBeInstanceOf(TimesheetNotFoundError);
+    expect(earnings.computeForWeek).not.toHaveBeenCalled();
+  });
+});
+
+describe('TimesheetQueryService — the WRITE gates stay ACTIVE-ONLY (F-B3b-3)', () => {
+  it('getOwnedTimesheet refuses a removed PARENT — the approve/query/reopen lookup', async () => {
+    const svc = new TimesheetQueryService(
+      makeTimeEntryRepo(),
+      makeTimesheetRepo(),
+      makeRemovedMemberRepo('parent', 'parent-1'),
+      makeHouseholdRepo()
+    );
+
+    await expect(
+      svc.getOwnedTimesheet('parent-1', 'ts1')
+    ).rejects.toBeInstanceOf(TimesheetNotFoundError);
+  });
+
+  it('getOwnedTimesheet refuses a removed NANNY reading her own week — reads use getReadableTimesheet', async () => {
+    const svc = new TimesheetQueryService(
+      makeTimeEntryRepo(),
+      makeTimesheetRepo(),
+      makeRemovedMemberRepo('nanny', 'carer-1'),
+      makeHouseholdRepo()
+    );
+
+    await expect(
+      svc.getOwnedTimesheet('carer-1', 'ts1')
+    ).rejects.toBeInstanceOf(TimesheetNotFoundError);
+  });
+
+  it('getOwnedTimeEntry refuses a removed nanny — clock-out and corrections stay shut', async () => {
+    const svc = new TimesheetQueryService(
+      makeTimeEntryRepo(),
+      makeTimesheetRepo(),
+      makeRemovedMemberRepo('nanny', 'carer-1'),
+      makeHouseholdRepo()
+    );
+
+    await expect(svc.getOwnedTimeEntry('carer-1', 't1')).rejects.toBeInstanceOf(
+      TimeEntryNotFoundError
+    );
+  });
+
+  it('both write gates use the ACTIVE-only lookup, never the any-status one', async () => {
+    const memberRepo = makeMemberRepo();
+    const svc = new TimesheetQueryService(
+      makeTimeEntryRepo(),
+      makeTimesheetRepo(),
+      memberRepo,
+      makeHouseholdRepo()
+    );
+
+    await svc.getOwnedTimesheet('u1', 'ts1');
+    await svc.getOwnedTimeEntry('carer-1', 't1');
+
+    expect(memberRepo.findActiveMembership).toHaveBeenCalledTimes(2);
+    expect(memberRepo.findMembershipAnyStatus).not.toHaveBeenCalled();
   });
 });

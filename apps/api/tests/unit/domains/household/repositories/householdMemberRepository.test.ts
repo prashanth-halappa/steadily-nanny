@@ -20,6 +20,63 @@ function createMockQueryChain(
   return chain;
 }
 
+/**
+ * Predicate-APPLYING fake, for the two status transitions that are
+ * compare-and-set: a recording-only chain would pass with the
+ * `status = 'active'` / `status = 'removed'` predicate missing, which is the
+ * whole point of those writes. Same shape as
+ * `householdInviteRepository.test.ts`'s fake.
+ */
+function createCasQueryChain(rows: FakeRow[], error: unknown = null): any {
+  const eqFilters: [string, unknown][] = [];
+  let updatePatch: Record<string, unknown> | null = null;
+  const matches = (row: FakeRow): boolean =>
+    eqFilters.every(([key, value]) => row[key] === value);
+
+  const chain: any = {
+    select: mock(() => chain),
+    eq: mock((key: string, value: unknown) => {
+      eqFilters.push([key, value]);
+      return chain;
+    }),
+    update: mock((patch: Record<string, unknown>) => {
+      updatePatch = patch;
+      return chain;
+    }),
+    maybeSingle: mock(async () => {
+      if (error) return { data: null, error };
+      const row = rows.filter(matches)[0];
+      if (!row) return { data: null, error: null };
+      if (updatePatch) {
+        Object.assign(row, updatePatch);
+      }
+      return { data: { ...row }, error: null };
+    }),
+  };
+  return chain;
+}
+
+interface FakeRow {
+  [key: string]: unknown;
+}
+
+function memberRow(overrides: FakeRow = {}): FakeRow {
+  return {
+    id: 'm1',
+    household_id: 'h1',
+    user_id: 'u1',
+    role: 'nanny',
+    can_edit: false,
+    status: 'active',
+    display_name_override: null,
+    colour: null,
+    joined_at: 't',
+    created_at: 't',
+    updated_at: 't',
+    ...overrides,
+  };
+}
+
 beforeAll(async () => {
   mock.module('../../../../../src/config/supabase', () => {
     const obj = { from: mock(() => createMockQueryChain()) };
@@ -107,6 +164,88 @@ describe('HouseholdMemberRepository.findMembershipAnyStatus', () => {
   });
 });
 
+describe('HouseholdMemberRepository.removeMembership', () => {
+  it('flips an active membership to removed and returns the updated row', async () => {
+    const row = memberRow();
+    mockSupabaseService.from.mockImplementation(() =>
+      createCasQueryChain([row])
+    );
+    const repo = new HouseholdMemberRepository();
+
+    const result = await repo.removeMembership('m1');
+
+    expect(result).toMatchObject({ id: 'm1', status: 'removed' });
+    expect(row.status).toBe('removed');
+  });
+
+  it('returns null when the membership is already removed — the CAS predicate', async () => {
+    // Two parents tapping remove at once, or a retry after a timeout: the
+    // second write must match zero rows so the service can 404 rather than
+    // report a second successful removal.
+    const row = memberRow({ status: 'removed' });
+    mockSupabaseService.from.mockImplementation(() =>
+      createCasQueryChain([row])
+    );
+    const repo = new HouseholdMemberRepository();
+
+    expect(await repo.removeMembership('m1')).toBeNull();
+  });
+
+  it('throws a DatabaseError when the update fails', async () => {
+    mockSupabaseService.from.mockImplementation(() =>
+      createCasQueryChain([memberRow()], { message: 'boom' })
+    );
+    const repo = new HouseholdMemberRepository();
+    await expect(repo.removeMembership('m1')).rejects.toThrow(
+      'Failed to remove household member'
+    );
+  });
+});
+
+describe('HouseholdMemberRepository.reactivateMembership', () => {
+  it('flips a removed membership back to active with the invite role and can_edit false', async () => {
+    // can_edit is deliberately reset: a returning member starts from the same
+    // baseline a fresh redeem produces, never the rights they had before.
+    const row = memberRow({ status: 'removed', role: 'nanny', can_edit: true });
+    mockSupabaseService.from.mockImplementation(() =>
+      createCasQueryChain([row])
+    );
+    const repo = new HouseholdMemberRepository();
+
+    const result = await repo.reactivateMembership('m1', 'parent');
+
+    expect(result).toMatchObject({
+      id: 'm1',
+      status: 'active',
+      role: 'parent',
+      can_edit: false,
+    });
+  });
+
+  it('returns null when the membership is not removed — the CAS predicate', async () => {
+    const row = memberRow({ status: 'active' });
+    mockSupabaseService.from.mockImplementation(() =>
+      createCasQueryChain([row])
+    );
+    const repo = new HouseholdMemberRepository();
+
+    expect(await repo.reactivateMembership('m1', 'nanny')).toBeNull();
+    expect(row.role).toBe('nanny');
+  });
+
+  it('throws a DatabaseError when the update fails', async () => {
+    mockSupabaseService.from.mockImplementation(() =>
+      createCasQueryChain([memberRow({ status: 'removed' })], {
+        message: 'boom',
+      })
+    );
+    const repo = new HouseholdMemberRepository();
+    await expect(repo.reactivateMembership('m1', 'nanny')).rejects.toThrow(
+      'Failed to reactivate household member'
+    );
+  });
+});
+
 describe('HouseholdMemberRepository.listActiveByUser', () => {
   it('returns every active membership row for the user, across households', async () => {
     const rows = [
@@ -127,6 +266,78 @@ describe('HouseholdMemberRepository.listActiveByUser', () => {
     );
     const repo = new HouseholdMemberRepository();
     expect(await repo.listActiveByUser('u1')).toEqual([]);
+  });
+});
+
+describe('HouseholdMemberRepository.listByUser', () => {
+  // The active-only sibling above is what `listMembershipsForUser` used to
+  // call, and it is why the mobile app's `isPastMember` was always false: a
+  // `removed` row could never reach the client, so the read-only gate the
+  // past-households feature is built on had nothing to switch on. This query
+  // must NOT filter on status.
+  it('returns removed rows alongside active ones and applies NO status filter', async () => {
+    const rows = [
+      { id: 'm1', household_id: 'h1', user_id: 'u1', status: 'active' },
+      { id: 'm2', household_id: 'h2', user_id: 'u1', status: 'removed' },
+    ];
+    let chain: any;
+    mockSupabaseService.from.mockImplementation(() => {
+      chain = createMockQueryChain({ data: rows, error: null });
+      return chain;
+    });
+    const repo = new HouseholdMemberRepository();
+
+    expect(await repo.listByUser('u1')).toEqual(rows);
+    const eqKeys = chain.eq.mock.calls.map((call: unknown[]) => call[0]);
+    expect(eqKeys).toEqual(['user_id']);
+  });
+
+  it('returns [] when the user has no memberships at all', async () => {
+    mockSupabaseService.from.mockImplementation(() =>
+      createMockQueryChain({ data: null, error: null })
+    );
+    const repo = new HouseholdMemberRepository();
+    expect(await repo.listByUser('u1')).toEqual([]);
+  });
+});
+
+describe('HouseholdMemberRepository.listRemovedHouseholdIds', () => {
+  // A removed nanny is still owed the hours she worked. If this query is not
+  // pinned to status='removed' it silently returns the active households too
+  // and the picker shows a household she can no longer act in as if she can.
+  it('filters on the user and status=removed, and returns only the ids', async () => {
+    let chain: any;
+    mockSupabaseService.from.mockImplementation(() => {
+      chain = createMockQueryChain({
+        data: [{ household_id: 'h9' }, { household_id: 'h8' }],
+        error: null,
+      });
+      return chain;
+    });
+    const repo = new HouseholdMemberRepository();
+    expect(await repo.listRemovedHouseholdIds('u1')).toEqual(['h9', 'h8']);
+    expect(chain.eq.mock.calls).toEqual([
+      ['user_id', 'u1'],
+      ['status', 'removed'],
+    ]);
+  });
+
+  it('returns [] when the user has never been removed from anything', async () => {
+    mockSupabaseService.from.mockImplementation(() =>
+      createMockQueryChain({ data: null, error: null })
+    );
+    const repo = new HouseholdMemberRepository();
+    expect(await repo.listRemovedHouseholdIds('u1')).toEqual([]);
+  });
+
+  it('throws a DatabaseError when the query fails', async () => {
+    mockSupabaseService.from.mockImplementation(() =>
+      createMockQueryChain({ data: null, error: { message: 'boom' } })
+    );
+    const repo = new HouseholdMemberRepository();
+    await expect(repo.listRemovedHouseholdIds('u1')).rejects.toThrow(
+      'Failed to list households for user'
+    );
   });
 });
 

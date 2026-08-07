@@ -27,6 +27,10 @@ import {
   HouseholdSchema,
   RedeemHouseholdInviteSchema,
   type UpdateHouseholdInput,
+  type UpdateHouseholdInviteInput,
+  UpdateHouseholdInviteSchema,
+  type UpdateHouseholdMemberInput,
+  UpdateHouseholdMemberSchema,
   UpdateHouseholdSchema,
 } from '@steadily-nanny/shared-types/schemas/household.schema';
 import { z } from 'zod';
@@ -39,8 +43,12 @@ export const householdEndpoints = {
   getById: (householdId: string) => `/v1/households/${householdId}`,
   update: (householdId: string) => `/v1/households/${householdId}`,
   listMembers: (householdId: string) => `/v1/households/${householdId}/members`,
+  updateMember: (householdId: string, memberId: string) =>
+    `/v1/households/${householdId}/members/${memberId}`,
   createInvite: (householdId: string) =>
     `/v1/households/${householdId}/invites`,
+  updateInvite: (householdId: string, inviteId: string) =>
+    `/v1/households/${householdId}/invites/${inviteId}`,
   redeemInvite: '/v1/households/invites/redeem',
   previewInvite: (code: string) => `/v1/households/invites/${code}/preview`,
 } as const;
@@ -60,12 +68,30 @@ export type InvitePreview = z.infer<typeof InvitePreviewSchema>;
 
 // --- API --------------------------------------------------------------------
 export const householdApi = {
-  /** The caller's own households. */
+  /** The caller's own households — ACTIVE memberships only. */
   list: async (): Promise<Household[]> => {
     const response = await apiClient.get(householdEndpoints.list);
     const parsed = HouseholdListResponseSchema.safeParse(response.data.data);
     if (!parsed.success) throw parsed.error;
     return parsed.data.households;
+  },
+
+  /**
+   * The households the caller was REMOVED from. A removed nanny still reads
+   * the hours, expenses and pay she accrued there — without this the money
+   * she is owed has no route in the app, because her old household drops out
+   * of `list` the moment the parent removes her.
+   *
+   * ponytail: same GET as `list`, deliberately fetched twice rather than
+   * widening `list`'s array return into the envelope — that contract is
+   * mocked in eleven test files across other domains. Collapse the two into
+   * one `select`-split query when those mocks are being touched anyway.
+   */
+  listPast: async (): Promise<Household[]> => {
+    const response = await apiClient.get(householdEndpoints.list);
+    const parsed = HouseholdListResponseSchema.safeParse(response.data.data);
+    if (!parsed.success) throw parsed.error;
+    return parsed.data.past_households;
   },
 
   /** Create a household — the caller becomes its owner. */
@@ -133,6 +159,34 @@ export const householdApi = {
     return parsed.data.household_members;
   },
 
+  /**
+   * Update a member's mutable fields — in practice, only `status: 'removed'`
+   * (soft-remove). Owner/parent only, enforced server-side; 409 CONFLICT if
+   * the member has a running time entry. Response envelope key (`member`)
+   * follows the same singular-resource convention as `update`'s `household`
+   * and `createInvite`'s `invite`.
+   */
+  updateMember: async (
+    householdId: string,
+    memberId: string,
+    input: UpdateHouseholdMemberInput
+  ): Promise<HouseholdMember> => {
+    const validated = UpdateHouseholdMemberSchema.safeParse(input);
+    if (!validated.success) throw validated.error;
+
+    const response = await apiClient.patch(
+      householdEndpoints.updateMember(householdId, memberId),
+      validated.data
+    );
+    // Envelope key matches the API's house convention: listMembers wraps as
+    // `household_members`, so the singular PATCH wraps as `household_member`.
+    const parsed = z
+      .object({ household_member: HouseholdMemberSchema })
+      .safeParse(response.data.data);
+    if (!parsed.success) throw parsed.error;
+    return parsed.data.household_member;
+  },
+
   /** Generate an invite code (parents only — enforced server-side). */
   createInvite: async (
     householdId: string,
@@ -143,6 +197,30 @@ export const householdApi = {
 
     const response = await apiClient.post(
       householdEndpoints.createInvite(householdId),
+      validated.data
+    );
+    const parsed = z
+      .object({ invite: HouseholdInviteSchema })
+      .safeParse(response.data.data);
+    if (!parsed.success) throw parsed.error;
+    return parsed.data.invite;
+  },
+
+  /**
+   * Revoke a pending invite (the only client-legal transition — enforced by
+   * `UpdateHouseholdInviteSchema`'s literal). Owner/parent only,
+   * enforced server-side; 409 CONFLICT if the invite is no longer pending.
+   */
+  updateInvite: async (
+    householdId: string,
+    inviteId: string,
+    input: UpdateHouseholdInviteInput
+  ): Promise<HouseholdInvite> => {
+    const validated = UpdateHouseholdInviteSchema.safeParse(input);
+    if (!validated.success) throw validated.error;
+
+    const response = await apiClient.patch(
+      householdEndpoints.updateInvite(householdId, inviteId),
       validated.data
     );
     const parsed = z

@@ -43,6 +43,8 @@ function arrangement(over: Partial<PayArrangement> = {}): PayArrangement {
     mileage_rate_per_mile_minor: null,
     cancellation_paid_within_hours: null,
     valid_from: '2026-01-01',
+    // 065: null = these terms are still live (set only on member removal).
+    valid_to: null,
     carer_display_name: 'Nia Rowe',
     note: null,
     created_by: uuid(92),
@@ -495,6 +497,39 @@ describe('buildWeekEarningsInput', () => {
     });
     expect(built.pto_usage).toEqual([
       { local_date: '2026-08-04', minutes: 120 },
+    ]);
+  });
+
+  it('keeps a worked entry and a PTO usage row on the SAME local date BOTH — the netting groups by time_off_id, never by date (F-B10-5)', () => {
+    // The half-day: four hours of booked leave and a worked afternoon on the
+    // same Tuesday. `netPtoUsage` groups by `time_off_id` and never looks at
+    // `sources.entries` at all, so there is no path by which the worked
+    // minutes could be netted away — but nothing pinned that, and the engine
+    // downstream prices both buckets additively (see the same-date case in
+    // earningsService.test.ts). One shared date, two separate outputs.
+    const built = buildWeekEarningsInput({
+      weekStart: WEEK_START,
+      entries: [
+        entry({
+          local_date: '2026-08-04',
+          clock_in_at: '2026-08-04T13:00:00.000Z',
+          clock_out_at: '2026-08-04T17:00:00.000Z', // 4h worked
+        }),
+      ],
+      arrangements: [arrangement()],
+      closureDates: [],
+      closureDayShifts: [],
+      ptoLedgerRows: [
+        ptoLedgerRow({ effective_date: '2026-08-04', minutes: -240 }), // 4h leave
+      ],
+      approvedExpenses: [],
+    });
+
+    expect(built.entries).toEqual([
+      { kind: 'worked', local_date: '2026-08-04', minutes: 240 },
+    ]);
+    expect(built.pto_usage).toEqual([
+      { local_date: '2026-08-04', minutes: 240 },
     ]);
   });
 
@@ -1262,6 +1297,64 @@ describe('WeekEarningsService.computeForWeek', () => {
       result.status === 'ok' &&
         result.lines.some(line => line.kind === 'reimbursements')
     ).toBe(true);
+  });
+
+  it('prices TWO time offs on the SAME date additively — netting is per time_off_id, so neither cancels the other', async () => {
+    // The per-time_off_id netting vector above uses different DATES, so the
+    // same-date collision was unpinned: two separate bookings (a half-day of
+    // annual leave and a half-day of sick, say) both landing on Tuesday.
+    // `netPtoUsage` groups by `time_off_id`, so each survives as its own
+    // `pto_usage` row on the same date, and `sumMinutesByDate` then folds
+    // them into ONE 360-minute line. 360 x 1850 = 666_000; /60 = 11_100
+    // exactly (6h at £18.50). A netting bug that keyed on date instead would
+    // pay 5_550 — half her leave, silently.
+    const ptoRepo = makePtoRepo({
+      listForCarerYear: mock(async () => [
+        ptoLedgerRow({
+          id: 'pto-a',
+          time_off_id: 'to-a',
+          effective_date: '2026-08-04',
+          minutes: -180,
+        }),
+        ptoLedgerRow({
+          id: 'pto-b',
+          time_off_id: 'to-b',
+          effective_date: '2026-08-04',
+          minutes: -180,
+        }),
+      ]),
+    });
+    const svc = new WeekEarningsService(
+      makeTimeEntryRepo({ listForCarerWeek: mock(async () => []) }),
+      makeArrangementRepo({
+        listForCarer: mock(async () => [arrangement({ rate_minor: 1850 })]),
+      }),
+      makeClosureRepo(),
+      makeShiftRepo(),
+      makeHouseholdRepo(),
+      ptoRepo,
+      makeExpenseRepo()
+    );
+
+    const result = await svc.computeForWeek(HOUSEHOLD_ID, CARER_ID, WEEK_START);
+
+    expect(result.status).toBe('ok');
+    expect(result.status === 'ok' && result.gross_minor).toBe(11_100);
+    expect(result.status === 'ok' && result.payable_minutes).toBe(360);
+    expect(
+      result.status === 'ok' && result.lines.filter(line => line.kind === 'pto')
+    ).toEqual([
+      {
+        kind: 'pto',
+        minutes: 360,
+        rate_minor: 1850,
+        multiplier: null,
+        amount_minor: 11_100,
+        from_date: '2026-08-04',
+        to_date: '2026-08-04',
+        arrangement_id: uuid(1),
+      },
+    ]);
   });
 
   it('a week with real PTO usage suppresses a guaranteed top-up it now pays for on its own pto line — no double pay', async () => {

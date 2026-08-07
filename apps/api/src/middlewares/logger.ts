@@ -2,6 +2,7 @@ import type { Request } from 'express';
 import morgan from 'morgan';
 import winston from 'winston';
 import Transport from 'winston-transport';
+import { env } from '../config/env';
 import Sentry from '../config/sentry';
 import { BaseError, isExpectedClientError } from '../errors';
 
@@ -67,7 +68,7 @@ export class SentryTransport extends Transport {
 }
 
 export const logger = winston.createLogger({
-  level: process.env.LOG_LEVEL || 'info',
+  level: env.LOG_LEVEL,
   format: winston.format.combine(
     winston.format.colorize(),
     winston.format.json()
@@ -83,15 +84,21 @@ export const logger = winston.createLogger({
   ],
 });
 
+// Access lines log at winston's `http` level — below `info` in the default npm
+// level order (error=0, warn=1, info=2, http=3, ...). At LOG_LEVEL=info (the
+// production default) they're suppressed entirely, so payroll/business errors
+// (logged at `warn`/`error`) aren't buried in per-request noise. Set
+// LOG_LEVEL=debug to see them — `bun run dev` does this so logs/dev.log keeps
+// full request/response cycles as documented in CLAUDE.md.
+export const logHttpAccess = (message: string): void => {
+  logger.http(message.trim());
+};
+
 /** Morgan HTTP access log → winston. */
 export const morganMiddleware = morgan(
   ':method :url :status :res[content-length] - :response-time ms',
   {
-    stream: {
-      write: (message: string) => {
-        logger.info(message.trim());
-      },
-    },
+    stream: { write: logHttpAccess },
   }
 );
 

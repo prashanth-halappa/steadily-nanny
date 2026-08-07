@@ -64,7 +64,10 @@ beforeEach(() => {
 function makeEventRepo(overrides: Record<string, unknown> = {}): any {
   return {
     listEventKeysForDate: mock(async () => new Set<string>()),
-    insertMany: mock(async () => undefined),
+    // Default: everything submitted was genuinely created (no concurrent
+    // race) — mirrors `ShiftEventRepository.insertMany`'s
+    // `ON CONFLICT DO NOTHING RETURNING` contract (F-B6-5).
+    insertMany: mock(async (rows: unknown[]) => rows),
     ...overrides,
   };
 }
@@ -128,6 +131,77 @@ describe('CoverageGapService.raiseGapsOnce — pushes', () => {
     ]);
 
     expect(eventRepo.insertMany).toHaveBeenCalledTimes(1);
+    expect(notifyHouseholdParents).toHaveBeenCalledTimes(1);
+  });
+
+  // F-B6-5 (reopened): migration 025's dedupe index is a partial EXPRESSION
+  // index, which PostgREST's `ignoreDuplicates` cannot target (it only
+  // accepts a column-name `onConflict`) — a concurrent duplicate-keyed insert
+  // 23505s the WHOLE batch instead of being silently skipped.
+  // `ShiftEventRepository.insertMany` catches that and retries row by row,
+  // returning only the rows THIS call genuinely created; a loser's per-row
+  // 23505 is swallowed there, never reaching this service. From here, that's
+  // observable only as "insertMany resolved with fewer rows than we asked
+  // for" — this test pins that `raiseGapsOnce` must not push (or report as
+  // inserted) a gap that lost that race.
+  it('does not push when insertMany creates nothing (a concurrent run already inserted the same key)', async () => {
+    const eventRepo = makeEventRepo({
+      // The filter saw the key as free, but by the time our row-by-row
+      // fallback ran, a concurrent writer already had it.
+      insertMany: mock(async () => []),
+    });
+    const svc = new CoverageGapService(eventRepo);
+
+    const inserted = await svc.raiseGapsOnce(
+      'h1',
+      localDate,
+      LONDON,
+      shifts,
+      commitments
+    );
+
+    expect(inserted).toHaveLength(0);
+    expect(notifyHouseholdParents).not.toHaveBeenCalled();
+  });
+
+  it('pushes once when insertMany reports the gap was actually created', async () => {
+    const eventRepo = makeEventRepo({
+      insertMany: mock(async (rows: unknown[]) => rows),
+    });
+    const svc = new CoverageGapService(eventRepo);
+
+    const inserted = await svc.raiseGapsOnce(
+      'h1',
+      localDate,
+      LONDON,
+      shifts,
+      commitments
+    );
+
+    expect(inserted).toHaveLength(1);
+    expect(notifyHouseholdParents).toHaveBeenCalledTimes(1);
+  });
+
+  // Pins the PARTIAL-subset shape a real race actually produces: two gaps
+  // submitted, only one wins the row-by-row fallback. Every other test here
+  // has insertMany return everything or nothing — this is the one that
+  // exercises the key-matching (not just a length check) between what was
+  // submitted and what insertMany actually reports as created.
+  it('returns and pushes only the gap insertMany reports as created, when a batch is partially suppressed', async () => {
+    const eventRepo = makeEventRepo({
+      insertMany: mock(async (rows: { payload: { commitment_id: string } }[]) =>
+        rows.filter(row => row.payload.commitment_id === 'cm2')
+      ),
+    });
+    const svc = new CoverageGapService(eventRepo);
+
+    const inserted = await svc.raiseGapsOnce('h1', localDate, LONDON, shifts, [
+      preschool({ id: 'cm1' }),
+      preschool({ id: 'cm2' }),
+    ]);
+
+    expect(inserted).toHaveLength(1);
+    expect(inserted[0]?.commitmentId).toBe('cm2');
     expect(notifyHouseholdParents).toHaveBeenCalledTimes(1);
   });
 

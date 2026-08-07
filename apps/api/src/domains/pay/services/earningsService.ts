@@ -277,19 +277,32 @@ function overtimeRateMinor(rateMinor: number, multiplier: number): number {
  * `payArrangementRepository.effectiveOn`, re-expressed in memory because the
  * engine is pure and prices many dates from one fetch.
  *
- * Greatest `valid_from <= date`, ties broken by `created_at desc`. The
+ * Greatest `valid_from <= date` among rows not yet ended (065's `valid_to`),
+ * ties broken by `created_at desc`. The
  * tie-break is not a detail: it is the ONLY correction mechanism for a
  * same-day rate typo under append-only, no-future-dating terms
  * (`docs/11-MONEY.md` §2). If that rule ever changes it must change in both
  * places at once — there is a test here that pins it.
+ *
+ * Exported for the cross-implementation parity test (F-B10-7) — see
+ * `apps/api/tests/unit/domains/pay/services/effectiveOnParity.test.ts`, which
+ * runs one vector table through BOTH this and the repository's SQL.
  */
-function effectiveOn(
+export function effectiveOn(
   arrangements: readonly PayArrangement[],
   date: string
 ): PayArrangement | null {
   let best: PayArrangement | null = null;
   for (const candidate of arrangements) {
     if (candidate.valid_from > date) {
+      continue;
+    }
+    // 065: removal end-dates an arrangement (INCLUSIVE), so it stops being in
+    // force the day after. The history this loop reads is deliberately
+    // unfiltered — a week worked before the end must still price at the terms
+    // of the day — so the exclusion has to be per-date, here, exactly as the
+    // repository's `or(valid_to.is.null,valid_to.gte.date)` does it in SQL.
+    if (candidate.valid_to !== null && candidate.valid_to < date) {
       continue;
     }
     if (best === null || candidate.valid_from > best.valid_from) {
