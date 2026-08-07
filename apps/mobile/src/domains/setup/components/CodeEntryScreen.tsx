@@ -117,10 +117,25 @@ export function CodeEntryScreen() {
           });
         }
         const membership = await redeemInvite.mutateAsync(submittedCode);
+        // A co-parent invite (server role 'parent', see HOUSEHOLD_ROLES) is
+        // JOINING a household the redeem above already gave them — unlike
+        // RoleScreen's own PARENT fork, which is the household's FIRST
+        // member and must create it via CHILDREN -> INVITE. Mapping to
+        // SETUP_ROLES.PARENT here is still correct (it is the role), but the
+        // step entry point can't be CODE's "next" within the parent
+        // sequence: `stepsForRole(PARENT)` doesn't contain CODE at all
+        // (that array is [ROLE, CHILDREN, INVITE, NOTIFICATIONS_PERMISSION,
+        // CALENDAR_PERMISSION]), so `getNextSetupStep` returns null and the
+        // existing `?? NOTIFICATIONS_PERMISSION` fallback below already
+        // lands a joining co-parent past CHILDREN/INVITE — exactly the
+        // "already has a household" entry point they need. No fallback
+        // route change required; this comment documents why that's safe.
         const resolvedRole =
           membership.role === HOUSEHOLD_ROLES.HELPER
             ? SETUP_ROLES.HELPER
-            : SETUP_ROLES.NANNY;
+            : membership.role === HOUSEHOLD_ROLES.PARENT
+              ? SETUP_ROLES.PARENT
+              : SETUP_ROLES.NANNY;
         setRole(resolvedRole);
         const next =
           getNextSetupStep(resolvedRole, SETUP_STEPS.CODE) ??

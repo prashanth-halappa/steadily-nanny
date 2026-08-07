@@ -101,6 +101,35 @@ function buildConflictPush(
   };
 }
 
+/**
+ * The requested-push copy, branched on `kind`, mirroring `buildConflictPush`
+ * above (follow-up to 067). A sick day with no booked shifts still reaches
+ * this path — `scanAndNotify` only fires when there IS an overlap — so
+ * without a branch here every sick day reads to parents as a holiday
+ * request, the same bug the conflict push was fixed for.
+ *
+ * The personal-kind strings are byte-identical to the pre-fix ones — every
+ * existing family is already receiving them — and are pinned in
+ * `timeOffRequestedNotify.test.ts`.
+ */
+function buildRequestedPush(
+  kind: CarerTimeOffKind,
+  householdId: string
+): PushPayload {
+  const isSick = kind === CARER_TIME_OFF_KINDS.SICK;
+
+  return {
+    title: isSick ? 'Carer is off sick' : 'Time off requested',
+    body: isSick
+      ? 'Your carer has recorded a sick day — open Time off to see the dates.'
+      : 'Your nanny has requested time off — open Time off to review.',
+    data: {
+      type: PUSH_NOTIFICATION_TYPES.TIME_OFF_REQUESTED,
+      householdId,
+    },
+  };
+}
+
 export class TimeOffCommandService {
   constructor(
     private readonly timeOffRepo: CarerTimeOffRepository = new CarerTimeOffRepository(),
@@ -143,7 +172,7 @@ export class TimeOffCommandService {
       carer_time_off.ends_at,
       carer_time_off.kind
     );
-    this.notifyTimeOffRequested(userId);
+    this.notifyTimeOffRequested(userId, carer_time_off.kind);
     return { carer_time_off, affected_shift_count };
   }
 
@@ -340,7 +369,10 @@ export class TimeOffCommandService {
    * carer fans out one push per household. Complements the conflict push when
    * shifts overlap; both are intentional (request vs overlap detail).
    */
-  private notifyTimeOffRequested(carerId: string): void {
+  private notifyTimeOffRequested(
+    carerId: string,
+    kind: CarerTimeOffKind
+  ): void {
     void this.memberRepo
       .listActiveByUser(carerId)
       .then(memberships => {
@@ -350,14 +382,7 @@ export class TimeOffCommandService {
             .map(m => m.household_id)
         );
         for (const householdId of householdIds) {
-          const payload: PushPayload = {
-            title: 'Time off requested',
-            body: 'Your nanny has requested time off — open Time off to review.',
-            data: {
-              type: PUSH_NOTIFICATION_TYPES.TIME_OFF_REQUESTED,
-              householdId,
-            },
-          };
+          const payload = buildRequestedPush(kind, householdId);
           try {
             this.notifyParents(householdId, payload);
           } catch {

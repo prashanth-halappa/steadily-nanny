@@ -201,6 +201,25 @@ describe('CodeEntryScreen — role branch (WS-F)', () => {
     expect(useSetupProgressStore.getState().role).toBe('nanny');
   });
 
+  it('a parent (co-parent) membership sets the local role to parent and skips straight to NOTIFICATIONS_PERMISSION — they are joining an existing household, not creating one', async () => {
+    redeemInviteMock.mockImplementationOnce(() => {
+      callOrder.push('redeemInvite');
+      return Promise.resolve({ ...MEMBERSHIP, role: 'parent' });
+    });
+    const screen = renderWithProviders(<CodeEntryScreen />);
+
+    await enterCode(screen);
+    fireEvent.press(screen.getByTestId('code-screen-cta'));
+
+    await waitFor(() => expect(redeemInviteMock).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(useSetupProgressStore.getState().currentStep).toBe(
+        'NOTIFICATIONS_PERMISSION'
+      )
+    );
+    expect(useSetupProgressStore.getState().role).toBe('parent');
+  });
+
   it('a helper membership skips availability entirely and advances straight to NOTIFICATIONS_PERMISSION', async () => {
     redeemInviteMock.mockImplementationOnce(() => {
       callOrder.push('redeemInvite');

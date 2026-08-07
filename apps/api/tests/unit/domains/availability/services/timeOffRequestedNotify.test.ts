@@ -154,6 +154,81 @@ describe('TimeOffCommandService.create — time_off_requested', () => {
     expect(types).toContain(PUSH_NOTIFICATION_TYPES.TIME_OFF_REQUESTED);
   });
 
+  it('sends sick wording when the persisted row kind is sick', async () => {
+    const notify = mock((_householdId: string, _payload: unknown) => undefined);
+    const memberRepo = {
+      listActiveByUser: mock(async () => [membership('hh-sick', 'nanny')]),
+    };
+    const timeOffRepo = {
+      create: mock(async (data: Record<string, unknown>) => ({
+        ...row,
+        ...data,
+        id: 't-new',
+        kind: 'sick',
+      })),
+    };
+    const svc = new TimeOffCommandService(
+      timeOffRepo as never,
+      {
+        getOwned: mock(async () => row),
+        assertActiveMember: mock(async () => undefined),
+      } as never,
+      makeOverlapRepo() as never,
+      notify,
+      async () => undefined,
+      memberRepo as never
+    );
+
+    await svc.create('nanny-1', {
+      starts_at: '2026-08-10T00:00:00Z',
+      ends_at: '2026-08-12T00:00:00Z',
+      kind: 'sick',
+    });
+
+    expect(notify).toHaveBeenCalledTimes(1);
+    expect(notify).toHaveBeenCalledWith('hh-sick', {
+      title: 'Carer is off sick',
+      body: 'Your carer has recorded a sick day — open Time off to see the dates.',
+      data: {
+        type: PUSH_NOTIFICATION_TYPES.TIME_OFF_REQUESTED,
+        householdId: 'hh-sick',
+      },
+    });
+  });
+
+  it('personal wording stays byte-identical (pin)', async () => {
+    const notify = mock((_householdId: string, _payload: unknown) => undefined);
+    const memberRepo = {
+      listActiveByUser: mock(async () => [membership('hh-personal', 'nanny')]),
+    };
+    const svc = new TimeOffCommandService(
+      makeTimeOffRepo() as never,
+      {
+        getOwned: mock(async () => row),
+        assertActiveMember: mock(async () => undefined),
+      } as never,
+      makeOverlapRepo() as never,
+      notify,
+      async () => undefined,
+      memberRepo as never
+    );
+
+    await svc.create('nanny-1', {
+      starts_at: '2026-08-10T00:00:00Z',
+      ends_at: '2026-08-12T00:00:00Z',
+    });
+
+    expect(notify).toHaveBeenCalledTimes(1);
+    expect(notify).toHaveBeenCalledWith('hh-personal', {
+      title: 'Time off requested',
+      body: 'Your nanny has requested time off — open Time off to review.',
+      data: {
+        type: PUSH_NOTIFICATION_TYPES.TIME_OFF_REQUESTED,
+        householdId: 'hh-personal',
+      },
+    });
+  });
+
   it('push failure still returns the created row', async () => {
     const notify = mock(() => {
       throw new Error('expo down');
