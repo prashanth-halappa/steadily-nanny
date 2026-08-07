@@ -8,6 +8,8 @@
   "children": {
     "wizardTitle": "Who are the children?",
     "wizardSubtitle": "Add each child so your nanny knows who they're looking after.",
+    "householdNameLabel": "Household name",
+    "householdNamePlaceholder": "Our household",
     "manageTitle": "Children",
     "manageSubtitle": "Add, edit, or remove the children in your household.",
     "continueButton": "Continue",

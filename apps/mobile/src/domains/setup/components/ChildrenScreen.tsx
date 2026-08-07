@@ -10,7 +10,10 @@
 import { type Href, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { View } from 'react-native';
 import { ErrorState } from '@/src/components/custom/ErrorState';
+import { FieldLabel } from '@/src/components/ui/field-label';
+import { Input } from '@/src/components/ui/input';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { ChildrenManager } from '@/src/domains/setup/components/ChildrenManager';
 import { SetupScreenShell } from '@/src/domains/setup/components/SetupScreenShell';
@@ -48,6 +51,11 @@ export function ChildrenScreen() {
   // spinner with no way forward; `retryBootstrap` clears it, which — being in
   // the effect's deps — re-triggers the attempt.
   const [bootstrapFailed, setBootstrapFailed] = useState(false);
+  // Optional, typed while the bootstrap create-household call is in flight
+  // (the input only renders during that window — see `isLoadingHousehold`
+  // below). Empty stays empty; the bootstrap effect falls back to
+  // `DEFAULT_HOUSEHOLD_NAME` itself, same as before this field existed.
+  const [householdName, setHouseholdName] = useState('');
 
   const householdId = households.data?.[0]?.id ?? cachedHouseholdId ?? null;
 
@@ -84,7 +92,9 @@ export function ChildrenScreen() {
               buildBootstrapProfileRequest(authUser)
             );
           }
-          await createHousehold.mutateAsync({ name: DEFAULT_HOUSEHOLD_NAME });
+          await createHousehold.mutateAsync({
+            name: householdName.trim() || DEFAULT_HOUSEHOLD_NAME,
+          });
         } catch {
           bootstrapStartedRef.current = false;
           setBootstrapFailed(true);
@@ -116,6 +126,7 @@ export function ChildrenScreen() {
     upsertProfile.isPending,
     upsertProfile.mutateAsync,
     bootstrapFailed,
+    householdName,
   ]);
 
   const children = useChildren(householdId);
@@ -149,10 +160,31 @@ export function ChildrenScreen() {
       ctaDisabled={isLoadingHousehold || !hasAtLeastOneChild}
       onCta={onContinue}
     >
-      {bootstrapFailed ? (
-        <ErrorState variant="generic" onRetry={retryBootstrap} />
-      ) : isLoadingHousehold ? (
-        <LoadingIndicator />
+      {isLoadingHousehold ? (
+        <View className="gap-4">
+          {/* Visible for the whole create-household window (including a
+              failed/retrying attempt) — this is the only chance to set it,
+              the bootstrap create call fires automatically and there's no
+              separate "name your household" step in Wave 1 (see this
+              module's header comment). Renaming after the fact happens from
+              Settings -> Manage household instead. */}
+          <View className="gap-2">
+            <FieldLabel>{t('children.householdNameLabel')}</FieldLabel>
+            <Input
+              testID="household-name-input"
+              accessibilityLabel={t('children.householdNameLabel')}
+              value={householdName}
+              onChangeText={setHouseholdName}
+              placeholder={t('children.householdNamePlaceholder')}
+              autoCapitalize="words"
+            />
+          </View>
+          {bootstrapFailed ? (
+            <ErrorState variant="generic" onRetry={retryBootstrap} />
+          ) : (
+            <LoadingIndicator />
+          )}
+        </View>
       ) : (
         <ChildrenManager householdId={householdId} />
       )}

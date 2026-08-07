@@ -17,6 +17,18 @@ import { useSetupProgressStore } from '@/src/store/setupProgress';
 import { renderWithProviders } from '@/src/test-utils';
 import { CodeEntryScreen } from '../components/CodeEntryScreen';
 
+const mockPush = mock();
+const mockReplace = mock();
+const mockSignOut = mock(() => Promise.resolve());
+mock.module('expo-router', () => ({
+  useRouter: () => ({
+    push: mockPush,
+    replace: mockReplace,
+    back: mock(),
+    navigate: mock(),
+  }),
+}));
+
 const INVITE_PREVIEW = {
   household_name: 'The Ruiz family',
   children_first_names: ['Mia'],
@@ -66,11 +78,15 @@ beforeEach(() => {
   updateNameMock.mockClear();
   getProfileMock.mockReset();
   getProfileMock.mockImplementation(() => Promise.resolve(null));
+  mockPush.mockClear();
+  mockReplace.mockClear();
+  mockSignOut.mockClear();
   useAuthStore.setState({
     session: {
       user: { id: 'user-1', email: 'ana@example.com', user_metadata: {} },
     } as unknown as never,
     isInitialized: true,
+    signOut: mockSignOut,
   } as never);
 });
 
@@ -202,5 +218,27 @@ describe('CodeEntryScreen — role branch (WS-F)', () => {
       )
     );
     expect(useSetupProgressStore.getState().role).toBe('helper');
+  });
+});
+
+describe('CodeEntryScreen — trapped-nanny escape hatches (W1-E fix 2)', () => {
+  it('renders a back affordance that returns to the role screen', () => {
+    const screen = renderWithProviders(<CodeEntryScreen />);
+
+    const back = screen.getByTestId('code-screen-back');
+    expect(back).toBeTruthy();
+    fireEvent.press(back);
+
+    expect(mockReplace).toHaveBeenCalledWith('/onboarding/role');
+  });
+
+  it('renders a sign-out affordance that calls the auth store sign-out', () => {
+    const screen = renderWithProviders(<CodeEntryScreen />);
+
+    const signOutButton = screen.getByTestId('code-screen-sign-out');
+    expect(signOutButton).toBeTruthy();
+    fireEvent.press(signOutButton);
+
+    expect(mockSignOut).toHaveBeenCalledTimes(1);
   });
 });

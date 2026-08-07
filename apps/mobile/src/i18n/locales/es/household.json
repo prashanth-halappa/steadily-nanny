@@ -8,6 +8,8 @@
   "children": {
     "wizardTitle": "¿Quiénes son los niños?",
     "wizardSubtitle": "Añade cada niño para que tu niñera sepa a quién está cuidando.",
+    "householdNameLabel": "Nombre del hogar",
+    "householdNamePlaceholder": "Nuestro hogar",
     "manageTitle": "Niños",
     "manageSubtitle": "Añade, edita o elimina los niños de tu hogar.",
     "continueButton": "Continuar",
