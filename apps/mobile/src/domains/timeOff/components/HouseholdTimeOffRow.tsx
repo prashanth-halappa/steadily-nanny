@@ -73,6 +73,10 @@ export function HouseholdTimeOffRow({
   householdTimezone,
 }: HouseholdTimeOffRowProps) {
   const { t } = useTranslation('pay');
+  // The sick-kind label is owned by the timeOff namespace (`kind.sick`),
+  // reusing the SAME string `TimeOffRow`'s own marker uses on the carer's
+  // own cross-household view — one label, not a second one coined here.
+  const { t: tTimeOff } = useTranslation('timeOff');
   const elevation = useElevation();
   const [sheetOpen, setSheetOpen] = useState(false);
 
@@ -141,6 +145,13 @@ export function HouseholdTimeOffRow({
                 : t('householdTimeOff.notMarkedPaid')
             }
           />
+          {timeOff.kind === 'sick' ? (
+            <StatusPill
+              testID={`household-time-off-kind-sick-${timeOff.id}`}
+              variant="short-notice"
+              label={tTimeOff('kind.sick')}
+            />
+          ) : null}
           {timeOff.message ? (
             <Small className="text-muted-foreground">{timeOff.message}</Small>
           ) : null}

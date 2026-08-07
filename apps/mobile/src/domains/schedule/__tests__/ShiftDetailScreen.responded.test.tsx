@@ -6,6 +6,9 @@
  */
 import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 import { render } from '@testing-library/react-native';
+import { mockAlertDialogPrimitive } from './mockAlertDialog';
+
+mockAlertDialogPrimitive();
 
 mock.module('@/src/components/ui/loading-indicator', () => {
   const React = require('react');
@@ -151,6 +154,18 @@ beforeAll(async () => {
   }));
   mock.module('@/src/hooks/mutations/useAcceptShift', () => ({
     useAcceptShift: () => ({
+      mutateAsync: mock(() => Promise.resolve({})),
+      isPending: false,
+    }),
+  }));
+  mock.module('@/src/hooks/mutations/useDeclineShift', () => ({
+    useDeclineShift: () => ({
+      mutateAsync: mock(() => Promise.resolve({})),
+      isPending: false,
+    }),
+  }));
+  mock.module('@/src/hooks/mutations/useWithdrawChangeRequest', () => ({
+    useWithdrawChangeRequest: () => ({
       mutateAsync: mock(() => Promise.resolve({})),
       isPending: false,
     }),

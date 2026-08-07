@@ -35,6 +35,14 @@ export const CARER_TIME_OFF_STATUSES = {
 export type CarerTimeOffStatus =
   (typeof CARER_TIME_OFF_STATUSES)[keyof typeof CARER_TIME_OFF_STATUSES];
 
+/** carer_time_off.kind (068) — sick is same-day illness, personal is planned. */
+export const CARER_TIME_OFF_KINDS = {
+  PERSONAL: 'personal',
+  SICK: 'sick',
+} as const;
+export type CarerTimeOffKind =
+  (typeof CARER_TIME_OFF_KINDS)[keyof typeof CARER_TIME_OFF_KINDS];
+
 /** The `kind` discriminator produced by the `v_busy_blocks` view. */
 export const BUSY_BLOCK_KINDS = {
   OTHER_COMMITMENT: 'other_commitment',
@@ -119,6 +127,9 @@ export const CarerTimeOffSchema = z.object({
   all_day: z.boolean(),
   // Shown to families verbatim if the carer writes one; optional.
   message: z.string().nullable(),
+  // Defaulted (not required) so rows serialized before 068 still parse; the
+  // column is NOT NULL DEFAULT 'personal', so the server always sends it.
+  kind: z.enum(Object.values(CARER_TIME_OFF_KINDS)).default('personal'),
   status: z.enum(Object.values(CARER_TIME_OFF_STATUSES)),
   ical_uid: z.string(),
   sequence: z.int(),
@@ -131,6 +142,9 @@ const CarerTimeOffInputSchema = z.object({
   ends_at: z.iso.datetime({ offset: true }),
   all_day: z.boolean().optional(),
   message: z.string().optional(),
+  // Omitted = personal (the column default). Also reachable via Update's
+  // `.partial()` so a pending personal request can be corrected to sick.
+  kind: z.enum(Object.values(CARER_TIME_OFF_KINDS)).optional(),
 });
 
 /**

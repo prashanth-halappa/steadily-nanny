@@ -8,6 +8,8 @@
   "children": {
     "wizardTitle": "Who are the children?",
     "wizardSubtitle": "Add each child so your nanny knows who they're looking after.",
+    "householdNameLabel": "Household name",
+    "householdNamePlaceholder": "Our household",
     "manageTitle": "Children",
     "manageSubtitle": "Add, edit, or remove the children in your household.",
     "continueButton": "Continue",
@@ -108,7 +110,17 @@
     "removeMemberConfirmBody": "They'll lose access to this household right away. You can invite them again later if you change your mind.",
     "removeMemberConfirmCancel": "Cancel",
     "removeMemberConfirmConfirm": "Remove",
-    "removeMemberSuccessToast": "{{name}} removed from the household"
+    "removeMemberSuccessToast": "{{name}} removed from the household",
+    "leaveSectionTitle": "Leaving",
+    "leaveButton": "Leave household",
+    "leaveHint": "Only a parent in this household can add you back.",
+    "leaveConfirmTitle": "Leave {{name}}?",
+    "leaveConfirmBody": "You'll lose access to this household's schedule, hours and pay. The hours you've already worked stay on their record, and a parent would have to invite you back.",
+    "leaveConfirmCancel": "Stay",
+    "leaveConfirmConfirm": "Leave household",
+    "leftToast": "You've left {{name}}",
+    "leaveOwnerError": "You created this household, so you can't leave it — someone has to be able to manage it.",
+    "leaveClockedInError": "You're clocked in. Clock out first, then leave."
   },
   "closures": {
     "manageTitle": "We're away",

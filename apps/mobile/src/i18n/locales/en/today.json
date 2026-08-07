@@ -106,6 +106,33 @@
     "title": "Needs attention ({{count}})",
     "body": "Pending work is waiting on you."
   },
+  "missedHours": {
+    "cta": "Add missed hours",
+    "sheetTitle": "Add missed hours",
+    "sheetHint": "Forgot to clock in? Log the hours you worked.",
+    "dateLabel": "Date",
+    "noteLabel": "Note (optional)",
+    "notePlaceholder": "Anything worth noting?",
+    "submit": "Add hours",
+    "addedToast": "Hours added"
+  },
+  "shiftDetail": {
+    "declineCta": "Decline",
+    "declineConfirmTitle": "Decline this shift?",
+    "declineConfirmBody": "The family will be notified.",
+    "declineConfirmCancel": "Cancel",
+    "declineConfirmConfirm": "Decline",
+    "cancelConfirmTitle": "Request to cancel this shift?",
+    "cancelConfirmBody": "This sends a cancellation request — it won't cancel the shift until confirmed.",
+    "cancelConfirmCancel": "Keep shift",
+    "cancelConfirmConfirm": "Request cancel",
+    "withdrawCta": "Withdraw",
+    "withdrawConfirmTitle": "Withdraw this request?",
+    "withdrawConfirmBody": "The other side won't be able to respond once you withdraw.",
+    "withdrawConfirmCancel": "Cancel",
+    "withdrawConfirmConfirm": "Withdraw",
+    "withdrawnToast": "Request withdrawn"
+  },
   "handoff": {
     "morningTitle": "Morning handoff",
     "eveningTitle": "Evening handoff",

@@ -6,6 +6,7 @@ let getOwned: any;
 let listEvents: any;
 let update: any;
 let accept: any;
+let decline: any;
 
 beforeAll(async () => {
   listForHousehold = mock(async () => [{ id: 's1' }]);
@@ -27,10 +28,19 @@ beforeAll(async () => {
       shiftQueryService: { listForHousehold, getOwned, listEvents },
     })
   );
+  decline = mock(async () => ({
+    id: 's1',
+    status: 'declined',
+    carer_id: 'carer-1',
+    starts_at: '2026-08-05T09:00:00.000Z',
+    ends_at: '2026-08-05T17:00:00.000Z',
+    timezone: 'UTC',
+  }));
+
   mock.module(
     '../../../../../src/domains/shift/services/shiftCommandService',
     () => ({
-      shiftCommandService: { update, accept },
+      shiftCommandService: { update, accept, decline },
     })
   );
   mock.module('../../../../../src/domains/me/services/clashWarning', () => ({
@@ -56,7 +66,14 @@ function mockRes(): any {
 }
 
 beforeEach(() => {
-  for (const m of [listForHousehold, getOwned, listEvents, update, accept]) {
+  for (const m of [
+    listForHousehold,
+    getOwned,
+    listEvents,
+    update,
+    accept,
+    decline,
+  ]) {
     m.mockClear?.();
   }
 });
@@ -142,6 +159,43 @@ describe('ShiftController', () => {
       status: 'confirmed',
     });
     expect(res.body.data.warnings).toEqual([]);
+  });
+
+  it('decline delegates to the command service', async () => {
+    const res = mockRes();
+    await ShiftController.decline(
+      { user: { id: 'carer-1' }, params: { shiftId: 's1' } } as any,
+      res,
+      mock()
+    );
+    expect(decline).toHaveBeenCalledWith('carer-1', 's1');
+    expect(res.statusCode).toBe(200);
+    // No clash warnings on the decline leg: a declined shift is not on the
+    // carer's calendar at all, so there is nothing for it to clash with.
+    expect(res.body.data).toEqual({
+      shift: {
+        id: 's1',
+        status: 'declined',
+        carer_id: 'carer-1',
+        starts_at: '2026-08-05T09:00:00.000Z',
+        ends_at: '2026-08-05T17:00:00.000Z',
+        timezone: 'UTC',
+      },
+    });
+  });
+
+  it('decline forwards service errors to next()', async () => {
+    decline.mockImplementationOnce(async () => {
+      throw new Error('not pending');
+    });
+    const res = mockRes();
+    const next = mock();
+    await ShiftController.decline(
+      { user: { id: 'carer-1' }, params: { shiftId: 's1' } } as any,
+      res,
+      next
+    );
+    expect(next).toHaveBeenCalled();
   });
 
   it('forwards service errors to next()', async () => {

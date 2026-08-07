@@ -28,6 +28,7 @@ export const shiftEndpoints = {
   getById: (shiftId: string) => `/v1/shifts/${shiftId}`,
   update: (shiftId: string) => `/v1/shifts/${shiftId}`,
   accept: (shiftId: string) => `/v1/shifts/${shiftId}/accept`,
+  decline: (shiftId: string) => `/v1/shifts/${shiftId}/decline`,
   events: (householdId: string, shiftId: string) =>
     `/v1/households/${householdId}/shifts/${shiftId}/events`,
   dayThread: (householdId: string, localDate: string) =>
@@ -118,6 +119,18 @@ export const shiftApi = {
     const parsed = ShiftWriteEnvelopeSchema.safeParse(response.data.data);
     if (!parsed.success) throw parsed.error;
     return parsed.data;
+  },
+
+  /**
+   * Carer-only: pending → declined. Body-less POST. No clash-warnings arm —
+   * a declined shift is off the calendar, so `ShiftEnvelopeSchema` (not the
+   * write-with-warnings envelope `accept` uses) is the right shape here.
+   */
+  decline: async (shiftId: string): Promise<Shift> => {
+    const response = await apiClient.post(shiftEndpoints.decline(shiftId));
+    const parsed = ShiftEnvelopeSchema.safeParse(response.data.data);
+    if (!parsed.success) throw parsed.error;
+    return parsed.data.shift;
   },
 
   listEvents: async (

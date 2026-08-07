@@ -6,13 +6,17 @@ Wave 2, and Wave 3 (an eighteen-defect adversarial sweep — §4g). Sections bel
 still marked "Wave 0" describe what was true then; read §4g for the current
 picture of what's actually verified versus merely built.
 
-**Committed through `6eb80b0`** ("Wave 3: sixteen-defect sweep —
-authorization, state integrity, reachability"), the current `main` HEAD as of
-2026-08-02. Earlier revisions of this document said "nothing is committed" —
-that was true for Wave 0 only; every wave since has landed on `main`. The
-working tree currently has a handful of uncommitted files, all belonging to
-defects still being fixed live (§4g) — check `git status`
-before assuming a clean baseline, but do not assume an *empty* one either.
+**Committed through `f0b89d5`** ("Carer 'no' paths: decline a shift, recover
+a missed clock-in, withdraw a request"), the current branch HEAD as of
+2026-08-07. `6eb80b0` (Wave 3, referenced throughout §4g below) is over a
+hundred commits behind that — everything from the co-parent/coverage/pay
+build-out through the pay-loop-and-reachability wave in §4h has landed on top
+of it since. Earlier revisions of this document said "nothing is committed" —
+that was true for Wave 0 only; every wave since has landed on `main` (this
+checkout is on branch `claude/launch-readiness-scheduling-payments-bbcngn`).
+The working tree may have a handful of uncommitted files belonging to other
+agents' concurrent work in this coordinated build — check `git status` before
+assuming a clean baseline, but do not assume an *empty* one either.
 
 **Wave 0 was complete** with `bun run qc` green (mobile 311/0, API 35/0,
 `packages/shared-types` 32/0 separately) and nothing yet committed. That
@@ -72,9 +76,20 @@ One-line summary of each flow/view:
 
 ## 3. Status board
 
-Every flow and view is **not started** in application code — no schedule or
+**Stale as of this writing — kept as the historical opening of this section.**
+The line below described the true starting state at the top of Wave 1; every
+flow is now built (see "Flow-by-flow status" immediately after this
+paragraph, and §4h for what landed most recently). Both `apps/mobile/src/domains/`
+and `apps/api/src/domains/` are populated — `apps/api/src/domains/` alone now
+has fourteen domains (`app`, `availability`, `child`, `email`, `handoff`,
+`household`, `job`, `llm`, `me`, `notification`, `pay`, `schedule`, `shift`,
+`timesheet`), and `apps/mobile/src/domains/` has `expenses`, `household`,
+`householdClosures`, `inbox`, `pay`, `schedule`, `settings`, `setup`,
+`timeOff`, `timesheet`, `today`. Original text, unedited below:
+
+~~Every flow and view is **not started** in application code — no schedule or
 calendar domain exists yet under `apps/mobile/src/domains/` or
-`apps/api/src/domains/`.
+`apps/api/src/domains/`.~~
 
 The **database is a different story**: the full schema for flows 1a–1c (the
 Wave 1 spine) plus the calendar-integration seams is designed, applied, and
@@ -623,10 +638,13 @@ see §4g and `docs/DEFECT-LOG.md`.
 2. **Draft resume.** `schedule-pending-continue-cta` always starts a fresh
    wizard rather than reopening the saved draft's days. Still open — not part
    of the defect sweep.
-3. **No scheduled job rolls the materialisation horizon forward.** Shifts
-   materialise once, on acceptance, for 84 days. An accepted pattern silently
-   stops producing shifts after that. Still open — not part of the defect
-   sweep.
+3. ~~No scheduled job rolls the materialisation horizon forward~~ —
+   **RESOLVED.** `apps/api/src/jobs/scheduleHorizonJob.ts` iterates every
+   accepted pattern and calls `materialiseForHorizon`; it is wired to
+   `POST /api/jobs/schedule-horizon` (`026_schedule_horizon_cron.sql`) and is
+   also referenced in §3's flow table ("Materialisation horizon"). This item
+   was already stale before this document's 2026-08-07 pass — left uncorrected
+   for many prior waves.
 4. ~~Timesheet status on a late clock-out~~ — **RESOLVED (D1).** An
    `approved`/`queried` timesheet now reopens to `submitted` (and clears
    `approved_by`/`approved_at`) when new hours land in that week, rather than
@@ -764,6 +782,71 @@ instructive thing to come out of the whole sweep:
   RLS policy exactly, so it reads as a deliberate data-model choice rather
   than an oversight, and narrowing it is a product call, not an engineering
   one. Recorded in `docs/DEFECT-LOG.md`, not changed unilaterally.
+
+## 4h. 2026-08-07 — the pay-loop-and-reachability wave
+
+Committed `d9494c3`→`f0b89d5`, ten commits on branch
+`claude/launch-readiness-scheduling-payments-bbcngn`, all same-day. Shared
+contracts landed first (`d9494c3`, "Wave 0: shared contracts for the pay-loop
+and scheduling gap closure") specifically so the parallel feature commits that
+followed never touched the same files concurrently. What's true now:
+
+- **Settlement ledger (payments).** A parent can record that an approved
+  week's wages were actually paid, outside the app (bank transfer, cash).
+  Migration `supabase/migrations/067_payments.sql`; wire contract
+  `packages/shared-types/src/schemas/payment.schema.ts`; API domain at
+  `apps/api/src/domains/pay/` — `repositories/paymentRepository.ts`,
+  `services/paymentCommandService.ts` / `paymentQueryService.ts`,
+  `controllers/paymentController.ts`, `routes/paymentRoutes.ts`, mounted at
+  `/timesheets/:timesheetId/payments` (`apps/api/src/routes/index.ts`); mobile
+  `apps/mobile/src/api/endpoints/payments.ts`,
+  `hooks/queries/usePayments.ts` / `hooks/mutations/useRecordPayment.ts`,
+  `domains/timesheet/components/PaidStateCard.tsx` /
+  `RecordPaymentSheet.tsx`. `payments` is append-only; the command service
+  refuses (never clamps) a payment that would push `sum(payments)` past the
+  week's frozen `gross_minor`, and documents its own read-then-write race on
+  that gate as a known, un-closed gap (see `docs/11-MONEY.md` §11, which this
+  wave also added).
+- **CSV export.** `GET /timesheets/:id/export.csv` serves an approved week's
+  frozen earnings snapshot as a payroll-handoff CSV; the column contract lives
+  in `apps/api/src/domains/timesheet/utils/weekExportCsv.ts`. Mobile adds
+  share-the-CSV plus an `expo-print` PDF receipt
+  (`domains/timesheet/` `ExportWeekSheet`, `WeekExportAction`,
+  `utils/weekExport.ts`).
+- **Sick days.** `kind` (`personal` | `sick`) added to `carer_time_off`
+  (`supabase/migrations/068_time_off_sick_kind.sql`, default-backfilled, no
+  new table, no status change) end-to-end through the availability schema and
+  an "I'm sick today" button on the Time-off screen
+  (`apps/mobile/src/domains/timeOff/components/SickTimeOffButton.tsx`).
+  `v_busy_blocks` is deliberately untouched — sick reads as plain time off to
+  every other household.
+- **Shift decline.** `POST /shifts/:shiftId/decline`
+  (`apps/api/src/domains/shift/routes/shiftRoutes.ts`) is the carer-only
+  symmetric "no" to accept; mobile adds `useDeclineShift`
+  (`apps/mobile/src/hooks/mutations/useDeclineShift.ts`) and the decline
+  action in `ShiftDetailScreen`.
+- **Leave household.** `POST /households/:householdId/members/leave`
+  (`apps/api/src/domains/household/routes/householdRoutes.ts`) — no role gate,
+  any active member may leave — plus the leave action in
+  `apps/mobile/src/domains/setup/components/ManageHouseholdScreen.tsx`.
+- **Also in this wave:** a retroactive time-entry mobile client
+  (`AddMissedHoursCard` on Today,
+  `apps/mobile/src/domains/today/components/AddMissedHoursCard.tsx`);
+  change-request withdraw UI on `ShiftDetailScreen`; pattern-amend UI
+  (`AdjustSchedulePatternSheet` over `POST /schedule-patterns/:patternId/amend`,
+  `apps/api/src/domains/schedule/routes/schedulePatternRoutes.ts`); co-parent
+  approval respond UI in the inbox plus `submitted_week` inbox items
+  (`apps/mobile/src/domains/inbox/`); invite preview hardened so a dead code
+  404s instead of leaking; an onboarding third role card, code-entry
+  back/sign-out, and household naming; two new notification types,
+  `payment_recorded` / `shift_declined`
+  (`packages/shared-types/src/schemas/notification.schema.ts`).
+
+This wave landed on top of `6eb80b0` (§4g) after more than a hundred
+intervening commits — a co-parent/coverage/audit-closeout arc this document
+does not narrate commit-by-commit. Treat `git log --oneline` as the source of
+truth for everything between the two; this section only covers what shipped
+today.
 
 ## 5. Deliberate omissions
 

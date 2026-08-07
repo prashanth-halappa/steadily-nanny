@@ -52,6 +52,20 @@ router.get(
   asyncHandler(TimesheetController.getWeek)
 );
 
+// The payroll export — the SAME gate as the read above, and for the same
+// reason: it is the same week, in a file. No ownership middleware, so the
+// service's `getReadableTimesheet` decides (any active member; a removed
+// member keeps the payroll she was part of, role-scoped there), and no cache
+// entry is left behind for the ACTION routes below to reuse.
+//
+// Only an APPROVED week exports — refused with TimesheetNotExportableError
+// (409) in the service, never here.
+router.get(
+  '/:id/export.csv',
+  ...authWithValidation(TimesheetIdParamSchema),
+  asyncHandler(TimesheetController.exportCsv)
+);
+
 router.post(
   '/:id/approve',
   ...authWithOwnership(TimesheetIdParamSchema, timesheetOwnership),

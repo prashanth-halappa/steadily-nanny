@@ -41,6 +41,7 @@ import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 import { useTimeOff } from '@/src/hooks/queries/useTimeOff';
 import { showSuccessToast } from '@/src/lib/toast';
 import { usePaidFamilyCounts } from '../hooks/usePaidFamilyCounts';
+import { SickTimeOffButton } from './SickTimeOffButton';
 import { TimeOffRequestForm } from './TimeOffRequestForm';
 import { TimeOffRow } from './TimeOffRow';
 
@@ -170,6 +171,7 @@ export function TimeOffScreen() {
           <View className="mb-2 gap-1">
             {backHeader}
             <H1 testID="time-off-header">{t('screenTitle')}</H1>
+            {editingTimeOff ? null : <SickTimeOffButton />}
             {editingTimeOff ? (
               <TimeOffRequestForm
                 key={editingTimeOff.id}

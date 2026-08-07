@@ -1,8 +1,11 @@
 import { describe, expect, it, mock } from 'bun:test';
 import {
   AlreadyMemberError,
+  CannotLeaveAsOwnerError,
+  CannotLeaveWhileClockedInError,
   CannotRemoveOwnerError,
   CannotRemoveSelfError,
+  HouseholdNotFoundError,
   InviteAlreadyAcceptedError,
   InviteExpiredError,
   InviteNotFoundError,
@@ -236,6 +239,14 @@ function makeProfileWorld() {
 }
 
 const stubUsers: any = { ensureProfile: mock(async () => {}) };
+
+/**
+ * The rejoin path's carried-over-PTO sentence reads the ledger; every test
+ * that reaches it must stub this, or the ctor default constructs a REAL
+ * PtoLedgerRepository whose supabase call turns a unit test into a slow
+ * network failure.
+ */
+const stubPtoLedger: any = { listForCarerYear: mock(async () => []) };
 
 function makeQueries(
   role: HouseholdMember['role'] = 'owner',
@@ -1087,7 +1098,10 @@ describe('HouseholdCommandService.redeemInvite — removed member rejoining', ()
       memberRepo,
       inviteRepo,
       makeQueries(),
-      stubUsers
+      stubUsers,
+      makeTimeEntries(),
+      makePayArrangements(),
+      stubPtoLedger
     );
 
     const membership = await svc.redeemInvite('u2', { code: 'ABC-234' });
@@ -1130,7 +1144,10 @@ describe('HouseholdCommandService.redeemInvite — removed member rejoining', ()
       memberRepo,
       inviteRepo,
       makeQueries(),
-      stubUsers
+      stubUsers,
+      makeTimeEntries(),
+      makePayArrangements(),
+      stubPtoLedger
     );
 
     await svc.redeemInvite('u2', { code: 'ABC-234' });
@@ -1639,5 +1656,212 @@ describe('HouseholdCommandService.removeMember — pay arrangement (065)', () =>
       svc.removeMember('u1', 'h1', 'm-target', AT_NOON_UTC)
     ).rejects.toBeInstanceOf(CannotRemoveOwnerError);
     expect(payArrangements.endForCarer).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * `removeMember` refuses a self-directed removal with CannotRemoveSelfError and
+ * a comment promising leaving is its own feature. This is that feature: same
+ * end state on the row, different authorization (nobody gates it but your own
+ * membership) and different refusals (the owner is stuck, and you cannot walk
+ * out mid-shift on yourself either).
+ */
+describe('HouseholdCommandService.leave', () => {
+  function svcWith(overrides: {
+    role?: HouseholdMember['role'];
+    householdRepo?: any;
+    memberRepo?: any;
+    queries?: any;
+    timeEntries?: any;
+    payArrangements?: any;
+  }) {
+    return new HouseholdCommandService(
+      overrides.householdRepo ?? makeHouseholdRepo(),
+      overrides.memberRepo ?? makeMemberRepo(),
+      makeInviteRepo(),
+      overrides.queries ?? makeQueries(overrides.role ?? 'nanny'),
+      stubUsers,
+      overrides.timeEntries ?? makeTimeEntries(),
+      overrides.payArrangements ?? makePayArrangements(),
+      stubPtoLedger
+    );
+  }
+
+  it('refuses the owner — leaving would orphan the household', async () => {
+    // Exactly the CannotRemoveOwnerError rationale seen from the other side:
+    // the owner membership is created with the household and can never be
+    // revoked, so no path may leave a household with nobody who can write.
+    const memberRepo = makeMemberRepo();
+    const payArrangements = makePayArrangements();
+    const svc = svcWith({ role: 'owner', memberRepo, payArrangements });
+
+    await expect(svc.leave('u1', 'h1')).rejects.toBeInstanceOf(
+      CannotLeaveAsOwnerError
+    );
+    expect(memberRepo.removeMembership).not.toHaveBeenCalled();
+    expect(payArrangements.endForCarer).not.toHaveBeenCalled();
+  });
+
+  it('refuses a non-member with the same HouseholdNotFoundError every other read gives', async () => {
+    const memberRepo = makeMemberRepo();
+    const svc = svcWith({
+      memberRepo,
+      queries: makeQueries('nanny', {
+        getMembership: mock(async () => {
+          throw new HouseholdNotFoundError('h1');
+        }),
+      }),
+    });
+
+    await expect(svc.leave('u-stranger', 'h1')).rejects.toBeInstanceOf(
+      HouseholdNotFoundError
+    );
+    expect(memberRepo.removeMembership).not.toHaveBeenCalled();
+  });
+
+  it('refuses someone clocked in in THIS household', async () => {
+    // Same strand as removal: walking out mid-shift leaves a running entry
+    // nobody can close, and the hours never reach a timesheet.
+    const memberRepo = makeMemberRepo();
+    const payArrangements = makePayArrangements();
+    const svc = svcWith({
+      memberRepo,
+      payArrangements,
+      timeEntries: makeTimeEntries({
+        findRunningInHousehold: mock(async () => ({
+          id: 'te1',
+          household_id: 'h1',
+          status: 'running',
+        })),
+      }),
+    });
+
+    await expect(svc.leave('u1', 'h1')).rejects.toBeInstanceOf(
+      CannotLeaveWhileClockedInError
+    );
+    expect(memberRepo.removeMembership).not.toHaveBeenCalled();
+    expect(payArrangements.endForCarer).not.toHaveBeenCalled();
+  });
+
+  it('scopes the running-entry check to THIS household and the caller', async () => {
+    const timeEntries = makeTimeEntries();
+    const svc = svcWith({ timeEntries });
+
+    await svc.leave('u1', 'h1');
+
+    expect(timeEntries.findRunningInHousehold).toHaveBeenCalledWith('h1', 'u1');
+  });
+
+  it('writes removed on the CALLER OWN membership row', async () => {
+    const memberRepo = makeMemberRepo();
+    const svc = svcWith({ memberRepo });
+
+    const left = await svc.leave('u1', 'h1');
+
+    expect(memberRepo.removeMembership).toHaveBeenCalledWith('m1');
+    expect(left.status).toBe('removed');
+  });
+
+  it('404s when the CAS matches nothing — already removed, or removed underneath us', async () => {
+    const svc = svcWith({
+      memberRepo: makeMemberRepo({ removeMembership: mock(async () => null) }),
+    });
+
+    await expect(svc.leave('u1', 'h1')).rejects.toBeInstanceOf(
+      MemberNotFoundError
+    );
+  });
+
+  it('end-dates a leaving NANNY pay arrangement on the household-local date', async () => {
+    // Identical 065 consequence to being removed: a rejoin must not resurrect
+    // stale terms (docs/11-MONEY.md §10).
+    const payArrangements = makePayArrangements();
+    const svc = svcWith({ payArrangements });
+
+    await svc.leave('u1', 'h1', AT_NOON_UTC);
+
+    expect(payArrangements.endForCarer).toHaveBeenCalledWith(
+      'h1',
+      'u1',
+      '2026-07-01'
+    );
+  });
+
+  it('ends on the HOUSEHOLD-LOCAL date, not server UTC', async () => {
+    const payArrangements = makePayArrangements();
+    const svc = svcWith({
+      payArrangements,
+      householdRepo: makeHouseholdRepo({
+        findById: mock(async () => ({
+          ...household,
+          timezone: 'Pacific/Auckland',
+        })),
+      }),
+    });
+
+    await svc.leave('u1', 'h1', AT_NOON_UTC);
+
+    expect(payArrangements.endForCarer).toHaveBeenCalledWith(
+      'h1',
+      'u1',
+      '2026-07-02'
+    );
+  });
+
+  it('does NOT end-date pay when a non-owner PARENT leaves — they were never a carer', async () => {
+    // `endForCarer` keys on (household, carer). A co-parent has no arrangement
+    // to end, and calling it anyway would be a write nobody asked for.
+    const payArrangements = makePayArrangements();
+    const svc = svcWith({ role: 'parent', payArrangements });
+
+    const left = await svc.leave('u1', 'h1', AT_NOON_UTC);
+
+    expect(payArrangements.endForCarer).not.toHaveBeenCalled();
+    expect(left.status).toBe('removed');
+  });
+
+  it('does NOT end-date pay when a HELPER leaves', async () => {
+    const payArrangements = makePayArrangements();
+    const svc = svcWith({ role: 'helper', payArrangements });
+
+    await svc.leave('u1', 'h1', AT_NOON_UTC);
+
+    expect(payArrangements.endForCarer).not.toHaveBeenCalled();
+  });
+
+  it('end-dates BEFORE flipping the membership — the ordering that cannot strand', async () => {
+    const order: string[] = [];
+    const payArrangements = makePayArrangements({
+      endForCarer: mock(async () => {
+        order.push('end-arrangement');
+        return [];
+      }),
+    });
+    const memberRepo = makeMemberRepo({
+      removeMembership: mock(async (id: string) => {
+        order.push('remove-membership');
+        return { ...membershipFor('nanny'), id, status: 'removed' };
+      }),
+    });
+    const svc = svcWith({ payArrangements, memberRepo });
+
+    await svc.leave('u1', 'h1', AT_NOON_UTC);
+
+    expect(order).toEqual(['end-arrangement', 'remove-membership']);
+  });
+
+  it('refuses the whole leave when the end-date write fails, rather than half-leaving', async () => {
+    const memberRepo = makeMemberRepo();
+    const svc = svcWith({
+      memberRepo,
+      payArrangements: makePayArrangements({
+        endForCarer: mock(async () => {
+          throw new DatabaseError('boom', 'DATABASE_ERROR');
+        }),
+      }),
+    });
+
+    await expect(svc.leave('u1', 'h1', AT_NOON_UTC)).rejects.toThrow('boom');
+    expect(memberRepo.removeMembership).not.toHaveBeenCalled();
   });
 });

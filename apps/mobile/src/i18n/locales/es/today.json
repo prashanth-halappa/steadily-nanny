@@ -106,6 +106,33 @@
     "title": "Requiere atención ({{count}})",
     "body": "Hay pendientes que te esperan."
   },
+  "missedHours": {
+    "cta": "Añadir horas olvidadas",
+    "sheetTitle": "Añadir horas olvidadas",
+    "sheetHint": "¿Olvidaste fichar la entrada? Registra las horas que trabajaste.",
+    "dateLabel": "Fecha",
+    "noteLabel": "Nota (opcional)",
+    "notePlaceholder": "¿Algo que anotar?",
+    "submit": "Añadir horas",
+    "addedToast": "Horas añadidas"
+  },
+  "shiftDetail": {
+    "declineCta": "Rechazar",
+    "declineConfirmTitle": "¿Rechazar este turno?",
+    "declineConfirmBody": "Se notificará a la familia.",
+    "declineConfirmCancel": "Cancelar",
+    "declineConfirmConfirm": "Rechazar",
+    "cancelConfirmTitle": "¿Solicitar cancelar este turno?",
+    "cancelConfirmBody": "Esto envía una solicitud de cancelación — el turno no se cancelará hasta que se confirme.",
+    "cancelConfirmCancel": "Mantener turno",
+    "cancelConfirmConfirm": "Solicitar cancelación",
+    "withdrawCta": "Retirar",
+    "withdrawConfirmTitle": "¿Retirar esta solicitud?",
+    "withdrawConfirmBody": "La otra parte no podrá responder una vez que la retires.",
+    "withdrawConfirmCancel": "Cancelar",
+    "withdrawConfirmConfirm": "Retirar",
+    "withdrawnToast": "Solicitud retirada"
+  },
   "handoff": {
     "morningTitle": "Entrega matutina",
     "eveningTitle": "Entrega vespertina",

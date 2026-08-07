@@ -354,3 +354,106 @@ export class PtoAccrualGrantRaceError extends ConflictError {
     this.name = 'PtoAccrualGrantRaceError';
   }
 }
+
+// =============================================================================
+// Payments — the settlement ledger (migration 067, docs/11-MONEY.md §1/§3/§8)
+// =============================================================================
+
+/**
+ * 404 — the week's payments are not the caller's to see or write. ONE error
+ * for every failing case, the same discipline as
+ * `PayArrangementNotFoundError`/`TimesheetNotFoundError`:
+ *
+ * - no timesheet with that id exists;
+ * - the caller is not a member of its household at all;
+ * - the caller is a `helper`, or a nanny asking about a week that is not
+ *   hers.
+ *
+ * A distinguishable "that week exists, just not for you" would let a caller
+ * enumerate other families' timesheets by uuid, and a timesheet id is the
+ * handle on a real household's payroll. Discriminating detail goes in
+ * `metadata.reason`, which `BaseError.toClientJSON` only ships for 4xx.
+ *
+ * NOTE the asymmetry with the role gate below: a caller who IS an active
+ * member but holds the wrong role gets the 403
+ * `NotAHouseholdParentError` instead, exactly as
+ * `payArrangementCommandService` and `timesheetCommandService.approve` do —
+ * she already knows the household and the week exist, so there is nothing
+ * left to leak, and "you are not a parent" is the actionable message.
+ */
+export class PaymentNotFoundError extends NotFoundError {
+  constructor(timesheetId: string, metadata?: ErrorMetadata) {
+    super('Payments not found', 'PAYMENT_NOT_FOUND', {
+      timesheetId,
+      ...metadata,
+    });
+    this.name = 'PaymentNotFoundError';
+  }
+}
+
+/**
+ * 409 — the week cannot be paid against yet. Two arms, both in
+ * `metadata.reason`:
+ *
+ * - `week_not_approved` — the timesheet is `open`/`submitted`/`queried`.
+ *   There is no settled figure yet: the amount on screen is still
+ *   "Estimated" and recomputes on every read (`docs/11-MONEY.md` §3), so a
+ *   payment recorded against it would be measured against a number that
+ *   changes underneath it.
+ * - `no_frozen_gross` — the week IS approved but its snapshot is NULL: a
+ *   legacy week approved before migration 042, or an unpriceable one
+ *   (`no_arrangement`/`currency_change`, whose jsonb is frozen but whose
+ *   amount columns stay empty by design). There is no ceiling to enforce and
+ *   no currency to stamp, so a payment here could be neither bounded nor
+ *   labelled.
+ *
+ * A CONFLICT rather than a `ValidationError`: nothing the parent typed is
+ * wrong, the week is simply in the wrong state — the same shape as
+ * `ExpenseWeekLockedError` and `TimesheetNotActionableError`. Approving the
+ * week makes the identical request succeed.
+ */
+export class PaymentWeekNotApprovedError extends ConflictError {
+  constructor(timesheetId: string, reason: string, metadata?: ErrorMetadata) {
+    super(
+      'That week has not been approved yet, so a payment cannot be recorded against it',
+      'PAYMENT_WEEK_NOT_APPROVED',
+      { timesheetId, reason, ...metadata }
+    );
+    this.name = 'PaymentWeekNotApprovedError';
+  }
+}
+
+/**
+ * 400 — this payment would take the week's settled total past its frozen
+ * gross. The invariant is `sum(payments per timesheet) <= gross_minor`, and
+ * because a cross-row SUM cannot be a row CHECK constraint, this service-side
+ * refusal IS the constraint (migration 067's header).
+ *
+ * THE AMOUNT IS NEVER CLAMPED TO FIT — the same rule, and the same reason, as
+ * `TimesheetGrossTooLargeError` and `ExpenseAmountTooLargeError`
+ * (`docs/11-MONEY.md` §1). Writing the difference instead would record a
+ * payment for an amount nobody made, and the ledger's whole job is to answer
+ * "what has actually been paid". The parent either corrects the figure or
+ * (if the week really is worth more) re-approves the week.
+ *
+ * A `ValidationError` and not a 409: retrying changes nothing, because
+ * nothing is racing — the request as stated cannot be satisfied. `metadata`
+ * carries the amount, what is already paid, and the ceiling, so the client
+ * can say "£500.00 of £800.00 is already recorded" without re-deriving it.
+ */
+export class PaymentExceedsGrossError extends ValidationError {
+  constructor(
+    timesheetId: string,
+    amountMinor: number,
+    alreadyPaidMinor: number,
+    grossMinor: number
+  ) {
+    super(
+      'That payment is more than this week still has left to pay',
+      'PAYMENT_EXCEEDS_GROSS',
+      400,
+      { timesheetId, amountMinor, alreadyPaidMinor, grossMinor }
+    );
+    this.name = 'PaymentExceedsGrossError';
+  }
+}

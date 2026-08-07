@@ -104,5 +104,23 @@
     "alreadyPaid": "Marked as paid on {{date}} — {{hours}}h.",
     "adjustButton": "Adjust",
     "adjustHint": "Corrections are added as a new line, so the history stays true."
+  },
+  "recordPaymentSheet": {
+    "title": "Record a payment",
+    "subtitle": "{{name}} · {{range}}",
+    "amountLabel": "Amount paid",
+    "amountError": "Enter an amount, like 250 or 250.00.",
+    "dateLabel": "Paid on",
+    "chipToday": "Today ({{date}})",
+    "chipEarlier": "An earlier date",
+    "dateInputLabel": "Date",
+    "datePlaceholder": "YYYY-MM-DD",
+    "dateInvalid": "Enter a date of today or earlier, as YYYY-MM-DD.",
+    "methodLabel": "How it was paid (optional)",
+    "methodPlaceholder": "e.g. Bank transfer",
+    "submitButton": "Record payment",
+    "exceedsGrossTitle": "That's more than this week still has left to pay.",
+    "alreadyRecordedLabel": "Already recorded",
+    "weekGrossLabel": "Week's gross"
   }
 }

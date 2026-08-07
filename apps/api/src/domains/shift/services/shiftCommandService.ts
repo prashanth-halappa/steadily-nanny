@@ -1,6 +1,6 @@
 /**
  * Shift command service (CQRS-lite: writes). Owns the parent-only time/note
- * edit and the carer-only accept-pending path. Setting `origin =
+ * edit and the carer-only accept/decline-pending pair. Setting `origin =
  * 'parent_proposed'` on every parent edit is the load-bearing part: it's
  * exactly the flag `scheduleMaterialisationService.isManuallyTouched` reads
  * to decide "a human touched this, do not overwrite it" on the next
@@ -118,6 +118,101 @@ export class ShiftCommandService {
         body: 'The nanny confirmed a pending shift.',
         data: {
           type: PUSH_NOTIFICATION_TYPES.SHIFT_CONFIRMED,
+          shiftId: updated.id,
+          householdId: shift.household_id,
+        },
+      });
+    } catch {
+      // notifyHouseholdParents is sync fire-and-forget; swallow any unexpected throw.
+    }
+
+    return updated;
+  }
+
+  /**
+   * Assigned carer declines a pending shift — the symmetric "no" to
+   * `accept`, and gated identically: same assigned-carer check, same
+   * not-found shape for "missing" / "not a member" / "not the assigned
+   * carer", same soft `assertMutable` preflight + CAS write
+   * (`declinePending`).
+   *
+   * `pending` is the ONLY source state. A confirmed shift is not declined,
+   * it is cancelled or change-requested (the parent has already planned
+   * around it and, on the money side, a late cancel can be payable);
+   * draft/cancelled/completed/declined are not the carer's to answer at all.
+   * `assertMutable` additionally refuses a shift anyone has clocked into —
+   * worked reality must not be un-scheduled out from under the timesheet.
+   */
+  async decline(userId: string, shiftId: string): Promise<Shift> {
+    const shift = await this.queries.getOwned(userId, shiftId);
+
+    if (!shift.carer_id || shift.carer_id !== userId) {
+      throw new ShiftNotFoundError(shiftId);
+    }
+
+    const membership = await this.memberRepo.findActiveMembership(
+      shift.household_id,
+      userId
+    );
+    if (!membership || !CARER_ROLES.has(membership.role)) {
+      throw new ShiftNotFoundError(shiftId);
+    }
+
+    if (shift.status !== SHIFT_STATUSES.PENDING) {
+      throw new ValidationError(
+        'Only a pending shift can be declined',
+        'SHIFT_NOT_PENDING',
+        400,
+        { shiftId, status: shift.status }
+      );
+    }
+
+    const updated = await this.shiftRepo.declinePending(shiftId);
+
+    // Fire-and-forget for the same reason as `accept`: declinePending has
+    // already committed, so failing here would 500 on a shift that IS
+    // declined and the retry would 400 SHIFT_NOT_PENDING.
+    //
+    // KEYED (migration 025), unlike `shift_confirmed`: `declined` is terminal
+    // — there is no path back to pending — so at most one `shift_declined`
+    // may ever exist per shift, and the partial unique index on
+    // (household_id, local_date, event_type, payload->>'key') enforces it.
+    // Accept must stay unkeyed: a parent time edit demotes confirmed →
+    // pending (migration 034), so the same shift can legitimately be
+    // confirmed more than once and a key would swallow the later ones.
+    try {
+      await this.eventRepo.insertMany([
+        {
+          household_id: shift.household_id,
+          shift_id: shift.id,
+          local_date: shift.local_date,
+          actor_id: userId,
+          event_type: 'shift_declined',
+          payload: {
+            previous_status: shift.status,
+            key: shift.id,
+          },
+        },
+      ]);
+    } catch (error) {
+      logger.warn(
+        'Failed to record shift_declined event; shift is still declined',
+        {
+          shiftId: shift.id,
+          householdId: shift.household_id,
+          error: error instanceof Error ? error.message : String(error),
+        }
+      );
+    }
+
+    // Parents need to know: the family now has a gap where they thought they
+    // had cover, and they cannot see the refusal from the carer app.
+    try {
+      notifyHouseholdParents(shift.household_id, {
+        title: 'Shift declined',
+        body: 'The nanny declined a pending shift.',
+        data: {
+          type: PUSH_NOTIFICATION_TYPES.SHIFT_DECLINED,
           shiftId: updated.id,
           householdId: shift.household_id,
         },

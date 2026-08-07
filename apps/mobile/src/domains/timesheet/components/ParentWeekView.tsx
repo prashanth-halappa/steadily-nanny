@@ -18,6 +18,7 @@
  */
 
 import { FlashList } from '@shopify/flash-list';
+import type { CreatePaymentInput } from '@steadily-nanny/shared-types/schemas/payment.schema';
 import type { Href } from 'expo-router';
 import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
@@ -43,9 +44,15 @@ import { resolveMemberDisplayName } from '@/src/domains/schedule/utils/memberDis
 import { resolveWeekCarerHeaderName } from '@/src/domains/timesheet/utils/weekCarerHeaderName';
 import { useApproveTimesheet } from '@/src/hooks/mutations/useApproveTimesheet';
 import { useQueryTimesheet } from '@/src/hooks/mutations/useQueryTimesheet';
+import {
+  type OverPaymentMetadata,
+  overPaymentMetadata,
+  useRecordPayment,
+} from '@/src/hooks/mutations/useRecordPayment';
 import { useReopenTimesheet } from '@/src/hooks/mutations/useReopenTimesheet';
 import { useReviewExpense } from '@/src/hooks/mutations/useReviewExpense';
 import { useHouseholdMembers } from '@/src/hooks/queries/useHouseholdMembers';
+import { usePayments } from '@/src/hooks/queries/usePayments';
 import { usePendingExpenses } from '@/src/hooks/queries/usePendingExpenses';
 import { useWeekExpenses } from '@/src/hooks/queries/useWeekExpenses';
 import { useWeekTimeEntries } from '@/src/hooks/queries/useWeekTimeEntries';
@@ -62,12 +69,16 @@ import {
   formatEarningsLongDate,
 } from '../utils/earningsFormat';
 import { scheduledMinutesFor, sumEntryMinutes } from '../utils/entryMinutes';
+import { derivePaidState } from '../utils/paidState';
 import { useReopenedNotice } from '../utils/reopenedNotice';
 import { ApproveWeekDialog } from './ApproveWeekDialog';
 import { EarningsBreakdownSheet } from './EarningsBreakdownSheet';
+import { PaidStateCard } from './PaidStateCard';
 import { QueryNoteSheet } from './QueryNoteSheet';
+import { RecordPaymentSheet } from './RecordPaymentSheet';
 import { ReopenWeekDialog } from './ReopenWeekDialog';
 import { TimeEntryDayRow } from './TimeEntryDayRow';
+import { WeekExportAction } from './WeekExportAction';
 import { WeekTotal } from './WeekTotal';
 
 interface ParentWeekViewProps {
@@ -121,7 +132,15 @@ export function ParentWeekView({
   const queryTimesheet = useQueryTimesheet();
   const reopenTimesheet = useReopenTimesheet();
   const reviewExpense = useReviewExpense();
+  const recordPayment = useRecordPayment();
   const [isQuerySheetVisible, setIsQuerySheetVisible] = useState(false);
+  const [isRecordPaymentVisible, setIsRecordPaymentVisible] = useState(false);
+  // The server's own over-payment figures, held so the sheet can state the
+  // ceiling it hit. Cleared on every open and every fresh attempt — a stale
+  // banner would accuse the parent of a mistake they already corrected.
+  const [overPayment, setOverPayment] = useState<OverPaymentMetadata | null>(
+    null
+  );
   const [isApproveDialogOpen, setIsApproveDialogOpen] = useState(false);
   const [isReopenDialogOpen, setIsReopenDialogOpen] = useState(false);
   const [isBreakdownVisible, setIsBreakdownVisible] = useState(false);
@@ -186,6 +205,13 @@ export function ParentWeekView({
   const timesheet =
     weekTimesheets.find(t => carerKeyOf(t) === selectedCarerId) ?? null;
   const reopened = useReopenedNotice(timesheet?.id, timesheet?.status);
+  // Settlement only exists against a FROZEN gross, so the ledger is only
+  // fetched once the week is approved — an open week has nothing to settle
+  // and asking would be a guaranteed empty round trip on every week the
+  // parent pages through.
+  const paymentsQuery = usePayments(
+    timesheet?.status === TIMESHEET_STATUSES.APPROVED ? timesheet.id : null
+  );
 
   const pendingExpenses = pendingExpensesQuery.data ?? [];
 
@@ -368,6 +394,39 @@ export function ParentWeekView({
   const expensesCurrency =
     earningsOk?.currency ?? approvedExpenses[0]?.currency ?? 'GBP';
 
+  // TIER0 settlement (067): the ledger measured against the FROZEN gross.
+  // `earningsOk` is null for a week with no server total, and `derivePaidState`
+  // returns null for that — never `?? 0`, which would render "Paid" over a
+  // week whose value is simply unknown (docs/11-MONEY.md §4).
+  const payments = paymentsQuery.data ?? [];
+  const paidState = derivePaidState(
+    payments,
+    earningsOk ? earningsOk.gross_minor : null
+  );
+  const todayISO = localDateInZone(timeZone, new Date(nowMs));
+
+  const handleOpenRecordPayment = () => {
+    setOverPayment(null);
+    setIsRecordPaymentVisible(true);
+  };
+
+  // Sheet-owns-values, screen-owns-mutation: the sheet is closed ONLY on
+  // success, so a refusal leaves every typed figure in place — and the
+  // over-payment case additionally states the server's own ceiling inline,
+  // because a toast alone cannot say which number was too big.
+  const handleRecordPayment = async (input: CreatePaymentInput) => {
+    if (!timesheet || recordPayment.isPending) return;
+    setOverPayment(null);
+    try {
+      await recordPayment.mutateAsync({ timesheetId: timesheet.id, input });
+    } catch (error) {
+      setOverPayment(overPaymentMetadata(error));
+      return;
+    }
+    setIsRecordPaymentVisible(false);
+    showSuccessToast(t('paid.recordedToast'));
+  };
+
   // `.mutateAsync(...).then(onFulfilled)` with no rejection handler left a
   // failure's promise entirely unhandled (an "Uncaught (in promise)" in
   // metro.log, the same defect class as the clock-in double-tap bug) even
@@ -535,6 +594,30 @@ export function ParentWeekView({
               currency={expensesCurrency}
               carerName={carerName ?? undefined}
             />
+            {/* §7: settlement sits after the statement it settles. Both are
+                read-only for a helper — a helper may SEE that the family has
+                paid, and may never record that they have. */}
+            {isApproved && timesheet ? (
+              <>
+                <PaidStateCard
+                  paidState={paidState}
+                  payments={payments}
+                  currency={earningsOk?.currency ?? 'GBP'}
+                  onMarkPaidPress={
+                    readOnly ? undefined : handleOpenRecordPayment
+                  }
+                  isMarkPaidDisabled={recordPayment.isPending}
+                />
+                <WeekExportAction
+                  timesheetId={timesheet.id}
+                  weekStartISO={weekStartISO}
+                  weekRangeLabel={weekRangeLabel}
+                  carerName={approveDialogCarerName}
+                  earnings={earningsOk}
+                  paidState={paidState}
+                />
+              </>
+            ) : null}
             {/* Gated on status, not just a truthy note: `query_note` only
                 means "queried" while status is genuinely 'queried'. The API
                 never writes a reopen reason here (it lives in the day-thread
@@ -626,6 +709,22 @@ export function ParentWeekView({
         isSubmitting={reopenTimesheet.isPending}
         weekRangeLabel={weekRangeLabel}
       />
+
+      {timesheet && !readOnly ? (
+        <RecordPaymentSheet
+          visible={isRecordPaymentVisible}
+          onDismiss={() => setIsRecordPaymentVisible(false)}
+          onSubmit={input => void handleRecordPayment(input)}
+          isSubmitting={recordPayment.isPending}
+          outstandingMinor={paidState?.balanceMinor ?? 0}
+          currency={earningsOk?.currency ?? 'GBP'}
+          todayISO={todayISO}
+          householdTimezone={timeZone}
+          carerName={approveDialogCarerName}
+          weekRangeLabel={weekRangeLabel}
+          overPayment={overPayment}
+        />
+      ) : null}
 
       {earningsOk ? (
         <EarningsBreakdownSheet

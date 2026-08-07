@@ -58,6 +58,8 @@ export const timesheetEndpoints = {
   approve: (timesheetId: string) => `/v1/timesheets/${timesheetId}/approve`,
   query: (timesheetId: string) => `/v1/timesheets/${timesheetId}/query`,
   reopen: (timesheetId: string) => `/v1/timesheets/${timesheetId}/reopen`,
+  exportCsv: (timesheetId: string) =>
+    `/v1/timesheets/${timesheetId}/export.csv`,
 } as const;
 
 // --- API --------------------------------------------------------------------
@@ -178,5 +180,29 @@ export const timesheetApi = {
       .safeParse(response.data.data);
     if (!parsed.success) throw parsed.error;
     return parsed.data.timesheet;
+  },
+
+  /**
+   * `GET /timesheets/:id/export.csv` — the week as a CSV attachment,
+   * APPROVED weeks only (the server 409s otherwise). The ONE endpoint in
+   * this module that is not JSON: it returns `text/csv`, so there is no
+   * success envelope to unwrap and no Zod schema to validate against.
+   *
+   * `responseType: 'text'` is load-bearing. Axios's default JSON transform
+   * would try to parse the body and — worse than throwing — quietly hand
+   * back a string that has been round-tripped through a parse attempt. The
+   * explicit `Accept` header keeps a future content-negotiating server from
+   * answering this route with JSON.
+   *
+   * Returned VERBATIM. The server owns the column order and the summary
+   * rows; re-deriving or reformatting any of it here would be a second
+   * implementation of the same money figures (docs/11-MONEY.md §1).
+   */
+  exportCsv: async (timesheetId: string): Promise<string> => {
+    const response = await apiClient.get(
+      timesheetEndpoints.exportCsv(timesheetId),
+      { responseType: 'text', headers: { Accept: 'text/csv' } }
+    );
+    return response.data as string;
   },
 };

@@ -134,6 +134,32 @@ describe('availability.schema', () => {
           .success
       ).toBe(false);
     });
+
+    it('parses a sick row — 068 kind discriminator', () => {
+      const result = CarerTimeOffSchema.safeParse({
+        ...validTimeOff,
+        kind: 'sick',
+      });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.kind).toBe('sick');
+      }
+    });
+
+    it('defaults kind to personal so pre-068 rows still parse', () => {
+      const result = CarerTimeOffSchema.safeParse(validTimeOff);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.kind).toBe('personal');
+      }
+    });
+
+    it('rejects a kind outside the SQL check', () => {
+      expect(
+        CarerTimeOffSchema.safeParse({ ...validTimeOff, kind: 'holiday' })
+          .success
+      ).toBe(false);
+    });
   });
 
   describe('CreateCarerTimeOffSchema', () => {
@@ -151,6 +177,16 @@ describe('availability.schema', () => {
         ends_at: NOW,
       });
       expect(result.success).toBe(false);
+    });
+
+    it('accepts an explicit sick kind on create', () => {
+      expect(
+        CreateCarerTimeOffSchema.safeParse({
+          starts_at: NOW,
+          ends_at: '2026-08-02T10:00:00Z',
+          kind: 'sick',
+        }).success
+      ).toBe(true);
     });
 
     it('compares instants, not lexicographic ISO strings across offsets', () => {

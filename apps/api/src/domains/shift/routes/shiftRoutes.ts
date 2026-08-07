@@ -55,6 +55,15 @@ router.post(
   asyncHandler(ShiftController.accept)
 );
 
+// Carer-only decline pending → declined — the symmetric "no" to accept.
+// Same ownership guard, same body-less shape: a plain refusal carries no
+// fields, so there is no schema to validate.
+router.post(
+  '/:shiftId/decline',
+  ...authWithOwnership(ShiftIdParamSchema, shiftOwnership),
+  asyncHandler(ShiftController.decline)
+);
+
 // Change requests (flows 1d/1e) — propose against an existing shift.
 router.post(
   '/:shiftId/change-requests',

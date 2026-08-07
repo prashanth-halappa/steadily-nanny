@@ -104,5 +104,23 @@
     "alreadyPaid": "Marcado como pagado el {{date}} — {{hours}}h.",
     "adjustButton": "Ajustar",
     "adjustHint": "Las correcciones se añaden como una nueva línea, para que el historial siga siendo fiel."
+  },
+  "recordPaymentSheet": {
+    "title": "Registrar un pago",
+    "subtitle": "{{name}} · {{range}}",
+    "amountLabel": "Importe pagado",
+    "amountError": "Escribe un importe, como 250 o 250,00.",
+    "dateLabel": "Pagado el",
+    "chipToday": "Hoy ({{date}})",
+    "chipEarlier": "Una fecha anterior",
+    "dateInputLabel": "Fecha",
+    "datePlaceholder": "AAAA-MM-DD",
+    "dateInvalid": "Escribe una fecha de hoy o anterior, con el formato AAAA-MM-DD.",
+    "methodLabel": "Cómo se pagó (opcional)",
+    "methodPlaceholder": "p. ej. Transferencia",
+    "submitButton": "Registrar pago",
+    "exceedsGrossTitle": "Eso es más de lo que queda por pagar de esta semana.",
+    "alreadyRecordedLabel": "Ya registrado",
+    "weekGrossLabel": "Bruto de la semana"
   }
 }

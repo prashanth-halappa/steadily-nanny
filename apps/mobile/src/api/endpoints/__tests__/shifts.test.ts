@@ -257,3 +257,29 @@ describe('shiftApi.accept', () => {
     await expect(shiftApi.accept(shiftId)).rejects.toThrow();
   });
 });
+
+describe('shiftApi.decline', () => {
+  it('POSTs /v1/shifts/:id/decline (body-less) and unwraps { shift }', async () => {
+    apiClient.post.mockResolvedValue({
+      data: {
+        data: {
+          shift: { ...validShift, status: 'declined' },
+        },
+      },
+    });
+
+    const result = await shiftApi.decline(shiftId);
+
+    expect(apiClient.post).toHaveBeenCalledWith(
+      `/v1/shifts/${shiftId}/decline`
+    );
+    expect(result.status).toBe('declined');
+  });
+
+  it('throws when the response fails validation', async () => {
+    apiClient.post.mockResolvedValue({
+      data: { data: { shift: { status: 'not-a-status' } } },
+    });
+    await expect(shiftApi.decline(shiftId)).rejects.toThrow();
+  });
+});

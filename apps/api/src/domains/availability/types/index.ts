@@ -18,6 +18,7 @@ export type {
   CarerEveningMode,
   CarerIdParam,
   CarerTimeOff,
+  CarerTimeOffKind,
   CarerTimeOffListResponse,
   CarerTimeOffMutationResponse,
   CarerTimeOffStatus,

@@ -78,6 +78,7 @@ describe('buildInboxItems', () => {
       approvals: [
         {
           id: 'ap-1',
+          household_id: 'hh-1',
           action: 'extra_shift',
           status: 'pending',
           requested_by: OTHER,
@@ -86,6 +87,7 @@ describe('buildInboxItems', () => {
         },
         {
           id: 'ap-mine',
+          household_id: 'hh-1',
           action: 'cancel',
           status: 'pending',
           requested_by: ME,
@@ -101,6 +103,7 @@ describe('buildInboxItems', () => {
       {
         kind: 'co_parent_approval',
         id: 'ap-1',
+        householdId: 'hh-1',
         action: 'extra_shift',
         timeoutAt: '2026-08-04T12:00:00Z',
         shiftId: 'shift-9',
@@ -112,6 +115,7 @@ describe('buildInboxItems', () => {
     const approvals = [
       {
         id: 'ap-1',
+        household_id: 'hh-1',
         action: 'extra_shift',
         status: 'pending',
         requested_by: OTHER,
@@ -227,5 +231,106 @@ describe('buildInboxItems', () => {
         timesheets,
       })
     ).toEqual([]);
+  });
+
+  it('includes submitted weeks for parent/owner viewers, with carer info when available', () => {
+    const timesheets = [
+      {
+        id: 'ts-sub-1',
+        carer_id: OTHER,
+        week_start: '2026-08-04',
+        status: 'submitted',
+        query_note: null,
+        carer_display_name: 'Jamie Carer',
+      },
+      {
+        id: 'ts-approved',
+        carer_id: OTHER,
+        week_start: '2026-07-28',
+        status: 'approved',
+        query_note: null,
+        carer_display_name: 'Jamie Carer',
+      },
+      {
+        id: 'ts-queried',
+        carer_id: OTHER,
+        week_start: '2026-07-21',
+        status: 'queried',
+        query_note: 'Break looks long',
+        carer_display_name: 'Jamie Carer',
+      },
+    ] as const;
+
+    expect(
+      buildInboxItems({
+        role: SETUP_ROLES.PARENT,
+        currentUserId: ME,
+        changeRequests: [],
+        approvals: [],
+        patterns: [],
+        timesheets,
+      })
+    ).toEqual([
+      {
+        kind: 'submitted_week',
+        id: 'ts-sub-1',
+        weekStart: '2026-08-04',
+        carerDisplayName: 'Jamie Carer',
+      },
+    ]);
+  });
+
+  it('falls back to a null carer name when the row carries none', () => {
+    const items = buildInboxItems({
+      role: SETUP_ROLES.PARENT,
+      currentUserId: ME,
+      changeRequests: [],
+      approvals: [],
+      patterns: [],
+      timesheets: [
+        {
+          id: 'ts-sub-2',
+          carer_id: OTHER,
+          week_start: '2026-08-04',
+          status: 'submitted',
+          query_note: null,
+        },
+      ],
+    });
+
+    expect(items).toEqual([
+      {
+        kind: 'submitted_week',
+        id: 'ts-sub-2',
+        weekStart: '2026-08-04',
+        carerDisplayName: null,
+      },
+    ]);
+  });
+
+  it('never surfaces submitted weeks to carer/helper viewers', () => {
+    const timesheets = [
+      {
+        id: 'ts-sub-1',
+        carer_id: ME,
+        week_start: '2026-08-04',
+        status: 'submitted',
+        query_note: null,
+        carer_display_name: 'Me Carer',
+      },
+    ] as const;
+
+    for (const role of [SETUP_ROLES.NANNY, SETUP_ROLES.HELPER] as const) {
+      expect(
+        buildInboxItems({
+          role,
+          currentUserId: ME,
+          changeRequests: [],
+          approvals: [],
+          patterns: [],
+          timesheets,
+        })
+      ).toEqual([]);
+    }
   });
 });

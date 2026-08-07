@@ -188,6 +188,16 @@ export const queryKeys = {
       [...queryKeys.pto.all, 'ledger', householdId, carerId, year] as const,
   },
 
+  // Settlement payments (067): rows recorded against one approved week.
+  // Keyed by timesheet — the ledger is meaningless outside the week it
+  // settles — so a record-payment mutation invalidates exactly one week's
+  // list (plus the timesheet.week read that renders the paid badge).
+  payment: {
+    all: ['payment'] as const,
+    forTimesheet: (timesheetId?: string) =>
+      [...queryKeys.payment.all, 'forTimesheet', timesheetId] as const,
+  },
+
   // Expenses and mileage (Phase 4). `week` is keyed by the household-local
   // week start, matching how timesheet keys its weeks.
   expenses: {

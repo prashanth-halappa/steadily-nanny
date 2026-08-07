@@ -9,6 +9,8 @@
  *  - pending patterns: status pending AND addressed to me as carer
  *  - queried weeks: status === 'queried' AND carer_id === me (not the parent
  *    who raised the query)
+ *  - submitted weeks: status === 'submitted' AND viewer is a parent/owner —
+ *    a carer must never see her own submission surface back at her here.
  */
 
 import { isParentEditorRole, type SetupRole } from '@/src/domains/setup/types';
@@ -23,6 +25,7 @@ export type InboxChangeRequestInput = {
 
 export type InboxApprovalInput = {
   id: string;
+  household_id: string;
   action: string;
   status: string;
   requested_by: string | null;
@@ -43,6 +46,8 @@ export type InboxTimesheetInput = {
   week_start: string;
   status: string;
   query_note: string | null;
+  /** Snapshotted carer name — optional so pre-existing fixtures still type-check. */
+  carer_display_name?: string;
 };
 
 export type InboxItem =
@@ -55,6 +60,7 @@ export type InboxItem =
   | {
       kind: 'co_parent_approval';
       id: string;
+      householdId: string;
       action: string;
       timeoutAt: string;
       shiftId?: string;
@@ -70,6 +76,12 @@ export type InboxItem =
       id: string;
       weekStart: string;
       queryNote: string | null;
+    }
+  | {
+      kind: 'submitted_week';
+      id: string;
+      weekStart: string;
+      carerDisplayName: string | null;
     };
 
 function shiftIdFromPayload(
@@ -110,6 +122,7 @@ export function buildInboxItems(input: {
       items.push({
         kind: 'co_parent_approval',
         id: approval.id,
+        householdId: approval.household_id,
         action: approval.action,
         timeoutAt: approval.timeout_at,
         shiftId: shiftIdFromPayload(approval.payload),
@@ -138,6 +151,22 @@ export function buildInboxItems(input: {
       weekStart: sheet.week_start,
       queryNote: sheet.query_note,
     });
+  }
+
+  // Submitted weeks are a parent/owner review surface — a carer must never
+  // see her own submission bounce back at her as "pending work" here (she
+  // already knows; nothing is awaiting HER response). Same role gate as
+  // co-parent approvals above.
+  if (isParentEditorRole(input.role)) {
+    for (const sheet of input.timesheets) {
+      if (sheet.status !== 'submitted') continue;
+      items.push({
+        kind: 'submitted_week',
+        id: sheet.id,
+        weekStart: sheet.week_start,
+        carerDisplayName: sheet.carer_display_name ?? null,
+      });
+    }
   }
 
   return items;

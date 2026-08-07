@@ -42,6 +42,7 @@ import { useUpdateExpense } from '@/src/hooks/mutations/useUpdateExpense';
 import { useUpdateTimeEntry } from '@/src/hooks/mutations/useUpdateTimeEntry';
 import { useWithdrawExpense } from '@/src/hooks/mutations/useWithdrawExpense';
 import { useCurrentPayArrangement } from '@/src/hooks/queries/useCurrentPayArrangement';
+import { usePayments } from '@/src/hooks/queries/usePayments';
 import { useWeekExpenses } from '@/src/hooks/queries/useWeekExpenses';
 import { useWeekTimeEntries } from '@/src/hooks/queries/useWeekTimeEntries';
 import { useWeekTimesheet } from '@/src/hooks/queries/useWeekTimesheet';
@@ -52,9 +53,12 @@ import type { TimeEntry } from '../types';
 import { formatDuration, formatOvertimeDelta } from '../utils/duration';
 import { formatEarningsLongDate } from '../utils/earningsFormat';
 import { scheduledMinutesFor, sumEntryMinutes } from '../utils/entryMinutes';
+import { derivePaidState } from '../utils/paidState';
 import { useReopenedNotice } from '../utils/reopenedNotice';
 import { EarningsBreakdownSheet } from './EarningsBreakdownSheet';
+import { PaidStateCard } from './PaidStateCard';
 import { TimeEntryDayRow } from './TimeEntryDayRow';
+import { WeekExportAction } from './WeekExportAction';
 import { WeekTotal } from './WeekTotal';
 
 interface NannyWeekViewProps {
@@ -126,6 +130,12 @@ export function NannyWeekView({
     ? (weekTimesheets.find(t => t.carer_id === currentUserId) ?? null)
     : null;
   const reopened = useReopenedNotice(timesheet?.id, timesheet?.status);
+  // Read-only for her, and only once the week is approved — settlement is
+  // measured against a FROZEN gross, so there is nothing to show before one
+  // exists. Same gate as the parent view, from the other side of the card.
+  const paymentsQuery = usePayments(
+    timesheet?.status === 'approved' ? timesheet.id : null
+  );
 
   const handleOpenAddExpense = () => {
     setEditingExpense(null);
@@ -237,6 +247,13 @@ export function NannyWeekView({
   const approvedExpenses = weekExpenses.filter(e => e.status === 'approved');
   const expensesCurrency =
     earningsOk?.currency ?? arrangementQuery.data?.currency ?? 'GBP';
+  // `earningsOk` is null for a week with no server total — `derivePaidState`
+  // returns null for that rather than measuring against a fabricated zero
+  // (docs/11-MONEY.md §4), and the card then renders nothing.
+  const paidState = derivePaidState(
+    paymentsQuery.data ?? [],
+    earningsOk ? earningsOk.gross_minor : null
+  );
   const mileageRateMinor =
     arrangementQuery.data?.mileage_rate_per_mile_minor ?? null;
 
@@ -307,6 +324,27 @@ export function NannyWeekView({
               onEdit={readOnly ? undefined : handleEditExpense}
               onWithdraw={readOnly ? undefined : handleWithdrawExpense}
             />
+            {/* "Paid £X on <date>", and what is still owed. No
+                `onMarkPaidPress` — recording a payment is the paying
+                family's action, and its absence is the whole read-only
+                contract (see PaidStateCard's module doc). */}
+            {isApproved && timesheet ? (
+              <>
+                <PaidStateCard
+                  paidState={paidState}
+                  payments={paymentsQuery.data ?? []}
+                  currency={expensesCurrency}
+                />
+                <WeekExportAction
+                  timesheetId={timesheet.id}
+                  weekStartISO={weekStartISO}
+                  weekRangeLabel={weekRangeLabel}
+                  carerName={timesheet.carer_display_name}
+                  earnings={earningsOk}
+                  paidState={paidState}
+                />
+              </>
+            ) : null}
           </>
         }
         contentContainerStyle={{

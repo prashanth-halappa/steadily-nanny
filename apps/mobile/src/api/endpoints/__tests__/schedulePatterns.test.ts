@@ -334,6 +334,111 @@ describe('schedulePatternApi.respond', () => {
   });
 });
 
+describe('schedulePatternApi.amend', () => {
+  it('POSTs an until-only body and returns the amended pattern + warnings', async () => {
+    apiClient.post.mockResolvedValue({
+      data: {
+        data: {
+          schedule_pattern: {
+            ...validPattern,
+            status: 'accepted',
+            until: '2026-03-01',
+          },
+          warnings: [],
+        },
+      },
+    });
+
+    const result = await schedulePatternApi.amend(patternId, {
+      until: '2026-03-01',
+    });
+
+    expect(apiClient.post).toHaveBeenCalledWith(
+      `/v1/schedule-patterns/${patternId}/amend`,
+      { until: '2026-03-01' }
+    );
+    expect(result.schedule_pattern.until).toBe('2026-03-01');
+    expect(result.warnings).toEqual([]);
+  });
+
+  it('POSTs a null until to remove the end date', async () => {
+    apiClient.post.mockResolvedValue({
+      data: {
+        data: {
+          schedule_pattern: {
+            ...validPattern,
+            status: 'accepted',
+            until: null,
+          },
+          warnings: [],
+        },
+      },
+    });
+
+    await schedulePatternApi.amend(patternId, { until: null });
+
+    expect(apiClient.post).toHaveBeenCalledWith(
+      `/v1/schedule-patterns/${patternId}/amend`,
+      { until: null }
+    );
+  });
+
+  it('POSTs an exdates-only body', async () => {
+    apiClient.post.mockResolvedValue({
+      data: {
+        data: {
+          schedule_pattern: {
+            ...validPattern,
+            status: 'accepted',
+            exdates: ['2026-02-10'],
+          },
+          warnings: [],
+        },
+      },
+    });
+
+    const result = await schedulePatternApi.amend(patternId, {
+      exdates: ['2026-02-10'],
+    });
+
+    expect(apiClient.post).toHaveBeenCalledWith(
+      `/v1/schedule-patterns/${patternId}/amend`,
+      { exdates: ['2026-02-10'] }
+    );
+    expect(result.schedule_pattern.exdates).toEqual(['2026-02-10']);
+  });
+
+  it('POSTs a pause_ranges-only body and keeps clash warnings', async () => {
+    apiClient.post.mockResolvedValue({
+      data: {
+        data: {
+          schedule_pattern: {
+            ...validPattern,
+            status: 'accepted',
+            pause_ranges: [{ from: '2026-04-01', to: '2026-04-08' }],
+          },
+          warnings: [{ kind: 'outside_availability' }],
+        },
+      },
+    });
+
+    const result = await schedulePatternApi.amend(patternId, {
+      pause_ranges: [{ from: '2026-04-01', to: '2026-04-08' }],
+    });
+
+    expect(apiClient.post).toHaveBeenCalledWith(
+      `/v1/schedule-patterns/${patternId}/amend`,
+      { pause_ranges: [{ from: '2026-04-01', to: '2026-04-08' }] }
+    );
+    expect(result.warnings).toEqual([{ kind: 'outside_availability' }]);
+  });
+
+  it('rejects an empty body without calling the API — at least one field is required', async () => {
+    await expect(schedulePatternApi.amend(patternId, {})).rejects.toThrow();
+    expect(apiClient.post).not.toHaveBeenCalled();
+  });
+});
+
 describe('schedulePatternApi.withdraw', () => {
   it('POSTs the withdraw action with no body', async () => {
     apiClient.post.mockResolvedValue({

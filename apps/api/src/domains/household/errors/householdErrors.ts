@@ -93,6 +93,40 @@ export class CannotRemoveOwnerError extends AuthorizationError {
   }
 }
 
+/**
+ * 403 — the owner cannot LEAVE either. Same rule as CannotRemoveOwnerError seen
+ * from the other side: the owner membership is created with the household and
+ * can never be revoked, so no path — removal or self-service leave — may leave
+ * a household orphaned, with nobody who can write to it.
+ */
+export class CannotLeaveAsOwnerError extends AuthorizationError {
+  constructor(householdId: string) {
+    super(
+      'The household owner cannot leave — the household would be left with nobody who can manage it',
+      'CANNOT_LEAVE_AS_OWNER',
+      { householdId }
+    );
+    this.name = 'CannotLeaveAsOwnerError';
+  }
+}
+
+/**
+ * 409 — the leaver is clocked in. Same strand as MemberHasRunningEntryError,
+ * addressed to the person themselves rather than to a parent about someone
+ * else: a distinct error exists purely so the message is second-person, since
+ * "ask them to clock out first" is nonsense shown to the carer who IS them.
+ */
+export class CannotLeaveWhileClockedInError extends ConflictError {
+  constructor(householdId: string) {
+    super(
+      'You are clocked in — clock out before leaving this household',
+      'CANNOT_LEAVE_WHILE_CLOCKED_IN',
+      { householdId }
+    );
+    this.name = 'CannotLeaveWhileClockedInError';
+  }
+}
+
 /** 400 — removing yourself is not this endpoint; leaving a household is its own feature. */
 export class CannotRemoveSelfError extends ValidationError {
   constructor(householdId: string) {

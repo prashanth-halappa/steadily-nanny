@@ -380,3 +380,30 @@ describe('householdApi.redeemInvite', () => {
     expect(apiClient.post).not.toHaveBeenCalled();
   });
 });
+
+describe('householdApi.leave', () => {
+  it('POSTs to the members/leave route with no body', async () => {
+    apiClient.post.mockResolvedValue({ data: { data: {} } });
+
+    await householdApi.leave(validHousehold.id);
+
+    expect(apiClient.post).toHaveBeenCalledWith(
+      `/v1/households/${validHousehold.id}/members/leave`
+    );
+  });
+
+  it('propagates the API refusal (owner / clocked in) rather than swallowing it', async () => {
+    apiClient.post.mockRejectedValue(
+      Object.assign(new Error('refused'), {
+        response: {
+          status: 403,
+          data: { error: { code: 'CANNOT_LEAVE_AS_OWNER' } },
+        },
+      })
+    );
+
+    await expect(householdApi.leave(validHousehold.id)).rejects.toThrow(
+      'refused'
+    );
+  });
+});

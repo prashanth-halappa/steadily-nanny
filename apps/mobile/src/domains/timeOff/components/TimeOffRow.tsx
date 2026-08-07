@@ -63,6 +63,13 @@ export function TimeOffRow({
         variant={pillVariant}
         label={t(`status.${timeOff.status}`)}
       />
+      {timeOff.kind === 'sick' ? (
+        <StatusPill
+          testID={`time-off-kind-sick-${timeOff.id}`}
+          variant="short-notice"
+          label={t('kind.sick')}
+        />
+      ) : null}
       {paidFamilyCount === undefined ? null : (
         <Small
           testID={`time-off-paid-marker-${timeOff.id}`}

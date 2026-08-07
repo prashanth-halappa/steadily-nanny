@@ -18,6 +18,7 @@ function makeTimeOff(overrides: Partial<Record<string, unknown>> = {}) {
     ends_at: '2026-08-13T00:00:00.000Z',
     all_day: true,
     message: null,
+    kind: 'personal' as const,
     status: 'confirmed' as const,
     ical_uid: 'time-off-1@steadily',
     sequence: 0,
@@ -272,5 +273,33 @@ describe('TimeOffRow', () => {
     expect(
       queryByTestId('time-off-cancel-22222222-2222-4222-8222-222222222222')
     ).toBeNull();
+  });
+
+  describe('kind: "sick" (068)', () => {
+    const ROW_ID = '22222222-2222-4222-8222-222222222222';
+
+    it('renders a distinct sick-kind marker for a sick row', () => {
+      const { getByTestId } = render(
+        <TimeOffRow
+          timeOff={makeTimeOff({ kind: 'sick' })}
+          onCancel={() => {}}
+          isCancelling={false}
+        />
+      );
+
+      expect(getByTestId(`time-off-kind-sick-${ROW_ID}`)).toBeTruthy();
+    });
+
+    it('renders no sick-kind marker for a personal row', () => {
+      const { queryByTestId } = render(
+        <TimeOffRow
+          timeOff={makeTimeOff({ kind: 'personal' })}
+          onCancel={() => {}}
+          isCancelling={false}
+        />
+      );
+
+      expect(queryByTestId(`time-off-kind-sick-${ROW_ID}`)).toBeNull();
+    });
   });
 });

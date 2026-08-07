@@ -77,6 +77,9 @@ mock.module('@/src/domains/inbox', () => ({
 mock.module('@/src/domains/today/components/ClockInCard', () => ({
   ClockInCard: marker('clock-in'),
 }));
+mock.module('@/src/domains/today/components/AddMissedHoursCard', () => ({
+  AddMissedHoursCard: marker('add-missed-hours'),
+}));
 mock.module('@/src/domains/today/components/CoverageGapBanner', () => ({
   CoverageGapBanner: marker('coverage-gap'),
 }));
@@ -199,5 +202,11 @@ describe('TodayScreen — card order', () => {
     );
 
     expect(order).not.toContain('clock-in');
+    expect(order).not.toContain('add-missed-hours');
+  });
+
+  it('still renders the missed-hours affordance for an active nanny', () => {
+    const order = renderOrder('nanny');
+    expect(order).toContain('add-missed-hours');
   });
 });

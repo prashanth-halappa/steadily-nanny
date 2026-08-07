@@ -22,6 +22,8 @@ import { localDateOf } from '../../timesheet/utils/weekStart';
 import { UserService } from '../../user/services/userService';
 import {
   AlreadyMemberError,
+  CannotLeaveAsOwnerError,
+  CannotLeaveWhileClockedInError,
   CannotRemoveOwnerError,
   CannotRemoveSelfError,
   InviteAlreadyAcceptedError,
@@ -255,14 +257,7 @@ export class HouseholdCommandService {
       }
     }
 
-    const roleLabel =
-      invite.role === HOUSEHOLD_ROLES.NANNY
-        ? 'nanny'
-        : invite.role === HOUSEHOLD_ROLES.PARENT
-          ? 'parent'
-          : invite.role === HOUSEHOLD_ROLES.HELPER
-            ? 'helper'
-            : invite.role;
+    const roleLabel = this.roleLabel(invite.role);
     // Same push type either way — "someone has access again" is the same alert
     // to a parent who did not send the invite; only the wording differs.
     const rejoined = existingMembership !== null;
@@ -375,6 +370,107 @@ export class HouseholdCommandService {
     return removed;
   }
 
+  /**
+   * Leave a household, self-service. This is the "separate feature" the
+   * `CannotRemoveSelfError` guard in `removeMember` points at: the same end
+   * state on the row, reached through a different door.
+   *
+   * What differs from a removal, and why:
+   * - Authorization is your own membership and nothing else. Any active role
+   *   may leave, so there is no `assertWriteRole` here — a nanny walking out is
+   *   the main case, and needing a parent's permission to stop working for a
+   *   family is not a product we would ship.
+   * - The OWNER is refused (`CannotLeaveAsOwnerError`), for exactly the reason
+   *   `CannotRemoveOwnerError` refuses removing them: the owner membership is
+   *   created with the household and never revoked, so no path may leave a
+   *   household with nobody who can write to it.
+   * - Pay is end-dated only for a NANNY. A removal calls `endForCarer`
+   *   unconditionally because the target is whoever a parent picked; here the
+   *   role is already in hand, and a co-parent or helper has no arrangement to
+   *   end — calling it for them is a write nobody asked for.
+   *
+   * What is deliberately IDENTICAL to removal: the running-entry refusal
+   * (leaving mid-shift strands an entry nobody can close), the end-date-then-
+   * flip ordering (the only order that cannot leave a departed member with live
+   * terms), and the household-LOCAL date the terms end on.
+   *
+   * `now` is injectable only for deterministic tests of that date boundary;
+   * production callers never pass it.
+   */
+  async leave(
+    callerId: string,
+    householdId: string,
+    now: () => Date = () => new Date()
+  ): Promise<HouseholdMember> {
+    // Throws HouseholdNotFoundError for both "no such household" and "not a
+    // member" — a stranger learns nothing either way.
+    const membership = await this.queries.getMembership(callerId, householdId);
+
+    if (membership.role === HOUSEHOLD_ROLES.OWNER) {
+      throw new CannotLeaveAsOwnerError(householdId);
+    }
+
+    // Scoped to THIS household, same as removal: a nanny clocked in at another
+    // family may still leave this one, and that shift is never disclosed here.
+    const running = await this.timeEntries.findRunningInHousehold(
+      householdId,
+      callerId
+    );
+    if (running) {
+      throw new CannotLeaveWhileClockedInError(householdId);
+    }
+
+    if (membership.role === HOUSEHOLD_ROLES.NANNY) {
+      const householdRow = await this.householdRepo.findById(householdId);
+      if (!householdRow) {
+        throw new MemberNotFoundError(membership.id);
+      }
+      await this.payArrangements.endForCarer(
+        householdId,
+        callerId,
+        localDateOf(now(), householdRow.timezone)
+      );
+    }
+
+    const removed = await this.memberRepo.removeMembership(membership.id);
+    if (!removed) {
+      // CAS matched nothing: a parent removed them between the read and here,
+      // or a duplicate tap won first.
+      throw new MemberNotFoundError(membership.id);
+    }
+
+    const roleLabel = this.roleLabel(membership.role);
+    // Nobody in the household initiated this, so without a push the family
+    // finds out when a shift goes uncovered.
+    //
+    // ponytail: the type is INVITE_REDEEMED, which is a lie in the name and
+    // true in every effect a client observes — it is the household's
+    // membership-changed push, and `notificationRouteMap` sends it to
+    // `/(private)/settings/household`, exactly where a parent reading "someone
+    // left" needs to land. There is no MEMBER_LEFT literal to use: the union
+    // lives in `packages/shared-types/schemas/notification.schema`, and adding
+    // one obliges the mobile route map to grow a matching entry in the same
+    // change (the exhaustiveness test enforces it). Split it out when that
+    // package is next touched; the wording, not the type, is what a recipient
+    // actually reads.
+    try {
+      notifyHouseholdParents(householdId, {
+        title: 'Someone left your household',
+        body: `A ${roleLabel} left the household.`,
+        data: {
+          type: PUSH_NOTIFICATION_TYPES.INVITE_REDEEMED,
+          householdId,
+        },
+      });
+    } catch {
+      // notifyHouseholdParents is sync fire-and-forget; swallow any unexpected
+      // throw — the membership row is already flipped and must not be undone by
+      // a notification failure.
+    }
+
+    return removed;
+  }
+
   /** Revoke a pending invite so its code stops working. Owner/parent only. */
   async revokeInvite(
     callerId: string,
@@ -442,6 +538,24 @@ export class HouseholdCommandService {
     } catch {
       return '';
     }
+  }
+
+  /**
+   * The role as it reads inside a push body. Falls back to the raw value rather
+   * than throwing: a role added to the enum without touching this map should
+   * cost a slightly stiff notification, never the write that triggered it.
+   */
+  private roleLabel(role: string): string {
+    if (role === HOUSEHOLD_ROLES.NANNY) {
+      return 'nanny';
+    }
+    if (role === HOUSEHOLD_ROLES.PARENT) {
+      return 'parent';
+    }
+    if (role === HOUSEHOLD_ROLES.HELPER) {
+      return 'helper';
+    }
+    return role;
   }
 
   private assertWriteRole(

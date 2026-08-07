@@ -15,7 +15,7 @@ import { renderWithProviders } from '@/src/test-utils';
 
 const listHouseholdsMock = mock(() => Promise.resolve([]));
 const createHouseholdMock = mock(
-  (): Promise<{ id: string; name: string }> =>
+  (_req: { name: string }): Promise<{ id: string; name: string }> =>
     Promise.reject(new Error('network down'))
 );
 const getProfileMock = mock(() =>
@@ -91,5 +91,38 @@ describe('ChildrenScreen — bootstrap failure surfacing (F-B11-6)', () => {
     fireEvent.press(screen.getByText('tryAgain'));
 
     await waitFor(() => expect(createHouseholdMock).toHaveBeenCalledTimes(2));
+  });
+});
+
+describe('ChildrenScreen — naming the household at creation (W1-E fix 3)', () => {
+  it('passes a typed household name to the create mutation', async () => {
+    createHouseholdMock.mockImplementationOnce(() =>
+      Promise.resolve({ id: 'household-1', name: 'The Ruiz Family' })
+    );
+    const screen = renderWithProviders(<ChildrenScreen />);
+
+    fireEvent.changeText(
+      screen.getByTestId('household-name-input'),
+      'The Ruiz Family'
+    );
+
+    await waitFor(() => expect(createHouseholdMock).toHaveBeenCalledTimes(1));
+    expect(createHouseholdMock.mock.calls[0]?.[0]).toEqual({
+      name: 'The Ruiz Family',
+    });
+  });
+
+  it('falls back to the default household name when the input is left empty', async () => {
+    createHouseholdMock.mockImplementationOnce(() =>
+      Promise.resolve({ id: 'household-1', name: 'Our household' })
+    );
+    const screen = renderWithProviders(<ChildrenScreen />);
+
+    expect(screen.getByTestId('household-name-input').props.value).toBe('');
+
+    await waitFor(() => expect(createHouseholdMock).toHaveBeenCalledTimes(1));
+    expect(createHouseholdMock.mock.calls[0]?.[0]).toEqual({
+      name: 'Our household',
+    });
   });
 });

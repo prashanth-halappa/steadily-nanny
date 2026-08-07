@@ -13,12 +13,14 @@
 import type {
   ClockInInput,
   ClockOutInput,
+  CreateRetroactiveTimeEntryInput,
   TimeEntry,
   UpdateTimeEntryInput,
 } from '@steadily-nanny/shared-types/schemas/timesheet.schema';
 import {
   ClockInSchema,
   ClockOutSchema,
+  CreateRetroactiveTimeEntrySchema,
   TimeEntryListResponseSchema,
   TimeEntrySchema,
   UpdateTimeEntrySchema,
@@ -36,7 +38,13 @@ export {
 } from '@steadily-nanny/shared-types/schemas/timesheet.schema';
 // Re-exported so domain-internal imports (`@/src/api/endpoints/timeEntries`)
 // stay stable regardless of where the wire contract itself lives.
-export type { ClockInInput, ClockOutInput, TimeEntry, UpdateTimeEntryInput };
+export type {
+  ClockInInput,
+  ClockOutInput,
+  CreateRetroactiveTimeEntryInput,
+  TimeEntry,
+  UpdateTimeEntryInput,
+};
 
 // --- Endpoint URLs ----------------------------------------------------------
 export const timeEntryEndpoints = {
@@ -44,6 +52,7 @@ export const timeEntryEndpoints = {
   clockOut: (entryId: string) => `/v1/time-entries/${entryId}/clock-out`,
   update: (entryId: string) => `/v1/time-entries/${entryId}`,
   running: '/v1/time-entries/running',
+  retroactive: '/v1/time-entries/retroactive',
   weekForHousehold: (householdId: string) =>
     `/v1/households/${householdId}/time-entries`,
 } as const;
@@ -107,6 +116,30 @@ export const timeEntryApi = {
 
     const response = await apiClient.patch(
       timeEntryEndpoints.update(entryId),
+      validated.data
+    );
+    const parsed = z
+      .object({ time_entry: TimeEntrySchema })
+      .safeParse(response.data.data);
+    if (!parsed.success) throw parsed.error;
+    return parsed.data.time_entry;
+  },
+
+  /**
+   * Forgotten clock-in recovery (D-something Today "Add missed hours").
+   * Both ends required — there is no running phase — and the entry lands
+   * `submitted` immediately. Server refusals a caller should expect:
+   * `CLOCK_CROSSES_WEEK` (span crosses a week boundary),
+   * `TIME_ENTRY_NOT_EDITABLE`/`week_approved`, and `TIME_ENTRY_OVERLAPS`.
+   */
+  createRetroactiveEntry: async (
+    input: CreateRetroactiveTimeEntryInput
+  ): Promise<TimeEntry> => {
+    const validated = CreateRetroactiveTimeEntrySchema.safeParse(input);
+    if (!validated.success) throw validated.error;
+
+    const response = await apiClient.post(
+      timeEntryEndpoints.retroactive,
       validated.data
     );
     const parsed = z

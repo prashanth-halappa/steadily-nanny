@@ -26,11 +26,13 @@ import { type Href, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
+import { Button } from '@/src/components/ui/button';
 import { Card } from '@/src/components/ui/card';
 import { FieldError } from '@/src/components/ui/field-error';
 import { FieldLabel } from '@/src/components/ui/field-label';
 import { Input } from '@/src/components/ui/input';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
+import { Text } from '@/src/components/ui/text';
 import { Body, H3 } from '@/src/components/ui/typography';
 import { SetupScreenShell } from '@/src/domains/setup/components/SetupScreenShell';
 import {
@@ -57,6 +59,7 @@ export function CodeEntryScreen() {
   const router = useRouter();
   const setRole = useSetupProgressStore(s => s.setRole);
   const setCurrentStep = useSetupProgressStore(s => s.setCurrentStep);
+  const signOut = useAuthStore(s => s.signOut);
   const authUser = useAuthStore(s => s.session?.user) ?? null;
   const [code, setCode] = useState('');
   const [submittedCode, setSubmittedCode] = useState<string | null>(null);
@@ -79,6 +82,16 @@ export function CodeEntryScreen() {
   const onCheckCode = () => {
     if (!code.trim()) return;
     setSubmittedCode(code.trim());
+  };
+
+  // A nanny (or the invite-code path off RoleScreen — see that screen's
+  // header comment) who lands here without a code in hand used to be
+  // trapped: no back, no sign-out. `replace`, not `back()` — RoleScreen
+  // itself navigates here with `router.replace`, which drops RoleScreen
+  // from history, so a bare `back()` would skip past it to whatever
+  // preceded RoleScreen instead of returning to the role fork.
+  const onBack = () => {
+    router.replace(getSetupStepRoute(SETUP_STEPS.ROLE) as Href);
   };
 
   const onJoin = () => {
@@ -104,10 +117,25 @@ export function CodeEntryScreen() {
           });
         }
         const membership = await redeemInvite.mutateAsync(submittedCode);
+        // A co-parent invite (server role 'parent', see HOUSEHOLD_ROLES) is
+        // JOINING a household the redeem above already gave them — unlike
+        // RoleScreen's own PARENT fork, which is the household's FIRST
+        // member and must create it via CHILDREN -> INVITE. Mapping to
+        // SETUP_ROLES.PARENT here is still correct (it is the role), but the
+        // step entry point can't be CODE's "next" within the parent
+        // sequence: `stepsForRole(PARENT)` doesn't contain CODE at all
+        // (that array is [ROLE, CHILDREN, INVITE, NOTIFICATIONS_PERMISSION,
+        // CALENDAR_PERMISSION]), so `getNextSetupStep` returns null and the
+        // existing `?? NOTIFICATIONS_PERMISSION` fallback below already
+        // lands a joining co-parent past CHILDREN/INVITE — exactly the
+        // "already has a household" entry point they need. No fallback
+        // route change required; this comment documents why that's safe.
         const resolvedRole =
           membership.role === HOUSEHOLD_ROLES.HELPER
             ? SETUP_ROLES.HELPER
-            : SETUP_ROLES.NANNY;
+            : membership.role === HOUSEHOLD_ROLES.PARENT
+              ? SETUP_ROLES.PARENT
+              : SETUP_ROLES.NANNY;
         setRole(resolvedRole);
         const next =
           getNextSetupStep(resolvedRole, SETUP_STEPS.CODE) ??
@@ -127,6 +155,8 @@ export function CodeEntryScreen() {
     <SetupScreenShell
       testID="code-screen"
       progress={getStepProgress(SETUP_ROLES.NANNY, SETUP_STEPS.CODE)}
+      onBack={onBack}
+      backLabel={t('common:back')}
       title={t('onboarding.code.title')}
       subtitle={t('onboarding.code.subtitle')}
       ctaLabel={
@@ -197,6 +227,19 @@ export function CodeEntryScreen() {
       {redeemInvite.isError ? (
         <FieldError>{t('onboarding.code.redeemError')}</FieldError>
       ) : null}
+
+      {/* Second escape hatch alongside `onBack`: someone who signed up
+          without a code in hand and doesn't want to go back to the role
+          fork either should still be able to leave, not just retreat one
+          step. Ghost/ text-only, same weight as `backToSignIn` elsewhere in
+          this namespace. */}
+      <Button
+        testID="code-screen-sign-out"
+        variant="ghost"
+        onPress={() => void signOut()}
+      >
+        <Text>{t('onboarding.code.signOut')}</Text>
+      </Button>
     </SetupScreenShell>
   );
 }

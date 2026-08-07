@@ -446,3 +446,94 @@ today because reactivation reuses the row. Whether a rejoin should end-date
 the arrangement, snapshot or reset the PTO balance, or refuse a role change
 is an **open owner decision** — see `audit/RESIDUAL-RISK.md`. Do not add
 money-side behaviour to the rejoin path before that lands.
+
+## 11. The settlement ledger: payments are facts, never a second source of truth
+
+`payments` (`supabase/migrations/067_payments.sql`,
+`packages/shared-types/src/schemas/payment.schema.ts`) records that a week's
+wages **actually moved**, outside the app — bank transfer, cash, whatever a
+family actually does. It is the other half of the loop §3 describes: §3
+freezes what a week was *worth*; this table records that it was *paid*. A
+payment row is evidence of a real-world event, not a computed or editable
+figure, so — same discipline as `pay_arrangements` (§2) and `pto_ledger`
+(§5) — **it is append-only**: no update, no delete, anywhere in the stack.
+Recording the wrong amount cannot be fixed by editing the row, only by
+recording a correcting fact (there is currently no correction path at all;
+an over-recorded payment stands until a human notices).
+
+**The ceiling is enforced by refusal, not by clamping.**
+`apps/api/src/domains/pay/services/paymentCommandService.ts` is the only
+place `sum(payments) <= gross_minor` is checked — a cross-row `SUM` can't be
+a row `CHECK`, and 067 has no insert policy at all (§8), so the service is
+the entire constraint. Gate 4 there computes `alreadyPaidMinor + amountMinor`
+and, if it would exceed the week's frozen `gross_minor`, throws
+`PaymentExceedsGrossError` rather than trimming the amount to what's left —
+a trimmed payment would be a record of money that did not move, which is a
+worse lie than a rejected request. **The service's own header documents a
+known, un-closed race on this gate**, in its own words: the check is
+read-then-write, so two simultaneous first payments could each see `sum = 0`
+and both commit, together exceeding the gross; sequential retries never hit
+it (the first row is visible by the second write), so the window is two
+parents tapping "Record payment" on the same week in the same instant.
+Closing it needs a 051-style database function that sums and inserts in one
+statement — a wider pre-check in the service cannot close a race that lives
+between two reads and two writes.
+
+**Currency is stamped from the frozen week, never client-chosen.**
+`CreatePaymentSchema` carries no `currency` field at all — the command
+service copies `currency` off the timesheet's own frozen snapshot (the same
+`gross_minor`/`currency` pair §3 freezes at approval), so a payment can never
+be recorded in a currency the week wasn't priced in. This is the same
+"minor-units-plus-sibling-currency, never packed, never guessed" discipline
+as §1, applied at the point where a client could otherwise have supplied one.
+
+**`paid_at` is a calendar date, not an instant.** It's the day the parent
+says the money moved — `z.iso.date()` on the wire, no timezone to get wrong,
+the same shape as a `local_date` elsewhere in this codebase rather than a
+`timestamptz`. There is no "when during the day" to record because nothing
+about payroll needs it.
+
+**The CSV export serialises only the FROZEN snapshot, in integer minor
+units, and refuses anything that isn't one.**
+`apps/api/src/domains/timesheet/utils/weekExportCsv.ts` is the payroll
+handoff artifact — the file a parent hands to HomePay/Nannytax/an
+accountant — and its column contract states plainly: "EVERY AMOUNT IS AN
+INTEGER IN MINOR UNITS. Never a major-unit float, never a currency symbol,
+never a thousands separator" — formatting money server-side is exactly how
+rounding errors get into a payslip, so the export never does it.
+`timesheetQueryService.exportWeekCsv` is **stricter than the screen**: a week
+that isn't `TIMESHEET_STATUSES.APPROVED`, or whose earnings state isn't
+`WEEK_EARNINGS_STATES.OK` (a legacy pre-042 approval, an unreadable snapshot,
+a departed-carer week, anything the screen would degrade to "hours only"),
+is refused outright with `TimesheetNotExportableError` (409) rather than
+exported with a caveat — a screen can show an honest "Estimated" or
+"hours-only" state next to a figure, but a downloaded file has no such label
+once it leaves the app and is filed against. Nothing is recomputed on the
+way out: the status check happens *before* the earnings are read, so the
+only branch reachable from there is the frozen-snapshot one.
+
+**`balance_due_minor` is a plain subtraction, deliberately never clamped at
+zero.** It is `total_gross_minor - paid_to_date_minor` in the export, and an
+over-payment (recorded in error, or against a week whose gross later reads
+differently through some future correction path) must render as a
+**negative** balance, not silently disappear — the same "no is honest, zero
+often lies" instinct as §4's no-arrangement rule.
+
+**The export's `paid_to_date_minor` read gate is deliberately the WEEK read's
+gate, not the payments-list gate — read the one-line reason at its call
+site rather than assuming a bug.**
+`paymentQueryService`'s own gate (used by `GET
+/timesheets/:timesheetId/payments`) is narrower than the week read: only
+active owners/parents plus the week's own carer, denying a second nanny and
+any helper — because one nanny must never see another's money. The export,
+by contrast, calls `getReadableTimesheet` — byte-identical to the plain week
+read's gate, which is "any active member of the household." That's not an
+oversight; `timesheetQueryService.exportWeekCsv`'s doc comment states the
+reasoning directly: *"this discloses a settlement total to any active member
+the week read already shows the frozen gross to — a wider audience than
+`paymentQueryService`'s own gate... That is deliberate and bounded: the
+export is the same artifact as the week read, in a different container, and
+giving it a second, narrower gate would mean a carer or parent could see a
+figure on screen that her own download silently omits."* In short: the export
+must never hide a number the corresponding screen already shows, even though
+that makes its read gate wider than the dedicated payments-list endpoint's.
