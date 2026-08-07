@@ -221,6 +221,164 @@ describe('TimeOffCommandService.create — conflict scan', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// SICK-DAY COPY (067). The conflict push is the ONLY place a family learns
+// that a booked shift is about to go uncovered, so it has to say which thing
+// happened: "she has taken time off" (planned, weeks out, plan around it) and
+// "she has called in sick" (today, right now, find cover) are different
+// messages to different urgencies. The personal wording is pinned verbatim in
+// the same block — branching on kind must not disturb the copy every existing
+// family already receives.
+//
+// Not tested here because it is deliberately NOT built: nothing demotes or
+// cancels the affected shifts. They stay confirmed and the parent decides —
+// cancellation has pay consequences (cancellation_paid).
+// ---------------------------------------------------------------------------
+describe('TimeOffCommandService — conflict push copy by kind', () => {
+  function pushFor(
+    calls: unknown[][],
+    householdId: string
+  ): { title: string; body: string; data: Record<string, unknown> } {
+    const call = (
+      calls as [string, { title: string; body: string; data: never }][]
+    ).find(([id]) => id === householdId);
+    if (!call) throw new Error(`no push for ${householdId}`);
+    return call[1];
+  }
+
+  it('a SICK time off over 1 shift reads as sickness, not as a holiday request', async () => {
+    const notify = mock(() => undefined);
+    const svc = new TimeOffCommandService(
+      makeTimeOffRepo() as never,
+      makeQueries() as never,
+      makeOverlapRepo([{ id: 's1', household_id: 'hh-reyes' }]) as never,
+      notify,
+      async () => undefined,
+      makeMemberRepo() as never
+    );
+
+    await svc.create('nanny-1', {
+      starts_at: '2026-08-10T08:00:00Z',
+      ends_at: '2026-08-10T18:00:00Z',
+      kind: 'sick',
+    });
+
+    const payload = pushFor(notify.mock.calls, 'hh-reyes');
+    expect(payload.title).toBe('Carer has called in sick');
+    expect(payload.body).toBe(
+      'Your carer has called in sick and will miss 1 booked shift.'
+    );
+    expect(payload.data).toEqual(
+      expect.objectContaining({
+        type: PUSH_NOTIFICATION_TYPES.CARER_TIME_OFF_CONFLICT,
+        householdId: 'hh-reyes',
+        affectedShiftCount: 1,
+        kind: 'sick',
+      })
+    );
+    // The holiday-request phrasing must be nowhere near a sick day.
+    expect(payload.body).not.toContain('taken time off');
+  });
+
+  it('a SICK time off over several shifts pluralises the sickness copy', async () => {
+    const notify = mock(() => undefined);
+    const svc = new TimeOffCommandService(
+      makeTimeOffRepo() as never,
+      makeQueries() as never,
+      makeOverlapRepo([
+        { id: 's1', household_id: 'hh-reyes' },
+        { id: 's2', household_id: 'hh-reyes' },
+      ]) as never,
+      notify,
+      async () => undefined,
+      makeMemberRepo() as never
+    );
+
+    await svc.create('nanny-1', {
+      starts_at: '2026-08-10T08:00:00Z',
+      ends_at: '2026-08-11T18:00:00Z',
+      kind: 'sick',
+    });
+
+    const payload = pushFor(notify.mock.calls, 'hh-reyes');
+    expect(payload.title).toBe('Carer has called in sick');
+    expect(payload.body).toBe(
+      'Your carer has called in sick and will miss 2 booked shifts.'
+    );
+  });
+
+  // Byte-identical regression pin for every family already on the app.
+  it('a PERSONAL time off keeps the pre-067 wording, singular and plural', async () => {
+    const notify = mock(() => undefined);
+    const svc = new TimeOffCommandService(
+      makeTimeOffRepo() as never,
+      makeQueries() as never,
+      makeOverlapRepo([
+        { id: 's1', household_id: 'hh-one' },
+        { id: 's2', household_id: 'hh-many' },
+        { id: 's3', household_id: 'hh-many' },
+      ]) as never,
+      notify,
+      async () => undefined,
+      makeMemberRepo() as never
+    );
+
+    await svc.create('nanny-1', {
+      starts_at: '2026-08-10T00:00:00Z',
+      ends_at: '2026-08-12T00:00:00Z',
+      all_day: true,
+    });
+
+    const single = pushFor(notify.mock.calls, 'hh-one');
+    expect(single.title).toBe('Carer time off overlaps shifts');
+    expect(single.body).toBe(
+      'Your carer has taken time off that overlaps 1 booked shift.'
+    );
+    expect(single.data).toEqual(
+      expect.objectContaining({ kind: 'personal', affectedShiftCount: 1 })
+    );
+
+    const plural = pushFor(notify.mock.calls, 'hh-many');
+    expect(plural.title).toBe('Carer time off overlaps shifts');
+    expect(plural.body).toBe(
+      'Your carer has taken time off that overlaps 2 booked shifts.'
+    );
+  });
+
+  it('an UPDATE of a sick row re-pushes with the sickness copy', async () => {
+    const notify = mock(() => undefined);
+    const sickRow: CarerTimeOff = {
+      ...row,
+      kind: 'sick',
+      starts_at: new Date(Date.now() + 3_600_000).toISOString(),
+      ends_at: new Date(Date.now() + 7_200_000).toISOString(),
+    };
+    const svc = new TimeOffCommandService(
+      makeTimeOffRepo({
+        // The repo returns the row as it now stands in the database.
+        update: mock(async (id: string, data: Record<string, unknown>) => ({
+          ...sickRow,
+          id,
+          ...data,
+        })),
+      }) as never,
+      makeQueries({ getOwned: mock(async () => sickRow) }) as never,
+      makeOverlapRepo([{ id: 's1', household_id: 'hh-a' }]) as never,
+      notify,
+      async () => undefined,
+      makeMemberRepo() as never
+    );
+
+    await svc.update('nanny-1', 't1', { message: 'still unwell' });
+
+    const payload = pushFor(notify.mock.calls, 'hh-a');
+    expect(payload.title).toBe('Carer has called in sick');
+    expect(payload.body).toBe(
+      'Your carer has called in sick and will miss 1 booked shift.'
+    );
+  });
+});
+
 describe('TimeOffCommandService.update — conflict scan', () => {
   it('re-scans the effective range and pushes per-household counts', async () => {
     const notify = mock(() => undefined);

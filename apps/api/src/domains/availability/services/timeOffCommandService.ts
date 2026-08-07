@@ -21,9 +21,10 @@ import {
   type OverlappingBookedShift,
   OverlappingShiftRepository,
 } from '../repositories/overlappingShiftRepository';
-import { CARER_TIME_OFF_STATUSES } from '../schemas';
+import { CARER_TIME_OFF_KINDS, CARER_TIME_OFF_STATUSES } from '../schemas';
 import type {
   CarerTimeOff,
+  CarerTimeOffKind,
   CarerTimeOffMutationResponse,
   CreateCarerTimeOffInput,
   UpdateCarerTimeOffInput,
@@ -55,6 +56,51 @@ export type NotifyHouseholdParentsFn = (
  */
 export type ReconcilePtoUsageFn = (timeOffId: string) => Promise<void>;
 
+/**
+ * The conflict push copy, branched on `kind` (067).
+ *
+ * This push is the ONLY signal a family gets that a booked shift is about to
+ * go uncovered, so it has to name which thing happened. "Your carer has taken
+ * time off" is a planned absence you plan around; "your carer has called in
+ * sick" is today, and someone has to cover this morning. Same notification
+ * type, same per-household count, different urgency — sending the holiday
+ * wording for a sick day buries the emergency inside the routine.
+ *
+ * The personal-kind strings are byte-identical to the pre-067 ones and are
+ * pinned in `timeOffConflictNotify.test.ts` — every existing family is already
+ * receiving them.
+ *
+ * `count` is THIS household's own overlap count and `householdId` its own id:
+ * never the cross-household total, never another family's id. `kind` is safe
+ * to include here precisely because this push only ever reaches households
+ * whose confirmed shifts the absence hits — it is deliberately NOT in the
+ * anonymised busy-block view, where a sick day stays plain `time_off`
+ * (see 067's privacy note and `AnonymisedBusyBlockSchema`).
+ */
+function buildConflictPush(
+  kind: CarerTimeOffKind,
+  householdId: string,
+  count: number
+): PushPayload {
+  const shifts = count === 1 ? '1 booked shift' : `${count} booked shifts`;
+  const isSick = kind === CARER_TIME_OFF_KINDS.SICK;
+
+  return {
+    title: isSick
+      ? 'Carer has called in sick'
+      : 'Carer time off overlaps shifts',
+    body: isSick
+      ? `Your carer has called in sick and will miss ${shifts}.`
+      : `Your carer has taken time off that overlaps ${shifts}.`,
+    data: {
+      type: PUSH_NOTIFICATION_TYPES.CARER_TIME_OFF_CONFLICT,
+      householdId,
+      affectedShiftCount: count,
+      kind,
+    },
+  };
+}
+
 export class TimeOffCommandService {
   constructor(
     private readonly timeOffRepo: CarerTimeOffRepository = new CarerTimeOffRepository(),
@@ -85,12 +131,17 @@ export class TimeOffCommandService {
     await this.queries.assertActiveMember(userId);
     const carer_time_off = await this.timeOffRepo.create({
       ...input,
+      // Explicit rather than left to the column default (067): `kind` decides
+      // what the affected families are told, and "absent" is not a state this
+      // domain has. A client that omits it means a planned personal request.
+      kind: input.kind ?? CARER_TIME_OFF_KINDS.PERSONAL,
       user_id: userId,
     });
     const affected_shift_count = await this.safeScanAndNotify(
       userId,
       carer_time_off.starts_at,
-      carer_time_off.ends_at
+      carer_time_off.ends_at,
+      carer_time_off.kind
     );
     this.notifyTimeOffRequested(userId);
     return { carer_time_off, affected_shift_count };
@@ -220,7 +271,8 @@ export class TimeOffCommandService {
     const affected_shift_count = await this.safeScanAndNotify(
       userId,
       carer_time_off.starts_at,
-      carer_time_off.ends_at
+      carer_time_off.ends_at,
+      carer_time_off.kind
     );
     return { carer_time_off, affected_shift_count };
   }
@@ -232,10 +284,11 @@ export class TimeOffCommandService {
   private async safeScanAndNotify(
     carerId: string,
     startsAt: string,
-    endsAt: string
+    endsAt: string,
+    kind: CarerTimeOffKind
   ): Promise<number> {
     try {
-      return await this.scanAndNotify(carerId, startsAt, endsAt);
+      return await this.scanAndNotify(carerId, startsAt, endsAt, kind);
     } catch (error) {
       logger.error('Time-off overlap scan failed after write', {
         carerId,
@@ -254,7 +307,8 @@ export class TimeOffCommandService {
   private async scanAndNotify(
     carerId: string,
     startsAt: string,
-    endsAt: string
+    endsAt: string,
+    kind: CarerTimeOffKind
   ): Promise<number> {
     const shifts = await this.overlapRepo.listConfirmedForCarerInRange(
       carerId,
@@ -269,18 +323,7 @@ export class TimeOffCommandService {
     }
 
     for (const [householdId, count] of counts) {
-      const payload: PushPayload = {
-        title: 'Carer time off overlaps shifts',
-        body:
-          count === 1
-            ? 'Your carer has taken time off that overlaps 1 booked shift.'
-            : `Your carer has taken time off that overlaps ${count} booked shifts.`,
-        data: {
-          type: PUSH_NOTIFICATION_TYPES.CARER_TIME_OFF_CONFLICT,
-          householdId,
-          affectedShiftCount: count,
-        },
-      };
+      const payload = buildConflictPush(kind, householdId, count);
       try {
         this.notifyParents(householdId, payload);
       } catch {
