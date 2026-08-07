@@ -110,7 +110,17 @@
     "removeMemberConfirmBody": "Perderá el acceso a este hogar de inmediato. Puedes volver a invitarle más adelante si cambias de opinión.",
     "removeMemberConfirmCancel": "Cancelar",
     "removeMemberConfirmConfirm": "Eliminar",
-    "removeMemberSuccessToast": "{{name}} eliminado del hogar"
+    "removeMemberSuccessToast": "{{name}} eliminado del hogar",
+    "leaveSectionTitle": "Salir",
+    "leaveButton": "Salir del hogar",
+    "leaveHint": "Solo un padre o madre de este hogar puede volver a añadirte.",
+    "leaveConfirmTitle": "¿Salir de {{name}}?",
+    "leaveConfirmBody": "Perderás el acceso al horario, las horas y el pago de este hogar. Las horas que ya has trabajado siguen en su registro, y tendrían que volver a invitarte.",
+    "leaveConfirmCancel": "Quedarme",
+    "leaveConfirmConfirm": "Salir del hogar",
+    "leftToast": "Has salido de {{name}}",
+    "leaveOwnerError": "Creaste este hogar, así que no puedes salir: alguien tiene que poder gestionarlo.",
+    "leaveClockedInError": "Tienes el turno abierto. Fíchalo primero y luego sal."
   },
   "closures": {
     "manageTitle": "Estamos de viaje",

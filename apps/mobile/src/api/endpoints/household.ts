@@ -45,6 +45,7 @@ export const householdEndpoints = {
   listMembers: (householdId: string) => `/v1/households/${householdId}/members`,
   updateMember: (householdId: string, memberId: string) =>
     `/v1/households/${householdId}/members/${memberId}`,
+  leave: (householdId: string) => `/v1/households/${householdId}/members/leave`,
   createInvite: (householdId: string) =>
     `/v1/households/${householdId}/invites`,
   updateInvite: (householdId: string, inviteId: string) =>
@@ -185,6 +186,25 @@ export const householdApi = {
       .safeParse(response.data.data);
     if (!parsed.success) throw parsed.error;
     return parsed.data.household_member;
+  },
+
+  /**
+   * Leave a household yourself — the self-service counterpart to
+   * `updateMember({ status: 'removed' })`, which is deliberately somebody
+   * ELSE removing you (`CannotRemoveSelfError`). No body: the membership is
+   * fully determined by the caller's identity plus the household in the URL.
+   *
+   * Two refusals, both enforced server-side and both surfaced to the caller
+   * rather than swallowed: 403 `CANNOT_LEAVE_AS_OWNER` (the owner membership
+   * is created with the household and can never be revoked, so no path may
+   * orphan a household) and 409 `CANNOT_LEAVE_WHILE_CLOCKED_IN`.
+   *
+   * Returns nothing. The response carries no membership row on purpose —
+   * after leaving there is no active membership left to describe, and the
+   * caller's next honest read is the refetched household/membership lists.
+   */
+  leave: async (householdId: string): Promise<void> => {
+    await apiClient.post(householdEndpoints.leave(householdId));
   },
 
   /** Generate an invite code (parents only — enforced server-side). */

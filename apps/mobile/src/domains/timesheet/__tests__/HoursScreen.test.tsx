@@ -100,6 +100,21 @@ mock.module('@/src/hooks/mutations/useReviewExpense', () => ({
   }),
 }));
 
+// Settlement (066): both role views call the real payments query/mutation
+// unconditionally on an approved week — mocked for the same "a real hook
+// needs a QueryClientProvider this screen test deliberately doesn't stand
+// up" reason as every hook above.
+mock.module('@/src/hooks/queries/usePayments', () => ({
+  usePayments: () => ({ data: [], isLoading: false }),
+}));
+mock.module('@/src/hooks/mutations/useRecordPayment', () => ({
+  useRecordPayment: () => ({
+    mutateAsync: mock(() => Promise.resolve({})),
+    isPending: false,
+  }),
+  overPaymentMetadata: () => null,
+}));
+
 // TimeEntryDayRow now hosts a flagged-entry AlertDialog (Wave 4 CX).
 mock.module('@rn-primitives/alert-dialog', () => {
   const React = require('react');

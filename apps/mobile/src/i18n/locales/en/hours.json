@@ -82,5 +82,37 @@
   "reopenDialogReasonHint": "Required — kept on your household's record.",
   "reopenDialogCancel": "Not yet",
   "reopenDialogConfirm": "Reopen the week",
-  "reopenedToast": "Week reopened"
+  "reopenedToast": "Week reopened",
+  "paid": {
+    "title": "Payment",
+    "badgePaid": "Paid",
+    "badgePartial": "Partially paid",
+    "badgeUnpaid": "Unpaid",
+    "paidToDateLabel": "Paid so far",
+    "balanceLabel": "Still to pay",
+    "noPayments": "No payments recorded yet.",
+    "markPaidButton": "Mark as paid",
+    "recordedToast": "Payment recorded",
+    "note": "Steadily records that the money moved — it doesn't move it.",
+    "exceedsGrossError": "That's more than this week still has left to pay.",
+    "weekNotApprovedError": "Approve the week first — payments are recorded against an approved total."
+  },
+  "export": {
+    "button": "Export week",
+    "sheetTitle": "Export this week",
+    "sheetSubtitle": "{{range}}",
+    "csvOption": "Share CSV",
+    "csvHint": "Every line of the week, for a spreadsheet or your accountant.",
+    "pdfOption": "Share PDF",
+    "pdfHint": "A one-page statement for this week.",
+    "unavailable": "Sharing isn't available on this device.",
+    "failed": "Couldn't prepare the export. Please try again.",
+    "receiptHeading": "Weekly statement",
+    "receiptCarer": "Carer",
+    "receiptWeek": "Week",
+    "receiptGross": "Gross pay",
+    "receiptPaidToDate": "Paid so far",
+    "receiptBalance": "Still to pay",
+    "receiptFooter": "Based on the hours recorded in Steadily. Tax and deductions are handled by your payroll."
+  }
 }

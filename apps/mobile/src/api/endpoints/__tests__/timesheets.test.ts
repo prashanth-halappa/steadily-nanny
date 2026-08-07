@@ -250,3 +250,23 @@ describe('timesheetApi.query', () => {
     expect(apiClient.post).not.toHaveBeenCalled();
   });
 });
+
+describe('timesheetApi.exportCsv', () => {
+  it('GETs :id/export.csv as raw text and returns the body verbatim', async () => {
+    const csv =
+      'date,description,kind,minutes,rate_minor,amount_minor,currency\n' +
+      '2026-07-27,Hours worked,regular,2460,1850,23612,GBP\n';
+    apiClient.get.mockResolvedValue({ data: csv });
+
+    const result = await timesheetApi.exportCsv(validTimesheet.id);
+
+    expect(apiClient.get).toHaveBeenCalledWith(
+      `/v1/timesheets/${validTimesheet.id}/export.csv`,
+      { responseType: 'text', headers: { Accept: 'text/csv' } }
+    );
+    // Verbatim: the server owns the column order and the summary rows, and
+    // re-deriving any of it on the client is exactly the duplication
+    // docs/11-MONEY.md forbids.
+    expect(result).toBe(csv);
+  });
+});

@@ -82,5 +82,37 @@
   "reopenDialogReasonHint": "Obligatorio — se guarda en el registro de tu hogar.",
   "reopenDialogCancel": "Todavía no",
   "reopenDialogConfirm": "Reabrir la semana",
-  "reopenedToast": "Semana reabierta"
+  "reopenedToast": "Semana reabierta",
+  "paid": {
+    "title": "Pago",
+    "badgePaid": "Pagada",
+    "badgePartial": "Pagada en parte",
+    "badgeUnpaid": "Sin pagar",
+    "paidToDateLabel": "Pagado hasta ahora",
+    "balanceLabel": "Pendiente de pago",
+    "noPayments": "Todavía no hay pagos registrados.",
+    "markPaidButton": "Marcar como pagada",
+    "recordedToast": "Pago registrado",
+    "note": "Steadily deja constancia de que el dinero se movió; no lo mueve.",
+    "exceedsGrossError": "Eso es más de lo que queda por pagar de esta semana.",
+    "weekNotApprovedError": "Aprueba la semana primero: los pagos se registran sobre un total aprobado."
+  },
+  "export": {
+    "button": "Exportar semana",
+    "sheetTitle": "Exportar esta semana",
+    "sheetSubtitle": "{{range}}",
+    "csvOption": "Compartir CSV",
+    "csvHint": "Cada línea de la semana, para una hoja de cálculo o tu gestoría.",
+    "pdfOption": "Compartir PDF",
+    "pdfHint": "Un resumen de una página de esta semana.",
+    "unavailable": "Este dispositivo no permite compartir.",
+    "failed": "No se pudo preparar la exportación. Inténtalo de nuevo.",
+    "receiptHeading": "Resumen semanal",
+    "receiptCarer": "Cuidadora",
+    "receiptWeek": "Semana",
+    "receiptGross": "Pago bruto",
+    "receiptPaidToDate": "Pagado hasta ahora",
+    "receiptBalance": "Pendiente de pago",
+    "receiptFooter": "Basado en las horas registradas en Steadily. Los impuestos y las deducciones los gestiona tu nómina."
+  }
 }

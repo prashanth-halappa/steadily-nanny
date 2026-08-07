@@ -28,6 +28,14 @@
  * week is 'this week'" for any NEW schedule or the Hours screen's default
  * view changes the moment this saves. The copy says exactly that, not more.
  *
+ * LEAVING (066 wave): the mirror image of the per-row Remove below — a member
+ * taking THEMSELVES out. Offered only when the viewer's own membership is not
+ * `owner`, read from the same server-derived members list the Remove rows use
+ * rather than from `onboarding.role`, which collapses `owner` and `parent`
+ * into one `SetupRole` and so cannot tell the un-leavable owner from a
+ * co-parent. The server refuses an owner anyway (403 CANNOT_LEAVE_AS_OWNER);
+ * hiding the action is so nobody is offered a door that never opens.
+ *
  * D3: member removal reuses the same `AlertDialog` confirm pattern for its
  * own destructive action (unlike delete-account's `BottomSheetBase` — there
  * is no text input here, so no keyboard to avoid). The Remove action is
@@ -48,7 +56,7 @@ import {
   HOUSEHOLD_APPROVAL_SCOPES,
   HOUSEHOLD_ROLES,
 } from '@steadily-nanny/shared-types/schemas/household.schema';
-import { useRouter } from 'expo-router';
+import { type Href, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
@@ -77,6 +85,7 @@ import { PaySetupPromptCard } from '@/src/domains/pay/components/PaySetupPromptC
 import { resolveCarerName } from '@/src/domains/schedule/utils/memberDisplayName';
 import { isParentEditorRole } from '@/src/domains/setup/types';
 import { findTimezoneOption } from '@/src/domains/setup/utils/timezones';
+import { useLeaveHousehold } from '@/src/hooks/mutations/useLeaveHousehold';
 import { useRemoveMember } from '@/src/hooks/mutations/useRemoveMember';
 import { useUpdateHousehold } from '@/src/hooks/mutations/useUpdateHousehold';
 import { useHouseholdMembers } from '@/src/hooks/queries/useHouseholdMembers';
@@ -131,9 +140,11 @@ export function ManageHouseholdScreen() {
   );
   const activeMembers = (members.data ?? []).filter(m => m.status === 'active');
   const removeMember = useRemoveMember(household?.id ?? '');
+  const leaveHousehold = useLeaveHousehold();
   const [memberToRemove, setMemberToRemove] = useState<HouseholdMember | null>(
     null
   );
+  const [isLeaveConfirmOpen, setIsLeaveConfirmOpen] = useState(false);
 
   const [name, setName] = useState('');
   const [addressLine, setAddressLine] = useState('');
@@ -283,6 +294,34 @@ export function ManageHouseholdScreen() {
     } catch {
       // useUpdateHousehold's onError already surfaces a toast.
     }
+  };
+
+  // The viewer's OWN row, from the same list the Remove rows are built from.
+  const ownMembership =
+    activeMembers.find(m => m.user_id === currentUserId) ?? null;
+  const canLeave =
+    ownMembership !== null && ownMembership.role !== HOUSEHOLD_ROLES.OWNER;
+
+  const handleConfirmLeave = async () => {
+    setIsLeaveConfirmOpen(false);
+    const name = household.name;
+    try {
+      await leaveHousehold.mutateAsync(household.id);
+    } catch {
+      // useLeaveHousehold's onError already named the refusal (owner /
+      // clocked in) in a toast, and staying on this screen is the honest
+      // outcome — nothing changed.
+      return;
+    }
+    showSuccessToast(t('householdSettings.leftToast', { name }));
+    // Back through the ENTRY ROUTER rather than a guessed destination: after
+    // leaving, "where does this user belong" depends on whether they have
+    // another active household, a past-household-only history, or nothing at
+    // all — and `app/index.tsx` is the one place that answers that, from the
+    // memberships the mutation just invalidated. `replace`, not `push`: the
+    // household settings screen for a household you are no longer in must
+    // not be reachable with a back gesture.
+    router.replace('/' as Href);
   };
 
   const canRemoveMember = (member: HouseholdMember): boolean =>
@@ -511,6 +550,61 @@ export function ManageHouseholdScreen() {
           ))}
         </View>
       </View>
+
+      {canLeave ? (
+        <View className="gap-2" testID="household-leave-section">
+          <FieldLabel>{t('householdSettings.leaveSectionTitle')}</FieldLabel>
+          <AnimatedPressable
+            testID="household-leave-button"
+            accessibilityLabel={t('householdSettings.leaveButton')}
+            onPress={() => setIsLeaveConfirmOpen(true)}
+          >
+            <View className="rounded-row border border-border bg-background px-4 py-3">
+              <Small className="text-destructive">
+                {t('householdSettings.leaveButton')}
+              </Small>
+            </View>
+          </AnimatedPressable>
+          <Small className="text-muted-foreground">
+            {t('householdSettings.leaveHint')}
+          </Small>
+        </View>
+      ) : null}
+
+      {/* Controlled, no Trigger — same shape as the two confirms below. No
+          text input, so AlertDialog's lack of keyboard avoidance never comes
+          into play. */}
+      <AlertDialog
+        open={isLeaveConfirmOpen}
+        onOpenChange={setIsLeaveConfirmOpen}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {t('householdSettings.leaveConfirmTitle', {
+                name: household.name,
+              })}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('householdSettings.leaveConfirmBody')}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel testID="household-leave-cancel">
+              <Text>{t('householdSettings.leaveConfirmCancel')}</Text>
+            </AlertDialogCancel>
+            <AlertDialogAction
+              testID="household-leave-confirm"
+              className={buttonVariants({ variant: 'destructive' })}
+              onPress={() => void handleConfirmLeave()}
+            >
+              <Text className="text-destructive-foreground">
+                {t('householdSettings.leaveConfirmConfirm')}
+              </Text>
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Controlled, no Trigger — opened programmatically from a per-row
           Remove tap above. No text input here (unlike delete-account), so
