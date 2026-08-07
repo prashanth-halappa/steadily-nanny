@@ -1,0 +1,13 @@
+{
+  "name": "nanny-getsteadily",
+  "main": "worker.js",
+  "compatibility_date": "2026-08-06",
+  "routes": [{ "pattern": "nanny.getsteadily.app", "custom_domain": true }],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "nanny-waitlist",
+      "database_id": "529b3a07-6e97-429a-8fab-0280c5a4154c"
+    }
+  ]
+}
