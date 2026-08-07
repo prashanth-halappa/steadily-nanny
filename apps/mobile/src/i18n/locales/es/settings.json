@@ -129,7 +129,8 @@
       "co_parent_approval_requested": "Aprobación necesaria",
       "co_parent_approval_resolved": "Aprobación respondida",
       "approval_expiring": "Aprobación por vencer",
-      "handoff_note_added": "Nueva nota de traspaso"
+      "handoff_note_added": "Nueva nota de traspaso",
+      "shift_no_show": "Nadie ha fichado"
     }
   }
 }

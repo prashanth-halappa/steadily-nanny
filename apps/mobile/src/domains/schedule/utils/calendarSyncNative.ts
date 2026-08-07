@@ -7,7 +7,7 @@
 import * as Sentry from '@sentry/react-native';
 import type { HouseholdMember } from '@steadily-nanny/shared-types/schemas/household.schema';
 // ponytail: expo-calendar/legacy is deprecated in SDK 57; migrate to root class API when EventKit write+read path is reworked.
-import * as Calendar from 'expo-calendar/legacy';
+import type * as ExpoCalendar from 'expo-calendar/legacy';
 import { childrenApi } from '@/src/api/endpoints/children';
 import { householdApi } from '@/src/api/endpoints/household';
 import { shiftApi } from '@/src/api/endpoints/shifts';
@@ -23,6 +23,37 @@ import {
   clearMarkedEvents,
   runCalendarSync,
 } from './runCalendarSync';
+
+type CalendarApi = typeof ExpoCalendar;
+
+let cachedCalendar: CalendarApi | null | undefined;
+
+/**
+ * `expo-calendar` resolves its native module at import time and throws
+ * `Cannot find native module 'ExpoCalendar'` when the running binary doesn't
+ * have it — a dev client built before the pod was linked, or JS shipped ahead
+ * of the native build by an OTA update. This module is reached from
+ * `AppBootstrap`, so a static import turns that into a redbox at
+ * bundle-evaluation time, before login, and takes the whole app down. Loading
+ * it lazily keeps calendar sync — a nice-to-have — the only casualty.
+ */
+function calendar(): CalendarApi | null {
+  if (cachedCalendar === undefined) {
+    try {
+      cachedCalendar = require('expo-calendar/legacy') as CalendarApi;
+    } catch {
+      cachedCalendar = null;
+    }
+  }
+  return cachedCalendar;
+}
+
+/** For the write paths, which `runCalendarSync` only reaches once permission reads succeed. */
+function requireCalendar(): CalendarApi {
+  const api = calendar();
+  if (!api) throw new Error("Native module 'ExpoCalendar' is unavailable");
+  return api;
+}
 
 function resolveEventLabels(): CalendarEventLabels {
   return {
@@ -58,12 +89,11 @@ export function createDefaultCalendarSyncDeps(): CalendarSyncDeps {
       shiftApi.range(householdId, from, to),
     listChildren: householdId => childrenApi.list(householdId),
     listMembers: householdId => householdApi.listMembers(householdId),
-    getPermissions: async () => {
-      const result = await Calendar.getCalendarPermissionsAsync();
-      return { granted: result.granted, status: result.status };
-    },
+    getPermissions: getCalendarPermissions,
     getEvents: async (calendarId, from, to) => {
-      const events = await Calendar.getEventsAsync([calendarId], from, to);
+      const api = calendar();
+      if (!api) return [];
+      const events = await api.getEventsAsync([calendarId], from, to);
       return events.map(event => ({
         id: event.id,
         title: event.title,
@@ -73,12 +103,12 @@ export function createDefaultCalendarSyncDeps(): CalendarSyncDeps {
       }));
     },
     createEvent: (calendarId, details) =>
-      Calendar.createEventAsync(calendarId, details),
+      requireCalendar().createEventAsync(calendarId, details),
     updateEvent: async (eventId, details) => {
-      await Calendar.updateEventAsync(eventId, details);
+      await requireCalendar().updateEventAsync(eventId, details);
     },
     deleteEvent: async eventId => {
-      await Calendar.deleteEventAsync(eventId);
+      await requireCalendar().deleteEventAsync(eventId);
     },
     captureException: (error, context) => {
       Sentry.captureException(error, context);
@@ -113,11 +143,16 @@ export async function clearMarkedEventsDefault(
   await clearMarkedEvents(createDefaultClearMarkedEventsDeps(calendarId));
 }
 
+/** What callers see when the native module is missing: nothing granted, nothing broken. */
+const NO_CALENDAR_PERMISSION = { granted: false, status: 'undetermined' };
+
 export async function requestCalendarPermissions(): Promise<{
   granted: boolean;
   status: string;
 }> {
-  const result = await Calendar.requestCalendarPermissionsAsync();
+  const api = calendar();
+  if (!api) return NO_CALENDAR_PERMISSION;
+  const result = await api.requestCalendarPermissionsAsync();
   return { granted: result.granted, status: result.status };
 }
 
@@ -125,7 +160,9 @@ export async function getCalendarPermissions(): Promise<{
   granted: boolean;
   status: string;
 }> {
-  const result = await Calendar.getCalendarPermissionsAsync();
+  const api = calendar();
+  if (!api) return NO_CALENDAR_PERMISSION;
+  const result = await api.getCalendarPermissionsAsync();
   return { granted: result.granted, status: result.status };
 }
 
@@ -159,9 +196,9 @@ export async function enableDefaultCalendarSync(): Promise<boolean> {
 }
 
 export async function listWritableCalendars(): Promise<WritableCalendar[]> {
-  const calendars = await Calendar.getCalendarsAsync(
-    Calendar.EntityTypes.EVENT
-  );
+  const api = calendar();
+  if (!api) return [];
+  const calendars = await api.getCalendarsAsync(api.EntityTypes.EVENT);
   return calendars
     .filter(cal => cal.allowsModifications)
     .map(cal => {
@@ -169,8 +206,8 @@ export async function listWritableCalendars(): Promise<WritableCalendar[]> {
       const isLocal =
         cal.source?.isLocalAccount === true ||
         sourceType.toLowerCase() === 'local' ||
-        sourceType === Calendar.CalendarType.LOCAL ||
-        sourceType === Calendar.SourceType.LOCAL;
+        sourceType === api.CalendarType.LOCAL ||
+        sourceType === api.SourceType.LOCAL;
       return {
         id: cal.id,
         title: cal.title,

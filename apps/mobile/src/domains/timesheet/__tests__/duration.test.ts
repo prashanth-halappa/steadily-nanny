@@ -39,6 +39,28 @@ describe('formatDuration', () => {
   it('treats a negative duration as 0m (defensive — never shown in real data)', () => {
     expect(formatDuration(-5)).toBe('0m');
   });
+
+  // "8h 52m" is not Spanish, it is untranslated English, and it was leaking
+  // onto every screen that shows a total (and would have been inherited by
+  // the widgets). Spanish writes the spaced SI-style form.
+  describe('i18n', () => {
+    afterEach(async () => {
+      await i18n.changeLanguage('en');
+    });
+
+    it('uses the spaced Spanish unit convention', async () => {
+      await i18n.changeLanguage('es');
+      expect(formatDuration(532)).toBe('8 h 52 min');
+      expect(formatDuration(120)).toBe('2 h');
+      expect(formatDuration(45)).toBe('45 min');
+      expect(formatDuration(0)).toBe('0 min');
+    });
+
+    it('falls back to the English units for an unknown language', async () => {
+      await i18n.changeLanguage('fr');
+      expect(formatDuration(532)).toBe('8h 52m');
+    });
+  });
 });
 
 describe('formatElapsedSince', () => {
@@ -116,10 +138,10 @@ describe('formatOvertimeDelta', () => {
     it('renders in Spanish when the app language is es', async () => {
       await i18n.changeLanguage('es');
       expect(formatOvertimeDelta(554, 540)).toBe(
-        '14m por encima de lo previsto'
+        '14 min por encima de lo previsto'
       );
       expect(formatOvertimeDelta(500, 540)).toBe(
-        '40m por debajo de lo previsto'
+        '40 min por debajo de lo previsto'
       );
     });
   });

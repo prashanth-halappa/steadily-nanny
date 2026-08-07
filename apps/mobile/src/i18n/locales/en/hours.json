@@ -82,5 +82,14 @@
   "reopenDialogReasonHint": "Required — kept on your household's record.",
   "reopenDialogCancel": "Not yet",
   "reopenDialogConfirm": "Reopen the week",
-  "reopenedToast": "Week reopened"
+  "reopenedToast": "Week reopened",
+  "widgets": {
+    "title": "This week",
+    "scheduled": "of {{duration}} scheduled",
+    "statusSubmittedAged": "Sent {{day}} · awaiting approval · {{age}}",
+    "ageToday": "today",
+    "ageDays_one": "{{count}} day",
+    "ageDays_other": "{{count}} days",
+    "adjusted": "{{submitted}} submitted → {{approved}} approved"
+  }
 }

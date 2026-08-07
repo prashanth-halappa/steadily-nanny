@@ -43,5 +43,6 @@ router.post(
   jobHandler(JobController.runCancellationPayReconcile)
 );
 router.post('/integrity-checks', jobHandler(JobController.runIntegrityChecks));
+router.post('/no-show-sweep', jobHandler(JobController.runNoShowSweep));
 
 export default router;

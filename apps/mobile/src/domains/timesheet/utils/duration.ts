@@ -1,8 +1,9 @@
 /**
  * @module domains/timesheet/utils/duration
- * Pure duration formatting for clock in/out and the hours screen. en-GB
- * style ("6h 12m") for totals; live timer uses HH:MM — no user-visible time
- * or duration in this app shows seconds. Clock *display* follows the device
+ * Pure duration formatting for clock in/out and the hours screen. Totals
+ * follow the app language ("6h 12m" en, "6 h 12 min" es); the live timer uses
+ * HH:MM — no user-visible time or duration in this app shows seconds. Clock
+ * *display* follows the device
  * locale's 12h/24h preference while staying in the household IANA zone
  * (GOLDEN-FIXES #21).
  */
@@ -16,7 +17,35 @@ import {
 const MINUTES_PER_HOUR = 60;
 
 /**
- * "6h 14m" / "2h" (no trailing "0m") / "45m" / "0m". Negative input is
+ * Duration unit suffixes per language. English abbreviates tight ("8h 52m");
+ * Spanish writes the SI-style spaced form ("8 h 52 min") — "8h 52m" is not
+ * Spanish, it is untranslated English, and it was leaking onto every screen
+ * that shows a total.
+ *
+ * A two-entry lookup rather than `Intl.NumberFormat`'s `unit` style: that
+ * formatter renders "8 h" and "52 min" fine but has no way to join them into
+ * one figure, so composing the pair by hand is unavoidable either way.
+ */
+interface DurationUnits {
+  hour: string;
+  minute: string;
+}
+
+const EN_DURATION_UNITS: DurationUnits = { hour: 'h', minute: 'm' };
+
+const DURATION_UNITS: Record<string, DurationUnits> = {
+  en: EN_DURATION_UNITS,
+  es: { hour: ' h', minute: ' min' },
+};
+
+function durationUnits(): DurationUnits {
+  const language = i18n.language?.split('-')[0] ?? 'en';
+  return DURATION_UNITS[language] ?? EN_DURATION_UNITS;
+}
+
+/**
+ * "6h 14m" / "2h" (no trailing "0m") / "45m" / "0m", in the app's current
+ * language ("6 h 14 min" / "2 h" / "45 min" in es). Negative input is
  * clamped to 0 — it should never happen with real data, but a display
  * helper must not print a negative duration.
  */
@@ -24,10 +53,11 @@ export function formatDuration(totalMinutes: number): string {
   const minutes = Math.max(0, Math.floor(totalMinutes));
   const hours = Math.floor(minutes / MINUTES_PER_HOUR);
   const remainder = minutes % MINUTES_PER_HOUR;
+  const units = durationUnits();
 
-  if (hours === 0) return `${remainder}m`;
-  if (remainder === 0) return `${hours}h`;
-  return `${hours}h ${remainder}m`;
+  if (hours === 0) return `${remainder}${units.minute}`;
+  if (remainder === 0) return `${hours}${units.hour}`;
+  return `${hours}${units.hour} ${remainder}${units.minute}`;
 }
 
 /**

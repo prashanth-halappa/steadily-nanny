@@ -174,6 +174,57 @@ const config = {
         },
       },
     ],
+    // Phase-0 smoke test (expo/expo#44695): proves the widget extension
+    // target compiles against this app's full autolinked pod graph
+    // (Sentry/PostHog/google-signin are the suspect class). No
+    // `enablePushNotifications` — v1 needs no Live Activity push tokens.
+    // All P0 surfaces are declared now (native shape only, hello-world
+    // bodies) so streams C/D land as JS-only diffs against this config.
+    [
+      'expo-widgets',
+      {
+        groupIdentifier: 'group.com.jetto.steadily.nanny',
+        widgets: [
+          {
+            name: 'NextShift',
+            displayName: 'Next shift',
+            description: 'Nanny: next scheduled shift.',
+            supportedFamilies: [
+              'systemSmall',
+              'systemMedium',
+              'accessoryRectangular',
+              'accessoryInline',
+            ],
+          },
+          {
+            name: 'TodaysCover',
+            displayName: "Today's cover",
+            description: 'Parent: who is with the kids right now.',
+            supportedFamilies: [
+              'systemSmall',
+              'systemMedium',
+              'accessoryRectangular',
+            ],
+          },
+          {
+            name: 'NannyWeek',
+            displayName: 'This week',
+            description: 'Nanny: hours worked this week.',
+            supportedFamilies: [
+              'systemSmall',
+              'systemMedium',
+              'accessoryRectangular',
+            ],
+          },
+          {
+            name: 'ParentWeek',
+            displayName: 'This week',
+            description: 'Parent: hours booked this week.',
+            supportedFamilies: ['systemSmall', 'systemMedium'],
+          },
+        ],
+      },
+    ],
   ],
   experiments: {
     typedRoutes: true,

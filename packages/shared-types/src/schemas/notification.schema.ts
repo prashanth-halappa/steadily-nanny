@@ -79,6 +79,12 @@ export const PUSH_NOTIFICATION_TYPES = {
   APPROVAL_EXPIRING: 'approval_expiring',
   SHIFT_REMINDER: 'shift_reminder',
   TIMESHEET_AWAITING_APPROVAL: 'timesheet_awaiting_approval',
+
+  // Nobody clocked in 20+ minutes into a confirmed shift — emitted by the
+  // no-show sweep to the household's parents, who are the only people who can
+  // act on it. Never sent to the carer: she is either already there (in which
+  // case the alert is wrong) or unreachable.
+  SHIFT_NO_SHOW: 'shift_no_show',
 } as const;
 
 export type PushNotificationType =

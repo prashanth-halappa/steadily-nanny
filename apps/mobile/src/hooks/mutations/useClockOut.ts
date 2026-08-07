@@ -14,6 +14,11 @@ import type { ClockOutInput, TimeEntry } from '@/src/api/endpoints/timeEntries';
 import { timeEntryApi } from '@/src/api/endpoints/timeEntries';
 import { queryKeys } from '@/src/api/queryKeys';
 import { getLocalizedErrorMessage } from '@/src/lib/errorLocalization';
+import {
+  abortClockOut,
+  beginClockOut,
+  completeWithReceipt,
+} from '@/src/lib/liveActivity';
 import { useIsOnline } from '@/src/lib/network';
 import { showErrorToast } from '@/src/lib/toast';
 import {
@@ -53,6 +58,10 @@ export function useClockOut() {
         queryKeys.timeEntry.running()
       );
       queryClient.setQueryData(queryKeys.timeEntry.running(), null);
+      // The optimistic clear above makes the running cache look exactly
+      // like a cross-device clock-out; without this the Live Activity's
+      // orphan check would end the activity a beat before the receipt.
+      beginClockOut();
       if (!isOnline) {
         showErrorToast(
           getLocalizedErrorMessage({ isAxiosError: true }, t, 'errors:offline')
@@ -60,11 +69,15 @@ export function useClockOut() {
       }
       return { previous };
     },
-    onSuccess: () => {
+    onSuccess: data => {
       queryClient.invalidateQueries({ queryKey: queryKeys.timeEntry.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.timesheet.all });
+      // Receipt on the lock screen, then it ends itself ~90s later. Both
+      // figures come off the recorded row, never off a client guess.
+      void completeWithReceipt(data);
     },
     onError: (error, _variables, context) => {
+      abortClockOut();
       if (isClockOutConflictError(error)) {
         queryClient.invalidateQueries({ queryKey: queryKeys.timeEntry.all });
       } else if (context?.previous !== undefined) {

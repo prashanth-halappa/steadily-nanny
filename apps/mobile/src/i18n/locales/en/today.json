@@ -42,6 +42,53 @@
     "description": "Coverage gap {{start}}–{{end}}",
     "descriptionFallback": "Coverage gap today"
   },
+  "widgets": {
+    "asOf": "As of {{time}}",
+    "neverSyncedTitle": "Steadily",
+    "neverSyncedBody": "Open Steadily to get started",
+    "timeRange": "{{start}}–{{end}}",
+    "dayToday": "Today",
+    "dayTomorrow": "Tomorrow",
+    "nextShift": {
+      "title": "Next shift",
+      "emptyTitle": "Next shift",
+      "emptyBody": "No shifts in the next two weeks",
+      "onClockTitle": "On the clock",
+      "onClockDetail": "Since {{time}}",
+      "startingSoonTitle": "Starting soon",
+      "startedTitle": "Shift started",
+      "startedBody": "Tap to clock in",
+      "needsResponse": "Needs your response",
+      "needsResponseDetail": "{{day}} {{start}}–{{end}}"
+    },
+    "cover": {
+      "title": "Today's cover",
+      "withChildren": "{{name}} is with {{children}}",
+      "isHere": "{{name}} is here",
+      "liveDetail": "On the clock since {{time}}",
+      "finished": "{{name}} finished at {{time}}",
+      "finishedDetail": "{{duration}}",
+      "arriving": "{{name}} arrives at {{start}}",
+      "due": "{{name}} · due {{start}}–{{end}}",
+      "noCoverRange": "No cover {{start}}–{{end}}",
+      "emptyTitle": "No cover today",
+      "emptyBody": "Nothing on the schedule for today yet.",
+      "more_one": "+{{count}} more",
+      "more_other": "+{{count}} more"
+    }
+  },
+  "liveActivity": {
+    "onTheClock": "You're on the clock",
+    "clockedInAt": "Clocked in {{time}}",
+    "scheduledFinish": "Scheduled finish {{time}}",
+    "noScheduledShift": "No scheduled shift today.",
+    "clockOut": "Clock out",
+    "overdueTitle": "Past {{time}} — still working?",
+    "overdueBody": "Clock out when you're done.",
+    "receiptTitle": "Clocked out at {{time}}",
+    "receiptBody": "{{duration}} recorded",
+    "receiptBodyWithBreak": "{{duration}} recorded · Break {{breakDuration}}"
+  },
   "screenTitle": "Today",
   "emptyTitle": "Your week will appear here",
   "emptyDescription": "Once you add a schedule, upcoming shifts and updates will show up on this screen.",

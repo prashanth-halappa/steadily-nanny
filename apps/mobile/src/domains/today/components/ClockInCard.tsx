@@ -25,7 +25,8 @@
  * scheduled finish instead of "now". `useClockOutReminder` is the other
  * half, for the carer whose phone is in her pocket.
  */
-import { useMemo, useRef, useState } from 'react';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
 import { Card } from '@/src/components/ui/card';
@@ -40,6 +41,7 @@ import { useClockOut } from '@/src/hooks/mutations/useClockOut';
 import { useRunningTimeEntry } from '@/src/hooks/queries/useRunningTimeEntry';
 import { useShift } from '@/src/hooks/queries/useShift';
 import { useShiftsRange } from '@/src/hooks/queries/useShiftsRange';
+import { updateOnShiftMatch } from '@/src/lib/liveActivity';
 import { addLocalDays, localDateInZone } from '@/src/lib/localDate';
 import { showErrorToast } from '@/src/lib/toast';
 import { wallClockToUtcIso } from '@/src/lib/wallClock';
@@ -62,6 +64,10 @@ interface ClockInCardProps {
    * see domains/timesheet/utils/week.ts's header). Drives every clock time
    * this card and its `ClockOutSheet` render. */
   timeZone: string;
+  /** Shown on the Live Activity's lock-screen banner only — a nanny with
+   * several households must never have to guess which one she is on the
+   * clock for. Optional so existing call sites keep working. */
+  householdName?: string;
 }
 
 const ARRIVING_WINDOW_MS = 60 * 60 * 1000;
@@ -71,12 +77,16 @@ type OffClockShiftState =
   | { kind: 'arriving'; start: string }
   | { kind: 'none' };
 
-export function ClockInCard({ householdId, timeZone }: ClockInCardProps) {
+export function ClockInCard({
+  householdId,
+  timeZone,
+  householdName,
+}: ClockInCardProps) {
   const { t } = useTranslation('today');
   const { t: tErrors } = useTranslation('errors');
   const currentUserId = useAuthStore(s => s.user?.id ?? null);
   const running = useRunningTimeEntry();
-  const clockIn = useClockIn(timeZone);
+  const clockIn = useClockIn(timeZone, householdName);
   const clockOut = useClockOut();
 
   const entry = running.data ?? null;
@@ -255,6 +265,35 @@ export function ClockInCard({ householdId, timeZone }: ClockInCardProps) {
         clockOutInFlightRef.current = false;
       });
   };
+
+  // The shift the clock-in matched has finished loading. The Live Activity
+  // started without it (the clock-in response carries only a `shift_id`),
+  // so this is where it gains its scheduled finish and progress bar. The
+  // module ignores every later call — the finish is frozen once set.
+  useEffect(() => {
+    if (!clockInAt || !shift.data) return;
+    void updateOnShiftMatch(shift.data, clockInAt, timeZone);
+  }, [clockInAt, shift.data, timeZone]);
+
+  // Arrived from the Live Activity's "Clock out" deep link. Routed through
+  // the same handler as the on-screen button, so the forgotten-clock-out
+  // pre-fill and every in-flight guard apply identically — the LA must
+  // never be a second, thinner way to clock out (that was D20). The param
+  // is cleared immediately so returning to this tab does not reopen it.
+  const params = useLocalSearchParams<{ clockOut?: string }>();
+  const router = useRouter();
+  const clockOutRequested = params.clockOut === '1';
+  // Nothing to open until the running-entry query has answered — a cold
+  // start from the lock screen gets here first. Once it HAS answered, the
+  // param is spent either way, including when the answer is "not running".
+  const runningSettled = running.isSuccess || running.isError;
+  const clockOutPressRef = useRef(handleClockOutPress);
+  clockOutPressRef.current = handleClockOutPress;
+  useEffect(() => {
+    if (!clockOutRequested || !runningSettled) return;
+    router.setParams({ clockOut: undefined });
+    clockOutPressRef.current();
+  }, [clockOutRequested, runningSettled, router]);
 
   const sheetClockInAt = sheetClockInAtRef.current;
   const sheetDefaultClockOutAt = sheetDefaultClockOutAtRef.current;

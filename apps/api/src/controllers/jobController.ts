@@ -10,6 +10,7 @@ import type { CancellationPayReconcileResult } from '../jobs/cancellationPayReco
 import { runCancellationPayReconcileJob } from '../jobs/cancellationPayReconcileJob';
 import { runExampleMaintenanceJob } from '../jobs/exampleMaintenanceJob';
 import { runIntegrityCheckJob } from '../jobs/integrityCheckJob';
+import { runNoShowJob } from '../jobs/noShowJob';
 import { runReminderJob } from '../jobs/reminderJob';
 import { runScheduleHorizonJob } from '../jobs/scheduleHorizonJob';
 import { createTrackedJobHandler } from './jobHandlerFactory';
@@ -86,6 +87,21 @@ export const JobController = {
     'integrity-checks',
     runIntegrityCheckJob,
     'Integrity checks completed'
+  ),
+
+  /** POST /api/jobs/no-show-sweep */
+  runNoShowSweep: createTrackedJobHandler(
+    'no-show-sweep',
+    runNoShowJob,
+    'No-show sweep completed',
+    {
+      mapForJobRun: result => ({
+        totalProcessed: result.noShow.candidates,
+        successCount: result.noShow.sent,
+        errorCount: result.errorCount,
+        noShow: result.noShow,
+      }),
+    }
   ),
 
   /** POST /api/jobs/cancellation-pay-reconcile */

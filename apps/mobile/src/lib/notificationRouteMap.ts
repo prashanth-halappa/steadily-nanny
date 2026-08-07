@@ -140,4 +140,9 @@ export const NOTIFICATION_ROUTE_MAP: NotificationRouteMap &
 
   // Handoff notes render inside Today — no dedicated handoff route.
   [PUSH_NOTIFICATION_TYPES.HANDOFF_NOTE_ADDED]: () => '/(private)/(tabs)/home',
+
+  // Today, not shift detail: the parent's question is "is anyone with my
+  // kids right now", which NannyLiveStatusCard answers. Shift detail would
+  // show them the schedule they already know.
+  [PUSH_NOTIFICATION_TYPES.SHIFT_NO_SHOW]: () => '/(private)/(tabs)/home',
 };

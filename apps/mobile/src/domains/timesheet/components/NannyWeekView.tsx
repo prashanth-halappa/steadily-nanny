@@ -51,7 +51,7 @@ import { useAuthStore } from '@/src/store/auth';
 import type { TimeEntry } from '../types';
 import { formatDuration, formatOvertimeDelta } from '../utils/duration';
 import { formatEarningsLongDate } from '../utils/earningsFormat';
-import { sumEntryMinutes } from '../utils/entryMinutes';
+import { scheduledMinutesFor, sumEntryMinutes } from '../utils/entryMinutes';
 import { useReopenedNotice } from '../utils/reopenedNotice';
 import { EarningsBreakdownSheet } from './EarningsBreakdownSheet';
 import { TimeEntryDayRow } from './TimeEntryDayRow';
@@ -76,12 +76,6 @@ interface NannyWeekViewProps {
    * expense add/edit/withdraw. Owned by `HoursScreen`, which reads
    * `useIsOnboarded().isPastMember`. */
   readOnly?: boolean;
-}
-
-function scheduledMinutesFor(entries: TimeEntry[]): number | null {
-  const withSchedule = entries.filter(e => e.scheduled_minutes !== null);
-  if (withSchedule.length === 0) return null;
-  return withSchedule.reduce((sum, e) => sum + (e.scheduled_minutes ?? 0), 0);
 }
 
 export function NannyWeekView({

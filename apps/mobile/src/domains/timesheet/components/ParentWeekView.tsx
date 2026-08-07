@@ -54,14 +54,14 @@ import { localDateInZone } from '@/src/lib/localDate';
 import { formatMoney } from '@/src/lib/money';
 import { showSuccessToast } from '@/src/lib/toast';
 import { useAuthStore } from '@/src/store/auth';
-import { TIMESHEET_STATUSES, type TimeEntry } from '../types';
+import { TIMESHEET_STATUSES } from '../types';
 import { carerKeyOf } from '../utils/carerKey';
 import { formatDuration, formatOvertimeDelta } from '../utils/duration';
 import {
   formatEarningsDuration,
   formatEarningsLongDate,
 } from '../utils/earningsFormat';
-import { sumEntryMinutes } from '../utils/entryMinutes';
+import { scheduledMinutesFor, sumEntryMinutes } from '../utils/entryMinutes';
 import { useReopenedNotice } from '../utils/reopenedNotice';
 import { ApproveWeekDialog } from './ApproveWeekDialog';
 import { EarningsBreakdownSheet } from './EarningsBreakdownSheet';
@@ -69,12 +69,6 @@ import { QueryNoteSheet } from './QueryNoteSheet';
 import { ReopenWeekDialog } from './ReopenWeekDialog';
 import { TimeEntryDayRow } from './TimeEntryDayRow';
 import { WeekTotal } from './WeekTotal';
-
-function scheduledMinutesFor(entries: TimeEntry[]): number | null {
-  const withSchedule = entries.filter(e => e.scheduled_minutes !== null);
-  if (withSchedule.length === 0) return null;
-  return withSchedule.reduce((sum, e) => sum + (e.scheduled_minutes ?? 0), 0);
-}
 
 interface ParentWeekViewProps {
   householdId: string;

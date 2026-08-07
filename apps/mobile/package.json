@@ -31,6 +31,7 @@
     "@sentry/cli"
   ],
   "dependencies": {
+    "@expo/ui": "~57.0.9",
     "@react-native-community/datetimepicker": "9.1.0",
     "@react-native-community/netinfo": "12.0.1",
     "@react-native-google-signin/google-signin": "^16.0.0",
@@ -95,6 +96,7 @@
     "expo-system-ui": "~57.0.0",
     "expo-updates": "~57.0.5",
     "expo-web-browser": "~57.0.0",
+    "expo-widgets": "~57.0.8",
     "i18next": "25.7.3",
     "lucide-react-native": "^0.548.0",
     "nativewind": "^4.2.5",

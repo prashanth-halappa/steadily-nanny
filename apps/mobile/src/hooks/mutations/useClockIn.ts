@@ -14,6 +14,7 @@ import type { ClockInInput, TimeEntry } from '@/src/api/endpoints/timeEntries';
 import { timeEntryApi } from '@/src/api/endpoints/timeEntries';
 import { queryKeys } from '@/src/api/queryKeys';
 import { getLocalizedErrorMessage } from '@/src/lib/errorLocalization';
+import { startOnTheClock } from '@/src/lib/liveActivity';
 import { useIsOnline } from '@/src/lib/network';
 import { showErrorToast } from '@/src/lib/toast';
 import {
@@ -58,8 +59,12 @@ function isAlreadyClockedInError(error: unknown): boolean {
 /**
  * `householdTimezone` (the household's IANA zone — GOLDEN-FIXES #21) only
  * shapes the optimistic row; the server resolves the zone for the real one.
+ *
+ * `householdName` is for the Live Activity alone: the lock screen must name
+ * the household, because a nanny working for several families and reading
+ * "You're on the clock" with no name has a wrong-door problem.
  */
-export function useClockIn(householdTimezone?: string) {
+export function useClockIn(householdTimezone?: string, householdName?: string) {
   const queryClient = useQueryClient();
   const { t } = useTranslation('errors');
   const isOnline = useIsOnline();
@@ -89,6 +94,10 @@ export function useClockIn(householdTimezone?: string) {
     onSuccess: data => {
       queryClient.setQueryData(queryKeys.timeEntry.running(), data);
       queryClient.invalidateQueries({ queryKey: queryKeys.timeEntry.all });
+      // Wired here rather than in the card so ANY future clock-in call site
+      // gets the Live Activity for free. Deliberately not awaited: the
+      // activity is decoration, and it swallows its own failures.
+      void startOnTheClock(data, null, householdName ?? '');
     },
     onError: (error, _variables, context) => {
       if (context?.previous !== undefined) {

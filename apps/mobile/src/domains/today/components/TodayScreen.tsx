@@ -152,6 +152,7 @@ export function TodayScreen() {
               <ClockInCard
                 householdId={household.id}
                 timeZone={household.timezone}
+                householdName={household.name}
               />
             ) : null}
 

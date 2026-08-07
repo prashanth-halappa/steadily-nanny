@@ -76,3 +76,23 @@ export function sumEntryMinutes(entries: TimeEntry[], nowMs: number): number {
     0
   );
 }
+
+/**
+ * What these entries were ROSTERED for — the shift booking snapshotted onto
+ * each entry at clock-in — or `null` when not one of them carries a schedule
+ * (an ad-hoc week, or manually-added entries, which write
+ * `scheduled_minutes: null`). Null means "say nothing", never "0 scheduled".
+ *
+ * ponytail: a rostered day she never clocked into contributes NOTHING here, so
+ * the figure only becomes roster-true in arrears. That undercount is
+ * deliberate — this is the denominator `NannyWeekView`/`ParentWeekView` have
+ * always shown, and a widget quoting a different number than the Hours screen
+ * beside it would be worse than quoting a conservative one. Upgrade path: sum
+ * the week's shifts from `useShiftsRange`, and change all three call sites
+ * together.
+ */
+export function scheduledMinutesFor(entries: TimeEntry[]): number | null {
+  const withSchedule = entries.filter(e => e.scheduled_minutes !== null);
+  if (withSchedule.length === 0) return null;
+  return withSchedule.reduce((sum, e) => sum + (e.scheduled_minutes ?? 0), 0);
+}

@@ -82,5 +82,14 @@
   "reopenDialogReasonHint": "Obligatorio — se guarda en el registro de tu hogar.",
   "reopenDialogCancel": "Todavía no",
   "reopenDialogConfirm": "Reabrir la semana",
-  "reopenedToast": "Semana reabierta"
+  "reopenedToast": "Semana reabierta",
+  "widgets": {
+    "title": "Esta semana",
+    "scheduled": "de {{duration}} previstas",
+    "statusSubmittedAged": "Enviada {{day}} · pendiente de aprobación · {{age}}",
+    "ageToday": "hoy",
+    "ageDays_one": "{{count}} día",
+    "ageDays_other": "{{count}} días",
+    "adjusted": "{{submitted}} enviadas → {{approved}} aprobadas"
+  }
 }

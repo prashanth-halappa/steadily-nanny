@@ -655,6 +655,44 @@ mock.module('expo-web-browser', () => ({
   WebBrowserPresentationStyle: { AUTOMATIC: 'AUTOMATIC' },
 }));
 
+// Widgets and Live Activities are WidgetKit surfaces: their views only ever
+// render inside the extension's own JS runtime, never here. Loading the real
+// SwiftUI primitives (which a widget module imports for typing and for the
+// serialized layout's identifier names) inside a React `act()` trips expo's
+// async-require HMR shim with a TDZ error, attributed to whichever test
+// happened to be running when the lazy import landed. A Proxy so a new
+// primitive never needs adding here; nothing asserts on these.
+const swiftUiPrimitiveStub = new Proxy(
+  {},
+  { get: (_target, name) => mock(() => ({ type: String(name) })) }
+);
+mock.module('@expo/ui/swift-ui', () => swiftUiPrimitiveStub);
+mock.module('@expo/ui/swift-ui/modifiers', () => swiftUiPrimitiveStub);
+
+// Same reasoning for the module that registers those layouts natively. Tests
+// that care about Live Activity lifecycle mock `@/src/widgets/OnTheClock`.
+mock.module('expo-widgets', () => ({
+  createWidget: mock(() => ({
+    reload: mock(),
+    updateTimeline: mock(),
+    updateSnapshot: mock(),
+    getTimeline: mock(() => Promise.resolve([])),
+  })),
+  createLiveActivity: mock(() => ({
+    start: mock(() => ({
+      update: mock(() => Promise.resolve()),
+      end: mock(() => Promise.resolve()),
+      getPushToken: mock(() => Promise.resolve(null)),
+      addPushTokenListener: mock(() => ({ remove: mock() })),
+    })),
+    getInstances: mock(() => []),
+  })),
+  after: (date: Date) => ({ after: date }),
+  addUserInteractionListener: mock(() => ({ remove: mock() })),
+  addPushToStartTokenListener: mock(() => ({ remove: mock() })),
+  widgetsDirectory: '/widgets',
+}));
+
 mock.module('expo-linking', () => ({
   createURL: mock((path: string) => `steadilynanny://${path}`),
   openURL: mock(() => Promise.resolve()),

@@ -129,7 +129,8 @@
       "co_parent_approval_requested": "Approval needed",
       "co_parent_approval_resolved": "Approval answered",
       "approval_expiring": "Approval expiring",
-      "handoff_note_added": "New handoff note"
+      "handoff_note_added": "New handoff note",
+      "shift_no_show": "No one clocked in"
     }
   }
 }

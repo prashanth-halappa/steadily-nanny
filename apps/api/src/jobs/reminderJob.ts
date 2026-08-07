@@ -102,7 +102,7 @@ export interface ReminderJobResult {
   message: string;
 }
 
-function emptyRuleStats(): ReminderRuleStats {
+export function emptyRuleStats(): ReminderRuleStats {
   return {
     candidates: 0,
     claimed: 0,
@@ -363,7 +363,7 @@ class DefaultUserTimezoneResolver implements UserTimezoneResolver {
   }
 }
 
-class DefaultReminderParentLister implements ReminderParentLister {
+export class DefaultReminderParentLister implements ReminderParentLister {
   constructor(
     private readonly members: HouseholdMemberRepository = new HouseholdMemberRepository()
   ) {}
@@ -376,7 +376,7 @@ class DefaultReminderParentLister implements ReminderParentLister {
   }
 }
 
-const defaultPushService: ReminderPushService = {
+export const defaultPushService: ReminderPushService = {
   canDeliver(userId, payload) {
     return hasDeliverableTarget(userId, payload);
   },
@@ -401,8 +401,12 @@ const defaultClock: ReminderJobClock = {
  *
  * Mutates `stats` in place; throws on a send exception (after releasing the
  * claim) so the caller's existing per-candidate try/catch records the error.
+ *
+ * Exported for `noShowJob`, which needs the same claim/send/confirm ordering.
+ * Keep it here rather than copied: every line of the analysis above applies
+ * identically, and a divergent copy would rot silently.
  */
-async function claimAndSend(
+export async function claimAndSend(
   deps: { log: ReminderLogClaim; push: ReminderPushService },
   userId: string,
   reminderKey: string,

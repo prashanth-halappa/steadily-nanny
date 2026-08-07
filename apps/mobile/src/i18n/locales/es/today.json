@@ -42,6 +42,53 @@
     "description": "Hueco de cobertura {{start}}–{{end}}",
     "descriptionFallback": "Hueco de cobertura hoy"
   },
+  "widgets": {
+    "asOf": "A las {{time}}",
+    "neverSyncedTitle": "Steadily",
+    "neverSyncedBody": "Abre Steadily para empezar",
+    "timeRange": "{{start}}–{{end}}",
+    "dayToday": "Hoy",
+    "dayTomorrow": "Mañana",
+    "nextShift": {
+      "title": "Próximo turno",
+      "emptyTitle": "Próximo turno",
+      "emptyBody": "Sin turnos en las próximas dos semanas",
+      "onClockTitle": "En horario",
+      "onClockDetail": "Desde las {{time}}",
+      "startingSoonTitle": "Empieza pronto",
+      "startedTitle": "El turno ha empezado",
+      "startedBody": "Toca para fichar la entrada",
+      "needsResponse": "Requiere tu respuesta",
+      "needsResponseDetail": "{{day}} {{start}}–{{end}}"
+    },
+    "cover": {
+      "title": "Cobertura de hoy",
+      "withChildren": "{{name}} está con {{children}}",
+      "isHere": "{{name}} está aquí",
+      "liveDetail": "En horario desde las {{time}}",
+      "finished": "{{name}} terminó a las {{time}}",
+      "finishedDetail": "{{duration}}",
+      "arriving": "{{name}} llega a las {{start}}",
+      "due": "{{name}} · prevista {{start}}–{{end}}",
+      "noCoverRange": "Sin cobertura {{start}}–{{end}}",
+      "emptyTitle": "Sin cobertura hoy",
+      "emptyBody": "Aún no hay nada en el horario de hoy.",
+      "more_one": "+{{count}} más",
+      "more_other": "+{{count}} más"
+    }
+  },
+  "liveActivity": {
+    "onTheClock": "Tu jornada está en marcha",
+    "clockedInAt": "Entrada {{time}}",
+    "scheduledFinish": "Fin previsto {{time}}",
+    "noScheduledShift": "No hay turno programado hoy.",
+    "clockOut": "Fichar salida",
+    "overdueTitle": "Pasadas las {{time}} — ¿sigues trabajando?",
+    "overdueBody": "Ficha la salida cuando termines.",
+    "receiptTitle": "Salida a las {{time}}",
+    "receiptBody": "{{duration}} registradas",
+    "receiptBodyWithBreak": "{{duration}} registradas · Descanso {{breakDuration}}"
+  },
   "screenTitle": "Hoy",
   "emptyTitle": "Tu semana aparecerá aquí",
   "emptyDescription": "Cuando añadas un horario, los próximos turnos y novedades se mostrarán en esta pantalla.",
