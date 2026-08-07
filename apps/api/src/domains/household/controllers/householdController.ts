@@ -12,12 +12,24 @@ import { householdQueryService } from '../services/householdQueryService';
 import type { UpdateHouseholdMemberInput } from '../types';
 
 export class HouseholdController {
+  /**
+   * `past_households` is ADDITIVE, never a change to `households`: the
+   * active list is byte-for-byte what it always was, and a client parsing
+   * the old envelope drops the new key (Zod objects are non-strict). Past
+   * households are the ones the caller was removed from — she still reads
+   * the hours and pay she accrued there, so the app needs a route to them.
+   */
   static async list(req: Request, res: Response, next: NextFunction) {
     try {
-      const households = await householdQueryService.listForUser(
-        getAuthUserId(req)
-      );
-      return sendSuccessResponse(res, 'Households fetched', { households });
+      const userId = getAuthUserId(req);
+      const [households, past_households] = await Promise.all([
+        householdQueryService.listForUser(userId),
+        householdQueryService.listPastForUser(userId),
+      ]);
+      return sendSuccessResponse(res, 'Households fetched', {
+        households,
+        past_households,
+      });
     } catch (error) {
       return next(error);
     }

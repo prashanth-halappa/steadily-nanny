@@ -269,6 +269,78 @@ describe('HouseholdMemberRepository.listActiveByUser', () => {
   });
 });
 
+describe('HouseholdMemberRepository.listByUser', () => {
+  // The active-only sibling above is what `listMembershipsForUser` used to
+  // call, and it is why the mobile app's `isPastMember` was always false: a
+  // `removed` row could never reach the client, so the read-only gate the
+  // past-households feature is built on had nothing to switch on. This query
+  // must NOT filter on status.
+  it('returns removed rows alongside active ones and applies NO status filter', async () => {
+    const rows = [
+      { id: 'm1', household_id: 'h1', user_id: 'u1', status: 'active' },
+      { id: 'm2', household_id: 'h2', user_id: 'u1', status: 'removed' },
+    ];
+    let chain: any;
+    mockSupabaseService.from.mockImplementation(() => {
+      chain = createMockQueryChain({ data: rows, error: null });
+      return chain;
+    });
+    const repo = new HouseholdMemberRepository();
+
+    expect(await repo.listByUser('u1')).toEqual(rows);
+    const eqKeys = chain.eq.mock.calls.map((call: unknown[]) => call[0]);
+    expect(eqKeys).toEqual(['user_id']);
+  });
+
+  it('returns [] when the user has no memberships at all', async () => {
+    mockSupabaseService.from.mockImplementation(() =>
+      createMockQueryChain({ data: null, error: null })
+    );
+    const repo = new HouseholdMemberRepository();
+    expect(await repo.listByUser('u1')).toEqual([]);
+  });
+});
+
+describe('HouseholdMemberRepository.listRemovedHouseholdIds', () => {
+  // A removed nanny is still owed the hours she worked. If this query is not
+  // pinned to status='removed' it silently returns the active households too
+  // and the picker shows a household she can no longer act in as if she can.
+  it('filters on the user and status=removed, and returns only the ids', async () => {
+    let chain: any;
+    mockSupabaseService.from.mockImplementation(() => {
+      chain = createMockQueryChain({
+        data: [{ household_id: 'h9' }, { household_id: 'h8' }],
+        error: null,
+      });
+      return chain;
+    });
+    const repo = new HouseholdMemberRepository();
+    expect(await repo.listRemovedHouseholdIds('u1')).toEqual(['h9', 'h8']);
+    expect(chain.eq.mock.calls).toEqual([
+      ['user_id', 'u1'],
+      ['status', 'removed'],
+    ]);
+  });
+
+  it('returns [] when the user has never been removed from anything', async () => {
+    mockSupabaseService.from.mockImplementation(() =>
+      createMockQueryChain({ data: null, error: null })
+    );
+    const repo = new HouseholdMemberRepository();
+    expect(await repo.listRemovedHouseholdIds('u1')).toEqual([]);
+  });
+
+  it('throws a DatabaseError when the query fails', async () => {
+    mockSupabaseService.from.mockImplementation(() =>
+      createMockQueryChain({ data: null, error: { message: 'boom' } })
+    );
+    const repo = new HouseholdMemberRepository();
+    await expect(repo.listRemovedHouseholdIds('u1')).rejects.toThrow(
+      'Failed to list households for user'
+    );
+  });
+});
+
 describe('HouseholdMemberRepository.listActiveByHousehold', () => {
   // Two nannies with no `display_name_override` were indistinguishable on
   // every member surface, because `household_members` has no name column and

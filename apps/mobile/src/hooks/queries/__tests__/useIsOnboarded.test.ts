@@ -14,13 +14,14 @@ const HOUSEHOLD_ID = 'household-1';
 
 const membershipsListMock = mock(() => Promise.resolve([] as unknown[]));
 const householdsListMock = mock(() => Promise.resolve([] as unknown[]));
+const householdsListPastMock = mock(() => Promise.resolve([] as unknown[]));
 const childrenListMock = mock(() => Promise.resolve([] as unknown[]));
 
 mock.module('@/src/api/endpoints/user', () => ({
   userApi: { listMemberships: membershipsListMock },
 }));
 mock.module('@/src/api/endpoints/household', () => ({
-  householdApi: { list: householdsListMock },
+  householdApi: { list: householdsListMock, listPast: householdsListPastMock },
 }));
 mock.module('@/src/api/endpoints/children', () => ({
   childrenApi: { list: childrenListMock },
@@ -64,9 +65,11 @@ function householdRow(overrides: Record<string, unknown> = {}) {
 beforeEach(() => {
   membershipsListMock.mockReset();
   householdsListMock.mockReset();
+  householdsListPastMock.mockReset();
   childrenListMock.mockReset();
   membershipsListMock.mockResolvedValue([]);
   householdsListMock.mockResolvedValue([]);
+  householdsListPastMock.mockResolvedValue([]);
   childrenListMock.mockResolvedValue([]);
   useAuthStore.setState({
     session: { user: { id: USER_ID } } as any,
@@ -180,6 +183,79 @@ describe('useIsOnboarded', () => {
     expect(result.current.role).toBe('nanny');
     expect(result.current.householdId).toBe(HOUSEHOLD_ID);
     expect(childrenListMock).not.toHaveBeenCalled();
+  });
+
+  // A parent removed a nanny. Her JWT still reads the timesheets, expenses
+  // and pay she accrued there (the API read gates allow it) — but with her
+  // only membership flipped to `removed`, the pre-existing active-only filter
+  // left her with no membership at all, and the entry router dropped her into
+  // the "Who are you?" signup wizard. The hours she is owed became
+  // unreachable in the app.
+  it('is onboarded, flagged past, for a nanny removed from the only household she worked in', async () => {
+    membershipsListMock.mockResolvedValue([
+      ownerMembership({ role: 'nanny', status: 'removed' }),
+    ]);
+    householdsListMock.mockResolvedValue([]);
+    householdsListPastMock.mockResolvedValue([
+      householdRow({ created_by: 'someone-else' }),
+    ]);
+
+    const { result } = renderHookWithProviders(() => useIsOnboarded());
+
+    await waitFor(() => expect(result.current.status).toBe('onboarded'));
+    expect(result.current.role).toBe('nanny');
+    expect(result.current.householdId).toBe(HOUSEHOLD_ID);
+    expect(result.current.isPastMember).toBe(true);
+  });
+
+  // The other half of the pair: an ACTIVE member must never be flagged past,
+  // or every write affordance in the app disappears for everyone.
+  it('does NOT flag an active member as past', async () => {
+    membershipsListMock.mockResolvedValue([ownerMembership({ role: 'nanny' })]);
+    householdsListMock.mockResolvedValue([
+      householdRow({ created_by: 'someone-else' }),
+    ]);
+
+    const { result } = renderHookWithProviders(() => useIsOnboarded());
+
+    await waitFor(() => expect(result.current.status).toBe('onboarded'));
+    expect(result.current.isPastMember).toBe(false);
+  });
+
+  // Reporting a DIFFERENT household's role for the selected household is
+  // worse than reporting none: it would show a nanny the parent surfaces of
+  // a family she still works for, while she is looking at the one she left.
+  it('reports the removed role for the selected past household, not another household active role', async () => {
+    membershipsListMock.mockResolvedValue([
+      ownerMembership({
+        id: 'member-active-elsewhere',
+        household_id: 'household-other',
+        role: 'owner',
+      }),
+      ownerMembership({
+        id: 'member-removed',
+        role: 'nanny',
+        status: 'removed',
+      }),
+    ]);
+    householdsListMock.mockResolvedValue([
+      householdRow({ id: 'household-other' }),
+    ]);
+    householdsListPastMock.mockResolvedValue([
+      householdRow({ created_by: 'someone-else' }),
+    ]);
+    const { useActiveHouseholdStore } = await import(
+      '@/src/store/activeHousehold'
+    );
+    useActiveHouseholdStore.getState().setPreferredHouseholdId(HOUSEHOLD_ID);
+
+    const { result } = renderHookWithProviders(() => useIsOnboarded());
+
+    await waitFor(() => expect(result.current.isPastMember).toBe(true));
+    expect(result.current.householdId).toBe(HOUSEHOLD_ID);
+    expect(result.current.role).toBe('nanny');
+
+    useActiveHouseholdStore.getState().reset();
   });
 
   // A failed memberships query is NOT "this user never signed up". Observed on

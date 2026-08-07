@@ -124,9 +124,24 @@ export const HouseholdIdParamSchema = z.object({
   householdId: z.uuid(),
 });
 
-/** List response envelope. */
+/**
+ * List response envelope.
+ *
+ * `past_households` are the households the caller was REMOVED from. They are
+ * a SEPARATE array, never merged into `households`, because everything that
+ * asks "which household am I in" — writes, role gating, the picker's default
+ * — reads `households`, and a removed member must never land in that set.
+ * She keeps read-only access to the hours and pay she accrued there, so the
+ * app still needs a route to them.
+ *
+ * `.default([])` keeps a client on this schema working against a server that
+ * predates the field; the field being additive keeps a client that predates
+ * the schema working against this server (Zod objects are non-strict and
+ * strip it). Both directions are pinned by tests.
+ */
 export const HouseholdListResponseSchema = z.object({
   households: z.array(HouseholdSchema),
+  past_households: z.array(HouseholdSchema).default([]),
 });
 
 export type Household = z.infer<typeof HouseholdSchema>;

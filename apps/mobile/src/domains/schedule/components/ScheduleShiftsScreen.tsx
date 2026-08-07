@@ -72,7 +72,8 @@ export function ScheduleShiftsScreen({
   const activeHousehold = useActiveHousehold();
   const onboarding = useIsOnboarded();
   const profile = useUserProfile();
-  const canAddExtra = isParentEditorRole(onboarding.role);
+  const canAddExtra =
+    isParentEditorRole(onboarding.role) && !onboarding.isPastMember;
   const [calendarView, setCalendarView] = useCalendarViewPreference();
   const [weekOffset, setWeekOffset] = useState(0);
 

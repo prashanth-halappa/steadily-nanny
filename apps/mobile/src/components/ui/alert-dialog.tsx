@@ -151,7 +151,12 @@ function AlertDialogAction({
   ref?: React.RefObject<AlertDialogPrimitive.ActionRef>;
 }) {
   return (
-    <TextClassContext.Provider value={buttonTextVariants({ className })}>
+    // `className` styles the BUTTON — it must not reach the label. Callers pass
+    // a whole `buttonVariants({ variant: 'destructive' })` string, and a self
+    // scoped `active:` on a <Text> makes css-interop attach press handlers to
+    // it; the Text then wins the touch responder and this Pressable never
+    // fires. (GOLDEN-FIXES — inert destructive confirm.)
+    <TextClassContext.Provider value={buttonTextVariants()}>
       <AlertDialogPrimitive.Action
         className={cn(buttonVariants(), className)}
         {...props}
@@ -168,7 +173,7 @@ function AlertDialogCancel({
 }) {
   return (
     <TextClassContext.Provider
-      value={buttonTextVariants({ className, variant: 'outline' })}
+      value={buttonTextVariants({ variant: 'outline' })}
     >
       <AlertDialogPrimitive.Cancel
         className={cn(buttonVariants({ variant: 'outline', className }))}

@@ -113,6 +113,8 @@ beforeAll(async () => {
       households: [
         { id: HOUSEHOLD_ID, name: 'Order Household', timezone: 'UTC' },
       ],
+      pastHouseholds: [],
+      isPastHousehold: false,
       setActiveHouseholdId: mock(),
       isLoading: false,
     })),
@@ -179,5 +181,23 @@ describe('TodayScreen — card order', () => {
     expect(order).toContain('coverage-gap');
     expect(order).toContain('handoff-chips');
     expect(order).toContain('this-weeks-shifts');
+  });
+
+  // Clocking in to a household she was removed from would 403 server-side —
+  // all writes stay active-only. Offering the button is a lie.
+  it('offers no clock-in on a household she was removed from', () => {
+    mockUseIsOnboarded.mockImplementation(() => ({
+      status: 'onboarded',
+      role: 'nanny',
+      householdId: HOUSEHOLD_ID,
+      isPastMember: true,
+    }));
+
+    const { getAllByTestId } = render(<TodayScreen />);
+    const order = getAllByTestId(ORDER_MARKER).map(
+      node => node.props.accessibilityLabel as string
+    );
+
+    expect(order).not.toContain('clock-in');
   });
 });

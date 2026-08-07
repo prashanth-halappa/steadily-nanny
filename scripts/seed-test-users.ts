@@ -15,6 +15,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createClient } from '@supabase/supabase-js';
+import { assertLocalSupabaseUrl } from './localSupabaseGuard';
 
 const TEST_PASSWORD = 'SteadilyTest!2026';
 const TIMEZONE = 'Europe/London';
@@ -58,6 +59,7 @@ async function main() {
       'SUPABASE_URL / SUPABASE_SERVICE_KEY missing from apps/api/.env'
     );
   }
+  assertLocalSupabaseUrl(supabaseUrl);
 
   const supabase = createClient(supabaseUrl, serviceKey, {
     auth: { autoRefreshToken: false, persistSession: false },
@@ -132,10 +134,12 @@ async function main() {
   }
 }
 
-main().catch(err => {
-  console.error(
-    'seed-test-users failed:',
-    err instanceof Error ? err.message : err
-  );
-  process.exit(1);
-});
+if (import.meta.main) {
+  main().catch(err => {
+    console.error(
+      'seed-test-users failed:',
+      err instanceof Error ? err.message : err
+    );
+    process.exit(1);
+  });
+}

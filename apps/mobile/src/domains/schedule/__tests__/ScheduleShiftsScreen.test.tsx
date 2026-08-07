@@ -317,6 +317,24 @@ describe('ScheduleShiftsScreen', () => {
     expect(getByTestId('schedule-shifts-add-extra')).toBeTruthy();
   });
 
+  it('hides Add a one-off shift for a REMOVED parent (past member)', () => {
+    mockUseIsOnboarded.mockImplementation(() => ({
+      role: 'parent',
+      status: 'onboarded',
+      isPastMember: true,
+    }));
+    mockUseShiftsRange.mockImplementation(() => ({
+      data: [],
+      isLoading: false,
+      isError: false,
+      error: null,
+    }));
+
+    const { queryByTestId } = render(<ScheduleShiftsScreen />);
+
+    expect(queryByTestId('schedule-shifts-add-extra')).toBeNull();
+  });
+
   it('hides Add a one-off shift for nannies', () => {
     mockUseIsOnboarded.mockImplementation(() => ({
       role: 'nanny',

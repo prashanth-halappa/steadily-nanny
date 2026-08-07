@@ -220,6 +220,88 @@ describe('ClockOutSheet', () => {
     });
   });
 
+  describe("future clock-out (Daylight audit — block at submit, matching the server's CLOCK_OUT_IN_FUTURE)", () => {
+    // Household time 00:32, clock-in at 00:15 the same day: typing a finish
+    // of 01:45 is a plain same-day mistake (01:45 is after the 00:15 start,
+    // so this is NOT the overnight-roll case) and lands over an hour after
+    // "now" — exactly the report's on-device reproduction.
+    const RECENT_CLOCK_IN_AT = '2026-08-02T00:15:00.000Z';
+    const HOUSEHOLD_NOW_MS = new Date('2026-08-02T00:32:00.000Z').getTime();
+
+    it('blocks the submit and shows an inline message when the finish resolves to after now', () => {
+      const { getByTestId, onSubmit } = renderSheet({
+        clockInAt: RECENT_CLOCK_IN_AT,
+        nowMs: HOUSEHOLD_NOW_MS,
+      });
+
+      fireEvent.changeText(getByTestId('clockout-finish-time'), '01:45');
+
+      expect(getByTestId('clockout-future-finish-error').props.children).toBe(
+        'futureFinishError'
+      );
+
+      fireEvent.press(getByTestId('clockout-confirm'));
+      expect(onSubmit).not.toHaveBeenCalled();
+    });
+
+    it('allows a finish exactly at now, and within the 60s tolerance the server also applies', () => {
+      const { getByTestId, queryByTestId, onSubmit } = renderSheet({
+        clockInAt: RECENT_CLOCK_IN_AT,
+        nowMs: HOUSEHOLD_NOW_MS, // 00:32:00.000 exactly
+      });
+
+      // 00:33 is exactly 60s after "now" — the server's own boundary
+      // (`outMs > Date.now() + CLOCK_SKEW_TOLERANCE_MS`) is strict, so equal
+      // to the tolerance is still allowed.
+      fireEvent.changeText(getByTestId('clockout-finish-time'), '00:33');
+
+      expect(queryByTestId('clockout-future-finish-error')).toBeNull();
+      fireEvent.press(getByTestId('clockout-confirm'));
+      expect(onSubmit).toHaveBeenCalled();
+    });
+
+    it('blocks one minute past the tolerance boundary', () => {
+      const { getByTestId, onSubmit } = renderSheet({
+        clockInAt: RECENT_CLOCK_IN_AT,
+        nowMs: HOUSEHOLD_NOW_MS,
+      });
+
+      fireEvent.changeText(getByTestId('clockout-finish-time'), '00:34');
+
+      expect(getByTestId('clockout-future-finish-error')).toBeTruthy();
+      fireEvent.press(getByTestId('clockout-confirm'));
+      expect(onSubmit).not.toHaveBeenCalled();
+    });
+
+    it("does NOT flag the overnight roll as a future finish, even though the rolled instant lands after this test's nowMs", () => {
+      // Same fixture as the "still rolls a genuinely earlier finish onto the
+      // next day" test above: finish (02:15) is before the start (08:15) by
+      // wall clock, so it legitimately rolls to the next calendar day. A
+      // naive "is the resolved instant after now" check would misfire here
+      // — this is the exact regression the zero-length fix already had to
+      // avoid, and this fix must avoid it too.
+      const { getByTestId, queryByTestId, onSubmit } = renderSheet();
+
+      fireEvent.changeText(getByTestId('clockout-finish-time'), '02:15');
+
+      expect(queryByTestId('clockout-future-finish-error')).toBeNull();
+      fireEvent.press(getByTestId('clockout-confirm'));
+      expect(onSubmit).toHaveBeenCalled();
+    });
+
+    it('does not clash with the zero-length message when both start and finish are typed equal', () => {
+      const { getByTestId, queryByTestId } = renderSheet({
+        clockInAt: RECENT_CLOCK_IN_AT,
+        nowMs: HOUSEHOLD_NOW_MS,
+      });
+
+      fireEvent.changeText(getByTestId('clockout-finish-time'), '00:15');
+
+      expect(getByTestId('clockout-zero-length-error')).toBeTruthy();
+      expect(queryByTestId('clockout-future-finish-error')).toBeNull();
+    });
+  });
+
   describe('summary block wiring (source inspection — proves zone-awareness independent of the key-echo i18n mock)', () => {
     let sheetSource: string;
 

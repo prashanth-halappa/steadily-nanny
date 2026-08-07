@@ -1,7 +1,9 @@
 {
   "switcher": {
     "triggerLabel": "Switch household",
-    "sheetTitle": "Choose a household"
+    "sheetTitle": "Choose a household",
+    "pastSectionTitle": "Past households",
+    "pastBadge": "Past"
   },
   "children": {
     "wizardTitle": "Who are the children?",

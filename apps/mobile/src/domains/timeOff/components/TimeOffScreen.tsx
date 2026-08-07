@@ -118,7 +118,9 @@ export function TimeOffScreen() {
     );
   }
 
-  if (onboarding.role !== SETUP_ROLES.NANNY) {
+  // A removed nanny is STILL role `nanny`, so the role check alone lets her
+  // through to request/cancel/edit — writes the server now 403s.
+  if (onboarding.role !== SETUP_ROLES.NANNY || onboarding.isPastMember) {
     return (
       <View testID="time-off-screen" className="flex-1 bg-background">
         <View

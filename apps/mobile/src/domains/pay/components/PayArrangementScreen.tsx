@@ -336,7 +336,7 @@ export function PayArrangementScreen() {
     );
   }
 
-  if (!isParentEditorRole(onboarding.role)) {
+  if (!isParentEditorRole(onboarding.role) || onboarding.isPastMember) {
     return (
       <View testID="pay-not-available" className="flex-1 bg-background">
         <ScrollView contentContainerStyle={SCREEN_CONTENT_STYLE}>

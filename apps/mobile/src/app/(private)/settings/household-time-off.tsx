@@ -32,7 +32,8 @@ export default function HouseholdTimeOffScreen() {
   // Defense in depth — the server is the real gate (D12-class assertion in
   // `ptoCommandService.markTimeOffPaid`). A non-parent still sees the list
   // and its paid status, exactly as before; she just can't open the sheet.
-  const canMarkPaid = isParentEditorRole(onboarding.role);
+  const canMarkPaid =
+    isParentEditorRole(onboarding.role) && !onboarding.isPastMember;
 
   const rows = (timeOff.data ?? []).filter(r => r.status !== 'cancelled');
 

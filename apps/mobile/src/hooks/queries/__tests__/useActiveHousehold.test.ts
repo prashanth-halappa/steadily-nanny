@@ -19,10 +19,16 @@ const HOUSEHOLD_B = {
   name: 'The Chen Household',
 } as Household;
 
+const HOUSEHOLD_PAST = {
+  id: 'household-past',
+  name: 'The Okonjo Household',
+} as Household;
+
 const householdsListMock = mock(() => Promise.resolve([] as unknown[]));
+const householdsListPastMock = mock(() => Promise.resolve([] as unknown[]));
 
 mock.module('@/src/api/endpoints/household', () => ({
-  householdApi: { list: householdsListMock },
+  householdApi: { list: householdsListMock, listPast: householdsListPastMock },
 }));
 
 let useActiveHousehold: typeof import('../useActiveHousehold').useActiveHousehold;
@@ -38,6 +44,8 @@ beforeEach(async () => {
 
   householdsListMock.mockReset();
   householdsListMock.mockResolvedValue([]);
+  householdsListPastMock.mockReset();
+  householdsListPastMock.mockResolvedValue([]);
   useActiveHouseholdStore.getState().reset();
   useAuthStore.setState({
     session: { user: { id: 'user-1' } } as unknown as never,
@@ -110,6 +118,61 @@ describe('useActiveHousehold', () => {
     expect(useActiveHouseholdStore.getState().preferredHouseholdId).toBe(
       'household-b'
     );
+  });
+
+  it('exposes past households separately and never inside the active list', async () => {
+    householdsListMock.mockResolvedValue([HOUSEHOLD_A]);
+    householdsListPastMock.mockResolvedValue([HOUSEHOLD_PAST]);
+
+    const { result } = renderHookWithProviders(() => useActiveHousehold());
+
+    await waitFor(() =>
+      expect(result.current.pastHouseholds).toEqual([HOUSEHOLD_PAST])
+    );
+    expect(result.current.households).toEqual([HOUSEHOLD_A]);
+    expect(result.current.householdId).toBe('household-a');
+    expect(result.current.isPastHousehold).toBe(false);
+  });
+
+  it('resolves a past household when it is the persisted preference, flagged as past', async () => {
+    useActiveHouseholdStore
+      .getState()
+      .setPreferredHouseholdId('household-past');
+    householdsListMock.mockResolvedValue([HOUSEHOLD_A]);
+    householdsListPastMock.mockResolvedValue([HOUSEHOLD_PAST]);
+
+    const { result } = renderHookWithProviders(() => useActiveHousehold());
+
+    await waitFor(() => expect(result.current.isPastHousehold).toBe(true));
+    expect(result.current.householdId).toBe('household-past');
+    expect(result.current.household).toEqual(HOUSEHOLD_PAST);
+  });
+
+  // A nanny removed from the only family she worked for has NO active
+  // household. Resolving to null would leave the hours she is owed with no
+  // screen to render on.
+  it('falls back to a past household when the user has no active ones left', async () => {
+    householdsListMock.mockResolvedValue([]);
+    householdsListPastMock.mockResolvedValue([HOUSEHOLD_PAST]);
+
+    const { result } = renderHookWithProviders(() => useActiveHousehold());
+
+    await waitFor(() =>
+      expect(result.current.householdId).toBe('household-past')
+    );
+    expect(result.current.isPastHousehold).toBe(true);
+  });
+
+  // The past list is a bonus surface; the live app must not go down with it.
+  it('degrades to no past households when that query fails, leaving the active experience intact', async () => {
+    householdsListMock.mockResolvedValue([HOUSEHOLD_A]);
+    householdsListPastMock.mockRejectedValue(new Error('network down'));
+
+    const { result } = renderHookWithProviders(() => useActiveHousehold());
+
+    await waitFor(() => expect(result.current.householdId).toBe('household-a'));
+    expect(result.current.pastHouseholds).toEqual([]);
+    expect(result.current.isError).toBe(false);
   });
 
   it('surfaces isError when the households list query fails', async () => {

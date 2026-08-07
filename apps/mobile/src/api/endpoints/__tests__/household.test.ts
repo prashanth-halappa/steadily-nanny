@@ -5,13 +5,18 @@
  * `mock.module('@/src/api/client', …)` seam pattern (see user.test.ts).
  */
 import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
+import type { Household } from '@steadily-nanny/shared-types/schemas/household.schema';
 
 let householdApi: any;
 let apiClient: any;
 
 const now = '2026-01-01T00:00:00.000Z';
 
-const validHousehold = {
+// Typed against the shared wire contract, not left as a bare literal: an
+// untyped fixture widens `approval_mode`/`approval_scope` to `string`, which
+// then fails to satisfy the schema's enums anywhere the fixture is handed to
+// something typed.
+const validHousehold: Household = {
   id: '11111111-1111-4111-8111-111111111111',
   name: 'The Smiths',
   timezone: 'Europe/London',
@@ -27,6 +32,8 @@ const validHousehold = {
   created_at: now,
   updated_at: now,
 };
+
+const pastHouseholdId = '99999999-9999-4999-8999-999999999999';
 
 const validInvite = {
   id: '33333333-3333-4333-8333-333333333333',
@@ -95,6 +102,81 @@ describe('householdApi.list', () => {
   it('throws when the response fails validation', async () => {
     apiClient.get.mockResolvedValue({ data: { data: { households: 'x' } } });
     await expect(householdApi.list()).rejects.toThrow();
+  });
+
+  // The active list is what every write path and role check reads. A removed
+  // household appearing here would offer a nanny a household she can no
+  // longer act in.
+  it('never leaks a past household into the active list', async () => {
+    apiClient.get.mockResolvedValue({
+      data: {
+        data: {
+          households: [validHousehold],
+          past_households: [{ ...validHousehold, id: pastHouseholdId }],
+        },
+      },
+    });
+
+    const result = await householdApi.list();
+
+    expect(result.map((h: { id: string }) => h.id)).toEqual([
+      validHousehold.id,
+    ]);
+  });
+});
+
+describe('householdApi.listPast', () => {
+  // A removed nanny's only route back to the hours she worked.
+  it('returns the households the caller was removed from', async () => {
+    apiClient.get.mockResolvedValue({
+      data: {
+        data: {
+          households: [validHousehold],
+          past_households: [
+            { ...validHousehold, id: pastHouseholdId, name: 'The Joneses' },
+          ],
+        },
+      },
+    });
+
+    const result = await householdApi.listPast();
+
+    expect(apiClient.get).toHaveBeenCalledWith('/v1/households');
+    expect(result).toHaveLength(1);
+    expect(result[0].name).toBe('The Joneses');
+  });
+
+  // Forward compatibility: this build talking to a server that predates
+  // `past_households` must degrade to "no past households", never throw.
+  it('returns [] when the server omits past_households entirely', async () => {
+    apiClient.get.mockResolvedValue({
+      data: { data: { households: [validHousehold] } },
+    });
+
+    expect(await householdApi.listPast()).toEqual([]);
+  });
+});
+
+// Backward compatibility, the other direction: a SHIPPED client parsing the
+// pre-change envelope against the new payload. Zod objects are non-strict, so
+// the added key is stripped and the old client is untouched — this is why
+// extending the envelope cannot break anyone.
+describe('past_households is additive-only on the wire', () => {
+  it('a client on the pre-change envelope schema still parses the new payload', async () => {
+    const { z } = await import('zod');
+    const { HouseholdSchema } = await import(
+      '@steadily-nanny/shared-types/schemas/household.schema'
+    );
+    const preChangeSchema = z.object({
+      households: z.array(HouseholdSchema),
+    });
+
+    const parsed = preChangeSchema.parse({
+      households: [validHousehold],
+      past_households: [{ ...validHousehold, id: pastHouseholdId }],
+    });
+
+    expect(parsed).toEqual({ households: [validHousehold] });
   });
 });
 

@@ -4,6 +4,7 @@ import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 // the HTTP shaping (status code + envelope payload) and error forwarding.
 let HouseholdController: any;
 let listForUser: any;
+let listPastForUser: any;
 let getOwned: any;
 let listMembers: any;
 let previewInvite: any;
@@ -16,6 +17,7 @@ let revokeInvite: any;
 
 beforeAll(async () => {
   listForUser = mock(async () => [{ id: 'h1' }]);
+  listPastForUser = mock(async () => []);
   getOwned = mock(async () => ({ id: 'h1', name: 'The Smiths' }));
   listMembers = mock(async () => [{ id: 'm1' }]);
   previewInvite = mock(async () => ({
@@ -35,6 +37,7 @@ beforeAll(async () => {
     () => ({
       householdQueryService: {
         listForUser,
+        listPastForUser,
         getOwned,
         listMembers,
         previewInvite,
@@ -78,6 +81,7 @@ function mockRes(): any {
 beforeEach(() => {
   for (const m of [
     listForUser,
+    listPastForUser,
     getOwned,
     listMembers,
     previewInvite,
@@ -93,12 +97,34 @@ beforeEach(() => {
 });
 
 describe('HouseholdController', () => {
-  it('list responds 200 with households', async () => {
+  // REGRESSION PIN. `households` is the key every shipped client reads; its
+  // value must not move when `past_households` is bolted alongside it. The
+  // added key is additive-only — Zod object schemas are non-strict, so a
+  // client parsing the old shape strips it (proved in the mobile endpoint
+  // test).
+  it('list responds 200 with households unchanged, plus an empty past_households for an active-only member', async () => {
     const res = mockRes();
     await HouseholdController.list({ user: { id: 'u1' } } as any, res, mock());
     expect(listForUser).toHaveBeenCalledWith('u1');
+    expect(listPastForUser).toHaveBeenCalledWith('u1');
     expect(res.statusCode).toBe(200);
-    expect(res.body.data).toEqual({ households: [{ id: 'h1' }] });
+    expect(res.body.data.households).toEqual([{ id: 'h1' }]);
+    expect(res.body.data).toEqual({
+      households: [{ id: 'h1' }],
+      past_households: [],
+    });
+  });
+
+  // The removed nanny's only route back to the money she is owed: her old
+  // household has to come down the wire, distinguishable from a live one.
+  it('list includes the households the caller was removed from', async () => {
+    listPastForUser.mockImplementationOnce(async () => [{ id: 'h9' }]);
+    const res = mockRes();
+    await HouseholdController.list({ user: { id: 'u1' } } as any, res, mock());
+    expect(res.body.data).toEqual({
+      households: [{ id: 'h1' }],
+      past_households: [{ id: 'h9' }],
+    });
   });
 
   it('create responds 201', async () => {

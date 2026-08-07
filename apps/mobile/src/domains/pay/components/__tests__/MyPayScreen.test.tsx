@@ -64,6 +64,12 @@ const householdA = {
   updated_at: now,
 };
 const householdB = { ...householdA, id: HOUSEHOLD_B, name: 'The Reyes' };
+const HOUSEHOLD_PAST = 'household-past';
+const householdPast = {
+  ...householdA,
+  id: HOUSEHOLD_PAST,
+  name: 'The Okonjos',
+};
 
 const nannyMembership = (householdId: string) => ({
   id: `member-${householdId}`,
@@ -100,6 +106,7 @@ const arrangementFor = (householdId: string) => ({
 });
 
 const listMock = mock(() => Promise.resolve([householdA, householdB]));
+const listPastMock = mock(() => Promise.resolve([] as unknown[]));
 const membershipsListMock = mock(() =>
   Promise.resolve([nannyMembership(HOUSEHOLD_A)])
 );
@@ -112,7 +119,7 @@ const payCurrentMock = mock<
 );
 
 mock.module('@/src/api/endpoints/household', () => ({
-  householdApi: { list: listMock },
+  householdApi: { list: listMock, listPast: listPastMock },
 }));
 mock.module('@/src/api/endpoints/user', () => ({
   userApi: { listMemberships: membershipsListMock },
@@ -137,6 +144,8 @@ beforeAll(async () => {
 
 beforeEach(() => {
   listMock.mockReset();
+  listPastMock.mockReset();
+  listPastMock.mockImplementation(() => Promise.resolve([]));
   membershipsListMock.mockReset();
   payCurrentMock.mockReset();
   ptoBalanceMock.mockReset();
@@ -302,5 +311,25 @@ describe('MyPayScreen', () => {
       fireEvent.press(back);
       expect(routerBack).toHaveBeenCalled();
     });
+  });
+
+  // The pay she is owed by the family she left is the whole point of the
+  // removed-member read access. Listing only ACTIVE households hid it.
+  it('renders a card for a household she was removed from', async () => {
+    listMock.mockImplementation(() => Promise.resolve([householdA]));
+    listPastMock.mockImplementation(() => Promise.resolve([householdPast]));
+    membershipsListMock.mockImplementation(() =>
+      Promise.resolve([
+        nannyMembership(HOUSEHOLD_A),
+        { ...nannyMembership(HOUSEHOLD_PAST), status: 'removed' },
+      ])
+    );
+
+    const { findByTestId } = renderWithProviders(<MyPayScreen />);
+
+    expect(
+      await findByTestId(`my-pay-household-${HOUSEHOLD_PAST}`)
+    ).toBeTruthy();
+    expect(await findByTestId(`my-pay-household-${HOUSEHOLD_A}`)).toBeTruthy();
   });
 });

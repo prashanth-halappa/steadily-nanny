@@ -33,6 +33,22 @@ export class HouseholdQueryService {
   }
 
   /**
+   * List the households the caller was REMOVED from. Deliberately separate
+   * from `listForUser` rather than merged into it: everything downstream of
+   * "which household am I in" — writes, role gating, the picker's default —
+   * keys off the active list, and folding removed rows into it would hand a
+   * removed member a household she can appear to act in. She gets read-only
+   * access to her own money history there, nothing more.
+   */
+  async listPastForUser(userId: string): Promise<Household[]> {
+    const ids = await this.memberRepo.listRemovedHouseholdIds(userId);
+    if (ids.length === 0) {
+      return [];
+    }
+    return this.householdRepo.findByIds(ids);
+  }
+
+  /**
    * Fetch one household, enforcing membership. Throws HouseholdNotFoundError
    * for both "doesn't exist" and "exists but you are not a member" — the SAME
    * error for both, so a non-member can never learn a household exists. This
@@ -67,12 +83,23 @@ export class HouseholdQueryService {
   }
 
   /**
-   * List every active membership the caller has, across all households —
-   * how mobile learns "what is my role in each household I belong to"
-   * without walking `listMembers` per household and filtering by userId.
+   * List every membership the caller has, across all households — how mobile
+   * learns "what is my role in each household" without walking `listMembers`
+   * per household and filtering by userId.
+   *
+   * INCLUDES `removed` rows, deliberately, and this is the only read that
+   * does. The client needs them for two decisions it cannot make otherwise: a
+   * removed member is ONBOARDED (she has an account and money owed — reporting
+   * her as a new user routes her into the signup wizard and strands it), and
+   * she is READ-ONLY in that household (`useIsOnboarded().isPastMember`, the
+   * gate every write affordance ANDs into its role check). Filtered to active,
+   * that gate could never be true and the whole read-only path was dead code.
+   *
+   * This grants nothing. Every server-side write gate resolves membership
+   * through `findActiveMembership` / `listActiveByUser`, never through here.
    */
   async listMembershipsForUser(userId: string): Promise<HouseholdMember[]> {
-    return this.memberRepo.listActiveByUser(userId);
+    return this.memberRepo.listByUser(userId);
   }
 
   /** List a household's active members. Caller must already be a member. */

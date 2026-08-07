@@ -20,6 +20,34 @@ export interface OnboardingState {
    * loading or if none exists yet. */
   householdId: string | null;
   /**
+   * The resolved membership is `removed` — the user was taken out of this
+   * household but keeps read-only access to the hours and pay she accrued in
+   * it. THE honest write gate: screens must AND this into whatever role check
+   * they already do, never offer a write affordance when it is true.
+   *
+   * Honoured today by: `HoursScreen` (both role views — approve/query/reopen,
+   * expense add/edit/withdraw, time entry corrections), `TodayScreen`'s
+   * clock-in card, `TimeOffScreen` (request/edit/cancel), the parent
+   * `household-time-off` route's mark-paid sheet, `PaySetupScreen`,
+   * `PayArrangementScreen`, and `ScheduleShiftsScreen`'s add-extra affordance.
+   * `MyPayScreen` needs no gate: it offers no writes.
+   *
+   * Until the server stopped filtering `removed` rows out of
+   * `GET /v1/users/me/memberships` this was permanently false and every one of
+   * those gates was dead code — see `householdQueryService.listMembershipsForUser`.
+   *
+   * ponytail: NOT yet honoured by `ShiftDetailScreen` (accept/decline/change
+   * request — no single choke point, it would mean ANDing into three separate
+   * booleans), `ScheduleRespondScreen` (doesn't call this hook at all),
+   * `SchedulePendingScreen`, `ScheduleBuildScreen`, `ExtraShiftScreen`
+   * (reachable only by deep link now that its entry point is gated), and the
+   * inbox. Those all have source-inspection tests rather than render tests, so
+   * a gate there is cheap to write and expensive to prove; the API refuses the
+   * write with a 403 regardless, so the failure mode is an error toast, not a
+   * bad write. Widen the gate as those screens gain render tests.
+   */
+  isPastMember: boolean;
+  /**
    * The memberships query FAILED — we do not know whether this user is
    * onboarded. Deliberately DISTINCT from "resolved with zero memberships":
    * callers must never treat this as not-onboarded (see the header comment).
@@ -46,6 +74,12 @@ function isOnboardedForMembership(
   membership: HouseholdMember,
   childCount: number
 ): boolean {
+  // A removed member is set up — she just has no live household. Reporting
+  // her as not-onboarded routes her into the signup wizard, which puts the
+  // hours and pay she is still owed permanently out of reach.
+  if (membership.status === HOUSEHOLD_MEMBER_STATUSES.REMOVED) {
+    return true;
+  }
   if (membership.status !== HOUSEHOLD_MEMBER_STATUSES.ACTIVE) {
     return false;
   }
@@ -115,19 +149,33 @@ export function useIsOnboarded(): OnboardingState {
   }, [membershipsQuery.refetch]);
   const membershipsError = membershipsQuery.isError;
 
-  const activeMemberships = (membershipsQuery.data ?? []).filter(
+  const memberships = membershipsQuery.data ?? [];
+  const activeMemberships = memberships.filter(
     membership => membership.status === HOUSEHOLD_MEMBER_STATUSES.ACTIVE
   );
 
+  // The last fall-through covers a nanny whose ONLY membership is `removed`:
+  // both prior terms are null for her, and leaving the id null reported her
+  // as a brand-new user. It also holds during the frame before the
+  // past-households query resolves, so routing never depends on that timing.
   const resolvedHouseholdId =
-    activeHousehold.householdId ?? activeMemberships[0]?.household_id ?? null;
+    activeHousehold.householdId ??
+    activeMemberships[0]?.household_id ??
+    memberships[0]?.household_id ??
+    null;
 
+  // Prefer the row for the household actually selected — INCLUDING a removed
+  // one. Falling through to `activeMemberships[0]` for a household the user
+  // was removed from would report a DIFFERENT family's role against the
+  // household on screen.
   const membership =
     (resolvedHouseholdId
-      ? activeMemberships.find(m => m.household_id === resolvedHouseholdId)
+      ? memberships.find(m => m.household_id === resolvedHouseholdId)
       : undefined) ??
     activeMemberships[0] ??
     null;
+
+  const isPastMember = membership?.status === HOUSEHOLD_MEMBER_STATUSES.REMOVED;
 
   const setupRole = membership
     ? membershipRoleToSetupRole(membership.role)
@@ -148,6 +196,7 @@ export function useIsOnboarded(): OnboardingState {
       status: 'loading',
       role: null,
       householdId: null,
+      isPastMember: false,
       membershipsError: true,
       retryMemberships,
     };
@@ -158,6 +207,7 @@ export function useIsOnboarded(): OnboardingState {
       status: 'loading',
       role: null,
       householdId: null,
+      isPastMember: false,
       membershipsError: false,
       retryMemberships,
     };
@@ -168,6 +218,7 @@ export function useIsOnboarded(): OnboardingState {
       status: 'not-onboarded',
       role: null,
       householdId: null,
+      isPastMember: false,
       membershipsError: false,
       retryMemberships,
     };
@@ -178,6 +229,7 @@ export function useIsOnboarded(): OnboardingState {
       status: 'loading',
       role: setupRole,
       householdId: resolvedHouseholdId,
+      isPastMember,
       membershipsError: false,
       retryMemberships,
     };
@@ -190,6 +242,7 @@ export function useIsOnboarded(): OnboardingState {
     status: onboarded ? 'onboarded' : 'not-onboarded',
     role: setupRole,
     householdId: resolvedHouseholdId,
+    isPastMember,
     membershipsError: false,
     retryMemberships,
   };

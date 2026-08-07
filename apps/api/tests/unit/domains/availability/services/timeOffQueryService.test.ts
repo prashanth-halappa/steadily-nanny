@@ -122,3 +122,67 @@ describe('TimeOffQueryService.getOwned', () => {
     );
   });
 });
+
+// ---------------------------------------------------------------------------
+// `carer_time_off` is PERSON-scoped — no household_id on the row — so the
+// time-off write paths had no household to authorize against and ended up
+// authorizing against nothing at all: POST /v1/time-off was a bare insert and
+// DELETE checked only `user_id`. A nanny removed from every household she
+// worked for still got a 201, and her DELETE still drove
+// `reconcileCancelledTimeOff` into a past household's `pto_ledger` — a money
+// write by a non-member. The API runs on the service-role key and migration
+// 049 dropped the client write policies, so this TypeScript gate is the ONLY
+// gate; RLS does not back it up.
+// ---------------------------------------------------------------------------
+describe('TimeOffQueryService.assertActiveMember', () => {
+  it('refuses a caller with no active membership anywhere', async () => {
+    const svc = new TimeOffQueryService(
+      makeTimeOffRepo(),
+      makeMemberRepo({ listActiveByUser: mock(async () => []) })
+    );
+    await expect(svc.assertActiveMember('removed-nanny')).rejects.toMatchObject(
+      { statusCode: 403 }
+    );
+  });
+
+  // The discriminating half: a gate that refuses everyone passes the case
+  // above and fails this one.
+  it('allows a caller holding at least one active membership', async () => {
+    const memberRepo = makeMemberRepo({
+      listActiveByUser: mock(async () => [
+        { id: 'm1', household_id: 'hh1', user_id: 'nanny-1', status: 'active' },
+      ]),
+    });
+    const svc = new TimeOffQueryService(makeTimeOffRepo(), memberRepo);
+
+    await svc.assertActiveMember('nanny-1');
+
+    expect(memberRepo.listActiveByUser).toHaveBeenCalledWith('nanny-1');
+  });
+
+  // A membership row that EXISTS but is `removed` must not count. Pinned
+  // separately because the repository call is the thing doing the filtering:
+  // swapping `listActiveByUser` for the status-unfiltered `listByUser` (which
+  // `listMembershipsForUser` now uses) would silently reopen the hole.
+  it('does not count a removed membership row as active', async () => {
+    const svc = new TimeOffQueryService(
+      makeTimeOffRepo(),
+      makeMemberRepo({
+        // What the active-only repository query returns for a user whose only
+        // row is `removed`: nothing.
+        listActiveByUser: mock(async () => []),
+        listByUser: mock(async () => [
+          {
+            id: 'm1',
+            household_id: 'hh1',
+            user_id: 'nanny-1',
+            status: 'removed',
+          },
+        ]),
+      })
+    );
+    await expect(svc.assertActiveMember('nanny-1')).rejects.toMatchObject({
+      statusCode: 403,
+    });
+  });
+});

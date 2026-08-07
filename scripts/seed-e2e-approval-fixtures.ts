@@ -57,6 +57,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createClient } from '@supabase/supabase-js';
+import { assertLocalSupabaseUrl } from './localSupabaseGuard';
 
 const NANNY_EMAIL = 'nanny@steadilynanny.test';
 const PARENT_EMAIL = 'parent@steadilynanny.test';
@@ -117,6 +118,7 @@ if (!url || !serviceKey || serviceKey.startsWith('SET-ME')) {
   );
   process.exit(1);
 }
+assertLocalSupabaseUrl(url);
 
 const db = createClient(url, serviceKey, {
   auth: { persistSession: false, autoRefreshToken: false },

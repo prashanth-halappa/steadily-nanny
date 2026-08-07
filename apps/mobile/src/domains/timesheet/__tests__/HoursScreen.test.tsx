@@ -597,3 +597,91 @@ describe('HoursScreen — parent, historical weeks stay non-actionable', () => {
     expect(getByTestId('hours-query-button').props.disabled).toBe(false);
   });
 });
+
+// The removed nanny can now reach the household she left, so this screen is
+// the one that has to stop offering her writes. Read access is the point of
+// the feature; a write affordance on a household she is no longer a member of
+// would fail server-side anyway (all writes stay active-only) — offering it
+// is a lie the UI must not tell.
+describe('HoursScreen — a past household is read-only', () => {
+  function pastMember() {
+    mockUseIsOnboarded.mockImplementation(() => ({
+      status: 'onboarded',
+      role: 'nanny',
+      householdId: HOUSEHOLD_ID,
+      isPastMember: true,
+    }));
+  }
+
+  it('offers the nanny no add-expense button on a household she was removed from', () => {
+    pastMember();
+    const { queryByTestId } = render(<HoursScreen />);
+    expect(queryByTestId('expenses-add')).toBeNull();
+  });
+
+  // The discriminating half: hiding it unconditionally would also pass the
+  // test above.
+  it('still offers add-expense on a household she is an active member of', () => {
+    const { getByTestId } = render(<HoursScreen />);
+    expect(getByTestId('expenses-add')).toBeTruthy();
+  });
+
+  it('still shows her the hours themselves on a past household', () => {
+    pastMember();
+    const { getByTestId } = render(<HoursScreen />);
+    expect(getByTestId('hours-title')).toBeTruthy();
+    expect(getByTestId('hours-week-prev')).toBeTruthy();
+  });
+
+  it('offers a removed parent no approve action on a past household', () => {
+    mockUseIsOnboarded.mockImplementation(() => ({
+      status: 'onboarded',
+      role: 'parent',
+      householdId: HOUSEHOLD_ID,
+      isPastMember: true,
+    }));
+    mockUseWeekTimesheet.mockImplementation(() => ({
+      data: [
+        {
+          id: '4359148e-d5ee-4515-9fca-3396b29ee48d',
+          carer_id: null,
+          carer_display_name: 'Amara',
+          status: 'submitted',
+          query_note: null,
+        },
+      ],
+      isLoading: false,
+    }));
+
+    const { queryByTestId } = render(<HoursScreen />);
+
+    expect(queryByTestId('hours-approve-button')).toBeNull();
+    expect(queryByTestId('hours-query-button')).toBeNull();
+  });
+
+  // Discriminating half for the parent path.
+  it('still offers approve to a parent who is an active member', () => {
+    mockUseIsOnboarded.mockImplementation(() => ({
+      status: 'onboarded',
+      role: 'parent',
+      householdId: HOUSEHOLD_ID,
+      isPastMember: false,
+    }));
+    mockUseWeekTimesheet.mockImplementation(() => ({
+      data: [
+        {
+          id: '4359148e-d5ee-4515-9fca-3396b29ee48d',
+          carer_id: null,
+          carer_display_name: 'Amara',
+          status: 'submitted',
+          query_note: null,
+        },
+      ],
+      isLoading: false,
+    }));
+
+    const { getByTestId } = render(<HoursScreen />);
+
+    expect(getByTestId('hours-approve-button')).toBeTruthy();
+  });
+});

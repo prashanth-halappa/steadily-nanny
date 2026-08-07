@@ -68,12 +68,30 @@ export type InvitePreview = z.infer<typeof InvitePreviewSchema>;
 
 // --- API --------------------------------------------------------------------
 export const householdApi = {
-  /** The caller's own households. */
+  /** The caller's own households — ACTIVE memberships only. */
   list: async (): Promise<Household[]> => {
     const response = await apiClient.get(householdEndpoints.list);
     const parsed = HouseholdListResponseSchema.safeParse(response.data.data);
     if (!parsed.success) throw parsed.error;
     return parsed.data.households;
+  },
+
+  /**
+   * The households the caller was REMOVED from. A removed nanny still reads
+   * the hours, expenses and pay she accrued there — without this the money
+   * she is owed has no route in the app, because her old household drops out
+   * of `list` the moment the parent removes her.
+   *
+   * ponytail: same GET as `list`, deliberately fetched twice rather than
+   * widening `list`'s array return into the envelope — that contract is
+   * mocked in eleven test files across other domains. Collapse the two into
+   * one `select`-split query when those mocks are being touched anyway.
+   */
+  listPast: async (): Promise<Household[]> => {
+    const response = await apiClient.get(householdEndpoints.list);
+    const parsed = HouseholdListResponseSchema.safeParse(response.data.data);
+    if (!parsed.success) throw parsed.error;
+    return parsed.data.past_households;
   },
 
   /** Create a household — the caller becomes its owner. */

@@ -1,7 +1,9 @@
 {
   "switcher": {
     "triggerLabel": "Cambiar de hogar",
-    "sheetTitle": "Elige un hogar"
+    "sheetTitle": "Elige un hogar",
+    "pastSectionTitle": "Hogares anteriores",
+    "pastBadge": "Anterior"
   },
   "children": {
     "wizardTitle": "¿Quiénes son los niños?",

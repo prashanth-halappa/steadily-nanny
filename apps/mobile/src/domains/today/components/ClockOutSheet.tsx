@@ -69,6 +69,12 @@ import {
 
 const QUICK_BREAK_MINUTES = [0, 15, 30, 45, 60] as const;
 
+// Mirrors the server's CLOCK_SKEW_TOLERANCE_MS
+// (apps/api/src/domains/timesheet/services/timesheetCommandService.ts) so
+// the client and the eventual 400 agree on what counts as "future" — a few
+// seconds of clock drift must not flag an ordinary clock-out.
+const FUTURE_FINISH_TOLERANCE_MS = 60_000;
+
 export interface ClockOutSheetSubmitInput {
   breakMinutes: number;
   note: string;
@@ -213,6 +219,14 @@ export function ClockOutSheet({
   const isZeroLength = Boolean(
     parsedInTime && parsedOutTime && parsedInTime === parsedOutTime
   );
+  // Same "finish at or before start" comparison `shiftInstantsFromWallClock`
+  // uses to decide whether to roll onto the next day, minus the equal case
+  // (that's `isZeroLength`, handled separately above). A rolled finish is a
+  // legitimate overnight shift even though the resolved instant can land
+  // after `nowMs` — only a NON-rolled finish that's after now is wrong.
+  const isOvernightRoll = Boolean(
+    parsedInTime && parsedOutTime && parsedOutTime < parsedInTime
+  );
   const instants =
     rolledInstants && isZeroLength
       ? { ...rolledInstants, ends_at: rolledInstants.starts_at }
@@ -222,6 +236,13 @@ export function ClockOutSheet({
   const effectiveClockOutMs = instants
     ? new Date(instants.ends_at).getTime()
     : nowMs;
+
+  const isFutureFinish = Boolean(
+    instants &&
+      !isZeroLength &&
+      !isOvernightRoll &&
+      effectiveClockOutMs > nowMs + FUTURE_FINISH_TOLERANCE_MS
+  );
 
   const workedMinutes = effectiveClockInAt
     ? computeWorkedMinutesFromInstants(
@@ -242,7 +263,7 @@ export function ClockOutSheet({
   };
 
   const handleSubmit = () => {
-    if (!timesAreValid || isZeroLength) return;
+    if (!timesAreValid || isZeroLength || isFutureFinish) return;
     onSubmit({
       breakMinutes,
       note: note.trim(),
@@ -323,6 +344,15 @@ export function ClockOutSheet({
             className="text-destructive"
           >
             {t('zeroLengthFinishError')}
+          </Small>
+        ) : null}
+
+        {clockInAt && timesAreValid && !isZeroLength && isFutureFinish ? (
+          <Small
+            testID="clockout-future-finish-error"
+            className="text-destructive"
+          >
+            {t('futureFinishError')}
           </Small>
         ) : null}
 
@@ -413,7 +443,7 @@ export function ClockOutSheet({
           testID="clockout-confirm"
           label={mode === 'edit' ? t('saveCorrection') : t('clockOut')}
           isLoading={isSubmitting}
-          disabled={!timesAreValid || isZeroLength}
+          disabled={!timesAreValid || isZeroLength || isFutureFinish}
           onPress={handleSubmit}
         />
       </View>
