@@ -2,8 +2,9 @@
  * @module domains/inbox/components/InboxScreen
  *
  * "What needs my attention" — actionable rows for pending change requests,
- * co-parent approvals (auto-approve on timeout), pending schedule patterns,
- * and queried timesheet weeks. Deep-links into existing screens; no new
+ * co-parent approvals (auto-approve on timeout, with inline Approve/Decline),
+ * pending schedule patterns, queried timesheet weeks, and submitted weeks
+ * awaiting a parent's review. Deep-links into existing screens; no new
  * detail routes. Query failures surface ErrorState + retry — never the
  * empty-success copy.
  */
@@ -14,6 +15,7 @@ import { illustrations } from '@/assets/illustrations';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { ErrorState } from '@/src/components/custom/ErrorState';
 import { BackButton } from '@/src/components/ui/back-button';
+import { Button } from '@/src/components/ui/button';
 import { EmptyState } from '@/src/components/ui/empty-state';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { Body, H1, Small } from '@/src/components/ui/typography';
@@ -21,6 +23,7 @@ import { useInboxItems } from '@/src/domains/inbox/hooks/useInboxItems';
 import type { InboxItem } from '@/src/domains/inbox/utils/buildInboxItems';
 import { formatApprovalDeadline } from '@/src/domains/inbox/utils/formatApprovalDeadline';
 import { formatDisplayDate } from '@/src/domains/timesheet/utils/week';
+import { useRespondToApproval } from '@/src/hooks/mutations/useRespondToApproval';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
 import { useElevation } from '~/lib/design-tokens/elevation';
 
@@ -35,6 +38,8 @@ function hrefForItem(item: InboxItem): Href {
     case 'pending_pattern':
       return `/(private)/schedule/respond/${item.patternId}` as Href;
     case 'queried_week':
+      return `/(private)/(tabs)/hours?weekStart=${item.weekStart}` as Href;
+    case 'submitted_week':
       return `/(private)/(tabs)/hours?weekStart=${item.weekStart}` as Href;
   }
 }
@@ -62,6 +67,10 @@ function titleForItem(
       return t('items.queriedWeek.title', {
         week: formatDisplayDate(item.weekStart),
       });
+    case 'submitted_week':
+      return t('items.submittedWeek.title', {
+        week: formatDisplayDate(item.weekStart),
+      });
   }
 }
 
@@ -85,6 +94,10 @@ function subtitleForItem(
       return item.queryNote?.trim()
         ? t('items.queriedWeek.subtitleWithNote', { note: item.queryNote })
         : t('items.queriedWeek.subtitle');
+    case 'submitted_week':
+      return item.carerDisplayName
+        ? t('items.submittedWeek.subtitle', { carer: item.carerDisplayName })
+        : t('items.submittedWeek.subtitleFallback');
   }
 }
 
@@ -96,6 +109,7 @@ export function InboxScreen() {
   const active = useActiveHousehold();
   const timeZone = active.household?.timezone ?? 'UTC';
   const { items, isLoading, isError, refetch } = useInboxItems();
+  const respondToApproval = useRespondToApproval();
 
   return (
     <ScrollView
@@ -151,6 +165,47 @@ export function InboxScreen() {
                   <Small className="text-muted-foreground">
                     {subtitleForItem(item, t, timeZone)}
                   </Small>
+                  {item.kind === 'co_parent_approval' ? (
+                    <View className="mt-2 flex-row gap-2">
+                      <Button
+                        testID={`inbox-approval-decline-${item.id}`}
+                        variant="outline"
+                        size="sm"
+                        disabled={
+                          respondToApproval.isPending &&
+                          respondToApproval.variables?.approvalId === item.id
+                        }
+                        onPress={() =>
+                          respondToApproval.mutate({
+                            householdId: item.householdId,
+                            approvalId: item.id,
+                            status: 'declined',
+                          })
+                        }
+                      >
+                        <Small>{t('items.approval.decline')}</Small>
+                      </Button>
+                      <Button
+                        testID={`inbox-approval-approve-${item.id}`}
+                        size="sm"
+                        disabled={
+                          respondToApproval.isPending &&
+                          respondToApproval.variables?.approvalId === item.id
+                        }
+                        onPress={() =>
+                          respondToApproval.mutate({
+                            householdId: item.householdId,
+                            approvalId: item.id,
+                            status: 'approved',
+                          })
+                        }
+                      >
+                        <Small className="text-primary-foreground">
+                          {t('items.approval.approve')}
+                        </Small>
+                      </Button>
+                    </View>
+                  ) : null}
                 </Pressable>
               ))}
             </View>

@@ -57,6 +57,20 @@ describe('InboxScreen source', () => {
     expect(screenSource).toContain('useElevation');
     expect(screenSource).not.toMatch(/className="[^"]*shadow-/);
   });
+
+  it('wires Approve/Decline actions on co-parent approval rows through the mutation hook', () => {
+    expect(screenSource).toContain('useRespondToApproval');
+    expect(screenSource).toContain('inbox-approval-approve-');
+    expect(screenSource).toContain('inbox-approval-decline-');
+    expect(screenSource).toMatch(/status:\s*'approved'/);
+    expect(screenSource).toMatch(/status:\s*'declined'/);
+    // Buttons must disable while THAT row's mutation is in flight.
+    expect(screenSource).toContain('isPending');
+  });
+
+  it('renders a submitted-week row deep-linking to Hours, parent/owner-only via buildInboxItems', () => {
+    expect(screenSource).toContain('submitted_week');
+  });
 });
 
 describe('useInboxItems source', () => {
@@ -106,6 +120,13 @@ describe('buildInboxItems source', () => {
     expect(buildSource).toContain('role');
     expect(buildSource).toContain('carer_id');
     expect(buildSource).toContain('isParentEditorRole');
+  });
+
+  it('gates submitted weeks by parent/owner role — carers must never see them', () => {
+    expect(buildSource).toContain('submitted_week');
+    expect(buildSource).toMatch(
+      /isParentEditorRole\(input\.role\)\)\s*\{[\s\S]*submitted_week/
+    );
   });
 });
 

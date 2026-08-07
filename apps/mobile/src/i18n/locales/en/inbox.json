@@ -24,7 +24,10 @@
         "cancel": "cancellation",
         "extra_shift": "extra shift",
         "other": "change"
-      }
+      },
+      "approve": "Approve",
+      "decline": "Decline",
+      "respondedToast": "Response sent"
     },
     "pendingPattern": {
       "title": "Respond to proposed schedule",
@@ -34,6 +37,11 @@
       "title": "Queried week of {{week}}",
       "subtitle": "A parent asked about this week's hours.",
       "subtitleWithNote": "{{note}}"
+    },
+    "submittedWeek": {
+      "title": "Week of {{week}} submitted — review and approve",
+      "subtitle": "Submitted by {{carer}}.",
+      "subtitleFallback": "Tap to review this week's hours."
     }
   }
 }
