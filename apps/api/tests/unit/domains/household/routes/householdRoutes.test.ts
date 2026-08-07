@@ -51,6 +51,8 @@ const OTHER_HOUSEHOLD_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 // ownership lookup instead of coasting on the negative relationship cache the
 // members 404 test leaves behind (makeOwnershipValidator caches misses).
 const OTHER_HOUSEHOLD_ID_2 = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+// A THIRD stranger household for the leave route, same reason.
+const OTHER_HOUSEHOLD_ID_3 = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
 const MEMBER_ID = 'bbbbbbbb-bbbb-4bbb-9bbb-bbbbbbbbbbbb';
 const INVITE_ID = 'dddddddd-dddd-4ddd-9ddd-dddddddddddd';
 const AUTH_USER_ID = 'parent-1';
@@ -61,6 +63,7 @@ let baseUrl: string;
 let removeMemberMock: ReturnType<typeof mock>;
 let revokeInviteMock: ReturnType<typeof mock>;
 let redeemInviteMock: ReturnType<typeof mock>;
+let leaveMock: ReturnType<typeof mock>;
 let getOwnedMock: ReturnType<typeof mock>;
 
 function patch(path: string, body: unknown): Promise<Response> {
@@ -68,6 +71,13 @@ function patch(path: string, body: unknown): Promise<Response> {
     method: 'PATCH',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
+  });
+}
+
+function post(path: string): Promise<Response> {
+  return fetch(`${baseUrl}${path}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
   });
 }
 
@@ -81,6 +91,10 @@ beforeAll(async () => {
     status: 'revoked',
   }));
   redeemInviteMock = mock(async (..._args: unknown[]) => ({ id: 'm-new' }));
+  leaveMock = mock(async (..._args: unknown[]) => ({
+    id: MEMBER_ID,
+    status: 'removed',
+  }));
   getOwnedMock = mock(async (_userId: string, householdId: string) => ({
     id: householdId,
   }));
@@ -112,6 +126,7 @@ beforeAll(async () => {
         removeMember: (...args: any[]) => removeMemberMock(...args),
         revokeInvite: (...args: any[]) => revokeInviteMock(...args),
         redeemInvite: (...args: any[]) => redeemInviteMock(...args),
+        leave: (...args: any[]) => leaveMock(...args),
         create: mock(async () => ({})),
         update: mock(async () => ({})),
         createInvite: mock(async () => ({})),
@@ -151,6 +166,7 @@ beforeEach(() => {
   removeMemberMock.mockClear();
   revokeInviteMock.mockClear();
   redeemInviteMock.mockClear();
+  leaveMock.mockClear();
 });
 
 describe('PATCH /households/:householdId/members/:memberId', () => {
@@ -276,6 +292,38 @@ describe('PATCH /households/:householdId/invites/:inviteId', () => {
 
     expect(res.status).toBe(400);
     expect(revokeInviteMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('POST /households/:householdId/members/leave', () => {
+  it('passes the caller and household through to the command service', async () => {
+    // No body and no memberId: the caller IS the subject, which is the whole
+    // difference from the removal PATCH.
+    const res = await post(`/households/${HOUSEHOLD_ID}/members/leave`);
+
+    expect(res.status).toBe(200);
+    expect(leaveMock).toHaveBeenCalledWith(AUTH_USER_ID, HOUSEHOLD_ID);
+  });
+
+  it('404s a household the caller is not a member of, BEFORE the service', async () => {
+    getOwnedMock.mockImplementationOnce(async () => {
+      const { HouseholdNotFoundError } = await import(
+        '../../../../../src/domains/household/errors/householdErrors'
+      );
+      throw new HouseholdNotFoundError(OTHER_HOUSEHOLD_ID_3);
+    });
+
+    const res = await post(`/households/${OTHER_HOUSEHOLD_ID_3}/members/leave`);
+
+    expect(res.status).toBe(404);
+    expect(leaveMock).not.toHaveBeenCalled();
+  });
+
+  it('rejects a non-uuid householdId with 400 BEFORE the service', async () => {
+    const res = await post('/households/not-a-uuid/members/leave');
+
+    expect(res.status).toBe(400);
+    expect(leaveMock).not.toHaveBeenCalled();
   });
 });
 

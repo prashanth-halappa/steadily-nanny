@@ -134,6 +134,25 @@ export class HouseholdController {
     }
   }
 
+  /**
+   * Leave the household yourself. A POST with no body and no member id: the
+   * caller IS the subject, which is exactly why it is not the member PATCH
+   * (that one refuses a self-directed removal on purpose — see
+   * `CannotRemoveSelfError`). Every refusal lives in the command service.
+   */
+  static async leave(req: Request, res: Response, next: NextFunction) {
+    try {
+      const householdId = req.params.householdId as string;
+      const household_member = await householdCommandService.leave(
+        getAuthUserId(req),
+        householdId
+      );
+      return sendSuccessResponse(res, 'Left household', { household_member });
+    } catch (error) {
+      return next(error);
+    }
+  }
+
   /** PATCH an invite. The schema allows only `status: 'revoked'`. */
   static async updateInvite(req: Request, res: Response, next: NextFunction) {
     try {

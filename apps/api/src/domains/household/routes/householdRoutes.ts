@@ -98,6 +98,22 @@ router.post(
   asyncHandler(HouseholdController.createInvite)
 );
 
+// Leave the household yourself. Registered BEFORE the `/members/:memberId`
+// route below on the same literal-before-param principle the invite routes at
+// the top of this file follow: 'leave' must never be read as a member id. It
+// happens to be safe today only because that route is a PATCH and this is a
+// POST — that is a coincidence of verbs, not a guarantee, and the ordering is
+// what actually holds if either verb ever changes.
+//
+// No ROLE gate: any active member may leave, so the ownership preset (active
+// membership, 404 otherwise) is the whole authorization. No body to validate —
+// the caller is the subject.
+router.post(
+  '/:householdId/members/leave',
+  ...authWithOwnership(HouseholdIdParamSchema, householdOwnership),
+  asyncHandler(HouseholdController.leave)
+);
+
 // Remove a member — parents only (role check in the command service). The
 // controller accepts only `status: 'removed'`; see its doc comment.
 router.patch(

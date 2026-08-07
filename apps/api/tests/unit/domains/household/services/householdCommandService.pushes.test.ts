@@ -65,6 +65,14 @@ function makeMemberRepo(overrides: Record<string, unknown> = {}) {
       can_edit: false,
       status: 'active',
     })),
+    removeMembership: mock(async (id: string) => ({
+      id,
+      role: 'nanny',
+      household_id: 'h1',
+      user_id: 'u2',
+      can_edit: false,
+      status: 'removed',
+    })),
     ...overrides,
   };
 }
@@ -277,5 +285,79 @@ describe('HouseholdCommandService.redeemInvite — carried-over PTO in the rejoi
     await expect(
       svc.redeemInvite('u2', { code: 'ABC-234' })
     ).resolves.toMatchObject({ status: 'active' });
+  });
+});
+
+/**
+ * A self-service leave is the one membership change no parent initiates, so
+ * without a push the household finds out when a shift goes uncovered. Same
+ * fan-out and the same household-membership push type the redeem path uses
+ * (both land the parent on the household settings screen); only the wording
+ * separates "joined" from "left".
+ */
+describe('HouseholdCommandService.leave — parents are told', () => {
+  // An earlier test in this file leaves a throwing implementation behind
+  // (beforeEach only clears calls), so restore the no-op explicitly.
+  beforeEach(() => {
+    notifyHouseholdParents.mockImplementation(() => undefined);
+  });
+
+  function leaveSvc(role: string) {
+    return new HouseholdCommandService(
+      makeHouseholdRepo() as never,
+      makeMemberRepo() as never,
+      makeInviteRepo() as never,
+      {
+        getMembership: mock(async () => ({
+          id: 'm1',
+          household_id: 'h1',
+          user_id: 'u2',
+          role,
+          can_edit: false,
+          status: 'active',
+        })),
+      } as never,
+      { ensureProfile: mock(async () => {}) } as never,
+      { findRunningInHousehold: mock(async () => null) } as never,
+      { endForCarer: mock(async () => []) } as never,
+      makePtoRepo() as never
+    );
+  }
+
+  it('notifies the household parents that the member LEFT, carrying the householdId', async () => {
+    const svc = leaveSvc('nanny');
+
+    await svc.leave('u2', 'h1');
+
+    expect(notifyHouseholdParents).toHaveBeenCalledWith(
+      'h1',
+      expect.objectContaining({
+        title: expect.stringContaining('left'),
+        body: expect.stringContaining('left'),
+        data: expect.objectContaining({ householdId: 'h1' }),
+      })
+    );
+  });
+
+  it('names the leaving role in the body, so a parent knows whose cover just vanished', async () => {
+    for (const role of ['nanny', 'parent', 'helper']) {
+      notifyHouseholdParents.mockClear();
+      await leaveSvc(role).leave('u2', 'h1');
+
+      expect(notifyHouseholdParents).toHaveBeenCalledWith(
+        'h1',
+        expect.objectContaining({ body: expect.stringContaining(role) })
+      );
+    }
+  });
+
+  it('push failure never fails the leave — the row is already flipped', async () => {
+    notifyHouseholdParents.mockImplementation(() => {
+      throw new Error('expo down');
+    });
+
+    await expect(leaveSvc('nanny').leave('u2', 'h1')).resolves.toMatchObject({
+      status: 'removed',
+    });
   });
 });

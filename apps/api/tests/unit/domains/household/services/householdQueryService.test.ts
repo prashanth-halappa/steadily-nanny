@@ -301,4 +301,84 @@ describe('HouseholdQueryService.previewInvite', () => {
       InviteNotFoundError
     );
   });
+
+  // Preview is the ONLY unauthenticated read in this domain: anyone holding a
+  // string can call it. Answering for a dead code hands a stranger the family's
+  // household name and the children's first names off a code that grants
+  // nothing — a revoked one is the worst case, because revoking is exactly how
+  // a parent takes access back. The refusal is the SAME error as "no such
+  // code" in every case, matching the domain's existence-hiding convention:
+  // telling the caller WHY confirms the code was real.
+  it('throws InviteNotFoundError for a REVOKED code, without disclosing anything about the household', async () => {
+    const householdRepo = makeHouseholdRepo();
+    const svc = new HouseholdQueryService(
+      householdRepo,
+      makeMemberRepo(),
+      makeInviteRepo({
+        findByCode: mock(async () => ({ ...invite, status: 'revoked' })),
+      })
+    );
+
+    await expect(svc.previewInvite('ABC-234')).rejects.toBeInstanceOf(
+      InviteNotFoundError
+    );
+    expect(householdRepo.listActiveChildFirstNames).not.toHaveBeenCalled();
+  });
+
+  it('throws InviteNotFoundError for an ACCEPTED code — a used code previews nothing', async () => {
+    const householdRepo = makeHouseholdRepo();
+    const svc = new HouseholdQueryService(
+      householdRepo,
+      makeMemberRepo(),
+      makeInviteRepo({
+        findByCode: mock(async () => ({
+          ...invite,
+          status: 'accepted',
+          accepted_by: 'u2',
+          accepted_at: '2026-01-01T00:00:00Z',
+        })),
+      })
+    );
+
+    await expect(svc.previewInvite('ABC-234')).rejects.toBeInstanceOf(
+      InviteNotFoundError
+    );
+    expect(householdRepo.listActiveChildFirstNames).not.toHaveBeenCalled();
+  });
+
+  it('throws InviteNotFoundError for a pending-but-EXPIRED code', async () => {
+    // Nothing flips `status` to 'expired' on a schedule — expiry is decided by
+    // comparing `expires_at`, exactly as redeemInvite does. A row left
+    // 'pending' forever is the normal case, so a status check alone would let
+    // every long-dead code keep previewing.
+    const householdRepo = makeHouseholdRepo();
+    const svc = new HouseholdQueryService(
+      householdRepo,
+      makeMemberRepo(),
+      makeInviteRepo({
+        findByCode: mock(async () => ({
+          ...invite,
+          expires_at: '2000-01-01T00:00:00Z',
+        })),
+      })
+    );
+
+    await expect(svc.previewInvite('ABC-234')).rejects.toBeInstanceOf(
+      InviteNotFoundError
+    );
+    expect(householdRepo.listActiveChildFirstNames).not.toHaveBeenCalled();
+  });
+
+  it('still previews a live pending code', async () => {
+    const svc = new HouseholdQueryService(
+      makeHouseholdRepo(),
+      makeMemberRepo(),
+      makeInviteRepo()
+    );
+    await expect(svc.previewInvite('ABC-234')).resolves.toEqual({
+      household_name: 'The Smiths',
+      children_first_names: ['Maya'],
+      role: 'nanny',
+    });
+  });
 });

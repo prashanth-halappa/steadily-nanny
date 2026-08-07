@@ -14,6 +14,7 @@ import {
 import { HouseholdInviteRepository } from '../repositories/householdInviteRepository';
 import { HouseholdMemberRepository } from '../repositories/householdMemberRepository';
 import { HouseholdRepository } from '../repositories/householdRepository';
+import { HOUSEHOLD_INVITE_STATUSES } from '../schemas';
 import type { Household, HouseholdMember, InvitePreview } from '../types';
 
 export class HouseholdQueryService {
@@ -115,10 +116,34 @@ export class HouseholdQueryService {
    * Preview an invite by its code — deliberately NOT membership-gated (the
    * redeemer isn't a member yet). Returns only the household name, active
    * children's first names, and the proposed role; nothing else.
+   *
+   * Only a LIVE code previews. This is the one unauthenticated read in the
+   * domain, so a code that grants nothing must disclose nothing: answering for
+   * a revoked one is the worst case, since revoking is precisely how a parent
+   * takes access back, and an accepted or expired one is a code whose holder
+   * has no claim on the family's name or their children's names either.
+   *
+   * Both refusals are the SAME InviteNotFoundError a missing code gets — the
+   * domain's existence-hiding convention (see the error's doc comment): naming
+   * the reason confirms the code was real.
+   *
+   * `redeemInvite` reports the reasons separately, and that asymmetry is
+   * deliberate rather than an oversight — a redeemer is acting on a code
+   * somebody actually sent them and needs to know whether to ask for a new one,
+   * where a previewer may simply be typing strings. What is shared is the
+   * TEST for liveness, expiry included: nothing flips `status` to 'expired' on
+   * a schedule, so a status check alone would let every long-dead pending row
+   * keep previewing.
    */
   async previewInvite(code: string): Promise<InvitePreview> {
     const invite = await this.inviteRepo.findByCode(code);
     if (!invite) {
+      throw new InviteNotFoundError(code);
+    }
+    if (
+      invite.status !== HOUSEHOLD_INVITE_STATUSES.PENDING ||
+      new Date(invite.expires_at).getTime() < Date.now()
+    ) {
       throw new InviteNotFoundError(code);
     }
     const household = await this.householdRepo.findById(invite.household_id);
