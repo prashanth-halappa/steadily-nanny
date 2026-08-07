@@ -35,5 +35,14 @@
     "start": "Start",
     "end": "End",
     "endBeforeStart": "End date must not be before the start date."
-  }
+  },
+  "kind": {
+    "sick": "Sick day"
+  },
+  "sickButton": "I'm sick today",
+  "sickConfirmTitle": "Book a sick day?",
+  "sickConfirmBody": "The family will be notified. This books today off as a sick day.",
+  "sickConfirmCancel": "Cancel",
+  "sickConfirmConfirm": "Yes, I'm sick",
+  "sickToast": "Sick day booked"
 }

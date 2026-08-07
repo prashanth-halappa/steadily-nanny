@@ -19,6 +19,8 @@ import {
   ClashWarningSchema,
 } from '@steadily-nanny/shared-types/schemas/me.schema';
 import {
+  type AmendSchedulePatternInput,
+  AmendSchedulePatternSchema,
   type CreateSchedulePatternInput,
   CreateSchedulePatternSchema,
   type SchedulePattern,
@@ -52,6 +54,7 @@ export const schedulePatternEndpoints = {
   update: (patternId: string) => `/v1/schedule-patterns/${patternId}`,
   days: (patternId: string) => `/v1/schedule-patterns/${patternId}/days`,
   send: (patternId: string) => `/v1/schedule-patterns/${patternId}/send`,
+  amend: (patternId: string) => `/v1/schedule-patterns/${patternId}/amend`,
   respond: (patternId: string) => `/v1/schedule-patterns/${patternId}/respond`,
   withdraw: (patternId: string) =>
     `/v1/schedule-patterns/${patternId}/withdraw`,
@@ -219,6 +222,32 @@ export const schedulePatternApi = {
   send: async (patternId: string): Promise<SchedulePatternWriteResult> => {
     const response = await apiClient.post(
       schedulePatternEndpoints.send(patternId)
+    );
+    const parsed = SchedulePatternWriteEnvelopeSchema.safeParse(
+      response.data.data
+    );
+    if (!parsed.success) throw parsed.error;
+    return parsed.data;
+  },
+
+  /**
+   * Amend an ACCEPTED pattern's skips / pauses / end date only — the server
+   * has no post-accept day/time amend (see `AmendSchedulePatternSchema`'s
+   * doc comment in the shared schema); a day/time change always means
+   * building and sending a new usual week. `input` mirrors the server's
+   * body exactly: `until` (nullable — `null` removes the end date),
+   * `exdates`, and `pause_ranges`, all optional but at least one required.
+   */
+  amend: async (
+    patternId: string,
+    input: AmendSchedulePatternInput
+  ): Promise<SchedulePatternWriteResult> => {
+    const validated = AmendSchedulePatternSchema.safeParse(input);
+    if (!validated.success) throw validated.error;
+
+    const response = await apiClient.post(
+      schedulePatternEndpoints.amend(patternId),
+      validated.data
     );
     const parsed = SchedulePatternWriteEnvelopeSchema.safeParse(
       response.data.data

@@ -26,6 +26,20 @@ export function isPastTimeOff(endsAt: string, nowMs = Date.now()): boolean {
   return Date.parse(endsAt) <= nowMs;
 }
 
+/**
+ * Today's calendar date, "yyyy-mm-dd", in the DEVICE's local zone —
+ * `injectedNow` lets tests pin a specific instant instead of mocking `Date`.
+ * Used by the sick-day quick action (067) to build a same-day
+ * `toAllDayRange(today, today)` request; same local-getter discipline as
+ * every other function in this module (never a UTC truncation).
+ */
+export function todayISO(injectedNow: Date = new Date()): string {
+  const y = injectedNow.getFullYear();
+  const m = String(injectedNow.getMonth() + 1).padStart(2, '0');
+  const d = String(injectedNow.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
 /** Nominal "yyyy-mm-dd" calendar dates -> the wire `{ starts_at, ends_at }` pair. */
 export function toAllDayRange(
   startDateISO: string,

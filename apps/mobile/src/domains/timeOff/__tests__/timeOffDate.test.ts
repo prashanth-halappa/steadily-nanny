@@ -10,6 +10,7 @@ import {
   formatTimeOffRangeLabel,
   fromAllDayRange,
   toAllDayRange,
+  todayISO,
 } from '../utils/timeOffDate';
 
 describe('toAllDayRange', () => {
@@ -58,6 +59,21 @@ describe('toAllDayRange', () => {
     expect(end.getFullYear()).toBe(2026);
     expect(end.getMonth()).toBe(0); // January
     expect(end.getDate()).toBe(1);
+  });
+});
+
+describe('todayISO', () => {
+  it('returns the DEVICE local calendar date as "yyyy-mm-dd" (067 sick-day quick action)', () => {
+    const now = new Date(2026, 7, 4, 23, 30); // 4 Aug 2026, 23:30 local
+    expect(todayISO(now)).toBe('2026-08-04');
+  });
+
+  it('a same-day sick request built from todayISO() is a valid single-day toAllDayRange', () => {
+    const today = todayISO(new Date(2026, 7, 4));
+    const { starts_at, ends_at } = toAllDayRange(today, today);
+    expect(new Date(ends_at).getTime()).toBeGreaterThan(
+      new Date(starts_at).getTime()
+    );
   });
 });
 

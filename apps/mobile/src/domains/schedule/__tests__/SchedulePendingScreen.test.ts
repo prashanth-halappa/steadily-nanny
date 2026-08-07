@@ -104,6 +104,45 @@ describe('SchedulePendingScreen', () => {
     expect(screenSource).toContain('pauseRanges={pattern.pause_ranges}');
   });
 
+  it('wires an "Adjust schedule" affordance behind canEditSchedule, alongside (not instead of) view-shifts/change-week, ONLY on the accepted branch', () => {
+    // The server only accepts amend on an `accepted` pattern
+    // (`PatternNotAcceptedError` otherwise) — isolate everything between the
+    // accepted branch and the next status branch so this affordance can
+    // never leak into declined/withdrawn.
+    const acceptedStart = screenSource.indexOf("pattern.status === 'accepted'");
+    const declinedStart = screenSource.indexOf(
+      "pattern.status === 'declined'",
+      acceptedStart
+    );
+    expect(acceptedStart).toBeGreaterThan(-1);
+    expect(declinedStart).toBeGreaterThan(acceptedStart);
+    const acceptedRegion = screenSource.slice(acceptedStart, declinedStart);
+
+    expect(acceptedRegion).toContain('schedule-pending-view-shifts');
+    expect(acceptedRegion).toContain('schedule-pending-change-week');
+    expect(acceptedRegion).toContain('schedule-pending-adjust');
+    expect(acceptedRegion).toContain('AdjustSchedulePatternSheet');
+    expect(
+      acceptedRegion.match(/canEditSchedule/g)?.length ?? 0
+    ).toBeGreaterThanOrEqual(3);
+  });
+
+  it('drives the adjust sheet through useAmendSchedulePattern, never touching schedulePatternApi.amend directly', () => {
+    expect(screenSource).toContain('useAmendSchedulePattern');
+    expect(screenSource).not.toContain('schedulePatternApi');
+  });
+
+  it("passes the accepted pattern's own dtstart/until/pause_ranges into the sheet, not the wizard draft", () => {
+    expect(screenSource).toContain('dtstart={pattern.dtstart}');
+    expect(screenSource).toContain('until={pattern.until}');
+    expect(screenSource).toContain('pauseRanges={pattern.pause_ranges}');
+  });
+
+  it('REGRESSION: amend is never a bare .mutateAsync() with no rejection handler', () => {
+    expect(screenSource).not.toMatch(/void amend\.mutateAsync\(/);
+    expect(screenSource).toMatch(/try\s*\{\s*await amend\.mutateAsync/);
+  });
+
   it('REGRESSION: a non-parent/helper role sees an honest not-available state with a back affordance, never a bare null', () => {
     // The bug: `if (!canViewParentSchedule(onboarding.role)) { return null; }`
     // left a deep-linked nanny staring at a blank screen — no message, no

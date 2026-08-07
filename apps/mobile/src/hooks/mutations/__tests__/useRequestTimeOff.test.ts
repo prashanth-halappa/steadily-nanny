@@ -61,6 +61,50 @@ describe('useRequestTimeOff invalidation', () => {
   });
 });
 
+describe('useRequestTimeOff kind pass-through (067)', () => {
+  it('forwards kind: "sick" to timeOffApi.create unchanged', async () => {
+    createMock.mockClear();
+    const { result } = renderHookWithProviders(() => useRequestTimeOff());
+
+    await act(async () => {
+      await result.current.mutateAsync({
+        starts_at: '2026-08-10T00:00:00.000Z',
+        ends_at: '2026-08-11T00:00:00.000Z',
+        all_day: true,
+        kind: 'sick',
+      });
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(createMock).toHaveBeenCalledWith({
+      starts_at: '2026-08-10T00:00:00.000Z',
+      ends_at: '2026-08-11T00:00:00.000Z',
+      all_day: true,
+      kind: 'sick',
+    });
+  });
+
+  it('an omitted kind is passed through unchanged — existing personal callers are unaffected', async () => {
+    createMock.mockClear();
+    const { result } = renderHookWithProviders(() => useRequestTimeOff());
+
+    await act(async () => {
+      await result.current.mutateAsync({
+        starts_at: '2026-08-10T00:00:00.000Z',
+        ends_at: '2026-08-13T00:00:00.000Z',
+        all_day: true,
+      });
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(createMock).toHaveBeenCalledWith({
+      starts_at: '2026-08-10T00:00:00.000Z',
+      ends_at: '2026-08-13T00:00:00.000Z',
+      all_day: true,
+    });
+  });
+});
+
 describe('useCancelTimeOff invalidation', () => {
   it('invalidates timeOff and availability busy caches on success', async () => {
     const { result, queryClient } = renderHookWithProviders(() =>

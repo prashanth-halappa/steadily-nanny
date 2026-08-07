@@ -118,6 +118,57 @@ describe('timeOffApi.create', () => {
       })
     ).rejects.toThrow();
   });
+
+  // Sick time off (067) — `kind` rides through the SAME create body/schema,
+  // no dedicated endpoint. Pinning: an omitted `kind` must not regress —
+  // existing personal-time-off callers never send it.
+  it('passes kind: "sick" straight through to the POST body', async () => {
+    const sickRow = { ...validRow, kind: 'sick' };
+    apiClient.post.mockResolvedValue({
+      data: { data: { carer_time_off: sickRow } },
+    });
+
+    const result = await timeOffApi.create({
+      starts_at: '2026-08-10T00:00:00.000Z',
+      ends_at: '2026-08-11T00:00:00.000Z',
+      all_day: true,
+      kind: 'sick',
+    });
+
+    expect(apiClient.post).toHaveBeenCalledWith('/v1/time-off', {
+      starts_at: '2026-08-10T00:00:00.000Z',
+      ends_at: '2026-08-11T00:00:00.000Z',
+      all_day: true,
+      kind: 'sick',
+    });
+    expect(result.kind).toBe('sick');
+  });
+
+  it('never sends a kind field when the caller omits it — unchanged personal-request behavior', async () => {
+    apiClient.post.mockResolvedValue({
+      data: { data: { carer_time_off: validRow } },
+    });
+
+    await timeOffApi.create({
+      starts_at: '2026-08-10T00:00:00.000Z',
+      ends_at: '2026-08-13T00:00:00.000Z',
+      all_day: true,
+    });
+
+    const body = apiClient.post.mock.calls[0][1];
+    expect(Object.hasOwn(body, 'kind')).toBe(false);
+  });
+
+  it('rejects an invalid kind without calling the API', async () => {
+    await expect(
+      timeOffApi.create({
+        starts_at: '2026-08-10T00:00:00.000Z',
+        ends_at: '2026-08-13T00:00:00.000Z',
+        kind: 'vacation' as any,
+      })
+    ).rejects.toThrow();
+    expect(apiClient.post).not.toHaveBeenCalled();
+  });
 });
 
 describe('timeOffApi.cancel', () => {

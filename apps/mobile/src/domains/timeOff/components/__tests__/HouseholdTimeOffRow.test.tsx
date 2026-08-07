@@ -395,6 +395,47 @@ describe('HouseholdTimeOffRow', () => {
     );
   });
 
+  describe('kind: "sick" (067)', () => {
+    it('renders a distinct sick-kind marker for a sick row', async () => {
+      const { getByTestId } = renderWithProviders(
+        <HouseholdTimeOffRow
+          timeOff={{ ...timeOff, kind: 'sick' } as never}
+          householdId={HOUSEHOLD_ID}
+          carerName="Amara"
+          canMarkPaid
+          householdTimezone="UTC"
+        />
+      );
+
+      await waitFor(() =>
+        expect(
+          getByTestId(`household-time-off-kind-sick-${TIME_OFF_ID}`)
+        ).toBeTruthy()
+      );
+    });
+
+    it('renders no sick-kind marker for a personal row', async () => {
+      const { getByTestId, queryByTestId } = renderWithProviders(
+        <HouseholdTimeOffRow
+          timeOff={{ ...timeOff, kind: 'personal' } as never}
+          householdId={HOUSEHOLD_ID}
+          carerName="Amara"
+          canMarkPaid
+          householdTimezone="UTC"
+        />
+      );
+
+      await waitFor(() =>
+        expect(
+          getByTestId(`household-time-off-status-${TIME_OFF_ID}`)
+        ).toBeTruthy()
+      );
+      expect(
+        queryByTestId(`household-time-off-kind-sick-${TIME_OFF_ID}`)
+      ).toBeNull();
+    });
+  });
+
   it('mutation failure keeps the sheet open with the typed values (ClockOutSheet discipline)', async () => {
     markPaidMock.mockImplementation(() =>
       Promise.reject(new Error('network error'))

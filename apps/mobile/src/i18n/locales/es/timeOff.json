@@ -35,5 +35,14 @@
     "start": "Inicio",
     "end": "Fin",
     "endBeforeStart": "La fecha de fin no puede ser anterior a la de inicio."
-  }
+  },
+  "kind": {
+    "sick": "Día de baja por enfermedad"
+  },
+  "sickButton": "Hoy estoy enferma",
+  "sickConfirmTitle": "¿Reservar un día de baja por enfermedad?",
+  "sickConfirmBody": "Se notificará a la familia. Esto reserva hoy como un día de baja por enfermedad.",
+  "sickConfirmCancel": "Cancelar",
+  "sickConfirmConfirm": "Sí, estoy enferma",
+  "sickToast": "Día de baja por enfermedad reservado"
 }

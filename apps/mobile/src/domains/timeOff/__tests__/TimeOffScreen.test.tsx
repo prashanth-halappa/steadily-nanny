@@ -335,6 +335,43 @@ describe('TimeOffScreen — nanny', () => {
     expect(getByTestId('time-off-request-form')).toBeTruthy();
   });
 
+  it('renders the "I\'m sick today" quick action, but hides it while editing an existing request', () => {
+    const row = makeTimeOff();
+    mockUseTimeOff.mockImplementation(() => ({
+      data: [row],
+      isLoading: false,
+    }));
+    const { getByTestId, queryByTestId } = render(<TimeOffScreen />);
+
+    expect(getByTestId('time-off-sick-today')).toBeTruthy();
+
+    fireEvent.press(getByTestId(`time-off-edit-${row.id}`));
+
+    expect(queryByTestId('time-off-sick-today')).toBeNull();
+    expect(getByTestId('time-off-edit-form')).toBeTruthy();
+  });
+
+  it('a confirmed "I\'m sick today" creates a same-day, all_day, kind: "sick" request via the SAME useRequestTimeOff instance the form uses', async () => {
+    const { getByTestId } = render(<TimeOffScreen />);
+
+    fireEvent.press(getByTestId('time-off-sick-today'));
+    fireEvent.press(getByTestId('time-off-sick-confirm'));
+
+    await waitFor(() => expect(requestMutateAsync).toHaveBeenCalledTimes(1));
+    const payload = requestMutateAsync.mock.calls[0]?.[0] as {
+      starts_at: string;
+      ends_at: string;
+      all_day: boolean;
+      kind?: string;
+    };
+    expect(payload.kind).toBe('sick');
+    expect(payload.all_day).toBe(true);
+    const spanMs =
+      new Date(payload.ends_at).getTime() -
+      new Date(payload.starts_at).getTime();
+    expect(spanMs).toBe(24 * 60 * 60 * 1000);
+  });
+
   it('submitting with the default (today..today) range calls the mutation with a same-day all-day payload — no invented approval status', async () => {
     const { getByTestId } = render(<TimeOffScreen />);
 

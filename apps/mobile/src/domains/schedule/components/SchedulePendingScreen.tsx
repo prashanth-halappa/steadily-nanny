@@ -41,8 +41,9 @@
  * starts a genuinely NEW pattern, since there is no draft to resume in
  * those states.
  */
+import type { AmendSchedulePatternInput } from '@steadily-nanny/shared-types/schemas/schedule.schema';
 import { type Href, useRouter } from 'expo-router';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ScrollView, View } from 'react-native';
 import { illustrations } from '@/assets/illustrations';
@@ -65,6 +66,7 @@ import { EmptyState } from '@/src/components/ui/empty-state';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { Text } from '@/src/components/ui/text';
 import { Body, H1, Small } from '@/src/components/ui/typography';
+import { AdjustSchedulePatternSheet } from '@/src/domains/schedule/components/AdjustSchedulePatternSheet';
 import { PatternStatusIndicator } from '@/src/domains/schedule/components/PatternStatusIndicator';
 import { SchedulePatternPreview } from '@/src/domains/schedule/components/SchedulePatternPreview';
 import { parseWeeklyRruleInterval } from '@/src/domains/schedule/utils';
@@ -74,12 +76,14 @@ import {
   isParentEditorRole,
 } from '@/src/domains/setup/types';
 import { formatDisplayDate } from '@/src/domains/timesheet/utils/week';
+import { useAmendSchedulePattern } from '@/src/hooks/mutations/useAmendSchedulePattern';
 import { useWithdrawSchedulePattern } from '@/src/hooks/mutations/useWithdrawSchedulePattern';
 import { useChildren } from '@/src/hooks/queries/useChildren';
 import { useHouseholdMembers } from '@/src/hooks/queries/useHouseholdMembers';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 import { useSchedulePattern } from '@/src/hooks/queries/useSchedulePattern';
 import { useSchedulePatterns } from '@/src/hooks/queries/useSchedulePatterns';
+import { showSuccessToast } from '@/src/lib/toast';
 import { useAuthStore } from '@/src/store/auth';
 import { useElevation } from '~/lib/design-tokens/elevation';
 
@@ -100,6 +104,8 @@ export function SchedulePendingScreen() {
   const patterns = useSchedulePatterns(onboarding.householdId);
   const pattern = (patterns.data ?? []).find(p => p.status !== 'ended') ?? null;
   const withdraw = useWithdrawSchedulePattern(pattern?.id);
+  const amend = useAmendSchedulePattern(pattern?.id);
+  const [adjustOpen, setAdjustOpen] = useState(false);
   const detail = useSchedulePattern(
     pattern && pattern.status !== 'draft' ? pattern.id : null
   );
@@ -182,6 +188,19 @@ export function SchedulePendingScreen() {
     } catch {
       // onError already surfaced a toast.
     }
+  };
+
+  // Same try/catch discipline as handleWithdraw above — `onError` already
+  // surfaces a toast, but discarding the mutation's promise with a bare
+  // `void` operator would still leave the rejection unhandled.
+  const handleAmend = async (input: AmendSchedulePatternInput) => {
+    try {
+      await amend.mutateAsync(input);
+    } catch {
+      return;
+    }
+    setAdjustOpen(false);
+    showSuccessToast(t('pending.adjustSuccessToast'));
   };
 
   const isLoading = onboarding.status === 'loading' || patterns.isLoading;
@@ -372,6 +391,26 @@ export function SchedulePendingScreen() {
                 >
                   <Text>{t('pending.changeWeek')}</Text>
                 </Button>
+              ) : null}
+              {canEditSchedule ? (
+                <Button
+                  testID="schedule-pending-adjust"
+                  variant="outline"
+                  onPress={() => setAdjustOpen(true)}
+                >
+                  <Text>{t('pending.adjust')}</Text>
+                </Button>
+              ) : null}
+              {canEditSchedule ? (
+                <AdjustSchedulePatternSheet
+                  visible={adjustOpen}
+                  onDismiss={() => setAdjustOpen(false)}
+                  dtstart={pattern.dtstart}
+                  until={pattern.until}
+                  pauseRanges={pattern.pause_ranges}
+                  onSubmit={input => void handleAmend(input)}
+                  isSubmitting={amend.isPending}
+                />
               ) : null}
             </>
           ) : null}
