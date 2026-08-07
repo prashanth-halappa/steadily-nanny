@@ -46,6 +46,7 @@ import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
 import { useChildren } from '@/src/hooks/queries/useChildren';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 import { useHouseholdIsLive } from '../hooks/useHouseholdIsLive';
+import { AddMissedHoursCard } from './AddMissedHoursCard';
 import { ClockInCard } from './ClockInCard';
 import { CoverageGapBanner } from './CoverageGapBanner';
 import { HandoffChipsCard } from './HandoffChipsCard';
@@ -150,6 +151,18 @@ export function TodayScreen() {
             {onboarding.role === SETUP_ROLES.NANNY &&
             !onboarding.isPastMember ? (
               <ClockInCard
+                householdId={household.id}
+                timeZone={household.timezone}
+              />
+            ) : null}
+
+            {/* Forgotten clock-in recovery — same active-membership guard
+                as ClockInCard: a write here 403s server-side on a household
+                she was removed from, so offering the affordance there would
+                be a lie. */}
+            {onboarding.role === SETUP_ROLES.NANNY &&
+            !onboarding.isPastMember ? (
+              <AddMissedHoursCard
                 householdId={household.id}
                 timeZone={household.timezone}
               />

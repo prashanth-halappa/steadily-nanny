@@ -54,6 +54,9 @@ mock.module('@/src/domains/inbox', () => ({
 mock.module('@/src/domains/today/components/ClockInCard', () => ({
   ClockInCard: () => null,
 }));
+mock.module('@/src/domains/today/components/AddMissedHoursCard', () => ({
+  AddMissedHoursCard: () => null,
+}));
 mock.module('@/src/domains/today/components/CoverageGapBanner', () => ({
   CoverageGapBanner: () => null,
 }));

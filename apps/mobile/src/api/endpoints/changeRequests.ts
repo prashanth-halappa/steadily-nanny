@@ -110,6 +110,18 @@ export const changeRequestApi = {
     return parsed.data.shift_change_request;
   },
 
+  /** Requester-only: withdraw a still-pending change request the caller raised. */
+  withdraw: async (changeRequestId: string): Promise<ShiftChangeRequest> => {
+    const response = await apiClient.post(
+      changeRequestEndpoints.withdraw(changeRequestId)
+    );
+    const parsed = z
+      .object({ shift_change_request: ShiftChangeRequestSchema })
+      .safeParse(response.data.data);
+    if (!parsed.success) throw parsed.error;
+    return parsed.data.shift_change_request;
+  },
+
   createExtra: async (
     householdId: string,
     input: CreateExtraShiftInput

@@ -210,6 +210,55 @@ describe('changeRequestApi', () => {
     });
   });
 
+  it('withdraws a pending change request the caller raised', async () => {
+    postMock.mockImplementationOnce(() =>
+      Promise.resolve({
+        data: {
+          data: {
+            shift_change_request: {
+              id: '11111111-1111-4111-8111-111111111111',
+              shift_id: '22222222-2222-4222-8222-222222222222',
+              requested_by: '33333333-3333-4333-8333-333333333333',
+              kind: 'cancel',
+              proposed_starts_at: null,
+              proposed_ends_at: null,
+              message: null,
+              response_message: null,
+              status: 'withdrawn',
+              responded_by: null,
+              responded_at: null,
+              created_at: '2026-08-01T10:00:00Z',
+              updated_at: '2026-08-01T10:00:00Z',
+            },
+          },
+        },
+      })
+    );
+
+    const { changeRequestApi } = await import('../changeRequests');
+    const result = await changeRequestApi.withdraw(
+      '11111111-1111-4111-8111-111111111111'
+    );
+
+    expect(postMock).toHaveBeenCalledWith(
+      '/v1/change-requests/11111111-1111-4111-8111-111111111111/withdraw'
+    );
+    expect(result.status).toBe('withdrawn');
+  });
+
+  it('throws when the withdraw response fails validation', async () => {
+    postMock.mockImplementationOnce(() =>
+      Promise.resolve({
+        data: { data: { shift_change_request: { status: 'not-a-status' } } },
+      })
+    );
+
+    const { changeRequestApi } = await import('../changeRequests');
+    await expect(
+      changeRequestApi.withdraw('11111111-1111-4111-8111-111111111111')
+    ).rejects.toThrow();
+  });
+
   it('rejects createExtra body when ends_at is not after starts_at', async () => {
     const { changeRequestApi } = await import('../changeRequests');
     await expect(

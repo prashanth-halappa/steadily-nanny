@@ -135,6 +135,87 @@ describe('timeEntryApi.getRunning', () => {
   });
 });
 
+describe('timeEntryApi.createRetroactiveEntry', () => {
+  it('POSTs to /time-entries/retroactive with the validated body', async () => {
+    const created = {
+      ...validEntry,
+      clock_in_at: '2026-08-01T07:00:00.000Z',
+      clock_out_at: '2026-08-01T15:00:00.000Z',
+      status: 'submitted',
+    };
+    apiClient.post.mockResolvedValue({
+      data: { data: { time_entry: created } },
+    });
+
+    const result = await timeEntryApi.createRetroactiveEntry({
+      household_id: validEntry.household_id,
+      clock_in_at: '2026-08-01T07:00:00.000Z',
+      clock_out_at: '2026-08-01T15:00:00.000Z',
+      note: 'Forgot to clock in',
+    });
+
+    expect(apiClient.post).toHaveBeenCalledWith(
+      '/v1/time-entries/retroactive',
+      {
+        household_id: validEntry.household_id,
+        clock_in_at: '2026-08-01T07:00:00.000Z',
+        clock_out_at: '2026-08-01T15:00:00.000Z',
+        note: 'Forgot to clock in',
+      }
+    );
+    expect(result.status).toBe('submitted');
+  });
+
+  it('rejects a clock_out_at at or before clock_in_at without calling the API', async () => {
+    // The schema itself has no ordering refine (the server owns that
+    // rejection, INVALID_CLOCK_TIMES) — this documents that this client
+    // does not invent a client-side check the shared schema doesn't have,
+    // and instead relies on Zod's base datetime validation only for shape.
+    await expect(
+      timeEntryApi.createRetroactiveEntry({
+        household_id: validEntry.household_id,
+        clock_in_at: 'not-a-date',
+        clock_out_at: '2026-08-01T15:00:00.000Z',
+      })
+    ).rejects.toThrow();
+    expect(apiClient.post).not.toHaveBeenCalled();
+  });
+
+  it('omits break_minutes/note/shift_id when not supplied', async () => {
+    apiClient.post.mockResolvedValue({
+      data: { data: { time_entry: validEntry } },
+    });
+
+    await timeEntryApi.createRetroactiveEntry({
+      household_id: validEntry.household_id,
+      clock_in_at: '2026-08-01T07:00:00.000Z',
+      clock_out_at: '2026-08-01T15:00:00.000Z',
+    });
+
+    expect(apiClient.post).toHaveBeenCalledWith(
+      '/v1/time-entries/retroactive',
+      {
+        household_id: validEntry.household_id,
+        clock_in_at: '2026-08-01T07:00:00.000Z',
+        clock_out_at: '2026-08-01T15:00:00.000Z',
+      }
+    );
+  });
+
+  it('throws when the response fails validation', async () => {
+    apiClient.post.mockResolvedValue({
+      data: { data: { time_entry: { status: 'not-a-real-status' } } },
+    });
+    await expect(
+      timeEntryApi.createRetroactiveEntry({
+        household_id: validEntry.household_id,
+        clock_in_at: '2026-08-01T07:00:00.000Z',
+        clock_out_at: '2026-08-01T15:00:00.000Z',
+      })
+    ).rejects.toThrow();
+  });
+});
+
 describe('timeEntryApi.listForWeek', () => {
   it('GETs the household week with the week_start query param', async () => {
     apiClient.get.mockResolvedValue({

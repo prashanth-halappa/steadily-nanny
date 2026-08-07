@@ -95,6 +95,37 @@ describe('ShiftDetailScreen source', () => {
     expect(source).toContain('detail.accept');
   });
 
+  it('wires carer Decline (useDeclineShift) beside Accept, behind a confirm dialog', () => {
+    expect(source).toContain('useDeclineShift');
+    expect(source).toContain('shift-detail-decline');
+    expect(source).toContain('shift-detail-decline-confirm');
+    expect(source).toContain('shift-detail-decline-cancel');
+    expect(source).toContain('today:shiftDetail.declineConfirmTitle');
+  });
+
+  it('wires requester Withdraw (useWithdrawChangeRequest) behind a confirm dialog', () => {
+    expect(source).toContain('useWithdrawChangeRequest');
+    expect(source).toContain('shift-change-withdraw-');
+    expect(source).toContain('isOwnRequest');
+  });
+
+  it('gates the cancel-shift action behind an alert-dialog confirm, never fires unconfirmed', () => {
+    expect(source).toContain('shift-detail-cancel-confirm');
+    expect(source).toContain('setCancelConfirmOpen(true)');
+    // The onPress handler on the trigger button must only open the dialog,
+    // never call the mutation directly.
+    expect(source).not.toMatch(
+      /testID="shift-detail-cancel"[\s\S]{0,120}createChange\.mutateAsync/
+    );
+  });
+
+  it('replaces free-text HH:MM inputs with TimeRangePicker on both compose surfaces', () => {
+    expect(source).toContain('TimeRangePicker');
+    expect(source).not.toContain("from '@/src/components/ui/input'");
+    expect(source).toContain('shift-detail-times');
+    expect(source).toContain('shift-detail-counter-times');
+  });
+
   it('discriminates fresh-extra proposal copy from demoted re-confirm copy', () => {
     expect(source).toContain('parent_proposed');
     expect(source).toContain('isFreshExtraProposal');

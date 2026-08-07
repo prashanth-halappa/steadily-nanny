@@ -23,9 +23,18 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ScrollView, View } from 'react-native';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/src/components/ui/alert-dialog';
 import { Button } from '@/src/components/ui/button';
 import { FieldLabel } from '@/src/components/ui/field-label';
-import { Input } from '@/src/components/ui/input';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import {
   StatusPill,
@@ -33,6 +42,7 @@ import {
 } from '@/src/components/ui/status-pill';
 import { Text } from '@/src/components/ui/text';
 import { Textarea } from '@/src/components/ui/textarea';
+import { TimeRangePicker } from '@/src/components/ui/time-range-picker';
 import { Body, H1, H2, Small } from '@/src/components/ui/typography';
 import {
   shiftChangeRequestKindLabelKey,
@@ -43,8 +53,10 @@ import { isParentEditorRole, SETUP_ROLES } from '@/src/domains/setup/types';
 import { formatDisplayDate } from '@/src/domains/timesheet/utils/week';
 import { useAcceptShift } from '@/src/hooks/mutations/useAcceptShift';
 import { useCreateShiftChangeRequest } from '@/src/hooks/mutations/useCreateShiftChangeRequest';
+import { useDeclineShift } from '@/src/hooks/mutations/useDeclineShift';
 import { useRespondToShiftChangeRequest } from '@/src/hooks/mutations/useRespondToShiftChangeRequest';
 import { useUpdateShift } from '@/src/hooks/mutations/useUpdateShift';
+import { useWithdrawChangeRequest } from '@/src/hooks/mutations/useWithdrawChangeRequest';
 import { useHouseholdMembers } from '@/src/hooks/queries/useHouseholdMembers';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 import { useShift } from '@/src/hooks/queries/useShift';
@@ -87,7 +99,7 @@ const STATUS_TO_LABEL_KEY: Record<Shift['status'], string> = {
 };
 
 export function ShiftDetailScreen() {
-  const { t } = useTranslation('schedule');
+  const { t } = useTranslation(['schedule', 'today']);
   const elevation = useElevation();
   const router = useRouter();
   const params = useLocalSearchParams<{ shiftId?: string }>();
@@ -100,8 +112,10 @@ export function ShiftDetailScreen() {
   const membersQuery = useHouseholdMembers(shiftQuery.data?.household_id);
   const updateShift = useUpdateShift();
   const acceptShift = useAcceptShift();
+  const declineShift = useDeclineShift();
   const createChange = useCreateShiftChangeRequest();
   const respondChange = useRespondToShiftChangeRequest();
+  const withdrawChange = useWithdrawChangeRequest();
   const changeRequests = useShiftChangeRequests(shiftId);
 
   const shift = shiftQuery.data;
@@ -153,6 +167,14 @@ export function ShiftDetailScreen() {
   const [endTime, setEndTime] = useState('17:00');
   const [note, setNote] = useState('');
   const [hydrated, setHydrated] = useState(false);
+  const [declineConfirmOpen, setDeclineConfirmOpen] = useState(false);
+  const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
+  // The change-request id currently confirming withdrawal, or null — a list
+  // of change requests can in principle hold more than one row, so this is
+  // keyed by id rather than a bare boolean.
+  const [withdrawConfirmId, setWithdrawConfirmId] = useState<string | null>(
+    null
+  );
 
   useEffect(() => {
     if (!shift || hydrated) return;
@@ -272,24 +294,14 @@ export function ShiftDetailScreen() {
       {isParent ? (
         <View className="mt-6 gap-4" testID="shift-detail-edit">
           <FieldLabel>{t('detail.startLabel')}</FieldLabel>
-          <Input
-            testID="shift-detail-start"
-            value={startTime}
-            onChangeText={setStartTime}
-            placeholder={t('detail.timePlaceholder')}
-            accessibilityLabel={t('detail.startLabel')}
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
-          <FieldLabel>{t('detail.endLabel')}</FieldLabel>
-          <Input
-            testID="shift-detail-end"
-            value={endTime}
-            onChangeText={setEndTime}
-            placeholder={t('detail.timePlaceholder')}
-            accessibilityLabel={t('detail.endLabel')}
-            autoCapitalize="none"
-            autoCorrect={false}
+          <TimeRangePicker
+            testID="shift-detail-times"
+            start={startTime}
+            end={endTime}
+            onChange={(nextStart, nextEnd) => {
+              setStartTime(nextStart);
+              setEndTime(nextEnd);
+            }}
           />
           <FieldLabel>{t('detail.noteLabel')}</FieldLabel>
           <Textarea
@@ -310,16 +322,46 @@ export function ShiftDetailScreen() {
               testID="shift-detail-cancel"
               variant="outline"
               disabled={createChange.isPending}
-              onPress={() =>
-                void createChange.mutateAsync({
-                  shiftId: shift.id,
-                  input: { kind: 'cancel' },
-                })
-              }
+              onPress={() => setCancelConfirmOpen(true)}
             >
               <Text>{t('detail.cancelShift')}</Text>
             </Button>
           ) : null}
+          <AlertDialog
+            open={cancelConfirmOpen}
+            onOpenChange={setCancelConfirmOpen}
+          >
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>
+                  {t('today:shiftDetail.cancelConfirmTitle')}
+                </AlertDialogTitle>
+                <AlertDialogDescription>
+                  {t('today:shiftDetail.cancelConfirmBody')}
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel
+                  testID="shift-detail-cancel-dismiss"
+                  onPress={() => setCancelConfirmOpen(false)}
+                >
+                  <Text>{t('today:shiftDetail.cancelConfirmCancel')}</Text>
+                </AlertDialogCancel>
+                <AlertDialogAction
+                  testID="shift-detail-cancel-confirm"
+                  onPress={() => {
+                    setCancelConfirmOpen(false);
+                    void createChange.mutateAsync({
+                      shiftId: shift.id,
+                      input: { kind: 'cancel' },
+                    });
+                  }}
+                >
+                  <Text>{t('today:shiftDetail.cancelConfirmConfirm')}</Text>
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </View>
       ) : (
         <View className="mt-6 gap-2" testID="shift-detail-readonly">
@@ -331,24 +373,14 @@ export function ShiftDetailScreen() {
           {isNanny ? (
             <View className="mt-4 gap-3" testID="shift-detail-counter-form">
               <FieldLabel>{t('detail.startLabel')}</FieldLabel>
-              <Input
-                testID="shift-detail-counter-start"
-                value={startTime}
-                onChangeText={setStartTime}
-                placeholder={t('detail.timePlaceholder')}
-                accessibilityLabel={t('detail.startLabel')}
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
-              <FieldLabel>{t('detail.endLabel')}</FieldLabel>
-              <Input
-                testID="shift-detail-counter-end"
-                value={endTime}
-                onChangeText={setEndTime}
-                placeholder={t('detail.timePlaceholder')}
-                accessibilityLabel={t('detail.endLabel')}
-                autoCapitalize="none"
-                autoCorrect={false}
+              <TimeRangePicker
+                testID="shift-detail-counter-times"
+                start={startTime}
+                end={endTime}
+                onChange={(nextStart, nextEnd) => {
+                  setStartTime(nextStart);
+                  setEndTime(nextEnd);
+                }}
               />
               <View className="flex-row flex-wrap gap-2">
                 {canAcceptPending ? (
@@ -360,6 +392,18 @@ export function ShiftDetailScreen() {
                     }
                   >
                     <Text>{t('detail.accept')}</Text>
+                  </Button>
+                ) : null}
+                {canAcceptPending ? (
+                  <Button
+                    testID="shift-detail-decline"
+                    variant="outline"
+                    disabled={declineShift.isPending}
+                    onPress={() => setDeclineConfirmOpen(true)}
+                  >
+                    <Text className="text-destructive">
+                      {t('today:shiftDetail.declineCta')}
+                    </Text>
                   </Button>
                 ) : null}
                 <Button
@@ -388,6 +432,40 @@ export function ShiftDetailScreen() {
                   <Text>{t('detail.counterOffer')}</Text>
                 </Button>
               </View>
+              <AlertDialog
+                open={declineConfirmOpen}
+                onOpenChange={setDeclineConfirmOpen}
+              >
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>
+                      {t('today:shiftDetail.declineConfirmTitle')}
+                    </AlertDialogTitle>
+                    <AlertDialogDescription>
+                      {t('today:shiftDetail.declineConfirmBody')}
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel
+                      testID="shift-detail-decline-cancel"
+                      onPress={() => setDeclineConfirmOpen(false)}
+                    >
+                      <Text>{t('today:shiftDetail.declineConfirmCancel')}</Text>
+                    </AlertDialogCancel>
+                    <AlertDialogAction
+                      testID="shift-detail-decline-confirm"
+                      onPress={() => {
+                        setDeclineConfirmOpen(false);
+                        void declineShift.mutateAsync({ shiftId: shift.id });
+                      }}
+                    >
+                      <Text>
+                        {t('today:shiftDetail.declineConfirmConfirm')}
+                      </Text>
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             </View>
           ) : null}
         </View>
@@ -396,96 +474,154 @@ export function ShiftDetailScreen() {
       {(changeRequests.data ?? []).length > 0 ? (
         <View testID="shift-detail-changes" className="mt-8 gap-3">
           <H2>{t('detail.changesTitle')}</H2>
-          {(changeRequests.data ?? []).map(req => (
-            <View
-              key={req.id}
-              className="gap-2 rounded-row bg-card p-3"
-              style={elevation.row}
-            >
-              <Body weight="medium">
-                {t(shiftChangeRequestKindLabelKey(req.kind), {
-                  defaultValue: req.kind,
-                })}
-              </Body>
-              <Small className="text-muted-foreground">
-                {t(shiftChangeRequestStatusLabelKey(req.status), {
-                  defaultValue: req.status,
-                })}
-              </Small>
-              <Small
-                testID={`shift-change-raised-by-${req.id}`}
-                className="text-muted-foreground"
+          {(changeRequests.data ?? []).map(req => {
+            // The requester's own pending request: she withdraws it, she
+            // does not accept/decline it. Same guard `awaitingCoParent`
+            // already uses just above — `requested_by !== null` first so a
+            // system-authored row (null) never reads as "mine" just because
+            // `currentUserId` also happens to be null in an unauthenticated
+            // render.
+            const isOwnRequest =
+              req.requested_by !== null && req.requested_by === currentUserId;
+            return (
+              <View
+                key={req.id}
+                className="gap-2 rounded-row bg-card p-3"
+                style={elevation.row}
               >
-                {t('detail.raisedBy', { name: nameFor(req.requested_by) })}
-              </Small>
-              <Small
-                testID={`shift-change-created-${req.id}`}
-                className="text-muted-foreground"
-                tabular
-              >
-                {formatInstantDisplay(req.created_at, shift.timezone)}
-              </Small>
-              {req.status === 'pending' &&
-              req.requested_by !== null &&
-              req.requested_by === currentUserId ? (
-                <Small
-                  testID={`shift-change-awaiting-${req.id}`}
-                  className="text-muted-foreground"
-                >
-                  {t('detail.awaitingCoParent')}
-                </Small>
-              ) : null}
-              {req.status !== 'pending' && req.responded_by ? (
-                <Small
-                  testID={`shift-change-responded-by-${req.id}`}
-                  className="text-muted-foreground"
-                >
-                  {t('detail.respondedBy', {
-                    name: nameFor(req.responded_by),
+                <Body weight="medium">
+                  {t(shiftChangeRequestKindLabelKey(req.kind), {
+                    defaultValue: req.kind,
+                  })}
+                </Body>
+                <Small className="text-muted-foreground">
+                  {t(shiftChangeRequestStatusLabelKey(req.status), {
+                    defaultValue: req.status,
                   })}
                 </Small>
-              ) : null}
-              {req.message ? (
-                <Body testID={`shift-change-message-${req.id}`}>
-                  {t('detail.requestMessageLabel')}: {req.message}
-                </Body>
-              ) : null}
-              {req.response_message ? (
-                <Body testID={`shift-change-response-${req.id}`}>
-                  {t('detail.responseLabel')}: {req.response_message}
-                </Body>
-              ) : null}
-              {req.status === 'pending' ? (
-                <View className="flex-row gap-2">
-                  <Button
-                    testID={`shift-change-accept-${req.id}`}
-                    disabled={respondChange.isPending}
-                    onPress={() =>
-                      void respondChange.mutateAsync({
-                        changeRequestId: req.id,
-                        input: { status: 'accepted' },
-                      })
-                    }
+                <Small
+                  testID={`shift-change-raised-by-${req.id}`}
+                  className="text-muted-foreground"
+                >
+                  {t('detail.raisedBy', { name: nameFor(req.requested_by) })}
+                </Small>
+                <Small
+                  testID={`shift-change-created-${req.id}`}
+                  className="text-muted-foreground"
+                  tabular
+                >
+                  {formatInstantDisplay(req.created_at, shift.timezone)}
+                </Small>
+                {req.status === 'pending' && isOwnRequest ? (
+                  <Small
+                    testID={`shift-change-awaiting-${req.id}`}
+                    className="text-muted-foreground"
                   >
-                    <Text>{t('detail.acceptChange')}</Text>
-                  </Button>
+                    {t('detail.awaitingCoParent')}
+                  </Small>
+                ) : null}
+                {req.status !== 'pending' && req.responded_by ? (
+                  <Small
+                    testID={`shift-change-responded-by-${req.id}`}
+                    className="text-muted-foreground"
+                  >
+                    {t('detail.respondedBy', {
+                      name: nameFor(req.responded_by),
+                    })}
+                  </Small>
+                ) : null}
+                {req.message ? (
+                  <Body testID={`shift-change-message-${req.id}`}>
+                    {t('detail.requestMessageLabel')}: {req.message}
+                  </Body>
+                ) : null}
+                {req.response_message ? (
+                  <Body testID={`shift-change-response-${req.id}`}>
+                    {t('detail.responseLabel')}: {req.response_message}
+                  </Body>
+                ) : null}
+                {req.status === 'pending' && isOwnRequest ? (
                   <Button
-                    testID={`shift-change-decline-${req.id}`}
+                    testID={`shift-change-withdraw-${req.id}`}
                     variant="outline"
-                    disabled={respondChange.isPending}
-                    onPress={() =>
-                      void respondChange.mutateAsync({
-                        changeRequestId: req.id,
-                        input: { status: 'declined' },
-                      })
-                    }
+                    disabled={withdrawChange.isPending}
+                    onPress={() => setWithdrawConfirmId(req.id)}
                   >
-                    <Text>{t('detail.declineChange')}</Text>
+                    <Text className="text-destructive">
+                      {t('today:shiftDetail.withdrawCta')}
+                    </Text>
                   </Button>
-                </View>
-              ) : null}
-            </View>
-          ))}
+                ) : null}
+                {req.status === 'pending' && !isOwnRequest ? (
+                  <View className="flex-row gap-2">
+                    <Button
+                      testID={`shift-change-accept-${req.id}`}
+                      disabled={respondChange.isPending}
+                      onPress={() =>
+                        void respondChange.mutateAsync({
+                          changeRequestId: req.id,
+                          input: { status: 'accepted' },
+                        })
+                      }
+                    >
+                      <Text>{t('detail.acceptChange')}</Text>
+                    </Button>
+                    <Button
+                      testID={`shift-change-decline-${req.id}`}
+                      variant="outline"
+                      disabled={respondChange.isPending}
+                      onPress={() =>
+                        void respondChange.mutateAsync({
+                          changeRequestId: req.id,
+                          input: { status: 'declined' },
+                        })
+                      }
+                    >
+                      <Text>{t('detail.declineChange')}</Text>
+                    </Button>
+                  </View>
+                ) : null}
+                <AlertDialog
+                  open={withdrawConfirmId === req.id}
+                  onOpenChange={open => {
+                    if (!open) setWithdrawConfirmId(null);
+                  }}
+                >
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>
+                        {t('today:shiftDetail.withdrawConfirmTitle')}
+                      </AlertDialogTitle>
+                      <AlertDialogDescription>
+                        {t('today:shiftDetail.withdrawConfirmBody')}
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel
+                        testID={`shift-change-withdraw-cancel-${req.id}`}
+                        onPress={() => setWithdrawConfirmId(null)}
+                      >
+                        <Text>
+                          {t('today:shiftDetail.withdrawConfirmCancel')}
+                        </Text>
+                      </AlertDialogCancel>
+                      <AlertDialogAction
+                        testID={`shift-change-withdraw-confirm-${req.id}`}
+                        onPress={() => {
+                          setWithdrawConfirmId(null);
+                          void withdrawChange.mutateAsync(req.id);
+                        }}
+                      >
+                        <Text>
+                          {t('today:shiftDetail.withdrawConfirmConfirm')}
+                        </Text>
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </View>
+            );
+          })}
         </View>
       ) : null}
 
