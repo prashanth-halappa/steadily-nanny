@@ -105,6 +105,7 @@ export const NOTIFICATION_ROUTE_MAP: NotificationRouteMap &
   [PUSH_NOTIFICATION_TYPES.SHIFT_CANCELLED]: shiftDetailHref,
   [PUSH_NOTIFICATION_TYPES.SHIFT_NEEDS_RECONFIRM]: shiftDetailHref,
   [PUSH_NOTIFICATION_TYPES.SHIFT_CONFIRMED]: shiftDetailHref,
+  [PUSH_NOTIFICATION_TYPES.SHIFT_DECLINED]: shiftDetailHref,
   [PUSH_NOTIFICATION_TYPES.SHIFT_REMINDER]: shiftDetailHref,
 
   [PUSH_NOTIFICATION_TYPES.CARER_TIME_OFF_CONFLICT]: shiftsCalendarHref,
@@ -125,6 +126,10 @@ export const NOTIFICATION_ROUTE_MAP: NotificationRouteMap &
     '/(private)/settings/household-time-off',
 
   [PUSH_NOTIFICATION_TYPES.PTO_MARKED_PAID]: () => '/(private)/settings/my-pay',
+
+  // A parent recorded a settlement — land the carer on the week it settles,
+  // same Hours destination (and payload fields) as the timesheet leg.
+  [PUSH_NOTIFICATION_TYPES.PAYMENT_RECORDED]: hoursHref,
 
   [PUSH_NOTIFICATION_TYPES.TIME_OFF_REQUESTED]: () =>
     '/(private)/settings/household-time-off',

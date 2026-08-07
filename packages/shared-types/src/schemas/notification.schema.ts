@@ -54,6 +54,9 @@ export const PUSH_NOTIFICATION_TYPES = {
   EXPENSE_APPROVED: 'expense_approved',
   EXPENSE_REJECTED: 'expense_rejected',
   EXPENSE_SUBMITTED: 'expense_submitted',
+  // A parent recorded a settlement against an approved week (066 payments) —
+  // carer-targeted: she is the one who was just paid.
+  PAYMENT_RECORDED: 'payment_recorded',
   PTO_MARKED_PAID: 'pto_marked_paid',
   TIMESHEET_APPROVED: 'timesheet_approved',
 
@@ -63,6 +66,9 @@ export const PUSH_NOTIFICATION_TYPES = {
   COVERAGE_GAP_DETECTED: 'coverage_gap_detected',
   HOUSEHOLD_CLOSURE_CHANGED: 'household_closure_changed',
   SHIFT_CONFIRMED: 'shift_confirmed',
+  // The carer's symmetric "no" to SHIFT_CONFIRMED — parent-targeted: the
+  // family now has a gap where they thought they had cover.
+  SHIFT_DECLINED: 'shift_declined',
   TIME_OFF_REQUESTED: 'time_off_requested',
 
   // Household / consent leg — approval types are parent-to-parent (requested

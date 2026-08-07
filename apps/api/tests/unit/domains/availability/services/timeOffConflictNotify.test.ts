@@ -17,6 +17,7 @@ const row: CarerTimeOff = {
   starts_at: '2026-08-10T00:00:00Z',
   ends_at: '2026-08-12T00:00:00Z',
   all_day: true,
+  kind: 'personal',
   message: null,
   status: 'confirmed',
   ical_uid: 'ical-1',

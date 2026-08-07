@@ -237,6 +237,14 @@ function makeProfileWorld() {
 
 const stubUsers: any = { ensureProfile: mock(async () => {}) };
 
+/**
+ * The rejoin path's carried-over-PTO sentence reads the ledger; every test
+ * that reaches it must stub this, or the ctor default constructs a REAL
+ * PtoLedgerRepository whose supabase call turns a unit test into a slow
+ * network failure.
+ */
+const stubPtoLedger: any = { listForCarerYear: mock(async () => []) };
+
 function makeQueries(
   role: HouseholdMember['role'] = 'owner',
   overrides: Record<string, unknown> = {}
@@ -1087,7 +1095,10 @@ describe('HouseholdCommandService.redeemInvite — removed member rejoining', ()
       memberRepo,
       inviteRepo,
       makeQueries(),
-      stubUsers
+      stubUsers,
+      makeTimeEntries(),
+      makePayArrangements(),
+      stubPtoLedger
     );
 
     const membership = await svc.redeemInvite('u2', { code: 'ABC-234' });
@@ -1130,7 +1141,10 @@ describe('HouseholdCommandService.redeemInvite — removed member rejoining', ()
       memberRepo,
       inviteRepo,
       makeQueries(),
-      stubUsers
+      stubUsers,
+      makeTimeEntries(),
+      makePayArrangements(),
+      stubPtoLedger
     );
 
     await svc.redeemInvite('u2', { code: 'ABC-234' });

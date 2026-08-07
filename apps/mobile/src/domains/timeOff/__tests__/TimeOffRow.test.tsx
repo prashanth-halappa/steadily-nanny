@@ -18,6 +18,7 @@ function makeTimeOff(overrides: Partial<Record<string, unknown>> = {}) {
     ends_at: '2026-08-13T00:00:00.000Z',
     all_day: true,
     message: null,
+    kind: 'personal' as const,
     status: 'confirmed' as const,
     ical_uid: 'time-off-1@steadily',
     sequence: 0,
