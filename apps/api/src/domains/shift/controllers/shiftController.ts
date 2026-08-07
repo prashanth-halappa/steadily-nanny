@@ -122,6 +122,25 @@ export class ShiftController {
   }
 
   /**
+   * Carer-only decline pending → declined: POST /shifts/:shiftId/decline.
+   *
+   * No clash warnings on this leg (unlike `accept`): a declined shift is off
+   * the carer's calendar, so there is nothing left for it to clash with.
+   */
+  static async decline(req: Request, res: Response, next: NextFunction) {
+    try {
+      const shiftId = req.params.shiftId as string;
+      const shift = await shiftCommandService.decline(
+        getAuthUserId(req),
+        shiftId
+      );
+      return sendSuccessResponse(res, 'Shift declined', { shift });
+    } catch (error) {
+      return next(error);
+    }
+  }
+
+  /**
    * Household/date day thread: GET /households/:householdId/day-thread?local_date=
    * Includes nullable-shift_id events; does not widen the shift-scoped events route.
    */

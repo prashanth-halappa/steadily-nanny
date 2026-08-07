@@ -151,6 +151,43 @@ export class ShiftRepository extends BaseRepository<Shift> {
   }
 
   /**
+   * CAS pending → declined for carer decline — the symmetric write to
+   * `confirmPending`, and serialised the same way: soft `assertMutable`
+   * preflight (no row lock) plus `status = 'pending'` in the WHERE clause, so
+   * a concurrent accept/cancel/parent-edit cannot be silently overwritten
+   * with `declined`. `declined` is terminal, which makes losing that race
+   * unrecoverable, so the CAS is doing more work here than on the accept leg.
+   */
+  async declinePending(shiftId: string): Promise<Shift> {
+    await this.assertMutable(shiftId);
+    const { data, error } = await supabaseService
+      .from(this.table)
+      .update({ status: 'declined' })
+      .eq('id', shiftId)
+      .eq('status', 'pending')
+      .select()
+      .maybeSingle();
+
+    if (error) {
+      throw new DatabaseError(
+        'Failed to decline pending shift',
+        'DATABASE_ERROR',
+        { details: error.message, shiftId }
+      );
+    }
+    if (!data) {
+      // Lost the pending race (concurrent accept/cancel/edit) after preflight.
+      throw new ValidationError(
+        'Only a pending shift can be declined',
+        'SHIFT_NOT_PENDING',
+        400,
+        { shiftId }
+      );
+    }
+    return data as Shift;
+  }
+
+  /**
    * Shifts overlapping `[from, to)`, each carrying its `shift_children` —
    * the primary calendar feed, sized to avoid an N+1 per-shift children
    * fetch. Overlap semantics match `busyBlockRepository.listForCarer`: a

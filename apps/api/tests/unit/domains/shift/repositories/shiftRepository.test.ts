@@ -264,6 +264,96 @@ describe('ShiftRepository.confirmPending — CAS pending → confirmed', () => {
   });
 });
 
+describe('ShiftRepository.declinePending — CAS pending → declined', () => {
+  function makeTimeEntryRepo(hasTimeEntries = false): any {
+    return { hasTimeEntries: mock(async () => hasTimeEntries) };
+  }
+
+  it('declines when status is still pending, filtering the update on pending', async () => {
+    const pending = { id: 's1', status: 'pending' };
+    const declined = { id: 's1', status: 'declined' };
+    let call = 0;
+    let casChain: any;
+    mockSupabaseService.from.mockImplementation(() => {
+      call += 1;
+      // assertMutable findById, then CAS update+.maybeSingle
+      if (call === 1) {
+        return createMockQueryChain({ data: pending, error: null });
+      }
+      casChain = createMockQueryChain({ data: declined, error: null });
+      return casChain;
+    });
+
+    const repo = new ShiftRepository(makeTimeEntryRepo(false));
+
+    expect(await repo.declinePending('s1')).toEqual(declined);
+    // The compare-and-swap IS the serialisation: without `status = 'pending'`
+    // a concurrent accept/cancel would be silently overwritten with declined.
+    expect(casChain.update).toHaveBeenCalledWith({ status: 'declined' });
+    expect(casChain.eq).toHaveBeenCalledWith('id', 's1');
+    expect(casChain.eq).toHaveBeenCalledWith('status', 'pending');
+  });
+
+  it('throws SHIFT_NOT_PENDING ValidationError when the CAS update matches 0 rows', async () => {
+    const { ValidationError } = await import('../../../../../src/errors');
+    const pending = { id: 's1', status: 'pending' };
+    let call = 0;
+    mockSupabaseService.from.mockImplementation(() => {
+      call += 1;
+      if (call === 1) {
+        return createMockQueryChain({ data: pending, error: null });
+      }
+      // Lost race: a concurrent accept/cancel moved status off pending.
+      return createMockQueryChain({ data: null, error: null });
+    });
+
+    const repo = new ShiftRepository(makeTimeEntryRepo(false));
+    try {
+      await repo.declinePending('s1');
+      expect.unreachable('declinePending should have thrown');
+    } catch (error) {
+      expect(error).toBeInstanceOf(ValidationError);
+      expect(
+        (error as InstanceType<typeof ValidationError>).metadata?.reason
+      ).toBe('SHIFT_NOT_PENDING');
+    }
+  });
+
+  it('refuses when someone has clocked into the shift', async () => {
+    const pending = { id: 's1', status: 'pending' };
+    mockSupabaseService.from.mockImplementation(() =>
+      createMockQueryChain({ data: pending, error: null })
+    );
+
+    const repo = new ShiftRepository(makeTimeEntryRepo(true));
+
+    await expect(repo.declinePending('s1')).rejects.toBeInstanceOf(
+      ShiftImmutableError
+    );
+  });
+
+  it('surfaces a database failure as DatabaseError', async () => {
+    const pending = { id: 's1', status: 'pending' };
+    let call = 0;
+    mockSupabaseService.from.mockImplementation(() => {
+      call += 1;
+      if (call === 1) {
+        return createMockQueryChain({ data: pending, error: null });
+      }
+      return createMockQueryChain({
+        data: null,
+        error: { message: 'connection reset' },
+      });
+    });
+
+    const repo = new ShiftRepository(makeTimeEntryRepo(false));
+
+    await expect(repo.declinePending('s1')).rejects.toBeInstanceOf(
+      DatabaseError
+    );
+  });
+});
+
 describe('ShiftRepository.listCancellationPaidSince', () => {
   // Feeds the reconcile job, which re-drives a PAYABLE write. A shift with no
   // carer can never be paid (`recordCancellationPaidEntry` returns null early),
