@@ -47,16 +47,20 @@ function loadEnvFile(path: string): Record<string, string> {
 }
 
 async function main() {
+  // An EXPORTED value wins over the file. Without this the loopback guard
+  // below turns a dangerous workflow into an impossible one: `apps/api/.env`
+  // points at production (GOLDEN-FIXES #26), so reading the file alone means
+  // the guard refuses every run and `bun run seed` can never work. Exporting
+  // the local stack's values — `supabase status -o env` — is the supported way
+  // in, and it is also the shape the rest of this repo's local tooling uses.
   const envPath = join(import.meta.dir, '..', 'apps', 'api', '.env');
-  if (!existsSync(envPath)) {
-    throw new Error(`Missing env file: ${envPath}`);
-  }
-  const env = loadEnvFile(envPath);
-  const supabaseUrl = env.SUPABASE_URL;
-  const serviceKey = env.SUPABASE_SERVICE_KEY;
+  const fileEnv = existsSync(envPath) ? loadEnvFile(envPath) : {};
+  const supabaseUrl = process.env.SUPABASE_URL ?? fileEnv.SUPABASE_URL;
+  const serviceKey =
+    process.env.SUPABASE_SERVICE_KEY ?? fileEnv.SUPABASE_SERVICE_KEY;
   if (!supabaseUrl || !serviceKey) {
     throw new Error(
-      'SUPABASE_URL / SUPABASE_SERVICE_KEY missing from apps/api/.env'
+      'SUPABASE_URL / SUPABASE_SERVICE_KEY missing — export them (see `supabase status -o env`) or set them in apps/api/.env'
     );
   }
   assertLocalSupabaseUrl(supabaseUrl);
