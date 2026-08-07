@@ -23,6 +23,7 @@ import {
   expenseIdRoutes,
   expenseRoutes,
   payArrangementRoutes,
+  paymentRoutes,
   ptoRoutes,
 } from '../domains/pay';
 import {
@@ -89,6 +90,13 @@ router.use('/change-requests', shiftChangeRequestRoutes);
 router.use('/households/:householdId/time-entries', householdTimeEntryRoutes);
 router.use('/time-entries', timeEntryRoutes);
 router.use('/households/:householdId/timesheets', householdTimesheetRoutes);
+// The settlement ledger for an approved week (066). Timesheet-nested and
+// mounted BEFORE the flat `/timesheets` router, the same nested-then-flat
+// ordering as shifts and schedule patterns — the more specific path must win.
+// (A payment belongs to exactly one week, so there is no flat id-scoped
+// router, and no PATCH/DELETE anywhere: the table is append-only. See
+// docs/11-MONEY.md and domains/pay/routes/paymentRoutes.ts.)
+router.use('/timesheets/:timesheetId/payments', paymentRoutes);
 router.use('/timesheets', timesheetRoutes);
 
 // Pay arrangements — effective-dated terms for one carer in one household.

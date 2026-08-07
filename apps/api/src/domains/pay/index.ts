@@ -16,16 +16,19 @@
  */
 export * from './controllers/expenseController';
 export * from './controllers/payArrangementController';
+export * from './controllers/paymentController';
 export * from './controllers/ptoController';
 export * from './errors/payErrors';
 export * from './repositories/expenseRepository';
 export * from './repositories/payArrangementRepository';
+export * from './repositories/paymentRepository';
 export * from './repositories/ptoLedgerRepository';
 export {
   default as expenseRoutes,
   expenseIdRoutes,
 } from './routes/expenseRoutes';
 export { default as payArrangementRoutes } from './routes/payArrangementRoutes';
+export { default as paymentRoutes } from './routes/paymentRoutes';
 export { default as ptoRoutes } from './routes/ptoRoutes';
 export * from './schemas';
 export * from './services/earningsService';
@@ -33,6 +36,8 @@ export * from './services/expenseCommandService';
 export * from './services/expenseQueryService';
 export * from './services/payArrangementCommandService';
 export * from './services/payArrangementQueryService';
+export * from './services/paymentCommandService';
+export * from './services/paymentQueryService';
 export * from './services/ptoCommandService';
 export * from './services/ptoQueryService';
 export * from './services/weekEarningsService';

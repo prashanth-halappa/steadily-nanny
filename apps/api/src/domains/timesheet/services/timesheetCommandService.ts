@@ -1885,7 +1885,7 @@ export class TimesheetCommandService {
       weekStart
     );
     if (!existing) {
-      await this.timesheetRepo.create({
+      const created = await this.timesheetRepo.create({
         household_id: entry.household_id,
         carer_id: carerId,
         // Snapshotted from the entry that triggered this roll-up, not
@@ -1896,15 +1896,10 @@ export class TimesheetCommandService {
         total_minutes: totalMinutes,
         status: 'submitted',
       });
-      this.push.notifyHouseholdParents(entry.household_id, {
-        title: 'Hours submitted',
-        body: `${entry.carer_display_name ?? 'Your carer'} logged hours for this week.`,
-        data: {
-          type: PUSH_NOTIFICATION_TYPES.TIMESHEET_SUBMITTED,
-          householdId: entry.household_id,
-          weekStart,
-        },
-      });
+      // A week CREATED `submitted` is the other way into that status, and
+      // the parent's first notice that hours exist at all — the only other
+      // signal is `reminderJob`'s 09:00 digest the next morning.
+      this.notifyParentsOfSubmission(entry, weekStart, created.id);
       return;
     }
 
@@ -1958,6 +1953,41 @@ export class TimesheetCommandService {
       ...CLEARED_EARNINGS_SNAPSHOT,
     });
     if (newlySubmitted || reopening) {
+      this.notifyParentsOfSubmission(entry, weekStart, existing.id);
+    }
+  }
+
+  /**
+   * The parent nudge for a week that has just moved INTO `submitted` — the
+   * ONLY transition that fires it. A roll-up onto an already-`submitted`
+   * week (Wednesday's clock-out on a week that started Monday) is not a
+   * transition and pushes nothing: the parent has already been told, and a
+   * notification per clock-out would train her to ignore the one that
+   * matters. Both call sites above decide THAT; this method only knows how
+   * to send it, so the two ways into `submitted` (a week created submitted,
+   * and a week re-opened from `approved`/`queried`) can never drift into
+   * sending different payloads.
+   *
+   * The `data` keys are a contract with the mobile route map, whose
+   * `hoursHref` reads `householdId`/`weekStart`/`timesheetId` — `timesheetId`
+   * used to be absent on the create branch, which left the very first push of
+   * a week unable to deep-link to it.
+   *
+   * FIRE-AND-FORGET, and the try/catch is load-bearing rather than
+   * belt-and-braces: this runs inside `clockOut`/`createRetroactiveEntry`,
+   * i.e. AFTER the hours are already written. A synchronous throw out of the
+   * push seam would surface as a failed clock-out for work that has in fact
+   * been recorded, and the carer would clock out again. `notifyHouseholdParents`
+   * swallows its own async delivery errors; this catches the unexpected
+   * synchronous ones, the same guard `approve`/`query`/`reopen` put around
+   * their own pushes.
+   */
+  private notifyParentsOfSubmission(
+    entry: TimeEntry,
+    weekStart: string,
+    timesheetId: string
+  ): void {
+    try {
       this.push.notifyHouseholdParents(entry.household_id, {
         title: 'Hours submitted',
         body: `${entry.carer_display_name ?? 'Your carer'} logged hours for this week.`,
@@ -1965,9 +1995,12 @@ export class TimesheetCommandService {
           type: PUSH_NOTIFICATION_TYPES.TIMESHEET_SUBMITTED,
           householdId: entry.household_id,
           weekStart,
-          timesheetId: existing.id,
+          timesheetId,
         },
       });
+    } catch {
+      // notifyHouseholdParents is sync fire-and-forget; swallow any
+      // unexpected throw so a dead push service cannot reject real hours.
     }
   }
 

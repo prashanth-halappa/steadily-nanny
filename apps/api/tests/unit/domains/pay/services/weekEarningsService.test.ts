@@ -1389,4 +1389,52 @@ describe('WeekEarningsService.computeForWeek', () => {
     // min * £20 = £120.00. gross = £160.00.
     expect(result.status === 'ok' && result.gross_minor).toBe(16_000);
   });
+
+  // ===========================================================================
+  // A DECLINED shift is worth nothing — the contract the decline feature rests
+  // on.
+  //
+  // `buildWeekEarningsInput`'s own block already pins that `declined` is
+  // filtered out of `closure_day_shifts`; this pins the CONSEQUENCE end to
+  // end, which is the part a caller actually depends on: a shift the carer
+  // declined contributes zero minutes and zero money to the priced week, in
+  // the one arrangement where a shift can move money at all (a guaranteed-
+  // hours week with a closure day — docs/11-MONEY.md §7).
+  //
+  // The vector is deliberately the SAME setup as the confirmed-shift topup
+  // case above, changed in exactly one character: `status: 'declined'`. With
+  // `confirmed` the closure day loses 360 minutes and tops up £120.00; with
+  // `declined` nothing was ever agreed, so nothing was lost and the week is
+  // worth £0.00. If declining ever started paying, this is the test that
+  // catches it.
+  // ===========================================================================
+  it('a DECLINED shift contributes zero minutes and zero money to the week', async () => {
+    const svc = new WeekEarningsService(
+      makeTimeEntryRepo({ listForCarerWeek: mock(async () => []) }),
+      makeArrangementRepo({
+        listForCarer: mock(async () => [
+          arrangement({ guaranteed_minutes_per_week: 2400 }),
+        ]),
+      }),
+      makeClosureRepo({ listByHousehold: mock(async () => [closure()]) }),
+      makeShiftRepo({
+        findByHouseholdAndLocalDate: mock(async () => [
+          shift({ status: 'declined' }),
+        ]),
+      }),
+      makeHouseholdRepo(),
+      makePtoRepo(),
+      makeExpenseRepo()
+    );
+
+    const result = await svc.computeForWeek(HOUSEHOLD_ID, CARER_ID, WEEK_START);
+
+    expect(result.status).toBe('ok');
+    expect(result.status === 'ok' && result.gross_minor).toBe(0);
+    expect(result.status === 'ok' && result.payable_minutes).toBe(0);
+    expect(
+      result.status === 'ok' &&
+        result.lines.some(line => line.kind === 'guaranteed_topup')
+    ).toBe(false);
+  });
 });

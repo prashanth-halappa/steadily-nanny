@@ -25,6 +25,16 @@ export {
   PayArrangementListResponseSchema,
   PayArrangementSchema,
 } from '@steadily-nanny/shared-types/schemas/payArrangement.schema';
+export type {
+  CreatePaymentInput,
+  Payment,
+  PaymentListResponse,
+} from '@steadily-nanny/shared-types/schemas/payment.schema';
+export {
+  CreatePaymentSchema,
+  PaymentListResponseSchema,
+  PaymentSchema,
+} from '@steadily-nanny/shared-types/schemas/payment.schema';
 
 /**
  * URL param validation for
@@ -55,3 +65,20 @@ export const PtoYearQuerySchema = z.object({
   year: z.coerce.number().int().min(2000).max(2100),
 });
 export type PtoYearQuery = z.infer<typeof PtoYearQuerySchema>;
+
+/**
+ * URL param validation for `/timesheets/:timesheetId/payments` (066). The id
+ * is client-supplied, so the shape is checked here and its OWNERSHIP is
+ * re-checked in both payment services — the shape check is not the
+ * authorization check (docs/11-MONEY.md §9), and unlike the pay-arrangement
+ * routes there is no ownership middleware in the chain to fall back on: one
+ * timesheet id means two different permissions here (a parent may record a
+ * payment, the carer may only read one), which the generic single-resource
+ * validator cannot express.
+ */
+export const TimesheetPaymentsParamSchema = z.object({
+  timesheetId: z.uuid(),
+});
+export type TimesheetPaymentsParam = z.infer<
+  typeof TimesheetPaymentsParamSchema
+>;
