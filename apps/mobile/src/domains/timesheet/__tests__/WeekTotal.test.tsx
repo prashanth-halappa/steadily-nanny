@@ -456,4 +456,72 @@ describe('WeekTotal', () => {
       expect(getByTestId('hours-earnings-line-reopened-note')).toBeTruthy();
     });
   });
+
+  // Approved week is locked for carers — one caption at the week-card level
+  // (not per entry row). Parents who can reopen themselves get the button
+  // instead; the caption would be noise next to it.
+  describe('approved lock note', () => {
+    it('renders the lock caption on an approved week when no onReopenPress is supplied', () => {
+      const { getByTestId } = render(
+        <WeekTotal
+          testID="hours-week-total"
+          weekRangeLabel="3 Aug – 9 Aug"
+          totalLabel="41h 0m"
+          overtimeLabel={null}
+          timesheetStatus="approved"
+        />
+      );
+
+      expect(getByTestId('hours-approved-lock-note')).toBeTruthy();
+    });
+
+    it('does not render the lock caption when onReopenPress is supplied (parent case)', () => {
+      const { queryByTestId } = render(
+        <WeekTotal
+          testID="hours-week-total"
+          weekRangeLabel="3 Aug – 9 Aug"
+          totalLabel="41h 0m"
+          overtimeLabel={null}
+          timesheetStatus="approved"
+          onReopenPress={() => {}}
+        />
+      );
+
+      expect(queryByTestId('hours-approved-lock-note')).toBeNull();
+    });
+
+    it.each([
+      'submitted',
+      'queried',
+    ] as const)('does not render the lock caption when timesheetStatus is %s', timesheetStatus => {
+      const { queryByTestId } = render(
+        <WeekTotal
+          testID="hours-week-total"
+          weekRangeLabel="3 Aug – 9 Aug"
+          totalLabel="41h 0m"
+          overtimeLabel={null}
+          timesheetStatus={timesheetStatus}
+        />
+      );
+
+      expect(queryByTestId('hours-approved-lock-note')).toBeNull();
+    });
+
+    it.each([
+      null,
+      undefined,
+    ] as const)('does not render the lock caption when timesheetStatus is %s', timesheetStatus => {
+      const { queryByTestId } = render(
+        <WeekTotal
+          testID="hours-week-total"
+          weekRangeLabel="3 Aug – 9 Aug"
+          totalLabel="41h 0m"
+          overtimeLabel={null}
+          timesheetStatus={timesheetStatus}
+        />
+      );
+
+      expect(queryByTestId('hours-approved-lock-note')).toBeNull();
+    });
+  });
 });

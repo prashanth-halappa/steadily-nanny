@@ -28,6 +28,24 @@
  * `onReopenPress` to render nothing at all (a helper's `readOnly` view, or
  * `NannyWeekView`, which never reopens).
  *
+ * Approved lock (carer CX): when `timesheetStatus === 'approved'` and the
+ * caller omits `onReopenPress`, a quiet caption (`approvedLockNote`)
+ * explains that entries are no longer editable — one line on the week
+ * card, not per row. Parents who supply `onReopenPress` get the button
+ * instead; the caption would be noise beside it.
+ *
+ * Card vertical order (`CardContent`):
+ * 1. Week nav / range label
+ * 2. Carer name + StatusPill row (when `shouldShowStatusPillBlock`)
+ * 3. Total hours + overtime delta
+ * 4. Empty-week note (0m total)
+ * 5. `WeekEarningsLine` (when earnings wired)
+ * 6. Reopened-reason caption (non-approved, wire/ephemeral reason)
+ * 7. Approved-week slot — the reopen button when `onReopenPress` is
+ *    supplied, else the lock caption. Same slot, because they answer the
+ *    same question: what can you do about an approved week?
+ * 8. Pay-boundary explainer (`showPayBoundary`)
+ *
  * The reopen *reason* caption is also owned here — it is a timesheet-status
  * fact ("this week was un-approved, and here is why"), not an earnings
  * fact. Rendering it inside `WeekEarningsLine`'s `ok` arm silently dropped
@@ -247,6 +265,14 @@ export function WeekTotal({
                   { reason: earningsReopenReason }
                 )
               : t('earningsReopenedNote')}
+          </Small>
+        ) : null}
+        {timesheetStatus === 'approved' && !onReopenPress ? (
+          <Small
+            testID="hours-approved-lock-note"
+            className="text-muted-foreground"
+          >
+            {t('approvedLockNote')}
           </Small>
         ) : null}
         {timesheetStatus === 'approved' && onReopenPress ? (

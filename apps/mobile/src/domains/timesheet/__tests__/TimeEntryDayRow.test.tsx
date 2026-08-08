@@ -260,7 +260,10 @@ describe('TimeEntryDayRow — voided entry (069)', () => {
     );
 
     // 2h real only — the voided 6h14m must not appear.
-    expect(within(getByTestId('hours-day-row')).getByText('2h')).toBeTruthy();
+    expect(
+      within(getByTestId('hours-day-row')).getByTestId('hours-day-total').props
+        .children
+    ).toBe('2h');
   });
 
   it('does not flag a voided zero-duration entry', () => {
@@ -538,6 +541,116 @@ describe('TimeEntryDayRow — the first fragment of a split session (C6)', () =>
     );
 
     expect(getByText(/edited/)).toBeTruthy();
+  });
+});
+
+describe('TimeEntryDayRow — header alignment', () => {
+  it('places day total as the last child of the header row', () => {
+    const entry = makeEntry({ clock_out_at: '2026-08-01T09:58:00.000Z' });
+    const { getByTestId } = render(
+      <TimeEntryDayRow
+        date="2026-08-01"
+        entries={[entry]}
+        nowMs={NOW_MS}
+        timeZone="Europe/London"
+      />
+    );
+
+    const header = getByTestId('hours-day-header');
+    const childArray = Array.isArray(header.props.children)
+      ? header.props.children
+      : [header.props.children];
+    // The last child is the right-hand group (day total + reserved chevron
+    // slot). What matters is that the total is the final thing in the row —
+    // the AlertDialog used to sit here as a third flex child, which parked
+    // the total in the MIDDLE slot and made the whole column ragged.
+    const lastChild = childArray[childArray.length - 1];
+    const groupChildren = Array.isArray(lastChild.props.children)
+      ? lastChild.props.children
+      : [lastChild.props.children];
+    expect(
+      groupChildren.some(
+        (child: { props?: { testID?: string } }) =>
+          child?.props?.testID === 'hours-day-total'
+      )
+    ).toBe(true);
+    expect(
+      childArray.some(
+        (child: { type?: string }) => child?.type === 'AlertDialog'
+      )
+    ).toBe(false);
+  });
+
+  it('gives the label side flex-1 and the total flex-shrink-0', () => {
+    const entry = makeEntry({ clock_out_at: '2026-08-01T09:58:00.000Z' });
+    const { getByTestId } = render(
+      <TimeEntryDayRow
+        date="2026-08-01"
+        entries={[entry]}
+        nowMs={NOW_MS}
+        timeZone="Europe/London"
+      />
+    );
+
+    const header = getByTestId('hours-day-header');
+    const childArray = Array.isArray(header.props.children)
+      ? header.props.children
+      : [header.props.children];
+    const labelSide = childArray[0];
+    const total = childArray[childArray.length - 1];
+    expect(labelSide.props.className).toContain('flex-1');
+    expect(total.props.className).toContain('flex-shrink-0');
+  });
+
+  // The FlashList already supplies 22px via SCREEN_CONTENT_STYLE. Adding
+  // more here inset the entry cards 22px further than the WeekTotal card
+  // above them (cards at 44..396 against the week card's 22..418), which is
+  // exactly the misalignment this component is supposed to be fixing.
+  it('adds no horizontal padding of its own, so entry cards share the week card edges', () => {
+    const entry = makeEntry({ clock_out_at: '2026-08-01T09:58:00.000Z' });
+    const { getByTestId } = render(
+      <TimeEntryDayRow
+        date="2026-08-01"
+        entries={[entry]}
+        nowMs={NOW_MS}
+        timeZone="Europe/London"
+        testID="hours-day-row"
+      />
+    );
+
+    const className = getByTestId('hours-day-row').props.className;
+    expect(className).not.toMatch(/\bp[xlr]?-/);
+  });
+
+  it('reserves the chevron column so the day total shares the duration column', () => {
+    const entry = makeEntry({ clock_out_at: '2026-08-01T09:58:00.000Z' });
+    const { getByTestId } = render(
+      <TimeEntryDayRow
+        date="2026-08-01"
+        entries={[entry]}
+        nowMs={NOW_MS}
+        timeZone="Europe/London"
+      />
+    );
+
+    // The header pads by the entry card's own 12px and then mirrors the
+    // row's right-hand group (figure + gap + reserved chevron slot), so the
+    // day total shares a column with the durations it sums.
+    expect(getByTestId('hours-day-header').props.className).toContain('pr-3');
+  });
+
+  it('empty day has no entry cards', () => {
+    const { queryByTestId } = render(
+      <TimeEntryDayRow
+        date="2026-08-07"
+        entries={[]}
+        nowMs={NOW_MS}
+        timeZone="Europe/London"
+      />
+    );
+
+    expect(queryByTestId('hours-day-header')).toBeNull();
+    expect(queryByTestId(/hours-edit-entry/)).toBeNull();
   });
 });
 
