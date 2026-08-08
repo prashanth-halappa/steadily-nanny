@@ -180,6 +180,45 @@ describe('ShiftRepository.update — immutability guard', () => {
     );
   });
 
+  it('allows mutation when the only time entry is voided — hasTimeEntries must exclude voided rows', async () => {
+    const { TimeEntryRepository } = await import(
+      '../../../../../src/domains/timesheet/repositories/timeEntryRepository'
+    );
+    let call = 0;
+    mockSupabaseService.from.mockImplementation(() => {
+      call += 1;
+      if (call === 1) {
+        return createMockQueryChain({
+          data: { id: 's1', status: 'confirmed' },
+          error: null,
+        });
+      }
+      if (call === 2) {
+        const chain: any = {
+          select: mock(() => chain),
+          eq: mock(() => chain),
+          neq: mock(() => chain),
+          // biome-ignore lint/suspicious/noThenProperty: intentional thenable for the mock
+          then: (resolve: (value: unknown) => unknown) =>
+            Promise.resolve({ data: null, error: null, count: 1 }).then(
+              resolve
+            ),
+        };
+        return chain;
+      }
+      return createMockQueryChain({
+        data: { id: 's1', status: 'confirmed', note: 'moved' },
+        error: null,
+      });
+    });
+    const repo = new ShiftRepository(new TimeEntryRepository());
+    await expect(repo.update('s1', { note: 'moved' })).resolves.toEqual({
+      id: 's1',
+      status: 'confirmed',
+      note: 'moved',
+    });
+  });
+
   it('throws ShiftNotFoundError when the shift is gone', async () => {
     mockSupabaseService.from.mockImplementation(() =>
       createMockQueryChain({ data: null, error: null })

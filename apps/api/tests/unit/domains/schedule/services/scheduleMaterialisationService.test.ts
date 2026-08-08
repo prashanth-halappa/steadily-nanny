@@ -7,7 +7,7 @@
  *
  * @module tests/unit/domains/schedule/services/scheduleMaterialisationService
  */
-import { describe, expect, it, mock } from 'bun:test';
+import { beforeAll, describe, expect, it, mock } from 'bun:test';
 import type { Shift } from '@steadily-nanny/shared-types/schemas/shift.schema';
 import type { NewShiftData } from '../../../../../src/domains/schedule/repositories/scheduleShiftRepository';
 import type { ExpandedOccurrence } from '../../../../../src/domains/schedule/services/recurrenceExpander';
@@ -648,5 +648,85 @@ describe('ScheduleMaterialisationService — occurrences no longer produced by t
     expect(repo.deleteMany).not.toHaveBeenCalled();
     expect(result.deleted).toBe(0);
     expect(result.cancelled).toBe(0);
+  });
+});
+
+describe('ScheduleMaterialisationService — voided entries do not freeze shifts (069)', () => {
+  let TimeEntryRepository: typeof import('../../../../../src/domains/timesheet/repositories/timeEntryRepository').TimeEntryRepository;
+  // `any` matches the house style for a mocked supabase client (see
+  // scheduleShiftRepository.test.ts:16) — the mocked shape and the real
+  // SupabaseClient type do not line up, and tests get a relaxed no-any rule.
+  // biome-ignore lint/suspicious/noExplicitAny: mocked supabase client
+  let mockSupabaseService: any;
+
+  function createSupabaseQueryChain(
+    finalResponse: { data: unknown; error: unknown } = {
+      data: null,
+      error: null,
+    }
+  ): any {
+    const chain: any = {
+      select: mock(() => chain),
+      eq: mock(() => chain),
+      neq: mock(() => chain),
+      in: mock(() => chain),
+      // biome-ignore lint/suspicious/noThenProperty: intentional thenable for the mock
+      then: (resolve: (value: unknown) => unknown) =>
+        Promise.resolve(finalResponse).then(resolve),
+    };
+    return chain;
+  }
+
+  beforeAll(async () => {
+    mock.module('../../../../../src/config/supabase', () => {
+      const obj = {
+        from: mock(() => createSupabaseQueryChain({ data: [], error: null })),
+      };
+      return { supabase: obj, supabaseService: obj };
+    });
+
+    TimeEntryRepository = (
+      await import(
+        '../../../../../src/domains/timesheet/repositories/timeEntryRepository'
+      )
+    ).TimeEntryRepository;
+    mockSupabaseService = (await import('../../../../../src/config/supabase'))
+      .supabaseService;
+  });
+
+  it('updates a shift when shiftIdsWithTimeEntries excludes its voided-only entry', async () => {
+    const existing = baseShift({
+      id: 'shift-voided-only',
+      status: 'confirmed',
+      origin: 'system_generated',
+    });
+    const repo = makeRepo({
+      findActiveByPattern: mock(async () => [existing]),
+      update: mock(async () =>
+        baseShift({
+          id: 'shift-voided-only',
+          starts_at: '2026-06-04T09:00:00.000Z',
+        })
+      ),
+    });
+    mockSupabaseService.from.mockImplementation(() =>
+      createSupabaseQueryChain({
+        data: [{ shift_id: 'shift-voided-only' }],
+        error: null,
+      })
+    );
+    const svc = new ScheduleMaterialisationService(
+      repo,
+      new TimeEntryRepository(),
+      makeEventRepo()
+    );
+
+    const occ = occurrence({ startsAt: '2026-06-04T09:00:00.000Z' });
+    await svc.materialise(pattern, [occ], NOW);
+
+    expect(repo.update).toHaveBeenCalledWith(
+      'shift-voided-only',
+      expect.objectContaining({ starts_at: '2026-06-04T09:00:00.000Z' })
+    );
   });
 });

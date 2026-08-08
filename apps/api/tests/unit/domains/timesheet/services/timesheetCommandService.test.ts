@@ -10,6 +10,7 @@ import {
   NotACarerError,
   NotATimesheetParentError,
   TimeEntryNotEditableError,
+  TimeEntryNotFoundError,
   TimeEntryNotRunningError,
   TimeEntryOverlapError,
   TimesheetGrossTooLargeError,
@@ -5817,5 +5818,286 @@ describe('recordCancellationPaidEntry — a neighbouring window is not this wind
     ]).recordCancellationPaidEntry(window('s-morning', '08:00', '16:00'));
 
     expect(created.map(e => e.scheduled_minutes)).toEqual([480]);
+  });
+});
+
+describe('TimesheetCommandService.voidEntry', () => {
+  function makeVoidableSvc(
+    overrides: {
+      timeEntryRepo?: any;
+      timesheetRepo?: any;
+      entry?: Record<string, unknown>;
+      queries?: any;
+    } = {}
+  ) {
+    return new TimesheetCommandService(
+      overrides.timeEntryRepo ?? makeTimeEntryRepo(),
+      overrides.timesheetRepo ??
+        makeTimesheetRepo({
+          findByWeek: mock(async () => ({ ...timesheet, status: 'submitted' })),
+        }),
+      makeMemberRepo(),
+      makeHouseholdRepo(),
+      makeShiftRepo(),
+      overrides.queries ??
+        makeQueries({
+          getOwnedTimeEntry: mock(
+            async () => overrides.entry ?? submittedEntry
+          ),
+        }),
+      makeUserService(),
+      makePush()
+    );
+  }
+
+  it('voids a running entry — accidental clock-in is the primary case', async () => {
+    const timeEntryRepo = makeTimeEntryRepo({
+      update: mock(async (_id: string, patch: Record<string, unknown>) => ({
+        ...runningEntry,
+        ...patch,
+      })),
+    });
+    const svc = makeVoidableSvc({
+      timeEntryRepo,
+      entry: runningEntry,
+    });
+
+    const result = await svc.voidEntry('carer-1', 't1');
+
+    expect(timeEntryRepo.update).toHaveBeenCalledWith(
+      't1',
+      expect.objectContaining({ status: 'voided' })
+    );
+    expect(result.status).toBe('voided');
+  });
+
+  it('voids a submitted entry while its week is still unapproved', async () => {
+    const timeEntryRepo = makeTimeEntryRepo({
+      listForCarerWeek: mock(async () => [
+        { ...finishedEntryA, id: 't1', status: 'voided' },
+      ]),
+      update: mock(async (_id: string, patch: Record<string, unknown>) => ({
+        ...submittedEntry,
+        ...patch,
+      })),
+    });
+    const svc = makeVoidableSvc({ timeEntryRepo });
+
+    const result = await svc.voidEntry('carer-1', 't1');
+
+    expect(result.status).toBe('voided');
+    expect(timeEntryRepo.update).toHaveBeenCalledWith(
+      't1',
+      expect.objectContaining({ status: 'voided' })
+    );
+  });
+
+  it('refuses to void an entry in a week the parent has already approved', async () => {
+    const svc = makeVoidableSvc({
+      timesheetRepo: makeTimesheetRepo({
+        findByWeek: mock(async () => ({ ...timesheet, status: 'approved' })),
+      }),
+    });
+
+    await expect(svc.voidEntry('carer-1', 't1')).rejects.toBeInstanceOf(
+      TimeEntryNotEditableError
+    );
+    await expect(svc.voidEntry('carer-1', 't1')).rejects.toMatchObject({
+      metadata: { editableReason: 'week_approved' },
+    });
+  });
+
+  it('refuses to void cancellation pay — the shift is the source of truth', async () => {
+    const cancelPaidEntry = {
+      ...submittedEntry,
+      id: 't-cancel',
+      kind: 'cancellation_paid',
+    };
+    const svc = makeVoidableSvc({ entry: cancelPaidEntry });
+
+    await expect(svc.voidEntry('carer-1', 't-cancel')).rejects.toBeInstanceOf(
+      TimeEntryNotEditableError
+    );
+    await expect(svc.voidEntry('carer-1', 't-cancel')).rejects.toMatchObject({
+      metadata: { editableReason: 'cancellation_paid' },
+    });
+  });
+
+  it("throws TimeEntryNotFoundError for another carer's entry — no existence leak", async () => {
+    const svc = makeVoidableSvc({
+      queries: makeQueries({
+        getOwnedTimeEntry: mock(async () => {
+          throw new TimeEntryNotFoundError('t-other');
+        }),
+      }),
+    });
+
+    await expect(svc.voidEntry('carer-1', 't-other')).rejects.toBeInstanceOf(
+      TimeEntryNotFoundError
+    );
+  });
+
+  it('is idempotent — a second void returns the row and rolls up only once', async () => {
+    const voided = { ...submittedEntry, status: 'voided' };
+    const timeEntryRepo = makeTimeEntryRepo({
+      listForCarerWeek: mock(async () => [
+        { ...finishedEntryA, status: 'voided' },
+      ]),
+      update: mock(async (_id: string, patch: Record<string, unknown>) => {
+        if (patch.status === 'voided') {
+          return { ...submittedEntry, ...patch };
+        }
+        return voided;
+      }),
+    });
+    const timesheetRepo = makeTimesheetRepo({
+      findByWeek: mock(async () => ({ ...timesheet, status: 'submitted' })),
+    });
+    const svc = makeVoidableSvc({ timeEntryRepo, timesheetRepo });
+
+    const first = await svc.voidEntry('carer-1', 't1');
+    const second = await svc.voidEntry('carer-1', 't1');
+
+    expect(first.status).toBe('voided');
+    expect(second.status).toBe('voided');
+    expect(timesheetRepo.update).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a voided entry voided when a later updateEntry roll-up runs (resurrection site — rollUpIntoTimesheet create at :1882)', async () => {
+    const voidedEntry = {
+      ...submittedEntry,
+      id: 't-voided',
+      status: 'voided',
+    };
+    const otherEntry = {
+      ...submittedEntry,
+      id: 't-other',
+      clock_in_at: '2026-08-04T08:00:00.000Z',
+      clock_out_at: '2026-08-04T13:00:00.000Z',
+      local_date: '2026-08-04',
+      break_minutes: 0,
+    };
+    const weekStore = [voidedEntry, otherEntry];
+    const update = mock(async (id: string, patch: Record<string, unknown>) => {
+      const idx = weekStore.findIndex(e => e.id === id);
+      if (idx === -1) {
+        throw new Error(`unexpected update ${id}`);
+      }
+      // `patch` is Record<string, unknown>, so the spread widens every
+      // field to optional; the cast keeps the store's element type.
+      weekStore[idx] = {
+        ...weekStore[idx],
+        ...patch,
+      } as (typeof weekStore)[number];
+      return weekStore[idx];
+    });
+    const timeEntryRepo = makeTimeEntryRepo({
+      listForCarerWeek: mock(async () => weekStore),
+      listOverlapCandidatesForCarer: mock(async () => weekStore),
+      update,
+    });
+    const queries = makeQueries({
+      getOwnedTimeEntry: mock(async (_userId: string, id: string) => {
+        const row = weekStore.find(e => e.id === id);
+        if (!row) {
+          throw new TimeEntryNotFoundError(id);
+        }
+        return row;
+      }),
+    });
+    const svc = makeVoidableSvc({
+      timeEntryRepo,
+      queries,
+      timesheetRepo: makeTimesheetRepo({
+        findByWeek: mock(async () => null),
+      }),
+    });
+
+    await svc.voidEntry('carer-1', 't-voided');
+    await svc.updateEntry('carer-1', 't-other', { break_minutes: 15 });
+
+    expect(weekStore.find(e => e.id === 't-voided')?.status).toBe('voided');
+    const voidedUpdates = update.mock.calls.filter(
+      ([id, patch]) => id === 't-voided' && patch.status === 'submitted'
+    );
+    expect(voidedUpdates).toHaveLength(0);
+  });
+
+  it('keeps a voided entry voided when a later cross-week clockOut roll-up runs (resurrection site — clockOutAcrossWeeks patch at :706)', async () => {
+    const voidedEntry = {
+      ...submittedEntry,
+      id: 't-voided',
+      status: 'voided',
+      clock_in_at: '2026-01-11T20:00:00.000Z',
+      clock_out_at: '2026-01-11T22:00:00.000Z',
+      local_date: '2026-01-11',
+      timezone: 'Europe/London',
+    };
+    const runningOther = {
+      ...runningEntry,
+      id: 't-running',
+      shift_id: null,
+      clock_in_at: '2026-01-11T23:00:00.000Z', // Sun 23:00 London
+      local_date: '2026-01-11',
+      timezone: 'Europe/London',
+      break_minutes: 0,
+    };
+    const weekStore = [voidedEntry, runningOther];
+    const update = mock(async (id: string, patch: Record<string, unknown>) => {
+      const idx = weekStore.findIndex(e => e.id === id);
+      if (idx === -1) {
+        throw new Error(`unexpected update ${id}`);
+      }
+      // `patch` is Record<string, unknown>, so the spread widens every
+      // field to optional; the cast keeps the store's element type.
+      weekStore[idx] = {
+        ...weekStore[idx],
+        ...patch,
+      } as (typeof weekStore)[number];
+      return weekStore[idx];
+    });
+    const timeEntryRepo = makeTimeEntryRepo({
+      listForCarerWeek: mock(async () =>
+        weekStore.filter(e => e.clock_out_at != null)
+      ),
+      listOverlapCandidatesForCarer: mock(async () => weekStore),
+      createSubmitted: mock(async (data: Record<string, unknown>) => ({
+        ...runningOther,
+        ...data,
+        id: 't-fragment-b',
+        local_date: localDateOf(
+          new Date(data.clock_in_at as string),
+          data.timezone as string
+        ),
+      })),
+      update,
+    });
+    const queries = makeQueries({
+      getOwnedTimeEntry: mock(async (_userId: string, id: string) => {
+        const row = weekStore.find(e => e.id === id);
+        if (!row) {
+          throw new TimeEntryNotFoundError(id);
+        }
+        return row;
+      }),
+    });
+    const svc = makeVoidableSvc({
+      timeEntryRepo,
+      queries,
+      timesheetRepo: makeTimesheetRepo({
+        findByWeek: mock(async () => null),
+      }),
+    });
+
+    await svc.voidEntry('carer-1', 't-voided');
+    await svc.clockOut('carer-1', 't-running', {
+      clock_out_at: '2026-01-12T02:00:00.000Z',
+    });
+
+    expect(weekStore.find(e => e.id === 't-voided')?.status).toBe('voided');
+    const voidedResurrections = update.mock.calls.filter(
+      ([id, patch]) => id === 't-voided' && patch.status === 'submitted'
+    );
+    expect(voidedResurrections).toHaveLength(0);
   });
 });

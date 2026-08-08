@@ -118,6 +118,23 @@ describe('describeTimeEntryWriteError', () => {
     expect(message).toBe('errors:clockOutChangesWeek');
   });
 
+  it('gives a voided-entry refusal its own copy for inline sheet rendering', () => {
+    const { message } = describeTimeEntryWriteError(
+      {
+        isAxiosError: true,
+        response: {
+          status: 409,
+          data: { error: { metadata: { reason: 'voided' } } },
+        },
+      },
+      t,
+      TIME_ZONE
+    );
+
+    expect(message).toBe('errors:entryVoided');
+    expect(message).not.toBe('errors:conflict');
+  });
+
   it('falls back to the generic validation copy for an unmapped reason', () => {
     const { message } = describeTimeEntryWriteError(
       validation400('SOMETHING_NEW'),

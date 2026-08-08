@@ -8,6 +8,7 @@ let getWeekWithEarnings: any;
 let clockIn: any;
 let clockOut: any;
 let createRetroactiveEntry: any;
+let voidEntry: any;
 let approve: any;
 let queryTimesheet: any;
 let reopen: any;
@@ -27,6 +28,7 @@ beforeAll(async () => {
     id: 't-retro',
     status: 'submitted',
   }));
+  voidEntry = mock(async () => ({ id: 't1', status: 'voided' }));
   approve = mock(async () => ({ id: 'ts1', status: 'approved' }));
   queryTimesheet = mock(async () => ({ id: 'ts1', status: 'queried' }));
   reopen = mock(async () => ({ id: 'ts1', status: 'submitted' }));
@@ -49,6 +51,7 @@ beforeAll(async () => {
         clockIn,
         clockOut,
         createRetroactiveEntry,
+        voidEntry,
         approve,
         query: queryTimesheet,
         reopen,
@@ -85,6 +88,7 @@ beforeEach(() => {
     clockIn,
     clockOut,
     createRetroactiveEntry,
+    voidEntry,
     approve,
     queryTimesheet,
     reopen,
@@ -124,6 +128,19 @@ describe('TimesheetController', () => {
     });
     expect(res.body.data).toEqual({
       time_entry: { id: 't1', status: 'submitted' },
+    });
+  });
+
+  it('voidEntry passes the id param through and returns the voided entry', async () => {
+    const res = mockRes();
+    await TimesheetController.voidEntry(
+      { user: { id: 'carer-1' }, params: { id: 't1' } } as any,
+      res,
+      mock()
+    );
+    expect(voidEntry).toHaveBeenCalledWith('carer-1', 't1');
+    expect(res.body.data).toEqual({
+      time_entry: { id: 't1', status: 'voided' },
     });
   });
 

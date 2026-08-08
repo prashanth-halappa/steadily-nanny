@@ -439,3 +439,58 @@ describe("NannyLiveStatusCard Today's cover rows", () => {
     expect(getByText('nannyNoShiftBody')).toBeTruthy();
   });
 });
+
+describe('NannyLiveStatusCard voided entries (069 soft delete)', () => {
+  it('excludes voided minutes from a finished carer today duration', () => {
+    mockUseWeekTimeEntries.mockReturnValue({
+      data: [
+        makeEntry({
+          id: 'entry-voided',
+          carer_id: AMARA_ID,
+          carer_display_name: 'Amara',
+          status: 'voided',
+          clock_in_at: `${TODAY}T06:00:00.000Z`,
+          clock_out_at: `${TODAY}T10:00:00.000Z`,
+        }),
+        makeEntry({
+          id: 'entry-real',
+          carer_id: AMARA_ID,
+          carer_display_name: 'Amara',
+          status: 'submitted',
+          clock_in_at: `${TODAY}T12:00:00.000Z`,
+          clock_out_at: `${TODAY}T16:00:00.000Z`,
+        }),
+      ],
+    });
+    mockUseShiftsRange.mockReturnValue({ data: [] });
+
+    const { getByText, queryByText } = render(
+      <NannyLiveStatusCard householdId={HOUSEHOLD_ID} timeZone={TIME_ZONE} />
+    );
+
+    expect(getByText(/"duration":"4h"/)).toBeTruthy();
+    expect(queryByText(/"duration":"8h"/)).toBeNull();
+  });
+
+  it('does not treat a voided-only carer as finished for today', () => {
+    mockUseWeekTimeEntries.mockReturnValue({
+      data: [
+        makeEntry({
+          id: 'entry-voided-only',
+          carer_id: AMARA_ID,
+          carer_display_name: 'Amara',
+          status: 'voided',
+          clock_in_at: `${TODAY}T08:00:00.000Z`,
+          clock_out_at: `${TODAY}T16:00:00.000Z`,
+        }),
+      ],
+    });
+    mockUseShiftsRange.mockReturnValue({ data: [] });
+
+    const { queryByText } = render(
+      <NannyLiveStatusCard householdId={HOUSEHOLD_ID} timeZone={TIME_ZONE} />
+    );
+
+    expect(queryByText(/stateFinished::/)).toBeNull();
+  });
+});

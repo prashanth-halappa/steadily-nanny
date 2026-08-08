@@ -13,6 +13,7 @@
   "alreadyClockedIn": "You're already clocked in on another shift. Clock out of it first.",
   "cancelViaDelete": "Cancel time off by using the delete option instead.",
   "entryNotEditable": "This entry can't be changed any more — the week has already been approved. Ask your household to query it.",
+  "entryVoided": "This entry was voided and no longer counts toward your hours.",
   "invalidClockTimes": "Those times don't work. The finish must be after the start, and can't be in the future.",
   "clockSpanTooLong": "One shift can't run longer than 16 hours. Check the finish time — a finish earlier in the day than the start is read as the next day.",
   "clockOutChangesWeek": "The finish has to be in the same week as the start. Add this as two entries, one for each week.",

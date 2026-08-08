@@ -1296,6 +1296,10 @@ export class TimesheetCommandService {
     return updated;
   }
 
+  async voidEntry(_userId: string, _timeEntryId: string): Promise<TimeEntry> {
+    throw new Error('not implemented');
+  }
+
   /**
    * Reject clock times that can't describe a real session. Mirrors the DB's
    * `time_entries_clock_order` check (017_time_tracking.sql) so a bad edit

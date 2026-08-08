@@ -7,7 +7,7 @@
  * shift. A still-running entry with 0 elapsed so far must NOT be flagged.
  */
 import { beforeAll, describe, expect, it, mock } from 'bun:test';
-import { fireEvent, render } from '@testing-library/react-native';
+import { fireEvent, render, within } from '@testing-library/react-native';
 import type { TimeEntry } from '../types';
 
 // `@rn-primitives/alert-dialog` .mjs isn't pre-compiled for bun:test —
@@ -191,6 +191,86 @@ describe('TimeEntryDayRow — zero-duration flag', () => {
     );
 
     expect(queryByTestId('hours-zero-duration-flag')).toBeNull();
+  });
+});
+
+describe('TimeEntryDayRow — voided entry (069)', () => {
+  it('renders a voided entry visibly but struck through and muted', () => {
+    const entry = makeEntry({
+      status: 'voided',
+      clock_out_at: '2026-08-01T09:58:00.000Z',
+      updated_at: '2026-08-02T11:00:00.000Z',
+    });
+    const { getByTestId } = render(
+      <TimeEntryDayRow
+        date="2026-08-01"
+        entries={[entry]}
+        nowMs={NOW_MS}
+        timeZone="Europe/London"
+      />
+    );
+
+    expect(getByTestId(`hours-voided-entry-${entry.id}`)).toBeTruthy();
+  });
+
+  it('excludes voided minutes from the day total', () => {
+    const voided = makeEntry({
+      id: 'voided',
+      status: 'voided',
+      clock_in_at: '2026-08-01T07:58:00.000Z',
+      clock_out_at: '2026-08-01T14:12:00.000Z',
+    });
+    const real = makeEntry({
+      id: 'real',
+      clock_in_at: '2026-08-01T15:00:00.000Z',
+      clock_out_at: '2026-08-01T17:00:00.000Z',
+    });
+    const { getByTestId } = render(
+      <TimeEntryDayRow
+        date="2026-08-01"
+        entries={[voided, real]}
+        nowMs={NOW_MS}
+        timeZone="Europe/London"
+        testID="hours-day-row"
+      />
+    );
+
+    // 2h real only — the voided 6h14m must not appear.
+    expect(within(getByTestId('hours-day-row')).getByText('2h')).toBeTruthy();
+  });
+
+  it('does not flag a voided zero-duration entry', () => {
+    const entry = makeEntry({ status: 'voided' });
+    const { queryByTestId } = render(
+      <TimeEntryDayRow
+        date="2026-08-01"
+        entries={[entry]}
+        nowMs={NOW_MS}
+        timeZone="Europe/London"
+        testID="hours-day-row"
+      />
+    );
+
+    expect(queryByTestId('hours-zero-duration-flag')).toBeNull();
+  });
+
+  it('offers no edit affordance on a voided entry', () => {
+    const entry = makeEntry({
+      status: 'voided',
+      clock_out_at: '2026-08-01T09:58:00.000Z',
+    });
+    const { queryByTestId } = render(
+      <TimeEntryDayRow
+        date="2026-08-01"
+        entries={[entry]}
+        nowMs={NOW_MS}
+        timeZone="Europe/London"
+        onEditEntry={mock(() => {})}
+        timesheetStatus="submitted"
+      />
+    );
+
+    expect(queryByTestId(`hours-edit-entry-${entry.id}`)).toBeNull();
   });
 });
 

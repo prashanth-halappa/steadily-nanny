@@ -3,7 +3,7 @@
  * `runNoShowJob`'s parameters so these never touch Supabase — same shape as
  * `reminderJob.test.ts`, which this job's structure is copied from.
  */
-import { describe, expect, it, mock } from 'bun:test';
+import { beforeAll, describe, expect, it, mock } from 'bun:test';
 import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types/schemas/notification.schema';
 import { SHIFT_STATUSES } from '@steadily-nanny/shared-types/schemas/shift.schema';
 import type { PushPayload } from '../../../src/domains/notification/types';
@@ -495,5 +495,95 @@ describe('runNoShowJob — failure isolation', () => {
 
     expect(result.errorCount).toBe(0);
     expect(sent[0]?.payload.body).toContain('07:00 shift');
+  });
+});
+
+/**
+ * DefaultNoShowTimeEntryLister is the only raw `time_entries` query outside
+ * the repository. These tests mock Supabase and exercise the default lister
+ * via `runNoShowJob` (entries param omitted).
+ */
+describe('DefaultNoShowTimeEntryLister — voided entries are not coverage (069)', () => {
+  let runNoShowJobWithDefaults: typeof runNoShowJob;
+  // `any` matches the house style for a mocked supabase client (see
+  // scheduleShiftRepository.test.ts:16) — the mocked shape and the real
+  // SupabaseClient type do not line up, and tests get a relaxed no-any rule.
+  // biome-ignore lint/suspicious/noExplicitAny: mocked supabase client
+  let mockSupabaseService: any;
+
+  function createSupabaseQueryChain(finalResponse: {
+    data: unknown;
+    error: unknown;
+  }): any {
+    const chain: any = {
+      select: mock(() => chain),
+      eq: mock(() => chain),
+      neq: mock(() => chain),
+      or: mock(() => chain),
+      // biome-ignore lint/suspicious/noThenProperty: intentional thenable for the mock
+      then: (resolve: (value: unknown) => unknown) =>
+        Promise.resolve(finalResponse).then(resolve),
+    };
+    return chain;
+  }
+
+  beforeAll(async () => {
+    mock.module('../../../src/config/supabase', () => {
+      const obj = {
+        from: mock(() => createSupabaseQueryChain({ data: [], error: null })),
+      };
+      return { supabase: obj, supabaseService: obj };
+    });
+
+    const mod = await import('../../../src/jobs/noShowJob');
+    runNoShowJobWithDefaults = mod.runNoShowJob;
+    mockSupabaseService = (await import('../../../src/config/supabase'))
+      .supabaseService;
+  });
+
+  it('alerts when the only covering entry is voided — voided did not happen', async () => {
+    mockSupabaseService.from.mockImplementation(() =>
+      createSupabaseQueryChain({
+        data: [
+          {
+            shift_id: SHIFT_ID,
+            clock_in_at: iso(minutes(5)),
+            clock_out_at: iso(minutes(65)),
+            status: 'voided',
+          },
+        ],
+        error: null,
+      })
+    );
+    const { push, sent } = capturingPush();
+
+    const result = await runNoShowJobWithDefaults(
+      candidates([shift()]),
+      undefined,
+      alwaysClaims(),
+      parentsAre(PARENT_ID),
+      push,
+      { now: () => at(minutes(25)) }
+    );
+
+    expect(result.noShow.sent).toBe(1);
+    expect(sent).toHaveLength(1);
+  });
+
+  it('excludes voided rows in the Supabase query', async () => {
+    const chain = createSupabaseQueryChain({ data: [], error: null });
+    mockSupabaseService.from.mockImplementation(() => chain);
+    const { push } = capturingPush();
+
+    await runNoShowJobWithDefaults(
+      candidates([shift()]),
+      undefined,
+      alwaysClaims(),
+      parentsAre(PARENT_ID),
+      push,
+      { now: () => at(minutes(25)) }
+    );
+
+    expect(chain.neq).toHaveBeenCalledWith('status', 'voided');
   });
 });

@@ -769,6 +769,116 @@ describe('week hours widgets (N3 / P2)', () => {
     expect(props).not.toHaveProperty('adjustmentNote');
     expect(JSON.stringify(props)).not.toMatch(/£|\$|€|gross|pay/i);
   });
+
+  describe('voided entries (069 soft delete)', () => {
+    const voidedFirstDay = makeEntry({
+      id: 'w1-voided',
+      status: 'voided',
+      clock_in_at: '2026-08-03T07:00:00.000Z',
+      clock_out_at: '2026-08-03T16:00:00.000Z',
+      scheduled_minutes: 480,
+      local_date: '2026-08-03',
+    });
+    const activeSecondDay = makeEntry({
+      id: 'w2',
+      status: 'submitted',
+      clock_in_at: '2026-08-04T07:00:00.000Z',
+      clock_out_at: '2026-08-04T15:15:00.000Z',
+      scheduled_minutes: 480,
+      local_date: '2026-08-04',
+    });
+    const weekWithVoided = [voidedFirstDay, activeSecondDay];
+
+    it('nanny week hours exclude voided worked minutes', () => {
+      const { props } = buildNannyWeekPayload({
+        ...base,
+        entries: weekWithVoided,
+        timesheet: null,
+      });
+      expect(props.hours).toBe('8h 15m');
+    });
+
+    it('parent week hours exclude voided worked minutes', () => {
+      const { props } = buildParentWeekPayload({
+        ...base,
+        entries: weekWithVoided,
+        timesheet: null,
+      });
+      expect(props.hours).toBe('8h 15m');
+    });
+
+    it('scheduledLine excludes voided scheduled_minutes', () => {
+      const { props } = buildNannyWeekPayload({
+        ...base,
+        entries: weekWithVoided,
+        timesheet: null,
+      });
+      expect(props.scheduledLine).toBe('of 8h scheduled');
+    });
+
+    it('does not show adjustmentNote when approved total_minutes already excludes voided entries', () => {
+      const { props } = buildNannyWeekPayload({
+        ...base,
+        entries: weekWithVoided,
+        timesheet: {
+          status: 'approved',
+          total_minutes: 495,
+          updated_at: '2026-08-05T18:00:00.000Z',
+          approved_at: '2026-08-05T18:00:00.000Z',
+        },
+      });
+      expect(props.adjustmentNote).toBeNull();
+    });
+  });
+});
+
+describe('buildTodaysCoverPayload voided entries (069 soft delete)', () => {
+  const base = {
+    nowMs: NOW,
+    timeZone: ZONE,
+    householdName: 'Patel household',
+    namesByCarerId: { 'carer-1': 'Sarah' },
+    gaps: [],
+  };
+
+  it('does not surface a voided entry as a finished session', () => {
+    const { props } = buildTodaysCoverPayload({
+      ...base,
+      entries: [
+        makeEntry({
+          status: 'voided',
+          clock_in_at: '2026-08-06T07:12:00.000Z',
+          clock_out_at: '2026-08-06T16:04:00.000Z',
+          break_minutes: 30,
+        }),
+      ],
+      shifts: [],
+    });
+    expect(props.rows.some(row => row.kind === 'finished')).toBe(false);
+  });
+
+  it('finished-row detail excludes voided minutes when a carer also has a real session', () => {
+    const { props } = buildTodaysCoverPayload({
+      ...base,
+      entries: [
+        makeEntry({
+          id: 'voided-morning',
+          status: 'voided',
+          clock_in_at: '2026-08-06T06:00:00.000Z',
+          clock_out_at: '2026-08-06T10:00:00.000Z',
+        }),
+        makeEntry({
+          id: 'real-afternoon',
+          status: 'submitted',
+          clock_in_at: '2026-08-06T12:00:00.000Z',
+          clock_out_at: '2026-08-06T16:00:00.000Z',
+        }),
+      ],
+      shifts: [],
+    });
+    const finished = props.rows.find(row => row.kind === 'finished');
+    expect(finished?.detail).toBe('4h');
+  });
 });
 
 describe('buildRedirectPayload (wrong persona)', () => {

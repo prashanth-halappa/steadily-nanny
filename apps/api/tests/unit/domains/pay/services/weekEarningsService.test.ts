@@ -456,6 +456,53 @@ describe('buildWeekEarningsInput', () => {
     expect(built.closure_day_shifts[0]?.became_payable).toBe(true);
   });
 
+  it('does not mark a closure-day shift payable when the only referencing entry is voided — guaranteed top-up must still apply', () => {
+    const built = buildWeekEarningsInput({
+      weekStart: WEEK_START,
+      entries: [
+        entry({
+          id: 'te-voided',
+          status: 'voided',
+          shift_id: 's1',
+          kind: 'cancellation_paid',
+          local_date: '2026-08-05',
+          clock_in_at: '2026-08-05T08:00:00.000Z',
+          clock_out_at: '2026-08-05T14:00:00.000Z',
+          scheduled_minutes: 360,
+        }),
+      ],
+      arrangements: [arrangement()],
+      closureDates: ['2026-08-05'],
+      closureDayShifts: [shift()],
+      ptoLedgerRows: [],
+      approvedExpenses: [],
+    });
+    expect(built.closure_day_shifts[0]?.became_payable).toBe(false);
+  });
+
+  it('prices zero gross money for a voided worked entry on a closure day — voided minutes must not bank', () => {
+    const built = buildWeekEarningsInput({
+      weekStart: WEEK_START,
+      entries: [
+        entry({
+          id: 'te-voided',
+          status: 'voided',
+          shift_id: 's1',
+          local_date: '2026-08-05',
+          clock_in_at: '2026-08-05T08:00:00.000Z',
+          clock_out_at: '2026-08-05T14:00:00.000Z',
+        }),
+      ],
+      arrangements: [arrangement()],
+      closureDates: ['2026-08-05'],
+      closureDayShifts: [shift()],
+      ptoLedgerRows: [],
+      approvedExpenses: [],
+    });
+    expect(built.entries).toEqual([]);
+    expect(built.closure_day_shifts[0]?.became_payable).toBe(false);
+  });
+
   it('drops draft and declined shifts — never agreed, so nothing was lost', () => {
     const built = buildWeekEarningsInput({
       weekStart: WEEK_START,

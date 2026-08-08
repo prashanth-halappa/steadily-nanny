@@ -73,4 +73,10 @@ router.patch(
   asyncHandler(TimesheetController.updateEntry)
 );
 
+router.delete(
+  '/:id',
+  ...authWithOwnership(TimeEntryIdParamSchema, timeEntryOwnership),
+  asyncHandler(TimesheetController.voidEntry)
+);
+
 export default router;

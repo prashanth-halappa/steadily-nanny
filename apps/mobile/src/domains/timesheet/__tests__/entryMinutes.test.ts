@@ -11,6 +11,7 @@ import type { TimeEntry } from '../types';
 import {
   computeEntryMinutes,
   computeWorkedMinutesFromInstants,
+  scheduledMinutesFor,
   sumEntryMinutes,
 } from '../utils/entryMinutes';
 
@@ -61,6 +62,25 @@ describe('computeEntryMinutes', () => {
       clock_in_at: '2026-08-01T07:58:00.000Z',
       clock_out_at: '2026-08-01T08:08:00.000Z', // 10 minutes worked
       break_minutes: 999,
+    });
+    expect(computeEntryMinutes(entry, Date.now())).toBe(0);
+  });
+
+  it('returns 0 for a voided entry — it did not happen', () => {
+    const entry = makeEntry({
+      status: 'voided',
+      clock_in_at: '2026-08-01T08:00:00.000Z',
+      clock_out_at: '2026-08-01T16:00:00.000Z',
+      updated_at: '2026-08-02T09:00:00.000Z',
+    });
+    expect(computeEntryMinutes(entry, Date.now())).toBe(0);
+  });
+
+  it('returns 0 for a voided cancellation fragment — stored minutes do not bank', () => {
+    const entry = makeEntry({
+      status: 'voided',
+      kind: 'cancellation_paid',
+      scheduled_minutes: 419,
     });
     expect(computeEntryMinutes(entry, Date.now())).toBe(0);
   });
@@ -161,6 +181,20 @@ describe('sumEntryMinutes', () => {
   it('returns 0 for an empty list', () => {
     expect(sumEntryMinutes([], Date.now())).toBe(0);
   });
+
+  it('excludes voided entries from the week total', () => {
+    const entries = [
+      makeEntry({ id: 'voided', status: 'voided' }),
+      makeEntry({
+        id: 'real',
+        clock_in_at: '2026-08-02T07:58:00.000Z',
+        clock_out_at: '2026-08-02T09:58:00.000Z',
+        break_minutes: 0,
+      }),
+    ];
+    // 374 (voided, must not count) + 120 (real) = 120
+    expect(sumEntryMinutes(entries, Date.now())).toBe(120);
+  });
 });
 
 // Shared with apps/api/tests/unit/domains/timesheet/utils/workedMinutes.test.ts
@@ -192,4 +226,31 @@ describe('computeEntryMinutes — shared cancellation golden vectors (I-11)', ()
       expect(computeEntryMinutes(fragment, Date.now())).toBe(vector.expected);
     });
   }
+});
+
+describe('scheduledMinutesFor — voided rows are not roster (069)', () => {
+  it('ignores scheduled_minutes on a voided entry', () => {
+    const entries = [
+      makeEntry({
+        status: 'voided',
+        scheduled_minutes: 480,
+      }),
+    ];
+    expect(scheduledMinutesFor(entries)).toBeNull();
+  });
+
+  it('sums only non-voided scheduled minutes for the overtime denominator', () => {
+    const entries = [
+      makeEntry({
+        id: 'voided',
+        status: 'voided',
+        scheduled_minutes: 480,
+      }),
+      makeEntry({
+        id: 'real',
+        scheduled_minutes: 240,
+      }),
+    ];
+    expect(scheduledMinutesFor(entries)).toBe(240);
+  });
 });

@@ -63,6 +63,72 @@ describe('computeWorkedMinutes', () => {
   });
 });
 
+describe('entryMinutes — voided entries did not happen (069)', () => {
+  it('returns null for a voided worked entry', () => {
+    expect(
+      entryMinutes(
+        entry({
+          status: 'voided',
+          clock_in_at: '2026-08-03T08:00:00.000Z',
+          clock_out_at: '2026-08-03T16:00:00.000Z',
+        })
+      )
+    ).toBeNull();
+  });
+
+  it('returns null for a voided cancellation_paid entry — scheduled_minutes must not sneak through', () => {
+    expect(
+      entryMinutes(
+        entry({
+          status: 'voided',
+          kind: 'cancellation_paid',
+          clock_in_at: '2026-08-03T12:00:40.000Z',
+          clock_out_at: '2026-08-03T19:00:20.000Z',
+          scheduled_minutes: 419,
+        })
+      )
+    ).toBeNull();
+  });
+});
+
+describe('sumWorkedMinutes — voided entries did not happen (069)', () => {
+  it('banks the same total with or without a voided worked entry in the list', () => {
+    const worked = entry({
+      clock_in_at: '2026-08-03T08:00:00.000Z',
+      clock_out_at: '2026-08-03T12:00:00.000Z',
+    });
+    const voided = entry({
+      id: 'te-voided',
+      status: 'voided',
+      clock_in_at: '2026-08-04T08:00:00.000Z',
+      clock_out_at: '2026-08-04T16:00:00.000Z',
+    });
+
+    expect(sumWorkedMinutes([worked, voided])).toBe(sumWorkedMinutes([worked]));
+  });
+
+  it('banks the same total when a voided cancellation_paid fragment is present', () => {
+    const fragment = entry({
+      kind: 'cancellation_paid',
+      clock_in_at: '2026-08-03T12:00:40.000Z',
+      clock_out_at: '2026-08-03T19:00:20.000Z',
+      scheduled_minutes: 419,
+    });
+    const voidedFragment = entry({
+      id: 'te-voided',
+      status: 'voided',
+      kind: 'cancellation_paid',
+      clock_in_at: '2026-08-04T09:00:00.000Z',
+      clock_out_at: '2026-08-04T12:00:00.000Z',
+      scheduled_minutes: 180,
+    });
+
+    expect(sumWorkedMinutes([fragment, voidedFragment])).toBe(
+      sumWorkedMinutes([fragment])
+    );
+  });
+});
+
 describe('sumWorkedMinutes', () => {
   it('sums the span-derived minutes of every finished worked entry', () => {
     expect(

@@ -51,6 +51,7 @@ export const timeEntryEndpoints = {
   clockIn: '/v1/time-entries/clock-in',
   clockOut: (entryId: string) => `/v1/time-entries/${entryId}/clock-out`,
   update: (entryId: string) => `/v1/time-entries/${entryId}`,
+  void: (entryId: string) => `/v1/time-entries/${entryId}`,
   running: '/v1/time-entries/running',
   retroactive: '/v1/time-entries/retroactive',
   weekForHousehold: (householdId: string) =>
@@ -123,6 +124,11 @@ export const timeEntryApi = {
       .safeParse(response.data.data);
     if (!parsed.success) throw parsed.error;
     return parsed.data.time_entry;
+  },
+
+  /** Soft-delete: withdraw an entry that should never have existed (069). */
+  void: async (_entryId: string): Promise<TimeEntry> => {
+    throw new Error('not implemented');
   },
 
   /**

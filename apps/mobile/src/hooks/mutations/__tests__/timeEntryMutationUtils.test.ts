@@ -126,6 +126,18 @@ describe('getTimeEntryEditErrorKey', () => {
     ).toBe('errors:entryNotEditable');
   });
 
+  it('maps a void refusal (reason voided) on 409 to entryVoided', () => {
+    expect(getTimeEntryEditErrorKey(refusal(409, 'voided'))).toBe(
+      'errors:entryVoided'
+    );
+  });
+
+  it('maps a void refusal (reason voided) on 400 to entryVoided', () => {
+    expect(getTimeEntryEditErrorKey(refusal(400, 'voided'))).toBe(
+      'errors:entryVoided'
+    );
+  });
+
   it('returns undefined for a non-400 status or an unknown reason', () => {
     expect(
       getTimeEntryEditErrorKey(refusal(409, 'CLOCK_SPAN_TOO_LONG'))

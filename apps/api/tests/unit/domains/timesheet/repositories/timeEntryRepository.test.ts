@@ -14,10 +14,12 @@ function createMockQueryChain(
   const chain: any = {
     select: mock(() => chain),
     eq: mock(() => chain),
+    neq: mock(() => chain),
     in: mock(() => chain),
     gte: mock(() => chain),
     lt: mock(() => chain),
     order: mock(() => chain),
+    limit: mock(() => chain),
     insert: mock(() => chain),
     update: mock(() => chain),
     maybeSingle: mock(() => Promise.resolve(finalResponse)),
@@ -194,6 +196,18 @@ describe('TimeEntryRepository.findRunningInHousehold', () => {
 });
 
 describe('TimeEntryRepository.hasTimeEntries', () => {
+  it('excludes voided rows — a fully-voided shift must un-freeze for shift edits', async () => {
+    const chain = createMockQueryChain({
+      data: null,
+      error: null,
+      count: 0,
+    });
+    mockSupabaseService.from.mockImplementation(() => chain);
+    const repo = new TimeEntryRepository();
+    await repo.hasTimeEntries('shift-1');
+    expect(chain.neq).toHaveBeenCalledWith('status', 'voided');
+  });
+
   it('returns true when at least one entry exists for the shift', async () => {
     mockSupabaseService.from.mockImplementation(() =>
       createMockQueryChain({ data: null, error: null, count: 2 })
@@ -222,6 +236,14 @@ describe('TimeEntryRepository.hasTimeEntries', () => {
 // The batched form the schedule domain's materialiser asks once per run
 // instead of once per occurrence — see WS-J / scheduleMaterialisationService.
 describe('TimeEntryRepository.shiftIdsWithTimeEntries', () => {
+  it('excludes voided rows — schedule materialisation must not treat a voided-only shift as paid-for reality', async () => {
+    const chain = createMockQueryChain({ data: [], error: null });
+    mockSupabaseService.from.mockImplementation(() => chain);
+    const repo = new TimeEntryRepository();
+    await repo.shiftIdsWithTimeEntries(['shift-1']);
+    expect(chain.neq).toHaveBeenCalledWith('status', 'voided');
+  });
+
   it('returns the set of shift ids that have entries, deduped, in one query', async () => {
     const chain = createMockQueryChain({
       data: [
@@ -313,6 +335,91 @@ describe('TimeEntryRepository.listForHouseholdWeek', () => {
     );
     expect(result[0].household_member_id).toBe('member-1');
     expect(chain.select).toHaveBeenCalledWith('*');
+  });
+
+  // 069: deliberately NOT filtered here. The mobile week screen renders
+  // voided rows struck through, so this read must keep returning them; the
+  // exclusion lives in `entryMinutes` / the client sum, not in this query.
+  it('069: still returns voided rows for the household week payload', async () => {
+    const voidedRow = {
+      id: 't-voided',
+      household_id: 'h1',
+      carer_id: 'carer-1',
+      status: 'voided',
+      local_date: '2026-08-03',
+    };
+    mockSupabaseService.from.mockImplementation(() =>
+      createStatefulQuery([mondayDay, voidedRow])
+    );
+    const repo = new TimeEntryRepository();
+    const result = await repo.listForHouseholdWeek(
+      'h1',
+      '2026-08-03',
+      '2026-08-10'
+    );
+    expect(result.map((r: FakeRow) => r.id)).toContain('t-voided');
+    expect(result.map((r: FakeRow) => r.id)).toContain('t-monday');
+  });
+});
+
+describe('TimeEntryRepository.findCancellationPaidForShift', () => {
+  it('excludes voided rows — a voided cancellation-pay row must not read as settled', async () => {
+    const chain = createMockQueryChain({ data: null, error: null });
+    mockSupabaseService.from.mockImplementation(() => chain);
+    const repo = new TimeEntryRepository();
+    await repo.findCancellationPaidForShift('shift-1');
+    expect(chain.neq).toHaveBeenCalledWith('status', 'voided');
+  });
+
+  it('returns null when the only matching row is voided', async () => {
+    mockSupabaseService.from.mockImplementation(() =>
+      createMockQueryChain({
+        data: {
+          id: 'te-voided',
+          shift_id: 'shift-1',
+          kind: 'cancellation_paid',
+          status: 'voided',
+        },
+        error: null,
+      })
+    );
+    const repo = new TimeEntryRepository();
+    expect(await repo.findCancellationPaidForShift('shift-1')).toBeNull();
+  });
+});
+
+describe('TimeEntryRepository.findCancellationPaidForSpan', () => {
+  it('excludes voided rows from the 23505 recovery lookup', async () => {
+    const chain = createMockQueryChain({ data: null, error: null });
+    mockSupabaseService.from.mockImplementation(() => chain);
+    const repo = new TimeEntryRepository();
+    await repo.findCancellationPaidForSpan(
+      'shift-1',
+      '2026-08-03T09:00:00.000Z'
+    );
+    expect(chain.neq).toHaveBeenCalledWith('status', 'voided');
+  });
+
+  it('returns null when the span winner is voided — voided is not a successful write', async () => {
+    mockSupabaseService.from.mockImplementation(() =>
+      createMockQueryChain({
+        data: {
+          id: 'te-voided',
+          shift_id: 'shift-1',
+          kind: 'cancellation_paid',
+          status: 'voided',
+          clock_in_at: '2026-08-03T09:00:00.000Z',
+        },
+        error: null,
+      })
+    );
+    const repo = new TimeEntryRepository();
+    expect(
+      await repo.findCancellationPaidForSpan(
+        'shift-1',
+        '2026-08-03T09:00:00.000Z'
+      )
+    ).toBeNull();
   });
 });
 
@@ -441,6 +548,11 @@ const otherHousehold: FakeRow = {
   id: 't-other-household',
   household_id: 'h2',
 };
+const voidedMonday: FakeRow = {
+  ...mondayDay,
+  id: 't-voided',
+  status: 'voided',
+};
 
 const allRows = [
   overnightPriorWeek,
@@ -451,6 +563,21 @@ const allRows = [
 ];
 
 describe('TimeEntryRepository.listOverlapCandidatesForCarer', () => {
+  it('excludes voided rows — a voided entry must not block re-clock or underpay cancellation gaps', async () => {
+    mockSupabaseService.from.mockImplementation(() =>
+      createStatefulQuery([voidedMonday, mondayDay])
+    );
+    const repo = new TimeEntryRepository();
+
+    const result = await repo.listOverlapCandidatesForCarer(
+      'carer-1',
+      '2026-08-03T09:00:00.000Z',
+      '2026-08-03T10:00:00.000Z'
+    );
+
+    expect(result.map((r: FakeRow) => r.id)).toEqual(['t-monday']);
+  });
+
   it('finds an entry filed under the PREVIOUS week whose clock span still reaches into this one', async () => {
     mockSupabaseService.from.mockImplementation(() =>
       createStatefulQuery(allRows)

@@ -30,6 +30,7 @@
   "inProgress": "in progress",
   "nextDayMarker": "+1",
   "edited": "edited",
+  "voided": "voided",
   "editEntry": "Fix this entry",
   "statusNotSubmitted": "Hours still coming in",
   "statusSubmitted": "Ready for your approval",

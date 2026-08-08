@@ -53,13 +53,17 @@ const ACTION_IDS = {
 } as const;
 const SEQUENCE_ID = 'cccccccc-cccc-4ccc-8ccc-ccccccccccc4';
 const AUTH_USER_ID = 'removed-parent-1';
+const VOID_ENTRY_ID = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1';
+const VOID_REFUSED_ID = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee2';
 
 let server: import('node:http').Server;
 let baseUrl: string;
 
 let getWeekWithEarningsMock: ReturnType<typeof mock>;
 let getOwnedTimesheetMock: ReturnType<typeof mock>;
+let getOwnedTimeEntryMock: ReturnType<typeof mock>;
 let approveMock: ReturnType<typeof mock>;
+let voidEntryMock: ReturnType<typeof mock>;
 let exportWeekCsvMock: ReturnType<typeof mock>;
 
 beforeAll(async () => {
@@ -74,7 +78,17 @@ beforeAll(async () => {
     );
     throw new TimesheetNotFoundError(TIMESHEET_ID);
   });
+  getOwnedTimeEntryMock = mock(async (..._args: unknown[]) => ({
+    id: VOID_ENTRY_ID,
+    household_id: 'h1',
+    carer_id: AUTH_USER_ID,
+    status: 'submitted',
+  }));
   approveMock = mock(async (..._args: unknown[]) => ({ id: TIMESHEET_ID }));
+  voidEntryMock = mock(async (..._args: unknown[]) => ({
+    id: VOID_ENTRY_ID,
+    status: 'voided',
+  }));
   exportWeekCsvMock = mock(async (..._args: unknown[]) => ({
     filename: 'steadily-week-2026-08-03-nia-rowe.csv',
     csv: 'date,description,kind,minutes,rate_minor,amount_minor,currency\r\n',
@@ -95,6 +109,8 @@ beforeAll(async () => {
       timesheetQueryService: {
         getOwnedTimesheet: (...args: unknown[]) =>
           getOwnedTimesheetMock(...args),
+        getOwnedTimeEntry: (...args: unknown[]) =>
+          getOwnedTimeEntryMock(...args),
         getWeekWithEarnings: (...args: unknown[]) =>
           getWeekWithEarningsMock(...args),
         exportWeekCsv: (...args: unknown[]) => exportWeekCsvMock(...args),
@@ -108,6 +124,7 @@ beforeAll(async () => {
         approve: (...args: unknown[]) => approveMock(...args),
         query: (...args: unknown[]) => approveMock(...args),
         reopen: (...args: unknown[]) => approveMock(...args),
+        voidEntry: (...args: unknown[]) => voidEntryMock(...args),
       },
     })
   );
@@ -116,6 +133,9 @@ beforeAll(async () => {
   const express = (await import('express')).default;
   const timesheetRoutes = (
     await import('../../../../../src/domains/timesheet/routes/timesheetRoutes')
+  ).default;
+  const timeEntryRoutes = (
+    await import('../../../../../src/domains/timesheet/routes/timeEntryRoutes')
   ).default;
   const { requestId } = await import(
     '../../../../../src/middlewares/requestId'
@@ -128,6 +148,7 @@ beforeAll(async () => {
   app.use(requestId);
   app.use(express.json());
   app.use('/timesheets', timesheetRoutes);
+  app.use('/time-entries', timeEntryRoutes);
   app.use(errorHandler);
 
   server = app.listen(0);
@@ -143,7 +164,9 @@ afterAll(() => {
 beforeEach(() => {
   getWeekWithEarningsMock.mockClear();
   getOwnedTimesheetMock.mockClear();
+  getOwnedTimeEntryMock.mockClear();
   approveMock.mockClear();
+  voidEntryMock.mockClear();
   exportWeekCsvMock.mockClear();
 });
 
@@ -266,5 +289,54 @@ describe('the read must not prime the ownership cache for the actions', () => {
       SEQUENCE_ID
     );
     expect(approveMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('DELETE /time-entries/:id — void uses authWithOwnership', () => {
+  it("voids the caller's own entry after the ownership lookup", async () => {
+    const res = await fetch(`${baseUrl}/time-entries/${VOID_ENTRY_ID}`, {
+      method: 'DELETE',
+    });
+
+    expect(res.status).toBe(200);
+    expect(getOwnedTimeEntryMock).toHaveBeenCalledWith(
+      AUTH_USER_ID,
+      VOID_ENTRY_ID
+    );
+    expect(voidEntryMock).toHaveBeenCalledWith(AUTH_USER_ID, VOID_ENTRY_ID);
+    const body = await res.json();
+    expect(body.data).toEqual({
+      time_entry: { id: VOID_ENTRY_ID, status: 'voided' },
+    });
+  });
+
+  it('404s when the ownership lookup rejects the caller before void runs', async () => {
+    getOwnedTimeEntryMock.mockImplementationOnce(async () => {
+      const { TimeEntryNotFoundError } = await import(
+        '../../../../../src/domains/timesheet/errors/timesheetErrors'
+      );
+      throw new TimeEntryNotFoundError(VOID_REFUSED_ID);
+    });
+
+    const res = await fetch(`${baseUrl}/time-entries/${VOID_REFUSED_ID}`, {
+      method: 'DELETE',
+    });
+
+    expect(res.status).toBe(404);
+    expect(getOwnedTimeEntryMock).toHaveBeenCalledWith(
+      AUTH_USER_ID,
+      VOID_REFUSED_ID
+    );
+    expect(voidEntryMock).not.toHaveBeenCalled();
+  });
+
+  it('rejects a non-uuid id with 400 before the ownership lookup runs', async () => {
+    const res = await fetch(`${baseUrl}/time-entries/not-a-uuid`, {
+      method: 'DELETE',
+    });
+
+    expect(res.status).toBe(400);
+    expect(getOwnedTimeEntryMock).not.toHaveBeenCalled();
+    expect(voidEntryMock).not.toHaveBeenCalled();
   });
 });

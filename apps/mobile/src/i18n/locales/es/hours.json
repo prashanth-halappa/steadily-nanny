@@ -30,6 +30,7 @@
   "inProgress": "en curso",
   "nextDayMarker": "+1",
   "edited": "corregido",
+  "voided": "anulado",
   "editEntry": "Corregir este registro",
   "statusNotSubmitted": "Aún se están registrando horas",
   "statusSubmitted": "Lista para tu aprobación",

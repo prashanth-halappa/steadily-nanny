@@ -53,6 +53,20 @@ export class TimesheetController {
     }
   }
 
+  /** DELETE /time-entries/:id — soft-delete (void) the carer's own entry. */
+  static async voidEntry(req: Request, res: Response, next: NextFunction) {
+    try {
+      const id = req.params.id as string;
+      const time_entry = await timesheetCommandService.voidEntry(
+        getAuthUserId(req),
+        id
+      );
+      return sendSuccessResponse(res, 'Time entry voided', { time_entry });
+    } catch (error) {
+      return next(error);
+    }
+  }
+
   /** POST /time-entries/retroactive — forgotten clock-in recovery. */
   static async createRetroactiveEntry(
     req: Request,

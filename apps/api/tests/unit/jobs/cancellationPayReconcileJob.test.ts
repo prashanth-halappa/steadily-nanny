@@ -106,6 +106,26 @@ describe('runCancellationPayReconcileJob', () => {
     expect(result.errorCount).toBe(0);
   });
 
+  it('flags a paid cancellation when the only cancellation_paid row is voided — voided is not pay', async () => {
+    const shiftRepo = makeShiftRepo();
+    const recorder = mock(async () => [] as any);
+
+    const result = await runCancellationPayReconcileJob(
+      shiftRepo,
+      makeEntries({
+        id: 'te-voided',
+        kind: 'cancellation_paid',
+        status: 'voided',
+      }),
+      recorder
+    );
+
+    expect(recorder).toHaveBeenCalledWith(stuckShift);
+    expect(result.stillUnpaidCount).toBe(1);
+    expect(result.repaired).toBe(0);
+    expect(result.errorCount).toBe(0);
+  });
+
   // The one failure no retry can ever settle: the week is already approved, so
   // the entry is refused deterministically. It has to be counted apart from
   // transient errors, because it needs a human, not another run.

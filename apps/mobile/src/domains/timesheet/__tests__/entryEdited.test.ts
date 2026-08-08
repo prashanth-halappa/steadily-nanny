@@ -111,6 +111,25 @@ describe('isEntryEditable', () => {
       false
     );
   });
+
+  it('refuses a voided entry — voiding is final', () => {
+    expect(isEntryEditable(makeEntry({ status: 'voided' }), 'submitted')).toBe(
+      false
+    );
+  });
+});
+
+describe('wasEntryEdited — voiding bumps updated_at but is not a correction', () => {
+  it('is false for a voided entry even when updated_at moved well after clock-out', () => {
+    expect(
+      wasEntryEdited(
+        makeEntry({
+          status: 'voided',
+          updated_at: '2026-08-04T09:12:00.000Z',
+        })
+      )
+    ).toBe(false);
+  });
 });
 
 describe('wasEntryEdited — a retroactive entry is not an edited one', () => {

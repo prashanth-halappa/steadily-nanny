@@ -13,6 +13,7 @@
   "alreadyClockedIn": "Ya has fichado la entrada en otro turno. Ficha la salida primero.",
   "cancelViaDelete": "Cancela el tiempo libre utilizando la opción de eliminar en su lugar.",
   "entryNotEditable": "Este registro ya no se puede cambiar — la semana ya fue aprobada. Pide a tu familia que la consulte.",
+  "entryVoided": "Este registro fue anulado y ya no cuenta para tus horas.",
   "invalidClockTimes": "Esas horas no funcionan. La salida debe ser posterior a la entrada y no puede estar en el futuro.",
   "clockSpanTooLong": "Un turno no puede durar más de 16 horas. Revisa la hora de salida — una salida más temprana que la entrada se interpreta como del día siguiente.",
   "clockOutChangesWeek": "La salida debe estar en la misma semana que la entrada. Añádelo como dos registros, uno para cada semana.",

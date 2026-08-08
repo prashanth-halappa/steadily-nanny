@@ -1815,3 +1815,79 @@ describe('ParentWeekView — cold-mount reopen reason', () => {
     expect(queryByTestId('hours-earnings-line-reopened-note')).toBeNull();
   });
 });
+
+describe('ParentWeekView — voided entries (069)', () => {
+  const CARER_B_ID = 'carer-bea';
+  const TIMESHEET_B_ID = 'ts-2';
+
+  const carerBMember = {
+    ...householdMember,
+    id: 'member-carer-b',
+    user_id: CARER_B_ID,
+  };
+
+  function makeCarerBEntry(overrides: Partial<Record<string, unknown>> = {}) {
+    return makeEntry({
+      id: 'entry-2',
+      carer_id: CARER_B_ID,
+      carer_display_name: 'Bea',
+      clock_in_at: '2026-08-04T08:00:00.000Z',
+      clock_out_at: '2026-08-04T12:00:00.000Z',
+      scheduled_minutes: 240,
+      local_date: '2026-08-04',
+      ...overrides,
+    });
+  }
+
+  function makeCarerBTimesheet(
+    overrides: Partial<Record<string, unknown>> = {}
+  ) {
+    return makeTimesheet({
+      id: TIMESHEET_B_ID,
+      carer_id: CARER_B_ID,
+      carer_display_name: 'Bea',
+      total_minutes: 0,
+      ...overrides,
+    });
+  }
+
+  beforeEach(() => {
+    listEntriesMock.mockImplementation(() =>
+      Promise.resolve([makeEntry(), makeCarerBEntry({ status: 'voided' })])
+    );
+    listTimesheetsMock.mockImplementation(() =>
+      Promise.resolve([makeTimesheet(), makeCarerBTimesheet()])
+    );
+    getByIdMock.mockImplementation((timesheetId?: string) =>
+      Promise.resolve(
+        timesheetId === TIMESHEET_B_ID
+          ? makeTimesheetWeek({ id: TIMESHEET_B_ID, total_minutes: 0 })
+          : makeTimesheetWeek()
+      )
+    );
+    listMembersMock.mockImplementation(() =>
+      Promise.resolve([householdMember, carerBMember])
+    );
+  });
+
+  it('keeps a carer tab when her entire week is voided', async () => {
+    const { getByTestId } = renderParentView();
+
+    await waitFor(() =>
+      expect(getByTestId(`hours-carer-tab-${CARER_B_ID}`)).toBeTruthy()
+    );
+  });
+
+  it('shows 0h on a carer tab whose entries are all voided', async () => {
+    const { getByTestId } = renderParentView();
+
+    await waitFor(() =>
+      expect(getByTestId(`hours-carer-tab-${CARER_B_ID}`)).toBeTruthy()
+    );
+    fireEvent.press(getByTestId(`hours-carer-tab-${CARER_B_ID}`));
+
+    await waitFor(() =>
+      expect(getByTestId('hours-total').props.children).toBe('0h')
+    );
+  });
+});
