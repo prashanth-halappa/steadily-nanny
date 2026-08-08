@@ -29,6 +29,19 @@ interface VoidEntryDialogProps {
   onOpenChange: (open: boolean) => void;
   onConfirm: () => void;
   isSubmitting: boolean;
+  /**
+   * Copy overrides for the RUNNING-entry path, which speaks a different
+   * register: the trigger is in her voice ("I didn't mean to clock in") and
+   * discarding a live clock-in removes nothing that was ever banked, so the
+   * finished-entry wording ("won't count toward your hours or pay") would
+   * overstate it. Defaults keep the Hours caller untouched.
+   */
+  title?: string;
+  body?: string;
+  cancelLabel?: string;
+  confirmLabel?: string;
+  /** Lets the two callers own distinct testIDs without a duplicate component. */
+  testIDPrefix?: string;
 }
 
 export function VoidEntryDialog({
@@ -36,30 +49,35 @@ export function VoidEntryDialog({
   onOpenChange,
   onConfirm,
   isSubmitting,
+  title,
+  body,
+  cancelLabel,
+  confirmLabel,
+  testIDPrefix = 'hours-void-dialog',
 }: VoidEntryDialogProps) {
   const { t } = useTranslation('hours');
 
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
-      <AlertDialogContent testID="hours-void-dialog">
+      <AlertDialogContent testID={testIDPrefix}>
         <AlertDialogHeader>
-          <AlertDialogTitle testID="hours-void-dialog-title">
-            {t('voidConfirmTitle')}
+          <AlertDialogTitle testID={`${testIDPrefix}-title`}>
+            {title ?? t('voidConfirmTitle')}
           </AlertDialogTitle>
-          <AlertDialogDescription testID="hours-void-dialog-body">
-            {t('voidConfirmBody')}
+          <AlertDialogDescription testID={`${testIDPrefix}-body`}>
+            {body ?? t('voidConfirmBody')}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel testID="hours-void-dialog-cancel">
-            <Text>{t('voidConfirmCancel')}</Text>
+          <AlertDialogCancel testID={`${testIDPrefix}-cancel`}>
+            <Text>{cancelLabel ?? t('voidConfirmCancel')}</Text>
           </AlertDialogCancel>
           <AlertDialogAction
-            testID="hours-void-dialog-confirm"
+            testID={`${testIDPrefix}-confirm`}
             disabled={isSubmitting}
             onPress={onConfirm}
           >
-            <Text>{t('voidConfirmAction')}</Text>
+            <Text>{confirmLabel ?? t('voidConfirmAction')}</Text>
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

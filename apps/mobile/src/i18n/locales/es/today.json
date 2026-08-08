@@ -23,6 +23,7 @@
   "finishLabel": "Salida",
   "invalidTime": "Introduce una hora con formato HH:MM.",
   "zeroLengthFinishError": "La hora de salida debe ser posterior a la de entrada.",
+  "zeroLengthRunningError": "Acabas de fichar entrada. Cierra esto y elige «Fiché entrada sin querer» si fue un error.",
   "futureFinishError": "La hora de salida no puede ser en el futuro.",
   "tooLongFinishError": "Eso da un turno de {{total}}. Una hora de salida anterior a la de entrada se entiende como del día siguiente; un turno no puede durar más de {{maxHours}} horas.",
   "overnightFinishHint": "Termina el {{date}}",
@@ -157,5 +158,13 @@
       "fussy": "Irritable",
       "outdoor_play": "Juego al aire libre"
     }
+  },
+  "discard": {
+    "cta": "Fiché entrada sin querer",
+    "confirmTitle": "¿Fichaste entrada sin querer?",
+    "confirmBody": "El reloj se para y no se cuenta nada. Seguirá visible en tus horas como una línea tachada, para que el registro no pierda nada. Puedes volver a fichar entrada cuando quieras.",
+    "confirmBodyElapsed": "Llevas {{elapsed}} en horario. Si lo descartas no contará como horas ni como sueldo, y seguirá visible en tus horas como una línea tachada. Puedes volver a fichar entrada cuando quieras.",
+    "confirmCancel": "Seguir en horario",
+    "confirmAction": "Descartar"
   }
 }

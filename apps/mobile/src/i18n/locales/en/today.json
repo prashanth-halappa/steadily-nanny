@@ -23,6 +23,7 @@
   "finishLabel": "Finished",
   "invalidTime": "Enter a time as HH:MM.",
   "zeroLengthFinishError": "Finish time must be after start time.",
+  "zeroLengthRunningError": "You've only just clocked in. Close this and choose \"I didn't mean to clock in\" if it was a mistake.",
   "futureFinishError": "Finish time can't be in the future.",
   "tooLongFinishError": "That works out as a {{total}} shift. A finish earlier in the day than the start is read as finishing the next day — one shift can't be longer than {{maxHours}} hours.",
   "overnightFinishHint": "Finishes {{date}}",
@@ -157,5 +158,13 @@
       "fussy": "Fussy",
       "outdoor_play": "Outdoor play"
     }
+  },
+  "discard": {
+    "cta": "I didn't mean to clock in",
+    "confirmTitle": "Clock in by mistake?",
+    "confirmBody": "The clock stops and nothing is counted. It stays on your hours as a crossed-out line, so the record isn't missing anything. You can clock in again straight away.",
+    "confirmBodyElapsed": "You've been on the clock {{elapsed}}. Discarding it counts as no hours and no pay, and it stays on your hours as a crossed-out line. You can clock in again straight away.",
+    "confirmCancel": "Stay clocked in",
+    "confirmAction": "Discard it"
   }
 }

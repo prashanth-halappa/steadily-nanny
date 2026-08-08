@@ -423,7 +423,13 @@ export function ClockOutSheet({
             testID="clockout-zero-length-error"
             className="text-destructive"
           >
-            {t('zeroLengthFinishError')}
+            {/* A running entry at zero elapsed is not a typo to correct — she
+                has just clocked in by mistake, and "type a later finish" is
+                advice she cannot act on. Point at the discard instead. In
+                edit mode the original wording is right. */}
+            {mode === 'edit'
+              ? t('zeroLengthFinishError')
+              : t('zeroLengthRunningError')}
           </Small>
         ) : null}
 

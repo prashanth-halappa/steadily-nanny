@@ -29,20 +29,29 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
+import { Button } from '@/src/components/ui/button';
 import { Card } from '@/src/components/ui/card';
 import { LiveDot } from '@/src/components/ui/live-dot';
 import { LoadingButton } from '@/src/components/ui/loading-button';
+import { Text } from '@/src/components/ui/text';
 import { Body, Caption, Small, Timer } from '@/src/components/ui/typography';
-import { formatClockTime } from '@/src/domains/timesheet/utils/duration';
+import { VoidEntryDialog } from '@/src/domains/timesheet/components/VoidEntryDialog';
+import {
+  formatClockTime,
+  formatDuration,
+} from '@/src/domains/timesheet/utils/duration';
 import { describeTimeEntryWriteError } from '@/src/domains/timesheet/utils/timeEntryWriteError';
 import { isOptimisticTimeEntry } from '@/src/hooks/mutations/timeEntryMutationUtils';
 import { useClockIn } from '@/src/hooks/mutations/useClockIn';
 import { useClockOut } from '@/src/hooks/mutations/useClockOut';
+import { useVoidTimeEntry } from '@/src/hooks/mutations/useVoidTimeEntry';
 import { useRunningTimeEntry } from '@/src/hooks/queries/useRunningTimeEntry';
 import { useShift } from '@/src/hooks/queries/useShift';
 import { useShiftsRange } from '@/src/hooks/queries/useShiftsRange';
+import { getLocalizedErrorMessage } from '@/src/lib/errorLocalization';
 import { addLocalDays, localDateInZone } from '@/src/lib/localDate';
 import { useIsOnline } from '@/src/lib/network';
+import { showErrorToast } from '@/src/lib/toast';
 import { wallClockToUtcIso } from '@/src/lib/wallClock';
 import { useAuthStore } from '@/src/store/auth';
 import { useClockOutReminder } from '../hooks/useClockOutReminder';
@@ -66,6 +75,21 @@ interface ClockInCardProps {
 }
 
 const ARRIVING_WINDOW_MS = 60 * 60 * 1000;
+
+/**
+ * Above this elapsed time the discard confirmation names the duration being
+ * thrown away, because past it the entry could plausibly be real work.
+ *
+ * The AFFORDANCE never changes with elapsed time — hiding it after N minutes
+ * locks out the person who most needs it (clocked into the wrong household at
+ * 08:00, noticed at 09:30), and "I clocked in and shouldn't have" is the same
+ * act at any duration. Only the wording escalates.
+ *
+ * Ten minutes: shorter than any plausible billable interval here (nobody bills
+ * a nine-minute nanny shift), and comfortably longer than walk in, pocket the
+ * phone, notice at the door.
+ */
+const DISCARD_ELAPSED_HINT_MS = 10 * 60 * 1000;
 
 type OffClockShiftState =
   | { kind: 'scheduled'; start: string; end: string }
@@ -154,8 +178,10 @@ export function ClockInCard({
   const clockInInFlightRef = useRef(false);
   const clockOutInFlightRef = useRef(false);
   const isOnline = useIsOnline();
+  const voidEntry = useVoidTimeEntry();
   const [showClockOutSheet, setShowClockOutSheet] = useState(false);
   const [refusal, setRefusal] = useState<string | null>(null);
+  const [isDiscardOpen, setIsDiscardOpen] = useState(false);
   // Frozen when the sheet opens so the optimistic clear (and a 409 overlap
   // invalidate) can null the running cache without remounting the sheet or
   // reseeding its draft from shifting props.
@@ -163,6 +189,52 @@ export function ClockInCard({
   const sheetEntryIdRef = useRef<string | null>(null);
   const sheetDefaultClockOutAtRef = useRef<string | undefined>(undefined);
   const sheetShowOverdueHintRef = useRef(false);
+
+  /**
+   * Discard a clock-in that should never have happened. Hidden for an
+   * optimistic row (its id is client-side and would 404) and refused offline,
+   * because `useVoidTimeEntry` is `networkMode: 'online'` — a press with no
+   * connection would leave the confirm spinning forever with nothing in flight.
+   */
+  // `useElapsedTimer` returns the formatted clock, so derive the raw span for
+  // the threshold. Clamped: a clock skew putting `clock_in_at` in the future
+  // must not read as a negative shift.
+  const elapsedMs = entry?.clock_in_at
+    ? Math.max(0, Date.now() - new Date(entry.clock_in_at).getTime())
+    : 0;
+  const canDiscard = Boolean(entry) && !isOptimisticTimeEntry(entry);
+  const handleDiscardPress = () => {
+    if (!isOnline) {
+      showErrorToast(getLocalizedErrorMessage(null, tErrors, 'errors:offline'));
+      return;
+    }
+    setIsDiscardOpen(true);
+  };
+
+  /**
+   * The dialog stays OPEN in `isSubmitting` until the mutation settles — there
+   * is no optimistic clear, so closing first would leave her on an unchanged
+   * card for a full round trip with no sign anything happened. Deliberately
+   * unlike `NannyWeekView.handleVoid`, which must close first so its hidden
+   * correction sheet can come back and render the refusal inline.
+   *
+   * A toast IS right here: this path has no sheet, so nothing is portalled
+   * over a native modal window and the toast is actually visible.
+   */
+  const handleDiscardConfirm = () => {
+    const entryId = entry?.id;
+    if (!entryId) return;
+    voidEntry
+      .mutateAsync({ entryId })
+      .then(() => setIsDiscardOpen(false))
+      .catch((error: unknown) => {
+        setIsDiscardOpen(false);
+        showErrorToast(
+          describeTimeEntryWriteError(error, tErrors, timeZone, isOnline)
+            .message
+        );
+      });
+  };
 
   const clockOutBlocked =
     !entry ||
@@ -323,6 +395,22 @@ export function ClockInCard({
             disabled={clockOutBlocked}
             onPress={handleClockOutPress}
           />
+          {/* Destructive, so it sits BELOW the primary — she must not reach
+              for "Clock out" and land on this. Ghost + destructive text, the
+              same treatment as the correction sheet's void trigger; colour
+              alone carries the distinction from the outline button above.
+              The card's own `gap-4` is the separation: Daylight separates by
+              light, not by dividers. */}
+          {canDiscard ? (
+            <Button
+              testID="today-discard-entry"
+              variant="ghost"
+              size="default"
+              onPress={handleDiscardPress}
+            >
+              <Text className="text-destructive">{t('discard.cta')}</Text>
+            </Button>
+          ) : null}
         </>
       ) : (
         <>
@@ -389,6 +477,27 @@ export function ClockInCard({
           submitError={refusal}
         />
       ) : null}
+
+      <VoidEntryDialog
+        open={isDiscardOpen}
+        onOpenChange={setIsDiscardOpen}
+        onConfirm={handleDiscardConfirm}
+        isSubmitting={voidEntry.isPending}
+        testIDPrefix="today-discard-dialog"
+        title={t('discard.confirmTitle')}
+        // Past ten minutes the body names the duration being thrown away —
+        // "I didn't mean to clock in" is not enough said before discarding
+        // six hours that might have been real work.
+        body={
+          elapsedMs > DISCARD_ELAPSED_HINT_MS
+            ? t('discard.confirmBodyElapsed', {
+                elapsed: formatDuration(Math.round(elapsedMs / 60_000)),
+              })
+            : t('discard.confirmBody')
+        }
+        cancelLabel={t('discard.confirmCancel')}
+        confirmLabel={t('discard.confirmAction')}
+      />
     </Card>
   );
 }

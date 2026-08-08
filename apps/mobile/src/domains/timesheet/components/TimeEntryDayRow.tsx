@@ -165,10 +165,21 @@ export function TimeEntryDayRow({
                 {entry.clock_in_at
                   ? formatClockTime(entry.clock_in_at, timeZone)
                   : '—'}
-                {' – '}
-                {entry.clock_out_at
-                  ? formatClockTime(entry.clock_out_at, timeZone)
-                  : t('inProgress')}
+                {/* A DISCARDED clock-in has no finish and never will: voiding
+                    writes `status` only, because inventing a finish the carer
+                    never gave would be a lie on a record her household reads.
+                    So drop the range entirely rather than render "9:58 PM –
+                    in progress · voided", which claims the entry is both
+                    running and withdrawn on the one screen whose job is to be
+                    unambiguous about what happened. */}
+                {isVoided && !entry.clock_out_at ? null : (
+                  <>
+                    {' – '}
+                    {entry.clock_out_at
+                      ? formatClockTime(entry.clock_out_at, timeZone)
+                      : t('inProgress')}
+                  </>
+                )}
                 {finishesNextDay ? ` ${t('nextDayMarker')}` : ''}
                 {isZeroDuration ? ` – ${t('flaggedCheckEntry')}` : ''}
                 {isVoided ? ` · ${t('voided')}` : ''}

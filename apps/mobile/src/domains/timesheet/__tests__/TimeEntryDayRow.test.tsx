@@ -213,6 +213,30 @@ describe('TimeEntryDayRow — voided entry (069)', () => {
     expect(getByTestId(`hours-voided-entry-${entry.id}`)).toBeTruthy();
   });
 
+  it('a voided entry with no finish never reads "in progress" — it did not happen', () => {
+    // `voidById` sets only `status`, deliberately: inventing a finish time the
+    // carer never gave would be a lie on the shared record. So a discarded
+    // clock-in keeps `clock_out_at === null`, and the row must not render
+    // "9:58 PM - in progress - voided", which claims both at once.
+    const entry = makeEntry({
+      id: 'discarded-running',
+      status: 'voided',
+      clock_out_at: null,
+    });
+    const { getByTestId, queryByText } = render(
+      <TimeEntryDayRow
+        date="2026-08-01"
+        entries={[entry]}
+        nowMs={NOW_MS}
+        timeZone="Europe/London"
+      />
+    );
+
+    expect(getByTestId(`hours-voided-entry-${entry.id}`)).toBeTruthy();
+    expect(queryByText(/inProgress/)).toBeNull();
+    expect(queryByText(/–/)).toBeNull();
+  });
+
   it('excludes voided minutes from the day total', () => {
     const voided = makeEntry({
       id: 'voided',

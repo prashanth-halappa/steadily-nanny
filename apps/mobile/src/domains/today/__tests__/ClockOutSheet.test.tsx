@@ -214,6 +214,21 @@ describe('ClockOutSheet', () => {
       fireEvent.press(getByTestId('clockout-confirm'));
 
       expect(onSubmit).not.toHaveBeenCalled();
+      // clockOut mode points at the discard: she has just clocked in by
+      // mistake, and "type a later finish" is advice she cannot act on.
+      expect(getByTestId('clockout-zero-length-error').props.children).toBe(
+        'zeroLengthRunningError'
+      );
+    });
+
+    it('keeps the "type a later finish" wording in edit mode, where it is actionable', () => {
+      const { getByTestId } = renderSheet({
+        mode: 'edit',
+        defaultClockOutAt: '2026-08-02T08:15:00.000Z',
+      });
+
+      fireEvent.changeText(getByTestId('clockout-finish-time'), '08:15');
+
       expect(getByTestId('clockout-zero-length-error').props.children).toBe(
         'zeroLengthFinishError'
       );

@@ -275,6 +275,133 @@ mock.module('@react-native-community/netinfo', () => ({
 }));
 
 // -----------------------------------------------------------------------------
+// @rn-primitives/alert-dialog — ships a `.mjs` dist containing raw, uncompiled
+// JSX (`return <AlertDialogContext.Provider ...`). Same root-cause class as the
+// datetimepicker and netinfo entries above: Bun cannot parse it, and the
+// failure happens at module-graph PARSE time, so a `mock.module()` inside an
+// individual test file only works there if that file ALSO defers its component
+// import to a dynamic `await import()` after the mock is registered.
+//
+// Registering it here instead is what makes any screen that composes a dialog
+// render-testable with an ordinary static import. That became load-bearing when
+// `ClockInCard` grew the discard confirmation (069) — six existing ClockInCard
+// suites import it statically and would otherwise all die on "Unexpected <"
+// for a component none of them are testing.
+//
+// Behavioural stand-in, not a stub: `Root` threads `open`/`onOpenChange`
+// through a context so `Overlay` renders only while open, which is what lets a
+// test assert a dialog appeared and press its actions.
+// -----------------------------------------------------------------------------
+mock.module('@rn-primitives/alert-dialog', () => {
+  const React = require('react');
+  const Ctx = React.createContext({
+    open: false,
+    setOpen: (_open: boolean) => {},
+  });
+
+  return {
+    Root: ({
+      children,
+      open,
+      onOpenChange,
+    }: {
+      children: React.ReactNode;
+      open?: boolean;
+      onOpenChange?: (open: boolean) => void;
+    }) => {
+      const setOpen = (next: boolean) => onOpenChange?.(next);
+      return React.createElement(
+        Ctx.Provider,
+        { value: { open: open ?? false, setOpen } },
+        children
+      );
+    },
+    Trigger: ({ children }: { children: React.ReactNode }) => children,
+    Portal: ({ children }: { children: React.ReactNode }) => children,
+    Overlay: ({
+      children,
+      ...props
+    }: {
+      children?: React.ReactNode;
+      [key: string]: unknown;
+    }) => {
+      const { open } = React.useContext(Ctx);
+      return open ? React.createElement('View', props, children) : null;
+    },
+    Content: ({
+      children,
+      ...props
+    }: {
+      children?: React.ReactNode;
+      [key: string]: unknown;
+    }) => React.createElement('View', props, children),
+    Title: ({
+      children,
+      ...props
+    }: {
+      children?: React.ReactNode;
+      [key: string]: unknown;
+    }) => React.createElement('Text', props, children),
+    Description: ({
+      children,
+      ...props
+    }: {
+      children?: React.ReactNode;
+      [key: string]: unknown;
+    }) => React.createElement('Text', props, children),
+    Cancel: ({
+      children,
+      onPress,
+      ...props
+    }: {
+      children?: React.ReactNode;
+      onPress?: (e: unknown) => void;
+      [key: string]: unknown;
+    }) => {
+      const { setOpen } = React.useContext(Ctx);
+      return React.createElement(
+        'Pressable',
+        {
+          ...props,
+          onPress: (e: unknown) => {
+            onPress?.(e);
+            setOpen(false);
+          },
+        },
+        children
+      );
+    },
+    Action: ({
+      children,
+      onPress,
+      disabled,
+      ...props
+    }: {
+      children?: React.ReactNode;
+      onPress?: (e: unknown) => void;
+      disabled?: boolean;
+      [key: string]: unknown;
+    }) => {
+      const { setOpen } = React.useContext(Ctx);
+      return React.createElement(
+        'Pressable',
+        {
+          ...props,
+          disabled,
+          onPress: (e: unknown) => {
+            if (disabled) return;
+            onPress?.(e);
+            setOpen(false);
+          },
+        },
+        children
+      );
+    },
+    useRootContext: () => React.useContext(Ctx),
+  };
+});
+
+// -----------------------------------------------------------------------------
 // @react-native-community/datetimepicker — ships raw Flow-typed `.js` source
 // with no pre-built dist (D25, same root-cause class as the netinfo fix
 // above): Bun's parser cannot handle it, and that failure happens at
