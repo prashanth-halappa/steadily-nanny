@@ -31,4 +31,11 @@ describe('CodeEntryScreen i18n', () => {
     expect(screenSource).not.toContain("That code doesn't look right");
     expect(screenSource).not.toContain("Couldn't join that household");
   });
+
+  it('localizes the settings variant through the household namespace', () => {
+    expect(screenSource).toContain("useTranslation('household')");
+    expect(screenSource).toContain("tHousehold('invite.joinTitle')");
+    expect(screenSource).toContain("tHousehold('invite.joinSubtitle')");
+    expect(screenSource).not.toContain('Join another household');
+  });
 });

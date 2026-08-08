@@ -29,6 +29,10 @@ export const ERROR_CODE_TO_I18N_KEY: Record<string, string> = {
   [ERROR_CODES.RATE_LIMITED]: 'errors:rateLimited',
   [ERROR_CODES.INTERNAL_ERROR]: 'errors:server',
   [ERROR_CODES.EXTERNAL_SERVICE_ERROR]: 'errors:server',
+  // Not in shared-types' generic ERROR_CODES — a household-domain code
+  // (apps/api/src/domains/household/errors/householdErrors.ts). Literal key;
+  // the map is Record<string, string> precisely so domain codes can land here.
+  ALREADY_MEMBER: 'errors:alreadyMember',
 };
 
 interface ErrorLike {

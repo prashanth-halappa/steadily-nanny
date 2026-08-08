@@ -10,6 +10,7 @@
   "validation": "Comprueba la información que ingresaste e inténtalo de nuevo.",
   "timeout": "La solicitud tardó demasiado. Inténtalo de nuevo.",
   "offline": "Estás sin conexión. Comprueba tu conexión.",
+  "alreadyMember": "Ya formas parte de ese hogar.",
   "alreadyClockedIn": "Ya has fichado la entrada en otro turno. Ficha la salida primero.",
   "cancelViaDelete": "Cancela el tiempo libre utilizando la opción de eliminar en su lugar.",
   "entryNotEditable": "Este registro ya no se puede cambiar — la semana ya fue aprobada. Pide a tu familia que la consulte.",

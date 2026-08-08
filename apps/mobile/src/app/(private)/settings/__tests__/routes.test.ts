@@ -144,3 +144,18 @@ describe('settings/my-pay route', () => {
     expect(source).toContain('export default function');
   });
 });
+
+describe('settings/join-household route', () => {
+  let source: string;
+  beforeAll(async () => {
+    source = await readRoute('../join-household.tsx');
+  });
+
+  it('delegates to CodeEntryScreen with onJoined navigation', () => {
+    expect(source).toContain('CodeEntryScreen');
+    expect(source).toContain('onJoined');
+    expect(source).toContain('setActiveHouseholdId');
+    expect(source).toContain("'/(private)/(tabs)/home'");
+    expect(source).toContain('export default function');
+  });
+});

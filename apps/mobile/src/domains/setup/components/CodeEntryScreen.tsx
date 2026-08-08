@@ -54,8 +54,24 @@ import {
 import { useAuthStore } from '@/src/store/auth';
 import { useSetupProgressStore } from '@/src/store/setupProgress';
 
-export function CodeEntryScreen() {
+export interface CodeEntryScreenProps {
+  /**
+   * SETTINGS ENTRY POINT (`/settings/join-household`). Presence of this
+   * callback IS the variant switch: an ALREADY-ONBOARDED carer redeeming a
+   * code for an ADDITIONAL household.
+   *
+   * The wizard step machine must NOT run for them. `setupProgress` is
+   * MMKV-PERSISTED, and `app/onboarding/_layout.tsx` reads `role !== null`
+   * as `wizardEngaged` to SUPPRESS its bounce-an-onboarded-user-out-of-the-
+   * wizard guard. One `setRole` from here would disarm that guard for this
+   * user on this device permanently.
+   */
+  onJoined?: (householdId: string) => void;
+}
+
+export function CodeEntryScreen({ onJoined }: CodeEntryScreenProps = {}) {
   const { t } = useTranslation('auth');
+  const { t: tHousehold } = useTranslation('household');
   const router = useRouter();
   const setRole = useSetupProgressStore(s => s.setRole);
   const setCurrentStep = useSetupProgressStore(s => s.setCurrentStep);
@@ -91,32 +107,50 @@ export function CodeEntryScreen() {
   // from history, so a bare `back()` would skip past it to whatever
   // preceded RoleScreen instead of returning to the role fork.
   const onBack = () => {
+    // Settings variant: `back()` is correct here — this route was pushed onto
+    // the private stack, not `replace`d over RoleScreen.
+    if (onJoined) {
+      router.back();
+      return;
+    }
     router.replace(getSetupStepRoute(SETUP_STEPS.ROLE) as Href);
   };
 
   const onJoin = () => {
     if (!submittedCode) return;
     const trimmedName = name.trim();
-    if (!trimmedName) {
+    if (!onJoined && !trimmedName) {
       setNameError(true);
       return;
     }
 
     void (async () => {
       try {
-        if (profile.data?.user_id) {
-          // PATCH, not upsert: an existing row already has real city/country
-          // that the bootstrap payload's placeholders would overwrite.
-          if (trimmedName !== profile.data.name) {
-            await updateName.mutateAsync({ name: trimmedName });
+        // Settings variant: no name field, so nothing to persist. Skipping the
+        // block also closes a real hazard — with `profile` still unresolved,
+        // the `else if (authUser)` arm would upsert the BOOTSTRAP PLACEHOLDER
+        // city/country over this user's real profile.
+        if (!onJoined) {
+          if (profile.data?.user_id) {
+            // PATCH, not upsert: an existing row already has real city/country
+            // that the bootstrap payload's placeholders would overwrite.
+            if (trimmedName !== profile.data.name) {
+              await updateName.mutateAsync({ name: trimmedName });
+            }
+          } else if (authUser) {
+            await upsertProfile.mutateAsync({
+              ...buildBootstrapProfileRequest(authUser),
+              name: trimmedName,
+            });
           }
-        } else if (authUser) {
-          await upsertProfile.mutateAsync({
-            ...buildBootstrapProfileRequest(authUser),
-            name: trimmedName,
-          });
         }
         const membership = await redeemInvite.mutateAsync(submittedCode);
+        // BEFORE the role/step resolution below — never write the persisted
+        // wizard state for an already-onboarded user (see CodeEntryScreenProps).
+        if (onJoined) {
+          onJoined(membership.household_id);
+          return;
+        }
         // A co-parent invite (server role 'parent', see HOUSEHOLD_ROLES) is
         // JOINING a household the redeem above already gave them — unlike
         // RoleScreen's own PARENT fork, which is the household's FIRST
@@ -154,38 +188,50 @@ export function CodeEntryScreen() {
   return (
     <SetupScreenShell
       testID="code-screen"
-      progress={getStepProgress(SETUP_ROLES.NANNY, SETUP_STEPS.CODE)}
+      progress={
+        onJoined
+          ? undefined
+          : getStepProgress(SETUP_ROLES.NANNY, SETUP_STEPS.CODE)
+      }
       onBack={onBack}
       backLabel={t('common:back')}
-      title={t('onboarding.code.title')}
-      subtitle={t('onboarding.code.subtitle')}
+      title={
+        onJoined ? tHousehold('invite.joinTitle') : t('onboarding.code.title')
+      }
+      subtitle={
+        onJoined
+          ? tHousehold('invite.joinSubtitle')
+          : t('onboarding.code.subtitle')
+      }
       ctaLabel={
         preview.data ? t('onboarding.code.joinHousehold') : t('common:continue')
       }
       ctaDisabled={preview.data ? isJoining : code.trim().length === 0}
       onCta={preview.data ? onJoin : onCheckCode}
     >
-      <View className="gap-2">
-        <FieldLabel>{t('onboarding.code.nameLabel')}</FieldLabel>
-        <Input
-          testID="name-input"
-          accessibilityLabel={t('onboarding.code.nameLabel')}
-          value={name}
-          onChangeText={text => {
-            setNameDraft(text);
-            if (text.trim()) setNameError(false);
-          }}
-          placeholder={t('onboarding.code.namePlaceholder')}
-          autoCapitalize="words"
-          autoFocus
-          error={nameError}
-        />
-        {nameError ? (
-          <FieldError testID="name-error">
-            {t('onboarding.code.nameRequired')}
-          </FieldError>
-        ) : null}
-      </View>
+      {onJoined ? null : (
+        <View className="gap-2">
+          <FieldLabel>{t('onboarding.code.nameLabel')}</FieldLabel>
+          <Input
+            testID="name-input"
+            accessibilityLabel={t('onboarding.code.nameLabel')}
+            value={name}
+            onChangeText={text => {
+              setNameDraft(text);
+              if (text.trim()) setNameError(false);
+            }}
+            placeholder={t('onboarding.code.namePlaceholder')}
+            autoCapitalize="words"
+            autoFocus
+            error={nameError}
+          />
+          {nameError ? (
+            <FieldError testID="name-error">
+              {t('onboarding.code.nameRequired')}
+            </FieldError>
+          ) : null}
+        </View>
+      )}
 
       <View className="gap-2">
         <FieldLabel>{t('onboarding.code.inviteCodeLabel')}</FieldLabel>
@@ -199,6 +245,7 @@ export function CodeEntryScreen() {
           }}
           placeholder={t('onboarding.code.placeholder')}
           autoCapitalize="characters"
+          autoFocus={Boolean(onJoined)}
         />
       </View>
 
@@ -232,14 +279,17 @@ export function CodeEntryScreen() {
           without a code in hand and doesn't want to go back to the role
           fork either should still be able to leave, not just retreat one
           step. Ghost/ text-only, same weight as `backToSignIn` elsewhere in
-          this namespace. */}
-      <Button
-        testID="code-screen-sign-out"
-        variant="ghost"
-        onPress={() => void signOut()}
-      >
-        <Text>{t('onboarding.code.signOut')}</Text>
-      </Button>
+          this namespace. Wizard only — a ghost "Sign out" on a Settings
+          sub-screen is a surprise sign-out, and Settings has its own. */}
+      {onJoined ? null : (
+        <Button
+          testID="code-screen-sign-out"
+          variant="ghost"
+          onPress={() => void signOut()}
+        >
+          <Text>{t('onboarding.code.signOut')}</Text>
+        </Button>
+      )}
     </SetupScreenShell>
   );
 }

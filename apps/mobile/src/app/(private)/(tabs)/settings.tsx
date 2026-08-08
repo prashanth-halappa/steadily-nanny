@@ -320,6 +320,14 @@ export default function SettingsScreen() {
                 label={t('timeOff:screenTitle')}
                 onPress={() => router.push('/settings/time-off' as Href)}
               />
+              {/* A carer can work for more than one family. Without this row a
+                  second family's invite code has nowhere to be typed —
+                  `/onboarding/code` is sealed off once she's onboarded. */}
+              <SettingsNavRow
+                testID="settings-join-household"
+                label={t('household:invite.joinTitle')}
+                onPress={() => router.push('/settings/join-household' as Href)}
+              />
             </>
           )}
         </View>

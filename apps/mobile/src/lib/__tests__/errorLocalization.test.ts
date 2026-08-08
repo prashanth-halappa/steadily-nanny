@@ -50,6 +50,13 @@ describe('getLocalizedErrorMessage', () => {
       ).toBe('errors:conflict');
     });
 
+    it('maps ALREADY_MEMBER to errors:alreadyMember', () => {
+      const error = {
+        response: { status: 409, data: { error: { code: 'ALREADY_MEMBER' } } },
+      };
+      expect(getLocalizedErrorMessage(error, t)).toBe('errors:alreadyMember');
+    });
+
     it('maps INTERNAL_ERROR to errors:server', () => {
       expect(
         getLocalizedErrorMessage(envelopeError(ERROR_CODES.INTERNAL_ERROR), t)

@@ -152,4 +152,13 @@ describe('SettingsScreen', () => {
     expect(screenSource).toContain('useTabBarScrollPadding');
     expect(screenSource).toContain('paddingBottom: tabBarScrollPadding');
   });
+
+  it('wires a nanny/helper path to join another household after request time off', () => {
+    expect(screenSource).toContain('settings-join-household');
+    expect(screenSource).toContain("router.push('/settings/join-household'");
+    expect(screenSource).toContain("t('household:invite.joinTitle')");
+    expect(screenSource.indexOf('settings-join-household')).toBeGreaterThan(
+      screenSource.indexOf('settings-request-time-off')
+    );
+  });
 });

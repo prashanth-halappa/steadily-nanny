@@ -37,6 +37,8 @@
     "wizardSubtitle": "Share this code — they'll enter it when they sign up.",
     "manageTitle": "Invite someone",
     "manageSubtitle": "Generate an invite code to add a nanny, co-parent, or helper.",
+    "joinTitle": "Join another household",
+    "joinSubtitle": "Enter the invite code the family sent you.",
     "doneButton": "Done",
     "continueButton": "Continue",
     "generateButton": "Generate invite code",

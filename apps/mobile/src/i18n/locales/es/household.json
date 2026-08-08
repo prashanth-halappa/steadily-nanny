@@ -37,6 +37,8 @@
     "wizardSubtitle": "Comparte este código — lo introducirán al registrarse.",
     "manageTitle": "Invitar a alguien",
     "manageSubtitle": "Genera un código de invitación para añadir una niñera, un co-padre/madre o un ayudante.",
+    "joinTitle": "Unirse a otro hogar",
+    "joinSubtitle": "Introduce el código de invitación que te envió la familia.",
     "doneButton": "Listo",
     "continueButton": "Continuar",
     "generateButton": "Generar código de invitación",
