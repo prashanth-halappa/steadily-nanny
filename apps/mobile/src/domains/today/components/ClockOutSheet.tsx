@@ -146,6 +146,15 @@ interface ClockOutSheetProps {
    * when the refusal names a conflicting entry the caller can jump to.
    */
   submitErrorAction?: { label: string; onPress: () => void } | null;
+  /**
+   * Edit mode only: opens the caller's void confirmation. Absent means the
+   * entry cannot be voided (a running entry is voided from Today, and an
+   * approved week is not the carer's to reopen), so the affordance is simply
+   * not offered rather than shown-and-refused.
+   */
+  onVoidPress?: (() => void) | null;
+  /** Label for the void trigger — the caller owns `hours` namespace copy. */
+  voidLabel?: string;
 }
 
 /** Parses a break-minutes text field to a non-negative integer, defaulting
@@ -170,6 +179,8 @@ export function ClockOutSheet({
   showOverdueHint = false,
   submitError = null,
   submitErrorAction = null,
+  onVoidPress = null,
+  voidLabel,
 }: ClockOutSheetProps) {
   const { t } = useTranslation('today');
   const [breakMinutes, setBreakMinutes] = useState(initialBreakMinutes);
@@ -548,6 +559,20 @@ export function ClockOutSheet({
           }
           onPress={handleSubmit}
         />
+
+        {/* Destructive, so it sits BELOW the primary action and reads as a
+            ghost — a carer reaching for "Save" must not land on "Void" by
+            muscle memory. The confirm step lives in the caller's dialog. */}
+        {mode === 'edit' && onVoidPress ? (
+          <Button
+            testID="clockout-void"
+            variant="ghost"
+            size="default"
+            onPress={onVoidPress}
+          >
+            <Text className="text-destructive">{voidLabel}</Text>
+          </Button>
+        ) : null}
       </View>
     </BottomSheetBase>
   );

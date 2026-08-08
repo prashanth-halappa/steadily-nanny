@@ -40,6 +40,7 @@ import {
 import { useCreateExpense } from '@/src/hooks/mutations/useCreateExpense';
 import { useUpdateExpense } from '@/src/hooks/mutations/useUpdateExpense';
 import { useUpdateTimeEntry } from '@/src/hooks/mutations/useUpdateTimeEntry';
+import { useVoidTimeEntry } from '@/src/hooks/mutations/useVoidTimeEntry';
 import { useWithdrawExpense } from '@/src/hooks/mutations/useWithdrawExpense';
 import { useCurrentPayArrangement } from '@/src/hooks/queries/useCurrentPayArrangement';
 import { usePayments } from '@/src/hooks/queries/usePayments';
@@ -60,6 +61,7 @@ import { describeTimeEntryWriteError } from '../utils/timeEntryWriteError';
 import { EarningsBreakdownSheet } from './EarningsBreakdownSheet';
 import { PaidStateCard } from './PaidStateCard';
 import { TimeEntryDayRow } from './TimeEntryDayRow';
+import { VoidEntryDialog } from './VoidEntryDialog';
 import { WeekExportAction } from './WeekExportAction';
 import { WeekTotal } from './WeekTotal';
 
@@ -112,6 +114,7 @@ export function NannyWeekView({
   // rest of what an arrangement is for.
   const arrangementQuery = useCurrentPayArrangement(householdId, currentUserId);
   const updateEntry = useUpdateTimeEntry();
+  const voidEntry = useVoidTimeEntry();
   const createExpense = useCreateExpense(householdId);
   const updateExpense = useUpdateExpense();
   const withdrawExpense = useWithdrawExpense();
@@ -124,6 +127,7 @@ export function NannyWeekView({
     overlappingEntryId: string | null;
   } | null>(null);
   const isOnline = useIsOnline();
+  const [isVoidConfirmOpen, setIsVoidConfirmOpen] = useState(false);
   const [isBreakdownVisible, setIsBreakdownVisible] = useState(false);
   const [isAddExpenseVisible, setIsAddExpenseVisible] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
@@ -184,11 +188,33 @@ export function NannyWeekView({
 
   const openEditor = (entry: TimeEntry) => {
     setSaveRefusal(null);
+    setIsVoidConfirmOpen(false);
     setEditing(entry);
   };
   const closeEditor = () => {
     setSaveRefusal(null);
+    setIsVoidConfirmOpen(false);
     setEditing(null);
+  };
+
+  /**
+   * Withdraw an entry that should never have existed. The refusal lands in
+   * the SAME inline slot a failed correction uses — a toast fired over an
+   * open BottomSheetBase is not visible on iOS (GOLDEN-FIXES #40). The sheet
+   * stays open on failure so she can see why.
+   */
+  const handleVoid = () => {
+    if (!editing) return;
+    setSaveRefusal(null);
+    setIsVoidConfirmOpen(false);
+    voidEntry
+      .mutateAsync({ entryId: editing.id })
+      .then(() => closeEditor())
+      .catch((error: unknown) => {
+        setSaveRefusal(
+          describeTimeEntryWriteError(error, tErrors, timeZone, isOnline)
+        );
+      });
   };
 
   const handleSaveCorrection = ({
@@ -399,7 +425,7 @@ export function NannyWeekView({
         visible={editing !== null}
         onDismiss={closeEditor}
         onSubmit={handleSaveCorrection}
-        isSubmitting={updateEntry.isPending}
+        isSubmitting={updateEntry.isPending || voidEntry.isPending}
         mode="edit"
         clockInAt={editing?.clock_in_at ?? null}
         timeZone={timeZone}
@@ -416,6 +442,18 @@ export function NannyWeekView({
               }
             : null
         }
+        // Only an unapproved week is hers to withdraw from; an approved one
+        // is a signed agreement and the server refuses it anyway, so the
+        // affordance is withheld rather than shown-and-refused.
+        onVoidPress={isApproved ? null : () => setIsVoidConfirmOpen(true)}
+        voidLabel={t('voidEntry')}
+      />
+
+      <VoidEntryDialog
+        open={isVoidConfirmOpen}
+        onOpenChange={setIsVoidConfirmOpen}
+        onConfirm={handleVoid}
+        isSubmitting={voidEntry.isPending}
       />
 
       {earningsOk ? (

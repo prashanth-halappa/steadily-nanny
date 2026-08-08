@@ -205,6 +205,7 @@ let mockUseApproveTimesheet: ReturnType<typeof mock>;
 let mockUseQueryTimesheet: ReturnType<typeof mock>;
 let mockUseReopenTimesheet: ReturnType<typeof mock>;
 let mockUseUpdateTimeEntry: ReturnType<typeof mock>;
+let mockUseVoidTimeEntry: ReturnType<typeof mock>;
 let mockUseLocalSearchParams: ReturnType<typeof mock>;
 let mockSetParams: ReturnType<typeof mock>;
 
@@ -231,6 +232,12 @@ beforeAll(async () => {
     isPending: false,
   }));
   mockUseUpdateTimeEntry = mock(() => ({
+    mutateAsync: mock(async () => ({})),
+    isPending: false,
+  }));
+  // NannyWeekView calls this for the void action (069); unmocked it reaches
+  // the real useMutation and every HoursScreen case dies on "No QueryClient".
+  mockUseVoidTimeEntry = mock(() => ({
     mutateAsync: mock(async () => ({})),
     isPending: false,
   }));
@@ -271,6 +278,9 @@ beforeAll(async () => {
   // QueryClientProvider this screen test deliberately doesn't stand up.
   mock.module('@/src/hooks/mutations/useUpdateTimeEntry', () => ({
     useUpdateTimeEntry: mockUseUpdateTimeEntry,
+  }));
+  mock.module('@/src/hooks/mutations/useVoidTimeEntry', () => ({
+    useVoidTimeEntry: mockUseVoidTimeEntry,
   }));
   mock.module('expo-router', () => {
     const React = require('react');

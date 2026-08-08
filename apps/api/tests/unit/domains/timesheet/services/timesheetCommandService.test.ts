@@ -6115,3 +6115,120 @@ describe('TimesheetCommandService.voidEntry', () => {
     expect(voidedResurrections).toHaveLength(0);
   });
 });
+
+/**
+ * 069 MONEY INVARIANTS — written by the orchestrator, not by the agent that
+ * implemented the filters, because an implementer verifying its own filter
+ * is exactly how an unfiltered read survives a green suite.
+ *
+ * Each asserts a CONSEQUENCE in money terms rather than the mechanism: what
+ * the household is billed and what the carer is owed once an entry is voided.
+ */
+describe('069 money invariants — a voided entry did not happen', () => {
+  const paidShift = {
+    id: 's-void-money',
+    household_id: 'h1',
+    carer_id: 'carer-1',
+    starts_at: '2026-08-03T09:00:00.000Z',
+    ends_at: '2026-08-03T17:00:00.000Z', // 480 min cancelled window
+    timezone: 'Europe/London',
+    cancellation_paid: true,
+  };
+
+  function makeSvc(timeEntryRepo: any, timesheetRepo: any) {
+    return new TimesheetCommandService(
+      timeEntryRepo,
+      timesheetRepo,
+      makeMemberRepo(),
+      makeHouseholdRepo(),
+      makeShiftRepo(),
+      makeQueries(),
+      makeUserService(),
+      makePush()
+    );
+  }
+
+  it('pays the FULL cancelled window when the only overlapping worked entry was voided — the underpay trap', async () => {
+    // She clocked into half this cancelled shift, then voided that entry: it
+    // did not happen, so she stood down for the WHOLE window and is owed all
+    // 480 minutes. If a voided row reached `remainingSpans` it would close
+    // the 09:00-13:00 gap and she would silently be paid 240 — the carer
+    // loses money and nothing anywhere reports an error.
+    const created: any[] = [];
+    const timeEntryRepo = makeTimeEntryRepo({
+      // What the repository returns NOW that it filters voided rows.
+      listOverlapCandidatesForCarer: mock(async () => []),
+      createSubmitted: mock(async (data: Record<string, unknown>) => {
+        const row = { ...submittedEntry, ...data, id: `t-${created.length}` };
+        created.push(row);
+        return row;
+      }),
+      listForCarerWeek: mock(async () => []),
+    });
+    const timesheetRepo = makeTimesheetRepo({
+      findByWeek: mock(async () => ({ ...timesheet, status: 'submitted' })),
+    });
+
+    await makeSvc(timeEntryRepo, timesheetRepo).recordCancellationPaidEntry(
+      paidShift
+    );
+
+    expect(created).toHaveLength(1);
+    expect(created[0].scheduled_minutes).toBe(480);
+    expect(created[0].clock_in_at).toBe(paidShift.starts_at);
+    expect(created[0].clock_out_at).toBe(paidShift.ends_at);
+  });
+
+  it('banks a week total that ignores the voided entry entirely', async () => {
+    // The figure the parent is asked to approve. `finishedEntryA` is 450
+    // payable minutes; the voided row would add 300 more if it counted.
+    const voided = {
+      ...submittedEntry,
+      id: 't-voided',
+      clock_in_at: '2026-08-04T08:00:00.000Z',
+      clock_out_at: '2026-08-04T13:00:00.000Z', // 300 min if it counted
+      break_minutes: 0,
+      scheduled_minutes: null,
+      status: 'voided',
+    };
+    const timeEntryRepo = makeTimeEntryRepo({
+      listForCarerWeek: mock(async () => [
+        { ...submittedEntry, ...finishedEntryA },
+        voided,
+      ]),
+      // The voided row must come back FINISHED — `rollUpIntoTimesheet` bails
+      // on a row with no clock_out_at, and then nothing is banked at all.
+      update: mock(async (_id: string, patch: Record<string, unknown>) => ({
+        ...submittedEntry,
+        id: 't-other',
+        ...patch,
+      })),
+    });
+    const timesheetRepo = makeTimesheetRepo({
+      findByWeek: mock(async () => ({ ...timesheet, status: 'submitted' })),
+    });
+    const queries = makeQueries({
+      getOwnedTimeEntry: mock(async () => ({
+        ...submittedEntry,
+        id: 't-other',
+      })),
+    });
+    const svc = new TimesheetCommandService(
+      timeEntryRepo,
+      timesheetRepo,
+      makeMemberRepo(),
+      makeHouseholdRepo(),
+      makeShiftRepo(),
+      queries,
+      makeUserService(),
+      makePush()
+    );
+
+    await svc.voidEntry('carer-1', 't-other');
+
+    expect(timesheetRepo.update).toHaveBeenCalledWith(
+      'ts1',
+      expect.objectContaining({ total_minutes: 450 })
+    );
+  });
+});
