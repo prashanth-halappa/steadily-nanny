@@ -53,6 +53,8 @@ Conventions baked into the tokens:
 - **Elevation via inline styles, not Tailwind `shadow-*`** — `boxShadow.*` stay `none` because NativeWind cannot parse multi-layer shadows. Use `useElevation()` from `lib/design-tokens/elevation.ts` for plum-tinted card/row shadows; hairline borders (`borderWidth.hairline`) still separate outlined surfaces.
 - **Palette source of truth** — `lib/design-tokens/palette.ts` (Daylight); `global.css` mirrors it and is parity-tested.
 
+**A new colour not showing up on device/simulator is (almost) never a stale bundler.** `bun run dev` already runs `expo start -c` — cache-cleared on every launch — and NativeWind's Metro plugin runs the Tailwind CLI in `--watch` mode during dev, pushing a rebuilt `global.css`/`tailwind.config.js` through Fast Refresh automatically (`nativewind/dist/metro/tailwind/v3/child.js` spawns `tailwindcss --watch`; `react-native-css-interop`'s Metro plugin fires a synthetic file-change event on every rebuild — verified by reading both, not assumed). A genuinely stuck HMR socket does happen occasionally; if a new class truly won't appear, a fresh `bun run dev` + simulator relaunch clears it, but check `lib/design-tokens/palette.ts` first — `useThemeColors()`/`useElevation()` read that as plain hex for inline styles, not a Tailwind class, so a token missing there is a wiring gap (see `palette-parity.test.ts`), not a cache.
+
 A skeleton of this config (generic palette, same structure) ships at `pattern/templates/mobile/tailwind.config.js`.
 
 ---
