@@ -202,7 +202,7 @@ describe('WeekTotal', () => {
       expect(getByTestId('hours-timesheet-status')).toBeTruthy();
     });
 
-    it('demotes the over-scheduled delta to Small typography (was Body)', () => {
+    it('renders the over-scheduled delta as a caption beneath the figure, not beside it', () => {
       const { getByText } = render(
         <WeekTotal
           testID="hours-week-total"
@@ -213,7 +213,37 @@ describe('WeekTotal', () => {
       );
 
       const node = getByText('14m over scheduled');
-      expect(flatStyle(node).fontSize).toBe(14);
+      expect(flatStyle(node).fontSize).toBe(13);
+    });
+
+    it('renders the total hours figure in SignatureHeroBold (40/600 tabular)', () => {
+      const { getByTestId } = render(
+        <WeekTotal
+          testID="hours-week-total"
+          weekRangeLabel="3 Aug – 9 Aug"
+          totalLabel="9h 14m"
+          overtimeLabel={null}
+        />
+      );
+
+      const total = getByTestId('hours-total');
+      expect(flatStyle(total).fontSize).toBe(40);
+      expect(flatStyle(total).fontWeight).toBe('600');
+    });
+
+    it('renders a 0m total in muted foreground so an empty week does not shout', () => {
+      const { getByTestId } = render(
+        <WeekTotal
+          testID="hours-week-total"
+          weekRangeLabel="3 Aug – 9 Aug"
+          totalLabel="0m"
+          overtimeLabel={null}
+        />
+      );
+
+      expect(getByTestId('hours-total').props.className).toContain(
+        'text-muted-foreground'
+      );
     });
 
     it('demotes the payBoundary explainer to MetadataLabel with more top margin', () => {
@@ -305,13 +335,11 @@ describe('WeekTotal', () => {
         />
       );
 
-      // "destructive" is the app's existing high-weight treatment for a
-      // consequential action (settings-delete-account-confirm,
-      // shift-detail's decline confirm) — a solid, tinted button, not the
-      // quiet `ghost` variant Query still uses.
-      expect(getByTestId('hours-reopen-button').props.variant).toBe(
-        'destructive'
-      );
+      // The trigger is bordered and distinct from Query's ghost; the
+      // destructive treatment now lives in ReopenWeekDialog.
+      const button = getByTestId('hours-reopen-button');
+      expect(button.props.variant).toBe('outline');
+      expect(button.props.variant).not.toBe('ghost');
     });
 
     it('does not render the reopen control when the week is not approved, even if a handler is supplied', () => {

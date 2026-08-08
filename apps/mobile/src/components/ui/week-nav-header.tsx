@@ -59,7 +59,7 @@ export function WeekNavHeader({
       >
         <Icon icon={ChevronLeft} size={20} className="text-foreground" />
       </AnimatedPressable>
-      <Small testID={labelTestID} className="text-muted-foreground" tabular>
+      <Small testID={labelTestID} weight="semibold" tabular>
         {label}
       </Small>
       <AnimatedPressable

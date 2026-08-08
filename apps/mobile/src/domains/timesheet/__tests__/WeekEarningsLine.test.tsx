@@ -38,6 +38,43 @@ describe('WeekEarningsLine', () => {
     expect(queryByTestId('hours-earnings-line')).toBeNull();
   });
 
+  it('ok arm: inner row wears the recessed money plate; no_arrangement never does', () => {
+    const { getByTestId } = render(
+      <WeekEarningsLine
+        earnings={okEarnings}
+        timesheetStatus="submitted"
+        viewerRole="parent"
+        carerId="carer-1"
+        carerDisplayName="Amara"
+        totalMinutes={2460}
+      />
+    );
+    const innerRow = getByTestId('hours-earnings-line-pressable')
+      .children[0] as unknown as {
+      props: { className: string };
+    };
+    expect(innerRow.props.className).toContain('bg-muted');
+    expect(innerRow.props.className).toContain('rounded-row');
+
+    const { getByTestId: getNoArrangement } = render(
+      <WeekEarningsLine
+        earnings={{
+          status: 'no_arrangement',
+          week_start: '2026-08-03',
+          unpriced_dates: ['2026-08-03'],
+        }}
+        timesheetStatus="submitted"
+        viewerRole="nanny"
+        carerId="carer-42"
+        carerDisplayName="Amara"
+        totalMinutes={2460}
+      />
+    );
+    const noArrangementClassName = getNoArrangement('hours-earnings-line').props
+      .className as string;
+    expect(noArrangementClassName).not.toContain('bg-muted');
+  });
+
   it('estimated arm: "Estimated gross" label + amount, tappable', () => {
     const onPress = mock();
     const { getByTestId } = render(

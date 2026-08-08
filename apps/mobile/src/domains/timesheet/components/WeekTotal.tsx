@@ -10,23 +10,23 @@
  * total so approval state is above the fold.
  *
  * Money (TIER0-CX-SPEC.md §4.1): `WeekEarningsLine` renders immediately
- * below `hours-total` and above `payBoundary` — same card, `CardContent`'s
- * existing `gap-1` plus the line's own `mt-1`, no extra card, no divider
- * (Daylight separates by light). `earnings === undefined`/`null` renders
- * nothing (no data yet, or no timesheet row exists for this week) —
+ * below `hours-total` and above `payBoundary` — same card, each band owns
+ * its own top margin (no blanket `CardContent` gap), no extra card, no
+ * divider (Daylight separates by light). `earnings === undefined`/`null`
+ * renders nothing (no data yet, or no timesheet row exists for this week) —
  * `WeekEarningsLine`'s own header comment has the full state table.
  *
  * Reopen (walkthrough fix, 2026-08): the "undo approve" affordance lives
  * here, right after the gross figure, rather than in `ParentWeekView`'s
  * FlashList footer — that buried it below every day row and the
  * reimbursements card, invisible on first load for the exact moment a
- * parent doubts an approved total. `variant="destructive"` gives it the
- * same solid, high-weight treatment as the app's other real destructive
- * confirms (`settings-delete-account-confirm`, the shift decline confirm in
- * `ScheduleRespondScreen`) — deliberately heavier than the `ghost` Query
- * button beside it in the footer, which is not destructive. Omit
- * `onReopenPress` to render nothing at all (a helper's `readOnly` view, or
- * `NannyWeekView`, which never reopens).
+ * parent doubts an approved total. `variant="outline"` keeps the trigger
+ * visibly heavier than the `ghost` Query button beside it in the footer
+ * (a border vs none) without painting a solid terracotta button inside the
+ * anchor card on every approved week — the consequential destructive
+ * treatment lives in `ReopenWeekDialog` where the irreversible step
+ * actually happens. Omit `onReopenPress` to render nothing at all (a
+ * helper's `readOnly` view, or `NannyWeekView`, which never reopens).
  *
  * Approved lock (carer CX): when `timesheetStatus === 'approved'` and the
  * caller omits `onReopenPress`, a quiet caption (`approvedLockNote`)
@@ -60,8 +60,8 @@ import { StatusPill } from '@/src/components/ui/status-pill';
 import { Text } from '@/src/components/ui/text';
 import {
   Body,
-  Display,
   MetadataLabel,
+  SignatureHeroBold,
   Small,
 } from '@/src/components/ui/typography';
 import { WeekNavHeader } from '@/src/components/ui/week-nav-header';
@@ -181,7 +181,7 @@ export function WeekTotal({
 
   return (
     <Card testID={testID} className="mb-4">
-      <CardContent className="gap-1">
+      <CardContent>
         {hasNav ? (
           <WeekNavHeader
             label={weekRangeLabel}
@@ -198,7 +198,7 @@ export function WeekTotal({
           </Small>
         )}
         {shouldShowStatusPillBlock ? (
-          <View className="mt-1 flex-row items-center justify-between gap-2">
+          <View className="mt-3 flex-row items-center justify-between gap-2">
             {carerName ? (
               <Body
                 testID="hours-carer-name"
@@ -220,21 +220,31 @@ export function WeekTotal({
             ) : null}
           </View>
         ) : null}
-        <View className="mt-2 flex-row items-baseline gap-2">
-          <Display testID="hours-total" tabular>
+        <View className="mt-4">
+          <SignatureHeroBold
+            testID="hours-total"
+            tabular
+            numberOfLines={1}
+            className={
+              totalLabel === '0m' ? 'text-muted-foreground' : undefined
+            }
+          >
             {totalLabel}
-          </Display>
+          </SignatureHeroBold>
           {overtimeLabel ? (
-            <Small className="text-muted-foreground" tabular>
+            <MetadataLabel className="mt-0.5 text-muted-foreground" tabular>
               {overtimeLabel}
+            </MetadataLabel>
+          ) : null}
+          {totalLabel === '0m' ? (
+            <Small
+              testID="hours-empty-week"
+              className="mt-0.5 text-muted-foreground"
+            >
+              {t('emptyWeek')}
             </Small>
           ) : null}
         </View>
-        {totalLabel === '0m' ? (
-          <Small testID="hours-empty-week" className="text-muted-foreground">
-            {t('emptyWeek')}
-          </Small>
-        ) : null}
         {earnings !== undefined || earningsError ? (
           <WeekEarningsLine
             earnings={earnings ?? null}
@@ -255,7 +265,7 @@ export function WeekTotal({
         {showReopenedNote ? (
           <Small
             testID="hours-earnings-line-reopened-note"
-            className="text-muted-foreground"
+            className="mt-3 text-muted-foreground"
           >
             {earningsReopenReason
               ? t(
@@ -270,7 +280,7 @@ export function WeekTotal({
         {timesheetStatus === 'approved' && !onReopenPress ? (
           <Small
             testID="hours-approved-lock-note"
-            className="text-muted-foreground"
+            className="mt-3 text-muted-foreground"
           >
             {t('approvedLockNote')}
           </Small>
@@ -278,9 +288,9 @@ export function WeekTotal({
         {timesheetStatus === 'approved' && onReopenPress ? (
           <Button
             testID="hours-reopen-button"
-            variant="destructive"
+            variant="outline"
             size="sm"
-            className="mt-1 self-start"
+            className="mt-3 self-start"
             disabled={isReopenPending}
             onPress={onReopenPress}
           >

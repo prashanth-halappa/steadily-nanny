@@ -103,7 +103,7 @@ export function WeekEarningsLine({
 
   if (earningsError) {
     return (
-      <View testID={testID} className="mt-3 gap-1">
+      <View testID={testID} className="mt-4 gap-1">
         <Small className="text-muted-foreground">
           {t('earningsCouldntCompute')}
         </Small>
@@ -124,7 +124,7 @@ export function WeekEarningsLine({
   if (earnings.status === WEEK_EARNINGS_STATES.HOURS_ONLY) {
     if (earnings.reason !== HOURS_ONLY_REASONS.CARER_REMOVED) return null;
     return (
-      <View testID={testID} className="mt-3">
+      <View testID={testID} className="mt-4">
         <Small className="text-muted-foreground">
           {t('earningsDepartedCarer', { name: carerDisplayName })}
         </Small>
@@ -140,7 +140,7 @@ export function WeekEarningsLine({
     // entirely for both roles (the parent's own CTA included).
     if (timesheetStatus === 'approved') {
       return (
-        <View testID={testID} className="mt-3">
+        <View testID={testID} className="mt-4">
           <Small className="text-muted-foreground">
             {t('earningsNoArrangementApproved')}
           </Small>
@@ -148,7 +148,7 @@ export function WeekEarningsLine({
       );
     }
     return (
-      <View testID={testID} className="mt-3 gap-1">
+      <View testID={testID} className="mt-4 gap-1">
         <Small className="text-muted-foreground">
           {viewerRole === 'parent'
             ? t('earningsNoArrangementParent')
@@ -175,7 +175,7 @@ export function WeekEarningsLine({
     // states the outcome instead of an unkeepable ask, carrying the
     // mandatory "Approved" state word.
     return (
-      <View testID={testID} className="mt-3">
+      <View testID={testID} className="mt-4">
         <Small className="text-muted-foreground">
           {timesheetStatus === 'approved'
             ? t('earningsCurrencyChangeApproved')
@@ -201,7 +201,7 @@ export function WeekEarningsLine({
     : `${label} ${amount}`;
 
   return (
-    <View testID={testID} className="mt-3 gap-1">
+    <View testID={testID} className="mt-4 gap-1">
       <AnimatedPressable
         testID={`${testID}-pressable`}
         accessibilityRole="button"
@@ -210,7 +210,7 @@ export function WeekEarningsLine({
         onPress={onPress}
       >
         <View
-          className="flex-row items-baseline justify-between gap-2"
+          className="flex-row items-baseline justify-between gap-2 rounded-row bg-muted px-4 py-3"
           style={{ minHeight: spacing.minTouchTarget }}
         >
           {/* `flex-1` / `flex-shrink-0` split — the audit's StatusPill overflow
