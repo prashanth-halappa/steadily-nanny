@@ -709,11 +709,13 @@ describe('ScheduleMaterialisationService — voided entries do not freeze shifts
         })
       ),
     });
+    // The real query is `.select('shift_id').in(...).neq('status','voided')`,
+    // so a shift whose only entry is voided comes back with NO rows at all.
+    // Returning the row here would model a database that ignores its own
+    // filter — and production code written to satisfy that would have to
+    // guess voidedness from the row shape.
     mockSupabaseService.from.mockImplementation(() =>
-      createSupabaseQueryChain({
-        data: [{ shift_id: 'shift-voided-only' }],
-        error: null,
-      })
+      createSupabaseQueryChain({ data: [], error: null })
     );
     const svc = new ScheduleMaterialisationService(
       repo,

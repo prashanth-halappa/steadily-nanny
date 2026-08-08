@@ -269,6 +269,12 @@ export function buildWeekEarningsInput(
   const entries: EarningsTimeEntryInput[] = [];
 
   for (const entry of sources.entries) {
+    // 069: voided did not happen — no banked minutes and no payable-shift
+    // linkage. Skipped before `entryMinutes` so a voided cancellation-pay row
+    // cannot mark its shift payable and suppress closure-day top-up.
+    if (entry.status === 'voided') {
+      continue;
+    }
     // A running entry has no minutes yet — `entryMinutes` returns null for
     // it, and it is skipped rather than treated as zero-length, exactly as
     // `sumWorkedMinutes` skips it, so the priced week and `total_minutes`

@@ -29,6 +29,8 @@ const EDIT_DETECTION_SLACK_MS = 60_000;
  * first time a parent actually disputes a correction, and not before.
  */
 export function wasEntryEdited(entry: TimeEntry): boolean {
+  // Voiding bumps `updated_at` but is not a correction — never show "edited".
+  if (entry.status === 'voided') return false;
   if (!entry.clock_out_at) return false;
   if (endsAtLocalMidnight(entry)) return false;
   const clockOutMs = new Date(entry.clock_out_at).getTime();

@@ -66,6 +66,11 @@ export function entryMinutes(entry: TimeEntry): number | null {
   if (!entry.clock_in_at || !entry.clock_out_at) {
     return null;
   }
+  // 069: a voided entry did not happen — it banks nothing, and must not
+  // reach the cancellation_paid scheduled_minutes branch below.
+  if (entry.status === 'voided') {
+    return null;
+  }
   if (entry.kind === 'cancellation_paid' && entry.scheduled_minutes !== null) {
     // Floored like `computeWorkedMinutes`, so "no entry ever banks negative
     // minutes" stays a guarantee rather than a convention that happened to

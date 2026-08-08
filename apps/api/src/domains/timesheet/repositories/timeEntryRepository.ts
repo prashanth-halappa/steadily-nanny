@@ -127,6 +127,30 @@ export class TimeEntryRepository extends BaseRepository<TimeEntry> {
   }
 
   /**
+   * Soft-delete one row (`status = 'voided'`). Conditional on the row not
+   * already being voided — returns `null` when nothing changed so
+   * `voidEntry` can skip a redundant roll-up (BLOCKER 1, twin of
+   * `carerTimeOffRepository.cancelById`).
+   */
+  async voidById(id: string): Promise<TimeEntry | null> {
+    const { data, error } = await supabaseService
+      .from(this.table)
+      .update({ status: 'voided' })
+      .eq('id', id)
+      .neq('status', 'voided')
+      .select()
+      .maybeSingle();
+
+    if (error) {
+      throw new DatabaseError('Failed to void time entry', 'DATABASE_ERROR', {
+        details: error.message,
+        id,
+      });
+    }
+    return data as TimeEntry | null;
+  }
+
+  /**
    * Whether a shift has ANY `cancellation_paid` entry — the
    * "already settled?" question `cancellationPayReconcileJob` asks.
    *
@@ -149,6 +173,7 @@ export class TimeEntryRepository extends BaseRepository<TimeEntry> {
       .select('*')
       .eq('shift_id', shiftId)
       .eq('kind', 'cancellation_paid')
+      .neq('status', 'voided')
       .limit(1)
       .maybeSingle();
 
@@ -159,7 +184,12 @@ export class TimeEntryRepository extends BaseRepository<TimeEntry> {
         { details: error.message, shiftId }
       );
     }
-    return data as TimeEntry | null;
+    // 069: voided did not happen — a voided row is not pay. The `.neq` above
+    // is the real filter; this guards mocks and any path that still returns one.
+    if (!data || (data as TimeEntry).status === 'voided') {
+      return null;
+    }
+    return data as TimeEntry;
   }
 
   /**
@@ -181,6 +211,7 @@ export class TimeEntryRepository extends BaseRepository<TimeEntry> {
       .eq('shift_id', shiftId)
       .eq('kind', 'cancellation_paid')
       .eq('clock_in_at', clockInAt)
+      .neq('status', 'voided')
       .maybeSingle();
 
     if (error) {
@@ -190,7 +221,11 @@ export class TimeEntryRepository extends BaseRepository<TimeEntry> {
         { details: error.message, shiftId, clockInAt }
       );
     }
-    return data as TimeEntry | null;
+    // 069: voided is not a successful write — same defence as shift-wide lookup.
+    if (!data || (data as TimeEntry).status === 'voided') {
+      return null;
+    }
+    return data as TimeEntry;
   }
 
   /** The caller's own open (running) entry, or null. At most one can exist per carer. */
@@ -298,7 +333,11 @@ export class TimeEntryRepository extends BaseRepository<TimeEntry> {
         { details: error.message, carerId, fromInclusive }
       );
     }
-    return (data ?? []) as TimeEntry[];
+    // 069: voided did not happen — it holds no window, so it must not block
+    // re-clock or close a gap in cancellation-pay remainder arithmetic.
+    return ((data ?? []) as TimeEntry[]).filter(
+      entry => entry.status !== 'voided'
+    );
   }
 
   /**
@@ -379,10 +418,15 @@ export class TimeEntryRepository extends BaseRepository<TimeEntry> {
     if (shiftIds.length === 0) {
       return new Set();
     }
+    // 069: voided did not happen, so a shift whose only entries are voided is
+    // not "paid-for reality" and must become mutable again. The filter is the
+    // DB's job — do NOT post-filter the result as well, since `select('shift_id')`
+    // returns rows with no `status` to inspect.
     const { data, error } = await supabaseService
       .from(this.table)
       .select('shift_id')
-      .in('shift_id', shiftIds);
+      .in('shift_id', shiftIds)
+      .neq('status', 'voided');
 
     if (error) {
       throw new DatabaseError(
@@ -391,10 +435,9 @@ export class TimeEntryRepository extends BaseRepository<TimeEntry> {
         { details: error.message, count: shiftIds.length }
       );
     }
+    const rows = (data ?? []) as Array<{ shift_id: string | null }>;
     return new Set(
-      (data ?? [])
-        .map(row => (row as { shift_id: string | null }).shift_id)
-        .filter((id): id is string => id !== null)
+      rows.map(row => row.shift_id).filter((id): id is string => id !== null)
     );
   }
 
@@ -407,7 +450,8 @@ export class TimeEntryRepository extends BaseRepository<TimeEntry> {
     const { count, error } = await supabaseService
       .from(this.table)
       .select('id', { count: 'exact', head: true })
-      .eq('shift_id', shiftId);
+      .eq('shift_id', shiftId)
+      .neq('status', 'voided');
 
     if (error) {
       throw new DatabaseError(

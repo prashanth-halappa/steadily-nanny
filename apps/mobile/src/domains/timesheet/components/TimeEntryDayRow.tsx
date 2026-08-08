@@ -117,6 +117,7 @@ export function TimeEntryDayRow({
           </Small>
         ) : (
           entries.map(entry => {
+            const isVoided = entry.status === 'voided';
             // A FINISHED entry (has clock_out_at) that computes to 0 minutes
             // is real but suspicious — e.g. an accidental clock-in/out
             // within the same second. Flag it distinctly rather than
@@ -131,6 +132,7 @@ export function TimeEntryDayRow({
             // its minutes are the window's residual, and zero is a legitimate
             // outcome of paying the window exactly once.
             const isZeroDuration =
+              !isVoided &&
               !!entry.clock_out_at &&
               entryMinutes === 0 &&
               entry.kind !== 'cancellation_paid' &&
@@ -145,10 +147,17 @@ export function TimeEntryDayRow({
               !!onEditEntry && isEntryEditable(entry, timesheetStatus);
             const label = (
               <Small
-                testID={isZeroDuration ? 'hours-zero-duration-flag' : undefined}
+                testID={
+                  isVoided
+                    ? `hours-voided-entry-${entry.id}`
+                    : isZeroDuration
+                      ? 'hours-zero-duration-flag'
+                      : undefined
+                }
                 weight={isZeroDuration ? 'medium' : 'regular'}
                 className={cn(
                   'text-muted-foreground',
+                  isVoided && 'line-through',
                   isZeroDuration && 'text-warning'
                 )}
                 tabular
@@ -162,9 +171,15 @@ export function TimeEntryDayRow({
                   : t('inProgress')}
                 {finishesNextDay ? ` ${t('nextDayMarker')}` : ''}
                 {isZeroDuration ? ` – ${t('flaggedCheckEntry')}` : ''}
-                {wasEntryEdited(entry) ? ` · ${t('edited')}` : ''}
+                {isVoided ? ` · ${t('voided')}` : ''}
+                {!isVoided && wasEntryEdited(entry) ? ` · ${t('edited')}` : ''}
               </Small>
             );
+            // Voided rows stay visible for the audit trail but are never
+            // pressable — voiding is final and earns nothing.
+            if (isVoided) {
+              return <View key={entry.id}>{label}</View>;
+            }
             // Correcting it beats being told why it looks odd, so an
             // editable entry goes to the sheet even when flagged; the
             // explainer is the fallback for one that can no longer be fixed.

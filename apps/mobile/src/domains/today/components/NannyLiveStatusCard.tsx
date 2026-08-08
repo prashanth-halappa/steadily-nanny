@@ -110,8 +110,10 @@ export function NannyLiveStatusCard({
     // (`carerKeyOf`) — a card that merges two carers Hours splits would
     // report one carer's day under the other's name. A running entry counts
     // whatever its local_date says, because "on the clock" is about now.
+    // Voided rows are visible on Hours but did not happen — never coverage (069).
     const buckets = new Map<string, TimeEntry[]>();
     for (const entry of entries.data ?? []) {
+      if (entry.status === 'voided') continue;
       if (entry.local_date !== today && entry.status !== 'running') continue;
       const key = carerKeyOf(entry);
       const bucket = buckets.get(key);

@@ -300,6 +300,7 @@ class DefaultNoShowTimeEntryLister implements NoShowTimeEntryLister {
       .select('shift_id, clock_in_at, clock_out_at')
       .eq('carer_id', carerId)
       .eq('household_id', shift.household_id)
+      .neq('status', 'voided')
       .or(
         `clock_in_at.gte.${toleranceStart},clock_out_at.is.null,clock_out_at.gte.${startsAt}`
       );
@@ -312,7 +313,12 @@ class DefaultNoShowTimeEntryLister implements NoShowTimeEntryLister {
       );
     }
 
-    return (data ?? []) as NoShowTimeEntry[];
+    // 069: voided did not happen — it is not coverage. The `.neq` above is the
+    // real filter; this drops any voided row a dumb mock still hands back.
+    return (data ?? []).filter(
+      (row): row is NoShowTimeEntry =>
+        (row as { status?: string }).status !== 'voided'
+    );
   }
 }
 

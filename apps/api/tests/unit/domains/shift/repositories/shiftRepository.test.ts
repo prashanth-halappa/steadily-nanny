@@ -198,9 +198,12 @@ describe('ShiftRepository.update — immutability guard', () => {
           select: mock(() => chain),
           eq: mock(() => chain),
           neq: mock(() => chain),
+          // `hasTimeEntries` head-counts with `.neq('status','voided')`, so a
+          // shift whose only entry is voided counts ZERO. `count: 1` here
+          // would model a database that ignores its own filter.
           // biome-ignore lint/suspicious/noThenProperty: intentional thenable for the mock
           then: (resolve: (value: unknown) => unknown) =>
-            Promise.resolve({ data: null, error: null, count: 1 }).then(
+            Promise.resolve({ data: null, error: null, count: 0 }).then(
               resolve
             ),
         };

@@ -493,8 +493,11 @@ export function buildTodaysCoverPayload(
 
   // Bucket by the same carer identity rule the week screens use. A running
   // entry counts whatever its `local_date` says — "on the clock" is about now.
+  // Voided rows never count as coverage (069) — they stay on the Hours screen
+  // struck through, but a withdrawn clock-in did not happen.
   const buckets = new Map<string, TimeEntry[]>();
   for (const entry of entries) {
+    if (entry.status === 'voided') continue;
     if (entry.local_date !== today && entry.status !== 'running') continue;
     const key = carerKeyOf(entry);
     const bucket = buckets.get(key);

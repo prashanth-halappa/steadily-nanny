@@ -1296,8 +1296,63 @@ export class TimesheetCommandService {
     return updated;
   }
 
-  async voidEntry(_userId: string, _timeEntryId: string): Promise<TimeEntry> {
-    throw new Error('not implemented');
+  /**
+   * Soft-delete the carer's own entry — an accidental clock-in, a duplicate, a
+   * retroactive entry on the wrong day. The row persists (`status = 'voided'`)
+   * so the ledger is evidence; a voided entry did not happen and earns nothing.
+   *
+   * Gates inherit `updateEntry`'s ownership, cancellation-pay refusal, and
+   * approved-week check (anchored on the row's frozen `timezone` /
+   * `clock_in_at`, never the household's current zone). The one deliberate
+   * divergence: `running` entries are voidable — nothing is banked yet and
+   * accidental clock-in is the primary case.
+   *
+   * IDEMPOTENT — same reasoning as `timeOffCommandService.cancel` (BLOCKER 1):
+   * a second void returns the row as it stands and rolls up only once.
+   */
+  async voidEntry(userId: string, timeEntryId: string): Promise<TimeEntry> {
+    const entry = await this.queries.getOwnedTimeEntry(userId, timeEntryId);
+
+    if (entry.status === 'voided') {
+      return entry;
+    }
+
+    if (entry.kind === 'cancellation_paid') {
+      throw new TimeEntryNotEditableError(timeEntryId, 'cancellation_paid');
+    }
+
+    if (entry.status !== 'running' && entry.status !== 'submitted') {
+      throw new TimeEntryNotEditableError(timeEntryId, entry.status);
+    }
+
+    const originalClockInAt = entry.clock_in_at;
+    if (originalClockInAt) {
+      // Same anchor as `updateEntry` — the row's frozen zone, not the
+      // household's current one (F-B1-4).
+      const timeZone = entry.timezone;
+      const weekStart = weekStartOf(new Date(originalClockInAt), timeZone);
+
+      const timesheet = await this.timesheetRepo.findByWeek(
+        entry.household_id,
+        userId,
+        weekStart
+      );
+      if (timesheet?.status === 'approved') {
+        throw new TimeEntryNotEditableError(timeEntryId, 'week_approved');
+      }
+    }
+
+    const voided = await this.timeEntryRepo.voidById(timeEntryId);
+    if (voided) {
+      await this.rollUpIntoTimesheet(voided, userId);
+      return voided;
+    }
+    // `voidById` is a CONDITIONAL write (`.neq('status','voided')`), so a
+    // racing second DELETE matches no row and returns null. That is what
+    // makes this idempotent under concurrency rather than just on a re-read:
+    // a plain `update` would let both callers roll up, double-counting the
+    // week. Same shape as `carer_time_off`'s `cancelById` (BLOCKER 1).
+    return { ...entry, status: 'voided' };
   }
 
   /**

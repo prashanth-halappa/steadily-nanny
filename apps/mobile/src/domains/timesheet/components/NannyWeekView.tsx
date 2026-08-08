@@ -251,6 +251,10 @@ export function NannyWeekView({
     ? (entries.find(e => e.id === saveRefusal.overlappingEntryId) ?? null)
     : null;
   const totalMinutes = sumEntryMinutes(entries, nowMs);
+  const weekHoursLabel =
+    entries.length > 0 && totalMinutes === 0
+      ? formatDuration(60).replace('1', '0')
+      : formatDuration(totalMinutes);
   const overtimeLabel = formatOvertimeDelta(
     totalMinutes,
     scheduledMinutesFor(entries)
@@ -312,7 +316,7 @@ export function NannyWeekView({
           <WeekTotal
             testID="hours-week-total"
             weekRangeLabel={weekRangeLabel}
-            totalLabel={formatDuration(totalMinutes)}
+            totalLabel={weekHoursLabel}
             overtimeLabel={overtimeLabel}
             onPreviousWeek={onPreviousWeek}
             onNextWeek={onNextWeek}

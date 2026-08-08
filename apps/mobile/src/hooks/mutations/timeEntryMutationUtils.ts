@@ -108,6 +108,10 @@ export function isClockOutConflictError(error: unknown): boolean {
 export function getTimeEntryEditErrorKey(error: unknown): string | undefined {
   const err = asErrorLike(error);
   const reason = err.response?.data?.error?.metadata?.reason;
+  const status = err.response?.status;
+  if (reason === 'voided' && (status === 409 || status === 400)) {
+    return 'errors:entryVoided';
+  }
   if (err.response?.status === 409 && reason === 'TIME_ENTRY_NOT_EDITABLE') {
     return 'errors:entryNotEditable';
   }

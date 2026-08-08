@@ -55,6 +55,11 @@ import { logger } from '../middlewares/logger';
  */
 const LOOKBACK_DAYS = 30;
 
+/** 069: voided did not happen — a voided cancellation-pay row is not pay. */
+function isPayableCancellationEntry(entry: TimeEntry | null): boolean {
+  return entry !== null && entry.status !== 'voided';
+}
+
 export interface CancellationPayReconcileResult {
   checked: number;
   repaired: number;
@@ -116,7 +121,11 @@ export async function runCancellationPayReconcileJob(
         // with NO cancellation entry at all is an unpaid carer whatever the
         // cause, so alarm on that rather than on the running session
         // specifically — it stays correct for causes nobody has hit yet.
-        if (!(await entries.findCancellationPaidForShift(shift.id))) {
+        if (
+          !isPayableCancellationEntry(
+            await entries.findCancellationPaidForShift(shift.id)
+          )
+        ) {
           stillUnpaidCount++;
           logger.warn(
             'Paid cancellation has no payable entry yet; nothing was owed on this pass',
@@ -154,7 +163,11 @@ export async function runCancellationPayReconcileJob(
         // arithmetic, which is private to `timesheetCommandService`; export
         // `remainingSpans`, or move the approved-week check below it, to
         // sharpen this.
-        if (await entries.findCancellationPaidForShift(shift.id)) {
+        if (
+          isPayableCancellationEntry(
+            await entries.findCancellationPaidForShift(shift.id)
+          )
+        ) {
           logger.warn(
             'Approved week already carries cancellation pay; nothing to repair',
             { shiftId: shift.id, householdId: shift.household_id }

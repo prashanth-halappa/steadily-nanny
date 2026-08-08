@@ -90,7 +90,7 @@ const timesheet = {
 const household = { id: 'h1', timezone: 'Europe/London' };
 
 function makeTimeEntryRepo(overrides: Record<string, unknown> = {}): any {
-  return {
+  const repo: any = {
     findRunningForCarer: mock(async () => null),
     clockIn: mock(async () => ({ ...runningEntry })),
     update: mock(async (_id: string, patch: Record<string, unknown>) => ({
@@ -105,6 +105,20 @@ function makeTimeEntryRepo(overrides: Record<string, unknown> = {}): any {
     listOverlapCandidatesForCarer: mock(async () => []),
     ...overrides,
   };
+  // Models `voidById`'s CONDITIONAL write (`.neq('status','voided')`): the
+  // first call flips the row, a racing second call matches NOTHING and
+  // returns null. That null is the whole basis of idempotent DELETE — a mock
+  // that always returned a row would leave the real semantics untested.
+  // Delegates to `update` so a test overriding it still drives the row shape.
+  if (!repo.voidById) {
+    const voidedIds = new Set<string>();
+    repo.voidById = mock(async (id: string) => {
+      if (voidedIds.has(id)) return null;
+      voidedIds.add(id);
+      return repo.update(id, { status: 'voided' });
+    });
+  }
+  return repo;
 }
 
 function makeTimesheetRepo(overrides: Record<string, unknown> = {}): any {

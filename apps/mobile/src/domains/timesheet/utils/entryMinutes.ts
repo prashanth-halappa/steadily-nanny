@@ -52,6 +52,9 @@ export function computeWorkedMinutesFromInstants(
  * what she was rostered for, not what she did.
  */
 export function computeEntryMinutes(entry: TimeEntry, nowMs: number): number {
+  // Soft-deleted (069): voiding is final — the row stays visible but must
+  // never bank minutes in any total on this screen.
+  if (entry.status === 'voided') return 0;
   if (!entry.clock_in_at) return 0;
   if (entry.kind === 'cancellation_paid' && entry.scheduled_minutes !== null) {
     // Clamped like every other path here and on the server — no entry ever
@@ -92,7 +95,11 @@ export function sumEntryMinutes(entries: TimeEntry[], nowMs: number): number {
  * together.
  */
 export function scheduledMinutesFor(entries: TimeEntry[]): number | null {
-  const withSchedule = entries.filter(e => e.scheduled_minutes !== null);
+  // Own filter — this path sums `scheduled_minutes` directly and never calls
+  // `computeEntryMinutes`, so the void chokepoint above does not cover it.
+  const withSchedule = entries.filter(
+    e => e.scheduled_minutes !== null && e.status !== 'voided'
+  );
   if (withSchedule.length === 0) return null;
   return withSchedule.reduce((sum, e) => sum + (e.scheduled_minutes ?? 0), 0);
 }

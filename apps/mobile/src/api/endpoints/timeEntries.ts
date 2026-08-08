@@ -127,8 +127,13 @@ export const timeEntryApi = {
   },
 
   /** Soft-delete: withdraw an entry that should never have existed (069). */
-  void: async (_entryId: string): Promise<TimeEntry> => {
-    throw new Error('not implemented');
+  void: async (entryId: string): Promise<TimeEntry> => {
+    const response = await apiClient.delete(timeEntryEndpoints.void(entryId));
+    const parsed = z
+      .object({ time_entry: TimeEntrySchema })
+      .safeParse(response.data.data);
+    if (!parsed.success) throw parsed.error;
+    return parsed.data.time_entry;
   },
 
   /**

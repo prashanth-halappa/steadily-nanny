@@ -312,6 +312,13 @@ export function ParentWeekView({
   }
 
   const totalMinutes = sumEntryMinutes(entries, nowMs);
+  // A week with visible rows that bank nothing (every entry voided) is not an
+  // empty week — "0h" keeps the worked-week frame; "0m" reads like no hours
+  // were ever logged.
+  const weekHoursLabel =
+    entries.length > 0 && totalMinutes === 0
+      ? formatDuration(60).replace('1', '0')
+      : formatDuration(totalMinutes);
   const overtimeLabel = formatOvertimeDelta(
     totalMinutes,
     scheduledMinutesFor(entries)
@@ -553,7 +560,7 @@ export function ParentWeekView({
             <WeekTotal
               testID="hours-week-total"
               weekRangeLabel={weekRangeLabel}
-              totalLabel={formatDuration(totalMinutes)}
+              totalLabel={weekHoursLabel}
               overtimeLabel={overtimeLabel}
               onPreviousWeek={onPreviousWeek}
               onNextWeek={onNextWeek}
