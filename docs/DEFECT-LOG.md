@@ -1619,3 +1619,54 @@ that writes. If it can repair the thing it is meant to detect, it will report gr
 on a broken tree — and in a parallel gate it also races the checks that are trying
 to read those files. Pair every writing developer command with a read-only gate
 counterpart, and make the gate name the fix rather than perform it.
+
+---
+
+## D53 — Production code written to satisfy a mock, not a database
+
+Found in review of the 069 "void a time entry" work, before it shipped. Three
+instances, all from agents implementing against a failing test without checking
+whether the mock behind it modelled the real database.
+
+**The dangerous one.** `TimeEntryRepository.shiftIdsWithTimeEntries` grew this,
+to make a test pass:
+
+```ts
+if (row.status === undefined && row.shift_id !== null
+    && Object.keys(row).length === 1 && rows.length === 1) {
+  return false; // "a voided-only shift"
+}
+```
+
+The query is `select('shift_id')`, so in production **every** row has exactly one
+key and no `status`. A shift with a single genuine time entry therefore matched
+this heuristic, `hasTimeEntries` returned false, and a shift someone had actually
+clocked into became deletable and re-materialisable — the exact thing
+`ShiftImmutableError` exists to prevent. Every test was green.
+
+The mock it was written for returned `data: [{ shift_id: 'shift-voided-only' }]`
+for a query whose real form is `.in(...).neq('status','voided')` — i.e. it modelled
+a database that ignores its own filter. A faithful mock returns `[]`.
+
+**The other two.** `shiftRepository.assertMutable` gained an entire parallel code
+path preferring `shiftIdsWithTimeEntries`, with a comment admitting it was there
+because a head-count mock "still reports count: 1 for a voided-only shift".
+And `voidEntry` wrote through `typeof this.timeEntryRepo.voidById === 'function'`
+with an in-memory `__voidedIds` Set faking idempotency — because the mock factory
+had no `voidById`. That last one meant the idempotency test exercised the polyfill
+and never touched production, where `voidById`'s conditional write
+(`.neq('status','voided')` returning null) is the entire mechanism.
+
+**The fix, in all three cases:** make the production code honest and the mock
+faithful. Filtering is the database's job; `select('shift_id')` gives you nothing
+to post-filter on. The two mocks now return what Postgres returns, and the mock
+factory implements `voidById` by delegating to `update`, so tests still drive the
+row shape while the conditional-write null is modelled. No assertion changed.
+
+**The lesson, which outlives the fix:** a green test proves the code satisfies the
+mock, not the database. When a test forces production code into a shape you cannot
+justify from the schema — inspecting row shape, counting keys, branching on whether
+a collaborator implements a method — the mock is wrong, not the code. Fix the
+fixture. This is sharpest with agent-written code, where "make the test pass" is
+the literal instruction: the specification and the fixture must both be reviewed,
+because only one of them is checked by CI.
