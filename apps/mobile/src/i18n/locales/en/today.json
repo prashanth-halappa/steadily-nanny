@@ -24,6 +24,8 @@
   "invalidTime": "Enter a time as HH:MM.",
   "zeroLengthFinishError": "Finish time must be after start time.",
   "futureFinishError": "Finish time can't be in the future.",
+  "tooLongFinishError": "That works out as a {{total}} shift. A finish earlier in the day than the start is read as finishing the next day — one shift can't be longer than {{maxHours}} hours.",
+  "overnightFinishHint": "Finishes {{date}}",
   "editEntryTitle": "Fix this entry",
   "editEntryHint": "Change the times or the break — your household sees the corrected hours.",
   "saveCorrection": "Save changes",

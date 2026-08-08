@@ -34,7 +34,7 @@ import { LiveDot } from '@/src/components/ui/live-dot';
 import { LoadingButton } from '@/src/components/ui/loading-button';
 import { Body, Caption, Small, Timer } from '@/src/components/ui/typography';
 import { formatClockTime } from '@/src/domains/timesheet/utils/duration';
-import { formatEarningsSpanDate } from '@/src/domains/timesheet/utils/earningsFormat';
+import { describeTimeEntryWriteError } from '@/src/domains/timesheet/utils/timeEntryWriteError';
 import { isOptimisticTimeEntry } from '@/src/hooks/mutations/timeEntryMutationUtils';
 import { useClockIn } from '@/src/hooks/mutations/useClockIn';
 import { useClockOut } from '@/src/hooks/mutations/useClockOut';
@@ -42,7 +42,7 @@ import { useRunningTimeEntry } from '@/src/hooks/queries/useRunningTimeEntry';
 import { useShift } from '@/src/hooks/queries/useShift';
 import { useShiftsRange } from '@/src/hooks/queries/useShiftsRange';
 import { addLocalDays, localDateInZone } from '@/src/lib/localDate';
-import { showErrorToast } from '@/src/lib/toast';
+import { useIsOnline } from '@/src/lib/network';
 import { wallClockToUtcIso } from '@/src/lib/wallClock';
 import { useAuthStore } from '@/src/store/auth';
 import { useClockOutReminder } from '../hooks/useClockOutReminder';
@@ -51,10 +51,6 @@ import {
   isOverdue as isEntryOverdue,
   resolveDefaultClockOutAt,
 } from '../utils/clockOutReminder';
-import {
-  formatTimeEntryOverlapMessage,
-  getOverlappingEntry,
-} from '../utils/timeEntryOverlapError';
 import { ClockOutSheet, type ClockOutSheetSubmitInput } from './ClockOutSheet';
 
 interface ClockInCardProps {
@@ -157,7 +153,9 @@ export function ClockInCard({
   // useClockIn's onError, which refetches on ALREADY_CLOCKED_IN.
   const clockInInFlightRef = useRef(false);
   const clockOutInFlightRef = useRef(false);
+  const isOnline = useIsOnline();
   const [showClockOutSheet, setShowClockOutSheet] = useState(false);
+  const [refusal, setRefusal] = useState<string | null>(null);
   // Frozen when the sheet opens so the optimistic clear (and a 409 overlap
   // invalidate) can null the running cache without remounting the sheet or
   // reseeding its draft from shifting props.
@@ -205,6 +203,7 @@ export function ClockInCard({
         ? resolveDefaultClockOutAt(clockInAt, shiftEndsAt, nowMs)
         : undefined;
     sheetShowOverdueHintRef.current = overdue && Boolean(shiftEndsAt);
+    setRefusal(null);
     setShowClockOutSheet(true);
   };
 
@@ -231,6 +230,7 @@ export function ClockInCard({
       return;
     }
     clockOutInFlightRef.current = true;
+    setRefusal(null);
     clockOut
       .mutateAsync({
         entryId,
@@ -247,18 +247,15 @@ export function ClockInCard({
       .then(() => setShowClockOutSheet(false))
       .catch((error: unknown) => {
         // Overlap is more than a generic conflict: the entry stays running
-        // and she can't clock in again. Name the conflicting entry by day
-        // and time range (household zone — GOLDEN-FIXES #21) so she can
-        // find it on Hours. useClockOut still toasts the generic conflict
-        // copy; this is the actionable one.
-        const overlapping = getOverlappingEntry(error);
-        if (overlapping) {
-          const day = formatEarningsSpanDate(
-            localDateInZone(timeZone, new Date(overlapping.clockInAt))
-          );
-          const range = `${formatClockTime(overlapping.clockInAt, timeZone)}–${formatClockTime(overlapping.clockOutAt, timeZone)}`;
-          showErrorToast(formatTimeEntryOverlapMessage(tErrors, day, range));
-        }
+        // and she can't clock in again, so the refusal has to name the
+        // conflicting entry by day and range (household zone —
+        // GOLDEN-FIXES #21). Rendered INSIDE the sheet: `useClockOut` does
+        // toast it, but the toast host is another RN `<Modal>` and this
+        // sheet is one, so on iOS the toast is not reliably visible.
+        setRefusal(
+          describeTimeEntryWriteError(error, tErrors, timeZone, isOnline)
+            .message
+        );
       })
       .finally(() => {
         clockOutInFlightRef.current = false;
@@ -375,7 +372,10 @@ export function ClockInCard({
       {showClockOutSheet ? (
         <ClockOutSheet
           visible={showClockOutSheet}
-          onDismiss={() => setShowClockOutSheet(false)}
+          onDismiss={() => {
+            setRefusal(null);
+            setShowClockOutSheet(false);
+          }}
           onSubmit={handleConfirmClockOut}
           isSubmitting={clockOut.isPending}
           clockInAt={sheetClockInAt}
@@ -386,6 +386,7 @@ export function ClockInCard({
           // second-level precision a typed HH:MM would round away.
           defaultClockOutAt={sheetDefaultClockOutAt}
           showOverdueHint={sheetShowOverdueHint}
+          submitError={refusal}
         />
       ) : null}
     </Card>

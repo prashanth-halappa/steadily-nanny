@@ -8,15 +8,18 @@
  * `useCreateRetroactiveEntry`. GOLDEN: BottomSheetBase, never a bare RN
  * Modal (GOLDEN-FIXES #1).
  *
- * Overnight-aware: `shiftInstantsFromWallClock` rolls a finish at or before
- * the start onto the next calendar day — the same builder ShiftDetailScreen
- * and ClockOutSheet use, so a forgotten overnight session resolves the same
- * way everywhere in this app.
+ * NOT overnight-capable, despite building its instants with
+ * `shiftInstantsFromWallClock`: `TimeRangePicker` refuses any end at or
+ * before the start and never calls `onChange`, so the builder's next-day
+ * roll is unreachable from here. A forgotten overnight session has to be
+ * corrected from Hours instead. Left as-is deliberately — the picker's
+ * refusal is visible and immediate, which is more than a silent roll gave.
  *
- * Stays open on failure (overlap, week already approved, or a span crossing
- * the week boundary all come back as ordinary mutation errors, toasted by
- * `useCreateRetroactiveEntry` itself) so nothing typed is lost on a retry;
- * closes and resets only after a successful submit.
+ * Stays open on failure so nothing typed is lost on a retry; closes and
+ * resets only after a successful submit. The refusal renders INSIDE the
+ * sheet (`describeTimeEntryWriteError`): the hook does toast it, but the
+ * toast host is another RN `<Modal>` and this sheet is one, so on iOS that
+ * toast is not reliably visible — the carer saw nothing at all.
  */
 
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -30,13 +33,15 @@ import { LoadingButton } from '@/src/components/ui/loading-button';
 import { Text } from '@/src/components/ui/text';
 import { Textarea } from '@/src/components/ui/textarea';
 import { TimeRangePicker } from '@/src/components/ui/time-range-picker';
-import { Body } from '@/src/components/ui/typography';
+import { Body, Small } from '@/src/components/ui/typography';
 import {
   formatDate,
   parseDate,
 } from '@/src/domains/timeOff/components/TimeOffDateRangePicker.utils';
+import { describeTimeEntryWriteError } from '@/src/domains/timesheet/utils/timeEntryWriteError';
 import { useCreateRetroactiveEntry } from '@/src/hooks/mutations/useCreateRetroactiveEntry';
 import { localDateInZone } from '@/src/lib/localDate';
+import { useIsOnline } from '@/src/lib/network';
 import { shiftInstantsFromWallClock } from '@/src/lib/wallClock';
 
 interface AddMissedHoursCardProps {
@@ -50,6 +55,8 @@ export function AddMissedHoursCard({
   timeZone,
 }: AddMissedHoursCardProps) {
   const { t } = useTranslation('today');
+  const { t: tErrors } = useTranslation('errors');
+  const isOnline = useIsOnline();
   const createRetroactiveEntry = useCreateRetroactiveEntry();
 
   const [visible, setVisible] = useState(false);
@@ -57,12 +64,14 @@ export function AddMissedHoursCard({
   const [start, setStart] = useState('09:00');
   const [end, setEnd] = useState('17:00');
   const [note, setNote] = useState('');
+  const [refusal, setRefusal] = useState<string | null>(null);
 
   const openSheet = () => {
     setDate(localDateInZone(timeZone));
     setStart('09:00');
     setEnd('17:00');
     setNote('');
+    setRefusal(null);
     setVisible(true);
   };
 
@@ -73,6 +82,7 @@ export function AddMissedHoursCard({
 
   const handleSubmit = () => {
     if (createRetroactiveEntry.isPending) return;
+    setRefusal(null);
     const { starts_at, ends_at } = shiftInstantsFromWallClock(
       date,
       start,
@@ -88,10 +98,15 @@ export function AddMissedHoursCard({
         ...(trimmedNote ? { note: trimmedNote } : {}),
       })
       .then(() => setVisible(false))
-      // useCreateRetroactiveEntry's onError already toasts — caught here
-      // only so the sheet stays open (note/times preserved) rather than an
-      // unhandled promise rejection.
-      .catch(() => undefined);
+      // An overlap names the clashing entry's day and range; everything else
+      // gets its specific copy. No "open that entry" action — this screen
+      // has no entry list to open one from, unlike NannyWeekView.
+      .catch((error: unknown) => {
+        setRefusal(
+          describeTimeEntryWriteError(error, tErrors, timeZone, isOnline)
+            .message
+        );
+      });
   };
 
   return (
@@ -149,6 +164,14 @@ export function AddMissedHoursCard({
               onChangeText={setNote}
               placeholder={t('missedHours.notePlaceholder')}
             />
+            {refusal ? (
+              <Small
+                testID="today-missed-hours-error"
+                className="text-destructive"
+              >
+                {refusal}
+              </Small>
+            ) : null}
             <LoadingButton
               testID="today-missed-hours-submit"
               label={t('missedHours.submit')}

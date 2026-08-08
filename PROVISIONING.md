@@ -57,7 +57,24 @@ Each section ends with **Verify:** — an observable check that the step actuall
 
 ## 3. Google Cloud
 
-Use **one** GCP project for everything below — splitting Google Sign-In and Firebase/Vertex across projects is a known footgun (mismatched OAuth audiences, SHA registration in the wrong place).
+Use **one GCP project per app**, holding everything below for that app. Two rules that look similar but guard opposite mistakes:
+
+- **Never split one app across projects.** Google Sign-In and Firebase/Vertex for the same app belong in the same project — otherwise you get mismatched OAuth audiences and SHA-1s registered where nothing reads them.
+- **Never share one project across apps.** A GCP project is the only unit Google lets you hand over: you can transfer a whole project to another owner or organisation, but there is **no supported way to move an app out of a Firebase project**. Two apps in one project can therefore never be cleanly separated later.
+
+Convention: project id `<company>-<app>` (e.g. `steadily-nanny`), Firebase enabled on that same project (§4), one project per app forever.
+
+**Why sharing a project across apps is a trap** — even though it looks cheaper on day one:
+
+| Coupled thing | Consequence |
+|---|---|
+| OAuth consent screen | Per-project. All apps show the same name, logo and privacy URL to users. |
+| IAM | Project-scoped. Firebase has no per-app access control, so granting a contractor access to one app exposes every other app's config, analytics and Crashlytics. |
+| FCM registration tokens | Issued per (app, project). Moving an app to a new project invalidates every device token — push goes dark until each client re-registers. |
+| OAuth client IDs | Recreating them in a new project changes the ids, which forces a client release. |
+| Billing, quotas, analytics export | Shared pool; one app's spike or export touches the others. |
+
+Sharing buys you almost nothing here: with only the non-sensitive `profile`/`email` scopes, each project's consent screen needs **no Google verification**, so a second project costs a few clicks rather than a review cycle. Firebase billing is usage-based, so N projects cost the same as one for the same total traffic.
 
 1. **OAuth consent screen** — configure it (external or internal) under **APIs & Services → OAuth consent screen**.
 2. **OAuth client IDs** — create three under **APIs & Services → Credentials**:
@@ -76,13 +93,16 @@ Use **one** GCP project for everything below — splitting Google Sign-In and Fi
 
 ## 4. Firebase
 
-Needed only for Android push notifications (Expo/FCM) and native Android Google Sign-In.
+Needed **only for Android push notifications** (Expo/FCM).
 
-1. Create a Firebase project (or reuse the one backing your GCP project — Firebase projects ARE GCP projects).
-2. Add an Android app with your `android.package` (from `appIdentity.json`) and the same SHA-1(s) as §3 step 2.
-3. Download `google-services.json` and place it at `apps/mobile/google-services.json` (the path `app.config.ts`'s Android config expects — this file is gitignored on purpose; never commit it).
+Firebase is *not* needed for Google Sign-In in this template. `app.config.js` passes `{ iosUrlScheme }` to the `@react-native-google-signin/google-signin` plugin, which selects its no-Firebase path — that applies the iOS URL scheme only and never wires Android google-services — and `GoogleSignin.configure` passes `webClientId` explicitly rather than reading the `default_web_client_id` resource that `google-services.json` generates. Android sign-in needs the §3 step 2 **Android OAuth clients**, nothing more.
 
-**Verify:** an EAS Android build includes the file (`eas build` fails fast with a clear error if it's missing and a plugin needs it).
+1. Enable Firebase on the app's existing GCP project from §3 (Firebase projects ARE GCP projects; adding Firebase is non-destructive and leaves your OAuth clients and project number intact). Do **not** reuse another app's project — see §3.
+2. Add an Android app with your `android.package` (from `appIdentity.json`).
+3. Download `google-services.json` to `apps/mobile/google-services.json` — gitignored on purpose; never commit it. `app.config.js` wires it only when the file exists, so a clone without it still prebuilds.
+4. Upload that project's **FCM V1 service account key** to EAS (`eas credentials` → Android → FCM V1). The file alone delivers nothing; both halves are required.
+
+**Verify:** on a device build, `getExpoPushTokenAsync` returns a token and a test push arrives. Do **not** rely on the build failing — because step 3 is existence-gated, a build without `google-services.json` succeeds silently and only fails at runtime push registration. iOS needs none of this: Expo delivers via APNs using a key EAS manages.
 
 ---
 

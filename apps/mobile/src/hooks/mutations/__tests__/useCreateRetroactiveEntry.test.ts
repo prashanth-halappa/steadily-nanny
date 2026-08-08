@@ -134,4 +134,31 @@ describe('useCreateRetroactiveEntry', () => {
 
     await waitFor(() => expect(showErrorToastMock).toHaveBeenCalled());
   });
+
+  // Retroactive adds route through the same `assertClockOrder` as a
+  // correction, so the same specific copy must reach the carer — the generic
+  // "check the information you entered" names neither the 16h cap nor the
+  // week boundary. (The t mock echoes keys, so the key IS the message here.)
+  it.each([
+    ['CLOCK_SPAN_TOO_LONG', 'errors:clockSpanTooLong'],
+    ['CLOCK_OUT_CHANGES_WEEK', 'errors:clockOutChangesWeek'],
+    ['CLOCK_OUT_BEFORE_CLOCK_IN', 'errors:invalidClockTimes'],
+  ])('toasts specific copy for a %s refusal', async (reason, expectedKey) => {
+    createRetroactiveEntryMock.mockImplementation(() =>
+      Promise.reject({
+        response: { status: 400, data: { error: { metadata: { reason } } } },
+      })
+    );
+    const { result } = renderHookWithProviders(() =>
+      useCreateRetroactiveEntry()
+    );
+
+    await act(async () => {
+      await result.current.mutateAsync(input).catch(() => {});
+    });
+
+    await waitFor(() =>
+      expect(showErrorToastMock).toHaveBeenCalledWith(expectedKey)
+    );
+  });
 });

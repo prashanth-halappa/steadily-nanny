@@ -38,6 +38,15 @@ mock.module('@/lib/useColorScheme', () => ({
 }));
 
 const CLOCK_IN_AT = '2026-08-02T08:15:00.000Z';
+/**
+ * An EVENING start, for the overnight-roll cases. The 08:15 default cannot
+ * express a legitimate overnight: the roll produces `24h - (start - finish)`,
+ * so any finish rolled off an 08:15 start is at least 16h — at or over the
+ * server's `MAX_SESSION_SPAN_MS` ceiling. These fixtures used to submit an
+ * 18-hour shift and assert it was fine; the server would always have
+ * refused it with `CLOCK_SPAN_TOO_LONG`.
+ */
+const EVENING_CLOCK_IN_AT = '2026-08-01T20:00:00.000Z';
 const TIME_ZONE = 'UTC';
 const NOW_MS = new Date('2026-08-02T17:29:00.000Z').getTime();
 
@@ -211,7 +220,9 @@ describe('ClockOutSheet', () => {
     });
 
     it('still submits the ordinary overnight case (finish before start by wall clock, rolls to next day)', () => {
-      const { getByTestId, onSubmit } = renderSheet();
+      const { getByTestId, onSubmit } = renderSheet({
+        clockInAt: EVENING_CLOCK_IN_AT,
+      });
 
       fireEvent.changeText(getByTestId('clockout-finish-time'), '02:15');
       fireEvent.press(getByTestId('clockout-confirm'));
@@ -275,12 +286,14 @@ describe('ClockOutSheet', () => {
 
     it("does NOT flag the overnight roll as a future finish, even though the rolled instant lands after this test's nowMs", () => {
       // Same fixture as the "still rolls a genuinely earlier finish onto the
-      // next day" test above: finish (02:15) is before the start (08:15) by
+      // next day" test above: finish (02:15) is before the start (20:00) by
       // wall clock, so it legitimately rolls to the next calendar day. A
       // naive "is the resolved instant after now" check would misfire here
       // — this is the exact regression the zero-length fix already had to
       // avoid, and this fix must avoid it too.
-      const { getByTestId, queryByTestId, onSubmit } = renderSheet();
+      const { getByTestId, queryByTestId, onSubmit } = renderSheet({
+        clockInAt: EVENING_CLOCK_IN_AT,
+      });
 
       fireEvent.changeText(getByTestId('clockout-finish-time'), '02:15');
 
@@ -356,6 +369,153 @@ describe('ClockOutSheet', () => {
       const { getByText } = renderSheet();
 
       expect(getByText('minutesUnit')).toBeTruthy();
+    });
+  });
+
+  describe('session-span ceiling (the reported CLOCK_SPAN_TOO_LONG 400)', () => {
+    // The bug as reported: an 06:53 start, a finish typed as 05:27, and a
+    // PATCH carrying 2026-08-05T05:27Z against a 2026-08-04T06:53Z start —
+    // 22h 34m, refused by the server, with nothing shown to the carer. The
+    // roll to the next day is what produced it, and it was invisible.
+    const REPORTED_CLOCK_IN_AT = '2026-08-04T06:53:37.958Z';
+    const REPORTED_NOW_MS = new Date('2026-08-04T18:00:00.000Z').getTime();
+
+    it('blocks the submit and names the span when a finish rolls past the 16h ceiling', () => {
+      const { getByTestId, onSubmit } = renderSheet({
+        clockInAt: REPORTED_CLOCK_IN_AT,
+        nowMs: REPORTED_NOW_MS,
+      });
+
+      fireEvent.changeText(getByTestId('clockout-finish-time'), '05:27');
+      fireEvent.press(getByTestId('clockout-confirm'));
+
+      expect(onSubmit).not.toHaveBeenCalled();
+      expect(getByTestId('clockout-too-long-error').props.children).toBe(
+        'tooLongFinishError'
+      );
+    });
+
+    it('does not show the overnight hint for a roll it is refusing anyway', () => {
+      const { getByTestId, queryByTestId } = renderSheet({
+        clockInAt: REPORTED_CLOCK_IN_AT,
+        nowMs: REPORTED_NOW_MS,
+      });
+
+      fireEvent.changeText(getByTestId('clockout-finish-time'), '05:27');
+
+      expect(queryByTestId('clockout-overnight-hint')).toBeNull();
+    });
+
+    it('leaves a legitimate overnight alone and says which day it finishes', () => {
+      const { getByTestId, queryByTestId, onSubmit } = renderSheet({
+        clockInAt: EVENING_CLOCK_IN_AT,
+      });
+
+      fireEvent.changeText(getByTestId('clockout-finish-time'), '02:15');
+
+      expect(queryByTestId('clockout-too-long-error')).toBeNull();
+      expect(getByTestId('clockout-overnight-hint').props.children).toBe(
+        'overnightFinishHint'
+      );
+      fireEvent.press(getByTestId('clockout-confirm'));
+      expect(onSubmit).toHaveBeenCalled();
+    });
+
+    it('shows no overnight hint for an ordinary same-day finish', () => {
+      const { getByTestId, queryByTestId } = renderSheet();
+
+      fireEvent.changeText(getByTestId('clockout-finish-time'), '16:30');
+
+      expect(queryByTestId('clockout-overnight-hint')).toBeNull();
+    });
+  });
+
+  describe('server refusals render inside the sheet, not as a toast a presented modal hides', () => {
+    it('renders submitError inline', () => {
+      const { getByTestId } = renderSheet({
+        submitError: 'That clashes with 4 Aug (09:00-17:00).',
+      });
+
+      expect(getByTestId('clockout-submit-error').props.children).toBe(
+        'That clashes with 4 Aug (09:00-17:00).'
+      );
+    });
+
+    it('renders no error block when there is no refusal', () => {
+      const { queryByTestId } = renderSheet();
+
+      expect(queryByTestId('clockout-submit-error')).toBeNull();
+      expect(queryByTestId('clockout-submit-error-action')).toBeNull();
+    });
+
+    it('renders the optional action and fires it', () => {
+      const onPress = mock();
+      const { getByTestId } = renderSheet({
+        submitError: 'That clashes with an entry you already have.',
+        submitErrorAction: { label: 'Open that entry', onPress },
+      });
+
+      fireEvent.press(getByTestId('clockout-submit-error-action'));
+
+      expect(onPress).toHaveBeenCalled();
+    });
+
+    it('shows the action only alongside a refusal', () => {
+      const { queryByTestId } = renderSheet({
+        submitErrorAction: { label: 'Open that entry', onPress: mock() },
+      });
+
+      expect(queryByTestId('clockout-submit-error-action')).toBeNull();
+    });
+  });
+
+  describe('edit mode leaves an untouched finish alone (it used to round it)', () => {
+    const RECORDED_CLOCK_OUT_AT = '2026-08-02T16:42:37.412Z';
+
+    it('shows the recorded finish without arming it for submit', () => {
+      const { getByTestId, onSubmit } = renderSheet({
+        mode: 'edit',
+        defaultClockOutAt: RECORDED_CLOCK_OUT_AT,
+      });
+
+      expect(getByTestId('clockout-finish-time').props.value).toBe('16:42');
+
+      fireEvent.press(getByTestId('clockout-break-30'));
+      fireEvent.press(getByTestId('clockout-confirm'));
+
+      // No `clockOutAt`: rebuilding it from HH:MM would silently drop the
+      // recorded 37.412 seconds on a break-only correction.
+      expect(onSubmit).toHaveBeenCalledWith({ breakMinutes: 30, note: '' });
+    });
+
+    it('sends the finish once the carer actually retypes it', () => {
+      const { getByTestId, onSubmit } = renderSheet({
+        mode: 'edit',
+        defaultClockOutAt: RECORDED_CLOCK_OUT_AT,
+      });
+
+      fireEvent.changeText(getByTestId('clockout-finish-time'), '16:30');
+      fireEvent.press(getByTestId('clockout-confirm'));
+
+      expect(onSubmit).toHaveBeenCalledWith({
+        breakMinutes: 0,
+        note: '',
+        clockOutAt: '2026-08-02T16:30:00.000Z',
+      });
+    });
+
+    it('clockOut mode still arms a pre-filled scheduled finish (forgotten clock-out)', () => {
+      const { getByTestId, onSubmit } = renderSheet({
+        defaultClockOutAt: '2026-08-02T17:00:00.000Z',
+      });
+
+      fireEvent.press(getByTestId('clockout-confirm'));
+
+      expect(onSubmit).toHaveBeenCalledWith({
+        breakMinutes: 0,
+        note: '',
+        clockOutAt: '2026-08-02T17:00:00.000Z',
+      });
     });
   });
 

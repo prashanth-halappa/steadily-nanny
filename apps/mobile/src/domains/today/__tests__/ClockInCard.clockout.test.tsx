@@ -216,7 +216,7 @@ describe('ClockInCard — D20 break minutes at clock-out', () => {
     expect(clockOutMock).toHaveBeenCalledTimes(1);
   });
 
-  it('a 409 TIME_ENTRY_OVERLAPS toast names the conflicting entry by day/range and keeps the sheet open with the typed draft', async () => {
+  it('a 409 TIME_ENTRY_OVERLAPS names the conflicting entry by day/range inside the sheet and keeps the typed draft', async () => {
     clockOutMock.mockImplementationOnce(() =>
       Promise.reject(TIME_ENTRY_OVERLAPS_ERROR)
     );
@@ -239,12 +239,16 @@ describe('ClockInCard — D20 break minutes at clock-out', () => {
     fireEvent.press(getByTestId('clockout-confirm'));
 
     await waitFor(() => expect(clockOutMock).toHaveBeenCalledTimes(1));
+    // Rendered INSIDE the sheet, not toasted: the toast host is its own RN
+    // `<Modal>` and so is the sheet, so on iOS that toast is not reliably
+    // visible over it — a refused clock-out looked like nothing happened.
     await waitFor(() => {
-      const toast = showErrorToastMock.mock.calls
-        .map(call => String(call[0] ?? ''))
-        .find(msg => msg.includes(expectedDay) && msg.includes(expectedRange));
-      expect(toast).toBeDefined();
-      expect(toast).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-/);
+      const message = String(
+        getByTestId('clockout-submit-error').props.children ?? ''
+      );
+      expect(message).toContain(expectedDay);
+      expect(message).toContain(expectedRange);
+      expect(message).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-/);
     });
 
     // Sheet stays open — only success closes it — and the typed break/note

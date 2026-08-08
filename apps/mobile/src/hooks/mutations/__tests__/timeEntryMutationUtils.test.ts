@@ -22,12 +22,15 @@ mock.module('expo-crypto', () => ({
 
 let buildOptimisticRunningEntry: typeof import('../timeEntryMutationUtils').buildOptimisticRunningEntry;
 let isOptimisticTimeEntry: typeof import('../timeEntryMutationUtils').isOptimisticTimeEntry;
+let getTimeEntryEditErrorKey: typeof import('../timeEntryMutationUtils').getTimeEntryEditErrorKey;
 
 beforeEach(async () => {
   randomUuidMock.mockClear();
-  ({ buildOptimisticRunningEntry, isOptimisticTimeEntry } = await import(
-    '../timeEntryMutationUtils'
-  ));
+  ({
+    buildOptimisticRunningEntry,
+    isOptimisticTimeEntry,
+    getTimeEntryEditErrorKey,
+  } = await import('../timeEntryMutationUtils'));
 });
 
 afterEach(() => {
@@ -80,5 +83,56 @@ describe('timeEntryMutationUtils — A1 optimistic entry', () => {
     expect(
       isOptimisticTimeEntry({ ...optimistic, isOptimistic: undefined })
     ).toBe(false);
+  });
+});
+
+// Every refusal a carer can hit while fixing her own pay record needs copy
+// she can act on. A 16h span and a week-crossing finish used to fall through
+// to `errors:validation` ("check the information you entered"), which names
+// neither the cap nor the week.
+describe('getTimeEntryEditErrorKey', () => {
+  function refusal(status: number, reason: string) {
+    return { response: { status, data: { error: { metadata: { reason } } } } };
+  }
+
+  it('maps a 16h-cap refusal to its own key', () => {
+    expect(getTimeEntryEditErrorKey(refusal(400, 'CLOCK_SPAN_TOO_LONG'))).toBe(
+      'errors:clockSpanTooLong'
+    );
+  });
+
+  it('maps a finish that would change the week to its own key', () => {
+    expect(
+      getTimeEntryEditErrorKey(refusal(400, 'CLOCK_OUT_CHANGES_WEEK'))
+    ).toBe('errors:clockOutChangesWeek');
+  });
+
+  it('keeps the four plain bad-time reasons on invalidClockTimes', () => {
+    for (const reason of [
+      'CLOCK_OUT_BEFORE_CLOCK_IN',
+      'CLOCK_OUT_IN_FUTURE',
+      'CLOCK_IN_CHANGES_WEEK',
+      'MISSING_CLOCK_TIME',
+    ]) {
+      expect(getTimeEntryEditErrorKey(refusal(400, reason))).toBe(
+        'errors:invalidClockTimes'
+      );
+    }
+  });
+
+  it('maps the approved-week 409 to entryNotEditable', () => {
+    expect(
+      getTimeEntryEditErrorKey(refusal(409, 'TIME_ENTRY_NOT_EDITABLE'))
+    ).toBe('errors:entryNotEditable');
+  });
+
+  it('returns undefined for a non-400 status or an unknown reason', () => {
+    expect(
+      getTimeEntryEditErrorKey(refusal(409, 'CLOCK_SPAN_TOO_LONG'))
+    ).toBeUndefined();
+    expect(
+      getTimeEntryEditErrorKey(refusal(400, 'SOMETHING_ELSE'))
+    ).toBeUndefined();
+    expect(getTimeEntryEditErrorKey(new Error('boom'))).toBeUndefined();
   });
 });

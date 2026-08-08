@@ -2,6 +2,8 @@
 // Import the JSON directly (not the .ts wrapper): `expo config` evaluates this
 // file in Node and does NOT transpile imported TypeScript, but it CAN require JSON.
 const appIdentity = require('./src/config/appIdentity.json');
+const { existsSync } = require('node:fs');
+const { join } = require('node:path');
 
 /**
  * Expo app config (replaces app.json). Reads the static `appIdentity` object so
@@ -88,7 +90,19 @@ const config = {
   },
   android: {
     package: appIdentity.android.package,
-    // SETUP: add ./google-services.json (from Firebase) for native Google Sign-In.
+    // google-services.json is the FCM config for Android push (expo-notifications
+    // -> getExpoPushTokenAsync). It is NOT needed for Google Sign-In: the
+    // google-signin plugin below is given `iosUrlScheme`, which selects its
+    // no-Firebase path (iOS URL scheme only, no Android google-services wiring),
+    // and GoogleSignin.configure passes webClientId explicitly. Android sign-in
+    // instead needs an Android OAuth client (package + signing SHA-1) in GCP.
+    //
+    // The file is gitignored, so it is absent on a fresh clone. Wire it only
+    // when it exists — naming it unconditionally makes `expo prebuild` hard-fail
+    // for everyone who is not building push.
+    ...(existsSync(join(__dirname, 'google-services.json'))
+      ? { googleServicesFile: './google-services.json' }
+      : {}),
     adaptiveIcon: {
       foregroundImage: './assets/adaptive-icon.png',
       backgroundColor: '#F5F1F2',

@@ -1,12 +1,16 @@
 /**
  * @module domains/today/utils/timeEntryOverlapError
  *
- * Clock-out can 409 with `TIME_ENTRY_OVERLAPS` when the resolved finish
- * intersects another completed entry. The running entry stays running, so a
- * bare "conflict" toast strands the carer mid-shift with no idea which entry
- * to fix. Pull the conflicting entry's day/range off the envelope and build
- * the actionable `errors:timeEntryOverlaps` copy — same showErrorToast path
- * as every other mutation refusal, just with a human identifier.
+ * Shared across every write that can overlap an existing entry (clock-out,
+ * retroactive add, correction) — not today-only, despite living here.
+ *
+ * Those writes 409 with `TIME_ENTRY_OVERLAPS` when the resolved span
+ * intersects another entry. A bare "conflict" toast leaves the carer with no
+ * idea which entry to fix. Pull the conflicting entry's day/range off the
+ * envelope and build the actionable copy — same showErrorToast path as every
+ * other mutation refusal, just with a human identifier. The conflicting entry
+ * may still be RUNNING (she forgot to clock out and is now typing the same
+ * hours in by hand), which has no range and its own copy.
  */
 
 const TIME_ENTRY_OVERLAPS_REASON = 'TIME_ENTRY_OVERLAPS';
@@ -30,12 +34,14 @@ interface OverlapErrorLike {
 export interface OverlappingEntry {
   id: string;
   clockInAt: string;
-  clockOutAt: string;
+  /** null when the conflicting entry is still running (no finish yet). */
+  clockOutAt: string | null;
 }
 
 /**
- * The conflicting completed entry (id + times), or null when this isn't an
- * overlap 409 / the API omitted times (older build — degrade gracefully).
+ * The conflicting entry (id + times), or null when this isn't an overlap 409
+ * / the API omitted the id or start (older build — degrade gracefully). A
+ * missing finish is not a degraded envelope: that entry is still running.
  */
 export function getOverlappingEntry(error: unknown): OverlappingEntry | null {
   const err = (error ?? {}) as OverlapErrorLike;
@@ -47,22 +53,34 @@ export function getOverlappingEntry(error: unknown): OverlappingEntry | null {
   const clockOutAt = meta.overlappingClockOutAt;
   if (typeof id !== 'string' || id.length === 0) return null;
   if (typeof clockInAt !== 'string' || clockInAt.length === 0) return null;
-  if (typeof clockOutAt !== 'string' || clockOutAt.length === 0) return null;
-  return { id, clockInAt, clockOutAt };
+  return {
+    id,
+    clockInAt,
+    clockOutAt:
+      typeof clockOutAt === 'string' && clockOutAt.length > 0
+        ? clockOutAt
+        : null,
+  };
 }
 
 /**
  * Localized overlap refusal. `getLocalizedErrorMessage`'s contextKey path
  * cannot interpolate, so callers use this with the `errors` t-function and
- * pass `day` / `range` into the template. Under the key-echo test mock
+ * pass `day` / `range` into the template. A null `range` means the
+ * conflicting entry is still running — different copy, since the fix is to
+ * clock out of it rather than to shorten it. Under the key-echo test mock
  * (which ignores options), day+range are appended so behaviour tests still
  * identify the conflicting entry — never a raw UUID.
  */
 export function formatTimeEntryOverlapMessage(
-  t: (key: string, options?: { day: string; range: string }) => string,
+  t: (key: string, options?: { day: string; range?: string }) => string,
   day: string,
-  range: string
+  range: string | null
 ): string {
+  if (range === null) {
+    const localized = t('timeEntryOverlapsRunning', { day });
+    return localized.includes(day) ? localized : `${localized} ${day}`;
+  }
   const localized = t('timeEntryOverlaps', { day, range });
   if (localized.includes(day) && localized.includes(range)) {
     return localized;

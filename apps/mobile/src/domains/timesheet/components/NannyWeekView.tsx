@@ -47,6 +47,7 @@ import { useWeekExpenses } from '@/src/hooks/queries/useWeekExpenses';
 import { useWeekTimeEntries } from '@/src/hooks/queries/useWeekTimeEntries';
 import { useWeekTimesheet } from '@/src/hooks/queries/useWeekTimesheet';
 import { localDateInZone } from '@/src/lib/localDate';
+import { useIsOnline } from '@/src/lib/network';
 import { showSuccessToast } from '@/src/lib/toast';
 import { useAuthStore } from '@/src/store/auth';
 import type { TimeEntry } from '../types';
@@ -55,6 +56,7 @@ import { formatEarningsLongDate } from '../utils/earningsFormat';
 import { scheduledMinutesFor, sumEntryMinutes } from '../utils/entryMinutes';
 import { derivePaidState } from '../utils/paidState';
 import { useReopenedNotice } from '../utils/reopenedNotice';
+import { describeTimeEntryWriteError } from '../utils/timeEntryWriteError';
 import { EarningsBreakdownSheet } from './EarningsBreakdownSheet';
 import { PaidStateCard } from './PaidStateCard';
 import { TimeEntryDayRow } from './TimeEntryDayRow';
@@ -97,6 +99,7 @@ export function NannyWeekView({
 }: NannyWeekViewProps) {
   const { t } = useTranslation('hours');
   const { t: tExpenses } = useTranslation('expenses');
+  const { t: tErrors } = useTranslation('errors');
   // Same tab-bar dead-zone fix as Settings (BUG1) — the Hours tab's
   // FlashList needs the same real clearance a fixed magic number can't give.
   const tabBarScrollPadding = useTabBarScrollPadding();
@@ -113,6 +116,14 @@ export function NannyWeekView({
   const updateExpense = useUpdateExpense();
   const withdrawExpense = useWithdrawExpense();
   const [editing, setEditing] = useState<TimeEntry | null>(null);
+  // The server's refusal of the LAST correction, rendered inside the sheet.
+  // It used to be discarded here and toasted from the hook, where a
+  // presented BottomSheetBase hid it — see `describeTimeEntryWriteError`.
+  const [saveRefusal, setSaveRefusal] = useState<{
+    message: string;
+    overlappingEntryId: string | null;
+  } | null>(null);
+  const isOnline = useIsOnline();
   const [isBreakdownVisible, setIsBreakdownVisible] = useState(false);
   const [isAddExpenseVisible, setIsAddExpenseVisible] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
@@ -171,6 +182,15 @@ export function NannyWeekView({
       .catch(() => undefined);
   };
 
+  const openEditor = (entry: TimeEntry) => {
+    setSaveRefusal(null);
+    setEditing(entry);
+  };
+  const closeEditor = () => {
+    setSaveRefusal(null);
+    setEditing(null);
+  };
+
   const handleSaveCorrection = ({
     breakMinutes,
     note,
@@ -178,6 +198,7 @@ export function NannyWeekView({
     clockOutAt,
   }: ClockOutSheetSubmitInput) => {
     if (!editing) return;
+    setSaveRefusal(null);
     updateEntry
       .mutateAsync({
         entryId: editing.id,
@@ -188,10 +209,13 @@ export function NannyWeekView({
       })
       // Only close on success — the sheet keeps the typed correction so a
       // refusal (an approved week, a bad time) is one retype away, same
-      // reasoning as ClockInCard's clock-out. `useUpdateTimeEntry` has
-      // already surfaced the failure.
-      .then(() => setEditing(null))
-      .catch(() => undefined);
+      // reasoning as ClockInCard's clock-out.
+      .then(() => closeEditor())
+      .catch((error: unknown) => {
+        setSaveRefusal(
+          describeTimeEntryWriteError(error, tErrors, timeZone, isOnline)
+        );
+      });
   };
 
   if (entriesQuery.isLoading) {
@@ -216,6 +240,16 @@ export function NannyWeekView({
   const entries = currentUserId
     ? allEntries.filter(e => e.carer_id === currentUserId)
     : [];
+  /**
+   * "Open that entry" on an overlap refusal. The whole week is already
+   * loaded here, so switching the sheet to the conflicting entry is a state
+   * swap — no navigation, no refetch. Absent from the loaded week (it can
+   * belong to an adjacent week, or to another household) the action simply
+   * isn't offered; the message still names the day and range.
+   */
+  const overlappingEntry = saveRefusal?.overlappingEntryId
+    ? (entries.find(e => e.id === saveRefusal.overlappingEntryId) ?? null)
+    : null;
   const totalMinutes = sumEntryMinutes(entries, nowMs);
   const overtimeLabel = formatOvertimeDelta(
     totalMinutes,
@@ -270,7 +304,7 @@ export function NannyWeekView({
             entries={item.entries}
             nowMs={nowMs}
             timeZone={timeZone}
-            onEditEntry={readOnly ? undefined : setEditing}
+            onEditEntry={readOnly ? undefined : openEditor}
             timesheetStatus={timesheet?.status ?? null}
           />
         )}
@@ -359,7 +393,7 @@ export function NannyWeekView({
           simply means there is nothing to show. */}
       <ClockOutSheet
         visible={editing !== null}
-        onDismiss={() => setEditing(null)}
+        onDismiss={closeEditor}
         onSubmit={handleSaveCorrection}
         isSubmitting={updateEntry.isPending}
         mode="edit"
@@ -369,6 +403,15 @@ export function NannyWeekView({
         defaultClockOutAt={editing?.clock_out_at ?? undefined}
         initialBreakMinutes={editing?.break_minutes ?? 0}
         initialNote={editing?.note ?? ''}
+        submitError={saveRefusal?.message ?? null}
+        submitErrorAction={
+          overlappingEntry
+            ? {
+                label: t('openConflictingEntry'),
+                onPress: () => openEditor(overlappingEntry),
+              }
+            : null
+        }
       />
 
       {earningsOk ? (

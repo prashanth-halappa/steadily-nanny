@@ -97,11 +97,13 @@ export function isClockOutConflictError(error: unknown): boolean {
 }
 
 /**
- * The two ways the server refuses a correction (Daylight UX P0-2), mapped to
- * a specific `errors` key each. The generic "that conflicts with the current
+ * The ways the server refuses a correction (Daylight UX P0-2), mapped to a
+ * specific `errors` key each. The generic "that conflicts with the current
  * state" tells a carer nothing about a pay record she is trying to fix, and
- * the two refusals need different responses from her: an approved week is
- * someone else's to re-open, a bad time is hers to retype.
+ * each refusal needs a different response from her: an approved week is
+ * someone else's to re-open, a bad time is hers to retype, a 16h span or a
+ * week-crossing finish needs a different entry entirely — so the last two
+ * get their own copy rather than folding into `invalidClockTimes`.
  */
 export function getTimeEntryEditErrorKey(error: unknown): string | undefined {
   const err = asErrorLike(error);
@@ -109,12 +111,14 @@ export function getTimeEntryEditErrorKey(error: unknown): string | undefined {
   if (err.response?.status === 409 && reason === 'TIME_ENTRY_NOT_EDITABLE') {
     return 'errors:entryNotEditable';
   }
+  if (err.response?.status !== 400) return undefined;
+  if (reason === 'CLOCK_SPAN_TOO_LONG') return 'errors:clockSpanTooLong';
+  if (reason === 'CLOCK_OUT_CHANGES_WEEK') return 'errors:clockOutChangesWeek';
   if (
-    err.response?.status === 400 &&
-    (reason === 'CLOCK_OUT_BEFORE_CLOCK_IN' ||
-      reason === 'CLOCK_OUT_IN_FUTURE' ||
-      reason === 'CLOCK_IN_CHANGES_WEEK' ||
-      reason === 'MISSING_CLOCK_TIME')
+    reason === 'CLOCK_OUT_BEFORE_CLOCK_IN' ||
+    reason === 'CLOCK_OUT_IN_FUTURE' ||
+    reason === 'CLOCK_IN_CHANGES_WEEK' ||
+    reason === 'MISSING_CLOCK_TIME'
   ) {
     return 'errors:invalidClockTimes';
   }

@@ -39,6 +39,7 @@
  * GOLDEN: uses `BottomSheetBase`, never a bare RN Modal directly
  * (GOLDEN-FIXES #1 — iOS modal-freeze).
  */
+import { MAX_SESSION_SPAN_MS } from '@steadily-nanny/shared-types/schemas/timesheet.schema';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
@@ -61,6 +62,7 @@ import {
 } from '@/src/domains/timesheet/utils/duration';
 import { computeWorkedMinutesFromInstants } from '@/src/domains/timesheet/utils/entryMinutes';
 import { parseWallClockInput } from '@/src/domains/timesheet/utils/wallClockInput';
+import { formatDisplayDate } from '@/src/domains/timesheet/utils/week';
 import { localDateInZone } from '@/src/lib/localDate';
 import {
   shiftInstantsFromWallClock,
@@ -130,6 +132,20 @@ interface ClockOutSheetProps {
   /** Say out loud that the pre-filled finish is a guess from the schedule,
    * not something the carer did. Set for the forgotten-clock-out path. */
   showOverdueHint?: boolean;
+  /**
+   * A refusal the server returned for the LAST submit, already localized by
+   * the caller. Rendered inline, alongside the sheet's own pre-submit
+   * errors, because a toast fired while a `BottomSheetBase` is presented is
+   * not reliably visible on iOS — the sheet is itself an RN `<Modal>` and so
+   * is the toast host (GOLDEN-FIXES #1, same modal-over-modal family). A
+   * carer whose correction is refused saw nothing at all before this.
+   */
+  submitError?: string | null;
+  /**
+   * Optional action rendered under `submitError` — e.g. "Open that entry"
+   * when the refusal names a conflicting entry the caller can jump to.
+   */
+  submitErrorAction?: { label: string; onPress: () => void } | null;
 }
 
 /** Parses a break-minutes text field to a non-negative integer, defaulting
@@ -152,6 +168,8 @@ export function ClockOutSheet({
   initialBreakMinutes = 0,
   initialNote = '',
   showOverdueHint = false,
+  submitError = null,
+  submitErrorAction = null,
 }: ClockOutSheetProps) {
   const { t } = useTranslation('today');
   const [breakMinutes, setBreakMinutes] = useState(initialBreakMinutes);
@@ -173,13 +191,27 @@ export function ClockOutSheet({
     setBreakMinutes(initialBreakMinutes);
     setBreakMinutesText(String(initialBreakMinutes));
     setNote(initialNote);
+    // `clockOut` mode ARMS the pre-filled finish: a forgotten clock-out must
+    // actually SEND the scheduled finish, or the server's own clock banks the
+    // idle hours (see `ClockOutSheetSubmitInput.clockOutAt`). `edit` mode must
+    // not: the recorded finish is already correct, and re-sending it rebuilt
+    // from HH:MM rounded the recorded seconds away on every break-only
+    // correction. `shownOutTime` still displays it — untouched just means
+    // untouched, exactly as it already does for the start.
     setOutTimeText(
-      defaultClockOutAt
+      mode !== 'edit' && defaultClockOutAt
         ? utcIsoToWallClockHHMM(defaultClockOutAt, timeZone)
         : null
     );
     setInTimeText(null);
-  }, [visible, initialBreakMinutes, initialNote, defaultClockOutAt, timeZone]);
+  }, [
+    visible,
+    initialBreakMinutes,
+    initialNote,
+    defaultClockOutAt,
+    timeZone,
+    mode,
+  ]);
 
   const recordedInTime = clockInAt
     ? utcIsoToWallClockHHMM(clockInAt, timeZone)
@@ -187,7 +219,10 @@ export function ClockOutSheet({
   const shownInTime = inTimeText ?? recordedInTime;
   const shownOutTime =
     outTimeText ??
-    utcIsoToWallClockHHMM(new Date(nowMs).toISOString(), timeZone);
+    utcIsoToWallClockHHMM(
+      defaultClockOutAt ?? new Date(nowMs).toISOString(),
+      timeZone
+    );
 
   const parsedInTime = parseWallClockInput(shownInTime);
   const parsedOutTime = parseWallClockInput(shownOutTime);
@@ -232,6 +267,32 @@ export function ClockOutSheet({
       ? { ...rolledInstants, ends_at: rolledInstants.starts_at }
       : rolledInstants;
 
+  /**
+   * The span the server will actually measure, and the ceiling it measures
+   * it against. `shiftInstantsFromWallClock` rolls a finish at or before the
+   * start onto the NEXT day, so the rolled span is `24h - (start - finish)`
+   * — under the 16h cap only when the finish is typed at least 8 hours
+   * earlier than the start. Every value inside that 8-hour window was a
+   * guaranteed 400 the carer could neither predict nor see: she typed `527`
+   * meaning 5:27 pm against an 06:53 start and got a 22h 34m overnight
+   * shift. Caught here, before the request, with the number named.
+   */
+  const spanMs = instants
+    ? new Date(instants.ends_at).getTime() -
+      new Date(instants.starts_at).getTime()
+    : 0;
+  const isTooLong = spanMs > MAX_SESSION_SPAN_MS;
+
+  /**
+   * The day a rolled finish actually lands on. An overnight correction is
+   * legitimate and must stay possible, but it cannot be INVISIBLE — that is
+   * what let a mistyped finish read as an ordinary same-day one.
+   */
+  const overnightFinishDate =
+    instants && isOvernightRoll && !isTooLong
+      ? formatDisplayDate(localDateInZone(timeZone, new Date(instants.ends_at)))
+      : null;
+
   const effectiveClockInAt = instants?.starts_at ?? clockInAt;
   const effectiveClockOutMs = instants
     ? new Date(instants.ends_at).getTime()
@@ -263,7 +324,7 @@ export function ClockOutSheet({
   };
 
   const handleSubmit = () => {
-    if (!timesAreValid || isZeroLength || isFutureFinish) return;
+    if (!timesAreValid || isZeroLength || isTooLong || isFutureFinish) return;
     onSubmit({
       breakMinutes,
       note: note.trim(),
@@ -328,6 +389,14 @@ export function ClockOutSheet({
                 maxLength={5}
                 placeholder="HH:MM"
               />
+              {overnightFinishDate ? (
+                <Small
+                  testID="clockout-overnight-hint"
+                  className="text-muted-foreground"
+                >
+                  {t('overnightFinishHint', { date: overnightFinishDate })}
+                </Small>
+              ) : null}
             </View>
           </View>
         ) : null}
@@ -347,13 +416,44 @@ export function ClockOutSheet({
           </Small>
         ) : null}
 
-        {clockInAt && timesAreValid && !isZeroLength && isFutureFinish ? (
+        {clockInAt && timesAreValid && !isZeroLength && isTooLong ? (
+          <Small testID="clockout-too-long-error" className="text-destructive">
+            {t('tooLongFinishError', {
+              total: formatDuration(Math.round(spanMs / 60_000)),
+              maxHours: MAX_SESSION_SPAN_MS / 3_600_000,
+            })}
+          </Small>
+        ) : null}
+
+        {clockInAt &&
+        timesAreValid &&
+        !isZeroLength &&
+        !isTooLong &&
+        isFutureFinish ? (
           <Small
             testID="clockout-future-finish-error"
             className="text-destructive"
           >
             {t('futureFinishError')}
           </Small>
+        ) : null}
+
+        {submitError ? (
+          <View className="gap-1">
+            <Small testID="clockout-submit-error" className="text-destructive">
+              {submitError}
+            </Small>
+            {submitErrorAction ? (
+              <Button
+                testID="clockout-submit-error-action"
+                variant="outline"
+                size="default"
+                onPress={submitErrorAction.onPress}
+              >
+                <Text>{submitErrorAction.label}</Text>
+              </Button>
+            ) : null}
+          </View>
         ) : null}
 
         <View className="gap-2">
@@ -443,7 +543,9 @@ export function ClockOutSheet({
           testID="clockout-confirm"
           label={mode === 'edit' ? t('saveCorrection') : t('clockOut')}
           isLoading={isSubmitting}
-          disabled={!timesAreValid || isZeroLength || isFutureFinish}
+          disabled={
+            !timesAreValid || isZeroLength || isTooLong || isFutureFinish
+          }
           onPress={handleSubmit}
         />
       </View>

@@ -24,6 +24,8 @@
   "invalidTime": "Introduce una hora con formato HH:MM.",
   "zeroLengthFinishError": "La hora de salida debe ser posterior a la de entrada.",
   "futureFinishError": "La hora de salida no puede ser en el futuro.",
+  "tooLongFinishError": "Eso da un turno de {{total}}. Una hora de salida anterior a la de entrada se entiende como del día siguiente; un turno no puede durar más de {{maxHours}} horas.",
+  "overnightFinishHint": "Termina el {{date}}",
   "editEntryTitle": "Corregir este registro",
   "editEntryHint": "Cambia las horas o el descanso — tu familia verá las horas corregidas.",
   "saveCorrection": "Guardar cambios",

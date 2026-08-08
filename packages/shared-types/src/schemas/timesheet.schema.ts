@@ -58,6 +58,28 @@ export const TIMESHEET_STATUSES = {
 export type TimesheetStatus =
   (typeof TIMESHEET_STATUSES)[keyof typeof TIMESHEET_STATUSES];
 
+/**
+ * Hard ceiling on a single worked session span (`clock_out - clock_in`).
+ *
+ * Soft counterpart on mobile: `MAX_UNSCHEDULED_SHIFT_MS` in
+ * `apps/mobile/src/domains/today/utils/clockOutReminder.ts` (10h reminder).
+ * This hard reject must stay ABOVE that reminder so the client warns before
+ * the server refuses — same concept, two thresholds.
+ *
+ * Lives here, not in the service, because the mobile client now guards against
+ * this same value before submitting — one shared source, never two copies that
+ * can drift apart.
+ *
+ * Service-layer, not a DB constraint: a live-in or split arrangement may
+ * legitimately need a higher bound later without a migration.
+ *
+ * ponytail: calibration knob, not a law of physics — raise if a real
+ * household's longest legitimate session sits above 16h. Raising it past 24h
+ * needs `clockOutAcrossWeeks` to loop: it splits at ONE week boundary because
+ * no session shorter than a day can cross two.
+ */
+export const MAX_SESSION_SPAN_MS = 16 * 60 * 60 * 1000;
+
 // =============================================================================
 // time_entries
 // =============================================================================

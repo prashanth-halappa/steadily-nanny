@@ -31,7 +31,10 @@
 import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types/schemas/notification.schema';
 import { MAX_MONEY_MINOR } from '@steadily-nanny/shared-types/schemas/payArrangement.schema';
 import type { WeekEarnings } from '@steadily-nanny/shared-types/schemas/timesheet.schema';
-import { EARNINGS_RESULT_STATUSES } from '@steadily-nanny/shared-types/schemas/timesheet.schema';
+import {
+  EARNINGS_RESULT_STATUSES,
+  MAX_SESSION_SPAN_MS,
+} from '@steadily-nanny/shared-types/schemas/timesheet.schema';
 import { logger } from '../../../middlewares/logger';
 import {
   HOUSEHOLD_ROLES,
@@ -162,24 +165,6 @@ const UNNAMED_CARER_DISPLAY_NAME = 'Carer';
  * nobody can pre-record tomorrow's shift.
  */
 const CLOCK_SKEW_TOLERANCE_MS = 60_000;
-
-/**
- * Hard ceiling on a single worked session span (`clock_out - clock_in`).
- *
- * Soft counterpart on mobile: `MAX_UNSCHEDULED_SHIFT_MS` in
- * `apps/mobile/src/domains/today/utils/clockOutReminder.ts` (10h reminder).
- * This hard reject must stay ABOVE that reminder so the client warns before
- * the server refuses — same concept, two thresholds.
- *
- * Service-layer, not a DB constraint: a live-in or split arrangement may
- * legitimately need a higher bound later without a migration.
- *
- * ponytail: calibration knob, not a law of physics — raise if a real
- * household's longest legitimate session sits above 16h. Raising it past 24h
- * needs `clockOutAcrossWeeks` to loop: it splits at ONE week boundary because
- * no session shorter than a day can cross two.
- */
-const MAX_SESSION_SPAN_MS = 16 * 60 * 60 * 1000;
 
 const CARER_ROLES: ReadonlySet<string> = new Set([HOUSEHOLD_ROLES.NANNY]);
 const WRITE_ROLES: ReadonlySet<string> = new Set([

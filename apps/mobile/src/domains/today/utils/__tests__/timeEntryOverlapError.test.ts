@@ -46,7 +46,43 @@ describe('getOverlappingEntry', () => {
     });
   });
 
-  it('returns null when the metadata omits the times (older API build)', () => {
+  // A missing finish is not a degraded envelope — the conflicting entry is
+  // still running (she forgot to clock out and is typing the hours in by
+  // hand), which is its own message rather than a generic conflict.
+  it('reports a missing finish as a still-running conflict, not null', () => {
+    expect(
+      getOverlappingEntry(
+        overlapEnvelope({
+          reason: 'TIME_ENTRY_OVERLAPS',
+          overlappingEntryId: OVERLAP_ID,
+          overlappingClockInAt: OVERLAP_IN,
+        })
+      )
+    ).toEqual({ id: OVERLAP_ID, clockInAt: OVERLAP_IN, clockOutAt: null });
+  });
+
+  it('degrades a non-string finish to null rather than dropping the entry', () => {
+    expect(
+      getOverlappingEntry(
+        overlapEnvelope({
+          reason: 'TIME_ENTRY_OVERLAPS',
+          overlappingEntryId: OVERLAP_ID,
+          overlappingClockInAt: OVERLAP_IN,
+          overlappingClockOutAt: 1234,
+        })
+      )
+    ).toEqual({ id: OVERLAP_ID, clockInAt: OVERLAP_IN, clockOutAt: null });
+  });
+
+  it('returns null when the metadata omits the id or the start', () => {
+    expect(
+      getOverlappingEntry(
+        overlapEnvelope({
+          reason: 'TIME_ENTRY_OVERLAPS',
+          overlappingClockInAt: OVERLAP_IN,
+        })
+      )
+    ).toBeNull();
     expect(
       getOverlappingEntry(
         overlapEnvelope({
@@ -95,7 +131,7 @@ describe('formatTimeEntryOverlapMessage', () => {
   it('interpolates day and range, and never appends a UUID', () => {
     const t = (
       _key: string,
-      options?: { day: string; range: string }
+      options?: { day: string; range?: string }
     ): string =>
       `That finish overlaps another entry on ${options?.day} (${options?.range}). Still on the clock.`;
 
@@ -121,5 +157,27 @@ describe('formatTimeEntryOverlapMessage', () => {
     expect(message).toContain('Mon 3 Aug');
     expect(message).toContain('08:00–16:00');
     expect(message).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-/);
+  });
+
+  // The conflicting entry is still running: there is no range to show, and
+  // the fix is to clock out of it, not to shorten it.
+  it('uses the still-running key when the range is null', () => {
+    const keys: string[] = [];
+    const t = (key: string, options?: { day: string; range?: string }) => {
+      keys.push(key);
+      return `That clashes with a shift you're still clocked into on ${options?.day}.`;
+    };
+
+    const message = formatTimeEntryOverlapMessage(t, 'Mon 3 Aug', null);
+    expect(keys).toEqual(['timeEntryOverlapsRunning']);
+    expect(message).toContain('Mon 3 Aug');
+    expect(message).not.toContain('undefined');
+  });
+
+  it('under a key-echo mock, the running case still surfaces the day', () => {
+    const t = (key: string) => key;
+    const message = formatTimeEntryOverlapMessage(t, 'Mon 3 Aug', null);
+    expect(message).toContain('timeEntryOverlapsRunning');
+    expect(message).toContain('Mon 3 Aug');
   });
 });
