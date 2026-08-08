@@ -57,8 +57,8 @@ import { useSetupProgressStore } from '@/src/store/setupProgress';
 export interface CodeEntryScreenProps {
   /**
    * SETTINGS ENTRY POINT (`/settings/join-household`). Presence of this
-   * callback IS the variant switch: an ALREADY-ONBOARDED carer redeeming a
-   * code for an ADDITIONAL household.
+   * callback IS the variant switch: an ALREADY-ONBOARDED member — carer or
+   * co-parent — redeeming a code for an ADDITIONAL household.
    *
    * The wizard step machine must NOT run for them. `setupProgress` is
    * MMKV-PERSISTED, and `app/onboarding/_layout.tsx` reads `role !== null`

@@ -153,12 +153,18 @@ describe('SettingsScreen', () => {
     expect(screenSource).toContain('paddingBottom: tabBarScrollPadding');
   });
 
-  it('wires a nanny/helper path to join another household after request time off', () => {
+  it('offers join-another-household to EVERY role, outside the parent/carer ternary', () => {
     expect(screenSource).toContain('settings-join-household');
     expect(screenSource).toContain("router.push('/settings/join-household'");
     expect(screenSource).toContain("t('household:invite.joinTitle')");
+    // A co-parent invited by a second family needs this as much as a nanny
+    // does, so the row must sit AFTER the role ternary closes, not inside
+    // either arm. `</>\n          )}` is that closing token — the parent arm
+    // ends `</>\n          ) : (` instead, so this match is unambiguous.
+    const roleTernaryEnd = screenSource.indexOf('</>\n          )}');
+    expect(roleTernaryEnd).toBeGreaterThan(-1);
     expect(screenSource.indexOf('settings-join-household')).toBeGreaterThan(
-      screenSource.indexOf('settings-request-time-off')
+      roleTernaryEnd
     );
   });
 });

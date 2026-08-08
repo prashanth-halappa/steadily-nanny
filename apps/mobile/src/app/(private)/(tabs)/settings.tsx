@@ -320,16 +320,19 @@ export default function SettingsScreen() {
                 label={t('timeOff:screenTitle')}
                 onPress={() => router.push('/settings/time-off' as Href)}
               />
-              {/* A carer can work for more than one family. Without this row a
-                  second family's invite code has nowhere to be typed —
-                  `/onboarding/code` is sealed off once she's onboarded. */}
-              <SettingsNavRow
-                testID="settings-join-household"
-                label={t('household:invite.joinTitle')}
-                onPress={() => router.push('/settings/join-household' as Href)}
-              />
             </>
           )}
+          {/* OUTSIDE the role ternary on purpose — every role can be invited
+              by a second family (a carer working for two households, a
+              co-parent joining one). Without this row that invite code has
+              nowhere to be typed: `/onboarding/code` is sealed off the moment
+              `useIsOnboarded` says onboarded. Last in the section because it
+              is an occasional action, not a daily one. */}
+          <SettingsNavRow
+            testID="settings-join-household"
+            label={t('household:invite.joinTitle')}
+            onPress={() => router.push('/settings/join-household' as Href)}
+          />
         </View>
       ) : null}
 
