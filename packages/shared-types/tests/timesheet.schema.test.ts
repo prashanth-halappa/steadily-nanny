@@ -27,10 +27,13 @@ describe('timesheet.schema', () => {
       );
     });
 
+    // 'voided' added by 069_time_entry_void.sql, which drops and re-adds
+    // `time_entries_status_check` with the wider set. If this assertion and
+    // that CHECK ever disagree, a write the types allow is refused by the DB.
     it('TIME_ENTRY_STATUSES matches time_entries.status', () => {
       const values: string[] = Object.values(TIME_ENTRY_STATUSES);
       expect(values.sort()).toEqual(
-        ['running', 'submitted', 'approved', 'queried'].sort()
+        ['running', 'submitted', 'approved', 'queried', 'voided'].sort()
       );
     });
 

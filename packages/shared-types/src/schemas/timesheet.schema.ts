@@ -27,12 +27,33 @@ export const TIME_ENTRY_KINDS = {
 export type TimeEntryKind =
   (typeof TIME_ENTRY_KINDS)[keyof typeof TIME_ENTRY_KINDS];
 
-/** time_entries.status */
+/**
+ * time_entries.status
+ *
+ * `voided` is a SOFT DELETE (069): the carer withdrew an entry that should
+ * never have existed — an accidental clock-in, a duplicate, a retroactive
+ * entry filed on the wrong day. Never a hard delete; a time entry is a pay
+ * record, and a week where a row silently vanished is unanswerable in a
+ * dispute (same reasoning as `timeOffCommandService.cancel`'s
+ * `status = 'cancelled'`).
+ *
+ * ONE RULE, EVERYWHERE: a voided entry did not happen. It earns nothing, it
+ * occupies no clock time, it does not freeze a shift, and it does not count
+ * as coverage. Every read that lists or sums entries either applies that
+ * rule or carries a comment saying why it is an exception — there is NO
+ * exhaustive switch over this type in either app, so the compiler will not
+ * catch a missed branch. Tests are the only net.
+ *
+ * The one place it is deliberately NOT filtered is the household week read
+ * (`listForHouseholdWeek`): the client renders voided rows struck through,
+ * so it needs them, and the exclusion lives in the mobile sum instead.
+ */
 export const TIME_ENTRY_STATUSES = {
   RUNNING: 'running',
   SUBMITTED: 'submitted',
   APPROVED: 'approved',
   QUERIED: 'queried',
+  VOIDED: 'voided',
 } as const;
 export type TimeEntryStatus =
   (typeof TIME_ENTRY_STATUSES)[keyof typeof TIME_ENTRY_STATUSES];
