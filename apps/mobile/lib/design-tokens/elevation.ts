@@ -87,6 +87,7 @@ export function liveCardBackground(mode: PaletteMode): string {
 /** Exported for token tests — the app should use `useElevation()`. */
 export function elevationForMode(mode: PaletteMode): {
   card: ViewStyle;
+  cardProminent: ViewStyle;
   liveCard: ViewStyle;
   liveCardBackground: string;
   row: ViewStyle;
@@ -110,6 +111,27 @@ export function elevationForMode(mode: PaletteMode): {
           blurRadius: 24,
           spreadDistance: -12,
           color: hexToRgba(ink, 0.2),
+        },
+      ],
+    },
+    // T1 "act now" cards (tone="attention"). Same neutral ink as `card`,
+    // deliberately NOT apricot — coloured shadows stay exclusive to
+    // `liveCard`, so it remains the app's only coloured shadow.
+    cardProminent: {
+      boxShadow: [
+        {
+          offsetX: 0,
+          offsetY: 2,
+          blurRadius: 4,
+          spreadDistance: 0,
+          color: hexToRgba(ink, 0.06),
+        },
+        {
+          offsetX: 0,
+          offsetY: 18,
+          blurRadius: 36,
+          spreadDistance: -14,
+          color: hexToRgba(ink, 0.24),
         },
       ],
     },
@@ -158,6 +180,7 @@ const DARK_ELEVATION = elevationForMode('dark');
  */
 export function useElevation(): {
   card: ViewStyle;
+  cardProminent: ViewStyle;
   liveCard: ViewStyle;
   liveCardBackground: string;
   row: ViewStyle;

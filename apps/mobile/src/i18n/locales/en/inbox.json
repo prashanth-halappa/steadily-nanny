@@ -4,10 +4,16 @@
   "loading": "Loading…",
   "emptyTitle": "You're all caught up",
   "emptyBody": "No change requests, approvals, patterns, or queried weeks need you right now.",
+  "needsAttentionCard": {
+    "moreItems_one": "and {{count}} more thing waiting on you",
+    "moreItems_other": "and {{count}} more things waiting on you",
+    "seeAll": "See all ({{count}})"
+  },
   "items": {
     "changeRequest": {
       "title": "Respond to {{kind}}",
       "subtitle": "A schedule change is waiting on your reply.",
+      "cta": "Review request",
       "kind": {
         "time_change": "time change",
         "cancel": "cancellation",
@@ -19,6 +25,8 @@
     "approval": {
       "title": "Co-parent approval: {{action}}",
       "subtitle": "Auto-approves after {{when}} if you don't respond.",
+      "deadlineLabel": "Auto-approves {{when}}",
+      "cta": "Review",
       "action": {
         "short_notice_change": "short-notice change",
         "cancel": "cancellation",
@@ -31,17 +39,20 @@
     },
     "pendingPattern": {
       "title": "Respond to proposed schedule",
-      "subtitle": "Week starting {{start}} is waiting on you."
+      "subtitle": "Week starting {{start}} is waiting on you.",
+      "cta": "Respond"
     },
     "queriedWeek": {
       "title": "Queried week of {{week}}",
       "subtitle": "A parent asked about this week's hours.",
-      "subtitleWithNote": "{{note}}"
+      "subtitleWithNote": "{{note}}",
+      "cta": "Review week"
     },
     "submittedWeek": {
       "title": "Week of {{week}} submitted — review and approve",
       "subtitle": "Submitted by {{carer}}.",
-      "subtitleFallback": "Tap to review this week's hours."
+      "subtitleFallback": "Tap to review this week's hours.",
+      "cta": "Approve week"
     }
   }
 }

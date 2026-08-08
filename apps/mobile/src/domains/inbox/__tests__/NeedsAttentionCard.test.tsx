@@ -5,26 +5,73 @@
  * greps the component's source text — deleting the `items.length === 0`
  * early return still leaves that string in the file's comments, so the
  * source scan stays green on a gutted component. This file RENDERS the card:
- * invisible-when-idle, count flows through, press deep-links to /inbox.
+ * invisible-when-idle, the T1 tone (and its `demoted` opt-out),
+ * headline/deadline/"more" copy from `inboxItemCopy.ts`, the primary CTA
+ * deep-linking to the headline item, the "see all" ghost button only past
+ * one item, and that `pending_pattern` is filtered out entirely — it's
+ * `PendingScheduleCard`'s obligation, and double-showing/double-counting it
+ * here was the Wave 1 defect this file's tests now pin against regressing.
  *
  * The global preload's `react-i18next` mock echoes the key and drops
- * interpolation, so it is re-mocked here to splice `{{count}}` in — the count
- * reaching the rendered text is the thing under test.
+ * interpolation, so it is re-mocked here to splice `{{count}}`/`{{when}}`
+ * in — the interpolated value reaching the rendered text is under test.
  */
 import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 import { fireEvent, render } from '@testing-library/react-native';
+import { palette } from '~/lib/design-tokens/palette';
 import type { InboxItem } from '../utils/buildInboxItems';
 
-const ITEM: InboxItem = {
+const SURFACE_ATTENTION = palette.light.surfaceAttention.hex;
+
+const CHANGE_REQUEST: InboxItem = {
   kind: 'change_request',
   id: 'cr-1',
   shiftId: 'shift-1',
   requestKind: 'time_change',
 };
 
+const APPROVAL: InboxItem = {
+  kind: 'co_parent_approval',
+  id: 'ap-1',
+  householdId: 'hh-1',
+  action: 'extra_shift',
+  timeoutAt: '2026-08-08T16:00:00Z',
+  shiftId: 'shift-9',
+};
+
+const PENDING_PATTERN: InboxItem = {
+  kind: 'pending_pattern',
+  id: 'pat-1',
+  patternId: 'pat-1',
+  dtstart: '2026-08-10',
+};
+
+const SUBMITTED_WEEK: InboxItem = {
+  kind: 'submitted_week',
+  id: 'ts-1',
+  weekStart: '2026-08-04',
+  carerDisplayName: 'Test Nanny',
+};
+
+const QUERIED_WEEK: InboxItem = {
+  kind: 'queried_week',
+  id: 'ts-2',
+  weekStart: '2026-07-28',
+  queryNote: null,
+};
+
 let NeedsAttentionCard: typeof import('../components/NeedsAttentionCard').NeedsAttentionCard;
 let mockUseInboxItems: ReturnType<typeof mock>;
 let mockPush: ReturnType<typeof mock>;
+
+function setItems(items: InboxItem[]) {
+  mockUseInboxItems.mockImplementation(() => ({
+    items,
+    isLoading: false,
+    isError: false,
+    refetch: mock(),
+  }));
+}
 
 beforeAll(async () => {
   mockUseInboxItems = mock(() => ({
@@ -37,8 +84,8 @@ beforeAll(async () => {
 
   mock.module('react-i18next', () => ({
     useTranslation: () => ({
-      t: (key: string, opts?: { count?: number }) =>
-        opts?.count === undefined ? key : `${key}(${opts.count})`,
+      t: (key: string, opts?: Record<string, string | number>) =>
+        opts ? `${key}(${JSON.stringify(opts)})` : key,
       i18n: { language: 'en', changeLanguage: mock() },
     }),
   }));
@@ -48,6 +95,16 @@ beforeAll(async () => {
   mock.module('expo-router', () => ({
     useRouter: () => ({ push: mockPush, back: mock() }),
   }));
+  mock.module('@/src/hooks/queries/useActiveHousehold', () => ({
+    useActiveHousehold: () => ({
+      household: { timezone: 'UTC' },
+      householdId: 'hh-1',
+      households: [],
+      setActiveHouseholdId: mock(),
+      isLoading: false,
+      isError: false,
+    }),
+  }));
 
   const mod = await import('../components/NeedsAttentionCard');
   NeedsAttentionCard = mod.NeedsAttentionCard;
@@ -55,12 +112,7 @@ beforeAll(async () => {
 
 beforeEach(() => {
   mockPush.mockClear?.();
-  mockUseInboxItems.mockImplementation(() => ({
-    items: [] as InboxItem[],
-    isLoading: false,
-    isError: false,
-    refetch: mock(),
-  }));
+  setItems([]);
 });
 
 describe('NeedsAttentionCard', () => {
@@ -70,31 +122,147 @@ describe('NeedsAttentionCard', () => {
     expect(queryByTestId('today-needs-attention-card')).toBeNull();
   });
 
-  it('renders with the pending count once there is work', () => {
-    mockUseInboxItems.mockImplementation(() => ({
-      items: [ITEM, { ...ITEM, id: 'cr-2' }, { ...ITEM, id: 'cr-3' }],
-      isLoading: false,
-      isError: false,
-      refetch: mock(),
-    }));
-
-    const { getByTestId, getByText } = render(<NeedsAttentionCard />);
-
-    expect(getByTestId('today-needs-attention-card')).toBeTruthy();
-    expect(getByText('today:needsAttention.title(3)')).toBeTruthy();
-  });
-
-  it('deep-links to the inbox on press', () => {
-    mockUseInboxItems.mockImplementation(() => ({
-      items: [ITEM],
-      isLoading: false,
-      isError: false,
-      refetch: mock(),
-    }));
+  it("renders on the T1 attention-toned ground (Card's tone, not a bar)", () => {
+    setItems([CHANGE_REQUEST]);
 
     const { getByTestId } = render(<NeedsAttentionCard />);
-    fireEvent.press(getByTestId('today-needs-attention-card'));
+
+    const card = getByTestId('today-needs-attention-card');
+    const styleArray = [card.props.style].flat();
+    expect(
+      styleArray.some(
+        s =>
+          s && typeof s === 'object' && s.backgroundColor === SURFACE_ATTENTION
+      )
+    ).toBe(true);
+  });
+
+  it("uses the first item's own sentence as the headline", () => {
+    setItems([SUBMITTED_WEEK]);
+
+    const { getByText } = render(<NeedsAttentionCard />);
+
+    expect(
+      getByText('items.submittedWeek.title({"week":"4 Aug"})')
+    ).toBeTruthy();
+  });
+
+  it('shows the destructive-coloured auto-approve deadline only for a co-parent approval', () => {
+    setItems([APPROVAL]);
+
+    const { getByText } = render(<NeedsAttentionCard />);
+
+    const deadline = getByText(/items\.approval\.deadlineLabel/);
+    expect(deadline).toBeTruthy();
+    expect(deadline.props.className).toContain('text-destructive');
+  });
+
+  it('renders no deadline line for a non-approval item', () => {
+    setItems([SUBMITTED_WEEK]);
+
+    const { queryByText } = render(<NeedsAttentionCard />);
+
+    expect(queryByText(/deadlineLabel/)).toBeNull();
+  });
+
+  it('hides the "more" body and the "see all" button for a single item', () => {
+    setItems([CHANGE_REQUEST]);
+
+    const { queryByText, queryByTestId } = render(<NeedsAttentionCard />);
+
+    expect(queryByText(/moreItems/)).toBeNull();
+    expect(queryByTestId('today-needs-attention-see-all')).toBeNull();
+  });
+
+  it('shows the pluralised "more" body and "see all" button past one item', () => {
+    setItems([CHANGE_REQUEST, APPROVAL]);
+
+    const { getByText, getByTestId } = render(<NeedsAttentionCard />);
+
+    expect(getByText('needsAttentionCard.moreItems({"count":1})')).toBeTruthy();
+    expect(getByTestId('today-needs-attention-see-all')).toBeTruthy();
+  });
+
+  // A pending pattern is `PendingScheduleCard`'s obligation, not this card's
+  // — same status/carer_id gate, same destination (buildInboxItems.ts:133).
+  // It must not inflate the "N more" count even when it rides along with a
+  // real item, or the two cards silently double-count the same thing.
+  it('does not count a pending pattern toward "more items" alongside a real item', () => {
+    setItems([CHANGE_REQUEST, APPROVAL, PENDING_PATTERN]);
+
+    const { getByText } = render(<NeedsAttentionCard />);
+
+    expect(getByText('needsAttentionCard.moreItems({"count":1})')).toBeTruthy();
+  });
+
+  it('deep-links the primary CTA to the headline item, not always /inbox', () => {
+    setItems([CHANGE_REQUEST]);
+
+    const { getByTestId } = render(<NeedsAttentionCard />);
+    fireEvent.press(getByTestId('today-needs-attention-cta'));
+
+    expect(mockPush).toHaveBeenCalledWith('/(private)/schedule/shifts/shift-1');
+  });
+
+  it('deep-links "see all" to /inbox', () => {
+    setItems([CHANGE_REQUEST, APPROVAL]);
+
+    const { getByTestId } = render(<NeedsAttentionCard />);
+    fireEvent.press(getByTestId('today-needs-attention-see-all'));
 
     expect(mockPush).toHaveBeenCalledWith('/inbox');
+  });
+
+  it('derives the CTA label from the headline item kind', () => {
+    setItems([SUBMITTED_WEEK]);
+
+    const { getByText } = render(<NeedsAttentionCard />);
+
+    expect(getByText('items.submittedWeek.cta')).toBeTruthy();
+  });
+
+  // Filtered out before headline selection ever runs — not special-cased
+  // there — so a pattern riding with one real item never becomes the
+  // headline, and never leaves a stray "more" line behind either.
+  it('excludes a pending pattern from consideration entirely: headline is the other item, no "more" line', () => {
+    setItems([PENDING_PATTERN, QUERIED_WEEK]);
+
+    const { getByText, getByTestId, queryByText } = render(
+      <NeedsAttentionCard />
+    );
+
+    expect(
+      getByText('items.queriedWeek.title({"week":"28 Jul"})')
+    ).toBeTruthy();
+    expect(queryByText(/moreItems/)).toBeNull();
+    fireEvent.press(getByTestId('today-needs-attention-cta'));
+    expect(mockPush).toHaveBeenCalledWith(
+      '/(private)/(tabs)/hours?weekStart=2026-07-28'
+    );
+  });
+
+  // PendingScheduleCard renders on the identical status/carer_id gate and
+  // routes to the identical destination (schedule/respond/:id) — a sole
+  // pending pattern is ALREADY shown there. Falling back to it here (the old
+  // behaviour) stacked two cards for one obligation.
+  it("renders nothing when the only item is a pending pattern — that's PendingScheduleCard's obligation alone", () => {
+    setItems([PENDING_PATTERN]);
+
+    const { queryByTestId } = render(<NeedsAttentionCard />);
+
+    expect(queryByTestId('today-needs-attention-card')).toBeNull();
+  });
+
+  it('demoted renders at default tone — no tinted ground, content and CTA still intact', () => {
+    setItems([CHANGE_REQUEST]);
+
+    const { getByTestId } = render(<NeedsAttentionCard demoted />);
+
+    const card = getByTestId('today-needs-attention-card');
+    const styleArray = [card.props.style].flat();
+    expect(
+      styleArray.some(s => s && typeof s === 'object' && 'backgroundColor' in s)
+    ).toBe(false);
+    expect(getByTestId('today-needs-attention-cta')).toBeTruthy();
   });
 });

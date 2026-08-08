@@ -423,6 +423,18 @@ describe('ParentWeekView — earnings arms', () => {
     );
   });
 
+  // Daylight P0-3 regression: the headline replaces the pill for the
+  // parent viewer — the two must never render together on the real,
+  // fully-wired card (not just the isolated WeekTotal prop test).
+  it('shows the status headline, never the StatusPill, on the real card', async () => {
+    const { getByTestId, queryByTestId } = renderParentView();
+
+    await waitFor(() =>
+      expect(getByTestId('hours-status-headline')).toBeTruthy()
+    );
+    expect(queryByTestId('hours-timesheet-status')).toBeNull();
+  });
+
   it('approved-frozen arm: shows "Approved gross" from the snapshot', async () => {
     getByIdMock.mockImplementation(() =>
       Promise.resolve(

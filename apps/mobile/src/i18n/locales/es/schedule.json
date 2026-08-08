@@ -247,7 +247,14 @@
   "crossFamily": {
     "header": "Ritmo de dos semanas entre tus familias",
     "thisFamily": "Esta familia",
-    "otherFamily": "Otra familia"
+    "otherFamily": "Otra familia",
+    "noClashes": "Sin coincidencias en las próximas dos semanas",
+    "clashCount_one": "1 coincidencia en las próximas dos semanas",
+    "clashCount_other": "{{count}} coincidencias en las próximas dos semanas",
+    "workingDaysThisFamily_one": "{{count}} día con esta familia",
+    "workingDaysThisFamily_other": "{{count}} días con esta familia",
+    "workingDaysOtherFamily_one": "{{count}} día con la otra familia",
+    "workingDaysOtherFamily_other": "{{count}} días con la otra familia"
   },
   "changeRequestKind": {
     "time_change": "Cambio de horario",

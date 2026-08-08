@@ -76,7 +76,10 @@ function cellStatusColour(
       return colors.warning;
     case 'declined':
     case 'cancelled':
-      return colors.mutedForeground;
+      // gray200, not mutedForeground — the dark grey-plum reads visually
+      // heavier than confirmed `success` at this size, so a cancelled day
+      // was louder than a working one.
+      return colors.gray[200];
     default:
       return colors.category.accent2;
   }
@@ -193,14 +196,18 @@ export function WeekRibbonView({
             const status = shift?.status;
             const filled = status !== undefined;
             const colour = cellStatusColour(status, themeColors);
+            // Empty cells are a thin centred rule, not a full-height muted
+            // capsule — the row's own `items-center` centres it — so an
+            // occupied block is the only real shape on screen.
             const cell = (
               <View
                 testID={`week-ribbon-cell-${dow}-${hour}`}
                 accessibilityState={{ selected: filled }}
                 accessibilityLabel={status ?? 'empty'}
-                className="mx-0.5 h-4 flex-1 rounded-full"
+                className="mx-0.5 flex-1 rounded-full"
                 style={{
-                  backgroundColor: filled ? colour : themeColors.muted,
+                  height: filled ? 16 : 2,
+                  backgroundColor: filled ? colour : themeColors.border,
                   opacity: 1,
                   borderWidth: 0,
                 }}

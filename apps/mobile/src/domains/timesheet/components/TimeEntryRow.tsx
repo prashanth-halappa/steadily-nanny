@@ -113,7 +113,13 @@ export function TimeEntryRow({
 
   const content = (
     <View
-      className={cn('rounded-row p-3', isRunning ? undefined : 'bg-card')}
+      testID={`hours-entry-row-${entry.id}`}
+      className={cn(
+        'rounded-row p-3',
+        // T4: a voided entry is a complete record, but it must not compete
+        // with a real one for weight — no card ground, no elevation.
+        isRunning ? undefined : isVoided ? 'bg-muted' : 'bg-card'
+      )}
       style={[
         // Apricot is the live-clock state and nothing else. Applied the way
         // `components/ui/card.tsx` already does it, and INSTEAD of the flat
@@ -123,7 +129,9 @@ export function TimeEntryRow({
               ...elevation.liveCard,
               backgroundColor: elevation.liveCardBackground,
             }
-          : elevation.row,
+          : isVoided
+            ? null
+            : elevation.row,
         { minHeight: spacing.minTouchTarget },
       ]}
     >
@@ -177,6 +185,7 @@ export function TimeEntryRow({
           <Body
             testID={`hours-entry-duration-${entry.id}`}
             weight="medium"
+            className={isVoided ? 'text-muted-foreground' : undefined}
             tabular
           >
             {formatDuration(minutes)}

@@ -122,4 +122,31 @@ describe('elevationForMode', () => {
     expect(layerColours(light.row)).toHaveLength(1);
     expect(layerColours(light.card)).toHaveLength(2);
   });
+
+  it('derives cardProminent from the neutral ink, never apricot — coloured shadows stay exclusive to liveCard', () => {
+    const light = elevationForMode('light');
+    expect(layerColours(light.cardProminent)).toEqual([
+      hexToRgba(palette.light.foreground.hex, 0.06),
+      hexToRgba(palette.light.foreground.hex, 0.24),
+    ]);
+  });
+
+  it('gives cardProminent a stronger lift than the resting card', () => {
+    const light = elevationForMode('light');
+    const [, cardLift] = layers(light.card);
+    const [, prominentLift] = layers(light.cardProminent);
+    expect(Number(prominentLift?.blurRadius ?? 0)).toBeGreaterThan(
+      Number(cardLift?.blurRadius ?? 0)
+    );
+    expect(Number(prominentLift?.offsetY ?? 0)).toBeGreaterThan(
+      Number(cardLift?.offsetY ?? 0)
+    );
+  });
+
+  it('tracks cardProminent against the dark palette independently', () => {
+    expect(layerColours(elevationForMode('dark').cardProminent)).toEqual([
+      hexToRgba(palette.dark.foreground.hex, 0.06),
+      hexToRgba(palette.dark.foreground.hex, 0.24),
+    ]);
+  });
 });

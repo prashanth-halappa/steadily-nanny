@@ -1,5 +1,7 @@
 {
   "clockInHint": "Starting early? Clock in whenever — we record what happened, not what was planned.",
+  "clockInHintNoShift": "Nothing's scheduled today — clock in whenever you start.",
+  "readyWhenYouAre": "Ready when you are",
   "clockIn": "Clock in",
   "clockOut": "Clock out",
   "onTheClock": "You're on the clock",
@@ -30,7 +32,7 @@
   "editEntryTitle": "Fix this entry",
   "editEntryHint": "Change the times or the break — your household sees the corrected hours.",
   "saveCorrection": "Save changes",
-  "nannyScheduledBody": "{{start}}–{{end}}",
+  "nannyScheduledBody": "Today, {{start}} – {{end}}",
   "nannyArrivingBody": "Starts at {{start}}",
   "todayCoverTitle": "Today's cover",
   "stateLive": "On the clock since {{time}}",
@@ -40,6 +42,10 @@
   "carerFallback": "Carer",
   "nannyNoShiftTitle": "No cover today",
   "nannyNoShiftBody": "Nothing on the schedule for today yet.",
+  "calm": {
+    "title": "Everything's covered",
+    "body": "{{name}} · {{detail}}. Nothing needs you right now."
+  },
   "coverageGap": {
     "title": "Coverage gaps today",
     "description": "Coverage gap {{start}}–{{end}}",
@@ -110,8 +116,7 @@
     "body": "Pending work is waiting on you."
   },
   "missedHours": {
-    "cta": "Add missed hours",
-    "sheetTitle": "Add missed hours",
+    "cta": "Forgot to clock in?",
     "sheetHint": "Forgot to clock in? Log the hours you worked.",
     "dateLabel": "Date",
     "noteLabel": "Note (optional)",
@@ -142,6 +147,7 @@
     "eveningRecap": "Evening recap from your nanny",
     "saveAsMoment": "Save as moment",
     "savedAsMoment": "Saved as moment",
+    "addNote": "Add a note",
     "tapHintForNanny": "Tap what your nanny should know",
     "tapHintForParent": "Tap what your family should know",
     "anythingElse": "Anything else?",

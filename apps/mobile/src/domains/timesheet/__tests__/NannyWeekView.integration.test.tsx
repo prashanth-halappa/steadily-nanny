@@ -143,6 +143,30 @@ const WEEK_START = '2026-08-03';
 const TIMESHEET_ID = 'ts-1';
 const now = '2026-08-01T00:00:00.000Z';
 
+// Daylight P0-5: NannyWeekView now reads `useActiveHousehold()` for the
+// approved appreciation line's household name — mocked at the same
+// endpoint boundary as everything else here, not the hook level.
+function makeHousehold(overrides: Partial<Record<string, unknown>> = {}) {
+  return {
+    id: HOUSEHOLD_ID,
+    name: 'The Smiths',
+    timezone: 'UTC',
+    address_line: null,
+    latitude: null,
+    longitude: null,
+    approval_mode: 'either',
+    approval_scope: 'all',
+    approval_timeout_minutes: 60,
+    short_notice_hours: 24,
+    cancellation_paid_within_hours: 24,
+    created_by: null,
+    created_at: now,
+    updated_at: now,
+    ...overrides,
+  };
+}
+const listHouseholdsMock = mock(() => Promise.resolve([makeHousehold()]));
+
 function makeEntry(overrides: Partial<Record<string, unknown>> = {}) {
   return {
     id: 'entry-1',
@@ -253,6 +277,13 @@ mock.module('@/src/api/endpoints/expenses', () => {
     },
   };
 });
+mock.module('@/src/api/endpoints/household', () => ({
+  householdApi: {
+    list: listHouseholdsMock,
+    listPast: mock(() => Promise.resolve([])),
+    listMembers: mock(() => Promise.resolve([])),
+  },
+}));
 mock.module('@/src/api/endpoints/payArrangements', () => {
   const shared = require('@steadily-nanny/shared-types/schemas/payArrangement.schema');
   return {
@@ -305,7 +336,7 @@ beforeAll(async () => {
   formatWeekRangeLabel = weekUtils.formatWeekRangeLabel;
 });
 
-function renderNannyView() {
+function renderNannyView({ readOnly = false }: { readOnly?: boolean } = {}) {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: { retry: false, gcTime: 0 },
@@ -327,6 +358,7 @@ function renderNannyView() {
         onNextWeek={() => {}}
         isNextWeekDisabled={false}
         isPreviousWeekDisabled={false}
+        readOnly={readOnly}
       />
     </QueryClientProvider>
   );
@@ -342,8 +374,12 @@ beforeEach(() => {
   updateExpenseMock.mockReset();
   withdrawExpenseMock.mockReset();
   getCurrentArrangementMock.mockReset();
+  listHouseholdsMock.mockReset();
   routerPush.mockClear();
 
+  listHouseholdsMock.mockImplementation(() =>
+    Promise.resolve([makeHousehold()])
+  );
   listEntriesMock.mockImplementation(() => Promise.resolve([makeEntry()]));
   listTimesheetsMock.mockImplementation(() =>
     Promise.resolve([makeTimesheet()])
@@ -367,8 +403,8 @@ beforeEach(() => {
 });
 
 describe('NannyWeekView — earnings arms', () => {
-  it('estimated arm: shows the amount and no StatusPill row (nanny view never got one)', async () => {
-    const { getByTestId, queryByTestId } = renderNannyView();
+  it('estimated arm: shows the amount and her own StatusPill (Daylight P0-5)', async () => {
+    const { getByTestId } = renderNannyView();
 
     await waitFor(() =>
       expect(getByTestId('hours-earnings-line-amount')).toBeTruthy()
@@ -376,7 +412,13 @@ describe('NannyWeekView — earnings arms', () => {
     expect(getByTestId('hours-earnings-line-amount').props.children).toBe(
       '£148.00'
     );
-    expect(queryByTestId('hours-timesheet-status')).toBeNull();
+    // P0-5: the person whose pay it is can now see her own week's status —
+    // worded from her side ("With the family", not "Ready for your
+    // approval", which is about someone else's action).
+    expect(getByTestId('hours-timesheet-status')).toBeTruthy();
+    expect(getByTestId('hours-timesheet-status-label').props.children).toBe(
+      'nannyStatusSubmitted'
+    );
   });
 
   it('tapping the money line opens the breakdown sheet, read-only', async () => {
@@ -444,6 +486,31 @@ describe('NannyWeekView — earnings arms', () => {
       expect(
         getByTestId('hours-earnings-breakdown-subheader').props.children
       ).toContain('earningsBreakdownApproved')
+    );
+  });
+
+  // Daylight P0-5 "nanny appreciated": once approved, her card names the
+  // household and the date, and the gross her own week worked out to.
+  it('approved-frozen arm: shows the appreciation line naming the household', async () => {
+    getByIdMock.mockImplementation(() =>
+      Promise.resolve(
+        makeTimesheetWeek({
+          status: 'approved',
+          approved_at: '2026-08-10T09:00:00.000Z',
+        })
+      )
+    );
+    listTimesheetsMock.mockImplementation(() =>
+      Promise.resolve([makeTimesheet({ status: 'approved' })])
+    );
+
+    const { getByTestId } = renderNannyView();
+
+    await waitFor(() =>
+      expect(getByTestId('hours-approved-by-note')).toBeTruthy()
+    );
+    expect(getByTestId('hours-approved-by-note').props.children).toBe(
+      'approvedByHouseholdWithGross'
     );
   });
 });
@@ -646,6 +713,24 @@ describe('NannyWeekView — expenses & the statement (Phase 4)', () => {
     fireEvent.press(getByTestId('expenses-add'));
 
     await waitFor(() => expect(getByTestId('expense-add-sheet')).toBeTruthy());
+  });
+
+  // Daylight P1: "Add an expense" moved from ParentWeekView-sibling JSX
+  // (gated `{readOnly ? null : <Button .../>}`) into `ExpensesListCard`'s
+  // own `onAddExpense` prop — confirm the readOnly/past-member gate
+  // survived the move rather than assuming it did.
+  it('omits the Add-an-expense button for a past member (readOnly)', async () => {
+    listExpensesForWeekMock.mockImplementation(() =>
+      Promise.resolve([makeExpense()])
+    );
+    const { queryByTestId, getByTestId } = renderNannyView({
+      readOnly: true,
+    });
+
+    await waitFor(() =>
+      expect(getByTestId('expense-row-expense-1-description')).toBeTruthy()
+    );
+    expect(queryByTestId('expenses-add')).toBeNull();
   });
 
   it('no Reimbursements card when the week has no approved expenses', async () => {

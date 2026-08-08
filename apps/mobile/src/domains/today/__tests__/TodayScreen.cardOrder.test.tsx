@@ -73,6 +73,10 @@ mock.module('@/src/domains/schedule', () => ({
 }));
 mock.module('@/src/domains/inbox', () => ({
   NeedsAttentionCard: marker('needs-attention'),
+  useInboxItems: () => ({ items: [], isLoading: false }),
+}));
+mock.module('@/src/domains/today/hooks/useTodayCoverageGaps', () => ({
+  useTodayCoverageGaps: () => ({ gaps: [] }),
 }));
 mock.module('@/src/domains/today/components/ClockInCard', () => ({
   ClockInCard: marker('clock-in'),
@@ -89,6 +93,13 @@ mock.module('@/src/domains/today/components/HandoffChipsCard', () => ({
 mock.module('@/src/domains/today/components/NannyLiveStatusCard', () => ({
   NannyLiveStatusCard: marker('nanny-live-status'),
 }));
+// Not part of the pinned order (it renders nothing unless the inbox is
+// empty, nothing is live, AND someone is covering today — see its own
+// tests) — stubbed to null here so this file stays about ORDER, not the
+// calm state's own condition.
+mock.module('@/src/domains/today/components/TodayCalmCard', () => ({
+  TodayCalmCard: () => null,
+}));
 
 const HOUSEHOLD_ID = 'household-order-1';
 
@@ -104,6 +115,13 @@ beforeAll(async () => {
 
   mock.module('@/src/domains/today/hooks/useHouseholdIsLive', () => ({
     useHouseholdIsLive: mock(() => false),
+  }));
+  mock.module('@/src/domains/today/hooks/useOverdueClockOut', () => ({
+    useOverdueClockOut: mock(() => ({
+      overdue: false,
+      clockInAt: null,
+      shiftEndsAt: null,
+    })),
   }));
   mock.module('@/src/hooks/queries/useActiveHousehold', () => ({
     useActiveHousehold: mock(() => ({

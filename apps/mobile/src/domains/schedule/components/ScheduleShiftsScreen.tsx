@@ -15,15 +15,13 @@ import { MATERIALISATION_HORIZON_WEEKS } from '@steadily-nanny/shared-types';
 import { type Href, useRouter } from 'expo-router';
 import { type ReactNode, useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { View } from 'react-native';
+import { Pressable, View } from 'react-native';
 import { illustrations } from '@/assets/illustrations';
-import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
+import { SCREEN_CONTENT_STYLE, spacing } from '@/lib/design-tokens';
 import { ErrorState } from '@/src/components/custom/ErrorState';
 import { BackButton } from '@/src/components/ui/back-button';
-import { Button } from '@/src/components/ui/button';
 import { EmptyState } from '@/src/components/ui/empty-state';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
-import { Text } from '@/src/components/ui/text';
 import { H1, Small } from '@/src/components/ui/typography';
 import { WeekNavHeader } from '@/src/components/ui/week-nav-header';
 import { AgendaView } from '@/src/domains/schedule/components/AgendaView';
@@ -34,7 +32,7 @@ import {
 import { CrossFamilyRhythmView } from '@/src/domains/schedule/components/CrossFamilyRhythmView';
 import { WeekRibbonView } from '@/src/domains/schedule/components/WeekRibbonView';
 import { timeOffCoversLocalDate } from '@/src/domains/schedule/utils/timeOffOverlap';
-import { isParentEditorRole } from '@/src/domains/setup/types';
+import { isParentEditorRole, SETUP_ROLES } from '@/src/domains/setup/types';
 import {
   addWeeks,
   formatWeekRangeLabel,
@@ -141,6 +139,12 @@ export function ScheduleShiftsScreen({
     (shifts.length > 0 || weekHasAway);
   const showCrossFamily =
     calendarView === CALENDAR_VIEWS.CROSS_FAMILY &&
+    // TIER0-CX-SPEC §5.2: household names are nanny-only. The switcher
+    // already hides this view from a parent (CalendarViewSwitcher's
+    // `nannyOnly`), but Rhythm now renders real household names, so the
+    // gate belongs here too, where the data actually renders — not only
+    // where the tab is offered.
+    onboarding.role === SETUP_ROLES.NANNY &&
     !isLoading &&
     !showUnavailable &&
     !showQueryError &&
@@ -170,16 +174,22 @@ export function ScheduleShiftsScreen({
         <View className="flex-row items-center justify-between gap-2">
           <H1>{t('shifts.screenTitle')}</H1>
           {canAddExtra ? (
-            <Button
+            // Small/14/600, not a ghost Button (16 @600) — it was reading
+            // as heavy as the H1 beside it.
+            <Pressable
               testID="schedule-shifts-add-extra"
-              variant="ghost"
-              size="sm"
+              accessibilityRole="button"
+              hitSlop={8}
+              style={{ minHeight: spacing.minTouchTarget }}
+              className="justify-center"
               onPress={() =>
                 router.push('/(private)/schedule/shifts/extra' as Href)
               }
             >
-              <Text className="text-primary">{t('shifts.addExtra')}</Text>
-            </Button>
+              <Small weight="semibold" className="text-primary">
+                {t('shifts.addExtra')}
+              </Small>
+            </Pressable>
           ) : null}
         </View>
         {patternBanner}
@@ -239,7 +249,7 @@ export function ScheduleShiftsScreen({
       {showContent && calendarView === CALENDAR_VIEWS.AGENDA ? (
         <AgendaView
           shifts={shifts}
-          displayTimeZone={profile.data?.timezone}
+          displayTimeZone={timeZone}
           timeOff={timeOff}
           householdTimeZone={timeZone}
           weekDates={weekDates}
@@ -259,9 +269,7 @@ export function ScheduleShiftsScreen({
           ) : null}
           <WeekRibbonView
             shifts={shifts}
-            displayTimeZone={
-              activeHousehold.household?.timezone ?? profile.data?.timezone
-            }
+            displayTimeZone={timeZone}
             weekStartsOn={profile.data?.week_starts_on}
             timeOff={timeOff}
             householdTimeZone={timeZone}

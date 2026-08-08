@@ -16,7 +16,12 @@ import { Button } from '@/src/components/ui/button';
 import { Card } from '@/src/components/ui/card';
 import { Input } from '@/src/components/ui/input';
 import { Text } from '@/src/components/ui/text';
-import { Caption, H3, Small } from '@/src/components/ui/typography';
+import {
+  Caption,
+  H4,
+  MetadataLabel,
+  Small,
+} from '@/src/components/ui/typography';
 import { SETUP_ROLES, type SetupRole } from '@/src/domains/setup/types';
 import {
   chipsForPhase,
@@ -25,8 +30,27 @@ import {
 import { useCreateHandoffNote } from '@/src/hooks/mutations/useCreateHandoffNote';
 import { useUpdateHandoffNote } from '@/src/hooks/mutations/useUpdateHandoffNote';
 import { useHandoffNotes } from '@/src/hooks/queries/useHandoffNotes';
+import { timeToMinutes } from '@/src/lib/displayTime';
 import { localDateInZone } from '@/src/lib/localDate';
+import { utcIsoToWallClockHHMM } from '@/src/lib/wallClock';
 import { useAuthStore } from '@/src/store/auth';
+
+/** Household-local "before 10:00" — the auto-expand cutoff (Wave 2-C). */
+const AUTO_EXPAND_CUTOFF_MINUTES = 10 * 60;
+
+function isBeforeTenAM(timeZone: string): boolean {
+  const nowHHMM = utcIsoToWallClockHHMM(new Date().toISOString(), timeZone);
+  return timeToMinutes(nowHHMM) < AUTO_EXPAND_CUTOFF_MINUTES;
+}
+
+function titleForPhase(
+  phase: HandoffPhase,
+  t: (key: string) => string
+): string {
+  return phase === HANDOFF_PHASES.MORNING
+    ? t('handoff.morningTitle')
+    : t('handoff.eveningTitle');
+}
 
 interface HandoffChipsCardProps {
   householdId: string;
@@ -130,10 +154,7 @@ function HandoffPhaseEditor({
 
   const isPending = createNote.isPending || updateNote.isPending;
 
-  const title =
-    phase === HANDOFF_PHASES.MORNING
-      ? t('handoff.morningTitle')
-      : t('handoff.eveningTitle');
+  const title = titleForPhase(phase, t);
 
   const sentLabel = sentAt
     ? t('handoff.sentAt', {
@@ -146,7 +167,7 @@ function HandoffPhaseEditor({
 
   return (
     <View testID={`handoff-editor-${phase}`} className="gap-2">
-      <H3>{title}</H3>
+      <H4>{title}</H4>
       <View className="flex-row flex-wrap gap-2">
         {suggestions.map(chip => (
           <ChipToggle
@@ -206,6 +227,9 @@ export function HandoffChipsCard({
   const notesQuery = useHandoffNotes(householdId, localDate);
   const updateNote = useUpdateHandoffNote(householdId, localDate);
   const currentUserId = useAuthStore(s => s.user?.id) ?? null;
+  // `null` = no manual override yet, so `expanded` below tracks the derived
+  // auto-expand condition; once she taps "Add a note" it wins outright.
+  const [manualExpanded, setManualExpanded] = useState<boolean | null>(null);
 
   const editorPhase: HandoffPhase | null =
     role === SETUP_ROLES.PARENT
@@ -243,26 +267,64 @@ export function HandoffChipsCard({
   const existingChips = myNote?.chips ?? [];
   const existingNoteId = myNote?.id;
 
+  // Collapsed by default (~96pt): auto-expands only while there is genuinely
+  // something to do before the household's morning gets away from it —
+  // nothing sent yet AND still before 10:00 household-local. Once she taps
+  // "Add a note" the manual override wins regardless of either condition.
+  const shouldAutoExpand =
+    !notesQuery.isLoading && !myNote && isBeforeTenAM(timeZone);
+  const expanded = manualExpanded ?? shouldAutoExpand;
+
+  const summaryChips = existingChips.map(chip =>
+    t(handoffChipLabelKey(chip), { defaultValue: chip })
+  );
+  const summaryLine =
+    summaryChips.length > 0
+      ? summaryChips.join(' · ')
+      : (myNote?.body ??
+        (editorPhase === HANDOFF_PHASES.MORNING
+          ? t('handoff.tapHintForNanny')
+          : t('handoff.tapHintForParent')));
+
   return (
     <Card testID="handoff-chips-card" className="gap-3 p-5.5">
-      <HandoffPhaseEditor
-        phase={editorPhase}
-        householdId={householdId}
-        localDate={localDate}
-        existingChips={existingChips}
-        existingNoteId={existingNoteId}
-        existingBody={myNote?.body}
-        sentAt={myNote?.created_at}
-      />
+      {expanded ? (
+        <HandoffPhaseEditor
+          phase={editorPhase}
+          householdId={householdId}
+          localDate={localDate}
+          existingChips={existingChips}
+          existingNoteId={existingNoteId}
+          existingBody={myNote?.body}
+          sentAt={myNote?.created_at}
+        />
+      ) : (
+        <View testID="handoff-collapsed" className="gap-1">
+          <H4>{titleForPhase(editorPhase, t)}</H4>
+          <Small
+            testID="handoff-collapsed-summary"
+            className="text-muted-foreground"
+            numberOfLines={1}
+          >
+            {summaryLine}
+          </Small>
+          <Button
+            testID="handoff-add-note"
+            variant="ghost"
+            size="sm"
+            className="self-start px-0"
+            onPress={() => setManualExpanded(true)}
+          >
+            <Text className="text-primary">{t('handoff.addNote')}</Text>
+          </Button>
+        </View>
+      )}
 
       {role === SETUP_ROLES.PARENT && eveningNote ? (
-        <View
-          testID="handoff-save-moment-section"
-          className="gap-2 border-t border-border pt-3"
-        >
-          <Small className="text-muted-foreground">
+        <View testID="handoff-save-moment-section" className="mt-4 gap-2">
+          <MetadataLabel className="text-muted-foreground">
             {t('handoff.eveningRecap')}
-          </Small>
+          </MetadataLabel>
           <View className="flex-row flex-wrap gap-1">
             {eveningNote.chips.map(chip => (
               <Small key={chip}>

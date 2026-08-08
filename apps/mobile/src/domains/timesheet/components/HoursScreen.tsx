@@ -42,7 +42,7 @@ import { ScrollView, View } from 'react-native';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { useTabBarScrollPadding } from '@/lib/layout/useTabBarScrollPadding';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
-import { H4 } from '@/src/components/ui/typography';
+import { H1 } from '@/src/components/ui/typography';
 import {
   canViewParentSchedule,
   isParentEditorRole,
@@ -236,7 +236,7 @@ export function HoursScreen() {
           paddingBottom: tabBarScrollPadding,
         }}
       >
-        <H4>{t('title')}</H4>
+        <H1>{t('title')}</H1>
       </ScrollView>
     );
   }
@@ -251,13 +251,17 @@ export function HoursScreen() {
         accessible={false}
         importantForAccessibility="no"
       />
+      {/* Daylight P1: opaque ground, not just padding — the list below it
+          must never be able to show through it (screenshot 11). */}
       <View
+        testID="hours-title-row"
+        className="bg-background"
         style={{
           paddingHorizontal: SCREEN_CONTENT_STYLE.padding,
           paddingTop: SCREEN_CONTENT_STYLE.padding,
         }}
       >
-        <H4 testID="hours-title">{t('title')}</H4>
+        <H1 testID="hours-title">{t('title')}</H1>
       </View>
       {canViewParentSchedule(onboarding.role) ? (
         <ParentWeekView

@@ -34,7 +34,14 @@ import { Card } from '@/src/components/ui/card';
 import { LiveDot } from '@/src/components/ui/live-dot';
 import { LoadingButton } from '@/src/components/ui/loading-button';
 import { Text } from '@/src/components/ui/text';
-import { Body, Caption, Small, Timer } from '@/src/components/ui/typography';
+import {
+  Body,
+  Caption,
+  H3,
+  MetadataLabel,
+  Small,
+  Timer,
+} from '@/src/components/ui/typography';
 import { VoidEntryDialog } from '@/src/domains/timesheet/components/VoidEntryDialog';
 import {
   formatClockTime,
@@ -46,7 +53,6 @@ import { useClockIn } from '@/src/hooks/mutations/useClockIn';
 import { useClockOut } from '@/src/hooks/mutations/useClockOut';
 import { useVoidTimeEntry } from '@/src/hooks/mutations/useVoidTimeEntry';
 import { useRunningTimeEntry } from '@/src/hooks/queries/useRunningTimeEntry';
-import { useShift } from '@/src/hooks/queries/useShift';
 import { useShiftsRange } from '@/src/hooks/queries/useShiftsRange';
 import { getLocalizedErrorMessage } from '@/src/lib/errorLocalization';
 import { addLocalDays, localDateInZone } from '@/src/lib/localDate';
@@ -56,10 +62,8 @@ import { wallClockToUtcIso } from '@/src/lib/wallClock';
 import { useAuthStore } from '@/src/store/auth';
 import { useClockOutReminder } from '../hooks/useClockOutReminder';
 import { useElapsedTimer } from '../hooks/useElapsedTimer';
-import {
-  isOverdue as isEntryOverdue,
-  resolveDefaultClockOutAt,
-} from '../utils/clockOutReminder';
+import { useOverdueClockOut } from '../hooks/useOverdueClockOut';
+import { resolveDefaultClockOutAt } from '../utils/clockOutReminder';
 import { ClockOutSheet, type ClockOutSheetSubmitInput } from './ClockOutSheet';
 
 interface ClockInCardProps {
@@ -111,13 +115,11 @@ export function ClockInCard({
   const entry = running.data ?? null;
   const elapsed = useElapsedTimer(entry?.clock_in_at ?? null);
 
-  // The shift clock-in already auto-matched (within 2h — see the API's
-  // `matchConfirmedShift`). Its scheduled finish is what makes "still on the
-  // clock?" land at a time that means something, rather than at a flat cap.
-  // Disabled by `useShift` itself when there is no `shift_id`.
-  const shift = useShift(entry?.shift_id);
-  const shiftEndsAt = shift.data?.ends_at ?? null;
-  const clockInAt = entry?.clock_in_at ?? null;
+  // Single source for "is this overdue" — also read by TodayScreen to
+  // arbitrate which T1 surface wins when this and NeedsAttentionCard are
+  // both eligible. `shiftEndsAt` comes from here too: the shift auto-match
+  // (within 2h — see the API's `matchConfirmedShift`) it's derived from.
+  const { overdue, clockInAt, shiftEndsAt } = useOverdueClockOut();
 
   const today = useMemo(() => localDateInZone(timeZone), [timeZone]);
   const tomorrow = useMemo(() => addLocalDays(today, 1), [today]);
@@ -159,13 +161,7 @@ export function ClockInCard({
   }, [shifts.data, today, timeZone, currentUserId]);
 
   useClockOutReminder(clockInAt, shiftEndsAt);
-
-  // Re-derived on every tick of `useElapsedTimer`, so the card crosses into
-  // its overdue state while the carer is looking at it — no extra timer.
   const nowMs = Date.now();
-  const overdue = Boolean(
-    clockInAt && isEntryOverdue(clockInAt, shiftEndsAt, nowMs)
-  );
 
   // D7 (double-tap clock-in): `clockIn.isPending` only flips once React
   // commits a re-render, but a fast double-tap can fire the second press
@@ -361,14 +357,25 @@ export function ClockInCard({
   return (
     <Card
       testID="today-clock-card"
-      live={Boolean(entry)}
+      tone={overdue ? 'attention' : entry ? 'live' : 'default'}
       className="gap-4 p-5.5"
     >
       {entry ? (
         <>
           <View className="flex-row items-center gap-2">
-            <LiveDot testID="today-live-dot" />
-            <Caption weight="semibold" className="text-highlight">
+            {/* The apricot dot means "actually working" — overdue has
+                changed the meaning to "please close this out", so it drops
+                along with the rest of the live signal. */}
+            {overdue ? null : <LiveDot testID="today-live-dot" />}
+            {/* Rule B: sentence text on `surfaceAttention` is `foreground`
+                (the default), never `warningStrong` — that measures 4.07:1
+                there, under AA for 14px semibold. The `live` branch is
+                unchanged: it sits on `surfaceLive`, not this ground. */}
+            <Caption
+              testID="today-live-caption"
+              weight="semibold"
+              className={overdue ? undefined : 'text-highlight'}
+            >
               {overdue ? t('stillOnTheClockTitle') : t('onTheClock')}
             </Caption>
           </View>
@@ -381,9 +388,10 @@ export function ClockInCard({
             </Small>
           ) : null}
           {overdue ? (
-            <Body testID="today-overdue-hint" className="text-warning">
-              {t('stillOnTheClockBody')}
-            </Body>
+            // Rule B: sentence text on a tinted `surfaceAttention` ground is
+            // `foreground`, never `warningStrong`/`warning` — those measure
+            // under AA there.
+            <Body testID="today-overdue-hint">{t('stillOnTheClockBody')}</Body>
           ) : null}
           <LoadingButton
             testID="today-clock-out"
@@ -414,41 +422,44 @@ export function ClockInCard({
         </>
       ) : (
         <>
-          <Body weight="semibold">{t('notOnTheClock')}</Body>
+          {/* Invert what it says: the shift window is the fact, "not on
+              the clock" is just the label under it. */}
+          <MetadataLabel className="text-muted-foreground">
+            {t('notOnTheClock')}
+          </MetadataLabel>
           {offClockShift.kind === 'scheduled' ? (
-            <Body
-              testID="today-off-clock-scheduled"
-              weight="semibold"
-              className="text-foreground"
-            >
+            <H3 testID="today-off-clock-scheduled">
               {t('nannyScheduledBody', {
                 start: offClockShift.start,
                 end: offClockShift.end,
               })}
-            </Body>
+            </H3>
           ) : offClockShift.kind === 'arriving' ? (
-            <Body
-              testID="today-off-clock-arriving"
-              weight="semibold"
-              className="text-foreground"
-            >
+            <H3 testID="today-off-clock-arriving">
               {t('nannyArrivingBody', { start: offClockShift.start })}
-            </Body>
+            </H3>
           ) : (
-            <Small
-              testID="today-off-clock-none"
-              className="text-muted-foreground"
-            >
-              {t('nannyNoShiftBody')}
-            </Small>
+            // The hero must never be a negation — "Not on the clock" above
+            // already said the absence once. Nothing scheduled is an
+            // invitation here, not a second void.
+            <H3 testID="today-off-clock-none">{t('readyWhenYouAre')}</H3>
           )}
-          <Body className="text-muted-foreground">{t('clockInHint')}</Body>
           <LoadingButton
             testID="today-clock-in"
             label={t('clockIn')}
+            size="lg"
             isLoading={clockIn.isPending || running.isLoading}
             onPress={handleClockIn}
           />
+          {/* Reassurance goes after the action, not in front of it. With no
+              shift today, fold the absence and the hint into ONE line
+              rather than two — a second empty-day mention plus the generic
+              hint read as a dead paragraph beneath the button. */}
+          <Small className="text-muted-foreground">
+            {offClockShift.kind === 'none'
+              ? t('clockInHintNoShift')
+              : t('clockInHint')}
+          </Small>
         </>
       )}
       {/*

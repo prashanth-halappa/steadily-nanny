@@ -330,6 +330,23 @@ beforeEach(() => {
   mockSetParams.mockClear();
 });
 
+// Daylight P1: the title read as a subtitle next to Today/Shifts' H1s, and
+// the list scrolled under it unmasked (screenshot 11) because the header
+// row had no ground of its own.
+describe('HoursScreen — title scale (Daylight P1)', () => {
+  it('renders the title as an H1 (aria-level 1), not the smaller H4', () => {
+    const { getByTestId } = render(<HoursScreen />);
+    expect(getByTestId('hours-title').props['aria-level']).toBe('1');
+  });
+
+  it('gives the title row an opaque ground so scrolled content cannot show through it', () => {
+    const { getByTestId } = render(<HoursScreen />);
+    expect(getByTestId('hours-title-row').props.className).toContain(
+      'bg-background'
+    );
+  });
+});
+
 describe('HoursScreen — nanny with multiple households (Wave B)', () => {
   it('uses the ACTIVE household, not onboarding.householdId, when the two differ', () => {
     const ONBOARDING_HOUSEHOLD_ID = 'onboarding-household-should-not-be-used';

@@ -233,7 +233,9 @@ agreed. Empty state, per family: title **"No pay terms yet"**, description
 **"This family hasn't set your rate in Steadily yet. Your hours are still being
 recorded."** — no CTA, no chasing copy.
 
-Cross-family surfaces (§5) show **"1 family"**, never a name.
+Cross-family surfaces (§5) show **"1 family"**, never a name — from a
+parent's view. A nanny-only cross-family surface is a documented exception;
+see §5.2's scope carve-out.
 
 ---
 
@@ -403,6 +405,23 @@ Two different surfaces, two different rules:
   - Never a household name, never a per-family amount, on this screen. This
     surface gets a LEAKCANARY-style test asserting no household name or id
     reaches it (plan, Phase 3 mobile).
+
+**Scope carve-out (2026-08, user ruling).** The "never a name" promise above
+protects the OTHER household **from a parent** — a family must never learn
+another family's identity through Steadily. It does not protect a household's
+name from the nanny herself: she already knows every family she works for by
+name, offline, before she ever opens the app. A genuinely nanny-only
+cross-family surface (gated so no parent role can ever reach it — see
+`ScheduleShiftsScreen.tsx`'s `showCrossFamily`, which independently checks
+`role === 'nanny'` even though the calendar-view switcher already hides the
+option from a parent) may show real household names for exactly this reason.
+`CrossFamilyRhythmView.tsx` (Schedule tab, calendar view 2d — a nanny's
+two-week rhythm across her households) is the first surface built this way;
+`/settings/my-pay` and `/settings/time-off` above are unchanged by this
+carve-out and keep anonymising. Before naming households on any FUTURE
+cross-family surface, confirm it is actually nanny-only end to end — a role
+check on the surface's own render gate, not just on the tab/switcher that
+offers it.
 
 Empty/loading: balance omitted while loading (no `0h` placeholder); when the
 arrangement has no `pto_entitlement_minutes_per_year`, the row reads

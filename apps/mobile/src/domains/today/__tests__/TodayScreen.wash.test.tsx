@@ -50,6 +50,10 @@ mock.module('@/src/domains/schedule', () => ({
 }));
 mock.module('@/src/domains/inbox', () => ({
   NeedsAttentionCard: () => null,
+  useInboxItems: () => ({ items: [], isLoading: false }),
+}));
+mock.module('@/src/domains/today/hooks/useTodayCoverageGaps', () => ({
+  useTodayCoverageGaps: () => ({ gaps: [] }),
 }));
 mock.module('@/src/domains/today/components/ClockInCard', () => ({
   ClockInCard: () => null,
@@ -65,6 +69,16 @@ mock.module('@/src/domains/today/components/HandoffChipsCard', () => ({
 }));
 mock.module('@/src/domains/today/components/NannyLiveStatusCard', () => ({
   NannyLiveStatusCard: () => null,
+}));
+mock.module('@/src/domains/today/components/TodayCalmCard', () => ({
+  TodayCalmCard: () => null,
+}));
+mock.module('@/src/domains/today/hooks/useOverdueClockOut', () => ({
+  useOverdueClockOut: () => ({
+    overdue: false,
+    clockInAt: null,
+    shiftEndsAt: null,
+  }),
 }));
 
 const HOUSEHOLD_ID = 'household-wash-1';

@@ -4,15 +4,21 @@
  * Today "Next up" card — next two upcoming shifts so Today has a future tense.
  * Whose shift it is only earns row space in a 2+ carer household; a one-carer
  * home is told once, under the title, and the rows stay a clean date column.
+ *
+ * T4 (Wave 2-F): history/context on the bare ground, not its own lifted
+ * card — the `MetadataLabel` eyebrow + `rounded-row bg-card` rows carry the
+ * surface instead. A row whose status isn't `confirmed` gets a `StatusPill`
+ * (previously no row showed status at all, so a pending shift and a
+ * confirmed one were pixel-identical).
  */
 import type { HouseholdMember } from '@steadily-nanny/shared-types/schemas/household.schema';
 import type { Shift } from '@steadily-nanny/shared-types/schemas/shift.schema';
 import { type Href, useRouter } from 'expo-router';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Pressable } from 'react-native';
-import { Card } from '@/src/components/ui/card';
-import { Body, Figure, Small } from '@/src/components/ui/typography';
+import { Pressable, View } from 'react-native';
+import { StatusPill } from '@/src/components/ui/status-pill';
+import { Figure, MetadataLabel, Small } from '@/src/components/ui/typography';
 import { resolveCarerName } from '@/src/domains/schedule/utils/memberDisplayName';
 import { formatDisplayDate } from '@/src/domains/timesheet/utils/week';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
@@ -20,8 +26,17 @@ import { useHouseholdMembers } from '@/src/hooks/queries/useHouseholdMembers';
 import { useShiftsRange } from '@/src/hooks/queries/useShiftsRange';
 import { addLocalDays, localDateInZone } from '@/src/lib/localDate';
 import { formatInstantDisplay, wallClockToUtcIso } from '@/src/lib/wallClock';
+import { useAuthStore } from '@/src/store/auth';
 import { useElevation } from '~/lib/design-tokens/elevation';
 import { spacing } from '~/lib/design-tokens/spacing';
+
+/** A row whose status isn't confirmed still needs a human — every non-
+ * confirmed shift status reads as StatusPill's "pending" variant here (the
+ * only ones that can reach this row: cancelled is filtered upstream, and a
+ * completed shift can't have `ends_at` in the future). */
+function pillLabelKey(status: Shift['status']): string {
+  return status === 'draft' ? 'shifts.statusDraft' : 'shifts.statusPending';
+}
 
 function weekdayDow(dateISO: string): number {
   const [year, month, day] = dateISO.split('-').map(Number);
@@ -50,6 +65,7 @@ export function ThisWeeksShiftsCard() {
   const { t } = useTranslation('schedule');
   const router = useRouter();
   const elevation = useElevation();
+  const currentUserId = useAuthStore(s => s.user?.id ?? null);
   const active = useActiveHousehold();
   const timeZone = active.household?.timezone ?? 'UTC';
   const today = localDateInZone(timeZone);
@@ -80,16 +96,20 @@ export function ThisWeeksShiftsCard() {
   // than a role word standing in for a name.
   const nameFor = (carerId: string | null) =>
     carerId ? resolveCarerName(carersByUserId.get(carerId), '') : '';
+  // A solo carer viewing her own Today would just be reading her own name
+  // back to herself — noise. Only useful to a viewer who ISN'T that carer
+  // (the parent/helper view, where it identifies who is covering).
+  const soleCarer = carers.length === 1 ? carers[0] : undefined;
   const soleCarerName =
-    carers.length === 1 ? nameFor(carers[0]?.user_id ?? '') : '';
+    soleCarer && soleCarer.user_id !== currentUserId
+      ? nameFor(soleCarer.user_id)
+      : '';
 
   return (
-    <Card
-      testID="today-shifts-card"
-      className="gap-2 p-5.5"
-      style={elevation.card}
-    >
-      <Body weight="semibold">{t('todayCard.nextUpTitle')}</Body>
+    <View testID="today-shifts-card" className="gap-2">
+      <MetadataLabel className="text-muted-foreground">
+        {t('todayCard.nextUpTitle')}
+      </MetadataLabel>
       {soleCarerName ? (
         <Small testID="today-next-up-carer" className="text-muted-foreground">
           {soleCarerName}
@@ -108,8 +128,8 @@ export function ThisWeeksShiftsCard() {
               key={shift.id}
               testID={`today-next-up-${shift.id}`}
               accessibilityRole="button"
-              className="flex-row items-center justify-between gap-3 py-1.5"
-              style={{ minHeight: spacing.minTouchTarget }}
+              className="flex-row items-center justify-between gap-3 rounded-row bg-card px-3 py-1.5"
+              style={[elevation.row, { minHeight: spacing.minTouchTarget }]}
               hitSlop={8}
               onPress={() =>
                 router.push(`/(private)/schedule/shifts/${shift.id}` as Href)
@@ -121,16 +141,25 @@ export function ThisWeeksShiftsCard() {
               >
                 {formatShiftLine(shift, timeZone, t)}
               </Figure>
-              {carerName ? (
-                <Small
-                  testID={`today-next-up-carer-${shift.id}`}
-                  className="max-w-[38%] flex-shrink-0 text-muted-foreground"
-                  numberOfLines={1}
-                  ellipsizeMode="tail"
-                >
-                  {carerName}
-                </Small>
-              ) : null}
+              <View className="flex-row items-center gap-2">
+                {shift.status !== 'confirmed' ? (
+                  <StatusPill
+                    testID={`today-next-up-status-${shift.id}`}
+                    variant="pending"
+                    label={t(pillLabelKey(shift.status))}
+                  />
+                ) : null}
+                {carerName ? (
+                  <Small
+                    testID={`today-next-up-carer-${shift.id}`}
+                    className="max-w-[38%] flex-shrink-0 text-muted-foreground"
+                    numberOfLines={1}
+                    ellipsizeMode="tail"
+                  >
+                    {carerName}
+                  </Small>
+                ) : null}
+              </View>
             </Pressable>
           );
         })
@@ -142,6 +171,6 @@ export function ThisWeeksShiftsCard() {
       >
         <Small className="text-primary">{t('todayCard.viewCalendar')}</Small>
       </Pressable>
-    </Card>
+    </View>
   );
 }

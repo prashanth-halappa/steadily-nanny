@@ -27,6 +27,18 @@ import type { TimeEntry } from '@steadily-nanny/shared-types/schemas/timesheet.s
 import { render } from '@testing-library/react-native';
 import { localDateInZone } from '@/src/lib/localDate';
 
+/** RN's own `StyleSheet.flatten` is a no-op passthrough under this test
+ * runtime (verified directly), so merge the `style` array by hand — the
+ * same left-to-right, later-layer-wins semantics RN applies natively. */
+function baseStyle(style: unknown): Record<string, unknown> {
+  const layers = Array.isArray(style) ? style : [style];
+  const merged: Record<string, unknown> = {};
+  for (const layer of layers) {
+    if (layer && typeof layer === 'object') Object.assign(merged, layer);
+  }
+  return merged;
+}
+
 const HOUSEHOLD_ID = '11111111-1111-4111-8111-111111111111';
 const PARENT_ID = '22222222-2222-4222-8222-222222222222';
 const AMARA_ID = '33333333-3333-4333-8333-333333333333';
@@ -492,5 +504,197 @@ describe('NannyLiveStatusCard voided entries (069 soft delete)', () => {
     );
 
     expect(queryByText(/stateFinished::/)).toBeNull();
+  });
+});
+
+// P0-6/eyebrow-headline (Wave 1-D): "Today's cover" is the label, the
+// carer's name is the fact — so the label drops to MetadataLabel (13/18)
+// and the name is promoted to H4 (18/27 @600), no longer tied at Body/600
+// (16/24) with its own subtitle underneath it.
+describe('NannyLiveStatusCard title scale (P0-6 eyebrow/headline)', () => {
+  it('renders "Today\'s cover" as a MetadataLabel eyebrow, not Small', () => {
+    mockUseWeekTimeEntries.mockReturnValue({ data: [] });
+    mockUseShiftsRange.mockReturnValue({ data: [] });
+
+    const { getByText } = render(
+      <NannyLiveStatusCard householdId={HOUSEHOLD_ID} timeZone={TIME_ZONE} />
+    );
+
+    const style = baseStyle(getByText('todayCoverTitle').props.style);
+    expect(style.fontSize).toBe(13);
+    expect(style.lineHeight).toBe(18);
+  });
+
+  it("promotes the carer's name to H4 (18/27), not Body semibold (16/24)", () => {
+    mockUseWeekTimeEntries.mockReturnValue({
+      data: [
+        makeEntry({
+          carer_id: AMARA_ID,
+          carer_display_name: 'Amara',
+          status: 'running',
+          clock_in_at: `${TODAY}T08:00:00.000Z`,
+          clock_out_at: null,
+        }),
+      ],
+    });
+    mockUseShiftsRange.mockReturnValue({ data: [] });
+
+    const { getByText } = render(
+      <NannyLiveStatusCard householdId={HOUSEHOLD_ID} timeZone={TIME_ZONE} />
+    );
+
+    const style = baseStyle(getByText('Amara').props.style);
+    expect(style.fontSize).toBe(18);
+    expect(style.lineHeight).toBe(27);
+  });
+
+  it('promotes the empty-state title to H4, not Body semibold', () => {
+    mockUseWeekTimeEntries.mockReturnValue({ data: [] });
+    mockUseShiftsRange.mockReturnValue({ data: [] });
+
+    const { getByText } = render(
+      <NannyLiveStatusCard householdId={HOUSEHOLD_ID} timeZone={TIME_ZONE} />
+    );
+
+    const style = baseStyle(getByText('nannyNoShiftTitle').props.style);
+    expect(style.fontSize).toBe(18);
+    expect(style.lineHeight).toBe(27);
+  });
+});
+
+// Wave 2-D: a per-row 8px dot by `kind` — only `live` got one before. The
+// live dot stays the protected `LiveDot` (apricot, GOLDEN-FIXES vocabulary);
+// the other three kinds get a plain coloured dot.
+describe('NannyLiveStatusCard per-kind dot colour (Wave 2-D)', () => {
+  it('colours a finished row success #4A7A5C', () => {
+    mockUseWeekTimeEntries.mockReturnValue({
+      data: [
+        makeEntry({
+          carer_id: AMARA_ID,
+          carer_display_name: 'Amara',
+          clock_in_at: `${TODAY}T08:00:00.000Z`,
+          clock_out_at: `${TODAY}T10:00:00.000Z`,
+        }),
+      ],
+    });
+    mockUseShiftsRange.mockReturnValue({ data: [] });
+
+    const { getByTestId } = render(
+      <NannyLiveStatusCard householdId={HOUSEHOLD_ID} timeZone={TIME_ZONE} />
+    );
+
+    const dot = getByTestId(`today-cover-dot-${AMARA_ID}`);
+    expect(baseStyle(dot.props.style).backgroundColor).toBe('#4A7A5C');
+  });
+
+  it('colours an arriving row warning #C08A3E', () => {
+    mockUseWeekTimeEntries.mockReturnValue({ data: [] });
+    mockUseShiftsRange.mockReturnValue({
+      data: [
+        {
+          id: 'shift-bea',
+          household_id: HOUSEHOLD_ID,
+          carer_id: BEA_ID,
+          local_date: TODAY,
+          status: 'confirmed',
+          // Pinned "now" is 12:00Z — 30 min out is inside the 1h arriving window.
+          starts_at: `${TODAY}T12:30:00.000Z`,
+          ends_at: `${TODAY}T16:00:00.000Z`,
+        },
+      ],
+    });
+
+    const { getByTestId } = render(
+      <NannyLiveStatusCard householdId={HOUSEHOLD_ID} timeZone={TIME_ZONE} />
+    );
+
+    const dot = getByTestId(`today-cover-dot-shift-${BEA_ID}`);
+    expect(baseStyle(dot.props.style).backgroundColor).toBe('#C08A3E');
+  });
+
+  it('colours a scheduled row borderStrong #D2C5CD', () => {
+    mockUseWeekTimeEntries.mockReturnValue({ data: [] });
+    mockUseShiftsRange.mockReturnValue({
+      data: [
+        {
+          id: 'shift-bea',
+          household_id: HOUSEHOLD_ID,
+          carer_id: BEA_ID,
+          local_date: TODAY,
+          status: 'confirmed',
+          // Hours out — well past the arriving window.
+          starts_at: `${TODAY}T18:00:00.000Z`,
+          ends_at: `${TODAY}T22:00:00.000Z`,
+        },
+      ],
+    });
+
+    const { getByTestId } = render(
+      <NannyLiveStatusCard householdId={HOUSEHOLD_ID} timeZone={TIME_ZONE} />
+    );
+
+    const dot = getByTestId(`today-cover-dot-shift-${BEA_ID}`);
+    expect(baseStyle(dot.props.style).backgroundColor).toBe('#D2C5CD');
+  });
+
+  it('keeps the protected LiveDot (no plain dot) for a live row', () => {
+    mockUseWeekTimeEntries.mockReturnValue({
+      data: [
+        makeEntry({
+          carer_id: AMARA_ID,
+          carer_display_name: 'Amara',
+          status: 'running',
+          clock_in_at: `${TODAY}T08:00:00.000Z`,
+          clock_out_at: null,
+        }),
+      ],
+    });
+    mockUseShiftsRange.mockReturnValue({ data: [] });
+
+    const { getByTestId, queryByTestId } = render(
+      <NannyLiveStatusCard householdId={HOUSEHOLD_ID} timeZone={TIME_ZONE} />
+    );
+
+    expect(getByTestId(`today-cover-live-dot-${AMARA_ID}`)).toBeTruthy();
+    expect(queryByTestId(`today-cover-dot-${AMARA_ID}`)).toBeNull();
+  });
+});
+
+// Wave 2-D: "nothing is happening, so nothing should lift" — the empty
+// state drops to bg-muted with no elevation instead of a lifted white card.
+describe('NannyLiveStatusCard empty-state surface (Wave 2-D)', () => {
+  it('drops the card to bg-muted with no shadow when there is no cover today', () => {
+    mockUseWeekTimeEntries.mockReturnValue({ data: [] });
+    mockUseShiftsRange.mockReturnValue({ data: [] });
+
+    const { getByTestId } = render(
+      <NannyLiveStatusCard householdId={HOUSEHOLD_ID} timeZone={TIME_ZONE} />
+    );
+
+    const card = getByTestId('today-nanny-live-status-card');
+    expect(String(card.props.className)).toContain('bg-muted');
+    const style = baseStyle(card.props.style) as { boxShadow?: unknown[] };
+    expect(style.boxShadow).toEqual([]);
+  });
+
+  it('keeps the normal card surface once there is a row', () => {
+    mockUseWeekTimeEntries.mockReturnValue({
+      data: [
+        makeEntry({
+          carer_id: AMARA_ID,
+          carer_display_name: 'Amara',
+          clock_in_at: `${TODAY}T08:00:00.000Z`,
+          clock_out_at: `${TODAY}T10:00:00.000Z`,
+        }),
+      ],
+    });
+    mockUseShiftsRange.mockReturnValue({ data: [] });
+
+    const { getByTestId } = render(
+      <NannyLiveStatusCard householdId={HOUSEHOLD_ID} timeZone={TIME_ZONE} />
+    );
+
+    const card = getByTestId('today-nanny-live-status-card');
+    expect(String(card.props.className)).not.toContain('bg-muted');
   });
 });

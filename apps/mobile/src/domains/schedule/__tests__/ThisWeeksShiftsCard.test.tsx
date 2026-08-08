@@ -3,6 +3,20 @@
  */
 import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 import { render } from '@testing-library/react-native';
+import { useAuthStore } from '@/src/store/auth';
+
+/** The typography factory always puts the token's base style first in the
+ * `style` array (`[baseStyle, weightStyle, tabularStyle, callerStyle]`) —
+ * read it directly rather than via RN's `StyleSheet.flatten`, which is a
+ * no-op passthrough under this test runtime. */
+function baseStyle(style: unknown): Record<string, unknown> {
+  const layers = Array.isArray(style) ? style : [style];
+  const merged: Record<string, unknown> = {};
+  for (const layer of layers) {
+    if (layer && typeof layer === 'object') Object.assign(merged, layer);
+  }
+  return merged;
+}
 
 const HOUSEHOLD_ID = 'hh1';
 const AMARA_ID = '33333333-3333-4333-8333-333333333333';
@@ -75,6 +89,7 @@ beforeAll(async () => {
 beforeEach(() => {
   mockUseShiftsRange.mockReturnValue({ data: [] });
   mockUseHouseholdMembers.mockReturnValue({ data: [] });
+  useAuthStore.setState({ user: null } as never);
 });
 
 describe('ThisWeeksShiftsCard', () => {
@@ -122,14 +137,20 @@ describe('ThisWeeksShiftsCard', () => {
     );
   });
 
-  it('rows meet the 44pt touch target and carry hit slop', () => {
+  it('rows meet the 44pt touch target, carry hit slop, and take the row surface', () => {
     mockUseShiftsRange.mockReturnValue({ data: SHIFTS });
 
     const { getByTestId } = render(<ThisWeeksShiftsCard />);
     const row = getByTestId('today-next-up-shift-a');
 
     expect(row.props.hitSlop).toBe(8);
-    expect(row.props.style).toEqual({ minHeight: 44 });
+    const style = baseStyle(row.props.style);
+    expect(style.minHeight).toBe(44);
+    // Wave 2-F (T4): the row itself carries `rounded-row bg-card` +
+    // `elevation.row` — the card wrapper around them is gone.
+    expect(style.boxShadow).toBeTruthy();
+    expect(String(row.props.className)).toContain('rounded-row');
+    expect(String(row.props.className)).toContain('bg-card');
   });
 
   it('shows the weekday in its short form so the row stays on one line', () => {
@@ -141,5 +162,68 @@ describe('ThisWeeksShiftsCard', () => {
 
     expect(line).toContain('weekdayShort.');
     expect(line).not.toContain('weekday.');
+  });
+
+  // Wave 2-F: re-tiered T3 -> T4 ("history, resolved state, context" — the
+  // ladder's own bare-ground/MetadataLabel tier). Title drops from H4
+  // (18/27) to a MetadataLabel eyebrow (13/18) on the bare ground.
+  it('renders the "Next up" title as a MetadataLabel eyebrow, not H4', () => {
+    const { getByText } = render(<ThisWeeksShiftsCard />);
+
+    const style = baseStyle(getByText('todayCard.nextUpTitle').props.style);
+    expect(style.fontSize).toBe(13);
+    expect(style.lineHeight).toBe(18);
+  });
+
+  it('has no card surface around the rows — bare ground, no shadow', () => {
+    const { getByTestId } = render(<ThisWeeksShiftsCard />);
+
+    const outer = getByTestId('today-shifts-card');
+    const style = baseStyle(outer.props.style);
+    expect(style.boxShadow).toBeFalsy();
+    expect(String(outer.props.className ?? '')).not.toContain('bg-card');
+  });
+
+  // Review fix: a nanny viewing her own Today saw "Test Nanny" — her own
+  // name, on her own screen, pure noise. The sole-carer summary line is
+  // useful only when the VIEWER isn't that carer (the parent/helper view).
+  it('hides the sole-carer name when the viewer IS that carer', () => {
+    mockUseShiftsRange.mockReturnValue({ data: SHIFTS });
+    mockUseHouseholdMembers.mockReturnValue({
+      data: [member(AMARA_ID, 'Amara Okafor')],
+    });
+    useAuthStore.setState({ user: { id: AMARA_ID } } as never);
+
+    const { queryByTestId } = render(<ThisWeeksShiftsCard />);
+
+    expect(queryByTestId('today-next-up-carer')).toBeNull();
+  });
+
+  it('still shows the sole-carer name to a viewer who is NOT that carer', () => {
+    mockUseShiftsRange.mockReturnValue({ data: SHIFTS });
+    mockUseHouseholdMembers.mockReturnValue({
+      data: [member(AMARA_ID, 'Amara Okafor')],
+    });
+    useAuthStore.setState({ user: { id: 'parent-1' } } as never);
+
+    const { getByTestId } = render(<ThisWeeksShiftsCard />);
+
+    expect(getByTestId('today-next-up-carer').props.children).toBe(
+      'Amara Okafor'
+    );
+  });
+
+  it('shows a StatusPill on a row whose status is not confirmed', () => {
+    mockUseShiftsRange.mockReturnValue({
+      data: [
+        { ...SHIFTS[0], status: 'pending' },
+        { ...SHIFTS[1], status: 'confirmed' },
+      ],
+    });
+
+    const { getByTestId, queryByTestId } = render(<ThisWeeksShiftsCard />);
+
+    expect(getByTestId('today-next-up-status-shift-a')).toBeTruthy();
+    expect(queryByTestId('today-next-up-status-shift-b')).toBeNull();
   });
 });

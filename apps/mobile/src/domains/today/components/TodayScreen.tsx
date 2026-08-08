@@ -34,23 +34,29 @@ import { useColorScheme } from '@/lib/useColorScheme';
 import { ChildChip } from '@/src/components/ui/child-chip';
 import { EmptyState } from '@/src/components/ui/empty-state';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
-import { Body, H1 } from '@/src/components/ui/typography';
+import { H1, Small } from '@/src/components/ui/typography';
 import { HouseholdSwitcher } from '@/src/domains/household';
-import { NeedsAttentionCard } from '@/src/domains/inbox';
+import { NeedsAttentionCard, useInboxItems } from '@/src/domains/inbox';
 import {
   PendingScheduleCard,
   ThisWeeksShiftsCard,
 } from '@/src/domains/schedule';
 import { canViewParentSchedule, SETUP_ROLES } from '@/src/domains/setup/types';
+import { formatDisplayDate } from '@/src/domains/timesheet/utils/week';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
 import { useChildren } from '@/src/hooks/queries/useChildren';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
+import { localDateInZone } from '@/src/lib/localDate';
 import { useHouseholdIsLive } from '../hooks/useHouseholdIsLive';
+import { useOverdueClockOut } from '../hooks/useOverdueClockOut';
+import { useTodayCoverageGaps } from '../hooks/useTodayCoverageGaps';
+import { resolveAttentionOwner } from '../utils/attentionOwner';
 import { AddMissedHoursCard } from './AddMissedHoursCard';
 import { ClockInCard } from './ClockInCard';
 import { CoverageGapBanner } from './CoverageGapBanner';
 import { HandoffChipsCard } from './HandoffChipsCard';
 import { NannyLiveStatusCard } from './NannyLiveStatusCard';
+import { TodayCalmCard } from './TodayCalmCard';
 
 export function TodayScreen() {
   const { t } = useTranslation('today');
@@ -66,6 +72,21 @@ export function TodayScreen() {
   // Wash while someone is on the clock — caller running OR household week
   // entry running. Stays inside this screen (below the tab navigator).
   const isLive = useHouseholdIsLive(household?.id, household?.timezone);
+  // One T1 per screen: `resolveAttentionOwner` (its own module doc carries
+  // the ranking + justification) is the single decision every
+  // attention-capable card demotes against, so a fourth surface extends
+  // the ladder there instead of colliding with these two.
+  const { overdue: clockOutOverdue } = useOverdueClockOut();
+  const inbox = useInboxItems();
+  const { gaps: coverageGaps } = useTodayCoverageGaps(
+    household?.id,
+    household?.timezone
+  );
+  const attentionOwner = resolveAttentionOwner({
+    overdue: clockOutOverdue,
+    hasCoverageGap: coverageGaps.length > 0,
+    hasInboxItems: !inbox.isLoading && inbox.items.length > 0,
+  });
   const wash = washGradient(isDarkColorScheme);
   // Same tab-bar dead-zone fix as Settings (BUG1) — the floating tab bar
   // overlays this screen's content instead of reserving its own layout
@@ -98,20 +119,19 @@ export function TodayScreen() {
           <LoadingIndicator />
         ) : household ? (
           <View className="mt-2 gap-4">
+            {/* Folded into the H1 block: the date always shows (a screen
+                called Today with no date on it is odd), and the household
+                name joins it on the same line — but only when there's
+                nothing to switch between. Mirrors HouseholdSwitcher's own
+                bail-out; rendering both would print the household twice. */}
+            <Small testID="today-date" className="text-muted-foreground">
+              {activeHousehold.households.length +
+                activeHousehold.pastHouseholds.length <=
+                1 && !activeHousehold.isPastHousehold
+                ? `${formatDisplayDate(localDateInZone(household.timezone))} · ${household.name}`
+                : formatDisplayDate(localDateInZone(household.timezone))}
+            </Small>
             <HouseholdSwitcher />
-            {/* Mirrors HouseholdSwitcher's own bail-out — this is the plain
-                name it falls back to, and rendering both would print the
-                household twice. */}
-            {activeHousehold.households.length +
-              activeHousehold.pastHouseholds.length <=
-              1 && !activeHousehold.isPastHousehold ? (
-              <Body
-                testID="today-household-name"
-                className="text-muted-foreground"
-              >
-                {household.name}
-              </Body>
-            ) : null}
 
             {canViewParentSchedule(onboarding.role) ? (
               <View
@@ -136,13 +156,25 @@ export function TodayScreen() {
                 past. Order is load-bearing — behind the routine cards the
                 respond CTA fell below the fold, and it is the only route into
                 the accept flow. See TodayScreen.cardOrder.test.tsx. */}
-            <NeedsAttentionCard />
+            <NeedsAttentionCard demoted={attentionOwner !== 'inbox'} />
             <PendingScheduleCard />
 
             {canViewParentSchedule(onboarding.role) ? (
               <NannyLiveStatusCard
                 householdId={household.id}
                 timeZone={household.timezone}
+              />
+            ) : null}
+
+            {/* Parent at ease: the one reassurance on the screen, and it
+                renders nothing unless the inbox is empty, nothing is live,
+                AND someone is actually covering today — see its own module
+                doc for exactly what "cover" means here. */}
+            {canViewParentSchedule(onboarding.role) ? (
+              <TodayCalmCard
+                householdId={household.id}
+                timeZone={household.timezone}
+                isLive={isLive}
               />
             ) : null}
 
@@ -172,6 +204,7 @@ export function TodayScreen() {
             <CoverageGapBanner
               householdId={household.id}
               timeZone={household.timezone}
+              demoted={attentionOwner !== 'coverageGap'}
             />
 
             {onboarding.role ? (

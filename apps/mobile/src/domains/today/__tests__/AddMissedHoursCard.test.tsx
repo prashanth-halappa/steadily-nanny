@@ -139,4 +139,39 @@ describe('AddMissedHoursCard', () => {
       'Note kept'
     );
   });
+
+  // Wave 2-A: the outer Card + H4 title is gone — a 130pt card whose only
+  // content was a button labelled the same as its own title. The trigger is
+  // now a single ghost text link that opens the SAME unchanged sheet.
+  it('has no card surface — the trigger is a bare ghost link, not a Card', () => {
+    const { getByTestId, queryByTestId } = render(
+      <AddMissedHoursCard householdId={HOUSEHOLD_ID} timeZone={TIME_ZONE} />
+    );
+
+    expect(queryByTestId('today-missed-hours-card')).toBeNull();
+    const cta = getByTestId('today-missed-hours-cta');
+    expect(cta.props.children.props.children).toBe('missedHours.cta');
+  });
+
+  // Review fix: a ghost Button centres by default, which read as a section
+  // heading floating in whitespace between two cards, not a link. Left-align
+  // it, drop its text to Small (a recovery affordance, not a peer of "Clock
+  // in"), and pull it tight under ClockInCard rather than orphaned between
+  // the two cards.
+  it('left-aligns the link, sizes it Small, and sits tight under the card above it', () => {
+    const { getByTestId, getByText } = render(
+      <AddMissedHoursCard householdId={HOUSEHOLD_ID} timeZone={TIME_ZONE} />
+    );
+
+    const cta = getByTestId('today-missed-hours-cta');
+    expect(String(cta.props.className ?? '')).toContain('self-start');
+    expect(String(cta.props.className ?? '')).toMatch(/-mt-/);
+
+    const layers = getByText('missedHours.cta').props.style;
+    const merged = Object.assign(
+      {},
+      ...(Array.isArray(layers) ? layers : [layers]).filter(Boolean)
+    );
+    expect(merged.fontSize).toBe(14);
+  });
 });

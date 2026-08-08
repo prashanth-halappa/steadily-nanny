@@ -15,6 +15,14 @@ import { beforeAll, describe, expect, it, mock } from 'bun:test';
 import type { SchedulePattern } from '@steadily-nanny/shared-types/schemas/schedule.schema';
 import { render } from '@testing-library/react-native';
 
+// The global `react-native` mock's `StyleSheet.flatten` (bun.setup.ts) is an
+// identity function, not a real merge — typography components' `style` prop
+// is an array (`[base, weight, tabular, caller]`), so `StyleSheet.flatten`
+// leaves it unflattened. Merge it by hand for style assertions here.
+function flattenStyle(style: unknown): Record<string, unknown> {
+  return Object.assign({}, ...[style].flat(Infinity).filter(Boolean));
+}
+
 const HOUSEHOLD_ID = '11111111-1111-4111-8111-111111111111';
 const CARER_USER_ID = '22222222-2222-4222-8222-222222222222';
 const CURRENT_USER_ID = '33333333-3333-4333-8333-333333333333';
@@ -191,5 +199,64 @@ describe('SchedulePatternBanner', () => {
     expect(queryByTestId('schedule-pattern-banner-action')).toBeNull();
 
     mockUseIsOnboarded.mockImplementation(() => ({ role: 'parent' as const }));
+  });
+});
+
+// Card.tsx dropped the accent-bar prop after on-device user feedback ("you
+// don't need the left border") and a genuine rendering defect (a 4px-wide
+// element can't carry a 20px corner radius) — the tinted ground alone now
+// carries the T1 tiering, so these tests verify tone via the Card's own
+// `surfaceAttention` background colour instead of a `card-accent-bar` node.
+const SURFACE_ATTENTION = '#F9F3EC';
+
+describe('SchedulePatternBanner surface tiers (P1)', () => {
+  it.each([
+    'pending',
+    'declined',
+    'draft',
+  ] as const)('T1: %s pattern renders on the attention-toned surfaceAttention ground', status => {
+    const pattern = makePattern({ status });
+    const { getByTestId } = render(
+      <SchedulePatternBanner pattern={pattern} householdId={HOUSEHOLD_ID} />
+    );
+
+    const style = flattenStyle(
+      getByTestId('schedule-pattern-banner').props.style
+    );
+    expect(style.backgroundColor).toBe(SURFACE_ATTENTION);
+  });
+
+  it.each([
+    'accepted',
+    'withdrawn',
+  ] as const)('T4: %s pattern has no card surface — no tint, MetadataLabel message', status => {
+    const pattern = makePattern({ status });
+    const { getByTestId } = render(
+      <SchedulePatternBanner pattern={pattern} householdId={HOUSEHOLD_ID} />
+    );
+
+    const bannerStyle = flattenStyle(
+      getByTestId('schedule-pattern-banner').props.style
+    );
+    expect(bannerStyle.backgroundColor).toBeUndefined();
+    const style = flattenStyle(
+      getByTestId('schedule-pattern-banner-status').props.style
+    );
+    expect(style.fontSize).toBe(13); // MetadataLabel
+  });
+
+  it('T4: no pattern yet (null) also has no card surface', () => {
+    const { getByTestId } = render(
+      <SchedulePatternBanner pattern={null} householdId={HOUSEHOLD_ID} />
+    );
+
+    const bannerStyle = flattenStyle(
+      getByTestId('schedule-pattern-banner').props.style
+    );
+    expect(bannerStyle.backgroundColor).toBeUndefined();
+    const style = flattenStyle(
+      getByTestId('schedule-pattern-banner-status').props.style
+    );
+    expect(style.fontSize).toBe(13);
   });
 });

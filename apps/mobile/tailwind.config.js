@@ -106,6 +106,13 @@ module.exports = {
           foreground: 'hsl(var(--highlight-foreground))',
         },
 
+        // Tone surfaces for <Card tone="…">: opaque tints, never bg-*/opacity.
+        surface: {
+          attention: 'hsl(var(--surface-attention))',
+          positive: 'hsl(var(--surface-positive))',
+          live: 'hsl(var(--surface-live))',
+        },
+
         // Popover
         popover: {
           DEFAULT: 'hsl(var(--popover))',

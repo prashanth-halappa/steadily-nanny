@@ -37,4 +37,19 @@ describe('TodayScreen i18n', () => {
     expect(screenSource).toContain('useTabBarScrollPadding');
     expect(screenSource).toContain('paddingBottom: tabBarScrollPadding');
   });
+
+  // Wave 2-G: the orphan household-name Body folded into the H1 block, and
+  // the date joins it — "Today" with no date on it read as odd.
+  it('folds the date (and, when there is one household, its name) under the H1', () => {
+    expect(screenSource).toContain('testID="today-date"');
+    expect(screenSource).toContain('formatDisplayDate');
+    expect(screenSource).not.toContain('testID="today-household-name"');
+  });
+
+  // Wave 2-G: "Parent at ease" — mounted only for the parent role, and it
+  // owns its own render condition (see TodayCalmCard.test.tsx).
+  it('mounts TodayCalmCard for the parent role', () => {
+    expect(screenSource).toContain('<TodayCalmCard');
+    expect(screenSource).toContain('canViewParentSchedule(onboarding.role)');
+  });
 });

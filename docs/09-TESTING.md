@@ -264,6 +264,24 @@ isolateWorkers = true
 
 **Rule:** do not re-mock anything the preload already covers — check existing tests for precedent. Only mock the extra deps a specific component needs.
 
+**Trap: `StyleSheet.flatten` doesn't flatten.** The preload's `StyleSheet` stub is `{ create: (s) => s, flatten: (s) => s }` — both identity passthroughs, not real implementations. `create`'s identity is load-bearing (`loading-indicator.tsx`'s `StyleSheet.create({...})` needs `styles.foo` to stay a plain object, since there's no native style registry under `bun:test`). `flatten` has no such requirement — nothing in this suite depends on it leaving an array unmerged — but it lives in the same mock object as `create`, so don't touch it just to make one assertion pass.
+
+The symptom: every typography component (`Body`, `Small`, `H1`, …) sets `style` to an array — `[baseStyle, weightStyle, tabularStyle, callerStyle]` — so `StyleSheet.flatten(node.props.style).fontSize` reliably comes back `undefined`, no matter what actually rendered. Two fixes are already in the codebase; prefer the first:
+
+```typescript
+// Preferred — merges the whole array, correct regardless of prop order.
+function flattenStyle(style: unknown): Record<string, unknown> {
+  return Object.assign({}, ...[style].flat(Infinity).filter(Boolean));
+}
+
+// Also seen (PendingScheduleCard.test.tsx, HandoffChipsCard.render.test.tsx,
+// NannyLiveStatusCard.render.test.tsx, …) — works only because the factory
+// happens to put the token's base style first; more fragile than the merge.
+function baseStyle(style: unknown): Record<string, unknown> {
+  return (Array.isArray(style) ? style[0] : style) as Record<string, unknown>;
+}
+```
+
 ---
 
 ## 7. Maestro E2E

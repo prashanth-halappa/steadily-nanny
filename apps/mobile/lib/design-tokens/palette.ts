@@ -39,6 +39,8 @@ export const PALETTE_CSS_VARS = {
   accentForeground: 'accent-foreground',
   highlight: 'highlight',
   highlightForeground: 'highlight-foreground',
+  /** Opaque apricot-on-card ground for `<Card tone="live">` — mirrors `liveCardBackground()`. */
+  surfaceLive: 'surface-live',
   categoryAccent1: 'category-accent1',
   categoryAccent2: 'category-accent2',
   categoryAccent3: 'category-accent3',
@@ -48,6 +50,10 @@ export const PALETTE_CSS_VARS = {
   warning: 'warning',
   warningStrong: 'warning-strong',
   warningForeground: 'warning-foreground',
+  /** Opaque warning-on-card ground for `<Card tone="attention">`. */
+  surfaceAttention: 'surface-attention',
+  /** Opaque success-on-card ground for `<Card tone="positive">`. */
+  surfacePositive: 'surface-positive',
   shortNotice: 'short-notice',
   shortNoticeStrong: 'short-notice-strong',
   border: 'border',
@@ -101,6 +107,8 @@ export const palette = {
     accentForeground: { css: '295 16% 15%', hex: '#2A1F2B' },
     highlight: { css: '24 79% 57%', hex: '#E8823C' },
     highlightForeground: { css: '295 16% 15%', hex: '#2A1F2B' },
+    // mixHex(card, highlight, 0.08) — same value as liveCardBackground('light').
+    surfaceLive: { css: '26 78% 96%', hex: '#FDF5EF' },
 
     categoryAccent1: { css: '282 22% 38%', hex: '#6A4C77' },
     categoryAccent2: { css: '159 23% 39%', hex: '#4C7A6A' },
@@ -112,6 +120,10 @@ export const palette = {
     warning: { css: '35 51% 50%', hex: '#C08A3E' },
     warningStrong: { css: '35 54% 40%', hex: '#9C6E2E' },
     warningForeground: { css: '295 16% 15%', hex: '#2A1F2B' },
+    // mixHex(card, warning, 0.10)
+    surfaceAttention: { css: '32 52% 95%', hex: '#F9F3EC' },
+    // mixHex(card, success, 0.08)
+    surfacePositive: { css: '140 12% 95%', hex: '#F1F4F2' },
     shortNotice: { css: '20 54% 50%', hex: '#C4693A' },
     shortNoticeStrong: { css: '21 60% 43%', hex: '#B15A2C' },
 
@@ -165,6 +177,8 @@ export const palette = {
     accentForeground: { css: '309 20% 93%', hex: '#F1EAF0' },
     highlight: { css: '27 87% 62%', hex: '#F2954B' },
     highlightForeground: { css: '291 14% 10%', hex: '#1B151C' },
+    // mixHex('#241C26', '#F2954B', 0.08)
+    surfaceLive: { css: '347 16% 18%', hex: '#342629' },
 
     categoryAccent1: { css: '284 21% 63%', hex: '#A98CB4' },
     categoryAccent2: { css: '159 28% 59%', hex: '#79B39F' },
@@ -176,6 +190,10 @@ export const palette = {
     warning: { css: '37 67% 63%', hex: '#E0B061' },
     warningStrong: { css: '38 77% 73%', hex: '#EFC886' },
     warningForeground: { css: '291 14% 10%', hex: '#1B151C' },
+    // mixHex('#241C26', '#E0B061', 0.12)
+    surfaceAttention: { css: '4 13% 20%', hex: '#3B2E2D' },
+    // mixHex('#241C26', '#6FB98A', 0.10)
+    surfacePositive: { css: '240 4% 18%', hex: '#2C2C30' },
     shortNotice: { css: '25 74% 65%', hex: '#E89A63' },
     shortNoticeStrong: { css: '23 77% 74%', hex: '#F0B189' },
 

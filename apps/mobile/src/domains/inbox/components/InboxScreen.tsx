@@ -8,7 +8,7 @@
  * detail routes. Query failures surface ErrorState + retry — never the
  * empty-success copy.
  */
-import { type Href, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { Pressable, ScrollView, View } from 'react-native';
 import { illustrations } from '@/assets/illustrations';
@@ -20,86 +20,14 @@ import { EmptyState } from '@/src/components/ui/empty-state';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { Body, H1, Small } from '@/src/components/ui/typography';
 import { useInboxItems } from '@/src/domains/inbox/hooks/useInboxItems';
-import type { InboxItem } from '@/src/domains/inbox/utils/buildInboxItems';
-import { formatApprovalDeadline } from '@/src/domains/inbox/utils/formatApprovalDeadline';
-import { formatDisplayDate } from '@/src/domains/timesheet/utils/week';
+import {
+  hrefForItem,
+  subtitleForItem,
+  titleForItem,
+} from '@/src/domains/inbox/utils/inboxItemCopy';
 import { useRespondToApproval } from '@/src/hooks/mutations/useRespondToApproval';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
 import { useElevation } from '~/lib/design-tokens/elevation';
-
-function hrefForItem(item: InboxItem): Href {
-  switch (item.kind) {
-    case 'change_request':
-      return `/(private)/schedule/shifts/${item.shiftId}` as Href;
-    case 'co_parent_approval':
-      return item.shiftId
-        ? (`/(private)/schedule/shifts/${item.shiftId}` as Href)
-        : ('/(private)/(tabs)/schedule' as Href);
-    case 'pending_pattern':
-      return `/(private)/schedule/respond/${item.patternId}` as Href;
-    case 'queried_week':
-      return `/(private)/(tabs)/hours?weekStart=${item.weekStart}` as Href;
-    case 'submitted_week':
-      return `/(private)/(tabs)/hours?weekStart=${item.weekStart}` as Href;
-  }
-}
-
-function titleForItem(
-  item: InboxItem,
-  t: (key: string, opts?: Record<string, string>) => string
-): string {
-  switch (item.kind) {
-    case 'change_request':
-      return t('items.changeRequest.title', {
-        kind: t(`items.changeRequest.kind.${item.requestKind}`, {
-          defaultValue: item.requestKind,
-        }),
-      });
-    case 'co_parent_approval':
-      return t('items.approval.title', {
-        action: t(`items.approval.action.${item.action}`, {
-          defaultValue: item.action,
-        }),
-      });
-    case 'pending_pattern':
-      return t('items.pendingPattern.title');
-    case 'queried_week':
-      return t('items.queriedWeek.title', {
-        week: formatDisplayDate(item.weekStart),
-      });
-    case 'submitted_week':
-      return t('items.submittedWeek.title', {
-        week: formatDisplayDate(item.weekStart),
-      });
-  }
-}
-
-function subtitleForItem(
-  item: InboxItem,
-  t: (key: string, opts?: Record<string, string>) => string,
-  timeZone: string
-): string {
-  switch (item.kind) {
-    case 'change_request':
-      return t('items.changeRequest.subtitle');
-    case 'co_parent_approval':
-      return t('items.approval.subtitle', {
-        when: formatApprovalDeadline(item.timeoutAt, timeZone),
-      });
-    case 'pending_pattern':
-      return t('items.pendingPattern.subtitle', {
-        start: formatDisplayDate(item.dtstart),
-      });
-    case 'queried_week':
-      return item.queryNote?.trim()
-        ? t('items.queriedWeek.subtitleWithNote', { note: item.queryNote })
-        : t('items.queriedWeek.subtitle');
-    case 'submitted_week':
-      return item.carerDisplayName
-        ? t('items.submittedWeek.subtitle', { carer: item.carerDisplayName })
-        : t('items.submittedWeek.subtitleFallback');
-  }
-}
 
 export function InboxScreen() {
   const { t } = useTranslation('inbox');

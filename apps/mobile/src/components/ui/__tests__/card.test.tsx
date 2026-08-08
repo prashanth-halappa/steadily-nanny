@@ -10,6 +10,8 @@ import { describe, expect, it, mock } from 'bun:test';
 import { render } from '@testing-library/react-native';
 import type { BoxShadowValue, ViewStyle } from 'react-native';
 import { Card } from '@/src/components/ui/card';
+import { hexToRgba, liveCardBackground } from '~/lib/design-tokens/elevation';
+import { palette } from '~/lib/design-tokens/palette';
 
 mock.module('@/lib/useColorScheme', () => ({
   useColorScheme: () => ({
@@ -108,6 +110,61 @@ describe('Card', () => {
     // losing the shadow.
     expect(entries.at(-1)).toEqual({ opacity: 0.5 });
     expect(shadowColours(entries)).toContain(INK_RGB);
+  });
+});
+
+describe('Card tone (Wave 0 / P0-1)', () => {
+  it('defaults to tone="default" — bg-card class, plain card elevation, no tint', () => {
+    const { getByTestId } = render(<Card testID="card" />);
+    const entries = getByTestId('card').props.style as ViewStyle[];
+    const bg = entries.find(
+      (s): s is ViewStyle => Boolean(s) && 'backgroundColor' in (s as object)
+    );
+    expect(bg).toBeUndefined();
+    expect(shadowColours(entries)).toContain(INK_RGB);
+  });
+
+  it('tone="attention" tints with opaque surfaceAttention and lifts with cardProminent (ink, not apricot)', () => {
+    const { getByTestId } = render(<Card testID="card" tone="attention" />);
+    const entries = getByTestId('card').props.style as ViewStyle[];
+    const bg = entries.find(
+      (s): s is ViewStyle => Boolean(s) && 'backgroundColor' in (s as object)
+    );
+    expect(bg?.backgroundColor).toBe(palette.light.surfaceAttention.hex);
+    expect(shadowColours(entries)).toBe(
+      `${hexToRgba(palette.light.foreground.hex, 0.06)} ${hexToRgba(palette.light.foreground.hex, 0.24)}`
+    );
+  });
+
+  it('tone="positive" tints with opaque surfacePositive but keeps the plain card elevation', () => {
+    const { getByTestId } = render(<Card testID="card" tone="positive" />);
+    const entries = getByTestId('card').props.style as ViewStyle[];
+    const bg = entries.find(
+      (s): s is ViewStyle => Boolean(s) && 'backgroundColor' in (s as object)
+    );
+    expect(bg?.backgroundColor).toBe(palette.light.surfacePositive.hex);
+    expect(shadowColours(entries)).toContain(INK_RGB);
+    expect(shadowColours(entries)).not.toContain(APRICOT_RGB);
+  });
+
+  it('tone="live" matches the pre-existing live=true behaviour exactly', () => {
+    const { getByTestId } = render(<Card testID="card" tone="live" />);
+    const entries = getByTestId('card').props.style as ViewStyle[];
+    const bg = entries.find(
+      (s): s is ViewStyle => Boolean(s) && 'backgroundColor' in (s as object)
+    );
+    expect(bg?.backgroundColor).toBe(liveCardBackground('light'));
+    expect(shadowColours(entries)).toContain(APRICOT_RGB);
+  });
+
+  it('tone wins when both tone and the deprecated live prop are passed', () => {
+    const { getByTestId } = render(<Card testID="card" tone="positive" live />);
+    const entries = getByTestId('card').props.style as ViewStyle[];
+    const bg = entries.find(
+      (s): s is ViewStyle => Boolean(s) && 'backgroundColor' in (s as object)
+    );
+    expect(bg?.backgroundColor).toBe(palette.light.surfacePositive.hex);
+    expect(shadowColours(entries)).not.toContain(APRICOT_RGB);
   });
 });
 

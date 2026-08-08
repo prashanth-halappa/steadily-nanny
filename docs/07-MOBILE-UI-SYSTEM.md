@@ -125,15 +125,52 @@ function Card({ style, live = false, ...props }) {
 }
 ```
 
-`useElevation()` returns `{ card, liveCard, row }` — colours derived from `palette.ts` via `hexToRgba`, so shadows track theme changes. The two mode variants are built once at module load and returned by reference, so consumers get a stable style identity across renders.
+`useElevation()` returns `{ card, cardProminent, liveCard, row }` — colours derived from `palette.ts` via `hexToRgba`, so shadows track theme changes. The two mode variants are built once at module load and returned by reference, so consumers get a stable style identity across renders.
 
 **Shadow instead of rule — the inversion that defines Daylight.** Ledger separated surfaces with a hairline border and no elevation; Daylight does the opposite. `Card` therefore carries **no border**. When you need a card surface, use `<Card>` rather than hand-rolling `<View className="rounded-card border border-border bg-card">` — a hand-rolled one gets the radius but silently misses the shadow, which is how the app ends up looking like Ledger in Daylight's colours. Rows are the same story: `rounded-row bg-card` + `style={elevation.row}`, no border.
 
 Two deliberate exceptions, both still bordered because the border is doing a *different* job: `RoleOptionCard`'s `border-2` is a selection affordance, and form fields keep their input border.
 
-**`live`** swaps the neutral plum shadow for the apricot one. Pass it on exactly the predicate that drives the Today wash (`ClockInCard`, `NannyLiveStatusCard`) so the card carries the signal and the wash reads as its echo — not the other way round.
+**`live`** swaps the neutral plum shadow for the apricot one. Pass it on exactly the predicate that drives the Today wash (`ClockInCard`, `NannyLiveStatusCard`) so the card carries the signal and the wash reads as its echo — not the other way round. `live` is now a deprecated alias for `tone="live"` (below) — new call sites should use `tone` directly.
 
-**`card-variants.tsx`:** suppress elevation when `tintColor` sets a translucent background. Never merge elevation styles onto a Reanimated `Animated.View` that also carries `className` (see §4).
+Never merge elevation styles onto a Reanimated `Animated.View` that also carries `className` (see §4).
+
+### Card tone tiers
+
+`<Card tone="…">` (`src/components/ui/card.tsx`) names four attention tiers so screens don't reinvent card hierarchy per call site:
+
+| Tier | Meaning | `tone` | Ground | Elevation |
+|---|---|---|---|---|
+| T1 — Act now | something needs the viewer's action | `tone="attention"` | opaque `surfaceAttention` | `cardProminent` |
+| T2 — Live | happening right now | `tone="live"` | opaque `surfaceLive` / `liveCardBackground()` | `liveCard` (apricot) |
+| T3 — Routine | the default, everyday card | `tone="default"` (or omit `tone`) | `bg-card` | `card` |
+| T4 — Reference | present but not asking for attention | *(not a `Card` tone)* — use `bg-muted` directly | `bg-muted` | none |
+
+`tone="attention"` and `tone="positive"` tint with opaque hex (`surfaceAttention` / `surfacePositive`), never a translucent `bg-*/NN` class (GOLDEN-FIXES #19 — a shadow over a translucent ground reads wrong on device). `tone="positive"` keeps the plain `card` elevation, not `cardProminent` — it's a calm confirmation, not an alert.
+
+`Card` no longer has an `accent` prop. It used to draw a 4px inset bar down the card's left edge; removed after user feedback on device ("you don't need the left border") and a genuine rendering defect (a 4px-wide element can't carry the card's own 20px corner radius — the radius degenerates and the bar poked past the rounded corners). The tinted ground alone now carries the tier.
+
+#### Rule B — text colour on a tinted ground
+
+On a `tone="attention"` / `"positive"` / `"live"` card:
+
+- The **primary sentence** — the headline, the main statement the tier exists to deliver — is `foreground`. Muting the message undercuts the tier that's trying to raise it.
+- **Genuinely secondary text** — metadata, timestamps, supporting captions — may stay `mutedForeground`. It passes AA on all three tints, and the hierarchy *within* the card is real; don't sweep every muted line to `foreground` just because the card is tinted.
+- **Semantic hues are never sentence text on a tint.** `destructive` is the one exception, for a deadline — it's deliberate and it's measured below.
+
+WCAG relative-luminance contrast, independently recomputed (not transcribed):
+
+| Text | on `surfaceAttention` #F9F3EC | on `surfacePositive` #F1F4F2 | on `surfaceLive` #FDF5EF |
+|---|---|---|---|
+| `foreground` #2A1F2B | 14.34 ✅ | 14.26 ✅ | 14.66 ✅ |
+| `mutedForeground` #6E6270 | 5.23 ✅ | 5.20 ✅ | 5.35 ✅ |
+| `destructive` #A85145 | 4.85 ✅ | 4.83 ✅ | 4.96 ✅ |
+| `success` #4A7A5C | 4.51 ✅ | **4.48 ✗** | 4.61 ✅ |
+| `warningStrong` #9C6E2E | **4.07 ✗** | **4.05 ✗** | **4.16 ✗** |
+| `warning` #C08A3E | **2.74 ✗** | **2.73 ✗** | **2.80 ✗** |
+| `highlight` #E8823C | **2.48 ✗** | **2.47 ✗** | **2.53 ✗** |
+
+Threshold: 4.5:1 (3:1 only applies at ≥18.66px bold or ≥24px regular). **`success` on `surfacePositive` is a landmine**: 4.48 is a hair under AA, `success` is currently unused as text there, and colouring an approved-state sentence green is exactly the mistake someone reaches for next. Don't.
 
 ---
 

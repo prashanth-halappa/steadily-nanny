@@ -44,6 +44,7 @@
     /* Highlight — apricot brand accent */
     --highlight: 24 79% 57%; /* #E8823C */
     --highlight-foreground: 295 16% 15%; /* #2A1F2B */
+    --surface-live: 26 78% 96%; /* #FDF5EF */
 
     /* Category accents — Daylight hues */
     --category-accent1: 282 22% 38%; /* #6A4C77 */
@@ -57,6 +58,8 @@
     --warning: 35 51% 50%; /* #C08A3E */
     --warning-strong: 35 54% 40%; /* #9C6E2E */
     --warning-foreground: 295 16% 15%; /* #2A1F2B */
+    --surface-attention: 32 52% 95%; /* #F9F3EC */
+    --surface-positive: 140 12% 95%; /* #F1F4F2 */
     --short-notice: 20 54% 50%; /* #C4693A */
     --short-notice-strong: 21 60% 43%; /* #B15A2C */
 
@@ -115,6 +118,7 @@
 
     --highlight: 27 87% 62%; /* #F2954B */
     --highlight-foreground: 291 14% 10%; /* #1B151C */
+    --surface-live: 347 16% 18%; /* #342629 */
 
     --category-accent1: 284 21% 63%; /* #A98CB4 */
     --category-accent2: 159 28% 59%; /* #79B39F */
@@ -126,6 +130,8 @@
     --warning: 37 67% 63%; /* #E0B061 */
     --warning-strong: 38 77% 73%; /* #EFC886 */
     --warning-foreground: 291 14% 10%; /* #1B151C */
+    --surface-attention: 4 13% 20%; /* #3B2E2D */
+    --surface-positive: 240 4% 18%; /* #2C2C30 */
     --short-notice: 25 74% 65%; /* #E89A63 */
     --short-notice-strong: 23 77% 74%; /* #F0B189 */
 

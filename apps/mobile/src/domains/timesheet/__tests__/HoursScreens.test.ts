@@ -21,12 +21,14 @@ let hoursScreenSource: string;
 let nannyWeekViewSource: string;
 let parentWeekViewSource: string;
 let queryNoteSheetSource: string;
+let weekTotalSource: string;
 
 beforeAll(async () => {
   hoursScreenSource = await readSource('HoursScreen.tsx');
   nannyWeekViewSource = await readSource('NannyWeekView.tsx');
   parentWeekViewSource = await readSource('ParentWeekView.tsx');
   queryNoteSheetSource = await readSource('QueryNoteSheet.tsx');
+  weekTotalSource = await readSource('WeekTotal.tsx');
 });
 
 describe('HoursScreen', () => {
@@ -107,11 +109,16 @@ describe('NannyWeekView', () => {
 });
 
 describe('ParentWeekView', () => {
+  // Daylight P0-3: the honest "why is Approve disabled" copy now renders
+  // inside `WeekTotal` (`actionsNote`, testID `hours-approve-waiting`) —
+  // ParentWeekView still DECIDES the copy (the `waitingForHours`/
+  // `waitingAfterQuery` keys live in its `actionsNote` computation) and
+  // hands it down; WeekTotal stays presentational.
   it('explains why Approve is disabled with honest clock-out submit copy (no fake submit button)', () => {
-    expect(parentWeekViewSource).toContain('hours-approve-waiting');
     expect(parentWeekViewSource).toContain('waitingForHours');
     expect(parentWeekViewSource).toContain('waitingAfterQuery');
     expect(parentWeekViewSource).not.toContain('waitingForSubmit');
+    expect(weekTotalSource).toContain('hours-approve-waiting');
   });
 
   // SUPERSEDED by TIER0-CX-SPEC.md §4.3: approving now freezes a gross
@@ -120,11 +127,16 @@ describe('ParentWeekView', () => {
   // directly. The button press only opens the dialog; the mutation call
   // itself still lives in `handleApprove` (asserted below), reached from the
   // dialog's confirm action.
+  //
+  // Daylight P0-3: the button itself now renders inside `WeekTotal`
+  // (`primaryAction`) — the handler that opens the dialog is still owned
+  // and passed down by ParentWeekView, as a plain object property rather
+  // than a JSX prop.
   it('approve is behind a confirmation dialog (ApproveWeekDialog), not a direct tap', () => {
     expect(parentWeekViewSource).toContain('ApproveWeekDialog');
     expect(parentWeekViewSource).toContain('isApproveDialogOpen');
     expect(parentWeekViewSource).toMatch(
-      /onPress=\{\(\) => setIsApproveDialogOpen\(true\)\}/
+      /onPress:\s*\(\) => setIsApproveDialogOpen\(true\)/
     );
   });
 

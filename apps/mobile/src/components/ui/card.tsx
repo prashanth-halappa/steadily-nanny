@@ -3,6 +3,9 @@ import { Text, type TextProps, View, type ViewProps } from 'react-native';
 import { cn } from '@/lib/utils';
 import { TextClassContext } from '@/src/components/ui/text';
 import { useElevation } from '~/lib/design-tokens/elevation';
+import { useThemeColors } from '~/lib/design-tokens/useThemeColors';
+
+export type CardTone = 'default' | 'attention' | 'live' | 'positive';
 
 /**
  * Daylight separates surfaces with soft plum-tinted shadow and NO border —
@@ -10,30 +13,64 @@ import { useElevation } from '~/lib/design-tokens/elevation';
  * hairline rule, zero elevation). If the shadow ever reads too faint on a
  * device, the hairline comes back HERE, once, not per call site.
  *
- * `live` swaps the neutral shadow for the apricot one. Pass it wherever the
- * screen is also showing the Today wash, so the card carries the signal and
- * the wash echoes it.
+ * `tone` picks the card's surface + elevation tier:
+ * - `default` — `bg-card` class, plain `card` elevation (unchanged).
+ * - `attention` — opaque `surfaceAttention` ground, `cardProminent` elevation.
+ * - `live` — apricot `liveCardBackground` ground, apricot `liveCard` elevation.
+ * - `positive` — opaque `surfacePositive` ground, plain `card` elevation.
+ *
+ * No accent bar — tried as a 4px inset colour stripe on `tone="attention"`,
+ * removed after user feedback on device ("you don't need the left border").
+ * It also had a genuine rendering defect (a 4px-wide element can't carry a
+ * 20px corner radius; the radius degenerates and the bar poked past the
+ * card's rounded corners), which is further reason not to reintroduce it.
+ * The tinted ground alone does the tiering work.
  */
 function Card({
   className,
   style,
   live = false,
+  tone,
+  children,
   ...props
 }: ViewProps & {
   ref?: React.RefObject<View>;
+  /** @deprecated use `tone="live"` instead. Ignored when `tone` is set. */
   live?: boolean;
+  tone?: CardTone;
 }) {
   const elevation = useElevation();
+  const colors = useThemeColors();
+  const resolvedTone: CardTone = tone ?? (live ? 'live' : 'default');
+
+  const toneBackground: string | undefined =
+    resolvedTone === 'attention'
+      ? colors.surfaceAttention
+      : resolvedTone === 'positive'
+        ? colors.surfacePositive
+        : resolvedTone === 'live'
+          ? elevation.liveCardBackground
+          : undefined;
+
+  const toneElevation =
+    resolvedTone === 'attention'
+      ? elevation.cardProminent
+      : resolvedTone === 'live'
+        ? elevation.liveCard
+        : elevation.card;
+
   return (
     <View
       className={cn('rounded-card bg-card', className)}
       style={[
-        live ? elevation.liveCard : elevation.card,
-        live ? { backgroundColor: elevation.liveCardBackground } : null,
+        toneElevation,
+        toneBackground ? { backgroundColor: toneBackground } : null,
         style,
       ]}
       {...props}
-    />
+    >
+      {children}
+    </View>
   );
 }
 

@@ -4,10 +4,16 @@
   "loading": "Cargando…",
   "emptyTitle": "Todo al día",
   "emptyBody": "No hay solicitudes de cambio, aprobaciones, patrones ni semanas consultadas que necesiten tu respuesta.",
+  "needsAttentionCard": {
+    "moreItems_one": "y {{count}} cosa más te espera",
+    "moreItems_other": "y {{count}} cosas más te esperan",
+    "seeAll": "Ver todo ({{count}})"
+  },
   "items": {
     "changeRequest": {
       "title": "Responder a {{kind}}",
       "subtitle": "Un cambio de horario espera tu respuesta.",
+      "cta": "Revisar solicitud",
       "kind": {
         "time_change": "cambio de horario",
         "cancel": "cancelación",
@@ -19,6 +25,8 @@
     "approval": {
       "title": "Aprobación de co-padre/madre: {{action}}",
       "subtitle": "Se aprueba automáticamente después del {{when}} si no respondes.",
+      "deadlineLabel": "Se aprueba automáticamente {{when}}",
+      "cta": "Revisar",
       "action": {
         "short_notice_change": "cambio de corto aviso",
         "cancel": "cancelación",
@@ -31,17 +39,20 @@
     },
     "pendingPattern": {
       "title": "Responder al horario propuesto",
-      "subtitle": "La semana que empieza el {{start}} te espera."
+      "subtitle": "La semana que empieza el {{start}} te espera.",
+      "cta": "Responder"
     },
     "queriedWeek": {
       "title": "Semana consultada del {{week}}",
       "subtitle": "Un padre/madre preguntó por las horas de esta semana.",
-      "subtitleWithNote": "{{note}}"
+      "subtitleWithNote": "{{note}}",
+      "cta": "Revisar semana"
     },
     "submittedWeek": {
       "title": "Semana del {{week}} enviada — revisar y aprobar",
       "subtitle": "Enviada por {{carer}}.",
-      "subtitleFallback": "Toca para revisar las horas de esta semana."
+      "subtitleFallback": "Toca para revisar las horas de esta semana.",
+      "cta": "Aprobar semana"
     }
   }
 }

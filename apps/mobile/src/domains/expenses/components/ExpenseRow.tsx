@@ -107,7 +107,12 @@ export function ExpenseRow({
             size="sm"
             onPress={() => onWithdraw?.(expense.id)}
           >
-            <Text className="text-destructive">{t('list.withdrawButton')}</Text>
+            {/* Destructive colour is reserved for the confirm dialog — that's
+                the moment it means "this is your last chance". A benign
+                action (Edit) beside it must not be outranked by red. */}
+            <Text className="text-muted-foreground">
+              {t('list.withdrawButton')}
+            </Text>
           </Button>
         </View>
       ) : null}

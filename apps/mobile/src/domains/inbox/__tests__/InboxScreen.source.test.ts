@@ -9,17 +9,20 @@ import { join } from 'node:path';
 const screenPath = join(__dirname, '../components/InboxScreen.tsx');
 const hookPath = join(__dirname, '../hooks/useInboxItems.ts');
 const buildPath = join(__dirname, '../utils/buildInboxItems.ts');
+const copyPath = join(__dirname, '../utils/inboxItemCopy.ts');
 const routePath = join(__dirname, '../../../app/(private)/inbox.tsx');
 
 let screenSource: string;
 let hookSource: string;
 let buildSource: string;
+let copySource: string;
 let routeSource: string;
 
 beforeAll(async () => {
   screenSource = await Bun.file(screenPath).text();
   hookSource = await Bun.file(hookPath).text();
   buildSource = await Bun.file(buildPath).text();
+  copySource = await Bun.file(copyPath).text();
   routeSource = await Bun.file(routePath).text();
 });
 
@@ -37,16 +40,15 @@ describe('InboxScreen source', () => {
     expect(screenSource).toContain('refetch');
   });
 
-  it('formats approval deadlines at minute granularity', () => {
-    expect(screenSource).toContain('formatApprovalDeadline');
-    expect(screenSource).not.toMatch(/timeoutAt\.slice\(0,\s*10\)/);
-  });
-
-  it('deep-links each pending-work kind to an existing screen', () => {
-    expect(screenSource).toContain('schedule/shifts/');
-    expect(screenSource).toContain('schedule/respond/');
-    expect(screenSource).toContain('(tabs)/hours');
-    expect(screenSource).toContain('weekStart=');
+  it('shares title/subtitle/href copy with NeedsAttentionCard via inboxItemCopy', () => {
+    expect(screenSource).toContain('inboxItemCopy');
+    expect(screenSource).toContain('titleForItem');
+    expect(screenSource).toContain('subtitleForItem');
+    expect(screenSource).toContain('hrefForItem');
+    // The functions themselves must live in the shared module, not here.
+    expect(screenSource).not.toContain('function titleForItem');
+    expect(screenSource).not.toContain('function subtitleForItem');
+    expect(screenSource).not.toContain('function hrefForItem');
   });
 
   it('never mounts a bare RN Modal (GOLDEN-FIX #1)', () => {
@@ -69,7 +71,8 @@ describe('InboxScreen source', () => {
   });
 
   it('renders a submitted-week row deep-linking to Hours, parent/owner-only via buildInboxItems', () => {
-    expect(screenSource).toContain('submitted_week');
+    expect(copySource).toContain('submitted_week');
+    expect(buildSource).toContain('submitted_week');
   });
 });
 
@@ -134,5 +137,31 @@ describe('inbox route', () => {
   it('is a thin delegate to InboxScreen', () => {
     expect(routeSource).toContain('InboxScreen');
     expect(routeSource).toContain('export default');
+  });
+});
+
+describe('inboxItemCopy source', () => {
+  it('formats approval deadlines at minute granularity', () => {
+    expect(copySource).toContain('formatApprovalDeadline');
+    expect(copySource).not.toMatch(/timeoutAt\.slice\(0,\s*10\)/);
+  });
+
+  it('deep-links each pending-work kind to an existing screen', () => {
+    expect(copySource).toContain('schedule/shifts/');
+    expect(copySource).toContain('schedule/respond/');
+    expect(copySource).toContain('(tabs)/hours');
+    expect(copySource).toContain('weekStart=');
+  });
+
+  it('exports titleForItem, subtitleForItem, hrefForItem and ctaForItem', () => {
+    expect(copySource).toContain('export function titleForItem');
+    expect(copySource).toContain('export function subtitleForItem');
+    expect(copySource).toContain('export function hrefForItem');
+    expect(copySource).toContain('export function ctaForItem');
+  });
+
+  it('gives co-parent approvals a deadline label — the only exception to Rule B', () => {
+    expect(copySource).toContain('export function deadlineForItem');
+    expect(copySource).toContain('co_parent_approval');
   });
 });

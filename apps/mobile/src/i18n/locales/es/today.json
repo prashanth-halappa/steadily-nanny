@@ -1,5 +1,7 @@
 {
   "clockInHint": "¿Empiezas antes? Ficha la entrada cuando quieras — registramos lo que pasó, no lo planeado.",
+  "clockInHintNoShift": "Hoy no hay nada programado — ficha la entrada cuando empieces.",
+  "readyWhenYouAre": "Lista cuando quieras",
   "clockIn": "Fichar entrada",
   "clockOut": "Fichar salida",
   "onTheClock": "Estás en horario",
@@ -30,7 +32,7 @@
   "editEntryTitle": "Corregir este registro",
   "editEntryHint": "Cambia las horas o el descanso — tu familia verá las horas corregidas.",
   "saveCorrection": "Guardar cambios",
-  "nannyScheduledBody": "{{start}}–{{end}}",
+  "nannyScheduledBody": "Hoy, {{start}} – {{end}}",
   "nannyArrivingBody": "Empieza a las {{start}}",
   "todayCoverTitle": "Cobertura de hoy",
   "stateLive": "En horario desde las {{time}}",
@@ -40,6 +42,10 @@
   "carerFallback": "Cuidadora",
   "nannyNoShiftTitle": "Sin cobertura hoy",
   "nannyNoShiftBody": "Aún no hay nada en el horario de hoy.",
+  "calm": {
+    "title": "Todo está cubierto",
+    "body": "{{name}} · {{detail}}. No necesitas hacer nada ahora mismo."
+  },
   "coverageGap": {
     "title": "Huecos de cobertura hoy",
     "description": "Hueco de cobertura {{start}}–{{end}}",
@@ -110,8 +116,7 @@
     "body": "Hay pendientes que te esperan."
   },
   "missedHours": {
-    "cta": "Añadir horas olvidadas",
-    "sheetTitle": "Añadir horas olvidadas",
+    "cta": "¿Olvidaste fichar la entrada?",
     "sheetHint": "¿Olvidaste fichar la entrada? Registra las horas que trabajaste.",
     "dateLabel": "Fecha",
     "noteLabel": "Nota (opcional)",
@@ -142,6 +147,7 @@
     "eveningRecap": "Resumen vespertino de tu niñera",
     "saveAsMoment": "Guardar como momento",
     "savedAsMoment": "Guardado como momento",
+    "addNote": "Añadir una nota",
     "tapHintForNanny": "Toca lo que tu niñera debería saber",
     "tapHintForParent": "Toca lo que tu familia debería saber",
     "anythingElse": "¿Algo más?",

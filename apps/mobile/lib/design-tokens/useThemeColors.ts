@@ -35,6 +35,10 @@ export interface ThemeColors {
   accentForeground: string;
   highlight: string;
   highlightForeground: string;
+  /** Opaque tone-surface tints for `<Card tone="…">` — never a translucent `bg-card/90`-style class. */
+  surfaceAttention: string;
+  surfacePositive: string;
+  surfaceLive: string;
   destructive: string;
   destructiveForeground: string;
   success: string;
@@ -90,6 +94,9 @@ function themeFromPalette(
     accentForeground: mode.accentForeground.hex,
     highlight: mode.highlight.hex,
     highlightForeground: mode.highlightForeground.hex,
+    surfaceAttention: mode.surfaceAttention.hex,
+    surfacePositive: mode.surfacePositive.hex,
+    surfaceLive: mode.surfaceLive.hex,
     destructive: mode.destructive.hex,
     destructiveForeground: mode.destructiveForeground.hex,
     success: mode.success.hex,

@@ -15,7 +15,10 @@ import { beforeEach, describe, expect, it, mock } from 'bun:test';
 import { fireEvent, waitFor } from '@testing-library/react-native';
 import { useAuthStore } from '@/src/store/auth';
 import { renderWithProviders } from '@/src/test-utils';
+import { palette } from '~/lib/design-tokens/palette';
 import { ClockInCard } from '../components/ClockInCard';
+
+const SURFACE_ATTENTION = palette.light.surfaceAttention.hex;
 
 mock.module('@/lib/animations/useReducedMotion', () => ({
   useReducedMotion: mock(() => false),
@@ -126,5 +129,41 @@ describe('ClockInCard — forgotten clock-out (#7)', () => {
     // and not 14 hours of elapsed time.
     const sentMs = Date.parse(payload.clock_out_at as string);
     expect(Math.abs(sentMs - SHIFT_END_MS)).toBeLessThan(60_000);
+  });
+
+  // Wave 2-A: overdue is a meaning change ("please close this out"), not a
+  // continuation of "working" — the card itself flips to tone="attention"
+  // (the tinted `surfaceAttention` ground), and the apricot live dot (that
+  // signal belongs to actually-working) disappears.
+  it('flips the card to tone="attention", and drops the live dot', async () => {
+    const { getByTestId, queryByTestId } = renderWithProviders(
+      <ClockInCard householdId={HOUSEHOLD_ID} timeZone="UTC" />
+    );
+
+    await waitFor(() => expect(getByTestId('today-overdue-hint')).toBeTruthy());
+
+    const styleArray = [getByTestId('today-clock-card').props.style].flat();
+    expect(
+      styleArray.some(
+        s =>
+          s && typeof s === 'object' && s.backgroundColor === SURFACE_ATTENTION
+      )
+    ).toBe(true);
+    expect(queryByTestId('today-live-dot')).toBeNull();
+  });
+
+  // Rule B regression (cross-agent audit): the overdue Caption sits on the
+  // tinted `surfaceAttention` ground now — `warningStrong` there is
+  // 4.07:1, under AA for 14px semibold. Pin it to `foreground` (no colour
+  // className override) so it can't drift back.
+  it('renders the overdue caption in foreground, never warningStrong (Rule B)', async () => {
+    const { getByTestId } = renderWithProviders(
+      <ClockInCard householdId={HOUSEHOLD_ID} timeZone="UTC" />
+    );
+
+    await waitFor(() => expect(getByTestId('today-overdue-hint')).toBeTruthy());
+
+    const caption = getByTestId('today-live-caption');
+    expect(String(caption.props.className ?? '')).not.toContain('warning');
   });
 });

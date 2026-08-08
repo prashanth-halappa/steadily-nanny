@@ -16,6 +16,18 @@
  */
 import { beforeAll, describe, expect, it, mock } from 'bun:test';
 import { fireEvent, render } from '@testing-library/react-native';
+import {
+  CALENDAR_VIEWS,
+  useCalendarViewStore,
+} from '@/src/store/calendarViewStore';
+
+// The global `react-native` mock's `StyleSheet.flatten` (bun.setup.ts) is an
+// identity function, not a real merge — typography components' `style` prop
+// is an array (`[base, weight, tabular, caller]`), so `StyleSheet.flatten`
+// leaves it unflattened. Merge it by hand for style assertions here.
+function flattenStyle(style: unknown): Record<string, unknown> {
+  return Object.assign({}, ...[style].flat(Infinity).filter(Boolean));
+}
 
 // LoadingIndicator's require('@/assets/splash.png') breaks bundling under
 // bun:test (see loading-indicator.test.tsx's header comment) — mock it out
@@ -68,6 +80,7 @@ let mockUseShiftsRange: ReturnType<typeof mock>;
 let mockUseActiveHousehold: ReturnType<typeof mock>;
 let mockIsShiftsRouteUnavailable: ReturnType<typeof mock>;
 let mockUseIsOnboarded: ReturnType<typeof mock>;
+let mockUseUserProfile: ReturnType<typeof mock>;
 
 const HOUSEHOLD_ID = '11111111-1111-4111-8111-111111111111';
 
@@ -124,11 +137,12 @@ beforeAll(async () => {
   mock.module('@/src/hooks/queries/useActiveHousehold', () => ({
     useActiveHousehold: mockUseActiveHousehold,
   }));
+  mockUseUserProfile = mock(() => ({
+    data: { timezone: 'America/New_York', week_starts_on: 1 },
+    isLoading: false,
+  }));
   mock.module('@/src/hooks/queries/useUserProfile', () => ({
-    useUserProfile: mock(() => ({
-      data: { timezone: 'America/New_York', week_starts_on: 1 },
-      isLoading: false,
-    })),
+    useUserProfile: mockUseUserProfile,
   }));
   mock.module('@/src/hooks/queries/useIsOnboarded', () => ({
     useIsOnboarded: mockUseIsOnboarded,
@@ -350,5 +364,104 @@ describe('ScheduleShiftsScreen', () => {
     const { queryByTestId } = render(<ScheduleShiftsScreen />);
 
     expect(queryByTestId('schedule-shifts-add-extra')).toBeNull();
+  });
+
+  it('REGRESSION P0-8: Agenda resolves the SAME timezone as the Week ribbon (household-first, not Agenda-profile-only)', () => {
+    // Household is America/New_York (EDT, UTC-4 in August); profile is
+    // Asia/Kolkata (UTC+5:30) — ~9.5h apart, so a wrong fallback chain on
+    // either view is impossible to miss.
+    mockUseActiveHousehold.mockImplementation(() => ({
+      household: { id: HOUSEHOLD_ID, timezone: 'America/New_York' },
+      householdId: HOUSEHOLD_ID,
+      households: [{ id: HOUSEHOLD_ID }],
+      setActiveHouseholdId: mock(),
+      isLoading: false,
+    }));
+    mockUseUserProfile.mockImplementation(() => ({
+      data: { timezone: 'Asia/Kolkata', week_starts_on: 1 },
+      isLoading: false,
+    }));
+    const shifts = [
+      makeShift({
+        id: 'shift-tz',
+        local_date: '2026-08-03', // Monday
+        starts_at: '2026-08-03T13:00:00.000Z',
+        ends_at: '2026-08-03T21:00:00.000Z',
+        status: 'confirmed',
+      }),
+    ];
+    mockUseShiftsRange.mockImplementation(() => ({
+      data: shifts,
+      isLoading: false,
+      isError: false,
+      error: null,
+    }));
+
+    const { getByTestId, getByText } = render(<ScheduleShiftsScreen />);
+
+    // Agenda (default view): 13:00Z-21:00Z in America/New_York is 09:00-17:00.
+    // Before the fix, Agenda used profile tz only and would show 18:30-02:30.
+    expect(getByText('09:00 – 17:00')).toBeTruthy();
+
+    fireEvent.press(getByTestId('calendar-view-week_ribbon'));
+
+    // Monday (dow=1), hour 9 is occupied in America/New_York too — same
+    // resolved zone as Agenda, not a second, independent fallback chain.
+    expect(getByTestId('week-ribbon-cell-1-9').props.accessibilityLabel).toBe(
+      'confirmed'
+    );
+  });
+
+  it('P1: "Add a one-off shift" renders at Small/14/600, not Button-sm 16 (reads as heavy as the H1)', () => {
+    mockUseIsOnboarded.mockImplementation(() => ({
+      role: 'parent',
+      status: 'onboarded',
+    }));
+    mockUseShiftsRange.mockImplementation(() => ({
+      data: [],
+      isLoading: false,
+      isError: false,
+      error: null,
+    }));
+
+    const { getByText } = render(<ScheduleShiftsScreen />);
+
+    const style = flattenStyle(getByText('shifts.addExtra').props.style);
+    expect(style.fontSize).toBe(14);
+    expect(style.fontWeight).toBe('600');
+  });
+
+  it('REGRESSION P0-Rhythm-gate: a parent NEVER sees CrossFamilyRhythmView, even if the persisted view preference is somehow already "cross_family" (TIER0-CX-SPEC §5.2 — real household names are nanny-only)', () => {
+    // Defense in depth: CalendarViewSwitcher already hides this option from
+    // a parent, but the render gate must not depend on that alone — a
+    // stale/corrupted persisted value must not leak a household name to a
+    // parent. Simulate the worst case directly against the real, role-keyed
+    // store rather than trusting the switcher to have prevented it.
+    useCalendarViewStore
+      .getState()
+      .setView('parent', CALENDAR_VIEWS.CROSS_FAMILY);
+    mockUseIsOnboarded.mockImplementation(() => ({
+      role: 'parent',
+      status: 'onboarded',
+    }));
+    mockUseActiveHousehold.mockImplementation(() => ({
+      household: { id: HOUSEHOLD_ID },
+      householdId: HOUSEHOLD_ID,
+      households: [{ id: HOUSEHOLD_ID }, { id: 'other-household' }],
+      setActiveHouseholdId: mock(),
+      isLoading: false,
+    }));
+    mockUseShiftsRange.mockImplementation(() => ({
+      data: [],
+      isLoading: false,
+      isError: false,
+      error: null,
+    }));
+
+    const { queryByTestId } = render(<ScheduleShiftsScreen />);
+
+    expect(queryByTestId('calendar-cross-family-view')).toBeNull();
+
+    useCalendarViewStore.getState().reset();
   });
 });

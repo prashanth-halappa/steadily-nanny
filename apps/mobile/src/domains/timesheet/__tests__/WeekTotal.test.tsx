@@ -10,7 +10,11 @@
  */
 import { describe, expect, it, mock } from 'bun:test';
 import { render } from '@testing-library/react-native';
+import { palette } from '~/lib/design-tokens/palette';
 import { WeekTotal } from '../components/WeekTotal';
+
+const SURFACE_ATTENTION = palette.light.surfaceAttention.hex;
+const SURFACE_POSITIVE = palette.light.surfacePositive.hex;
 
 describe('WeekTotal', () => {
   it('renders the total and week range label without nav props (backwards compatible)', () => {
@@ -550,6 +554,435 @@ describe('WeekTotal', () => {
       );
 
       expect(queryByTestId('hours-approved-lock-note')).toBeNull();
+    });
+  });
+
+  // Daylight P0-3: the card itself carries the T1/T2 prominence ladder — a
+  // tinted ground — derived from timesheet status crossed with the viewer
+  // (`earningsRole` doubles as "who is looking at this card", already
+  // passed by both ParentWeekView and NannyWeekView). No accent bar — removed
+  // after on-device user feedback ("you don't need the left border") and a
+  // genuine rendering defect (a 4px-wide element can't carry a 20px radius).
+  describe('T1/positive tone (Daylight prominence ladder)', () => {
+    function toneBackground(node: { props: { style?: unknown } }) {
+      const styles = [node.props.style].flat(Infinity);
+      const bg = styles.find(
+        (s): s is { backgroundColor: string } =>
+          !!s && typeof s === 'object' && 'backgroundColor' in s
+      );
+      return bg?.backgroundColor;
+    }
+
+    it('is attention-toned when submitted and the viewer is the parent', () => {
+      const { getByTestId } = render(
+        <WeekTotal
+          testID="hours-week-total"
+          weekRangeLabel="3 Aug – 9 Aug"
+          totalLabel="9h 14m"
+          overtimeLabel={null}
+          timesheetStatus="submitted"
+          earningsRole="parent"
+        />
+      );
+
+      expect(toneBackground(getByTestId('hours-week-total'))).toBe(
+        SURFACE_ATTENTION
+      );
+    });
+
+    it('stays default (no tint) when submitted and the viewer is the nanny — not her obligation', () => {
+      const { getByTestId } = render(
+        <WeekTotal
+          testID="hours-week-total"
+          weekRangeLabel="3 Aug – 9 Aug"
+          totalLabel="9h 14m"
+          overtimeLabel={null}
+          timesheetStatus="submitted"
+          earningsRole="nanny"
+        />
+      );
+
+      expect(toneBackground(getByTestId('hours-week-total'))).toBeUndefined();
+    });
+
+    it('is attention-toned when queried, for either viewer', () => {
+      const { getByTestId } = render(
+        <WeekTotal
+          testID="hours-week-total"
+          weekRangeLabel="3 Aug – 9 Aug"
+          totalLabel="9h 14m"
+          overtimeLabel={null}
+          timesheetStatus="queried"
+          earningsRole="nanny"
+        />
+      );
+
+      expect(toneBackground(getByTestId('hours-week-total'))).toBe(
+        SURFACE_ATTENTION
+      );
+    });
+
+    it('is positive-toned once approved', () => {
+      const { getByTestId } = render(
+        <WeekTotal
+          testID="hours-week-total"
+          weekRangeLabel="3 Aug – 9 Aug"
+          totalLabel="41h 0m"
+          overtimeLabel={null}
+          timesheetStatus="approved"
+        />
+      );
+
+      expect(toneBackground(getByTestId('hours-week-total'))).toBe(
+        SURFACE_POSITIVE
+      );
+    });
+
+    it('stays default with no tint when the week is still open', () => {
+      const { getByTestId } = render(
+        <WeekTotal
+          testID="hours-week-total"
+          weekRangeLabel="3 Aug – 9 Aug"
+          totalLabel="0m"
+          overtimeLabel={null}
+          timesheetStatus="open"
+        />
+      );
+
+      expect(toneBackground(getByTestId('hours-week-total'))).toBeUndefined();
+    });
+  });
+
+  // Daylight P0-3: "Ready for your approval" — the reason the parent opened
+  // the screen — is a headline directly above the figure, not a 12px pill.
+  // Pills annotate rows; the anchor card of a screen gets a headline.
+  describe('parent headline replaces the StatusPill', () => {
+    it('renders a MetadataLabel headline above the total instead of a StatusPill, for the parent viewer', () => {
+      const { getByTestId, queryByTestId, getByText } = render(
+        <WeekTotal
+          testID="hours-week-total"
+          weekRangeLabel="3 Aug – 9 Aug"
+          totalLabel="9h 14m"
+          overtimeLabel={null}
+          timesheetStatus="submitted"
+          earningsRole="parent"
+        />
+      );
+
+      expect(getByTestId('hours-status-headline')).toBeTruthy();
+      expect(getByText('statusSubmitted')).toBeTruthy();
+      expect(queryByTestId('hours-timesheet-status')).toBeNull();
+    });
+
+    it('reads "Approved on {date}" once approved and a date is known', () => {
+      const { getByText } = render(
+        <WeekTotal
+          testID="hours-week-total"
+          weekRangeLabel="3 Aug – 9 Aug"
+          totalLabel="41h 0m"
+          overtimeLabel={null}
+          timesheetStatus="approved"
+          earningsRole="parent"
+          approvedDateLabel="6 August"
+        />
+      );
+
+      expect(getByText('approvedOnDate')).toBeTruthy();
+    });
+
+    it('falls back to the plain approved label when no date is known', () => {
+      const { getByText } = render(
+        <WeekTotal
+          testID="hours-week-total"
+          weekRangeLabel="3 Aug – 9 Aug"
+          totalLabel="41h 0m"
+          overtimeLabel={null}
+          timesheetStatus="approved"
+          earningsRole="parent"
+        />
+      );
+
+      expect(getByText('statusApproved')).toBeTruthy();
+    });
+
+    it('promotes the query note into the card, directly under the headline, when queried', () => {
+      const { getByTestId } = render(
+        <WeekTotal
+          testID="hours-week-total"
+          weekRangeLabel="3 Aug – 9 Aug"
+          totalLabel="9h 14m"
+          overtimeLabel={null}
+          timesheetStatus="queried"
+          earningsRole="parent"
+          queryNote="Thursday looks longer than expected"
+        />
+      );
+
+      expect(getByTestId('hours-query-note')).toBeTruthy();
+    });
+
+    it('never shows the query note when status is not queried, even if one is supplied', () => {
+      const { queryByTestId } = render(
+        <WeekTotal
+          testID="hours-week-total"
+          weekRangeLabel="3 Aug – 9 Aug"
+          totalLabel="9h 14m"
+          overtimeLabel={null}
+          timesheetStatus="submitted"
+          earningsRole="parent"
+          queryNote="Stale note"
+        />
+      );
+
+      expect(queryByTestId('hours-query-note')).toBeNull();
+    });
+  });
+
+  // Daylight P0-5: the person whose pay it is could not see whether her week
+  // was open, submitted, queried or approved. Same StatusPill the parent
+  // used to see, forked to carer-side wording.
+  describe('nanny StatusPill — carer-side wording (P0-5)', () => {
+    it.each([
+      ['open', 'stillOpen'],
+      ['submitted', 'withTheFamily'],
+      ['queried', 'theFamilyAsked'],
+      ['approved', 'approved'],
+    ] as const)('labels the pill for nanny status %s', (status, _label) => {
+      const { getByTestId } = render(
+        <WeekTotal
+          testID="hours-week-total"
+          weekRangeLabel="3 Aug – 9 Aug"
+          totalLabel="9h 14m"
+          overtimeLabel={null}
+          timesheetStatus={status}
+          earningsRole="nanny"
+        />
+      );
+
+      expect(getByTestId('hours-timesheet-status')).toBeTruthy();
+    });
+
+    // Regression pairing (with the parent test above): the pill and the
+    // headline are each other's replacement for their respective viewer,
+    // never both at once for either.
+    it('never shows the parent headline alongside the nanny pill', () => {
+      const { getByTestId, queryByTestId } = render(
+        <WeekTotal
+          testID="hours-week-total"
+          weekRangeLabel="3 Aug – 9 Aug"
+          totalLabel="9h 14m"
+          overtimeLabel={null}
+          timesheetStatus="submitted"
+          earningsRole="nanny"
+        />
+      );
+
+      expect(getByTestId('hours-timesheet-status')).toBeTruthy();
+      expect(queryByTestId('hours-status-headline')).toBeNull();
+    });
+
+    it('reads "Still open" for a nanny whose week has not been submitted yet', () => {
+      const { getByText } = render(
+        <WeekTotal
+          testID="hours-week-total"
+          weekRangeLabel="3 Aug – 9 Aug"
+          totalLabel="9h 14m"
+          overtimeLabel={null}
+          timesheetStatus="open"
+          earningsRole="nanny"
+        />
+      );
+
+      expect(getByText('nannyStatusNotSubmitted')).toBeTruthy();
+    });
+
+    it('reads "With the family" for a nanny whose week is submitted', () => {
+      const { getByText } = render(
+        <WeekTotal
+          testID="hours-week-total"
+          weekRangeLabel="3 Aug – 9 Aug"
+          totalLabel="9h 14m"
+          overtimeLabel={null}
+          timesheetStatus="submitted"
+          earningsRole="nanny"
+        />
+      );
+
+      expect(getByText('nannyStatusSubmitted')).toBeTruthy();
+    });
+
+    it('reads "The family asked a question" for a nanny whose week is queried', () => {
+      const { getByText } = render(
+        <WeekTotal
+          testID="hours-week-total"
+          weekRangeLabel="3 Aug – 9 Aug"
+          totalLabel="9h 14m"
+          overtimeLabel={null}
+          timesheetStatus="queried"
+          earningsRole="nanny"
+        />
+      );
+
+      expect(getByText('nannyStatusQueried')).toBeTruthy();
+    });
+
+    const okEarnings = {
+      status: 'ok' as const,
+      week_start: '2026-08-03',
+      currency: 'GBP',
+      lines: [],
+      gross_minor: 35208,
+      reimbursements_minor: 0,
+      worked_minutes: 2460,
+      payable_minutes: 2460,
+      guaranteed_minutes_per_week: null,
+    };
+
+    it('shows an appreciation line with the household, date and gross once approved', () => {
+      const { getByTestId, getByText } = render(
+        <WeekTotal
+          testID="hours-week-total"
+          weekRangeLabel="3 Aug – 9 Aug"
+          totalLabel="41h 0m"
+          overtimeLabel={null}
+          timesheetStatus="approved"
+          earningsRole="nanny"
+          approvedDateLabel="6 August"
+          householdName="the Smiths"
+          earnings={okEarnings}
+        />
+      );
+
+      expect(getByTestId('hours-approved-by-note')).toBeTruthy();
+      expect(getByText('approvedByHouseholdWithGross')).toBeTruthy();
+      // Rule B (docs/07-MOBILE-UI-SYSTEM.md): on the tinted `positive`
+      // ground, the primary sentence is `foreground`, not muted — this
+      // line IS the tier's message (the P0-5 appreciation moment), not a
+      // supporting caption.
+      expect(
+        getByTestId('hours-approved-by-note').props.className
+      ).not.toContain('text-muted-foreground');
+    });
+
+    it('omits the money clause when the gross is unknown, rather than inventing a figure', () => {
+      const { getByText, queryByText } = render(
+        <WeekTotal
+          testID="hours-week-total"
+          weekRangeLabel="3 Aug – 9 Aug"
+          totalLabel="41h 0m"
+          overtimeLabel={null}
+          timesheetStatus="approved"
+          earningsRole="nanny"
+          approvedDateLabel="6 August"
+          householdName="the Smiths"
+          earnings={{
+            status: 'no_arrangement',
+            week_start: '2026-08-03',
+            unpriced_dates: [],
+          }}
+        />
+      );
+
+      expect(getByText('approvedByHousehold')).toBeTruthy();
+      expect(queryByText('approvedByHouseholdWithGross')).toBeNull();
+    });
+
+    it('does not render the appreciation line for a non-approved status', () => {
+      const { queryByTestId } = render(
+        <WeekTotal
+          testID="hours-week-total"
+          weekRangeLabel="3 Aug – 9 Aug"
+          totalLabel="9h 14m"
+          overtimeLabel={null}
+          timesheetStatus="submitted"
+          earningsRole="nanny"
+          approvedDateLabel="6 August"
+          householdName="the Smiths"
+        />
+      );
+
+      expect(queryByTestId('hours-approved-by-note')).toBeNull();
+    });
+  });
+
+  // Daylight P0-3: Approve moves from the FlashList footer, several screens
+  // below every day row, into the anchor card itself, next to the figure it
+  // approves. WeekTotal stays presentational — the caller owns the handlers.
+  describe('primary/secondary action slots', () => {
+    it('renders the primary action as a full-width default button', () => {
+      const onPress = mock(() => {});
+      const { getByTestId } = render(
+        <WeekTotal
+          testID="hours-week-total"
+          weekRangeLabel="3 Aug – 9 Aug"
+          totalLabel="9h 14m"
+          overtimeLabel={null}
+          primaryAction={{
+            testID: 'hours-approve-button',
+            label: 'Approve the week',
+            onPress,
+          }}
+        />
+      );
+
+      const button = getByTestId('hours-approve-button');
+      expect(button.props.variant).toBeUndefined();
+      button.props.onPress?.();
+      expect(onPress).toHaveBeenCalledTimes(1);
+    });
+
+    it('renders the secondary action as a ghost button beneath the primary, in destructive text when marked', () => {
+      const { getByTestId, getByText } = render(
+        <WeekTotal
+          testID="hours-week-total"
+          weekRangeLabel="3 Aug – 9 Aug"
+          totalLabel="9h 14m"
+          overtimeLabel={null}
+          primaryAction={{
+            testID: 'hours-approve-button',
+            label: 'Approve the week',
+            onPress: () => {},
+          }}
+          secondaryAction={{
+            testID: 'hours-query-button',
+            label: 'Query',
+            onPress: () => {},
+            destructive: true,
+          }}
+        />
+      );
+
+      const button = getByTestId('hours-query-button');
+      expect(button.props.variant).toBe('ghost');
+      expect(getByText('Query').props.className).toContain('text-destructive');
+    });
+
+    it('renders an actionsNote above the actions when supplied', () => {
+      const { getByTestId } = render(
+        <WeekTotal
+          testID="hours-week-total"
+          weekRangeLabel="3 Aug – 9 Aug"
+          totalLabel="9h 14m"
+          overtimeLabel={null}
+          actionsNote="Approve unlocks once your carer has logged hours this week."
+        />
+      );
+
+      expect(getByTestId('hours-approve-waiting')).toBeTruthy();
+    });
+
+    it('renders neither action when both are omitted', () => {
+      const { queryByTestId } = render(
+        <WeekTotal
+          testID="hours-week-total"
+          weekRangeLabel="3 Aug – 9 Aug"
+          totalLabel="9h 14m"
+          overtimeLabel={null}
+        />
+      );
+
+      expect(queryByTestId('hours-approve-button')).toBeNull();
+      expect(queryByTestId('hours-query-button')).toBeNull();
     });
   });
 });

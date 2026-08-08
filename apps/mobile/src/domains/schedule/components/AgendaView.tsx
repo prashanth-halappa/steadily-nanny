@@ -11,21 +11,34 @@ import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Pressable, View } from 'react-native';
 import { useTabBarScrollPadding } from '@/lib/layout/useTabBarScrollPadding';
+import { cn } from '@/lib/utils';
 import {
   StatusPill,
   type StatusPillProps,
 } from '@/src/components/ui/status-pill';
-import { Body, DayGroup, Small } from '@/src/components/ui/typography';
+import { Body, DayGroup, Figure, Small } from '@/src/components/ui/typography';
 import { resolveMemberDisplayName } from '@/src/domains/schedule/utils/memberDisplayName';
 import {
   formatShiftTime,
   localDateToWeekday,
 } from '@/src/domains/schedule/utils/shiftGrouping';
 import { timeOffRowsForLocalDate } from '@/src/domains/schedule/utils/timeOffOverlap';
+import { formatDuration } from '@/src/domains/timesheet/utils/duration';
 import { formatDisplayDate } from '@/src/domains/timesheet/utils/week';
 import { useHouseholdMembers } from '@/src/hooks/queries/useHouseholdMembers';
 import { useAuthStore } from '@/src/store/auth';
 import { useElevation } from '~/lib/design-tokens/elevation';
+import { useThemeColors } from '~/lib/design-tokens/useThemeColors';
+
+// Row radius (`rounded-row`, tailwind.config.js) — no shared JS constant
+// exists for it, so it's named here once for the accent-bar style, same
+// approach as `card.tsx`'s CARD_RADIUS.
+const ROW_RADIUS = 16;
+
+/** Statuses that read as a resolved record, not a thing to act on (T4). */
+const RESOLVED_STATUSES = new Set<Shift['status']>(['cancelled', 'declined']);
+/** Statuses that still need a human — get the T3 accent bar. */
+const NEEDS_ACTION_STATUSES = new Set<Shift['status']>(['pending', 'draft']);
 
 type ShiftStatusVariant = NonNullable<StatusPillProps['variant']>;
 
@@ -59,9 +72,26 @@ interface AgendaViewProps {
 }
 
 type AgendaItem =
-  | { type: 'header'; key: string; label: string }
+  | {
+      type: 'header';
+      key: string;
+      label: string;
+      localDate: string;
+      /** Sum of shifts that count as cover — excludes cancelled/declined.
+       * Omitted (no total shown) when the day has no shifts at all. */
+      totalMinutes: number | null;
+    }
   | { type: 'away'; key: string; localDate: string; message: string | null }
   | { type: 'shift'; key: string; shift: Shift };
+
+/** Whole-minute duration between two ISO instants, floored (never negative
+ * with real data, but a display sum must not go negative). */
+function shiftMinutes(shift: Shift): number {
+  const minutes =
+    (new Date(shift.ends_at).getTime() - new Date(shift.starts_at).getTime()) /
+    60000;
+  return Math.max(0, minutes);
+}
 
 function ShiftRow({
   shift,
@@ -78,7 +108,10 @@ function ShiftRow({
   const { t } = useTranslation('schedule');
   const router = useRouter();
   const elevation = useElevation();
+  const colors = useThemeColors();
   const variant = STATUS_TO_VARIANT[shift.status];
+  const isResolved = RESOLVED_STATUSES.has(shift.status);
+  const needsAction = NEEDS_ACTION_STATUSES.has(shift.status);
 
   return (
     <Pressable
@@ -87,11 +120,34 @@ function ShiftRow({
       onPress={() =>
         router.push(`/(private)/schedule/shifts/${shift.id}` as Href)
       }
-      className="mx-5.5 mb-2 flex-row items-center justify-between gap-2 rounded-row bg-card p-3"
-      style={elevation.row}
+      className={cn(
+        'relative mx-5.5 mb-2 flex-row items-center justify-between gap-2 rounded-row p-3',
+        isResolved ? 'bg-muted' : 'bg-card'
+      )}
+      style={isResolved ? undefined : elevation.row}
     >
+      {needsAction ? (
+        <View
+          testID={`schedule-shift-accent-${shift.id}`}
+          pointerEvents="none"
+          style={{
+            position: 'absolute',
+            left: 0,
+            top: 0,
+            bottom: 0,
+            width: 3,
+            borderTopLeftRadius: ROW_RADIUS,
+            borderBottomLeftRadius: ROW_RADIUS,
+            backgroundColor: colors.warningStrong,
+          }}
+        />
+      ) : null}
       <View className="gap-1">
-        <Body tabular>
+        <Body
+          tabular
+          className={isResolved ? 'text-muted-foreground' : undefined}
+          style={isResolved ? { textDecorationLine: 'line-through' } : null}
+        >
           {formatShiftTime(shift.starts_at, displayTimeZone)} –{' '}
           {formatShiftTime(shift.ends_at, displayTimeZone)}
         </Body>
@@ -190,10 +246,23 @@ export function AgendaView({
 
     const result: AgendaItem[] = [];
     for (const localDate of [...dates].sort()) {
+      const dayShifts = (byDate.get(localDate) ?? []).sort((a, b) =>
+        a.starts_at.localeCompare(b.starts_at)
+      );
+      // The parent's question is how much cover exists, not how many rows
+      // to add up themselves — but a cancelled/declined shift isn't cover.
+      const totalMinutes =
+        dayShifts.length === 0
+          ? null
+          : dayShifts
+              .filter(shift => !RESOLVED_STATUSES.has(shift.status))
+              .reduce((sum, shift) => sum + shiftMinutes(shift), 0);
       result.push({
         type: 'header',
         key: `header-${localDate}`,
         label: `${t(`weekday.${localDateToWeekday(localDate)}`)} · ${formatDisplayDate(localDate)}`,
+        localDate,
+        totalMinutes,
       });
       for (const row of timeOffRowsForLocalDate(
         timeOff,
@@ -207,9 +276,6 @@ export function AgendaView({
           message: row.message,
         });
       }
-      const dayShifts = (byDate.get(localDate) ?? []).sort((a, b) =>
-        a.starts_at.localeCompare(b.starts_at)
-      );
       for (const shift of dayShifts) {
         result.push({ type: 'shift', key: shift.id, shift });
       }
@@ -228,8 +294,13 @@ export function AgendaView({
         renderItem={({ item }) => {
           if (item.type === 'header') {
             return (
-              <View className="px-5.5 pt-4 pb-1">
+              <View className="flex-row items-baseline justify-between px-5.5 pt-4 pb-1">
                 <DayGroup>{item.label}</DayGroup>
+                {item.totalMinutes !== null ? (
+                  <Figure testID={`schedule-day-total-${item.localDate}`}>
+                    {formatDuration(item.totalMinutes)}
+                  </Figure>
+                ) : null}
               </View>
             );
           }

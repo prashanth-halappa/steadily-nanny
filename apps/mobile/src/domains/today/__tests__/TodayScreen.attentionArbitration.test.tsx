@@ -1,0 +1,219 @@
+/**
+ * @module domains/today/__tests__/TodayScreen.attentionArbitration.test
+ *
+ * "One T1 per screen", enforced at the only place that sees every
+ * attention-capable card — `TodayScreen` itself. This is the guard the
+ * audit asked for: it counts how many of REAL `NeedsAttentionCard` +
+ * `CoverageGapBanner` (not opaque markers) are actually rendering
+ * `tone="attention"`'s tinted background, so a FOURTH attention surface
+ * added later without wiring into `resolveAttentionOwner` fails this test
+ * instead of shipping stacked.
+ *
+ * Detection is the tinted-ground `backgroundColor` Card applies for
+ * `tone="attention"`, not the accent bar — the bar was removed after user
+ * feedback on device (it also had a genuine rendering defect: a 4px-wide
+ * element can't carry a 20px corner radius). The tint alone still marks
+ * which card, if any, currently owns the screen's one T1 slot.
+ *
+ * `ClockInCard` stays mocked to null here — its side of the arbitration
+ * (overdue vs inbox) already has its own dedicated coverage in
+ * `TodayScreen.t1Arbitration.test.tsx`; this file is about the NEW pair
+ * (inbox vs coverage-gap) the follow-up audit found.
+ */
+import { beforeAll, describe, expect, it, mock } from 'bun:test';
+import { render } from '@testing-library/react-native';
+import type { InboxItem } from '@/src/domains/inbox/utils/buildInboxItems';
+import { palette } from '~/lib/design-tokens/palette';
+
+mock.module('@/lib/animations/useReducedMotion', () => ({
+  useReducedMotion: mock(() => false),
+}));
+mock.module('@/lib/useColorScheme', () => ({
+  useColorScheme: () => ({
+    colorScheme: 'light' as const,
+    isDarkColorScheme: false,
+    setColorScheme: () => {},
+    toggleColorScheme: () => {},
+  }),
+}));
+mock.module('@/src/components/ui/loading-indicator', () => {
+  const React = require('react');
+  return { LoadingIndicator: () => React.createElement('View') };
+});
+mock.module('@/src/components/ui/empty-state', () => {
+  const React = require('react');
+  return { EmptyState: () => React.createElement('View') };
+});
+mock.module('@/src/domains/household', () => ({
+  HouseholdSwitcher: () => null,
+}));
+mock.module('@/src/domains/schedule', () => ({
+  PendingScheduleCard: () => null,
+  ThisWeeksShiftsCard: () => null,
+}));
+mock.module('@/src/domains/today/components/ClockInCard', () => ({
+  ClockInCard: () => null,
+}));
+mock.module('@/src/domains/today/components/AddMissedHoursCard', () => ({
+  AddMissedHoursCard: () => null,
+}));
+mock.module('@/src/domains/today/components/HandoffChipsCard', () => ({
+  HandoffChipsCard: () => null,
+}));
+mock.module('@/src/domains/today/components/NannyLiveStatusCard', () => ({
+  NannyLiveStatusCard: () => null,
+}));
+mock.module('@/src/domains/today/components/TodayCalmCard', () => ({
+  TodayCalmCard: () => null,
+}));
+mock.module('@/src/domains/today/hooks/useHouseholdIsLive', () => ({
+  useHouseholdIsLive: () => false,
+}));
+mock.module('expo-router', () => ({
+  useRouter: () => ({ push: mock(), back: mock() }),
+}));
+
+const HOUSEHOLD_ID = 'household-attn-1';
+const CHANGE_REQUEST: InboxItem = {
+  kind: 'change_request',
+  id: 'cr-1',
+  shiftId: 'shift-1',
+  requestKind: 'time_change',
+};
+const GAP_EVENT = {
+  id: 'gap-1',
+  event_type: 'coverage_gap',
+  payload: { starts_at: null, ends_at: null },
+};
+
+let mockUseOverdueClockOut: ReturnType<typeof mock>;
+let mockUseInboxItems: ReturnType<typeof mock>;
+let mockUseTodayCoverageGaps: ReturnType<typeof mock>;
+let TodayScreen: typeof import('../components/TodayScreen').TodayScreen;
+
+beforeAll(async () => {
+  mockUseOverdueClockOut = mock(() => ({
+    overdue: false,
+    clockInAt: null,
+    shiftEndsAt: null,
+  }));
+  mock.module('@/src/domains/today/hooks/useOverdueClockOut', () => ({
+    useOverdueClockOut: mockUseOverdueClockOut,
+  }));
+
+  mockUseInboxItems = mock(() => ({ items: [], isLoading: false }));
+  mock.module('@/src/domains/inbox/hooks/useInboxItems', () => ({
+    useInboxItems: mockUseInboxItems,
+  }));
+
+  mockUseTodayCoverageGaps = mock(() => ({ gaps: [] }));
+  mock.module('@/src/domains/today/hooks/useTodayCoverageGaps', () => ({
+    useTodayCoverageGaps: mockUseTodayCoverageGaps,
+  }));
+
+  mock.module('@/src/hooks/queries/useActiveHousehold', () => ({
+    useActiveHousehold: () => ({
+      household: { id: HOUSEHOLD_ID, name: 'Attn Household', timezone: 'UTC' },
+      householdId: HOUSEHOLD_ID,
+      households: [
+        { id: HOUSEHOLD_ID, name: 'Attn Household', timezone: 'UTC' },
+      ],
+      pastHouseholds: [],
+      isPastHousehold: false,
+      setActiveHouseholdId: mock(),
+      isLoading: false,
+    }),
+  }));
+  mock.module('@/src/hooks/queries/useIsOnboarded', () => ({
+    useIsOnboarded: () => ({
+      status: 'onboarded',
+      role: 'parent',
+      householdId: HOUSEHOLD_ID,
+    }),
+  }));
+  mock.module('@/src/hooks/queries/useChildren', () => ({
+    useChildren: () => ({ data: [], isLoading: false }),
+  }));
+
+  const mod = await import('../components/TodayScreen');
+  TodayScreen = mod.TodayScreen;
+});
+
+const ATTENTION_BG = palette.light.surfaceAttention.hex;
+
+/** The two attention-capable T1 cards this file exercises together. */
+const ATTENTION_CANDIDATE_TEST_IDS = [
+  'today-needs-attention-card',
+  'coverage-gap-banner',
+];
+
+function hasAttentionBackground(style: unknown): boolean {
+  const styles = Array.isArray(style) ? style.flat() : [style];
+  return styles.some(
+    s =>
+      !!s &&
+      typeof s === 'object' &&
+      (s as { backgroundColor?: string }).backgroundColor === ATTENTION_BG
+  );
+}
+
+function countAttentionCards(
+  queryByTestId: (id: string) => { props: { style?: unknown } } | null
+): number {
+  return ATTENTION_CANDIDATE_TEST_IDS.filter(id => {
+    const el = queryByTestId(id);
+    return !!el && hasAttentionBackground(el.props.style);
+  }).length;
+}
+
+describe('TodayScreen — one T1 per screen (attention arbitration)', () => {
+  it('parent + inbox item + coverage gap today: exactly one attention surface (the gap wins)', () => {
+    mockUseInboxItems.mockReturnValue({
+      items: [CHANGE_REQUEST],
+      isLoading: false,
+    });
+    mockUseTodayCoverageGaps.mockReturnValue({ gaps: [GAP_EVENT] });
+    mockUseOverdueClockOut.mockReturnValue({
+      overdue: false,
+      clockInAt: null,
+      shiftEndsAt: null,
+    });
+
+    const { queryByTestId } = render(<TodayScreen />);
+
+    expect(countAttentionCards(queryByTestId)).toBe(1);
+    // The gap owns it — the inbox card is demoted but still present.
+    expect(queryByTestId('coverage-gap-banner')).toBeTruthy();
+  });
+
+  it('inbox item alone, no gap: exactly one attention surface (the inbox owns it)', () => {
+    mockUseInboxItems.mockReturnValue({
+      items: [CHANGE_REQUEST],
+      isLoading: false,
+    });
+    mockUseTodayCoverageGaps.mockReturnValue({ gaps: [] });
+    mockUseOverdueClockOut.mockReturnValue({
+      overdue: false,
+      clockInAt: null,
+      shiftEndsAt: null,
+    });
+
+    const { queryByTestId } = render(<TodayScreen />);
+
+    expect(countAttentionCards(queryByTestId)).toBe(1);
+  });
+
+  it('nothing needs attention: zero attention surfaces', () => {
+    mockUseInboxItems.mockReturnValue({ items: [], isLoading: false });
+    mockUseTodayCoverageGaps.mockReturnValue({ gaps: [] });
+    mockUseOverdueClockOut.mockReturnValue({
+      overdue: false,
+      clockInAt: null,
+      shiftEndsAt: null,
+    });
+
+    const { queryByTestId } = render(<TodayScreen />);
+
+    expect(countAttentionCards(queryByTestId)).toBe(0);
+  });
+});

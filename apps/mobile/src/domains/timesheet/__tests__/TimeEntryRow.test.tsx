@@ -261,6 +261,46 @@ describe('TimeEntryRow — voided entry', () => {
     expect(queryByText(/inProgress/)).toBeNull();
     expect(queryByText(/–/)).toBeNull();
   });
+
+  it("drops to T4 (muted ground, no elevation) instead of a live entry's card weight", () => {
+    const entry = makeEntry({
+      status: 'voided',
+      clock_out_at: '2026-08-01T09:58:00.000Z',
+    });
+    const { getByTestId } = render(
+      <TimeEntryRow
+        entry={entry}
+        nowMs={NOW_MS}
+        timeZone="Europe/London"
+        dayDate="2026-08-01"
+      />
+    );
+
+    const row = getByTestId(`hours-entry-row-${entry.id}`);
+    expect(row.props.className).toContain('bg-muted');
+    expect(row.props.className).not.toContain('bg-card');
+    // style is [elevation-or-null, { minHeight }] — no elevation for T4.
+    const styleArray = [row.props.style].flat();
+    expect(styleArray[0]).toBeFalsy();
+  });
+
+  it('keeps every StatusPill and the strike-through — the record stays complete', () => {
+    const entry = makeEntry({
+      status: 'voided',
+      clock_out_at: '2026-08-01T09:58:00.000Z',
+    });
+    const { getByTestId } = render(
+      <TimeEntryRow
+        entry={entry}
+        nowMs={NOW_MS}
+        timeZone="Europe/London"
+        dayDate="2026-08-01"
+      />
+    );
+
+    const timeEl = getByTestId(`hours-voided-entry-${entry.id}`);
+    expect(timeEl.props.className).toContain('line-through');
+  });
 });
 
 describe('TimeEntryRow — zero-duration flag', () => {

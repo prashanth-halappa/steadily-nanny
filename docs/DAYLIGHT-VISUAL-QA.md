@@ -86,7 +86,7 @@ Sign in as **parent** for the first block, then as **nanny** for the second.
 
 Check these against every screenshot:
 
-- **No card or row has a border.** The only legitimate borders left are: `RoleOptionCard`'s selection ring, form-field inputs, and chips (Daylight chips do carry a 1px rule). A bordered *card* is a regression.
+- **No card or row has a border.** The only legitimate borders left are `RoleOptionCard`'s selection ring, form-field inputs, and chips (Daylight chips do carry a 1px rule). Everything else with a hairline is a regression — `Card`'s accent bar was a documented exception to this rule; it was removed after user feedback on device and a genuine rendering defect (a 4px-wide element can't carry the card's 20px corner radius), so the rule is now unqualified.
 - **Every card sits on a soft shadow.** If a surface has 20px corners but no lift, it was hand-rolled instead of using `<Card>` — report the screen.
 - **Shadows are plum-tinted, not grey/black.** Neutral-black shadows mean something bypassed `useElevation()`.
 - **Radii:** cards 20px, buttons 14px, rows 16px, pills/chips fully round, week-strip cells 12px.

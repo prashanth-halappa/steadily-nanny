@@ -6,9 +6,16 @@
  * hours) and a "Query" escape hatch that takes a note instead of silently
  * withholding approval. An approved week also offers "Reopen the week" —
  * the opposite of approve — so a frozen past week can be corrected without
- * a manual DB write. Reopen's own `hours-reopen-button` renders inside
- * `WeekTotal` (the FlashList header), not this footer — see that module's
- * doc comment for why it needs to be above the fold.
+ * a manual DB write.
+ *
+ * Daylight P0-3: Approve, Query, Reopen, the queried-note and the "waiting"
+ * explainer all render INSIDE `WeekTotal` (`primaryAction`/`secondaryAction`/
+ * `onReopenPress`/`queryNote`/`actionsNote`), not this component's FlashList
+ * footer — they used to sit below every day row and the reimbursements
+ * card, several screens down from the figure they act on. This component
+ * still owns every handler, dialog and gate (`isActionable`, `readOnly`);
+ * `WeekTotal` stays presentational. See that module's doc comment for the
+ * card's full vertical order.
  *
  * TIER0-CX-SPEC.md §6.2/§6.3/§7 (Phase 4, additive): the footer also carries
  * the pending-expenses review affordance (action-gated behind `!readOnly`,
@@ -29,10 +36,8 @@ import { useThemeColors } from '@/lib/design-tokens/useThemeColors';
 import { useTabBarScrollPadding } from '@/lib/layout/useTabBarScrollPadding';
 import { cn } from '@/lib/utils';
 import { ErrorState } from '@/src/components/custom/ErrorState';
-import { Button } from '@/src/components/ui/button';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
-import { Text } from '@/src/components/ui/text';
-import { Body, Caption } from '@/src/components/ui/typography';
+import { Caption } from '@/src/components/ui/typography';
 import { ExpenseReviewSheet } from '@/src/domains/expenses/components/ExpenseReviewSheet';
 import { PendingExpensesRow } from '@/src/domains/expenses/components/PendingExpensesRow';
 import { ReimbursementsCard } from '@/src/domains/expenses/components/ReimbursementsCard';
@@ -579,6 +584,11 @@ export function ParentWeekView({
               earningsReopenReason={timesheet?.reopen_reason ?? null}
               earningsError={timesheetQuery.isError}
               onRetryEarnings={() => void timesheetQuery.refetch()}
+              approvedDateLabel={approvedDateLabel}
+              // Daylight P0-3: gated internally on `timesheetStatus ===
+              // 'queried'`, same belt-and-braces the old footer render used
+              // — a stale note from a since-resolved query never shows.
+              queryNote={timesheet?.query_note ?? null}
               // Walkthrough fix 1 — the reopen affordance lives in the
               // summary card, next to the status pill/gross, not below the
               // day rows. `readOnly` (a helper) never gets a handler, so a
@@ -588,6 +598,38 @@ export function ParentWeekView({
                 readOnly ? undefined : () => setIsReopenDialogOpen(true)
               }
               isReopenPending={reopenTimesheet.isPending}
+              // Daylight P0-3: Approve/Query move from the FlashList footer
+              // (several screens below every day row) into this card, next
+              // to the figure they act on. Every existing gate is preserved
+              // — `isActionable`, `readOnly`, the disabled label swap.
+              primaryAction={
+                readOnly
+                  ? null
+                  : {
+                      testID: 'hours-approve-button',
+                      label: isApproved ? t('approved') : t('approveWeek'),
+                      disabled: !isActionable || approveTimesheet.isPending,
+                      onPress: () => setIsApproveDialogOpen(true),
+                    }
+              }
+              secondaryAction={
+                readOnly
+                  ? null
+                  : {
+                      testID: 'hours-query-button',
+                      label: t('query'),
+                      disabled: !isActionable,
+                      destructive: true,
+                      onPress: () => setIsQuerySheetVisible(true),
+                    }
+              }
+              actionsNote={
+                readOnly || isActionable || isApproved
+                  ? null
+                  : timesheet?.status === TIMESHEET_STATUSES.QUERIED
+                    ? t('waitingAfterQuery')
+                    : t('waitingForHours')
+              }
             />
           </>
         }
@@ -625,58 +667,17 @@ export function ParentWeekView({
                 />
               </>
             ) : null}
-            {/* Gated on status, not just a truthy note: `query_note` only
-                means "queried" while status is genuinely 'queried'. The API
-                never writes a reopen reason here (it lives in the day-thread
-                audit event instead — see timesheetCommandService.reopen's
-                doc comment), but this stays status-gated as the same
-                belt-and-braces `buildInboxItems` already applies, so a
-                stale or future-mistaken note can never mislabel a
-                reopened/approved week as an open dispute. */}
-            {timesheet?.status === TIMESHEET_STATUSES.QUERIED &&
-            timesheet.query_note ? (
-              <Body
-                testID="hours-query-note"
-                className="mt-4 text-muted-foreground"
-              >
-                {t('queriedWithNote', { note: timesheet.query_note })}
-              </Body>
-            ) : null}
+            {/* Daylight P0-3: the query note, the "waiting" explainer and
+                the Approve/Query buttons all moved into the summary card
+                above (`WeekTotal`'s `queryNote`/`actionsNote`/
+                `primaryAction`/`secondaryAction`) — next to the figure they
+                act on, not several screens below every day row. */}
             {readOnly ? null : (
-              <>
-                {/* §6.2 — above the approve actions. */}
-                <PendingExpensesRow
-                  pendingExpenses={pendingExpenses}
-                  onPress={() => setIsExpenseReviewVisible(true)}
-                />
-                {!isActionable && !isApproved ? (
-                  <Body
-                    testID="hours-approve-waiting"
-                    className="mt-4 text-muted-foreground"
-                  >
-                    {timesheet?.status === TIMESHEET_STATUSES.QUERIED
-                      ? t('waitingAfterQuery')
-                      : t('waitingForHours')}
-                  </Body>
-                ) : null}
-                <Button
-                  testID="hours-approve-button"
-                  className="mt-6"
-                  disabled={!isActionable || approveTimesheet.isPending}
-                  onPress={() => setIsApproveDialogOpen(true)}
-                >
-                  <Text>{isApproved ? t('approved') : t('approveWeek')}</Text>
-                </Button>
-                <Button
-                  testID="hours-query-button"
-                  variant="ghost"
-                  className="mt-2"
-                  disabled={!isActionable}
-                  onPress={() => setIsQuerySheetVisible(true)}
-                >
-                  <Text className="text-destructive">{t('query')}</Text>
-                </Button>
-              </>
+              // §6.2 — above the approve actions (which now live in the card).
+              <PendingExpensesRow
+                pendingExpenses={pendingExpenses}
+                onPress={() => setIsExpenseReviewVisible(true)}
+              />
             )}
           </>
         }

@@ -10,6 +10,16 @@
  * summary that shows the recorded total before it's written must have one
  * implementation.
  *
+ * Daylight P0-5 — the biggest trust gap this pass found: the person whose
+ * pay it is could not see whether her week was open, submitted, queried or
+ * approved (`WeekTotal` used to be called here with `showStatusPill={false}`).
+ * She now gets the same StatusPill the parent's card used to show, worded
+ * from her own side of the conversation (`WeekTotal`'s `timesheetPillLabel`
+ * role fork), plus — once approved — an appreciation line naming the
+ * household and the date, and the gross, that WeekTotal itself omits rather
+ * than fabricates when the total isn't known (docs/11-MONEY.md).
+ *
+
  * TIER0-CX-SPEC.md §6.1/§7 (Phase 4, additive): the footer also carries her
  * "Add an expense" quick-add + own status list, and — before that, per §7's
  * fixed statement order (item 3, after day rows) — the Reimbursements card
@@ -23,9 +33,7 @@ import { useTranslation } from 'react-i18next';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { useTabBarScrollPadding } from '@/lib/layout/useTabBarScrollPadding';
 import { ErrorState } from '@/src/components/custom/ErrorState';
-import { Button } from '@/src/components/ui/button';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
-import { Text } from '@/src/components/ui/text';
 import { ExpenseAddSheet } from '@/src/domains/expenses/components/ExpenseAddSheet';
 import { ExpensesListCard } from '@/src/domains/expenses/components/ExpensesListCard';
 import { ReimbursementsCard } from '@/src/domains/expenses/components/ReimbursementsCard';
@@ -42,6 +50,7 @@ import { useUpdateExpense } from '@/src/hooks/mutations/useUpdateExpense';
 import { useUpdateTimeEntry } from '@/src/hooks/mutations/useUpdateTimeEntry';
 import { useVoidTimeEntry } from '@/src/hooks/mutations/useVoidTimeEntry';
 import { useWithdrawExpense } from '@/src/hooks/mutations/useWithdrawExpense';
+import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
 import { useCurrentPayArrangement } from '@/src/hooks/queries/useCurrentPayArrangement';
 import { usePayments } from '@/src/hooks/queries/usePayments';
 import { useWeekExpenses } from '@/src/hooks/queries/useWeekExpenses';
@@ -106,6 +115,12 @@ export function NannyWeekView({
   // FlashList needs the same real clearance a fixed magic number can't give.
   const tabBarScrollPadding = useTabBarScrollPadding();
   const currentUserId = useAuthStore(s => s.user?.id ?? null);
+  // Daylight P0-5: the household name for the approved appreciation line
+  // ("Approved by the Smiths on..."). Reads the same SINGLE CHOKE POINT
+  // `HoursScreen` already resolved `householdId` from — a cache hit, not a
+  // second request — rather than threading a new prop through a file this
+  // task doesn't own.
+  const activeHousehold = useActiveHousehold();
   const entriesQuery = useWeekTimeEntries(householdId, weekStartISO);
   const timesheetQuery = useWeekTimesheet(householdId, weekStartISO);
   const expensesQuery = useWeekExpenses(householdId, weekStartISO);
@@ -349,13 +364,14 @@ export function NannyWeekView({
             isNextDisabled={isNextWeekDisabled}
             isPreviousDisabled={isPreviousWeekDisabled}
             timesheetStatus={timesheet?.status ?? null}
-            showStatusPill={false}
             totalMinutes={totalMinutes}
             earnings={earnings}
             earningsRole="nanny"
             earningsCarerId={timesheet?.carer_id ?? null}
             earningsCarerDisplayName={timesheet?.carer_display_name ?? ''}
             onPressEarnings={() => setIsBreakdownVisible(true)}
+            approvedDateLabel={approvedDateLabel}
+            householdName={activeHousehold.household?.name ?? null}
             earningsReopened={reopened}
             earningsReopenReason={timesheet?.reopen_reason ?? null}
             earningsError={timesheetQuery.isError}
@@ -371,22 +387,15 @@ export function NannyWeekView({
               totalMinor={earningsOk ? earningsOk.reimbursements_minor : null}
               currency={expensesCurrency}
             />
-            {readOnly ? null : (
-              <Button
-                testID="expenses-add"
-                variant="outline"
-                className="mt-4"
-                onPress={handleOpenAddExpense}
-              >
-                <Text className="text-foreground">
-                  {tExpenses('addButton')}
-                </Text>
-              </Button>
-            )}
+            {/* Daylight P1: "Add an expense" is now ExpensesListCard's own
+                footer action (it used to float here on a bare mt-4,
+                belonging to neither card) — same readOnly gate as
+                onEdit/onWithdraw below. */}
             <ExpensesListCard
               expenses={weekExpenses}
               onEdit={readOnly ? undefined : handleEditExpense}
               onWithdraw={readOnly ? undefined : handleWithdrawExpense}
+              onAddExpense={readOnly ? undefined : handleOpenAddExpense}
             />
             {/* "Paid £X on <date>", and what is still owed. No
                 `onMarkPaidPress` — recording a payment is the paying

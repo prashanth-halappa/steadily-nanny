@@ -33,10 +33,13 @@ mock.module('@/lib/useColorScheme', () => ({
 }));
 
 const HOUSEHOLD_ID = 'household-1';
+// Relative to "now", not a fixed past ISO date — a hardcoded date eventually
+// crosses `MAX_UNSCHEDULED_SHIFT_MS` (10h, no shift matched) and the entry
+// reads as overdue, which now also flips the card's tone/dot this file pins.
 const RUNNING_ENTRY = {
   id: 'entry-1',
   household_id: HOUSEHOLD_ID,
-  clock_in_at: '2026-08-01T20:00:00.000Z',
+  clock_in_at: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
   status: 'running',
 };
 
@@ -118,5 +121,22 @@ describe('ClockInCard — the live signal', () => {
     const colours = shadowColours(getByTestId('today-clock-card').props.style);
     expect(colours).toContain(INK_RGB);
     expect(colours).not.toContain(APRICOT_RGB);
+  });
+
+  // Wave 2-A: idle inversion — "Not on the clock" is the eyebrow, the day's
+  // own fact (no shift today, in this fixture) is the H3 headline.
+  it('off the clock with no shift today: the day fact is the headline, not the clock state', async () => {
+    getRunningMock.mockImplementation(() => Promise.resolve(null));
+
+    const { getByTestId } = renderWithProviders(
+      <ClockInCard householdId={HOUSEHOLD_ID} timeZone="UTC" />
+    );
+
+    await waitFor(() =>
+      expect(getByTestId('today-off-clock-none')).toBeTruthy()
+    );
+    expect(getByTestId('today-off-clock-none').props.children).toBe(
+      'readyWhenYouAre'
+    );
   });
 });

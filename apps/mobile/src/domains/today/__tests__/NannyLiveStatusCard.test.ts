@@ -8,28 +8,34 @@ import { beforeAll, describe, expect, it } from 'bun:test';
 import { join } from 'node:path';
 
 const cardPath = join(__dirname, '../components/NannyLiveStatusCard.tsx');
+// Wave 2-D: row derivation (bucketing, carer identity, per-carer duration)
+// moved out of the component into `useTodayCoverRows` so `TodayCalmCard`
+// can reuse it — the architectural markers this file pins now live there.
+const hookPath = join(__dirname, '../hooks/useTodayCoverRows.ts');
 const enTodayPath = join(__dirname, '../../../i18n/locales/en/today.json');
 const esTodayPath = join(__dirname, '../../../i18n/locales/es/today.json');
 let cardSource: string;
+let hookSource: string;
 let enToday: Record<string, unknown>;
 let esToday: Record<string, unknown>;
 
 beforeAll(async () => {
   cardSource = await Bun.file(cardPath).text();
+  hookSource = await Bun.file(hookPath).text();
   enToday = await Bun.file(enTodayPath).json();
   esToday = await Bun.file(esTodayPath).json();
 });
 
 describe('NannyLiveStatusCard', () => {
   it('resolves every carer name through the one resolver and opens Hours on tap', () => {
-    expect(cardSource).toContain('useHouseholdMembers');
-    expect(cardSource).toContain('resolveCarerName');
+    expect(hookSource).toContain('useHouseholdMembers');
+    expect(hookSource).toContain('resolveCarerName');
     expect(cardSource).toContain("router.push('/(private)/(tabs)/hours'");
     expect(cardSource).toContain('testID="today-nanny-live-status"');
   });
 
   it('buckets by the shared carer identity rule, never a raw carer_id', () => {
-    expect(cardSource).toContain('carerKeyOf');
+    expect(hookSource).toContain('carerKeyOf');
   });
 
   it('titles the card "Today\'s cover" and keeps the no-cover copy', () => {
@@ -71,7 +77,7 @@ describe('NannyLiveStatusCard', () => {
   });
 
   it("keeps a finished carer's duration scoped to her own entries", () => {
-    expect(cardSource).toContain('sumEntryMinutes');
+    expect(hookSource).toContain('sumEntryMinutes');
     expect(cardSource).not.toContain('nannyFinishedTitle');
   });
 });

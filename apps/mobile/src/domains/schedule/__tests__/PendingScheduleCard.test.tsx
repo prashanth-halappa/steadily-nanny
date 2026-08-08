@@ -12,6 +12,19 @@
 import { beforeAll, describe, expect, it, mock } from 'bun:test';
 import { render } from '@testing-library/react-native';
 
+/** The typography factory always puts the token's base style first in the
+ * `style` array (`[baseStyle, weightStyle, tabularStyle, callerStyle]`) —
+ * read it directly rather than via RN's `StyleSheet.flatten`, which is a
+ * no-op passthrough under this test runtime. */
+function baseStyle(style: unknown): Record<string, unknown> {
+  const layers = Array.isArray(style) ? style : [style];
+  const merged: Record<string, unknown> = {};
+  for (const layer of layers) {
+    if (layer && typeof layer === 'object') Object.assign(merged, layer);
+  }
+  return merged;
+}
+
 mock.module('@/src/components/ui/loading-indicator', () => {
   const React = require('react');
   return {
@@ -163,5 +176,24 @@ describe('PendingScheduleCard', () => {
     const { queryByTestId } = render(<PendingScheduleCard />);
 
     expect(queryByTestId('today-pending-schedule-card')).toBeNull();
+  });
+
+  // P0-6 (Wave 1-D): routine card title promoted off Body/600 (16/24) onto
+  // H4 (18/27 @600).
+  it('renders the title at H4, not Body weight="semibold"', () => {
+    mockUseSchedulePatterns.mockImplementation(() => ({
+      data: [pendingPatternForMe],
+      isLoading: false,
+    }));
+    mockUseSchedulePattern.mockImplementation(() => ({
+      data: { ...pendingPatternForMe, days: patternDays },
+      isLoading: false,
+    }));
+
+    const { getByText } = render(<PendingScheduleCard />);
+
+    const style = baseStyle(getByText('todayCard.pendingTitle').props.style);
+    expect(style.fontSize).toBe(18);
+    expect(style.lineHeight).toBe(27);
   });
 });

@@ -23,12 +23,11 @@
  */
 
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
 import { BottomSheetBase } from '@/src/components/custom/BottomSheetBase';
 import { Button } from '@/src/components/ui/button';
-import { Card } from '@/src/components/ui/card';
 import { LoadingButton } from '@/src/components/ui/loading-button';
 import { Text } from '@/src/components/ui/text';
 import { Textarea } from '@/src/components/ui/textarea';
@@ -110,14 +109,18 @@ export function AddMissedHoursCard({
   };
 
   return (
-    <Card testID="today-missed-hours-card" className="gap-2 p-5.5">
-      <Body weight="semibold">{t('missedHours.sheetTitle')}</Body>
+    <Fragment>
+      {/* A recovery affordance, not a peer of "Clock in" — left-aligned
+          and Small so it reads as a link, not a centred section heading,
+          and pulled tight (-mt-2) under the clock card above it rather
+          than orphaned in the gap between the two. */}
       <Button
         testID="today-missed-hours-cta"
         variant="ghost"
+        className="-mt-2 self-start px-0"
         onPress={openSheet}
       >
-        <Text className="text-primary">{t('missedHours.cta')}</Text>
+        <Small className="text-primary">{t('missedHours.cta')}</Small>
       </Button>
       {/*
         Mounted only while open, same as ClockInCard's ClockOutSheet — RN's
@@ -181,6 +184,6 @@ export function AddMissedHoursCard({
           </View>
         </BottomSheetBase>
       ) : null}
-    </Card>
+    </Fragment>
   );
 }

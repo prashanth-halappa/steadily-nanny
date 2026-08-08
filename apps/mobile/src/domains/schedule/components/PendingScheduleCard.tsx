@@ -27,7 +27,7 @@ import { useTranslation } from 'react-i18next';
 import { Button } from '@/src/components/ui/button';
 import { Card } from '@/src/components/ui/card';
 import { Text } from '@/src/components/ui/text';
-import { Body } from '@/src/components/ui/typography';
+import { Body, H4 } from '@/src/components/ui/typography';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
 import { useSchedulePattern } from '@/src/hooks/queries/useSchedulePattern';
 import { useSchedulePatterns } from '@/src/hooks/queries/useSchedulePatterns';
@@ -60,7 +60,7 @@ export function PendingScheduleCard() {
 
   return (
     <Card testID="today-pending-schedule-card" className="gap-2 p-5.5">
-      <Body weight="semibold">{t('todayCard.pendingTitle')}</Body>
+      <H4>{t('todayCard.pendingTitle')}</H4>
       <Body className="text-muted-foreground" tabular>
         {t('todayCard.pendingBody', { count: days.length, hours: totalHours })}
       </Body>

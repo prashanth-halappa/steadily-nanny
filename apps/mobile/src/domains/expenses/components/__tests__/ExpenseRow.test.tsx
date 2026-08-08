@@ -110,6 +110,17 @@ describe('ExpenseRow', () => {
     expect(onWithdraw).toHaveBeenCalledWith(expense.id);
   });
 
+  it('does not outrank the benign Edit action with destructive weight — Withdraw is muted, not red, until the confirm dialog', () => {
+    const expense = makeExpense();
+    const { getByText } = render(
+      <ExpenseRow testID="expense-row-1" expense={expense} />
+    );
+
+    const withdrawLabel = getByText('list.withdrawButton');
+    expect(withdrawLabel.props.className).toContain('text-muted-foreground');
+    expect(withdrawLabel.props.className).not.toContain('text-destructive');
+  });
+
   it('pending mileage with no frozen amount renders miles, never a money figure', () => {
     const { getByTestId } = render(
       <ExpenseRow

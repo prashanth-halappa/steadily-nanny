@@ -1,19 +1,28 @@
 /**
  * @module domains/today/components/CoverageGapBanner
  *
- * Simple banner when the day-thread has coverage_gap events (Wave D / 1g).
+ * Banner when the day-thread has coverage_gap events (Wave D / 1g). An
+ * unmet obligation on today — T1/attention (Wave 2-E): opaque
+ * `surfaceAttention` ground via `Card tone="attention"`, not the old
+ * translucent 15%-alpha warning tint (a shadow over a translucent ground is
+ * GOLDEN-FIXES #19; the tint was right, the execution wasn't).
+ *
+ * `demoted` (default `false`, same contract as `NeedsAttentionCard`): a
+ * third independent `tone="attention"` trigger on Today needs an escape
+ * hatch too — `TodayScreen` sets it per `utils/attentionOwner`'s ranking
+ * whenever something more urgent owns the screen's one T1 slot.
  */
 import type { ShiftEvent } from '@steadily-nanny/shared-types/schemas/shift.schema';
 import { useTranslation } from 'react-i18next';
-import { View } from 'react-native';
+import { Card } from '@/src/components/ui/card';
 import { Body } from '@/src/components/ui/typography';
-import { useDayThread } from '@/src/hooks/queries/useDayThread';
 import { formatInstantInZone } from '@/src/lib/displayTime';
-import { localDateInZone } from '@/src/lib/localDate';
+import { useTodayCoverageGaps } from '../hooks/useTodayCoverageGaps';
 
 interface CoverageGapBannerProps {
   householdId: string;
   timeZone: string;
+  demoted?: boolean;
 }
 
 function formatGapTime(iso: unknown, timeZone: string): string {
@@ -38,31 +47,31 @@ function gapDescription(
 export function CoverageGapBanner({
   householdId,
   timeZone,
+  demoted = false,
 }: CoverageGapBannerProps) {
   const { t } = useTranslation('today');
-  const localDate = localDateInZone(timeZone);
-  const dayThread = useDayThread(householdId, localDate);
-
-  const gaps = (dayThread.data ?? []).filter(
-    e => e.event_type === 'coverage_gap'
-  );
+  const { gaps } = useTodayCoverageGaps(householdId, timeZone);
 
   if (gaps.length === 0) return null;
 
   return (
-    <View testID="coverage-gap-banner" className="rounded-lg bg-warning/15 p-3">
-      <Body weight="medium" className="text-warning">
-        {t('coverageGap.title')}
-      </Body>
+    <Card
+      testID="coverage-gap-banner"
+      tone={demoted ? 'default' : 'attention'}
+      className="gap-1 p-5.5"
+    >
+      {/* Rule B: sentence text on `surfaceAttention` stays `foreground` —
+          the default typography colour. */}
+      <Body weight="medium">{t('coverageGap.title')}</Body>
       {gaps.map(gap => (
         <Body
           key={gap.id}
           testID={`coverage-gap-item-${gap.id}`}
-          className="mt-1 text-sm text-muted-foreground"
+          className="text-sm text-muted-foreground"
         >
           {gapDescription(gap, timeZone, t)}
         </Body>
       ))}
-    </View>
+    </Card>
   );
 }
