@@ -35,7 +35,7 @@
         "EXPO_PUBLIC_POSTHOG_HOST": "https://us.i.posthog.com",
         "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "662649119218-v5l4a8lai731tbme9mjmimke6dil5qrg.apps.googleusercontent.com",
         "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "662649119218-u1qro7hcgcq1re6sglcv77fari4hakij.apps.googleusercontent.com",
-        "SENTRY_ALLOW_FAILURE": "false",
+        "SENTRY_DISABLE_AUTO_UPLOAD": "true",
         "EXPO_USE_PRECOMPILED_MODULES": "0"
       }
     }
