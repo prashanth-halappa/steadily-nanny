@@ -421,8 +421,14 @@ export function NannyWeekView({
       {/* Rendered outside the list so dismissing it never depends on which
           row is still mounted. `visible` alone drives it; a null `editing`
           simply means there is nothing to show. */}
+      {/* HIDE the sheet while the confirm is up. `VoidEntryDialog` renders
+          through the root PortalHost — the JS tree — while BottomSheetBase is
+          an RN <Modal>, a native window ABOVE that tree, so a dialog shown
+          over an open sheet is invisible (GOLDEN-FIXES #40's family: it is
+          not only toasts). `editing` stays set, so cancelling brings the
+          sheet straight back. */}
       <ClockOutSheet
-        visible={editing !== null}
+        visible={editing !== null && !isVoidConfirmOpen}
         onDismiss={closeEditor}
         onSubmit={handleSaveCorrection}
         isSubmitting={updateEntry.isPending || voidEntry.isPending}
