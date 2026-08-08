@@ -34,6 +34,7 @@
   },
   "changeSheet": {
     "title": "Change terms",
+    "currencyLabel": "Currency",
     "rateLabel": "Hourly rate",
     "effectiveLabel": "Takes effect from",
     "chipToday": "Today ({{date}})",

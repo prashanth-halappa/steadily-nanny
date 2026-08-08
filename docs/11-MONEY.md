@@ -42,7 +42,11 @@ No `Money` object crosses the wire — a minor-units integer plus a sibling
 **The display-major/store-minor conversion lives in exactly one util.**
 `apps/mobile/src/lib/money.ts` is the only place that multiplies or divides
 by 100: `formatMoney(minor, currency)`, `formatRate(minor, currency)`,
-`parseMajorToMinor(text)`. `parseMajorToMinor` works on the **string**, never
+`parseMajorToMinor(text)`. It also owns the single fallback-symbol map, via
+`currencySymbol(code)` — the adornment an editable amount input renders beside
+`minorToMajorText`'s value. A domain-local copy of that map used to live in
+`domains/pay/utils/currencySymbol.ts`; it is gone, and a second one must not
+come back. `parseMajorToMinor` works on the **string**, never
 `Math.round(x * 100)` on a parsed float — that reintroduces the exact bug
 integer storage exists to avoid. Every call site imports this util; nobody
 hand-rolls `* 100`/`/ 100` elsewhere. Property-test it at `0`, `1p`,
@@ -63,6 +67,24 @@ The rule now is whole-string:
   every realistic input is a stray extra digit;
 - anything else returns `null`. The caller shows "enter a valid amount"; the
   parser never guesses, for the same reason `parseWallClockInput` doesn't.
+
+**Which currency is data; how it is FORMATTED is the device's preference.**
+Two separate things, and they were both hardcoded to the UK until Aug 2026.
+The currency code is a stored column (`pay_arrangements.currency`, §2), chosen
+by the parent in `CurrencySelect` and merely *prefilled* from
+`getDeviceCurrency()` — currency belongs to the employment arrangement, not to
+whichever phone created it, so the prefill is never the final word. The
+locale, meanwhile, is purely presentational (grouping, decimal separator,
+symbol placement) and comes from `getDeviceLocale()`
+(`apps/mobile/src/lib/deviceLocale.ts`), read once into `money.ts`'s
+`DEVICE_LOCALE`. Both read `expo-localization`'s Language & Region SETTING,
+which does not follow the user when they travel.
+
+Known ceiling: `parseMajorToMinor` still accepts `.`-decimals only, so a
+comma-decimal locale can display `1.234,56` but cannot have it typed back in.
+Editable inputs seed from `minorToMajorText` (always `.`), so this only bites
+someone hand-typing a comma. Build the locale-aware parser when a
+comma-decimal market actually ships.
 
 `formatMoney` never throws, even on a corrupt stored code: the
 `Intl.NumberFormat` construction is wrapped, and a bad code degrades to

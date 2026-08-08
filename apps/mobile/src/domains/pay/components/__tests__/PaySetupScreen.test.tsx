@@ -8,6 +8,7 @@
  */
 import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 import { fireEvent, waitFor } from '@testing-library/react-native';
+import { getLocales } from 'expo-localization';
 import { useAuthStore } from '@/src/store/auth';
 import { renderWithProviders } from '@/src/test-utils';
 
@@ -136,6 +137,18 @@ beforeAll(async () => {
 });
 
 beforeEach(() => {
+  // Restore bun.setup.ts's en-GB default — one test below re-points this and
+  // the override would otherwise leak into every test after it.
+  (
+    getLocales as unknown as { mockImplementation: (fn: () => unknown) => void }
+  ).mockImplementation(() => [
+    {
+      languageCode: 'en',
+      regionCode: 'GB',
+      languageTag: 'en-GB',
+      currencyCode: 'GBP',
+    },
+  ]);
   listMock.mockReset();
   listMembersMock.mockReset();
   membershipsListMock.mockReset();
@@ -274,6 +287,64 @@ describe('PaySetupScreen', () => {
       expect(getByTestId('pay-setup-not-available')).toBeTruthy()
     );
     expect(queryByTestId('pay-setup-rate-input')).toBeNull();
+  });
+
+  it('defaults the currency to the device Language & Region, not a hardcoded GBP', async () => {
+    // The device value is a PREFILL, so it has to reach the submitted request
+    // when untouched. `getLocales` is the global mock from `bun.setup.ts`;
+    // only the per-render `useState(getDeviceCurrency())` reads it, so
+    // re-pointing it before render is enough. (`CURRENCY_OPTIONS` in
+    // `currencyOptions()` reads the device value too, but this asserts the
+    // SELECTION, not the list ordering.)
+    (
+      getLocales as unknown as {
+        mockImplementation: (fn: () => unknown) => void;
+      }
+    ).mockImplementation(() => [{ currencyCode: 'USD', languageTag: 'en-US' }]);
+
+    const { getByTestId } = renderWithProviders(<PaySetupScreen />);
+
+    await waitFor(() =>
+      expect(getByTestId('pay-setup-rate-input')).toBeTruthy()
+    );
+    expect(getByTestId('pay-setup-currency-prefix').props.children).toBe('$');
+
+    fireEvent.changeText(getByTestId('pay-setup-rate-input'), '18.50');
+    fireEvent.press(getByTestId('pay-setup-cancellation-chip-none'));
+    fireEvent.press(getByTestId('pay-setup-screen-cta'));
+
+    await waitFor(() =>
+      expect(payCreateMock).toHaveBeenCalledWith(
+        HOUSEHOLD_ID,
+        NANNY_ID,
+        expect.objectContaining({ currency: 'USD' })
+      )
+    );
+  });
+
+  it('lets the device default be overridden — currency belongs to the arrangement, not the phone', async () => {
+    const { getByTestId, queryByTestId } = renderWithProviders(
+      <PaySetupScreen />
+    );
+
+    await waitFor(() =>
+      expect(getByTestId('pay-setup-rate-input')).toBeTruthy()
+    );
+    fireEvent.press(getByTestId('pay-setup-currency-trigger'));
+    fireEvent.press(getByTestId('pay-setup-currency-EUR'));
+    // Picking closes the list, so the long form doesn't stay long.
+    expect(queryByTestId('pay-setup-currency-list')).toBeNull();
+    fireEvent.changeText(getByTestId('pay-setup-rate-input'), '18.50');
+    fireEvent.press(getByTestId('pay-setup-cancellation-chip-none'));
+    fireEvent.press(getByTestId('pay-setup-screen-cta'));
+
+    await waitFor(() =>
+      expect(payCreateMock).toHaveBeenCalledWith(
+        HOUSEHOLD_ID,
+        NANNY_ID,
+        expect.objectContaining({ currency: 'EUR' })
+      )
+    );
   });
 
   it('saves through the real mutation and returns on success', async () => {

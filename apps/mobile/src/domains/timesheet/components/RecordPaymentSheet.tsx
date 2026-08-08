@@ -43,9 +43,9 @@ import { LoadingButton } from '@/src/components/ui/loading-button';
 import { Text } from '@/src/components/ui/text';
 import { Body, H4, Label, Small } from '@/src/components/ui/typography';
 import { AmountRow } from '@/src/domains/pay/components/AmountRow';
-import { currencySymbol } from '@/src/domains/pay/utils/currencySymbol';
 import { localDateInZone } from '@/src/lib/localDate';
 import {
+  currencySymbol,
   formatMoney,
   minorToMajorText,
   parseMajorToMinor,

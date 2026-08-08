@@ -34,6 +34,7 @@
   },
   "changeSheet": {
     "title": "Cambiar condiciones",
+    "currencyLabel": "Moneda",
     "rateLabel": "Tarifa por hora",
     "effectiveLabel": "Entra en vigor desde",
     "chipToday": "Hoy ({{date}})",

@@ -23,6 +23,17 @@
  * owed; a throw there shows her a blank screen instead of a number.
  */
 
+import { getDeviceLocale } from '@/src/lib/deviceLocale';
+
+/**
+ * The device's BCP-47 tag, read ONCE at import rather than per call: changing
+ * the system language restarts the RN app, so a per-call read would buy no
+ * freshness and cost a native bridge hop for every amount rendered in a list.
+ * It governs grouping, decimal separator and symbol placement only — WHICH
+ * currency is shown is the stored `currency` argument, never this.
+ */
+const DEVICE_LOCALE = getDeviceLocale();
+
 /**
  * Explicit fallback symbol map for the currencies this app actually uses.
  * Some Hermes ICU builds ship without CLDR currency-symbol data, so
@@ -37,11 +48,11 @@ const CURRENCY_SYMBOL_FALLBACKS: Record<string, string> = {
   USD: '$',
 };
 
-/** Plain decimal formatting (grouping + 2dp, en-GB), no currency symbol —
+/** Plain decimal formatting (grouping + 2dp, device locale), no currency symbol —
  * the piece that still works even on the degraded-ICU builds this file
  * works around. */
 function formatMajorAmount(major: number): string {
-  return new Intl.NumberFormat('en-GB', {
+  return new Intl.NumberFormat(DEVICE_LOCALE, {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(major);
@@ -61,7 +72,7 @@ export function formatMoney(minor: number, currency: string): string {
 
   let formatted: string;
   try {
-    formatted = new Intl.NumberFormat('en-GB', {
+    formatted = new Intl.NumberFormat(DEVICE_LOCALE, {
       style: 'currency',
       currency,
     }).format(major);
@@ -79,10 +90,32 @@ export function formatMoney(minor: number, currency: string): string {
   const code = currency.toUpperCase();
   const fallbackSymbol = CURRENCY_SYMBOL_FALLBACKS[code];
   if (fallbackSymbol && formatted.toUpperCase().includes(code)) {
+    // ponytail: symbol-PREFIX assumption — de-DE wants "18,50 €", this emits
+    // "€18,50". Only reachable on a degraded-ICU build. The obvious one-liner
+    // (`formatted.replace(code, fallbackSymbol)`, which would preserve the
+    // locale's symbol POSITION) loses `formatMajorAmount`'s grouping, because
+    // such a build's own output has none — and "£999,999.99" beats "£999999.99"
+    // when only one of the two can be had. Upgrade path is
+    // `Intl.NumberFormat.formatToParts` to learn the position, which these
+    // builds by definition cannot supply.
     return `${fallbackSymbol}${formatMajorAmount(major)}`;
   }
 
   return formatted;
+}
+
+/**
+ * `"GBP"` -> `"£"`; an unrecognised code falls back to itself, never blank.
+ *
+ * The currency adornment an EDITABLE amount input renders beside
+ * `minorToMajorText`'s value — `formatMoney` is wrong there because it would
+ * put a second symbol inside the field's own text. Previously a duplicate map
+ * in `domains/pay/utils/currencySymbol.ts`, which existed only because this
+ * map was unexported and that file's author was blocked on a concurrent
+ * workstream here; docs/11-MONEY.md §1's one-money-util rule wins now.
+ */
+export function currencySymbol(currency: string): string {
+  return CURRENCY_SYMBOL_FALLBACKS[currency.toUpperCase()] ?? currency;
 }
 
 /** `formatMoney` plus the `/hr` suffix used everywhere a rate (as opposed

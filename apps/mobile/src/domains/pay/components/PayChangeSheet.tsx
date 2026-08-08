@@ -39,8 +39,11 @@ import { Text } from '@/src/components/ui/text';
 import { Textarea } from '@/src/components/ui/textarea';
 import { Body, H4, Label, Small } from '@/src/components/ui/typography';
 import { localDateInZone } from '@/src/lib/localDate';
-import { minorToMajorText, parseMajorToMinor } from '@/src/lib/money';
-import { currencySymbol } from '../utils/currencySymbol';
+import {
+  currencySymbol,
+  minorToMajorText,
+  parseMajorToMinor,
+} from '@/src/lib/money';
 import {
   buildCreatePayArrangementRequest,
   buildMidWeekConsequence,
@@ -48,6 +51,7 @@ import {
   isValidCalendarDate,
   type PayTermsFormState,
 } from '../utils/payArrangementForm';
+import { CurrencySelect } from './CurrencySelect';
 
 interface PayChangeSheetProps {
   visible: boolean;
@@ -108,6 +112,11 @@ export function PayChangeSheet({
 }: PayChangeSheetProps) {
   const { t } = useTranslation('pay');
 
+  // Seeded from the arrangement, NOT `getDeviceCurrency()`: an existing
+  // arrangement's currency is a stored fact about the employment, and the
+  // device of whoever opens this sheet says nothing about it. Reset alongside
+  // every other field in the `visible` effect below.
+  const [currency, setCurrency] = useState(currentArrangement.currency);
   const [rateText, setRateText] = useState('');
   const [effectiveChoice, setEffectiveChoice] = useState<'today' | 'earlier'>(
     'today'
@@ -167,6 +176,7 @@ export function PayChangeSheet({
           ? String(householdCancellationDefaultHours)
           : ''
     );
+    setCurrency(currentArrangement.currency);
     setNote('');
   }, [visible, currentArrangement, householdCancellationDefaultHours]);
 
@@ -189,13 +199,21 @@ export function PayChangeSheet({
           currentArrangement.rate_minor,
           currentArrangement.currency,
           typedRateMinor,
-          currentArrangement.currency
+          // The SELECTED currency, not the stored one. `buildMidWeekConsequence`
+          // has always compared `previousCurrency !== newCurrency`
+          // (payArrangementForm.ts) but both args used to be
+          // `currentArrangement.currency`, so the currency half could never
+          // fire. This one argument IS the mid-week currency-change warning:
+          // a flip on a non-Monday splits the week, and the API answers such a
+          // week with the `currency_change` earnings arm rather than a total
+          // (earningsService.ts) — better to say so before it's submitted.
+          currency
         )
       : null;
 
   const formState: PayTermsFormState = {
     rateText,
-    currency: currentArrangement.currency,
+    currency,
     effectiveDateISO,
     todayISO,
     overtimeThresholdHoursText,
@@ -243,13 +261,22 @@ export function PayChangeSheet({
         <H4>{t('changeSheet.title')}</H4>
 
         <View className="gap-2">
+          <Label>{t('changeSheet.currencyLabel')}</Label>
+          <CurrencySelect
+            value={currency}
+            onChange={setCurrency}
+            testIDPrefix="pay-change"
+          />
+        </View>
+
+        <View className="gap-2">
           <Label>{t('changeSheet.rateLabel')}</Label>
           <View className="flex-row items-center gap-2">
             <Body
               testID="pay-change-currency-prefix"
               className="text-muted-foreground"
             >
-              {currencySymbol(currentArrangement.currency)}
+              {currencySymbol(currency)}
             </Body>
             <Input
               testID="pay-change-rate-input"

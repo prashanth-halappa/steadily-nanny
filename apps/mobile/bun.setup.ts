@@ -602,7 +602,18 @@ mock.module('react-i18next', () => ({
 }));
 
 mock.module('expo-localization', () => ({
-  getLocales: mock(() => [{ languageCode: 'en', regionCode: 'US' }]),
+  // Pinned to en-GB, NOT en-US: `lib/money.ts` now formats with the device
+  // locale, and `money.test.ts` asserts en-GB's ICU disambiguation
+  // ("US$18.50" for USD). `currencyCode` makes `getDeviceCurrency()` return
+  // 'GBP', byte-identical to the literal it replaced across the suite.
+  getLocales: mock(() => [
+    {
+      languageCode: 'en',
+      regionCode: 'GB',
+      languageTag: 'en-GB',
+      currencyCode: 'GBP',
+    },
+  ]),
   getCalendars: mock(() => [{ timeZone: 'America/Los_Angeles' }]),
   locale: 'en-US',
   locales: ['en-US'],

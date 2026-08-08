@@ -157,6 +157,53 @@ describe('PayChangeSheet', () => {
     expect(queryByTestId('pay-change-midweek-consequence')).toBeNull();
   });
 
+  it('a mid-week CURRENCY change warns even when the rate is untouched', () => {
+    // `buildMidWeekConsequence` has always compared currency, but this sheet
+    // used to pass `currentArrangement.currency` as BOTH the old and the new
+    // value, so the currency half could never fire. A flip splits the week and
+    // the API answers such a week with the `currency_change` earnings arm
+    // rather than a total (earningsService.ts) — this line is the only warning
+    // before that happens.
+    const { getByTestId } = renderSheet();
+
+    fireEvent.press(getByTestId('pay-change-currency-trigger'));
+    fireEvent.press(getByTestId('pay-change-currency-EUR'));
+
+    expect(getByTestId('pay-change-midweek-consequence')).toBeTruthy();
+  });
+
+  it('switching currency moves the rate input adornment off the stored code', () => {
+    const { getByTestId } = renderSheet();
+
+    expect(getByTestId('pay-change-currency-prefix').props.children).toBe('£');
+    fireEvent.press(getByTestId('pay-change-currency-trigger'));
+    fireEvent.press(getByTestId('pay-change-currency-USD'));
+    expect(getByTestId('pay-change-currency-prefix').props.children).toBe('$');
+  });
+
+  it('submits the selected currency, not the arrangement’s stored one', () => {
+    const { getByTestId, onSubmit } = renderSheet();
+
+    fireEvent.press(getByTestId('pay-change-currency-trigger'));
+    fireEvent.press(getByTestId('pay-change-currency-USD'));
+    fireEvent.changeText(getByTestId('pay-change-rate-input'), '19.50');
+    fireEvent.press(getByTestId('pay-change-submit'));
+
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ currency: 'USD' })
+    );
+  });
+
+  it('offers the wider curated list, not just the three shipped symbols', () => {
+    const { getByTestId } = renderSheet();
+
+    fireEvent.press(getByTestId('pay-change-currency-trigger'));
+
+    for (const code of ['CAD', 'MXN', 'AUD', 'INR', 'JPY']) {
+      expect(getByTestId(`pay-change-currency-${code}`)).toBeTruthy();
+    }
+  });
+
   it('no mid-week line when the effective date IS a Monday', () => {
     const mondayArrangement = { ...currentArrangement };
     const { getByTestId, queryByTestId } = renderSheet({

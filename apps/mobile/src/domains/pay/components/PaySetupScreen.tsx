@@ -26,7 +26,8 @@ import { Input } from '@/src/components/ui/input';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { Text } from '@/src/components/ui/text';
 import { Textarea } from '@/src/components/ui/textarea';
-import { Label, Small } from '@/src/components/ui/typography';
+import { Body, Label, Small } from '@/src/components/ui/typography';
+import { CurrencySelect } from '@/src/domains/pay/components/CurrencySelect';
 import { resolveCarerName } from '@/src/domains/schedule/utils/memberDisplayName';
 import { SetupScreenShell } from '@/src/domains/setup/components/SetupScreenShell';
 import { isParentEditorRole } from '@/src/domains/setup/types';
@@ -35,8 +36,13 @@ import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
 import { useCurrentPayArrangement } from '@/src/hooks/queries/useCurrentPayArrangement';
 import { useHouseholdMembers } from '@/src/hooks/queries/useHouseholdMembers';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
+import { getDeviceCurrency } from '@/src/lib/deviceLocale';
 import { localDateInZone } from '@/src/lib/localDate';
-import { minorToMajorText, parseMajorToMinor } from '@/src/lib/money';
+import {
+  currencySymbol,
+  minorToMajorText,
+  parseMajorToMinor,
+} from '@/src/lib/money';
 import { showSuccessToast } from '@/src/lib/toast';
 import {
   buildCreatePayArrangementRequest,
@@ -85,6 +91,10 @@ export function PaySetupScreen() {
     household?.cancellation_paid_within_hours ?? 0;
 
   const [rateText, setRateText] = useState('');
+  // Device Language & Region as a PREFILL only — the chips below always let it
+  // be overridden, because currency belongs to the employment arrangement and
+  // not to whichever phone happens to be creating it.
+  const [currency, setCurrency] = useState(getDeviceCurrency());
   const [effectiveChoice, setEffectiveChoice] = useState<'today' | 'earlier'>(
     'today'
   );
@@ -221,7 +231,7 @@ export function PaySetupScreen() {
     effectiveChoice === 'today' ? todayISO : earlierDateText;
   const formState: PayTermsFormState = {
     rateText,
-    currency: 'GBP',
+    currency,
     effectiveDateISO,
     todayISO,
     overtimeThresholdHoursText,
@@ -266,18 +276,36 @@ export function PaySetupScreen() {
       backLabel={tCommon('back')}
     >
       <View className="gap-2">
-        <Label>{t('changeSheet.rateLabel')}</Label>
-        <Input
-          testID="pay-setup-rate-input"
-          accessibilityLabel={t('changeSheet.rateLabel')}
-          value={rateText}
-          onChangeText={setRateText}
-          onBlur={() => {
-            const minor = parseMajorToMinor(rateText);
-            if (minor !== null) setRateText(minorToMajorText(minor));
-          }}
-          keyboardType="decimal-pad"
+        <Label>{t('changeSheet.currencyLabel')}</Label>
+        <CurrencySelect
+          value={currency}
+          onChange={setCurrency}
+          testIDPrefix="pay-setup"
         />
+      </View>
+
+      <View className="gap-2">
+        <Label>{t('changeSheet.rateLabel')}</Label>
+        <View className="flex-row items-center gap-2">
+          <Body
+            testID="pay-setup-currency-prefix"
+            className="text-muted-foreground"
+          >
+            {currencySymbol(currency)}
+          </Body>
+          <Input
+            testID="pay-setup-rate-input"
+            accessibilityLabel={t('changeSheet.rateLabel')}
+            value={rateText}
+            onChangeText={setRateText}
+            onBlur={() => {
+              const minor = parseMajorToMinor(rateText);
+              if (minor !== null) setRateText(minorToMajorText(minor));
+            }}
+            keyboardType="decimal-pad"
+            className="flex-1"
+          />
+        </View>
       </View>
 
       <View className="gap-2">
