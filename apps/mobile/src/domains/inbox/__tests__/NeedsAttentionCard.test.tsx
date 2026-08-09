@@ -30,13 +30,11 @@ const CHANGE_REQUEST: InboxItem = {
   requestKind: 'time_change',
 };
 
-const APPROVAL: InboxItem = {
-  kind: 'co_parent_approval',
-  id: 'ap-1',
-  householdId: 'hh-1',
-  action: 'extra_shift',
-  timeoutAt: '2026-08-08T16:00:00Z',
-  shiftId: 'shift-9',
+const SECOND_CHANGE_REQUEST: InboxItem = {
+  kind: 'change_request',
+  id: 'cr-2',
+  shiftId: 'shift-2',
+  requestKind: 'cancel',
 };
 
 const PENDING_PATTERN: InboxItem = {
@@ -147,17 +145,7 @@ describe('NeedsAttentionCard', () => {
     ).toBeTruthy();
   });
 
-  it('shows the destructive-coloured auto-approve deadline only for a co-parent approval', () => {
-    setItems([APPROVAL]);
-
-    const { getByText } = render(<NeedsAttentionCard />);
-
-    const deadline = getByText(/items\.approval\.deadlineLabel/);
-    expect(deadline).toBeTruthy();
-    expect(deadline.props.className).toContain('text-destructive');
-  });
-
-  it('renders no deadline line for a non-approval item', () => {
+  it('renders no deadline line for inbox items', () => {
     setItems([SUBMITTED_WEEK]);
 
     const { queryByText } = render(<NeedsAttentionCard />);
@@ -175,7 +163,7 @@ describe('NeedsAttentionCard', () => {
   });
 
   it('shows the pluralised "more" body and "see all" button past one item', () => {
-    setItems([CHANGE_REQUEST, APPROVAL]);
+    setItems([CHANGE_REQUEST, SECOND_CHANGE_REQUEST]);
 
     const { getByText, getByTestId } = render(<NeedsAttentionCard />);
 
@@ -188,7 +176,7 @@ describe('NeedsAttentionCard', () => {
   // It must not inflate the "N more" count even when it rides along with a
   // real item, or the two cards silently double-count the same thing.
   it('does not count a pending pattern toward "more items" alongside a real item', () => {
-    setItems([CHANGE_REQUEST, APPROVAL, PENDING_PATTERN]);
+    setItems([CHANGE_REQUEST, SECOND_CHANGE_REQUEST, PENDING_PATTERN]);
 
     const { getByText } = render(<NeedsAttentionCard />);
 
@@ -205,7 +193,7 @@ describe('NeedsAttentionCard', () => {
   });
 
   it('deep-links "see all" to /inbox', () => {
-    setItems([CHANGE_REQUEST, APPROVAL]);
+    setItems([CHANGE_REQUEST, SECOND_CHANGE_REQUEST]);
 
     const { getByTestId } = render(<NeedsAttentionCard />);
     fireEvent.press(getByTestId('today-needs-attention-see-all'));

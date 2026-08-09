@@ -34,6 +34,7 @@ export function NotificationsPermissionScreen() {
   const { t } = useTranslation('auth');
   const role = useSetupProgressStore(s => s.role);
   const setCurrentStep = useSetupProgressStore(s => s.setCurrentStep);
+  const resetSetupProgress = useSetupProgressStore(s => s.reset);
   const recordPrompt = useNotificationStore(s => s.recordPrompt);
   const [isRequesting, setIsRequesting] = useState(false);
 
@@ -49,6 +50,7 @@ export function NotificationsPermissionScreen() {
       router.push(getSetupStepRoute(next) as Href);
       return;
     }
+    resetSetupProgress();
     router.replace('/(private)/(tabs)/home' as Href);
   };
 

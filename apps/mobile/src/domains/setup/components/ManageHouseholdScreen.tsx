@@ -98,7 +98,6 @@ import { TimezonePickerSheet } from './TimezonePickerSheet';
 
 const APPROVAL_MODE_OPTIONS: readonly HouseholdApprovalMode[] = [
   HOUSEHOLD_APPROVAL_MODES.EITHER,
-  HOUSEHOLD_APPROVAL_MODES.ASK_OTHER,
   HOUSEHOLD_APPROVAL_MODES.OWNER_ONLY,
 ];
 
@@ -107,7 +106,6 @@ const APPROVAL_SCOPE_OPTIONS: readonly HouseholdApprovalScope[] = [
   HOUSEHOLD_APPROVAL_SCOPES.SHORT_NOTICE_AND_CANCELLATIONS,
 ];
 
-const MAX_APPROVAL_TIMEOUT_MINUTES = 10080;
 const MAX_SHORT_NOTICE_HOURS = 336;
 const MAX_CANCELLATION_PAID_WITHIN_HOURS = 336;
 
@@ -155,7 +153,6 @@ export function ManageHouseholdScreen() {
   const [approvalScope, setApprovalScope] = useState<HouseholdApprovalScope>(
     HOUSEHOLD_APPROVAL_SCOPES.ALL
   );
-  const [approvalTimeoutMinutes, setApprovalTimeoutMinutes] = useState('0');
   const [shortNoticeHours, setShortNoticeHours] = useState('0');
   const [cancellationPaidWithinHours, setCancellationPaidWithinHours] =
     useState('0');
@@ -177,7 +174,6 @@ export function ManageHouseholdScreen() {
     setTimezone(household.timezone);
     setApprovalMode(household.approval_mode);
     setApprovalScope(household.approval_scope);
-    setApprovalTimeoutMinutes(String(household.approval_timeout_minutes));
     setShortNoticeHours(String(household.short_notice_hours));
     setCancellationPaidWithinHours(
       String(household.cancellation_paid_within_hours)
@@ -243,7 +239,6 @@ export function ManageHouseholdScreen() {
   }
 
   const isNumericFieldsValid =
-    isValidBoundedInt(approvalTimeoutMinutes, MAX_APPROVAL_TIMEOUT_MINUTES) &&
     isValidBoundedInt(shortNoticeHours, MAX_SHORT_NOTICE_HOURS) &&
     isValidBoundedInt(
       cancellationPaidWithinHours,
@@ -267,10 +262,6 @@ export function ManageHouseholdScreen() {
     }
     if (approvalScope !== household.approval_scope) {
       diff.approval_scope = approvalScope;
-    }
-    const timeoutNum = Number(approvalTimeoutMinutes.trim());
-    if (timeoutNum !== household.approval_timeout_minutes) {
-      diff.approval_timeout_minutes = timeoutNum;
     }
     const shortNoticeNum = Number(shortNoticeHours.trim());
     if (shortNoticeNum !== household.short_notice_hours) {
@@ -474,17 +465,6 @@ export function ManageHouseholdScreen() {
             </AnimatedPressable>
           ))}
         </View>
-      </View>
-
-      <View className="gap-2">
-        <FieldLabel>{t('householdSettings.approvalTimeoutLabel')}</FieldLabel>
-        <Input
-          testID="household-approval-timeout-input"
-          accessibilityLabel={t('householdSettings.approvalTimeoutLabel')}
-          value={approvalTimeoutMinutes}
-          onChangeText={setApprovalTimeoutMinutes}
-          keyboardType="number-pad"
-        />
       </View>
 
       <View className="gap-2">

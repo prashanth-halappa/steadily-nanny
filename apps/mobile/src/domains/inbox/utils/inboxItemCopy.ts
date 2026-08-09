@@ -8,7 +8,6 @@
  */
 import type { Href } from 'expo-router';
 import type { InboxItem } from '@/src/domains/inbox/utils/buildInboxItems';
-import { formatApprovalDeadline } from '@/src/domains/inbox/utils/formatApprovalDeadline';
 import { formatDisplayDate } from '@/src/domains/timesheet/utils/week';
 
 export type InboxItemT = (key: string, opts?: Record<string, string>) => string;
@@ -17,10 +16,6 @@ export function hrefForItem(item: InboxItem): Href {
   switch (item.kind) {
     case 'change_request':
       return `/(private)/schedule/shifts/${item.shiftId}` as Href;
-    case 'co_parent_approval':
-      return item.shiftId
-        ? (`/(private)/schedule/shifts/${item.shiftId}` as Href)
-        : ('/(private)/(tabs)/schedule' as Href);
     case 'pending_pattern':
       return `/(private)/schedule/respond/${item.patternId}` as Href;
     case 'queried_week':
@@ -36,12 +31,6 @@ export function titleForItem(item: InboxItem, t: InboxItemT): string {
       return t('items.changeRequest.title', {
         kind: t(`items.changeRequest.kind.${item.requestKind}`, {
           defaultValue: item.requestKind,
-        }),
-      });
-    case 'co_parent_approval':
-      return t('items.approval.title', {
-        action: t(`items.approval.action.${item.action}`, {
-          defaultValue: item.action,
         }),
       });
     case 'pending_pattern':
@@ -60,15 +49,11 @@ export function titleForItem(item: InboxItem, t: InboxItemT): string {
 export function subtitleForItem(
   item: InboxItem,
   t: InboxItemT,
-  timeZone: string
+  _timeZone: string
 ): string {
   switch (item.kind) {
     case 'change_request':
       return t('items.changeRequest.subtitle');
-    case 'co_parent_approval':
-      return t('items.approval.subtitle', {
-        when: formatApprovalDeadline(item.timeoutAt, timeZone),
-      });
     case 'pending_pattern':
       return t('items.pendingPattern.subtitle', {
         start: formatDisplayDate(item.dtstart),
@@ -89,8 +74,6 @@ export function ctaForItem(item: InboxItem, t: InboxItemT): string {
   switch (item.kind) {
     case 'change_request':
       return t('items.changeRequest.cta');
-    case 'co_parent_approval':
-      return t('items.approval.cta');
     case 'pending_pattern':
       return t('items.pendingPattern.cta');
     case 'queried_week':
@@ -100,20 +83,11 @@ export function ctaForItem(item: InboxItem, t: InboxItemT): string {
   }
 }
 
-/**
- * The auto-approve deadline, in `destructive` on the T1 card (Rule B's one
- * coloured-text exception) — `null` for every kind but `co_parent_approval`,
- * which always carries a `timeoutAt`.
- */
+/** Reserved for Rule B's one coloured-text exception — always null now. */
 export function deadlineForItem(
-  item: InboxItem,
-  t: InboxItemT,
-  timeZone: string
+  _item: InboxItem,
+  _t: InboxItemT,
+  _timeZone: string
 ): string | null {
-  if (item.kind !== 'co_parent_approval') {
-    return null;
-  }
-  return t('items.approval.deadlineLabel', {
-    when: formatApprovalDeadline(item.timeoutAt, timeZone),
-  });
+  return null;
 }

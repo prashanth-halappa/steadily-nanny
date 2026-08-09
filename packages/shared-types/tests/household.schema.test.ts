@@ -30,9 +30,7 @@ describe('household.schema', () => {
     // sorted so the assertion doesn't depend on key declaration order.
     it('HOUSEHOLD_APPROVAL_MODES matches households.approval_mode', () => {
       const values: string[] = Object.values(HOUSEHOLD_APPROVAL_MODES);
-      expect(values.sort()).toEqual(
-        ['either', 'ask_other', 'owner_only'].sort()
-      );
+      expect(values.sort()).toEqual(['either', 'owner_only'].sort());
     });
 
     it('HOUSEHOLD_APPROVAL_SCOPES matches households.approval_scope', () => {
@@ -77,7 +75,6 @@ describe('household.schema', () => {
       longitude: null,
       approval_mode: 'either',
       approval_scope: 'short_notice_and_cancellations',
-      approval_timeout_minutes: 120,
       short_notice_hours: 24,
       cancellation_paid_within_hours: 24,
       created_by: VALID_UUID,

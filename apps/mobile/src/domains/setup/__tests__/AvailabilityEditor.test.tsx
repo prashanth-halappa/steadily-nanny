@@ -40,4 +40,12 @@ describe('AvailabilityEditor', () => {
     expect(source).toContain('weekday.');
     expect(source).not.toContain('DAY_LABELS');
   });
+
+  it('upserts only when the per-weekday draft range is valid', () => {
+    expect(source).toContain('isEndAfterStart(start, end)');
+    expect(source).toContain('setDraft');
+    expect(source).toMatch(
+      /if \(isEndAfterStart\(start, end\)\)[\s\S]{0,40}upsertDay/
+    );
+  });
 });

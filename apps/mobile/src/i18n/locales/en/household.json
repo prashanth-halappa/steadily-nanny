@@ -10,6 +10,8 @@
     "wizardSubtitle": "Add each child and the regular hours they'll need your nanny. You can add extra sessions any time.",
     "householdNameLabel": "Household name",
     "householdNamePlaceholder": "Our household",
+    "parentNameLabel": "Your name",
+    "parentNamePlaceholder": "e.g. Ana Ruiz",
     "manageTitle": "Children",
     "manageSubtitle": "Add or edit children and the regular hours they need your nanny. Extra sessions can be added any time.",
     "continueButton": "Continue",
@@ -73,7 +75,7 @@
   },
   "householdSettings": {
     "manageTitle": "Household settings",
-    "manageSubtitle": "Update your household's name, time zone, address, and approval policy.",
+    "manageSubtitle": "Update your household's name, time zone, address, and who may make changes.",
     "notAvailableTitle": "Not available",
     "notAvailableDescription": "Household settings are managed by a parent on this household.",
     "saveButton": "Save",
@@ -94,7 +96,6 @@
     "approvalModeLabel": "Who approves changes",
     "approvalMode": {
       "either": "Either parent can decide",
-      "ask_other": "Ask the other parent first",
       "owner_only": "Only the household owner decides"
     },
     "approvalScopeLabel": "What needs approval",
@@ -102,7 +103,6 @@
       "all": "All changes",
       "short_notice_and_cancellations": "Only short-notice changes and cancellations"
     },
-    "approvalTimeoutLabel": "Approval timeout (minutes)",
     "shortNoticeHoursLabel": "Short-notice window (hours)",
     "cancellationPaidWithinHoursLabel": "Cancellation still paid within (hours)",
     "membersSectionTitle": "Household members",
@@ -136,6 +136,10 @@
     "submitButton": "Save closure",
     "createdToast": "Closure saved",
     "deleteButton": "Remove",
+    "deleteConfirmTitle": "Remove this closure?",
+    "deleteConfirmDescription": "Days it covered will count as needing cover again.",
+    "deleteConfirmCancel": "Cancel",
+    "deleteConfirmConfirm": "Remove",
     "deletedToast": "Closure removed",
     "emptyTitle": "No closures yet",
     "emptyDescription": "Dates you add will appear here."

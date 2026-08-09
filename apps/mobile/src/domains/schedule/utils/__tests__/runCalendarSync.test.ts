@@ -72,7 +72,6 @@ function baseDeps(overrides: Partial<CalendarSyncDeps> = {}): CalendarSyncDeps {
         longitude: null,
         approval_mode: 'either',
         approval_scope: 'all',
-        approval_timeout_minutes: 0,
         short_notice_hours: 24,
         cancellation_paid_within_hours: 24,
         created_by: null,

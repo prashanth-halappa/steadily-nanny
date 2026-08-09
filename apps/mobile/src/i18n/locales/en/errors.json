@@ -11,6 +11,8 @@
   "timeout": "The request timed out. Please try again.",
   "offline": "You're offline. Please check your connection.",
   "alreadyMember": "You're already part of that household.",
+  "noPayArrangementMileage": "Mileage needs a pay rate — ask the parents to set up pay first.",
+  "notHouseholdOwner": "Only the household owner can do this — your household is set to owner-only changes.",
   "alreadyClockedIn": "You're already clocked in on another shift. Clock out of it first.",
   "cancelViaDelete": "Cancel time off by using the delete option instead.",
   "entryNotEditable": "This entry can't be changed any more — the week has already been approved. Ask your household to query it.",

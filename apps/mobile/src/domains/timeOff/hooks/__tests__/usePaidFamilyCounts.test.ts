@@ -28,26 +28,31 @@ const TIME_OFF_PARTIALLY_REVERSED = 'timeoff-partial';
 
 const householdA = { id: HOUSEHOLD_A, name: 'The Smiths', timezone: 'UTC' };
 const householdB = { id: HOUSEHOLD_B, name: 'The Reyes', timezone: 'UTC' };
+const householdPacific = {
+  id: 'household-pacific',
+  name: 'Pacific Family',
+  timezone: 'America/Los_Angeles',
+};
 
 const listMock = mock<() => Promise<unknown[]>>(() =>
   Promise.resolve([householdA, householdB])
 );
-const getLedgerMock = mock<(householdId: string) => Promise<unknown[]>>(
-  (householdId: string) => {
-    if (householdId === HOUSEHOLD_A) {
-      return Promise.resolve([
-        { kind: 'usage', time_off_id: TIME_OFF_PAID_BY_BOTH, minutes: -480 },
-        { kind: 'usage', time_off_id: TIME_OFF_PAID_BY_ONE, minutes: -480 },
-      ]);
-    }
-    if (householdId === HOUSEHOLD_B) {
-      return Promise.resolve([
-        { kind: 'usage', time_off_id: TIME_OFF_PAID_BY_BOTH, minutes: -480 },
-      ]);
-    }
-    return Promise.resolve([]);
+const getLedgerMock = mock<
+  (householdId: string, carerId: string, year: number) => Promise<unknown[]>
+>((householdId: string) => {
+  if (householdId === HOUSEHOLD_A) {
+    return Promise.resolve([
+      { kind: 'usage', time_off_id: TIME_OFF_PAID_BY_BOTH, minutes: -480 },
+      { kind: 'usage', time_off_id: TIME_OFF_PAID_BY_ONE, minutes: -480 },
+    ]);
   }
-);
+  if (householdId === HOUSEHOLD_B) {
+    return Promise.resolve([
+      { kind: 'usage', time_off_id: TIME_OFF_PAID_BY_BOTH, minutes: -480 },
+    ]);
+  }
+  return Promise.resolve([]);
+});
 
 mock.module('@/src/api/endpoints/household', () => ({
   householdApi: { list: listMock },
@@ -186,5 +191,40 @@ describe('usePaidFamilyCounts', () => {
 
     await waitFor(() => expect(result.current.isLoading).toBe(false));
     expect(result.current.counts.get(TIME_OFF_PARTIALLY_REVERSED)).toBe(1);
+  });
+
+  it('resolves ledger year in the household timezone near New Year, not UTC', async () => {
+    // 2026-01-01T07:30:00.000Z is still 2025-12-31 in America/Los_Angeles.
+    // UTC getUTCFullYear() would bucket this into 2026; the ledger for 2025
+    // would be missed and the paid marker would stay stale.
+    const newYearRow = {
+      id: 'timeoff-new-year',
+      starts_at: '2026-01-01T07:30:00.000Z',
+    } as never;
+
+    getLedgerMock.mockImplementation(
+      (householdId: string, _carerId: string, year: number) => {
+        if (householdId === householdPacific.id && year === 2025) {
+          return Promise.resolve([
+            { kind: 'usage', time_off_id: 'timeoff-new-year', minutes: -480 },
+          ]);
+        }
+        return Promise.resolve([]);
+      }
+    );
+
+    listMock.mockImplementation(() => Promise.resolve([householdPacific]));
+
+    const { result } = renderHookWithProviders(() =>
+      usePaidFamilyCounts([newYearRow])
+    );
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(getLedgerMock).toHaveBeenCalledWith(
+      householdPacific.id,
+      CARER_ID,
+      2025
+    );
+    expect(result.current.counts.get('timeoff-new-year')).toBe(1);
   });
 });

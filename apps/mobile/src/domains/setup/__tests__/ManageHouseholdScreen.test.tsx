@@ -202,7 +202,6 @@ const baseHousehold = {
   longitude: null,
   approval_mode: 'either',
   approval_scope: 'all',
-  approval_timeout_minutes: 60,
   short_notice_hours: 24,
   cancellation_paid_within_hours: 24,
   created_by: PARENT_USER_ID,
@@ -363,10 +362,10 @@ describe('ManageHouseholdScreen', () => {
       expect(getByTestId('household-name-input').props.value).toBe('The Smiths')
     );
 
-    // 10081 > the schema's 10080-minute (7 day) max.
+    // 337 > the schema's 336-hour max.
     fireEvent.changeText(
-      getByTestId('household-approval-timeout-input'),
-      '10081'
+      getByTestId('household-short-notice-hours-input'),
+      '337'
     );
     fireEvent.press(getByTestId('manage-household-screen-cta'));
 

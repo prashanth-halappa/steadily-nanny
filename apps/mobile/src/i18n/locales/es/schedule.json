@@ -140,6 +140,11 @@
     "extraCarerLabel": "Quién cubre",
     "extraChildrenLabel": "Niños",
     "extraSubmit": "Añadir turno",
+    "extraClashTitle": "{{name}} ya está ocupada/o entonces.",
+    "extraClashCarerFallback": "Este cuidador",
+    "extraClashDescription": "¿Crear de todos modos?",
+    "extraClashCancel": "Volver",
+    "extraClashConfirm": "Crear de todos modos",
     "unavailable": "Los turnos aún no están disponibles — vuelve pronto.",
     "statusDraft": "Borrador",
     "statusPending": "Pendiente",
@@ -188,7 +193,7 @@
     "acceptChange": "Aceptar",
     "declineChange": "Rechazar",
     "shortNoticePaidHint": "Dentro de la ventana de cancelación pagada.",
-    "awaitingCoParent": "Esperando aprobación del otro progenitor",
+    "awaitingNannyConfirm": "Esperando confirmación de la niñera",
     "raisedBy": "Solicitado por {{name}}",
     "respondedBy": "Respondido por {{name}}",
     "you": "Tú",
@@ -206,7 +211,6 @@
   },
   "change": {
     "requestedToast": "Cambio solicitado",
-    "pendingApprovalToast": "Enviado al otro progenitor para aprobación",
     "respondedToast": "Respuesta enviada"
   },
   "weekday": {

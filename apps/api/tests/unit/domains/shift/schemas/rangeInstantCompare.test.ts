@@ -103,6 +103,10 @@ describe('ParentEditShiftSchema — instant compare (F-B7-3)', () => {
       ParentEditShiftSchema.safeParse({ note: 'running late' }).success
     ).toBe(true);
   });
+
+  it('accepts note: null to clear the note', () => {
+    expect(ParentEditShiftSchema.safeParse({ note: null }).success).toBe(true);
+  });
 });
 
 describe('CreateExtraShiftSchema — instant compare (F-B7-3)', () => {

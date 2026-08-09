@@ -12,24 +12,13 @@
  * sites share one implementation) for every currently-accepted pattern, so
  * the horizon keeps rolling forward on a schedule instead of freezing.
  *
- * Also sweeps past-due `co_parent_approvals` across every household (flow 1f
- * — see `supabase/migrations/022_co_parent_approvals.sql`). Timing out means
- * auto-approve-by-silence, so each expired row's parked mutation is re-driven
- * through `approvalApplierRegistry`. A row whose applier fails is put BACK to
- * `pending` by the registry so the next sweep retries it — it never settles as
- * `timed_out` with nothing applied. A hard failure of the sweep itself is
- * logged and swallowed rather than failing the whole job: rolling the schedule
- * horizon is this job's real purpose and must not depend on the approval sweep
- * succeeding.
- *
  * And ages out `shift_change_requests` nobody answered (F-B5-5, migration
  * 064). That table had five statuses and no clock — four reached by somebody
  * DOING something, none by nobody doing anything — so an unanswered request
  * stayed `pending` long after the shift it was about. `EXPIRY_DAYS` days after
  * `created_at` the sweep flips it to `expired`, which is deliberately not
- * `withdrawn`: withdrawn means the requester acted. Same logged-and-swallowed
- * isolation as the approval sweep, and isolated from that sweep too — one
- * unreachable table is not a reason to skip the other.
+ * `withdrawn`: withdrawn means the requester acted. A hard failure of the
+ * sweep itself is logged and swallowed rather than failing the whole job.
  *
  * SETUP: scheduled daily via pg_cron in migration
  * `026_schedule_horizon_cron.sql` (POST `/api/jobs/schedule-horizon`). Requires
@@ -38,10 +27,20 @@
  * @module jobs/scheduleHorizonJob
  */
 
+import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types/schemas/notification.schema';
+import type {
+  Shift,
+  ShiftChangeRequest,
+} from '@steadily-nanny/shared-types/schemas/shift.schema';
+import { ChildCommitmentRepository } from '../domains/child/repositories/childCommitmentRepository';
 import {
-  type CoParentApprovalQueryService,
-  coParentApprovalQueryService,
-} from '../domains/household/services/coParentApprovalQueryService';
+  type DetectUncoveredCareArgs,
+  detectUncoveredCareForDate,
+} from '../domains/child/services/detectUncoveredCareForDate';
+import { HouseholdRepository } from '../domains/household/repositories/householdRepository';
+import { notifyUser } from '../domains/notification';
+import type { PushPayload } from '../domains/notification/types';
+import { addDays } from '../domains/pay/utils/localDateSpan';
 import { SchedulePatternRepository } from '../domains/schedule/repositories/schedulePatternRepository';
 import {
   type SchedulePatternCommandService,
@@ -49,6 +48,8 @@ import {
 } from '../domains/schedule/services/schedulePatternCommandService';
 import type { SchedulePattern } from '../domains/schedule/types';
 import { ShiftChangeRequestRepository } from '../domains/shift/repositories/shiftChangeRequestRepository';
+import { ShiftRepository } from '../domains/shift/repositories/shiftRepository';
+import { localDateOf } from '../domains/timesheet/utils/weekStart';
 import { logger } from '../middlewares/logger';
 
 /**
@@ -62,11 +63,19 @@ import { logger } from '../middlewares/logger';
  */
 const EXPIRY_DAYS = 7;
 
+/**
+ * Uncovered-care backstop window — one `detectUncoveredCareForDate` call per
+ * household-local day in `[today, today + UNCOVERED_DETECTION_DAYS]`.
+ *
+ * ponytail: 30×N sequential detector calls per run (N = households with care
+ * hours). Batch/SQL scan if daily-job duration becomes a problem.
+ */
+const UNCOVERED_DETECTION_DAYS = 30;
+
 export interface ScheduleHorizonJobResult {
   patternsProcessed: number;
   successCount: number;
   errorCount: number;
-  coParentApprovalsExpired: number;
   changeRequestsExpired: number;
   message: string;
 }
@@ -82,23 +91,43 @@ export type HorizonMaterialisationService = Pick<
   'materialiseForHorizon'
 >;
 
-/** The narrow approval-expiry contract this job depends on, for injecting a fake in tests. */
-export type HorizonApprovalExpiryService = Pick<
-  CoParentApprovalQueryService,
-  'expirePendingApprovals'
->;
-
 /** The narrow change-request-expiry contract this job depends on, for injecting a fake in tests. */
 export type HorizonChangeRequestExpiryRepository = Pick<
   ShiftChangeRequestRepository,
   'expirePendingOlderThan'
 >;
 
+export type HorizonShiftLookupRepository = Pick<ShiftRepository, 'findByIds'>;
+
+export type HorizonCommitmentRepository = Pick<
+  ChildCommitmentRepository,
+  'listHouseholdIdsWithCommitments'
+>;
+
+export type HorizonHouseholdRepository = Pick<HouseholdRepository, 'findByIds'>;
+
+export type HorizonUncoveredDetector = (
+  args: DetectUncoveredCareArgs
+) => Promise<unknown>;
+
+export type HorizonUserNotifier = (
+  userId: string,
+  payload: PushPayload
+) => void;
+
+export interface ScheduleHorizonJobDeps {
+  shifts?: HorizonShiftLookupRepository;
+  commitments?: HorizonCommitmentRepository;
+  households?: HorizonHouseholdRepository;
+  detectUncovered?: HorizonUncoveredDetector;
+  notifyUser?: HorizonUserNotifier;
+}
+
 export async function runScheduleHorizonJob(
   patternRepo: AcceptedPatternRepository = new SchedulePatternRepository(),
   commandService: HorizonMaterialisationService = schedulePatternCommandService,
-  approvals: HorizonApprovalExpiryService = coParentApprovalQueryService,
-  changeRequests: HorizonChangeRequestExpiryRepository = new ShiftChangeRequestRepository()
+  changeRequests: HorizonChangeRequestExpiryRepository = new ShiftChangeRequestRepository(),
+  deps: ScheduleHorizonJobDeps = {}
 ): Promise<ScheduleHorizonJobResult> {
   const patterns = await patternRepo.listAccepted();
 
@@ -118,82 +147,189 @@ export async function runScheduleHorizonJob(
     }
   }
 
-  const coParentApprovalsExpired =
-    await expireStaleCoParentApprovals(approvals);
-  const changeRequestsExpired = await expireStaleChangeRequests(changeRequests);
+  const changeRequestsExpired = await expireStaleChangeRequests(
+    changeRequests,
+    deps
+  );
+
+  await sweepUncoveredCare(deps);
 
   return {
     patternsProcessed: patterns.length,
     successCount,
     errorCount,
-    coParentApprovalsExpired,
     changeRequestsExpired,
     message: `Rolled the materialisation horizon forward for ${successCount}/${patterns.length} accepted schedule pattern(s)`,
   };
 }
 
 /**
- * Sweep every household's past-due `co_parent_approvals` (flow 1f). Called
- * with no `householdId`, so it is global — otherwise timeouts would only ever
- * fire for a household whose parent happens to OPEN the approvals screen, and
- * a family where nobody looks would never resolve a pending change at all.
- *
- * Expiry is auto-approve-by-silence: `expirePendingApprovals` re-drives each
- * expired row's gated mutation through `approvalApplierRegistry`, which logs a
- * row it cannot apply and reverts it to `pending` so this sweep picks it up
- * again tomorrow instead of leaving it terminally `timed_out` with the payload
- * never applied. `coParentApprovalsExpired` counts the rows this run flipped,
- * including any that were reverted. A hard failure here is logged and
- * swallowed rather than failing the schedule-horizon work above, which is this
- * job's real purpose.
- */
-async function expireStaleCoParentApprovals(
-  approvals: HorizonApprovalExpiryService
-): Promise<number> {
-  try {
-    const expired = await approvals.expirePendingApprovals();
-    return expired.length;
-  } catch (error) {
-    logger.error('Schedule horizon job: co_parent_approvals expiry failed', {
-      error,
-    });
-    return 0;
-  }
-}
-
-/**
  * Age out `shift_change_requests` nobody ever answered (F-B5-5). Global for
- * the same reason as the approvals sweep, and keyed off `created_at` rather
- * than the shift's start: a request about a shift six weeks out is just as
- * stale on day eight as one about tomorrow, and a request can outlive the
- * shift it was about entirely.
+ * the same reason as other sweeps, and keyed off `created_at` rather than the
+ * shift's start: a request about a shift six weeks out is just as stale on
+ * day eight as one about tomorrow, and a request can outlive the shift it was
+ * about entirely.
  *
- * Isolated from the approvals sweep as well as from the horizon work — the two
- * read different tables and neither is a reason to skip the other. The
- * repository compare-and-sets on `pending`, so a request answered between the
- * cutoff being computed and the update landing is left alone.
- *
- * ponytail: no push to the requester. `notifyChangeRequestOpened` and friends
- * live on `shiftChangeRequestCommandService` and every push type is a member
- * of `PUSH_NOTIFICATION_TYPES`, which `notificationRouteMap` consumes as an
- * exhaustive `Record` — so telling the requester costs a new notification
- * type, a mobile route, and copy in both locales, not a function call. Worth
- * doing; deliberately not smuggled into this job. Until then a requester finds
- * out by looking, which is the same as today.
+ * Isolated from the horizon work — the two read different tables and neither
+ * is a reason to skip the other. The repository compare-and-sets on `pending`,
+ * so a request answered between the cutoff being computed and the update
+ * landing is left alone.
  */
 async function expireStaleChangeRequests(
-  changeRequests: HorizonChangeRequestExpiryRepository
+  changeRequests: HorizonChangeRequestExpiryRepository,
+  deps: ScheduleHorizonJobDeps
 ): Promise<number> {
   try {
     const cutoff = new Date(
       Date.now() - EXPIRY_DAYS * 24 * 60 * 60 * 1000
     ).toISOString();
     const expired = await changeRequests.expirePendingOlderThan(cutoff);
+    try {
+      await notifyExpiredChangeRequests(expired, deps);
+    } catch (error) {
+      logger.error('Schedule horizon job: expired change-request push failed', {
+        error,
+      });
+    }
     return expired.length;
   } catch (error) {
     logger.error('Schedule horizon job: shift_change_requests expiry failed', {
       error,
     });
     return 0;
+  }
+}
+
+async function notifyExpiredChangeRequests(
+  expired: ShiftChangeRequest[],
+  deps: ScheduleHorizonJobDeps
+): Promise<void> {
+  const notify = deps.notifyUser ?? notifyUser;
+  const shiftRepo = deps.shifts ?? new ShiftRepository();
+  const withRequester = expired.filter(
+    (row): row is ShiftChangeRequest & { requested_by: string } =>
+      typeof row.requested_by === 'string'
+  );
+  if (withRequester.length === 0) {
+    return;
+  }
+
+  const shiftIds = [...new Set(withRequester.map(row => row.shift_id))];
+  const shifts = await shiftRepo.findByIds(shiftIds);
+  const shiftById = new Map(shifts.map(shift => [shift.id, shift]));
+
+  for (const request of withRequester) {
+    const shift = shiftById.get(request.shift_id);
+    if (!shift) {
+      logger.error('Expired change request references missing shift', {
+        changeRequestId: request.id,
+        shiftId: request.shift_id,
+      });
+      continue;
+    }
+    try {
+      notify(
+        request.requested_by,
+        buildExpiredChangeRequestPayload(shift, request)
+      );
+    } catch (error) {
+      logger.error('Failed to notify requester of expired change request', {
+        changeRequestId: request.id,
+        requestedBy: request.requested_by,
+        error,
+      });
+    }
+  }
+}
+
+function buildExpiredChangeRequestPayload(
+  shift: Shift,
+  request: ShiftChangeRequest
+): PushPayload {
+  return {
+    title: 'Change request expired',
+    body: `Your change request for ${formatLocalDateLabel(shift.local_date)} expired without a response.`,
+    data: {
+      type: PUSH_NOTIFICATION_TYPES.CHANGE_REQUEST_EXPIRED,
+      shiftId: shift.id,
+      changeRequestId: request.id,
+      householdId: shift.household_id,
+    },
+  };
+}
+
+function formatLocalDateLabel(localDate: string): string {
+  const [y, m, d] = localDate.split('-').map(Number);
+  return new Date(Date.UTC(y ?? 0, (m ?? 1) - 1, d ?? 1)).toLocaleDateString(
+    'en-US',
+    {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+      timeZone: 'UTC',
+    }
+  );
+}
+
+async function sweepUncoveredCare(deps: ScheduleHorizonJobDeps): Promise<void> {
+  const commitmentRepo = deps.commitments ?? new ChildCommitmentRepository();
+  const householdRepo = deps.households ?? new HouseholdRepository();
+  const detect =
+    deps.detectUncovered ?? (args => detectUncoveredCareForDate(args));
+
+  let householdIds: string[];
+  try {
+    householdIds = await commitmentRepo.listHouseholdIdsWithCommitments();
+  } catch (error) {
+    logger.error(
+      'Schedule horizon job: failed to list households with care hours',
+      {
+        error,
+      }
+    );
+    return;
+  }
+
+  if (householdIds.length === 0) {
+    return;
+  }
+
+  let households: Awaited<ReturnType<HorizonHouseholdRepository['findByIds']>>;
+  try {
+    households = await householdRepo.findByIds(householdIds);
+  } catch (error) {
+    logger.error(
+      'Schedule horizon job: failed to load households for uncovered sweep',
+      {
+        error,
+      }
+    );
+    return;
+  }
+
+  for (const household of households) {
+    try {
+      const today = localDateOf(new Date(), household.timezone);
+      const windowEnd = addDays(today, UNCOVERED_DETECTION_DAYS);
+      for (
+        let localDate = today;
+        localDate <= windowEnd;
+        localDate = addDays(localDate, 1)
+      ) {
+        await detect({
+          householdId: household.id,
+          localDate,
+          cause: 'nothingScheduled',
+        });
+      }
+    } catch (error) {
+      logger.error(
+        'Schedule horizon job: uncovered-care sweep failed for household',
+        {
+          householdId: household.id,
+          error,
+        }
+      );
+    }
   }
 }

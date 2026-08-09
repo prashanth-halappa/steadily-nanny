@@ -30,6 +30,7 @@ describe('notification.schema push types', () => {
       expect(PUSH_TYPE_AUDIENCE[type]).toBeDefined();
     }
     expect(PUSH_TYPE_AUDIENCE.uncovered_care_detected).toBe('parent');
+    expect(PUSH_TYPE_AUDIENCE.change_request_expired).toBe('any');
     expect(
       (Object.values(PUSH_TYPE_AUDIENCE) as string[]).includes(
         'coverage_gap_detected'

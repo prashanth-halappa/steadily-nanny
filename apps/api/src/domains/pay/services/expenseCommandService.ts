@@ -14,9 +14,12 @@
  *    (never client-supplied), and `carer_display_name` is snapshotted the
  *    same way `payArrangementCommandService.create` does. Currency must
  *    match the effective pay arrangement's currency on `local_date`
- *    (`payArrangementRepository.effectiveOn`) — no arrangement, or a
- *    mismatched one, is a typed `ExpenseValidationError`, never a silent
- *    accept. A mileage payload is NEVER read for `amount_minor` — the write
+ *    (`payArrangementRepository.effectiveOn`) when an arrangement exists;
+ *    a mismatch is a typed `ExpenseValidationError`. Non-mileage claims do
+ *    NOT require an arrangement — the submitted `currency` stands on its own
+ *    (`docs/11-MONEY.md` §9). Mileage claims and mileage approval still
+ *    require one (`NO_PAY_ARRANGEMENT`), because the rate lives there. A
+ *    mileage payload is NEVER read for `amount_minor` — the write
  *    is built field-by-field per `kind`, so a stray client field cannot
  *    reach the row even if it slipped past the wire schema's `.strict()`
  *    union.
@@ -54,6 +57,7 @@ import {
   EXPENSE_KINDS,
   EXPENSE_STATUSES,
   type Expense,
+  type ExpenseKind,
   type ReviewExpenseRequest,
   type UpdateExpenseRequest,
 } from '@steadily-nanny/shared-types/schemas/expense.schema';
@@ -186,6 +190,7 @@ export class ExpenseCommandService {
       request.local_date
     );
     this.assertCurrencyMatches(
+      request.kind,
       effective,
       request.currency,
       householdId,
@@ -249,6 +254,7 @@ export class ExpenseCommandService {
       request.local_date
     );
     this.assertCurrencyMatches(
+      request.kind,
       effective,
       request.currency,
       existing.household_id,
@@ -428,6 +434,7 @@ export class ExpenseCommandService {
     // the right label, which is the one failure mode §1 exists to prevent.
     // Rejecting is unaffected: it prices nothing, so it never gets here.
     this.assertCurrencyMatches(
+      EXPENSE_KINDS.MILEAGE,
       arrangement,
       existing.currency,
       existing.household_id,
@@ -614,22 +621,28 @@ export class ExpenseCommandService {
   }
 
   /**
-   * The claim's currency must match the carer's effective pay-arrangement
-   * currency on `local_date` — no arrangement to compare against is just as
-   * invalid as a mismatched one; both are refused rather than silently
-   * accepted (`docs/11-MONEY.md` §9).
+   * When an effective pay arrangement exists, the claim's currency must
+   * match its currency on `local_date`. Mileage claims (and mileage approval)
+   * also require an arrangement — the mileage rate lives there, so nothing can
+   * price or validate the claim without one (`NO_PAY_ARRANGEMENT`). Non-mileage
+   * reimbursements do not require an arrangement; the submitted `currency`
+   * stands on its own (`docs/11-MONEY.md` §9).
    */
   private assertCurrencyMatches(
+    kind: ExpenseKind,
     arrangement: PayArrangement | null,
     currency: string,
     householdId: string,
     carerId: string
   ): void {
     if (!arrangement) {
-      throw new ExpenseValidationError('NO_PAY_ARRANGEMENT', {
-        householdId,
-        carerId,
-      });
+      if (kind === EXPENSE_KINDS.MILEAGE) {
+        throw new ExpenseValidationError('NO_PAY_ARRANGEMENT', {
+          householdId,
+          carerId,
+        });
+      }
+      return;
     }
     if (arrangement.currency !== currency) {
       throw new ExpenseValidationError('CURRENCY_MISMATCH', {

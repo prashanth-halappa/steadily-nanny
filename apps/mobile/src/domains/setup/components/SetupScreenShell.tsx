@@ -95,6 +95,7 @@ export function SetupScreenShell({
       ) : null}
 
       <ScrollView
+        keyboardShouldPersistTaps="handled"
         style={{ flex: 1 }}
         contentContainerStyle={{
           flexGrow: 1,

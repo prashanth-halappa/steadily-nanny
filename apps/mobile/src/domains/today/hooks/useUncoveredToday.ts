@@ -53,6 +53,16 @@ export function computeUncoveredToday(args: {
     args.localDate,
     args.timezone
   );
+  const needOnDay = computeUncovered({
+    localDate: args.localDate,
+    timezone: args.timezone,
+    needWindows,
+    shifts: [],
+    closures: [],
+  });
+  if (needOnDay.length === 0) {
+    return { status: 'setup' };
+  }
   const windows = withCauses(
     computeUncovered({
       localDate: args.localDate,

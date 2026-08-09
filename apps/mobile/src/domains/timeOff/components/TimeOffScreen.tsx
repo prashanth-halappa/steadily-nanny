@@ -37,6 +37,7 @@ import { H1, MetadataLabel, Small } from '@/src/components/ui/typography';
 import { SETUP_ROLES } from '@/src/domains/setup/types';
 import { useCancelTimeOff } from '@/src/hooks/mutations/useCancelTimeOff';
 import { useUpdateTimeOff } from '@/src/hooks/mutations/useUpdateTimeOff';
+import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 import { useTimeOff } from '@/src/hooks/queries/useTimeOff';
 import { showSuccessToast } from '@/src/lib/toast';
@@ -58,6 +59,7 @@ export function TimeOffScreen() {
   const { t } = useTranslation('timeOff');
   const { t: tCommon } = useTranslation('common');
   const onboarding = useIsOnboarded();
+  const { household } = useActiveHousehold();
   const timeOff = useTimeOff();
   const cancelTimeOff = useCancelTimeOff();
   const updateTimeOff = useUpdateTimeOff();
@@ -165,6 +167,7 @@ export function TimeOffScreen() {
                 ? undefined
                 : (paidFamilyCounts.counts.get(item.id) ?? 0)
             }
+            timeZone={household?.timezone}
           />
         )}
         ListHeaderComponent={

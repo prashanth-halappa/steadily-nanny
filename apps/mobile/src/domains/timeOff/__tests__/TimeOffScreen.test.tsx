@@ -249,6 +249,19 @@ beforeAll(async () => {
   mock.module('@/src/hooks/queries/useIsOnboarded', () => ({
     useIsOnboarded: mockUseIsOnboarded,
   }));
+  // SickTimeOffButton/TimeOffRequestForm read the household timezone for
+  // household-local "today"; there is no QueryClientProvider in this harness.
+  mock.module('@/src/hooks/queries/useActiveHousehold', () => ({
+    useActiveHousehold: () => ({
+      household: { id: 'household-1', name: 'Test Household', timezone: 'UTC' },
+      householdId: 'household-1',
+      households: [
+        { id: 'household-1', name: 'Test Household', timezone: 'UTC' },
+      ],
+      pastHouseholds: [],
+      isPastHousehold: false,
+    }),
+  }));
   mock.module('@/src/hooks/queries/useTimeOff', () => ({
     useTimeOff: mockUseTimeOff,
   }));

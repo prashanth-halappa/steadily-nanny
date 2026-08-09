@@ -19,12 +19,6 @@ export class ShiftChangeRequestController {
         shiftId,
         req.body
       );
-      if (result.status === 'pending_approval') {
-        return sendSuccessResponse(res, 'Co-parent approval required', {
-          status: result.status,
-          approval: result.approval,
-        });
-      }
       return sendSuccessResponse(res, 'Change request created', {
         status: result.status,
         shift_change_request: result.shift_change_request,
@@ -96,12 +90,6 @@ export class ShiftChangeRequestController {
         householdId,
         req.body
       );
-      if (result.status === 'pending_approval') {
-        return sendSuccessResponse(res, 'Co-parent approval required', {
-          status: result.status,
-          approval: result.approval,
-        });
-      }
       const shift = result.shift;
       const warnings =
         shift.carer_id != null

@@ -411,6 +411,44 @@ describe('ParentWeekView — the paid-state card', () => {
     expect(listPaymentsMock).not.toHaveBeenCalled();
   });
 
+  it('keeps payment history visible on a reopened week without mark-paid', async () => {
+    listPaymentsMock.mockImplementation(() =>
+      Promise.resolve([makePayment({ amount_minor: 12000 })])
+    );
+    listTimesheetsMock.mockImplementation(() =>
+      Promise.resolve([
+        makeTimesheet({
+          status: 'submitted',
+          reopen_reason: 'Thursday hours were wrong',
+        }),
+      ])
+    );
+    getByIdMock.mockImplementation(() =>
+      Promise.resolve(
+        makeTimesheetWeek({
+          status: 'submitted',
+          approved_at: null,
+          reopen_reason: 'Thursday hours were wrong',
+          earnings: null,
+        })
+      )
+    );
+
+    const { getByTestId, queryByTestId } = renderParentView();
+
+    await waitFor(() => expect(listPaymentsMock).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(getByTestId('hours-paid-state-total-value').props.children).toBe(
+        '£120.00'
+      )
+    );
+    expect(
+      getByTestId('hours-paid-state-line-pay-existing-value').props.children
+    ).toBe('£120.00');
+    expect(queryByTestId('hours-mark-paid-button')).toBeNull();
+    expect(queryByTestId('hours-export-button')).toBeNull();
+  });
+
   it('lets a helper READ the settlement but never record one', async () => {
     listPaymentsMock.mockImplementation(() =>
       Promise.resolve([makePayment({ amount_minor: 12000 })])

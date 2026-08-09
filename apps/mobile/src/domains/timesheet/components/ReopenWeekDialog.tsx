@@ -41,6 +41,9 @@ interface ReopenWeekDialogProps {
   onConfirm: (reason: string) => void;
   isSubmitting: boolean;
   weekRangeLabel: string;
+  /** Formatted total already recorded against this week — when set, the
+   * dialog warns that those payments stay on record. */
+  paidToDateLabel?: string | null;
 }
 
 export function ReopenWeekDialog({
@@ -49,6 +52,7 @@ export function ReopenWeekDialog({
   onConfirm,
   isSubmitting,
   weekRangeLabel,
+  paidToDateLabel = null,
 }: ReopenWeekDialogProps) {
   const { t } = useTranslation('hours');
   const [reason, setReason] = useState('');
@@ -86,6 +90,14 @@ export function ReopenWeekDialog({
         >
           {t('reopenDialogBody')}
         </Body>
+        {paidToDateLabel ? (
+          <Body
+            testID="hours-reopen-dialog-paid-warning"
+            className="text-muted-foreground"
+          >
+            {t('reopenDialogBodyPaidWarning', { paid: paidToDateLabel })}
+          </Body>
+        ) : null}
         <Textarea
           testID="hours-reopen-dialog-reason"
           accessibilityLabel={t('reopenDialogReasonPlaceholder')}

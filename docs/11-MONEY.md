@@ -341,29 +341,28 @@ nanny already spent on the family's behalf.
 
 ---
 
-## 7. Guaranteed-hours top-up: closure-day shortfalls only
+## 7. Guaranteed-hours top-up: weekly shortfall, unconditional
 
-**Owner ruling, 2026-08-04, after independent review:** the top-up pays out
-**only** for household-closure-day shortfalls — never a generic
-under-scheduled week, never a nanny-caused absence. The engine implements
-these definitions exactly, not an approximation:
+**Owner ruling, 2026-08-09:** the top-up pays out for **any** weekly
+shortfall against `guaranteed_minutes_per_week` — unconditionally. An
+under-guarantee week always shows a `guaranteed_topup` line for the **full**
+shortfall, whether the gap came from a household closure, under-booking, or
+nanny absence. The earlier closure-day-only gate (owner ruling 2026-08-04) was
+removed as a product decision: families with a guaranteed-hours arrangement
+expect the guarantee to mean what it says on the label.
+
+The engine implements these definitions exactly, not an approximation:
 
 - **Payable minutes** = worked + `cancellation_paid` + PTO usage. Guaranteed
   hours compare against payable minutes, so a week that already used paid
   PTO or a paid cancellation never *also* tops up on top of them — no
   double pay by construction.
-- Per household-closure day, **lost minutes** = the scheduled minutes of the
-  carer's shifts that day that did **not** become payable (not worked, not
-  `cancellation_paid`). A closure-day shift already paid under the
-  cancellation window counts as payable and so reduces, not adds to, topup.
-- A closure day with **no materialized shifts contributes nothing** — no
-  schedule means nothing was lost to it.
-- `guaranteed_topup = min(total lost minutes across the week's closure
-  days, max(0, guaranteed_minutes_per_week − payable minutes))` — capped at
-  what closure days actually cost, never at the full shortfall.
-- **A week with no closure days never tops up, whatever the shortfall.**
-  Family under-booking and nanny absence are both outside the v1 guarantee;
-  only the household choosing to close pays for it.
+- `guaranteed_topup = max(0, guaranteed_minutes_per_week − payable minutes)`
+  — the full shortfall, never capped by closure-day lost minutes or any
+  schedule-derived figure.
+- **Closure days no longer gate the top-up.** Household closures may still
+  affect what was worked or cancelled, but they do not limit how much of the
+  shortfall is topped up.
 
 ---
 
@@ -434,6 +433,14 @@ who is an active member of the calling household. A `carer_id`/
 shape of `assertShiftBelongsToCarer` (D12's fix) rather than inventing a new
 pattern — this is the one check every money write shares, and it belongs at
 the top of the command service method.
+
+**Expense claims are reimbursements, not wages — they do not require a pay
+arrangement to exist** (owner decision, 2026-08-09). A non-mileage claim's
+`currency` is whatever the carer submitted (schema default `GBP`); when an
+arrangement *does* exist, its currency must still match. **Mileage is the
+exception:** the per-mile rate lives on the arrangement, so a mileage claim
+(and approving one) still refuses with `NO_PAY_ARRANGEMENT` when none is
+effective on `local_date`.
 
 ## 10. Removal is soft, and rejoining resumes the old money state
 

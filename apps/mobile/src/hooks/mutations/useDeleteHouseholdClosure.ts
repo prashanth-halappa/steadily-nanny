@@ -6,7 +6,7 @@ import { queryKeys } from '@/src/api/queryKeys';
 import { getLocalizedErrorMessage } from '@/src/lib/errorLocalization';
 import { showErrorToast } from '@/src/lib/toast';
 
-/** Hard-deletes a closure by id — unlike time off, there is no soft-cancel. */
+/** Hard-deletes a closure by id after the parent confirms in the screen. */
 export function useDeleteHouseholdClosure(householdId: string) {
   const queryClient = useQueryClient();
   const { t } = useTranslation('errors');

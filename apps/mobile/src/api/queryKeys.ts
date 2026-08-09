@@ -209,14 +209,6 @@ export const queryKeys = {
     pending: (householdId?: string) =>
       [...queryKeys.expenses.all, 'pending', householdId] as const,
   },
-
-  // Pending-work inbox aggregates (approvals list; other sources reuse
-  // schedulePattern / shift / timesheet keys above).
-  inbox: {
-    all: ['inbox'] as const,
-    approvals: (householdId?: string) =>
-      [...queryKeys.inbox.all, 'approvals', householdId] as const,
-  },
 } as const;
 
 /**

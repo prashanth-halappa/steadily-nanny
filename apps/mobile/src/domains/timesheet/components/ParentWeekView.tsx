@@ -74,7 +74,11 @@ import {
   formatEarningsLongDate,
 } from '../utils/earningsFormat';
 import { scheduledMinutesFor, sumEntryMinutes } from '../utils/entryMinutes';
-import { derivePaidState } from '../utils/paidState';
+import {
+  derivePaidState,
+  deriveReopenedPaidState,
+  sumPaymentsMinor,
+} from '../utils/paidState';
 import { useReopenedNotice } from '../utils/reopenedNotice';
 import { ApproveWeekDialog } from './ApproveWeekDialog';
 import { EarningsBreakdownSheet } from './EarningsBreakdownSheet';
@@ -210,12 +214,14 @@ export function ParentWeekView({
   const timesheet =
     weekTimesheets.find(t => carerKeyOf(t) === selectedCarerId) ?? null;
   const reopened = useReopenedNotice(timesheet?.id, timesheet?.status);
-  // Settlement only exists against a FROZEN gross, so the ledger is only
-  // fetched once the week is approved — an open week has nothing to settle
-  // and asking would be a guaranteed empty round trip on every week the
-  // parent pages through.
+  // Settlement is measured against a frozen gross, but a reopened week keeps
+  // its ledger rows even after the snapshot clears — fetch whenever the week
+  // is approved OR carries a reopen reason (submitted-with-reopen_reason).
+  const showSettlementHistory =
+    timesheet?.status === TIMESHEET_STATUSES.APPROVED ||
+    timesheet?.reopen_reason != null;
   const paymentsQuery = usePayments(
-    timesheet?.status === TIMESHEET_STATUSES.APPROVED ? timesheet.id : null
+    showSettlementHistory && timesheet ? timesheet.id : null
   );
 
   const pendingExpenses = pendingExpensesQuery.data ?? [];
@@ -411,10 +417,17 @@ export function ParentWeekView({
   // returns null for that — never `?? 0`, which would render "Paid" over a
   // week whose value is simply unknown (docs/11-MONEY.md §4).
   const payments = paymentsQuery.data ?? [];
-  const paidState = derivePaidState(
-    payments,
-    earningsOk ? earningsOk.gross_minor : null
-  );
+  const paidState = earningsOk
+    ? derivePaidState(payments, earningsOk.gross_minor)
+    : timesheet?.reopen_reason != null
+      ? deriveReopenedPaidState(payments)
+      : null;
+  const settlementCurrency =
+    earningsOk?.currency ?? payments[0]?.currency ?? expensesCurrency;
+  const paidToDateLabel =
+    payments.length > 0
+      ? formatMoney(sumPaymentsMinor(payments), settlementCurrency)
+      : null;
   const todayISO = localDateInZone(timeZone, new Date(nowMs));
 
   const handleOpenRecordPayment = () => {
@@ -646,25 +659,29 @@ export function ParentWeekView({
             {/* §7: settlement sits after the statement it settles. Both are
                 read-only for a helper — a helper may SEE that the family has
                 paid, and may never record that they have. */}
-            {isApproved && timesheet ? (
+            {showSettlementHistory && timesheet ? (
               <>
                 <PaidStateCard
                   paidState={paidState}
                   payments={payments}
-                  currency={earningsOk?.currency ?? 'GBP'}
+                  currency={settlementCurrency}
                   onMarkPaidPress={
-                    readOnly ? undefined : handleOpenRecordPayment
+                    isApproved && !readOnly
+                      ? handleOpenRecordPayment
+                      : undefined
                   }
                   isMarkPaidDisabled={recordPayment.isPending}
                 />
-                <WeekExportAction
-                  timesheetId={timesheet.id}
-                  weekStartISO={weekStartISO}
-                  weekRangeLabel={weekRangeLabel}
-                  carerName={approveDialogCarerName}
-                  earnings={earningsOk}
-                  paidState={paidState}
-                />
+                {isApproved ? (
+                  <WeekExportAction
+                    timesheetId={timesheet.id}
+                    weekStartISO={weekStartISO}
+                    weekRangeLabel={weekRangeLabel}
+                    carerName={approveDialogCarerName}
+                    earnings={earningsOk}
+                    paidState={paidState}
+                  />
+                ) : null}
               </>
             ) : null}
             {/* Daylight P0-3: the query note, the "waiting" explainer and
@@ -707,6 +724,7 @@ export function ParentWeekView({
         weekRangeLabel={weekRangeLabel}
         hoursLabel={formatEarningsDuration(totalMinutes)}
         grossLabel={grossLabel}
+        earningsStatus={earnings?.status}
         carerName={approveDialogCarerName}
       />
 
@@ -716,6 +734,7 @@ export function ParentWeekView({
         onConfirm={handleConfirmReopen}
         isSubmitting={reopenTimesheet.isPending}
         weekRangeLabel={weekRangeLabel}
+        paidToDateLabel={paidToDateLabel}
       />
 
       {timesheet && !readOnly ? (

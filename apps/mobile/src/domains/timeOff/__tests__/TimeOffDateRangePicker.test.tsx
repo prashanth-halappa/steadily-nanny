@@ -51,23 +51,20 @@ describe('TimeOffDateRangePicker source', () => {
     expect(source).toContain('`${baseTestID}-error`');
   });
 
-  it('guards BOTH handlers with isEndOnOrAfterStart before calling onChange', () => {
-    const guardCount = (source.match(/if \(!isEndOnOrAfterStart/g) ?? [])
-      .length;
-    expect(guardCount).toBe(2);
-  });
-
   it('never calls onChange with a raw Date — only formatted "yyyy-mm-dd" strings', () => {
     expect(source).not.toMatch(/onChange\(\s*date/);
-    expect(source).toContain('onChange(nextStart, end)');
-    expect(source).toContain('onChange(start, nextEnd)');
+    expect(source).toContain('onChange(formatDate(date), end)');
+    expect(source).toContain('onChange(start, formatDate(date))');
   });
 
-  it('never silently swaps start and end on rejection', () => {
+  it('never silently swaps start and end', () => {
     expect(source).not.toContain('onChange(end, start)');
     expect(source).not.toContain('onChange(nextEnd, nextStart)');
-    // The refuse path must return early instead of calling onChange at all.
-    expect(source).toMatch(/Refuse[\s\S]{0,150}return;/);
+  });
+
+  it('derives the inline error from current start/end props', () => {
+    expect(source).toContain('!isEndOnOrAfterStart(start, end)');
+    expect(source).toContain('rangeError');
   });
 
   it('localizes labels and error through timeOff namespace keys', () => {

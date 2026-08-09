@@ -135,6 +135,7 @@ describe('ApproveWeekDialog', () => {
         weekRangeLabel="3 – 9 August"
         hoursLabel="41h 00m"
         grossLabel="£236.12"
+        earningsStatus="ok"
         carerName="Amara"
       />
     );
@@ -156,12 +157,33 @@ describe('ApproveWeekDialog', () => {
         weekRangeLabel="3 – 9 August"
         hoursLabel="41h 00m"
         grossLabel={null}
+        earningsStatus="no_arrangement"
         carerName="Amara"
       />
     );
 
     expect(getByTestId('hours-approve-dialog-body').props.children).toBe(
       'approveDialogBodyNoArrangement'
+    );
+  });
+
+  it('renders the currency-change body variant when earnings span two currencies', () => {
+    const { getByTestId } = render(
+      <ApproveWeekDialog
+        open
+        onOpenChange={() => {}}
+        onConfirm={() => {}}
+        isSubmitting={false}
+        weekRangeLabel="3 – 9 August"
+        hoursLabel="41h 00m"
+        grossLabel={null}
+        earningsStatus="currency_change"
+        carerName="Amara"
+      />
+    );
+
+    expect(getByTestId('hours-approve-dialog-body').props.children).toBe(
+      'approveDialogBodyCurrencyChange'
     );
   });
 
@@ -176,6 +198,7 @@ describe('ApproveWeekDialog', () => {
         weekRangeLabel="3 – 9 August"
         hoursLabel="41h 00m"
         grossLabel="£236.12"
+        earningsStatus="ok"
         carerName="Amara"
       />
     );
@@ -197,6 +220,7 @@ describe('ApproveWeekDialog', () => {
         weekRangeLabel="3 – 9 August"
         hoursLabel="41h 00m"
         grossLabel="£236.12"
+        earningsStatus="ok"
         carerName="Amara"
       />
     );
@@ -216,6 +240,7 @@ describe('ApproveWeekDialog', () => {
         weekRangeLabel="3 – 9 August"
         hoursLabel="41h 00m"
         grossLabel="£236.12"
+        earningsStatus="ok"
         carerName="Amara"
       />
     );

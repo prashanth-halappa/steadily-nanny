@@ -45,6 +45,7 @@ import {
 import { Text } from '@/src/components/ui/text';
 import { Textarea } from '@/src/components/ui/textarea';
 import { TimeRangePicker } from '@/src/components/ui/time-range-picker';
+import { isEndAfterStart } from '@/src/components/ui/time-range-picker.utils';
 import { Body, H1, H2, Small } from '@/src/components/ui/typography';
 import {
   shiftChangeRequestKindLabelKey,
@@ -189,6 +190,8 @@ export function ShiftDetailScreen() {
     setHydrated(true);
   }, [shift, hydrated]);
 
+  const isRangeValid = isEndAfterStart(startTime, endTime);
+
   const handleSave = async () => {
     if (!shift || updateShift.isPending) return;
     // Overnight handling (end <= start rolls to the next calendar day) lives
@@ -206,7 +209,7 @@ export function ShiftDetailScreen() {
         input: {
           starts_at,
           ends_at,
-          note: note.trim() || undefined,
+          note: note.trim() === '' ? null : note.trim(),
         },
       });
     } catch {
@@ -325,7 +328,7 @@ export function ShiftDetailScreen() {
           />
           <Button
             testID="shift-detail-save"
-            disabled={updateShift.isPending}
+            disabled={!isRangeValid || updateShift.isPending}
             onPress={() => void handleSave()}
           >
             <Text>{t('detail.save')}</Text>
@@ -422,7 +425,7 @@ export function ShiftDetailScreen() {
                 <Button
                   testID="shift-detail-counter"
                   variant={canAcceptPending ? 'outline' : 'default'}
-                  disabled={createChange.isPending}
+                  disabled={!isRangeValid || createChange.isPending}
                   onPress={() => {
                     // Same overnight-aware builder the parent's Save uses —
                     // never two instants off the one `local_date`.
@@ -489,7 +492,7 @@ export function ShiftDetailScreen() {
           <H2>{t('detail.changesTitle')}</H2>
           {(changeRequests.data ?? []).map(req => {
             // The requester's own pending request: she withdraws it, she
-            // does not accept/decline it. Same guard `awaitingCoParent`
+            // does not accept/decline it. Same guard `awaitingNannyConfirm`
             // already uses just above — `requested_by !== null` first so a
             // system-authored row (null) never reads as "mine" just because
             // `currentUserId` also happens to be null in an unauthenticated
@@ -530,7 +533,7 @@ export function ShiftDetailScreen() {
                     testID={`shift-change-awaiting-${req.id}`}
                     className="text-muted-foreground"
                   >
-                    {t('detail.awaitingCoParent')}
+                    {t('detail.awaitingNannyConfirm')}
                   </Small>
                 ) : null}
                 {req.status !== 'pending' && req.responded_by ? (

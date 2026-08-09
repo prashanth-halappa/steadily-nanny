@@ -21,8 +21,8 @@
  * nested inside a `ScrollView` produces RN's "VirtualizedLists should never
  * be nested" warning and broken scroll behaviour.
  *
- * HARD DELETE, no confirmation dialog — mirrors `TimeOffRow`'s Cancel
- * control, which also has no confirm step.
+ * Delete is confirmed via `AlertDialog` — removing a closure makes those
+ * days count as needing cover again.
  */
 import { FlashList } from '@shopify/flash-list';
 import type { HouseholdClosure } from '@steadily-nanny/shared-types/schemas/availability.schema';
@@ -32,6 +32,16 @@ import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
 import { illustrations } from '@/assets/illustrations';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/src/components/ui/alert-dialog';
 import { BackButton } from '@/src/components/ui/back-button';
 import { Button } from '@/src/components/ui/button';
 import { Card } from '@/src/components/ui/card';
@@ -42,25 +52,19 @@ import { Textarea } from '@/src/components/ui/textarea';
 import { Body, H1, Small } from '@/src/components/ui/typography';
 import { SETUP_ROLES } from '@/src/domains/setup/types';
 import { TimeOffDateRangePicker } from '@/src/domains/timeOff/components/TimeOffDateRangePicker';
+import { isEndOnOrAfterStart } from '@/src/domains/timeOff/components/TimeOffDateRangePicker.utils';
 import {
   formatTimeOffRangeLabel,
   isPastTimeOff,
   toAllDayRange,
+  todayISO,
 } from '@/src/domains/timeOff/utils/timeOffDate';
 import { useCreateHouseholdClosure } from '@/src/hooks/mutations/useCreateHouseholdClosure';
 import { useDeleteHouseholdClosure } from '@/src/hooks/mutations/useDeleteHouseholdClosure';
+import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
 import { useHouseholdClosures } from '@/src/hooks/queries/useHouseholdClosures';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 import { showSuccessToast } from '@/src/lib/toast';
-
-/** Today's calendar date, "yyyy-mm-dd", in the DEVICE's local zone. */
-function todayISO(): string {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, '0');
-  const d = String(now.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
-}
 
 export function HouseholdClosuresScreen() {
   const router = useRouter();
@@ -71,10 +75,19 @@ export function HouseholdClosuresScreen() {
   const closures = useHouseholdClosures(householdId);
   const createClosure = useCreateHouseholdClosure(householdId ?? '');
   const deleteClosure = useDeleteHouseholdClosure(householdId ?? '');
+  // A closure names the HOUSEHOLD's calendar days — all-day boundaries and
+  // row labels must use the household clock, not the device's (same rule as
+  // time off; a Pacific device once stored a London "24–25 Aug" closure as
+  // PDT midnights, spilling 8h into Aug 26).
+  const { household } = useActiveHousehold();
+  const timeZone = household?.timezone;
 
-  const [startDate, setStartDate] = useState(todayISO());
-  const [endDate, setEndDate] = useState(todayISO());
+  const [startDate, setStartDate] = useState(todayISO(new Date(), timeZone));
+  const [endDate, setEndDate] = useState(todayISO(new Date(), timeZone));
   const [message, setMessage] = useState('');
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+
+  const invalid = !isEndOnOrAfterStart(startDate, endDate);
 
   const backHeader = (
     <BackButton
@@ -127,8 +140,8 @@ export function HouseholdClosuresScreen() {
   }
 
   const handleSubmit = async () => {
-    if (createClosure.isPending) return;
-    const { starts_at, ends_at } = toAllDayRange(startDate, endDate);
+    if (createClosure.isPending || invalid) return;
+    const { starts_at, ends_at } = toAllDayRange(startDate, endDate, timeZone);
     const trimmedMessage = message.trim();
     try {
       await createClosure.mutateAsync({
@@ -153,6 +166,13 @@ export function HouseholdClosuresScreen() {
     showSuccessToast(t('closures.deletedToast'));
   };
 
+  const confirmDelete = () => {
+    const id = pendingDeleteId;
+    if (!id) return;
+    setPendingDeleteId(null);
+    void handleDelete(id);
+  };
+
   return (
     <View testID="household-closures-screen" className="flex-1 bg-background">
       <FlashList
@@ -167,7 +187,11 @@ export function HouseholdClosuresScreen() {
               className="mb-3 gap-1 p-4"
             >
               <Body>
-                {formatTimeOffRangeLabel(item.starts_at, item.ends_at)}
+                {formatTimeOffRangeLabel(
+                  item.starts_at,
+                  item.ends_at,
+                  timeZone
+                )}
               </Body>
               {item.message ? (
                 <Small className="text-muted-foreground">{item.message}</Small>
@@ -178,7 +202,7 @@ export function HouseholdClosuresScreen() {
                     testID={`household-closures-delete-${item.id}`}
                     variant="ghost"
                     disabled={deleteClosure.isPending}
-                    onPress={() => void handleDelete(item.id)}
+                    onPress={() => setPendingDeleteId(item.id)}
                   >
                     <Text className="text-destructive">
                       {t('closures.deleteButton')}
@@ -218,7 +242,7 @@ export function HouseholdClosuresScreen() {
               />
               <Button
                 testID="household-closures-submit"
-                disabled={createClosure.isPending}
+                disabled={invalid || createClosure.isPending}
                 onPress={() => void handleSubmit()}
               >
                 <Text>{t('closures.submitButton')}</Text>
@@ -242,6 +266,35 @@ export function HouseholdClosuresScreen() {
         }
         contentContainerStyle={SCREEN_CONTENT_STYLE}
       />
+
+      <AlertDialog
+        open={pendingDeleteId !== null}
+        onOpenChange={open => {
+          if (!open) setPendingDeleteId(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {t('closures.deleteConfirmTitle')}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('closures.deleteConfirmDescription')}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel testID="household-closures-delete-cancel">
+              <Text>{t('closures.deleteConfirmCancel')}</Text>
+            </AlertDialogCancel>
+            <AlertDialogAction
+              testID="household-closures-delete-confirm"
+              onPress={confirmDelete}
+            >
+              <Text>{t('closures.deleteConfirmConfirm')}</Text>
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </View>
   );
 }

@@ -21,17 +21,13 @@ export function useCreateShiftChangeRequest() {
       shiftId: string;
       input: CreateShiftChangeRequestInput;
     }) => changeRequestApi.create(shiftId, input),
-    onSuccess: (result, vars) => {
+    onSuccess: (_result, vars) => {
       queryClient.invalidateQueries({
         queryKey: queryKeys.shift.changeRequests(vars.shiftId),
       });
       queryClient.invalidateQueries({ queryKey: queryKeys.shift.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.me.all });
-      if (result.status === 'pending_approval') {
-        showSuccessToast(t('schedule:change.pendingApprovalToast'));
-      } else {
-        showSuccessToast(t('schedule:change.requestedToast'));
-      }
+      showSuccessToast(t('schedule:change.requestedToast'));
     },
     onSettled: () => {
       requestCalendarSync();

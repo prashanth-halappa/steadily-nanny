@@ -1,8 +1,8 @@
 /**
  * ShiftChangeRequestCommandService — create/respond/withdraw/extra-shift flows.
  */
-import { beforeAll, describe, expect, it, mock } from 'bun:test';
-import { ChildNotFoundError } from '../../../../../src/domains/child/errors/childErrors';
+import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
+import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types/schemas/notification.schema';
 import { NotAHouseholdParentError } from '../../../../../src/domains/household';
 import {
   ChangeRequestNotPendingError,
@@ -16,8 +16,10 @@ import type { ShiftWithChildren } from '../../../../../src/domains/shift/reposit
 import { ValidationError } from '../../../../../src/errors';
 
 let ShiftChangeRequestCommandService: typeof import('../../../../../src/domains/shift/services/shiftChangeRequestCommandService').ShiftChangeRequestCommandService;
+let notifyHouseholdParents: ReturnType<typeof mock>;
 
 beforeAll(async () => {
+  notifyHouseholdParents = mock(() => undefined);
   mock.module(
     '../../../../../src/domains/child/services/detectUncoveredCareForDate',
     () => ({
@@ -25,6 +27,10 @@ beforeAll(async () => {
       detectUncoveredCareBestEffort: mock(() => undefined),
     })
   );
+  mock.module('../../../../../src/domains/notification', () => ({
+    notifyUser: mock(() => undefined),
+    notifyHouseholdParents,
+  }));
   ({ ShiftChangeRequestCommandService } = await import(
     '../../../../../src/domains/shift/services/shiftChangeRequestCommandService'
   ));
@@ -34,9 +40,8 @@ const household = {
   id: 'h1',
   name: 'Smiths',
   timezone: 'Europe/London',
-  approval_mode: 'ask_other' as const,
+  approval_mode: 'either' as const,
   approval_scope: 'short_notice_and_cancellations' as const,
-  approval_timeout_minutes: 60,
   short_notice_hours: 24,
   cancellation_paid_within_hours: 24,
 };
@@ -157,6 +162,14 @@ function makeMemberRepo(overrides: Record<string, unknown> = {}): any {
       if (userId === 'parent-2') return membershipFor('parent', 'parent-2');
       return membershipFor('parent', userId);
     }),
+    listActiveByHousehold: mock(async (householdId: string) => [
+      {
+        ...membershipFor('parent', 'parent-1'),
+        household_id: householdId,
+        display_name_override: 'Alex',
+        profile_name: null,
+      },
+    ]),
     ...overrides,
   };
 }
@@ -184,7 +197,7 @@ function makeShiftQueries(overrides: Record<string, unknown> = {}): any {
 
 function makeGate(overrides: Record<string, unknown> = {}): any {
   return {
-    assertApprovalAllows: mock(async () => ({ needsApproval: false })),
+    assertApprovalAllows: mock(async () => undefined),
     ...overrides,
   };
 }
@@ -254,43 +267,6 @@ describe('ShiftChangeRequestCommandService.create', () => {
     // window: a crash between the two writes leaves a change request with no
     // audit trail.
     expect(eventRepo.insertMany).not.toHaveBeenCalled();
-  });
-
-  it('returns pending_approval without creating a request when the gate requires co-parent sign-off', async () => {
-    const changeRequestRepo = makeChangeRequestRepo();
-    const gate = makeGate({
-      assertApprovalAllows: mock(async () => ({
-        needsApproval: true,
-        approval: { id: 'ap1', action: 'cancel' },
-      })),
-    });
-    const householdRepo = makeHouseholdRepo({
-      findById: mock(async () => ({
-        ...household,
-        short_notice_hours: 9999,
-      })),
-    });
-    const shiftQueries = makeShiftQueries({
-      getOwned: mock(async () => ({
-        ...shift,
-        starts_at: new Date(Date.now() + 3600_000).toISOString(),
-      })),
-    });
-    const svc = makeSvc({
-      changeRequestRepo,
-      gate,
-      householdRepo,
-      shiftQueries,
-    });
-
-    const result = await svc.create('parent-1', 's1', { kind: 'cancel' });
-
-    expect(result.status).toBe('pending_approval');
-    if (result.status === 'pending_approval') {
-      expect(result.approval.id).toBe('ap1');
-      expect(result.approval.action).toBe('cancel');
-    }
-    expect(changeRequestRepo.openWithSupersede).not.toHaveBeenCalled();
   });
 
   it('rejects a nanny opening a parent-only kind', async () => {
@@ -428,36 +404,6 @@ describe('ShiftChangeRequestCommandService.createExtraShift', () => {
     expect(shiftRepo.createShift).not.toHaveBeenCalled();
   });
 
-  it('returns pending_approval without writing a shift when the gate requires co-parent sign-off', async () => {
-    const shiftRepo = makeShiftRepo();
-    const eventRepo = makeEventRepo();
-    const gate = makeGate({
-      assertApprovalAllows: mock(async () => ({
-        needsApproval: true,
-        approval: { id: 'ap-extra', action: 'extra_shift' },
-      })),
-    });
-    // approval_scope = all so extra_shift is in scope for ask_other households
-    const householdRepo = makeHouseholdRepo({
-      findById: mock(async () => ({
-        ...household,
-        approval_mode: 'ask_other' as const,
-        approval_scope: 'all' as const,
-      })),
-    });
-    const svc = makeSvc({ shiftRepo, eventRepo, gate, householdRepo });
-
-    const result = await svc.createExtraShift('parent-1', 'h1', extraInput);
-
-    expect(result.status).toBe('pending_approval');
-    if (result.status === 'pending_approval') {
-      expect(result.approval.id).toBe('ap-extra');
-    }
-    expect(shiftRepo.createShift).not.toHaveBeenCalled();
-    expect(shiftRepo.insertChildren).not.toHaveBeenCalled();
-    expect(eventRepo.insertMany).not.toHaveBeenCalled();
-  });
-
   // Migration 059's unique index is what makes the check-then-act guard above
   // actually hold under a double-tap: both taps read an empty window, both
   // insert, and the DB refuses the loser with a 23505. Without adoption the
@@ -503,60 +449,6 @@ describe('ShiftChangeRequestCommandService.createExtraShift', () => {
     expect(eventRepo.insertMany).not.toHaveBeenCalled();
   });
 
-  // Same adoption, reached through the approval applier — the other caller of
-  // insertExtraShift. A re-driven approval racing itself must not 500 either.
-  it('adopts the winner on the approved-applier path too', async () => {
-    const winner = {
-      ...shift,
-      id: 's-winner',
-      kind: 'extra' as const,
-      status: 'pending' as const,
-      shift_children: [],
-    };
-    let lookups = 0;
-    const shiftRepo = makeShiftRepo({
-      findExtraShiftInWindow: mock(async () => {
-        lookups += 1;
-        return lookups === 1 ? null : winner;
-      }),
-      createShift: mock(async () => {
-        throw new ExtraShiftAlreadyExistsError({
-          householdId: 'h1',
-          startsAt: extraInput.starts_at,
-          endsAt: extraInput.ends_at,
-          carerId: 'carer-1',
-        });
-      }),
-    });
-    const eventRepo = makeEventRepo();
-    const svc = makeSvc({ shiftRepo, eventRepo });
-
-    const result = await svc.applyApprovedExtraShift({
-      id: 'a-extra',
-      household_id: 'h1',
-      requested_by: 'parent-1',
-      action: 'extra_shift',
-      payload: {
-        starts_at: extraInput.starts_at,
-        ends_at: extraInput.ends_at,
-        timezone: extraInput.timezone,
-        carer_id: 'carer-1',
-        child_ids: ['child-1'],
-        note: null,
-        reason: 'Date night',
-      },
-      status: 'approved',
-      timeout_at: '2999-01-01T00:00:00Z',
-      responded_by: 'parent-2',
-      responded_at: 't',
-      created_at: 't',
-      updated_at: 't',
-    } as any);
-
-    expect(result.id).toBe('s-winner');
-    expect(eventRepo.insertMany).not.toHaveBeenCalled();
-  });
-
   // Adoption only makes sense if a winner is actually there. If the re-read
   // comes back empty the DB and the lookup disagree — swallowing that would
   // return a shift nobody can see, so the conflict must surface.
@@ -592,165 +484,90 @@ describe('ShiftChangeRequestCommandService.createExtraShift', () => {
   });
 });
 
-describe('ShiftChangeRequestCommandService.applyApprovedExtraShift', () => {
-  function approvalFor(overrides: Record<string, unknown> = {}): any {
-    return {
-      id: 'a-extra',
-      household_id: 'h1',
-      requested_by: 'parent-1',
-      action: 'extra_shift',
-      payload: {
-        starts_at: '2026-08-04T08:00:00.000Z',
-        ends_at: '2026-08-04T12:00:00.000Z',
-        timezone: 'Europe/London',
-        carer_id: 'carer-1',
-        child_ids: ['child-1'],
-        note: null,
-        reason: 'Date night',
-      },
-      status: 'approved',
-      timeout_at: '2999-01-01T00:00:00Z',
-      responded_by: 'parent-2',
-      responded_at: 't',
-      created_at: 't',
-      updated_at: 't',
-      ...overrides,
-    };
+describe('ShiftChangeRequestCommandService — co-parent FYI pushes', () => {
+  async function flushFyi(): Promise<void> {
+    await new Promise<void>(resolve => setImmediate(resolve));
   }
 
-  it('re-validates as the original requester and inserts the extra shift', async () => {
-    const shiftRepo = makeShiftRepo();
-    const children = makeChildren();
-    const memberRepo = makeMemberRepo();
-    const svc = makeSvc({ shiftRepo, children, memberRepo });
-
-    const result = await svc.applyApprovedExtraShift(approvalFor());
-
-    expect(memberRepo.findActiveMembership).toHaveBeenCalledWith(
-      'h1',
-      'parent-1'
-    );
-    expect(children.getOwned).toHaveBeenCalledWith('parent-1', 'h1', 'child-1');
-    expect(shiftRepo.createShift).toHaveBeenCalledWith(
-      expect.objectContaining({
-        kind: 'extra',
-        status: 'pending',
-        origin: 'parent_proposed',
-        created_by: 'parent-1',
-        carer_id: 'carer-1',
-        reason: 'Date night',
-      })
-    );
-    expect(result.id).toBe('s-extra');
-  });
-
-  // `insertExtraShift` is four sequential writes and the shift row commits
-  // first. A throw anywhere after it leaves the shift behind, the approval
-  // recorded as failed, and U5's bounded retry then re-drives the whole
-  // sequence — creating a SECOND extra shift for one approval.
-  it('does not create a second extra shift when a retried approval re-runs after a partial failure', async () => {
-    const created: Record<string, unknown>[] = [];
-    let childrenCalls = 0;
-    const shiftRepo = makeShiftRepo({
-      createShift: mock(async (data: Record<string, unknown>) => {
-        const row = { ...shift, ...data, id: `s-extra-${created.length + 1}` };
-        created.push(row);
-        return row;
-      }),
-      insertChildren: mock(async () => {
-        childrenCalls += 1;
-        if (childrenCalls === 1) {
-          throw new Error('db blip');
-        }
-      }),
-      findExtraShiftInWindow: mock(async () =>
-        created.length ? { ...created[0], shift_children: [] } : null
-      ),
-      findByIdWithChildren: mock(async (id: string) => {
-        const row = created.find(s => s.id === id);
-        return row ? { ...row, shift_children: [] } : null;
-      }),
+  function shortNoticeShiftQueries() {
+    return makeShiftQueries({
+      getOwned: mock(async () => ({
+        ...shift,
+        starts_at: new Date(Date.now() + 3600_000).toISOString(),
+      })),
     });
-    const svc = makeSvc({ shiftRepo });
+  }
 
-    await expect(svc.applyApprovedExtraShift(approvalFor())).rejects.toThrow(
-      'db blip'
-    );
-    const retried = await svc.applyApprovedExtraShift(approvalFor());
-
-    expect(created).toHaveLength(1);
-    expect(retried.id).toBe('s-extra-1');
+  beforeEach(() => {
+    notifyHouseholdParents.mockClear();
   });
 
-  it('uses the same createShift shape as the ungated createExtraShift path (anti-drift)', async () => {
-    const shiftRepoGated = makeShiftRepo();
-    const shiftRepoUngated = makeShiftRepo();
-    const gate = makeGate();
-    const input = {
+  it('notifies other parents after a short-notice cancel clears the gate', async () => {
+    const svc = makeSvc({ shiftQueries: shortNoticeShiftQueries() });
+
+    await svc.create('parent-1', 's1', {
+      kind: 'cancel',
+      message: 'Emergency',
+    });
+    await flushFyi();
+
+    expect(notifyHouseholdParents).toHaveBeenCalledWith(
+      'h1',
+      expect.objectContaining({
+        data: expect.objectContaining({
+          type: PUSH_NOTIFICATION_TYPES.CO_PARENT_ACTION_FYI,
+          shiftId: 's1',
+          householdId: 'h1',
+          action: 'cancel',
+        }),
+      }),
+      { excludeUserId: 'parent-1' }
+    );
+  });
+
+  it('notifies other parents after a short-notice time_change clears the gate', async () => {
+    const svc = makeSvc({ shiftQueries: shortNoticeShiftQueries() });
+
+    await svc.create('parent-1', 's1', {
+      kind: 'time_change',
+      proposed_starts_at: '2026-08-03T09:00:00.000Z',
+      proposed_ends_at: '2026-08-03T18:00:00.000Z',
+    });
+    await flushFyi();
+
+    expect(notifyHouseholdParents).toHaveBeenCalledWith(
+      'h1',
+      expect.objectContaining({
+        data: expect.objectContaining({
+          type: PUSH_NOTIFICATION_TYPES.CO_PARENT_ACTION_FYI,
+          action: 'short_notice_change',
+        }),
+      }),
+      { excludeUserId: 'parent-1' }
+    );
+  });
+
+  it('notifies other parents after an extra shift clears the gate', async () => {
+    const svc = makeSvc();
+
+    await svc.createExtraShift('parent-1', 'h1', {
       starts_at: '2026-08-04T08:00:00.000Z',
       ends_at: '2026-08-04T12:00:00.000Z',
       timezone: 'Europe/London',
       carer_id: 'carer-1',
-      child_ids: ['child-1'],
-      note: 'n',
-      reason: 'r',
-    };
+    });
+    await flushFyi();
 
-    await makeSvc({ shiftRepo: shiftRepoUngated, gate }).createExtraShift(
-      'parent-1',
+    expect(notifyHouseholdParents).toHaveBeenCalledWith(
       'h1',
-      input
-    );
-    await makeSvc({ shiftRepo: shiftRepoGated }).applyApprovedExtraShift(
-      approvalFor({
-        payload: {
-          starts_at: input.starts_at,
-          ends_at: input.ends_at,
-          timezone: input.timezone,
-          carer_id: input.carer_id,
-          child_ids: input.child_ids,
-          note: input.note,
-          reason: input.reason,
-        },
-      })
-    );
-
-    const ungatedArg = shiftRepoUngated.createShift.mock.calls[0][0];
-    const gatedArg = shiftRepoGated.createShift.mock.calls[0][0];
-    expect(gatedArg).toEqual(ungatedArg);
-  });
-
-  it('refuses when the original requester no longer exists', async () => {
-    const svc = makeSvc();
-    await expect(
-      svc.applyApprovedExtraShift(approvalFor({ requested_by: null }))
-    ).rejects.toThrow();
-  });
-
-  it('refuses when the assigned carer has left the household', async () => {
-    const memberRepo = makeMemberRepo({
-      findActiveMembership: mock(async (_h: string, userId: string) => {
-        if (userId === 'parent-1') return membershipFor('parent', 'parent-1');
-        if (userId === 'carer-1') return null; // departed
-        return membershipFor('parent', userId);
+      expect.objectContaining({
+        data: expect.objectContaining({
+          type: PUSH_NOTIFICATION_TYPES.CO_PARENT_ACTION_FYI,
+          action: 'extra_shift',
+        }),
       }),
-    });
-    const svc = makeSvc({ memberRepo });
-    await expect(
-      svc.applyApprovedExtraShift(approvalFor())
-    ).rejects.toBeInstanceOf(ValidationError);
-  });
-
-  it('refuses when a child no longer belongs to the household', async () => {
-    const children = makeChildren({
-      getOwned: mock(async () => {
-        throw new ChildNotFoundError('child-1');
-      }),
-    });
-    const svc = makeSvc({ children });
-    await expect(
-      svc.applyApprovedExtraShift(approvalFor())
-    ).rejects.toBeInstanceOf(ValidationError);
+      { excludeUserId: 'parent-1' }
+    );
   });
 });
 
@@ -1258,94 +1075,5 @@ describe('ShiftChangeRequestCommandService.create — supersede siblings', () =>
     // inside the transaction — see migration 030.
     expect(changeRequestRepo.openWithSupersede).toHaveBeenCalledTimes(1);
     expect(eventRepo.insertMany).not.toHaveBeenCalled();
-  });
-});
-
-describe('ShiftChangeRequestCommandService.applyApprovedChangeRequest', () => {
-  // Regression for flow 1f: the gate parks the request on the approval and
-  // returns `needsApproval`, so `create` never opens it. Approving used to
-  // flip the row's status and nothing more — the change silently never
-  // happened. This is the path that resumes it.
-  function approvalFor(overrides: Record<string, unknown> = {}): any {
-    return {
-      id: 'a1',
-      household_id: 'h1',
-      requested_by: 'u1',
-      action: 'cancel',
-      payload: {
-        shift_id: 's1',
-        kind: 'cancel',
-        proposed_starts_at: null,
-        proposed_ends_at: null,
-        message: 'nursery closed',
-      },
-      status: 'approved',
-      timeout_at: '2999-01-01T00:00:00Z',
-      responded_by: 'u2',
-      responded_at: 't',
-      created_at: 't',
-      updated_at: 't',
-      ...overrides,
-    };
-  }
-
-  it('opens the parked request against the shift, attributed to the ORIGINAL requester', async () => {
-    const changeRequestRepo = makeChangeRequestRepo();
-    const eventRepo = makeEventRepo();
-    const svc = makeSvc({ changeRequestRepo, eventRepo });
-
-    await svc.applyApprovedChangeRequest(approvalFor());
-
-    expect(changeRequestRepo.openWithSupersede).toHaveBeenCalledWith(
-      expect.objectContaining({
-        p_shift_id: 's1',
-        p_requested_by: 'u1',
-        p_kind: 'cancel',
-        p_message: 'nursery closed',
-      })
-    );
-    // Resumed-after-approval opens go through the same atomic RPC path.
-    expect(eventRepo.insertMany).not.toHaveBeenCalled();
-  });
-
-  it('does NOT apply the change to the shift itself — the nanny still gets to respond', async () => {
-    const shiftRepo = makeShiftRepo();
-    const svc = makeSvc({ shiftRepo });
-
-    await svc.applyApprovedChangeRequest(approvalFor());
-
-    expect(shiftRepo.update).not.toHaveBeenCalled();
-  });
-
-  it('re-checks access as the original requester, so an approval outlives their membership safely', async () => {
-    const shiftQueries = makeShiftQueries();
-    const svc = makeSvc({ shiftQueries });
-
-    await svc.applyApprovedChangeRequest(approvalFor());
-
-    expect(shiftQueries.getOwned).toHaveBeenCalledWith('u1', 's1');
-  });
-
-  it('calls assertMutable before opening the parked request', async () => {
-    const shiftRepo = makeShiftRepo();
-    const svc = makeSvc({ shiftRepo });
-
-    await svc.applyApprovedChangeRequest(approvalFor());
-
-    expect(shiftRepo.assertMutable).toHaveBeenCalledWith('s1');
-  });
-
-  it('refuses a payload that lost the shift it was gating', async () => {
-    const svc = makeSvc();
-    await expect(
-      svc.applyApprovedChangeRequest(approvalFor({ payload: {} }))
-    ).rejects.toThrow();
-  });
-
-  it('refuses to act when the requesting parent has been deleted', async () => {
-    const svc = makeSvc();
-    await expect(
-      svc.applyApprovedChangeRequest(approvalFor({ requested_by: null }))
-    ).rejects.toThrow();
   });
 });

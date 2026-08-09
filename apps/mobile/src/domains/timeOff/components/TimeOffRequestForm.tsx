@@ -44,21 +44,14 @@ import { Textarea } from '@/src/components/ui/textarea';
 import { Body } from '@/src/components/ui/typography';
 import { useRequestTimeOff } from '@/src/hooks/mutations/useRequestTimeOff';
 import type { UpdateTimeOffVariables } from '@/src/hooks/mutations/useUpdateTimeOff';
+import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
 import { useBusyBlocks } from '@/src/hooks/queries/useBusyBlocks';
 import { showSuccessToast } from '@/src/lib/toast';
 import { useAuthStore } from '@/src/store/auth';
 import { findConflictingBusyBlocks } from '../utils/busyConflict';
-import { fromAllDayRange, toAllDayRange } from '../utils/timeOffDate';
+import { fromAllDayRange, toAllDayRange, todayISO } from '../utils/timeOffDate';
 import { TimeOffDateRangePicker } from './TimeOffDateRangePicker';
-
-/** Today's calendar date, "yyyy-mm-dd", in the DEVICE's local zone. */
-function todayISO(): string {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, '0');
-  const d = String(now.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
-}
+import { isEndOnOrAfterStart } from './TimeOffDateRangePicker.utils';
 
 interface TimeOffRequestFormProps {
   editTimeOff?: CarerTimeOff;
@@ -76,9 +69,14 @@ export function TimeOffRequestForm({
   updateTimeOff,
 }: TimeOffRequestFormProps = {}) {
   const isEditMode = editTimeOff != null;
+  const { household } = useActiveHousehold();
+  const timeZone = household?.timezone;
   const initialDates = isEditMode
-    ? fromAllDayRange(editTimeOff.starts_at, editTimeOff.ends_at)
-    : { startDate: todayISO(), endDate: todayISO() };
+    ? fromAllDayRange(editTimeOff.starts_at, editTimeOff.ends_at, timeZone)
+    : {
+        startDate: todayISO(new Date(), timeZone),
+        endDate: todayISO(new Date(), timeZone),
+      };
 
   const { t } = useTranslation('timeOff');
   const requestTimeOff = useRequestTimeOff();
@@ -102,9 +100,15 @@ export function TimeOffRequestForm({
 
   const { starts_at: rangeStart, ends_at: rangeEnd } = toAllDayRange(
     startDate,
-    endDate
+    endDate,
+    timeZone
   );
-  const busyQuery = useBusyBlocks(userId, rangeStart, rangeEnd);
+  const dateRangeValid = isEndOnOrAfterStart(startDate, endDate);
+  const busyQuery = useBusyBlocks(
+    userId,
+    dateRangeValid ? rangeStart : null,
+    dateRangeValid ? rangeEnd : null
+  );
 
   const handleDateChange = (start: string, end: string) => {
     setStartDate(start);
@@ -114,7 +118,7 @@ export function TimeOffRequestForm({
   const buildPayload = ():
     | CreateCarerTimeOffInput
     | UpdateCarerTimeOffInput => {
-    const { starts_at, ends_at } = toAllDayRange(startDate, endDate);
+    const { starts_at, ends_at } = toAllDayRange(startDate, endDate, timeZone);
     const trimmedMessage = message.trim();
     if (isEditMode) {
       return {
@@ -221,7 +225,7 @@ export function TimeOffRequestForm({
           <Button
             testID="time-off-edit-submit"
             className="flex-1"
-            disabled={activeMutation?.isPending ?? false}
+            disabled={!dateRangeValid || (activeMutation?.isPending ?? false)}
             onPress={() => void handleSubmit()}
           >
             <Text>{t('editSubmit')}</Text>
@@ -231,7 +235,7 @@ export function TimeOffRequestForm({
         <Button
           testID="time-off-request-submit"
           className="w-full"
-          disabled={activeMutation?.isPending ?? false}
+          disabled={!dateRangeValid || (activeMutation?.isPending ?? false)}
           onPress={() => void handleSubmit()}
         >
           <Text>{t('requestSubmit')}</Text>

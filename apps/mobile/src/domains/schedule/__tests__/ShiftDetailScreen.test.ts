@@ -63,7 +63,7 @@ describe('ShiftDetailScreen source', () => {
     expect(source).toContain('STATUS_TO_VARIANT');
     expect(source).toContain('shift-detail-status');
     expect(source).toContain('detail.shortNoticePaidHint');
-    expect(source).toContain('detail.awaitingCoParent');
+    expect(source).toContain('detail.awaitingNannyConfirm');
   });
 
   it('names who raised (and who responded to) each change request', () => {
@@ -126,6 +126,17 @@ describe('ShiftDetailScreen source', () => {
     expect(source).toContain('shift-detail-counter-times');
   });
 
+  it('disables parent save and nanny counter when the time range is invalid', () => {
+    expect(source).toContain('isRangeValid');
+    expect(source).toContain('isEndAfterStart');
+    expect(source).toContain(
+      'disabled={!isRangeValid || updateShift.isPending}'
+    );
+    expect(source).toContain(
+      'disabled={!isRangeValid || createChange.isPending}'
+    );
+  });
+
   it('discriminates fresh-extra proposal copy from demoted re-confirm copy', () => {
     expect(source).toContain('parent_proposed');
     expect(source).toContain('isFreshExtraProposal');
@@ -158,5 +169,9 @@ describe('ShiftDetailScreen source', () => {
   it('localises uncovered_care day-thread events instead of falling through', () => {
     expect(source).toContain("'uncovered_care'");
     expect(source).toContain('detail.eventType.uncovered_care');
+  });
+
+  it('sends null (not undefined) when the parent clears the note field', () => {
+    expect(source).toContain("note.trim() === '' ? null : note.trim()");
   });
 });

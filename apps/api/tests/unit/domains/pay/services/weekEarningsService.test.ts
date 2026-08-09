@@ -77,20 +77,6 @@ function entry(over: Record<string, unknown> = {}): any {
   };
 }
 
-function shift(over: Record<string, unknown> = {}): any {
-  return {
-    id: 's1',
-    household_id: HOUSEHOLD_ID,
-    carer_id: CARER_ID,
-    starts_at: '2026-08-05T08:00:00.000Z',
-    ends_at: '2026-08-05T14:00:00.000Z', // 6h
-    timezone: 'Europe/London',
-    local_date: '2026-08-05',
-    status: 'confirmed',
-    ...over,
-  };
-}
-
 function closure(over: Record<string, unknown> = {}): any {
   return {
     id: 'c1',
@@ -163,28 +149,20 @@ function makeArrangementRepo(overrides: Record<string, unknown> = {}): any {
   };
 }
 
-function makeClosureRepo(overrides: Record<string, unknown> = {}): any {
-  return {
-    listByHousehold: mock(async () => []),
-    ...overrides,
-  };
-}
-
-function makeShiftRepo(overrides: Record<string, unknown> = {}): any {
-  return {
-    findByHouseholdAndLocalDate: mock(async () => []),
-    ...overrides,
-  };
-}
-
-function makeHouseholdRepo(overrides: Record<string, unknown> = {}): any {
-  return {
-    findById: mock(async () => ({
-      id: HOUSEHOLD_ID,
-      timezone: 'Europe/London',
-    })),
-    ...overrides,
-  };
+function makeWeekEarningsService(
+  overrides: {
+    timeEntryRepo?: ReturnType<typeof makeTimeEntryRepo>;
+    arrangementRepo?: ReturnType<typeof makeArrangementRepo>;
+    ptoRepo?: ReturnType<typeof makePtoRepo>;
+    expenseRepo?: ReturnType<typeof makeExpenseRepo>;
+  } = {}
+): WeekEarningsService {
+  return new WeekEarningsService(
+    overrides.timeEntryRepo ?? makeTimeEntryRepo(),
+    overrides.arrangementRepo ?? makeArrangementRepo(),
+    overrides.ptoRepo ?? makePtoRepo(),
+    overrides.expenseRepo ?? makeExpenseRepo()
+  );
 }
 
 function makePtoRepo(overrides: Record<string, unknown> = {}): any {
@@ -329,8 +307,6 @@ describe('buildWeekEarningsInput', () => {
         }),
       ],
       arrangements: [arrangement()],
-      closureDates: [],
-      closureDayShifts: [],
       ptoLedgerRows: [],
       approvedExpenses: [],
     });
@@ -373,8 +349,6 @@ describe('buildWeekEarningsInput', () => {
         }),
       ],
       arrangements: [arrangement()],
-      closureDates: [],
-      closureDayShifts: [],
       ptoLedgerRows: [],
       approvedExpenses: [],
     });
@@ -390,8 +364,6 @@ describe('buildWeekEarningsInput', () => {
       weekStart: WEEK_START,
       entries: [entry({ clock_out_at: null, status: 'running' })],
       arrangements: [arrangement()],
-      closureDates: [],
-      closureDayShifts: [],
       ptoLedgerRows: [],
       approvedExpenses: [],
     });
@@ -407,80 +379,13 @@ describe('buildWeekEarningsInput', () => {
       weekStart: WEEK_START,
       entries: [],
       arrangements: history,
-      closureDates: [],
-      closureDayShifts: [],
       ptoLedgerRows: [],
       approvedExpenses: [],
     });
     expect(built.arrangements).toEqual(history);
   });
 
-  it('derives closure-day shift scheduled_minutes from the shift span', () => {
-    const built = buildWeekEarningsInput({
-      weekStart: WEEK_START,
-      entries: [],
-      arrangements: [arrangement()],
-      closureDates: ['2026-08-05'],
-      closureDayShifts: [shift()],
-      ptoLedgerRows: [],
-      approvedExpenses: [],
-    });
-    expect(built.closure_day_shifts).toEqual([
-      {
-        local_date: '2026-08-05',
-        scheduled_minutes: 360,
-        became_payable: false,
-      },
-    ]);
-  });
-
-  it('marks a closure-day shift payable when a week entry references it — no double pay', () => {
-    const built = buildWeekEarningsInput({
-      weekStart: WEEK_START,
-      entries: [
-        entry({
-          id: 'te9',
-          shift_id: 's1',
-          kind: 'cancellation_paid',
-          local_date: '2026-08-05',
-          clock_in_at: '2026-08-05T08:00:00.000Z',
-          clock_out_at: '2026-08-05T14:00:00.000Z',
-        }),
-      ],
-      arrangements: [arrangement()],
-      closureDates: ['2026-08-05'],
-      closureDayShifts: [shift()],
-      ptoLedgerRows: [],
-      approvedExpenses: [],
-    });
-    expect(built.closure_day_shifts[0]?.became_payable).toBe(true);
-  });
-
-  it('does not mark a closure-day shift payable when the only referencing entry is voided — guaranteed top-up must still apply', () => {
-    const built = buildWeekEarningsInput({
-      weekStart: WEEK_START,
-      entries: [
-        entry({
-          id: 'te-voided',
-          status: 'voided',
-          shift_id: 's1',
-          kind: 'cancellation_paid',
-          local_date: '2026-08-05',
-          clock_in_at: '2026-08-05T08:00:00.000Z',
-          clock_out_at: '2026-08-05T14:00:00.000Z',
-          scheduled_minutes: 360,
-        }),
-      ],
-      arrangements: [arrangement()],
-      closureDates: ['2026-08-05'],
-      closureDayShifts: [shift()],
-      ptoLedgerRows: [],
-      approvedExpenses: [],
-    });
-    expect(built.closure_day_shifts[0]?.became_payable).toBe(false);
-  });
-
-  it('prices zero gross money for a voided worked entry on a closure day — voided minutes must not bank', () => {
+  it('prices zero gross money for a voided worked entry — voided minutes must not bank', () => {
     const built = buildWeekEarningsInput({
       weekStart: WEEK_START,
       entries: [
@@ -494,32 +399,10 @@ describe('buildWeekEarningsInput', () => {
         }),
       ],
       arrangements: [arrangement()],
-      closureDates: ['2026-08-05'],
-      closureDayShifts: [shift()],
       ptoLedgerRows: [],
       approvedExpenses: [],
     });
     expect(built.entries).toEqual([]);
-    expect(built.closure_day_shifts[0]?.became_payable).toBe(false);
-  });
-
-  it('drops draft and declined shifts — never agreed, so nothing was lost', () => {
-    const built = buildWeekEarningsInput({
-      weekStart: WEEK_START,
-      entries: [],
-      arrangements: [arrangement()],
-      closureDates: ['2026-08-05'],
-      closureDayShifts: [
-        shift({ id: 's-draft', status: 'draft' }),
-        shift({ id: 's-declined', status: 'declined' }),
-        shift({ id: 's-cancelled', status: 'cancelled' }),
-      ],
-      ptoLedgerRows: [],
-      approvedExpenses: [],
-    });
-    expect(built.closure_day_shifts.map(s => s.scheduled_minutes)).toEqual([
-      360,
-    ]);
   });
 
   // ===========================================================================
@@ -535,8 +418,6 @@ describe('buildWeekEarningsInput', () => {
       weekStart: WEEK_START,
       entries: [],
       arrangements: [arrangement()],
-      closureDates: [],
-      closureDayShifts: [],
       ptoLedgerRows: [
         ptoLedgerRow({ effective_date: '2026-08-04', minutes: -120 }),
       ],
@@ -564,8 +445,6 @@ describe('buildWeekEarningsInput', () => {
         }),
       ],
       arrangements: [arrangement()],
-      closureDates: [],
-      closureDayShifts: [],
       ptoLedgerRows: [
         ptoLedgerRow({ effective_date: '2026-08-04', minutes: -240 }), // 4h leave
       ],
@@ -585,8 +464,6 @@ describe('buildWeekEarningsInput', () => {
       weekStart: WEEK_START,
       entries: [],
       arrangements: [arrangement()],
-      closureDates: [],
-      closureDayShifts: [],
       ptoLedgerRows: [
         // Week is [2026-08-03, 2026-08-09]. Both of these fall outside it.
         ptoLedgerRow({ effective_date: '2026-08-02', minutes: -60 }),
@@ -609,8 +486,6 @@ describe('buildWeekEarningsInput', () => {
       weekStart: WEEK_START,
       entries: [],
       arrangements: [arrangement()],
-      closureDates: [],
-      closureDayShifts: [],
       ptoLedgerRows: [
         ptoLedgerRow({
           id: 'pto-accrual',
@@ -643,8 +518,6 @@ describe('buildWeekEarningsInput', () => {
       weekStart: WEEK_START,
       entries: [],
       arrangements: [arrangement()],
-      closureDates: [],
-      closureDayShifts: [],
       ptoLedgerRows: [
         ptoLedgerRow({
           id: 'usage',
@@ -670,8 +543,6 @@ describe('buildWeekEarningsInput', () => {
       weekStart: WEEK_START,
       entries: [],
       arrangements: [arrangement()],
-      closureDates: [],
-      closureDayShifts: [],
       ptoLedgerRows: [
         ptoLedgerRow({
           id: 'usage',
@@ -699,8 +570,6 @@ describe('buildWeekEarningsInput', () => {
       weekStart: WEEK_START,
       entries: [],
       arrangements: [arrangement()],
-      closureDates: [],
-      closureDayShifts: [],
       ptoLedgerRows: [
         ptoLedgerRow({
           id: 'usage',
@@ -728,8 +597,6 @@ describe('buildWeekEarningsInput', () => {
       weekStart: WEEK_START,
       entries: [],
       arrangements: [arrangement()],
-      closureDates: [],
-      closureDayShifts: [],
       ptoLedgerRows: [
         ptoLedgerRow({
           id: 'usage',
@@ -755,8 +622,6 @@ describe('buildWeekEarningsInput', () => {
       weekStart: WEEK_START,
       entries: [],
       arrangements: [arrangement()],
-      closureDates: [],
-      closureDayShifts: [],
       ptoLedgerRows: [
         ptoLedgerRow({
           id: 'usage-a',
@@ -793,8 +658,6 @@ describe('buildWeekEarningsInput', () => {
       weekStart: WEEK_START,
       entries: [],
       arrangements: [arrangement()],
-      closureDates: [],
-      closureDayShifts: [],
       ptoLedgerRows: [
         ptoLedgerRow({
           id: 'usage',
@@ -837,8 +700,6 @@ describe('buildWeekEarningsInput', () => {
       weekStart: WEEK_START,
       entries: [],
       arrangements: [arrangement()],
-      closureDates: [],
-      closureDayShifts: [],
       ptoLedgerRows: rows,
       approvedExpenses: [],
     });
@@ -858,8 +719,6 @@ describe('buildWeekEarningsInput', () => {
       weekStart: WEEK_START,
       entries: [],
       arrangements: [arrangement()],
-      closureDates: [],
-      closureDayShifts: [],
       ptoLedgerRows: [
         ptoLedgerRow({
           id: 'u1',
@@ -894,8 +753,6 @@ describe('buildWeekEarningsInput', () => {
       weekStart: WEEK_START,
       entries: [],
       arrangements: [arrangement()],
-      closureDates: [],
-      closureDayShifts: [],
       ptoLedgerRows: [
         ptoLedgerRow({
           id: 'u1',
@@ -937,8 +794,6 @@ describe('buildWeekEarningsInput', () => {
       weekStart: WEEK_START,
       entries: [],
       arrangements: [arrangement()],
-      closureDates: [],
-      closureDayShifts: [],
       ptoLedgerRows: [
         ptoLedgerRow({
           id: 'u1',
@@ -975,8 +830,6 @@ describe('buildWeekEarningsInput', () => {
       weekStart: WEEK_START,
       entries: [],
       arrangements: [arrangement()],
-      closureDates: [],
-      closureDayShifts: [],
       ptoLedgerRows: [
         ptoLedgerRow({
           id: 'orphan',
@@ -996,8 +849,6 @@ describe('buildWeekEarningsInput', () => {
       weekStart: WEEK_START,
       entries: [entry()],
       arrangements: [arrangement()],
-      closureDates: [],
-      closureDayShifts: [],
       ptoLedgerRows: [],
       approvedExpenses: [],
     });
@@ -1014,8 +865,6 @@ describe('buildWeekEarningsInput', () => {
       weekStart: WEEK_START,
       entries: [],
       arrangements: [arrangement()],
-      closureDates: [],
-      closureDayShifts: [],
       ptoLedgerRows: [],
       approvedExpenses: [
         approvedExpense({
@@ -1035,8 +884,6 @@ describe('buildWeekEarningsInput', () => {
       weekStart: WEEK_START,
       entries: [],
       arrangements: [arrangement()],
-      closureDates: [],
-      closureDayShifts: [],
       ptoLedgerRows: [],
       approvedExpenses: [
         approvedExpense({
@@ -1059,8 +906,6 @@ describe('buildWeekEarningsInput', () => {
       weekStart: WEEK_START,
       entries: [entry()],
       arrangements: [arrangement()],
-      closureDates: [],
-      closureDayShifts: [],
       ptoLedgerRows: [],
       approvedExpenses: [],
     });
@@ -1081,18 +926,14 @@ describe('WeekEarningsService.computeForWeek', () => {
   it('scopes every fetch to this household, this carer and this week', async () => {
     const timeEntryRepo = makeTimeEntryRepo();
     const arrangementRepo = makeArrangementRepo();
-    const closureRepo = makeClosureRepo();
     const ptoRepo = makePtoRepo();
     const expenseRepo = makeExpenseRepo();
-    const svc = new WeekEarningsService(
+    const svc = makeWeekEarningsService({
       timeEntryRepo,
       arrangementRepo,
-      closureRepo,
-      makeShiftRepo(),
-      makeHouseholdRepo(),
       ptoRepo,
-      expenseRepo
-    );
+      expenseRepo,
+    });
 
     await svc.computeForWeek(HOUSEHOLD_ID, CARER_ID, WEEK_START);
 
@@ -1106,7 +947,6 @@ describe('WeekEarningsService.computeForWeek', () => {
       HOUSEHOLD_ID,
       CARER_ID
     );
-    expect(closureRepo.listByHousehold).toHaveBeenCalledWith(HOUSEHOLD_ID);
     // The week is entirely inside 2026, so exactly one year is fetched — and
     // BOTH household id and carer id are passed, since `listForCarerYear`
     // (unlike `listApprovedForWeek`) carries no other scoping of its own.
@@ -1122,67 +962,34 @@ describe('WeekEarningsService.computeForWeek', () => {
     );
   });
 
-  it('never queries shifts when the week has no closure days', async () => {
-    const shiftRepo = makeShiftRepo();
-    const svc = new WeekEarningsService(
-      makeTimeEntryRepo(),
-      makeArrangementRepo(),
-      makeClosureRepo(),
-      shiftRepo,
-      makeHouseholdRepo(),
-      makePtoRepo(),
-      makeExpenseRepo()
-    );
-
-    await svc.computeForWeek(HOUSEHOLD_ID, CARER_ID, WEEK_START);
-
-    expect(shiftRepo.findByHouseholdAndLocalDate).not.toHaveBeenCalled();
-  });
-
-  it('fetches shifts for each closure day and keeps only THIS carer’s (D12 scoping)', async () => {
-    const shiftRepo = makeShiftRepo({
-      findByHouseholdAndLocalDate: mock(async () => [
-        shift(),
-        shift({ id: 's-other', carer_id: 'carer-2' }),
-        shift({ id: 's-unassigned', carer_id: null }),
-      ]),
-    });
-    const svc = new WeekEarningsService(
-      makeTimeEntryRepo({ listForCarerWeek: mock(async () => []) }),
-      makeArrangementRepo({
+  it('tops up the full guaranteed shortfall on a zero-hours week', async () => {
+    const svc = makeWeekEarningsService({
+      timeEntryRepo: makeTimeEntryRepo({
+        listForCarerWeek: mock(async () => []),
+      }),
+      arrangementRepo: makeArrangementRepo({
         listForCarer: mock(async () => [
           arrangement({ guaranteed_minutes_per_week: 2400 }),
         ]),
       }),
-      makeClosureRepo({ listByHousehold: mock(async () => [closure()]) }),
-      shiftRepo,
-      makeHouseholdRepo(),
-      makePtoRepo(),
-      makeExpenseRepo()
-    );
+    });
 
     const result = await svc.computeForWeek(HOUSEHOLD_ID, CARER_ID, WEEK_START);
 
-    expect(shiftRepo.findByHouseholdAndLocalDate).toHaveBeenCalledWith(
-      HOUSEHOLD_ID,
-      '2026-08-05'
-    );
-    expect(shiftRepo.findByHouseholdAndLocalDate).toHaveBeenCalledTimes(1);
-    // Only the carer's own 6h shift is lost: 360 min at £20/h = £120.00.
     expect(result.status).toBe('ok');
-    expect(result.status === 'ok' && result.gross_minor).toBe(12_000);
+    expect(result.status === 'ok' && result.gross_minor).toBe(80_000);
+    expect(
+      result.status === 'ok' &&
+        result.lines.some(line => line.kind === 'guaranteed_topup')
+    ).toBe(true);
   });
 
   it('returns the typed no_arrangement arm when the carer has no pay terms', async () => {
-    const svc = new WeekEarningsService(
-      makeTimeEntryRepo(),
-      makeArrangementRepo({ listForCarer: mock(async () => []) }),
-      makeClosureRepo(),
-      makeShiftRepo(),
-      makeHouseholdRepo(),
-      makePtoRepo(),
-      makeExpenseRepo()
-    );
+    const svc = makeWeekEarningsService({
+      arrangementRepo: makeArrangementRepo({
+        listForCarer: mock(async () => []),
+      }),
+    });
 
     const result = await svc.computeForWeek(HOUSEHOLD_ID, CARER_ID, WEEK_START);
 
@@ -1190,50 +997,13 @@ describe('WeekEarningsService.computeForWeek', () => {
   });
 
   it('prices a plain worked week end to end', async () => {
-    const svc = new WeekEarningsService(
-      makeTimeEntryRepo(),
-      makeArrangementRepo(),
-      makeClosureRepo(),
-      makeShiftRepo(),
-      makeHouseholdRepo(),
-      makePtoRepo(),
-      makeExpenseRepo()
-    );
+    const svc = makeWeekEarningsService();
 
     const result = await svc.computeForWeek(HOUSEHOLD_ID, CARER_ID, WEEK_START);
 
     // 8h at £20.00 = £160.00.
     expect(result.status === 'ok' && result.gross_minor).toBe(16_000);
     expect(result.week_start).toBe(WEEK_START);
-  });
-
-  it('falls back to UTC when the household row has gone missing', async () => {
-    const closureRepo = makeClosureRepo({
-      listByHousehold: mock(async () => [
-        closure({
-          starts_at: '2026-08-04T23:30:00.000Z',
-          ends_at: '2026-08-05T23:30:00.000Z',
-        }),
-      ]),
-    });
-    const shiftRepo = makeShiftRepo();
-    const svc = new WeekEarningsService(
-      makeTimeEntryRepo({ listForCarerWeek: mock(async () => []) }),
-      makeArrangementRepo(),
-      closureRepo,
-      shiftRepo,
-      makeHouseholdRepo({ findById: mock(async () => null) }),
-      makePtoRepo(),
-      makeExpenseRepo()
-    );
-
-    await svc.computeForWeek(HOUSEHOLD_ID, CARER_ID, WEEK_START);
-
-    // In UTC the closure starts on the 4th, not the 5th.
-    expect(shiftRepo.findByHouseholdAndLocalDate).toHaveBeenCalledWith(
-      HOUSEHOLD_ID,
-      '2026-08-04'
-    );
   });
 
   // ===========================================================================
@@ -1247,19 +1017,17 @@ describe('WeekEarningsService.computeForWeek', () => {
 
   it('fetches PTO ledger rows from BOTH years when the week spans a year boundary', async () => {
     const ptoRepo = makePtoRepo();
-    const svc = new WeekEarningsService(
-      makeTimeEntryRepo({ listForCarerWeek: mock(async () => []) }),
-      makeArrangementRepo({
+    const svc = makeWeekEarningsService({
+      timeEntryRepo: makeTimeEntryRepo({
+        listForCarerWeek: mock(async () => []),
+      }),
+      arrangementRepo: makeArrangementRepo({
         listForCarer: mock(async () => [
           arrangement({ valid_from: '2025-01-01' }),
         ]),
       }),
-      makeClosureRepo(),
-      makeShiftRepo(),
-      makeHouseholdRepo(),
       ptoRepo,
-      makeExpenseRepo()
-    );
+    });
 
     // Monday 2025-12-29 .. Sunday 2026-01-04 — spans 2025 and 2026.
     await svc.computeForWeek(HOUSEHOLD_ID, CARER_ID, '2025-12-29');
@@ -1289,15 +1057,13 @@ describe('WeekEarningsService.computeForWeek', () => {
         }),
       ]),
     });
-    const svc = new WeekEarningsService(
-      makeTimeEntryRepo({ listForCarerWeek: mock(async () => []) }),
-      makeArrangementRepo(),
-      makeClosureRepo(),
-      makeShiftRepo(),
-      makeHouseholdRepo(),
-      makePtoRepo(),
-      expenseRepo
-    );
+    const svc = makeWeekEarningsService({
+      timeEntryRepo: makeTimeEntryRepo({
+        listForCarerWeek: mock(async () => []),
+      }),
+      arrangementRepo: makeArrangementRepo(),
+      expenseRepo,
+    });
 
     const result = await svc.computeForWeek(HOUSEHOLD_ID, CARER_ID, WEEK_START);
 
@@ -1319,15 +1085,11 @@ describe('WeekEarningsService.computeForWeek', () => {
         approvedExpense({ local_date: '2026-08-06', amount_minor: 3_000 }),
       ]),
     });
-    const svc = new WeekEarningsService(
-      makeTimeEntryRepo(),
-      makeArrangementRepo(),
-      makeClosureRepo(),
-      makeShiftRepo(),
-      makeHouseholdRepo(),
+    const svc = makeWeekEarningsService({
+      arrangementRepo: makeArrangementRepo(),
       ptoRepo,
-      expenseRepo
-    );
+      expenseRepo,
+    });
 
     const result = await svc.computeForWeek(HOUSEHOLD_ID, CARER_ID, WEEK_START);
 
@@ -1371,17 +1133,15 @@ describe('WeekEarningsService.computeForWeek', () => {
         }),
       ]),
     });
-    const svc = new WeekEarningsService(
-      makeTimeEntryRepo({ listForCarerWeek: mock(async () => []) }),
-      makeArrangementRepo({
+    const svc = makeWeekEarningsService({
+      timeEntryRepo: makeTimeEntryRepo({
+        listForCarerWeek: mock(async () => []),
+      }),
+      arrangementRepo: makeArrangementRepo({
         listForCarer: mock(async () => [arrangement({ rate_minor: 1850 })]),
       }),
-      makeClosureRepo(),
-      makeShiftRepo(),
-      makeHouseholdRepo(),
       ptoRepo,
-      makeExpenseRepo()
-    );
+    });
 
     const result = await svc.computeForWeek(HOUSEHOLD_ID, CARER_ID, WEEK_START);
 
@@ -1405,83 +1165,30 @@ describe('WeekEarningsService.computeForWeek', () => {
   });
 
   it('a week with real PTO usage suppresses a guaranteed top-up it now pays for on its own pto line — no double pay', async () => {
-    // Guaranteed 40h/week, closure day loses a 6h shift, but 2h of paid PTO
-    // already counts toward payable minutes, so the topup shrinks by that
-    // much AND the carer is paid for the PTO itself on its own line.
+    // Guaranteed 40h/week with 2h of paid PTO and no worked time: payable is
+    // 120 minutes, shortfall is 2280, and the top-up pays that remainder while
+    // the PTO itself prices on its own line.
     const ptoRepo = makePtoRepo({
       listForCarerYear: mock(async () => [
         ptoLedgerRow({ effective_date: '2026-08-04', minutes: -120 }),
       ]),
     });
-    const svc = new WeekEarningsService(
-      makeTimeEntryRepo({ listForCarerWeek: mock(async () => []) }),
-      makeArrangementRepo({
+    const svc = makeWeekEarningsService({
+      timeEntryRepo: makeTimeEntryRepo({
+        listForCarerWeek: mock(async () => []),
+      }),
+      arrangementRepo: makeArrangementRepo({
         listForCarer: mock(async () => [
           arrangement({ guaranteed_minutes_per_week: 2400 }),
         ]),
       }),
-      makeClosureRepo({ listByHousehold: mock(async () => [closure()]) }),
-      makeShiftRepo({
-        findByHouseholdAndLocalDate: mock(async () => [shift()]),
-      }),
-      makeHouseholdRepo(),
       ptoRepo,
-      makeExpenseRepo()
-    );
+    });
 
     const result = await svc.computeForWeek(HOUSEHOLD_ID, CARER_ID, WEEK_START);
 
     expect(result.status).toBe('ok');
-    // pto: 2h * £20 = £40.00. topup: min(360 lost, max(0, 2400 - 120)) = 360
-    // min * £20 = £120.00. gross = £160.00.
-    expect(result.status === 'ok' && result.gross_minor).toBe(16_000);
-  });
-
-  // ===========================================================================
-  // A DECLINED shift is worth nothing — the contract the decline feature rests
-  // on.
-  //
-  // `buildWeekEarningsInput`'s own block already pins that `declined` is
-  // filtered out of `closure_day_shifts`; this pins the CONSEQUENCE end to
-  // end, which is the part a caller actually depends on: a shift the carer
-  // declined contributes zero minutes and zero money to the priced week, in
-  // the one arrangement where a shift can move money at all (a guaranteed-
-  // hours week with a closure day — docs/11-MONEY.md §7).
-  //
-  // The vector is deliberately the SAME setup as the confirmed-shift topup
-  // case above, changed in exactly one character: `status: 'declined'`. With
-  // `confirmed` the closure day loses 360 minutes and tops up £120.00; with
-  // `declined` nothing was ever agreed, so nothing was lost and the week is
-  // worth £0.00. If declining ever started paying, this is the test that
-  // catches it.
-  // ===========================================================================
-  it('a DECLINED shift contributes zero minutes and zero money to the week', async () => {
-    const svc = new WeekEarningsService(
-      makeTimeEntryRepo({ listForCarerWeek: mock(async () => []) }),
-      makeArrangementRepo({
-        listForCarer: mock(async () => [
-          arrangement({ guaranteed_minutes_per_week: 2400 }),
-        ]),
-      }),
-      makeClosureRepo({ listByHousehold: mock(async () => [closure()]) }),
-      makeShiftRepo({
-        findByHouseholdAndLocalDate: mock(async () => [
-          shift({ status: 'declined' }),
-        ]),
-      }),
-      makeHouseholdRepo(),
-      makePtoRepo(),
-      makeExpenseRepo()
-    );
-
-    const result = await svc.computeForWeek(HOUSEHOLD_ID, CARER_ID, WEEK_START);
-
-    expect(result.status).toBe('ok');
-    expect(result.status === 'ok' && result.gross_minor).toBe(0);
-    expect(result.status === 'ok' && result.payable_minutes).toBe(0);
-    expect(
-      result.status === 'ok' &&
-        result.lines.some(line => line.kind === 'guaranteed_topup')
-    ).toBe(false);
+    // pto: 2h * £20 = £40.00. topup: 38h * £20 = £760.00. gross = £800.00.
+    expect(result.status === 'ok' && result.gross_minor).toBe(80_000);
   });
 });

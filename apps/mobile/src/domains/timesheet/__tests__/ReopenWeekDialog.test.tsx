@@ -149,6 +149,38 @@ describe('ReopenWeekDialog', () => {
     expect(queryByTestId('hours-reopen-dialog-title')).toBeNull();
   });
 
+  it('shows the paid warning when paidToDateLabel is set', () => {
+    const { getByTestId } = render(
+      <ReopenWeekDialog
+        open
+        onOpenChange={() => {}}
+        onConfirm={() => {}}
+        isSubmitting={false}
+        weekRangeLabel="3 – 9 August"
+        paidToDateLabel="£120.00"
+      />
+    );
+
+    expect(getByTestId('hours-reopen-dialog-paid-warning').props.children).toBe(
+      'reopenDialogBodyPaidWarning'
+    );
+  });
+
+  it('omits the paid warning when paidToDateLabel is null', () => {
+    const { queryByTestId } = render(
+      <ReopenWeekDialog
+        open
+        onOpenChange={() => {}}
+        onConfirm={() => {}}
+        isSubmitting={false}
+        weekRangeLabel="3 – 9 August"
+        paidToDateLabel={null}
+      />
+    );
+
+    expect(queryByTestId('hours-reopen-dialog-paid-warning')).toBeNull();
+  });
+
   it('cancel dismisses via onOpenChange without confirming', () => {
     const onOpenChange = mock();
     const onConfirm = mock();

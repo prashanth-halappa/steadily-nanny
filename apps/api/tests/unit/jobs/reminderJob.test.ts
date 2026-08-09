@@ -5,7 +5,6 @@
 import { describe, expect, it, mock } from 'bun:test';
 import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types/schemas/notification.schema';
 import type {
-  ApprovalExpiringCandidate,
   ReminderCandidateSource,
   ReminderLogClaim,
   ReminderPushService,
@@ -16,11 +15,9 @@ import { runReminderJob } from '../../../src/jobs/reminderJob';
 
 const CARER_ID = 'carer-11111111-1111-1111-1111-111111111111';
 const PARENT_ID = 'parent-11111111-1111-1111-1111-111111111111';
-const OTHER_PARENT_ID = 'parent-22222222-2222-2222-2222-222222222222';
 const HOUSEHOLD_ID = 'house-11111111-1111-1111-1111-111111111111';
 const SHIFT_ID = 'shift-11111111-1111-1111-1111-111111111111';
 const TIMESHEET_ID = 'sheet-11111111-1111-1111-1111-111111111111';
-const APPROVAL_ID = 'appr-11111111-1111-1111-1111-111111111111';
 
 /** 2026-08-05 18:00 in America/Los_Angeles (PDT, UTC-7). */
 const LA_18_00 = new Date('2026-08-06T01:00:00.000Z');
@@ -47,7 +44,6 @@ function emptyCandidates(): ReminderCandidateSource {
   return {
     listShiftReminders: mock(async () => []),
     listTimesheetAwaitingApproval: mock(async () => []),
-    listApprovalExpiring: mock(async () => []),
   };
 }
 
@@ -351,44 +347,6 @@ describe('runReminderJob', () => {
         timesheetId: TIMESHEET_ID,
         householdId: HOUSEHOLD_ID,
         weekStart: '2026-08-04',
-      },
-    });
-  });
-
-  it('sends approval_expiring with householdId and no local-hour gate', async () => {
-    const approval: ApprovalExpiringCandidate = {
-      id: APPROVAL_ID,
-      household_id: HOUSEHOLD_ID,
-      requested_by: PARENT_ID,
-      timeout_at: '2026-08-05T12:00:00.000Z',
-    };
-    const candidates: ReminderCandidateSource = {
-      ...emptyCandidates(),
-      listApprovalExpiring: mock(async () => [approval]),
-    };
-    const log: ReminderLogClaim = alwaysClaims();
-    const { push, sent } = capturingPush();
-
-    /** 03:00 local would block hour-gated rules — must not block this one. */
-    const oddHour = new Date('2026-08-05T10:00:00.000Z');
-
-    await runReminderJob(
-      candidates,
-      log,
-      { resolve: mock(async () => 'America/Los_Angeles') },
-      {
-        listParentUserIds: mock(async () => [PARENT_ID, OTHER_PARENT_ID]),
-      },
-      push,
-      { now: () => oddHour }
-    );
-
-    expect(sent).toHaveLength(1);
-    expect(sent[0]?.userId).toBe(OTHER_PARENT_ID);
-    expect(sent[0]?.payload).toMatchObject({
-      data: {
-        type: PUSH_NOTIFICATION_TYPES.APPROVAL_EXPIRING,
-        householdId: HOUSEHOLD_ID,
       },
     });
   });

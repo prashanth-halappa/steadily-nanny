@@ -140,6 +140,25 @@ describe('AddMissedHoursCard', () => {
     );
   });
 
+  it('disables submit when the time range is invalid', () => {
+    const { getByTestId } = render(
+      <AddMissedHoursCard householdId={HOUSEHOLD_ID} timeZone={TIME_ZONE} />
+    );
+
+    fireEvent.press(getByTestId('today-missed-hours-cta'));
+    fireEvent(
+      getByTestId('today-missed-hours-times-end'),
+      'change',
+      {},
+      new Date(2026, 0, 1, 8, 0)
+    );
+
+    const submit = getByTestId('today-missed-hours-submit');
+    expect(
+      submit.props.disabled ?? submit.props.accessibilityState?.disabled
+    ).toBe(true);
+  });
+
   // Wave 2-A: the outer Card + H4 title is gone — a 130pt card whose only
   // content was a button labelled the same as its own title. The trigger is
   // now a single ghost text link that opens the SAME unchanged sheet.

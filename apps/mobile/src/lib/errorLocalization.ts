@@ -33,6 +33,12 @@ export const ERROR_CODE_TO_I18N_KEY: Record<string, string> = {
   // (apps/api/src/domains/household/errors/householdErrors.ts). Literal key;
   // the map is Record<string, string> precisely so domain codes can land here.
   ALREADY_MEMBER: 'errors:alreadyMember',
+  // ExpenseValidationError metadata.reason — mileage needs a rate on the
+  // arrangement (apps/api/src/domains/pay/errors/payErrors.ts).
+  NO_PAY_ARRANGEMENT: 'errors:noPayArrangementMileage',
+  // AuthorizationError metadata.reason — owner_only household gate
+  // (apps/api/src/errors/AuthorizationError.ts).
+  NOT_OWNER: 'errors:notHouseholdOwner',
 };
 
 interface ErrorLike {
@@ -41,7 +47,10 @@ interface ErrorLike {
   /** Supabase AuthError's stable code, e.g. `weak_password`. */
   code?: string;
   isAxiosError?: boolean;
-  response?: { status?: number; data?: { error?: { code?: string } } };
+  response?: {
+    status?: number;
+    data?: { error?: { code?: string; metadata?: { reason?: string } } };
+  };
 }
 
 function asErrorLike(error: unknown): ErrorLike {
@@ -82,15 +91,22 @@ function extractErrorCode(error: ErrorLike): string | undefined {
   return error.response?.data?.error?.code;
 }
 
+/** Domain-specific refusal reason carried in the error envelope's metadata. */
+function extractMetadataReason(error: ErrorLike): string | undefined {
+  return error.response?.data?.error?.metadata?.reason;
+}
+
 /**
  * Returns a localized error message for a given error.
  *
  * Resolution order:
  * 1. If `contextKey` is provided, use it verbatim (a fully-qualified i18n key,
  *    e.g. `errors:saveProfileFailed`) — the caller owns app-specific copy.
- * 2. If the error carries an API error code, map it to an `errors:*` key.
- * 3. Detect offline / network / timeout by shape and message.
- * 4. Fall back to `errors:unknown`.
+ * 2. If the error carries a domain-specific `metadata.reason`, map it to an
+ *    `errors:*` key (takes precedence over the generic envelope `code`).
+ * 3. If the error carries an API error code, map it to an `errors:*` key.
+ * 4. Detect offline / network / timeout by shape and message.
+ * 5. Fall back to `errors:unknown`.
  *
  * @param error - The thrown value to localize (any shape).
  * @param t - The i18next translation function.
@@ -107,6 +123,11 @@ export function getLocalizedErrorMessage(
   }
 
   const err = asErrorLike(error);
+
+  const metadataReason = extractMetadataReason(err);
+  if (metadataReason && ERROR_CODE_TO_I18N_KEY[metadataReason]) {
+    return t(ERROR_CODE_TO_I18N_KEY[metadataReason] as string);
+  }
 
   const errorCode = extractErrorCode(err);
   if (errorCode && ERROR_CODE_TO_I18N_KEY[errorCode]) {
@@ -138,7 +159,21 @@ export function getLocalizedAuthErrorMessage(
   t: ErrorTFunction
 ): string {
   const err = asErrorLike(error);
+  const code = err.code;
   const message = (err.message ?? '').toLowerCase();
+
+  if (
+    code === 'over_request_rate_limit' ||
+    code === 'over_email_send_rate_limit'
+  ) {
+    return t('auth:errors.rateLimited');
+  }
+  if (
+    code === 'email_address_invalid' ||
+    code === 'email_address_not_authorized'
+  ) {
+    return t('auth:errors.invalidEmailDomain');
+  }
 
   if (message.includes('invalid login credentials')) {
     return t('auth:errors.invalidCredentials');

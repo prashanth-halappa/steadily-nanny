@@ -3,7 +3,7 @@
   "screenSubtitle": "Pendientes que te esperan.",
   "loading": "Cargando…",
   "emptyTitle": "Todo al día",
-  "emptyBody": "No hay solicitudes de cambio, aprobaciones, patrones ni semanas consultadas que necesiten tu respuesta.",
+  "emptyBody": "No hay solicitudes de cambio, patrones ni semanas consultadas que necesiten tu respuesta.",
   "needsAttentionCard": {
     "moreItems_one": "y {{count}} cosa más te espera",
     "moreItems_other": "y {{count}} cosas más te esperan",
@@ -21,21 +21,6 @@
         "split": "división",
         "handover": "traspaso"
       }
-    },
-    "approval": {
-      "title": "Aprobación de co-padre/madre: {{action}}",
-      "subtitle": "Se aprueba automáticamente después del {{when}} si no respondes.",
-      "deadlineLabel": "Se aprueba automáticamente {{when}}",
-      "cta": "Revisar",
-      "action": {
-        "short_notice_change": "cambio de corto aviso",
-        "cancel": "cancelación",
-        "extra_shift": "turno extra",
-        "other": "cambio"
-      },
-      "approve": "Aprobar",
-      "decline": "Rechazar",
-      "respondedToast": "Respuesta enviada"
     },
     "pendingPattern": {
       "title": "Responder al horario propuesto",

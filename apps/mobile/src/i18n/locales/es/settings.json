@@ -112,6 +112,7 @@
       "shift_change_requested": "Cambio de turno solicitado",
       "change_request_accepted": "Cambio aceptado",
       "change_request_declined": "Cambio rechazado",
+      "change_request_expired": "Cambio caducado",
       "change_request_withdrawn": "Cambio retirado",
       "extra_shift_proposed": "Turno extra propuesto",
       "shift_cancelled": "Turno cancelado",
@@ -133,9 +134,7 @@
       "household_closure_changed": "Cierre del hogar modificado",
       "time_off_requested": "Ausencia solicitada",
       "invite_redeemed": "Nuevo miembro incorporado",
-      "co_parent_approval_requested": "Aprobación necesaria",
-      "co_parent_approval_resolved": "Aprobación respondida",
-      "approval_expiring": "Aprobación por vencer",
+      "co_parent_action_fyi": "Otro padre/madre actuó",
       "handoff_note_added": "Nueva nota de traspaso",
       "shift_no_show": "Nadie ha fichado"
     }

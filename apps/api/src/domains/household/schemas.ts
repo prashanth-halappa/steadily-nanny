@@ -19,28 +19,6 @@ import {
 } from '@steadily-nanny/shared-types/schemas/household.schema';
 import { z } from 'zod';
 
-// --- Co-parent approval queue (design flow 1f) ---
-// Backing table `co_parent_approvals`; wire contract lives alongside the
-// approval domain's own schema module, NOT household.schema, since it's a
-// separate table with its own lifecycle — see
-// packages/shared-types/src/schemas/approval.schema.ts.
-export type {
-  CoParentApproval,
-  CoParentApprovalAction,
-  CoParentApprovalListResponse,
-  CoParentApprovalStatus,
-  CreateCoParentApprovalInput,
-  RespondToCoParentApprovalInput,
-} from '@steadily-nanny/shared-types/schemas/approval.schema';
-export {
-  CO_PARENT_APPROVAL_ACTIONS,
-  CO_PARENT_APPROVAL_STATUSES,
-  CoParentApprovalIdParamSchema,
-  CoParentApprovalListResponseSchema,
-  CoParentApprovalSchema,
-  CreateCoParentApprovalSchema,
-  RespondToCoParentApprovalSchema,
-} from '@steadily-nanny/shared-types/schemas/approval.schema';
 export type {
   CreateHouseholdInput,
   CreateHouseholdInviteInput,
@@ -116,12 +94,3 @@ export const HouseholdInviteParamSchema = HouseholdIdParam.extend(
   InviteIdParam.shape
 );
 export type HouseholdInviteParam = z.infer<typeof HouseholdInviteParamSchema>;
-
-/** URL param validation for /households/:householdId/approvals/:approvalId routes. */
-export const HouseholdApprovalIdParamSchema = z.object({
-  householdId: z.uuid(),
-  approvalId: z.uuid(),
-});
-export type HouseholdApprovalIdParam = z.infer<
-  typeof HouseholdApprovalIdParamSchema
->;

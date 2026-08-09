@@ -112,6 +112,7 @@
       "shift_change_requested": "Shift change requested",
       "change_request_accepted": "Change request accepted",
       "change_request_declined": "Change request declined",
+      "change_request_expired": "Change request expired",
       "change_request_withdrawn": "Change request withdrawn",
       "extra_shift_proposed": "Extra shift proposed",
       "shift_cancelled": "Shift cancelled",
@@ -133,9 +134,7 @@
       "household_closure_changed": "Household closure changed",
       "time_off_requested": "Time off requested",
       "invite_redeemed": "New member joined",
-      "co_parent_approval_requested": "Approval needed",
-      "co_parent_approval_resolved": "Approval answered",
-      "approval_expiring": "Approval expiring",
+      "co_parent_action_fyi": "Another parent acted",
       "handoff_note_added": "New handoff note",
       "shift_no_show": "No one clocked in"
     }

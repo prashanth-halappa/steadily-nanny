@@ -108,19 +108,4 @@ describe('ShiftChangeRequestController.createExtraShift', () => {
 
     expect(res.body.data.adopted).toBe(true);
   });
-
-  it('leaves the pending_approval arm alone — nothing was created to adopt', async () => {
-    createExtraShift.mockImplementationOnce(async () => ({
-      status: 'pending_approval',
-      approval: { id: 'ap-1' },
-    }));
-    const res = mockRes();
-    await ShiftChangeRequestController.createExtraShift(req(), res, mock());
-
-    expect(res.body.data).toEqual({
-      status: 'pending_approval',
-      approval: { id: 'ap-1' },
-    });
-    expect(collectClashWarningsForCarer).not.toHaveBeenCalled();
-  });
 });

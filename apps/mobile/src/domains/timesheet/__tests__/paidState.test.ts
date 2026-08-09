@@ -6,7 +6,11 @@
  * a wrong balance in front of the person owed the money.
  */
 import { describe, expect, it } from 'bun:test';
-import { derivePaidState, sumPaymentsMinor } from '../utils/paidState';
+import {
+  derivePaidState,
+  deriveReopenedPaidState,
+  sumPaymentsMinor,
+} from '../utils/paidState';
 
 const payment = (amount_minor: number, paid_at = '2026-08-11') =>
   ({ amount_minor, paid_at }) as never;
@@ -75,6 +79,21 @@ describe('derivePaidState', () => {
       status: 'paid',
       paidMinor: 30000,
       grossMinor: 23612,
+      balanceMinor: 0,
+    });
+  });
+});
+
+describe('deriveReopenedPaidState', () => {
+  it('is null when the ledger is empty', () => {
+    expect(deriveReopenedPaidState([])).toBeNull();
+  });
+
+  it('reads paid-to-date from the ledger without inventing a balance', () => {
+    expect(deriveReopenedPaidState([payment(12000), payment(5000)])).toEqual({
+      status: 'paid',
+      paidMinor: 17000,
+      grossMinor: 17000,
       balanceMinor: 0,
     });
   });

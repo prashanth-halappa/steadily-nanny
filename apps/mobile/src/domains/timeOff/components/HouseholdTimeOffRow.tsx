@@ -104,7 +104,8 @@ export function HouseholdTimeOffRow({
 
   const rangeLabel = formatTimeOffRangeLabel(
     timeOff.starts_at,
-    timeOff.ends_at
+    timeOff.ends_at,
+    householdTimezone
   );
 
   const handlePress = () => {

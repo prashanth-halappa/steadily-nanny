@@ -26,6 +26,10 @@ mock.module('@/src/components/ui/loading-indicator', () => {
   };
 });
 
+import { mockAlertDialogPrimitive } from '../../schedule/__tests__/mockAlertDialog';
+
+mockAlertDialogPrimitive();
+
 mock.module('@/src/domains/timeOff/components/TimeOffDateRangePicker', () => {
   const React = require('react');
   return {
@@ -35,11 +39,21 @@ mock.module('@/src/domains/timeOff/components/TimeOffDateRangePicker', () => {
     }: {
       onChange: (start: string, end: string) => void;
       testID?: string;
-    }) =>
-      React.createElement('TouchableOpacity', {
-        testID: `${testID ?? 'time-off-date-range'}-set-range`,
-        onPress: () => onChange('2026-08-10', '2026-08-12'),
-      }),
+    }) => {
+      const base = testID ?? 'time-off-date-range';
+      return React.createElement(
+        React.Fragment,
+        null,
+        React.createElement('TouchableOpacity', {
+          testID: `${base}-set-range`,
+          onPress: () => onChange('2026-08-10', '2026-08-12'),
+        }),
+        React.createElement('TouchableOpacity', {
+          testID: `${base}-set-invalid-range`,
+          onPress: () => onChange('2026-08-12', '2026-08-10'),
+        })
+      );
+    },
   };
 });
 
@@ -98,6 +112,21 @@ beforeAll(async () => {
   mock.module('@/src/hooks/mutations/useDeleteHouseholdClosure', () => ({
     useDeleteHouseholdClosure: mockUseDeleteHouseholdClosure,
   }));
+  // Closure boundaries + row labels use the HOUSEHOLD timezone; no
+  // QueryClientProvider in this harness, so the hook is mocked directly.
+  mock.module('@/src/hooks/queries/useActiveHousehold', () => ({
+    useActiveHousehold: () => ({
+      household: {
+        id: HOUSEHOLD_ID,
+        name: 'Test Household',
+        timezone: 'Europe/London',
+      },
+      householdId: HOUSEHOLD_ID,
+      households: [],
+      pastHouseholds: [],
+      isPastHousehold: false,
+    }),
+  }));
 
   const mod = await import('../components/HouseholdClosuresScreen');
   HouseholdClosuresScreen = mod.HouseholdClosuresScreen;
@@ -154,7 +183,12 @@ describe('HouseholdClosuresScreen — parent', () => {
     fireEvent.press(getByTestId('household-closures-submit'));
 
     await waitFor(() => expect(createMutateAsync).toHaveBeenCalledTimes(1));
-    const expected = toAllDayRange('2026-08-10', '2026-08-12');
+    // HOUSEHOLD-zone midnights, whatever zone the test runner is in: a
+    // London closure "10–12 Aug" is 2026-08-09T23:00Z → 2026-08-12T23:00Z
+    // (BST). A device-local range here is the P4 QA bug regressing.
+    const expected = toAllDayRange('2026-08-10', '2026-08-12', 'Europe/London');
+    expect(expected.starts_at).toBe('2026-08-09T23:00:00.000Z');
+    expect(expected.ends_at).toBe('2026-08-12T23:00:00.000Z');
     expect(createMutateAsync).toHaveBeenCalledWith(
       expect.objectContaining({
         starts_at: expected.starts_at,
@@ -179,6 +213,16 @@ describe('HouseholdClosuresScreen — parent', () => {
     expect(payload.message).toBe('Half-term in Cornwall');
   });
 
+  it('disables submit when the date range is inverted', async () => {
+    const { getByTestId } = render(<HouseholdClosuresScreen />);
+
+    fireEvent.press(getByTestId('household-closures-dates-set-invalid-range'));
+    const submit = getByTestId('household-closures-submit');
+    expect(
+      submit.props.disabled ?? submit.props.accessibilityState?.disabled
+    ).toBe(true);
+  });
+
   it('renders a closure row with a working Remove control, and calls delete with the right id', async () => {
     mockUseHouseholdClosures.mockImplementation(() => ({
       data: [makeClosure()],
@@ -198,10 +242,33 @@ describe('HouseholdClosuresScreen — parent', () => {
       )
     );
 
+    expect(queryByTestId('household-closures-delete-confirm')).toBeTruthy();
+    expect(deleteMutateAsync).not.toHaveBeenCalled();
+
+    fireEvent.press(getByTestId('household-closures-delete-confirm'));
+
     await waitFor(() => expect(deleteMutateAsync).toHaveBeenCalledTimes(1));
     expect(deleteMutateAsync).toHaveBeenCalledWith(
       '22222222-2222-4222-8222-222222222222'
     );
+  });
+
+  it('does not delete when the confirm dialog is cancelled', async () => {
+    mockUseHouseholdClosures.mockImplementation(() => ({
+      data: [makeClosure()],
+      isLoading: false,
+    }));
+
+    const { getByTestId } = render(<HouseholdClosuresScreen />);
+
+    fireEvent.press(
+      getByTestId(
+        'household-closures-delete-22222222-2222-4222-8222-222222222222'
+      )
+    );
+    fireEvent.press(getByTestId('household-closures-delete-cancel'));
+
+    expect(deleteMutateAsync).not.toHaveBeenCalled();
   });
 
   it('hides Remove for an already-past closure', () => {

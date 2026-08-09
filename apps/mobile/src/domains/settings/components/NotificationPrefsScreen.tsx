@@ -38,14 +38,13 @@ const QUIET_END_OPTIONS = ['06:00', '07:00', '08:00'] as const;
 type NotificationGroup = 'schedule' | 'hoursAndPay' | 'household';
 
 const PUSH_TYPE_GROUP: Record<PushNotificationType, NotificationGroup> = {
-  approval_expiring: 'household',
   carer_time_off_conflict: 'schedule',
   change_request_accepted: 'schedule',
   change_request_declined: 'schedule',
+  change_request_expired: 'schedule',
   change_request_withdrawn: 'schedule',
   clock_out_reminder: 'hoursAndPay',
-  co_parent_approval_requested: 'household',
-  co_parent_approval_resolved: 'household',
+  co_parent_action_fyi: 'household',
   expense_approved: 'hoursAndPay',
   expense_rejected: 'hoursAndPay',
   expense_submitted: 'hoursAndPay',
@@ -91,11 +90,11 @@ const GROUP_I18N_KEY: Record<NotificationGroup, string> = {
 function audiencesForRole(
   role: ReturnType<typeof useIsOnboarded>['role']
 ): PushAudience[] {
-  if (role === SETUP_ROLES.NANNY) return ['carer', 'both'];
+  if (role === SETUP_ROLES.NANNY) return ['carer', 'both', 'any'];
   if (role === SETUP_ROLES.PARENT || role === SETUP_ROLES.HELPER) {
-    return ['parent', 'both'];
+    return ['parent', 'both', 'any'];
   }
-  return ['parent', 'carer', 'both'];
+  return ['parent', 'carer', 'both', 'any'];
 }
 
 function isTypeVisibleForRole(

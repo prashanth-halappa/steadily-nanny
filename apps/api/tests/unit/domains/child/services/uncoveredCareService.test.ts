@@ -172,7 +172,7 @@ describe('UncoveredCareService.raiseUncoveredOnce', () => {
     expect(notifyHouseholdParents).toHaveBeenCalledTimes(1);
   });
 
-  it('still inserts but does not push when every uncovered window starts more than 72h out', async () => {
+  it('still inserts but pushes when every uncovered window starts more than 72h out', async () => {
     const eventRepo = makeEventRepo();
     const svc = new UncoveredCareService(eventRepo);
 
@@ -183,10 +183,10 @@ describe('UncoveredCareService.raiseUncoveredOnce', () => {
 
     expect(inserted).toHaveLength(1);
     expect(eventRepo.insertMany).toHaveBeenCalledTimes(1);
-    expect(notifyHouseholdParents).not.toHaveBeenCalled();
+    expect(notifyHouseholdParents).toHaveBeenCalledTimes(1);
   });
 
-  it('pushes with uncovered_care_detected type and localDate when a window starts within 72h', async () => {
+  it('pushes with uncovered_care_detected type and localDate when windows are inserted', async () => {
     const eventRepo = makeEventRepo();
     const svc = new UncoveredCareService(eventRepo);
 

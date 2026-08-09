@@ -10,6 +10,8 @@
     "wizardSubtitle": "Añade cada niño y las horas habituales en las que necesitarás a tu niñera. Puedes añadir sesiones extra cuando quieras.",
     "householdNameLabel": "Nombre del hogar",
     "householdNamePlaceholder": "Nuestro hogar",
+    "parentNameLabel": "Tu nombre",
+    "parentNamePlaceholder": "p. ej. Ana Ruiz",
     "manageTitle": "Niños",
     "manageSubtitle": "Añade o edita los niños y las horas habituales en las que necesitan a la niñera. Puedes añadir sesiones extra cuando quieras.",
     "continueButton": "Continuar",
@@ -73,7 +75,7 @@
   },
   "householdSettings": {
     "manageTitle": "Ajustes del hogar",
-    "manageSubtitle": "Actualiza el nombre, la zona horaria, la dirección y la política de aprobación de tu hogar.",
+    "manageSubtitle": "Actualiza el nombre, la zona horaria, la dirección y quién puede hacer cambios.",
     "notAvailableTitle": "No disponible",
     "notAvailableDescription": "Los ajustes del hogar los gestiona un progenitor de este hogar.",
     "saveButton": "Guardar",
@@ -94,7 +96,6 @@
     "approvalModeLabel": "Quién aprueba los cambios",
     "approvalMode": {
       "either": "Cualquiera de los padres puede decidir",
-      "ask_other": "Preguntar primero al otro padre",
       "owner_only": "Solo decide el propietario del hogar"
     },
     "approvalScopeLabel": "Qué necesita aprobación",
@@ -102,7 +103,6 @@
       "all": "Todos los cambios",
       "short_notice_and_cancellations": "Solo cambios de última hora y cancelaciones"
     },
-    "approvalTimeoutLabel": "Tiempo límite de aprobación (minutos)",
     "shortNoticeHoursLabel": "Ventana de última hora (horas)",
     "cancellationPaidWithinHoursLabel": "Cancelación aún pagada dentro de (horas)",
     "membersSectionTitle": "Miembros del hogar",
@@ -136,6 +136,10 @@
     "submitButton": "Guardar cierre",
     "createdToast": "Cierre guardado",
     "deleteButton": "Eliminar",
+    "deleteConfirmTitle": "¿Eliminar este cierre?",
+    "deleteConfirmDescription": "Los días que cubría volverán a contar como que necesitan cobertura.",
+    "deleteConfirmCancel": "Cancelar",
+    "deleteConfirmConfirm": "Eliminar",
     "deletedToast": "Cierre eliminado",
     "emptyTitle": "Aún no hay cierres",
     "emptyDescription": "Las fechas que añadas aparecerán aquí."

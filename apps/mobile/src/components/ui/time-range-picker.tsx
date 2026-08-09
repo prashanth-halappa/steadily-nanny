@@ -8,9 +8,9 @@
  * schema was designed to avoid. Date objects exist only transiently, at the
  * `@react-native-community/datetimepicker` boundary.
  *
- * An end time at or before the start (or a start at or after the end) is
- * REFUSED — the component does not call `onChange` and shows an inline
- * error instead. It never silently swaps the two values.
+ * Invalid ranges (end at or before start) always commit via `onChange`; an
+ * inline error is derived from the current `start`/`end` props. Consumers
+ * gate Save/submit on validity. The picker never silently swaps values.
  *
  * NOTE ON TEST STRATEGY: `@react-native-community/datetimepicker` ships raw
  * Flow-typed `.js` source (no pre-built dist) that `bun:test`'s parser
@@ -25,7 +25,6 @@
  */
 
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
 import { Text } from '@/src/components/ui/text';
@@ -54,32 +53,18 @@ export function TimeRangePicker({
 }: TimeRangePickerProps) {
   const { t } = useTranslation('common');
   const baseTestID = testID ?? DEFAULT_TEST_ID;
-  const [showError, setShowError] = useState(false);
+  const rangeError = !isEndAfterStart(start, end);
 
   // The event param's real type lives in the native module's own (untranspilable
   // under bun:test) source — see the module doc comment. We only need `date`.
   const handleStartChange = (_event: unknown, date?: Date) => {
     if (!date) return;
-    const nextStart = formatTime(date);
-    if (!isEndAfterStart(nextStart, end)) {
-      // Refuse — do not swap, do not report an invalid range upward.
-      setShowError(true);
-      return;
-    }
-    setShowError(false);
-    onChange(nextStart, end);
+    onChange(formatTime(date), end);
   };
 
   const handleEndChange = (_event: unknown, date?: Date) => {
     if (!date) return;
-    const nextEnd = formatTime(date);
-    if (!isEndAfterStart(start, nextEnd)) {
-      // Refuse — do not swap, do not report an invalid range upward.
-      setShowError(true);
-      return;
-    }
-    setShowError(false);
-    onChange(start, nextEnd);
+    onChange(start, formatTime(date));
   };
 
   return (
@@ -110,14 +95,14 @@ export function TimeRangePicker({
           />
         </View>
       </View>
-      {showError && (
+      {rangeError ? (
         <Text
           testID={`${baseTestID}-error`}
           className="mt-2 text-destructive text-xs"
         >
           {t('timeRange.endAfterStart')}
         </Text>
-      )}
+      ) : null}
     </View>
   );
 }

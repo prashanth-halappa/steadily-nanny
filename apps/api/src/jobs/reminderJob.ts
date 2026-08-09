@@ -36,7 +36,6 @@
  * @module jobs/reminderJob
  */
 
-import type { CoParentApproval } from '@steadily-nanny/shared-types/schemas/approval.schema';
 import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types/schemas/notification.schema';
 import type { Shift } from '@steadily-nanny/shared-types/schemas/shift.schema';
 import type { Timesheet } from '@steadily-nanny/shared-types/schemas/timesheet.schema';
@@ -78,7 +77,6 @@ const SHIFT_REMINDER_HOUR = 18;
 const SHIFT_REMINDER_WINDOW_END = 22;
 const TIMESHEET_NUDGE_HOUR = 9;
 const TIMESHEET_SUBMITTED_DAYS = 3;
-const APPROVAL_EXPIRING_HOURS = 6;
 
 const PARENT_ROLES: ReadonlySet<string> = new Set([
   HOUSEHOLD_ROLES.OWNER,
@@ -97,7 +95,6 @@ export interface ReminderRuleStats {
 export interface ReminderJobResult {
   shiftReminder: ReminderRuleStats;
   timesheetAwaitingApproval: ReminderRuleStats;
-  approvalExpiring: ReminderRuleStats;
   errorCount: number;
   message: string;
 }
@@ -124,18 +121,11 @@ export type TimesheetReminderCandidate = Pick<
   'id' | 'household_id' | 'week_start' | 'updated_at'
 >;
 
-/** Narrow approval row the job needs. */
-export type ApprovalExpiringCandidate = Pick<
-  CoParentApproval,
-  'id' | 'household_id' | 'requested_by' | 'timeout_at'
->;
-
 export interface ReminderCandidateSource {
   listShiftReminders(now: Date): Promise<ShiftReminderCandidate[]>;
   listTimesheetAwaitingApproval(
     now: Date
   ): Promise<TimesheetReminderCandidate[]>;
-  listApprovalExpiring(now: Date): Promise<ApprovalExpiringCandidate[]>;
 }
 
 export interface ReminderLogClaim {
@@ -245,10 +235,6 @@ export function buildTimesheetAwaitingApprovalKey(
   return `timesheet_awaiting_approval:${timesheetId}:${localSendDate}`;
 }
 
-export function buildApprovalExpiringKey(approvalId: string): string {
-  return `approval_expiring:${approvalId}`;
-}
-
 class DefaultReminderCandidateSource implements ReminderCandidateSource {
   async listShiftReminders(now: Date): Promise<ShiftReminderCandidate[]> {
     const windowStart = new Date(
@@ -299,30 +285,6 @@ class DefaultReminderCandidateSource implements ReminderCandidateSource {
     }
 
     return (data ?? []) as TimesheetReminderCandidate[];
-  }
-
-  async listApprovalExpiring(now: Date): Promise<ApprovalExpiringCandidate[]> {
-    const nowIso = now.toISOString();
-    const horizonIso = new Date(
-      now.getTime() + APPROVAL_EXPIRING_HOURS * 60 * 60 * 1000
-    ).toISOString();
-
-    const { data, error } = await supabaseService
-      .from('co_parent_approvals')
-      .select('id, household_id, requested_by, timeout_at')
-      .eq('status', 'pending')
-      .gt('timeout_at', nowIso)
-      .lte('timeout_at', horizonIso);
-
-    if (error) {
-      throw new DatabaseError(
-        'Failed to list approval-expiring candidates',
-        'DATABASE_ERROR',
-        { details: error.message }
-      );
-    }
-
-    return (data ?? []) as ApprovalExpiringCandidate[];
   }
 }
 
@@ -623,69 +585,6 @@ async function processTimesheetReminders(
   return stats;
 }
 
-async function processApprovalExpiring(
-  candidates: ApprovalExpiringCandidate[],
-  deps: {
-    log: ReminderLogClaim;
-    parents: ReminderParentLister;
-    push: ReminderPushService;
-  }
-): Promise<ReminderRuleStats> {
-  const stats = emptyRuleStats();
-  stats.candidates = candidates.length;
-
-  for (const approval of candidates) {
-    try {
-      const parentIds = await deps.parents.listParentUserIds(
-        approval.household_id
-      );
-      const responders = parentIds.filter(id => id !== approval.requested_by);
-      if (responders.length === 0) {
-        stats.skipped++;
-        continue;
-      }
-
-      for (const responderId of responders) {
-        try {
-          const reminderKey = buildApprovalExpiringKey(approval.id);
-          await claimAndSend(
-            deps,
-            responderId,
-            reminderKey,
-            {
-              title: 'Approval expiring soon',
-              body: 'A co-parent approval request is about to time out.',
-              data: {
-                type: PUSH_NOTIFICATION_TYPES.APPROVAL_EXPIRING,
-                householdId: approval.household_id,
-              },
-            },
-            stats
-          );
-        } catch (error) {
-          stats.errors++;
-          logger.error(
-            'Reminder job failed to send approval expiring reminder',
-            {
-              approvalId: approval.id,
-              responderId,
-              error,
-            }
-          );
-        }
-      }
-    } catch (error) {
-      stats.errors++;
-      logger.error('Reminder job failed to resolve approval expiring parents', {
-        approvalId: approval.id,
-        error,
-      });
-    }
-  }
-
-  return stats;
-}
-
 export async function runReminderJob(
   candidates: ReminderCandidateSource = new DefaultReminderCandidateSource(),
   log: ReminderLogClaim = new ReminderLogRepository(),
@@ -702,12 +601,10 @@ export async function runReminderJob(
   // failed sweep must not stop this run from sending anything.
   await log.sweepStaleClaims();
 
-  const [shiftCandidates, timesheetCandidates, approvalCandidates] =
-    await Promise.all([
-      candidates.listShiftReminders(now),
-      candidates.listTimesheetAwaitingApproval(now),
-      candidates.listApprovalExpiring(now),
-    ]);
+  const [shiftCandidates, timesheetCandidates] = await Promise.all([
+    candidates.listShiftReminders(now),
+    candidates.listTimesheetAwaitingApproval(now),
+  ]);
 
   const shiftReminder = await processShiftReminders(shiftCandidates, {
     log,
@@ -727,24 +624,13 @@ export async function runReminderJob(
     }
   );
 
-  const approvalExpiring = await processApprovalExpiring(approvalCandidates, {
-    log,
-    parents,
-    push,
-  });
+  const errorCount = shiftReminder.errors + timesheetAwaitingApproval.errors;
 
-  const errorCount =
-    shiftReminder.errors +
-    timesheetAwaitingApproval.errors +
-    approvalExpiring.errors;
-
-  const sentTotal =
-    shiftReminder.sent + timesheetAwaitingApproval.sent + approvalExpiring.sent;
+  const sentTotal = shiftReminder.sent + timesheetAwaitingApproval.sent;
 
   return {
     shiftReminder,
     timesheetAwaitingApproval,
-    approvalExpiring,
     errorCount,
     message: `Reminders job sent ${sentTotal} push(es)`,
   };

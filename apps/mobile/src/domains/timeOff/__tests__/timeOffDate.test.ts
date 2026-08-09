@@ -1,9 +1,9 @@
 /**
  * @module domains/timeOff/__tests__/timeOffDate.test
  * Pure date-math tests for the time-off request flow's all-day range
- * construction and display formatting. Assertions read back through the
- * SAME local `Date` getters the implementation writes with (never a UTC
- * field), so these pass regardless of the test runner's own timezone.
+ * construction and display formatting. Device-local assertions read back
+ * through local `Date` getters; household-zone assertions pin exact UTC
+ * instants from `wallClockToUtcIso`.
  */
 import { describe, expect, it } from 'bun:test';
 import {
@@ -13,7 +13,7 @@ import {
   todayISO,
 } from '../utils/timeOffDate';
 
-describe('toAllDayRange', () => {
+describe('toAllDayRange (device-local fallback)', () => {
   it('a single-day request produces local midnight start and local midnight the next day (exclusive end)', () => {
     const { starts_at, ends_at } = toAllDayRange('2026-08-10', '2026-08-10');
 
@@ -62,10 +62,43 @@ describe('toAllDayRange', () => {
   });
 });
 
+describe('toAllDayRange (household timezone)', () => {
+  it('zone boundary: brackets the London calendar day when device would be Kolkata next day', () => {
+    const londonToday = '2026-08-04';
+    const { starts_at, ends_at } = toAllDayRange(
+      londonToday,
+      londonToday,
+      'Europe/London'
+    );
+    // 2026-08-04 00:00 BST = 2026-08-03T23:00:00.000Z
+    expect(starts_at).toBe('2026-08-03T23:00:00.000Z');
+    // exclusive end: 2026-08-05 00:00 BST = 2026-08-04T23:00:00.000Z
+    expect(ends_at).toBe('2026-08-04T23:00:00.000Z');
+  });
+
+  it('round-trips a multi-day range in Europe/London', () => {
+    const wire = toAllDayRange('2026-08-10', '2026-08-12', 'Europe/London');
+    expect(
+      fromAllDayRange(wire.starts_at, wire.ends_at, 'Europe/London')
+    ).toEqual({
+      startDate: '2026-08-10',
+      endDate: '2026-08-12',
+    });
+  });
+});
+
 describe('todayISO', () => {
-  it('returns the DEVICE local calendar date as "yyyy-mm-dd" (068 sick-day quick action)', () => {
+  it('without timeZone returns the DEVICE local calendar date as "yyyy-mm-dd"', () => {
     const now = new Date(2026, 7, 4, 23, 30); // 4 Aug 2026, 23:30 local
     expect(todayISO(now)).toBe('2026-08-04');
+  });
+
+  it('zone boundary: household Europe/London date wins over device Asia/Kolkata', () => {
+    // 2026-08-04 23:30 Europe/London (BST) = 2026-08-04T22:30:00.000Z.
+    // Same instant in Asia/Kolkata = 2026-08-05 04:00 — device would say Aug 5.
+    const instant = new Date('2026-08-04T22:30:00.000Z');
+    expect(todayISO(instant, 'Europe/London')).toBe('2026-08-04');
+    expect(todayISO(instant, 'Asia/Kolkata')).toBe('2026-08-05');
   });
 
   it('a same-day sick request built from todayISO() is a valid single-day toAllDayRange', () => {
@@ -120,5 +153,29 @@ describe('formatTimeOffRangeLabel', () => {
     expect(formatTimeOffRangeLabel(starts_at, ends_at)).toBe(
       'Thu 30 Jul – Fri 31 Jul'
     );
+  });
+});
+
+describe('formatTimeOffRangeLabel (household timezone)', () => {
+  it('London all-day sick day renders the household calendar date, not device-local', () => {
+    // Aug 9 2026 in Europe/London (BST): stored as 2026-08-08T23:00Z .. 2026-08-09T23:00Z.
+    // On a Pacific device those instants fall on Aug 8 local — label must still be Aug 9.
+    const starts_at = '2026-08-08T23:00:00.000Z';
+    const ends_at = '2026-08-09T23:00:00.000Z';
+    expect(formatTimeOffRangeLabel(starts_at, ends_at, 'Europe/London')).toBe(
+      'Sun 9 Aug'
+    );
+  });
+
+  it('formats a multi-day range with both endpoints in the household zone', () => {
+    const wire = toAllDayRange('2026-08-10', '2026-08-12', 'Europe/London');
+    expect(
+      formatTimeOffRangeLabel(wire.starts_at, wire.ends_at, 'Europe/London')
+    ).toBe('Mon 10 Aug – Wed 12 Aug');
+  });
+
+  it('without timeZone keeps device-local formatting unchanged', () => {
+    const { starts_at, ends_at } = toAllDayRange('2026-08-10', '2026-08-10');
+    expect(formatTimeOffRangeLabel(starts_at, ends_at)).toBe('Mon 10 Aug');
   });
 });

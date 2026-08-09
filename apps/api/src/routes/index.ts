@@ -19,7 +19,6 @@ import {
 } from '../domains/child';
 import childRoutes from '../domains/child/routes/childRoutes';
 import { handoffRoutes, householdHandoffRoutes } from '../domains/handoff';
-import { householdApprovalRoutes } from '../domains/household';
 import householdRoutes from '../domains/household/routes/householdRoutes';
 import { meRoutes } from '../domains/me';
 import notificationsRoutes from '../domains/notification/routes/notificationsRoutes';
@@ -138,13 +137,5 @@ router.use('/households/:householdId', ptoRoutes);
 // update.
 router.use('/households/:householdId/handoff-notes', householdHandoffRoutes);
 router.use('/handoff-notes', handoffRoutes);
-
-// Co-parent approval queue (design flow 1f): list/respond are household-nested
-// only — there is no flat/top-level router, since an approval is always read
-// or acted on in the context of its household. See
-// domains/household/routes/householdApprovalRoutes.ts for why there is no
-// POST / here (creation is an internal side effect of another domain's
-// command service, never a direct client write).
-router.use('/households/:householdId/approvals', householdApprovalRoutes);
 
 export default router;

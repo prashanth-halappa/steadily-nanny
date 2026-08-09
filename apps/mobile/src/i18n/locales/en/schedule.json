@@ -140,6 +140,11 @@
     "extraCarerLabel": "Who's covering",
     "extraChildrenLabel": "Children",
     "extraSubmit": "Add shift",
+    "extraClashTitle": "{{name}} is already busy then.",
+    "extraClashCarerFallback": "This carer",
+    "extraClashDescription": "Create anyway?",
+    "extraClashCancel": "Go back",
+    "extraClashConfirm": "Create anyway",
     "unavailable": "Shifts aren't available yet — check back soon.",
     "statusDraft": "Draft",
     "statusPending": "Pending",
@@ -188,7 +193,7 @@
     "acceptChange": "Accept",
     "declineChange": "Decline",
     "shortNoticePaidHint": "Within the paid-cancellation window — hours may still count.",
-    "awaitingCoParent": "Waiting for co-parent approval",
+    "awaitingNannyConfirm": "Waiting for the nanny to confirm",
     "raisedBy": "Requested by {{name}}",
     "respondedBy": "Responded by {{name}}",
     "you": "You",
@@ -206,7 +211,6 @@
   },
   "change": {
     "requestedToast": "Change requested",
-    "pendingApprovalToast": "Sent to your co-parent for approval",
     "respondedToast": "Response sent"
   },
   "weekday": {

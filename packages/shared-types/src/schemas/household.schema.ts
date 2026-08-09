@@ -19,7 +19,6 @@ import { z } from 'zod';
 /** households.approval_mode */
 export const HOUSEHOLD_APPROVAL_MODES = {
   EITHER: 'either',
-  ASK_OTHER: 'ask_other',
   OWNER_ONLY: 'owner_only',
 } as const;
 export type HouseholdApprovalMode =
@@ -91,7 +90,6 @@ export const HouseholdSchema = z.object({
   longitude: z.number().nullable(),
   approval_mode: z.enum(Object.values(HOUSEHOLD_APPROVAL_MODES)),
   approval_scope: z.enum(Object.values(HOUSEHOLD_APPROVAL_SCOPES)),
-  approval_timeout_minutes: z.int().min(0).max(10080),
   short_notice_hours: z.int().min(0).max(336),
   cancellation_paid_within_hours: z.int().min(0).max(336),
   created_by: z.uuid().nullable(),
@@ -108,7 +106,6 @@ export const CreateHouseholdSchema = z.object({
   longitude: z.number().optional(),
   approval_mode: z.enum(Object.values(HOUSEHOLD_APPROVAL_MODES)).optional(),
   approval_scope: z.enum(Object.values(HOUSEHOLD_APPROVAL_SCOPES)).optional(),
-  approval_timeout_minutes: z.int().min(0).max(10080).optional(),
   short_notice_hours: z.int().min(0).max(336).optional(),
   cancellation_paid_within_hours: z.int().min(0).max(336).optional(),
 });

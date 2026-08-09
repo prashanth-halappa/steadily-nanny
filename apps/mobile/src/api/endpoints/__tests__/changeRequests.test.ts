@@ -182,34 +182,6 @@ describe('changeRequestApi', () => {
     }
   });
 
-  it('returns pending_approval envelope from createExtra when co-parent sign-off is required', async () => {
-    postMock.mockImplementationOnce(() =>
-      Promise.resolve({
-        data: {
-          data: {
-            status: 'pending_approval',
-            approval: { id: 'approval-1' },
-          },
-        },
-      })
-    );
-
-    const { changeRequestApi } = await import('../changeRequests');
-    const result = await changeRequestApi.createExtra(
-      '55555555-5555-4555-8555-555555555555',
-      {
-        starts_at: '2026-08-05T09:00:00.000Z',
-        ends_at: '2026-08-05T17:00:00.000Z',
-        timezone: 'Europe/London',
-      }
-    );
-
-    expect(result).toEqual({
-      status: 'pending_approval',
-      approval: { id: 'approval-1' },
-    });
-  });
-
   it('withdraws a pending change request the caller raised', async () => {
     postMock.mockImplementationOnce(() =>
       Promise.resolve({

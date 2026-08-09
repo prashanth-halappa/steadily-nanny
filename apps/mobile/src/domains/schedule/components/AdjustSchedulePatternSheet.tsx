@@ -51,6 +51,7 @@ import { LoadingButton } from '@/src/components/ui/loading-button';
 import { Text } from '@/src/components/ui/text';
 import { Body, H4, Small } from '@/src/components/ui/typography';
 import { TimeOffDateRangePicker } from '@/src/domains/timeOff/components/TimeOffDateRangePicker';
+import { isEndOnOrAfterStart } from '@/src/domains/timeOff/components/TimeOffDateRangePicker.utils';
 import { useThemeColors } from '~/lib/design-tokens/useThemeColors';
 import {
   formatDate,
@@ -87,8 +88,10 @@ export function AdjustSchedulePatternSheet({
   const [skipStart, setSkipStart] = useState(dtstart);
   const [skipEnd, setSkipEnd] = useState(dtstart);
   const [endDateValue, setEndDateValue] = useState(until ?? dtstart);
-  const [endDateError, setEndDateError] = useState(false);
   const [endDateConfirmOpen, setEndDateConfirmOpen] = useState(false);
+
+  const skipWeekInvalid = !isEndOnOrAfterStart(skipStart, skipEnd);
+  const endDateInvalid = !isOnOrAfter(endDateValue, dtstart);
 
   // Re-seed every time the sheet opens — it stays mounted between openings
   // (the `MarkTimeOffPaidSheet` pattern), so without this a later open would
@@ -99,7 +102,6 @@ export function AdjustSchedulePatternSheet({
     setSkipStart(dtstart);
     setSkipEnd(dtstart);
     setEndDateValue(until ?? dtstart);
-    setEndDateError(false);
     setEndDateConfirmOpen(false);
   }, [visible, dtstart, until]);
 
@@ -111,6 +113,7 @@ export function AdjustSchedulePatternSheet({
   };
 
   const submitSkipWeek = () => {
+    if (skipWeekInvalid) return;
     onSubmit({
       pause_ranges: [...pauseRanges, { from: skipStart, to: skipEnd }],
     });
@@ -121,13 +124,7 @@ export function AdjustSchedulePatternSheet({
   // header comment. Only `date` is needed here.
   const handleEndDateChange = (_event: unknown, date?: Date) => {
     if (!date) return;
-    const next = formatDate(date);
-    if (!isOnOrAfter(next, dtstart)) {
-      setEndDateError(true);
-      return;
-    }
-    setEndDateError(false);
-    setEndDateValue(next);
+    setEndDateValue(formatDate(date));
   };
 
   const submitEndDate = () => {
@@ -196,6 +193,7 @@ export function AdjustSchedulePatternSheet({
                 testID="schedule-adjust-skip-week-submit"
                 label={t('pending.adjustSkipWeekSubmit')}
                 isLoading={isSubmitting}
+                disabled={skipWeekInvalid}
                 onPress={submitSkipWeek}
               />
             </View>
@@ -221,7 +219,7 @@ export function AdjustSchedulePatternSheet({
                 />
               </View>
               <FieldError testID="schedule-adjust-end-date-error">
-                {endDateError ? t('pending.adjustEndDateError') : null}
+                {endDateInvalid ? t('pending.adjustEndDateError') : null}
               </FieldError>
             </View>
             <View className="flex-row flex-wrap gap-2">
@@ -249,7 +247,7 @@ export function AdjustSchedulePatternSheet({
                 <AlertDialogTrigger
                   testID="schedule-adjust-end-date-submit"
                   className={buttonVariants({})}
-                  disabled={endDateError || isSubmitting}
+                  disabled={endDateInvalid || isSubmitting}
                 >
                   <Text className="text-primary-foreground font-medium">
                     {t('pending.adjustEndDateSubmit')}

@@ -3,7 +3,7 @@
   "screenSubtitle": "Pending work waiting on you.",
   "loading": "Loading…",
   "emptyTitle": "You're all caught up",
-  "emptyBody": "No change requests, approvals, patterns, or queried weeks need you right now.",
+  "emptyBody": "No change requests, patterns, or queried weeks need you right now.",
   "needsAttentionCard": {
     "moreItems_one": "and {{count}} more thing waiting on you",
     "moreItems_other": "and {{count}} more things waiting on you",
@@ -21,21 +21,6 @@
         "split": "split",
         "handover": "handover"
       }
-    },
-    "approval": {
-      "title": "Co-parent approval: {{action}}",
-      "subtitle": "Auto-approves after {{when}} if you don't respond.",
-      "deadlineLabel": "Auto-approves {{when}}",
-      "cta": "Review",
-      "action": {
-        "short_notice_change": "short-notice change",
-        "cancel": "cancellation",
-        "extra_shift": "extra shift",
-        "other": "change"
-      },
-      "approve": "Approve",
-      "decline": "Decline",
-      "respondedToast": "Response sent"
     },
     "pendingPattern": {
       "title": "Respond to proposed schedule",

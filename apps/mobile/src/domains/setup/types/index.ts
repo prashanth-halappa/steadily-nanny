@@ -95,6 +95,25 @@ export function getSetupStepRoute(step: SetupStep): string {
   return SETUP_STEP_ROUTES[step];
 }
 
+/**
+ * When the server already considers the user onboarded but persisted wizard
+ * state says they have not reached the final step, return the route to resume.
+ * Returns null when setup is finished, never started, or the step is stale —
+ * callers route home. Finish paths call `useSetupProgressStore.reset()` so a
+ * completed wizard cannot loop back into itself on the next cold start.
+ */
+export function getUnfinishedSetupResumeRoute(
+  role: SetupRole | null,
+  currentStep: SetupStep
+): string | null {
+  if (role === null) return null;
+  const steps = stepsForRole(role);
+  const lastStep = steps[steps.length - 1];
+  if (currentStep === lastStep) return null;
+  if (!steps.includes(currentStep)) return null;
+  return getSetupStepRoute(currentStep);
+}
+
 /** The step after `current` for `role`, or null if `current` is the last step. */
 export function getNextSetupStep(
   role: SetupRole | null,

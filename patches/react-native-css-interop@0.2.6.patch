@@ -1,0 +1,34 @@
+diff --git a/dist/runtime/native/render-component.js b/dist/runtime/native/render-component.js
+index eba25ece1cf3fe3170cd55134df6b70c7aabd70e..9d384ce915efd576e95bd0f78a07bc76d4cd550a 100644
+--- a/dist/runtime/native/render-component.js
++++ b/dist/runtime/native/render-component.js
+@@ -131,8 +131,27 @@ function stringify(object) {
+         }
+         seen.add(value);
+         const newValue = Array.isArray(value) ? [] : {};
+-        for (const entry of Object.entries(value)) {
+-            newValue[entry[0]] = replace(entry[0], entry[1]);
++        // PATCHED (steadily-nanny): props graphs can contain objects with
++        // throwing getters (e.g. expo-router's NavigationStateContext default
++        // value, whose accessors all throw). This is a dev-only diagnostic
++        // dump — a getter that throws must degrade to a placeholder, not
++        // crash the render. Object.keys (unlike Object.entries) does not
++        // invoke getters, so each property is read individually under guard.
++        for (const key of Object.keys(value)) {
++            let propValue;
++            try {
++                propValue = value[key];
++            }
++            catch {
++                newValue[key] = "[Unserializable]";
++                continue;
++            }
++            try {
++                newValue[key] = replace(key, propValue);
++            }
++            catch {
++                newValue[key] = "[Unserializable]";
++            }
+         }
+         seen.delete(value);
+         return newValue;

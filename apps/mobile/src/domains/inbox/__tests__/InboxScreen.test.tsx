@@ -13,8 +13,6 @@ let InboxScreen: typeof import('../components/InboxScreen').InboxScreen;
 let mockUseInboxItems: ReturnType<typeof mock>;
 let mockPush: ReturnType<typeof mock>;
 let mockRefetch: ReturnType<typeof mock>;
-let mockRespondMutate: ReturnType<typeof mock>;
-let mockUseRespondToApproval: ReturnType<typeof mock>;
 
 beforeAll(async () => {
   mockRefetch = mock(() => Promise.resolve());
@@ -25,18 +23,9 @@ beforeAll(async () => {
     refetch: mockRefetch,
   }));
   mockPush = mock();
-  mockRespondMutate = mock();
-  mockUseRespondToApproval = mock(() => ({
-    mutate: mockRespondMutate,
-    isPending: false,
-    variables: undefined,
-  }));
 
   mock.module('@/src/domains/inbox/hooks/useInboxItems', () => ({
     useInboxItems: mockUseInboxItems,
-  }));
-  mock.module('@/src/hooks/mutations/useRespondToApproval', () => ({
-    useRespondToApproval: mockUseRespondToApproval,
   }));
   mock.module('expo-router', () => ({
     useRouter: () => ({ push: mockPush, back: mock() }),
@@ -76,18 +65,11 @@ beforeEach(() => {
   mockUseInboxItems.mockClear?.();
   mockPush.mockClear?.();
   mockRefetch.mockClear?.();
-  mockRespondMutate.mockClear?.();
-  mockUseRespondToApproval.mockClear?.();
   mockUseInboxItems.mockImplementation(() => ({
     items: [] as InboxItem[],
     isLoading: false,
     isError: false,
     refetch: mockRefetch,
-  }));
-  mockUseRespondToApproval.mockImplementation(() => ({
-    mutate: mockRespondMutate,
-    isPending: false,
-    variables: undefined,
   }));
 });
 
@@ -147,152 +129,6 @@ describe('InboxScreen', () => {
     expect(row).toBeTruthy();
     fireEvent.press(row);
     expect(mockPush).toHaveBeenCalledWith('/(private)/schedule/shifts/shift-1');
-  });
-
-  it('renders a co-parent approval row that deep-links to the shift when known', () => {
-    mockUseInboxItems.mockImplementation(() => ({
-      isLoading: false,
-      isError: false,
-      refetch: mockRefetch,
-      items: [
-        {
-          kind: 'co_parent_approval',
-          id: 'ap-1',
-          householdId: 'hh-1',
-          action: 'extra_shift',
-          timeoutAt: '2026-08-04T12:00:00Z',
-          shiftId: 'shift-9',
-        },
-      ] satisfies InboxItem[],
-    }));
-
-    const { getByTestId } = render(<InboxScreen />);
-    const row = getByTestId('inbox-item-co_parent_approval-ap-1');
-    fireEvent.press(row);
-    expect(mockPush).toHaveBeenCalledWith('/(private)/schedule/shifts/shift-9');
-  });
-
-  it('fires the approve mutation from a co-parent approval row', () => {
-    mockUseInboxItems.mockImplementation(() => ({
-      isLoading: false,
-      isError: false,
-      refetch: mockRefetch,
-      items: [
-        {
-          kind: 'co_parent_approval',
-          id: 'ap-1',
-          householdId: 'hh-1',
-          action: 'extra_shift',
-          timeoutAt: '2026-08-04T12:00:00Z',
-          shiftId: 'shift-9',
-        },
-      ] satisfies InboxItem[],
-    }));
-
-    const { getByTestId } = render(<InboxScreen />);
-    fireEvent.press(getByTestId('inbox-approval-approve-ap-1'));
-
-    expect(mockRespondMutate).toHaveBeenCalledWith({
-      householdId: 'hh-1',
-      approvalId: 'ap-1',
-      status: 'approved',
-    });
-  });
-
-  it('fires the decline mutation from a co-parent approval row', () => {
-    mockUseInboxItems.mockImplementation(() => ({
-      isLoading: false,
-      isError: false,
-      refetch: mockRefetch,
-      items: [
-        {
-          kind: 'co_parent_approval',
-          id: 'ap-1',
-          householdId: 'hh-1',
-          action: 'extra_shift',
-          timeoutAt: '2026-08-04T12:00:00Z',
-          shiftId: 'shift-9',
-        },
-      ] satisfies InboxItem[],
-    }));
-
-    const { getByTestId } = render(<InboxScreen />);
-    fireEvent.press(getByTestId('inbox-approval-decline-ap-1'));
-
-    expect(mockRespondMutate).toHaveBeenCalledWith({
-      householdId: 'hh-1',
-      approvalId: 'ap-1',
-      status: 'declined',
-    });
-  });
-
-  it('disables approve/decline while the mutation for that row is in flight', () => {
-    mockUseRespondToApproval.mockImplementation(() => ({
-      mutate: mockRespondMutate,
-      isPending: true,
-      variables: {
-        householdId: 'hh-1',
-        approvalId: 'ap-1',
-        status: 'approved',
-      },
-    }));
-    mockUseInboxItems.mockImplementation(() => ({
-      isLoading: false,
-      isError: false,
-      refetch: mockRefetch,
-      items: [
-        {
-          kind: 'co_parent_approval',
-          id: 'ap-1',
-          householdId: 'hh-1',
-          action: 'extra_shift',
-          timeoutAt: '2026-08-04T12:00:00Z',
-          shiftId: 'shift-9',
-        },
-      ] satisfies InboxItem[],
-    }));
-
-    const { getByTestId } = render(<InboxScreen />);
-
-    expect(getByTestId('inbox-approval-approve-ap-1').props.disabled).toBe(
-      true
-    );
-    expect(getByTestId('inbox-approval-decline-ap-1').props.disabled).toBe(
-      true
-    );
-  });
-
-  it('does not disable approve/decline for a row that is not the in-flight one', () => {
-    mockUseRespondToApproval.mockImplementation(() => ({
-      mutate: mockRespondMutate,
-      isPending: true,
-      variables: {
-        householdId: 'hh-1',
-        approvalId: 'ap-other',
-        status: 'approved',
-      },
-    }));
-    mockUseInboxItems.mockImplementation(() => ({
-      isLoading: false,
-      isError: false,
-      refetch: mockRefetch,
-      items: [
-        {
-          kind: 'co_parent_approval',
-          id: 'ap-1',
-          householdId: 'hh-1',
-          action: 'extra_shift',
-          timeoutAt: '2026-08-04T12:00:00Z',
-          shiftId: 'shift-9',
-        },
-      ] satisfies InboxItem[],
-    }));
-
-    const { getByTestId } = render(<InboxScreen />);
-
-    expect(
-      getByTestId('inbox-approval-approve-ap-1').props.disabled
-    ).toBeFalsy();
   });
 
   it('renders a pending-pattern row that deep-links to respond', () => {

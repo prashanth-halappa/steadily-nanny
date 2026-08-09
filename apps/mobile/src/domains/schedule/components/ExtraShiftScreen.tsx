@@ -10,6 +10,18 @@ import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Pressable, ScrollView, View } from 'react-native';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
+import { availabilityApi } from '@/src/api/endpoints/availability';
+import type { CreateExtraShiftInput } from '@/src/api/endpoints/changeRequests';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/src/components/ui/alert-dialog';
 import { BackButton } from '@/src/components/ui/back-button';
 import { Button } from '@/src/components/ui/button';
 import { ChildChip } from '@/src/components/ui/child-chip';
@@ -25,6 +37,7 @@ import {
   formatDate,
   parseDate,
 } from '@/src/domains/timeOff/components/TimeOffDateRangePicker.utils';
+import { findConflictingBusyBlocks } from '@/src/domains/timeOff/utils/busyConflict';
 import { useCreateExtraShift } from '@/src/hooks/mutations/useCreateExtraShift';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
 import { useChildren } from '@/src/hooks/queries/useChildren';
@@ -70,6 +83,9 @@ export function ExtraShiftScreen() {
       ? [params.childId]
       : []
   );
+  const [clashOpen, setClashOpen] = useState(false);
+  const [pendingPayload, setPendingPayload] =
+    useState<CreateExtraShiftInput | null>(null);
 
   useEffect(() => {
     const rows = carers.data ?? [];
@@ -103,23 +119,66 @@ export function ExtraShiftScreen() {
     setDate(formatDate(next));
   };
 
-  const handleSubmit = async () => {
-    if (!canSubmit || !active.householdId || !carerId) return;
+  const selectedCarer = useMemo(
+    () => (carers.data ?? []).find(member => member.user_id === carerId),
+    [carers.data, carerId]
+  );
+
+  const submitPayload = async (payload: CreateExtraShiftInput) => {
     try {
-      await createExtra.mutateAsync({
-        starts_at: wallClockToUtcIso(date, start, timeZone),
-        ends_at: wallClockToUtcIso(date, end, timeZone),
-        timezone: timeZone,
-        carer_id: carerId,
-        child_ids: childIds.length > 0 ? childIds : undefined,
-      });
+      await createExtra.mutateAsync(payload);
       router.back();
     } catch (error) {
       // Mutation onError already toasts API failures; surface client-side throws.
+      const err = error as { isAxiosError?: boolean; response?: unknown };
+      if (err.isAxiosError || err.response) {
+        return;
+      }
       if (error instanceof Error && error.message) {
         showErrorToast(error.message);
       }
     }
+  };
+
+  const confirmPending = () => {
+    const payload = pendingPayload;
+    if (!payload) return;
+    setClashOpen(false);
+    setPendingPayload(null);
+    void submitPayload(payload);
+  };
+
+  const handleSubmit = async () => {
+    if (!canSubmit || !active.householdId || !carerId) return;
+    const payload: CreateExtraShiftInput = {
+      starts_at: wallClockToUtcIso(date, start, timeZone),
+      ends_at: wallClockToUtcIso(date, end, timeZone),
+      timezone: timeZone,
+      carer_id: carerId,
+      child_ids: childIds.length > 0 ? childIds : undefined,
+    };
+
+    try {
+      const busyBlocks = await availabilityApi.getBusyBlocks(
+        carerId,
+        payload.starts_at,
+        payload.ends_at
+      );
+      const conflicts = findConflictingBusyBlocks(
+        payload.starts_at,
+        payload.ends_at,
+        busyBlocks
+      );
+      if (conflicts.length > 0) {
+        setPendingPayload(payload);
+        setClashOpen(true);
+        return;
+      }
+    } catch {
+      // Advisory only — never block creation on a lookup failure.
+    }
+
+    await submitPayload(payload);
   };
 
   // Parent-only, same guard the siblings (SchedulePendingScreen,
@@ -257,6 +316,37 @@ export function ExtraShiftScreen() {
           </Text>
         </Button>
       </View>
+
+      <AlertDialog open={clashOpen} onOpenChange={setClashOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {t('shifts.extraClashTitle', {
+                name: selectedCarer
+                  ? resolveCarerName(
+                      selectedCarer,
+                      t('shifts.extraClashCarerFallback')
+                    )
+                  : t('shifts.extraClashCarerFallback'),
+              })}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('shifts.extraClashDescription')}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel testID="schedule-extra-clash-cancel">
+              <Text>{t('shifts.extraClashCancel')}</Text>
+            </AlertDialogCancel>
+            <AlertDialogAction
+              testID="schedule-extra-clash-confirm"
+              onPress={confirmPending}
+            >
+              <Text>{t('shifts.extraClashConfirm')}</Text>
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </ScrollView>
   );
 }

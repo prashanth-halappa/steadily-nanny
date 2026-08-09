@@ -64,7 +64,7 @@ import type { TimeEntry } from '../types';
 import { formatDuration, formatOvertimeDelta } from '../utils/duration';
 import { formatEarningsLongDate } from '../utils/earningsFormat';
 import { scheduledMinutesFor, sumEntryMinutes } from '../utils/entryMinutes';
-import { derivePaidState } from '../utils/paidState';
+import { derivePaidState, deriveReopenedPaidState } from '../utils/paidState';
 import { useReopenedNotice } from '../utils/reopenedNotice';
 import { describeTimeEntryWriteError } from '../utils/timeEntryWriteError';
 import { EarningsBreakdownSheet } from './EarningsBreakdownSheet';
@@ -160,11 +160,12 @@ export function NannyWeekView({
     ? (weekTimesheets.find(t => t.carer_id === currentUserId) ?? null)
     : null;
   const reopened = useReopenedNotice(timesheet?.id, timesheet?.status);
-  // Read-only for her, and only once the week is approved — settlement is
-  // measured against a FROZEN gross, so there is nothing to show before one
-  // exists. Same gate as the parent view, from the other side of the card.
+  // Read-only for her. Fetch once approved OR reopened — the ledger survives
+  // a reopen even when the earnings snapshot clears.
+  const showSettlementHistory =
+    timesheet?.status === 'approved' || timesheet?.reopen_reason != null;
   const paymentsQuery = usePayments(
-    timesheet?.status === 'approved' ? timesheet.id : null
+    showSettlementHistory && timesheet ? timesheet.id : null
   );
 
   const handleOpenAddExpense = () => {
@@ -329,10 +330,17 @@ export function NannyWeekView({
   // `earningsOk` is null for a week with no server total — `derivePaidState`
   // returns null for that rather than measuring against a fabricated zero
   // (docs/11-MONEY.md §4), and the card then renders nothing.
-  const paidState = derivePaidState(
-    paymentsQuery.data ?? [],
-    earningsOk ? earningsOk.gross_minor : null
-  );
+  const payments = paymentsQuery.data ?? [];
+  const paidState = earningsOk
+    ? derivePaidState(payments, earningsOk.gross_minor)
+    : timesheet?.reopen_reason != null
+      ? deriveReopenedPaidState(payments)
+      : null;
+  const settlementCurrency =
+    earningsOk?.currency ??
+    payments[0]?.currency ??
+    arrangementQuery.data?.currency ??
+    'GBP';
   const mileageRateMinor =
     arrangementQuery.data?.mileage_rate_per_mile_minor ?? null;
 
@@ -401,21 +409,23 @@ export function NannyWeekView({
                 `onMarkPaidPress` — recording a payment is the paying
                 family's action, and its absence is the whole read-only
                 contract (see PaidStateCard's module doc). */}
-            {isApproved && timesheet ? (
+            {showSettlementHistory && timesheet ? (
               <>
                 <PaidStateCard
                   paidState={paidState}
-                  payments={paymentsQuery.data ?? []}
-                  currency={expensesCurrency}
+                  payments={payments}
+                  currency={settlementCurrency}
                 />
-                <WeekExportAction
-                  timesheetId={timesheet.id}
-                  weekStartISO={weekStartISO}
-                  weekRangeLabel={weekRangeLabel}
-                  carerName={timesheet.carer_display_name}
-                  earnings={earningsOk}
-                  paidState={paidState}
-                />
+                {isApproved ? (
+                  <WeekExportAction
+                    timesheetId={timesheet.id}
+                    weekStartISO={weekStartISO}
+                    weekRangeLabel={weekRangeLabel}
+                    carerName={timesheet.carer_display_name}
+                    earnings={earningsOk}
+                    paidState={paidState}
+                  />
+                ) : null}
               </>
             ) : null}
           </>

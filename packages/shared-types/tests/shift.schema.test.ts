@@ -223,6 +223,10 @@ describe('shift.schema', () => {
         true
       );
     });
+
+    it('accepts note: null to clear the note', () => {
+      expect(UpdateShiftSchema.safeParse({ note: null }).success).toBe(true);
+    });
   });
 
   describe('ShiftIdParamSchema', () => {
@@ -450,14 +454,6 @@ describe('shift.schema', () => {
       if (result.success && result.data.status === 'created') {
         expect(result.data.adopted).toBe(false);
       }
-    });
-
-    it('parses the pending_approval arm', () => {
-      const result = CreateExtraShiftResultSchema.safeParse({
-        status: 'pending_approval',
-        approval: { id: 'approval-1' },
-      });
-      expect(result.success).toBe(true);
     });
 
     it('rejects an unknown status', () => {

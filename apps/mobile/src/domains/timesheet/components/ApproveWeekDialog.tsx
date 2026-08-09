@@ -10,10 +10,11 @@
  *
  * The gross figure is echoed as TEXT inside the body sentence, tabular but
  * NOT a hero number — this is a confirmation, not a receipt (spec's own
- * distinction). `grossLabel: null` renders the no-arrangement body variant
- * (§4.3: a week can be approved with no pay rate set at all — hours still
- * lock, there is simply nothing to total).
+ * distinction). The body variant follows `earningsStatus`: `ok` shows the
+ * gross clause; `currency_change` explains the mid-week currency switch;
+ * everything else (`no_arrangement`, missing earnings) drops the gross.
  */
+import type { WeekEarningsState } from '@steadily-nanny/shared-types/schemas/timesheet.schema';
 import { useTranslation } from 'react-i18next';
 import {
   AlertDialog,
@@ -37,9 +38,10 @@ interface ApproveWeekDialogProps {
    * headline `formatDuration` (matches the breakdown sheet's row style, and
    * the spec's own worked example). */
   hoursLabel: string;
-  /** `null` -> no arrangement: the body drops the gross clause entirely
-   * (§4.3's no-arrangement variant), never a £0.00 stand-in. */
+  /** Formatted gross — only rendered when `earningsStatus === 'ok'`. */
   grossLabel: string | null;
+  /** Drives which body variant renders — not inferred from `grossLabel`. */
+  earningsStatus?: WeekEarningsState;
   carerName: string;
 }
 
@@ -51,9 +53,17 @@ export function ApproveWeekDialog({
   weekRangeLabel,
   hoursLabel,
   grossLabel,
+  earningsStatus,
   carerName,
 }: ApproveWeekDialogProps) {
   const { t } = useTranslation('hours');
+
+  const bodyKey =
+    earningsStatus === 'ok'
+      ? 'approveDialogBody'
+      : earningsStatus === 'currency_change'
+        ? 'approveDialogBodyCurrencyChange'
+        : 'approveDialogBodyNoArrangement';
 
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
@@ -63,16 +73,11 @@ export function ApproveWeekDialog({
             {t('approveDialogTitle', { range: weekRangeLabel })}
           </AlertDialogTitle>
           <AlertDialogDescription testID="hours-approve-dialog-body">
-            {grossLabel === null
-              ? t('approveDialogBodyNoArrangement', {
-                  hours: hoursLabel,
-                  name: carerName,
-                })
-              : t('approveDialogBody', {
-                  hours: hoursLabel,
-                  gross: grossLabel,
-                  name: carerName,
-                })}
+            {t(bodyKey, {
+              hours: hoursLabel,
+              ...(bodyKey === 'approveDialogBody' ? { gross: grossLabel } : {}),
+              name: carerName,
+            })}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>

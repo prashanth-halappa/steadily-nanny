@@ -11,9 +11,8 @@
  * a Date object — Date only exists transiently at the
  * `@react-native-community/datetimepicker` boundary (`ExpenseDateField.utils.ts`).
  *
- * A future date is REFUSED — the component does not call `onChange` and
- * shows an inline error instead, same discipline as
- * `TimeOffDateRangePicker`'s refuse-don't-swap contract.
+ * A future date always commits via `onChange`; an inline error is derived
+ * from the current `value` vs `todayISO`. Consumers gate submit on validity.
  *
  * NOTE ON TEST STRATEGY: `@react-native-community/datetimepicker` ships raw
  * Flow-typed `.js` source `bun:test`'s parser cannot handle, and
@@ -27,7 +26,6 @@
  */
 
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
 import { FieldError } from '@/src/components/ui/field-error';
@@ -59,22 +57,14 @@ export function ExpenseDateField({
   const { t } = useTranslation('expenses');
   const colors = useThemeColors();
   const baseTestID = testID ?? DEFAULT_TEST_ID;
-  const [showError, setShowError] = useState(false);
+  const dateError = !isOnOrBeforeToday(value, todayISO);
 
   // The event param's real type lives in the native module's own
   // (untranspilable under bun:test) source — see the module doc comment.
   // Only `date` is needed here.
   const handleChange = (_event: unknown, date?: Date) => {
     if (!date) return;
-    const next = formatDate(date);
-    if (!isOnOrBeforeToday(next, todayISO)) {
-      // Refuse — do not silently clamp to today, do not report a bad date
-      // upward.
-      setShowError(true);
-      return;
-    }
-    setShowError(false);
-    onChange(next);
+    onChange(formatDate(date));
   };
 
   return (
@@ -90,7 +80,7 @@ export function ExpenseDateField({
         textColor={colors.foreground}
         themeVariant="light"
       />
-      {showError ? (
+      {dateError ? (
         <FieldError testID={`${baseTestID}-error`}>
           {t('addSheet.dateFutureError')}
         </FieldError>

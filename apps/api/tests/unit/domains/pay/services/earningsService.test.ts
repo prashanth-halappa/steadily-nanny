@@ -70,14 +70,6 @@ function cancelled(local_date: string, minutes: number) {
   return { kind: 'cancellation_paid' as const, local_date, minutes };
 }
 
-function closureShift(
-  local_date: string,
-  scheduled_minutes: number,
-  became_payable = false
-) {
-  return { local_date, scheduled_minutes, became_payable };
-}
-
 function pto(local_date: string, minutes: number) {
   return { local_date, minutes };
 }
@@ -93,8 +85,6 @@ function input(
     week_start: WEEK_START,
     entries: [],
     arrangements: [arrangement()],
-    closure_dates: [],
-    closure_day_shifts: [],
     ...over,
   };
 }
@@ -416,22 +406,18 @@ describe('earningsService.computeWeekEarnings', () => {
     });
   });
 
-  describe('guaranteed top-up — closure days only', () => {
+  describe('guaranteed top-up — weekly shortfall, unconditional', () => {
     const guaranteed = (minutes: number) =>
       arrangement({
         overtime_threshold_minutes: null,
         guaranteed_minutes_per_week: minutes,
       });
 
-    it('pays a full-closure zero-hours week as a topup-only breakdown', () => {
+    it('pays a zero-hours week as a topup-only breakdown when payable minutes are below the guarantee', () => {
       const result = ok(
         computeWeekEarnings(
           input({
             arrangements: [guaranteed(2400)],
-            closure_dates: [MON, TUE, WED, THU, FRI],
-            closure_day_shifts: [MON, TUE, WED, THU, FRI].map(d =>
-              closureShift(d, 480)
-            ),
           })
         )
       );
@@ -453,7 +439,38 @@ describe('earningsService.computeWeekEarnings', () => {
       expect(result.guaranteed_minutes_per_week).toBe(2400);
     });
 
-    it('excludes closure-day shifts already paid as cancellation_paid — no double pay', () => {
+    it('tops up the full shortfall when payable minutes fall short with no closure days', () => {
+      const result = ok(
+        computeWeekEarnings(
+          input({
+            arrangements: [guaranteed(2400)],
+            entries: [MON, TUE, WED].map(d => worked(d, 480)),
+          })
+        )
+      );
+
+      expect(result.lines.map(l => [l.kind, l.minutes])).toEqual([
+        ['regular', 1440],
+        ['guaranteed_topup', 960],
+      ]);
+      expect(result.gross_minor).toBe(74_000);
+    });
+
+    it('emits no top-up when payable minutes meet the guarantee', () => {
+      const result = ok(
+        computeWeekEarnings(
+          input({
+            arrangements: [guaranteed(2400)],
+            entries: [MON, TUE, WED, THU, FRI].map(d => worked(d, 480)),
+          })
+        )
+      );
+
+      expect(result.lines.map(l => l.kind)).toEqual(['regular']);
+      expect(result.gross_minor).toBe(74_000);
+    });
+
+    it('tops up only the remaining shortfall when paid cancellation minutes count toward payable', () => {
       const result = ok(
         computeWeekEarnings(
           input({
@@ -461,11 +478,6 @@ describe('earningsService.computeWeekEarnings', () => {
             entries: [
               ...[MON, TUE, WED, THU].map(d => worked(d, 480)),
               cancelled(FRI, 240),
-            ],
-            closure_dates: [FRI],
-            closure_day_shifts: [
-              closureShift(FRI, 240, true),
-              closureShift(FRI, 240, false),
             ],
           })
         )
@@ -477,58 +489,15 @@ describe('earningsService.computeWeekEarnings', () => {
         ['cancellation_paid', 240],
         ['guaranteed_topup', 240],
       ]);
-      // 40h at £18.50 exactly — the paid cancellation reduced the topup
-      // rather than stacking on top of it.
-      expect(result.gross_minor).toBe(74000);
+      expect(result.gross_minor).toBe(74_000);
     });
 
-    it('contributes nothing for a closure day with no materialized shifts', () => {
-      const result = ok(
-        computeWeekEarnings(
-          input({
-            arrangements: [guaranteed(2400)],
-            entries: [MON, TUE, WED, THU].map(d => worked(d, 480)),
-            closure_dates: [FRI],
-            closure_day_shifts: [],
-          })
-        )
-      );
-
-      expect(result.lines.map(l => l.kind)).toEqual(['regular']);
-      expect(result.gross_minor).toBe(59200);
-    });
-
-    it('caps the topup at closure-day lost minutes when the shortfall is larger', () => {
-      const result = ok(
-        computeWeekEarnings(
-          input({
-            arrangements: [guaranteed(2400)],
-            entries: [MON, TUE, WED].map(d => worked(d, 480)),
-            closure_dates: [THU],
-            closure_day_shifts: [closureShift(THU, 480)],
-          })
-        )
-      );
-
-      // Shortfall is 960 minutes; only 480 were lost to the closure.
-      expect(result.lines.map(l => [l.kind, l.minutes])).toEqual([
-        ['regular', 1440],
-        ['guaranteed_topup', 480],
-      ]);
-      expect(result.gross_minor).toBe(59200);
-    });
-
-    it('pays only the shortfall when closure-day lost minutes exceed it', () => {
+    it('tops up only the shortfall when payable minutes are partway to the guarantee', () => {
       const result = ok(
         computeWeekEarnings(
           input({
             arrangements: [guaranteed(1800)],
             entries: [MON, TUE, WED].map(d => worked(d, 480)),
-            closure_dates: [THU, FRI],
-            closure_day_shifts: [
-              closureShift(THU, 480),
-              closureShift(FRI, 480),
-            ],
           })
         )
       );
@@ -537,24 +506,10 @@ describe('earningsService.computeWeekEarnings', () => {
         ['regular', 1440],
         ['guaranteed_topup', 360],
       ]);
-      expect(result.gross_minor).toBe(55500);
+      expect(result.gross_minor).toBe(55_500);
     });
 
-    it('never tops up a shortfall with no closure days, whatever its size', () => {
-      const result = ok(
-        computeWeekEarnings(
-          input({
-            arrangements: [guaranteed(2400)],
-            entries: [MON, TUE, WED].map(d => worked(d, 480)),
-          })
-        )
-      );
-
-      expect(result.lines.map(l => l.kind)).toEqual(['regular']);
-      expect(result.gross_minor).toBe(44400);
-    });
-
-    it('lets overtime and a topup coexist — overtime Mon-Thu, closure Friday', () => {
+    it('lets overtime and a topup coexist on an under-guarantee week', () => {
       const result = ok(
         computeWeekEarnings(
           input({
@@ -565,8 +520,6 @@ describe('earningsService.computeWeekEarnings', () => {
               }),
             ],
             entries: [MON, TUE, WED, THU].map(d => worked(d, 450)),
-            closure_dates: [FRI],
-            closure_day_shifts: [closureShift(FRI, 480)],
           })
         )
       );
@@ -594,34 +547,16 @@ describe('earningsService.computeWeekEarnings', () => {
         },
         {
           kind: 'guaranteed_topup',
-          minutes: 480,
+          minutes: 600,
           rate_minor: 1850,
           multiplier: null,
-          amount_minor: 14800,
+          amount_minor: 18500,
           from_date: MON,
           to_date: SUN,
           arrangement_id: ARR_ID_A,
         },
       ]);
-      expect(result.gross_minor).toBe(79550);
-    });
-
-    it('ignores shifts on days that are not closure days', () => {
-      const result = ok(
-        computeWeekEarnings(
-          input({
-            arrangements: [guaranteed(2400)],
-            entries: [MON, TUE, WED].map(d => worked(d, 480)),
-            closure_dates: [THU],
-            closure_day_shifts: [closureShift(THU, 60), closureShift(FRI, 480)],
-          })
-        )
-      );
-
-      expect(result.lines.map(l => [l.kind, l.minutes])).toEqual([
-        ['regular', 1440],
-        ['guaranteed_topup', 60],
-      ]);
+      expect(result.gross_minor).toBe(83_250);
     });
 
     it('never tops up when the arrangement sets no guaranteed minutes', () => {
@@ -629,8 +564,6 @@ describe('earningsService.computeWeekEarnings', () => {
         computeWeekEarnings(
           input({
             entries: [worked(MON, 480)],
-            closure_dates: [FRI],
-            closure_day_shifts: [closureShift(FRI, 480)],
           })
         )
       );
@@ -867,11 +800,10 @@ describe('earningsService.computeWeekEarnings', () => {
 
     it('PTO suppresses a guaranteed top-up while ALSO paying its own line — the hazard case', () => {
       // Without the pto line, payable_minutes would have been 1920 (worked
-      // only), the closure-day shortfall would be 480, and the topup would
-      // pay it. WITH the pto line, the same 480 PTO minutes count toward
-      // payable_minutes (suppressing the topup to zero) AND are themselves
-      // paid on a `pto` line — no double pay, and no more "suppresses
-      // without paying."
+      // only), the shortfall would be 480, and the topup would pay it. WITH
+      // the pto line, the same 480 PTO minutes count toward payable_minutes
+      // (suppressing the topup to zero) AND are themselves paid on a `pto`
+      // line — no double pay, and no more "suppresses without paying."
       const result = ok(
         computeWeekEarnings(
           input({
@@ -883,8 +815,6 @@ describe('earningsService.computeWeekEarnings', () => {
             ],
             entries: [MON, TUE, WED, THU].map(d => worked(d, 480)),
             pto_usage: [pto(FRI, 480)],
-            closure_dates: [FRI],
-            closure_day_shifts: [closureShift(FRI, 480)],
           })
         )
       );
@@ -1079,7 +1009,7 @@ describe('earningsService.computeWeekEarnings', () => {
       });
     });
 
-    it('ignores an approved expense dated outside the week, same convention as closure_dates', () => {
+    it('ignores an approved expense dated outside the week', () => {
       const result = ok(
         computeWeekEarnings(
           input({
@@ -1190,8 +1120,6 @@ describe('earningsService.computeWeekEarnings', () => {
               ...[MON, TUE, WED, THU].map(d => worked(d, 455)),
               cancelled(FRI, 200),
             ],
-            closure_dates: [SAT],
-            closure_day_shifts: [closureShift(SAT, 300)],
           })
         )
       );
@@ -1239,10 +1167,10 @@ describe('earningsService.computeWeekEarnings', () => {
         },
         {
           kind: 'guaranteed_topup',
-          minutes: 300,
+          minutes: 380,
           rate_minor: 1957,
           multiplier: null,
-          amount_minor: 9785,
+          amount_minor: 12_394,
           from_date: MON,
           to_date: SUN,
           arrangement_id: ARR_ID_B,
@@ -1251,7 +1179,7 @@ describe('earningsService.computeWeekEarnings', () => {
 
       const summed = result.lines.reduce((t, l) => t + l.amount_minor, 0);
       expect(result.gross_minor).toBe(summed);
-      expect(result.gross_minor).toBe(83230);
+      expect(result.gross_minor).toBe(85_839);
       expect(WeekEarningsSchema.safeParse(result).success).toBe(true);
     });
   });

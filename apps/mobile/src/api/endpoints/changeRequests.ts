@@ -9,7 +9,6 @@ import {
   CreatedExtraShiftResultSchema,
   type CreateShiftChangeRequestInput,
   CreateShiftChangeRequestSchema,
-  PendingApprovalResultSchema,
   type RespondToShiftChangeRequestInput,
   RespondToShiftChangeRequestSchema,
   type ShiftChangeRequest,
@@ -30,24 +29,18 @@ export const changeRequestEndpoints = {
     `/v1/households/${householdId}/shifts/extra`,
 } as const;
 
-const CreateResultSchema = z.discriminatedUnion('status', [
-  z.object({
-    status: z.literal('pending'),
-    shift_change_request: ShiftChangeRequestSchema,
-  }),
-  PendingApprovalResultSchema,
-]);
+const CreateResultSchema = z.object({
+  status: z.literal('pending'),
+  shift_change_request: ShiftChangeRequestSchema,
+});
 
 // The created arm comes from shared-types (so a server-side shape change
 // breaks a test in this repo rather than a phone at runtime); `warnings` is
 // added here because `ClashWarningSchema` lives in `me.schema`, which imports
 // `shift.schema` — defining it there would close an import cycle.
-const CreateExtraResultSchema = z.discriminatedUnion('status', [
-  CreatedExtraShiftResultSchema.extend({
-    warnings: z.array(ClashWarningSchema).default([]),
-  }),
-  PendingApprovalResultSchema,
-]);
+const CreateExtraResultSchema = CreatedExtraShiftResultSchema.extend({
+  warnings: z.array(ClashWarningSchema).default([]),
+});
 export type CreateExtraShiftResult = z.infer<typeof CreateExtraResultSchema>;
 
 const CreateExtraBodySchema = z

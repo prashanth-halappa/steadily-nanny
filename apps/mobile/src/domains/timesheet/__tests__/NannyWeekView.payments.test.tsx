@@ -311,4 +311,34 @@ describe('NannyWeekView — reading the settlement', () => {
     expect(queryByTestId('hours-export-button')).toBeNull();
     expect(listPaymentsMock).not.toHaveBeenCalled();
   });
+
+  it('keeps payment history visible on a reopened week', async () => {
+    listPaymentsMock.mockImplementation(() =>
+      Promise.resolve([makePayment({ amount_minor: 12000 })])
+    );
+    getWeekMock.mockImplementation(() =>
+      Promise.resolve([
+        makeTimesheetWeek({
+          status: 'submitted',
+          approved_at: null,
+          reopen_reason: 'Thursday hours were wrong',
+          earnings: null,
+        }),
+      ])
+    );
+
+    const { getByTestId, queryByTestId } = renderNannyView();
+
+    await waitFor(() => expect(listPaymentsMock).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(getByTestId('hours-paid-state-total-value').props.children).toBe(
+        '£120.00'
+      )
+    );
+    expect(
+      getByTestId('hours-paid-state-line-pay-1-value').props.children
+    ).toBe('£120.00');
+    expect(queryByTestId('hours-mark-paid-button')).toBeNull();
+    expect(queryByTestId('hours-export-button')).toBeNull();
+  });
 });

@@ -9,9 +9,10 @@
  * `starts_at`/`ends_at` at submit time. Date objects exist only transiently,
  * at the `@react-native-community/datetimepicker` boundary.
  *
- * An end date before the start (or a start after the end) is REFUSED — the
- * component does not call `onChange` and shows an inline error instead. It
- * never silently swaps the two values. Same shape as `TimeRangePicker`
+ * Invalid ranges (end before start) always commit via `onChange`; an inline
+ * error is derived from the current `start`/`end` props. Consumers gate
+ * Save/submit on validity. Never silently swaps values. Same shape as
+ * `TimeRangePicker`
  * (`src/components/ui/time-range-picker.tsx`), which this is deliberately
  * modelled on.
  *
@@ -31,7 +32,6 @@
  */
 
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
 import { FieldError } from '@/src/components/ui/field-error';
@@ -63,32 +63,18 @@ export function TimeOffDateRangePicker({
   const { t } = useTranslation('timeOff');
   const colors = useThemeColors();
   const baseTestID = testID ?? DEFAULT_TEST_ID;
-  const [showError, setShowError] = useState(false);
+  const rangeError = !isEndOnOrAfterStart(start, end);
 
   // The event param's real type lives in the native module's own (untranspilable
   // under bun:test) source — see the module doc comment. We only need `date`.
   const handleStartChange = (_event: unknown, date?: Date) => {
     if (!date) return;
-    const nextStart = formatDate(date);
-    if (!isEndOnOrAfterStart(nextStart, end)) {
-      // Refuse — do not swap, do not report an invalid range upward.
-      setShowError(true);
-      return;
-    }
-    setShowError(false);
-    onChange(nextStart, end);
+    onChange(formatDate(date), end);
   };
 
   const handleEndChange = (_event: unknown, date?: Date) => {
     if (!date) return;
-    const nextEnd = formatDate(date);
-    if (!isEndOnOrAfterStart(start, nextEnd)) {
-      // Refuse — do not swap, do not report an invalid range upward.
-      setShowError(true);
-      return;
-    }
-    setShowError(false);
-    onChange(start, nextEnd);
+    onChange(start, formatDate(date));
   };
 
   return (
@@ -124,7 +110,7 @@ export function TimeOffDateRangePicker({
         </View>
       </View>
       <FieldError testID={`${baseTestID}-error`}>
-        {showError ? t('dateRange.endBeforeStart') : null}
+        {rangeError ? t('dateRange.endBeforeStart') : null}
       </FieldError>
     </View>
   );

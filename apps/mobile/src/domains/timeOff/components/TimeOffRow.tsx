@@ -34,6 +34,9 @@ interface TimeOffRowProps {
    * paid — `undefined` while unresolved (renders nothing), a resolved
    * number renders the anonymised marker (TIER0-CX-SPEC.md §5.2). */
   paidFamilyCount?: number;
+  /** Household IANA zone — formats the date range in household-local
+   * calendar dates, not the device's. */
+  timeZone?: string;
 }
 
 export function TimeOffRow({
@@ -43,6 +46,7 @@ export function TimeOffRow({
   isCancelling,
   isEditing = false,
   paidFamilyCount,
+  timeZone,
 }: TimeOffRowProps) {
   const { t } = useTranslation('timeOff');
   const { t: tPay } = useTranslation('pay');
@@ -57,7 +61,9 @@ export function TimeOffRow({
       testID={`time-off-row-${timeOff.id}`}
       className={isCancelled ? 'mb-3 gap-1 p-4 opacity-50' : 'mb-3 gap-1 p-4'}
     >
-      <Body>{formatTimeOffRangeLabel(timeOff.starts_at, timeOff.ends_at)}</Body>
+      <Body>
+        {formatTimeOffRangeLabel(timeOff.starts_at, timeOff.ends_at, timeZone)}
+      </Body>
       <StatusPill
         testID={`time-off-status-${timeOff.id}`}
         variant={pillVariant}

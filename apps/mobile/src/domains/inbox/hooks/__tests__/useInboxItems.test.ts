@@ -18,7 +18,6 @@ const HOUSEHOLD = {
 const listPatterns = mock(() => Promise.resolve([] as unknown[]));
 const listTimesheets = mock(() => Promise.resolve([] as unknown[]));
 const listPendingChangeRequests = mock(() => Promise.resolve([] as unknown[]));
-const listPendingApprovals = mock(() => Promise.resolve([] as unknown[]));
 
 let mockUseActiveHousehold: ReturnType<typeof mock>;
 let mockUseIsOnboarded: ReturnType<typeof mock>;
@@ -57,9 +56,6 @@ beforeAll(async () => {
       listShifts: mock(() => Promise.resolve([])),
     },
   }));
-  mock.module('@/src/domains/inbox/api', () => ({
-    listPendingApprovals,
-  }));
 
   useInboxItems = (await import('../useInboxItems')).useInboxItems;
   useAuthStore = (await import('@/src/store/auth')).useAuthStore;
@@ -69,11 +65,9 @@ beforeEach(() => {
   listPatterns.mockReset();
   listTimesheets.mockReset();
   listPendingChangeRequests.mockReset();
-  listPendingApprovals.mockReset();
   listPatterns.mockResolvedValue([]);
   listTimesheets.mockResolvedValue([]);
   listPendingChangeRequests.mockResolvedValue([]);
-  listPendingApprovals.mockResolvedValue([]);
 
   mockUseActiveHousehold.mockImplementation(() => ({
     household: HOUSEHOLD,

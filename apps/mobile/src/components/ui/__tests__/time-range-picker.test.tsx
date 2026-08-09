@@ -15,11 +15,12 @@
  * The pure "HH:MM" logic (parseTime/formatTime/isEndAfterStart) has its own
  * dedicated, dependency-free unit tests in time-range-picker.utils.test.ts —
  * this file exercises the real component wired to the real (mocked-native)
- * picker: actual `onChange` calls, the refuse-don't-swap contract, and the
- * inline error, end to end.
+ * picker: actual `onChange` calls, derived inline errors, and end-to-end
+ * invalid-range handling.
  */
 import { describe, expect, it, mock } from 'bun:test';
 import { fireEvent, render } from '@testing-library/react-native';
+import { useState } from 'react';
 import { TimeRangePicker } from '../time-range-picker';
 
 mock.module('@/lib/animations/useReducedMotion', () => ({
@@ -56,6 +57,30 @@ function selectEnd(
     'change',
     {},
     new Date(2026, 0, 1, hours, minutes)
+  );
+}
+
+function StatefulRangePicker({
+  initialStart = '09:00',
+  initialEnd = '17:00',
+  testID = 'range',
+}: {
+  initialStart?: string;
+  initialEnd?: string;
+  testID?: string;
+}) {
+  const [start, setStart] = useState(initialStart);
+  const [end, setEnd] = useState(initialEnd);
+  return (
+    <TimeRangePicker
+      testID={testID}
+      start={start}
+      end={end}
+      onChange={(nextStart, nextEnd) => {
+        setStart(nextStart);
+        setEnd(nextEnd);
+      }}
+    />
   );
 }
 
@@ -108,9 +133,9 @@ describe('TimeRangePicker', () => {
     expect(onChange).toHaveBeenCalledWith('09:00', '18:30');
   });
 
-  it('refuses a new start at or after the current end: no onChange, no swap, shows the inline error', () => {
+  it('always calls onChange with the picked value even when the range becomes invalid', () => {
     const onChange = mock();
-    const { getByTestId, queryByTestId } = render(
+    const { getByTestId } = render(
       <TimeRangePicker
         testID="range"
         start="09:00"
@@ -118,61 +143,51 @@ describe('TimeRangePicker', () => {
         onChange={onChange}
       />
     );
+    selectEnd(getByTestId, 'range', 8, 0);
+    expect(onChange).toHaveBeenCalledWith('09:00', '08:00');
+  });
+
+  it('calls onChange with an invalid start at or after the current end and shows the inline error', () => {
+    const { getByTestId, queryByTestId } = render(<StatefulRangePicker />);
     expect(queryByTestId('range-error')).toBeNull();
 
     selectStart(getByTestId, 'range', 18, 0); // after the current end (17:00)
 
-    expect(onChange).not.toHaveBeenCalled();
     expect(getByTestId('range-error')).toBeTruthy();
   });
 
-  it('refuses a new end at or before the current start: no onChange, no swap, shows the inline error', () => {
-    const onChange = mock();
-    const { getByTestId } = render(
-      <TimeRangePicker
-        testID="range"
-        start="09:00"
-        end="17:00"
-        onChange={onChange}
-      />
-    );
+  it('calls onChange with an invalid end at or before the current start and shows the inline error', () => {
+    const { getByTestId } = render(<StatefulRangePicker />);
     selectEnd(getByTestId, 'range', 8, 0); // before the current start (09:00)
 
-    expect(onChange).not.toHaveBeenCalled();
     expect(getByTestId('range-error')).toBeTruthy();
   });
 
-  it('refuses an end exactly equal to the start — "after" is strict, not "on or after"', () => {
-    const onChange = mock();
+  it('treats end exactly equal to start as invalid — "after" is strict, not "on or after"', () => {
+    const { getByTestId } = render(<StatefulRangePicker />);
+    selectEnd(getByTestId, 'range', 9, 0); // exactly equal to start
+
+    expect(getByTestId('range-error')).toBeTruthy();
+  });
+
+  it('renders the range-error node when mounted with invalid props', () => {
     const { getByTestId } = render(
       <TimeRangePicker
         testID="range"
-        start="09:00"
-        end="17:00"
-        onChange={onChange}
+        start="17:00"
+        end="09:00"
+        onChange={mock()}
       />
     );
-    selectEnd(getByTestId, 'range', 9, 0); // exactly equal to start
-
-    expect(onChange).not.toHaveBeenCalled();
     expect(getByTestId('range-error')).toBeTruthy();
   });
 
-  it('clears the error once a subsequent change is valid', () => {
-    const onChange = mock();
-    const { getByTestId, queryByTestId } = render(
-      <TimeRangePicker
-        testID="range"
-        start="09:00"
-        end="17:00"
-        onChange={onChange}
-      />
-    );
+  it('clears the error once props become valid again', () => {
+    const { getByTestId, queryByTestId } = render(<StatefulRangePicker />);
     selectStart(getByTestId, 'range', 18, 0);
     expect(getByTestId('range-error')).toBeTruthy();
 
     selectStart(getByTestId, 'range', 8, 0);
     expect(queryByTestId('range-error')).toBeNull();
-    expect(onChange).toHaveBeenCalledWith('08:00', '17:00');
   });
 });

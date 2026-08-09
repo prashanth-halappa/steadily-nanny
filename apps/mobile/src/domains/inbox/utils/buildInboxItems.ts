@@ -5,7 +5,6 @@
  * screen so each item type has a single, testable gate:
  *
  *  - change requests: pending AND opened by someone else (awaiting me)
- *  - co-parent approvals: parent/owner role AND pending AND not requested by me
  *  - pending patterns: status pending AND addressed to me as carer
  *  - queried weeks: status === 'queried' AND carer_id === me (not the parent
  *    who raised the query)
@@ -21,16 +20,6 @@ export type InboxChangeRequestInput = {
   requested_by: string | null;
   kind: string;
   status: string;
-};
-
-export type InboxApprovalInput = {
-  id: string;
-  household_id: string;
-  action: string;
-  status: string;
-  requested_by: string | null;
-  timeout_at: string;
-  payload: Record<string, unknown>;
 };
 
 export type InboxPatternInput = {
@@ -58,14 +47,6 @@ export type InboxItem =
       requestKind: string;
     }
   | {
-      kind: 'co_parent_approval';
-      id: string;
-      householdId: string;
-      action: string;
-      timeoutAt: string;
-      shiftId?: string;
-    }
-  | {
       kind: 'pending_pattern';
       id: string;
       patternId: string;
@@ -84,18 +65,10 @@ export type InboxItem =
       carerDisplayName: string | null;
     };
 
-function shiftIdFromPayload(
-  payload: Record<string, unknown>
-): string | undefined {
-  const raw = payload.shift_id;
-  return typeof raw === 'string' && raw.length > 0 ? raw : undefined;
-}
-
 export function buildInboxItems(input: {
   role: SetupRole | null;
   currentUserId: string | null | undefined;
   changeRequests: readonly InboxChangeRequestInput[];
-  approvals: readonly InboxApprovalInput[];
   patterns: readonly InboxPatternInput[];
   timesheets: readonly InboxTimesheetInput[];
 }): InboxItem[] {
@@ -111,23 +84,6 @@ export function buildInboxItems(input: {
       shiftId: req.shift_id,
       requestKind: req.kind,
     });
-  }
-
-  // Co-parent approvals are a parent/owner surface — nannies must never see
-  // (or fetch) them. GET /approvals is parent-gated server-side.
-  if (isParentEditorRole(input.role)) {
-    for (const approval of input.approvals) {
-      if (approval.status !== 'pending') continue;
-      if (!me || approval.requested_by === me) continue;
-      items.push({
-        kind: 'co_parent_approval',
-        id: approval.id,
-        householdId: approval.household_id,
-        action: approval.action,
-        timeoutAt: approval.timeout_at,
-        shiftId: shiftIdFromPayload(approval.payload),
-      });
-    }
   }
 
   for (const pattern of input.patterns) {
@@ -155,8 +111,7 @@ export function buildInboxItems(input: {
 
   // Submitted weeks are a parent/owner review surface — a carer must never
   // see her own submission bounce back at her as "pending work" here (she
-  // already knows; nothing is awaiting HER response). Same role gate as
-  // co-parent approvals above.
+  // already knows; nothing is awaiting HER response).
   if (isParentEditorRole(input.role)) {
     for (const sheet of input.timesheets) {
       if (sheet.status !== 'submitted') continue;

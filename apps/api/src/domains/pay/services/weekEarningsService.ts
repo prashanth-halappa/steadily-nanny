@@ -13,10 +13,8 @@
  *
  * SCOPING (D12): every repository here uses the service-role client and so
  * bypasses RLS. Each query below therefore carries its own
- * `household_id`/`carer_id` filter, and the one query that cannot
- * (`findByHouseholdAndLocalDate`, household-scoped only) is narrowed to this
- * carer in process before anything is priced. Authorization — may this caller
- * see this week at all — belongs to the calling service, not here.
+ * `household_id`/`carer_id` filter. Authorization — may this caller see this
+ * week at all — belongs to the calling service, not here.
  *
  * @module domains/pay/services/weekEarningsService
  */
@@ -25,15 +23,10 @@ import type { Expense } from '@steadily-nanny/shared-types/schemas/expense.schem
 import { EXPENSE_STATUSES } from '@steadily-nanny/shared-types/schemas/expense.schema';
 import type { PtoLedgerEntry } from '@steadily-nanny/shared-types/schemas/pto.schema';
 import { PTO_LEDGER_KINDS } from '@steadily-nanny/shared-types/schemas/pto.schema';
-import type { Shift } from '@steadily-nanny/shared-types/schemas/shift.schema';
-import { SHIFT_STATUSES } from '@steadily-nanny/shared-types/schemas/shift.schema';
 import type {
   TimeEntry,
   WeekEarnings,
 } from '@steadily-nanny/shared-types/schemas/timesheet.schema';
-import { HouseholdClosureRepository } from '../../availability/repositories/householdClosureRepository';
-import { HouseholdRepository } from '../../household';
-import { ShiftRepository } from '../../shift/repositories/shiftRepository';
 import { TimeEntryRepository } from '../../timesheet/repositories/timeEntryRepository';
 import { weekEndExclusive } from '../../timesheet/utils/weekStart';
 import { entryMinutes } from '../../timesheet/utils/workedMinutes';
@@ -45,7 +38,6 @@ import { allocateMinutes } from '../utils/allocateMinutes';
 import { addDays, localDatesCovered } from '../utils/localDateSpan';
 import {
   type ApprovedExpenseInput,
-  type ClosureDayShiftInput,
   type ComputeWeekEarningsInput,
   computeWeekEarnings,
   type EarningsTimeEntryInput,
@@ -53,23 +45,6 @@ import {
 } from './earningsService';
 
 const DAYS_PER_WEEK = 7;
-
-/**
- * Shift statuses whose scheduled minutes can be LOST to a closure.
- *
- * `draft` and `declined` are excluded: a draft was never issued and a
- * declined shift was never agreed, so neither represents work the carer was
- * promised and the closure then took away. `cancelled` very much is included
- * — a shift cancelled *because* the family is away is the archetypal lost
- * shift, and whether it was cancelled early enough to be paid is already
- * answered by `became_payable`, not by the status.
- */
-const SCHEDULED_SHIFT_STATUSES: ReadonlySet<string> = new Set([
-  SHIFT_STATUSES.PENDING,
-  SHIFT_STATUSES.CONFIRMED,
-  SHIFT_STATUSES.CANCELLED,
-  SHIFT_STATUSES.COMPLETED,
-]);
 
 /**
  * The household-local dates in `[weekStart, weekStart+7)` that a closure
@@ -110,9 +85,6 @@ export interface WeekEarningsSources {
   entries: readonly TimeEntry[];
   /** The carer's FULL append-only history — the engine resolves per-date itself. */
   arrangements: readonly PayArrangement[];
-  closureDates: readonly string[];
-  /** Shifts on those closure dates, already narrowed to this carer. */
-  closureDayShifts: readonly Shift[];
   /**
    * THIS carer's PTO ledger rows (`ptoLedgerRepo.listForCarerYear`, already
    * household- AND carer-scoped by its own arguments) for the calendar
@@ -265,13 +237,12 @@ function netPtoUsage(
 export function buildWeekEarningsInput(
   sources: WeekEarningsSources
 ): ComputeWeekEarningsInput {
-  const payableShiftIds = new Set<string>();
   const entries: EarningsTimeEntryInput[] = [];
 
   for (const entry of sources.entries) {
-    // 069: voided did not happen — no banked minutes and no payable-shift
-    // linkage. Skipped before `entryMinutes` so a voided cancellation-pay row
-    // cannot mark its shift payable and suppress closure-day top-up.
+    // 069: voided did not happen — no banked minutes. Skipped before
+    // `entryMinutes` so a voided row cannot price or count toward payable
+    // minutes.
     if (entry.status === 'voided') {
       continue;
     }
@@ -289,24 +260,7 @@ export function buildWeekEarningsInput(
       local_date: entry.local_date,
       minutes,
     });
-    if (entry.shift_id) {
-      // This shift produced payable minutes (worked, or a paid cancellation),
-      // so it is already in `payable_minutes` and must NOT also count as lost.
-      payableShiftIds.add(entry.shift_id);
-    }
   }
-
-  const closureDayShifts: ClosureDayShiftInput[] = sources.closureDayShifts
-    .filter(shift => SCHEDULED_SHIFT_STATUSES.has(shift.status))
-    .map(shift => ({
-      local_date: shift.local_date,
-      scheduled_minutes: Math.round(
-        (new Date(shift.ends_at).getTime() -
-          new Date(shift.starts_at).getTime()) /
-          60_000
-      ),
-      became_payable: payableShiftIds.has(shift.id),
-    }));
 
   // The week's last local date, inclusive — the same boundary
   // `computeWeekEarnings` uses for `week_end` and for filtering
@@ -352,28 +306,12 @@ export function buildWeekEarningsInput(
     week_start: sources.weekStart,
     entries,
     arrangements: sources.arrangements,
-    closure_dates: sources.closureDates,
-    closure_day_shifts: closureDayShifts,
     pto_usage: ptoUsage,
     reimbursements,
   };
 }
 
-/** Only the closure query this service needs — keeps the test double honest. */
-export interface WeekEarningsClosureRepository {
-  listByHousehold: (householdId: string) => Promise<HouseholdClosure[]>;
-}
-
-/** Only the shift query this service needs. Read-only: the shift domain owns its own writes. */
-export interface WeekEarningsShiftRepository {
-  findByHouseholdAndLocalDate: (
-    householdId: string,
-    localDate: string
-  ) => Promise<Shift[]>;
-}
-
-/**
- * Only the PTO ledger query this service needs. Household- AND
+/** Only the PTO ledger query this service needs. Household- AND
  * carer-scoped by its own arguments (unlike `WeekEarningsShiftRepository`'s
  * `findByHouseholdAndLocalDate`), so `computeForWeek` needs no further
  * in-process narrowing before handing the rows to `buildWeekEarningsInput`.
@@ -387,9 +325,9 @@ export interface WeekEarningsPtoRepository {
 }
 
 /**
- * Only the expense query this service needs. Household-scoped only — like
- * `WeekEarningsShiftRepository`, `computeForWeek` narrows the result to this
- * carer in process before pricing (D12 scoping).
+ * Only the expense query this service needs. Household-scoped only —
+ * `computeForWeek` narrows the result to this carer in process before pricing
+ * (D12 scoping).
  */
 export interface WeekEarningsExpenseRepository {
   listApprovedForWeek: (
@@ -418,9 +356,6 @@ export class WeekEarningsService implements WeekEarningsComputer {
   constructor(
     private readonly timeEntryRepo: TimeEntryRepository = new TimeEntryRepository(),
     private readonly arrangementRepo: PayArrangementRepository = new PayArrangementRepository(),
-    private readonly closureRepo: WeekEarningsClosureRepository = new HouseholdClosureRepository(),
-    private readonly shiftRepo: WeekEarningsShiftRepository = new ShiftRepository(),
-    private readonly householdRepo: HouseholdRepository = new HouseholdRepository(),
     private readonly ptoRepo: WeekEarningsPtoRepository = new PtoLedgerRepository(),
     private readonly expenseRepo: WeekEarningsExpenseRepository = new ExpenseRepository()
   ) {}
@@ -435,9 +370,6 @@ export class WeekEarningsService implements WeekEarningsComputer {
     carerId: string,
     weekStart: string
   ): Promise<WeekEarnings> {
-    const household = await this.householdRepo.findById(householdId);
-    const timeZone = household?.timezone ?? 'UTC';
-
     // `listForCarerYear` is a CALENDAR-YEAR query (`043_pto_ledger.sql`'s PTO
     // year, owner decision 3), not a date-range one, so a week that spans a
     // year boundary (Mon 29 Dec .. Sun 4 Jan) needs both years fetched — the
@@ -448,7 +380,7 @@ export class WeekEarningsService implements WeekEarningsComputer {
     const endYear = Number(weekEnd.slice(0, 4));
     const ptoYears = startYear === endYear ? [startYear] : [startYear, endYear];
 
-    const [entries, arrangements, closures, ptoLedgerRowsPerYear, expenses] =
+    const [entries, arrangements, ptoLedgerRowsPerYear, expenses] =
       await Promise.all([
         this.timeEntryRepo.listForCarerWeek(
           householdId,
@@ -457,7 +389,6 @@ export class WeekEarningsService implements WeekEarningsComputer {
           weekEndExclusive(weekStart)
         ),
         this.arrangementRepo.listForCarer(householdId, carerId),
-        this.closureRepo.listByHousehold(householdId),
         Promise.all(
           ptoYears.map(year =>
             this.ptoRepo.listForCarerYear(householdId, carerId, year)
@@ -471,33 +402,17 @@ export class WeekEarningsService implements WeekEarningsComputer {
       ]);
 
     const ptoLedgerRows = ptoLedgerRowsPerYear.flat();
-    // `listApprovedForWeek` is household-scoped only (like
-    // `findByHouseholdAndLocalDate` below) — narrowed to this carer HERE,
-    // in process, before anything is priced (D12 scoping, module doc).
+    // `listApprovedForWeek` is household-scoped only — narrowed to this carer
+    // HERE, in process, before anything is priced (D12 scoping, module doc).
     const approvedExpenses = expenses.filter(
       expense => expense.carer_id === carerId
     );
-
-    const closureDates = closureDatesInWeek(closures, weekStart, timeZone);
-    // At most seven dates, and usually zero — a per-date fetch is cheaper
-    // than widening the query, and it reuses the index the calendar already
-    // relies on. No closure days, no shift query at all.
-    const shiftsPerDate = await Promise.all(
-      closureDates.map(date =>
-        this.shiftRepo.findByHouseholdAndLocalDate(householdId, date)
-      )
-    );
-    const closureDayShifts = shiftsPerDate
-      .flat()
-      .filter(shift => shift.carer_id === carerId);
 
     return computeWeekEarnings(
       buildWeekEarningsInput({
         weekStart,
         entries,
         arrangements,
-        closureDates,
-        closureDayShifts,
         ptoLedgerRows,
         approvedExpenses,
       })

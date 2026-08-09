@@ -4,7 +4,7 @@
  * Pure unit tests for the inbox aggregator — filters each pending-work
  * source into actionable rows the screen can render. Role + identity
  * gates keep parents from seeing weeks they queried and nannies from
- * seeing co-parent approvals.
+ * seeing parent-only surfaces.
  */
 import { describe, expect, it } from 'bun:test';
 import { SETUP_ROLES } from '@/src/domains/setup/types';
@@ -21,7 +21,6 @@ describe('buildInboxItems', () => {
         role: SETUP_ROLES.PARENT,
         currentUserId: ME,
         changeRequests: [],
-        approvals: [],
         patterns: [],
         timesheets: [],
       })
@@ -55,7 +54,6 @@ describe('buildInboxItems', () => {
           status: 'accepted',
         },
       ],
-      approvals: [],
       patterns: [],
       timesheets: [],
     });
@@ -70,80 +68,11 @@ describe('buildInboxItems', () => {
     ]);
   });
 
-  it('includes pending co-parent approvals for parents who did not request them', () => {
-    const items = buildInboxItems({
-      role: SETUP_ROLES.PARENT,
-      currentUserId: ME,
-      changeRequests: [],
-      approvals: [
-        {
-          id: 'ap-1',
-          household_id: 'hh-1',
-          action: 'extra_shift',
-          status: 'pending',
-          requested_by: OTHER,
-          timeout_at: '2026-08-04T12:00:00Z',
-          payload: { shift_id: 'shift-9' },
-        },
-        {
-          id: 'ap-mine',
-          household_id: 'hh-1',
-          action: 'cancel',
-          status: 'pending',
-          requested_by: ME,
-          timeout_at: '2026-08-04T12:00:00Z',
-          payload: {},
-        },
-      ],
-      patterns: [],
-      timesheets: [],
-    });
-
-    expect(items).toEqual([
-      {
-        kind: 'co_parent_approval',
-        id: 'ap-1',
-        householdId: 'hh-1',
-        action: 'extra_shift',
-        timeoutAt: '2026-08-04T12:00:00Z',
-        shiftId: 'shift-9',
-      },
-    ]);
-  });
-
-  it('does not include co-parent approvals for nanny or helper roles', () => {
-    const approvals = [
-      {
-        id: 'ap-1',
-        household_id: 'hh-1',
-        action: 'extra_shift',
-        status: 'pending',
-        requested_by: OTHER,
-        timeout_at: '2026-08-04T12:00:00Z',
-        payload: { shift_id: 'shift-9' },
-      },
-    ] as const;
-
-    for (const role of [SETUP_ROLES.NANNY, SETUP_ROLES.HELPER] as const) {
-      expect(
-        buildInboxItems({
-          role,
-          currentUserId: ME,
-          changeRequests: [],
-          approvals,
-          patterns: [],
-          timesheets: [],
-        })
-      ).toEqual([]);
-    }
-  });
-
   it('includes pending schedule patterns addressed to me', () => {
     const items = buildInboxItems({
       role: SETUP_ROLES.NANNY,
       currentUserId: ME,
       changeRequests: [],
-      approvals: [],
       patterns: [
         {
           id: 'pat-1',
@@ -207,7 +136,6 @@ describe('buildInboxItems', () => {
         role: SETUP_ROLES.NANNY,
         currentUserId: ME,
         changeRequests: [],
-        approvals: [],
         patterns: [],
         timesheets,
       })
@@ -226,7 +154,6 @@ describe('buildInboxItems', () => {
         role: SETUP_ROLES.PARENT,
         currentUserId: PARENT,
         changeRequests: [],
-        approvals: [],
         patterns: [],
         timesheets,
       })
@@ -266,7 +193,6 @@ describe('buildInboxItems', () => {
         role: SETUP_ROLES.PARENT,
         currentUserId: ME,
         changeRequests: [],
-        approvals: [],
         patterns: [],
         timesheets,
       })
@@ -285,7 +211,6 @@ describe('buildInboxItems', () => {
       role: SETUP_ROLES.PARENT,
       currentUserId: ME,
       changeRequests: [],
-      approvals: [],
       patterns: [],
       timesheets: [
         {
@@ -326,7 +251,6 @@ describe('buildInboxItems', () => {
           role,
           currentUserId: ME,
           changeRequests: [],
-          approvals: [],
           patterns: [],
           timesheets,
         })

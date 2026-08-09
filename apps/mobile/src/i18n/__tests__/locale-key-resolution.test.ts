@@ -18,7 +18,6 @@ import { join, relative } from 'node:path';
 import {
   ALL_PUSH_NOTIFICATION_TYPES,
   CARER_TIME_OFF_STATUSES,
-  CO_PARENT_APPROVAL_ACTIONS,
   HOUSEHOLD_ROLES,
   SHIFT_CHANGE_REQUEST_KINDS,
 } from '@steadily-nanny/shared-types';
@@ -46,7 +45,7 @@ const EVENT_TYPE_VALUES = [
 ] as const;
 const INVITE_ROLE_VALUES = ['nanny', 'parent', 'helper'] as const;
 const WIDGET_REDIRECT_ROLES = ['nanny', 'parent'] as const;
-const APPROVAL_MODE_VALUES = ['either', 'ask_other', 'owner_only'] as const;
+const APPROVAL_MODE_VALUES = ['either', 'owner_only'] as const;
 const APPROVAL_SCOPE_VALUES = [
   'all',
   'short_notice_and_cancellations',
@@ -138,11 +137,6 @@ const TEMPLATE_KEY_DECLARATIONS: readonly TemplateKeyDeclaration[] = [
     pattern: /^items\.changeRequest\.kind\.\$\{[^}]+\}$/,
     values: Object.values(SHIFT_CHANGE_REQUEST_KINDS),
     keyPattern: 'items.changeRequest.kind.$1',
-  },
-  {
-    pattern: /^items\.approval\.action\.\$\{[^}]+\}$/,
-    values: Object.values(CO_PARENT_APPROVAL_ACTIONS),
-    keyPattern: 'items.approval.action.$1',
   },
   {
     pattern: /^invite\.roles\.\$\{[^}]+\}\.(title|description)$/,

@@ -29,6 +29,13 @@ describe('ExtraShiftScreen', () => {
     expect(source).not.toMatch(/catch\s*\{\s*return;\s*\}/);
   });
 
+  it('warns before create when the carer has a conflicting busy block', () => {
+    expect(source).toContain('availabilityApi.getBusyBlocks');
+    expect(source).toContain('findConflictingBusyBlocks');
+    expect(source).toContain('schedule-extra-clash-confirm');
+    expect(source).toContain("t('shifts.extraClashTitle'");
+  });
+
   it('lets the parent pick carer and children', () => {
     expect(source).toContain('useHouseholdCarers');
     expect(source).toContain('useChildren');

@@ -29,6 +29,8 @@ describe('ChildrenScreen (wizard)', () => {
     expect(source).toContain('useCreateHousehold');
     expect(source).toContain('useUpsertProfile');
     expect(source).toContain('buildBootstrapProfileRequest');
+    expect(source).toContain('deriveBootstrapName');
+    expect(source).toContain('parent-name-input');
   });
 
   it('still gates Continue on at least one child and advances to INVITE', () => {

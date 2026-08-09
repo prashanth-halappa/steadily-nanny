@@ -28,7 +28,10 @@ import { useUpsertProfile } from '@/src/hooks/mutations/useUpsertProfile';
 import { useChildren } from '@/src/hooks/queries/useChildren';
 import { useHouseholds } from '@/src/hooks/queries/useHouseholds';
 import { useUserProfile } from '@/src/hooks/queries/useUserProfile';
-import { buildBootstrapProfileRequest } from '@/src/lib/bootstrapUserProfile';
+import {
+  buildBootstrapProfileRequest,
+  deriveBootstrapName,
+} from '@/src/lib/bootstrapUserProfile';
 import { useAuthStore } from '@/src/store/auth';
 import { useSetupProgressStore } from '@/src/store/setupProgress';
 
@@ -56,6 +59,10 @@ export function ChildrenScreen() {
   // below). Empty stays empty; the bootstrap effect falls back to
   // `DEFAULT_HOUSEHOLD_NAME` itself, same as before this field existed.
   const [householdName, setHouseholdName] = useState('');
+  const [displayName, setDisplayName] = useState(() => {
+    const user = session?.user;
+    return user ? deriveBootstrapName(user) : '';
+  });
 
   const householdId = households.data?.[0]?.id ?? cachedHouseholdId ?? null;
 
@@ -89,7 +96,7 @@ export function ChildrenScreen() {
         try {
           if (!profileExists) {
             await upsertProfile.mutateAsync(
-              buildBootstrapProfileRequest(authUser)
+              buildBootstrapProfileRequest(authUser, { name: displayName })
             );
           }
           await createHousehold.mutateAsync({
@@ -127,6 +134,7 @@ export function ChildrenScreen() {
     upsertProfile.mutateAsync,
     bootstrapFailed,
     householdName,
+    displayName,
   ]);
 
   const children = useChildren(householdId);
@@ -168,6 +176,17 @@ export function ChildrenScreen() {
               separate "name your household" step in Wave 1 (see this
               module's header comment). Renaming after the fact happens from
               Settings -> Manage household instead. */}
+          <View className="gap-2">
+            <FieldLabel>{t('children.parentNameLabel')}</FieldLabel>
+            <Input
+              testID="parent-name-input"
+              accessibilityLabel={t('children.parentNameLabel')}
+              value={displayName}
+              onChangeText={setDisplayName}
+              placeholder={t('children.parentNamePlaceholder')}
+              autoCapitalize="words"
+            />
+          </View>
           <View className="gap-2">
             <FieldLabel>{t('children.householdNameLabel')}</FieldLabel>
             <Input

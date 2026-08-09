@@ -66,19 +66,42 @@ beforeEach(() => {
   notifyHouseholdParents.mockClear();
 });
 
-function makeShiftRepo(overrides: Record<string, unknown> = {}): any {
+function instantsEqual(a: string, b: string): boolean {
+  return Date.parse(a) === Date.parse(b);
+}
+
+function makeShiftRepo(
+  sourceShift: ShiftWithChildren = confirmedShift,
+  overrides: Record<string, unknown> = {}
+): any {
   const assertMutable = mock(async (_id: string) => undefined);
   return {
     applyParentEdit: mock(async (args: Record<string, unknown>) => {
-      const timeChanged = Boolean(args.setStartsAt || args.setEndsAt);
+      const newStarts = args.setStartsAt
+        ? (args.startsAt as string)
+        : sourceShift.starts_at;
+      const newEnds = args.setEndsAt
+        ? (args.endsAt as string)
+        : sourceShift.ends_at;
+      const newNote = args.setNote ? args.note : sourceShift.note;
+      const startsChanged =
+        Boolean(args.setStartsAt) &&
+        typeof args.startsAt === 'string' &&
+        !instantsEqual(args.startsAt, sourceShift.starts_at);
+      const endsChanged =
+        Boolean(args.setEndsAt) &&
+        typeof args.endsAt === 'string' &&
+        !instantsEqual(args.endsAt, sourceShift.ends_at);
+      const demoted =
+        sourceShift.status === 'confirmed' && (startsChanged || endsChanged);
       return {
-        ...confirmedShift,
-        starts_at: args.setStartsAt ? args.startsAt : confirmedShift.starts_at,
-        ends_at: args.setEndsAt ? args.endsAt : confirmedShift.ends_at,
-        note: args.setNote ? args.note : confirmedShift.note,
+        ...sourceShift,
+        starts_at: newStarts,
+        ends_at: newEnds,
+        note: newNote,
         origin: args.origin,
-        status: timeChanged ? 'pending' : confirmedShift.status,
-        sequence: confirmedShift.sequence + 1,
+        status: demoted ? 'pending' : sourceShift.status,
+        sequence: sourceShift.sequence + 1,
       };
     }),
     update: mock(async (_id: string, data: Record<string, unknown>) => ({
@@ -266,7 +289,7 @@ describe('ShiftCommandService.accept', () => {
     const assertMutable = mock(async (_id: string) => {
       throw new ShiftImmutableError('s1', 'pending', 'has_time_entries');
     });
-    const shiftRepo = makeShiftRepo({
+    const shiftRepo = makeShiftRepo(pendingShift, {
       assertMutable,
       confirmPending: mock(async (id: string) => {
         await assertMutable(id);
@@ -359,6 +382,53 @@ describe('ShiftCommandService.update — consent parity', () => {
     });
 
     expect(result.status).toBe('confirmed');
+    expect(notifyUser).not.toHaveBeenCalled();
+  });
+
+  it('does not demote-push when times are resent unchanged and only the note changes', async () => {
+    const shiftRepo = makeShiftRepo();
+    const svc = new ShiftCommandService(
+      shiftRepo,
+      makeMemberRepo(),
+      makeQueries(confirmedShift),
+      makeEventRepo()
+    );
+
+    const result = await svc.update('parent-1', 's1', {
+      starts_at: confirmedShift.starts_at,
+      ends_at: confirmedShift.ends_at,
+      note: 'Updated note',
+    });
+
+    expect(shiftRepo.applyParentEdit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        setStartsAt: true,
+        setEndsAt: true,
+        setNote: true,
+        startsAt: confirmedShift.starts_at,
+        endsAt: confirmedShift.ends_at,
+        note: 'Updated note',
+      })
+    );
+    expect(result.status).toBe('confirmed');
+    expect(notifyUser).not.toHaveBeenCalled();
+  });
+
+  it('does not re-push when times change on an already-pending shift', async () => {
+    const shiftRepo = makeShiftRepo(pendingShift);
+    const svc = new ShiftCommandService(
+      shiftRepo,
+      makeMemberRepo(),
+      makeQueries(pendingShift),
+      makeEventRepo()
+    );
+
+    const result = await svc.update('parent-1', 's1', {
+      starts_at: '2026-08-03T09:00:00.000Z',
+      ends_at: '2026-08-03T18:00:00.000Z',
+    });
+
+    expect(result.status).toBe('pending');
     expect(notifyUser).not.toHaveBeenCalled();
   });
 

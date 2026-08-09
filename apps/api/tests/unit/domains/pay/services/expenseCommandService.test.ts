@@ -288,19 +288,35 @@ describe('ExpenseCommandService.create — currency must match the effective arr
     expect(expenseRepo.create).not.toHaveBeenCalled();
   });
 
-  it('rejects when the carer has no effective pay arrangement at all', async () => {
+  it('rejects mileage when the carer has no effective pay arrangement at all', async () => {
     const expenseRepo = makeExpenseRepo();
     const arrangementRepo = makeArrangementRepo({
       effectiveOn: mock(async () => null),
     });
     const svc = service({ expenseRepo, arrangementRepo });
-    await expect(
-      svc.create('carer-1', 'h1', expenseRequest())
-    ).rejects.toBeInstanceOf(ExpenseValidationError);
+    const err = await svc
+      .create('carer-1', 'h1', mileageRequest())
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ExpenseValidationError);
+    expect((err as { metadata?: { reason?: string } }).metadata?.reason).toBe(
+      'NO_PAY_ARRANGEMENT'
+    );
     expect(expenseRepo.create).not.toHaveBeenCalled();
   });
 
-  it('accepts a matching currency', async () => {
+  it('accepts a non-mileage expense with no arrangement and stores the submitted currency', async () => {
+    const expenseRepo = makeExpenseRepo();
+    const arrangementRepo = makeArrangementRepo({
+      effectiveOn: mock(async () => null),
+    });
+    const svc = service({ expenseRepo, arrangementRepo });
+    await svc.create('carer-1', 'h1', expenseRequest({ currency: 'GBP' }));
+    expect(expenseRepo.create).toHaveBeenCalledWith(
+      expect.objectContaining({ currency: 'GBP' })
+    );
+  });
+
+  it('accepts a matching currency when an arrangement exists', async () => {
     const expenseRepo = makeExpenseRepo();
     const svc = service({ expenseRepo });
     await svc.create('carer-1', 'h1', expenseRequest({ currency: 'GBP' }));
@@ -426,6 +442,41 @@ describe('ExpenseCommandService.update', () => {
     await expect(
       svc.update('carer-1', 'exp-1', expenseRequest({ currency: 'GBP' }))
     ).rejects.toBeInstanceOf(ExpenseValidationError);
+    expect(expenseRepo.updateOwnedPending).not.toHaveBeenCalled();
+  });
+
+  it('accepts a non-mileage update with no arrangement and stores the submitted currency', async () => {
+    const expenseRepo = makeExpenseRepo();
+    const arrangementRepo = makeArrangementRepo({
+      effectiveOn: mock(async () => null),
+    });
+    const svc = service({ expenseRepo, arrangementRepo });
+    await svc.update(
+      'carer-1',
+      'exp-1',
+      expenseRequest({ currency: 'EUR', description: 'Snacks' })
+    );
+    expect(expenseRepo.updateOwnedPending).toHaveBeenCalledWith(
+      'exp-1',
+      'h1',
+      'carer-1',
+      expect.objectContaining({ currency: 'EUR', description: 'Snacks' })
+    );
+  });
+
+  it('rejects a mileage update when no arrangement exists', async () => {
+    const expenseRepo = makeExpenseRepo();
+    const arrangementRepo = makeArrangementRepo({
+      effectiveOn: mock(async () => null),
+    });
+    const svc = service({ expenseRepo, arrangementRepo });
+    const err = await svc
+      .update('carer-1', 'exp-1', mileageRequest())
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ExpenseValidationError);
+    expect((err as { metadata?: { reason?: string } }).metadata?.reason).toBe(
+      'NO_PAY_ARRANGEMENT'
+    );
     expect(expenseRepo.updateOwnedPending).not.toHaveBeenCalled();
   });
 
@@ -707,9 +758,13 @@ describe('ExpenseCommandService.review — approving MILEAGE freezes the compute
       arrangementRepo,
       members: { 'parent-1': PARENT },
     });
-    await expect(
-      svc.review('parent-1', 'exp-1', { status: 'approved' })
-    ).rejects.toBeInstanceOf(ExpenseValidationError);
+    const err = await svc
+      .review('parent-1', 'exp-1', { status: 'approved' })
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ExpenseValidationError);
+    expect((err as { metadata?: { reason?: string } }).metadata?.reason).toBe(
+      'NO_PAY_ARRANGEMENT'
+    );
     expect(expenseRepo.reviewPending).not.toHaveBeenCalled();
   });
 

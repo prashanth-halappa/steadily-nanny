@@ -18,6 +18,7 @@
  */
 import type { CreateExpenseRequest } from '@steadily-nanny/shared-types/schemas/expense.schema';
 import { parseMajorToMinor } from '@/src/lib/money';
+import { isOnOrBeforeToday } from '../components/ExpenseDateField.utils';
 import { parseMilesInput } from './miles';
 
 export interface ExpenseFormState {
@@ -35,11 +36,13 @@ export interface ExpenseFormState {
 const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 export function buildExpenseRequest(
-  state: ExpenseFormState
+  state: ExpenseFormState,
+  todayISO: string
 ): CreateExpenseRequest | null {
   const description = state.description.trim();
   if (description === '') return null;
   if (!ISO_DATE_PATTERN.test(state.localDateISO)) return null;
+  if (!isOnOrBeforeToday(state.localDateISO, todayISO)) return null;
 
   if (state.kind === 'expense') {
     const amountMinor = parseMajorToMinor(state.amountText);

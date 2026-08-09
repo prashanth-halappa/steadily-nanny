@@ -106,7 +106,7 @@ describe('useRequestTimeOff kind pass-through (068)', () => {
 });
 
 describe('useCancelTimeOff invalidation', () => {
-  it('invalidates timeOff and availability busy caches on success', async () => {
+  it('invalidates timeOff, availability, pto, and timesheet caches on success', async () => {
     const { result, queryClient } = renderHookWithProviders(() =>
       useCancelTimeOff()
     );
@@ -122,6 +122,12 @@ describe('useCancelTimeOff invalidation', () => {
     });
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: queryKeys.availability.all,
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: queryKeys.pto.all,
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: queryKeys.timesheet.all,
     });
   });
 });

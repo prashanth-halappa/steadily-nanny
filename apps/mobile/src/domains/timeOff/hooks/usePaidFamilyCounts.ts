@@ -32,11 +32,13 @@ import { useQueries } from '@tanstack/react-query';
 import { ptoApi } from '@/src/api/endpoints/pto';
 import { queryKeys } from '@/src/api/queryKeys';
 import { useHouseholds } from '@/src/hooks/queries/useHouseholds';
+import { localDateInZone } from '@/src/lib/localDate';
 import { useAuthStore } from '@/src/store/auth';
 import { netPaidMinutesForTimeOff } from '../utils/ptoNet';
 
-function yearOf(startsAtIso: string): number {
-  return new Date(startsAtIso).getUTCFullYear();
+/** Ledger year in the household's zone — same rule as `HouseholdTimeOffRow`. */
+function yearOfInZone(startsAtIso: string, timeZone: string): number {
+  return Number(localDateInZone(timeZone, new Date(startsAtIso)).slice(0, 4));
 }
 
 export interface PaidFamilyCounts {
@@ -61,21 +63,32 @@ export function usePaidFamilyCounts(
 ): PaidFamilyCounts {
   const carerId = useAuthStore(s => s.user?.id ?? null);
   const households = useHouseholds();
-  const householdIds = (households.data ?? []).map(h => h.id);
+  const householdList = households.data ?? [];
 
-  const years = Array.from(
-    new Set(timeOffRows.map(row => yearOf(row.starts_at)))
-  );
-
-  const pairs = householdIds.flatMap(householdId =>
-    years.map(year => ({ householdId, year }))
-  );
+  // Each household's ledger is keyed by calendar year in THAT household's
+  // zone (HouseholdTimeOffRow uses the same rule) — not UTC, which mis-buckets
+  // time off that straddles New Year when device tz ≠ household tz.
+  const pairKeySet = new Set<string>();
+  const pairs: { householdId: string; year: number; timeZone: string }[] = [];
+  for (const household of householdList) {
+    for (const row of timeOffRows) {
+      const year = yearOfInZone(row.starts_at, household.timezone);
+      const key = `${household.id}:${year}`;
+      if (pairKeySet.has(key)) continue;
+      pairKeySet.add(key);
+      pairs.push({
+        householdId: household.id,
+        year,
+        timeZone: household.timezone,
+      });
+    }
+  }
 
   const ledgerQueries = useQueries({
     queries: pairs.map(({ householdId, year }) => ({
       queryKey: queryKeys.pto.ledger(householdId, carerId ?? undefined, year),
       queryFn: () => ptoApi.getLedger(householdId, carerId as string, year),
-      enabled: !!carerId && householdIds.length > 0,
+      enabled: !!carerId && householdList.length > 0,
       staleTime: 60_000,
     })),
   });
@@ -89,7 +102,7 @@ export function usePaidFamilyCounts(
     // adjustment always shares its usage row's `effective_date` (so its
     // year), never a different one.
     const timeOffIdsThisYear = timeOffRows
-      .filter(row => yearOf(row.starts_at) === pair.year)
+      .filter(row => yearOfInZone(row.starts_at, pair.timeZone) === pair.year)
       .map(row => row.id);
     for (const timeOffId of timeOffIdsThisYear) {
       const netMinutes = netPaidMinutesForTimeOff(query.data, timeOffId);

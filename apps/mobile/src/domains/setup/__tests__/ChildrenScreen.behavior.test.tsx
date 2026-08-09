@@ -21,6 +21,10 @@ const createHouseholdMock = mock(
 const getProfileMock = mock(() =>
   Promise.resolve({ user_id: 'user-1', name: 'Ana' })
 );
+const upsertProfileMock = mock(
+  (_req: { name: string }): Promise<{ user_id: string; name: string }> =>
+    Promise.resolve({ user_id: 'user-1', name: 'Ana' })
+);
 const listChildrenMock = mock(() => Promise.resolve([]));
 
 mock.module('@/src/api/endpoints/household', () => ({
@@ -32,9 +36,7 @@ mock.module('@/src/api/endpoints/household', () => ({
 mock.module('@/src/api/endpoints/user', () => ({
   userApi: {
     getProfile: getProfileMock,
-    upsertProfile: mock(() =>
-      Promise.resolve({ user_id: 'user-1', name: 'Ana' })
-    ),
+    upsertProfile: upsertProfileMock,
   },
 }));
 mock.module('@/src/api/endpoints/children', () => ({
@@ -64,6 +66,10 @@ beforeEach(() => {
   listHouseholdsMock.mockClear();
   createHouseholdMock.mockClear();
   getProfileMock.mockClear();
+  upsertProfileMock.mockClear();
+  getProfileMock.mockImplementation(() =>
+    Promise.resolve({ user_id: 'user-1', name: 'Ana' })
+  );
   useSetupProgressStore.setState({ householdId: null } as never);
   useAuthStore.setState({
     session: {
@@ -123,6 +129,34 @@ describe('ChildrenScreen — naming the household at creation (W1-E fix 3)', () 
     await waitFor(() => expect(createHouseholdMock).toHaveBeenCalledTimes(1));
     expect(createHouseholdMock.mock.calls[0]?.[0]).toEqual({
       name: 'Our household',
+    });
+  });
+});
+
+describe('ChildrenScreen — parent display name at bootstrap', () => {
+  beforeEach(() => {
+    getProfileMock.mockImplementation(() =>
+      Promise.resolve(undefined as never)
+    );
+  });
+
+  it('renders the name field pre-filled from auth metadata', () => {
+    const screen = renderWithProviders(<ChildrenScreen />);
+
+    expect(screen.getByTestId('parent-name-input').props.value).toBe('ana');
+  });
+
+  it('submits the edited display name with the bootstrap profile upsert', async () => {
+    createHouseholdMock.mockImplementationOnce(() =>
+      Promise.resolve({ id: 'household-1', name: 'Our household' })
+    );
+    const screen = renderWithProviders(<ChildrenScreen />);
+
+    fireEvent.changeText(screen.getByTestId('parent-name-input'), 'Maria Ruiz');
+
+    await waitFor(() => expect(upsertProfileMock).toHaveBeenCalledTimes(1));
+    expect(upsertProfileMock.mock.calls[0]?.[0]).toMatchObject({
+      name: 'Maria Ruiz',
     });
   });
 });

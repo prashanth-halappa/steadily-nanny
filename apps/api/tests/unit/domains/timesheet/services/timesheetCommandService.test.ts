@@ -2532,9 +2532,6 @@ function makeRealEarnings(
   return new WeekEarningsService(
     { listForCarerWeek: mock(async () => entries) } as any,
     { listForCarer: mock(async () => arrangements) } as any,
-    { listByHousehold: mock(async () => []) },
-    { findByHouseholdAndLocalDate: mock(async () => []) },
-    { findById: mock(async () => household) } as any,
     { listForCarerYear: mock(async () => []) },
     { listApprovedForWeek: mock(async () => expenses) }
   );

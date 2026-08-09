@@ -60,16 +60,6 @@ describe('InboxScreen source', () => {
     expect(screenSource).not.toMatch(/className="[^"]*shadow-/);
   });
 
-  it('wires Approve/Decline actions on co-parent approval rows through the mutation hook', () => {
-    expect(screenSource).toContain('useRespondToApproval');
-    expect(screenSource).toContain('inbox-approval-approve-');
-    expect(screenSource).toContain('inbox-approval-decline-');
-    expect(screenSource).toMatch(/status:\s*'approved'/);
-    expect(screenSource).toMatch(/status:\s*'declined'/);
-    // Buttons must disable while THAT row's mutation is in flight.
-    expect(screenSource).toContain('isPending');
-  });
-
   it('renders a submitted-week row deep-linking to Hours, parent/owner-only via buildInboxItems', () => {
     expect(copySource).toContain('submitted_week');
     expect(buildSource).toContain('submitted_week');
@@ -77,11 +67,10 @@ describe('InboxScreen source', () => {
 });
 
 describe('useInboxItems source', () => {
-  it('composes the four pending-work sources across all households', () => {
+  it('composes the three pending-work sources across all households', () => {
     expect(hookSource).toContain('schedulePatternApi');
     expect(hookSource).toContain('useMePendingChangeRequests');
     expect(hookSource).toContain('timesheetApi');
-    expect(hookSource).toContain('listPendingApprovals');
     expect(hookSource).toContain('buildInboxItems');
     expect(hookSource).toContain('active.households');
     // Single fan-in — never N changeRequestApi.listForShift / useQueries per shift.
@@ -97,17 +86,6 @@ describe('useInboxItems source', () => {
     expect(hookSource).toContain('active.isError');
   });
 
-  it('enables the parent-only approvals query only for parent editors', () => {
-    expect(hookSource).toContain('isParentEditorRole');
-    expect(hookSource).toContain('useIsOnboarded');
-    // Approvals enabled clause must AND the parent gate — nannies must not
-    // fire GET /approvals (403) on every inbox open.
-    expect(hookSource).toMatch(/parentEditor/);
-    expect(hookSource).toMatch(
-      /enabled:\s*[^\n]*parentEditor|enabled:[^\n]*\n[^\n]*parentEditor/
-    );
-  });
-
   it('uses isLoading only for the loading flag — never isFetching', () => {
     expect(hookSource).not.toMatch(/isFetching/);
     expect(hookSource).toContain('isLoading');
@@ -119,7 +97,7 @@ describe('useInboxItems source', () => {
 });
 
 describe('buildInboxItems source', () => {
-  it('gates queried weeks by carer identity and approvals by parent role', () => {
+  it('gates queried weeks by carer identity and submitted weeks by parent role', () => {
     expect(buildSource).toContain('role');
     expect(buildSource).toContain('carer_id');
     expect(buildSource).toContain('isParentEditorRole');
@@ -141,11 +119,6 @@ describe('inbox route', () => {
 });
 
 describe('inboxItemCopy source', () => {
-  it('formats approval deadlines at minute granularity', () => {
-    expect(copySource).toContain('formatApprovalDeadline');
-    expect(copySource).not.toMatch(/timeoutAt\.slice\(0,\s*10\)/);
-  });
-
   it('deep-links each pending-work kind to an existing screen', () => {
     expect(copySource).toContain('schedule/shifts/');
     expect(copySource).toContain('schedule/respond/');
@@ -160,8 +133,8 @@ describe('inboxItemCopy source', () => {
     expect(copySource).toContain('export function ctaForItem');
   });
 
-  it('gives co-parent approvals a deadline label — the only exception to Rule B', () => {
+  it('keeps deadlineForItem as a no-op now that co-parent approvals are gone', () => {
     expect(copySource).toContain('export function deadlineForItem');
-    expect(copySource).toContain('co_parent_approval');
+    expect(copySource).toContain('return null');
   });
 });

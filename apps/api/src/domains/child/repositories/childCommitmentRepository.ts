@@ -60,4 +60,20 @@ export class ChildCommitmentRepository extends BaseRepository<ChildCommitment> {
     }
     return (data ?? []) as ChildCommitment[];
   }
+
+  /** Distinct household ids that have at least one care-hours row. */
+  async listHouseholdIdsWithCommitments(): Promise<string[]> {
+    const { data, error } = await supabaseService
+      .from(this.table)
+      .select('household_id');
+
+    if (error) {
+      throw new DatabaseError(
+        'Failed to list households with commitments',
+        'DATABASE_ERROR',
+        { details: error.message }
+      );
+    }
+    return [...new Set((data ?? []).map(row => row.household_id as string))];
+  }
 }

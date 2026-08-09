@@ -178,6 +178,17 @@ describe('ScheduleBuildScreen source', () => {
     expect(source).not.toMatch(/TimeRangePicker[\s\S]{0,40}disabled/);
   });
 
+  it('gates the hours-step CTA and review send on all weekday ranges being valid', () => {
+    expect(source).toContain('allDaysValid');
+    expect(source).toContain('isEndAfterStart');
+    expect(source).toMatch(
+      /build\.hoursCta[\s\S]{0,80}ctaDisabled=\{!allDaysValid\}/
+    );
+    expect(source).toMatch(
+      /build\.reviewSendCta[\s\S]{0,80}ctaDisabled=\{isSending \|\| !allDaysValid\}/
+    );
+  });
+
   it('D25: does not treat a still-loading availability fetch as "outside availability" (no false-positive warning flash)', () => {
     // isOutsideAvailability itself treats "no row for this weekday" as
     // outside — correct once data has actually loaded, wrong while it's

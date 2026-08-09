@@ -246,6 +246,25 @@ export class ShiftRepository extends BaseRepository<Shift> {
     return (data ?? []) as ShiftWithChildren[];
   }
 
+  /** Batch fetch by primary key — empty input returns without a round trip. */
+  async findByIds(ids: string[]): Promise<Shift[]> {
+    if (ids.length === 0) {
+      return [];
+    }
+    const { data, error } = await supabaseService
+      .from(this.table)
+      .select('*')
+      .in('id', ids);
+
+    if (error) {
+      throw new DatabaseError('Failed to list shifts by id', 'DATABASE_ERROR', {
+        details: error.message,
+        count: ids.length,
+      });
+    }
+    return (data ?? []) as Shift[];
+  }
+
   /**
    * Cancelled shifts flagged `cancellation_paid` and starting on/after
    * `since` — the reconcile job's candidate set (`cancellationPayReconcileJob`).

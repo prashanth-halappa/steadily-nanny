@@ -31,6 +31,10 @@ const SIGNED_IN_SESSION = { user: { id: 'user-1' } };
 let onboardingState: OnboardingMockState;
 let authState: { isInitialized: boolean; session: unknown };
 let hasToken: boolean;
+let setupProgressState: {
+  role: SetupRoleValue | null;
+  currentStep: string;
+};
 
 let mockReplace: ReturnType<typeof mock>;
 let mockRetryMemberships: ReturnType<typeof mock>;
@@ -71,6 +75,12 @@ beforeAll(async () => {
     },
   }));
 
+  mock.module('@/src/store/setupProgress', () => ({
+    useSetupProgressStore: {
+      getState: () => setupProgressState,
+    },
+  }));
+
   mock.module('@/src/components/ui/loading-indicator', () => {
     const React = require('react');
     return {
@@ -103,6 +113,7 @@ beforeEach(() => {
   };
   authState = { isInitialized: true, session: SIGNED_IN_SESSION };
   hasToken = true;
+  setupProgressState = { role: null, currentStep: 'ROLE' };
   mockReplace.mockReset();
   mockRetryMemberships.mockReset();
   mockConsumePendingLink.mockReset();
@@ -238,5 +249,33 @@ describe('Index entry router — the branches that must keep working', () => {
     expect(mockReplace).toHaveBeenCalledWith('/welcome');
     expect(getByTestId('loading-indicator-mock')).toBeTruthy();
     expect(queryByTestId('index-error')).toBeNull();
+  });
+
+  it('resumes an onboarded parent at the persisted wizard step', () => {
+    onboardingState = {
+      status: 'onboarded',
+      role: 'parent',
+      householdId: 'h1',
+      membershipsError: false,
+    };
+    setupProgressState = { role: 'parent', currentStep: 'INVITE' };
+
+    render(<Index />);
+
+    expect(mockReplace).toHaveBeenCalledWith('/onboarding/invite');
+  });
+
+  it('routes an onboarded user home when the wizard is on its final step', () => {
+    onboardingState = {
+      status: 'onboarded',
+      role: 'parent',
+      householdId: 'h1',
+      membershipsError: false,
+    };
+    setupProgressState = { role: 'parent', currentStep: 'CALENDAR_PERMISSION' };
+
+    render(<Index />);
+
+    expect(mockReplace).toHaveBeenCalledWith('/(private)/(tabs)/home');
   });
 });

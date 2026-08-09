@@ -47,11 +47,21 @@ mock.module('@/src/domains/timeOff/components/TimeOffDateRangePicker', () => {
     }: {
       onChange: (start: string, end: string) => void;
       testID?: string;
-    }) =>
-      React.createElement('TouchableOpacity', {
-        testID: `${testID ?? 'time-off-date-range'}-set-range`,
-        onPress: () => onChange('2026-04-01', '2026-04-08'),
-      }),
+    }) => {
+      const base = testID ?? 'time-off-date-range';
+      return React.createElement(
+        React.Fragment,
+        null,
+        React.createElement('TouchableOpacity', {
+          testID: `${base}-set-range`,
+          onPress: () => onChange('2026-04-01', '2026-04-08'),
+        }),
+        React.createElement('TouchableOpacity', {
+          testID: `${base}-set-invalid-range`,
+          onPress: () => onChange('2026-04-08', '2026-04-01'),
+        })
+      );
+    },
   };
 });
 
@@ -259,6 +269,21 @@ describe('AdjustSchedulePatternSheet skip-a-week flow', () => {
     fireEvent.press(getByTestId('schedule-adjust-skip-week-back'));
 
     expect(getByTestId('schedule-adjust-menu')).toBeTruthy();
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it('disables submit when skipStart/skipEnd is an invalid range', () => {
+    const onSubmit = mock();
+    const { getByTestId } = renderWithProviders(
+      <AdjustSchedulePatternSheet {...baseProps({ onSubmit })} />
+    );
+
+    fireEvent.press(getByTestId('schedule-adjust-skip-week-option'));
+    fireEvent.press(
+      getByTestId('schedule-adjust-skip-week-dates-set-invalid-range')
+    );
+    fireEvent.press(getByTestId('schedule-adjust-skip-week-submit'));
+
     expect(onSubmit).not.toHaveBeenCalled();
   });
 });

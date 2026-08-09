@@ -16,10 +16,12 @@
  * **Closures:** household closure intervals suppress detection entirely — the
  * family declared no cover needed for those hours.
  *
- * **72h push rule:** parents are pushed only when at least one genuinely-
- * inserted window starts within 72 hours of now. Windows further out are
- * persisted silently; digest notifications for them are explicitly out of
- * scope for v1.
+ * **Push rule:** parents are pushed whenever this call genuinely inserts at
+ * least one new window (`actuallyInserted` non-empty). Dedupe is the
+ * `shift_events` keyed-unique index — re-detection never re-pushes.
+ *
+ * **Accepted quirk:** windows persisted silently before the 72h gate was
+ * removed already burned their dedupe key and will never notify.
  *
  * **Causes** are supplied by callers, one per trigger: `cancelled` (a cancel
  * request accepted), `declined` (a carer declined a pending shift),
@@ -47,8 +49,6 @@ import {
 } from '@steadily-nanny/shared-types/uncoveredCare';
 import { notifyHouseholdParents } from '../../notification';
 import { ShiftEventRepository } from '../../shift/repositories/shiftEventRepository';
-
-const PUSH_WITHIN_MS = 72 * 60 * 60 * 1000;
 
 export type UncoveredCause =
   | 'cancelled'
@@ -141,27 +141,25 @@ export class UncoveredCareService {
       return [];
     }
 
-    const shouldPush = actuallyInserted.some(
-      w => Date.parse(w.startsAt) - Date.now() < PUSH_WITHIN_MS
-    );
-    if (shouldPush) {
-      try {
-        notifyHouseholdParents(
-          args.householdId,
-          {
-            title: 'No one booked',
-            body: 'A time you need your nanny is not on the schedule.',
-            data: {
-              type: PUSH_NOTIFICATION_TYPES.UNCOVERED_CARE_DETECTED,
-              householdId: args.householdId,
-              localDate: args.localDate,
-            },
+    try {
+      notifyHouseholdParents(
+        args.householdId,
+        {
+          title: 'No one booked',
+          body:
+            actuallyInserted.length === 1
+              ? 'A time you need your nanny is not on the schedule.'
+              : `${actuallyInserted.length} times you need your nanny are not on the schedule.`,
+          data: {
+            type: PUSH_NOTIFICATION_TYPES.UNCOVERED_CARE_DETECTED,
+            householdId: args.householdId,
+            localDate: args.localDate,
           },
-          { excludeUserId: args.excludeUserId }
-        );
-      } catch {
-        // notifyHouseholdParents is sync fire-and-forget; swallow any unexpected throw.
-      }
+        },
+        { excludeUserId: args.excludeUserId }
+      );
+    } catch {
+      // notifyHouseholdParents is sync fire-and-forget; swallow any unexpected throw.
     }
 
     return actuallyInserted;

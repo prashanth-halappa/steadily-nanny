@@ -51,7 +51,7 @@ const ParentEditShiftSchema = z
   .object({
     starts_at: z.iso.datetime({ offset: true }).optional(),
     ends_at: z.iso.datetime({ offset: true }).optional(),
-    note: z.string().optional(),
+    note: z.string().nullable().optional(),
   })
   .refine(data => Object.keys(data).length > 0, {
     message: 'at least one field is required',

@@ -36,10 +36,10 @@ describe('ExpenseDateField', () => {
     expect(source).toContain('maximumDate={parseDate(todayISO)}');
   });
 
-  it('refuses a future date rather than clamping it silently', async () => {
-    expect(source).toContain('isOnOrBeforeToday(next, todayISO)');
-    expect(source).toContain('setShowError(true)');
-    expect(source).toContain('return;');
+  it('derives the future-date error from value vs todayISO', async () => {
+    expect(source).toContain('isOnOrBeforeToday(value, todayISO)');
+    expect(source).toContain('dateError');
+    expect(source).not.toContain('setShowError');
   });
 
   it('wires the date-field and error testIDs', async () => {

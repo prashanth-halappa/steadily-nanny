@@ -12,9 +12,8 @@ const household = {
   id: 'h1',
   name: 'Smiths',
   timezone: 'Europe/London',
-  approval_mode: 'ask_other' as const,
+  approval_mode: 'either' as const,
   approval_scope: 'short_notice_and_cancellations' as const,
-  approval_timeout_minutes: 60,
   short_notice_hours: 24,
   cancellation_paid_within_hours: 24,
 };
@@ -173,6 +172,14 @@ function makeSvc(overrides: Record<string, unknown> = {}) {
         if (userId === 'parent-1') return membershipFor('parent', 'parent-1');
         return membershipFor('parent', userId);
       }),
+      listActiveByHousehold: mock(async (householdId: string) => [
+        {
+          ...membershipFor('parent', 'parent-1'),
+          household_id: householdId,
+          display_name_override: 'Alex',
+          profile_name: null,
+        },
+      ]),
     }) as any,
     (overrides.householdRepo ?? {
       findById: mock(async () => household),
@@ -184,7 +191,7 @@ function makeSvc(overrides: Record<string, unknown> = {}) {
       getOwned: mock(async () => shift),
     }) as any,
     (overrides.gate ?? {
-      assertApprovalAllows: mock(async () => ({ needsApproval: false })),
+      assertApprovalAllows: mock(async () => undefined),
     }) as any,
     (overrides.children ?? {
       getOwned: mock(async () => ({ id: 'child-1' })),
@@ -413,68 +420,6 @@ describe('response-leg pushes', () => {
     expect(notifyUser).not.toHaveBeenCalled();
   });
 
-  // The approval applier is the OTHER caller of `insertExtraShift`, and a
-  // re-driven approval is the likeliest way to reach adoption at all.
-  it('does not re-fire extra_shift_proposed when the approved applier adopted', async () => {
-    const existing = {
-      ...shift,
-      id: 's-existing',
-      kind: 'extra' as const,
-      status: 'pending' as const,
-    };
-    const svc = makeSvc({
-      shiftRepo: makeShiftRepo({
-        findExtraShiftInWindow: mock(async () => existing),
-      }),
-    });
-
-    await svc.applyApprovedExtraShift({
-      id: 'a-extra',
-      household_id: 'h1',
-      requested_by: 'parent-1',
-      action: 'extra_shift',
-      payload: {
-        starts_at: '2026-08-04T08:00:00.000Z',
-        ends_at: '2026-08-04T12:00:00.000Z',
-        timezone: 'Europe/London',
-        carer_id: 'carer-1',
-      },
-      status: 'approved',
-      timeout_at: '2999-01-01T00:00:00Z',
-      responded_by: 'parent-2',
-      responded_at: 't',
-      created_at: 't',
-      updated_at: 't',
-    } as never);
-
-    expect(notifyUser).not.toHaveBeenCalled();
-  });
-
-  it('still fires extra_shift_proposed once when the applier really created', async () => {
-    const svc = makeSvc();
-
-    await svc.applyApprovedExtraShift({
-      id: 'a-extra',
-      household_id: 'h1',
-      requested_by: 'parent-1',
-      action: 'extra_shift',
-      payload: {
-        starts_at: '2026-08-04T08:00:00.000Z',
-        ends_at: '2026-08-04T12:00:00.000Z',
-        timezone: 'Europe/London',
-        carer_id: 'carer-1',
-      },
-      status: 'approved',
-      timeout_at: '2999-01-01T00:00:00Z',
-      responded_by: 'parent-2',
-      responded_at: 't',
-      created_at: 't',
-      updated_at: 't',
-    } as never);
-
-    expect(notifyUser).toHaveBeenCalledTimes(1);
-  });
-
   it('push failure never fails respond HTTP path', async () => {
     notifyUser.mockImplementation(() => {
       throw new Error('push boom');
@@ -489,101 +434,114 @@ describe('response-leg pushes', () => {
   });
 });
 
-describe('open-leg push on the co-parent-approved path (D1)', () => {
-  /** The approval `approvalApplierRegistry` hands back once the co-parent signs off. */
-  const approval = {
-    id: 'ap1',
-    household_id: 'h1',
-    requested_by: 'parent-1',
-    action: 'short_notice_change' as const,
-    payload: {
-      shift_id: 's1',
-      kind: 'time_change',
-      proposed_starts_at: '2026-08-03T09:00:00.000Z',
-      proposed_ends_at: '2026-08-03T18:00:00.000Z',
-      message: 'Running late',
-    },
-    status: 'approved' as const,
-    timeout_at: '2026-08-02T08:00:00.000Z',
-    responded_by: 'parent-2',
-    responded_at: '2026-08-02T07:00:00.000Z',
-    created_at: 't',
-    updated_at: 't',
-  };
+describe('co-parent FYI pushes after gate success', () => {
+  async function flushFyi(): Promise<void> {
+    await new Promise<void>(resolve => setImmediate(resolve));
+  }
 
-  it('tells the nanny when an approved short-notice change opens a request on her shift', async () => {
-    // D1: the gated path opened the request silently. Three of the four
-    // `openChangeRequest` call sites notify; this one did not, so a nanny
-    // whose shift was changed via co-parent approval learned about it only by
-    // opening the app — the one path where the ask was DELAYED, and so the one
-    // where a push matters most.
-    const svc = makeSvc();
+  function shortNoticeShiftQueries() {
+    return {
+      getOwned: mock(async () => ({
+        ...shift,
+        starts_at: new Date(Date.now() + 3600_000).toISOString(),
+      })),
+    };
+  }
 
-    await svc.applyApprovedChangeRequest(approval as any);
+  it('fires CO_PARENT_ACTION_FYI after a short-notice cancel opens the request', async () => {
+    const svc = makeSvc({ shiftQueries: shortNoticeShiftQueries() });
 
-    expect(notifyUser).toHaveBeenCalledTimes(1);
-    expect(notifyUser).toHaveBeenCalledWith(
-      'carer-1',
-      expect.objectContaining({
-        data: expect.objectContaining({
-          type: PUSH_NOTIFICATION_TYPES.SHIFT_CHANGE_REQUESTED,
-          shiftId: 's1',
-          householdId: 'h1',
-          changeRequestId: 'cr-new',
-        }),
-      })
-    );
-  });
-
-  it('stays silent while the co-parent has not approved yet', async () => {
-    // The negative half of the same invariant: `create` returning
-    // `pending_approval` has opened NOTHING, so notifying the nanny there
-    // would announce an ask that may still be declined. The push belongs to
-    // the open, not to the request for permission.
-    const svc = makeSvc({
-      gate: {
-        assertApprovalAllows: mock(async () => ({
-          needsApproval: true,
-          approval,
-        })),
-      },
-    });
-
-    const result = await svc.create('parent-1', 's1', {
+    await svc.create('parent-1', 's1', {
       kind: 'cancel',
       message: 'Cannot make it',
     });
+    await flushFyi();
 
-    expect(result.status).toBe('pending_approval');
-    expect(notifyUser).not.toHaveBeenCalled();
-    expect(notifyHouseholdParents).not.toHaveBeenCalled();
+    expect(notifyHouseholdParents).toHaveBeenCalledWith(
+      'h1',
+      expect.objectContaining({
+        data: expect.objectContaining({
+          type: PUSH_NOTIFICATION_TYPES.CO_PARENT_ACTION_FYI,
+          shiftId: 's1',
+          action: 'cancel',
+        }),
+      }),
+      { excludeUserId: 'parent-1' }
+    );
   });
 
-  it('opens the request without a push when the shift has no carer', async () => {
-    // Mirrors the sibling call site's guard: an unassigned shift is a real
-    // state, and there is nobody to tell.
-    const svc = makeSvc({
-      shiftQueries: {
-        getOwned: mock(async () => ({ ...shift, carer_id: null })),
-      },
+  it('fires CO_PARENT_ACTION_FYI after a short-notice time_change opens the request', async () => {
+    const svc = makeSvc({ shiftQueries: shortNoticeShiftQueries() });
+
+    await svc.create('parent-1', 's1', {
+      kind: 'time_change',
+      proposed_starts_at: '2026-08-03T09:00:00.000Z',
+      proposed_ends_at: '2026-08-03T18:00:00.000Z',
     });
+    await flushFyi();
 
-    await svc.applyApprovedChangeRequest(approval as any);
-
-    expect(notifyUser).not.toHaveBeenCalled();
+    expect(notifyHouseholdParents).toHaveBeenCalledWith(
+      'h1',
+      expect.objectContaining({
+        data: expect.objectContaining({
+          type: PUSH_NOTIFICATION_TYPES.CO_PARENT_ACTION_FYI,
+          action: 'short_notice_change',
+        }),
+      }),
+      { excludeUserId: 'parent-1' }
+    );
   });
 
-  it('still returns the opened request when the push throws', async () => {
-    // Fire-and-forget, same as every sibling: `safeNotify` swallows.
-    notifyUser.mockImplementation(() => {
-      throw new Error('push boom');
-    });
+  it('fires CO_PARENT_ACTION_FYI when an extra shift is created', async () => {
     const svc = makeSvc();
 
-    const result = await svc.applyApprovedChangeRequest(approval as any);
+    await svc.createExtraShift('parent-1', 'h1', {
+      starts_at: '2026-08-04T08:00:00.000Z',
+      ends_at: '2026-08-04T12:00:00.000Z',
+      timezone: 'Europe/London',
+      carer_id: 'carer-1',
+    });
+    await flushFyi();
 
-    expect(result.id).toBe('cr-new');
-    notifyUser.mockImplementation(() => undefined);
+    expect(notifyHouseholdParents).toHaveBeenCalledWith(
+      'h1',
+      expect.objectContaining({
+        data: expect.objectContaining({
+          type: PUSH_NOTIFICATION_TYPES.CO_PARENT_ACTION_FYI,
+          action: 'extra_shift',
+        }),
+      }),
+      { excludeUserId: 'parent-1' }
+    );
+  });
+
+  it('does not fire CO_PARENT_ACTION_FYI when an extra shift was adopted', async () => {
+    const existing = {
+      ...shift,
+      id: 's-existing',
+      kind: 'extra' as const,
+      status: 'pending' as const,
+    };
+    const svc = makeSvc({
+      shiftRepo: makeShiftRepo({
+        findExtraShiftInWindow: mock(async () => existing),
+      }),
+    });
+
+    await svc.createExtraShift('parent-1', 'h1', {
+      starts_at: '2026-08-04T08:00:00.000Z',
+      ends_at: '2026-08-04T12:00:00.000Z',
+      timezone: 'Europe/London',
+      carer_id: 'carer-1',
+    });
+    await flushFyi();
+
+    const fyiCalls = notifyHouseholdParents.mock.calls.filter(
+      (call: unknown[]) =>
+        (call[1] as { data?: { type?: string } })?.data?.type ===
+        PUSH_NOTIFICATION_TYPES.CO_PARENT_ACTION_FYI
+    );
+    expect(fyiCalls).toHaveLength(0);
   });
 });
 

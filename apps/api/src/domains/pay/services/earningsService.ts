@@ -58,25 +58,6 @@ export interface EarningsTimeEntryInput {
 }
 
 /**
- * A shift the carer had scheduled on a household-closure day.
- *
- * `became_payable` is true when that shift turned into worked time or a paid
- * cancellation — the wrapper knows this because a `time_entry` references the
- * shift. A payable shift is already in `payable_minutes`, so it must NOT also
- * count as lost: that is where "no double pay" is enforced, structurally.
- *
- * `scheduled_minutes` is the shift's own span, rounded once by
- * `buildWeekEarningsInput` — a closure-day shift never became a time entry,
- * so there is no frozen figure to read and the booking itself is the only
- * record of what was promised.
- */
-export interface ClosureDayShiftInput {
-  local_date: string;
-  scheduled_minutes: number;
-  became_payable: boolean;
-}
-
-/**
  * One day's paid-time-off usage, dated like a worked entry so PTO prices at
  * the arrangement effective on THAT day — the same rule as `time_entries`
  * (`docs/11-MONEY.md` §5/§7), and the reason this replaces the old undated
@@ -114,11 +95,6 @@ export interface ApprovedExpenseInput {
  * broken by `created_at desc`). The wrapper's only obligation is to pass every
  * arrangement that could be effective during the week — in practice, the full
  * `listForCarer` result.
- *
- * `closure_dates` are household-local dates; dates outside the week are
- * ignored rather than trusted. `closure_day_shifts` may likewise contain
- * shifts on non-closure days — only shifts on a closure date are counted, so
- * the wrapper can hand over the week's shifts wholesale.
  *
  * **`pto_usage`** (Phase 3, `docs/11-MONEY.md` §5/§7): dated, one entry per
  * day of paid time off, priced exactly like a worked entry — the arrangement
@@ -159,7 +135,7 @@ export interface ApprovedExpenseInput {
  * touch a `regular`/`overtime`/`cancellation_paid`/`guaranteed_topup`/`pto`
  * line, and sum into `reimbursements_minor` instead of `gross_minor`. An
  * expense dated outside `[week_start, week_start+6]` is ignored rather than
- * trusted, the same convention `closure_dates` already uses.
+ * trusted.
  *
  * Currency: an approved expense whose currency differs from the week's
  * resolved currency is NOT silently summed. Rather than invent a second,
@@ -175,8 +151,6 @@ export interface ComputeWeekEarningsInput {
   week_start: string;
   entries: readonly EarningsTimeEntryInput[];
   arrangements: readonly PayArrangement[];
-  closure_dates: readonly string[];
-  closure_day_shifts: readonly ClosureDayShiftInput[];
   /** Dated PTO usage — preferred. See the doc above. */
   pto_usage?: readonly PtoUsageInput[];
   /** @deprecated Undated fallback — see the doc above. Prefer `pto_usage`. */
@@ -474,8 +448,7 @@ export function computeWeekEarnings(
     ? sumMinutesByDate(input.pto_usage ?? [])
     : new Map<string, number>();
 
-  // Reimbursements dated outside the week are ignored rather than trusted —
-  // the same convention `closure_dates` already uses.
+  // Reimbursements dated outside the week are ignored rather than trusted.
   const weekExpenses = (input.reimbursements ?? []).filter(
     expense => expense.local_date >= weekStart && expense.local_date <= weekEnd
   );
@@ -675,30 +648,17 @@ export function computeWeekEarnings(
     }));
 
   // ---------------------------------------------------------------------
-  // Guaranteed top-up — closure-day shortfalls ONLY (owner ruling
-  // 2026-08-04, `docs/11-MONEY.md` §7). Three properties this code must keep:
-  //   1. No closure days ⇒ no top-up, whatever the shortfall.
-  //   2. A closure day with no materialized shifts contributes nothing — no
-  //      schedule, nothing lost; the honest record does not invent hours.
-  //   3. A closure-day shift already paid (worked, or paid under the
-  //      cancellation window) is in `payable_minutes` and so is NOT lost —
-  //      that is the no-double-pay guarantee, enforced structurally rather
-  //      than by a later subtraction.
+  // Guaranteed top-up — weekly shortfall, unconditional (owner ruling
+  // 2026-08-09, `docs/11-MONEY.md` §7). When payable minutes fall short of
+  // `guaranteed_minutes_per_week`, the engine emits a single top-up line for
+  // the FULL shortfall — no closure-day gate, no schedule-based cap.
+  // Payable minutes already include worked time, paid cancellations, and PTO
+  // usage, so a week that paid for those minutes never also tops up for them
+  // — no double pay by construction.
   // The guaranteed minutes and the rate come from the week's LAST DAY
   // arrangement, for the same "the week is one unit" reason as the overtime
-  // terms — and because a zero-hours closure week has no other date to ask.
+  // terms — and because a zero-hours week has no other date to ask.
   // ---------------------------------------------------------------------
-  const closureDates = new Set(
-    input.closure_dates.filter(date => date >= weekStart && date <= weekEnd)
-  );
-  const lostMinutes = input.closure_day_shifts.reduce(
-    (sum, shift) =>
-      closureDates.has(shift.local_date) && !shift.became_payable
-        ? sum + Math.max(0, shift.scheduled_minutes)
-        : sum,
-    0
-  );
-
   const workedMinutes = total(workedByDate);
   const payableMinutes =
     workedMinutes + total(cancelledByDate) + ptoUsageMinutes;
@@ -708,7 +668,7 @@ export function computeWeekEarnings(
     guaranteedMinutes === null
       ? 0
       : Math.max(0, guaranteedMinutes - payableMinutes);
-  const topupMinutes = Math.min(lostMinutes, shortfall);
+  const topupMinutes = shortfall;
 
   const topupLines: EarningsLine[] =
     topupMinutes > 0

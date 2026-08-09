@@ -161,6 +161,26 @@ describe('ShiftCommandService.update', () => {
     );
   });
 
+  it('maps note: null through as an explicit clear (setNote true, note null)', async () => {
+    const shiftRepo = makeShiftRepo();
+    const svc = new ShiftCommandService(
+      shiftRepo,
+      makeMemberRepo(),
+      makeQueries()
+    );
+
+    await svc.update('parent-1', 's1', { note: null });
+
+    expect(shiftRepo.applyParentEdit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        note: null,
+        setNote: true,
+        setStartsAt: false,
+        setEndsAt: false,
+      })
+    );
+  });
+
   it('validates a one-sided starts_at edit against the EXISTING ends_at', async () => {
     const shiftRepo = makeShiftRepo();
     const svc = new ShiftCommandService(

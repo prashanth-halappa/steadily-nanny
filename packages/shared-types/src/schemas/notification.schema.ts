@@ -23,6 +23,7 @@ export const PUSH_NOTIFICATION_TYPES = {
   // Shift response-leg + consent (Batch 1 / 1A)
   CHANGE_REQUEST_ACCEPTED: 'change_request_accepted',
   CHANGE_REQUEST_DECLINED: 'change_request_declined',
+  CHANGE_REQUEST_EXPIRED: 'change_request_expired',
   CHANGE_REQUEST_WITHDRAWN: 'change_request_withdrawn',
   EXTRA_SHIFT_PROPOSED: 'extra_shift_proposed',
   SHIFT_CANCELLED: 'shift_cancelled',
@@ -71,18 +72,15 @@ export const PUSH_NOTIFICATION_TYPES = {
   SHIFT_DECLINED: 'shift_declined',
   TIME_OFF_REQUESTED: 'time_off_requested',
 
-  // Household / consent leg — approval types are parent-to-parent (requested
-  // goes to the other parent, resolved back to the requester) and invites go to
-  // parents. Handoff notes go to whichever side did not write the note.
-  CO_PARENT_APPROVAL_REQUESTED: 'co_parent_approval_requested',
-  CO_PARENT_APPROVAL_RESOLVED: 'co_parent_approval_resolved',
+  // Household leg — FYI when another parent acts; invites go to parents.
+  // Handoff notes go to whichever side did not write the note.
+  CO_PARENT_ACTION_FYI: 'co_parent_action_fyi',
   HANDOFF_NOTE_ADDED: 'handoff_note_added',
   INVITE_REDEEMED: 'invite_redeemed',
 
   // Scheduled reminders (emitted by the reminder cron job, not by a write) —
-  // parents get the approval-expiring nudge and the unapproved-week nudge; the
-  // carer gets tomorrow's shift reminder.
-  APPROVAL_EXPIRING: 'approval_expiring',
+  // parents get the unapproved-week nudge; the carer gets tomorrow's shift
+  // reminder.
   SHIFT_REMINDER: 'shift_reminder',
   TIMESHEET_AWAITING_APPROVAL: 'timesheet_awaiting_approval',
 
@@ -107,7 +105,7 @@ export const PushNotificationTypeSchema = z.enum(
 export const ALL_PUSH_NOTIFICATION_TYPES: readonly PushNotificationType[] =
   Object.values(PUSH_NOTIFICATION_TYPES);
 
-export type PushAudience = 'parent' | 'carer' | 'both';
+export type PushAudience = 'parent' | 'carer' | 'both' | 'any';
 
 /**
  * Who can actually RECEIVE each push type. Drives the notification-settings
@@ -120,14 +118,13 @@ export type PushAudience = 'parent' | 'carer' | 'both';
  * either leg depending on who acted ⇒ `'both'`.
  */
 export const PUSH_TYPE_AUDIENCE: Record<PushNotificationType, PushAudience> = {
-  [PUSH_NOTIFICATION_TYPES.APPROVAL_EXPIRING]: 'parent',
   [PUSH_NOTIFICATION_TYPES.CARER_TIME_OFF_CONFLICT]: 'parent',
   [PUSH_NOTIFICATION_TYPES.CHANGE_REQUEST_ACCEPTED]: 'both',
   [PUSH_NOTIFICATION_TYPES.CHANGE_REQUEST_DECLINED]: 'both',
+  [PUSH_NOTIFICATION_TYPES.CHANGE_REQUEST_EXPIRED]: 'any',
   [PUSH_NOTIFICATION_TYPES.CHANGE_REQUEST_WITHDRAWN]: 'both',
   [PUSH_NOTIFICATION_TYPES.CLOCK_OUT_REMINDER]: 'carer',
-  [PUSH_NOTIFICATION_TYPES.CO_PARENT_APPROVAL_REQUESTED]: 'parent',
-  [PUSH_NOTIFICATION_TYPES.CO_PARENT_APPROVAL_RESOLVED]: 'parent',
+  [PUSH_NOTIFICATION_TYPES.CO_PARENT_ACTION_FYI]: 'parent',
   [PUSH_NOTIFICATION_TYPES.EXPENSE_APPROVED]: 'carer',
   [PUSH_NOTIFICATION_TYPES.EXPENSE_REJECTED]: 'carer',
   [PUSH_NOTIFICATION_TYPES.EXPENSE_SUBMITTED]: 'parent',

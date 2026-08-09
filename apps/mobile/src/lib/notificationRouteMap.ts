@@ -107,6 +107,7 @@ export const NOTIFICATION_ROUTE_MAP: NotificationRouteMap &
   [PUSH_NOTIFICATION_TYPES.SHIFT_CHANGE_REQUESTED]: shiftDetailHref,
   [PUSH_NOTIFICATION_TYPES.CHANGE_REQUEST_ACCEPTED]: shiftDetailHref,
   [PUSH_NOTIFICATION_TYPES.CHANGE_REQUEST_DECLINED]: shiftDetailHref,
+  [PUSH_NOTIFICATION_TYPES.CHANGE_REQUEST_EXPIRED]: shiftDetailHref,
   [PUSH_NOTIFICATION_TYPES.CHANGE_REQUEST_WITHDRAWN]: shiftDetailHref,
   [PUSH_NOTIFICATION_TYPES.EXTRA_SHIFT_PROPOSED]: shiftDetailHref,
   [PUSH_NOTIFICATION_TYPES.SHIFT_CANCELLED]: shiftDetailHref,
@@ -144,11 +145,7 @@ export const NOTIFICATION_ROUTE_MAP: NotificationRouteMap &
   [PUSH_NOTIFICATION_TYPES.INVITE_REDEEMED]: () =>
     '/(private)/settings/household',
 
-  [PUSH_NOTIFICATION_TYPES.CO_PARENT_APPROVAL_REQUESTED]: () =>
-    '/(private)/inbox',
-  [PUSH_NOTIFICATION_TYPES.CO_PARENT_APPROVAL_RESOLVED]: () =>
-    '/(private)/inbox',
-  [PUSH_NOTIFICATION_TYPES.APPROVAL_EXPIRING]: () => '/(private)/inbox',
+  [PUSH_NOTIFICATION_TYPES.CO_PARENT_ACTION_FYI]: shiftDetailHref,
 
   // Handoff notes render inside Today — no dedicated handoff route.
   [PUSH_NOTIFICATION_TYPES.HANDOFF_NOTE_ADDED]: () => '/(private)/(tabs)/home',

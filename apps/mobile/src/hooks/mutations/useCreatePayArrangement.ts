@@ -32,6 +32,8 @@ export function useCreatePayArrangement(householdId: string, carerId: string) {
       queryClient.invalidateQueries({
         queryKey: queryKeys.pay.history(householdId, carerId),
       });
+      // A new arrangement can flip a week's earnings status (e.g. currency_change → ok).
+      queryClient.invalidateQueries({ queryKey: queryKeys.timesheet.all });
     },
     onError: error => {
       showErrorToast(getLocalizedErrorMessage(error, t));

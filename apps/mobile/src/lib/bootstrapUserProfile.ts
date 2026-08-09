@@ -32,9 +32,13 @@ export function deriveBootstrapName(user: User): string {
   return 'User';
 }
 
-export function buildBootstrapProfileRequest(user: User): UserProfileRequest {
+export function buildBootstrapProfileRequest(
+  user: User,
+  options?: { name?: string }
+): UserProfileRequest {
+  const trimmed = options?.name?.trim();
   return {
-    name: deriveBootstrapName(user),
+    name: trimmed ? trimmed.slice(0, 200) : deriveBootstrapName(user),
     city: BOOTSTRAP_LOCATION_PLACEHOLDER,
     country: BOOTSTRAP_LOCATION_PLACEHOLDER,
     timezone: getDeviceTimeZone(),

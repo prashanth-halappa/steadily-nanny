@@ -64,5 +64,8 @@ describe('useCreatePayArrangement', () => {
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: queryKeys.pay.history(HOUSEHOLD_ID, CARER_ID),
     });
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: queryKeys.timesheet.all,
+    });
   });
 });

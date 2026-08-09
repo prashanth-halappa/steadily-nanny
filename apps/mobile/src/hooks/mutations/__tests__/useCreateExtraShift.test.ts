@@ -68,10 +68,6 @@ function createdResult(
   } as CreateExtraShiftResult;
 }
 
-function pendingApprovalResult(): CreateExtraShiftResult {
-  return { status: 'pending_approval', approval: {} } as CreateExtraShiftResult;
-}
-
 const createExtraMock = mock(
   (): Promise<CreateExtraShiftResult> => Promise.resolve(createdResult())
 );
@@ -173,19 +169,29 @@ describe('useCreateExtraShift', () => {
     await waitFor(() => expect(requestCalendarSyncMock).toHaveBeenCalled());
   });
 
-  it('shows the toast for a pending_approval result (unchanged)', async () => {
-    createExtraMock.mockImplementation(() =>
-      Promise.resolve(pendingApprovalResult())
+  it('shows the owner-only message on a 403 NOT_OWNER, not generic forbidden', async () => {
+    createExtraMock.mockImplementationOnce(() =>
+      Promise.reject({
+        response: {
+          status: 403,
+          data: {
+            error: {
+              code: 'FORBIDDEN',
+              metadata: { reason: 'NOT_OWNER' },
+            },
+          },
+        },
+      })
     );
     const { result } = renderHookWithProviders(() =>
       useCreateExtraShift(HOUSEHOLD_ID)
     );
 
     await act(async () => {
-      await result.current.mutateAsync(input);
+      await expect(result.current.mutateAsync(input)).rejects.toBeTruthy();
     });
 
-    expect(showSuccessToastMock).toHaveBeenCalled();
-    expect(showClashWarningToastsMock).not.toHaveBeenCalled();
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(showErrorToastMock).toHaveBeenCalledWith('errors:notHouseholdOwner');
   });
 });

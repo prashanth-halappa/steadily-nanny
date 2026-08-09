@@ -12,6 +12,8 @@
 import { describe, expect, it } from 'bun:test';
 import { buildExpenseRequest } from '../buildExpenseRequest';
 
+const TODAY = '2026-08-10';
+
 const BASE = {
   kind: 'expense' as const,
   localDateISO: '2026-08-03',
@@ -23,7 +25,7 @@ const BASE = {
 
 describe('buildExpenseRequest — expense kind', () => {
   it('builds a valid expense request', () => {
-    expect(buildExpenseRequest(BASE)).toEqual({
+    expect(buildExpenseRequest(BASE, TODAY)).toEqual({
       kind: 'expense',
       local_date: '2026-08-03',
       description: 'Soft play tickets',
@@ -33,21 +35,31 @@ describe('buildExpenseRequest — expense kind', () => {
   });
 
   it('returns null when the description is blank', () => {
-    expect(buildExpenseRequest({ ...BASE, description: '   ' })).toBeNull();
+    expect(
+      buildExpenseRequest({ ...BASE, description: '   ' }, TODAY)
+    ).toBeNull();
   });
 
   it('returns null when the amount cannot be parsed', () => {
-    expect(buildExpenseRequest({ ...BASE, amountText: 'abc' })).toBeNull();
+    expect(
+      buildExpenseRequest({ ...BASE, amountText: 'abc' }, TODAY)
+    ).toBeNull();
   });
 
   it('returns null when the date is not a valid calendar date', () => {
     expect(
-      buildExpenseRequest({ ...BASE, localDateISO: 'not-a-date' })
+      buildExpenseRequest({ ...BASE, localDateISO: 'not-a-date' }, TODAY)
+    ).toBeNull();
+  });
+
+  it('returns null when the date is after today', () => {
+    expect(
+      buildExpenseRequest({ ...BASE, localDateISO: '2026-08-15' }, TODAY)
     ).toBeNull();
   });
 
   it('never includes `miles` on an expense-kind payload', () => {
-    const result = buildExpenseRequest(BASE);
+    const result = buildExpenseRequest(BASE, TODAY);
     expect(result).not.toHaveProperty('miles');
   });
 });
@@ -62,7 +74,7 @@ describe('buildExpenseRequest — mileage kind', () => {
   };
 
   it('builds a valid mileage request', () => {
-    expect(buildExpenseRequest(mileageState)).toEqual({
+    expect(buildExpenseRequest(mileageState, TODAY)).toEqual({
       kind: 'mileage',
       local_date: '2026-08-03',
       description: 'Nursery run',
@@ -72,18 +84,22 @@ describe('buildExpenseRequest — mileage kind', () => {
   });
 
   it('never includes `amount_minor` on a mileage-kind payload', () => {
-    const result = buildExpenseRequest(mileageState);
+    const result = buildExpenseRequest(mileageState, TODAY);
     expect(result).not.toHaveProperty('amount_minor');
   });
 
   it('returns null when miles has more than one decimal place', () => {
     expect(
-      buildExpenseRequest({ ...mileageState, milesText: '12.45' })
+      buildExpenseRequest({ ...mileageState, milesText: '12.45' }, TODAY)
     ).toBeNull();
   });
 
   it('returns null when miles is zero or blank', () => {
-    expect(buildExpenseRequest({ ...mileageState, milesText: '0' })).toBeNull();
-    expect(buildExpenseRequest({ ...mileageState, milesText: '' })).toBeNull();
+    expect(
+      buildExpenseRequest({ ...mileageState, milesText: '0' }, TODAY)
+    ).toBeNull();
+    expect(
+      buildExpenseRequest({ ...mileageState, milesText: '' }, TODAY)
+    ).toBeNull();
   });
 });

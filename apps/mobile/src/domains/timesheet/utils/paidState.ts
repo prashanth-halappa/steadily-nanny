@@ -62,3 +62,24 @@ export function derivePaidState(
 
   return { status, paidMinor, grossMinor, balanceMinor };
 }
+
+/**
+ * A reopened week has no frozen gross (`CLEARED_EARNINGS_SNAPSHOT`), but its
+ * ledger rows still exist. `derivePaidState` would return `null` there —
+ * this helper feeds `PaidStateCard` from the payments sum alone so both
+ * roles keep seeing what landed. No balance is stated (gross is unknown);
+ * `grossMinor` is set to `paidMinor` so the card's contract stays intact.
+ */
+export function deriveReopenedPaidState(
+  payments: readonly PaymentAmount[]
+): WeekPaidState | null {
+  if (payments.length === 0) return null;
+
+  const paidMinor = sumPaymentsMinor(payments);
+  return {
+    status: 'paid',
+    paidMinor,
+    grossMinor: paidMinor,
+    balanceMinor: 0,
+  };
+}

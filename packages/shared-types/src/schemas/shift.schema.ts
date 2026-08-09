@@ -182,7 +182,7 @@ const ShiftInputSchema = z.object({
   ends_at: z.iso.datetime({ offset: true }).optional(),
   timezone: z.string().min(1).optional(),
   kind: z.enum(Object.values(SHIFT_KINDS)).optional(),
-  note: z.string().optional(),
+  note: z.string().nullable().optional(),
   reason: z.string().optional(),
 });
 
@@ -334,26 +334,12 @@ export type CreateParentCoverInput = z.infer<typeof CreateParentCoverSchema>;
 // tests instead of surfacing as a runtime parse failure on a phone.
 
 /**
- * The co-parent gate parked the mutation: nothing was written, and the other
- * parent has to sign off first. `approval` is left as an open record because
- * the client only ever reads its `id` — the full `CoParentApproval` wire shape
- * belongs to the household domain, and pulling it in here would tie the shift
- * contract to a schema it does not otherwise need.
- *
- * Shared with the change-request create union, which has the same arm.
- */
-export const PendingApprovalResultSchema = z.object({
-  status: z.literal('pending_approval'),
-  approval: z.record(z.string(), z.unknown()),
-});
-
-/**
  * The shift exists. `adopted` says whether THIS request is what made it:
  * `false` for a genuine create, `true` when the server found a shift already
- * matching the window and handed that back instead (a double-tapped submit,
- * or a co-parent approval re-driving itself). The two responses are otherwise
- * byte-identical, so without this flag a client cannot tell them apart and
- * shows a second "Extra shift proposed" confirmation for one shift.
+ * matching the window and handed that back instead (a double-tapped submit).
+ * The two responses are otherwise byte-identical, so without this flag a client
+ * cannot tell them apart and shows a second "Extra shift proposed" confirmation
+ * for one shift.
  *
  * Defaulted rather than required: a server that predates the field still
  * answers without it, and `false` is the safe reading of that silence.
@@ -370,10 +356,7 @@ export const CreatedExtraShiftResultSchema = z.object({
   adopted: z.boolean().default(false),
 });
 
-export const CreateExtraShiftResultSchema = z.discriminatedUnion('status', [
-  CreatedExtraShiftResultSchema,
-  PendingApprovalResultSchema,
-]);
+export const CreateExtraShiftResultSchema = CreatedExtraShiftResultSchema;
 
 export type CreatedExtraShiftResult = z.infer<
   typeof CreatedExtraShiftResultSchema

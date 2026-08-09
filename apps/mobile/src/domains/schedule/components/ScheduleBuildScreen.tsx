@@ -74,6 +74,7 @@ import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { StatusPill } from '@/src/components/ui/status-pill';
 import { Text } from '@/src/components/ui/text';
 import { TimeRangePicker } from '@/src/components/ui/time-range-picker';
+import { isEndAfterStart } from '@/src/components/ui/time-range-picker.utils';
 import { Body, Caption } from '@/src/components/ui/typography';
 import { WeekStrip } from '@/src/components/ui/week-strip';
 import { useHouseholdCarers } from '@/src/domains/schedule/hooks/useHouseholdCarers';
@@ -284,6 +285,11 @@ export function ScheduleBuildScreen({
       end_time: dayTimes[day]?.end ?? DEFAULT_END,
     }))
   );
+
+  const allDaysValid = selectedDays.every(day => {
+    const times = dayTimes[day];
+    return times !== undefined && isEndAfterStart(times.start, times.end);
+  });
 
   // A missing display name falls back to a neutral, translated placeholder
   // — NEVER a UI step title (that was the bug: an un-namespaced `t()` call
@@ -505,6 +511,7 @@ export function ScheduleBuildScreen({
           title={t('build.hoursTitle')}
           subtitle={t('build.hoursSubtitle')}
           ctaLabel={t('build.hoursCta')}
+          ctaDisabled={!allDaysValid}
           onCta={() => setStep('repeat')}
           onBack={() => setStep('days')}
           backLabel={tCommon('back')}
@@ -618,7 +625,7 @@ export function ScheduleBuildScreen({
               : undefined
           }
           ctaLabel={t('build.reviewSendCta')}
-          ctaDisabled={isSending}
+          ctaDisabled={isSending || !allDaysValid}
           onCta={() => void onSend()}
           onBack={() => setStep('repeat')}
           backLabel={tCommon('back')}

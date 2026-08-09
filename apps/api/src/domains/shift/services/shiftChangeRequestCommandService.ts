@@ -1,9 +1,9 @@
 /**
  * Shift-change-request command service (CQRS-lite: writes). Parents open
  * time-change/cancel/split/handover requests; nannies counter-offer. Short-
- * notice cancel/time-change may route through the co-parent approval gate
- * (flow 1f) before a pending request is created. Accepting a request applies
- * the mutation to the shift and appends day-thread events.
+ * notice cancel/time-change consult the owner-only gate (flow 1f) before a
+ * pending request is created. Accepting a request applies the mutation to the
+ * shift and appends day-thread events.
  *
  * @module domains/shift/services/shiftChangeRequestCommandService
  */
@@ -29,14 +29,10 @@ import {
   childQueryService,
 } from '../../child/services/childQueryService';
 import { detectUncoveredCareForDate } from '../../child/services/detectUncoveredCareForDate';
-import type {
-  CoParentApproval,
-  Household,
-  HouseholdMember,
-} from '../../household';
+import type { Household, HouseholdMember } from '../../household';
 import {
+  type ApprovalGateAction,
   type ApprovalGateService,
-  approvalApplierRegistry,
   approvalGateService,
   HOUSEHOLD_ROLES,
   HouseholdMemberRepository,
@@ -121,25 +117,23 @@ export function setCancellationPaidEntryRecorder(
   cancellationPaidEntryRecorder = recorder;
 }
 
-export type CreateChangeRequestResult =
-  | { status: 'pending'; shift_change_request: ShiftChangeRequest }
-  | { status: 'pending_approval'; approval: CoParentApproval };
+export type CreateChangeRequestResult = {
+  status: 'pending';
+  shift_change_request: ShiftChangeRequest;
+};
 
-export type CreateExtraShiftResult =
-  | {
-      status: 'created';
-      shift: ShiftWithChildren;
-      /**
-       * True when this call did NOT write the shift — it found one already
-       * matching the window and returned that instead (a double-tap, or an
-       * approval re-drive repairing its own earlier attempt). The wire shape
-       * is identical either way, which is exactly why the flag has to be
-       * explicit: the client cannot otherwise tell "I just booked this" from
-       * "this was already booked", and neither can the push helper.
-       */
-      adopted: boolean;
-    }
-  | { status: 'pending_approval'; approval: CoParentApproval };
+export type CreateExtraShiftResult = {
+  status: 'created';
+  shift: ShiftWithChildren;
+  /**
+   * True when this call did NOT write the shift — it found one already
+   * matching the window and returned that instead (a double-tap). The wire
+   * shape is identical either way, which is exactly why the flag has to be
+   * explicit: the client cannot otherwise tell "I just booked this" from
+   * "this was already booked", and neither can the push helper.
+   */
+  adopted: boolean;
+};
 
 /** What `insertExtraShift` answers with — see `CreateExtraShiftResult.adopted`. */
 interface InsertedExtraShift {
@@ -331,8 +325,7 @@ export class ShiftChangeRequestCommandService {
   /**
    * Open a change request against an existing shift. Parents may time-change,
    * cancel, split, or handover; nannies may counter-offer only. Short-notice
-   * cancel/time-change may return `{ status: 'pending_approval' }` instead of
-   * creating the request.
+   * cancel/time-change consult the owner-only gate before creating the request.
    */
   async create(
     userId: string,
@@ -359,6 +352,8 @@ export class ShiftChangeRequestCommandService {
       household.short_notice_hours
     );
 
+    let coParentFyiAction: ApprovalGateAction | null = null;
+
     if (
       shortNotice &&
       (input.kind === SHIFT_CHANGE_REQUEST_KINDS.CANCEL ||
@@ -368,32 +363,32 @@ export class ShiftChangeRequestCommandService {
         input.kind === SHIFT_CHANGE_REQUEST_KINDS.CANCEL
           ? ('cancel' as const)
           : ('short_notice_change' as const);
-      const gateResult = await this.gate.assertApprovalAllows(
-        household,
-        membership,
-        action,
-        {
-          shift_id: shiftId,
-          kind: input.kind,
-          proposed_starts_at: input.proposed_starts_at ?? null,
-          proposed_ends_at: input.proposed_ends_at ?? null,
-          message: input.message ?? null,
-        }
-      );
-      if (gateResult.needsApproval) {
-        return { status: 'pending_approval', approval: gateResult.approval };
-      }
+      await this.gate.assertApprovalAllows(household, membership, action, {
+        shift_id: shiftId,
+        kind: input.kind,
+        proposed_starts_at: input.proposed_starts_at ?? null,
+        proposed_ends_at: input.proposed_ends_at ?? null,
+        message: input.message ?? null,
+      });
+      coParentFyiAction = action;
     }
 
     const changeRequest = await this.openChangeRequest(shift, userId, input);
+    if (coParentFyiAction) {
+      void this.notifyCoParentActionFyi(
+        userId,
+        shift.household_id,
+        shift,
+        coParentFyiAction
+      );
+    }
     this.notifyChangeRequestOpened(shift, userId, changeRequest.id);
     return { status: 'pending', shift_change_request: changeRequest };
   }
 
   /**
    * Insert the pending request + its day-thread events. Shared by `create`
-   * (ungated path) and `applyApprovedChangeRequest` (the same work, resumed
-   * once the co-parent signed off) so the two can never drift apart.
+   * so the open path has one implementation.
    *
    * Every other still-pending request on the same shift is superseded first,
    * so the day thread never holds competing ask/answer pairs for one shift.
@@ -423,98 +418,15 @@ export class ShiftChangeRequestCommandService {
   }
 
   /**
-   * Applier for `cancel` / `short_notice_change` co-parent approvals (flow
-   * 1f). `approvalGateService` stored the intended request on the approval
-   * and returned `needsApproval`, so `create` never opened it; this re-drives
-   * that step once the other parent approved — or once the timeout
-   * auto-approved by silence.
-   *
-   * Note what this does NOT do: it opens the request against the shift, it
-   * does not apply it to the shift. Co-parent sign-off unblocks ASKING the
-   * nanny; the nanny still accepts or declines through the normal
-   * `respond` path.
-   *
-   * `getOwned` is re-run as the ORIGINAL requester, so an approval that sat in
-   * the queue while that parent left the household correctly fails to apply
-   * rather than acting on their behalf after the fact.
-   */
-  async applyApprovedChangeRequest(
-    approval: CoParentApproval
-  ): Promise<ShiftChangeRequest> {
-    const payload = approval.payload as {
-      shift_id?: unknown;
-      kind?: unknown;
-      proposed_starts_at?: unknown;
-      proposed_ends_at?: unknown;
-      message?: unknown;
-    };
-
-    if (
-      typeof payload.shift_id !== 'string' ||
-      typeof payload.kind !== 'string'
-    ) {
-      throw new ValidationError(
-        'Approval payload is missing the shift change it was gating',
-        'INVALID_APPROVAL_PAYLOAD',
-        400,
-        { approvalId: approval.id }
-      );
-    }
-
-    // `requested_by` is ON DELETE SET NULL — the requesting parent's profile
-    // is gone, so there is no one to open the request on behalf of.
-    const requestedBy = approval.requested_by;
-    if (!requestedBy) {
-      throw new ValidationError(
-        'The parent who requested this approval no longer exists',
-        'APPROVAL_REQUESTER_MISSING',
-        400,
-        { approvalId: approval.id }
-      );
-    }
-
-    const shift = await this.shiftQueries.getOwned(
-      requestedBy,
-      payload.shift_id
-    );
-
-    await this.shiftRepo.assertMutable(payload.shift_id);
-
-    const changeRequest = await this.openChangeRequest(shift, requestedBy, {
-      kind: payload.kind as CreateShiftChangeRequestInput['kind'],
-      proposed_starts_at:
-        typeof payload.proposed_starts_at === 'string'
-          ? payload.proposed_starts_at
-          : undefined,
-      proposed_ends_at:
-        typeof payload.proposed_ends_at === 'string'
-          ? payload.proposed_ends_at
-          : undefined,
-      message:
-        typeof payload.message === 'string' ? payload.message : undefined,
-    });
-    // D1: this open was as real as `create`'s, and the nanny was never told.
-    // It is also the one path where the ask was DELAYED — parked while the
-    // co-parent decided — so she has less reason than anywhere else to be
-    // watching the app for it.
-    this.notifyChangeRequestOpened(shift, requestedBy, changeRequest.id);
-    return changeRequest;
-  }
-
-  /**
-   * Parent proposes a one-off extra shift (flow 1d). Validates first, then
-   * consults the co-parent approval gate (`extra_shift`). When the gate
-   * parks the mutation, returns `{ status: 'pending_approval' }` without
-   * writing a shift; otherwise creates `kind=extra`, `status=pending`,
-   * `origin=parent_proposed`.
+   * Parent proposes a one-off extra shift (flow 1d). Validates first, consults
+   * the owner-only gate (`extra_shift`), then creates `kind=extra`,
+   * `status=pending`, `origin=parent_proposed`.
    */
   async createExtraShift(
     userId: string,
     householdId: string,
     input: CreateExtraShiftInput
   ): Promise<CreateExtraShiftResult> {
-    // Validation BEFORE the gate — refuse a bad carer/child without parking
-    // an approval that could never apply cleanly.
     const membership = await this.assertExtraShiftAllowed(
       userId,
       householdId,
@@ -522,39 +434,35 @@ export class ShiftChangeRequestCommandService {
     );
     const household = await this.requireHousehold(householdId);
 
-    const gateResult = await this.gate.assertApprovalAllows(
-      household,
-      membership,
-      'extra_shift',
-      {
-        starts_at: input.starts_at,
-        ends_at: input.ends_at,
-        timezone: input.timezone,
-        carer_id: input.carer_id ?? null,
-        child_ids: input.child_ids ?? null,
-        note: input.note ?? null,
-        reason: input.reason ?? null,
-      }
-    );
-    if (gateResult.needsApproval) {
-      return { status: 'pending_approval', approval: gateResult.approval };
-    }
+    await this.gate.assertApprovalAllows(household, membership, 'extra_shift', {
+      starts_at: input.starts_at,
+      ends_at: input.ends_at,
+      timezone: input.timezone,
+      carer_id: input.carer_id ?? null,
+      child_ids: input.child_ids ?? null,
+      note: input.note ?? null,
+      reason: input.reason ?? null,
+    });
 
     const { shift, adopted } = await this.insertExtraShift(
       userId,
       householdId,
       input
     );
-    // An adopted shift was pushed for by whoever actually created it. Pushing
-    // again is a second "Extra shift proposed" for one shift.
-    if (!adopted) this.notifyExtraShiftProposed(shift);
+    if (!adopted) {
+      void this.notifyCoParentActionFyi(
+        userId,
+        householdId,
+        shift,
+        'extra_shift'
+      );
+      this.notifyExtraShiftProposed(shift);
+    }
     return { status: 'created', shift, adopted };
   }
 
   /**
-   * Membership + carer + per-child ownership checks for an extra-shift
-   * proposal. Shared by `createExtraShift` (before the gate) and
-   * `applyApprovedExtraShift` (re-run as the original requester).
+   * Membership + carer + per-child ownership checks for an extra-shift proposal.
    */
   private async assertExtraShiftAllowed(
     userId: string,
@@ -589,9 +497,7 @@ export class ShiftChangeRequestCommandService {
   }
 
   /**
-   * Insert the pending extra shift + day-thread event. Shared by
-   * `createExtraShift` (ungated path) and `applyApprovedExtraShift` so the
-   * two can never drift apart.
+   * Insert the pending extra shift + day-thread event.
    */
   private async insertExtraShift(
     createdBy: string,
@@ -599,12 +505,8 @@ export class ShiftChangeRequestCommandService {
     input: CreateExtraShiftInput
   ): Promise<InsertedExtraShift> {
     // These are four sequential writes and the shift row commits FIRST, so a
-    // throw in any of the other three leaves the shift behind. The approval is
-    // then recorded as failed and re-driven, which without this would create a
-    // SECOND shift for one approval. Keyed on the natural key rather than the
-    // approval id, because that needs a column this table does not have — and
-    // this way the ungated `createExtraShift` double-tap is covered too, which
-    // an approval-id key would have missed.
+    // throw in any of the later three leaves the shift behind. Keyed on the
+    // natural key so the `createExtraShift` double-tap is covered.
     const existing = await this.shiftRepo.findExtraShiftInWindow(
       householdId,
       input.carer_id ?? null,
@@ -635,9 +537,8 @@ export class ShiftChangeRequestCommandService {
         throw error;
       }
       // The pre-check above is check-then-act, so a SIMULTANEOUS create can
-      // still slip between the read and the insert — a double-tapped button,
-      // or an approval re-drive racing the attempt it is repairing. Migration
-      // 059's unique index catches that, and the answer the caller wants is
+      // still slip between the read and the insert — a double-tapped button.
+      // Migration 059's unique index catches that, and the answer the caller wants is
       // the shift that did get made, not a 409 for a booking that exists.
       // ponytail: if the winner is CANCELLED between the 23505 and this
       // re-read, the loser gets a 409 for a booking that could now legitimately
@@ -656,8 +557,7 @@ export class ShiftChangeRequestCommandService {
       }
       // The children and the day-thread event belong to the winner's own call.
       // Re-writing them here would double the child rows and post the shift to
-      // the thread twice; a winner that crashed BEFORE writing them is repaired
-      // by the same approval re-drive that repairs it today.
+      // the thread twice.
       return { shift: winner, adopted: true };
     }
 
@@ -684,91 +584,6 @@ export class ShiftChangeRequestCommandService {
       shift: withChildren ?? { ...shift, shift_children: [] },
       adopted: false,
     };
-  }
-
-  /**
-   * Applier for `extra_shift` co-parent approvals. Re-validates as the
-   * ORIGINAL requester (so a departed carer/child or left household fails
-   * loudly rather than inventing a shift) and then runs `insertExtraShift`.
-   * Re-validation failure throws — it is not swallowed.
-   */
-  async applyApprovedExtraShift(
-    approval: CoParentApproval
-  ): Promise<ShiftWithChildren> {
-    const payload = approval.payload as {
-      starts_at?: unknown;
-      ends_at?: unknown;
-      timezone?: unknown;
-      carer_id?: unknown;
-      child_ids?: unknown;
-      note?: unknown;
-      reason?: unknown;
-    };
-
-    if (
-      typeof payload.starts_at !== 'string' ||
-      typeof payload.ends_at !== 'string' ||
-      typeof payload.timezone !== 'string'
-    ) {
-      throw new ValidationError(
-        'Approval payload is missing the extra shift it was gating',
-        'INVALID_APPROVAL_PAYLOAD',
-        400,
-        { approvalId: approval.id }
-      );
-    }
-
-    if (!(payload.ends_at > payload.starts_at)) {
-      throw new ValidationError(
-        'ends_at must be after starts_at',
-        'INVALID_SHIFT_WINDOW',
-        400,
-        { approvalId: approval.id }
-      );
-    }
-
-    const requestedBy = approval.requested_by;
-    if (!requestedBy) {
-      throw new ValidationError(
-        'The parent who requested this approval no longer exists',
-        'APPROVAL_REQUESTER_MISSING',
-        400,
-        { approvalId: approval.id }
-      );
-    }
-
-    const input: CreateExtraShiftInput = {
-      starts_at: payload.starts_at,
-      ends_at: payload.ends_at,
-      timezone: payload.timezone,
-      ...(typeof payload.carer_id === 'string'
-        ? { carer_id: payload.carer_id }
-        : {}),
-      ...(Array.isArray(payload.child_ids)
-        ? {
-            child_ids: payload.child_ids.filter(
-              (id): id is string => typeof id === 'string'
-            ),
-          }
-        : {}),
-      ...(typeof payload.note === 'string' ? { note: payload.note } : {}),
-      ...(typeof payload.reason === 'string' ? { reason: payload.reason } : {}),
-    };
-
-    await this.assertExtraShiftAllowed(
-      requestedBy,
-      approval.household_id,
-      input
-    );
-    const { shift, adopted } = await this.insertExtraShift(
-      requestedBy,
-      approval.household_id,
-      input
-    );
-    // Same dedupe as `createExtraShift`: a re-driven approval that adopts the
-    // shift its own earlier attempt already made must not push a second time.
-    if (!adopted) this.notifyExtraShiftProposed(shift);
-    return shift;
   }
 
   /**
@@ -1266,6 +1081,55 @@ export class ShiftChangeRequestCommandService {
     });
   }
 
+  /** Fire-and-forget: tell the other parent(s) a gated action already applied. */
+  private async notifyCoParentActionFyi(
+    actorUserId: string,
+    householdId: string,
+    shift: Pick<Shift, 'id' | 'local_date' | 'timezone' | 'household_id'>,
+    action: ApprovalGateAction
+  ): Promise<void> {
+    try {
+      const actorName = await this.resolveParentDisplayName(
+        householdId,
+        actorUserId
+      );
+      const shiftDay = formatShiftDayLabel(shift.local_date, shift.timezone);
+      const { title, body } = coParentFyiCopy(actorName, action, shiftDay);
+      this.safeNotify(() => {
+        notifyHouseholdParents(
+          householdId,
+          {
+            title,
+            body,
+            data: {
+              type: PUSH_NOTIFICATION_TYPES.CO_PARENT_ACTION_FYI,
+              shiftId: shift.id,
+              householdId,
+              action,
+            },
+          },
+          { excludeUserId: actorUserId }
+        );
+      });
+    } catch {
+      // fire-and-forget
+    }
+  }
+
+  private async resolveParentDisplayName(
+    householdId: string,
+    userId: string
+  ): Promise<string> {
+    const members = await this.memberRepo.listActiveByHousehold(householdId);
+    const member = members.find(m => m.user_id === userId);
+    if (!member) return 'A parent';
+    const override = member.display_name_override?.trim();
+    if (override) return override;
+    const profileName = member.profile_name?.trim();
+    if (profileName) return profileName;
+    return 'A parent';
+  }
+
   /** Push helpers must never fail the write that triggered them. */
   private safeNotify(fn: () => void): void {
     try {
@@ -1279,20 +1143,42 @@ export class ShiftChangeRequestCommandService {
 export const shiftChangeRequestCommandService =
   new ShiftChangeRequestCommandService();
 
-/**
- * Close the flow-1f loop: `approvalGateService` (household domain) parks the
- * mutation, and these hand it back here once the other parent approves or the
- * timeout auto-approves. Registered at module load — `routes/index.ts` imports
- * the shift barrel at boot, so all three appliers exist before the first
- * request. The household domain cannot import this module directly without an
- * import cycle; see `approvalApplierRegistry` for why.
- */
-approvalApplierRegistry.register('cancel', async approval => {
-  await shiftChangeRequestCommandService.applyApprovedChangeRequest(approval);
-});
-approvalApplierRegistry.register('short_notice_change', async approval => {
-  await shiftChangeRequestCommandService.applyApprovedChangeRequest(approval);
-});
-approvalApplierRegistry.register('extra_shift', async approval => {
-  await shiftChangeRequestCommandService.applyApprovedExtraShift(approval);
-});
+function formatShiftDayLabel(localDate: string, timezone: string): string {
+  try {
+    return new Intl.DateTimeFormat('en-GB', {
+      weekday: 'long',
+      timeZone: timezone,
+    }).format(new Date(`${localDate}T12:00:00`));
+  } catch {
+    return localDate;
+  }
+}
+
+function coParentFyiCopy(
+  actorName: string,
+  action: ApprovalGateAction,
+  shiftDay: string
+): { title: string; body: string } {
+  switch (action) {
+    case 'cancel':
+      return {
+        title: 'Shift cancellation',
+        body: `${actorName} cancelled ${shiftDay}'s shift.`,
+      };
+    case 'short_notice_change':
+      return {
+        title: 'Short-notice change',
+        body: `${actorName} requested a short-notice change for ${shiftDay}'s shift.`,
+      };
+    case 'extra_shift':
+      return {
+        title: 'Extra shift proposed',
+        body: `${actorName} proposed an extra shift.`,
+      };
+    default:
+      return {
+        title: 'Schedule update',
+        body: `${actorName} made a schedule change.`,
+      };
+  }
+}

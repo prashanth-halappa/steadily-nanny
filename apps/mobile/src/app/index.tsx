@@ -6,12 +6,14 @@ import { ErrorState } from '@/src/components/custom/ErrorState';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import {
   getSetupStepRoute,
+  getUnfinishedSetupResumeRoute,
   SETUP_ROLES,
   SETUP_STEPS,
 } from '@/src/domains/setup/types';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 import { useAuthStore } from '@/src/store/auth';
 import { usePendingDeepLinkStore } from '@/src/store/pendingDeepLinkStore';
+import { useSetupProgressStore } from '@/src/store/setupProgress';
 
 /**
  * Entry router — decides where to send the user, exactly once.
@@ -84,6 +86,13 @@ export default function Index() {
           ? SETUP_STEPS.CHILDREN
           : SETUP_STEPS.ROLE;
       router.replace(getSetupStepRoute(step) as Href);
+      return;
+    }
+
+    const { role, currentStep } = useSetupProgressStore.getState();
+    const resumeRoute = getUnfinishedSetupResumeRoute(role, currentStep);
+    if (resumeRoute) {
+      router.replace(resumeRoute as Href);
       return;
     }
 

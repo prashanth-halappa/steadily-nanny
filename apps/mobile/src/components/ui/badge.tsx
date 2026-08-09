@@ -15,12 +15,14 @@ const badgeVariants = cva(
   {
     variants: {
       variant: {
-        default:
-          'border-transparent bg-primary web:hover:opacity-80 active:opacity-80',
-        secondary:
-          'border-transparent bg-secondary web:hover:opacity-80 active:opacity-80',
-        destructive:
-          'border-transparent bg-destructive web:hover:opacity-80 active:opacity-80',
+        // No native `active:` pseudo-classes here: a badge is not pressable,
+        // and an `active:` class on a plain View makes css-interop upgrade it
+        // to a Pressable after first paint — the dev-only upgrade warning for
+        // that crashed the whole screen (see GOLDEN-FIXES "Badge render
+        // crash"). `web:hover:` variants are web-only and inert on native.
+        default: 'border-transparent bg-primary web:hover:opacity-80',
+        secondary: 'border-transparent bg-secondary web:hover:opacity-80',
+        destructive: 'border-transparent bg-destructive web:hover:opacity-80',
         outline: 'border border-border text-foreground',
       },
     },

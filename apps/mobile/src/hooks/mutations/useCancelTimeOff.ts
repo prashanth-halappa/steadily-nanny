@@ -22,6 +22,14 @@ export function useCancelTimeOff() {
       queryClient.invalidateQueries({ queryKey: queryKeys.timeOff.all });
       // Busy view unions time_off rows — keep clash checks fresh (D30).
       queryClient.invalidateQueries({ queryKey: queryKeys.availability.all });
+      // Cancel on a PAID time off writes reversing `pto_ledger` rows — the
+      // carer's "Paid by N families" marker (`usePaidFamilyCounts`) reads
+      // those ledgers, so it must refetch (same class as useMarkTimeOffPaid).
+      queryClient.invalidateQueries({ queryKey: queryKeys.pto.all });
+      // Reversing paid PTO changes the week's `pto` line and gross — every
+      // expense mutation hook already invalidates `queryKeys.timesheet.all`
+      // for this reason (useMarkTimeOffPaid finding 10); cancel must too.
+      queryClient.invalidateQueries({ queryKey: queryKeys.timesheet.all });
     },
     onError: error => {
       showErrorToast(getLocalizedErrorMessage(error, t));

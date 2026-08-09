@@ -31,9 +31,8 @@ const household = {
   id: 'h1',
   name: 'Smiths',
   timezone: 'Europe/London',
-  approval_mode: 'ask_other' as const,
+  approval_mode: 'either' as const,
   approval_scope: 'short_notice_and_cancellations' as const,
-  approval_timeout_minutes: 60,
   short_notice_hours: 24,
   cancellation_paid_within_hours: 24,
 };
@@ -198,7 +197,7 @@ function makeSvc(overrides: Record<string, unknown> = {}) {
     (overrides.queries ?? makeQueries()) as any,
     (overrides.shiftQueries ?? makeShiftQueries()) as any,
     (overrides.gate ?? {
-      assertApprovalAllows: mock(async () => ({ needsApproval: false })),
+      assertApprovalAllows: mock(async () => undefined),
     }) as any,
     (overrides.children ?? {
       getOwned: mock(async () => ({ id: 'child-1' })),

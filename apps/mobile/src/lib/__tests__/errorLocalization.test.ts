@@ -57,6 +57,40 @@ describe('getLocalizedErrorMessage', () => {
       expect(getLocalizedErrorMessage(error, t)).toBe('errors:alreadyMember');
     });
 
+    it('maps NO_PAY_ARRANGEMENT metadata.reason to errors:noPayArrangementMileage', () => {
+      const error = {
+        response: {
+          status: 400,
+          data: {
+            error: {
+              code: 'VALIDATION_ERROR',
+              metadata: { reason: 'NO_PAY_ARRANGEMENT' },
+            },
+          },
+        },
+      };
+      expect(getLocalizedErrorMessage(error, t)).toBe(
+        'errors:noPayArrangementMileage'
+      );
+    });
+
+    it('maps NOT_OWNER metadata.reason to errors:notHouseholdOwner', () => {
+      const error = {
+        response: {
+          status: 403,
+          data: {
+            error: {
+              code: 'FORBIDDEN',
+              metadata: { reason: 'NOT_OWNER' },
+            },
+          },
+        },
+      };
+      expect(getLocalizedErrorMessage(error, t)).toBe(
+        'errors:notHouseholdOwner'
+      );
+    });
+
     it('maps INTERNAL_ERROR to errors:server', () => {
       expect(
         getLocalizedErrorMessage(envelopeError(ERROR_CODES.INTERNAL_ERROR), t)

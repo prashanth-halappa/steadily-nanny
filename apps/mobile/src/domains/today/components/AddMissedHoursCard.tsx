@@ -9,11 +9,9 @@
  * Modal (GOLDEN-FIXES #1).
  *
  * NOT overnight-capable, despite building its instants with
- * `shiftInstantsFromWallClock`: `TimeRangePicker` refuses any end at or
- * before the start and never calls `onChange`, so the builder's next-day
- * roll is unreachable from here. A forgotten overnight session has to be
- * corrected from Hours instead. Left as-is deliberately — the picker's
- * refusal is visible and immediate, which is more than a silent roll gave.
+ * `shiftInstantsFromWallClock`: submit is gated on a strict end-after-start
+ * range, so the builder's next-day roll is unreachable from here. A forgotten
+ * overnight session has to be corrected from Hours instead.
  *
  * Stays open on failure so nothing typed is lost on a retry; closes and
  * resets only after a successful submit. The refusal renders INSIDE the
@@ -32,6 +30,7 @@ import { LoadingButton } from '@/src/components/ui/loading-button';
 import { Text } from '@/src/components/ui/text';
 import { Textarea } from '@/src/components/ui/textarea';
 import { TimeRangePicker } from '@/src/components/ui/time-range-picker';
+import { isEndAfterStart } from '@/src/components/ui/time-range-picker.utils';
 import { Body, Small } from '@/src/components/ui/typography';
 import {
   formatDate,
@@ -64,6 +63,8 @@ export function AddMissedHoursCard({
   const [end, setEnd] = useState('17:00');
   const [note, setNote] = useState('');
   const [refusal, setRefusal] = useState<string | null>(null);
+
+  const isRangeValid = isEndAfterStart(start, end);
 
   const openSheet = () => {
     setDate(localDateInZone(timeZone));
@@ -179,6 +180,7 @@ export function AddMissedHoursCard({
               testID="today-missed-hours-submit"
               label={t('missedHours.submit')}
               isLoading={createRetroactiveEntry.isPending}
+              disabled={!isRangeValid}
               onPress={handleSubmit}
             />
           </View>

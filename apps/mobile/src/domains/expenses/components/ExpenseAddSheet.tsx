@@ -141,14 +141,17 @@ export function ExpenseAddSheet({
     milesText.trim() !== '' &&
     parseMilesInput(milesText) === null;
 
-  const request = buildExpenseRequest({
-    kind,
-    localDateISO: dateISO,
-    description,
-    amountText,
-    milesText,
-    currency,
-  });
+  const request = buildExpenseRequest(
+    {
+      kind,
+      localDateISO: dateISO,
+      description,
+      amountText,
+      milesText,
+      currency,
+    },
+    todayISO
+  );
 
   const handleSubmit = () => {
     // Recomputed HERE, not the `todayISO` prop closed over at render time —
@@ -158,14 +161,17 @@ export function ExpenseAddSheet({
     const submitTodayISO = localDateInZone(householdTimezone);
     const finalDateISO =
       !isEdit && dateISO === todayISO ? submitTodayISO : dateISO;
-    const finalRequest = buildExpenseRequest({
-      kind,
-      localDateISO: finalDateISO,
-      description,
-      amountText,
-      milesText,
-      currency,
-    });
+    const finalRequest = buildExpenseRequest(
+      {
+        kind,
+        localDateISO: finalDateISO,
+        description,
+        amountText,
+        milesText,
+        currency,
+      },
+      submitTodayISO
+    );
     if (!finalRequest) return;
     onSubmit(finalRequest);
   };

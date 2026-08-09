@@ -22,6 +22,51 @@ describe('getLocalizedAuthErrorMessage', () => {
     ).toBe('t:auth:errors.rateLimited');
   });
 
+  it('maps over_request_rate_limit by supabase error code', () => {
+    expect(
+      getLocalizedAuthErrorMessage(
+        {
+          code: 'over_request_rate_limit',
+          message: 'Request rate limit reached',
+        },
+        t
+      )
+    ).toBe('t:auth:errors.rateLimited');
+  });
+
+  it('maps over_email_send_rate_limit by supabase error code', () => {
+    expect(
+      getLocalizedAuthErrorMessage(
+        {
+          code: 'over_email_send_rate_limit',
+          message: 'Email rate limit exceeded',
+        },
+        t
+      )
+    ).toBe('t:auth:errors.rateLimited');
+  });
+
+  it('maps email_address_invalid by supabase error code', () => {
+    expect(
+      getLocalizedAuthErrorMessage(
+        { code: 'email_address_invalid', message: 'Email address is invalid' },
+        t
+      )
+    ).toBe('t:auth:errors.invalidEmailDomain');
+  });
+
+  it('maps email_address_not_authorized by supabase error code', () => {
+    expect(
+      getLocalizedAuthErrorMessage(
+        {
+          code: 'email_address_not_authorized',
+          message: 'Email address is not authorized',
+        },
+        t
+      )
+    ).toBe('t:auth:errors.invalidEmailDomain');
+  });
+
   // Supabase rejects a short password with 422 "Password should be at least 6
   // characters." — the most common signup failure there is. Mapped to real copy
   // instead of "An unknown error occurred", which tells the user nothing.
