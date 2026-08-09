@@ -12,7 +12,11 @@ import {
   householdTimeOffRoutes,
   timeOffRoutes,
 } from '../domains/availability';
-import { childCommitmentRoutes, commitmentRoutes } from '../domains/child';
+import {
+  childCommitmentRoutes,
+  commitmentRoutes,
+  householdCommitmentRoutes,
+} from '../domains/child';
 import childRoutes from '../domains/child/routes/childRoutes';
 import { handoffRoutes, householdHandoffRoutes } from '../domains/handoff';
 import { householdApprovalRoutes } from '../domains/household';
@@ -57,6 +61,7 @@ router.use(
   '/households/:householdId/children/:childId/commitments',
   childCommitmentRoutes
 );
+router.use('/households/:householdId/commitments', householdCommitmentRoutes);
 router.use('/commitments', commitmentRoutes);
 
 // Availability belongs to the PERSON, not a household — a carer states one

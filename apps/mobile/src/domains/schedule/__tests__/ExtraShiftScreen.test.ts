@@ -13,6 +13,14 @@ beforeAll(async () => {
 });
 
 describe('ExtraShiftScreen', () => {
+  it('reads optional prefill params from the route', () => {
+    expect(source).toContain('useLocalSearchParams');
+    expect(source).toContain('params.date');
+    expect(source).toContain('params.start');
+    expect(source).toContain('params.carerId');
+    expect(source).toContain('params.childId');
+  });
+
   it('uses native pickers and disables submit until the form is valid', () => {
     expect(source).toContain('TimeRangePicker');
     expect(source).toContain('DateTimePicker');

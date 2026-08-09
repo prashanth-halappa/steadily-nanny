@@ -143,6 +143,9 @@ beforeAll(async () => {
       isLoading: false,
     }),
   }));
+  mock.module('@/src/hooks/queries/useChildren', () => ({
+    useChildren: () => ({ data: [], isLoading: false }),
+  }));
   mock.module('@/src/hooks/mutations/useUpdateShift', () => ({
     useUpdateShift: mockUseUpdateShift,
   }));

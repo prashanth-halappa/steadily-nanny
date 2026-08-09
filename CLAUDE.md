@@ -6,12 +6,13 @@ This file guides Claude Code (or any AI agent) working in an app built from this
 
 | Doc | Read it for |
 |---|---|
-| [`docs/README.md`](./docs/README.md) | The routing map for docs 01–10 (stack, monorepo setup, shared-types, API architecture, LLM/jobs, mobile architecture, UI system, conventions, testing, new-app checklist) |
+| [`docs/README.md`](./docs/README.md) | The routing map for docs 01–12 (stack, monorepo setup, shared-types, API architecture, LLM/jobs, mobile architecture, UI system, conventions, testing, new-app checklist, money, need coverage) |
 | [`docs/08-CONVENTIONS.md`](./docs/08-CONVENTIONS.md) | TypeScript non-negotiables, naming, file organization, which Biome rule enforces what |
 | [`docs/09-TESTING.md`](./docs/09-TESTING.md) | `bun:test` patterns, one-file-per-process runner, coverage baselines, mock conventions |
 | [`docs/04-API-ARCHITECTURE.md`](./docs/04-API-ARCHITECTURE.md) / [`05-API-LLM-JOBS.md`](./docs/05-API-LLM-JOBS.md) | Before touching `apps/api` |
 | [`docs/06-MOBILE-ARCHITECTURE.md`](./docs/06-MOBILE-ARCHITECTURE.md) / [`07-MOBILE-UI-SYSTEM.md`](./docs/07-MOBILE-UI-SYSTEM.md) | Before touching `apps/mobile` |
 | [`docs/11-MONEY.md`](./docs/11-MONEY.md) | Before touching anything that stores or renders an amount |
+| [`docs/12-NEED-COVERAGE.md`](./docs/12-NEED-COVERAGE.md) | Before touching care hours (`child_commitments`), uncovered-care detection, `CoverCard`, agenda uncovered rows, `parent_cover`, or `uncovered_care` shift events |
 | [`GOLDEN-FIXES.md`](./GOLDEN-FIXES.md) | Hard-won production bugs and their fixes — check before touching an area listed here; it's the highest-value doc in this repo |
 | [`SETUP.md`](./SETUP.md) / [`PROVISIONING.md`](./PROVISIONING.md) | Only needed once, when standing up a brand-new app from this template — not for day-to-day feature work |
 | `apps/api/.env.example` / `apps/mobile/.env.example` | The full list of env vars each app reads, with inline comments |

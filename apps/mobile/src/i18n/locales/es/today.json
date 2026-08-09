@@ -46,10 +46,27 @@
     "title": "Todo está cubierto",
     "body": "{{name}} · {{detail}}. No necesitas hacer nada ahora mismo."
   },
-  "coverageGap": {
-    "title": "Huecos de cobertura hoy",
-    "description": "Hueco de cobertura {{start}}–{{end}}",
-    "descriptionFallback": "Hueco de cobertura hoy"
+  "cover": {
+    "setup": {
+      "title": "¿Cuándo necesitas cuidado?",
+      "body": "Añade las horas en las que necesitas a alguien con tus hijos — así sabremos cuándo estás cubierto."
+    },
+    "covered": {
+      "title": "Hoy estás cubierto",
+      "variant0": "Cada hora en la que necesitas cuidado hoy tiene a alguien reservado. Puedes respirar.",
+      "variant1": "El horario coincide con lo que pediste hoy — no falta nada.",
+      "variant2": "El cuidado de hoy está listo. Quien aparece en el calendario es quien necesitas.",
+      "variant3": "Vas bien hoy — cada franja que necesitas está en el calendario."
+    },
+    "uncovered": {
+      "titleOne": "{{childName}} no está totalmente cubierto",
+      "titleMany": "{{count}} momentos hoy no están cubiertos",
+      "windowLine": "{{childName}} · {{start}}–{{end}} · {{cause}}",
+      "windowAllDay": "{{childName}} · todo el día · {{cause}}",
+      "windowFallback": "{{childName}} · {{cause}}",
+      "allDay": "todo el día",
+      "andMore": "y {{count}} más"
+    }
   },
   "widgets": {
     "asOf": "A las {{time}}",

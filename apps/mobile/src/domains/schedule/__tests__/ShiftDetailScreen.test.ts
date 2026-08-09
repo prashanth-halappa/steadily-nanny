@@ -137,4 +137,26 @@ describe('ShiftDetailScreen source', () => {
     expect(source).toContain('shift-detail-needs-reconfirm');
     expect(source).toContain('detail.needsReconfirm');
   });
+
+  it('shows who-you-have children above times for every viewer', () => {
+    expect(source).toContain('useChildren');
+    expect(source).toContain('ChildChip');
+    expect(source).toContain('shift-detail-children');
+    expect(source).toContain('detail.childrenTitle');
+    expect(source).toContain('detail.childWindow');
+    expect(source).toContain('detail.childWholeShift');
+    expect(source).toContain('detail.childrenEmpty');
+    expect(source).toContain('shift_children');
+    const childrenUsageIdx = source.indexOf('<ShiftChildrenBlock');
+    const editIdx = source.indexOf('testID="shift-detail-edit"');
+    const readonlyIdx = source.indexOf('testID="shift-detail-readonly"');
+    expect(childrenUsageIdx).toBeGreaterThan(-1);
+    expect(childrenUsageIdx).toBeLessThan(editIdx);
+    expect(childrenUsageIdx).toBeLessThan(readonlyIdx);
+  });
+
+  it('localises uncovered_care day-thread events instead of falling through', () => {
+    expect(source).toContain("'uncovered_care'");
+    expect(source).toContain('detail.eventType.uncovered_care');
+  });
 });

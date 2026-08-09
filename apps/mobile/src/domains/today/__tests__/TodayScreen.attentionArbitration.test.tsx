@@ -4,7 +4,7 @@
  * "One T1 per screen", enforced at the only place that sees every
  * attention-capable card — `TodayScreen` itself. This is the guard the
  * audit asked for: it counts how many of REAL `NeedsAttentionCard` +
- * `CoverageGapBanner` (not opaque markers) are actually rendering
+ * `CoverCard` (not opaque markers) are actually rendering
  * `tone="attention"`'s tinted background, so a FOURTH attention surface
  * added later without wiring into `resolveAttentionOwner` fails this test
  * instead of shipping stacked.
@@ -80,15 +80,23 @@ const CHANGE_REQUEST: InboxItem = {
   shiftId: 'shift-1',
   requestKind: 'time_change',
 };
-const GAP_EVENT = {
-  id: 'gap-1',
-  event_type: 'coverage_gap',
-  payload: { starts_at: null, ends_at: null },
+const UNCOVERED_STATE = {
+  status: 'uncovered' as const,
+  localDate: '2026-03-23',
+  windows: [
+    {
+      childId: 'child-1',
+      commitmentId: 'commit-1',
+      startsAt: '2026-03-23T09:00:00.000Z',
+      endsAt: '2026-03-23T12:00:00.000Z',
+      cause: 'nothingScheduled' as const,
+    },
+  ],
 };
 
 let mockUseOverdueClockOut: ReturnType<typeof mock>;
 let mockUseInboxItems: ReturnType<typeof mock>;
-let mockUseTodayCoverageGaps: ReturnType<typeof mock>;
+let mockUseUncoveredToday: ReturnType<typeof mock>;
 let TodayScreen: typeof import('../components/TodayScreen').TodayScreen;
 
 beforeAll(async () => {
@@ -106,9 +114,12 @@ beforeAll(async () => {
     useInboxItems: mockUseInboxItems,
   }));
 
-  mockUseTodayCoverageGaps = mock(() => ({ gaps: [] }));
-  mock.module('@/src/domains/today/hooks/useTodayCoverageGaps', () => ({
-    useTodayCoverageGaps: mockUseTodayCoverageGaps,
+  mockUseUncoveredToday = mock(() => ({
+    status: 'covered',
+    localDate: '2026-03-23',
+  }));
+  mock.module('@/src/domains/today/hooks/useUncoveredToday', () => ({
+    useUncoveredToday: mockUseUncoveredToday,
   }));
 
   mock.module('@/src/hooks/queries/useActiveHousehold', () => ({
@@ -134,6 +145,9 @@ beforeAll(async () => {
   mock.module('@/src/hooks/queries/useChildren', () => ({
     useChildren: () => ({ data: [], isLoading: false }),
   }));
+  mock.module('@/src/hooks/queries/useHouseholdCommitments', () => ({
+    useHouseholdCommitments: () => ({ data: [], isLoading: false }),
+  }));
 
   const mod = await import('../components/TodayScreen');
   TodayScreen = mod.TodayScreen;
@@ -144,7 +158,7 @@ const ATTENTION_BG = palette.light.surfaceAttention.hex;
 /** The two attention-capable T1 cards this file exercises together. */
 const ATTENTION_CANDIDATE_TEST_IDS = [
   'today-needs-attention-card',
-  'coverage-gap-banner',
+  'cover-card',
 ];
 
 function hasAttentionBackground(style: unknown): boolean {
@@ -167,12 +181,12 @@ function countAttentionCards(
 }
 
 describe('TodayScreen — one T1 per screen (attention arbitration)', () => {
-  it('parent + inbox item + coverage gap today: exactly one attention surface (the gap wins)', () => {
+  it('parent + inbox item + uncovered care today: exactly one attention surface (uncovered wins)', () => {
     mockUseInboxItems.mockReturnValue({
       items: [CHANGE_REQUEST],
       isLoading: false,
     });
-    mockUseTodayCoverageGaps.mockReturnValue({ gaps: [GAP_EVENT] });
+    mockUseUncoveredToday.mockReturnValue(UNCOVERED_STATE);
     mockUseOverdueClockOut.mockReturnValue({
       overdue: false,
       clockInAt: null,
@@ -182,16 +196,18 @@ describe('TodayScreen — one T1 per screen (attention arbitration)', () => {
     const { queryByTestId } = render(<TodayScreen />);
 
     expect(countAttentionCards(queryByTestId)).toBe(1);
-    // The gap owns it — the inbox card is demoted but still present.
-    expect(queryByTestId('coverage-gap-banner')).toBeTruthy();
+    expect(queryByTestId('cover-card')).toBeTruthy();
   });
 
-  it('inbox item alone, no gap: exactly one attention surface (the inbox owns it)', () => {
+  it('inbox item alone, no uncovered care: exactly one attention surface (the inbox owns it)', () => {
     mockUseInboxItems.mockReturnValue({
       items: [CHANGE_REQUEST],
       isLoading: false,
     });
-    mockUseTodayCoverageGaps.mockReturnValue({ gaps: [] });
+    mockUseUncoveredToday.mockReturnValue({
+      status: 'covered',
+      localDate: '2026-03-23',
+    });
     mockUseOverdueClockOut.mockReturnValue({
       overdue: false,
       clockInAt: null,
@@ -205,7 +221,10 @@ describe('TodayScreen — one T1 per screen (attention arbitration)', () => {
 
   it('nothing needs attention: zero attention surfaces', () => {
     mockUseInboxItems.mockReturnValue({ items: [], isLoading: false });
-    mockUseTodayCoverageGaps.mockReturnValue({ gaps: [] });
+    mockUseUncoveredToday.mockReturnValue({
+      status: 'covered',
+      localDate: '2026-03-23',
+    });
     mockUseOverdueClockOut.mockReturnValue({
       overdue: false,
       clockInAt: null,

@@ -21,6 +21,13 @@ let HouseholdClosureQueryService: typeof import('../../../../../src/domains/avai
 let HouseholdClosureNotFoundError: typeof import('../../../../../src/domains/availability/errors/availabilityErrors').HouseholdClosureNotFoundError;
 
 beforeAll(async () => {
+  mock.module(
+    '../../../../../src/domains/child/services/detectUncoveredCareForDate',
+    () => ({
+      detectUncoveredCareForDate: mock(async () => []),
+      detectUncoveredCareBestEffort: mock(() => undefined),
+    })
+  );
   ({ HouseholdClosureCommandService } = await import(
     '../../../../../src/domains/availability/services/householdClosureCommandService'
   ));
@@ -62,6 +69,11 @@ function makeHouseholds(
       user_id: 'u1',
       role,
       status: 'active',
+    })),
+    getOwned: mock(async () => ({
+      id: 'hh1',
+      name: 'Smiths',
+      timezone: 'UTC',
     })),
     ...overrides,
   };

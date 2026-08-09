@@ -3,28 +3,44 @@
  *
  * Calendar view 2a — day-by-day shift list, with Away bands for carer time off.
  */
-import { FlashList } from '@shopify/flash-list';
+import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import type { CarerTimeOff } from '@steadily-nanny/shared-types/schemas/availability.schema';
-import type { Shift } from '@steadily-nanny/shared-types/schemas/shift.schema';
+import type { ChildCommitment } from '@steadily-nanny/shared-types/schemas/child.schema';
+import type { HouseholdMember } from '@steadily-nanny/shared-types/schemas/household.schema';
+import {
+  SHIFT_KINDS,
+  type Shift,
+} from '@steadily-nanny/shared-types/schemas/shift.schema';
+import { uncoveredKey } from '@steadily-nanny/shared-types/uncoveredCare';
 import { type Href, useRouter } from 'expo-router';
-import { useMemo } from 'react';
+import { type RefObject, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Pressable, View } from 'react-native';
 import { useTabBarScrollPadding } from '@/lib/layout/useTabBarScrollPadding';
 import { cn } from '@/lib/utils';
+import { Button } from '@/src/components/ui/button';
 import {
   StatusPill,
   type StatusPillProps,
 } from '@/src/components/ui/status-pill';
 import { Body, DayGroup, Figure, Small } from '@/src/components/ui/typography';
+import { useHouseholdCarers } from '@/src/domains/schedule/hooks/useHouseholdCarers';
 import { resolveMemberDisplayName } from '@/src/domains/schedule/utils/memberDisplayName';
 import {
   formatShiftTime,
   localDateToWeekday,
 } from '@/src/domains/schedule/utils/shiftGrouping';
 import { timeOffRowsForLocalDate } from '@/src/domains/schedule/utils/timeOffOverlap';
+import {
+  isFullDayUncovered,
+  type UncoveredWindowDisplay,
+} from '@/src/domains/schedule/utils/uncoveredDisplay';
+import { commitmentBoundsOnLocalDate } from '@/src/domains/schedule/utils/uncoveredWeek';
 import { formatDuration } from '@/src/domains/timesheet/utils/duration';
 import { formatDisplayDate } from '@/src/domains/timesheet/utils/week';
+import { useCreateParentCover } from '@/src/hooks/mutations/useCreateParentCover';
+import { useRemoveParentCover } from '@/src/hooks/mutations/useRemoveParentCover';
+import { useChildren } from '@/src/hooks/queries/useChildren';
 import { useHouseholdMembers } from '@/src/hooks/queries/useHouseholdMembers';
 import { useAuthStore } from '@/src/store/auth';
 import { useElevation } from '~/lib/design-tokens/elevation';
@@ -69,9 +85,14 @@ interface AgendaViewProps {
   weekDates?: string[];
   /** Used to resolve carer first names once the household has 2+ carers. */
   householdId?: string | null;
+  uncoveredByDay?: Record<string, UncoveredWindowDisplay[]>;
+  showUncoveredActions?: boolean;
+  focusUncoveredKey?: string | null;
+  commitments?: readonly ChildCommitment[];
+  listRef?: RefObject<FlashListRef<AgendaItem> | null>;
 }
 
-type AgendaItem =
+export type AgendaItem =
   | {
       type: 'header';
       key: string;
@@ -82,6 +103,13 @@ type AgendaItem =
       totalMinutes: number | null;
     }
   | { type: 'away'; key: string; localDate: string; message: string | null }
+  | {
+      type: 'uncovered';
+      key: string;
+      localDate: string;
+      window: UncoveredWindowDisplay;
+      highlighted: boolean;
+    }
   | { type: 'shift'; key: string; shift: Shift };
 
 /** Whole-minute duration between two ISO instants, floored (never negative
@@ -93,10 +121,157 @@ function shiftMinutes(shift: Shift): number {
   return Math.max(0, minutes);
 }
 
+function UncoveredRow({
+  localDate,
+  window,
+  highlighted,
+  householdId,
+  displayTimeZone,
+  childName,
+  commitment,
+  showActions,
+  carers,
+  currentUserId,
+  membersByUserId,
+  memberLabels,
+}: {
+  localDate: string;
+  window: UncoveredWindowDisplay;
+  highlighted: boolean;
+  householdId: string;
+  displayTimeZone?: string | null;
+  childName: string;
+  commitment?: ChildCommitment;
+  showActions: boolean;
+  carers: HouseholdMember[];
+  currentUserId: string | null;
+  membersByUserId: Map<string, HouseholdMember>;
+  memberLabels: {
+    you: string;
+    someone: string;
+    roleFallback: (role: 'owner' | 'parent' | 'nanny' | 'helper') => string;
+  };
+}) {
+  const { t } = useTranslation('schedule');
+  const { t: tToday } = useTranslation('today');
+  const router = useRouter();
+  const colors = useThemeColors();
+  const createCover = useCreateParentCover();
+  const key = uncoveredKey(window);
+
+  const cause = t(`cover.cause.${window.cause}`);
+  const timeLabel = (() => {
+    if (commitment && displayTimeZone) {
+      const { startUtc, endUtc } = commitmentBoundsOnLocalDate(
+        commitment,
+        localDate,
+        displayTimeZone
+      );
+      if (isFullDayUncovered(window, startUtc, endUtc)) {
+        return tToday('cover.uncovered.allDay');
+      }
+    }
+    const start = formatShiftTime(window.startsAt, displayTimeZone);
+    const end = formatShiftTime(window.endsAt, displayTimeZone);
+    return `${start}–${end}`;
+  })();
+
+  const singleCarer = carers.length === 1 ? carers[0] : null;
+  const carerFirstName = singleCarer
+    ? resolveMemberDisplayName(
+        singleCarer.user_id,
+        currentUserId,
+        membersByUserId,
+        memberLabels
+      ).split(' ')[0]
+    : '';
+
+  const extraHref = (() => {
+    const start = formatShiftTime(window.startsAt, displayTimeZone);
+    const end = formatShiftTime(window.endsAt, displayTimeZone);
+    const params = new URLSearchParams({
+      date: localDate,
+      start,
+      end,
+      childId: window.childId,
+    });
+    if (singleCarer?.user_id) {
+      params.set('carerId', singleCarer.user_id);
+    }
+    return `/(private)/schedule/shifts/extra?${params.toString()}` as Href;
+  })();
+
+  return (
+    <View
+      testID={`schedule-uncovered-${key}`}
+      className="mx-5.5 mb-2 gap-3 rounded-row p-3"
+      style={{
+        backgroundColor: colors.surfaceAttention,
+        borderWidth: highlighted ? 2 : 0,
+        borderColor: highlighted ? colors.warningStrong : undefined,
+      }}
+    >
+      <View className="gap-1">
+        <View className="flex-row items-center justify-between gap-2">
+          <Body weight="medium">{childName}</Body>
+          <StatusPill variant="pending" label={t('cover.rowPill')} />
+        </View>
+        <Small className="text-muted-foreground">
+          {timeLabel} · {cause}
+        </Small>
+      </View>
+      {showActions ? (
+        <View className="gap-2">
+          <Button
+            testID={`schedule-uncovered-ask-${key}`}
+            size="sm"
+            onPress={() => router.push(extraHref)}
+          >
+            {singleCarer
+              ? t('cover.askToCover', { carerName: carerFirstName })
+              : t('cover.askSomeoneToCover')}
+          </Button>
+          <Button
+            testID={`schedule-uncovered-cover-${key}`}
+            size="sm"
+            variant="secondary"
+            disabled={createCover.isPending}
+            onPress={() => {
+              if (!householdId) return;
+              void createCover.mutateAsync({
+                householdId,
+                starts_at: window.startsAt,
+                ends_at: window.endsAt,
+                child_id: window.childId,
+              });
+            }}
+          >
+            {t('cover.iveGotIt')}
+          </Button>
+          <Pressable
+            testID={`schedule-uncovered-hours-${key}`}
+            accessibilityRole="button"
+            hitSlop={8}
+            onPress={() => router.push('/settings/children' as Href)}
+          >
+            <Small className="text-primary" weight="medium">
+              {t('cover.hoursWrong')}
+            </Small>
+          </Pressable>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
 function ShiftRow({
   shift,
   displayTimeZone,
   carerName,
+  currentUserId,
+  membersByUserId,
+  memberLabels,
+  showParentCoverUndo,
 }: {
   shift: Shift;
   displayTimeZone?: string | null;
@@ -104,28 +279,47 @@ function ShiftRow({
    * 2+ nanny/helper members (see `AgendaView`'s `showCarerNames`); a
    * single-carer household leaves this row exactly as it was before. */
   carerName?: string | null;
+  currentUserId: string | null;
+  membersByUserId: Map<
+    string,
+    NonNullable<ReturnType<typeof useHouseholdMembers>['data']>[number]
+  >;
+  memberLabels: {
+    you: string;
+    someone: string;
+    roleFallback: (role: 'owner' | 'parent' | 'nanny' | 'helper') => string;
+  };
+  showParentCoverUndo?: boolean;
 }) {
   const { t } = useTranslation('schedule');
   const router = useRouter();
   const elevation = useElevation();
   const colors = useThemeColors();
+  const removeCover = useRemoveParentCover();
+  const isParentCover = shift.kind === SHIFT_KINDS.PARENT_COVER;
   const variant = STATUS_TO_VARIANT[shift.status];
-  const isResolved = RESOLVED_STATUSES.has(shift.status);
-  const needsAction = NEEDS_ACTION_STATUSES.has(shift.status);
+  const isResolved = !isParentCover && RESOLVED_STATUSES.has(shift.status);
+  const needsAction = !isParentCover && NEEDS_ACTION_STATUSES.has(shift.status);
 
-  return (
-    <Pressable
-      testID={`schedule-shift-${shift.id}`}
-      accessibilityRole="button"
-      onPress={() =>
-        router.push(`/(private)/schedule/shifts/${shift.id}` as Href)
-      }
-      className={cn(
-        'relative mx-5.5 mb-2 flex-row items-center justify-between gap-2 rounded-row p-3',
-        isResolved ? 'bg-muted' : 'bg-card'
-      )}
-      style={isResolved ? undefined : elevation.row}
-    >
+  const parentCoverLabel = (() => {
+    if (!isParentCover) return null;
+    const parentId = shift.created_by;
+    if (parentId && parentId === currentUserId) {
+      return t('cover.parentCoveringRow');
+    }
+    const parentName = parentId
+      ? resolveMemberDisplayName(
+          parentId,
+          currentUserId,
+          membersByUserId,
+          memberLabels
+        ).split(' ')[0]
+      : memberLabels.someone;
+    return t('cover.parentCoveringBy', { parentName });
+  })();
+
+  const rowBody = (
+    <>
       {needsAction ? (
         <View
           testID={`schedule-shift-accent-${shift.id}`}
@@ -145,12 +339,17 @@ function ShiftRow({
       <View className="gap-1">
         <Body
           tabular
-          className={isResolved ? 'text-muted-foreground' : undefined}
+          className={
+            isResolved || isParentCover ? 'text-muted-foreground' : undefined
+          }
           style={isResolved ? { textDecorationLine: 'line-through' } : null}
         >
           {formatShiftTime(shift.starts_at, displayTimeZone)} –{' '}
           {formatShiftTime(shift.ends_at, displayTimeZone)}
         </Body>
+        {parentCoverLabel ? (
+          <Small className="text-muted-foreground">{parentCoverLabel}</Small>
+        ) : null}
       </View>
       {carerName ? (
         <Small
@@ -161,20 +360,64 @@ function ShiftRow({
           {carerName}
         </Small>
       ) : null}
-      <View className="flex-row items-center gap-2">
-        {shift.is_short_notice ? (
+      {!isParentCover ? (
+        <View className="flex-row items-center gap-2">
+          {shift.is_short_notice ? (
+            <StatusPill
+              testID={`schedule-shift-short-notice-${shift.id}`}
+              variant="short-notice"
+              label={t('shifts.shortNotice')}
+            />
+          ) : null}
           <StatusPill
-            testID={`schedule-shift-short-notice-${shift.id}`}
-            variant="short-notice"
-            label={t('shifts.shortNotice')}
+            testID={`schedule-shift-status-${shift.id}`}
+            variant={variant}
+            label={t(STATUS_TO_LABEL_KEY[shift.status])}
           />
+        </View>
+      ) : null}
+    </>
+  );
+
+  if (isParentCover) {
+    return (
+      <View
+        testID={`schedule-shift-${shift.id}`}
+        accessibilityRole="text"
+        className="relative mx-5.5 mb-2 flex-row items-center justify-between gap-2 rounded-row bg-muted p-3"
+      >
+        {rowBody}
+        {showParentCoverUndo ? (
+          <Pressable
+            testID={`schedule-parent-cover-undo-${shift.id}`}
+            accessibilityRole="button"
+            hitSlop={8}
+            disabled={removeCover.isPending}
+            onPress={() => void removeCover.mutateAsync({ shiftId: shift.id })}
+          >
+            <Small className="text-primary" weight="medium">
+              {t('cover.undoCovering')}
+            </Small>
+          </Pressable>
         ) : null}
-        <StatusPill
-          testID={`schedule-shift-status-${shift.id}`}
-          variant={variant}
-          label={t(STATUS_TO_LABEL_KEY[shift.status])}
-        />
       </View>
+    );
+  }
+
+  return (
+    <Pressable
+      testID={`schedule-shift-${shift.id}`}
+      accessibilityRole="button"
+      onPress={() =>
+        router.push(`/(private)/schedule/shifts/${shift.id}` as Href)
+      }
+      className={cn(
+        'relative mx-5.5 mb-2 flex-row items-center justify-between gap-2 rounded-row p-3',
+        isResolved ? 'bg-muted' : 'bg-card'
+      )}
+      style={isResolved ? undefined : elevation.row}
+    >
+      {rowBody}
     </Pressable>
   );
 }
@@ -186,6 +429,11 @@ export function AgendaView({
   householdTimeZone = 'UTC',
   weekDates = [],
   householdId,
+  uncoveredByDay,
+  showUncoveredActions = false,
+  focusUncoveredKey = null,
+  commitments = [],
+  listRef,
 }: AgendaViewProps) {
   const { t } = useTranslation('schedule');
   // Same tab-bar dead-zone fix as Settings (BUG1) — this is one of the
@@ -229,6 +477,16 @@ export function AgendaView({
     );
     return fullName.split(' ')[0];
   };
+  const childrenQuery = useChildren(householdId);
+  const carersQuery = useHouseholdCarers(householdId);
+  const childrenById = useMemo(
+    () => new Map((childrenQuery.data ?? []).map(child => [child.id, child])),
+    [childrenQuery.data]
+  );
+  const commitmentsById = useMemo(
+    () => new Map(commitments.map(c => [c.id, c])),
+    [commitments]
+  );
   const items = useMemo(() => {
     const byDate = new Map<string, Shift[]>();
     for (const shift of shifts) {
@@ -239,18 +497,22 @@ export function AgendaView({
 
     const dates = new Set<string>([
       ...byDate.keys(),
-      ...weekDates.filter(
-        d => timeOffRowsForLocalDate(timeOff, d, householdTimeZone).length > 0
-      ),
+      ...weekDates,
+      ...(uncoveredByDay ? Object.keys(uncoveredByDay) : []),
     ]);
+    dates.forEach(date => {
+      if (
+        timeOffRowsForLocalDate(timeOff, date, householdTimeZone).length > 0
+      ) {
+        dates.add(date);
+      }
+    });
 
     const result: AgendaItem[] = [];
     for (const localDate of [...dates].sort()) {
       const dayShifts = (byDate.get(localDate) ?? []).sort((a, b) =>
         a.starts_at.localeCompare(b.starts_at)
       );
-      // The parent's question is how much cover exists, not how many rows
-      // to add up themselves — but a cancelled/declined shift isn't cover.
       const totalMinutes =
         dayShifts.length === 0
           ? null
@@ -276,16 +538,75 @@ export function AgendaView({
           message: row.message,
         });
       }
-      for (const shift of dayShifts) {
-        result.push({ type: 'shift', key: shift.id, shift });
+
+      type TimedRow =
+        | { kind: 'shift'; at: number; shift: Shift }
+        | {
+            kind: 'uncovered';
+            at: number;
+            window: UncoveredWindowDisplay;
+            highlighted: boolean;
+          };
+
+      const timed: TimedRow[] = dayShifts.map(shift => ({
+        kind: 'shift',
+        at: Date.parse(shift.starts_at),
+        shift,
+      }));
+      for (const window of uncoveredByDay?.[localDate] ?? []) {
+        const key = uncoveredKey(window);
+        timed.push({
+          kind: 'uncovered',
+          at: Date.parse(window.startsAt),
+          window,
+          highlighted: focusUncoveredKey === key,
+        });
+      }
+      timed.sort((a, b) => a.at - b.at);
+
+      for (const row of timed) {
+        if (row.kind === 'shift') {
+          result.push({ type: 'shift', key: row.shift.id, shift: row.shift });
+        } else {
+          result.push({
+            type: 'uncovered',
+            key: `uncovered-${uncoveredKey(row.window)}`,
+            localDate,
+            window: row.window,
+            highlighted: row.highlighted,
+          });
+        }
       }
     }
     return result;
-  }, [shifts, timeOff, householdTimeZone, weekDates, t]);
+  }, [
+    shifts,
+    timeOff,
+    householdTimeZone,
+    weekDates,
+    uncoveredByDay,
+    focusUncoveredKey,
+    t,
+  ]);
+
+  useEffect(() => {
+    if (!focusUncoveredKey || !listRef?.current) {
+      return;
+    }
+    const index = items.findIndex(
+      item =>
+        item.type === 'uncovered' &&
+        uncoveredKey(item.window) === focusUncoveredKey
+    );
+    if (index >= 0) {
+      listRef.current.scrollToIndex({ index, animated: false });
+    }
+  }, [focusUncoveredKey, items, listRef]);
 
   return (
     <View testID="calendar-agenda-view" style={{ flex: 1 }}>
       <FlashList
+        ref={listRef}
         testID="schedule-shifts-list"
         data={items}
         keyExtractor={item => item.key}
@@ -321,12 +642,44 @@ export function AgendaView({
               </View>
             );
           }
+          if (item.type === 'uncovered') {
+            if (!householdId) {
+              return null;
+            }
+            const child = childrenById.get(item.window.childId);
+            return (
+              <UncoveredRow
+                localDate={item.localDate}
+                window={item.window}
+                highlighted={item.highlighted}
+                householdId={householdId}
+                displayTimeZone={displayTimeZone}
+                childName={child?.name ?? ''}
+                commitment={commitmentsById.get(item.window.commitmentId)}
+                showActions={showUncoveredActions}
+                carers={carersQuery.data ?? []}
+                currentUserId={currentUserId}
+                membersByUserId={membersByUserId}
+                memberLabels={memberLabels}
+              />
+            );
+          }
+          if (item.type !== 'shift') {
+            return null;
+          }
           return (
             <ShiftRow
               shift={item.shift}
               displayTimeZone={displayTimeZone}
               carerName={
                 showCarerNames ? carerFirstName(item.shift.carer_id) : null
+              }
+              currentUserId={currentUserId}
+              membersByUserId={membersByUserId}
+              memberLabels={memberLabels}
+              showParentCoverUndo={
+                showUncoveredActions &&
+                item.shift.kind === SHIFT_KINDS.PARENT_COVER
               }
             />
           );

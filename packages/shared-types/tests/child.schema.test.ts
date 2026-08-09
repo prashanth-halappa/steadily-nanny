@@ -119,7 +119,6 @@ describe('child.schema', () => {
       starts_on: null,
       ends_on: null,
       exdates: [],
-      excluded_from_cover: true,
       created_at: NOW,
       updated_at: NOW,
     };
@@ -139,6 +138,13 @@ describe('child.schema', () => {
       ).toBe(false);
     });
 
+    it('accepts a null label', () => {
+      expect(
+        ChildCommitmentSchema.safeParse({ ...validCommitment, label: null })
+          .success
+      ).toBe(true);
+    });
+
     it('accepts HH:MM:SS times as well as HH:MM', () => {
       expect(
         ChildCommitmentSchema.safeParse({
@@ -151,10 +157,19 @@ describe('child.schema', () => {
   });
 
   describe('CreateChildCommitmentSchema', () => {
-    it('accepts a valid create body', () => {
+    it('accepts a valid create body with label', () => {
       const result = CreateChildCommitmentSchema.safeParse({
         label: 'Preschool',
         rrule: 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH',
+        start_time: '09:00',
+        end_time: '12:00',
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it('accepts a create body without label', () => {
+      const result = CreateChildCommitmentSchema.safeParse({
+        rrule: 'FREQ=WEEKLY;BYDAY=MO',
         start_time: '09:00',
         end_time: '12:00',
       });

@@ -408,6 +408,35 @@ export class ShiftRepository extends BaseRepository<Shift> {
     return (data?.[0] as ShiftWithChildren | undefined) ?? null;
   }
 
+  /**
+   * An existing live parent-cover shift with exactly this window — the
+   * natural key behind `createParentCover`'s double-tap guard.
+   */
+  async findParentCoverInWindow(
+    householdId: string,
+    startsAt: string,
+    endsAt: string
+  ): Promise<Shift | null> {
+    const { data, error } = await supabaseService
+      .from(this.table)
+      .select()
+      .eq('household_id', householdId)
+      .eq('kind', 'parent_cover')
+      .eq('starts_at', startsAt)
+      .eq('ends_at', endsAt)
+      .neq('status', 'cancelled')
+      .limit(1);
+
+    if (error) {
+      throw new DatabaseError(
+        'Failed to look for an existing parent-cover shift',
+        'DATABASE_ERROR',
+        { details: error.message, householdId, startsAt, endsAt }
+      );
+    }
+    return (data?.[0] as Shift | undefined) ?? null;
+  }
+
   /** Attach whole-shift child coverage rows (null start/end). */
   async insertChildren(shiftId: string, childIds: string[]): Promise<void> {
     if (childIds.length === 0) {

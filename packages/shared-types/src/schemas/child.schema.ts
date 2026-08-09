@@ -83,7 +83,7 @@ export const ChildCommitmentSchema = z.object({
   child_id: z.uuid(),
   household_id: z.uuid(),
   kind: z.enum(Object.values(CHILD_COMMITMENT_KINDS)),
-  label: z.string().min(1),
+  label: z.string().nullable(),
   // iCalendar RRULE, e.g. 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH'.
   rrule: z.string().min(1),
   // Nominal local wall-clock times, deliberately not instants — see migration
@@ -93,21 +93,19 @@ export const ChildCommitmentSchema = z.object({
   starts_on: z.iso.date().nullable(),
   ends_on: z.iso.date().nullable(),
   exdates: z.array(z.iso.date()),
-  excluded_from_cover: z.boolean(),
   created_at: z.iso.datetime({ offset: true }),
   updated_at: z.iso.datetime({ offset: true }),
 });
 
 const ChildCommitmentInputSchema = z.object({
   kind: z.enum(Object.values(CHILD_COMMITMENT_KINDS)).optional(),
-  label: z.string().min(1, 'label is required'),
+  label: z.string().min(1).optional().nullable(),
   rrule: z.string().min(1, 'rrule is required'),
   start_time: z.iso.time(),
   end_time: z.iso.time(),
   starts_on: z.iso.date().optional(),
   ends_on: z.iso.date().optional(),
   exdates: z.array(z.iso.date()).optional(),
-  excluded_from_cover: z.boolean().optional(),
 });
 
 /**

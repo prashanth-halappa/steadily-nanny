@@ -7,7 +7,10 @@
  * Away days (carer time off) are marked on the weekday header.
  */
 import type { CarerTimeOff } from '@steadily-nanny/shared-types/schemas/availability.schema';
-import type { Shift } from '@steadily-nanny/shared-types/schemas/shift.schema';
+import {
+  SHIFT_KINDS,
+  type Shift,
+} from '@steadily-nanny/shared-types/schemas/shift.schema';
 import { type Href, useRouter } from 'expo-router';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -64,10 +67,16 @@ interface WeekRibbonViewProps {
 }
 
 function cellStatusColour(
-  status: Shift['status'] | undefined,
+  shift: Shift | undefined,
   colors: ReturnType<typeof useThemeColors>
 ): string {
-  switch (status) {
+  if (!shift) {
+    return colors.category.accent2;
+  }
+  if (shift.kind === SHIFT_KINDS.PARENT_COVER) {
+    return colors.gray[200];
+  }
+  switch (shift.status) {
     case 'confirmed':
     case 'completed':
       return colors.success;
@@ -193,9 +202,9 @@ export function WeekRibbonView({
           </View>
           {displayOrder.map(dow => {
             const shift = densestShift(shifts, dow, hour, displayTimeZone);
-            const status = shift?.status;
-            const filled = status !== undefined;
-            const colour = cellStatusColour(status, themeColors);
+            const filled = shift !== undefined;
+            const colour = cellStatusColour(shift, themeColors);
+            const isParentCover = shift?.kind === SHIFT_KINDS.PARENT_COVER;
             // Empty cells are a thin centred rule, not a full-height muted
             // capsule — the row's own `items-center` centres it — so an
             // occupied block is the only real shape on screen.
@@ -203,7 +212,9 @@ export function WeekRibbonView({
               <View
                 testID={`week-ribbon-cell-${dow}-${hour}`}
                 accessibilityState={{ selected: filled }}
-                accessibilityLabel={status ?? 'empty'}
+                accessibilityLabel={
+                  isParentCover ? 'parent_cover' : (shift?.status ?? 'empty')
+                }
                 className="mx-0.5 flex-1 rounded-full"
                 style={{
                   height: filled ? 16 : 2,
@@ -213,7 +224,7 @@ export function WeekRibbonView({
                 }}
               />
             );
-            if (!shift) {
+            if (!shift || isParentCover) {
               return (
                 <View key={`${dow}-${hour}`} className="flex-1">
                   {cell}

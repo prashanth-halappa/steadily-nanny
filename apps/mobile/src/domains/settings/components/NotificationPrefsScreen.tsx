@@ -8,6 +8,8 @@
 
 import {
   ALL_PUSH_NOTIFICATION_TYPES,
+  PUSH_TYPE_AUDIENCE,
+  type PushAudience,
   type PushNotificationType,
 } from '@steadily-nanny/shared-types';
 import { useRouter } from 'expo-router';
@@ -20,7 +22,9 @@ import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { Switch } from '@/src/components/ui/switch';
 import { Body, Small } from '@/src/components/ui/typography';
 import { SetupScreenShell } from '@/src/domains/setup/components/SetupScreenShell';
+import { SETUP_ROLES } from '@/src/domains/setup/types';
 import { useUpdateNotificationPrefs } from '@/src/hooks/mutations/useUpdateNotificationPrefs';
+import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 import { useNotificationPrefs } from '@/src/hooks/queries/useNotificationPrefs';
 import { getDeviceTimeZone } from '@/src/lib/deviceTimeZone';
 import { showSuccessToast } from '@/src/lib/toast';
@@ -31,11 +35,82 @@ const DEFAULT_QUIET_END = '07:00';
 const QUIET_START_OPTIONS = ['21:00', '22:00', '23:00'] as const;
 const QUIET_END_OPTIONS = ['06:00', '07:00', '08:00'] as const;
 
+type NotificationGroup = 'schedule' | 'hoursAndPay' | 'household';
+
+const PUSH_TYPE_GROUP: Record<PushNotificationType, NotificationGroup> = {
+  approval_expiring: 'household',
+  carer_time_off_conflict: 'schedule',
+  change_request_accepted: 'schedule',
+  change_request_declined: 'schedule',
+  change_request_withdrawn: 'schedule',
+  clock_out_reminder: 'hoursAndPay',
+  co_parent_approval_requested: 'household',
+  co_parent_approval_resolved: 'household',
+  expense_approved: 'hoursAndPay',
+  expense_rejected: 'hoursAndPay',
+  expense_submitted: 'hoursAndPay',
+  extra_shift_proposed: 'schedule',
+  handoff_note_added: 'schedule',
+  household_closure_changed: 'schedule',
+  invite_redeemed: 'household',
+  payment_recorded: 'hoursAndPay',
+  pay_terms_set: 'hoursAndPay',
+  pto_marked_paid: 'hoursAndPay',
+  pto_usage_reversed: 'hoursAndPay',
+  schedule_pattern_amended: 'schedule',
+  schedule_pattern_responded: 'schedule',
+  schedule_pattern_sent: 'schedule',
+  shift_cancelled: 'schedule',
+  shift_change_requested: 'schedule',
+  shift_confirmed: 'schedule',
+  shift_declined: 'schedule',
+  shift_needs_reconfirm: 'schedule',
+  shift_no_show: 'schedule',
+  shift_reminder: 'schedule',
+  timesheet_approved: 'hoursAndPay',
+  timesheet_awaiting_approval: 'hoursAndPay',
+  timesheet_queried: 'hoursAndPay',
+  timesheet_reopened: 'hoursAndPay',
+  timesheet_submitted: 'hoursAndPay',
+  time_off_requested: 'schedule',
+  uncovered_care_detected: 'schedule',
+};
+
+const GROUP_ORDER: NotificationGroup[] = [
+  'schedule',
+  'hoursAndPay',
+  'household',
+];
+
+const GROUP_I18N_KEY: Record<NotificationGroup, string> = {
+  schedule: 'notificationPrefs.groups.schedule',
+  hoursAndPay: 'notificationPrefs.groups.hoursAndPay',
+  household: 'notificationPrefs.groups.household',
+};
+
+function audiencesForRole(
+  role: ReturnType<typeof useIsOnboarded>['role']
+): PushAudience[] {
+  if (role === SETUP_ROLES.NANNY) return ['carer', 'both'];
+  if (role === SETUP_ROLES.PARENT || role === SETUP_ROLES.HELPER) {
+    return ['parent', 'both'];
+  }
+  return ['parent', 'carer', 'both'];
+}
+
+function isTypeVisibleForRole(
+  type: PushNotificationType,
+  role: ReturnType<typeof useIsOnboarded>['role']
+): boolean {
+  return audiencesForRole(role).includes(PUSH_TYPE_AUDIENCE[type]);
+}
+
 export function NotificationPrefsScreen() {
   const router = useRouter();
   const elevation = useElevation();
   const { t } = useTranslation('settings');
   const { t: tCommon } = useTranslation('common');
+  const onboarding = useIsOnboarded();
   const prefsQuery = useNotificationPrefs();
   const updatePrefs = useUpdateNotificationPrefs();
 
@@ -83,6 +158,14 @@ export function NotificationPrefsScreen() {
     showSuccessToast(t('notificationPrefs.savedToast'));
     router.back();
   };
+
+  const visibleTypes = ALL_PUSH_NOTIFICATION_TYPES.filter(type =>
+    isTypeVisibleForRole(type, onboarding.role)
+  );
+  const typesByGroup = GROUP_ORDER.map(group => ({
+    group,
+    types: visibleTypes.filter(type => PUSH_TYPE_GROUP[type] === group),
+  })).filter(section => section.types.length > 0);
 
   if (prefsQuery.isLoading || !hydrated) {
     return (
@@ -188,30 +271,39 @@ export function NotificationPrefsScreen() {
           ) : null}
         </View>
 
-        <View className="gap-3">
+        <View className="gap-6">
           <Body weight="medium">{t('notificationPrefs.typesHeading')}</Body>
           <Small className="text-muted-foreground">
             {t('notificationPrefs.typesHint')}
           </Small>
-          {ALL_PUSH_NOTIFICATION_TYPES.map(type => {
-            const enabled = !disabledTypes.includes(type);
-            return (
-              <View
-                key={type}
-                className="flex-row items-center justify-between gap-3"
-                testID={`notification-prefs-type-${type}`}
-              >
-                <Body className="flex-1">
-                  {t(`notificationPrefs.types.${type}`)}
-                </Body>
-                <Switch
-                  testID={`notification-prefs-type-switch-${type}`}
-                  checked={enabled}
-                  onCheckedChange={next => toggleType(type, next)}
-                />
-              </View>
-            );
-          })}
+          {typesByGroup.map(({ group, types }) => (
+            <View
+              key={group}
+              className="gap-3"
+              testID={`notification-prefs-group-${group}`}
+            >
+              <Body weight="medium">{t(GROUP_I18N_KEY[group])}</Body>
+              {types.map(type => {
+                const enabled = !disabledTypes.includes(type);
+                return (
+                  <View
+                    key={type}
+                    className="flex-row items-center justify-between gap-3"
+                    testID={`notification-prefs-type-${type}`}
+                  >
+                    <Body className="flex-1">
+                      {t(`notificationPrefs.types.${type}`)}
+                    </Body>
+                    <Switch
+                      testID={`notification-prefs-type-switch-${type}`}
+                      checked={enabled}
+                      onCheckedChange={next => toggleType(type, next)}
+                    />
+                  </View>
+                );
+              })}
+            </View>
+          ))}
         </View>
 
         <AnimatedPressable

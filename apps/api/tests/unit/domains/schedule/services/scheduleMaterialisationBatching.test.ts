@@ -412,6 +412,7 @@ describe('ScheduleMaterialisationService — batch insert still adopts on a 062 
       deleted: 0,
       cancelled: 0,
       conflicts: [],
+      touchedDates: ['2026-06-02', '2026-06-04'],
     });
   });
 });
@@ -660,6 +661,7 @@ describe('ScheduleMaterialisationService — a no-op re-run does not rewrite unc
     expect(shiftRepo.update).not.toHaveBeenCalled();
     expect(shiftRepo.replaceChildrenMany).not.toHaveBeenCalled();
     expect(result.updated).toBe(0);
+    expect(result.touchedDates).toEqual([]);
   });
 
   it('still updates, demotes confirmed to pending, and bumps sequence when the time moved', async () => {

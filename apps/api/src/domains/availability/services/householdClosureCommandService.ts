@@ -7,6 +7,7 @@
 import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types/schemas/notification.schema';
 import { ValidationError } from '../../../errors';
 import { logger } from '../../../middlewares/logger';
+import { detectUncoveredCareBestEffort } from '../../child/services/detectUncoveredCareForDate';
 import { NotAHouseholdParentError } from '../../household/errors/householdErrors';
 import { HouseholdMemberRepository } from '../../household/repositories/householdMemberRepository';
 import { HOUSEHOLD_ROLES } from '../../household/schemas';
@@ -15,6 +16,8 @@ import {
   householdQueryService,
 } from '../../household/services/householdQueryService';
 import { notifyUser } from '../../notification';
+import { addDays, localDatesCovered } from '../../pay/utils/localDateSpan';
+import { localDateOf } from '../../timesheet/utils/weekStart';
 import { HouseholdClosureRepository } from '../repositories/householdClosureRepository';
 import type {
   CreateHouseholdClosureInput,
@@ -103,9 +106,36 @@ export class HouseholdClosureCommandService {
     closureId: string
   ): Promise<void> {
     await this.assertWriteRole(userId, householdId);
-    await this.queries.getOwned(userId, householdId, closureId);
+    const closure = await this.queries.getOwned(userId, householdId, closureId);
+    const household = await this.households.getOwned(userId, householdId);
     await this.repo.delete(closureId);
     this.notifyCarersClosureChanged(householdId, 'removed');
+
+    const today = localDateOf(new Date(), household.timezone);
+    const maxDate = addDays(today, 30);
+    const dates = localDatesCovered(
+      closure.starts_at,
+      closure.ends_at,
+      household.timezone
+    ).filter(date => date >= today && date <= maxDate);
+
+    for (const localDate of dates) {
+      try {
+        detectUncoveredCareBestEffort({
+          householdId,
+          localDate,
+          cause: 'closureRemoved',
+          actorId: userId,
+          excludeUserId: userId,
+        });
+      } catch (error) {
+        logger.error('Uncovered-care detection failed after closure removal', {
+          householdId,
+          localDate,
+          error,
+        });
+      }
+    }
   }
 
   private async assertWriteRole(

@@ -7,11 +7,11 @@
   },
   "children": {
     "wizardTitle": "Who are the children?",
-    "wizardSubtitle": "Add each child so your nanny knows who they're looking after.",
+    "wizardSubtitle": "Add each child and the regular hours they'll need your nanny. You can add extra sessions any time.",
     "householdNameLabel": "Household name",
     "householdNamePlaceholder": "Our household",
     "manageTitle": "Children",
-    "manageSubtitle": "Add, edit, or remove the children in your household.",
+    "manageSubtitle": "Add or edit children and the regular hours they need your nanny. Extra sessions can be added any time.",
     "continueButton": "Continue",
     "doneButton": "Done",
     "addButton": "Add a child",
@@ -140,32 +140,27 @@
     "emptyTitle": "No closures yet",
     "emptyDescription": "Dates you add will appear here."
   },
-  "commitments": {
-    "sectionTitle": "Regular times",
-    "sectionBody": "Fixed slots like preschool or nap time. Only these hours affect nanny care — nothing else is assumed for the rest of the day.",
-    "addButton": "Add a time",
-    "deleteLabel": "Delete {{label}}",
-    "rowExcludedFromCover": " · nanny not needed",
-    "dayCount_one": "{{count}} day",
-    "dayCount_other": "{{count}} days",
-    "kind": {
-      "preschool": "Preschool",
-      "school": "School",
-      "activity": "Activity",
-      "nap": "Nap",
-      "other": "Other"
-    },
+  "careHours": {
+    "sectionTitle": "When you need your nanny",
+    "sectionBody": "Share the regular hours {{childName}} needs your nanny each week. We'll let you know if any of them aren't scheduled or confirmed yet. You can add extra sessions any time.",
+    "addButton": "Add hours",
+    "deleteLabel": "Delete {{summary}}",
+    "emptyTitle": "No regular hours yet",
+    "emptyBody": "Without these hours, we can't tell you when something isn't booked or confirmed yet.",
+    "daysEveryDay": "Every day",
+    "daysEveryWeekday": "Every weekday",
+    "rowPrimary": "{{start}}–{{end}} · {{daysSummary}}",
     "form": {
-      "title": "Add a time for {{childName}}",
-      "kindLabel": "Type",
-      "labelLabel": "Label",
-      "labelPlaceholder": "e.g. Preschool drop-off",
-      "labelA11y": "Time label",
+      "addTitle": "Add hours for {{childName}}",
+      "intro": "These are the recurring hours you need your nanny each week. We'll tell you when any of them aren't scheduled or confirmed yet.",
       "daysLabel": "Days",
       "timeLabel": "Time",
-      "excludedLabel": "Nanny not needed",
-      "excludedHelper": "On when your child doesn't need care during this time — for example at preschool or napping. Turn off if your nanny is still responsible, like on a supervised outing.",
-      "submit": "Add time"
+      "labelLabel": "Label (optional)",
+      "labelPlaceholder": "e.g. After-school club",
+      "labelHelper": "Your nanny sees this on her schedule, so she knows the shape of the day is deliberate.",
+      "labelA11y": "Optional label",
+      "readback": "{{daysSummary}}, {{start}}–{{end}} for {{childName}}.",
+      "submit": "Add hours"
     }
   }
 }

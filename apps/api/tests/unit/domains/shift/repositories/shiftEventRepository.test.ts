@@ -100,7 +100,7 @@ describe('ShiftEventRepository.listEventKeysForDate', () => {
     const result = await repo.listEventKeysForDate(
       'h1',
       '2026-08-03',
-      'coverage_gap'
+      'uncovered_care'
     );
     expect(result).toEqual(
       new Set([
@@ -120,7 +120,7 @@ describe('ShiftEventRepository.listEventKeysForDate', () => {
     const result = await repo.listEventKeysForDate(
       'h1',
       '2026-08-03',
-      'coverage_gap'
+      'uncovered_care'
     );
     expect(result).toEqual(new Set());
   });
@@ -133,7 +133,7 @@ describe('ShiftEventRepository.listEventKeysForDate', () => {
     const result = await repo.listEventKeysForDate(
       'h1',
       '2026-08-03',
-      'coverage_gap'
+      'uncovered_care'
     );
     expect(result).toEqual(new Set());
   });
@@ -144,7 +144,7 @@ describe('ShiftEventRepository.listEventKeysForDate', () => {
     );
     const repo = new ShiftEventRepository();
     await expect(
-      repo.listEventKeysForDate('h1', '2026-08-03', 'coverage_gap')
+      repo.listEventKeysForDate('h1', '2026-08-03', 'uncovered_care')
     ).rejects.toThrow();
   });
 });
@@ -160,7 +160,7 @@ describe('ShiftEventRepository.insertMany', () => {
         shift_id: null,
         local_date: '2026-08-03',
         actor_id: null,
-        event_type: 'coverage_gap',
+        event_type: 'uncovered_care',
         payload: { key: 'k1' },
       },
     ];
@@ -205,7 +205,7 @@ describe('ShiftEventRepository.insertMany', () => {
       shift_id: null,
       local_date: '2026-08-03',
       actor_id: null,
-      event_type: 'coverage_gap',
+      event_type: 'uncovered_care',
       payload: { key: 'k1' },
       created_at: '2026-08-03T00:00:00.000Z',
     };
@@ -221,7 +221,7 @@ describe('ShiftEventRepository.insertMany', () => {
         shift_id: null,
         local_date: '2026-08-03',
         actor_id: null,
-        event_type: 'coverage_gap',
+        event_type: 'uncovered_care',
         payload: { key: 'k1' },
       },
       {
@@ -229,7 +229,7 @@ describe('ShiftEventRepository.insertMany', () => {
         shift_id: null,
         local_date: '2026-08-03',
         actor_id: null,
-        event_type: 'coverage_gap',
+        event_type: 'uncovered_care',
         payload: { key: 'k2 — already raised by a concurrent run' },
       },
     ]);
@@ -248,7 +248,7 @@ describe('ShiftEventRepository.insertMany', () => {
         shift_id: null,
         local_date: '2026-08-03',
         actor_id: null,
-        event_type: 'coverage_gap',
+        event_type: 'uncovered_care',
         payload: { key: 'k1' },
       },
     ]);
@@ -268,7 +268,7 @@ describe('ShiftEventRepository.insertMany', () => {
           shift_id: null,
           local_date: '2026-08-03',
           actor_id: null,
-          event_type: 'coverage_gap',
+          event_type: 'uncovered_care',
           payload: { key: 'k1' },
         },
       ])
@@ -295,7 +295,7 @@ describe('ShiftEventRepository.insertMany', () => {
         shift_id: null,
         local_date: '2026-08-03',
         actor_id: null,
-        event_type: 'coverage_gap',
+        event_type: 'uncovered_care',
         payload: { key },
       };
     }

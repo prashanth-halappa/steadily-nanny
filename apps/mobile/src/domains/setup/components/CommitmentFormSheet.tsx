@@ -1,13 +1,8 @@
 /**
  * @module domains/setup/components/CommitmentFormSheet
  *
- * Add a fixed commitment for a child: kind, label, weekly days, times,
- * excluded_from_cover toggle.
+ * Add recurring care hours for a child: weekly days, time range, optional label.
  */
-import {
-  CHILD_COMMITMENT_KINDS,
-  type ChildCommitmentKind,
-} from '@steadily-nanny/shared-types/schemas/child.schema';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
@@ -16,24 +11,21 @@ import { BottomSheetBase } from '@/src/components/custom/BottomSheetBase';
 import { Button } from '@/src/components/ui/button';
 import { FieldLabel } from '@/src/components/ui/field-label';
 import { Input } from '@/src/components/ui/input';
-import { Switch } from '@/src/components/ui/switch';
 import { Text } from '@/src/components/ui/text';
 import { TimeRangePicker } from '@/src/components/ui/time-range-picker';
-import { H3, Small } from '@/src/components/ui/typography';
+import { Body, H3, Small } from '@/src/components/ui/typography';
 import { WeekStrip } from '@/src/components/ui/week-strip';
-import { commitmentKindLabelKey } from '@/src/domains/setup/constants/commitmentKinds';
+import { formatCareHoursReadback } from '@/src/domains/setup/utils/careHoursDisplay';
 import {
   buildWeeklyRrule,
   formatCommitmentTime,
 } from '@/src/domains/setup/utils/commitmentRrule';
 
 export interface CommitmentFormValues {
-  kind: ChildCommitmentKind;
   label: string;
   days: number[];
   startTime: string;
   endTime: string;
-  excludedFromCover: boolean;
 }
 
 interface CommitmentFormSheetProps {
@@ -46,7 +38,7 @@ interface CommitmentFormSheetProps {
 
 const DEFAULT_DAYS = [1, 2, 3, 4, 5];
 const DEFAULT_START = '09:00';
-const DEFAULT_END = '12:00';
+const DEFAULT_END = '17:00';
 
 export function CommitmentFormSheet({
   visible,
@@ -56,23 +48,17 @@ export function CommitmentFormSheet({
   childName,
 }: CommitmentFormSheetProps) {
   const { t } = useTranslation('household');
-  const [kind, setKind] = useState<ChildCommitmentKind>(
-    CHILD_COMMITMENT_KINDS.PRESCHOOL
-  );
   const [label, setLabel] = useState('');
   const [days, setDays] = useState<number[]>(DEFAULT_DAYS);
   const [startTime, setStartTime] = useState(DEFAULT_START);
   const [endTime, setEndTime] = useState(DEFAULT_END);
-  const [excludedFromCover, setExcludedFromCover] = useState(true);
 
   useEffect(() => {
     if (visible) {
-      setKind(CHILD_COMMITMENT_KINDS.PRESCHOOL);
       setLabel('');
       setDays(DEFAULT_DAYS);
       setStartTime(DEFAULT_START);
       setEndTime(DEFAULT_END);
-      setExcludedFromCover(true);
     }
   }, [visible]);
 
@@ -82,20 +68,21 @@ export function CommitmentFormSheet({
     );
   };
 
-  const isValid =
-    label.trim().length > 0 && days.length > 0 && endTime > startTime;
+  const isValid = days.length > 0 && endTime > startTime;
 
   const handleSubmit = () => {
     if (!isValid) return;
     onSubmit({
-      kind,
       label: label.trim(),
       days,
       startTime,
       endTime,
-      excludedFromCover,
     });
   };
+
+  const readback = isValid
+    ? formatCareHoursReadback(startTime, endTime, days, childName, t)
+    : null;
 
   return (
     <BottomSheetBase
@@ -109,43 +96,13 @@ export function CommitmentFormSheet({
         className="gap-3 pb-4"
         style={{ paddingHorizontal: SCREEN_CONTENT_STYLE.padding }}
       >
-        <H3>{t('commitments.form.title', { childName })}</H3>
+        <H3>{t('careHours.form.addTitle', { childName })}</H3>
+        <Small className="text-muted-foreground">
+          {t('careHours.form.intro')}
+        </Small>
 
         <View className="gap-2">
-          <FieldLabel>{t('commitments.form.kindLabel')}</FieldLabel>
-          <View
-            className="flex-row flex-wrap gap-2"
-            testID="commitment-kind-row"
-          >
-            {(
-              Object.values(CHILD_COMMITMENT_KINDS) as ChildCommitmentKind[]
-            ).map(k => (
-              <Button
-                key={k}
-                testID={`commitment-kind-${k}`}
-                variant={kind === k ? 'default' : 'outline'}
-                size="sm"
-                onPress={() => setKind(k)}
-              >
-                <Text>{t(commitmentKindLabelKey(k), { defaultValue: k })}</Text>
-              </Button>
-            ))}
-          </View>
-        </View>
-
-        <View className="gap-2">
-          <FieldLabel>{t('commitments.form.labelLabel')}</FieldLabel>
-          <Input
-            testID="commitment-form-label"
-            accessibilityLabel={t('commitments.form.labelA11y')}
-            value={label}
-            onChangeText={setLabel}
-            placeholder={t('commitments.form.labelPlaceholder')}
-          />
-        </View>
-
-        <View className="gap-2">
-          <FieldLabel>{t('commitments.form.daysLabel')}</FieldLabel>
+          <FieldLabel>{t('careHours.form.daysLabel')}</FieldLabel>
           <WeekStrip
             testID="commitment-form-days"
             selected={days}
@@ -154,7 +111,7 @@ export function CommitmentFormSheet({
         </View>
 
         <View className="gap-2">
-          <FieldLabel>{t('commitments.form.timeLabel')}</FieldLabel>
+          <FieldLabel>{t('careHours.form.timeLabel')}</FieldLabel>
           <TimeRangePicker
             testID="commitment-form-time"
             start={startTime}
@@ -166,28 +123,35 @@ export function CommitmentFormSheet({
           />
         </View>
 
-        <View className="flex-row items-start justify-between gap-3">
-          <View className="flex-1 gap-1">
-            <FieldLabel className="mb-0">
-              {t('commitments.form.excludedLabel')}
-            </FieldLabel>
-            <Small className="text-muted-foreground">
-              {t('commitments.form.excludedHelper')}
-            </Small>
-          </View>
-          <Switch
-            testID="commitment-form-excluded"
-            checked={excludedFromCover}
-            onCheckedChange={setExcludedFromCover}
+        <View className="gap-2">
+          <FieldLabel>{t('careHours.form.labelLabel')}</FieldLabel>
+          <Input
+            testID="commitment-form-label"
+            accessibilityLabel={t('careHours.form.labelA11y')}
+            value={label}
+            onChangeText={setLabel}
+            placeholder={t('careHours.form.labelPlaceholder')}
           />
+          <Small className="text-muted-foreground">
+            {t('careHours.form.labelHelper')}
+          </Small>
         </View>
+
+        {readback ? (
+          <Body
+            testID="commitment-form-readback"
+            className="text-muted-foreground"
+          >
+            {readback}
+          </Body>
+        ) : null}
 
         <Button
           testID="commitment-form-submit"
           onPress={handleSubmit}
           disabled={!isValid || isSubmitting}
         >
-          <Text>{t('commitments.form.submit')}</Text>
+          <Text>{t('careHours.form.submit')}</Text>
         </Button>
       </View>
     </BottomSheetBase>

@@ -13,30 +13,26 @@
  * writer for pattern-driven create/update/delete, so there is no overlap.
  *
  * ONE DELIBERATE WRITE FROM A READ: `listDayThread` runs the child domain's
- * coverage-gap detection (flow 1g) for the requested date before returning
- * the thread, so a household's gaps actually surface — nothing else invokes
- * it. `coverageGapService.raiseGapsOnce` is idempotent (it filters against
- * `shiftEventRepository.listEventKeysForDate` before inserting), so repeated
- * reads of the same day never double up the thread. Detection is
- * BEST-EFFORT: a failure is logged and swallowed, because a read endpoint
- * must still return the thread it was asked for.
+ * uncovered-care detection for the requested date before returning the
+ * thread, so a household's uncovered windows actually surface — nothing else
+ * invokes it. `uncoveredCareService.raiseUncoveredOnce` is idempotent (it
+ * filters against `shiftEventRepository.listEventKeysForDate` before
+ * inserting), so repeated reads of the same day never double up the thread.
+ * Detection is BEST-EFFORT: a failure is logged and swallowed, because a read
+ * endpoint must still return the thread it was asked for.
  *
  * @module domains/shift/services/shiftQueryService
  */
-import type { ChildCommitment } from '@steadily-nanny/shared-types/schemas/child.schema';
 import { logger } from '../../../middlewares/logger';
+import { HouseholdClosureRepository } from '../../availability/repositories/householdClosureRepository';
 // Import the child-domain files DIRECTLY — never the `../../child` barrel,
-// whose services import back into the household/shift graph. Same rule
-// `coverageGapService` itself follows for its shift-repository import.
+// whose services import back into the household/shift graph.
 import { ChildCommitmentRepository } from '../../child/repositories/childCommitmentRepository';
-import type {
-  GapCommitmentInput,
-  GapShiftInput,
-} from '../../child/services/coverageGapService';
+import { detectUncoveredCareForDate } from '../../child/services/detectUncoveredCareForDate';
 import {
-  type CoverageGapService,
-  coverageGapService,
-} from '../../child/services/coverageGapService';
+  type UncoveredCareService,
+  uncoveredCareService,
+} from '../../child/services/uncoveredCareService';
 import {
   HouseholdMemberRepository,
   HouseholdRepository,
@@ -49,8 +45,11 @@ import {
 } from '../repositories/shiftRepository';
 import type { ShiftEvent } from '../types';
 
-/** The narrow slice of the child domain's gap detector this read path needs. */
-export type DayThreadGapRaiser = Pick<CoverageGapService, 'raiseGapsOnce'>;
+/** The narrow slice of the child domain's uncovered-care detector this read path needs. */
+export type DayThreadUncoveredRaiser = Pick<
+  UncoveredCareService,
+  'raiseUncoveredOnce'
+>;
 
 export class ShiftQueryService {
   constructor(
@@ -59,7 +58,8 @@ export class ShiftQueryService {
     private readonly memberRepo: HouseholdMemberRepository = new HouseholdMemberRepository(),
     private readonly householdRepo: HouseholdRepository = new HouseholdRepository(),
     private readonly commitmentRepo: ChildCommitmentRepository = new ChildCommitmentRepository(),
-    private readonly gapService: DayThreadGapRaiser = coverageGapService
+    private readonly closureRepo: HouseholdClosureRepository = new HouseholdClosureRepository(),
+    readonly _uncoveredService: DayThreadUncoveredRaiser = uncoveredCareService
   ) {}
 
   /**
@@ -111,8 +111,8 @@ export class ShiftQueryService {
   /**
    * Household + local_date day thread (includes nullable-shift_id events).
    * Distinct from the shift-scoped `listEvents` route. Raises that date's
-   * coverage gaps first (see the module header) so they are part of the
-   * thread this call returns.
+   * uncovered-care windows first (see the module header) so they are part of
+   * the thread this call returns.
    */
   async listDayThread(
     userId: string,
@@ -120,39 +120,37 @@ export class ShiftQueryService {
     localDate: string
   ): Promise<ShiftEvent[]> {
     await this.assertMember(userId, householdId);
-    await this.raiseCoverageGaps(householdId, localDate);
+    await this.raiseUncoveredCare(householdId, localDate);
     return this.eventRepo.listForHouseholdDate(householdId, localDate);
   }
 
   /**
-   * Flow 1g: carve the day's `excluded_from_cover` commitments out of the
-   * day's shift coverage and append any newly-found gap to the thread.
-   * Idempotent per (child, commitment, interval) — see
-   * `coverageGapService.raiseGapsOnce`. Best-effort: any failure is logged
-   * and swallowed so the day thread still returns.
+   * Compare declared need windows against shift cover and household closures
+   * for one local date; append any newly-found uncovered intervals to the
+   * thread. Idempotent per (child, commitment, interval) — see
+   * `uncoveredCareService.raiseUncoveredOnce`. Best-effort: any failure is
+   * logged and swallowed so the day thread still returns.
    */
-  private async raiseCoverageGaps(
+  private async raiseUncoveredCare(
     householdId: string,
     localDate: string
   ): Promise<void> {
     try {
-      const household = await this.householdRepo.findById(householdId);
-      if (!household) {
-        return;
-      }
-      const [shifts, commitments] = await Promise.all([
-        this.shiftRepo.findByHouseholdAndLocalDate(householdId, localDate),
-        this.commitmentRepo.findByHouseholdId(householdId),
-      ]);
-      await this.gapService.raiseGapsOnce(
-        householdId,
-        localDate,
-        household.timezone,
-        shifts.map(toGapShift),
-        commitments.map(toGapCommitment)
+      await detectUncoveredCareForDate(
+        {
+          householdId,
+          localDate,
+          cause: 'nothingScheduled',
+        },
+        {
+          householdRepo: this.householdRepo,
+          shiftRepo: this.shiftRepo,
+          commitmentRepo: this.commitmentRepo,
+          closureRepo: this.closureRepo,
+        }
       );
     } catch (error) {
-      logger.error('Coverage-gap detection failed for a day thread', {
+      logger.error('Uncovered-care detection failed for a day thread', {
         householdId,
         localDate,
         error,
@@ -175,35 +173,6 @@ export class ShiftQueryService {
       });
     }
   }
-}
-
-/** DB row -> the pure input shape `coverageGapService` consumes. */
-function toGapShift(shift: ShiftWithChildren): GapShiftInput {
-  return {
-    id: shift.id,
-    startsAt: shift.starts_at,
-    endsAt: shift.ends_at,
-    children: (shift.shift_children ?? []).map(child => ({
-      childId: child.child_id,
-      startsAt: child.starts_at,
-      endsAt: child.ends_at,
-    })),
-  };
-}
-
-/** DB row -> the pure input shape `coverageGapService` consumes. */
-function toGapCommitment(commitment: ChildCommitment): GapCommitmentInput {
-  return {
-    id: commitment.id,
-    childId: commitment.child_id,
-    rrule: commitment.rrule,
-    startTime: commitment.start_time,
-    endTime: commitment.end_time,
-    startsOn: commitment.starts_on,
-    endsOn: commitment.ends_on,
-    exdates: commitment.exdates,
-    excludedFromCover: commitment.excluded_from_cover,
-  };
 }
 
 // Singleton for controllers/routes that don't need DI.

@@ -94,6 +94,11 @@
     "quietHoursEnd": "Ends",
     "typesHeading": "Push types",
     "typesHint": "Turn off types you do not want. System permission is managed separately below.",
+    "groups": {
+      "schedule": "Schedule",
+      "hoursAndPay": "Hours and pay",
+      "household": "Your household"
+    },
     "openOsSettings": "Device notification settings",
     "openOsSettingsHint": "Control whether Steadily can alert you at the OS level.",
     "types": {
@@ -124,7 +129,7 @@
       "shift_confirmed": "Shift confirmed",
       "shift_declined": "Shift declined",
       "shift_reminder": "Shift reminder",
-      "coverage_gap_detected": "Coverage gap",
+      "uncovered_care_detected": "No one booked for a child",
       "household_closure_changed": "Household closure changed",
       "time_off_requested": "Time off requested",
       "invite_redeemed": "New member joined",

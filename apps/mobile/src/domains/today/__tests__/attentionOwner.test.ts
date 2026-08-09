@@ -15,7 +15,7 @@ describe('resolveAttentionOwner', () => {
     expect(
       resolveAttentionOwner({
         overdue: false,
-        hasCoverageGap: false,
+        hasUncoveredCare: false,
         hasInboxItems: false,
       })
     ).toBeNull();
@@ -25,7 +25,7 @@ describe('resolveAttentionOwner', () => {
     expect(
       resolveAttentionOwner({
         overdue: true,
-        hasCoverageGap: true,
+        hasUncoveredCare: true,
         hasInboxItems: true,
       })
     ).toBe('overdue');
@@ -35,17 +35,17 @@ describe('resolveAttentionOwner', () => {
     expect(
       resolveAttentionOwner({
         overdue: false,
-        hasCoverageGap: true,
+        hasUncoveredCare: true,
         hasInboxItems: true,
       })
-    ).toBe('coverageGap');
+    ).toBe('uncoveredCare');
   });
 
   it('inbox items own attention only once nothing more urgent is true', () => {
     expect(
       resolveAttentionOwner({
         overdue: false,
-        hasCoverageGap: false,
+        hasUncoveredCare: false,
         hasInboxItems: true,
       })
     ).toBe('inbox');

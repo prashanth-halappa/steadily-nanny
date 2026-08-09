@@ -101,6 +101,7 @@ function makeMaterialisation(): any {
       deleted: 1,
       cancelled: 0,
       conflicts: [],
+      touchedDates: [],
     })),
   };
 }

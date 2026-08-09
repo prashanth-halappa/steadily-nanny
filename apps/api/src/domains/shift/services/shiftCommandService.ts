@@ -17,13 +17,23 @@
 
 import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types/schemas/notification.schema';
 import type { Shift } from '@steadily-nanny/shared-types/schemas/shift.schema';
-import { SHIFT_STATUSES } from '@steadily-nanny/shared-types/schemas/shift.schema';
+import {
+  SHIFT_KINDS,
+  SHIFT_ORIGINS,
+  SHIFT_STATUSES,
+} from '@steadily-nanny/shared-types/schemas/shift.schema';
 import { ValidationError } from '../../../errors';
 import { logger } from '../../../middlewares/logger';
+import {
+  type ChildQueryService,
+  childQueryService,
+} from '../../child/services/childQueryService';
+import { detectUncoveredCareForDate } from '../../child/services/detectUncoveredCareForDate';
 import {
   HOUSEHOLD_ROLES,
   type HouseholdMember,
   HouseholdMemberRepository,
+  HouseholdRepository,
   NotAHouseholdParentError,
 } from '../../household';
 import { notifyHouseholdParents, notifyUser } from '../../notification';
@@ -44,7 +54,9 @@ export class ShiftCommandService {
     private readonly shiftRepo: ShiftRepository = new ShiftRepository(),
     private readonly memberRepo: HouseholdMemberRepository = new HouseholdMemberRepository(),
     private readonly queries: ShiftQueryService = shiftQueryService,
-    private readonly eventRepo: ShiftEventRepository = new ShiftEventRepository()
+    private readonly eventRepo: ShiftEventRepository = new ShiftEventRepository(),
+    private readonly children: ChildQueryService = childQueryService,
+    private readonly householdRepo: HouseholdRepository = new HouseholdRepository()
   ) {}
 
   /**
@@ -206,22 +218,136 @@ export class ShiftCommandService {
     }
 
     // Parents need to know: the family now has a gap where they thought they
-    // had cover, and they cannot see the refusal from the carer app.
+    // had cover, and they cannot see the refusal from the carer app — unless
+    // uncovered-care detection already pushed for the gap (one parent push per
+    // event).
+    let uncoveredInserted: Awaited<
+      ReturnType<typeof detectUncoveredCareForDate>
+    > = [];
     try {
-      notifyHouseholdParents(shift.household_id, {
-        title: 'Shift declined',
-        body: 'The nanny declined a pending shift.',
-        data: {
-          type: PUSH_NOTIFICATION_TYPES.SHIFT_DECLINED,
-          shiftId: updated.id,
-          householdId: shift.household_id,
-        },
+      uncoveredInserted = await detectUncoveredCareForDate({
+        householdId: shift.household_id,
+        localDate: shift.local_date,
+        cause: 'declined',
+        actorId: userId,
       });
-    } catch {
-      // notifyHouseholdParents is sync fire-and-forget; swallow any unexpected throw.
+    } catch (error) {
+      logger.error('Uncovered-care detection failed after decline', {
+        shiftId: shift.id,
+        householdId: shift.household_id,
+        localDate: shift.local_date,
+        error,
+      });
+    }
+
+    if (uncoveredInserted.length === 0) {
+      try {
+        notifyHouseholdParents(shift.household_id, {
+          title: 'Shift declined',
+          body: 'The nanny declined a pending shift.',
+          data: {
+            type: PUSH_NOTIFICATION_TYPES.SHIFT_DECLINED,
+            shiftId: updated.id,
+            householdId: shift.household_id,
+          },
+        });
+      } catch {
+        // notifyHouseholdParents is sync fire-and-forget; swallow any unexpected throw.
+      }
     }
 
     return updated;
+  }
+
+  /**
+   * Parent marks themselves as covering a need window — writes a real
+   * `parent_cover` shift with no carer so the uncovered alert clears.
+   */
+  async createParentCover(
+    userId: string,
+    householdId: string,
+    input: { starts_at: string; ends_at: string; child_id: string }
+  ): Promise<Shift> {
+    await this.assertWriteMember(userId, householdId);
+    await this.children.getOwned(userId, householdId, input.child_id);
+
+    const household = await this.householdRepo.findById(householdId);
+    if (!household) {
+      throw new ShiftNotFoundError(householdId, {
+        reason: 'household_not_accessible',
+      });
+    }
+
+    // ponytail: check-then-act; a unique index like 059's if double-submit ever shows up in the wild
+    const existing = await this.shiftRepo.findParentCoverInWindow(
+      householdId,
+      input.starts_at,
+      input.ends_at
+    );
+    if (existing) {
+      return existing;
+    }
+
+    const shift = await this.shiftRepo.createShift({
+      household_id: householdId,
+      carer_id: null,
+      starts_at: input.starts_at,
+      ends_at: input.ends_at,
+      timezone: household.timezone,
+      kind: SHIFT_KINDS.PARENT_COVER,
+      status: SHIFT_STATUSES.CONFIRMED,
+      origin: SHIFT_ORIGINS.PARENT_COVER,
+      created_by: userId,
+    });
+
+    await this.shiftRepo.insertChildren(shift.id, [input.child_id]);
+
+    try {
+      await this.eventRepo.insertMany([
+        {
+          household_id: householdId,
+          shift_id: shift.id,
+          local_date: shift.local_date,
+          actor_id: userId,
+          event_type: 'parent_cover_added',
+          payload: {
+            shift_id: shift.id,
+            child_id: input.child_id,
+          },
+        },
+      ]);
+    } catch (error) {
+      logger.warn(
+        'Failed to record parent_cover_added event; shift is still created',
+        {
+          shiftId: shift.id,
+          householdId,
+          error: error instanceof Error ? error.message : String(error),
+        }
+      );
+    }
+
+    return shift;
+  }
+
+  /**
+   * Undo a parent-cover shift — hard-deletes only `parent_cover` rows so this
+   * cannot become a way to delete a real shift.
+   */
+  async removeParentCover(userId: string, shiftId: string): Promise<void> {
+    const shift = await this.queries.getOwned(userId, shiftId);
+    await this.assertWriteMember(userId, shift.household_id);
+
+    if (shift.kind !== SHIFT_KINDS.PARENT_COVER) {
+      throw new ValidationError(
+        'Only a parent-cover shift can be removed this way',
+        'SHIFT_NOT_PARENT_COVER',
+        400,
+        { shiftId, kind: shift.kind }
+      );
+    }
+
+    await this.shiftRepo.delete(shiftId);
   }
 
   /**

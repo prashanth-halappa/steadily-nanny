@@ -75,6 +75,46 @@ mock.module('@/src/hooks/queries/useHouseholdMembers', () => ({
   useHouseholdMembers: () => ({ data: [], isLoading: false }),
 }));
 
+mock.module('expo-router', () => ({
+  useRouter: () => ({ push: mock(), back: mock() }),
+  useLocalSearchParams: () => ({}),
+  router: { push: mock(), replace: mock(), back: mock() },
+}));
+
+mock.module('@/src/hooks/queries/useHouseholdCommitments', () => ({
+  useHouseholdCommitments: () => ({
+    data: [],
+    isLoading: false,
+    isError: false,
+  }),
+}));
+
+mock.module('@/src/hooks/queries/useHouseholdClosures', () => ({
+  useHouseholdClosures: () => ({ data: [], isLoading: false, isError: false }),
+}));
+
+mock.module('@/src/hooks/queries/useChildren', () => ({
+  useChildren: () => ({ data: [], isLoading: false }),
+}));
+
+mock.module('@/src/domains/schedule/hooks/useHouseholdCarers', () => ({
+  useHouseholdCarers: () => ({ data: [], isLoading: false }),
+}));
+
+mock.module('@/src/hooks/mutations/useCreateParentCover', () => ({
+  useCreateParentCover: () => ({
+    mutateAsync: async () => {},
+    isPending: false,
+  }),
+}));
+
+mock.module('@/src/hooks/mutations/useRemoveParentCover', () => ({
+  useRemoveParentCover: () => ({
+    mutateAsync: async () => {},
+    isPending: false,
+  }),
+}));
+
 let ScheduleShiftsScreen: typeof import('../components/ScheduleShiftsScreen').ScheduleShiftsScreen;
 let mockUseShiftsRange: ReturnType<typeof mock>;
 let mockUseActiveHousehold: ReturnType<typeof mock>;

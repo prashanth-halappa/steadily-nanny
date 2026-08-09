@@ -32,6 +32,24 @@ const mockUseHouseholdMembers = mock((): { data: unknown[] } => ({
 mock.module('@/src/hooks/queries/useHouseholdMembers', () => ({
   useHouseholdMembers: mockUseHouseholdMembers,
 }));
+mock.module('@/src/hooks/queries/useChildren', () => ({
+  useChildren: () => ({ data: [], isLoading: false }),
+}));
+mock.module('@/src/domains/schedule/hooks/useHouseholdCarers', () => ({
+  useHouseholdCarers: () => ({ data: [], isLoading: false }),
+}));
+mock.module('@/src/hooks/mutations/useCreateParentCover', () => ({
+  useCreateParentCover: () => ({
+    mutateAsync: async () => {},
+    isPending: false,
+  }),
+}));
+mock.module('@/src/hooks/mutations/useRemoveParentCover', () => ({
+  useRemoveParentCover: () => ({
+    mutateAsync: async () => {},
+    isPending: false,
+  }),
+}));
 
 let AgendaView: typeof import('../components/AgendaView').AgendaView;
 

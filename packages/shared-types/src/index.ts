@@ -34,3 +34,5 @@ export * from './schemas/shift.schema';
 export * from './schemas/timesheet.schema';
 // Text utilities
 export * from './text';
+// Uncovered-care interval arithmetic (dependency-free)
+export * from './uncoveredCare';

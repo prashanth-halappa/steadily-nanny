@@ -2,6 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import {
   ALL_PUSH_NOTIFICATION_TYPES,
   PUSH_NOTIFICATION_TYPES,
+  PUSH_TYPE_AUDIENCE,
   PushNotificationTypeSchema,
 } from '../src/schemas/notification.schema';
 
@@ -22,5 +23,25 @@ describe('notification.schema push types', () => {
     for (const value of Object.values(PUSH_NOTIFICATION_TYPES)) {
       expect(PushNotificationTypeSchema.parse(value)).toBe(value);
     }
+  });
+
+  it('classifies every push type in PUSH_TYPE_AUDIENCE', () => {
+    for (const type of ALL_PUSH_NOTIFICATION_TYPES) {
+      expect(PUSH_TYPE_AUDIENCE[type]).toBeDefined();
+    }
+    expect(PUSH_TYPE_AUDIENCE.uncovered_care_detected).toBe('parent');
+    expect(
+      (Object.values(PUSH_TYPE_AUDIENCE) as string[]).includes(
+        'coverage_gap_detected'
+      )
+    ).toBe(false);
+    expect(PUSH_NOTIFICATION_TYPES.UNCOVERED_CARE_DETECTED).toBe(
+      'uncovered_care_detected'
+    );
+    expect(
+      (Object.values(PUSH_NOTIFICATION_TYPES) as string[]).includes(
+        'coverage_gap_detected'
+      )
+    ).toBe(false);
   });
 });

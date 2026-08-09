@@ -118,7 +118,10 @@
     "declineMessageLabel": "Motivo (opcional)",
     "declineMessagePlaceholder": "p. ej. Puedo por las mañanas pero no días completos",
     "acceptedToast": "¡Aceptado! Los turnos se añadieron a tu calendario.",
-    "declinedToast": "Rechazado."
+    "declinedToast": "Rechazado.",
+    "childWindow": "{{childName}} {{start}}–{{end}}",
+    "structuralNoteLabelled": "Es más corto que un día completo por “{{label}}”.",
+    "structuralNote": "Estas horas se repiten cada semana: la familia las definió así a propósito."
   },
   "shifts": {
     "screenTitle": "Turnos",
@@ -171,7 +174,7 @@
     "eventType": {
       "shift_updated": "Turno actualizado",
       "pattern_conflict": "Conflicto de horario",
-      "gap_raised": "Hueco de cobertura"
+      "uncovered_care": "Nadie reservado"
     },
     "cancelShift": "Pedir cancelación",
     "accept": "Aceptar",
@@ -195,7 +198,11 @@
       "parent": "Un progenitor",
       "nanny": "Una niñera",
       "helper": "Un ayudante"
-    }
+    },
+    "childrenTitle": "A quién cuidas",
+    "childWindow": "{{start}}–{{end}}",
+    "childWholeShift": "Todo el turno",
+    "childrenEmpty": "Sin especificar: pregunta a una madre o un padre si tienes dudas."
   },
   "change": {
     "requestedToast": "Cambio solicitado",
@@ -270,5 +277,28 @@
     "withdrawn": "Retirado",
     "superseded": "Reemplazado",
     "expired": "Caducado"
+  },
+  "cover": {
+    "weekSummaryTitle_one": "{{count}} momento esta semana sin nadie reservado",
+    "weekSummaryTitle_other": "{{count}} momentos esta semana sin nadie reservado",
+    "rowPill": "Sin cubrir",
+    "rowMeta": "{{childName}} · {{cause}}",
+    "askToCover": "Pide a {{carerName}} que lo cubra",
+    "askSomeoneToCover": "Pide a alguien que lo cubra",
+    "iveGotIt": "Yo me encargo",
+    "parentCoveringRow": "Te encargas tú",
+    "parentCoveringBy": "Se encarga {{parentName}}",
+    "undoCovering": "Deshacer",
+    "coveringToast": "Marcado como cubierto por ti",
+    "undoneToast": "Quitado: ese rato vuelve a estar sin cubrir.",
+    "hoursWrong": "Estas horas no son correctas",
+    "allCovered": "Todo lo que pediste está reservado.",
+    "cause": {
+      "cancelled": "Se canceló un turno",
+      "declined": "Se rechazó un turno",
+      "needsAdded": "Añadiste estas horas",
+      "closureRemoved": "Cambiaron tus días fuera",
+      "nothingScheduled": "Aún no hay nada programado"
+    }
   }
 }

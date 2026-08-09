@@ -16,7 +16,7 @@
  * 1g ("Per-child coverage & gaps"), wired up by
  * `childCommitmentRepository`/`childCommitmentQueryService`/
  * `childCommitmentCommandService`/`childCommitmentRoutes`+`commitmentRoutes`
- * and consumed by `coverageGapService`.
+ * and consumed by `uncoveredCareService`.
  *
  * @module domains/child/schemas
  */

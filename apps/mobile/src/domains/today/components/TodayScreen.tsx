@@ -49,11 +49,11 @@ import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 import { localDateInZone } from '@/src/lib/localDate';
 import { useHouseholdIsLive } from '../hooks/useHouseholdIsLive';
 import { useOverdueClockOut } from '../hooks/useOverdueClockOut';
-import { useTodayCoverageGaps } from '../hooks/useTodayCoverageGaps';
+import { useUncoveredToday } from '../hooks/useUncoveredToday';
 import { resolveAttentionOwner } from '../utils/attentionOwner';
 import { AddMissedHoursCard } from './AddMissedHoursCard';
 import { ClockInCard } from './ClockInCard';
-import { CoverageGapBanner } from './CoverageGapBanner';
+import { CoverCard } from './CoverCard';
 import { HandoffChipsCard } from './HandoffChipsCard';
 import { NannyLiveStatusCard } from './NannyLiveStatusCard';
 import { TodayCalmCard } from './TodayCalmCard';
@@ -78,13 +78,10 @@ export function TodayScreen() {
   // the ladder there instead of colliding with these two.
   const { overdue: clockOutOverdue } = useOverdueClockOut();
   const inbox = useInboxItems();
-  const { gaps: coverageGaps } = useTodayCoverageGaps(
-    household?.id,
-    household?.timezone
-  );
+  const uncoveredToday = useUncoveredToday(household?.id, household?.timezone);
   const attentionOwner = resolveAttentionOwner({
     overdue: clockOutOverdue,
-    hasCoverageGap: coverageGaps.length > 0,
+    hasUncoveredCare: uncoveredToday.status === 'uncovered',
     hasInboxItems: !inbox.isLoading && inbox.items.length > 0,
   });
   const wash = washGradient(isDarkColorScheme);
@@ -201,11 +198,14 @@ export function TodayScreen() {
               />
             ) : null}
 
-            <CoverageGapBanner
-              householdId={household.id}
-              timeZone={household.timezone}
-              demoted={attentionOwner !== 'coverageGap'}
-            />
+            {canViewParentSchedule(onboarding.role) ? (
+              <CoverCard
+                householdId={household.id}
+                timeZone={household.timezone}
+                householdChildren={children.data ?? []}
+                demoted={attentionOwner !== 'uncoveredCare'}
+              />
+            ) : null}
 
             {onboarding.role ? (
               <HandoffChipsCard

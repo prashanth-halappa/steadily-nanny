@@ -19,11 +19,24 @@ describe('AgendaView source', () => {
     expect(viewSource).toContain('testID="schedule-shifts-list"');
   });
 
+  it('renders parent_cover rows muted and without navigation', () => {
+    expect(viewSource).toContain('shift.kind === SHIFT_KINDS.PARENT_COVER');
+    expect(viewSource).toContain('accessibilityRole="text"');
+    expect(viewSource).toContain('rounded-row bg-muted p-3');
+    expect(viewSource).toMatch(
+      /if \(isParentCover\) \{[\s\S]*return \([\s\S]*<View[\s\S]*accessibilityRole="text"/
+    );
+  });
+
+  it('slots uncovered rows chronologically and uses opaque warning ground without shadow', () => {
+    expect(viewSource).toContain("type: 'uncovered'");
+    expect(viewSource).toContain('colors.surfaceAttention');
+    expect(viewSource).toContain('useCreateParentCover');
+    expect(viewSource).toContain('cover.askToCover');
+    expect(viewSource).toContain('cover.hoursWrong');
+  });
+
   it('REGRESSION: sizes scroll bottom padding off the tab bar height, not a static magic number (BUG1)', () => {
-    // This is the default Schedule tab content view (Agenda calendar),
-    // so it needs the same tap-through dead-zone fix as
-    // Settings/Today/Hours: the floating tab bar overlays this screen's
-    // content instead of reserving its own layout space.
     expect(viewSource).toContain('useTabBarScrollPadding');
     expect(viewSource).toContain('paddingBottom: tabBarScrollPadding');
   });

@@ -150,4 +150,19 @@ describe('ScheduleRespondScreen source', () => {
     // "stuck-after-accept".
     expect(source).toMatch(/router\.replace\(/);
   });
+
+  it('shows per-child windows on each day using the pattern payload', () => {
+    expect(source).toContain('respond.childWindow');
+    expect(source).toContain('start_time');
+    expect(source).toContain('end_time');
+    expect(source).toContain('schedule-respond-child-window-');
+  });
+
+  it('explains shorter days with household commitment labels when present', () => {
+    expect(source).toContain('useHouseholdCommitments');
+    expect(source).toContain('respond.structuralNote');
+    expect(source).toContain('respond.structuralNoteLabelled');
+    expect(source).toContain('schedule-respond-structural-note-');
+    expect(source).toContain('calculateDayHours');
+  });
 });

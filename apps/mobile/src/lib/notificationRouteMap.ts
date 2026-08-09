@@ -74,6 +74,13 @@ const shiftsCalendarHref: NotificationRouteResolver = data =>
     householdId: asString(data.householdId),
   });
 
+const uncoveredCareHref: NotificationRouteResolver = data =>
+  appendQuery('/(private)/schedule/shifts', {
+    householdId: asString(data.householdId),
+    localDate: asString(data.localDate),
+    focusUncovered: '1',
+  });
+
 /**
  * Full product route map. Typed against `PushNotificationType` so a missing
  * key is a compile error; the colocated exhaustiveness test guards runtime.
@@ -109,7 +116,7 @@ export const NOTIFICATION_ROUTE_MAP: NotificationRouteMap &
   [PUSH_NOTIFICATION_TYPES.SHIFT_REMINDER]: shiftDetailHref,
 
   [PUSH_NOTIFICATION_TYPES.CARER_TIME_OFF_CONFLICT]: shiftsCalendarHref,
-  [PUSH_NOTIFICATION_TYPES.COVERAGE_GAP_DETECTED]: shiftsCalendarHref,
+  [PUSH_NOTIFICATION_TYPES.UNCOVERED_CARE_DETECTED]: uncoveredCareHref,
 
   [PUSH_NOTIFICATION_TYPES.HOUSEHOLD_CLOSURE_CHANGED]: scheduleTabHref,
 

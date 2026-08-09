@@ -1,7 +1,27 @@
-import { describe, expect, it, mock } from 'bun:test';
+import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 import { ShiftNotFoundError } from '../../../../../src/domains/shift/errors/shiftErrors';
 import type { ShiftWithChildren } from '../../../../../src/domains/shift/repositories/shiftRepository';
-import { ShiftQueryService } from '../../../../../src/domains/shift/services/shiftQueryService';
+
+let ShiftQueryService: typeof import('../../../../../src/domains/shift/services/shiftQueryService').ShiftQueryService;
+let raiseUncoveredOnceMock: ReturnType<typeof mock>;
+
+beforeAll(async () => {
+  raiseUncoveredOnceMock = mock(async () => []);
+  mock.module(
+    '../../../../../src/domains/child/services/uncoveredCareService',
+    () => ({
+      uncoveredCareService: { raiseUncoveredOnce: raiseUncoveredOnceMock },
+    })
+  );
+  ({ ShiftQueryService } = await import(
+    '../../../../../src/domains/shift/services/shiftQueryService'
+  ));
+});
+
+beforeEach(() => {
+  raiseUncoveredOnceMock.mockClear();
+  raiseUncoveredOnceMock.mockImplementation(async () => []);
+});
 
 const shift: ShiftWithChildren = {
   id: 's1',
@@ -61,7 +81,7 @@ function makeEventRepo(overrides: Record<string, unknown> = {}): any {
         id: 'e2',
         household_id: 'h1',
         shift_id: null,
-        event_type: 'coverage_gap',
+        event_type: 'uncovered_care',
       },
     ]),
     ...overrides,
@@ -90,7 +110,16 @@ const commitment = {
   starts_on: null,
   ends_on: null,
   exdates: [],
-  excluded_from_cover: true,
+};
+
+const closure = {
+  id: 'cl1',
+  household_id: 'h1',
+  starts_at: '2026-08-01T00:00:00.000Z',
+  ends_at: '2026-08-31T23:59:59.000Z',
+  label: 'Holiday',
+  created_at: 't',
+  updated_at: 't',
 };
 
 function makeHouseholdRepo(overrides: Record<string, unknown> = {}): any {
@@ -107,14 +136,21 @@ function makeCommitmentRepo(overrides: Record<string, unknown> = {}): any {
   };
 }
 
-function makeGapService(overrides: Record<string, unknown> = {}): any {
+function makeClosureRepo(overrides: Record<string, unknown> = {}): any {
   return {
-    raiseGapsOnce: mock(async () => []),
+    listByHousehold: mock(async () => [closure]),
     ...overrides,
   };
 }
 
-/** The day-thread wiring needs all six collaborators — see `listDayThread`. */
+function makeUncoveredService(overrides: Record<string, unknown> = {}): any {
+  return {
+    raiseUncoveredOnce: mock(async () => []),
+    ...overrides,
+  };
+}
+
+/** The day-thread wiring needs all collaborators — see `listDayThread`. */
 function makeDayThreadService(
   repos: {
     shiftRepo?: any;
@@ -122,9 +158,10 @@ function makeDayThreadService(
     memberRepo?: any;
     householdRepo?: any;
     commitmentRepo?: any;
-    gapService?: any;
+    closureRepo?: any;
+    uncoveredService?: any;
   } = {}
-): ShiftQueryService {
+): InstanceType<typeof ShiftQueryService> {
   return new ShiftQueryService(
     repos.shiftRepo ??
       makeShiftRepo({
@@ -136,7 +173,8 @@ function makeDayThreadService(
     repos.memberRepo ?? makeMemberRepo(),
     repos.householdRepo ?? makeHouseholdRepo(),
     repos.commitmentRepo ?? makeCommitmentRepo(),
-    repos.gapService ?? makeGapService()
+    repos.closureRepo ?? makeClosureRepo(),
+    repos.uncoveredService ?? makeUncoveredService()
   );
 }
 
@@ -222,20 +260,27 @@ describe('ShiftQueryService.listEvents', () => {
 });
 
 describe('ShiftQueryService.listDayThread', () => {
-  it('raises that date coverage gaps BEFORE returning the thread (flow 1g production caller)', async () => {
+  it('raises uncovered care BEFORE returning the thread with mapped inputs incl. shift status and closures', async () => {
     const shiftRepo = makeShiftRepo({
       findByHouseholdAndLocalDate: mock(async () => [
         {
           ...shift,
+          status: 'confirmed',
           shift_children: [
             { child_id: 'child-1', starts_at: null, ends_at: null },
           ],
         },
       ]),
     });
-    const gapService = makeGapService();
+    const uncoveredService = makeUncoveredService();
+    const closureRepo = makeClosureRepo();
     const eventRepo = makeEventRepo();
-    const svc = makeDayThreadService({ shiftRepo, gapService, eventRepo });
+    const svc = makeDayThreadService({
+      shiftRepo,
+      uncoveredService,
+      closureRepo,
+      eventRepo,
+    });
 
     const result = await svc.listDayThread('u1', 'h1', '2026-08-03');
 
@@ -243,19 +288,21 @@ describe('ShiftQueryService.listDayThread', () => {
       'h1',
       '2026-08-03'
     );
-    expect(gapService.raiseGapsOnce).toHaveBeenCalledWith(
-      'h1',
-      '2026-08-03',
-      'Europe/London', // the household timezone, not the shift's
-      [
+    expect(closureRepo.listByHousehold).toHaveBeenCalledWith('h1');
+    expect(raiseUncoveredOnceMock).toHaveBeenCalledWith({
+      householdId: 'h1',
+      localDate: '2026-08-03',
+      timezone: 'Europe/London',
+      shifts: [
         {
           id: 's1',
           startsAt: shift.starts_at,
           endsAt: shift.ends_at,
+          status: 'confirmed',
           children: [{ childId: 'child-1', startsAt: null, endsAt: null }],
         },
       ],
-      [
+      needWindows: [
         {
           id: 'cm1',
           childId: 'child-1',
@@ -265,10 +312,16 @@ describe('ShiftQueryService.listDayThread', () => {
           startsOn: null,
           endsOn: null,
           exdates: [],
-          excludedFromCover: true,
         },
-      ]
-    );
+      ],
+      closures: [
+        {
+          startsAt: closure.starts_at,
+          endsAt: closure.ends_at,
+        },
+      ],
+      cause: 'nothingScheduled',
+    });
     expect(eventRepo.listForHouseholdDate).toHaveBeenCalledWith(
       'h1',
       '2026-08-03'
@@ -276,30 +329,26 @@ describe('ShiftQueryService.listDayThread', () => {
     expect(result).toHaveLength(1);
   });
 
-  it('still returns the thread when gap detection blows up (best-effort side effect)', async () => {
-    const gapService = makeGapService({
-      raiseGapsOnce: mock(async () => {
-        throw new Error('supabase is down');
-      }),
+  it('still returns the thread when uncovered-care detection blows up (best-effort side effect)', async () => {
+    raiseUncoveredOnceMock.mockImplementation(async () => {
+      throw new Error('supabase is down');
     });
-    const svc = makeDayThreadService({ gapService });
+    const svc = makeDayThreadService();
 
     const result = await svc.listDayThread('u1', 'h1', '2026-08-03');
     expect(result).toHaveLength(1);
   });
 
-  it('never raises gaps for a non-member — membership is checked first', async () => {
-    const gapService = makeGapService();
+  it('never raises uncovered care for a non-member — membership is checked first', async () => {
     const svc = makeDayThreadService({
       memberRepo: makeMemberRepo({
         findActiveMembership: mock(async () => null),
       }),
-      gapService,
     });
 
     await expect(
       svc.listDayThread('u2', 'h1', '2026-08-03')
     ).rejects.toBeInstanceOf(ShiftNotFoundError);
-    expect(gapService.raiseGapsOnce).not.toHaveBeenCalled();
+    expect(raiseUncoveredOnceMock).not.toHaveBeenCalled();
   });
 });

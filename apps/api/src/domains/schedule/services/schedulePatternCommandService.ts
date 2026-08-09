@@ -18,6 +18,7 @@ import {
   type ChildQueryService,
   childQueryService,
 } from '../../child';
+import { detectUncoveredCareBestEffort } from '../../child/services/detectUncoveredCareForDate';
 import type { HouseholdMember } from '../../household';
 import {
   HOUSEHOLD_ROLES,
@@ -26,6 +27,7 @@ import {
   NotAHouseholdParentError,
 } from '../../household';
 import { notifyHouseholdParents, notifyUser } from '../../notification';
+import { addDays as addCalendarDate } from '../../pay/utils/localDateSpan';
 import { localDateOf } from '../../timesheet/utils/weekStart';
 import {
   InvalidPatternCarerError,
@@ -546,7 +548,7 @@ export class SchedulePatternCommandService {
       horizon
     );
 
-    return this.materialisation.materialise(
+    const result = await this.materialisation.materialise(
       {
         id: pattern.id,
         householdId: pattern.household_id,
@@ -558,6 +560,20 @@ export class SchedulePatternCommandService {
       occurrences,
       now
     );
+
+    const today = localDateOf(now, pattern.timezone);
+    const windowEnd = addCalendarDate(today, 7);
+    for (const localDate of result.touchedDates) {
+      if (localDate >= today && localDate <= windowEnd) {
+        detectUncoveredCareBestEffort({
+          householdId: pattern.household_id,
+          localDate,
+          cause: 'nothingScheduled',
+        });
+      }
+    }
+
+    return result;
   }
 
   private async assertWriteMember(

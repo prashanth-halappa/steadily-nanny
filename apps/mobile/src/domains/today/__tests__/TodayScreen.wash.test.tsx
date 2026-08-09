@@ -52,8 +52,8 @@ mock.module('@/src/domains/inbox', () => ({
   NeedsAttentionCard: () => null,
   useInboxItems: () => ({ items: [], isLoading: false }),
 }));
-mock.module('@/src/domains/today/hooks/useTodayCoverageGaps', () => ({
-  useTodayCoverageGaps: () => ({ gaps: [] }),
+mock.module('@/src/domains/today/hooks/useUncoveredToday', () => ({
+  useUncoveredToday: () => ({ status: 'covered', localDate: '2026-03-23' }),
 }));
 mock.module('@/src/domains/today/components/ClockInCard', () => ({
   ClockInCard: () => null,
@@ -61,8 +61,8 @@ mock.module('@/src/domains/today/components/ClockInCard', () => ({
 mock.module('@/src/domains/today/components/AddMissedHoursCard', () => ({
   AddMissedHoursCard: () => null,
 }));
-mock.module('@/src/domains/today/components/CoverageGapBanner', () => ({
-  CoverageGapBanner: () => null,
+mock.module('@/src/domains/today/components/CoverCard', () => ({
+  CoverCard: () => null,
 }));
 mock.module('@/src/domains/today/components/HandoffChipsCard', () => ({
   HandoffChipsCard: () => null,

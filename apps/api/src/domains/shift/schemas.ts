@@ -18,6 +18,7 @@ import { z } from 'zod';
 // Re-export the shared change-request wire contract — flows 1d/1e are
 // implemented in `shiftChangeRequestCommandService` / routes below.
 export type {
+  CreateParentCoverInput,
   CreateShiftChangeRequestInput,
   RespondToShiftChangeRequestInput,
   Shift,
@@ -32,6 +33,7 @@ export type {
   ShiftStatus,
 } from '@steadily-nanny/shared-types/schemas/shift.schema';
 export {
+  CreateParentCoverSchema,
   CreateShiftChangeRequestSchema,
   RespondToShiftChangeRequestSchema,
   SHIFT_KINDS,

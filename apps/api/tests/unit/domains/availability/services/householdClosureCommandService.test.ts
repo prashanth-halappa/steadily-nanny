@@ -22,6 +22,13 @@ let notifyUser: ReturnType<typeof mock>;
 
 beforeAll(async () => {
   notifyUser = mock(() => undefined);
+  mock.module(
+    '../../../../../src/domains/child/services/detectUncoveredCareForDate',
+    () => ({
+      detectUncoveredCareForDate: mock(async () => []),
+      detectUncoveredCareBestEffort: mock(() => undefined),
+    })
+  );
   mock.module('../../../../../src/domains/notification', () => ({
     notifyUser,
     notifyHouseholdParents: mock(() => undefined),
@@ -75,6 +82,11 @@ function makeRepo(overrides: Record<string, unknown> = {}) {
 function makeHouseholds(role: HouseholdMember['role'] = 'owner') {
   return {
     getMembership: mock(async () => membership(role, 'parent-1')),
+    getOwned: mock(async () => ({
+      id: 'h1',
+      name: 'Smiths',
+      timezone: 'UTC',
+    })),
   };
 }
 

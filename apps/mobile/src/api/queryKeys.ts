@@ -68,6 +68,8 @@ export const queryKeys = {
     all: ['commitments'] as const,
     list: (householdId?: string, childId?: string) =>
       [...queryKeys.commitments.all, 'list', householdId, childId] as const,
+    byHousehold: (householdId?: string) =>
+      [...queryKeys.commitments.all, 'household', householdId] as const,
   },
 
   // Daily handoff notes (morning/evening chips)

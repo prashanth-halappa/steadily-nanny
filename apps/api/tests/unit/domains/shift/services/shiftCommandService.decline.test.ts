@@ -52,6 +52,13 @@ let notifyHouseholdParents: ReturnType<typeof mock>;
 
 beforeAll(async () => {
   notifyHouseholdParents = mock(() => undefined);
+  mock.module(
+    '../../../../../src/domains/child/services/detectUncoveredCareForDate',
+    () => ({
+      detectUncoveredCareForDate: mock(async () => []),
+      detectUncoveredCareBestEffort: mock(() => undefined),
+    })
+  );
   mock.module('../../../../../src/domains/notification', () => ({
     notifyUser: mock(() => undefined),
     notifyHouseholdParents,

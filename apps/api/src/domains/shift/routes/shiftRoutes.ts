@@ -78,4 +78,11 @@ router.get(
   asyncHandler(ShiftChangeRequestController.listForShift)
 );
 
+// Parent undo self-cover — must refuse non-parent_cover shifts in the service.
+router.delete(
+  '/:shiftId/parent-cover',
+  ...authWithOwnership(ShiftIdParamSchema, shiftOwnership),
+  asyncHandler(ShiftController.removeParentCover)
+);
+
 export default router;

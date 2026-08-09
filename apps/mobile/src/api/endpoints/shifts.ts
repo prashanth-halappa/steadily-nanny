@@ -13,6 +13,7 @@ import {
   ClashWarningSchema,
 } from '@steadily-nanny/shared-types/schemas/me.schema';
 import {
+  CreateParentCoverSchema,
   type Shift,
   type ShiftEvent,
   ShiftEventListResponseSchema,
@@ -29,6 +30,9 @@ export const shiftEndpoints = {
   update: (shiftId: string) => `/v1/shifts/${shiftId}`,
   accept: (shiftId: string) => `/v1/shifts/${shiftId}/accept`,
   decline: (shiftId: string) => `/v1/shifts/${shiftId}/decline`,
+  parentCover: (householdId: string) =>
+    `/v1/households/${householdId}/shifts/parent-cover`,
+  removeParentCover: (shiftId: string) => `/v1/shifts/${shiftId}/parent-cover`,
   events: (householdId: string, shiftId: string) =>
     `/v1/households/${householdId}/shifts/${shiftId}/events`,
   dayThread: (householdId: string, localDate: string) =>
@@ -155,5 +159,25 @@ export const shiftApi = {
     const parsed = ShiftEventListResponseSchema.safeParse(response.data.data);
     if (!parsed.success) throw parsed.error;
     return parsed.data.shift_events;
+  },
+
+  createParentCover: async (
+    householdId: string,
+    input: { starts_at: string; ends_at: string; child_id: string }
+  ): Promise<Shift> => {
+    const validated = CreateParentCoverSchema.safeParse(input);
+    if (!validated.success) throw validated.error;
+
+    const response = await apiClient.post(
+      shiftEndpoints.parentCover(householdId),
+      validated.data
+    );
+    const parsed = ShiftEnvelopeSchema.safeParse(response.data.data);
+    if (!parsed.success) throw parsed.error;
+    return parsed.data.shift;
+  },
+
+  removeParentCover: async (shiftId: string): Promise<void> => {
+    await apiClient.delete(shiftEndpoints.removeParentCover(shiftId));
   },
 };

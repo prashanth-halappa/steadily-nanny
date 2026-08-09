@@ -51,6 +51,7 @@ function noOpMaterialiser() {
       deleted: 0,
       cancelled: 0,
       conflicts: [],
+      touchedDates: [],
     })),
   };
 }
@@ -65,6 +66,7 @@ describe('runScheduleHorizonJob', () => {
       deleted: 0,
       cancelled: 0,
       conflicts: [],
+      touchedDates: [],
     }));
     const commandService = { materialiseForHorizon };
 
@@ -91,6 +93,7 @@ describe('runScheduleHorizonJob', () => {
       deleted: 0,
       cancelled: 0,
       conflicts: [],
+      touchedDates: [],
     }));
     const commandService = { materialiseForHorizon };
 
@@ -123,6 +126,7 @@ describe('runScheduleHorizonJob', () => {
         deleted: 0,
         cancelled: 0,
         conflicts: [],
+        touchedDates: [],
       };
     });
     const commandService = { materialiseForHorizon };
@@ -151,6 +155,7 @@ describe('runScheduleHorizonJob', () => {
       deleted: 0,
       cancelled: 0,
       conflicts: [],
+      touchedDates: [],
     }));
     const commandService = { materialiseForHorizon };
 
@@ -176,6 +181,7 @@ describe('runScheduleHorizonJob', () => {
       deleted: 0,
       cancelled: 0,
       conflicts: [],
+      touchedDates: [],
     }));
     const commandService = { materialiseForHorizon };
     const approvals = {
@@ -204,6 +210,7 @@ describe('runScheduleHorizonJob', () => {
       deleted: 0,
       cancelled: 0,
       conflicts: [],
+      touchedDates: [],
     }));
     const commandService = { materialiseForHorizon };
     const approvals = {
@@ -286,6 +293,7 @@ describe('runScheduleHorizonJob — stale change-request sweep (F-B5-5)', () => 
       deleted: 0,
       cancelled: 0,
       conflicts: [],
+      touchedDates: [],
     }));
     const changeRequests = {
       expirePendingOlderThan: mock(async () => {

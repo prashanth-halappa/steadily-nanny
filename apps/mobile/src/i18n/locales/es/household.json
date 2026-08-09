@@ -7,11 +7,11 @@
   },
   "children": {
     "wizardTitle": "¿Quiénes son los niños?",
-    "wizardSubtitle": "Añade cada niño para que tu niñera sepa a quién está cuidando.",
+    "wizardSubtitle": "Añade cada niño y las horas habituales en las que necesitarás a tu niñera. Puedes añadir sesiones extra cuando quieras.",
     "householdNameLabel": "Nombre del hogar",
     "householdNamePlaceholder": "Nuestro hogar",
     "manageTitle": "Niños",
-    "manageSubtitle": "Añade, edita o elimina los niños de tu hogar.",
+    "manageSubtitle": "Añade o edita los niños y las horas habituales en las que necesitan a la niñera. Puedes añadir sesiones extra cuando quieras.",
     "continueButton": "Continuar",
     "doneButton": "Listo",
     "addButton": "Añadir un niño",
@@ -140,32 +140,27 @@
     "emptyTitle": "Aún no hay cierres",
     "emptyDescription": "Las fechas que añadas aparecerán aquí."
   },
-  "commitments": {
-    "sectionTitle": "Horarios fijos",
-    "sectionBody": "Bloques como guardería o siesta. Solo estas horas afectan el cuidado de la niñera; el resto del día no se programa automáticamente.",
-    "addButton": "Añadir horario",
-    "deleteLabel": "Eliminar {{label}}",
-    "rowExcludedFromCover": " · niñera no necesaria",
-    "dayCount_one": "{{count}} día",
-    "dayCount_other": "{{count}} días",
-    "kind": {
-      "preschool": "Guardería",
-      "school": "Colegio",
-      "activity": "Actividad",
-      "nap": "Siesta",
-      "other": "Otro"
-    },
+  "careHours": {
+    "sectionTitle": "Cuando necesitas a tu niñera",
+    "sectionBody": "Indica las horas habituales cada semana en las que {{childName}} necesita a la niñera. Te avisaremos si alguna no está programada o confirmada todavía. Puedes añadir sesiones extra cuando quieras.",
+    "addButton": "Añadir horas",
+    "deleteLabel": "Eliminar {{summary}}",
+    "emptyTitle": "Aún no hay horas habituales",
+    "emptyBody": "Sin estas horas, no podemos avisarte cuando algo no está reservado o confirmado todavía.",
+    "daysEveryDay": "Todos los días",
+    "daysEveryWeekday": "Todos los días laborables",
+    "rowPrimary": "{{start}}–{{end}} · {{daysSummary}}",
     "form": {
-      "title": "Añadir horario para {{childName}}",
-      "kindLabel": "Tipo",
-      "labelLabel": "Etiqueta",
-      "labelPlaceholder": "p. ej. Entrega en la guardería",
-      "labelA11y": "Etiqueta del horario",
+      "addTitle": "Añadir horas para {{childName}}",
+      "intro": "Estas son las horas recurrentes cada semana en las que necesitas a tu niñera. Te avisaremos cuando alguna no esté programada o confirmada todavía.",
       "daysLabel": "Días",
       "timeLabel": "Horario",
-      "excludedLabel": "No se necesita niñera",
-      "excludedHelper": "Actívalo cuando el niño no necesita cuidado en ese horario — por ejemplo en la guardería o durmiendo. Desactívalo si la niñera sigue responsable, como en una salida supervisada.",
-      "submit": "Añadir horario"
+      "labelLabel": "Etiqueta (opcional)",
+      "labelPlaceholder": "p. ej. Club después del cole",
+      "labelHelper": "Tu niñera lo verá en su horario, para saber que el día está planificado.",
+      "labelA11y": "Etiqueta opcional",
+      "readback": "{{daysSummary}}, {{start}}–{{end}} para {{childName}}.",
+      "submit": "Añadir horas"
     }
   }
 }

@@ -31,6 +31,16 @@ const updatePrefsMock = mock((input: Record<string, unknown>) =>
 const getDeviceTimeZoneMock = mock(() => 'Europe/London');
 const showSuccessToastMock = mock(() => undefined);
 const mockBack = mock(() => undefined);
+let onboardingRole: 'parent' | 'nanny' | 'helper' = 'parent';
+
+mock.module('@/src/hooks/queries/useIsOnboarded', () => ({
+  useIsOnboarded: () => ({
+    status: 'onboarded' as const,
+    role: onboardingRole,
+    householdId: 'hh-1',
+    isPastMember: false,
+  }),
+}));
 
 mock.module('@/src/components/ui/switch', () => {
   const React = require('react');
@@ -92,6 +102,7 @@ beforeAll(async () => {
 });
 
 beforeEach(() => {
+  onboardingRole = 'parent';
   useAuthStore.setState({
     session: {
       access_token: 'tok',
@@ -148,5 +159,38 @@ describe('NotificationPrefsScreen', () => {
       ).toBe(true);
       expect(getByTestId('notification-prefs-quiet-window')).toBeTruthy();
     });
+  });
+
+  it('preserves parent-only disabled_types when a nanny saves her filtered list', async () => {
+    onboardingRole = 'nanny';
+    getPrefsMock.mockResolvedValue({
+      quietHoursEnabled: false,
+      quietHoursStart: '22:00',
+      quietHoursEnd: '07:00',
+      disabledTypes: ['uncovered_care_detected'],
+      timezone: 'UTC',
+    });
+
+    const { getByTestId, queryByTestId } = renderWithProviders(
+      <NotificationPrefsScreen />
+    );
+
+    await waitFor(() => {
+      expect(getByTestId('notification-prefs-quiet-hours')).toBeTruthy();
+    });
+
+    fireEvent.press(getByTestId('notification-prefs-screen-cta'));
+
+    await waitFor(() => {
+      expect(updatePrefsMock).toHaveBeenCalled();
+    });
+
+    const saved = updatePrefsMock.mock.calls.at(-1)?.[0] as {
+      disabledTypes: string[];
+    };
+    expect(saved.disabledTypes).toContain('uncovered_care_detected');
+    expect(
+      queryByTestId('notification-prefs-type-uncovered_care_detected')
+    ).toBeNull();
   });
 });

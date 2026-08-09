@@ -40,7 +40,7 @@ export class ChildCommitmentRepository extends BaseRepository<ChildCommitment> {
 
   /**
    * Every commitment in a household, across all its children — the input
-   * shape `coverageGapService.raiseGapsOnce` needs for a whole-household,
+   * shape `uncoveredCareService.raiseUncoveredOnce` needs for a whole-household,
    * one-day gap sweep (a job iterates households, not children one at a
    * time).
    */

@@ -46,10 +46,27 @@
     "title": "Everything's covered",
     "body": "{{name}} · {{detail}}. Nothing needs you right now."
   },
-  "coverageGap": {
-    "title": "Coverage gaps today",
-    "description": "Coverage gap {{start}}–{{end}}",
-    "descriptionFallback": "Coverage gap today"
+  "cover": {
+    "setup": {
+      "title": "When do you need care?",
+      "body": "Add the hours you need someone with your children — then we can tell you when you're covered."
+    },
+    "covered": {
+      "title": "You're covered today",
+      "variant0": "Every hour you need care today has someone booked. You can breathe.",
+      "variant1": "The schedule matches what you asked for today — nothing missing.",
+      "variant2": "Today's care is all set. Whoever's on the calendar is who you need.",
+      "variant3": "You're good for today — every window you need is on the books."
+    },
+    "uncovered": {
+      "titleOne": "{{childName}} isn't fully covered",
+      "titleMany": "{{count}} times today aren't covered",
+      "windowLine": "{{childName}} · {{start}}–{{end}} · {{cause}}",
+      "windowAllDay": "{{childName}} · all day · {{cause}}",
+      "windowFallback": "{{childName}} · {{cause}}",
+      "allDay": "all day",
+      "andMore": "and {{count}} more"
+    }
   },
   "widgets": {
     "asOf": "As of {{time}}",

@@ -24,7 +24,6 @@ const validCommitment = {
   starts_on: null,
   ends_on: null,
   exdates: [],
-  excluded_from_cover: true,
   created_at: now,
   updated_at: now,
 };

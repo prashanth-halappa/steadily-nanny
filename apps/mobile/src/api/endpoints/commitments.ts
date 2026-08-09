@@ -19,6 +19,8 @@ import { apiClient } from '@/src/api/client';
 export const commitmentEndpoints = {
   list: (householdId: string, childId: string) =>
     `/v1/households/${householdId}/children/${childId}/commitments`,
+  listForHousehold: (householdId: string) =>
+    `/v1/households/${householdId}/commitments`,
   create: (householdId: string, childId: string) =>
     `/v1/households/${householdId}/children/${childId}/commitments`,
   update: (commitmentId: string) => `/v1/commitments/${commitmentId}`,
@@ -36,6 +38,17 @@ export const commitmentApi = {
   ): Promise<ChildCommitment[]> => {
     const response = await apiClient.get(
       commitmentEndpoints.list(householdId, childId)
+    );
+    const parsed = ChildCommitmentListResponseSchema.safeParse(
+      response.data.data
+    );
+    if (!parsed.success) throw parsed.error;
+    return parsed.data.child_commitments;
+  },
+
+  listForHousehold: async (householdId: string): Promise<ChildCommitment[]> => {
+    const response = await apiClient.get(
+      commitmentEndpoints.listForHousehold(householdId)
     );
     const parsed = ChildCommitmentListResponseSchema.safeParse(
       response.data.data

@@ -11,11 +11,14 @@
  * @module domains/child/services/childCommitmentCommandService
  */
 import { NotAHouseholdParentError } from '../../household/errors/householdErrors';
+import { HouseholdRepository } from '../../household/repositories/householdRepository';
 import { HOUSEHOLD_ROLES } from '../../household/schemas';
 import {
   type HouseholdQueryService,
   householdQueryService,
 } from '../../household/services/householdQueryService';
+import { addDays } from '../../pay/utils/localDateSpan';
+import { localDateOf } from '../../timesheet/utils/weekStart';
 import { ChildCommitmentRepository } from '../repositories/childCommitmentRepository';
 import type {
   ChildCommitment,
@@ -27,6 +30,7 @@ import {
   childCommitmentQueryService,
 } from './childCommitmentQueryService';
 import { type ChildQueryService, childQueryService } from './childQueryService';
+import { detectUncoveredCareBestEffort } from './detectUncoveredCareForDate';
 
 const WRITE_ROLES: ReadonlySet<string> = new Set([
   HOUSEHOLD_ROLES.OWNER,
@@ -38,7 +42,8 @@ export class ChildCommitmentCommandService {
     private readonly repo: ChildCommitmentRepository = new ChildCommitmentRepository(),
     private readonly households: HouseholdQueryService = householdQueryService,
     private readonly children: ChildQueryService = childQueryService,
-    private readonly queries: ChildCommitmentQueryService = childCommitmentQueryService
+    private readonly queries: ChildCommitmentQueryService = childCommitmentQueryService,
+    private readonly householdRepo: HouseholdRepository = new HouseholdRepository()
   ) {}
 
   /** Create a commitment for a child. Owner/parent only. */
@@ -50,11 +55,13 @@ export class ChildCommitmentCommandService {
   ): Promise<ChildCommitment> {
     await this.assertWriteRole(userId, householdId);
     await this.children.getOwned(userId, householdId, childId);
-    return this.repo.create({
+    const commitment = await this.repo.create({
       ...input,
       child_id: childId,
       household_id: householdId,
     });
+    this.detectNeedsAddedBestEffort(householdId, userId);
+    return commitment;
   }
 
   /** Update a commitment's mutable fields. Owner/parent only. */
@@ -65,7 +72,9 @@ export class ChildCommitmentCommandService {
   ): Promise<ChildCommitment> {
     const commitment = await this.queries.getOwned(userId, commitmentId);
     await this.assertWriteRole(userId, commitment.household_id);
-    return this.repo.update(commitmentId, input);
+    const updated = await this.repo.update(commitmentId, input);
+    this.detectNeedsAddedBestEffort(commitment.household_id, userId);
+    return updated;
   }
 
   /**
@@ -76,6 +85,32 @@ export class ChildCommitmentCommandService {
     const commitment = await this.queries.getOwned(userId, commitmentId);
     await this.assertWriteRole(userId, commitment.household_id);
     await this.repo.delete(commitmentId);
+    this.detectNeedsAddedBestEffort(commitment.household_id, userId);
+  }
+
+  /** Best-effort detection for the next 72h of local dates after a need write. */
+  private detectNeedsAddedBestEffort(
+    householdId: string,
+    actorId: string
+  ): void {
+    void this.householdRepo.findById(householdId).then(household => {
+      if (!household) {
+        return;
+      }
+      const today = localDateOf(new Date(), household.timezone);
+      for (let day = 0; day < 3; day++) {
+        try {
+          detectUncoveredCareBestEffort({
+            householdId,
+            localDate: addDays(today, day),
+            cause: 'needsAdded',
+            actorId,
+          });
+        } catch {
+          // Best-effort only — never fail the commitment write.
+        }
+      }
+    });
   }
 
   private async assertWriteRole(

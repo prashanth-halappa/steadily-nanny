@@ -152,6 +152,7 @@ describe('ScheduleMaterialisationService — new occurrence', () => {
       deleted: 0,
       cancelled: 0,
       conflicts: [],
+      touchedDates: ['2026-06-04'],
     });
   });
 });
@@ -438,6 +439,7 @@ describe('ScheduleMaterialisationService — completed/cancelled shifts are NEVE
       deleted: 0,
       cancelled: 0,
       conflicts: [],
+      touchedDates: [],
     });
   });
 
@@ -494,6 +496,7 @@ describe('ScheduleMaterialisationService — a shift with time_entries is NEVER 
       deleted: 0,
       cancelled: 0,
       conflicts: [],
+      touchedDates: [],
     });
   });
 

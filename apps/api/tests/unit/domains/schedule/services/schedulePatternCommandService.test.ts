@@ -198,6 +198,7 @@ function makeMaterialisation(overrides: Record<string, unknown> = {}): any {
       deleted: 0,
       cancelled: 0,
       conflicts: [],
+      touchedDates: [],
     })),
     // Every path that ends a pattern withdraws its future shifts through
     // here — covered in `scheduleMaterialisationDedupe.test.ts` /

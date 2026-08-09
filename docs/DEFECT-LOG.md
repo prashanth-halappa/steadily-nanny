@@ -1670,3 +1670,37 @@ a collaborator implements a method — the mock is wrong, not the code. Fix the
 fixture. This is sharpest with agent-written code, where "make the test pass" is
 the literal instruction: the specification and the fixture must both be reviewed,
 because only one of them is checked by CI.
+
+---
+
+## D54 — Coverage-gap detector inverted; banner read stale events and never cleared
+
+**Status:** FIXED (unverified on device) · **Severity:** high — core scheduling
+promise wrong end-to-end
+
+**Symptom:** Parents saw "coverage gaps" copy while the scenario they actually
+feared — a child needs care and nobody is booked — produced **no** alert. When
+the inverted detector *did* fire, the Today banner never cleared after the
+schedule was fixed, named no child, was not tappable, and rendered for nannies
+too.
+
+**Why it survived:** Every user-facing string described the **correct** product
+("isn't covered", "coverage gaps") while `coverageGapService` implemented the
+**opposite** predicate — alert when a nanny was scheduled during a child's
+`excluded_from_cover` window (preschool, nap, etc.). Reading the copy or the
+banner component never revealed the bug; only reading the interval maths did.
+The banner compounded this by treating append-only `shift_events` as current
+state, so raised `coverage_gap` rows persisted after cover was restored.
+
+**Fix:** Invert the model and rename around **need** windows (migration
+`070_uncovered_care.sql`: drop `excluded_from_cover`; every `child_commitments`
+row is a declared need). Pure detection in
+`packages/shared-types/src/uncoveredCare.ts` (`computeUncovered`); API shell in
+`uncoveredCareService` + `detectUncoveredCareForDate`. Mobile recomputes live
+(`CoverCard`, agenda uncovered rows) — **never** reads events to decide what is
+true now. Events are `uncovered_care` audit + push dedupe only. Canonical record:
+`docs/12-NEED-COVERAGE.md`.
+
+**Consciously deferred:** evening/Sunday digest pushes; push i18n (hardcoded
+English like every other emitter); "extend adjacent shift" as a fix action;
+retracting `uncovered_care` events when fixed; backfilling historical days.

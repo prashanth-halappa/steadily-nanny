@@ -103,6 +103,9 @@ beforeAll(async () => {
   mock.module('@/src/hooks/queries/useHouseholdMembers', () => ({
     useHouseholdMembers: () => ({ data: [], isLoading: false }),
   }));
+  mock.module('@/src/hooks/queries/useChildren', () => ({
+    useChildren: () => ({ data: [], isLoading: false }),
+  }));
   mock.module('@/src/hooks/mutations/useUpdateShift', () => ({
     useUpdateShift: () => ({
       mutateAsync: mock(() => Promise.resolve(pendingParentProposed)),

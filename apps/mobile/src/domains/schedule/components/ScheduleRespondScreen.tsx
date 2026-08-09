@@ -37,6 +37,7 @@
  * pattern always belongs to a specific household regardless of which one a
  * nanny with several currently has selected.
  */
+import type { ChildCommitment } from '@steadily-nanny/shared-types/schemas/child.schema';
 import { type Href, useRouter } from 'expo-router';
 import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -44,16 +45,17 @@ import { ScrollView, View } from 'react-native';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { BottomSheetBase } from '@/src/components/custom/BottomSheetBase';
 import { Button } from '@/src/components/ui/button';
-import { ChildChip } from '@/src/components/ui/child-chip';
 import { FieldLabel } from '@/src/components/ui/field-label';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { StatusPill } from '@/src/components/ui/status-pill';
 import { Text } from '@/src/components/ui/text';
 import { Textarea } from '@/src/components/ui/textarea';
-import { Body, H1, H4 } from '@/src/components/ui/typography';
+import { Body, H1, H4, Small } from '@/src/components/ui/typography';
+import { parseWeeklyDays } from '@/src/domains/setup/utils/commitmentRrule';
 import { useRespondToSchedulePattern } from '@/src/hooks/mutations/useRespondToSchedulePattern';
 import { useAvailability } from '@/src/hooks/queries/useAvailability';
 import { useChildren } from '@/src/hooks/queries/useChildren';
+import { useHouseholdCommitments } from '@/src/hooks/queries/useHouseholdCommitments';
 import { useSchedulePattern } from '@/src/hooks/queries/useSchedulePattern';
 import { useUserProfile } from '@/src/hooks/queries/useUserProfile';
 import { showSuccessToast } from '@/src/lib/toast';
@@ -61,6 +63,7 @@ import { getWeekdayOrder } from '@/src/lib/weekdayOrder';
 import { useElevation } from '~/lib/design-tokens/elevation';
 import {
   type AvailabilityRow,
+  calculateDayHours,
   calculateWeekTotalHours,
   formatWallClockTime,
   isOutsideAvailability,
@@ -68,6 +71,20 @@ import {
 
 interface ScheduleRespondScreenProps {
   patternId: string;
+}
+
+function structuralNoteLabel(
+  weekday: number,
+  childIds: string[],
+  commitments: ChildCommitment[]
+): string | null {
+  const childIdSet = new Set(childIds);
+  for (const commitment of commitments) {
+    if (!childIdSet.has(commitment.child_id)) continue;
+    if (!parseWeeklyDays(commitment.rrule).includes(weekday)) continue;
+    if (commitment.label) return commitment.label;
+  }
+  return null;
 }
 
 export function ScheduleRespondScreen({
@@ -81,6 +98,7 @@ export function ScheduleRespondScreen({
   const profile = useUserProfile();
   const availability = useAvailability();
   const children = useChildren(pattern.data?.household_id);
+  const commitments = useHouseholdCommitments(pattern.data?.household_id);
   const respond = useRespondToSchedulePattern(patternId);
 
   const hasRespondedRef = useRef(false);
@@ -121,6 +139,12 @@ export function ScheduleRespondScreen({
     .map(dow => pattern.data.days.find(d => d.weekday === dow))
     .filter((d): d is (typeof pattern.data.days)[number] => d !== undefined);
   const totalHours = calculateWeekTotalHours(days);
+  const maxDayHours = days.reduce(
+    (max, day) =>
+      Math.max(max, calculateDayHours(day.start_time, day.end_time)),
+    0
+  );
+  const householdCommitments = commitments.data ?? [];
 
   const handleAccept = async () => {
     if (hasRespondedRef.current || respond.isPending) return;
@@ -169,6 +193,15 @@ export function ScheduleRespondScreen({
         <View className="mt-6 gap-4">
           {days.map(day => {
             const outsideHours = isOutsideAvailability(day, availabilityRows);
+            const dayHours = calculateDayHours(day.start_time, day.end_time);
+            const isShorterDay = dayHours < maxDayHours;
+            const noteLabel = isShorterDay
+              ? structuralNoteLabel(
+                  day.weekday,
+                  day.children.map(child => child.child_id),
+                  householdCommitments
+                )
+              : null;
             return (
               <View
                 key={day.id}
@@ -194,20 +227,47 @@ export function ScheduleRespondScreen({
                 {day.children.length > 0 ? (
                   <View className="gap-1.5">
                     <FieldLabel>{t('respond.childrenLabel')}</FieldLabel>
-                    <View className="flex-row flex-wrap gap-2">
+                    <View className="gap-2">
                       {day.children.map(dayChild => {
                         const child = childrenById.get(dayChild.child_id);
+                        const wholeDay =
+                          dayChild.start_time === null &&
+                          dayChild.end_time === null;
+                        const childStart = wholeDay
+                          ? day.start_time
+                          : (dayChild.start_time ?? day.start_time);
+                        const childEnd = wholeDay
+                          ? day.end_time
+                          : (dayChild.end_time ?? day.end_time);
                         return (
-                          <ChildChip
+                          <Body
                             key={dayChild.id}
-                            name={child?.name ?? ''}
-                            colour={child?.colour ?? undefined}
-                            testID={`schedule-respond-child-${dayChild.id}`}
-                          />
+                            tabular
+                            className="text-muted-foreground"
+                            testID={`schedule-respond-child-window-${dayChild.id}`}
+                          >
+                            {t('respond.childWindow', {
+                              childName: child?.name ?? '',
+                              start: formatWallClockTime(childStart),
+                              end: formatWallClockTime(childEnd),
+                            })}
+                          </Body>
                         );
                       })}
                     </View>
                   </View>
+                ) : null}
+                {isShorterDay ? (
+                  <Small
+                    testID={`schedule-respond-structural-note-${day.weekday}`}
+                    className="text-muted-foreground"
+                  >
+                    {noteLabel
+                      ? t('respond.structuralNoteLabelled', {
+                          label: noteLabel,
+                        })
+                      : t('respond.structuralNote')}
+                  </Small>
                 ) : null}
               </View>
             );

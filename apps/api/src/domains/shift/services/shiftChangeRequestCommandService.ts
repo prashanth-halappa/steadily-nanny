@@ -28,6 +28,7 @@ import {
   type ChildQueryService,
   childQueryService,
 } from '../../child/services/childQueryService';
+import { detectUncoveredCareForDate } from '../../child/services/detectUncoveredCareForDate';
 import type {
   CoParentApproval,
   Household,
@@ -873,10 +874,29 @@ export class ShiftChangeRequestCommandService {
       };
 
       if (request.kind === SHIFT_CHANGE_REQUEST_KINDS.CANCEL) {
-        // Household parents get SHIFT_CANCELLED. If the requester is the
-        // carer they are not in that fan-out — ping them with ACCEPTED.
-        // A parent requester must not get both ACCEPTED + CANCELLED.
-        this.notifyShiftCancelled(shift, changeRequestId);
+        // Household parents get SHIFT_CANCELLED unless uncovered-care
+        // detection already pushed for the gap (one parent push per event).
+        let uncoveredInserted: Awaited<
+          ReturnType<typeof detectUncoveredCareForDate>
+        > = [];
+        try {
+          uncoveredInserted = await detectUncoveredCareForDate({
+            householdId: shift.household_id,
+            localDate: updatedShift.local_date,
+            cause: 'cancelled',
+            actorId: userId,
+          });
+        } catch (error) {
+          logger.error('Uncovered-care detection failed after cancel accept', {
+            shiftId: updatedShift.id,
+            householdId: shift.household_id,
+            localDate: updatedShift.local_date,
+            error,
+          });
+        }
+        if (uncoveredInserted.length === 0) {
+          this.notifyShiftCancelled(shift, changeRequestId);
+        }
         if (request.requested_by === shift.carer_id) {
           this.notifyChangeRequestResponded(
             shift,

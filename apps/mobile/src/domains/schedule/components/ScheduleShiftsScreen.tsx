@@ -11,9 +11,18 @@
  * so the two tabs cannot drift.
  */
 
+import type { FlashListRef } from '@shopify/flash-list';
 import { MATERIALISATION_HORIZON_WEEKS } from '@steadily-nanny/shared-types';
-import { type Href, useRouter } from 'expo-router';
-import { type ReactNode, useCallback, useMemo, useState } from 'react';
+import { uncoveredKey } from '@steadily-nanny/shared-types/uncoveredCare';
+import { type Href, useLocalSearchParams, useRouter } from 'expo-router';
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import { Pressable, View } from 'react-native';
 import { illustrations } from '@/assets/illustrations';
@@ -24,7 +33,10 @@ import { EmptyState } from '@/src/components/ui/empty-state';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { H1, Small } from '@/src/components/ui/typography';
 import { WeekNavHeader } from '@/src/components/ui/week-nav-header';
-import { AgendaView } from '@/src/domains/schedule/components/AgendaView';
+import {
+  type AgendaItem,
+  AgendaView,
+} from '@/src/domains/schedule/components/AgendaView';
 import {
   CalendarViewSwitcher,
   useCalendarViewPreference,
@@ -32,14 +44,23 @@ import {
 import { CrossFamilyRhythmView } from '@/src/domains/schedule/components/CrossFamilyRhythmView';
 import { WeekRibbonView } from '@/src/domains/schedule/components/WeekRibbonView';
 import { timeOffCoversLocalDate } from '@/src/domains/schedule/utils/timeOffOverlap';
-import { isParentEditorRole, SETUP_ROLES } from '@/src/domains/setup/types';
+import { withCauses } from '@/src/domains/schedule/utils/uncoveredDisplay';
+import { computeUncoveredWeek } from '@/src/domains/schedule/utils/uncoveredWeek';
+import {
+  canViewParentSchedule,
+  isParentEditorRole,
+  SETUP_ROLES,
+} from '@/src/domains/setup/types';
 import {
   addWeeks,
   formatWeekRangeLabel,
   getWeekDates,
   getWeekStartISO,
+  weeksBetween,
 } from '@/src/domains/timesheet/utils/week';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
+import { useHouseholdClosures } from '@/src/hooks/queries/useHouseholdClosures';
+import { useHouseholdCommitments } from '@/src/hooks/queries/useHouseholdCommitments';
 import { useHouseholdTimeOff } from '@/src/hooks/queries/useHouseholdTimeOff';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 import {
@@ -49,6 +70,7 @@ import {
 import { useUserProfile } from '@/src/hooks/queries/useUserProfile';
 import { wallClockToUtcIso } from '@/src/lib/wallClock';
 import { CALENDAR_VIEWS } from '@/src/store/calendarViewStore';
+import { parseDateOnlyLocal } from '@/src/utils/parseDateOnlyLocal';
 
 const MAX_WEEKS_BACK = 104;
 const MAX_WEEKS_FORWARD = MATERIALISATION_HORIZON_WEEKS;
@@ -67,13 +89,30 @@ export function ScheduleShiftsScreen({
   const { t } = useTranslation('schedule');
   const { t: tCommon } = useTranslation('common');
   const router = useRouter();
+  const params = useLocalSearchParams<{
+    localDate?: string;
+    focusUncovered?: string;
+    householdId?: string;
+  }>();
   const activeHousehold = useActiveHousehold();
   const onboarding = useIsOnboarded();
   const profile = useUserProfile();
   const canAddExtra =
     isParentEditorRole(onboarding.role) && !onboarding.isPastMember;
+  const canViewCover = canViewParentSchedule(onboarding.role);
+  const canEditCover =
+    isParentEditorRole(onboarding.role) && !onboarding.isPastMember;
   const [calendarView, setCalendarView] = useCalendarViewPreference();
+  const focusUncovered = params.focusUncovered === '1';
+  const arrivalLocalDate =
+    typeof params.localDate === 'string' && params.localDate.length > 0
+      ? params.localDate
+      : null;
   const [weekOffset, setWeekOffset] = useState(0);
+  const agendaListRef = useRef<FlashListRef<AgendaItem> | null>(null);
+  const [scrollToUncoveredKey, setScrollToUncoveredKey] = useState<
+    string | null
+  >(null);
 
   const timeZone =
     activeHousehold.household?.timezone ?? profile.data?.timezone ?? 'UTC';
@@ -108,6 +147,8 @@ export function ScheduleShiftsScreen({
 
   const shiftsQuery = useShiftsRange(activeHousehold.householdId, from, to);
   const timeOffQuery = useHouseholdTimeOff(activeHousehold.householdId);
+  const commitmentsQuery = useHouseholdCommitments(activeHousehold.householdId);
+  const closuresQuery = useHouseholdClosures(activeHousehold.householdId);
   const timeOff = timeOffQuery.data ?? [];
 
   const isLoading = activeHousehold.isLoading || shiftsQuery.isLoading;
@@ -119,6 +160,74 @@ export function ScheduleShiftsScreen({
   const showUnavailable = routeUnavailable;
 
   const shifts = shiftsQuery.data ?? [];
+  const uncoveredWeek = useMemo(() => {
+    if (!canViewCover) {
+      return { byDay: {} as Record<string, never[]>, totalCount: 0 };
+    }
+    const raw = computeUncoveredWeek({
+      weekDates,
+      timezone: timeZone,
+      commitments: commitmentsQuery.data ?? [],
+      shifts,
+      closures: closuresQuery.data ?? [],
+    });
+    const byDay: Record<string, ReturnType<typeof withCauses>> = {};
+    for (const [date, windows] of Object.entries(raw.byDay)) {
+      byDay[date] = withCauses(windows, shifts);
+    }
+    return { byDay, totalCount: raw.totalCount };
+  }, [
+    canViewCover,
+    weekDates,
+    timeZone,
+    commitmentsQuery.data,
+    shifts,
+    closuresQuery.data,
+  ]);
+
+  const focusUncoveredKey = useMemo(() => {
+    if (!arrivalLocalDate || !focusUncovered) {
+      return null;
+    }
+    const first = uncoveredWeek.byDay[arrivalLocalDate]?.[0];
+    return first ? uncoveredKey(first) : null;
+  }, [arrivalLocalDate, focusUncovered, uncoveredWeek.byDay]);
+
+  useEffect(() => {
+    if (!arrivalLocalDate || !focusUncovered) {
+      return;
+    }
+    const targetWeekStart = getWeekStartISO(
+      parseDateOnlyLocal(arrivalLocalDate),
+      timeZone
+    );
+    const offset = weeksBetween(currentWeekStartISO, targetWeekStart);
+    setWeekOffset(offset);
+    if (calendarView !== CALENDAR_VIEWS.AGENDA) {
+      setCalendarView(CALENDAR_VIEWS.AGENDA);
+    }
+    if (focusUncoveredKey) {
+      setScrollToUncoveredKey(focusUncoveredKey);
+    }
+  }, [
+    arrivalLocalDate,
+    focusUncovered,
+    timeZone,
+    currentWeekStartISO,
+    calendarView,
+    setCalendarView,
+    focusUncoveredKey,
+  ]);
+
+  const firstUncoveredKey = useMemo(() => {
+    for (const date of weekDates) {
+      const first = uncoveredWeek.byDay[date]?.[0];
+      if (first) {
+        return uncoveredKey(first);
+      }
+    }
+    return null;
+  }, [weekDates, uncoveredWeek.byDay]);
   const weekHasAway = useMemo(
     () =>
       timeOff.some(row =>
@@ -193,6 +302,24 @@ export function ScheduleShiftsScreen({
           ) : null}
         </View>
         {patternBanner}
+        {canViewCover && uncoveredWeek.totalCount > 0 ? (
+          <Pressable
+            testID="schedule-cover-week-summary"
+            accessibilityRole="button"
+            onPress={() => {
+              if (firstUncoveredKey) {
+                setScrollToUncoveredKey(firstUncoveredKey);
+              }
+              if (calendarView !== CALENDAR_VIEWS.AGENDA) {
+                setCalendarView(CALENDAR_VIEWS.AGENDA);
+              }
+            }}
+          >
+            <Small className="text-warning-strong" weight="medium">
+              {t('cover.weekSummaryTitle', { count: uncoveredWeek.totalCount })}
+            </Small>
+          </Pressable>
+        ) : null}
         <WeekNavHeader
           label={weekRangeLabel}
           onPreviousWeek={handlePreviousWeek}
@@ -248,12 +375,17 @@ export function ScheduleShiftsScreen({
 
       {showContent && calendarView === CALENDAR_VIEWS.AGENDA ? (
         <AgendaView
+          listRef={agendaListRef}
           shifts={shifts}
           displayTimeZone={timeZone}
           timeOff={timeOff}
           householdTimeZone={timeZone}
           weekDates={weekDates}
           householdId={activeHousehold.householdId}
+          uncoveredByDay={canViewCover ? uncoveredWeek.byDay : undefined}
+          showUncoveredActions={canEditCover}
+          focusUncoveredKey={scrollToUncoveredKey ?? focusUncoveredKey}
+          commitments={commitmentsQuery.data ?? []}
         />
       ) : null}
 

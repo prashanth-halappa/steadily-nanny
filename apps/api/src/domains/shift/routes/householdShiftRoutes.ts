@@ -16,6 +16,7 @@ import { ShiftChangeRequestController } from '../controllers/shiftChangeRequestC
 import { ShiftController } from '../controllers/shiftController';
 import {
   CreateExtraShiftSchema,
+  CreateParentCoverSchema,
   HouseholdIdParamSchema,
   HouseholdShiftIdParamSchema,
   ShiftRangeQuerySchema,
@@ -39,6 +40,14 @@ router.post(
   ...authWithValidation(HouseholdIdParamSchema, 'params'),
   validate(CreateExtraShiftSchema, 'body'),
   asyncHandler(ShiftChangeRequestController.createExtraShift)
+);
+
+// Parent self-cover ("I've got it") — must precede /:shiftId routes.
+router.post(
+  '/parent-cover',
+  ...authWithValidation(HouseholdIdParamSchema, 'params'),
+  validate(CreateParentCoverSchema, 'body'),
+  asyncHandler(ShiftController.createParentCover)
 );
 
 // The append-only day thread for one shift.

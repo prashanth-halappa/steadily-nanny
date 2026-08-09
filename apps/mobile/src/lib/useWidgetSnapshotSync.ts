@@ -229,7 +229,7 @@ export function useWidgetSnapshotSync(): void {
       );
 
       const gaps = (threadEvents ?? [])
-        .filter(event => event.event_type === 'coverage_gap')
+        .filter(event => event.event_type === 'uncovered_care')
         .flatMap(event => {
           const startsAt = event.payload.starts_at;
           const endsAt = event.payload.ends_at;

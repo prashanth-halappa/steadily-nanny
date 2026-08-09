@@ -35,6 +35,24 @@ export class ChildCommitmentQueryService {
   }
 
   /**
+   * List every commitment in a household. Any active member may read — same
+   * rule as `listForChild` (a nanny needs the full need-window picture).
+   */
+  async listForHousehold(
+    userId: string,
+    householdId: string
+  ): Promise<ChildCommitment[]> {
+    const membership = await this.memberRepo.findActiveMembership(
+      householdId,
+      userId
+    );
+    if (!membership) {
+      throw new ChildCommitmentNotFoundError(householdId);
+    }
+    return this.repo.findByHouseholdId(householdId);
+  }
+
+  /**
    * Fetch one commitment by id alone — the flat `/commitments/:commitmentId`
    * routes carry no household id in the URL to validate against, so
    * membership is checked against the commitment's OWN `household_id`

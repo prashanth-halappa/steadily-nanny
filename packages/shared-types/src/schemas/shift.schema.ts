@@ -310,6 +310,23 @@ export type ShiftChangeRequestListResponse = z.infer<
 >;
 
 // =============================================================================
+// POST /households/:householdId/shifts/parent-cover — parent self-cover
+// =============================================================================
+
+/** Parent marks themselves as covering a need window ("I've got it"). */
+export const CreateParentCoverSchema = z
+  .object({
+    starts_at: z.iso.datetime({ offset: true }),
+    ends_at: z.iso.datetime({ offset: true }),
+    child_id: z.uuid(),
+  })
+  .refine(data => Date.parse(data.ends_at) > Date.parse(data.starts_at), {
+    message: 'ends_at must be after starts_at',
+    path: ['ends_at'],
+  });
+export type CreateParentCoverInput = z.infer<typeof CreateParentCoverSchema>;
+
+// =============================================================================
 // POST /households/:householdId/shifts/extra — response union
 // =============================================================================
 // Lives here rather than in the mobile client (where it used to be the ONLY

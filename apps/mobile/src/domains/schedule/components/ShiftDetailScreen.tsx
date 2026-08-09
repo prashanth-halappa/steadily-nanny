@@ -16,6 +16,7 @@
  */
 import type {
   Shift,
+  ShiftChild,
   ShiftEvent,
 } from '@steadily-nanny/shared-types/schemas/shift.schema';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -34,6 +35,7 @@ import {
   AlertDialogTitle,
 } from '@/src/components/ui/alert-dialog';
 import { Button } from '@/src/components/ui/button';
+import { ChildChip } from '@/src/components/ui/child-chip';
 import { FieldLabel } from '@/src/components/ui/field-label';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import {
@@ -57,6 +59,7 @@ import { useDeclineShift } from '@/src/hooks/mutations/useDeclineShift';
 import { useRespondToShiftChangeRequest } from '@/src/hooks/mutations/useRespondToShiftChangeRequest';
 import { useUpdateShift } from '@/src/hooks/mutations/useUpdateShift';
 import { useWithdrawChangeRequest } from '@/src/hooks/mutations/useWithdrawChangeRequest';
+import { useChildren } from '@/src/hooks/queries/useChildren';
 import { useHouseholdMembers } from '@/src/hooks/queries/useHouseholdMembers';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 import { useShift } from '@/src/hooks/queries/useShift';
@@ -72,10 +75,11 @@ import {
 import { useAuthStore } from '@/src/store/auth';
 import { useElevation } from '~/lib/design-tokens/elevation';
 
+/** Known shift-event types map to `detail.eventType.*` — e.g. `detail.eventType.uncovered_care`. */
 const KNOWN_EVENT_TYPES = new Set([
   'shift_updated',
   'pattern_conflict',
-  'gap_raised',
+  'uncovered_care',
 ]);
 
 type ShiftStatusVariant = NonNullable<StatusPillProps['variant']>;
@@ -110,6 +114,7 @@ export function ShiftDetailScreen() {
   const shiftQuery = useShift(shiftId);
   const eventsQuery = useShiftEvents(shiftQuery.data?.household_id, shiftId);
   const membersQuery = useHouseholdMembers(shiftQuery.data?.household_id);
+  const childrenQuery = useChildren(shiftQuery.data?.household_id);
   const updateShift = useUpdateShift();
   const acceptShift = useAcceptShift();
   const declineShift = useDeclineShift();
@@ -290,6 +295,14 @@ export function ShiftDetailScreen() {
           {t('detail.shortNoticePaidHint')}
         </Small>
       ) : null}
+
+      <ShiftChildrenBlock
+        shiftChildren={shift.shift_children ?? []}
+        childrenById={
+          new Map((childrenQuery.data ?? []).map(child => [child.id, child]))
+        }
+        timeZone={shift.timezone}
+      />
 
       {isParent ? (
         <View className="mt-6 gap-4" testID="shift-detail-edit">
@@ -647,6 +660,56 @@ export function ShiftDetailScreen() {
         <Text>{t('detail.back')}</Text>
       </Button>
     </ScrollView>
+  );
+}
+
+function ShiftChildrenBlock({
+  shiftChildren,
+  childrenById,
+  timeZone,
+}: {
+  shiftChildren: ShiftChild[];
+  childrenById: Map<string, { name: string; colour: string | null }>;
+  timeZone: string;
+}) {
+  const { t } = useTranslation('schedule');
+
+  return (
+    <View className="mt-6 gap-2" testID="shift-detail-children">
+      <FieldLabel>{t('detail.childrenTitle')}</FieldLabel>
+      {shiftChildren.length === 0 ? (
+        <Small className="text-muted-foreground">
+          {t('detail.childrenEmpty')}
+        </Small>
+      ) : (
+        shiftChildren.map(link => {
+          const child = childrenById.get(link.child_id);
+          const wholeShift = link.starts_at === null && link.ends_at === null;
+          const windowLabel = wholeShift
+            ? t('detail.childWholeShift')
+            : t('detail.childWindow', {
+                start: utcIsoToWallClockHHMM(link.starts_at ?? '', timeZone),
+                end: utcIsoToWallClockHHMM(link.ends_at ?? '', timeZone),
+              });
+          return (
+            <View
+              key={link.id}
+              className="flex-row flex-wrap items-center gap-2"
+              testID={`shift-detail-child-${link.id}`}
+            >
+              <ChildChip
+                name={child?.name ?? ''}
+                colour={child?.colour ?? undefined}
+                testID={`shift-detail-child-chip-${link.id}`}
+              />
+              <Body tabular className="text-muted-foreground">
+                {windowLabel}
+              </Body>
+            </View>
+          );
+        })
+      )}
+    </View>
   );
 }
 

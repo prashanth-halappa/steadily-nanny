@@ -94,6 +94,11 @@
     "quietHoursEnd": "Termina",
     "typesHeading": "Tipos de aviso",
     "typesHint": "Desactiva los tipos que no quieras. El permiso del sistema se gestiona aparte abajo.",
+    "groups": {
+      "schedule": "Horario",
+      "hoursAndPay": "Horas y pago",
+      "household": "Tu hogar"
+    },
     "openOsSettings": "Ajustes de notificación del dispositivo",
     "openOsSettingsHint": "Controla si Steadily puede avisarte a nivel del sistema.",
     "types": {
@@ -124,7 +129,7 @@
       "shift_confirmed": "Turno confirmado",
       "shift_declined": "Turno rechazado",
       "shift_reminder": "Recordatorio de turno",
-      "coverage_gap_detected": "Hueco de cobertura",
+      "uncovered_care_detected": "Nadie reservado para un niño",
       "household_closure_changed": "Cierre del hogar modificado",
       "time_off_requested": "Ausencia solicitada",
       "invite_redeemed": "Nuevo miembro incorporado",

@@ -42,7 +42,7 @@ const CALENDAR_VIEW_VALUES = ['agenda', 'week_ribbon', 'cross_family'] as const;
 const EVENT_TYPE_VALUES = [
   'shift_updated',
   'pattern_conflict',
-  'gap_raised',
+  'uncovered_care',
 ] as const;
 const INVITE_ROLE_VALUES = ['nanny', 'parent', 'helper'] as const;
 const WIDGET_REDIRECT_ROLES = ['nanny', 'parent'] as const;
@@ -55,6 +55,13 @@ const SETUP_ROLE_VALUES = ['parent', 'nanny', 'helper'] as const;
 const CLASH_WARNING_KEYS = [
   'clash.busyOverlap',
   'clash.outsideAvailability',
+] as const;
+const UNCOVERED_CAUSE_VALUES = [
+  'cancelled',
+  'declined',
+  'needsAdded',
+  'closureRemoved',
+  'nothingScheduled',
 ] as const;
 
 type LocaleCode = 'en' | 'es';
@@ -178,6 +185,11 @@ const TEMPLATE_KEY_DECLARATIONS: readonly TemplateKeyDeclaration[] = [
     pattern: /^today:widgets\.redirect\.\$\{[^}]+\}\.(title|body)$/,
     values: WIDGET_REDIRECT_ROLES,
     keyPattern: 'today:widgets.redirect.$1.$2',
+  },
+  {
+    pattern: /^cover\.cause\.\$\{[^}]+\}$/,
+    values: UNCOVERED_CAUSE_VALUES,
+    keyPattern: 'schedule:cover.cause.$1',
   },
 ];
 

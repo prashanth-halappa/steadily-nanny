@@ -5,7 +5,7 @@
  * (not free-text) so malformed times cannot silently no-op via wallClockToUtcIso.
  */
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Pressable, ScrollView, View } from 'react-native';
@@ -37,6 +37,13 @@ export function ExtraShiftScreen() {
   const { t } = useTranslation('schedule');
   const { t: tCommon } = useTranslation('common');
   const router = useRouter();
+  const params = useLocalSearchParams<{
+    date?: string;
+    start?: string;
+    end?: string;
+    carerId?: string;
+    childId?: string;
+  }>();
   const onboarding = useIsOnboarded();
   const active = useActiveHousehold();
   const timeZone = active.household?.timezone ?? 'UTC';
@@ -44,11 +51,25 @@ export function ExtraShiftScreen() {
   const carers = useHouseholdCarers(active.householdId);
   const children = useChildren(active.householdId);
 
-  const [date, setDate] = useState(() => localDateInZone(timeZone));
-  const [start, setStart] = useState('09:00');
-  const [end, setEnd] = useState('17:00');
-  const [carerId, setCarerId] = useState<string | null>(null);
-  const [childIds, setChildIds] = useState<string[]>([]);
+  const [date, setDate] = useState(
+    () =>
+      (typeof params.date === 'string' && params.date) ||
+      localDateInZone(timeZone)
+  );
+  const [start, setStart] = useState(
+    () => (typeof params.start === 'string' && params.start) || '09:00'
+  );
+  const [end, setEnd] = useState(
+    () => (typeof params.end === 'string' && params.end) || '17:00'
+  );
+  const [carerId, setCarerId] = useState<string | null>(
+    () => (typeof params.carerId === 'string' && params.carerId) || null
+  );
+  const [childIds, setChildIds] = useState<string[]>(() =>
+    typeof params.childId === 'string' && params.childId.length > 0
+      ? [params.childId]
+      : []
+  );
 
   useEffect(() => {
     const rows = carers.data ?? [];

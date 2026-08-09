@@ -21,13 +21,24 @@ async function listParentUserIds(householdId: string): Promise<string[]> {
   return members.filter(m => PARENT_ROLES.has(m.role)).map(m => m.user_id);
 }
 
+export interface NotifyHouseholdParentsOptions {
+  /** Omit this user from the fan-out (e.g. the parent who just acted). */
+  excludeUserId?: string;
+}
+
 /** Notify every owner/parent in the household. Errors are logged, never thrown. */
 export function notifyHouseholdParents(
   householdId: string,
-  payload: PushPayload
+  payload: PushPayload,
+  options?: NotifyHouseholdParentsOptions
 ): void {
   void listParentUserIds(householdId)
-    .then(ids => Promise.all(ids.map(id => sendToUser(id, payload))))
+    .then(ids => {
+      const recipients = options?.excludeUserId
+        ? ids.filter(id => id !== options.excludeUserId)
+        : ids;
+      return Promise.all(recipients.map(id => sendToUser(id, payload)));
+    })
     .catch(error => {
       logger.error('Failed to notify household parents', {
         householdId,

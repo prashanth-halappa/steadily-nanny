@@ -1,7 +1,7 @@
 /**
  * ShiftChangeRequestCommandService — create/respond/withdraw/extra-shift flows.
  */
-import { describe, expect, it, mock } from 'bun:test';
+import { beforeAll, describe, expect, it, mock } from 'bun:test';
 import { ChildNotFoundError } from '../../../../../src/domains/child/errors/childErrors';
 import { NotAHouseholdParentError } from '../../../../../src/domains/household';
 import {
@@ -13,8 +13,22 @@ import {
   ShiftImmutableError,
 } from '../../../../../src/domains/shift/errors/shiftErrors';
 import type { ShiftWithChildren } from '../../../../../src/domains/shift/repositories/shiftRepository';
-import { ShiftChangeRequestCommandService } from '../../../../../src/domains/shift/services/shiftChangeRequestCommandService';
 import { ValidationError } from '../../../../../src/errors';
+
+let ShiftChangeRequestCommandService: typeof import('../../../../../src/domains/shift/services/shiftChangeRequestCommandService').ShiftChangeRequestCommandService;
+
+beforeAll(async () => {
+  mock.module(
+    '../../../../../src/domains/child/services/detectUncoveredCareForDate',
+    () => ({
+      detectUncoveredCareForDate: mock(async () => []),
+      detectUncoveredCareBestEffort: mock(() => undefined),
+    })
+  );
+  ({ ShiftChangeRequestCommandService } = await import(
+    '../../../../../src/domains/shift/services/shiftChangeRequestCommandService'
+  ));
+});
 
 const household = {
   id: 'h1',

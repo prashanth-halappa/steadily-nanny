@@ -40,4 +40,22 @@ describe('NotificationPrefsScreen', () => {
     expect(source).toContain('quietHoursEnabled');
     expect(source).toContain('disabledTypes');
   });
+
+  it('filters push types by role via PUSH_TYPE_AUDIENCE without dropping hidden disabled_types on save', () => {
+    expect(source).toContain('PUSH_TYPE_AUDIENCE');
+    expect(source).toContain('useIsOnboarded');
+    expect(source).toContain('SETUP_ROLES');
+    expect(source).not.toMatch(
+      /ALL_PUSH_NOTIFICATION_TYPES\.map\(\s*type\s*=>/
+    );
+    expect(source).toContain('disabledTypes');
+    expect(source).toMatch(/mutateAsync\(\{[\s\S]*disabledTypes/);
+  });
+
+  it('groups visible push types under Schedule, Hours and pay, and Your household headings', () => {
+    expect(source).toContain('notificationPrefs.groups.schedule');
+    expect(source).toContain('notificationPrefs.groups.hoursAndPay');
+    expect(source).toContain('notificationPrefs.groups.household');
+    expect(source).toContain('notification-prefs-group-');
+  });
 });

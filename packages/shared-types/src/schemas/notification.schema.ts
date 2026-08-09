@@ -60,10 +60,10 @@ export const PUSH_NOTIFICATION_TYPES = {
   PTO_MARKED_PAID: 'pto_marked_paid',
   TIMESHEET_APPROVED: 'timesheet_approved',
 
-  // Shift / schedule leg — parents get coverage gaps, shift confirmations, and
-  // time-off requests; the carer gets closure changes, since a closure moves
-  // her paid days.
-  COVERAGE_GAP_DETECTED: 'coverage_gap_detected',
+  // Shift / schedule leg — parents get uncovered-care alerts, shift
+  // confirmations, and time-off requests; the carer gets closure changes,
+  // since a closure moves her paid days.
+  UNCOVERED_CARE_DETECTED: 'uncovered_care_detected',
   HOUSEHOLD_CLOSURE_CHANGED: 'household_closure_changed',
   SHIFT_CONFIRMED: 'shift_confirmed',
   // The carer's symmetric "no" to SHIFT_CONFIRMED — parent-targeted: the
@@ -106,3 +106,54 @@ export const PushNotificationTypeSchema = z.enum(
 /** Every push type value — useful for exhaustiveness tests on the route map. */
 export const ALL_PUSH_NOTIFICATION_TYPES: readonly PushNotificationType[] =
   Object.values(PUSH_NOTIFICATION_TYPES);
+
+export type PushAudience = 'parent' | 'carer' | 'both';
+
+/**
+ * Who can actually RECEIVE each push type. Drives the notification-settings
+ * screen so a role is never offered a toggle for a push it can never get.
+ * Typed as a total Record so a newly added push type fails to compile until
+ * it is classified here.
+ *
+ * Classified by grepping each emitter in `apps/api/src`: `notifyHouseholdParents`
+ * ⇒ `'parent'`, `notifyUser(carerId, …)` ⇒ `'carer'`, and types routed to
+ * either leg depending on who acted ⇒ `'both'`.
+ */
+export const PUSH_TYPE_AUDIENCE: Record<PushNotificationType, PushAudience> = {
+  [PUSH_NOTIFICATION_TYPES.APPROVAL_EXPIRING]: 'parent',
+  [PUSH_NOTIFICATION_TYPES.CARER_TIME_OFF_CONFLICT]: 'parent',
+  [PUSH_NOTIFICATION_TYPES.CHANGE_REQUEST_ACCEPTED]: 'both',
+  [PUSH_NOTIFICATION_TYPES.CHANGE_REQUEST_DECLINED]: 'both',
+  [PUSH_NOTIFICATION_TYPES.CHANGE_REQUEST_WITHDRAWN]: 'both',
+  [PUSH_NOTIFICATION_TYPES.CLOCK_OUT_REMINDER]: 'carer',
+  [PUSH_NOTIFICATION_TYPES.CO_PARENT_APPROVAL_REQUESTED]: 'parent',
+  [PUSH_NOTIFICATION_TYPES.CO_PARENT_APPROVAL_RESOLVED]: 'parent',
+  [PUSH_NOTIFICATION_TYPES.EXPENSE_APPROVED]: 'carer',
+  [PUSH_NOTIFICATION_TYPES.EXPENSE_REJECTED]: 'carer',
+  [PUSH_NOTIFICATION_TYPES.EXPENSE_SUBMITTED]: 'parent',
+  [PUSH_NOTIFICATION_TYPES.EXTRA_SHIFT_PROPOSED]: 'carer',
+  [PUSH_NOTIFICATION_TYPES.HANDOFF_NOTE_ADDED]: 'both',
+  [PUSH_NOTIFICATION_TYPES.HOUSEHOLD_CLOSURE_CHANGED]: 'carer',
+  [PUSH_NOTIFICATION_TYPES.INVITE_REDEEMED]: 'parent',
+  [PUSH_NOTIFICATION_TYPES.PAYMENT_RECORDED]: 'carer',
+  [PUSH_NOTIFICATION_TYPES.PAY_TERMS_SET]: 'carer',
+  [PUSH_NOTIFICATION_TYPES.PTO_MARKED_PAID]: 'carer',
+  [PUSH_NOTIFICATION_TYPES.PTO_USAGE_REVERSED]: 'parent',
+  [PUSH_NOTIFICATION_TYPES.SCHEDULE_PATTERN_AMENDED]: 'carer',
+  [PUSH_NOTIFICATION_TYPES.SCHEDULE_PATTERN_RESPONDED]: 'parent',
+  [PUSH_NOTIFICATION_TYPES.SCHEDULE_PATTERN_SENT]: 'carer',
+  [PUSH_NOTIFICATION_TYPES.SHIFT_CANCELLED]: 'parent',
+  [PUSH_NOTIFICATION_TYPES.SHIFT_CHANGE_REQUESTED]: 'both',
+  [PUSH_NOTIFICATION_TYPES.SHIFT_CONFIRMED]: 'parent',
+  [PUSH_NOTIFICATION_TYPES.SHIFT_DECLINED]: 'parent',
+  [PUSH_NOTIFICATION_TYPES.SHIFT_NEEDS_RECONFIRM]: 'carer',
+  [PUSH_NOTIFICATION_TYPES.SHIFT_NO_SHOW]: 'parent',
+  [PUSH_NOTIFICATION_TYPES.SHIFT_REMINDER]: 'carer',
+  [PUSH_NOTIFICATION_TYPES.TIMESHEET_APPROVED]: 'carer',
+  [PUSH_NOTIFICATION_TYPES.TIMESHEET_AWAITING_APPROVAL]: 'parent',
+  [PUSH_NOTIFICATION_TYPES.TIMESHEET_QUERIED]: 'carer',
+  [PUSH_NOTIFICATION_TYPES.TIMESHEET_REOPENED]: 'carer',
+  [PUSH_NOTIFICATION_TYPES.TIMESHEET_SUBMITTED]: 'parent',
+  [PUSH_NOTIFICATION_TYPES.TIME_OFF_REQUESTED]: 'parent',
+  [PUSH_NOTIFICATION_TYPES.UNCOVERED_CARE_DETECTED]: 'parent',
+} as const;

@@ -1,15 +1,19 @@
 /**
  * @module domains/setup/components/ManageCommitmentsSection
  *
- * List/add/delete fixed commitments for one child (Wave D / flow 1g).
+ * List/add/delete recurring care hours for one child.
  */
-import type { ChildCommitment } from '@steadily-nanny/shared-types/schemas/child.schema';
+import {
+  CHILD_COMMITMENT_KINDS,
+  type ChildCommitment,
+} from '@steadily-nanny/shared-types/schemas/child.schema';
 import { Trash2 } from 'lucide-react-native';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Pressable, View } from 'react-native';
 import { Icon } from '@/lib/icons/iconWithClassName';
 import { Button } from '@/src/components/ui/button';
+import { Card } from '@/src/components/ui/card';
 import { Text } from '@/src/components/ui/text';
 import { Body, H3, Small } from '@/src/components/ui/typography';
 import {
@@ -17,11 +21,8 @@ import {
   CommitmentFormSheet,
   type CommitmentFormValues,
 } from '@/src/domains/setup/components/CommitmentFormSheet';
-import { commitmentKindLabelKey } from '@/src/domains/setup/constants/commitmentKinds';
-import {
-  formatCommitmentTime,
-  parseWeeklyDays,
-} from '@/src/domains/setup/utils/commitmentRrule';
+import { formatCareHoursPrimary } from '@/src/domains/setup/utils/careHoursDisplay';
+import { parseWeeklyDays } from '@/src/domains/setup/utils/commitmentRrule';
 import { useCreateCommitment } from '@/src/hooks/mutations/useCreateCommitment';
 import { useDeleteCommitment } from '@/src/hooks/mutations/useDeleteCommitment';
 import { useCommitments } from '@/src/hooks/queries/useCommitments';
@@ -41,7 +42,12 @@ function CommitmentRow({
 }) {
   const { t } = useTranslation('household');
   const days = parseWeeklyDays(commitment.rrule);
-  const dayCount = days.length;
+  const primaryLine = formatCareHoursPrimary(
+    commitment.start_time,
+    commitment.end_time,
+    days,
+    t
+  );
 
   return (
     <View
@@ -49,27 +55,19 @@ function CommitmentRow({
       className="flex-row items-center justify-between rounded-row bg-muted p-3"
     >
       <View className="flex-1 gap-1">
-        <Body weight="medium">{commitment.label}</Body>
-        <Small className="text-muted-foreground">
-          {t(commitmentKindLabelKey(commitment.kind), {
-            defaultValue: commitment.kind,
-          })}{' '}
-          · {formatCommitmentTime(commitment.start_time)}–
-          {formatCommitmentTime(commitment.end_time)} ·{' '}
-          {t('commitments.dayCount', { count: dayCount })}
-          {commitment.excluded_from_cover
-            ? t('commitments.rowExcludedFromCover')
-            : ''}
-        </Small>
+        <Body weight="medium">{primaryLine}</Body>
+        {commitment.label ? (
+          <Small className="text-muted-foreground">{commitment.label}</Small>
+        ) : null}
       </View>
       <Pressable
         testID={`commitment-delete-${commitment.id}`}
         accessibilityRole="button"
-        accessibilityLabel={t('commitments.deleteLabel', {
-          label: commitment.label,
+        accessibilityLabel={t('careHours.deleteLabel', {
+          summary: primaryLine,
         })}
         onPress={onDelete}
-        hitSlop={8}
+        className="h-touch w-touch items-center justify-center"
       >
         <Icon icon={Trash2} className="text-muted-foreground" size="sm" />
       </Pressable>
@@ -88,37 +86,45 @@ export function ManageCommitmentsSection({
   const deleteCommitment = useDeleteCommitment(householdId, childId);
   const [formVisible, setFormVisible] = useState(false);
 
+  const commitmentList = commitments.data ?? [];
+  const isEmpty = commitmentList.length === 0;
+
   const handleSubmit = (values: CommitmentFormValues) => {
     createCommitment.mutate(
       {
-        kind: values.kind,
-        label: values.label,
+        kind: CHILD_COMMITMENT_KINDS.OTHER,
+        label: values.label || undefined,
         rrule: buildWeeklyRrule(values.days),
         start_time: `${values.startTime}:00`,
         end_time: `${values.endTime}:00`,
-        excluded_from_cover: values.excludedFromCover,
       },
       { onSuccess: () => setFormVisible(false) }
     );
   };
 
   return (
-    <View
-      testID={`manage-commitments-${childId}`}
-      className="gap-2 rounded-row border border-border p-3"
-    >
-      <H3>{t('commitments.sectionTitle')}</H3>
+    <Card testID={`manage-commitments-${childId}`} className="gap-3 p-3">
+      <H3>{t('careHours.sectionTitle')}</H3>
       <Small className="text-muted-foreground">
-        {t('commitments.sectionBody')}
+        {t('careHours.sectionBody', { childName })}
       </Small>
 
-      {(commitments.data ?? []).map(c => (
-        <CommitmentRow
-          key={c.id}
-          commitment={c}
-          onDelete={() => deleteCommitment.mutate(c.id)}
-        />
-      ))}
+      {isEmpty ? (
+        <View testID={`commitment-empty-${childId}`} className="gap-1">
+          <Body weight="medium">{t('careHours.emptyTitle')}</Body>
+          <Small className="text-muted-foreground">
+            {t('careHours.emptyBody')}
+          </Small>
+        </View>
+      ) : (
+        commitmentList.map(c => (
+          <CommitmentRow
+            key={c.id}
+            commitment={c}
+            onDelete={() => deleteCommitment.mutate(c.id)}
+          />
+        ))
+      )}
 
       <Button
         testID={`commitment-add-${childId}`}
@@ -126,7 +132,7 @@ export function ManageCommitmentsSection({
         size="sm"
         onPress={() => setFormVisible(true)}
       >
-        <Text>{t('commitments.addButton')}</Text>
+        <Text>{t('careHours.addButton')}</Text>
       </Button>
 
       <CommitmentFormSheet
@@ -136,6 +142,6 @@ export function ManageCommitmentsSection({
         isSubmitting={createCommitment.isPending}
         childName={childName}
       />
-    </View>
+    </Card>
   );
 }

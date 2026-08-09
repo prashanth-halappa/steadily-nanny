@@ -121,12 +121,7 @@ export class ShiftController {
     }
   }
 
-  /**
-   * Carer-only decline pending → declined: POST /shifts/:shiftId/decline.
-   *
-   * No clash warnings on this leg (unlike `accept`): a declined shift is off
-   * the carer's calendar, so there is nothing left for it to clash with.
-   */
+  /** Carer-only decline pending → declined: POST /shifts/:shiftId/decline. */
   static async decline(req: Request, res: Response, next: NextFunction) {
     try {
       const shiftId = req.params.shiftId as string;
@@ -135,6 +130,40 @@ export class ShiftController {
         shiftId
       );
       return sendSuccessResponse(res, 'Shift declined', { shift });
+    } catch (error) {
+      return next(error);
+    }
+  }
+
+  /** Parent self-cover: POST /households/:householdId/shifts/parent-cover. */
+  static async createParentCover(
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ) {
+    try {
+      const householdId = req.params.householdId as string;
+      const shift = await shiftCommandService.createParentCover(
+        getAuthUserId(req),
+        householdId,
+        req.body
+      );
+      return sendSuccessResponse(res, 'Parent cover created', { shift });
+    } catch (error) {
+      return next(error);
+    }
+  }
+
+  /** Undo parent self-cover: DELETE /shifts/:shiftId/parent-cover. */
+  static async removeParentCover(
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ) {
+    try {
+      const shiftId = req.params.shiftId as string;
+      await shiftCommandService.removeParentCover(getAuthUserId(req), shiftId);
+      return sendSuccessResponse(res, 'Parent cover removed', {});
     } catch (error) {
       return next(error);
     }

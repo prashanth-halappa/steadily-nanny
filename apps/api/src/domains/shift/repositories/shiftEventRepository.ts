@@ -4,8 +4,8 @@
  * idempotent bulk-append pair below (`listEventKeysForDate` + `insertMany`),
  * which callers use to append an event without ever double-raising the same
  * `payload.key`:
- *   - the child domain's `coverageGapService.raiseGapsOnce`
- *     (`coverage_gap`), and
+ *   - the child domain's `uncoveredCareService.raiseUncoveredOnce`
+ *     (`uncovered_care`), and
  *   - the schedule domain's `scheduleMaterialisationService`
  *     (`pattern_conflict`) — re-materialisation re-expands every pattern from
  *     `dtstart` on every horizon run, so an unkeyed append would grow this

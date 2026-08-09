@@ -14,7 +14,6 @@ const commitment = {
   starts_on: null,
   ends_on: null,
   exdates: [],
-  excluded_from_cover: true,
   created_at: 't',
   updated_at: 't',
 };
@@ -22,6 +21,7 @@ const commitment = {
 function makeRepo(overrides: Record<string, unknown> = {}): any {
   return {
     findByChildId: mock(async () => [commitment]),
+    findByHouseholdId: mock(async () => [commitment]),
     findById: mock(async () => commitment),
     ...overrides,
   };
@@ -73,6 +73,32 @@ describe('ChildCommitmentQueryService.listForChild', () => {
     );
     await expect(svc.listForChild('u2', 'h1', 'c1')).rejects.toThrow(
       'CHILD_NOT_FOUND'
+    );
+  });
+});
+
+describe('ChildCommitmentQueryService.listForHousehold', () => {
+  it('returns commitments for an active household member', async () => {
+    const repo = makeRepo({
+      findByHouseholdId: mock(async () => [commitment]),
+    });
+    const svc = new ChildCommitmentQueryService(
+      repo,
+      makeChildren(),
+      makeMemberRepo()
+    );
+    expect(await svc.listForHousehold('u1', 'h1')).toEqual([commitment]);
+    expect(repo.findByHouseholdId).toHaveBeenCalledWith('h1');
+  });
+
+  it('throws when the caller is not an active member', async () => {
+    const svc = new ChildCommitmentQueryService(
+      makeRepo({ findByHouseholdId: mock(async () => [commitment]) }),
+      makeChildren(),
+      makeMemberRepo({ findActiveMembership: mock(async () => null) })
+    );
+    await expect(svc.listForHousehold('u2', 'h1')).rejects.toBeInstanceOf(
+      ChildCommitmentNotFoundError
     );
   });
 });

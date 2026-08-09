@@ -9,6 +9,26 @@ import { childCommitmentCommandService } from '../services/childCommitmentComman
 import { childCommitmentQueryService } from '../services/childCommitmentQueryService';
 
 export class ChildCommitmentController {
+  static async listForHousehold(
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ) {
+    try {
+      const householdId = req.params.householdId as string;
+      const child_commitments =
+        await childCommitmentQueryService.listForHousehold(
+          getAuthUserId(req),
+          householdId
+        );
+      return sendSuccessResponse(res, 'Child commitments fetched', {
+        child_commitments,
+      });
+    } catch (error) {
+      return next(error);
+    }
+  }
+
   static async list(req: Request, res: Response, next: NextFunction) {
     try {
       const householdId = req.params.householdId as string;

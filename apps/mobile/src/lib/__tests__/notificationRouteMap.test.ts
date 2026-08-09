@@ -129,6 +129,17 @@ describe('NOTIFICATION_ROUTE_MAP resolvers', () => {
     ).toBe('/(private)/schedule/shifts?householdId=hh-1');
   });
 
+  it('routes uncovered care to the shifts calendar on the problem date with focus', () => {
+    expect(
+      resolve(PUSH_NOTIFICATION_TYPES.UNCOVERED_CARE_DETECTED, {
+        householdId: 'hh-1',
+        localDate: '2026-03-23',
+      })
+    ).toBe(
+      '/(private)/schedule/shifts?householdId=hh-1&localDate=2026-03-23&focusUncovered=1'
+    );
+  });
+
   it('routes pay_terms_set to the nanny My pay screen', () => {
     expect(
       resolve(PUSH_NOTIFICATION_TYPES.PAY_TERMS_SET, {

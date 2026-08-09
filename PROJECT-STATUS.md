@@ -47,7 +47,7 @@ One-line summary of each flow/view:
 - **1d One-off extra shift** — parent asks for extra time with a reason; nanny can accept, decline, or counter with a different time; cross-family clashes warn but never block and never name the other family.
 - **1e Short notice — change, cancel, or swap** — change/cancel a shift close to start time with pay consequences shown at the moment of decision (24-hour rule); a co-parent or other carer can cover part or all of the day instead.
 - **1f Two-parent sync & approval** — co-parents set an approval rule once (either changes anything, or ask-first for cancellations/short-notice) with a timeout default so a silent phone never blocks a day; each day gets a quiet audit-trail thread.
-- **1g Per-child coverage & gaps** — fixed commitments (preschool, naps, pickups) are set once per child and every shift is drawn around them; uncovered gaps are raised once per child, never repeatedly.
+- **1g Per-child coverage & gaps** — care hours (need windows) are set once per child; when a need window on a day has no covering shift or closure, parents are alerted once per interval (live UI recomputes; events dedupe pushes).
 - **1h Clock in/out → hours → timesheet** — nanny clocks in/out with actual-vs-scheduled times and an optional note; parent approves hours weekly with a query option; nanny sees combined hours-only totals across all her families.
 - **1i Daily handoff notes** — quick chip-based or voice notes from parent (morning) and nanny (end of day) covering naps/meals/mood, rolling into a parent-facing evening recap that can be saved as a "moment."
 - **1j Time off, holidays & availability changes** — nanny requests time off; impact is counted across all her families without naming them to each other; the affected family re-plans the week, possibly with several substitute carers.
@@ -155,7 +155,7 @@ things an adversarial pass caught. §4g is the more current picture.
 | 1d | One-off extra shift (ask/accept/decline/counter) | **done** | `shiftChangeRequest*` API + `changeRequests` mobile; ShiftDetailScreen counter/cancel |
 | 1e | Short notice change/cancel/swap | **done** | same change-request path; short-notice + cancellation_paid applied on accept |
 | 1f | Two-parent sync & approval | **done** (one gap — see below) | `approvalGateService` + `approvalApplierRegistry`, `co_parent_approvals`, `GET /users/me/memberships`, membership-based `useIsOnboarded` |
-| 1g | Per-child coverage & gaps | **done** | `child_commitments` CRUD, `CoverageGapService` (raised from the day-thread read), ManageCommitmentsSection, CoverageGapBanner |
+| 1g | Per-child coverage & gaps | **done** | `child_commitments` CRUD, `computeUncovered` + `uncoveredCareService` (event-driven + day-thread backstop), `CoverCard`, agenda uncovered rows, `parent_cover` |
 | 1h | Clock in/out → hours → weekly approval | **done** | `apps/api/src/domains/timesheet/`, `src/domains/timesheet/`, `src/domains/today/ClockInCard` |
 | 1i | Daily handoff notes | **done** | `handoff` API domain + `HandoffChipsCard` (no AI/voice) |
 | 1j | Time off, holidays & availability | **done** | existing time-off + availability; horizon job rolls materialisation |
@@ -180,9 +180,11 @@ advertised flow non-functional are fixed and covered by tests:
   could approve their OWN request — now `SelfApprovalNotAllowedError` — and the
   nightly expiry called a module and method that never existed, so timeouts only
   ever fired for a household whose parent happened to open the approvals screen.
-- **1g never ran.** `CoverageGapService` was complete and unit-tested with no
-  production caller. Now raised (best-effort, de-duplicated) from the day-thread
-  read.
+- **1g detector was inverted, then rewritten.** The first `CoverageGapService`
+  alerted when a nanny *was* booked during an `excluded_from_cover` window while
+  user-facing copy described the opposite; the banner also read append-only events
+  and never cleared. Replaced by `computeUncovered` / `uncoveredCareService` —
+  see `docs/12-NEED-COVERAGE.md` and D54.
 - **Invite wizard minted every code as `nanny`** regardless of the role picked,
   so invitees landed with wrong permissions and no error anywhere.
 - **Handoff chips** stored English display labels as the row value (localizing
@@ -196,9 +198,11 @@ advertised flow non-functional are fixed and covered by tests:
 
 **Still open, deliberately:**
 
-- `shift_events` de-duplication is caller-side with no unique constraint, so two
-  concurrent day-thread reads of the same date can both insert. Pre-existing,
-  but a read path now hits it more often than a nightly job did.
+- Keyed `shift_events` dedupe is enforced at the DB (`shift_events_keyed_unique_idx`,
+  migration 025) with row-by-row retry in `shiftEventRepository.insertMany` when
+  PostgREST bulk `ignoreDuplicates` cannot target the expression index — see
+  `GOLDEN-FIXES.md` #31. A rare duplicate insert can still race; the unique index
+  rejects it and the repository returns only genuinely created rows.
 
 **Closed after Wave 5 (follow-ups, uncommitted until reviewed):**
 

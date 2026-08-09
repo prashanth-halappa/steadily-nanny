@@ -118,7 +118,10 @@
     "declineMessageLabel": "Reason (optional)",
     "declineMessagePlaceholder": "e.g. I can do mornings but not full days",
     "acceptedToast": "Accepted! Shifts have been added to your calendar.",
-    "declinedToast": "Declined."
+    "declinedToast": "Declined.",
+    "childWindow": "{{childName}} {{start}}–{{end}}",
+    "structuralNoteLabelled": "Shorter than a full day because “{{label}}”.",
+    "structuralNote": "These hours repeat every week — the family set them deliberately."
   },
   "shifts": {
     "screenTitle": "Shifts",
@@ -171,7 +174,7 @@
     "eventType": {
       "shift_updated": "Shift updated",
       "pattern_conflict": "Schedule conflict",
-      "gap_raised": "Coverage gap"
+      "uncovered_care": "No one booked"
     },
     "cancelShift": "Request cancel",
     "accept": "Accept",
@@ -195,7 +198,11 @@
       "parent": "A parent",
       "nanny": "A nanny",
       "helper": "A helper"
-    }
+    },
+    "childrenTitle": "Who you have",
+    "childWindow": "{{start}}–{{end}}",
+    "childWholeShift": "Whole shift",
+    "childrenEmpty": "Not specified — check with a parent if you're unsure."
   },
   "change": {
     "requestedToast": "Change requested",
@@ -270,5 +277,28 @@
     "withdrawn": "Withdrawn",
     "superseded": "Superseded",
     "expired": "Expired"
+  },
+  "cover": {
+    "weekSummaryTitle_one": "{{count}} time this week with no one booked",
+    "weekSummaryTitle_other": "{{count}} times this week with no one booked",
+    "rowPill": "Not covered",
+    "rowMeta": "{{childName}} · {{cause}}",
+    "askToCover": "Ask {{carerName}} to cover",
+    "askSomeoneToCover": "Ask someone to cover",
+    "iveGotIt": "I've got it",
+    "parentCoveringRow": "You're covering",
+    "parentCoveringBy": "{{parentName}} is covering",
+    "undoCovering": "Undo",
+    "coveringToast": "Marked as covered by you",
+    "undoneToast": "Removed — that time isn't covered again.",
+    "hoursWrong": "These hours are wrong",
+    "allCovered": "Everything you asked for is booked.",
+    "cause": {
+      "cancelled": "A shift was cancelled",
+      "declined": "A shift was declined",
+      "needsAdded": "You added these hours",
+      "closureRemoved": "Your away dates changed",
+      "nothingScheduled": "Nothing scheduled yet"
+    }
   }
 }

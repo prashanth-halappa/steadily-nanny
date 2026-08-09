@@ -114,6 +114,8 @@ export interface MaterialiseResult {
   deleted: number;
   cancelled: number;
   conflicts: MaterialiseConflict[];
+  /** Local dates where a shift was genuinely created, updated, or cancelled. */
+  touchedDates: string[];
 }
 
 /** The narrow repository contract this service depends on — see `ScheduleShiftRepository` for the production implementation. */
@@ -171,6 +173,12 @@ const NEVER_TOUCH_STATUSES: ReadonlySet<Shift['status']> = new Set([
 
 const PATTERN_CONFLICT = 'pattern_conflict';
 
+function touchDate(result: MaterialiseResult, localDate: string): void {
+  if (!result.touchedDates.includes(localDate)) {
+    result.touchedDates.push(localDate);
+  }
+}
+
 /**
  * How many times-moved `update`s run at once. Their patches differ per row, so
  * unlike every other write here they cannot collapse into one statement.
@@ -213,6 +221,7 @@ export class ScheduleMaterialisationService {
       deleted: 0,
       cancelled: 0,
       conflicts: [],
+      touchedDates: [],
     };
 
     // ONE read of everything this pattern owns. `local_date` is on the row, so
@@ -363,6 +372,9 @@ export class ScheduleMaterialisationService {
       })
     );
     result.created += created.length;
+    for (const occ of occurrences) {
+      touchDate(result, occ.localDate);
+    }
   }
 
   /** The per-row retry `createBatch` falls back to, where a collision is attributable. */
@@ -385,6 +397,7 @@ export class ScheduleMaterialisationService {
       { shiftId: created.id, children: toChildData(occ) },
     ]);
     result.created++;
+    touchDate(result, occ.localDate);
   }
 
   /**
@@ -473,6 +486,9 @@ export class ScheduleMaterialisationService {
       );
     }
     result.updated += dirty.length;
+    for (const { occ } of dirty) {
+      touchDate(result, occ.localDate);
+    }
   }
 
   /**
@@ -514,6 +530,7 @@ export class ScheduleMaterialisationService {
       { shiftId: adopted.id, children: toChildData(occ) },
     ]);
     result.updated++;
+    touchDate(result, occ.localDate);
   }
 
   /**
@@ -595,6 +612,11 @@ export class ScheduleMaterialisationService {
     if (toDelete.length > 0) {
       await this.shiftRepo.deleteMany(toDelete);
       result.deleted += toDelete.length;
+      for (const shift of orphans) {
+        if (toDelete.includes(shift.id)) {
+          touchDate(result, shift.local_date);
+        }
+      }
     }
 
     if (toCancel.length === 0) {
@@ -609,6 +631,9 @@ export class ScheduleMaterialisationService {
       }
     );
     result.cancelled += toCancel.length;
+    for (const shift of toCancel) {
+      touchDate(result, shift.local_date);
+    }
 
     for (const shift of toCancel) {
       if (!isTouched.manually(shift)) {

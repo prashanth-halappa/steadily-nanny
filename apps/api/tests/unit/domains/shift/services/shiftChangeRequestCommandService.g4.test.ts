@@ -1,7 +1,7 @@
 /**
  * G4 — serialised accept/open via RPC. Strict TDD companion to the main service tests.
  */
-import { describe, expect, it, mock } from 'bun:test';
+import { beforeAll, describe, expect, it, mock } from 'bun:test';
 import type { PayArrangement } from '@steadily-nanny/shared-types/schemas/payArrangement.schema';
 import {
   SHIFT_CHANGE_REQUEST_KINDS,
@@ -9,11 +9,23 @@ import {
   SHIFT_STATUSES,
 } from '@steadily-nanny/shared-types/schemas/shift.schema';
 import type { ShiftWithChildren } from '../../../../../src/domains/shift/repositories/shiftRepository';
-import {
-  planAcceptedChange,
-  ShiftChangeRequestCommandService,
-} from '../../../../../src/domains/shift/services/shiftChangeRequestCommandService';
 import { ValidationError } from '../../../../../src/errors';
+
+let ShiftChangeRequestCommandService: typeof import('../../../../../src/domains/shift/services/shiftChangeRequestCommandService').ShiftChangeRequestCommandService;
+let planAcceptedChange: typeof import('../../../../../src/domains/shift/services/shiftChangeRequestCommandService').planAcceptedChange;
+
+beforeAll(async () => {
+  mock.module(
+    '../../../../../src/domains/child/services/detectUncoveredCareForDate',
+    () => ({
+      detectUncoveredCareForDate: mock(async () => []),
+      detectUncoveredCareBestEffort: mock(() => undefined),
+    })
+  );
+  ({ ShiftChangeRequestCommandService, planAcceptedChange } = await import(
+    '../../../../../src/domains/shift/services/shiftChangeRequestCommandService'
+  ));
+});
 
 const household = {
   id: 'h1',

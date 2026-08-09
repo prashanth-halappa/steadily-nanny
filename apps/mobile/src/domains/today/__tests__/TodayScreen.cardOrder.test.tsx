@@ -75,8 +75,8 @@ mock.module('@/src/domains/inbox', () => ({
   NeedsAttentionCard: marker('needs-attention'),
   useInboxItems: () => ({ items: [], isLoading: false }),
 }));
-mock.module('@/src/domains/today/hooks/useTodayCoverageGaps', () => ({
-  useTodayCoverageGaps: () => ({ gaps: [] }),
+mock.module('@/src/domains/today/hooks/useUncoveredToday', () => ({
+  useUncoveredToday: () => ({ status: 'covered', localDate: '2026-03-23' }),
 }));
 mock.module('@/src/domains/today/components/ClockInCard', () => ({
   ClockInCard: marker('clock-in'),
@@ -84,8 +84,8 @@ mock.module('@/src/domains/today/components/ClockInCard', () => ({
 mock.module('@/src/domains/today/components/AddMissedHoursCard', () => ({
   AddMissedHoursCard: marker('add-missed-hours'),
 }));
-mock.module('@/src/domains/today/components/CoverageGapBanner', () => ({
-  CoverageGapBanner: marker('coverage-gap'),
+mock.module('@/src/domains/today/components/CoverCard', () => ({
+  CoverCard: marker('cover-card'),
 }));
 mock.module('@/src/domains/today/components/HandoffChipsCard', () => ({
   HandoffChipsCard: marker('handoff-chips'),
@@ -199,9 +199,14 @@ describe('TodayScreen — card order', () => {
   it('still renders the routine cards it moved past', () => {
     const order = renderOrder('nanny');
     expect(order).toContain('clock-in');
-    expect(order).toContain('coverage-gap');
+    expect(order).not.toContain('cover-card');
     expect(order).toContain('handoff-chips');
     expect(order).toContain('this-weeks-shifts');
+  });
+
+  it('renders the cover card for a parent', () => {
+    const order = renderOrder('parent');
+    expect(order).toContain('cover-card');
   });
 
   // Clocking in to a household she was removed from would 403 server-side —

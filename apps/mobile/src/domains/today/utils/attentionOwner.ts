@@ -11,7 +11,7 @@
  *   1. `overdue`      — an overdue clock-out corrupts the pay record while
  *                        unresolved; it's also the one obligation that is
  *                        nanny-actionable in a single tap.
- *   2. `coverageGap`   — a child may be uncovered RIGHT NOW; immediate and
+ *   2. `uncoveredCare` — a child may be uncovered RIGHT NOW; immediate and
  *                        consequential, but nobody's pay is silently wrong.
  *   3. `inbox`         — real obligations (approvals, queries), but they
  *                        wait safely — nothing decays by staying pending an
@@ -21,15 +21,15 @@
  * pending pattern is already represented in the inbox, and `NeedsAttentionCard`
  * suppresses `pending_pattern` there so the two never say the same thing).
  */
-export type AttentionOwner = 'overdue' | 'coverageGap' | 'inbox' | null;
+export type AttentionOwner = 'overdue' | 'uncoveredCare' | 'inbox' | null;
 
 export function resolveAttentionOwner(inputs: {
   overdue: boolean;
-  hasCoverageGap: boolean;
+  hasUncoveredCare: boolean;
   hasInboxItems: boolean;
 }): AttentionOwner {
   if (inputs.overdue) return 'overdue';
-  if (inputs.hasCoverageGap) return 'coverageGap';
+  if (inputs.hasUncoveredCare) return 'uncoveredCare';
   if (inputs.hasInboxItems) return 'inbox';
   return null;
 }
