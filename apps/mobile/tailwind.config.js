@@ -92,6 +92,7 @@ module.exports = {
         muted: {
           DEFAULT: 'hsl(var(--muted))',
           foreground: 'hsl(var(--muted-foreground))',
+          strong: 'hsl(var(--muted-strong))',
         },
 
         // Accent — subtle hover ground
@@ -111,7 +112,10 @@ module.exports = {
           attention: 'hsl(var(--surface-attention))',
           positive: 'hsl(var(--surface-positive))',
           live: 'hsl(var(--surface-live))',
+          critical: 'hsl(var(--surface-critical))',
         },
+
+        'wash-plum': 'hsl(var(--wash-plum))',
 
         // Popover
         popover: {
@@ -137,11 +141,26 @@ module.exports = {
           success: 'hsl(var(--success-state))',
         },
         success: 'hsl(var(--success-state))',
+        'success-ink': 'hsl(var(--success-ink))',
         warning: 'hsl(var(--warning))',
         'warning-strong': 'hsl(var(--warning-strong))',
+        'warning-ink': 'hsl(var(--warning-ink))',
         warningForeground: 'hsl(var(--warning-foreground))',
         'short-notice': 'hsl(var(--short-notice))',
+        'short-notice-ink': 'hsl(var(--short-notice-ink))',
         'short-notice-strong': 'hsl(var(--short-notice-strong))',
+        pill: {
+          success: 'hsl(var(--pill-success))',
+          warning: 'hsl(var(--pill-warning))',
+          destructive: 'hsl(var(--pill-destructive))',
+          'short-notice': 'hsl(var(--pill-short-notice))',
+        },
+        chip: {
+          plum: 'hsl(var(--chip-plum))',
+          cat1: 'hsl(var(--chip-cat1))',
+          cat2: 'hsl(var(--chip-cat2))',
+          cat3: 'hsl(var(--chip-cat3))',
+        },
         neutral: 'hsl(var(--neutral))',
 
         // Neutral palette (adaptive via CSS variables, inverted in dark mode)

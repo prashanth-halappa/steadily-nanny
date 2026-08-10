@@ -1837,6 +1837,100 @@ describe('ParentWeekView — cold-mount reopen reason', () => {
   });
 });
 
+// Daylight v2 statement rebuild. Every testID below already existed; what
+// changed is WHICH block owns it. The figure, the carer name, the title and
+// the week nav moved out of `WeekTotal` into the new `HoursHeroBand`, and the
+// gross moved out of `WeekTotal` into the new `WeekMoneyCard` — so a plain
+// `getByTestId` still passes even if a band was left behind in its old home.
+// These assert containment, which is the only thing that can regress.
+describe('ParentWeekView — Daylight v2 statement layout', () => {
+  it('puts the carer name and the week figure in the hero band, never in the status card', async () => {
+    const { getByTestId } = renderParentView();
+
+    // Anchored on the status card, not the hero band: the loading skeleton
+    // renders a hero band of its own, so waiting on that would sample the
+    // half-painted screen.
+    await waitFor(() => expect(getByTestId('hours-week-total')).toBeTruthy());
+    const hero = within(getByTestId('hours-hero-band'));
+    expect(hero.getByTestId('hours-total').props.children).toBe('8h');
+    expect(hero.getByTestId('hours-carer-name').props.children).toBe('Amara');
+
+    const statusCard = within(getByTestId('hours-week-total'));
+    expect(statusCard.queryByTestId('hours-total')).toBeNull();
+    expect(statusCard.queryByTestId('hours-carer-name')).toBeNull();
+  });
+
+  it('keeps the title and the week nav in the hero band, never in the status card', async () => {
+    const { getByTestId } = renderParentView();
+
+    await waitFor(() => expect(getByTestId('hours-week-total')).toBeTruthy());
+    const hero = within(getByTestId('hours-hero-band'));
+    expect(hero.getByTestId('hours-title')).toBeTruthy();
+    expect(hero.getByTestId('hours-week-prev')).toBeTruthy();
+    expect(hero.getByTestId('hours-week-label')).toBeTruthy();
+    expect(hero.getByTestId('hours-week-next')).toBeTruthy();
+
+    const statusCard = within(getByTestId('hours-week-total'));
+    expect(statusCard.queryByTestId('hours-week-prev')).toBeNull();
+    expect(statusCard.queryByTestId('hours-week-label')).toBeNull();
+    expect(statusCard.queryByTestId('hours-week-next')).toBeNull();
+  });
+
+  it('leaves the status headline, the pay boundary and both actions in the status card', async () => {
+    const { getByTestId } = renderParentView();
+
+    await waitFor(() => expect(getByTestId('hours-week-total')).toBeTruthy());
+    const statusCard = within(getByTestId('hours-week-total'));
+    expect(statusCard.getByTestId('hours-status-chip')).toBeTruthy();
+    expect(statusCard.getByTestId('hours-status-headline')).toBeTruthy();
+    expect(statusCard.getByTestId('hours-pay-boundary')).toBeTruthy();
+    expect(statusCard.getByTestId('hours-approve-button')).toBeTruthy();
+    expect(statusCard.getByTestId('hours-query-button')).toBeTruthy();
+
+    // The hero band is the figure and nothing to press — an approve button
+    // beside the total is the pre-Daylight layout.
+    const hero = within(getByTestId('hours-hero-band'));
+    expect(hero.queryByTestId('hours-approve-button')).toBeNull();
+    expect(hero.queryByTestId('hours-query-button')).toBeNull();
+  });
+
+  it('renders the money line inside the money card, never inside the status card', async () => {
+    const { getByTestId, queryByTestId } = renderParentView();
+
+    await waitFor(() => expect(getByTestId('hours-money-card')).toBeTruthy());
+    const moneyCard = within(getByTestId('hours-money-card'));
+    expect(
+      moneyCard.getByTestId('hours-earnings-line-amount').props.children
+    ).toBe('£236.12');
+    expect(
+      within(getByTestId('hours-week-total')).queryByTestId(
+        'hours-earnings-line'
+      )
+    ).toBeNull();
+    // Nothing approved yet, so the settlement half of the merged card stays
+    // silent rather than rendering an empty stub under the gross.
+    expect(queryByTestId('hours-paid-state')).toBeNull();
+  });
+
+  it('shows the week skeleton, never a full-screen spinner, while the hours load', async () => {
+    listEntriesMock.mockImplementation(
+      () => new Promise<ReturnType<typeof makeEntry>[]>(() => {})
+    );
+
+    const { getByTestId, queryByTestId } = renderParentView();
+
+    await waitFor(() => expect(getByTestId('hours-loading')).toBeTruthy());
+    expect(queryByTestId('loading-indicator-container')).toBeNull();
+    // The title and the week label paint on the first frame — a blanked
+    // header is the thing the skeleton replaced. Only the FIGURE waits, and
+    // it waits as a shimmer rather than a fabricated 0m.
+    expect(getByTestId('hours-title')).toBeTruthy();
+    expect(getByTestId('hours-week-label')).toBeTruthy();
+    expect(getByTestId('hours-total-skeleton')).toBeTruthy();
+    expect(queryByTestId('hours-total')).toBeNull();
+  });
+});
+
 describe('ParentWeekView — voided entries (069)', () => {
   const CARER_B_ID = 'carer-bea';
   const TIMESHEET_B_ID = 'ts-2';

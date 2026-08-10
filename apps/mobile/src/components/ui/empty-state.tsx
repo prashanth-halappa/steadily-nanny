@@ -17,7 +17,9 @@ import { Icon } from '@/lib/icons/iconWithClassName';
 import { cn } from '@/lib/utils';
 import { Button } from '@/src/components/ui/button';
 import { Text } from '@/src/components/ui/text';
+import { Body, H3 } from '@/src/components/ui/typography';
 import { spacing } from '~/lib/design-tokens/spacing';
+import { useThemeColors } from '~/lib/design-tokens/useThemeColors';
 
 interface EmptyStateProps {
   icon?: LucideIcon;
@@ -30,24 +32,73 @@ interface EmptyStateProps {
   variant?: 'default' | 'inline' | 'compact';
 }
 
+const ILLUSTRATION_GROUND_SCALE = 1.6;
+
 const VARIANT_STYLES = {
   default: {
     container: 'flex-1 items-center justify-center px-6 py-12',
     iconWrapper:
       'w-24 h-24 rounded-full bg-muted items-center justify-center mb-4',
     iconSize: 40,
-    title: 'text-xl font-semibold text-center mb-2 text-foreground',
-    description: 'text-base text-muted-foreground text-center mb-6 max-w-sm',
+    imageSize: 240,
+    titleClassName: 'text-center mb-2',
+    descriptionClassName: 'text-center text-muted-foreground mb-6 max-w-sm',
   },
   inline: {
     container: 'items-center justify-center px-4 py-8',
     iconWrapper:
       'w-16 h-16 rounded-full bg-muted items-center justify-center mb-3',
     iconSize: 28,
-    title: 'text-lg font-semibold text-center mb-1 text-foreground',
-    description: 'text-sm text-muted-foreground text-center mb-4',
+    imageSize: 160,
+    titleClassName: 'text-center mb-1',
+    descriptionClassName: 'text-center text-muted-foreground mb-4',
   },
 } as const;
+
+function EmptyStateIllustration({
+  image,
+  imageSize,
+  groundColor,
+}: {
+  image: ImageSourcePropType;
+  imageSize: number;
+  groundColor: string;
+}) {
+  const groundSize = imageSize * ILLUSTRATION_GROUND_SCALE;
+
+  return (
+    <View
+      style={{
+        width: imageSize,
+        height: imageSize,
+        marginBottom: 16,
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
+      <View
+        style={{
+          position: 'absolute',
+          width: groundSize,
+          height: groundSize,
+          borderRadius: groundSize / 2,
+          backgroundColor: groundColor,
+        }}
+      />
+      <Image
+        source={image}
+        style={{
+          width: imageSize,
+          height: imageSize,
+          // 6px has no Daylight token — nearest is rounded-sm (8px).
+          borderRadius: spacing.radiusSm,
+        }}
+        resizeMode="contain"
+        accessibilityElementsHidden
+      />
+    </View>
+  );
+}
 
 function useEmptyStateAnimation() {
   const reducedMotion = useReducedMotion();
@@ -90,6 +141,7 @@ export function EmptyState({
   className,
   variant = 'default',
 }: EmptyStateProps) {
+  const colors = useThemeColors();
   const animatedStyle = useEmptyStateAnimation();
   const isInline = variant === 'inline';
   const styles = VARIANT_STYLES[isInline ? 'inline' : 'default'];
@@ -108,26 +160,10 @@ export function EmptyState({
         accessibilityLabel={`${title}. ${description}`}
       >
         {image ? (
-          <Image
-            source={image}
-            style={
-              isInline
-                ? {
-                    width: 160,
-                    height: 160,
-                    // 6px has no Daylight token — nearest is rounded-sm (8px).
-                    borderRadius: spacing.radiusSm,
-                    marginBottom: 16,
-                  }
-                : {
-                    width: 240,
-                    height: 240,
-                    borderRadius: spacing.radiusSm,
-                    marginBottom: 16,
-                  }
-            }
-            resizeMode="contain"
-            accessibilityElementsHidden
+          <EmptyStateIllustration
+            image={image}
+            imageSize={styles.imageSize}
+            groundColor={colors.chip.plum}
           />
         ) : IconComponent ? (
           <View className={styles.iconWrapper}>
@@ -139,8 +175,8 @@ export function EmptyState({
           </View>
         ) : null}
 
-        <Text className={styles.title}>{title}</Text>
-        <Text className={styles.description}>{description}</Text>
+        <H3 className={styles.titleClassName}>{title}</H3>
+        <Body className={styles.descriptionClassName}>{description}</Body>
 
         {action &&
           (isInline ? (

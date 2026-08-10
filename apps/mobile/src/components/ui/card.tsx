@@ -5,7 +5,12 @@ import { TextClassContext } from '@/src/components/ui/text';
 import { useElevation } from '~/lib/design-tokens/elevation';
 import { useThemeColors } from '~/lib/design-tokens/useThemeColors';
 
-export type CardTone = 'default' | 'attention' | 'live' | 'positive';
+export type CardTone =
+  | 'default'
+  | 'attention'
+  | 'live'
+  | 'positive'
+  | 'critical';
 
 /**
  * Daylight separates surfaces with soft plum-tinted shadow and NO border —
@@ -18,6 +23,7 @@ export type CardTone = 'default' | 'attention' | 'live' | 'positive';
  * - `attention` — opaque `surfaceAttention` ground, `cardProminent` elevation.
  * - `live` — apricot `liveCardBackground` ground, apricot `liveCard` elevation.
  * - `positive` — opaque `surfacePositive` ground, plain `card` elevation.
+ * - `critical` — opaque `surfaceCritical` ground, plain `card` elevation.
  *
  * No accent bar — tried as a 4px inset colour stripe on `tone="attention"`,
  * removed after user feedback on device ("you don't need the left border").
@@ -48,9 +54,11 @@ function Card({
       ? colors.surfaceAttention
       : resolvedTone === 'positive'
         ? colors.surfacePositive
-        : resolvedTone === 'live'
-          ? elevation.liveCardBackground
-          : undefined;
+        : resolvedTone === 'critical'
+          ? colors.surfaceCritical
+          : resolvedTone === 'live'
+            ? elevation.liveCardBackground
+            : undefined;
 
   const toneElevation =
     resolvedTone === 'attention'

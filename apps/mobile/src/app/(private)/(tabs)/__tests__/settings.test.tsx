@@ -97,9 +97,10 @@ describe('SettingsScreen', () => {
     expect(screenSource).toContain("router.push('/inbox'");
   });
 
-  it('groups navigable rows with elevation.row surfaces', () => {
-    expect(screenSource).toContain('elevation.row');
-    expect(screenSource).toContain('rounded-row');
+  it('groups navigable rows into one elevated Card per section, not per-row elevation (daylight-v2 §2.1)', () => {
+    expect(screenSource).toContain('<Card tone="default"');
+    expect(screenSource).toContain('<IconChip');
+    expect(screenSource).not.toContain('elevation.row');
   });
 
   it('persists a language change through useUpdatePreferredLocale, not just locally (D26)', () => {
@@ -158,13 +159,17 @@ describe('SettingsScreen', () => {
     expect(screenSource).toContain("router.push('/settings/join-household'");
     expect(screenSource).toContain("t('household:invite.joinTitle')");
     // A co-parent invited by a second family needs this as much as a nanny
-    // does, so the row must sit AFTER the role ternary closes, not inside
-    // either arm. `</>\n          )}` is that closing token — the parent arm
-    // ends `</>\n          ) : (` instead, so this match is unambiguous.
-    const roleTernaryEnd = screenSource.indexOf('</>\n          )}');
-    expect(roleTernaryEnd).toBeGreaterThan(-1);
-    expect(screenSource.indexOf('settings-join-household')).toBeGreaterThan(
-      roleTernaryEnd
-    );
+    // does, so the row must sit AFTER both role arms close, not inside
+    // either one. Indentation-agnostic (unlike a literal `</>\n  )}` match):
+    // it just requires the join row to come after the LAST testID of both
+    // the parent-only arm (household-closures) and the nanny/helper-only
+    // arm (request-time-off).
+    const parentArmEnd = screenSource.indexOf('settings-household-closures');
+    const carerArmEnd = screenSource.indexOf('settings-request-time-off');
+    const joinIdx = screenSource.indexOf('settings-join-household');
+    expect(parentArmEnd).toBeGreaterThan(-1);
+    expect(carerArmEnd).toBeGreaterThan(-1);
+    expect(joinIdx).toBeGreaterThan(parentArmEnd);
+    expect(joinIdx).toBeGreaterThan(carerArmEnd);
   });
 });

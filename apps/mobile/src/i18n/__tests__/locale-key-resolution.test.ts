@@ -21,6 +21,7 @@ import {
   HOUSEHOLD_ROLES,
   SHIFT_CHANGE_REQUEST_KINDS,
 } from '@steadily-nanny/shared-types';
+import { SUPPORTED_LANGUAGES } from '../constants';
 import i18n from '../index';
 
 const srcRoot = join(import.meta.dir, '../..');
@@ -162,6 +163,13 @@ const TEMPLATE_KEY_DECLARATIONS: readonly TemplateKeyDeclaration[] = [
     pattern: /^settings:role\.\$\{[^}]+\}$/,
     values: SETUP_ROLE_VALUES,
     keyPattern: 'settings:role.$1',
+  },
+  {
+    // Settings language segmented control (daylight-v2 §2.3) — endonym per
+    // supported language.
+    pattern: /^settings:languageNames\.\$\{[^}]+\}$/,
+    values: SUPPORTED_LANGUAGES,
+    keyPattern: 'settings:languageNames.$1',
   },
   {
     pattern: /^states\.\$\{[^}]+\}\.(title|message)$/,

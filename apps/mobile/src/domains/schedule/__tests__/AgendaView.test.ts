@@ -28,12 +28,18 @@ describe('AgendaView source', () => {
     );
   });
 
-  it('slots uncovered rows chronologically and uses opaque warning ground without shadow', () => {
+  it('slots uncovered rows chronologically, on the opaque warning ground, lifted as the screen L1 (daylight-v2 §3.1)', () => {
     expect(viewSource).toContain("type: 'uncovered'");
     expect(viewSource).toContain('colors.surfaceAttention');
+    expect(viewSource).toContain('elevation.cardProminent');
     expect(viewSource).toContain('useCreateParentCover');
     expect(viewSource).toContain('cover.askToCover');
     expect(viewSource).toContain('cover.hoursWrong');
+  });
+
+  it('REGRESSION: the 3px accent bar and its ROW_RADIUS constant are retired (daylight-v2 §3) — the pending pill alone carries the message', () => {
+    expect(viewSource).not.toContain('ROW_RADIUS');
+    expect(viewSource).not.toContain('schedule-shift-accent-');
   });
 
   it('REGRESSION: sizes scroll bottom padding off the tab bar height, not a static magic number (BUG1)', () => {

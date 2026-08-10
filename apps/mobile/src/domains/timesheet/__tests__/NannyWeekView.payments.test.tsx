@@ -288,6 +288,69 @@ describe('NannyWeekView — reading the settlement', () => {
     );
   });
 
+  // Daylight v2 (screens-hours.md §5): "what am I owed" and "did it arrive"
+  // are two halves of one question and used to sit a screen apart — the
+  // gross inside `WeekTotal` at the top, the paid state in its own footer
+  // card below the day rows and the reimbursements. One card now, and this
+  // pins the merge rather than merely that both figures exist somewhere.
+  it('resolves the gross AND the paid state inside the one money card', async () => {
+    listPaymentsMock.mockImplementation(() =>
+      Promise.resolve([makePayment({ amount_minor: 12000 })])
+    );
+
+    const { getByTestId, queryByTestId } = renderNannyView();
+
+    await waitFor(() => expect(getByTestId('hours-money-card')).toBeTruthy());
+    const moneyCard = within(getByTestId('hours-money-card'));
+
+    expect(
+      moneyCard.getByTestId('hours-earnings-line-amount').props.children
+    ).toBe('£236.12');
+    expect(moneyCard.getByTestId('hours-earnings-line-pressable')).toBeTruthy();
+    expect(moneyCard.getByTestId('hours-paid-state')).toBeTruthy();
+    expect(moneyCard.getByTestId('hours-paid-state-badge').props.children).toBe(
+      'paid.badgePartial'
+    );
+    expect(
+      moneyCard.getByTestId('hours-paid-state-line-pay-1-value').props.children
+    ).toBe('£120.00');
+    // The status card above keeps neither half.
+    expect(
+      within(getByTestId('hours-week-total')).queryByTestId('hours-paid-state')
+    ).toBeNull();
+    expect(queryByTestId('hours-mark-paid-button')).toBeNull();
+  });
+
+  // The card DISAPPEARS when neither half has anything true to say — an
+  // empty white rectangle on a money screen reads as a figure that failed.
+  it('renders no money card at all when there is neither a gross nor a payment', async () => {
+    getWeekMock.mockImplementation(() =>
+      Promise.resolve([
+        makeTimesheetWeek({
+          status: 'submitted',
+          approved_at: null,
+          earnings: {
+            status: 'no_arrangement',
+            week_start: WEEK_START,
+            unpriced_dates: [WEEK_START],
+          },
+        }),
+      ])
+    );
+
+    const { getByTestId, queryByTestId } = renderNannyView();
+
+    await waitFor(() => expect(getByTestId('hours-week-total')).toBeTruthy());
+    // The no-arrangement nudge is still a thing to say, so the card stays;
+    // what must NOT appear is a paid-state half with no settlement, nor a
+    // fabricated £0.00 gross.
+    expect(
+      within(getByTestId('hours-money-card')).getByTestId('hours-earnings-line')
+    ).toBeTruthy();
+    expect(queryByTestId('hours-paid-state')).toBeNull();
+    expect(queryByTestId('hours-earnings-line-amount')).toBeNull();
+  });
+
   it('never offers her the way to record one — that is her family’s action', async () => {
     listPaymentsMock.mockImplementation(() =>
       Promise.resolve([makePayment({ amount_minor: 12000 })])

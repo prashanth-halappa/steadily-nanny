@@ -10,11 +10,11 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default:
-          'bg-primary web:hover:opacity-90 active:opacity-90 disabled:bg-muted disabled:opacity-100',
+          'bg-primary web:hover:opacity-90 active:bg-primary-dark disabled:bg-muted disabled:opacity-100',
         destructive:
           'bg-destructive web:hover:opacity-90 active:opacity-90 disabled:bg-muted disabled:opacity-100',
         outline:
-          'border-1.5 border-border bg-background web:hover:bg-accent web:hover:text-accent-foreground active:bg-accent disabled:border-muted-foreground/30 disabled:opacity-100',
+          'border-1.5 border-border-strong bg-background web:hover:bg-accent web:hover:text-accent-foreground active:bg-accent disabled:border-muted-foreground/30 disabled:opacity-100',
         secondary:
           'bg-secondary web:hover:opacity-80 active:opacity-80 disabled:bg-muted disabled:opacity-100',
         ghost:
@@ -25,7 +25,9 @@ const buttonVariants = cva(
         default: 'h-10 px-4 py-2 native:h-12 native:px-5 native:py-3',
         // native:h-12 meets spacing.minTouchTarget (44pt); bare h-9 is 36px.
         sm: 'h-9 rounded-button px-3 native:h-12 native:px-4',
-        lg: 'h-11 rounded-button px-8 native:h-14',
+        // min-h, not h: an L1 button's label carries times and can wrap —
+        // a fixed height clips the second line instead of growing.
+        lg: 'min-h-[44px] rounded-button px-8 py-2 native:min-h-[56px] native:py-3',
         icon: 'h-10 w-10',
       },
     },
@@ -37,7 +39,7 @@ const buttonVariants = cva(
 );
 
 const buttonTextVariants = cva(
-  'web:whitespace-nowrap text-sm native:text-base font-semibold text-foreground web:transition-colors',
+  'web:whitespace-nowrap text-center text-sm native:text-base font-semibold text-foreground web:transition-colors',
   {
     variants: {
       variant: {

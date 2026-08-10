@@ -3,6 +3,7 @@ import { CalendarDays, Clock, Home, Settings } from 'lucide-react-native';
 import { useTranslation } from 'react-i18next';
 import { Pressable, type PressableProps } from 'react-native';
 import { useThemeColors } from '@/lib/design-tokens';
+import { useElevation } from '@/lib/design-tokens/elevation';
 
 /**
  * Main tab bar — Today / Schedule / Hours / Settings for every role, all
@@ -25,8 +26,11 @@ function tabBarButtonWithTestID(testID: string) {
   };
 }
 
+const TAB_ICON_STROKE = { active: 2.25, inactive: 1.75 } as const;
+
 export default function TabsLayout() {
   const colors = useThemeColors();
+  const elevation = useElevation();
   const { t } = useTranslation('common');
 
   return (
@@ -35,13 +39,27 @@ export default function TabsLayout() {
         headerShown: false,
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.mutedForeground,
+        tabBarLabelStyle: { fontSize: 11, fontWeight: '600' },
+        tabBarStyle: {
+          backgroundColor: colors.card,
+          borderTopWidth: 0,
+          ...elevation.card,
+        },
       }}
     >
       <Tabs.Screen
         name="home"
         options={{
           title: t('tabs.today'),
-          tabBarIcon: ({ color, size }) => <Home color={color} size={size} />,
+          tabBarIcon: ({ color, size, focused }) => (
+            <Home
+              color={color}
+              size={size}
+              strokeWidth={
+                focused ? TAB_ICON_STROKE.active : TAB_ICON_STROKE.inactive
+              }
+            />
+          ),
           tabBarButton: tabBarButtonWithTestID('tab-today'),
         }}
       />
@@ -49,8 +67,14 @@ export default function TabsLayout() {
         name="schedule"
         options={{
           title: t('tabs.schedule'),
-          tabBarIcon: ({ color, size }) => (
-            <CalendarDays color={color} size={size} />
+          tabBarIcon: ({ color, size, focused }) => (
+            <CalendarDays
+              color={color}
+              size={size}
+              strokeWidth={
+                focused ? TAB_ICON_STROKE.active : TAB_ICON_STROKE.inactive
+              }
+            />
           ),
           tabBarButton: tabBarButtonWithTestID('tab-schedule'),
         }}
@@ -59,7 +83,15 @@ export default function TabsLayout() {
         name="hours"
         options={{
           title: t('tabs.hours'),
-          tabBarIcon: ({ color, size }) => <Clock color={color} size={size} />,
+          tabBarIcon: ({ color, size, focused }) => (
+            <Clock
+              color={color}
+              size={size}
+              strokeWidth={
+                focused ? TAB_ICON_STROKE.active : TAB_ICON_STROKE.inactive
+              }
+            />
+          ),
           tabBarButton: tabBarButtonWithTestID('tab-hours'),
         }}
       />
@@ -67,8 +99,14 @@ export default function TabsLayout() {
         name="settings"
         options={{
           title: t('tabs.settings'),
-          tabBarIcon: ({ color, size }) => (
-            <Settings color={color} size={size} />
+          tabBarIcon: ({ color, size, focused }) => (
+            <Settings
+              color={color}
+              size={size}
+              strokeWidth={
+                focused ? TAB_ICON_STROKE.active : TAB_ICON_STROKE.inactive
+              }
+            />
           ),
           tabBarButton: tabBarButtonWithTestID('tab-settings'),
         }}

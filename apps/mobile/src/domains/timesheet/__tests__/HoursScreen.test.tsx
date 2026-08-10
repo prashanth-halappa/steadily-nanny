@@ -15,8 +15,13 @@
  * docs/09-TESTING.md's service-test boilerplate.
  */
 import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
-import { fireEvent, render } from '@testing-library/react-native';
-import { addWeeks, getWeekStartISO } from '../utils/week';
+import { fireEvent, render, within } from '@testing-library/react-native';
+import {
+  addWeeks,
+  formatWeekRangeLabel,
+  getWeekDates,
+  getWeekStartISO,
+} from '../utils/week';
 
 // LoadingIndicator's require('@/assets/splash.png') breaks bundling under
 // bun:test — mock it out to a plain marker View (same as
@@ -324,6 +329,20 @@ beforeEach(() => {
     role: 'nanny',
     householdId: HOUSEHOLD_ID,
   }));
+  // Reset here too, not only inside the cases that override it — the loading
+  // branch below returns a household-less `isLoading: true`, and leaking that
+  // into the next test would blank the week views it is asserting on.
+  mockUseActiveHousehold.mockImplementation(() => ({
+    household: { id: HOUSEHOLD_ID, timezone: TIMEZONE },
+    householdId: HOUSEHOLD_ID,
+    households: [{ id: HOUSEHOLD_ID, timezone: TIMEZONE }],
+    setActiveHouseholdId: mock(),
+    isLoading: false,
+  }));
+  mockUseWeekTimesheet.mockImplementation(() => ({
+    data: null,
+    isLoading: false,
+  }));
   mockUseLocalSearchParams.mockImplementation(() => ({}));
   mockUseWeekTimeEntries.mockClear();
   mockUseWeekTimesheet.mockClear();
@@ -339,11 +358,145 @@ describe('HoursScreen — title scale (Daylight P1)', () => {
     expect(getByTestId('hours-title').props['aria-level']).toBe('1');
   });
 
-  it('gives the title row an opaque ground so scrolled content cannot show through it', () => {
-    const { getByTestId } = render(<HoursScreen />);
-    expect(getByTestId('hours-title-row').props.className).toContain(
-      'bg-background'
+  // Daylight v2 reverses the original fix rather than dropping it: the fixed
+  // opaque `hours-title-row` is GONE, because the statement is now meant to
+  // sit on the brand wash. The H1 moved into each week view's list header
+  // (`HoursHeroBand`) so it scrolls WITH the content instead of being a band
+  // the content slides under (screens-hours.md §2).
+  it('renders the title inside the scrollable hero band, not a fixed opaque header row', () => {
+    const { getByTestId, queryByTestId } = render(<HoursScreen />);
+
+    expect(queryByTestId('hours-title-row')).toBeNull();
+    expect(getByTestId('screen-wash')).toBeTruthy();
+    expect(
+      within(getByTestId('hours-hero-band')).getByTestId('hours-title')
+    ).toBeTruthy();
+  });
+});
+
+// The loading state is the reason the hero band exists. The `LoadingIndicator`
+// it replaces returned a full-screen spinner from the same branch, blanking
+// the title and the week label on every household/role resolution — both are
+// derived locally from the household timezone and never needed a request.
+describe('HoursScreen — loading week keeps its title and week label', () => {
+  const loadingHousehold = () => ({
+    household: null,
+    householdId: null,
+    households: [],
+    setActiveHouseholdId: mock(),
+    isLoading: true,
+  });
+
+  function expectStatementChrome(
+    getByTestId: ReturnType<typeof render>['getByTestId'],
+    queryByTestId: ReturnType<typeof render>['queryByTestId']
+  ) {
+    const currentWeekLabel = formatWeekRangeLabel(
+      getWeekDates(getWeekStartISO(new Date(), TIMEZONE))
     );
+    // The loading marker survives the rewrite — Maestro keys off it.
+    expect(getByTestId('hours-loading')).toBeTruthy();
+    expect(getByTestId('hours-title')).toBeTruthy();
+    // Not merely present: the REAL week label, not an empty placeholder.
+    expect(getByTestId('hours-week-label').props.children).toBe(
+      currentWeekLabel
+    );
+    // Only the figure is a skeleton, and it is never a fabricated `0m`.
+    expect(getByTestId('hours-total-skeleton')).toBeTruthy();
+    expect(queryByTestId('hours-total')).toBeNull();
+    expect(queryByTestId('hours-empty-week')).toBeNull();
+  }
+
+  it('shows the week skeleton, not a blank screen, while the household loads', () => {
+    mockUseActiveHousehold.mockImplementation(loadingHousehold);
+
+    const { getByTestId, queryByTestId } = render(<HoursScreen />);
+
+    expectStatementChrome(getByTestId, queryByTestId);
+    expect(getByTestId('hours-day-skeleton-0')).toBeTruthy();
+  });
+
+  it('does the same while the ROLE is still resolving', () => {
+    mockUseIsOnboarded.mockImplementation(() => ({
+      status: 'loading',
+      role: null,
+      householdId: null,
+    }));
+
+    const { getByTestId, queryByTestId } = render(<HoursScreen />);
+
+    expectStatementChrome(getByTestId, queryByTestId);
+  });
+});
+
+// `isPastMember` is now a prop in its own right, distinct from `readOnly` —
+// the removed member is TOLD her record stays rather than silently losing
+// every button. A view that only received `readOnly` could not tell the two
+// apart, so the last case here is the discriminating one.
+describe('HoursScreen — forwards isPastMember to the week view', () => {
+  const submittedWeek = () => ({
+    data: [
+      {
+        id: '4359148e-d5ee-4515-9fca-3396b29ee48d',
+        carer_id: null,
+        carer_display_name: 'Amara',
+        status: 'submitted',
+        query_note: null,
+      },
+    ],
+    isLoading: false,
+  });
+
+  it('renders the past-member note for a removed nanny', () => {
+    mockUseIsOnboarded.mockImplementation(() => ({
+      status: 'onboarded',
+      role: 'nanny',
+      householdId: HOUSEHOLD_ID,
+      isPastMember: true,
+    }));
+
+    const { getByTestId } = render(<HoursScreen />);
+
+    expect(getByTestId('hours-past-member-note')).toBeTruthy();
+  });
+
+  it('omits it for an active nanny', () => {
+    const { queryByTestId } = render(<HoursScreen />);
+    expect(queryByTestId('hours-past-member-note')).toBeNull();
+  });
+
+  it('renders it for a removed parent too', () => {
+    mockUseIsOnboarded.mockImplementation(() => ({
+      status: 'onboarded',
+      role: 'parent',
+      householdId: HOUSEHOLD_ID,
+      isPastMember: true,
+    }));
+    mockUseWeekTimesheet.mockImplementation(submittedWeek);
+
+    const { getByTestId } = render(<HoursScreen />);
+
+    expect(getByTestId('hours-past-member-note')).toBeTruthy();
+  });
+
+  // The discriminating case: a helper is read-only (`!isParentEditorRole`)
+  // while still being a current member. Passing `readOnly` where
+  // `isPastMember` belongs would tell her she had left the household.
+  it('does NOT show it to a read-only helper who is still a member', () => {
+    mockUseIsOnboarded.mockImplementation(() => ({
+      status: 'onboarded',
+      role: 'helper',
+      householdId: HOUSEHOLD_ID,
+      isPastMember: false,
+    }));
+    mockUseWeekTimesheet.mockImplementation(submittedWeek);
+
+    const { queryByTestId } = render(<HoursScreen />);
+
+    expect(queryByTestId('hours-past-member-note')).toBeNull();
+    // She really is read-only — otherwise this test would pass for the wrong
+    // reason (a helper who could approve).
+    expect(queryByTestId('hours-approve-button')).toBeNull();
   });
 });
 

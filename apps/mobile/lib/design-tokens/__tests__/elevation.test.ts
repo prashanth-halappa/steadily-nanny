@@ -20,6 +20,7 @@ import {
   hexToRgba,
   liveCardBackground,
   mixHex,
+  screenWash,
   washGradient,
 } from '../elevation';
 import { palette } from '../palette';
@@ -34,7 +35,7 @@ describe('hexToRgba', () => {
   });
 });
 
-describe('washGradient', () => {
+describe('screenWash / washGradient', () => {
   it('fades the apricot highlight to transparent at the spec 62% stop', () => {
     const light = washGradient('light');
     expect(light.locations).toEqual([0, 0.62]);
@@ -42,7 +43,7 @@ describe('washGradient', () => {
     expect(light.colors[1]).toBe(hexToRgba(palette.light.highlight.hex, 0));
   });
 
-  it('uses the dimmer dark-mode opening alpha', () => {
+  it('uses the dimmer dark-mode opening alpha for live', () => {
     expect(washGradient('dark').colors[0]).toBe(
       hexToRgba(palette.dark.highlight.hex, 0.13)
     );
@@ -51,6 +52,18 @@ describe('washGradient', () => {
   it('accepts an isDark boolean as well as a mode name', () => {
     expect(washGradient(true)).toEqual(washGradient('dark'));
     expect(washGradient(false)).toEqual(washGradient('light'));
+  });
+
+  it('keeps washGradient byte-identical to screenWash live', () => {
+    expect(washGradient('light')).toEqual(screenWash('light', 'live'));
+    expect(washGradient('dark')).toEqual(screenWash('dark', 'live'));
+  });
+
+  it('derives the brand wash from primary at 0.14 alpha', () => {
+    const brand = screenWash('light', 'brand');
+    expect(brand.locations).toEqual([0, 0.62]);
+    expect(brand.colors[0]).toBe(hexToRgba(palette.light.primary.hex, 0.14));
+    expect(brand.colors[1]).toBe(hexToRgba(palette.light.primary.hex, 0));
   });
 });
 
@@ -126,8 +139,14 @@ describe('elevationForMode', () => {
   it('derives cardProminent from the neutral ink, never apricot — coloured shadows stay exclusive to liveCard', () => {
     const light = elevationForMode('light');
     expect(layerColours(light.cardProminent)).toEqual([
-      hexToRgba(palette.light.foreground.hex, 0.06),
-      hexToRgba(palette.light.foreground.hex, 0.24),
+      hexToRgba(palette.light.foreground.hex, 0.08),
+      hexToRgba(palette.light.foreground.hex, 0.34),
+    ]);
+  });
+
+  it('derives row shadow from the plum-tinted ink, not pure black', () => {
+    expect(layerColours(elevationForMode('light').row)).toEqual([
+      hexToRgba(palette.light.foreground.hex, 0.05),
     ]);
   });
 
@@ -145,8 +164,8 @@ describe('elevationForMode', () => {
 
   it('tracks cardProminent against the dark palette independently', () => {
     expect(layerColours(elevationForMode('dark').cardProminent)).toEqual([
-      hexToRgba(palette.dark.foreground.hex, 0.06),
-      hexToRgba(palette.dark.foreground.hex, 0.24),
+      hexToRgba(palette.dark.foreground.hex, 0.08),
+      hexToRgba(palette.dark.foreground.hex, 0.34),
     ]);
   });
 });

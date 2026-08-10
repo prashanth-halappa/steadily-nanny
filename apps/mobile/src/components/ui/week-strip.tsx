@@ -14,8 +14,10 @@
 
 import { View } from 'react-native';
 import { AnimatedPressable } from '@/lib/animations';
+import { useThemeColors } from '@/lib/design-tokens/useThemeColors';
 import { cn } from '@/lib/utils';
 import { Text } from '@/src/components/ui/text';
+import { MetadataLabel, tabularStyle } from '@/src/components/ui/typography';
 import { getWeekdayOrder } from '@/src/lib/weekdayOrder';
 
 const DAY_LABELS: Record<number, string> = {
@@ -30,6 +32,11 @@ const DAY_LABELS: Record<number, string> = {
 
 const DEFAULT_TEST_ID = 'week-strip';
 
+function dayOfMonthFromLocalDate(localDate: string): string {
+  const day = Number(localDate.slice(8, 10));
+  return Number.isNaN(day) ? localDate.slice(8, 10) : String(day);
+}
+
 interface WeekStripProps {
   /** Selected days — Postgres `extract(dow)` convention: 0=Sunday..6=Saturday. */
   selected: number[];
@@ -42,6 +49,13 @@ interface WeekStripProps {
    * change the integers in `selected` / `onToggle`.
    */
   weekStartsOn?: number | null;
+  /**
+   * ISO local dates keyed by Postgres dow (0=Sun … 6=Sat). When set, renders
+   * tabular day-of-month numerals under each initial.
+   */
+  weekDates?: Partial<Record<number, string>>;
+  /** Highlights today's cell with chipPlum when it is not selected. */
+  todayLocalDate?: string;
   testID?: string;
 }
 
@@ -50,8 +64,11 @@ export function WeekStrip({
   onToggle,
   disabled = [],
   weekStartsOn = 1,
+  weekDates,
+  todayLocalDate,
   testID,
 }: WeekStripProps) {
+  const colors = useThemeColors();
   const baseTestID = testID ?? DEFAULT_TEST_ID;
   const displayOrder = getWeekdayOrder(weekStartsOn);
 
@@ -63,6 +80,15 @@ export function WeekStrip({
       {displayOrder.map(day => {
         const isSelected = selected.includes(day);
         const isDisabled = disabled.includes(day);
+        const localDate = weekDates?.[day];
+        const dayOfMonth = localDate
+          ? dayOfMonthFromLocalDate(localDate)
+          : null;
+        const isToday =
+          todayLocalDate != null &&
+          localDate != null &&
+          localDate === todayLocalDate;
+        const isTodayUnselected = isToday && !isSelected;
 
         return (
           <AnimatedPressable
@@ -76,20 +102,37 @@ export function WeekStrip({
             onPress={() => {
               if (!isDisabled) onToggle(day);
             }}
+            style={
+              isTodayUnselected
+                ? { backgroundColor: colors.chip.plum }
+                : undefined
+            }
             className={cn(
-              'h-touch w-touch items-center justify-center rounded-cell',
-              isSelected ? 'bg-primary' : 'bg-muted',
+              'h-touch w-touch items-center justify-center gap-0.5 rounded-cell',
+              isSelected && 'bg-primary',
               isDisabled && 'opacity-40'
             )}
           >
-            <Text
+            <MetadataLabel
               className={cn(
-                'font-medium text-sm',
-                isSelected ? 'text-primary-foreground' : 'text-foreground'
+                isSelected ? 'text-primary-foreground' : 'text-muted-foreground'
               )}
             >
               {DAY_LABELS[day]}
-            </Text>
+            </MetadataLabel>
+            {dayOfMonth != null ? (
+              <Text
+                style={tabularStyle}
+                className={cn(
+                  'text-sm font-medium',
+                  isSelected && 'text-primary-foreground',
+                  isTodayUnselected && 'text-primary',
+                  !isSelected && !isTodayUnselected && 'text-muted-foreground'
+                )}
+              >
+                {dayOfMonth}
+              </Text>
+            ) : null}
           </AnimatedPressable>
         );
       })}

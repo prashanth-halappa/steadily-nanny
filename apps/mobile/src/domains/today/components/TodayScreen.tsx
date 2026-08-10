@@ -24,16 +24,15 @@
  * the scroll viewport, so a nanny with a week waiting saw no call to action.
  */
 
-import { LinearGradient } from 'expo-linear-gradient';
 import { useTranslation } from 'react-i18next';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { Image, ScrollView, View } from 'react-native';
 import { illustrations } from '@/assets/illustrations';
-import { SCREEN_CONTENT_STYLE, washGradient } from '@/lib/design-tokens';
+import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { useTabBarScrollPadding } from '@/lib/layout/useTabBarScrollPadding';
-import { useColorScheme } from '@/lib/useColorScheme';
 import { ChildChip } from '@/src/components/ui/child-chip';
 import { EmptyState } from '@/src/components/ui/empty-state';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
+import { ScreenWash } from '@/src/components/ui/screen-wash';
 import { H1, Small } from '@/src/components/ui/typography';
 import { HouseholdSwitcher } from '@/src/domains/household';
 import { NeedsAttentionCard, useInboxItems } from '@/src/domains/inbox';
@@ -41,6 +40,7 @@ import {
   PendingScheduleCard,
   ThisWeeksShiftsCard,
 } from '@/src/domains/schedule';
+import { localDateToWeekday } from '@/src/domains/schedule/utils/shiftGrouping';
 import { canViewParentSchedule, SETUP_ROLES } from '@/src/domains/setup/types';
 import { formatDisplayDate } from '@/src/domains/timesheet/utils/week';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
@@ -49,8 +49,10 @@ import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 import { localDateInZone } from '@/src/lib/localDate';
 import { useHouseholdIsLive } from '../hooks/useHouseholdIsLive';
 import { useOverdueClockOut } from '../hooks/useOverdueClockOut';
+import { useTodayCoverRows } from '../hooks/useTodayCoverRows';
 import { useUncoveredToday } from '../hooks/useUncoveredToday';
 import { resolveAttentionOwner } from '../utils/attentionOwner';
+import { HERO_MOOD_ILLUSTRATION, resolveHeroMood } from '../utils/heroMood';
 import { AddMissedHoursCard } from './AddMissedHoursCard';
 import { ClockInCard } from './ClockInCard';
 import { HandoffChipsCard } from './HandoffChipsCard';
@@ -59,7 +61,7 @@ import { TodayCoverage } from './TodayCoverage';
 
 export function TodayScreen() {
   const { t } = useTranslation('today');
-  const { isDarkColorScheme } = useColorScheme();
+  const { t: tSchedule } = useTranslation('schedule');
   // Server-derived role, NOT the local setupProgress store — that's
   // in-flight wizard UI state and can be empty/stale for a parent whose
   // household was seeded directly, or who signed in on a fresh device. See
@@ -83,7 +85,14 @@ export function TodayScreen() {
     hasUncoveredCare: uncoveredToday.status === 'uncovered',
     hasInboxItems: !inbox.isLoading && inbox.items.length > 0,
   });
-  const wash = washGradient(isDarkColorScheme);
+  // Same rows the coverage surface reads, off the same React Query keys, so
+  // the hero illustration costs no extra network. Both roles read the whole
+  // household's day: a nanny's own shifts are among these rows.
+  const coverRows = useTodayCoverRows(
+    household?.id ?? '',
+    household?.timezone ?? 'UTC'
+  );
+  const heroMood = resolveHeroMood({ isLive, rows: coverRows.rows });
   // Same tab-bar dead-zone fix as Settings (BUG1) — the floating tab bar
   // overlays this screen's content instead of reserving its own layout
   // space, so a fixed paddingBottom is not safe-area-aware.
@@ -91,17 +100,10 @@ export function TodayScreen() {
 
   return (
     <View className="flex-1 bg-background">
-      {isLive ? (
-        <LinearGradient
-          pointerEvents="none"
-          testID="today-live-wash"
-          style={StyleSheet.absoluteFill}
-          colors={wash.colors}
-          locations={wash.locations}
-          start={{ x: 0.5, y: 0 }}
-          end={{ x: 0.5, y: 1 }}
-        />
-      ) : null}
+      {/* Always mounted now, brand plum by default and apricot only while
+          someone is on the clock. The screen used to be flat warm grey for
+          the other sixteen hours of the day (daylight-v2 §4.3). */}
+      <ScreenWash testID="today-live-wash" kind={isLive ? 'live' : 'brand'} />
       <ScrollView
         className="flex-1"
         contentContainerStyle={{
@@ -109,24 +111,46 @@ export function TodayScreen() {
           paddingBottom: tabBarScrollPadding,
         }}
       >
-        <H1 testID="today-header">{t('screenTitle')}</H1>
+        {/* Hero band — no card, no ground of its own: it IS the top of the
+            wash, and the wash is what separates it from the cards below. */}
+        <View className="flex-row items-start justify-between gap-3">
+          <View className="flex-1">
+            <H1 testID="today-header">{t('screenTitle')}</H1>
+            {/* Folded into the H1 block: the date always shows (a screen
+                called Today with no date on it is odd), and the household
+                name joins it on the same line — but only when there's
+                nothing to switch between. Mirrors HouseholdSwitcher's own
+                bail-out; rendering both would print the household twice.
+                `text-muted-strong`, not `text-muted-foreground`: this line
+                sits on the wash, where mutedForeground is 4.28:1 (Rule M). */}
+            {household ? (
+              <Small testID="today-date" className="mt-1 text-muted-strong">
+                {`${tSchedule(`weekday.${localDateToWeekday(localDateInZone(household.timezone))}`)} ${formatDisplayDate(localDateInZone(household.timezone))}${
+                  activeHousehold.households.length +
+                    activeHousehold.pastHouseholds.length <=
+                    1 && !activeHousehold.isPastHousehold
+                    ? ` · ${household.name}`
+                    : ''
+                }`}
+              </Small>
+            ) : null}
+          </View>
+          {/* Transparent PNG on purpose — the wash gradient passes under it. */}
+          <Image
+            testID={`today-hero-art-${heroMood}`}
+            accessibilityRole="image"
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
+            source={illustrations[HERO_MOOD_ILLUSTRATION[heroMood]]}
+            style={{ width: 104, height: 104 }}
+            resizeMode="contain"
+          />
+        </View>
 
         {activeHousehold.isLoading ? (
           <LoadingIndicator />
         ) : household ? (
           <View className="mt-2 gap-4">
-            {/* Folded into the H1 block: the date always shows (a screen
-                called Today with no date on it is odd), and the household
-                name joins it on the same line — but only when there's
-                nothing to switch between. Mirrors HouseholdSwitcher's own
-                bail-out; rendering both would print the household twice. */}
-            <Small testID="today-date" className="text-muted-foreground">
-              {activeHousehold.households.length +
-                activeHousehold.pastHouseholds.length <=
-                1 && !activeHousehold.isPastHousehold
-                ? `${formatDisplayDate(localDateInZone(household.timezone))} · ${household.name}`
-                : formatDisplayDate(localDateInZone(household.timezone))}
-            </Small>
             <HouseholdSwitcher />
 
             {canViewParentSchedule(onboarding.role) ? (

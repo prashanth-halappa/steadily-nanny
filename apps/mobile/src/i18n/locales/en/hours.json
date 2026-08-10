@@ -48,7 +48,6 @@
   "nannyStatusSubmitted": "With the family",
   "nannyStatusQueried": "The family asked a question",
   "approvedByHousehold": "Approved by {{household}} on {{date}}.",
-  "approvedByHouseholdWithGross": "Approved by {{household}} on {{date}}. {{amount}}.",
   "payBoundary": "Steadily totals the pay; the payment itself happens outside the app.",
   "earningsEstimatedGross": "Estimated gross",
   "earningsApprovedGross": "Approved gross",
@@ -140,5 +139,9 @@
     "receiptPaidToDate": "Paid so far",
     "receiptBalance": "Still to pay",
     "receiptFooter": "Based on the hours recorded in Steadily. Tax and deductions are handled by your payroll."
-  }
+  },
+  "pastMemberNote": "You're no longer with this household. Your record stays here.",
+  "editedMarker": "Edited",
+  "earningsSeeBreakdown": "See the breakdown",
+  "earningsRateSubline": "{{duration}} × {{rate}}"
 }

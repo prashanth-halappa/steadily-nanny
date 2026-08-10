@@ -1,6 +1,10 @@
 {
   "title": "Ajustes",
   "language": "Idioma",
+  "languageNames": {
+    "en": "English",
+    "es": "Español"
+  },
   "signOut": "Cerrar sesión",
   "privacyPolicy": "Política de privacidad",
   "termsOfService": "Términos del servicio",
@@ -11,7 +15,7 @@
     "saveButton": "Guardar",
     "savedToast": "Nombre guardado"
   },
-  "legal": "Legal",
+  "legal": "Legal y ayuda",
   "getHelp": "Obtener ayuda",
   "appVersion": "Versión {{version}}",
   "carerAvailability": "Disponibilidad de la niñera",
@@ -28,7 +32,7 @@
   },
   "notifications": "Notificaciones",
   "inbox": "Requiere atención",
-  "household": "Hogar",
+  "household": "Tu hogar",
   "deleteAccount": "Eliminar cuenta",
   "deleteAccountConfirmTitle": "¿Eliminar tu cuenta?",
   "deleteAccountConfirmBody": "Esto elimina permanentemente tu cuenta y tu perfil. No elimina los registros compartidos de tu hogar: las horas trabajadas y las hojas de horas aprobadas permanecen en ese historial para las demás personas de tu hogar. Esta acción no se puede deshacer.",

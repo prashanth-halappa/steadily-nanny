@@ -146,6 +146,7 @@
     "extraClashCancel": "Go back",
     "extraClashConfirm": "Create anyway",
     "unavailable": "Shifts aren't available yet — check back soon.",
+    "weekTotal": "{{duration}} this week",
     "statusDraft": "Draft",
     "statusPending": "Pending",
     "statusConfirmed": "Confirmed",
@@ -238,6 +239,7 @@
     "pendingCta": "Review and respond",
     "shiftsCta": "This week's shifts",
     "nextUpTitle": "Next up",
+    "nextUpTitleWithCarer": "Next up · {{name}}",
     "nextUpEmpty": "No upcoming shifts in the next two weeks",
     "viewCalendar": "View the calendar"
   },

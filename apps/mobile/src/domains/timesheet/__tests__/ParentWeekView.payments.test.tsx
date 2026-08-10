@@ -21,7 +21,12 @@ import type { Expense } from '@steadily-nanny/shared-types/schemas/expense.schem
 import * as expenseSchemaModule from '@steadily-nanny/shared-types/schemas/expense.schema';
 import * as timesheetSchemaModule from '@steadily-nanny/shared-types/schemas/timesheet.schema';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import {
+  fireEvent,
+  render,
+  waitFor,
+  within,
+} from '@testing-library/react-native';
 import type React from 'react';
 import { localDateInZone } from '@/src/lib/localDate';
 import { useAuthStore } from '@/src/store/auth';
@@ -469,6 +474,92 @@ describe('ParentWeekView — the paid-state card', () => {
     expect(queryByTestId('hours-mark-paid-button')).toBeNull();
     // The export is informational, so a helper keeps it.
     expect(getByTestId('hours-export-button')).toBeTruthy();
+  });
+});
+
+// Daylight v2: `WeekEarningsLine` (what the week is worth) and the former
+// standalone `PaidStateSection` (whether it arrived) merged into ONE
+// `WeekMoneyCard`. Both halves kept every testID, so a flat `getByTestId`
+// passes whether they are one card or two — containment is the assertion.
+describe('ParentWeekView — the merged money card', () => {
+  it('holds the gross, the settlement and Mark as paid inside ONE card', async () => {
+    listPaymentsMock.mockImplementation(() =>
+      Promise.resolve([makePayment({ amount_minor: 12000 })])
+    );
+
+    const { getByTestId } = renderParentView();
+
+    await waitFor(() => expect(getByTestId('hours-money-card')).toBeTruthy());
+    const card = within(getByTestId('hours-money-card'));
+    expect(card.getByTestId('hours-earnings-line-amount').props.children).toBe(
+      '£236.12'
+    );
+    expect(card.getByTestId('hours-paid-state-badge').props.children).toBe(
+      'paid.badgePartial'
+    );
+    expect(
+      card.getByTestId('hours-paid-state-balance-value').props.children
+    ).toBe('£116.12');
+    expect(card.getByTestId('hours-mark-paid-button')).toBeTruthy();
+
+    // The gross left the status card when it moved into this one.
+    expect(
+      within(getByTestId('hours-week-total')).queryByTestId(
+        'hours-earnings-line'
+      )
+    ).toBeNull();
+  });
+
+  it('a helper sees the whole money card and can act on none of it', async () => {
+    listPaymentsMock.mockImplementation(() =>
+      Promise.resolve([makePayment({ amount_minor: 12000 })])
+    );
+
+    const { getByTestId, queryByTestId } = renderParentView({ readOnly: true });
+
+    await waitFor(() => expect(getByTestId('hours-money-card')).toBeTruthy());
+    const card = within(getByTestId('hours-money-card'));
+    // Reading the family's money is the helper's whole entitlement here.
+    expect(card.getByTestId('hours-earnings-line-amount').props.children).toBe(
+      '£236.12'
+    );
+    expect(card.getByTestId('hours-paid-state')).toBeTruthy();
+    expect(
+      card.getByTestId('hours-paid-state-balance-value').props.children
+    ).toBe('£116.12');
+    // ...and writing it is nobody's but a parent's.
+    expect(card.queryByTestId('hours-mark-paid-button')).toBeNull();
+    expect(queryByTestId('hours-approve-button')).toBeNull();
+    expect(queryByTestId('hours-query-button')).toBeNull();
+    expect(queryByTestId('hours-record-payment-sheet')).toBeNull();
+  });
+
+  it('renders no money card at all when neither half has anything true to say', async () => {
+    // Legacy hours-only week, never approved: no gross the server will stand
+    // behind, and no settlement to report. An empty white rectangle on a
+    // money screen reads as a figure that failed to load.
+    listTimesheetsMock.mockImplementation(() =>
+      Promise.resolve([makeTimesheet({ status: 'submitted' })])
+    );
+    // `makeTimesheetWeek` hardcodes the `ok` earnings arm, so the shape is
+    // cast rather than re-typing the shared fixture for one test.
+    getByIdMock.mockImplementation(() =>
+      Promise.resolve({
+        ...makeTimesheet({ status: 'submitted' }),
+        earnings: {
+          status: 'hours_only',
+          week_start: WEEK_START,
+          reason: 'legacy_approval',
+        },
+      } as unknown as ReturnType<typeof makeTimesheetWeek>)
+    );
+
+    const { getByTestId, queryByTestId } = renderParentView();
+
+    await waitFor(() => expect(getByTestId('hours-total')).toBeTruthy());
+    expect(queryByTestId('hours-money-card')).toBeNull();
+    expect(queryByTestId('hours-earnings-line')).toBeNull();
+    expect(queryByTestId('hours-paid-state')).toBeNull();
   });
 });
 

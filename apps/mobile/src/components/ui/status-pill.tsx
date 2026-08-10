@@ -19,12 +19,12 @@ const statusPillVariants = cva(
   {
     variants: {
       variant: {
-        confirmed: 'bg-success/15',
-        pending: 'bg-warning/15',
-        declined: 'bg-destructive/15',
-        cancelled: 'bg-muted',
-        'short-notice': 'bg-short-notice/15',
-        'outside-hours': 'bg-short-notice/15',
+        confirmed: 'bg-pill-success',
+        pending: 'bg-pill-warning',
+        declined: 'bg-pill-destructive',
+        cancelled: 'bg-secondary',
+        'short-notice': 'bg-pill-short-notice',
+        'outside-hours': 'bg-pill-short-notice',
       },
     },
     defaultVariants: { variant: 'pending' },
@@ -34,12 +34,12 @@ const statusPillVariants = cva(
 const statusPillTextVariants = cva('font-semibold text-xs', {
   variants: {
     variant: {
-      confirmed: 'text-success',
-      pending: 'text-warning-strong',
-      declined: 'text-destructive',
-      cancelled: 'text-muted-foreground',
-      'short-notice': 'text-short-notice-strong',
-      'outside-hours': 'text-short-notice-strong',
+      confirmed: 'text-success-ink',
+      pending: 'text-warning-ink',
+      declined: 'text-error-inline-text',
+      cancelled: 'text-muted-strong',
+      'short-notice': 'text-short-notice-ink',
+      'outside-hours': 'text-short-notice-ink',
     },
   },
   defaultVariants: { variant: 'pending' },

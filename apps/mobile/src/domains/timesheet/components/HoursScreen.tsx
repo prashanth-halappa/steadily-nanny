@@ -41,7 +41,7 @@ import { useTranslation } from 'react-i18next';
 import { ScrollView, View } from 'react-native';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { useTabBarScrollPadding } from '@/lib/layout/useTabBarScrollPadding';
-import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
+import { ScreenWash } from '@/src/components/ui/screen-wash';
 import { H1 } from '@/src/components/ui/typography';
 import {
   canViewParentSchedule,
@@ -56,6 +56,7 @@ import {
   getWeekStartISO,
   weeksBetween,
 } from '../utils/week';
+import { HoursWeekSkeleton } from './HoursWeekSkeleton';
 import { NannyWeekView } from './NannyWeekView';
 import { ParentWeekView } from './ParentWeekView';
 
@@ -218,31 +219,54 @@ export function HoursScreen() {
   const isNextWeekDisabled = weekOffset >= 0;
   const isPreviousWeekDisabled = weekOffset <= -MAX_WEEKS_BACK;
 
+  // Daylight v2: the title and the week label are derived locally and paint
+  // on the first frame — only the figure and the day rows are ever a
+  // skeleton. The `LoadingIndicator` this replaces blanked the whole tab,
+  // title included, on every household/role resolution.
   if (onboarding.status === 'loading' || activeHousehold.isLoading) {
     return (
       <View testID="hours-screen" className="flex-1 bg-background">
-        <LoadingIndicator testID="hours-loading" />
+        <ScreenWash kind="brand" />
+        <ScrollView
+          contentContainerStyle={{
+            ...SCREEN_CONTENT_STYLE,
+            paddingBottom: tabBarScrollPadding,
+          }}
+        >
+          <HoursWeekSkeleton
+            weekRangeLabel={weekRangeLabel}
+            onPreviousWeek={handlePreviousWeek}
+            onNextWeek={handleNextWeek}
+            isPreviousDisabled={isPreviousWeekDisabled}
+            isNextDisabled={isNextWeekDisabled}
+          />
+        </ScrollView>
       </View>
     );
   }
 
   if (!activeHousehold.householdId || !onboarding.role) {
     return (
-      <ScrollView
-        testID="hours-screen"
-        className="flex-1 bg-background"
-        contentContainerStyle={{
-          ...SCREEN_CONTENT_STYLE,
-          paddingBottom: tabBarScrollPadding,
-        }}
-      >
-        <H1>{t('title')}</H1>
-      </ScrollView>
+      <View testID="hours-screen" className="flex-1 bg-background">
+        <ScreenWash kind="brand" />
+        <ScrollView
+          contentContainerStyle={{
+            ...SCREEN_CONTENT_STYLE,
+            paddingBottom: tabBarScrollPadding,
+          }}
+        >
+          <H1>{t('title')}</H1>
+        </ScrollView>
+      </View>
     );
   }
 
   return (
     <View testID="hours-screen" className="flex-1 bg-background">
+      {/* The statement sits ON the wash — which is why the title moved into
+          the scrollable content below instead of a fixed opaque header row
+          above it (screens-hours.md §2). */}
+      <ScreenWash kind="brand" />
       {/* Absolute Monday currently shown — Maestro deep-link regression (weekStart one-shot). */}
       <View
         testID={`hours-active-week-${weekStartISO}`}
@@ -251,18 +275,6 @@ export function HoursScreen() {
         accessible={false}
         importantForAccessibility="no"
       />
-      {/* Daylight P1: opaque ground, not just padding — the list below it
-          must never be able to show through it (screenshot 11). */}
-      <View
-        testID="hours-title-row"
-        className="bg-background"
-        style={{
-          paddingHorizontal: SCREEN_CONTENT_STYLE.padding,
-          paddingTop: SCREEN_CONTENT_STYLE.padding,
-        }}
-      >
-        <H1 testID="hours-title">{t('title')}</H1>
-      </View>
       {canViewParentSchedule(onboarding.role) ? (
         <ParentWeekView
           householdId={activeHousehold.householdId}
@@ -275,6 +287,7 @@ export function HoursScreen() {
           onNextWeek={handleNextWeek}
           isNextWeekDisabled={isNextWeekDisabled}
           isPreviousWeekDisabled={isPreviousWeekDisabled}
+          isPastMember={isReadOnly}
           readOnly={!isParentEditorRole(onboarding.role) || isReadOnly}
         />
       ) : (
@@ -289,6 +302,7 @@ export function HoursScreen() {
           onNextWeek={handleNextWeek}
           isNextWeekDisabled={isNextWeekDisabled}
           isPreviousWeekDisabled={isPreviousWeekDisabled}
+          isPastMember={isReadOnly}
           readOnly={isReadOnly}
         />
       )}

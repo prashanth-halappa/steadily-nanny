@@ -46,7 +46,10 @@ export const typography = {
   h3: {
     size: 20,
     lineHeight: 28,
-    weight: '600' as const,
+    // Daylight v2 spec calls for 650 (Figtree Variable covers the axis), but
+    // RN's fontWeight type (____FontWeight_Internal) only accepts hundreds —
+    // '650' doesn't typecheck without a cast. Falling back to 700.
+    weight: '700' as const,
     letterSpacing: 0,
   },
   h4: {
@@ -114,7 +117,16 @@ export const typography = {
   metadataLabel: {
     size: 13,
     lineHeight: 18,
-    weight: '500' as const,
+    weight: '600' as const,
+    letterSpacing: 0.1,
+  },
+
+  // Card-level numbers (week totals, amounts) — the missing rung between
+  // h3 (20) and signature.heroBold (40). Always tabular — see factory.tsx.
+  figure: {
+    size: 28,
+    lineHeight: 34,
+    weight: '700' as const,
     letterSpacing: 0,
   },
   button: {
@@ -155,7 +167,7 @@ export const typography = {
     heroBold: {
       size: 40,
       lineHeight: 48,
-      weight: '600' as const,
+      weight: '700' as const,
       letterSpacing: 0,
     },
     milestoneHeading: {
@@ -181,24 +193,25 @@ export const typographyClasses = {
   display: 'text-[32px] leading-[40px] font-extrabold',
   h1: 'text-[32px] leading-[40px] font-semibold',
   h2: 'text-2xl leading-8 font-semibold',
-  h3: 'text-xl leading-7 font-semibold',
+  h3: 'text-xl leading-7 font-bold',
   h4: 'text-lg leading-[27px] font-semibold',
   timer: 'text-[44px] leading-[48px] font-medium',
   dayGroup: 'text-[17px] leading-6 font-semibold',
+  figure: 'text-[28px] leading-[34px] font-bold',
   body: 'text-base leading-6',
   bodyLarge: 'text-lg leading-7',
   bodySmall: 'text-sm leading-[21px]',
   bodyLight: 'text-base leading-6 font-light',
   caption: 'text-sm leading-[21px]',
   label: 'text-sm leading-[21px] font-medium',
-  metadataLabel: 'text-[13px] leading-[18px] font-medium',
+  metadataLabel: 'text-[13px] leading-[18px] font-semibold tracking-wide',
   button: 'text-base leading-6 font-semibold',
   buttonSmall: 'text-sm leading-5 font-semibold tracking-wide',
   achievement: 'text-2xl leading-8 font-bold tracking-wide',
   encouragement: 'text-lg leading-7 italic tracking-wide',
   signature: {
     heroLight: 'text-[40px] leading-[48px] font-light',
-    heroBold: 'text-[40px] leading-[48px] font-semibold',
+    heroBold: 'text-[40px] leading-[48px] font-bold',
     milestoneHeading: 'text-[32px] leading-[40px] font-extrabold',
     contemplative: 'text-lg leading-[32px] font-light tracking-wide',
   },

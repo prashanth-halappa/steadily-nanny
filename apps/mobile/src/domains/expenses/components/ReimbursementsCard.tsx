@@ -26,11 +26,11 @@
  */
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
-import { Card, CardContent } from '@/src/components/ui/card';
-import { H4, Small } from '@/src/components/ui/typography';
+import { H4, MetadataLabel, Small } from '@/src/components/ui/typography';
 import { AmountRow } from '@/src/domains/pay/components/AmountRow';
 import { formatEarningsSpanDate } from '@/src/domains/timesheet/utils/earningsFormat';
 import { formatMoney } from '@/src/lib/money';
+import { useElevation } from '~/lib/design-tokens/elevation';
 import type { Expense } from '../types';
 
 interface ReimbursementsCardProps {
@@ -57,61 +57,68 @@ export function ReimbursementsCard({
   testID = 'reimbursements-card',
 }: ReimbursementsCardProps) {
   const { t } = useTranslation('expenses');
+  const elevation = useElevation();
 
   if (approvedExpenses.length === 0) return null;
 
   return (
-    <Card testID={testID} className="mt-4">
-      <CardContent className="gap-3">
-        <H4>{t('reimbursements.title')}</H4>
-        {carerName ? (
-          <Small
-            testID={`${testID}-carer-name`}
-            className="text-muted-foreground"
-          >
-            {carerName}
-          </Small>
-        ) : null}
+    <View testID={testID} className="mt-4 gap-2">
+      <MetadataLabel className="text-muted-foreground">
+        {t('reimbursements.title')}
+      </MetadataLabel>
+      {carerName ? (
+        <Small
+          testID={`${testID}-carer-name`}
+          className="text-muted-foreground"
+        >
+          {carerName}
+        </Small>
+      ) : null}
 
-        <View className="gap-3">
-          {approvedExpenses.map(expense => (
-            <AmountRow
-              key={expense.id}
-              testID={`${testID}-line-${expense.id}`}
-              label={expense.description}
-              value={
-                expense.amount_minor !== null
-                  ? formatMoney(expense.amount_minor, currency)
-                  : null
-              }
-              subLine={formatEarningsSpanDate(expense.local_date)}
-            />
-          ))}
+      {approvedExpenses.map(expense => (
+        <View
+          key={expense.id}
+          className="rounded-row bg-card px-4 py-3"
+          style={elevation.row}
+        >
+          <AmountRow
+            testID={`${testID}-line-${expense.id}`}
+            label={expense.description}
+            value={
+              expense.amount_minor !== null
+                ? formatMoney(expense.amount_minor, currency)
+                : null
+            }
+            subLine={formatEarningsSpanDate(expense.local_date)}
+          />
         </View>
+      ))}
 
-        {totalMinor !== null ? (
-          <View className="flex-row items-baseline justify-between gap-3 rounded-cell bg-muted px-4 py-3">
+      {totalMinor !== null ? (
+        <View className="rounded-row bg-card px-4 py-3" style={elevation.row}>
+          <View className="flex-row items-baseline justify-between gap-3">
             <H4>{t('reimbursements.totalLabel')}</H4>
             <H4 testID={`${testID}-total`} tabular>
               {formatMoney(totalMinor, currency)}
             </H4>
           </View>
-        ) : (
-          <View
-            testID={`${testID}-total-unavailable`}
-            className="rounded-cell bg-muted px-4 py-3"
-          >
-            <Small className="text-muted-foreground">
-              {t('reimbursements.totalUnavailable')}
-            </Small>
-          </View>
-        )}
+        </View>
+      ) : (
+        <View
+          testID={`${testID}-total-unavailable`}
+          className="rounded-row bg-card px-4 py-3"
+          style={elevation.row}
+        >
+          <Small className="text-muted-foreground">
+            {t('reimbursements.totalUnavailable')}
+          </Small>
+        </View>
+      )}
 
-        <Small testID={`${testID}-note`} className="text-muted-foreground">
-          {t('reimbursements.note')}
-        </Small>
-      </CardContent>
-    </Card>
+      <Small testID={`${testID}-note`} className="text-muted-foreground">
+        {t('reimbursements.note')}
+      </Small>
+    </View>
   );
 }
 

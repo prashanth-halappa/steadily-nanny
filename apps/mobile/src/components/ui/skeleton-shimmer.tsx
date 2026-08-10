@@ -3,7 +3,7 @@
  *
  * Replaces cold gray pulse animations with a warm, branded shimmer effect.
  * Uses Reanimated opacity animation cycling between 0.4 and 1.0 on the
- * skeleton base color (#EFE7EC). Respects reduced motion accessibility settings.
+ * skeleton base color (secondary). Respects reduced motion accessibility settings.
  *
  * Optional dimensionColor prop adds a subtle 2dp top border accent at 20% opacity
  * for category-aware skeleton placeholders.
@@ -12,6 +12,7 @@
 import { useEffect } from 'react';
 import type { DimensionValue } from 'react-native';
 import Animated, {
+  Easing,
   useAnimatedStyle,
   useSharedValue,
   withRepeat,
@@ -46,10 +47,11 @@ export function SkeletonShimmer({
       return;
     }
 
+    const shimmerEasing = Easing.inOut(Easing.ease);
     opacity.value = withRepeat(
       withSequence(
-        withTiming(0.3, { duration: 750 }),
-        withTiming(1.0, { duration: 750 })
+        withTiming(0.3, { duration: 600, easing: shimmerEasing }),
+        withTiming(1.0, { duration: 600, easing: shimmerEasing })
       ),
       -1 // infinite repeats
     );

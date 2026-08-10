@@ -36,6 +36,7 @@
     --secondary-foreground: 295 16% 15%; /* #2A1F2B */
     --muted: 326 19% 93%; /* #F0E9ED */
     --muted-foreground: 291 7% 41%; /* #6E6270 */
+    --muted-strong: 291 7% 35%; /* #5F5461 */
 
     /* Accent — subtle hover ground (not apricot) */
     --accent: 322 20% 92%; /* #EFE7EC */
@@ -45,6 +46,7 @@
     --highlight: 24 79% 57%; /* #E8823C */
     --highlight-foreground: 295 16% 15%; /* #2A1F2B */
     --surface-live: 26 78% 96%; /* #FDF5EF */
+    --wash-plum: 317 10% 86%; /* #DFD8DD */
 
     /* Category accents — Daylight hues */
     --category-accent1: 282 22% 38%; /* #6A4C77 */
@@ -55,12 +57,24 @@
     --destructive: 7 42% 46%; /* #A85145 */
     --destructive-foreground: 0 0% 100%; /* #FFFFFF */
     --success-state: 143 24% 38%; /* #4A7A5C */
+    --success-ink: 147 31% 27%; /* #2F5A42 */
     --warning: 35 51% 50%; /* #C08A3E */
-    --warning-strong: 35 54% 40%; /* #9C6E2E */
+    --warning-strong: 35 54% 40%; /* #9C6E2E — non-text only; fails AA on tinted grounds */
+    --warning-ink: 37 59% 27%; /* #6E4E1C */
     --warning-foreground: 295 16% 15%; /* #2A1F2B */
-    --surface-attention: 32 52% 95%; /* #F9F3EC */
-    --surface-positive: 140 12% 95%; /* #F1F4F2 */
+    --surface-attention: 35 52% 91%; /* #F4EADC */
+    --surface-positive: 140 16% 93%; /* #E9EFEB */
+    --surface-critical: 9 37% 93%; /* #F3E7E5 */
+    --pill-success: 147 16% 89%; /* #DEE7E2 */
+    --pill-warning: 34 50% 89%; /* #F1E5D5 */
+    --pill-destructive: 7 35% 90%; /* #EFE0DE */
+    --pill-short-notice: 20 52% 91%; /* #F4E4DC */
+    --chip-plum: 285 10% 92%; /* #EBE8EC */
+    --chip-cat1: 276 14% 93%; /* #EDEAEF */
+    --chip-cat2: 156 14% 93%; /* #EAEFED */
+    --chip-cat3: 347 31% 94%; /* #F5ECEE */
     --short-notice: 20 54% 50%; /* #C4693A */
+    --short-notice-ink: 20 65% 30%; /* #7E3C1B */
     --short-notice-strong: 21 60% 43%; /* #B15A2C */
 
     /* UI Elements */
@@ -72,8 +86,8 @@
     --scrim: 295 16% 15%; /* #2A1F2B — apply alpha at call site */
 
     /* Specialty: Skeleton Shimmer */
-    --skeleton-base: 322 20% 92%; /* #EFE7EC */
-    --skeleton-highlight: 330 25% 97%; /* #F9F5F7 */
+    --skeleton-base: 323 18% 91%; /* #EDE5EA */
+    --skeleton-highlight: 0 0% 100%; /* #FFFFFF */
 
     /* Specialty: Inline Error */
     --error-inline-bg: 12 65% 95%; /* #FBEFEC */
@@ -112,6 +126,7 @@
 
     --muted: 278 20% 16%; /* #2A2030 */
     --muted-foreground: 296 9% 67%; /* #B2A4B3 */
+    --muted-strong: 291 9% 29%; /* #4E4350 — unverified */
 
     --accent: 286 15% 17%; /* #2E2431 */
     --accent-foreground: 309 20% 93%; /* #F1EAF0 */
@@ -119,6 +134,7 @@
     --highlight: 27 87% 62%; /* #F2954B */
     --highlight-foreground: 291 14% 10%; /* #1B151C */
     --surface-live: 347 16% 18%; /* #342629 */
+    --wash-plum: 286 15% 17%; /* #2E2431 — unverified */
 
     --category-accent1: 284 21% 63%; /* #A98CB4 */
     --category-accent2: 159 28% 59%; /* #79B39F */
@@ -127,12 +143,24 @@
     --destructive: 6 61% 67%; /* #DE8378 */
     --destructive-foreground: 291 14% 10%; /* #1B151C */
     --success-state: 142 35% 58%; /* #6FB98A */
+    --success-ink: 142 35% 58%; /* #6FB98A — unverified */
     --warning: 37 67% 63%; /* #E0B061 */
     --warning-strong: 38 77% 73%; /* #EFC886 */
+    --warning-ink: 38 77% 73%; /* #EFC886 — unverified */
     --warning-foreground: 291 14% 10%; /* #1B151C */
     --surface-attention: 4 13% 20%; /* #3B2E2D */
     --surface-positive: 240 4% 18%; /* #2C2C30 */
+    --surface-critical: 4 13% 20%; /* #3B2E2D — unverified */
+    --pill-success: 240 4% 18%; /* #2C2C30 — unverified */
+    --pill-warning: 4 13% 20%; /* #3B2E2D — unverified */
+    --pill-destructive: 5 31% 14%; /* #2E1A18 — unverified */
+    --pill-short-notice: 5 31% 14%; /* #2E1A18 — unverified */
+    --chip-plum: 286 15% 17%; /* #2E2431 — unverified */
+    --chip-cat1: 278 20% 16%; /* #2A2030 — unverified */
+    --chip-cat2: 278 20% 16%; /* #2A2030 — unverified */
+    --chip-cat3: 278 20% 16%; /* #2A2030 — unverified */
     --short-notice: 25 74% 65%; /* #E89A63 */
+    --short-notice-ink: 23 77% 74%; /* #F0B189 — unverified */
     --short-notice-strong: 23 77% 74%; /* #F0B189 */
 
     --border: 279 18% 19%; /* #332839 */

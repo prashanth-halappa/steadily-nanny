@@ -57,6 +57,11 @@ mock.module('@/src/domains/today/components/HandoffChipsCard', () => ({
 mock.module('@/src/domains/today/hooks/useHouseholdIsLive', () => ({
   useHouseholdIsLive: () => false,
 }));
+// Feeds the hero illustration only; this file renders without a QueryClient
+// and is about overdue-vs-inbox precedence.
+mock.module('@/src/domains/today/hooks/useTodayCoverRows', () => ({
+  useTodayCoverRows: () => ({ rows: [], isLoading: false }),
+}));
 
 const HOUSEHOLD_ID = 'household-t1-1';
 let mockUseOverdueClockOut: ReturnType<typeof mock>;

@@ -18,7 +18,12 @@ import type { Expense } from '@steadily-nanny/shared-types/schemas/expense.schem
 import * as expenseSchemaModule from '@steadily-nanny/shared-types/schemas/expense.schema';
 import * as timesheetSchemaModule from '@steadily-nanny/shared-types/schemas/timesheet.schema';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import {
+  fireEvent,
+  render,
+  waitFor,
+  within,
+} from '@testing-library/react-native';
 import type React from 'react';
 import { useAuthStore } from '@/src/store/auth';
 
@@ -338,7 +343,7 @@ beforeAll(async () => {
 });
 
 function renderParentView(
-  opts: { readOnly?: boolean } = {},
+  opts: { readOnly?: boolean; isPastMember?: boolean } = {},
   queryClient = new QueryClient({
     defaultOptions: {
       queries: { retry: false, gcTime: 0 },
@@ -362,6 +367,7 @@ function renderParentView(
         isNextWeekDisabled={false}
         isPreviousWeekDisabled={false}
         readOnly={opts.readOnly}
+        isPastMember={opts.isPastMember}
       />
     </QueryClientProvider>
   );
@@ -433,6 +439,27 @@ describe('ParentWeekView — reopen affordance', () => {
     );
   });
 
+  // Daylight v2: the affordance stayed at `hours-reopen-button`, but the
+  // block around it became the STATUS card — the reopen control belongs
+  // beside the "approved and locked" sentence that explains why it exists,
+  // not beside the figure in the hero band or adrift in the footer.
+  it('renders the reopen control inside the status card, not the hero band', async () => {
+    stubApprovedWeek();
+    const { getByTestId } = renderParentView();
+
+    await waitFor(() =>
+      expect(getByTestId('hours-reopen-button')).toBeTruthy()
+    );
+    expect(
+      within(getByTestId('hours-week-total')).getByTestId('hours-reopen-button')
+    ).toBeTruthy();
+    expect(
+      within(getByTestId('hours-hero-band')).queryByTestId(
+        'hours-reopen-button'
+      )
+    ).toBeNull();
+  });
+
   it('does not render reopen on submitted / queried / open weeks', async () => {
     for (const status of ['submitted', 'queried', 'open'] as const) {
       getByIdMock.mockImplementation(() =>
@@ -459,6 +486,34 @@ describe('ParentWeekView — reopen affordance', () => {
 
     await waitFor(() => expect(getByTestId('hours-week-list')).toBeTruthy());
     expect(queryByTestId('hours-reopen-button')).toBeNull();
+  });
+
+  // `isPastMember` is a SEPARATE prop from `readOnly`, and conflating them
+  // was the easy mistake: a helper is read-only every day of her membership
+  // and must never be told her record is being kept for her after she left.
+  it('a helper is read-only but not a past member — no past-member note', async () => {
+    stubApprovedWeek();
+    const { getByTestId, queryByTestId } = renderParentView({ readOnly: true });
+
+    await waitFor(() => expect(getByTestId('hours-hero-band')).toBeTruthy());
+    expect(queryByTestId('hours-past-member-note')).toBeNull();
+  });
+
+  it('a past member gets the note, in the hero band', async () => {
+    stubApprovedWeek();
+    const { getByTestId } = renderParentView({
+      readOnly: true,
+      isPastMember: true,
+    });
+
+    await waitFor(() =>
+      expect(getByTestId('hours-past-member-note')).toBeTruthy()
+    );
+    expect(
+      within(getByTestId('hours-hero-band')).getByTestId(
+        'hours-past-member-note'
+      )
+    ).toBeTruthy();
   });
 
   it('confirming with a reason calls the reopen mutation; cancelling does not', async () => {

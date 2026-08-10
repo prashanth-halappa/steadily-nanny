@@ -30,10 +30,10 @@
 import { FlashList } from '@shopify/flash-list';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { View } from 'react-native';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { useTabBarScrollPadding } from '@/lib/layout/useTabBarScrollPadding';
 import { ErrorState } from '@/src/components/custom/ErrorState';
-import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { ExpenseAddSheet } from '@/src/domains/expenses/components/ExpenseAddSheet';
 import { ExpensesListCard } from '@/src/domains/expenses/components/ExpensesListCard';
 import { ReimbursementsCard } from '@/src/domains/expenses/components/ReimbursementsCard';
@@ -68,10 +68,12 @@ import { derivePaidState, deriveReopenedPaidState } from '../utils/paidState';
 import { useReopenedNotice } from '../utils/reopenedNotice';
 import { describeTimeEntryWriteError } from '../utils/timeEntryWriteError';
 import { EarningsBreakdownSheet } from './EarningsBreakdownSheet';
-import { PaidStateCard } from './PaidStateCard';
+import { HoursHeroBand } from './HoursHeroBand';
+import { HoursWeekSkeleton } from './HoursWeekSkeleton';
 import { TimeEntryDayRow } from './TimeEntryDayRow';
 import { VoidEntryDialog } from './VoidEntryDialog';
 import { WeekExportAction } from './WeekExportAction';
+import { WeekMoneyCard } from './WeekMoneyCard';
 import { WeekTotal } from './WeekTotal';
 
 interface NannyWeekViewProps {
@@ -93,6 +95,10 @@ interface NannyWeekViewProps {
    * expense add/edit/withdraw. Owned by `HoursScreen`, which reads
    * `useIsOnboarded().isPastMember`. */
   readOnly?: boolean;
+  /** Same fact as `readOnly` for a carer today, named for what the hero
+   * band says about it ("your record stays here") rather than for what it
+   * hides. */
+  isPastMember?: boolean;
 }
 
 export function NannyWeekView({
@@ -107,6 +113,7 @@ export function NannyWeekView({
   isNextWeekDisabled,
   isPreviousWeekDisabled,
   readOnly = false,
+  isPastMember = false,
 }: NannyWeekViewProps) {
   const { t } = useTranslation('hours');
   const { t: tExpenses } = useTranslation('expenses');
@@ -260,8 +267,25 @@ export function NannyWeekView({
       });
   };
 
+  // The hero band's title and week label paint now; only the figure and the
+  // day rows wait (screens-hours.md §7 — never a full-screen spinner).
   if (entriesQuery.isLoading) {
-    return <LoadingIndicator testID="hours-loading" />;
+    return (
+      <View
+        style={{
+          ...SCREEN_CONTENT_STYLE,
+          paddingBottom: tabBarScrollPadding,
+        }}
+      >
+        <HoursWeekSkeleton
+          weekRangeLabel={weekRangeLabel}
+          onPreviousWeek={onPreviousWeek}
+          onNextWeek={onNextWeek}
+          isPreviousDisabled={isPreviousWeekDisabled}
+          isNextDisabled={isNextWeekDisabled}
+        />
+      </View>
+    );
   }
 
   // Same split as `ParentWeekView`: hours failing blanks the screen; a
@@ -362,32 +386,52 @@ export function NannyWeekView({
           />
         )}
         ListHeaderComponent={
-          <WeekTotal
-            testID="hours-week-total"
-            weekRangeLabel={weekRangeLabel}
-            totalLabel={weekHoursLabel}
-            overtimeLabel={overtimeLabel}
-            onPreviousWeek={onPreviousWeek}
-            onNextWeek={onNextWeek}
-            isNextDisabled={isNextWeekDisabled}
-            isPreviousDisabled={isPreviousWeekDisabled}
-            timesheetStatus={timesheet?.status ?? null}
-            totalMinutes={totalMinutes}
-            earnings={earnings}
-            earningsRole="nanny"
-            earningsCarerId={timesheet?.carer_id ?? null}
-            earningsCarerDisplayName={timesheet?.carer_display_name ?? ''}
-            onPressEarnings={() => setIsBreakdownVisible(true)}
-            approvedDateLabel={approvedDateLabel}
-            householdName={activeHousehold.household?.name ?? null}
-            earningsReopened={reopened}
-            earningsReopenReason={timesheet?.reopen_reason ?? null}
-            earningsError={timesheetQuery.isError}
-            onRetryEarnings={() => void timesheetQuery.refetch()}
-          />
+          <>
+            <HoursHeroBand
+              weekRangeLabel={weekRangeLabel}
+              onPreviousWeek={onPreviousWeek}
+              onNextWeek={onNextWeek}
+              isNextDisabled={isNextWeekDisabled}
+              isPreviousDisabled={isPreviousWeekDisabled}
+              totalLabel={weekHoursLabel}
+              overtimeLabel={overtimeLabel}
+              isPastMember={isPastMember}
+            />
+            <WeekTotal
+              testID="hours-week-total"
+              timesheetStatus={timesheet?.status ?? null}
+              earnings={earnings}
+              earningsRole="nanny"
+              approvedDateLabel={approvedDateLabel}
+              householdName={activeHousehold.household?.name ?? null}
+              earningsReopened={reopened}
+              earningsReopenReason={timesheet?.reopen_reason ?? null}
+            />
+          </>
         }
         ListFooterComponent={
           <>
+            {/* §7 fixed order item 4 — the money card sits under the day
+                rows it totals: gross, breakdown link and paid state, one
+                card (screens-hours.md §5). */}
+            <WeekMoneyCard
+              earnings={earnings ?? null}
+              timesheetStatus={timesheet?.status ?? null}
+              viewerRole="nanny"
+              carerId={timesheet?.carer_id ?? null}
+              carerDisplayName={timesheet?.carer_display_name ?? ''}
+              totalMinutes={totalMinutes}
+              earningsError={timesheetQuery.isError}
+              onRetryEarnings={() => void timesheetQuery.refetch()}
+              onPressBreakdown={() => setIsBreakdownVisible(true)}
+              // "Paid £X on <date>", and what is still owed. No
+              // `onMarkPaidPress` — recording a payment is the paying
+              // family's action, and its absence is the whole read-only
+              // contract (see PaidStateSection's module doc).
+              paidState={showSettlementHistory ? paidState : null}
+              payments={payments}
+              settlementCurrency={settlementCurrency}
+            />
             {/* §7 fixed order item 3 — after day rows, approved-only,
                 never rendered when the week has no approved claims. */}
             <ReimbursementsCard
@@ -405,28 +449,15 @@ export function NannyWeekView({
               onWithdraw={readOnly ? undefined : handleWithdrawExpense}
               onAddExpense={readOnly ? undefined : handleOpenAddExpense}
             />
-            {/* "Paid £X on <date>", and what is still owed. No
-                `onMarkPaidPress` — recording a payment is the paying
-                family's action, and its absence is the whole read-only
-                contract (see PaidStateCard's module doc). */}
-            {showSettlementHistory && timesheet ? (
-              <>
-                <PaidStateCard
-                  paidState={paidState}
-                  payments={payments}
-                  currency={settlementCurrency}
-                />
-                {isApproved ? (
-                  <WeekExportAction
-                    timesheetId={timesheet.id}
-                    weekStartISO={weekStartISO}
-                    weekRangeLabel={weekRangeLabel}
-                    carerName={timesheet.carer_display_name}
-                    earnings={earningsOk}
-                    paidState={paidState}
-                  />
-                ) : null}
-              </>
+            {showSettlementHistory && timesheet && isApproved ? (
+              <WeekExportAction
+                timesheetId={timesheet.id}
+                weekStartISO={weekStartISO}
+                weekRangeLabel={weekRangeLabel}
+                carerName={timesheet.carer_display_name}
+                earnings={earningsOk}
+                paidState={paidState}
+              />
             ) : null}
           </>
         }

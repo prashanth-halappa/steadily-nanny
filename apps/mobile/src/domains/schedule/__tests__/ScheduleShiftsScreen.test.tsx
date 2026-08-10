@@ -225,8 +225,10 @@ describe('ScheduleShiftsScreen', () => {
     expect(getByTestId('calendar-view-switcher')).toBeTruthy();
     expect(getByTestId('schedule-shifts-list')).toBeTruthy();
     expect(getByTestId('schedule-shift-shift-mon')).toBeTruthy();
-    expect(getByTestId('schedule-shift-status-shift-mon')).toBeTruthy();
+    // daylight-v2 §3: a confirmed row is a settled fact — no StatusPill.
+    expect(queryByTestId('schedule-shift-status-shift-mon')).toBeNull();
     expect(getByTestId('schedule-shift-shift-tue')).toBeTruthy();
+    expect(getByTestId('schedule-shift-status-shift-tue')).toBeTruthy();
     expect(queryByTestId('schedule-shifts-empty')).toBeNull();
     expect(queryByTestId('schedule-shifts-unavailable')).toBeNull();
   });

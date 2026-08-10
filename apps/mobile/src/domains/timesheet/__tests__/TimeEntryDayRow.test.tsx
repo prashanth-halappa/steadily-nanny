@@ -96,10 +96,12 @@ mock.module('@rn-primitives/alert-dialog', () => {
 });
 
 let TimeEntryDayRow: typeof import('../components/TimeEntryDayRow').TimeEntryDayRow;
+let CHEVRON_SLOT: number;
 
 beforeAll(async () => {
   TimeEntryDayRow = (await import('../components/TimeEntryDayRow'))
     .TimeEntryDayRow;
+  CHEVRON_SLOT = (await import('../components/TimeEntryRow')).CHEVRON_SLOT;
 });
 
 function makeEntry(overrides: Partial<TimeEntry> = {}): TimeEntry {
@@ -385,7 +387,7 @@ describe('TimeEntryDayRow — correction affordance (P0-2)', () => {
       />
     );
 
-    expect(getByText(/edited/)).toBeTruthy();
+    expect(getByText('editedMarker')).toBeTruthy();
   });
 });
 
@@ -522,7 +524,7 @@ describe('TimeEntryDayRow — the first fragment of a split session (C6)', () =>
       />
     );
 
-    expect(queryByText(/edited/)).toBeNull();
+    expect(queryByText('editedMarker')).toBeNull();
   });
 
   it('still marks a genuinely corrected ordinary entry as edited', () => {
@@ -540,7 +542,7 @@ describe('TimeEntryDayRow — the first fragment of a split session (C6)', () =>
       />
     );
 
-    expect(getByText(/edited/)).toBeTruthy();
+    expect(getByText('editedMarker')).toBeTruthy();
   });
 });
 
@@ -633,10 +635,14 @@ describe('TimeEntryDayRow — header alignment', () => {
       />
     );
 
-    // The header pads by the entry card's own 12px and then mirrors the
-    // row's right-hand group (figure + gap + reserved chevron slot), so the
-    // day total shares a column with the durations it sums.
-    expect(getByTestId('hours-day-header').props.className).toContain('pr-3');
+    // The header mirrors the entry line's right-hand group by CONSTRUCTION:
+    // figure, 8px gap, then the same reserved `CHEVRON_SLOT` spacer the line
+    // uses. The old hand-computed `pr-3` was the arithmetic this replaces.
+    const header = getByTestId('hours-day-header');
+    const childArray = [header.props.children].flat();
+    const rightGroup = childArray[childArray.length - 1];
+    const spacer = [rightGroup.props.children].flat().at(-1);
+    expect(spacer.props.style.width).toBe(CHEVRON_SLOT);
   });
 
   it('empty day has no entry cards', () => {
@@ -651,6 +657,133 @@ describe('TimeEntryDayRow — header alignment', () => {
 
     expect(queryByTestId('hours-day-header')).toBeNull();
     expect(queryByTestId(/hours-edit-entry/)).toBeNull();
+  });
+});
+
+describe('TimeEntryDayRow — the row owns the ground', () => {
+  /** The single elevated container inside the row's outer spacing wrapper. */
+  function rowSurface(outer: { props: { [key: string]: unknown } }) {
+    return [outer.props.children].flat()[0] as {
+      props: { className: string; style: Record<string, unknown>[] };
+    };
+  }
+
+  it('is a 56pt card-ground ledger row — the entries inside it are lines', () => {
+    const entry = makeEntry({ clock_out_at: '2026-08-01T09:58:00.000Z' });
+    const { getByTestId } = render(
+      <TimeEntryDayRow
+        date="2026-08-01"
+        entries={[entry]}
+        nowMs={NOW_MS}
+        timeZone="Europe/London"
+        testID="hours-day-row"
+      />
+    );
+
+    const surface = rowSurface(getByTestId('hours-day-row'));
+    expect(surface.props.className).toContain('rounded-row');
+    expect(surface.props.className).toContain('bg-card');
+    expect(
+      surface.props.style
+        .flat()
+        .some((s: { minHeight?: number }) => s?.minHeight === 56)
+    ).toBe(true);
+  });
+
+  it('a running day takes the live ground and a live dot instead of the flat row', () => {
+    const entry = makeEntry({
+      id: 'running',
+      clock_in_at: new Date(NOW_MS - 60 * 60 * 1000).toISOString(),
+      clock_out_at: null,
+      status: 'running',
+    });
+    const { getByTestId } = render(
+      <TimeEntryDayRow
+        date="2026-08-01"
+        entries={[entry]}
+        nowMs={NOW_MS}
+        timeZone="Europe/London"
+        testID="hours-day-row"
+      />
+    );
+
+    expect(getByTestId('hours-day-live')).toBeTruthy();
+    const surface = rowSurface(getByTestId('hours-day-row'));
+    // Apricot is applied INSTEAD of `bg-card`, never on top of it.
+    expect(surface.props.className).not.toContain('bg-card');
+    expect(
+      surface.props.style
+        .flat()
+        .some((s: { backgroundColor?: string }) => !!s?.backgroundColor)
+    ).toBe(true);
+  });
+
+  it('shows no live dot on a day whose entries are all finished', () => {
+    const entry = makeEntry({ clock_out_at: '2026-08-01T09:58:00.000Z' });
+    const { queryByTestId } = render(
+      <TimeEntryDayRow
+        date="2026-08-01"
+        entries={[entry]}
+        nowMs={NOW_MS}
+        timeZone="Europe/London"
+      />
+    );
+
+    expect(queryByTestId('hours-day-live')).toBeNull();
+  });
+});
+
+describe('TimeEntryDayRow — per-entry durations only on a multi-entry day', () => {
+  it('omits the entry duration on a single-entry day — the day total IS it', () => {
+    const entry = makeEntry({ clock_out_at: '2026-08-01T09:58:00.000Z' });
+    const { getByTestId, queryByTestId } = render(
+      <TimeEntryDayRow
+        date="2026-08-01"
+        entries={[entry]}
+        nowMs={NOW_MS}
+        timeZone="Europe/London"
+        testID="hours-day-row"
+      />
+    );
+
+    expect(queryByTestId(`hours-entry-duration-${entry.id}`)).toBeNull();
+    expect(
+      within(getByTestId('hours-day-row')).getByTestId('hours-day-total').props
+        .children
+    ).toBe('2h');
+  });
+
+  it('shows each entry duration once the day has more than one', () => {
+    const morning = makeEntry({
+      id: 'morning',
+      clock_in_at: '2026-08-01T07:00:00.000Z',
+      clock_out_at: '2026-08-01T09:00:00.000Z',
+    });
+    const afternoon = makeEntry({
+      id: 'afternoon',
+      clock_in_at: '2026-08-01T13:00:00.000Z',
+      clock_out_at: '2026-08-01T14:00:00.000Z',
+    });
+    const { getByTestId } = render(
+      <TimeEntryDayRow
+        date="2026-08-01"
+        entries={[morning, afternoon]}
+        nowMs={NOW_MS}
+        timeZone="Europe/London"
+        testID="hours-day-row"
+      />
+    );
+
+    expect(getByTestId('hours-entry-duration-morning').props.children).toBe(
+      '2h'
+    );
+    expect(getByTestId('hours-entry-duration-afternoon').props.children).toBe(
+      '1h'
+    );
+    expect(
+      within(getByTestId('hours-day-row')).getByTestId('hours-day-total').props
+        .children
+    ).toBe('3h');
   });
 });
 

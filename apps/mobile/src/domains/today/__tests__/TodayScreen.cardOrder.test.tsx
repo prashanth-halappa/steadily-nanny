@@ -78,6 +78,11 @@ mock.module('@/src/domains/inbox', () => ({
 mock.module('@/src/domains/today/hooks/useUncoveredToday', () => ({
   useUncoveredToday: () => ({ status: 'covered', localDate: '2026-03-23' }),
 }));
+// Feeds the hero illustration only; this file renders without a QueryClient
+// and is about card ORDER.
+mock.module('@/src/domains/today/hooks/useTodayCoverRows', () => ({
+  useTodayCoverRows: () => ({ rows: [], isLoading: false }),
+}));
 mock.module('@/src/domains/today/components/ClockInCard', () => ({
   ClockInCard: marker('clock-in'),
 }));

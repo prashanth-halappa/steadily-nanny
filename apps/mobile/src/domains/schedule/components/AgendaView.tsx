@@ -13,22 +13,34 @@ import {
 } from '@steadily-nanny/shared-types/schemas/shift.schema';
 import { uncoveredKey } from '@steadily-nanny/shared-types/uncoveredCare';
 import { type Href, useRouter } from 'expo-router';
+import { AlertCircle, Plane } from 'lucide-react-native';
 import { type RefObject, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Pressable, View } from 'react-native';
 import { useTabBarScrollPadding } from '@/lib/layout/useTabBarScrollPadding';
 import { cn } from '@/lib/utils';
 import { Button } from '@/src/components/ui/button';
+import { IconChip } from '@/src/components/ui/icon-chip';
+import { LiveDot } from '@/src/components/ui/live-dot';
 import {
   StatusPill,
   type StatusPillProps,
 } from '@/src/components/ui/status-pill';
-import { Body, DayGroup, Figure, Small } from '@/src/components/ui/typography';
+import {
+  Body,
+  DayGroup,
+  Figure,
+  H4,
+  MetadataLabel,
+  Small,
+} from '@/src/components/ui/typography';
 import { useHouseholdCarers } from '@/src/domains/schedule/hooks/useHouseholdCarers';
 import { resolveMemberDisplayName } from '@/src/domains/schedule/utils/memberDisplayName';
 import {
   formatShiftTime,
   localDateToWeekday,
+  RESOLVED_STATUSES,
+  shiftMinutes,
 } from '@/src/domains/schedule/utils/shiftGrouping';
 import { timeOffRowsForLocalDate } from '@/src/domains/schedule/utils/timeOffOverlap';
 import {
@@ -44,20 +56,11 @@ import { useCreateParentCover } from '@/src/hooks/mutations/useCreateParentCover
 import { useRemoveParentCover } from '@/src/hooks/mutations/useRemoveParentCover';
 import { useChildren } from '@/src/hooks/queries/useChildren';
 import { useHouseholdMembers } from '@/src/hooks/queries/useHouseholdMembers';
+import { localDateInZone } from '@/src/lib/localDate';
 import { utcIsoToWallClockHHMM } from '@/src/lib/wallClock';
 import { useAuthStore } from '@/src/store/auth';
 import { useElevation } from '~/lib/design-tokens/elevation';
 import { useThemeColors } from '~/lib/design-tokens/useThemeColors';
-
-// Row radius (`rounded-row`, tailwind.config.js) — no shared JS constant
-// exists for it, so it's named here once for the accent-bar style, same
-// approach as `card.tsx`'s CARD_RADIUS.
-const ROW_RADIUS = 16;
-
-/** Statuses that read as a resolved record, not a thing to act on (T4). */
-const RESOLVED_STATUSES = new Set<Shift['status']>(['cancelled', 'declined']);
-/** Statuses that still need a human — get the T3 accent bar. */
-const NEEDS_ACTION_STATUSES = new Set<Shift['status']>(['pending', 'draft']);
 
 type ShiftStatusVariant = NonNullable<StatusPillProps['variant']>;
 
@@ -104,6 +107,7 @@ export type AgendaItem =
       /** Sum of shifts that count as cover — excludes cancelled/declined.
        * Omitted (no total shown) when the day has no shifts at all. */
       totalMinutes: number | null;
+      isToday: boolean;
     }
   | { type: 'away'; key: string; localDate: string; message: string | null }
   | {
@@ -114,15 +118,6 @@ export type AgendaItem =
       highlighted: boolean;
     }
   | { type: 'shift'; key: string; shift: Shift };
-
-/** Whole-minute duration between two ISO instants, floored (never negative
- * with real data, but a display sum must not go negative). */
-function shiftMinutes(shift: Shift): number {
-  const minutes =
-    (new Date(shift.ends_at).getTime() - new Date(shift.starts_at).getTime()) /
-    60000;
-  return Math.max(0, minutes);
-}
 
 function UncoveredRow({
   localDate,
@@ -161,6 +156,7 @@ function UncoveredRow({
   const { t: tToday } = useTranslation('today');
   const router = useRouter();
   const colors = useThemeColors();
+  const elevation = useElevation();
   const createCover = useCreateParentCover();
   const key = uncoveredKey(window);
 
@@ -230,19 +226,23 @@ function UncoveredRow({
   return (
     <View
       testID={`schedule-uncovered-${key}`}
-      className="mx-5.5 mb-2 gap-3 rounded-row p-3"
-      style={{
-        backgroundColor: colors.surfaceAttention,
-        borderWidth: highlighted ? 2 : 0,
-        borderColor: highlighted ? colors.warningStrong : undefined,
-      }}
+      className="mx-5.5 mb-2 gap-3 rounded-row p-4"
+      style={[
+        elevation.cardProminent,
+        {
+          backgroundColor: colors.surfaceAttention,
+          borderWidth: highlighted ? 2 : 0,
+          borderColor: highlighted ? colors.warningStrong : undefined,
+        },
+      ]}
     >
       <View className="gap-1">
-        <View className="flex-row items-center justify-between gap-2">
-          <Body weight="medium">{childName}</Body>
+        <View className="flex-row items-center gap-2">
+          <IconChip tone="brand" icon={AlertCircle} />
+          <H4 className="flex-1">{childName}</H4>
           <StatusPill variant="pending" label={t('cover.rowPill')} />
         </View>
-        <Small className="text-muted-foreground">
+        <Small className="text-muted-strong">
           {timeLabel} · {causeLabel}
         </Small>
       </View>
@@ -326,12 +326,29 @@ function ShiftRow({
   const { t } = useTranslation('schedule');
   const router = useRouter();
   const elevation = useElevation();
-  const colors = useThemeColors();
   const removeCover = useRemoveParentCover();
   const isParentCover = shift.kind === SHIFT_KINDS.PARENT_COVER;
   const variant = STATUS_TO_VARIANT[shift.status];
   const isResolved = !isParentCover && RESOLVED_STATUSES.has(shift.status);
-  const needsAction = !isParentCover && NEEDS_ACTION_STATUSES.has(shift.status);
+  // "Shift in progress" (L2) — a currently-confirmed shift whose window
+  // straddles now. Computed once per render, not a ticking clock: the row
+  // is close enough to live the moment any refetch/refocus re-renders it,
+  // and a per-second timer here would be a stopwatch nobody asked for.
+  const startMs = new Date(shift.starts_at).getTime();
+  const endMs = new Date(shift.ends_at).getTime();
+  const nowMs = Date.now();
+  const isLive =
+    !isParentCover &&
+    shift.status === 'confirmed' &&
+    startMs <= nowMs &&
+    nowMs < endMs;
+  // StatusPill only when the row isn't already a settled fact (L3 rule) —
+  // a confirmed/completed row showing "Confirmed" on every single row is
+  // the noise the pill was invented to avoid, not information.
+  const showStatusPill =
+    !isParentCover &&
+    shift.status !== 'confirmed' &&
+    shift.status !== 'completed';
 
   const parentCoverLabel = (() => {
     if (!isParentCover) return null;
@@ -350,26 +367,12 @@ function ShiftRow({
     return t('cover.parentCoveringBy', { parentName });
   })();
 
+  const TimeText = isResolved || isParentCover ? Body : Figure;
+
   const rowBody = (
     <>
-      {needsAction ? (
-        <View
-          testID={`schedule-shift-accent-${shift.id}`}
-          pointerEvents="none"
-          style={{
-            position: 'absolute',
-            left: 0,
-            top: 0,
-            bottom: 0,
-            width: 3,
-            borderTopLeftRadius: ROW_RADIUS,
-            borderBottomLeftRadius: ROW_RADIUS,
-            backgroundColor: colors.warningStrong,
-          }}
-        />
-      ) : null}
       <View className="gap-1">
-        <Body
+        <TimeText
           tabular
           className={
             isResolved || isParentCover ? 'text-muted-foreground' : undefined
@@ -378,7 +381,7 @@ function ShiftRow({
         >
           {formatShiftTime(shift.starts_at, displayTimeZone)} –{' '}
           {formatShiftTime(shift.ends_at, displayTimeZone)}
-        </Body>
+        </TimeText>
         {parentCoverLabel ? (
           <Small className="text-muted-foreground">{parentCoverLabel}</Small>
         ) : null}
@@ -401,11 +404,15 @@ function ShiftRow({
               label={t('shifts.shortNotice')}
             />
           ) : null}
-          <StatusPill
-            testID={`schedule-shift-status-${shift.id}`}
-            variant={variant}
-            label={t(STATUS_TO_LABEL_KEY[shift.status])}
-          />
+          {isLive ? (
+            <LiveDot testID={`schedule-shift-live-${shift.id}`} />
+          ) : showStatusPill ? (
+            <StatusPill
+              testID={`schedule-shift-status-${shift.id}`}
+              variant={variant}
+              label={t(STATUS_TO_LABEL_KEY[shift.status])}
+            />
+          ) : null}
         </View>
       ) : null}
     </>
@@ -436,6 +443,12 @@ function ShiftRow({
     );
   }
 
+  const rowStyle = isLive
+    ? [elevation.liveCard, { backgroundColor: elevation.liveCardBackground }]
+    : isResolved
+      ? undefined
+      : elevation.row;
+
   return (
     <Pressable
       testID={`schedule-shift-${shift.id}`}
@@ -445,9 +458,9 @@ function ShiftRow({
       }
       className={cn(
         'relative mx-5.5 mb-2 flex-row items-center justify-between gap-2 rounded-row p-3',
-        isResolved ? 'bg-muted' : 'bg-card'
+        isResolved ? 'bg-muted' : isLive ? undefined : 'bg-card'
       )}
-      style={isResolved ? undefined : elevation.row}
+      style={rowStyle}
     >
       {rowBody}
     </Pressable>
@@ -468,12 +481,14 @@ export function AgendaView({
   listRef,
 }: AgendaViewProps) {
   const { t } = useTranslation('schedule');
+  const { t: tCommon } = useTranslation('common');
   // Same tab-bar dead-zone fix as Settings (BUG1) — this is one of the
   // Schedule tab's own scrollable views, so it needs the same real
   // clearance a fixed magic number can't give.
   const tabBarScrollPadding = useTabBarScrollPadding();
   const currentUserId = useAuthStore(s => s.session?.user?.id ?? null);
   const membersQuery = useHouseholdMembers(householdId);
+  const todayLocalDate = localDateInZone(displayTimeZone ?? householdTimeZone);
   const membersByUserId = useMemo(
     () =>
       new Map(
@@ -557,6 +572,7 @@ export function AgendaView({
         label: `${t(`weekday.${localDateToWeekday(localDate)}`)} · ${formatDisplayDate(localDate)}`,
         localDate,
         totalMinutes,
+        isToday: localDate === todayLocalDate,
       });
       for (const row of timeOffRowsForLocalDate(
         timeOff,
@@ -618,6 +634,7 @@ export function AgendaView({
     weekDates,
     uncoveredByDay,
     focusUncoveredKey,
+    todayLocalDate,
     t,
   ]);
 
@@ -647,8 +664,20 @@ export function AgendaView({
         renderItem={({ item }) => {
           if (item.type === 'header') {
             return (
-              <View className="flex-row items-baseline justify-between px-5.5 pt-4 pb-1">
-                <DayGroup>{item.label}</DayGroup>
+              <View className="flex-row items-center justify-between px-5.5 pt-6 pb-2">
+                <View className="flex-row items-center gap-2">
+                  <DayGroup>{item.label}</DayGroup>
+                  {item.isToday ? (
+                    <View
+                      testID={`schedule-day-today-${item.localDate}`}
+                      className="rounded-chip bg-chip-plum px-2 py-0.5"
+                    >
+                      <MetadataLabel className="text-primary">
+                        {tCommon('tabs.today')}
+                      </MetadataLabel>
+                    </View>
+                  ) : null}
+                </View>
                 {item.totalMinutes !== null ? (
                   <Figure testID={`schedule-day-total-${item.localDate}`}>
                     {formatDuration(item.totalMinutes)}
@@ -661,16 +690,19 @@ export function AgendaView({
             return (
               <View
                 testID={`schedule-away-${item.localDate}`}
-                className="mx-5.5 mb-2 rounded-row bg-muted px-3 py-2"
+                className="mx-5.5 mb-2 flex-row items-center gap-3 rounded-row bg-muted px-3 py-2"
               >
-                <Body weight="medium" className="text-muted-foreground">
-                  {t('shifts.awayBand')}
-                </Body>
-                {item.message ? (
-                  <Small className="text-muted-foreground">
-                    {item.message}
-                  </Small>
-                ) : null}
+                <IconChip tone="people" icon={Plane} />
+                <View className="flex-1 gap-1">
+                  <Body weight="medium" className="text-muted-foreground">
+                    {t('shifts.awayBand')}
+                  </Body>
+                  {item.message ? (
+                    <Small className="text-muted-foreground">
+                      {item.message}
+                    </Small>
+                  ) : null}
+                </View>
               </View>
             );
           }

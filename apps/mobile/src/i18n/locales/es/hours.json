@@ -48,7 +48,6 @@
   "nannyStatusSubmitted": "Con la familia",
   "nannyStatusQueried": "La familia hizo una pregunta",
   "approvedByHousehold": "Aprobada por {{household}} el {{date}}.",
-  "approvedByHouseholdWithGross": "Aprobada por {{household}} el {{date}}. {{amount}}.",
   "payBoundary": "Steadily totaliza el sueldo; el pago en sí se realiza fuera de la app.",
   "earningsEstimatedGross": "Sueldo bruto estimado",
   "earningsApprovedGross": "Sueldo bruto aprobado",
@@ -140,5 +139,9 @@
     "receiptPaidToDate": "Pagado hasta ahora",
     "receiptBalance": "Pendiente de pago",
     "receiptFooter": "Basado en las horas registradas en Steadily. Los impuestos y las deducciones los gestiona tu nómina."
-  }
+  },
+  "pastMemberNote": "Ya no estás en este hogar. Tu registro se queda aquí.",
+  "editedMarker": "Corregido",
+  "earningsSeeBreakdown": "Ver el desglose",
+  "earningsRateSubline": "{{duration}} × {{rate}}"
 }

@@ -212,6 +212,16 @@ beforeAll(async () => {
   TodayCoverage = mod.TodayCoverage;
 });
 
+/** The typography factory layers `[baseStyle, weight, tabular, caller]`. */
+function mergedStyle(style: unknown): Record<string, unknown> {
+  const layers = Array.isArray(style) ? style.flat() : [style];
+  const merged: Record<string, unknown> = {};
+  for (const layer of layers) {
+    if (layer && typeof layer === 'object') Object.assign(merged, layer);
+  }
+  return merged;
+}
+
 function testIdIndex(
   tree: ReturnType<typeof renderWithProviders>,
   testId: string
@@ -297,5 +307,39 @@ describe('TodayCoverage — 10 Aug 2026 gap + plan', () => {
     expect(testIdIndex(tree, 'today-coverage-gap-headline')).toBeLessThan(
       testIdIndex(tree, 'today-coverage-plan-confirmed-1122')
     );
+  });
+
+  // Daylight v2's single largest fix: this sentence was `Body weight="medium"`
+  // (16/24/500) — SMALLER than the handoff card's H4 title below it, on a
+  // ground 4% off white. "A title is never smaller than the title of a less
+  // important card" (daylight-v2 §3.2), so at L1 it is an H3 and demoted it
+  // drops exactly one rung to H4. Sizes, not class names, because the
+  // typography factory emits size inline.
+  it('sets the gap headline at H3 when it owns the screen, H4 when demoted', () => {
+    const atL1 = renderWithProviders(
+      <TodayCoverage
+        householdId={HOUSEHOLD_ID}
+        timeZone={ZONE}
+        householdChildren={[{ id: CHILD_ID, name: 'H1 Child1' } as never]}
+      />
+    );
+    expect(
+      mergedStyle(atL1.getByTestId('today-coverage-gap-headline').props.style)
+        .fontSize
+    ).toBe(20);
+
+    const demoted = renderWithProviders(
+      <TodayCoverage
+        householdId={HOUSEHOLD_ID}
+        timeZone={ZONE}
+        householdChildren={[{ id: CHILD_ID, name: 'H1 Child1' } as never]}
+        demoted
+      />
+    );
+    expect(
+      mergedStyle(
+        demoted.getByTestId('today-coverage-gap-headline').props.style
+      ).fontSize
+    ).toBe(18);
   });
 });

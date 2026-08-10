@@ -11,6 +11,31 @@ export type ListItem =
   | { type: 'header'; key: string; label: string }
   | { type: 'shift'; key: string; shift: Shift };
 
+/** Statuses that read as a resolved record, not a thing to act on (T4) — a
+ * cancelled or declined shift never counts as cover for a duration total. */
+export const RESOLVED_STATUSES = new Set<Shift['status']>([
+  'cancelled',
+  'declined',
+]);
+
+/** Whole-minute duration between two ISO instants, floored (never negative
+ * with real data, but a display sum must not go negative). */
+export function shiftMinutes(shift: Shift): number {
+  const minutes =
+    (new Date(shift.ends_at).getTime() - new Date(shift.starts_at).getTime()) /
+    60000;
+  return Math.max(0, minutes);
+}
+
+/** Total covering minutes across `shifts`, excluding cancelled/declined —
+ * the same rule AgendaView's day-header totals and the Schedule tab's
+ * week-total figure both use. */
+export function totalCoveringMinutes(shifts: readonly Shift[]): number {
+  return shifts
+    .filter(shift => !RESOLVED_STATUSES.has(shift.status))
+    .reduce((sum, shift) => sum + shiftMinutes(shift), 0);
+}
+
 /** Parses YYYY-MM-DD into local calendar weekday (0=Sun..6=Sat). */
 export function localDateToWeekday(localDate: string): number {
   const [year, month, day] = localDate.split('-').map(Number);

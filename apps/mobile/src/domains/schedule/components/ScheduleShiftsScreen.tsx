@@ -31,7 +31,8 @@ import { ErrorState } from '@/src/components/custom/ErrorState';
 import { BackButton } from '@/src/components/ui/back-button';
 import { EmptyState } from '@/src/components/ui/empty-state';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
-import { H1, Small } from '@/src/components/ui/typography';
+import { ScreenWash } from '@/src/components/ui/screen-wash';
+import { Figure28, H1, Small } from '@/src/components/ui/typography';
 import { WeekNavHeader } from '@/src/components/ui/week-nav-header';
 import {
   type AgendaItem,
@@ -43,6 +44,7 @@ import {
 } from '@/src/domains/schedule/components/CalendarViewSwitcher';
 import { CrossFamilyRhythmView } from '@/src/domains/schedule/components/CrossFamilyRhythmView';
 import { WeekRibbonView } from '@/src/domains/schedule/components/WeekRibbonView';
+import { totalCoveringMinutes } from '@/src/domains/schedule/utils/shiftGrouping';
 import { timeOffCoversLocalDate } from '@/src/domains/schedule/utils/timeOffOverlap';
 import { withCauses } from '@/src/domains/schedule/utils/uncoveredDisplay';
 import { computeUncoveredWeek } from '@/src/domains/schedule/utils/uncoveredWeek';
@@ -51,6 +53,7 @@ import {
   isParentEditorRole,
   SETUP_ROLES,
 } from '@/src/domains/setup/types';
+import { formatDuration } from '@/src/domains/timesheet/utils/duration';
 import {
   addWeeks,
   formatWeekRangeLabel,
@@ -160,6 +163,13 @@ export function ScheduleShiftsScreen({
   const showUnavailable = routeUnavailable;
 
   const shifts = shiftsQuery.data ?? [];
+  // The week-total anchor (daylight-v2 §2, "the highest-value addition on
+  // this screen") — same excludes-cancelled/declined rule AgendaView's
+  // per-day totals use, summed over the fetched week instead of one day.
+  const weekTotalMinutes = useMemo(
+    () => totalCoveringMinutes(shifts),
+    [shifts]
+  );
   const uncoveredWeek = useMemo(() => {
     if (!canViewCover) {
       return { byDay: {} as Record<string, never[]>, totalCount: 0 };
@@ -265,6 +275,7 @@ export function ScheduleShiftsScreen({
       style={{ flex: 1 }}
       className="bg-background"
     >
+      <ScreenWash testID="schedule-screen-wash" kind="brand" />
       <View
         style={{
           gap: 8,
@@ -280,26 +291,36 @@ export function ScheduleShiftsScreen({
             label={tCommon('back')}
           />
         ) : null}
-        <View className="flex-row items-center justify-between gap-2">
-          <H1>{t('shifts.screenTitle')}</H1>
-          {canAddExtra ? (
-            // Small/14/600, not a ghost Button (16 @600) — it was reading
-            // as heavy as the H1 beside it.
-            <Pressable
-              testID="schedule-shifts-add-extra"
-              accessibilityRole="button"
-              hitSlop={8}
-              style={{ minHeight: spacing.minTouchTarget }}
-              className="justify-center"
-              onPress={() =>
-                router.push('/(private)/schedule/shifts/extra' as Href)
-              }
-            >
-              <Small weight="semibold" className="text-primary">
-                {t('shifts.addExtra')}
-              </Small>
-            </Pressable>
-          ) : null}
+        <View className="gap-1">
+          <View className="flex-row items-center justify-between gap-2">
+            <H1>{t('shifts.screenTitle')}</H1>
+            {canAddExtra ? (
+              // Small/14/600, not a ghost Button (16 @600) — it was reading
+              // as heavy as the H1 beside it.
+              <Pressable
+                testID="schedule-shifts-add-extra"
+                accessibilityRole="button"
+                hitSlop={8}
+                style={{ minHeight: spacing.minTouchTarget }}
+                className="justify-center"
+                onPress={() =>
+                  router.push('/(private)/schedule/shifts/extra' as Href)
+                }
+              >
+                <Small weight="semibold" className="text-primary">
+                  {t('shifts.addExtra')}
+                </Small>
+              </Pressable>
+            ) : null}
+          </View>
+          <Small tabular className="text-muted-strong">
+            {weekRangeLabel}
+          </Small>
+          <Figure28 testID="schedule-week-total">
+            {t('shifts.weekTotal', {
+              duration: formatDuration(weekTotalMinutes),
+            })}
+          </Figure28>
         </View>
         {patternBanner}
         {canViewCover && uncoveredWeek.totalCount > 0 ? (
@@ -394,7 +415,7 @@ export function ScheduleShiftsScreen({
           {weekHasAway ? (
             <Small
               testID="schedule-away-summary"
-              className="px-5.5 pb-2 text-muted-foreground"
+              className="px-5.5 pb-2 text-muted-strong"
             >
               {t('shifts.awaySummary')}
             </Small>

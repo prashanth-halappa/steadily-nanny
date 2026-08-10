@@ -14,6 +14,7 @@
 import { beforeAll, describe, expect, it, mock } from 'bun:test';
 import type { SchedulePattern } from '@steadily-nanny/shared-types/schemas/schedule.schema';
 import { render } from '@testing-library/react-native';
+import { palette } from '@/lib/design-tokens/palette';
 
 // The global `react-native` mock's `StyleSheet.flatten` (bun.setup.ts) is an
 // identity function, not a real merge — typography components' `style` prop
@@ -207,7 +208,7 @@ describe('SchedulePatternBanner', () => {
 // element can't carry a 20px corner radius) — the tinted ground alone now
 // carries the T1 tiering, so these tests verify tone via the Card's own
 // `surfaceAttention` background colour instead of a `card-accent-bar` node.
-const SURFACE_ATTENTION = '#F9F3EC';
+const SURFACE_ATTENTION = palette.light.surfaceAttention.hex;
 
 describe('SchedulePatternBanner surface tiers (P1)', () => {
   it.each([
