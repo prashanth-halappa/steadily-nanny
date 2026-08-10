@@ -87,7 +87,7 @@ function ChipToggle({
       )}
     >
       <Caption
-        weight="medium"
+        weight={selected ? 'semibold' : 'medium'}
         className={selected ? 'text-primary-foreground' : 'text-foreground'}
       >
         {label}

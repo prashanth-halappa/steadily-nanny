@@ -60,10 +60,10 @@ describe('StatusPill', () => {
       <StatusPill variant="declined" label="Declined" testID="pill-declined" />
     );
     expect(getByTestId('pill-declined').props.className).toContain(
-      'bg-destructive/15'
+      'bg-pill-destructive'
     );
     expect(getByTestId('pill-declined-label').props.className).toContain(
-      'destructive'
+      'text-error-inline-text'
     );
   });
 
@@ -77,8 +77,8 @@ describe('StatusPill', () => {
     );
     const container = getByTestId('pill-sn');
     const label = getByTestId('pill-sn-label');
-    expect(container.props.className).toContain('bg-short-notice/15');
-    expect(label.props.className).toContain('short-notice');
+    expect(container.props.className).toContain('bg-pill-short-notice');
+    expect(label.props.className).toContain('text-short-notice-ink');
     expect(label.props.className).not.toContain('destructive');
   });
 
@@ -92,8 +92,8 @@ describe('StatusPill', () => {
     );
     const container = getByTestId('pill-oh');
     const label = getByTestId('pill-oh-label');
-    expect(container.props.className).toContain('bg-short-notice/15');
-    expect(label.props.className).toContain('short-notice');
+    expect(container.props.className).toContain('bg-pill-short-notice');
+    expect(label.props.className).toContain('text-short-notice-ink');
     expect(label.props.className).not.toContain('destructive');
   });
 
@@ -106,11 +106,11 @@ describe('StatusPill', () => {
       />
     );
     expect(getByTestId('pill-confirmed-fill').props.className).toContain(
-      'bg-success/15'
+      'bg-pill-success'
     );
   });
 
-  it('applies muted fill on cancelled container', () => {
+  it('applies secondary fill on cancelled container', () => {
     const { getByTestId } = render(
       <StatusPill
         variant="cancelled"
@@ -119,7 +119,7 @@ describe('StatusPill', () => {
       />
     );
     expect(getByTestId('pill-cancelled-fill').props.className).toContain(
-      'bg-muted'
+      'bg-secondary'
     );
   });
 });

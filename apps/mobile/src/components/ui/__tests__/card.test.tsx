@@ -147,6 +147,17 @@ describe('Card tone (Wave 0 / P0-1)', () => {
     expect(shadowColours(entries)).not.toContain(APRICOT_RGB);
   });
 
+  it('tone="critical" tints with opaque surfaceCritical but keeps the plain card elevation', () => {
+    const { getByTestId } = render(<Card testID="card" tone="critical" />);
+    const entries = getByTestId('card').props.style as ViewStyle[];
+    const bg = entries.find(
+      (s): s is ViewStyle => Boolean(s) && 'backgroundColor' in (s as object)
+    );
+    expect(bg?.backgroundColor).toBe(palette.light.surfaceCritical.hex);
+    expect(shadowColours(entries)).toContain(INK_RGB);
+    expect(shadowColours(entries)).not.toContain(APRICOT_RGB);
+  });
+
   it('tone="live" matches the pre-existing live=true behaviour exactly', () => {
     const { getByTestId } = render(<Card testID="card" tone="live" />);
     const entries = getByTestId('card').props.style as ViewStyle[];

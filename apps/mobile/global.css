@@ -86,8 +86,8 @@
     --scrim: 295 16% 15%; /* #2A1F2B — apply alpha at call site */
 
     /* Specialty: Skeleton Shimmer */
-    --skeleton-base: 322 20% 92%; /* #EFE7EC */
-    --skeleton-highlight: 330 25% 97%; /* #F9F5F7 */
+    --skeleton-base: 323 18% 91%; /* #EDE5EA */
+    --skeleton-highlight: 0 0% 100%; /* #FFFFFF */
 
     /* Specialty: Inline Error */
     --error-inline-bg: 12 65% 95%; /* #FBEFEC */

@@ -11,6 +11,7 @@
 import { describe, expect, it, mock } from 'bun:test';
 import { fireEvent, render } from '@testing-library/react-native';
 import type { ReactTestInstance } from 'react-test-renderer';
+import { palette } from '@/lib/design-tokens/palette';
 import { WeekStrip } from '../week-strip';
 
 /** Narrows a React Native test-tree child (which may be a plain text node)
@@ -97,5 +98,33 @@ describe('WeekStrip', () => {
       <WeekStrip selected={[]} onToggle={() => {}} />
     );
     expect(getByTestId('week-strip-day-1')).toBeTruthy();
+  });
+
+  it('v2: selected cell uses bg-primary without a ground on unselected cells', () => {
+    const { getByTestId } = render(
+      <WeekStrip selected={[1]} onToggle={() => {}} testID="week-strip" />
+    );
+    const monday = getByTestId('week-strip-day-1');
+    const tuesday = getByTestId('week-strip-day-2');
+    expect(monday.props.className).toContain('bg-primary');
+    expect(tuesday.props.className).not.toContain('bg-muted');
+    expect(tuesday.props.className).not.toContain('bg-primary');
+  });
+
+  it('v2: today-but-unselected uses chipPlum ground and a primary numeral', () => {
+    const { getByTestId, getByText } = render(
+      <WeekStrip
+        selected={[]}
+        onToggle={() => {}}
+        weekDates={{ 3: '2026-08-12' }}
+        todayLocalDate="2026-08-12"
+        testID="week-strip"
+      />
+    );
+    const wednesday = getByTestId('week-strip-day-3');
+    expect(wednesday.props.style).toEqual({
+      backgroundColor: palette.light.chipPlum.hex,
+    });
+    expect(getByText('12')).toBeTruthy();
   });
 });

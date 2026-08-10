@@ -165,8 +165,8 @@ export const palette = {
     ring: { css: '296 20% 30%', hex: '#5B3E5D' },
     neutral: { css: '315 6% 61%', hex: '#A2969F' },
 
-    skeletonBase: { css: '322 20% 92%', hex: '#EFE7EC' },
-    skeletonHighlight: { css: '330 25% 97%', hex: '#F9F5F7' },
+    skeletonBase: { css: '323 18% 91%', hex: '#EDE5EA' },
+    skeletonHighlight: { css: '0 0% 100%', hex: '#FFFFFF' },
 
     errorInlineBg: { css: '12 65% 95%', hex: '#FBEFEC' },
     errorInlineBorder: { css: '9 48% 74%', hex: '#DDA79D' },
