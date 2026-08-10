@@ -45,4 +45,15 @@ describe('notification.schema push types', () => {
       )
     ).toBe(false);
   });
+
+  // The evening digest is a distinct, independently-mutable type from the
+  // immediate alert — see notificationPrefsService.test.ts for the proof
+  // that muting one never mutes the other.
+  it('adds uncovered_care_digest as a distinct parent-audience type', () => {
+    expect(PUSH_NOTIFICATION_TYPES.UNCOVERED_CARE_DIGEST).toBe(
+      'uncovered_care_digest'
+    );
+    expect(ALL_PUSH_NOTIFICATION_TYPES).toContain('uncovered_care_digest');
+    expect(PUSH_TYPE_AUDIENCE.uncovered_care_digest).toBe('parent');
+  });
 });

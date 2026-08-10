@@ -118,6 +118,9 @@ export const NOTIFICATION_ROUTE_MAP: NotificationRouteMap &
 
   [PUSH_NOTIFICATION_TYPES.CARER_TIME_OFF_CONFLICT]: shiftsCalendarHref,
   [PUSH_NOTIFICATION_TYPES.UNCOVERED_CARE_DETECTED]: uncoveredCareHref,
+  // Evening digest carries the same householdId + earliest-affected-date
+  // payload shape as the immediate alert, so it reuses the resolver.
+  [PUSH_NOTIFICATION_TYPES.UNCOVERED_CARE_DIGEST]: uncoveredCareHref,
 
   [PUSH_NOTIFICATION_TYPES.HOUSEHOLD_CLOSURE_CHANGED]: scheduleTabHref,
 

@@ -63,11 +63,18 @@ import { logger } from '../middlewares/logger';
  * them: by the next run the hour no longer matched. A window turns a missed
  * run into a late reminder instead of no reminder.
  *
- * Widening is only safe because the shift claim key
- * (`shift_reminder:<shiftId>`) carries NO date segment, so the ledger row from
- * the first successful send blocks every later hour in the window. A key with
- * a date segment would re-send once per hour instead (see
- * `TIMESHEET_NUDGE_HOUR` below).
+ * Widening is safe whatever the key shape, because `claimAndSend` claims on the
+ * key STRING: the ledger row from the first successful send blocks every later
+ * hour that builds the same string. `shift_reminder:<shiftId>` carries no date
+ * segment, so it fires once ever. A DATE-segmented key
+ * (`timesheet_awaiting_approval:<id>:<localSendDate>`) is invariant across the
+ * hours of one local day, so it fires once per local DAY — not once per hour.
+ *
+ * (An earlier revision of this comment claimed a dated key "would re-send once
+ * per hour instead". That was wrong — `buildTimesheetAwaitingApprovalKey`'s own
+ * doc says the segment is "the recipient's local calendar day when the 09:00
+ * send fires", which cannot change between 18:00 and 21:00. `uncoveredDigestJob`
+ * relies on the corrected reading: a window PLUS a dated key, sending once a day.)
  *
  * 22:00 is the cutoff because a reminder for tomorrow stops being worth a late
  * buzz — quiet hours in `canDeliver` may suppress it anyway, and that is the

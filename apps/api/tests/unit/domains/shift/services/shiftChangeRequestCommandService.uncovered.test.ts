@@ -69,8 +69,10 @@ let detectUncoveredCareForDate: ReturnType<typeof mock>;
 let notifyUser: ReturnType<typeof mock>;
 let notifyHouseholdParents: ReturnType<typeof mock>;
 
+const NOTHING = { inserted: [], pushed: [] };
+
 beforeAll(async () => {
-  detectUncoveredCareForDate = mock(async () => []);
+  detectUncoveredCareForDate = mock(async () => NOTHING);
   notifyUser = mock(() => undefined);
   notifyHouseholdParents = mock(() => undefined);
   mock.module(
@@ -96,7 +98,7 @@ beforeEach(() => {
   detectUncoveredCareForDate.mockClear();
   notifyUser.mockClear();
   notifyHouseholdParents.mockClear();
-  detectUncoveredCareForDate.mockImplementation(async () => []);
+  detectUncoveredCareForDate.mockImplementation(async () => NOTHING);
   setCancellationPaidEntryRecorder(async () => null);
 });
 
@@ -165,15 +167,17 @@ describe('ShiftChangeRequestCommandService.cancel — uncovered detection', () =
     );
   });
 
-  it('suppresses shift_cancelled when uncovered windows were inserted', async () => {
-    detectUncoveredCareForDate.mockImplementation(async () => [
-      {
-        childId: 'c1',
-        commitmentId: 'cm1',
-        startsAt: '2026-08-03T09:00:00.000Z',
-        endsAt: '2026-08-03T12:00:00.000Z',
-      },
-    ]);
+  it('suppresses shift_cancelled when uncovered windows were pushed', async () => {
+    const window = {
+      childId: 'c1',
+      commitmentId: 'cm1',
+      startsAt: '2026-08-03T09:00:00.000Z',
+      endsAt: '2026-08-03T12:00:00.000Z',
+    };
+    detectUncoveredCareForDate.mockImplementation(async () => ({
+      inserted: [window],
+      pushed: [window],
+    }));
 
     await makeSvc().respond('carer-1', 'cr1', { status: 'accepted' });
 
@@ -183,6 +187,29 @@ describe('ShiftChangeRequestCommandService.cancel — uncovered detection', () =
         PUSH_NOTIFICATION_TYPES.SHIFT_CANCELLED
     );
     expect(cancelledCalls).toHaveLength(0);
+  });
+
+  it('still fires shift_cancelled when a window was inserted but gated to the digest (nobody heard anything otherwise)', async () => {
+    detectUncoveredCareForDate.mockImplementation(async () => ({
+      inserted: [
+        {
+          childId: 'c1',
+          commitmentId: 'cm1',
+          startsAt: '2026-08-13T09:00:00.000Z',
+          endsAt: '2026-08-13T12:00:00.000Z',
+        },
+      ],
+      pushed: [],
+    }));
+
+    await makeSvc().respond('carer-1', 'cr1', { status: 'accepted' });
+
+    const cancelledCalls = notifyHouseholdParents.mock.calls.filter(
+      (call: unknown[]) =>
+        (call[1] as { data?: { type?: string } })?.data?.type ===
+        PUSH_NOTIFICATION_TYPES.SHIFT_CANCELLED
+    );
+    expect(cancelledCalls).toHaveLength(1);
   });
 
   it('fires shift_cancelled when the day is still covered', async () => {
@@ -198,14 +225,16 @@ describe('ShiftChangeRequestCommandService.cancel — uncovered detection', () =
 
   it('still pings carer requester with CHANGE_REQUEST_ACCEPTED when uncovered', async () => {
     const carerRequest = { ...pendingRequest, requested_by: 'carer-1' };
-    detectUncoveredCareForDate.mockImplementation(async () => [
-      {
-        childId: 'c1',
-        commitmentId: 'cm1',
-        startsAt: '2026-08-03T09:00:00.000Z',
-        endsAt: '2026-08-03T12:00:00.000Z',
-      },
-    ]);
+    const window = {
+      childId: 'c1',
+      commitmentId: 'cm1',
+      startsAt: '2026-08-03T09:00:00.000Z',
+      endsAt: '2026-08-03T12:00:00.000Z',
+    };
+    detectUncoveredCareForDate.mockImplementation(async () => ({
+      inserted: [window],
+      pushed: [window],
+    }));
     const svc = makeSvc({
       changeRequestRepo: makeChangeRequestRepo({
         acceptAndApply: mock(async () => ({

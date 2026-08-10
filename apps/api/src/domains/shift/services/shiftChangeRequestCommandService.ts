@@ -692,11 +692,13 @@ export class ShiftChangeRequestCommandService {
       if (request.kind === SHIFT_CHANGE_REQUEST_KINDS.CANCEL) {
         // Household parents get SHIFT_CANCELLED unless uncovered-care
         // detection already pushed for the gap (one parent push per event).
-        let uncoveredInserted: Awaited<
-          ReturnType<typeof detectUncoveredCareForDate>
-        > = [];
+        // A far-out window that only got inserted (gated to the evening
+        // digest) must NOT suppress this — otherwise a cancel 10 days out
+        // tells the parent nothing at all.
+        let uncovered: Awaited<ReturnType<typeof detectUncoveredCareForDate>> =
+          { inserted: [], pushed: [] };
         try {
-          uncoveredInserted = await detectUncoveredCareForDate({
+          uncovered = await detectUncoveredCareForDate({
             householdId: shift.household_id,
             localDate: updatedShift.local_date,
             cause: 'cancelled',
@@ -710,7 +712,7 @@ export class ShiftChangeRequestCommandService {
             error,
           });
         }
-        if (uncoveredInserted.length === 0) {
+        if (uncovered.pushed.length === 0) {
           this.notifyShiftCancelled(shift, changeRequestId);
         }
         // Only a CARER requester gets the "your request was accepted" ping.

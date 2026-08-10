@@ -51,7 +51,10 @@ beforeAll(async () => {
   mock.module(
     '../../../../../src/domains/child/services/detectUncoveredCareForDate',
     () => ({
-      detectUncoveredCareForDate: mock(async () => []),
+      detectUncoveredCareForDate: mock(async () => ({
+        inserted: [],
+        pushed: [],
+      })),
       detectUncoveredCareBestEffort: mock(() => undefined),
     })
   );

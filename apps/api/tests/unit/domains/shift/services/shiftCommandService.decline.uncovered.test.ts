@@ -37,8 +37,10 @@ let ShiftCommandService: typeof import('../../../../../src/domains/shift/service
 let detectUncoveredCareForDate: ReturnType<typeof mock>;
 let notifyHouseholdParents: ReturnType<typeof mock>;
 
+const NOTHING = { inserted: [], pushed: [] };
+
 beforeAll(async () => {
-  detectUncoveredCareForDate = mock(async () => []);
+  detectUncoveredCareForDate = mock(async () => NOTHING);
   notifyHouseholdParents = mock(() => undefined);
   mock.module(
     '../../../../../src/domains/child/services/detectUncoveredCareForDate',
@@ -60,7 +62,7 @@ beforeAll(async () => {
 beforeEach(() => {
   detectUncoveredCareForDate.mockClear();
   notifyHouseholdParents.mockClear();
-  detectUncoveredCareForDate.mockImplementation(async () => []);
+  detectUncoveredCareForDate.mockImplementation(async () => NOTHING);
 });
 
 function makeService() {
@@ -113,21 +115,58 @@ describe('ShiftCommandService.decline — uncovered detection', () => {
     );
   });
 
-  it('suppresses shift_declined when uncovered windows were inserted', async () => {
-    detectUncoveredCareForDate.mockImplementation(async () => [
-      {
-        childId: 'c1',
-        commitmentId: 'cm1',
-        startsAt: '2026-08-03T09:00:00.000Z',
-        endsAt: '2026-08-03T12:00:00.000Z',
-      },
-    ]);
+  it('suppresses shift_declined when uncovered windows were pushed', async () => {
+    detectUncoveredCareForDate.mockImplementation(async () => ({
+      inserted: [
+        {
+          childId: 'c1',
+          commitmentId: 'cm1',
+          startsAt: '2026-08-03T09:00:00.000Z',
+          endsAt: '2026-08-03T12:00:00.000Z',
+        },
+      ],
+      pushed: [
+        {
+          childId: 'c1',
+          commitmentId: 'cm1',
+          startsAt: '2026-08-03T09:00:00.000Z',
+          endsAt: '2026-08-03T12:00:00.000Z',
+        },
+      ],
+    }));
 
     await makeService().decline('carer-1', 's1');
 
     await flushPush();
 
     expect(notifyHouseholdParents).not.toHaveBeenCalled();
+  });
+
+  it('still fires shift_declined when a window was inserted but gated to the digest (nobody heard anything otherwise)', async () => {
+    detectUncoveredCareForDate.mockImplementation(async () => ({
+      inserted: [
+        {
+          childId: 'c1',
+          commitmentId: 'cm1',
+          startsAt: '2026-08-10T09:00:00.000Z',
+          endsAt: '2026-08-10T12:00:00.000Z',
+        },
+      ],
+      pushed: [],
+    }));
+
+    await makeService().decline('carer-1', 's1');
+    await flushPush();
+
+    expect(notifyHouseholdParents).toHaveBeenCalledTimes(1);
+    expect(notifyHouseholdParents).toHaveBeenCalledWith(
+      'h1',
+      expect.objectContaining({
+        data: expect.objectContaining({
+          type: PUSH_NOTIFICATION_TYPES.SHIFT_DECLINED,
+        }),
+      })
+    );
   });
 
   it('fires shift_declined when the day is still covered', async () => {

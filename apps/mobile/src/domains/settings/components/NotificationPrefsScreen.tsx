@@ -73,6 +73,7 @@ const PUSH_TYPE_GROUP: Record<PushNotificationType, NotificationGroup> = {
   timesheet_submitted: 'hoursAndPay',
   time_off_requested: 'schedule',
   uncovered_care_detected: 'schedule',
+  uncovered_care_digest: 'schedule',
 };
 
 const GROUP_ORDER: NotificationGroup[] = [

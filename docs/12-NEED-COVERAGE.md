@@ -2,8 +2,10 @@
 
 Read this before touching anything that answers “does this child have someone
 booked during the hours we said we need care?” — `child_commitments`,
-`uncovered_care` shift events, the Today `CoverCard`, agenda uncovered rows,
-`parent_cover` shifts, or the `uncovered_care_detected` push. The **pure**
+`uncovered_care` shift events, the Today `TodayCoverage` card (renamed from
+`CoverCard`; `TodayCoverage.test.ts` regression-guards the old name never
+reappears in source), agenda uncovered rows, `parent_cover` shifts, or the
+`uncovered_care_detected` / `uncovered_care_digest` pushes. The **pure**
 detection algorithm lives in
 `packages/shared-types/src/uncoveredCare.ts`; this doc is the canonical
 product/architecture record. Module headers and `docs/DEFECT-LOG.md` D54 point
@@ -18,7 +20,8 @@ here rather than restating the maths.
 | **Need window** / **care hours** | Parent-facing copy; `child_commitments` rows | A recurring local-time span when a child **requires** care (preschool pickup window, nap coverage, etc.). Every `child_commitments` row is a need window — migration `070_uncovered_care.sql` dropped `excluded_from_cover`, which had inverted the old model. |
 | **Uncovered time** / **uncovered care** | Code, UI, pushes | Part of a need window on a local date that is **not** covered by a qualifying shift or a household closure. |
 | **`uncovered_care` event** | `shift_events.event_type` | Append-only audit row recording that a specific `(child, commitment, interval)` was detected uncovered on a `local_date`. **Not** the source of truth for whether the banner still shows — see §4. |
-| **`uncovered_care_detected` push** | `PUSH_NOTIFICATION_TYPES.UNCOVERED_CARE_DETECTED` | Parent-targeted Expo push fired when genuinely-new uncovered windows are inserted and at least one starts within 72 hours (§5). |
+| **`uncovered_care_detected` push** | `PUSH_NOTIFICATION_TYPES.UNCOVERED_CARE_DETECTED` | Parent-targeted Expo push fired immediately for a genuinely-new window whose `startsAt` is within 72 hours of the moment it's inserted (§5). |
+| **`uncovered_care_digest` push** | `PUSH_NOTIFICATION_TYPES.UNCOVERED_CARE_DIGEST` | Parent-targeted Expo push, at most once per household-local evening, summarizing windows the 72-hour gate silenced (§5). A distinct type from `uncovered_care_detected` — see §8. |
 
 **Naming debt (deliberate):** the DB table and API routes stay `child_commitments`
 / `commitments`; mobile query keys use `commitments`. Every user-visible string
@@ -124,8 +127,9 @@ next query/refetch — no waiting for a compensating event.
 1. **Audit** — the day thread shows what was detected and why (`cause` in
    payload).
 2. **Push dedupe** — `raiseUncoveredOnce` skips intervals whose
-   `uncoveredKey` already exists for that household/date; only genuinely
-   inserted windows trigger a push.
+   `uncoveredKey` already exists for that household/date. Of the windows
+   genuinely inserted, only those within 72h trigger an immediate push (§5);
+   the rest are picked up by the evening digest instead.
 
 Legacy `coverage_gap` rows were deleted in migration `070_uncovered_care.sql`
 (pre-launch). **We do not delete or retract `uncovered_care` events when cover
@@ -151,18 +155,83 @@ noted — failures are logged and never fail the caller’s primary write/read.
 
 ### Push rule (72 hours)
 
-Parents receive `uncovered_care_detected` only when **this call** genuinely
-inserts at least one new window **and** some inserted window has
-`startsAt < now + 72h`. Further-out windows are persisted silently. Copy is
-hardcoded English in `uncoveredCareService` (same as every other emitter);
-push i18n is deferred.
+`raiseUncoveredOnce` returns `{ inserted, pushed }`: `inserted` is every
+window this call genuinely wrote to `shift_events`; `pushed` is the subset a
+push actually went out for. A window pushes immediately only when it starts
+within `UNCOVERED_PUSH_WITHIN_MS` (72h, exported from `uncoveredCareService.ts`)
+of the moment it is inserted — computed once per call so the decision and the
+persisted tag can't disagree. Every inserted row carries
+`payload.push_gate: 'immediate' | 'digest'`, decided once at insert and never
+revisited (a window detected far out and gated to the digest does not
+retroactively become `'immediate'` as it approaches — see the evening digest
+below for how that's still covered).
+
+**Why the split return matters.** `shiftCommandService.decline` and
+`shiftChangeRequestCommandService`'s cancel-accept path each suppress their own
+generic push (`SHIFT_DECLINED` / `SHIFT_CANCELLED`) when uncovered-care
+detection already told the parent about the resulting gap, so nobody hears the
+same fact twice. That suppression is keyed on `pushed.length === 0`, **not**
+`inserted.length === 0` — a decline or cancel more than 72h out still *inserts*
+a window (silently, gated to the digest) but does not *push* one, so the
+generic push must still fire. Keying suppression on `inserted` was a real
+regression (a far-out decline told the parent nothing at all) closed in the
+same change that restored this gate.
+
+Further-out windows are persisted silently and picked up by the evening
+digest below, not lost.
+
+### Evening digest
+
+`runUncoveredDigestJob` (`apps/api/src/jobs/uncoveredDigestJob.ts`) tells
+parents about windows the 72-hour gate silenced. Scheduled hourly
+(`073_uncovered_digest_cron.sql`, `'35 * * * *'`) but gated per household to
+`[18:00, 21:00)` **household-local** time via `getLocalClock` — hourly, not
+daily, because that local window can't be hit by one fixed UTC tick; the
+repeated ticks inside the window are free, since the claim key below collides
+on every one after the first send.
+
+Two clauses, unioned by `uncoveredKey`:
+
+- **(a) New since yesterday** — `shift_events` rows tagged
+  `push_gate: 'digest'` whose `created_at` falls in the household-local
+  **previous** calendar day (a fixed local-day partition, not a rolling 24h
+  lookback, so a send that lands late one evening and early the next never
+  double-reports).
+- **(b) Closing in** — `[today, today+3]`, recomputed fresh. Needed because a
+  window's dedupe key (the `shift_events` unique index) is burned the moment
+  its row is written — clause (a) alone would mention a far-out window once,
+  the evening it was first detected, and never again as it approaches. Clause
+  (b) is what re-surfaces it on each of its last three evenings.
+
+**Every candidate is re-verified by recompute before it counts.** A
+`shift_events` row proves a window *was* uncovered when written, never that it
+still is — a parent may have booked cover since. Both clauses are checked
+against a fresh `loadUncoveredInputsForDate` + `computeUncovered` (the same
+pair `detectUncoveredCareForDate` uses) and dropped if the key is no longer in
+the live set. Skipping this would tell a parent "no one's booked" about a
+shift that now exists.
+
+One push per parent per household-local day
+(`push_reminder_log` key `uncovered_digest:<householdId>:<householdLocalDate>`,
+via `reminderJob`'s `claimAndSend`), type `uncovered_care_digest`, title
+"No one booked yet". Body names the affected day(s) nearest-first, not a bare
+count; a single affected window also names the child. Nothing uncovered ⇒
+silence, not an "all clear" push.
+
+**The honest ceiling.** A standing far-out gap the parent never acts on gets
+exactly one clause-(a) mention (the evening after it's first detected), then
+goes quiet until clause (b) picks it up inside 3 days of the date itself —
+that gap in the middle is a deliberate consequence of the burned dedupe key,
+not an oversight. A weekly "your next 4 weeks" recompute that would close it
+was scoped out on purpose: re-mentioning an ignored gap every evening is the
+all-clear-fatigue problem in reverse. If product wants that later, it's a
+different job keyed on a full weekly recompute — not a change to this one.
 
 ### Deferred (v1)
 
 | Item | Notes |
 |---|---|
-| Evening / Sunday digest pushes | Windows beyond 72h are stored but not pushed; no digest job. |
-| Push i18n | `notifyHouseholdParents` title/body are English literals. |
+| Push i18n | All push titles/bodies — including the evening digest's — are English literals in the emitting module (`notifyHouseholdParents` for the immediate push, `claimAndSend` for the digest). The digest's Spanish translations are kept in `uncoveredDigestJob.ts`'s module header only, not wired to any locale file. |
 | **Extend adjacent shift** fix action | Agenda offers ask-for-cover, “I’ve got it” (`parent_cover`), and edit care hours — not “stretch the neighbouring shift”. |
 
 ### Who “ask for cover” can ask
@@ -223,11 +292,12 @@ Double-tap guard: `shiftRepository.findParentCoverInWindow` before insert
 
 | Surface | Parent (editor) | Helper | Nanny |
 |---|---|---|---|
-| Today `CoverCard` | Yes | Yes (read-only reassurance / alert) | **No** — gated by `canViewParentSchedule` on `TodayScreen` |
+| Today `TodayCoverage` card | Yes | Yes (read-only reassurance / alert) | **No** — gated by `canViewParentSchedule` on `TodayScreen` |
 | Schedule uncovered rows | Yes | Yes (view) | **No** — `canViewCover` = `canViewParentSchedule` |
 | Uncovered row actions (ask / I’ve got it / edit hours) | Yes | **No** — `canEditCover` = `isParentEditorRole` (parent only) | **No** |
 | `parent_cover` shift on agenda | Yes (+ undo when editor) | View only | **Yes** — muted row, no navigation to shift detail; shows who is covering |
 | `uncovered_care_detected` push | Yes | No | No |
+| `uncovered_care_digest` push | Yes | No | No |
 | Care hours CRUD (`ManageCommitmentsSection`) | Yes | No | No |
 
 **Deliberate exception:** nannies do not see the uncovered **warning** UI (they
@@ -243,10 +313,21 @@ they know why they are not booked for that window.
 `PUSH_NOTIFICATION_TYPES` value as `'parent'`, `'carer'`, or `'both'`. It is a
 **total map** — adding a push type without an entry fails typecheck.
 
-`UNCOVERED_CARE_DETECTED` is `'parent'`. Mobile notification routing uses the
-map (`notificationRouteMap.ts` → schedule with `focusUncovered=1`). The map is
-documentation + client routing; server-side fan-out is
-`notifyHouseholdParents` in `uncoveredCareService`.
+`UNCOVERED_CARE_DETECTED` and `UNCOVERED_CARE_DIGEST` are both `'parent'`.
+Mobile notification routing uses the map for both — the same
+`uncoveredCareHref` resolver, schedule with `focusUncovered=1` (the digest's
+`localDate` is the earliest affected date). Server-side fan-out differs: the
+immediate push goes through `notifyHouseholdParents` in `uncoveredCareService`;
+the digest goes through `uncoveredDigestJob`'s call to `claimAndSend`
+(`reminderJob`'s idempotency primitive), one send per parent tracked in
+`push_reminder_log`.
+
+**Deliberately two types, not one.** `NotificationPrefsScreen.tsx`'s
+`PUSH_TYPE_GROUP` puts both under the `schedule` group but as two independent
+switches, and neither is in `QUIET_HOURS_EXEMPT_TYPES` (they're asks/FYIs, not
+deadline-bearing). Muting the evening brief must not mute "cover just broke" —
+collapsing them into one type would let a volume preference silently disable a
+safety alert.
 
 ---
 

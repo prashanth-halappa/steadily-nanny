@@ -13,7 +13,6 @@ import type {
   ClosureInput,
   CoveredShiftInput,
   NeedWindowInput,
-  UncoveredWindow,
 } from '@steadily-nanny/shared-types/uncoveredCare';
 import { logger } from '../../../middlewares/logger';
 import { HouseholdClosureRepository } from '../../availability/repositories/householdClosureRepository';
@@ -23,6 +22,7 @@ import type { ShiftWithChildren } from '../../shift/repositories/shiftRepository
 import { ShiftRepository } from '../../shift/repositories/shiftRepository';
 import { ChildCommitmentRepository } from '../repositories/childCommitmentRepository';
 import {
+  type RaiseUncoveredResult,
   type UncoveredCause,
   uncoveredCareService,
 } from './uncoveredCareService';
@@ -131,9 +131,62 @@ function offsetMinutesAt(utcMillis: number, timeZone: string): number {
   return (localAsUtc - utcMillis) / 60_000;
 }
 
+export interface UncoveredComputeInputs {
+  timezone: string;
+  shifts: CoveredShiftInput[];
+  needWindows: NeedWindowInput[];
+  closures: ClosureInput[];
+}
+
 /**
- * Run uncovered-care detection for one household local date. Returns only
- * windows genuinely inserted this call (empty = nothing new / still covered).
+ * Fetch + map the shift/commitment/closure rows `computeUncovered` needs for
+ * one household local date. `null` means the household is gone. Extracted so
+ * the digest job can share this one fetch/map path rather than growing a
+ * second — both callers then delegate to the same `computeUncovered` import.
+ */
+export async function loadUncoveredInputsForDate(
+  householdId: string,
+  localDate: string,
+  deps: {
+    householdRepo?: HouseholdRepository;
+    shiftRepo?: ShiftRepository;
+    commitmentRepo?: ChildCommitmentRepository;
+    closureRepo?: HouseholdClosureRepository;
+  } = {}
+): Promise<UncoveredComputeInputs | null> {
+  const householdRepo = deps.householdRepo ?? new HouseholdRepository();
+  const shiftRepo = deps.shiftRepo ?? new ShiftRepository();
+  const commitmentRepo = deps.commitmentRepo ?? new ChildCommitmentRepository();
+  const closureRepo = deps.closureRepo ?? new HouseholdClosureRepository();
+
+  const household = await householdRepo.findById(householdId);
+  if (!household) {
+    return null;
+  }
+
+  const [shifts, commitments, allClosures] = await Promise.all([
+    shiftRepo.findByHouseholdAndLocalDate(householdId, localDate),
+    commitmentRepo.findByHouseholdId(householdId),
+    closureRepo.listByHousehold(householdId),
+  ]);
+  const closures = closuresOverlappingLocalDate(
+    allClosures,
+    localDate,
+    household.timezone
+  );
+
+  return {
+    timezone: household.timezone,
+    shifts: shifts.map(toCoveredShift),
+    needWindows: commitments.map(toNeedWindow),
+    closures,
+  };
+}
+
+/**
+ * Run uncovered-care detection for one household local date. `inserted` is
+ * every window genuinely created this call; `pushed` is the subset a push
+ * went out for (see `uncoveredCareService.raiseUncoveredOnce`).
  */
 export async function detectUncoveredCareForDate(
   args: DetectUncoveredCareArgs,
@@ -143,35 +196,23 @@ export async function detectUncoveredCareForDate(
     commitmentRepo?: ChildCommitmentRepository;
     closureRepo?: HouseholdClosureRepository;
   } = {}
-): Promise<UncoveredWindow[]> {
-  const householdRepo = deps.householdRepo ?? new HouseholdRepository();
-  const shiftRepo = deps.shiftRepo ?? new ShiftRepository();
-  const commitmentRepo = deps.commitmentRepo ?? new ChildCommitmentRepository();
-  const closureRepo = deps.closureRepo ?? new HouseholdClosureRepository();
-
-  const household = await householdRepo.findById(args.householdId);
-  if (!household) {
-    return [];
-  }
-
-  const [shifts, commitments, allClosures] = await Promise.all([
-    shiftRepo.findByHouseholdAndLocalDate(args.householdId, args.localDate),
-    commitmentRepo.findByHouseholdId(args.householdId),
-    closureRepo.listByHousehold(args.householdId),
-  ]);
-  const closures = closuresOverlappingLocalDate(
-    allClosures,
+): Promise<RaiseUncoveredResult> {
+  const inputs = await loadUncoveredInputsForDate(
+    args.householdId,
     args.localDate,
-    household.timezone
+    deps
   );
+  if (!inputs) {
+    return { inserted: [], pushed: [] };
+  }
 
   return uncoveredCareService.raiseUncoveredOnce({
     householdId: args.householdId,
     localDate: args.localDate,
-    timezone: household.timezone,
-    shifts: shifts.map(toCoveredShift),
-    needWindows: commitments.map(toNeedWindow),
-    closures,
+    timezone: inputs.timezone,
+    shifts: inputs.shifts,
+    needWindows: inputs.needWindows,
+    closures: inputs.closures,
     cause: args.cause,
     actorId: args.actorId,
     excludeUserId: args.excludeUserId,

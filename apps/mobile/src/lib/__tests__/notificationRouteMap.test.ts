@@ -141,6 +141,13 @@ describe('NOTIFICATION_ROUTE_MAP resolvers', () => {
     );
   });
 
+  it('routes the evening digest to the same shifts-calendar deep link as the immediate alert', () => {
+    const payload = { householdId: 'hh-1', localDate: '2026-03-23' };
+    expect(
+      resolve(PUSH_NOTIFICATION_TYPES.UNCOVERED_CARE_DIGEST, payload)
+    ).toBe(resolve(PUSH_NOTIFICATION_TYPES.UNCOVERED_CARE_DETECTED, payload));
+  });
+
   it('routes pay_terms_set to the nanny My pay screen', () => {
     expect(
       resolve(PUSH_NOTIFICATION_TYPES.PAY_TERMS_SET, {

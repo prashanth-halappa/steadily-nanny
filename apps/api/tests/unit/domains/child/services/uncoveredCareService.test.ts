@@ -51,6 +51,7 @@ const baseArgs: RaiseUncoveredArgs = {
 };
 
 let UncoveredCareService: typeof import('../../../../../src/domains/child/services/uncoveredCareService').UncoveredCareService;
+let UNCOVERED_PUSH_WITHIN_MS: number;
 let notifyHouseholdParents: ReturnType<typeof mock>;
 
 const FIXED_NOW = Date.parse('2026-08-01T12:00:00.000Z');
@@ -63,7 +64,7 @@ beforeAll(async () => {
     notifyUser: mock(() => undefined),
   }));
 
-  ({ UncoveredCareService } = await import(
+  ({ UncoveredCareService, UNCOVERED_PUSH_WITHIN_MS } = await import(
     '../../../../../src/domains/child/services/uncoveredCareService'
   ));
 });
@@ -91,13 +92,13 @@ describe('UncoveredCareService.raiseUncoveredOnce', () => {
     const eventRepo = makeEventRepo();
     const svc = new UncoveredCareService(eventRepo);
 
-    const inserted = await svc.raiseUncoveredOnce({
+    const result = await svc.raiseUncoveredOnce({
       ...baseArgs,
       cause: 'needsAdded',
       actorId: 'parent-1',
     });
 
-    expect(inserted).toHaveLength(1);
+    expect(result.inserted).toHaveLength(1);
     expect(eventRepo.insertMany).toHaveBeenCalledTimes(1);
     const rows = eventRepo.insertMany.mock.calls[0]?.[0] as {
       event_type: string;
@@ -135,9 +136,10 @@ describe('UncoveredCareService.raiseUncoveredOnce', () => {
     });
     const svc = new UncoveredCareService(eventRepo);
 
-    const inserted = await svc.raiseUncoveredOnce(baseArgs);
+    const result = await svc.raiseUncoveredOnce(baseArgs);
 
-    expect(inserted).toHaveLength(0);
+    expect(result.inserted).toHaveLength(0);
+    expect(result.pushed).toHaveLength(0);
     expect(eventRepo.insertMany).not.toHaveBeenCalled();
     expect(notifyHouseholdParents).not.toHaveBeenCalled();
   });
@@ -148,9 +150,10 @@ describe('UncoveredCareService.raiseUncoveredOnce', () => {
     });
     const svc = new UncoveredCareService(eventRepo);
 
-    const inserted = await svc.raiseUncoveredOnce(baseArgs);
+    const result = await svc.raiseUncoveredOnce(baseArgs);
 
-    expect(inserted).toHaveLength(0);
+    expect(result.inserted).toHaveLength(0);
+    expect(result.pushed).toHaveLength(0);
     expect(notifyHouseholdParents).not.toHaveBeenCalled();
   });
 
@@ -162,28 +165,81 @@ describe('UncoveredCareService.raiseUncoveredOnce', () => {
     });
     const svc = new UncoveredCareService(eventRepo);
 
-    const inserted = await svc.raiseUncoveredOnce({
+    const result = await svc.raiseUncoveredOnce({
       ...baseArgs,
       needWindows: [needWindow({ id: 'cm1' }), needWindow({ id: 'cm2' })],
     });
 
-    expect(inserted).toHaveLength(1);
-    expect(inserted[0]?.commitmentId).toBe('cm2');
+    expect(result.inserted).toHaveLength(1);
+    expect(result.inserted[0]?.commitmentId).toBe('cm2');
     expect(notifyHouseholdParents).toHaveBeenCalledTimes(1);
   });
 
-  it('still inserts but pushes when every uncovered window starts more than 72h out', async () => {
+  it('pushes immediately and marks push_gate "immediate" when the window starts within 72h', async () => {
     const eventRepo = makeEventRepo();
     const svc = new UncoveredCareService(eventRepo);
 
-    const inserted = await svc.raiseUncoveredOnce({
+    // baseArgs' window (Mon 3 Aug 09:00 Europe/London) sits ~44h after
+    // FIXED_NOW (Sat 1 Aug 12:00 UTC) — inside the gate.
+    const result = await svc.raiseUncoveredOnce(baseArgs);
+
+    expect(result.inserted).toHaveLength(1);
+    expect(result.pushed).toHaveLength(1);
+    expect(notifyHouseholdParents).toHaveBeenCalledTimes(1);
+    const rows = eventRepo.insertMany.mock.calls[0]?.[0] as {
+      payload: Record<string, unknown>;
+    }[];
+    expect(rows[0]?.payload.push_gate).toBe('immediate');
+  });
+
+  it('inserts silently and marks push_gate "digest" when every uncovered window starts more than 72h out', async () => {
+    const eventRepo = makeEventRepo();
+    const svc = new UncoveredCareService(eventRepo);
+
+    // 2026-08-06 09:00 Europe/London is ~117h after FIXED_NOW — outside the gate.
+    const result = await svc.raiseUncoveredOnce({
       ...baseArgs,
       localDate: '2026-08-06',
     });
 
-    expect(inserted).toHaveLength(1);
+    expect(result.inserted).toHaveLength(1);
+    expect(result.pushed).toHaveLength(0);
     expect(eventRepo.insertMany).toHaveBeenCalledTimes(1);
-    expect(notifyHouseholdParents).toHaveBeenCalledTimes(1);
+    expect(notifyHouseholdParents).not.toHaveBeenCalled();
+    const rows = eventRepo.insertMany.mock.calls[0]?.[0] as {
+      payload: Record<string, unknown>;
+    }[];
+    expect(rows[0]?.payload.push_gate).toBe('digest');
+  });
+
+  it('does not push a window that starts exactly 72h out — the gate is strictly-less-than', async () => {
+    // Deterministic only because Date.now is stubbed to FIXED_NOW in
+    // beforeEach: the boundary window's startsAt is pinned to exactly
+    // FIXED_NOW + UNCOVERED_PUSH_WITHIN_MS, so `<` (not `<=`) is what's
+    // under test, not real-clock timing.
+    const boundaryInstant = new Date(FIXED_NOW + UNCOVERED_PUSH_WITHIN_MS);
+    const boundaryDate = boundaryInstant.toISOString().slice(0, 10); // 2026-08-04, a Tuesday
+    const boundaryTime = boundaryInstant.toISOString().slice(11, 16); // '12:00'
+
+    const eventRepo = makeEventRepo();
+    const svc = new UncoveredCareService(eventRepo);
+
+    const result = await svc.raiseUncoveredOnce({
+      ...baseArgs,
+      localDate: boundaryDate,
+      timezone: 'UTC',
+      needWindows: [
+        needWindow({
+          rrule: 'FREQ=WEEKLY;BYDAY=TU',
+          startTime: boundaryTime,
+          endTime: '23:00',
+        }),
+      ],
+    });
+
+    expect(result.inserted).toHaveLength(1);
+    expect(result.pushed).toHaveLength(0);
+    expect(notifyHouseholdParents).not.toHaveBeenCalled();
   });
 
   it('pushes with uncovered_care_detected type and localDate when windows are inserted', async () => {
@@ -208,6 +264,57 @@ describe('UncoveredCareService.raiseUncoveredOnce', () => {
     );
   });
 
+  it('a mixed batch pushes only the imminent window, with a singular body and per-row push_gate', async () => {
+    const eventRepo = makeEventRepo();
+    const svc = new UncoveredCareService(eventRepo);
+
+    // Both commitments occur on the same Tuesday (2026-08-04, UTC), one
+    // starting 66h after FIXED_NOW (imminent) and one 78h after (far out) —
+    // a single call whose insert batch straddles the gate.
+    const result = await svc.raiseUncoveredOnce({
+      ...baseArgs,
+      localDate: '2026-08-04',
+      timezone: 'UTC',
+      needWindows: [
+        needWindow({
+          id: 'cm-near',
+          childId: 'child1',
+          rrule: 'FREQ=WEEKLY;BYDAY=TU',
+          startTime: '06:00',
+          endTime: '07:00',
+        }),
+        needWindow({
+          id: 'cm-far',
+          childId: 'child2',
+          rrule: 'FREQ=WEEKLY;BYDAY=TU',
+          startTime: '18:00',
+          endTime: '19:00',
+        }),
+      ],
+    });
+
+    expect(result.inserted).toHaveLength(2);
+    expect(result.pushed).toHaveLength(1);
+    expect(result.pushed[0]?.commitmentId).toBe('cm-near');
+    expect(notifyHouseholdParents).toHaveBeenCalledTimes(1);
+    expect(notifyHouseholdParents).toHaveBeenCalledWith(
+      'h1',
+      expect.objectContaining({
+        body: 'A time you need your nanny is not on the schedule.',
+      }),
+      { excludeUserId: undefined }
+    );
+
+    const rows = eventRepo.insertMany.mock.calls[0]?.[0] as {
+      payload: Record<string, unknown>;
+    }[];
+    const gateByCommitment = new Map(
+      rows.map(row => [row.payload.commitment_id, row.payload.push_gate])
+    );
+    expect(gateByCommitment.get('cm-near')).toBe('immediate');
+    expect(gateByCommitment.get('cm-far')).toBe('digest');
+  });
+
   it('push failure never fails persistence', async () => {
     notifyHouseholdParents.mockImplementation(() => {
       throw new Error('push boom');
@@ -215,9 +322,9 @@ describe('UncoveredCareService.raiseUncoveredOnce', () => {
     const eventRepo = makeEventRepo();
     const svc = new UncoveredCareService(eventRepo);
 
-    const inserted = await svc.raiseUncoveredOnce(baseArgs);
+    const result = await svc.raiseUncoveredOnce(baseArgs);
 
-    expect(inserted).toHaveLength(1);
+    expect(result.inserted).toHaveLength(1);
     expect(eventRepo.insertMany).toHaveBeenCalledTimes(1);
   });
 
@@ -232,12 +339,12 @@ describe('UncoveredCareService.raiseUncoveredOnce', () => {
       children: [{ childId: 'child1', startsAt: null, endsAt: null }],
     };
 
-    const inserted = await svc.raiseUncoveredOnce({
+    const result = await svc.raiseUncoveredOnce({
       ...baseArgs,
       shifts: [coveringShift],
     });
 
-    expect(inserted).toHaveLength(0);
+    expect(result.inserted).toHaveLength(0);
     expect(eventRepo.insertMany).not.toHaveBeenCalled();
   });
 });

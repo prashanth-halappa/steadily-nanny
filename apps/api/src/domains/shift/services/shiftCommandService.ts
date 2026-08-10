@@ -223,12 +223,15 @@ export class ShiftCommandService {
     // Parents need to know: the family now has a gap where they thought they
     // had cover, and they cannot see the refusal from the carer app — unless
     // uncovered-care detection already pushed for the gap (one parent push per
-    // event).
-    let uncoveredInserted: Awaited<
-      ReturnType<typeof detectUncoveredCareForDate>
-    > = [];
+    // event). A far-out window that only got inserted (gated to the evening
+    // digest) must NOT suppress this — otherwise a decline 10 days out tells
+    // the parent nothing at all.
+    let uncovered: Awaited<ReturnType<typeof detectUncoveredCareForDate>> = {
+      inserted: [],
+      pushed: [],
+    };
     try {
-      uncoveredInserted = await detectUncoveredCareForDate({
+      uncovered = await detectUncoveredCareForDate({
         householdId: shift.household_id,
         localDate: shift.local_date,
         cause: 'declined',
@@ -243,7 +246,7 @@ export class ShiftCommandService {
       });
     }
 
-    if (uncoveredInserted.length === 0) {
+    if (uncovered.pushed.length === 0) {
       // Fire-and-forget, and NOT awaited: the enriched copy needs a member
       // lookup and a child lookup, and neither belongs on the critical path of
       // her decline. A slow or failing directory read must never delay — or

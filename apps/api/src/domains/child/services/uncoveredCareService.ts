@@ -16,12 +16,12 @@
  * **Closures:** household closure intervals suppress detection entirely — the
  * family declared no cover needed for those hours.
  *
- * **Push rule:** parents are pushed whenever this call genuinely inserts at
- * least one new window (`actuallyInserted` non-empty). Dedupe is the
- * `shift_events` keyed-unique index — re-detection never re-pushes.
- *
- * **Accepted quirk:** windows persisted silently before the 72h gate was
- * removed already burned their dedupe key and will never notify.
+ * **Push rule (72 hours):** of the windows this call genuinely inserts, only
+ * the ones starting within `UNCOVERED_PUSH_WITHIN_MS` of now push
+ * immediately — an urgent, actionable gap. Windows further out are persisted
+ * silently, tagged `payload.push_gate: 'digest'`, and are picked up by the
+ * evening digest job instead. Dedupe is the `shift_events` keyed-unique
+ * index — re-detection never re-pushes or re-tags a row.
  *
  * **Causes** are supplied by callers, one per trigger: `cancelled` (a cancel
  * request accepted), `declined` (a carer declined a pending shift),
@@ -54,6 +54,8 @@ import type { ShiftWithChildren } from '../../shift/repositories/shiftRepository
 import { ShiftRepository } from '../../shift/repositories/shiftRepository';
 import { ChildRepository } from '../repositories/childRepository';
 
+export const UNCOVERED_PUSH_WITHIN_MS = 72 * 60 * 60 * 1000;
+
 export type UncoveredCause =
   | 'cancelled'
   | 'declined'
@@ -74,6 +76,13 @@ export interface RaiseUncoveredArgs {
   excludeUserId?: string;
 }
 
+export interface RaiseUncoveredResult {
+  /** Rows THIS call created (empty on dedupe-skip or a fully-covered day). */
+  inserted: UncoveredWindow[];
+  /** The subset of `inserted` a push actually went out for (within 72h). */
+  pushed: UncoveredWindow[];
+}
+
 export class UncoveredCareService {
   constructor(
     private readonly eventRepo: ShiftEventRepository = new ShiftEventRepository(),
@@ -85,11 +94,13 @@ export class UncoveredCareService {
   /**
    * Idempotently persists uncovered windows as `uncovered_care` shift_events
    * for a household/date — skips any interval already raised for that date.
-   * Returns only the windows actually inserted.
+   * `inserted` is every window this call genuinely created; `pushed` is the
+   * subset within `UNCOVERED_PUSH_WITHIN_MS` that a push actually went out
+   * for — the rest are tagged `push_gate: 'digest'` for the evening digest.
    */
   async raiseUncoveredOnce(
     args: RaiseUncoveredArgs
-  ): Promise<UncoveredWindow[]> {
+  ): Promise<RaiseUncoveredResult> {
     const uncovered = computeUncovered({
       localDate: args.localDate,
       timezone: args.timezone,
@@ -98,7 +109,7 @@ export class UncoveredCareService {
       closures: args.closures,
     });
     if (uncovered.length === 0) {
-      return [];
+      return { inserted: [], pushed: [] };
     }
 
     const existingKeys = await this.eventRepo.listEventKeysForDate(
@@ -108,8 +119,14 @@ export class UncoveredCareService {
     );
     const toInsert = uncovered.filter(w => !existingKeys.has(uncoveredKey(w)));
     if (toInsert.length === 0) {
-      return [];
+      return { inserted: [], pushed: [] };
     }
+
+    // Computed once, before the insert map, so the persisted `push_gate` and
+    // the push decision below agree by construction.
+    const now = Date.now();
+    const isImmediate = (w: UncoveredWindow): boolean =>
+      Date.parse(w.startsAt) - now < UNCOVERED_PUSH_WITHIN_MS;
 
     const created = await this.eventRepo.insertMany(
       toInsert.map(window => ({
@@ -125,6 +142,7 @@ export class UncoveredCareService {
           starts_at: window.startsAt,
           ends_at: window.endsAt,
           cause: args.cause,
+          push_gate: isImmediate(window) ? 'immediate' : 'digest',
         },
       }))
     );
@@ -145,14 +163,22 @@ export class UncoveredCareService {
       createdKeys.has(uncoveredKey(w))
     );
     if (actuallyInserted.length === 0) {
-      return [];
+      return { inserted: [], pushed: [] };
     }
 
-    const causeBody = await this.buildCauseAwareBody(args, actuallyInserted);
+    // The 72h gate sits downstream of `actuallyInserted`, never mixed into
+    // it: a window first detected far out is still recorded (for the
+    // digest), it just doesn't push now.
+    const pushed = actuallyInserted.filter(isImmediate);
+    if (pushed.length === 0) {
+      return { inserted: actuallyInserted, pushed: [] };
+    }
+
+    const causeBody = await this.buildCauseAwareBody(args, pushed);
     const genericBody =
-      actuallyInserted.length === 1
+      pushed.length === 1
         ? 'A time you need your nanny is not on the schedule.'
-        : `${actuallyInserted.length} times you need your nanny are not on the schedule.`;
+        : `${pushed.length} times you need your nanny are not on the schedule.`;
 
     try {
       notifyHouseholdParents(
@@ -172,7 +198,7 @@ export class UncoveredCareService {
       // notifyHouseholdParents is sync fire-and-forget; swallow any unexpected throw.
     }
 
-    return actuallyInserted;
+    return { inserted: actuallyInserted, pushed };
   }
 
   /** Decline/cancel gaps name the person and shift — generic copy drops the cause. */
@@ -218,7 +244,7 @@ export class UncoveredCareService {
     const startLabel = formatPushTime12h(causeShift.starts_at, args.timezone);
     const endLabel = formatPushTime12h(causeShift.ends_at, args.timezone);
 
-    return `${carerName} ${verb} ${dayLabel}, ${startLabel}–${endLabel} (${childName}).`;
+    return `${carerName} ${verb} ${dayLabel}, ${startLabel} – ${endLabel} (${childName}).`;
   }
 }
 
@@ -300,7 +326,11 @@ function resolveChildNameForShift(
   return names[0] ?? 'your child';
 }
 
-function formatPushShortDate(localDate: string, timeZone: string): string {
+/** Exported for `uncoveredDigestJob`, which reuses this exact date copy. */
+export function formatPushShortDate(
+  localDate: string,
+  timeZone: string
+): string {
   try {
     const formatted = new Intl.DateTimeFormat('en-GB', {
       timeZone,
@@ -314,7 +344,11 @@ function formatPushShortDate(localDate: string, timeZone: string): string {
   }
 }
 
-function formatPushTime12h(instantIso: string, timeZone: string): string {
+/** Exported for `uncoveredDigestJob`, which reuses this exact time copy. */
+export function formatPushTime12h(
+  instantIso: string,
+  timeZone: string
+): string {
   const instant = new Date(instantIso);
   try {
     const parts = new Intl.DateTimeFormat('en-US', {
