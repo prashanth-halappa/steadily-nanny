@@ -30,13 +30,12 @@
 import { FlashList } from '@shopify/flash-list';
 import type { Href } from 'expo-router';
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Pressable, View } from 'react-native';
+import { View } from 'react-native';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { useTabBarScrollPadding } from '@/lib/layout/useTabBarScrollPadding';
 import { ErrorState } from '@/src/components/custom/ErrorState';
-import { Small } from '@/src/components/ui/typography';
 import { ExpenseAddSheet } from '@/src/domains/expenses/components/ExpenseAddSheet';
 import { ExpensesListCard } from '@/src/domains/expenses/components/ExpensesListCard';
 import { ReimbursementsCard } from '@/src/domains/expenses/components/ReimbursementsCard';
@@ -44,6 +43,7 @@ import type {
   CreateExpenseRequest,
   Expense,
 } from '@/src/domains/expenses/types';
+import { resolveMemberDisplayName } from '@/src/domains/schedule/utils/memberDisplayName';
 import {
   ClockOutSheet,
   type ClockOutSheetSubmitInput,
@@ -55,6 +55,7 @@ import { useVoidTimeEntry } from '@/src/hooks/mutations/useVoidTimeEntry';
 import { useWithdrawExpense } from '@/src/hooks/mutations/useWithdrawExpense';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
 import { useCurrentPayArrangement } from '@/src/hooks/queries/useCurrentPayArrangement';
+import { useHouseholdMembers } from '@/src/hooks/queries/useHouseholdMembers';
 import { usePayments } from '@/src/hooks/queries/usePayments';
 import { useWeekExpenses } from '@/src/hooks/queries/useWeekExpenses';
 import { useWeekTimeEntries } from '@/src/hooks/queries/useWeekTimeEntries';
@@ -73,6 +74,8 @@ import { describeTimeEntryWriteError } from '../utils/timeEntryWriteError';
 import { EarningsBreakdownSheet } from './EarningsBreakdownSheet';
 import { HoursHeroBand } from './HoursHeroBand';
 import { HoursWeekSkeleton } from './HoursWeekSkeleton';
+import { PaymentDetailSheet } from './PaymentDetailSheet';
+import { PaymentsEntryRow } from './PaymentsEntryRow';
 import { TimeEntryDayRow } from './TimeEntryDayRow';
 import { VoidEntryDialog } from './VoidEntryDialog';
 import { WeekExportAction } from './WeekExportAction';
@@ -102,6 +105,11 @@ interface NannyWeekViewProps {
    * band says about it ("your record stays here") rather than for what it
    * hides. */
   isPastMember?: boolean;
+  /** Bumped by `HoursScreen` each time it consumes a `breakdown=1` deep
+   * link (a payment's "For the week" row). A nonce, not a boolean: a SECOND
+   * payment opened later must re-open the breakdown, and a flag already
+   * sitting at `true` would swallow that. */
+  openBreakdownSignal?: number;
 }
 
 export function NannyWeekView({
@@ -117,10 +125,12 @@ export function NannyWeekView({
   isPreviousWeekDisabled,
   readOnly = false,
   isPastMember = false,
+  openBreakdownSignal = 0,
 }: NannyWeekViewProps) {
   const { t } = useTranslation('hours');
   const { t: tExpenses } = useTranslation('expenses');
   const { t: tErrors } = useTranslation('errors');
+  const { t: tSchedule } = useTranslation('schedule');
   const router = useRouter();
   // Same tab-bar dead-zone fix as Settings (BUG1) — the Hours tab's
   // FlashList needs the same real clearance a fixed magic number can't give.
@@ -139,6 +149,12 @@ export function NannyWeekView({
   // hint (TIER0-CX-SPEC.md §6.1); the money line above already covers the
   // rest of what an arrangement is for.
   const arrangementQuery = useCurrentPayArrangement(householdId, currentUserId);
+  // Only so a payment's "Recorded by" reads as a person. Resolved through
+  // `resolveMemberDisplayName`, same as the parent view: it degrades to
+  // "Someone" for an id it cannot resolve YET, where a hand-rolled lookup
+  // degrades to "No longer in this household" — a false statement about a
+  // present, active parent on the one field that exists purely for trust.
+  const membersQuery = useHouseholdMembers(householdId);
   const updateEntry = useUpdateTimeEntry();
   const voidEntry = useVoidTimeEntry();
   const createExpense = useCreateExpense(householdId);
@@ -154,7 +170,32 @@ export function NannyWeekView({
   } | null>(null);
   const isOnline = useIsOnline();
   const [isVoidConfirmOpen, setIsVoidConfirmOpen] = useState(false);
-  const [isBreakdownVisible, setIsBreakdownVisible] = useState(false);
+  // The week the breakdown is open FOR, not a bare boolean. Paging to
+  // another week then closes it for free — no reset effect to get wrong, and
+  // no sheet re-appearing on a week the user paged to.
+  const [breakdownWeek, setBreakdownWeek] = useState<string | null>(null);
+  const isBreakdownVisible = breakdownWeek === weekStartISO;
+
+  // Landing from a payment's "For the week" row: open the breakdown this
+  // view already owns, so the route is one hop rather than two. Deliberately
+  // NOT keyed on `weekStartISO` — re-running on a week change would re-open
+  // the sheet on whatever week the user paged to next.
+  //
+  // Nothing here forces a sheet to exist. `EarningsBreakdownSheet` only
+  // mounts under `earningsOk`, so a `no_arrangement` or hours-only week
+  // lands on the week and opens nothing — an empty breakdown would be worse
+  // than none. Earnings that resolve a moment AFTER landing do open it,
+  // which is exactly the first-paint case.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: weekStartISO is READ at signal time, never tracked — listing it re-runs this on every page and re-opens the sheet on the week the user moved to.
+  useEffect(() => {
+    if (!openBreakdownSignal) return;
+    setBreakdownWeek(weekStartISO);
+  }, [openBreakdownSignal]);
+  // The ID, not the payment — a refetch re-resolves the open sheet against
+  // fresh data. Same discipline as `PaymentsScreen`.
+  const [selectedPaymentId, setSelectedPaymentId] = useState<string | null>(
+    null
+  );
   const [isAddExpenseVisible, setIsAddExpenseVisible] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
   // F-B1-3: BOTH household week reads are household-wide, not self-scoped —
@@ -371,6 +412,17 @@ export function NannyWeekView({
     'GBP';
   const mileageRateMinor =
     arrangementQuery.data?.mileage_rate_per_mile_minor ?? null;
+  const selectedPayment =
+    payments.find(payment => payment.id === selectedPaymentId) ?? null;
+  const membersByUserId = new Map(
+    (membersQuery.data ?? []).map(member => [member.user_id, member])
+  );
+  const memberLabels = {
+    you: tSchedule('detail.you'),
+    someone: tSchedule('detail.someone'),
+    roleFallback: (role: 'owner' | 'parent' | 'nanny' | 'helper') =>
+      tSchedule(`detail.roleFallback.${role}`),
+  };
 
   return (
     <>
@@ -427,7 +479,7 @@ export function NannyWeekView({
               totalMinutes={totalMinutes}
               earningsError={timesheetQuery.isError}
               onRetryEarnings={() => void timesheetQuery.refetch()}
-              onPressBreakdown={() => setIsBreakdownVisible(true)}
+              onPressBreakdown={() => setBreakdownWeek(weekStartISO)}
               // "Paid £X on <date>", and what is still owed. No
               // `onMarkPaidPress` — recording a payment is the paying
               // family's action, and its absence is the whole read-only
@@ -435,6 +487,7 @@ export function NannyWeekView({
               paidState={showSettlementHistory ? paidState : null}
               payments={payments}
               settlementCurrency={settlementCurrency}
+              onPaymentPress={payment => setSelectedPaymentId(payment.id)}
             />
             {/* §7 fixed order item 3 — after day rows, approved-only,
                 never rendered when the week has no approved claims. */}
@@ -455,12 +508,10 @@ export function NannyWeekView({
             />
             {/* Cross-week record, not gated on this week's approval — same
                 read-only entitlement as the money card above it. */}
-            <Pressable
-              testID="hours-payments-link"
+            <PaymentsEntryRow
+              subtitle={t('payments.subtitleNanny')}
               onPress={() => router.push('/(private)/payments' as Href)}
-            >
-              <Small className="text-primary">{t('payments.entryLink')}</Small>
-            </Pressable>
+            />
             {showSettlementHistory && timesheet && isApproved ? (
               <WeekExportAction
                 timesheetId={timesheet.id}
@@ -517,6 +568,27 @@ export function NannyWeekView({
         voidLabel={t('voidEntry')}
       />
 
+      {/* Outside the list with the other sheets. `weekStart` is null on
+          purpose — the week is the context this was opened from, and
+          `paidToName` is null because it is always her. */}
+      <PaymentDetailSheet
+        visible={selectedPayment !== null}
+        onDismiss={() => setSelectedPaymentId(null)}
+        payment={selectedPayment}
+        weekStart={null}
+        paidToName={null}
+        recordedByName={
+          selectedPayment
+            ? resolveMemberDisplayName(
+                selectedPayment.recorded_by,
+                currentUserId,
+                membersByUserId,
+                memberLabels
+              )
+            : null
+        }
+      />
+
       <VoidEntryDialog
         open={isVoidConfirmOpen}
         onOpenChange={setIsVoidConfirmOpen}
@@ -527,7 +599,7 @@ export function NannyWeekView({
       {earningsOk ? (
         <EarningsBreakdownSheet
           visible={isBreakdownVisible}
-          onDismiss={() => setIsBreakdownVisible(false)}
+          onDismiss={() => setBreakdownWeek(null)}
           earnings={earningsOk}
           weekRangeLabel={weekRangeLabel}
           approvedDateLabel={approvedDateLabel}

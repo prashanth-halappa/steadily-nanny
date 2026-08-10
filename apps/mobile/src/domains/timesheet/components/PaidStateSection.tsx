@@ -33,8 +33,11 @@
  * itself derived once in `utils/paidState`.
  */
 import type { Payment } from '@steadily-nanny/shared-types/schemas/payment.schema';
+import { ChevronRight } from 'lucide-react-native';
 import { useTranslation } from 'react-i18next';
-import { View } from 'react-native';
+import { Pressable, View } from 'react-native';
+import { spacing } from '@/lib/design-tokens/spacing';
+import { Icon } from '@/lib/icons/iconWithClassName';
 import { Badge } from '@/src/components/ui/badge';
 import { Button } from '@/src/components/ui/button';
 import { Text } from '@/src/components/ui/text';
@@ -43,6 +46,7 @@ import { AmountRow } from '@/src/domains/pay/components/AmountRow';
 import { formatMoney } from '@/src/lib/money';
 import { formatEarningsLongDate } from '../utils/earningsFormat';
 import type { PaidStatus, WeekPaidState } from '../utils/paidState';
+import { CHEVRON_SLOT } from './TimeEntryRow';
 
 const BADGE_COPY_KEY: Record<PaidStatus, string> = {
   paid: 'paid.badgePaid',
@@ -79,6 +83,10 @@ interface PaidStateSectionProps {
   onMarkPaidPress?: () => void;
   /** Held down while a record-payment request is in flight. */
   isMarkPaidDisabled?: boolean;
+  /** Opens the payment's own detail. Its absence leaves the ledger exactly
+   * as it was — a chevron with no destination is a lie, so the slot is not
+   * even reserved. Every line in the block is pressable, or none is. */
+  onPaymentPress?: (payment: Payment) => void;
   testID?: string;
 }
 
@@ -88,6 +96,7 @@ export function PaidStateSection({
   currency,
   onMarkPaidPress,
   isMarkPaidDisabled = false,
+  onPaymentPress,
   testID = 'hours-paid-state',
 }: PaidStateSectionProps) {
   const { t } = useTranslation('hours');
@@ -123,15 +132,46 @@ export function PaidStateSection({
 
       {payments.length > 0 ? (
         <View className="gap-3 rounded-cell bg-muted px-4 py-3">
-          {payments.map(payment => (
-            <AmountRow
-              key={payment.id}
-              testID={`${testID}-line-${payment.id}`}
-              label={formatEarningsLongDate(payment.paid_at)}
-              value={formatMoney(payment.amount_minor, currency)}
-              subLine={payment.method_note ?? undefined}
-            />
-          ))}
+          {payments.map(payment => {
+            // The payment's OWN currency, not the section's: this line and
+            // the detail sheet it opens are one tap apart, and two spellings
+            // of one figure is a trust bug. The rows above stay week-scoped.
+            // Keyed here, not only on the wrapper: the unpressable branch
+            // returns this element as the list item itself.
+            const line = (
+              <AmountRow
+                key={payment.id}
+                testID={`${testID}-line-${payment.id}`}
+                label={formatEarningsLongDate(payment.paid_at)}
+                value={formatMoney(payment.amount_minor, payment.currency)}
+                subLine={payment.method_note ?? undefined}
+              />
+            );
+            // `-open` on the wrapper, not the base testID: `AmountRow`
+            // derives its money target as `${testID}-value` and moving the
+            // base would silently rename a money assertion.
+            return onPaymentPress ? (
+              <Pressable
+                key={payment.id}
+                testID={`${testID}-line-${payment.id}-open`}
+                accessibilityRole="button"
+                onPress={() => onPaymentPress(payment)}
+                className="flex-row items-center gap-3"
+                style={{ minHeight: spacing.minTouchTarget }}
+              >
+                <View className="min-w-0 flex-1">{line}</View>
+                <View style={{ width: CHEVRON_SLOT }}>
+                  <Icon
+                    icon={ChevronRight}
+                    size={CHEVRON_SLOT}
+                    className="text-muted-foreground"
+                  />
+                </View>
+              </Pressable>
+            ) : (
+              line
+            );
+          })}
         </View>
       ) : (
         <Small testID={`${testID}-empty`} className="text-muted-foreground">

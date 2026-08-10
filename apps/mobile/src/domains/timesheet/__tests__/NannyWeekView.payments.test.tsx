@@ -44,11 +44,17 @@ mock.module('@/src/components/custom/BottomSheetBase', () => {
       visible,
       children,
       testID,
+      onDismiss,
     }: {
       visible: boolean;
       children: React.ReactNode;
       testID?: string;
-    }) => (visible ? R.createElement('View', { testID }, children) : null),
+      onDismiss?: () => void;
+      // Forwarded onto the host node so a test can dismiss the sheet the way
+      // the real backdrop/close button would, without a fake control that
+      // exists nowhere in the shipped tree.
+    }) =>
+      visible ? R.createElement('View', { testID, onDismiss }, children) : null,
   };
 });
 
@@ -202,6 +208,46 @@ mock.module('@/src/api/endpoints/payArrangements', () => ({
   },
 }));
 
+// WP-C: she now resolves who recorded a payment, so the members read is
+// hers too. Never reset between tests — nothing here varies it.
+const PARENT_ID = 'parent-1';
+const HOUSEHOLD_MEMBERS = [
+  {
+    id: 'member-carer',
+    household_id: HOUSEHOLD_ID,
+    user_id: CARER_ID,
+    role: 'nanny',
+    can_edit: false,
+    status: 'active',
+    display_name_override: null,
+    profile_name: 'Amara',
+    colour: null,
+    joined_at: now,
+    created_at: now,
+    updated_at: now,
+  },
+  {
+    id: 'member-parent',
+    household_id: HOUSEHOLD_ID,
+    user_id: PARENT_ID,
+    role: 'parent',
+    can_edit: true,
+    status: 'active',
+    display_name_override: null,
+    profile_name: 'Jo',
+    colour: null,
+    joined_at: now,
+    created_at: now,
+    updated_at: now,
+  },
+];
+const listMembersMock = mock(
+  (): Promise<typeof HOUSEHOLD_MEMBERS> => Promise.resolve(HOUSEHOLD_MEMBERS)
+);
+mock.module('@/src/api/endpoints/household', () => ({
+  householdApi: { listMembers: listMembersMock },
+}));
+
 let NannyWeekView: typeof import('../components/NannyWeekView').NannyWeekView;
 let getWeekDates: typeof import('../utils/week').getWeekDates;
 let formatWeekRangeLabel: typeof import('../utils/week').formatWeekRangeLabel;
@@ -266,6 +312,7 @@ beforeEach(() => {
   getWeekMock.mockImplementation(() => Promise.resolve([makeTimesheetWeek()]));
   listExpensesForWeekMock.mockImplementation(() => Promise.resolve([]));
   listPaymentsMock.mockImplementation(() => Promise.resolve([]));
+  listMembersMock.mockImplementation(() => Promise.resolve(HOUSEHOLD_MEMBERS));
 
   useAuthStore.setState({
     session: { user: { id: CARER_ID } } as unknown as never,
@@ -450,5 +497,139 @@ describe('NannyWeekView — the payments entry link', () => {
     await waitFor(() =>
       expect(getByTestId('hours-payments-link')).toBeTruthy()
     );
+  });
+});
+
+// WP-C: the same payment leaf the Payments screen opens, reached from the
+// week it settles. Same sheet, same testID — reuse, not a second component.
+describe('NannyWeekView — opening a payment from the week', () => {
+  it('says what the Payments screen holds, on a row rather than a bare link', async () => {
+    const { getByTestId } = renderNannyView();
+
+    await waitFor(() =>
+      expect(getByTestId('hours-payments-link')).toBeTruthy()
+    );
+    expect(getByTestId('hours-payments-link-subtitle').props.children).toBe(
+      'payments.subtitleNanny'
+    );
+  });
+
+  it('opens the payment that was tapped, not merely a payment', async () => {
+    listPaymentsMock.mockImplementation(() =>
+      Promise.resolve([
+        makePayment({ id: 'pay-first', amount_minor: 5000 }),
+        makePayment({ id: 'pay-second', amount_minor: 12000 }),
+      ])
+    );
+
+    const { getByTestId, queryByTestId } = renderNannyView();
+
+    await waitFor(() =>
+      expect(getByTestId('hours-paid-state-line-pay-second-open')).toBeTruthy()
+    );
+    expect(queryByTestId('payments-detail')).toBeNull();
+
+    fireEvent.press(getByTestId('hours-paid-state-line-pay-second-open'));
+
+    await waitFor(() => expect(getByTestId('payments-detail')).toBeTruthy());
+    expect(getByTestId('payments-detail-amount').props.children).toBe(
+      '\u00a3120.00'
+    );
+  });
+
+  it('closes again on dismiss', async () => {
+    listPaymentsMock.mockImplementation(() =>
+      Promise.resolve([makePayment({ amount_minor: 12000 })])
+    );
+
+    const { getByTestId, queryByTestId } = renderNannyView();
+
+    await waitFor(() =>
+      expect(getByTestId('hours-paid-state-line-pay-1-open')).toBeTruthy()
+    );
+    fireEvent.press(getByTestId('hours-paid-state-line-pay-1-open'));
+    await waitFor(() => expect(getByTestId('payments-detail')).toBeTruthy());
+
+    fireEvent(getByTestId('payments-detail'), 'dismiss');
+
+    await waitFor(() => expect(queryByTestId('payments-detail')).toBeNull());
+  });
+
+  // The week IS the context the sheet was opened from, and she is the only
+  // person a payment on her own week can have gone to.
+  it('offers no link back to this week, and does not tell her who she is', async () => {
+    listPaymentsMock.mockImplementation(() =>
+      Promise.resolve([makePayment({ amount_minor: 12000 })])
+    );
+
+    const { getByTestId, queryByTestId } = renderNannyView();
+
+    await waitFor(() =>
+      expect(getByTestId('hours-paid-state-line-pay-1-open')).toBeTruthy()
+    );
+    fireEvent.press(getByTestId('hours-paid-state-line-pay-1-open'));
+
+    await waitFor(() => expect(getByTestId('payments-detail')).toBeTruthy());
+    expect(queryByTestId('payments-detail-for-week')).toBeNull();
+    expect(queryByTestId('payments-detail-paid-to')).toBeNull();
+  });
+
+  // The one field that exists purely for trust. Printing "No longer in this
+  // household" over a present, active parent is a false statement about a
+  // real person on a money record.
+  it('names the household member who recorded it, never the gone copy', async () => {
+    listPaymentsMock.mockImplementation(() =>
+      Promise.resolve([makePayment({ amount_minor: 12000 })])
+    );
+
+    const { getByTestId } = renderNannyView();
+
+    await waitFor(() =>
+      expect(getByTestId('hours-paid-state-line-pay-1-open')).toBeTruthy()
+    );
+    fireEvent.press(getByTestId('hours-paid-state-line-pay-1-open'));
+
+    await waitFor(() => expect(getByTestId('payments-detail')).toBeTruthy());
+    await waitFor(() =>
+      expect(
+        getByTestId('payments-detail-recorded-by-value').props.children
+      ).toBe('Jo')
+    );
+    expect(
+      getByTestId('payments-detail-recorded-by-value').props.children
+    ).not.toBe('payments.detail.recordedByGone');
+  });
+});
+
+// The one field that exists purely for trust, in the one window where it is
+// cheapest to get wrong. `recordedByName ?? t('recordedByGone')` means every
+// "I don't know yet" prints as "No longer in this household" — a false
+// statement about a present, active parent, and a cold cache is exactly when
+// a nanny opens a payment.
+describe('NannyWeekView — who recorded it, before the members read lands', () => {
+  it('never calls a present member gone while the members query is still in flight', async () => {
+    listPaymentsMock.mockImplementation(() =>
+      Promise.resolve([makePayment({ amount_minor: 12000 })])
+    );
+    listMembersMock.mockImplementation(
+      () => new Promise<typeof HOUSEHOLD_MEMBERS>(() => {})
+    );
+
+    const { getByTestId } = renderNannyView();
+
+    await waitFor(() =>
+      expect(getByTestId('hours-paid-state-line-pay-1-open')).toBeTruthy()
+    );
+    fireEvent.press(getByTestId('hours-paid-state-line-pay-1-open'));
+
+    await waitFor(() => expect(getByTestId('payments-detail')).toBeTruthy());
+    expect(
+      getByTestId('payments-detail-recorded-by-value').props.children
+    ).not.toBe('payments.detail.recordedByGone');
+    // Vague but true, and the same word the parent side already shows for an
+    // id it cannot resolve.
+    expect(
+      getByTestId('payments-detail-recorded-by-value').props.children
+    ).toBe('detail.someone');
   });
 });

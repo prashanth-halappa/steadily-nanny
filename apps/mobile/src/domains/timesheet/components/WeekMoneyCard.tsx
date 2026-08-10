@@ -18,8 +18,10 @@
  * card, below. That separation is deliberate and is not a layout accident.
  */
 import type { Payment } from '@steadily-nanny/shared-types/schemas/payment.schema';
+import { ChevronRight } from 'lucide-react-native';
 import { useTranslation } from 'react-i18next';
-import { Pressable } from 'react-native';
+import { Pressable, View } from 'react-native';
+import { Icon } from '@/lib/icons/iconWithClassName';
 import { Button } from '@/src/components/ui/button';
 import { Card, CardContent } from '@/src/components/ui/card';
 import { Text } from '@/src/components/ui/text';
@@ -29,6 +31,7 @@ import { formatMoney } from '@/src/lib/money';
 import type { TimesheetStatus, WeekEarningsStateResult } from '../types';
 import type { WeekPaidState } from '../utils/paidState';
 import { hasPaidStateContent, PaidStateSection } from './PaidStateSection';
+import { CHEVRON_SLOT } from './TimeEntryRow';
 import type { EarningsRole } from './WeekEarningsLine';
 import { WeekEarningsLine, weekEarningsSectionKind } from './WeekEarningsLine';
 
@@ -52,6 +55,9 @@ interface WeekMoneyCardProps {
   /** PARENT view only — its absence is the read-only contract. */
   onMarkPaidPress?: () => void;
   isMarkPaidDisabled?: boolean;
+  /** Opens one recorded payment. Forwarded straight down; its absence keeps
+   * the ledger read-only. */
+  onPaymentPress?: (payment: Payment) => void;
   /** The parent's STAGED approval-time adjustment — decided but not yet sent,
    * so it is deliberately NOT inside the estimated gross above it (the
    * caption below the row says so). `null` when nothing is staged. */
@@ -79,6 +85,7 @@ export function WeekMoneyCard({
   settlementCurrency,
   onMarkPaidPress,
   isMarkPaidDisabled = false,
+  onPaymentPress,
   adjustment = null,
   onAdjustmentPress,
 }: WeekMoneyCardProps) {
@@ -125,12 +132,31 @@ export function WeekMoneyCard({
             onPress={onAdjustmentPress}
             className="gap-1"
           >
-            <AmountRow
-              testID={`${testID}-adjustment-row`}
-              label={t('adjustment.rowLabel')}
-              value={formatMoney(adjustment.amountMinor, adjustment.currency)}
-              subLine={adjustment.note}
-            />
+            {/* Same chevron the ledger lines below now carry — one card
+                must not mix pressable rows that show one with ones that
+                don't. Omitted with no handler: the row goes nowhere. */}
+            <View className="flex-row items-center gap-3">
+              <View className="min-w-0 flex-1">
+                <AmountRow
+                  testID={`${testID}-adjustment-row`}
+                  label={t('adjustment.rowLabel')}
+                  value={formatMoney(
+                    adjustment.amountMinor,
+                    adjustment.currency
+                  )}
+                  subLine={adjustment.note}
+                />
+              </View>
+              {onAdjustmentPress ? (
+                <View style={{ width: CHEVRON_SLOT }}>
+                  <Icon
+                    icon={ChevronRight}
+                    size={CHEVRON_SLOT}
+                    className="text-muted-foreground"
+                  />
+                </View>
+              ) : null}
+            </View>
             {/* Load-bearing: the staged figure is NOT in the estimated gross
                 above, and a parent reading two numbers that don't add up
                 deserves to be told which one is waiting. */}
@@ -155,6 +181,7 @@ export function WeekMoneyCard({
           currency={settlementCurrency}
           onMarkPaidPress={onMarkPaidPress}
           isMarkPaidDisabled={isMarkPaidDisabled}
+          onPaymentPress={onPaymentPress}
         />
       </CardContent>
     </Card>

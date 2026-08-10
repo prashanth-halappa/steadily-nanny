@@ -92,8 +92,11 @@ describe('HoursScreen', () => {
 
   it('consumes weekStart as a one-shot (Wave 2B) — apply, clear param, reset on blur', () => {
     expect(hoursScreenSource).toContain('router.setParams');
+    // `breakdown` (a payment's "For the week" row) is cleared in the same
+    // call and for the same reason — a param left on the route re-opens the
+    // earnings breakdown on every later visit to this tab.
     expect(hoursScreenSource).toMatch(
-      /setParams\(\{\s*weekStart:\s*undefined\s*\}\)/
+      /setParams\(\{\s*weekStart:\s*undefined,\s*breakdown:\s*undefined,?\s*\}\)/
     );
     expect(hoursScreenSource).toContain('useFocusEffect');
     // Must not wipe the consumed offset when the param disappears — that

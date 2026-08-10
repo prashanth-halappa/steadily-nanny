@@ -2157,3 +2157,165 @@ describe('ParentWeekView — voided entries (069)', () => {
     );
   });
 });
+
+// ---------------------------------------------------------------------------
+// Landing from a payment. `PaymentDetailSheet`'s "For the week" row pushes
+// `?weekStart=…&breakdown=1`; `HoursScreen` consumes that param and bumps
+// `openBreakdownSignal`, which opens the breakdown this view already owns.
+// The user's report was that the breakdown could not be reached at all.
+// ---------------------------------------------------------------------------
+const PRIOR_WEEK = '2026-07-27';
+const PRIOR_TIMESHEET_ID = 'ts-prior';
+
+function renderParentWeek(props: {
+  openBreakdownSignal?: number;
+  weekStartISO?: string;
+}) {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false, gcTime: 0 },
+      mutations: { retry: false },
+    },
+  });
+  const tree = (next: typeof props) => {
+    const weekStartISO = next.weekStartISO ?? WEEK_START;
+    const weekDates = getWeekDates(weekStartISO);
+    return (
+      <QueryClientProvider client={queryClient}>
+        <ParentWeekView
+          householdId={HOUSEHOLD_ID}
+          weekStartISO={weekStartISO}
+          weekDates={weekDates}
+          weekRangeLabel={formatWeekRangeLabel(weekDates)}
+          nowMs={new Date('2026-08-09T12:00:00.000Z').getTime()}
+          timeZone="UTC"
+          onPreviousWeek={() => {}}
+          onNextWeek={() => {}}
+          isNextWeekDisabled={false}
+          isPreviousWeekDisabled={false}
+          openBreakdownSignal={next.openBreakdownSignal}
+        />
+      </QueryClientProvider>
+    );
+  };
+  const utils = render(tree(props));
+  return {
+    ...utils,
+    rerenderWith: (next: typeof props) => utils.rerender(tree(next)),
+  };
+}
+
+/** Both weeks priced, so "paging closes it" is testing the mechanism and
+ * not just an empty week unmounting the sheet. */
+function seedTwoPricedWeeks() {
+  listTimesheetsMock.mockImplementation(() =>
+    Promise.resolve([
+      makeTimesheet(),
+      makeTimesheet({ id: PRIOR_TIMESHEET_ID, week_start: PRIOR_WEEK }),
+    ])
+  );
+  listEntriesMock.mockImplementation(() =>
+    Promise.resolve([makeEntry(), makeEntry({ id: 'entry-prior' })])
+  );
+  getByIdMock.mockImplementation((timesheetId?: string) =>
+    Promise.resolve(
+      timesheetId === PRIOR_TIMESHEET_ID
+        ? makeTimesheetWeek(
+            { id: PRIOR_TIMESHEET_ID, week_start: PRIOR_WEEK },
+            { ...okEarnings, week_start: PRIOR_WEEK, gross_minor: 11100 }
+          )
+        : makeTimesheetWeek()
+    )
+  );
+}
+
+describe('ParentWeekView — breakdown on landing', () => {
+  it('opens the breakdown on landing, with no second tap on the money card', async () => {
+    const { getByTestId } = renderParentWeek({ openBreakdownSignal: 1 });
+
+    await waitFor(() =>
+      expect(getByTestId('hours-earnings-breakdown').props.visible).toBe(true)
+    );
+    expect(getByTestId('hours-earnings-breakdown-total').props.children).toBe(
+      '£236.12'
+    );
+  });
+
+  it('does not open the breakdown without the signal', async () => {
+    const { getByTestId, queryByTestId } = renderParentWeek({});
+
+    await waitFor(() =>
+      expect(getByTestId('hours-earnings-line-amount')).toBeTruthy()
+    );
+    expect(getByTestId('hours-earnings-breakdown').props.visible).toBe(false);
+  });
+
+  it('closes the breakdown when the user pages to another priced week', async () => {
+    seedTwoPricedWeeks();
+    const { getByTestId, queryByTestId, rerenderWith } = renderParentWeek({
+      openBreakdownSignal: 1,
+    });
+
+    await waitFor(() =>
+      expect(getByTestId('hours-earnings-breakdown').props.visible).toBe(true)
+    );
+
+    rerenderWith({ openBreakdownSignal: 1, weekStartISO: PRIOR_WEEK });
+
+    await waitFor(() =>
+      expect(getByTestId('hours-earnings-breakdown').props.visible).toBe(false)
+    );
+  });
+
+  it('re-opens for a second payment tapped later — the signal is not swallowed', async () => {
+    seedTwoPricedWeeks();
+    const { getByTestId, queryByTestId, rerenderWith } = renderParentWeek({
+      openBreakdownSignal: 1,
+    });
+
+    await waitFor(() =>
+      expect(getByTestId('hours-earnings-breakdown').props.visible).toBe(true)
+    );
+    // Scoped: every other sheet this view mounts also carries a close
+    // button, and Modal renders its children whether or not it is visible.
+    fireEvent.press(
+      within(getByTestId('hours-earnings-breakdown')).getByTestId(
+        'bottom-sheet-close-button'
+      )
+    );
+    await waitFor(() =>
+      expect(getByTestId('hours-earnings-breakdown').props.visible).toBe(false)
+    );
+
+    rerenderWith({ openBreakdownSignal: 2 });
+
+    await waitFor(() =>
+      expect(getByTestId('hours-earnings-breakdown').props.visible).toBe(true)
+    );
+  });
+
+  // An empty breakdown sheet is worse than no sheet: `no_arrangement` has no
+  // lines to show and nothing to total. The sheet is already mounted only
+  // under `earningsOk`, so the signal simply finds nothing to open.
+  it('opens nothing on a no-arrangement week, and still lands on the week', async () => {
+    getByIdMock.mockImplementation(() =>
+      Promise.resolve(
+        makeTimesheetWeek(
+          {},
+          {
+            status: 'no_arrangement',
+            week_start: WEEK_START,
+            unpriced_dates: [WEEK_START],
+          }
+        )
+      )
+    );
+
+    const { getByTestId, queryByTestId } = renderParentWeek({
+      openBreakdownSignal: 1,
+    });
+
+    await waitFor(() => expect(getByTestId('hours-total')).toBeTruthy());
+    expect(queryByTestId('hours-earnings-breakdown')).toBeNull();
+  });
+});

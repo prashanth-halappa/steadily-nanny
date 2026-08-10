@@ -15,7 +15,13 @@
  * docs/09-TESTING.md's service-test boilerplate.
  */
 import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
-import { fireEvent, render, within } from '@testing-library/react-native';
+import {
+  fireEvent,
+  render,
+  waitFor,
+  within,
+} from '@testing-library/react-native';
+import { useAuthStore } from '@/src/store/auth';
 import {
   addWeeks,
   formatWeekRangeLabel,
@@ -49,6 +55,20 @@ mock.module('@/src/domains/timesheet/components/QueryNoteSheet', () => {
   return {
     QueryNoteSheet: () =>
       React.createElement('View', { testID: 'query-note-sheet-stub' }),
+  };
+});
+
+// Same reason as QueryNoteSheet above — the breakdown sheet renders a real
+// BottomSheetBase, which this file cannot mount. Stubbed to a marker so the
+// payment → hours → breakdown route can be asserted end-to-end here rather
+// than only inside the two week-view integration suites.
+mock.module('@/src/domains/timesheet/components/EarningsBreakdownSheet', () => {
+  const React = require('react');
+  return {
+    EarningsBreakdownSheet: ({ visible }: { visible: boolean }) =>
+      visible
+        ? React.createElement('View', { testID: 'earnings-breakdown-stub' })
+        : null,
   };
 });
 
@@ -878,5 +898,140 @@ describe('HoursScreen — a past household is read-only', () => {
     const { getByTestId } = render(<HoursScreen />);
 
     expect(getByTestId('hours-approve-button')).toBeTruthy();
+  });
+});
+
+// The user's report: a payment's "For the week" row was reachable but the
+// BREAKDOWN behind it was not — landing on the week still meant hunting for
+// the money card. `PaymentDetailSheet` now pushes `?weekStart=…&breakdown=1`
+// and this screen must consume BOTH params, open the breakdown on whichever
+// week view it renders, and clear both so a later Hours visit is clean.
+describe('HoursScreen — deep-link breakdown', () => {
+  const CARER_ID = 'carer-1';
+  const NOW = '2026-08-01T00:00:00.000Z';
+
+  function seedPricedWeek(weekStart: string) {
+    mockUseWeekTimesheet.mockImplementation(() => ({
+      data: [
+        {
+          id: 'ts-1',
+          household_id: HOUSEHOLD_ID,
+          carer_id: CARER_ID,
+          carer_display_name: 'Alex',
+          week_start: weekStart,
+          total_minutes: 480,
+          status: 'submitted',
+          approved_by: null,
+          approved_at: null,
+          query_note: null,
+          created_at: NOW,
+          updated_at: NOW,
+          earnings: {
+            status: 'ok',
+            week_start: weekStart,
+            currency: 'GBP',
+            lines: [
+              {
+                kind: 'regular',
+                minutes: 480,
+                rate_minor: 1850,
+                multiplier: null,
+                amount_minor: 14800,
+                from_date: weekStart,
+                to_date: weekStart,
+                arrangement_id: 'arr-1',
+              },
+            ],
+            gross_minor: 14800,
+            reimbursements_minor: 0,
+            worked_minutes: 480,
+            payable_minutes: 480,
+            guaranteed_minutes_per_week: null,
+          },
+        },
+      ],
+      isLoading: false,
+    }));
+  }
+
+  beforeEach(() => {
+    useAuthStore.setState({
+      session: { user: { id: CARER_ID } } as unknown as never,
+      user: { id: CARER_ID } as unknown as never,
+      isInitialized: true,
+    } as never);
+  });
+
+  it('opens the week view breakdown when breakdown=1 rides along with weekStart', async () => {
+    const threeWeeksBack = addWeeks(getWeekStartISO(new Date(), TIMEZONE), -3);
+    seedPricedWeek(threeWeeksBack);
+    mockUseLocalSearchParams.mockImplementation(() => ({
+      weekStart: threeWeeksBack,
+      breakdown: '1',
+    }));
+
+    const { getByTestId } = render(<HoursScreen />);
+
+    await waitFor(() =>
+      expect(getByTestId('earnings-breakdown-stub')).toBeTruthy()
+    );
+  });
+
+  it('leaves the breakdown shut when only weekStart is deep-linked', async () => {
+    const threeWeeksBack = addWeeks(getWeekStartISO(new Date(), TIMEZONE), -3);
+    seedPricedWeek(threeWeeksBack);
+    mockUseLocalSearchParams.mockImplementation(() => ({
+      weekStart: threeWeeksBack,
+    }));
+
+    const { getByTestId, queryByTestId } = render(<HoursScreen />);
+
+    await waitFor(() => expect(getByTestId('hours-total')).toBeTruthy());
+    expect(queryByTestId('earnings-breakdown-stub')).toBeNull();
+  });
+
+  // THE regression guard. A `breakdown` param left on the route re-opens the
+  // sheet on every later visit to the Hours tab (it does not unmount on
+  // blur) — exactly the D15 trap `weekStart` already had to be taught.
+  it('clears the breakdown param off the route, not just weekStart', async () => {
+    const threeWeeksBack = addWeeks(getWeekStartISO(new Date(), TIMEZONE), -3);
+    seedPricedWeek(threeWeeksBack);
+    mockUseLocalSearchParams.mockImplementation(() => ({
+      weekStart: threeWeeksBack,
+      breakdown: '1',
+    }));
+
+    render(<HoursScreen />);
+
+    await waitFor(() =>
+      expect(mockSetParams).toHaveBeenCalledWith(
+        expect.objectContaining({
+          weekStart: undefined,
+          breakdown: undefined,
+        })
+      )
+    );
+  });
+
+  it('does not re-open the breakdown on a later visit with no params', async () => {
+    const threeWeeksBack = addWeeks(getWeekStartISO(new Date(), TIMEZONE), -3);
+    seedPricedWeek(threeWeeksBack);
+    mockUseLocalSearchParams.mockImplementation(() => ({
+      weekStart: threeWeeksBack,
+      breakdown: '1',
+    }));
+
+    const first = render(<HoursScreen />);
+    await waitFor(() =>
+      expect(first.getByTestId('earnings-breakdown-stub')).toBeTruthy()
+    );
+    first.unmount();
+
+    seedPricedWeek(getWeekStartISO(new Date(), TIMEZONE));
+    mockUseLocalSearchParams.mockImplementation(() => ({}));
+    const second = render(<HoursScreen />);
+
+    await waitFor(() => expect(second.getByTestId('hours-total')).toBeTruthy());
+    expect(second.queryByTestId('earnings-breakdown-stub')).toBeNull();
   });
 });

@@ -16,6 +16,8 @@
 import { describe, expect, it, mock } from 'bun:test';
 import type { Payment } from '@steadily-nanny/shared-types/schemas/payment.schema';
 import { fireEvent, render, within } from '@testing-library/react-native';
+import { StyleSheet } from 'react-native';
+import { spacing } from '@/lib/design-tokens/spacing';
 import {
   hasPaidStateContent,
   PaidStateSection,
@@ -232,5 +234,71 @@ describe('PaidStateSection — who may act', () => {
     });
 
     expect(queryByTestId('hours-mark-paid-button')).toBeNull();
+  });
+});
+
+// A ledger line that opens its own payment. `onPaymentPress` follows the
+// same read-only idiom as `onMarkPaidPress`: without it the block is exactly
+// what it was, chevron included — a chevron with no destination is a lie.
+describe('PaidStateSection — opening a payment', () => {
+  it('leaves every line inert with no handler — no chevron, nothing to press', () => {
+    const { queryByTestId, getByTestId, UNSAFE_queryByType } = renderCard({
+      payments: [makePayment({ id: 'p1', amount_minor: 12000 })],
+    });
+
+    expect(queryByTestId('hours-paid-state-line-p1-open')).toBeNull();
+    expect(UNSAFE_queryByType('ChevronRight' as never)).toBeNull();
+    // The line itself is untouched.
+    expect(getByTestId('hours-paid-state-line-p1-value').props.children).toBe(
+      '£120.00'
+    );
+  });
+
+  it('makes the line pressable with a chevron once a handler is supplied', () => {
+    const { getByTestId, UNSAFE_queryByType } = renderCard({
+      payments: [makePayment({ id: 'p1', amount_minor: 12000 })],
+      onPaymentPress: mock(() => {}),
+    });
+
+    const open = getByTestId('hours-paid-state-line-p1-open');
+    expect(open.props.accessibilityRole).toBe('button');
+    expect(StyleSheet.flatten(open.props.style).minHeight).toBe(
+      spacing.minTouchTarget
+    );
+    expect(UNSAFE_queryByType('ChevronRight' as never)).toBeTruthy();
+    // The money testID stays on the AmountRow, not on the wrapper.
+    expect(getByTestId('hours-paid-state-line-p1-value').props.children).toBe(
+      '£120.00'
+    );
+  });
+
+  it('hands back the payment that was actually tapped', () => {
+    const onPaymentPress = mock(() => {});
+    const second = makePayment({ id: 'p2', amount_minor: 3612 });
+    const { getByTestId } = renderCard({
+      payments: [makePayment({ id: 'p1', amount_minor: 10000 }), second],
+      onPaymentPress,
+    });
+
+    fireEvent.press(getByTestId('hours-paid-state-line-p2-open'));
+    expect(onPaymentPress).toHaveBeenCalledWith(second);
+  });
+
+  // The line and its detail sheet are one tap apart; a figure that changes
+  // currency between them is a trust bug on a money screen.
+  it('states each payment in ITS OWN currency, not the section currency', () => {
+    const { getByTestId } = renderCard({
+      payments: [
+        makePayment({ id: 'p1', amount_minor: 12000, currency: 'EUR' }),
+      ],
+    });
+
+    expect(getByTestId('hours-paid-state-line-p1-value').props.children).toBe(
+      '€120.00'
+    );
+    // The week-scoped rows above keep the section currency.
+    expect(getByTestId('hours-paid-state-total-value').props.children).toBe(
+      '£120.00'
+    );
   });
 });

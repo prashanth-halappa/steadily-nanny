@@ -54,11 +54,17 @@ mock.module('@/src/components/custom/BottomSheetBase', () => {
       visible,
       children,
       testID,
+      onDismiss,
     }: {
       visible: boolean;
       children: React.ReactNode;
       testID?: string;
-    }) => (visible ? R.createElement('View', { testID }, children) : null),
+      onDismiss?: () => void;
+      // Forwarded onto the host node so a test can dismiss the sheet the way
+      // the real backdrop/close button would, without a fake control that
+      // exists nowhere in the shipped tree.
+    }) =>
+      visible ? R.createElement('View', { testID, onDismiss }, children) : null,
   };
 });
 
@@ -702,5 +708,108 @@ describe('ParentWeekView — the payments entry link', () => {
     await waitFor(() =>
       expect(getByTestId('hours-payments-link')).toBeTruthy()
     );
+  });
+});
+
+// WP-C: the week is the second door into the payment leaf the Payments
+// screen already opens. Same sheet, same testID — a second testID for one
+// component would be the invention, not the reuse.
+describe('ParentWeekView — opening a payment from the week', () => {
+  it('says what the Payments screen holds, on a row rather than a bare link', async () => {
+    const { getByTestId } = renderParentView();
+
+    await waitFor(() =>
+      expect(getByTestId('hours-payments-link')).toBeTruthy()
+    );
+    expect(getByTestId('hours-payments-link-subtitle').props.children).toBe(
+      'payments.subtitleParent'
+    );
+  });
+
+  it('opens the payment that was tapped, not merely a payment', async () => {
+    listPaymentsMock.mockImplementation(() =>
+      Promise.resolve([
+        makePayment({ id: 'pay-first', amount_minor: 5000 }),
+        makePayment({ id: 'pay-second', amount_minor: 12000 }),
+      ])
+    );
+
+    const { getByTestId, queryByTestId } = renderParentView();
+
+    await waitFor(() =>
+      expect(getByTestId('hours-paid-state-line-pay-second-open')).toBeTruthy()
+    );
+    expect(queryByTestId('payments-detail')).toBeNull();
+
+    fireEvent.press(getByTestId('hours-paid-state-line-pay-second-open'));
+
+    await waitFor(() => expect(getByTestId('payments-detail')).toBeTruthy());
+    expect(getByTestId('payments-detail-amount').props.children).toBe(
+      '£120.00'
+    );
+  });
+
+  it('closes again on dismiss', async () => {
+    listPaymentsMock.mockImplementation(() =>
+      Promise.resolve([makePayment({ amount_minor: 12000 })])
+    );
+
+    const { getByTestId, queryByTestId } = renderParentView();
+
+    await waitFor(() =>
+      expect(
+        getByTestId('hours-paid-state-line-pay-existing-open')
+      ).toBeTruthy()
+    );
+    fireEvent.press(getByTestId('hours-paid-state-line-pay-existing-open'));
+    await waitFor(() => expect(getByTestId('payments-detail')).toBeTruthy());
+
+    fireEvent(getByTestId('payments-detail'), 'dismiss');
+
+    await waitFor(() => expect(queryByTestId('payments-detail')).toBeNull());
+  });
+
+  // The week IS the context the sheet was opened from — a "For the week" link
+  // here would navigate to the week already on screen and stack a second
+  // Hours route behind it.
+  it('offers no link back to the week it was opened from', async () => {
+    listPaymentsMock.mockImplementation(() =>
+      Promise.resolve([makePayment({ amount_minor: 12000 })])
+    );
+
+    const { getByTestId, queryByTestId } = renderParentView();
+
+    await waitFor(() =>
+      expect(
+        getByTestId('hours-paid-state-line-pay-existing-open')
+      ).toBeTruthy()
+    );
+    fireEvent.press(getByTestId('hours-paid-state-line-pay-existing-open'));
+
+    await waitFor(() => expect(getByTestId('payments-detail')).toBeTruthy());
+    expect(queryByTestId('payments-detail-for-week')).toBeNull();
+  });
+
+  it('names the carer it went to, and the parent who recorded it as themselves', async () => {
+    listPaymentsMock.mockImplementation(() =>
+      Promise.resolve([makePayment({ amount_minor: 12000 })])
+    );
+
+    const { getByTestId } = renderParentView();
+
+    await waitFor(() =>
+      expect(
+        getByTestId('hours-paid-state-line-pay-existing-open')
+      ).toBeTruthy()
+    );
+    fireEvent.press(getByTestId('hours-paid-state-line-pay-existing-open'));
+
+    await waitFor(() => expect(getByTestId('payments-detail')).toBeTruthy());
+    expect(getByTestId('payments-detail-paid-to-value').props.children).toBe(
+      'Amara'
+    );
+    expect(
+      getByTestId('payments-detail-recorded-by-value').props.children
+    ).toBe('detail.you');
   });
 });

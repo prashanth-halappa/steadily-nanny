@@ -24,9 +24,11 @@
  */
 import type { Payment } from '@steadily-nanny/shared-types/schemas/payment.schema';
 import { type Href, useRouter } from 'expo-router';
+import { ChevronRight } from 'lucide-react-native';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Pressable, View } from 'react-native';
+import { Icon } from '@/lib/icons/iconWithClassName';
 import { BottomSheetBase } from '@/src/components/custom/BottomSheetBase';
 import {
   Body,
@@ -38,6 +40,7 @@ import {
 import { formatMoney } from '@/src/lib/money';
 import { formatEarningsLongDate } from '../utils/earningsFormat';
 import { formatWeekRangeLabel, getWeekDates } from '../utils/week';
+import { CHEVRON_SLOT } from './TimeEntryRow';
 
 interface PaymentDetailSheetProps {
   visible: boolean;
@@ -58,7 +61,18 @@ interface PaymentDetailSheetProps {
 }
 
 /** Label over value. `onPress` is what makes a row a link — its absence is
- * why a plain fact needs no "read-only" copy beside it. */
+ * why a plain fact needs no "read-only" copy beside it.
+ *
+ * A link moves TWO channels, never one: `text-primary` (#5B3E5D) against
+ * `text-foreground` (#2A1F2B) is two dark plums, and on device that read as
+ * static text — nobody found the route to the week. The chevron is the
+ * second channel, and it is the same `CHEVRON_SLOT` column `PaymentRow` and
+ * `PaidStateSection` use so the affordance is identical everywhere.
+ *
+ * The non-pressable branch reserves NO slot: a chevron with no destination
+ * is a lie, and a blank 20pt column on a plain fact would shift the value
+ * for nothing. These rows are stacked, not a ragged figure column, so
+ * nothing needs the spacer `TimeEntryRow` keeps. */
 function DetailRow({
   testID,
   label,
@@ -92,9 +106,20 @@ function DetailRow({
       testID={testID}
       accessibilityRole="button"
       onPress={onPress}
-      className="gap-1"
+      className="flex-row items-center gap-3"
     >
-      {content}
+      <View className="flex-1 gap-1">{content}</View>
+      <View
+        testID={`${testID}-chevron`}
+        style={{ width: CHEVRON_SLOT }}
+        pointerEvents="none"
+      >
+        <Icon
+          icon={ChevronRight}
+          size={CHEVRON_SLOT}
+          className="text-muted-foreground"
+        />
+      </View>
     </Pressable>
   ) : (
     <View testID={testID} className="gap-1">
@@ -164,9 +189,14 @@ export function PaymentDetailSheet({
               testID={`${testID}-for-week`}
               label={t('payments.detail.forWeek')}
               value={formatWeekRangeLabel(getWeekDates(weekStart))}
+              // `breakdown=1` asks the Hours tab to land on the week with the
+              // earnings breakdown already open — one hop, not two. The
+              // breakdown is NOT inlined here: those lines sum to the week's
+              // GROSS, and against a partial payment they would read as a
+              // false total on a settlement record.
               onPress={() =>
                 router.push(
-                  `/(private)/(tabs)/hours?weekStart=${weekStart}` as Href
+                  `/(private)/(tabs)/hours?weekStart=${weekStart}&breakdown=1` as Href
                 )
               }
             />

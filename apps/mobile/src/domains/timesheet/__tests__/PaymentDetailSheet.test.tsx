@@ -183,13 +183,16 @@ describe('PaymentDetailSheet — the facts', () => {
 });
 
 describe('PaymentDetailSheet — the week link', () => {
-  it('pushes the hours tab at that week when the for-week row is tapped', () => {
+  // The route now lands on the week with the earnings breakdown already
+  // open — one hop, not two. `breakdown=1` is the request; `HoursScreen`
+  // consumes and clears it.
+  it('pushes the hours tab at that week AND asks for the breakdown', () => {
     const { getByTestId } = renderSheet();
 
     fireEvent.press(getByTestId('payments-detail-for-week'));
 
     expect(pushMock).toHaveBeenCalledWith(
-      '/(private)/(tabs)/hours?weekStart=2026-08-10'
+      '/(private)/(tabs)/hours?weekStart=2026-08-10&breakdown=1'
     );
   });
 
@@ -197,6 +200,28 @@ describe('PaymentDetailSheet — the week link', () => {
     const { queryByTestId } = renderSheet({ weekStart: null });
 
     expect(queryByTestId('payments-detail-for-week')).toBeNull();
+  });
+
+  // The defect this exists to fix: `text-primary` (#5B3E5D) against
+  // `text-foreground` (#2A1F2B) is two dark plums, so colour alone made the
+  // row read as static text and nobody found the route. The chevron is the
+  // second channel (colour + iconography) daylight-v2 requires.
+  it('carries a trailing chevron on the pressable for-week row', () => {
+    const { getByTestId } = renderSheet();
+
+    expect(getByTestId('payments-detail-for-week-chevron')).toBeTruthy();
+  });
+
+  // A chevron with no destination is a lie, and a RESERVED slot on a
+  // non-pressable row would shift the value column for no reason.
+  it('gives the read-only rows no chevron and no reserved slot', () => {
+    const { queryByTestId } = renderSheet();
+
+    expect(queryByTestId('payments-detail-paid-on-chevron')).toBeNull();
+    expect(queryByTestId('payments-detail-recorded-on-chevron')).toBeNull();
+    expect(queryByTestId('payments-detail-paid-to-chevron')).toBeNull();
+    expect(queryByTestId('payments-detail-recorded-by-chevron')).toBeNull();
+    expect(queryByTestId('payments-detail-method-chevron')).toBeNull();
   });
 });
 

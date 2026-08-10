@@ -314,3 +314,55 @@ describe('WeekMoneyCard — the staged adjustment', () => {
     expect(queryByTestId('hours-money-card')).toBeNull();
   });
 });
+
+// Once a ledger line opens its payment, one card must not hold a pressable
+// row with a chevron next to a pressable row without one.
+describe('WeekMoneyCard — pressable rows carry a chevron', () => {
+  const staged = {
+    amountMinor: -2000,
+    note: 'Advance on Friday',
+    currency: 'GBP',
+  };
+
+  it('forwards onPaymentPress down to the ledger line', () => {
+    const onPaymentPress = mock(() => {});
+    const payment = makePayment({ id: 'p1', amount_minor: 12000 });
+    const { getByTestId } = renderCard({
+      earnings: okEarnings,
+      paidState: derivePaidState([payment], 23612),
+      payments: [payment],
+      onPaymentPress,
+    });
+
+    fireEvent.press(getByTestId('hours-paid-state-line-p1-open'));
+    expect(onPaymentPress).toHaveBeenCalledWith(payment);
+  });
+
+  it('gives the staged adjustment row a chevron when it opens the editor', () => {
+    const { getByTestId } = renderCard({
+      earnings: okEarnings,
+      adjustment: staged,
+      onAdjustmentPress: mock(() => {}),
+    });
+
+    expect(
+      within(getByTestId('hours-money-card-adjustment')).UNSAFE_queryByType(
+        'ChevronRight' as never
+      )
+    ).toBeTruthy();
+  });
+
+  it('leaves the read-only adjustment row without one — it goes nowhere', () => {
+    const { getByTestId } = renderCard({
+      earnings: okEarnings,
+      viewerRole: 'nanny',
+      adjustment: staged,
+    });
+
+    expect(
+      within(getByTestId('hours-money-card-adjustment')).UNSAFE_queryByType(
+        'ChevronRight' as never
+      )
+    ).toBeNull();
+  });
+});

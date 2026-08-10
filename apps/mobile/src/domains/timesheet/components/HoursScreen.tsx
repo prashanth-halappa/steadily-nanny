@@ -27,6 +27,13 @@
  * later visit. Blur resets local paging so returning to the tab lands on the
  * current week; a fresh push can set `weekStart` again and win.
  *
+ * `breakdown=1` (from a payment's "For the week" row) rides the same
+ * one-shot discipline for the same reason — left on the route it would
+ * re-open the earnings breakdown on every later visit to this tab. It is
+ * consumed into a monotonically increasing nonce handed to whichever week
+ * view is rendered; the breakdown sheet's open state stays where it already
+ * lived, inside that view.
+ *
  * Wave B: the household shown here comes from `useActiveHousehold`, not
  * `useIsOnboarded().householdId` — a nanny in multiple households needs the
  * one she's currently switched to, and `useIsOnboarded` only ever resolves
@@ -128,8 +135,10 @@ export function HoursScreen() {
   // from `useActiveHousehold`; timesheet is resolved by week query.
   const searchParams = useLocalSearchParams<{
     weekStart?: string | string[];
+    breakdown?: string | string[];
   }>();
   const weekStartFromRoute = normalizeSearchParam(searchParams.weekStart);
+  const wantsBreakdown = normalizeSearchParam(searchParams.breakdown) === '1';
   const validWeekStart =
     typeof weekStartFromRoute === 'string' &&
     ISO_DATE_RE.test(weekStartFromRoute)
@@ -155,18 +164,27 @@ export function HoursScreen() {
   // null = follow the route offset (or current week once the param is gone);
   // non-null = deep-link consume and/or user paging with prev/next.
   const [userWeekOffset, setUserWeekOffset] = useState<number | null>(null);
+  // 0 = never asked. A counter rather than a boolean: a SECOND payment
+  // opened later must re-open the breakdown, and a flag already sitting at
+  // `true` would swallow that silently.
+  const [openBreakdownSignal, setOpenBreakdownSignal] = useState(0);
 
   // One-shot: apply a valid weekStart into local state, then clear it from the
   // route so a later Hours visit (tab stays mounted) cannot reopen it.
+  // `breakdown` is consumed and cleared in the same breath, for the same
+  // reason — see the module header.
   // Do not reset userWeekOffset when the param disappears — that would jump
   // back to the current week immediately after the deep link lands.
   useEffect(() => {
-    if (!validWeekStart) return;
-    setUserWeekOffset(
-      weekOffsetFromSearchParam(validWeekStart, currentWeekStartISO)
-    );
-    router.setParams({ weekStart: undefined });
-  }, [validWeekStart, currentWeekStartISO, router]);
+    if (!validWeekStart && !wantsBreakdown) return;
+    if (validWeekStart) {
+      setUserWeekOffset(
+        weekOffsetFromSearchParam(validWeekStart, currentWeekStartISO)
+      );
+    }
+    if (wantsBreakdown) setOpenBreakdownSignal(signal => signal + 1);
+    router.setParams({ weekStart: undefined, breakdown: undefined });
+  }, [validWeekStart, wantsBreakdown, currentWeekStartISO, router]);
 
   // Leaving the tab drops local paging so the next focus (with no weekStart)
   // lands on the current week. A new push can set weekStart again and the
@@ -289,6 +307,7 @@ export function HoursScreen() {
           isPreviousWeekDisabled={isPreviousWeekDisabled}
           isPastMember={isReadOnly}
           readOnly={!isParentEditorRole(onboarding.role) || isReadOnly}
+          openBreakdownSignal={openBreakdownSignal}
         />
       ) : (
         <NannyWeekView
@@ -304,6 +323,7 @@ export function HoursScreen() {
           isPreviousWeekDisabled={isPreviousWeekDisabled}
           isPastMember={isReadOnly}
           readOnly={isReadOnly}
+          openBreakdownSignal={openBreakdownSignal}
         />
       )}
     </View>

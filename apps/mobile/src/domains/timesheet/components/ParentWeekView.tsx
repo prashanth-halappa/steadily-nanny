@@ -36,7 +36,7 @@ import { useThemeColors } from '@/lib/design-tokens/useThemeColors';
 import { useTabBarScrollPadding } from '@/lib/layout/useTabBarScrollPadding';
 import { cn } from '@/lib/utils';
 import { ErrorState } from '@/src/components/custom/ErrorState';
-import { Caption, Small } from '@/src/components/ui/typography';
+import { Caption } from '@/src/components/ui/typography';
 import { ExpenseReviewSheet } from '@/src/domains/expenses/components/ExpenseReviewSheet';
 import { PendingExpensesRow } from '@/src/domains/expenses/components/PendingExpensesRow';
 import { ReimbursementsCard } from '@/src/domains/expenses/components/ReimbursementsCard';
@@ -83,6 +83,8 @@ import { ApproveWeekDialog } from './ApproveWeekDialog';
 import { EarningsBreakdownSheet } from './EarningsBreakdownSheet';
 import { HoursHeroBand } from './HoursHeroBand';
 import { HoursWeekSkeleton } from './HoursWeekSkeleton';
+import { PaymentDetailSheet } from './PaymentDetailSheet';
+import { PaymentsEntryRow } from './PaymentsEntryRow';
 import { QueryNoteSheet } from './QueryNoteSheet';
 import { RecordPaymentSheet } from './RecordPaymentSheet';
 import { ReopenWeekDialog } from './ReopenWeekDialog';
@@ -115,6 +117,11 @@ interface ParentWeekViewProps {
    * true for a helper who is still a member: only a past member gets the
    * "your record stays here" line under the hero band. */
   isPastMember?: boolean;
+  /** Bumped by `HoursScreen` each time it consumes a `breakdown=1` deep
+   * link (a payment's "For the week" row). A nonce, not a boolean: a SECOND
+   * payment opened later must re-open the breakdown, and a flag already
+   * sitting at `true` would swallow that. */
+  openBreakdownSignal?: number;
 }
 
 export function ParentWeekView({
@@ -130,6 +137,7 @@ export function ParentWeekView({
   isPreviousWeekDisabled,
   readOnly = false,
   isPastMember = false,
+  openBreakdownSignal = 0,
 }: ParentWeekViewProps) {
   const { t } = useTranslation('hours');
   const { t: tSchedule } = useTranslation('schedule');
@@ -154,6 +162,12 @@ export function ParentWeekView({
   const recordPayment = useRecordPayment();
   const [isQuerySheetVisible, setIsQuerySheetVisible] = useState(false);
   const [isRecordPaymentVisible, setIsRecordPaymentVisible] = useState(false);
+  // The ID, not the payment: a refetch then re-resolves the open sheet
+  // against fresh data instead of pinning the snapshot that was on screen
+  // when it was tapped. Same discipline as `PaymentsScreen`.
+  const [selectedPaymentId, setSelectedPaymentId] = useState<string | null>(
+    null
+  );
   // The server's own over-payment figures, held so the sheet can state the
   // ceiling it hit. Cleared on every open and every fresh attempt — a stale
   // banner would accuse the parent of a mistake they already corrected.
@@ -170,7 +184,27 @@ export function ParentWeekView({
     useState(false);
   const [isApproveDialogOpen, setIsApproveDialogOpen] = useState(false);
   const [isReopenDialogOpen, setIsReopenDialogOpen] = useState(false);
-  const [isBreakdownVisible, setIsBreakdownVisible] = useState(false);
+  // The week the breakdown is open FOR, not a bare boolean. Paging to
+  // another week then closes it for free — no reset effect to get wrong, and
+  // no sheet re-appearing on a week the user paged to.
+  const [breakdownWeek, setBreakdownWeek] = useState<string | null>(null);
+  const isBreakdownVisible = breakdownWeek === weekStartISO;
+
+  // Landing from a payment's "For the week" row: open the breakdown this
+  // view already owns, so the route is one hop rather than two. Deliberately
+  // NOT keyed on `weekStartISO` — re-running on a week change would re-open
+  // the sheet on whatever week the user paged to next.
+  //
+  // Nothing here forces a sheet to exist. `EarningsBreakdownSheet` only
+  // mounts under `earningsOk`, so a `no_arrangement` or hours-only week
+  // lands on the week and opens nothing — an empty breakdown would be worse
+  // than none. Earnings that resolve a moment AFTER landing do open it,
+  // which is exactly the first-paint case.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: weekStartISO is READ at signal time, never tracked — listing it re-runs this on every page and re-opens the sheet on the week the user moved to.
+  useEffect(() => {
+    if (!openBreakdownSignal) return;
+    setBreakdownWeek(weekStartISO);
+  }, [openBreakdownSignal]);
   const [isExpenseReviewVisible, setIsExpenseReviewVisible] = useState(false);
   const [submittingExpenseId, setSubmittingExpenseId] = useState<string | null>(
     null
@@ -485,6 +519,8 @@ export function ParentWeekView({
   // returns null for that — never `?? 0`, which would render "Paid" over a
   // week whose value is simply unknown (docs/11-MONEY.md §4).
   const payments = paymentsQuery.data ?? [];
+  const selectedPayment =
+    payments.find(payment => payment.id === selectedPaymentId) ?? null;
   const paidState = earningsOk
     ? derivePaidState(payments, earningsOk.gross_minor)
     : timesheet?.reopen_reason != null
@@ -733,10 +769,11 @@ export function ParentWeekView({
               totalMinutes={totalMinutes}
               earningsError={timesheetQuery.isError}
               onRetryEarnings={() => void timesheetQuery.refetch()}
-              onPressBreakdown={() => setIsBreakdownVisible(true)}
+              onPressBreakdown={() => setBreakdownWeek(weekStartISO)}
               paidState={showSettlementHistory ? paidState : null}
               payments={payments}
               settlementCurrency={settlementCurrency}
+              onPaymentPress={payment => setSelectedPaymentId(payment.id)}
               onMarkPaidPress={
                 isApproved && !readOnly ? handleOpenRecordPayment : undefined
               }
@@ -770,12 +807,10 @@ export function ParentWeekView({
             />
             {/* Cross-week record, not gated on this week's approval — a
                 helper reads settlements too, same as ReimbursementsCard. */}
-            <Pressable
-              testID="hours-payments-link"
+            <PaymentsEntryRow
+              subtitle={t('payments.subtitleParent')}
               onPress={() => router.push('/(private)/payments' as Href)}
-            >
-              <Small className="text-primary">{t('payments.entryLink')}</Small>
-            </Pressable>
+            />
             {showSettlementHistory && timesheet && isApproved ? (
               <WeekExportAction
                 timesheetId={timesheet.id}
@@ -816,6 +851,29 @@ export function ParentWeekView({
         hint={t('queryHint')}
         placeholder={t('queryNotePlaceholder')}
         submitLabel={t('querySubmit')}
+      />
+
+      {/* Outside the FlashList, with the other sheets: dismissal must never
+          depend on which row is still mounted. `weekStart` is null on
+          purpose — the week is the context this was opened from, and the
+          "For the week" row would push a second Hours route onto the one
+          already on screen. */}
+      <PaymentDetailSheet
+        visible={selectedPayment !== null}
+        onDismiss={() => setSelectedPaymentId(null)}
+        payment={selectedPayment}
+        weekStart={null}
+        paidToName={carerName ?? timesheet?.carer_display_name ?? null}
+        recordedByName={
+          selectedPayment
+            ? resolveMemberDisplayName(
+                selectedPayment.recorded_by,
+                currentUserId,
+                membersByUserId,
+                memberLabels
+              )
+            : null
+        }
       />
 
       <ApproveWeekDialog
@@ -886,7 +944,7 @@ export function ParentWeekView({
       {earningsOk ? (
         <EarningsBreakdownSheet
           visible={isBreakdownVisible}
-          onDismiss={() => setIsBreakdownVisible(false)}
+          onDismiss={() => setBreakdownWeek(null)}
           earnings={earningsOk}
           weekRangeLabel={weekRangeLabel}
           approvedDateLabel={approvedDateLabel}

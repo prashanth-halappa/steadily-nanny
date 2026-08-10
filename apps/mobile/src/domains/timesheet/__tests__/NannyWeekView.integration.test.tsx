@@ -1063,3 +1063,128 @@ describe('NannyWeekView — cold-mount reopen reason', () => {
     expect(queryByTestId('hours-earnings-line-reopened-note')).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Landing from a payment — same contract as `ParentWeekView`: `HoursScreen`
+// consumes `?breakdown=1` and bumps `openBreakdownSignal`, and this view
+// opens the `EarningsBreakdownSheet` it already owns.
+// ---------------------------------------------------------------------------
+const PRIOR_WEEK = '2026-07-27';
+const PRIOR_TIMESHEET_ID = 'ts-prior';
+
+function renderNannyWeek(props: {
+  openBreakdownSignal?: number;
+  weekStartISO?: string;
+}) {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false, gcTime: 0 },
+      mutations: { retry: false },
+    },
+  });
+  const tree = (next: typeof props) => {
+    const weekStartISO = next.weekStartISO ?? WEEK_START;
+    const weekDates = getWeekDates(weekStartISO);
+    return (
+      <QueryClientProvider client={queryClient}>
+        <NannyWeekView
+          householdId={HOUSEHOLD_ID}
+          weekStartISO={weekStartISO}
+          weekDates={weekDates}
+          weekRangeLabel={formatWeekRangeLabel(weekDates)}
+          nowMs={new Date('2026-08-09T12:00:00.000Z').getTime()}
+          timeZone="UTC"
+          onPreviousWeek={() => {}}
+          onNextWeek={() => {}}
+          isNextWeekDisabled={false}
+          isPreviousWeekDisabled={false}
+          openBreakdownSignal={next.openBreakdownSignal}
+        />
+      </QueryClientProvider>
+    );
+  };
+  const utils = render(tree(props));
+  return {
+    ...utils,
+    rerenderWith: (next: typeof props) => utils.rerender(tree(next)),
+  };
+}
+
+describe('NannyWeekView — breakdown on landing', () => {
+  it('opens the breakdown on landing, with no second tap on the money card', async () => {
+    const { getByTestId } = renderNannyWeek({ openBreakdownSignal: 1 });
+
+    await waitFor(() =>
+      expect(getByTestId('hours-earnings-breakdown').props.visible).toBe(true)
+    );
+    expect(getByTestId('hours-earnings-breakdown-total').props.children).toBe(
+      '£148.00'
+    );
+  });
+
+  it('does not open the breakdown without the signal', async () => {
+    const { getByTestId, queryByTestId } = renderNannyWeek({});
+
+    await waitFor(() =>
+      expect(getByTestId('hours-earnings-line-amount')).toBeTruthy()
+    );
+    expect(getByTestId('hours-earnings-breakdown').props.visible).toBe(false);
+  });
+
+  it('closes the breakdown when the user pages to another priced week', async () => {
+    listTimesheetsMock.mockImplementation(() =>
+      Promise.resolve([
+        makeTimesheet(),
+        makeTimesheet({ id: PRIOR_TIMESHEET_ID, week_start: PRIOR_WEEK }),
+      ])
+    );
+    getByIdMock.mockImplementation((timesheetId?: string) =>
+      Promise.resolve(
+        timesheetId === PRIOR_TIMESHEET_ID
+          ? makeTimesheetWeek(
+              { id: PRIOR_TIMESHEET_ID, week_start: PRIOR_WEEK },
+              { ...okEarnings, week_start: PRIOR_WEEK, gross_minor: 11100 }
+            )
+          : makeTimesheetWeek()
+      )
+    );
+
+    const { getByTestId, queryByTestId, rerenderWith } = renderNannyWeek({
+      openBreakdownSignal: 1,
+    });
+
+    await waitFor(() =>
+      expect(getByTestId('hours-earnings-breakdown').props.visible).toBe(true)
+    );
+
+    rerenderWith({ openBreakdownSignal: 1, weekStartISO: PRIOR_WEEK });
+
+    await waitFor(() =>
+      expect(getByTestId('hours-earnings-breakdown').props.visible).toBe(false)
+    );
+  });
+
+  // An empty breakdown is worse than no breakdown — the sheet only ever
+  // mounts under `earningsOk`, so the signal finds nothing to open here.
+  it('opens nothing on a no-arrangement week, and still lands on the week', async () => {
+    getByIdMock.mockImplementation(() =>
+      Promise.resolve(
+        makeTimesheetWeek(
+          {},
+          {
+            status: 'no_arrangement',
+            week_start: WEEK_START,
+            unpriced_dates: [WEEK_START],
+          }
+        )
+      )
+    );
+
+    const { getByTestId, queryByTestId } = renderNannyWeek({
+      openBreakdownSignal: 1,
+    });
+
+    await waitFor(() => expect(getByTestId('hours-total')).toBeTruthy());
+    expect(queryByTestId('hours-earnings-breakdown')).toBeNull();
+  });
+});
