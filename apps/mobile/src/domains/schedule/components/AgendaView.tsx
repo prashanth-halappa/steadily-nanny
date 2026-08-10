@@ -14,7 +14,7 @@ import {
 import { uncoveredKey } from '@steadily-nanny/shared-types/uncoveredCare';
 import { type Href, useRouter } from 'expo-router';
 import { AlertCircle, Plane } from 'lucide-react-native';
-import { type RefObject, useEffect, useMemo } from 'react';
+import { type ReactElement, type RefObject, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Pressable, View } from 'react-native';
 import { useTabBarScrollPadding } from '@/lib/layout/useTabBarScrollPadding';
@@ -96,6 +96,8 @@ interface AgendaViewProps {
   focusUncoveredKey?: string | null;
   commitments?: readonly ChildCommitment[];
   listRef?: RefObject<FlashListRef<AgendaItem> | null>;
+  /** Scrolls with the list instead of sitting frozen above it. */
+  listHeader?: ReactElement;
 }
 
 export type AgendaItem =
@@ -479,6 +481,7 @@ export function AgendaView({
   focusUncoveredKey = null,
   commitments = [],
   listRef,
+  listHeader,
 }: AgendaViewProps) {
   const { t } = useTranslation('schedule');
   const { t: tCommon } = useTranslation('common');
@@ -660,6 +663,7 @@ export function AgendaView({
         data={items}
         keyExtractor={item => item.key}
         getItemType={item => item.type}
+        ListHeaderComponent={listHeader}
         contentContainerStyle={{ paddingBottom: tabBarScrollPadding }}
         renderItem={({ item }) => {
           if (item.type === 'header') {

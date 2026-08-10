@@ -12,7 +12,7 @@ import {
   type Shift,
 } from '@steadily-nanny/shared-types/schemas/shift.schema';
 import { type Href, useRouter } from 'expo-router';
-import { useMemo } from 'react';
+import { type ReactNode, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Pressable, ScrollView, View } from 'react-native';
 import { SCREEN_CONTENT_STYLE, useThemeColors } from '@/lib/design-tokens';
@@ -64,6 +64,8 @@ interface WeekRibbonViewProps {
   timeOff?: CarerTimeOff[];
   householdTimeZone?: string;
   weekDates?: string[];
+  /** Scrolls with the grid instead of sitting frozen above it. */
+  listHeader?: ReactNode;
 }
 
 function cellStatusColour(
@@ -124,6 +126,7 @@ export function WeekRibbonView({
   timeOff = [],
   householdTimeZone = 'UTC',
   weekDates = [],
+  listHeader,
 }: WeekRibbonViewProps) {
   const { t } = useTranslation('schedule');
   const themeColors = useThemeColors();
@@ -168,6 +171,7 @@ export function WeekRibbonView({
         paddingBottom: tabBarScrollPadding,
       }}
     >
+      {listHeader}
       <View className="flex-row pb-2">
         <View className="w-12 items-end pr-2">
           <MetadataLabel className="text-muted-foreground">

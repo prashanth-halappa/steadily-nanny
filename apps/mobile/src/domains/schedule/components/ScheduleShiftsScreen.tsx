@@ -269,6 +269,105 @@ export function ScheduleShiftsScreen({
     !showQueryError &&
     (activeHousehold.households?.length ?? 0) >= 2;
 
+  // The header scrolls with the content — it is handed to whichever view is
+  // on screen as its list header, not stacked frozen above it.
+  const header = (
+    <View
+      style={{
+        gap: 8,
+        paddingHorizontal: SCREEN_CONTENT_STYLE.padding,
+        paddingTop: SCREEN_CONTENT_STYLE.padding,
+        paddingBottom: 8,
+      }}
+    >
+      {showBack ? (
+        <BackButton
+          testID="schedule-shifts-back"
+          onPress={() => router.back()}
+          label={tCommon('back')}
+        />
+      ) : null}
+      <View className="gap-1">
+        <View className="flex-row items-center justify-between gap-2">
+          <H1>{t('shifts.screenTitle')}</H1>
+          {canAddExtra ? (
+            // Small/14/600, not a ghost Button (16 @600) — it was reading
+            // as heavy as the H1 beside it.
+            <Pressable
+              testID="schedule-shifts-add-extra"
+              accessibilityRole="button"
+              hitSlop={8}
+              style={{ minHeight: spacing.minTouchTarget }}
+              className="justify-center"
+              onPress={() =>
+                router.push('/(private)/schedule/shifts/extra' as Href)
+              }
+            >
+              <Small weight="semibold" className="text-primary">
+                {t('shifts.addExtra')}
+              </Small>
+            </Pressable>
+          ) : null}
+        </View>
+        <Small tabular className="text-muted-strong">
+          {weekRangeLabel}
+        </Small>
+        <Figure28 testID="schedule-week-total">
+          {t('shifts.weekTotal', {
+            duration: formatDuration(weekTotalMinutes),
+          })}
+        </Figure28>
+      </View>
+      {patternBanner}
+      {canViewCover && uncoveredWeek.totalCount > 0 ? (
+        <Pressable
+          testID="schedule-cover-week-summary"
+          accessibilityRole="button"
+          onPress={() => {
+            if (firstUncoveredKey) {
+              setScrollToUncoveredKey(firstUncoveredKey);
+            }
+            if (calendarView !== CALENDAR_VIEWS.AGENDA) {
+              setCalendarView(CALENDAR_VIEWS.AGENDA);
+            }
+          }}
+        >
+          <Small className="text-warning-strong" weight="medium">
+            {t('cover.weekSummaryTitle', { count: uncoveredWeek.totalCount })}
+          </Small>
+        </Pressable>
+      ) : null}
+      <WeekNavHeader
+        label={weekRangeLabel}
+        onPreviousWeek={handlePreviousWeek}
+        onNextWeek={handleNextWeek}
+        previousAccessibilityLabel={t('shifts.previousWeek')}
+        nextAccessibilityLabel={t('shifts.nextWeek')}
+        isPreviousDisabled={weekOffset <= -MAX_WEEKS_BACK}
+        isNextDisabled={weekOffset >= MAX_WEEKS_FORWARD}
+        previousTestID="schedule-week-prev"
+        nextTestID="schedule-week-next"
+        labelTestID="schedule-week-label"
+      />
+      <CalendarViewSwitcher value={calendarView} onChange={setCalendarView} />
+    </View>
+  );
+  // Agenda's FlashList has no horizontal padding of its own; the two
+  // ScrollViews pad their content container, so the header cancels it.
+  const gutterlessHeader = (
+    <View style={{ marginHorizontal: -SCREEN_CONTENT_STYLE.padding }}>
+      {header}
+      {weekHasAway ? (
+        <Small
+          testID="schedule-away-summary"
+          className="px-5.5 pb-2 text-muted-strong"
+        >
+          {t('shifts.awaySummary')}
+        </Small>
+      ) : null}
+    </View>
+  );
+
   return (
     <View
       testID="schedule-shifts-screen"
@@ -276,85 +375,8 @@ export function ScheduleShiftsScreen({
       className="bg-background"
     >
       <ScreenWash testID="schedule-screen-wash" kind="brand" />
-      <View
-        style={{
-          gap: 8,
-          paddingHorizontal: SCREEN_CONTENT_STYLE.padding,
-          paddingTop: SCREEN_CONTENT_STYLE.padding,
-          paddingBottom: 8,
-        }}
-      >
-        {showBack ? (
-          <BackButton
-            testID="schedule-shifts-back"
-            onPress={() => router.back()}
-            label={tCommon('back')}
-          />
-        ) : null}
-        <View className="gap-1">
-          <View className="flex-row items-center justify-between gap-2">
-            <H1>{t('shifts.screenTitle')}</H1>
-            {canAddExtra ? (
-              // Small/14/600, not a ghost Button (16 @600) — it was reading
-              // as heavy as the H1 beside it.
-              <Pressable
-                testID="schedule-shifts-add-extra"
-                accessibilityRole="button"
-                hitSlop={8}
-                style={{ minHeight: spacing.minTouchTarget }}
-                className="justify-center"
-                onPress={() =>
-                  router.push('/(private)/schedule/shifts/extra' as Href)
-                }
-              >
-                <Small weight="semibold" className="text-primary">
-                  {t('shifts.addExtra')}
-                </Small>
-              </Pressable>
-            ) : null}
-          </View>
-          <Small tabular className="text-muted-strong">
-            {weekRangeLabel}
-          </Small>
-          <Figure28 testID="schedule-week-total">
-            {t('shifts.weekTotal', {
-              duration: formatDuration(weekTotalMinutes),
-            })}
-          </Figure28>
-        </View>
-        {patternBanner}
-        {canViewCover && uncoveredWeek.totalCount > 0 ? (
-          <Pressable
-            testID="schedule-cover-week-summary"
-            accessibilityRole="button"
-            onPress={() => {
-              if (firstUncoveredKey) {
-                setScrollToUncoveredKey(firstUncoveredKey);
-              }
-              if (calendarView !== CALENDAR_VIEWS.AGENDA) {
-                setCalendarView(CALENDAR_VIEWS.AGENDA);
-              }
-            }}
-          >
-            <Small className="text-warning-strong" weight="medium">
-              {t('cover.weekSummaryTitle', { count: uncoveredWeek.totalCount })}
-            </Small>
-          </Pressable>
-        ) : null}
-        <WeekNavHeader
-          label={weekRangeLabel}
-          onPreviousWeek={handlePreviousWeek}
-          onNextWeek={handleNextWeek}
-          previousAccessibilityLabel={t('shifts.previousWeek')}
-          nextAccessibilityLabel={t('shifts.nextWeek')}
-          isPreviousDisabled={weekOffset <= -MAX_WEEKS_BACK}
-          isNextDisabled={weekOffset >= MAX_WEEKS_FORWARD}
-          previousTestID="schedule-week-prev"
-          nextTestID="schedule-week-next"
-          labelTestID="schedule-week-label"
-        />
-        <CalendarViewSwitcher value={calendarView} onChange={setCalendarView} />
-      </View>
+      {/* Only the states that render no scroller keep the header stacked. */}
+      {showContent || showCrossFamily ? null : header}
 
       {isLoading ? (
         <View style={{ flex: 1 }} className="items-center justify-center">
@@ -407,34 +429,27 @@ export function ScheduleShiftsScreen({
           showUncoveredActions={canEditCover}
           focusUncoveredKey={scrollToUncoveredKey ?? focusUncoveredKey}
           commitments={commitmentsQuery.data ?? []}
+          listHeader={header}
         />
       ) : null}
 
       {showContent && calendarView === CALENDAR_VIEWS.WEEK_RIBBON ? (
-        <>
-          {weekHasAway ? (
-            <Small
-              testID="schedule-away-summary"
-              className="px-5.5 pb-2 text-muted-strong"
-            >
-              {t('shifts.awaySummary')}
-            </Small>
-          ) : null}
-          <WeekRibbonView
-            shifts={shifts}
-            displayTimeZone={timeZone}
-            weekStartsOn={profile.data?.week_starts_on}
-            timeOff={timeOff}
-            householdTimeZone={timeZone}
-            weekDates={weekDates}
-          />
-        </>
+        <WeekRibbonView
+          shifts={shifts}
+          displayTimeZone={timeZone}
+          weekStartsOn={profile.data?.week_starts_on}
+          timeOff={timeOff}
+          householdTimeZone={timeZone}
+          weekDates={weekDates}
+          listHeader={gutterlessHeader}
+        />
       ) : null}
 
       {showCrossFamily && activeHousehold.householdId ? (
         <CrossFamilyRhythmView
           households={activeHousehold.households}
           activeHouseholdId={activeHousehold.householdId}
+          listHeader={gutterlessHeader}
         />
       ) : null}
     </View>

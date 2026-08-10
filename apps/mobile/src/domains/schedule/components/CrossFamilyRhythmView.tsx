@@ -26,6 +26,7 @@
 import type { Household } from '@steadily-nanny/shared-types/schemas/household.schema';
 import type { MeShift } from '@steadily-nanny/shared-types/schemas/me.schema';
 import { COVERING_SHIFT_STATUSES } from '@steadily-nanny/shared-types/uncoveredCare';
+import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ScrollView, View } from 'react-native';
 import { SCREEN_CONTENT_STYLE, useThemeColors } from '@/lib/design-tokens';
@@ -153,11 +154,14 @@ export function householdColourIndex(
 interface CrossFamilyRhythmViewProps {
   households: Household[];
   activeHouseholdId: string;
+  /** Scrolls with the grid instead of sitting frozen above it. */
+  listHeader?: ReactNode;
 }
 
 export function CrossFamilyRhythmView({
   households,
   activeHouseholdId,
+  listHeader,
 }: CrossFamilyRhythmViewProps) {
   const { t } = useTranslation('schedule');
   const colors = useThemeColors();
@@ -223,6 +227,7 @@ export function CrossFamilyRhythmView({
         paddingBottom: tabBarScrollPadding,
       }}
     >
+      {listHeader}
       <MetadataLabel className="mb-1 text-muted-foreground">
         {t('crossFamily.header')}
       </MetadataLabel>
