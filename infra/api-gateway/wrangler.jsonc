@@ -1,0 +1,15 @@
+{
+  // Fronts the Cloud Run API at api.nanny.getsteadily.app.
+  // Deploy: `npx wrangler deploy` from this directory.
+  //
+  // `custom_domain` (not a plain route) because Cloudflare Universal SSL covers
+  // *.getsteadily.app but NOT this third-level name — a Workers Custom Domain
+  // provisions both the DNS record and a cert for the exact hostname.
+  "name": "nanny-api-gateway",
+  "main": "worker.js",
+  "compatibility_date": "2026-08-09",
+  "routes": [{ "pattern": "api.nanny.getsteadily.app", "custom_domain": true }],
+  "vars": {
+    "CLOUD_RUN_ORIGIN": "https://nanny-api-662649119218.northamerica-northeast1.run.app"
+  }
+}

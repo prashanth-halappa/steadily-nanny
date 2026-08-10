@@ -1,0 +1,13 @@
+# What `gcloud builds submit` uploads as the build context. Without this gcloud
+# falls back to .gitignore semantics and ships ~400 MiB of mobile assets and
+# docs images for a build that only needs the API + shared-types.
+.git
+node_modules
+logs
+dist
+.env
+.env.*
+apps/mobile
+docs
+supabase
+.maestro

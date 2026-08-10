@@ -13,8 +13,11 @@ FROM oven/bun:1.3.9-alpine
 WORKDIR /app
 
 # Root package files.
-COPY package.json bun.lock ./
+COPY package.json bun.lock tsconfig.base.json ./
 COPY turbo.json ./
+# Root package.json declares patchedDependencies; bun install fails without the
+# patch file even though the patched package is mobile-only.
+COPY patches ./patches
 
 # Workspace package manifests (for a cached install layer).
 COPY packages/shared-types/package.json ./packages/shared-types/

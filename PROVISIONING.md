@@ -137,14 +137,98 @@ Create **two separate projects** — one for the API (Node/Bun), one for mobile 
 
 ---
 
-## 8. Cloud Run (API deploy)
+## 8. Cloud Run (API deploy) + Cloudflare gateway
 
-1. Copy the required vars from `apps/api/deploy-cloud-run.sh`'s header into a local `.env.cloudrun` (gitignored): `GCP_PROJECT_ID`, `GCP_REGION`, `SERVICE_NAME`, `ARTIFACT_REGISTRY_REPO`, `IMAGE_TAG` (optional: `MIN_INSTANCES`, `MAX_INSTANCES`, `CPU`, `MEMORY`, `CONCURRENCY`, `TIMEOUT` — all have shell defaults).
-2. Attach the Vertex-AI-capable service account from §3 step 4 to the Cloud Run service so ADC resolves without a mounted key file.
-3. Set the application's own runtime env vars (everything in `apps/api/.env.example`) on the Cloud Run service itself — the deploy script passes secrets inline via `--set-env-vars` from your local `.env`, not a secret manager. **Known limitation, not a bug**: if you need tighter secret handling, layer in Google Secret Manager yourself; it isn't wired up in this template.
-4. Run `bash apps/api/deploy-cloud-run.sh` (or `bun run` whatever script you wire to it).
+**This app is deployed.** Live values, not a template:
 
-**Verify:** `curl https://<your-cloud-run-url>/health` returns `{"status":"OK",...}`; `curl https://<your-cloud-run-url>/api/app/status` returns a valid `AppStatusResponse` envelope.
+| | |
+|---|---|
+| GCP project | `steadily-nanny` (662649119218) |
+| Region | `northamerica-northeast1` — same city as the Supabase project's `ca-central-1`, so the API's per-request DB round-trips stay local |
+| Cloud Run service | `nanny-api` (`https://nanny-api-662649119218.northamerica-northeast1.run.app`) |
+| Artifact Registry | `northamerica-northeast1-docker.pkg.dev/steadily-nanny/nanny-api` |
+| Public hostname | `api.nanny.getsteadily.app` via the Cloudflare Worker in `infra/api-gateway/` |
+
+### 8.1 One-time GCP setup
+
+```bash
+gcloud services enable run.googleapis.com artifactregistry.googleapis.com --project=steadily-nanny
+gcloud artifacts repositories create nanny-api --repository-format=docker \
+  --location=northamerica-northeast1 --project=steadily-nanny
+gcloud auth configure-docker northamerica-northeast1-docker.pkg.dev
+```
+
+### 8.2 Two gitignored files next to the deploy script
+
+`apps/api/.env.cloudrun` — *where* to deploy (`GCP_PROJECT_ID`, `GCP_REGION`, `SERVICE_NAME`,
+`ARTIFACT_REGISTRY_REPO`, `IMAGE_TAG`, plus the optional sizing vars).
+
+`apps/api/.env.cloudrun.yaml` — *what the container gets at runtime*, passed as
+`--env-vars-file`. Generated from `apps/api/.env` with three deliberate differences:
+
+- `NODE_ENV: production` (not `development`).
+- **Omit** `PORT` (Cloud Run injects it), `SUPABASE_DB_URL` (only `scripts/e2e-assert.ts` reads it),
+  `POSTHOG_API_KEY` (mobile-only — nothing in `apps/api/src` reads it), and any empty value.
+- A real `RESEND_API_KEY` is mandatory: `productionRequiredCoreKeys` in
+  `src/config/env.core.ts` makes the container refuse to boot without it under `NODE_ENV=production`,
+  which fails the deploy outright.
+
+YAML, not `--set-env-vars`, because several values contain commas, spaces and angle brackets.
+Regenerate it whenever `apps/api/.env` changes. **Known limitation, not a bug:** secrets live on the
+service, not in Secret Manager.
+
+No service account is attached — the default compute SA is used. Vertex/ADC (§3) is not needed: no
+domain calls `llmGenerate`, and `GOOGLE_VERTEX_PROJECT` is a placeholder.
+
+### 8.3 Deploy
+
+```bash
+bash apps/api/deploy-cloud-run.sh   # Cloud Build -> Artifact Registry -> gcloud run deploy
+```
+
+The image is built on **Cloud Build** (`apps/api/cloudbuild.yaml`), not locally: Cloud Run needs
+linux/amd64 and an emulated `docker build --platform linux/amd64` on Apple Silicon spends 20+ minutes
+in `bun install`. Cloud Build is native amd64 and takes ~50s. Two files control what gets uploaded /
+copied, and both matter:
+
+- Root `.gcloudignore` — what `gcloud builds submit` uploads. Without it gcloud falls back to
+  `.gitignore` semantics and ships ~400 MiB of mobile assets and doc images.
+- Root `.dockerignore` — the Docker build context. `apps/api/.dockerignore` is dead code: the context
+  is the monorepo root, so Docker never reads it.
+
+The Dockerfile must copy `tsconfig.base.json` (which `apps/api/tsconfig.json` extends) and `patches/`
+(the root `patchedDependencies` entry makes `bun install` fail without the patch file, even though the
+patched package is mobile-only).
+
+**Verify:** `curl https://nanny-api-662649119218.northamerica-northeast1.run.app/health` returns
+`{"status":"OK",...}`; `/api/app/status` returns a valid `AppStatusResponse` envelope.
+
+### 8.4 Cloudflare gateway
+
+There is **no** Cloud Run domain mapping. `api.nanny.getsteadily.app` is a Cloudflare Worker
+(`infra/api-gateway/`) that rewrites `Host` to the `run.app` name and proxies through — the same shape
+that fronts `api.getsteadily.app`. The route is a **Workers Custom Domain**, not a plain route:
+Universal SSL covers `*.getsteadily.app` but not this third-level name, and a custom domain
+provisions the DNS record and a matching cert itself.
+
+```bash
+cd infra/api-gateway && npx wrangler deploy
+```
+
+If the Cloud Run URL ever changes (new service name, new region), update `CLOUD_RUN_ORIGIN` in
+`infra/api-gateway/wrangler.jsonc` and redeploy the worker.
+
+**Verify:** `curl -i https://api.nanny.getsteadily.app/health` → 200 with both `server: cloudflare`
+and `x-cloud-trace-context` headers (proves the proxy reached Cloud Run);
+`curl -i https://api.nanny.getsteadily.app/api/v1/households` → 401, not 404.
+
+### 8.5 What depends on this hostname
+
+- `apps/mobile/eas.json` → `build.production.env.EXPO_PUBLIC_API_URL`.
+- Supabase vault secret `cron_api_base_url`, used by 5 active pg_cron jobs that POST to
+  `/api/jobs/*` with `X-Job-Api-Key` = vault `cron_job_api_key`, which must equal the service's
+  `JOB_API_KEY`. Check runs with
+  `select * from cron.job_run_details order by start_time desc limit 5;`.
 
 ---
 

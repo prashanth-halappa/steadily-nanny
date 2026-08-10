@@ -1,0 +1,9 @@
+# Build context is the MONOREPO ROOT (see apps/api/Dockerfile), so this is the
+# file Docker reads — apps/api/.dockerignore is never consulted.
+node_modules
+.git
+logs
+dist
+.env
+.env.*
+apps/mobile

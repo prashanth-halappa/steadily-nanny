@@ -5,9 +5,11 @@
 # SETUP:
 #   1. Create `.env.cloudrun` next to this file (gitignored) with the GCP vars
 #      listed below.
-#   2. Provide runtime secrets to the service via Secret Manager or
-#      `--set-env-vars` — do NOT bake them into the image (see .dockerignore).
-#   3. Run from the MONOREPO ROOT is not required; this script cd's there.
+#   2. Create `.env.cloudrun.yaml` next to this file (gitignored) with the
+#      container's runtime env — it is passed as --env-vars-file. Do NOT bake
+#      secrets into the image (see the root .dockerignore).
+#   3. Runnable from anywhere; the build context is always the monorepo root.
+#      The image is built on Cloud Build (cloudbuild.yaml), not locally.
 #
 # Required in .env.cloudrun:
 #   GCP_PROJECT_ID, GCP_REGION, SERVICE_NAME, ARTIFACT_REGISTRY_REPO, IMAGE_TAG
@@ -38,13 +40,23 @@ MEMORY="${MEMORY:-512Mi}"
 CONCURRENCY="${CONCURRENCY:-80}"
 TIMEOUT="${TIMEOUT:-300}"
 
+# Runtime env vars. A YAML file (not --set-env-vars) because values contain
+# commas, spaces and angle brackets. Gitignored; see PROVISIONING.md section 8.
+ENV_FILE_ARGS=()
+if [ -f "$SCRIPT_DIR/.env.cloudrun.yaml" ]; then
+  ENV_FILE_ARGS=(--env-vars-file "$SCRIPT_DIR/.env.cloudrun.yaml")
+fi
+
 IMAGE="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${ARTIFACT_REGISTRY_REPO}/${SERVICE_NAME}:${IMAGE_TAG}"
 
-echo "Building ${IMAGE} ..."
-docker build --platform linux/amd64 -f "$SCRIPT_DIR/Dockerfile" -t "$IMAGE" "$ROOT_DIR"
-
-echo "Pushing ${IMAGE} ..."
-docker push "$IMAGE"
+echo "Building ${IMAGE} on Cloud Build ..."
+# Built remotely, not locally: Cloud Run is amd64 and an emulated
+# `docker build --platform linux/amd64` on Apple Silicon takes 20+ minutes.
+# Cloud Build also pushes the image (see cloudbuild.yaml's `images:`).
+gcloud builds submit "$ROOT_DIR" \
+  --project "$GCP_PROJECT_ID" \
+  --config "$SCRIPT_DIR/cloudbuild.yaml" \
+  --substitutions "_IMAGE=${IMAGE}"
 
 echo "Deploying ${SERVICE_NAME} to Cloud Run (${GCP_REGION}) ..."
 gcloud run deploy "$SERVICE_NAME" \
@@ -59,6 +71,7 @@ gcloud run deploy "$SERVICE_NAME" \
   --cpu "$CPU" \
   --memory "$MEMORY" \
   --concurrency "$CONCURRENCY" \
-  --timeout "$TIMEOUT"
+  --timeout "$TIMEOUT" \
+  ${ENV_FILE_ARGS[@]+"${ENV_FILE_ARGS[@]}"}
 
-echo "Done. Set runtime secrets via Secret Manager or gcloud run services update --set-secrets."
+echo "Done."
