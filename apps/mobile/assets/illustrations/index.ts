@@ -3,6 +3,9 @@
  * Generated via Higgsfield; see docs/design/art-direction.md.
  */
 export const illustrations = {
+  todayQuiet: require('./today-quiet.png'),
+  todayHere: require('./today-here.png'),
+  todayDone: require('./today-done.png'),
   welcomeHero: require('./welcome-hero.png'),
   onboardingRole: require('./onboarding-role.png'),
   onboardingNotifications: require('./onboarding-notifications.png'),

@@ -41,9 +41,9 @@ Its commitments:
   shadow. Cards do not get borders, and lists do not get hairline dividers.
   (Exceptions that are *correct*: ghost buttons carry a border; chips keep a 1px
   rule; the role-selection card keeps a 2px selected border.)
-- **Radius 14px** on cards/buttons, 16px on inputs.
-- **The platform face** (SF Pro / Roboto). Weight comes from numeric
-  `fontWeight`, never from a `fontFamily` per weight. No custom font.
+- **Radius 20px** on cards, 14px on buttons, 16px on inputs/rows, 12px on cells.
+- **Figtree Variable** (one embedded family, weight axis 300–900). Weight comes
+  from numeric `fontWeight`, never from a `fontFamily` per weight.
 - **Sentence case.** No UPPERCASE micro-labels.
 - **Filled status pills** in semantic color (green confirmed, ochre pending,
   terracotta/red declined), sentence case.

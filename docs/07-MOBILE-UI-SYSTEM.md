@@ -14,7 +14,7 @@ Example: `tailwind.config.js` — the token groups that matter:
 
 ```js
 theme: { extend: {
-  // No fontFamily — Daylight keeps the platform face; weight via fontWeight / font-medium
+  fontFamily: { sans: ['Figtree'] },  // Figtree Variable (assets/fonts/Figtree.ttf), one family, weight via fontWeight / font-medium
   fontSize: {              // body min 16px; line-heights ~1.5x; semantic aliases
     base: ['16px', { lineHeight: '24px' }],   // MINIMUM body size
     display: ['32px', { lineHeight: '48px', fontWeight: '600' }],
@@ -48,7 +48,7 @@ theme: { extend: {
 
 Conventions baked into the tokens:
 - **Spacing is an 8pt grid** — use `p-4` (16px), `gap-6` (24px), not arbitrary values. `touch` (44px) is the minimum tappable size. Screen content gutters are 22px (`SCREEN_CONTENT_STYLE` in `lib/design-tokens/spacing.ts`).
-- **Typography minimum is 16px** for body; the scale is semantic (`display`, `caption`, `button`). Weight via numeric `fontWeight` / Tailwind `font-*` — no custom `fontFamily`.
+- **Typography minimum is 16px** for body; the scale is semantic (`display`, `caption`, `button`). The app ships one embedded family, **Figtree Variable** (weight axis 300–900), applied centrally by the typography factory — weight via numeric `fontWeight` / Tailwind `font-*`, never a per-weight `fontFamily`.
 - **Soft radii** — `rounded-card` (20px), `rounded-button` (14px), `rounded-row` (16px), `rounded-cell` (12px); `rounded-chip` (999px) is a pill for badges and chips.
 - **Elevation via inline styles, not Tailwind `shadow-*`** — `boxShadow.*` stay `none` because NativeWind cannot parse multi-layer shadows. Use `useElevation()` from `lib/design-tokens/elevation.ts` for plum-tinted card/row shadows; hairline borders (`borderWidth.hairline`) still separate outlined surfaces.
 - **Palette source of truth** — `lib/design-tokens/palette.ts` (Daylight); `global.css` mirrors it and is parity-tested.
@@ -304,7 +304,7 @@ Rules of thumb:
 | Elevation shadows (`useElevation()`) | `lib/design-tokens/elevation.ts` |
 | Token names | `tailwind.config.js` |
 | CSS-variable theme (light/dark) | `global.css` |
-| Typography tokens (platform face) | `lib/design-tokens/typography.ts` |
+| Typography tokens (Figtree Variable) | `lib/design-tokens/typography.ts` |
 | Screen content padding | `lib/design-tokens/spacing.ts` |
 | `cn()` class merge | `lib/utils.ts` |
 | CVA variant component | `src/components/ui/button.tsx` |
