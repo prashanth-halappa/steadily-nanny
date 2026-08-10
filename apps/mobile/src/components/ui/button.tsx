@@ -2,7 +2,7 @@ import { cva, type VariantProps } from 'class-variance-authority';
 import type * as React from 'react';
 import { AnimatedPressable } from '@/lib/animations';
 import { cn } from '@/lib/utils';
-import { TextClassContext } from '@/src/components/ui/text';
+import { Text, TextClassContext } from '@/src/components/ui/text';
 
 const buttonVariants = cva(
   'group flex items-center justify-center rounded-button web:ring-offset-background web:transition-colors web:focus-visible:outline-none web:focus-visible:ring-2 web:focus-visible:ring-ring web:focus-visible:ring-offset-2',
@@ -69,7 +69,7 @@ const buttonTextVariants = cva(
 type ButtonProps = React.ComponentPropsWithoutRef<typeof AnimatedPressable> &
   VariantProps<typeof buttonVariants>;
 
-function Button({ className, variant, size, ...props }: ButtonProps) {
+function Button({ className, variant, size, children, ...props }: ButtonProps) {
   return (
     <TextClassContext.Provider
       value={buttonTextVariants({
@@ -87,7 +87,14 @@ function Button({ className, variant, size, ...props }: ButtonProps) {
         haptic="light"
         scaleIntensity="standard"
         {...props}
-      />
+      >
+        {/* A bare string child would land inside a Pressable (a View) and be
+            dropped by RN with "Text strings must be rendered within a <Text>
+            component" — an invisible label. Wrap it here so the whole class of
+            mistake can't recur; `Text` picks up TextClassContext, so it styles
+            identically to an explicit <Text> child. */}
+        {typeof children === 'string' ? <Text>{children}</Text> : children}
+      </AnimatedPressable>
     </TextClassContext.Provider>
   );
 }
