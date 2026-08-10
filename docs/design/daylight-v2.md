@@ -27,9 +27,10 @@ one vivid hue in the system — apricot — is correctly reserved for the live
 clock, and nothing was ever promoted to take its place for everything else. So
 the tinted "attention" ground came out at 10% ochre-in-white (`#F9F3EC`), a 4%
 deviation from the card beside it, and the T1 card ended up with a *smaller
-title* than the routine card below it (`CoverCard.tsx:130` renders `<Body
-weight="medium">` — 16/24/500 — while `HandoffChipsCard.tsx:314` renders `<H4>`
-— 18/27/600). The user's complaint is literally true and it is measurable.
+title* than the routine card below it (the gap headline rendered `<Body
+weight="medium">` — 16/24/500 — while `HandoffChipsCard.tsx` rendered `<H4>` —
+18/27/600; fixed in v2, the headline is now `H3` in `TodayCoverage.tsx`). The
+user's complaint was literally true and it was measurable.
 
 v2 keeps every Daylight commitment (warm ground, separation by light, sentence
 case, tabular figures, apricot-for-live-only, no custom font) and adds the two
@@ -172,7 +173,7 @@ justification that beats "it already works."
 | Token | Before | After | Why |
 |---|---|---|---|
 | `figure` **(new)** | — | `28 / 34 / 700`, tabular | The missing rung. Card-level numbers (a week total inside a routine card, a day total, an amount) have nowhere to live between `h3` 20 and `signature.heroBold` 40. |
-| `h3` | `20 / 28 / 600` | `20 / 28 / 650` | T1 card titles. 650 is available on a variable axis and reads a half-step heavier without jumping to 700. |
+| `h3` | `20 / 28 / 600` | `20 / 28 / 700` | T1 card titles. The spec wanted 650 (the variable axis covers it), but RN's `fontWeight` type is a closed union of hundreds — 650 does not typecheck without a cast, so 700 shipped, documented on the token. |
 | `metadataLabel` | `13 / 18 / 500` | `13 / 18 / 600`, `letterSpacing: 0.1` | Eyebrows must read as structural, not as faint body. Still sentence case — no uppercase. |
 | `timer` | `44 / 48 / 500` | `44 / 48 / 500` | Unchanged. Do not touch it. |
 | `signature.heroBold` | `40 / 48 / 600` | `40 / 48 / 700` | It is the Hours screen's anchor figure. At 600 it does not out-weigh an `h1` two lines above it. |
@@ -281,7 +282,7 @@ Still **no borders on cards** and still no accent bar — the removal note in
 
 | Rung | Name | Surface | Title | Body | Action | Icon chip | Cap |
 |---|---|---|---|---|---|---|---|
-| **L1** | The one thing | `tone="attention"` (or `critical`), `cardProminent` | `H3` 20/28/650 `foreground` | `body` 16/24/400 `mutedStrong` | filled `variant="default"`, full width | `chipPlum` + `primary` icon | **Exactly one per screen** |
+| **L1** | The one thing | `tone="attention"` (or `critical`), `cardProminent` | `H3` 20/28/700 `foreground` | `body` 16/24/400 `mutedStrong` | filled `variant="default"`, full width | `chipPlum` + `primary` icon | **Exactly one per screen** |
 | **L2** | Live | `tone="live"`, `liveCard`, apricot wash | `Caption` semibold `highlight` + `Timer` 44 tabular | `Small` `mutedStrong` | `outline` | `LiveDot`, no chip | At most one; can coexist with L1 |
 | **L3** | Routine | `tone="default"`, `card` | `H4` 18/27/600 `foreground` | `Small` 14 `mutedForeground` | `ghost` or none | `chipCat*` + accent icon | Unlimited |
 | **L4** | Context | no card — bare ground | `MetadataLabel` 13/18/600 `mutedForeground` | `Figure`/`Small` rows on `rounded-row bg-card` + `elevation.row` | text link | none | Unlimited, always last |
@@ -296,7 +297,7 @@ tint shift to a full rung.
 
 **The squint test, stated numerically.** At L1 vs L3 the deltas are: ground
 lightness 91% vs 100% (9 points, was 95% vs 100%), shadow opacity 0.34 vs 0.20,
-title size 20 vs 18 and weight 650 vs 600, plus a filled plum button that L3
+title size 20 vs 18 and weight 700 vs 600, plus a filled plum button that L3
 never has. Four channels, not one. At L2 vs L3: apricot ground, apricot shadow,
 a pulsing dot, and a 44px tabular timer — the existing four-part chord, retained
 verbatim.

@@ -3,12 +3,26 @@
 Reads with [`daylight-v2.md`](./daylight-v2.md).
 
 Owners: `apps/mobile/src/domains/timesheet/components/HoursScreen.tsx`,
-`WeekTotal.tsx`, `NannyWeekView.tsx`, `ParentWeekView.tsx`,
-`TimeEntryDayRow.tsx`, `WeekEarningsLine.tsx`, `PaidStateCard.tsx`.
+`HoursHeroBand.tsx`, `WeekTotal.tsx`, `WeekMoneyCard.tsx`, `NannyWeekView.tsx`,
+`ParentWeekView.tsx`, `TimeEntryDayRow.tsx`, `WeekEarningsLine.tsx`,
+`PaidStateSection.tsx`.
 
 This is the screen where the app is a record between two parties. Everything
 here is judged on whether hours and money are unambiguous, legible, and hard to
 misread — warmth is secondary and precision is not negotiable.
+
+> **As shipped (Daylight v2).** The full statement rebuild in §1–§5 landed:
+> `HoursHeroBand.tsx` owns the H1, week nav, the 40/48/700 tabular figure and
+> the delta caption; `WeekTotal.tsx` slimmed to the status card only (it
+> renders nothing when it has nothing to say about the agreement);
+> `WeekMoneyCard.tsx` merges `WeekEarningsLine` and the paid state
+> (`PaidStateCard` was renamed `PaidStateSection` — it no longer renders a
+> card); `TimeEntryDayRow` is the ledger row with the `editedMarker` key.
+> Two content deviations from this spec: the money card keeps "Estimated
+> gross"/"Approved gross" (docs/11-MONEY.md requires the state label beside an
+> amount), and the rate sub-line renders only when the whole week priced at a
+> single rate with no overtime multiplier — a week crossing a raise has no one
+> true "× rate", so it is omitted and the breakdown sheet says the rest.
 
 ---
 

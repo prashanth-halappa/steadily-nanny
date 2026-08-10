@@ -107,10 +107,7 @@ export function HoursHeroBand({
           </MetadataLabel>
         ) : null}
         {isEmptyWeek ? (
-          <Small
-            testID="hours-empty-week"
-            className="mt-0.5 text-muted-foreground"
-          >
+          <Small testID="hours-empty-week" className="mt-0.5 text-muted-strong">
             {t('emptyWeek')}
           </Small>
         ) : null}

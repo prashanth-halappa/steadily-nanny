@@ -415,7 +415,7 @@ export function ScheduleShiftsScreen({
           {weekHasAway ? (
             <Small
               testID="schedule-away-summary"
-              className="px-5.5 pb-2 text-muted-foreground"
+              className="px-5.5 pb-2 text-muted-strong"
             >
               {t('shifts.awaySummary')}
             </Small>
