@@ -13,6 +13,7 @@ import { validate } from '../../../middlewares/validator';
 import { asyncHandler } from '../../../utils/asyncHandler';
 import { TimesheetController } from '../controllers/timesheetController';
 import {
+  ApproveTimesheetSchema,
   QueryTimesheetSchema,
   ReopenTimesheetSchema,
   TimesheetIdParamSchema,
@@ -66,9 +67,25 @@ router.get(
   asyncHandler(TimesheetController.exportCsv)
 );
 
+// Approve gains BODY validation and nothing else — the ownership preset above
+// it is untouched, in the same position, with the same lookup. That is not a
+// stylistic preference: `makeOwnershipValidator` caches by
+// `(userId, resourceId)` with no lookup identity (see the GET comment above),
+// so any rearrangement here risks the exact cache-poisoning class GOLDEN-FIXES
+// #31 documents. `validate(..., 'body')` sits AFTER ownership, matching
+// /query and /reopen below.
+//
+// The body is optional in shape (`{}` and `{adjustment: null}` both pass), so
+// every client shipped before the adjustment existed keeps working unchanged.
+// `.default({})` is what makes that literally true rather than nearly true:
+// every shipped client posts approve with NO body and NO content-type, and
+// Express 5's body-parser leaves `req.body` UNDEFINED in that case (it is not
+// the `{}` Express 4 handed you). Without the default, adding validation to a
+// previously unvalidated route would 400 every existing app on first tap.
 router.post(
   '/:id/approve',
   ...authWithOwnership(TimesheetIdParamSchema, timesheetOwnership),
+  validate(ApproveTimesheetSchema.default({}), 'body'),
   asyncHandler(TimesheetController.approve)
 );
 

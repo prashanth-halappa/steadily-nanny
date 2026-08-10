@@ -215,3 +215,102 @@ describe('WeekMoneyCard — who may record a payment', () => {
     expect(getByTestId('hours-mark-paid-button').props.disabled).toBe(true);
   });
 });
+
+// The parent's STAGED approval-time adjustment. It is decided but not yet
+// sent, so it deliberately is NOT inside the estimated gross above it — the
+// caption is the only thing that stops two figures on one card looking like
+// an arithmetic bug.
+describe('WeekMoneyCard — the staged adjustment', () => {
+  const staged = {
+    amountMinor: -2000,
+    note: 'Advance on Friday',
+    currency: 'GBP',
+  };
+
+  it('renders the row, the note and the "not counted yet" caption', () => {
+    const { getByTestId, getByText } = renderCard({
+      earnings: okEarnings,
+      adjustment: staged,
+      onAdjustmentPress: mock(() => {}),
+    });
+
+    // Intl renders the minus — the component never hand-prefixes a sign.
+    expect(
+      getByTestId('hours-money-card-adjustment-row-value').props.children
+    ).toBe('-£20.00');
+    expect(getByText('Advance on Friday')).toBeTruthy();
+    expect(getByText('adjustment.stagedNote')).toBeTruthy();
+  });
+
+  it('opens the editor when the staged row is pressed', () => {
+    const onAdjustmentPress = mock(() => {});
+    const { getByTestId } = renderCard({
+      earnings: okEarnings,
+      adjustment: staged,
+      onAdjustmentPress,
+    });
+
+    fireEvent.press(getByTestId('hours-money-card-adjustment'));
+    expect(onAdjustmentPress).toHaveBeenCalledTimes(1);
+  });
+
+  it('offers the ghost "Add an adjustment" affordance when nothing is staged', () => {
+    const onAdjustmentPress = mock(() => {});
+    const { getByTestId, queryByTestId } = renderCard({
+      earnings: okEarnings,
+      onAdjustmentPress,
+    });
+
+    expect(queryByTestId('hours-money-card-adjustment')).toBeNull();
+    fireEvent.press(getByTestId('hours-money-card-add-adjustment'));
+    expect(onAdjustmentPress).toHaveBeenCalledTimes(1);
+  });
+
+  it('is READ-ONLY without a handler — the carer sees the figure, never the button', () => {
+    const { getByTestId, queryByTestId } = renderCard({
+      earnings: okEarnings,
+      viewerRole: 'nanny',
+      adjustment: staged,
+    });
+
+    expect(queryByTestId('hours-money-card-add-adjustment')).toBeNull();
+    expect(
+      getByTestId('hours-money-card-adjustment-row-value').props.children
+    ).toBe('-£20.00');
+  });
+
+  it('shows no adjustment surface at all to a viewer with neither', () => {
+    const { queryByTestId } = renderCard({
+      earnings: okEarnings,
+      viewerRole: 'nanny',
+    });
+
+    expect(queryByTestId('hours-money-card-adjustment')).toBeNull();
+    expect(queryByTestId('hours-money-card-add-adjustment')).toBeNull();
+  });
+
+  // The disappear guard now has THREE predicates, not two: a card whose only
+  // content is the adjustment still has something true to say.
+  it('still renders when the adjustment is the ONLY thing the card has to say', () => {
+    const { getByTestId } = renderCard({
+      earnings: null,
+      totalMinutes: 0,
+      paidState: null,
+      adjustment: staged,
+    });
+
+    expect(getByTestId('hours-money-card')).toBeTruthy();
+    expect(getByTestId('hours-money-card-adjustment')).toBeTruthy();
+  });
+
+  it('still disappears when there is no adjustment either', () => {
+    const { queryByTestId } = renderCard({
+      earnings: null,
+      totalMinutes: 0,
+      paidState: null,
+      adjustment: null,
+    });
+
+    expect(queryByTestId('hours-money-card')).toBeNull();
+  });
+});

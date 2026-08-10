@@ -250,17 +250,30 @@ describe('TimesheetController', () => {
     );
   });
 
-  it('approve passes the id param through', async () => {
+  it('approve passes the id param and the body through', async () => {
     const res = mockRes();
     await TimesheetController.approve(
-      { user: { id: 'parent-1' }, params: { id: 'ts1' } } as any,
+      { user: { id: 'parent-1' }, params: { id: 'ts1' }, body: {} } as any,
       res,
       mock()
     );
-    expect(approve).toHaveBeenCalledWith('parent-1', 'ts1');
+    expect(approve).toHaveBeenCalledWith('parent-1', 'ts1', {});
     expect(res.body.data).toEqual({
       timesheet: { id: 'ts1', status: 'approved' },
     });
+  });
+
+  it('approve forwards the validated adjustment untouched', async () => {
+    const res = mockRes();
+    const body = {
+      adjustment: { amount_minor: -2000, note: 'Advance repaid' },
+    };
+    await TimesheetController.approve(
+      { user: { id: 'parent-1' }, params: { id: 'ts1' }, body } as any,
+      res,
+      mock()
+    );
+    expect(approve).toHaveBeenCalledWith('parent-1', 'ts1', body);
   });
 
   it('query passes the id param and note through', async () => {

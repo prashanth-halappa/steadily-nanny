@@ -178,6 +178,67 @@ export class TimesheetGrossTooLargeError extends ValidationError {
 }
 
 /**
+ * 409 — an approval-time adjustment was supplied for a week that has no
+ * computed gross to adjust.
+ *
+ * Three reasons wear this error, and they are the three shapes of "no base":
+ * the carer deleted her account (`carer_removed`, 033 — nothing to resolve an
+ * arrangement against), no arrangement covers the week (`no_arrangement`), or
+ * the week straddles a currency change (`currency_change`). All three already
+ * freeze a snapshot with NULL money columns, and `docs/11-MONEY.md` §4 is
+ * explicit about what must not happen next: a bare adjustment folded into
+ * nothing would print `£15.00` under an "Approved gross" label for a week the
+ * engine could not price at all — a number invented out of a missing one.
+ *
+ * WITHOUT an adjustment every one of those paths behaves exactly as it always
+ * has: the hours are still approved, only the money is absent. This refusal
+ * fires ONLY when a client asked to add money to a week that has none.
+ */
+export class TimesheetAdjustmentNotAllowedError extends ConflictError {
+  constructor(
+    timesheetId: string,
+    reason: 'no_arrangement' | 'currency_change' | 'carer_removed'
+  ) {
+    super(
+      "This week has no total to adjust, so an adjustment can't be applied",
+      'TIMESHEET_ADJUSTMENT_NOT_ALLOWED',
+      { timesheetId, reason }
+    );
+    this.name = 'TimesheetAdjustmentNotAllowedError';
+  }
+}
+
+/**
+ * 400 — the deduction is bigger than the week's computed gross, so the
+ * adjusted total would be negative.
+ *
+ * REFUSED, NEVER CLAMPED, for the same reason `PaymentExceedsGrossError`
+ * refuses rather than trimming (`docs/11-MONEY.md` §11): a gross silently
+ * floored at zero is a figure nobody chose, frozen into a snapshot and paid
+ * against. `gross_minor` is `min(0)` on the wire and in the DB, so the only
+ * two honest options are "refuse" and "let the write die on a constraint" —
+ * and only one of those is readable.
+ *
+ * `metadata` carries both halves so the client can name the ceiling it hit
+ * without re-deriving it.
+ */
+export class TimesheetAdjustmentNegativeGrossError extends ValidationError {
+  constructor(
+    timesheetId: string,
+    grossMinor: number,
+    adjustmentMinor: number
+  ) {
+    super(
+      "That takes off more than the week's total",
+      'TIMESHEET_ADJUSTMENT_NEGATIVE_GROSS',
+      400,
+      { timesheetId, grossMinor, adjustmentMinor }
+    );
+    this.name = 'TimesheetAdjustmentNegativeGrossError';
+  }
+}
+
+/**
  * 409 — `GET /timesheets/:id/export.csv` on a week whose figures are not
  * FROZEN, so there is nothing honest to hand a payroll provider.
  *

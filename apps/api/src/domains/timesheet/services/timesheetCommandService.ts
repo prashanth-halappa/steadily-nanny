@@ -71,6 +71,8 @@ import {
   TimeEntryNotEditableError,
   TimeEntryNotRunningError,
   TimeEntryOverlapError,
+  TimesheetAdjustmentNegativeGrossError,
+  TimesheetAdjustmentNotAllowedError,
   TimesheetGrossTooLargeError,
   TimesheetNotActionableError,
 } from '../errors/timesheetErrors';
@@ -81,6 +83,7 @@ import {
   TimesheetRepository,
 } from '../repositories/timesheetRepository';
 import type {
+  ApproveTimesheetInput,
   ClockInInput,
   ClockOutInput,
   CreateRetroactiveTimeEntryInput,
@@ -1529,8 +1532,23 @@ export class TimesheetCommandService {
    * situation, just noticed a few milliseconds later. Both raises live in
    * this method's flow so they cannot drift apart. The parent simply approves
    * again, this time against the hours that are actually there.
+   *
+   * THE OPTIONAL ADJUSTMENT rides the same atomic write, deliberately: it is a
+   * parameter of the approval, not a second endpoint and not a persisted
+   * pre-approval state. It exists in exactly one place — inside the frozen
+   * snapshot — so "a submitted week has no adjustment" needs no code to be
+   * true, and every existing clearing path (`rollUpIntoTimesheet`, `reopen`)
+   * drops it for free by nulling the same four columns it lives in.
+   *
+   * A lost CAS race therefore also drops the adjustment, which is correct: it
+   * was decided against hours that have since moved. The client keeps its
+   * staged value for the retry.
    */
-  async approve(userId: string, timesheetId: string): Promise<Timesheet> {
+  async approve(
+    userId: string,
+    timesheetId: string,
+    input?: ApproveTimesheetInput
+  ): Promise<Timesheet> {
     const timesheet = await this.queries.getOwnedTimesheet(userId, timesheetId);
     await this.assertWriteMember(userId, timesheet.household_id);
     this.assertActionable(timesheet);
@@ -1538,7 +1556,13 @@ export class TimesheetCommandService {
     // One instant for the approval and the snapshot: they describe the same
     // event, and two `new Date()` calls would let them disagree.
     const at = new Date().toISOString();
-    const snapshot = await this.computeSnapshot(timesheet, at);
+    const adjustment = input?.adjustment ?? null;
+    const snapshot = await this.computeSnapshot(
+      timesheet,
+      at,
+      userId,
+      adjustment
+    );
 
     const approved = await this.timesheetRepo.approveSubmittedWithEarnings(
       timesheetId,
@@ -1556,7 +1580,14 @@ export class TimesheetCommandService {
       try {
         this.push.notifyUser(approved.carer_id, {
           title: 'Hours approved',
-          body: 'A parent approved your hours this week.',
+          // Body copy only — same type, same title, same payload, so nothing
+          // downstream forks on this. The FIGURE is deliberately absent: a
+          // lock screen carries no state label, and `docs/11-MONEY.md` §3
+          // forbids an unlabelled amount. "Open Hours to see it" is the
+          // honest version.
+          body: adjustment
+            ? 'A parent approved your hours this week, with an adjustment included.'
+            : 'A parent approved your hours this week.',
           data: {
             type: PUSH_NOTIFICATION_TYPES.TIMESHEET_APPROVED,
             timesheetId: approved.id,
@@ -1586,12 +1617,38 @@ export class TimesheetCommandService {
    * priceable week. Writing `0` here to satisfy it would be exactly the
    * silently-wrong zero `docs/11-MONEY.md` §4 forbids, so the jsonb carries
    * the honest reason and the amount columns stay empty.
+   *
+   * THE ADJUSTMENT'S VALIDATION ORDER IS THE DESIGN, not an accident of where
+   * the code was easiest to insert:
+   *
+   * 1. An unpriceable week (no carer, no arrangement, a currency change)
+   *    refuses an adjustment outright — no base, no number (§4). Without an
+   *    adjustment every one of those paths is byte-identical to before.
+   * 2. The existing computed-gross > MAX check stays FIRST, ahead of the
+   *    fold. An oversized `hours x rate` is a problem with the RATE and must
+   *    be reported as one; letting a negative adjustment pull it back under
+   *    the cap would hide a broken arrangement behind a parent's deduction.
+   * 3. Only then is the adjustment folded, and the result bounded at both
+   *    ends. Neither bound clamps.
+   *
+   * The column `gross_minor` and the jsonb's own `gross_minor` are written
+   * from the SAME `adjusted` binding, so they cannot disagree — which is what
+   * lets payments Gate 4, the CSV export and every frozen read stay correct
+   * with no change at all.
    */
   private async computeSnapshot(
     timesheet: Timesheet,
-    computedAt: string
+    computedAt: string,
+    userId: string,
+    adjustment: NonNullable<ApproveTimesheetInput['adjustment']> | null
   ): Promise<TimesheetEarningsSnapshot> {
     if (!timesheet.carer_id) {
+      if (adjustment) {
+        throw new TimesheetAdjustmentNotAllowedError(
+          timesheet.id,
+          'carer_removed'
+        );
+      }
       return CLEARED_EARNINGS_SNAPSHOT;
     }
     const earnings: WeekEarnings = await this.earnings.computeForWeek(
@@ -1600,6 +1657,12 @@ export class TimesheetCommandService {
       timesheet.week_start
     );
     if (earnings.status !== EARNINGS_RESULT_STATUSES.OK) {
+      if (adjustment) {
+        throw new TimesheetAdjustmentNotAllowedError(
+          timesheet.id,
+          earnings.status
+        );
+      }
       return {
         gross_minor: null,
         currency: null,
@@ -1630,10 +1693,50 @@ export class TimesheetCommandService {
       );
     }
 
+    if (!adjustment) {
+      return {
+        gross_minor: earnings.gross_minor,
+        currency: earnings.currency,
+        earnings,
+        earnings_computed_at: computedAt,
+      };
+    }
+
+    const adjusted = earnings.gross_minor + adjustment.amount_minor;
+    // Refused, never clamped, at BOTH ends (`docs/11-MONEY.md` §1). A gross
+    // floored at zero — or trimmed to the cap — is a figure nobody chose,
+    // frozen into a snapshot and paid against.
+    if (adjusted < 0) {
+      throw new TimesheetAdjustmentNegativeGrossError(
+        timesheet.id,
+        earnings.gross_minor,
+        adjustment.amount_minor
+      );
+    }
+    if (adjusted > MAX_MONEY_MINOR) {
+      throw new TimesheetGrossTooLargeError(
+        timesheet.id,
+        adjusted,
+        MAX_MONEY_MINOR
+      );
+    }
+
+    // Trimmed here as well as on the wire: the route's Zod schema already
+    // trims, and a service is not entitled to assume its only caller is the
+    // route. The note lands in a permanent snapshot the carer reads.
     return {
-      gross_minor: earnings.gross_minor,
+      gross_minor: adjusted,
       currency: earnings.currency,
-      earnings,
+      earnings: {
+        ...earnings,
+        gross_minor: adjusted,
+        adjustment: {
+          amount_minor: adjustment.amount_minor,
+          note: adjustment.note.trim(),
+          created_by: userId,
+          created_at: computedAt,
+        },
+      },
       earnings_computed_at: computedAt,
     };
   }

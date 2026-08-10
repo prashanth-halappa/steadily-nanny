@@ -16,6 +16,7 @@
 import { z } from 'zod';
 
 export type {
+  ApproveTimesheetInput,
   ClockInInput,
   ClockOutInput,
   CreateRetroactiveTimeEntryInput,
@@ -26,11 +27,13 @@ export type {
   TimeEntryListResponse,
   TimeEntryStatus,
   Timesheet,
+  TimesheetAdjustment,
   TimesheetListResponse,
   TimesheetStatus,
   UpdateTimeEntryInput,
 } from '@steadily-nanny/shared-types/schemas/timesheet.schema';
 export {
+  ApproveTimesheetSchema,
   ClockInSchema,
   ClockOutSchema,
   CreateRetroactiveTimeEntrySchema,

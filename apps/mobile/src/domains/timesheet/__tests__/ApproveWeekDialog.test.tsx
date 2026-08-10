@@ -2,8 +2,31 @@
  * @module domains/timesheet/__tests__/ApproveWeekDialog.test
  * TIER0-CX-SPEC.md §4.3.
  */
-import { beforeAll, describe, expect, it, mock } from 'bun:test';
+import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 import { fireEvent, render } from '@testing-library/react-native';
+
+// Same key-echo contract as the global `bun.setup.ts` mock (every existing
+// assertion below still reads a bare key), plus a capture of the
+// INTERPOLATION ARGUMENTS — which is the only way to see that the dialog
+// echoes the ADJUSTED gross and an UNSIGNED `{{adjustment}}`, since the echo
+// mock drops options entirely. Same technique as
+// `EarningsBreakdownSheet.i18n.test.tsx`.
+const capturedTCalls: Array<{
+  key: string;
+  options?: Record<string, unknown>;
+}> = [];
+
+mock.module('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string, options?: Record<string, unknown>) => {
+      capturedTCalls.push({ key, options });
+      return key;
+    },
+    i18n: { language: 'en', changeLanguage: () => Promise.resolve() },
+  }),
+  Trans: ({ children }: { children: unknown }) => children,
+  initReactI18next: { type: '3rdParty', init: () => {} },
+}));
 
 // Same stand-in as ManageHouseholdScreen.test / TimeOffScreen.test —
 // @rn-primitives/alert-dialog's .mjs distribution isn't pre-compiled for
@@ -124,6 +147,10 @@ beforeAll(async () => {
     .ApproveWeekDialog;
 });
 
+beforeEach(() => {
+  capturedTCalls.length = 0;
+});
+
 describe('ApproveWeekDialog', () => {
   it('shows hours + gross as text in the body when an arrangement exists', () => {
     const { getByTestId } = render(
@@ -137,6 +164,7 @@ describe('ApproveWeekDialog', () => {
         grossLabel="£236.12"
         earningsStatus="ok"
         carerName="Amara"
+        adjustmentLabel={null}
       />
     );
 
@@ -159,6 +187,7 @@ describe('ApproveWeekDialog', () => {
         grossLabel={null}
         earningsStatus="no_arrangement"
         carerName="Amara"
+        adjustmentLabel={null}
       />
     );
 
@@ -179,6 +208,7 @@ describe('ApproveWeekDialog', () => {
         grossLabel={null}
         earningsStatus="currency_change"
         carerName="Amara"
+        adjustmentLabel={null}
       />
     );
 
@@ -200,6 +230,7 @@ describe('ApproveWeekDialog', () => {
         grossLabel="£236.12"
         earningsStatus="ok"
         carerName="Amara"
+        adjustmentLabel={null}
       />
     );
 
@@ -222,6 +253,7 @@ describe('ApproveWeekDialog', () => {
         grossLabel="£236.12"
         earningsStatus="ok"
         carerName="Amara"
+        adjustmentLabel={null}
       />
     );
 
@@ -242,9 +274,98 @@ describe('ApproveWeekDialog', () => {
         grossLabel="£236.12"
         earningsStatus="ok"
         carerName="Amara"
+        adjustmentLabel={null}
       />
     );
 
     expect(queryByTestId('hours-approve-dialog-title')).toBeNull();
+  });
+});
+
+// The parent's approval-time adjustment. What this confirmation exists to
+// prevent is approving one figure while a different one gets frozen, so the
+// gross echoed here is the ADJUSTED gross, and the sign lives in the verb —
+// "after taking off £20.00", never "after adding −£20.00".
+describe('ApproveWeekDialog — a staged adjustment', () => {
+  type Props = Parameters<
+    typeof import('../components/ApproveWeekDialog').ApproveWeekDialog
+  >[0];
+
+  function renderWithAdjustment(props: Partial<Props> = {}) {
+    return render(
+      <ApproveWeekDialog
+        open
+        onOpenChange={() => {}}
+        onConfirm={() => {}}
+        isSubmitting={false}
+        weekRangeLabel="3 – 9 August"
+        hoursLabel="41h 00m"
+        // Already adjusted by the caller: £236.12 − £20.00.
+        grossLabel="£216.12"
+        earningsStatus="ok"
+        carerName="Amara"
+        adjustmentLabel="£20.00"
+        adjustmentDirection="deducted"
+        {...props}
+      />
+    );
+  }
+
+  it('forks to the "taking off" body for a deduction', () => {
+    const { getByTestId } = renderWithAdjustment();
+
+    expect(getByTestId('hours-approve-dialog-body').props.children).toBe(
+      'approveDialogBodyAdjustmentDeducted'
+    );
+  });
+
+  it('forks to the "adding" body for an addition', () => {
+    const { getByTestId } = renderWithAdjustment({
+      grossLabel: '£251.12',
+      adjustmentLabel: '£15.00',
+      adjustmentDirection: 'added',
+    });
+
+    expect(getByTestId('hours-approve-dialog-body').props.children).toBe(
+      'approveDialogBodyAdjustmentAdded'
+    );
+  });
+
+  it('echoes the ADJUSTED gross and an UNSIGNED adjustment figure', () => {
+    renderWithAdjustment();
+
+    const call = capturedTCalls.find(
+      c => c.key === 'approveDialogBodyAdjustmentDeducted'
+    );
+    expect(call?.options?.gross).toBe('£216.12');
+    // The verb carries the sign — a minus here would say it twice.
+    expect(call?.options?.adjustment).toBe('£20.00');
+    expect(String(call?.options?.adjustment)).not.toContain('-');
+  });
+
+  it('keeps the plain body when nothing is staged, and passes no adjustment', () => {
+    const { getByTestId } = renderWithAdjustment({
+      grossLabel: '£236.12',
+      adjustmentLabel: null,
+      adjustmentDirection: null,
+    });
+
+    expect(getByTestId('hours-approve-dialog-body').props.children).toBe(
+      'approveDialogBody'
+    );
+    const call = capturedTCalls.find(c => c.key === 'approveDialogBody');
+    expect(call?.options?.gross).toBe('£236.12');
+    expect(call?.options?.adjustment).toBeUndefined();
+  });
+
+  it('never mentions an adjustment on a week with no computable gross', () => {
+    const { getByTestId } = renderWithAdjustment({
+      grossLabel: null,
+      earningsStatus: 'no_arrangement',
+    });
+
+    expect(getByTestId('hours-approve-dialog-body').props.children).toBe(
+      'approveDialogBodyNoArrangement'
+    );
   });
 });

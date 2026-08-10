@@ -638,6 +638,157 @@ describe('ParentWeekView — approve dialog', () => {
   });
 });
 
+// The approval-time adjustment, staged client-side (Option A): nothing is
+// persisted until approve, so the wiring this pins is "what the parent
+// staged is exactly what the approve call carries — or nothing at all".
+describe('ParentWeekView — staging an approval-time adjustment', () => {
+  async function stageDeduction(
+    utils: ReturnType<typeof renderParentView>,
+    amount = '20',
+    note = 'Advance on Friday'
+  ) {
+    const { getByTestId } = utils;
+    await waitFor(() =>
+      expect(getByTestId('hours-money-card-add-adjustment')).toBeTruthy()
+    );
+    fireEvent.press(getByTestId('hours-money-card-add-adjustment'));
+
+    await waitFor(() =>
+      expect(getByTestId('hours-week-adjustment-submit')).toBeTruthy()
+    );
+    fireEvent.press(getByTestId('hours-week-adjustment-direction-deduct'));
+    fireEvent.changeText(
+      getByTestId('hours-week-adjustment-amount-input'),
+      amount
+    );
+    fireEvent.changeText(getByTestId('hours-week-adjustment-note-input'), note);
+    fireEvent.press(getByTestId('hours-week-adjustment-submit'));
+
+    await waitFor(() =>
+      expect(getByTestId('hours-money-card-adjustment')).toBeTruthy()
+    );
+  }
+
+  it('sends the staged adjustment with the approval, then clears it on success', async () => {
+    const utils = renderParentView();
+    const { getByTestId, queryByTestId } = utils;
+
+    await stageDeduction(utils);
+    expect(
+      getByTestId('hours-money-card-adjustment-row-value').props.children
+    ).toBe('-£20.00');
+
+    fireEvent.press(getByTestId('hours-approve-button'));
+    await waitFor(() =>
+      expect(getByTestId('hours-approve-dialog-body').props.children).toBe(
+        'approveDialogBodyAdjustmentDeducted'
+      )
+    );
+    fireEvent.press(getByTestId('hours-approve-dialog-confirm'));
+
+    await waitFor(() =>
+      expect(approveMock).toHaveBeenCalledWith(TIMESHEET_ID, {
+        adjustment: { amount_minor: -2000, note: 'Advance on Friday' },
+      })
+    );
+    // Sent means spent — the staged row must not survive into the next
+    // render and get sent twice.
+    await waitFor(() =>
+      expect(queryByTestId('hours-money-card-adjustment')).toBeNull()
+    );
+  });
+
+  it('approves with NO body at all when nothing is staged', async () => {
+    const { getByTestId } = renderParentView();
+
+    await waitFor(() =>
+      expect(getByTestId('hours-approve-button')).toBeTruthy()
+    );
+    fireEvent.press(getByTestId('hours-approve-button'));
+    fireEvent.press(getByTestId('hours-approve-dialog-confirm'));
+
+    await waitFor(() => expect(approveMock).toHaveBeenCalledWith(TIMESHEET_ID));
+  });
+
+  // A roll-up invalidates the number the parent decided against: she chose
+  // "-£20" against a £236.12 week, and the week is no longer that.
+  it('drops the staged adjustment when the week rolls up underneath it', async () => {
+    const utils = renderParentView();
+    const { getByTestId, queryByTestId, queryClient } = utils;
+
+    await stageDeduction(utils);
+
+    getByIdMock.mockImplementation(() =>
+      Promise.resolve(
+        makeTimesheetWeek({ updated_at: '2026-08-09T18:00:00.000Z' })
+      )
+    );
+    listTimesheetsMock.mockImplementation(() =>
+      Promise.resolve([
+        makeTimesheet({ updated_at: '2026-08-09T18:00:00.000Z' }),
+      ])
+    );
+    await act(async () => {
+      await queryClient.invalidateQueries();
+    });
+
+    await waitFor(() =>
+      expect(queryByTestId('hours-money-card-adjustment')).toBeNull()
+    );
+    expect(getByTestId('hours-money-card-add-adjustment')).toBeTruthy();
+  });
+
+  it('keeps the staged adjustment across a refetch that changes nothing', async () => {
+    const utils = renderParentView();
+    const { getByTestId, queryClient } = utils;
+
+    await stageDeduction(utils);
+    await act(async () => {
+      await queryClient.invalidateQueries();
+    });
+
+    expect(getByTestId('hours-money-card-adjustment')).toBeTruthy();
+  });
+
+  it('offers no adjustment affordance on an already-approved week', async () => {
+    getByIdMock.mockImplementation(() =>
+      Promise.resolve(makeTimesheetWeek({ status: 'approved' }))
+    );
+    listTimesheetsMock.mockImplementation(() =>
+      Promise.resolve([makeTimesheet({ status: 'approved' })])
+    );
+
+    const { getByTestId, queryByTestId } = renderParentView();
+
+    await waitFor(() =>
+      expect(getByTestId('hours-earnings-line-amount')).toBeTruthy()
+    );
+    expect(queryByTestId('hours-money-card-add-adjustment')).toBeNull();
+  });
+
+  it('offers no adjustment affordance on a week with no computable gross', async () => {
+    getByIdMock.mockImplementation(() =>
+      Promise.resolve(
+        makeTimesheetWeek(
+          {},
+          {
+            status: 'no_arrangement',
+            week_start: WEEK_START,
+            unpriced_dates: [WEEK_START],
+          }
+        )
+      )
+    );
+
+    const { getByTestId, queryByTestId } = renderParentView();
+
+    await waitFor(() =>
+      expect(getByTestId('hours-earnings-line')).toBeTruthy()
+    );
+    expect(queryByTestId('hours-money-card-add-adjustment')).toBeNull();
+  });
+});
+
 describe('ParentWeekView — reopen after approval (D1)', () => {
   it('reverts to "Estimated gross" and shows the reopened caption once new hours land', async () => {
     getByIdMock.mockImplementation(() =>

@@ -20,6 +20,14 @@
  * `reimbursements_minor` alone, which drives the note below the total, not a
  * row in this list.
  *
+ * The parent's approval-time ADJUSTMENT is a different thing again and DOES
+ * get a row here — the last one before the total, sourced from
+ * `earnings.adjustment` (a sibling field on the `ok` arm, not a line kind, so
+ * every per-line invariant stays intact). It renders for the nanny too: the
+ * adjustment is staged silently and folded in at approval, so this sheet is
+ * where she learns of it, and the note beside it is why the row is not
+ * optional for her.
+ *
  * DATE-RANGE LABEL (documented simplification): the spec's worked example
  * shows a compressed single-month header ("3 – 9 August"), distinct from
  * `formatWeekRangeLabel`'s existing "3 Aug – 9 Aug" (used on the same card's
@@ -93,6 +101,24 @@ export function EarningsBreakdownSheet({
     line => line.kind === EARNINGS_LINE_KINDS.REGULAR
   );
   const isZeroHoursWeek = earnings.worked_minutes === 0;
+  // Legacy frozen snapshots have no `adjustment` key at all — `?? null` is
+  // the whole backward-compatibility story on this side.
+  const adjustment = earnings.adjustment ?? null;
+  // Resolved to a plain variable, never inline in the `t()` call, for the
+  // same reason `cancellationSublineKey` below is: the locale-key extractor
+  // scans every string literal inside a `t(...)` arg list, so a ternary there
+  // would make `'parent'` look like a translation key. The NOTE is
+  // interpolated, never a key.
+  const adjustmentSublineKey =
+    adjustment === null
+      ? null
+      : adjustment.amount_minor < 0
+        ? earningsRole === 'parent'
+          ? 'earningsLineAdjustmentDeductedParent'
+          : 'earningsLineAdjustmentDeductedNanny'
+        : earningsRole === 'parent'
+          ? 'earningsLineAdjustmentAddedParent'
+          : 'earningsLineAdjustmentAddedNanny';
 
   function rowFor(line: EarningsLine, index: number) {
     const duration = formatEarningsDuration(line.minutes);
@@ -230,6 +256,16 @@ export function EarningsBreakdownSheet({
 
         <View className="gap-3">
           {renderableLines.map((line, index) => rowFor(line, index))}
+          {adjustment && adjustmentSublineKey ? (
+            <AmountRow
+              testID={`${testID}-line-adjustment`}
+              label={t('earningsLineAdjustment')}
+              // `Intl` renders the minus itself — hand-prefixing a sign here
+              // would print it twice in every locale that already has one.
+              value={formatMoney(adjustment.amount_minor, earnings.currency)}
+              subLine={t(adjustmentSublineKey, { note: adjustment.note })}
+            />
+          ) : null}
         </View>
 
         <View className="flex-row items-baseline justify-between gap-3 rounded-cell bg-muted px-4 py-3">

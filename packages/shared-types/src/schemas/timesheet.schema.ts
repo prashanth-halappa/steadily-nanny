@@ -13,6 +13,7 @@
  */
 
 import { z } from 'zod';
+import { MAX_MONEY_MINOR } from './payArrangement.schema';
 
 // =============================================================================
 // Const-maps — mirror the SQL `check` constraints exactly.
@@ -284,12 +285,69 @@ export const ReopenTimesheetSchema = z.object({
   reason: z.string().min(1, 'reason is required'),
 });
 
+/**
+ * Ceiling on the parent's adjustment reason. Same 200 as
+ * `PAYMENT_METHOD_NOTE_MAX` — both are one line a person types beside a
+ * figure, and two different limits for the same gesture would be arbitrary.
+ */
+export const TIMESHEET_ADJUSTMENT_NOTE_MAX = 200;
+
+/**
+ * A parent's one final correction to a week's gross, folded into the frozen
+ * snapshot at approval — a bonus, a reimbursement-style extra, or a
+ * deduction. Real pay routinely differs from hours × rate.
+ *
+ * ONE signed amount and ONE required note per week; no categories, no line
+ * items. The note is REQUIRED because the carer reads it beside the figure on
+ * the approved breakdown — an unexplained deduction is the single worst thing
+ * this feature could ship.
+ *
+ * `amount_minor` is the only SIGNED money field on the wire. It is
+ * deliberately NOT an `EarningsLine`: every line's `amount_minor` is
+ * `min(0)`, and relaxing that to let one kind go negative would weaken the
+ * invariant for all six. This is a SIBLING field on the `ok` earnings arm
+ * instead, so every per-line rule stays exactly as strict as it was.
+ *
+ * Zero is refused rather than accepted-and-ignored: an adjustment of nothing
+ * is a client bug or a parent who meant to remove it, and silently freezing
+ * `{amount_minor: 0, note: "…"}` would print a meaningless row on the
+ * carer's breakdown forever.
+ */
+export const TimesheetAdjustmentSchema = z.object({
+  amount_minor: z
+    .int()
+    .min(-MAX_MONEY_MINOR)
+    .max(MAX_MONEY_MINOR)
+    .refine(value => value !== 0, 'zero adjustment — omit instead'),
+  note: z.string().trim().min(1).max(TIMESHEET_ADJUSTMENT_NOTE_MAX),
+  /** Who applied it. Nullable for the same reason `approved_by` is: 033. */
+  created_by: z.uuid().nullable(),
+  created_at: z.iso.datetime({ offset: true }),
+});
+
+/**
+ * POST /timesheets/:id/approve body.
+ *
+ * `.nullish()` and the whole body optional: every client shipped before this
+ * feature posts approve with NO body at all, and `{}` must keep meaning
+ * "approve the computed total, unchanged". The server stamps `created_by`
+ * and `created_at` — a client never supplies either.
+ */
+export const ApproveTimesheetSchema = z.object({
+  adjustment: TimesheetAdjustmentSchema.pick({
+    amount_minor: true,
+    note: true,
+  }).nullish(),
+});
+
 /** List response envelope. */
 export const TimesheetListResponseSchema = z.object({
   timesheets: z.array(TimesheetSchema),
 });
 
 export type Timesheet = z.infer<typeof TimesheetSchema>;
+export type TimesheetAdjustment = z.infer<typeof TimesheetAdjustmentSchema>;
+export type ApproveTimesheetInput = z.infer<typeof ApproveTimesheetSchema>;
 export type QueryTimesheetInput = z.infer<typeof QueryTimesheetSchema>;
 export type ReopenTimesheetInput = z.infer<typeof ReopenTimesheetSchema>;
 export type TimesheetListResponse = z.infer<typeof TimesheetListResponseSchema>;
@@ -322,6 +380,11 @@ export type TimesheetListResponse = z.infer<typeof TimesheetListResponseSchema>;
  * (TIER0-PLAN.md's "worked minutes" definition). Pricing it as its own line
  * would double-count it. The CX row, if it is ever wanted, is an entry-level
  * annotation, not an earnings line.
+ *
+ * The parent's approval-time adjustment is a DIFFERENT thing again and lives
+ * on `WeekEarningsSchema`'s `ok` arm as `adjustment` — money, not minutes, and
+ * deliberately not a line kind (see `TimesheetAdjustmentSchema`). Do not
+ * "unify" the three.
  */
 export const EARNINGS_LINE_KINDS = {
   REGULAR: 'regular',
@@ -419,7 +482,15 @@ export const WeekEarningsSchema = z.discriminatedUnion('status', [
     currency: EarningsCurrencyCodeSchema,
     /** In `EARNINGS_LINE_ORDER`, then chronological. Empty lines are omitted. */
     lines: z.array(EarningsLineSchema),
-    /** Sum of every line EXCEPT `reimbursements` — wages only. */
+    /**
+     * Sum of every line EXCEPT `reimbursements`, PLUS the parent's
+     * approval-time `adjustment` when there is one — wages only:
+     *
+     *   gross_minor === sum(non-reimbursement lines) + (adjustment?.amount_minor ?? 0)
+     *
+     * Still `min(0)`: a deduction that would push the week negative is
+     * REFUSED at approval, never clamped (`TimesheetAdjustmentNegativeGrossError`).
+     */
     gross_minor: z.int().min(0),
     /** Summed separately and never part of gross (`docs/11-MONEY.md` §6). */
     reimbursements_minor: z.int().min(0),
@@ -429,6 +500,18 @@ export const WeekEarningsSchema = z.discriminatedUnion('status', [
     payable_minutes: z.int().min(0),
     /** Echoed so the top-up sub-line can read "to reach the agreed 40h". */
     guaranteed_minutes_per_week: z.int().min(0).nullable(),
+    /**
+     * The parent's final correction, frozen with the rest of the snapshot.
+     *
+     * `.nullable().optional()` IS LOAD-BEARING, not defensive style. Every
+     * frozen snapshot written before this feature has no `adjustment` key at
+     * all, and the read path re-parses `timesheets.earnings` through this
+     * schema on EVERY read (`timesheetQueryService`) — a required field here
+     * would fail that parse and silently degrade every already-approved week
+     * in production to `hours_only`. Optional covers the legacy rows; nullable
+     * covers a client or store that writes an explicit null.
+     */
+    adjustment: TimesheetAdjustmentSchema.nullable().optional(),
   }),
   z.object({
     status: z.literal(EARNINGS_RESULT_STATUSES.NO_ARRANGEMENT),

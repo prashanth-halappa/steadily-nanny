@@ -9,6 +9,7 @@
  * @module domains/timesheet/types
  */
 export type {
+  ApproveTimesheetInput,
   CarerQuery,
   ClockInInput,
   ClockOutInput,
@@ -22,6 +23,7 @@ export type {
   TimeEntryListResponse,
   TimeEntryStatus,
   Timesheet,
+  TimesheetAdjustment,
   TimesheetIdParam,
   TimesheetListResponse,
   TimesheetStatus,

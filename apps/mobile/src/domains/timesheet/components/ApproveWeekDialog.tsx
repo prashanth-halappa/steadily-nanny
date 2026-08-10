@@ -38,11 +38,20 @@ interface ApproveWeekDialogProps {
    * headline `formatDuration` (matches the breakdown sheet's row style, and
    * the spec's own worked example). */
   hoursLabel: string;
-  /** Formatted gross — only rendered when `earningsStatus === 'ok'`. */
+  /** Formatted gross — only rendered when `earningsStatus === 'ok'`. Already
+   * ADJUSTED by the caller when an adjustment is staged: the figure being
+   * confirmed is the figure that gets frozen, never the pre-adjustment one. */
   grossLabel: string | null;
   /** Drives which body variant renders — not inferred from `grossLabel`. */
   earningsStatus?: WeekEarningsState;
   carerName: string;
+  /** The staged adjustment's ABSOLUTE formatted value, or null. The verb in
+   * the body copy ("adding" / "taking off") carries the sign, so a minus
+   * sign here would say it twice. */
+  adjustmentLabel: string | null;
+  /** Which way `adjustmentLabel` points — the sign, extracted, because the
+   * label itself is deliberately unsigned. */
+  adjustmentDirection?: 'added' | 'deducted' | null;
 }
 
 export function ApproveWeekDialog({
@@ -55,15 +64,25 @@ export function ApproveWeekDialog({
   grossLabel,
   earningsStatus,
   carerName,
+  adjustmentLabel,
+  adjustmentDirection,
 }: ApproveWeekDialogProps) {
   const { t } = useTranslation('hours');
 
+  const hasAdjustment = adjustmentLabel !== null && adjustmentDirection != null;
+  const okBodyKey =
+    hasAdjustment && adjustmentDirection === 'deducted'
+      ? 'approveDialogBodyAdjustmentDeducted'
+      : hasAdjustment
+        ? 'approveDialogBodyAdjustmentAdded'
+        : 'approveDialogBody';
   const bodyKey =
     earningsStatus === 'ok'
-      ? 'approveDialogBody'
+      ? okBodyKey
       : earningsStatus === 'currency_change'
         ? 'approveDialogBodyCurrencyChange'
         : 'approveDialogBodyNoArrangement';
+  const showsGross = earningsStatus === 'ok';
 
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
@@ -75,7 +94,10 @@ export function ApproveWeekDialog({
           <AlertDialogDescription testID="hours-approve-dialog-body">
             {t(bodyKey, {
               hours: hoursLabel,
-              ...(bodyKey === 'approveDialogBody' ? { gross: grossLabel } : {}),
+              ...(showsGross ? { gross: grossLabel } : {}),
+              ...(showsGross && hasAdjustment
+                ? { adjustment: adjustmentLabel }
+                : {}),
               name: carerName,
             })}
           </AlertDialogDescription>

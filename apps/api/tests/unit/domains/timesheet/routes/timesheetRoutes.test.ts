@@ -340,3 +340,108 @@ describe('DELETE /time-entries/:id — void uses authWithOwnership', () => {
     expect(voidEntryMock).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * The adjustment rides POST /:id/approve as a BODY. Adding body validation to
+ * a route that previously validated none is the exact shape of change that
+ * can quietly break two things at once, so both are pinned here:
+ *
+ *  - the ownership middleware is still in front of it (GOLDEN-FIXES #31 — a
+ *    removed parent must still 404, body or no body);
+ *  - a legacy client that posts approve with NO body at all still succeeds.
+ *    Express 5's body-parser leaves `req.body` UNDEFINED for a bodyless POST,
+ *    not `{}`, so a bare `z.object({...})` here would 400 every shipped app.
+ */
+describe('POST /timesheets/:id/approve — the adjustment body', () => {
+  const ADJ_IDS = {
+    removed: 'cccccccc-cccc-4ccc-8ccc-ccccccccccd1',
+    allowed: 'cccccccc-cccc-4ccc-8ccc-ccccccccccd2',
+    invalid: 'cccccccc-cccc-4ccc-8ccc-ccccccccccd3',
+    bodyless: 'cccccccc-cccc-4ccc-8ccc-ccccccccccd4',
+    zero: 'cccccccc-cccc-4ccc-8ccc-ccccccccccd5',
+  } as const;
+
+  function approveWithBody(
+    timesheetId: string,
+    body: unknown
+  ): Promise<Response> {
+    return fetch(`${baseUrl}/timesheets/${timesheetId}/approve`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  }
+
+  it('still 404s a removed parent who posts an adjustment', async () => {
+    const res = await approveWithBody(ADJ_IDS.removed, {
+      adjustment: { amount_minor: -2000, note: 'Advance repaid' },
+    });
+
+    expect(res.status).toBe(404);
+    expect(getOwnedTimesheetMock).toHaveBeenCalledWith(
+      AUTH_USER_ID,
+      ADJ_IDS.removed
+    );
+    expect(approveMock).not.toHaveBeenCalled();
+  });
+
+  it('passes the validated adjustment through to the command service', async () => {
+    getOwnedTimesheetMock.mockImplementationOnce(async () => ({
+      id: ADJ_IDS.allowed,
+    }));
+
+    const res = await approveWithBody(ADJ_IDS.allowed, {
+      adjustment: { amount_minor: -2000, note: '  Advance repaid  ' },
+    });
+
+    expect(res.status).toBe(200);
+    expect(approveMock).toHaveBeenCalledWith(AUTH_USER_ID, ADJ_IDS.allowed, {
+      // Trimmed on the way in by the schema, before the service ever sees it.
+      adjustment: { amount_minor: -2000, note: 'Advance repaid' },
+    });
+  });
+
+  it('400s a malformed adjustment before the command service runs', async () => {
+    getOwnedTimesheetMock.mockImplementationOnce(async () => ({
+      id: ADJ_IDS.invalid,
+    }));
+
+    const res = await approveWithBody(ADJ_IDS.invalid, {
+      adjustment: { amount_minor: -2000, note: '' },
+    });
+
+    expect(res.status).toBe(400);
+    expect(approveMock).not.toHaveBeenCalled();
+  });
+
+  it('400s a zero adjustment — an adjustment of nothing is a client bug', async () => {
+    getOwnedTimesheetMock.mockImplementationOnce(async () => ({
+      id: ADJ_IDS.zero,
+    }));
+
+    const res = await approveWithBody(ADJ_IDS.zero, {
+      adjustment: { amount_minor: 0, note: 'Nothing' },
+    });
+
+    expect(res.status).toBe(400);
+    expect(approveMock).not.toHaveBeenCalled();
+  });
+
+  it('accepts a bodyless approve — every client shipped before this feature', async () => {
+    getOwnedTimesheetMock.mockImplementationOnce(async () => ({
+      id: ADJ_IDS.bodyless,
+    }));
+
+    const res = await fetch(
+      `${baseUrl}/timesheets/${ADJ_IDS.bodyless}/approve`,
+      { method: 'POST' }
+    );
+
+    expect(res.status).toBe(200);
+    expect(approveMock).toHaveBeenCalledWith(
+      AUTH_USER_ID,
+      ADJ_IDS.bodyless,
+      {}
+    );
+  });
+});

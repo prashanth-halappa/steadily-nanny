@@ -9,12 +9,14 @@
 // `response.data.data` before validating the payload with Zod.
 
 import type {
+  ApproveTimesheetInput,
   QueryTimesheetInput,
   ReopenTimesheetInput,
   Timesheet,
   TimesheetWeek,
 } from '@steadily-nanny/shared-types/schemas/timesheet.schema';
 import {
+  ApproveTimesheetSchema,
   QueryTimesheetSchema,
   ReopenTimesheetSchema,
   TimesheetListResponseSchema,
@@ -44,6 +46,7 @@ export {
 // Re-exported so domain-internal imports (`@/src/api/endpoints/timesheets`)
 // stay stable regardless of where the wire contract itself lives.
 export type {
+  ApproveTimesheetInput,
   QueryTimesheetInput,
   ReopenTimesheetInput,
   Timesheet,
@@ -128,10 +131,29 @@ export const timesheetApi = {
     return parsed.data.timesheet;
   },
 
-  /** Approve a week in one tap. Parents only — enforced server-side. */
-  approve: async (timesheetId: string): Promise<Timesheet> => {
+  /**
+   * Approve a week in one tap. Parents only — enforced server-side.
+   *
+   * `input` carries the parent's optional approval-time adjustment (a bonus
+   * or a deduction plus its required reason), which the server folds into the
+   * frozen snapshot atomically. Called with no argument it posts NO body at
+   * all — the pre-adjustment call shape, unchanged, which is what every
+   * legacy caller and the server's `{}`-accepting schema both expect.
+   */
+  approve: async (
+    timesheetId: string,
+    input?: ApproveTimesheetInput
+  ): Promise<Timesheet> => {
+    let body: ApproveTimesheetInput | undefined;
+    if (input !== undefined) {
+      const validated = ApproveTimesheetSchema.safeParse(input);
+      if (!validated.success) throw validated.error;
+      body = validated.data;
+    }
+
     const response = await apiClient.post(
-      timesheetEndpoints.approve(timesheetId)
+      timesheetEndpoints.approve(timesheetId),
+      body
     );
     const parsed = z
       .object({ timesheet: TimesheetSchema })

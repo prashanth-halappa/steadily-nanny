@@ -246,3 +246,120 @@ describe('carerSlug', () => {
     expect(carerSlug('a"; drop table payments; --')).toMatch(/^[a-z0-9-]+$/);
   });
 });
+
+/**
+ * The parent's approval-time adjustment on the payroll sheet.
+ *
+ * It is the only record that can carry a NEGATIVE amount and the only one
+ * whose description holds free text a person typed — so escaping is not a
+ * theoretical concern here, it is the common case.
+ */
+describe('renderWeekExportCsv — the parent adjustment line', () => {
+  const adjusted: WeekEarningsOk = {
+    ...earnings,
+    gross_minor: 104_375,
+    adjustment: {
+      amount_minor: -2000,
+      note: 'Advance repaid',
+      created_by: 'parent-1',
+      created_at: '2026-08-10T09:30:00.000Z',
+    },
+  };
+
+  it('emits one record after the lines, with empty date/minutes/rate', () => {
+    const { csv } = renderWeekExportCsv({
+      timesheet,
+      earnings: adjusted,
+      paidToDateMinor: 0,
+    });
+
+    const rows = csv.split(CRLF);
+    // Immediately after the last line record, immediately before the blank
+    // separator — the adjustment closes the line section.
+    expect(rows[7]).toBe(',Adjustment: Advance repaid,adjustment,,,-2000,GBP');
+    expect(rows[8]).toBe('');
+  });
+
+  it('needs no change to the totals — the frozen gross was written adjusted', () => {
+    const { csv } = renderWeekExportCsv({
+      timesheet,
+      earnings: adjusted,
+      paidToDateMinor: 30_000,
+    });
+
+    expect(csv).toContain(`${CRLF}total_gross_minor,104375${CRLF}`);
+    expect(csv).toContain(`${CRLF}balance_due_minor,74375${CRLF}`);
+    // Untouched: a deduction from WAGES never moves the reimbursement total.
+    expect(csv).toContain(`${CRLF}reimbursements_minor,1250${CRLF}`);
+  });
+
+  it('carries a positive adjustment with no sign at all', () => {
+    const { csv } = renderWeekExportCsv({
+      timesheet,
+      earnings: {
+        ...adjusted,
+        gross_minor: 108_875,
+        adjustment: {
+          amount_minor: 2500,
+          note: 'Late pickup',
+          created_by: 'parent-1',
+          created_at: '2026-08-10T09:30:00.000Z',
+        },
+      },
+      paidToDateMinor: 0,
+    });
+
+    expect(csv).toContain(
+      `${CRLF},Adjustment: Late pickup,adjustment,,,2500,GBP${CRLF}`
+    );
+  });
+
+  it('escapes a note containing a comma, a quote, or a newline', () => {
+    const { csv } = renderWeekExportCsv({
+      timesheet,
+      earnings: {
+        ...adjusted,
+        adjustment: {
+          amount_minor: -2000,
+          note: 'Advance, as agreed — she said "next week"\nfollow up',
+          created_by: 'parent-1',
+          created_at: '2026-08-10T09:30:00.000Z',
+        },
+      },
+      paidToDateMinor: 0,
+    });
+
+    expect(csv).toContain(
+      ',"Adjustment: Advance, as agreed — she said ""next week""\nfollow up",adjustment,,,-2000,GBP'
+    );
+    // The escaping keeps the whole note inside ONE field: the record count is
+    // unchanged from the un-escaped case.
+    const { csv: plain } = renderWeekExportCsv({
+      timesheet,
+      earnings: adjusted,
+      paidToDateMinor: 0,
+    });
+    expect(csv.split(CRLF).length).toBe(plain.split(CRLF).length);
+  });
+
+  it('is byte-identical to today for a snapshot with no adjustment key', () => {
+    const { csv } = renderWeekExportCsv({
+      timesheet,
+      earnings,
+      paidToDateMinor: 30_000,
+    });
+
+    expect(csv).toBe(EXPECTED_CSV);
+    expect(csv).not.toContain('adjustment');
+  });
+
+  it('treats an explicitly null adjustment as no adjustment', () => {
+    const { csv } = renderWeekExportCsv({
+      timesheet,
+      earnings: { ...earnings, adjustment: null },
+      paidToDateMinor: 30_000,
+    });
+
+    expect(csv).toBe(EXPECTED_CSV);
+  });
+});

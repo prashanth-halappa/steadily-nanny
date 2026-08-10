@@ -24,7 +24,18 @@
  *
  * 2. ZERO OR MORE line records — one per `EarningsLine` in the snapshot, in
  *    the snapshot's own order (`EARNINGS_LINE_ORDER`, then chronological);
- *    never re-sorted here.
+ *    never re-sorted here. Then, when the week carries the parent's
+ *    approval-time `adjustment`, ONE more record after them all:
+ *
+ *      ,Adjustment: <note>,adjustment,,,<signed amount_minor>,<currency>
+ *
+ *    `kind` is `adjustment` — the ONE value in that column that is not an
+ *    `EARNINGS_LINE_KINDS` member, because the adjustment is deliberately not
+ *    a line kind (see `timesheet.schema.ts`). It is the only record whose
+ *    `amount_minor` may be NEGATIVE, and its `date`, `minutes` and
+ *    `rate_minor` are EMPTY rather than `0`: it is money, not time, and a `0`
+ *    rate would read as "priced at nothing". `total_gross_minor` already
+ *    includes it — the frozen gross was written adjusted.
  *
  *    | column        | value                                                  |
  *    |---------------|--------------------------------------------------------|
@@ -166,12 +177,38 @@ function lineRecord(line: EarningsLine, currency: string): string {
   ]);
 }
 
+/**
+ * The parent's approval-time adjustment as a line record.
+ *
+ * Built with the same `csvRow` as every other record, which is not a
+ * consistency nicety here: the note is FREE TEXT the parent typed, so it is
+ * the one field on this sheet that can contain a comma, a quote or a newline,
+ * and `csvRow` owns the RFC 4180 escaping that keeps those inside one field.
+ */
+function adjustmentRecord(
+  adjustment: NonNullable<WeekEarningsOk['adjustment']>,
+  currency: string
+): string {
+  return csvRow([
+    '',
+    `Adjustment: ${adjustment.note}`,
+    'adjustment',
+    '',
+    '',
+    String(adjustment.amount_minor),
+    currency,
+  ]);
+}
+
 /** The frozen week, serialised. Pure: same input, same bytes, every time. */
 export function renderWeekExportCsv(input: WeekExportCsvInput): WeekExportCsv {
   const { timesheet, earnings, paidToDateMinor } = input;
   const records: string[] = [
     csvRow(HEADER),
     ...earnings.lines.map(line => lineRecord(line, earnings.currency)),
+    ...(earnings.adjustment
+      ? [adjustmentRecord(earnings.adjustment, earnings.currency)]
+      : []),
     // The section separator.
     '',
     csvRow(['total_gross_minor', String(earnings.gross_minor)]),

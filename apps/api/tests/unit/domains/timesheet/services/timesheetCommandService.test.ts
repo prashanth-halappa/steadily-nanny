@@ -13,6 +13,8 @@ import {
   TimeEntryNotFoundError,
   TimeEntryNotRunningError,
   TimeEntryOverlapError,
+  TimesheetAdjustmentNegativeGrossError,
+  TimesheetAdjustmentNotAllowedError,
   TimesheetGrossTooLargeError,
   TimesheetNotActionableError,
 } from '../../../../../src/domains/timesheet/errors/timesheetErrors';
@@ -6227,5 +6229,459 @@ describe('069 money invariants — a voided entry did not happen', () => {
       'ts1',
       expect.objectContaining({ total_minutes: 450 })
     );
+  });
+});
+
+// =============================================================================
+// Approve with the parent's final adjustment (Option A: a parameter of the
+// approval, folded atomically into the frozen snapshot — no migration, no new
+// endpoint, no persisted pre-approval state).
+//
+// The invariant every test below is really guarding: the COLUMN gross and the
+// JSONB gross are written from one binding and can never disagree, because
+// payments Gate 4, the CSV export and every frozen read take that agreement
+// for granted and were changed nowhere to accommodate this feature.
+// =============================================================================
+
+describe('TimesheetCommandService.approve — the parent adjustment', () => {
+  const MAX_GROSS_MINOR = 99_999_999;
+
+  function approvingSvc(timesheetRepo: any, earnings: any = makeEarnings()) {
+    return new TimesheetCommandService(
+      makeTimeEntryRepo(),
+      timesheetRepo,
+      makeParentMemberRepo(),
+      makeHouseholdRepo(),
+      makeShiftRepo(),
+      makeQueries(),
+      makeUserService(),
+      makePush(),
+      earnings
+    );
+  }
+
+  /** The engine's ok arm, priced at whatever gross a case needs. */
+  function earningsGrossing(grossMinor: number): any {
+    const okWeek = computedEarnings as Extract<WeekEarnings, { status: 'ok' }>;
+    return makeEarnings({
+      computeForWeek: mock(async () => ({
+        ...okWeek,
+        gross_minor: grossMinor,
+      })),
+    });
+  }
+
+  function patchOf(timesheetRepo: any): Record<string, unknown> {
+    const [, patch] = timesheetRepo.approveSubmittedWithEarnings.mock
+      .calls[0] as [string, Record<string, unknown>];
+    return patch;
+  }
+
+  it('adds a bonus to the gross, in BOTH the column and the jsonb', async () => {
+    const timesheetRepo = makeApprovingRepo();
+    const svc = approvingSvc(timesheetRepo);
+
+    await svc.approve('parent-1', 'ts1', {
+      adjustment: { amount_minor: 2_500, note: 'Late pickup on Thursday' },
+    });
+
+    const patch = patchOf(timesheetRepo);
+    expect(patch.gross_minor).toBe(17_300);
+    const frozen = patch.earnings as Extract<WeekEarnings, { status: 'ok' }>;
+    expect(frozen.gross_minor).toBe(17_300);
+    expect(frozen.adjustment).toEqual({
+      amount_minor: 2_500,
+      note: 'Late pickup on Thursday',
+      created_by: 'parent-1',
+      created_at: patch.approved_at as string,
+    });
+  });
+
+  it('takes a deduction off the gross, in BOTH the column and the jsonb', async () => {
+    const timesheetRepo = makeApprovingRepo();
+    const svc = approvingSvc(timesheetRepo);
+
+    await svc.approve('parent-1', 'ts1', {
+      adjustment: { amount_minor: -2_000, note: 'Advance repaid' },
+    });
+
+    const patch = patchOf(timesheetRepo);
+    expect(patch.gross_minor).toBe(12_800);
+    const frozen = patch.earnings as Extract<WeekEarnings, { status: 'ok' }>;
+    expect(frozen.gross_minor).toBe(12_800);
+    expect(frozen.adjustment?.amount_minor).toBe(-2_000);
+  });
+
+  it('leaves the line items completely alone — the adjustment is a sibling, not a line', async () => {
+    const timesheetRepo = makeApprovingRepo();
+    const svc = approvingSvc(timesheetRepo);
+
+    await svc.approve('parent-1', 'ts1', {
+      adjustment: { amount_minor: -2_000, note: 'Advance repaid' },
+    });
+
+    const frozen = patchOf(timesheetRepo).earnings as Extract<
+      WeekEarnings,
+      { status: 'ok' }
+    >;
+    const computed = computedEarnings as Extract<
+      WeekEarnings,
+      { status: 'ok' }
+    >;
+    expect(frozen.lines).toEqual(computed.lines);
+    expect(frozen.reimbursements_minor).toBe(computed.reimbursements_minor);
+    expect(frozen.worked_minutes).toBe(computed.worked_minutes);
+  });
+
+  it('stamps created_at with the SAME instant as the approval', async () => {
+    const timesheetRepo = makeApprovingRepo();
+    const svc = approvingSvc(timesheetRepo);
+
+    await svc.approve('parent-1', 'ts1', {
+      adjustment: { amount_minor: 500, note: 'Bonus' },
+    });
+
+    const patch = patchOf(timesheetRepo);
+    const frozen = patch.earnings as Extract<WeekEarnings, { status: 'ok' }>;
+    expect(frozen.adjustment?.created_at).toBe(patch.approved_at as string);
+    expect(frozen.adjustment?.created_at).toBe(
+      patch.earnings_computed_at as string
+    );
+  });
+
+  it('trims the note before freezing it — a permanent record the carer reads', async () => {
+    const timesheetRepo = makeApprovingRepo();
+    const svc = approvingSvc(timesheetRepo);
+
+    await svc.approve('parent-1', 'ts1', {
+      adjustment: { amount_minor: 500, note: '  Bus fares  ' },
+    });
+
+    const frozen = patchOf(timesheetRepo).earnings as Extract<
+      WeekEarnings,
+      { status: 'ok' }
+    >;
+    expect(frozen.adjustment?.note).toBe('Bus fares');
+  });
+
+  it('writes NO adjustment key at all when none was supplied', async () => {
+    const timesheetRepo = makeApprovingRepo();
+    const svc = approvingSvc(timesheetRepo);
+
+    await svc.approve('parent-1', 'ts1');
+
+    const patch = patchOf(timesheetRepo);
+    expect(patch.gross_minor).toBe(14_800);
+    expect(patch.earnings).toEqual(computedEarnings);
+    expect(patch.earnings).not.toHaveProperty('adjustment');
+  });
+
+  it('treats an explicitly null adjustment as no adjustment', async () => {
+    const timesheetRepo = makeApprovingRepo();
+    const svc = approvingSvc(timesheetRepo);
+
+    await svc.approve('parent-1', 'ts1', { adjustment: null });
+
+    expect(patchOf(timesheetRepo).earnings).toEqual(computedEarnings);
+  });
+
+  it('allows a deduction that lands the week on exactly zero', async () => {
+    const timesheetRepo = makeApprovingRepo();
+    const svc = approvingSvc(timesheetRepo);
+
+    await svc.approve('parent-1', 'ts1', {
+      adjustment: { amount_minor: -14_800, note: 'Paid in advance last week' },
+    });
+
+    const patch = patchOf(timesheetRepo);
+    expect(patch.gross_minor).toBe(0);
+    const frozen = patch.earnings as Extract<WeekEarnings, { status: 'ok' }>;
+    expect(frozen.gross_minor).toBe(0);
+  });
+
+  it('REFUSES a deduction that would push the week negative, and writes nothing', async () => {
+    const timesheetRepo = makeApprovingRepo();
+    const svc = approvingSvc(timesheetRepo);
+
+    await expect(
+      svc.approve('parent-1', 'ts1', {
+        adjustment: { amount_minor: -14_801, note: 'Too much' },
+      })
+    ).rejects.toBeInstanceOf(TimesheetAdjustmentNegativeGrossError);
+    expect(timesheetRepo.approveSubmittedWithEarnings).not.toHaveBeenCalled();
+  });
+
+  it('names the ceiling it hit rather than clamping to zero', async () => {
+    const svc = approvingSvc(makeApprovingRepo());
+
+    const err = (await svc
+      .approve('parent-1', 'ts1', {
+        adjustment: { amount_minor: -20_000, note: 'Too much' },
+      })
+      .catch((e: unknown) => e)) as {
+      statusCode?: number;
+      metadata?: { grossMinor?: number; adjustmentMinor?: number };
+    };
+
+    expect(err.statusCode).toBe(400);
+    expect(err.metadata?.grossMinor).toBe(14_800);
+    expect(err.metadata?.adjustmentMinor).toBe(-20_000);
+  });
+
+  it('BOUNDARY: an adjusted total landing exactly ON the cap approves', async () => {
+    const timesheetRepo = makeApprovingRepo();
+    const svc = approvingSvc(
+      timesheetRepo,
+      earningsGrossing(MAX_GROSS_MINOR - 1)
+    );
+
+    await svc.approve('parent-1', 'ts1', {
+      adjustment: { amount_minor: 1, note: 'One penny' },
+    });
+
+    expect(patchOf(timesheetRepo).gross_minor).toBe(MAX_GROSS_MINOR);
+  });
+
+  it('BOUNDARY: one penny past the cap is refused, never clamped', async () => {
+    const timesheetRepo = makeApprovingRepo();
+    const svc = approvingSvc(timesheetRepo, earningsGrossing(MAX_GROSS_MINOR));
+
+    await expect(
+      svc.approve('parent-1', 'ts1', {
+        adjustment: { amount_minor: 1, note: 'One penny too many' },
+      })
+    ).rejects.toBeInstanceOf(TimesheetGrossTooLargeError);
+    expect(timesheetRepo.approveSubmittedWithEarnings).not.toHaveBeenCalled();
+  });
+
+  it('attributes an oversized COMPUTED gross to the rate, even when a deduction would rescue it', async () => {
+    // Order matters: the computed-gross guard runs BEFORE the fold, so a
+    // broken arrangement is reported as a broken arrangement instead of being
+    // masked by the parent's deduction.
+    const svc = approvingSvc(
+      makeApprovingRepo(),
+      earningsGrossing(3_999_999_960)
+    );
+
+    const err = (await svc
+      .approve('parent-1', 'ts1', {
+        adjustment: { amount_minor: -MAX_GROSS_MINOR, note: 'Rescue attempt' },
+      })
+      .catch((e: unknown) => e)) as {
+      metadata?: { grossMinor?: number };
+    };
+
+    expect(err).toBeInstanceOf(TimesheetGrossTooLargeError);
+    expect(err.metadata?.grossMinor).toBe(3_999_999_960);
+  });
+
+  it('REFUSES an adjustment on a no_arrangement week — no base, no number', async () => {
+    const timesheetRepo = makeApprovingRepo();
+    const noArrangement: WeekEarnings = {
+      status: 'no_arrangement',
+      week_start: '2026-08-03',
+      unpriced_dates: ['2026-08-03'],
+    };
+    const svc = approvingSvc(
+      timesheetRepo,
+      makeEarnings({ computeForWeek: mock(async () => noArrangement) })
+    );
+
+    const err = (await svc
+      .approve('parent-1', 'ts1', {
+        adjustment: { amount_minor: 1_500, note: 'Bonus' },
+      })
+      .catch((e: unknown) => e)) as {
+      statusCode?: number;
+      metadata?: { reason?: string };
+    };
+
+    expect(err).toBeInstanceOf(TimesheetAdjustmentNotAllowedError);
+    expect(err.statusCode).toBe(409);
+    expect(err.metadata?.reason).toBe('no_arrangement');
+    expect(timesheetRepo.approveSubmittedWithEarnings).not.toHaveBeenCalled();
+  });
+
+  it('leaves the no_arrangement week EXACTLY as it was when no adjustment is supplied', async () => {
+    const timesheetRepo = makeApprovingRepo();
+    const noArrangement: WeekEarnings = {
+      status: 'no_arrangement',
+      week_start: '2026-08-03',
+      unpriced_dates: ['2026-08-03'],
+    };
+    const svc = approvingSvc(
+      timesheetRepo,
+      makeEarnings({ computeForWeek: mock(async () => noArrangement) })
+    );
+
+    await svc.approve('parent-1', 'ts1');
+
+    const patch = patchOf(timesheetRepo);
+    expect(patch.gross_minor).toBeNull();
+    expect(patch.currency).toBeNull();
+    expect(patch.earnings).toEqual(noArrangement);
+  });
+
+  it('REFUSES an adjustment on a currency_change week', async () => {
+    const timesheetRepo = makeApprovingRepo();
+    const currencyChange: WeekEarnings = {
+      status: 'currency_change',
+      week_start: '2026-08-03',
+      currencies: ['GBP', 'EUR'],
+    };
+    const svc = approvingSvc(
+      timesheetRepo,
+      makeEarnings({ computeForWeek: mock(async () => currencyChange) })
+    );
+
+    const err = (await svc
+      .approve('parent-1', 'ts1', {
+        adjustment: { amount_minor: 1_500, note: 'Bonus' },
+      })
+      .catch((e: unknown) => e)) as { metadata?: { reason?: string } };
+
+    expect(err).toBeInstanceOf(TimesheetAdjustmentNotAllowedError);
+    expect(err.metadata?.reason).toBe('currency_change');
+    expect(timesheetRepo.approveSubmittedWithEarnings).not.toHaveBeenCalled();
+  });
+
+  it('REFUSES an adjustment on a departed-carer week, and never asks the engine', async () => {
+    const timesheetRepo = makeApprovingRepo();
+    const earnings = makeEarnings();
+    const svc = new TimesheetCommandService(
+      makeTimeEntryRepo(),
+      timesheetRepo,
+      makeParentMemberRepo(),
+      makeHouseholdRepo(),
+      makeShiftRepo(),
+      makeQueries({
+        getOwnedTimesheet: mock(async () => ({ ...timesheet, carer_id: null })),
+      }),
+      makeUserService(),
+      makePush(),
+      earnings
+    );
+
+    const err = (await svc
+      .approve('parent-1', 'ts1', {
+        adjustment: { amount_minor: 1_500, note: 'Bonus' },
+      })
+      .catch((e: unknown) => e)) as { metadata?: { reason?: string } };
+
+    expect(err).toBeInstanceOf(TimesheetAdjustmentNotAllowedError);
+    expect(err.metadata?.reason).toBe('carer_removed');
+    expect(earnings.computeForWeek).not.toHaveBeenCalled();
+    expect(timesheetRepo.approveSubmittedWithEarnings).not.toHaveBeenCalled();
+  });
+
+  it('still approves a departed-carer week with an empty snapshot when no adjustment is supplied', async () => {
+    const timesheetRepo = makeApprovingRepo();
+    const svc = new TimesheetCommandService(
+      makeTimeEntryRepo(),
+      timesheetRepo,
+      makeParentMemberRepo(),
+      makeHouseholdRepo(),
+      makeShiftRepo(),
+      makeQueries({
+        getOwnedTimesheet: mock(async () => ({ ...timesheet, carer_id: null })),
+      }),
+      makeUserService(),
+      makePush(),
+      makeEarnings()
+    );
+
+    await svc.approve('parent-1', 'ts1');
+
+    expect(patchOf(timesheetRepo).gross_minor).toBeNull();
+  });
+
+  it('drops the adjustment with the rest of the approval when the CAS loses the race', async () => {
+    const timesheetRepo = makeApprovingRepo({
+      approveSubmittedWithEarnings: mock(async () => null),
+    });
+    const svc = approvingSvc(timesheetRepo);
+
+    await expect(
+      svc.approve('parent-1', 'ts1', {
+        adjustment: { amount_minor: -2_000, note: 'Advance repaid' },
+      })
+    ).rejects.toBeInstanceOf(TimesheetNotActionableError);
+  });
+
+  it('is refused for a carer before any of this is reached', async () => {
+    const svc = new TimesheetCommandService(
+      makeTimeEntryRepo(),
+      makeApprovingRepo(),
+      makeMemberRepo(),
+      makeHouseholdRepo(),
+      makeShiftRepo(),
+      makeQueries(),
+      makeUserService(),
+      makePush(),
+      makeEarnings()
+    );
+
+    await expect(
+      svc.approve('carer-1', 'ts1', {
+        adjustment: { amount_minor: 1_000, note: 'Self-awarded bonus' },
+      })
+    ).rejects.toBeInstanceOf(NotATimesheetParentError);
+  });
+
+  it('forks ONLY the push body — same type, same title, same payload', async () => {
+    const push = makePush();
+    const svc = new TimesheetCommandService(
+      makeTimeEntryRepo(),
+      makeApprovingRepo(),
+      makeParentMemberRepo(),
+      makeHouseholdRepo(),
+      makeShiftRepo(),
+      makeQueries(),
+      makeUserService(),
+      push,
+      makeEarnings()
+    );
+
+    await svc.approve('parent-1', 'ts1', {
+      adjustment: { amount_minor: -2_000, note: 'Advance repaid' },
+    });
+
+    const [, payload] = push.notifyUser.mock.calls[0] as [
+      string,
+      Record<string, unknown>,
+    ];
+    expect(payload.title).toBe('Hours approved');
+    expect(payload.body).toBe(
+      'A parent approved your hours this week, with an adjustment included.'
+    );
+    // No figure on a lock screen — it could carry no state label.
+    expect(payload.body).not.toContain('20');
+    expect(payload.data).toMatchObject({
+      type: PUSH_NOTIFICATION_TYPES.TIMESHEET_APPROVED,
+      timesheetId: 'ts1',
+    });
+  });
+
+  it('keeps the original push body when there is no adjustment', async () => {
+    const push = makePush();
+    const svc = new TimesheetCommandService(
+      makeTimeEntryRepo(),
+      makeApprovingRepo(),
+      makeParentMemberRepo(),
+      makeHouseholdRepo(),
+      makeShiftRepo(),
+      makeQueries(),
+      makeUserService(),
+      push,
+      makeEarnings()
+    );
+
+    await svc.approve('parent-1', 'ts1');
+
+    const [, payload] = push.notifyUser.mock.calls[0] as [
+      string,
+      Record<string, unknown>,
+    ];
+    expect(payload.body).toBe('A parent approved your hours this week.');
   });
 });

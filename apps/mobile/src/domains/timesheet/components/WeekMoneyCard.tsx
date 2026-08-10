@@ -18,7 +18,14 @@
  * card, below. That separation is deliberate and is not a layout accident.
  */
 import type { Payment } from '@steadily-nanny/shared-types/schemas/payment.schema';
+import { useTranslation } from 'react-i18next';
+import { Pressable } from 'react-native';
+import { Button } from '@/src/components/ui/button';
 import { Card, CardContent } from '@/src/components/ui/card';
+import { Text } from '@/src/components/ui/text';
+import { Caption } from '@/src/components/ui/typography';
+import { AmountRow } from '@/src/domains/pay/components/AmountRow';
+import { formatMoney } from '@/src/lib/money';
 import type { TimesheetStatus, WeekEarningsStateResult } from '../types';
 import type { WeekPaidState } from '../utils/paidState';
 import { hasPaidStateContent, PaidStateSection } from './PaidStateSection';
@@ -45,6 +52,14 @@ interface WeekMoneyCardProps {
   /** PARENT view only — its absence is the read-only contract. */
   onMarkPaidPress?: () => void;
   isMarkPaidDisabled?: boolean;
+  /** The parent's STAGED approval-time adjustment — decided but not yet sent,
+   * so it is deliberately NOT inside the estimated gross above it (the
+   * caption below the row says so). `null` when nothing is staged. */
+  adjustment?: { amountMinor: number; note: string; currency: string } | null;
+  /** PARENT view only, same read-only contract as `onMarkPaidPress`: without
+   * a handler the row is inert and the "Add an adjustment" affordance never
+   * renders at all. */
+  onAdjustmentPress?: () => void;
 }
 
 export function WeekMoneyCard({
@@ -64,15 +79,22 @@ export function WeekMoneyCard({
   settlementCurrency,
   onMarkPaidPress,
   isMarkPaidDisabled = false,
+  adjustment = null,
+  onAdjustmentPress,
 }: WeekMoneyCardProps) {
+  const { t } = useTranslation('hours');
   const earningsKind = weekEarningsSectionKind({
     earnings,
     totalMinutes,
     earningsError,
   });
   const showPaidState = hasPaidStateContent(paidState, payments);
+  // Third predicate on the disappear guard: a card whose only content is the
+  // adjustment (staged, or the affordance to stage one) still has something
+  // true to say, and must not vanish along with the two original halves.
+  const showAdjustment = adjustment !== null || onAdjustmentPress !== undefined;
 
-  if (earningsKind === 'none' && !showPaidState) return null;
+  if (earningsKind === 'none' && !showPaidState && !showAdjustment) return null;
 
   return (
     <Card testID={testID} className="mb-4">
@@ -91,6 +113,42 @@ export function WeekMoneyCard({
             onPress={onPressBreakdown}
           />
         )}
+        {/* Between the gross and the settlement, NOT inside
+            `WeekEarningsLine` — that component's four early returns would
+            swallow it on exactly the degraded weeks where a parent is most
+            likely to want an adjustment. */}
+        {adjustment ? (
+          <Pressable
+            testID={`${testID}-adjustment`}
+            accessibilityRole={onAdjustmentPress ? 'button' : undefined}
+            disabled={!onAdjustmentPress}
+            onPress={onAdjustmentPress}
+            className="gap-1"
+          >
+            <AmountRow
+              testID={`${testID}-adjustment-row`}
+              label={t('adjustment.rowLabel')}
+              value={formatMoney(adjustment.amountMinor, adjustment.currency)}
+              subLine={adjustment.note}
+            />
+            {/* Load-bearing: the staged figure is NOT in the estimated gross
+                above, and a parent reading two numbers that don't add up
+                deserves to be told which one is waiting. */}
+            <Caption className="text-muted-foreground">
+              {t('adjustment.stagedNote')}
+            </Caption>
+          </Pressable>
+        ) : onAdjustmentPress ? (
+          <Button
+            testID={`${testID}-add-adjustment`}
+            variant="ghost"
+            size="sm"
+            className="self-start"
+            onPress={onAdjustmentPress}
+          >
+            <Text>{t('adjustment.addButton')}</Text>
+          </Button>
+        ) : null}
         <PaidStateSection
           paidState={paidState}
           payments={payments}

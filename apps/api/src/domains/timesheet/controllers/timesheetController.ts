@@ -198,13 +198,20 @@ export class TimesheetController {
     }
   }
 
-  /** POST /timesheets/:id/approve — parents only. */
+  /**
+   * POST /timesheets/:id/approve — parents only.
+   *
+   * The body carries the optional final adjustment; it is validated (and
+   * defaulted to `{}` for a bodyless legacy request) by the route's
+   * `ApproveTimesheetSchema`, so this layer passes it straight through.
+   */
   static async approve(req: Request, res: Response, next: NextFunction) {
     try {
       const id = req.params.id as string;
       const timesheet = await timesheetCommandService.approve(
         getAuthUserId(req),
-        id
+        id,
+        req.body
       );
       return sendSuccessResponse(res, 'Timesheet approved', { timesheet });
     } catch (error) {

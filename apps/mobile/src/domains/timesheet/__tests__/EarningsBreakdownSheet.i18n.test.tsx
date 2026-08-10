@@ -103,3 +103,45 @@ describe('EarningsBreakdownSheet — overtime multiplier i18n (review finding 9a
     expect(call?.options?.multiplier).toBe('1,5');
   });
 });
+
+// The adjustment's reason is free text a parent typed. It must reach the
+// carer VERBATIM as an interpolated value — never treated as a key, and
+// never reworded — which the key-echo suite cannot see.
+describe('EarningsBreakdownSheet — the adjustment note is interpolated, not keyed', () => {
+  afterEach(() => {
+    capturedTCalls.length = 0;
+  });
+
+  function adjustedEarnings(amountMinor: number, note: string): WeekEarningsOk {
+    return {
+      ...overtimeEarnings(),
+      gross_minor: 8325 + amountMinor,
+      adjustment: {
+        amount_minor: amountMinor,
+        note,
+        created_by: '11111111-1111-4111-8111-111111111111',
+        created_at: '2026-08-10T09:00:00.000Z',
+      },
+    };
+  }
+
+  it('passes the reason through as `note`, character for character', () => {
+    const note = 'Bus fares for the school run — £4.80 × 5';
+    render(
+      <EarningsBreakdownSheet
+        visible
+        onDismiss={() => {}}
+        earnings={adjustedEarnings(-2400, note)}
+        weekRangeLabel="3 Aug – 9 Aug"
+        earningsRole="nanny"
+      />
+    );
+
+    const call = capturedTCalls.find(
+      c => c.key === 'earningsLineAdjustmentDeductedNanny'
+    );
+    expect(call?.options?.note).toBe(note);
+    // The note is never itself handed to `t()` as a key.
+    expect(capturedTCalls.some(c => c.key === note)).toBe(false);
+  });
+});

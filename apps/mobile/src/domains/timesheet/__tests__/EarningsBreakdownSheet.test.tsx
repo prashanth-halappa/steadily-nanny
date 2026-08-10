@@ -283,4 +283,134 @@ describe('EarningsBreakdownSheet', () => {
       expect(queryByText('earningsLineCancellationSublineParent')).toBeNull();
     });
   });
+
+  // The parent's approval-time adjustment. This sheet is where the NANNY
+  // learns of it — it is staged silently and folded in at approval — so the
+  // row renders for both roles, with the voice forked and the note verbatim.
+  describe('the approval-time adjustment row', () => {
+    function adjustedEarnings(
+      amountMinor: number,
+      note = 'Advance on Friday'
+    ): WeekEarningsOk {
+      return baseEarnings({
+        lines: [
+          {
+            kind: 'regular',
+            minutes: 2460,
+            rate_minor: 1850,
+            multiplier: null,
+            amount_minor: 23612,
+            from_date: '2026-08-03',
+            to_date: '2026-08-09',
+            arrangement_id: 'arr-1',
+          },
+        ],
+        gross_minor: 23612 + amountMinor,
+        worked_minutes: 2460,
+        payable_minutes: 2460,
+        adjustment: {
+          amount_minor: amountMinor,
+          note,
+          created_by: '11111111-1111-4111-8111-111111111111',
+          created_at: '2026-08-10T09:00:00.000Z',
+        },
+      });
+    }
+
+    it('renders NO adjustment row on a legacy snapshot that never had the key', () => {
+      const { queryByTestId } = render(
+        <EarningsBreakdownSheet
+          visible
+          onDismiss={() => {}}
+          earnings={baseEarnings()}
+          weekRangeLabel="3 Aug – 9 Aug"
+        />
+      );
+
+      expect(
+        queryByTestId('hours-earnings-breakdown-line-adjustment')
+      ).toBeNull();
+    });
+
+    it('lets Intl render the minus on a deduction — never a hand-prefixed sign', () => {
+      const { getByTestId } = render(
+        <EarningsBreakdownSheet
+          visible
+          onDismiss={() => {}}
+          earnings={adjustedEarnings(-2000)}
+          weekRangeLabel="3 Aug – 9 Aug"
+        />
+      );
+
+      expect(
+        getByTestId('hours-earnings-breakdown-line-adjustment-value').props
+          .children
+      ).toBe('-£20.00');
+      // The total already includes it — this row explains the total, it does
+      // not adjust it a second time.
+      expect(getByTestId('hours-earnings-breakdown-total').props.children).toBe(
+        '£216.12'
+      );
+    });
+
+    it('renders an addition unsigned, as Intl formats it', () => {
+      const { getByTestId } = render(
+        <EarningsBreakdownSheet
+          visible
+          onDismiss={() => {}}
+          earnings={adjustedEarnings(1500)}
+          weekRangeLabel="3 Aug – 9 Aug"
+        />
+      );
+
+      expect(
+        getByTestId('hours-earnings-breakdown-line-adjustment-value').props
+          .children
+      ).toBe('£15.00');
+    });
+
+    it('forks the subline voice by role AND by sign', () => {
+      const parentDeduction = render(
+        <EarningsBreakdownSheet
+          visible
+          onDismiss={() => {}}
+          earnings={adjustedEarnings(-2000)}
+          weekRangeLabel="3 Aug – 9 Aug"
+          earningsRole="parent"
+        />
+      );
+      expect(
+        parentDeduction.getByText('earningsLineAdjustmentDeductedParent')
+      ).toBeTruthy();
+
+      const nannyDeduction = render(
+        <EarningsBreakdownSheet
+          visible
+          onDismiss={() => {}}
+          earnings={adjustedEarnings(-2000)}
+          weekRangeLabel="3 Aug – 9 Aug"
+          earningsRole="nanny"
+        />
+      );
+      expect(
+        nannyDeduction.getByText('earningsLineAdjustmentDeductedNanny')
+      ).toBeTruthy();
+      expect(
+        nannyDeduction.queryByText('earningsLineAdjustmentDeductedParent')
+      ).toBeNull();
+
+      const nannyAddition = render(
+        <EarningsBreakdownSheet
+          visible
+          onDismiss={() => {}}
+          earnings={adjustedEarnings(1500)}
+          weekRangeLabel="3 Aug – 9 Aug"
+          earningsRole="nanny"
+        />
+      );
+      expect(
+        nannyAddition.getByText('earningsLineAdjustmentAddedNanny')
+      ).toBeTruthy();
+    });
+  });
 });

@@ -214,10 +214,54 @@ describe('timesheetApi.approve', () => {
 
     const result = await timesheetApi.approve(validTimesheet.id);
 
+    // No body — `undefined` is what axios receives when the parent staged no
+    // adjustment, which is the same empty request as before this feature.
     expect(apiClient.post).toHaveBeenCalledWith(
-      `/v1/timesheets/${validTimesheet.id}/approve`
+      `/v1/timesheets/${validTimesheet.id}/approve`,
+      undefined
     );
     expect(result.status).toBe('approved');
+  });
+
+  it('POSTs the parent’s adjustment as the body when one is supplied', async () => {
+    apiClient.post.mockResolvedValue({
+      data: {
+        data: { timesheet: { ...validTimesheet, status: 'approved' } },
+      },
+    });
+
+    await timesheetApi.approve(validTimesheet.id, {
+      adjustment: { amount_minor: -2000, note: '  Advance on Friday  ' },
+    });
+
+    expect(apiClient.post).toHaveBeenCalledWith(
+      `/v1/timesheets/${validTimesheet.id}/approve`,
+      // The shared schema TRIMS the note — validation happens before the
+      // wire, not on the server's word alone.
+      { adjustment: { amount_minor: -2000, note: 'Advance on Friday' } }
+    );
+  });
+
+  it('refuses a zero adjustment before it ever reaches the network', async () => {
+    apiClient.post.mockClear();
+
+    await expect(
+      timesheetApi.approve(validTimesheet.id, {
+        adjustment: { amount_minor: 0, note: 'Nothing really' },
+      })
+    ).rejects.toThrow();
+    expect(apiClient.post).not.toHaveBeenCalled();
+  });
+
+  it('refuses an adjustment with an empty reason', async () => {
+    apiClient.post.mockClear();
+
+    await expect(
+      timesheetApi.approve(validTimesheet.id, {
+        adjustment: { amount_minor: -2000, note: '   ' },
+      })
+    ).rejects.toThrow();
+    expect(apiClient.post).not.toHaveBeenCalled();
   });
 });
 

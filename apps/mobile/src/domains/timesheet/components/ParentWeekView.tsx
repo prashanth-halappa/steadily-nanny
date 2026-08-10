@@ -28,7 +28,7 @@ import { FlashList } from '@shopify/flash-list';
 import type { CreatePaymentInput } from '@steadily-nanny/shared-types/schemas/payment.schema';
 import type { Href } from 'expo-router';
 import { useRouter } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Pressable, View } from 'react-native';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
@@ -87,6 +87,10 @@ import { QueryNoteSheet } from './QueryNoteSheet';
 import { RecordPaymentSheet } from './RecordPaymentSheet';
 import { ReopenWeekDialog } from './ReopenWeekDialog';
 import { TimeEntryDayRow } from './TimeEntryDayRow';
+import {
+  type StagedAdjustment,
+  WeekAdjustmentSheet,
+} from './WeekAdjustmentSheet';
 import { WeekExportAction } from './WeekExportAction';
 import { WeekMoneyCard } from './WeekMoneyCard';
 import { WeekTotal } from './WeekTotal';
@@ -156,6 +160,14 @@ export function ParentWeekView({
   const [overPayment, setOverPayment] = useState<OverPaymentMetadata | null>(
     null
   );
+  // The approval-time adjustment lives ONLY here until approve is sent —
+  // Option A stages it client-side rather than persisting it, so nothing
+  // exists server-side to reconcile and the nanny is never shown a figure
+  // that may still be withdrawn.
+  const [pendingAdjustment, setPendingAdjustment] =
+    useState<StagedAdjustment | null>(null);
+  const [isAdjustmentSheetVisible, setIsAdjustmentSheetVisible] =
+    useState(false);
   const [isApproveDialogOpen, setIsApproveDialogOpen] = useState(false);
   const [isReopenDialogOpen, setIsReopenDialogOpen] = useState(false);
   const [isBreakdownVisible, setIsBreakdownVisible] = useState(false);
@@ -220,6 +232,19 @@ export function ParentWeekView({
   const timesheet =
     weekTimesheets.find(t => carerKeyOf(t) === selectedCarerId) ?? null;
   const reopened = useReopenedNotice(timesheet?.id, timesheet?.status);
+  // Drop the staged adjustment whenever the week underneath it moves — a
+  // different carer's row, or a roll-up that changed the hours. The parent
+  // decided "-£20" against a gross that no longer exists, and carrying that
+  // number forward would attach it to a total she never saw.
+  const timesheetId = timesheet?.id ?? null;
+  const timesheetUpdatedAt = timesheet?.updated_at ?? null;
+  useEffect(() => {
+    // Both dependencies are READ here, not merely listed: `bun run format`'s
+    // unsafe pass deletes a dependency the body never touches, and this
+    // effect exists precisely to fire when either changes (GOLDEN-FIXES #30).
+    if (timesheetId === null && timesheetUpdatedAt === null) return;
+    setPendingAdjustment(null);
+  }, [timesheetId, timesheetUpdatedAt]);
   // Settlement is measured against a frozen gross, but a reopened week keeps
   // its ledger rows even after the snapshot clears — fetch whenever the week
   // is approved OR carries a reopen reason (submitted-with-reopen_reason).
@@ -415,8 +440,28 @@ export function ParentWeekView({
           localDateInZone(timeZone, new Date(timesheet.approved_at))
         )
       : null;
+  // The dialog confirms the figure that will actually be FROZEN, so the
+  // staged adjustment is folded in here rather than mentioned beside an
+  // un-adjusted total. `adjustmentLabel` is absolute — the body copy's verb
+  // ("adding" / "taking off") carries the sign.
+  const stagedAdjustment = earningsOk ? pendingAdjustment : null;
   const grossLabel = earningsOk
-    ? formatMoney(earningsOk.gross_minor, earningsOk.currency)
+    ? formatMoney(
+        earningsOk.gross_minor + (stagedAdjustment?.amount_minor ?? 0),
+        earningsOk.currency
+      )
+    : null;
+  const adjustmentLabel =
+    earningsOk && stagedAdjustment
+      ? formatMoney(
+          Math.abs(stagedAdjustment.amount_minor),
+          earningsOk.currency
+        )
+      : null;
+  const adjustmentDirection = stagedAdjustment
+    ? stagedAdjustment.amount_minor < 0
+      ? ('deducted' as const)
+      : ('added' as const)
     : null;
   const approveDialogCarerName =
     carerName ?? timesheet?.carer_display_name ?? tSchedule('detail.someone');
@@ -483,10 +528,16 @@ export function ParentWeekView({
   const handleApprove = async () => {
     if (!timesheet || !isActionable || approveTimesheet.isPending) return;
     try {
-      await approveTimesheet.mutateAsync(timesheet.id);
+      await approveTimesheet.mutateAsync({
+        timesheetId: timesheet.id,
+        adjustment: stagedAdjustment ?? undefined,
+      });
     } catch {
+      // The staged adjustment SURVIVES a refusal on purpose: a lost CAS race
+      // or a network failure is a retry, not a change of mind.
       return;
     }
+    setPendingAdjustment(null);
     showSuccessToast(t('approvedToast'));
   };
 
@@ -690,6 +741,24 @@ export function ParentWeekView({
                 isApproved && !readOnly ? handleOpenRecordPayment : undefined
               }
               isMarkPaidDisabled={recordPayment.isPending}
+              adjustment={
+                stagedAdjustment && earningsOk
+                  ? {
+                      amountMinor: stagedAdjustment.amount_minor,
+                      note: stagedAdjustment.note,
+                      currency: earningsOk.currency,
+                    }
+                  : null
+              }
+              // Same read-only contract as `onMarkPaidPress`. Also gated on a
+              // computed gross: an adjustment with no base to adjust is a
+              // number with nothing behind it (docs/11-MONEY.md §4), and the
+              // API refuses it anyway.
+              onAdjustmentPress={
+                !readOnly && isActionable && earnings?.status === 'ok'
+                  ? () => setIsAdjustmentSheetVisible(true)
+                  : undefined
+              }
             />
             {/* §7 fixed order item 3 — after day rows, approved-only,
                 read-only so it renders for a helper too. */}
@@ -751,6 +820,8 @@ export function ParentWeekView({
         grossLabel={grossLabel}
         earningsStatus={earnings?.status}
         carerName={approveDialogCarerName}
+        adjustmentLabel={adjustmentLabel}
+        adjustmentDirection={adjustmentDirection}
       />
 
       <ReopenWeekDialog
@@ -775,6 +846,32 @@ export function ParentWeekView({
           carerName={approveDialogCarerName}
           weekRangeLabel={weekRangeLabel}
           overPayment={overPayment}
+        />
+      ) : null}
+
+      {earningsOk && !readOnly ? (
+        <WeekAdjustmentSheet
+          visible={isAdjustmentSheetVisible}
+          onDismiss={() => setIsAdjustmentSheetVisible(false)}
+          // Sheet-owns-values, screen-owns-mutation: the sheet hands back the
+          // signed figure, this screen decides it is staged and closes.
+          onSubmit={value => {
+            setPendingAdjustment(value);
+            setIsAdjustmentSheetVisible(false);
+          }}
+          onRemove={
+            pendingAdjustment
+              ? () => {
+                  setPendingAdjustment(null);
+                  setIsAdjustmentSheetVisible(false);
+                }
+              : undefined
+          }
+          computedGrossMinor={earningsOk.gross_minor}
+          currency={earningsOk.currency}
+          carerName={approveDialogCarerName}
+          weekRangeLabel={weekRangeLabel}
+          initialAdjustment={pendingAdjustment}
         />
       ) : null}
 
