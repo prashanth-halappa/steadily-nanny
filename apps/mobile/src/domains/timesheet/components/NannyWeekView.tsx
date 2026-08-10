@@ -28,12 +28,15 @@
  * semantically separate from the money line above.
  */
 import { FlashList } from '@shopify/flash-list';
+import type { Href } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { View } from 'react-native';
+import { Pressable, View } from 'react-native';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { useTabBarScrollPadding } from '@/lib/layout/useTabBarScrollPadding';
 import { ErrorState } from '@/src/components/custom/ErrorState';
+import { Small } from '@/src/components/ui/typography';
 import { ExpenseAddSheet } from '@/src/domains/expenses/components/ExpenseAddSheet';
 import { ExpensesListCard } from '@/src/domains/expenses/components/ExpensesListCard';
 import { ReimbursementsCard } from '@/src/domains/expenses/components/ReimbursementsCard';
@@ -118,6 +121,7 @@ export function NannyWeekView({
   const { t } = useTranslation('hours');
   const { t: tExpenses } = useTranslation('expenses');
   const { t: tErrors } = useTranslation('errors');
+  const router = useRouter();
   // Same tab-bar dead-zone fix as Settings (BUG1) — the Hours tab's
   // FlashList needs the same real clearance a fixed magic number can't give.
   const tabBarScrollPadding = useTabBarScrollPadding();
@@ -449,6 +453,14 @@ export function NannyWeekView({
               onWithdraw={readOnly ? undefined : handleWithdrawExpense}
               onAddExpense={readOnly ? undefined : handleOpenAddExpense}
             />
+            {/* Cross-week record, not gated on this week's approval — same
+                read-only entitlement as the money card above it. */}
+            <Pressable
+              testID="hours-payments-link"
+              onPress={() => router.push('/(private)/payments' as Href)}
+            >
+              <Small className="text-primary">{t('payments.entryLink')}</Small>
+            </Pressable>
             {showSettlementHistory && timesheet && isApproved ? (
               <WeekExportAction
                 timesheetId={timesheet.id}

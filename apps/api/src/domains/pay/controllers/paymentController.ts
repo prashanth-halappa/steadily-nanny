@@ -27,6 +27,29 @@ export class PaymentController {
     }
   }
 
+  /**
+   * GET /households/:householdId/payments — the household's settlement
+   * history, newest first. The service decides the SCOPE (every carer's rows
+   * for a parent/owner, only her own for a nanny), so there is nothing to
+   * choose here.
+   */
+  static async listForHousehold(
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ) {
+    try {
+      const householdId = req.params.householdId as string;
+      const payments = await paymentQueryService.listForHousehold(
+        getAuthUserId(req),
+        householdId
+      );
+      return sendSuccessResponse(res, 'Payments fetched', { payments });
+    } catch (error) {
+      return next(error);
+    }
+  }
+
   /** POST /timesheets/:timesheetId/payments — parents only, approved weeks only. */
   static async create(req: Request, res: Response, next: NextFunction) {
     try {

@@ -14,6 +14,7 @@ let apiClient: any;
 
 const now = '2026-08-11T09:30:00.000Z';
 const TIMESHEET_ID = '44444444-4444-4444-8444-444444444444';
+const HOUSEHOLD_ID = '22222222-2222-4222-8222-222222222222';
 
 const validPayment = {
   id: '66666666-6666-4666-8666-666666666666',
@@ -70,6 +71,32 @@ describe('paymentApi.list', () => {
     });
 
     await expect(paymentApi.list(TIMESHEET_ID)).rejects.toBeDefined();
+  });
+});
+
+describe('paymentApi.listForHousehold', () => {
+  it('GETs the household-nested payments and returns validated rows', async () => {
+    apiClient.get.mockResolvedValue({
+      data: { data: { payments: [validPayment] } },
+    });
+
+    const result = await paymentApi.listForHousehold(HOUSEHOLD_ID);
+
+    expect(apiClient.get).toHaveBeenCalledWith(
+      `/v1/households/${HOUSEHOLD_ID}/payments`
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0].amount_minor).toBe(23612);
+  });
+
+  it('throws when the payload fails Zod validation', async () => {
+    apiClient.get.mockResolvedValue({
+      data: { data: { payments: [{ ...validPayment, amount_minor: 0 }] } },
+    });
+
+    await expect(
+      paymentApi.listForHousehold(HOUSEHOLD_ID)
+    ).rejects.toBeDefined();
   });
 });
 

@@ -5,11 +5,10 @@
 // `@steadily-nanny/shared-types/schemas/payment.schema` — never redefined
 // here.
 //
-// Two calls and deliberately no third: `payments` is append-only server-side
-// (there is no PATCH and no DELETE route — see
-// `apps/api/src/domains/pay/routes/paymentRoutes.ts`), so this module has no
-// update/remove to wrap. A mistake is prevented at write time by the
-// over-payment gate, never corrected by editing history.
+// Three reads/writes and deliberately no update or remove: `payments` is
+// append-only server-side (there is no PATCH and no DELETE route — see
+// `apps/api/src/domains/pay/routes/paymentRoutes.ts`). A mistake is prevented
+// at write time by the over-payment gate, never corrected by editing history.
 //
 // Every network call goes through the shared `apiClient` and unwraps the
 // standard success envelope `{ success, data, message, ... }` at
@@ -37,6 +36,9 @@ export const paymentEndpoints = {
   /** Both the list GET and the create POST — one nested collection. */
   forTimesheet: (timesheetId: string) =>
     `/v1/timesheets/${timesheetId}/payments`,
+  /** Read-only: every payment across every carer and week in one household. */
+  forHousehold: (householdId: string) =>
+    `/v1/households/${householdId}/payments`,
 } as const;
 
 // --- API --------------------------------------------------------------------
@@ -49,6 +51,20 @@ export const paymentApi = {
   list: async (timesheetId: string): Promise<Payment[]> => {
     const response = await apiClient.get(
       paymentEndpoints.forTimesheet(timesheetId)
+    );
+    const parsed = PaymentListResponseSchema.safeParse(response.data.data);
+    if (!parsed.success) throw parsed.error;
+    return parsed.data.payments;
+  },
+
+  /**
+   * `GET /households/:householdId/payments` — the household's whole payment
+   * history, across every carer and week, for the Payments screen. Same
+   * envelope and schema as `list`, just scoped wider.
+   */
+  listForHousehold: async (householdId: string): Promise<Payment[]> => {
+    const response = await apiClient.get(
+      paymentEndpoints.forHousehold(householdId)
     );
     const parsed = PaymentListResponseSchema.safeParse(response.data.data);
     if (!parsed.success) throw parsed.error;

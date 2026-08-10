@@ -18,7 +18,12 @@ import type { Expense } from '@steadily-nanny/shared-types/schemas/expense.schem
 import * as expenseSchemaModule from '@steadily-nanny/shared-types/schemas/expense.schema';
 import * as timesheetSchemaModule from '@steadily-nanny/shared-types/schemas/timesheet.schema';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, waitFor, within } from '@testing-library/react-native';
+import {
+  fireEvent,
+  render,
+  waitFor,
+  within,
+} from '@testing-library/react-native';
 import type React from 'react';
 import { useAuthStore } from '@/src/store/auth';
 
@@ -48,7 +53,6 @@ mock.module('@/src/components/custom/BottomSheetBase', () => {
 });
 
 mock.module('@rn-primitives/alert-dialog', () => {
-  const R = require('react');
   const pass = ({ children }: { children?: React.ReactNode }) => children;
   return {
     Root: pass,
@@ -68,6 +72,11 @@ mock.module('@/src/domains/expenses/components/ExpenseDateField', () => {
   const R = require('react');
   return { ExpenseDateField: () => R.createElement('View', {}) };
 });
+
+const routerPushMock = mock();
+mock.module('expo-router', () => ({
+  useRouter: () => ({ push: routerPushMock, back: mock(), replace: mock() }),
+}));
 
 class FakeExportUnavailableError extends Error {}
 mock.module('../utils/weekExport', () => ({
@@ -251,6 +260,7 @@ beforeEach(() => {
   getWeekMock.mockReset();
   listExpensesForWeekMock.mockReset();
   listPaymentsMock.mockReset();
+  routerPushMock.mockClear();
 
   listEntriesMock.mockImplementation(() => Promise.resolve([entry]));
   getWeekMock.mockImplementation(() => Promise.resolve([makeTimesheetWeek()]));
@@ -412,5 +422,33 @@ describe('NannyWeekView — reading the settlement', () => {
     ).toBe('£120.00');
     expect(queryByTestId('hours-mark-paid-button')).toBeNull();
     expect(queryByTestId('hours-export-button')).toBeNull();
+  });
+});
+
+// WP7: one entry link from the week to the cross-week Payments screen. A
+// plain text link, not gated on approval — it links to a record that spans
+// every week, not to this week's state.
+describe('NannyWeekView — the payments entry link', () => {
+  it('renders and navigates to the payments screen on tap', async () => {
+    const { getByTestId } = renderNannyView();
+
+    await waitFor(() =>
+      expect(getByTestId('hours-payments-link')).toBeTruthy()
+    );
+    fireEvent.press(getByTestId('hours-payments-link'));
+
+    expect(routerPushMock).toHaveBeenCalledWith('/(private)/payments');
+  });
+
+  it('renders even when the week is NOT approved', async () => {
+    getWeekMock.mockImplementation(() =>
+      Promise.resolve([makeTimesheetWeek({ status: 'submitted' })])
+    );
+
+    const { getByTestId } = renderNannyView();
+
+    await waitFor(() =>
+      expect(getByTestId('hours-payments-link')).toBeTruthy()
+    );
   });
 });

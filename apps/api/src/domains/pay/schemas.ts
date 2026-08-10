@@ -82,3 +82,15 @@ export const TimesheetPaymentsParamSchema = z.object({
 export type TimesheetPaymentsParam = z.infer<
   typeof TimesheetPaymentsParamSchema
 >;
+
+/**
+ * URL param validation for `/households/:householdId/payments` — the
+ * household-wide settlement history. Same rule as above: the shape check is
+ * not the authorization check. `paymentQueryService.assertPaymentReader`
+ * re-checks membership and decides whether the caller reads the household or
+ * only her own rows (docs/11-MONEY.md §9).
+ */
+export const HouseholdIdParamSchema = z.object({
+  householdId: z.uuid(),
+});
+export type HouseholdIdParam = z.infer<typeof HouseholdIdParamSchema>;

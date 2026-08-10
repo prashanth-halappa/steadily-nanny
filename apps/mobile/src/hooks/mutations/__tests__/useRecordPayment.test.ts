@@ -61,11 +61,27 @@ describe('useRecordPayment', () => {
       method_note: 'Bank transfer',
     });
     expect(invalidateSpy).toHaveBeenCalledWith({
-      queryKey: queryKeys.payment.forTimesheet(TIMESHEET_ID),
+      queryKey: queryKeys.payment.all,
     });
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: queryKeys.timesheet.all,
     });
+  });
+
+  // The household-scoped Payments screen (queryKeys.payment.forHousehold)
+  // would otherwise sit stale after a payment is recorded from the Hours
+  // tab — this proves the widened key still catches the week's own ledger,
+  // rather than assuming React Query's prefix matching does.
+  it('payment.all is a prefix of payment.forTimesheet, so invalidating it still invalidates the week ledger', () => {
+    const { queryClient } = renderHookWithProviders(() => useRecordPayment());
+    queryClient.setQueryData(queryKeys.payment.forTimesheet(TIMESHEET_ID), []);
+
+    queryClient.invalidateQueries({ queryKey: queryKeys.payment.all });
+
+    expect(
+      queryClient.getQueryState(queryKeys.payment.forTimesheet(TIMESHEET_ID))
+        ?.isInvalidated
+    ).toBe(true);
   });
 
   it('surfaces the over-payment refusal as a toast and rejects, so the sheet keeps what was typed', async () => {

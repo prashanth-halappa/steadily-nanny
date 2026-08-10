@@ -36,7 +36,7 @@ import { useThemeColors } from '@/lib/design-tokens/useThemeColors';
 import { useTabBarScrollPadding } from '@/lib/layout/useTabBarScrollPadding';
 import { cn } from '@/lib/utils';
 import { ErrorState } from '@/src/components/custom/ErrorState';
-import { Caption } from '@/src/components/ui/typography';
+import { Caption, Small } from '@/src/components/ui/typography';
 import { ExpenseReviewSheet } from '@/src/domains/expenses/components/ExpenseReviewSheet';
 import { PendingExpensesRow } from '@/src/domains/expenses/components/PendingExpensesRow';
 import { ReimbursementsCard } from '@/src/domains/expenses/components/ReimbursementsCard';
@@ -768,6 +768,14 @@ export function ParentWeekView({
               currency={expensesCurrency}
               carerName={carerName ?? undefined}
             />
+            {/* Cross-week record, not gated on this week's approval — a
+                helper reads settlements too, same as ReimbursementsCard. */}
+            <Pressable
+              testID="hours-payments-link"
+              onPress={() => router.push('/(private)/payments' as Href)}
+            >
+              <Small className="text-primary">{t('payments.entryLink')}</Small>
+            </Pressable>
             {showSettlementHistory && timesheet && isApproved ? (
               <WeekExportAction
                 timesheetId={timesheet.id}

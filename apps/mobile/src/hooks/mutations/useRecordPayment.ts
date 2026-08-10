@@ -5,12 +5,15 @@
  * approved weeks only, `sum(payments) <= gross_minor` — all enforced
  * server-side; this hook's job is the cache and the copy.
  *
- * TWO invalidations, and both are load-bearing. The ledger
- * (`payment.forTimesheet`) is the obvious one. `timesheet.all` is the one
- * that is easy to forget: the paid badge and the outstanding balance render
- * on the WEEK view, which is served from the timesheet cache, so invalidating
- * only the ledger leaves a freshly-settled week still reading "Unpaid" until
- * something else happens to refetch it.
+ * TWO invalidations, and both are load-bearing. The ledger (`payment.all`,
+ * not just `payment.forTimesheet` — a prefix of it, so the week's own list
+ * still refetches too) is the obvious one; widening it to the whole domain is
+ * what keeps a household-scoped payments screen (`payment.forHousehold`)
+ * from sitting stale after a payment recorded on the Hours tab.
+ * `timesheet.all` is the one that is easy to forget: the paid badge and the
+ * outstanding balance render on the WEEK view, which is served from the
+ * timesheet cache, so invalidating only the ledger leaves a freshly-settled
+ * week still reading "Unpaid" until something else happens to refetch it.
  *
  * The over-payment refusal gets its OWN copy rather than falling through to
  * `errors:validation`. "Please check the information you entered" is useless
@@ -104,10 +107,8 @@ export function useRecordPayment() {
   return useMutation<Payment, Error, RecordPaymentVariables>({
     mutationFn: ({ timesheetId, input }) =>
       paymentApi.create(timesheetId, input),
-    onSuccess: (_payment, { timesheetId }) => {
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.payment.forTimesheet(timesheetId),
-      });
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.payment.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.timesheet.all });
     },
     onError: error => {

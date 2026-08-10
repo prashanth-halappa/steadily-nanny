@@ -4,8 +4,9 @@
  * Extends BaseRepository for `create`/`findById` and adds the two reads the
  * domain needs. Uses the service-role client, so it bypasses RLS entirely:
  * authorization lives in the SERVICE layer, never here (docs/11-MONEY.md §9),
- * but every query below still filters `timesheet_id` explicitly, because a
- * bypassed-RLS query with no filter of its own reads across households.
+ * but every query below still filters `timesheet_id` or `household_id`
+ * explicitly, because a bypassed-RLS query with no filter of its own reads
+ * across households.
  *
  * There is deliberately NO update or delete helper. A payment row is a fact
  * about money that already moved outside the app, not app state under review:
@@ -49,6 +50,46 @@ export class PaymentRepository extends BaseRepository<Payment> {
         'Failed to list payments for timesheet',
         'DATABASE_ERROR',
         { details: error.message, timesheetId }
+      );
+    }
+    return (data ?? []) as Payment[];
+  }
+
+  /**
+   * A household's payments, NEWEST settlement first, optionally narrowed to
+   * one carer.
+   *
+   * Descending, the deliberate REVERSE of `listForTimesheet` above: partial
+   * payments inside ONE week are a running story read forwards, but history
+   * ACROSS weeks is a feed — the last thing that happened belongs at the top.
+   * `created_at` breaks a same-day tie the same way, newest first.
+   *
+   * `carerId` narrows to one carer. It is not a convenience: the service
+   * FORCES it for a nanny caller (`assertPaymentReader`), so an unfiltered
+   * call here can only come from a caller already resolved to household
+   * scope. The `household_id` filter itself is mandatory for the reason in
+   * the module header — this query bypasses RLS.
+   */
+  async listForHousehold(
+    householdId: string,
+    carerId?: string
+  ): Promise<Payment[]> {
+    let query = supabaseService
+      .from(this.table)
+      .select('*')
+      .eq('household_id', householdId);
+    if (carerId) {
+      query = query.eq('carer_id', carerId);
+    }
+    const { data, error } = await query
+      .order('paid_at', { ascending: false })
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      throw new DatabaseError(
+        'Failed to list payments for household',
+        'DATABASE_ERROR',
+        { details: error.message, householdId }
       );
     }
     return (data ?? []) as Payment[];

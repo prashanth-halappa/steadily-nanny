@@ -177,3 +177,90 @@ describe('PaymentRepository.sumForTimesheet', () => {
     expect(await new PaymentRepository().sumForTimesheet('ts-1')).toBe(0);
   });
 });
+
+describe('PaymentRepository.listForHousehold', () => {
+  it('returns only THIS household’s rows — the filter is mandatory under bypassed RLS', async () => {
+    withRows([
+      paymentRow({ id: 'pay-mine' }),
+      paymentRow({ id: 'pay-other-household', household_id: 'h2' }),
+    ]);
+
+    const rows = await new PaymentRepository().listForHousehold('h1');
+
+    expect(rows.map((r: FakeRow) => r.id)).toEqual(['pay-mine']);
+    expect(lastCalls).toContainEqual({
+      method: 'eq',
+      args: ['household_id', 'h1'],
+    });
+  });
+
+  it('narrows to ONE carer when a carerId is given', async () => {
+    withRows([
+      paymentRow({ id: 'pay-carer-1', carer_id: 'carer-1' }),
+      paymentRow({ id: 'pay-carer-2', carer_id: 'carer-2' }),
+    ]);
+
+    const rows = await new PaymentRepository().listForHousehold(
+      'h1',
+      'carer-1'
+    );
+
+    expect(rows.map((r: FakeRow) => r.id)).toEqual(['pay-carer-1']);
+    expect(lastCalls).toContainEqual({
+      method: 'eq',
+      args: ['carer_id', 'carer-1'],
+    });
+  });
+
+  it('applies NO carer filter when none is given', async () => {
+    withRows([paymentRow({ id: 'pay-1' })]);
+
+    await new PaymentRepository().listForHousehold('h1');
+
+    expect(
+      lastCalls.filter(c => c.method === 'eq').map(c => c.args[0])
+    ).toEqual(['household_id']);
+  });
+
+  it('orders NEWEST settlement first — history across weeks reads backwards', async () => {
+    withRows([
+      paymentRow({ id: 'pay-early', paid_at: '2026-08-04' }),
+      paymentRow({ id: 'pay-late', paid_at: '2026-08-11' }),
+    ]);
+
+    const rows = await new PaymentRepository().listForHousehold('h1');
+
+    expect(rows.map((r: FakeRow) => r.id)).toEqual(['pay-late', 'pay-early']);
+  });
+
+  it('breaks a same-day tie on created_at, newest first', async () => {
+    withRows([
+      paymentRow({
+        id: 'pay-first',
+        paid_at: '2026-08-11',
+        created_at: '2026-08-11T09:00:00.000Z',
+      }),
+      paymentRow({
+        id: 'pay-second',
+        paid_at: '2026-08-11',
+        created_at: '2026-08-11T17:00:00.000Z',
+      }),
+    ]);
+
+    const rows = await new PaymentRepository().listForHousehold('h1');
+
+    expect(rows.map((r: FakeRow) => r.id)).toEqual(['pay-second', 'pay-first']);
+  });
+
+  it('returns [] for a household that has never paid anyone', async () => {
+    withRows([]);
+    expect(await new PaymentRepository().listForHousehold('h1')).toEqual([]);
+  });
+
+  it('throws a DatabaseError when the query fails', async () => {
+    withRows([], { message: 'boom' });
+    await expect(
+      new PaymentRepository().listForHousehold('h1')
+    ).rejects.toThrow('Failed to list payments for household');
+  });
+});

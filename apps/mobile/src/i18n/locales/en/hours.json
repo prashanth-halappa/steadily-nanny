@@ -170,5 +170,36 @@
     "exceedsGrossError": "You can take off at most {{gross}} — that's this week's total.",
     "saveButton": "Save adjustment",
     "removeButton": "Remove adjustment"
+  },
+  "payments": {
+    "screenTitle": "Payments",
+    "subtitleParent": "Every payment recorded for your household.",
+    "subtitleNanny": "Every payment recorded for you.",
+    "recordedLabel": "Recorded",
+    "rowWeek": "Week of {{range}}",
+    "rowPaidTo": "To {{name}}",
+    "rowEnteredLate": "Entered {{date}}",
+    "emptyTitle": "No payments yet",
+    "emptyBodyParent": "Payments you record show up here.",
+    "emptyBodyNanny": "Payments your family records show up here.",
+    "noPaymentWeeksNote": "Weeks with no payment recorded aren't listed.",
+    "reimbursementsNote": "Expenses and mileage are reimbursed separately and aren't shown here.",
+    "readOnlyNote": "You're no longer with this household. Your record stays here.",
+    "entryLink": "See all payments",
+    "exportButton": "Export payments",
+    "exportTitle": "Export payments",
+    "exportCsvHint": "Every payment recorded, for a spreadsheet or your accountant.",
+    "detail": {
+      "title": "Payment",
+      "paidOn": "Date the money moved",
+      "recordedOn": "Entered in Steadily",
+      "recordedBy": "Recorded by",
+      "recordedByGone": "No longer in this household",
+      "method": "How",
+      "methodUnstated": "—",
+      "forWeek": "For the week",
+      "paidTo": "Paid to",
+      "appendOnly": "Payments can't be edited or removed. A correction is recorded as another payment."
+    }
   }
 }

@@ -170,5 +170,36 @@
     "exceedsGrossError": "Como máximo puedes descontar {{gross}}, el total de esta semana.",
     "saveButton": "Guardar ajuste",
     "removeButton": "Quitar el ajuste"
+  },
+  "payments": {
+    "screenTitle": "Pagos",
+    "subtitleParent": "Todos los pagos registrados de tu hogar.",
+    "subtitleNanny": "Todos los pagos registrados para ti.",
+    "recordedLabel": "Registrado",
+    "rowWeek": "Semana del {{range}}",
+    "rowPaidTo": "A {{name}}",
+    "rowEnteredLate": "Registrado el {{date}}",
+    "emptyTitle": "Aún no hay pagos",
+    "emptyBodyParent": "Los pagos que registres aparecerán aquí.",
+    "emptyBodyNanny": "Los pagos que registre tu familia aparecerán aquí.",
+    "noPaymentWeeksNote": "Las semanas sin ningún pago registrado no aparecen en la lista.",
+    "reimbursementsNote": "Los gastos y el kilometraje se reembolsan por separado y no se muestran aquí.",
+    "readOnlyNote": "Ya no estás en este hogar. Tu registro se queda aquí.",
+    "entryLink": "Ver todos los pagos",
+    "exportButton": "Exportar pagos",
+    "exportTitle": "Exportar pagos",
+    "exportCsvHint": "Todos los pagos registrados, para una hoja de cálculo o tu gestoría.",
+    "detail": {
+      "title": "Pago",
+      "paidOn": "Fecha en que se movió el dinero",
+      "recordedOn": "Registrado en Steadily",
+      "recordedBy": "Registrado por",
+      "recordedByGone": "Ya no está en este hogar",
+      "method": "Cómo",
+      "methodUnstated": "—",
+      "forWeek": "Para la semana",
+      "paidTo": "Pagado a",
+      "appendOnly": "Los pagos no se pueden editar ni eliminar. Una corrección se registra como otro pago."
+    }
   }
 }

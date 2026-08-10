@@ -25,6 +25,7 @@ import notificationsRoutes from '../domains/notification/routes/notificationsRou
 import {
   expenseIdRoutes,
   expenseRoutes,
+  householdPaymentRoutes,
   payArrangementRoutes,
   paymentRoutes,
   ptoRoutes,
@@ -101,6 +102,11 @@ router.use('/households/:householdId/timesheets', householdTimesheetRoutes);
 // router, and no PATCH/DELETE anywhere: the table is append-only. See
 // docs/11-MONEY.md and domains/pay/routes/paymentRoutes.ts.)
 router.use('/timesheets/:timesheetId/payments', paymentRoutes);
+// The same ledger read household-wide instead of week-wide, newest first —
+// GET only, because the over-payment gate is defined against ONE week's
+// frozen gross. The service resolves a read SCOPE: a parent/owner sees every
+// carer's rows, a nanny only her own, and a REMOVED nanny keeps hers.
+router.use('/households/:householdId/payments', householdPaymentRoutes);
 router.use('/timesheets', timesheetRoutes);
 
 // Pay arrangements — effective-dated terms for one carer in one household.

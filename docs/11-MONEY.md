@@ -217,10 +217,16 @@ would silently show today's arrangement standing in for whatever was
 actually in force when the week was signed off.
 
 **State labels are mandatory.** Every displayed amount carries an explicit
-state word: **"Estimated"** while open/submitted/queried, **"Approved"**
-once frozen (`docs/TIER0-CX-SPEC.md` §0). A figure with no state label is a
-defect — the reader can't otherwise tell a live projection from a locked
-number, and those carry very different weight in a pay dispute.
+state word, and the word tells you which register the figure belongs to.
+**Earnings** — what a week is worth — carry **"Estimated"** while
+open/submitted/queried, or **"Approved"** once frozen
+(`docs/TIER0-CX-SPEC.md` §0). **Settlement** — what actually moved, summed
+from `payments` (§11) — carries **"Recorded"** instead: nobody approves a
+payment, and it is not a projection either, it is a recorded fact, so it
+gets its own word rather than borrowing an earnings label. A figure with no
+state label is a defect — the reader can't otherwise tell a live projection,
+a locked number, and a settled fact apart, and those carry very different
+weight in a pay dispute.
 
 ---
 
@@ -489,6 +495,15 @@ figure, so — same discipline as `pay_arrangements` (§2) and `pto_ledger`
 Recording the wrong amount cannot be fixed by editing the row, only by
 recording a correcting fact (there is currently no correction path at all;
 an over-recorded payment stands until a human notices).
+
+**A figure summed from `payments` carries the state word "Recorded", never
+"Estimated" or "Approved" (§3).** Those two describe earnings — a live
+projection or a frozen total for what a week is *worth*. A total paid-to-date
+is neither: nobody signs off a payment, and it is not a forward-looking
+number that could still change, it is a sum of facts that already happened.
+Labelling it "Approved" would imply someone approved a payment (nobody
+does); labelling it "Estimated" would imply it might be wrong (it's a
+record, not a guess).
 
 **The ceiling is enforced by refusal, not by clamping.**
 `apps/api/src/domains/pay/services/paymentCommandService.ts` is the only

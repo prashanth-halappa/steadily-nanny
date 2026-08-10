@@ -63,7 +63,6 @@ mock.module('@/src/components/custom/BottomSheetBase', () => {
 });
 
 mock.module('@rn-primitives/alert-dialog', () => {
-  const R = require('react');
   const pass = ({ children }: { children?: React.ReactNode }) => children;
   return {
     Root: pass,
@@ -79,8 +78,9 @@ mock.module('@rn-primitives/alert-dialog', () => {
   };
 });
 
+const routerPushMock = mock();
 mock.module('expo-router', () => ({
-  useRouter: () => ({ push: mock(), back: mock(), replace: mock() }),
+  useRouter: () => ({ push: routerPushMock, back: mock(), replace: mock() }),
 }));
 
 // The native export seam — see utils/weekExport's module doc.
@@ -341,6 +341,7 @@ beforeEach(() => {
   ]) {
     m.mockReset();
   }
+  routerPushMock.mockClear();
 
   listEntriesMock.mockImplementation(() => Promise.resolve([makeEntry()]));
   listTimesheetsMock.mockImplementation(() =>
@@ -670,5 +671,36 @@ describe('ParentWeekView — exporting the week', () => {
 
     await waitFor(() => expect(sharePdfMock).toHaveBeenCalled());
     expect(exportCsvMock).not.toHaveBeenCalled();
+  });
+});
+
+// WP7: one entry link from the week to the cross-week Payments screen. A
+// plain text link, not gated on approval — it links to a record that spans
+// every week, not to this week's state.
+describe('ParentWeekView — the payments entry link', () => {
+  it('renders and navigates to the payments screen on tap', async () => {
+    const { getByTestId } = renderParentView();
+
+    await waitFor(() =>
+      expect(getByTestId('hours-payments-link')).toBeTruthy()
+    );
+    fireEvent.press(getByTestId('hours-payments-link'));
+
+    expect(routerPushMock).toHaveBeenCalledWith('/(private)/payments');
+  });
+
+  it('renders even when the week is NOT approved', async () => {
+    listTimesheetsMock.mockImplementation(() =>
+      Promise.resolve([makeTimesheet({ status: 'submitted' })])
+    );
+    getByIdMock.mockImplementation(() =>
+      Promise.resolve(makeTimesheetWeek({ status: 'submitted' }))
+    );
+
+    const { getByTestId } = renderParentView();
+
+    await waitFor(() =>
+      expect(getByTestId('hours-payments-link')).toBeTruthy()
+    );
   });
 });

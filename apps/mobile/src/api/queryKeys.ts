@@ -191,13 +191,16 @@ export const queryKeys = {
   },
 
   // Settlement payments (067): rows recorded against one approved week.
-  // Keyed by timesheet — the ledger is meaningless outside the week it
-  // settles — so a record-payment mutation invalidates exactly one week's
-  // list (plus the timesheet.week read that renders the paid badge).
+  // `forTimesheet` scopes one week's ledger; `forHousehold` scopes the whole
+  // household's payment history across every carer and week. A
+  // record-payment mutation invalidates `all` (a prefix of both) — plus the
+  // timesheet.week read that renders the paid badge.
   payment: {
     all: ['payment'] as const,
     forTimesheet: (timesheetId?: string) =>
       [...queryKeys.payment.all, 'forTimesheet', timesheetId] as const,
+    forHousehold: (householdId?: string) =>
+      [...queryKeys.payment.all, 'forHousehold', householdId] as const,
   },
 
   // Expenses and mileage (Phase 4). `week` is keyed by the household-local

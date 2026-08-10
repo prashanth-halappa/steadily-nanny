@@ -27,6 +27,7 @@ export {
   default as expenseRoutes,
   expenseIdRoutes,
 } from './routes/expenseRoutes';
+export { default as householdPaymentRoutes } from './routes/householdPaymentRoutes';
 export { default as payArrangementRoutes } from './routes/payArrangementRoutes';
 export { default as paymentRoutes } from './routes/paymentRoutes';
 export { default as ptoRoutes } from './routes/ptoRoutes';

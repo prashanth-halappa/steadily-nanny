@@ -65,7 +65,7 @@ It is NOT a kitchen sink — cross-cutting pieces live elsewhere, and each has e
 12. `hooks/queries/use<Feature>.ts` + `hooks/mutations/use<Verb><Feature>.ts` — one hook per file; components call these, never the endpoint module directly (`docs/08-CONVENTIONS.md`). See `hooks/queries/useWeekTimesheet.ts` and `hooks/mutations/useApproveTimesheet.ts`.
 13. `domains/<feature>/components/` — the screen(s); a thin route file under `src/app/(private)/...` delegates to it (`domains/timesheet/components/HoursScreen.tsx`, `app/(private)/(tabs)/hours.tsx`).
 
-**Tests, colocated at every layer** (per `docs/09-TESTING.md`): API service/controller tests next to the source; mobile component tests under a `__tests__/` folder — **never** a `*.test.ts(x)` file colocated directly inside `src/app/` next to a route file (expo-router will try to treat it as a route — see `GOLDEN-FIXES.md` #8).
+**Tests** (per `docs/09-TESTING.md`): `apps/api` tests are NOT colocated with source — they live under `apps/api/tests/unit/domains/<feature>/{services,controllers,routes,repositories,utils}/`, mirroring the source tree one directory over (e.g. `apps/api/tests/unit/domains/pay/services/*.test.ts`). Mobile component tests ARE colocated, under a `__tests__/` folder next to the component — **never** a `*.test.ts(x)` file colocated directly inside `src/app/` next to a route file (expo-router will try to treat it as a route — see `GOLDEN-FIXES.md` #8).
 
 ## Critical mobile gotchas
 

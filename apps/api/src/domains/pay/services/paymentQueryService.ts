@@ -1,6 +1,15 @@
 /**
- * Payment query service (CQRS-lite: reads only) — what a week has actually
- * been paid.
+ * Payment query service (CQRS-lite: reads only) — what a week, or a whole
+ * household, has actually been paid.
+ *
+ * TWO reads, TWO gates, and they are deliberately not the same gate:
+ * `listForTimesheet` answers "what was THIS week paid" and arms on the week's
+ * own `carer_id` (`assertCanRead`); `listForHousehold` answers "what has this
+ * household paid, ever" and arms on the caller's MEMBERSHIP, resolving a
+ * scope rather than a yes/no (`assertPaymentReader`). A row-armed check
+ * cannot express "every carer's rows", and a membership-armed check cannot
+ * express "the carer of this particular week", so neither collapses into the
+ * other.
  *
  * READ GATING — who may see a week's settlement history:
  *
@@ -31,6 +40,22 @@
  * no removed-parent arm is needed here, because a parent who is gone has no
  * active membership and no row of her own to arm on.
  *
+ * READ GATING — who may see the HOUSEHOLD's settlement history
+ * (`listForHousehold`, `assertPaymentReader`):
+ *
+ * | caller                       | sees                          |
+ * |------------------------------|-------------------------------|
+ * | `owner`/`parent`, any status | every carer's payments        |
+ * | `nanny`, any status          | HER OWN rows, and only hers   |
+ * | `helper`, any status         | denied                        |
+ * | non-member                   | denied                        |
+ *
+ * That is `timesheetQueryService.assertPayrollReader` restated on the money
+ * table, membership status and all — read its doc for why a REMOVED member
+ * keeps a payroll read at all. The carer scope is FORCED, not offered: the
+ * repo is called with her own id whatever filter arrives, so a nanny cannot
+ * widen her scope to the household's.
+ *
  * Every denial — missing week, non-member, helper, another nanny — raises the
  * SAME `PaymentNotFoundError`, so a caller learns nothing about a household
  * or a week that isn't hers.
@@ -51,6 +76,15 @@ const PAYMENT_READ_ROLES: ReadonlySet<string> = new Set([
   HOUSEHOLD_ROLES.PARENT,
 ]);
 
+/**
+ * What `assertPaymentReader` resolved: every carer's rows, or one carer's.
+ * Same shape and same purpose as `timesheetQueryService`'s `PayrollReadScope`
+ * and `expenseQueryService`'s `ReadScope`.
+ */
+type PaymentReadScope =
+  | { kind: 'household' }
+  | { kind: 'own'; carerId: string };
+
 export class PaymentQueryService {
   constructor(
     private readonly paymentRepo: PaymentRepository = new PaymentRepository(),
@@ -65,6 +99,71 @@ export class PaymentQueryService {
   ): Promise<Payment[]> {
     await this.assertCanRead(callerId, timesheetId);
     return this.paymentRepo.listForTimesheet(timesheetId);
+  }
+
+  /**
+   * A household's payments, newest first — every carer's, or just the
+   * caller's own, whichever `assertPaymentReader` resolved.
+   *
+   * The scope OVERRIDES the client-supplied `carerId`, never merely defaults
+   * it: a nanny handed carer-2's id would otherwise read carer-2's pay.
+   * Same enforcement point as
+   * `timesheetQueryService.listTimesheetsForHousehold`.
+   */
+  async listForHousehold(
+    callerId: string,
+    householdId: string,
+    carerId?: string
+  ): Promise<Payment[]> {
+    const scope = await this.assertPaymentReader(callerId, householdId);
+    return this.paymentRepo.listForHousehold(
+      householdId,
+      scope.kind === 'own' ? scope.carerId : carerId
+    );
+  }
+
+  /**
+   * Who may read a HOUSEHOLD's payroll — `assertPayrollReader`'s gate
+   * (`timesheetQueryService`) restated on the money table, and deliberately
+   * NOT `assertCanRead`'s gate below.
+   *
+   * `findMembershipAnyStatus`, never `findActiveMembership`: a carer who has
+   * since been removed must still read what she was paid. That is the same
+   * argument 067's row-armed `carer_id = auth.uid()` policy makes and the
+   * same one `assertPayrollReader` makes about hours — payroll is an audit
+   * trail, not a live surface that vanishes with the badge. A removed
+   * owner/parent keeps the household view for the same reason.
+   *
+   * A helper is denied in BOTH statuses: she never had a money surface to
+   * keep (the rule every read in this domain shares). Every denial is the
+   * SAME `PaymentNotFoundError`, so a non-member learns nothing about a
+   * household that isn't hers — the reason lives in the metadata.
+   */
+  private async assertPaymentReader(
+    callerId: string,
+    householdId: string
+  ): Promise<PaymentReadScope> {
+    const membership = await this.memberRepo.findMembershipAnyStatus(
+      householdId,
+      callerId
+    );
+    if (!membership) {
+      throw new PaymentNotFoundError(householdId, {
+        householdId,
+        reason: 'household_not_accessible',
+      });
+    }
+    if (PAYMENT_READ_ROLES.has(membership.role)) {
+      return { kind: 'household' };
+    }
+    if (membership.role === HOUSEHOLD_ROLES.NANNY) {
+      return { kind: 'own', carerId: callerId };
+    }
+    // A helper, active or removed — no money surface, ever.
+    throw new PaymentNotFoundError(householdId, {
+      householdId,
+      reason: 'not_a_payment_reader',
+    });
   }
 
   /** The gate in the module doc, and nothing else. */

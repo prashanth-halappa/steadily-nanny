@@ -187,7 +187,7 @@ export function WeekExportAction({
         onShareCsv={() => void handleShareCsv()}
         onSharePdf={() => void handleSharePdf()}
         busyKind={busyKind}
-        weekRangeLabel={weekRangeLabel}
+        subtitleLabel={weekRangeLabel}
       />
     </>
   );
