@@ -11,7 +11,7 @@ import * as Slot from '@rn-primitives/slot';
 import * as React from 'react';
 import type { Role, TextStyle } from 'react-native';
 import { Text as RNText } from 'react-native';
-import { FONT_FAMILY } from '@/lib/design-tokens/typography';
+import { FONT_FAMILY, typography } from '@/lib/design-tokens/typography';
 import { cn } from '@/lib/utils';
 import { TextClassContext } from '@/src/components/ui/text';
 import type { TypographyProps, TypographyWeight } from './types';
@@ -129,5 +129,15 @@ export const Figure = createTypographyComponent(
     letterSpacing: 0,
   },
   'Figure',
+  { tabular: true }
+);
+
+/**
+ * Card-level numbers (week totals, day totals, amounts) — 28/34/700, always
+ * tabular. For body-sized digit columns use `Figure` instead.
+ */
+export const Figure28 = createTypographyComponent(
+  typography.figure,
+  'Figure28',
   { tabular: true }
 );

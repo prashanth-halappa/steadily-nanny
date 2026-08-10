@@ -220,7 +220,7 @@ describe('WeekTotal', () => {
       expect(flatStyle(node).fontSize).toBe(13);
     });
 
-    it('renders the total hours figure in SignatureHeroBold (40/600 tabular)', () => {
+    it('renders the total hours figure in SignatureHeroBold (40/700 tabular)', () => {
       const { getByTestId } = render(
         <WeekTotal
           testID="hours-week-total"
@@ -232,7 +232,7 @@ describe('WeekTotal', () => {
 
       const total = getByTestId('hours-total');
       expect(flatStyle(total).fontSize).toBe(40);
-      expect(flatStyle(total).fontWeight).toBe('600');
+      expect(flatStyle(total).fontWeight).toBe('700');
     });
 
     it('renders a 0m total in muted foreground so an empty week does not shout', () => {

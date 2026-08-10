@@ -31,6 +31,7 @@ export interface ThemeColors {
   secondaryForeground: string;
   muted: string;
   mutedForeground: string;
+  mutedStrong: string;
   accent: string;
   accentForeground: string;
   highlight: string;
@@ -39,14 +40,31 @@ export interface ThemeColors {
   surfaceAttention: string;
   surfacePositive: string;
   surfaceLive: string;
+  surfaceCritical: string;
+  washPlum: string;
   destructive: string;
   destructiveForeground: string;
   success: string;
+  successInk: string;
   warning: string;
   warningStrong: string;
+  warningInk: string;
   warningForeground: string;
   shortNotice: string;
+  shortNoticeInk: string;
   shortNoticeStrong: string;
+  pill: {
+    success: string;
+    warning: string;
+    destructive: string;
+    shortNotice: string;
+  };
+  chip: {
+    plum: string;
+    cat1: string;
+    cat2: string;
+    cat3: string;
+  };
   border: string;
   borderStrong: string;
   input: string;
@@ -90,6 +108,7 @@ function themeFromPalette(
     secondaryForeground: mode.secondaryForeground.hex,
     muted: mode.muted.hex,
     mutedForeground: mode.mutedForeground.hex,
+    mutedStrong: mode.mutedStrong.hex,
     accent: mode.accent.hex,
     accentForeground: mode.accentForeground.hex,
     highlight: mode.highlight.hex,
@@ -97,14 +116,31 @@ function themeFromPalette(
     surfaceAttention: mode.surfaceAttention.hex,
     surfacePositive: mode.surfacePositive.hex,
     surfaceLive: mode.surfaceLive.hex,
+    surfaceCritical: mode.surfaceCritical.hex,
+    washPlum: mode.washPlum.hex,
     destructive: mode.destructive.hex,
     destructiveForeground: mode.destructiveForeground.hex,
     success: mode.success.hex,
+    successInk: mode.successInk.hex,
     warning: mode.warning.hex,
     warningStrong: mode.warningStrong.hex,
+    warningInk: mode.warningInk.hex,
     warningForeground: mode.warningForeground.hex,
     shortNotice: mode.shortNotice.hex,
+    shortNoticeInk: mode.shortNoticeInk.hex,
     shortNoticeStrong: mode.shortNoticeStrong.hex,
+    pill: {
+      success: mode.pillSuccess.hex,
+      warning: mode.pillWarning.hex,
+      destructive: mode.pillDestructive.hex,
+      shortNotice: mode.pillShortNotice.hex,
+    },
+    chip: {
+      plum: mode.chipPlum.hex,
+      cat1: mode.chipCat1.hex,
+      cat2: mode.chipCat2.hex,
+      cat3: mode.chipCat3.hex,
+    },
     border: mode.border.hex,
     borderStrong: mode.borderStrong.hex,
     input: mode.input.hex,

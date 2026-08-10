@@ -132,7 +132,7 @@ describe('Card tone (Wave 0 / P0-1)', () => {
     );
     expect(bg?.backgroundColor).toBe(palette.light.surfaceAttention.hex);
     expect(shadowColours(entries)).toBe(
-      `${hexToRgba(palette.light.foreground.hex, 0.06)} ${hexToRgba(palette.light.foreground.hex, 0.24)}`
+      `${hexToRgba(palette.light.foreground.hex, 0.08)} ${hexToRgba(palette.light.foreground.hex, 0.34)}`
     );
   });
 

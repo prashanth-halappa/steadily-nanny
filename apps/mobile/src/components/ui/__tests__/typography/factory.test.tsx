@@ -15,6 +15,7 @@ import type { ReactTestRendererJSON } from 'react-test-renderer';
 
 // Declared at module level; assigned in beforeAll after mocks are registered.
 let createTypographyComponent: typeof import('../../typography/factory').createTypographyComponent;
+let Figure28: typeof import('../../typography/factory').Figure28;
 let TextClassContext: typeof import('../../text').TextClassContext;
 
 beforeAll(async () => {
@@ -60,8 +61,9 @@ beforeAll(async () => {
     SlideOutDown: { duration: () => ({}) },
   }));
 
-  createTypographyComponent = (await import('../../typography/factory'))
-    .createTypographyComponent;
+  const factoryModule = await import('../../typography/factory');
+  createTypographyComponent = factoryModule.createTypographyComponent;
+  Figure28 = factoryModule.Figure28;
   TextClassContext = (await import('../../text')).TextClassContext;
 });
 
@@ -87,6 +89,14 @@ function getProps(
   if (!tree) return undefined;
   if (Array.isArray(tree)) return tree[0]?.props;
   return tree.props;
+}
+
+function getJsonChildren(
+  tree: ReactTestRendererJSON | ReactTestRendererJSON[] | null
+): ReactTestRendererJSON['children'] | undefined {
+  if (!tree) return undefined;
+  if (Array.isArray(tree)) return tree[0]?.children ?? undefined;
+  return tree.children ?? undefined;
 }
 
 const token = {
@@ -202,5 +212,25 @@ describe('createTypographyComponent — resolved inline style', () => {
     );
     const flat = flattenStyle(getProps(toJSON())?.style);
     expect(flat?.fontWeight).toBe('300');
+  });
+});
+
+describe('Figure28 — card-level number token', () => {
+  beforeEach(() => {
+    cleanup();
+  });
+
+  it('renders the 28/34/700 figure token, tabular by default', () => {
+    const { toJSON } = render(<Figure28>42</Figure28>);
+    const flat = flattenStyle(getProps(toJSON())?.style);
+    expect(flat?.fontSize).toBe(28);
+    expect(flat?.lineHeight).toBe(34);
+    expect(flat?.fontWeight).toBe('700');
+    expect(flat?.fontVariant).toEqual(['tabular-nums']);
+  });
+
+  it('renders children', () => {
+    const { toJSON } = render(<Figure28>42</Figure28>);
+    expect(getJsonChildren(toJSON())).toContain('42');
   });
 });

@@ -14,8 +14,8 @@ import { PALETTE_CSS_VARS, palette } from '../palette';
 describe('surface tone tokens', () => {
   it('derives surfaceAttention from mixHex(card, warning, …) in both modes', () => {
     expect(palette.light.surfaceAttention).toEqual({
-      css: '32 52% 95%',
-      hex: mixHex(palette.light.card.hex, palette.light.warning.hex, 0.1),
+      css: '35 52% 91%',
+      hex: mixHex(palette.light.card.hex, palette.light.warning.hex, 0.18),
     });
     expect(palette.dark.surfaceAttention).toEqual({
       css: '4 13% 20%',
@@ -25,8 +25,8 @@ describe('surface tone tokens', () => {
 
   it('derives surfacePositive from mixHex(card, success, …) in both modes', () => {
     expect(palette.light.surfacePositive).toEqual({
-      css: '140 12% 95%',
-      hex: mixHex(palette.light.card.hex, palette.light.success.hex, 0.08),
+      css: '140 16% 93%',
+      hex: mixHex(palette.light.card.hex, palette.light.success.hex, 0.12),
     });
     expect(palette.dark.surfacePositive).toEqual({
       css: '240 4% 18%',
@@ -46,9 +46,10 @@ describe('surface tone tokens', () => {
     });
   });
 
-  it('registers all three keys in PALETTE_CSS_VARS', () => {
+  it('registers all tone surface keys in PALETTE_CSS_VARS', () => {
     expect(PALETTE_CSS_VARS.surfaceAttention).toBe('surface-attention');
     expect(PALETTE_CSS_VARS.surfacePositive).toBe('surface-positive');
     expect(PALETTE_CSS_VARS.surfaceLive).toBe('surface-live');
+    expect(PALETTE_CSS_VARS.surfaceCritical).toBe('surface-critical');
   });
 });

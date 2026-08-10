@@ -35,26 +35,41 @@ export const PALETTE_CSS_VARS = {
   secondaryForeground: 'secondary-foreground',
   muted: 'muted',
   mutedForeground: 'muted-foreground',
+  mutedStrong: 'muted-strong',
   accent: 'accent',
   accentForeground: 'accent-foreground',
   highlight: 'highlight',
   highlightForeground: 'highlight-foreground',
   /** Opaque apricot-on-card ground for `<Card tone="live">` — mirrors `liveCardBackground()`. */
   surfaceLive: 'surface-live',
+  washPlum: 'wash-plum',
   categoryAccent1: 'category-accent1',
   categoryAccent2: 'category-accent2',
   categoryAccent3: 'category-accent3',
   destructive: 'destructive',
   destructiveForeground: 'destructive-foreground',
   success: 'success-state',
+  successInk: 'success-ink',
   warning: 'warning',
   warningStrong: 'warning-strong',
+  warningInk: 'warning-ink',
   warningForeground: 'warning-foreground',
   /** Opaque warning-on-card ground for `<Card tone="attention">`. */
   surfaceAttention: 'surface-attention',
   /** Opaque success-on-card ground for `<Card tone="positive">`. */
   surfacePositive: 'surface-positive',
+  /** Opaque destructive-on-card ground for `<Card tone="critical">`. */
+  surfaceCritical: 'surface-critical',
+  pillSuccess: 'pill-success',
+  pillWarning: 'pill-warning',
+  pillDestructive: 'pill-destructive',
+  pillShortNotice: 'pill-short-notice',
+  chipPlum: 'chip-plum',
+  chipCat1: 'chip-cat1',
+  chipCat2: 'chip-cat2',
+  chipCat3: 'chip-cat3',
   shortNotice: 'short-notice',
+  shortNoticeInk: 'short-notice-ink',
   shortNoticeStrong: 'short-notice-strong',
   border: 'border',
   borderStrong: 'border-strong',
@@ -101,6 +116,7 @@ export const palette = {
     secondaryForeground: { css: '295 16% 15%', hex: '#2A1F2B' },
     muted: { css: '326 19% 93%', hex: '#F0E9ED' },
     mutedForeground: { css: '291 7% 41%', hex: '#6E6270' },
+    mutedStrong: { css: '291 7% 35%', hex: '#5F5461' },
 
     // Semantic: accent is a subtle hover ground, not apricot.
     accent: { css: '322 20% 92%', hex: '#EFE7EC' },
@@ -109,6 +125,8 @@ export const palette = {
     highlightForeground: { css: '295 16% 15%', hex: '#2A1F2B' },
     // mixHex(card, highlight, 0.08) — same value as liveCardBackground('light').
     surfaceLive: { css: '26 78% 96%', hex: '#FDF5EF' },
+    // mixHex(background, primary, 0.14)
+    washPlum: { css: '317 10% 86%', hex: '#DFD8DD' },
 
     categoryAccent1: { css: '282 22% 38%', hex: '#6A4C77' },
     categoryAccent2: { css: '159 23% 39%', hex: '#4C7A6A' },
@@ -117,14 +135,28 @@ export const palette = {
     destructive: { css: '7 42% 46%', hex: '#A85145' },
     destructiveForeground: { css: '0 0% 100%', hex: '#FFFFFF' },
     success: { css: '143 24% 38%', hex: '#4A7A5C' },
+    successInk: { css: '147 31% 27%', hex: '#2F5A42' },
     warning: { css: '35 51% 50%', hex: '#C08A3E' },
+    // Fails AA for text on every tinted ground (3.77:1 on surfaceAttention v2). Non-text uses only.
     warningStrong: { css: '35 54% 40%', hex: '#9C6E2E' },
+    warningInk: { css: '37 59% 27%', hex: '#6E4E1C' },
     warningForeground: { css: '295 16% 15%', hex: '#2A1F2B' },
-    // mixHex(card, warning, 0.10)
-    surfaceAttention: { css: '32 52% 95%', hex: '#F9F3EC' },
-    // mixHex(card, success, 0.08)
-    surfacePositive: { css: '140 12% 95%', hex: '#F1F4F2' },
+    // mixHex(card, warning, 0.18)
+    surfaceAttention: { css: '35 52% 91%', hex: '#F4EADC' },
+    // mixHex(card, success, 0.12)
+    surfacePositive: { css: '140 16% 93%', hex: '#E9EFEB' },
+    // mixHex(card, destructive, 0.14)
+    surfaceCritical: { css: '9 37% 93%', hex: '#F3E7E5' },
+    pillSuccess: { css: '147 16% 89%', hex: '#DEE7E2' },
+    pillWarning: { css: '34 50% 89%', hex: '#F1E5D5' },
+    pillDestructive: { css: '7 35% 90%', hex: '#EFE0DE' },
+    pillShortNotice: { css: '20 52% 91%', hex: '#F4E4DC' },
+    chipPlum: { css: '285 10% 92%', hex: '#EBE8EC' },
+    chipCat1: { css: '276 14% 93%', hex: '#EDEAEF' },
+    chipCat2: { css: '156 14% 93%', hex: '#EAEFED' },
+    chipCat3: { css: '347 31% 94%', hex: '#F5ECEE' },
     shortNotice: { css: '20 54% 50%', hex: '#C4693A' },
+    shortNoticeInk: { css: '20 65% 30%', hex: '#7E3C1B' },
     shortNoticeStrong: { css: '21 60% 43%', hex: '#B15A2C' },
 
     border: { css: '323 13% 88%', hex: '#E5DDE2' },
@@ -172,6 +204,8 @@ export const palette = {
     secondaryForeground: { css: '309 20% 93%', hex: '#F1EAF0' },
     muted: { css: '278 20% 16%', hex: '#2A2030' },
     mutedForeground: { css: '296 9% 67%', hex: '#B2A4B3' },
+    // unverified — dark mode is undesigned
+    mutedStrong: { css: '291 9% 29%', hex: '#4E4350' },
 
     accent: { css: '286 15% 17%', hex: '#2E2431' },
     accentForeground: { css: '309 20% 93%', hex: '#F1EAF0' },
@@ -179,6 +213,8 @@ export const palette = {
     highlightForeground: { css: '291 14% 10%', hex: '#1B151C' },
     // mixHex('#241C26', '#F2954B', 0.08)
     surfaceLive: { css: '347 16% 18%', hex: '#342629' },
+    // unverified — dark mode is undesigned
+    washPlum: { css: '286 15% 17%', hex: '#2E2431' },
 
     categoryAccent1: { css: '284 21% 63%', hex: '#A98CB4' },
     categoryAccent2: { css: '159 28% 59%', hex: '#79B39F' },
@@ -187,14 +223,38 @@ export const palette = {
     destructive: { css: '6 61% 67%', hex: '#DE8378' },
     destructiveForeground: { css: '291 14% 10%', hex: '#1B151C' },
     success: { css: '142 35% 58%', hex: '#6FB98A' },
+    // unverified — dark mode is undesigned
+    successInk: { css: '142 35% 58%', hex: '#6FB98A' },
     warning: { css: '37 67% 63%', hex: '#E0B061' },
     warningStrong: { css: '38 77% 73%', hex: '#EFC886' },
+    // unverified — dark mode is undesigned
+    warningInk: { css: '38 77% 73%', hex: '#EFC886' },
     warningForeground: { css: '291 14% 10%', hex: '#1B151C' },
     // mixHex('#241C26', '#E0B061', 0.12)
     surfaceAttention: { css: '4 13% 20%', hex: '#3B2E2D' },
     // mixHex('#241C26', '#6FB98A', 0.10)
     surfacePositive: { css: '240 4% 18%', hex: '#2C2C30' },
+    // unverified — dark mode is undesigned
+    surfaceCritical: { css: '4 13% 20%', hex: '#3B2E2D' },
+    // unverified — dark mode is undesigned
+    pillSuccess: { css: '240 4% 18%', hex: '#2C2C30' },
+    // unverified — dark mode is undesigned
+    pillWarning: { css: '4 13% 20%', hex: '#3B2E2D' },
+    // unverified — dark mode is undesigned
+    pillDestructive: { css: '5 31% 14%', hex: '#2E1A18' },
+    // unverified — dark mode is undesigned
+    pillShortNotice: { css: '5 31% 14%', hex: '#2E1A18' },
+    // unverified — dark mode is undesigned
+    chipPlum: { css: '286 15% 17%', hex: '#2E2431' },
+    // unverified — dark mode is undesigned
+    chipCat1: { css: '278 20% 16%', hex: '#2A2030' },
+    // unverified — dark mode is undesigned
+    chipCat2: { css: '278 20% 16%', hex: '#2A2030' },
+    // unverified — dark mode is undesigned
+    chipCat3: { css: '278 20% 16%', hex: '#2A2030' },
     shortNotice: { css: '25 74% 65%', hex: '#E89A63' },
+    // unverified — dark mode is undesigned
+    shortNoticeInk: { css: '23 77% 74%', hex: '#F0B189' },
     shortNoticeStrong: { css: '23 77% 74%', hex: '#F0B189' },
 
     border: { css: '279 18% 19%', hex: '#332839' },

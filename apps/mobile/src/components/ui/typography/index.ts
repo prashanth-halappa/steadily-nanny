@@ -27,6 +27,7 @@ export { DayGroup, Display, DisplayLarge, Timer } from './display';
 export {
   createTypographyComponent,
   Figure,
+  Figure28,
   tabularStyle,
   tokenToStyle,
 } from './factory';

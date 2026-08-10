@@ -38,21 +38,65 @@ function resolveMode(modeOrIsDark: PaletteMode | boolean): PaletteMode {
   return modeOrIsDark;
 }
 
-/**
- * Apricot wash gradient stops for the Today live wash (Wave C).
- * `highlight` at 0.16→0 (light) / 0.13→0 (dark); locations match the 62% stop.
- */
-export function washGradient(modeOrIsDark: PaletteMode | boolean): {
+export type ScreenWashKind = 'brand' | 'live';
+
+type ScreenWashGradient = {
   colors: [string, string];
   locations: [number, number];
-} {
-  const mode = resolveMode(modeOrIsDark);
-  const apricot = palette[mode].highlight.hex;
-  const fromAlpha = mode === 'dark' ? 0.13 : 0.16;
+};
+
+function buildScreenWash(
+  mode: PaletteMode,
+  kind: ScreenWashKind
+): ScreenWashGradient {
+  if (kind === 'live') {
+    const apricot = palette[mode].highlight.hex;
+    const fromAlpha = mode === 'dark' ? 0.13 : 0.16;
+    return {
+      colors: [hexToRgba(apricot, fromAlpha), hexToRgba(apricot, 0)],
+      locations: [0, 0.62],
+    };
+  }
+  const plum = palette[mode].primary.hex;
   return {
-    colors: [hexToRgba(apricot, fromAlpha), hexToRgba(apricot, 0)],
+    colors: [hexToRgba(plum, 0.14), hexToRgba(plum, 0)],
     locations: [0, 0.62],
   };
+}
+
+// Built once at module load — same rationale as LIGHT_ELEVATION below.
+const SCREEN_WASH: Record<
+  PaletteMode,
+  Record<ScreenWashKind, ScreenWashGradient>
+> = {
+  light: {
+    brand: buildScreenWash('light', 'brand'),
+    live: buildScreenWash('light', 'live'),
+  },
+  dark: {
+    brand: buildScreenWash('dark', 'brand'),
+    live: buildScreenWash('dark', 'live'),
+  },
+};
+
+/**
+ * Screen wash gradient stops — plum brand wash or apricot live wash.
+ * `brand`: `primary` at 0.14→0; `live`: `highlight` at 0.16→0 (light) /
+ * 0.13→0 (dark). Locations match the 62% stop.
+ */
+export function screenWash(
+  modeOrIsDark: PaletteMode | boolean,
+  kind: ScreenWashKind
+): ScreenWashGradient {
+  const mode = resolveMode(modeOrIsDark);
+  return SCREEN_WASH[mode][kind];
+}
+
+/** Apricot live wash — thin alias so existing call sites keep passing. */
+export function washGradient(
+  modeOrIsDark: PaletteMode | boolean
+): ScreenWashGradient {
+  return screenWash(modeOrIsDark, 'live');
 }
 
 /**
@@ -122,16 +166,16 @@ export function elevationForMode(mode: PaletteMode): {
         {
           offsetX: 0,
           offsetY: 2,
-          blurRadius: 4,
+          blurRadius: 6,
           spreadDistance: 0,
-          color: hexToRgba(ink, 0.06),
+          color: hexToRgba(ink, 0.08),
         },
         {
           offsetX: 0,
-          offsetY: 18,
-          blurRadius: 36,
-          spreadDistance: -14,
-          color: hexToRgba(ink, 0.24),
+          offsetY: 24,
+          blurRadius: 48,
+          spreadDistance: -16,
+          color: hexToRgba(ink, 0.34),
         },
       ],
     },
@@ -161,7 +205,7 @@ export function elevationForMode(mode: PaletteMode): {
           offsetY: 1,
           blurRadius: 2,
           spreadDistance: 0,
-          color: 'rgba(0, 0, 0, 0.05)',
+          color: hexToRgba(ink, 0.05),
         },
       ],
     },
