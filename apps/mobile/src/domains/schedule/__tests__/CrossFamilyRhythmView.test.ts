@@ -98,8 +98,14 @@ describe('CrossFamilyRhythmView source', () => {
     expect(viewSource).not.toContain('colors.destructive');
   });
 
-  it('excludes cancelled shifts from both the table and the headline counts', () => {
-    expect(viewSource).toContain("shift.status === 'cancelled'");
+  it('counts only COVERING_SHIFT_STATUSES toward the table and the headline counts', () => {
+    // Was `shift.status === 'cancelled'`, which excluded cancelled shifts but
+    // let a DECLINED one paint a dot and inflate the clash count — the same
+    // hand-rolled-predicate bug as the Today cover cards. The shared constant
+    // is the only correct answer; see src/__tests__/shiftStatusPredicate.test.ts.
+    expect(viewSource).toContain('COVERING_SHIFT_STATUSES');
+    expect(viewSource).toContain('COVERING_STATUS_SET.has(shift.status)');
+    expect(viewSource).not.toContain("shift.status === 'cancelled'");
   });
 
   it('degrades past 3 households to a shared neutral colour instead of throwing', () => {

@@ -40,4 +40,25 @@ describe('AgendaView source', () => {
     expect(viewSource).toContain('useTabBarScrollPadding');
     expect(viewSource).toContain('paddingBottom: tabBarScrollPadding');
   });
+
+  it('REGRESSION: extraHref uses utcIsoToWallClockHHMM for 24h start/end query params (A9)', () => {
+    expect(viewSource).toMatch(
+      /const extraHref = \(\(\) => \{[\s\S]*?utcIsoToWallClockHHMM\(window\.startsAt[\s\S]*?utcIsoToWallClockHHMM\(window\.endsAt/
+    );
+    // The two formatters must not be crossed: the URL params are machine
+    // values and stay 24h, while everything the user READS goes through the
+    // display formatter. These are now hoisted (`formattedStart`/`formattedEnd`)
+    // so the row label, both ask buttons and the cause line cannot disagree
+    // with each other — assert that fact rather than the old inline shape.
+    expect(viewSource).toMatch(
+      /const formattedStart = formatShiftTime\(window\.startsAt/
+    );
+    expect(viewSource).toMatch(
+      /const formattedEnd = formatShiftTime\(window\.endsAt/
+    );
+    expect(viewSource).toContain('`${formattedStart}–${formattedEnd}`');
+    expect(viewSource).not.toMatch(
+      /start:\s*utcIsoToWallClockHHMM[\s\S]{0,80}askToCover/
+    );
+  });
 });

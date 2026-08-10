@@ -63,7 +63,7 @@ describe('ClockInCard', () => {
 
   // Review fix: the H3 hero must never be a negation ("Nothing on the
   // schedule…") — that's the same "Not on the clock" eyebrow said twice.
-  // `nannyNoShiftBody` stays NannyLiveStatusCard's key (parent-facing,
+  // `parentNoCoverBody` stays NannyLiveStatusCard's key (parent-facing,
   // negation is fine there); ClockInCard's own no-shift H3 gets an
   // invitation instead, pinned here so it can't regress back.
   it('never uses the negation copy for its own no-shift H3', () => {
@@ -71,7 +71,7 @@ describe('ClockInCard', () => {
       /<H3 testID="today-off-clock-none">\{t\('readyWhenYouAre'\)\}<\/H3>/
     );
     expect(cardSource).not.toContain(
-      '<H3 testID="today-off-clock-none">{t(\'nannyNoShiftBody\')}</H3>'
+      '<H3 testID="today-off-clock-none">{t(\'parentNoCoverBody\')}</H3>'
     );
   });
 
@@ -97,7 +97,34 @@ describe('ClockInCard', () => {
   // the card itself flips tone, not just the button variant, and drops the
   // apricot live dot (that signal now belongs to tone="live" only).
   it('flips the card to tone="attention" (not just the button) when overdue', () => {
-    expect(cardSource).toMatch(/tone=\{overdue \? 'attention'/);
+    expect(cardSource).toMatch(/overdue\s*\?\s*'attention'/);
     expect(cardSource).not.toContain('live={Boolean(entry)}');
+  });
+
+  it('filters off-clock shifts with COVERING_SHIFT_STATUSES, not a hand-rolled cancelled check', () => {
+    expect(cardSource).toContain('COVERING_SHIFT_STATUSES');
+    expect(cardSource).toContain('COVERING_STATUS_SET');
+    expect(cardSource).not.toMatch(/s\.status !== 'cancelled'/);
+  });
+
+  it('waits for the shifts query to settle before claiming a schedule state', () => {
+    expect(cardSource).toContain('shiftsSettled');
+    expect(cardSource).toMatch(/shifts\.isSuccess \|\| shifts\.isError/);
+  });
+
+  it('names a declined-today shift without gating clock-in', () => {
+    expect(cardSource).toContain('testID="today-off-clock-declined"');
+    expect(cardSource).toContain("t('declinedToday'");
+    expect(cardSource).toContain("t('declinedTodayHint')");
+    expect(cardSource).not.toMatch(/disabled=\{[^}]*offClockShift/);
+  });
+
+  it('keeps clock-in isLoading tied only to clockIn.isPending and running.isLoading', () => {
+    expect(cardSource).toMatch(
+      /isLoading=\{clockIn\.isPending \|\| running\.isLoading\}/
+    );
+    expect(cardSource).not.toMatch(
+      /testID="today-clock-in"[\s\S]{0,400}sendRunningLate\.isPending/
+    );
   });
 });

@@ -439,9 +439,13 @@ describe('ScheduleShiftsScreen', () => {
 
     const { getByTestId, getByText } = render(<ScheduleShiftsScreen />);
 
-    // Agenda (default view): 13:00Z-21:00Z in America/New_York is 09:00-17:00.
+    // Agenda (default view): 13:00Z-21:00Z in America/New_York is 9:00 AM-5:00 PM.
     // Before the fix, Agenda used profile tz only and would show 18:30-02:30.
-    expect(getByText('09:00 – 17:00')).toBeTruthy();
+    // The ZONE is what this regression guards — the literals moved from "09:00"
+    // to "9:00 AM" when schedule screens adopted the app-wide device-locale
+    // clock format (GOLDEN-FIXES #21), which is a display change, not a zone one.
+    expect(getByText(/9:00\s*AM/)).toBeTruthy();
+    expect(getByText(/5:00\s*PM/)).toBeTruthy();
 
     fireEvent.press(getByTestId('calendar-view-week_ribbon'));
 

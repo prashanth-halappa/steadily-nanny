@@ -53,10 +53,9 @@ import { useUncoveredToday } from '../hooks/useUncoveredToday';
 import { resolveAttentionOwner } from '../utils/attentionOwner';
 import { AddMissedHoursCard } from './AddMissedHoursCard';
 import { ClockInCard } from './ClockInCard';
-import { CoverCard } from './CoverCard';
 import { HandoffChipsCard } from './HandoffChipsCard';
-import { NannyLiveStatusCard } from './NannyLiveStatusCard';
-import { TodayCalmCard } from './TodayCalmCard';
+import { NannyWeekLine } from './NannyWeekLine';
+import { TodayCoverage } from './TodayCoverage';
 
 export function TodayScreen() {
   const { t } = useTranslation('today');
@@ -156,25 +155,6 @@ export function TodayScreen() {
             <NeedsAttentionCard demoted={attentionOwner !== 'inbox'} />
             <PendingScheduleCard />
 
-            {canViewParentSchedule(onboarding.role) ? (
-              <NannyLiveStatusCard
-                householdId={household.id}
-                timeZone={household.timezone}
-              />
-            ) : null}
-
-            {/* Parent at ease: the one reassurance on the screen, and it
-                renders nothing unless the inbox is empty, nothing is live,
-                AND someone is actually covering today — see its own module
-                doc for exactly what "cover" means here. */}
-            {canViewParentSchedule(onboarding.role) ? (
-              <TodayCalmCard
-                householdId={household.id}
-                timeZone={household.timezone}
-                isLive={isLive}
-              />
-            ) : null}
-
             {/* Not on a household she was REMOVED from: every write there is
                 refused server-side, so the button would only ever fail. */}
             {onboarding.role === SETUP_ROLES.NANNY &&
@@ -192,6 +172,14 @@ export function TodayScreen() {
                 be a lie. */}
             {onboarding.role === SETUP_ROLES.NANNY &&
             !onboarding.isPastMember ? (
+              <NannyWeekLine
+                householdId={household.id}
+                timeZone={household.timezone}
+              />
+            ) : null}
+
+            {onboarding.role === SETUP_ROLES.NANNY &&
+            !onboarding.isPastMember ? (
               <AddMissedHoursCard
                 householdId={household.id}
                 timeZone={household.timezone}
@@ -199,7 +187,7 @@ export function TodayScreen() {
             ) : null}
 
             {canViewParentSchedule(onboarding.role) ? (
-              <CoverCard
+              <TodayCoverage
                 householdId={household.id}
                 timeZone={household.timezone}
                 householdChildren={children.data ?? []}

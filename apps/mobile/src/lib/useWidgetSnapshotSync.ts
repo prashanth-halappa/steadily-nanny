@@ -20,6 +20,7 @@
  */
 
 import type { Shift } from '@steadily-nanny/shared-types/schemas/shift.schema';
+import { COVERING_SHIFT_STATUSES } from '@steadily-nanny/shared-types/uncoveredCare';
 import { useEffect } from 'react';
 import { resolveCarerName } from '@/src/domains/schedule/utils/memberDisplayName';
 import { canViewParentSchedule, SETUP_ROLES } from '@/src/domains/setup/types';
@@ -53,6 +54,7 @@ import {
 import type { WidgetSnapshotSet } from './widgetSnapshot.types';
 
 /** How far ahead the nanny widget looks. The plan's "next two weeks" empty copy. */
+const COVERING_STATUS_SET = new Set<string>(COVERING_SHIFT_STATUSES);
 const LOOK_AHEAD_DAYS = 14;
 
 /**
@@ -141,9 +143,7 @@ export function useWidgetSnapshotSync(): void {
         (householdList ?? []).map(household => [household.id, household.name])
       );
       const shifts: NannyShiftInput[] = (myShiftList ?? [])
-        .filter(
-          shift => shift.status !== 'cancelled' && shift.status !== 'declined'
-        )
+        .filter(shift => COVERING_STATUS_SET.has(shift.status))
         .map(shift => ({
           id: shift.id,
           startsAt: shift.starts_at,
@@ -224,6 +224,7 @@ export function useWidgetSnapshotSync(): void {
           endsAt: shift.ends_at,
           localDate: shift.local_date,
           status: shift.status,
+          kind: shift.kind,
           childNames: childNamesFor(shift),
         })
       );

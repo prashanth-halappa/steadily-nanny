@@ -135,6 +135,24 @@ export class ShiftController {
     }
   }
 
+  /**
+   * Carer-only running-late signal: POST /shifts/:shiftId/running-late.
+   *
+   * Body-less on purpose. It carries no ETA and no minute count — the event is
+   * a message to the family, not a measurement of her. Both the carer and the
+   * parent asked us not to create a punctuality record, and a payload with
+   * "how late" in it is one waiting to be aggregated.
+   */
+  static async runningLate(req: Request, res: Response, next: NextFunction) {
+    try {
+      const shiftId = req.params.shiftId as string;
+      await shiftCommandService.runningLate(getAuthUserId(req), shiftId);
+      return sendSuccessResponse(res, 'Family notified', {});
+    } catch (error) {
+      return next(error);
+    }
+  }
+
   /** Parent self-cover: POST /households/:householdId/shifts/parent-cover. */
   static async createParentCover(
     req: Request,

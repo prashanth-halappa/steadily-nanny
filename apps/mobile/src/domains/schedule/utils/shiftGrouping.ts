@@ -5,6 +5,7 @@
 import type { Shift } from '@steadily-nanny/shared-types/schemas/shift.schema';
 import { formatDisplayDate } from '@/src/domains/timesheet/utils/week';
 import { formatInstantInZone, timeToMinutes } from '@/src/lib/displayTime';
+import { formatInstantDisplay } from '@/src/lib/wallClock';
 
 export type ListItem =
   | { type: 'header'; key: string; label: string }
@@ -44,14 +45,15 @@ export function groupShiftsByDay(
 
 export function formatShiftTime(
   isoInstant: string,
-  timeZone?: string | null
+  timeZone?: string | null,
+  locale?: string
 ): string {
   if (timeZone) {
-    return formatInstantInZone(isoInstant, timeZone);
+    return formatInstantDisplay(isoInstant, timeZone, locale);
   }
   const date = new Date(isoInstant);
   if (Number.isNaN(date.getTime())) return '';
-  return date.toLocaleTimeString(undefined, {
+  return date.toLocaleTimeString(locale, {
     hour: 'numeric',
     minute: '2-digit',
   });

@@ -17,6 +17,7 @@ import {
   type Shift,
   type ShiftEvent,
   ShiftEventListResponseSchema,
+  ShiftEventSchema,
   ShiftListResponseSchema,
   ShiftSchema,
 } from '@steadily-nanny/shared-types/schemas/shift.schema';
@@ -30,6 +31,7 @@ export const shiftEndpoints = {
   update: (shiftId: string) => `/v1/shifts/${shiftId}`,
   accept: (shiftId: string) => `/v1/shifts/${shiftId}/accept`,
   decline: (shiftId: string) => `/v1/shifts/${shiftId}/decline`,
+  runningLate: (shiftId: string) => `/v1/shifts/${shiftId}/running-late`,
   parentCover: (householdId: string) =>
     `/v1/households/${householdId}/shifts/parent-cover`,
   removeParentCover: (shiftId: string) => `/v1/shifts/${shiftId}/parent-cover`,
@@ -68,6 +70,8 @@ const ParentEditShiftSchema = z
 export type ParentEditShiftInput = z.infer<typeof ParentEditShiftSchema>;
 
 const ShiftEnvelopeSchema = z.object({ shift: ShiftSchema });
+
+const ShiftEventEnvelopeSchema = z.object({ shift_event: ShiftEventSchema });
 
 /** Write responses may attach non-blocking clash warnings alongside the shift. */
 const ShiftWriteEnvelopeSchema = z.object({
@@ -135,6 +139,14 @@ export const shiftApi = {
     const parsed = ShiftEnvelopeSchema.safeParse(response.data.data);
     if (!parsed.success) throw parsed.error;
     return parsed.data.shift;
+  },
+
+  /** Carer-only: one-tap running-late signal for today's shift. Body-less POST. */
+  sendRunningLate: async (shiftId: string): Promise<ShiftEvent> => {
+    const response = await apiClient.post(shiftEndpoints.runningLate(shiftId));
+    const parsed = ShiftEventEnvelopeSchema.safeParse(response.data.data);
+    if (!parsed.success) throw parsed.error;
+    return parsed.data.shift_event;
   },
 
   listEvents: async (

@@ -222,7 +222,7 @@ function timesheetPillVariant(
 /** Forked by viewer (P0-5): the nanny reads her own week from her side of
  * the conversation ("With the family", not "Ready for your approval" — that
  * sentence is about someone else's action, not hers). */
-function timesheetPillLabel(
+export function timesheetPillLabel(
   status: TimesheetStatus | null | undefined,
   role: EarningsRole,
   t: (key: string, options?: Record<string, unknown>) => string

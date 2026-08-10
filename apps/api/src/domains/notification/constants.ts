@@ -13,12 +13,15 @@ import {
  * Push types that must still deliver during quiet hours — they carry a
  * response deadline (reconfirm / change-request paths that auto-approve on
  * timeout). Opt-out still wins over this list.
+ *
+ * Asks (extra-shift proposals, uncovered-care pings, etc.) are NOT exempt:
+ * silence does not auto-approve them, and a cover request at 23:40 for
+ * tomorrow morning is exactly the kind of push quiet hours should defer.
  */
 export const QUIET_HOURS_EXEMPT_TYPES: ReadonlySet<PushNotificationType> =
   new Set([
     PUSH_NOTIFICATION_TYPES.SHIFT_NEEDS_RECONFIRM,
     PUSH_NOTIFICATION_TYPES.SHIFT_CHANGE_REQUESTED,
-    PUSH_NOTIFICATION_TYPES.EXTRA_SHIFT_PROPOSED,
   ]);
 
 /**

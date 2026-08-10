@@ -8,7 +8,7 @@
   "notOnTheClock": "No estás en horario",
   "since": "Desde las {{time}}",
   "clockOutSheetTitle": "Fichar salida",
-  "clockOutSheetHint": "Añade un descanso si lo tomaste — la mayoría de los días no hará falta.",
+  "clockOutSheetHint": "Añade un descanso si lo tomaste.",
   "breakLabel": "Descanso",
   "noBreak": "Sin descanso",
   "breakMinutesOption": "{{minutes}} min",
@@ -18,7 +18,7 @@
   "noteLabel": "Nota (opcional)",
   "notePlaceholder": "¿Algo que anotar sobre hoy?",
   "stillOnTheClockTitle": "¿Sigues en horario?",
-  "stillOnTheClockBody": "Este turno ha pasado su hora de fin prevista. Ficha la salida y revisa las horas antes de que queden registradas.",
+  "stillOnTheClockBody": "Este turno ha pasado su hora de fin prevista. Ficha la salida y revisa las horas — son las que te pagarán.",
   "clockOutNow": "Fichar salida",
   "overdueClockOutHint": "Hemos puesto tu hora de fin prevista — cámbiala si saliste a otra hora.",
   "startLabel": "Entrada",
@@ -34,38 +34,55 @@
   "saveCorrection": "Guardar cambios",
   "nannyScheduledBody": "Hoy, {{start}} – {{end}}",
   "nannyArrivingBody": "Empieza a las {{start}}",
-  "todayCoverTitle": "Cobertura de hoy",
+  "awaitingYourAnswer": "Esperando tu respuesta",
+  "clockedIntoHousehold": "En {{household}}",
+  "weekLine": "{{duration}} esta semana",
   "stateLive": "En horario desde las {{time}}",
   "stateFinished": "Salida {{time}} · {{duration}}",
   "stateArriving": "Llega a las {{start}}",
   "stateScheduled": "Prevista {{start}}–{{end}}",
   "carerFallback": "Cuidadora",
-  "nannyNoShiftTitle": "Sin cobertura hoy",
-  "nannyNoShiftBody": "Aún no hay nada en el horario de hoy.",
-  "calm": {
-    "title": "Todo está cubierto",
-    "body": "{{name}} · {{detail}}. No necesitas hacer nada ahora mismo."
+  "parentNoCoverTitle": "Sin cobertura hoy",
+  "parentNoCoverBody": "Aún no hay nada en el horario de hoy.",
+  "declinedToday": "Rechazaste el turno de hoy de {{start}} – {{end}}.",
+  "declinedTodayHint": "Ficha la entrada igualmente si estás trabajando.",
+  "coverage": {
+    "gap": {
+      "titleOne": "Nadie está con {{childName}} de {{start}} a {{end}}",
+      "titleMany": "{{count}} huecos hoy",
+      "windowLine": "{{childName}} · {{start}} – {{end}} · {{cause}}",
+      "windowAllDay": "{{childName}} · todo el día · {{cause}}",
+      "windowFallback": "{{childName}} · {{cause}}",
+      "andMore": "y {{count}} más",
+      "allDay": "todo el día"
+    },
+    "plan": {
+      "booked": "{{name}} tiene a los niños {{start}} – {{end}}.",
+      "arrivingIn_one": "Llega en {{count}} minuto",
+      "arrivingIn_other": "Llega en {{count}} minutos",
+      "here": "Aquí desde las {{time}}.",
+      "until": "Hasta las {{end}}.",
+      "left": "{{name}} salió a las {{time}} · {{duration}}.",
+      "youCovering": "Tú estás con ellos de {{start}} a {{end}}.",
+      "parentCovering": "{{parentName}} está con ellos de {{start}} a {{end}}.",
+      "runningLate": "{{name}} avisa de que va con retraso.",
+      "parentCoveringNanny": "Un familiar está con ellos de {{start}} a {{end}}. Tu día empieza a las {{end}} como estaba previsto."
+    },
+    "status": {
+      "confirmed": "Confirmado",
+      "waiting": "Esperando",
+      "declined": "Rechazado"
+    },
+    "asked": "Preguntado a las {{time}}. Sin respuesta aún."
   },
   "cover": {
     "setup": {
       "title": "¿Cuándo necesitas cuidado?",
       "body": "Añade las horas en las que necesitas a alguien con tus hijos — así sabremos cuándo estás cubierto."
     },
-    "covered": {
-      "title": "Hoy estás cubierto",
-      "variant0": "Cada hora en la que necesitas cuidado hoy tiene a alguien reservado. Puedes respirar.",
-      "variant1": "El horario coincide con lo que pediste hoy — no falta nada.",
-      "variant2": "El cuidado de hoy está listo. Quien aparece en el calendario es quien necesitas.",
-      "variant3": "Vas bien hoy — cada franja que necesitas está en el calendario."
-    },
-    "uncovered": {
-      "titleOne": "{{childName}} no está totalmente cubierto",
-      "titleMany": "{{count}} momentos hoy no están cubiertos",
-      "windowLine": "{{childName}} · {{start}}–{{end}} · {{cause}}",
-      "windowAllDay": "{{childName}} · todo el día · {{cause}}",
-      "windowFallback": "{{childName}} · {{cause}}",
-      "allDay": "todo el día",
-      "andMore": "y {{count}} más"
+    "noNeed": {
+      "title": "No hace falta nada hoy",
+      "body": "No has configurado horas de cuidado para los {{weekday}}."
     }
   },
   "widgets": {
@@ -96,8 +113,8 @@
       "finishedDetail": "{{duration}}",
       "arriving": "{{name}} llega a las {{start}}",
       "due": "{{name}} · prevista {{start}}–{{end}}",
-      "noCoverRange": "Sin cobertura {{start}}–{{end}}",
-      "emptyTitle": "Sin cobertura hoy",
+      "noCoverRange": "Nadie reservado {{start}}–{{end}}",
+      "emptyTitle": "Nadie reservado hoy",
       "emptyBody": "Aún no hay nada en el horario de hoy.",
       "more_one": "+{{count}} más",
       "more_other": "+{{count}} más"
@@ -117,7 +134,6 @@
     "onTheClock": "Tu jornada está en marcha",
     "clockedInAt": "Entrada {{time}}",
     "scheduledFinish": "Fin previsto {{time}}",
-    "noScheduledShift": "No hay turno programado hoy.",
     "clockOut": "Fichar salida",
     "overdueTitle": "Pasadas las {{time}} — ¿sigues trabajando?",
     "overdueBody": "Ficha la salida cuando termines.",
@@ -133,8 +149,8 @@
     "body": "Hay pendientes que te esperan."
   },
   "missedHours": {
-    "cta": "¿Olvidaste fichar la entrada?",
-    "sheetHint": "¿Olvidaste fichar la entrada? Registra las horas que trabajaste.",
+    "cta": "Añadir horas trabajadas",
+    "sheetHint": "Añade horas que trabajaste pero no fichaste.",
     "dateLabel": "Fecha",
     "noteLabel": "Nota (opcional)",
     "notePlaceholder": "¿Algo que anotar?",
@@ -165,8 +181,8 @@
     "saveAsMoment": "Guardar como momento",
     "savedAsMoment": "Guardado como momento",
     "addNote": "Añadir una nota",
-    "tapHintForNanny": "Toca lo que tu niñera debería saber",
-    "tapHintForParent": "Toca lo que tu familia debería saber",
+    "tapHintParentEditor": "Toca lo que tu niñera debería saber",
+    "tapHintNannyEditor": "Toca lo que tu familia debería saber",
     "anythingElse": "¿Algo más?",
     "sentAt": "Enviado {{time}}",
     "chips": {
@@ -189,5 +205,11 @@
     "confirmBodyElapsed": "Llevas {{elapsed}} en horario. Si lo descartas no contará como horas ni como sueldo, y seguirá visible en tus horas como una línea tachada. Puedes volver a fichar entrada cuando quieras.",
     "confirmCancel": "Seguir en horario",
     "confirmAction": "Descartar"
+  },
+  "runningLate": "Voy con retraso",
+  "runningLateSent": "Tu familia ya lo sabe.",
+  "cancelledShift": {
+    "paid": "Tu turno de {{start}} a {{end}} se canceló. Aun así se te pagará.",
+    "unpaid": "Tu turno de {{start}} a {{end}} se canceló — son {{duration}} menos esta semana."
   }
 }

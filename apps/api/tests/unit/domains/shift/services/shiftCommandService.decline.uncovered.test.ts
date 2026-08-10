@@ -81,13 +81,27 @@ function makeService() {
       })),
     } as never,
     { getOwned: mock(async () => pendingShift) } as never,
-    { insertMany: mock(async () => []) } as never
+    { insertMany: mock(async () => []) } as never,
+    // The decline push copy names the child, so the service reaches for
+    // ChildQueryService. Its constructor DEFAULT is the real one, which goes
+    // to the network and never settles under test — leaving the push pending
+    // rather than failing loudly. Always inject it here.
+    {
+      getOwned: mock(async () => ({ id: 'c1', name: 'Ada' })),
+      listForHousehold: mock(async () => [{ id: 'c1', name: 'Ada' }]),
+    } as never
   );
+}
+
+/** The decline push is fire-and-forget (see the service): let it land. */
+async function flushPush(): Promise<void> {
+  await new Promise(resolve => setTimeout(resolve, 0));
 }
 
 describe('ShiftCommandService.decline — uncovered detection', () => {
   it('calls detection with cause declined', async () => {
     await makeService().decline('carer-1', 's1');
+    await flushPush();
 
     expect(detectUncoveredCareForDate).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -111,11 +125,14 @@ describe('ShiftCommandService.decline — uncovered detection', () => {
 
     await makeService().decline('carer-1', 's1');
 
+    await flushPush();
+
     expect(notifyHouseholdParents).not.toHaveBeenCalled();
   });
 
   it('fires shift_declined when the day is still covered', async () => {
     await makeService().decline('carer-1', 's1');
+    await flushPush();
 
     expect(notifyHouseholdParents).toHaveBeenCalledTimes(1);
     expect(notifyHouseholdParents).toHaveBeenCalledWith(

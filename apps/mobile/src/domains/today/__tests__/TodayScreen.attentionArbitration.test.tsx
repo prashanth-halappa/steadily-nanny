@@ -4,7 +4,7 @@
  * "One T1 per screen", enforced at the only place that sees every
  * attention-capable card — `TodayScreen` itself. This is the guard the
  * audit asked for: it counts how many of REAL `NeedsAttentionCard` +
- * `CoverCard` (not opaque markers) are actually rendering
+ * `TodayCoverage` (not opaque markers) are actually rendering
  * `tone="attention"`'s tinted background, so a FOURTH attention surface
  * added later without wiring into `resolveAttentionOwner` fails this test
  * instead of shipping stacked.
@@ -21,8 +21,11 @@
  * (inbox vs coverage-gap) the follow-up audit found.
  */
 import { beforeAll, describe, expect, it, mock } from 'bun:test';
-import { render } from '@testing-library/react-native';
 import type { InboxItem } from '@/src/domains/inbox/utils/buildInboxItems';
+// `renderWithProviders`, not bare `render`: the coverage surface now reads the
+// day thread (to know whether the carer has said she's running late), and that
+// hook needs a QueryClient.
+import { renderWithProviders } from '@/src/test-utils';
 import { palette } from '~/lib/design-tokens/palette';
 
 mock.module('@/lib/animations/useReducedMotion', () => ({
@@ -60,17 +63,39 @@ mock.module('@/src/domains/today/components/AddMissedHoursCard', () => ({
 mock.module('@/src/domains/today/components/HandoffChipsCard', () => ({
   HandoffChipsCard: () => null,
 }));
-mock.module('@/src/domains/today/components/NannyLiveStatusCard', () => ({
-  NannyLiveStatusCard: () => null,
+mock.module('@/src/domains/today/components/NannyWeekLine', () => ({
+  NannyWeekLine: () => null,
 }));
-mock.module('@/src/domains/today/components/TodayCalmCard', () => ({
-  TodayCalmCard: () => null,
+mock.module('@/src/hooks/queries/useWeekTimeEntries', () => ({
+  useWeekTimeEntries: () => ({ data: [], isLoading: false }),
+}));
+mock.module('@/src/hooks/queries/useShiftsRange', () => ({
+  useShiftsRange: () => ({ data: [], isLoading: false }),
+}));
+mock.module('@/src/hooks/queries/useHouseholdMembers', () => ({
+  useHouseholdMembers: () => ({ data: [], isLoading: false }),
+}));
+mock.module('@/src/hooks/queries/useHouseholdClosures', () => ({
+  useHouseholdClosures: () => ({ data: [], isLoading: false }),
+}));
+mock.module('@/src/domains/schedule/hooks/useHouseholdCarers', () => ({
+  useHouseholdCarers: () => ({ data: [], isLoading: false }),
+}));
+mock.module('@/src/hooks/mutations/useCreateParentCover', () => ({
+  useCreateParentCover: () => ({
+    isPending: false,
+    mutateAsync: mock(() => Promise.resolve({})),
+  }),
 }));
 mock.module('@/src/domains/today/hooks/useHouseholdIsLive', () => ({
   useHouseholdIsLive: () => false,
 }));
 mock.module('expo-router', () => ({
   useRouter: () => ({ push: mock(), back: mock() }),
+  // `src/lib/pushNotification.ts` imports the imperative `router`, and this
+  // screen's graph now reaches it via the running-late mutation. Without it
+  // the file fails at LOAD with "Export named 'router' not found".
+  router: { push: mock(), back: mock(), replace: mock() },
 }));
 
 const HOUSEHOLD_ID = 'household-attn-1';
@@ -158,7 +183,7 @@ const ATTENTION_BG = palette.light.surfaceAttention.hex;
 /** The two attention-capable T1 cards this file exercises together. */
 const ATTENTION_CANDIDATE_TEST_IDS = [
   'today-needs-attention-card',
-  'cover-card',
+  'today-coverage-gap-card',
 ];
 
 function hasAttentionBackground(style: unknown): boolean {
@@ -193,10 +218,10 @@ describe('TodayScreen — one T1 per screen (attention arbitration)', () => {
       shiftEndsAt: null,
     });
 
-    const { queryByTestId } = render(<TodayScreen />);
+    const { queryByTestId } = renderWithProviders(<TodayScreen />);
 
     expect(countAttentionCards(queryByTestId)).toBe(1);
-    expect(queryByTestId('cover-card')).toBeTruthy();
+    expect(queryByTestId('today-coverage-gap-card')).toBeTruthy();
   });
 
   it('inbox item alone, no uncovered care: exactly one attention surface (the inbox owns it)', () => {
@@ -214,7 +239,7 @@ describe('TodayScreen — one T1 per screen (attention arbitration)', () => {
       shiftEndsAt: null,
     });
 
-    const { queryByTestId } = render(<TodayScreen />);
+    const { queryByTestId } = renderWithProviders(<TodayScreen />);
 
     expect(countAttentionCards(queryByTestId)).toBe(1);
   });
@@ -231,7 +256,7 @@ describe('TodayScreen — one T1 per screen (attention arbitration)', () => {
       shiftEndsAt: null,
     });
 
-    const { queryByTestId } = render(<TodayScreen />);
+    const { queryByTestId } = renderWithProviders(<TodayScreen />);
 
     expect(countAttentionCards(queryByTestId)).toBe(0);
   });

@@ -47,8 +47,12 @@ import {
   type UncoveredWindow,
   uncoveredKey,
 } from '@steadily-nanny/shared-types/uncoveredCare';
+import { HouseholdMemberRepository } from '../../household';
 import { notifyHouseholdParents } from '../../notification';
 import { ShiftEventRepository } from '../../shift/repositories/shiftEventRepository';
+import type { ShiftWithChildren } from '../../shift/repositories/shiftRepository';
+import { ShiftRepository } from '../../shift/repositories/shiftRepository';
+import { ChildRepository } from '../repositories/childRepository';
 
 export type UncoveredCause =
   | 'cancelled'
@@ -72,7 +76,10 @@ export interface RaiseUncoveredArgs {
 
 export class UncoveredCareService {
   constructor(
-    private readonly eventRepo: ShiftEventRepository = new ShiftEventRepository()
+    private readonly eventRepo: ShiftEventRepository = new ShiftEventRepository(),
+    private readonly shiftRepo: ShiftRepository = new ShiftRepository(),
+    private readonly memberRepo: HouseholdMemberRepository = new HouseholdMemberRepository(),
+    private readonly childRepo: ChildRepository = new ChildRepository()
   ) {}
 
   /**
@@ -141,15 +148,18 @@ export class UncoveredCareService {
       return [];
     }
 
+    const causeBody = await this.buildCauseAwareBody(args, actuallyInserted);
+    const genericBody =
+      actuallyInserted.length === 1
+        ? 'A time you need your nanny is not on the schedule.'
+        : `${actuallyInserted.length} times you need your nanny are not on the schedule.`;
+
     try {
       notifyHouseholdParents(
         args.householdId,
         {
           title: 'No one booked',
-          body:
-            actuallyInserted.length === 1
-              ? 'A time you need your nanny is not on the schedule.'
-              : `${actuallyInserted.length} times you need your nanny are not on the schedule.`,
+          body: causeBody ?? genericBody,
           data: {
             type: PUSH_NOTIFICATION_TYPES.UNCOVERED_CARE_DETECTED,
             householdId: args.householdId,
@@ -164,6 +174,169 @@ export class UncoveredCareService {
 
     return actuallyInserted;
   }
+
+  /** Decline/cancel gaps name the person and shift — generic copy drops the cause. */
+  private async buildCauseAwareBody(
+    args: RaiseUncoveredArgs,
+    windows: readonly UncoveredWindow[]
+  ): Promise<string | null> {
+    if (args.cause !== 'declined' && args.cause !== 'cancelled') {
+      return null;
+    }
+    const window = windows[0];
+    if (!window) {
+      return null;
+    }
+
+    const dayShifts = await this.shiftRepo.findByHouseholdAndLocalDate(
+      args.householdId,
+      args.localDate
+    );
+    const causeShift = pickCauseShift(
+      dayShifts,
+      args.cause,
+      args.actorId,
+      window
+    );
+    if (!causeShift?.carer_id) {
+      return null;
+    }
+
+    const [members, children] = await Promise.all([
+      this.memberRepo.listActiveByHousehold(args.householdId),
+      this.childRepo.findActiveByHousehold(args.householdId),
+    ]);
+    const carerMember = members.find(m => m.user_id === causeShift.carer_id);
+    const carerName = resolveMemberDisplayName(carerMember);
+    const childName = resolveChildNameForShift(
+      causeShift,
+      children,
+      window.childId
+    );
+    const verb = args.cause === 'declined' ? 'turned down' : 'cancelled';
+    const dayLabel = formatPushShortDate(args.localDate, args.timezone);
+    const startLabel = formatPushTime12h(causeShift.starts_at, args.timezone);
+    const endLabel = formatPushTime12h(causeShift.ends_at, args.timezone);
+
+    return `${carerName} ${verb} ${dayLabel}, ${startLabel}–${endLabel} (${childName}).`;
+  }
 }
 
 export const uncoveredCareService = new UncoveredCareService();
+
+function pickCauseShift(
+  shifts: readonly ShiftWithChildren[],
+  cause: 'declined' | 'cancelled',
+  actorId: string | null | undefined,
+  window: UncoveredWindow
+): ShiftWithChildren | undefined {
+  const candidates = shifts.filter(shift => shift.status === cause);
+  if (candidates.length === 0) {
+    return undefined;
+  }
+
+  const overlapping = candidates.filter(shift =>
+    intervalsOverlap(
+      shift.starts_at,
+      shift.ends_at,
+      window.startsAt,
+      window.endsAt
+    )
+  );
+  const pool = overlapping.length > 0 ? overlapping : candidates;
+
+  if (cause === 'declined' && actorId) {
+    return pool.find(shift => shift.carer_id === actorId) ?? pool[0];
+  }
+  return pool[0];
+}
+
+function intervalsOverlap(
+  aStart: string,
+  aEnd: string,
+  bStart: string,
+  bEnd: string
+): boolean {
+  return (
+    Date.parse(aStart) < Date.parse(bEnd) &&
+    Date.parse(bStart) < Date.parse(aEnd)
+  );
+}
+
+function resolveMemberDisplayName(
+  member:
+    | {
+        display_name_override?: string | null;
+        profile_name?: string | null;
+      }
+    | undefined
+): string {
+  const override = member?.display_name_override?.trim();
+  if (override) {
+    return override;
+  }
+  const profile = member?.profile_name?.trim();
+  if (profile) {
+    return profile;
+  }
+  return 'The nanny';
+}
+
+function resolveChildNameForShift(
+  shift: ShiftWithChildren,
+  children: readonly { id: string; name: string }[],
+  fallbackChildId: string
+): string {
+  const childIds =
+    shift.shift_children.length > 0
+      ? shift.shift_children.map(row => row.child_id)
+      : [fallbackChildId];
+  const names = childIds
+    .map(id => children.find(child => child.id === id)?.name?.trim())
+    .filter((name): name is string => Boolean(name));
+  if (names.length === 0) {
+    return 'your child';
+  }
+  return names[0] ?? 'your child';
+}
+
+function formatPushShortDate(localDate: string, timeZone: string): string {
+  try {
+    const formatted = new Intl.DateTimeFormat('en-GB', {
+      timeZone,
+      weekday: 'short',
+      day: 'numeric',
+      month: 'short',
+    }).format(new Date(`${localDate}T12:00:00`));
+    return formatted.replace(',', '');
+  } catch {
+    return localDate;
+  }
+}
+
+function formatPushTime12h(instantIso: string, timeZone: string): string {
+  const instant = new Date(instantIso);
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    }).formatToParts(instant);
+    const hour = parts.find(part => part.type === 'hour')?.value ?? '0';
+    const minute = parts.find(part => part.type === 'minute')?.value ?? '00';
+    const dayPeriod = (
+      parts.find(part => part.type === 'dayPeriod')?.value ?? 'am'
+    ).toLowerCase();
+    return `${hour}:${minute} ${dayPeriod}`;
+  } catch {
+    return new Intl.DateTimeFormat('en-US', {
+      timeZone: 'UTC',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    })
+      .format(instant)
+      .toLowerCase();
+  }
+}

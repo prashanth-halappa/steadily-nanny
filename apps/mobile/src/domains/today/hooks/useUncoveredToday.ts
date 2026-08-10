@@ -11,6 +11,7 @@ import type { ChildCommitment } from '@steadily-nanny/shared-types/schemas/child
 import type { Shift } from '@steadily-nanny/shared-types/schemas/shift.schema';
 import { computeUncovered } from '@steadily-nanny/shared-types/uncoveredCare';
 import { useMemo } from 'react';
+import { localDateToWeekday } from '@/src/domains/schedule/utils/shiftGrouping';
 import {
   type UncoveredWindowDisplay,
   withCauses,
@@ -30,6 +31,7 @@ export type UncoveredTodayState =
   | { status: 'loading' }
   | { status: 'error' }
   | { status: 'setup' }
+  | { status: 'noNeedToday'; localDate: string; weekday: number }
   | { status: 'covered'; localDate: string }
   | {
       status: 'uncovered';
@@ -61,7 +63,11 @@ export function computeUncoveredToday(args: {
     closures: [],
   });
   if (needOnDay.length === 0) {
-    return { status: 'setup' };
+    return {
+      status: 'noNeedToday',
+      localDate: args.localDate,
+      weekday: localDateToWeekday(args.localDate),
+    };
   }
   const windows = withCauses(
     computeUncovered({

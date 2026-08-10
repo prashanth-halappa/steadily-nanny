@@ -13,11 +13,15 @@
  */
 import type { HouseholdMember } from '@steadily-nanny/shared-types/schemas/household.schema';
 import type { Shift } from '@steadily-nanny/shared-types/schemas/shift.schema';
+import { COVERING_SHIFT_STATUSES } from '@steadily-nanny/shared-types/uncoveredCare';
 import { type Href, useRouter } from 'expo-router';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Pressable, View } from 'react-native';
-import { StatusPill } from '@/src/components/ui/status-pill';
+import {
+  StatusPill,
+  type StatusPillProps,
+} from '@/src/components/ui/status-pill';
 import { Figure, MetadataLabel, Small } from '@/src/components/ui/typography';
 import { resolveCarerName } from '@/src/domains/schedule/utils/memberDisplayName';
 import { formatDisplayDate } from '@/src/domains/timesheet/utils/week';
@@ -30,13 +34,28 @@ import { useAuthStore } from '@/src/store/auth';
 import { useElevation } from '~/lib/design-tokens/elevation';
 import { spacing } from '~/lib/design-tokens/spacing';
 
-/** A row whose status isn't confirmed still needs a human — every non-
- * confirmed shift status reads as StatusPill's "pending" variant here (the
- * only ones that can reach this row: cancelled is filtered upstream, and a
- * completed shift can't have `ends_at` in the future). */
-function pillLabelKey(status: Shift['status']): string {
-  return status === 'draft' ? 'shifts.statusDraft' : 'shifts.statusPending';
-}
+const COVERING_STATUS_SET = new Set<string>(COVERING_SHIFT_STATUSES);
+
+type ShiftStatusVariant = NonNullable<StatusPillProps['variant']>;
+
+/** Each row renders the status it was given — no upstream promotion. */
+const STATUS_TO_VARIANT: Record<Shift['status'], ShiftStatusVariant> = {
+  draft: 'pending',
+  pending: 'pending',
+  confirmed: 'confirmed',
+  declined: 'declined',
+  cancelled: 'cancelled',
+  completed: 'confirmed',
+};
+
+const STATUS_TO_LABEL_KEY: Record<Shift['status'], string> = {
+  draft: 'shifts.statusDraft',
+  pending: 'shifts.statusPending',
+  confirmed: 'shifts.statusConfirmed',
+  declined: 'shifts.statusDeclined',
+  cancelled: 'shifts.statusCancelled',
+  completed: 'shifts.statusCompleted',
+};
 
 function weekdayDow(dateISO: string): number {
   const [year, month, day] = dateISO.split('-').map(Number);
@@ -78,7 +97,9 @@ export function ThisWeeksShiftsCard() {
     const now = Date.now();
     return (shiftsQuery.data ?? [])
       .filter(
-        s => s.status !== 'cancelled' && new Date(s.ends_at).getTime() >= now
+        s =>
+          COVERING_STATUS_SET.has(s.status) &&
+          new Date(s.ends_at).getTime() >= now
       )
       .sort((a, b) => a.starts_at.localeCompare(b.starts_at))
       .slice(0, 2);
@@ -145,8 +166,8 @@ export function ThisWeeksShiftsCard() {
                 {shift.status !== 'confirmed' ? (
                   <StatusPill
                     testID={`today-next-up-status-${shift.id}`}
-                    variant="pending"
-                    label={t(pillLabelKey(shift.status))}
+                    variant={STATUS_TO_VARIANT[shift.status]}
+                    label={t(STATUS_TO_LABEL_KEY[shift.status])}
                   />
                 ) : null}
                 {carerName ? (

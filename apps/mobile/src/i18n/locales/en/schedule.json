@@ -285,10 +285,10 @@
   "cover": {
     "weekSummaryTitle_one": "{{count}} time this week with no one booked",
     "weekSummaryTitle_other": "{{count}} times this week with no one booked",
-    "rowPill": "Not covered",
+    "rowPill": "No one booked",
     "rowMeta": "{{childName}} · {{cause}}",
-    "askToCover": "Ask {{carerName}} to cover",
-    "askSomeoneToCover": "Ask someone to cover",
+    "askToCover": "Ask {{carerName}} to start at {{start}}",
+    "askSomeoneToCover": "Ask someone to cover {{start}} – {{end}}",
     "iveGotIt": "I've got it",
     "parentCoveringRow": "You're covering",
     "parentCoveringBy": "{{parentName}} is covering",
@@ -302,7 +302,11 @@
       "declined": "A shift was declined",
       "needsAdded": "You added these hours",
       "closureRemoved": "Your away dates changed",
-      "nothingScheduled": "Nothing scheduled yet"
+      "nothingScheduled": "No one's booked for these hours"
+    },
+    "causeNamed": {
+      "cancelled": "{{carerName}}'s {{start}} – {{end}} shift was cancelled",
+      "declined": "{{carerName}} turned down {{start}} – {{end}}"
     }
   }
 }

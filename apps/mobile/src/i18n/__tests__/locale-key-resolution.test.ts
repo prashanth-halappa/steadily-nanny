@@ -185,6 +185,15 @@ const TEMPLATE_KEY_DECLARATIONS: readonly TemplateKeyDeclaration[] = [
     values: UNCOVERED_CAUSE_VALUES,
     keyPattern: 'schedule:cover.cause.$1',
   },
+  {
+    // Only the two causes with a PERSON behind them get a named sentence
+    // ("H1 Nanny1 turned down 6:00 AM – 8:00 PM"). `needsAdded`,
+    // `closureRemoved` and `nothingScheduled` have no carer to name and fall
+    // back to the generic `cover.cause.*` line above.
+    pattern: /^cover\.causeNamed\.\$\{[^}]+\}$/,
+    values: ['cancelled', 'declined'],
+    keyPattern: 'schedule:cover.causeNamed.$1',
+  },
 ];
 
 function loadLocaleNamespaces(locale: LocaleCode): NamespaceMap {

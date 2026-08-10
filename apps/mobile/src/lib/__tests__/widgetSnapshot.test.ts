@@ -565,7 +565,7 @@ describe('buildTodaysCoverPayload (P1)', () => {
     ]);
     expect(props.rows[2]?.title).toMatch(/^Ann arrives at /);
     expect(props.rows[3]?.title).toMatch(/^Zoe · due /);
-    expect(props.rows[4]?.title).toMatch(/^No cover /);
+    expect(props.rows[4]?.title).toMatch(/^No one booked /);
     expect(props.moreLabel).toBe('+4 more');
   });
 
@@ -625,7 +625,7 @@ describe('buildTodaysCoverPayload (P1)', () => {
       shifts: [],
     });
     expect(props.householdName).toBe('Patel household');
-    expect(props.emptyTitle).toBe('No cover today');
+    expect(props.emptyTitle).toBe('No one booked today');
   });
 });
 
@@ -829,6 +829,98 @@ describe('week hours widgets (N3 / P2)', () => {
       });
       expect(props.adjustmentNote).toBeNull();
     });
+  });
+});
+
+describe('buildTodaysCoverPayload covering-shift selection', () => {
+  const AUG10_NOW = new Date('2026-08-10T12:00:00.000Z').getTime();
+  const base = {
+    nowMs: AUG10_NOW,
+    timeZone: ZONE,
+    householdName: 'Household 1',
+    namesByCarerId: { 'carer-nanny1': 'H1 Nanny1' },
+    gaps: [],
+    entries: [],
+  };
+
+  it('picks the confirmed shift when declined and cancelled shifts share the carer', () => {
+    const { props } = buildTodaysCoverPayload({
+      ...base,
+      shifts: [
+        makeCoverShift({
+          id: 'declined-0600',
+          carerId: 'carer-nanny1',
+          status: 'declined',
+          localDate: '2026-08-10',
+          startsAt: '2026-08-10T05:00:00.000Z',
+          endsAt: '2026-08-10T19:00:00.000Z',
+        }),
+        makeCoverShift({
+          id: 'cancelled-1',
+          carerId: 'carer-nanny1',
+          status: 'cancelled',
+          localDate: '2026-08-10',
+          startsAt: '2026-08-10T08:00:00.000Z',
+          endsAt: '2026-08-10T12:00:00.000Z',
+        }),
+        makeCoverShift({
+          id: 'cancelled-2',
+          carerId: 'carer-nanny1',
+          status: 'cancelled',
+          localDate: '2026-08-10',
+          startsAt: '2026-08-10T13:00:00.000Z',
+          endsAt: '2026-08-10T17:00:00.000Z',
+        }),
+        makeCoverShift({
+          id: 'confirmed-1122',
+          carerId: 'carer-nanny1',
+          status: 'confirmed',
+          localDate: '2026-08-10',
+          startsAt: '2026-08-10T10:22:00.000Z',
+          endsAt: '2026-08-10T18:22:00.000Z',
+        }),
+      ],
+    });
+    expect(props.rows).toHaveLength(1);
+    expect(props.rows[0]?.title).toMatch(/11:22/i);
+    expect(props.rows[0]?.title).not.toMatch(/6:00|06:00/i);
+  });
+
+  it('never produces a row for a draft shift', () => {
+    const { props } = buildTodaysCoverPayload({
+      ...base,
+      shifts: [
+        makeCoverShift({
+          id: 'draft-only',
+          carerId: null,
+          status: 'draft',
+          localDate: '2026-08-10',
+          startsAt: '2026-08-10T09:00:00.000Z',
+          endsAt: '2026-08-10T17:00:00.000Z',
+        }),
+      ],
+    });
+    expect(props.rows).toHaveLength(0);
+  });
+
+  it('labels parent_cover with the parent-covering copy, not carerFallback', () => {
+    const { props } = buildTodaysCoverPayload({
+      ...base,
+      shifts: [
+        makeCoverShift({
+          id: 'parent-cover-1',
+          carerId: null,
+          status: 'confirmed',
+          kind: 'parent_cover',
+          localDate: '2026-08-10',
+          startsAt: '2026-08-10T09:00:00.000Z',
+          endsAt: '2026-08-10T17:00:00.000Z',
+        }),
+      ],
+    });
+    expect(props.rows).toHaveLength(1);
+    expect(props.rows[0]?.title).toMatch(/You're covering/i);
+    expect(props.rows[0]?.title).not.toMatch(/Carer/i);
   });
 });
 

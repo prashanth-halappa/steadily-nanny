@@ -84,22 +84,19 @@ mock.module('@/src/domains/today/components/ClockInCard', () => ({
 mock.module('@/src/domains/today/components/AddMissedHoursCard', () => ({
   AddMissedHoursCard: marker('add-missed-hours'),
 }));
-mock.module('@/src/domains/today/components/CoverCard', () => ({
-  CoverCard: marker('cover-card'),
+mock.module('@/src/domains/today/components/TodayCoverage', () => ({
+  TodayCoverage: marker('today-coverage'),
+}));
+mock.module('@/src/domains/today/components/NannyWeekLine', () => ({
+  NannyWeekLine: marker('nanny-week-line'),
 }));
 mock.module('@/src/domains/today/components/HandoffChipsCard', () => ({
   HandoffChipsCard: marker('handoff-chips'),
-}));
-mock.module('@/src/domains/today/components/NannyLiveStatusCard', () => ({
-  NannyLiveStatusCard: marker('nanny-live-status'),
 }));
 // Not part of the pinned order (it renders nothing unless the inbox is
 // empty, nothing is live, AND someone is covering today — see its own
 // tests) — stubbed to null here so this file stays about ORDER, not the
 // calm state's own condition.
-mock.module('@/src/domains/today/components/TodayCalmCard', () => ({
-  TodayCalmCard: () => null,
-}));
 
 const HOUSEHOLD_ID = 'household-order-1';
 
@@ -186,7 +183,7 @@ describe('TodayScreen — card order', () => {
     const order = renderOrder('parent');
 
     expect(order.indexOf('needs-attention')).toBeLessThan(
-      order.indexOf('nanny-live-status')
+      order.indexOf('today-coverage')
     );
     expect(order.indexOf('needs-attention')).toBeLessThan(
       order.indexOf('handoff-chips')
@@ -199,14 +196,15 @@ describe('TodayScreen — card order', () => {
   it('still renders the routine cards it moved past', () => {
     const order = renderOrder('nanny');
     expect(order).toContain('clock-in');
-    expect(order).not.toContain('cover-card');
+    expect(order).not.toContain('today-coverage');
+    expect(order).toContain('nanny-week-line');
     expect(order).toContain('handoff-chips');
     expect(order).toContain('this-weeks-shifts');
   });
 
-  it('renders the cover card for a parent', () => {
+  it('renders the coverage surface for a parent', () => {
     const order = renderOrder('parent');
-    expect(order).toContain('cover-card');
+    expect(order).toContain('today-coverage');
   });
 
   // Clocking in to a household she was removed from would 403 server-side —
@@ -231,5 +229,8 @@ describe('TodayScreen — card order', () => {
   it('still renders the missed-hours affordance for an active nanny', () => {
     const order = renderOrder('nanny');
     expect(order).toContain('add-missed-hours');
+    expect(order.indexOf('nanny-week-line')).toBeLessThan(
+      order.indexOf('add-missed-hours')
+    );
   });
 });

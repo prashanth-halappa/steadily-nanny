@@ -64,6 +64,15 @@ router.post(
   asyncHandler(ShiftController.decline)
 );
 
+// Carer-only "I'm running late". Same ownership guard and body-less shape as
+// decline: there is nothing to validate because the signal deliberately
+// carries no ETA.
+router.post(
+  '/:shiftId/running-late',
+  ...authWithOwnership(ShiftIdParamSchema, shiftOwnership),
+  asyncHandler(ShiftController.runningLate)
+);
+
 // Change requests (flows 1d/1e) — propose against an existing shift.
 router.post(
   '/:shiftId/change-requests',

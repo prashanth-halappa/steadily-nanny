@@ -263,7 +263,14 @@ describe('response-leg pushes', () => {
 
     await svc.respond('carer-1', 'cr1', { status: 'accepted' });
 
-    expect(notifyUser).not.toHaveBeenCalled();
+    expect(notifyUser).not.toHaveBeenCalledWith(
+      'parent-1',
+      expect.objectContaining({
+        data: expect.objectContaining({
+          type: PUSH_NOTIFICATION_TYPES.CHANGE_REQUEST_ACCEPTED,
+        }),
+      })
+    );
     expect(notifyHouseholdParents).toHaveBeenCalledWith(
       'h1',
       expect.objectContaining({
@@ -274,7 +281,7 @@ describe('response-leg pushes', () => {
     );
   });
 
-  it('still pings a carer requester with ACCEPTED on cancel accept', async () => {
+  it('still pings a carer requester with cancellation pay outcome on cancel accept', async () => {
     const carerRequest = {
       ...pendingRequest,
       requested_by: 'carer-1',
@@ -295,8 +302,9 @@ describe('response-leg pushes', () => {
     expect(notifyUser).toHaveBeenCalledWith(
       'carer-1',
       expect.objectContaining({
+        body: expect.stringMatching(/You'll still be paid for it/i),
         data: expect.objectContaining({
-          type: PUSH_NOTIFICATION_TYPES.CHANGE_REQUEST_ACCEPTED,
+          type: PUSH_NOTIFICATION_TYPES.SHIFT_CANCELLED,
         }),
       })
     );
@@ -342,6 +350,7 @@ describe('response-leg pushes', () => {
       ends_at: '2026-08-04T12:00:00.000Z',
       timezone: 'Europe/London',
       carer_id: 'carer-1',
+      child_ids: ['child-1'],
     });
 
     expect(notifyUser).toHaveBeenCalledTimes(1);
@@ -354,6 +363,46 @@ describe('response-leg pushes', () => {
         }),
       })
     );
+  });
+
+  it('extra_shift_proposed body triages from the lock screen with asker, day, times, and child', async () => {
+    const svc = makeSvc({
+      shiftRepo: makeShiftRepo({
+        findByIdWithChildren: mock(async () => ({
+          ...shift,
+          id: 's-extra',
+          kind: 'extra',
+          status: 'pending',
+          created_by: 'parent-1',
+          starts_at: '2026-08-09T08:00:00.000Z',
+          ends_at: '2026-08-09T10:20:00.000Z',
+          timezone: 'Europe/London',
+          shift_children: [{ shift_id: 's-extra', child_id: 'child-1' }],
+        })),
+      }),
+      children: {
+        getOwned: mock(async () => ({ id: 'child-1', name: 'Child1' })),
+      },
+    });
+
+    await svc.createExtraShift('parent-1', 'h1', {
+      starts_at: '2026-08-09T08:00:00.000Z',
+      ends_at: '2026-08-09T10:20:00.000Z',
+      timezone: 'Europe/London',
+      carer_id: 'carer-1',
+      child_ids: ['child-1'],
+    });
+    await new Promise<void>(resolve => setImmediate(resolve));
+
+    const body =
+      (notifyUser.mock.calls[0]?.[1] as { body?: string })?.body ?? '';
+    expect(body).toContain('Alex');
+    expect(body).toMatch(/asked if you can cover/i);
+    expect(body).toMatch(/9 Aug/i);
+    expect(body).toMatch(/09:00/);
+    expect(body).toMatch(/11:20/);
+    expect(body).toContain('Child1');
+    expect(body).not.toContain('undefined');
   });
 
   // Adoption returns the shift somebody ELSE's call already created — and
@@ -542,6 +591,109 @@ describe('co-parent FYI pushes after gate success', () => {
         PUSH_NOTIFICATION_TYPES.CO_PARENT_ACTION_FYI
     );
     expect(fyiCalls).toHaveLength(0);
+  });
+});
+
+describe('carer cancellation pay pushes', () => {
+  const londonNineToFiveShift = {
+    ...shift,
+    starts_at: '2026-08-03T08:00:00.000Z',
+    ends_at: '2026-08-03T16:00:00.000Z',
+  };
+
+  it('tells the carer she is still paid when cancellation_paid is true', async () => {
+    const svc = makeSvc({
+      shiftQueries: { getOwned: mock(async () => londonNineToFiveShift) },
+      changeRequestRepo: makeChangeRequestRepo({
+        acceptAndApply: mock(async () => ({
+          changeRequest: { ...pendingRequest, status: 'accepted' },
+          shift: {
+            ...londonNineToFiveShift,
+            status: 'cancelled',
+            cancellation_paid: true,
+          },
+          superseded: [],
+        })),
+      }),
+    });
+
+    await svc.respond('carer-1', 'cr1', { status: 'accepted' });
+
+    expect(notifyUser).toHaveBeenCalledWith(
+      'carer-1',
+      expect.objectContaining({
+        body: expect.stringMatching(
+          /9:00 AM – 5:00 PM.*You'll still be paid for it/i
+        ),
+        data: expect.objectContaining({
+          type: PUSH_NOTIFICATION_TYPES.SHIFT_CANCELLED,
+        }),
+      })
+    );
+  });
+
+  it('tells the carer unpaid hours when cancellation_paid is false', async () => {
+    const changeRequestRepo = makeChangeRequestRepo({
+      acceptAndApply: mock(async () => ({
+        changeRequest: { ...pendingRequest, status: 'accepted' },
+        shift: {
+          ...londonNineToFiveShift,
+          status: 'cancelled',
+          cancellation_paid: false,
+        },
+        superseded: [],
+      })),
+    });
+    const svc = makeSvc({
+      changeRequestRepo,
+      shiftQueries: { getOwned: mock(async () => londonNineToFiveShift) },
+    });
+
+    await svc.respond('carer-1', 'cr1', { status: 'accepted' });
+
+    expect(notifyUser).toHaveBeenCalledWith(
+      'carer-1',
+      expect.objectContaining({
+        body: expect.stringMatching(/8h off this week's hours/i),
+        data: expect.objectContaining({
+          type: PUSH_NOTIFICATION_TYPES.SHIFT_CANCELLED,
+        }),
+      })
+    );
+  });
+
+  it('states a part-hour loss exactly, never rounded to whole hours', async () => {
+    // This sentence is about her PAY. Rounding turned 7h30m into "8h off this
+    // week's hours" — overstating what she lost — and would turn a short shift
+    // into "0h". Be exact on a money message or say nothing.
+    const sevenThirty = {
+      ...londonNineToFiveShift,
+      ends_at: '2026-08-03T15:30:00.000Z', // 08:00–15:30Z = 7h 30m
+    };
+    const changeRequestRepo = makeChangeRequestRepo({
+      acceptAndApply: mock(async () => ({
+        changeRequest: { ...pendingRequest, status: 'accepted' },
+        shift: {
+          ...sevenThirty,
+          status: 'cancelled',
+          cancellation_paid: false,
+        },
+        superseded: [],
+      })),
+    });
+    const svc = makeSvc({
+      changeRequestRepo,
+      shiftQueries: { getOwned: mock(async () => sevenThirty) },
+    });
+
+    await svc.respond('carer-1', 'cr1', { status: 'accepted' });
+
+    expect(notifyUser).toHaveBeenCalledWith(
+      'carer-1',
+      expect.objectContaining({
+        body: expect.stringMatching(/7h 30m off this week's hours/i),
+      })
+    );
   });
 });
 

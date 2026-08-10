@@ -41,6 +41,7 @@ import {
 import { notifyHouseholdParents, notifyUser } from '../../notification';
 import { ShiftNotFoundError } from '../errors/shiftErrors';
 import { ShiftEventRepository } from '../repositories/shiftEventRepository';
+import type { ShiftWithChildren } from '../repositories/shiftRepository';
 import { ShiftRepository } from '../repositories/shiftRepository';
 import type { ParentEditShiftInput } from '../types';
 import { type ShiftQueryService, shiftQueryService } from './shiftQueryService';
@@ -243,19 +244,38 @@ export class ShiftCommandService {
     }
 
     if (uncoveredInserted.length === 0) {
-      try {
-        notifyHouseholdParents(shift.household_id, {
-          title: 'Shift declined',
-          body: 'The nanny declined a pending shift.',
-          data: {
-            type: PUSH_NOTIFICATION_TYPES.SHIFT_DECLINED,
-            shiftId: updated.id,
-            householdId: shift.household_id,
-          },
+      // Fire-and-forget, and NOT awaited: the enriched copy needs a member
+      // lookup and a child lookup, and neither belongs on the critical path of
+      // her decline. A slow or failing directory read must never delay — or
+      // fail — the act of saying no. On any error we still send, with the
+      // generic body.
+      void this.buildDeclinePushBody(userId, shift)
+        .catch(error => {
+          logger.warn(
+            'Failed to build decline push copy; sending generic body',
+            {
+              shiftId: shift.id,
+              householdId: shift.household_id,
+              error: error instanceof Error ? error.message : String(error),
+            }
+          );
+          return 'The nanny declined a pending shift.';
+        })
+        .then(body => {
+          try {
+            notifyHouseholdParents(shift.household_id, {
+              title: 'Shift declined',
+              body,
+              data: {
+                type: PUSH_NOTIFICATION_TYPES.SHIFT_DECLINED,
+                shiftId: updated.id,
+                householdId: shift.household_id,
+              },
+            });
+          } catch {
+            // notifyHouseholdParents is sync fire-and-forget; swallow.
+          }
         });
-      } catch {
-        // notifyHouseholdParents is sync fire-and-forget; swallow any unexpected throw.
-      }
     }
 
     return updated;
@@ -329,7 +349,81 @@ export class ShiftCommandService {
       );
     }
 
+    await this.notifyCarersParentCover(householdId, shift);
+
     return shift;
+  }
+
+  /**
+   * Assigned carer signals she is running late — a message to parents, not a
+   * punctuality metric. Deliberately carries no minutes or ETA in the event
+   * payload so nothing downstream can build a lateness record from it.
+   */
+  async runningLate(userId: string, shiftId: string): Promise<void> {
+    const shift = await this.queries.getOwned(userId, shiftId);
+
+    if (!shift.carer_id || shift.carer_id !== userId) {
+      throw new ShiftNotFoundError(shiftId);
+    }
+
+    const membership = await this.memberRepo.findActiveMembership(
+      shift.household_id,
+      userId
+    );
+    if (!membership || !CARER_ROLES.has(membership.role)) {
+      throw new ShiftNotFoundError(shiftId);
+    }
+
+    if (
+      shift.status !== SHIFT_STATUSES.PENDING &&
+      shift.status !== SHIFT_STATUSES.CONFIRMED
+    ) {
+      throw new ValidationError(
+        'Only a pending or confirmed shift can be marked running late',
+        'SHIFT_NOT_RUNNING_LATE_ELIGIBLE',
+        400,
+        { shiftId, status: shift.status }
+      );
+    }
+
+    try {
+      await this.eventRepo.insertMany([
+        {
+          household_id: shift.household_id,
+          shift_id: shift.id,
+          local_date: shift.local_date,
+          actor_id: userId,
+          event_type: 'running_late',
+          payload: {
+            shift_id: shift.id,
+          },
+        },
+      ]);
+    } catch (error) {
+      logger.warn('Failed to record running_late event; push still sent', {
+        shiftId: shift.id,
+        householdId: shift.household_id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+
+    try {
+      const carerName = await this.resolveCarerDisplayName(
+        shift.household_id,
+        userId
+      );
+      notifyHouseholdParents(shift.household_id, {
+        title: 'Running late',
+        body: `${carerName} says she's running late.`,
+        data: {
+          type: 'running_late',
+          shiftId: shift.id,
+          householdId: shift.household_id,
+        },
+      });
+    } catch {
+      // notifyHouseholdParents is sync fire-and-forget; swallow any unexpected throw.
+    }
   }
 
   /**
@@ -421,6 +515,134 @@ export class ShiftCommandService {
     return updated;
   }
 
+  private async buildDeclinePushBody(
+    carerId: string,
+    shift: ShiftWithChildren
+  ): Promise<string> {
+    const carerName = await this.resolveCarerDisplayName(
+      shift.household_id,
+      carerId
+    );
+    const childName = await this.resolvePrimaryChildName(carerId, shift);
+    const dayLabel = formatPushShortDate(shift.local_date, shift.timezone);
+    const startLabel = formatPushTime12h(shift.starts_at, shift.timezone);
+    const endLabel = formatPushTime12h(shift.ends_at, shift.timezone);
+    return `${carerName} turned down ${dayLabel}, ${startLabel}–${endLabel} (${childName}).`;
+  }
+
+  private async resolveCarerDisplayName(
+    householdId: string,
+    carerId: string
+  ): Promise<string> {
+    const member = await this.memberRepo.findActiveMembership(
+      householdId,
+      carerId
+    );
+    const override = member?.display_name_override?.trim();
+    if (override) {
+      return override;
+    }
+    try {
+      const members = await this.memberRepo.listActiveByHousehold(householdId);
+      const profile = members
+        .find(m => m.user_id === carerId)
+        ?.profile_name?.trim();
+      if (profile) {
+        return profile;
+      }
+    } catch {
+      // Partial mocks in unit tests may omit listActiveByHousehold.
+    }
+    return 'The nanny';
+  }
+
+  private async resolvePrimaryChildName(
+    actorId: string,
+    shift: ShiftWithChildren
+  ): Promise<string> {
+    try {
+      const childId = shift.shift_children[0]?.child_id;
+      if (childId) {
+        const child = await this.children.getOwned(
+          actorId,
+          shift.household_id,
+          childId
+        );
+        return child.name.trim() || 'your child';
+      }
+      const children = await this.children.listForHousehold(
+        actorId,
+        shift.household_id
+      );
+      const fallbackName = children[0]?.name?.trim();
+      return fallbackName || 'your child';
+    } catch {
+      return 'your child';
+    }
+  }
+
+  /** Quiet FYI — both sentences or neither per carer. */
+  private async notifyCarersParentCover(
+    householdId: string,
+    cover: Shift
+  ): Promise<void> {
+    try {
+      const [members, dayShifts] = await Promise.all([
+        this.memberRepo.listActiveByHousehold(householdId),
+        this.shiftRepo.findByHouseholdAndLocalDate(
+          householdId,
+          cover.local_date
+        ),
+      ]);
+      const carers = members.filter(member => CARER_ROLES.has(member.role));
+      for (const carer of carers) {
+        const nextShift = dayShifts
+          .filter(
+            shift =>
+              shift.carer_id === carer.user_id &&
+              (shift.status === SHIFT_STATUSES.PENDING ||
+                shift.status === SHIFT_STATUSES.CONFIRMED) &&
+              Date.parse(shift.starts_at) >= Date.parse(cover.ends_at)
+          )
+          .sort(
+            (left, right) =>
+              Date.parse(left.starts_at) - Date.parse(right.starts_at)
+          )[0];
+
+        if (!nextShift || nextShift.starts_at !== cover.ends_at) {
+          continue;
+        }
+
+        const startLabel = formatPushTimePlain(cover.starts_at, cover.timezone);
+        const endLabel = formatPushTimePlain(cover.ends_at, cover.timezone);
+        const nextStart = formatPushTimePlain(
+          nextShift.starts_at,
+          cover.timezone
+        );
+
+        try {
+          notifyUser(carer.user_id, {
+            title: 'Parent is covering',
+            body: `Parent is covering ${startLabel} – ${endLabel}. Your day starts ${nextStart} as planned.`,
+            data: {
+              type: 'parent_covering',
+              shiftId: cover.id,
+              householdId,
+            },
+          });
+        } catch {
+          // notifyUser is sync fire-and-forget; swallow any unexpected throw.
+        }
+      }
+    } catch (error) {
+      logger.error('Failed to notify carers of parent cover', {
+        householdId,
+        shiftId: cover.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
   /** Fire-and-forget: carer must reconfirm after a parent time edit. */
   private notifyNeedsReconfirm(shift: Shift, carerId: string): void {
     try {
@@ -464,3 +686,69 @@ export class ShiftCommandService {
 
 // Singleton for controllers/routes that don't need DI.
 export const shiftCommandService = new ShiftCommandService();
+
+function formatPushShortDate(localDate: string, timeZone: string): string {
+  try {
+    const formatted = new Intl.DateTimeFormat('en-GB', {
+      timeZone,
+      weekday: 'short',
+      day: 'numeric',
+      month: 'short',
+    }).format(new Date(`${localDate}T12:00:00`));
+    return formatted.replace(',', '');
+  } catch {
+    return localDate;
+  }
+}
+
+function formatPushTime12h(instantIso: string, timeZone: string): string {
+  const instant = new Date(instantIso);
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    }).formatToParts(instant);
+    const hour = parts.find(part => part.type === 'hour')?.value ?? '0';
+    const minute = parts.find(part => part.type === 'minute')?.value ?? '00';
+    const dayPeriod = (
+      parts.find(part => part.type === 'dayPeriod')?.value ?? 'am'
+    ).toLowerCase();
+    return `${hour}:${minute} ${dayPeriod}`;
+  } catch {
+    return new Intl.DateTimeFormat('en-US', {
+      timeZone: 'UTC',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    })
+      .format(instant)
+      .toLowerCase();
+  }
+}
+
+function formatPushTimePlain(instantIso: string, timeZone: string): string {
+  const instant = new Date(instantIso);
+  try {
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone,
+      hour: 'numeric',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    }).formatToParts(instant);
+    const hour = parts.find(part => part.type === 'hour')?.value ?? '0';
+    const minute = parts.find(part => part.type === 'minute')?.value ?? '00';
+    return `${hour}:${minute}`;
+  } catch {
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'UTC',
+      hour: 'numeric',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    }).formatToParts(instant);
+    const hour = parts.find(part => part.type === 'hour')?.value ?? '0';
+    const minute = parts.find(part => part.type === 'minute')?.value ?? '00';
+    return `${hour}:${minute}`;
+  }
+}

@@ -144,7 +144,7 @@ export const typography = {
     fontStyle: 'italic' as const,
   },
 
-  // Signature — retuned for platform face (no ultralight; less negative tracking)
+  // Signature — tuned for Figtree Variable (no ultralight; less negative tracking)
   signature: {
     heroLight: {
       size: 40,

@@ -5,8 +5,10 @@
  * detection, and deterministic copy rotation. Interval maths stay in
  * shared-types; this is presentation-only.
  */
+
 import type { Shift } from '@steadily-nanny/shared-types/schemas/shift.schema';
 import type { UncoveredWindow } from '@steadily-nanny/shared-types/uncoveredCare';
+import { formatClockTime } from '@/src/domains/timesheet/utils/duration';
 
 export type UncoveredCause =
   | 'cancelled'
@@ -36,14 +38,13 @@ function shiftCoversChild(shift: Shift, childId: string): boolean {
   return children.some(child => child.child_id === childId);
 }
 
-/** Best-effort cause from current shift rows (live computation has no event history). */
-export function inferUncoveredCause(
+function overlappingShifts(
   window: UncoveredWindow,
   shifts: readonly Shift[]
-): UncoveredCause {
+): Shift[] {
   const winStart = Date.parse(window.startsAt);
   const winEnd = Date.parse(window.endsAt);
-  const overlapping = shifts.filter(shift => {
+  return shifts.filter(shift => {
     if (!shiftCoversChild(shift, window.childId)) {
       return false;
     }
@@ -54,26 +55,58 @@ export function inferUncoveredCause(
       Date.parse(shift.ends_at)
     );
   });
-  if (overlapping.some(shift => shift.status === 'cancelled')) {
-    return 'cancelled';
-  }
-  if (overlapping.some(shift => shift.status === 'declined')) {
-    return 'declined';
-  }
-  return 'nothingScheduled';
 }
 
-/** Stable non-negative hash for deterministic daily copy rotation. */
-export function hashLocalDate(localDate: string): number {
-  let hash = 0;
-  for (let i = 0; i < localDate.length; i++) {
-    hash = (hash * 31 + localDate.charCodeAt(i)) | 0;
+/** Best-effort cause from current shift rows (live computation has no event history). */
+export function inferUncoveredCauseDetail(
+  window: UncoveredWindow,
+  shifts: readonly Shift[]
+): { cause: UncoveredCause; shift: Shift | null } {
+  const overlapping = overlappingShifts(window, shifts);
+  const cancelled = overlapping.find(shift => shift.status === 'cancelled');
+  if (cancelled) {
+    return { cause: 'cancelled', shift: cancelled };
   }
-  return Math.abs(hash);
+  const declined = overlapping.find(shift => shift.status === 'declined');
+  if (declined) {
+    return { cause: 'declined', shift: declined };
+  }
+  return { cause: 'nothingScheduled', shift: null };
 }
 
-export function coveredVariantIndex(localDate: string): number {
-  return hashLocalDate(localDate) % 4;
+export function inferUncoveredCause(
+  window: UncoveredWindow,
+  shifts: readonly Shift[]
+): UncoveredCause {
+  return inferUncoveredCauseDetail(window, shifts).cause;
+}
+
+/**
+ * The gap's reason, naming the person when there is one to name.
+ *
+ * The times come from the SHIFT, never from the uncovered window — the named
+ * sentence reads "{carer}'s {start} – {end} shift was cancelled", so feeding it
+ * the window would describe a 09:00–17:00 shift as a "09:00–11:22 shift"
+ * whenever cover partially survived. Callers used to pass the window's times
+ * and got exactly that wrong sentence, so the formatting now lives in here
+ * where it cannot be mismatched.
+ */
+export function describeUncoveredCause(args: {
+  cause: UncoveredCause;
+  shift: Shift | null;
+  carerName: string | null;
+  timeZone: string;
+  t: (key: string, vars?: Record<string, unknown>) => string;
+}): string {
+  const { cause, shift, carerName, timeZone, t } = args;
+  if (shift && carerName && (cause === 'cancelled' || cause === 'declined')) {
+    return t(`cover.causeNamed.${cause}`, {
+      carerName,
+      start: formatClockTime(shift.starts_at, timeZone),
+      end: formatClockTime(shift.ends_at, timeZone),
+    });
+  }
+  return t(`cover.cause.${cause}`);
 }
 
 /** Whether the uncovered slice spans the full need window for display as "all day". */

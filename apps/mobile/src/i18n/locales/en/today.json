@@ -8,7 +8,7 @@
   "notOnTheClock": "Not on the clock",
   "since": "Since {{time}}",
   "clockOutSheetTitle": "Clock out",
-  "clockOutSheetHint": "Add a break if you took one — most days won't need this.",
+  "clockOutSheetHint": "Add a break if you took one.",
   "breakLabel": "Break",
   "noBreak": "No break",
   "breakMinutesOption": "{{minutes}} min",
@@ -18,7 +18,7 @@
   "noteLabel": "Note (optional)",
   "notePlaceholder": "Anything worth noting about today?",
   "stillOnTheClockTitle": "Still on the clock?",
-  "stillOnTheClockBody": "This shift has run past its scheduled finish. Clock out and check the times before they're recorded.",
+  "stillOnTheClockBody": "This shift has run past its scheduled finish. Clock out and check the times — these are the hours you'll be paid for.",
   "clockOutNow": "Clock out",
   "overdueClockOutHint": "We've filled in your scheduled finish — change it if you left at a different time.",
   "startLabel": "Started",
@@ -34,38 +34,55 @@
   "saveCorrection": "Save changes",
   "nannyScheduledBody": "Today, {{start}} – {{end}}",
   "nannyArrivingBody": "Starts at {{start}}",
-  "todayCoverTitle": "Today's cover",
+  "awaitingYourAnswer": "Waiting on you",
+  "clockedIntoHousehold": "At {{household}}",
+  "weekLine": "{{duration}} this week",
   "stateLive": "On the clock since {{time}}",
   "stateFinished": "Clocked out {{time}} · {{duration}}",
   "stateArriving": "Arriving at {{start}}",
   "stateScheduled": "Due {{start}}–{{end}}",
   "carerFallback": "Carer",
-  "nannyNoShiftTitle": "No cover today",
-  "nannyNoShiftBody": "Nothing on the schedule for today yet.",
-  "calm": {
-    "title": "Everything's covered",
-    "body": "{{name}} · {{detail}}. Nothing needs you right now."
+  "parentNoCoverTitle": "No cover today",
+  "parentNoCoverBody": "Nothing on the schedule for today yet.",
+  "declinedToday": "You turned down today's {{start}} – {{end}} shift.",
+  "declinedTodayHint": "Clock in anyway if you're working.",
+  "coverage": {
+    "gap": {
+      "titleOne": "No one's with {{childName}} from {{start}} to {{end}}",
+      "titleMany": "{{count}} gaps today",
+      "windowLine": "{{childName}} · {{start}} – {{end}} · {{cause}}",
+      "windowAllDay": "{{childName}} · all day · {{cause}}",
+      "windowFallback": "{{childName}} · {{cause}}",
+      "andMore": "and {{count}} more",
+      "allDay": "all day"
+    },
+    "plan": {
+      "booked": "{{name}} has the children {{start}} – {{end}}.",
+      "arrivingIn_one": "Arrives in {{count}} minute",
+      "arrivingIn_other": "Arrives in {{count}} minutes",
+      "here": "Here since {{time}}.",
+      "until": "Until {{end}}.",
+      "left": "{{name}} left at {{time}} · {{duration}}.",
+      "youCovering": "You're covering {{start}} – {{end}}.",
+      "parentCovering": "{{parentName}} is covering {{start}} – {{end}}.",
+      "runningLate": "{{name}} says she's running late.",
+      "parentCoveringNanny": "Parent is covering {{start}} – {{end}}. Your day starts {{end}} as planned."
+    },
+    "status": {
+      "confirmed": "Confirmed",
+      "waiting": "Waiting",
+      "declined": "Declined"
+    },
+    "asked": "Asked at {{time}}. No reply yet."
   },
   "cover": {
     "setup": {
       "title": "When do you need care?",
       "body": "Add the hours you need someone with your children — then we can tell you when you're covered."
     },
-    "covered": {
-      "title": "You're covered today",
-      "variant0": "Every hour you need care today has someone booked. You can breathe.",
-      "variant1": "The schedule matches what you asked for today — nothing missing.",
-      "variant2": "Today's care is all set. Whoever's on the calendar is who you need.",
-      "variant3": "You're good for today — every window you need is on the books."
-    },
-    "uncovered": {
-      "titleOne": "{{childName}} isn't fully covered",
-      "titleMany": "{{count}} times today aren't covered",
-      "windowLine": "{{childName}} · {{start}}–{{end}} · {{cause}}",
-      "windowAllDay": "{{childName}} · all day · {{cause}}",
-      "windowFallback": "{{childName}} · {{cause}}",
-      "allDay": "all day",
-      "andMore": "and {{count}} more"
+    "noNeed": {
+      "title": "Nothing needed today",
+      "body": "You haven't set care hours for {{weekday}}s."
     }
   },
   "widgets": {
@@ -96,8 +113,8 @@
       "finishedDetail": "{{duration}}",
       "arriving": "{{name}} arrives at {{start}}",
       "due": "{{name}} · due {{start}}–{{end}}",
-      "noCoverRange": "No cover {{start}}–{{end}}",
-      "emptyTitle": "No cover today",
+      "noCoverRange": "No one booked {{start}}–{{end}}",
+      "emptyTitle": "No one booked today",
       "emptyBody": "Nothing on the schedule for today yet.",
       "more_one": "+{{count}} more",
       "more_other": "+{{count}} more"
@@ -117,7 +134,6 @@
     "onTheClock": "You're on the clock",
     "clockedInAt": "Clocked in {{time}}",
     "scheduledFinish": "Scheduled finish {{time}}",
-    "noScheduledShift": "No scheduled shift today.",
     "clockOut": "Clock out",
     "overdueTitle": "Past {{time}} — still working?",
     "overdueBody": "Clock out when you're done.",
@@ -133,8 +149,8 @@
     "body": "Pending work is waiting on you."
   },
   "missedHours": {
-    "cta": "Forgot to clock in?",
-    "sheetHint": "Forgot to clock in? Log the hours you worked.",
+    "cta": "Add hours you worked",
+    "sheetHint": "Add hours you worked but didn't clock.",
     "dateLabel": "Date",
     "noteLabel": "Note (optional)",
     "notePlaceholder": "Anything worth noting?",
@@ -165,8 +181,8 @@
     "saveAsMoment": "Save as moment",
     "savedAsMoment": "Saved as moment",
     "addNote": "Add a note",
-    "tapHintForNanny": "Tap what your nanny should know",
-    "tapHintForParent": "Tap what your family should know",
+    "tapHintParentEditor": "Tap what your nanny should know",
+    "tapHintNannyEditor": "Tap what your family should know",
     "anythingElse": "Anything else?",
     "sentAt": "Sent {{time}}",
     "chips": {
@@ -189,5 +205,11 @@
     "confirmBodyElapsed": "You've been on the clock {{elapsed}}. Discarding it counts as no hours and no pay, and it stays on your hours as a crossed-out line. You can clock in again straight away.",
     "confirmCancel": "Stay clocked in",
     "confirmAction": "Discard it"
+  },
+  "runningLate": "I'm running late",
+  "runningLateSent": "Your family has been told.",
+  "cancelledShift": {
+    "paid": "Your {{start}} – {{end}} shift was cancelled. You'll still be paid for it.",
+    "unpaid": "Your {{start}} – {{end}} shift was cancelled — that's {{duration}} off this week's hours."
   }
 }

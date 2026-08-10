@@ -25,6 +25,9 @@
  * scheduled finish instead of "now". `useClockOutReminder` is the other
  * half, for the carer whose phone is in her pocket.
  */
+
+import type { Shift } from '@steadily-nanny/shared-types/schemas/shift.schema';
+import { COVERING_SHIFT_STATUSES } from '@steadily-nanny/shared-types/uncoveredCare';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -47,13 +50,20 @@ import {
   formatClockTime,
   formatDuration,
 } from '@/src/domains/timesheet/utils/duration';
+import { computeWorkedMinutesFromInstants } from '@/src/domains/timesheet/utils/entryMinutes';
 import { describeTimeEntryWriteError } from '@/src/domains/timesheet/utils/timeEntryWriteError';
+import { getWeekStartISO } from '@/src/domains/timesheet/utils/week';
 import { isOptimisticTimeEntry } from '@/src/hooks/mutations/timeEntryMutationUtils';
 import { useClockIn } from '@/src/hooks/mutations/useClockIn';
 import { useClockOut } from '@/src/hooks/mutations/useClockOut';
+import { useSendRunningLate } from '@/src/hooks/mutations/useSendRunningLate';
 import { useVoidTimeEntry } from '@/src/hooks/mutations/useVoidTimeEntry';
+import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
+import { useChildren } from '@/src/hooks/queries/useChildren';
+import { useDayThread } from '@/src/hooks/queries/useDayThread';
 import { useRunningTimeEntry } from '@/src/hooks/queries/useRunningTimeEntry';
 import { useShiftsRange } from '@/src/hooks/queries/useShiftsRange';
+import { useWeekTimeEntries } from '@/src/hooks/queries/useWeekTimeEntries';
 import { getLocalizedErrorMessage } from '@/src/lib/errorLocalization';
 import { addLocalDays, localDateInZone } from '@/src/lib/localDate';
 import { useIsOnline } from '@/src/lib/network';
@@ -80,6 +90,8 @@ interface ClockInCardProps {
 
 const ARRIVING_WINDOW_MS = 60 * 60 * 1000;
 
+const COVERING_STATUS_SET = new Set<string>(COVERING_SHIFT_STATUSES);
+
 /**
  * Above this elapsed time the discard confirmation names the duration being
  * thrown away, because past it the entry could plausibly be real work.
@@ -95,9 +107,71 @@ const ARRIVING_WINDOW_MS = 60 * 60 * 1000;
  */
 const DISCARD_ELAPSED_HINT_MS = 10 * 60 * 1000;
 
+function firstName(name: string): string {
+  return name.trim().split(/\s+/)[0] ?? name;
+}
+
+/**
+ * First names, unless that makes two children indistinguishable.
+ *
+ * Shortening to the first token reads well for the usual case ("Ada, Rosie"),
+ * but siblings sharing a leading token collapse to "H1, H1" — a line whose one
+ * job is to say WHICH children, saying nothing. When truncation loses
+ * information, fall back to the full names for everyone in the list rather
+ * than mixing the two forms.
+ */
+function childNamesFor(
+  shift: Pick<Shift, 'shift_children'>,
+  childNameById: Map<string, string>,
+  fullNameById: Map<string, string>
+): string[] {
+  const links = (shift.shift_children ?? []).filter(link =>
+    childNameById.has(link.child_id)
+  );
+  const short = links.map(link => childNameById.get(link.child_id) ?? '');
+  const distinct = new Set(short.filter(name => name.length > 0));
+  if (distinct.size === short.filter(name => name.length > 0).length) {
+    return short.filter(name => name.length > 0);
+  }
+  return links
+    .map(link => fullNameById.get(link.child_id) ?? '')
+    .filter(name => name.length > 0);
+}
+
+/**
+ * Joins only the meta parts that are actually present.
+ *
+ * Deliberately NOT a `t()` template with empty-string interpolations: that
+ * required re-splitting the rendered string on its own separator to drop the
+ * blanks, which meant parsing translated output — and the earlier version
+ * branched on `raw.includes('::')`, a shape produced only by the test mock, so
+ * production behaviour depended on how tests stub i18next. The separator here
+ * is punctuation, not prose, so joining in code is both simpler and honest.
+ */
+function formatShiftMetaLine(parts: {
+  status?: string;
+  household?: string;
+  children?: string;
+}): string | null {
+  const segments = [parts.status, parts.household, parts.children].filter(
+    (segment): segment is string => Boolean(segment?.trim())
+  );
+  return segments.length > 0 ? segments.join(' · ') : null;
+}
+
 type OffClockShiftState =
-  | { kind: 'scheduled'; start: string; end: string }
-  | { kind: 'arriving'; start: string }
+  | {
+      kind: 'scheduled';
+      start: string;
+      end: string;
+      declined?: { start: string; end: string };
+    }
+  | {
+      kind: 'arriving';
+      start: string;
+      declined?: { start: string; end: string };
+    }
+  | { kind: 'declined'; start: string; end: string }
   | { kind: 'none' };
 
 export function ClockInCard({
@@ -108,9 +182,12 @@ export function ClockInCard({
   const { t } = useTranslation('today');
   const { t: tErrors } = useTranslation('errors');
   const currentUserId = useAuthStore(s => s.user?.id ?? null);
+  const { households } = useActiveHousehold();
+  const isMultiHousehold = households.length > 1;
   const running = useRunningTimeEntry();
   const clockIn = useClockIn(timeZone, householdName);
   const clockOut = useClockOut();
+  const sendRunningLate = useSendRunningLate();
 
   const entry = running.data ?? null;
   const elapsed = useElapsedTimer(entry?.clock_in_at ?? null);
@@ -122,6 +199,7 @@ export function ClockInCard({
   const { overdue, clockInAt, shiftEndsAt } = useOverdueClockOut();
 
   const today = useMemo(() => localDateInZone(timeZone), [timeZone]);
+  const dayThread = useDayThread(householdId, today);
   const tomorrow = useMemo(() => addLocalDays(today, 1), [today]);
   const from = useMemo(
     () => wallClockToUtcIso(today, '00:00', timeZone),
@@ -132,33 +210,167 @@ export function ClockInCard({
     [tomorrow, timeZone]
   );
   const shifts = useShiftsRange(householdId, from, to);
+  /**
+   * Whether the schedule query has actually answered. Mirrors `runningSettled`
+   * below. This gates the CLAIM ("Nothing's scheduled today"), never the hero
+   * and never the button: "Ready when you are" is an invitation that is true
+   * regardless of what the query says, and clocking in must work offline.
+   */
+  const shiftsSettled = shifts.isSuccess || shifts.isError;
+
+  const childrenQuery = useChildren(householdId);
+  const childNameById = useMemo(
+    () =>
+      new Map(
+        (childrenQuery.data ?? []).map(child => [
+          child.id,
+          firstName(child.name),
+        ])
+      ),
+    [childrenQuery.data]
+  );
+  const childFullNameById = useMemo(
+    () =>
+      new Map(
+        (childrenQuery.data ?? []).map(child => [child.id, child.name.trim()])
+      ),
+    [childrenQuery.data]
+  );
+
+  const weekStart = useMemo(
+    () => getWeekStartISO(new Date(), timeZone),
+    [timeZone]
+  );
+  const weekEntries = useWeekTimeEntries(householdId, weekStart);
+
+  const receiptEntry = useMemo(() => {
+    if (entry) return null;
+    const todays = (weekEntries.data ?? [])
+      .filter(
+        e =>
+          e.local_date === today &&
+          e.carer_id === currentUserId &&
+          e.status !== 'voided' &&
+          !isOptimisticTimeEntry(e) &&
+          e.clock_out_at &&
+          e.clock_in_at
+      )
+      .sort((a, b) =>
+        (b.clock_out_at ?? '').localeCompare(a.clock_out_at ?? '')
+      );
+    return todays[0] ?? null;
+  }, [weekEntries.data, today, currentUserId, entry]);
+
+  const relevantCoveringShift = useMemo(() => {
+    const todayShifts = (shifts.data ?? [])
+      .filter(s => s.local_date === today && s.carer_id === currentUserId)
+      .sort((a, b) => a.starts_at.localeCompare(b.starts_at));
+    const coveringShifts = todayShifts.filter(s =>
+      COVERING_STATUS_SET.has(s.status)
+    );
+    const now = Date.now();
+    const stillActive = coveringShifts.find(
+      s => new Date(s.ends_at).getTime() > now
+    );
+    if (stillActive) return stillActive;
+    return coveringShifts.at(-1);
+  }, [shifts.data, today, currentUserId]);
 
   const offClockShift: OffClockShiftState = useMemo(() => {
     const todayShifts = (shifts.data ?? [])
-      .filter(
-        s =>
-          s.local_date === today &&
-          s.status !== 'cancelled' &&
-          s.carer_id === currentUserId
-      )
+      .filter(s => s.local_date === today && s.carer_id === currentUserId)
       .sort((a, b) => a.starts_at.localeCompare(b.starts_at));
-    const next = todayShifts[0];
+
+    const declinedShifts = todayShifts.filter(s => s.status === 'declined');
+
+    const now = Date.now();
+
+    const pickRelevantShift = (
+      list: typeof todayShifts
+    ): (typeof todayShifts)[number] | undefined => {
+      const stillActive = list.find(s => new Date(s.ends_at).getTime() > now);
+      if (stillActive) return stillActive;
+      return list.at(-1);
+    };
+
+    const declinedShift = pickRelevantShift(declinedShifts);
+    const declinedLine = declinedShift
+      ? {
+          start: formatClockTime(declinedShift.starts_at, timeZone),
+          end: formatClockTime(declinedShift.ends_at, timeZone),
+        }
+      : undefined;
+
+    const next = relevantCoveringShift;
+
+    if (!next && declinedLine) {
+      return {
+        kind: 'declined',
+        start: declinedLine.start,
+        end: declinedLine.end,
+      };
+    }
+
     if (!next) return { kind: 'none' };
 
     const startMs = new Date(next.starts_at).getTime();
-    const now = Date.now();
+    const declinedSecondary = declinedLine ? { declined: declinedLine } : {};
+
     if (now < startMs && startMs - now <= ARRIVING_WINDOW_MS) {
       return {
         kind: 'arriving',
         start: formatClockTime(next.starts_at, timeZone),
+        ...declinedSecondary,
       };
     }
     return {
       kind: 'scheduled',
       start: formatClockTime(next.starts_at, timeZone),
       end: formatClockTime(next.ends_at, timeZone),
+      ...declinedSecondary,
     };
-  }, [shifts.data, today, timeZone, currentUserId]);
+  }, [shifts.data, today, timeZone, currentUserId, relevantCoveringShift]);
+
+  const runningLateSent = useMemo(() => {
+    if (!relevantCoveringShift) return false;
+    if (sendRunningLate.isSuccess) return true;
+    return (dayThread.data ?? []).some(
+      event =>
+        event.event_type === 'running_late' &&
+        event.shift_id === relevantCoveringShift.id
+    );
+  }, [dayThread.data, relevantCoveringShift, sendRunningLate.isSuccess]);
+
+  const showRunningLate =
+    !entry &&
+    (offClockShift.kind === 'scheduled' || offClockShift.kind === 'arriving') &&
+    relevantCoveringShift;
+
+  const shiftMetaLine = useMemo(() => {
+    if (!relevantCoveringShift) return null;
+    const status =
+      relevantCoveringShift.status === 'pending'
+        ? t('awaitingYourAnswer')
+        : relevantCoveringShift.status === 'confirmed'
+          ? t('coverage.status.confirmed')
+          : undefined;
+    const household =
+      isMultiHousehold && householdName ? householdName : undefined;
+    const names = childNamesFor(
+      relevantCoveringShift,
+      childNameById,
+      childFullNameById
+    );
+    const children = names.length > 0 ? names.join(', ') : undefined;
+    return formatShiftMetaLine({ status, household, children });
+  }, [
+    relevantCoveringShift,
+    isMultiHousehold,
+    householdName,
+    childNameById,
+    t,
+    childFullNameById,
+  ]);
 
   useClockOutReminder(clockInAt, shiftEndsAt);
   const nowMs = Date.now();
@@ -357,7 +569,15 @@ export function ClockInCard({
   return (
     <Card
       testID="today-clock-card"
-      tone={overdue ? 'attention' : entry ? 'live' : 'default'}
+      tone={
+        overdue
+          ? 'attention'
+          : entry
+            ? 'live'
+            : receiptEntry
+              ? 'positive'
+              : 'default'
+      }
       className="gap-4 p-5.5"
     >
       {entry ? (
@@ -385,6 +605,11 @@ export function ClockInCard({
               {t('since', {
                 time: formatClockTime(entry.clock_in_at, timeZone),
               })}
+            </Small>
+          ) : null}
+          {isMultiHousehold && householdName ? (
+            <Small className="text-muted-foreground">
+              {t('clockedIntoHousehold', { household: householdName })}
             </Small>
           ) : null}
           {overdue ? (
@@ -422,43 +647,142 @@ export function ClockInCard({
         </>
       ) : (
         <>
-          {/* Invert what it says: the shift window is the fact, "not on
-              the clock" is just the label under it. */}
-          <MetadataLabel className="text-muted-foreground">
-            {t('notOnTheClock')}
-          </MetadataLabel>
-          {offClockShift.kind === 'scheduled' ? (
-            <H3 testID="today-off-clock-scheduled">
-              {t('nannyScheduledBody', {
-                start: offClockShift.start,
-                end: offClockShift.end,
-              })}
-            </H3>
-          ) : offClockShift.kind === 'arriving' ? (
-            <H3 testID="today-off-clock-arriving">
-              {t('nannyArrivingBody', { start: offClockShift.start })}
-            </H3>
+          {receiptEntry?.clock_out_at && receiptEntry.clock_in_at ? (
+            <View testID="today-clock-receipt" className="gap-1">
+              <H3>
+                {t('liveActivity.receiptTitle', {
+                  time: formatClockTime(receiptEntry.clock_out_at, timeZone),
+                })}
+              </H3>
+              <Small className="text-muted-foreground">
+                {receiptEntry.break_minutes > 0
+                  ? t('liveActivity.receiptBodyWithBreak', {
+                      duration: formatDuration(
+                        computeWorkedMinutesFromInstants(
+                          receiptEntry.clock_in_at,
+                          new Date(receiptEntry.clock_out_at).getTime(),
+                          receiptEntry.break_minutes
+                        )
+                      ),
+                      breakDuration: formatDuration(receiptEntry.break_minutes),
+                    })
+                  : t('liveActivity.receiptBody', {
+                      duration: formatDuration(
+                        computeWorkedMinutesFromInstants(
+                          receiptEntry.clock_in_at,
+                          new Date(receiptEntry.clock_out_at).getTime(),
+                          receiptEntry.break_minutes
+                        )
+                      ),
+                    })}
+              </Small>
+            </View>
           ) : (
-            // The hero must never be a negation — "Not on the clock" above
-            // already said the absence once. Nothing scheduled is an
-            // invitation here, not a second void.
-            <H3 testID="today-off-clock-none">{t('readyWhenYouAre')}</H3>
+            <>
+              {/* Invert what it says: the shift window is the fact, "not on
+                  the clock" is just the label under it. */}
+              <MetadataLabel className="text-muted-foreground">
+                {t('notOnTheClock')}
+              </MetadataLabel>
+              {offClockShift.kind === 'scheduled' ? (
+                <H3 testID="today-off-clock-scheduled">
+                  {t('nannyScheduledBody', {
+                    start: offClockShift.start,
+                    end: offClockShift.end,
+                  })}
+                </H3>
+              ) : offClockShift.kind === 'arriving' ? (
+                <H3 testID="today-off-clock-arriving">
+                  {t('nannyArrivingBody', { start: offClockShift.start })}
+                </H3>
+              ) : offClockShift.kind === 'declined' ? (
+                <H3 testID="today-off-clock-declined">
+                  {t('declinedToday', {
+                    start: offClockShift.start,
+                    end: offClockShift.end,
+                  })}
+                </H3>
+              ) : (
+                // The hero must never be a negation — "Not on the clock" above
+                // already said the absence once. Nothing scheduled is an
+                // invitation here, not a second void.
+                <H3 testID="today-off-clock-none">{t('readyWhenYouAre')}</H3>
+              )}
+              {shiftMetaLine ? (
+                <Small
+                  testID="today-shift-meta"
+                  className="text-muted-foreground"
+                >
+                  {shiftMetaLine}
+                </Small>
+              ) : null}
+              {/* Only the two states that already lead with a covering shift carry
+                  a secondary decline line — the `declined` hero says it itself. */}
+              {(offClockShift.kind === 'scheduled' ||
+                offClockShift.kind === 'arriving') &&
+              offClockShift.declined ? (
+                <Small
+                  testID="today-off-clock-declined-secondary"
+                  className="text-muted-foreground"
+                >
+                  {t('declinedToday', {
+                    start: offClockShift.declined.start,
+                    end: offClockShift.declined.end,
+                  })}
+                </Small>
+              ) : null}
+            </>
           )}
           <LoadingButton
             testID="today-clock-in"
             label={t('clockIn')}
             size="lg"
+            // Never gated on the shifts query. If she is in the house working,
+            // she is working — a slow schedule fetch must not cost her an hour
+            // of pay. Only the LABEL above reacts to shift state.
             isLoading={clockIn.isPending || running.isLoading}
             onPress={handleClockIn}
           />
+          {showRunningLate ? (
+            runningLateSent ? (
+              <Small
+                testID="today-running-late-sent"
+                className="text-muted-foreground"
+              >
+                {t('runningLateSent')}
+              </Small>
+            ) : (
+              <Button
+                testID="today-running-late"
+                variant="outline"
+                size="default"
+                disabled={sendRunningLate.isPending}
+                onPress={() => {
+                  void sendRunningLate.mutateAsync({
+                    shiftId: relevantCoveringShift.id,
+                  });
+                }}
+              >
+                {t('runningLate')}
+              </Button>
+            )
+          ) : null}
           {/* Reassurance goes after the action, not in front of it. With no
               shift today, fold the absence and the hint into ONE line
               rather than two — a second empty-day mention plus the generic
               hint read as a dead paragraph beneath the button. */}
+          {/* "Nothing's scheduled today" is a CLAIM about the schedule, so it
+              waits for the query to actually answer — otherwise a slow or
+              failed fetch states it as settled fact. The generic hint is safe
+              in every state, so it is what an unsettled query falls back to. */}
           <Small className="text-muted-foreground">
             {offClockShift.kind === 'none'
-              ? t('clockInHintNoShift')
-              : t('clockInHint')}
+              ? shiftsSettled
+                ? t('clockInHintNoShift')
+                : t('clockInHint')
+              : offClockShift.kind === 'declined'
+                ? t('declinedTodayHint')
+                : t('clockInHint')}
           </Small>
         </>
       )}

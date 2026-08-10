@@ -194,7 +194,12 @@ describe('shouldDeliverPush quiet hours', () => {
     expect(deliver).toBe(true);
   });
 
-  it('delivers extra_shift_proposed during quiet hours (co-parent approval path)', async () => {
+  it('HOLDS extra_shift_proposed until quiet hours end — an ask is not a deadline', async () => {
+    // The exemption list is for pushes that AUTO-APPROVE on timeout, where
+    // silence costs the recipient something. An extra-shift proposal expires
+    // into nothing, so nothing is lost by delivering it in the morning — while
+    // a cover request at 23:40 for tomorrow is, in the carer's words, "exactly
+    // the thing that gets an app deleted". It failed the list's own criterion.
     findByUserId.mockResolvedValueOnce(quietHoursAllDayRow());
 
     const deliver = await shouldDeliverPush(
@@ -207,7 +212,7 @@ describe('shouldDeliverPush quiet hours', () => {
       midday
     );
 
-    expect(deliver).toBe(true);
+    expect(deliver).toBe(false);
   });
 
   it('still respects opt-out for an exempt type', async () => {

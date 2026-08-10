@@ -18,8 +18,10 @@
  * `sumEntryMinutes`/`scheduledMinutesFor`. A widget quoting a different
  * number than the screen behind it is worse than a widget saying less.
  */
-import { Platform } from 'react-native';
 
+import { SHIFT_KINDS } from '@steadily-nanny/shared-types/schemas/shift.schema';
+import { COVERING_SHIFT_STATUSES } from '@steadily-nanny/shared-types/uncoveredCare';
+import { Platform } from 'react-native';
 import { appIdentity } from '@/src/config/appIdentity';
 import type { TimeEntry } from '@/src/domains/timesheet/types';
 import { carerKeyOf } from '@/src/domains/timesheet/utils/carerKey';
@@ -69,6 +71,8 @@ export {
 export const ARRIVING_WINDOW_MS = 60 * 60 * 1000;
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+const COVERING_STATUS_SET = new Set<string>(COVERING_SHIFT_STATUSES);
 
 /** Row ranking, mirroring `NannyLiveStatusCard`'s KIND_ORDER. */
 const KIND_ORDER: Record<CoverRowKind, number> = {
@@ -429,8 +433,9 @@ export interface CoverShiftInput {
   startsAt: string;
   endsAt: string;
   localDate: string;
-  /** `cancelled` shifts are dropped, as in `NannyLiveStatusCard`. */
+  /** Only `COVERING_SHIFT_STATUSES` count as cover. */
   status: string;
+  kind?: string;
   childNames: string[];
 }
 
@@ -445,6 +450,25 @@ export interface TodaysCoverInput {
   namesByCarerId: Record<string, string>;
   /** Coverage gaps for today, from the day thread. */
   gaps: { startsAt: string; endsAt: string }[];
+}
+
+function shiftRowKey(shift: Pick<CoverShiftInput, 'kind' | 'carerId'>): string {
+  if (shift.kind === SHIFT_KINDS.PARENT_COVER) return 'shift-parent_cover';
+  return `shift-${shift.carerId ?? 'unassigned'}`;
+}
+
+function pickCoverShift(
+  shifts: CoverShiftInput[],
+  nowMs: number
+): CoverShiftInput | undefined {
+  const covering = shifts
+    .filter(shift => COVERING_STATUS_SET.has(shift.status))
+    .sort((a, b) => a.startsAt.localeCompare(b.startsAt));
+  if (covering.length === 0) return undefined;
+  return (
+    covering.find(shift => Date.parse(shift.endsAt) > nowMs) ??
+    covering[covering.length - 1]
+  );
 }
 
 /** "Sarah is with Mia & Jonah", or "Sarah is here" when the shift has no children. */
@@ -483,13 +507,14 @@ export function buildTodaysCoverPayload(
     fallbackName;
 
   const todayShifts = shifts.filter(
-    shift => shift.localDate === today && shift.status !== 'cancelled'
+    shift => shift.localDate === today && COVERING_STATUS_SET.has(shift.status)
   );
   const shiftById = new Map(todayShifts.map(shift => [shift.id, shift]));
-  const earliestShiftFor = (carerId: string | null) =>
-    todayShifts
-      .filter(shift => shift.carerId === carerId)
-      .sort((a, b) => a.startsAt.localeCompare(b.startsAt))[0];
+  const coveringShiftFor = (carerId: string | null) =>
+    pickCoverShift(
+      todayShifts.filter(shift => shift.carerId === carerId),
+      nowMs
+    );
 
   // Bucket by the same carer identity rule the week screens use. A running
   // entry counts whatever its `local_date` says — "on the clock" is about now.
@@ -518,7 +543,7 @@ export function buildTodaysCoverPayload(
     sortNames.set(key, name);
     const shift =
       (first.shift_id ? shiftById.get(first.shift_id) : undefined) ??
-      earliestShiftFor(first.carer_id);
+      coveringShiftFor(first.carer_id);
     const staleTitle = dueTitle(name, shift, timeZone);
 
     const running = bucket.find(
@@ -571,18 +596,19 @@ export function buildTodaysCoverPayload(
   const shiftBuckets = new Map<string, CoverShiftInput[]>();
   for (const shift of todayShifts) {
     if (shift.carerId && covered.has(shift.carerId)) continue;
-    const key = `shift-${shift.carerId ?? 'unassigned'}`;
+    const key = shiftRowKey(shift);
     const bucket = shiftBuckets.get(key);
     if (bucket) bucket.push(shift);
     else shiftBuckets.set(key, [shift]);
   }
 
   for (const [key, bucket] of shiftBuckets) {
-    const next = [...bucket].sort((a, b) =>
-      a.startsAt.localeCompare(b.startsAt)
-    )[0];
+    const next = pickCoverShift(bucket, nowMs);
     if (!next) continue;
-    const name = nameFor(next.carerId);
+    const name =
+      next.kind === SHIFT_KINDS.PARENT_COVER
+        ? i18n.t('schedule:cover.parentCoveringRow')
+        : nameFor(next.carerId);
     sortNames.set(key, name);
     const startMs = new Date(next.startsAt).getTime();
     const arriving = nowMs < startMs && startMs - nowMs <= ARRIVING_WINDOW_MS;

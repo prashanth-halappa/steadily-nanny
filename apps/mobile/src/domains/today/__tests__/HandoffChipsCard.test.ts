@@ -82,7 +82,7 @@ describe('HandoffChipsCard source', () => {
     // The parent's read-back of the nanny's evening recap stays UNscoped by
     // author — it is by definition somebody else's note.
     expect(cardSource).toMatch(
-      /const eveningNote = useMemo\([\s\S]{0,160}n\.phase === HANDOFF_PHASES\.EVENING\s*\)/
+      /const eveningNote = useMemo\([\s\S]{0,200}n\.local_date === localDate/
     );
   });
 
@@ -117,6 +117,24 @@ describe('HandoffChipsCard source', () => {
     expect(cardSource).toContain('canSave');
     expect(cardSource).toContain('handoff-hint-${phase}');
     expect(cardSource).toContain('handoff-body-${phase}');
+  });
+
+  it('FIX A8: gates the 10am auto-expand on the morning phase only', () => {
+    expect(cardSource).toContain('editorPhase === HANDOFF_PHASES.MORNING');
+    expect(cardSource).toMatch(
+      /shouldAutoExpand[\s\S]{0,120}isBeforeTenAM\(timeZone\)/
+    );
+  });
+
+  it('FIX A9: formats sentAt through formatClockTime with household timezone', () => {
+    expect(cardSource).toContain('formatClockTime(sentAt, timeZone)');
+    expect(cardSource).not.toContain('toLocaleTimeString');
+  });
+
+  it('documents that sentAt is author-visible only — never on the recap block', () => {
+    expect(cardSource).toMatch(/sentAt.*author/i);
+    expect(cardSource).toMatch(/never.*recap/i);
+    expect(cardSource).not.toMatch(/eveningNote\.created_at/);
   });
 });
 

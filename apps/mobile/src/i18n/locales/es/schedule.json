@@ -285,10 +285,10 @@
   "cover": {
     "weekSummaryTitle_one": "{{count}} momento esta semana sin nadie reservado",
     "weekSummaryTitle_other": "{{count}} momentos esta semana sin nadie reservado",
-    "rowPill": "Sin cubrir",
+    "rowPill": "Nadie reservado",
     "rowMeta": "{{childName}} · {{cause}}",
-    "askToCover": "Pide a {{carerName}} que lo cubra",
-    "askSomeoneToCover": "Pide a alguien que lo cubra",
+    "askToCover": "Pide a {{carerName}} que empiece a las {{start}}",
+    "askSomeoneToCover": "Pide a alguien para {{start}} – {{end}}",
     "iveGotIt": "Yo me encargo",
     "parentCoveringRow": "Te encargas tú",
     "parentCoveringBy": "Se encarga {{parentName}}",
@@ -302,7 +302,11 @@
       "declined": "Se rechazó un turno",
       "needsAdded": "Añadiste estas horas",
       "closureRemoved": "Cambiaron tus días fuera",
-      "nothingScheduled": "Aún no hay nada programado"
+      "nothingScheduled": "Nadie ha reservado estas horas"
+    },
+    "causeNamed": {
+      "cancelled": "Se canceló el turno de {{carerName}} de {{start}} – {{end}}",
+      "declined": "{{carerName}} rechazó {{start}} – {{end}}"
     }
   }
 }

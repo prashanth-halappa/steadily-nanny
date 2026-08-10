@@ -21,7 +21,10 @@
  */
 
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { Fragment, useState } from 'react';
+import type { Shift } from '@steadily-nanny/shared-types/schemas/shift.schema';
+import type { TimeEntry } from '@steadily-nanny/shared-types/schemas/timesheet.schema';
+import { COVERING_SHIFT_STATUSES } from '@steadily-nanny/shared-types/uncoveredCare';
+import { Fragment, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
 import { BottomSheetBase } from '@/src/components/custom/BottomSheetBase';
@@ -37,10 +40,44 @@ import {
   parseDate,
 } from '@/src/domains/timeOff/components/TimeOffDateRangePicker.utils';
 import { describeTimeEntryWriteError } from '@/src/domains/timesheet/utils/timeEntryWriteError';
+import {
+  getWeekDates,
+  getWeekStartISO,
+} from '@/src/domains/timesheet/utils/week';
 import { useCreateRetroactiveEntry } from '@/src/hooks/mutations/useCreateRetroactiveEntry';
-import { localDateInZone } from '@/src/lib/localDate';
+import { useShiftsRange } from '@/src/hooks/queries/useShiftsRange';
+import { useWeekTimeEntries } from '@/src/hooks/queries/useWeekTimeEntries';
+import { addLocalDays, localDateInZone } from '@/src/lib/localDate';
 import { useIsOnline } from '@/src/lib/network';
-import { shiftInstantsFromWallClock } from '@/src/lib/wallClock';
+import {
+  shiftInstantsFromWallClock,
+  wallClockToUtcIso,
+} from '@/src/lib/wallClock';
+import { useAuthStore } from '@/src/store/auth';
+
+const COVERING_STATUS_SET = new Set<string>(COVERING_SHIFT_STATUSES);
+
+function hasMissedHoursDay(
+  shifts: readonly Shift[],
+  entries: readonly TimeEntry[],
+  currentUserId: string,
+  weekDates: readonly string[]
+): boolean {
+  const entryDates = new Set(
+    entries
+      .filter(
+        entry => entry.carer_id === currentUserId && entry.status !== 'voided'
+      )
+      .map(entry => entry.local_date)
+  );
+  return shifts.some(
+    shift =>
+      COVERING_STATUS_SET.has(shift.status) &&
+      shift.carer_id === currentUserId &&
+      weekDates.includes(shift.local_date) &&
+      !entryDates.has(shift.local_date)
+  );
+}
 
 interface AddMissedHoursCardProps {
   householdId: string;
@@ -56,6 +93,52 @@ export function AddMissedHoursCard({
   const { t: tErrors } = useTranslation('errors');
   const isOnline = useIsOnline();
   const createRetroactiveEntry = useCreateRetroactiveEntry();
+  const currentUserId = useAuthStore(s => s.user?.id ?? null);
+  const weekStart = useMemo(
+    () => getWeekStartISO(new Date(), timeZone),
+    [timeZone]
+  );
+  const weekDates = useMemo(() => getWeekDates(weekStart), [weekStart]);
+  const weekEndExclusive = useMemo(
+    () => addLocalDays(weekDates[weekDates.length - 1] ?? weekStart, 1),
+    [weekDates, weekStart]
+  );
+  const from = useMemo(
+    () => wallClockToUtcIso(weekStart, '00:00', timeZone),
+    [weekStart, timeZone]
+  );
+  const to = useMemo(
+    () => wallClockToUtcIso(weekEndExclusive, '00:00', timeZone),
+    [weekEndExclusive, timeZone]
+  );
+  const entriesQuery = useWeekTimeEntries(householdId, weekStart);
+  const shiftsQuery = useShiftsRange(householdId, from, to);
+  const showCta = useMemo(() => {
+    if (!currentUserId) return false;
+    if (
+      entriesQuery.isLoading ||
+      entriesQuery.isPending ||
+      shiftsQuery.isLoading ||
+      shiftsQuery.isPending
+    ) {
+      return false;
+    }
+    return hasMissedHoursDay(
+      shiftsQuery.data ?? [],
+      entriesQuery.data ?? [],
+      currentUserId,
+      weekDates
+    );
+  }, [
+    currentUserId,
+    entriesQuery.data,
+    entriesQuery.isLoading,
+    entriesQuery.isPending,
+    shiftsQuery.data,
+    shiftsQuery.isLoading,
+    shiftsQuery.isPending,
+    weekDates,
+  ]);
 
   const [visible, setVisible] = useState(false);
   const [date, setDate] = useState(() => localDateInZone(timeZone));
@@ -108,6 +191,10 @@ export function AddMissedHoursCard({
         );
       });
   };
+
+  if (!showCta) {
+    return null;
+  }
 
   return (
     <Fragment>

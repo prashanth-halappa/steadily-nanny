@@ -13,6 +13,8 @@
  * departed-carer name snapshots, voided-entry exclusion).
  */
 import type { Shift } from '@steadily-nanny/shared-types/schemas/shift.schema';
+import { SHIFT_KINDS } from '@steadily-nanny/shared-types/schemas/shift.schema';
+import { COVERING_SHIFT_STATUSES } from '@steadily-nanny/shared-types/uncoveredCare';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { resolveCarerName } from '@/src/domains/schedule/utils/memberDisplayName';
@@ -51,11 +53,33 @@ const KIND_ORDER: Record<CoverKind, number> = {
 
 const ARRIVING_WINDOW_MS = 60 * 60 * 1000;
 
+const COVERING_STATUS_SET = new Set<string>(COVERING_SHIFT_STATUSES);
+
+function shiftRowKey(shift: Pick<Shift, 'kind' | 'carer_id'>): string {
+  if (shift.kind === SHIFT_KINDS.PARENT_COVER) return 'shift-parent_cover';
+  return `shift-${shift.carer_id ?? 'unassigned'}`;
+}
+
+export function pickCoverShift(
+  shifts: Shift[],
+  nowMs: number
+): Shift | undefined {
+  const covering = shifts
+    .filter(shift => COVERING_STATUS_SET.has(shift.status))
+    .sort((a, b) => a.starts_at.localeCompare(b.starts_at));
+  if (covering.length === 0) return undefined;
+  return (
+    covering.find(shift => Date.parse(shift.ends_at) > nowMs) ??
+    covering[covering.length - 1]
+  );
+}
+
 export function useTodayCoverRows(
   householdId: string,
   timeZone: string
 ): { rows: CoverRow[]; isLoading: boolean } {
   const { t } = useTranslation('today');
+  const { t: tSchedule } = useTranslation('schedule');
   const membersQuery = useHouseholdMembers(householdId);
   const weekStart = useMemo(
     () => getWeekStartISO(new Date(), timeZone),
@@ -169,9 +193,14 @@ export function useTodayCoverRows(
     // Today's shifts fill in the carers who have not clocked anything yet.
     const shiftBuckets = new Map<string, Shift[]>();
     for (const shift of shifts.data ?? []) {
-      if (shift.local_date !== today || shift.status === 'cancelled') continue;
+      if (
+        shift.local_date !== today ||
+        !COVERING_STATUS_SET.has(shift.status)
+      ) {
+        continue;
+      }
       if (shift.carer_id && covered.has(shift.carer_id)) continue;
-      const key = `shift-${shift.carer_id ?? 'unassigned'}`;
+      const key = shiftRowKey(shift);
       const bucket = shiftBuckets.get(key);
       if (bucket) {
         bucket.push(shift);
@@ -181,11 +210,12 @@ export function useTodayCoverRows(
     }
 
     for (const [key, bucket] of shiftBuckets) {
-      const next = [...bucket].sort((a, b) =>
-        a.starts_at.localeCompare(b.starts_at)
-      )[0];
+      const next = pickCoverShift(bucket, nowMs);
       if (!next) continue;
-      const name = nameFor(next.carer_id);
+      const name =
+        next.kind === SHIFT_KINDS.PARENT_COVER
+          ? tSchedule('cover.parentCoveringRow')
+          : nameFor(next.carer_id);
       const startMs = new Date(next.starts_at).getTime();
       const arriving = nowMs < startMs && startMs - nowMs <= ARRIVING_WINDOW_MS;
       result.push({
@@ -207,7 +237,15 @@ export function useTodayCoverRows(
       (a, b) =>
         KIND_ORDER[a.kind] - KIND_ORDER[b.kind] || a.name.localeCompare(b.name)
     );
-  }, [entries.data, shifts.data, membersByUserId, today, timeZone, t]);
+  }, [
+    entries.data,
+    shifts.data,
+    membersByUserId,
+    today,
+    timeZone,
+    t,
+    tSchedule,
+  ]);
 
   return {
     rows,

@@ -30,6 +30,7 @@ import {
 } from 'bun:test';
 import { fireEvent, render } from '@testing-library/react-native';
 import { SETUP_ROLES } from '@/src/domains/setup/types';
+import { formatClockTime } from '@/src/domains/timesheet/utils/duration';
 
 // Household-local baseline for every test in this file: nothing sent today,
 // before 10:00 — the collapse feature's auto-expand condition. Pinned in
@@ -56,11 +57,19 @@ function baseStyle(style: unknown): Record<string, unknown> {
 
 let HandoffChipsCard: typeof import('../components/HandoffChipsCard').HandoffChipsCard;
 let mockUseHandoffNotes: ReturnType<typeof mock>;
+let mockFormatClockTime: ReturnType<typeof mock>;
 
 const HOUSEHOLD_ID = '11111111-1111-4111-8111-111111111111';
 const USER_ID = '22222222-2222-4222-8222-222222222222';
 
 beforeAll(async () => {
+  mockFormatClockTime = mock(formatClockTime);
+  mock.module('@/src/domains/timesheet/utils/duration', () => ({
+    formatClockTime: mockFormatClockTime,
+    utcIsoToWallClockHHMM: (iso: string, timeZone: string) =>
+      formatClockTime(iso, timeZone, 'en-GB'),
+  }));
+
   mockUseHandoffNotes = mock(() => ({ data: [], isLoading: false }));
   mock.module('@/src/hooks/queries/useHandoffNotes', () => ({
     useHandoffNotes: mockUseHandoffNotes,
@@ -93,7 +102,7 @@ describe('HandoffChipsCard empty-state hint', () => {
 
     const hint = getByTestId('handoff-hint-morning');
     expect(hint.props.children).toContain('handoff.tapHint');
-    expect(hint.props.children).not.toBe('handoff.tapHintForParent');
+    expect(hint.props.children).not.toBe('handoff.tapHintNannyEditor');
   });
 
   it('addresses the PARENT in the evening editor (nanny is writing for the parent) — NOT "your nanny"', () => {
@@ -105,10 +114,11 @@ describe('HandoffChipsCard empty-state hint', () => {
       />
     );
 
+    fireEvent.press(getByTestId('handoff-add-note'));
     const hint = getByTestId('handoff-hint-evening');
     expect(hint.props.children).toContain('handoff.tapHint');
     // The regression: evening must NOT reuse the morning (nanny-addressed) key.
-    expect(hint.props.children).not.toBe('handoff.tapHintForNanny');
+    expect(hint.props.children).not.toBe('handoff.tapHintParentEditor');
   });
 
   it('uses two DIFFERENT hint keys for morning vs evening', () => {
@@ -127,6 +137,7 @@ describe('HandoffChipsCard empty-state hint', () => {
       />
     );
 
+    fireEvent.press(evening.getByTestId('handoff-add-note'));
     const morningHint = morning.getByTestId('handoff-hint-morning').props
       .children;
     const eveningHint = evening.getByTestId('handoff-hint-evening').props
@@ -167,6 +178,7 @@ describe('HandoffChipsCard evening recap (P0-7 — no in-card divider)', () => {
       chips: ['fed', 'napped'],
       body: null,
       moment_saved_at: null,
+      local_date: '2026-08-06',
       created_at: '2026-08-06T18:00:00.000Z',
     },
   ];
@@ -188,7 +200,6 @@ describe('HandoffChipsCard evening recap (P0-7 — no in-card divider)', () => {
     const section = getByTestId('handoff-save-moment-section');
     expect(section.props.className ?? '').not.toContain('border-t');
     expect(section.props.className ?? '').not.toContain('border-border');
-    expect(section.props.className ?? '').toContain('mt-4');
   });
 
   it('renders the recap label as a MetadataLabel eyebrow', () => {
@@ -223,16 +234,17 @@ describe('HandoffChipsCard collapse (Wave 2-C)', () => {
     chips: ['slept_well', 'ate_breakfast'],
     body: null,
     moment_saved_at: null,
+    local_date: '2026-08-06',
     created_at: '2026-08-06T07:00:00.000Z',
   };
 
-  it('collapses once a note was already sent today, even before 10am', () => {
+  it('hides the morning block once the parent has already sent today, even before 10am', () => {
     mockUseHandoffNotes.mockReturnValue({
       data: [myMorningNote],
       isLoading: false,
     });
 
-    const { getByTestId, queryByTestId } = render(
+    const { queryByTestId } = render(
       <HandoffChipsCard
         householdId={HOUSEHOLD_ID}
         timeZone="America/Los_Angeles"
@@ -241,13 +253,24 @@ describe('HandoffChipsCard collapse (Wave 2-C)', () => {
     );
 
     expect(queryByTestId('handoff-editor-morning')).toBeNull();
-    expect(getByTestId('handoff-collapsed')).toBeTruthy();
-    expect(getByTestId('handoff-add-note')).toBeTruthy();
+    expect(queryByTestId('handoff-collapsed')).toBeNull();
+    expect(queryByTestId('handoff-add-note')).toBeNull();
+    expect(queryByTestId('handoff-chips-card')).toBeNull();
   });
 
-  it('lists the selected chip labels on the collapsed summary line', () => {
+  it('lists the selected chip labels on the collapsed summary line for the nanny', () => {
+    const myEveningNote = {
+      id: 'note-mine-evening',
+      phase: 'evening',
+      author_id: USER_ID,
+      chips: ['slept_well', 'ate_breakfast'],
+      body: null,
+      moment_saved_at: null,
+      local_date: '2026-08-06',
+      created_at: '2026-08-06T18:00:00.000Z',
+    };
     mockUseHandoffNotes.mockReturnValue({
-      data: [myMorningNote],
+      data: [myEveningNote],
       isLoading: false,
     });
 
@@ -255,7 +278,7 @@ describe('HandoffChipsCard collapse (Wave 2-C)', () => {
       <HandoffChipsCard
         householdId={HOUSEHOLD_ID}
         timeZone="America/Los_Angeles"
-        role={SETUP_ROLES.PARENT}
+        role={SETUP_ROLES.NANNY}
       />
     );
 
@@ -298,8 +321,213 @@ describe('HandoffChipsCard collapse (Wave 2-C)', () => {
   });
 
   it('tapping "Add a note" expands the full editor', () => {
+    const myEveningNote = {
+      id: 'note-mine-evening',
+      phase: 'evening',
+      author_id: USER_ID,
+      chips: ['fed'],
+      body: null,
+      moment_saved_at: null,
+      local_date: '2026-08-06',
+      created_at: '2026-08-06T18:00:00.000Z',
+    };
+    mockUseHandoffNotes.mockReturnValue({
+      data: [myEveningNote],
+      isLoading: false,
+    });
+
+    const { getByTestId, queryByTestId } = render(
+      <HandoffChipsCard
+        householdId={HOUSEHOLD_ID}
+        timeZone="America/Los_Angeles"
+        role={SETUP_ROLES.NANNY}
+      />
+    );
+
+    expect(queryByTestId('handoff-editor-evening')).toBeNull();
+    fireEvent.press(getByTestId('handoff-add-note'));
+    expect(getByTestId('handoff-editor-evening')).toBeTruthy();
+    expect(queryByTestId('handoff-collapsed')).toBeNull();
+  });
+
+  it('still renders the H4 title on the collapsed row', () => {
+    const myEveningNote = {
+      id: 'note-mine-evening',
+      phase: 'evening',
+      author_id: USER_ID,
+      chips: ['fed'],
+      body: null,
+      moment_saved_at: null,
+      local_date: '2026-08-06',
+      created_at: '2026-08-06T18:00:00.000Z',
+    };
+    mockUseHandoffNotes.mockReturnValue({
+      data: [myEveningNote],
+      isLoading: false,
+    });
+
+    const { getByText } = render(
+      <HandoffChipsCard
+        householdId={HOUSEHOLD_ID}
+        timeZone="America/Los_Angeles"
+        role={SETUP_ROLES.NANNY}
+      />
+    );
+
+    const style = baseStyle(getByText('handoff.eveningTitle').props.style);
+    expect(style.fontSize).toBe(18);
+  });
+
+  // Review fix: a ghost Button centres by default — "Add a note" read as
+  // the card's primary button, not a link, floating centred in whitespace.
+  it('left-aligns the "Add a note" link', () => {
+    const myEveningNote = {
+      id: 'note-mine-evening',
+      phase: 'evening',
+      author_id: USER_ID,
+      chips: ['fed'],
+      body: null,
+      moment_saved_at: null,
+      local_date: '2026-08-06',
+      created_at: '2026-08-06T18:00:00.000Z',
+    };
+    mockUseHandoffNotes.mockReturnValue({
+      data: [myEveningNote],
+      isLoading: false,
+    });
+
+    const { getByTestId } = render(
+      <HandoffChipsCard
+        householdId={HOUSEHOLD_ID}
+        timeZone="America/Los_Angeles"
+        role={SETUP_ROLES.NANNY}
+      />
+    );
+
+    expect(
+      String(getByTestId('handoff-add-note').props.className ?? '')
+    ).toContain('self-start');
+  });
+});
+
+// FIX A8: the 10:00 auto-expand cutoff applies to the parent's MORNING editor
+// only — a nanny's EVENING recap is for a day that hasn't happened yet, so
+// auto-expanding it at 06:45 is wrong. Manual "Add a note" must still work.
+describe('HandoffChipsCard auto-expand phase gate (FIX A8)', () => {
+  it('does NOT auto-expand the nanny evening editor before 10am', () => {
+    mockUseHandoffNotes.mockReturnValue({ data: [], isLoading: false });
+
+    const { getByTestId, queryByTestId } = render(
+      <HandoffChipsCard
+        householdId={HOUSEHOLD_ID}
+        timeZone="America/Los_Angeles"
+        role={SETUP_ROLES.NANNY}
+      />
+    );
+
+    expect(getByTestId('handoff-collapsed')).toBeTruthy();
+    expect(queryByTestId('handoff-editor-evening')).toBeNull();
+  });
+
+  it('still auto-expands the parent morning editor before 10am', () => {
+    mockUseHandoffNotes.mockReturnValue({ data: [], isLoading: false });
+
+    const { getByTestId, queryByTestId } = render(
+      <HandoffChipsCard
+        householdId={HOUSEHOLD_ID}
+        timeZone="America/Los_Angeles"
+        role={SETUP_ROLES.PARENT}
+      />
+    );
+
+    expect(getByTestId('handoff-editor-morning')).toBeTruthy();
+    expect(queryByTestId('handoff-collapsed')).toBeNull();
+  });
+
+  it('manual "Add a note" still expands the nanny evening editor before 10am', () => {
+    mockUseHandoffNotes.mockReturnValue({ data: [], isLoading: false });
+
+    const { getByTestId, queryByTestId } = render(
+      <HandoffChipsCard
+        householdId={HOUSEHOLD_ID}
+        timeZone="America/Los_Angeles"
+        role={SETUP_ROLES.NANNY}
+      />
+    );
+
+    expect(queryByTestId('handoff-editor-evening')).toBeNull();
+    fireEvent.press(getByTestId('handoff-add-note'));
+    expect(getByTestId('handoff-editor-evening')).toBeTruthy();
+    expect(queryByTestId('handoff-collapsed')).toBeNull();
+  });
+});
+
+// Handoff timing: morning clears once sent; evening recap is evening-only and
+// wins over the morning block for parents.
+describe('HandoffChipsCard handoff timing', () => {
+  const myMorningNote = {
+    id: 'note-mine',
+    phase: 'morning',
+    author_id: USER_ID,
+    chips: ['slept_well'],
+    body: null,
+    moment_saved_at: null,
+    local_date: '2026-08-06',
+    created_at: '2026-08-06T07:00:00.000Z',
+  };
+
+  const eveningNoteToday = {
+    id: 'note-evening',
+    phase: 'evening',
+    author_id: 'someone-else',
+    chips: ['fed', 'napped'],
+    body: null,
+    moment_saved_at: null,
+    local_date: '2026-08-06',
+    created_at: '2026-08-06T18:00:00.000Z',
+  };
+
+  it('hides the morning block entirely once the parent has sent their morning note', () => {
     mockUseHandoffNotes.mockReturnValue({
       data: [myMorningNote],
+      isLoading: false,
+    });
+
+    const { queryByTestId } = render(
+      <HandoffChipsCard
+        householdId={HOUSEHOLD_ID}
+        timeZone="America/Los_Angeles"
+        role={SETUP_ROLES.PARENT}
+      />
+    );
+
+    expect(queryByTestId('handoff-editor-morning')).toBeNull();
+    expect(queryByTestId('handoff-collapsed')).toBeNull();
+    expect(queryByTestId('handoff-add-note')).toBeNull();
+  });
+
+  it('does not show a sent timestamp on the parent evening recap block', () => {
+    mockUseHandoffNotes.mockReturnValue({
+      data: [eveningNoteToday],
+      isLoading: false,
+    });
+
+    const { queryByTestId } = render(
+      <HandoffChipsCard
+        householdId={HOUSEHOLD_ID}
+        timeZone="America/Los_Angeles"
+        role={SETUP_ROLES.PARENT}
+      />
+    );
+
+    expect(queryByTestId('handoff-save-moment-section')).toBeTruthy();
+    expect(queryByTestId('handoff-sent-evening')).toBeNull();
+    expect(queryByTestId('handoff-sent-morning')).toBeNull();
+  });
+
+  it('prefers the evening recap over the morning block once an evening note exists today', () => {
+    mockUseHandoffNotes.mockReturnValue({
+      data: [eveningNoteToday],
       isLoading: false,
     });
 
@@ -311,19 +539,24 @@ describe('HandoffChipsCard collapse (Wave 2-C)', () => {
       />
     );
 
+    expect(getByTestId('handoff-save-moment-section')).toBeTruthy();
     expect(queryByTestId('handoff-editor-morning')).toBeNull();
-    fireEvent.press(getByTestId('handoff-add-note'));
-    expect(getByTestId('handoff-editor-morning')).toBeTruthy();
     expect(queryByTestId('handoff-collapsed')).toBeNull();
   });
 
-  it('still renders the H4 title on the collapsed row', () => {
+  it('does not show yesterday evening recap on the next morning', () => {
+    const yesterdayEvening = {
+      ...eveningNoteToday,
+      id: 'note-evening-yesterday',
+      local_date: '2026-08-05',
+      created_at: '2026-08-05T18:00:00.000Z',
+    };
     mockUseHandoffNotes.mockReturnValue({
-      data: [myMorningNote],
+      data: [yesterdayEvening],
       isLoading: false,
     });
 
-    const { getByText } = render(
+    const { queryByTestId } = render(
       <HandoffChipsCard
         householdId={HOUSEHOLD_ID}
         timeZone="America/Los_Angeles"
@@ -331,15 +564,28 @@ describe('HandoffChipsCard collapse (Wave 2-C)', () => {
       />
     );
 
-    const style = baseStyle(getByText('handoff.morningTitle').props.style);
-    expect(style.fontSize).toBe(18);
+    expect(queryByTestId('handoff-save-moment-section')).toBeNull();
   });
+});
 
-  // Review fix: a ghost Button centres by default — "Add a note" read as
-  // the card's primary button, not a link, floating centred in whitespace.
-  it('left-aligns the "Add a note" link', () => {
+// FIX A9: sentAt was formatted with toLocaleTimeString(undefined) — device zone.
+// GOLDEN-FIXES #21: route through formatClockTime(iso, householdTimeZone).
+describe('HandoffChipsCard sent timestamp (FIX A9)', () => {
+  const myEveningNote = {
+    id: 'note-mine-evening',
+    phase: 'evening',
+    author_id: USER_ID,
+    chips: ['fed'],
+    body: null,
+    moment_saved_at: null,
+    local_date: '2026-08-06',
+    created_at: '2026-08-06T18:00:00.000Z',
+  };
+
+  it('formats sentAt through formatClockTime with the household timezone', () => {
+    mockFormatClockTime.mockClear();
     mockUseHandoffNotes.mockReturnValue({
-      data: [myMorningNote],
+      data: [myEveningNote],
       isLoading: false,
     });
 
@@ -347,12 +593,14 @@ describe('HandoffChipsCard collapse (Wave 2-C)', () => {
       <HandoffChipsCard
         householdId={HOUSEHOLD_ID}
         timeZone="America/Los_Angeles"
-        role={SETUP_ROLES.PARENT}
+        role={SETUP_ROLES.NANNY}
       />
     );
 
-    expect(
-      String(getByTestId('handoff-add-note').props.className ?? '')
-    ).toContain('self-start');
+    fireEvent.press(getByTestId('handoff-add-note'));
+    expect(mockFormatClockTime).toHaveBeenCalledWith(
+      '2026-08-06T18:00:00.000Z',
+      'America/Los_Angeles'
+    );
   });
 });

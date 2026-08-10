@@ -226,4 +226,17 @@ describe('ThisWeeksShiftsCard', () => {
     expect(getByTestId('today-next-up-status-shift-a')).toBeTruthy();
     expect(queryByTestId('today-next-up-status-shift-b')).toBeNull();
   });
+
+  it('excludes declined shifts from Next up — they must not show a Pending pill', () => {
+    const declinedShift = {
+      ...shift('shift-declined', AMARA_ID, '2099-08-08'),
+      status: 'declined',
+    };
+    mockUseShiftsRange.mockReturnValue({ data: [declinedShift] });
+
+    const { queryByTestId } = render(<ThisWeeksShiftsCard />);
+
+    expect(queryByTestId('today-next-up-shift-declined')).toBeNull();
+    expect(queryByTestId('today-next-up-status-shift-declined')).toBeNull();
+  });
 });

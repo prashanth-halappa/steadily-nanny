@@ -24,4 +24,13 @@ describe('formatInstantInZone', () => {
     expect(london.length).toBeGreaterThan(0);
     expect(tokyo.length).toBeGreaterThan(0);
   });
+
+  it('always emits fixed 24h HH:MM for parsing — never locale AM/PM (A9)', () => {
+    expect(formatInstantInZone('2026-08-03T14:00:00.000Z', 'UTC')).toBe(
+      '14:00'
+    );
+    expect(formatInstantInZone('2026-08-03T09:03:00.000Z', 'UTC')).toBe(
+      '09:03'
+    );
+  });
 });

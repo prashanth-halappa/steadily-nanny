@@ -48,7 +48,7 @@ describe('computeUncoveredToday', () => {
     ).toEqual({ status: 'setup' });
   });
 
-  it('returns setup when commitments exist but none apply on the local date', () => {
+  it('returns noNeedToday when commitments exist but none apply on the local date', () => {
     expect(
       computeUncoveredToday({
         localDate: SATURDAY,
@@ -57,7 +57,11 @@ describe('computeUncoveredToday', () => {
         shifts: [],
         closures: [],
       })
-    ).toEqual({ status: 'setup' });
+    ).toEqual({
+      status: 'noNeedToday',
+      localDate: SATURDAY,
+      weekday: 6,
+    });
   });
 
   it('returns covered when need windows apply and shifts cover them', () => {

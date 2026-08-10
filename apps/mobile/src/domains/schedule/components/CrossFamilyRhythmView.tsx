@@ -25,6 +25,7 @@
 
 import type { Household } from '@steadily-nanny/shared-types/schemas/household.schema';
 import type { MeShift } from '@steadily-nanny/shared-types/schemas/me.schema';
+import { COVERING_SHIFT_STATUSES } from '@steadily-nanny/shared-types/uncoveredCare';
 import { useTranslation } from 'react-i18next';
 import { ScrollView, View } from 'react-native';
 import { SCREEN_CONTENT_STYLE, useThemeColors } from '@/lib/design-tokens';
@@ -46,6 +47,8 @@ import {
   localDateInZone,
   localDateRange,
 } from '@/src/lib/localDate';
+
+const COVERING_STATUS_SET = new Set<string>(COVERING_SHIFT_STATUSES);
 
 const PERIODS: DayPeriod[] = ['morning', 'afternoon', 'evening'];
 const DAYS_IN_WINDOW = 14;
@@ -114,16 +117,18 @@ export function countClashDays(
   ).length;
 }
 
-/** Shifts -> work slots, excluding cancelled — a cancelled shift is not
- * real cover for either family and must not count toward the headline
- * numbers or paint a dot. */
+/** Shifts -> work slots. Only COVERING_SHIFT_STATUSES count: a cancelled,
+ * declined or draft shift is not real cover for either family and must not
+ * count toward the headline numbers or paint a dot. This used to exclude only
+ * `cancelled`, so a shift the carer had DECLINED still painted a dot and
+ * inflated the clash count. */
 export function slotsFromShifts(
   shifts: readonly MeShift[],
   timeZoneFor: (householdId: string) => string
 ): RhythmWorkSlot[] {
   const slots: RhythmWorkSlot[] = [];
   for (const shift of shifts) {
-    if (shift.status === 'cancelled') continue;
+    if (!COVERING_STATUS_SET.has(shift.status)) continue;
     slots.push({
       householdId: shift.household_id,
       date: shift.local_date,

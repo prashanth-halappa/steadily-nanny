@@ -3,6 +3,11 @@
  *
  * Compact daily handoff notes (Wave F / 1i): morning for parent, evening
  * for nanny. Parents can save_moment on evening notes.
+ *
+ * The `sentAt` timestamp is shown only on the author's own editor (author-scoped
+ * via `myNote`) — never on the parent's evening recap block. That recap is
+ * somebody else's note by definition; adding a send time there would quietly
+ * build a punctuality record out of the nanny's admin.
  */
 import {
   HANDOFF_PHASES,
@@ -23,6 +28,7 @@ import {
   Small,
 } from '@/src/components/ui/typography';
 import { SETUP_ROLES, type SetupRole } from '@/src/domains/setup/types';
+import { formatClockTime } from '@/src/domains/timesheet/utils/duration';
 import {
   chipsForPhase,
   handoffChipLabelKey,
@@ -94,6 +100,7 @@ function HandoffPhaseEditor({
   phase,
   householdId,
   localDate,
+  timeZone,
   existingChips,
   existingNoteId,
   existingBody,
@@ -102,6 +109,7 @@ function HandoffPhaseEditor({
   phase: HandoffPhase;
   householdId: string;
   localDate: string;
+  timeZone: string;
   existingChips: string[];
   existingNoteId?: string;
   existingBody?: string | null;
@@ -158,10 +166,7 @@ function HandoffPhaseEditor({
 
   const sentLabel = sentAt
     ? t('handoff.sentAt', {
-        time: new Date(sentAt).toLocaleTimeString(undefined, {
-          hour: 'numeric',
-          minute: '2-digit',
-        }),
+        time: formatClockTime(sentAt, timeZone),
       })
     : null;
 
@@ -209,8 +214,8 @@ function HandoffPhaseEditor({
           className="text-muted-foreground"
         >
           {phase === HANDOFF_PHASES.MORNING
-            ? t('handoff.tapHintForNanny')
-            : t('handoff.tapHintForParent')}
+            ? t('handoff.tapHintParentEditor')
+            : t('handoff.tapHintNannyEditor')}
         </Small>
       )}
     </View>
@@ -256,23 +261,38 @@ export function HandoffChipsCard({
   );
 
   // Deliberately NOT author-scoped: the recap a parent reads back is by
-  // definition somebody else's note (their nanny's evening handoff).
+  // definition somebody else's note (their nanny's evening handoff). Scoped to
+  // today's household-local date so yesterday's recap is gone by morning.
   const eveningNote = useMemo(
-    () => (notesQuery.data ?? []).find(n => n.phase === HANDOFF_PHASES.EVENING),
-    [notesQuery.data]
+    () =>
+      (notesQuery.data ?? []).find(
+        n => n.phase === HANDOFF_PHASES.EVENING && n.local_date === localDate
+      ),
+    [notesQuery.data, localDate]
   );
 
   if (!editorPhase) return null;
 
+  const showMorningBlock =
+    role === SETUP_ROLES.PARENT ? !myNote && !eveningNote : true;
+  const showEveningRecap = role === SETUP_ROLES.PARENT && eveningNote != null;
+
+  if (!showMorningBlock && !showEveningRecap) return null;
+
   const existingChips = myNote?.chips ?? [];
   const existingNoteId = myNote?.id;
 
-  // Collapsed by default (~96pt): auto-expands only while there is genuinely
-  // something to do before the household's morning gets away from it —
-  // nothing sent yet AND still before 10:00 household-local. Once she taps
-  // "Add a note" the manual override wins regardless of either condition.
+  // Collapsed by default (~96pt): auto-expands only for the parent's MORNING
+  // editor while there is genuinely something to do before the household's
+  // morning gets away from it — nothing sent yet AND still before 10:00
+  // household-local. The nanny's EVENING editor never auto-expands (that day
+  // hasn't happened yet). Once she taps "Add a note" the manual override wins
+  // regardless of either condition.
   const shouldAutoExpand =
-    !notesQuery.isLoading && !myNote && isBeforeTenAM(timeZone);
+    !notesQuery.isLoading &&
+    !myNote &&
+    editorPhase === HANDOFF_PHASES.MORNING &&
+    isBeforeTenAM(timeZone);
   const expanded = manualExpanded ?? shouldAutoExpand;
 
   const summaryChips = existingChips.map(chip =>
@@ -283,45 +303,13 @@ export function HandoffChipsCard({
       ? summaryChips.join(' · ')
       : (myNote?.body ??
         (editorPhase === HANDOFF_PHASES.MORNING
-          ? t('handoff.tapHintForNanny')
-          : t('handoff.tapHintForParent')));
+          ? t('handoff.tapHintParentEditor')
+          : t('handoff.tapHintNannyEditor')));
 
   return (
     <Card testID="handoff-chips-card" className="gap-3 p-5.5">
-      {expanded ? (
-        <HandoffPhaseEditor
-          phase={editorPhase}
-          householdId={householdId}
-          localDate={localDate}
-          existingChips={existingChips}
-          existingNoteId={existingNoteId}
-          existingBody={myNote?.body}
-          sentAt={myNote?.created_at}
-        />
-      ) : (
-        <View testID="handoff-collapsed" className="gap-1">
-          <H4>{titleForPhase(editorPhase, t)}</H4>
-          <Small
-            testID="handoff-collapsed-summary"
-            className="text-muted-foreground"
-            numberOfLines={1}
-          >
-            {summaryLine}
-          </Small>
-          <Button
-            testID="handoff-add-note"
-            variant="ghost"
-            size="sm"
-            className="self-start px-0"
-            onPress={() => setManualExpanded(true)}
-          >
-            <Text className="text-primary">{t('handoff.addNote')}</Text>
-          </Button>
-        </View>
-      )}
-
-      {role === SETUP_ROLES.PARENT && eveningNote ? (
-        <View testID="handoff-save-moment-section" className="mt-4 gap-2">
+      {showEveningRecap ? (
+        <View testID="handoff-save-moment-section" className="gap-2">
           <MetadataLabel className="text-muted-foreground">
             {t('handoff.eveningRecap')}
           </MetadataLabel>
@@ -351,6 +339,41 @@ export function HandoffChipsCard({
             </Text>
           </Button>
         </View>
+      ) : null}
+
+      {showMorningBlock ? (
+        expanded ? (
+          <HandoffPhaseEditor
+            phase={editorPhase}
+            householdId={householdId}
+            localDate={localDate}
+            timeZone={timeZone}
+            existingChips={existingChips}
+            existingNoteId={existingNoteId}
+            existingBody={myNote?.body}
+            sentAt={myNote?.created_at}
+          />
+        ) : (
+          <View testID="handoff-collapsed" className="gap-1">
+            <H4>{titleForPhase(editorPhase, t)}</H4>
+            <Small
+              testID="handoff-collapsed-summary"
+              className="text-muted-foreground"
+              numberOfLines={1}
+            >
+              {summaryLine}
+            </Small>
+            <Button
+              testID="handoff-add-note"
+              variant="ghost"
+              size="sm"
+              className="self-start px-0"
+              onPress={() => setManualExpanded(true)}
+            >
+              <Text className="text-primary">{t('handoff.addNote')}</Text>
+            </Button>
+          </View>
+        )
       ) : null}
     </Card>
   );

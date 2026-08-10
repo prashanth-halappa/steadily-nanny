@@ -6,11 +6,24 @@
  * the household zone), a TimeRangePicker, an optional note — and submits
  * via useCreateRetroactiveEntry.
  */
-import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  mock,
+  setSystemTime,
+} from 'bun:test';
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
 
 const HOUSEHOLD_ID = '22222222-2222-4222-8222-222222222222';
+const NANNY_ID = '33333333-3333-4333-8333-333333333333';
 const TIME_ZONE = 'Europe/London';
+
+setSystemTime(new Date('2026-08-06T12:00:00.000Z'));
+afterAll(() => setSystemTime());
 
 const createdEntry = {
   id: '11111111-1111-4111-8111-111111111111',
@@ -41,6 +54,42 @@ mock.module('@/src/hooks/mutations/useCreateRetroactiveEntry', () => ({
     mutateAsync: mockMutateAsync,
     isPending: mockIsPending,
   }),
+}));
+
+mock.module('@/src/store/auth', () => ({
+  useAuthStore: mock((selector: (s: unknown) => unknown) =>
+    selector({ user: { id: NANNY_ID } })
+  ),
+}));
+
+mock.module('@/src/hooks/queries/useWeekTimeEntries', () => ({
+  useWeekTimeEntries: mock(() => ({
+    data: [],
+    isLoading: false,
+    isPending: false,
+  })),
+}));
+
+mock.module('@/src/hooks/queries/useShiftsRange', () => ({
+  useShiftsRange: mock(() => ({
+    data: [
+      {
+        id: 'shift-1',
+        household_id: HOUSEHOLD_ID,
+        carer_id: NANNY_ID,
+        kind: 'regular',
+        status: 'confirmed',
+        local_date: '2026-08-06',
+        starts_at: '2026-08-06T09:00:00.000Z',
+        ends_at: '2026-08-06T17:00:00.000Z',
+        note: null,
+        created_at: '2026-08-01T00:00:00.000Z',
+        updated_at: '2026-08-01T00:00:00.000Z',
+      },
+    ],
+    isLoading: false,
+    isPending: false,
+  })),
 }));
 
 let AddMissedHoursCard: typeof import('../components/AddMissedHoursCard').AddMissedHoursCard;

@@ -45,17 +45,14 @@ mock.module('@/src/domains/today/components/ClockInCard', () => ({
 mock.module('@/src/domains/today/components/AddMissedHoursCard', () => ({
   AddMissedHoursCard: () => null,
 }));
-mock.module('@/src/domains/today/components/CoverCard', () => ({
-  CoverCard: () => null,
+mock.module('@/src/domains/today/components/TodayCoverage', () => ({
+  TodayCoverage: () => null,
+}));
+mock.module('@/src/domains/today/components/NannyWeekLine', () => ({
+  NannyWeekLine: () => null,
 }));
 mock.module('@/src/domains/today/components/HandoffChipsCard', () => ({
   HandoffChipsCard: () => null,
-}));
-mock.module('@/src/domains/today/components/NannyLiveStatusCard', () => ({
-  NannyLiveStatusCard: () => null,
-}));
-mock.module('@/src/domains/today/components/TodayCalmCard', () => ({
-  TodayCalmCard: () => null,
 }));
 mock.module('@/src/domains/today/hooks/useHouseholdIsLive', () => ({
   useHouseholdIsLive: () => false,

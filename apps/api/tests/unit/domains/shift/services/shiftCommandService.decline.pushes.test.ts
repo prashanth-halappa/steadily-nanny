@@ -93,6 +93,9 @@ function makeCarerMemberRepo(): any {
       user_id: 'carer-1',
       role: 'nanny',
     })),
+    listActiveByHousehold: mock(async () => [
+      { user_id: 'carer-1', profile_name: 'Ines', role: 'nanny' },
+    ]),
   };
 }
 
@@ -100,18 +103,44 @@ function makeQueries(): any {
   return { getOwned: mock(async () => pendingShift) };
 }
 
+/**
+ * The decline push copy now names the child, so the service reaches for
+ * `ChildQueryService`. Its constructor default is the REAL one, which goes to
+ * the network and never settles under test — leaving the push pending forever
+ * rather than failing loudly. Inject a stub so the copy path is exercised
+ * rather than hung.
+ */
+function makeChildren(): any {
+  return {
+    getOwned: mock(async () => ({ id: 'c1', name: 'Ada' })),
+    listForHousehold: mock(async () => [{ id: 'c1', name: 'Ada' }]),
+  };
+}
+
 function makeService(eventRepo = makeEventRepo()) {
   return new ShiftCommandService(
     makeShiftRepo(),
     makeCarerMemberRepo(),
     makeQueries(),
-    eventRepo
+    eventRepo,
+    makeChildren()
   );
+}
+
+/**
+ * The decline push is deliberately NOT awaited by `decline()` — the enriched
+ * copy needs a member and child lookup, and neither may sit on the critical
+ * path of her saying no. That means the push lands a microtask later, so tests
+ * must let the queue drain before asserting.
+ */
+async function flushPush(): Promise<void> {
+  await new Promise(resolve => setTimeout(resolve, 0));
 }
 
 describe('ShiftCommandService.decline — pushes', () => {
   it('pushes household parents with shift_declined exactly once', async () => {
     await makeService().decline('carer-1', 's1');
+    await flushPush();
 
     expect(notifyHouseholdParents).toHaveBeenCalledTimes(1);
     const [householdId, payload] = notifyHouseholdParents.mock.calls[0] as [
@@ -120,7 +149,12 @@ describe('ShiftCommandService.decline — pushes', () => {
     ];
     expect(householdId).toBe('h1');
     expect(payload.title).toBe('Shift declined');
-    expect(payload.body).toBe('The nanny declined a pending shift.');
+    // The whole point of the change: a parent can triage this from the lock
+    // screen. "The nanny declined a pending shift." told them nothing — not
+    // who, not when, not which child.
+    expect(payload.body).toBe(
+      'Ines turned down Mon 3 Aug, 9:00 am–6:00 pm (Ada).'
+    );
     // Field-exact: the mobile route map reads shiftId/householdId off `data`.
     expect(payload.data).toEqual({
       type: PUSH_NOTIFICATION_TYPES.SHIFT_DECLINED,
@@ -131,6 +165,7 @@ describe('ShiftCommandService.decline — pushes', () => {
 
   it('never pushes the declining carer herself', async () => {
     await makeService().decline('carer-1', 's1');
+    await flushPush();
 
     expect(notifyUser).not.toHaveBeenCalled();
   });
@@ -141,6 +176,7 @@ describe('ShiftCommandService.decline — pushes', () => {
     });
 
     const result = await makeService().decline('carer-1', 's1');
+    await flushPush();
 
     expect(result.status).toBe('declined');
   });
@@ -155,6 +191,7 @@ describe('ShiftCommandService.decline — pushes', () => {
     });
 
     await makeService(eventRepo).decline('carer-1', 's1');
+    await flushPush();
 
     expect(notifyHouseholdParents).toHaveBeenCalledTimes(1);
   });

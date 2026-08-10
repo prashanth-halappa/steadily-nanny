@@ -175,9 +175,11 @@ function buildRunningProps(
     // Dynamic Island. Not new copy — the identical value, without the
     // sentence around it.
     finishTimeShort: finishTime,
-    unmatchedNote: window
-      ? null
-      : i18n.t('today:liveActivity.noScheduledShift'),
+    // No note when nothing matched. It used to read "No scheduled shift
+    // today." on the lock screen of a carer who was ON THE CLOCK — a bare
+    // negation implying she shouldn't be working. Absence of a shift is not
+    // something she needs told while she is standing in the house working.
+    unmatchedNote: null,
     // With no scheduled finish there is no time to be "past", so the
     // overdue headline falls back to the card's own flat-backstop wording.
     overdueTitle: finishTime

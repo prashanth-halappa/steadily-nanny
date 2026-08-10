@@ -165,7 +165,10 @@ describe('startOnTheClock', () => {
     expect(props.scheduledEndIso).toBeNull();
     expect(props.finishLabel).toBeNull();
     expect(props.finishTimeShort).toBeNull();
-    expect(props.unmatchedNote).toBe('No scheduled shift today.');
+    // Deliberately null, not a sentence. This fires on the lock screen of a
+    // carer who IS on the clock; "No scheduled shift today." read as a
+    // correction — you shouldn't be working — while she was working.
+    expect(props.unmatchedNote).toBeNull();
   });
 
   it('deep-links "Clock out" into the sheet rather than clocking out in one tap (D20)', async () => {

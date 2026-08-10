@@ -6,8 +6,17 @@
  * approved weeks, never for a helper (`readOnly`), and confirming must send
  * the parent's reason through the real mutation hook.
  */
+// Imported at module scope, NOT `require()`d inside the mock factories below.
+// A `require()` of an ES module from inside a factory races on whether that
+// module has finished evaluating: when it hasn't, Bun throws
+// "require() async module ... is unsupported" and the whole file fails at
+// load with 0 tests run. It is timing-dependent, so it surfaced as an
+// intermittent gate failure that passed on re-run.
+
 import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 import type { Expense } from '@steadily-nanny/shared-types/schemas/expense.schema';
+import * as expenseSchemaModule from '@steadily-nanny/shared-types/schemas/expense.schema';
+import * as timesheetSchemaModule from '@steadily-nanny/shared-types/schemas/timesheet.schema';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
 import type React from 'react';
@@ -269,7 +278,7 @@ const reviewExpenseMock = mock(() =>
 );
 
 mock.module('@/src/api/endpoints/expenses', () => {
-  const shared = require('@steadily-nanny/shared-types/schemas/expense.schema');
+  const shared = expenseSchemaModule;
   return {
     ...shared,
     expenseApi: {
@@ -284,7 +293,7 @@ mock.module('@/src/api/endpoints/expenses', () => {
 });
 
 mock.module('@/src/api/endpoints/timeEntries', () => {
-  const shared = require('@steadily-nanny/shared-types/schemas/timesheet.schema');
+  const shared = timesheetSchemaModule;
   return {
     ...shared,
     timeEntryApi: { listForWeek: listEntriesMock },
@@ -294,7 +303,7 @@ mock.module('@/src/api/endpoints/household', () => ({
   householdApi: { listMembers: listMembersMock },
 }));
 mock.module('@/src/api/endpoints/timesheets', () => {
-  const shared = require('@steadily-nanny/shared-types/schemas/timesheet.schema');
+  const shared = timesheetSchemaModule;
   return {
     ...shared,
     timesheetApi: {

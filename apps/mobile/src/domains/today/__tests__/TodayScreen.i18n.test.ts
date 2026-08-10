@@ -46,10 +46,17 @@ describe('TodayScreen i18n', () => {
     expect(screenSource).not.toContain('testID="today-household-name"');
   });
 
-  // Wave 2-G: "Parent at ease" — mounted only for the parent role, and it
-  // owns its own render condition (see TodayCalmCard.test.tsx).
-  it('mounts TodayCalmCard for the parent role', () => {
-    expect(screenSource).toContain('<TodayCalmCard');
+  // TodayCalmCard is GONE, and must not come back. It rendered "Everything's
+  // covered" from inbox-empty + not-live + a cover row existing — it never
+  // consulted `useUncoveredToday`, so it sat directly above "H1 Child1 isn't
+  // fully covered" and flatly contradicted it. Correct data could not fix that:
+  // the two cards answered different questions ("is a carer booked?" vs "is
+  // every declared care hour staffed?"). One unified TodayCoverage surface
+  // answers the need-centric question; shift rows are plan lines below it.
+  it('does not mount a second, shift-derived coverage verdict', () => {
+    expect(screenSource).not.toContain('TodayCalmCard');
+    expect(screenSource).not.toContain('NannyLiveStatusCard');
+    expect(screenSource).toContain('TodayCoverage');
     expect(screenSource).toContain('canViewParentSchedule(onboarding.role)');
   });
 });

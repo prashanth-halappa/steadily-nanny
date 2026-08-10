@@ -32,6 +32,8 @@ import {
 } from '@/src/domains/schedule/utils/shiftGrouping';
 import { timeOffRowsForLocalDate } from '@/src/domains/schedule/utils/timeOffOverlap';
 import {
+  describeUncoveredCause,
+  inferUncoveredCauseDetail,
   isFullDayUncovered,
   type UncoveredWindowDisplay,
 } from '@/src/domains/schedule/utils/uncoveredDisplay';
@@ -42,6 +44,7 @@ import { useCreateParentCover } from '@/src/hooks/mutations/useCreateParentCover
 import { useRemoveParentCover } from '@/src/hooks/mutations/useRemoveParentCover';
 import { useChildren } from '@/src/hooks/queries/useChildren';
 import { useHouseholdMembers } from '@/src/hooks/queries/useHouseholdMembers';
+import { utcIsoToWallClockHHMM } from '@/src/lib/wallClock';
 import { useAuthStore } from '@/src/store/auth';
 import { useElevation } from '~/lib/design-tokens/elevation';
 import { useThemeColors } from '~/lib/design-tokens/useThemeColors';
@@ -131,6 +134,7 @@ function UncoveredRow({
   commitment,
   showActions,
   carers,
+  shifts,
   currentUserId,
   membersByUserId,
   memberLabels,
@@ -144,6 +148,7 @@ function UncoveredRow({
   commitment?: ChildCommitment;
   showActions: boolean;
   carers: HouseholdMember[];
+  shifts: readonly Shift[];
   currentUserId: string | null;
   membersByUserId: Map<string, HouseholdMember>;
   memberLabels: {
@@ -159,7 +164,8 @@ function UncoveredRow({
   const createCover = useCreateParentCover();
   const key = uncoveredKey(window);
 
-  const cause = t(`cover.cause.${window.cause}`);
+  const formattedStart = formatShiftTime(window.startsAt, displayTimeZone);
+  const formattedEnd = formatShiftTime(window.endsAt, displayTimeZone);
   const timeLabel = (() => {
     if (commitment && displayTimeZone) {
       const { startUtc, endUtc } = commitmentBoundsOnLocalDate(
@@ -168,13 +174,32 @@ function UncoveredRow({
         displayTimeZone
       );
       if (isFullDayUncovered(window, startUtc, endUtc)) {
-        return tToday('cover.uncovered.allDay');
+        return tToday('coverage.gap.allDay');
       }
     }
-    const start = formatShiftTime(window.startsAt, displayTimeZone);
-    const end = formatShiftTime(window.endsAt, displayTimeZone);
-    return `${start}–${end}`;
+    return `${formattedStart}–${formattedEnd}`;
   })();
+
+  const { cause, shift: causeShift } = inferUncoveredCauseDetail(
+    window,
+    shifts
+  );
+  const causeCarerName =
+    causeShift?.carer_id && membersByUserId.has(causeShift.carer_id)
+      ? resolveMemberDisplayName(
+          causeShift.carer_id,
+          currentUserId,
+          membersByUserId,
+          memberLabels
+        )
+      : null;
+  const causeLabel = describeUncoveredCause({
+    cause,
+    shift: causeShift,
+    carerName: causeCarerName,
+    timeZone: displayTimeZone ?? 'UTC',
+    t,
+  });
 
   const singleCarer = carers.length === 1 ? carers[0] : null;
   const carerFirstName = singleCarer
@@ -187,8 +212,9 @@ function UncoveredRow({
     : '';
 
   const extraHref = (() => {
-    const start = formatShiftTime(window.startsAt, displayTimeZone);
-    const end = formatShiftTime(window.endsAt, displayTimeZone);
+    const zone = displayTimeZone ?? 'UTC';
+    const start = utcIsoToWallClockHHMM(window.startsAt, zone);
+    const end = utcIsoToWallClockHHMM(window.endsAt, zone);
     const params = new URLSearchParams({
       date: localDate,
       start,
@@ -217,7 +243,7 @@ function UncoveredRow({
           <StatusPill variant="pending" label={t('cover.rowPill')} />
         </View>
         <Small className="text-muted-foreground">
-          {timeLabel} · {cause}
+          {timeLabel} · {causeLabel}
         </Small>
       </View>
       {showActions ? (
@@ -228,8 +254,14 @@ function UncoveredRow({
             onPress={() => router.push(extraHref)}
           >
             {singleCarer
-              ? t('cover.askToCover', { carerName: carerFirstName })
-              : t('cover.askSomeoneToCover')}
+              ? t('cover.askToCover', {
+                  carerName: carerFirstName,
+                  start: formattedStart,
+                })
+              : t('cover.askSomeoneToCover', {
+                  start: formattedStart,
+                  end: formattedEnd,
+                })}
           </Button>
           <Button
             testID={`schedule-uncovered-cover-${key}`}
@@ -658,6 +690,7 @@ export function AgendaView({
                 commitment={commitmentsById.get(item.window.commitmentId)}
                 showActions={showUncoveredActions}
                 carers={carersQuery.data ?? []}
+                shifts={shifts}
                 currentUserId={currentUserId}
                 membersByUserId={membersByUserId}
                 memberLabels={memberLabels}

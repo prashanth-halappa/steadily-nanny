@@ -4,11 +4,7 @@
 import { describe, expect, it } from 'bun:test';
 import type { Shift } from '@steadily-nanny/shared-types/schemas/shift.schema';
 import type { UncoveredWindow } from '@steadily-nanny/shared-types/uncoveredCare';
-import {
-  coveredVariantIndex,
-  hashLocalDate,
-  inferUncoveredCause,
-} from '../uncoveredDisplay';
+import { inferUncoveredCause } from '../uncoveredDisplay';
 
 const CHILD = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 
@@ -76,23 +72,5 @@ describe('inferUncoveredCause', () => {
       'nothingScheduled'
     );
     expect(inferUncoveredCause(window, [])).toBe('nothingScheduled');
-  });
-});
-
-describe('hashLocalDate', () => {
-  it('is stable for the same date and varies across dates', () => {
-    const a = hashLocalDate('2026-03-23');
-    const b = hashLocalDate('2026-03-23');
-    const c = hashLocalDate('2026-03-24');
-    expect(a).toBe(b);
-    expect(a).not.toBe(c);
-  });
-
-  it('coveredVariantIndex is always 0..3', () => {
-    for (const date of ['2026-01-01', '2026-06-15', '2026-12-31']) {
-      const idx = coveredVariantIndex(date);
-      expect(idx).toBeGreaterThanOrEqual(0);
-      expect(idx).toBeLessThan(4);
-    }
   });
 });

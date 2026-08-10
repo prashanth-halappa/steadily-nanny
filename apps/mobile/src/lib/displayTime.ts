@@ -13,7 +13,10 @@ export function timeToMinutes(time: string): number {
 }
 
 /**
- * Short local time label for an absolute ISO instant in `timeZone`.
+ * Fixed 24-hour `HH:MM` wall clock in `timeZone` for parsing and interval
+ * maths (`minutesInZone`, `hourInZone`, form wire values via
+ * `utcIsoToWallClockHHMM`). Not for on-screen display — use
+ * `formatInstantDisplay` / `formatClockTime` for locale-aware labels.
  * Falls back to the raw instant if the zone is unrecognized.
  */
 export function formatInstantInZone(iso: string, timeZone: string): string {

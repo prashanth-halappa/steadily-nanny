@@ -13,6 +13,7 @@ import type { PayArrangement } from '@steadily-nanny/shared-types/schemas/payArr
 import type {
   Shift,
   ShiftChangeRequest,
+  ShiftChild,
 } from '@steadily-nanny/shared-types/schemas/shift.schema';
 import {
   SHIFT_CHANGE_REQUEST_KINDS,
@@ -456,7 +457,7 @@ export class ShiftChangeRequestCommandService {
         shift,
         'extra_shift'
       );
-      this.notifyExtraShiftProposed(shift);
+      void this.notifyExtraShiftProposed(shift);
     }
     return { status: 'created', shift, adopted };
   }
@@ -712,6 +713,11 @@ export class ShiftChangeRequestCommandService {
         if (uncoveredInserted.length === 0) {
           this.notifyShiftCancelled(shift, changeRequestId);
         }
+        // Only a CARER requester gets the "your request was accepted" ping.
+        // Parents already learn of the cancellation through the household
+        // push above, so sending it to a parent requester notifies the same
+        // person twice for one action. The carer's pay push below is a
+        // different fact and goes out either way.
         if (request.requested_by === shift.carer_id) {
           this.notifyChangeRequestResponded(
             shift,
@@ -719,6 +725,10 @@ export class ShiftChangeRequestCommandService {
             PUSH_NOTIFICATION_TYPES.CHANGE_REQUEST_ACCEPTED
           );
         }
+        this.notifyCarerCancellationOutcome(
+          updatedShift,
+          applied.shift.cancellation_paid
+        );
       } else {
         this.notifyChangeRequestResponded(
           shift,
@@ -1054,7 +1064,15 @@ export class ShiftChangeRequestCommandService {
     this.safeNotify(() => {
       notifyHouseholdParents(shift.household_id, {
         title: 'Shift cancelled',
-        body: 'A shift has been cancelled.',
+        // Carries the day and hours for the same reason the decline push does:
+        // a cancellation you can triage from the lock screen on Sunday is a
+        // solvable problem; one you have to open the app to understand at 8:50
+        // on Monday is a crisis.
+        body: `${formatShiftWindow12h(
+          shift.starts_at,
+          shift.ends_at,
+          shift.timezone
+        )} was cancelled.`,
         data: {
           type: PUSH_NOTIFICATION_TYPES.SHIFT_CANCELLED,
           shiftId: shift.id,
@@ -1066,19 +1084,100 @@ export class ShiftChangeRequestCommandService {
   }
 
   /** Fire-and-forget: assigned carer learns about a new extra shift. */
-  private notifyExtraShiftProposed(shift: Shift): void {
+  private async notifyExtraShiftProposed(
+    shift: ShiftWithChildren
+  ): Promise<void> {
+    try {
+      if (!shift.carer_id) return;
+      const actorId = shift.created_by ?? shift.carer_id;
+      const parentName = shift.created_by
+        ? await this.resolveParentDisplayName(
+            shift.household_id,
+            shift.created_by
+          )
+        : 'A parent';
+      const childLabel = await this.resolveShiftChildrenLabel(
+        actorId,
+        shift.household_id,
+        shift.shift_children
+      );
+      const whenLabel = formatShiftWindow24h(
+        shift.starts_at,
+        shift.ends_at,
+        shift.timezone
+      );
+      const childSuffix = childLabel ? ` (${childLabel})` : '';
+      const body = `${parentName} asked if you can cover ${whenLabel}${childSuffix}.`;
+      const carerId = shift.carer_id;
+      if (!carerId) return;
+      this.safeNotify(() => {
+        notifyUser(carerId, {
+          title: 'Cover request',
+          body,
+          data: {
+            type: PUSH_NOTIFICATION_TYPES.EXTRA_SHIFT_PROPOSED,
+            shiftId: shift.id,
+            householdId: shift.household_id,
+          },
+        });
+      });
+    } catch {
+      // fire-and-forget
+    }
+  }
+
+  /** Fire-and-forget: tell the assigned carer the cancellation pay outcome. */
+  private notifyCarerCancellationOutcome(
+    shift: Shift,
+    cancellationPaid: boolean
+  ): void {
     this.safeNotify(() => {
       if (!shift.carer_id) return;
+      const windowLabel = formatShiftWindow12h(
+        shift.starts_at,
+        shift.ends_at,
+        shift.timezone
+      );
+      const body = cancellationPaid
+        ? `Your ${windowLabel} shift was cancelled. You'll still be paid for it.`
+        : `Your ${windowLabel} shift was cancelled — that's ${shiftDurationLabel(
+            shift.starts_at,
+            shift.ends_at
+          )} off this week's hours.`;
       notifyUser(shift.carer_id, {
-        title: 'Extra shift proposed',
-        body: 'A parent proposed an extra shift — open Schedule to respond.',
+        title: 'Shift cancelled',
+        body,
         data: {
-          type: PUSH_NOTIFICATION_TYPES.EXTRA_SHIFT_PROPOSED,
+          type: PUSH_NOTIFICATION_TYPES.SHIFT_CANCELLED,
           shiftId: shift.id,
           householdId: shift.household_id,
         },
       });
     });
+  }
+
+  private async resolveShiftChildrenLabel(
+    actorUserId: string,
+    householdId: string,
+    shiftChildren: ShiftChild[]
+  ): Promise<string | null> {
+    if (shiftChildren.length === 0) return null;
+    const names: string[] = [];
+    for (const row of shiftChildren) {
+      try {
+        const child = await this.children.getOwned(
+          actorUserId,
+          householdId,
+          row.child_id
+        );
+        const name = child.name.trim();
+        if (name) names.push(name);
+      } catch {
+        // omit unresolved children rather than blocking the push
+      }
+    }
+    if (names.length === 0) return null;
+    return names.join(', ');
   }
 
   /** Fire-and-forget: tell the other parent(s) a gated action already applied. */
@@ -1142,6 +1241,106 @@ export class ShiftChangeRequestCommandService {
 
 export const shiftChangeRequestCommandService =
   new ShiftChangeRequestCommandService();
+
+/**
+ * `8h`, `7h 30m`, `45m` — never rounded to whole hours.
+ *
+ * This lands in a message about her PAY. Rounding turned a 7h30m shift into
+ * "8h off this week's hours" (overstating the loss) and a short shift into
+ * "0h" (nonsense). On a money sentence, be exact or say nothing.
+ */
+function shiftDurationLabel(startsAt: string, endsAt: string): string {
+  const totalMinutes = Math.max(
+    0,
+    Math.round(
+      (new Date(endsAt).getTime() - new Date(startsAt).getTime()) / 60_000
+    )
+  );
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours === 0) return `${minutes}m`;
+  return minutes === 0 ? `${hours}h` : `${hours}h ${minutes}m`;
+}
+
+/** `Thu 9 Aug, 09:00–11:20` in the shift's household timezone. */
+function formatShiftWindow24h(
+  startsAt: string,
+  endsAt: string,
+  timezone: string
+): string {
+  const dayLabel = formatShiftAskDateLabel(startsAt, timezone);
+  const startTime = formatLocalTime24h(startsAt, timezone);
+  const endTime = formatLocalTime24h(endsAt, timezone);
+  return `${dayLabel}, ${startTime}–${endTime}`;
+}
+
+/** `9:00 AM – 5:00 PM` in the shift's household timezone. */
+function formatShiftWindow12h(
+  startsAt: string,
+  endsAt: string,
+  timezone: string
+): string {
+  const startTime = formatLocalTime12h(startsAt, timezone);
+  const endTime = formatLocalTime12h(endsAt, timezone);
+  return `${startTime} – ${endTime}`;
+}
+
+function formatShiftAskDateLabel(instantIso: string, timezone: string): string {
+  const instant = new Date(instantIso);
+  try {
+    return new Intl.DateTimeFormat('en-GB', {
+      weekday: 'short',
+      day: 'numeric',
+      month: 'short',
+      timeZone: timezone,
+    }).format(instant);
+  } catch {
+    return new Intl.DateTimeFormat('en-GB', {
+      weekday: 'short',
+      day: 'numeric',
+      month: 'short',
+      timeZone: 'UTC',
+    }).format(instant);
+  }
+}
+
+function formatLocalTime24h(instantIso: string, timezone: string): string {
+  const instant = new Date(instantIso);
+  try {
+    return new Intl.DateTimeFormat('en-GB', {
+      timeZone: timezone,
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    }).format(instant);
+  } catch {
+    return new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'UTC',
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    }).format(instant);
+  }
+}
+
+function formatLocalTime12h(instantIso: string, timezone: string): string {
+  const instant = new Date(instantIso);
+  try {
+    return new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    }).format(instant);
+  } catch {
+    return new Intl.DateTimeFormat('en-US', {
+      timeZone: 'UTC',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    }).format(instant);
+  }
+}
 
 function formatShiftDayLabel(localDate: string, timezone: string): string {
   try {
