@@ -35,7 +35,10 @@ import {
   Small,
 } from '@/src/components/ui/typography';
 import { useHouseholdCarers } from '@/src/domains/schedule/hooks/useHouseholdCarers';
-import { resolveMemberDisplayName } from '@/src/domains/schedule/utils/memberDisplayName';
+import {
+  resolveCarerName,
+  resolveMemberDisplayName,
+} from '@/src/domains/schedule/utils/memberDisplayName';
 import {
   formatShiftTime,
   localDateToWeekday,
@@ -200,13 +203,13 @@ function UncoveredRow({
   });
 
   const singleCarer = carers.length === 1 ? carers[0] : null;
+  // `resolveCarerName` with an EMPTY fallback, not `resolveMemberDisplayName`:
+  // the latter's last resort is a role phrase ('A nanny'), and the first-name
+  // split turned that into "Ask A to start at 9:00". '' falls the CTA through
+  // to the generic "Ask a nanny to cover" copy instead. Still the resolver, so
+  // a carer's display-name override still wins, as on every other surface.
   const carerFirstName = singleCarer
-    ? resolveMemberDisplayName(
-        singleCarer.user_id,
-        currentUserId,
-        membersByUserId,
-        memberLabels
-      ).split(' ')[0]
+    ? resolveCarerName(singleCarer, '').trim().split(/\s+/)[0]
     : '';
 
   const extraHref = (() => {
@@ -255,7 +258,7 @@ function UncoveredRow({
             size="sm"
             onPress={() => router.push(extraHref)}
           >
-            {singleCarer
+            {carerFirstName
               ? t('cover.askToCover', {
                   carerName: carerFirstName,
                   start: formattedStart,

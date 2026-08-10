@@ -164,6 +164,24 @@ push i18n is deferred.
 | Push i18n | `notifyHouseholdParents` title/body are English literals. |
 | **Extend adjacent shift** fix action | Agenda offers ask-for-cover, “I’ve got it” (`parent_cover`), and edit care hours — not “stretch the neighbouring shift”. |
 
+### Who “ask for cover” can ask
+
+The ask-for-cover action pushes the one-off extra-shift form
+(`ExtraShiftScreen`) prefilled with the window’s date/time/child. The recipient
+is **exactly one nanny already in the household** — single-select, required.
+`useHouseholdCarers` is therefore **nanny-only**, matching every server carer
+gate (`shiftChangeRequestCommandService.assertCarerRole` → 400
+`INVALID_SHIFT_CARER`); helpers are members but not bookable, have no pay
+arrangement, and cannot clock in. There is no broadcast, no request to a
+co-parent (they get `CO_PARENT_ACTION_FYI`), and no path to anyone outside the
+household.
+
+That same list drives the CTA copy: with exactly one **named** nanny the button
+reads `cover.askToCover` (“Ask Maria to start at 9:00”); with none, several, or
+one whose name is unset it falls back to `cover.askSomeoneToCover`, which says
+“Ask **a nanny** to cover …”. Both call sites resolve the name with an empty
+fallback on purpose — a phrase fallback gets chopped by the first-name split.
+
 ---
 
 ## 6. `parent_cover` — “I’ve got it”

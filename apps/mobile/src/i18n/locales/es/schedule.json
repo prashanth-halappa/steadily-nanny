@@ -290,7 +290,7 @@
     "rowPill": "Nadie reservado",
     "rowMeta": "{{childName}} · {{cause}}",
     "askToCover": "Pide a {{carerName}} que empiece a las {{start}}",
-    "askSomeoneToCover": "Pide a alguien para {{start}} – {{end}}",
+    "askSomeoneToCover": "Pide a una niñera que cubra {{start}} – {{end}}",
     "iveGotIt": "Yo me encargo",
     "parentCoveringRow": "Te encargas tú",
     "parentCoveringBy": "Se encarga {{parentName}}",

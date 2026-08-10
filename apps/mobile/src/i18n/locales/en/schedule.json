@@ -290,7 +290,7 @@
     "rowPill": "No one booked",
     "rowMeta": "{{childName}} · {{cause}}",
     "askToCover": "Ask {{carerName}} to start at {{start}}",
-    "askSomeoneToCover": "Ask someone to cover {{start}} – {{end}}",
+    "askSomeoneToCover": "Ask a nanny to cover {{start}} – {{end}}",
     "iveGotIt": "I've got it",
     "parentCoveringRow": "You're covering",
     "parentCoveringBy": "{{parentName}} is covering",

@@ -241,6 +241,15 @@ export function TodayCoverage({
   const hiddenCount = windows.length - visible.length;
   const carers = carersQuery.data ?? [];
   const singleCarer = carers.length === 1 ? carers[0] : null;
+  // Empty fallback ON PURPOSE. Always through the resolver — reading the raw
+  // name columns here would ignore a carer's display-name override and call
+  // her one name in this button and another on every other surface — but a
+  // carer with no name at all must resolve to '' so the CTA falls through to
+  // the generic "Ask a nanny to cover" copy. A phrase fallback ('Carer',
+  // 'A nanny') gets chopped by the first-name split into "Ask Carer" / "Ask A".
+  const singleCarerFirstName = singleCarer
+    ? carerFirstName(resolveCarerName(singleCarer, ''))
+    : '';
 
   const gapHeadline =
     windows.length === 1 && singleWindow
@@ -353,17 +362,9 @@ export function TodayCoverage({
               className={demoted ? 'self-start px-0' : 'w-full'}
               onPress={() => router.push(extraHref)}
             >
-              {singleCarer
+              {singleCarerFirstName
                 ? tSchedule('cover.askToCover', {
-                    // Always through the resolver: reading the raw name
-                    // columns here would ignore a carer's display-name
-                    // override and call her one name in this button and
-                    // another on every other surface.
-                    carerName:
-                      resolveCarerName(
-                        singleCarer,
-                        t('today:carerFallback')
-                      ).split(' ')[0] ?? '',
+                    carerName: singleCarerFirstName,
                     start: formatClockTime(singleWindow.startsAt, timeZone),
                   })
                 : tSchedule('cover.askSomeoneToCover', {

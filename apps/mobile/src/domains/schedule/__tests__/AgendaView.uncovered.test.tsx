@@ -228,6 +228,54 @@ describe('AgendaView uncovered row copy', () => {
     expect(label).not.toContain('{{end}}');
   });
 
+  it('a single nameless nanny falls through to the generic copy, not "Ask A"', () => {
+    // resolveMemberDisplayName's last resort is the role phrase 'A nanny';
+    // the first-name split used to chop that to "Ask A to start at ...".
+    const nameless = {
+      ...nannyMember(NANNY_ID, 'ignored'),
+      display_name_override: null,
+    };
+    const { getByTestId, window, formattedStart, formattedEnd } =
+      renderUncoveredRow({
+        carers: [nameless],
+        members: [nameless],
+        shifts: [makeShift()],
+      });
+
+    const button = getByTestId(
+      `schedule-uncovered-ask-${uncoveredKey(window)}`
+    );
+    const label = String(button.props.children);
+    expect(label).toBe(
+      interpolate(getNested(scheduleEn, 'cover.askSomeoneToCover'), {
+        start: formattedStart,
+        end: formattedEnd,
+      })
+    );
+    expect(label).not.toContain('Ask A ');
+  });
+
+  it('no cover string says "someone" in either locale', () => {
+    const scheduleEs = JSON.parse(
+      readFileSync(
+        join(import.meta.dir, '../../../i18n/locales/es/schedule.json'),
+        'utf8'
+      )
+    ) as Record<string, unknown>;
+
+    for (const [locale, bundle] of [
+      ['en', scheduleEn],
+      ['es', scheduleEs],
+    ] as const) {
+      // Values only — the KEY is still `askSomeoneToCover` (renaming it would
+      // churn every call site and test for no user-visible gain).
+      const cover = JSON.stringify((bundle as Record<string, unknown>).cover);
+      const strings = (cover.match(/:"[^"]*"/g) ?? []).join(' ').toLowerCase();
+      expect(`${locale}:${strings}`).not.toContain('someone');
+      expect(`${locale}:${strings}`).not.toContain('alguien');
+    }
+  });
+
   it('cause line names the carer when a cancelled shift overlaps', () => {
     const { getByTestId, window, formattedStart, formattedEnd } =
       renderUncoveredRow({
