@@ -189,12 +189,13 @@ column would relabel an undo-approve as an open dispute the next time anyone
 reads the row. The two facts about a week are kept in two places on purpose, and no new
 migration was needed to do it — the day-thread table already exists and
 already carries a nullable `shift_id` for exactly this kind of week/day-level
-(non-shift) event. A dedicated `reopen_reason` column on `timesheets` (wired
-through the shared `TimesheetSchema` wire contract) would let the reason
-surface in the UI the way `query_note` does today; nothing currently reads
-the day-thread audit trail for this, so that surfacing is a real product
-decision to make deliberately, not a gap to patch quietly — if you build it,
-it needs a migration, not a second reuse of `query_note`.
+(non-shift) event. **That surfacing was subsequently built** (verified 2026-08-10):
+`timesheets.reopen_reason` exists, rides the shared `TimesheetSchema` wire
+contract, and `ParentWeekView.tsx` reads it — a submitted week carrying a
+`reopen_reason` renders the reopened note and drives the earnings-state copy
+(`:250`, `:490`, `:670`). It got its own migration, as this paragraph required;
+it did **not** reuse `query_note`. The two facts about a week are still kept in
+two places on purpose.
 
 **A frozen week refuses new money, rather than silently reopening.**
 Approving an expense or mileage claim dated inside an already-`approved`
@@ -227,6 +228,34 @@ gets its own word rather than borrowing an earnings label. A figure with no
 state label is a defect — the reader can't otherwise tell a live projection,
 a locked number, and a settled fact apart, and those carry very different
 weight in a pay dispute.
+
+---
+
+### The parent's approval-time adjustment
+
+A parent can change the final figure once, at the moment they approve
+(`6e1e26d`): **one signed amount plus a required note**, staged on the parent's
+week and sent as a parameter of `POST /timesheets/:id/approve`, frozen
+atomically into the earnings snapshot alongside the gross it changes. No
+migration, no second endpoint, no new reopen semantics — the adjustment lives
+*in the snapshot*, so every existing clearing path (§3's reopen) drops it for
+free.
+
+- `WeekEarningsSchema`'s `ok` arm carries `adjustment`, `.nullable().optional()`
+  because every week frozen before this feature lacks the key and is re-parsed
+  on every read.
+- The invariant it must satisfy:
+  `gross_minor === sum(non-reimbursement lines) + (adjustment?.amount_minor ?? 0)`.
+- **Bounds are refused, never clamped** (§1's discipline): the computed-gross cap
+  fires *before* the fold so a broken rate can't hide behind a deduction, and the
+  adjusted total must land within `[0, MAX_MONEY_MINOR]`. Zero is refused too —
+  an adjustment of nothing is an omission, not a value.
+- There is deliberately **no `manual_adjustment` line kind** on the breakdown: a
+  `manual_adjustment` *time entry* is a correction of worked *minutes* and
+  belongs in the hours, while this is money. Two different things, two homes.
+- The nanny sees the line and the reason on her approved breakdown ("Taken off by
+  your family — …"), and the CSV export carries the signed row. Payments Gate 4
+  (§11) needed no change: the frozen column already holds the adjusted figure.
 
 ---
 
@@ -495,6 +524,14 @@ figure, so — same discipline as `pay_arrangements` (§2) and `pto_ledger`
 Recording the wrong amount cannot be fixed by editing the row, only by
 recording a correcting fact (there is currently no correction path at all;
 an over-recorded payment stands until a human notices).
+
+**The approval-time adjustment (§3) is NOT this correction path**, and the two
+get confused because both are called "adjustment". That one changes what a week
+is *worth* — a signed amount plus a required note, staged by the parent before
+approval and folded into the frozen `gross_minor` — so it moves the ceiling this
+section's Gate 4 checks against. It cannot touch a `payments` row, it is
+unavailable once the week is approved, and it has no effect on money that has
+already moved. A wrongly-recorded *payment* still has no remedy in the product.
 
 **A figure summed from `payments` carries the state word "Recorded", never
 "Estimated" or "Approved" (§3).** Those two describe earnings — a live

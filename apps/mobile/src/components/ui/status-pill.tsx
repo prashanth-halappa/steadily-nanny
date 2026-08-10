@@ -6,6 +6,12 @@
  * errors — schedule conflicts warn and never block, so those two variants use
  * the dedicated `shortNotice` hue (separate from `destructive`), never the
  * error treatment.
+ *
+ * The pill SHRINKS and its label truncates to one line. RN defaults
+ * `flexShrink: 0`, so without this a long label (a translated availability
+ * status, say) pushes the pill past its card and off the screen edge rather
+ * than ellipsising — `DAYLIGHT-UX-AUDIT.md` #29, which was overflow, not
+ * truncation. `self-start` still keeps a short pill hugging its content.
  */
 
 import { cva, type VariantProps } from 'class-variance-authority';
@@ -15,7 +21,7 @@ import { FILLED_CHIP_PADDING_Y } from '@/src/components/ui/badge';
 import { Text } from '@/src/components/ui/text';
 
 const statusPillVariants = cva(
-  `flex-row items-center self-start rounded-chip px-3 ${FILLED_CHIP_PADDING_Y}`,
+  `shrink flex-row items-center self-start rounded-chip px-3 ${FILLED_CHIP_PADDING_Y}`,
   {
     variants: {
       variant: {
@@ -60,7 +66,8 @@ export function StatusPill({ variant, label, testID }: StatusPillProps) {
     >
       <Text
         testID={testID ? `${testID}-label` : undefined}
-        className={cn(statusPillTextVariants({ variant }))}
+        className={cn('shrink', statusPillTextVariants({ variant }))}
+        numberOfLines={1}
       >
         {label}
       </Text>

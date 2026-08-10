@@ -10,7 +10,7 @@ Purpose: the exact toolchain and library versions this blueprint reuses, plus th
 
 | Library | Version | Role | Install note |
 |---|---|---|---|
-| Bun | `1.3.9` | Package manager + runtime + test runner. The **only** package manager. | `packageManager: "bun@1.3.9"` in root `package.json`. Install Bun, then `bun install`. |
+| Bun | `1.3.14` | Package manager + runtime + test runner. The **only** package manager. | `packageManager: "bun@1.3.14"` in root `package.json`. Install Bun, then `bun install`. |
 | Turborepo (`turbo`) | `2.7.2` | Task orchestrator across workspaces (`turbo run dev/build/lint/test/typecheck`). | root devDependency |
 | Biome (`@biomejs/biome`) | `2.3.10` | Formatter + linter. The **only** formatter/linter. | root devDependency |
 | Husky | `9.1.7` | Git hooks (`prepare: "husky"` installs them). | root devDependency |
@@ -18,7 +18,7 @@ Purpose: the exact toolchain and library versions this blueprint reuses, plus th
 | TypeScript | `5.9.3` | Type system across all apps/packages. | root devDependency |
 | Playwright | `1.58.2` | Web E2E (root-level, used by the web app). | root devDependency |
 
-> Bun is pinned at `1.3.9` everywhere — the CI workflow (`oven-sh/setup-bun`) and the root `packageManager` field both use this version. Bump both together if you ever change it.
+> Bun is pinned at `1.3.14` everywhere — the CI workflow (`oven-sh/setup-bun`) and the root `packageManager` field both use this version. Bump both together if you ever change it.
 
 ---
 

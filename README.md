@@ -48,4 +48,4 @@ docs/               The architecture/conventions playbook (10 numbered docs) —
 scripts/setup.ts    The identity find-replace tool — see SETUP.md
 ```
 
-**Package manager: Bun `1.3.9`, everywhere — never `npm`/`yarn`.** See `docs/01-STACK.md` for the full toolchain list.
+**Package manager: Bun `1.3.14`, everywhere — never `npm`/`yarn`.** See `docs/01-STACK.md` for the full toolchain list.

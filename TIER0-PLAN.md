@@ -774,15 +774,35 @@ shaped to receive them.
 Rough total: **4–6 focused implementation sessions** at this repo's
 conventions-and-tests density, Phase 2 the largest.
 
-## Open items deliberately left with the owner
+## Open items deliberately left with the owner — CLOSED 2026-08-10
 
 (The design questions formerly listed here were ruled on 2026-08-04 — see
-"Owner decisions" at the top. What remains is operational:)
+"Owner decisions" at the top. The operational remainder is now resolved:)
 
-- Apply migrations 040–044 to the live project as phases land (service-role
-  access is not available to agents here).
-- Default currency confirmed as GBP? (Plan assumes yes; it's a one-line
-  default either way.)
-- Notification *content* for expense-approved / pay-set events: rows will go
-  to the existing in-app outbox like every other domain event; delivery
-  remains the owner's separately-planned work.
+- ~~Apply migrations 040–044 to the live project as phases land.~~ — **DONE.**
+  Applied, along with everything through `072_remove_ask_other.sql`; the API is
+  deployed at `api.nanny.getsteadily.app`.
+- ~~Default currency confirmed as GBP?~~ — **RULED: no. The currency follows the
+  DEVICE, not a house default.** `apps/mobile/src/lib/deviceLocale.ts`
+  `getDeviceCurrency()` reads `expo-localization`'s `getLocales()[0].currencyCode`,
+  upcases it, and shape-checks it against the same `^[A-Z]{3}$` the
+  `CurrencyCodeSchema` and the `pay_arrangements.currency` DB check enforce.
+  `PaySetupScreen` seeds its state from it and `CurrencySelect` marks it as the
+  device option; `getDeviceLocale()` likewise drives `money.ts` formatting, so
+  grouping, decimal separator and symbol placement are the phone's too
+  (`630aad5`, "the currency is chosen, and the formatting is the phone's").
+
+  **`'GBP'` survives only as a degrade fallback, never as an intent**, in three
+  places, all deliberate and none of them a default anyone chooses: the two
+  `catch`/shape-check returns in `deviceLocale.ts` (a native-module read must
+  never be the reason a pay screen fails to render); `.default('GBP')` on
+  `payArrangement.schema.ts:165` and `expense.schema.ts:149/158`; and
+  `default 'GBP'` on the `041`/`044` columns. Currency belongs to the employment
+  arrangement, not the phone — a UK family whose phone region is US must not
+  silently store USD — so `getDeviceCurrency()` is a **prefill paired with a
+  picker**, never the final word, and `PayChangeSheet` deliberately seeds from
+  the existing arrangement instead.
+- ~~Notification *content* for expense-approved / pay-set events.~~ — moot as
+  written: there is **no in-app outbox table** and never was (see
+  `PROJECT-STATUS.md` §5). Delivery is fire-and-forget Expo push; adding a type
+  means a `PUSH_NOTIFICATION_TYPES` entry and a call site.

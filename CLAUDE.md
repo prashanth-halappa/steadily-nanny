@@ -23,7 +23,7 @@ If something you need to know isn't written down in one of these, that's a docum
 
 | Tool | Rule |
 |---|---|
-| Package manager | **Bun 1.3.9** — never `npm` or `yarn`. Pinned in root `package.json`'s `packageManager` field, `apps/mobile/eas.json`'s build profiles, and CI. |
+| Package manager | **Bun 1.3.14** — never `npm` or `yarn`. Pinned in root `package.json`'s `packageManager` field, `apps/mobile/eas.json`'s build profiles, and CI. |
 | Formatter/Linter | **Biome 2.5.0** — never Prettier or ESLint. `noExplicitAny: error`, `noNonNullAssertion: error`, `useImportType: error` (see `biome.json`). Test files (`*.test.ts(x)`, `__tests__/**`) get relaxed `any`/`!` rules via a Biome override — production code does not. |
 | Test runner | **`bun:test`** — never Jest or Vitest. Import test utilities from `'bun:test'`, not `'@jest/globals'` or `'vitest'`. |
 | Typecheck scope | Both apps' `tsconfig.json` **include test files** in `tsc --noEmit` — unlike some setups that exclude tests from typecheck, a type error in a `*.test.ts` file here fails `bun run typecheck` too. Keep test files type-clean. |

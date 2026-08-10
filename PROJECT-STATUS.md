@@ -154,7 +154,7 @@ things an adversarial pass caught. §4g is the more current picture.
 | 1c | Weekly schedule: propose → send → accept | **done** | `apps/api/src/domains/schedule/`, `src/domains/schedule/` (draft resume via `?patternId=`) |
 | 1d | One-off extra shift (ask/accept/decline/counter) | **done** | `shiftChangeRequest*` API + `changeRequests` mobile; ShiftDetailScreen counter/cancel |
 | 1e | Short notice change/cancel/swap | **done** | same change-request path; short-notice + cancellation_paid applied on accept |
-| 1f | Two-parent sync & approval | **done** (one gap — see below) | `approvalGateService` + `approvalApplierRegistry`, `co_parent_approvals`, `GET /users/me/memberships`, membership-based `useIsOnboarded` |
+| 1f | Two-parent sync & approval | **done, then deliberately narrowed** | Migration `072_remove_ask_other.sql` (owner decision 2026-08-09) **deletes the two-parent consent gate**: any single parent's action applies immediately, the actor is recorded for audit, the other parent gets an FYI push. Only `either` and `owner_only` survive in `HOUSEHOLD_APPROVAL_MODES`; in-flight approvals were closed as `withdrawn` and `co_parent_approvals` is kept as an audit table. `approvalGateService` + `approvalApplierRegistry` still exist for `owner_only`. |
 | 1g | Per-child coverage & gaps | **done** | `child_commitments` CRUD, `computeUncovered` + `uncoveredCareService` (event-driven + day-thread backstop), `CoverCard`, agenda uncovered rows, `parent_cover` |
 | 1h | Clock in/out → hours → weekly approval | **done** | `apps/api/src/domains/timesheet/`, `src/domains/timesheet/`, `src/domains/today/ClockInCard` |
 | 1i | Daily handoff notes | **done** | `handoff` API domain + `HandoffChipsCard` (no AI/voice) |
@@ -162,7 +162,7 @@ things an adversarial pass caught. §4g is the more current picture.
 | 1k | Notifications & reminders | deferred | push/email/SMS delivery deliberately out of scope; template Expo plumbing untouched |
 | 2a | Agenda list calendar view | **done** | `AgendaView` / ScheduleShiftsScreen + CalendarViewSwitcher |
 | 2b | Week ribbon calendar view | **done** | `WeekRibbonView` |
-| 2c | Coverage lanes calendar view | **done** | `CoverageLanesView` |
+| 2c | Coverage lanes calendar view | **folded into the agenda** | `CoverageLanesView.tsx` was **deleted** in `44b3419` as unrendered; per-child coverage now surfaces on `AgendaView` rows and in `uncoveredDisplay`/`uncoveredWeek`. The switcher ships two views, not three. |
 | 2d | Nanny cross-family rhythm view | **done** | `CrossFamilyRhythmView` (non-active households labelled "Other family") |
 
 Multi-household: `useActiveHousehold` + `HouseholdSwitcher`. Materialisation horizon: `POST /api/jobs/schedule-horizon`.
@@ -639,9 +639,13 @@ see §4g and `docs/DEFECT-LOG.md`.
 1. ~~No way to build a second schedule~~ — **RESOLVED (D5).**
    `schedule-pending-change-week` now routes from `accepted` back into the
    builder, confirmed live on device (`docs/screenshots/TOUR-PLAN.md`).
-2. **Draft resume.** `schedule-pending-continue-cta` always starts a fresh
-   wizard rather than reopening the saved draft's days. Still open — not part
-   of the defect sweep.
+2. ~~**Draft resume.**~~ — **RESOLVED (verified 2026-08-10).**
+   `SchedulePendingScreen.tsx:273` routes to
+   `/(private)/schedule/build?patternId=<pattern.id>` and
+   `ScheduleBuildScreen` resumes that pattern's days; `sendScheduleWeek`'s
+   `!patternId` branch is what creates a *new* week, and the "build a new week"
+   CTAs still omit it on purpose. §3's flow table already said this; §4f was the
+   stale half.
 3. ~~No scheduled job rolls the materialisation horizon forward~~ —
    **RESOLVED.** `apps/api/src/jobs/scheduleHorizonJob.ts` iterates every
    accepted pattern and calls `materialiseForHorizon`; it is wired to
@@ -871,10 +875,15 @@ today.
   push must never fail the write that triggered it. Adding a notification
   type therefore means adding a `PUSH_NOTIFICATION_TYPES` entry and a call
   site, not writing a row. To turn on the parts that are genuinely missing:
-  an email path (Resend — `RESEND_API_KEY`/`RESEND_WEBHOOK_SECRET` are
-  already in the API env schema, just unset), SMS, and, if an in-app
-  notification list is ever wanted, a table to hold the history that today is
-  simply not kept.
+  SMS, and, if an in-app notification list is ever wanted, a table to hold the
+  history that today is simply not kept. **Email is no longer missing — it is
+  built and unwired** (verified 2026-08-10): `apps/api/src/domains/email/` ships
+  a real `EmailService.sendEmail` over Resend (`config/resend.ts`) with graceful
+  degradation when unconfigured, `email_log`-backed dedupe, a per-user daily cap
+  (`DEFAULT_DAILY_EMAIL_CAP = 10`) and a log row per send. A repo-wide grep finds
+  **zero callers outside the domain** — no product event sends an email yet. This
+  is the same shape as `llmGenerate`: a working building block with nothing
+  wired into it.
 - **Server-side Google/Apple Calendar OAuth** — not built. Device-local
   one-way write via `expo-calendar` *is* shipped (Settings → Time & calendar;
   marker-in-notes diff; no `calendar_event_links` rows). Seam tables in
@@ -895,47 +904,67 @@ today.
   but force-disabled in `apps/mobile/lib/useColorScheme.ts`. To turn on:
   flip that override and QA every screen against the dark palette (they are
   authored but unverified in dark mode).
-- **Hosted AASA file for universal links** — `associatedDomains` in
-  `app.config.ts` expects `nanny.getsteadily.app` to serve
-  `/.well-known/apple-app-site-association`, which doesn't exist yet. To
-  turn on: host the AASA file (and Android `assetlinks.json`) at that
-  domain once it's provisioned.
+- ~~**Hosted AASA file for universal links**~~ — **SHIPPED 2026-08-10** for
+  iOS; the Android `assetlinks.json` route exists and 503s pending one
+  fingerprint. Both are served by `infra/nanny-site/worker.js`; see §6.
 
-## 6. Blocked on a human
+## 6. Blocked on a human — CLEARED 2026-08-10
 
-The user explicitly asked **not** to create the Apple or Google developer
-projects during this wave — the items below need a human with those account
-credentials:
+Every item in this section is **done**. Kept, struck through, so a later reader
+doesn't re-open work that has already landed. Verified against the tree on
+2026-08-10 where the artifact is checkable here.
 
-- **Apple Developer setup** — bundle id registration (`com.jetto.steadily.nanny`),
-  Sign In with Apple capability, an APNs `.p8` key, and a Services ID + JWT
-  secret for web-based Apple auth if needed.
-- **Google Cloud setup** — one GCP project with three OAuth clients (iOS,
-  Android — needs **both** the debug keystore SHA-1 and the Play App Signing
-  SHA-1, and Web), plus wiring Supabase's Google auth provider with a
-  comma-separated list of all three client ids.
-- **`eas init`** — needed to mint the real EAS project id;
-  `appIdentity.json.easProjectId` is still the literal placeholder
-  `SETUP-EAS-PROJECT-ID`.
-- **Supabase service-role key** — the MCP tools used in this session cannot
-  read service-role keys. `apps/api/.env`'s `SUPABASE_SERVICE_KEY` is the
-  placeholder `SET-ME-service-role-key-from-supabase-dashboard`; a human
-  must copy the real value from the Supabase dashboard (Project Settings →
-  API → service_role) for project ref `dylhrlvfkibipdkguptz`.
+- ~~**Apple Developer setup**~~ — **DONE.** Bundle id `com.jetto.steadily.nanny`
+  registered, Sign In with Apple capability, APNs key, Services ID. (Owner-side;
+  not verifiable from this checkout.)
+- ~~**Google Cloud setup**~~ — **DONE.** GCP project with the iOS / Android /
+  Web OAuth clients and the Supabase Google provider wired. (Owner-side.)
+- ~~**`eas init`**~~ — **DONE.** `easProjectId` is the real id
+  `32be2bb5-1b45-4432-8767-71cc1809ae5a` in
+  `apps/mobile/src/config/appIdentity.json` (note the path — this document used
+  to say the file was at the mobile root). Leftover: `app.config.js:266` still
+  carries the stale `SETUP: replace SETUP-EAS-PROJECT-ID` comment; the code one
+  line below it already reads the real value.
+- ~~**Supabase service-role key**~~ — **DONE.** `apps/api/.env`'s
+  `SUPABASE_SERVICE_KEY` holds a real value; the
+  `SET-ME-service-role-key-from-supabase-dashboard` placeholder is gone.
+- ~~**Migrations 040–044 to live**~~ (tracked in `TIER0-PLAN.md`) — **DONE**,
+  along with everything through 072. The API is deployed at
+  `api.nanny.getsteadily.app` (`5a852e4`).
 - ~~Sora font files~~ — superseded by Daylight (platform face; no custom fonts).
   See §4 Fonts.
 
+- ~~**Hosted app-association files**~~ — **DONE 2026-08-10, iOS half.**
+  `infra/nanny-site/worker.js` now answers `/.well-known/*` before the Lovable
+  proxy. `/.well-known/apple-app-site-association` serves
+  `H59RX7HAGW.com.jetto.steadily.nanny` for both `applinks` and
+  `webcredentials`, `200 application/json`, no redirect — **verified live**, and
+  Apple's own CDN (`app-site-association.cdn-apple.com/a/v1/nanny.getsteadily.app`)
+  has already picked it up. Path scope is `"/": "*"`, deliberately mirroring the
+  Android intent filter's `pathPrefix: '/'`; that is why
+  `src/utils/openExternalUrl.ts` routes Terms/Privacy through `WebBrowser`.
+
+**Still blocked on a human:** the **Android** half. `/.well-known/assetlinks.json`
+returns `503 ANDROID_SHA256_CERT_FINGERPRINTS is not configured` until someone
+pastes the SHA-256 of the Play App Signing certificate (Play Console → Test and
+release → App integrity → App signing key certificate — the *app signing* key,
+not the upload key) into `ANDROID_SHA256_CERT_FINGERPRINTS` in
+`infra/nanny-site/worker.js` and runs `npx wrangler deploy` from
+`infra/nanny-site/`. It refuses rather than serving a file with an empty
+fingerprint array, which would look valid and verify nothing.
+
 ## 7. Known template defects inherited
 
-- **Mobile `.env.example` port mismatch** — it defaults
-  `EXPO_PUBLIC_API_URL` to `:3000`, but the API's own `.env.example`
-  defaults `PORT=8080` and every curl example in `VERIFICATION.md` uses
-  `:8080`. `8080` is correct; `apps/mobile/.env` in this repo already uses
-  it. The `.env.example` itself was not touched (out of scope for this
-  agent — other agents own it).
-- **Bun version drift** — `bun.lock`/root `package.json`'s `packageManager`
-  field pin `bun@1.3.9`, but the installed toolchain in this environment is
-  `1.3.14`.
+- ~~**Mobile `.env.example` port mismatch**~~ — **FIXED 2026-08-10.**
+  `EXPO_PUBLIC_API_URL` now defaults to `http://localhost:8080/api`, matching
+  the API's own `.env.example` (`PORT=8080`), every curl example in
+  `VERIFICATION.md`, and `apps/mobile/.env` as it already was.
+- ~~**Bun version drift**~~ — **RESOLVED 2026-08-10.** The pin was moved up to
+  the installed toolchain, not the other way round: `bun@1.3.14` in root
+  `package.json`, all three `apps/mobile/eas.json` build profiles, all 14
+  `oven-sh/setup-bun` steps in `.github/workflows/ci.yml`, and the four docs
+  that quote the number (`CLAUDE.md`, `docs/01-STACK.md`,
+  `docs/02-MONOREPO-SETUP.md`, `docs/README.md`, plus `README.md`/`SETUP.md`).
 - **`docs/01-STACK.md` version table drift** — its version table has
   drifted from the real `package.json` dependency versions; not
   reconciled in this wave.
@@ -946,9 +975,11 @@ credentials:
   `apps/mobile/bunfig.toml` → 25% lines/functions/statements (`docs/09-TESTING.md`
   shows an illustrative 30/30/30 example, and separately notes 80% as an
   aspirational goal — neither is the live gate).
-- **`.maestro/` does not exist** — despite `docs/09-TESTING.md` §7
-  documenting Maestro E2E conventions, no `.maestro/` directory has been
-  created in this repo yet.
+- ~~**`.maestro/` does not exist**~~ — **RESOLVED (verified 2026-08-10).**
+  Two now exist: `apps/mobile/.maestro/` (the real suite — `config.yaml`,
+  `flows/`, `tests/`, captures) and a repo-root `.maestro/void-cx/` holding the
+  void-a-clock-in CX spec. `docs/09-TESTING.md` §7 is no longer describing
+  something absent.
 
 ## 8. How to run and verify
 

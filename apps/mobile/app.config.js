@@ -258,12 +258,10 @@ const config = {
   extra: {
     router: {},
     eas: {
-      // SETUP: replace with your EAS project id (`eas init`).
       projectId: appIdentity.easProjectId,
     },
   },
   updates: {
-    // SETUP: replace SETUP-EAS-PROJECT-ID with your real EAS project id.
     url: `https://u.expo.dev/${appIdentity.easProjectId}`,
     enabled: true,
     checkAutomatically: 'ON_LOAD',

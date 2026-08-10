@@ -77,4 +77,4 @@ A few facts that are easy to get wrong by assuming instead of checking:
 - **Coverage thresholds are ratcheted baselines: API 30%, mobile 25%** — treat 80% as an aspirational target for both, not the current gate. See doc 09.
 - **New code uses const-maps, not `enum`** (see doc 03 / 08). Legacy `enum` usage you may encounter elsewhere is tech debt, not the pattern to follow.
 - **The blessed API pattern is `src/domains/<feature>/`** — there is no `src/services/` folder in this template. See doc 04.
-- **Bun is pinned at `1.3.9` everywhere** — the root `packageManager` field and CI's `oven-sh/setup-bun` step match. See doc 01.
+- **Bun is pinned at `1.3.14` everywhere** — the root `packageManager` field and CI's `oven-sh/setup-bun` step match. See doc 01.

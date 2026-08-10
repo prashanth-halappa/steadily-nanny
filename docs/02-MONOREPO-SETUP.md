@@ -35,7 +35,7 @@ Template: [`templates/root-package.json`](./templates/root-package.json).
 {
   "private": true,
   "workspaces": ["apps/*", "packages/*"],
-  "packageManager": "bun@1.3.9"
+  "packageManager": "bun@1.3.14"
 }
 ```
 

@@ -5,6 +5,46 @@
 **Evidence:** the 17 captures in `docs/screenshots/daylight-2026-08/`, the source behind each screen, `lib/design-tokens/`, and the migration's own QA doc
 **Constraint:** every recommendation stays **inside** Daylight. Nothing here asks to change the direction, the plum/apricot assignment, the shadow-not-rule commitment, the platform face, or the radii.
 
+> **RE-VERIFIED 2026-08-10 — most of this audit is now closed, and the row
+> markers below are stale.** The `daylight-v2` arc (`e2aa78a`→`d6eccea`,
+> `83c5bee`) plus the auth-cluster and hours work landed after this document was
+> last touched, so read the per-row ✅ markers as a floor, not a status.
+>
+> **Confirmed fixed in the tree (spot-checked file-by-file):** #5 and #28 —
+> `welcome.tsx` renders `<InlineError testID="welcome-error">` off the store's
+> `error` and passes `isLoading` to every action; #9 — `HoursScreen.tsx:258`
+> has a real `<H1>`; #13 — `WeekRibbonView.tsx:81` switches on `shift.status`
+> instead of painting every cell `accent2`; #15 — copy is now "Book time off",
+> not "Request"; #17 — the welcome subtitle names the product; #18/#42 —
+> `app/auth/login.tsx` has `KeyboardAvoidingView`, `textContentType`,
+> `autoComplete`, `returnKeyType` chaining and a show/hide password toggle;
+> #19 — `store/auth.ts` routes every failure through
+> `authErrorMessage` → `getLocalizedAuthErrorMessage(error, i18n.t)`, so no raw
+> Supabase string reaches a user; #20 — the real
+> `AppleAuthentication.AppleAuthenticationButton` replaced the hand-rolled plum
+> one; #21 — welcome links Terms/Privacy; #22 — `formatWallClockTime` now
+> honours the device's 12h/24h preference; #23 — `HandoffChipsCard` is rebuilt
+> on `IconChip`/tone, so the muted-on-muted invisibility is gone; #25 —
+> `input.tsx` tracks `focused` and swaps to `border-ring border-1.5`; #26 —
+> `button.tsx` disabled states are `disabled:bg-muted disabled:opacity-100`,
+> not a 50% dim; #27 — `components/ui/inline-error.tsx` exists and consumes the
+> `errorInline*` tokens ("finally consumed", in its own header); #33 —
+> `CoverageLanesView.tsx` was deleted and coverage folded into the agenda;
+> #34 — `ThisWeeksShiftsCard` is no longer a card wrapping one button; #38 —
+> `TimeOffRow` renders a `StatusPill`; #41 — the date pickers now pass
+> `accentColor`/`textColor`/`themeVariant`; #43 — the 48px spacer is
+> `__DEV__`-guarded (`SetupScreenShell.tsx:79`) and no longer ships.
+>
+> **Still open on this pass:** #29 — `status-pill.tsx:18` still has no
+> `shrink`, no `maxWidth` and no `numberOfLines`, so a long label can still
+> overflow its card.
+>
+> **Not re-checked, treat as unknown:** #6, #8, #10, #11, #16, #35, #36, #37,
+> #39, #44. Several of their target files were restructured by `daylight-v2`
+> (`WeekTotal.tsx` no longer has the `H2` line #10 cites; `useElapsedTimer`
+> moved to `domains/today/hooks/`), so verify against the current file before
+> acting on the row text.
+
 > **Status — 2026-08-03, after #24 polish.** Residual gaps `#12/#14/#30/#31/#32/#40` were re-verified fixed; `#24` polish pass closed the remaining Account/Language order, Notifications wiring, and `elevation.row` grouping. Both dead-code items remain gone.
 >
 > **Verified fixed: #5, #6, #8–#44 — except #7.** Highlights:

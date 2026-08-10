@@ -146,7 +146,8 @@ noted — failures are logged and never fail the caller’s primary write/read.
 | **Shift cancelled** | `shiftChangeRequestCommandService` (cancel accept path) | `cancelled` | Awaited after cancel is applied. Same suppression pattern vs `SHIFT_CANCELLED` when uncovered push fires. |
 | **Care hours written** | `childCommitmentCommandService` create/update/remove | `needsAdded` | Fire-and-forget for **today + next 2 local dates** (3 days) after any commitment write. |
 | **Closure removed** | `householdClosureCommandService.remove` | `closureRemoved` | Each local date from closure span intersecting `[today, today+30]` in household TZ. `excludeUserId` = remover (they already know). |
-| **Schedule materialised** | `schedulePatternCommandService` after `materialise` | `nothingScheduled` | Each `touchedDates` entry from today through **today+7** (household TZ). Not wired in `scheduleHorizonJob` — only pattern-driven materialisation paths that return `touchedDates`. |
+| **Schedule materialised** | `schedulePatternCommandService` after `materialise` | `nothingScheduled` | Each `touchedDates` entry from today through **today+7** (household TZ). |
+| **Horizon job sweep** | `scheduleHorizonJob` → `sweepUncoveredCare` | per `detectUncoveredCareForDate` | **Wired as of 2026-08-10** (verified in the tree): the job calls `detectUncoveredCareForDate` across its backstop window, so households that neither write nor read a day-thread still get detection. This closes the "not wired in `scheduleHorizonJob`" gap this table used to record. |
 
 ### Push rule (72 hours)
 

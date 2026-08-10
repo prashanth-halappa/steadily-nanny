@@ -537,8 +537,8 @@ it reflects real discipline rather than only the exercised paths staying honest.
 
 ## D27 — `ShiftSchema` is behind its own implementation
 
-**Status:** IN PROGRESS — **still, and it moved backwards** ·
-**Severity:** low now, blocking later
+**Status:** FIXED — verified in the tree 2026-08-10 ·
+**Severity:** was low, blocking later
 
 Both shift read endpoints return `ShiftWithChildren` — the shift plus its joined
 `shift_children` — but `ShiftSchema` declares no such field, so Zod silently
@@ -562,6 +562,17 @@ the entry exists for flow 2c, and flow 2c has no code. Note also that the
 `day.children` reads in `SchedulePatternPreview.tsx`, `ScheduleRespondScreen.tsx`
 and `ScheduleBuildScreen.tsx` are **pattern-day** children, a different shape;
 they are not evidence that this is wired up.
+
+**CLOSED 2026-08-10 — on consumers, not on the schema line.** The bar this entry
+set is met: five non-test mobile readers of `shift.shift_children` now exist —
+`schedule/utils/runCalendarSync.ts:160`, `schedule/utils/uncoveredWeek.ts:26`,
+`schedule/utils/uncoveredDisplay.ts:34`,
+`schedule/components/ShiftDetailScreen.tsx:303` (passes `shiftChildren` down),
+`today/components/ClockInCard.tsx:124–128`, and `lib/useWidgetSnapshotSync.ts:131`.
+Flow 2c itself was *not* revived — `CoverageLanesView.tsx` stayed deleted and
+per-child coverage surfaces through the agenda and the uncovered-care path
+instead. So the outcome is the reverse of the one this entry anticipated: the
+field found its consumers somewhere other than the view it was blocking.
 
 ## D28 — Mobile's hand-mirrored request schema drops three validations
 

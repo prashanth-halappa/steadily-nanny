@@ -10,7 +10,7 @@ Each step names the exact command and what you should observe. If a step's obser
 
 1. **Get the code.** If you started from "Use this template" on GitHub, you already have a fresh repo — `git clone` it. If you're starting from a local copy of this template, `git init` a fresh repo in a new directory so your app's history doesn't inherit the template's.
 
-2. **Install Bun 1.3.9 if you don't have it**, then install dependencies:
+2. **Install Bun 1.3.14 if you don't have it**, then install dependencies:
    ```bash
    bun install
    ```
