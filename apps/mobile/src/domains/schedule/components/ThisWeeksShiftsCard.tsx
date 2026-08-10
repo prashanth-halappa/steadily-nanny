@@ -128,14 +128,14 @@ export function ThisWeeksShiftsCard() {
 
   return (
     <View testID="today-shifts-card" className="gap-2">
-      <MetadataLabel className="text-muted-foreground">
-        {t('todayCard.nextUpTitle')}
+      <MetadataLabel
+        testID={soleCarerName ? 'today-next-up-carer' : undefined}
+        className="text-muted-foreground"
+      >
+        {soleCarerName
+          ? t('todayCard.nextUpTitleWithCarer', { name: soleCarerName })
+          : t('todayCard.nextUpTitle')}
       </MetadataLabel>
-      {soleCarerName ? (
-        <Small testID="today-next-up-carer" className="text-muted-foreground">
-          {soleCarerName}
-        </Small>
-      ) : null}
       {nextShifts.length === 0 ? (
         <Small className="text-muted-foreground">
           {t('todayCard.nextUpEmpty')}

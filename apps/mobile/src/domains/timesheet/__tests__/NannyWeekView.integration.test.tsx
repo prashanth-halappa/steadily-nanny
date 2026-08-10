@@ -20,7 +20,12 @@ import * as expenseSchemaModule from '@steadily-nanny/shared-types/schemas/expen
 import * as payArrangementSchemaModule from '@steadily-nanny/shared-types/schemas/payArrangement.schema';
 import * as timesheetSchemaModule from '@steadily-nanny/shared-types/schemas/timesheet.schema';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import {
+  fireEvent,
+  render,
+  waitFor,
+  within,
+} from '@testing-library/react-native';
 import type React from 'react';
 import { useAuthStore } from '@/src/store/auth';
 
@@ -345,7 +350,13 @@ beforeAll(async () => {
   formatWeekRangeLabel = weekUtils.formatWeekRangeLabel;
 });
 
-function renderNannyView({ readOnly = false }: { readOnly?: boolean } = {}) {
+function renderNannyView({
+  readOnly = false,
+  isPastMember = false,
+}: {
+  readOnly?: boolean;
+  isPastMember?: boolean;
+} = {}) {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: { retry: false, gcTime: 0 },
@@ -368,6 +379,7 @@ function renderNannyView({ readOnly = false }: { readOnly?: boolean } = {}) {
         isNextWeekDisabled={false}
         isPreviousWeekDisabled={false}
         readOnly={readOnly}
+        isPastMember={isPastMember}
       />
     </QueryClientProvider>
   );
@@ -500,7 +512,11 @@ describe('NannyWeekView — earnings arms', () => {
 
   // Daylight P0-5 "nanny appreciated": once approved, her card names the
   // household and the date, and the gross her own week worked out to.
-  it('approved-frozen arm: shows the appreciation line naming the household', async () => {
+  // Daylight v2: the sentence no longer carries the money clause
+  // (`approvedByHouseholdWithGross` is gone) — the gross is its own
+  // `Figure28` line beside it, so the SAME two facts are still stated, just
+  // not in one string.
+  it('approved-frozen arm: shows the appreciation line naming the household, with the gross beside it', async () => {
     getByIdMock.mockImplementation(() =>
       Promise.resolve(
         makeTimesheetWeek({
@@ -519,8 +535,137 @@ describe('NannyWeekView — earnings arms', () => {
       expect(getByTestId('hours-approved-by-note')).toBeTruthy()
     );
     expect(getByTestId('hours-approved-by-note').props.children).toBe(
-      'approvedByHouseholdWithGross'
+      'approvedByHousehold'
     );
+    expect(getByTestId('hours-approved-by-amount').props.children).toBe(
+      '£148.00'
+    );
+    // Both live in the status card, not the money card below.
+    expect(
+      within(getByTestId('hours-week-total')).getByTestId(
+        'hours-approved-by-amount'
+      )
+    ).toBeTruthy();
+  });
+
+  // docs/11-MONEY.md: the money clause is OMITTED, never fabricated, when
+  // the week has no server total. An approved week priced by no arrangement
+  // still gets the appreciation sentence — and no figure at all.
+  it('approved-frozen arm: omits the gross figure when earnings are not `ok`', async () => {
+    getByIdMock.mockImplementation(() =>
+      Promise.resolve(
+        makeTimesheetWeek(
+          {
+            status: 'approved',
+            approved_at: '2026-08-10T09:00:00.000Z',
+          },
+          {
+            status: 'no_arrangement',
+            week_start: WEEK_START,
+            unpriced_dates: [WEEK_START],
+          }
+        )
+      )
+    );
+    listTimesheetsMock.mockImplementation(() =>
+      Promise.resolve([
+        makeTimesheet({
+          status: 'approved',
+          approved_at: '2026-08-10T09:00:00.000Z',
+        }),
+      ])
+    );
+
+    const { getByTestId, queryByTestId, queryAllByText } = renderNannyView();
+
+    await waitFor(() =>
+      expect(getByTestId('hours-approved-by-note')).toBeTruthy()
+    );
+    expect(queryByTestId('hours-approved-by-amount')).toBeNull();
+    expect(queryAllByText('£0.00')).toHaveLength(0);
+  });
+});
+
+// Daylight v2 (screens-hours.md §2/§3/§5): the statement is five blocks, and
+// which block owns which fact is the whole point of the rebuild. These pin
+// the placement, not just the presence.
+describe('NannyWeekView — the statement blocks own the right facts', () => {
+  it('the hero band owns the figure and the week nav — the status card owns neither', async () => {
+    const { getByTestId, queryByTestId } = renderNannyView();
+
+    await waitFor(() => expect(getByTestId('hours-total')).toBeTruthy());
+
+    const hero = within(getByTestId('hours-hero-band'));
+    expect(hero.getByTestId('hours-title')).toBeTruthy();
+    expect(hero.getByTestId('hours-total').props.children).toBe('8h');
+    expect(hero.getByTestId('hours-week-prev')).toBeTruthy();
+    expect(hero.getByTestId('hours-week-label')).toBeTruthy();
+    expect(hero.getByTestId('hours-week-next')).toBeTruthy();
+
+    // `WeekTotal` is the STATUS card now: the figure and the nav moved out,
+    // the pill stayed.
+    const statusCard = within(getByTestId('hours-week-total'));
+    expect(statusCard.queryByTestId('hours-total')).toBeNull();
+    expect(statusCard.queryByTestId('hours-week-prev')).toBeNull();
+    expect(statusCard.getByTestId('hours-timesheet-status')).toBeTruthy();
+    expect(statusCard.getByTestId('hours-status-chip')).toBeTruthy();
+    // …and the money line moved down into the money card, not up into here.
+    expect(statusCard.queryByTestId('hours-earnings-line-amount')).toBeNull();
+    expect(queryByTestId('hours-past-member-note')).toBeNull();
+  });
+
+  it('the past-member note is the hero band’s, and is distinct from readOnly', async () => {
+    const readOnlyOnly = renderNannyView({ readOnly: true });
+    await waitFor(() =>
+      expect(readOnlyOnly.getByTestId('hours-total')).toBeTruthy()
+    );
+    // `readOnly` alone hides the writes but says nothing.
+    expect(readOnlyOnly.queryByTestId('hours-past-member-note')).toBeNull();
+    readOnlyOnly.unmount();
+
+    const pastMember = renderNannyView({ readOnly: true, isPastMember: true });
+    await waitFor(() =>
+      expect(pastMember.getByTestId('hours-past-member-note')).toBeTruthy()
+    );
+    expect(
+      within(pastMember.getByTestId('hours-hero-band')).getByTestId(
+        'hours-past-member-note'
+      ).props.children
+    ).toBe('pastMemberNote');
+  });
+
+  it('the gross resolves inside the money card, never loose in the footer', async () => {
+    const { getByTestId } = renderNannyView();
+
+    await waitFor(() =>
+      expect(getByTestId('hours-earnings-line-amount')).toBeTruthy()
+    );
+    const moneyCard = within(getByTestId('hours-money-card'));
+    expect(
+      moneyCard.getByTestId('hours-earnings-line-amount').props.children
+    ).toBe('£148.00');
+    expect(moneyCard.getByTestId('hours-earnings-line-pressable')).toBeTruthy();
+  });
+
+  it('shows the skeleton, not a full-screen spinner, while the hours load', async () => {
+    let releaseEntries: (entries: unknown[]) => void = () => {};
+    listEntriesMock.mockImplementation(
+      () =>
+        new Promise(resolve => {
+          releaseEntries = resolve as (entries: unknown[]) => void;
+        })
+    );
+
+    const { getByTestId, queryByTestId } = renderNannyView();
+
+    await waitFor(() => expect(getByTestId('hours-loading')).toBeTruthy());
+    // The week label paints immediately — the skeleton replaces the figure
+    // only.
+    expect(getByTestId('hours-week-label')).toBeTruthy();
+    expect(queryByTestId('hours-total')).toBeNull();
+
+    releaseEntries([makeEntry()]);
+    await waitFor(() => expect(getByTestId('hours-total')).toBeTruthy());
   });
 });
 

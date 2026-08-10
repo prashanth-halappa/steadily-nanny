@@ -1,21 +1,24 @@
 /**
  * @module domains/timesheet/components/WeekEarningsLine
  *
- * The money line under the hours total on `WeekTotal` (`docs/TIER0-CX-SPEC.md`
- * §4.1). Every amount is labelled with its state (`docs/11-MONEY.md` §3): the
- * ONLY two labels this line can show for a priced week are "Estimated gross"
- * (open/submitted/queried) and "Approved gross" (frozen). No arrangement
- * never renders £0.00 — it renders the role-asymmetric nudge (§4.4) instead,
- * and a departed carer's unpriced week gets its own caption rather than a
- * nudge whose CTA she — sorry, the parent — could never complete for her
- * (§8, "Departed/deleted carer's unapproved week").
+ * The earnings half of the money card (`docs/design/screens-hours.md` §5,
+ * `docs/TIER0-CX-SPEC.md` §4.1). Every amount is labelled with its state
+ * (`docs/11-MONEY.md` §3): the ONLY two labels this section can show for a
+ * priced week are "Estimated gross" (open/submitted/queried) and "Approved
+ * gross" (frozen). No arrangement never renders £0.00 — it renders the
+ * role-asymmetric nudge (§4.4) instead, and a departed carer's unpriced week
+ * gets its own caption rather than a nudge whose CTA she — sorry, the parent
+ * — could never complete for her (§8, "Departed/deleted carer's unapproved
+ * week").
  *
- * Hidden entirely (renders `null`) for:
+ * Which of those arms applies is decided ONCE, by `weekEarningsSectionKind`,
+ * so `WeekMoneyCard` can ask "is there anything to show?" without
+ * re-deriving the cascade — an empty white card is the failure mode that
+ * splitting this section out of `WeekTotal` would otherwise introduce.
+ *
+ * Renders nothing (`kind === 'none'`) for:
  * - `earnings === null` — no data yet (loading, or no timesheet row exists
- *   for this week at all). §4.5 "Loading": never a £0.00 placeholder, just
- *   omit the line until real data arrives — the caller already blocks
- *   rendering `WeekTotal` on `isLoading`, so this case mostly covers "no
- *   timesheet row yet" rather than an in-flight fetch.
+ *   for this week at all). §4.5 "Loading": never a £0.00 placeholder.
  * - `hours_only` with reason `legacy_approval` or `unreadable_snapshot` — an
  *   approved week from before earnings existed, or a snapshot that failed to
  *   parse. §8: "renders hours only — no money line at all", never a caption
@@ -26,24 +29,69 @@
  *   alone — a topup line is the only way gross can be non-zero on a
  *   zero-hours week.
  *
+ * The rate sub-line ("38h 30m × £12.00") is shown ONLY when the whole week
+ * priced at a single rate. A week that crosses a raise, or carries overtime
+ * at a multiplier, has no single "× rate" that is true — and the one thing
+ * this screen may never do is state a number nobody owes (docs/11-MONEY.md).
+ * The breakdown sheet says the rest.
+ *
  * The reopen-reason caption is NOT rendered here — it is a timesheet-status
  * fact owned by `WeekTotal`, so it survives every early return above.
  */
 import { useRouter } from 'expo-router';
-import { ChevronRight } from 'lucide-react-native';
+import { Wallet } from 'lucide-react-native';
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
 import { AnimatedPressable } from '@/lib/animations';
-import { spacing } from '@/lib/design-tokens';
-import { Icon } from '@/lib/icons/iconWithClassName';
 import { Button } from '@/src/components/ui/button';
+import { IconChip } from '@/src/components/ui/icon-chip';
 import { Text } from '@/src/components/ui/text';
-import { H3, MetadataLabel, Small } from '@/src/components/ui/typography';
+import { Figure28, H4, Small } from '@/src/components/ui/typography';
 import { formatMoney } from '@/src/lib/money';
 import type { TimesheetStatus, WeekEarningsStateResult } from '../types';
 import { HOURS_ONLY_REASONS, WEEK_EARNINGS_STATES } from '../types';
+import { formatEarningsDuration } from '../utils/earningsFormat';
 
 export type EarningsRole = 'parent' | 'nanny';
+
+/** Which arm of the section applies — `'none'` means render nothing at all. */
+export type WeekEarningsSectionKind =
+  | 'none'
+  | 'error'
+  | 'departed'
+  | 'no-arrangement'
+  | 'currency-change'
+  | 'ok';
+
+interface WeekEarningsSectionInput {
+  earnings: WeekEarningsStateResult | null;
+  totalMinutes: number;
+  earningsError?: boolean;
+}
+
+/** The one place the section's state cascade lives — see module header. */
+export function weekEarningsSectionKind({
+  earnings,
+  totalMinutes,
+  earningsError = false,
+}: WeekEarningsSectionInput): WeekEarningsSectionKind {
+  if (earningsError) return 'error';
+  if (earnings === null) return 'none';
+  if (earnings.status === WEEK_EARNINGS_STATES.HOURS_ONLY) {
+    return earnings.reason === HOURS_ONLY_REASONS.CARER_REMOVED
+      ? 'departed'
+      : 'none';
+  }
+  if (earnings.status === WEEK_EARNINGS_STATES.NO_ARRANGEMENT) {
+    return 'no-arrangement';
+  }
+  if (earnings.status === WEEK_EARNINGS_STATES.CURRENCY_CHANGE) {
+    return 'currency-change';
+  }
+  const isZeroHours = Math.round(totalMinutes) <= 0;
+  if (isZeroHours && earnings.gross_minor === 0) return 'none';
+  return 'ok';
+}
 
 interface WeekEarningsLineProps {
   testID?: string;
@@ -67,22 +115,41 @@ interface WeekEarningsLineProps {
   carerId: string | null;
   /** For the departed-carer caption (`hours_only`/`carer_removed`). */
   carerDisplayName: string;
-  /** Whose hours this line is — folded into the `ok` arm's
-   * `accessibilityLabel` ONLY (`"${carerName}: ${label} ${amount}"`), never
-   * into the visible label text (deliberate — the visible row stays
-   * carer-agnostic; `WeekTotal`'s identity row already names her). */
+  /** Whose hours this section is — folded into the `ok` arm's
+   * `accessibilityLabel` ONLY, never into the visible label text
+   * (deliberate; the hero band already names her). */
   carerName?: string | null;
   /** Hours actually recorded this week — drives the zero-hours omission
    * rule together with `gross_minor` (see module header). */
   totalMinutes: number;
   /** True when the LAST fetch of this week's timesheet/earnings failed —
    * §4.5 "Earnings error (hours OK)": hours must still render; only the
-   * money line degrades to a retry affordance. */
+   * money card degrades to a retry affordance. */
   earningsError?: boolean;
   onRetryEarnings?: () => void;
-  /** Opens the breakdown sheet — only wired when the line is actually
+  /** Opens the breakdown sheet — only wired when the section is actually
    * tappable (the `ok` arm). */
   onPress?: () => void;
+}
+
+/** "38h 30m × £12.00", or null when the week has no single true rate. */
+function singleRateSubline(
+  earnings: Extract<WeekEarningsStateResult, { status: 'ok' }>
+): { duration: string; rate: string } | null {
+  const priced = earnings.lines.filter(line => line.minutes > 0);
+  if (priced.length === 0) return null;
+  const first = priced[0];
+  if (!first) return null;
+  const sameRate = priced.every(
+    line => line.rate_minor === first.rate_minor && (line.multiplier ?? 1) === 1
+  );
+  if (!sameRate) return null;
+  return {
+    duration: formatEarningsDuration(
+      priced.reduce((sum, line) => sum + line.minutes, 0)
+    ),
+    rate: formatMoney(first.rate_minor, earnings.currency),
+  };
 }
 
 export function WeekEarningsLine({
@@ -100,10 +167,17 @@ export function WeekEarningsLine({
 }: WeekEarningsLineProps) {
   const { t } = useTranslation('hours');
   const router = useRouter();
+  const kind = weekEarningsSectionKind({
+    earnings,
+    totalMinutes,
+    earningsError,
+  });
 
-  if (earningsError) {
+  if (kind === 'none') return null;
+
+  if (kind === 'error') {
     return (
-      <View testID={testID} className="mt-4 gap-1">
+      <View testID={testID} className="gap-1">
         <Small className="text-muted-foreground">
           {t('earningsCouldntCompute')}
         </Small>
@@ -111,6 +185,7 @@ export function WeekEarningsLine({
           testID={`${testID}-retry`}
           variant="ghost"
           size="sm"
+          className="self-start"
           onPress={onRetryEarnings}
         >
           <Text>{t('earningsRetry')}</Text>
@@ -119,12 +194,9 @@ export function WeekEarningsLine({
     );
   }
 
-  if (earnings === null) return null;
-
-  if (earnings.status === WEEK_EARNINGS_STATES.HOURS_ONLY) {
-    if (earnings.reason !== HOURS_ONLY_REASONS.CARER_REMOVED) return null;
+  if (kind === 'departed') {
     return (
-      <View testID={testID} className="mt-4">
+      <View testID={testID}>
         <Small className="text-muted-foreground">
           {t('earningsDepartedCarer', { name: carerDisplayName })}
         </Small>
@@ -132,7 +204,7 @@ export function WeekEarningsLine({
     );
   }
 
-  if (earnings.status === WEEK_EARNINGS_STATES.NO_ARRANGEMENT) {
+  if (kind === 'no-arrangement') {
     // review finding 3: an approved week is FROZEN — a backdated arrangement
     // recomputes nothing (approved weeks never recompute), so the "Set a pay
     // rate" CTA's promise is unkeepable here. Render the mandatory
@@ -140,7 +212,7 @@ export function WeekEarningsLine({
     // entirely for both roles (the parent's own CTA included).
     if (timesheetStatus === 'approved') {
       return (
-        <View testID={testID} className="mt-4">
+        <View testID={testID}>
           <Small className="text-muted-foreground">
             {t('earningsNoArrangementApproved')}
           </Small>
@@ -148,7 +220,7 @@ export function WeekEarningsLine({
       );
     }
     return (
-      <View testID={testID} className="mt-4 gap-1">
+      <View testID={testID} className="gap-1">
         <Small className="text-muted-foreground">
           {viewerRole === 'parent'
             ? t('earningsNoArrangementParent')
@@ -159,6 +231,7 @@ export function WeekEarningsLine({
             testID={`${testID}-set-rate`}
             variant="ghost"
             size="sm"
+            className="self-start"
             onPress={() => router.push(`/settings/pay/setup/${carerId}`)}
           >
             <Text>{t('earningsSetPayRate')}</Text>
@@ -168,14 +241,14 @@ export function WeekEarningsLine({
     );
   }
 
-  if (earnings.status === WEEK_EARNINGS_STATES.CURRENCY_CHANGE) {
+  if (kind === 'currency-change') {
     // review finding 3: the live caption ("ask your family to check the
     // terms") promises an ongoing fix that a frozen approved week can never
     // receive — an approved timesheet never recomputes. Swap in copy that
     // states the outcome instead of an unkeepable ask, carrying the
     // mandatory "Approved" state word.
     return (
-      <View testID={testID} className="mt-4">
+      <View testID={testID}>
         <Small className="text-muted-foreground">
           {timesheetStatus === 'approved'
             ? t('earningsCurrencyChangeApproved')
@@ -185,15 +258,15 @@ export function WeekEarningsLine({
     );
   }
 
-  // `ok` — the only arm with an actual number.
-  const isZeroHours = Math.round(totalMinutes) <= 0;
-  if (isZeroHours && earnings.gross_minor === 0) return null;
+  // `ok` — the only arm with an actual number. `kind` already proved it.
+  if (!earnings || earnings.status !== WEEK_EARNINGS_STATES.OK) return null;
 
   const isApproved = timesheetStatus === 'approved';
   const label = t(
     isApproved ? 'earningsApprovedGross' : 'earningsEstimatedGross'
   );
   const amount = formatMoney(earnings.gross_minor, earnings.currency);
+  const subline = singleRateSubline(earnings);
   // Carer name goes in the a11y label only — never the visible label text
   // (deliberate; see `carerName`'s doc comment above).
   const accessibilityLabel = carerName
@@ -201,7 +274,28 @@ export function WeekEarningsLine({
     : `${label} ${amount}`;
 
   return (
-    <View testID={testID} className="mt-4 gap-1">
+    <View testID={testID} className="gap-1">
+      <View className="flex-row items-center gap-3">
+        <IconChip tone="hours" icon={Wallet} testID={`${testID}-chip`} />
+        <H4 className="flex-1">{label}</H4>
+      </View>
+      {/* The gross reads at 28, never 40 — the hero band's hours figure owns
+          40, and two numbers at one size is a reader who cannot tell which
+          one is money (screens-hours.md §5). */}
+      <Figure28
+        testID={`${testID}-amount`}
+        accessibilityLabel={accessibilityLabel}
+      >
+        {amount}
+      </Figure28>
+      {subline ? (
+        <Small testID={`${testID}-rate`} className="text-muted-foreground">
+          {t('earningsRateSubline', {
+            duration: subline.duration,
+            rate: subline.rate,
+          })}
+        </Small>
+      ) : null}
       <AnimatedPressable
         testID={`${testID}-pressable`}
         accessibilityRole="button"
@@ -209,27 +303,9 @@ export function WeekEarningsLine({
         hitSlop={8}
         onPress={onPress}
       >
-        <View
-          className="flex-row items-baseline justify-between gap-2 rounded-row bg-muted px-4 py-3"
-          style={{ minHeight: spacing.minTouchTarget }}
-        >
-          {/* `flex-1` / `flex-shrink-0` split — the audit's StatusPill overflow
-              (#29) is the failure mode a long amount must never hit (§8
-              "Long amounts": `£1,234,567.89` must not truncate the label). */}
-          <MetadataLabel className="flex-1 text-muted-foreground">
-            {label}
-          </MetadataLabel>
-          <View className="flex-shrink-0 flex-row items-center gap-1">
-            <H3 testID={`${testID}-amount`} tabular>
-              {amount}
-            </H3>
-            <Icon
-              icon={ChevronRight}
-              size={18}
-              className="text-muted-foreground"
-            />
-          </View>
-        </View>
+        <Small className="text-primary" weight="semibold">
+          {t('earningsSeeBreakdown')}
+        </Small>
       </AnimatedPressable>
       {timesheetStatus === 'queried' ? (
         <Small

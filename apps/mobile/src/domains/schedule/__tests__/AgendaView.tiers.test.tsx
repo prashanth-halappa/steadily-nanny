@@ -6,10 +6,13 @@
  * be rendered for real here, unlike the sibling `AgendaView.test.ts` (source
  * inspection only).
  *
- * Covers P0-4: cancelled/declined rows drop to T4 (bg-muted, no elevation,
- * strikethrough), pending/draft rows get a T3 accent bar, confirmed/completed
- * rows are unchanged, and each day header gains a right-aligned total that
- * excludes cancelled/declined shifts.
+ * Covers P0-4 / daylight-v2 §3: cancelled/declined rows drop to T4/L4
+ * (bg-muted, no elevation, strikethrough); pending/draft rows stay L3
+ * (bg-card + elevation.row) distinguished ONLY by their pending pill — the
+ * 3px accent bar was retired, the pill carries the message alone now;
+ * confirmed/completed rows drop their StatusPill entirely (a settled row
+ * showing "Confirmed" on every row is noise); and each day header gains a
+ * right-aligned total that excludes cancelled/declined shifts.
  */
 import { beforeAll, describe, expect, it, mock } from 'bun:test';
 import type { Shift } from '@steadily-nanny/shared-types/schemas/shift.schema';
@@ -117,7 +120,7 @@ describe('AgendaView row tiers (P0-4)', () => {
     expect(getByTestId('schedule-shift-status-s-cancelled')).toBeTruthy();
   });
 
-  it('T3+accent: pending row keeps bg-card + elevation AND gets the inset accent bar', () => {
+  it('T3: pending row keeps bg-card + elevation, no accent bar — the pending pill alone carries the message', () => {
     const { getByTestId, queryByTestId } = render(
       <AgendaView
         shifts={[makeShift({ id: 's-pending', status: 'pending' })]}
@@ -128,21 +131,23 @@ describe('AgendaView row tiers (P0-4)', () => {
     const row = getByTestId('schedule-shift-s-pending');
     expect(row.props.className).toContain('bg-card');
     expect(row.props.style).toBeTruthy();
-    expect(queryByTestId('schedule-shift-accent-s-pending')).not.toBeNull();
+    expect(getByTestId('schedule-shift-status-s-pending')).toBeTruthy();
+    expect(queryByTestId('schedule-shift-accent-s-pending')).toBeNull();
   });
 
-  it('draft row gets the same accent treatment as pending', () => {
-    const { queryByTestId } = render(
+  it('draft row shows the same pending pill and no accent bar', () => {
+    const { getByTestId, queryByTestId } = render(
       <AgendaView
         shifts={[makeShift({ id: 's-draft', status: 'draft' })]}
         weekDates={['2026-08-03']}
       />
     );
 
-    expect(queryByTestId('schedule-shift-accent-s-draft')).not.toBeNull();
+    expect(getByTestId('schedule-shift-status-s-draft')).toBeTruthy();
+    expect(queryByTestId('schedule-shift-accent-s-draft')).toBeNull();
   });
 
-  it('confirmed/completed rows are unchanged — bg-card, elevation, no accent bar', () => {
+  it('confirmed/completed rows are unchanged — bg-card, elevation, no accent bar, and no StatusPill (a settled row is not a thing to act on)', () => {
     const { getByTestId, queryByTestId } = render(
       <AgendaView
         shifts={[
@@ -161,10 +166,12 @@ describe('AgendaView row tiers (P0-4)', () => {
     expect(confirmedRow.props.className).toContain('bg-card');
     expect(confirmedRow.props.style).toBeTruthy();
     expect(queryByTestId('schedule-shift-accent-s-confirmed')).toBeNull();
+    expect(queryByTestId('schedule-shift-status-s-confirmed')).toBeNull();
 
     const completedRow = getByTestId('schedule-shift-s-completed');
     expect(completedRow.props.className).toContain('bg-card');
     expect(queryByTestId('schedule-shift-accent-s-completed')).toBeNull();
+    expect(queryByTestId('schedule-shift-status-s-completed')).toBeNull();
   });
 });
 

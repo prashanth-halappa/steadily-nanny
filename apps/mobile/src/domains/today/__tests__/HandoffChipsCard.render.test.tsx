@@ -410,6 +410,77 @@ describe('HandoffChipsCard collapse (Wave 2-C)', () => {
   });
 });
 
+// Daylight v2 (screens-today §3.3): expanded, five chips wrapped to two rows
+// above an input, a hint and a button made the LEAST consequential card on
+// Today the tallest object on it. Three chips plus "More" caps the height
+// without hiding anything.
+describe('HandoffChipsCard suggestion cap (Daylight v2)', () => {
+  it('shows only the first three suggestions plus a More chip', () => {
+    mockUseHandoffNotes.mockReturnValue({ data: [], isLoading: false });
+
+    const { getByTestId, queryByTestId } = render(
+      <HandoffChipsCard
+        householdId={HOUSEHOLD_ID}
+        timeZone="America/Los_Angeles"
+        role={SETUP_ROLES.PARENT}
+      />
+    );
+
+    expect(getByTestId('handoff-chip-morning-slept_well')).toBeTruthy();
+    expect(getByTestId('handoff-chip-morning-ate_breakfast')).toBeTruthy();
+    expect(queryByTestId('handoff-chip-morning-medication_given')).toBeNull();
+    expect(getByTestId('handoff-chip-more-morning')).toBeTruthy();
+  });
+
+  it('More reveals the rest and then retires itself', () => {
+    mockUseHandoffNotes.mockReturnValue({ data: [], isLoading: false });
+
+    const { getByTestId, queryByTestId } = render(
+      <HandoffChipsCard
+        householdId={HOUSEHOLD_ID}
+        timeZone="America/Los_Angeles"
+        role={SETUP_ROLES.PARENT}
+      />
+    );
+
+    fireEvent.press(getByTestId('handoff-chip-more-morning'));
+    expect(getByTestId('handoff-chip-morning-medication_given')).toBeTruthy();
+    expect(queryByTestId('handoff-chip-more-morning')).toBeNull();
+  });
+
+  // A note already carrying a chip from beyond the cap must show it, or
+  // re-opening the editor looks like the selection was dropped.
+  it('opens uncapped when an existing note selected a chip past the cap', () => {
+    mockUseHandoffNotes.mockReturnValue({
+      data: [
+        {
+          id: 'note-mine-evening',
+          phase: 'evening',
+          author_id: USER_ID,
+          chips: ['outdoor_play'],
+          body: null,
+          moment_saved_at: null,
+          local_date: '2026-08-06',
+          created_at: '2026-08-06T18:00:00.000Z',
+        },
+      ],
+      isLoading: false,
+    });
+
+    const { getByTestId, queryByTestId } = render(
+      <HandoffChipsCard
+        householdId={HOUSEHOLD_ID}
+        timeZone="America/Los_Angeles"
+        role={SETUP_ROLES.NANNY}
+      />
+    );
+
+    fireEvent.press(getByTestId('handoff-add-note'));
+    expect(getByTestId('handoff-chip-evening-outdoor_play')).toBeTruthy();
+    expect(queryByTestId('handoff-chip-more-evening')).toBeNull();
+  });
+});
+
 // FIX A8: the 10:00 auto-expand cutoff applies to the parent's MORNING editor
 // only — a nanny's EVENING recap is for a day that hasn't happened yet, so
 // auto-expanding it at 06:45 is wrong. Manual "Add a note" must still work.

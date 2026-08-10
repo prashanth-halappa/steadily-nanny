@@ -18,6 +18,7 @@ async function readSource(fileName: string): Promise<string> {
 }
 
 let hoursScreenSource: string;
+let hoursHeroBandSource: string;
 let nannyWeekViewSource: string;
 let parentWeekViewSource: string;
 let queryNoteSheetSource: string;
@@ -25,6 +26,7 @@ let weekTotalSource: string;
 
 beforeAll(async () => {
   hoursScreenSource = await readSource('HoursScreen.tsx');
+  hoursHeroBandSource = await readSource('HoursHeroBand.tsx');
   nannyWeekViewSource = await readSource('NannyWeekView.tsx');
   parentWeekViewSource = await readSource('ParentWeekView.tsx');
   queryNoteSheetSource = await readSource('QueryNoteSheet.tsx');
@@ -32,11 +34,35 @@ beforeAll(async () => {
 });
 
 describe('HoursScreen', () => {
+  // Daylight v2: the H1 moved OUT of a fixed header row on HoursScreen and
+  // into `HoursHeroBand`, rendered inside each week view's list header so it
+  // scrolls on the brand wash (screens-hours.md §2). HoursScreen still owns
+  // the title on its no-household/no-role fallback branch.
   it('renders an H1 title on the main path, not the settings week-starts hint', () => {
-    expect(hoursScreenSource).toContain('hours-title');
+    expect(hoursHeroBandSource).toContain('hours-title');
+    expect(hoursHeroBandSource).toMatch(/<H1 testID="hours-title">/);
+    expect(hoursHeroBandSource).toContain("t('title')");
     expect(hoursScreenSource).toContain("t('title')");
     expect(hoursScreenSource).not.toContain('hours-monday-week-note');
     expect(hoursScreenSource).not.toContain('weekStartsHint');
+  });
+
+  // The fixed opaque header band is gone on purpose — a `bg-background` row
+  // above the list would cut the wash the statement is supposed to sit on.
+  it('has no fixed title row left above the list', () => {
+    expect(hoursScreenSource).not.toContain('hours-title-row');
+    expect(hoursScreenSource).toContain('ScreenWash');
+  });
+
+  // The loading branch must keep the title and week label painted — it
+  // renders the week skeleton, never a full-screen spinner.
+  it('renders HoursWeekSkeleton while loading, not a blanking LoadingIndicator', () => {
+    expect(hoursScreenSource).toContain('HoursWeekSkeleton');
+    // The doc comment names `LoadingIndicator` to explain what it replaced —
+    // check for an actual import, not the substring anywhere.
+    expect(hoursScreenSource).not.toMatch(
+      /import\s*\{[^}]*\bLoadingIndicator\b[^}]*\}\s*from/
+    );
   });
 
   it('wires the hours-screen testID', () => {

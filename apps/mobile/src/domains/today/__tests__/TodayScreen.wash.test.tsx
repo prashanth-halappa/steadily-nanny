@@ -1,14 +1,20 @@
 /**
  * @module domains/today/__tests__/TodayScreen.wash.test
  *
- * Wave C1 — Daylight live wash. Asserts the apricot gradient mounts iff
- * `useHouseholdIsLive` is true, stays non-interactive (`pointerEvents="none"`),
- * and sits inside the screen (not the tab bar). Hooks are mocked via
- * `mock.module()` in `beforeAll` before the dynamic import, per
- * docs/09-TESTING.md / HoursScreen.test.tsx.
+ * Daylight v2 §4.3 — the screen wash is now ALWAYS mounted and only changes
+ * register: plum brand by default, apricot while someone is on the clock. The
+ * v1 behaviour it replaces (mount iff live) left every screen flat warm grey
+ * for the other sixteen hours of the day, so "absent when not live" is exactly
+ * the regression this file now guards against rather than pins.
+ *
+ * The three claims: it is always there, its colours swap with liveness (and
+ * the live stops are byte-identical to v1's — the live signature does not
+ * change), and it never eats a touch. Hooks are mocked via `mock.module()` in
+ * `beforeAll` before the dynamic import, per docs/09-TESTING.md.
  */
 import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 import { render } from '@testing-library/react-native';
+import { screenWash } from '@/lib/design-tokens';
 
 mock.module('@/lib/animations/useReducedMotion', () => ({
   useReducedMotion: mock(() => false),
@@ -77,6 +83,11 @@ mock.module('@/src/domains/today/hooks/useOverdueClockOut', () => ({
     shiftEndsAt: null,
   }),
 }));
+// The hero illustration reads these rows; this file renders without a
+// QueryClient, and the wash is the only subject under test.
+mock.module('@/src/domains/today/hooks/useTodayCoverRows', () => ({
+  useTodayCoverRows: () => ({ rows: [], isLoading: false }),
+}));
 
 const HOUSEHOLD_ID = 'household-wash-1';
 
@@ -129,22 +140,41 @@ beforeEach(() => {
   mockUseHouseholdIsLive.mockImplementation(() => false);
 });
 
-describe('TodayScreen — live wash (Wave C1)', () => {
-  it('does not render the wash when nobody is on the clock', () => {
-    mockUseHouseholdIsLive.mockImplementation(() => false);
-    const { queryByTestId } = render(<TodayScreen />);
-    expect(queryByTestId('today-live-wash')).toBeNull();
-  });
+const BRAND_WASH = screenWash(false, 'brand');
+const LIVE_WASH = screenWash(false, 'live');
 
-  it('renders the wash when useHouseholdIsLive is true', () => {
-    mockUseHouseholdIsLive.mockImplementation(() => true);
+describe('TodayScreen — screen wash (Daylight v2)', () => {
+  it('is mounted on an ordinary, nobody-on-the-clock day', () => {
+    mockUseHouseholdIsLive.mockImplementation(() => false);
     const { getByTestId } = render(<TodayScreen />);
     expect(getByTestId('today-live-wash')).toBeTruthy();
   });
 
-  it('marks the wash pointerEvents="none" so scroll content stays interactive', () => {
+  it('wears the brand register when nobody is on the clock', () => {
+    mockUseHouseholdIsLive.mockImplementation(() => false);
+    const { getByTestId } = render(<TodayScreen />);
+    expect(getByTestId('today-live-wash').props.colors).toEqual(
+      BRAND_WASH.colors
+    );
+  });
+
+  it('swaps to the apricot live register when useHouseholdIsLive is true', () => {
     mockUseHouseholdIsLive.mockImplementation(() => true);
     const { getByTestId } = render(<TodayScreen />);
-    expect(getByTestId('today-live-wash').props.pointerEvents).toBe('none');
+    expect(getByTestId('today-live-wash').props.colors).toEqual(
+      LIVE_WASH.colors
+    );
+  });
+
+  it('the two registers are genuinely different colours, not one alias', () => {
+    expect(BRAND_WASH.colors).not.toEqual(LIVE_WASH.colors);
+  });
+
+  it('marks the wash pointerEvents="none" in both registers', () => {
+    for (const live of [false, true]) {
+      mockUseHouseholdIsLive.mockImplementation(() => live);
+      const { getByTestId } = render(<TodayScreen />);
+      expect(getByTestId('today-live-wash').props.pointerEvents).toBe('none');
+    }
   });
 });

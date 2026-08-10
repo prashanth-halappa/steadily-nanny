@@ -13,12 +13,14 @@ import {
   HANDOFF_PHASES,
   type HandoffPhase,
 } from '@steadily-nanny/shared-types/schemas/handoff.schema';
+import { MessageCircle } from 'lucide-react-native';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Pressable, View } from 'react-native';
 import { cn } from '@/lib/utils';
 import { Button } from '@/src/components/ui/button';
 import { Card } from '@/src/components/ui/card';
+import { IconChip } from '@/src/components/ui/icon-chip';
 import { Input } from '@/src/components/ui/input';
 import { Text } from '@/src/components/ui/text';
 import {
@@ -43,6 +45,24 @@ import { useAuthStore } from '@/src/store/auth';
 
 /** Household-local "before 10:00" — the auto-expand cutoff (Wave 2-C). */
 const AUTO_EXPAND_CUTOFF_MINUTES = 10 * 60;
+
+/**
+ * Expanded, five suggestion chips wrapped to two rows above an input, a hint
+ * and a button — ~280pt, which made the LEAST consequential card on Today the
+ * tallest object on it, outranking the L1 card by sheer area (screens-today
+ * §3.3). Three chips plus a "More" chip caps it without hiding anything.
+ */
+const VISIBLE_CHIP_LIMIT = 3;
+
+/** The card's title row — an L3 identity marker, never the screen's subject. */
+function HandoffTitle({ title }: { title: string }) {
+  return (
+    <View className="flex-row items-center gap-3">
+      <IconChip testID="handoff-icon-chip" tone="people" icon={MessageCircle} />
+      <H4 className="flex-1">{title}</H4>
+    </View>
+  );
+}
 
 function isBeforeTenAM(timeZone: string): boolean {
   const nowHHMM = utcIsoToWallClockHHMM(new Date().toISOString(), timeZone);
@@ -117,6 +137,7 @@ function HandoffPhaseEditor({
 }) {
   const { t } = useTranslation('today');
   const suggestions = chipsForPhase(phase);
+  const [showAllChips, setShowAllChips] = useState(false);
   const [selected, setSelected] = useState<string[]>(existingChips);
   const [body, setBody] = useState(existingBody ?? '');
   const createNote = useCreateHandoffNote(householdId, localDate);
@@ -138,6 +159,16 @@ function HandoffPhaseEditor({
   };
 
   const canSave = selected.length > 0 || body.trim().length > 0;
+
+  // Derived, not a second piece of state: a note that already carries a chip
+  // from beyond the cap must show it, or re-opening the editor would look
+  // like the selection had been dropped.
+  const showAll =
+    showAllChips ||
+    suggestions.slice(VISIBLE_CHIP_LIMIT).some(chip => selected.includes(chip));
+  const visibleChips = showAll
+    ? suggestions
+    : suggestions.slice(0, VISIBLE_CHIP_LIMIT);
 
   const handleSubmit = () => {
     const trimmed = body.trim();
@@ -172,9 +203,9 @@ function HandoffPhaseEditor({
 
   return (
     <View testID={`handoff-editor-${phase}`} className="gap-2">
-      <H4>{title}</H4>
+      <HandoffTitle title={title} />
       <View className="flex-row flex-wrap gap-2">
-        {suggestions.map(chip => (
+        {visibleChips.map(chip => (
           <ChipToggle
             key={chip}
             testID={`handoff-chip-${phase}-${chip}`}
@@ -183,6 +214,14 @@ function HandoffPhaseEditor({
             onPress={() => toggleChip(chip)}
           />
         ))}
+        {showAll ? null : (
+          <ChipToggle
+            testID={`handoff-chip-more-${phase}`}
+            label={t('handoff.more')}
+            selected={false}
+            onPress={() => setShowAllChips(true)}
+          />
+        )}
       </View>
       <Input
         testID={`handoff-body-${phase}`}
@@ -355,7 +394,7 @@ export function HandoffChipsCard({
           />
         ) : (
           <View testID="handoff-collapsed" className="gap-1">
-            <H4>{titleForPhase(editorPhase, t)}</H4>
+            <HandoffTitle title={titleForPhase(editorPhase, t)} />
             <Small
               testID="handoff-collapsed-summary"
               className="text-muted-foreground"

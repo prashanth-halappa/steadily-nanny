@@ -2,9 +2,12 @@
  * @module domains/timesheet/__tests__/WeekTotal.reopenReason.test
  *
  * Cold-mount reopen reason lives on `WeekTotal` (a timesheet-status fact),
- * not inside `WeekEarningsLine`'s earnings arms. `useReopenedNotice` only
- * fires when this instance watched approved→submitted; a carer who opens
- * the app days later needs the reason from the timesheet row itself.
+ * not inside `WeekEarningsLine`'s earnings arms — which, after the Daylight
+ * v2 statement rebuild, `WeekTotal` no longer renders at all. That makes the
+ * point sharper: the caption must appear for every earnings shape, including
+ * the ones that never reach `ok`. `useReopenedNotice` only fires when this
+ * instance watched approved→submitted; a carer who opens the app days later
+ * needs the reason from the timesheet row itself.
  * Overrides the global key-echo i18n mock so `{{reason}}` actually lands
  * in the tree — same pattern as EarningsBreakdownSheet.i18n.test.tsx.
  */
@@ -51,10 +54,6 @@ const REASON = 'Thursday hours were wrong';
 
 const baseProps = {
   testID: 'hours-week-total',
-  weekRangeLabel: '3 Aug – 9 Aug',
-  totalLabel: '41h 0m',
-  overtimeLabel: null as string | null,
-  totalMinutes: 2460,
   timesheetStatus: 'submitted' as const,
   earnings: okEarnings,
 };
@@ -135,23 +134,19 @@ describe('WeekTotal — reopenReason (cold-mount caption)', () => {
           unpriced_dates: ['2026-08-03'],
         }}
         earningsRole="parent"
-        earningsCarerId="carer-1"
         earningsReopenReason={REASON}
       />
     );
-    expect(getByText('earningsNoArrangementParent')).toBeTruthy();
     expect(getByTestId('hours-earnings-line-reopened-note')).toBeTruthy();
     expect(
       getByText(`earningsReopenedWithReasonParent::${REASON}`)
     ).toBeTruthy();
   });
 
-  it('renders the reason when the earnings line is omitted (zero hours)', () => {
+  it('renders the reason on a zero-hours week', () => {
     const { getByTestId, queryByTestId, getByText } = render(
       <WeekTotal
         {...baseProps}
-        totalLabel="0m"
-        totalMinutes={0}
         earnings={{
           ...okEarnings,
           gross_minor: 0,
@@ -162,7 +157,23 @@ describe('WeekTotal — reopenReason (cold-mount caption)', () => {
         earningsReopenReason={REASON}
       />
     );
+    // The money line moved to WeekMoneyCard — the caption stands on its own.
     expect(queryByTestId('hours-earnings-line')).toBeNull();
+    expect(getByTestId('hours-earnings-line-reopened-note')).toBeTruthy();
+    expect(
+      getByText(`earningsReopenedWithReasonNanny::${REASON}`)
+    ).toBeTruthy();
+  });
+
+  it('renders the reason with no earnings at all', () => {
+    const { getByTestId, getByText } = render(
+      <WeekTotal
+        {...baseProps}
+        earnings={null}
+        earningsRole="nanny"
+        earningsReopenReason={REASON}
+      />
+    );
     expect(getByTestId('hours-earnings-line-reopened-note')).toBeTruthy();
     expect(
       getByText(`earningsReopenedWithReasonNanny::${REASON}`)

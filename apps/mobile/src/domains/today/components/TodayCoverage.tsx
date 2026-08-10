@@ -6,14 +6,16 @@
  */
 import type { Child } from '@steadily-nanny/shared-types/schemas/child.schema';
 import { type Href, useRouter } from 'expo-router';
+import { AlertCircle } from 'lucide-react-native';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Pressable, View } from 'react-native';
 import { Button } from '@/src/components/ui/button';
 import { Card } from '@/src/components/ui/card';
+import { IconChip } from '@/src/components/ui/icon-chip';
 import { LiveDot } from '@/src/components/ui/live-dot';
 import { StatusPill } from '@/src/components/ui/status-pill';
-import { Body, Small } from '@/src/components/ui/typography';
+import { Body, H3, H4, Small } from '@/src/components/ui/typography';
 import { useHouseholdCarers } from '@/src/domains/schedule/hooks/useHouseholdCarers';
 import { resolveCarerName } from '@/src/domains/schedule/utils/memberDisplayName';
 import {
@@ -265,6 +267,13 @@ export function TodayCoverage({
     return `/(private)/schedule/shifts/extra?${params.toString()}` as Href;
   })();
 
+  // Rule M (daylight-v2 §2.3): on the ochre `surfaceAttention` ground
+  // `mutedForeground` measures 4.28:1 and fails AA at these sizes. Demoted the
+  // card is plain white, where `mutedForeground` is fine and correct.
+  const detailMutedClass = demoted
+    ? 'text-muted-foreground'
+    : 'text-muted-strong';
+
   return (
     <View testID="today-coverage" className="gap-3">
       <Card
@@ -272,9 +281,29 @@ export function TodayCoverage({
         tone={demoted ? 'default' : 'attention'}
         className="gap-3 p-5.5"
       >
-        <Body testID="today-coverage-gap-headline" weight="medium">
-          {gapHeadline}
-        </Body>
+        {/* The single largest fix in the v2 audit: this sentence — a child is
+            not covered right now — used to be 16/24/500, smaller than the
+            handoff card's title below it. At L1 it is an H3; demoted it drops
+            a whole rung to H4 on a plain white card, and the chip drops out of
+            the brand register with it (daylight-v2 §2.4: an attention ground
+            already carries the message, so its chip is never a category hue —
+            and a card that is NOT the one thing to do never wears plum). */}
+        <View className="flex-row items-center gap-3">
+          <IconChip
+            testID="today-coverage-gap-chip"
+            tone={demoted ? 'schedule' : 'brand'}
+            icon={AlertCircle}
+          />
+          {demoted ? (
+            <H4 testID="today-coverage-gap-headline" className="flex-1">
+              {gapHeadline}
+            </H4>
+          ) : (
+            <H3 testID="today-coverage-gap-headline" className="flex-1">
+              {gapHeadline}
+            </H3>
+          )}
+        </View>
 
         {visible.map(window => {
           const causeDetail = inferUncoveredCauseDetail(
@@ -299,7 +328,7 @@ export function TodayCoverage({
           return (
             <Small
               key={`${window.childId}|${window.commitmentId}|${window.startsAt}`}
-              className="text-muted-foreground"
+              className={detailMutedClass}
             >
               {causeLine}
             </Small>
@@ -307,16 +336,21 @@ export function TodayCoverage({
         })}
 
         {hiddenCount > 0 ? (
-          <Small className="text-muted-foreground">
+          <Small className={detailMutedClass}>
             {t('coverage.gap.andMore', { count: hiddenCount })}
           </Small>
         ) : null}
 
         {singleWindow && extraHref ? (
           <View className="gap-2">
+            {/* L1's action is a full-width filled button at `lg` (56pt); the
+                demoted rung gets a ghost link instead, because a card that
+                lost arbitration must not out-shout the one that won it. */}
             <Button
               testID="today-coverage-ask-cover"
-              size="sm"
+              size={demoted ? 'sm' : 'lg'}
+              variant={demoted ? 'ghost' : 'default'}
+              className={demoted ? 'self-start px-0' : 'w-full'}
               onPress={() => router.push(extraHref)}
             >
               {singleCarer

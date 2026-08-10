@@ -67,6 +67,19 @@ beforeAll(async () => {
   mock.module('expo-router', () => ({
     useRouter: () => ({ push: mockPush }),
   }));
+  // The global key-echo mock (bun.setup.ts) drops interpolation vars — the
+  // merged "Next up · {{name}}" eyebrow needs the name to actually land, so
+  // re-mock locally with a minimal interpolation, same pattern
+  // SchedulePatternBanner.test.tsx uses.
+  mock.module('react-i18next', () => ({
+    useTranslation: () => ({
+      t: (key: string, opts?: { name?: string }) =>
+        opts?.name === undefined ? key : `${key}(${opts.name})`,
+      i18n: { language: 'en', changeLanguage: mock(() => Promise.resolve()) },
+    }),
+    Trans: ({ children }: { children: unknown }) => children,
+    initReactI18next: { type: '3rdParty', init: mock() },
+  }));
   mock.module('@/src/hooks/queries/useActiveHousehold', () => ({
     useActiveHousehold: () => ({
       householdId: HOUSEHOLD_ID,
@@ -105,7 +118,7 @@ describe('ThisWeeksShiftsCard', () => {
     expect(mockPush).toHaveBeenCalledWith('/(private)/schedule/shifts');
   });
 
-  it('one-carer household: names her once under the title, not on every row', () => {
+  it('one-carer household: names her once in the eyebrow, not on every row', () => {
     mockUseShiftsRange.mockReturnValue({ data: SHIFTS });
     mockUseHouseholdMembers.mockReturnValue({
       data: [member(AMARA_ID, 'Amara Okafor')],
@@ -113,9 +126,10 @@ describe('ThisWeeksShiftsCard', () => {
 
     const { getByTestId, queryByTestId } = render(<ThisWeeksShiftsCard />);
 
-    // Her FULL name, once — repeating it per row is noise in a one-carer home.
+    // Her FULL name, once, merged into the "Next up · {{name}}" eyebrow —
+    // repeating it per row is noise in a one-carer home.
     expect(getByTestId('today-next-up-carer').props.children).toBe(
-      'Amara Okafor'
+      'todayCard.nextUpTitleWithCarer(Amara Okafor)'
     );
     expect(queryByTestId('today-next-up-carer-shift-a')).toBeNull();
   });
@@ -209,7 +223,7 @@ describe('ThisWeeksShiftsCard', () => {
     const { getByTestId } = render(<ThisWeeksShiftsCard />);
 
     expect(getByTestId('today-next-up-carer').props.children).toBe(
-      'Amara Okafor'
+      'todayCard.nextUpTitleWithCarer(Amara Okafor)'
     );
   });
 

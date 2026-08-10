@@ -21,8 +21,9 @@ import { type Href, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { Pressable, View } from 'react-native';
 import { spacing } from '@/lib/design-tokens';
+import { Button } from '@/src/components/ui/button';
 import { Card } from '@/src/components/ui/card';
-import { Body, MetadataLabel, Small } from '@/src/components/ui/typography';
+import { Body, H3, MetadataLabel } from '@/src/components/ui/typography';
 import { resolveMemberDisplayName } from '@/src/domains/schedule/utils/memberDisplayName';
 import { isParentEditorRole } from '@/src/domains/setup/types';
 import { useHouseholdMembers } from '@/src/hooks/queries/useHouseholdMembers';
@@ -125,30 +126,49 @@ export function SchedulePatternBanner({
     }
   })();
 
-  // pending/declined/draft still need a human — T1, an attention-toned Card.
-  // accepted/withdrawn/no-pattern are settled — T4, no card surface at all,
-  // sitting on the bare ground.
+  // pending/declined/draft still need a human — L1, an attention-toned Card
+  // with an H3 title and a full-width filled action (daylight-v2 §5.1).
+  // accepted/withdrawn/no-pattern are settled — L4, no card surface at all,
+  // a bare MetadataLabel line on the ground.
   const needsAction = pattern?.status
     ? NEEDS_ACTION_STATUSES.has(pattern.status)
     : false;
-  const MessageText = needsAction ? Small : MetadataLabel;
 
-  const content = (
-    <>
-      <MessageText
+  if (needsAction) {
+    return (
+      <Card
+        testID="schedule-pattern-banner"
+        tone="attention"
+        className="gap-3 p-4"
+      >
+        <H3 testID="schedule-pattern-banner-status">{message}</H3>
+        {canEdit ? (
+          <Button
+            testID="schedule-pattern-banner-action"
+            size="lg"
+            className="w-full"
+            accessibilityLabel={`${message}. ${actionLabel}`}
+            onPress={onAction}
+          >
+            {actionLabel}
+          </Button>
+        ) : null}
+      </Card>
+    );
+  }
+
+  return (
+    <View
+      testID="schedule-pattern-banner"
+      className="flex-row items-center justify-between gap-2 px-3 py-2"
+    >
+      <MetadataLabel
         testID="schedule-pattern-banner-status"
-        // Rule B: sentence text on the tinted `surfaceAttention` ground is
-        // `foreground`, not `muted-foreground` — the bare-ground T4 keeps
-        // muted since it isn't on a tint.
-        className={
-          needsAction
-            ? 'flex-1 text-foreground'
-            : 'flex-1 text-muted-foreground'
-        }
+        className="flex-1 text-muted-foreground"
         numberOfLines={1}
       >
         {message}
-      </MessageText>
+      </MetadataLabel>
       {canEdit ? (
         <Pressable
           testID="schedule-pattern-banner-action"
@@ -162,27 +182,6 @@ export function SchedulePatternBanner({
           <Body className="text-primary">{actionLabel}</Body>
         </Pressable>
       ) : null}
-    </>
-  );
-
-  if (needsAction) {
-    return (
-      <Card
-        testID="schedule-pattern-banner"
-        tone="attention"
-        className="flex-row items-center justify-between gap-2 px-3 py-2"
-      >
-        {content}
-      </Card>
-    );
-  }
-
-  return (
-    <View
-      testID="schedule-pattern-banner"
-      className="flex-row items-center justify-between gap-2 px-3 py-2"
-    >
-      {content}
     </View>
   );
 }

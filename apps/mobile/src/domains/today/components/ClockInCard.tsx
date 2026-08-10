@@ -589,15 +589,24 @@ export function ClockInCard({
             {overdue ? null : <LiveDot testID="today-live-dot" />}
             {/* Rule B: sentence text on `surfaceAttention` is `foreground`
                 (the default), never `warningStrong` — that measures 4.07:1
-                there, under AA for 14px semibold. The `live` branch is
-                unchanged: it sits on `surfaceLive`, not this ground. */}
-            <Caption
-              testID="today-live-caption"
-              weight="semibold"
-              className={overdue ? undefined : 'text-highlight'}
-            >
-              {overdue ? t('stillOnTheClockTitle') : t('onTheClock')}
-            </Caption>
+                there, under AA for 14px semibold.
+                The two states are different RUNGS, not one line with a colour
+                swap. Overdue is L1 and takes the L1 title (H3) every other L1
+                card takes — the most urgent state a nanny can be in had the
+                smallest title on the screen. `live` is L2 and keeps the
+                apricot Caption: its size is carried by the 44px timer below,
+                and it sits on `surfaceLive`, not this ground. */}
+            {overdue ? (
+              <H3 testID="today-live-caption">{t('stillOnTheClockTitle')}</H3>
+            ) : (
+              <Caption
+                testID="today-live-caption"
+                weight="semibold"
+                className="text-highlight"
+              >
+                {t('onTheClock')}
+              </Caption>
+            )}
           </View>
           <Timer testID="today-live-timer">{elapsed}</Timer>
           {entry.clock_in_at ? (
@@ -684,19 +693,22 @@ export function ClockInCard({
               <MetadataLabel className="text-muted-foreground">
                 {t('notOnTheClock')}
               </MetadataLabel>
+              {/* Tabular: these are times being read against a clock, and two
+                  of them sit either side of an en dash where a proportional
+                  `1` would shuffle the range's width as the minute ticks. */}
               {offClockShift.kind === 'scheduled' ? (
-                <H3 testID="today-off-clock-scheduled">
+                <H3 testID="today-off-clock-scheduled" tabular>
                   {t('nannyScheduledBody', {
                     start: offClockShift.start,
                     end: offClockShift.end,
                   })}
                 </H3>
               ) : offClockShift.kind === 'arriving' ? (
-                <H3 testID="today-off-clock-arriving">
+                <H3 testID="today-off-clock-arriving" tabular>
                   {t('nannyArrivingBody', { start: offClockShift.start })}
                 </H3>
               ) : offClockShift.kind === 'declined' ? (
-                <H3 testID="today-off-clock-declined">
+                <H3 testID="today-off-clock-declined" tabular>
                   {t('declinedToday', {
                     start: offClockShift.start,
                     end: offClockShift.end,

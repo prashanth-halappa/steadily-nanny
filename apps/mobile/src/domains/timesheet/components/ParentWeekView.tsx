@@ -36,7 +36,6 @@ import { useThemeColors } from '@/lib/design-tokens/useThemeColors';
 import { useTabBarScrollPadding } from '@/lib/layout/useTabBarScrollPadding';
 import { cn } from '@/lib/utils';
 import { ErrorState } from '@/src/components/custom/ErrorState';
-import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { Caption } from '@/src/components/ui/typography';
 import { ExpenseReviewSheet } from '@/src/domains/expenses/components/ExpenseReviewSheet';
 import { PendingExpensesRow } from '@/src/domains/expenses/components/PendingExpensesRow';
@@ -82,12 +81,14 @@ import {
 import { useReopenedNotice } from '../utils/reopenedNotice';
 import { ApproveWeekDialog } from './ApproveWeekDialog';
 import { EarningsBreakdownSheet } from './EarningsBreakdownSheet';
-import { PaidStateCard } from './PaidStateCard';
+import { HoursHeroBand } from './HoursHeroBand';
+import { HoursWeekSkeleton } from './HoursWeekSkeleton';
 import { QueryNoteSheet } from './QueryNoteSheet';
 import { RecordPaymentSheet } from './RecordPaymentSheet';
 import { ReopenWeekDialog } from './ReopenWeekDialog';
 import { TimeEntryDayRow } from './TimeEntryDayRow';
 import { WeekExportAction } from './WeekExportAction';
+import { WeekMoneyCard } from './WeekMoneyCard';
 import { WeekTotal } from './WeekTotal';
 
 interface ParentWeekViewProps {
@@ -106,6 +107,10 @@ interface ParentWeekViewProps {
   isPreviousWeekDisabled: boolean;
   /** Hide approve/query actions — helpers see the parent view read-only. */
   readOnly?: boolean;
+  /** Removed from this household. Distinct from `readOnly`, which is also
+   * true for a helper who is still a member: only a past member gets the
+   * "your record stays here" line under the hero band. */
+  isPastMember?: boolean;
 }
 
 export function ParentWeekView({
@@ -120,6 +125,7 @@ export function ParentWeekView({
   isNextWeekDisabled,
   isPreviousWeekDisabled,
   readOnly = false,
+  isPastMember = false,
 }: ParentWeekViewProps) {
   const { t } = useTranslation('hours');
   const { t: tSchedule } = useTranslation('schedule');
@@ -302,8 +308,25 @@ export function ParentWeekView({
     [tSchedule]
   );
 
+  // The hero band's title and week label paint now; only the figure and the
+  // day rows wait (screens-hours.md §7 — never a full-screen spinner).
   if (entriesQuery.isLoading || timesheetQuery.isLoading) {
-    return <LoadingIndicator testID="hours-loading" />;
+    return (
+      <View
+        style={{
+          ...SCREEN_CONTENT_STYLE,
+          paddingBottom: tabBarScrollPadding,
+        }}
+      >
+        <HoursWeekSkeleton
+          weekRangeLabel={weekRangeLabel}
+          onPreviousWeek={onPreviousWeek}
+          onNextWeek={onNextWeek}
+          isPreviousDisabled={isPreviousWeekDisabled}
+          isNextDisabled={isNextWeekDisabled}
+        />
+      </View>
+    );
   }
 
   // Hours (`entriesQuery`) failing blanks the whole screen — there is
@@ -519,12 +542,23 @@ export function ParentWeekView({
         )}
         ListHeaderComponent={
           <>
+            <HoursHeroBand
+              weekRangeLabel={weekRangeLabel}
+              onPreviousWeek={onPreviousWeek}
+              onNextWeek={onNextWeek}
+              isNextDisabled={isNextWeekDisabled}
+              isPreviousDisabled={isPreviousWeekDisabled}
+              totalLabel={weekHoursLabel}
+              overtimeLabel={overtimeLabel}
+              carerName={carerName}
+              isPastMember={isPastMember}
+            />
             {/* F-B1-3: two carers, two pay records, two approvals. One
-                carer at a time, so the figure on the card is always the
-                figure the button below approves. A departed carer gets a
-                tab like anyone else — hiding her is what let her hours be
-                summed into someone else's. Hidden entirely when the week
-                has one carer: the single-carer screen is unchanged. */}
+                carer at a time, so the figure above is always the figure
+                the button below approves. A departed carer gets a tab like
+                anyone else — hiding her is what let her hours be summed
+                into someone else's. Hidden entirely when the week has one
+                carer: the single-carer screen is unchanged. */}
             {weekCarerIds.length > 1 ? (
               <View
                 testID="hours-carer-switcher"
@@ -577,26 +611,12 @@ export function ParentWeekView({
             ) : null}
             <WeekTotal
               testID="hours-week-total"
-              weekRangeLabel={weekRangeLabel}
-              totalLabel={weekHoursLabel}
-              overtimeLabel={overtimeLabel}
-              onPreviousWeek={onPreviousWeek}
-              onNextWeek={onNextWeek}
-              isNextDisabled={isNextWeekDisabled}
-              isPreviousDisabled={isPreviousWeekDisabled}
-              carerName={carerName}
               timesheetStatus={timesheet?.status ?? null}
               showPayBoundary
-              totalMinutes={totalMinutes}
               earnings={earnings}
               earningsRole="parent"
-              earningsCarerId={timesheet?.carer_id ?? null}
-              earningsCarerDisplayName={timesheet?.carer_display_name ?? ''}
-              onPressEarnings={() => setIsBreakdownVisible(true)}
               earningsReopened={reopened}
               earningsReopenReason={timesheet?.reopen_reason ?? null}
-              earningsError={timesheetQuery.isError}
-              onRetryEarnings={() => void timesheetQuery.refetch()}
               approvedDateLabel={approvedDateLabel}
               // Daylight P0-3: gated internally on `timesheetStatus ===
               // 'queried'`, same belt-and-braces the old footer render used
@@ -648,6 +668,29 @@ export function ParentWeekView({
         }
         ListFooterComponent={
           <>
+            {/* §7 fixed order item 4 — gross, breakdown link and the
+                settlement that answers it, one card under the day rows
+                (screens-hours.md §5). A helper may SEE that the family has
+                paid, and may never record that they have. */}
+            <WeekMoneyCard
+              earnings={earnings ?? null}
+              timesheetStatus={timesheet?.status ?? null}
+              viewerRole="parent"
+              carerId={timesheet?.carer_id ?? null}
+              carerDisplayName={timesheet?.carer_display_name ?? ''}
+              carerName={carerName}
+              totalMinutes={totalMinutes}
+              earningsError={timesheetQuery.isError}
+              onRetryEarnings={() => void timesheetQuery.refetch()}
+              onPressBreakdown={() => setIsBreakdownVisible(true)}
+              paidState={showSettlementHistory ? paidState : null}
+              payments={payments}
+              settlementCurrency={settlementCurrency}
+              onMarkPaidPress={
+                isApproved && !readOnly ? handleOpenRecordPayment : undefined
+              }
+              isMarkPaidDisabled={recordPayment.isPending}
+            />
             {/* §7 fixed order item 3 — after day rows, approved-only,
                 read-only so it renders for a helper too. */}
             <ReimbursementsCard
@@ -656,33 +699,15 @@ export function ParentWeekView({
               currency={expensesCurrency}
               carerName={carerName ?? undefined}
             />
-            {/* §7: settlement sits after the statement it settles. Both are
-                read-only for a helper — a helper may SEE that the family has
-                paid, and may never record that they have. */}
-            {showSettlementHistory && timesheet ? (
-              <>
-                <PaidStateCard
-                  paidState={paidState}
-                  payments={payments}
-                  currency={settlementCurrency}
-                  onMarkPaidPress={
-                    isApproved && !readOnly
-                      ? handleOpenRecordPayment
-                      : undefined
-                  }
-                  isMarkPaidDisabled={recordPayment.isPending}
-                />
-                {isApproved ? (
-                  <WeekExportAction
-                    timesheetId={timesheet.id}
-                    weekStartISO={weekStartISO}
-                    weekRangeLabel={weekRangeLabel}
-                    carerName={approveDialogCarerName}
-                    earnings={earningsOk}
-                    paidState={paidState}
-                  />
-                ) : null}
-              </>
+            {showSettlementHistory && timesheet && isApproved ? (
+              <WeekExportAction
+                timesheetId={timesheet.id}
+                weekStartISO={weekStartISO}
+                weekRangeLabel={weekRangeLabel}
+                carerName={approveDialogCarerName}
+                earnings={earningsOk}
+                paidState={paidState}
+              />
             ) : null}
             {/* Daylight P0-3: the query note, the "waiting" explainer and
                 the Approve/Query buttons all moved into the summary card

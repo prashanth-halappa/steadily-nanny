@@ -146,6 +146,7 @@
     "extraClashCancel": "Volver",
     "extraClashConfirm": "Crear de todos modos",
     "unavailable": "Los turnos aún no están disponibles — vuelve pronto.",
+    "weekTotal": "{{duration}} esta semana",
     "statusDraft": "Borrador",
     "statusPending": "Pendiente",
     "statusConfirmed": "Confirmado",
@@ -238,6 +239,7 @@
     "pendingCta": "Revisar y responder",
     "shiftsCta": "Los turnos de esta semana",
     "nextUpTitle": "Próximos",
+    "nextUpTitleWithCarer": "Próximos · {{name}}",
     "nextUpEmpty": "No hay turnos en las próximas dos semanas",
     "viewCalendar": "Ver el calendario"
   },

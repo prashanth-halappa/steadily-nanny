@@ -200,6 +200,17 @@ export function CrossFamilyRhythmView({
   const colourFor = (householdId: string): string =>
     dotColours[householdColourIndex(householdIds, householdId)] ??
     colors.neutral;
+  // Legend chip ground — same accent, paired `chipCat*` token (neutral
+  // fallback shares `chipPlum`, the system's other neutral chip ground).
+  const chipColours = [
+    colors.chip.cat1,
+    colors.chip.cat2,
+    colors.chip.cat3,
+    colors.chip.plum,
+  ];
+  const chipColourFor = (householdId: string): string =>
+    chipColours[householdColourIndex(householdIds, householdId)] ??
+    colors.chip.plum;
 
   const clashDays = countClashDays(index, dates);
 
@@ -304,12 +315,17 @@ export function CrossFamilyRhythmView({
           <View
             key={h.id}
             testID={`cross-family-legend-${h.id}`}
-            className="flex-row items-center gap-1"
+            className="flex-row items-center gap-2"
           >
             <View
-              className="h-2 w-2 rounded-full"
-              style={{ backgroundColor: colourFor(h.id) }}
-            />
+              className="h-6 w-6 items-center justify-center rounded-cell"
+              style={{ backgroundColor: chipColourFor(h.id) }}
+            >
+              <View
+                className="h-3 w-3 rounded-full"
+                style={{ backgroundColor: colourFor(h.id) }}
+              />
+            </View>
             {/* Real household name — nanny-only surface, see module doc. */}
             <Caption className="text-muted-foreground">{h.name}</Caption>
           </View>

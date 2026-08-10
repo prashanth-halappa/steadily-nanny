@@ -1,6 +1,10 @@
 {
   "title": "Settings",
   "language": "Language",
+  "languageNames": {
+    "en": "English",
+    "es": "Español"
+  },
   "signOut": "Sign out",
   "privacyPolicy": "Privacy Policy",
   "termsOfService": "Terms of Service",
@@ -11,7 +15,7 @@
     "saveButton": "Save",
     "savedToast": "Name saved"
   },
-  "legal": "Legal",
+  "legal": "Legal & help",
   "getHelp": "Get help",
   "appVersion": "Version {{version}}",
   "carerAvailability": "Nanny availability",
@@ -28,7 +32,7 @@
   },
   "notifications": "Notifications",
   "inbox": "Needs attention",
-  "household": "Household",
+  "household": "Your household",
   "deleteAccount": "Delete account",
   "deleteAccountConfirmTitle": "Delete your account?",
   "deleteAccountConfirmBody": "This permanently deletes your account and profile. It does not delete your household's shared records — hours worked and approved timesheets stay in that history for the other people in your household. This action cannot be undone.",

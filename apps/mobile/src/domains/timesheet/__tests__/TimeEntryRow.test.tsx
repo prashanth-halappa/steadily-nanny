@@ -1,17 +1,30 @@
 /**
  * @module domains/timesheet/__tests__/TimeEntryRow.test
- * One entry = one card — duration, editability, voided, break subline.
+ *
+ * One entry = one LINE inside its day's ledger row (Daylight v2). The ground,
+ * the elevation and the 56pt minimum all moved up to `TimeEntryDayRow` — what
+ * stays here is the content contract: the time range, whatever qualifies it
+ * (voided, zero-duration, edited, `+1`), the optional duration, and the
+ * chevron that means "this can be corrected".
  */
 import { beforeAll, describe, expect, it, mock } from 'bun:test';
+import { join } from 'node:path';
 import { fireEvent, render } from '@testing-library/react-native';
 import type { TimeEntry } from '../types';
 import { formatDuration } from '../utils/duration';
 import { computeEntryMinutes } from '../utils/entryMinutes';
 
 let TimeEntryRow: typeof import('../components/TimeEntryRow').TimeEntryRow;
+let CHEVRON_SLOT: number;
+let enHours: Record<string, string>;
 
 beforeAll(async () => {
-  TimeEntryRow = (await import('../components/TimeEntryRow')).TimeEntryRow;
+  const mod = await import('../components/TimeEntryRow');
+  TimeEntryRow = mod.TimeEntryRow;
+  CHEVRON_SLOT = mod.CHEVRON_SLOT;
+  enHours = await Bun.file(
+    join(__dirname, '../../../i18n/locales/en/hours.json')
+  ).json();
 });
 
 function makeEntry(overrides: Partial<TimeEntry> = {}): TimeEntry {
@@ -50,6 +63,7 @@ describe('TimeEntryRow — per-entry duration', () => {
         nowMs={NOW_MS}
         timeZone="Europe/London"
         dayDate="2026-08-01"
+        showDuration
       />
     );
 
@@ -70,11 +84,64 @@ describe('TimeEntryRow — per-entry duration', () => {
         nowMs={NOW_MS}
         timeZone="Europe/London"
         dayDate="2026-08-01"
+        showDuration
       />
     );
 
     expect(minutes).toBe(45);
     expect(getByText(formatDuration(45))).toBeTruthy();
+  });
+
+  // On a one-entry day the day total right above IS this entry's duration.
+  // Printing it twice makes a reader check whether the two agree.
+  it('hides the duration by default — the day total already states it', () => {
+    const entry = makeEntry();
+    const { queryByTestId } = render(
+      <TimeEntryRow
+        entry={entry}
+        nowMs={NOW_MS}
+        timeZone="Europe/London"
+        dayDate="2026-08-01"
+      />
+    );
+
+    expect(queryByTestId(`hours-entry-duration-${entry.id}`)).toBeNull();
+  });
+
+  it('shows the duration when showDuration is true (a multi-entry day)', () => {
+    const entry = makeEntry();
+    const { getByTestId } = render(
+      <TimeEntryRow
+        entry={entry}
+        nowMs={NOW_MS}
+        timeZone="Europe/London"
+        dayDate="2026-08-01"
+        showDuration
+      />
+    );
+
+    expect(getByTestId(`hours-entry-duration-${entry.id}`).props.children).toBe(
+      formatDuration(computeEntryMinutes(entry, NOW_MS))
+    );
+  });
+});
+
+describe('TimeEntryRow — the time range is the record, not metadata', () => {
+  // It used to be a muted `Small`. The times ARE what the ledger records, so
+  // they read at full foreground weight; only a voided line is demoted.
+  it('renders an ordinary time range unmuted', () => {
+    const entry = makeEntry();
+    const { getByTestId } = render(
+      <TimeEntryRow
+        entry={entry}
+        nowMs={NOW_MS}
+        timeZone="Europe/London"
+        dayDate="2026-08-01"
+      />
+    );
+
+    const timeEl = getByTestId(`hours-entry-time-${entry.id}`);
+    expect(timeEl.props.className ?? '').not.toContain('text-muted-foreground');
   });
 });
 
@@ -97,7 +164,11 @@ describe('TimeEntryRow — edit affordance', () => {
     expect(onPress).toHaveBeenCalledTimes(1);
   });
 
-  it('carries minHeight 44 on the pressable inner view', () => {
+  // The row's own minHeight moved UP to `TimeEntryDayRow` (56pt, one ledger
+  // row) when the entry stopped being a card — see that suite. What guarantees
+  // the tap target here is the pressable's hitSlop, so assert THAT rather than
+  // dropping the reachability check on the floor.
+  it('extends the tap target past the text with hitSlop', () => {
     const entry = makeEntry();
     const { getByTestId } = render(
       <TimeEntryRow
@@ -109,14 +180,43 @@ describe('TimeEntryRow — edit affordance', () => {
       />
     );
 
-    const pressable = getByTestId(`hours-edit-entry-${entry.id}`);
-    const innerView = pressable.props.children;
-    const style = Array.isArray(innerView.props.style)
-      ? innerView.props.style.flat()
-      : [innerView.props.style];
-    expect(style.some((s: { minHeight?: number }) => s?.minHeight === 44)).toBe(
-      true
+    expect(getByTestId(`hours-edit-entry-${entry.id}`).props.hitSlop).toBe(8);
+  });
+
+  it('is a LINE, not a card — no ground, no padding, no elevation of its own', () => {
+    const entry = makeEntry();
+    const { getByTestId } = render(
+      <TimeEntryRow
+        entry={entry}
+        nowMs={NOW_MS}
+        timeZone="Europe/London"
+        dayDate="2026-08-01"
+        onPress={mock(() => {})}
+      />
     );
+
+    const row = getByTestId(`hours-entry-row-${entry.id}`);
+    expect(row.props.className).not.toContain('bg-card');
+    expect(row.props.className).not.toMatch(/\bp[xyltrb]?-\d/);
+    expect(row.props.className).not.toContain('rounded-row');
+    expect(row.props.style).toBeFalsy();
+  });
+
+  it('reserves the chevron slot even when the entry is read-only', () => {
+    const entry = makeEntry();
+    const { getByTestId } = render(
+      <TimeEntryRow
+        entry={entry}
+        nowMs={NOW_MS}
+        timeZone="Europe/London"
+        dayDate="2026-08-01"
+      />
+    );
+
+    const row = getByTestId(`hours-entry-row-${entry.id}`);
+    const rightGroup = [row.props.children].flat().at(-1);
+    const slot = [rightGroup.props.children].flat().at(-1);
+    expect(slot.props.style.width).toBe(CHEVRON_SLOT);
   });
 
   it('omits chevron when no onPress (read-only parent view)', () => {
@@ -183,8 +283,8 @@ describe('TimeEntryRow — break subline', () => {
   });
 });
 
-describe('TimeEntryRow — edited pill and +1 marker', () => {
-  it('renders edited as a StatusPill, not inside the time string', () => {
+describe('TimeEntryRow — edited marker and +1 marker', () => {
+  it('renders edited as its own marker, not inside the time string', () => {
     const entry = makeEntry({
       clock_out_at: '2026-08-01T09:58:00.000Z',
       updated_at: '2026-08-02T11:00:00.000Z',
@@ -198,9 +298,30 @@ describe('TimeEntryRow — edited pill and +1 marker', () => {
       />
     );
 
-    expect(getByText('edited')).toBeTruthy();
+    // i18n is key-echo-mocked, so this asserts "the marker reaches the
+    // screen at the key the component now reads".
+    expect(getByText('editedMarker')).toBeTruthy();
+    expect(getByTestId(`hours-entry-edited-pill-${entry.id}`)).toBeTruthy();
     const timeEl = getByTestId(`hours-entry-time-${entry.id}`);
     expect(timeEl.props.children.join('')).not.toContain('edited');
+  });
+
+  it('reads "Edited" in English — who changed a recorded hour is stated in words', () => {
+    expect(enHours.editedMarker).toBe('Edited');
+  });
+
+  it('shows no edited marker on an untouched entry', () => {
+    const entry = makeEntry({ clock_out_at: '2026-08-01T09:58:00.000Z' });
+    const { queryByTestId } = render(
+      <TimeEntryRow
+        entry={entry}
+        nowMs={NOW_MS}
+        timeZone="Europe/London"
+        dayDate="2026-08-01"
+      />
+    );
+
+    expect(queryByTestId(`hours-entry-edited-pill-${entry.id}`)).toBeNull();
   });
 
   it('keeps +1 inside the time range string', () => {
@@ -262,7 +383,11 @@ describe('TimeEntryRow — voided entry', () => {
     expect(queryByText(/–/)).toBeNull();
   });
 
-  it("drops to T4 (muted ground, no elevation) instead of a live entry's card weight", () => {
+  // T4 used to be a muted GROUND, because the entry was a card. Now that it
+  // is a line inside the day's row it has no ground to mute — the demotion
+  // moved onto the type itself, and the rule it encodes is unchanged: a
+  // voided entry stays a complete record but must not compete with a real one.
+  it('drops to T4 — muted, struck through, and never a duration in full weight', () => {
     const entry = makeEntry({
       status: 'voided',
       clock_out_at: '2026-08-01T09:58:00.000Z',
@@ -273,15 +398,16 @@ describe('TimeEntryRow — voided entry', () => {
         nowMs={NOW_MS}
         timeZone="Europe/London"
         dayDate="2026-08-01"
+        showDuration
       />
     );
 
-    const row = getByTestId(`hours-entry-row-${entry.id}`);
-    expect(row.props.className).toContain('bg-muted');
-    expect(row.props.className).not.toContain('bg-card');
-    // style is [elevation-or-null, { minHeight }] — no elevation for T4.
-    const styleArray = [row.props.style].flat();
-    expect(styleArray[0]).toBeFalsy();
+    const timeEl = getByTestId(`hours-voided-entry-${entry.id}`);
+    expect(timeEl.props.className).toContain('text-muted-foreground');
+    expect(timeEl.props.className).toContain('line-through');
+    expect(
+      getByTestId(`hours-entry-duration-${entry.id}`).props.className
+    ).toContain('text-muted-foreground');
   });
 
   it('keeps every StatusPill and the strike-through — the record stays complete', () => {

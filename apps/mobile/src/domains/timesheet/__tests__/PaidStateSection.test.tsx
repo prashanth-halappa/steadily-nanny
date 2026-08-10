@@ -1,15 +1,25 @@
 /**
- * @module domains/timesheet/__tests__/PaidStateCard.test
+ * @module domains/timesheet/__tests__/PaidStateSection.test
  *
- * The approved week's settlement card: the Paid / Partially paid / Unpaid
- * badge, the ledger of what has actually landed, and — parents only — the
- * way to record another payment. The carer sees the identical card minus the
- * button, which is the whole point: both sides read the SAME figures.
+ * The approved week's settlement SECTION — since Daylight v2 it renders no
+ * card of its own (`WeekMoneyCard` owns the one card the money block gets),
+ * but every figure it states is unchanged: the Paid / Partially paid /
+ * Unpaid badge, the ledger of what has actually landed, and — parents only —
+ * the way to record another payment. The carer sees the identical section
+ * minus the button, which is the whole point: both sides read the SAME
+ * figures.
+ *
+ * `hasPaidStateContent` is the same predicate the section gates itself on and
+ * `WeekMoneyCard` asks before drawing a card at all — so the two can never
+ * disagree about whether there is a settlement to talk about.
  */
 import { describe, expect, it, mock } from 'bun:test';
 import type { Payment } from '@steadily-nanny/shared-types/schemas/payment.schema';
 import { fireEvent, render, within } from '@testing-library/react-native';
-import { PaidStateCard } from '../components/PaidStateCard';
+import {
+  hasPaidStateContent,
+  PaidStateSection,
+} from '../components/PaidStateSection';
 import { derivePaidState } from '../utils/paidState';
 
 const TIMESHEET_ID = '44444444-4444-4444-8444-444444444444';
@@ -31,11 +41,11 @@ function makePayment(overrides: Partial<Payment> = {}): Payment {
 }
 
 function renderCard(
-  props: Partial<React.ComponentProps<typeof PaidStateCard>> = {}
+  props: Partial<React.ComponentProps<typeof PaidStateSection>> = {}
 ) {
   const payments = props.payments ?? [];
   return render(
-    <PaidStateCard
+    <PaidStateSection
       payments={payments}
       paidState={
         props.paidState !== undefined
@@ -48,7 +58,7 @@ function renderCard(
   );
 }
 
-describe('PaidStateCard — badge states', () => {
+describe('PaidStateSection — badge states', () => {
   it('reads Unpaid with the full gross outstanding when nothing has been recorded', () => {
     const { getByTestId } = renderCard({ payments: [] });
 
@@ -114,9 +124,50 @@ describe('PaidStateCard — badge states', () => {
 
     expect(queryByTestId('hours-paid-state')).toBeNull();
   });
+
+  it('renders NOTHING for a genuinely zero-value week with no payments — there is no settlement to talk about', () => {
+    const { queryByTestId } = renderCard({
+      payments: [],
+      paidState: derivePaidState([], 0),
+    });
+
+    expect(queryByTestId('hours-paid-state')).toBeNull();
+  });
+
+  it('still renders a zero-gross week that HAS a recorded payment — the ledger row is a fact', () => {
+    const payments = [makePayment({ id: 'p1', amount_minor: 5000 })];
+    const { getByTestId } = renderCard({
+      payments,
+      paidState: derivePaidState(payments, 0),
+    });
+
+    expect(getByTestId('hours-paid-state')).toBeTruthy();
+    expect(getByTestId('hours-paid-state-line-p1-value').props.children).toBe(
+      '£50.00'
+    );
+  });
 });
 
-describe('PaidStateCard — the ledger', () => {
+describe('hasPaidStateContent — the predicate WeekMoneyCard shares', () => {
+  it('is false with no server gross, whatever the ledger says', () => {
+    expect(hasPaidStateContent(null, [])).toBe(false);
+    expect(hasPaidStateContent(null, [makePayment()])).toBe(false);
+  });
+
+  it('is false for a zero-gross week with an empty ledger', () => {
+    expect(hasPaidStateContent(derivePaidState([], 0), [])).toBe(false);
+  });
+
+  it('is true once there is either a gross or a payment', () => {
+    expect(hasPaidStateContent(derivePaidState([], 23612), [])).toBe(true);
+    const payments = [makePayment({ amount_minor: 5000 })];
+    expect(hasPaidStateContent(derivePaidState(payments, 0), payments)).toBe(
+      true
+    );
+  });
+});
+
+describe('PaidStateSection — the ledger', () => {
   it('lists each recorded payment with its amount, date and method note', () => {
     const { getByTestId } = renderCard({
       payments: [
@@ -150,7 +201,7 @@ describe('PaidStateCard — the ledger', () => {
   });
 });
 
-describe('PaidStateCard — who may act', () => {
+describe('PaidStateSection — who may act', () => {
   it('offers "Mark as paid" only when a handler is supplied (the parent view)', () => {
     const onMarkPaidPress = mock(() => {});
     const { getByTestId } = renderCard({ onMarkPaidPress });

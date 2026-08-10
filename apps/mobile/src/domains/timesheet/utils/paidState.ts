@@ -66,7 +66,7 @@ export function derivePaidState(
 /**
  * A reopened week has no frozen gross (`CLEARED_EARNINGS_SNAPSHOT`), but its
  * ledger rows still exist. `derivePaidState` would return `null` there —
- * this helper feeds `PaidStateCard` from the payments sum alone so both
+ * this helper feeds `PaidStateSection` from the payments sum alone so both
  * roles keep seeing what landed. No balance is stated (gross is unknown);
  * `grossMinor` is set to `paidMinor` so the card's contract stays intact.
  */

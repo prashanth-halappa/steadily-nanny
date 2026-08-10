@@ -1,12 +1,17 @@
 /**
  * @module domains/timesheet/__tests__/WeekTotal.test
  *
- * D15: previous/next week navigation lives on `WeekTotal` — it already
- * shows the week-range label, so the nav controls that change which week is
- * shown sit right next to it. No `AlertDialog`/`BottomSheetBase`/FlashList
- * here, so this renders cleanly under `@testing-library/react-native`,
- * unlike `HoursScreen`/`ParentWeekView` (see `HoursScreens.test.ts`'s
- * source-inspection rationale).
+ * Daylight v2: `WeekTotal` is now the Hours statement's STATUS CARD only.
+ * The week figure, week nav, carer name and empty-week note moved to
+ * `HoursHeroBand`; the money line and paid state moved to `WeekMoneyCard`.
+ * The tests that used to exercise those props survive here as negative
+ * assertions ("no longer this component's job") in the `moved out of
+ * WeekTotal` block — the positive coverage lives in the owning components'
+ * own test files.
+ *
+ * No `AlertDialog`/`BottomSheetBase`/FlashList here, so this renders cleanly
+ * under `@testing-library/react-native`, unlike `HoursScreen`/`ParentWeekView`
+ * (see `HoursScreens.test.ts`'s source-inspection rationale).
  */
 import { describe, expect, it, mock } from 'bun:test';
 import { render } from '@testing-library/react-native';
@@ -16,306 +21,158 @@ import { WeekTotal } from '../components/WeekTotal';
 const SURFACE_ATTENTION = palette.light.surfaceAttention.hex;
 const SURFACE_POSITIVE = palette.light.surfacePositive.hex;
 
+function flatStyle(node: { props: { style?: unknown } }) {
+  const style = node.props.style;
+  return Array.isArray(style)
+    ? Object.assign({}, ...style.flat(Number.POSITIVE_INFINITY).filter(Boolean))
+    : (style ?? {});
+}
+
+const okEarnings = {
+  status: 'ok' as const,
+  week_start: '2026-08-03',
+  currency: 'GBP',
+  lines: [],
+  gross_minor: 23612,
+  reimbursements_minor: 0,
+  worked_minutes: 2460,
+  payable_minutes: 2460,
+  guaranteed_minutes_per_week: null,
+};
+
 describe('WeekTotal', () => {
-  it('renders the total and week range label without nav props (backwards compatible)', () => {
-    const { getByTestId, queryByTestId } = render(
+  it('renders the status card for a week that has a status', () => {
+    const { getByTestId } = render(
       <WeekTotal
         testID="hours-week-total"
-        weekRangeLabel="27 Jul – 2 Aug"
-        totalLabel="9h 14m"
-        overtimeLabel={null}
+        timesheetStatus="submitted"
+        earningsRole="parent"
       />
     );
 
     expect(getByTestId('hours-week-total')).toBeTruthy();
-    expect(getByTestId('hours-total')).toBeTruthy();
-    expect(queryByTestId('hours-week-prev')).toBeNull();
-    expect(queryByTestId('hours-week-next')).toBeNull();
   });
 
-  it('renders previous/next controls when nav callbacks are provided, with a clear week-label testID', () => {
-    const onPreviousWeek = mock(() => {});
-    const onNextWeek = mock(() => {});
+  it('renders nothing at all when it has nothing to say about the agreement', () => {
+    const { queryByTestId } = render(<WeekTotal testID="hours-week-total" />);
 
+    expect(queryByTestId('hours-week-total')).toBeNull();
+  });
+
+  // These behaviours did NOT disappear — they moved. `hours-total`, the week
+  // nav, the carer name and the empty-week note are `HoursHeroBand`'s; the
+  // money line and its carer-name accessibilityLabel are `WeekMoneyCard`'s.
+  // Asserting their absence here is the regression guard against the card
+  // quietly growing back into the whole screen.
+  describe('moved out of WeekTotal (hero band / money card own these now)', () => {
+    it('never renders the week figure, its overtime caption or the empty-week note', () => {
+      const { queryByTestId } = render(
+        <WeekTotal
+          testID="hours-week-total"
+          timesheetStatus="submitted"
+          earningsRole="parent"
+        />
+      );
+
+      expect(queryByTestId('hours-total')).toBeNull();
+      expect(queryByTestId('hours-overtime')).toBeNull();
+      expect(queryByTestId('hours-empty-week')).toBeNull();
+    });
+
+    it('never renders week navigation — no prev/next/label controls', () => {
+      const { queryByTestId } = render(
+        <WeekTotal
+          testID="hours-week-total"
+          timesheetStatus="submitted"
+          earningsRole="parent"
+        />
+      );
+
+      expect(queryByTestId('hours-week-prev')).toBeNull();
+      expect(queryByTestId('hours-week-next')).toBeNull();
+      expect(queryByTestId('hours-week-label')).toBeNull();
+    });
+
+    it('never renders the carer name', () => {
+      const { queryByTestId } = render(
+        <WeekTotal
+          testID="hours-week-total"
+          timesheetStatus="submitted"
+          earningsRole="parent"
+        />
+      );
+
+      expect(queryByTestId('hours-carer-name')).toBeNull();
+    });
+
+    it('never renders the money line, even when priced earnings are supplied', () => {
+      const { queryByTestId } = render(
+        <WeekTotal
+          testID="hours-week-total"
+          timesheetStatus="submitted"
+          earningsRole="parent"
+          earnings={okEarnings}
+        />
+      );
+
+      expect(queryByTestId('hours-earnings-line')).toBeNull();
+      expect(queryByTestId('hours-earnings-line-amount')).toBeNull();
+      expect(queryByTestId('hours-earnings-line-pressable')).toBeNull();
+    });
+
+    it('never renders the money card', () => {
+      const { queryByTestId } = render(
+        <WeekTotal
+          testID="hours-week-total"
+          timesheetStatus="approved"
+          earningsRole="nanny"
+          earnings={okEarnings}
+        />
+      );
+
+      expect(queryByTestId('hours-money-card')).toBeNull();
+    });
+  });
+
+  it('renders the timesheet status pill and the pay-boundary line', () => {
     const { getByTestId } = render(
       <WeekTotal
         testID="hours-week-total"
-        weekRangeLabel="27 Jul – 2 Aug"
-        totalLabel="9h 14m"
-        overtimeLabel={null}
-        onPreviousWeek={onPreviousWeek}
-        onNextWeek={onNextWeek}
-        isNextDisabled={false}
-      />
-    );
-
-    expect(getByTestId('hours-week-prev')).toBeTruthy();
-    expect(getByTestId('hours-week-next')).toBeTruthy();
-    expect(getByTestId('hours-week-label')).toBeTruthy();
-  });
-
-  it('tapping previous/next fires the respective callback', () => {
-    const onPreviousWeek = mock(() => {});
-    const onNextWeek = mock(() => {});
-
-    const { getByTestId } = render(
-      <WeekTotal
-        testID="hours-week-total"
-        weekRangeLabel="27 Jul – 2 Aug"
-        totalLabel="9h 14m"
-        overtimeLabel={null}
-        onPreviousWeek={onPreviousWeek}
-        onNextWeek={onNextWeek}
-        isNextDisabled={false}
-      />
-    );
-
-    getByTestId('hours-week-prev').props.onPress?.();
-    getByTestId('hours-week-next').props.onPress?.();
-
-    expect(onPreviousWeek).toHaveBeenCalledTimes(1);
-    expect(onNextWeek).toHaveBeenCalledTimes(1);
-  });
-
-  it('disables the next-week control when isNextDisabled is true — never lets navigation reach the future', () => {
-    const onNextWeek = mock(() => {});
-
-    const { getByTestId } = render(
-      <WeekTotal
-        testID="hours-week-total"
-        weekRangeLabel="3 Aug – 9 Aug"
-        totalLabel="0h 0m"
-        overtimeLabel={null}
-        onPreviousWeek={() => {}}
-        onNextWeek={onNextWeek}
-        isNextDisabled
-      />
-    );
-
-    const nextButton = getByTestId('hours-week-next');
-    expect(nextButton.props.disabled).toBe(true);
-    expect(nextButton.props.accessibilityState?.disabled).toBe(true);
-  });
-
-  it('disables the previous-week control when isPreviousDisabled is true — bounds how far back navigation can page', () => {
-    const onPreviousWeek = mock(() => {});
-
-    const { getByTestId } = render(
-      <WeekTotal
-        testID="hours-week-total"
-        weekRangeLabel="27 Jul – 2 Aug"
-        totalLabel="0h 0m"
-        overtimeLabel={null}
-        onPreviousWeek={onPreviousWeek}
-        onNextWeek={() => {}}
-        isPreviousDisabled
-      />
-    );
-
-    const prevButton = getByTestId('hours-week-prev');
-    expect(prevButton.props.disabled).toBe(true);
-    expect(prevButton.props.accessibilityState?.disabled).toBe(true);
-  });
-
-  it('does not render a money line when earnings is omitted (undefined)', () => {
-    const { queryByTestId } = render(
-      <WeekTotal
-        testID="hours-week-total"
-        weekRangeLabel="3 Aug – 9 Aug"
-        totalLabel="9h 14m"
-        overtimeLabel={null}
-      />
-    );
-    expect(queryByTestId('hours-earnings-line')).toBeNull();
-  });
-
-  it('wires earnings through to WeekEarningsLine when earnings is provided', () => {
-    const { getByTestId } = render(
-      <WeekTotal
-        testID="hours-week-total"
-        weekRangeLabel="3 Aug – 9 Aug"
-        totalLabel="41h 0m"
-        overtimeLabel={null}
-        totalMinutes={2460}
-        timesheetStatus="submitted"
-        earningsRole="parent"
-        earningsCarerId="carer-1"
-        earnings={{
-          status: 'ok',
-          week_start: '2026-08-03',
-          currency: 'GBP',
-          lines: [],
-          gross_minor: 23612,
-          reimbursements_minor: 0,
-          worked_minutes: 2460,
-          payable_minutes: 2460,
-          guaranteed_minutes_per_week: null,
-        }}
-      />
-    );
-    expect(getByTestId('hours-earnings-line')).toBeTruthy();
-    expect(getByTestId('hours-earnings-line-amount').props.children).toBe(
-      '£236.12'
-    );
-  });
-
-  it('renders carer name and timesheet status pill above the total', () => {
-    const { getByTestId } = render(
-      <WeekTotal
-        testID="hours-week-total"
-        weekRangeLabel="3 Aug – 9 Aug"
-        totalLabel="5h 34m"
-        overtimeLabel={null}
-        carerName="Maria Lopez"
         timesheetStatus="submitted"
         showPayBoundary
       />
     );
 
-    expect(getByTestId('hours-carer-name')).toBeTruthy();
     expect(getByTestId('hours-timesheet-status')).toBeTruthy();
     expect(getByTestId('hours-pay-boundary')).toBeTruthy();
   });
 
-  // Declutter pass: the carer name is promoted to the primary color and
-  // shares one row with the pill instead of stacking above it.
-  describe('identity row declutter', () => {
-    function flatStyle(node: { props: { style?: unknown } }) {
-      const style = node.props.style;
-      return Array.isArray(style)
-        ? Object.assign({}, ...style.filter(Boolean))
-        : (style ?? {});
-    }
+  // The explainer stays a 13px muted MetadataLabel; its old `mt-3` is gone
+  // because `CardContent`'s single `gap-3` now spaces every card row.
+  it('keeps the payBoundary explainer a muted MetadataLabel', () => {
+    const { getByTestId } = render(
+      <WeekTotal
+        testID="hours-week-total"
+        timesheetStatus="submitted"
+        showPayBoundary
+      />
+    );
 
-    it('promotes the carer name to semibold default-foreground text, single line, sharing a row with the pill', () => {
-      const { getByTestId } = render(
-        <WeekTotal
-          testID="hours-week-total"
-          weekRangeLabel="3 Aug – 9 Aug"
-          totalLabel="5h 34m"
-          overtimeLabel={null}
-          carerName="Maria Lopez"
-          timesheetStatus="submitted"
-        />
-      );
-
-      const name = getByTestId('hours-carer-name');
-      expect(flatStyle(name).fontWeight).toBe('600');
-      expect(name.props.numberOfLines).toBe(1);
-      expect(name.props.className).not.toContain('text-muted-foreground');
-      expect(getByTestId('hours-timesheet-status')).toBeTruthy();
-    });
-
-    it('renders the over-scheduled delta as a caption beneath the figure, not beside it', () => {
-      const { getByText } = render(
-        <WeekTotal
-          testID="hours-week-total"
-          weekRangeLabel="3 Aug – 9 Aug"
-          totalLabel="9h 14m"
-          overtimeLabel="14m over scheduled"
-        />
-      );
-
-      const node = getByText('14m over scheduled');
-      expect(flatStyle(node).fontSize).toBe(13);
-    });
-
-    it('renders the total hours figure in SignatureHeroBold (40/700 tabular)', () => {
-      const { getByTestId } = render(
-        <WeekTotal
-          testID="hours-week-total"
-          weekRangeLabel="3 Aug – 9 Aug"
-          totalLabel="9h 14m"
-          overtimeLabel={null}
-        />
-      );
-
-      const total = getByTestId('hours-total');
-      expect(flatStyle(total).fontSize).toBe(40);
-      expect(flatStyle(total).fontWeight).toBe('700');
-    });
-
-    it('renders a 0m total in muted foreground so an empty week does not shout', () => {
-      const { getByTestId } = render(
-        <WeekTotal
-          testID="hours-week-total"
-          weekRangeLabel="3 Aug – 9 Aug"
-          totalLabel="0m"
-          overtimeLabel={null}
-        />
-      );
-
-      expect(getByTestId('hours-total').props.className).toContain(
-        'text-muted-foreground'
-      );
-    });
-
-    it('demotes the payBoundary explainer to MetadataLabel with more top margin', () => {
-      const { getByTestId } = render(
-        <WeekTotal
-          testID="hours-week-total"
-          weekRangeLabel="3 Aug – 9 Aug"
-          totalLabel="5h 34m"
-          overtimeLabel={null}
-          showPayBoundary
-        />
-      );
-
-      const node = getByTestId('hours-pay-boundary');
-      expect(node.props.className).toContain('mt-3');
-      expect(flatStyle(node).fontSize).toBe(13);
-    });
-
-    it('folds the carer name into the money row accessibilityLabel, never the visible label', () => {
-      const { getByTestId } = render(
-        <WeekTotal
-          testID="hours-week-total"
-          weekRangeLabel="3 Aug – 9 Aug"
-          totalLabel="41h 0m"
-          overtimeLabel={null}
-          totalMinutes={2460}
-          timesheetStatus="submitted"
-          carerName="Maria Lopez"
-          earningsRole="parent"
-          earningsCarerId="carer-1"
-          earnings={{
-            status: 'ok',
-            week_start: '2026-08-03',
-            currency: 'GBP',
-            lines: [],
-            gross_minor: 23612,
-            reimbursements_minor: 0,
-            worked_minutes: 2460,
-            payable_minutes: 2460,
-            guaranteed_minutes_per_week: null,
-          }}
-        />
-      );
-
-      expect(
-        getByTestId('hours-earnings-line-pressable').props.accessibilityLabel
-      ).toBe('Maria Lopez: earningsEstimatedGross £236.12');
-      // The visible label itself must not carry the carer name.
-      expect(getByTestId('hours-earnings-line-amount').props.children).toBe(
-        '£236.12'
-      );
-    });
+    const node = getByTestId('hours-pay-boundary');
+    expect(flatStyle(node).fontSize).toBe(13);
+    expect(node.props.className).toContain('text-muted-foreground');
   });
 
   // Walkthrough fix 1: the reopen affordance was buried in the FlashList
   // footer, below the day rows and reimbursements card — invisible on
-  // first load for an approved week. It now lives in the summary card
-  // itself, next to the status pill and gross, so a parent who doubts an
-  // approved total sees it immediately.
+  // first load for an approved week. It now lives in the status card
+  // itself, so a parent who doubts an approved total sees it immediately.
   describe('reopen affordance', () => {
-    it('renders hours-reopen-button in the summary card on an approved week when onReopenPress is supplied', () => {
+    it('renders hours-reopen-button in the status card on an approved week when onReopenPress is supplied', () => {
       const onReopenPress = mock(() => {});
       const { getByTestId } = render(
         <WeekTotal
           testID="hours-week-total"
-          weekRangeLabel="3 Aug – 9 Aug"
-          totalLabel="41h 0m"
-          overtimeLabel={null}
           timesheetStatus="approved"
           onReopenPress={onReopenPress}
         />
@@ -331,9 +188,6 @@ describe('WeekTotal', () => {
       const { getByTestId } = render(
         <WeekTotal
           testID="hours-week-total"
-          weekRangeLabel="3 Aug – 9 Aug"
-          totalLabel="41h 0m"
-          overtimeLabel={null}
           timesheetStatus="approved"
           onReopenPress={() => {}}
         />
@@ -350,9 +204,6 @@ describe('WeekTotal', () => {
       const { queryByTestId } = render(
         <WeekTotal
           testID="hours-week-total"
-          weekRangeLabel="3 Aug – 9 Aug"
-          totalLabel="41h 0m"
-          overtimeLabel={null}
           timesheetStatus="submitted"
           onReopenPress={() => {}}
         />
@@ -363,13 +214,7 @@ describe('WeekTotal', () => {
 
     it('does not render the reopen control when no handler is supplied (helper/read-only view)', () => {
       const { queryByTestId } = render(
-        <WeekTotal
-          testID="hours-week-total"
-          weekRangeLabel="3 Aug – 9 Aug"
-          totalLabel="41h 0m"
-          overtimeLabel={null}
-          timesheetStatus="approved"
-        />
+        <WeekTotal testID="hours-week-total" timesheetStatus="approved" />
       );
 
       expect(queryByTestId('hours-reopen-button')).toBeNull();
@@ -379,9 +224,6 @@ describe('WeekTotal', () => {
       const { getByTestId } = render(
         <WeekTotal
           testID="hours-week-total"
-          weekRangeLabel="3 Aug – 9 Aug"
-          totalLabel="41h 0m"
-          overtimeLabel={null}
           timesheetStatus="approved"
           onReopenPress={() => {}}
           isReopenPending
@@ -392,31 +234,16 @@ describe('WeekTotal', () => {
     });
   });
 
-  // Cold-mount reopen reason — wire `earningsReopenReason` through to the
-  // existing `-reopened-note` slot (no ephemeral transition needed).
+  // Cold-mount reopen reason — a timesheet-status fact, so it must survive
+  // every earnings shape (no arrangement, zero hours, no earnings at all).
+  // These cases failed when the note lived inside WeekEarningsLine's `ok` arm.
   describe('earningsReopenReason', () => {
-    const earnings = {
-      status: 'ok' as const,
-      week_start: '2026-08-03',
-      currency: 'GBP',
-      lines: [],
-      gross_minor: 23612,
-      reimbursements_minor: 0,
-      worked_minutes: 2460,
-      payable_minutes: 2460,
-      guaranteed_minutes_per_week: null,
-    };
-
     it('shows the reopened note from a wire reason on a non-approved week', () => {
       const { getByTestId } = render(
         <WeekTotal
           testID="hours-week-total"
-          weekRangeLabel="3 Aug – 9 Aug"
-          totalLabel="41h 0m"
-          overtimeLabel={null}
-          totalMinutes={2460}
           timesheetStatus="submitted"
-          earnings={earnings}
+          earnings={okEarnings}
           earningsReopenReason="Thursday hours were wrong"
         />
       );
@@ -427,30 +254,18 @@ describe('WeekTotal', () => {
       const { queryByTestId } = render(
         <WeekTotal
           testID="hours-week-total"
-          weekRangeLabel="3 Aug – 9 Aug"
-          totalLabel="41h 0m"
-          overtimeLabel={null}
-          totalMinutes={2460}
           timesheetStatus="approved"
-          earnings={earnings}
+          earnings={okEarnings}
           earningsReopenReason="Thursday hours were wrong"
         />
       );
       expect(queryByTestId('hours-earnings-line-reopened-note')).toBeNull();
     });
 
-    // The reason is a timesheet-status fact, not an earnings fact — it must
-    // survive every early return inside WeekEarningsLine (no arrangement,
-    // hours-only, zero-hours, earnings null). These cases failed when the
-    // note lived only in the `ok` earnings arm.
-    it('shows the wire reason on a no_arrangement week (earnings arm never reaches ok)', () => {
-      const { getByTestId, getByText } = render(
+    it('shows the wire reason on a no_arrangement week (earnings never reach ok)', () => {
+      const { getByTestId } = render(
         <WeekTotal
           testID="hours-week-total"
-          weekRangeLabel="3 Aug – 9 Aug"
-          totalLabel="41h 0m"
-          overtimeLabel={null}
-          totalMinutes={2460}
           timesheetStatus="submitted"
           earnings={{
             status: 'no_arrangement',
@@ -458,25 +273,19 @@ describe('WeekTotal', () => {
             unpriced_dates: ['2026-08-03'],
           }}
           earningsRole="parent"
-          earningsCarerId="carer-1"
           earningsReopenReason="Thursday hours were wrong"
         />
       );
-      expect(getByText('earningsNoArrangementParent')).toBeTruthy();
       expect(getByTestId('hours-earnings-line-reopened-note')).toBeTruthy();
     });
 
-    it('shows the wire reason on a zero-hours week (earnings line itself is omitted)', () => {
+    it('shows the wire reason on a zero-hours week', () => {
       const { getByTestId, queryByTestId } = render(
         <WeekTotal
           testID="hours-week-total"
-          weekRangeLabel="3 Aug – 9 Aug"
-          totalLabel="0m"
-          overtimeLabel={null}
-          totalMinutes={0}
           timesheetStatus="submitted"
           earnings={{
-            ...earnings,
+            ...okEarnings,
             gross_minor: 0,
             worked_minutes: 0,
             payable_minutes: 0,
@@ -487,6 +296,17 @@ describe('WeekTotal', () => {
       expect(queryByTestId('hours-earnings-line')).toBeNull();
       expect(getByTestId('hours-earnings-line-reopened-note')).toBeTruthy();
     });
+
+    it('shows the wire reason with no earnings at all', () => {
+      const { getByTestId } = render(
+        <WeekTotal
+          testID="hours-week-total"
+          timesheetStatus="submitted"
+          earningsReopenReason="Thursday hours were wrong"
+        />
+      );
+      expect(getByTestId('hours-earnings-line-reopened-note')).toBeTruthy();
+    });
   });
 
   // Approved week is locked for carers — one caption at the week-card level
@@ -495,13 +315,7 @@ describe('WeekTotal', () => {
   describe('approved lock note', () => {
     it('renders the lock caption on an approved week when no onReopenPress is supplied', () => {
       const { getByTestId } = render(
-        <WeekTotal
-          testID="hours-week-total"
-          weekRangeLabel="3 Aug – 9 Aug"
-          totalLabel="41h 0m"
-          overtimeLabel={null}
-          timesheetStatus="approved"
-        />
+        <WeekTotal testID="hours-week-total" timesheetStatus="approved" />
       );
 
       expect(getByTestId('hours-approved-lock-note')).toBeTruthy();
@@ -511,9 +325,6 @@ describe('WeekTotal', () => {
       const { queryByTestId } = render(
         <WeekTotal
           testID="hours-week-total"
-          weekRangeLabel="3 Aug – 9 Aug"
-          totalLabel="41h 0m"
-          overtimeLabel={null}
           timesheetStatus="approved"
           onReopenPress={() => {}}
         />
@@ -529,9 +340,6 @@ describe('WeekTotal', () => {
       const { queryByTestId } = render(
         <WeekTotal
           testID="hours-week-total"
-          weekRangeLabel="3 Aug – 9 Aug"
-          totalLabel="41h 0m"
-          overtimeLabel={null}
           timesheetStatus={timesheetStatus}
         />
       );
@@ -546,10 +354,8 @@ describe('WeekTotal', () => {
       const { queryByTestId } = render(
         <WeekTotal
           testID="hours-week-total"
-          weekRangeLabel="3 Aug – 9 Aug"
-          totalLabel="41h 0m"
-          overtimeLabel={null}
           timesheetStatus={timesheetStatus}
+          showPayBoundary
         />
       );
 
@@ -565,7 +371,7 @@ describe('WeekTotal', () => {
   // genuine rendering defect (a 4px-wide element can't carry a 20px radius).
   describe('T1/positive tone (Daylight prominence ladder)', () => {
     function toneBackground(node: { props: { style?: unknown } }) {
-      const styles = [node.props.style].flat(Infinity);
+      const styles = [node.props.style].flat(Number.POSITIVE_INFINITY);
       const bg = styles.find(
         (s): s is { backgroundColor: string } =>
           !!s && typeof s === 'object' && 'backgroundColor' in s
@@ -577,9 +383,6 @@ describe('WeekTotal', () => {
       const { getByTestId } = render(
         <WeekTotal
           testID="hours-week-total"
-          weekRangeLabel="3 Aug – 9 Aug"
-          totalLabel="9h 14m"
-          overtimeLabel={null}
           timesheetStatus="submitted"
           earningsRole="parent"
         />
@@ -594,9 +397,6 @@ describe('WeekTotal', () => {
       const { getByTestId } = render(
         <WeekTotal
           testID="hours-week-total"
-          weekRangeLabel="3 Aug – 9 Aug"
-          totalLabel="9h 14m"
-          overtimeLabel={null}
           timesheetStatus="submitted"
           earningsRole="nanny"
         />
@@ -609,9 +409,6 @@ describe('WeekTotal', () => {
       const { getByTestId } = render(
         <WeekTotal
           testID="hours-week-total"
-          weekRangeLabel="3 Aug – 9 Aug"
-          totalLabel="9h 14m"
-          overtimeLabel={null}
           timesheetStatus="queried"
           earningsRole="nanny"
         />
@@ -624,13 +421,7 @@ describe('WeekTotal', () => {
 
     it('is positive-toned once approved', () => {
       const { getByTestId } = render(
-        <WeekTotal
-          testID="hours-week-total"
-          weekRangeLabel="3 Aug – 9 Aug"
-          totalLabel="41h 0m"
-          overtimeLabel={null}
-          timesheetStatus="approved"
-        />
+        <WeekTotal testID="hours-week-total" timesheetStatus="approved" />
       );
 
       expect(toneBackground(getByTestId('hours-week-total'))).toBe(
@@ -640,47 +431,76 @@ describe('WeekTotal', () => {
 
     it('stays default with no tint when the week is still open', () => {
       const { getByTestId } = render(
-        <WeekTotal
-          testID="hours-week-total"
-          weekRangeLabel="3 Aug – 9 Aug"
-          totalLabel="0m"
-          overtimeLabel={null}
-          timesheetStatus="open"
-        />
+        <WeekTotal testID="hours-week-total" timesheetStatus="open" />
       );
 
       expect(toneBackground(getByTestId('hours-week-total'))).toBeUndefined();
     });
   });
 
-  // Daylight P0-3: "Ready for your approval" — the reason the parent opened
-  // the screen — is a headline directly above the figure, not a 12px pill.
-  // Pills annotate rows; the anchor card of a screen gets a headline.
+  // Daylight v2: "Ready for your approval" — the reason the parent opened
+  // the screen — is an H3 headline in the title row, not a 12px pill and no
+  // longer a 13px MetadataLabel. The IconChip is the third prominence
+  // channel (ground, type, iconography) beside it.
   describe('parent headline replaces the StatusPill', () => {
-    it('renders a MetadataLabel headline above the total instead of a StatusPill, for the parent viewer', () => {
+    it('renders an H3 headline instead of a StatusPill, for the parent viewer', () => {
       const { getByTestId, queryByTestId, getByText } = render(
         <WeekTotal
           testID="hours-week-total"
-          weekRangeLabel="3 Aug – 9 Aug"
-          totalLabel="9h 14m"
-          overtimeLabel={null}
           timesheetStatus="submitted"
           earningsRole="parent"
         />
       );
 
-      expect(getByTestId('hours-status-headline')).toBeTruthy();
+      const headline = getByTestId('hours-status-headline');
+      expect(headline).toBeTruthy();
+      // H3, asserted from what the element actually renders as — role and
+      // heading level, plus the h3 token's 20/700 — not a snapshot.
+      expect(headline.props.role).toBe('heading');
+      expect(headline.props['aria-level']).toBe('3');
+      expect(flatStyle(headline).fontSize).toBe(20);
+      expect(flatStyle(headline).fontWeight).toBe('700');
       expect(getByText('statusSubmitted')).toBeTruthy();
       expect(queryByTestId('hours-timesheet-status')).toBeNull();
+    });
+
+    it('renders the status IconChip beside the headline', () => {
+      const { getByTestId } = render(
+        <WeekTotal
+          testID="hours-week-total"
+          timesheetStatus="submitted"
+          earningsRole="parent"
+        />
+      );
+
+      expect(getByTestId('hours-status-chip')).toBeTruthy();
+    });
+
+    it('renders the status IconChip beside the nanny pill too', () => {
+      const { getByTestId } = render(
+        <WeekTotal
+          testID="hours-week-total"
+          timesheetStatus="submitted"
+          earningsRole="nanny"
+        />
+      );
+
+      expect(getByTestId('hours-status-chip')).toBeTruthy();
+    });
+
+    it('renders no title row at all — chip included — when there is no status', () => {
+      const { queryByTestId } = render(
+        <WeekTotal testID="hours-week-total" showPayBoundary />
+      );
+
+      expect(queryByTestId('hours-status-chip')).toBeNull();
+      expect(queryByTestId('hours-status-headline')).toBeNull();
     });
 
     it('reads "Approved on {date}" once approved and a date is known', () => {
       const { getByText } = render(
         <WeekTotal
           testID="hours-week-total"
-          weekRangeLabel="3 Aug – 9 Aug"
-          totalLabel="41h 0m"
-          overtimeLabel={null}
           timesheetStatus="approved"
           earningsRole="parent"
           approvedDateLabel="6 August"
@@ -694,9 +514,6 @@ describe('WeekTotal', () => {
       const { getByText } = render(
         <WeekTotal
           testID="hours-week-total"
-          weekRangeLabel="3 Aug – 9 Aug"
-          totalLabel="41h 0m"
-          overtimeLabel={null}
           timesheetStatus="approved"
           earningsRole="parent"
         />
@@ -709,9 +526,6 @@ describe('WeekTotal', () => {
       const { getByTestId } = render(
         <WeekTotal
           testID="hours-week-total"
-          weekRangeLabel="3 Aug – 9 Aug"
-          totalLabel="9h 14m"
-          overtimeLabel={null}
           timesheetStatus="queried"
           earningsRole="parent"
           queryNote="Thursday looks longer than expected"
@@ -725,9 +539,6 @@ describe('WeekTotal', () => {
       const { queryByTestId } = render(
         <WeekTotal
           testID="hours-week-total"
-          weekRangeLabel="3 Aug – 9 Aug"
-          totalLabel="9h 14m"
-          overtimeLabel={null}
           timesheetStatus="submitted"
           earningsRole="parent"
           queryNote="Stale note"
@@ -751,9 +562,6 @@ describe('WeekTotal', () => {
       const { getByTestId } = render(
         <WeekTotal
           testID="hours-week-total"
-          weekRangeLabel="3 Aug – 9 Aug"
-          totalLabel="9h 14m"
-          overtimeLabel={null}
           timesheetStatus={status}
           earningsRole="nanny"
         />
@@ -769,9 +577,6 @@ describe('WeekTotal', () => {
       const { getByTestId, queryByTestId } = render(
         <WeekTotal
           testID="hours-week-total"
-          weekRangeLabel="3 Aug – 9 Aug"
-          totalLabel="9h 14m"
-          overtimeLabel={null}
           timesheetStatus="submitted"
           earningsRole="nanny"
         />
@@ -785,9 +590,6 @@ describe('WeekTotal', () => {
       const { getByText } = render(
         <WeekTotal
           testID="hours-week-total"
-          weekRangeLabel="3 Aug – 9 Aug"
-          totalLabel="9h 14m"
-          overtimeLabel={null}
           timesheetStatus="open"
           earningsRole="nanny"
         />
@@ -800,9 +602,6 @@ describe('WeekTotal', () => {
       const { getByText } = render(
         <WeekTotal
           testID="hours-week-total"
-          weekRangeLabel="3 Aug – 9 Aug"
-          totalLabel="9h 14m"
-          overtimeLabel={null}
           timesheetStatus="submitted"
           earningsRole="nanny"
         />
@@ -815,9 +614,6 @@ describe('WeekTotal', () => {
       const { getByText } = render(
         <WeekTotal
           testID="hours-week-total"
-          weekRangeLabel="3 Aug – 9 Aug"
-          totalLabel="9h 14m"
-          overtimeLabel={null}
           timesheetStatus="queried"
           earningsRole="nanny"
         />
@@ -826,35 +622,28 @@ describe('WeekTotal', () => {
       expect(getByText('nannyStatusQueried')).toBeTruthy();
     });
 
-    const okEarnings = {
-      status: 'ok' as const,
-      week_start: '2026-08-03',
-      currency: 'GBP',
-      lines: [],
-      gross_minor: 35208,
-      reimbursements_minor: 0,
-      worked_minutes: 2460,
-      payable_minutes: 2460,
-      guaranteed_minutes_per_week: null,
-    };
+    const approvedEarnings = { ...okEarnings, gross_minor: 35208 };
 
-    it('shows an appreciation line with the household, date and gross once approved', () => {
+    it('shows an appreciation line with the household and date, and the gross on its own Figure28 line, once approved', () => {
       const { getByTestId, getByText } = render(
         <WeekTotal
           testID="hours-week-total"
-          weekRangeLabel="3 Aug – 9 Aug"
-          totalLabel="41h 0m"
-          overtimeLabel={null}
           timesheetStatus="approved"
           earningsRole="nanny"
           approvedDateLabel="6 August"
           householdName="the Smiths"
-          earnings={okEarnings}
+          earnings={approvedEarnings}
         />
       );
 
       expect(getByTestId('hours-approved-by-note')).toBeTruthy();
-      expect(getByText('approvedByHouseholdWithGross')).toBeTruthy();
+      // One sentence key for every case now — the gross is a separate
+      // element, so `approvedByHouseholdWithGross` no longer exists.
+      expect(getByText('approvedByHousehold')).toBeTruthy();
+      const amount = getByTestId('hours-approved-by-amount');
+      expect(amount.props.children).toBe('£352.08');
+      expect(flatStyle(amount).fontSize).toBe(28);
+      expect(flatStyle(amount).fontWeight).toBe('700');
       // Rule B (docs/07-MOBILE-UI-SYSTEM.md): on the tinted `positive`
       // ground, the primary sentence is `foreground`, not muted — this
       // line IS the tier's message (the P0-5 appreciation moment), not a
@@ -864,13 +653,10 @@ describe('WeekTotal', () => {
       ).not.toContain('text-muted-foreground');
     });
 
-    it('omits the money clause when the gross is unknown, rather than inventing a figure', () => {
-      const { getByText, queryByText } = render(
+    it('omits the amount when the gross is unknown, rather than inventing a figure', () => {
+      const { getByTestId, queryByTestId, getByText } = render(
         <WeekTotal
           testID="hours-week-total"
-          weekRangeLabel="3 Aug – 9 Aug"
-          totalLabel="41h 0m"
-          overtimeLabel={null}
           timesheetStatus="approved"
           earningsRole="nanny"
           approvedDateLabel="6 August"
@@ -883,17 +669,30 @@ describe('WeekTotal', () => {
         />
       );
 
+      expect(getByTestId('hours-approved-by-note')).toBeTruthy();
       expect(getByText('approvedByHousehold')).toBeTruthy();
-      expect(queryByText('approvedByHouseholdWithGross')).toBeNull();
+      expect(queryByTestId('hours-approved-by-amount')).toBeNull();
+    });
+
+    it('omits the amount when there are no earnings at all', () => {
+      const { getByTestId, queryByTestId } = render(
+        <WeekTotal
+          testID="hours-week-total"
+          timesheetStatus="approved"
+          earningsRole="nanny"
+          approvedDateLabel="6 August"
+          householdName="the Smiths"
+        />
+      );
+
+      expect(getByTestId('hours-approved-by-note')).toBeTruthy();
+      expect(queryByTestId('hours-approved-by-amount')).toBeNull();
     });
 
     it('does not render the appreciation line for a non-approved status', () => {
       const { queryByTestId } = render(
         <WeekTotal
           testID="hours-week-total"
-          weekRangeLabel="3 Aug – 9 Aug"
-          totalLabel="9h 14m"
-          overtimeLabel={null}
           timesheetStatus="submitted"
           earningsRole="nanny"
           approvedDateLabel="6 August"
@@ -903,20 +702,33 @@ describe('WeekTotal', () => {
 
       expect(queryByTestId('hours-approved-by-note')).toBeNull();
     });
+
+    it('does not render the appreciation line for the parent viewer — it is the carer’s moment', () => {
+      const { queryByTestId } = render(
+        <WeekTotal
+          testID="hours-week-total"
+          timesheetStatus="approved"
+          earningsRole="parent"
+          approvedDateLabel="6 August"
+          householdName="the Smiths"
+          earnings={approvedEarnings}
+        />
+      );
+
+      expect(queryByTestId('hours-approved-by-note')).toBeNull();
+      expect(queryByTestId('hours-approved-by-amount')).toBeNull();
+    });
   });
 
   // Daylight P0-3: Approve moves from the FlashList footer, several screens
-  // below every day row, into the anchor card itself, next to the figure it
-  // approves. WeekTotal stays presentational — the caller owns the handlers.
+  // below every day row, into the status card itself. WeekTotal stays
+  // presentational — the caller owns the handlers.
   describe('primary/secondary action slots', () => {
     it('renders the primary action as a full-width default button', () => {
       const onPress = mock(() => {});
       const { getByTestId } = render(
         <WeekTotal
           testID="hours-week-total"
-          weekRangeLabel="3 Aug – 9 Aug"
-          totalLabel="9h 14m"
-          overtimeLabel={null}
           primaryAction={{
             testID: 'hours-approve-button',
             label: 'Approve the week',
@@ -935,9 +747,6 @@ describe('WeekTotal', () => {
       const { getByTestId, getByText } = render(
         <WeekTotal
           testID="hours-week-total"
-          weekRangeLabel="3 Aug – 9 Aug"
-          totalLabel="9h 14m"
-          overtimeLabel={null}
           primaryAction={{
             testID: 'hours-approve-button',
             label: 'Approve the week',
@@ -961,9 +770,6 @@ describe('WeekTotal', () => {
       const { getByTestId } = render(
         <WeekTotal
           testID="hours-week-total"
-          weekRangeLabel="3 Aug – 9 Aug"
-          totalLabel="9h 14m"
-          overtimeLabel={null}
           actionsNote="Approve unlocks once your carer has logged hours this week."
         />
       );
@@ -973,12 +779,7 @@ describe('WeekTotal', () => {
 
     it('renders neither action when both are omitted', () => {
       const { queryByTestId } = render(
-        <WeekTotal
-          testID="hours-week-total"
-          weekRangeLabel="3 Aug – 9 Aug"
-          totalLabel="9h 14m"
-          overtimeLabel={null}
-        />
+        <WeekTotal testID="hours-week-total" timesheetStatus="submitted" />
       );
 
       expect(queryByTestId('hours-approve-button')).toBeNull();
