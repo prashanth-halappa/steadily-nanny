@@ -152,7 +152,8 @@
       "cover_ask_expired": "Solicitud de cobertura caducada",
       "cover_ask_declined": "Solicitud de cobertura rechazada",
       "carer_sick_shifts_affected": "Día de baja que afecta a turnos",
-      "shift_no_show_digest": "Resumen de fichajes no realizados"
+      "shift_no_show_digest": "Resumen de fichajes no realizados",
+      "week_below_guarantee": "Semana aprobada por debajo de la garantía"
     }
   }
 }

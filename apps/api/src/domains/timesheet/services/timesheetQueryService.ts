@@ -49,15 +49,19 @@ import {
   HouseholdMemberRepository,
   HouseholdRepository,
 } from '../../household';
-// Concrete cross-domain import, never the pay barrel — the same rule
+import { PayArrangementRepository } from '../../pay/repositories/payArrangementRepository';
+// Concrete cross-domain imports, never the pay barrel — the same rule
 // `paymentQueryService` follows importing this domain's repository.
 import { PaymentRepository } from '../../pay/repositories/paymentRepository';
 import {
   type WeekEarningsComputer,
   weekEarningsService,
 } from '../../pay/services/weekEarningsService';
+import type { PayArrangement } from '../../pay/types';
+import { computePayPeriodEnd } from '../../pay/utils/payPeriod';
 import { ShiftEventRepository } from '../../shift/repositories/shiftEventRepository';
 import {
+  PaySummaryExportError,
   TimeEntryNotFoundError,
   TimesheetNotExportableError,
   TimesheetNotFoundError,
@@ -68,6 +72,11 @@ import {
   type TimesheetRow,
 } from '../repositories/timesheetRepository';
 import type { TimeEntry, Timesheet } from '../types';
+import {
+  type CarerPaySummaryCsv,
+  type CarerPaySummaryRow,
+  renderCarerPaySummaryCsv,
+} from '../utils/carerPaySummaryCsv';
 import { toWireTimesheet } from '../utils/toWireTimesheet';
 import {
   renderWeekExportCsv,
@@ -76,9 +85,15 @@ import {
 import {
   DEFAULT_WEEK_STARTS_ON,
   weekEndExclusive,
+  weekEndInclusive,
   weekStartOf,
 } from '../utils/weekStart';
 import { toThreadMessages } from '../utils/weekThread';
+import {
+  renderYearEndSummaryCsv,
+  type YearEndCarerRow,
+  type YearEndSummaryCsv,
+} from '../utils/yearEndSummaryCsv';
 
 /** Roles that read the WHOLE household's payroll, active or removed. */
 const PAYROLL_HOUSEHOLD_READ_ROLES: ReadonlySet<string> = new Set([
@@ -121,6 +136,22 @@ export interface DayThreadReader {
   ): Promise<ShiftEvent[]>;
 }
 
+/**
+ * The one thing `exportWeekCsv` needs from the pay domain's arrangements
+ * table (082, D-29): the term effective on the week, read ONLY for its
+ * `pay_frequency`/`pay_day_of_week`/`pay_day_of_month` fields — presentation
+ * grouping, never a second pricing source. Narrowed to a single method for
+ * the same reason `WeekPaymentReader`/`DayThreadReader` are: the dependency
+ * stays a read and stays injectable.
+ */
+export interface PayArrangementReader {
+  effectiveOn(
+    householdId: string,
+    carerId: string,
+    date: string
+  ): Promise<PayArrangement | null>;
+}
+
 export class TimesheetQueryService {
   constructor(
     private readonly timeEntryRepo: TimeEntryRepository = new TimeEntryRepository(),
@@ -131,7 +162,10 @@ export class TimesheetQueryService {
     private readonly payments: WeekPaymentReader = new PaymentRepository(),
     // The week thread's store. Appended at the END so every existing caller
     // and test on the six-arg constructor keeps working unchanged.
-    private readonly events: DayThreadReader = new ShiftEventRepository()
+    private readonly events: DayThreadReader = new ShiftEventRepository(),
+    // 082/D-29's pay-period grouping. Appended at the END for the same
+    // backward-compat reason `events` is.
+    private readonly payArrangements: PayArrangementReader = new PayArrangementRepository()
   ) {}
 
   /** The caller's own open (running) entry, or null. No membership check — this is always the caller's own data. */
@@ -433,11 +467,216 @@ export class TimesheetQueryService {
           : earnings.status
       );
     }
+    // 082/D-29: period-end + household identifier, both PRESENTATION ONLY.
+    // Neither read here can fail the export — a household row always exists
+    // for a readable timesheet, and a missing/unpriced-schedule arrangement
+    // just means the two new fields are omitted (`renderWeekExportCsv`'s own
+    // discipline), never that the export itself refuses.
+    const [household, arrangement] = await Promise.all([
+      this.householdRepo.findById(row.household_id),
+      row.carer_id
+        ? this.payArrangements.effectiveOn(
+            row.household_id,
+            row.carer_id,
+            weekEndInclusive(row.week_start)
+          )
+        : Promise.resolve(null),
+    ]);
+    const periodEnd = arrangement
+      ? computePayPeriodEnd({
+          weekStart: row.week_start,
+          weekEnd: weekEndInclusive(row.week_start),
+          payFrequency: arrangement.pay_frequency ?? null,
+          payDayOfMonth: arrangement.pay_day_of_month ?? null,
+          arrangementValidFrom: arrangement.valid_from,
+          weekStartsOn: household?.week_starts_on ?? DEFAULT_WEEK_STARTS_ON,
+        })
+      : null;
     return renderWeekExportCsv({
       timesheet: toWireTimesheet(row),
       earnings,
       payments: await this.payments.listForTimesheet(timesheetId),
+      periodEnd,
+      householdDisplayName: household?.name || null,
     });
+  }
+
+  /**
+   * THE NANNY'S OWN PAY RECORD (D-29, P11, `docs/design/
+   * screens-pay-terms.md` §12.1) — her weeks, gross, and a YTD total over a
+   * date range. "Generated by her, from My pay, without asking anyone."
+   *
+   * READ GATE: `assertPayrollReader`, the SAME carer-scoped read model 3-T2
+   * built for every other payroll surface — a nanny caller is FORCED to her
+   * own `carerId`, exactly like `listForHouseholdWeek`/
+   * `listTimesheetsForHousehold`; a supplied `params.carerId` is ignored for
+   * her, never trusted. A parent (household scope) MUST name a carer —
+   * there is no "everyone's summary in one file" here, only the year-end
+   * total below has that shape.
+   *
+   * EXPORT DISCIPLINE, extended for a MULTI-week surface: a single week's
+   * export REFUSES the whole request when the week is not a frozen
+   * `approved` snapshot (`exportWeekCsv`). A range spans many weeks, most of
+   * which are legitimately still open on any given day, so refusing the
+   * whole range for that reason would make this export unusable in
+   * practice. Instead, each week is checked individually and a
+   * non-exportable one is EXCLUDED from the range — never estimated, never
+   * counted, simply absent from the rows and the YTD sum. This is still
+   * "frozen snapshots only": every row that DOES appear is exactly as
+   * approved, nothing is recomputed.
+   *
+   * CURRENCY: refused, never blended (`PaySummaryExportError`,
+   * `mixed_currency`) if the included weeks price in more than one — the
+   * same `docs/11-MONEY.md` §6 rule the earnings engine applies to a single
+   * week, extended to a range.
+   */
+  async exportCarerPaySummaryCsv(
+    userId: string,
+    householdId: string,
+    params: { carerId?: string; from: string; to: string }
+  ): Promise<CarerPaySummaryCsv> {
+    const scope = await this.assertPayrollReader(userId, householdId);
+    const carerId = scope.kind === 'own' ? scope.carerId : params.carerId;
+    if (!carerId) {
+      throw new PaySummaryExportError('carer_required', { householdId });
+    }
+    const household = await this.householdRepo.findById(householdId);
+    const rows = await this.timesheetRepo.listForHousehold(
+      householdId,
+      carerId
+    );
+    const {
+      rows: included,
+      carerDisplayName,
+      currency,
+    } = await this.exportableRowsInRange(rows, params.from, params.to);
+    if (currency === undefined) {
+      throw new PaySummaryExportError('mixed_currency', {
+        householdId,
+        carerId,
+      });
+    }
+    included.sort((a, b) => a.weekStart.localeCompare(b.weekStart));
+    return renderCarerPaySummaryCsv({
+      carerDisplayName: carerDisplayName ?? 'Carer',
+      householdDisplayName: household?.name || null,
+      currency: currency ?? household?.currency ?? 'USD',
+      rangeStart: params.from,
+      rangeEnd: params.to,
+      rows: included,
+    });
+  }
+
+  /**
+   * THE PARENT'S YEAR-END PAYROLL HANDOFF (D-29, P12, `docs/design/
+   * screens-pay-terms.md` §12.2) — "calendar-year sum of approved gross +
+   * reimbursements split out" for the FSA / Form 2441 job, one row per
+   * carer. READ GATE: `assertPayrollReader` — a nanny caller is forced to
+   * her own row only (the same fairness rule as every other read here), a
+   * parent sees the whole household.
+   *
+   * Same exclude-don't-refuse-the-range discipline as
+   * `exportCarerPaySummaryCsv`, and the same refuse-don't-blend currency
+   * rule, applied across the WHOLE household this time (a household with
+   * two carers paid in different currencies cannot be honestly totalled).
+   */
+  async exportYearEndSummaryCsv(
+    userId: string,
+    householdId: string,
+    year: number
+  ): Promise<YearEndSummaryCsv> {
+    const scope = await this.assertPayrollReader(userId, householdId);
+    const household = await this.householdRepo.findById(householdId);
+    const rows = await this.timesheetRepo.listForHousehold(
+      householdId,
+      scope.kind === 'own' ? scope.carerId : undefined
+    );
+    const from = `${year}-01-01`;
+    const to = `${year}-12-31`;
+
+    const byCarer = new Map<
+      string,
+      { name: string; gross: number; reimb: number; weeks: number }
+    >();
+    const currencies = new Set<string>();
+    for (const row of rows) {
+      if (!row.carer_id) continue;
+      if (row.week_start < from || row.week_start > to) continue;
+      if (row.status !== TIMESHEET_STATUSES.APPROVED) continue;
+      const earnings = await this.earningsFor(row);
+      if (earnings.status !== WEEK_EARNINGS_STATES.OK) continue;
+      currencies.add(earnings.currency);
+      const entry = byCarer.get(row.carer_id) ?? {
+        name: row.carer_display_name ?? 'Carer',
+        gross: 0,
+        reimb: 0,
+        weeks: 0,
+      };
+      entry.gross += earnings.gross_minor;
+      entry.reimb += earnings.reimbursements_minor;
+      entry.weeks += 1;
+      byCarer.set(row.carer_id, entry);
+    }
+    if (currencies.size > 1) {
+      throw new PaySummaryExportError('mixed_currency', {
+        householdId,
+        year,
+      });
+    }
+    const currency = [...currencies][0] ?? household?.currency ?? 'USD';
+    const carerRows: YearEndCarerRow[] = [...byCarer.values()].map(e => ({
+      carerDisplayName: e.name,
+      grossMinor: e.gross,
+      reimbursementsMinor: e.reimb,
+      weeksIncluded: e.weeks,
+    }));
+    return renderYearEndSummaryCsv({
+      householdDisplayName: household?.name || null,
+      currency,
+      year,
+      rows: carerRows,
+    });
+  }
+
+  /**
+   * Shared by `exportCarerPaySummaryCsv`: filters one carer's rows to a date
+   * range and to exportable (approved + `ok` snapshot) weeks, deriving the
+   * carer's display name and the range's currency along the way. `currency`
+   * is `undefined` on a MIXED-currency range (the caller refuses), `null`
+   * when there are no included rows at all to have an opinion about.
+   */
+  private async exportableRowsInRange(
+    rows: readonly TimesheetRow[],
+    from: string,
+    to: string
+  ): Promise<{
+    rows: CarerPaySummaryRow[];
+    carerDisplayName: string | null;
+    currency: string | undefined | null;
+  }> {
+    const included: CarerPaySummaryRow[] = [];
+    let carerDisplayName: string | null = null;
+    const currencies = new Set<string>();
+    for (const row of rows) {
+      if (row.week_start < from || row.week_start > to) continue;
+      if (row.status !== TIMESHEET_STATUSES.APPROVED) continue;
+      const earnings = await this.earningsFor(row);
+      if (earnings.status !== WEEK_EARNINGS_STATES.OK) continue;
+      carerDisplayName = row.carer_display_name ?? carerDisplayName;
+      currencies.add(earnings.currency);
+      included.push({
+        weekStart: row.week_start,
+        weekEnd: weekEndInclusive(row.week_start),
+        approvedAt: row.approved_at ?? '',
+        grossMinor: earnings.gross_minor,
+        reimbursementsMinor: earnings.reimbursements_minor,
+      });
+    }
+    return {
+      rows: included,
+      carerDisplayName,
+      currency: currencies.size > 1 ? undefined : ([...currencies][0] ?? null),
+    };
   }
 
   /** The earnings state for one row — the live/frozen decision, and nothing else. */

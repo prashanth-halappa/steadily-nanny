@@ -152,7 +152,8 @@
       "cover_ask_expired": "Cover request expired",
       "cover_ask_declined": "Cover request declined",
       "carer_sick_shifts_affected": "Sick day affects shifts",
-      "shift_no_show_digest": "Missed clock-in summary"
+      "shift_no_show_digest": "Missed clock-in summary",
+      "week_below_guarantee": "Week approved below guarantee"
     }
   }
 }

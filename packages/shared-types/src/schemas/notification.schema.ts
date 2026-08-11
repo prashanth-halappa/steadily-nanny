@@ -156,6 +156,12 @@ export const PUSH_NOTIFICATION_TYPES = {
   // `shift_change_requested` (A6). D-23 auto-opens a cancel request per
   // overlapping shift; this batches the lot.
   CARER_SICK_SHIFTS_AFFECTED: 'carer_sick_shifts_affected',
+  // 3-U3: N17, D-32 extension. REPLACES `timesheet_approved` for a week whose
+  // FROZEN snapshot still carries a `guaranteed_topup` line — the guarantee
+  // was still short even after the unconditional top-up (or no arrangement
+  // covered every day). One act, one push, never both
+  // (`docs/design/attention-and-notifications.md` §1.4/§2.3b).
+  WEEK_BELOW_GUARANTEE: 'week_below_guarantee',
 } as const;
 
 export type PushNotificationType =
@@ -234,4 +240,5 @@ export const PUSH_TYPE_AUDIENCE: Record<PushNotificationType, PushAudience> = {
   [PUSH_NOTIFICATION_TYPES.TIME_OFF_REQUESTED]: 'parent',
   [PUSH_NOTIFICATION_TYPES.UNCOVERED_CARE_DETECTED]: 'parent',
   [PUSH_NOTIFICATION_TYPES.UNCOVERED_CARE_DIGEST]: 'parent',
+  [PUSH_NOTIFICATION_TYPES.WEEK_BELOW_GUARANTEE]: 'carer',
 } as const;

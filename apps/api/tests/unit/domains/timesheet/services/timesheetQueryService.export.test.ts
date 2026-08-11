@@ -112,6 +112,8 @@ function makeService(
     payments?: unknown[];
     membership?: unknown;
     anyStatusMembership?: unknown;
+    household?: unknown;
+    arrangement?: unknown;
   } = {}
 ) {
   const timesheetRepo: any = { findById: mock(async () => row) };
@@ -126,7 +128,16 @@ function makeService(
     ),
   };
   const householdRepo: any = {
-    findById: mock(async () => ({ id: 'h-1', timezone: 'Europe/London' })),
+    findById: mock(async () =>
+      overrides.household === undefined
+        ? {
+            id: 'h-1',
+            name: 'The Ahmeds',
+            timezone: 'Europe/London',
+            week_starts_on: 1,
+          }
+        : overrides.household
+    ),
   };
   const earnings: any = {
     computeForWeek: mock(async () => snapshot),
@@ -136,15 +147,32 @@ function makeService(
   const payments: any = {
     listForTimesheet: mock(async () => overrides.payments ?? []),
   };
+  // 082/D-29: the effective arrangement, read ONLY for its pay_frequency/
+  // pay_day fields — presentation grouping, never a second pricing source.
+  const payArrangements: any = {
+    effectiveOn: mock(async () =>
+      overrides.arrangement === undefined ? null : overrides.arrangement
+    ),
+  };
   const service = new TimesheetQueryService(
     {} as any,
     timesheetRepo,
     memberRepo,
     householdRepo,
     earnings,
-    payments
+    payments,
+    undefined,
+    payArrangements
   );
-  return { service, timesheetRepo, memberRepo, earnings, payments };
+  return {
+    service,
+    timesheetRepo,
+    memberRepo,
+    earnings,
+    payments,
+    householdRepo,
+    payArrangements,
+  };
 }
 
 describe('exportWeekCsv — the happy path', () => {
@@ -183,6 +211,87 @@ describe('exportWeekCsv — the happy path', () => {
 
     const { csv } = await service.exportWeekCsv('carer-1', 'ts-1');
     expect(csv).toContain('total_gross_minor,74000');
+  });
+});
+
+describe('exportWeekCsv — period-end + household identifier (082, D-29)', () => {
+  it('adds household_display_name from the household row', async () => {
+    const { service } = makeService(approvedRow, { payments: [] });
+    const { csv } = await service.exportWeekCsv('u1', 'ts-1');
+    expect(csv).toContain('household_display_name,The Ahmeds');
+  });
+
+  it('omits household_display_name when the household has no name available', async () => {
+    const { service } = makeService(approvedRow, {
+      payments: [],
+      household: {
+        id: 'h-1',
+        name: '',
+        timezone: 'Europe/London',
+        week_starts_on: 1,
+      },
+    });
+    const { csv } = await service.exportWeekCsv('u1', 'ts-1');
+    expect(csv).not.toContain('household_display_name');
+  });
+
+  it('adds period_end for a WEEKLY arrangement — the period IS the week', async () => {
+    const { service } = makeService(approvedRow, {
+      payments: [],
+      arrangement: {
+        id: 'arr-1',
+        pay_frequency: 'weekly',
+        pay_day_of_week: null,
+        pay_day_of_month: null,
+        valid_from: '2026-01-01',
+      },
+    });
+    const { csv } = await service.exportWeekCsv('u1', 'ts-1');
+    // approvedRow.week_start is 2026-08-03 (Monday) -> inclusive end 2026-08-09.
+    expect(csv).toContain('period_end,2026-08-09');
+  });
+
+  it('omits period_end entirely when no arrangement resolves for the week', async () => {
+    const { service } = makeService(approvedRow, {
+      payments: [],
+      arrangement: null,
+    });
+    const { csv } = await service.exportWeekCsv('u1', 'ts-1');
+    expect(csv).not.toContain('period_end');
+  });
+
+  it('omits period_end when the resolved arrangement has no pay_frequency stated', async () => {
+    const { service } = makeService(approvedRow, {
+      payments: [],
+      arrangement: {
+        id: 'arr-1',
+        pay_frequency: null,
+        pay_day_of_week: null,
+        pay_day_of_month: null,
+        valid_from: '2026-01-01',
+      },
+    });
+    const { csv } = await service.exportWeekCsv('u1', 'ts-1');
+    expect(csv).not.toContain('period_end');
+  });
+
+  it('resolves the arrangement effective on the week — never recomputed money, presentation only', async () => {
+    const { service, payArrangements } = makeService(approvedRow, {
+      payments: [],
+      arrangement: {
+        id: 'arr-1',
+        pay_frequency: 'monthly',
+        pay_day_of_week: null,
+        pay_day_of_month: null,
+        valid_from: '2026-01-01',
+      },
+    });
+    await service.exportWeekCsv('u1', 'ts-1');
+    expect(payArrangements.effectiveOn).toHaveBeenCalledWith(
+      'h-1',
+      'carer-1',
+      '2026-08-09'
+    );
   });
 });
 

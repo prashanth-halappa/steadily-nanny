@@ -16,7 +16,10 @@
  * command service enforces them again, server-side, per TIER0-PLAN.md owner
  * decision 4 — this is a fast-fail UX check, not the source of truth).
  */
-import type { CreatePayArrangementRequest } from '@steadily-nanny/shared-types/schemas/payArrangement.schema';
+import type {
+  CreatePayArrangementRequest,
+  PayFrequency,
+} from '@steadily-nanny/shared-types/schemas/payArrangement.schema';
 import { addLocalDays } from '@/src/lib/localDate';
 import { formatMoney, parseMajorToMinor } from '@/src/lib/money';
 
@@ -227,6 +230,16 @@ export interface PayTermsFormState {
   cancellationHoursText: string;
   note: string;
   /**
+   * 082 (D-17, T7 reversal). PRESENTATION ONLY — `''` means "no pay schedule
+   * stated". Two day fields, not one: `payDayOfWeekText` reads only for
+   * weekly/biweekly, `payDayOfMonthText` only for semimonthly/monthly (see
+   * `payArrangement.schema.ts`'s comment). Both are plain optional text —
+   * a chosen frequency with no day typed is still a valid request.
+   */
+  payFrequency: PayFrequency | '';
+  payDayOfWeekText: string;
+  payDayOfMonthText: string;
+  /**
    * The CURRENT arrangement's `overtime_multiplier` — carried through
    * unchanged when the threshold field is blank (review finding 6), so a
    * rate-only change never silently rewrites a non-default stored
@@ -367,6 +380,32 @@ export function buildCreatePayArrangementRequest(
     cancellationPaidWithinHours = hours;
   }
 
+  // ---------------------------------------------------------------------
+  // 082's pay schedule (D-17, T7 reversal). PRESENTATION ONLY — see
+  // `payArrangement.schema.ts`'s comment. Which day field is READ depends on
+  // the chosen frequency; the other is always sent as null, never whatever
+  // stale text sits in the field the family isn't using.
+  // ---------------------------------------------------------------------
+  const payFrequency: PayFrequency | null =
+    state.payFrequency === '' ? null : state.payFrequency;
+  let payDayOfWeek: number | null = null;
+  let payDayOfMonth: number | null = null;
+  if (payFrequency === 'weekly' || payFrequency === 'biweekly') {
+    const trimmed = state.payDayOfWeekText.trim();
+    if (trimmed !== '') {
+      const day = Number(trimmed);
+      if (!Number.isInteger(day) || day < 0 || day > 6) return null;
+      payDayOfWeek = day;
+    }
+  } else if (payFrequency === 'semimonthly' || payFrequency === 'monthly') {
+    const trimmed = state.payDayOfMonthText.trim();
+    if (trimmed !== '') {
+      const day = Number(trimmed);
+      if (!Number.isInteger(day) || day < 1 || day > 31) return null;
+      payDayOfMonth = day;
+    }
+  }
+
   const trimmedNote = state.note.trim();
 
   return {
@@ -383,6 +422,9 @@ export function buildCreatePayArrangementRequest(
     seventh_day_multiplier: seventhDayMultiplier,
     seventh_day_doubletime_after_minutes: seventhDayDoubletimeAfterMinutes,
     worked_holiday_multiplier: workedHolidayMultiplier,
+    pay_frequency: payFrequency,
+    pay_day_of_week: payDayOfWeek,
+    pay_day_of_month: payDayOfMonth,
     guaranteed_minutes_per_week: guaranteedMinutesPerWeek,
     pto_entitlement_minutes_per_year: ptoEntitlementMinutesPerYear,
     mileage_rate_per_mile_minor: mileageRatePerMileMinor,

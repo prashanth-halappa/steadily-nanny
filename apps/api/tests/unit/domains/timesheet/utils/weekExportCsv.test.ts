@@ -620,3 +620,98 @@ describe('renderWeekExportCsv — the parent adjustment line', () => {
     expect(csv).toBe(EXPECTED_CSV);
   });
 });
+
+/**
+ * 082 / D-29 (P11/P12): period-end + an optional household identifier.
+ * PRESENTATION ONLY — this module never computes `periodEnd` itself (see
+ * `domains/pay/utils/payPeriod.ts`); it only serialises what the caller
+ * already resolved. Both fields are OMITTED entirely, never a fabricated
+ * empty string, when the caller has nothing to say (§2.9).
+ */
+describe('renderWeekExportCsv — period-end + household identifier (082, D-29)', () => {
+  it('is byte-identical to today when neither field is supplied — purely additive', () => {
+    const { csv } = renderWeekExportCsv({
+      timesheet,
+      earnings,
+      payments: [PAID_30000],
+    });
+    expect(csv).toBe(EXPECTED_CSV);
+  });
+
+  it('adds period_end right after week_start when supplied', () => {
+    const { csv } = renderWeekExportCsv({
+      timesheet,
+      earnings,
+      payments: [PAID_30000],
+      periodEnd: '2026-08-16',
+    });
+    expect(csv).toContain(
+      `${CRLF}week_start,2026-08-03${CRLF}period_end,2026-08-16${CRLF}`
+    );
+  });
+
+  it('omits period_end entirely when null — never a fabricated date', () => {
+    const { csv } = renderWeekExportCsv({
+      timesheet,
+      earnings,
+      payments: [PAID_30000],
+      periodEnd: null,
+    });
+    expect(csv).not.toContain('period_end');
+  });
+
+  it('adds household_display_name right after carer_display_name when supplied', () => {
+    const { csv } = renderWeekExportCsv({
+      timesheet,
+      earnings,
+      payments: [PAID_30000],
+      householdDisplayName: 'The Ahmeds',
+    });
+    expect(csv).toContain(
+      `${CRLF}carer_display_name,"Rowe, Nia"${CRLF}household_display_name,The Ahmeds${CRLF}`
+    );
+  });
+
+  it('escapes a household name containing a comma', () => {
+    const { csv } = renderWeekExportCsv({
+      timesheet,
+      earnings,
+      payments: [PAID_30000],
+      householdDisplayName: 'Smith, Jones & Co',
+    });
+    expect(csv).toContain('household_display_name,"Smith, Jones & Co"');
+  });
+
+  it('omits household_display_name entirely when absent — never an empty row', () => {
+    const { csv } = renderWeekExportCsv({
+      timesheet,
+      earnings,
+      payments: [PAID_30000],
+    });
+    expect(csv).not.toContain('household_display_name');
+  });
+
+  it('both fields together, in the documented order', () => {
+    const { csv } = renderWeekExportCsv({
+      timesheet,
+      earnings,
+      payments: [PAID_30000],
+      periodEnd: '2026-08-16',
+      householdDisplayName: 'The Ahmeds',
+    });
+    const summary = csv.split(`${CRLF}${CRLF}`)[1] as string;
+    expect(summary.split(CRLF)).toEqual([
+      'total_gross_minor,121175',
+      'reimbursements_minor,1250',
+      'paid_to_date_minor,30000',
+      'balance_due_minor,91175',
+      'carer_display_name,"Rowe, Nia"',
+      'household_display_name,The Ahmeds',
+      'week_start,2026-08-03',
+      'period_end,2026-08-16',
+      'currency,GBP',
+      'approved_at,2026-08-10T09:30:00.000Z',
+      '',
+    ]);
+  });
+});

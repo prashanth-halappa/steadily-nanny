@@ -14,6 +14,7 @@ import { describe, expect, it } from 'bun:test';
 import {
   DEFAULT_WEEK_STARTS_ON,
   weekEndExclusive,
+  weekEndInclusive,
   weekStartOf,
   weekStartOfLocalDate,
 } from '../../../../../src/domains/timesheet/utils/weekStart';
@@ -160,6 +161,28 @@ describe('weekEndExclusive', () => {
     ] as const;
     for (const [start, end] of weekStarts) {
       expect(weekEndExclusive(start)).toBe(end);
+    }
+  });
+});
+
+describe('weekEndInclusive', () => {
+  it('returns the day exactly 6 days after weekStart — one day before weekEndExclusive', () => {
+    expect(weekEndInclusive('2026-08-03')).toBe('2026-08-09');
+    expect(weekEndExclusive('2026-08-03')).toBe('2026-08-10');
+  });
+
+  it('crosses a month boundary correctly', () => {
+    expect(weekEndInclusive('2026-08-31')).toBe('2026-09-06');
+  });
+
+  it('is week-start agnostic, same as weekEndExclusive', () => {
+    const weekStarts = [
+      ['2026-08-02', '2026-08-08'],
+      ['2026-08-03', '2026-08-09'],
+      ['2026-08-08', '2026-08-14'],
+    ] as const;
+    for (const [start, end] of weekStarts) {
+      expect(weekEndInclusive(start)).toBe(end);
     }
   });
 });

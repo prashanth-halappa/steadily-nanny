@@ -38,6 +38,9 @@ const baseState: PayTermsFormState = {
   cancellationChoice: 'none',
   cancellationHoursText: '',
   note: '',
+  payFrequency: '',
+  payDayOfWeekText: '',
+  payDayOfMonthText: '',
 };
 
 describe('isValidCalendarDate', () => {
@@ -143,6 +146,9 @@ describe('buildCreatePayArrangementRequest', () => {
       seventh_day_multiplier: null,
       seventh_day_doubletime_after_minutes: null,
       worked_holiday_multiplier: null,
+      pay_frequency: null,
+      pay_day_of_week: null,
+      pay_day_of_month: null,
       cancellation_paid_within_hours: null,
       valid_from: '2026-08-04',
       note: undefined,
@@ -166,6 +172,8 @@ describe('buildCreatePayArrangementRequest', () => {
       cancellationChoice: 'window',
       cancellationHoursText: '24',
       note: '  Annual review  ',
+      payFrequency: 'biweekly',
+      payDayOfWeekText: '5',
     });
     expect(result).toEqual({
       rate_minor: 1850,
@@ -178,6 +186,9 @@ describe('buildCreatePayArrangementRequest', () => {
       seventh_day_multiplier: 1.5,
       seventh_day_doubletime_after_minutes: 480,
       worked_holiday_multiplier: 1.5,
+      pay_frequency: 'biweekly',
+      pay_day_of_week: 5,
+      pay_day_of_month: null,
       guaranteed_minutes_per_week: 2400,
       pto_entitlement_minutes_per_year: 8400,
       mileage_rate_per_mile_minor: 45,
@@ -541,6 +552,100 @@ describe('buildCreatePayArrangementRequest', () => {
           workedHolidayMultiplierText: 'time and a half',
         })
       ).toBeNull();
+    });
+  });
+
+  // 082 (D-17, T7 reversal). Presentation only — the field-by-field
+  // three-key contract (T17) mirrors the 078/080 blocks above.
+  describe('pay frequency + pay day (082)', () => {
+    it('carries all three keys explicitly as null when the schedule is unset', () => {
+      const result = buildCreatePayArrangementRequest(baseState);
+      expect(result).toHaveProperty('pay_frequency', null);
+      expect(result).toHaveProperty('pay_day_of_week', null);
+      expect(result).toHaveProperty('pay_day_of_month', null);
+    });
+
+    it('sends the weekday for weekly/biweekly, day-of-month left null', () => {
+      const weekly = buildCreatePayArrangementRequest({
+        ...baseState,
+        payFrequency: 'weekly',
+        payDayOfWeekText: '5',
+      });
+      expect(weekly?.pay_frequency).toBe('weekly');
+      expect(weekly?.pay_day_of_week).toBe(5);
+      expect(weekly?.pay_day_of_month).toBeNull();
+
+      const biweekly = buildCreatePayArrangementRequest({
+        ...baseState,
+        payFrequency: 'biweekly',
+        payDayOfWeekText: '0',
+      });
+      expect(biweekly?.pay_day_of_week).toBe(0);
+    });
+
+    it('sends the day-of-month for semimonthly/monthly, weekday left null', () => {
+      const semimonthly = buildCreatePayArrangementRequest({
+        ...baseState,
+        payFrequency: 'semimonthly',
+        payDayOfMonthText: '15',
+      });
+      expect(semimonthly?.pay_frequency).toBe('semimonthly');
+      expect(semimonthly?.pay_day_of_month).toBe(15);
+      expect(semimonthly?.pay_day_of_week).toBeNull();
+
+      const monthly = buildCreatePayArrangementRequest({
+        ...baseState,
+        payFrequency: 'monthly',
+        payDayOfMonthText: '1',
+      });
+      expect(monthly?.pay_day_of_month).toBe(1);
+    });
+
+    it('a frequency with no day typed is still valid — the day is optional within a chosen frequency', () => {
+      const result = buildCreatePayArrangementRequest({
+        ...baseState,
+        payFrequency: 'monthly',
+      });
+      expect(result?.pay_frequency).toBe('monthly');
+      expect(result?.pay_day_of_month).toBeNull();
+    });
+
+    it('rejects an out-of-range day-of-week', () => {
+      expect(
+        buildCreatePayArrangementRequest({
+          ...baseState,
+          payFrequency: 'weekly',
+          payDayOfWeekText: '7',
+        })
+      ).toBeNull();
+    });
+
+    it('rejects an out-of-range day-of-month', () => {
+      expect(
+        buildCreatePayArrangementRequest({
+          ...baseState,
+          payFrequency: 'monthly',
+          payDayOfMonthText: '32',
+        })
+      ).toBeNull();
+      expect(
+        buildCreatePayArrangementRequest({
+          ...baseState,
+          payFrequency: 'monthly',
+          payDayOfMonthText: '0',
+        })
+      ).toBeNull();
+    });
+
+    it('ignores a day-of-month typed against a weekly frequency, and vice versa — only the applicable field is read', () => {
+      const result = buildCreatePayArrangementRequest({
+        ...baseState,
+        payFrequency: 'weekly',
+        payDayOfWeekText: '2',
+        payDayOfMonthText: 'not a number at all',
+      });
+      expect(result?.pay_day_of_week).toBe(2);
+      expect(result?.pay_day_of_month).toBeNull();
     });
   });
 });

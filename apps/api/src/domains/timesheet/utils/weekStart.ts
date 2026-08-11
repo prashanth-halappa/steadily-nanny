@@ -144,3 +144,16 @@ export function weekEndExclusive(weekStart: string): string {
   const epoch = toEpochDay(parseDateOnly(weekStart));
   return formatDateOnly(epoch + DAYS_PER_WEEK * MS_PER_DAY);
 }
+
+/**
+ * The INCLUSIVE last day ('YYYY-MM-DD') of the week starting `weekStart` —
+ * i.e. `weekStart + 6 days`. Added for 082/D-29's pay-period grouping
+ * (`domains/pay/utils/payPeriod.ts`), which needs the week's own last day as
+ * a plain date, not the exclusive boundary `weekEndExclusive` answers for
+ * range queries. Same "week-start agnostic" property: seven days after the
+ * start is the same question whatever day the week starts on.
+ */
+export function weekEndInclusive(weekStart: string): string {
+  const epoch = toEpochDay(parseDateOnly(weekStart));
+  return formatDateOnly(epoch + (DAYS_PER_WEEK - 1) * MS_PER_DAY);
+}

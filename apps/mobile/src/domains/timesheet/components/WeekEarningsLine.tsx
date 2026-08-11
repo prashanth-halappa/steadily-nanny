@@ -49,7 +49,11 @@ import { Text } from '@/src/components/ui/text';
 import { Figure28, H4, Small } from '@/src/components/ui/typography';
 import { formatMoney } from '@/src/lib/money';
 import type { TimesheetStatus, WeekEarningsStateResult } from '../types';
-import { HOURS_ONLY_REASONS, WEEK_EARNINGS_STATES } from '../types';
+import {
+  EARNINGS_LINE_KINDS,
+  HOURS_ONLY_REASONS,
+  WEEK_EARNINGS_STATES,
+} from '../types';
 import { formatEarningsDuration } from '../utils/earningsFormat';
 
 export type EarningsRole = 'parent' | 'nanny';
@@ -267,6 +271,26 @@ export function WeekEarningsLine({
   );
   const amount = formatMoney(earnings.gross_minor, earnings.currency);
   const subline = singleRateSubline(earnings);
+  // D-32/§2.3b (3-U3): the guarantee's presence is the topup line itself —
+  // the engine only ever emits one when payable minutes fell short
+  // (`earningsService.ts`), so its existence IS the shortfall fact. Never
+  // shown on a week with no arrangement (this whole branch is the `ok` arm
+  // only) or an unpriceable one, and never a fabricated "0h below" —
+  // `guaranteedShortfall` below is `undefined` whenever there is nothing to
+  // say, which every branch below checks before rendering anything.
+  const topupLine = earnings.lines.find(
+    line => line.kind === EARNINGS_LINE_KINDS.GUARANTEED_TOPUP
+  );
+  const guaranteedShortfall =
+    topupLine && earnings.guaranteed_minutes_per_week !== null
+      ? {
+          shortfallMinutes: topupLine.minutes,
+          guaranteedMinutes: earnings.guaranteed_minutes_per_week,
+          payableMinutes:
+            earnings.guaranteed_minutes_per_week - topupLine.minutes,
+        }
+      : undefined;
+  const isZeroHoursWeek = Math.round(totalMinutes) <= 0;
   // Carer name goes in the a11y label only — never the visible label text
   // (deliberate; see `carerName`'s doc comment above).
   const accessibilityLabel = carerName
@@ -313,6 +337,53 @@ export function WeekEarningsLine({
           className="text-muted-foreground"
         >
           {t('earningsQueriedNote')}
+        </Small>
+      ) : null}
+      {/* Nanny-only. In-week: L4, bare ground, no tone — it changes with the
+          next clock-out and resolves at approval (§1.6: no push for this
+          case). Approved: the figure is final — a different sentence, never
+          both at once. */}
+      {guaranteedShortfall && viewerRole === 'nanny' && !isApproved ? (
+        <Small
+          testID={`${testID}-guarantee-shortfall`}
+          className="text-muted-foreground"
+        >
+          {t('earningsGuaranteedShortfall', {
+            duration: formatEarningsDuration(
+              guaranteedShortfall.shortfallMinutes
+            ),
+          })}
+        </Small>
+      ) : null}
+      {guaranteedShortfall && viewerRole === 'nanny' && isApproved ? (
+        <Small
+          testID={`${testID}-guarantee-shortfall-approved`}
+          className="text-muted-foreground"
+        >
+          {t('earningsGuaranteedShortfallApproved', {
+            payable: formatEarningsDuration(guaranteedShortfall.payableMinutes),
+            shortfall: formatEarningsDuration(
+              guaranteedShortfall.shortfallMinutes
+            ),
+            guaranteed: formatEarningsDuration(
+              guaranteedShortfall.guaranteedMinutes
+            ),
+          })}
+        </Small>
+      ) : null}
+      {/* Parent-only, and only on a genuine "the family was away" week — the
+          proactive half of P14's gap (today this fact only lives inside the
+          breakdown sheet). */}
+      {guaranteedShortfall && viewerRole === 'parent' && isZeroHoursWeek ? (
+        <Small
+          testID={`${testID}-vacation-week-note`}
+          className="text-muted-foreground"
+        >
+          {t('earningsVacationWeekNote', {
+            guaranteed: formatEarningsDuration(
+              guaranteedShortfall.guaranteedMinutes
+            ),
+          })}
         </Small>
       ) : null}
     </View>
