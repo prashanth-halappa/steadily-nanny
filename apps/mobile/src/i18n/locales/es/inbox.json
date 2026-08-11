@@ -43,6 +43,13 @@
       "title": "Semana del {{week}} — enviada hace {{days}} días, sin aprobar",
       "subtitle": "{{hours}} · Con la familia",
       "cta": "Abrir la semana"
+    },
+    "pendingShift": {
+      "title": "¿Puedes cubrir el {{date}}, {{start}} – {{end}}?",
+      "subtitle": "Solicitado el {{askedDate}} · Responde antes del {{deadlineDate}}, {{deadlineTime}}",
+      "subtitleNoDeadline": "Solicitado el {{askedDate}}",
+      "deadline": "Responde antes del {{deadlineDate}}, {{deadlineTime}}",
+      "cta": "Abrir el turno"
     }
   }
 }

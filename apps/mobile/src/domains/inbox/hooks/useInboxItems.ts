@@ -4,11 +4,14 @@
  * Composes household queries into one pending-work list across EVERY
  * household the user belongs to (not only the active switcher selection):
  * change requests (single GET /me/change-requests), pending schedule
- * patterns, and queried timesheet weeks (carer who must respond). Exposes an
- * error channel so failures never collapse to the empty-success state.
+ * patterns, queried timesheet weeks (carer who must respond), and — §2.2/
+ * §2.3a — the carer's own pending shifts (single GET /me/shifts, the same
+ * fan-in shape as change requests). Exposes an error channel so failures
+ * never collapse to the empty-success state.
  *
- * Change requests use the me fan-in endpoint so NeedsAttentionCard on Today
- * does not fire one per-shift change-request list in the glance window.
+ * Change requests and shifts both use their `me` fan-in endpoint so
+ * NeedsAttentionCard on Today does not fire one per-shift/per-household list
+ * in the glance window.
  */
 import { useQueries } from '@tanstack/react-query';
 import { useCallback, useMemo } from 'react';
@@ -19,6 +22,7 @@ import { buildInboxItems } from '@/src/domains/inbox/utils/buildInboxItems';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 import { useMePendingChangeRequests } from '@/src/hooks/queries/useMePendingChangeRequests';
+import { useMeShifts } from '@/src/hooks/queries/useMeShifts';
 import { isValidId, QUERY_TIMING } from '@/src/hooks/queries/utils';
 import { addLocalDays, localDateInZone } from '@/src/lib/localDate';
 import { wallClockToUtcIso } from '@/src/lib/wallClock';
@@ -55,6 +59,11 @@ export function useInboxItems() {
     baseEnabled ? from : undefined,
     baseEnabled ? to : undefined
   );
+  // §2.2/§2.3a — the same glance window and fan-in shape as change requests.
+  const meShiftsQuery = useMeShifts(
+    baseEnabled ? from : undefined,
+    baseEnabled ? to : undefined
+  );
 
   const timesheetsQueries = useQueries({
     queries: households.map(h => ({
@@ -80,6 +89,11 @@ export function useInboxItems() {
     [timesheetsQueries]
   );
 
+  const meShifts = useMemo(
+    () => meShiftsQuery.data ?? [],
+    [meShiftsQuery.data]
+  );
+
   const items = useMemo(
     () =>
       buildInboxItems({
@@ -89,8 +103,9 @@ export function useInboxItems() {
         changeRequests,
         patterns,
         timesheets,
+        shifts: meShifts,
       }),
-    [role, currentUserId, today, changeRequests, patterns, timesheets]
+    [role, currentUserId, today, changeRequests, patterns, timesheets, meShifts]
   );
 
   // Initial load only — background refetch must not blank the list.
@@ -99,19 +114,22 @@ export function useInboxItems() {
     onboarding.status === 'loading' ||
     patternsQueries.some(q => q.isLoading) ||
     timesheetsQueries.some(q => q.isLoading) ||
-    changeRequestsQuery.isLoading;
+    changeRequestsQuery.isLoading ||
+    meShiftsQuery.isLoading;
 
   const isError =
     active.isError ||
     patternsQueries.some(q => q.isError) ||
     timesheetsQueries.some(q => q.isError) ||
-    changeRequestsQuery.isError;
+    changeRequestsQuery.isError ||
+    meShiftsQuery.isError;
 
   const refetch = useCallback(() => {
     for (const q of patternsQueries) void q.refetch();
     for (const q of timesheetsQueries) void q.refetch();
     void changeRequestsQuery.refetch();
-  }, [patternsQueries, timesheetsQueries, changeRequestsQuery]);
+    void meShiftsQuery.refetch();
+  }, [patternsQueries, timesheetsQueries, changeRequestsQuery, meShiftsQuery]);
 
   return { items, isLoading, isError, refetch };
 }
