@@ -1,0 +1,10 @@
+{
+  "uncoveredDigest": {
+    "title": "Nadie reservado todavía",
+    "and": "y",
+    "single": "Nadie ha reservado para {{child}} el {{day}}, {{start}} – {{end}}",
+    "listPrefix": "Nadie ha reservado para {{days}}",
+    "moreDays_one": "Nadie ha reservado para {{day}} y {{count}} día más",
+    "moreDays_other": "Nadie ha reservado para {{day}} y {{count}} días más"
+  }
+}

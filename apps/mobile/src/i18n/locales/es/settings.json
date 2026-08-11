@@ -143,7 +143,9 @@
       "handoff_note_added": "Nueva nota de traspaso",
       "shift_no_show": "Nadie ha fichado",
       "running_late": "La niñera llega tarde",
-      "parent_covering": "Un padre/madre cubre el turno"
+      "parent_covering": "Un padre/madre cubre el turno",
+      "cover_ask_reminder": "Recordatorio de solicitud de cobertura",
+      "shift_no_show_digest": "Resumen de fichajes no realizados"
     }
   }
 }

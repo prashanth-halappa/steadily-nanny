@@ -1,0 +1,10 @@
+{
+  "uncoveredDigest": {
+    "title": "No one booked yet",
+    "and": "and",
+    "single": "No one's booked for {{child}} on {{day}}, {{start}} – {{end}}",
+    "listPrefix": "No one's booked for {{days}}",
+    "moreDays_one": "No one's booked for {{day}} and {{count}} other day",
+    "moreDays_other": "No one's booked for {{day}} and {{count}} other days"
+  }
+}

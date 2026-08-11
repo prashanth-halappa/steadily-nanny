@@ -69,4 +69,25 @@ describe('notification.schema push types', () => {
     expect(ALL_PUSH_NOTIFICATION_TYPES).toContain('uncovered_care_digest');
     expect(PUSH_TYPE_AUDIENCE.uncovered_care_digest).toBe('parent');
   });
+
+  // 3-N (A2/A11): the evening reminder job now also covers pending
+  // cover-asks — a distinct, carer-audience type from shift_reminder so
+  // muting one never mutes the other.
+  it('registers cover_ask_reminder as a distinct carer-audience type', () => {
+    expect(PUSH_NOTIFICATION_TYPES.COVER_ASK_REMINDER).toBe(
+      'cover_ask_reminder'
+    );
+    expect(ALL_PUSH_NOTIFICATION_TYPES).toContain('cover_ask_reminder');
+    expect(PUSH_TYPE_AUDIENCE.cover_ask_reminder).toBe('carer');
+  });
+
+  // 3-N (A1/D-26/A11): the morning catch-up digest for a quiet-hour-swallowed
+  // no-show — parent-audience, distinct from the immediate shift_no_show.
+  it('registers shift_no_show_digest as a distinct parent-audience type', () => {
+    expect(PUSH_NOTIFICATION_TYPES.SHIFT_NO_SHOW_DIGEST).toBe(
+      'shift_no_show_digest'
+    );
+    expect(ALL_PUSH_NOTIFICATION_TYPES).toContain('shift_no_show_digest');
+    expect(PUSH_TYPE_AUDIENCE.shift_no_show_digest).toBe('parent');
+  });
 });

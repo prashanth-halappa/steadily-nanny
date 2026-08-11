@@ -100,6 +100,16 @@ export const PUSH_NOTIFICATION_TYPES = {
   // parent taking a cover window tells the carer her day still starts on time.
   PARENT_COVERING: 'parent_covering',
   RUNNING_LATE: 'running_late',
+
+  // 3-N: A2 fix. A pending cover-ask (kind='cover', status='pending') gets
+  // the same evening-before reminder a confirmed shift already does —
+  // reuses reminderJob's window/job, distinct type/key so muting one never
+  // mutes the other (A6 shape).
+  COVER_ASK_REMINDER: 'cover_ask_reminder',
+  // 3-N: A1/D-26 catch-up. Morning sweep over yesterday's confirmed shifts
+  // that had no clock-in and no confirmed shift_no_show claim — see
+  // jobs/noShowDigestJob.ts.
+  SHIFT_NO_SHOW_DIGEST: 'shift_no_show_digest',
 } as const;
 
 export type PushNotificationType =
@@ -136,6 +146,7 @@ export const PUSH_TYPE_AUDIENCE: Record<PushNotificationType, PushAudience> = {
   [PUSH_NOTIFICATION_TYPES.CHANGE_REQUEST_WITHDRAWN]: 'both',
   [PUSH_NOTIFICATION_TYPES.CLOCK_OUT_REMINDER]: 'carer',
   [PUSH_NOTIFICATION_TYPES.CO_PARENT_ACTION_FYI]: 'parent',
+  [PUSH_NOTIFICATION_TYPES.COVER_ASK_REMINDER]: 'carer',
   [PUSH_NOTIFICATION_TYPES.EXPENSE_APPROVED]: 'carer',
   [PUSH_NOTIFICATION_TYPES.EXPENSE_REJECTED]: 'carer',
   [PUSH_NOTIFICATION_TYPES.EXPENSE_SUBMITTED]: 'parent',
@@ -158,6 +169,7 @@ export const PUSH_TYPE_AUDIENCE: Record<PushNotificationType, PushAudience> = {
   [PUSH_NOTIFICATION_TYPES.SHIFT_DECLINED]: 'parent',
   [PUSH_NOTIFICATION_TYPES.SHIFT_NEEDS_RECONFIRM]: 'carer',
   [PUSH_NOTIFICATION_TYPES.SHIFT_NO_SHOW]: 'parent',
+  [PUSH_NOTIFICATION_TYPES.SHIFT_NO_SHOW_DIGEST]: 'parent',
   [PUSH_NOTIFICATION_TYPES.SHIFT_REMINDER]: 'carer',
   [PUSH_NOTIFICATION_TYPES.TIMESHEET_APPROVED]: 'carer',
   [PUSH_NOTIFICATION_TYPES.TIMESHEET_AWAITING_APPROVAL]: 'parent',

@@ -119,6 +119,9 @@ export const NOTIFICATION_ROUTE_MAP: NotificationRouteMap &
   // the whole message, so they land on the same detail screen.
   [PUSH_NOTIFICATION_TYPES.RUNNING_LATE]: shiftDetailHref,
   [PUSH_NOTIFICATION_TYPES.PARENT_COVERING]: shiftDetailHref,
+  // 3-N (A2, N7): same fact-shape as SHIFT_REMINDER — carries `shiftId` +
+  // `householdId` only, same destination.
+  [PUSH_NOTIFICATION_TYPES.COVER_ASK_REMINDER]: shiftDetailHref,
 
   [PUSH_NOTIFICATION_TYPES.CARER_TIME_OFF_CONFLICT]: shiftsCalendarHref,
   [PUSH_NOTIFICATION_TYPES.UNCOVERED_CARE_DETECTED]: uncoveredCareHref,
@@ -161,4 +164,10 @@ export const NOTIFICATION_ROUTE_MAP: NotificationRouteMap &
   // kids right now", which NannyLiveStatusCard answers. Shift detail would
   // show them the schedule they already know.
   [PUSH_NOTIFICATION_TYPES.SHIFT_NO_SHOW]: () => '/(private)/(tabs)/home',
+
+  // 3-N (A1/D-26, N11): unlike the immediate alert, the morning catch-up is
+  // never about "right now" — the window is long past by the time it fires.
+  // Matrix routes it to the shifts calendar, same surface as the other
+  // schedule-review pushes.
+  [PUSH_NOTIFICATION_TYPES.SHIFT_NO_SHOW_DIGEST]: shiftsCalendarHref,
 };

@@ -38,6 +38,10 @@
 
 import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types/schemas/notification.schema';
 import type { Shift } from '@steadily-nanny/shared-types/schemas/shift.schema';
+import {
+  SHIFT_KINDS,
+  SHIFT_STATUSES,
+} from '@steadily-nanny/shared-types/schemas/shift.schema';
 import type { Timesheet } from '@steadily-nanny/shared-types/schemas/timesheet.schema';
 import { supabaseService } from '../config/supabase';
 import { HouseholdMemberRepository } from '../domains/household/repositories/householdMemberRepository';
@@ -84,6 +88,17 @@ const SHIFT_REMINDER_HOUR = 18;
 const SHIFT_REMINDER_WINDOW_END = 22;
 const TIMESHEET_NUDGE_HOUR = 9;
 const TIMESHEET_SUBMITTED_DAYS = 3;
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+/**
+ * Nag-cap (A7 / D-27, §1.5 of the design spec): 3 consecutive daily nudges
+ * from the entry threshold, then weekly. No counter table — the age of the
+ * row already carries the count, so the gate is a pure function of
+ * `daysSinceSubmitted`: `daysSinceSubmitted <= TIMESHEET_NAG_CONSECUTIVE_DAYS
+ * || daysSinceSubmitted % 7 === 0`. `TIMESHEET_SUBMITTED_DAYS` stays 3 as the
+ * entry threshold (unchanged); this is a SEPARATE constant on purpose so a
+ * future change to either doesn't silently move the other.
+ */
+const TIMESHEET_NAG_CONSECUTIVE_DAYS = 3;
 
 const PARENT_ROLES: ReadonlySet<string> = new Set([
   HOUSEHOLD_ROLES.OWNER,
@@ -116,10 +131,16 @@ export function emptyRuleStats(): ReminderRuleStats {
   };
 }
 
-/** Narrow shift row the job needs — no children join. */
+/**
+ * Narrow shift row the job needs — no children join. `kind`/`status` decide
+ * which of the two evening pushes a candidate gets (A2): a CONFIRMED shift
+ * (any kind) is `shift_reminder`; a PENDING `cover`-kind shift (an
+ * unanswered cover-ask) is `cover_ask_reminder`. The candidate query below
+ * only ever returns one of those two combinations.
+ */
 export type ShiftReminderCandidate = Pick<
   Shift,
-  'id' | 'household_id' | 'carer_id' | 'starts_at'
+  'id' | 'household_id' | 'carer_id' | 'starts_at' | 'kind' | 'status'
 >;
 
 /** Narrow timesheet row the job needs. */
@@ -231,6 +252,16 @@ export function buildShiftReminderKey(shiftId: string): string {
 }
 
 /**
+ * A2 / matrix row N7. Distinct from `buildShiftReminderKey` — a separate
+ * key/type so a carer muting one can never mute the other (A6 shape), and
+ * so a cover-ask that later gets accepted (status flips to `confirmed`)
+ * still gets its own ordinary shift reminder from that point on.
+ */
+export function buildCoverAskReminderKey(shiftId: string): string {
+  return `cover_ask_reminder:${shiftId}`;
+}
+
+/**
  * Daily nudge key — the date segment is the recipient's local calendar day
  * when the 09:00 send fires, so a still-unapproved week can be re-nudged on
  * later days (not once-only).
@@ -251,13 +282,20 @@ class DefaultReminderCandidateSource implements ReminderCandidateSource {
       now.getTime() + 48 * 60 * 60 * 1000
     ).toISOString();
 
+    // A2: a CONFIRMED shift (any kind) OR a PENDING cover-ask (kind='cover')
+    // — a pending ask assigned to a carer who hasn't answered yet. Every
+    // other pending shift (recurring/extra awaiting first confirmation) is
+    // deliberately excluded: this reminder is about a shift that already has
+    // a carer's name on it, confirmed or asked.
     const { data, error } = await supabaseService
       .from('shifts')
-      .select('id, household_id, carer_id, starts_at')
-      .eq('status', 'confirmed')
+      .select('id, household_id, carer_id, starts_at, kind, status')
       .not('carer_id', 'is', null)
       .gte('starts_at', windowStart)
-      .lt('starts_at', windowEnd);
+      .lt('starts_at', windowEnd)
+      .or(
+        `status.eq.${SHIFT_STATUSES.CONFIRMED},and(kind.eq.${SHIFT_KINDS.COVER},status.eq.${SHIFT_STATUSES.PENDING})`
+      );
 
     if (error) {
       throw new DatabaseError(
@@ -474,22 +512,37 @@ async function processShiftReminders(
         continue;
       }
 
-      const reminderKey = buildShiftReminderKey(shift.id);
-      await claimAndSend(
-        deps,
-        carerId,
-        reminderKey,
-        {
-          title: 'Shift tomorrow',
-          body: 'You have a confirmed shift starting tomorrow.',
-          data: {
-            type: PUSH_NOTIFICATION_TYPES.SHIFT_REMINDER,
-            shiftId: shift.id,
-            householdId: shift.household_id,
-          },
-        },
-        stats
-      );
+      // A2: a PENDING cover-ask (kind='cover') gets its own type/key —
+      // everything else (any CONFIRMED shift) keeps the ordinary reminder.
+      // The candidate query above never returns a third combination.
+      const isPendingCoverAsk =
+        shift.kind === SHIFT_KINDS.COVER &&
+        shift.status === SHIFT_STATUSES.PENDING;
+
+      const reminderKey = isPendingCoverAsk
+        ? buildCoverAskReminderKey(shift.id)
+        : buildShiftReminderKey(shift.id);
+      const payload: PushPayload = isPendingCoverAsk
+        ? {
+            title: 'Cover request tomorrow',
+            body: 'Someone asked you to cover a shift starting tomorrow.',
+            data: {
+              type: PUSH_NOTIFICATION_TYPES.COVER_ASK_REMINDER,
+              shiftId: shift.id,
+              householdId: shift.household_id,
+            },
+          }
+        : {
+            title: 'Shift tomorrow',
+            body: 'You have a confirmed shift starting tomorrow.',
+            data: {
+              type: PUSH_NOTIFICATION_TYPES.SHIFT_REMINDER,
+              shiftId: shift.id,
+              householdId: shift.household_id,
+            },
+          };
+
+      await claimAndSend(deps, carerId, reminderKey, payload, stats);
     } catch (error) {
       stats.errors++;
       logger.error('Reminder job failed to send shift reminder', {
@@ -541,6 +594,24 @@ async function processTimesheetReminders(
           // than once a day. Changing that is a cadence decision, not a
           // reliability fix.
           if (clock.hour !== TIMESHEET_NUDGE_HOUR) {
+            stats.skipped++;
+            continue;
+          }
+
+          // A7 / D-27 nag cap: 3 consecutive daily nudges from the entry
+          // threshold, then weekly. Computed in raw elapsed days (same basis
+          // the candidate query's `updated_at <= cutoff` filter already
+          // uses), not calendar-local days — the row only becomes a
+          // candidate once true anyway.
+          const daysSinceSubmitted = Math.floor(
+            (deps.now.getTime() - Date.parse(timesheet.updated_at)) / MS_PER_DAY
+          );
+          if (
+            !(
+              daysSinceSubmitted <= TIMESHEET_NAG_CONSECUTIVE_DAYS ||
+              daysSinceSubmitted % 7 === 0
+            )
+          ) {
             stats.skipped++;
             continue;
           }
