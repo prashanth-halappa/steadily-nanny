@@ -172,6 +172,27 @@ describe('NOTIFICATION_ROUTE_MAP resolvers', () => {
     ).toBe('/(private)/settings/my-pay');
   });
 
+  // 3-N (A2, N7): the pending-cover-ask reminder is the same fact-shape as
+  // shift_reminder — lands on the same shift detail screen.
+  it('routes cover_ask_reminder to shift detail, same as shift_reminder', () => {
+    const payload = { shiftId: 'shift-1', householdId: 'hh-1' };
+    expect(resolve(PUSH_NOTIFICATION_TYPES.COVER_ASK_REMINDER, payload)).toBe(
+      resolve(PUSH_NOTIFICATION_TYPES.SHIFT_REMINDER, payload)
+    );
+    expect(resolve(PUSH_NOTIFICATION_TYPES.COVER_ASK_REMINDER, {})).toBeNull();
+  });
+
+  // 3-N (A1/D-26, N11): the morning no-show catch-up digest — per the
+  // matrix, deep-links to the shifts calendar (not Today, unlike the
+  // immediate shift_no_show alert).
+  it('routes shift_no_show_digest to the shifts calendar', () => {
+    expect(
+      resolve(PUSH_NOTIFICATION_TYPES.SHIFT_NO_SHOW_DIGEST, {
+        householdId: 'hh-1',
+      })
+    ).toBe('/(private)/schedule/shifts?householdId=hh-1');
+  });
+
   it('is usable as the injected NotificationRouteMap type', () => {
     const map: NotificationRouteMap = NOTIFICATION_ROUTE_MAP;
     expect(Object.keys(map).length).toBe(ALL_PUSH_NOTIFICATION_TYPES.length);

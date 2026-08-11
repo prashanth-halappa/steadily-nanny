@@ -51,16 +51,18 @@
  * once a day" analysis this relies on). `claimAndSend` — the claim/confirm/
  * release ordering — is imported from `reminderJob`, not copied.
  *
- * COPY is hardcoded English, like every other push emitter in this repo
- * (push i18n is a deferred, repo-wide concern). Spanish translations, kept
- * here rather than in an unused locale file:
- *   Title "No one booked yet" -> "Nadie reservado todavía"
- *   1 window  -> "Nadie ha reservado para {child} el {day}, {start} – {end}."
- *   2-3 days  -> "Nadie ha reservado para {day1} y {day2}."
- *   4+ days   -> "Nadie ha reservado para {day1} y {n} días más."
- * "yet" (vs the immediate push's "No one booked") is the whole distinction a
- * parent needs on a lock screen between "something just broke" and "here's
- * the week's tail" — see the plan doc's §4 for the full copy rationale.
+ * COPY (A10): unlike every other push emitter in this repo (hardcoded
+ * English by deliberate, documented convention — push i18n is a deferred,
+ * repo-wide concern), this ONE digest is wired to a real catalog
+ * (`domains/notification/i18n/{en,es}.json`) because its Spanish strings
+ * already existed — dead, in a module comment — and shipping them for real
+ * costs one lookup. Locale is resolved PER RECIPIENT via
+ * `listUserLocales(parentIds)` (a household can have parents on different
+ * `user_profiles.preferred_locale` values), defaulting to English when
+ * unset or unsupported. "yet" (vs the immediate push's "No one booked") is
+ * the whole distinction a parent needs on a lock screen between "something
+ * just broke" and "here's the week's tail" — see the plan doc's §4 for the
+ * full copy rationale.
  *
  * SETUP: scheduled hourly via pg_cron in migration
  * `073_uncovered_digest_cron.sql` (POST `/api/jobs/uncovered-digest`) — Unit
@@ -69,6 +71,10 @@
  * @module jobs/uncoveredDigestJob
  */
 
+import {
+  DEFAULT_LOCALE,
+  isValidLocale,
+} from '@steadily-nanny/shared-types/locale';
 import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types/schemas/notification.schema';
 import {
   computeUncovered,
@@ -84,6 +90,7 @@ import {
   formatPushTime12h,
 } from '../domains/child/services/uncoveredCareService';
 import { HouseholdRepository } from '../domains/household';
+import { createNotificationI18n } from '../domains/notification/i18n';
 import { ReminderLogRepository } from '../domains/notification/repositories/reminderLogRepository';
 import type { PushPayload } from '../domains/notification/types';
 import { addDays } from '../domains/pay/utils/localDateSpan';
@@ -143,6 +150,13 @@ export interface UncoveredDigestCandidateSource {
   ): Promise<UncoveredDigestCandidateRow[]>;
   /** `childId -> display name`, for the single-window copy. */
   listChildNames(householdId: string): Promise<Map<string, string>>;
+  /**
+   * A10: `userId -> preferred_locale` for the given ids, omitting any user
+   * with none set or an unsupported value — the caller defaults those to
+   * English. Batched per household's resolved parent ids, mirroring
+   * `listChildNames`.
+   */
+  listUserLocales(userIds: string[]): Promise<Map<string, string>>;
 }
 
 export interface UncoveredDigestVerifier {
@@ -239,6 +253,37 @@ class DefaultUncoveredDigestCandidateSource
   async listChildNames(householdId: string): Promise<Map<string, string>> {
     const children = await this.childRepo.findActiveByHousehold(householdId);
     return new Map(children.map(child => [child.id, child.name]));
+  }
+
+  async listUserLocales(userIds: string[]): Promise<Map<string, string>> {
+    if (userIds.length === 0) {
+      return new Map();
+    }
+
+    const { data, error } = await supabaseService
+      .from('user_profiles')
+      .select('user_id, preferred_locale')
+      .in('user_id', userIds);
+
+    if (error) {
+      throw new DatabaseError(
+        'Failed to load preferred locales for the uncovered-care digest',
+        'DATABASE_ERROR',
+        { details: error.message }
+      );
+    }
+
+    const rows = (data ?? []) as Array<{
+      user_id: string;
+      preferred_locale: string | null;
+    }>;
+    const locales = new Map<string, string>();
+    for (const row of rows) {
+      if (row.preferred_locale && isValidLocale(row.preferred_locale)) {
+        locales.set(row.user_id, row.preferred_locale);
+      }
+    }
+    return locales;
   }
 }
 
@@ -344,34 +389,72 @@ function sortByStart(windows: readonly UncoveredWindow[]): UncoveredWindow[] {
   );
 }
 
-function joinWithAnd(items: readonly string[]): string {
+/** A10: `t('uncoveredDigest.and')` is `'and'`/`'y'` — the locale's join word. */
+function joinWithAnd(items: readonly string[], and: string): string {
   if (items.length <= 1) {
     return items[0] ?? '';
   }
   if (items.length === 2) {
-    return `${items[0]} and ${items[1]}`;
+    return `${items[0]} ${and} ${items[1]}`;
   }
-  return `${items.slice(0, -1).join(', ')} and ${items.at(-1)}`;
+  return `${items.slice(0, -1).join(', ')} ${and} ${items.at(-1)}`;
 }
+
+/**
+ * i18n templates carry no trailing full stop (§ below) so this is the one
+ * place that adds one — and only when the sentence doesn't already end with
+ * one. Some locales' 12h time format ends in its own period (Spanish
+ * "p. m."), so a fixed `${body}.` would double it up ("p. m..") whenever the
+ * last interpolated token is the offender; a locale-specific punctuation
+ * hack would be far more fragile than checking the actual output.
+ */
+function finishSentence(body: string): string {
+  return /[.!?]$/.test(body) ? body : `${body}.`;
+}
+
+/**
+ * `SupportedLocale` ('en'/'es') is the i18n catalog key; these map it to the
+ * Intl BCP-47 tag `formatPushShortDate`/`formatPushTime12h` already default
+ * to for every OTHER (English-only) caller — `en-GB` for dates (day-before-
+ * month), `en-US` for 12h time (existing lowercase am/pm). Spanish uses the
+ * same tag for both; extend this if a future locale needs to diverge.
+ */
+const INTL_DATE_LOCALE: Record<string, string> = { en: 'en-GB', es: 'es' };
+const INTL_TIME_LOCALE: Record<string, string> = { en: 'en-US', es: 'es' };
 
 function buildSingleWindowBody(
   window: UncoveredWindow,
   timezone: string,
-  childNames: Map<string, string>
+  childNames: Map<string, string>,
+  i18n: ReturnType<typeof createNotificationI18n>,
+  locale: string
 ): string {
   const childName = childNames.get(window.childId) ?? 'your child';
   const day = formatPushShortDate(
     localDateOf(new Date(window.startsAt), timezone),
-    timezone
+    timezone,
+    INTL_DATE_LOCALE[locale]
   );
-  const start = formatPushTime12h(window.startsAt, timezone);
-  const end = formatPushTime12h(window.endsAt, timezone);
-  return `No one's booked for ${childName} on ${day}, ${start} – ${end}.`;
+  const start = formatPushTime12h(
+    window.startsAt,
+    timezone,
+    INTL_TIME_LOCALE[locale]
+  );
+  const end = formatPushTime12h(
+    window.endsAt,
+    timezone,
+    INTL_TIME_LOCALE[locale]
+  );
+  return finishSentence(
+    i18n.t('uncoveredDigest.single', { child: childName, day, start, end })
+  );
 }
 
 function buildMultiDayBody(
   sorted: readonly UncoveredWindow[],
-  timezone: string
+  timezone: string,
+  i18n: ReturnType<typeof createNotificationI18n>,
+  locale: string
 ): string {
   const days: string[] = [];
   const seen = new Set<string>();
@@ -382,21 +465,32 @@ function buildMultiDayBody(
       days.push(localDate);
     }
   }
-  const labels = days.map(date => formatPushShortDate(date, timezone));
+  const labels = days.map(date =>
+    formatPushShortDate(date, timezone, INTL_DATE_LOCALE[locale])
+  );
 
   if (labels.length <= 3) {
-    return `No one's booked for ${joinWithAnd(labels)}.`;
+    return finishSentence(
+      i18n.t('uncoveredDigest.listPrefix', {
+        days: joinWithAnd(labels, i18n.t('uncoveredDigest.and')),
+      })
+    );
   }
   const remaining = labels.length - 1;
-  const unit = remaining === 1 ? 'day' : 'days';
-  return `No one's booked for ${labels[0]} and ${remaining} other ${unit}.`;
+  return finishSentence(
+    i18n.t('uncoveredDigest.moreDays', {
+      day: labels[0],
+      count: remaining,
+    })
+  );
 }
 
 function buildDigestPayload(
   windows: readonly UncoveredWindow[],
   householdId: string,
   timezone: string,
-  childNames: Map<string, string>
+  childNames: Map<string, string>,
+  preferredLocale: string
 ): PushPayload {
   const sorted = sortByStart(windows);
   const earliest = sorted[0];
@@ -404,13 +498,23 @@ function buildDigestPayload(
     throw new Error('buildDigestPayload called with no windows');
   }
   const earliestLocalDate = localDateOf(new Date(earliest.startsAt), timezone);
+  const resolvedLocale = isValidLocale(preferredLocale)
+    ? preferredLocale
+    : DEFAULT_LOCALE;
+  const i18n = createNotificationI18n(resolvedLocale);
 
   return {
-    title: 'No one booked yet',
+    title: i18n.t('uncoveredDigest.title'),
     body:
       sorted.length === 1
-        ? buildSingleWindowBody(earliest, timezone, childNames)
-        : buildMultiDayBody(sorted, timezone),
+        ? buildSingleWindowBody(
+            earliest,
+            timezone,
+            childNames,
+            i18n,
+            resolvedLocale
+          )
+        : buildMultiDayBody(sorted, timezone, i18n, resolvedLocale),
     data: {
       type: PUSH_NOTIFICATION_TYPES.UNCOVERED_CARE_DIGEST,
       householdId,
@@ -493,12 +597,10 @@ export async function runUncoveredDigestJob(
           ? await candidates.listChildNames(household.householdId)
           : new Map<string, string>();
 
-      const payload = buildDigestPayload(
-        windows,
-        household.householdId,
-        effectiveHousehold.timezone,
-        childNames
-      );
+      // A10: locale is per RECIPIENT, not per household — one lookup, then
+      // each parent's payload is built in their own language below.
+      const parentLocales = await candidates.listUserLocales(parentIds);
+
       const reminderKey = buildUncoveredDigestKey(
         household.householdId,
         localClock.date
@@ -506,6 +608,13 @@ export async function runUncoveredDigestJob(
 
       for (const parentId of parentIds) {
         try {
+          const payload = buildDigestPayload(
+            windows,
+            household.householdId,
+            effectiveHousehold.timezone,
+            childNames,
+            parentLocales.get(parentId) ?? DEFAULT_LOCALE
+          );
           await claimAndSend(
             { log, push },
             parentId,

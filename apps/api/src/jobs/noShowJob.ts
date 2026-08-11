@@ -280,7 +280,8 @@ class DefaultNoShowCandidateSource implements NoShowCandidateSource {
   }
 }
 
-class DefaultNoShowTimeEntryLister implements NoShowTimeEntryLister {
+/** Exported for `noShowDigestJob`, which reuses this exact coverage query. */
+export class DefaultNoShowTimeEntryLister implements NoShowTimeEntryLister {
   async listCoveringEntries(
     carerId: string,
     shift: NoShowShiftCandidate

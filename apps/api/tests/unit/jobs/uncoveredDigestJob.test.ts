@@ -56,7 +56,9 @@ function household(
 function candidatesFake(
   households: UncoveredDigestHouseholdCandidate[],
   rowsByHousehold: Record<string, UncoveredDigestCandidateRow[]> = {},
-  childNamesByHousehold: Record<string, Map<string, string>> = {}
+  childNamesByHousehold: Record<string, Map<string, string>> = {},
+  /** Flat `userId -> locale` map, filtered to the requested ids at call time. */
+  allLocales: Map<string, string> = new Map()
 ): UncoveredDigestCandidateSource {
   return {
     listHouseholds: mock(async () => households),
@@ -67,6 +69,16 @@ function candidatesFake(
       async (householdId: string) =>
         childNamesByHousehold[householdId] ?? new Map()
     ),
+    listUserLocales: mock(async (userIds: string[]) => {
+      const result = new Map<string, string>();
+      for (const id of userIds) {
+        const locale = allLocales.get(id);
+        if (locale) {
+          result.set(id, locale);
+        }
+      }
+      return result;
+    }),
   };
 }
 
@@ -570,6 +582,93 @@ describe('runUncoveredDigestJob — copy', () => {
     expect(sent[0]?.payload.body).toBe(
       "No one's booked for Mon 10 Aug and 3 other days."
     );
+  });
+});
+
+// A10: the Spanish strings used to live only in a module comment, unwired to
+// i18n. Now resolved per-RECIPIENT (a household can have parents on
+// different locales) via `listUserLocales`, defaulting to English.
+describe('runUncoveredDigestJob — locale (A10)', () => {
+  it('renders the Spanish catalog for a parent with preferred_locale es', async () => {
+    const { push, sent } = capturingPush();
+
+    await runUncoveredDigestJob(
+      candidatesFake(
+        [household()],
+        {},
+        { [HOUSEHOLD_ID]: new Map([['child-1', 'Ivy']]) },
+        new Map([[PARENT_ID, 'es']])
+      ),
+      verifierWithLiveOn({ [TODAY]: [LIVE_WINDOW] }),
+      alwaysClaims(),
+      parentsAre(PARENT_ID),
+      push,
+      { now: () => HOUR_18 }
+    );
+
+    expect(sent[0]?.payload.title).toBe('Nadie reservado todavía');
+    expect(sent[0]?.payload.body).toBe(
+      'Nadie ha reservado para Ivy el lun 10 ago, 8:00 p. m. – 9:00 p. m.'
+    );
+  });
+
+  it('defaults to English for a parent with no locale on file', async () => {
+    const { push, sent } = capturingPush();
+
+    await runUncoveredDigestJob(
+      candidatesFake(
+        [household()],
+        {},
+        { [HOUSEHOLD_ID]: new Map([['child-1', 'Ivy']]) }
+      ),
+      verifierWithLiveOn({ [TODAY]: [LIVE_WINDOW] }),
+      alwaysClaims(),
+      parentsAre(PARENT_ID),
+      push,
+      { now: () => HOUR_18 }
+    );
+
+    expect(sent[0]?.payload.title).toBe('No one booked yet');
+  });
+
+  it('renders each parent in their own locale — one household, two languages', async () => {
+    const { push, sent } = capturingPush();
+
+    await runUncoveredDigestJob(
+      candidatesFake(
+        [household()],
+        {},
+        {},
+        new Map([
+          [PARENT_ID, 'es'],
+          [OTHER_PARENT_ID, 'en'],
+        ])
+      ),
+      verifierWithLiveOn({ [TODAY]: [LIVE_WINDOW] }),
+      alwaysClaims(),
+      parentsAre(PARENT_ID, OTHER_PARENT_ID),
+      push,
+      { now: () => HOUR_18 }
+    );
+
+    const byUser = new Map(sent.map(s => [s.userId, s.payload.title]));
+    expect(byUser.get(PARENT_ID)).toBe('Nadie reservado todavía');
+    expect(byUser.get(OTHER_PARENT_ID)).toBe('No one booked yet');
+  });
+
+  it('falls back to English for an unsupported locale code', async () => {
+    const { push, sent } = capturingPush();
+
+    await runUncoveredDigestJob(
+      candidatesFake([household()], {}, {}, new Map([[PARENT_ID, 'fr']])),
+      verifierWithLiveOn({ [TODAY]: [LIVE_WINDOW] }),
+      alwaysClaims(),
+      parentsAre(PARENT_ID),
+      push,
+      { now: () => HOUR_18 }
+    );
+
+    expect(sent[0]?.payload.title).toBe('No one booked yet');
   });
 });
 

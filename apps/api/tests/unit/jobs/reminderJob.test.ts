@@ -4,6 +4,10 @@
  */
 import { describe, expect, it, mock } from 'bun:test';
 import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types/schemas/notification.schema';
+import {
+  SHIFT_KINDS,
+  SHIFT_STATUSES,
+} from '@steadily-nanny/shared-types/schemas/shift.schema';
 import type {
   ReminderCandidateSource,
   ReminderLogClaim,
@@ -120,14 +124,26 @@ function capturingPush(): {
   return { push, sent };
 }
 
-function shiftStartingTomorrowLa(): ShiftReminderCandidate {
+function shiftStartingTomorrowLa(
+  overrides: Partial<ShiftReminderCandidate> = {}
+): ShiftReminderCandidate {
   return {
     id: SHIFT_ID,
     household_id: HOUSEHOLD_ID,
     carer_id: CARER_ID,
     // Tomorrow in LA when now is 2026-08-05 local.
     starts_at: '2026-08-06T15:00:00.000Z',
+    kind: SHIFT_KINDS.RECURRING,
+    status: SHIFT_STATUSES.CONFIRMED,
+    ...overrides,
   };
+}
+
+function pendingCoverAskTomorrowLa(): ShiftReminderCandidate {
+  return shiftStartingTomorrowLa({
+    kind: SHIFT_KINDS.COVER,
+    status: SHIFT_STATUSES.PENDING,
+  });
 }
 
 describe('runReminderJob', () => {
@@ -319,7 +335,10 @@ describe('runReminderJob', () => {
       id: TIMESHEET_ID,
       household_id: HOUSEHOLD_ID,
       week_start: '2026-08-04',
-      updated_at: '2026-08-01T00:00:00.000Z',
+      // Exactly 3 days before `londonNine` below — day 3 is the nag-cap's
+      // entry threshold (D-27, §1.5) and always sends, so this fixture stays
+      // valid regardless of the cap. Cadence itself is covered separately.
+      updated_at: '2026-08-02T08:00:00.000Z',
     };
     const candidates: ReminderCandidateSource = {
       ...emptyCandidates(),
@@ -594,5 +613,244 @@ describe('runReminderJob', () => {
     expect(result.shiftReminder.sent).toBe(0);
     expect(result.shiftReminder.errors).toBe(1);
     expect(claims.size).toBe(0);
+  });
+});
+
+// A2 / matrix row N7: the evening shift-reminder job now also covers a
+// PENDING cover-ask (kind='cover', status='pending') — today it only
+// reminded about confirmed shifts, so a pending ask got no reminder ever.
+describe('runReminderJob — cover-ask reminder (A2, N7)', () => {
+  it('sends cover_ask_reminder, not shift_reminder, for a pending cover-ask starting tomorrow', async () => {
+    const candidates: ReminderCandidateSource = {
+      ...emptyCandidates(),
+      listShiftReminders: mock(async () => [pendingCoverAskTomorrowLa()]),
+    };
+    const { push, sent } = capturingPush();
+
+    const result = await runReminderJob(
+      candidates,
+      alwaysClaims(),
+      { resolve: mock(async () => 'America/Los_Angeles') },
+      { listParentUserIds: mock(async () => []) },
+      push,
+      { now: () => LA_18_00 }
+    );
+
+    expect(result.shiftReminder.sent).toBe(1);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.payload).toMatchObject({
+      data: {
+        type: PUSH_NOTIFICATION_TYPES.COVER_ASK_REMINDER,
+        shiftId: SHIFT_ID,
+        householdId: HOUSEHOLD_ID,
+      },
+    });
+  });
+
+  it('keys the cover-ask reminder claim separately from shift_reminder — muting one never mutes the other', async () => {
+    const { log, claims } = statefulLog();
+    const { push } = capturingPush();
+    const timezone = { resolve: mock(async () => 'America/Los_Angeles') };
+    const parents = { listParentUserIds: mock(async () => []) };
+    const clock = { now: () => LA_18_00 };
+
+    await runReminderJob(
+      {
+        ...emptyCandidates(),
+        listShiftReminders: mock(async () => [shiftStartingTomorrowLa()]),
+      },
+      log,
+      timezone,
+      parents,
+      push,
+      clock
+    );
+    await runReminderJob(
+      {
+        ...emptyCandidates(),
+        listShiftReminders: mock(async () => [pendingCoverAskTomorrowLa()]),
+      },
+      log,
+      timezone,
+      parents,
+      push,
+      clock
+    );
+
+    expect(claims.has(`${CARER_ID}::shift_reminder:${SHIFT_ID}`)).toBe(true);
+    expect(claims.has(`${CARER_ID}::cover_ask_reminder:${SHIFT_ID}`)).toBe(
+      true
+    );
+  });
+
+  it('respects the same [18:00, 22:00) local window as shift_reminder', async () => {
+    const candidates: ReminderCandidateSource = {
+      ...emptyCandidates(),
+      listShiftReminders: mock(async () => [pendingCoverAskTomorrowLa()]),
+    };
+    const { push, sent } = capturingPush();
+
+    const result = await runReminderJob(
+      candidates,
+      alwaysClaims(),
+      { resolve: mock(async () => 'America/Los_Angeles') },
+      { listParentUserIds: mock(async () => []) },
+      push,
+      { now: () => LA_17_00 }
+    );
+
+    expect(result.shiftReminder.sent).toBe(0);
+    expect(sent).toHaveLength(0);
+  });
+
+  it('does not claim a cover-ask reminder that would be suppressed (quiet hours / opt-out)', async () => {
+    const candidates: ReminderCandidateSource = {
+      ...emptyCandidates(),
+      listShiftReminders: mock(async () => [pendingCoverAskTomorrowLa()]),
+    };
+    const log = alwaysClaims();
+    const push: ReminderPushService = {
+      canDeliver: mock(async () => false),
+      notifyUser: mock(async () => {
+        throw new Error('must not be called when canDeliver is false');
+      }),
+      notifyHouseholdParents: mock(async () => {}),
+    };
+
+    const result = await runReminderJob(
+      candidates,
+      log,
+      { resolve: mock(async () => 'America/Los_Angeles') },
+      { listParentUserIds: mock(async () => []) },
+      push,
+      { now: () => LA_18_00 }
+    );
+
+    expect(log.claim).not.toHaveBeenCalled();
+    expect(result.shiftReminder.sent).toBe(0);
+  });
+
+  it('still sends the ordinary shift_reminder for a CONFIRMED cover-kind shift', async () => {
+    const candidates: ReminderCandidateSource = {
+      ...emptyCandidates(),
+      listShiftReminders: mock(async () => [
+        shiftStartingTomorrowLa({
+          kind: SHIFT_KINDS.COVER,
+          status: SHIFT_STATUSES.CONFIRMED,
+        }),
+      ]),
+    };
+    const { push, sent } = capturingPush();
+
+    await runReminderJob(
+      candidates,
+      alwaysClaims(),
+      { resolve: mock(async () => 'America/Los_Angeles') },
+      { listParentUserIds: mock(async () => []) },
+      push,
+      { now: () => LA_18_00 }
+    );
+
+    expect(sent[0]?.payload).toMatchObject({
+      data: { type: PUSH_NOTIFICATION_TYPES.SHIFT_REMINDER },
+    });
+  });
+});
+
+// A7 / D-27: cap the timesheet_awaiting_approval nudge at 3 consecutive
+// daily nudges, then weekly — implemented as
+// `daysSinceSubmitted <= 3 || daysSinceSubmitted % 7 === 0`, no counter
+// table, per §1.5 of the design spec.
+describe('runReminderJob — timesheet nag cap (A7, D-27)', () => {
+  const LONDON_NINE = new Date('2026-08-05T08:00:00.000Z');
+  const dayMs = 24 * 60 * 60 * 1000;
+
+  function timesheetSubmittedDaysAgo(days: number): TimesheetReminderCandidate {
+    return {
+      id: TIMESHEET_ID,
+      household_id: HOUSEHOLD_ID,
+      week_start: '2026-08-04',
+      updated_at: new Date(LONDON_NINE.getTime() - days * dayMs).toISOString(),
+    };
+  }
+
+  it.each([
+    ['day 3, the entry threshold', 3, 1],
+    ['day 4, past the entry threshold', 4, 0],
+    ['day 5', 5, 0],
+    ['day 6', 6, 0],
+    ['day 7, the first weekly beat', 7, 1],
+    ['day 8, back to silent', 8, 0],
+    ['day 13', 13, 0],
+    ['day 14, the second weekly beat', 14, 1],
+  ])('%s', async (_label, days, expectedSent) => {
+    const timesheet = timesheetSubmittedDaysAgo(days);
+    const candidates: ReminderCandidateSource = {
+      ...emptyCandidates(),
+      listTimesheetAwaitingApproval: mock(async () => [timesheet]),
+    };
+    const { push, sent } = capturingPush();
+
+    const result = await runReminderJob(
+      candidates,
+      alwaysClaims(),
+      { resolve: mock(async () => 'Europe/London') },
+      { listParentUserIds: mock(async () => [PARENT_ID]) },
+      push,
+      { now: () => LONDON_NINE }
+    );
+
+    expect(result.timesheetAwaitingApproval.sent).toBe(expectedSent);
+    expect(sent).toHaveLength(expectedSent);
+  });
+
+  it('does not claim a nudge the cap silences', async () => {
+    const timesheet = timesheetSubmittedDaysAgo(5);
+    const candidates: ReminderCandidateSource = {
+      ...emptyCandidates(),
+      listTimesheetAwaitingApproval: mock(async () => [timesheet]),
+    };
+    const log = alwaysClaims();
+    const { push } = capturingPush();
+
+    await runReminderJob(
+      candidates,
+      log,
+      { resolve: mock(async () => 'Europe/London') },
+      { listParentUserIds: mock(async () => [PARENT_ID]) },
+      push,
+      { now: () => LONDON_NINE }
+    );
+
+    expect(log.claim).not.toHaveBeenCalled();
+  });
+
+  // GOLDEN #25: `daysSinceSubmitted` is computed via `Date.parse`, never a
+  // string compare, so a `+00:00`-serialised `updated_at` (PostgREST's
+  // shape) must gate identically to the `.000Z` fixtures above.
+  it('gates identically on a +00:00-serialised updated_at', async () => {
+    const timesheet: TimesheetReminderCandidate = {
+      id: TIMESHEET_ID,
+      household_id: HOUSEHOLD_ID,
+      week_start: '2026-08-04',
+      updated_at: '2026-08-02T08:00:00+00:00', // day 3 — sends.
+    };
+    const candidates: ReminderCandidateSource = {
+      ...emptyCandidates(),
+      listTimesheetAwaitingApproval: mock(async () => [timesheet]),
+    };
+    const { push, sent } = capturingPush();
+
+    const result = await runReminderJob(
+      candidates,
+      alwaysClaims(),
+      { resolve: mock(async () => 'Europe/London') },
+      { listParentUserIds: mock(async () => [PARENT_ID]) },
+      push,
+      { now: () => LONDON_NINE }
+    );
+
+    expect(result.timesheetAwaitingApproval.sent).toBe(1);
+    expect(sent).toHaveLength(1);
   });
 });

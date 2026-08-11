@@ -32,6 +32,14 @@ import { showSuccessToast } from '@/src/lib/toast';
 const DEFAULT_QUIET_START = '22:00';
 const DEFAULT_QUIET_END = '07:00';
 
+// A12 (extended, §1.5): no UI-reachable quiet window may swallow a whole
+// recurring digest window. `cover_ask_reminder` fires in `[18:00, 22:00)`
+// (loses at most its last tick to a 21:00 start); `shift_no_show_digest`
+// fires in `[07:00, 10:00)` (loses at most its first tick to an 08:00 end);
+// `uncovered_care_digest` fires in `[18:00, 21:00)`. The rule: any new
+// recurring window must be at least 3 hours wide and must not be fully
+// contained in `[21:00, 08:00)` — check new options against all three
+// windows before adding one.
 const QUIET_START_OPTIONS = ['21:00', '22:00', '23:00'] as const;
 const QUIET_END_OPTIONS = ['06:00', '07:00', '08:00'] as const;
 
@@ -45,6 +53,7 @@ const PUSH_TYPE_GROUP: Record<PushNotificationType, NotificationGroup> = {
   change_request_withdrawn: 'schedule',
   clock_out_reminder: 'hoursAndPay',
   co_parent_action_fyi: 'household',
+  cover_ask_reminder: 'schedule',
   expense_approved: 'hoursAndPay',
   expense_rejected: 'hoursAndPay',
   expense_submitted: 'hoursAndPay',
@@ -67,6 +76,7 @@ const PUSH_TYPE_GROUP: Record<PushNotificationType, NotificationGroup> = {
   shift_declined: 'schedule',
   shift_needs_reconfirm: 'schedule',
   shift_no_show: 'schedule',
+  shift_no_show_digest: 'schedule',
   shift_reminder: 'schedule',
   timesheet_approved: 'hoursAndPay',
   timesheet_awaiting_approval: 'hoursAndPay',

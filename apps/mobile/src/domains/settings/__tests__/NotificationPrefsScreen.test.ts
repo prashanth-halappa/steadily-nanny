@@ -57,6 +57,13 @@ describe('NotificationPrefsScreen', () => {
     expect(source).toContain("parent_covering: 'schedule'");
   });
 
+  // 3-N (A11): both new types belong to the same schedule loop
+  // shift_reminder / shift_no_show already sit in.
+  it('groups the new 3-N reminder/digest types under Schedule', () => {
+    expect(source).toContain("cover_ask_reminder: 'schedule'");
+    expect(source).toContain("shift_no_show_digest: 'schedule'");
+  });
+
   it('groups visible push types under Schedule, Hours and pay, and Your household headings', () => {
     expect(source).toContain('notificationPrefs.groups.schedule');
     expect(source).toContain('notificationPrefs.groups.hoursAndPay');

@@ -143,7 +143,9 @@
       "handoff_note_added": "New handoff note",
       "shift_no_show": "No one clocked in",
       "running_late": "Nanny running late",
-      "parent_covering": "A parent is covering"
+      "parent_covering": "A parent is covering",
+      "cover_ask_reminder": "Cover request reminder",
+      "shift_no_show_digest": "Missed clock-in summary"
     }
   }
 }

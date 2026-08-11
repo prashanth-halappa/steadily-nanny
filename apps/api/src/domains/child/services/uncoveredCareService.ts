@@ -326,13 +326,19 @@ function resolveChildNameForShift(
   return names[0] ?? 'your child';
 }
 
-/** Exported for `uncoveredDigestJob`, which reuses this exact date copy. */
+/**
+ * Exported for `uncoveredDigestJob`, which reuses this exact date copy.
+ * `locale` defaults to `en-GB` (unchanged for every existing caller) — A10
+ * passes the recipient's resolved locale so the digest can render this in
+ * their own language.
+ */
 export function formatPushShortDate(
   localDate: string,
-  timeZone: string
+  timeZone: string,
+  locale = 'en-GB'
 ): string {
   try {
-    const formatted = new Intl.DateTimeFormat('en-GB', {
+    const formatted = new Intl.DateTimeFormat(locale, {
       timeZone,
       weekday: 'short',
       day: 'numeric',
@@ -344,14 +350,19 @@ export function formatPushShortDate(
   }
 }
 
-/** Exported for `uncoveredDigestJob`, which reuses this exact time copy. */
+/**
+ * Exported for `uncoveredDigestJob`, which reuses this exact time copy.
+ * `locale` defaults to `en-US` (unchanged for every existing caller) — see
+ * `formatPushShortDate`.
+ */
 export function formatPushTime12h(
   instantIso: string,
-  timeZone: string
+  timeZone: string,
+  locale = 'en-US'
 ): string {
   const instant = new Date(instantIso);
   try {
-    const parts = new Intl.DateTimeFormat('en-US', {
+    const parts = new Intl.DateTimeFormat(locale, {
       timeZone,
       hour: 'numeric',
       minute: '2-digit',
