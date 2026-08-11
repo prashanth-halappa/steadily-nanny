@@ -251,6 +251,15 @@ const stubUsers: any = { ensureProfile: mock(async () => {}) };
  */
 const stubPtoLedger: any = { listForCarerYear: mock(async () => []) };
 
+/**
+ * Same hazard as `stubPtoLedger`, on the create path: `create` seeds the
+ * federal holiday set, so a test that reaches it and leaves this defaulted
+ * constructs a REAL HouseholdHolidayRepository and waits on a supabase call.
+ * The seed failure is swallowed by design, so the symptom is a five-second
+ * timeout rather than an assertion — which is exactly why it needs a name.
+ */
+const stubHolidays: any = { seedFederalSet: mock(async () => []) };
+
 function makeQueries(
   role: HouseholdMember['role'] = 'owner',
   overrides: Record<string, unknown> = {}
@@ -270,7 +279,12 @@ describe('HouseholdCommandService.create', () => {
       memberRepo,
       makeInviteRepo(),
       makeQueries(),
-      stubUsers
+      stubUsers,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      stubHolidays
     );
 
     const result = await svc.create('u1', { name: 'The Smiths' });
@@ -302,7 +316,12 @@ describe('HouseholdCommandService.create', () => {
       memberRepo,
       makeInviteRepo(),
       makeQueries(),
-      stubUsers
+      stubUsers,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      stubHolidays
     );
 
     await svc.create('u1', {
@@ -352,7 +371,12 @@ describe('HouseholdCommandService onboarding without a user_profiles row', () =>
       world.memberRepo,
       makeInviteRepo(),
       makeQueries(),
-      world.users
+      world.users,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      stubHolidays
     );
 
     const result = await svc.create('u-fresh', { name: 'The Smiths' });
@@ -386,7 +410,12 @@ describe('HouseholdCommandService onboarding without a user_profiles row', () =>
       world.memberRepo,
       makeInviteRepo(),
       makeQueries(),
-      world.users
+      world.users,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      stubHolidays
     );
 
     await svc.create('u-existing', { name: 'The Smiths' });

@@ -185,6 +185,25 @@ export function EarningsBreakdownSheet({
             })}
           />
         );
+      case EARNINGS_LINE_KINDS.HOLIDAY_PREMIUM:
+        return (
+          <AmountRow
+            key={key}
+            testID={`${testID}-line-holiday-premium`}
+            label={t('earningsLineHolidayPremium')}
+            value={amount}
+            // The only INCREMENT row on this sheet: `rate` is the
+            // premium-ONLY hourly rate ($14.00 at $28.00/h and 1.5×, never
+            // $42.00), and these minutes are the SAME minutes already priced
+            // on the tier rows above — so the copy says "extra", not "at".
+            // `multiplier` is locale-formatted for review finding 9a's reason.
+            subLine={t('earningsLineHolidayPremiumSubline', {
+              duration,
+              rate,
+              multiplier: formatEarningsMultiplier(line.multiplier ?? 1.5),
+            })}
+          />
+        );
       case EARNINGS_LINE_KINDS.CANCELLATION_PAID: {
         // review finding 9b: "paid under your cancellation policy" is
         // parent-voiced (her own family's policy) — wrong when this same

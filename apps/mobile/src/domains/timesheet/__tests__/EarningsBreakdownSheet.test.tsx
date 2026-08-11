@@ -300,6 +300,71 @@ describe('EarningsBreakdownSheet', () => {
     });
   });
 
+  // 3-E4: the worked-holiday premium. Unlike every tier above it this line is
+  // an INCREMENT — its minutes are the SAME minutes already priced on the
+  // regular/overtime rows, carried a second time at the premium alone, so its
+  // `rate_minor` is $14.00 at $28.00/h and 1.5×, not $42.00.
+  describe('the holiday premium row', () => {
+    function holidayPremiumEarnings(): WeekEarningsOk {
+      return baseEarnings({
+        lines: [
+          {
+            kind: 'regular',
+            minutes: 2400,
+            rate_minor: 2800,
+            multiplier: null,
+            amount_minor: 112000,
+            from_date: '2026-08-03',
+            to_date: '2026-08-07',
+            arrangement_id: 'arr-1',
+          },
+          {
+            // The same 480 minutes as one of the regular days above — this
+            // row prices the 0.5× on top, nothing else.
+            kind: 'holiday_premium',
+            minutes: 480,
+            rate_minor: 1400,
+            multiplier: 1.5,
+            amount_minor: 11200,
+            from_date: '2026-08-03',
+            to_date: '2026-08-03',
+            arrangement_id: 'arr-1',
+          },
+        ],
+        gross_minor: 123200,
+        worked_minutes: 2400,
+        payable_minutes: 2400,
+      });
+    }
+
+    it('renders its own label, amount and multiplier subline — never the unknown-kind fallback', () => {
+      const { getByTestId, getByText, queryByTestId, queryByText } = render(
+        <EarningsBreakdownSheet
+          visible
+          onDismiss={() => {}}
+          earnings={holidayPremiumEarnings()}
+          weekRangeLabel="3 Aug – 9 Aug"
+        />
+      );
+
+      expect(
+        getByTestId('hours-earnings-breakdown-line-holiday-premium')
+      ).toBeTruthy();
+      expect(
+        getByTestId('hours-earnings-breakdown-line-holiday-premium-value').props
+          .children
+      ).toBe('£112.00');
+      expect(getByText('earningsLineHolidayPremium')).toBeTruthy();
+      expect(getByText('earningsLineHolidayPremiumSubline')).toBeTruthy();
+      // The fallback row, and its humanized label, must both be absent.
+      expect(
+        queryByTestId('hours-earnings-breakdown-line-unknown-1')
+      ).toBeNull();
+      expect(queryByText('Holiday premium')).toBeNull();
+      expect(queryByText('earningsLineUnknownSubline')).toBeNull();
+    });
+  });
+
   // The fleet rule: a server that starts emitting a seventh kind reaches
   // clients that predate it. This sheet must show the row rather than drop
   // it — a missing row makes the total stop equalling the visible sum, which

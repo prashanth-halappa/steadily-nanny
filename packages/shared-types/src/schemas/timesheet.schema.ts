@@ -495,6 +495,38 @@ export const EARNINGS_LINE_KINDS = {
    * kind with no localisation.
    */
   DOUBLETIME: 'doubletime',
+  /**
+   * The worked-holiday premium (3-E4, §5 D-12): the EXTRA a household agreed
+   * to pay for hours worked on a date it observes as a holiday
+   * (`household_holidays`, migration 080), at
+   * `pay_arrangements.worked_holiday_multiplier`.
+   *
+   * AN INCREMENT, NOT A RE-PRICING — the one thing to understand about this
+   * kind. The hours themselves are ordinary worked time: they price through
+   * the regular / daily-overtime / double-time / seventh-day machinery
+   * unchanged and count toward every threshold, and they already appear on
+   * whichever tier line they earned. This line carries the SAME minutes a
+   * second time at `rate_minor × (multiplier − 1)` — the premium alone. So
+   * `minutes` on a `holiday_premium` line is deliberately NOT disjoint from
+   * the minutes on the lines above it, unlike every other kind, and anything
+   * that totals hours across lines must exclude it (nothing in this repo
+   * does; `docs/design/screens-pay-terms.md` §12.2's export gives it its own
+   * `holiday_premium_minutes` column for exactly this reason).
+   *
+   * `rate_minor` is therefore the premium-only hourly rate, not the full
+   * holiday rate: at $28.00/h and 1.5× it is $14.00, and $14.00 × the hours
+   * is what this row adds. `multiplier` still carries the agreed 1.5 so the
+   * row can say what it was agreed at.
+   *
+   * WHY EMITTING THIS IS SAFE. Same two reasons as `doubletime` above: 1-A
+   * made `kind` an open string with `humanizeEarningsLineKind` on every read
+   * site, so a build that has never heard of it renders "Holiday premium"
+   * beside a correct amount; and §5 D-9 wipes every account before store
+   * release, so there is no older client to be tolerant for. The known-kind
+   * sites in this repo are closed anyway (`EarningsBreakdownSheet`,
+   * `WeekExportAction`'s copy map, `weekExportCsv`'s label map).
+   */
+  HOLIDAY_PREMIUM: 'holiday_premium',
   CANCELLATION_PAID: 'cancellation_paid',
   GUARANTEED_TOPUP: 'guaranteed_topup',
   PTO: 'pto',
@@ -518,6 +550,12 @@ export const EARNINGS_LINE_ORDER = [
   // also the order `docs/design/screens-pay-terms.md` §12.1's pay record
   // prints them in (Regular / Overtime / Double time).
   EARNINGS_LINE_KINDS.DOUBLETIME,
+  // Last of the premium tiers. It sorts below double time rather than beside
+  // overtime because it is the only premium that does not MOVE an hour
+  // between bands — it sits on top of whichever band the hour already landed
+  // in, so reading down the list the reader meets the hour's own rate first
+  // and the holiday uplift after.
+  EARNINGS_LINE_KINDS.HOLIDAY_PREMIUM,
   EARNINGS_LINE_KINDS.CANCELLATION_PAID,
   EARNINGS_LINE_KINDS.PTO,
   EARNINGS_LINE_KINDS.GUARANTEED_TOPUP,

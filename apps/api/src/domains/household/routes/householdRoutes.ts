@@ -23,6 +23,7 @@ import {
   HouseholdMemberParamSchema,
   InviteCodeParamSchema,
   RedeemHouseholdInviteSchema,
+  SetHouseholdHolidaysRequestSchema,
   UpdateHouseholdInviteSchema,
   UpdateHouseholdMemberSchema,
   UpdateHouseholdSchema,
@@ -88,6 +89,23 @@ router.get(
   '/:householdId/members',
   ...authWithOwnership(HouseholdIdParamSchema, householdOwnership),
   asyncHandler(HouseholdController.listMembers)
+);
+
+// The household's holiday calendar (080). Read: any active member — what the
+// family observes is a term of the nanny's employment. Write: parents only
+// (role check in the command service). A PUT, not a PATCH, because the body is
+// a SET of toggles; keys it does not name are left alone all the same.
+router.get(
+  '/:householdId/holidays',
+  ...authWithOwnership(HouseholdIdParamSchema, householdOwnership),
+  asyncHandler(HouseholdController.listHolidays)
+);
+
+router.put(
+  '/:householdId/holidays',
+  ...authWithOwnership(HouseholdIdParamSchema, householdOwnership),
+  validate(SetHouseholdHolidaysRequestSchema, 'body'),
+  asyncHandler(HouseholdController.setHolidays)
 );
 
 // Generate an invite code — parents only (role check in the command service).

@@ -55,6 +55,14 @@ describe('timesheet.schema — earnings', () => {
         // `humanizeEarningsLineKind` (1-A), and because the app is pre-launch
         // (§5 D-9) so there is no older client to be tolerant for.
         DOUBLETIME: 'doubletime',
+        // 3-E4: the worked-holiday premium — an INCREMENT over whatever tier
+        // the hour was already priced at, never a re-pricing of it. Emitted
+        // only when the arrangement carries a `worked_holiday_multiplier`
+        // above 1 AND the week has minutes worked on a date the household
+        // toggled on (080). Safe to emit for the same two reasons
+        // `doubletime` was: `kind` is an open string with a humanizing
+        // fallback on every read site (1-A), and the app is pre-launch (D-9).
+        HOLIDAY_PREMIUM: 'holiday_premium',
         CANCELLATION_PAID: 'cancellation_paid',
         GUARANTEED_TOPUP: 'guaranteed_topup',
         PTO: 'pto',
@@ -70,6 +78,10 @@ describe('timesheet.schema — earnings', () => {
         // it is the order `docs/design/screens-pay-terms.md` §12.1's pay
         // record prints (Regular / Overtime / Double time).
         'doubletime',
+        // Last of the premium tiers, because it is the only one that does not
+        // move an hour between bands — it sits on top of whichever band the
+        // hour landed in above.
+        'holiday_premium',
         'cancellation_paid',
         'pto',
         'guaranteed_topup',

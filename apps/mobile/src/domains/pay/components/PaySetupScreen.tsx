@@ -115,6 +115,8 @@ export function PaySetupScreen() {
     seventhDayDoubletimeAfterHoursText,
     setSeventhDayDoubletimeAfterHoursText,
   ] = useState('');
+  const [workedHolidayMultiplierText, setWorkedHolidayMultiplierText] =
+    useState('');
   const [guaranteedHoursText, setGuaranteedHoursText] = useState('');
   const [ptoHoursPerYearText, setPtoHoursPerYearText] = useState('');
   const [mileageRateText, setMileageRateText] = useState('');
@@ -261,6 +263,7 @@ export function PaySetupScreen() {
     doubletimeMultiplierText,
     seventhDayMultiplierText,
     seventhDayDoubletimeAfterHoursText,
+    workedHolidayMultiplierText,
     guaranteedHoursText,
     ptoHoursPerYearText,
     mileageRateText,
@@ -479,6 +482,22 @@ export function PaySetupScreen() {
         />
         <Small className="text-muted-foreground">
           {t('changeSheet.ptoHint')}
+        </Small>
+      </View>
+
+      {/* 3-E4's half of the holidays group (`screens-pay-terms.md` §4.3) —
+          the premium only. The household's observed-holiday list is 3-U1's. */}
+      <View className="gap-2">
+        <Label>{t('changeSheet.workedHolidayPremiumFieldLabel')}</Label>
+        <Input
+          testID="pay-setup-worked-holiday-multiplier-input"
+          accessibilityLabel={t('changeSheet.workedHolidayPremiumFieldLabel')}
+          value={workedHolidayMultiplierText}
+          onChangeText={setWorkedHolidayMultiplierText}
+          keyboardType="decimal-pad"
+        />
+        <Small className="text-muted-foreground">
+          {t('changeSheet.workedHolidayPremiumHint')}
         </Small>
       </View>
 

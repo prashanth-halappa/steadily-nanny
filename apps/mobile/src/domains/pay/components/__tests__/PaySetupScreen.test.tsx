@@ -195,6 +195,9 @@ describe('PaySetupScreen', () => {
     expect(
       getByTestId('pay-setup-seventh-day-doubletime-after-input')
     ).toBeTruthy();
+    expect(
+      getByTestId('pay-setup-worked-holiday-multiplier-input')
+    ).toBeTruthy();
     expect(getByTestId('pay-setup-guaranteed-hours-input')).toBeTruthy();
     expect(getByTestId('pay-setup-pto-hours-input')).toBeTruthy();
     expect(getByTestId('pay-setup-mileage-rate-input')).toBeTruthy();
@@ -482,6 +485,74 @@ describe('PaySetupScreen', () => {
       fireEvent.changeText(
         getByTestId('pay-setup-seventh-day-doubletime-after-input'),
         '8'
+      );
+      expect(getByTestId('pay-setup-screen-cta').props.disabled).toBe(true);
+    });
+  });
+
+  // 3-E4 / `worked_holiday_multiplier`. Blank must reach the API as an
+  // explicit null — a first-ever arrangement that omits the key persists no
+  // premium and no record that none was agreed (T17).
+  describe('the worked-holiday premium', () => {
+    it('starts blank and sends null when untouched', async () => {
+      const { getByTestId } = renderWithProviders(<PaySetupScreen />);
+
+      await waitFor(() =>
+        expect(getByTestId('pay-setup-rate-input')).toBeTruthy()
+      );
+      expect(
+        getByTestId('pay-setup-worked-holiday-multiplier-input').props.value
+      ).toBe('');
+
+      fireEvent.changeText(getByTestId('pay-setup-rate-input'), '18.50');
+      fireEvent.press(getByTestId('pay-setup-cancellation-chip-none'));
+      fireEvent.press(getByTestId('pay-setup-screen-cta'));
+
+      await waitFor(() =>
+        expect(payCreateMock).toHaveBeenCalledWith(
+          HOUSEHOLD_ID,
+          NANNY_ID,
+          expect.objectContaining({ worked_holiday_multiplier: null })
+        )
+      );
+    });
+
+    it('submits a typed premium', async () => {
+      const { getByTestId } = renderWithProviders(<PaySetupScreen />);
+
+      await waitFor(() =>
+        expect(getByTestId('pay-setup-rate-input')).toBeTruthy()
+      );
+      fireEvent.changeText(getByTestId('pay-setup-rate-input'), '18.50');
+      fireEvent.changeText(
+        getByTestId('pay-setup-worked-holiday-multiplier-input'),
+        '1.5'
+      );
+      fireEvent.press(getByTestId('pay-setup-cancellation-chip-none'));
+      fireEvent.press(getByTestId('pay-setup-screen-cta'));
+
+      await waitFor(() =>
+        expect(payCreateMock).toHaveBeenCalledWith(
+          HOUSEHOLD_ID,
+          NANNY_ID,
+          expect.objectContaining({ worked_holiday_multiplier: 1.5 })
+        )
+      );
+    });
+
+    it('keeps Save disabled on a three-decimal premium the numeric(3,2) column cannot hold', async () => {
+      const { getByTestId } = renderWithProviders(<PaySetupScreen />);
+
+      await waitFor(() =>
+        expect(getByTestId('pay-setup-rate-input')).toBeTruthy()
+      );
+      fireEvent.changeText(getByTestId('pay-setup-rate-input'), '18.50');
+      fireEvent.press(getByTestId('pay-setup-cancellation-chip-none'));
+      expect(getByTestId('pay-setup-screen-cta').props.disabled).toBe(false);
+
+      fireEvent.changeText(
+        getByTestId('pay-setup-worked-holiday-multiplier-input'),
+        '1.555'
       );
       expect(getByTestId('pay-setup-screen-cta').props.disabled).toBe(true);
     });

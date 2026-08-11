@@ -165,6 +165,69 @@ describe('EarningsBreakdownSheet — double-time multiplier i18n', () => {
   });
 });
 
+// 3-E4's `holiday_premium` row carries a multiplier for the same reason and
+// with the same hazard — and it is the ONE row whose multiplier is not the
+// rate it is priced at, so the number in the copy has to be exactly the
+// multiplier that was agreed.
+describe('EarningsBreakdownSheet — holiday premium multiplier i18n', () => {
+  afterEach(async () => {
+    capturedTCalls.length = 0;
+    await i18n.changeLanguage('en');
+  });
+
+  function holidayPremiumEarnings(multiplier: number): WeekEarningsOk {
+    return {
+      ...overtimeEarnings(),
+      lines: [
+        {
+          kind: 'holiday_premium',
+          minutes: 480,
+          // The PREMIUM-ONLY rate: $28.00/h at 1.5× leaves $14.00 on top.
+          rate_minor: 1400,
+          multiplier,
+          amount_minor: 11200,
+          from_date: '2026-08-03',
+          to_date: '2026-08-03',
+          arrangement_id: 'arr-1',
+        },
+      ],
+      gross_minor: 11200,
+    };
+  }
+
+  it('passes the multiplier as a formatted STRING, not the raw number', () => {
+    render(
+      <EarningsBreakdownSheet
+        visible
+        onDismiss={() => {}}
+        earnings={holidayPremiumEarnings(1.5)}
+        weekRangeLabel="3 Aug – 9 Aug"
+      />
+    );
+    const call = capturedTCalls.find(
+      c => c.key === 'earningsLineHolidayPremiumSubline'
+    );
+    expect(call?.options?.multiplier).toBe('1.5');
+    expect(typeof call?.options?.multiplier).toBe('string');
+  });
+
+  it('uses the locale decimal separator in Spanish', async () => {
+    await i18n.changeLanguage('es');
+    render(
+      <EarningsBreakdownSheet
+        visible
+        onDismiss={() => {}}
+        earnings={holidayPremiumEarnings(2.5)}
+        weekRangeLabel="3 Ago – 9 Ago"
+      />
+    );
+    const call = capturedTCalls.find(
+      c => c.key === 'earningsLineHolidayPremiumSubline'
+    );
+    expect(call?.options?.multiplier).toBe('2,5');
+  });
+});
+
 // The adjustment's reason is free text a parent typed. It must reach the
 // carer VERBATIM as an interpolated value — never treated as a key, and
 // never reworded — which the key-echo suite cannot see.

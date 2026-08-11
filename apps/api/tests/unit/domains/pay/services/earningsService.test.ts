@@ -1962,6 +1962,548 @@ describe('earningsService.computeWeekEarnings', () => {
       expect(result.payable_minutes).toBe(3000 + 240 + 480);
     });
   });
+
+  // =========================================================================
+  // The worked-holiday premium (3-E4, §5 D-12).
+  //
+  // THE COMPOSITION RULE THIS BLOCK EXISTS TO PIN, stated once:
+  //
+  //   Hours worked on a household-observed holiday are ORDINARY WORKED TIME
+  //   for every purpose the engine already had. They price through the daily
+  //   bands, the seventh-day rule and the weekly threshold exactly as if the
+  //   day were not a holiday, they appear on whichever tier line they earned,
+  //   and they count toward every threshold. The premium is then an ADDITIVE
+  //   INCREMENT on top: one `holiday_premium` line carrying THE SAME MINUTES
+  //   a second time at `rate x (multiplier - 1)`.
+  //
+  // Why an increment and not a re-pricing. §10.1's non-duplication invariant
+  // says weekly overtime must never re-examine an hour a daily tier already
+  // promoted, because those are the same hours. A holiday is a different KIND
+  // of fact about an hour: "this hour was above the daily threshold" and
+  // "this hour was worked on the Fourth of July" are two independent things,
+  // both true, and each was separately agreed. Pricing the holiday hours
+  // WHOLE at the premium (the way the seventh day is priced whole) would have
+  // to either pull them out of the weekly threshold — silently shrinking the
+  // week and destroying overtime she earned — or leave them in and pay some
+  // of them twice. The increment does neither: the hour is priced once at its
+  // own tier, and the agreed holiday uplift is paid once on top.
+  //
+  // The consequence a reader must hold on to: `minutes` on a
+  // `holiday_premium` line is NOT disjoint from the minutes above it. It is
+  // the only kind where that is true, and it is why
+  // `docs/design/screens-pay-terms.md` §12.2's export gives it its own
+  // `holiday_premium_minutes` column.
+  //
+  // `observed_holidays` reaches the engine as DATES, never as holiday keys —
+  // the engine takes priced facts, not storage, the same boundary the PTO
+  // netting sits on. Resolving this household's toggles into this week's
+  // dates is `weekEarningsService`'s job and is tested there. Which is also
+  // why these cases can put a holiday on any date in the canonical week.
+  // =========================================================================
+  describe('worked-holiday premium (3-E4)', () => {
+    /** [kind, minutes, rate_minor, amount_minor] — the whole line, compactly. */
+    function shape(result: ReturnType<typeof ok>) {
+      return result.lines.map(l => [
+        l.kind,
+        l.minutes,
+        l.rate_minor,
+        l.amount_minor,
+      ]);
+    }
+
+    /** $28.00/hr, 40h weekly threshold at 1.5x — the spec's canonical rate. */
+    function holidayArrangement(over: Partial<PayArrangement> = {}) {
+      return arrangement({
+        rate_minor: 2800,
+        currency: 'USD',
+        overtime_threshold_minutes: 2400,
+        overtime_multiplier: 1.5,
+        worked_holiday_multiplier: 1.5,
+        ...over,
+      });
+    }
+
+    it('pays a premium for hours worked on an observed holiday', () => {
+      // 5 x 8h = 40h, Friday observed. Nothing crosses a threshold.
+      //   regular  2400m x 2800/60 = 112_000
+      //   premium rate = 2800 x 1.5 - 2800 = 1400 (the uplift ALONE)
+      //   premium   480m x 1400/60 =  11_200
+      //   gross                    = 123_200 = $1,232.00
+      // By hand the other way: 32 ordinary hours at $28 = $896, plus 8
+      // holiday hours at $42 = $336. $896 + $336 = $1,232. The two readings
+      // agree, which is the whole point of pricing the uplift separately.
+      const result = ok(
+        computeWeekEarnings(
+          input({
+            arrangements: [holidayArrangement()],
+            entries: [MON, TUE, WED, THU, FRI].map(d => worked(d, 480)),
+            observed_holidays: [FRI],
+          })
+        )
+      );
+
+      expect(shape(result)).toEqual([
+        ['regular', 2400, 2800, 112_000],
+        ['holiday_premium', 480, 1400, 11_200],
+      ]);
+      expect(result.gross_minor).toBe(123_200);
+      // The premium is an uplift on hours already counted — it must not
+      // inflate either minute total. Worked is 40h, not 48h.
+      expect(result.worked_minutes).toBe(2400);
+      expect(result.payable_minutes).toBe(2400);
+      expect(WeekEarningsSchema.safeParse(result).success).toBe(true);
+    });
+
+    it('states the agreed multiplier on the line, beside the uplift-only rate', () => {
+      const result = ok(
+        computeWeekEarnings(
+          input({
+            arrangements: [holidayArrangement()],
+            entries: [worked(FRI, 480)],
+            observed_holidays: [FRI],
+          })
+        )
+      );
+      const premium = result.lines.find(l => l.kind === 'holiday_premium');
+      // `multiplier` is what was AGREED (1.5); `rate_minor` is what this row
+      // ADDS (the uplift). A reader who multiplies 2800 by 1.5 and expects
+      // 4200 here is reading the wrong row — the base 2800 is on the
+      // `regular` line above.
+      expect(premium?.multiplier).toBe(1.5);
+      expect(premium?.rate_minor).toBe(1400);
+      expect(premium?.from_date).toBe(FRI);
+      expect(premium?.to_date).toBe(FRI);
+      expect(premium?.arrangement_id).toBe(ARR_ID_A);
+    });
+
+    it('emits NOTHING when the premium is null — never a fabricated 0.00 row', () => {
+      // Null means "a worked holiday pays the normal rate" (§4.3's own copy).
+      // A zero-amount row would tell a nanny her family agreed a holiday
+      // premium and then paid her nothing for it (§2.9: never render a
+      // fabricated figure).
+      const result = ok(
+        computeWeekEarnings(
+          input({
+            arrangements: [
+              holidayArrangement({ worked_holiday_multiplier: null }),
+            ],
+            entries: [MON, TUE, WED, THU, FRI].map(d => worked(d, 480)),
+            observed_holidays: [FRI],
+          })
+        )
+      );
+
+      expect(shape(result)).toEqual([['regular', 2400, 2800, 112_000]]);
+      expect(result.gross_minor).toBe(112_000);
+    });
+
+    it('emits nothing for a PRE-080 arrangement that omits the column entirely', () => {
+      // Undefined and null must read the same: the terms it was agreed under
+      // said nothing about holidays (§5 D-9 — no backfill, no default).
+      const { worked_holiday_multiplier: _omitted, ...preMigration } =
+        holidayArrangement();
+      const result = ok(
+        computeWeekEarnings(
+          input({
+            arrangements: [preMigration as PayArrangement],
+            entries: [worked(FRI, 480)],
+            observed_holidays: [FRI],
+          })
+        )
+      );
+      expect(result.lines.some(l => l.kind === 'holiday_premium')).toBe(false);
+    });
+
+    it('emits nothing at a multiplier of exactly 1 — an uplift of zero is not a term', () => {
+      // 1.00 is storable (the column floors at 1) and it means the same thing
+      // null does. The gate is `> 1`, not `!== null`, so a family that typed
+      // 1 rather than clearing the field gets the same honest week.
+      const result = ok(
+        computeWeekEarnings(
+          input({
+            arrangements: [
+              holidayArrangement({ worked_holiday_multiplier: 1 }),
+            ],
+            entries: [worked(FRI, 480)],
+            observed_holidays: [FRI],
+          })
+        )
+      );
+      expect(result.lines.some(l => l.kind === 'holiday_premium')).toBe(false);
+      expect(result.gross_minor).toBe(22_400); // 480m x 2800/60
+    });
+
+    it('prices a DISABLED holiday as an ordinary day', () => {
+      // The family toggled it off, so the date never reaches the engine. Same
+      // week, same premium on the arrangement, and the day pays the ordinary
+      // rate — which is what "per-family toggles" has to mean to be worth
+      // anything (D-12).
+      const entries = [MON, TUE, WED, THU, FRI].map(d => worked(d, 480));
+      const disabled = ok(
+        computeWeekEarnings(
+          input({
+            arrangements: [holidayArrangement()],
+            entries,
+            observed_holidays: [],
+          })
+        )
+      );
+      expect(shape(disabled)).toEqual([['regular', 2400, 2800, 112_000]]);
+
+      // Omitting the field entirely is the same as an empty list: a caller
+      // that has not wired holidays through cannot accidentally pay one.
+      const omitted = ok(
+        computeWeekEarnings(
+          input({ arrangements: [holidayArrangement()], entries })
+        )
+      );
+      expect(shape(omitted)).toEqual(shape(disabled));
+    });
+
+    it('pays nothing for an observed holiday NOBODY WORKED', () => {
+      // THE DELIBERATE GAP, and it is a gap in the model, not in this code.
+      // Nothing on the arrangement, on the household, or in D-12 says how
+      // many hours a paid-but-not-worked holiday is worth — not her scheduled
+      // hours, not a fixed eight, not an average. Pricing one would mean the
+      // engine inventing a number, which is the one thing it must never do
+      // (§2.9). What ALREADY pays an unworked holiday is the guaranteed-hours
+      // top-up (the companion case below) or a time-off day marked paid.
+      // Carried to the owner as this slice's open question.
+      const result = ok(
+        computeWeekEarnings(
+          input({
+            arrangements: [holidayArrangement()],
+            entries: [MON, TUE, WED, THU].map(d => worked(d, 480)),
+            observed_holidays: [FRI],
+          })
+        )
+      );
+
+      expect(result.lines.map(l => l.kind)).toEqual(['regular']);
+      expect(result.gross_minor).toBe(89_600); // 1920m x 2800/60
+    });
+
+    it('lets the guaranteed-hours top-up pay the unworked holiday, unchanged', () => {
+      // Same week, but the family guaranteed 40h. The Friday off produces an
+      // 8h shortfall and the existing top-up covers it at the ordinary rate —
+      // the mechanism that already existed, still working, with no holiday
+      // line and no double pay.
+      const result = ok(
+        computeWeekEarnings(
+          input({
+            arrangements: [
+              holidayArrangement({ guaranteed_minutes_per_week: 2400 }),
+            ],
+            entries: [MON, TUE, WED, THU].map(d => worked(d, 480)),
+            observed_holidays: [FRI],
+          })
+        )
+      );
+
+      expect(shape(result)).toEqual([
+        ['regular', 1920, 2800, 89_600],
+        ['guaranteed_topup', 480, 2800, 22_400],
+      ]);
+      expect(result.gross_minor).toBe(112_000);
+    });
+
+    // -----------------------------------------------------------------------
+    // The composition case. This is the one that pins the rule.
+    // -----------------------------------------------------------------------
+
+    it('a holiday hour is still an overtime hour — the premium stacks, the tiers do not move', () => {
+      // CA-shaped terms plus a 1.5x holiday premium. Mon-Thu 8h, Fri 13h, and
+      // FRIDAY IS THE HOLIDAY. 45h in the week.
+      //
+      //   Mon..Thu 480 each: entirely below the 8h daily threshold -> 1920 in
+      //                      the remainder.
+      //   Fri 780:  480 regular | 240 daily OT (8h-12h) | 60 double time
+      //             -> 480 joins the remainder.
+      //   remainder 1920 + 480 = 2400 = the weekly threshold exactly, so the
+      //             weekly rule adds nothing (§10.1).
+      //   regular   2400m x 2800/60 = 112_000
+      //   overtime   240m x 4200/60 =  16_800
+      //   doubletime  60m x 5600/60 =   5_600
+      //   premium    780m x 1400/60 =  18_200   <- ALL 13 holiday hours
+      //   gross                     = 152_600 = $1,526.00
+      //
+      // Read the premium line: it is 780 minutes, the WHOLE holiday day,
+      // including the four overtime hours and the double-time hour. Those
+      // hours were promoted by the daily tiers AND worked on a holiday; both
+      // facts are true and both were separately agreed. What must NOT happen
+      // is the holiday pulling those 780 minutes out of the daily bands (Fri
+      // would stop producing overtime) or out of the weekly remainder (the
+      // week would shrink to 32h and lose overtime she earned).
+      const tiers: Partial<PayArrangement> = {
+        overtime_daily_threshold_minutes: 480,
+        doubletime_daily_threshold_minutes: 720,
+        doubletime_multiplier: 2,
+      };
+      const entries = [
+        ...[MON, TUE, WED, THU].map(d => worked(d, 480)),
+        worked(FRI, 780),
+      ];
+      const result = ok(
+        computeWeekEarnings(
+          input({
+            arrangements: [holidayArrangement(tiers)],
+            entries,
+            observed_holidays: [FRI],
+          })
+        )
+      );
+
+      expect(shape(result)).toEqual([
+        ['regular', 2400, 2800, 112_000],
+        ['overtime', 240, 4200, 16_800],
+        ['doubletime', 60, 5600, 5_600],
+        ['holiday_premium', 780, 1400, 18_200],
+      ]);
+      expect(result.gross_minor).toBe(152_600);
+      // The tier split is byte-identical to the same week with the holiday
+      // toggled off — the premium changes what is PAID, never how the hours
+      // are CLASSIFIED. That is the invariant, asserted directly.
+      const ordinary = ok(
+        computeWeekEarnings(
+          input({
+            arrangements: [holidayArrangement(tiers)],
+            entries,
+            observed_holidays: [],
+          })
+        )
+      );
+      expect(shape(ordinary)).toEqual(
+        shape(result).filter(([kind]) => kind !== 'holiday_premium')
+      );
+      expect(result.worked_minutes).toBe(2700);
+      expect(result.payable_minutes).toBe(2700);
+      expect(WeekEarningsSchema.safeParse(result).success).toBe(true);
+    });
+
+    it('the seventh consecutive day can also be a holiday, and both apply', () => {
+      // All seven days worked at 8h, Sunday (the seventh day of this
+      // Monday-start week) observed. The seventh-day rule prices Sunday whole
+      // at 1.5x and keeps it out of the weekly remainder; the holiday premium
+      // then adds its uplift on top of that, because the two are independent
+      // agreements about the same hours.
+      //   Mon..Sat remainder 2880, weekly threshold 2400
+      //             -> 2400 regular + 480 weekly OT
+      //   Sun 480 priced whole at the seventh-day tier -> 480 OT
+      //   overtime line = 480 (weekly, Sat) + 480 (Sun) = 960 at 4200
+      //   regular    2400m x 2800/60 = 112_000
+      //   overtime    960m x 4200/60 =  67_200
+      //   premium     480m x 1400/60 =  11_200
+      //   gross                      = 190_400
+      const result = ok(
+        computeWeekEarnings(
+          input({
+            arrangements: [holidayArrangement({ seventh_day_multiplier: 1.5 })],
+            entries: [MON, TUE, WED, THU, FRI, SAT, SUN].map(d =>
+              worked(d, 480)
+            ),
+            observed_holidays: [SUN],
+          })
+        )
+      );
+
+      expect(shape(result)).toEqual([
+        ['regular', 2400, 2800, 112_000],
+        ['overtime', 960, 4200, 67_200],
+        ['holiday_premium', 480, 1400, 11_200],
+      ]);
+      expect(result.gross_minor).toBe(190_400);
+      expect(result.worked_minutes).toBe(3360);
+    });
+
+    // -----------------------------------------------------------------------
+    // Which arrangement supplies which number.
+    // -----------------------------------------------------------------------
+
+    it('takes the RATE per day and the MULTIPLIER from the week, like every other premium', () => {
+      // Arrangement A ($28.00, 1.5x) until Tuesday; B ($30.00, 2x) from
+      // Wednesday. Monday AND Friday are observed.
+      //
+      // The multiplier comes from the LAST WORKED DAY's arrangement (B, 2x) —
+      // the same "a multiplier is a TERM, and the week is negotiated and
+      // signed off as one unit" rule the weekly threshold, the daily tiers and
+      // the seventh-day rule all already follow. The base RATE stays per-day,
+      // exactly as it does on the `regular` lines beside it.
+      //   Mon premium: (2800 x 2) - 2800 = 2800 uplift; 480m -> 22_400
+      //   Fri premium: (3000 x 2) - 3000 = 3000 uplift; 480m -> 24_000
+      //   regular A Mon..Tue  960m x 2800/60 = 44_800
+      //   regular B Wed..Fri 1440m x 3000/60 = 72_000
+      //   gross                              = 163_200
+      const arrA = holidayArrangement({ valid_from: '2026-01-01' });
+      const arrB = holidayArrangement({
+        id: ARR_ID_B,
+        rate_minor: 3000,
+        worked_holiday_multiplier: 2,
+        valid_from: WED,
+        created_at: '2026-08-05T09:00:00+00:00',
+      });
+
+      const result = ok(
+        computeWeekEarnings(
+          input({
+            arrangements: [arrB, arrA], // any order — the engine resolves
+            entries: [MON, TUE, WED, THU, FRI].map(d => worked(d, 480)),
+            observed_holidays: [MON, FRI],
+          })
+        )
+      );
+
+      expect(shape(result)).toEqual([
+        ['regular', 960, 2800, 44_800],
+        ['regular', 1440, 3000, 72_000],
+        ['holiday_premium', 480, 2800, 22_400],
+        ['holiday_premium', 480, 3000, 24_000],
+      ]);
+      expect(result.gross_minor).toBe(163_200);
+      // Two rows, not one merged row: they were priced by different
+      // arrangements, and merging them would make the line unable to
+      // reproduce its own amount.
+      const premiums = result.lines.filter(l => l.kind === 'holiday_premium');
+      expect(premiums.map(l => l.arrangement_id)).toEqual([ARR_ID_A, ARR_ID_B]);
+      expect(premiums.every(l => l.multiplier === 2)).toBe(true);
+    });
+
+    it('merges consecutive observed days priced by one arrangement into one dated row', () => {
+      const result = ok(
+        computeWeekEarnings(
+          input({
+            arrangements: [holidayArrangement()],
+            entries: [THU, FRI].map(d => worked(d, 480)),
+            observed_holidays: [THU, FRI],
+          })
+        )
+      );
+      const premium = result.lines.find(l => l.kind === 'holiday_premium');
+      expect(premium?.minutes).toBe(960);
+      expect(premium?.from_date).toBe(THU);
+      expect(premium?.to_date).toBe(FRI);
+      expect(premium?.amount_minor).toBe(22_400); // 960m x 1400/60
+    });
+
+    // -----------------------------------------------------------------------
+    // Refusals and rounding.
+    // -----------------------------------------------------------------------
+
+    it('still fails the WHOLE week when a holiday is worked on an unpriceable date', () => {
+      // The holiday changes nothing about refuse-don't-clamp: a week with a
+      // day it cannot price returns no numbers at all, never a premium beside
+      // a fabricated 0.00 (§2.9, docs/11-MONEY.md §4).
+      const result = computeWeekEarnings(
+        input({
+          arrangements: [holidayArrangement({ valid_from: THU })],
+          entries: [worked(MON, 480), worked(FRI, 480)],
+          observed_holidays: [FRI],
+        })
+      );
+      expect(result.status).toBe('no_arrangement');
+      expect(
+        result.status === 'no_arrangement' && result.unpriced_dates
+      ).toEqual([MON]);
+    });
+
+    it('an observed holiday with no worked minutes never makes a week unpriceable', () => {
+      // The date needs no rate, because it prices nothing. Adding observed
+      // holidays to the set of dates that must resolve would fail a week for
+      // a Christmas nobody worked and nobody was owed for.
+      const result = computeWeekEarnings(
+        input({
+          arrangements: [holidayArrangement({ valid_from: THU })],
+          entries: [worked(FRI, 480)],
+          observed_holidays: [MON, FRI],
+        })
+      );
+      expect(result.status).toBe('ok');
+    });
+
+    it('rounds the uplift half-up, once, in integers', () => {
+      // 1250 x 1.13 is exactly 1412.5 in decimal and 1412.4999999999998 as a
+      // double — the documented float trap `overtimeRateMinor` exists to
+      // avoid. The uplift must be 1413 - 1250 = 163, not 162.
+      const result = ok(
+        computeWeekEarnings(
+          input({
+            arrangements: [
+              holidayArrangement({
+                rate_minor: 1250,
+                worked_holiday_multiplier: 1.13,
+              }),
+            ],
+            entries: [worked(FRI, 60)],
+            observed_holidays: [FRI],
+          })
+        )
+      );
+      const premium = result.lines.find(l => l.kind === 'holiday_premium');
+      expect(premium?.rate_minor).toBe(163);
+      expect(premium?.amount_minor).toBe(163); // exactly one hour
+      // The uplift is the full premium rate minus the base, exactly — the two
+      // roundings can never leave a penny between them.
+      const regular = result.lines.find(l => l.kind === 'regular');
+      expect((regular?.rate_minor ?? 0) + (premium?.rate_minor ?? 0)).toBe(
+        1413
+      );
+    });
+
+    it('leaves a PTO or cancelled day alone even when it is an observed holiday', () => {
+      // The premium is for hours WORKED (D-12: "worked-holiday premium"). A
+      // day the nanny did not work — paid leave, a paid cancellation — earns
+      // no uplift, and pricing one would pay a premium for a holiday she
+      // spent at home.
+      const result = ok(
+        computeWeekEarnings(
+          input({
+            arrangements: [holidayArrangement()],
+            entries: [cancelled(FRI, 240)],
+            pto_usage: [pto(THU, 480)],
+            observed_holidays: [THU, FRI],
+          })
+        )
+      );
+      expect(result.lines.some(l => l.kind === 'holiday_premium')).toBe(false);
+      expect(result.lines.map(l => l.kind)).toEqual([
+        'cancellation_paid',
+        'pto',
+      ]);
+    });
+
+    it('counts a manual adjustment on a holiday as worked time for the premium', () => {
+      // A `manual_adjustment` is a correction of WORKED time and folds into
+      // the worked bucket everywhere else in this engine; the premium must
+      // read the same bucket or a corrected holiday would silently lose its
+      // uplift.
+      const result = ok(
+        computeWeekEarnings(
+          input({
+            arrangements: [holidayArrangement()],
+            entries: [worked(FRI, 480), adjustment(FRI, 60)],
+            observed_holidays: [FRI],
+          })
+        )
+      );
+      const premium = result.lines.find(l => l.kind === 'holiday_premium');
+      expect(premium?.minutes).toBe(540);
+      expect(premium?.amount_minor).toBe(12_600); // 540m x 1400/60
+    });
+
+    it('ignores an observed date outside the week', () => {
+      // Belt and braces on the wrapper's window: a stray date cannot price,
+      // because there are no worked minutes on it inside this week.
+      const result = ok(
+        computeWeekEarnings(
+          input({
+            arrangements: [holidayArrangement()],
+            entries: [worked(MON, 480)],
+            observed_holidays: ['2026-07-04', '2026-12-25'],
+          })
+        )
+      );
+      expect(result.lines.some(l => l.kind === 'holiday_premium')).toBe(false);
+    });
+  });
 });
 
 // =============================================================================

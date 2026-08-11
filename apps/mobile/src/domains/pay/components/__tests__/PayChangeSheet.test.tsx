@@ -353,6 +353,69 @@ describe('PayChangeSheet', () => {
     });
   });
 
+  // 3-E4 / `worked_holiday_multiplier`. Same T17 hazard as the 078 five: a
+  // column this sheet never seeds is a term a rate change silently drops.
+  describe('the worked-holiday premium', () => {
+    it('seeds from the current arrangement', () => {
+      const { getByTestId } = renderSheet({
+        currentArrangement: {
+          ...currentArrangement,
+          worked_holiday_multiplier: 1.5,
+        },
+      });
+
+      expect(
+        getByTestId('pay-change-worked-holiday-multiplier-input').props.value
+      ).toBe('1.5');
+    });
+
+    it('a null column seeds an empty field, never a fabricated 1.5', () => {
+      const { getByTestId } = renderSheet();
+
+      expect(
+        getByTestId('pay-change-worked-holiday-multiplier-input').props.value
+      ).toBe('');
+    });
+
+    it('a rate-only change re-sends the seeded premium unchanged', () => {
+      const { getByTestId, onSubmit } = renderSheet({
+        currentArrangement: {
+          ...currentArrangement,
+          worked_holiday_multiplier: 2,
+        },
+      });
+
+      fireEvent.changeText(getByTestId('pay-change-rate-input'), '19.50');
+      fireEvent.press(getByTestId('pay-change-submit'));
+
+      expect(onSubmit).toHaveBeenCalledWith(
+        expect.objectContaining({ worked_holiday_multiplier: 2 })
+      );
+    });
+
+    it('sends null when the field is left blank', () => {
+      const { getByTestId, onSubmit } = renderSheet();
+
+      fireEvent.press(getByTestId('pay-change-submit'));
+
+      expect(onSubmit).toHaveBeenCalledWith(
+        expect.objectContaining({ worked_holiday_multiplier: null })
+      );
+    });
+
+    it('refuses to submit a below-1 premium rather than clamping it', () => {
+      const { getByTestId, onSubmit } = renderSheet();
+
+      fireEvent.changeText(
+        getByTestId('pay-change-worked-holiday-multiplier-input'),
+        '0.5'
+      );
+      fireEvent.press(getByTestId('pay-change-submit'));
+
+      expect(onSubmit).not.toHaveBeenCalled();
+    });
+  });
+
   it('on failure the sheet keeps the typed rate rather than resetting (ClockOutSheet discipline)', () => {
     const { getByTestId } = renderSheet();
 

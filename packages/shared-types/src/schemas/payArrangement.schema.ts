@@ -152,6 +152,30 @@ export const PayArrangementSchema = z.object({
   doubletime_multiplier: OvertimeMultiplierSchema.nullable().optional(),
   seventh_day_multiplier: OvertimeMultiplierSchema.nullable().optional(),
   seventh_day_doubletime_after_minutes: z.int().min(1).nullable().optional(),
+  // ---------------------------------------------------------------------
+  // The worked-holiday premium (080, 3-E4, §5 D-12,
+  // `docs/design/screens-pay-terms.md` §3/§4.3).
+  //
+  // NULL = A WORKED HOLIDAY PAYS THE NORMAL RATE — the screen's own words
+  // ("Leave blank if a worked holiday pays the normal rate"), and the same
+  // null-is-an-explicit-no rule as every tier above. A pre-080 row reads as
+  // no premium, which is exactly the terms it was agreed under (§5 D-9: no
+  // backfill, no default). `.optional()` as well as `.nullable()` for the
+  // same fixture reason the 078 five carry it.
+  //
+  // ON THE ARRANGEMENT, NOT THE HOUSEHOLD, deliberately. The holiday
+  // CALENDAR is the family's (`household_holidays`, 080) — one list, every
+  // carer. What a worked holiday PAYS is a term of this carer's employment,
+  // and a household with two carers may have agreed different ones. Spec
+  // §4.3: "The list is household-level; the premium multiplier is on the
+  // arrangement."
+  //
+  // Bounded like every other multiplier: `numeric(3,2)`, at least 1 (a
+  // "premium" below 1 would pay less for working a holiday), at most two
+  // decimals so the column never rounds the agreed figure out from under
+  // the parties.
+  // ---------------------------------------------------------------------
+  worked_holiday_multiplier: OvertimeMultiplierSchema.nullable().optional(),
   // Null = no guaranteed-hours top-up.
   guaranteed_minutes_per_week: z.int().min(0).nullable(),
   // Null = no PTO entitlement. Read by Phase 3's ledger accrual.
@@ -228,6 +252,9 @@ export const CreatePayArrangementRequestSchema = z.object({
   doubletime_multiplier: OvertimeMultiplierSchema.nullable().optional(),
   seventh_day_multiplier: OvertimeMultiplierSchema.nullable().optional(),
   seventh_day_doubletime_after_minutes: z.int().min(1).nullable().optional(),
+  // No wire default, for the same reason the 078 tiers have none: a default
+  // here would promise every family a holiday premium nobody agreed to.
+  worked_holiday_multiplier: OvertimeMultiplierSchema.nullable().optional(),
   guaranteed_minutes_per_week: z.int().min(0).nullable().optional(),
   pto_entitlement_minutes_per_year: z.int().min(0).nullable().optional(),
   mileage_rate_per_mile_minor: z

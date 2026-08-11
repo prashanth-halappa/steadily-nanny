@@ -2580,7 +2580,11 @@ function makeRealEarnings(
     { listForCarerWeek: mock(async () => entries) } as any,
     { listForCarer: mock(async () => arrangements) } as any,
     { listForCarerYear: mock(async () => []) },
-    { listApprovedForWeek: mock(async () => expenses) }
+    { listApprovedForWeek: mock(async () => expenses) },
+    // 080's holiday toggles. Empty, and it must be SUPPLIED rather than left
+    // to the constructor default — the default is the real repository, which
+    // would reach the network from a unit test.
+    { listForHousehold: mock(async () => []) }
   );
 }
 

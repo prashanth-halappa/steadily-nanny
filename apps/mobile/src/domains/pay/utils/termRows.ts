@@ -1,7 +1,7 @@
 /**
  * @module domains/pay/utils/termRows
  *
- * The nine `AmountRow`s every "Pay & terms" card shows, in the fixed order
+ * The ten `AmountRow`s every "Pay & terms" card shows, in the fixed order
  * TIER0-CX-SPEC.md §2 specifies, built from one `PayArrangement`. Shared
  * between the parent's current-terms card (`PayArrangementScreen`) and the
  * nanny's read-only card (`MyPayScreen`) so the two surfaces can never drift
@@ -160,6 +160,23 @@ export function buildTermRows(
           ? null
           : t('terms.ptoValue', {
               hours: arrangement.pto_entitlement_minutes_per_year / 60,
+            }),
+    },
+    // 3-E4, and the PRE-3-U1 inventory only: the holidays group is two
+    // halves, and this is the arrangement's one — the premium, a term of HER
+    // employment. The other half (which federal holidays the household
+    // observes, as a per-family toggle list) is household-level and belongs
+    // to 3-U1's terms-group UI, not to this fixed-order row list.
+    {
+      key: 'workedHolidayPremium',
+      label: t('terms.workedHolidayPremiumLabel'),
+      value:
+        arrangement.worked_holiday_multiplier == null
+          ? null
+          : t('terms.workedHolidayPremiumValue', {
+              multiplier: formatMultiplier(
+                arrangement.worked_holiday_multiplier
+              ),
             }),
     },
     {

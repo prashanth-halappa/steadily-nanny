@@ -11,17 +11,24 @@ import {
   HouseholdNotFoundError,
   InviteNotFoundError,
 } from '../errors/householdErrors';
+import { HouseholdHolidayRepository } from '../repositories/householdHolidayRepository';
 import { HouseholdInviteRepository } from '../repositories/householdInviteRepository';
 import { HouseholdMemberRepository } from '../repositories/householdMemberRepository';
 import { HouseholdRepository } from '../repositories/householdRepository';
 import { HOUSEHOLD_INVITE_STATUSES } from '../schemas';
-import type { Household, HouseholdMember, InvitePreview } from '../types';
+import type {
+  Household,
+  HouseholdHoliday,
+  HouseholdMember,
+  InvitePreview,
+} from '../types';
 
 export class HouseholdQueryService {
   constructor(
     private readonly householdRepo: HouseholdRepository = new HouseholdRepository(),
     private readonly memberRepo: HouseholdMemberRepository = new HouseholdMemberRepository(),
-    private readonly inviteRepo: HouseholdInviteRepository = new HouseholdInviteRepository()
+    private readonly inviteRepo: HouseholdInviteRepository = new HouseholdInviteRepository(),
+    private readonly holidayRepo: HouseholdHolidayRepository = new HouseholdHolidayRepository()
   ) {}
 
   /** List the households the caller actively belongs to. */
@@ -110,6 +117,23 @@ export class HouseholdQueryService {
   ): Promise<HouseholdMember[]> {
     await this.getMembership(userId, householdId);
     return this.memberRepo.listActiveByHousehold(householdId);
+  }
+
+  /**
+   * The household's holiday calendar. ANY active member, nanny included: what
+   * the family observes is a term of her employment and she is entitled to
+   * read it (080's select policy, spec §2). Writes stay parent-only, in the
+   * command service.
+   *
+   * An empty list is a real answer, not a missing one — no row means nothing
+   * agreed, which is NOT observed.
+   */
+  async listHolidays(
+    userId: string,
+    householdId: string
+  ): Promise<HouseholdHoliday[]> {
+    await this.getMembership(userId, householdId);
+    return this.holidayRepo.listForHousehold(householdId);
   }
 
   /**
