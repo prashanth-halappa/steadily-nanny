@@ -691,8 +691,9 @@ describe('PayChangeSheet', () => {
 
       // `BottomSheetBase` is a `Modal`, which keeps its host node in the tree
       // and flips `visible` — so the closed sheet is asserted on the prop, not
-      // on the node's absence.
-      expect(getByTestId('pay-preset-sheet').props.visible).toBe(false);
+      // on the node's absence. The prop lives on the `-modal` node; the bare
+      // testID is on the sheet card, the only node an iOS a11y tree exposes.
+      expect(getByTestId('pay-preset-sheet-modal').props.visible).toBe(false);
       expect(
         getByTestId('pay-change-daily-overtime-threshold-input').props.value
       ).toBe('');

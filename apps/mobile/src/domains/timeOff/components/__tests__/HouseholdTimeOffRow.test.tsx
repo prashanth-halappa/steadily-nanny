@@ -344,10 +344,10 @@ describe('HouseholdTimeOffRow', () => {
       />
     );
 
-    expect(getByTestId('pto-mark-paid-sheet').props.visible).toBe(false);
+    expect(getByTestId('pto-mark-paid-sheet-modal').props.visible).toBe(false);
     fireEvent.press(getByTestId(`household-time-off-${TIME_OFF_ID}`));
     await waitFor(() =>
-      expect(getByTestId('pto-mark-paid-sheet').props.visible).toBe(true)
+      expect(getByTestId('pto-mark-paid-sheet-modal').props.visible).toBe(true)
     );
   });
 
@@ -391,7 +391,7 @@ describe('HouseholdTimeOffRow', () => {
       })
     );
     await waitFor(() =>
-      expect(getByTestId('pto-mark-paid-sheet').props.visible).toBe(false)
+      expect(getByTestId('pto-mark-paid-sheet-modal').props.visible).toBe(false)
     );
   });
 

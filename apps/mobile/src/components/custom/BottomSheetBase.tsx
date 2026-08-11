@@ -51,7 +51,9 @@ export interface BottomSheetBaseProps {
    * Lands on the sheet CARD, not on the `<Modal>`: a testID set on an iOS
    * modal never reaches the accessibility tree, so every `assertVisible` on a
    * sheet root silently failed against a sheet that was plainly on screen
-   * (Phase 4). React Testing Library finds it either way.
+   * (Phase 4). The modal itself carries `<testID>-modal`, because the test
+   * renderer mounts modal children whether or not the modal is presented —
+   * asserting open/closed needs the modal's own `visible` prop.
    */
   testID?: string;
   showCloseButton?: boolean;
@@ -121,6 +123,7 @@ export function BottomSheetBase({
       animationType="none"
       statusBarTranslucent
       onRequestClose={handleDismiss}
+      testID={testID ? `${testID}-modal` : undefined}
     >
       <GestureHandlerRootView style={{ flex: 1 }}>
         <KeyboardAvoidingView

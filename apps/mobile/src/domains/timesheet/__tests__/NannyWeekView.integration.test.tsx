@@ -1164,7 +1164,9 @@ describe('NannyWeekView — breakdown on landing', () => {
     const { getByTestId } = renderNannyWeek({ openBreakdownSignal: 1 });
 
     await waitFor(() =>
-      expect(getByTestId('hours-earnings-breakdown').props.visible).toBe(true)
+      expect(getByTestId('hours-earnings-breakdown-modal').props.visible).toBe(
+        true
+      )
     );
     expect(getByTestId('hours-earnings-breakdown-total').props.children).toBe(
       '£148.00'
@@ -1177,7 +1179,9 @@ describe('NannyWeekView — breakdown on landing', () => {
     await waitFor(() =>
       expect(getByTestId('hours-earnings-line-amount')).toBeTruthy()
     );
-    expect(getByTestId('hours-earnings-breakdown').props.visible).toBe(false);
+    expect(getByTestId('hours-earnings-breakdown-modal').props.visible).toBe(
+      false
+    );
   });
 
   it('closes the breakdown when the user pages to another priced week', async () => {
@@ -1203,13 +1207,17 @@ describe('NannyWeekView — breakdown on landing', () => {
     });
 
     await waitFor(() =>
-      expect(getByTestId('hours-earnings-breakdown').props.visible).toBe(true)
+      expect(getByTestId('hours-earnings-breakdown-modal').props.visible).toBe(
+        true
+      )
     );
 
     rerenderWith({ openBreakdownSignal: 1, weekStartISO: PRIOR_WEEK });
 
     await waitFor(() =>
-      expect(getByTestId('hours-earnings-breakdown').props.visible).toBe(false)
+      expect(getByTestId('hours-earnings-breakdown-modal').props.visible).toBe(
+        false
+      )
     );
   });
 
