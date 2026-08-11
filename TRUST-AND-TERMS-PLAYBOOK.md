@@ -777,7 +777,13 @@ query→nanny reads note→replies→parent withdraws→approves. (M.)
 
 **3-T2 (Opus) — money record integrity.** Per §5 D-20/D-21 + D-14 + P9: payment
 correction mechanism (correction rows linked to the original; paid-to-date =
-sum with corrections; export `balance_due` honest, still never clamped);
+sum with corrections; export `balance_due` honest, still never clamped —
+NOTE: migration 077's `record_timesheet_payment` computes paid-to-date as a
+bare `sum(amount_minor)` INSIDE the DB function, so corrections must amend
+the function itself via a new migration, not just service/read paths, or the
+atomic over-gross gate refuses valid payments after a correction; D46 trap
+applies if the arg list changes, and 077's header reserves a
+`unique_violation` handler should a dedupe index be added);
 reimbursement settlement per §5 D-14; payroll read-scope tightening (P4/P8:
 carer-scoped reads for nannies, helper excluded — service gates AND RLS,
 plus the ownership-cache poisoning lesson GOLDEN #32); drop-or-document dead
