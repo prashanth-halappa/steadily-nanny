@@ -90,4 +90,38 @@ describe('notification.schema push types', () => {
     expect(ALL_PUSH_NOTIFICATION_TYPES).toContain('shift_no_show_digest');
     expect(PUSH_TYPE_AUDIENCE.shift_no_show_digest).toBe('parent');
   });
+
+  // 3-U1 (D-16/D-45, attention-and-notifications.md §1.3 N18–N20). N18/N19
+  // REPLACE pay_terms_set for their situations rather than adding to it
+  // (never both) — see payArrangementCommandService.test.ts for that proof.
+  it('registers pay_terms_backdated as a carer-audience type (N18)', () => {
+    expect(PUSH_NOTIFICATION_TYPES.PAY_TERMS_BACKDATED).toBe(
+      'pay_terms_backdated'
+    );
+    expect(ALL_PUSH_NOTIFICATION_TYPES).toContain('pay_terms_backdated');
+    expect(PUSH_TYPE_AUDIENCE.pay_terms_backdated).toBe('carer');
+  });
+
+  it('registers pay_terms_scheduled_change_cancelled as a carer-audience type (N19)', () => {
+    expect(PUSH_NOTIFICATION_TYPES.PAY_TERMS_SCHEDULED_CHANGE_CANCELLED).toBe(
+      'pay_terms_scheduled_change_cancelled'
+    );
+    expect(ALL_PUSH_NOTIFICATION_TYPES).toContain(
+      'pay_terms_scheduled_change_cancelled'
+    );
+    expect(PUSH_TYPE_AUDIENCE.pay_terms_scheduled_change_cancelled).toBe(
+      'carer'
+    );
+  });
+
+  // D-45: the dissent notice is parent-audience — she is the one whose
+  // record it goes on, and the person that must learn about it is the
+  // employer (N20).
+  it('registers pay_terms_disagreed as a parent-audience type (N20)', () => {
+    expect(PUSH_NOTIFICATION_TYPES.PAY_TERMS_DISAGREED).toBe(
+      'pay_terms_disagreed'
+    );
+    expect(ALL_PUSH_NOTIFICATION_TYPES).toContain('pay_terms_disagreed');
+    expect(PUSH_TYPE_AUDIENCE.pay_terms_disagreed).toBe('parent');
+  });
 });

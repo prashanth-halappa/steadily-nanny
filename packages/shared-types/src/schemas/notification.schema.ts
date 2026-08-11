@@ -162,6 +162,26 @@ export const PUSH_NOTIFICATION_TYPES = {
   // covered every day). One act, one push, never both
   // (`docs/design/attention-and-notifications.md` §1.4/§2.3b).
   WEEK_BELOW_GUARANTEE: 'week_below_guarantee',
+
+  // 3-U1 (D-16 §7.4 / D-45 §8.3.1 / §6.1 — attention-and-notifications.md
+  // §1.3 N18–N20). `docs/design/screens-pay-terms.md` owns the copy; that
+  // doc owns the matrix rows — cross-spec by design, do not restate titles
+  // here.
+  //
+  // N18 REPLACES pay_terms_set — never both — when a change backdated into
+  // an already-worked week prices any UNAPPROVED week lower under the new
+  // terms than the old (the walk-away fix, M1). A backdated RAISE stays the
+  // ordinary pay_terms_set.
+  PAY_TERMS_BACKDATED: 'pay_terms_backdated',
+  // N19 REPLACES pay_terms_set — never both — when a SCHEDULED (future
+  // valid_from) change is called off before it ever took effect (M4). The
+  // generic "your terms changed" body would take the employer's side on a
+  // raise that isn't happening.
+  PAY_TERMS_SCHEDULED_CHANGE_CANCELLED: 'pay_terms_scheduled_change_cancelled',
+  // N20 (D-45): the nanny recorded "I don't agree with this" on an
+  // arrangement — parent-targeted, so the family sees it. Blocks nothing;
+  // this is the push for the record, not for an approval gate.
+  PAY_TERMS_DISAGREED: 'pay_terms_disagreed',
 } as const;
 
 export type PushNotificationType =
@@ -209,6 +229,9 @@ export const PUSH_TYPE_AUDIENCE: Record<PushNotificationType, PushAudience> = {
   [PUSH_NOTIFICATION_TYPES.PARENT_COVERING]: 'carer',
   [PUSH_NOTIFICATION_TYPES.PAYMENT_CORRECTED]: 'carer',
   [PUSH_NOTIFICATION_TYPES.PAYMENT_RECORDED]: 'carer',
+  [PUSH_NOTIFICATION_TYPES.PAY_TERMS_BACKDATED]: 'carer',
+  [PUSH_NOTIFICATION_TYPES.PAY_TERMS_DISAGREED]: 'parent',
+  [PUSH_NOTIFICATION_TYPES.PAY_TERMS_SCHEDULED_CHANGE_CANCELLED]: 'carer',
   [PUSH_NOTIFICATION_TYPES.PAY_TERMS_SET]: 'carer',
   [PUSH_NOTIFICATION_TYPES.PTO_MARKED_PAID]: 'carer',
   [PUSH_NOTIFICATION_TYPES.PTO_USAGE_REVERSED]: 'parent',

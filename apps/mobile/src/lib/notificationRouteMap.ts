@@ -149,6 +149,21 @@ export const NOTIFICATION_ROUTE_MAP: NotificationRouteMap &
   // household she belongs to itself, so no query params are needed here.
   [PUSH_NOTIFICATION_TYPES.PAY_TERMS_SET]: () => '/(private)/settings/my-pay',
 
+  // 3-U1 (D-16 §7.4/N18, D-45 §8.3.1/N20). Same static-destination shape as
+  // PAY_TERMS_SET — both are carer-targeted and her My pay screen fetches
+  // every household itself, so no query params are needed to land her on
+  // the right card.
+  [PUSH_NOTIFICATION_TYPES.PAY_TERMS_BACKDATED]: () =>
+    '/(private)/settings/my-pay',
+  // §6.1/N19 — the "cancelled raise" push. Same destination as PAY_TERMS_SET:
+  // the terms document already shows the scheduled card gone.
+  [PUSH_NOTIFICATION_TYPES.PAY_TERMS_SCHEDULED_CHANGE_CANCELLED]: () =>
+    '/(private)/settings/my-pay',
+  // D-45/N20 — parent-targeted. Lands on the household's pay hub, where the
+  // `declined` pill (§8.4) is visible on the carer whose row it is.
+  [PUSH_NOTIFICATION_TYPES.PAY_TERMS_DISAGREED]: () =>
+    '/(private)/settings/pay',
+
   // A carer cancelled time off a parent had already marked paid;
   // `ptoCommandService.reconcileCancelledTimeOff` notifies that household's
   // parents so they see the corrected balance — same static-destination

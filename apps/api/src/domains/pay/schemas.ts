@@ -28,6 +28,16 @@ export {
   PayArrangementSchema,
 } from '@steadily-nanny/shared-types/schemas/payArrangement.schema';
 export type {
+  CreatePayArrangementAckRequest,
+  PayArrangementAck,
+  PayArrangementAckListResponse,
+} from '@steadily-nanny/shared-types/schemas/payArrangementAck.schema';
+export {
+  CreatePayArrangementAckRequestSchema,
+  PayArrangementAckListResponseSchema,
+  PayArrangementAckSchema,
+} from '@steadily-nanny/shared-types/schemas/payArrangementAck.schema';
+export type {
   CreatePaymentCorrectionInput,
   CreatePaymentInput,
   Payment,
@@ -52,6 +62,22 @@ export const HouseholdCarerParamSchema = z.object({
   carerId: z.uuid(),
 });
 export type HouseholdCarerParam = z.infer<typeof HouseholdCarerParamSchema>;
+
+/**
+ * URL param validation for
+ * /households/:householdId/carers/:carerId/pay-arrangements/:arrangementId
+ * (ack, dissent, acks — D-31/D-45). `arrangementId` is client-supplied on
+ * every one of these, so the shape check is not the authorization check —
+ * `PayArrangementAckService.assertOwnArrangement`/`assertCanRead` re-verify
+ * it belongs to (householdId, carerId) (docs/11-MONEY.md §9).
+ */
+export const HouseholdCarerArrangementParamSchema =
+  HouseholdCarerParamSchema.extend({
+    arrangementId: z.uuid(),
+  });
+export type HouseholdCarerArrangementParam = z.infer<
+  typeof HouseholdCarerArrangementParamSchema
+>;
 
 /**
  * Query param validation for the PTO reads

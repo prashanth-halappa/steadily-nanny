@@ -178,42 +178,155 @@ beforeEach(() => {
 
 describe('PaySetupScreen', () => {
   it('renders the real form with the setup-specific title/subtitle and every field', async () => {
-    const { getByTestId } = renderWithProviders(<PaySetupScreen />);
+    const { getByTestId, queryByTestId } = renderWithProviders(
+      <PaySetupScreen />
+    );
 
     await waitFor(() =>
       expect(getByTestId('pay-setup-rate-input')).toBeTruthy()
     );
-    expect(getByTestId('pay-setup-chip-today')).toBeTruthy();
-    expect(getByTestId('pay-setup-chip-earlier')).toBeTruthy();
-    expect(getByTestId('pay-setup-overtime-threshold-input')).toBeTruthy();
-    expect(
-      getByTestId('pay-setup-daily-overtime-threshold-input')
-    ).toBeTruthy();
-    expect(getByTestId('pay-setup-doubletime-threshold-input')).toBeTruthy();
-    expect(getByTestId('pay-setup-doubletime-multiplier-input')).toBeTruthy();
-    expect(getByTestId('pay-setup-seventh-day-multiplier-input')).toBeTruthy();
-    expect(
-      getByTestId('pay-setup-seventh-day-doubletime-after-input')
-    ).toBeTruthy();
-    expect(
-      getByTestId('pay-setup-worked-holiday-multiplier-input')
-    ).toBeTruthy();
-    expect(getByTestId('pay-setup-guaranteed-hours-input')).toBeTruthy();
-    expect(getByTestId('pay-setup-pto-hours-input')).toBeTruthy();
-    expect(getByTestId('pay-setup-mileage-rate-input')).toBeTruthy();
+    // Required core, always visible (§4.1).
+    expect(getByTestId('pay-setup-date-input')).toBeTruthy();
     expect(getByTestId('pay-setup-cancellation-chip-window')).toBeTruthy();
     expect(getByTestId('pay-setup-cancellation-chip-none')).toBeTruthy();
+    // Every optional term now sits behind a group header (D-3), and on a
+    // first-ever arrangement there is nothing seeded, so all are closed.
+    for (const group of [
+      'overtime',
+      'guaranteed-hours',
+      'pto',
+      'holidays',
+      'mileage',
+      'outside-wages',
+      'in-writing',
+    ]) {
+      expect(getByTestId(`pay-setup-group-${group}`)).toBeTruthy();
+      expect(queryByTestId(`pay-setup-group-${group}-content`)).toBeNull();
+    }
   });
 
   it('defaults the effective date to the day she joined, since it is in the past', async () => {
     const { getByTestId } = renderWithProviders(<PaySetupScreen />);
 
     await waitFor(() =>
-      expect(getByTestId('pay-setup-chip-earlier').props.variant).toBe(
-        'default'
-      )
+      expect(getByTestId('pay-setup-date-input').props.value).toBe('2026-07-01')
     );
-    expect(getByTestId('pay-setup-date-input').props.value).toBe('2026-07-01');
+  });
+
+  // T10: setup used to have no date validation at all — the change sheet's
+  // error and backdating hint existed only there. One `EffectiveDateField`
+  // now owns both, so the parity gap cannot re-open.
+  describe('T10: the date field validates the same on setup as on change', () => {
+    it('refuses a date that is not a real calendar date', async () => {
+      const { getByTestId } = renderWithProviders(<PaySetupScreen />);
+
+      await waitFor(() =>
+        expect(getByTestId('pay-setup-rate-input')).toBeTruthy()
+      );
+      fireEvent.changeText(getByTestId('pay-setup-rate-input'), '18.50');
+      fireEvent.press(getByTestId('pay-setup-cancellation-chip-none'));
+      expect(getByTestId('pay-setup-screen-cta').props.disabled).toBe(false);
+
+      fireEvent.changeText(getByTestId('pay-setup-date-input'), '2026-02-30');
+
+      expect(getByTestId('pay-setup-date-error')).toBeTruthy();
+      expect(getByTestId('pay-setup-screen-cta').props.disabled).toBe(true);
+    });
+
+    it('refuses a date beyond the 12-month horizon (D-16)', async () => {
+      const { getByTestId } = renderWithProviders(<PaySetupScreen />);
+
+      await waitFor(() =>
+        expect(getByTestId('pay-setup-rate-input')).toBeTruthy()
+      );
+      fireEvent.changeText(getByTestId('pay-setup-rate-input'), '18.50');
+      fireEvent.press(getByTestId('pay-setup-cancellation-chip-none'));
+
+      // Household-local today is 2026-08-01 here, so the horizon is
+      // 2027-08-01.
+      fireEvent.changeText(getByTestId('pay-setup-date-input'), '2027-09-01');
+
+      expect(getByTestId('pay-setup-date-horizon-error')).toBeTruthy();
+      expect(getByTestId('pay-setup-screen-cta').props.disabled).toBe(true);
+    });
+
+    it('accepts a scheduled future date inside the horizon', async () => {
+      const { getByTestId, queryByTestId } = renderWithProviders(
+        <PaySetupScreen />
+      );
+
+      await waitFor(() =>
+        expect(getByTestId('pay-setup-rate-input')).toBeTruthy()
+      );
+      fireEvent.changeText(getByTestId('pay-setup-rate-input'), '18.50');
+      fireEvent.press(getByTestId('pay-setup-cancellation-chip-none'));
+      fireEvent.changeText(getByTestId('pay-setup-date-input'), '2026-09-01');
+
+      expect(queryByTestId('pay-setup-date-horizon-error')).toBeNull();
+      fireEvent.press(getByTestId('pay-setup-screen-cta'));
+
+      await waitFor(() =>
+        expect(payCreateMock).toHaveBeenCalledWith(
+          HOUSEHOLD_ID,
+          NANNY_ID,
+          expect.objectContaining({ valid_from: '2026-09-01' })
+        )
+      );
+    });
+
+    it('shows the backdating hint on the seeded joined date, which is in the past', async () => {
+      const { getByTestId } = renderWithProviders(<PaySetupScreen />);
+
+      await waitFor(() =>
+        expect(getByTestId('pay-setup-backdating-hint')).toBeTruthy()
+      );
+    });
+  });
+
+  // §5.2 / D-7, on the screen a first-time family actually meets it.
+  describe('the common-defaults preset (§5.2, D-7)', () => {
+    it('fills the overtime fields and records terms.preset', async () => {
+      const { getByTestId } = renderWithProviders(<PaySetupScreen />);
+
+      await waitFor(() =>
+        expect(getByTestId('pay-setup-rate-input')).toBeTruthy()
+      );
+      fireEvent.changeText(getByTestId('pay-setup-rate-input'), '18.50');
+      fireEvent.press(getByTestId('pay-setup-cancellation-chip-none'));
+
+      fireEvent.press(getByTestId('pay-setup-group-overtime'));
+      fireEvent.press(getByTestId('pay-setup-preset-button'));
+      expect(getByTestId('pay-preset-confirm').props.disabled).toBe(true);
+      fireEvent.press(getByTestId('pay-preset-checkbox'));
+      fireEvent.press(getByTestId('pay-preset-confirm'));
+
+      expect(
+        getByTestId('pay-setup-daily-overtime-threshold-input').props.value
+      ).toBe('8');
+      fireEvent.press(getByTestId('pay-setup-screen-cta'));
+
+      await waitFor(() =>
+        expect(payCreateMock).toHaveBeenCalledWith(
+          HOUSEHOLD_ID,
+          NANNY_ID,
+          expect.objectContaining({
+            overtime_threshold_minutes: 2400,
+            overtime_daily_threshold_minutes: 480,
+            doubletime_daily_threshold_minutes: 720,
+            doubletime_multiplier: 2,
+            seventh_day_multiplier: 1.5,
+            seventh_day_doubletime_after_minutes: 480,
+            terms: expect.objectContaining({
+              preset: expect.objectContaining({
+                id: 'common-defaults',
+                version: 1,
+                confirmed_by: PARENT_USER_ID,
+              }),
+            }),
+          })
+        )
+      );
+    });
   });
 
   describe('review finding 9: the joined-date default only applies when there is genuinely no current arrangement yet', () => {
@@ -254,12 +367,9 @@ describe('PaySetupScreen', () => {
       const { getByTestId } = renderWithProviders(<PaySetupScreen />);
 
       await waitFor(() =>
-        expect(getByTestId('pay-setup-chip-earlier').props.variant).toBe(
-          'default'
+        expect(getByTestId('pay-setup-date-input').props.value).toBe(
+          '2026-07-01'
         )
-      );
-      expect(getByTestId('pay-setup-date-input').props.value).toBe(
-        '2026-07-01'
       );
     });
   });
@@ -391,6 +501,7 @@ describe('PaySetupScreen', () => {
       await waitFor(() =>
         expect(getByTestId('pay-setup-rate-input')).toBeTruthy()
       );
+      fireEvent.press(getByTestId('pay-setup-group-overtime'));
       expect(
         getByTestId('pay-setup-daily-overtime-threshold-input').props.value
       ).toBe('');
@@ -424,6 +535,7 @@ describe('PaySetupScreen', () => {
         expect(getByTestId('pay-setup-rate-input')).toBeTruthy()
       );
       fireEvent.changeText(getByTestId('pay-setup-rate-input'), '18.50');
+      fireEvent.press(getByTestId('pay-setup-group-overtime'));
       fireEvent.changeText(
         getByTestId('pay-setup-overtime-threshold-input'),
         '40'
@@ -478,6 +590,7 @@ describe('PaySetupScreen', () => {
       fireEvent.press(getByTestId('pay-setup-cancellation-chip-none'));
       expect(getByTestId('pay-setup-screen-cta').props.disabled).toBe(false);
 
+      fireEvent.press(getByTestId('pay-setup-group-overtime'));
       fireEvent.changeText(
         getByTestId('pay-setup-seventh-day-multiplier-input'),
         '1.5'
@@ -500,6 +613,7 @@ describe('PaySetupScreen', () => {
       await waitFor(() =>
         expect(getByTestId('pay-setup-rate-input')).toBeTruthy()
       );
+      fireEvent.press(getByTestId('pay-setup-group-holidays'));
       expect(
         getByTestId('pay-setup-worked-holiday-multiplier-input').props.value
       ).toBe('');
@@ -524,6 +638,7 @@ describe('PaySetupScreen', () => {
         expect(getByTestId('pay-setup-rate-input')).toBeTruthy()
       );
       fireEvent.changeText(getByTestId('pay-setup-rate-input'), '18.50');
+      fireEvent.press(getByTestId('pay-setup-group-holidays'));
       fireEvent.changeText(
         getByTestId('pay-setup-worked-holiday-multiplier-input'),
         '1.5'
@@ -550,6 +665,7 @@ describe('PaySetupScreen', () => {
       fireEvent.press(getByTestId('pay-setup-cancellation-chip-none'));
       expect(getByTestId('pay-setup-screen-cta').props.disabled).toBe(false);
 
+      fireEvent.press(getByTestId('pay-setup-group-holidays'));
       fireEvent.changeText(
         getByTestId('pay-setup-worked-holiday-multiplier-input'),
         '1.555'

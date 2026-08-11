@@ -4,11 +4,13 @@ let PayArrangementController: any;
 let getCurrent: any;
 let getHistory: any;
 let create: any;
+let cancelScheduled: any;
 
 beforeAll(async () => {
   getCurrent = mock(async () => ({ id: 'pa-1', rate_minor: 1500 }));
   getHistory = mock(async () => [{ id: 'pa-1' }, { id: 'pa-0' }]);
   create = mock(async () => ({ id: 'pa-new', rate_minor: 1500 }));
+  cancelScheduled = mock(async () => ({ id: 'pa-reverted', rate_minor: 1500 }));
 
   mock.module(
     '../../../../../src/domains/pay/services/payArrangementQueryService',
@@ -19,7 +21,7 @@ beforeAll(async () => {
   mock.module(
     '../../../../../src/domains/pay/services/payArrangementCommandService',
     () => ({
-      payArrangementCommandService: { create },
+      payArrangementCommandService: { create, cancelScheduled },
     })
   );
 
@@ -61,8 +63,15 @@ describe('PayArrangementController', () => {
       mock()
     );
     expect(getCurrent).toHaveBeenCalledWith('parent-1', 'h1', 'carer-1');
+    // D-6/§10: the controller attaches the server-computed weekly-equivalent
+    // at the wire edge — null here because the stub carries no
+    // `guaranteed_minutes_per_week` (no guarantee, no line, T16).
     expect(res.body.data).toEqual({
-      pay_arrangement: { id: 'pa-1', rate_minor: 1500 },
+      pay_arrangement: {
+        id: 'pa-1',
+        rate_minor: 1500,
+        weekly_equivalent_minor: null,
+      },
     });
   });
 
@@ -92,7 +101,10 @@ describe('PayArrangementController', () => {
     );
     expect(getHistory).toHaveBeenCalledWith('carer-1', 'h1', 'carer-1');
     expect(res.body.data).toEqual({
-      pay_arrangements: [{ id: 'pa-1' }, { id: 'pa-0' }],
+      pay_arrangements: [
+        { id: 'pa-1', weekly_equivalent_minor: null },
+        { id: 'pa-0', weekly_equivalent_minor: null },
+      ],
     });
   });
 
@@ -114,6 +126,8 @@ describe('PayArrangementController', () => {
     );
     expect(create).toHaveBeenCalledWith('parent-1', 'h1', 'carer-1', body);
     expect(res.statusCode).toBe(201);
+    // create's response is NOT enriched (module doc: only the read paths
+    // are) — the command service's own return value passes straight through.
     expect(res.body.data).toEqual({
       pay_arrangement: { id: 'pa-new', rate_minor: 1500 },
     });
@@ -154,5 +168,30 @@ describe('PayArrangementController', () => {
     );
     expect(next).toHaveBeenCalled();
     expect(res.body).toBeUndefined();
+  });
+
+  it('cancelScheduled passes the caller and every route id through', async () => {
+    const res = mockRes();
+    await PayArrangementController.cancelScheduled(
+      {
+        user: { id: 'parent-1' },
+        params: {
+          householdId: 'h1',
+          carerId: 'carer-1',
+          arrangementId: 'pa-scheduled',
+        },
+      } as any,
+      res,
+      mock()
+    );
+    expect(cancelScheduled).toHaveBeenCalledWith(
+      'parent-1',
+      'h1',
+      'carer-1',
+      'pa-scheduled'
+    );
+    expect(res.body.data).toEqual({
+      pay_arrangement: { id: 'pa-reverted', rate_minor: 1500 },
+    });
   });
 });

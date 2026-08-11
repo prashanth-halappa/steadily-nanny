@@ -57,7 +57,8 @@
     "chipEarlier": "Una fecha anterior",
     "dateInputLabel": "Fecha",
     "datePlaceholder": "AAAA-MM-DD",
-    "dateInvalid": "Introduce una fecha de hoy o anterior, como AAAA-MM-DD.",
+    "dateInvalid": "Introduce una fecha real, como AAAA-MM-DD.",
+    "dateTooFarAhead": "Un cambio puede empezar hasta 12 meses después de hoy.",
     "backdatingHint": "Las semanas ya aprobadas conservan sus totales aprobados.",
     "midWeekConsequence": "Esta semana se pagará a dos tarifas: {{oldRate}} hasta el {{oldUntil}}, luego {{newRate}} desde el {{newFrom}}.",
     "overtimeAfterLabel": "Horas extra después de",
@@ -101,6 +102,51 @@
     "notePlaceholder": "p. ej. Revisión anual",
     "submitButton": "Establecer nuevas condiciones",
     "savedToast": "Nuevas condiciones guardadas"
+  },
+  "termGroups": {
+    "heading": "El resto del acuerdo",
+    "overtime": "Horas extra",
+    "guaranteedHours": "Horas garantizadas",
+    "pto": "Tiempo libre pagado",
+    "holidays": "Días festivos",
+    "mileage": "Kilometraje",
+    "outsideWages": "Pagos fuera del salario",
+    "inWriting": "Por escrito",
+    "weeklyEquivalent": "{{amount}} a la semana con {{hours}} horas garantizadas"
+  },
+  "preset": {
+    "button": "Usar los valores más comunes",
+    "title": "Valores comunes de horas extra",
+    "body": "Horas extra después de 8 horas en un día y 40 en una semana, a 1,5×. Pago doble después de 12 horas en un día, a 2×. Un séptimo día consecutivo trabajado se paga como horas extra.",
+    "disclaimer": "Los valores más comunes — un punto de partida, no asesoramiento legal. Revisa cada uno según lo que habéis acordado.",
+    "reviewed": "Revisado en {{month}} de {{year}}.",
+    "checkbox": "Revisaré que estas condiciones sean correctas para nuestra familia.",
+    "confirm": "Usar estos valores",
+    "cancel": "Cancelar",
+    "appliedNote": "Se han rellenado los valores más comunes — revisa cada uno y cambia lo que no coincida con lo acordado."
+  },
+  "outsideWages": {
+    "hint": "Estos se pagan fuera del salario por hora. Steadily los muestra en la semana pero nunca los suma al bruto de la semana.",
+    "labelFieldLabel": "Para qué es",
+    "labelPlaceholder": "p. ej. Ayuda para el seguro médico",
+    "amountFieldLabel": "Importe",
+    "cadenceWeekly": "Semanal",
+    "cadenceMonthly": "Mensual",
+    "cadenceAnnual": "Anual",
+    "removeRow": "Quitar este pago",
+    "addRow": "+ Añadir un pago periódico",
+    "summary_one": "{{count}} pago periódico",
+    "summary_other": "{{count}} pagos periódicos"
+  },
+  "inWriting": {
+    "noticePeriodLabel": "Preaviso (semanas)",
+    "probationLabel": "Periodo de prueba (días)",
+    "dutiesLabel": "Qué incluye el trabajo",
+    "dutiesPlaceholder": "p. ej. Cuidar de Mia y Theo, comidas y recoger lo de los niños, su ropa, recogida del colegio.",
+    "drivingLabel": "Conducir",
+    "drivingPlaceholder": "p. ej. Llevar al colegio en nuestro coche; se paga el kilometraje de los recados.",
+    "hint": "Documentación de lo acordado. Nada de esto cambia lo que paga una semana.",
+    "summary": "{{filled}} de {{total}} rellenados"
   },
   "setup": {
     "title": "Configurar el sueldo de {{name}}",
@@ -164,6 +210,50 @@
     "exceedsGrossTitle": "Eso es más de lo que queda por pagar de esta semana.",
     "alreadyRecordedLabel": "Ya registrado",
     "weekGrossLabel": "Bruto de la semana"
+  },
+  "history": {
+    "diffRateLabel": "Tarifa por hora",
+    "notSet": "No establecido",
+    "firstTermsSet": "Primeras condiciones establecidas"
+  },
+  "consequence": {
+    "rate": "Esta semana se paga a dos tarifas: la anterior hasta el día antes, la nueva a partir de esta fecha.",
+    "weeklyOvertimeOrGuarantee": "Las horas extra y las horas garantizadas se calculan con las condiciones vigentes el último día de la semana, así que toda la semana usa las nuevas.",
+    "dailyTiers": "Las horas extra diarias se calculan día a día, así que se aplican a partir de esta fecha. Los días anteriores de la semana mantienen las anteriores.",
+    "cancellations": "El pago por cancelación se decide según la fecha de inicio de cada turno, así que los turnos ya cancelados mantienen lo que se les debía.",
+    "mileage": "El kilometraje ya aprobado mantiene la tarifa con la que se aprobó. Solo las nuevas aprobaciones usan la nueva tarifa.",
+    "pto": "La asignación anual cambia ahora. Las ausencias ya marcadas como pagadas no se recalculan.",
+    "holidays": "Los festivos ya trabajados y aprobados mantienen lo que pagaron.",
+    "checkTheWeek": "Un cambio a mitad de semana significa que el total de esta semana puede no coincidir con lo que calcule tu servicio de nómina. Revisa la semana antes de enviarla."
+  },
+  "ack": {
+    "changedTitle": "Tus condiciones cambiaron el {{date}}",
+    "firstTitle": "Tus condiciones de pago están fijadas",
+    "seenButton": "He visto estas condiciones",
+    "disagreeButton": "No estoy de acuerdo con esto",
+    "reassurance": "Esto registra la fecha en que las viste. No es una aceptación de ellas y no renuncias a nada.",
+    "recordFailed": "No se pudo registrar. Revisa tu conexión e inténtalo de nuevo.",
+    "seenBy": "Visto por {{name}} el {{date}}",
+    "seen": "Visto el {{date}}",
+    "notSeenYet": "Aún sin ver",
+    "disagreed": "En desacuerdo el {{date}}",
+    "historySeen": "Visto el {{date}}"
+  },
+  "dissent": {
+    "title": "Diles qué está mal",
+    "placeholder": "¿Qué no cuadra?",
+    "hint": "Esto se registra con la fecha y tu familia lo ve. No cambia las condiciones ni impide que se apliquen: deja tu versión por escrito.",
+    "submit": "Registrar"
+  },
+  "scheduledChange": {
+    "title": "Las nuevas condiciones empiezan el {{date}}",
+    "editButton": "Editar",
+    "cancelButton": "Anular",
+    "confirmTitle": "¿Anular este cambio?",
+    "confirmBody": "El cambio programado no se aplicará. Tanto el cambio como esta anulación quedan en el historial.",
+    "confirmKeep": "Mantenerlo",
+    "confirmCancel": "Anularlo",
+    "cancelFailed": "No se pudo completar. Si la fecha de inicio ya llegó, estas condiciones están vigentes: cámbialas en su lugar."
   },
   "correctPaymentSheet": {
     "title": "Corregir este pago",

@@ -8,13 +8,19 @@
  * because the branching the spec describes ("one carer -> inline, two or
  * more -> a picker") only makes sense evaluated in one place.
  *
- * Amended per TIER0-PLAN.md owner decisions: no "Scheduled change" card
- * (`valid_from` is always today or earlier, so the current-terms card is
- * always the whole truth), and the append-only note moves to `Small` muted
- * copy directly above the History heading.
+ * The append-only note lives in `Small` muted copy directly above the
+ * History heading. D-16 re-opened future-dated terms, so §6's scheduled-
+ * change card is back: a `valid_from` after the household's today is a
+ * promise that has not landed yet, and the parent needs both a way to see it
+ * and a way to call it off (which is itself an APPEND, never a delete).
+ *
+ * §8.4: the ack pill beside "In effect since" reports whether the carer has
+ * SEEN this version. A disagreement outranks a seen. The pill never uses the
+ * word 3-O's proposal flow owns — see `../utils/ackState`.
  */
 
 import type { HouseholdMember } from '@steadily-nanny/shared-types/schemas/household.schema';
+import type { PayArrangement } from '@steadily-nanny/shared-types/schemas/payArrangement.schema';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -23,31 +29,51 @@ import { illustrations } from '@/assets/illustrations';
 import { AnimatedPressable } from '@/lib/animations';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { ErrorState } from '@/src/components/custom/ErrorState';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/src/components/ui/alert-dialog';
 import { Button } from '@/src/components/ui/button';
 import { Card, CardContent } from '@/src/components/ui/card';
 import { EmptyState } from '@/src/components/ui/empty-state';
+import { InlineError } from '@/src/components/ui/inline-error';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
+import { StatusPill } from '@/src/components/ui/status-pill';
 import { Text } from '@/src/components/ui/text';
 import { Body, H1, H4, Small } from '@/src/components/ui/typography';
 import { resolveCarerName } from '@/src/domains/schedule/utils/memberDisplayName';
 import { isParentEditorRole } from '@/src/domains/setup/types';
 import { DEFAULT_WEEK_STARTS_ON } from '@/src/domains/timesheet/utils/week';
+import { useCancelScheduledPayArrangement } from '@/src/hooks/mutations/useCancelScheduledPayArrangement';
 import { useCreatePayArrangement } from '@/src/hooks/mutations/useCreatePayArrangement';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
 import { useCurrentPayArrangement } from '@/src/hooks/queries/useCurrentPayArrangement';
 import { useHouseholdMembers } from '@/src/hooks/queries/useHouseholdMembers';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
+import { usePayArrangementAcks } from '@/src/hooks/queries/usePayArrangementAcks';
 import { usePayArrangementHistory } from '@/src/hooks/queries/usePayArrangementHistory';
 import { usePtoBalance } from '@/src/hooks/queries/usePtoBalance';
 import { localDateInZone } from '@/src/lib/localDate';
 import { formatMoney, formatRate } from '@/src/lib/money';
 import { showSuccessToast } from '@/src/lib/toast';
 import { useElevation } from '~/lib/design-tokens/elevation';
+import { resolveAckState } from '../utils/ackState';
 import { formatDisplayDateWithYear } from '../utils/payArrangementForm';
 import { buildTermRows } from '../utils/termRows';
+import { buildTermsDiff, summarizeTermsDiff } from '../utils/termsDiff';
 import { AmountRow } from './AmountRow';
 import { BackRow } from './BackRow';
 import { PayChangeSheet } from './PayChangeSheet';
+
+/** §6's card names the headline terms only — the full diff is one tap away
+ * in the history once the change lands. */
+const SCHEDULED_SUMMARY_TERMS = 2;
 
 function normalizeParam(
   value: string | string[] | undefined
@@ -140,8 +166,14 @@ function CarerPayDetail({
   const router = useRouter();
   const current = useCurrentPayArrangement(householdId, carerId);
   const history = usePayArrangementHistory(householdId, carerId);
+  const acks = usePayArrangementAcks(householdId, carerId, current.data?.id);
   const createArrangement = useCreatePayArrangement(householdId, carerId);
+  const cancelScheduled = useCancelScheduledPayArrangement(
+    householdId,
+    carerId
+  );
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
   const elevation = useElevation();
 
   // Household-local "today"'s year — called unconditionally (rules of
@@ -184,6 +216,35 @@ function CarerPayDetail({
     arrangement?.carer_display_name
   );
 
+  const ackState = resolveAckState(acks.data);
+  const ackDate =
+    ackState.kind === 'none'
+      ? null
+      : formatDisplayDateWithYear(
+          localDateInZone(householdTimezone, new Date(ackState.createdAt))
+        );
+  // §8.4's three states, in the order the spec ranks them: a disagreement
+  // outranks a seen, because that is the one the reader would be misled by
+  // not seeing. Never worded as agreement (D-41).
+  const ackPill =
+    ackState.kind === 'disagreed'
+      ? ({
+          variant: 'declined',
+          label: t('ack.disagreed', { date: ackDate }),
+        } as const)
+      : ackState.kind === 'seen'
+        ? ({
+            variant: 'confirmed',
+            label: t('ack.seen', { date: ackDate }),
+          } as const)
+        : ({ variant: 'pending', label: t('ack.notSeenYet') } as const);
+
+  // §6/D-16: `valid_from` after the household's today. Newest first, so the
+  // first match is the one that starts soonest to announce.
+  const scheduled: PayArrangement | undefined = (history.data ?? [])
+    .filter(row => row.valid_from > todayISO)
+    .at(-1);
+
   const handleSubmit = (
     input: Parameters<typeof createArrangement.mutateAsync>[0]
   ) => {
@@ -214,13 +275,63 @@ function CarerPayDetail({
         </View>
       ) : (
         <>
+          {scheduled ? (
+            <Card testID="pay-scheduled-change-card" tone="attention">
+              <CardContent className="gap-3">
+                <H4>
+                  {t('scheduledChange.title', {
+                    date: formatDisplayDateWithYear(scheduled.valid_from),
+                  })}
+                </H4>
+                <Small
+                  testID="pay-scheduled-diff"
+                  className="text-muted-foreground"
+                >
+                  {summarizeTermsDiff(
+                    buildTermsDiff(arrangement, scheduled, t),
+                    SCHEDULED_SUMMARY_TERMS
+                  )}
+                </Small>
+                <View className="flex-row gap-2">
+                  <Button
+                    testID="pay-scheduled-edit"
+                    variant="ghost"
+                    onPress={() => setSheetOpen(true)}
+                  >
+                    <Text>{t('scheduledChange.editButton')}</Text>
+                  </Button>
+                  <Button
+                    testID="pay-scheduled-cancel"
+                    variant="ghost"
+                    onPress={() => setCancelConfirmOpen(true)}
+                  >
+                    <Text>{t('scheduledChange.cancelButton')}</Text>
+                  </Button>
+                </View>
+                {cancelScheduled.isError ? (
+                  <InlineError
+                    testID="pay-scheduled-cancel-error"
+                    message={t('scheduledChange.cancelFailed')}
+                  />
+                ) : null}
+              </CardContent>
+            </Card>
+          ) : null}
+
           <Card testID="pay-current-terms-card">
             <CardContent className="gap-3">
-              <Small className="text-muted-foreground">
-                {t('inEffectSince', {
-                  date: formatDisplayDateWithYear(arrangement.valid_from),
-                })}
-              </Small>
+              <View className="flex-row flex-wrap items-center gap-2">
+                <Small className="text-muted-foreground">
+                  {t('inEffectSince', {
+                    date: formatDisplayDateWithYear(arrangement.valid_from),
+                  })}
+                </Small>
+                <StatusPill
+                  testID="pay-ack-pill"
+                  variant={ackPill.variant}
+                  label={ackPill.label}
+                />
+              </View>
               <View className="flex-row items-baseline gap-1">
                 <H1 testID="pay-current-rate" tabular>
                   {formatMoney(arrangement.rate_minor, arrangement.currency)}
@@ -252,7 +363,7 @@ function CarerPayDetail({
 
           <H4>{t('historyHeading')}</H4>
           <View className="gap-2" testID="pay-history-list">
-            {history.data?.map(row => {
+            {history.data?.map((row, index) => {
               const setByMember = row.created_by
                 ? members.find(m => m.user_id === row.created_by)
                 : undefined;
@@ -260,6 +371,10 @@ function CarerPayDetail({
               // no-name copy branch below rather than reading "Carer set
               // this rate". The resolver still adds her profile name.
               const setByName = resolveCarerName(setByMember, '');
+              // §8.5: what CHANGED, from the same `buildTermsDiff` the change
+              // review used. The oldest row has no predecessor and says so
+              // rather than diffing against nothing.
+              const older = (history.data ?? [])[index + 1] ?? null;
               return (
                 <View
                   key={row.id}
@@ -267,9 +382,27 @@ function CarerPayDetail({
                   className="gap-2 rounded-row bg-card px-4 py-3"
                   style={elevation.row}
                 >
-                  <Body weight="medium" tabular>
-                    {formatRate(row.rate_minor, row.currency)}
+                  <Body weight="medium">
+                    {t('historyFrom', {
+                      date: formatDisplayDateWithYear(row.valid_from),
+                    })}
                   </Body>
+                  <Small
+                    testID={`pay-history-diff-${row.id}`}
+                    className="text-muted-foreground"
+                  >
+                    {older
+                      ? summarizeTermsDiff(buildTermsDiff(older, row, t))
+                      : t('history.firstTermsSet')}
+                  </Small>
+                  {row.id === arrangement.id && ackState.kind === 'seen' ? (
+                    <Small
+                      testID={`pay-history-seen-${row.id}`}
+                      className="text-muted-foreground"
+                    >
+                      {t('ack.historySeen', { date: ackDate })}
+                    </Small>
+                  ) : null}
                   <Small className="text-muted-foreground">
                     {setByName
                       ? t('historyFromSetBy', {
@@ -307,6 +440,40 @@ function CarerPayDetail({
             householdWeekStartsOn={householdWeekStartsOn}
             todayISO={todayISO}
           />
+
+          {/* §6: cancelling is an APPEND, and the confirm says so — the
+              change and its cancellation both stay in the history. */}
+          <AlertDialog
+            open={cancelConfirmOpen}
+            onOpenChange={setCancelConfirmOpen}
+          >
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>
+                  {t('scheduledChange.confirmTitle')}
+                </AlertDialogTitle>
+                <AlertDialogDescription>
+                  {t('scheduledChange.confirmBody')}
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                {/* Children MUST be wrapped in <Text> — these primitives feed
+                    a TextClassContext and a bare string child crashes RN. */}
+                <AlertDialogCancel testID="pay-scheduled-cancel-dismiss">
+                  <Text>{t('scheduledChange.confirmKeep')}</Text>
+                </AlertDialogCancel>
+                <AlertDialogAction
+                  testID="pay-scheduled-cancel-confirm"
+                  onPress={() => {
+                    setCancelConfirmOpen(false);
+                    if (scheduled) cancelScheduled.mutate(scheduled.id);
+                  }}
+                >
+                  <Text>{t('scheduledChange.confirmCancel')}</Text>
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </>
       )}
     </View>

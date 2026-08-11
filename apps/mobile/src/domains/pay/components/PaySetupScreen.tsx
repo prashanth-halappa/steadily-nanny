@@ -2,9 +2,15 @@
  * @module domains/pay/components/PaySetupScreen
  *
  * "Set up pay for {name}" — TIER0-PLAN.md owner decision 8 / TIER0-CX-SPEC.md
- * §2 "First-time setup". A full screen (not a sheet) — seven fields with a
- * keyboard is past `fitContent` territory — reached from the prompt card on
+ * §2 "First-time setup". A full screen (not a sheet) — the required core plus
+ * a keyboard is past `fitContent` territory — reached from the prompt card on
  * Manage household and every no-arrangement empty state in this domain.
+ *
+ * Required core at the top, always open; every optional term behind a
+ * `TermGroup` via the shared `PayTermsGroups` (D-3). There is no seed
+ * arrangement here, so §4.2's "a group opens when it has a value" resolves to
+ * "everything closed" — the same rule the change sheet uses, reading as a
+ * short required form rather than as a document.
  *
  * Two differences from `PayChangeSheet`, both load-bearing:
  *  - the effective date defaults to the day she JOINED the household (when
@@ -14,7 +20,6 @@
  *    where silence breeds the dispute" (spec). Save stays disabled until one
  *    is tapped.
  */
-import type { PayFrequency } from '@steadily-nanny/shared-types/schemas/payArrangement.schema';
 import { type Href, useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -29,7 +34,9 @@ import { Text } from '@/src/components/ui/text';
 import { Textarea } from '@/src/components/ui/textarea';
 import { Body, Label, Small } from '@/src/components/ui/typography';
 import { CurrencySelect } from '@/src/domains/pay/components/CurrencySelect';
+import { EffectiveDateField } from '@/src/domains/pay/components/EffectiveDateField';
 import { PayScheduleFields } from '@/src/domains/pay/components/PayScheduleFields';
+import { PayTermsGroups } from '@/src/domains/pay/components/PayTermsGroups';
 import { resolveCarerName } from '@/src/domains/schedule/utils/memberDisplayName';
 import { SetupScreenShell } from '@/src/domains/setup/components/SetupScreenShell';
 import { isParentEditorRole } from '@/src/domains/setup/types';
@@ -48,7 +55,6 @@ import {
 import { showSuccessToast } from '@/src/lib/toast';
 import {
   buildCreatePayArrangementRequest,
-  formatShortDate,
   type PayTermsFormState,
 } from '../utils/payArrangementForm';
 
@@ -57,6 +63,46 @@ function normalizeParam(
 ): string | undefined {
   if (value == null) return undefined;
   return Array.isArray(value) ? value[0] : value;
+}
+
+/** A first-ever arrangement starts blank on every optional term: there is
+ * nothing agreed yet to seed from, and a pre-filled 8/12/1.5 would read as a
+ * term the family had already chosen. */
+function blankFormState(currency: string, todayISO: string): PayTermsFormState {
+  return {
+    rateText: '',
+    currency,
+    effectiveDateISO: todayISO,
+    todayISO,
+    overtimeThresholdHoursText: '',
+    overtimeMultiplierText: '1.5',
+    dailyOvertimeThresholdHoursText: '',
+    doubletimeThresholdHoursText: '',
+    doubletimeMultiplierText: '',
+    seventhDayMultiplierText: '',
+    seventhDayDoubletimeAfterHoursText: '',
+    workedHolidayMultiplierText: '',
+    guaranteedHoursText: '',
+    ptoHoursPerYearText: '',
+    mileageRateText: '',
+    cancellationChoice: null,
+    cancellationHoursText: '',
+    note: '',
+    noticePeriodWeeksText: '',
+    probationDaysText: '',
+    dutiesText: '',
+    drivingText: '',
+    stipends: [],
+    // 082's pay schedule — blank on a first-ever arrangement, same as every
+    // other optional term above: nothing is agreed yet to seed from.
+    payFrequency: '',
+    payDayOfWeekText: '',
+    payDayOfMonthText: '',
+    // Deliberately absent: `currentOvertimeMultiplier`. The redirect below
+    // means there is no current arrangement by the time this renders, so 1.5
+    // (the blank-threshold default in `buildCreatePayArrangementRequest`) is
+    // always right here. Editing an existing arrangement is PayChangeSheet's.
+  };
 }
 
 export function PaySetupScreen() {
@@ -93,46 +139,14 @@ export function PaySetupScreen() {
   const householdCancellationDefaultHours =
     household?.cancellation_paid_within_hours ?? 0;
 
-  const [rateText, setRateText] = useState('');
-  // Device Language & Region as a PREFILL only — the chips below always let it
-  // be overridden, because currency belongs to the employment arrangement and
-  // not to whichever phone happens to be creating it.
-  const [currency, setCurrency] = useState(getDeviceCurrency());
-  const [effectiveChoice, setEffectiveChoice] = useState<'today' | 'earlier'>(
-    'today'
+  // Device Language & Region as a PREFILL only — the select below always lets
+  // it be overridden, because currency belongs to the employment arrangement
+  // and not to whichever phone happens to be creating it.
+  const [form, setForm] = useState<PayTermsFormState>(() =>
+    blankFormState(getDeviceCurrency(), todayISO)
   );
-  const [earlierDateText, setEarlierDateText] = useState('');
-  const [overtimeThresholdHoursText, setOvertimeThresholdHoursText] =
-    useState('');
-  const [overtimeMultiplierText, setOvertimeMultiplierText] = useState('1.5');
-  // 078's tiers start blank on a first-ever arrangement — there is nothing
-  // agreed yet to seed from, and a prefilled 8/12/1.5 would read as a term
-  // the family had already chosen.
-  const [dailyOvertimeThresholdHoursText, setDailyOvertimeThresholdHoursText] =
-    useState('');
-  const [doubletimeThresholdHoursText, setDoubletimeThresholdHoursText] =
-    useState('');
-  const [doubletimeMultiplierText, setDoubletimeMultiplierText] = useState('');
-  const [seventhDayMultiplierText, setSeventhDayMultiplierText] = useState('');
-  const [
-    seventhDayDoubletimeAfterHoursText,
-    setSeventhDayDoubletimeAfterHoursText,
-  ] = useState('');
-  const [workedHolidayMultiplierText, setWorkedHolidayMultiplierText] =
-    useState('');
-  const [guaranteedHoursText, setGuaranteedHoursText] = useState('');
-  const [ptoHoursPerYearText, setPtoHoursPerYearText] = useState('');
-  const [mileageRateText, setMileageRateText] = useState('');
-  const [cancellationChoice, setCancellationChoice] = useState<
-    'window' | 'none' | null
-  >(null);
-  const [cancellationHoursText, setCancellationHoursText] = useState('');
-  const [note, setNote] = useState('');
-  // 082's pay schedule — blank on a first-ever arrangement, same as the 078
-  // tiers above: there is nothing agreed yet to seed from.
-  const [payFrequency, setPayFrequency] = useState<PayFrequency | ''>('');
-  const [payDayOfWeekText, setPayDayOfWeekText] = useState('');
-  const [payDayOfMonthText, setPayDayOfMonthText] = useState('');
+  const patch = (next: Partial<PayTermsFormState>) =>
+    setForm(current => ({ ...current, ...next }));
 
   // Seed the effective-date default and the cancellation-hours prefill ONCE,
   // the first time both the member and household have loaded — mirrors
@@ -149,27 +163,27 @@ export function PaySetupScreen() {
       return;
     }
     hasSeededRef.current = true;
-    // Household currency over the device prefill, once the household has
-    // loaded — currency belongs to the household's employment arrangements,
-    // not to whichever phone happened to create this one. `getDeviceCurrency()`
-    // stays as the `useState` initializer below for the brief window before
-    // `household` resolves, and as the fallback for a household predating
-    // the field.
-    setCurrency(household.currency ?? getDeviceCurrency());
     // Only seed the joined-date default when there is genuinely no current
     // arrangement yet — the first-time-setup case the screen is named for.
-    // A current arrangement already existing means "today" (the initial
-    // state) is the honest default (review finding 9).
+    // A current arrangement already existing means "today" is the honest
+    // default (review finding 9).
     const joinedDateISO = localDateInZone(timezone, new Date(member.joined_at));
-    if (!currentArrangement.data && joinedDateISO < todayISO) {
-      setEffectiveChoice('earlier');
-      setEarlierDateText(joinedDateISO);
-    }
-    setCancellationHoursText(
-      householdCancellationDefaultHours > 0
-        ? String(householdCancellationDefaultHours)
-        : ''
-    );
+    setForm(current => ({
+      ...current,
+      // Household currency over the device prefill, once the household has
+      // loaded — currency belongs to the household's employment arrangements,
+      // not to whichever phone happened to create this one.
+      currency: household.currency ?? getDeviceCurrency(),
+      effectiveDateISO:
+        !currentArrangement.data && joinedDateISO < todayISO
+          ? joinedDateISO
+          : current.effectiveDateISO,
+      todayISO,
+      cancellationHoursText:
+        householdCancellationDefaultHours > 0
+          ? String(householdCancellationDefaultHours)
+          : '',
+    }));
   }, [
     member,
     household,
@@ -257,39 +271,7 @@ export function PaySetupScreen() {
     );
   }
 
-  const effectiveDateISO =
-    effectiveChoice === 'today' ? todayISO : earlierDateText;
-  const formState: PayTermsFormState = {
-    rateText,
-    currency,
-    effectiveDateISO,
-    todayISO,
-    overtimeThresholdHoursText,
-    overtimeMultiplierText,
-    dailyOvertimeThresholdHoursText,
-    doubletimeThresholdHoursText,
-    doubletimeMultiplierText,
-    seventhDayMultiplierText,
-    seventhDayDoubletimeAfterHoursText,
-    workedHolidayMultiplierText,
-    guaranteedHoursText,
-    ptoHoursPerYearText,
-    mileageRateText,
-    cancellationChoice,
-    cancellationHoursText,
-    note,
-    payFrequency,
-    payDayOfWeekText,
-    payDayOfMonthText,
-    // Deliberately absent: the redirect above means there is no current
-    // arrangement by the time this renders, so 1.5 (the blank-threshold
-    // default in `buildCreatePayArrangementRequest`) is always right here.
-    // This used to carry `currentArrangement.data?.overtime_multiplier`
-    // through for review finding 9's re-entry case — the redirect replaces
-    // that half-measure, and TypeScript narrowed the read to `never` to
-    // say so. Editing an existing arrangement is PayChangeSheet's job.
-  };
-  const request = buildCreatePayArrangementRequest(formState);
+  const request = buildCreatePayArrangementRequest({ ...form, todayISO });
 
   const handleSubmit = async () => {
     if (!request) return;
@@ -317,8 +299,8 @@ export function PaySetupScreen() {
       <View className="gap-2">
         <Label>{t('changeSheet.currencyLabel')}</Label>
         <CurrencySelect
-          value={currency}
-          onChange={setCurrency}
+          value={form.currency}
+          onChange={currency => patch({ currency })}
           testIDPrefix="pay-setup"
         />
       </View>
@@ -330,16 +312,16 @@ export function PaySetupScreen() {
             testID="pay-setup-currency-prefix"
             className="text-muted-foreground"
           >
-            {currencySymbol(currency)}
+            {currencySymbol(form.currency)}
           </Body>
           <Input
             testID="pay-setup-rate-input"
             accessibilityLabel={t('changeSheet.rateLabel')}
-            value={rateText}
-            onChangeText={setRateText}
+            value={form.rateText}
+            onChangeText={rateText => patch({ rateText })}
             onBlur={() => {
-              const minor = parseMajorToMinor(rateText);
-              if (minor !== null) setRateText(minorToMajorText(minor));
+              const minor = parseMajorToMinor(form.rateText);
+              if (minor !== null) patch({ rateText: minorToMajorText(minor) });
             }}
             keyboardType="decimal-pad"
             className="flex-1"
@@ -347,217 +329,49 @@ export function PaySetupScreen() {
         </View>
       </View>
 
-      <View className="gap-2">
-        <Label>{t('changeSheet.effectiveLabel')}</Label>
-        <View className="flex-row flex-wrap gap-2">
-          <Button
-            testID="pay-setup-chip-today"
-            variant={effectiveChoice === 'today' ? 'default' : 'outline'}
-            size="sm"
-            onPress={() => setEffectiveChoice('today')}
-          >
-            <Text>
-              {/* §2.6 — was a raw "08-10" MM-DD substring; matches
-                  PayChangeSheet's "Today (Aug 10)" chip. */}
-              {t('changeSheet.chipToday', { date: formatShortDate(todayISO) })}
-            </Text>
-          </Button>
-          <Button
-            testID="pay-setup-chip-earlier"
-            variant={effectiveChoice === 'earlier' ? 'default' : 'outline'}
-            size="sm"
-            onPress={() => setEffectiveChoice('earlier')}
-          >
-            <Text>{t('changeSheet.chipEarlier')}</Text>
-          </Button>
-        </View>
-        {effectiveChoice === 'earlier' ? (
-          <Input
-            testID="pay-setup-date-input"
-            accessibilityLabel={t('changeSheet.dateInputLabel')}
-            value={earlierDateText}
-            onChangeText={setEarlierDateText}
-            placeholder={t('changeSheet.datePlaceholder')}
-            keyboardType="numbers-and-punctuation"
-            maxLength={10}
-          />
-        ) : null}
-      </View>
-
-      <View className="gap-2">
-        <Label>{t('changeSheet.overtimeAfterLabel')}</Label>
-        <View className="flex-row gap-2">
-          <Input
-            testID="pay-setup-overtime-threshold-input"
-            accessibilityLabel={t('changeSheet.overtimeAfterLabel')}
-            value={overtimeThresholdHoursText}
-            onChangeText={setOvertimeThresholdHoursText}
-            keyboardType="decimal-pad"
-            className="flex-1"
-          />
-          <Input
-            testID="pay-setup-overtime-multiplier-input"
-            accessibilityLabel={t('changeSheet.overtimePaidAtLabel')}
-            value={overtimeMultiplierText}
-            onChangeText={setOvertimeMultiplierText}
-            keyboardType="decimal-pad"
-            className="flex-1"
-          />
-        </View>
-        <Small className="text-muted-foreground">
-          {t('changeSheet.overtimeHint')}
-        </Small>
-      </View>
-
-      {/* 078's three further tiers (`screens-pay-terms.md` §4.3). Daily
-          overtime has no multiplier input of its own — it is paid at the
-          weekly `overtime_multiplier` above. */}
-      <View className="gap-2">
-        <Label>{t('changeSheet.dailyOvertimeAfterLabel')}</Label>
-        <Input
-          testID="pay-setup-daily-overtime-threshold-input"
-          accessibilityLabel={t('changeSheet.dailyOvertimeAfterLabel')}
-          value={dailyOvertimeThresholdHoursText}
-          onChangeText={setDailyOvertimeThresholdHoursText}
-          keyboardType="decimal-pad"
-        />
-        <Small className="text-muted-foreground">
-          {t('changeSheet.dailyOvertimeHint')}
-        </Small>
-      </View>
-
-      <View className="gap-2">
-        <Label>{t('changeSheet.doubletimeAfterLabel')}</Label>
-        <View className="flex-row gap-2">
-          <Input
-            testID="pay-setup-doubletime-threshold-input"
-            accessibilityLabel={t('changeSheet.doubletimeAfterLabel')}
-            value={doubletimeThresholdHoursText}
-            onChangeText={setDoubletimeThresholdHoursText}
-            keyboardType="decimal-pad"
-            className="flex-1"
-          />
-          <Input
-            testID="pay-setup-doubletime-multiplier-input"
-            accessibilityLabel={t('changeSheet.doubletimePaidAtLabel')}
-            value={doubletimeMultiplierText}
-            onChangeText={setDoubletimeMultiplierText}
-            keyboardType="decimal-pad"
-            className="flex-1"
-          />
-        </View>
-      </View>
-
-      <View className="gap-2">
-        <Label>{t('changeSheet.seventhDayFieldLabel')}</Label>
-        <View className="flex-row gap-2">
-          <Input
-            testID="pay-setup-seventh-day-multiplier-input"
-            accessibilityLabel={t('changeSheet.seventhDayPaidAtLabel')}
-            value={seventhDayMultiplierText}
-            onChangeText={setSeventhDayMultiplierText}
-            keyboardType="decimal-pad"
-            className="flex-1"
-          />
-          <Input
-            testID="pay-setup-seventh-day-doubletime-after-input"
-            accessibilityLabel={t('changeSheet.seventhDayDoubletimeAfterLabel')}
-            value={seventhDayDoubletimeAfterHoursText}
-            onChangeText={setSeventhDayDoubletimeAfterHoursText}
-            keyboardType="decimal-pad"
-            className="flex-1"
-          />
-        </View>
-        <Small className="text-muted-foreground">
-          {t('changeSheet.seventhDayHint')}
-        </Small>
-      </View>
-
-      <View className="gap-2">
-        <Label>{t('changeSheet.guaranteedHoursFieldLabel')}</Label>
-        <Input
-          testID="pay-setup-guaranteed-hours-input"
-          accessibilityLabel={t('changeSheet.guaranteedHoursFieldLabel')}
-          value={guaranteedHoursText}
-          onChangeText={setGuaranteedHoursText}
-          keyboardType="decimal-pad"
-        />
-      </View>
-
-      <View className="gap-2">
-        <Label>{t('changeSheet.ptoFieldLabel')}</Label>
-        <Input
-          testID="pay-setup-pto-hours-input"
-          accessibilityLabel={t('changeSheet.ptoFieldLabel')}
-          value={ptoHoursPerYearText}
-          onChangeText={setPtoHoursPerYearText}
-          keyboardType="decimal-pad"
-        />
-        <Small className="text-muted-foreground">
-          {t('changeSheet.ptoHint')}
-        </Small>
-      </View>
-
-      {/* 3-E4's half of the holidays group (`screens-pay-terms.md` §4.3) —
-          the premium only. The household's observed-holiday list is 3-U1's. */}
-      <View className="gap-2">
-        <Label>{t('changeSheet.workedHolidayPremiumFieldLabel')}</Label>
-        <Input
-          testID="pay-setup-worked-holiday-multiplier-input"
-          accessibilityLabel={t('changeSheet.workedHolidayPremiumFieldLabel')}
-          value={workedHolidayMultiplierText}
-          onChangeText={setWorkedHolidayMultiplierText}
-          keyboardType="decimal-pad"
-        />
-        <Small className="text-muted-foreground">
-          {t('changeSheet.workedHolidayPremiumHint')}
-        </Small>
-      </View>
-
-      <View className="gap-2">
-        <Label>{t('changeSheet.mileageFieldLabel')}</Label>
-        <Input
-          testID="pay-setup-mileage-rate-input"
-          accessibilityLabel={t('changeSheet.mileageFieldLabel')}
-          value={mileageRateText}
-          onChangeText={setMileageRateText}
-          keyboardType="decimal-pad"
-        />
-        <Small className="text-muted-foreground">
-          {t('changeSheet.mileageHint')}
-        </Small>
-      </View>
+      {/* T10: the SAME date field the change sheet renders, so setup can no
+          longer accept a date the change flow would refuse. */}
+      <EffectiveDateField
+        testIDPrefix="pay-setup"
+        value={form.effectiveDateISO}
+        onChange={effectiveDateISO => patch({ effectiveDateISO })}
+        todayISO={todayISO}
+      />
 
       <View className="gap-2">
         <Label>{t('changeSheet.cancellationsFieldLabel')}</Label>
         <View className="flex-row flex-wrap gap-2">
           <Button
             testID="pay-setup-cancellation-chip-window"
-            variant={cancellationChoice === 'window' ? 'default' : 'outline'}
+            variant={
+              form.cancellationChoice === 'window' ? 'default' : 'outline'
+            }
             size="sm"
-            onPress={() => setCancellationChoice('window')}
+            onPress={() => patch({ cancellationChoice: 'window' })}
           >
             <Text>{t('changeSheet.cancellationWindowChip')}</Text>
           </Button>
           <Button
             testID="pay-setup-cancellation-chip-none"
-            variant={cancellationChoice === 'none' ? 'default' : 'outline'}
+            variant={form.cancellationChoice === 'none' ? 'default' : 'outline'}
             size="sm"
-            onPress={() => setCancellationChoice('none')}
+            onPress={() => patch({ cancellationChoice: 'none' })}
           >
             <Text>{t('changeSheet.cancellationNoneChip')}</Text>
           </Button>
         </View>
-        {cancellationChoice === 'window' ? (
+        {form.cancellationChoice === 'window' ? (
           <Input
             testID="pay-setup-cancellation-hours-input"
             accessibilityLabel={t('changeSheet.cancellationHoursLabel')}
-            value={cancellationHoursText}
-            onChangeText={setCancellationHoursText}
+            value={form.cancellationHoursText}
+            onChangeText={cancellationHoursText =>
+              patch({ cancellationHoursText })
+            }
             keyboardType="number-pad"
           />
         ) : null}
-        {cancellationChoice === null ? (
+        {form.cancellationChoice === null ? (
           <Small
             testID="pay-setup-cancellation-required-hint"
             className="text-muted-foreground"
@@ -567,15 +381,32 @@ export function PaySetupScreen() {
         ) : null}
       </View>
 
+      {/* No `seed` — there is no arrangement yet, so every group is closed
+          and D-6's weekly-equivalent line has nothing stored to render. */}
+      <PayTermsGroups
+        testIDPrefix="pay-setup"
+        state={form}
+        onChange={patch}
+        seed={null}
+        todayISO={todayISO}
+      />
+
+      {/* 082's pay schedule (D-17, T7 reversal) — presentation only, not part
+          of PayTermsGroups' D-3 expanders (spec §4.3 lists it as its own,
+          always-visible block, same as the required core). */}
       <PayScheduleFields
         testIDPrefix="pay-setup"
         t={t}
-        payFrequency={payFrequency}
-        onPayFrequencyChange={setPayFrequency}
-        payDayOfWeekText={payDayOfWeekText}
-        onPayDayOfWeekTextChange={setPayDayOfWeekText}
-        payDayOfMonthText={payDayOfMonthText}
-        onPayDayOfMonthTextChange={setPayDayOfMonthText}
+        payFrequency={form.payFrequency}
+        onPayFrequencyChange={payFrequency => patch({ payFrequency })}
+        payDayOfWeekText={form.payDayOfWeekText}
+        onPayDayOfWeekTextChange={payDayOfWeekText =>
+          patch({ payDayOfWeekText })
+        }
+        payDayOfMonthText={form.payDayOfMonthText}
+        onPayDayOfMonthTextChange={payDayOfMonthText =>
+          patch({ payDayOfMonthText })
+        }
       />
 
       <View className="gap-2">
@@ -583,8 +414,8 @@ export function PaySetupScreen() {
         <Textarea
           testID="pay-setup-note-input"
           accessibilityLabel={t('changeSheet.noteLabel')}
-          value={note}
-          onChangeText={setNote}
+          value={form.note}
+          onChangeText={note => patch({ note })}
           placeholder={t('changeSheet.notePlaceholder')}
         />
       </View>

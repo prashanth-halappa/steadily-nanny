@@ -9,8 +9,11 @@
  */
 import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 import { fireEvent, waitFor } from '@testing-library/react-native';
+import { mockAlertDialogPrimitive } from '@/src/domains/schedule/__tests__/mockAlertDialog';
 import { useAuthStore } from '@/src/store/auth';
 import { renderWithProviders } from '@/src/test-utils';
+
+mockAlertDialogPrimitive();
 
 let PayArrangementScreen: typeof import('../PayArrangementScreen').PayArrangementScreen;
 
@@ -153,11 +156,19 @@ mock.module('@/src/api/endpoints/household', () => ({
 mock.module('@/src/api/endpoints/user', () => ({
   userApi: { listMemberships: membershipsListMock },
 }));
+const listAcksMock = mock<() => Promise<unknown[]>>(() => Promise.resolve([]));
+const cancelScheduledMock = mock<
+  (h: string, c: string, a: string) => Promise<unknown>
+>(() => Promise.resolve({}));
 mock.module('@/src/api/endpoints/payArrangements', () => ({
   payArrangementApi: {
     getCurrent: payCurrentMock,
     getHistory: payHistoryMock,
     create: payCreateMock,
+    listAcks: listAcksMock,
+    ack: mock(),
+    dissent: mock(),
+    cancelScheduled: cancelScheduledMock,
   },
 }));
 const ptoBalanceMock = mock<() => Promise<unknown>>(() =>
@@ -179,11 +190,15 @@ beforeEach(() => {
   payCurrentMock.mockReset();
   payHistoryMock.mockReset();
   payCreateMock.mockReset();
+  listAcksMock.mockReset();
+  cancelScheduledMock.mockReset();
   ptoBalanceMock.mockReset();
   routerPush.mockClear();
   routerBack.mockClear();
   searchParams = {};
 
+  listAcksMock.mockImplementation(() => Promise.resolve([]));
+  cancelScheduledMock.mockImplementation(() => Promise.resolve({}));
   ptoBalanceMock.mockImplementation(() => Promise.resolve(null));
   listMock.mockImplementation(() => Promise.resolve([baseHousehold]));
   listMembersMock.mockImplementation(() =>
@@ -539,5 +554,155 @@ describe('PayArrangementScreen', () => {
       expect(row.props.accessibilityLabel).toBe('Priya');
       expect(row.props.hitSlop).toBe(8);
     });
+  });
+
+  // §8.4 — the parent's ack pill. Three states, and a disagreement outranks
+  // a seen. Never the word the 3-O proposal flow owns.
+  describe('acknowledgment pill (§8.4)', () => {
+    const ackRow = (kind: 'seen' | 'disagreed', created_at: string) => ({
+      id: `ack-${kind}`,
+      arrangement_id: `arr-${NANNY_A_ID}`,
+      carer_id: NANNY_A_ID,
+      kind,
+      note: kind === 'disagreed' ? 'The rate went down.' : null,
+      created_at,
+    });
+
+    beforeEach(() => {
+      payCurrentMock.mockImplementation(() =>
+        Promise.resolve(arrangementFor(NANNY_A_ID))
+      );
+    });
+
+    it('no ack row: the pill reads "Not seen yet"', async () => {
+      const { getByTestId } = renderWithProviders(<PayArrangementScreen />);
+
+      await waitFor(() =>
+        expect(getByTestId('pay-ack-pill-label').props.children).toBe(
+          'ack.notSeenYet'
+        )
+      );
+    });
+
+    it('a seen row: the pill reads the seen state', async () => {
+      listAcksMock.mockImplementation(() =>
+        Promise.resolve([ackRow('seen', '2026-08-11T09:00:00.000Z')])
+      );
+
+      const { getByTestId } = renderWithProviders(<PayArrangementScreen />);
+
+      await waitFor(() =>
+        expect(getByTestId('pay-ack-pill-label').props.children).toBe(
+          'ack.seen'
+        )
+      );
+    });
+
+    it('a disagreement outranks a seen when both exist', async () => {
+      listAcksMock.mockImplementation(() =>
+        Promise.resolve([
+          ackRow('seen', '2026-08-11T09:00:00.000Z'),
+          ackRow('disagreed', '2026-08-12T09:00:00.000Z'),
+        ])
+      );
+
+      const { getByTestId } = renderWithProviders(<PayArrangementScreen />);
+
+      await waitFor(() =>
+        expect(getByTestId('pay-ack-pill-label').props.children).toBe(
+          'ack.disagreed'
+        )
+      );
+    });
+  });
+
+  // §6 / D-16 — a `valid_from` in the future.
+  describe('scheduled future change (§6)', () => {
+    const scheduled = {
+      ...arrangementFor(NANNY_A_ID),
+      id: 'arr-scheduled',
+      rate_minor: 2000,
+      valid_from: '2099-01-01',
+    };
+
+    beforeEach(() => {
+      payCurrentMock.mockImplementation(() =>
+        Promise.resolve(arrangementFor(NANNY_A_ID))
+      );
+      payHistoryMock.mockImplementation(() =>
+        Promise.resolve([scheduled, arrangementFor(NANNY_A_ID)])
+      );
+    });
+
+    it('renders the scheduled-change card with a before → after summary', async () => {
+      const { getByTestId } = renderWithProviders(<PayArrangementScreen />);
+
+      await waitFor(() =>
+        expect(getByTestId('pay-scheduled-change-card')).toBeTruthy()
+      );
+      expect(getByTestId('pay-scheduled-diff').props.children).toContain(
+        '£18.50 → £20.00'
+      );
+    });
+
+    it('"Cancel this" asks first, and only then appends the revert row', async () => {
+      const { getByTestId } = renderWithProviders(<PayArrangementScreen />);
+
+      await waitFor(() =>
+        expect(getByTestId('pay-scheduled-cancel')).toBeTruthy()
+      );
+      fireEvent.press(getByTestId('pay-scheduled-cancel'));
+      expect(cancelScheduledMock).not.toHaveBeenCalled();
+
+      fireEvent.press(getByTestId('pay-scheduled-cancel-confirm'));
+
+      await waitFor(() =>
+        expect(cancelScheduledMock).toHaveBeenCalledWith(
+          HOUSEHOLD_ID,
+          NANNY_A_ID,
+          'arr-scheduled'
+        )
+      );
+    });
+
+    it('no future row: no scheduled-change card', async () => {
+      payHistoryMock.mockImplementation(() =>
+        Promise.resolve([arrangementFor(NANNY_A_ID)])
+      );
+
+      const { getByTestId, queryByTestId } = renderWithProviders(
+        <PayArrangementScreen />
+      );
+
+      await waitFor(() => expect(getByTestId('pay-current-rate')).toBeTruthy());
+      expect(queryByTestId('pay-scheduled-change-card')).toBeNull();
+    });
+  });
+
+  // §8.5 — history says what changed, via the same `buildTermsDiff` §7 uses.
+  it('history rows carry the diff against the previous version, oldest reading "First terms set"', async () => {
+    const older = {
+      ...arrangementFor(NANNY_A_ID),
+      id: 'arr-older',
+      rate_minor: 1600,
+      valid_from: '2026-01-01',
+    };
+    payCurrentMock.mockImplementation(() =>
+      Promise.resolve(arrangementFor(NANNY_A_ID))
+    );
+    payHistoryMock.mockImplementation(() =>
+      Promise.resolve([arrangementFor(NANNY_A_ID), older])
+    );
+
+    const { getByTestId } = renderWithProviders(<PayArrangementScreen />);
+
+    await waitFor(() =>
+      expect(
+        getByTestId(`pay-history-diff-arr-${NANNY_A_ID}`).props.children
+      ).toContain('£16.00 → £18.50')
+    );
+    expect(getByTestId('pay-history-diff-arr-older').props.children).toBe(
+      'history.firstTermsSet'
+    );
   });
 });

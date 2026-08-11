@@ -1008,6 +1008,50 @@ describe('WeekEarningsService.computeForWeek', () => {
     expect(result.status).toBe('no_arrangement');
   });
 
+  // D-16/§7.4 (M1) — the seam payArrangementCommandService uses to compare
+  // a week's gross under the OLD terms vs the NEW ones for the
+  // backdated-reduction walk-away fix.
+  describe('computeForWeekWithArrangements', () => {
+    it('prices the SUPPLIED arrangements, never fetching the repo’s own history', async () => {
+      const arrangementRepo = makeArrangementRepo();
+      const svc = makeWeekEarningsService({ arrangementRepo });
+
+      const result = await svc.computeForWeekWithArrangements(
+        HOUSEHOLD_ID,
+        CARER_ID,
+        WEEK_START,
+        [arrangement({ rate_minor: 2000 })]
+      );
+
+      expect(arrangementRepo.listForCarer).not.toHaveBeenCalled();
+      expect(result.status).toBe('ok');
+    });
+
+    it('the same week prices differently under two different arrangement lists — the before/after comparison', async () => {
+      const svc = makeWeekEarningsService();
+
+      const before = await svc.computeForWeekWithArrangements(
+        HOUSEHOLD_ID,
+        CARER_ID,
+        WEEK_START,
+        [arrangement({ rate_minor: 2000 })]
+      );
+      const after = await svc.computeForWeekWithArrangements(
+        HOUSEHOLD_ID,
+        CARER_ID,
+        WEEK_START,
+        [arrangement({ rate_minor: 1000 })]
+      );
+
+      expect(before.status).toBe('ok');
+      expect(after.status).toBe('ok');
+      expect(before.status === 'ok' && after.status === 'ok').toBe(true);
+      if (before.status === 'ok' && after.status === 'ok') {
+        expect(after.gross_minor).toBeLessThan(before.gross_minor);
+      }
+    });
+  });
+
   it('prices a plain worked week end to end', async () => {
     const svc = makeWeekEarningsService();
 

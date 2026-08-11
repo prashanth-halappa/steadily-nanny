@@ -123,11 +123,24 @@ mock.module('@/src/api/endpoints/household', () => ({
 mock.module('@/src/api/endpoints/user', () => ({
   userApi: { listMemberships: membershipsListMock },
 }));
+const payHistoryMock = mock<() => Promise<unknown[]>>(() =>
+  Promise.resolve([])
+);
+const listAcksMock = mock<() => Promise<unknown[]>>(() => Promise.resolve([]));
+const ackMock = mock<(h: string, c: string, a: string) => Promise<unknown>>(
+  () => Promise.resolve({})
+);
+const dissentMock = mock<
+  (h: string, c: string, a: string, note?: string) => Promise<unknown>
+>(() => Promise.resolve({}));
 mock.module('@/src/api/endpoints/payArrangements', () => ({
   payArrangementApi: {
     getCurrent: payCurrentMock,
-    getHistory: mock(() => Promise.resolve([])),
+    getHistory: payHistoryMock,
     create: mock(),
+    listAcks: listAcksMock,
+    ack: ackMock,
+    dissent: dissentMock,
   },
 }));
 const ptoBalanceMock = mock<() => Promise<unknown>>(() =>
@@ -147,9 +160,17 @@ beforeEach(() => {
   listPastMock.mockImplementation(() => Promise.resolve([]));
   membershipsListMock.mockReset();
   payCurrentMock.mockReset();
+  payHistoryMock.mockReset();
+  listAcksMock.mockReset();
+  ackMock.mockReset();
+  dissentMock.mockReset();
   ptoBalanceMock.mockReset();
   routerBack.mockClear();
 
+  payHistoryMock.mockImplementation(() => Promise.resolve([]));
+  listAcksMock.mockImplementation(() => Promise.resolve([]));
+  ackMock.mockImplementation(() => Promise.resolve({}));
+  dissentMock.mockImplementation(() => Promise.resolve({}));
   ptoBalanceMock.mockImplementation(() => Promise.resolve(null));
   listMock.mockImplementation(() => Promise.resolve([householdA, householdB]));
   membershipsListMock.mockImplementation(() =>
@@ -330,5 +351,117 @@ describe('MyPayScreen', () => {
       await findByTestId(`my-pay-household-${HOUSEHOLD_PAST}`)
     ).toBeTruthy();
     expect(await findByTestId(`my-pay-household-${HOUSEHOLD_A}`)).toBeTruthy();
+  });
+
+  // D-31/D-41, spec §8.2/§8.3. The state word is the load-bearing part: a
+  // 'seen' row must NEVER read as agreement anywhere on this screen.
+  describe('acknowledgment (D-31)', () => {
+    const ARRANGEMENT_A = `arr-${HOUSEHOLD_A}`;
+    const seenRow = {
+      id: 'ack-1',
+      arrangement_id: ARRANGEMENT_A,
+      carer_id: NANNY_ID,
+      kind: 'seen',
+      note: null,
+      created_at: '2026-08-11T09:00:00.000Z',
+    };
+
+    it('no ack row: the state word reads "Not seen yet" and both footer buttons are offered', async () => {
+      const { getByTestId } = renderWithProviders(<MyPayScreen />);
+
+      await waitFor(() =>
+        expect(
+          getByTestId(`my-pay-ack-state-${HOUSEHOLD_A}`).props.children
+        ).toBe('ack.notSeenYet')
+      );
+      expect(getByTestId(`my-pay-ack-seen-${HOUSEHOLD_A}`)).toBeTruthy();
+      expect(getByTestId(`my-pay-ack-disagree-${HOUSEHOLD_A}`)).toBeTruthy();
+    });
+
+    it('"I\'ve seen these terms" records the ack, and the prompt gives way to the seen state word', async () => {
+      let recorded = false;
+      listAcksMock.mockImplementation(() =>
+        Promise.resolve(recorded ? [seenRow] : [])
+      );
+      ackMock.mockImplementation(() => {
+        recorded = true;
+        return Promise.resolve(seenRow);
+      });
+
+      const { getByTestId, queryByTestId } = renderWithProviders(
+        <MyPayScreen />
+      );
+
+      await waitFor(() =>
+        expect(getByTestId(`my-pay-ack-seen-${HOUSEHOLD_A}`)).toBeTruthy()
+      );
+      fireEvent.press(getByTestId(`my-pay-ack-seen-${HOUSEHOLD_A}`));
+
+      await waitFor(() =>
+        expect(ackMock).toHaveBeenCalledWith(
+          HOUSEHOLD_A,
+          NANNY_ID,
+          ARRANGEMENT_A
+        )
+      );
+      await waitFor(() =>
+        expect(queryByTestId(`my-pay-ack-seen-${HOUSEHOLD_A}`)).toBeNull()
+      );
+      expect(
+        getByTestId(`my-pay-ack-state-${HOUSEHOLD_A}`).props.children
+      ).toBe('ack.seenBy');
+    });
+
+    it('"I don\'t agree with this" opens the dissent sheet and records her note', async () => {
+      const { getByTestId } = renderWithProviders(<MyPayScreen />);
+
+      await waitFor(() =>
+        expect(getByTestId(`my-pay-ack-disagree-${HOUSEHOLD_A}`)).toBeTruthy()
+      );
+      fireEvent.press(getByTestId(`my-pay-ack-disagree-${HOUSEHOLD_A}`));
+
+      const input = getByTestId(`my-pay-dissent-note-${HOUSEHOLD_A}`);
+      fireEvent.changeText(input, 'My rate went down without a conversation.');
+      fireEvent.press(getByTestId(`my-pay-dissent-submit-${HOUSEHOLD_A}`));
+
+      await waitFor(() =>
+        expect(dissentMock).toHaveBeenCalledWith(
+          HOUSEHOLD_A,
+          NANNY_ID,
+          ARRANGEMENT_A,
+          'My rate went down without a conversation.'
+        )
+      );
+    });
+  });
+
+  // §8.5 — the history says WHAT changed, computed by the same
+  // `buildTermsDiff` the change review uses.
+  it('history rows carry the diff against the previous version, and the oldest reads "First terms set"', async () => {
+    const older = {
+      ...arrangementFor(HOUSEHOLD_A),
+      id: 'arr-older',
+      rate_minor: 1600,
+      valid_from: '2026-01-01',
+    };
+    payHistoryMock.mockImplementation(() =>
+      Promise.resolve([arrangementFor(HOUSEHOLD_A), older])
+    );
+
+    const { getByTestId } = renderWithProviders(<MyPayScreen />);
+
+    await waitFor(() =>
+      expect(getByTestId(`my-pay-history-toggle-${HOUSEHOLD_A}`)).toBeTruthy()
+    );
+    fireEvent.press(getByTestId(`my-pay-history-toggle-${HOUSEHOLD_A}`));
+
+    await waitFor(() =>
+      expect(
+        getByTestId(`my-pay-history-diff-arr-${HOUSEHOLD_A}`).props.children
+      ).toContain('→')
+    );
+    expect(getByTestId('my-pay-history-diff-arr-older').props.children).toBe(
+      'history.firstTermsSet'
+    );
   });
 });

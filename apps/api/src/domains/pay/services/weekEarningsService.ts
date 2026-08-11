@@ -419,6 +419,38 @@ export class WeekEarningsService implements WeekEarningsComputer {
     carerId: string,
     weekStart: string
   ): Promise<WeekEarnings> {
+    const arrangements = await this.arrangementRepo.listForCarer(
+      householdId,
+      carerId
+    );
+    return this.priceWeek(householdId, carerId, weekStart, arrangements);
+  }
+
+  /**
+   * Same pricing, with the arrangement HISTORY supplied by the caller rather
+   * than fetched — the seam `payArrangementCommandService` uses for §7.4's
+   * backdated-reduction comparison (D-42/M1): price the SAME week once
+   * against the arrangements as they stood BEFORE a new row was appended and
+   * once AFTER, and compare the two `gross_minor` figures. Everything else
+   * (entries, PTO, expenses, holidays) is unaffected by which arrangement
+   * history is passed, so it is fetched once and reused for both calls —
+   * see `priceWeek`.
+   */
+  async computeForWeekWithArrangements(
+    householdId: string,
+    carerId: string,
+    weekStart: string,
+    arrangements: readonly PayArrangement[]
+  ): Promise<WeekEarnings> {
+    return this.priceWeek(householdId, carerId, weekStart, arrangements);
+  }
+
+  private async priceWeek(
+    householdId: string,
+    carerId: string,
+    weekStart: string,
+    arrangements: readonly PayArrangement[]
+  ): Promise<WeekEarnings> {
     // `listForCarerYear` is a CALENDAR-YEAR query (`043_pto_ledger.sql`'s PTO
     // year, owner decision 3), not a date-range one, so a week that spans a
     // year boundary (Mon 29 Dec .. Sun 4 Jan) needs both years fetched — the
@@ -429,35 +461,29 @@ export class WeekEarningsService implements WeekEarningsComputer {
     const endYear = Number(weekEnd.slice(0, 4));
     const ptoYears = startYear === endYear ? [startYear] : [startYear, endYear];
 
-    const [
-      entries,
-      arrangements,
-      ptoLedgerRowsPerYear,
-      expenses,
-      householdHolidays,
-    ] = await Promise.all([
-      this.timeEntryRepo.listForCarerWeek(
-        householdId,
-        carerId,
-        weekStart,
-        weekEndExclusive(weekStart)
-      ),
-      this.arrangementRepo.listForCarer(householdId, carerId),
-      Promise.all(
-        ptoYears.map(year =>
-          this.ptoRepo.listForCarerYear(householdId, carerId, year)
-        )
-      ),
-      this.expenseRepo.listApprovedForWeek(
-        householdId,
-        weekStart,
-        weekEndExclusive(weekStart)
-      ),
-      // Every toggle, unfiltered: the rows hold KEYS, and only
-      // `buildWeekEarningsInput` knows which keys land in this week. There
-      // are at most eleven of them per household.
-      this.holidayRepo.listForHousehold(householdId),
-    ]);
+    const [entries, ptoLedgerRowsPerYear, expenses, householdHolidays] =
+      await Promise.all([
+        this.timeEntryRepo.listForCarerWeek(
+          householdId,
+          carerId,
+          weekStart,
+          weekEndExclusive(weekStart)
+        ),
+        Promise.all(
+          ptoYears.map(year =>
+            this.ptoRepo.listForCarerYear(householdId, carerId, year)
+          )
+        ),
+        this.expenseRepo.listApprovedForWeek(
+          householdId,
+          weekStart,
+          weekEndExclusive(weekStart)
+        ),
+        // Every toggle, unfiltered: the rows hold KEYS, and only
+        // `buildWeekEarningsInput` knows which keys land in this week. There
+        // are at most eleven of them per household.
+        this.holidayRepo.listForHousehold(householdId),
+      ]);
 
     const ptoLedgerRows = ptoLedgerRowsPerYear.flat();
     // `listApprovedForWeek` is household-scoped only — narrowed to this carer

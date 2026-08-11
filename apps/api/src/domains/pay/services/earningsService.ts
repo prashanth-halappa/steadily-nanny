@@ -1029,3 +1029,80 @@ export function computeWeekEarnings(
     guaranteed_minutes_per_week: guaranteedMinutes,
   };
 }
+
+// =============================================================================
+// Salary framing (D-6, `docs/design/screens-pay-terms.md` §10)
+// =============================================================================
+
+/**
+ * The weekly-equivalent figure for an arrangement's guaranteed hours — D-6's
+ * "$1,400/wk guaranteed = $28 × 50h" framing, corrected per §10's own
+ * warning that the naive multiply is wrong the moment overtime exists.
+ *
+ * FORBIDDEN REFACTOR — DO NOT "SIMPLIFY" THIS TO `rate_minor * hours`.
+ * §10, verbatim: "A naive rate × hours multiply is forbidden anywhere in
+ * this app." That refactor passes every test written against a
+ * no-overtime fixture and is silently wrong the instant an arrangement has
+ * ANY overtime tier — the spec's own worked example is 50 guaranteed hours
+ * at $28.00/hr pricing as $1,540.00 (40 reg + 10 OT at 1.5x), not the naive
+ * $1,400.00. This function exists so the figure is priced through the SAME
+ * engine (`computeWeekEarnings`) that prices a real week, never a second
+ * formula that can drift from it (§10.1's non-duplication invariant is the
+ * engine's own, inherited for free by routing through it).
+ *
+ * `null` when there is no guarantee (or it is zero) — no guarantee, no line
+ * (§10: "It renders only when both a rate and guaranteed hours exist"),
+ * never a fabricated figure (T16).
+ *
+ * ASSUMES AN EVEN SPREAD across 5 consecutive days, starting on the
+ * arrangement's own `valid_from` — the same assumption the UI states out
+ * loud when a daily tier is set ("Assumes five 10-hour days. Longer days add
+ * daily overtime."). Starting on `valid_from` itself (never earlier) is what
+ * guarantees `effectiveOn` resolves every synthetic day to THIS arrangement
+ * and no other, whatever `valid_from` actually falls on.
+ */
+export function weeklyEquivalentMinor(
+  arrangement: PayArrangement
+): number | null {
+  const guaranteedMinutes = arrangement.guaranteed_minutes_per_week;
+  // `== null` (not `===`) deliberately: this also guards a malformed/partial
+  // fixture whose field is simply `undefined` — the moment there is nothing
+  // to spread, `arrangement.valid_from` is never touched either, so a
+  // fixture missing THAT too (a controller test's minimal stub, for
+  // instance) is equally safe.
+  if (guaranteedMinutes == null || guaranteedMinutes <= 0) {
+    return null;
+  }
+
+  const SPREAD_DAYS = 5;
+  const perDay = Math.floor(guaranteedMinutes / SPREAD_DAYS);
+  const remainder = guaranteedMinutes - perDay * SPREAD_DAYS;
+
+  const entries: EarningsTimeEntryInput[] = [];
+  for (let i = 0; i < SPREAD_DAYS; i++) {
+    // The remainder (guaranteedMinutes not evenly divisible by 5) lands on
+    // the last synthetic day — an arbitrary but deterministic choice; which
+    // day absorbs a handful of leftover minutes cannot change which OT tier
+    // the OTHER four already-even days fall in.
+    const minutes = perDay + (i === SPREAD_DAYS - 1 ? remainder : 0);
+    if (minutes <= 0) continue;
+    entries.push({
+      kind: TIME_ENTRY_KINDS.WORKED,
+      local_date: addDays(arrangement.valid_from, i),
+      minutes,
+    });
+  }
+
+  const result = computeWeekEarnings({
+    week_start: arrangement.valid_from,
+    entries,
+    arrangements: [arrangement],
+    pto_usage: [],
+    reimbursements: [],
+    observed_holidays: [],
+  });
+
+  return result.status === EARNINGS_RESULT_STATUSES.OK
+    ? result.gross_minor
+    : null;
+}
