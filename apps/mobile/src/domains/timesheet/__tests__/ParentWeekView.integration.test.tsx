@@ -16,7 +16,22 @@
 // load with 0 tests run. It is timing-dependent, so it surfaced as an
 // intermittent gate failure that passed on re-run.
 
-import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
+import {
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  mock,
+  setDefaultTimeout,
+} from 'bun:test';
+
+// This file's waitFor(() => …toBeNull()) assertions legitimately take 4–12s
+// under CPU contention (parallel qc subshells), tipping over bun's default 5s
+// per-test budget intermittently. The slowness is scheduler contention, not a
+// hang — raise the budget for this file only.
+setDefaultTimeout(30_000);
+
 import type { Expense } from '@steadily-nanny/shared-types/schemas/expense.schema';
 import * as expenseSchemaModule from '@steadily-nanny/shared-types/schemas/expense.schema';
 import * as timesheetSchemaModule from '@steadily-nanny/shared-types/schemas/timesheet.schema';
