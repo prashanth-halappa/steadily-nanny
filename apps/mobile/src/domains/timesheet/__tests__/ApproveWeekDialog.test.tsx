@@ -262,6 +262,98 @@ describe('ApproveWeekDialog', () => {
     );
   });
 
+  // §11.4 / D-5's fast path — refined by §11.1.1's owner-decided predicate.
+  it('forks to the nothing-unusual body when the server says so', () => {
+    const { getByTestId } = render(
+      <ApproveWeekDialog
+        open
+        onOpenChange={() => {}}
+        onConfirm={() => {}}
+        isSubmitting={false}
+        weekRangeLabel="3 – 9 August"
+        hoursLabel="41h 00m"
+        grossLabel="£236.12"
+        earningsStatus="ok"
+        carerName="Amara"
+        adjustmentLabel={null}
+        nothingUnusual
+      />
+    );
+
+    expect(getByTestId('hours-approve-dialog-body').props.children).toBe(
+      'approveDialogBodyNothingUnusual'
+    );
+  });
+
+  it('keeps the plain body when nothingUnusual is false or unset', () => {
+    const { getByTestId } = render(
+      <ApproveWeekDialog
+        open
+        onOpenChange={() => {}}
+        onConfirm={() => {}}
+        isSubmitting={false}
+        weekRangeLabel="3 – 9 August"
+        hoursLabel="41h 00m"
+        grossLabel="£236.12"
+        earningsStatus="ok"
+        carerName="Amara"
+        adjustmentLabel={null}
+        nothingUnusual={false}
+      />
+    );
+
+    expect(getByTestId('hours-approve-dialog-body').props.children).toBe(
+      'approveDialogBody'
+    );
+  });
+
+  it('never claims nothing-unusual on a week with a staged adjustment', () => {
+    const { getByTestId } = render(
+      <ApproveWeekDialog
+        open
+        onOpenChange={() => {}}
+        onConfirm={() => {}}
+        isSubmitting={false}
+        weekRangeLabel="3 – 9 August"
+        hoursLabel="41h 00m"
+        grossLabel="£216.12"
+        earningsStatus="ok"
+        carerName="Amara"
+        adjustmentLabel="£20.00"
+        adjustmentDirection="deducted"
+        nothingUnusual
+      />
+    );
+
+    // The staged adjustment is decided THIS approval — the server's
+    // nothing_unusual read predates it and cannot know about it.
+    expect(getByTestId('hours-approve-dialog-body').props.children).toBe(
+      'approveDialogBodyAdjustmentDeducted'
+    );
+  });
+
+  it('never claims nothing-unusual outside the ok earnings status', () => {
+    const { getByTestId } = render(
+      <ApproveWeekDialog
+        open
+        onOpenChange={() => {}}
+        onConfirm={() => {}}
+        isSubmitting={false}
+        weekRangeLabel="3 – 9 August"
+        hoursLabel="41h 00m"
+        grossLabel={null}
+        earningsStatus="no_arrangement"
+        carerName="Amara"
+        adjustmentLabel={null}
+        nothingUnusual
+      />
+    );
+
+    expect(getByTestId('hours-approve-dialog-body').props.children).toBe(
+      'approveDialogBodyNoArrangement'
+    );
+  });
+
   it('renders nothing (dialog closed) when open is false', () => {
     const { queryByTestId } = render(
       <ApproveWeekDialog

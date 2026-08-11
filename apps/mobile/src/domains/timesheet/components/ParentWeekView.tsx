@@ -952,6 +952,7 @@ export function ParentWeekView({
               earningsError={timesheetQuery.isError}
               onRetryEarnings={() => void timesheetQuery.refetch()}
               onPressBreakdown={() => setBreakdownWeek(weekStartISO)}
+              nothingUnusual={timesheet?.nothing_unusual ?? null}
               paidState={showSettlementHistory ? paidState : null}
               payments={payments}
               settlementCurrency={settlementCurrency}
@@ -1091,6 +1092,7 @@ export function ParentWeekView({
         carerName={approveDialogCarerName}
         adjustmentLabel={adjustmentLabel}
         adjustmentDirection={adjustmentDirection}
+        nothingUnusual={timesheet?.nothing_unusual ?? null}
       />
 
       <WithdrawQueryDialog

@@ -165,7 +165,7 @@ describe('ShiftCommandService.decline — pushes', () => {
     // this from the lock screen. "The nanny declined a pending shift." told
     // them nothing — not who, not when, not which child.
     expect(payload.body).toBe(
-      'Ines turned down Mon 3 Aug, 9:00 am–6:00 pm (Ada).'
+      'Ines turned down Mon Aug 3, 9:00 am–6:00 pm (Ada).'
     );
     expect(payload.data).toEqual({
       type: PUSH_NOTIFICATION_TYPES.COVER_ASK_DECLINED,

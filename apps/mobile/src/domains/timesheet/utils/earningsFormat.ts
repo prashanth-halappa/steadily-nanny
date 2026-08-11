@@ -23,6 +23,12 @@
  * both depend on).
  */
 import i18n from '@/src/i18n';
+import type { WeekEarningsOk } from '../types';
+import {
+  EARNINGS_LINE_KINDS,
+  humanizeEarningsLineKind,
+  isKnownEarningsLineKind,
+} from '../types';
 
 /** UTC-anchored `yyyy-mm-dd` -> `Date`, same house convention as
  * `domains/timesheet/utils/week.ts` (never `new Date(isoString)` parsing,
@@ -68,7 +74,7 @@ export function formatEarningsDuration(totalMinutes: number): string {
 /**
  * "Wed 3 Sep" — weekday + day + month abbreviation, no year. The mid-week
  * split sub-line's date-span format ("12h 00m at £18.50 (to Wed 3 Sep)"),
- * distinct from `formatShortDate`'s "4 Aug" (no weekday, used on the pay
+ * distinct from `formatShortDate`'s "Aug 4" (no weekday, used on the pay
  * arrangement screens where the week isn't the point).
  */
 export function formatEarningsSpanDate(dateISO: string): string {
@@ -99,4 +105,63 @@ export function formatEarningsLongDate(dateISO: string): string {
  */
 export function formatEarningsMultiplier(multiplier: number): string {
   return new Intl.NumberFormat(i18n.language).format(multiplier);
+}
+
+/** Short kind label i18n key — `hours.json`'s `earningsStructureKind*`. */
+const SHORT_KIND_KEYS: Partial<Record<string, string>> = {
+  [EARNINGS_LINE_KINDS.REGULAR]: 'earningsStructureKindRegular',
+  [EARNINGS_LINE_KINDS.OVERTIME]: 'earningsStructureKindOvertime',
+  [EARNINGS_LINE_KINDS.DOUBLETIME]: 'earningsStructureKindDoubletime',
+  [EARNINGS_LINE_KINDS.HOLIDAY_PREMIUM]: 'earningsStructureKindHolidayPremium',
+  [EARNINGS_LINE_KINDS.CANCELLATION_PAID]:
+    'earningsStructureKindCancellationPaid',
+  [EARNINGS_LINE_KINDS.PTO]: 'earningsStructureKindPto',
+  [EARNINGS_LINE_KINDS.GUARANTEED_TOPUP]:
+    'earningsStructureKindGuaranteedTopup',
+};
+
+/**
+ * "53h = 40 reg + 12 OT + 1 DT" — `docs/design/screens-pay-terms.md` §11.1,
+ * D-4's collapsed one-liner. Derived from the SAME `earnings.lines` the
+ * breakdown sheet renders (never a second computation) — walks the lines in
+ * their given wire order (already `EARNINGS_LINE_ORDER`-then-chronological),
+ * summing minutes per kind, first-seen order.
+ *
+ * `reimbursements` is excluded — the same denylist `EarningsBreakdownSheet`
+ * applies, since it never rendered as a priced kind either. A kind this app
+ * has no short label for still gets one (`humanizeEarningsLineKind`), so a
+ * new kind never blanks this line — same tolerance §2.5 requires everywhere
+ * else on this screen.
+ *
+ * Each part is rounded to the nearest whole hour BEFORE summing, and the
+ * headline total is the SUM of those rounded parts (never rounded
+ * independently) — so "53h" always equals "40 + 12 + 1", never a total that
+ * disagrees with its own breakdown by a minute of rounding.
+ *
+ * `null` only when the week has no priced minutes at all (nothing to show).
+ */
+export function earningsStructureLine(earnings: WeekEarningsOk): string | null {
+  const minutesByKind = new Map<string, number>();
+  const order: string[] = [];
+  for (const l of earnings.lines) {
+    if (l.kind === EARNINGS_LINE_KINDS.REIMBURSEMENTS) continue;
+    if (l.minutes <= 0) continue;
+    if (!minutesByKind.has(l.kind)) order.push(l.kind);
+    minutesByKind.set(l.kind, (minutesByKind.get(l.kind) ?? 0) + l.minutes);
+  }
+  if (order.length === 0) return null;
+
+  const parts = order.map(kind => {
+    const hours = Math.round((minutesByKind.get(kind) ?? 0) / 60);
+    const label = isKnownEarningsLineKind(kind)
+      ? i18n.t(`hours:${SHORT_KIND_KEYS[kind]}`)
+      : humanizeEarningsLineKind(kind);
+    return { hours, label };
+  });
+  const totalHours = parts.reduce((sum, part) => sum + part.hours, 0);
+
+  return i18n.t('hours:earningsStructureLine', {
+    hours: totalHours,
+    parts: parts.map(part => `${part.hours} ${part.label}`).join(' + '),
+  });
 }

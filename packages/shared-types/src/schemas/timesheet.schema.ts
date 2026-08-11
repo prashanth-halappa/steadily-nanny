@@ -835,6 +835,24 @@ export const WeekEarningsStateSchema = z.discriminatedUnion('status', [
  */
 export const TimesheetWeekSchema = TimesheetSchema.extend({
   earnings: WeekEarningsStateSchema,
+  /**
+   * D-5 / `docs/design/screens-pay-terms.md` §11.1.1's "nothing unusual this
+   * week" fast path — true only when EVERY owner-decided criterion holds
+   * (no edited/ad-hoc/off-pattern entry, no open query, no expense or
+   * reimbursement, no arrangement change inside the week, and the gross
+   * sits within a small band of the trailing four-week median). Computed
+   * fresh on every read, next to the engine — NOT part of `earnings`, and
+   * deliberately so: `earnings` is also the frozen-snapshot jsonb format
+   * re-parsed on every read (`SnapshotFormatVersionSchema`), and this is a
+   * live judgement about "does last week's context still apply", never a
+   * fact worth freezing into a signed week.
+   *
+   * `null` when the week isn't in the `ok` earnings state (nothing to
+   * compare) or there isn't enough history yet. `.optional()` so an older
+   * server response (or a client fixture predating this field) still
+   * parses — same backward-compatibility shape as `adjustment` above.
+   */
+  nothing_unusual: z.boolean().nullable().optional(),
 });
 
 /**

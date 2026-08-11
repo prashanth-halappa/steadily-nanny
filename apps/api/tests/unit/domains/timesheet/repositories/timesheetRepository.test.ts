@@ -13,6 +13,9 @@ function createMockQueryChain(
     select: mock(() => chain),
     eq: mock(() => chain),
     in: mock(() => chain),
+    lt: mock(() => chain),
+    not: mock(() => chain),
+    limit: mock(() => chain),
     order: mock(() => chain),
     insert: mock(() => chain),
     update: mock(() => chain),
@@ -96,6 +99,52 @@ describe('TimesheetRepository.listForHousehold', () => {
     const rows = await repo.listForHousehold('h1');
     expect(rows[0].household_member_id).toBe('member-1');
     expect(chain.select).toHaveBeenCalledWith('*');
+  });
+});
+
+// §11.1.1's trailing-four-week median baseline for the "nothing unusual this
+// week" fast path (`nothingUnusualService.ts`).
+describe('TimesheetRepository.recentApprovedGross', () => {
+  it('returns the frozen gross_minor values, most recent week first', async () => {
+    const rows = [{ gross_minor: 15_400 }, { gross_minor: 15_600 }];
+    const chain = createMockQueryChain({ data: rows, error: null });
+    mockSupabaseService.from.mockImplementation(() => chain);
+    const repo = new TimesheetRepository();
+    const result = await repo.recentApprovedGross(
+      'h1',
+      'carer-1',
+      '2026-08-10',
+      4
+    );
+    expect(result).toEqual([15_400, 15_600]);
+    expect(chain.eq).toHaveBeenCalledWith('status', 'approved');
+    expect(chain.lt).toHaveBeenCalledWith('week_start', '2026-08-10');
+    expect(chain.limit).toHaveBeenCalledWith(4);
+  });
+
+  it('drops legacy rows with a NULL gross_minor rather than treating them as zero', async () => {
+    const rows = [{ gross_minor: 15_400 }, { gross_minor: null }];
+    mockSupabaseService.from.mockImplementation(() =>
+      createMockQueryChain({ data: rows, error: null })
+    );
+    const repo = new TimesheetRepository();
+    const result = await repo.recentApprovedGross(
+      'h1',
+      'carer-1',
+      '2026-08-10',
+      4
+    );
+    expect(result).toEqual([15_400]);
+  });
+
+  it('returns [] when there is no history yet', async () => {
+    mockSupabaseService.from.mockImplementation(() =>
+      createMockQueryChain({ data: null, error: null })
+    );
+    const repo = new TimesheetRepository();
+    expect(
+      await repo.recentApprovedGross('h1', 'carer-1', '2026-08-10', 4)
+    ).toEqual([]);
   });
 });
 

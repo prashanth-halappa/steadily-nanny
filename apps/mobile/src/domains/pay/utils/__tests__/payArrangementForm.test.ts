@@ -5,7 +5,8 @@
  * TIER0-PLAN.md flags for this slice (mid-week rate split, no-future-dates,
  * the household-window-0-maps-to-no-pay rule).
  */
-import { describe, expect, it } from 'bun:test';
+import { afterEach, describe, expect, it } from 'bun:test';
+import i18n from '@/src/i18n';
 import {
   buildCreatePayArrangementRequest,
   buildMidWeekConsequence,
@@ -85,17 +86,30 @@ describe('isWeekStartDay', () => {
   });
 });
 
+// §2.6 / D-4 — en-US, month-before-day, locale-aware (was hand-rolled
+// en-GB-shaped arrays).
 describe('formatWeekdayLong / formatShortDate / formatDisplayDateWithYear', () => {
-  it('formats a full weekday date', () => {
-    expect(formatWeekdayLong('2026-09-03')).toBe('Thursday 3 September');
+  afterEach(async () => {
+    await i18n.changeLanguage('en');
   });
 
-  it('formats a short no-year date', () => {
-    expect(formatShortDate('2026-08-04')).toBe('4 Aug');
+  it('formats a full weekday date, en-US order', () => {
+    expect(formatWeekdayLong('2026-09-03')).toBe('Thursday, September 3');
   });
 
-  it('formats a date with year', () => {
-    expect(formatDisplayDateWithYear('2026-04-01')).toBe('1 Apr 2026');
+  it('formats a short no-year date, month before day', () => {
+    expect(formatShortDate('2026-08-04')).toBe('Aug 4');
+  });
+
+  it('formats a date with year, month before day', () => {
+    expect(formatDisplayDateWithYear('2026-04-01')).toBe('Apr 1, 2026');
+  });
+
+  it('localises to Spanish word order and names, not just the words', async () => {
+    await i18n.changeLanguage('es');
+    expect(formatWeekdayLong('2026-09-03')).toBe('jueves, 3 de septiembre');
+    expect(formatShortDate('2026-08-04')).toBe('4 ago');
+    expect(formatDisplayDateWithYear('2026-04-01')).toBe('1 abr 2026');
   });
 });
 
@@ -680,9 +694,9 @@ describe('buildMidWeekConsequence', () => {
     );
     expect(result).toEqual({
       oldRateLabel: '£18.50',
-      oldUntilLabel: 'Thursday 3 September',
+      oldUntilLabel: 'Thursday, September 3',
       newRateLabel: '£19.50',
-      newFromLabel: 'Friday 4 September',
+      newFromLabel: 'Friday, September 4',
     });
   });
 

@@ -328,14 +328,14 @@ function resolveChildNameForShift(
 
 /**
  * Exported for `uncoveredDigestJob`, which reuses this exact date copy.
- * `locale` defaults to `en-GB` (unchanged for every existing caller) — A10
- * passes the recipient's resolved locale so the digest can render this in
- * their own language.
+ * `locale` defaults to `en-US` per §2.6's sweep (month-before-day, "Thu Aug
+ * 9" — was `en-GB`'s "Thu 9 Aug") — A10 passes the recipient's resolved
+ * locale so the digest can render this in their own language.
  */
 export function formatPushShortDate(
   localDate: string,
   timeZone: string,
-  locale = 'en-GB'
+  locale = 'en-US'
 ): string {
   try {
     const formatted = new Intl.DateTimeFormat(locale, {

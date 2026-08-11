@@ -20,11 +20,13 @@
  * conflict, no native window.
  */
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Pressable, View } from 'react-native';
 import { Check } from '@/lib/icons/Check';
 import { ChevronDown } from '@/lib/icons/ChevronDown';
 import { ChevronUp } from '@/lib/icons/ChevronUp';
 import { cn } from '@/lib/utils';
+import { Input } from '@/src/components/ui/input';
 import { Body, Small } from '@/src/components/ui/typography';
 import i18n from '@/src/i18n';
 import { getDeviceCurrency } from '@/src/lib/deviceLocale';
@@ -35,10 +37,12 @@ import { currencySymbol } from '@/src/lib/money';
  * so a long list is scannable; the device's own currency is pinned to the top
  * by `currencyOptions()` below.
  *
- * ponytail: a curated list, not all ~180 ISO-4217 codes. A full list needs a
- * search field, and the device currency is always present regardless, so the
- * only person this fails is someone paying in a currency that is neither their
- * phone's nor one of these. Add the code here when that person turns up.
+ * ponytail: a curated list, not all ~180 ISO-4217 codes (T13). The search
+ * field below narrows WITHIN this list, it does not widen it — the device
+ * currency is always present regardless, so the only person this still fails
+ * is someone paying in a currency that is neither their phone's nor one of
+ * these. Add the code here when that person turns up; a genuinely open list
+ * is the upgrade path if that keeps happening.
  */
 const CURATED_CURRENCIES = [
   'AED',
@@ -128,9 +132,27 @@ export function CurrencySelect({
   onChange,
   testIDPrefix,
 }: CurrencySelectProps) {
+  const { t } = useTranslation('pay');
   const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
   const selectedName = currencyName(value);
   const Chevron = open ? ChevronUp : ChevronDown;
+
+  // T13 — narrows the CURATED list by code or localized name, never widens
+  // it (see the module header's ponytail note). Case/diacritic-insensitive
+  // via a plain lowercase compare — the curated codes and English/Spanish
+  // currency names this app ships have no case-folding edge cases worth a
+  // heavier normalisation.
+  const query = search.trim().toLowerCase();
+  const filteredOptions = query
+    ? currencyOptions().filter(code => {
+        const name = currencyName(code);
+        return (
+          code.toLowerCase().includes(query) ||
+          (name?.toLowerCase().includes(query) ?? false)
+        );
+      })
+    : currencyOptions();
 
   return (
     <View className="gap-2">
@@ -139,7 +161,15 @@ export function CurrencySelect({
         accessibilityRole="button"
         accessibilityState={{ expanded: open }}
         accessibilityLabel={selectedName ?? value}
-        onPress={() => setOpen(wasOpen => !wasOpen)}
+        onPress={() =>
+          setOpen(wasOpen => {
+            // Reopening always starts from a clear search — a filter left
+            // over from the last time this closed would silently hide
+            // options the next open, which reads as a bug, not a feature.
+            if (wasOpen) setSearch('');
+            return !wasOpen;
+          })
+        }
         className="h-12 flex-row items-center justify-between rounded-2xl border border-input bg-background px-4"
       >
         <Body>
@@ -151,41 +181,61 @@ export function CurrencySelect({
       </Pressable>
 
       {open ? (
-        <View
-          testID={`${testIDPrefix}-currency-list`}
-          className="overflow-hidden rounded-2xl border border-border"
-        >
-          {currencyOptions().map(code => {
-            const selected = code === value;
-            const name = currencyName(code);
-            return (
-              <Pressable
-                key={code}
-                testID={`${testIDPrefix}-currency-${code}`}
-                accessibilityRole="button"
-                accessibilityState={{ selected }}
-                accessibilityLabel={name ?? code}
-                onPress={() => {
-                  onChange(code);
-                  setOpen(false);
-                }}
-                className={cn(
-                  'flex-row items-center justify-between px-4 py-3',
-                  selected && 'bg-secondary'
-                )}
+        <View className="gap-2">
+          <Input
+            testID={`${testIDPrefix}-currency-search`}
+            value={search}
+            onChangeText={setSearch}
+            placeholder={t('currencySearchPlaceholder')}
+            accessibilityLabel={t('currencySearchPlaceholder')}
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+          <View
+            testID={`${testIDPrefix}-currency-list`}
+            className="overflow-hidden rounded-2xl border border-border"
+          >
+            {filteredOptions.length === 0 ? (
+              <Small
+                testID={`${testIDPrefix}-currency-search-empty`}
+                className="px-4 py-3 text-muted-foreground"
               >
-                <View className="flex-1 pr-2">
-                  <Body>{currencyLabel(code)}</Body>
-                  {name ? (
-                    <Small className="text-muted-foreground">{name}</Small>
+                {t('currencySearchEmpty')}
+              </Small>
+            ) : null}
+            {filteredOptions.map(code => {
+              const selected = code === value;
+              const name = currencyName(code);
+              return (
+                <Pressable
+                  key={code}
+                  testID={`${testIDPrefix}-currency-${code}`}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected }}
+                  accessibilityLabel={name ?? code}
+                  onPress={() => {
+                    onChange(code);
+                    setOpen(false);
+                    setSearch('');
+                  }}
+                  className={cn(
+                    'flex-row items-center justify-between px-4 py-3',
+                    selected && 'bg-secondary'
+                  )}
+                >
+                  <View className="flex-1 pr-2">
+                    <Body>{currencyLabel(code)}</Body>
+                    {name ? (
+                      <Small className="text-muted-foreground">{name}</Small>
+                    ) : null}
+                  </View>
+                  {selected ? (
+                    <Check size={16} className="text-foreground" />
                   ) : null}
-                </View>
-                {selected ? (
-                  <Check size={16} className="text-foreground" />
-                ) : null}
-              </Pressable>
-            );
-          })}
+                </Pressable>
+              );
+            })}
+          </View>
         </View>
       ) : null}
     </View>

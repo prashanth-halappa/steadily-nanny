@@ -29,12 +29,17 @@
  *   alone — a topup line is the only way gross can be non-zero on a
  *   zero-hours week.
  *
- * The rate sub-line ("38h 30m × £12.00") is shown ONLY when the whole week
- * priced at a single rate. A week that crosses a raise, or carries overtime
- * at a multiplier, has no single "× rate" that is true — and the one thing
- * this screen may never do is state a number nobody owes (docs/11-MONEY.md).
- * The breakdown sheet says the rest.
+ * The sub-line under the gross ("38h 30m × £12.00") shows the single true
+ * rate ONLY when the whole week priced at one — a week that crosses a raise,
+ * or carries overtime at a multiplier, has no single "× rate" that is true.
+ * Every other priced week gets `earningsStructureLine` instead ("53h = 40
+ * reg + 12 OT + 1 DT", docs/design/screens-pay-terms.md §11.1, D-4) — always
+ * producible from the SAME `earnings.lines` the breakdown sheet renders, so
+ * this slot never just disappears on exactly the complicated weeks the way
+ * it used to. When the server judges the week "nothing unusual" (§11.1.1),
+ * either form gets " · nothing unusual this week" appended.
  *
+
  * The reopen-reason caption is NOT rendered here — it is a timesheet-status
  * fact owned by `WeekTotal`, so it survives every early return above.
  */
@@ -54,7 +59,10 @@ import {
   HOURS_ONLY_REASONS,
   WEEK_EARNINGS_STATES,
 } from '../types';
-import { formatEarningsDuration } from '../utils/earningsFormat';
+import {
+  earningsStructureLine,
+  formatEarningsDuration,
+} from '../utils/earningsFormat';
 
 export type EarningsRole = 'parent' | 'nanny';
 
@@ -134,6 +142,12 @@ interface WeekEarningsLineProps {
   /** Opens the breakdown sheet — only wired when the section is actually
    * tappable (the `ok` arm). */
   onPress?: () => void;
+  /** D-5/§11.1.1's "nothing unusual this week" fast-path clause — a SIBLING
+   * field on the week response (`timesheet.nothing_unusual`), never part of
+   * `earnings` itself (that shape is also the frozen-snapshot format, and
+   * this boolean is a live server judgement, not a fact worth freezing).
+   * `null`/`undefined`/`false` all render no clause. */
+  nothingUnusual?: boolean | null;
 }
 
 /** "38h 30m × £12.00", or null when the week has no single true rate. */
@@ -168,6 +182,7 @@ export function WeekEarningsLine({
   earningsError = false,
   onRetryEarnings,
   onPress,
+  nothingUnusual = null,
 }: WeekEarningsLineProps) {
   const { t } = useTranslation('hours');
   const router = useRouter();
@@ -291,6 +306,21 @@ export function WeekEarningsLine({
         }
       : undefined;
   const isZeroHoursWeek = Math.round(totalMinutes) <= 0;
+  // §11.1: the single true rate keeps its more readable form when one
+  // exists; otherwise the structure line — always producible, walking the
+  // SAME `earnings.lines` the breakdown sheet renders — fills the same slot
+  // that used to just disappear on exactly the complicated weeks.
+  const sublineText = subline
+    ? t('earningsRateSubline', {
+        duration: subline.duration,
+        rate: subline.rate,
+      })
+    : earningsStructureLine(earnings);
+  const sublineWithClause = sublineText
+    ? nothingUnusual
+      ? `${sublineText} · ${t('earningsNothingUnusualSuffix')}`
+      : sublineText
+    : null;
   // Carer name goes in the a11y label only — never the visible label text
   // (deliberate; see `carerName`'s doc comment above).
   const accessibilityLabel = carerName
@@ -312,12 +342,9 @@ export function WeekEarningsLine({
       >
         {amount}
       </Figure28>
-      {subline ? (
+      {sublineWithClause ? (
         <Small testID={`${testID}-rate`} className="text-muted-foreground">
-          {t('earningsRateSubline', {
-            duration: subline.duration,
-            rate: subline.rate,
-          })}
+          {sublineWithClause}
         </Small>
       ) : null}
       <AnimatedPressable

@@ -415,11 +415,12 @@ function finishSentence(body: string): string {
 /**
  * `SupportedLocale` ('en'/'es') is the i18n catalog key; these map it to the
  * Intl BCP-47 tag `formatPushShortDate`/`formatPushTime12h` already default
- * to for every OTHER (English-only) caller — `en-GB` for dates (day-before-
- * month), `en-US` for 12h time (existing lowercase am/pm). Spanish uses the
- * same tag for both; extend this if a future locale needs to diverge.
+ * to for every OTHER (English-only) caller — `en-US` for dates (month-
+ * before-day, §2.6) and for 12h time (existing lowercase am/pm). Spanish
+ * uses the same tag for both; extend this if a future locale needs to
+ * diverge.
  */
-const INTL_DATE_LOCALE: Record<string, string> = { en: 'en-GB', es: 'es' };
+const INTL_DATE_LOCALE: Record<string, string> = { en: 'en-US', es: 'es' };
 const INTL_TIME_LOCALE: Record<string, string> = { en: 'en-US', es: 'es' };
 
 function buildSingleWindowBody(

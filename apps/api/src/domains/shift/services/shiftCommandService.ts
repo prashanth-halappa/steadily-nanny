@@ -727,9 +727,13 @@ export class ShiftCommandService {
 // Singleton for controllers/routes that don't need DI.
 export const shiftCommandService = new ShiftCommandService();
 
+// en-US, month-before-day ("Mon Aug 10") per §2.6 — `Intl` prints the
+// weekday with a trailing comma in this locale ("Mon, Aug 10"), which the
+// `.replace(',', '')` below already strips (it predates this locale swap,
+// written as a no-op guard against exactly this).
 function formatPushShortDate(localDate: string, timeZone: string): string {
   try {
-    const formatted = new Intl.DateTimeFormat('en-GB', {
+    const formatted = new Intl.DateTimeFormat('en-US', {
       timeZone,
       weekday: 'short',
       day: 'numeric',
@@ -768,10 +772,12 @@ function formatPushTime12h(instantIso: string, timeZone: string): string {
   }
 }
 
+// `hourCycle: 'h23'` forces 24h regardless of locale — the locale swap below
+// is for consistency (§2.6's sweep), not a visible output change.
 function formatPushTimePlain(instantIso: string, timeZone: string): string {
   const instant = new Date(instantIso);
   try {
-    const parts = new Intl.DateTimeFormat('en-GB', {
+    const parts = new Intl.DateTimeFormat('en-US', {
       timeZone,
       hour: 'numeric',
       minute: '2-digit',
@@ -781,7 +787,7 @@ function formatPushTimePlain(instantIso: string, timeZone: string): string {
     const minute = parts.find(part => part.type === 'minute')?.value ?? '00';
     return `${hour}:${minute}`;
   } catch {
-    const parts = new Intl.DateTimeFormat('en-GB', {
+    const parts = new Intl.DateTimeFormat('en-US', {
       timeZone: 'UTC',
       hour: 'numeric',
       minute: '2-digit',

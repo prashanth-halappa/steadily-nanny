@@ -3,7 +3,8 @@
  *
  * Pure date/number helpers + the one function that turns typed form state
  * into a `CreatePayArrangementRequest` (or `null` when anything is invalid).
- * Kept dependency-free from React so it is exhaustively unit-testable
+ * Kept dependency-free from React (the `i18n` singleton import is not React
+ * and carries no component lifecycle) so it is exhaustively unit-testable
  * (docs/TIER0-CX-SPEC.md §1's money discipline: "never Math.round(x * 100)
  * on a float without the string path" applies just as much to dates here —
  * every date is a nominal "yyyy-mm-dd" string, resolved with an explicit
@@ -20,50 +21,11 @@ import type {
   CreatePayArrangementRequest,
   PayFrequency,
 } from '@steadily-nanny/shared-types/schemas/payArrangement.schema';
+import i18n from '@/src/i18n';
 import { addLocalDays } from '@/src/lib/localDate';
 import { formatMoney, parseMajorToMinor } from '@/src/lib/money';
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-
-const WEEKDAYS_LONG = [
-  'Sunday',
-  'Monday',
-  'Tuesday',
-  'Wednesday',
-  'Thursday',
-  'Friday',
-  'Saturday',
-] as const;
-
-const MONTHS_LONG = [
-  'January',
-  'February',
-  'March',
-  'April',
-  'May',
-  'June',
-  'July',
-  'August',
-  'September',
-  'October',
-  'November',
-  'December',
-] as const;
-
-const MONTHS_ABBR = [
-  'Jan',
-  'Feb',
-  'Mar',
-  'Apr',
-  'May',
-  'Jun',
-  'Jul',
-  'Aug',
-  'Sep',
-  'Oct',
-  'Nov',
-  'Dec',
-] as const;
 
 /** A local (non-UTC-shifting) `Date` for a nominal "yyyy-mm-dd" string. */
 function toLocalDate(dateISO: string): Date {
@@ -96,27 +58,45 @@ export function isWeekStartDay(dateISO: string, weekStartsOn: number): boolean {
   return toLocalDate(dateISO).getDay() === weekStartsOn;
 }
 
-/** "3 September" style, no year — for the mid-week consequence line and the
- * "Today (4 Aug)" chip is handled separately (needs no year, no weekday). */
+/**
+ * "Thursday, September 3" (en-US) — no year — for the mid-week consequence
+ * line; the "Today (Aug 4)" chip is handled separately (needs no year, no
+ * weekday, `formatShortDate` below).
+ *
+ * §2.6 / D-4 — was a hand-rolled `WEEKDAYS_LONG`/`MONTHS_LONG` array pair
+ * (en-GB day-before-month order, "Thursday 3 September"). `Intl`, keyed off
+ * `i18n.language` (the app's own language setting, not the device's — same
+ * reasoning and same call shape as `earningsFormat.ts`'s
+ * `formatEarningsMultiplier`), gets both the locale-correct WORD ORDER and
+ * the translated month/weekday name for free — a Spanish reader gets
+ * "jueves, 3 de septiembre", not an English month name mid-sentence.
+ */
 export function formatWeekdayLong(dateISO: string): string {
   if (!isValidCalendarDate(dateISO)) return dateISO;
-  const [, m, d] = dateISO.split('-').map(Number);
-  const date = toLocalDate(dateISO);
-  return `${WEEKDAYS_LONG[date.getDay()]} ${d} ${MONTHS_LONG[(m ?? 1) - 1]}`;
+  return new Intl.DateTimeFormat(i18n.language, {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+  }).format(toLocalDate(dateISO));
 }
 
-/** "4 Aug" — no year, for the "Today (…)" chip label. */
+/** "Aug 4" (en-US) — no year, for the "Today (…)" chip label. */
 export function formatShortDate(dateISO: string): string {
   if (!isValidCalendarDate(dateISO)) return dateISO;
-  const [, m, d] = dateISO.split('-').map(Number);
-  return `${d} ${MONTHS_ABBR[(m ?? 1) - 1]}`;
+  return new Intl.DateTimeFormat(i18n.language, {
+    month: 'short',
+    day: 'numeric',
+  }).format(toLocalDate(dateISO));
 }
 
-/** "1 Apr 2026" — with year, for "In effect since" / history rows. */
+/** "Apr 1, 2026" (en-US) — with year, for "In effect since" / history rows. */
 export function formatDisplayDateWithYear(dateISO: string): string {
   if (!isValidCalendarDate(dateISO)) return dateISO;
-  const [y, m, d] = dateISO.split('-').map(Number);
-  return `${d} ${MONTHS_ABBR[(m ?? 1) - 1]} ${y}`;
+  return new Intl.DateTimeFormat(i18n.language, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  }).format(toLocalDate(dateISO));
 }
 
 /** Parses a typed hours field ("40", "1.5") to integer minutes. Blank -> null

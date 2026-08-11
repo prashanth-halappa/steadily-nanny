@@ -131,6 +131,20 @@ function makeHouseholdRepo(overrides: Record<string, unknown> = {}): any {
   };
 }
 
+// §11.1.1's fast-path computer — DI'd as the 8th constructor arg (payments
+// and events default fine since neither `getWeekWithEarnings` call path
+// touches them, but a NothingUnusualService default would make a real
+// network call, so every test that calls `getWeekWithEarnings` supplies this
+// fake explicitly).
+function makeNothingUnusualComputer(
+  overrides: Record<string, unknown> = {}
+): any {
+  return {
+    computeForWeek: mock(async () => false),
+    ...overrides,
+  };
+}
+
 describe('TimesheetQueryService.getRunning', () => {
   it("returns the caller's running entry", async () => {
     const svc = new TimesheetQueryService(
@@ -343,7 +357,10 @@ describe('TimesheetQueryService.getWeekWithEarnings — live weeks', () => {
         }),
         makeMemberRepo(),
         makeHouseholdRepo(),
-        earnings
+        earnings,
+        undefined,
+        undefined,
+        makeNothingUnusualComputer()
       );
 
       const week = await svc.getWeekWithEarnings('u1', 'ts1');
@@ -368,7 +385,10 @@ describe('TimesheetQueryService.getWeekWithEarnings — live weeks', () => {
       timesheetRepo,
       makeMemberRepo(),
       makeHouseholdRepo(),
-      makeEarnings()
+      makeEarnings(),
+      undefined,
+      undefined,
+      makeNothingUnusualComputer()
     );
 
     await svc.getWeekWithEarnings('u1', 'ts1');
@@ -388,7 +408,10 @@ describe('TimesheetQueryService.getWeekWithEarnings — live weeks', () => {
       makeTimesheetRepo(),
       makeMemberRepo(),
       makeHouseholdRepo(),
-      makeEarnings({ computeForWeek: mock(async () => noArrangement) })
+      makeEarnings({ computeForWeek: mock(async () => noArrangement) }),
+      undefined,
+      undefined,
+      makeNothingUnusualComputer()
     );
 
     const week = await svc.getWeekWithEarnings('u1', 'ts1');
@@ -405,7 +428,10 @@ describe('TimesheetQueryService.getWeekWithEarnings — live weeks', () => {
       }),
       makeMemberRepo(),
       makeHouseholdRepo(),
-      earnings
+      earnings,
+      undefined,
+      undefined,
+      makeNothingUnusualComputer()
     );
 
     const week = await svc.getWeekWithEarnings('u1', 'ts1');
@@ -425,7 +451,10 @@ describe('TimesheetQueryService.getWeekWithEarnings — live weeks', () => {
       makeTimesheetRepo(),
       makeNonMemberRepo(),
       makeHouseholdRepo(),
-      earnings
+      earnings,
+      undefined,
+      undefined,
+      makeNothingUnusualComputer()
     );
 
     await expect(svc.getWeekWithEarnings('u2', 'ts1')).rejects.toBeInstanceOf(
@@ -443,7 +472,10 @@ describe('TimesheetQueryService.getWeekWithEarnings — approved weeks are FROZE
       makeTimesheetRepo({ findById: mock(async () => approvedTimesheet) }),
       makeMemberRepo(),
       makeHouseholdRepo(),
-      earnings
+      earnings,
+      undefined,
+      undefined,
+      makeNothingUnusualComputer()
     );
 
     const week = await svc.getWeekWithEarnings('u1', 'ts1');
@@ -460,7 +492,10 @@ describe('TimesheetQueryService.getWeekWithEarnings — approved weeks are FROZE
       makeTimesheetRepo({ findById: mock(async () => approvedTimesheet) }),
       makeMemberRepo(),
       makeHouseholdRepo(),
-      makeEarnings({ computeForWeek: mock(async () => raisedEarnings) })
+      makeEarnings({ computeForWeek: mock(async () => raisedEarnings) }),
+      undefined,
+      undefined,
+      makeNothingUnusualComputer()
     );
 
     const week = await svc.getWeekWithEarnings('u1', 'ts1');
@@ -483,7 +518,10 @@ describe('TimesheetQueryService.getWeekWithEarnings — approved weeks are FROZE
       }),
       makeMemberRepo(),
       makeHouseholdRepo(),
-      makeEarnings()
+      makeEarnings(),
+      undefined,
+      undefined,
+      makeNothingUnusualComputer()
     );
 
     const week = await svc.getWeekWithEarnings('u1', 'ts1');
@@ -509,7 +547,10 @@ describe('TimesheetQueryService.getWeekWithEarnings — approved weeks are FROZE
       }),
       makeMemberRepo(),
       makeHouseholdRepo(),
-      makeEarnings()
+      makeEarnings(),
+      undefined,
+      undefined,
+      makeNothingUnusualComputer()
     );
 
     expect((await svc.getWeekWithEarnings('u1', 'ts1')).earnings).toEqual(
@@ -534,7 +575,10 @@ describe('TimesheetQueryService.getWeekWithEarnings — the legacy arm', () => {
       }),
       makeMemberRepo(),
       makeHouseholdRepo(),
-      earnings
+      earnings,
+      undefined,
+      undefined,
+      makeNothingUnusualComputer()
     );
 
     const week = await svc.getWeekWithEarnings('u1', 'ts1');
@@ -558,7 +602,10 @@ describe('TimesheetQueryService.getWeekWithEarnings — the legacy arm', () => {
       }),
       makeMemberRepo(),
       makeHouseholdRepo(),
-      earnings
+      earnings,
+      undefined,
+      undefined,
+      makeNothingUnusualComputer()
     );
 
     await svc.getWeekWithEarnings('u1', 'ts1');
@@ -578,7 +625,10 @@ describe('TimesheetQueryService.getWeekWithEarnings — the legacy arm', () => {
       }),
       makeMemberRepo(),
       makeHouseholdRepo(),
-      earnings
+      earnings,
+      undefined,
+      undefined,
+      makeNothingUnusualComputer()
     );
 
     const week = await svc.getWeekWithEarnings('u1', 'ts1');
@@ -606,7 +656,10 @@ describe('TimesheetQueryService.getWeekWithEarnings — the legacy arm', () => {
       }),
       makeMemberRepo(),
       makeHouseholdRepo(),
-      makeEarnings()
+      makeEarnings(),
+      undefined,
+      undefined,
+      makeNothingUnusualComputer()
     );
 
     await svc.getWeekWithEarnings('u1', 'ts1');
@@ -648,7 +701,10 @@ describe('TimesheetQueryService.getWeekWithEarnings — the legacy arm', () => {
       }),
       makeMemberRepo(),
       makeHouseholdRepo(),
-      makeEarnings()
+      makeEarnings(),
+      undefined,
+      undefined,
+      makeNothingUnusualComputer()
     );
 
     const week = await svc.getWeekWithEarnings('u1', 'ts1');
@@ -670,7 +726,10 @@ describe('TimesheetQueryService.getWeekWithEarnings — the legacy arm', () => {
       }),
       makeMemberRepo(),
       makeHouseholdRepo(),
-      makeEarnings()
+      makeEarnings(),
+      undefined,
+      undefined,
+      makeNothingUnusualComputer()
     );
 
     const week = await svc.getWeekWithEarnings('u1', 'ts1');
@@ -697,7 +756,10 @@ describe('TimesheetQueryService.getWeekWithEarnings — the legacy arm', () => {
       }),
       makeMemberRepo(),
       makeHouseholdRepo(),
-      makeEarnings()
+      makeEarnings(),
+      undefined,
+      undefined,
+      makeNothingUnusualComputer()
     );
 
     expect((await svc.getWeekWithEarnings('u1', 'ts1')).earnings).toEqual({
@@ -714,7 +776,10 @@ describe('TimesheetQueryService.getWeekWithEarnings — the legacy arm', () => {
       }),
       makeMemberRepo(),
       makeHouseholdRepo(),
-      makeEarnings()
+      makeEarnings(),
+      undefined,
+      undefined,
+      makeNothingUnusualComputer()
     );
 
     expect((await svc.getWeekWithEarnings('u1', 'ts1')).earnings).toMatchObject(
@@ -756,7 +821,10 @@ describe('TimesheetQueryService — the raw snapshot columns never reach the wir
       makeTimesheetRepo({ findById: mock(async () => approvedTimesheet) }),
       makeMemberRepo(),
       makeHouseholdRepo(),
-      makeEarnings()
+      makeEarnings(),
+      undefined,
+      undefined,
+      makeNothingUnusualComputer()
     );
 
     const week = await svc.getWeekWithEarnings('u1', 'ts1');
@@ -1199,7 +1267,10 @@ describe('TimesheetQueryService.getWeekWithEarnings — removed members', () => 
       makeTimesheetRepo(),
       makeRemovedMemberRepo('nanny', 'carer-1'),
       makeHouseholdRepo(),
-      earnings
+      earnings,
+      undefined,
+      undefined,
+      makeNothingUnusualComputer()
     );
 
     const week = await svc.getWeekWithEarnings('carer-1', 'ts1');
@@ -1219,7 +1290,10 @@ describe('TimesheetQueryService.getWeekWithEarnings — removed members', () => 
       makeTimesheetRepo({ findById: mock(async () => approvedTimesheet) }),
       makeRemovedMemberRepo('nanny', 'carer-1'),
       makeHouseholdRepo(),
-      earnings
+      earnings,
+      undefined,
+      undefined,
+      makeNothingUnusualComputer()
     );
 
     const week = await svc.getWeekWithEarnings('carer-1', 'ts1');
@@ -1237,7 +1311,10 @@ describe('TimesheetQueryService.getWeekWithEarnings — removed members', () => 
       }),
       makeRemovedMemberRepo('nanny', 'carer-1'),
       makeHouseholdRepo(),
-      earnings
+      earnings,
+      undefined,
+      undefined,
+      makeNothingUnusualComputer()
     );
 
     await expect(
