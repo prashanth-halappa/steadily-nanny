@@ -17,6 +17,16 @@ import { PaymentCommandService } from '../../../../../src/domains/pay/services/p
  * (REFUSED, never clamped), and every server-derived field on the row —
  * household, carer, currency, recorder — comes off the timesheet or the
  * caller, never off the request body.
+ *
+ * Gate 4 MOVED INTO POSTGRES (migration 077). It used to be a read-then-write
+ * here — `sumForTimesheet`, compare, `create` — which two parents tapping
+ * "Record payment" in the same instant could both pass. The sum, the refusal
+ * and the insert are now one `record_timesheet_payment` call behind a
+ * `FOR UPDATE` lock on the week, so this file's job for gate 4 is no longer
+ * the arithmetic (the database owns it, and the SQL is pinned by
+ * `tests/unit/migration077PaymentAtomicInsert.test.ts`) but the MAPPING: the
+ * service must reach the rpc rather than the old path, and must turn each of
+ * its three outcomes into the right typed error with the figures the lock saw.
  */
 
 const APPROVED_TIMESHEET = {
@@ -45,6 +55,26 @@ const VALID_INPUT = {
   method_note: 'Bank transfer',
 };
 
+/** What 077 answers with on the happy path — the row it actually inserted. */
+function recordedPayment(overrides: Record<string, unknown> = {}): any {
+  return {
+    outcome: 'recorded',
+    payment: {
+      id: 'pay-new',
+      timesheet_id: 'ts-1',
+      household_id: 'h1',
+      carer_id: 'carer-1',
+      amount_minor: 5_000,
+      currency: 'GBP',
+      paid_at: '2026-08-11',
+      method_note: 'Bank transfer',
+      recorded_by: 'parent-1',
+      created_at: '2026-08-11T10:00:00.000Z',
+      ...overrides,
+    },
+  };
+}
+
 function makePaymentRepo(overrides: Record<string, unknown> = {}): any {
   return {
     listForTimesheet: mock(async () => []),
@@ -54,6 +84,10 @@ function makePaymentRepo(overrides: Record<string, unknown> = {}): any {
       created_at: '2026-08-11T10:00:00.000Z',
       ...data,
     })),
+    recordForTimesheet: mock(
+      async (_timesheetId: string, entry: Record<string, unknown>) =>
+        recordedPayment(entry)
+    ),
     ...overrides,
   };
 }
@@ -114,7 +148,7 @@ describe('PaymentCommandService.create — membership + role gate', () => {
     await expect(
       svc.create('parent-1', 'ts-nope', VALID_INPUT)
     ).rejects.toThrow(PaymentNotFoundError);
-    expect(paymentRepo.create).not.toHaveBeenCalled();
+    expect(paymentRepo.recordForTimesheet).not.toHaveBeenCalled();
   });
 
   it('a non-member gets the SAME PaymentNotFoundError — existence is never leaked', async () => {
@@ -127,7 +161,7 @@ describe('PaymentCommandService.create — membership + role gate', () => {
     await expect(svc.create('stranger-1', 'ts-1', VALID_INPUT)).rejects.toThrow(
       PaymentNotFoundError
     );
-    expect(paymentRepo.create).not.toHaveBeenCalled();
+    expect(paymentRepo.recordForTimesheet).not.toHaveBeenCalled();
   });
 
   it('an active NANNY member is refused with the 403-shaped NotAHouseholdParentError', async () => {
@@ -149,7 +183,7 @@ describe('PaymentCommandService.create — membership + role gate', () => {
 
     expect(error).toBeInstanceOf(NotAHouseholdParentError);
     expect((error as { statusCode: number }).statusCode).toBe(403);
-    expect(paymentRepo.create).not.toHaveBeenCalled();
+    expect(paymentRepo.recordForTimesheet).not.toHaveBeenCalled();
   });
 
   it('an active HELPER member is refused too — a helper never touches money', async () => {
@@ -168,7 +202,7 @@ describe('PaymentCommandService.create — membership + role gate', () => {
     await expect(svc.create('helper-1', 'ts-1', VALID_INPUT)).rejects.toThrow(
       NotAHouseholdParentError
     );
-    expect(paymentRepo.create).not.toHaveBeenCalled();
+    expect(paymentRepo.recordForTimesheet).not.toHaveBeenCalled();
   });
 
   it('an owner may record a payment', async () => {
@@ -186,7 +220,7 @@ describe('PaymentCommandService.create — membership + role gate', () => {
 
     await svc.create('owner-1', 'ts-1', VALID_INPUT);
 
-    expect(paymentRepo.create).toHaveBeenCalled();
+    expect(paymentRepo.recordForTimesheet).toHaveBeenCalled();
   });
 
   it('membership is resolved against the TIMESHEET’s household, not a client-supplied one', async () => {
@@ -220,7 +254,7 @@ describe('PaymentCommandService.create — the week must be approved and priced'
 
       expect(error).toBeInstanceOf(PaymentWeekNotApprovedError);
       expect((error as { statusCode: number }).statusCode).toBe(409);
-      expect(paymentRepo.create).not.toHaveBeenCalled();
+      expect(paymentRepo.recordForTimesheet).not.toHaveBeenCalled();
     });
   }
 
@@ -243,7 +277,7 @@ describe('PaymentCommandService.create — the week must be approved and priced'
     expect((error as { metadata: { reason: string } }).metadata.reason).toBe(
       'no_frozen_gross'
     );
-    expect(paymentRepo.create).not.toHaveBeenCalled();
+    expect(paymentRepo.recordForTimesheet).not.toHaveBeenCalled();
   });
 
   it('refuses an approved week whose frozen currency is NULL — nothing to stamp', async () => {
@@ -259,69 +293,47 @@ describe('PaymentCommandService.create — the week must be approved and priced'
     await expect(svc.create('parent-1', 'ts-1', VALID_INPUT)).rejects.toThrow(
       PaymentWeekNotApprovedError
     );
-    expect(paymentRepo.create).not.toHaveBeenCalled();
+    expect(paymentRepo.recordForTimesheet).not.toHaveBeenCalled();
   });
 });
 
 // =============================================================================
-// Gate (c) — sum(payments) <= gross. REFUSED, never clamped.
+// Gate (d) — sum(payments) <= gross, now decided under a row lock (077).
 // =============================================================================
 
-describe('PaymentCommandService.create — the over-payment gate', () => {
-  it('allows a payment landing EXACTLY on the frozen gross', async () => {
+describe('PaymentCommandService.create — the over-payment gate is the RPC', () => {
+  it('records through record_timesheet_payment, not the old read-then-write pair', async () => {
     const { svc, paymentRepo } = makeService();
 
-    const payment = await svc.create('parent-1', 'ts-1', {
-      ...VALID_INPUT,
-      amount_minor: 80_000,
-    });
+    await svc.create('parent-1', 'ts-1', VALID_INPUT);
 
-    expect(payment.amount_minor).toBe(80_000);
-    expect(paymentRepo.create).toHaveBeenCalled();
-  });
-
-  it('refuses gross + 1 — the boundary, and it is a REFUSAL, not a clamp', async () => {
-    const { svc, paymentRepo } = makeService();
-
-    const error = await svc
-      .create('parent-1', 'ts-1', { ...VALID_INPUT, amount_minor: 80_001 })
-      .catch((e: unknown) => e);
-
-    expect(error).toBeInstanceOf(PaymentExceedsGrossError);
-    expect((error as { statusCode: number }).statusCode).toBe(400);
-    expect(
-      (error as { metadata: Record<string, unknown> }).metadata
-    ).toMatchObject({
-      timesheetId: 'ts-1',
-      amountMinor: 80_001,
-      alreadyPaidMinor: 0,
-      grossMinor: 80_000,
-    });
-    // The whole point: no row is written at a trimmed amount.
+    expect(paymentRepo.recordForTimesheet).toHaveBeenCalledTimes(1);
+    // The window 077 closed: summing here and inserting there.
+    expect(paymentRepo.sumForTimesheet).not.toHaveBeenCalled();
     expect(paymentRepo.create).not.toHaveBeenCalled();
   });
 
-  it('accumulates partial payments — a second payment is measured against what is already paid', async () => {
-    const { svc, paymentRepo } = makeService({
-      paymentRepo: makePaymentRepo({
-        sumForTimesheet: mock(async () => 50_000),
-      }),
-    });
+  it('sends the amount, the settlement date, the note and the recorder — and the week id', async () => {
+    const { svc, paymentRepo } = makeService();
 
-    await svc.create('parent-1', 'ts-1', {
-      ...VALID_INPUT,
-      amount_minor: 30_000,
-    });
+    await svc.create('parent-1', 'ts-1', VALID_INPUT);
 
-    expect(paymentRepo.create).toHaveBeenCalledWith(
-      expect.objectContaining({ amount_minor: 30_000 })
-    );
+    expect(paymentRepo.recordForTimesheet).toHaveBeenCalledWith('ts-1', {
+      amount_minor: 5_000,
+      paid_at: '2026-08-11',
+      method_note: 'Bank transfer',
+      recorded_by: 'parent-1',
+    });
   });
 
-  it('refuses the partial payment that would take the running total one penny past gross', async () => {
-    const { svc, paymentRepo } = makeService({
+  it('turns exceeds_gross into a 400 carrying the figures the LOCK saw, not the ones a pre-read did', async () => {
+    const { svc } = makeService({
       paymentRepo: makePaymentRepo({
-        sumForTimesheet: mock(async () => 50_000),
+        recordForTimesheet: mock(async () => ({
+          outcome: 'exceeds_gross',
+          alreadyPaidMinor: 50_000,
+          grossMinor: 80_000,
+        })),
       }),
     });
 
@@ -330,65 +342,104 @@ describe('PaymentCommandService.create — the over-payment gate', () => {
       .catch((e: unknown) => e);
 
     expect(error).toBeInstanceOf(PaymentExceedsGrossError);
+    expect((error as { statusCode: number }).statusCode).toBe(400);
     expect(
       (error as { metadata: Record<string, unknown> }).metadata
-    ).toMatchObject({ alreadyPaidMinor: 50_000, grossMinor: 80_000 });
-    expect(paymentRepo.create).not.toHaveBeenCalled();
-  });
-
-  it('sums the payments of THIS timesheet only', async () => {
-    const { svc, paymentRepo } = makeService();
-
-    await svc.create('parent-1', 'ts-1', VALID_INPUT);
-
-    expect(paymentRepo.sumForTimesheet).toHaveBeenCalledWith('ts-1');
-  });
-});
-
-// =============================================================================
-// Gate (d) — every server-derived field is stamped, never accepted
-// =============================================================================
-
-describe('PaymentCommandService.create — stamped fields', () => {
-  it('stamps household, carer, currency and recorder from the timesheet and the caller', async () => {
-    const { svc, paymentRepo } = makeService();
-
-    await svc.create('parent-1', 'ts-1', VALID_INPUT);
-
-    expect(paymentRepo.create).toHaveBeenCalledWith({
-      timesheet_id: 'ts-1',
-      household_id: 'h1',
-      carer_id: 'carer-1',
-      amount_minor: 5_000,
-      currency: 'GBP',
-      paid_at: '2026-08-11',
-      method_note: 'Bank transfer',
-      recorded_by: 'parent-1',
+    ).toMatchObject({
+      timesheetId: 'ts-1',
+      amountMinor: 30_001,
+      alreadyPaidMinor: 50_000,
+      grossMinor: 80_000,
     });
   });
 
-  it('stamps the week’s frozen currency, never a client-supplied one', async () => {
-    const { svc, paymentRepo } = makeService({
-      timesheetRepo: makeTimesheetRepo({
-        findById: mock(async () => ({
-          ...APPROVED_TIMESHEET,
-          currency: 'EUR',
+  it('turns not_payable into the 409 — a reopen landed between gate 3 and the lock', async () => {
+    const { svc } = makeService({
+      paymentRepo: makePaymentRepo({
+        recordForTimesheet: mock(async () => ({
+          outcome: 'not_payable',
+          status: 'open',
         })),
       }),
     });
 
+    const error = await svc
+      .create('parent-1', 'ts-1', VALID_INPUT)
+      .catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(PaymentWeekNotApprovedError);
+    expect((error as { statusCode: number }).statusCode).toBe(409);
+    expect(
+      (error as { metadata: Record<string, unknown> }).metadata
+    ).toMatchObject({ status: 'open' });
+  });
+
+  it('pushes the carer only when the row was actually recorded', async () => {
+    const { svc, push } = makeService();
+
+    await svc.create('parent-1', 'ts-1', VALID_INPUT);
+
+    expect(push.notifyUser).toHaveBeenCalledTimes(1);
+  });
+
+  for (const outcome of [
+    { outcome: 'exceeds_gross', alreadyPaidMinor: 0, grossMinor: 80_000 },
+    { outcome: 'not_payable', status: 'open' },
+  ]) {
+    it(`sends NO push when the write is refused with ${outcome.outcome}`, async () => {
+      const { svc, push } = makeService({
+        paymentRepo: makePaymentRepo({
+          recordForTimesheet: mock(async () => outcome),
+        }),
+      });
+
+      await svc.create('parent-1', 'ts-1', VALID_INPUT).catch(() => undefined);
+
+      expect(push.notifyUser).not.toHaveBeenCalled();
+    });
+  }
+});
+
+// =============================================================================
+// Gate (e) — nothing describing the week crosses the wire into the write
+// =============================================================================
+
+describe('PaymentCommandService.create — the week describes itself', () => {
+  it('sends no household, carer or currency — 077 stamps them off the locked row', async () => {
+    const { svc, paymentRepo } = makeService();
+
     await svc.create('parent-1', 'ts-1', {
       ...VALID_INPUT,
-      // A client that invents a currency field must not be able to set one.
+      // A client that invents fields must not be able to set any of them.
       currency: 'USD',
+      household_id: 'h-evil',
+      carer_id: 'carer-evil',
     } as never);
 
-    expect(paymentRepo.create).toHaveBeenCalledWith(
-      expect.objectContaining({ currency: 'EUR' })
+    const entry = paymentRepo.recordForTimesheet.mock.calls[0][1];
+    expect(Object.keys(entry).sort()).toEqual([
+      'amount_minor',
+      'method_note',
+      'paid_at',
+      'recorded_by',
+    ]);
+  });
+
+  it('records the AUTHENTICATED caller, never a body-supplied one', async () => {
+    const { svc, paymentRepo } = makeService();
+
+    await svc.create('parent-1', 'ts-1', {
+      ...VALID_INPUT,
+      recorded_by: 'someone-else',
+    } as never);
+
+    expect(paymentRepo.recordForTimesheet).toHaveBeenCalledWith(
+      'ts-1',
+      expect.objectContaining({ recorded_by: 'parent-1' })
     );
   });
 
-  it('omits a method_note the caller did not send, as an explicit null', async () => {
+  it('passes a method_note the caller did not send as an explicit null', async () => {
     const { svc, paymentRepo } = makeService();
 
     await svc.create('parent-1', 'ts-1', {
@@ -396,29 +447,28 @@ describe('PaymentCommandService.create — stamped fields', () => {
       paid_at: '2026-08-11',
     });
 
-    expect(paymentRepo.create).toHaveBeenCalledWith(
+    expect(paymentRepo.recordForTimesheet).toHaveBeenCalledWith(
+      'ts-1',
       expect.objectContaining({ method_note: null })
     );
   });
 
-  it('carries a NULL carer through (033: she deleted her account, the record survives)', async () => {
+  it('targets the week the URL named, not one the body could redirect', async () => {
     const { svc, paymentRepo } = makeService({
       timesheetRepo: makeTimesheetRepo({
-        findById: mock(async () => ({
-          ...APPROVED_TIMESHEET,
-          carer_id: null,
-        })),
+        findById: mock(async () => ({ ...APPROVED_TIMESHEET, id: 'ts-real' })),
       }),
     });
 
     await svc.create('parent-1', 'ts-1', VALID_INPUT);
 
-    expect(paymentRepo.create).toHaveBeenCalledWith(
-      expect.objectContaining({ carer_id: null })
+    expect(paymentRepo.recordForTimesheet).toHaveBeenCalledWith(
+      'ts-real',
+      expect.anything()
     );
   });
 
-  it('returns the created row', async () => {
+  it('returns the row the database inserted, currency and all', async () => {
     const { svc } = makeService();
 
     const payment = await svc.create('parent-1', 'ts-1', VALID_INPUT);

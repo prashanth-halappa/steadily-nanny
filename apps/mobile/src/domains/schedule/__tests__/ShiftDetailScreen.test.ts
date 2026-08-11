@@ -149,6 +149,25 @@ describe('ShiftDetailScreen source', () => {
     expect(source).toContain('detail.needsReconfirm');
   });
 
+  it('gates the counter-offer form on the assigned carer, not the nanny role', () => {
+    expect(source).toMatch(
+      /\{isAssignedCarer \? \([\s\S]{0,80}testID="shift-detail-counter-form"/
+    );
+  });
+
+  it('frames proposal copy for the parent who proposed it, in en and es', async () => {
+    expect(source).toContain('detail.freshProposalAwaitingCarer');
+    expect(source).toContain('detail.needsReconfirmAwaitingCarer');
+
+    for (const language of ['en', 'es']) {
+      const copy = (await Bun.file(
+        join(__dirname, `../../../i18n/locales/${language}/schedule.json`)
+      ).json()) as { detail: Record<string, string> };
+      expect(copy.detail.freshProposalAwaitingCarer).toContain('{{name}}');
+      expect(copy.detail.needsReconfirmAwaitingCarer).toContain('{{name}}');
+    }
+  });
+
   it('shows who-you-have children above times for every viewer', () => {
     expect(source).toContain('useChildren');
     expect(source).toContain('ChildChip');

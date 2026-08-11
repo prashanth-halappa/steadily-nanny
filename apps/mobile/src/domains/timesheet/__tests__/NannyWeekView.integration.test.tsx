@@ -169,6 +169,8 @@ function makeHousehold(overrides: Partial<Record<string, unknown>> = {}) {
     address_line: null,
     latitude: null,
     longitude: null,
+    currency: 'GBP',
+    jurisdiction: null,
     approval_mode: 'either',
     approval_scope: 'all',
     short_notice_hours: 24,
@@ -1002,6 +1004,53 @@ describe('NannyWeekView — expenses & the statement (Phase 4)', () => {
     expect(queryByTestId('reimbursements-card-total')).toBeNull();
     expect(getByTestId('reimbursements-card-total-unavailable')).toBeTruthy();
     expect(queryAllByText('£0.00')).toHaveLength(0);
+  });
+
+  // D-37..D-39 (household currency + jurisdiction): the currency fallback
+  // chain used to bottom out at a literal `'GBP'` regardless of the
+  // household. A no_arrangement week with no earnings and no arrangement
+  // currency must fall through to the HOUSEHOLD's currency, never a
+  // hardcoded pound sign.
+  it('a USD household falls through to USD formatting, never the old GBP literal, once earnings/arrangement are silent', async () => {
+    listHouseholdsMock.mockImplementation(() =>
+      Promise.resolve([makeHousehold({ currency: 'USD' })])
+    );
+    listExpensesForWeekMock.mockImplementation(() =>
+      Promise.resolve([
+        makeExpense({
+          id: 'expense-approved',
+          status: 'approved',
+          amount_minor: 1200,
+        }),
+      ])
+    );
+    getByIdMock.mockImplementation(() =>
+      Promise.resolve(
+        makeTimesheetWeek(
+          {},
+          {
+            status: 'no_arrangement',
+            week_start: WEEK_START,
+            unpriced_dates: [WEEK_START],
+          }
+        )
+      )
+    );
+
+    const { getByTestId } = renderNannyView();
+
+    await waitFor(() =>
+      expect(getByTestId('reimbursements-card')).toBeTruthy()
+    );
+    // en-GB's ICU disambiguates USD as "US$" (same as `money.test.ts`), so
+    // this asserts the currency actually switched, not a literal '$'. Scoped
+    // to the reimbursements card's own line — the expense's OWN `currency`
+    // field (its own row in "her expenses" list, a separate card) is a
+    // different, unrelated concern from this fallback chain.
+    expect(
+      getByTestId('reimbursements-card-line-expense-approved-value').props
+        .children
+    ).toBe('US$12.00');
   });
 });
 

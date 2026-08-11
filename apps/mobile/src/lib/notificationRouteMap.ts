@@ -115,6 +115,10 @@ export const NOTIFICATION_ROUTE_MAP: NotificationRouteMap &
   [PUSH_NOTIFICATION_TYPES.SHIFT_CONFIRMED]: shiftDetailHref,
   [PUSH_NOTIFICATION_TYPES.SHIFT_DECLINED]: shiftDetailHref,
   [PUSH_NOTIFICATION_TYPES.SHIFT_REMINDER]: shiftDetailHref,
+  // Both carry `shiftId` + `householdId` only — the shift they are about is
+  // the whole message, so they land on the same detail screen.
+  [PUSH_NOTIFICATION_TYPES.RUNNING_LATE]: shiftDetailHref,
+  [PUSH_NOTIFICATION_TYPES.PARENT_COVERING]: shiftDetailHref,
 
   [PUSH_NOTIFICATION_TYPES.CARER_TIME_OFF_CONFLICT]: shiftsCalendarHref,
   [PUSH_NOTIFICATION_TYPES.UNCOVERED_CARE_DETECTED]: uncoveredCareHref,

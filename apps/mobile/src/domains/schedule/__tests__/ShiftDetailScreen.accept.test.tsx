@@ -203,6 +203,24 @@ describe('ShiftDetailScreen accept + reconfirm', () => {
     expect(queryByTestId('shift-detail-accept')).toBeNull();
   });
 
+  // The counter-offer is the assigned carer's answer about HER shift; the
+  // server refuses it from anyone else, so the form must not be offered.
+  it('hides the counter-offer form for a nanny who is not the assigned carer', () => {
+    mockUseAuthStore.mockImplementation((selector: (s: unknown) => unknown) =>
+      selector({ session: { user: { id: OTHER_USER_ID } } })
+    );
+
+    const { queryByTestId } = render(<ShiftDetailScreen />);
+
+    expect(queryByTestId('shift-detail-counter-form')).toBeNull();
+  });
+
+  it('shows the counter-offer form for the assigned carer', () => {
+    const { getByTestId } = render(<ShiftDetailScreen />);
+
+    expect(getByTestId('shift-detail-counter-form')).toBeTruthy();
+  });
+
   it('hides Accept when the shift is already confirmed', () => {
     mockUseShift.mockImplementation(() => ({
       data: { ...pendingParentProposed, status: 'confirmed' },
@@ -263,6 +281,48 @@ describe('ShiftDetailScreen accept + reconfirm', () => {
 
     expect(getByTestId('shift-detail-needs-reconfirm')).toBeTruthy();
     expect(queryByTestId('shift-detail-fresh-proposal')).toBeNull();
+  });
+
+  // The old copy told the reader a parent had proposed something and to
+  // accept or counter it — nonsense shown to the parent who proposed it.
+  it('frames proposal copy for the parent who proposed it', () => {
+    mockUseIsOnboarded.mockImplementation(() => ({
+      role: 'parent',
+      status: 'onboarded',
+    }));
+    mockUseAuthStore.mockImplementation((selector: (s: unknown) => unknown) =>
+      selector({ session: { user: { id: OTHER_USER_ID } } })
+    );
+
+    const { getByText, queryByText } = render(<ShiftDetailScreen />);
+
+    expect(getByText('detail.freshProposalAwaitingCarer')).toBeTruthy();
+    expect(queryByText('detail.freshProposal')).toBeNull();
+  });
+
+  it('frames re-confirm copy for the parent who changed the times', () => {
+    mockUseIsOnboarded.mockImplementation(() => ({
+      role: 'parent',
+      status: 'onboarded',
+    }));
+    mockUseAuthStore.mockImplementation((selector: (s: unknown) => unknown) =>
+      selector({ session: { user: { id: OTHER_USER_ID } } })
+    );
+    mockUseShift.mockImplementation(() => ({
+      data: { ...pendingParentProposed, sequence: 1 },
+      isLoading: false,
+    }));
+
+    const { getByText, queryByText } = render(<ShiftDetailScreen />);
+
+    expect(getByText('detail.needsReconfirmAwaitingCarer')).toBeTruthy();
+    expect(queryByText('detail.needsReconfirm')).toBeNull();
+  });
+
+  it('keeps the accept-or-counter copy for the carer viewer', () => {
+    const { getByText } = render(<ShiftDetailScreen />);
+
+    expect(getByText('detail.freshProposal')).toBeTruthy();
   });
 
   it('hides re-confirm and proposal copy when pending but origin is system_generated', () => {

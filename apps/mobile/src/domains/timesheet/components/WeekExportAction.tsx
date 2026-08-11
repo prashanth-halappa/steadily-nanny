@@ -31,7 +31,11 @@ import { Text } from '@/src/components/ui/text';
 import { formatMoney } from '@/src/lib/money';
 import { showErrorToast } from '@/src/lib/toast';
 import type { EarningsLineKind, WeekEarningsOk } from '../types';
-import { EARNINGS_LINE_KINDS } from '../types';
+import {
+  EARNINGS_LINE_KINDS,
+  humanizeEarningsLineKind,
+  isKnownEarningsLineKind,
+} from '../types';
 import { formatEarningsDuration } from '../utils/earningsFormat';
 import type { WeekPaidState } from '../utils/paidState';
 import {
@@ -112,18 +116,28 @@ export function WeekExportAction({
   const buildReceiptHtml = (): string => {
     const lines: WeekReceiptLine[] = earnings
       ? earnings.lines
-          .filter(line => LINE_COPY_KEY[line.kind] !== undefined)
-          .map(line => ({
-            label: t(LINE_COPY_KEY[line.kind] as string),
-            // Composed, not interpolated through a locale string: the two
-            // parts are already locale-formatted numbers, and a receipt row
-            // reads the same in every language.
-            subLine: `${formatEarningsDuration(line.minutes)} · ${formatMoney(
-              line.rate_minor,
-              earnings.currency
-            )}`,
-            amount: formatMoney(line.amount_minor, earnings.currency),
-          }))
+          // Reimbursements only — the same one exclusion the breakdown sheet
+          // makes, and for the same reason: they are not wages, so they are
+          // not in the gross printed under these rows. Every other kind
+          // prints, including one this build has no copy for, so the rows on
+          // a receipt always sum to the total beside them.
+          .filter(line => line.kind !== EARNINGS_LINE_KINDS.REIMBURSEMENTS)
+          .map(line => {
+            const copyKey = isKnownEarningsLineKind(line.kind)
+              ? LINE_COPY_KEY[line.kind]
+              : undefined;
+            return {
+              label: copyKey ? t(copyKey) : humanizeEarningsLineKind(line.kind),
+              // Composed, not interpolated through a locale string: the two
+              // parts are already locale-formatted numbers, and a receipt row
+              // reads the same in every language.
+              subLine: `${formatEarningsDuration(line.minutes)} · ${formatMoney(
+                line.rate_minor,
+                earnings.currency
+              )}`,
+              amount: formatMoney(line.amount_minor, earnings.currency),
+            };
+          })
       : [];
 
     const totals: WeekReceiptTotal[] = [];

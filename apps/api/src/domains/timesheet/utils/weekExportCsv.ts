@@ -86,7 +86,11 @@ import type {
   Timesheet,
   WeekEarningsOk,
 } from '@steadily-nanny/shared-types/schemas/timesheet.schema';
-import { EARNINGS_LINE_KINDS } from '@steadily-nanny/shared-types/schemas/timesheet.schema';
+import {
+  EARNINGS_LINE_KINDS,
+  humanizeEarningsLineKind,
+  isKnownEarningsLineKind,
+} from '@steadily-nanny/shared-types/schemas/timesheet.schema';
 import { CSV_LINE_TERMINATOR, csvRow } from './csv';
 
 /** The header record, spelled out once. */
@@ -104,6 +108,11 @@ const HEADER: readonly string[] = [
  * The human label per line kind. `kind` is already on its own column
  * verbatim — this is the column a person reads, so it is prose, and it is
  * fixed English: the artifact is a payroll handoff, not a localised screen.
+ *
+ * TOTAL, not `Partial`, deliberately: `kind` is an open string on the wire so
+ * that a snapshot from a newer server still parses, but a kind added to
+ * `EARNINGS_LINE_KINDS` in THIS repo must still be a compile error until
+ * someone writes its label here.
  */
 const LINE_LABELS: Record<EarningsLineKind, string> = {
   [EARNINGS_LINE_KINDS.REGULAR]: 'Regular hours',
@@ -154,7 +163,12 @@ export function carerSlug(name: string | null | undefined): string {
  * splits `regular` into two dated lines, and a top-up spans the whole week.
  */
 function describeLine(line: EarningsLine): string {
-  const label = LINE_LABELS[line.kind];
+  // A kind frozen by a newer server than the one exporting it gets a
+  // humanized label rather than an empty description — the `kind` column
+  // beside it is verbatim either way, so the payroll provider loses nothing.
+  const label = isKnownEarningsLineKind(line.kind)
+    ? LINE_LABELS[line.kind]
+    : humanizeEarningsLineKind(line.kind);
   const withMultiplier =
     line.kind === EARNINGS_LINE_KINDS.OVERTIME && line.multiplier !== null
       ? `${label} at ${line.multiplier}x`

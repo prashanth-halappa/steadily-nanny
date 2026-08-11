@@ -14,7 +14,16 @@ import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
  * `sumForTimesheet` is the number the over-payment gate is built on, so its
  * scoping is the security-relevant part: a sum that leaked another week's
  * rows would refuse legitimate payments; a sum that dropped rows would let a
- * week be paid twice.
+ * week be paid twice. It survives 077 — the CSV export and the paid-state
+ * reads still ask for it — even though the WRITE gate no longer uses it.
+ *
+ * `recordForTimesheet` is the 077 wiring. The arithmetic it guards happens in
+ * Postgres, under a row lock no unit test can reach, so what is testable here
+ * is the seam: the real function name, the real five `p_*` parameter names,
+ * and the mapping from each jsonb payload to the typed outcome the service
+ * branches on. The name and the parameters are asserted verbatim against what
+ * `077_payment_atomic_insert.sql` actually declares (D53) — a mock-shaped name
+ * would pass this file and 500 in production.
  */
 
 interface FakeRow {
@@ -24,6 +33,7 @@ interface FakeRow {
 let PaymentRepository: any;
 let mockSupabaseService: any;
 let lastCalls: { method: string; args: unknown[] }[] = [];
+let rpcCalls: { name: string; args: Record<string, unknown> }[] = [];
 
 function createFakeQuery(rows: FakeRow[], error: unknown = null): any {
   const eqFilters: [string, unknown][] = [];
@@ -94,9 +104,35 @@ function withRows(rows: FakeRow[], error: unknown = null): void {
   );
 }
 
+/**
+ * Stand-in for `public.record_timesheet_payment` (077). It records the call
+ * and answers with whatever payload the test is pinning — the function's own
+ * behaviour (lock, sum, refuse, insert) is pinned by
+ * `tests/unit/migration077PaymentAtomicInsert.test.ts` against the SQL source,
+ * because it cannot be reached from here.
+ */
+function withRpc(data: unknown, error: unknown = null): void {
+  mockSupabaseService.rpc.mockImplementation(
+    async (name: string, args: Record<string, unknown>) => {
+      rpcCalls.push({ name, args });
+      return { data: error ? null : data, error };
+    }
+  );
+}
+
+const RECORD_ENTRY = {
+  amount_minor: 5_000,
+  paid_at: '2026-08-11',
+  method_note: 'Bank transfer',
+  recorded_by: 'parent-1',
+};
+
 beforeAll(async () => {
   mock.module('../../../../../src/config/supabase', () => {
-    const obj = { from: mock(() => createFakeQuery([])) };
+    const obj = {
+      from: mock(() => createFakeQuery([])),
+      rpc: mock(async () => ({ data: null, error: null })),
+    };
     return { supabase: obj, supabaseService: obj };
   });
 
@@ -110,7 +146,9 @@ beforeAll(async () => {
 
 beforeEach(() => {
   lastCalls = [];
+  rpcCalls = [];
   mockSupabaseService.from.mockClear();
+  mockSupabaseService.rpc.mockClear?.();
 });
 
 describe('PaymentRepository.listForTimesheet', () => {
@@ -262,5 +300,130 @@ describe('PaymentRepository.listForHousehold', () => {
     await expect(
       new PaymentRepository().listForHousehold('h1')
     ).rejects.toThrow('Failed to list payments for household');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 077 — the sum and the insert are one statement behind a row lock.
+// ---------------------------------------------------------------------------
+
+describe('PaymentRepository.recordForTimesheet', () => {
+  it('calls the REAL function name with the REAL five parameter names', async () => {
+    withRpc({ outcome: 'recorded', payment: paymentRow() });
+
+    await new PaymentRepository().recordForTimesheet('ts-1', RECORD_ENTRY);
+
+    expect(rpcCalls[0]?.name).toBe('record_timesheet_payment');
+    expect(rpcCalls[0]?.args).toEqual({
+      p_timesheet_id: 'ts-1',
+      p_amount_minor: 5_000,
+      p_paid_at: '2026-08-11',
+      p_method_note: 'Bank transfer',
+      p_recorded_by: 'parent-1',
+    });
+  });
+
+  it('sends NOTHING that describes the week — 077 stamps those from the locked row', async () => {
+    withRpc({ outcome: 'recorded', payment: paymentRow() });
+
+    await new PaymentRepository().recordForTimesheet('ts-1', RECORD_ENTRY);
+
+    const args = Object.keys(rpcCalls[0]?.args ?? {});
+    expect(args).not.toContain('p_household_id');
+    expect(args).not.toContain('p_carer_id');
+    expect(args).not.toContain('p_currency');
+  });
+
+  it('passes an absent method_note through as an explicit null', async () => {
+    withRpc({ outcome: 'recorded', payment: paymentRow() });
+
+    await new PaymentRepository().recordForTimesheet('ts-1', {
+      ...RECORD_ENTRY,
+      method_note: null,
+    });
+
+    expect(rpcCalls[0]?.args.p_method_note).toBeNull();
+  });
+
+  it('maps a recorded payload to the recorded outcome, carrying the row', async () => {
+    withRpc({
+      outcome: 'recorded',
+      payment: paymentRow({ id: 'pay-new', amount_minor: 5_000 }),
+    });
+
+    const result = await new PaymentRepository().recordForTimesheet(
+      'ts-1',
+      RECORD_ENTRY
+    );
+
+    expect(result).toEqual({
+      outcome: 'recorded',
+      payment: expect.objectContaining({ id: 'pay-new', amount_minor: 5_000 }),
+    });
+  });
+
+  it('maps an exceeds_gross payload to the under-lock figures the error reports', async () => {
+    withRpc({
+      outcome: 'exceeds_gross',
+      already_paid_minor: 50_000,
+      gross_minor: 80_000,
+    });
+
+    const result = await new PaymentRepository().recordForTimesheet(
+      'ts-1',
+      RECORD_ENTRY
+    );
+
+    expect(result).toEqual({
+      outcome: 'exceeds_gross',
+      alreadyPaidMinor: 50_000,
+      grossMinor: 80_000,
+    });
+  });
+
+  it('maps a not_payable payload, carrying the status the locked row actually had', async () => {
+    withRpc({ outcome: 'not_payable', status: 'open' });
+
+    const result = await new PaymentRepository().recordForTimesheet(
+      'ts-1',
+      RECORD_ENTRY
+    );
+
+    expect(result).toEqual({ outcome: 'not_payable', status: 'open' });
+  });
+
+  it('survives a not_payable payload with no status (the week vanished under the lock)', async () => {
+    withRpc({ outcome: 'not_payable' });
+
+    const result = await new PaymentRepository().recordForTimesheet(
+      'ts-1',
+      RECORD_ENTRY
+    );
+
+    expect(result).toEqual({ outcome: 'not_payable', status: null });
+  });
+
+  it('throws a DatabaseError when the RPC itself fails', async () => {
+    withRpc(null, { message: 'boom' });
+
+    await expect(
+      new PaymentRepository().recordForTimesheet('ts-1', RECORD_ENTRY)
+    ).rejects.toThrow('Failed to record payment');
+  });
+
+  it('refuses a recorded payload with no row rather than reporting not_payable', async () => {
+    withRpc({ outcome: 'recorded' });
+
+    await expect(
+      new PaymentRepository().recordForTimesheet('ts-1', RECORD_ENTRY)
+    ).rejects.toThrow('Unrecognised payment outcome');
+  });
+
+  it('refuses an empty answer rather than reporting not_payable', async () => {
+    withRpc(null);
+
+    await expect(
+      new PaymentRepository().recordForTimesheet('ts-1', RECORD_ENTRY)
+    ).rejects.toThrow('Unrecognised payment outcome');
   });
 });

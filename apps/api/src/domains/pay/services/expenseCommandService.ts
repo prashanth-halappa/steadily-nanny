@@ -66,7 +66,11 @@ import {
   MAX_MONEY_MINOR,
   type PayArrangement,
 } from '@steadily-nanny/shared-types/schemas/payArrangement.schema';
-import { HOUSEHOLD_ROLES, HouseholdMemberRepository } from '../../household';
+import {
+  HOUSEHOLD_ROLES,
+  HouseholdMemberRepository,
+  HouseholdRepository,
+} from '../../household';
 import {
   notifyHouseholdParents,
   notifyUser,
@@ -173,7 +177,8 @@ export class ExpenseCommandService {
       typeof UserService,
       'getProfileById'
     > = UserService,
-    private readonly timesheetRepo: ExpenseWeekTimesheetLookup = new TimesheetRepository()
+    private readonly timesheetRepo: ExpenseWeekTimesheetLookup = new TimesheetRepository(),
+    private readonly householdRepo: HouseholdRepository = new HouseholdRepository()
   ) {}
 
   /** Gate 1 — see the module doc. Submit a new claim, always `pending`. */
@@ -189,10 +194,16 @@ export class ExpenseCommandService {
       callerId,
       request.local_date
     );
+    // No wire default on `request.currency` (Phase 1, T4) — an omitted
+    // currency resolves to the household's own currency, never an invented
+    // literal, and the match assertion below runs against THAT resolved
+    // value so a real mismatch is still caught.
+    const currency =
+      request.currency ?? (await this.getHouseholdCurrency(householdId));
     this.assertCurrencyMatches(
       request.kind,
       effective,
-      request.currency,
+      currency,
       householdId,
       callerId
     );
@@ -211,7 +222,7 @@ export class ExpenseCommandService {
       amount_minor:
         request.kind === EXPENSE_KINDS.EXPENSE ? request.amount_minor : null,
       miles: request.kind === EXPENSE_KINDS.MILEAGE ? request.miles : null,
-      currency: request.currency,
+      currency,
       status: EXPENSE_STATUSES.PENDING,
       reviewed_by: null,
       reviewed_at: null,
@@ -253,10 +264,15 @@ export class ExpenseCommandService {
       callerId,
       request.local_date
     );
+    // Same resolution as `create` — an omitted currency falls back to the
+    // household's, and the match assertion runs against that resolved value.
+    const currency =
+      request.currency ??
+      (await this.getHouseholdCurrency(existing.household_id));
     this.assertCurrencyMatches(
       request.kind,
       effective,
-      request.currency,
+      currency,
       existing.household_id,
       callerId
     );
@@ -272,7 +288,7 @@ export class ExpenseCommandService {
         amount_minor:
           request.kind === EXPENSE_KINDS.EXPENSE ? request.amount_minor : null,
         miles: request.kind === EXPENSE_KINDS.MILEAGE ? request.miles : null,
-        currency: request.currency,
+        currency,
       }
     );
     if (!updated) {
@@ -618,6 +634,17 @@ export class ExpenseCommandService {
         timesheet.status
       );
     }
+  }
+
+  /**
+   * Resolve an omitted request currency to the household's own (Phase 1,
+   * T4) — never an invented literal. `'USD'` is a defensive final fallback
+   * for a household row that fails to load; the D12-class carer assertion
+   * already ran, so in practice the household always exists here.
+   */
+  private async getHouseholdCurrency(householdId: string): Promise<string> {
+    const household = await this.householdRepo.findById(householdId);
+    return household?.currency ?? 'USD';
   }
 
   /**

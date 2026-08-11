@@ -8,6 +8,7 @@ import {
   ChangeRequestNotPendingError,
   ExtraShiftAlreadyExistsError,
   InvalidChangeRequestKindForRoleError,
+  NotTheAssignedCarerError,
   NotTheChangeRequestRequesterError,
   NotTheChangeRequestResponderError,
   ShiftImmutableError,
@@ -295,6 +296,58 @@ describe('ShiftChangeRequestCommandService.create', () => {
         p_requested_by: 'carer-1',
       })
     );
+  });
+
+  // A counter-offer is the assigned carer's answer to a proposal about HER
+  // shift. Role alone is not enough: any other active nanny in the household
+  // could otherwise renegotiate a colleague's hours. Same identity rule
+  // `assertCanRespond` already applies on the answering side.
+  it('rejects a counter-offer from a nanny who is not the assigned carer', async () => {
+    const changeRequestRepo = makeChangeRequestRepo();
+    const memberRepo = makeMemberRepo({
+      findActiveMembership: mock(async (_h: string, userId: string) =>
+        membershipFor('nanny', userId)
+      ),
+    });
+    const svc = makeSvc({ changeRequestRepo, memberRepo });
+
+    await expect(
+      svc.create('carer-2', 's1', {
+        kind: 'counter_offer',
+        proposed_starts_at: '2026-08-03T09:00:00.000Z',
+        proposed_ends_at: '2026-08-03T18:00:00.000Z',
+      })
+    ).rejects.toBeInstanceOf(NotTheAssignedCarerError);
+    expect(changeRequestRepo.openWithSupersede).not.toHaveBeenCalled();
+  });
+
+  it('rejects a counter-offer on an unassigned shift', async () => {
+    const changeRequestRepo = makeChangeRequestRepo();
+    const shiftQueries = makeShiftQueries({
+      getOwned: mock(async () => ({ ...shift, carer_id: null })),
+    });
+    const svc = makeSvc({ changeRequestRepo, shiftQueries });
+
+    await expect(
+      svc.create('carer-1', 's1', {
+        kind: 'counter_offer',
+        proposed_starts_at: '2026-08-03T09:00:00.000Z',
+        proposed_ends_at: '2026-08-03T18:00:00.000Z',
+      })
+    ).rejects.toBeInstanceOf(NotTheAssignedCarerError);
+    expect(changeRequestRepo.openWithSupersede).not.toHaveBeenCalled();
+  });
+
+  it('leaves parent-only kinds unaffected on an unassigned shift', async () => {
+    const changeRequestRepo = makeChangeRequestRepo();
+    const shiftQueries = makeShiftQueries({
+      getOwned: mock(async () => ({ ...shift, carer_id: null })),
+    });
+    const svc = makeSvc({ changeRequestRepo, shiftQueries });
+
+    const result = await svc.create('parent-1', 's1', { kind: 'cancel' });
+
+    expect(result.status).toBe('pending');
   });
 
   it('requires proposed times for time_change', async () => {

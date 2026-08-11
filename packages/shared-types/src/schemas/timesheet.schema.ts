@@ -414,6 +414,34 @@ export const EARNINGS_LINE_ORDER = [
   EARNINGS_LINE_KINDS.REIMBURSEMENTS,
 ] as const satisfies readonly EarningsLineKind[];
 
+/**
+ * Does THIS BUILD know what this kind means?
+ *
+ * The wire's `kind` is an open string (see `EarningsLineSchema`), so every
+ * consumer that maps a kind to copy has to ask. Emission stays type-safe —
+ * the engine only ever constructs `EARNINGS_LINE_KINDS.*` literals — so this
+ * guard is a READ-side question, never a write-side one.
+ */
+export function isKnownEarningsLineKind(
+  kind: string
+): kind is EarningsLineKind {
+  return Object.values(EARNINGS_LINE_KINDS).some(known => known === kind);
+}
+
+/**
+ * The last-resort label for a kind this build has no copy for:
+ * `night_differential` → `Night differential`.
+ *
+ * Deliberately not localised — there is nothing to localise, because the
+ * string came from a server this client predates. An unfamiliar but readable
+ * label beside a correct amount beats a dropped row, which would make a
+ * breakdown's lines stop summing to the total beside them.
+ */
+export function humanizeEarningsLineKind(kind: string): string {
+  const words = kind.replace(/_/g, ' ');
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
 /** The three arms of a week's earnings result. */
 export const EARNINGS_RESULT_STATUSES = {
   OK: 'ok',
@@ -451,7 +479,24 @@ const EarningsCurrencyCodeSchema = z.string().regex(/^[A-Z]{3}$/);
  * `guaranteed_topup` line spans the whole week.
  */
 export const EarningsLineSchema = z.object({
-  kind: z.enum(Object.values(EARNINGS_LINE_KINDS)),
+  /**
+   * OPEN, not a closed `z.enum` — and that is the whole point.
+   *
+   * This schema is compiled into every shipped mobile build, and the read
+   * path re-parses the frozen `earnings` jsonb on EVERY read. A closed enum
+   * meant the day the server started emitting a seventh kind, one unknown
+   * row failed the entire week parse and errored the whole Hours screen for
+   * every client older than that release. A row nobody has copy for is worth
+   * an unfamiliar label (`humanizeEarningsLineKind`), never a blank screen.
+   *
+   * `.min(1)` because tolerant is not credulous: an empty kind is a defect,
+   * not a future kind, and a non-string is not a kind at all.
+   *
+   * Emission is unaffected: the engine builds kinds only from
+   * `EARNINGS_LINE_KINDS.*`, and `earningsService`'s `Record<EarningsLineKind,
+   * …>` bucket stays TOTAL so a new kind is still a compile error there.
+   */
+  kind: z.string().min(1),
   minutes: z.int().min(0),
   rate_minor: z.int().min(0),
   /** Overtime only; null on every other kind. Never below 1. */
@@ -468,6 +513,25 @@ export const EarningsLineSchema = z.object({
 });
 
 /**
+ * The FORMAT version of a frozen snapshot, on every arm the approve path
+ * writes (`timesheetCommandService.computeSnapshot` stamps it).
+ *
+ * ABSENT IS v1 — every snapshot frozen before this field existed is one, and
+ * `.optional()` rather than `.default(1)` keeps the inferred output type
+ * optional so the engine's live results and every fixture stay unchanged.
+ *
+ * A `v: 2` snapshot FAILS this parse on purpose, degrading the week to
+ * `unreadable_snapshot` with the Sentry log rather than being reinterpreted
+ * by a build that has never seen the format. That is the opposite of `kind`'s
+ * tolerance, and deliberately so: an unknown KIND costs one row's label, an
+ * unknown FORMAT means every field on the row may mean something else.
+ *
+ * The recorded consequence: shipping a `v: 2` WRITER requires the reader to
+ * have shipped first — the same fleet rule new kinds live under.
+ */
+const SnapshotFormatVersionSchema = z.literal(1).optional();
+
+/**
  * A week's earnings — a discriminated union, never a nullable total.
  *
  * The two non-`ok` arms deliberately carry NO money fields at all. A `0`
@@ -478,6 +542,7 @@ export const EarningsLineSchema = z.object({
 export const WeekEarningsSchema = z.discriminatedUnion('status', [
   z.object({
     status: z.literal(EARNINGS_RESULT_STATUSES.OK),
+    v: SnapshotFormatVersionSchema,
     week_start: z.iso.date(),
     currency: EarningsCurrencyCodeSchema,
     /** In `EARNINGS_LINE_ORDER`, then chronological. Empty lines are omitted. */
@@ -515,12 +580,14 @@ export const WeekEarningsSchema = z.discriminatedUnion('status', [
   }),
   z.object({
     status: z.literal(EARNINGS_RESULT_STATUSES.NO_ARRANGEMENT),
+    v: SnapshotFormatVersionSchema,
     week_start: z.iso.date(),
     /** The household-local dates with no effective arrangement, ascending. */
     unpriced_dates: z.array(z.iso.date()),
   }),
   z.object({
     status: z.literal(EARNINGS_RESULT_STATUSES.CURRENCY_CHANGE),
+    v: SnapshotFormatVersionSchema,
     week_start: z.iso.date(),
     /** Distinct codes in the order the week meets them. Two or more, always. */
     currencies: z.array(EarningsCurrencyCodeSchema).min(2),

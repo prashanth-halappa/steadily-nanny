@@ -55,6 +55,7 @@ import {
 } from '@/src/hooks/mutations/useRecordPayment';
 import { useReopenTimesheet } from '@/src/hooks/mutations/useReopenTimesheet';
 import { useReviewExpense } from '@/src/hooks/mutations/useReviewExpense';
+import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
 import { useHouseholdMembers } from '@/src/hooks/queries/useHouseholdMembers';
 import { usePayments } from '@/src/hooks/queries/usePayments';
 import { usePendingExpenses } from '@/src/hooks/queries/usePendingExpenses';
@@ -148,6 +149,11 @@ export function ParentWeekView({
   const tabBarScrollPadding = useTabBarScrollPadding();
   const colors = useThemeColors();
   const currentUserId = useAuthStore(s => s.user?.id ?? null);
+  // Cache hit, not a second request — `HoursScreen` already resolved this
+  // same household via `useActiveHousehold` to get `householdId`. Only read
+  // here for the household-level currency fallback below (same pattern as
+  // `NannyWeekView`'s Daylight P0-5 household-name read).
+  const activeHousehold = useActiveHousehold();
   const membersQuery = useHouseholdMembers(householdId);
   const entriesQuery = useWeekTimeEntries(householdId, weekStartISO);
   const timesheetQuery = useWeekTimesheet(householdId, weekStartISO);
@@ -512,7 +518,10 @@ export function ParentWeekView({
     e => e.status === 'approved' && carerKeyOf(e) === selectedCarerId
   );
   const expensesCurrency =
-    earningsOk?.currency ?? approvedExpenses[0]?.currency ?? 'GBP';
+    earningsOk?.currency ??
+    approvedExpenses[0]?.currency ??
+    activeHousehold.household?.currency ??
+    'USD';
 
   // TIER0 settlement (067): the ledger measured against the FROZEN gross.
   // `earningsOk` is null for a week with no server total, and `derivePaidState`
@@ -906,7 +915,9 @@ export function ParentWeekView({
           onSubmit={input => void handleRecordPayment(input)}
           isSubmitting={recordPayment.isPending}
           outstandingMinor={paidState?.balanceMinor ?? 0}
-          currency={earningsOk?.currency ?? 'GBP'}
+          currency={
+            earningsOk?.currency ?? activeHousehold.household?.currency ?? 'USD'
+          }
           todayISO={todayISO}
           householdTimezone={timeZone}
           carerName={approveDialogCarerName}

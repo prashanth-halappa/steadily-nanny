@@ -29,7 +29,7 @@ export function getDeviceLocale(): string {
  * (`packages/shared-types/src/schemas/payArrangement.schema.ts`) and the
  * `pay_arrangements.currency` DB check enforce. Nothing between here and the
  * column upcases, so a lowercase or malformed platform value would be a 400 at
- * best and a wrong stored code at worst — it degrades to `'GBP'` instead.
+ * best and a wrong stored code at worst — it degrades to `'USD'` instead.
  *
  * This is a PREFILL, never the final word: currency belongs to the employment
  * arrangement, not to the phone (a UK family whose phone region is US must not
@@ -38,8 +38,23 @@ export function getDeviceLocale(): string {
 export function getDeviceCurrency(): string {
   try {
     const code = getLocales()[0]?.currencyCode?.toUpperCase();
-    return code && /^[A-Z]{3}$/.test(code) ? code : 'GBP';
+    return code && /^[A-Z]{3}$/.test(code) ? code : 'USD';
   } catch {
-    return 'GBP';
+    return 'USD';
+  }
+}
+
+/**
+ * The device's ISO-3166 region code, e.g. `"US"` — country-level only, never
+ * a US state (there is no `getDeviceJurisdiction`). Nullable: unlike
+ * currency, there is no safe default to fall back to — callers that need a
+ * yes/no US check (e.g. onboarding's `week_starts_on` default, D-8) compare
+ * against `'US'` explicitly rather than trusting an invented fallback.
+ */
+export function getDeviceRegion(): string | null {
+  try {
+    return getLocales()[0]?.regionCode ?? null;
+  } catch {
+    return null;
   }
 }

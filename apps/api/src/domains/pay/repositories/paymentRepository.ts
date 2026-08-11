@@ -23,6 +23,42 @@ import { supabaseService } from '../../../config/supabase';
 import { DatabaseError } from '../../../errors';
 import { BaseRepository } from '../../../shared/repositories/baseRepository';
 
+/**
+ * The caller's half of a payment row — the four columns that describe the
+ * SETTLEMENT rather than the week. Everything that describes the week
+ * (`household_id`, `carer_id`, `currency`) is deliberately absent: 077 stamps
+ * those from the timesheet row it locks, so there is nothing here to spoof.
+ */
+export interface RecordPaymentEntry {
+  amount_minor: number;
+  paid_at: string;
+  /** Explicit null, never omitted — "the parent said nothing about how". */
+  method_note: string | null;
+  recorded_by: string;
+}
+
+/**
+ * What `record_timesheet_payment` answers with. Three outcomes, because the
+ * two ways a payment can be refused need DIFFERENT errors: exceeding the
+ * frozen gross is the 400 `PaymentExceedsGrossError` (and carries the figures
+ * the LOCK saw, so the client can say what is already recorded), while a week
+ * that stopped being payable under the lock is the 409
+ * `PaymentWeekNotApprovedError`.
+ */
+export type RecordPaymentOutcome =
+  | { outcome: 'recorded'; payment: Payment }
+  | { outcome: 'exceeds_gross'; alreadyPaidMinor: number; grossMinor: number }
+  | { outcome: 'not_payable'; status: string | null };
+
+/** The raw jsonb shape 077's function returns. */
+interface RecordPaymentRpcPayload {
+  outcome: 'recorded' | 'exceeds_gross' | 'not_payable';
+  payment?: Payment;
+  already_paid_minor?: number;
+  gross_minor?: number;
+  status?: string | null;
+}
+
 export class PaymentRepository extends BaseRepository<Payment> {
   constructor() {
     super('payments');
@@ -111,5 +147,70 @@ export class PaymentRepository extends BaseRepository<Payment> {
   async sumForTimesheet(timesheetId: string): Promise<number> {
     const payments = await this.listForTimesheet(timesheetId);
     return payments.reduce((total, payment) => total + payment.amount_minor, 0);
+  }
+
+  /**
+   * The ONLY write path into the ledger — one payment, recorded atomically
+   * against the week's frozen gross (migration 077).
+   *
+   * IT GOES THROUGH AN RPC BECAUSE THE OVER-PAYMENT GATE BELONGS IN THE WRITE,
+   * the same argument `expenseRepository.reviewPending` makes for the freeze
+   * guard. `sumForTimesheet` above plus `BaseRepository.create` is a read then
+   * a write with no lock in between: two parents recording a payment in the
+   * same instant both saw `sum = 0` and both committed, settling the week at
+   * twice its gross — and `payments` is append-only, so nothing takes the
+   * second row back. `record_timesheet_payment` locks the week's timesheet row
+   * FOR UPDATE, re-checks that it is still approved and priced, sums, refuses
+   * over-gross, and inserts, all in one statement. `sumForTimesheet` survives
+   * for the READ paths (CSV export, paid-state) — it is no longer a gate.
+   *
+   * Only the settlement's own fields cross the wire: `household_id`,
+   * `carer_id` and `currency` are stamped inside the function from the locked
+   * timesheet, never sent.
+   */
+  async recordForTimesheet(
+    timesheetId: string,
+    entry: RecordPaymentEntry
+  ): Promise<RecordPaymentOutcome> {
+    const { data, error } = await supabaseService.rpc(
+      'record_timesheet_payment',
+      {
+        p_timesheet_id: timesheetId,
+        p_amount_minor: entry.amount_minor,
+        p_paid_at: entry.paid_at,
+        p_method_note: entry.method_note,
+        p_recorded_by: entry.recorded_by,
+      }
+    );
+
+    if (error) {
+      throw new DatabaseError('Failed to record payment', 'DATABASE_ERROR', {
+        details: error.message,
+        timesheetId,
+      });
+    }
+
+    const payload = data as RecordPaymentRpcPayload | null;
+    if (payload?.outcome === 'recorded' && payload.payment) {
+      return { outcome: 'recorded', payment: payload.payment };
+    }
+    if (payload?.outcome === 'exceeds_gross') {
+      return {
+        outcome: 'exceeds_gross',
+        alreadyPaidMinor: payload.already_paid_minor ?? 0,
+        grossMinor: payload.gross_minor ?? 0,
+      };
+    }
+    if (payload?.outcome === 'not_payable') {
+      return { outcome: 'not_payable', status: payload.status ?? null };
+    }
+    // Anything else — a 'recorded' answer with no row, or no answer at all —
+    // is refused rather than folded into `not_payable`. Reporting "the week
+    // is not payable" for an insert that DID commit is the one lie an
+    // append-only ledger cannot take back.
+    throw new DatabaseError('Unrecognised payment outcome', 'DATABASE_ERROR', {
+      outcome: payload?.outcome ?? null,
+      timesheetId,
+    });
   }
 }

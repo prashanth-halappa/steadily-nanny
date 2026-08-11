@@ -141,7 +141,9 @@
       "invite_redeemed": "Nuevo miembro incorporado",
       "co_parent_action_fyi": "Otro padre/madre actuó",
       "handoff_note_added": "Nueva nota de traspaso",
-      "shift_no_show": "Nadie ha fichado"
+      "shift_no_show": "Nadie ha fichado",
+      "running_late": "La niñera llega tarde",
+      "parent_covering": "Un padre/madre cubre el turno"
     }
   }
 }

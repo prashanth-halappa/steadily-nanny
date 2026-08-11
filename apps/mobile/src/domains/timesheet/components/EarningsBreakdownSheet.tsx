@@ -42,8 +42,8 @@ import { BottomSheetBase } from '@/src/components/custom/BottomSheetBase';
 import { H4, Small } from '@/src/components/ui/typography';
 import { AmountRow } from '@/src/domains/pay/components/AmountRow';
 import { formatMoney } from '@/src/lib/money';
-import type { EarningsLine, EarningsLineKind, WeekEarningsOk } from '../types';
-import { EARNINGS_LINE_KINDS } from '../types';
+import type { EarningsLine, WeekEarningsOk } from '../types';
+import { EARNINGS_LINE_KINDS, humanizeEarningsLineKind } from '../types';
 import { formatDuration } from '../utils/duration';
 import {
   formatEarningsDuration,
@@ -72,17 +72,6 @@ interface EarningsBreakdownSheetProps {
   testID?: string;
 }
 
-/** Renderable lines only — `reimbursements` never appears as a row here
- * (see module header); filtered defensively in case Phase 4 ever emits one
- * before this sheet is revisited. */
-const RENDERABLE_KINDS: ReadonlySet<EarningsLineKind> = new Set([
-  EARNINGS_LINE_KINDS.REGULAR,
-  EARNINGS_LINE_KINDS.OVERTIME,
-  EARNINGS_LINE_KINDS.CANCELLATION_PAID,
-  EARNINGS_LINE_KINDS.PTO,
-  EARNINGS_LINE_KINDS.GUARANTEED_TOPUP,
-]);
-
 export function EarningsBreakdownSheet({
   visible,
   onDismiss,
@@ -94,8 +83,13 @@ export function EarningsBreakdownSheet({
 }: EarningsBreakdownSheetProps) {
   const { t } = useTranslation('hours');
 
-  const renderableLines = earnings.lines.filter(line =>
-    RENDERABLE_KINDS.has(line.kind)
+  // A DENYLIST, not an allowlist: `reimbursements` is the one kind that must
+  // not appear here (it renders below the gross, never inside it — see the
+  // module header), and everything else renders even if this build has never
+  // heard of it. An allowlist silently dropped any newer kind, which made the
+  // total stop equalling the visible sum of the rows.
+  const renderableLines = earnings.lines.filter(
+    line => line.kind !== EARNINGS_LINE_KINDS.REIMBURSEMENTS
   );
   const regularLines = renderableLines.filter(
     line => line.kind === EARNINGS_LINE_KINDS.REGULAR
@@ -230,7 +224,18 @@ export function EarningsBreakdownSheet({
           </View>
         );
       default:
-        return null;
+        // A kind this build has no copy for. The label is the wire value
+        // humanized in place — unfamiliar, but beside a correct amount, and
+        // present, which is what keeps the rows summing to the total.
+        return (
+          <AmountRow
+            key={key}
+            testID={`${testID}-line-unknown-${index}`}
+            label={humanizeEarningsLineKind(line.kind)}
+            value={amount}
+            subLine={t('earningsLineUnknownSubline', { duration, rate })}
+          />
+        );
     }
   }
 

@@ -146,6 +146,20 @@ export const PayArrangementSchema = z.object({
   note: z.string().nullable(),
   created_by: z.uuid().nullable(),
   created_at: z.iso.datetime({ offset: true }),
+  // Opaque documentary-terms bag (notice period, probation, duties scope,
+  // driving, live-in conditions) — the free-text `note` was the only place
+  // any of this could live before. Deliberately untyped until the terms UI
+  // lands (3-U1); the engine must never read it, nothing prices it
+  // (Phase 1, T9 storage; `076_pay_arrangement_terms.sql`).
+  // `.optional()` not `.default({})`, same reasoning as `v` in
+  // `timesheet.schema.ts`'s `WeekEarningsSchema` (Phase 1, T3): `.default()`
+  // makes the INFERRED OUTPUT type required, which would force `terms` onto
+  // every `PayArrangement`-typed fixture repo-wide — including domains this
+  // slice has no business touching. The column's `not null default
+  // '{}'::jsonb` still means a live row always carries one; this only
+  // affects a fixture or pre-076 payload that omits it, which parses with
+  // `terms: undefined` rather than failing.
+  terms: z.record(z.string(), z.unknown()).optional(),
 });
 
 /**
@@ -162,7 +176,13 @@ export const PayArrangementSchema = z.object({
  */
 export const CreatePayArrangementRequestSchema = z.object({
   rate_minor: z.int().min(0).max(MAX_MONEY_MINOR),
-  currency: CurrencyCodeSchema.default('GBP'),
+  // No wire default (Phase 1, T4): a household has its own currency now
+  // (`household.schema.ts`), and inventing 'GBP' here was a guess with no
+  // relationship to where the family lives. Omitted currency is resolved
+  // server-side from the household row (`payArrangementCommandService.create`)
+  // — this stays optional so a shipped client that still sends its own
+  // explicit currency is unaffected (additive, non-breaking).
+  currency: CurrencyCodeSchema.optional(),
   overtime_threshold_minutes: z.int().min(1).nullable().optional(),
   overtime_multiplier: OvertimeMultiplierSchema.default(1.5),
   guaranteed_minutes_per_week: z.int().min(0).nullable().optional(),
@@ -176,6 +196,11 @@ export const CreatePayArrangementRequestSchema = z.object({
   cancellation_paid_within_hours: z.int().min(1).nullable().optional(),
   valid_from: z.iso.date(),
   note: z.string().optional(),
+  // Passthrough only (Phase 1, T9 storage) — no wire default, resolved to
+  // `{}` server-side (`payArrangementCommandService.create`) when omitted,
+  // same "optional here, resolved in the command service" shape as
+  // `currency` above.
+  terms: z.record(z.string(), z.unknown()).optional(),
 });
 
 /** List response envelope — the append-only history for one carer. */

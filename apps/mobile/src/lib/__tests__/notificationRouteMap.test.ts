@@ -122,6 +122,22 @@ describe('NOTIFICATION_ROUTE_MAP resolvers', () => {
     }
   });
 
+  it('routes running_late and parent_covering to the same shift detail as the change-request leg', () => {
+    const payload = { shiftId: 'shift-1', householdId: 'hh-1' };
+    const expected = resolve(
+      PUSH_NOTIFICATION_TYPES.SHIFT_CHANGE_REQUESTED,
+      payload
+    );
+
+    for (const type of [
+      PUSH_NOTIFICATION_TYPES.RUNNING_LATE,
+      PUSH_NOTIFICATION_TYPES.PARENT_COVERING,
+    ] as const) {
+      expect(resolve(type, payload)).toBe(expected);
+      expect(resolve(type, {})).toBeNull();
+    }
+  });
+
   it('routes carer time-off conflict to the shifts calendar for the household', () => {
     expect(
       resolve(PUSH_NOTIFICATION_TYPES.CARER_TIME_OFF_CONFLICT, {

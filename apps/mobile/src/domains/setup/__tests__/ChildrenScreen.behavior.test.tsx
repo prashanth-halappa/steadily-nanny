@@ -8,6 +8,7 @@
  * tapping it re-attempts the bootstrap.
  */
 import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
+import type { CreateHouseholdInput } from '@steadily-nanny/shared-types/schemas/household.schema';
 import { fireEvent, waitFor } from '@testing-library/react-native';
 import { useAuthStore } from '@/src/store/auth';
 import { useSetupProgressStore } from '@/src/store/setupProgress';
@@ -15,7 +16,7 @@ import { renderWithProviders } from '@/src/test-utils';
 
 const listHouseholdsMock = mock(() => Promise.resolve([]));
 const createHouseholdMock = mock(
-  (_req: { name: string }): Promise<{ id: string; name: string }> =>
+  (_req: CreateHouseholdInput): Promise<{ id: string; name: string }> =>
     Promise.reject(new Error('network down'))
 );
 const getProfileMock = mock(() =>
@@ -115,6 +116,8 @@ describe('ChildrenScreen — naming the household at creation (W1-E fix 3)', () 
     await waitFor(() => expect(createHouseholdMock).toHaveBeenCalledTimes(1));
     expect(createHouseholdMock.mock.calls[0]?.[0]).toEqual({
       name: 'The Ruiz Family',
+      timezone: 'America/Los_Angeles',
+      currency: 'GBP',
     });
   });
 
@@ -129,6 +132,8 @@ describe('ChildrenScreen — naming the household at creation (W1-E fix 3)', () 
     await waitFor(() => expect(createHouseholdMock).toHaveBeenCalledTimes(1));
     expect(createHouseholdMock.mock.calls[0]?.[0]).toEqual({
       name: 'Our household',
+      timezone: 'America/Los_Angeles',
+      currency: 'GBP',
     });
   });
 });

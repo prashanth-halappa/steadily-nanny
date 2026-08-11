@@ -224,6 +224,54 @@ describe('renderWeekExportCsv — the rich fixture, byte for byte', () => {
   });
 });
 
+/**
+ * A snapshot frozen by a NEWER server than the one rendering it — the export
+ * route reads jsonb it did not write, and a kind this build has never heard of
+ * must still reach the payroll provider rather than crashing the download.
+ */
+describe('renderWeekExportCsv — a line kind this build does not know', () => {
+  const withUnknownKind: WeekEarningsOk = {
+    ...earnings,
+    lines: [
+      ...earnings.lines,
+      {
+        kind: 'night_differential',
+        minutes: 120,
+        rate_minor: 2000,
+        multiplier: null,
+        amount_minor: 4000,
+        from_date: '2026-08-07',
+        to_date: '2026-08-07',
+        arrangement_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      },
+    ],
+  };
+
+  it('humanizes the description and carries the kind column verbatim', () => {
+    const { csv } = renderWeekExportCsv({
+      timesheet,
+      earnings: withUnknownKind,
+      paidToDateMinor: 30_000,
+    });
+
+    expect(csv).toContain(
+      `${CRLF}2026-08-07,Night differential,night_differential,120,2000,4000,GBP${CRLF}`
+    );
+  });
+
+  it('changes no total — the summary reads the frozen figures, not the rows', () => {
+    const { csv } = renderWeekExportCsv({
+      timesheet,
+      earnings: withUnknownKind,
+      paidToDateMinor: 30_000,
+    });
+
+    expect(csv).toContain(`${CRLF}total_gross_minor,106375${CRLF}`);
+    expect(csv).toContain(`${CRLF}reimbursements_minor,1250${CRLF}`);
+    expect(csv).toContain(`${CRLF}balance_due_minor,76375${CRLF}`);
+  });
+});
+
 describe('carerSlug', () => {
   it('lowercases and collapses non-alphanumerics to a single dash', () => {
     expect(carerSlug('Rowe, Nia')).toBe('rowe-nia');

@@ -1635,6 +1635,13 @@ export class TimesheetCommandService {
    * from the SAME `adjusted` binding, so they cannot disagree — which is what
    * lets payments Gate 4, the CSV export and every frozen read stay correct
    * with no change at all.
+   *
+   * Every non-null exit stamps `v: 1` — the jsonb's FORMAT version, not the
+   * week's. Absent still means v1 (nothing is backfilled), so the stamp buys
+   * nothing today; it exists so that a v2 writer can only ever ship AFTER a
+   * reader that recognises it, because an unstamped v2 would be read as v1
+   * (`WeekEarningsSchema`'s `SnapshotFormatVersionSchema`). The cleared exit
+   * writes no jsonb at all and so carries no version.
    */
   private async computeSnapshot(
     timesheet: Timesheet,
@@ -1666,7 +1673,7 @@ export class TimesheetCommandService {
       return {
         gross_minor: null,
         currency: null,
-        earnings,
+        earnings: { ...earnings, v: 1 },
         earnings_computed_at: computedAt,
       };
     }
@@ -1697,7 +1704,7 @@ export class TimesheetCommandService {
       return {
         gross_minor: earnings.gross_minor,
         currency: earnings.currency,
-        earnings,
+        earnings: { ...earnings, v: 1 },
         earnings_computed_at: computedAt,
       };
     }
@@ -1729,6 +1736,7 @@ export class TimesheetCommandService {
       currency: earnings.currency,
       earnings: {
         ...earnings,
+        v: 1,
         gross_minor: adjusted,
         adjustment: {
           amount_minor: adjustment.amount_minor,
@@ -1751,10 +1759,33 @@ export class TimesheetCommandService {
     await this.assertWriteMember(userId, timesheet.household_id);
     this.assertActionable(timesheet);
 
-    const updated = await this.timesheetRepo.update(timesheetId, {
-      status: 'queried',
-      query_note: input.note,
-    });
+    const updated = await this.timesheetRepo.queryFromSubmitted(
+      timesheetId,
+      timesheet.updated_at,
+      input.note
+    );
+    if (!updated) {
+      throw new TimesheetNotActionableError(timesheetId, 'changed_since_read');
+    }
+
+    const auditEvent: NewShiftEventInput = {
+      household_id: timesheet.household_id,
+      shift_id: null,
+      local_date: timesheet.week_start,
+      actor_id: userId,
+      event_type: 'timesheet_queried',
+      payload: {
+        timesheetId,
+        note: input.note,
+        weekStart: timesheet.week_start,
+      },
+    };
+    try {
+      await this.eventRepo.insertMany([auditEvent]);
+    } catch {
+      // Day-thread append is best-effort audit: the query write already
+      // succeeded and must not be rolled back for a logging failure.
+    }
 
     // Carer currently only learns of a queried week by opening Hours — push
     // her so she can respond. Fire-and-forget: a push failure must never
@@ -1786,9 +1817,11 @@ export class TimesheetCommandService {
    * week is permanently frozen — every write path rejects it, and even
    * `query` is refused because only `submitted` is actionable.
    *
-   * Snapshot clear reuses `CLEARED_EARNINGS_SNAPSHOT` — the same literal
-   * `rollUpIntoTimesheet` writes — so approve and reopen cannot drift on
-   * which columns null out. The caller-supplied reason is written BOTH as
+   * The write is `reopenFromApproved` — one conditional statement carrying
+   * the status, the cleared approval stamp and `CLEARED_EARNINGS_SNAPSHOT`,
+   * compare-and-set on the version of the row this method read, so a week
+   * re-approved underneath it loses the race instead of losing a snapshot.
+   * The caller-supplied reason is written BOTH as
    * display state on the timesheet row (`reopen_reason`, cleared on the
    * next approve) AND as an append-only day-thread event — reopening is a
    * money-visible act and must not be silent. Deliberately NOT on
@@ -1809,13 +1842,14 @@ export class TimesheetCommandService {
       throw new TimesheetNotActionableError(timesheetId, timesheet.status);
     }
 
-    const updated = await this.timesheetRepo.update(timesheetId, {
-      status: 'submitted',
-      approved_by: null,
-      approved_at: null,
-      reopen_reason: input.reason,
-      ...CLEARED_EARNINGS_SNAPSHOT,
-    });
+    const updated = await this.timesheetRepo.reopenFromApproved(
+      timesheetId,
+      timesheet.updated_at,
+      input.reason
+    );
+    if (!updated) {
+      throw new TimesheetNotActionableError(timesheetId, 'changed_since_read');
+    }
 
     const auditEvent: NewShiftEventInput = {
       household_id: timesheet.household_id,

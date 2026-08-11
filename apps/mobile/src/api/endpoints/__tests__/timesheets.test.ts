@@ -199,6 +199,46 @@ describe('timesheetApi.getById', () => {
     );
     expect(result.earnings.status).toBe('no_arrangement');
   });
+
+  it('resolves a week whose snapshot carries a line kind this build predates', async () => {
+    // THE fleet-risk case: a shipped client meets a seventh earnings kind. A
+    // closed enum here threw the whole parse and blanked the Hours screen —
+    // one unrecognised row must cost that row's label, nothing else. No `v`
+    // on the snapshot either: absent IS v1.
+    const weekWithUnknownKind = {
+      ...validTimesheet,
+      earnings: {
+        status: 'ok',
+        week_start: validTimesheet.week_start,
+        currency: 'GBP',
+        lines: [
+          {
+            kind: 'night_differential',
+            minutes: 120,
+            rate_minor: 2000,
+            multiplier: null,
+            amount_minor: 4000,
+            from_date: validTimesheet.week_start,
+            to_date: validTimesheet.week_start,
+            arrangement_id: null,
+          },
+        ],
+        gross_minor: 4000,
+        reimbursements_minor: 0,
+        worked_minutes: 120,
+        payable_minutes: 120,
+        guaranteed_minutes_per_week: null,
+      },
+    };
+    apiClient.get.mockResolvedValue({
+      data: { data: { timesheet: weekWithUnknownKind } },
+    });
+
+    const result = await timesheetApi.getById(validTimesheet.id);
+
+    expect(result.earnings.status).toBe('ok');
+    expect(result.earnings.lines[0].kind).toBe('night_differential');
+  });
 });
 
 describe('timesheetApi.approve', () => {

@@ -200,6 +200,9 @@ const baseHousehold = {
   address_line: null,
   latitude: null,
   longitude: null,
+  currency: 'GBP',
+  jurisdiction: null,
+  week_starts_on: 1,
   approval_mode: 'either',
   approval_scope: 'all',
   short_notice_hours: 24,
@@ -370,6 +373,92 @@ describe('ManageHouseholdScreen', () => {
     fireEvent.press(getByTestId('manage-household-screen-cta'));
 
     expect(updateMock).not.toHaveBeenCalled();
+  });
+
+  it('changes week start through the real chips and sends ONLY that field', async () => {
+    const { getByTestId } = renderWithProviders(<ManageHouseholdScreen />);
+
+    await waitFor(() =>
+      expect(getByTestId('household-name-input').props.value).toBe('The Smiths')
+    );
+    expect(getByTestId('manage-household-screen-cta').props.disabled).toBe(
+      true
+    );
+
+    fireEvent.press(getByTestId('household-week-start-0'));
+    fireEvent.press(getByTestId('manage-household-screen-cta'));
+
+    await waitFor(() =>
+      expect(updateMock).toHaveBeenCalledWith(HOUSEHOLD_ID, {
+        week_starts_on: 0,
+      })
+    );
+  });
+
+  it('T1: shows the lock copy and renders the row read-only after the server refuses with WEEK_START_LOCKED', async () => {
+    updateMock.mockImplementationOnce(() =>
+      Promise.reject({
+        response: {
+          status: 409,
+          data: {
+            error: {
+              code: 'CONFLICT',
+              metadata: { reason: 'WEEK_START_LOCKED' },
+            },
+          },
+        },
+      })
+    );
+    const { getByTestId, queryByTestId } = renderWithProviders(
+      <ManageHouseholdScreen />
+    );
+
+    await waitFor(() =>
+      expect(getByTestId('household-name-input').props.value).toBe('The Smiths')
+    );
+
+    fireEvent.press(getByTestId('household-week-start-0'));
+    fireEvent.press(getByTestId('manage-household-screen-cta'));
+
+    await waitFor(() =>
+      expect(getByTestId('household-week-start-locked-hint')).toBeTruthy()
+    );
+    expect(queryByTestId('household-week-start-0')).toBeNull();
+  });
+
+  it('changes currency and jurisdiction through the real pickers and sends ONLY those fields', async () => {
+    const { getByTestId } = renderWithProviders(<ManageHouseholdScreen />);
+
+    await waitFor(() =>
+      expect(getByTestId('household-name-input').props.value).toBe('The Smiths')
+    );
+    expect(getByTestId('manage-household-screen-cta').props.disabled).toBe(
+      true
+    );
+
+    fireEvent.press(getByTestId('household-currency-trigger'));
+    fireEvent.press(getByTestId('household-currency-USD'));
+
+    fireEvent.press(getByTestId('household-jurisdiction-trigger'));
+    await waitFor(() =>
+      expect(getByTestId('jurisdiction-picker-sheet').props.visible).toBe(true)
+    );
+    fireEvent.press(getByTestId('jurisdiction-option-CA'));
+    // `BottomSheetBase` (a real RN `Modal`) stays mounted with `visible: false`
+    // rather than unmounting — same as `TimezonePickerSheet` — so the
+    // dismissal check reads the prop, not presence in the tree.
+    await waitFor(() =>
+      expect(getByTestId('jurisdiction-picker-sheet').props.visible).toBe(false)
+    );
+
+    fireEvent.press(getByTestId('manage-household-screen-cta'));
+
+    await waitFor(() =>
+      expect(updateMock).toHaveBeenCalledWith(HOUSEHOLD_ID, {
+        currency: 'USD',
+        jurisdiction: 'CA',
+      })
+    );
   });
 
   // `membershipsListMock` (unlike `listMock`) does not consult the auth

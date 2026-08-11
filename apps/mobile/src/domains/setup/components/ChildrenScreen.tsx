@@ -32,6 +32,8 @@ import {
   buildBootstrapProfileRequest,
   deriveBootstrapName,
 } from '@/src/lib/bootstrapUserProfile';
+import { getDeviceCurrency, getDeviceRegion } from '@/src/lib/deviceLocale';
+import { getDeviceTimeZone } from '@/src/lib/deviceTimeZone';
 import { useAuthStore } from '@/src/store/auth';
 import { useSetupProgressStore } from '@/src/store/setupProgress';
 
@@ -101,6 +103,18 @@ export function ChildrenScreen() {
           }
           await createHousehold.mutateAsync({
             name: householdName.trim() || DEFAULT_HOUSEHOLD_NAME,
+            // Device-derived prefills, same "seed, never final word" discipline
+            // as `PaySetupScreen`'s currency chip — a parent can correct both
+            // from Settings -> Manage household afterward. `jurisdiction` is
+            // deliberately absent: expo-localization only gives country-level
+            // region, never a US state, so there is nothing honest to prefill.
+            timezone: getDeviceTimeZone(),
+            currency: getDeviceCurrency(),
+            // D-8: a US-region device gets a Sunday-start pay week; every
+            // other region keeps the SQL default (1, Monday) by omission.
+            // The engine doesn't read this yet (3-E1) — sending it now
+            // avoids a second onboarding touch when it does.
+            ...(getDeviceRegion() === 'US' ? { week_starts_on: 0 } : {}),
           });
         } catch {
           bootstrapStartedRef.current = false;

@@ -76,8 +76,8 @@ function makeMemberRepo(byUserId: Record<string, unknown>): any {
   };
 }
 
-function makeHouseholdRepo(timezone = 'Europe/London'): any {
-  return { findById: mock(async () => ({ id: 'h1', timezone })) };
+function makeHouseholdRepo(timezone = 'Europe/London', currency = 'GBP'): any {
+  return { findById: mock(async () => ({ id: 'h1', timezone, currency })) };
 }
 
 function makeUserService(name: string | null = 'Nia Rowe'): any {
@@ -103,6 +103,7 @@ interface ServiceParts {
   members?: Record<string, unknown>;
   payRepo?: any;
   timezone?: string;
+  householdCurrency?: string;
   userService?: any;
   push?: any;
 }
@@ -111,7 +112,10 @@ function service(parts: ServiceParts = {}): any {
   return new PayArrangementCommandService(
     parts.payRepo ?? makePayRepo(),
     makeMemberRepo(parts.members ?? { 'parent-1': PARENT, 'carer-1': NANNY }),
-    makeHouseholdRepo(parts.timezone ?? 'Europe/London'),
+    makeHouseholdRepo(
+      parts.timezone ?? 'Europe/London',
+      parts.householdCurrency ?? 'GBP'
+    ),
     parts.userService ?? makeUserService(),
     parts.push ?? makePush()
   );
@@ -340,6 +344,34 @@ describe('PayArrangementCommandService.create — valid_from is household-local'
   });
 });
 
+describe('PayArrangementCommandService.create — currency resolution (T4)', () => {
+  it('resolves an absent request currency from the household row', async () => {
+    const payRepo = makePayRepo();
+    const svc = service({ payRepo, householdCurrency: 'USD' });
+    await svc.create(
+      'parent-1',
+      'h1',
+      'carer-1',
+      request({ currency: undefined }),
+      NOW
+    );
+    expect(payRepo.create.mock.calls[0][0].currency).toBe('USD');
+  });
+
+  it('an explicit request currency still wins over the household default', async () => {
+    const payRepo = makePayRepo();
+    const svc = service({ payRepo, householdCurrency: 'USD' });
+    await svc.create(
+      'parent-1',
+      'h1',
+      'carer-1',
+      request({ currency: 'EUR' }),
+      NOW
+    );
+    expect(payRepo.create.mock.calls[0][0].currency).toBe('EUR');
+  });
+});
+
 describe('PayArrangementCommandService.create — carer_display_name derivation', () => {
   it("prefers the household member's display_name_override", async () => {
     const payRepo = makePayRepo();
@@ -441,7 +473,25 @@ describe('PayArrangementCommandService.create — the written row', () => {
       carer_display_name: 'Nia Rowe',
       note: 'annual review',
       created_by: 'parent-1',
+      terms: {},
     });
+  });
+
+  // T9 storage (1-D): the exact "forgotten field silently never persists"
+  // trap the field-by-field insert literal invites (T17) — pin both arms.
+  it('passes a supplied terms object through to the repo create call verbatim', async () => {
+    const payRepo = makePayRepo();
+    const svc = service({ payRepo });
+    const terms = { notice_period_days: 14, driving_required: true };
+    await svc.create('parent-1', 'h1', 'carer-1', request({ terms }), NOW);
+    expect(payRepo.create.mock.calls[0][0].terms).toEqual(terms);
+  });
+
+  it('writes an empty terms object when none is supplied', async () => {
+    const payRepo = makePayRepo();
+    const svc = service({ payRepo });
+    await svc.create('parent-1', 'h1', 'carer-1', request(), NOW);
+    expect(payRepo.create.mock.calls[0][0].terms).toEqual({});
   });
 
   it('stores omitted optional terms as explicit nulls, not undefined', async () => {

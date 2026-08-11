@@ -80,6 +80,30 @@ export type HouseholdInviteStatus =
 // households
 // =============================================================================
 
+/**
+ * `households.currency` — ISO-4217, house style matches every other money
+ * table's `CurrencyCodeSchema` (`docs/11-MONEY.md` §1): a regex, not
+ * `.length(3)`, because `"ab1"`/`"gbp"` are three characters and neither is
+ * a currency.
+ */
+const HouseholdCurrencySchema = z.string().regex(/^[A-Z]{3}$/);
+
+/**
+ * `households.jurisdiction` — a US state code. Nullable: a device can name a
+ * country from its locale but never a state (`getDeviceCurrency`'s sibling
+ * has no `getDeviceJurisdiction`), so this stays unset until a parent picks
+ * one in settings.
+ */
+const HouseholdJurisdictionSchema = z.string().regex(/^[A-Z]{2}$/);
+
+/**
+ * `households.week_starts_on` — 0=Sunday..6=Saturday, matching Postgres
+ * `extract(dow)` and the same convention `user_profiles.week_starts_on`
+ * (011_availability.sql) already uses. Required, not nullable: the SQL
+ * column is `not null default 1`.
+ */
+const HouseholdWeekStartsOnSchema = z.int().min(0).max(6);
+
 /** The persisted entity as returned to clients. */
 export const HouseholdSchema = z.object({
   id: z.uuid(),
@@ -92,6 +116,9 @@ export const HouseholdSchema = z.object({
   approval_scope: z.enum(Object.values(HOUSEHOLD_APPROVAL_SCOPES)),
   short_notice_hours: z.int().min(0).max(336),
   cancellation_paid_within_hours: z.int().min(0).max(336),
+  currency: HouseholdCurrencySchema,
+  jurisdiction: HouseholdJurisdictionSchema.nullable(),
+  week_starts_on: HouseholdWeekStartsOnSchema,
   created_by: z.uuid().nullable(),
   created_at: z.iso.datetime({ offset: true }),
   updated_at: z.iso.datetime({ offset: true }),
@@ -108,6 +135,9 @@ export const CreateHouseholdSchema = z.object({
   approval_scope: z.enum(Object.values(HOUSEHOLD_APPROVAL_SCOPES)).optional(),
   short_notice_hours: z.int().min(0).max(336).optional(),
   cancellation_paid_within_hours: z.int().min(0).max(336).optional(),
+  currency: HouseholdCurrencySchema.optional(),
+  jurisdiction: HouseholdJurisdictionSchema.nullable().optional(),
+  week_starts_on: HouseholdWeekStartsOnSchema.optional(),
 });
 
 /** PATCH body — every field optional, but at least one must be present. */

@@ -81,6 +81,7 @@
   "earningsLineTopup": "Complemento de horas garantizadas",
   "earningsLineTopupSubline": "{{duration}} para alcanzar las {{guaranteed}} acordadas",
   "earningsLineTopupZeroHoursSubline": "Tu familia estuvo fuera esta semana.",
+  "earningsLineUnknownSubline": "{{duration}} a {{rate}}",
   "earningsGrossPay": "Sueldo bruto",
   "earningsReimbursementsNote": "Los gastos se muestran por separado y no forman parte del sueldo bruto.",
   "earningsFooterNote": "Basado en las horas registradas en Steadily. Los impuestos y las deducciones los gestiona tu nómina.",

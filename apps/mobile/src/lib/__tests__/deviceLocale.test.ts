@@ -12,7 +12,11 @@
  */
 import { afterEach, describe, expect, it } from 'bun:test';
 import { getLocales } from 'expo-localization';
-import { getDeviceCurrency, getDeviceLocale } from '../deviceLocale';
+import {
+  getDeviceCurrency,
+  getDeviceLocale,
+  getDeviceRegion,
+} from '../deviceLocale';
 
 const mockGetLocales = getLocales as unknown as {
   mockImplementation: (fn: () => unknown) => void;
@@ -42,21 +46,21 @@ describe('getDeviceCurrency', () => {
     expect(getDeviceCurrency()).toBe('EUR');
   });
 
-  it('falls back to GBP on a malformed code rather than storing junk', () => {
+  it('falls back to USD on a malformed code rather than storing junk', () => {
     mockGetLocales.mockImplementation(() => [{ currencyCode: 'Pound' }]);
-    expect(getDeviceCurrency()).toBe('GBP');
+    expect(getDeviceCurrency()).toBe('USD');
   });
 
-  it('falls back to GBP when the platform reports no currency', () => {
+  it('falls back to USD when the platform reports no currency', () => {
     mockGetLocales.mockImplementation(() => [{ languageTag: 'en-GB' }]);
-    expect(getDeviceCurrency()).toBe('GBP');
+    expect(getDeviceCurrency()).toBe('USD');
   });
 
-  it('falls back to GBP when the native module throws', () => {
+  it('falls back to USD when the native module throws', () => {
     mockGetLocales.mockImplementation(() => {
       throw new Error('native module unavailable');
     });
-    expect(getDeviceCurrency()).toBe('GBP');
+    expect(getDeviceCurrency()).toBe('USD');
   });
 });
 
@@ -71,5 +75,24 @@ describe('getDeviceLocale', () => {
       throw new Error('native module unavailable');
     });
     expect(getDeviceLocale()).toBe('en-GB');
+  });
+});
+
+describe('getDeviceRegion', () => {
+  it('returns the ISO region code', () => {
+    mockGetLocales.mockImplementation(() => [{ regionCode: 'US' }]);
+    expect(getDeviceRegion()).toBe('US');
+  });
+
+  it('returns null when the platform reports no region', () => {
+    mockGetLocales.mockImplementation(() => [{ languageTag: 'en-GB' }]);
+    expect(getDeviceRegion()).toBeNull();
+  });
+
+  it('returns null when the native module throws', () => {
+    mockGetLocales.mockImplementation(() => {
+      throw new Error('native module unavailable');
+    });
+    expect(getDeviceRegion()).toBeNull();
   });
 });

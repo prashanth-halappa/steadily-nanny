@@ -77,6 +77,9 @@ describe('household.schema', () => {
       approval_scope: 'short_notice_and_cancellations',
       short_notice_hours: 24,
       cancellation_paid_within_hours: 24,
+      currency: 'GBP',
+      jurisdiction: null,
+      week_starts_on: 1,
       created_by: VALID_UUID,
       created_at: NOW,
       updated_at: NOW,
@@ -106,6 +109,55 @@ describe('household.schema', () => {
       });
       expect(result.success).toBe(false);
     });
+
+    it('accepts a two-letter US-state jurisdiction', () => {
+      expect(
+        HouseholdSchema.safeParse({ ...validHousehold, jurisdiction: 'CA' })
+          .success
+      ).toBe(true);
+    });
+
+    it.each([
+      'gbp',
+      'ab1',
+      'usa',
+    ])('rejects a malformed currency code %p', code => {
+      expect(
+        HouseholdSchema.safeParse({ ...validHousehold, currency: code }).success
+      ).toBe(false);
+    });
+
+    it.each([
+      'ca',
+      'C1',
+      'CAL',
+    ])('rejects a malformed jurisdiction code %p', code => {
+      expect(
+        HouseholdSchema.safeParse({ ...validHousehold, jurisdiction: code })
+          .success
+      ).toBe(false);
+    });
+
+    it.each([
+      0, 1, 2, 3, 4, 5, 6,
+    ])('accepts week_starts_on %p (0=Sunday..6=Saturday)', day => {
+      expect(
+        HouseholdSchema.safeParse({ ...validHousehold, week_starts_on: day })
+          .success
+      ).toBe(true);
+    });
+
+    it.each([7, -1, 1.5])('rejects an out-of-range week_starts_on %p', day => {
+      expect(
+        HouseholdSchema.safeParse({ ...validHousehold, week_starts_on: day })
+          .success
+      ).toBe(false);
+    });
+
+    it('rejects a missing week_starts_on — the column is not-null', () => {
+      const { week_starts_on: _week_starts_on, ...rest } = validHousehold;
+      expect(HouseholdSchema.safeParse(rest).success).toBe(false);
+    });
   });
 
   describe('CreateHouseholdSchema', () => {
@@ -117,6 +169,52 @@ describe('household.schema', () => {
 
     it('rejects an empty name', () => {
       expect(CreateHouseholdSchema.safeParse({ name: '' }).success).toBe(false);
+    });
+
+    it('accepts an explicit currency and jurisdiction', () => {
+      expect(
+        CreateHouseholdSchema.safeParse({
+          name: 'The Reyes Family',
+          currency: 'USD',
+          jurisdiction: 'NY',
+        }).success
+      ).toBe(true);
+    });
+
+    it('accepts a null jurisdiction (device cannot derive a US state)', () => {
+      expect(
+        CreateHouseholdSchema.safeParse({
+          name: 'The Reyes Family',
+          jurisdiction: null,
+        }).success
+      ).toBe(true);
+    });
+
+    it('accepts an explicit week_starts_on', () => {
+      expect(
+        CreateHouseholdSchema.safeParse({
+          name: 'The Reyes Family',
+          week_starts_on: 0,
+        }).success
+      ).toBe(true);
+    });
+
+    it('rejects an out-of-range week_starts_on', () => {
+      expect(
+        CreateHouseholdSchema.safeParse({
+          name: 'The Reyes Family',
+          week_starts_on: 7,
+        }).success
+      ).toBe(false);
+    });
+
+    it('rejects a lowercase currency code', () => {
+      expect(
+        CreateHouseholdSchema.safeParse({
+          name: 'The Reyes Family',
+          currency: 'usd',
+        }).success
+      ).toBe(false);
     });
   });
 
