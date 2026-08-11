@@ -56,6 +56,16 @@ export {
   UpdateHouseholdMemberSchema,
   UpdateHouseholdSchema,
 } from '@steadily-nanny/shared-types/schemas/household.schema';
+export type {
+  HouseholdHoliday,
+  HouseholdHolidayListResponse,
+  SetHouseholdHolidaysRequest,
+} from '@steadily-nanny/shared-types/schemas/householdHoliday.schema';
+export {
+  HouseholdHolidayListResponseSchema,
+  HouseholdHolidaySchema,
+  SetHouseholdHolidaysRequestSchema,
+} from '@steadily-nanny/shared-types/schemas/householdHoliday.schema';
 
 /** URL param validation for GET /households/invites/:code/preview. */
 export const InviteCodeParamSchema = z.object({

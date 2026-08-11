@@ -20,6 +20,8 @@ function fakeT(key: string, params?: Record<string, unknown>): string {
     'terms.seventhDayLabel': 'Seventh consecutive day',
     'terms.seventhDayValue': `At ${params?.multiplier}×`,
     'terms.seventhDayTwoTierValue': `At ${params?.multiplier}×, then ${params?.doubleMultiplier}× after ${params?.hours}h`,
+    'terms.workedHolidayPremiumLabel': 'Worked-holiday premium',
+    'terms.workedHolidayPremiumValue': `${params?.multiplier}× when worked`,
     'terms.guaranteedHoursLabel': 'Guaranteed hours',
     'terms.guaranteedHoursValue': `${params?.hours}h a week`,
     'terms.ptoLabel': 'Paid time off',
@@ -50,6 +52,7 @@ const fullArrangement: PayArrangement = {
   doubletime_multiplier: 2,
   seventh_day_multiplier: 1.5,
   seventh_day_doubletime_after_minutes: 480,
+  worked_holiday_multiplier: 1.5,
   guaranteed_minutes_per_week: 2400,
   pto_entitlement_minutes_per_year: 8400,
   mileage_rate_per_mile_minor: 45,
@@ -71,6 +74,7 @@ const emptyArrangement: PayArrangement = {
   doubletime_multiplier: null,
   seventh_day_multiplier: null,
   seventh_day_doubletime_after_minutes: null,
+  worked_holiday_multiplier: null,
   guaranteed_minutes_per_week: null,
   pto_entitlement_minutes_per_year: null,
   mileage_rate_per_mile_minor: null,
@@ -78,7 +82,7 @@ const emptyArrangement: PayArrangement = {
 };
 
 describe('buildTermRows', () => {
-  it('returns exactly nine rows, in the spec order — the three 078 tiers sit between weekly overtime and guaranteed hours', () => {
+  it('returns exactly ten rows, in the spec order — the worked-holiday premium reads after paid time off', () => {
     const rows = buildTermRows(fullArrangement, fakeT as never);
     expect(rows.map(r => r.key)).toEqual([
       'overtime',
@@ -87,6 +91,7 @@ describe('buildTermRows', () => {
       'seventhDay',
       'guaranteedHours',
       'pto',
+      'workedHolidayPremium',
       'cancellations',
       'mileage',
       'ptoBalance',
@@ -137,6 +142,23 @@ describe('buildTermRows', () => {
     expect(rows.find(r => r.key === 'seventhDay')?.value).toBe('At 1.5×');
   });
 
+  // 3-E4: the premium row is the ARRANGEMENT's half of the holidays group —
+  // which dates are paid is the household's list, and belongs to 3-U1.
+  it('the worked-holiday premium row states the agreed multiplier', () => {
+    const rows = buildTermRows(fullArrangement, fakeT as never);
+    expect(rows.find(r => r.key === 'workedHolidayPremium')?.value).toBe(
+      '1.5× when worked'
+    );
+  });
+
+  it('a null premium reads as not-set — never a fabricated 1.5×', () => {
+    const rows = buildTermRows(
+      { ...fullArrangement, worked_holiday_multiplier: null },
+      fakeT as never
+    );
+    expect(rows.find(r => r.key === 'workedHolidayPremium')?.value).toBeNull();
+  });
+
   // A pre-078 row carries no such column at all. It must read as "no tier",
   // never as a crash and never as a fabricated 1.5×.
   it('an arrangement predating 078 (columns absent, not just null) reads as no tier', () => {
@@ -147,6 +169,7 @@ describe('buildTermRows', () => {
       doubletime_multiplier: undefined,
       seventh_day_multiplier: undefined,
       seventh_day_doubletime_after_minutes: undefined,
+      worked_holiday_multiplier: undefined,
     };
     const byKey = Object.fromEntries(
       buildTermRows(preMigration, fakeT as never).map(r => [r.key, r.value])
@@ -154,6 +177,7 @@ describe('buildTermRows', () => {
     expect(byKey.dailyOvertime).toBeNull();
     expect(byKey.doubletime).toBeNull();
     expect(byKey.seventhDay).toBeNull();
+    expect(byKey.workedHolidayPremium).toBeNull();
   });
 
   it('a null term renders null value (caller applies "Not set")', () => {
@@ -163,6 +187,7 @@ describe('buildTermRows', () => {
     expect(byKey.dailyOvertime).toBeNull();
     expect(byKey.doubletime).toBeNull();
     expect(byKey.seventhDay).toBeNull();
+    expect(byKey.workedHolidayPremium).toBeNull();
     expect(byKey.guaranteedHours).toBeNull();
     expect(byKey.pto).toBeNull();
     expect(byKey.mileage).toBeNull();

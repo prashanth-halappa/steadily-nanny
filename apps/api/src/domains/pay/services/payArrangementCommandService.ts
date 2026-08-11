@@ -150,6 +150,11 @@ export class PayArrangementCommandService {
       seventh_day_multiplier: request.seventh_day_multiplier ?? null,
       seventh_day_doubletime_after_minutes:
         request.seventh_day_doubletime_after_minutes ?? null,
+      // 080's worked-holiday premium (3-E4). Stated explicitly for the same
+      // T17 reason as the five above: null here MEANS "a worked holiday pays
+      // the normal rate", so writing it is the difference between a term the
+      // parties agreed and a field somebody forgot.
+      worked_holiday_multiplier: request.worked_holiday_multiplier ?? null,
       guaranteed_minutes_per_week: request.guaranteed_minutes_per_week ?? null,
       pto_entitlement_minutes_per_year:
         request.pto_entitlement_minutes_per_year ?? null,

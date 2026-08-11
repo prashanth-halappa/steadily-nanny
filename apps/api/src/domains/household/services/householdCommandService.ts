@@ -8,6 +8,7 @@
  * @module domains/household/services/householdCommandService
  */
 import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types/schemas/notification.schema';
+import { logger } from '../../../middlewares/logger';
 import { notifyHouseholdParents } from '../../notification';
 // Repository modules directly, NOT the domain barrels: a barrel pulls in that
 // domain's services, and one of those reaching back for household membership
@@ -37,6 +38,7 @@ import {
   NotAHouseholdParentError,
   WeekStartLockedError,
 } from '../errors/householdErrors';
+import { HouseholdHolidayRepository } from '../repositories/householdHolidayRepository';
 import { HouseholdInviteRepository } from '../repositories/householdInviteRepository';
 import { HouseholdMemberRepository } from '../repositories/householdMemberRepository';
 import { HouseholdRepository } from '../repositories/householdRepository';
@@ -49,9 +51,11 @@ import type {
   CreateHouseholdInput,
   CreateHouseholdInviteInput,
   Household,
+  HouseholdHoliday,
   HouseholdInvite,
   HouseholdMember,
   RedeemHouseholdInviteInput,
+  SetHouseholdHolidaysRequest,
   UpdateHouseholdInput,
 } from '../types';
 import { generateUniqueInviteCode } from '../utils/inviteCode';
@@ -102,7 +106,11 @@ export class HouseholdCommandService {
     private readonly timesheets: Pick<
       TimesheetRepository,
       'existsForHousehold'
-    > = new TimesheetRepository()
+    > = new TimesheetRepository(),
+    private readonly holidays: Pick<
+      HouseholdHolidayRepository,
+      'upsertMany' | 'listForHousehold' | 'seedFederalSet'
+    > = new HouseholdHolidayRepository()
   ) {}
 
   /**
@@ -139,7 +147,45 @@ export class HouseholdCommandService {
       throw error;
     }
 
+    // Seed the federal holiday set, all observed — what makes the Holidays
+    // group read "all on" the first time a parent opens it (080). Deliberately
+    // NOT rolled back on failure, unlike the membership insert above: absence
+    // means NOT observed, so a household with no holiday rows is a valid state
+    // and every toggle is one PUT away from being right. A household with no
+    // MEMBERS is unreachable forever. Log it and move on.
+    try {
+      await this.holidays.seedFederalSet(household.id);
+    } catch (error) {
+      logger.error('Failed to seed federal holidays for new household', {
+        householdId: household.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+
     return household;
+  }
+
+  /**
+   * Set which federal holidays this household observes. Owner/parent only —
+   * D-12's owner note is "configurable by the parent"; from 3-O the nanny may
+   * PROPOSE terms, and a proposal is not a write to this table.
+   *
+   * Keys the payload does not name are LEFT ALONE (an upsert, never a
+   * delete-then-insert), so an older client that knows ten of eleven holidays
+   * cannot silently switch off the eleventh. The response is the FULL
+   * post-write calendar rather than the touched rows, because the terms screen
+   * renders the whole group.
+   */
+  async setHolidays(
+    userId: string,
+    householdId: string,
+    input: SetHouseholdHolidaysRequest
+  ): Promise<HouseholdHoliday[]> {
+    const membership = await this.queries.getMembership(userId, householdId);
+    this.assertWriteRole(householdId, membership);
+
+    await this.holidays.upsertMany(householdId, input.holidays);
+    return this.holidays.listForHousehold(householdId);
   }
 
   /**

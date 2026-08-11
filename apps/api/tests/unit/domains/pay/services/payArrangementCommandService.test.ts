@@ -454,6 +454,7 @@ describe('PayArrangementCommandService.create — the written row', () => {
         doubletime_multiplier: 2,
         seventh_day_multiplier: 1.5,
         seventh_day_doubletime_after_minutes: 480,
+        worked_holiday_multiplier: 1.5,
         guaranteed_minutes_per_week: 1800,
         pto_entitlement_minutes_per_year: 16800,
         mileage_rate_per_mile_minor: 45,
@@ -475,6 +476,7 @@ describe('PayArrangementCommandService.create — the written row', () => {
       doubletime_multiplier: 2,
       seventh_day_multiplier: 1.5,
       seventh_day_doubletime_after_minutes: 480,
+      worked_holiday_multiplier: 1.5,
       guaranteed_minutes_per_week: 1800,
       pto_entitlement_minutes_per_year: 16800,
       mileage_rate_per_mile_minor: 45,
@@ -566,6 +568,32 @@ describe('PayArrangementCommandService.create — the written row', () => {
       expect(written).toHaveProperty(column);
       expect(written[column]).toBeNull();
     }
+  });
+
+  // 3-E4 / T17 again, for the one column 080 adds. Same trap, same two arms:
+  // a forgotten line here means the family agrees a holiday premium, sees it
+  // echoed back by the form, and is never charged it.
+  it('persists worked_holiday_multiplier verbatim', async () => {
+    const payRepo = makePayRepo();
+    const svc = service({ payRepo });
+    await svc.create(
+      'parent-1',
+      'h1',
+      'carer-1',
+      request({ worked_holiday_multiplier: 1.5 }),
+      NOW
+    );
+    expect(payRepo.create.mock.calls[0][0].worked_holiday_multiplier).toBe(1.5);
+  });
+
+  it('writes worked_holiday_multiplier as an explicit null when omitted', async () => {
+    // Null is the term "a worked holiday pays the normal rate", not "unset".
+    const payRepo = makePayRepo();
+    const svc = service({ payRepo });
+    await svc.create('parent-1', 'h1', 'carer-1', request(), NOW);
+    const written = payRepo.create.mock.calls[0][0];
+    expect(written).toHaveProperty('worked_holiday_multiplier');
+    expect(written.worked_holiday_multiplier).toBeNull();
   });
 
   it('never writes bill_rate_minor — dormant until Tier 2 invoicing', async () => {

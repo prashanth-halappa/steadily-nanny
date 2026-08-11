@@ -25,6 +25,7 @@ export * from './schemas/child.schema';
 export * from './schemas/handoff.schema';
 // Zod wire schemas — household, child, availability, schedule, shift domains
 export * from './schemas/household.schema';
+export * from './schemas/householdHoliday.schema';
 export * from './schemas/me.schema';
 export * from './schemas/notification.schema';
 export * from './schemas/notificationPrefs.schema';
@@ -35,3 +36,5 @@ export * from './schemas/timesheet.schema';
 export * from './text';
 // Uncovered-care interval arithmetic (dependency-free)
 export * from './uncoveredCare';
+// The federal holiday set — data plus one pure date rule (3-E4)
+export * from './usFederalHolidays';

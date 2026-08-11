@@ -212,6 +212,14 @@ export interface PayTermsFormState {
   doubletimeMultiplierText: string;
   seventhDayMultiplierText: string;
   seventhDayDoubletimeAfterHoursText: string;
+  /**
+   * 3-E4's `worked_holiday_multiplier` — the same numeric(3,2) shape, but
+   * standing alone: it has no cross-field partner, because WHICH dates are
+   * holidays is the household's observed list, not a term of this
+   * arrangement. Blank is null ("a worked holiday pays the normal rate"),
+   * never a fabricated 1.5.
+   */
+  workedHolidayMultiplierText: string;
   guaranteedHoursText: string;
   ptoHoursPerYearText: string;
   mileageRateText: string;
@@ -315,6 +323,13 @@ export function buildCreatePayArrangementRequest(
     return null;
   }
 
+  // 3-E4. No cross-field rule of its own — the premium is agreed here, the
+  // dates it applies to are the household's observed list.
+  const workedHolidayMultiplier = parseOptionalMultiplier(
+    state.workedHolidayMultiplierText
+  );
+  if (workedHolidayMultiplier === undefined) return null;
+
   let guaranteedMinutesPerWeek: number | null = null;
   if (state.guaranteedHoursText.trim() !== '') {
     const minutes = parseHoursToMinutes(state.guaranteedHoursText);
@@ -367,6 +382,7 @@ export function buildCreatePayArrangementRequest(
     doubletime_multiplier: doubletimeMultiplier,
     seventh_day_multiplier: seventhDayMultiplier,
     seventh_day_doubletime_after_minutes: seventhDayDoubletimeAfterMinutes,
+    worked_holiday_multiplier: workedHolidayMultiplier,
     guaranteed_minutes_per_week: guaranteedMinutesPerWeek,
     pto_entitlement_minutes_per_year: ptoEntitlementMinutesPerYear,
     mileage_rate_per_mile_minor: mileageRatePerMileMinor,

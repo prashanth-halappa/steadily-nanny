@@ -93,6 +93,8 @@
   "earningsLineOvertimeSubline": "{{duration}} at {{rate}} ({{multiplier}}×)",
   "earningsLineDoubletime": "Double time",
   "earningsLineDoubletimeSubline": "{{duration}} at {{rate}} ({{multiplier}}×)",
+  "earningsLineHolidayPremium": "Holiday premium",
+  "earningsLineHolidayPremiumSubline": "{{duration}} worked on a holiday · {{rate}} extra ({{multiplier}}×)",
   "earningsLineCancellation": "Cancelled with short notice",
   "earningsLineCancellationSublineParent": "{{duration}} at {{rate}} · paid under your cancellation policy",
   "earningsLineCancellationSublineNanny": "{{duration}} at {{rate}} · paid under your family's cancellation policy",

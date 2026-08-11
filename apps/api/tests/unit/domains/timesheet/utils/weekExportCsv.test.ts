@@ -70,6 +70,22 @@ const earnings: WeekEarningsOk = {
       arrangement_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
     },
     {
+      // 3-E4. The UPLIFT alone: 1850 x 1.5 = 2775, minus the 1850 already
+      // paid on the `regular` line = 925. These 480 minutes are the SAME
+      // minutes counted in `regular` above — the one kind whose minutes are
+      // not disjoint from the rest, which is exactly why David's §12.2
+      // handoff wants `holiday_premium_minutes` in its own column and never
+      // added into an hours total.
+      kind: 'holiday_premium',
+      minutes: 480,
+      rate_minor: 925,
+      multiplier: 1.5,
+      amount_minor: 7400,
+      from_date: '2026-08-06',
+      to_date: '2026-08-06',
+      arrangement_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    },
+    {
       kind: 'cancellation_paid',
       minutes: 240,
       rate_minor: 1850,
@@ -110,7 +126,7 @@ const earnings: WeekEarningsOk = {
       arrangement_id: null,
     },
   ],
-  gross_minor: 113_775,
+  gross_minor: 121_175,
   reimbursements_minor: 1250,
   worked_minutes: 2700,
   payable_minutes: 3420,
@@ -126,15 +142,16 @@ const EXPECTED_CSV =
     '2026-08-03,Regular hours (to 2026-08-07),regular,2400,1850,74000,GBP',
     '2026-08-08,Overtime at 1.5x,overtime,180,2775,8325,GBP',
     '2026-08-09,Double time at 2x,doubletime,120,3700,7400,GBP',
+    '2026-08-06,Holiday premium at 1.5x,holiday_premium,480,925,7400,GBP',
     '2026-08-05,"Cancelled shift, paid",cancellation_paid,240,1850,7400,GBP',
     '2026-08-06,Paid time off,pto,480,1850,14800,GBP',
     '2026-08-03,Guaranteed hours top-up (to 2026-08-09),guaranteed_topup,60,1850,1850,GBP',
     '2026-08-04,Reimbursement,reimbursements,0,0,1250,GBP',
     '',
-    'total_gross_minor,113775',
+    'total_gross_minor,121175',
     'reimbursements_minor,1250',
     'paid_to_date_minor,30000',
-    'balance_due_minor,83775',
+    'balance_due_minor,91175',
     'carer_display_name,"Rowe, Nia"',
     'week_start,2026-08-03',
     'currency,GBP',
@@ -169,9 +186,9 @@ describe('renderWeekExportCsv — the rich fixture, byte for byte', () => {
       paidToDateMinor: 0,
     });
 
-    expect(csv).toContain(`${CRLF}total_gross_minor,113775${CRLF}`);
+    expect(csv).toContain(`${CRLF}total_gross_minor,121175${CRLF}`);
     expect(csv).toContain(`${CRLF}paid_to_date_minor,0${CRLF}`);
-    expect(csv).toContain(`${CRLF}balance_due_minor,113775${CRLF}`);
+    expect(csv).toContain(`${CRLF}balance_due_minor,121175${CRLF}`);
     // The reimbursement line's 1250 is in the rows but never in the gross.
     expect(csv).toContain(`${CRLF}reimbursements_minor,1250${CRLF}`);
   });
@@ -199,7 +216,7 @@ describe('renderWeekExportCsv — the rich fixture, byte for byte', () => {
     // Read the numeric columns from the END — only `description` can carry a
     // comma of its own.
     const dataRows = rows.filter(row => /^\d{4}-\d{2}-\d{2},/.test(row));
-    expect(dataRows).toHaveLength(7);
+    expect(dataRows).toHaveLength(8);
     for (const row of dataRows) {
       const fields = row.split(',');
       expect(fields.at(-1)).toBe('GBP');
@@ -277,9 +294,9 @@ describe('renderWeekExportCsv — a line kind this build does not know', () => {
       paidToDateMinor: 30_000,
     });
 
-    expect(csv).toContain(`${CRLF}total_gross_minor,113775${CRLF}`);
+    expect(csv).toContain(`${CRLF}total_gross_minor,121175${CRLF}`);
     expect(csv).toContain(`${CRLF}reimbursements_minor,1250${CRLF}`);
-    expect(csv).toContain(`${CRLF}balance_due_minor,83775${CRLF}`);
+    expect(csv).toContain(`${CRLF}balance_due_minor,91175${CRLF}`);
   });
 });
 
@@ -335,8 +352,8 @@ describe('renderWeekExportCsv — the parent adjustment line', () => {
     const rows = csv.split(CRLF);
     // Immediately after the last line record, immediately before the blank
     // separator — the adjustment closes the line section.
-    expect(rows[8]).toBe(',Adjustment: Advance repaid,adjustment,,,-2000,GBP');
-    expect(rows[9]).toBe('');
+    expect(rows[9]).toBe(',Adjustment: Advance repaid,adjustment,,,-2000,GBP');
+    expect(rows[10]).toBe('');
   });
 
   it('needs no change to the totals — the frozen gross was written adjusted', () => {

@@ -281,6 +281,47 @@ describe('WeekExportAction — Share PDF', () => {
     expect(html).toContain('£74.00');
   });
 
+  it('prints the holiday premium row under its own copy key, not the humanized fallback', async () => {
+    const { getByTestId } = renderAction({
+      earnings: {
+        ...okEarnings,
+        lines: [
+          ...okEarnings.lines,
+          {
+            // An increment, not a re-pricing: these 480 minutes are already
+            // on a line above, and this row carries the premium alone.
+            kind: 'holiday_premium',
+            minutes: 480,
+            rate_minor: 1400,
+            multiplier: 1.5,
+            amount_minor: 11200,
+            from_date: '2026-08-03',
+            to_date: '2026-08-03',
+            arrangement_id: 'arr-1',
+          },
+        ],
+        gross_minor: 34812,
+      },
+      paidState: {
+        status: 'partial',
+        paidMinor: 12000,
+        grossMinor: 34812,
+        balanceMinor: 22812,
+      },
+    });
+    fireEvent.press(getByTestId('hours-export-button'));
+    fireEvent.press(getByTestId('hours-export-pdf'));
+
+    await waitFor(() => expect(sharePdfMock).toHaveBeenCalled());
+    const html = sharePdfMock.mock.calls[0]?.[0] ?? '';
+    // Key-echo `t` (bun.setup.ts): the KEY in the label cell proves the copy
+    // map resolved it; the humanized "Holiday premium" in that same cell
+    // would prove it did not.
+    expect(html).toContain('label">earningsLineHolidayPremium<');
+    expect(html).not.toContain('label">Holiday premium<');
+    expect(html).toContain('£112.00');
+  });
+
   it('still produces a receipt for a week with no priced lines', async () => {
     const { getByTestId } = renderAction({
       earnings: null,

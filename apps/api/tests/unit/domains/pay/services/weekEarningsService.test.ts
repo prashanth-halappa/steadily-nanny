@@ -155,13 +155,15 @@ function makeWeekEarningsService(
     arrangementRepo?: ReturnType<typeof makeArrangementRepo>;
     ptoRepo?: ReturnType<typeof makePtoRepo>;
     expenseRepo?: ReturnType<typeof makeExpenseRepo>;
+    holidayRepo?: ReturnType<typeof makeHolidayRepo>;
   } = {}
 ): WeekEarningsService {
   return new WeekEarningsService(
     overrides.timeEntryRepo ?? makeTimeEntryRepo(),
     overrides.arrangementRepo ?? makeArrangementRepo(),
     overrides.ptoRepo ?? makePtoRepo(),
-    overrides.expenseRepo ?? makeExpenseRepo()
+    overrides.expenseRepo ?? makeExpenseRepo(),
+    overrides.holidayRepo ?? makeHolidayRepo()
   );
 }
 
@@ -175,6 +177,16 @@ function makePtoRepo(overrides: Record<string, unknown> = {}): any {
 function makeExpenseRepo(overrides: Record<string, unknown> = {}): any {
   return {
     listApprovedForWeek: mock(async () => []),
+    ...overrides,
+  };
+}
+
+/** 080's toggles. Empty by default — no household observes a holiday unless
+ * the case under test says so, which is also what the table means (absence is
+ * "nothing agreed"). */
+function makeHolidayRepo(overrides: Record<string, unknown> = {}): any {
+  return {
+    listForHousehold: mock(async () => []),
     ...overrides,
   };
 }
@@ -1190,5 +1202,181 @@ describe('WeekEarningsService.computeForWeek', () => {
     expect(result.status).toBe('ok');
     // pto: 2h * £20 = £40.00. topup: 38h * £20 = £760.00. gross = £800.00.
     expect(result.status === 'ok' && result.gross_minor).toBe(80_000);
+  });
+});
+
+// =============================================================================
+// Observed holidays — the household's toggles become this week's dates.
+//
+// The engine takes DATES, never holiday keys (see `observed_holidays`'s doc on
+// `ComputeWeekEarningsInput`). This is the ONLY place the key-to-date rule is
+// applied, and these cases are what stop it drifting: a toggle switched off
+// must not price, a key this build cannot resolve must not price, and a week
+// straddling New Year must resolve BOTH years or a worked Jan 1 silently loses
+// its premium — the same trap the calendar-year PTO fetch documents.
+// =============================================================================
+
+/** Week Mon 2026-06-29 .. Sun 2026-07-05 — it contains 2026-07-04. */
+const JULY_WEEK = '2026-06-29';
+
+describe('buildWeekEarningsInput — observed holidays (3-E4)', () => {
+  /** A `household_holidays` row (080), defaulting to observed. */
+  function holidayRow(over: Record<string, unknown> = {}): any {
+    return {
+      id: 'hh1',
+      household_id: HOUSEHOLD_ID,
+      holiday_key: 'independence_day',
+      observed: true,
+      // Both serialisations across the fixtures (GOLDEN-FIXES #25).
+      created_at: '2026-01-01T00:00:00+00:00',
+      updated_at: '2026-01-01T00:00:00.000Z',
+      ...over,
+    };
+  }
+
+  function build(householdHolidays: any[], weekStart = JULY_WEEK) {
+    return buildWeekEarningsInput({
+      weekStart,
+      entries: [],
+      arrangements: [arrangement()],
+      ptoLedgerRows: [],
+      approvedExpenses: [],
+      householdHolidays,
+    });
+  }
+
+  it('resolves an observed key to its date in the week it falls in', () => {
+    expect(build([holidayRow()]).observed_holidays).toEqual(['2026-07-04']);
+  });
+
+  it('drops a key the family switched OFF', () => {
+    // The per-family toggle is the whole point of D-12; an `observed: false`
+    // row that still priced would make the switch decorative.
+    expect(build([holidayRow({ observed: false })]).observed_holidays).toEqual(
+      []
+    );
+  });
+
+  it('drops a key whose date falls outside this week', () => {
+    expect(
+      build([holidayRow({ holiday_key: 'christmas_day' })]).observed_holidays
+    ).toEqual([]);
+  });
+
+  it('drops a key this build cannot resolve to a date', () => {
+    // A row written by a newer server (a state holiday, a custom day) parses
+    // on read — see `householdHoliday.schema.ts` — but this build has no rule
+    // for it, and guessing a date would be inventing when a premium is owed.
+    expect(
+      build([holidayRow({ holiday_key: 'cesar_chavez_day' })]).observed_holidays
+    ).toEqual([]);
+  });
+
+  it('resolves the NEXT year for a week that starts in December', () => {
+    // Mon 2026-12-28 .. Sun 2027-01-03. The only holiday in it is New Year's
+    // Day 2027, and resolving keys against the WEEK-START's year alone (2026)
+    // would look up 2026-01-01, miss the week entirely, and silently leave a
+    // worked Jan 1 with no premium. Christmas is in the payload and correctly
+    // does NOT price — Dec 25 and Jan 1 are exactly seven days apart, so no
+    // seven-day week can ever hold both.
+    const built = buildWeekEarningsInput({
+      weekStart: '2026-12-28',
+      entries: [],
+      arrangements: [arrangement()],
+      ptoLedgerRows: [],
+      approvedExpenses: [],
+      householdHolidays: [
+        holidayRow({ holiday_key: 'christmas_day' }),
+        holidayRow({ id: 'hh2', holiday_key: 'new_years_day' }),
+      ],
+    });
+    expect(built.observed_holidays).toEqual(['2027-01-01']);
+  });
+
+  it('resolves the PREVIOUS year for the same span read from the other end', () => {
+    // The mirror: Mon 2026-12-21 .. Sun 2026-12-27 holds Christmas 2026
+    // (Friday the 25th) and not New Year. Together with the case above, the
+    // pair pins that the resolver walks every year the week touches rather
+    // than guessing one.
+    const built = buildWeekEarningsInput({
+      weekStart: '2026-12-21',
+      entries: [],
+      arrangements: [arrangement()],
+      ptoLedgerRows: [],
+      approvedExpenses: [],
+      householdHolidays: [
+        holidayRow({ holiday_key: 'christmas_day' }),
+        holidayRow({ id: 'hh2', holiday_key: 'new_years_day' }),
+      ],
+    });
+    expect(built.observed_holidays).toEqual(['2026-12-25']);
+  });
+
+  it('passes an empty list when the household has no rows at all', () => {
+    // Absence means "nothing agreed" (080's header), never "all of them".
+    expect(build([]).observed_holidays).toEqual([]);
+    expect(
+      buildWeekEarningsInput({
+        weekStart: WEEK_START,
+        entries: [],
+        arrangements: [arrangement()],
+        ptoLedgerRows: [],
+        approvedExpenses: [],
+      }).observed_holidays
+    ).toEqual([]);
+  });
+});
+
+describe('WeekEarningsService.computeForWeek — holiday fetch', () => {
+  it('fetches this household’s holiday toggles and prices the premium', async () => {
+    const holidayRepo = {
+      listForHousehold: mock(async () => [
+        {
+          id: 'hh1',
+          household_id: HOUSEHOLD_ID,
+          holiday_key: 'independence_day',
+          observed: true,
+          created_at: '2026-01-01T00:00:00+00:00',
+          updated_at: '2026-01-01T00:00:00.000Z',
+        },
+      ]),
+    } as any;
+    const svc = new WeekEarningsService(
+      makeTimeEntryRepo({
+        listForCarerWeek: mock(async () => [
+          entry({
+            local_date: '2026-07-04',
+            clock_in_at: '2026-07-04T09:00:00.000Z',
+            clock_out_at: '2026-07-04T17:00:00.000Z',
+            break_minutes: 0,
+          }),
+        ]),
+      }),
+      makeArrangementRepo({
+        listForCarer: mock(async () => [
+          arrangement({
+            rate_minor: 2000,
+            overtime_threshold_minutes: 2400,
+            worked_holiday_multiplier: 1.5,
+          }),
+        ]),
+      }),
+      makePtoRepo(),
+      makeExpenseRepo(),
+      holidayRepo
+    );
+
+    const result = await svc.computeForWeek(HOUSEHOLD_ID, CARER_ID, JULY_WEEK);
+
+    // Household-scoped only — the calendar belongs to the family, not to one
+    // carer, so there is no carer argument to get wrong here.
+    expect(holidayRepo.listForHousehold).toHaveBeenCalledWith(HOUSEHOLD_ID);
+    expect(result.status).toBe('ok');
+    // 8h at £20 = £160.00 regular, plus the £10.00/h uplift x 8h = £80.00.
+    expect(result.status === 'ok' && result.gross_minor).toBe(24_000);
+    expect(
+      result.status === 'ok' &&
+        result.lines.some(line => line.kind === 'holiday_premium')
+    ).toBe(true);
   });
 });

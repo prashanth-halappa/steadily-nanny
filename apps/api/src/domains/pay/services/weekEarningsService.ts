@@ -21,12 +21,18 @@
 import type { HouseholdClosure } from '@steadily-nanny/shared-types/schemas/availability.schema';
 import type { Expense } from '@steadily-nanny/shared-types/schemas/expense.schema';
 import { EXPENSE_STATUSES } from '@steadily-nanny/shared-types/schemas/expense.schema';
+import type { HouseholdHoliday } from '@steadily-nanny/shared-types/schemas/householdHoliday.schema';
 import type { PtoLedgerEntry } from '@steadily-nanny/shared-types/schemas/pto.schema';
 import { PTO_LEDGER_KINDS } from '@steadily-nanny/shared-types/schemas/pto.schema';
 import type {
   TimeEntry,
   WeekEarnings,
 } from '@steadily-nanny/shared-types/schemas/timesheet.schema';
+import { observedHolidayDatesInRange } from '@steadily-nanny/shared-types/usFederalHolidays';
+// Repository MODULE, never the household domain's barrel — importing the
+// barrel here would close an import cycle (the household domain reaches into
+// pay for arrangement gating).
+import { HouseholdHolidayRepository } from '../../household/repositories/householdHolidayRepository';
 import { TimeEntryRepository } from '../../timesheet/repositories/timeEntryRepository';
 import { weekEndExclusive } from '../../timesheet/utils/weekStart';
 import { entryMinutes } from '../../timesheet/utils/workedMinutes';
@@ -107,6 +113,20 @@ export interface WeekEarningsSources {
    * gate — the repository query already selects `status = 'approved'` only.
    */
   approvedExpenses: readonly Expense[];
+  /**
+   * THIS household's holiday toggles (`household_holidays`, migration 080) —
+   * ALL of them, unfiltered, because the rows carry a KEY and not a date and
+   * only `observedHolidayDatesInRange` knows which keys land in this week.
+   *
+   * Household-scoped, not carer-scoped: the calendar belongs to the family
+   * (spec §4.3, "the list is household-level"). What a worked holiday PAYS is
+   * carer-scoped and lives on the arrangement instead.
+   *
+   * Optional so every existing caller and fixture is unaffected; omitted
+   * means no observed holidays, which is also what an empty table means (080:
+   * absence is "nothing agreed", never "all of them").
+   */
+  householdHolidays?: readonly HouseholdHoliday[];
 }
 
 /**
@@ -302,12 +322,31 @@ export function buildWeekEarningsInput(
     });
   }
 
+  // OBSERVED HOLIDAYS — the household's toggles, resolved into THIS week's
+  // dates. The whole key-to-date rule lives in one call, and this is its only
+  // production caller: the engine takes dates because it takes priced facts,
+  // not storage (`observed_holidays`'s doc on `ComputeWeekEarningsInput`), and
+  // `observedHolidayDatesInRange` is where "the third Monday in January"
+  // becomes "2027-01-18". A key this build has no rule for resolves to
+  // nothing rather than to a guessed date — inventing when a premium is owed
+  // is the same class of fabrication as inventing an amount. The helper spans
+  // both calendar years for a week that straddles New Year, so a worked Jan 1
+  // in a week that starts in December is not silently unpaid.
+  const observedHolidays = observedHolidayDatesInRange(
+    (sources.householdHolidays ?? [])
+      .filter(holiday => holiday.observed)
+      .map(holiday => holiday.holiday_key),
+    sources.weekStart,
+    weekEnd
+  );
+
   return {
     week_start: sources.weekStart,
     entries,
     arrangements: sources.arrangements,
     pto_usage: ptoUsage,
     reimbursements,
+    observed_holidays: observedHolidays,
   };
 }
 
@@ -344,6 +383,15 @@ export interface WeekEarningsExpenseRepository {
  * dependency on the pay domain one function wide, and lets a caller's tests
  * supply a stub without constructing five repositories.
  */
+/**
+ * Only the holiday query this service needs. HOUSEHOLD-scoped, with no carer
+ * argument at all — the calendar belongs to the family, and adding a carer
+ * parameter here would invite a future caller to scope it wrongly.
+ */
+export interface WeekEarningsHolidayRepository {
+  listForHousehold: (householdId: string) => Promise<HouseholdHoliday[]>;
+}
+
 export interface WeekEarningsComputer {
   computeForWeek: (
     householdId: string,
@@ -357,7 +405,8 @@ export class WeekEarningsService implements WeekEarningsComputer {
     private readonly timeEntryRepo: TimeEntryRepository = new TimeEntryRepository(),
     private readonly arrangementRepo: PayArrangementRepository = new PayArrangementRepository(),
     private readonly ptoRepo: WeekEarningsPtoRepository = new PtoLedgerRepository(),
-    private readonly expenseRepo: WeekEarningsExpenseRepository = new ExpenseRepository()
+    private readonly expenseRepo: WeekEarningsExpenseRepository = new ExpenseRepository(),
+    private readonly holidayRepo: WeekEarningsHolidayRepository = new HouseholdHolidayRepository()
   ) {}
 
   /**
@@ -380,26 +429,35 @@ export class WeekEarningsService implements WeekEarningsComputer {
     const endYear = Number(weekEnd.slice(0, 4));
     const ptoYears = startYear === endYear ? [startYear] : [startYear, endYear];
 
-    const [entries, arrangements, ptoLedgerRowsPerYear, expenses] =
-      await Promise.all([
-        this.timeEntryRepo.listForCarerWeek(
-          householdId,
-          carerId,
-          weekStart,
-          weekEndExclusive(weekStart)
-        ),
-        this.arrangementRepo.listForCarer(householdId, carerId),
-        Promise.all(
-          ptoYears.map(year =>
-            this.ptoRepo.listForCarerYear(householdId, carerId, year)
-          )
-        ),
-        this.expenseRepo.listApprovedForWeek(
-          householdId,
-          weekStart,
-          weekEndExclusive(weekStart)
-        ),
-      ]);
+    const [
+      entries,
+      arrangements,
+      ptoLedgerRowsPerYear,
+      expenses,
+      householdHolidays,
+    ] = await Promise.all([
+      this.timeEntryRepo.listForCarerWeek(
+        householdId,
+        carerId,
+        weekStart,
+        weekEndExclusive(weekStart)
+      ),
+      this.arrangementRepo.listForCarer(householdId, carerId),
+      Promise.all(
+        ptoYears.map(year =>
+          this.ptoRepo.listForCarerYear(householdId, carerId, year)
+        )
+      ),
+      this.expenseRepo.listApprovedForWeek(
+        householdId,
+        weekStart,
+        weekEndExclusive(weekStart)
+      ),
+      // Every toggle, unfiltered: the rows hold KEYS, and only
+      // `buildWeekEarningsInput` knows which keys land in this week. There
+      // are at most eleven of them per household.
+      this.holidayRepo.listForHousehold(householdId),
+    ]);
 
     const ptoLedgerRows = ptoLedgerRowsPerYear.flat();
     // `listApprovedForWeek` is household-scoped only — narrowed to this carer
@@ -415,6 +473,7 @@ export class WeekEarningsService implements WeekEarningsComputer {
         arrangements,
         ptoLedgerRows,
         approvedExpenses,
+        householdHolidays,
       })
     );
   }

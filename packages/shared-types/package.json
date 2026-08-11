@@ -16,6 +16,7 @@
     "./payTermsPresets": "./src/payTermsPresets.ts",
     "./text": "./src/text.ts",
     "./uncoveredCare": "./src/uncoveredCare.ts",
+    "./usFederalHolidays": "./src/usFederalHolidays.ts",
     "./domain/*": "./src/domain/*.ts",
     "./dto/*": "./src/dto/*.ts",
     "./schemas/*": "./src/schemas/*.ts",

@@ -610,6 +610,119 @@ describe('payArrangement.schema', () => {
   });
 
   // ==========================================================================
+  // The worked-holiday premium (080, 3-E4, §5 D-12). ONE column on the
+  // arrangement, not the household: the calendar is the family's, but what a
+  // worked holiday PAYS is a term of this carer's employment and a second
+  // carer may have a different one (`screens-pay-terms.md` §4.3).
+  // ==========================================================================
+  describe('worked_holiday_multiplier (080)', () => {
+    const base = {
+      id: VALID_UUID,
+      household_id: VALID_UUID,
+      carer_id: VALID_UUID,
+      rate_minor: 2800,
+      bill_rate_minor: null,
+      currency: 'USD',
+      overtime_threshold_minutes: 2400,
+      overtime_multiplier: 1.5,
+      guaranteed_minutes_per_week: null,
+      pto_entitlement_minutes_per_year: null,
+      mileage_rate_per_mile_minor: null,
+      cancellation_paid_within_hours: null,
+      valid_from: '2026-08-01',
+      valid_to: null,
+      carer_display_name: 'Nia Rowe',
+      note: null,
+      created_by: VALID_UUID,
+      // The `.000Z` serialisation here, the `+00:00` one in the 078 block
+      // below — both forms of the same instant appear across this repo's
+      // fixtures and both must parse (GOLDEN-FIXES #25).
+      created_at: '2026-08-01T08:00:00.000Z',
+    };
+
+    it('parses an arrangement carrying the premium', () => {
+      const parsed = PayArrangementSchema.safeParse({
+        ...base,
+        worked_holiday_multiplier: 1.5,
+      });
+      expect(parsed.success).toBe(true);
+      expect(parsed.success && parsed.data.worked_holiday_multiplier).toBe(1.5);
+    });
+
+    it('parses a PRE-080 row that omits it — no premium, which is the terms it was agreed under', () => {
+      const parsed = PayArrangementSchema.safeParse(base);
+      expect(parsed.success).toBe(true);
+      expect(
+        parsed.success && parsed.data.worked_holiday_multiplier
+      ).toBeUndefined();
+    });
+
+    it('accepts null — an explicit "a worked holiday pays the normal rate"', () => {
+      expect(
+        PayArrangementSchema.safeParse({
+          ...base,
+          worked_holiday_multiplier: null,
+        }).success
+      ).toBe(true);
+    });
+
+    it('holds it to the same numeric(3,2) bounds as every other multiplier', () => {
+      // Below 1 would be a "premium" that pays LESS for working a holiday.
+      expect(
+        PayArrangementSchema.safeParse({
+          ...base,
+          worked_holiday_multiplier: 0.9,
+        }).success
+      ).toBe(false);
+      // Above what numeric(3,2) holds — Postgres 500s on overflow.
+      expect(
+        PayArrangementSchema.safeParse({
+          ...base,
+          worked_holiday_multiplier: 10,
+        }).success
+      ).toBe(false);
+      // Three decimals: numeric(3,2) ROUNDS silently, the lossy conversion
+      // docs/11-MONEY.md §1 exists to prevent.
+      expect(
+        PayArrangementSchema.safeParse({
+          ...base,
+          worked_holiday_multiplier: 1.555,
+        }).success
+      ).toBe(false);
+      expect(
+        PayArrangementSchema.safeParse({
+          ...base,
+          worked_holiday_multiplier: 2,
+        }).success
+      ).toBe(true);
+    });
+
+    it('accepts it on a create request, with NO wire default', () => {
+      const parsed = CreatePayArrangementRequestSchema.safeParse({
+        rate_minor: 2800,
+        currency: 'USD',
+        valid_from: '2026-08-01',
+        worked_holiday_multiplier: 1.5,
+      });
+      expect(parsed.success).toBe(true);
+      expect(parsed.success && parsed.data.worked_holiday_multiplier).toBe(1.5);
+
+      // Omitted must stay omitted. A default of 1.5 here would promise every
+      // family a holiday premium nobody agreed to — the same D-7 liability
+      // the 078 tiers refuse a default for.
+      const omitted = CreatePayArrangementRequestSchema.safeParse({
+        rate_minor: 2800,
+        currency: 'USD',
+        valid_from: '2026-08-01',
+      });
+      expect(omitted.success).toBe(true);
+      expect(
+        omitted.success && omitted.data.worked_holiday_multiplier
+      ).toBeUndefined();
+    });
+  });
+
+  // ==========================================================================
   // The 078 tiers: daily overtime, daily double time, and the seventh
   // consecutive day. Five columns, all nullable, all optional on the wire.
   // ==========================================================================

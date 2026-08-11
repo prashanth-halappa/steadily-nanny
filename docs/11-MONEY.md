@@ -621,3 +621,71 @@ giving it a second, narrower gate would mean a carer or parent could see a
 figure on screen that her own download silently omits."* In short: the export
 must never hide a number the corresponding screen already shows, even though
 that makes its read gate wider than the dedicated payments-list endpoint's.
+
+---
+
+## 12. The worked-holiday premium is an increment, never a re-pricing
+
+Two pieces, two homes (`docs/design/screens-pay-terms.md` §3/§4.3, §5 D-12,
+migration 080):
+
+- **`household_holidays`** — which federal holidays *this family* observes.
+  One row per `(household_id, holiday_key)`, and it stores a **key, not a
+  date**: six of the eleven federal holidays are rules ("the last Monday in
+  May"), resolved per year by
+  `packages/shared-types/src/usFederalHolidays.ts`. Three states, not two: no
+  row means *nothing agreed* (and so **not** observed), `observed = true`
+  means observed, `observed = false` means explicitly opted out. New
+  households are seeded with the federal set at creation; nothing is
+  backfilled (§5 D-9).
+- **`pay_arrangements.worked_holiday_multiplier`** — what a worked holiday
+  pays *this carer*. Null means the normal rate, an explicit "no". It is on
+  the arrangement and not the household because a second carer may have
+  agreed a different one.
+
+**The composition rule.** Hours worked on an observed holiday are **ordinary
+worked time** for every purpose the engine already had: they split into the
+daily bands, they can be the seventh consecutive day, they count toward the
+weekly threshold, and they appear on whichever tier line they earned. Nothing
+in the tier machinery knows about holidays. The premium is then added **on
+top**, as a single `holiday_premium` line carrying **the same minutes a second
+time** at `rate_minor × (multiplier − 1)` — the uplift alone.
+
+*Why not price the holiday whole, the way the seventh day is priced whole?*
+Because that would have to do one of two wrong things. Pull the holiday
+minutes out of the weekly remainder, and a 45-hour week containing a holiday
+silently shrinks to 32 hours, destroying overtime she actually earned. Leave
+them in *and* price them whole, and the same minutes are paid twice — §10.1's
+non-duplication invariant, broken. The seventh-day rule replaces the daily
+bands because it answers the *same* question they do ("what tier is this hour
+in"). A holiday answers a different one. "This hour was above the 8-hour daily
+threshold" and "this hour was worked on the Fourth of July" are two
+independent facts about one hour, both true, each separately agreed. The hour
+is paid once at its own tier and the agreed uplift once on top.
+
+**The consequence to hold on to:** `minutes` on a `holiday_premium` line is
+**not disjoint** from the minutes on the lines above it. It is the only kind
+where that is true. Never sum the minutes column across kinds; the payroll
+export gives it its own `holiday_premium_minutes` column
+(`screens-pay-terms.md` §12.2) for exactly this reason, and `rate_minor` on
+that row is the uplift, not the full holiday rate.
+
+**Which arrangement supplies which number.** The multiplier comes from the
+week's **last worked day** — the same arrangement every other multiplier and
+threshold comes from, because a multiplier is a *term* and the week is
+negotiated and signed off as one unit. The base **rate** stays per-day, so a
+mid-week raise splits the premium into two dated rows exactly as it splits
+`regular`.
+
+**Emission is gated on `> 1`, not on `!== null`.** Null and an explicit `1.00`
+mean the same thing — the normal rate — and emitting a £0.00 uplift row would
+tell a nanny her family agreed a holiday premium and then paid her nothing for
+it. Never a fabricated figure (§4).
+
+**A paid holiday nobody worked prices nothing, deliberately.** Nothing on the
+arrangement, on the household, or in D-12 says how many hours an unworked paid
+holiday is worth — not her scheduled hours, not a fixed eight, not an average.
+Pricing one would mean inventing a number. What already pays an unworked
+holiday is the guaranteed-hours top-up (§7) or a time-off day marked paid
+(§5). Giving "which holidays are paid" a pricing meaning of its own needs an
+hours term that no decision has yet made — carried as 3-E4's open question.

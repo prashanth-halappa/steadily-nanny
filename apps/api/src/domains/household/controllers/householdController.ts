@@ -89,6 +89,42 @@ export class HouseholdController {
     }
   }
 
+  /** GET /households/:householdId/holidays — any active member may read. */
+  static async listHolidays(req: Request, res: Response, next: NextFunction) {
+    try {
+      const householdId = req.params.householdId as string;
+      const household_holidays = await householdQueryService.listHolidays(
+        getAuthUserId(req),
+        householdId
+      );
+      return sendSuccessResponse(res, 'Household holidays fetched', {
+        household_holidays,
+      });
+    } catch (error) {
+      return next(error);
+    }
+  }
+
+  /**
+   * PUT /households/:householdId/holidays — parent-gated (role check in the
+   * command service). Answers with the whole calendar, not just what changed.
+   */
+  static async setHolidays(req: Request, res: Response, next: NextFunction) {
+    try {
+      const householdId = req.params.householdId as string;
+      const household_holidays = await householdCommandService.setHolidays(
+        getAuthUserId(req),
+        householdId,
+        req.body
+      );
+      return sendSuccessResponse(res, 'Household holidays updated', {
+        household_holidays,
+      });
+    } catch (error) {
+      return next(error);
+    }
+  }
+
   static async createInvite(req: Request, res: Response, next: NextFunction) {
     try {
       const householdId = req.params.householdId as string;

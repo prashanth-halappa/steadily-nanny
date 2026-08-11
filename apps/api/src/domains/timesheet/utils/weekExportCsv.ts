@@ -41,9 +41,9 @@
  *    |---------------|--------------------------------------------------------|
  *    | date          | the line's `from_date` (household-local, ISO `YYYY-MM-DD`) |
  *    | description   | human label; carries the multiplier and the `to_date` when the line spans days — see `describeLine` |
- *    | kind          | the snapshot's `kind` VERBATIM: `regular`, `overtime`, `doubletime`, `cancellation_paid`, `pto`, `guaranteed_topup`, `reimbursements` |
- *    | minutes       | integer; `0` on a reimbursement line (it is not time)   |
- *    | rate_minor    | integer MINOR units per hour as displayed on the row (overtime and double time carry the already-multiplied rate); `0` on a reimbursement line |
+ *    | kind          | the snapshot's `kind` VERBATIM: `regular`, `overtime`, `doubletime`, `holiday_premium`, `cancellation_paid`, `pto`, `guaranteed_topup`, `reimbursements` |
+ *    | minutes       | integer; `0` on a reimbursement line (it is not time). NOT disjoint across rows on a `holiday_premium` line — those minutes are the same ones already counted on the tier row they were worked at, so never SUM this column across kinds (see `rate_minor` below and §12.2) |
+ *    | rate_minor    | integer MINOR units per hour as displayed on the row (overtime and double time carry the already-multiplied rate; `holiday_premium` carries the UPLIFT ALONE, `rate x (multiplier - 1)`); `0` on a reimbursement line |
  *    | amount_minor  | integer MINOR units                                     |
  *    | currency      | ISO-4217, uppercase; one currency per week by construction |
  *
@@ -118,6 +118,7 @@ const LINE_LABELS: Record<EarningsLineKind, string> = {
   [EARNINGS_LINE_KINDS.REGULAR]: 'Regular hours',
   [EARNINGS_LINE_KINDS.OVERTIME]: 'Overtime',
   [EARNINGS_LINE_KINDS.DOUBLETIME]: 'Double time',
+  [EARNINGS_LINE_KINDS.HOLIDAY_PREMIUM]: 'Holiday premium',
   [EARNINGS_LINE_KINDS.CANCELLATION_PAID]: 'Cancelled shift, paid',
   [EARNINGS_LINE_KINDS.PTO]: 'Paid time off',
   [EARNINGS_LINE_KINDS.GUARANTEED_TOPUP]: 'Guaranteed hours top-up',
@@ -172,7 +173,13 @@ function describeLine(line: EarningsLine): string {
     : humanizeEarningsLineKind(line.kind);
   const isPremiumTier =
     line.kind === EARNINGS_LINE_KINDS.OVERTIME ||
-    line.kind === EARNINGS_LINE_KINDS.DOUBLETIME;
+    line.kind === EARNINGS_LINE_KINDS.DOUBLETIME ||
+    // 3-E4. Carries a multiplier like the tiers above, but its `rate_minor`
+    // is the UPLIFT ALONE (`rate x (multiplier - 1)`), not the multiplied
+    // rate — so "Holiday premium at 1.5x" reads beside a rate that is half
+    // the hourly, on purpose. The reader who needs the full holiday rate adds
+    // the base back from the `regular` row these same minutes also appear on.
+    line.kind === EARNINGS_LINE_KINDS.HOLIDAY_PREMIUM;
   const withMultiplier =
     isPremiumTier && line.multiplier !== null
       ? `${label} at ${line.multiplier}x`

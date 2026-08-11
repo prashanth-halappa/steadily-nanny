@@ -31,6 +31,7 @@ const baseState: PayTermsFormState = {
   doubletimeMultiplierText: '',
   seventhDayMultiplierText: '',
   seventhDayDoubletimeAfterHoursText: '',
+  workedHolidayMultiplierText: '',
   guaranteedHoursText: '',
   ptoHoursPerYearText: '',
   mileageRateText: '',
@@ -141,6 +142,7 @@ describe('buildCreatePayArrangementRequest', () => {
       doubletime_multiplier: null,
       seventh_day_multiplier: null,
       seventh_day_doubletime_after_minutes: null,
+      worked_holiday_multiplier: null,
       cancellation_paid_within_hours: null,
       valid_from: '2026-08-04',
       note: undefined,
@@ -157,6 +159,7 @@ describe('buildCreatePayArrangementRequest', () => {
       doubletimeMultiplierText: '2',
       seventhDayMultiplierText: '1.5',
       seventhDayDoubletimeAfterHoursText: '8',
+      workedHolidayMultiplierText: '1.5',
       guaranteedHoursText: '40',
       ptoHoursPerYearText: '140',
       mileageRateText: '0.45',
@@ -174,6 +177,7 @@ describe('buildCreatePayArrangementRequest', () => {
       doubletime_multiplier: 2,
       seventh_day_multiplier: 1.5,
       seventh_day_doubletime_after_minutes: 480,
+      worked_holiday_multiplier: 1.5,
       guaranteed_minutes_per_week: 2400,
       pto_entitlement_minutes_per_year: 8400,
       mileage_rate_per_mile_minor: 45,
@@ -467,6 +471,74 @@ describe('buildCreatePayArrangementRequest', () => {
           seventhDayMultiplierText: '1.5',
           doubletimeMultiplierText: '2',
           seventhDayDoubletimeAfterHoursText: '0',
+        })
+      ).toBeNull();
+    });
+  });
+
+  // 3-E4 / `worked_holiday_multiplier`. Same numeric(3,2) shape as the tier
+  // multipliers above and the same refuse-don't-clamp discipline — but no
+  // cross-field rule at all: the premium stands alone, because whether a
+  // given date IS a holiday is the household's list, not this arrangement's.
+  describe('the worked-holiday premium', () => {
+    it('carries the key explicitly as null when blank — never 1.5, which would invent a premium nobody agreed', () => {
+      const result = buildCreatePayArrangementRequest(baseState);
+      expect(result).toHaveProperty('worked_holiday_multiplier', null);
+    });
+
+    it('sends a typed multiplier, on its own, with no other tier set', () => {
+      const result = buildCreatePayArrangementRequest({
+        ...baseState,
+        workedHolidayMultiplierText: '1.5',
+      });
+      expect(result?.worked_holiday_multiplier).toBe(1.5);
+      expect(result?.seventh_day_multiplier).toBeNull();
+      expect(result?.doubletime_multiplier).toBeNull();
+    });
+
+    it('accepts exactly 1 — "a worked holiday pays the normal rate" is a term, not a blank', () => {
+      const result = buildCreatePayArrangementRequest({
+        ...baseState,
+        workedHolidayMultiplierText: '1',
+      });
+      expect(result?.worked_holiday_multiplier).toBe(1);
+    });
+
+    it('rejects a multiplier below 1 — a holiday premium can never pay LESS than an ordinary hour', () => {
+      expect(
+        buildCreatePayArrangementRequest({
+          ...baseState,
+          workedHolidayMultiplierText: '0.5',
+        })
+      ).toBeNull();
+    });
+
+    it('rejects a three-decimal multiplier and one above the numeric(3,2) ceiling', () => {
+      expect(
+        buildCreatePayArrangementRequest({
+          ...baseState,
+          workedHolidayMultiplierText: '1.555',
+        })
+      ).toBeNull();
+      expect(
+        buildCreatePayArrangementRequest({
+          ...baseState,
+          workedHolidayMultiplierText: '50',
+        })
+      ).toBeNull();
+      expect(
+        buildCreatePayArrangementRequest({
+          ...baseState,
+          workedHolidayMultiplierText: '9.99',
+        })?.worked_holiday_multiplier
+      ).toBe(9.99);
+    });
+
+    it('rejects an unparsable multiplier rather than dropping the field', () => {
+      expect(
+        buildCreatePayArrangementRequest({
+          ...baseState,
+          workedHolidayMultiplierText: 'time and a half',
         })
       ).toBeNull();
     });

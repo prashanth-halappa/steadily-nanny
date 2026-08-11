@@ -153,6 +153,8 @@ export function PayChangeSheet({
     seventhDayDoubletimeAfterHoursText,
     setSeventhDayDoubletimeAfterHoursText,
   ] = useState('');
+  const [workedHolidayMultiplierText, setWorkedHolidayMultiplierText] =
+    useState('');
   const [guaranteedHoursText, setGuaranteedHoursText] = useState('');
   const [ptoHoursPerYearText, setPtoHoursPerYearText] = useState('');
   const [mileageRateText, setMileageRateText] = useState('');
@@ -194,6 +196,9 @@ export function PayChangeSheet({
       minutesToHoursText(
         currentArrangement.seventh_day_doubletime_after_minutes
       )
+    );
+    setWorkedHolidayMultiplierText(
+      multiplierToText(currentArrangement.worked_holiday_multiplier)
     );
     setGuaranteedHoursText(
       currentArrangement.guaranteed_minutes_per_week === null
@@ -271,6 +276,7 @@ export function PayChangeSheet({
     doubletimeMultiplierText,
     seventhDayMultiplierText,
     seventhDayDoubletimeAfterHoursText,
+    workedHolidayMultiplierText,
     guaranteedHoursText,
     ptoHoursPerYearText,
     mileageRateText,
@@ -522,6 +528,24 @@ export function PayChangeSheet({
           />
           <Small className="text-muted-foreground">
             {t('changeSheet.ptoHint')}
+          </Small>
+        </View>
+
+        {/* 3-E4's half of the holidays group (`screens-pay-terms.md` §4.3).
+            WHICH holidays the family observes is a household-level toggle
+            list and belongs to 3-U1 — this arrangement carries only what a
+            worked one pays. */}
+        <View className="gap-2">
+          <Label>{t('changeSheet.workedHolidayPremiumFieldLabel')}</Label>
+          <Input
+            testID="pay-change-worked-holiday-multiplier-input"
+            accessibilityLabel={t('changeSheet.workedHolidayPremiumFieldLabel')}
+            value={workedHolidayMultiplierText}
+            onChangeText={setWorkedHolidayMultiplierText}
+            keyboardType="decimal-pad"
+          />
+          <Small className="text-muted-foreground">
+            {t('changeSheet.workedHolidayPremiumHint')}
           </Small>
         </View>
 

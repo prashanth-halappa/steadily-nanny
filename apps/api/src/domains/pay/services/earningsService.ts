@@ -165,6 +165,24 @@ export interface ComputeWeekEarningsInput {
   pto_usage_minutes?: number;
   /** The week's approved expenses/mileage. See the doc above. */
   reimbursements?: readonly ApprovedExpenseInput[];
+  /**
+   * The household-local DATES in this week the household observes as
+   * holidays (3-E4, §5 D-12). Dates, never holiday keys: the engine takes
+   * priced FACTS, not storage, the same boundary the PTO netting sits on
+   * (see `netPtoUsage`'s doc in `weekEarningsService`). Resolving this
+   * household's `household_holidays` toggles into this week's dates — a
+   * per-year rule, and one that has to span a New Year week — is the
+   * wrapper's job (`observedHolidayDatesInRange`).
+   *
+   * Omitted and `[]` mean the same thing here, unlike `pto_usage`: no
+   * observed holidays. There is no legacy undated form to disambiguate
+   * against, and a caller that has not wired holidays through must never
+   * accidentally pay a premium.
+   *
+   * Dates outside `[week_start, week_start+6]` are harmless — a date with no
+   * worked minutes inside the week prices nothing either way.
+   */
+  observed_holidays?: readonly string[];
 }
 
 // =============================================================================
@@ -322,21 +340,53 @@ interface Segment {
  * a coincidentally equal rate (a correction row, say) honestly separate.
  * Segments arrive date-ascending, so runs are contiguous by construction.
  */
+/**
+ * The hourly rate a line displays AND prices at — one function, so the two can
+ * never disagree.
+ *
+ * Three shapes:
+ * - `multiplier === null` — the base rate (`regular`, `pto`, the top-up).
+ * - a multiplier — the already-multiplied rate, rounded to minor units BEFORE
+ *   pricing, so the sub-line's "at £27.75 (1.5×)" is exactly the figure that
+ *   produced the amount. Rounding after would let the row fail to reproduce
+ *   its own total.
+ * - `premiumIncrementOnly` — the UPLIFT alone (3-E4's `holiday_premium`): the
+ *   multiplied rate minus the base. That subtraction is exact, not an
+ *   approximation of `rate × (m − 1)`: with `k = round(m × 100)`,
+ *
+ *     floor((r·k + 50) / 100) − r = floor((r·k + 50 − 100r) / 100)
+ *                                 = floor((r·(k − 100) + 50) / 100)
+ *
+ *   which is `overtimeRateMinor(r, m − 1)` computed without ever forming
+ *   `m − 1` in floating point. So the uplift and the base always sum to the
+ *   full premium rate to the penny — asserted by the case table — and the
+ *   engine keeps ONE audited rounding helper instead of two.
+ */
+function lineRateMinor(
+  baseRate: number,
+  multiplier: number | null,
+  premiumIncrementOnly: boolean
+): number {
+  if (multiplier === null) {
+    return baseRate;
+  }
+  const fullRate = overtimeRateMinor(baseRate, multiplier);
+  return premiumIncrementOnly ? fullRate - baseRate : fullRate;
+}
+
 function toLines(
   segments: readonly Segment[],
   kind: EarningsLineKind,
-  multiplier: number | null
+  multiplier: number | null,
+  premiumIncrementOnly = false
 ): EarningsLine[] {
   const lines: EarningsLine[] = [];
   for (const segment of segments) {
-    const rateMinor =
-      multiplier === null
-        ? segment.arrangement.rate_minor
-        : // The overtime rate is rounded to minor units BEFORE pricing, so the
-          // rate the sub-line displays ("at £27.75 (1.5×)") is exactly the one
-          // that produced the amount. Rounding after would let the row fail to
-          // reproduce its own total.
-          overtimeRateMinor(segment.arrangement.rate_minor, multiplier);
+    const rateMinor = lineRateMinor(
+      segment.arrangement.rate_minor,
+      multiplier,
+      premiumIncrementOnly
+    );
     const previous = lines[lines.length - 1];
     if (previous && previous.arrangement_id === segment.arrangement.id) {
       previous.minutes += segment.minutes;
@@ -723,6 +773,70 @@ export function computeWeekEarnings(
   // rate for a nanny to reconcile.
   overtimeSegments.sort((a, b) => a.date.localeCompare(b.date));
 
+  // ---------------------------------------------------------------------
+  // THE WORKED-HOLIDAY PREMIUM (3-E4, §5 D-12) — AN INCREMENT, NEVER A
+  // RE-PRICING. This is the composition rule; read it before changing
+  // anything above.
+  //
+  //   Hours worked on a household-observed holiday are ORDINARY WORKED TIME
+  //   for every purpose the three steps above have. They split into the daily
+  //   bands, they can be the seventh day, they count toward the weekly
+  //   threshold, and they are already sitting on whichever tier line they
+  //   earned. NOTHING above this comment knows about holidays, on purpose.
+  //   The premium is then added ON TOP: one line carrying THE SAME MINUTES a
+  //   second time at `rate × (multiplier − 1)` — the uplift alone.
+  //
+  // WHY NOT PRICE THE HOLIDAY WHOLE, the way the seventh day is priced whole?
+  // Because it would have to do one of two wrong things. Pull the holiday
+  // minutes out of the weekly remainder and a 45-hour week containing a
+  // holiday silently shrinks to 32 hours — destroying overtime she actually
+  // earned. Leave them in AND price them whole and the same minutes are paid
+  // twice, which is precisely §10.1's non-duplication invariant broken.
+  //
+  // The seventh day is different because it answers the SAME question the
+  // daily bands answer — "what tier is this hour in" — so it has to replace
+  // them. A holiday answers a different question. "This hour was above the
+  // 8-hour daily threshold" and "this hour was worked on the Fourth of July"
+  // are two independent facts about one hour, both true, each separately
+  // agreed by the parties. The engine pays the hour once at its own tier and
+  // the agreed holiday uplift once on top.
+  //
+  // The consequence, stated so nobody has to rediscover it: `minutes` on a
+  // `holiday_premium` line is NOT disjoint from the minutes on the lines
+  // above it. It is the only kind where that is true. Nothing in this repo
+  // sums minutes across lines; `docs/design/screens-pay-terms.md` §12.2's
+  // export gives it its own `holiday_premium_minutes` column for this reason.
+  //
+  // WHICH ARRANGEMENT. The multiplier comes from `overtimeConfig` — the same
+  // arrangement every other multiplier and threshold comes from, the week's
+  // last worked day. A multiplier is a TERM, not a fact about a day, and the
+  // week is negotiated and signed off as one unit. The base RATE stays
+  // per-day, exactly as it does on the `regular` lines beside it, so a
+  // mid-week raise splits the premium into two dated rows too.
+  //
+  // `> 1`, NOT `!== null`. Null means "a worked holiday pays the normal rate"
+  // and so does an explicit 1.00, which the column permits (it floors at 1).
+  // Emitting a £0.00 uplift row would tell a nanny her family agreed a
+  // holiday premium and then paid her nothing for it — a fabricated figure,
+  // which §2.9 forbids outright. Same emission-gating reasoning as
+  // `doubletime`: a tier with no rate to price it at emits no line at all,
+  // and the minutes are not dropped because they were never this line's to
+  // begin with — they are already priced above.
+  // ---------------------------------------------------------------------
+  const observedHolidays = new Set(input.observed_holidays ?? []);
+  const workedHolidayMultiplier =
+    overtimeConfig.worked_holiday_multiplier ?? null;
+  const holidayPremiumSegments: Segment[] =
+    workedHolidayMultiplier !== null && workedHolidayMultiplier > 1
+      ? workedDates
+          .filter(date => observedHolidays.has(date))
+          .map(date => ({
+            date,
+            minutes: workedByDate.get(date) ?? 0,
+            arrangement: resolved.get(date) as PayArrangement,
+          }))
+      : [];
+
   const cancellationSegments: Segment[] = sortedDates(cancelledByDate)
     .filter(date => (cancelledByDate.get(date) ?? 0) > 0)
     .map(date => ({
@@ -866,6 +980,16 @@ export function computeWeekEarnings(
       doubletimeSegments,
       EARNINGS_LINE_KINDS.DOUBLETIME,
       doubletimeMultiplier ?? 1
+    ),
+    // The uplift alone — see the composition comment above. The `?? 1` is a
+    // type-narrowing floor and never a fallback multiplier: the segment list
+    // is empty whenever the multiplier is null or 1, so this call produces no
+    // lines at all in that case.
+    [EARNINGS_LINE_KINDS.HOLIDAY_PREMIUM]: toLines(
+      holidayPremiumSegments,
+      EARNINGS_LINE_KINDS.HOLIDAY_PREMIUM,
+      workedHolidayMultiplier ?? 1,
+      true
     ),
     [EARNINGS_LINE_KINDS.CANCELLATION_PAID]: toLines(
       cancellationSegments,

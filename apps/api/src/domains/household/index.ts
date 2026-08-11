@@ -7,6 +7,7 @@
 export * from './controllers/householdController';
 export * from './errors/approvalErrors';
 export * from './errors/householdErrors';
+export * from './repositories/householdHolidayRepository';
 export * from './repositories/householdInviteRepository';
 export * from './repositories/householdMemberRepository';
 export * from './repositories/householdRepository';
