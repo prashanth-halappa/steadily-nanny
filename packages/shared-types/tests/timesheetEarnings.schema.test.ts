@@ -429,6 +429,39 @@ describe('timesheet.schema — the week response', () => {
       expect(parsed.success && parsed.data.status).toBe('submitted');
     });
 
+    // D-5 / §11.1.1 — a live, never-frozen field, so a response written
+    // before it existed must still parse.
+    it('accepts a response with no nothing_unusual field at all (backward compatible)', () => {
+      const { nothing_unusual: _omit, ...withoutField } = {
+        ...validTimesheet,
+        earnings: validOk,
+        nothing_unusual: true,
+      };
+      expect(TimesheetWeekSchema.safeParse(withoutField).success).toBe(true);
+    });
+
+    it('accepts nothing_unusual true/false/null', () => {
+      for (const value of [true, false, null]) {
+        expect(
+          TimesheetWeekSchema.safeParse({
+            ...validTimesheet,
+            earnings: validOk,
+            nothing_unusual: value,
+          }).success
+        ).toBe(true);
+      }
+    });
+
+    it('rejects a non-boolean nothing_unusual', () => {
+      expect(
+        TimesheetWeekSchema.safeParse({
+          ...validTimesheet,
+          earnings: validOk,
+          nothing_unusual: 'yes',
+        }).success
+      ).toBe(false);
+    });
+
     it('allows a null timesheet on the envelope — no row exists until the first clock-out', () => {
       expect(
         TimesheetWeekResponseSchema.safeParse({ timesheet: null }).success

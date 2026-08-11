@@ -53,6 +53,10 @@ import {
 // `paymentQueryService` follows importing this domain's repository.
 import { PaymentRepository } from '../../pay/repositories/paymentRepository';
 import {
+  type NothingUnusualComputer,
+  nothingUnusualService,
+} from '../../pay/services/nothingUnusualService';
+import {
   type WeekEarningsComputer,
   weekEarningsService,
 } from '../../pay/services/weekEarningsService';
@@ -131,7 +135,9 @@ export class TimesheetQueryService {
     private readonly payments: WeekPaymentReader = new PaymentRepository(),
     // The week thread's store. Appended at the END so every existing caller
     // and test on the six-arg constructor keeps working unchanged.
-    private readonly events: DayThreadReader = new ShiftEventRepository()
+    private readonly events: DayThreadReader = new ShiftEventRepository(),
+    // §11.1.1's fast-path judgement. Same append-at-the-end rule.
+    private readonly nothingUnusual: NothingUnusualComputer = nothingUnusualService
   ) {}
 
   /** The caller's own open (running) entry, or null. No membership check — this is always the caller's own data. */
@@ -332,10 +338,36 @@ export class TimesheetQueryService {
     timesheetId: string
   ): Promise<TimesheetWeek> {
     const row = await this.getReadableTimesheet(userId, timesheetId);
+    const earnings = await this.earningsFor(row);
     return {
       ...toWireTimesheet(row),
-      earnings: await this.earningsFor(row),
+      earnings,
+      nothing_unusual: await this.nothingUnusualFor(row, earnings),
     };
+  }
+
+  /**
+   * D-5 / §11.1.1 — `null` outside the `ok` earnings state (no arrangement,
+   * no carer, hours-only, currency-change): there is nothing to judge as
+   * "usual" when there is no priced structure to compare in the first
+   * place. A live judgement, computed fresh on every read next to the
+   * engine — never stored, never part of the frozen snapshot (see the wire
+   * schema's own doc comment on why).
+   */
+  private async nothingUnusualFor(
+    row: TimesheetRow,
+    earnings: WeekEarningsStateResult
+  ): Promise<boolean | null> {
+    if (earnings.status !== WEEK_EARNINGS_STATES.OK || !row.carer_id) {
+      return null;
+    }
+    return this.nothingUnusual.computeForWeek(
+      row.household_id,
+      row.carer_id,
+      row.week_start,
+      row.status,
+      earnings
+    );
   }
 
   /**

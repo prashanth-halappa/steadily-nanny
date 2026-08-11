@@ -202,6 +202,22 @@ const TEMPLATE_KEY_DECLARATIONS: readonly TemplateKeyDeclaration[] = [
     values: ['cancelled', 'declined'],
     keyPattern: 'schedule:cover.causeNamed.$1',
   },
+  {
+    // §11.1's `earningsStructureLine` (utils/earningsFormat.ts) — the short
+    // per-kind label keyed by `SHORT_KIND_KEYS[kind]`, one of the known
+    // `EARNINGS_LINE_KINDS` (minus `reimbursements`, never rendered here).
+    pattern: /^hours:\$\{[^}]+\}$/,
+    values: [
+      'earningsStructureKindRegular',
+      'earningsStructureKindOvertime',
+      'earningsStructureKindDoubletime',
+      'earningsStructureKindHolidayPremium',
+      'earningsStructureKindCancellationPaid',
+      'earningsStructureKindPto',
+      'earningsStructureKindGuaranteedTopup',
+    ],
+    keyPattern: 'hours:$1',
+  },
 ];
 
 function loadLocaleNamespaces(locale: LocaleCode): NamespaceMap {

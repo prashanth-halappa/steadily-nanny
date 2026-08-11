@@ -16,6 +16,10 @@ import {
   setSystemTime,
 } from 'bun:test';
 import type { TimeEntry } from '@steadily-nanny/shared-types/schemas/timesheet.schema';
+import {
+  TIME_ENTRY_KINDS,
+  TIME_ENTRY_STATUSES,
+} from '@steadily-nanny/shared-types/schemas/timesheet.schema';
 import { waitFor } from '@testing-library/react-native';
 import { localDateInZone } from '@/src/lib/localDate';
 import { useAuthStore } from '@/src/store/auth';
@@ -134,6 +138,12 @@ beforeAll(async () => {
         Promise.resolve({ ...RUNNING_ENTRY, status: 'submitted' })
       ),
     },
+    // §11.1's `earningsStructureLine` chain pulls these re-exported
+    // constants in transitively — real, pure, sync values, so this mock
+    // stays a complete stand-in instead of throwing on a named export it
+    // never provided.
+    TIME_ENTRY_KINDS,
+    TIME_ENTRY_STATUSES,
   }));
 
   mockUseShiftsRange = mock(() => ({

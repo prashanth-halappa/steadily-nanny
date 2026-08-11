@@ -103,9 +103,13 @@ export function timeToMinutes(value: string): number | null {
   return hours * 60 + minutes;
 }
 
-/** Local wall-clock `HH:MM` for `instant` in `timeZone`. */
+/**
+ * Local wall-clock `HH:MM` for `instant` in `timeZone` — internal only
+ * (feeds `timeToMinutes`, never rendered), so `hourCycle: 'h23'` forcing 24h
+ * makes the en-US tag below (§2.6 sweep, was `en-GB`) a no-op on output.
+ */
 function localTimeOf(instant: Date, timeZone: string): string {
-  const parts = new Intl.DateTimeFormat('en-GB', {
+  const parts = new Intl.DateTimeFormat('en-US', {
     timeZone,
     hour: '2-digit',
     minute: '2-digit',

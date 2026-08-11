@@ -144,6 +144,48 @@ export class TimesheetRepository extends BaseRepository<TimesheetRow> {
   }
 
   /**
+   * The trailing `limit` APPROVED weeks' frozen `gross_minor` for one carer,
+   * strictly before `beforeWeekStart`, most recent first — §11.1.1's
+   * "trailing four-week median" baseline for the "nothing unusual this week"
+   * fast path (`nothingUnusualService.ts`). Reads the already-frozen column,
+   * never recomputes: a live estimate for a prior week would drift every
+   * time this ran, and the whole point is a stable baseline.
+   *
+   * Rows with a NULL `gross_minor` (approved before migration 042, never
+   * backfilled — same `legacy_approval` case `getWeekWithEarnings` handles)
+   * are excluded rather than treated as zero, which would drag the median
+   * toward a figure nobody ever earned.
+   */
+  async recentApprovedGross(
+    householdId: string,
+    carerId: string,
+    beforeWeekStart: string,
+    limit: number
+  ): Promise<number[]> {
+    const { data, error } = await supabaseService
+      .from(this.table)
+      .select('gross_minor')
+      .eq('household_id', householdId)
+      .eq('carer_id', carerId)
+      .eq('status', 'approved')
+      .lt('week_start', beforeWeekStart)
+      .not('gross_minor', 'is', null)
+      .order('week_start', { ascending: false })
+      .limit(limit);
+
+    if (error) {
+      throw new DatabaseError(
+        'Failed to list recent approved gross for carer',
+        'DATABASE_ERROR',
+        { details: error.message, householdId, carerId, beforeWeekStart }
+      );
+    }
+    return ((data ?? []) as { gross_minor: number | null }[])
+      .map(row => row.gross_minor)
+      .filter((value): value is number => value !== null);
+  }
+
+  /**
    * COMPARE-AND-SET `submitted` → `approved`, freezing the earnings snapshot
    * in the SAME statement.
    *

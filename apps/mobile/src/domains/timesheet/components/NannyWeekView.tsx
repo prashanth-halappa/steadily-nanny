@@ -558,6 +558,7 @@ export function NannyWeekView({
               earningsError={timesheetQuery.isError}
               onRetryEarnings={() => void timesheetQuery.refetch()}
               onPressBreakdown={() => setBreakdownWeek(weekStartISO)}
+              nothingUnusual={timesheet?.nothing_unusual ?? null}
               // "Paid £X on <date>", and what is still owed. No
               // `onMarkPaidPress` — recording a payment is the paying
               // family's action, and its absence is the whole read-only

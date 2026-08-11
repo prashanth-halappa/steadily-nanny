@@ -46,6 +46,7 @@ import {
 import { showSuccessToast } from '@/src/lib/toast';
 import {
   buildCreatePayArrangementRequest,
+  formatShortDate,
   type PayTermsFormState,
 } from '../utils/payArrangementForm';
 
@@ -346,7 +347,9 @@ export function PaySetupScreen() {
             onPress={() => setEffectiveChoice('today')}
           >
             <Text>
-              {t('changeSheet.chipToday', { date: todayISO.slice(5) })}
+              {/* §2.6 — was a raw "08-10" MM-DD substring; matches
+                  PayChangeSheet's "Today (Aug 10)" chip. */}
+              {t('changeSheet.chipToday', { date: formatShortDate(todayISO) })}
             </Text>
           </Button>
           <Button

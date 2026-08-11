@@ -156,7 +156,7 @@ describe('ShiftCommandService.decline — pushes', () => {
     // screen. "The nanny declined a pending shift." told them nothing — not
     // who, not when, not which child.
     expect(payload.body).toBe(
-      'Ines turned down Mon 3 Aug, 9:00 am–6:00 pm (Ada).'
+      'Ines turned down Mon Aug 3, 9:00 am–6:00 pm (Ada).'
     );
     // Field-exact: the mobile route map reads shiftId/householdId off `data`.
     expect(payload.data).toEqual({

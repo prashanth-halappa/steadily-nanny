@@ -401,7 +401,7 @@ describe('response-leg pushes', () => {
       (notifyUser.mock.calls[0]?.[1] as { body?: string })?.body ?? '';
     expect(body).toContain('Alex');
     expect(body).toMatch(/asked if you can cover/i);
-    expect(body).toMatch(/9 Aug/i);
+    expect(body).toMatch(/Aug 9/i);
     expect(body).toMatch(/09:00/);
     expect(body).toMatch(/11:20/);
     expect(body).toContain('Child1');

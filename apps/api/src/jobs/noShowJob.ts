@@ -117,18 +117,21 @@ export function buildNoShowKey(shiftId: string): string {
  * `HH:MM` in `timeZone`, falling back to UTC when the household carries a
  * timezone Postgres accepted but `Intl` does not — a wrong-by-an-offset time
  * in the body is still a useful alert; throwing would lose it entirely.
+ *
+ * `hourCycle: 'h23'` forces 24h regardless of locale — the en-US tag below
+ * (§2.6 sweep, was `en-GB`) is for consistency, not a visible output change.
  */
 export function formatLocalTime(instantIso: string, timeZone: string): string {
   const instant = new Date(instantIso);
   try {
-    return new Intl.DateTimeFormat('en-GB', {
+    return new Intl.DateTimeFormat('en-US', {
       timeZone,
       hour: '2-digit',
       minute: '2-digit',
       hourCycle: 'h23',
     }).format(instant);
   } catch {
-    return new Intl.DateTimeFormat('en-GB', {
+    return new Intl.DateTimeFormat('en-US', {
       timeZone: 'UTC',
       hour: '2-digit',
       minute: '2-digit',

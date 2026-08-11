@@ -13,6 +13,10 @@
  * it), and it does nothing when there is nothing to clock out of.
  */
 import { beforeEach, describe, expect, it, mock } from 'bun:test';
+import {
+  TIME_ENTRY_KINDS,
+  TIME_ENTRY_STATUSES,
+} from '@steadily-nanny/shared-types/schemas/timesheet.schema';
 import { waitFor } from '@testing-library/react-native';
 import { useAuthStore } from '@/src/store/auth';
 import { renderWithProviders } from '@/src/test-utils';
@@ -48,6 +52,12 @@ mock.module('@/src/api/endpoints/timeEntries', () => ({
     clockIn: mock(),
     clockOut: mock(),
   },
+  // §11.1's `earningsStructureLine` chain pulls these re-exported constants
+  // in transitively — real, pure, sync values, so this mock stays a
+  // complete stand-in instead of throwing on a named export it never
+  // provided (same fix as PaymentsScreen.test.tsx).
+  TIME_ENTRY_KINDS,
+  TIME_ENTRY_STATUSES,
 }));
 mock.module('@/src/lib/liveActivity', () => ({
   startOnTheClock: mock(() => Promise.resolve()),

@@ -1300,36 +1300,45 @@ function formatShiftWindow12h(
   return `${startTime} – ${endTime}`;
 }
 
+// en-US, month-before-day ("Thu Aug 9") per §2.6, matching
+// `shiftCommandService.ts`'s `formatPushShortDate` — same `.replace(',', '')`
+// strip of the weekday comma en-US prints ("Thu, Aug 9").
 function formatShiftAskDateLabel(instantIso: string, timezone: string): string {
   const instant = new Date(instantIso);
   try {
-    return new Intl.DateTimeFormat('en-GB', {
+    return new Intl.DateTimeFormat('en-US', {
       weekday: 'short',
       day: 'numeric',
       month: 'short',
       timeZone: timezone,
-    }).format(instant);
+    })
+      .format(instant)
+      .replace(',', '');
   } catch {
-    return new Intl.DateTimeFormat('en-GB', {
+    return new Intl.DateTimeFormat('en-US', {
       weekday: 'short',
       day: 'numeric',
       month: 'short',
       timeZone: 'UTC',
-    }).format(instant);
+    })
+      .format(instant)
+      .replace(',', '');
   }
 }
 
+// `hourCycle: 'h23'` forces 24h regardless of locale — the swap below is for
+// consistency (§2.6's sweep), not a visible output change.
 function formatLocalTime24h(instantIso: string, timezone: string): string {
   const instant = new Date(instantIso);
   try {
-    return new Intl.DateTimeFormat('en-GB', {
+    return new Intl.DateTimeFormat('en-US', {
       timeZone: timezone,
       hour: '2-digit',
       minute: '2-digit',
       hourCycle: 'h23',
     }).format(instant);
   } catch {
-    return new Intl.DateTimeFormat('en-GB', {
+    return new Intl.DateTimeFormat('en-US', {
       timeZone: 'UTC',
       hour: '2-digit',
       minute: '2-digit',
@@ -1359,7 +1368,7 @@ function formatLocalTime12h(instantIso: string, timezone: string): string {
 
 function formatShiftDayLabel(localDate: string, timezone: string): string {
   try {
-    return new Intl.DateTimeFormat('en-GB', {
+    return new Intl.DateTimeFormat('en-US', {
       weekday: 'long',
       timeZone: timezone,
     }).format(new Date(`${localDate}T12:00:00`));

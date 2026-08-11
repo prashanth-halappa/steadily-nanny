@@ -13,6 +13,11 @@
  * distinction). The body variant follows `earningsStatus`: `ok` shows the
  * gross clause; `currency_change` explains the mid-week currency switch;
  * everything else (`no_arrangement`, missing earnings) drops the gross.
+ *
+ * D-5 / §11.1.1's fast path: the plain `ok`, no-adjustment body swaps in
+ * "Nothing unusual this week" when the server's `nothing_unusual` judgement
+ * says so — never claimed alongside a staged adjustment (decided THIS
+ * approval, after that server read) or on any non-`ok` status.
  */
 import type { WeekEarningsState } from '@steadily-nanny/shared-types/schemas/timesheet.schema';
 import { useTranslation } from 'react-i18next';
@@ -52,6 +57,11 @@ interface ApproveWeekDialogProps {
   /** Which way `adjustmentLabel` points — the sign, extracted, because the
    * label itself is deliberately unsigned. */
   adjustmentDirection?: 'added' | 'deducted' | null;
+  /** D-5 / §11.1.1's fast path, straight off the week response
+   * (`timesheet.nothing_unusual`). Only ever swaps in the plain `ok` body —
+   * a staged adjustment (decided THIS approval, after the server's read)
+   * always wins, and every non-`ok` status keeps its own body untouched. */
+  nothingUnusual?: boolean | null;
 }
 
 export function ApproveWeekDialog({
@@ -66,6 +76,7 @@ export function ApproveWeekDialog({
   carerName,
   adjustmentLabel,
   adjustmentDirection,
+  nothingUnusual = null,
 }: ApproveWeekDialogProps) {
   const { t } = useTranslation('hours');
 
@@ -75,7 +86,9 @@ export function ApproveWeekDialog({
       ? 'approveDialogBodyAdjustmentDeducted'
       : hasAdjustment
         ? 'approveDialogBodyAdjustmentAdded'
-        : 'approveDialogBody';
+        : nothingUnusual
+          ? 'approveDialogBodyNothingUnusual'
+          : 'approveDialogBody';
   const bodyKey =
     earningsStatus === 'ok'
       ? okBodyKey

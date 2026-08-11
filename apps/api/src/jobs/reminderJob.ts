@@ -218,7 +218,10 @@ export function getLocalClock(
       month: '2-digit',
       day: '2-digit',
     }).format(instant);
-    const parts = new Intl.DateTimeFormat('en-GB', {
+    // `hourCycle: 'h23'` forces 24h regardless of locale — internal gating
+    // only, never rendered, so the en-US tag (§2.6 sweep, was `en-GB`) is a
+    // no-op on the extracted hour.
+    const parts = new Intl.DateTimeFormat('en-US', {
       timeZone,
       hour: '2-digit',
       minute: '2-digit',

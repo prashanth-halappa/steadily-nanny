@@ -440,8 +440,11 @@ describe('WeekEarningsLine', () => {
       expect(getByTestId('hours-earnings-line-rate')).toBeTruthy();
     });
 
-    it('withholds it across a mid-week raise — no single "× rate" is true', () => {
-      const { queryByTestId } = render(
+    // §11.1: a mid-week raise no longer disappears silently — the structure
+    // line takes over from the single-rate subline in the same slot, because
+    // it is always producible (kind-grouped, not rate-grouped).
+    it('falls back to the structure line across a mid-week raise', () => {
+      const { getByTestId } = render(
         <WeekEarningsLine
           earnings={{
             ...okEarnings,
@@ -454,11 +457,13 @@ describe('WeekEarningsLine', () => {
           totalMinutes={2400}
         />
       );
-      expect(queryByTestId('hours-earnings-line-rate')).toBeNull();
+      expect(getByTestId('hours-earnings-line-rate').props.children).toBe(
+        '40h = 40 reg'
+      );
     });
 
-    it('withholds it when any line carries an overtime multiplier', () => {
-      const { queryByTestId } = render(
+    it('falls back to the structure line when any line carries an overtime multiplier', () => {
+      const { getByTestId } = render(
         <WeekEarningsLine
           earnings={{
             ...okEarnings,
@@ -471,7 +476,46 @@ describe('WeekEarningsLine', () => {
           totalMinutes={2400}
         />
       );
-      expect(queryByTestId('hours-earnings-line-rate')).toBeNull();
+      expect(getByTestId('hours-earnings-line-rate').props.children).toBe(
+        '40h = 20 reg + 20 OT'
+      );
+    });
+
+    it('appends the nothing-unusual clause when the server says so (D-5, §11.1.1)', () => {
+      const { getByTestId } = render(
+        <WeekEarningsLine
+          earnings={{ ...okEarnings, lines: [line(), line()] }}
+          timesheetStatus="submitted"
+          viewerRole="parent"
+          carerId="carer-1"
+          carerDisplayName="Amara"
+          totalMinutes={2400}
+          nothingUnusual
+        />
+      );
+      // The hook's `t` is key-echoed under test (docs/09-TESTING.md §6) —
+      // asserting on the key is exactly how the rest of this file pins
+      // translated copy, e.g. `'earningsEstimatedGross'` above.
+      expect(getByTestId('hours-earnings-line-rate').props.children).toBe(
+        'earningsRateSubline · earningsNothingUnusualSuffix'
+      );
+    });
+
+    it('omits the nothing-unusual clause when the server says nothing', () => {
+      const { getByTestId } = render(
+        <WeekEarningsLine
+          earnings={{ ...okEarnings, lines: [line(), line()] }}
+          timesheetStatus="submitted"
+          viewerRole="parent"
+          carerId="carer-1"
+          carerDisplayName="Amara"
+          totalMinutes={2400}
+          nothingUnusual={false}
+        />
+      );
+      expect(
+        getByTestId('hours-earnings-line-rate').props.children
+      ).not.toContain('earningsNothingUnusualSuffix');
     });
 
     it('withholds it when no line has priced minutes at all', () => {

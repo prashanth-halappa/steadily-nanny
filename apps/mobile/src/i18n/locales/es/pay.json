@@ -41,6 +41,8 @@
     "ptoBalanceValue": "{{amount}} restantes este año",
     "ptoBalanceCaption": "1 ene – 31 dic {{year}}"
   },
+  "currencySearchPlaceholder": "Buscar monedas",
+  "currencySearchEmpty": "No hay monedas que coincidan",
   "changeSheet": {
     "title": "Cambiar condiciones",
     "currencyLabel": "Moneda",
