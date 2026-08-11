@@ -73,6 +73,7 @@ import {
   buildBootstrapProfileRequest,
   deriveBootstrapName,
 } from '@/src/lib/bootstrapUserProfile';
+import { getDeviceRegion } from '@/src/lib/deviceLocale';
 import { useAuthStore } from '@/src/store/auth';
 import { usePendingDeepLinkStore } from '@/src/store/pendingDeepLinkStore';
 import { useSetupProgressStore } from '@/src/store/setupProgress';
@@ -225,6 +226,16 @@ export function CodeEntryScreen({
         const membership = await redeemInvite.mutateAsync({
           code: submittedCode,
           ...(targetHouseholdId ? { targetHouseholdId } : {}),
+          // D-8: a US-region device gets a Sunday-start pay week. Only the
+          // server's INSTANTIATE branch reads it (096) — the case where a
+          // parent with no household redeems a nanny's draft code and the
+          // household is created right there. Nothing has ever set
+          // `week_starts_on` on a draft, so without this the family takes the
+          // SQL default of Monday and D-8 locks it at the first timesheet.
+          // Same one-line shape as the parent create path
+          // (`HouseholdScreen`/`ChildrenScreen`); every other region keeps
+          // the default by omission.
+          ...(getDeviceRegion() === 'US' ? { weekStartsOn: 0 } : {}),
         });
         // BEFORE the role/step resolution below — never write the persisted
         // wizard state for an already-onboarded user (see CodeEntryScreenProps).

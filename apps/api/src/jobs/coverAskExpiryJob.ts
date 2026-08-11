@@ -38,15 +38,37 @@
  * PM." vs "The family withdrew this ask.").
  *
  * ---------------------------------------------------------------------------
- * ORDERING: CLAIM AND SEND FIRST, FLIP SECOND
+ * ORDERING: FLIP FIRST, SEND ONLY ON A SUCCESSFUL FLIP
  * ---------------------------------------------------------------------------
- * Not the intuitive order, and the intuitive order loses pushes. Flip-then-push
- * means a process death between the two leaves an ask that is closed and a
- * parent who was never told — permanently, because the next tick no longer
- * sees a pending row. Push-then-flip means a death leaves the ask pending, the
- * next tick retries, and the once-ever claim key `cover_ask_expired:<shiftId>`
- * collides so nobody is told twice. Same claim → send → confirm ledger as
- * every other push job (GOLDEN-FIXES #24).
+ * This was push-then-flip, for a real reason: a process death between the two
+ * leaves an ask that is closed and a parent who was never told, permanently,
+ * because the next tick no longer sees a pending row. Push-then-flip made a
+ * death recoverable — the ask stays pending, the next tick retries, and the
+ * once-ever claim key collides so nobody is told twice.
+ *
+ * It also made the job LIE, every time it mattered most. `due` is a snapshot;
+ * a carer who accepts at 05:38 is still in the 05:40 tick's list, and carers
+ * answer near the deadline because that is what deadlines do. Push-then-flip
+ * told every parent "nobody is booked for the 7:00 AM shift" and only THEN let
+ * `expireAsk`'s `.eq('status','pending')` CAS correctly fail. The claim key
+ * `cover_ask_expired:<shiftId>` is once-ever, so nothing retracts it: the
+ * parent has been told nobody is coming to a shift that IS covered, forever.
+ *
+ * The CAS is the only thing in this job that knows whether the ask is still
+ * unanswered, so nothing may be sent before it runs.
+ *
+ * THE WINDOW THAT BUYS: a death between the flip and the push loses the push.
+ * The ask is `cancelled` with no actor, no tick will retry it, and the parent
+ * never gets the buzz. Accepted, because the two failures are not the same
+ * size — a lost push loses a NOTIFICATION of a fact that is still on the
+ * parent's schedule (the ask reads as expired there, and the shift is
+ * uncovered on every surface that shows coverage), whereas a wrong push
+ * manufactures a fact that is false and unretractable. One is a missed buzz in
+ * a sub-second crash window on a five-minute cron; the other fires on the
+ * ordinary case of a carer accepting late.
+ *
+ * The claim → send → confirm ledger inside `claimAndSend` is untouched
+ * (GOLDEN-FIXES #24) and still stops a double-send within the push loop.
  *
  * QUIET HOURS: conditionally exempt. `cover_ask_expired` breaks through only
  * when the shift starts within 12h — see `isQuietHoursExempt` in
@@ -96,6 +118,28 @@ export const EXPIRING_ASK_KINDS: readonly string[] = [
   SHIFT_KINDS.COVER,
 ];
 
+/**
+ * How far back the sweep reaches. Without a floor the `starts_at.lte.now` arm
+ * matches EVERY pending extra/cover shift ever created — including rows that
+ * predate 088 and therefore have a null deadline and a start months in the
+ * past — so the first tick after 088 ships would push "Nobody is booked for
+ * the ..." to every parent about all of them at once.
+ *
+ * Seven days is generous against the failure it has to survive: the job ticks
+ * every five minutes, so anything older than that was not missed, it was never
+ * in scope. An ask older than the floor stays `pending`; it is out of the
+ * reminder job's ±window too, so it is inert rather than noisy.
+ */
+export const EXPIRY_LOOKBACK_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * Rows per tick. A cap, not a filter — the remainder is picked up five minutes
+ * later, because `starts_at ascending` makes the drain deterministic and every
+ * ask this tick closes leaves the pending set. Hitting it is reported and
+ * logged, never swallowed (the playbook's no-silent-caps rule).
+ */
+export const EXPIRY_BATCH_LIMIT = 200;
+
 /** The narrow shift row this job needs. */
 export type ExpiringAsk = Pick<
   Shift,
@@ -115,6 +159,8 @@ export interface CoverAskExpiryWriter {
 export interface CoverAskExpiryJobResult {
   expiry: ReminderRuleStats;
   expiredCount: number;
+  /** The tick filled `EXPIRY_BATCH_LIMIT` — there is more waiting. */
+  batchCapped: boolean;
   errorCount: number;
   message: string;
 }
@@ -127,6 +173,7 @@ export function buildCoverAskExpiredKey(shiftId: string): string {
 export class DefaultCoverAskExpirySource implements CoverAskExpirySource {
   async listDueAsks(now: Date): Promise<ExpiringAsk[]> {
     const nowIso = now.toISOString();
+    const floorIso = new Date(now.getTime() - EXPIRY_LOOKBACK_MS).toISOString();
     const { data, error } = await supabaseService
       .from('shifts')
       .select(
@@ -135,12 +182,20 @@ export class DefaultCoverAskExpirySource implements CoverAskExpirySource {
       .eq('status', SHIFT_STATUSES.PENDING)
       .in('kind', [...EXPIRING_ASK_KINDS])
       .not('carer_id', 'is', null)
+      // THE FLOOR — see `EXPIRY_LOOKBACK_MS`. Anchored on `starts_at` because
+      // that is the one instant both arms below share; the deadline arm is
+      // always earlier than its own shift's start, so a floor here bounds both.
+      .gte('starts_at', floorIso)
       // Two arms, and the second is not redundant. Asks created before
       // migration 088 have a null deadline, and an ask whose shift has already
       // started is over however it got there — §5.2's "expiry never fires
       // after the shift has started" cuts both ways: not later than the start,
       // and not still open past it either.
-      .or(`cover_ask_expires_at.lte.${nowIso},starts_at.lte.${nowIso}`);
+      .or(`cover_ask_expires_at.lte.${nowIso},starts_at.lte.${nowIso}`)
+      // Oldest first, so a capped batch drains over the next ticks rather than
+      // re-picking the same slice forever.
+      .order('starts_at', { ascending: true })
+      .limit(EXPIRY_BATCH_LIMIT);
 
     if (error) {
       throw new DatabaseError(
@@ -229,19 +284,40 @@ export async function runCoverAskExpiryJob(
     return {
       expiry: stats,
       expiredCount: 0,
+      batchCapped: false,
       errorCount: 1,
       message: 'Cover-ask expiry failed to list due asks',
     };
   }
 
   stats.candidates = due.length;
+  const batchCapped = due.length >= EXPIRY_BATCH_LIMIT;
+  if (batchCapped) {
+    logger.warn('Cover-ask expiry hit its batch cap; more asks are waiting', {
+      limit: EXPIRY_BATCH_LIMIT,
+    });
+  }
 
   for (const ask of due) {
     try {
+      // CLOSE THE ASK FIRST — see the ordering note in the module header. The
+      // CAS is the only thing that knows the carer has not answered in the
+      // last five minutes, and a lost race must cost a push, never send one.
+      //
+      // `cancelled_at` is the DEADLINE, not the moment the tick happened: the
+      // ask died when its fuse ran out, and recording the sweep's own clock
+      // would make a five-minute tick look like the reason.
+      const at = ask.cover_ask_expires_at ?? ask.starts_at;
+      if (!(await writer.expireAsk(ask.id, at))) {
+        // She answered. Nothing expired, so nobody is told anything.
+        stats.skipped++;
+        continue;
+      }
+      expiredCount++;
+
       const payload = buildCoverAskExpiredPayload(ask);
       const reminderKey = buildCoverAskExpiredKey(ask.id);
 
-      // SEND FIRST — see the ordering note in the module header.
       const parentIds = await parents.listParentUserIds(ask.household_id);
       for (const parentId of parentIds) {
         try {
@@ -261,14 +337,6 @@ export async function runCoverAskExpiryJob(
           });
         }
       }
-
-      // THEN close the ask. `cancelled_at` is the DEADLINE, not the moment the
-      // tick happened: the ask died when its fuse ran out, and recording the
-      // sweep's own clock would make a five-minute tick look like the reason.
-      const at = ask.cover_ask_expires_at ?? ask.starts_at;
-      if (await writer.expireAsk(ask.id, at)) {
-        expiredCount++;
-      }
     } catch (error) {
       stats.errors++;
       logger.error('Cover-ask expiry failed for a shift', {
@@ -281,7 +349,10 @@ export async function runCoverAskExpiryJob(
   return {
     expiry: stats,
     expiredCount,
+    batchCapped,
     errorCount: stats.errors,
-    message: `Expired ${expiredCount} cover ask(s), sent ${stats.sent} push(es)`,
+    message: `Expired ${expiredCount} cover ask(s), sent ${stats.sent} push(es)${
+      batchCapped ? ' (batch capped — more waiting)' : ''
+    }`,
   };
 }

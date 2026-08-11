@@ -144,7 +144,10 @@ export const JobController = {
     'Shift completion completed',
     {
       mapForJobRun: result => ({
-        totalProcessed: result.completedCount,
+        // Candidates, not writes: a past confirmed shift with no hours behind
+        // it was looked at and deliberately left alone, and the difference
+        // between the two numbers IS the no-show backlog.
+        totalProcessed: result.completedCount + result.skippedCount,
         successCount: result.completedCount,
         errorCount: result.errorCount,
       }),

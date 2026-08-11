@@ -86,13 +86,25 @@ export {
  * 094 joins the nanny to. Absent means "I have no live household", which 094
  * reads as "instantiate one from her draft".
  *
- * Deliberately NOT in the shared wire package. It is meaningful only to the
- * draft-redemption path and only to this server; every other client of
+ * `week_starts_on` is D-8's FLSA workweek for the household 094 INSTANTIATES
+ * when there is no absorption target. It has to travel on this request because
+ * this is the first moment anyone with a claim to the answer is present: a
+ * nanny-authored draft carries 075's SQL default of 1 (Monday) — no server
+ * path has ever set the column on one — and the workweek belongs to the
+ * EMPLOYER, who is the redeemer holding this device. Without it a US family
+ * onboarded through 3-O gets Monday pay weeks forever, locked by D-8 the
+ * moment a timesheet exists, while the same family through the parent create
+ * path gets Sunday. Ignored on every other path, absorption included, where
+ * an existing household's setting is nobody's to overwrite.
+ *
+ * Deliberately NOT in the shared wire package. Both fields are meaningful only
+ * to the draft-redemption path and only to this server; every other client of
  * `RedeemHouseholdInviteSchema` sends a code and nothing else, and Zod objects
  * are non-strict, so an older client is unaffected either way.
  */
 export const RedeemHouseholdInviteBodySchema = RedeemInvite.extend({
   target_household_id: z.uuid().optional(),
+  week_starts_on: z.int().min(0).max(6).optional(),
 });
 export type RedeemHouseholdInviteBody = z.infer<
   typeof RedeemHouseholdInviteBodySchema
