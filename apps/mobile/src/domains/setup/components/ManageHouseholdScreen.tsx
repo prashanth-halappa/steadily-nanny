@@ -81,18 +81,22 @@ import { Input } from '@/src/components/ui/input';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { Text } from '@/src/components/ui/text';
 import { Body, Small } from '@/src/components/ui/typography';
+import { CurrencySelect } from '@/src/domains/pay/components/CurrencySelect';
 import { PaySetupPromptCard } from '@/src/domains/pay/components/PaySetupPromptCard';
 import { resolveCarerName } from '@/src/domains/schedule/utils/memberDisplayName';
 import { isParentEditorRole } from '@/src/domains/setup/types';
 import { findTimezoneOption } from '@/src/domains/setup/utils/timezones';
+import { findUsStateOption } from '@/src/domains/setup/utils/usStates';
 import { useLeaveHousehold } from '@/src/hooks/mutations/useLeaveHousehold';
 import { useRemoveMember } from '@/src/hooks/mutations/useRemoveMember';
 import { useUpdateHousehold } from '@/src/hooks/mutations/useUpdateHousehold';
 import { useHouseholdMembers } from '@/src/hooks/queries/useHouseholdMembers';
 import { useHouseholds } from '@/src/hooks/queries/useHouseholds';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
+import { getDeviceCurrency } from '@/src/lib/deviceLocale';
 import { showSuccessToast } from '@/src/lib/toast';
 import { useAuthStore } from '@/src/store/auth';
+import { JurisdictionPickerSheet } from './JurisdictionPickerSheet';
 import { SetupScreenShell } from './SetupScreenShell';
 import { TimezonePickerSheet } from './TimezonePickerSheet';
 
@@ -147,6 +151,8 @@ export function ManageHouseholdScreen() {
   const [name, setName] = useState('');
   const [addressLine, setAddressLine] = useState('');
   const [timezone, setTimezone] = useState('');
+  const [currency, setCurrency] = useState('');
+  const [jurisdiction, setJurisdiction] = useState<string | null>(null);
   const [approvalMode, setApprovalMode] = useState<HouseholdApprovalMode>(
     HOUSEHOLD_APPROVAL_MODES.EITHER
   );
@@ -158,6 +164,7 @@ export function ManageHouseholdScreen() {
     useState('0');
   const [isTimezoneSheetOpen, setIsTimezoneSheetOpen] = useState(false);
   const [isTimezoneConfirmOpen, setIsTimezoneConfirmOpen] = useState(false);
+  const [isJurisdictionSheetOpen, setIsJurisdictionSheetOpen] = useState(false);
 
   // Seed local form state from the server ONCE, the first time the household
   // loads — not on every `household` object change, so an in-flight
@@ -172,6 +179,12 @@ export function ManageHouseholdScreen() {
     setName(household.name);
     setAddressLine(household.address_line ?? '');
     setTimezone(household.timezone);
+    // `?? getDeviceCurrency()` is defensive, not the normal path: every real
+    // household carries `currency` (DB-required, backfilled). It only fires
+    // against a fixture/server that predates the field, so seeding never
+    // crashes `CurrencySelect` on an empty value.
+    setCurrency(household.currency ?? getDeviceCurrency());
+    setJurisdiction(household.jurisdiction ?? null);
     setApprovalMode(household.approval_mode);
     setApprovalScope(household.approval_scope);
     setShortNoticeHours(String(household.short_notice_hours));
@@ -257,6 +270,11 @@ export function ManageHouseholdScreen() {
       diff.address_line = trimmedAddress;
     }
     if (timezone !== household.timezone) diff.timezone = timezone;
+    const householdCurrency = household.currency ?? getDeviceCurrency();
+    if (currency !== householdCurrency) diff.currency = currency;
+    const householdJurisdiction = household.jurisdiction ?? null;
+    if (jurisdiction !== householdJurisdiction)
+      diff.jurisdiction = jurisdiction;
     if (approvalMode !== household.approval_mode) {
       diff.approval_mode = approvalMode;
     }
@@ -339,6 +357,9 @@ export function ManageHouseholdScreen() {
   };
 
   const selectedTimezoneLabel = findTimezoneOption(timezone)?.label ?? timezone;
+  const selectedJurisdictionLabel = jurisdiction
+    ? (findUsStateOption(jurisdiction)?.label ?? jurisdiction)
+    : t('householdSettings.jurisdictionNoneOption');
 
   const saveDisabled = !isValid || !isDirty || updateHousehold.isPending;
 
@@ -417,6 +438,30 @@ export function ManageHouseholdScreen() {
         <Small className="text-muted-foreground">
           {t('householdSettings.timezoneWarning')}
         </Small>
+      </View>
+
+      <View className="gap-2">
+        <FieldLabel>{t('householdSettings.currencyLabel')}</FieldLabel>
+        <CurrencySelect
+          value={currency}
+          onChange={setCurrency}
+          testIDPrefix="household"
+        />
+      </View>
+
+      <View className="gap-2">
+        <FieldLabel>{t('householdSettings.jurisdictionLabel')}</FieldLabel>
+        <AnimatedPressable
+          testID="household-jurisdiction-trigger"
+          onPress={() => setIsJurisdictionSheetOpen(true)}
+        >
+          <View className="flex-row items-center justify-between rounded-row border border-input bg-background px-4 py-3">
+            <Body>{selectedJurisdictionLabel}</Body>
+            <Small className="text-primary">
+              {t('householdSettings.jurisdictionChangeButton')}
+            </Small>
+          </View>
+        </AnimatedPressable>
       </View>
 
       <View className="gap-2">
@@ -670,6 +715,16 @@ export function ManageHouseholdScreen() {
         onSelect={value => {
           setTimezone(value);
           setIsTimezoneSheetOpen(false);
+        }}
+      />
+
+      <JurisdictionPickerSheet
+        visible={isJurisdictionSheetOpen}
+        onDismiss={() => setIsJurisdictionSheetOpen(false)}
+        selectedValue={jurisdiction}
+        onSelect={value => {
+          setJurisdiction(value);
+          setIsJurisdictionSheetOpen(false);
         }}
       />
     </SetupScreenShell>

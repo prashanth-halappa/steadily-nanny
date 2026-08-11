@@ -148,6 +148,10 @@ function makeUserService(name: string | null = 'Nia Rowe'): any {
   };
 }
 
+function makeHouseholdRepo(currency = 'GBP'): any {
+  return { findById: mock(async () => ({ id: 'h1', currency })) };
+}
+
 /**
  * The week-lock lookup (Phase 3/4 review, SERIOUS 6). Defaults to "no
  * timesheet for that week yet", which is the common case and unlocked.
@@ -179,6 +183,7 @@ interface ServiceParts {
   arrangementRepo?: any;
   userService?: any;
   timesheetRepo?: any;
+  householdRepo?: any;
 }
 
 function service(parts: ServiceParts = {}): any {
@@ -187,7 +192,8 @@ function service(parts: ServiceParts = {}): any {
     parts.arrangementRepo ?? makeArrangementRepo(),
     makeMemberRepo(parts.members ?? { 'carer-1': NANNY }),
     parts.userService ?? makeUserService(),
-    parts.timesheetRepo ?? makeTimesheetRepo()
+    parts.timesheetRepo ?? makeTimesheetRepo(),
+    parts.householdRepo ?? makeHouseholdRepo()
   );
 }
 
@@ -321,6 +327,76 @@ describe('ExpenseCommandService.create — currency must match the effective arr
     const svc = service({ expenseRepo });
     await svc.create('carer-1', 'h1', expenseRequest({ currency: 'GBP' }));
     expect(expenseRepo.create).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('ExpenseCommandService.create — currency resolution (T4)', () => {
+  it('resolves an absent request currency from the household row', async () => {
+    const expenseRepo = makeExpenseRepo();
+    const arrangementRepo = makeArrangementRepo({
+      effectiveOn: mock(async () => null),
+    });
+    const householdRepo = makeHouseholdRepo('USD');
+    const svc = service({ expenseRepo, arrangementRepo, householdRepo });
+    await svc.create('carer-1', 'h1', expenseRequest({ currency: undefined }));
+    expect(expenseRepo.create.mock.calls[0][0].currency).toBe('USD');
+  });
+
+  it('an explicit request currency still wins over the household default', async () => {
+    const expenseRepo = makeExpenseRepo();
+    const arrangementRepo = makeArrangementRepo({
+      effectiveOn: mock(async () => null),
+    });
+    const householdRepo = makeHouseholdRepo('USD');
+    const svc = service({ expenseRepo, arrangementRepo, householdRepo });
+    await svc.create('carer-1', 'h1', expenseRequest({ currency: 'EUR' }));
+    expect(expenseRepo.create.mock.calls[0][0].currency).toBe('EUR');
+  });
+
+  it('the currency-match assertion runs against the RESOLVED currency, not the raw request', async () => {
+    // Household resolves to USD; the effective arrangement is priced in EUR
+    // (`arrangement()`'s default). An absent request currency must be
+    // checked as USD, not as undefined — a real mismatch must still throw.
+    const expenseRepo = makeExpenseRepo();
+    const arrangementRepo = makeArrangementRepo({
+      effectiveOn: mock(async () => arrangement({ currency: 'EUR' })),
+    });
+    const householdRepo = makeHouseholdRepo('USD');
+    const svc = service({ expenseRepo, arrangementRepo, householdRepo });
+    const err = await svc
+      .create('carer-1', 'h1', expenseRequest({ currency: undefined }))
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ExpenseValidationError);
+    expect(
+      (err as { metadata?: Record<string, unknown> }).metadata
+    ).toMatchObject({
+      reason: 'CURRENCY_MISMATCH',
+      expectedCurrency: 'EUR',
+      submittedCurrency: 'USD',
+    });
+    expect(expenseRepo.create).not.toHaveBeenCalled();
+  });
+});
+
+describe('ExpenseCommandService.update — currency resolution (T4)', () => {
+  it('resolves an absent request currency from the household row', async () => {
+    const expenseRepo = makeExpenseRepo();
+    const arrangementRepo = makeArrangementRepo({
+      effectiveOn: mock(async () => null),
+    });
+    const householdRepo = makeHouseholdRepo('USD');
+    const svc = service({ expenseRepo, arrangementRepo, householdRepo });
+    await svc.update(
+      'carer-1',
+      'exp-1',
+      expenseRequest({ currency: undefined })
+    );
+    expect(expenseRepo.updateOwnedPending).toHaveBeenCalledWith(
+      'exp-1',
+      'h1',
+      'carer-1',
+      expect.objectContaining({ currency: 'USD' })
+    );
   });
 });
 

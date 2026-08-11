@@ -134,10 +134,13 @@ export const ExpenseSchema = z.object({
  * amount before approval"); a client-supplied amount on a mileage row would
  * bypass that freeze entirely, one union arm away from a `.strip()` no-op.
  *
- * `currency` defaults to `'GBP'`, the house convention
- * (`CreatePayArrangementRequestSchema`); the server still asserts it
- * matches the effective arrangement's currency (`docs/11-MONEY.md` §9),
- * which depends on data this schema has no access to.
+ * `currency` has NO wire default (Phase 1, T4) — omitted currency is
+ * resolved server-side from the household row
+ * (`expenseCommandService.create`/`.update`), matching
+ * `CreatePayArrangementRequestSchema`'s identical change; the server still
+ * asserts the resolved currency matches the effective arrangement's
+ * currency (`docs/11-MONEY.md` §9), which depends on data this schema has
+ * no access to.
  */
 export const CreateExpenseRequestSchema = z.discriminatedUnion('kind', [
   z
@@ -146,7 +149,7 @@ export const CreateExpenseRequestSchema = z.discriminatedUnion('kind', [
       local_date: z.iso.date(),
       description: z.string().min(1),
       amount_minor: z.int().min(0).max(MAX_MONEY_MINOR),
-      currency: CurrencyCodeSchema.default('GBP'),
+      currency: CurrencyCodeSchema.optional(),
     })
     .strict(),
   z
@@ -155,7 +158,7 @@ export const CreateExpenseRequestSchema = z.discriminatedUnion('kind', [
       local_date: z.iso.date(),
       description: z.string().min(1),
       miles: MilesSchema,
-      currency: CurrencyCodeSchema.default('GBP'),
+      currency: CurrencyCodeSchema.optional(),
     })
     .strict(),
 ]);

@@ -200,6 +200,8 @@ const baseHousehold = {
   address_line: null,
   latitude: null,
   longitude: null,
+  currency: 'GBP',
+  jurisdiction: null,
   approval_mode: 'either',
   approval_scope: 'all',
   short_notice_hours: 24,
@@ -370,6 +372,41 @@ describe('ManageHouseholdScreen', () => {
     fireEvent.press(getByTestId('manage-household-screen-cta'));
 
     expect(updateMock).not.toHaveBeenCalled();
+  });
+
+  it('changes currency and jurisdiction through the real pickers and sends ONLY those fields', async () => {
+    const { getByTestId } = renderWithProviders(<ManageHouseholdScreen />);
+
+    await waitFor(() =>
+      expect(getByTestId('household-name-input').props.value).toBe('The Smiths')
+    );
+    expect(getByTestId('manage-household-screen-cta').props.disabled).toBe(
+      true
+    );
+
+    fireEvent.press(getByTestId('household-currency-trigger'));
+    fireEvent.press(getByTestId('household-currency-USD'));
+
+    fireEvent.press(getByTestId('household-jurisdiction-trigger'));
+    await waitFor(() =>
+      expect(getByTestId('jurisdiction-picker-sheet').props.visible).toBe(true)
+    );
+    fireEvent.press(getByTestId('jurisdiction-option-CA'));
+    // `BottomSheetBase` (a real RN `Modal`) stays mounted with `visible: false`
+    // rather than unmounting — same as `TimezonePickerSheet` — so the
+    // dismissal check reads the prop, not presence in the tree.
+    await waitFor(() =>
+      expect(getByTestId('jurisdiction-picker-sheet').props.visible).toBe(false)
+    );
+
+    fireEvent.press(getByTestId('manage-household-screen-cta'));
+
+    await waitFor(() =>
+      expect(updateMock).toHaveBeenCalledWith(HOUSEHOLD_ID, {
+        currency: 'USD',
+        jurisdiction: 'CA',
+      })
+    );
   });
 
   // `membershipsListMock` (unlike `listMock`) does not consult the auth

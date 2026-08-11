@@ -395,7 +395,10 @@ export function NannyWeekView({
   const weekExpenses = expensesQuery.data ?? [];
   const approvedExpenses = weekExpenses.filter(e => e.status === 'approved');
   const expensesCurrency =
-    earningsOk?.currency ?? arrangementQuery.data?.currency ?? 'GBP';
+    earningsOk?.currency ??
+    arrangementQuery.data?.currency ??
+    activeHousehold.household?.currency ??
+    'USD';
   // `earningsOk` is null for a week with no server total — `derivePaidState`
   // returns null for that rather than measuring against a fabricated zero
   // (docs/11-MONEY.md §4), and the card then renders nothing.
@@ -409,7 +412,8 @@ export function NannyWeekView({
     earningsOk?.currency ??
     payments[0]?.currency ??
     arrangementQuery.data?.currency ??
-    'GBP';
+    activeHousehold.household?.currency ??
+    'USD';
   const mileageRateMinor =
     arrangementQuery.data?.mileage_rate_per_mile_minor ?? null;
   const selectedPayment =

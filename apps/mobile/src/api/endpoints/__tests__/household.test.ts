@@ -27,6 +27,8 @@ const validHousehold: Household = {
   approval_scope: 'all',
   short_notice_hours: 24,
   cancellation_paid_within_hours: 24,
+  currency: 'GBP',
+  jurisdiction: null,
   created_by: '22222222-2222-4222-8222-222222222222',
   created_at: now,
   updated_at: now,

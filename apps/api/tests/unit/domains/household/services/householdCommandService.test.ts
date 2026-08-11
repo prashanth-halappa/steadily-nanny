@@ -34,6 +34,8 @@ const household: Household = {
   approval_scope: 'short_notice_and_cancellations',
   short_notice_hours: 24,
   cancellation_paid_within_hours: 24,
+  currency: 'GBP',
+  jurisdiction: null,
   created_by: 'u1',
   created_at: 't',
   updated_at: 't',
@@ -285,6 +287,34 @@ describe('HouseholdCommandService.create', () => {
     );
     expect(householdRepo.delete).not.toHaveBeenCalled();
     expect(result.id).toBe('h-new');
+  });
+
+  // Phase 1, T4: currency/jurisdiction are wire-schema-only additions — the
+  // service already writes `{ ...input, created_by: userId }`, so passthrough
+  // requires no service change, only the schema allowing the fields.
+  it('passes currency and jurisdiction through to the repository create call', async () => {
+    const householdRepo = makeHouseholdRepo();
+    const memberRepo = makeMemberRepo();
+    const svc = new HouseholdCommandService(
+      householdRepo,
+      memberRepo,
+      makeInviteRepo(),
+      makeQueries(),
+      stubUsers
+    );
+
+    await svc.create('u1', {
+      name: 'The Smiths',
+      currency: 'USD',
+      jurisdiction: 'NY',
+    });
+
+    expect(householdRepo.create).toHaveBeenCalledWith({
+      name: 'The Smiths',
+      currency: 'USD',
+      jurisdiction: 'NY',
+      created_by: 'u1',
+    });
   });
 
   it('deletes the orphaned household and rethrows when the owner-membership insert fails', async () => {

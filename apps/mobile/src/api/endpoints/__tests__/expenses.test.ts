@@ -102,6 +102,7 @@ describe('expenseApi.create', () => {
       local_date: '2026-08-03',
       description: 'Soft play tickets',
       amount_minor: 1200,
+      currency: 'GBP',
     });
 
     expect(apiClient.post).toHaveBeenCalledWith(
@@ -113,6 +114,25 @@ describe('expenseApi.create', () => {
       })
     );
     expect(result.id).toBe(EXPENSE_ID);
+  });
+
+  // Phase 1, T4: no wire default on `currency` — an omitted currency is not
+  // invented as 'GBP' client-side either, it travels absent and the server
+  // resolves it from the household row (`expenseCommandService.create`).
+  it('omits currency from the posted body when the caller does not supply one', async () => {
+    apiClient.post.mockResolvedValue({
+      data: { data: { expense: validExpense } },
+    });
+
+    await expenseApi.create(HOUSEHOLD_ID, {
+      kind: 'expense',
+      local_date: '2026-08-03',
+      description: 'Soft play tickets',
+      amount_minor: 1200,
+    });
+
+    const [, postedBody] = apiClient.post.mock.calls[0];
+    expect(postedBody).not.toHaveProperty('currency');
   });
 
   it('POSTs a valid mileage-kind body without amount_minor', async () => {

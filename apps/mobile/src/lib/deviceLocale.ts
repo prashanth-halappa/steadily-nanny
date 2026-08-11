@@ -29,7 +29,7 @@ export function getDeviceLocale(): string {
  * (`packages/shared-types/src/schemas/payArrangement.schema.ts`) and the
  * `pay_arrangements.currency` DB check enforce. Nothing between here and the
  * column upcases, so a lowercase or malformed platform value would be a 400 at
- * best and a wrong stored code at worst — it degrades to `'GBP'` instead.
+ * best and a wrong stored code at worst — it degrades to `'USD'` instead.
  *
  * This is a PREFILL, never the final word: currency belongs to the employment
  * arrangement, not to the phone (a UK family whose phone region is US must not
@@ -38,8 +38,8 @@ export function getDeviceLocale(): string {
 export function getDeviceCurrency(): string {
   try {
     const code = getLocales()[0]?.currencyCode?.toUpperCase();
-    return code && /^[A-Z]{3}$/.test(code) ? code : 'GBP';
+    return code && /^[A-Z]{3}$/.test(code) ? code : 'USD';
   } catch {
-    return 'GBP';
+    return 'USD';
   }
 }

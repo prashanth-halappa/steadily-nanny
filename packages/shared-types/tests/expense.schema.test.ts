@@ -278,7 +278,10 @@ describe('expense.schema', () => {
       ).toBe(false);
     });
 
-    it('defaults currency to GBP', () => {
+    // No wire default (Phase 1, T4): an omitted currency stays undefined here
+    // and is resolved server-side from the household row, not invented as
+    // 'GBP' on the wire.
+    it('accepts currency omitted', () => {
       const result = CreateExpenseRequestSchema.safeParse({
         kind: EXPENSE_KINDS.EXPENSE,
         local_date: '2026-08-01',
@@ -287,7 +290,7 @@ describe('expense.schema', () => {
       });
       expect(result.success).toBe(true);
       if (result.success) {
-        expect(result.data.currency).toBe('GBP');
+        expect(result.data.currency).toBeUndefined();
       }
     });
   });

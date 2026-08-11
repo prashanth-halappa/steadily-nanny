@@ -126,6 +126,13 @@ export function PaySetupScreen() {
       return;
     }
     hasSeededRef.current = true;
+    // Household currency over the device prefill, once the household has
+    // loaded — currency belongs to the household's employment arrangements,
+    // not to whichever phone happened to create this one. `getDeviceCurrency()`
+    // stays as the `useState` initializer below for the brief window before
+    // `household` resolves, and as the fallback for a household predating
+    // the field.
+    setCurrency(household.currency ?? getDeviceCurrency());
     // Only seed the joined-date default when there is genuinely no current
     // arrangement yet — the first-time-setup case the screen is named for.
     // A current arrangement already existing means "today" (the initial

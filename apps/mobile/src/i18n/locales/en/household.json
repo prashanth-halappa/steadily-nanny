@@ -93,6 +93,11 @@
     "timezoneConfirmCancel": "Cancel",
     "timezoneConfirmConfirm": "Change time zone",
     "pickerTitle": "Choose a time zone",
+    "currencyLabel": "Currency",
+    "jurisdictionLabel": "State (for pay rules)",
+    "jurisdictionChangeButton": "Change",
+    "jurisdictionNoneOption": "Not set",
+    "jurisdictionPickerTitle": "Choose a state",
     "approvalModeLabel": "Who approves changes",
     "approvalMode": {
       "either": "Either parent can decide",

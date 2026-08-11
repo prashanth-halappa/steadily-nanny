@@ -118,6 +118,12 @@ export class PayArrangementCommandService {
       carerMembership.display_name_override
     );
 
+    // No wire default on `request.currency` (Phase 1, T4) — an omitted
+    // currency resolves to the household's own currency, never an invented
+    // literal. An explicit request currency still wins (additive, keeps a
+    // shipped client that always sent one unaffected).
+    const currency = request.currency ?? household?.currency ?? 'USD';
+
     // Written field-by-field, never by spreading `request`: the row must carry
     // exactly the client-settable terms plus the three server-derived values
     // (ids, snapshot name, created_by). `bill_rate_minor` is dormant until
@@ -126,7 +132,7 @@ export class PayArrangementCommandService {
       household_id: householdId,
       carer_id: carerId,
       rate_minor: request.rate_minor,
-      currency: request.currency,
+      currency,
       overtime_threshold_minutes: request.overtime_threshold_minutes ?? null,
       overtime_multiplier: request.overtime_multiplier,
       guaranteed_minutes_per_week: request.guaranteed_minutes_per_week ?? null,

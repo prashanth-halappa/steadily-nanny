@@ -471,11 +471,14 @@ the top of the command service method.
 
 **Expense claims are reimbursements, not wages — they do not require a pay
 arrangement to exist** (owner decision, 2026-08-09). A non-mileage claim's
-`currency` is whatever the carer submitted (schema default `GBP`); when an
-arrangement *does* exist, its currency must still match. **Mileage is the
-exception:** the per-mile rate lives on the arrangement, so a mileage claim
-(and approving one) still refuses with `NO_PAY_ARRANGEMENT` when none is
-effective on `local_date`.
+`currency` is whatever the carer submitted, or — since Phase 1, T4 —
+the household's own `currency` when the request omits one (no wire default
+is invented; `expenseCommandService.create`/`.update` resolve it from the
+household row, the same fallback `payArrangementCommandService.create`
+uses); when an arrangement *does* exist, the resolved currency must still
+match it. **Mileage is the exception:** the per-mile rate lives on the
+arrangement, so a mileage claim (and approving one) still refuses with
+`NO_PAY_ARRANGEMENT` when none is effective on `local_date`.
 
 ## 10. Removal is soft, and rejoining resumes the old money state
 

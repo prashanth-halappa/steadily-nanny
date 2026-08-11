@@ -76,8 +76,8 @@ function makeMemberRepo(byUserId: Record<string, unknown>): any {
   };
 }
 
-function makeHouseholdRepo(timezone = 'Europe/London'): any {
-  return { findById: mock(async () => ({ id: 'h1', timezone })) };
+function makeHouseholdRepo(timezone = 'Europe/London', currency = 'GBP'): any {
+  return { findById: mock(async () => ({ id: 'h1', timezone, currency })) };
 }
 
 function makeUserService(name: string | null = 'Nia Rowe'): any {
@@ -103,6 +103,7 @@ interface ServiceParts {
   members?: Record<string, unknown>;
   payRepo?: any;
   timezone?: string;
+  householdCurrency?: string;
   userService?: any;
   push?: any;
 }
@@ -111,7 +112,10 @@ function service(parts: ServiceParts = {}): any {
   return new PayArrangementCommandService(
     parts.payRepo ?? makePayRepo(),
     makeMemberRepo(parts.members ?? { 'parent-1': PARENT, 'carer-1': NANNY }),
-    makeHouseholdRepo(parts.timezone ?? 'Europe/London'),
+    makeHouseholdRepo(
+      parts.timezone ?? 'Europe/London',
+      parts.householdCurrency ?? 'GBP'
+    ),
     parts.userService ?? makeUserService(),
     parts.push ?? makePush()
   );
@@ -337,6 +341,34 @@ describe('PayArrangementCommandService.create — valid_from is household-local'
     expect((err as { metadata?: { reason?: string } }).metadata?.reason).toBe(
       'VALID_FROM_IN_FUTURE'
     );
+  });
+});
+
+describe('PayArrangementCommandService.create — currency resolution (T4)', () => {
+  it('resolves an absent request currency from the household row', async () => {
+    const payRepo = makePayRepo();
+    const svc = service({ payRepo, householdCurrency: 'USD' });
+    await svc.create(
+      'parent-1',
+      'h1',
+      'carer-1',
+      request({ currency: undefined }),
+      NOW
+    );
+    expect(payRepo.create.mock.calls[0][0].currency).toBe('USD');
+  });
+
+  it('an explicit request currency still wins over the household default', async () => {
+    const payRepo = makePayRepo();
+    const svc = service({ payRepo, householdCurrency: 'USD' });
+    await svc.create(
+      'parent-1',
+      'h1',
+      'carer-1',
+      request({ currency: 'EUR' }),
+      NOW
+    );
+    expect(payRepo.create.mock.calls[0][0].currency).toBe('EUR');
   });
 });
 

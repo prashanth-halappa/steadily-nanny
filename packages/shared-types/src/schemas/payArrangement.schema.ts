@@ -162,7 +162,13 @@ export const PayArrangementSchema = z.object({
  */
 export const CreatePayArrangementRequestSchema = z.object({
   rate_minor: z.int().min(0).max(MAX_MONEY_MINOR),
-  currency: CurrencyCodeSchema.default('GBP'),
+  // No wire default (Phase 1, T4): a household has its own currency now
+  // (`household.schema.ts`), and inventing 'GBP' here was a guess with no
+  // relationship to where the family lives. Omitted currency is resolved
+  // server-side from the household row (`payArrangementCommandService.create`)
+  // — this stays optional so a shipped client that still sends its own
+  // explicit currency is unaffected (additive, non-breaking).
+  currency: CurrencyCodeSchema.optional(),
   overtime_threshold_minutes: z.int().min(1).nullable().optional(),
   overtime_multiplier: OvertimeMultiplierSchema.default(1.5),
   guaranteed_minutes_per_week: z.int().min(0).nullable().optional(),

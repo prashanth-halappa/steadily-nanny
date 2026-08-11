@@ -21,6 +21,8 @@ const household: Household = {
   approval_scope: 'short_notice_and_cancellations',
   short_notice_hours: 24,
   cancellation_paid_within_hours: 24,
+  currency: 'GBP',
+  jurisdiction: null,
   created_by: 'u1',
   created_at: 't',
   updated_at: 't',

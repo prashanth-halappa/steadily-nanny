@@ -77,6 +77,8 @@ describe('household.schema', () => {
       approval_scope: 'short_notice_and_cancellations',
       short_notice_hours: 24,
       cancellation_paid_within_hours: 24,
+      currency: 'GBP',
+      jurisdiction: null,
       created_by: VALID_UUID,
       created_at: NOW,
       updated_at: NOW,
@@ -106,6 +108,34 @@ describe('household.schema', () => {
       });
       expect(result.success).toBe(false);
     });
+
+    it('accepts a two-letter US-state jurisdiction', () => {
+      expect(
+        HouseholdSchema.safeParse({ ...validHousehold, jurisdiction: 'CA' })
+          .success
+      ).toBe(true);
+    });
+
+    it.each([
+      'gbp',
+      'ab1',
+      'usa',
+    ])('rejects a malformed currency code %p', code => {
+      expect(
+        HouseholdSchema.safeParse({ ...validHousehold, currency: code }).success
+      ).toBe(false);
+    });
+
+    it.each([
+      'ca',
+      'C1',
+      'CAL',
+    ])('rejects a malformed jurisdiction code %p', code => {
+      expect(
+        HouseholdSchema.safeParse({ ...validHousehold, jurisdiction: code })
+          .success
+      ).toBe(false);
+    });
   });
 
   describe('CreateHouseholdSchema', () => {
@@ -117,6 +147,34 @@ describe('household.schema', () => {
 
     it('rejects an empty name', () => {
       expect(CreateHouseholdSchema.safeParse({ name: '' }).success).toBe(false);
+    });
+
+    it('accepts an explicit currency and jurisdiction', () => {
+      expect(
+        CreateHouseholdSchema.safeParse({
+          name: 'The Reyes Family',
+          currency: 'USD',
+          jurisdiction: 'NY',
+        }).success
+      ).toBe(true);
+    });
+
+    it('accepts a null jurisdiction (device cannot derive a US state)', () => {
+      expect(
+        CreateHouseholdSchema.safeParse({
+          name: 'The Reyes Family',
+          jurisdiction: null,
+        }).success
+      ).toBe(true);
+    });
+
+    it('rejects a lowercase currency code', () => {
+      expect(
+        CreateHouseholdSchema.safeParse({
+          name: 'The Reyes Family',
+          currency: 'usd',
+        }).success
+      ).toBe(false);
     });
   });
 

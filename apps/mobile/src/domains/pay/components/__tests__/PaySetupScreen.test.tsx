@@ -321,6 +321,30 @@ describe('PaySetupScreen', () => {
     );
   });
 
+  it('prefers the household currency over the device default, once the household has loaded', async () => {
+    listMock.mockImplementation(() =>
+      Promise.resolve([{ ...baseHousehold, currency: 'EUR' }])
+    );
+
+    const { getByTestId } = renderWithProviders(<PaySetupScreen />);
+
+    await waitFor(() =>
+      expect(getByTestId('pay-setup-currency-prefix').props.children).toBe('€')
+    );
+
+    fireEvent.changeText(getByTestId('pay-setup-rate-input'), '18.50');
+    fireEvent.press(getByTestId('pay-setup-cancellation-chip-none'));
+    fireEvent.press(getByTestId('pay-setup-screen-cta'));
+
+    await waitFor(() =>
+      expect(payCreateMock).toHaveBeenCalledWith(
+        HOUSEHOLD_ID,
+        NANNY_ID,
+        expect.objectContaining({ currency: 'EUR' })
+      )
+    );
+  });
+
   it('lets the device default be overridden — currency belongs to the arrangement, not the phone', async () => {
     const { getByTestId, queryByTestId } = renderWithProviders(
       <PaySetupScreen />

@@ -180,12 +180,15 @@ describe('payArrangement.schema', () => {
       valid_from: '2026-08-01',
     };
 
-    it('accepts the minimal request and defaults currency to GBP', () => {
+    // No wire default (Phase 1, T4): an omitted currency stays undefined here
+    // and is resolved server-side from the household row, not invented as
+    // 'GBP' on the wire.
+    it('accepts the minimal request with currency omitted', () => {
       const result =
         CreatePayArrangementRequestSchema.safeParse(minimalRequest);
       expect(result.success).toBe(true);
       if (result.success) {
-        expect(result.data.currency).toBe('GBP');
+        expect(result.data.currency).toBeUndefined();
       }
     });
 
