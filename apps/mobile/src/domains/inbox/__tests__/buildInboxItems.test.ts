@@ -385,3 +385,136 @@ describe('buildInboxItems', () => {
     }
   });
 });
+
+// §2.2/§2.3a — cover-ask-awaiting-you and extra-shift-proposed are the same
+// fact (a shift assigned to me, still pending) and the same inbox kind.
+describe('buildInboxItems — pending_shift kind (§2.2, §2.3a)', () => {
+  const NOW = '2026-08-25T12:00:00.000Z';
+  const pendingShift = {
+    id: 'shift-ask-1',
+    carer_id: ME,
+    status: 'pending',
+    local_date: '2026-08-26',
+    starts_at: '2026-08-26T08:00:00.000Z',
+    ends_at: '2026-08-26T13:00:00.000Z',
+    created_at: '2026-08-24T00:00:00.000Z',
+    cover_ask_expires_at: '2026-08-27T18:00:00.000Z',
+  } as const;
+
+  it('includes a shift assigned to me that is still pending', () => {
+    const items = buildInboxItems({
+      role: SETUP_ROLES.NANNY,
+      currentUserId: ME,
+      todayISO: '2026-08-25',
+      nowISO: NOW,
+      changeRequests: [],
+      patterns: [],
+      timesheets: [],
+      shifts: [pendingShift],
+    });
+    expect(items).toEqual([
+      {
+        kind: 'pending_shift',
+        id: 'shift-ask-1',
+        localDate: '2026-08-26',
+        startsAt: '2026-08-26T08:00:00.000Z',
+        endsAt: '2026-08-26T13:00:00.000Z',
+        createdAt: '2026-08-24T00:00:00.000Z',
+        coverAskExpiresAt: '2026-08-27T18:00:00.000Z',
+      },
+    ]);
+  });
+
+  it('excludes a shift assigned to someone else', () => {
+    expect(
+      buildInboxItems({
+        role: SETUP_ROLES.NANNY,
+        currentUserId: ME,
+        todayISO: '2026-08-25',
+        changeRequests: [],
+        patterns: [],
+        timesheets: [],
+        shifts: [{ ...pendingShift, carer_id: OTHER }],
+      })
+    ).toEqual([]);
+  });
+
+  it('excludes a shift that is no longer pending', () => {
+    expect(
+      buildInboxItems({
+        role: SETUP_ROLES.NANNY,
+        currentUserId: ME,
+        todayISO: '2026-08-25',
+        changeRequests: [],
+        patterns: [],
+        timesheets: [],
+        shifts: [{ ...pendingShift, status: 'confirmed' }],
+      })
+    ).toEqual([]);
+  });
+
+  // B5 — a helper is never a real carer_id match by data, but the guard is
+  // explicit here (not left to fall-through) so a helper's coverage
+  // attention item is excluded by construction, not by happenstance.
+  it('B5: a helper never sees a pending_shift item, even if carer_id happens to match', () => {
+    expect(
+      buildInboxItems({
+        role: SETUP_ROLES.HELPER,
+        currentUserId: ME,
+        todayISO: '2026-08-25',
+        changeRequests: [],
+        patterns: [],
+        timesheets: [],
+        shifts: [pendingShift],
+      })
+    ).toEqual([]);
+  });
+
+  it('ranks a pending_shift starting within 48h ahead of one further out (§2.2 ordering)', () => {
+    const soon = {
+      ...pendingShift,
+      id: 'soon',
+      starts_at: '2026-08-26T08:00:00.000Z',
+    };
+    const later = {
+      ...pendingShift,
+      id: 'later',
+      starts_at: '2026-09-05T08:00:00.000Z',
+      cover_ask_expires_at: '2026-09-04T18:00:00.000Z',
+    };
+    const items = buildInboxItems({
+      role: SETUP_ROLES.NANNY,
+      currentUserId: ME,
+      todayISO: '2026-08-25',
+      nowISO: NOW,
+      changeRequests: [],
+      patterns: [],
+      timesheets: [],
+      // Later-starting one listed FIRST in the input — the sort must reorder it.
+      shifts: [later, soon],
+    });
+    expect(items.map(i => (i as { id: string }).id)).toEqual(['soon', 'later']);
+  });
+
+  it('ranks a pending_shift within 48h ahead of a queried week (§2.2 ordering)', () => {
+    const items = buildInboxItems({
+      role: SETUP_ROLES.NANNY,
+      currentUserId: ME,
+      todayISO: '2026-08-25',
+      nowISO: NOW,
+      changeRequests: [],
+      patterns: [],
+      timesheets: [
+        {
+          id: 'ts-q',
+          carer_id: ME,
+          week_start: '2026-08-18',
+          status: 'queried',
+          query_note: 'Thursday looks long',
+        },
+      ],
+      shifts: [pendingShift],
+    });
+    expect(items.map(i => i.kind)).toEqual(['pending_shift', 'queried_week']);
+  });
+});

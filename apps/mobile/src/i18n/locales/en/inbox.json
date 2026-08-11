@@ -43,6 +43,13 @@
       "title": "Week of {{week}} — submitted {{days}} days ago, not approved",
       "subtitle": "{{hours}} · With the family",
       "cta": "Open the week"
+    },
+    "pendingShift": {
+      "title": "Can you cover {{date}}, {{start}} – {{end}}?",
+      "subtitle": "Asked {{askedDate}} · Answer by {{deadlineDate}}, {{deadlineTime}}",
+      "subtitleNoDeadline": "Asked {{askedDate}}",
+      "deadline": "Answer by {{deadlineDate}}, {{deadlineTime}}",
+      "cta": "Open the shift"
     }
   }
 }

@@ -204,8 +204,16 @@ beforeAll(async () => {
   mock.module('@/src/domains/schedule/hooks/useHouseholdCarers', () => ({
     useHouseholdCarers: () => ({ data: [], isLoading: false }),
   }));
+  mock.module('@/src/hooks/queries/useRestrictedAction', () => ({
+    useRestrictedAction: () => ({ disabled: false, reason: null }),
+  }));
   mock.module('expo-router', () => ({
     useRouter: () => ({ push: mock(), back: mock(), replace: mock() }),
+    router: { push: mock(), back: mock(), replace: mock() },
+    Link: 'Link',
+    Redirect: 'Redirect',
+    Stack: { Screen: 'StackScreen' },
+    Tabs: { Screen: 'TabsScreen' },
   }));
 
   const mod = await import('../components/TodayCoverage');

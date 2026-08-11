@@ -67,7 +67,7 @@ describe('InboxScreen source', () => {
 });
 
 describe('useInboxItems source', () => {
-  it('composes the three pending-work sources across all households', () => {
+  it('composes the four pending-work sources across all households', () => {
     expect(hookSource).toContain('schedulePatternApi');
     expect(hookSource).toContain('useMePendingChangeRequests');
     expect(hookSource).toContain('timesheetApi');
@@ -75,7 +75,11 @@ describe('useInboxItems source', () => {
     expect(hookSource).toContain('active.households');
     // Single fan-in — never N changeRequestApi.listForShift / useQueries per shift.
     expect(hookSource).not.toContain('changeRequestApi');
-    expect(hookSource).not.toContain('useMeShifts');
+    // §2.2/§2.3a — `useMeShifts` IS the fan-in for pending_shift, called ONCE
+    // (not once per household, which `households.map` over a shifts fetch
+    // would be — the exact anti-pattern this file guards against elsewhere).
+    expect(hookSource).toContain('useMeShifts');
+    expect(hookSource).not.toMatch(/households\.map\([^)]*[Ss]hift/);
   });
 
   it('exposes an error channel with refetch — failures must not collapse to []', () => {

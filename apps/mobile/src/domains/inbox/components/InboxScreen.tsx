@@ -85,7 +85,9 @@ export function InboxScreen() {
                   className="gap-1 rounded-row bg-card p-4"
                   style={elevation.row}
                 >
-                  <Body weight="semibold">{titleForItem(item, t)}</Body>
+                  <Body weight="semibold">
+                    {titleForItem(item, t, timeZone)}
+                  </Body>
                   <Small className="text-muted-foreground">
                     {subtitleForItem(item, t, timeZone)}
                   </Small>

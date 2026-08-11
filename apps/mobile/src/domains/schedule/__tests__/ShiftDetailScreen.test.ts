@@ -182,8 +182,12 @@ describe('ShiftDetailScreen source', () => {
   });
 
   it('gates the counter-offer form on the assigned carer, not the nanny role', () => {
+    // §5.3 narrows this further: an expired/withdrawn ask is "the same
+    // defect class as S4" (a button that only returns an error), so the
+    // gate is `isAssignedCarer` PLUS neither ask-lifecycle terminal state —
+    // still not the bare nanny role.
     expect(source).toMatch(
-      /\{isAssignedCarer \? \([\s\S]{0,80}testID="shift-detail-counter-form"/
+      /\{isAssignedCarer && !isAskExpired && !isAskWithdrawn \? \([\s\S]{0,80}testID="shift-detail-counter-form"/
     );
   });
 

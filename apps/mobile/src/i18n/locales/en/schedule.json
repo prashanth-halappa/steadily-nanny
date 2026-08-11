@@ -202,6 +202,8 @@
     "cancelPayUnknown": "There are no pay terms set, so we can't say whether this one is paid.",
     "cancelNeedsAccept": "{{name}} has to accept the cancellation before it's final.",
     "restrictedActionCancelShift": "cancel short-notice shifts",
+    "askExpired": "This ask expired {{weekday}} at {{time}}.",
+    "askWithdrawn": "The family withdrew this ask.",
     "awaitingNannyConfirm": "Waiting for the nanny to confirm",
     "raisedBy": "Requested by {{name}}",
     "respondedBy": "Responded by {{name}}",
@@ -299,6 +301,9 @@
     "rowMeta": "{{childName}} · {{cause}}",
     "askToCover": "Ask {{carerName}} to start at {{start}}",
     "askSomeoneToCover": "Ask a nanny to cover {{start}} – {{end}}",
+    "askAgain": "Ask {{carerName}} again",
+    "askSomeoneElse": "Ask another nanny",
+    "restrictedActionAskCover": "ask another nanny to cover this shift",
     "iveGotIt": "I've got it",
     "parentCoveringRow": "You're covering",
     "parentCoveringBy": "{{parentName}} is covering",
@@ -317,6 +322,11 @@
     "causeNamed": {
       "cancelled": "{{carerName}}'s {{start}} – {{end}} shift was cancelled",
       "declined": "{{carerName}} turned down {{start}} – {{end}}"
+    },
+    "causeAsk": {
+      "pending": "{{start}} – {{end}} is still uncovered. You asked {{carerName}} {{askedDay}}.",
+      "declined": "{{start}} – {{end}} is still uncovered. {{carerName}} can't cover this one.",
+      "expired": "{{start}} – {{end}} is still uncovered. The ask to {{carerName}} expired {{expiredDay}}."
     }
   }
 }

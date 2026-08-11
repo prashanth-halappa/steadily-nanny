@@ -57,8 +57,11 @@ import {
   hoursUntilStart,
   resolveCancellationPayOutcome,
 } from '@/src/domains/schedule/utils/cancellationPay';
+import { isCoverAskUrgent } from '@/src/domains/schedule/utils/coverAskDeadline';
 import { resolveMemberDisplayName } from '@/src/domains/schedule/utils/memberDisplayName';
+import { localDateToWeekday } from '@/src/domains/schedule/utils/shiftGrouping';
 import { isParentEditorRole, SETUP_ROLES } from '@/src/domains/setup/types';
+import { formatClockTime } from '@/src/domains/timesheet/utils/duration';
 import { formatDisplayDate } from '@/src/domains/timesheet/utils/week';
 import { useAcceptShift } from '@/src/hooks/mutations/useAcceptShift';
 import { useCreateShiftChangeRequest } from '@/src/hooks/mutations/useCreateShiftChangeRequest';
@@ -76,6 +79,7 @@ import { useShift } from '@/src/hooks/queries/useShift';
 import { useShiftChangeRequests } from '@/src/hooks/queries/useShiftChangeRequests';
 import { useShiftEvents } from '@/src/hooks/queries/useShiftEvents';
 import { useUserProfile } from '@/src/hooks/queries/useUserProfile';
+import { localDateInZone } from '@/src/lib/localDate';
 import { showSuccessToast } from '@/src/lib/toast';
 import {
   formatInstantDisplay,
@@ -129,7 +133,11 @@ const CANCEL_PAY_KEY: Record<CancellationPayVariant, string | null> = {
 };
 
 export function ShiftDetailScreen() {
-  const { t } = useTranslation(['schedule', 'today']);
+  // 'inbox' added for M21: the deadline sentence shares ONE i18n key
+  // (`inbox:items.pendingShift.deadline`) with `NeedsAttentionCard`'s
+  // `deadlineForItem` — "byte-identical string... a deadline that lives
+  // only on the card she tapped away from is a deadline she cannot check."
+  const { t } = useTranslation(['schedule', 'today', 'inbox']);
   const elevation = useElevation();
   const router = useRouter();
   const params = useLocalSearchParams<{ shiftId?: string }>();
@@ -185,6 +193,25 @@ export function ShiftDetailScreen() {
     shift.sequence === 0;
   const needsReconfirm =
     Boolean(isPendingParentProposed) && !isFreshExtraProposal;
+  // §5.3/M21 — the cover-ask lifecycle, DERIVED, never a wire status of its
+  // own. `expired` = cancelled + `cancelled_by` null + the stamped expiry
+  // already past; `withdrawn` = cancelled WITH `cancelled_by` set (the
+  // parent did it). Both only mean anything for the assigned carer.
+  const coverAskExpiresAt = shift?.cover_ask_expires_at ?? null;
+  const isAskExpired =
+    Boolean(isAssignedCarer) &&
+    shift?.status === 'cancelled' &&
+    shift.cancelled_by === null &&
+    coverAskExpiresAt !== null &&
+    Date.parse(coverAskExpiresAt) <= Date.now();
+  const isAskWithdrawn =
+    Boolean(isAssignedCarer) &&
+    shift?.status === 'cancelled' &&
+    shift.cancelled_by !== null;
+  const showAnswerByDeadline =
+    Boolean(isAssignedCarer) &&
+    shift?.status === 'pending' &&
+    coverAskExpiresAt !== null;
   const readerTimeZone = profile.data?.timezone;
   const showShiftZone =
     Boolean(shift?.timezone) &&
@@ -385,6 +412,50 @@ export function ShiftDetailScreen() {
         </Small>
       ) : null}
 
+      {/* §5.3/M21 — byte-identical to the inbox item's second clause, from
+          one i18n key. A deadline that lives only on the card she tapped
+          away from is a deadline she cannot check. Red inside the same
+          urgent window as `NeedsAttentionCard`'s `deadlineForItem`
+          (`coverAskDeadline.ts` — "same rule, same threshold"). */}
+      {showAnswerByDeadline && coverAskExpiresAt ? (
+        <Small
+          testID="shift-detail-answer-by"
+          className={
+            isCoverAskUrgent(coverAskExpiresAt, Date.now())
+              ? 'mt-2 text-destructive'
+              : 'mt-2 text-muted-foreground'
+          }
+        >
+          {t('inbox:items.pendingShift.deadline', {
+            deadlineDate: formatDisplayDate(
+              localDateInZone(shift.timezone, new Date(coverAskExpiresAt))
+            ),
+            deadlineTime: formatClockTime(coverAskExpiresAt, shift.timezone),
+          })}
+        </Small>
+      ) : null}
+      {isAskExpired && coverAskExpiresAt ? (
+        <Small
+          testID="shift-detail-ask-expired"
+          className="mt-2 text-muted-foreground"
+        >
+          {t('detail.askExpired', {
+            weekday: t(
+              `weekday.${localDateToWeekday(localDateInZone(shift.timezone, new Date(coverAskExpiresAt)))}`
+            ),
+            time: formatClockTime(coverAskExpiresAt, shift.timezone),
+          })}
+        </Small>
+      ) : null}
+      {isAskWithdrawn ? (
+        <Small
+          testID="shift-detail-ask-withdrawn"
+          className="mt-2 text-muted-foreground"
+        >
+          {t('detail.askWithdrawn')}
+        </Small>
+      ) : null}
+
       <ShiftChildrenBlock
         shiftChildren={shift.shift_children ?? []}
         childrenById={
@@ -473,7 +544,11 @@ export function ShiftDetailScreen() {
             {utcIsoToWallClockHHMM(shift.ends_at, shift.timezone)}
           </Body>
           {shift.note ? <Body>{shift.note}</Body> : null}
-          {isAssignedCarer ? (
+          {/* §5.3 — "the same defect class as S4": an expired or withdrawn
+              ask must not offer Accept/Decline/Counter, which would exist
+              only to return an error. The reason line above already told
+              her why; the form simply does not render. */}
+          {isAssignedCarer && !isAskExpired && !isAskWithdrawn ? (
             <View className="mt-4 gap-3" testID="shift-detail-counter-form">
               <FieldLabel>{t('detail.startLabel')}</FieldLabel>
               <TimeRangePicker
