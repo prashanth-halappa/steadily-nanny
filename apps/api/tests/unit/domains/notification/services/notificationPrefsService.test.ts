@@ -254,3 +254,88 @@ describe('shouldDeliverPush quiet hours', () => {
     expect(loggerWarn).toHaveBeenCalled();
   });
 });
+
+describe('shouldDeliverPush uncovered-care digest vs immediate alert', () => {
+  const anytime = new Date('2026-08-03T12:00:00.000Z');
+
+  // Precondition, not ceremony. Both cross-mute cases below pass VACUOUSLY when
+  // either constant is `undefined`: bun transpiles without typechecking, so a
+  // missing key becomes `disabled_types: [undefined]` (filtered out by
+  // `PushNotificationTypeSchema.safeParse` in `rowToPrefs`, making the mute a
+  // silent no-op) or `data.type: undefined` (short-circuits the
+  // `typeof eventType === 'string'` guard straight to `return true`). Either way
+  // the test would go green while proving nothing. Assert both constants are real,
+  // distinct strings first, so the cases below can only pass on real behaviour.
+  it('both uncovered-care types are real, distinct strings', () => {
+    expect(typeof PUSH_NOTIFICATION_TYPES.UNCOVERED_CARE_DIGEST).toBe('string');
+    expect(typeof PUSH_NOTIFICATION_TYPES.UNCOVERED_CARE_DETECTED).toBe(
+      'string'
+    );
+    expect(PUSH_NOTIFICATION_TYPES.UNCOVERED_CARE_DIGEST).not.toBe(
+      PUSH_NOTIFICATION_TYPES.UNCOVERED_CARE_DETECTED
+    );
+  });
+
+  it('muting the digest still delivers the immediate uncovered_care_detected alert', async () => {
+    findByUserId.mockResolvedValueOnce(
+      quietHoursAllDayRow({
+        quiet_hours_enabled: false,
+        disabled_types: [PUSH_NOTIFICATION_TYPES.UNCOVERED_CARE_DIGEST],
+      })
+    );
+
+    const deliver = await shouldDeliverPush(
+      'user-1',
+      {
+        title: 't',
+        body: 'b',
+        data: { type: PUSH_NOTIFICATION_TYPES.UNCOVERED_CARE_DETECTED },
+      },
+      anytime
+    );
+
+    expect(deliver).toBe(true);
+  });
+
+  it('muting the immediate alert still delivers the evening digest', async () => {
+    findByUserId.mockResolvedValueOnce(
+      quietHoursAllDayRow({
+        quiet_hours_enabled: false,
+        disabled_types: [PUSH_NOTIFICATION_TYPES.UNCOVERED_CARE_DETECTED],
+      })
+    );
+
+    const deliver = await shouldDeliverPush(
+      'user-1',
+      {
+        title: 't',
+        body: 'b',
+        data: { type: PUSH_NOTIFICATION_TYPES.UNCOVERED_CARE_DIGEST },
+      },
+      anytime
+    );
+
+    expect(deliver).toBe(true);
+  });
+
+  it('muting the digest suppresses the digest itself', async () => {
+    findByUserId.mockResolvedValueOnce(
+      quietHoursAllDayRow({
+        quiet_hours_enabled: false,
+        disabled_types: [PUSH_NOTIFICATION_TYPES.UNCOVERED_CARE_DIGEST],
+      })
+    );
+
+    const deliver = await shouldDeliverPush(
+      'user-1',
+      {
+        title: 't',
+        body: 'b',
+        data: { type: PUSH_NOTIFICATION_TYPES.UNCOVERED_CARE_DIGEST },
+      },
+      anytime
+    );
+
+    expect(deliver).toBe(false);
+  });
+});

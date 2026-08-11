@@ -13,6 +13,7 @@ import { runIntegrityCheckJob } from '../jobs/integrityCheckJob';
 import { runNoShowJob } from '../jobs/noShowJob';
 import { runReminderJob } from '../jobs/reminderJob';
 import { runScheduleHorizonJob } from '../jobs/scheduleHorizonJob';
+import { runUncoveredDigestJob } from '../jobs/uncoveredDigestJob';
 import { createTrackedJobHandler } from './jobHandlerFactory';
 
 /**
@@ -109,5 +110,20 @@ export const JobController = {
     runCancellationPayReconcileJob,
     'Cancellation pay reconcile job completed',
     { mapForJobRun: mapReconcileForJobRun }
+  ),
+
+  /** POST /api/jobs/uncovered-digest */
+  runUncoveredDigest: createTrackedJobHandler(
+    'uncovered-digest',
+    runUncoveredDigestJob,
+    'Uncovered digest completed',
+    {
+      mapForJobRun: result => ({
+        totalProcessed: result.digest.candidates,
+        successCount: result.digest.sent,
+        errorCount: result.errorCount,
+        digest: result.digest,
+      }),
+    }
   ),
 };

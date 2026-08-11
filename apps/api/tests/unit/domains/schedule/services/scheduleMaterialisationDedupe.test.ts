@@ -303,3 +303,44 @@ describe('ScheduleMaterialisationService.cancelFutureShiftsForEndedPattern', () 
     expect(repo.updateMany).not.toHaveBeenCalled();
   });
 });
+
+// A human moved a shift to another day and then cancelled it. `ical_uid` is
+// deliberately never re-keyed when a shift moves, so the row's `local_date` and
+// the date encoded in its uid diverge. Matching is by `local_date`, uniqueness
+// is by `ical_uid` — so the occurrence whose uid that row still holds looks
+// brand new, gets re-created, and dies on `shifts_ical_uid_key`. Nightly,
+// forever, and the whole horizon run 500s with it.
+describe('ScheduleMaterialisationService — moved shift still owns its uid', () => {
+  it('does not re-create an occurrence whose ical_uid is already taken by a moved shift', async () => {
+    const movedThenCancelled = baseShift({
+      id: 'shift-moved',
+      status: 'cancelled',
+      local_date: '2026-06-04',
+      ical_uid: 'pattern-ical-uid::2026-06-11',
+    });
+    const repo = makeRepo({
+      findActiveByPattern: mock(async () => [movedThenCancelled]),
+    });
+    const svc = new ScheduleMaterialisationService(
+      repo,
+      makeTimeEntryRepo(),
+      makeEventRepo()
+    );
+
+    const result = await svc.materialise(
+      pattern,
+      [
+        occurrence({
+          localDate: '2026-06-11',
+          startsAt: '2026-06-11T07:00:00.000Z',
+          endsAt: '2026-06-11T16:00:00.000Z',
+        }),
+      ],
+      NOW
+    );
+
+    expect(repo.createMany).not.toHaveBeenCalled();
+    expect(repo.create).not.toHaveBeenCalled();
+    expect(result.created).toBe(0);
+  });
+});

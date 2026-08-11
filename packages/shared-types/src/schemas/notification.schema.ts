@@ -65,6 +65,11 @@ export const PUSH_NOTIFICATION_TYPES = {
   // confirmations, and time-off requests; the carer gets closure changes,
   // since a closure moves her paid days.
   UNCOVERED_CARE_DETECTED: 'uncovered_care_detected',
+  // Household-local evening batch of uncovered windows too far out for the
+  // immediate alert — a distinct type so muting the digest can never mute
+  // the "cover just broke" push above. Never in QUIET_HOURS_EXEMPT_TYPES: it
+  // is the definition of non-urgent.
+  UNCOVERED_CARE_DIGEST: 'uncovered_care_digest',
   HOUSEHOLD_CLOSURE_CHANGED: 'household_closure_changed',
   SHIFT_CONFIRMED: 'shift_confirmed',
   // The carer's symmetric "no" to SHIFT_CONFIRMED — parent-targeted: the
@@ -153,4 +158,5 @@ export const PUSH_TYPE_AUDIENCE: Record<PushNotificationType, PushAudience> = {
   [PUSH_NOTIFICATION_TYPES.TIMESHEET_SUBMITTED]: 'parent',
   [PUSH_NOTIFICATION_TYPES.TIME_OFF_REQUESTED]: 'parent',
   [PUSH_NOTIFICATION_TYPES.UNCOVERED_CARE_DETECTED]: 'parent',
+  [PUSH_NOTIFICATION_TYPES.UNCOVERED_CARE_DIGEST]: 'parent',
 } as const;

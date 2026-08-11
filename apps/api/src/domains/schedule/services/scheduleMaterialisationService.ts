@@ -236,6 +236,19 @@ export class ScheduleMaterialisationService {
         byDate.set(shift.local_date, shift);
       }
     }
+    // Matching above is by `local_date`; the DB's uniqueness is by `ical_uid`.
+    // Those agree until a human MOVES a shift — `ical_uid` is deliberately not
+    // re-keyed then (see `applyUpdates`), so the row keeps the uid of the date
+    // it was born on while `local_date` follows it to the new day. The
+    // occurrence for the ORIGINAL date then finds nothing in `byDate`, looks
+    // brand new, and re-inserting it violates `shifts_ical_uid_key`. That
+    // aborts the whole horizon insert, so one moved shift 500s the nightly job
+    // for every pattern behind it, every night, until someone looks.
+    const takenUids = new Set(
+      existingForPattern
+        .map(shift => shift.ical_uid)
+        .filter((uid): uid is string => typeof uid === 'string')
+    );
     const producedDates = new Set(occurrences.map(occ => occ.localDate));
 
     const toCreate: ExpandedOccurrence[] = [];
@@ -243,6 +256,15 @@ export class ScheduleMaterialisationService {
     for (const occ of occurrences) {
       const existing = byDate.get(occ.localDate);
       if (!existing) {
+        if (
+          takenUids.has(deriveOccurrenceIcalUid(pattern.icalUid, occ.localDate))
+        ) {
+          // Already materialised once; a human has since moved it (and may
+          // have cancelled it). Re-creating is the duplicate-key crash, and
+          // re-pointing it would undo their edit. Leave it alone — same
+          // posture as the NEVER_TOUCH branch below.
+          continue;
+        }
         // F-B6-3: a horizon catch-up run (e.g. after the job was down for
         // days) re-expands from `dtstart` and can produce occurrences that
         // have already started. `occ.startsAt` is already an absolute UTC

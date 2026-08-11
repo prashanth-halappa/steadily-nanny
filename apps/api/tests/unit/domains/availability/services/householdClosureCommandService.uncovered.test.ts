@@ -1,7 +1,16 @@
 /**
  * Closure removal triggers uncovered-care detection per expanded local date.
  */
-import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
+import {
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  mock,
+  setSystemTime,
+} from 'bun:test';
 import type { HouseholdClosure } from '../../../../../src/domains/availability/types';
 import type { HouseholdMember } from '../../../../../src/domains/household/types';
 
@@ -46,9 +55,21 @@ beforeAll(async () => {
   ));
 });
 
+// `remove` clamps the closure span to `[today, today + 30]` against the REAL
+// clock, and the assertions below name absolute dates. Without pinning `now`
+// this file passes until the day the fixture's first date falls behind today,
+// then fails forever — it did exactly that at 2026-08-11T00:00Z, taking `qc`
+// red for a reason that had nothing to do with whatever was being changed.
+const FIXED_NOW = new Date('2026-08-10T12:00:00.000Z');
+
 beforeEach(() => {
+  setSystemTime(FIXED_NOW);
   detectUncoveredCareBestEffort.mockClear();
   notifyUser.mockClear();
+});
+
+afterEach(() => {
+  setSystemTime();
 });
 
 function membership(
