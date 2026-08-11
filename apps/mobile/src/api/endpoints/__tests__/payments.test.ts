@@ -22,6 +22,9 @@ const validPayment = {
   household_id: '22222222-2222-4222-8222-222222222222',
   carer_id: '33333333-3333-4333-8333-333333333333',
   amount_minor: 23612,
+  kind: 'payment',
+  corrects_payment_id: null,
+  correction_reason: null,
   currency: 'GBP',
   paid_at: '2026-08-11',
   method_note: 'Bank transfer',
@@ -144,6 +147,62 @@ describe('paymentApi.create', () => {
       paymentApi.create(TIMESHEET_ID, {
         amount_minor: 0,
         paid_at: '2026-08-11',
+      })
+    ).rejects.toBeDefined();
+    expect(apiClient.post).not.toHaveBeenCalled();
+  });
+});
+
+describe('paymentApi.correct', () => {
+  const PAYMENT_ID = '66666666-6666-4666-8666-666666666666';
+  // What the server writes back: the NEGATED row, under `correction`.
+  const validCorrection = {
+    ...validPayment,
+    id: '77777777-7777-4777-8777-777777777777',
+    amount_minor: -23612,
+    kind: 'correction',
+    corrects_payment_id: PAYMENT_ID,
+    correction_reason: 'recorded twice',
+    method_note: null,
+    paid_at: '2026-08-18',
+  };
+
+  it('POSTs a POSITIVE magnitude and returns the negated correction', async () => {
+    apiClient.post.mockResolvedValue({
+      data: { data: { correction: validCorrection } },
+    });
+
+    const result = await paymentApi.correct(TIMESHEET_ID, PAYMENT_ID, {
+      amount_minor: 23612,
+      paid_at: '2026-08-18',
+      reason: 'recorded twice',
+    });
+
+    expect(apiClient.post).toHaveBeenCalledWith(
+      `/v1/timesheets/${TIMESHEET_ID}/payments/${PAYMENT_ID}/corrections`,
+      { amount_minor: 23612, paid_at: '2026-08-18', reason: 'recorded twice' }
+    );
+    expect(result.amount_minor).toBe(-23612);
+    expect(result.correction_reason).toBe('recorded twice');
+  });
+
+  it('refuses an empty reason client-side, before any request is sent', async () => {
+    await expect(
+      paymentApi.correct(TIMESHEET_ID, PAYMENT_ID, {
+        amount_minor: 5000,
+        paid_at: '2026-08-18',
+        reason: '   ',
+      })
+    ).rejects.toBeDefined();
+    expect(apiClient.post).not.toHaveBeenCalled();
+  });
+
+  it('refuses a negative magnitude — the SERVER owns the sign flip', async () => {
+    await expect(
+      paymentApi.correct(TIMESHEET_ID, PAYMENT_ID, {
+        amount_minor: -5000,
+        paid_at: '2026-08-18',
+        reason: 'recorded twice',
       })
     ).rejects.toBeDefined();
     expect(apiClient.post).not.toHaveBeenCalled();

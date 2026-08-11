@@ -8,13 +8,26 @@
  * asserts a rejected row passed in by mistake still never inflates the
  * total (defence in depth, not the primary guarantee — the caller filters).
  */
-import { beforeAll, describe, expect, it } from 'bun:test';
+import { beforeAll, describe, expect, it, mock } from 'bun:test';
 import type { Expense } from '@steadily-nanny/shared-types/schemas/expense.schema';
-import { render } from '@testing-library/react-native';
+import { fireEvent, render } from '@testing-library/react-native';
 
 let ReimbursementsCard: typeof import('../ReimbursementsCard').ReimbursementsCard;
 
 beforeAll(async () => {
+  // The global key-echo `t` drops interpolation values, which would make
+  // "Reimbursed on 18 August" indistinguishable from a settled line with no
+  // date at all. This file's `t` appends them so the date is assertable.
+  mock.module('react-i18next', () => ({
+    useTranslation: () => ({
+      t: (key: string, opts?: Record<string, unknown>) =>
+        opts ? `${key}|${JSON.stringify(opts)}` : key,
+      i18n: { language: 'en', changeLanguage: () => Promise.resolve() },
+    }),
+    Trans: ({ children }: any) => children,
+    initReactI18next: { type: '3rdParty', init: () => {} },
+  }));
+
   ReimbursementsCard = (await import('../ReimbursementsCard'))
     .ReimbursementsCard;
 });
@@ -157,5 +170,102 @@ describe('ReimbursementsCard', () => {
     expect(queryByTestId('reimbursements-card-total')).toBeNull();
     expect(getByTestId('reimbursements-card-total-unavailable')).toBeTruthy();
     expect(queryAllByText('£0.00')).toHaveLength(0);
+  });
+
+  // --- attention spec §4.2: settlement state words + the parent-only action --
+  it('unsettled: states "approved, not reimbursed yet" and offers the action when the parent supplies it', () => {
+    const onMarkReimbursedPress = mock(() => {});
+    const { getByTestId } = render(
+      <ReimbursementsCard
+        testID="reimbursements-card"
+        approvedExpenses={[makeExpense()]}
+        totalMinor={1200}
+        currency="GBP"
+        onMarkReimbursedPress={onMarkReimbursedPress}
+      />
+    );
+
+    expect(getByTestId('reimbursements-card-state').props.children).toBe(
+      'reimbursements.stateUnsettled'
+    );
+    fireEvent.press(getByTestId('reimbursements-card-mark-reimbursed-button'));
+    expect(onMarkReimbursedPress).toHaveBeenCalledTimes(1);
+  });
+
+  it('omits the action entirely when onMarkReimbursedPress is not supplied (the nanny view)', () => {
+    const { getByTestId, queryByTestId } = render(
+      <ReimbursementsCard
+        testID="reimbursements-card"
+        approvedExpenses={[makeExpense()]}
+        totalMinor={1200}
+        currency="GBP"
+      />
+    );
+
+    // State words are for both roles; the action is not.
+    expect(getByTestId('reimbursements-card-state').props.children).toBe(
+      'reimbursements.stateUnsettled'
+    );
+    expect(
+      queryByTestId('reimbursements-card-mark-reimbursed-button')
+    ).toBeNull();
+  });
+
+  it('settled: states the settlement date and drops the action even for the parent', () => {
+    const { getByTestId, queryByTestId } = render(
+      <ReimbursementsCard
+        testID="reimbursements-card"
+        approvedExpenses={[makeExpense()]}
+        totalMinor={1200}
+        currency="GBP"
+        settledOn="2026-08-18"
+        onMarkReimbursedPress={mock(() => {})}
+      />
+    );
+
+    expect(getByTestId('reimbursements-card-state').props.children).toBe(
+      'reimbursements.stateSettled|{"date":"18 August"}'
+    );
+    expect(
+      queryByTestId('reimbursements-card-mark-reimbursed-button')
+    ).toBeNull();
+  });
+
+  // GOLDEN-FIXES #40: the refusal belongs next to the button that caused it.
+  it('renders a failed settlement inline, under the action', () => {
+    const { getByTestId } = render(
+      <ReimbursementsCard
+        testID="reimbursements-card"
+        approvedExpenses={[makeExpense()]}
+        totalMinor={1200}
+        currency="GBP"
+        onMarkReimbursedPress={mock(() => {})}
+        markReimbursedError="Something went wrong"
+      />
+    );
+
+    expect(
+      getByTestId('reimbursements-card-mark-reimbursed-error').props.children
+    ).toBe('Something went wrong');
+  });
+
+  it('totalMinor=null still states the settlement state and still offers the action', () => {
+    const { getByTestId } = render(
+      <ReimbursementsCard
+        testID="reimbursements-card"
+        approvedExpenses={[makeExpense()]}
+        totalMinor={null}
+        currency="GBP"
+        onMarkReimbursedPress={mock(() => {})}
+      />
+    );
+
+    expect(getByTestId('reimbursements-card-total-unavailable')).toBeTruthy();
+    expect(getByTestId('reimbursements-card-state').props.children).toBe(
+      'reimbursements.stateUnsettled'
+    );
+    expect(
+      getByTestId('reimbursements-card-mark-reimbursed-button')
+    ).toBeTruthy();
   });
 });

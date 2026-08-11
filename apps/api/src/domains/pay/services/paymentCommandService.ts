@@ -60,6 +60,7 @@
  */
 import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types/schemas/notification.schema';
 import type {
+  CreatePaymentCorrectionInput,
   CreatePaymentInput,
   Payment,
 } from '@steadily-nanny/shared-types/schemas/payment.schema';
@@ -80,7 +81,9 @@ import {
   type TimesheetRow,
 } from '../../timesheet/repositories/timesheetRepository';
 import {
+  PaymentCorrectionExceedsOriginalError,
   PaymentExceedsGrossError,
+  PaymentNotCorrectableError,
   PaymentNotFoundError,
   PaymentWeekNotApprovedError,
 } from '../errors/payErrors';
@@ -163,6 +166,87 @@ export class PaymentCommandService {
     return outcome.payment;
   }
 
+  /**
+   * Record a CORRECTION against one payment (D-20, gap P3, migration 085,
+   * attention spec §4.1). Returns the negative row.
+   *
+   * WHY THIS EXISTS. `PaymentDetailSheet` has told parents in production that
+   * "payments can't be edited or removed; a correction is recorded as another
+   * payment" — while 067's `amount_minor >= 1` made that other payment
+   * impossible to write. David records one Zelle transfer twice and the ledger
+   * says he paid the week twice, with no way back. This is the way back, and
+   * it is an APPEND, not an edit: the original row keeps its full amount
+   * forever. A ledger that quietly restates history is worse than one that
+   * cannot be corrected at all.
+   *
+   * CORRECTING IS THE PAYER'S ACT, so this reuses `PAYMENT_WRITE_ROLES` and
+   * gates 1 and 2 UNCHANGED — the same authority that records a payment
+   * un-records one. A nanny who thinks a payment is wrong says so on the week
+   * thread (3-T1's "This doesn't look right" on `PaymentDetailSheet`); that
+   * entry point is hers and this one is not, and neither should grow into the
+   * other.
+   *
+   * GATE 3 IS DELIBERATELY ABSENT. `create` requires an APPROVED, priced week
+   * because a payment is bounded by the frozen gross. A correction is bounded
+   * by the payment it reverses, so it needs no gross and no currency of its
+   * own — which is what lets it work on a REOPENED week, as P16 and spec §4.1
+   * both require ("a correction on a reopened week is still recordable, and
+   * still shows"). 085 stamps the row from the ORIGINAL PAYMENT for exactly
+   * this reason: a reopened week's `currency` is NULL.
+   *
+   * THE SIGN FLIP LIVES HERE AND NOWHERE ELSE. The wire carries a POSITIVE
+   * magnitude — the sheet's field is "Amount to reverse", prefilled with the
+   * original figure — and this is the one line that negates it. Asking a human
+   * to type a minus sign to un-record a payment is how a correction ends up
+   * adding money to a week.
+   *
+   * Gate 4's analogue (`|reversal| <= what is left of the original`) is inside
+   * 085's function behind the same `FOR UPDATE` anchor `create` uses, for the
+   * same P5 reason: two parents reversing one payment in the same instant each
+   * read "nothing reversed yet". REFUSED, never clamped, with the figures the
+   * lock saw.
+   */
+  async correct(
+    callerId: string,
+    timesheetId: string,
+    paymentId: string,
+    input: CreatePaymentCorrectionInput
+  ): Promise<Payment> {
+    const timesheet = await this.assertPayableWeekIsCallers(
+      callerId,
+      timesheetId
+    );
+
+    const outcome = await this.paymentRepo.recordCorrection(
+      timesheet.id,
+      paymentId,
+      {
+        // The one negation in the stack — see the doc above.
+        amount_minor: -input.amount_minor,
+        paid_at: input.paid_at,
+        reason: input.reason,
+        recorded_by: callerId,
+      }
+    );
+
+    if (outcome.outcome === 'exceeds_original') {
+      throw new PaymentCorrectionExceedsOriginalError(
+        paymentId,
+        input.amount_minor,
+        outcome.originalAmountMinor,
+        outcome.remainingMinor
+      );
+    }
+    if (outcome.outcome === 'not_correctable') {
+      throw new PaymentNotCorrectableError(paymentId, outcome.reason, {
+        timesheetId,
+      });
+    }
+
+    this.notifyCarerOfCorrection(timesheet);
+    return outcome.correction;
+  }
+
   /** Gates 1 and 2 — see the module doc. Returns the week's row. */
   private async assertPayableWeekIsCallers(
     callerId: string,
@@ -239,6 +323,40 @@ export class PaymentCommandService {
         body: 'A parent recorded a payment for one of your approved weeks.',
         data: {
           type: PUSH_NOTIFICATION_TYPES.PAYMENT_RECORDED,
+          householdId: timesheet.household_id,
+          weekStart: timesheet.week_start,
+          timesheetId: timesheet.id,
+        },
+      });
+    } catch {
+      // notifyUser is sync fire-and-forget; swallow any unexpected throw.
+    }
+  }
+
+  /**
+   * The carer's news when a payment she was told about is taken back off the
+   * record (§1.3 N5). Its OWN type, never a second `payment_recorded`: "money
+   * was recorded for you" and "money that was recorded for you has been
+   * reversed" are opposite facts, and sending the first for the second is
+   * precisely how a nanny stops trusting the ledger.
+   *
+   * A8 holds — NO FIGURE IN THE BODY. She opens the week and sees both rows,
+   * which is the only place the pair reads correctly; a number on a lock
+   * screen with no original beside it is a number she cannot check.
+   *
+   * Same data keys as `notifyCarerOfPayment`: they are a contract with the
+   * mobile route map's `hoursHref`, not a payload convention.
+   */
+  private notifyCarerOfCorrection(timesheet: TimesheetRow): void {
+    if (!timesheet.carer_id) {
+      return;
+    }
+    try {
+      this.push.notifyUser(timesheet.carer_id, {
+        title: 'Payment corrected',
+        body: 'A parent recorded a correction to a payment on one of your weeks.',
+        data: {
+          type: PUSH_NOTIFICATION_TYPES.PAYMENT_CORRECTED,
           householdId: timesheet.household_id,
           weekStart: timesheet.week_start,
           timesheetId: timesheet.id,

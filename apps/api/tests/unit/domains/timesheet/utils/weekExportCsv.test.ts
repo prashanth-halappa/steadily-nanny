@@ -7,6 +7,7 @@
  * the WHOLE body, not a spot check on a row.
  */
 import { describe, expect, it } from 'bun:test';
+import type { Payment } from '@steadily-nanny/shared-types/schemas/payment.schema';
 import type {
   Timesheet,
   WeekEarningsOk,
@@ -15,6 +16,31 @@ import {
   carerSlug,
   renderWeekExportCsv,
 } from '../../../../../src/domains/timesheet/utils/weekExportCsv';
+
+/**
+ * One recorded payment. The settlement rows are what make `paid_to_date_minor`
+ * checkable rather than asserted — D-20 requires the export to carry the rows
+ * AND the balance, never a netted figure alone.
+ *
+ * `created_at` in PostgREST's `+00:00` form here and `.000Z` on the correction
+ * below, deliberately (GOLDEN #25): a fixture set written in one style proves
+ * nothing about code that has to survive both.
+ */
+const PAID_30000: Payment = {
+  id: 'pay-1',
+  timesheet_id: 'ts-1',
+  household_id: 'h-1',
+  carer_id: 'carer-1',
+  amount_minor: 30_000,
+  kind: 'payment',
+  corrects_payment_id: null,
+  correction_reason: null,
+  currency: 'GBP',
+  paid_at: '2026-08-16',
+  method_note: 'Zelle',
+  recorded_by: 'parent-1',
+  created_at: '2026-08-16T18:04:00+00:00',
+};
 
 /** A comma in the display name — the escaping case, on a real field. */
 const timesheet: Timesheet = {
@@ -147,6 +173,7 @@ const EXPECTED_CSV =
     '2026-08-06,Paid time off,pto,480,1850,14800,GBP',
     '2026-08-03,Guaranteed hours top-up (to 2026-08-09),guaranteed_topup,60,1850,1850,GBP',
     '2026-08-04,Reimbursement,reimbursements,0,0,1250,GBP',
+    '2026-08-16,Payment: Zelle,payment,,,30000,GBP',
     '',
     'total_gross_minor,121175',
     'reimbursements_minor,1250',
@@ -163,7 +190,7 @@ describe('renderWeekExportCsv — the rich fixture, byte for byte', () => {
     const { csv } = renderWeekExportCsv({
       timesheet,
       earnings,
-      paidToDateMinor: 30_000,
+      payments: [PAID_30000],
     });
 
     expect(csv).toBe(EXPECTED_CSV);
@@ -173,7 +200,7 @@ describe('renderWeekExportCsv — the rich fixture, byte for byte', () => {
     const { filename } = renderWeekExportCsv({
       timesheet,
       earnings,
-      paidToDateMinor: 30_000,
+      payments: [PAID_30000],
     });
 
     expect(filename).toBe('steadily-week-2026-08-03-rowe-nia.csv');
@@ -183,7 +210,7 @@ describe('renderWeekExportCsv — the rich fixture, byte for byte', () => {
     const { csv } = renderWeekExportCsv({
       timesheet,
       earnings,
-      paidToDateMinor: 0,
+      payments: [],
     });
 
     expect(csv).toContain(`${CRLF}total_gross_minor,121175${CRLF}`);
@@ -197,7 +224,7 @@ describe('renderWeekExportCsv — the rich fixture, byte for byte', () => {
     const { csv } = renderWeekExportCsv({
       timesheet,
       earnings,
-      paidToDateMinor: 30_000,
+      payments: [PAID_30000],
     });
 
     expect(csv).not.toContain('£');
@@ -214,8 +241,14 @@ describe('renderWeekExportCsv — the rich fixture, byte for byte', () => {
       expect(amount).toMatch(/^-?\d+$/);
     }
     // Read the numeric columns from the END — only `description` can carry a
-    // comma of its own.
-    const dataRows = rows.filter(row => /^\d{4}-\d{2}-\d{2},/.test(row));
+    // comma of its own. Settlement records are excluded here and checked
+    // separately below: they are money, not time, so their `minutes` and
+    // `rate_minor` are EMPTY (the adjustment's precedent) and a correction's
+    // amount is signed.
+    const dataRows = rows.filter(
+      row =>
+        /^\d{4}-\d{2}-\d{2},/.test(row) && !/,(payment|correction),/.test(row)
+    );
     expect(dataRows).toHaveLength(8);
     for (const row of dataRows) {
       const fields = row.split(',');
@@ -230,7 +263,7 @@ describe('renderWeekExportCsv — the rich fixture, byte for byte', () => {
     const { csv } = renderWeekExportCsv({
       timesheet: { ...timesheet, approved_at: null },
       earnings,
-      paidToDateMinor: 0,
+      payments: [],
     });
 
     expect(csv).not.toContain('approved_at');
@@ -241,7 +274,7 @@ describe('renderWeekExportCsv — the rich fixture, byte for byte', () => {
     const { csv } = renderWeekExportCsv({
       timesheet,
       earnings: { ...earnings, lines: [], gross_minor: 0 },
-      paidToDateMinor: 0,
+      payments: [],
     });
 
     expect(csv.split(CRLF).slice(0, 3)).toEqual([
@@ -279,7 +312,7 @@ describe('renderWeekExportCsv — a line kind this build does not know', () => {
     const { csv } = renderWeekExportCsv({
       timesheet,
       earnings: withUnknownKind,
-      paidToDateMinor: 30_000,
+      payments: [PAID_30000],
     });
 
     expect(csv).toContain(
@@ -291,12 +324,160 @@ describe('renderWeekExportCsv — a line kind this build does not know', () => {
     const { csv } = renderWeekExportCsv({
       timesheet,
       earnings: withUnknownKind,
-      paidToDateMinor: 30_000,
+      payments: [PAID_30000],
     });
 
     expect(csv).toContain(`${CRLF}total_gross_minor,121175${CRLF}`);
     expect(csv).toContain(`${CRLF}reimbursements_minor,1250${CRLF}`);
     expect(csv).toContain(`${CRLF}balance_due_minor,91175${CRLF}`);
+  });
+});
+
+/**
+ * D-20's half of the export. The pair of rows IS the audit trail: the export
+ * is what a payroll service and a dispute both read, and netting a correction
+ * into its original destroys the only reason the correction was worth
+ * building. David's incident — one Zelle transfer recorded twice — is the
+ * fixture, deliberately.
+ */
+describe('renderWeekExportCsv — payments and corrections (D-20)', () => {
+  /** The duplicate. Same money, entered again two days later. */
+  const DUPLICATE: Payment = {
+    ...PAID_30000,
+    id: 'pay-2',
+    paid_at: '2026-08-16',
+    created_at: '2026-08-18T08:15:00.000Z',
+  };
+
+  /** The reversal of the duplicate, in full. */
+  const CORRECTION: Payment = {
+    id: 'corr-1',
+    timesheet_id: 'ts-1',
+    household_id: 'h-1',
+    carer_id: 'carer-1',
+    amount_minor: -30_000,
+    kind: 'correction',
+    corrects_payment_id: 'pay-2',
+    correction_reason: 'recorded twice',
+    currency: 'GBP',
+    paid_at: '2026-08-18',
+    method_note: null,
+    recorded_by: 'parent-1',
+    created_at: '2026-08-18T08:16:00.000Z',
+  };
+
+  it('ships BOTH rows — the original keeps its full amount, the correction is its own record', () => {
+    const { csv } = renderWeekExportCsv({
+      timesheet,
+      earnings,
+      payments: [PAID_30000, DUPLICATE, CORRECTION],
+    });
+
+    expect(csv).toContain(
+      `${CRLF}2026-08-16,Payment: Zelle,payment,,,30000,GBP${CRLF}`
+    );
+    expect(csv).toContain(
+      `${CRLF}2026-08-18,Correction: recorded twice,correction,,,-30000,GBP${CRLF}`
+    );
+  });
+
+  it('NEVER nets the pair into one row — three settlements in, three records out', () => {
+    const { csv } = renderWeekExportCsv({
+      timesheet,
+      earnings,
+      payments: [PAID_30000, DUPLICATE, CORRECTION],
+    });
+
+    const settlementRows = csv
+      .split(CRLF)
+      .filter(row => /,(payment|correction),/.test(row));
+    expect(settlementRows).toHaveLength(3);
+  });
+
+  it('paid_to_date_minor is the SIGNED sum, so balance_due is the true balance', () => {
+    const { csv } = renderWeekExportCsv({
+      timesheet,
+      earnings,
+      payments: [PAID_30000, DUPLICATE, CORRECTION],
+    });
+
+    // 30000 + 30000 - 30000 = 30000 paid; 121175 - 30000 = 91175 owed.
+    expect(csv).toContain(`${CRLF}paid_to_date_minor,30000${CRLF}`);
+    expect(csv).toContain(`${CRLF}balance_due_minor,91175${CRLF}`);
+  });
+
+  it('a partial reversal lands on an exact integer, never a rounded one', () => {
+    const partial: Payment = { ...CORRECTION, amount_minor: -12_345 };
+    const { csv } = renderWeekExportCsv({
+      timesheet,
+      earnings,
+      payments: [PAID_30000, DUPLICATE, partial],
+    });
+
+    // 30000 + 30000 - 12345 = 47655; 121175 - 47655 = 73520.
+    expect(csv).toContain(`${CRLF}paid_to_date_minor,47655${CRLF}`);
+    expect(csv).toContain(`${CRLF}balance_due_minor,73520${CRLF}`);
+  });
+
+  it('balance_due_minor is still NEVER clamped — an over-paid week reads negative', () => {
+    const overpaid: Payment = { ...PAID_30000, amount_minor: 200_000 };
+    const { csv } = renderWeekExportCsv({
+      timesheet,
+      earnings,
+      payments: [overpaid],
+    });
+
+    expect(csv).toContain(`${CRLF}balance_due_minor,-78825${CRLF}`);
+  });
+
+  it('describes a payment with no method note without a dangling colon', () => {
+    const { csv } = renderWeekExportCsv({
+      timesheet,
+      earnings,
+      payments: [{ ...PAID_30000, method_note: null }],
+    });
+
+    expect(csv).toContain(
+      `${CRLF}2026-08-16,Payment,payment,,,30000,GBP${CRLF}`
+    );
+  });
+
+  it('escapes a free-text reason containing a comma or a quote', () => {
+    const messy: Payment = {
+      ...CORRECTION,
+      correction_reason: 'wrong week, and she said "August"',
+    };
+    const { csv } = renderWeekExportCsv({
+      timesheet,
+      earnings,
+      payments: [PAID_30000, messy],
+    });
+
+    expect(csv).toContain(
+      '2026-08-18,"Correction: wrong week, and she said ""August""",correction,,,-30000,GBP'
+    );
+  });
+
+  it('keeps the settlement rows in the order given — the repository sorts, not this', () => {
+    const { csv } = renderWeekExportCsv({
+      timesheet,
+      earnings,
+      payments: [PAID_30000, DUPLICATE, CORRECTION],
+    });
+
+    const rows = csv
+      .split(CRLF)
+      .filter(row => /,(payment|correction),/.test(row));
+    expect(rows[0]).toContain('pay');
+    expect(rows.at(-1)).toContain('Correction: recorded twice');
+  });
+
+  it('emits no settlement records at all for a week nobody has paid', () => {
+    const { csv } = renderWeekExportCsv({ timesheet, earnings, payments: [] });
+
+    expect(csv).not.toContain(',payment,');
+    expect(csv).not.toContain(',correction,');
+    expect(csv).toContain(`${CRLF}paid_to_date_minor,0${CRLF}`);
   });
 });
 
@@ -346,7 +527,7 @@ describe('renderWeekExportCsv — the parent adjustment line', () => {
     const { csv } = renderWeekExportCsv({
       timesheet,
       earnings: adjusted,
-      paidToDateMinor: 0,
+      payments: [],
     });
 
     const rows = csv.split(CRLF);
@@ -360,7 +541,7 @@ describe('renderWeekExportCsv — the parent adjustment line', () => {
     const { csv } = renderWeekExportCsv({
       timesheet,
       earnings: adjusted,
-      paidToDateMinor: 30_000,
+      payments: [PAID_30000],
     });
 
     expect(csv).toContain(`${CRLF}total_gross_minor,111775${CRLF}`);
@@ -382,7 +563,7 @@ describe('renderWeekExportCsv — the parent adjustment line', () => {
           created_at: '2026-08-10T09:30:00.000Z',
         },
       },
-      paidToDateMinor: 0,
+      payments: [],
     });
 
     expect(csv).toContain(
@@ -402,7 +583,7 @@ describe('renderWeekExportCsv — the parent adjustment line', () => {
           created_at: '2026-08-10T09:30:00.000Z',
         },
       },
-      paidToDateMinor: 0,
+      payments: [],
     });
 
     expect(csv).toContain(
@@ -413,7 +594,7 @@ describe('renderWeekExportCsv — the parent adjustment line', () => {
     const { csv: plain } = renderWeekExportCsv({
       timesheet,
       earnings: adjusted,
-      paidToDateMinor: 0,
+      payments: [],
     });
     expect(csv.split(CRLF).length).toBe(plain.split(CRLF).length);
   });
@@ -422,7 +603,7 @@ describe('renderWeekExportCsv — the parent adjustment line', () => {
     const { csv } = renderWeekExportCsv({
       timesheet,
       earnings,
-      paidToDateMinor: 30_000,
+      payments: [PAID_30000],
     });
 
     expect(csv).toBe(EXPECTED_CSV);
@@ -433,7 +614,7 @@ describe('renderWeekExportCsv — the parent adjustment line', () => {
     const { csv } = renderWeekExportCsv({
       timesheet,
       earnings: { ...earnings, adjustment: null },
-      paidToDateMinor: 30_000,
+      payments: [PAID_30000],
     });
 
     expect(csv).toBe(EXPECTED_CSV);

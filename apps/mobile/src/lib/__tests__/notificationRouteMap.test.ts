@@ -79,6 +79,24 @@ describe('NOTIFICATION_ROUTE_MAP resolvers', () => {
     ).toBe(hoursHref);
   });
 
+  // 3-T2 (§1.3 N5/N6): both money-correction pushes are about a week's
+  // settlement, so they land on the same Hours week as payment_recorded.
+  it('routes the money-correction pushes to the same Hours week as payment_recorded', () => {
+    const payload = {
+      householdId: 'hh-1',
+      weekStart: '2026-08-03',
+      timesheetId: 'ts-1',
+    };
+    const expected = resolve(PUSH_NOTIFICATION_TYPES.PAYMENT_RECORDED, payload);
+
+    expect(resolve(PUSH_NOTIFICATION_TYPES.PAYMENT_CORRECTED, payload)).toBe(
+      expected
+    );
+    expect(
+      resolve(PUSH_NOTIFICATION_TYPES.REIMBURSEMENT_SETTLED, payload)
+    ).toBe(expected);
+  });
+
   it('routes pattern-sent to the respond screen via patternId', () => {
     expect(
       resolve(PUSH_NOTIFICATION_TYPES.SCHEDULE_PATTERN_SENT, {

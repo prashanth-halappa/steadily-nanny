@@ -403,12 +403,23 @@ The engine implements these definitions exactly, not an approximation:
 
 ## 8. RLS on money tables: select-only, service-role writes
 
-`pay_arrangements`, `pto_ledger`, and `expenses` all follow one RLS stance:
-a single **select** policy, and **no insert/update/delete policy at all**.
-Every write goes through the API under the service role, exactly like
-`shifts` and `time_entries`.
+`pay_arrangements` (041), `pto_ledger` (043), `expenses` (044), `payments`
+(067), `reimbursement_settlements` (086) — and, since **D-21 / migration 087**,
+`timesheets` and `time_entries` — all follow one RLS stance: a single
+**select** policy, and **no insert/update/delete policy at all**. Every write
+goes through the API under the service role, exactly like `shifts`.
 
-The select policy is the same on all three:
+Those last two were the exception until August 2026 and it was a real hole
+(gaps P4/P8). 017/018 gave them `can_read_household` — *any active member* —
+which was fine when a timesheet was a row of hours, and stopped being fine the
+day 042 froze `gross_minor` and the `earnings` snapshot onto it. A HELPER and a
+SECOND NANNY could read another carer's weekly pay via `GET /timesheets/:id`,
+the household list and the CSV export, and read her exact clock times, break
+lengths and shift notes off `time_entries`. 087 repoints both at the predicate
+below and `timesheetQueryService.assertPayrollReader` moved with it, in the same
+commit — a backstop wider than the check IS the door.
+
+The select policy is the same on all of them:
 
 ```sql
 using (private.can_write_household(household_id) or carer_id = (select auth.uid()))
@@ -416,12 +427,23 @@ using (private.can_write_household(household_id) or carer_id = (select auth.uid(
 
 **Parents and owners, plus the carer reading her own rows. Helpers and other
 carers are denied.** That is the product rule (`docs/TIER0-CX-SPEC.md`) and it
-is what the query services already enforce: a helper never sees pay, and one
-nanny never sees another's rate. An earlier draft used
+is what all five query services enforce (`payArrangementQueryService`,
+`ptoQueryService`, `expenseQueryService`, `paymentQueryService`, and
+`timesheetQueryService.assertPayrollReader`): a helper never sees pay, and one
+nanny never sees another's. An earlier draft used
 `private.can_read_household` — *every active member* — which was wider than
 both. PostgREST is a real door: a policy looser than the service does not make
 the service's refusal safer, it makes it cosmetic. The carer can always read
 her own terms, because opaque pay is the disease this feature treats.
+
+**Membership STATUS is not part of that rule, in either direction.** Every
+payroll read resolves scope from the ROLE and accepts a `removed` member: a
+nanny who has left still reads the hours she worked and the weeks she was owed
+for, and the parents who paid keep the household view. Payroll is an audit
+trail, not a live surface that disappears with the badge — which is exactly
+what the row-armed `carer_id = auth.uid()` arm above encodes in SQL. Every
+WRITE gate still resolves an ACTIVE membership, so a removed member can look
+and change nothing.
 
 Two notes on the form, both load-bearing:
 
@@ -525,16 +547,48 @@ payment row is evidence of a real-world event, not a computed or editable
 figure, so — same discipline as `pay_arrangements` (§2) and `pto_ledger`
 (§5) — **it is append-only**: no update, no delete, anywhere in the stack.
 Recording the wrong amount cannot be fixed by editing the row, only by
-recording a correcting fact (there is currently no correction path at all;
-an over-recorded payment stands until a human notices).
+recording a correcting fact.
 
-**The approval-time adjustment (§3) is NOT this correction path**, and the two
+**Corrections (D-20, migration 085).** That correcting fact is now a real
+mechanism. A `kind = 'correction'` row carries a **negative `amount_minor`**
+and a `corrects_payment_id` pointing at the payment it reverses, plus a
+required `correction_reason`. The original row **keeps its full amount
+forever** — a ledger that quietly restates history is worse than one that
+cannot be corrected at all. Three rules follow, and all three are load-bearing:
+
+- **Paid-to-date is the SIGNED sum**, `sum(amount_minor)` across both kinds,
+  everywhere it is computed: the atomic gate inside
+  `record_timesheet_payment` (085 re-issues 077's function), the CSV's
+  `paid_to_date_minor`, the mobile paid-state. Storing the reversal negative is
+  what keeps that one expression. **Never add `where kind = 'payment'`** — after
+  a downward correction the week would still count as fully paid and the next
+  legitimate payment would be refused as over-gross.
+- **One level, no chains.** A correction corrects a `payment`; a correction is
+  never itself correctable. Correcting a correction is a new payment.
+- **Refused, never clamped, at the original's ceiling.** A reversal larger than
+  what is LEFT of the payment it points at is refused with the figures the lock
+  saw. Bounding each correction by its own original is also what makes the
+  week's floor free: paid-to-date can never go below zero.
+- **Exports ship both rows.** The week CSV emits the payment AND the correction
+  as separate records and carries the true balance in `balance_due_minor`.
+  Never net them: the export is what a payroll service and a dispute both read,
+  and the pair IS the audit trail.
+
+**The approval-time adjustment (§3) is NOT the correction path**, and the two
 get confused because both are called "adjustment". That one changes what a week
 is *worth* — a signed amount plus a required note, staged by the parent before
 approval and folded into the frozen `gross_minor` — so it moves the ceiling this
 section's Gate 4 checks against. It cannot touch a `payments` row, it is
 unavailable once the week is approved, and it has no effect on money that has
-already moved. A wrongly-recorded *payment* still has no remedy in the product.
+already moved.
+
+**Reimbursement settlements (D-14, migration 086) are NOT payments either.**
+`reimbursement_settlements` records that a family repaid one carer's approved
+reimbursements for one household-local week. It is a separate table with no
+`timesheet_id` on purpose: reimbursements are excluded from gross, from payable
+minutes and from the payment ceiling (§6) because they are money she already
+spent, not wages. Do not merge the two tables and do not sum a settlement into
+paid-to-date.
 
 **A figure summed from `payments` carries the state word "Recorded", never
 "Estimated" or "Approved" (§3).** Those two describe earnings — a live
@@ -598,29 +652,24 @@ only branch reachable from there is the frozen-snapshot one.
 
 **`balance_due_minor` is a plain subtraction, deliberately never clamped at
 zero.** It is `total_gross_minor - paid_to_date_minor` in the export, and an
-over-payment (recorded in error, or against a week whose gross later reads
-differently through some future correction path) must render as a
-**negative** balance, not silently disappear — the same "no is honest, zero
-often lies" instinct as §4's no-arrangement rule.
+over-payment (recorded in error, or against a week reopened and re-approved at
+a lower gross after payments exist) must render as a **negative** balance, not
+silently disappear — the same "no is honest, zero often lies" instinct as §4's
+no-arrangement rule. `paid_to_date_minor` is the SIGNED sum of the settlement
+rows, corrections included (D-20), and the export prints those rows beside it
+so a reader can check the subtraction rather than take it on faith.
 
-**The export's `paid_to_date_minor` read gate is deliberately the WEEK read's
-gate, not the payments-list gate — read the one-line reason at its call
-site rather than assuming a bug.**
-`paymentQueryService`'s own gate (used by `GET
-/timesheets/:timesheetId/payments`) is narrower than the week read: only
-active owners/parents plus the week's own carer, denying a second nanny and
-any helper — because one nanny must never see another's money. The export,
-by contrast, calls `getReadableTimesheet` — byte-identical to the plain week
-read's gate, which is "any active member of the household." That's not an
-oversight; `timesheetQueryService.exportWeekCsv`'s doc comment states the
-reasoning directly: *"this discloses a settlement total to any active member
-the week read already shows the frozen gross to — a wider audience than
-`paymentQueryService`'s own gate... That is deliberate and bounded: the
-export is the same artifact as the week read, in a different container, and
-giving it a second, narrower gate would mean a carer or parent could see a
-figure on screen that her own download silently omits."* In short: the export
-must never hide a number the corresponding screen already shows, even though
-that makes its read gate wider than the dedicated payments-list endpoint's.
+**The export's read gate is the WEEK read's gate, and since D-21 that is the
+same gate the payments list uses.** `exportWeekCsv` calls
+`getReadableTimesheet`, byte-identical to the plain week read — the export
+must never hide a number the corresponding screen already shows. That gate used
+to be "any active member of the household", which was wider than
+`paymentQueryService`'s (owners/parents plus the week's own carer) and was
+documented as a deliberate, bounded widening. Migration 087 and
+`assertPayrollReader` closed the gap in the other direction: the week read is
+now owners/parents plus the week's own carer too, so the export, the screen and
+the payments list all disclose to exactly the same people. If you widen one,
+you have widened all three.
 
 ---
 

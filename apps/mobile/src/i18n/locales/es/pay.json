@@ -142,5 +142,21 @@
     "exceedsGrossTitle": "Eso es más de lo que queda por pagar de esta semana.",
     "alreadyRecordedLabel": "Ya registrado",
     "weekGrossLabel": "Bruto de la semana"
+  },
+  "correctPaymentSheet": {
+    "title": "Corregir este pago",
+    "original": "Pagado el {{date}}",
+    "originalWithMethod": "Pagado el {{date}} · {{method}}",
+    "amountLabel": "Importe a revertir",
+    "amountError": "Escribe un importe, como 250 o 250,00.",
+    "exceedsOriginalError": "Eso es más que este pago.",
+    "exceedsOriginalTitle": "Eso es más de lo que queda por revertir de este pago.",
+    "originalAmountLabel": "Este pago",
+    "remainingLabel": "Queda por revertir",
+    "notCorrectableTitle": "Este pago no se puede corregir. Puede que ya se haya revertido por completo, o que sea una corrección.",
+    "reasonLabel": "Por qué",
+    "reasonPlaceholder": "p. ej. registrado dos veces",
+    "note": "El original se queda en el registro. Esto añade un apunte de corrección.",
+    "submitButton": "Registrar la corrección"
   }
 }

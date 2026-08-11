@@ -218,8 +218,17 @@ const createPaymentMock = mock((_id: string, _input: unknown) =>
   Promise.resolve({ id: 'pay-1' })
 );
 
+const correctPaymentMock = mock(
+  (_timesheetId: string, _paymentId: string, _input: unknown) =>
+    Promise.resolve({ id: 'corr-1' })
+);
+
 mock.module('@/src/api/endpoints/payments', () => ({
-  paymentApi: { list: listPaymentsMock, create: createPaymentMock },
+  paymentApi: {
+    list: listPaymentsMock,
+    create: createPaymentMock,
+    correct: correctPaymentMock,
+  },
 }));
 
 mock.module('@/src/api/endpoints/expenses', () => {
@@ -292,6 +301,9 @@ function makePayment(overrides: Record<string, unknown> = {}) {
     household_id: HOUSEHOLD_ID,
     carer_id: CARER_ID,
     amount_minor: 12000,
+    kind: 'payment',
+    corrects_payment_id: null,
+    correction_reason: null,
     currency: 'GBP',
     paid_at: '2026-08-11',
     method_note: 'Bank transfer',
@@ -339,6 +351,7 @@ beforeEach(() => {
     listPendingExpensesMock,
     listPaymentsMock,
     createPaymentMock,
+    correctPaymentMock,
     exportCsvMock,
     shareCsvMock,
     sharePdfMock,
@@ -811,5 +824,94 @@ describe('ParentWeekView — opening a payment from the week', () => {
     expect(
       getByTestId('payments-detail-recorded-by-value').props.children
     ).toBe('detail.you');
+  });
+});
+
+// D-20, attention spec §4.1 — the parent's own entry point, and the one gate
+// that matters: a sheet presented over an already-presented sheet is
+// invisible on iOS, so the leaf must CLOSE before the correction opens.
+describe('ParentWeekView — correcting a payment', () => {
+  const openDetail = async (view: ReturnType<typeof renderParentView>) => {
+    await waitFor(() =>
+      expect(
+        view.getByTestId('hours-paid-state-line-pay-existing-open')
+      ).toBeTruthy()
+    );
+    fireEvent.press(
+      view.getByTestId('hours-paid-state-line-pay-existing-open')
+    );
+    await waitFor(() =>
+      expect(view.getByTestId('payments-detail')).toBeTruthy()
+    );
+  };
+
+  it('closes the payment leaf before the correction sheet arrives', async () => {
+    listPaymentsMock.mockImplementation(() =>
+      Promise.resolve([makePayment({ amount_minor: 12000 })])
+    );
+
+    const view = renderParentView();
+    await openDetail(view);
+
+    fireEvent.press(view.getByTestId('payments-detail-correct'));
+
+    await waitFor(() =>
+      expect(view.getByTestId('hours-correct-payment-sheet')).toBeTruthy()
+    );
+    expect(view.queryByTestId('payments-detail')).toBeNull();
+    // Prefilled with the original's own figure — £120.00.
+    expect(
+      view.getByTestId('hours-correct-payment-amount-input').props.value
+    ).toBe('120.00');
+  });
+
+  it('posts the POSITIVE magnitude with its reason, and closes only on success', async () => {
+    listPaymentsMock.mockImplementation(() =>
+      Promise.resolve([makePayment({ amount_minor: 12000 })])
+    );
+    correctPaymentMock.mockImplementation(() =>
+      Promise.resolve({ id: 'corr-1' })
+    );
+
+    const view = renderParentView();
+    await openDetail(view);
+    fireEvent.press(view.getByTestId('payments-detail-correct'));
+    await waitFor(() =>
+      expect(view.getByTestId('hours-correct-payment-sheet')).toBeTruthy()
+    );
+
+    fireEvent.changeText(
+      view.getByTestId('hours-correct-payment-reason-input'),
+      'recorded twice'
+    );
+    fireEvent.press(view.getByTestId('hours-correct-payment-submit'));
+
+    await waitFor(() =>
+      expect(correctPaymentMock).toHaveBeenCalledWith(
+        TIMESHEET_ID,
+        'pay-existing',
+        {
+          amount_minor: 12000,
+          paid_at: TODAY_IN_HOUSEHOLD_ZONE,
+          reason: 'recorded twice',
+        }
+      )
+    );
+    await waitFor(() =>
+      expect(view.queryByTestId('hours-correct-payment-sheet')).toBeNull()
+    );
+  });
+
+  // Correcting is the payer's act. A helper reads the ledger and never edits
+  // it — the same gate as "Mark as paid".
+  it('offers a read-only helper no way to correct anything', async () => {
+    listPaymentsMock.mockImplementation(() =>
+      Promise.resolve([makePayment({ amount_minor: 12000 })])
+    );
+
+    const view = renderParentView({ readOnly: true });
+    await openDetail(view);
+
+    expect(view.queryByTestId('payments-detail-correct')).toBeNull();
   });
 });

@@ -7,7 +7,25 @@
  * export refuses rather than emitting a wrong-money artifact.
  */
 import { beforeAll, describe, expect, it, mock } from 'bun:test';
+import type { Payment } from '@steadily-nanny/shared-types/schemas/payment.schema';
 import type { WeekEarnings } from '@steadily-nanny/shared-types/schemas/timesheet.schema';
+
+/** One recorded payment — the export prints the ROW and derives the total. */
+const PAID_30000: Payment = {
+  id: 'pay-1',
+  timesheet_id: 'ts-1',
+  household_id: 'h-1',
+  carer_id: 'carer-1',
+  amount_minor: 30_000,
+  kind: 'payment',
+  corrects_payment_id: null,
+  correction_reason: null,
+  currency: 'GBP',
+  paid_at: '2026-08-16',
+  method_note: 'Zelle',
+  recorded_by: 'parent-1',
+  created_at: '2026-08-16T18:04:00+00:00',
+};
 
 let TimesheetQueryService: typeof import('../../../../../src/domains/timesheet/services/timesheetQueryService').TimesheetQueryService;
 let TimesheetNotExportableError: typeof import('../../../../../src/domains/timesheet/errors/timesheetErrors').TimesheetNotExportableError;
@@ -91,7 +109,7 @@ const membership = {
 function makeService(
   row: unknown,
   overrides: {
-    paidToDateMinor?: number;
+    payments?: unknown[];
     membership?: unknown;
     anyStatusMembership?: unknown;
   } = {}
@@ -113,8 +131,10 @@ function makeService(
   const earnings: any = {
     computeForWeek: mock(async () => snapshot),
   };
+  // The ROWS, not a total (D-20): the export derives paid-to-date from the
+  // settlement rows it also prints, so the two can never disagree.
   const payments: any = {
-    sumForTimesheet: mock(async () => overrides.paidToDateMinor ?? 0),
+    listForTimesheet: mock(async () => overrides.payments ?? []),
   };
   const service = new TimesheetQueryService(
     {} as any,
@@ -130,13 +150,13 @@ function makeService(
 describe('exportWeekCsv — the happy path', () => {
   it('serialises the FROZEN snapshot, never a recomputation', async () => {
     const { service, earnings, payments } = makeService(approvedRow, {
-      paidToDateMinor: 30_000,
+      payments: [PAID_30000],
     });
 
     const { csv, filename } = await service.exportWeekCsv('u1', 'ts-1');
 
     expect(earnings.computeForWeek).not.toHaveBeenCalled();
-    expect(payments.sumForTimesheet).toHaveBeenCalledWith('ts-1');
+    expect(payments.listForTimesheet).toHaveBeenCalledWith('ts-1');
     expect(filename).toBe('steadily-week-2026-08-03-nia-rowe.csv');
     expect(csv).toContain(
       'date,description,kind,minutes,rate_minor,amount_minor,currency\r\n'
@@ -226,7 +246,7 @@ describe('exportWeekCsv — only an APPROVED week exports', () => {
       // No live estimate is ever computed for an export, and no payment read
       // happens for a week that cannot be exported.
       expect(earnings.computeForWeek).not.toHaveBeenCalled();
-      expect(payments.sumForTimesheet).not.toHaveBeenCalled();
+      expect(payments.listForTimesheet).not.toHaveBeenCalled();
     });
   }
 });

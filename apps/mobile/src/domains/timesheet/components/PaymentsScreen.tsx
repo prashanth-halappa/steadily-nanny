@@ -304,6 +304,7 @@ export function PaymentsScreen() {
             amount_minor: payment.amount_minor,
             currency: payment.currency,
             method_note: payment.method_note,
+            correction_reason: payment.correction_reason,
             recorded_by: payment.recorded_by,
             created_at: payment.created_at,
           };

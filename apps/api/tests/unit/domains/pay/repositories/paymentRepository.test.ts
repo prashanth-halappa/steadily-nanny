@@ -11,7 +11,7 @@ import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
  * (`timesheet_id`, and ONLY this timesheet's rows) instead of proving that a
  * mock returns what it was told to return.
  *
- * `sumForTimesheet` is the number the over-payment gate is built on, so its
+ * `listForTimesheet` is the number every paid-to-date read is built on, so its
  * scoping is the security-relevant part: a sum that leaked another week's
  * rows would refuse legitimate payments; a sum that dropped rows would let a
  * week be paid twice. It survives 077 — the CSV export and the paid-state
@@ -192,27 +192,6 @@ describe('PaymentRepository.listForTimesheet', () => {
     await expect(
       new PaymentRepository().listForTimesheet('ts-1')
     ).rejects.toThrow('Failed to list payments for timesheet');
-  });
-});
-
-describe('PaymentRepository.sumForTimesheet', () => {
-  it('sums only THIS timesheet’s rows — the figure the over-payment gate is built on', async () => {
-    withRows([
-      paymentRow({ id: 'pay-1', amount_minor: 5_000 }),
-      paymentRow({ id: 'pay-2', amount_minor: 2_500 }),
-      paymentRow({
-        id: 'pay-other-week',
-        timesheet_id: 'ts-2',
-        amount_minor: 100_000,
-      }),
-    ]);
-
-    expect(await new PaymentRepository().sumForTimesheet('ts-1')).toBe(7_500);
-  });
-
-  it('is 0 for an unpaid week, never null — the gate adds to it', async () => {
-    withRows([]);
-    expect(await new PaymentRepository().sumForTimesheet('ts-1')).toBe(0);
   });
 });
 

@@ -23,12 +23,29 @@
  * docs/11-MONEY.md §4 forbids. `null` renders `reimbursements.totalUnavailable`
  * instead — the items still list (they're real, independent of earnings),
  * only the SUBTOTAL is withheld.
+ *
+ * REIMBURSEMENT SETTLEMENTS ARE NOT PAYMENTS (attention spec §4.2, D20).
+ * They are excluded from gross, from payable minutes and from the payment
+ * ceiling (`earningsService.ts`) because they are the family repaying money
+ * she already spent, not wages. Do not merge these tables, do not sum them
+ * into paid-to-date. A settled reimbursement and a recorded payment look
+ * like the same shape and are not the same fact — `settledOn` below comes
+ * from `reimbursement_settlements`, never from the payments ledger.
+ *
+ * `onMarkReimbursedPress` is the whole role fork, exactly like
+ * `PaidStateSection`'s `onMarkPaidPress`: the parent view supplies it, the
+ * nanny view and a read-only helper omit it. Never a role check in here.
  */
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
+import { Button } from '@/src/components/ui/button';
+import { Text } from '@/src/components/ui/text';
 import { H4, MetadataLabel, Small } from '@/src/components/ui/typography';
 import { AmountRow } from '@/src/domains/pay/components/AmountRow';
-import { formatEarningsSpanDate } from '@/src/domains/timesheet/utils/earningsFormat';
+import {
+  formatEarningsLongDate,
+  formatEarningsSpanDate,
+} from '@/src/domains/timesheet/utils/earningsFormat';
 import { formatMoney } from '@/src/lib/money';
 import { useElevation } from '~/lib/design-tokens/elevation';
 import type { Expense } from '../types';
@@ -46,6 +63,17 @@ interface ReimbursementsCardProps {
    * this above the itemised list; a nanny viewing her own card never passes
    * it. Not repeated per line — one caption under the title is enough. */
   carerName?: string;
+  /** `settled_at` off this week's `reimbursement_settlement` row, or `null`
+   * while the money has not gone back yet. A DATE, not an instant. */
+  settledOn?: string | null;
+  /** Supplied by the PARENT view only — its absence is what makes the card
+   * read-only for the nanny and for a read-only helper. */
+  onMarkReimbursedPress?: () => void;
+  /** Held down while the settlement request is in flight. */
+  isMarkReimbursedDisabled?: boolean;
+  /** A refused settlement, stated under the button that caused it
+   * (GOLDEN-FIXES #40 — never a toast). */
+  markReimbursedError?: string | null;
   testID?: string;
 }
 
@@ -54,6 +82,10 @@ export function ReimbursementsCard({
   totalMinor,
   currency,
   carerName,
+  settledOn = null,
+  onMarkReimbursedPress,
+  isMarkReimbursedDisabled = false,
+  markReimbursedError = null,
   testID = 'reimbursements-card',
 }: ReimbursementsCardProps) {
   const { t } = useTranslation('expenses');
@@ -114,6 +146,40 @@ export function ReimbursementsCard({
           </Small>
         </View>
       )}
+
+      {/* State words on the figure, both roles, always (docs/11-MONEY.md §1):
+          a total with no state says nothing about whether she has her money
+          back. */}
+      <Small testID={`${testID}-state`} className="text-muted-foreground">
+        {settledOn
+          ? t('reimbursements.stateSettled', {
+              date: formatEarningsLongDate(settledOn),
+            })
+          : t('reimbursements.stateUnsettled')}
+      </Small>
+
+      {onMarkReimbursedPress && !settledOn ? (
+        <>
+          <Button
+            testID={`${testID}-mark-reimbursed-button`}
+            variant="ghost"
+            disabled={isMarkReimbursedDisabled}
+            onPress={onMarkReimbursedPress}
+          >
+            <Text className="text-foreground">
+              {t('reimbursements.markReimbursedButton')}
+            </Text>
+          </Button>
+          {markReimbursedError ? (
+            <Small
+              testID={`${testID}-mark-reimbursed-error`}
+              className="text-destructive"
+            >
+              {markReimbursedError}
+            </Small>
+          ) : null}
+        </>
+      ) : null}
 
       <Small testID={`${testID}-note`} className="text-muted-foreground">
         {t('reimbursements.note')}

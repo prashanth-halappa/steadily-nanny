@@ -143,6 +143,10 @@
     "noPayments": "No payments recorded yet.",
     "markPaidButton": "Mark as paid",
     "recordedToast": "Payment recorded",
+    "correctionRow": "Correction {{date}}",
+    "correctionRecordedToast": "Correction recorded",
+    "correctionExceedsError": "That's more than this payment has left to reverse.",
+    "notCorrectableError": "That payment can't be corrected.",
     "note": "Steadily records that the money moved — it doesn't move it.",
     "exceedsGrossError": "That's more than this week still has left to pay.",
     "weekNotApprovedError": "Approve the week first — payments are recorded against an approved total."
@@ -222,7 +226,8 @@
       "methodUnstated": "—",
       "forWeek": "For the week",
       "paidTo": "Paid to",
-      "appendOnly": "Payments can't be edited or removed. A correction is recorded as another payment."
+      "appendOnly": "Payments can't be edited or removed. A correction is recorded as another payment.",
+      "correctAction": "Correct this payment"
     }
   }
 }

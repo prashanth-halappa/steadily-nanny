@@ -72,7 +72,6 @@ beforeEach(() => {
 function makePaymentRepo(overrides: Record<string, unknown> = {}): any {
   return {
     listForTimesheet: mock(async () => []),
-    sumForTimesheet: mock(async () => 0),
     recordForTimesheet: mock(
       async (timesheetId: string, entry: Record<string, unknown>) => ({
         outcome: 'recorded',
@@ -196,5 +195,132 @@ describe('paymentCommandService.create — PAYMENT_RECORDED push', () => {
 
     expect(payment.id).toBe('pay-new');
     notifyUser.mockImplementation(() => undefined);
+  });
+});
+
+/**
+ * `payment_corrected` (§1.3 N5, D-20). A SEPARATE type from
+ * `PAYMENT_RECORDED`, and this block is where that stays true: "money was
+ * recorded for you" and "money that was recorded for you has been taken back
+ * off the record" are opposite facts, and one type serving both is how a nanny
+ * stops trusting the ledger.
+ */
+describe('paymentCommandService.correct — PAYMENT_CORRECTED push', () => {
+  const VALID_CORRECTION = {
+    amount_minor: 46_200,
+    paid_at: '2026-08-18',
+    reason: 'recorded twice',
+  };
+
+  function makeCorrectingRepo(overrides: Record<string, unknown> = {}): any {
+    return makePaymentRepo({
+      recordCorrection: mock(
+        async (
+          timesheetId: string,
+          paymentId: string,
+          entry: Record<string, unknown>
+        ) => ({
+          outcome: 'recorded',
+          correction: {
+            id: 'corr-new',
+            timesheet_id: timesheetId,
+            household_id: 'h1',
+            carer_id: 'carer-1',
+            kind: 'correction',
+            corrects_payment_id: paymentId,
+            correction_reason: entry.reason,
+            currency: 'GBP',
+            created_at: '2026-08-18T10:00:00+00:00',
+            ...entry,
+          },
+        })
+      ),
+      ...overrides,
+    });
+  }
+
+  it('pushes the CARER with the correction type and the same route-map keys', async () => {
+    const { svc } = makeService({ paymentRepo: makeCorrectingRepo() });
+
+    await svc.correct('parent-1', 'ts-1', 'pay-1', VALID_CORRECTION);
+
+    expect(notifyUser).toHaveBeenCalledTimes(1);
+    const [userId, payload] = notifyUser.mock.calls[0] as [
+      string,
+      { title: string; body: string; data: Record<string, unknown> },
+    ];
+    expect(userId).toBe('carer-1');
+    expect(payload.data).toEqual({
+      type: PUSH_NOTIFICATION_TYPES.PAYMENT_CORRECTED,
+      householdId: 'h1',
+      weekStart: '2026-08-03',
+      timesheetId: 'ts-1',
+    });
+  });
+
+  it('is NOT payment_recorded — the two facts are opposites', async () => {
+    const { svc } = makeService({ paymentRepo: makeCorrectingRepo() });
+
+    await svc.correct('parent-1', 'ts-1', 'pay-1', VALID_CORRECTION);
+
+    const [, payload] = notifyUser.mock.calls[0] as [
+      string,
+      { data: Record<string, unknown> },
+    ];
+    expect(payload.data.type).not.toBe(
+      PUSH_NOTIFICATION_TYPES.PAYMENT_RECORDED
+    );
+  });
+
+  it('carries NO figure in the body (A8) — she opens the week to see the pair', async () => {
+    const { svc } = makeService({ paymentRepo: makeCorrectingRepo() });
+
+    await svc.correct('parent-1', 'ts-1', 'pay-1', VALID_CORRECTION);
+
+    const [, payload] = notifyUser.mock.calls[0] as [
+      string,
+      { title: string; body: string },
+    ];
+    expect(payload.body).not.toMatch(/\d/);
+    expect(payload.title).not.toMatch(/\d/);
+  });
+
+  it('never fans out to the household', async () => {
+    const { svc } = makeService({ paymentRepo: makeCorrectingRepo() });
+
+    await svc.correct('parent-1', 'ts-1', 'pay-1', VALID_CORRECTION);
+
+    expect(notifyHouseholdParents).not.toHaveBeenCalled();
+  });
+
+  it('sends nothing when the week has no carer (033 account deletion)', async () => {
+    const { svc } = makeService({
+      paymentRepo: makeCorrectingRepo(),
+      timesheetRepo: makeTimesheetRepo({
+        findById: mock(async () => ({ ...APPROVED_TIMESHEET, carer_id: null })),
+      }),
+    });
+
+    await svc.correct('parent-1', 'ts-1', 'pay-1', VALID_CORRECTION);
+
+    expect(notifyUser).not.toHaveBeenCalled();
+  });
+
+  it('does not push when the correction was refused', async () => {
+    const { svc } = makeService({
+      paymentRepo: makeCorrectingRepo({
+        recordCorrection: mock(async () => ({
+          outcome: 'exceeds_original',
+          original_amount_minor: 46_200,
+          remaining_minor: 0,
+        })),
+      }),
+    });
+
+    await svc
+      .correct('parent-1', 'ts-1', 'pay-1', VALID_CORRECTION)
+      .catch(() => undefined);
+
+    expect(notifyUser).not.toHaveBeenCalled();
   });
 });

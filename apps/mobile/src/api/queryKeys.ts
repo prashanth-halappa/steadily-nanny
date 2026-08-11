@@ -218,6 +218,21 @@ export const queryKeys = {
     pending: (householdId?: string) =>
       [...queryKeys.expenses.all, 'pending', householdId] as const,
   },
+
+  // Reimbursement settlements (D-14) — "the family paid her back", keyed by
+  // the same household-local week as `expenses`. A SEPARATE key from
+  // `payment` on purpose: a settlement is not a payment, and one cache
+  // holding both would be the first step toward summing them together.
+  reimbursementSettlements: {
+    all: ['reimbursementSettlements'] as const,
+    week: (householdId?: string, weekStart?: string) =>
+      [
+        ...queryKeys.reimbursementSettlements.all,
+        'week',
+        householdId,
+        weekStart,
+      ] as const,
+  },
 } as const;
 
 /**

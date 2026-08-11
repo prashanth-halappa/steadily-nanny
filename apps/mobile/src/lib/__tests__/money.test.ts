@@ -81,6 +81,14 @@ describe('formatMoney', () => {
       stubBrokenCurrencyIntl();
       expect(formatMoney(99999999, 'GBP')).toBe('£999,999.99');
     });
+
+    // D-20 made `amount_minor` signed: a payment CORRECTION is a negative
+    // ledger row. "£-462.00" is not how anyone writes money — the minus
+    // belongs in front of the symbol, which is where Intl itself puts it.
+    it('keeps the minus in front of the symbol for a correction row', () => {
+      stubBrokenCurrencyIntl();
+      expect(formatMoney(-46200, 'GBP')).toBe('-£462.00');
+    });
   });
 
   // A `currency` value arrives from a stored row, not from a picker, so a

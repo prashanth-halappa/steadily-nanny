@@ -16,6 +16,7 @@ function makeRow(overrides: Partial<PaymentCsvRow> = {}): PaymentCsvRow {
     amount_minor: 62_400,
     currency: 'GBP',
     method_note: 'Bank transfer',
+    correction_reason: null,
     recorded_by: '11111111-1111-4111-8111-111111111111',
     created_at: '2026-08-16T09:30:00.000Z',
     ...overrides,
@@ -26,8 +27,30 @@ describe('buildPaymentsCsv', () => {
   it('starts with the header record, verbatim', () => {
     const csv = buildPaymentsCsv([makeRow()]);
     expect(csv.split('\r\n')[0]).toBe(
-      'paid_at,week_start,carer,amount_minor,currency,method_note,recorded_by,created_at'
+      'paid_at,week_start,carer,amount_minor,currency,method_note,correction_reason,recorded_by,created_at'
     );
+  });
+
+  // D-20, attention spec §4.1. The export is the artifact a payroll service
+  // and a dispute both read, and the PAIR is the audit trail — netting the
+  // two into one row (or filtering the reversed pair out) destroys the only
+  // reason the correction mechanism exists.
+  it('ships a correction and its original as TWO rows, never netted', () => {
+    const csv = buildPaymentsCsv([
+      makeRow({ paid_at: '2026-08-16', amount_minor: 46_200 }),
+      makeRow({
+        paid_at: '2026-08-18',
+        amount_minor: -46_200,
+        method_note: null,
+        correction_reason: 'recorded twice',
+      }),
+    ]);
+    const records = csv.split('\r\n').filter(Boolean);
+
+    expect(records).toHaveLength(3); // header + both rows
+    expect(records[1]).toContain(',46200,');
+    expect(records[2]).toContain(',-46200,');
+    expect(records[2]).toContain('recorded twice');
   });
 
   it('emits amount_minor as a bare integer — no currency symbol, no separator, no decimal point', () => {
@@ -67,7 +90,7 @@ describe('buildPaymentsCsv', () => {
       }),
     ]);
     const dataLine = csv.split('\r\n')[1] as string;
-    expect(dataLine).toBe('2026-08-16,,,62400,GBP,,,2026-08-16T09:30:00.000Z');
+    expect(dataLine).toBe('2026-08-16,,,62400,GBP,,,,2026-08-16T09:30:00.000Z');
     expect(csv).not.toContain('null');
     expect(csv).not.toContain('undefined');
   });
@@ -85,7 +108,7 @@ describe('buildPaymentsCsv', () => {
   it('renders an empty input as the header record alone', () => {
     const csv = buildPaymentsCsv([]);
     expect(csv).toBe(
-      'paid_at,week_start,carer,amount_minor,currency,method_note,recorded_by,created_at\r\n'
+      'paid_at,week_start,carer,amount_minor,currency,method_note,correction_reason,recorded_by,created_at\r\n'
     );
   });
 });

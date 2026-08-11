@@ -133,6 +133,8 @@
       "expense_rejected": "Gasto rechazado",
       "pto_marked_paid": "Ausencia marcada como pagada",
       "payment_recorded": "Pago registrado",
+      "payment_corrected": "Pago corregido",
+      "reimbursement_settled": "Gasto reembolsado",
       "shift_confirmed": "Turno confirmado",
       "shift_declined": "Turno rechazado",
       "shift_reminder": "Recordatorio de turno",

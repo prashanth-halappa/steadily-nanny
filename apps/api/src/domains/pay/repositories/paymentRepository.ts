@@ -59,6 +59,54 @@ interface RecordPaymentRpcPayload {
   status?: string | null;
 }
 
+/**
+ * The caller's half of a CORRECTION row (D-20, migration 085) — the three
+ * fields that describe the reversal, plus who did it.
+ *
+ * `amount_minor` IS ALREADY NEGATIVE here. The service negates the positive
+ * magnitude the wire carries, so the sign rule lives in exactly one place and
+ * every layer below this line sees the number that will be stored. Nothing
+ * describing the money is present: household, carer, currency and the
+ * `correction` kind are stamped inside the function from the ORIGINAL PAYMENT
+ * it locks (085's header explains why the original and not the timesheet — a
+ * reopened week's `currency` is NULL and a correction is by definition in the
+ * currency of the payment it reverses).
+ */
+export interface RecordCorrectionEntry {
+  /** Negative, always. See above. */
+  amount_minor: number;
+  paid_at: string;
+  /** Required — a reversal with no reason is unreadable a year later. */
+  reason: string;
+  recorded_by: string;
+}
+
+/**
+ * What `record_payment_correction` answers with. Three outcomes, because the
+ * two refusals need DIFFERENT errors: over-reversing is the 400
+ * `PaymentCorrectionExceedsOriginalError` (and carries the figures the LOCK
+ * saw), while "nothing here to correct" — the week vanished, the payment is
+ * not on this week, or the target is itself a correction — is the 409
+ * `PaymentNotCorrectableError`.
+ */
+export type RecordCorrectionOutcome =
+  | { outcome: 'recorded'; correction: Payment }
+  | {
+      outcome: 'exceeds_original';
+      originalAmountMinor: number;
+      remainingMinor: number;
+    }
+  | { outcome: 'not_correctable'; reason: string };
+
+/** The raw jsonb shape 085's correction function returns. */
+interface RecordCorrectionRpcPayload {
+  outcome: 'recorded' | 'exceeds_original' | 'not_correctable';
+  correction?: Payment;
+  original_amount_minor?: number;
+  remaining_minor?: number;
+  reason?: string;
+}
+
 export class PaymentRepository extends BaseRepository<Payment> {
   constructor() {
     super('payments');
@@ -132,37 +180,25 @@ export class PaymentRepository extends BaseRepository<Payment> {
   }
 
   /**
-   * What this week has been paid so far, in minor units — the left-hand side
-   * of the over-payment gate (`sum + amount <= gross_minor`).
-   *
-   * List-and-reduce rather than a PostgREST aggregate: the row count per week
-   * is tiny (a handful of partial payments at most), the reduce is exact
-   * integer arithmetic in the one place the gate reads it, and it shares
-   * `listForTimesheet`'s single filter so the sum and the list can never
-   * disagree about which rows belong to the week.
-   *
-   * Returns `0`, never null, for a week nobody has paid against: the caller
-   * adds to this figure, and a null would silently poison the comparison.
-   */
-  async sumForTimesheet(timesheetId: string): Promise<number> {
-    const payments = await this.listForTimesheet(timesheetId);
-    return payments.reduce((total, payment) => total + payment.amount_minor, 0);
-  }
-
-  /**
    * The ONLY write path into the ledger — one payment, recorded atomically
    * against the week's frozen gross (migration 077).
    *
    * IT GOES THROUGH AN RPC BECAUSE THE OVER-PAYMENT GATE BELONGS IN THE WRITE,
    * the same argument `expenseRepository.reviewPending` makes for the freeze
-   * guard. `sumForTimesheet` above plus `BaseRepository.create` is a read then
-   * a write with no lock in between: two parents recording a payment in the
-   * same instant both saw `sum = 0` and both committed, settling the week at
-   * twice its gross — and `payments` is append-only, so nothing takes the
-   * second row back. `record_timesheet_payment` locks the week's timesheet row
-   * FOR UPDATE, re-checks that it is still approved and priced, sums, refuses
-   * over-gross, and inserts, all in one statement. `sumForTimesheet` survives
-   * for the READ paths (CSV export, paid-state) — it is no longer a gate.
+   * guard. A sum here plus `BaseRepository.create` is a read then a write with
+   * no lock in between: two parents recording a payment in the same instant
+   * both saw `sum = 0` and both committed, settling the week at twice its
+   * gross — and `payments` is append-only, so nothing takes the second row
+   * back. `record_timesheet_payment` locks the week's timesheet row FOR
+   * UPDATE, re-checks that it is still approved and priced, sums, refuses
+   * over-gross, and inserts, all in one statement.
+   *
+   * THERE IS DELIBERATELY NO `sumForTimesheet` HELPER ANY MORE. It survived
+   * 077 as a read-path convenience and D-20 removed its last caller: the CSV
+   * export now takes the ROWS and derives the total from them, so the total
+   * and the rows it is printed beside cannot disagree. Re-adding a standalone
+   * sum is how the `where kind = 'payment'` trap gets typed somewhere nobody
+   * is looking — sum `listForTimesheet` at the point of use, signed.
    *
    * Only the settlement's own fields cross the wire: `household_id`,
    * `carer_id` and `currency` are stamped inside the function from the locked
@@ -212,5 +248,74 @@ export class PaymentRepository extends BaseRepository<Payment> {
       outcome: payload?.outcome ?? null,
       timesheetId,
     });
+  }
+
+  /**
+   * The ONLY write path into a correction row (D-20, migration 085).
+   *
+   * An RPC for the same reason `recordForTimesheet` is one: the invariant is a
+   * cross-row SUM — "this reversal, plus every reversal already filed against
+   * this payment, must not exceed the payment" — and reading that sum here and
+   * inserting there is a window two parents can both walk through, over an
+   * append-only table with no edit path back. 085 locks the WEEK's timesheet
+   * row FOR UPDATE (the same anchor 077 takes, so corrections serialise
+   * against concurrent payments as well as each other), loads the original
+   * pinned to that week, refuses a chain or an over-reversal, and inserts.
+   *
+   * Every read that wants paid-to-date sums `listForTimesheet` SIGNED:
+   * correction rows carry a NEGATIVE `amount_minor`, so a plain reduce already
+   * answers paid-to-date WITH corrections. Do not "fix" it by filtering on
+   * `kind` — 085's header explains what that breaks.
+   */
+  async recordCorrection(
+    timesheetId: string,
+    correctsPaymentId: string,
+    entry: RecordCorrectionEntry
+  ): Promise<RecordCorrectionOutcome> {
+    const { data, error } = await supabaseService.rpc(
+      'record_payment_correction',
+      {
+        p_timesheet_id: timesheetId,
+        p_corrects_payment_id: correctsPaymentId,
+        p_amount_minor: entry.amount_minor,
+        p_paid_at: entry.paid_at,
+        p_reason: entry.reason,
+        p_recorded_by: entry.recorded_by,
+      }
+    );
+
+    if (error) {
+      throw new DatabaseError('Failed to record correction', 'DATABASE_ERROR', {
+        details: error.message,
+        timesheetId,
+        correctsPaymentId,
+      });
+    }
+
+    const payload = data as RecordCorrectionRpcPayload | null;
+    if (payload?.outcome === 'recorded' && payload.correction) {
+      return { outcome: 'recorded', correction: payload.correction };
+    }
+    if (payload?.outcome === 'exceeds_original') {
+      return {
+        outcome: 'exceeds_original',
+        originalAmountMinor: payload.original_amount_minor ?? 0,
+        remainingMinor: payload.remaining_minor ?? 0,
+      };
+    }
+    if (payload?.outcome === 'not_correctable') {
+      return {
+        outcome: 'not_correctable',
+        reason: payload.reason ?? 'unknown',
+      };
+    }
+    // Same refusal as `recordForTimesheet`'s, for the same reason: telling the
+    // caller nothing happened when a row DID commit is the one lie an
+    // append-only ledger cannot take back.
+    throw new DatabaseError(
+      'Unrecognised correction outcome',
+      'DATABASE_ERROR',
+      { outcome: payload?.outcome ?? null, timesheetId, correctsPaymentId }
+    );
   }
 }

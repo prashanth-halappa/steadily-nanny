@@ -84,6 +84,54 @@ describe('derivePaidState', () => {
   });
 });
 
+// D-20, attention spec §4.1. Paid-to-date is the SIGNED sum across both kinds
+// — a correction is a negative row, so it is correct by construction here and
+// there is no per-site sign rule anywhere. These figures are hand-computed:
+//
+//   gross                    23_612
+//   payment 1                12_000
+//   payment 2                11_612   -> paid 23_612, balance 0, "paid"
+//   correction on payment 2 −11_612   -> paid 12_000, balance 11_612, "partial"
+//
+// 23_612 − 11_612 = 12_000 paid; 23_612 − 12_000 = 11_612 still owed.
+describe('derivePaidState — corrections', () => {
+  it('lowers paid-to-date and RAISES the balance by exactly the reversal', () => {
+    const settled = [payment(12_000), payment(11_612)];
+    expect(derivePaidState(settled, 23_612)).toEqual({
+      status: 'paid',
+      paidMinor: 23_612,
+      grossMinor: 23_612,
+      balanceMinor: 0,
+    });
+
+    expect(derivePaidState([...settled, payment(-11_612)], 23_612)).toEqual({
+      status: 'partial',
+      paidMinor: 12_000,
+      grossMinor: 23_612,
+      balanceMinor: 11_612,
+    });
+  });
+
+  it('reports the honest balance when every payment is reversed — never a clamped zero', () => {
+    // The whole week un-paid again. "Nothing paid, £236.12 still to pay" is
+    // the true sentence, and it is the one the nanny has to be able to read.
+    expect(
+      derivePaidState([payment(23_612), payment(-23_612)], 23_612)
+    ).toEqual({
+      status: 'unpaid',
+      paidMinor: 0,
+      grossMinor: 23_612,
+      balanceMinor: 23_612,
+    });
+  });
+
+  it('sums a partial reversal in minor units, never through a float', () => {
+    expect(
+      sumPaymentsMinor([payment(46_200), payment(-12_000), payment(46_200)])
+    ).toBe(80_400);
+  });
+});
+
 describe('deriveReopenedPaidState', () => {
   it('is null when the ledger is empty', () => {
     expect(deriveReopenedPaidState([])).toBeNull();
