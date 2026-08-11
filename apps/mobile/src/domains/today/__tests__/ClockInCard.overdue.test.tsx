@@ -98,7 +98,7 @@ beforeEach(() => {
 describe('ClockInCard — forgotten clock-out (#7)', () => {
   it('stops reporting and starts asking once the shift has run past its scheduled finish', async () => {
     const { getByTestId } = renderWithProviders(
-      <ClockInCard householdId={HOUSEHOLD_ID} timeZone="UTC" />
+      <ClockInCard householdId={HOUSEHOLD_ID} timeZone="UTC" weekStartsOn={1} />
     );
 
     await waitFor(() => expect(getByTestId('today-overdue-hint')).toBeTruthy());
@@ -106,7 +106,7 @@ describe('ClockInCard — forgotten clock-out (#7)', () => {
 
   it('sends the scheduled finish rather than now, so 14 idle hours are never banked', async () => {
     const { getByTestId } = renderWithProviders(
-      <ClockInCard householdId={HOUSEHOLD_ID} timeZone="UTC" />
+      <ClockInCard householdId={HOUSEHOLD_ID} timeZone="UTC" weekStartsOn={1} />
     );
 
     await waitFor(() => expect(getByTestId('today-clock-out')).toBeTruthy());
@@ -137,7 +137,7 @@ describe('ClockInCard — forgotten clock-out (#7)', () => {
   // signal belongs to actually-working) disappears.
   it('flips the card to tone="attention", and drops the live dot', async () => {
     const { getByTestId, queryByTestId } = renderWithProviders(
-      <ClockInCard householdId={HOUSEHOLD_ID} timeZone="UTC" />
+      <ClockInCard householdId={HOUSEHOLD_ID} timeZone="UTC" weekStartsOn={1} />
     );
 
     await waitFor(() => expect(getByTestId('today-overdue-hint')).toBeTruthy());
@@ -158,7 +158,7 @@ describe('ClockInCard — forgotten clock-out (#7)', () => {
   // className override) so it can't drift back.
   it('renders the overdue caption in foreground, never warningStrong (Rule B)', async () => {
     const { getByTestId } = renderWithProviders(
-      <ClockInCard householdId={HOUSEHOLD_ID} timeZone="UTC" />
+      <ClockInCard householdId={HOUSEHOLD_ID} timeZone="UTC" weekStartsOn={1} />
     );
 
     await waitFor(() => expect(getByTestId('today-overdue-hint')).toBeTruthy());

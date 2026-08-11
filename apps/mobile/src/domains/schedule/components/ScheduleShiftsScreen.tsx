@@ -56,6 +56,7 @@ import {
 import { formatDuration } from '@/src/domains/timesheet/utils/duration';
 import {
   addWeeks,
+  DEFAULT_WEEK_STARTS_ON,
   formatWeekRangeLabel,
   getWeekDates,
   getWeekStartISO,
@@ -119,9 +120,18 @@ export function ScheduleShiftsScreen({
 
   const timeZone =
     activeHousehold.household?.timezone ?? profile.data?.timezone ?? 'UTC';
+  // The HOUSEHOLD's business week, not `profile.data.week_starts_on` — that
+  // column is a per-user calendar DISPLAY preference and answers a different
+  // question (see domains/timesheet/utils/week.ts's header). It anchors both
+  // this screen's date range AND `WeekRibbonView`'s column order below: on a
+  // screen that renders a business week the household's first day wins over
+  // the per-user preference, or the ribbon's first column would be a day
+  // that isn't the start of the week being shown.
+  const weekStartsOn =
+    activeHousehold.household?.week_starts_on ?? DEFAULT_WEEK_STARTS_ON;
   const currentWeekStartISO = useMemo(
-    () => getWeekStartISO(new Date(), timeZone),
-    [timeZone]
+    () => getWeekStartISO(new Date(), timeZone, weekStartsOn),
+    [timeZone, weekStartsOn]
   );
   const weekStartISO = useMemo(
     () => addWeeks(currentWeekStartISO, weekOffset),
@@ -209,7 +219,8 @@ export function ScheduleShiftsScreen({
     }
     const targetWeekStart = getWeekStartISO(
       parseDateOnlyLocal(arrivalLocalDate),
-      timeZone
+      timeZone,
+      weekStartsOn
     );
     const offset = weeksBetween(currentWeekStartISO, targetWeekStart);
     setWeekOffset(offset);
@@ -223,6 +234,7 @@ export function ScheduleShiftsScreen({
     arrivalLocalDate,
     focusUncovered,
     timeZone,
+    weekStartsOn,
     currentWeekStartISO,
     calendarView,
     setCalendarView,
@@ -437,7 +449,7 @@ export function ScheduleShiftsScreen({
         <WeekRibbonView
           shifts={shifts}
           displayTimeZone={timeZone}
-          weekStartsOn={profile.data?.week_starts_on}
+          weekStartsOn={weekStartsOn}
           timeOff={timeOff}
           householdTimeZone={timeZone}
           weekDates={weekDates}

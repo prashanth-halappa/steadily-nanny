@@ -284,7 +284,8 @@ export class TimeEntryRepository extends BaseRepository<TimeEntry> {
    *
    * `local_date` is FROZEN at write time from the row's own `timezone`
    * column, so a week-filtered lookup cannot see an entry that started on the
-   * other side of Monday and is still running at the instant being checked —
+   * other side of the week boundary and is still running at the instant
+   * being checked —
    * nor one whose household has since changed timezone. Clock instants have
    * no such ambiguity, so the overlap question is asked of them and nothing
    * else.

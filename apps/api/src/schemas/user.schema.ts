@@ -60,8 +60,10 @@ export const UpsertProfileSchema = z.object({
   // Optional: "seeded from the device" at signup (migration 011's own
   // comment), best-effort — a client that can't detect a zone yet simply
   // omits it and the column stays null. There is no `week_starts_on` here:
-  // that field always defaults to Monday (1) at the DB level and this app is
-  // en-GB/Monday-first throughout, so there is nothing meaningful to seed.
+  // the PAYROLL week is a per-HOUSEHOLD setting (`households.week_starts_on`,
+  // §5 D-8), not a per-user one, and `user_profiles.week_starts_on` remains a
+  // display preference that defaults to Monday (1) at the DB level — so there
+  // is nothing meaningful to seed at signup, before any household exists.
   timezone: TIMEZONE_FIELD.optional(),
 });
 
@@ -72,12 +74,16 @@ export const UpdateProfileSchema = z.object({
   preferred_locale: z.string().max(16).optional(),
   // Per-user display timezone — "different households are in different time
   // zones, each user should be able to set their own." NOTE: `week_starts_on`
-  // is accepted and persisted below but is NOT currently read by any
-  // week-boundary computation in this codebase — every one of them
-  // (`domains/timesheet/utils/weekStart.ts`,
-  // `domains/schedule/services/recurrenceExpander.ts`, `utils/dateUtils.ts`)
-  // hardcodes Monday-first. Setting it today changes nothing visible; wiring
-  // it into those computations is separate, unstarted work.
+  // here is the PER-USER DISPLAY preference and is deliberately NOT read by
+  // any payroll week-boundary computation. The workweek that decides which
+  // timesheet hours land in is `households.week_starts_on` — a fixed,
+  // employer-designated 7-day week (FLSA, §5 D-8) threaded through
+  // `domains/timesheet/utils/weekStart.ts` — and one nanny working for two
+  // families must bucket her hours by each family's week, not by her own
+  // calendar taste. The two columns answer different questions; do not
+  // collapse them. (`recurrenceExpander.ts` is Monday-anchored for a third,
+  // unrelated reason: RFC 5545's `WKST=MO` default. `utils/dateUtils.ts` is
+  // ISO-week bucketing for usage quotas and has no callers here.)
   timezone: TIMEZONE_FIELD.optional(),
   week_starts_on: WEEK_STARTS_ON_FIELD.optional(),
 });

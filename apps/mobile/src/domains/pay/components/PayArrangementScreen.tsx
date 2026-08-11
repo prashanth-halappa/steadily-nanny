@@ -31,6 +31,7 @@ import { Text } from '@/src/components/ui/text';
 import { Body, H1, H4, Small } from '@/src/components/ui/typography';
 import { resolveCarerName } from '@/src/domains/schedule/utils/memberDisplayName';
 import { isParentEditorRole } from '@/src/domains/setup/types';
+import { DEFAULT_WEEK_STARTS_ON } from '@/src/domains/timesheet/utils/week';
 import { useCreatePayArrangement } from '@/src/hooks/mutations/useCreatePayArrangement';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
 import { useCurrentPayArrangement } from '@/src/hooks/queries/useCurrentPayArrangement';
@@ -106,6 +107,9 @@ function CarerPickerRow({
 interface CarerPayDetailProps {
   householdId: string;
   householdTimezone: string;
+  /** `households.week_starts_on` — the household's business week, which
+   * decides whether an effective date splits a week (`PayChangeSheet`). */
+  householdWeekStartsOn: number;
   householdCancellationDefaultHours: number;
   carerId: string;
   /** The carer's own household-membership row, when resolved — the first
@@ -124,6 +128,7 @@ interface CarerPayDetailProps {
 function CarerPayDetail({
   householdId,
   householdTimezone,
+  householdWeekStartsOn,
   householdCancellationDefaultHours,
   carerId,
   carerMember,
@@ -299,6 +304,7 @@ function CarerPayDetail({
               householdCancellationDefaultHours
             }
             householdTimezone={householdTimezone}
+            householdWeekStartsOn={householdWeekStartsOn}
             todayISO={todayISO}
           />
         </>
@@ -422,6 +428,9 @@ export function PayArrangementScreen() {
         <CarerPayDetail
           householdId={householdId}
           householdTimezone={household?.timezone ?? 'UTC'}
+          householdWeekStartsOn={
+            household?.week_starts_on ?? DEFAULT_WEEK_STARTS_ON
+          }
           householdCancellationDefaultHours={
             household?.cancellation_paid_within_hours ?? 0
           }

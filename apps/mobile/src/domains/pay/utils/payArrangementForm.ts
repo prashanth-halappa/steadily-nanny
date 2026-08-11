@@ -81,11 +81,16 @@ export function isValidCalendarDate(dateISO: string): boolean {
   );
 }
 
-/** True when `dateISO` falls on a Monday — the mid-week-consequence trigger
- * (TIER0-CX-SPEC.md §2's "Mid-week consequence line"). */
-export function isMonday(dateISO: string): boolean {
+/**
+ * True when `dateISO` is the first day of the HOUSEHOLD's week
+ * (`households.week_starts_on`, 0=Sunday..6=Saturday) — the inverse of the
+ * mid-week-consequence trigger (TIER0-CX-SPEC.md §2's "Mid-week consequence
+ * line"). Not a Monday literal: for a Sunday-start household a Monday
+ * change splits the week and a Sunday one doesn't, exactly inverted.
+ */
+export function isWeekStartDay(dateISO: string, weekStartsOn: number): boolean {
   if (!isValidCalendarDate(dateISO)) return false;
-  return toLocalDate(dateISO).getDay() === 1;
+  return toLocalDate(dateISO).getDay() === weekStartsOn;
 }
 
 /** "3 September" style, no year — for the mid-week consequence line and the
@@ -266,22 +271,23 @@ export interface MidWeekConsequence {
 }
 
 /**
- * `null` when the effective date IS a Monday (no split — the ordinary case),
- * isn't a valid date yet, or the rate+currency are unchanged from the
- * previous arrangement (pre-fill is not a split). TIER0-CX-SPEC.md §2:
- * "Whenever the chosen date is not a Monday" — never averaged, always the
- * two full figures. Rate-specific copy only; other mid-week term changes
- * stay silent here by design.
+ * `null` when the effective date IS the household's week start (no split —
+ * the ordinary case), isn't a valid date yet, or the rate+currency are
+ * unchanged from the previous arrangement (pre-fill is not a split).
+ * TIER0-CX-SPEC.md §2's "whenever the chosen date is not the first day of
+ * the week" — never averaged, always the two full figures. Rate-specific
+ * copy only; other mid-week term changes stay silent here by design.
  */
 export function buildMidWeekConsequence(
   effectiveDateISO: string,
+  weekStartsOn: number,
   previousRateMinor: number,
   previousCurrency: string,
   newRateMinor: number,
   newCurrency: string
 ): MidWeekConsequence | null {
   if (!isValidCalendarDate(effectiveDateISO)) return null;
-  if (isMonday(effectiveDateISO)) return null;
+  if (isWeekStartDay(effectiveDateISO, weekStartsOn)) return null;
   if (previousRateMinor === newRateMinor && previousCurrency === newCurrency) {
     return null;
   }

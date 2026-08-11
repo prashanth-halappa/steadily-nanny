@@ -82,6 +82,10 @@ interface ClockInCardProps {
    * see domains/timesheet/utils/week.ts's header). Drives every clock time
    * this card and its `ClockOutSheet` render. */
   timeZone: string;
+  /** Household `week_starts_on` (0=Sunday..6=Saturday) — the week this
+   * card's totals belong to is the household's business week, not a
+   * hardcoded Monday. */
+  weekStartsOn: number;
   /** Shown on the Live Activity's lock-screen banner only — a nanny with
    * several households must never have to guess which one she is on the
    * clock for. Optional so existing call sites keep working. */
@@ -177,6 +181,7 @@ type OffClockShiftState =
 export function ClockInCard({
   householdId,
   timeZone,
+  weekStartsOn,
   householdName,
 }: ClockInCardProps) {
   const { t } = useTranslation('today');
@@ -238,8 +243,8 @@ export function ClockInCard({
   );
 
   const weekStart = useMemo(
-    () => getWeekStartISO(new Date(), timeZone),
-    [timeZone]
+    () => getWeekStartISO(new Date(), timeZone, weekStartsOn),
+    [timeZone, weekStartsOn]
   );
   const weekEntries = useWeekTimeEntries(householdId, weekStart);
 

@@ -89,7 +89,11 @@ const timesheet = {
   updated_at: 't',
 };
 
-const household = { id: 'h1', timezone: 'Europe/London' };
+// `week_starts_on` is spelled out rather than left off: omitting it would
+// send every test in this file down the `?? DEFAULT_WEEK_STARTS_ON` fallback
+// instead of the real read, so the threading would be untested everywhere and
+// green anyway. 1 = Monday, matching migration 075's column default.
+const household = { id: 'h1', timezone: 'Europe/London', week_starts_on: 1 };
 
 function makeTimeEntryRepo(overrides: Record<string, unknown> = {}): any {
   const repo: any = {
@@ -6933,5 +6937,273 @@ describe('TimesheetCommandService.approve — the parent adjustment', () => {
       Record<string, unknown>,
     ];
     expect(payload.body).toBe('A parent approved your hours this week.');
+  });
+});
+
+// =============================================================================
+// Per-household workweek start (§5 D-8, migration 075)
+// =============================================================================
+//
+// `households.week_starts_on` is an employer-designated FIXED recurring 7-day
+// workweek (FLSA), chosen at setup and immutable once a timesheet exists. The
+// US default is Sunday. Everything below is the SAME household, the SAME
+// zone, and the SAME hours as the Monday-start tests above — only
+// `week_starts_on` differs, so any assertion that changes is changing because
+// of the workweek and nothing else.
+//
+// Unlike `timezone`, this is NOT anchored to the entry's own frozen column:
+// there is no per-row copy, and there does not need to be. The value cannot
+// move once a timesheet exists, so the household's current value is the same
+// value every existing row was bucketed under — the drift F-B1-4 guards
+// against for `timezone` is structurally impossible here.
+const sundayStartHousehold = {
+  id: 'h1',
+  timezone: 'Europe/London',
+  week_starts_on: 0,
+};
+
+describe('workweek start: the clock-out roll-up buckets by the HOUSEHOLD week (§5 D-8)', () => {
+  it('files a Monday clock-out into the preceding SUNDAY for a Sunday-start household', async () => {
+    // Identical to the Monday-start roll-up test above in every respect
+    // except `week_starts_on`. 2026-08-03 is a Monday; a Sunday-start
+    // household's week began 2026-08-02, so pricing these hours into
+    // '2026-08-03' would open a second, phantom week and split the week's
+    // overtime across two timesheets.
+    const timeEntryRepo = makeTimeEntryRepo({
+      listForCarerWeek: mock(async () => [finishedEntryA]),
+    });
+    const timesheetRepo = makeTimesheetRepo();
+    const svc = new TimesheetCommandService(
+      timeEntryRepo,
+      timesheetRepo,
+      makeMemberRepo(),
+      makeHouseholdRepo({ findById: mock(async () => sundayStartHousehold) }),
+      makeShiftRepo(),
+      makeQueries(),
+      makeUserService()
+    );
+
+    await svc.clockOut('carer-1', 't1', {
+      break_minutes: 30,
+      clock_out_at: '2026-08-03T16:00:00.000Z',
+    });
+
+    expect(timesheetRepo.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        household_id: 'h1',
+        carer_id: 'carer-1',
+        week_start: '2026-08-02', // Sunday, NOT the Monday 2026-08-03
+        total_minutes: 450,
+        status: 'submitted',
+      })
+    );
+  });
+
+  it('reads the week`s entries over the household`s OWN seven days, not a Monday..Sunday span', async () => {
+    // The roll-up derives `total_minutes` from `listForCarerWeek`, so the
+    // bucket and the range it sums must come from one source. A Sunday-start
+    // household must be asked for [Sun 02, Sun 09), not [Mon 03, Mon 10) —
+    // otherwise the Sunday's hours are summed into no week at all.
+    const timeEntryRepo = makeTimeEntryRepo({
+      listForCarerWeek: mock(async () => [finishedEntryA]),
+    });
+    const svc = new TimesheetCommandService(
+      timeEntryRepo,
+      makeTimesheetRepo(),
+      makeMemberRepo(),
+      makeHouseholdRepo({ findById: mock(async () => sundayStartHousehold) }),
+      makeShiftRepo(),
+      makeQueries(),
+      makeUserService()
+    );
+
+    await svc.clockOut('carer-1', 't1', {
+      break_minutes: 30,
+      clock_out_at: '2026-08-03T16:00:00.000Z',
+    });
+
+    expect(timeEntryRepo.listForCarerWeek).toHaveBeenCalledWith(
+      'h1',
+      'carer-1',
+      '2026-08-02',
+      '2026-08-09'
+    );
+  });
+
+  it('still files a Monday clock-out into that Monday for a Monday-start household', async () => {
+    // The mirror image, so a regression that hardcodes SUNDAY instead of
+    // Monday cannot pass this suite either.
+    const timeEntryRepo = makeTimeEntryRepo({
+      listForCarerWeek: mock(async () => [finishedEntryA]),
+    });
+    const timesheetRepo = makeTimesheetRepo();
+    const svc = new TimesheetCommandService(
+      timeEntryRepo,
+      timesheetRepo,
+      makeMemberRepo(),
+      makeHouseholdRepo({
+        findById: mock(async () => ({ ...household, week_starts_on: 1 })),
+      }),
+      makeShiftRepo(),
+      makeQueries(),
+      makeUserService()
+    );
+
+    await svc.clockOut('carer-1', 't1', {
+      break_minutes: 30,
+      clock_out_at: '2026-08-03T16:00:00.000Z',
+    });
+
+    expect(timesheetRepo.create).toHaveBeenCalledWith(
+      expect.objectContaining({ week_start: '2026-08-03' })
+    );
+  });
+});
+
+describe('workweek start: the overnight session splitter turns over on the household`s own night', () => {
+  // A session that runs across the week turnover is TWO weeks' work and
+  // becomes two rows (C6). WHICH night that is, is `week_starts_on`: a
+  // Sunday-start household turns over on Saturday night, a Monday-start one
+  // on Sunday night. Get it wrong and a whole night shift is priced into the
+  // wrong week — against the wrong overtime threshold, at the wrong week's
+  // rate.
+  const saturdayNightEntry = {
+    ...runningEntry,
+    clock_in_at: '2026-08-08T21:00:00.000Z', // Sat 22:00 BST
+    local_date: '2026-08-08',
+  };
+
+  /**
+   * Models 017's `local_date` TRIGGER: the column is derived from
+   * `clock_in_at` in the row's own zone, never sent by the client. The
+   * roll-up buckets off `local_date`, so a mock that let a fragment keep the
+   * fixture's stale date would test nothing about which week each half lands
+   * in — the very thing these two tests exist to check.
+   */
+  function withDerivedLocalDate(data: Record<string, unknown>) {
+    const clockInAt = String(data.clock_in_at ?? runningEntry.clock_in_at);
+    return {
+      ...runningEntry,
+      ...data,
+      local_date: localDateOf(new Date(clockInAt), 'Europe/London'),
+    };
+  }
+
+  function makeSplitAwareRepo() {
+    return makeTimeEntryRepo({
+      listForCarerWeek: mock(async () => []),
+      createSubmitted: mock(async (data: Record<string, unknown>) =>
+        withDerivedLocalDate(data)
+      ),
+      update: mock(async (_id: string, patch: Record<string, unknown>) =>
+        withDerivedLocalDate({
+          ...saturdayNightEntry,
+          ...patch,
+        })
+      ),
+    });
+  }
+
+  it('SPLITS a Saturday-night session for a Sunday-start household', async () => {
+    const timeEntryRepo = makeSplitAwareRepo();
+    const timesheetRepo = makeTimesheetRepo();
+    const svc = new TimesheetCommandService(
+      timeEntryRepo,
+      timesheetRepo,
+      makeMemberRepo(),
+      makeHouseholdRepo({ findById: mock(async () => sundayStartHousehold) }),
+      makeShiftRepo(),
+      makeQueries({ getOwnedTimeEntry: mock(async () => saturdayNightEntry) }),
+      makeUserService()
+    );
+
+    await svc.clockOut('carer-1', 't1', {
+      clock_out_at: '2026-08-09T05:00:00.000Z', // Sun 06:00 BST
+    });
+
+    // Two weeks touched: the outgoing week (starting Sun 2026-08-02) and the
+    // incoming one (starting Sun 2026-08-09).
+    const weeks = timesheetRepo.create.mock.calls.map(
+      (call: unknown[]) => (call[0] as { week_start: string }).week_start
+    );
+    expect(new Set(weeks)).toEqual(new Set(['2026-08-02', '2026-08-09']));
+  });
+
+  it('does NOT split the same Saturday-night session for a Monday-start household', async () => {
+    // Sat 22:00 -> Sun 06:00 is entirely inside a Monday-start week, so this
+    // is ONE row. Splitting it would invent a week boundary that household
+    // never agreed to.
+    const timeEntryRepo = makeSplitAwareRepo();
+    const timesheetRepo = makeTimesheetRepo();
+    const svc = new TimesheetCommandService(
+      timeEntryRepo,
+      timesheetRepo,
+      makeMemberRepo(),
+      makeHouseholdRepo({
+        findById: mock(async () => ({ ...household, week_starts_on: 1 })),
+      }),
+      makeShiftRepo(),
+      makeQueries({ getOwnedTimeEntry: mock(async () => saturdayNightEntry) }),
+      makeUserService()
+    );
+
+    await svc.clockOut('carer-1', 't1', {
+      clock_out_at: '2026-08-09T05:00:00.000Z',
+    });
+
+    const weeks = timesheetRepo.create.mock.calls.map(
+      (call: unknown[]) => (call[0] as { week_start: string }).week_start
+    );
+    expect(new Set(weeks)).toEqual(new Set(['2026-08-03']));
+  });
+});
+
+describe('workweek start: the retroactive-entry week-crossing guard', () => {
+  it('REFUSES a Saturday-night window that crosses a Sunday-start household`s turnover', async () => {
+    const svc = new TimesheetCommandService(
+      makeTimeEntryRepo(),
+      makeTimesheetRepo(),
+      makeMemberRepo(),
+      makeHouseholdRepo({ findById: mock(async () => sundayStartHousehold) }),
+      makeShiftRepo(),
+      makeQueries(),
+      makeUserService()
+    );
+
+    await expect(
+      svc.createRetroactiveEntry('carer-1', {
+        household_id: 'h1',
+        clock_in_at: '2026-08-08T21:00:00.000Z', // Sat
+        clock_out_at: '2026-08-09T05:00:00.000Z', // Sun — a new week here
+      })
+    ).rejects.toBeInstanceOf(InvalidClockTimesError);
+  });
+
+  it('ACCEPTS the same window for a Monday-start household, where it crosses nothing', async () => {
+    const timeEntryRepo = makeTimeEntryRepo({
+      createSubmitted: mock(async (data: Record<string, unknown>) => ({
+        ...runningEntry,
+        ...data,
+      })),
+    });
+    const svc = new TimesheetCommandService(
+      timeEntryRepo,
+      makeTimesheetRepo(),
+      makeMemberRepo(),
+      makeHouseholdRepo({
+        findById: mock(async () => ({ ...household, week_starts_on: 1 })),
+      }),
+      makeShiftRepo(),
+      makeQueries(),
+      makeUserService()
+    );
+
+    await svc.createRetroactiveEntry('carer-1', {
+      household_id: 'h1',
+      clock_in_at: '2026-08-08T21:00:00.000Z',
+      clock_out_at: '2026-08-09T05:00:00.000Z',
+    });
+
+    expect(timeEntryRepo.createSubmitted).toHaveBeenCalled();
   });
 });

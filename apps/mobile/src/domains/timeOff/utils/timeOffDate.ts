@@ -19,7 +19,7 @@
  * selected start date; `ends_at` is local midnight of the day AFTER the
  * selected end date — an EXCLUSIVE end, same convention as
  * `weekEndExclusive` on the API side (`apps/api/src/domains/timesheet/utils/weekStart.ts`)
- * and `getWeekDates`'s Monday..Sunday span on the mobile side. A single-day
+ * and `getWeekDates`'s seven-day span on the mobile side. A single-day
  * request (start === end) therefore still produces `ends_at > starts_at`,
  * satisfying `CreateCarerTimeOffSchema`'s refinement by construction.
  */

@@ -73,6 +73,11 @@ interface PayChangeSheetProps {
   /** IANA timezone — recomputes "today" at submit time so a sheet left open
    * across midnight never submits a stale date (review finding 11). */
   householdTimezone: string;
+  /** Household `week_starts_on` (0=Sunday..6=Saturday). Decides which
+   * effective dates split a week, and so whether the mid-week consequence
+   * line shows — a Monday literal would warn a Sunday-start household on
+   * exactly the wrong day. */
+  householdWeekStartsOn: number;
 }
 
 function EffectiveDateChip({
@@ -109,6 +114,7 @@ export function PayChangeSheet({
   householdCancellationDefaultHours,
   todayISO,
   householdTimezone,
+  householdWeekStartsOn,
 }: PayChangeSheetProps) {
   const { t } = useTranslation('pay');
 
@@ -196,6 +202,7 @@ export function PayChangeSheet({
     typedRateMinor !== null
       ? buildMidWeekConsequence(
           effectiveDateISO,
+          householdWeekStartsOn,
           currentArrangement.rate_minor,
           currentArrangement.currency,
           typedRateMinor,
@@ -204,7 +211,8 @@ export function PayChangeSheet({
           // (payArrangementForm.ts) but both args used to be
           // `currentArrangement.currency`, so the currency half could never
           // fire. This one argument IS the mid-week currency-change warning:
-          // a flip on a non-Monday splits the week, and the API answers such a
+          // a flip on any day but the household's own week start splits the
+          // week, and the API answers such a
           // week with the `currency_change` earnings arm rather than a total
           // (earningsService.ts) — better to say so before it's submitted.
           currency

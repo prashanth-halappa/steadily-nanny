@@ -209,7 +209,11 @@ function renderCard(clockInAt = JUST_NOW) {
     Promise.resolve(runningEntry(clockInAt))
   );
   return renderWithProviders(
-    <ClockInCard householdId={HOUSEHOLD_ID} timeZone={TIME_ZONE} />
+    <ClockInCard
+      householdId={HOUSEHOLD_ID}
+      timeZone={TIME_ZONE}
+      weekStartsOn={1}
+    />
   );
 }
 
@@ -217,7 +221,11 @@ describe('ClockInCard — discard a clock-in (069)', () => {
   it('offers the discard only while on the clock', async () => {
     getRunningMock.mockImplementation(() => Promise.resolve(null));
     const { queryByTestId, getByTestId } = renderWithProviders(
-      <ClockInCard householdId={HOUSEHOLD_ID} timeZone={TIME_ZONE} />
+      <ClockInCard
+        householdId={HOUSEHOLD_ID}
+        timeZone={TIME_ZONE}
+        weekStartsOn={1}
+      />
     );
 
     await waitFor(() => expect(getByTestId('today-clock-in')).toBeTruthy());

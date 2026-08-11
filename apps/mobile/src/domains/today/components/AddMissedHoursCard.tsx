@@ -83,11 +83,16 @@ interface AddMissedHoursCardProps {
   householdId: string;
   /** Household IANA zone — never the device's (GOLDEN-FIXES #21 bug class). */
   timeZone: string;
+  /** Household `week_starts_on` (0=Sunday..6=Saturday) — which days count as
+   * "this week" for a missed-hours prompt is the household's business week,
+   * not a hardcoded Monday. */
+  weekStartsOn: number;
 }
 
 export function AddMissedHoursCard({
   householdId,
   timeZone,
+  weekStartsOn,
 }: AddMissedHoursCardProps) {
   const { t } = useTranslation('today');
   const { t: tErrors } = useTranslation('errors');
@@ -95,8 +100,8 @@ export function AddMissedHoursCard({
   const createRetroactiveEntry = useCreateRetroactiveEntry();
   const currentUserId = useAuthStore(s => s.user?.id ?? null);
   const weekStart = useMemo(
-    () => getWeekStartISO(new Date(), timeZone),
-    [timeZone]
+    () => getWeekStartISO(new Date(), timeZone, weekStartsOn),
+    [timeZone, weekStartsOn]
   );
   const weekDates = useMemo(() => getWeekDates(weekStart), [weekStart]);
   const weekEndExclusive = useMemo(

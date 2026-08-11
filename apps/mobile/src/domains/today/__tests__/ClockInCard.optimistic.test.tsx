@@ -64,7 +64,7 @@ beforeEach(() => {
 describe('ClockInCard — A1 unconfirmed optimistic clock-in', () => {
   it('does not dispatch clock-out while the optimistic running entry is unconfirmed', async () => {
     const { getByTestId, queryByTestId } = renderWithProviders(
-      <ClockInCard householdId={HOUSEHOLD_ID} timeZone="UTC" />
+      <ClockInCard householdId={HOUSEHOLD_ID} timeZone="UTC" weekStartsOn={1} />
     );
 
     await waitFor(() => expect(getByTestId('today-clock-in')).toBeTruthy());
@@ -89,7 +89,11 @@ describe('ClockInCard — A1 unconfirmed optimistic clock-in', () => {
   // day too, not the travelling carer's device day.
   it('files the unconfirmed row under the household zone the card renders in', async () => {
     const { getByTestId, queryClient } = renderWithProviders(
-      <ClockInCard householdId={HOUSEHOLD_ID} timeZone="Pacific/Auckland" />
+      <ClockInCard
+        householdId={HOUSEHOLD_ID}
+        timeZone="Pacific/Auckland"
+        weekStartsOn={1}
+      />
     );
 
     await waitFor(() => expect(getByTestId('today-clock-in')).toBeTruthy());

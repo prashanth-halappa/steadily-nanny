@@ -107,7 +107,11 @@ beforeEach(() => {
 describe('AddMissedHoursCard', () => {
   it('renders the CTA and keeps the sheet hidden until pressed', () => {
     const { getByTestId, queryByTestId } = render(
-      <AddMissedHoursCard householdId={HOUSEHOLD_ID} timeZone={TIME_ZONE} />
+      <AddMissedHoursCard
+        householdId={HOUSEHOLD_ID}
+        timeZone={TIME_ZONE}
+        weekStartsOn={1}
+      />
     );
 
     expect(getByTestId('today-missed-hours-cta')).toBeTruthy();
@@ -116,7 +120,11 @@ describe('AddMissedHoursCard', () => {
 
   it('opens the sheet with a TimeRangePicker and a note field on press', () => {
     const { getByTestId } = render(
-      <AddMissedHoursCard householdId={HOUSEHOLD_ID} timeZone={TIME_ZONE} />
+      <AddMissedHoursCard
+        householdId={HOUSEHOLD_ID}
+        timeZone={TIME_ZONE}
+        weekStartsOn={1}
+      />
     );
 
     fireEvent.press(getByTestId('today-missed-hours-cta'));
@@ -128,7 +136,11 @@ describe('AddMissedHoursCard', () => {
 
   it('submits household_id + resolved clock_in_at/clock_out_at + trimmed note', async () => {
     const { getByTestId } = render(
-      <AddMissedHoursCard householdId={HOUSEHOLD_ID} timeZone={TIME_ZONE} />
+      <AddMissedHoursCard
+        householdId={HOUSEHOLD_ID}
+        timeZone={TIME_ZONE}
+        weekStartsOn={1}
+      />
     );
 
     fireEvent.press(getByTestId('today-missed-hours-cta'));
@@ -148,7 +160,11 @@ describe('AddMissedHoursCard', () => {
 
   it('omits note when left blank', async () => {
     const { getByTestId } = render(
-      <AddMissedHoursCard householdId={HOUSEHOLD_ID} timeZone={TIME_ZONE} />
+      <AddMissedHoursCard
+        householdId={HOUSEHOLD_ID}
+        timeZone={TIME_ZONE}
+        weekStartsOn={1}
+      />
     );
 
     fireEvent.press(getByTestId('today-missed-hours-cta'));
@@ -161,7 +177,11 @@ describe('AddMissedHoursCard', () => {
 
   it('closes the sheet after a successful submit', async () => {
     const { getByTestId, queryByTestId } = render(
-      <AddMissedHoursCard householdId={HOUSEHOLD_ID} timeZone={TIME_ZONE} />
+      <AddMissedHoursCard
+        householdId={HOUSEHOLD_ID}
+        timeZone={TIME_ZONE}
+        weekStartsOn={1}
+      />
     );
 
     fireEvent.press(getByTestId('today-missed-hours-cta'));
@@ -175,7 +195,11 @@ describe('AddMissedHoursCard', () => {
   it('keeps the sheet open (note preserved) when the mutation fails', async () => {
     mockMutateAsync = mock(() => Promise.reject(new Error('overlap')));
     const { getByTestId } = render(
-      <AddMissedHoursCard householdId={HOUSEHOLD_ID} timeZone={TIME_ZONE} />
+      <AddMissedHoursCard
+        householdId={HOUSEHOLD_ID}
+        timeZone={TIME_ZONE}
+        weekStartsOn={1}
+      />
     );
 
     fireEvent.press(getByTestId('today-missed-hours-cta'));
@@ -191,7 +215,11 @@ describe('AddMissedHoursCard', () => {
 
   it('disables submit when the time range is invalid', () => {
     const { getByTestId } = render(
-      <AddMissedHoursCard householdId={HOUSEHOLD_ID} timeZone={TIME_ZONE} />
+      <AddMissedHoursCard
+        householdId={HOUSEHOLD_ID}
+        timeZone={TIME_ZONE}
+        weekStartsOn={1}
+      />
     );
 
     fireEvent.press(getByTestId('today-missed-hours-cta'));
@@ -213,7 +241,11 @@ describe('AddMissedHoursCard', () => {
   // now a single ghost text link that opens the SAME unchanged sheet.
   it('has no card surface — the trigger is a bare ghost link, not a Card', () => {
     const { getByTestId, queryByTestId } = render(
-      <AddMissedHoursCard householdId={HOUSEHOLD_ID} timeZone={TIME_ZONE} />
+      <AddMissedHoursCard
+        householdId={HOUSEHOLD_ID}
+        timeZone={TIME_ZONE}
+        weekStartsOn={1}
+      />
     );
 
     expect(queryByTestId('today-missed-hours-card')).toBeNull();
@@ -228,7 +260,11 @@ describe('AddMissedHoursCard', () => {
   // the two cards.
   it('left-aligns the link, sizes it Small, and sits tight under the card above it', () => {
     const { getByTestId, getByText } = render(
-      <AddMissedHoursCard householdId={HOUSEHOLD_ID} timeZone={TIME_ZONE} />
+      <AddMissedHoursCard
+        householdId={HOUSEHOLD_ID}
+        timeZone={TIME_ZONE}
+        weekStartsOn={1}
+      />
     );
 
     const cta = getByTestId('today-missed-hours-cta');

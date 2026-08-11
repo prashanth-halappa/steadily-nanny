@@ -99,7 +99,7 @@ describe('ClockInCard — D7 double-tap', () => {
     );
 
     const { getByTestId, queryByTestId } = renderWithProviders(
-      <ClockInCard householdId={HOUSEHOLD_ID} timeZone="UTC" />
+      <ClockInCard householdId={HOUSEHOLD_ID} timeZone="UTC" weekStartsOn={1} />
     );
 
     await waitFor(() => expect(getByTestId('today-clock-in')).toBeTruthy());
@@ -124,7 +124,11 @@ describe('ClockInCard — D7 double-tap', () => {
 
     try {
       const { getByTestId } = renderWithProviders(
-        <ClockInCard householdId={HOUSEHOLD_ID} timeZone="UTC" />
+        <ClockInCard
+          householdId={HOUSEHOLD_ID}
+          timeZone="UTC"
+          weekStartsOn={1}
+        />
       );
       await waitFor(() => expect(getByTestId('today-clock-in')).toBeTruthy());
 
@@ -148,7 +152,7 @@ describe('ClockInCard — D7 double-tap', () => {
     clockInMock.mockImplementation(() => new Promise(() => {}));
 
     const { getByTestId } = renderWithProviders(
-      <ClockInCard householdId={HOUSEHOLD_ID} timeZone="UTC" />
+      <ClockInCard householdId={HOUSEHOLD_ID} timeZone="UTC" weekStartsOn={1} />
     );
     await waitFor(() => expect(getByTestId('today-clock-in')).toBeTruthy());
 

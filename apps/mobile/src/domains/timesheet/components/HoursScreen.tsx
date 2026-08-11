@@ -16,8 +16,8 @@
  * role views receive the same offset state so neither role regresses.
  *
  * Deep links (`hoursHref` for timesheet_submitted / timesheet_queried) pass
- * `weekStart` via search params. That absolute Monday is converted to the
- * matching offset from the household's current week so a push about a week
+ * `weekStart` via search params. That absolute week start is converted to
+ * the matching offset from the household's current week so a push about a week
  * three weeks back opens THAT week, not weekOffset=0. Schedule-route params
  * are not read here.
  *
@@ -58,6 +58,7 @@ import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 import {
   addWeeks,
+  DEFAULT_WEEK_STARTS_ON,
   formatWeekRangeLabel,
   getWeekDates,
   getWeekStartISO,
@@ -95,7 +96,7 @@ function clampWeekOffset(offset: number): number {
 }
 
 /**
- * Absolute Monday from a push → weekOffset relative to the household's
+ * Absolute week start from a push → weekOffset relative to the household's
  * current week. Invalid / missing / future dates fall back to 0.
  */
 function weekOffsetFromSearchParam(
@@ -124,11 +125,13 @@ export function HoursScreen() {
   // a nanny in multiple households may differ from `onboarding.householdId`.
   const activeHousehold = useActiveHousehold();
   const household = activeHousehold.household;
-  // The week boundary is a HOUSEHOLD-timezone question, never the device's
-  // — see utils/week.ts's header comment. Falls back to UTC only for the
-  // brief window before the household has loaded (the loading branch below
-  // returns before this value is ever shown).
+  // The week boundary is a HOUSEHOLD question on both axes — its timezone
+  // AND its `week_starts_on` — never the device's zone and never a
+  // hardcoded Monday (see utils/week.ts's header comment). Both fall back
+  // only for the brief window before the household has loaded (the loading
+  // branch below returns before either value is ever shown).
   const timezone = household?.timezone ?? 'UTC';
+  const weekStartsOn = household?.week_starts_on ?? DEFAULT_WEEK_STARTS_ON;
 
   // Only `weekStart` is consumed from the hours deep link. `householdId` /
   // `timesheetId` may be on the URL (from `hoursHref`) but household comes
@@ -151,10 +154,10 @@ export function HoursScreen() {
   // "so far today" figure that isn't the headline feature here.
   const nowMs = useMemo(() => Date.now(), []);
   const currentWeekStartISO = useMemo(
-    () => getWeekStartISO(new Date(), timezone),
-    [timezone]
+    () => getWeekStartISO(new Date(), timezone, weekStartsOn),
+    [timezone, weekStartsOn]
   );
-  // Deep-link absolute Monday → offset. Absent / invalid → 0 (current week).
+  // Deep-link absolute week start → offset. Absent/invalid → 0 (current week).
   // Used for the first paint before the consume effect copies into local
   // state, and as the baseline for prev/next until the user pages.
   const routeWeekOffset = useMemo(
@@ -285,7 +288,7 @@ export function HoursScreen() {
           the scrollable content below instead of a fixed opaque header row
           above it (screens-hours.md §2). */}
       <ScreenWash kind="brand" />
-      {/* Absolute Monday currently shown — Maestro deep-link regression (weekStart one-shot). */}
+      {/* Absolute week start currently shown — Maestro deep-link regression (weekStart one-shot). */}
       <View
         testID={`hours-active-week-${weekStartISO}`}
         collapsable={false}

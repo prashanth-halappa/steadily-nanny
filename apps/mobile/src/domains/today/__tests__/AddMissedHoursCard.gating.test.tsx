@@ -134,7 +134,11 @@ beforeEach(() => {
 describe('AddMissedHoursCard gating', () => {
   it('renders the CTA when a covering shift day has no time entry', () => {
     const { getByTestId } = render(
-      <AddMissedHoursCard householdId={HOUSEHOLD_ID} timeZone={TIME_ZONE} />
+      <AddMissedHoursCard
+        householdId={HOUSEHOLD_ID}
+        timeZone={TIME_ZONE}
+        weekStartsOn={1}
+      />
     );
     expect(getByTestId('today-missed-hours-cta')).toBeTruthy();
   });
@@ -146,7 +150,11 @@ describe('AddMissedHoursCard gating', () => {
       isPending: false,
     }));
     const { queryByTestId } = render(
-      <AddMissedHoursCard householdId={HOUSEHOLD_ID} timeZone={TIME_ZONE} />
+      <AddMissedHoursCard
+        householdId={HOUSEHOLD_ID}
+        timeZone={TIME_ZONE}
+        weekStartsOn={1}
+      />
     );
     expect(queryByTestId('today-missed-hours-cta')).toBeNull();
   });
@@ -162,7 +170,11 @@ describe('AddMissedHoursCard gating', () => {
       isPending: false,
     }));
     const { queryByTestId } = render(
-      <AddMissedHoursCard householdId={HOUSEHOLD_ID} timeZone={TIME_ZONE} />
+      <AddMissedHoursCard
+        householdId={HOUSEHOLD_ID}
+        timeZone={TIME_ZONE}
+        weekStartsOn={1}
+      />
     );
     expect(queryByTestId('today-missed-hours-cta')).toBeNull();
   });
@@ -174,7 +186,11 @@ describe('AddMissedHoursCard gating', () => {
       isPending: true,
     }));
     const { queryByTestId } = render(
-      <AddMissedHoursCard householdId={HOUSEHOLD_ID} timeZone={TIME_ZONE} />
+      <AddMissedHoursCard
+        householdId={HOUSEHOLD_ID}
+        timeZone={TIME_ZONE}
+        weekStartsOn={1}
+      />
     );
     expect(queryByTestId('today-missed-hours-cta')).toBeNull();
   });

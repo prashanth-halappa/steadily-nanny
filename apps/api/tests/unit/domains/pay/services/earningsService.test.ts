@@ -1183,6 +1183,245 @@ describe('earningsService.computeWeekEarnings', () => {
       expect(WeekEarningsSchema.safeParse(result).success).toBe(true);
     });
   });
+
+  // ===========================================================================
+  // Sunday-start weeks (§5 D-8, `households.week_starts_on`, migration 075)
+  // ===========================================================================
+  //
+  // The engine takes `week_start` as an INPUT and derives its span as
+  // `[week_start, week_start + 6]` — so it is already week-start agnostic and
+  // 3-E1 changed no engine code. That is a claim, and an untested claim about
+  // the thing that computes people's pay is worth nothing, so these cases
+  // prove it: a Sun..Sat week accumulates weekly overtime exactly as a
+  // Mon..Sun week does, the LAST-DAY-governs rule lands on the Saturday, and
+  // the reimbursement window moves with the week.
+  //
+  // FLSA overtime is a property of the designated 7-day workweek, so the same
+  // seven shifts genuinely CAN be owed different money in a Sunday-start and a
+  // Monday-start household. That is the law, not a rounding artifact — the
+  // last case below hand-computes both answers.
+  describe('Sunday-start workweek (§5 D-8)', () => {
+    const SUN_WEEK_START = '2026-08-02'; // Sunday
+    const SUN_1 = '2026-08-02';
+    const SAT_END = '2026-08-08'; // the week's LAST day, week_start + 6
+
+    /** The same arrangement, valid early enough to price a Sunday-start week. */
+    function sundayArrangement(over: Partial<PayArrangement> = {}) {
+      return arrangement({ valid_from: '2026-01-01', ...over });
+    }
+
+    it('accumulates weekly overtime across a Sun..Sat week exactly as it does Mon..Sun', () => {
+      // 50h worked: 8h on each of Sun..Fri (48h) plus 2h on the Saturday.
+      // Threshold 40h, so 40 regular + 10 overtime — the arithmetic is
+      // identical to the Mon-start 50h case, which is the point.
+      const result = ok(
+        computeWeekEarnings({
+          week_start: SUN_WEEK_START,
+          arrangements: [sundayArrangement()],
+          entries: [
+            worked(SUN_1, 480), // Sun 02
+            worked('2026-08-03', 480), // Mon 03
+            worked('2026-08-04', 480), // Tue 04
+            worked('2026-08-05', 480), // Wed 05
+            worked('2026-08-06', 480), // Thu 06
+            worked('2026-08-07', 480), // Fri 07
+            worked(SAT_END, 120), // Sat 08
+          ],
+        })
+      );
+
+      expect(result.lines.map(l => [l.kind, l.minutes])).toEqual([
+        ['regular', 2400],
+        ['overtime', 600],
+      ]);
+      // 2400 x 1850/60 = 74000; 600 x 2775/60 = 27750.
+      expect(result.gross_minor).toBe(74_000 + 27_750);
+      expect(WeekEarningsSchema.safeParse(result).success).toBe(true);
+    });
+
+    it('treats the SATURDAY as inside the week: work there is the last worked day and its terms govern', () => {
+      // The "terms in force on the last worked day govern" rule has to be
+      // able to reach the Saturday at all — it is the seventh day of a
+      // Sunday-start week. 42h worked, with the last two hours on Sat 08
+      // under new 30h/2x terms.
+      const result = ok(
+        computeWeekEarnings({
+          week_start: SUN_WEEK_START,
+          arrangements: [
+            sundayArrangement(),
+            sundayArrangement({
+              id: ARR_ID_C,
+              overtime_threshold_minutes: 1800, // 30h
+              overtime_multiplier: 2,
+              valid_from: SAT_END,
+              created_at: '2026-08-01T09:00:00.000Z',
+            }),
+          ],
+          entries: [
+            worked(SUN_1, 480),
+            worked('2026-08-03', 480),
+            worked('2026-08-04', 480),
+            worked('2026-08-05', 480),
+            worked('2026-08-06', 480), // 40h by here
+            worked(SAT_END, 120), // 42h, and the last worked day
+          ],
+        })
+      );
+
+      // 42h against the NEW 30h threshold: 30 regular + 12 overtime at 2x.
+      // Under the old 40h terms it would be 40 + 2 at 1.5x, so this pins the
+      // rule rather than restating it.
+      //
+      // The overtime arrives as TWO lines, not one: the threshold and
+      // multiplier come from the last worked day, but each day still prices
+      // at ITS OWN arrangement, and Sat 08 is the first day on ARR_ID_C. One
+      // merged line would be the bug — it would report the Saturday's two
+      // hours under an arrangement that was not in force when they were
+      // worked.
+      expect(result.lines.map(l => [l.kind, l.minutes, l.multiplier])).toEqual([
+        ['regular', 1800, null],
+        ['overtime', 600, 2], // Sun..Thu, under ARR_ID_A
+        ['overtime', 120, 2], // Sat 08, under ARR_ID_C
+      ]);
+      expect(
+        result.lines
+          .filter(l => l.kind === 'overtime')
+          .reduce((total, l) => total + l.minutes, 0)
+      ).toBe(720);
+    });
+
+    it('derives the week`s last day as week_start + 6: an arrangement starting that SATURDAY makes the week priceable', () => {
+      // This is the one place `week_start + 6` is load-bearing on its own:
+      // the week's last day must resolve to an arrangement or the WHOLE week
+      // comes back `no_arrangement` (never GBP 0.00). For a Sunday-start
+      // week that day is Sat 2026-08-08. An engine that computed the week's
+      // end any other way would either refuse a priceable week or price an
+      // unpriceable one.
+      const priceable = computeWeekEarnings({
+        week_start: SUN_WEEK_START,
+        arrangements: [sundayArrangement({ valid_from: SAT_END })],
+        entries: [],
+      });
+      expect(priceable.status).toBe('ok');
+
+      // One day later — the FOLLOWING Sunday — and the same week has no
+      // terms in force on any day it contains.
+      const unpriceable = computeWeekEarnings({
+        week_start: SUN_WEEK_START,
+        arrangements: [sundayArrangement({ valid_from: '2026-08-09' })],
+        entries: [],
+      });
+      expect(unpriceable.status).toBe('no_arrangement');
+      if (unpriceable.status === 'no_arrangement') {
+        expect(unpriceable.unpriced_dates).toEqual([SAT_END]);
+      }
+    });
+
+    it('moves the reimbursement window with the week: the Saturday is IN, the next Sunday is OUT', () => {
+      const result = ok(
+        computeWeekEarnings({
+          week_start: SUN_WEEK_START,
+          arrangements: [sundayArrangement()],
+          entries: [worked(SUN_1, 480)],
+          reimbursements: [
+            expense(SUN_1, 500), // the week's first day — in
+            expense(SAT_END, 700), // the week's last day — in
+            expense('2026-08-09', 900), // the NEXT week's Sunday — out
+            expense('2026-08-01', 300), // the PREVIOUS week's Saturday — out
+          ],
+        })
+      );
+
+      expect(result.reimbursements_minor).toBe(1200);
+    });
+
+    it('the SAME seven days of work split differently under the two workweeks — and both answers are right', () => {
+      // Six 8h days: Sun 2026-08-02 through Fri 2026-08-07. Threshold 40h.
+      const days = [
+        '2026-08-02', // Sun
+        '2026-08-03', // Mon
+        '2026-08-04', // Tue
+        '2026-08-05', // Wed
+        '2026-08-06', // Thu
+        '2026-08-07', // Fri
+      ];
+
+      // A SUNDAY-start household sees all six days in ONE week: 48h, so 40
+      // regular + 8 overtime.
+      const sundayWeek = ok(
+        computeWeekEarnings({
+          week_start: SUN_WEEK_START,
+          arrangements: [sundayArrangement()],
+          entries: days.map(d => worked(d, 480)),
+        })
+      );
+      expect(sundayWeek.lines.map(l => [l.kind, l.minutes])).toEqual([
+        ['regular', 2400],
+        ['overtime', 480],
+      ]);
+      expect(sundayWeek.gross_minor).toBe(74_000 + 22_200);
+
+      // A MONDAY-start household splits them: the Sunday belongs to the
+      // PREVIOUS week, leaving Mon..Fri at exactly 40h — NO overtime at all.
+      const mondayWeek = ok(
+        computeWeekEarnings({
+          week_start: '2026-08-03',
+          arrangements: [sundayArrangement()],
+          entries: days.slice(1).map(d => worked(d, 480)),
+        })
+      );
+      expect(mondayWeek.lines.map(l => [l.kind, l.minutes])).toEqual([
+        ['regular', 2400],
+      ]);
+      expect(mondayWeek.gross_minor).toBe(74_000);
+
+      // ...and the orphaned Sunday is a lone 8h day in the week before,
+      // priced at plain time. Total across BOTH Monday-start weeks is
+      // 74000 + 14800 = 88800, against the Sunday-start household's 96200 —
+      // a real GBP 74.00 difference produced by nothing but the designated
+      // workweek. This is why D-8 makes it immutable once hours exist.
+      const priorMondayWeek = ok(
+        computeWeekEarnings({
+          week_start: '2026-07-27',
+          arrangements: [sundayArrangement()],
+          entries: [worked('2026-08-02', 480)],
+        })
+      );
+      expect(priorMondayWeek.lines.map(l => [l.kind, l.minutes])).toEqual([
+        ['regular', 480],
+      ]);
+      expect(priorMondayWeek.gross_minor).toBe(14_800);
+      expect(mondayWeek.gross_minor + priorMondayWeek.gross_minor).not.toBe(
+        sundayWeek.gross_minor
+      );
+    });
+
+    it('applies the guaranteed-hours top-up against the Sun..Sat week`s own total', () => {
+      // 30h worked in a Sunday-start week against a 40h guarantee: the
+      // shortfall is 10h, priced at the last day's rate. The top-up is a
+      // WEEKLY term, so it must be measured over the household's own seven
+      // days and no others.
+      const result = ok(
+        computeWeekEarnings({
+          week_start: SUN_WEEK_START,
+          arrangements: [
+            sundayArrangement({ guaranteed_minutes_per_week: 2400 }),
+          ],
+          entries: [
+            worked(SUN_1, 480),
+            worked('2026-08-03', 480),
+            worked('2026-08-04', 480),
+            worked('2026-08-05', 480),
+          ],
+        })
+      );
+
+      expect(result.lines.map(l => [l.kind, l.minutes])).toEqual([
+        ['regular', 1920],
+        ['guaranteed_topup', 480],
+      ]);
+    });
+  });
 });
 
 // =============================================================================

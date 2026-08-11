@@ -68,7 +68,9 @@ const membership = {
   status: 'active',
 };
 
-const household = { id: 'h1', timezone: 'Europe/London' };
+// `week_starts_on` spelled out so the current-week read exercises the real
+// household value rather than the no-household fallback. 1 = Monday.
+const household = { id: 'h1', timezone: 'Europe/London', week_starts_on: 1 };
 
 function makeTimeEntryRepo(overrides: Record<string, unknown> = {}): any {
   return {

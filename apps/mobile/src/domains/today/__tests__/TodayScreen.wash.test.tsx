@@ -104,6 +104,7 @@ beforeAll(async () => {
       id: HOUSEHOLD_ID,
       name: 'Wash Household',
       timezone: 'UTC',
+      week_starts_on: 1,
     },
     householdId: HOUSEHOLD_ID,
     households: [{ id: HOUSEHOLD_ID, name: 'Wash Household', timezone: 'UTC' }],

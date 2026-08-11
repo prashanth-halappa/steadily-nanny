@@ -95,7 +95,7 @@ describe('ClockInCard — the live signal', () => {
     getRunningMock.mockImplementation(() => Promise.resolve(RUNNING_ENTRY));
 
     const { getByTestId } = renderWithProviders(
-      <ClockInCard householdId={HOUSEHOLD_ID} timeZone="UTC" />
+      <ClockInCard householdId={HOUSEHOLD_ID} timeZone="UTC" weekStartsOn={1} />
     );
 
     await waitFor(() => expect(getByTestId('today-clock-out')).toBeTruthy());
@@ -111,7 +111,7 @@ describe('ClockInCard — the live signal', () => {
     getRunningMock.mockImplementation(() => Promise.resolve(null));
 
     const { getByTestId, queryByTestId } = renderWithProviders(
-      <ClockInCard householdId={HOUSEHOLD_ID} timeZone="UTC" />
+      <ClockInCard householdId={HOUSEHOLD_ID} timeZone="UTC" weekStartsOn={1} />
     );
 
     await waitFor(() => expect(getByTestId('today-clock-in')).toBeTruthy());
@@ -129,7 +129,7 @@ describe('ClockInCard — the live signal', () => {
     getRunningMock.mockImplementation(() => Promise.resolve(null));
 
     const { getByTestId } = renderWithProviders(
-      <ClockInCard householdId={HOUSEHOLD_ID} timeZone="UTC" />
+      <ClockInCard householdId={HOUSEHOLD_ID} timeZone="UTC" weekStartsOn={1} />
     );
 
     await waitFor(() =>

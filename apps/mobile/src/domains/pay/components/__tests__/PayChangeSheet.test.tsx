@@ -73,6 +73,7 @@ function renderSheet(
       householdCancellationDefaultHours={0}
       todayISO={TODAY_ISO}
       householdTimezone="UTC"
+      householdWeekStartsOn={1}
       {...overrides}
     />
   );
@@ -139,7 +140,7 @@ describe('PayChangeSheet', () => {
     );
   });
 
-  it('the mid-week consequence line appears for a non-Monday effective date and states both rates', () => {
+  it('the mid-week consequence line appears for a mid-week effective date and states both rates', () => {
     const { getByTestId } = renderSheet();
 
     // Today (2026-08-04) is already a Tuesday, so the default choice alone
@@ -149,12 +150,41 @@ describe('PayChangeSheet', () => {
     expect(getByTestId('pay-change-midweek-consequence')).toBeTruthy();
   });
 
-  it('no mid-week line on a non-Monday when the rate is unchanged from the pre-fill', () => {
+  it('no mid-week line mid-week when the rate is unchanged from the pre-fill', () => {
     const { queryByTestId } = renderSheet();
 
     // Default Today (Tuesday) + pre-filled current rate — no rate change, so
     // there is no two-rate split to warn about.
     expect(queryByTestId('pay-change-midweek-consequence')).toBeNull();
+  });
+
+  // 3-E1: the split question is asked against the HOUSEHOLD's week start.
+  // 2026-08-03 is a Monday — clean for a Monday-start household, mid-week
+  // for a Sunday-start one. Same date, same rate change, opposite answer.
+  it('honours the household week start: a Monday is clean at 1 and a split at 0', () => {
+    const mondayStart = renderSheet({
+      todayISO: '2026-08-03',
+      householdWeekStartsOn: 1,
+    });
+    fireEvent.changeText(
+      mondayStart.getByTestId('pay-change-rate-input'),
+      '19.50'
+    );
+    expect(
+      mondayStart.queryByTestId('pay-change-midweek-consequence')
+    ).toBeNull();
+
+    const sundayStart = renderSheet({
+      todayISO: '2026-08-03',
+      householdWeekStartsOn: 0,
+    });
+    fireEvent.changeText(
+      sundayStart.getByTestId('pay-change-rate-input'),
+      '19.50'
+    );
+    expect(
+      sundayStart.getByTestId('pay-change-midweek-consequence')
+    ).toBeTruthy();
   });
 
   it('a mid-week CURRENCY change warns even when the rate is untouched', () => {

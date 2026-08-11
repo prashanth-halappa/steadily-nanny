@@ -282,6 +282,7 @@ describe('TodayCoverage — 10 Aug 2026 gap + plan', () => {
       <TodayCoverage
         householdId={HOUSEHOLD_ID}
         timeZone={ZONE}
+        weekStartsOn={1}
         householdChildren={[{ id: CHILD_ID, name: 'H1 Child1' } as never]}
       />
     );
@@ -320,6 +321,7 @@ describe('TodayCoverage — 10 Aug 2026 gap + plan', () => {
       <TodayCoverage
         householdId={HOUSEHOLD_ID}
         timeZone={ZONE}
+        weekStartsOn={1}
         householdChildren={[{ id: CHILD_ID, name: 'H1 Child1' } as never]}
       />
     );
@@ -332,6 +334,7 @@ describe('TodayCoverage — 10 Aug 2026 gap + plan', () => {
       <TodayCoverage
         householdId={HOUSEHOLD_ID}
         timeZone={ZONE}
+        weekStartsOn={1}
         householdChildren={[{ id: CHILD_ID, name: 'H1 Child1' } as never]}
         demoted
       />

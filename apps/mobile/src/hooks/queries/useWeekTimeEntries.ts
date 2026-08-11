@@ -6,9 +6,10 @@ import { isValidId, QUERY_TIMING } from '@/src/hooks/queries/utils';
 import { useAuthStore } from '@/src/store/auth';
 
 /**
- * A household's time entries for the week starting `weekStart` (Monday,
- * `yyyy-mm-dd`). Used by both roles: a nanny views her own household's week,
- * a parent views her carer's.
+ * A household's time entries for the week starting `weekStart` — the
+ * household's own first day of the week, `yyyy-mm-dd` (resolve it with
+ * `getWeekStartISO`, never assume Monday). Used by both roles: a nanny views
+ * her own household's week, a parent views her carer's.
  */
 export function useWeekTimeEntries(
   householdId: string | null | undefined,

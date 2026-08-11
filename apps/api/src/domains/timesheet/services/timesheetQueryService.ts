@@ -69,7 +69,11 @@ import {
   renderWeekExportCsv,
   type WeekExportCsv,
 } from '../utils/weekExportCsv';
-import { weekEndExclusive, weekStartOf } from '../utils/weekStart';
+import {
+  DEFAULT_WEEK_STARTS_ON,
+  weekEndExclusive,
+  weekStartOf,
+} from '../utils/weekStart';
 
 /** Roles that read the WHOLE household's payroll, active or removed. */
 const PAYROLL_HOUSEHOLD_READ_ROLES: ReadonlySet<string> = new Set([
@@ -439,10 +443,18 @@ export class TimesheetQueryService {
     return timesheet;
   }
 
-  /** The Monday, in the household's timezone, of the week containing "now". */
+  /**
+   * The first day of the household's own workweek, in the household's
+   * timezone, for the week containing "now". BOTH halves come off the
+   * household row (§5 D-8); the `??`s fire only when it fails to load.
+   */
   private async currentWeekStart(householdId: string): Promise<string> {
     const household = await this.householdRepo.findById(householdId);
-    return weekStartOf(new Date(), household?.timezone ?? 'UTC');
+    return weekStartOf(
+      new Date(),
+      household?.timezone ?? 'UTC',
+      household?.week_starts_on ?? DEFAULT_WEEK_STARTS_ON
+    );
   }
 
   /**

@@ -185,7 +185,11 @@ beforeEach(() => {
 describe('ClockInCard — running late', () => {
   it('shows the running-late button only in off-clock scheduled state', async () => {
     const { getByTestId } = renderWithProviders(
-      <ClockInCard householdId={HOUSEHOLD_ID} timeZone={TIME_ZONE} />
+      <ClockInCard
+        householdId={HOUSEHOLD_ID}
+        timeZone={TIME_ZONE}
+        weekStartsOn={1}
+      />
     );
 
     await waitFor(() => expect(getByTestId('today-clock-in')).toBeTruthy());
@@ -196,7 +200,11 @@ describe('ClockInCard — running late', () => {
   it('shows the running-late button in off-clock arriving state', async () => {
     setSystemTime(new Date('2026-08-10T10:30:00.000Z'));
     const { getByTestId } = renderWithProviders(
-      <ClockInCard householdId={HOUSEHOLD_ID} timeZone={TIME_ZONE} />
+      <ClockInCard
+        householdId={HOUSEHOLD_ID}
+        timeZone={TIME_ZONE}
+        weekStartsOn={1}
+      />
     );
 
     await waitFor(() => expect(getByTestId('today-clock-in')).toBeTruthy());
@@ -208,7 +216,11 @@ describe('ClockInCard — running late', () => {
   it('hides running late when on the clock, when there is no shift, or when declined', async () => {
     getRunningMock.mockImplementation(() => Promise.resolve(RUNNING_ENTRY));
     const onClock = renderWithProviders(
-      <ClockInCard householdId={HOUSEHOLD_ID} timeZone={TIME_ZONE} />
+      <ClockInCard
+        householdId={HOUSEHOLD_ID}
+        timeZone={TIME_ZONE}
+        weekStartsOn={1}
+      />
     );
     await waitFor(() =>
       expect(onClock.getByTestId('today-clock-out')).toBeTruthy()
@@ -223,7 +235,11 @@ describe('ClockInCard — running late', () => {
       isLoading: false,
     });
     const noShift = renderWithProviders(
-      <ClockInCard householdId={HOUSEHOLD_ID} timeZone={TIME_ZONE} />
+      <ClockInCard
+        householdId={HOUSEHOLD_ID}
+        timeZone={TIME_ZONE}
+        weekStartsOn={1}
+      />
     );
     await waitFor(() =>
       expect(noShift.getByTestId('today-clock-in')).toBeTruthy()
@@ -244,7 +260,11 @@ describe('ClockInCard — running late', () => {
       isLoading: false,
     });
     const declined = renderWithProviders(
-      <ClockInCard householdId={HOUSEHOLD_ID} timeZone={TIME_ZONE} />
+      <ClockInCard
+        householdId={HOUSEHOLD_ID}
+        timeZone={TIME_ZONE}
+        weekStartsOn={1}
+      />
     );
     await waitFor(() =>
       expect(declined.getByTestId('today-clock-in')).toBeTruthy()
@@ -254,7 +274,11 @@ describe('ClockInCard — running late', () => {
 
   it('tap swaps in confirmation and does not offer a second send', async () => {
     const { getByTestId, getByText, queryByTestId } = renderWithProviders(
-      <ClockInCard householdId={HOUSEHOLD_ID} timeZone={TIME_ZONE} />
+      <ClockInCard
+        householdId={HOUSEHOLD_ID}
+        timeZone={TIME_ZONE}
+        weekStartsOn={1}
+      />
     );
 
     await waitFor(() => expect(getByTestId('today-running-late')).toBeTruthy());

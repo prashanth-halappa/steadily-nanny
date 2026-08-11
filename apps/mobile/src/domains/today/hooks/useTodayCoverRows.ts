@@ -76,14 +76,17 @@ export function pickCoverShift(
 
 export function useTodayCoverRows(
   householdId: string,
-  timeZone: string
+  timeZone: string,
+  /** The household's `week_starts_on` — the entries query is keyed on the
+   * household's own business week, never a hardcoded Monday. */
+  weekStartsOn: number
 ): { rows: CoverRow[]; isLoading: boolean } {
   const { t } = useTranslation('today');
   const { t: tSchedule } = useTranslation('schedule');
   const membersQuery = useHouseholdMembers(householdId);
   const weekStart = useMemo(
-    () => getWeekStartISO(new Date(), timeZone),
-    [timeZone]
+    () => getWeekStartISO(new Date(), timeZone, weekStartsOn),
+    [timeZone, weekStartsOn]
   );
   const today = useMemo(() => localDateInZone(timeZone), [timeZone]);
   const tomorrow = useMemo(() => addLocalDays(today, 1), [today]);

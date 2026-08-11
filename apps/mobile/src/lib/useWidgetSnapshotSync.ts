@@ -25,7 +25,10 @@ import { useEffect } from 'react';
 import { resolveCarerName } from '@/src/domains/schedule/utils/memberDisplayName';
 import { canViewParentSchedule, SETUP_ROLES } from '@/src/domains/setup/types';
 import { carerKeyOf } from '@/src/domains/timesheet/utils/carerKey';
-import { getWeekStartISO } from '@/src/domains/timesheet/utils/week';
+import {
+  DEFAULT_WEEK_STARTS_ON,
+  getWeekStartISO,
+} from '@/src/domains/timesheet/utils/week';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
 import { useChildren } from '@/src/hooks/queries/useChildren';
 import { useDayThread } from '@/src/hooks/queries/useDayThread';
@@ -72,6 +75,8 @@ export function useWidgetSnapshotSync(): void {
   const householdsQuery = useHouseholds();
 
   const timeZone = active.household?.timezone ?? 'UTC';
+  const weekStartsOn =
+    active.household?.week_starts_on ?? DEFAULT_WEEK_STARTS_ON;
   const householdId = active.householdId;
   const householdName = active.household?.name ?? '';
 
@@ -79,7 +84,7 @@ export function useWidgetSnapshotSync(): void {
   const isParent = canViewParentSchedule(onboarding.role);
 
   const today = localDateInZone(timeZone);
-  const weekStart = getWeekStartISO(new Date(), timeZone);
+  const weekStart = getWeekStartISO(new Date(), timeZone, weekStartsOn);
   const dayFrom = wallClockToUtcIso(today, '00:00', timeZone);
   const dayTo = wallClockToUtcIso(addLocalDays(today, 1), '00:00', timeZone);
   const aheadTo = wallClockToUtcIso(

@@ -34,6 +34,9 @@ import { type PlanLine, useTodayCoverage } from '../hooks/useTodayCoverage';
 interface TodayCoverageProps {
   householdId: string;
   timeZone: string;
+  /** Household `week_starts_on` — threaded through to `useTodayCoverage`'s
+   * week-entries query so it reads the household's own business week. */
+  weekStartsOn: number;
   householdChildren: readonly Child[];
   demoted?: boolean;
 }
@@ -142,13 +145,14 @@ function PlanLineView({
 export function TodayCoverage({
   householdId,
   timeZone,
+  weekStartsOn,
   householdChildren,
   demoted = false,
 }: TodayCoverageProps) {
   const { t } = useTranslation('today');
   const { t: tSchedule } = useTranslation('schedule');
   const router = useRouter();
-  const state = useTodayCoverage(householdId, timeZone);
+  const state = useTodayCoverage(householdId, timeZone, weekStartsOn);
   const carersQuery = useHouseholdCarers(householdId);
   const membersQuery = useHouseholdMembers(householdId);
   const createCover = useCreateParentCover();

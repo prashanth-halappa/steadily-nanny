@@ -236,9 +236,9 @@ let mockSetParams: ReturnType<typeof mock>;
 
 beforeAll(async () => {
   mockUseActiveHousehold = mock(() => ({
-    household: { id: HOUSEHOLD_ID, timezone: TIMEZONE },
+    household: { id: HOUSEHOLD_ID, timezone: TIMEZONE, week_starts_on: 1 },
     householdId: HOUSEHOLD_ID,
-    households: [{ id: HOUSEHOLD_ID, timezone: TIMEZONE }],
+    households: [{ id: HOUSEHOLD_ID, timezone: TIMEZONE, week_starts_on: 1 }],
     setActiveHouseholdId: mock(),
     isLoading: false,
   }));
@@ -353,9 +353,9 @@ beforeEach(() => {
   // branch below returns a household-less `isLoading: true`, and leaking that
   // into the next test would blank the week views it is asserting on.
   mockUseActiveHousehold.mockImplementation(() => ({
-    household: { id: HOUSEHOLD_ID, timezone: TIMEZONE },
+    household: { id: HOUSEHOLD_ID, timezone: TIMEZONE, week_starts_on: 1 },
     householdId: HOUSEHOLD_ID,
-    households: [{ id: HOUSEHOLD_ID, timezone: TIMEZONE }],
+    households: [{ id: HOUSEHOLD_ID, timezone: TIMEZONE, week_starts_on: 1 }],
     setActiveHouseholdId: mock(),
     isLoading: false,
   }));
@@ -412,7 +412,7 @@ describe('HoursScreen — loading week keeps its title and week label', () => {
     queryByTestId: ReturnType<typeof render>['queryByTestId']
   ) {
     const currentWeekLabel = formatWeekRangeLabel(
-      getWeekDates(getWeekStartISO(new Date(), TIMEZONE))
+      getWeekDates(getWeekStartISO(new Date(), TIMEZONE, 1))
     );
     // The loading marker survives the rewrite — Maestro keys off it.
     expect(getByTestId('hours-loading')).toBeTruthy();
@@ -549,9 +549,9 @@ describe('HoursScreen — nanny with multiple households (Wave B)', () => {
 
     // Reset back to the single-household default for subsequent tests.
     mockUseActiveHousehold.mockImplementation(() => ({
-      household: { id: HOUSEHOLD_ID, timezone: TIMEZONE },
+      household: { id: HOUSEHOLD_ID, timezone: TIMEZONE, week_starts_on: 1 },
       householdId: HOUSEHOLD_ID,
-      households: [{ id: HOUSEHOLD_ID, timezone: TIMEZONE }],
+      households: [{ id: HOUSEHOLD_ID, timezone: TIMEZONE, week_starts_on: 1 }],
       setActiveHouseholdId: mock(),
       isLoading: false,
     }));
@@ -563,7 +563,7 @@ describe('HoursScreen — deep-link weekStart (Gap 3)', () => {
   // HoursScreen ignored search params and always opened weekOffset=0. Assert
   // the DESTINATION week (query arg / displayed weekStart), not the href shape.
   it('lands on the deep-linked weekStart three weeks back, not the current week', () => {
-    const currentWeekStart = getWeekStartISO(new Date(), TIMEZONE);
+    const currentWeekStart = getWeekStartISO(new Date(), TIMEZONE, 1);
     const threeWeeksBack = addWeeks(currentWeekStart, -3);
     mockUseLocalSearchParams.mockImplementation(() => ({
       householdId: HOUSEHOLD_ID,
@@ -583,7 +583,7 @@ describe('HoursScreen — deep-link weekStart (Gap 3)', () => {
   });
 
   it('defaults to the current week when weekStart is absent from search params', () => {
-    const currentWeekStart = getWeekStartISO(new Date(), TIMEZONE);
+    const currentWeekStart = getWeekStartISO(new Date(), TIMEZONE, 1);
     mockUseLocalSearchParams.mockImplementation(() => ({}));
 
     render(<HoursScreen />);
@@ -599,7 +599,7 @@ describe('HoursScreen — deep-link weekStart (Gap 3)', () => {
   // deep-linked week on every later visit. Consume → clear → leave → return
   // without the param must land on the current week.
   it('treats weekStart as one-shot — clear + remount without param shows current week', () => {
-    const currentWeekStart = getWeekStartISO(new Date(), TIMEZONE);
+    const currentWeekStart = getWeekStartISO(new Date(), TIMEZONE, 1);
     const threeWeeksBack = addWeeks(currentWeekStart, -3);
     mockUseLocalSearchParams.mockImplementation(() => ({
       weekStart: threeWeeksBack,
@@ -628,7 +628,7 @@ describe('HoursScreen — deep-link weekStart (Gap 3)', () => {
   });
 
   it('keeps prev/next paging after weekStart is consumed and cleared', () => {
-    const currentWeekStart = getWeekStartISO(new Date(), TIMEZONE);
+    const currentWeekStart = getWeekStartISO(new Date(), TIMEZONE, 1);
     const threeWeeksBack = addWeeks(currentWeekStart, -3);
     const fourWeeksBack = addWeeks(currentWeekStart, -4);
     mockUseLocalSearchParams.mockImplementation(() => ({
@@ -668,7 +668,7 @@ describe('HoursScreen — nanny', () => {
   });
 
   it('pressing hours-week-prev requests the PRIOR week from the query layer, and re-enables next', () => {
-    const currentWeekStart = getWeekStartISO(new Date(), TIMEZONE);
+    const currentWeekStart = getWeekStartISO(new Date(), TIMEZONE, 1);
     const priorWeekStart = addWeeks(currentWeekStart, -1);
 
     const { getByTestId } = render(<HoursScreen />);
@@ -688,7 +688,7 @@ describe('HoursScreen — nanny', () => {
   });
 
   it('pressing hours-week-prev twice then hours-week-next once lands two weeks back, not one', () => {
-    const currentWeekStart = getWeekStartISO(new Date(), TIMEZONE);
+    const currentWeekStart = getWeekStartISO(new Date(), TIMEZONE, 1);
     const twoWeeksBack = addWeeks(currentWeekStart, -2);
 
     const { getByTestId } = render(<HoursScreen />);
@@ -724,7 +724,7 @@ describe('HoursScreen — nanny', () => {
   // nobody can page back indefinitely into years before the household
   // existed. 104 presses is deliberately one more than the 104-week cap.
   it('cannot page back past the bounded history window — hours-week-prev disables and stops moving', () => {
-    const currentWeekStart = getWeekStartISO(new Date(), TIMEZONE);
+    const currentWeekStart = getWeekStartISO(new Date(), TIMEZONE, 1);
     const oldestReachableWeek = addWeeks(currentWeekStart, -104);
 
     const { getByTestId } = render(<HoursScreen />);
@@ -963,7 +963,10 @@ describe('HoursScreen — deep-link breakdown', () => {
   });
 
   it('opens the week view breakdown when breakdown=1 rides along with weekStart', async () => {
-    const threeWeeksBack = addWeeks(getWeekStartISO(new Date(), TIMEZONE), -3);
+    const threeWeeksBack = addWeeks(
+      getWeekStartISO(new Date(), TIMEZONE, 1),
+      -3
+    );
     seedPricedWeek(threeWeeksBack);
     mockUseLocalSearchParams.mockImplementation(() => ({
       weekStart: threeWeeksBack,
@@ -978,7 +981,10 @@ describe('HoursScreen — deep-link breakdown', () => {
   });
 
   it('leaves the breakdown shut when only weekStart is deep-linked', async () => {
-    const threeWeeksBack = addWeeks(getWeekStartISO(new Date(), TIMEZONE), -3);
+    const threeWeeksBack = addWeeks(
+      getWeekStartISO(new Date(), TIMEZONE, 1),
+      -3
+    );
     seedPricedWeek(threeWeeksBack);
     mockUseLocalSearchParams.mockImplementation(() => ({
       weekStart: threeWeeksBack,
@@ -994,7 +1000,10 @@ describe('HoursScreen — deep-link breakdown', () => {
   // sheet on every later visit to the Hours tab (it does not unmount on
   // blur) — exactly the D15 trap `weekStart` already had to be taught.
   it('clears the breakdown param off the route, not just weekStart', async () => {
-    const threeWeeksBack = addWeeks(getWeekStartISO(new Date(), TIMEZONE), -3);
+    const threeWeeksBack = addWeeks(
+      getWeekStartISO(new Date(), TIMEZONE, 1),
+      -3
+    );
     seedPricedWeek(threeWeeksBack);
     mockUseLocalSearchParams.mockImplementation(() => ({
       weekStart: threeWeeksBack,
@@ -1014,7 +1023,10 @@ describe('HoursScreen — deep-link breakdown', () => {
   });
 
   it('does not re-open the breakdown on a later visit with no params', async () => {
-    const threeWeeksBack = addWeeks(getWeekStartISO(new Date(), TIMEZONE), -3);
+    const threeWeeksBack = addWeeks(
+      getWeekStartISO(new Date(), TIMEZONE, 1),
+      -3
+    );
     seedPricedWeek(threeWeeksBack);
     mockUseLocalSearchParams.mockImplementation(() => ({
       weekStart: threeWeeksBack,
@@ -1027,7 +1039,7 @@ describe('HoursScreen — deep-link breakdown', () => {
     );
     first.unmount();
 
-    seedPricedWeek(getWeekStartISO(new Date(), TIMEZONE));
+    seedPricedWeek(getWeekStartISO(new Date(), TIMEZONE, 1));
     mockUseLocalSearchParams.mockImplementation(() => ({}));
     const second = render(<HoursScreen />);
 

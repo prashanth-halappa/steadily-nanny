@@ -6,7 +6,8 @@ import { isValidId, QUERY_TIMING } from '@/src/hooks/queries/utils';
 import { useAuthStore } from '@/src/store/auth';
 
 /**
- * EVERY carer's timesheet for one household + week (Monday `weekStart`),
+ * EVERY carer's timesheet for one household + week (`weekStart` is that
+ * household's own first day of the week, not a Monday by assumption),
  * each with its earnings attached — empty when no row exists yet (nothing
  * has been clocked out for that week).
  *

@@ -13,18 +13,24 @@ import { useWeekTimeEntries } from '@/src/hooks/queries/useWeekTimeEntries';
 
 /**
  * True when the caller has a running time entry OR any household week entry
- * is still running. Missing `householdId` / `timeZone` disables the week
- * query and contributes `false` for that half; the caller's own running
- * entry still counts.
+ * is still running. Missing `householdId` / `timeZone` / `weekStartsOn`
+ * disables the week query and contributes `false` for that half; the
+ * caller's own running entry still counts. All three come from the
+ * household — no Monday default, because "which week" is the household's
+ * `week_starts_on` (domains/timesheet/utils/week.ts).
  */
 export function useHouseholdIsLive(
   householdId: string | null | undefined,
-  timeZone: string | null | undefined
+  timeZone: string | null | undefined,
+  weekStartsOn: number | null | undefined
 ): boolean {
   const running = useRunningTimeEntry();
   const weekStart = useMemo(
-    () => (timeZone ? getWeekStartISO(new Date(), timeZone) : null),
-    [timeZone]
+    () =>
+      timeZone && weekStartsOn != null
+        ? getWeekStartISO(new Date(), timeZone, weekStartsOn)
+        : null,
+    [timeZone, weekStartsOn]
   );
   const entries = useWeekTimeEntries(householdId, weekStart);
   const householdHasRunning = (entries.data ?? []).some(

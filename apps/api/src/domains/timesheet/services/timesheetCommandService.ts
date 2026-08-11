@@ -93,9 +93,10 @@ import type {
   Timesheet,
   UpdateTimeEntryInput,
 } from '../types';
-import { mondayMidnightInstant } from '../utils/mondayMidnight';
 import { toWireTimesheet } from '../utils/toWireTimesheet';
+import { weekBoundaryInstant } from '../utils/weekBoundary';
 import {
+  DEFAULT_WEEK_STARTS_ON,
   weekEndExclusive,
   weekStartOf,
   weekStartOfLocalDate,
@@ -315,12 +316,13 @@ function presenceMinutesOf(
 }
 
 /**
- * Cut every span at each household-local Monday it crosses, so no fragment
+ * Cut every span at each household-local week boundary it crosses, so no
+ * fragment
  * ever straddles a week.
  *
  * `local_date` is trigger-derived from `clock_in_at`, and both
  * `rollUpIntoTimesheet` and the approved-week guard bucket by week — so a
- * fragment spanning a Monday prices ALL of its minutes into the week it
+ * fragment spanning a week boundary prices ALL of its minutes into the week it
  * started in. For a cancelled window that is the whole payout, at the wrong
  * week's rate and against the wrong week's overtime threshold.
  *
@@ -330,15 +332,17 @@ function presenceMinutesOf(
  */
 function splitAtWeekBoundaries(
   spans: readonly { from: number; to: number }[],
-  timeZone: string
+  timeZone: string,
+  weekStartsOn: number
 ): { from: number; to: number }[] {
   const pieces: { from: number; to: number }[] = [];
   for (const span of spans) {
     let from = span.from;
     while (from < span.to) {
-      const boundary = mondayMidnightInstant(
+      const boundary = weekBoundaryInstant(
         new Date(from),
-        timeZone
+        timeZone,
+        weekStartsOn
       ).getTime();
       // Always strictly after `from` (it is the END of `from`'s own week), so
       // this terminates.
@@ -516,13 +520,18 @@ export class TimesheetCommandService {
     // upgrade to a btree_gist exclusion constraint if concurrent clock-outs
     // across carers (or a future multi-device path) ever race here.
     //
-    // A session that runs across the household's Monday is TWO weeks' work
+    // A session that runs across the household's week boundary is TWO weeks' work
     // and is split into two rows (C6) — see `clockOutAcrossWeeks`. Unlike
     // `createRetroactiveEntry` and `updateEntry`, this path never rejects a
     // week crossing: refusing would strand the `running` row with no way to
     // close it, the exact stuck-entry class F-B2-4 exists to remove, and the
     // hours already happened.
-    const boundary = this.weekBoundaryWithin(clockInAt, clockOutAt, entry);
+    const boundary = this.weekBoundaryWithin(
+      clockInAt,
+      clockOutAt,
+      entry,
+      await this.weekStartsOnFor(entry.household_id)
+    );
     if (boundary) {
       return this.clockOutAcrossWeeks(userId, entry, {
         clockInAt,
@@ -562,6 +571,34 @@ export class TimesheetCommandService {
   }
 
   /**
+   * The household's designated workweek start (§5 D-8, `households.
+   * week_starts_on`, 0=Sunday..6=Saturday) — the day every `week_start` this
+   * service writes must land on.
+   *
+   * Read from the household rather than frozen onto the time entry, unlike
+   * `timezone`. The two look alike but are not: `timezone` is freely
+   * PATCHable, so a mid-session change would make the split boundary and the
+   * roll-up bucket disagree (F-B1-4) and every week read is therefore
+   * anchored to the row's own frozen column. `week_starts_on` cannot move
+   * once a timesheet exists — `householdCommandService.update` refuses it
+   * with a 409 — so the household's current value IS the value every existing
+   * row was bucketed under, and there is nothing to freeze.
+   *
+   * The `??` fires only when the household row genuinely fails to load; a
+   * caller that HAS the household in hand reads `week_starts_on` off it
+   * directly rather than calling this.
+   *
+   * ponytail: one extra round trip per call, and `clockOut` costs two (the
+   * boundary check plus the roll-up). Measured against GOLDEN #28's lesson
+   * that's noise beside the ~10 statements already in this path — pass the
+   * value down from `clockOut` if a profiler ever disagrees.
+   */
+  private async weekStartsOnFor(householdId: string): Promise<number> {
+    const household = await this.householdRepo.findById(householdId);
+    return household?.week_starts_on ?? DEFAULT_WEEK_STARTS_ON;
+  }
+
+  /**
    * The instant this session crosses into a new week, or null if it doesn't.
    *
    * The zone is the ENTRY's own frozen `timezone`, not the household's
@@ -575,21 +612,26 @@ export class TimesheetCommandService {
    * be a zero-length row.
    *
    * `MAX_SESSION_SPAN_MS` (16h) is what makes one boundary enough — no loop
-   * is needed because no legal session can span two Mondays.
+   * is needed because no legal session can span two week boundaries.
    */
   private weekBoundaryWithin(
     clockInAt: string,
     clockOutAt: string,
-    entry: TimeEntry
+    entry: TimeEntry,
+    weekStartsOn: number
   ): string | null {
     const timeZone = entry.timezone;
     if (
-      weekStartOf(new Date(clockInAt), timeZone) ===
-      weekStartOf(new Date(clockOutAt), timeZone)
+      weekStartOf(new Date(clockInAt), timeZone, weekStartsOn) ===
+      weekStartOf(new Date(clockOutAt), timeZone, weekStartsOn)
     ) {
       return null;
     }
-    const midnight = mondayMidnightInstant(new Date(clockInAt), timeZone);
+    const midnight = weekBoundaryInstant(
+      new Date(clockInAt),
+      timeZone,
+      weekStartsOn
+    );
     return new Date(clockOutAt).getTime() > midnight.getTime()
       ? midnight.toISOString()
       : null;
@@ -613,7 +655,8 @@ export class TimesheetCommandService {
    *      row the caller asked about;
    *   4. roll up A's week, then B's.
    * Crashing after 2 leaves B written and the runner still open; the retry
-   * adopts B rather than double-paying Monday morning. Crashing after 3
+   * adopts B rather than double-paying the new week's first morning.
+   * Crashing after 3
    * leaves both rows complete and the totals stale, which any later roll-up
    * self-heals and the `timesheet_total_mismatch` integrity check catches.
    * A runner the carer never comes back to is caught by `stuck_runner`.
@@ -696,7 +739,7 @@ export class TimesheetCommandService {
         kind: 'worked',
         status: 'submitted',
         // Both halves carry the carer's explanation: it describes the
-        // session, and a Monday-morning row with no context is the half a
+        // session, and a first-morning-of-the-week row with no context is the half a
         // parent is most likely to query.
         note: plan.note ?? entry.note,
       });
@@ -756,7 +799,8 @@ export class TimesheetCommandService {
    *
    * Identity is `(this household, worked, starts exactly at the boundary)` —
    * the shape only this split writes. Adopting it is what makes the retry
-   * idempotent; inserting a second one would pay Monday morning twice.
+   * idempotent; inserting a second one would pay the new week's first
+   * morning twice.
    */
   private async findAbandonedFragment(
     carerId: string,
@@ -822,8 +866,11 @@ export class TimesheetCommandService {
 
     const household = await this.householdRepo.findById(input.household_id);
     const timeZone = household?.timezone ?? 'UTC';
-    const weekStart = weekStartOf(new Date(clockInAt), timeZone);
-    if (weekStartOf(new Date(clockOutAt), timeZone) !== weekStart) {
+    const weekStartsOn = household?.week_starts_on ?? DEFAULT_WEEK_STARTS_ON;
+    const weekStart = weekStartOf(new Date(clockInAt), timeZone, weekStartsOn);
+    if (
+      weekStartOf(new Date(clockOutAt), timeZone, weekStartsOn) !== weekStart
+    ) {
       throw new InvalidClockTimesError('CLOCK_CROSSES_WEEK', {
         weekStart,
         clockInAt,
@@ -928,6 +975,7 @@ export class TimesheetCommandService {
 
     const household = await this.householdRepo.findById(shift.household_id);
     const timeZone = household?.timezone ?? 'UTC';
+    const weekStartsOn = household?.week_starts_on ?? DEFAULT_WEEK_STARTS_ON;
 
     // Pay for the parts of the window that were ACTUALLY cancelled. Writing
     // the whole booked span over time she already worked is wrong twice over:
@@ -972,21 +1020,24 @@ export class TimesheetCommandService {
     // a gap here: they already cover it.
     const remainders = splitAtWeekBoundaries(
       remainingSpans(startMs, endMs, thisHousehold),
-      timeZone
+      timeZone,
+      weekStartsOn
     );
 
     // Approved-week guard, AFTER the arithmetic and against EVERY fragment's
-    // own week — household-local Monday, same as roll-ups /
+    // own week — the household's own first day, same as roll-ups /
     // createRetroactiveEntry. Checking only the window's start week was safe
     // while a cancellation was one row; an overnight window reaches the
-    // following Monday, and `rollUpIntoTimesheet` un-approves whatever week it
+    // following week, and `rollUpIntoTimesheet` un-approves whatever week it
     // lands on UNCONDITIONALLY — nulling the frozen gross a parent signed off.
     // Every fragment now lies inside ONE week (`splitAtWeekBoundaries`), so
     // taking each one's start week covers every week that can be touched. It
     // refuses BEFORE anything is written, so a partial write cannot leave one
     // fragment banked against a refusal.
     for (const weekStart of new Set(
-      remainders.map(span => weekStartOf(new Date(span.from), timeZone))
+      remainders.map(span =>
+        weekStartOf(new Date(span.from), timeZone, weekStartsOn)
+      )
     )) {
       const existing = await this.timesheetRepo.findByWeek(
         shift.household_id,
@@ -1246,7 +1297,12 @@ export class TimesheetCommandService {
     // is by construction `weekStartOfLocalDate(entry.local_date)`, and the
     // trigger recomputes `local_date` from this same unchanged column.
     const timeZone = entry.timezone;
-    const weekStart = weekStartOf(new Date(originalClockInAt), timeZone);
+    const weekStartsOn = await this.weekStartsOnFor(entry.household_id);
+    const weekStart = weekStartOf(
+      new Date(originalClockInAt),
+      timeZone,
+      weekStartsOn
+    );
 
     // ponytail: a clock edit that crosses a week boundary is rejected
     // rather than handled — `rollUpIntoTimesheet` recomputes ONE week, so
@@ -1254,14 +1310,18 @@ export class TimesheetCommandService {
     // overstated. Both ends must stay in the original week: checking only
     // clock-in let a finish land on the following Sunday and still price
     // entirely into the original week. Teach the roll-up to take both weeks
-    // if overnight corrections across a Monday ever turn out to matter.
-    if (weekStartOf(new Date(clockInAt), timeZone) !== weekStart) {
+    // if overnight corrections across a week boundary ever turn out to matter.
+    if (
+      weekStartOf(new Date(clockInAt), timeZone, weekStartsOn) !== weekStart
+    ) {
       throw new InvalidClockTimesError('CLOCK_IN_CHANGES_WEEK', {
         timeEntryId,
         weekStart,
       });
     }
-    if (weekStartOf(new Date(clockOutAt), timeZone) !== weekStart) {
+    if (
+      weekStartOf(new Date(clockOutAt), timeZone, weekStartsOn) !== weekStart
+    ) {
       throw new InvalidClockTimesError('CLOCK_OUT_CHANGES_WEEK', {
         timeEntryId,
         weekStart,
@@ -1333,7 +1393,11 @@ export class TimesheetCommandService {
       // Same anchor as `updateEntry` — the row's frozen zone, not the
       // household's current one (F-B1-4).
       const timeZone = entry.timezone;
-      const weekStart = weekStartOf(new Date(originalClockInAt), timeZone);
+      const weekStart = weekStartOf(
+        new Date(originalClockInAt),
+        timeZone,
+        await this.weekStartsOnFor(entry.household_id)
+      );
 
       const timesheet = await this.timesheetRepo.findByWeek(
         entry.household_id,
@@ -1427,7 +1491,8 @@ export class TimesheetCommandService {
    * CLOCK INSTANTS, not `local_date`. The week-filtered lookup this used to
    * do had three holes, all of them ways to bank the same minutes twice or
    * to strand a row nobody can clock out (F-B1-1, F-B2-4):
-   * - an entry on the other side of Monday is filed under the previous week
+   * - an entry on the other side of the week boundary is filed under the
+   *   previous week
    *   and was simply invisible — and a legitimate overnight session is well
    *   inside `MAX_SESSION_SPAN_MS`, so this is ordinary, not exotic;
    * - `clockOut` derived the week from the clock-IN alone, so a finish
@@ -2050,7 +2115,10 @@ export class TimesheetCommandService {
     // so deriving the bucket the other way makes the sum and the filter
     // disagree and drops entries out of the recomputed total. Same date, one
     // source — see `weekStartOfLocalDate`.
-    const weekStart = weekStartOfLocalDate(entry.local_date);
+    const weekStart = weekStartOfLocalDate(
+      entry.local_date,
+      await this.weekStartsOnFor(entry.household_id)
+    );
 
     const weekEntries = await this.timeEntryRepo.listForCarerWeek(
       entry.household_id,
@@ -2141,7 +2209,7 @@ export class TimesheetCommandService {
   /**
    * The parent nudge for a week that has just moved INTO `submitted` — the
    * ONLY transition that fires it. A roll-up onto an already-`submitted`
-   * week (Wednesday's clock-out on a week that started Monday) is not a
+   * week (a mid-week clock-out on a week that opened days earlier) is not a
    * transition and pushes nothing: the parent has already been told, and a
    * notification per clock-out would train her to ignore the one that
    * matters. Both call sites above decide THAT; this method only knows how

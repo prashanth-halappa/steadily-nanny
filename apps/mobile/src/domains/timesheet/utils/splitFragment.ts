@@ -1,10 +1,11 @@
 /**
  * @module domains/timesheet/utils/splitFragment
  *
- * A session that runs across household-local Monday midnight is stored by
- * the API as TWO entries: the first keeps the original row's id with its
- * `clock_out_at` rewritten back to midnight, the second carries the rest
- * into the new week. Nothing on the wire says "I am half a session", so the
+ * A session that runs across the household-local week boundary (midnight on
+ * the household's own first day of the week) is stored by the API as TWO
+ * entries: the first keeps the original row's id with its `clock_out_at`
+ * rewritten back to that boundary, the second carries the rest into the new
+ * week. Nothing on the wire says "I am half a session", so the
  * only thing that distinguishes the first fragment from an ordinary entry is
  * where it ends.
  */
@@ -26,7 +27,7 @@ import type { TimeEntry } from '../types';
  * derived from, and a household that has since changed zones must not move
  * where an already-written row sits.
  *
- * ponytail: fails OPEN in a zone that springs forward at Monday 00:00 — that
+ * ponytail: fails OPEN in a zone that springs forward at the week boundary — that
  * local midnight does not exist, so the split instant reads as 01:00 and both
  * signals come back on a legitimate fragment. No zone in tzdata does this
  * through 2029 (Tehran and Casablanca have historically), and the failure is

@@ -113,7 +113,7 @@ beforeEach(() => {
 describe('ClockInCard — D20 break minutes at clock-out', () => {
   it('tapping Clock out opens the sheet without calling the API yet', async () => {
     const { getByTestId } = renderWithProviders(
-      <ClockInCard householdId={HOUSEHOLD_ID} timeZone="UTC" />
+      <ClockInCard householdId={HOUSEHOLD_ID} timeZone="UTC" weekStartsOn={1} />
     );
 
     await waitFor(() => expect(getByTestId('today-clock-out')).toBeTruthy());
@@ -125,7 +125,7 @@ describe('ClockInCard — D20 break minutes at clock-out', () => {
 
   it('confirming immediately (fast skip) clocks out with no break and no note', async () => {
     const { getByTestId } = renderWithProviders(
-      <ClockInCard householdId={HOUSEHOLD_ID} timeZone="UTC" />
+      <ClockInCard householdId={HOUSEHOLD_ID} timeZone="UTC" weekStartsOn={1} />
     );
 
     await waitFor(() => expect(getByTestId('today-clock-out')).toBeTruthy());
@@ -140,7 +140,7 @@ describe('ClockInCard — D20 break minutes at clock-out', () => {
 
   it('picking a break chip sends break_minutes to the real clock-out call', async () => {
     const { getByTestId } = renderWithProviders(
-      <ClockInCard householdId={HOUSEHOLD_ID} timeZone="UTC" />
+      <ClockInCard householdId={HOUSEHOLD_ID} timeZone="UTC" weekStartsOn={1} />
     );
 
     await waitFor(() => expect(getByTestId('today-clock-out')).toBeTruthy());
@@ -156,7 +156,7 @@ describe('ClockInCard — D20 break minutes at clock-out', () => {
 
   it('a break plus a note both reach the real clock-out call', async () => {
     const { getByTestId } = renderWithProviders(
-      <ClockInCard householdId={HOUSEHOLD_ID} timeZone="UTC" />
+      <ClockInCard householdId={HOUSEHOLD_ID} timeZone="UTC" weekStartsOn={1} />
     );
 
     await waitFor(() => expect(getByTestId('today-clock-out')).toBeTruthy());
@@ -182,7 +182,7 @@ describe('ClockInCard — D20 break minutes at clock-out', () => {
     });
 
     const { getByTestId, queryByTestId } = renderWithProviders(
-      <ClockInCard householdId={HOUSEHOLD_ID} timeZone="UTC" />
+      <ClockInCard householdId={HOUSEHOLD_ID} timeZone="UTC" weekStartsOn={1} />
     );
 
     await waitFor(() => expect(getByTestId('today-clock-out')).toBeTruthy());
@@ -200,7 +200,7 @@ describe('ClockInCard — D20 break minutes at clock-out', () => {
     clockOutMock.mockImplementation(() => new Promise(() => {}));
 
     const { getByTestId } = renderWithProviders(
-      <ClockInCard householdId={HOUSEHOLD_ID} timeZone="UTC" />
+      <ClockInCard householdId={HOUSEHOLD_ID} timeZone="UTC" weekStartsOn={1} />
     );
 
     await waitFor(() => expect(getByTestId('today-clock-out')).toBeTruthy());
@@ -227,7 +227,11 @@ describe('ClockInCard — D20 break minutes at clock-out', () => {
     const expectedRange = `${formatClockTime(OVERLAPPING_CLOCK_IN_AT, TIME_ZONE)}–${formatClockTime(OVERLAPPING_CLOCK_OUT_AT, TIME_ZONE)}`;
 
     const { getByTestId } = renderWithProviders(
-      <ClockInCard householdId={HOUSEHOLD_ID} timeZone={TIME_ZONE} />
+      <ClockInCard
+        householdId={HOUSEHOLD_ID}
+        timeZone={TIME_ZONE}
+        weekStartsOn={1}
+      />
     );
 
     await waitFor(() => expect(getByTestId('today-clock-out')).toBeTruthy());
@@ -270,7 +274,7 @@ describe('ClockInCard — D20 break minutes at clock-out', () => {
     );
 
     const { getByTestId } = renderWithProviders(
-      <ClockInCard householdId={HOUSEHOLD_ID} timeZone="UTC" />
+      <ClockInCard householdId={HOUSEHOLD_ID} timeZone="UTC" weekStartsOn={1} />
     );
 
     await waitFor(() => expect(getByTestId('today-clock-out')).toBeTruthy());

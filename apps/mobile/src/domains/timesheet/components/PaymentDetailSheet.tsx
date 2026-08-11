@@ -48,8 +48,9 @@ interface PaymentDetailSheetProps {
   /** Null between dismissals — the sheet lives OUTSIDE the list, so nothing
    * about its dismissal depends on which row is still mounted. */
   payment: Payment | null;
-  /** The joined week's Monday, or null when that timesheet is not in the
-   * list. Drives whether the for-week row exists at all. */
+  /** The joined week's first day, or null when that timesheet is not in the
+   * list. Comes off the timesheet row, so it is already the household's own
+   * week start. Drives whether the for-week row exists at all. */
   weekStart: string | null;
   /** The carer this went to. Null for a nanny reading her own record — she
    * does not need telling who she is. */

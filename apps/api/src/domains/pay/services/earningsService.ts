@@ -147,7 +147,15 @@ export interface ApprovedExpenseInput {
  * with the mismatched item quietly dropped.
  */
 export interface ComputeWeekEarningsInput {
-  /** Monday, household-local (`timesheets.week_start`). */
+  /**
+   * The first day of the household's own workweek, household-local
+   * (`timesheets.week_start`) — NOT necessarily a Monday. Which day it is
+   * comes from `households.week_starts_on` (§5 D-8) and is resolved by the
+   * caller; this engine takes it as given and derives the week as
+   * `[week_start, week_start + 6]`, so it is week-start agnostic by
+   * construction. Pinned by the 'Sunday-start workweek' cases in the test
+   * table.
+   */
   week_start: string;
   entries: readonly EarningsTimeEntryInput[];
   arrangements: readonly PayArrangement[];

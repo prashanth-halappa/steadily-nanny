@@ -233,6 +233,7 @@ describe('ClockInCard — shift meta under the hero', () => {
       <ClockInCard
         householdId={HOUSEHOLD_ID}
         timeZone={TIME_ZONE}
+        weekStartsOn={1}
         householdName="Smith Family"
       />
     );
@@ -257,7 +258,11 @@ describe('ClockInCard — shift meta under the hero', () => {
     });
 
     const { getByTestId, getByText } = renderWithProviders(
-      <ClockInCard householdId={HOUSEHOLD_ID} timeZone={TIME_ZONE} />
+      <ClockInCard
+        householdId={HOUSEHOLD_ID}
+        timeZone={TIME_ZONE}
+        weekStartsOn={1}
+      />
     );
 
     await waitFor(() => expect(getByTestId('today-clock-in')).toBeTruthy());
@@ -283,6 +288,7 @@ describe('ClockInCard — shift meta under the hero', () => {
       <ClockInCard
         householdId={HOUSEHOLD_ID}
         timeZone={TIME_ZONE}
+        weekStartsOn={1}
         householdName="Smith Family"
       />
     );
@@ -326,6 +332,7 @@ describe('ClockInCard — shift meta under the hero', () => {
       <ClockInCard
         householdId={HOUSEHOLD_ID}
         timeZone={TIME_ZONE}
+        weekStartsOn={1}
         householdName="Smith Family"
       />
     );
@@ -356,6 +363,7 @@ describe('ClockInCard — multi-household clock-in confirmation', () => {
       <ClockInCard
         householdId={HOUSEHOLD_ID}
         timeZone={TIME_ZONE}
+        weekStartsOn={1}
         householdName="Smith Family"
       />
     );
@@ -373,6 +381,7 @@ describe('ClockInCard — multi-household clock-in confirmation', () => {
       <ClockInCard
         householdId={HOUSEHOLD_ID}
         timeZone={TIME_ZONE}
+        weekStartsOn={1}
         householdName="Smith Family"
       />
     );
@@ -396,7 +405,11 @@ describe('ClockInCard — clocked-out receipt', () => {
     });
 
     const { getByTestId, getByText } = renderWithProviders(
-      <ClockInCard householdId={HOUSEHOLD_ID} timeZone={TIME_ZONE} />
+      <ClockInCard
+        householdId={HOUSEHOLD_ID}
+        timeZone={TIME_ZONE}
+        weekStartsOn={1}
+      />
     );
 
     await waitFor(() => expect(getByTestId('today-clock-in')).toBeTruthy());
@@ -422,7 +435,11 @@ describe('ClockInCard — clocked-out receipt', () => {
     });
 
     const { getByTestId, getByText } = renderWithProviders(
-      <ClockInCard householdId={HOUSEHOLD_ID} timeZone={TIME_ZONE} />
+      <ClockInCard
+        householdId={HOUSEHOLD_ID}
+        timeZone={TIME_ZONE}
+        weekStartsOn={1}
+      />
     );
 
     await waitFor(() => expect(getByTestId('today-clock-in')).toBeTruthy());
@@ -446,7 +463,11 @@ describe('ClockInCard — clocked-out receipt', () => {
     });
 
     const { getByTestId, queryByTestId } = renderWithProviders(
-      <ClockInCard householdId={HOUSEHOLD_ID} timeZone={TIME_ZONE} />
+      <ClockInCard
+        householdId={HOUSEHOLD_ID}
+        timeZone={TIME_ZONE}
+        weekStartsOn={1}
+      />
     );
 
     await waitFor(() => expect(getByTestId('today-clock-in')).toBeTruthy());
@@ -482,7 +503,11 @@ describe('ClockInCard — child names stay distinguishable', () => {
     });
 
     const { getByTestId, getByText, queryByText } = renderWithProviders(
-      <ClockInCard householdId={HOUSEHOLD_ID} timeZone={TIME_ZONE} />
+      <ClockInCard
+        householdId={HOUSEHOLD_ID}
+        timeZone={TIME_ZONE}
+        weekStartsOn={1}
+      />
     );
 
     await waitFor(() => expect(getByTestId('today-clock-in')).toBeTruthy());
