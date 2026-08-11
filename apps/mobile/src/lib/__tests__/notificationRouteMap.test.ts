@@ -251,6 +251,79 @@ describe('NOTIFICATION_ROUTE_MAP resolvers', () => {
     ).toBe('/(private)/schedule/shifts?householdId=hh-1');
   });
 
+  // 3-O (§13 / N13, N14, N16): three of the four proposal pushes are about a
+  // proposal awaiting an answer, and the review screen IS that proposal.
+  it('routes the three awaiting-an-answer proposal pushes to the review screen', () => {
+    for (const type of [
+      PUSH_NOTIFICATION_TYPES.TERMS_PROPOSAL_RECEIVED,
+      PUSH_NOTIFICATION_TYPES.TERMS_PROPOSAL_COUNTERED,
+      PUSH_NOTIFICATION_TYPES.TERMS_PROPOSAL_WITHDRAWN,
+    ] as const) {
+      expect(resolve(type, { proposalId: 'prop-1', householdId: 'hh-1' })).toBe(
+        '/(private)/pay/proposal/prop-1'
+      );
+      // No id, no destination — a contract screen for the wrong proposal is
+      // worse than a tap that does nothing.
+      expect(resolve(type, { householdId: 'hh-1' })).toBeNull();
+    }
+  });
+
+  // §13 / N15: acceptance is the one that is NOT about a pending decision —
+  // there is nothing left to review, and her terms document is now the fact.
+  it('routes an accepted proposal to the carer My pay screen, not the review screen', () => {
+    expect(
+      resolve(PUSH_NOTIFICATION_TYPES.TERMS_PROPOSAL_ACCEPTED, {
+        proposalId: 'prop-1',
+        householdId: 'hh-1',
+      })
+    ).toBe('/(private)/settings/my-pay');
+  });
+
+  // §1.4 (D-38): one type, two arms. The role comes off the payload the
+  // emitter built, the same way `isQuietHoursExempt` reads `shiftStartsAt` —
+  // the resolver signature stays `(data)`.
+  describe('invite_redeemed role fork', () => {
+    it('lands a parent on the household screen, unchanged', () => {
+      expect(
+        resolve(PUSH_NOTIFICATION_TYPES.INVITE_REDEEMED, {
+          role: 'parent',
+          householdId: 'hh-1',
+        })
+      ).toBe('/(private)/settings/household');
+    });
+
+    it('lands a payload with no role on the household screen — the shipped behaviour', () => {
+      expect(resolve(PUSH_NOTIFICATION_TYPES.INVITE_REDEEMED, {})).toBe(
+        '/(private)/settings/household'
+      );
+    });
+
+    it('lands the carer on the proposal she sent — the answer she is waiting for', () => {
+      expect(
+        resolve(PUSH_NOTIFICATION_TYPES.INVITE_REDEEMED, {
+          role: 'carer',
+          proposalId: 'prop-1',
+          householdId: 'hh-1',
+        })
+      ).toBe('/(private)/pay/proposal/prop-1');
+    });
+
+    it('falls back to her draft home when the payload carries only a draftId', () => {
+      expect(
+        resolve(PUSH_NOTIFICATION_TYPES.INVITE_REDEEMED, {
+          role: 'carer',
+          draftId: 'hh-draft',
+        })
+      ).toBe('/(private)/draft');
+    });
+
+    it('gives the carer no destination when neither id is present', () => {
+      expect(
+        resolve(PUSH_NOTIFICATION_TYPES.INVITE_REDEEMED, { role: 'carer' })
+      ).toBeNull();
+    });
+  });
+
   it('is usable as the injected NotificationRouteMap type', () => {
     const map: NotificationRouteMap = NOTIFICATION_ROUTE_MAP;
     expect(Object.keys(map).length).toBe(ALL_PUSH_NOTIFICATION_TYPES.length);

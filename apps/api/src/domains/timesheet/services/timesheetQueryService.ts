@@ -821,8 +821,12 @@ export class TimesheetQueryService {
    * the point: the two hours tables were the exception, and they no longer
    * are. If you change one of the four, change all four.
    *
-   * STATUS IS NOT PART OF THE TABLE, and that is deliberate in BOTH
-   * directions. A nanny who has left must still see the hours she worked and
+   * STATUS IS NOT PART OF THE TABLE — the table is roles — and that is
+   * deliberate in BOTH directions. What the LOOKUP admits is a separate
+   * question, and from 3-O it is `{active, removed}` positively: a
+   * `candidate` nanny (D-49) reads null and takes the same opaque 404 a
+   * stranger takes, because a person nobody has hired yet has no payroll
+   * here to be an audit trail of. A nanny who has left must still see the hours she worked and
    * the pay she was owed, and the parents who paid keep the household view —
    * payroll is an audit trail, not a live surface that disappears with the
    * badge (067's row-armed `carer_id = auth.uid()` policy makes the same

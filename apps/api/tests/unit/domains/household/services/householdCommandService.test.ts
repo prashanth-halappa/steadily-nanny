@@ -38,6 +38,7 @@ const household: Household = {
   currency: 'GBP',
   jurisdiction: null,
   week_starts_on: 1,
+  state: 'live',
   created_by: 'u1',
   created_at: 't',
   updated_at: 't',
@@ -73,6 +74,9 @@ function pendingInvite(
     status: 'pending',
     accepted_by: null,
     accepted_at: null,
+    link_expires_at: null,
+    opened_at: null,
+    label: null,
     created_at: 't',
     updated_at: 't',
     ...overrides,
@@ -123,7 +127,7 @@ function makeMemberRepo(overrides: Record<string, unknown> = {}): any {
       ...data,
     })),
     findActiveMembership: mock(async () => null),
-    findMembershipAnyStatus: mock(async () => null),
+    findMembershipIncludingCandidate: mock(async () => null),
     findById: mock(async () => null),
     removeMembership: mock(async (id: string) => ({
       ...membershipFor('nanny'),
@@ -748,7 +752,9 @@ describe('HouseholdCommandService.redeemInvite', () => {
     // from removed (reactivate). Refusing after the claim would burn a
     // single-use code on a no-op.
     const memberRepo = makeMemberRepo({
-      findMembershipAnyStatus: mock(async () => membershipFor('owner')),
+      findMembershipIncludingCandidate: mock(async () =>
+        membershipFor('owner')
+      ),
     });
     const inviteRepo = makeInviteRepo();
     const svc = new HouseholdCommandService(
@@ -961,7 +967,7 @@ describe('HouseholdCommandService.redeemInvite', () => {
 
   it('refuses to heal when the claimer has a REMOVED membership row — a consumed code must not resurrect', async () => {
     const memberRepo = makeMemberRepo({
-      findMembershipAnyStatus: mock(async () => ({
+      findMembershipIncludingCandidate: mock(async () => ({
         ...membershipFor('nanny'),
         user_id: 'u9',
         status: 'removed',
@@ -986,7 +992,7 @@ describe('HouseholdCommandService.redeemInvite', () => {
 
   it('refuses to heal when the claimer is an active member — the redeem actually completed', async () => {
     const memberRepo = makeMemberRepo({
-      findMembershipAnyStatus: mock(async () => ({
+      findMembershipIncludingCandidate: mock(async () => ({
         ...membershipFor('nanny'),
         user_id: 'u9',
       })),
@@ -1011,7 +1017,7 @@ describe('HouseholdCommandService.redeemInvite', () => {
   it('releases the ORIGINAL claimer, checks THEIR membership, and only then claims for the new caller', async () => {
     const order: string[] = [];
     const memberRepo = makeMemberRepo({
-      findMembershipAnyStatus: mock(
+      findMembershipIncludingCandidate: mock(
         async (householdId: string, userId: string) => {
           order.push(`membership-lookup:${householdId}:${userId}`);
           return null;
@@ -1129,7 +1135,7 @@ describe('HouseholdCommandService.redeemInvite', () => {
       svc.redeemInvite('u2', { code: 'ABC-234' })
     ).rejects.toBeInstanceOf(InviteAlreadyAcceptedError);
     expect(inviteRepo.releaseClaim).not.toHaveBeenCalled();
-    expect(memberRepo.findMembershipAnyStatus).not.toHaveBeenCalled();
+    expect(memberRepo.findMembershipIncludingCandidate).not.toHaveBeenCalled();
   });
 
   it('refuses to heal an accepted invite with no accepted_at to age', async () => {
@@ -1231,7 +1237,7 @@ describe('HouseholdCommandService.redeemInvite — removed member rejoining', ()
     // impossible for someone who was removed: without reactivation the only
     // outcome is a 409 the parent cannot get past.
     const memberRepo = makeMemberRepo({
-      findMembershipAnyStatus: mock(async () => removedMembership()),
+      findMembershipIncludingCandidate: mock(async () => removedMembership()),
     });
     const inviteRepo = makeInviteRepo({
       findByCode: mock(async () => pendingInvite({ role: 'parent' })),
@@ -1265,7 +1271,7 @@ describe('HouseholdCommandService.redeemInvite — removed member rejoining', ()
   it('consumes the code with claimPending BEFORE reactivating, so the invite stays single-use', async () => {
     const order: string[] = [];
     const memberRepo = makeMemberRepo({
-      findMembershipAnyStatus: mock(async () => removedMembership()),
+      findMembershipIncludingCandidate: mock(async () => removedMembership()),
       reactivateMembership: mock(async (id: string, role: string) => {
         order.push('reactivate');
         return { ...removedMembership(), id, role, status: 'active' };
@@ -1304,7 +1310,7 @@ describe('HouseholdCommandService.redeemInvite — removed member rejoining', ()
     // row first, so this claim bought nothing and must go back — keyed to the
     // accepted_at THIS request won, never a later one.
     const memberRepo = makeMemberRepo({
-      findMembershipAnyStatus: mock(async () => removedMembership()),
+      findMembershipIncludingCandidate: mock(async () => removedMembership()),
       reactivateMembership: mock(async () => null),
     });
     const inviteRepo = makeInviteRepo();
@@ -1324,7 +1330,7 @@ describe('HouseholdCommandService.redeemInvite — removed member rejoining', ()
 
   it('still refuses a revoked code to a removed member', async () => {
     const memberRepo = makeMemberRepo({
-      findMembershipAnyStatus: mock(async () => removedMembership()),
+      findMembershipIncludingCandidate: mock(async () => removedMembership()),
     });
     const svc = new HouseholdCommandService(
       makeHouseholdRepo(),
@@ -1344,7 +1350,7 @@ describe('HouseholdCommandService.redeemInvite — removed member rejoining', ()
 
   it('still refuses an expired code to a removed member', async () => {
     const memberRepo = makeMemberRepo({
-      findMembershipAnyStatus: mock(async () => removedMembership()),
+      findMembershipIncludingCandidate: mock(async () => removedMembership()),
     });
     const svc = new HouseholdCommandService(
       makeHouseholdRepo(),

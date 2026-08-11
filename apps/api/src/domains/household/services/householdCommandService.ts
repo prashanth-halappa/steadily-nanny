@@ -8,8 +8,9 @@
  * @module domains/household/services/householdCommandService
  */
 import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types/schemas/notification.schema';
+import { ConflictError } from '../../../errors';
 import { logger } from '../../../middlewares/logger';
-import { notifyHouseholdParents } from '../../notification';
+import { notifyHouseholdParents, notifyUser } from '../../notification';
 // Repository modules directly, NOT the domain barrels: a barrel pulls in that
 // domain's services, and one of those reaching back for household membership
 // would close an import cycle.
@@ -43,9 +44,11 @@ import { HouseholdInviteRepository } from '../repositories/householdInviteReposi
 import { HouseholdMemberRepository } from '../repositories/householdMemberRepository';
 import { HouseholdRepository } from '../repositories/householdRepository';
 import {
+  DEFAULT_INVITE_LINK_WINDOW_DAYS,
   HOUSEHOLD_INVITE_STATUSES,
   HOUSEHOLD_MEMBER_STATUSES,
   HOUSEHOLD_ROLES,
+  HOUSEHOLD_STATES,
 } from '../schemas';
 import type {
   CreateHouseholdInput,
@@ -54,10 +57,11 @@ import type {
   HouseholdHoliday,
   HouseholdInvite,
   HouseholdMember,
-  RedeemHouseholdInviteInput,
+  RedeemHouseholdInviteBody,
   SetHouseholdHolidaysRequest,
   UpdateHouseholdInput,
 } from '../types';
+import { isDraftAuthor } from '../utils/assertHouseholdRole';
 import { generateUniqueInviteCode } from '../utils/inviteCode';
 import {
   type HouseholdQueryService,
@@ -114,12 +118,20 @@ export class HouseholdCommandService {
   ) {}
 
   /**
-   * Create a household AND the creator's owner membership together. A
-   * household with no members is unreachable by anyone (deleting a user
-   * cascades away memberships but leaves the household orphaned, since
-   * `created_by` is `ON DELETE SET NULL`) — so if the membership insert
-   * fails, the just-created household is deleted rather than left
-   * half-created.
+   * Create a household AND the creator's membership together. A household with
+   * no members is unreachable by anyone (deleting a user cascades away
+   * memberships but leaves the household orphaned, since `created_by` is
+   * `ON DELETE SET NULL`) — so if the membership insert fails, the
+   * just-created household is deleted rather than left half-created.
+   *
+   * A DRAFT (`state: 'draft'`, D-34) is the same two writes with a different
+   * membership: the creator is a NANNY, not an owner, and that single
+   * difference is the whole of D-36. `WRITE_ROLES = {owner, parent}` gates the
+   * `pay_arrangements` insert, so a household whose only member is a nanny
+   * contains nobody who can price anything — "nothing priceable" is enforced
+   * by the membership table rather than by hiding buttons, and it stays true
+   * however the UI changes. What she CAN write in it is the §2.2 capability,
+   * four named doors wide.
    */
   async create(
     userId: string,
@@ -134,12 +146,17 @@ export class HouseholdCommandService {
       created_by: userId,
     });
 
+    const isDraft = input.state === HOUSEHOLD_STATES.DRAFT;
     try {
       await this.memberRepo.createMembership({
         household_id: household.id,
         user_id: userId,
-        role: HOUSEHOLD_ROLES.OWNER,
-        can_edit: true,
+        role: isDraft ? HOUSEHOLD_ROLES.NANNY : HOUSEHOLD_ROLES.OWNER,
+        // `can_edit` follows the role, not the authorship: the draft author
+        // writes through the §2.2 capability, which no `can_edit` check has
+        // any part in. Granting it here would be a right nobody reads today
+        // and a surprise the day somebody does.
+        can_edit: !isDraft,
         status: HOUSEHOLD_MEMBER_STATUSES.ACTIVE,
       });
     } catch (error) {
@@ -204,7 +221,17 @@ export class HouseholdCommandService {
     input: UpdateHouseholdInput
   ): Promise<Household> {
     const membership = await this.queries.getMembership(userId, householdId);
-    this.assertWriteRole(householdId, membership);
+    // The draft author may set the NAME and nothing else (§2.2). She is asked
+    // for it at the share moment, where it is finally known — every other
+    // field on this body belongs to a family that does not exist yet, so a
+    // non-parent naming one is refused before the capability is even consulted.
+    if (
+      !WRITE_ROLES.has(membership.role) &&
+      Object.keys(input).some(key => key !== 'name')
+    ) {
+      throw new NotAHouseholdParentError(householdId, membership.role);
+    }
+    await this.assertWriteRoleOrDraftAuthor(householdId, membership);
 
     if (input.week_starts_on !== undefined) {
       const current = await this.householdRepo.findById(householdId);
@@ -220,19 +247,37 @@ export class HouseholdCommandService {
     return this.householdRepo.update(householdId, input);
   }
 
-  /** Generate an invite code for a household. Owner/parent only. */
+  /**
+   * Generate an invite code. Owner/parent, or the §2.2 draft author sending
+   * her terms to a family she has just met.
+   *
+   * The PUBLIC LINK and the CODE expire on different clocks, and the split is
+   * load-bearing rather than fussy (§6.1, D-51). `expires_at` keeps its 30 days
+   * because a family may reasonably take three weeks to decide and she may read
+   * the code out over the phone. `link_expires_at` defaults to 7, because the
+   * web page is the surface carrying her RATE in the open and a month of live
+   * URL is a month of exposure for a conversation usually over in a week. It is
+   * one of the three conditions the rate is on that page at all — cutting it
+   * takes the rate off the page (see 093's header and §6.2).
+   */
   async createInvite(
     userId: string,
     householdId: string,
     input: CreateHouseholdInviteInput
   ): Promise<HouseholdInvite> {
     const membership = await this.queries.getMembership(userId, householdId);
-    this.assertWriteRole(householdId, membership);
+    await this.assertWriteRoleOrDraftAuthor(householdId, membership);
 
     const code = await generateUniqueInviteCode(async candidate => {
       const existing = await this.inviteRepo.findByCode(candidate);
       return existing !== null;
     });
+
+    // Computed here rather than defaulted in SQL so the two windows are set by
+    // ONE writer: a database default plus a service override is how a 30-day
+    // request silently lands on a 7-day row.
+    const linkWindowDays =
+      input.link_expires_in_days ?? DEFAULT_INVITE_LINK_WINDOW_DAYS;
 
     return this.inviteRepo.create({
       household_id: householdId,
@@ -240,6 +285,10 @@ export class HouseholdCommandService {
       email: input.email ?? null,
       role: input.role,
       invited_by: userId,
+      label: input.label ?? null,
+      link_expires_at: new Date(
+        Date.now() + linkWindowDays * 24 * 60 * 60 * 1000
+      ).toISOString(),
     });
   }
 
@@ -258,7 +307,7 @@ export class HouseholdCommandService {
    */
   async redeemInvite(
     userId: string,
-    input: RedeemHouseholdInviteInput
+    input: RedeemHouseholdInviteBody
   ): Promise<HouseholdMember> {
     // Same FK as `create`, and this path has no client-side bootstrap at all:
     // a nanny's first ever API call can be this one.
@@ -269,6 +318,27 @@ export class HouseholdCommandService {
     if (!invite) {
       throw new InviteNotFoundError(code);
     }
+
+    // A nanny-authored code redeems through 094 instead, because everything it
+    // has to do — instantiate or absorb, join two people, copy children and the
+    // proposal, claim the code — has to commit or roll back together. The
+    // parent-authored path below is UNCHANGED: same claim, same reactivation,
+    // same PTO carry-over, same self-heal.
+    const inviteHousehold = await this.householdRepo.findById(
+      invite.household_id
+    );
+    if (inviteHousehold?.state === HOUSEHOLD_STATES.DRAFT) {
+      const membership = await this.redeemDraftInvite(
+        userId,
+        code,
+        input,
+        invite
+      );
+      if (membership) {
+        return membership;
+      }
+    }
+
     if (invite.status === HOUSEHOLD_INVITE_STATUSES.REVOKED) {
       throw new InviteRevokedError(code);
     }
@@ -284,14 +354,17 @@ export class HouseholdCommandService {
       await this.releaseStrandedClaim(invite, code);
     }
 
-    // ANY status, not just active: a removed ex-member still owns a membership
-    // row, so the unique `(household_id, user_id)` constraint makes a fresh
-    // insert impossible for them. Active is the only state that refuses here,
-    // and it refuses BEFORE the claim so a no-op never burns a single-use code.
-    const existingMembership = await this.memberRepo.findMembershipAnyStatus(
-      invite.household_id,
-      userId
-    );
+    // EVERY status, `candidate` included: a removed ex-member still owns a
+    // membership row, so the unique `(household_id, user_id)` constraint makes
+    // a fresh insert impossible for them. Active is the only state that refuses
+    // here, and it refuses BEFORE the claim so a no-op never burns a single-use
+    // code. `findMembershipAnyStatus` would be wrong now — it excludes a
+    // candidate, whose row is just as unique-constraint-fatal as a removed one.
+    const existingMembership =
+      await this.memberRepo.findMembershipIncludingCandidate(
+        invite.household_id,
+        userId
+      );
     if (existingMembership?.status === HOUSEHOLD_MEMBER_STATUSES.ACTIVE) {
       throw new AlreadyMemberError(invite.household_id);
     }
@@ -355,6 +428,153 @@ export class HouseholdCommandService {
     }
 
     return membership;
+  }
+
+  /**
+   * The draft arm of `redeemInvite`. Returns the membership 094 created, or
+   * `null` to mean "not a draft after all — run the ordinary path".
+   *
+   * Every refusal below is 094's `outcome`, mapped to an error this API
+   * already has. Four of them collapse into the SAME opaque
+   * `InviteNotFoundError` a missing code gets, and that is the existence-hiding
+   * convention `previewInvite`'s header protects (§17): "you may not absorb
+   * into that household", "that is your own code" and "the draft has no
+   * author" all confirm the code was real to somebody probing strings. The
+   * reason travels in the metadata, where support can read it and a stranger
+   * cannot.
+   */
+  private async redeemDraftInvite(
+    userId: string,
+    code: string,
+    input: RedeemHouseholdInviteBody,
+    invite: HouseholdInvite
+  ): Promise<HouseholdMember | null> {
+    const result = await this.inviteRepo.redeemDraftHousehold(
+      code,
+      userId,
+      // "No live household of my own" is null, which 094 reads as
+      // "instantiate one from the draft" (§2.1 row 1).
+      input.target_household_id ?? null
+    );
+
+    switch (result.outcome) {
+      case 'redeemed':
+        this.notifyDraftRedemption(
+          result.household_id,
+          userId,
+          result,
+          await this.familyNameForCarerPush(invite, result.household_id)
+        );
+        return result.membership;
+      case 'not_a_draft_invite':
+        // The household went live between our read and the call — impossible
+        // today (094 is the only writer of that transition and it does not
+        // reach here), kept because falling through is free and correct.
+        return null;
+      case 'already_member':
+        throw new AlreadyMemberError(result.household_id);
+      case 'proposal_already_open':
+        // Two of her codes redeemed by the same family. Nothing is being
+        // hidden here — he knows who she is — so this one is nameable.
+        throw new ConflictError(
+          'These terms are already with this family to review',
+          'PROPOSAL_ALREADY_OPEN',
+          { householdId: result.household_id }
+        );
+      default:
+        // The reason is LOGGED, never returned: `BaseError` ships `metadata`
+        // to the client on a 4xx, and "you may not absorb into that household"
+        // versus "that is your own code" versus "no such code" is exactly the
+        // distinction §17's existence-hiding convention refuses to draw for
+        // somebody holding a string.
+        logger.info('Draft redemption refused', {
+          code,
+          outcome: result.outcome,
+        });
+        throw new InviteNotFoundError(code);
+    }
+  }
+
+  /**
+   * Both arms of `invite_redeemed` on a draft redemption (§13 — the type is
+   * widened to audience `both`, not split into a second type: one fact, one
+   * type, two arms of copy).
+   *
+   * The CARER arm is the new one and the important one. She is not present when
+   * this happens — she shared a link days ago — and "did it reach them" is the
+   * only question she has between sending her terms and hearing back. The
+   * payload carries `proposalId` so the mobile route map can fork on role and
+   * land her on the proposal rather than on a household she cannot read yet.
+   *
+   * NO FIGURE in either body (A8, §13): a lock screen is a public surface, and
+   * the one on this path would be her rate.
+   */
+  private notifyDraftRedemption(
+    householdId: string,
+    redeemerId: string,
+    result: { carer_id: string; proposal: { id: string } | null },
+    familyName: string
+  ): void {
+    try {
+      notifyHouseholdParents(
+        householdId,
+        {
+          title: 'Someone joined your household',
+          body: 'A code was redeemed — a new nanny joined the household.',
+          data: {
+            type: PUSH_NOTIFICATION_TYPES.INVITE_REDEEMED,
+            householdId,
+          },
+        },
+        // The redeemer just tapped the button and is looking at the result;
+        // a co-parent who was not there is the one who needs telling.
+        { excludeUserId: redeemerId }
+      );
+    } catch {
+      // Fire-and-forget, like every other push in this service: the membership
+      // is already committed and must not be undone by a notification.
+    }
+
+    try {
+      notifyUser(result.carer_id, {
+        title: 'Someone joined with your code',
+        body: `${familyName} joined with your code. Your terms are with them to review.`,
+        data: {
+          type: PUSH_NOTIFICATION_TYPES.INVITE_REDEEMED,
+          householdId,
+          ...(result.proposal ? { proposalId: result.proposal.id } : {}),
+        },
+      });
+    } catch {
+      // Same posture as the parent arm above.
+    }
+  }
+
+  /**
+   * How the carer's push names the family — HER label first.
+   *
+   * `invite.label` is the name she typed at the share moment ("The Bakers").
+   * It is private to her, and she is the recipient of this push, so it is both
+   * permitted and the best answer: on the instantiate path the household's own
+   * `name` is whatever 094 fell back to, which may be "Our household" and
+   * reads as nonsense in this sentence.
+   *
+   * Never throws and never blocks the redemption: a name is a nicety on a push
+   * and the membership is already committed.
+   */
+  private async familyNameForCarerPush(
+    invite: HouseholdInvite,
+    householdId: string
+  ): Promise<string> {
+    if (invite.label) {
+      return invite.label;
+    }
+    try {
+      const household = await this.householdRepo.findById(householdId);
+      return household?.name ?? 'A family';
+    } catch {
+      return 'A family';
+    }
   }
 
   /**
@@ -544,14 +764,20 @@ export class HouseholdCommandService {
     return removed;
   }
 
-  /** Revoke a pending invite so its code stops working. Owner/parent only. */
+  /**
+   * Revoke a pending invite so its code stops working — and, from 3-O, so the
+   * public terms page dies with it. Owner/parent, or the §2.2 draft author:
+   * the per-row off switch is the FIRST of Marisol's three conditions for her
+   * rate being on that page (D-51), and an off switch she cannot reach is not
+   * one.
+   */
   async revokeInvite(
     callerId: string,
     householdId: string,
     inviteId: string
   ): Promise<HouseholdInvite> {
     const membership = await this.queries.getMembership(callerId, householdId);
-    this.assertWriteRole(householdId, membership);
+    await this.assertWriteRoleOrDraftAuthor(householdId, membership);
 
     const revoked = await this.inviteRepo.revokePending(inviteId, householdId);
     if (revoked) {
@@ -641,6 +867,29 @@ export class HouseholdCommandService {
   }
 
   /**
+   * The role gate, widened by exactly the §2.2 draft-author capability and
+   * nothing else. See `isDraftAuthor` for why it is a predicate beside
+   * `WRITE_ROLES` rather than a fifth member of it.
+   *
+   * The household read only happens when the role gate has ALREADY failed —
+   * which today means a nanny or helper, i.e. a request that used to throw
+   * outright. Every parent-authored write keeps its old query count.
+   */
+  private async assertWriteRoleOrDraftAuthor(
+    householdId: string,
+    membership: HouseholdMember
+  ): Promise<void> {
+    if (WRITE_ROLES.has(membership.role)) {
+      return;
+    }
+    const household = await this.householdRepo.findById(householdId);
+    if (isDraftAuthor(household, membership)) {
+      return;
+    }
+    throw new NotAHouseholdParentError(householdId, membership.role);
+  }
+
+  /**
    * Best-effort un-claim after a failed membership insert. Without it the
    * invite is left `accepted` with nobody in the household, and the same user
    * retrying hits `InviteAlreadyAcceptedError` — a transient database error
@@ -718,10 +967,11 @@ export class HouseholdCommandService {
       throw new InviteAlreadyAcceptedError(code);
     }
 
-    const claimerMembership = await this.memberRepo.findMembershipAnyStatus(
-      invite.household_id,
-      claimedBy
-    );
+    const claimerMembership =
+      await this.memberRepo.findMembershipIncludingCandidate(
+        invite.household_id,
+        claimedBy
+      );
     if (claimerMembership) {
       throw new InviteAlreadyAcceptedError(code);
     }

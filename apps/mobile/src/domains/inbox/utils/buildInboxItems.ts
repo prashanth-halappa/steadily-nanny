@@ -22,15 +22,23 @@
  *    a real carer_id match by data, but this makes the exclusion true by
  *    construction, not by happenstance, and is pinned by a test.
  *
+ *  - terms proposals: status `proposed`, shown to the side that must ANSWER
+ *    (a carer-authored one is the parent's item, a parent counter is the
+ *    carer's) — never to whoever wrote it. Same explicit role check as
+ *    `pending_shift` (B5).
+ *
  * §2.2's urgency ordering: items are sorted by `sortKey` ascending (a rank
  * per kind, `pending_shift` forking on whether the shift starts within 48h),
  * ties broken by the date the item concerns, soonest first. Ranks the spec
- * assigns to kinds this build does not add (`terms_proposal`,
- * `reimbursement_owed`, `terms_ack` — see the module doc on `inboxItemCopy.ts`
- * for why) are reserved rather than reused, so a later slice slots in without
- * renumbering everything here.
+ * assigns to kinds this build does not add (`reimbursement_owed`, `terms_ack`
+ * — see the module doc on `inboxItemCopy.ts` for why) are reserved rather
+ * than reused, so a later slice slots in without renumbering everything here.
  */
 
+import {
+  TERMS_PROPOSAL_STATUSES,
+  type TermsProposalDirection,
+} from '@steadily-nanny/shared-types';
 import {
   isParentEditorRole,
   SETUP_ROLES,
@@ -88,6 +96,25 @@ export type InboxShiftInput = {
   cover_ask_expires_at?: string | null;
 };
 
+/**
+ * The `TermsProposal` fields this item needs, structurally — a wire row from
+ * `GET .../terms-proposals` assigns straight to it. `terms` is the pay
+ * arrangement REQUEST, whose `currency` is optional (the server resolves it
+ * from the household), which is why the item carries `currency: string | null`
+ * rather than a guess.
+ */
+export type InboxTermsProposalInput = {
+  id: string;
+  household_id: string;
+  carer_id: string;
+  direction: TermsProposalDirection;
+  status: string;
+  carer_display_name: string;
+  created_at: string;
+  weekly_equivalent_minor: number | null;
+  terms: { rate_minor: number; currency?: string | undefined };
+};
+
 export type InboxItem =
   | {
       kind: 'change_request';
@@ -128,6 +155,22 @@ export type InboxItem =
       endsAt: string;
       createdAt: string;
       coverAskExpiresAt: string | null;
+    }
+  | {
+      kind: 'terms_proposal';
+      id: string;
+      householdId: string;
+      carerDisplayName: string;
+      proposedAt: string;
+      /** Who WROTE it — which is what decides whose item this is. */
+      direction: TermsProposalDirection;
+      rateMinor: number;
+      /** Server-computed; null when there is no guaranteed-hours figure to
+       * stand behind. Never multiplied client-side (§17, D23). */
+      weeklyEquivalentMinor: number | null;
+      /** Null when the proposal's terms carry none — the copy then names no
+       * figure at all rather than an amount with an invented symbol. */
+      currency: string | null;
     };
 
 /**
@@ -161,6 +204,7 @@ export function buildInboxItems(input: {
   patterns: readonly InboxPatternInput[];
   timesheets: readonly InboxTimesheetInput[];
   shifts?: readonly InboxShiftInput[];
+  termsProposals?: readonly InboxTermsProposalInput[];
 }): InboxItem[] {
   const me = input.currentUserId ?? null;
   const nowMs = input.nowISO ? Date.parse(input.nowISO) : Date.now();
@@ -253,16 +297,45 @@ export function buildInboxItems(input: {
     }
   }
 
+  // §7.1 — a live proposal is always the OTHER side's item: the person who
+  // wrote it has nothing to answer, and a row about your own sent contract is
+  // not pending work. Direction decides the side; the role check is explicit
+  // (B5, same shape as pending_shift) because a helper cannot accept terms at
+  // all — the API's write roles are {owner, parent}.
+  for (const proposal of input.termsProposals ?? []) {
+    if (proposal.status !== TERMS_PROPOSAL_STATUSES.PROPOSED) continue;
+    const wantsParent = proposal.direction === 'carer';
+    if (wantsParent) {
+      if (!isParentEditorRole(input.role)) continue;
+    } else {
+      // Her counter to answer — and only hers (D-21: two nannies in one
+      // household never see each other's negotiation).
+      if (input.role !== SETUP_ROLES.NANNY) continue;
+      if (!me || proposal.carer_id !== me) continue;
+    }
+    items.push({
+      kind: 'terms_proposal',
+      id: proposal.id,
+      householdId: proposal.household_id,
+      carerDisplayName: proposal.carer_display_name,
+      proposedAt: proposal.created_at,
+      direction: proposal.direction,
+      rateMinor: proposal.terms.rate_minor,
+      weeklyEquivalentMinor: proposal.weekly_equivalent_minor,
+      currency: proposal.terms.currency ?? null,
+    });
+  }
+
   items.sort((a, b) => compareItems(a, b, nowMs));
   return items;
 }
 
 /**
  * §2.2's urgency ordering. Rank ascending; a lower number renders first.
- * Ranks 4/8/9 belong to kinds this build does not add (`terms_proposal`,
- * `reimbursement_owed`, `terms_ack`) and are deliberately left unassigned
- * here rather than reused, so a later slice's kind slots in at its spec'd
- * rank without renumbering every other kind.
+ * Ranks 8/9 belong to kinds this build does not add (`reimbursement_owed`,
+ * `terms_ack`) and are deliberately left unassigned here rather than reused,
+ * so a later slice's kind slots in at its spec'd rank without renumbering
+ * every other kind.
  */
 function sortKey(item: InboxItem, nowMs: number): number {
   if (item.kind === 'pending_shift') {
@@ -274,6 +347,10 @@ function sortKey(item: InboxItem, nowMs: number): number {
       return 2;
     case 'queried_week':
       return 3;
+    // A contract waiting on a signature: it blocks every future figure, but
+    // nothing about it decays overnight.
+    case 'terms_proposal':
+      return 4;
     // Not in §2.2's table (patterns predate this build) — bucketed with
     // "pending_shift, all others": both are a schedule response waiting on
     // her, neither D-22-deadline-bearing.
@@ -297,6 +374,10 @@ function sortDateFor(item: InboxItem): string | null {
     case 'submitted_week':
     case 'stale_submitted_week':
       return item.weekStart;
+    // The day it was sent — the oldest unanswered proposal first, which is
+    // the one that has been blocking longest.
+    case 'terms_proposal':
+      return item.proposedAt;
     // change_request carries no date on this shape — insertion order stands
     // (a stable sort's fallback), which is an acceptable tie-break: two
     // change requests competing for the same rank is rare, and neither one

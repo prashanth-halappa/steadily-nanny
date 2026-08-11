@@ -1,4 +1,14 @@
 {
+  "untitledDraft": "Untitled draft",
+  "setup": {
+    "wizardTitle": "Name your family",
+    "wizardSubtitle": "This is what your nanny sees on shifts, hours, and pay. You can change it later in settings.",
+    "parentNameLabel": "Your name",
+    "parentNamePlaceholder": "e.g. Ana Ruiz",
+    "householdNameLabel": "Family name",
+    "householdNamePlaceholder": "e.g. The Ruiz family",
+    "continueButton": "Continue"
+  },
   "switcher": {
     "triggerLabel": "Switch household",
     "sheetTitle": "Choose a household",
@@ -63,7 +73,14 @@
         "description": "Can view the schedule and hours — read-only, no editing."
       }
     },
-    "codeMeta": "{{role}} invite · expires {{date}}"
+    "codeMeta": "{{role}} invite · expires {{date}}",
+    "absorb": {
+      "title": "Add {{name}} to your family?",
+      "body": "{{name}} has proposed terms — you'll review them next. They join {{household}} once you agree, and they can't see your family's schedule or details until then. Nothing changes for anyone already in your family.",
+      "pickerHint": "Add them to this family.",
+      "confirmButton": "Add {{name}}",
+      "carerFallback": "this nanny"
+    }
   },
   "availability": {
     "wizardTitle": "When are you available?",

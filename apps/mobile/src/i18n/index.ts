@@ -19,6 +19,9 @@
  * - expenses:  expenses & mileage (Phase 4) — nanny's add sheet + status
  *   list, parent's pending-review sheet, and the weekly statement's
  *   Reimbursements card (reimbursements are NOT wages, docs/11-MONEY.md §6)
+ * - draft:     the nanny's draft home (§5) — the one-purpose screen a terms
+ *   draft opens to instead of the four-tab shell, plus the share, per-invite
+ *   and archive sheets that hang off it
  *
  * Language resolution order (each candidate validated vs SUPPORTED_LANGUAGES):
  *   1. MMKV-persisted preference from the `language-storage` Zustand store
@@ -38,6 +41,7 @@ import { storage } from '@/src/lib/mmkvStorage';
 import { SUPPORTED_LANGUAGES, type SupportedLanguage } from './constants';
 import enAuth from './locales/en/auth.json';
 import enCommon from './locales/en/common.json';
+import enDraft from './locales/en/draft.json';
 import enErrors from './locales/en/errors.json';
 import enExpenses from './locales/en/expenses.json';
 import enHours from './locales/en/hours.json';
@@ -51,6 +55,7 @@ import enToday from './locales/en/today.json';
 import enWelcome from './locales/en/welcome.json';
 import esAuth from './locales/es/auth.json';
 import esCommon from './locales/es/common.json';
+import esDraft from './locales/es/draft.json';
 import esErrors from './locales/es/errors.json';
 import esExpenses from './locales/es/expenses.json';
 import esHours from './locales/es/hours.json';
@@ -78,6 +83,7 @@ const resources = {
     inbox: enInbox,
     pay: enPay,
     expenses: enExpenses,
+    draft: enDraft,
   },
   es: {
     common: esCommon,
@@ -93,6 +99,7 @@ const resources = {
     inbox: esInbox,
     pay: esPay,
     expenses: esExpenses,
+    draft: esDraft,
   },
 };
 

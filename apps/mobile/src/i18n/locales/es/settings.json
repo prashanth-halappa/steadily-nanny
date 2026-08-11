@@ -156,7 +156,11 @@
       "cover_ask_declined": "Solicitud de cobertura rechazada",
       "carer_sick_shifts_affected": "Día de baja que afecta a turnos",
       "shift_no_show_digest": "Resumen de fichajes no realizados",
-      "week_below_guarantee": "Semana aprobada por debajo de la garantía"
+      "week_below_guarantee": "Semana aprobada por debajo de la garantía",
+      "terms_proposal_received": "Condiciones propuestas",
+      "terms_proposal_countered": "Contraoferta de condiciones",
+      "terms_proposal_accepted": "Condiciones acordadas",
+      "terms_proposal_withdrawn": "Condiciones retiradas"
     }
   }
 }

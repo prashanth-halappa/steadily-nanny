@@ -74,6 +74,15 @@ const shiftsCalendarHref: NotificationRouteResolver = data =>
     householdId: asString(data.householdId),
   });
 
+// 3-O (§7.2/§13): the review screen IS the proposal — there is no list to
+// fall back to, so a payload without the id resolves to nothing rather than
+// opening the wrong contract.
+const proposalReviewHref: NotificationRouteResolver = data => {
+  const proposalId = asString(data.proposalId);
+  if (!proposalId) return null;
+  return `/(private)/pay/proposal/${proposalId}`;
+};
+
 const uncoveredCareHref: NotificationRouteResolver = data =>
   appendQuery('/(private)/schedule/shifts', {
     householdId: asString(data.householdId),
@@ -164,6 +173,18 @@ export const NOTIFICATION_ROUTE_MAP: NotificationRouteMap &
   [PUSH_NOTIFICATION_TYPES.PAY_TERMS_DISAGREED]: () =>
     '/(private)/settings/pay',
 
+  // 3-O (§13, N13/N14/N16). Three of the four are about a proposal still
+  // awaiting an answer, and the review screen is that proposal in view mode.
+  [PUSH_NOTIFICATION_TYPES.TERMS_PROPOSAL_RECEIVED]: proposalReviewHref,
+  [PUSH_NOTIFICATION_TYPES.TERMS_PROPOSAL_COUNTERED]: proposalReviewHref,
+  [PUSH_NOTIFICATION_TYPES.TERMS_PROPOSAL_WITHDRAWN]: proposalReviewHref,
+  // N15 is the one that is NOT a pending decision: once terms are agreed
+  // there is nothing to review, and the arrangement on her My pay screen is
+  // now the fact. Same static destination as PAY_TERMS_SET, for the same
+  // reason — that screen fetches every household she belongs to itself.
+  [PUSH_NOTIFICATION_TYPES.TERMS_PROPOSAL_ACCEPTED]: () =>
+    '/(private)/settings/my-pay',
+
   // A carer cancelled time off a parent had already marked paid;
   // `ptoCommandService.reconcileCancelledTimeOff` notifies that household's
   // parents so they see the corrected balance — same static-destination
@@ -186,8 +207,18 @@ export const NOTIFICATION_ROUTE_MAP: NotificationRouteMap &
   [PUSH_NOTIFICATION_TYPES.TIME_OFF_REQUESTED]: () =>
     '/(private)/settings/household-time-off',
 
-  [PUSH_NOTIFICATION_TYPES.INVITE_REDEEMED]: () =>
-    '/(private)/settings/household',
+  // 3-O (§1.4/D-38): one type, two arms. Nanny-first onboarding means the
+  // CARER is the one waiting to hear a family redeemed her code, so she goes
+  // to what she is waiting on — the proposal she sent, or her draft home
+  // while there is no proposal yet. The role is read off the payload the
+  // emitter built (the same shape `isQuietHoursExempt` reads `shiftStartsAt`
+  // from), because the resolver signature is `(data)` and widening it would
+  // churn all 55 entries to serve one.
+  [PUSH_NOTIFICATION_TYPES.INVITE_REDEEMED]: data => {
+    if (asString(data.role) !== 'carer') return '/(private)/settings/household';
+    if (!asString(data.draftId)) return proposalReviewHref(data);
+    return proposalReviewHref(data) ?? '/(private)/draft';
+  },
 
   [PUSH_NOTIFICATION_TYPES.CO_PARENT_ACTION_FYI]: shiftDetailHref,
 

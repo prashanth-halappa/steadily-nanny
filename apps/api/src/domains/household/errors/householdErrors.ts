@@ -49,8 +49,8 @@ export class NotAHouseholdParentError extends AuthorizationError {
  * probing other families' invite ids.
  */
 export class InviteNotFoundError extends NotFoundError {
-  constructor(identifier: string) {
-    super('Invite not found', 'INVITE_NOT_FOUND', { identifier });
+  constructor(identifier: string, metadata?: ErrorMetadata) {
+    super('Invite not found', 'INVITE_NOT_FOUND', { identifier, ...metadata });
     this.name = 'InviteNotFoundError';
   }
 }

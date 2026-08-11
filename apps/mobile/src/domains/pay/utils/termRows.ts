@@ -81,11 +81,92 @@ function payScheduleValue(
   }
 }
 
+/**
+ * "Outside wages" (D-13) and "In writing" (T9) live in the arrangement's
+ * `terms` jsonb rather than in columns, and until 3-O they had no read-only
+ * row at all — they were enterable and invisible. That is survivable on a
+ * card the parent who typed them is reading; it is not survivable on the
+ * proposal review screen, where a term that does not render is a term he
+ * agrees to without being shown it, and where the nanny then becomes the
+ * person who "snuck something in" (`screens-onboarding-terms-proposal.md`
+ * §7.2, M22). One inventory, so all three surfaces gained them together.
+ *
+ * Every read below narrows rather than coerces — the bag is
+ * `Record<string, unknown>` on the wire, and a hand-edited row of the wrong
+ * shape is DROPPED, never rendered as a term somebody agreed to.
+ */
+const IN_WRITING_FIELD_COUNT = 5;
+
+function stipendLine(
+  row: unknown,
+  currency: string,
+  t: Translate
+): string | null {
+  if (typeof row !== 'object' || row === null) return null;
+  const { label, amount_minor, cadence } = row as Record<string, unknown>;
+  if (typeof label !== 'string' || typeof amount_minor !== 'number') {
+    return null;
+  }
+  const params = { label, amount: formatMoney(amount_minor, currency) };
+  // Literal keys, never a computed `outsideWagesItem${cadence}` — a computed
+  // key is invisible to the locale-key resolution guard, and a key no test
+  // can see is a key that silently stops resolving in Spanish.
+  switch (cadence) {
+    case 'monthly':
+      return t('terms.outsideWagesItemMonthly', params);
+    case 'annual':
+      return t('terms.outsideWagesItemAnnual', params);
+    default:
+      return t('terms.outsideWagesItemWeekly', params);
+  }
+}
+
+function outsideWagesValue(
+  terms: Record<string, unknown> | undefined,
+  currency: string,
+  t: Translate
+): string | null {
+  const recurring = terms?.recurring;
+  if (!Array.isArray(recurring)) return null;
+  const lines = recurring
+    .map(row => stipendLine(row, currency, t))
+    .filter((line): line is string => line !== null);
+  return lines.length === 0 ? null : lines.join(' · ');
+}
+
+function inWritingLines(
+  terms: Record<string, unknown> | undefined,
+  t: Translate
+): string[] {
+  const lines: string[] = [];
+  const notice = terms?.notice_period_days;
+  if (typeof notice === 'number') {
+    lines.push(t('terms.inWritingNotice', { weeks: notice / 7 }));
+  }
+  const probation = terms?.probation_days;
+  if (typeof probation === 'number') {
+    lines.push(t('terms.inWritingProbation', { days: probation }));
+  }
+  const freeText = [
+    ['duties', 'terms.inWritingDuties'],
+    ['driving', 'terms.inWritingDriving'],
+    ['live_in', 'terms.inWritingLiveIn'],
+  ] as const;
+  for (const [field, key] of freeText) {
+    const text = terms?.[field];
+    if (typeof text === 'string' && text.trim() !== '') {
+      lines.push(t(key, { text }));
+    }
+  }
+  return lines;
+}
+
 export function buildTermRows(
   arrangement: PayArrangement,
   t: Translate,
   balance?: PtoBalance | null
 ): TermRow[] {
+  const documentaryLines = inWritingLines(arrangement.terms, t);
   const hasEntitlement = arrangement.pto_entitlement_minutes_per_year !== null;
   const ptoBalanceRow: TermRow = !hasEntitlement
     ? { key: 'ptoBalance', label: t('terms.ptoBalanceLabel'), value: null }
@@ -232,6 +313,28 @@ export function buildTermRows(
       key: 'paySchedule',
       label: t('terms.payScheduleLabel'),
       value: payScheduleValue(arrangement.pay_frequency ?? null, t),
+    },
+    {
+      key: 'outsideWages',
+      label: t('terms.outsideWagesLabel'),
+      value: outsideWagesValue(arrangement.terms, arrangement.currency, t),
+    },
+    {
+      key: 'inWriting',
+      label: t('terms.inWritingLabel'),
+      value:
+        documentaryLines.length === 0
+          ? null
+          : t('inWriting.summary', {
+              filled: documentaryLines.length,
+              total: IN_WRITING_FIELD_COUNT,
+            }),
+      // The count alone would still leave the parent agreeing to a duties
+      // paragraph he never read (§7.2). The spec's chevron is the one thing
+      // given up here: the detail is always expanded rather than collapsible,
+      // which costs vertical space and no information.
+      subLine:
+        documentaryLines.length === 0 ? undefined : documentaryLines.join('\n'),
     },
     ptoBalanceRow,
   ];

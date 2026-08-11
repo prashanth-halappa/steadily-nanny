@@ -16,16 +16,20 @@
  * pastHouseholds[0]`, so a preference for a household the refetched list has
  * not produced yet falls back harmlessly for a frame instead of resolving null.
  */
-import { type Href, useRouter } from 'expo-router';
+import { type Href, useLocalSearchParams, useRouter } from 'expo-router';
 import { CodeEntryScreen } from '@/src/domains/setup/components/CodeEntryScreen';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
 
 export default function JoinHouseholdRoute() {
   const router = useRouter();
   const { setActiveHouseholdId } = useActiveHousehold();
+  // An already-onboarded person who tapped `nanny.getsteadily.app/t/:code`
+  // lands here rather than in the wizard — `/t/[code].tsx` forwards the code.
+  const { code } = useLocalSearchParams<{ code?: string }>();
 
   return (
     <CodeEntryScreen
+      initialCode={code}
       onJoined={householdId => {
         setActiveHouseholdId(householdId);
         router.replace('/(private)/(tabs)/home' as Href);

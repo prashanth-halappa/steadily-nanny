@@ -5,7 +5,7 @@
   "noCancellationPay": "Sin pago por cancelación",
   "inEffectSince": "Vigente desde el {{date}}",
   "changeTermsButton": "Cambiar condiciones",
-  "appendOnlyNote": "Las condiciones nunca se editan ni se eliminan — un cambio es un nuevo registro.",
+  "appendOnlyNote": "Puedes cambiar las condiciones más adelante. Los cambios se añaden al registro, nunca se editan encima.",
   "historyHeading": "Historial",
   "historyFrom": "Desde el {{date}}",
   "historyFromSetBy": "Desde el {{date}} · establecido por {{name}} el {{createdDate}}",
@@ -44,7 +44,18 @@
     "payScheduleValueMonthly": "Mensual",
     "ptoBalanceLabel": "Saldo de tiempo libre pagado",
     "ptoBalanceValue": "{{amount}} restantes este año",
-    "ptoBalanceCaption": "1 ene – 31 dic {{year}}"
+    "ptoBalanceCaption": "1 ene – 31 dic {{year}}",
+    "outsideWagesLabel": "Pagos fuera del salario",
+    "outsideWagesItemWeekly": "{{label}} {{amount}} a la semana",
+    "outsideWagesItemMonthly": "{{label}} {{amount}} al mes",
+    "outsideWagesItemAnnual": "{{label}} {{amount}} al año",
+    "inWritingLabel": "Por escrito",
+    "inWritingNotice": "Preaviso de {{weeks}} semanas",
+    "inWritingProbation": "Periodo de prueba de {{days}} días",
+    "inWritingDuties": "Qué incluye el trabajo: {{text}}",
+    "inWritingDriving": "Conducción: {{text}}",
+    "inWritingLiveIn": "Interna: {{text}}",
+    "startsLabel": "Comienza"
   },
   "currencySearchPlaceholder": "Buscar monedas",
   "currencySearchEmpty": "No hay monedas que coincidan",
@@ -270,5 +281,48 @@
     "reasonPlaceholder": "p. ej. registrado dos veces",
     "note": "El original se queda en el registro. Esto añade un apunte de corrección.",
     "submitButton": "Registrar la corrección"
+  },
+  "perHour": "/h",
+  "proposeSheet": {
+    "title": "Sugerir cambios",
+    "subtitle": "{{name}} verá lo que has cambiado.",
+    "submitButton": "Enviar estas condiciones"
+  },
+  "proposal": {
+    "you": "tú",
+    "theFamily": "la familia",
+    "by": "De {{name}}",
+    "was": "antes {{value}}",
+    "wasRate": "antes {{value}}/h",
+    "evenSpreadCaveat": "Supone cinco días de 10 horas. Los días más largos suman horas extra diarias.",
+    "historyHeading": "Cómo llegamos aquí",
+    "reviewTitle": "Condiciones de {{name}}",
+    "reviewTitleFamily": "Condiciones de {{name}}",
+    "reviewTitleFallback": "Condiciones",
+    "agreeButton": "De acuerdo con estas condiciones",
+    "counterButton": "Sugerir cambios",
+    "reviewButton": "Revisar estas condiciones",
+    "suggestChangeButton": "Sugerir un cambio",
+    "withdrawButton": "Retirar",
+    "openRowTitle": "Condiciones propuestas por {{name}}",
+    "state": {
+      "proposed": "Propuesto el {{date}}",
+      "countered": "Contrapropuesto el {{date}}",
+      "agreedWith": "Acordado con {{name}} el {{date}}",
+      "withdrawn": "Retirado el {{date}}",
+      "proposedBy": "Propuesto por {{name}} · {{date}}",
+      "counteredBy": "Contrapropuesto por {{name}} · {{date}}"
+    },
+    "accept": {
+      "title": "¿De acuerdo con estas condiciones?",
+      "summary": "{{amount}} a la semana con {{hours}} horas garantizadas. Empieza el {{date}}.",
+      "summaryNoWeekly": "Empieza el {{date}}.",
+      "responsibilityParent": "Me corresponde comprobar que estas condiciones son correctas para nuestra familia. Steadily Nanny registra lo que acordamos — no da asesoramiento legal ni fiscal.",
+      "responsibilityCarer": "He revisado estas condiciones y estoy de acuerdo con ellas. Steadily Nanny registra lo que acordamos — no da asesoramiento legal ni fiscal.",
+      "confirm": "De acuerdo",
+      "cancel": "Cancelar",
+      "offline": "Necesitas conexión para enviar esto.",
+      "failed": "No se pudo enviar. Comprueba tu conexión e inténtalo de nuevo."
+    }
   }
 }

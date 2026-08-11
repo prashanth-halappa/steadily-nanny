@@ -1,4 +1,14 @@
 {
+  "untitledDraft": "Borrador sin título",
+  "setup": {
+    "wizardTitle": "Ponle nombre a tu familia",
+    "wizardSubtitle": "Es lo que tu niñera verá en los turnos, las horas y el pago. Puedes cambiarlo más adelante en los ajustes.",
+    "parentNameLabel": "Tu nombre",
+    "parentNamePlaceholder": "p. ej. Ana Ruiz",
+    "householdNameLabel": "Nombre de la familia",
+    "householdNamePlaceholder": "p. ej. La familia Ruiz",
+    "continueButton": "Continuar"
+  },
   "switcher": {
     "triggerLabel": "Cambiar de hogar",
     "sheetTitle": "Elige un hogar",
@@ -63,7 +73,14 @@
         "description": "Puede ver el horario y las horas — solo lectura, sin editar."
       }
     },
-    "codeMeta": "Invitación de {{role}} · caduca el {{date}}"
+    "codeMeta": "Invitación de {{role}} · caduca el {{date}}",
+    "absorb": {
+      "title": "¿Añadir a {{name}} a tu familia?",
+      "body": "{{name}} ha propuesto unas condiciones y las revisarás a continuación. Se unirá a {{household}} cuando las aceptes y, hasta entonces, no podrá ver el horario ni los datos de tu familia. Nada cambia para quienes ya forman parte de ella.",
+      "pickerHint": "Añadir a esta familia.",
+      "confirmButton": "Añadir a {{name}}",
+      "carerFallback": "esta niñera"
+    }
   },
   "availability": {
     "wizardTitle": "¿Cuándo estás disponible?",

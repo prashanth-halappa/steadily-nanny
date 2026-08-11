@@ -58,6 +58,18 @@ const QUERIED_WEEK: InboxItem = {
   queryNote: null,
 };
 
+const TERMS_PROPOSAL: InboxItem = {
+  kind: 'terms_proposal',
+  id: 'prop-1',
+  householdId: 'hh-1',
+  carerDisplayName: 'Marisol',
+  proposedAt: '2026-08-24T09:00:00.000Z',
+  direction: 'carer',
+  rateMinor: 2800,
+  weeklyEquivalentMinor: 154000,
+  currency: 'USD',
+};
+
 let NeedsAttentionCard: typeof import('../components/NeedsAttentionCard').NeedsAttentionCard;
 let mockUseInboxItems: ReturnType<typeof mock>;
 let mockPush: ReturnType<typeof mock>;
@@ -240,6 +252,28 @@ describe('NeedsAttentionCard', () => {
   // behaviour) stacked two cards for one obligation.
   it("renders nothing when the only item is a pending pattern — that's PendingScheduleCard's obligation alone", () => {
     setItems([PENDING_PATTERN]);
+
+    const { queryByTestId } = render(<NeedsAttentionCard />);
+
+    expect(queryByTestId('today-needs-attention-card')).toBeNull();
+  });
+
+  // §7.1 / B3: a live proposal owns Today's L1 on its own card, exactly as a
+  // pending pattern owns PendingScheduleCard — so it is filtered here before
+  // headline selection, and cannot double-count into "N more" either.
+  it('excludes a terms proposal entirely: headline is the other item, no "more" line', () => {
+    setItems([TERMS_PROPOSAL, QUERIED_WEEK]);
+
+    const { getByText, queryByText } = render(<NeedsAttentionCard />);
+
+    expect(
+      getByText('items.queriedWeek.title({"week":"28 Jul"})')
+    ).toBeTruthy();
+    expect(queryByText(/moreItems/)).toBeNull();
+  });
+
+  it('renders nothing when the only item is a terms proposal — that is its own T1 card', () => {
+    setItems([TERMS_PROPOSAL]);
 
     const { queryByTestId } = render(<NeedsAttentionCard />);
 

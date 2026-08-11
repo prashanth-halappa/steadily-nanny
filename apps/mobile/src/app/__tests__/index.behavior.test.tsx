@@ -33,6 +33,7 @@ let authState: { isInitialized: boolean; session: unknown };
 let hasToken: boolean;
 let setupProgressState: {
   role: SetupRoleValue | null;
+  path: 'create' | 'join' | null;
   currentStep: string;
 };
 
@@ -113,7 +114,7 @@ beforeEach(() => {
   };
   authState = { isInitialized: true, session: SIGNED_IN_SESSION };
   hasToken = true;
-  setupProgressState = { role: null, currentStep: 'ROLE' };
+  setupProgressState = { role: null, path: null, currentStep: 'ROLE' };
   mockReplace.mockReset();
   mockRetryMemberships.mockReset();
   mockConsumePendingLink.mockReset();
@@ -227,7 +228,14 @@ describe('Index entry router — the branches that must keep working', () => {
     expect(queryByTestId('index-error')).toBeNull();
   });
 
-  it('resumes a not-onboarded parent at the children step', () => {
+  // D-33 moved this landing spot from CHILDREN to HOUSEHOLD. The router no
+  // longer carries its own `PARENT ? CHILDREN : ROLE` ternary — that was one
+  // of three drifted copies of the role -> step mapping — and asks
+  // `entryStepFor(role, path)` instead. HouseholdScreen adopts the household
+  // this parent already owns and pre-fills its name rather than minting a
+  // second, so landing there costs one tap and buys a name they never got to
+  // type.
+  it('resumes a not-onboarded parent at the household step', () => {
     onboardingState = {
       status: 'not-onboarded',
       role: 'parent',
@@ -237,7 +245,7 @@ describe('Index entry router — the branches that must keep working', () => {
 
     render(<Index />);
 
-    expect(mockReplace).toHaveBeenCalledWith('/onboarding/children');
+    expect(mockReplace).toHaveBeenCalledWith('/onboarding/household');
   });
 
   it('routes to /welcome with no session and no auth token', () => {
@@ -258,7 +266,11 @@ describe('Index entry router — the branches that must keep working', () => {
       householdId: 'h1',
       membershipsError: false,
     };
-    setupProgressState = { role: 'parent', currentStep: 'INVITE' };
+    setupProgressState = {
+      role: 'parent',
+      path: 'create',
+      currentStep: 'INVITE',
+    };
 
     render(<Index />);
 
@@ -272,7 +284,11 @@ describe('Index entry router — the branches that must keep working', () => {
       householdId: 'h1',
       membershipsError: false,
     };
-    setupProgressState = { role: 'parent', currentStep: 'CALENDAR_PERMISSION' };
+    setupProgressState = {
+      role: 'parent',
+      path: 'create',
+      currentStep: 'CALENDAR_PERMISSION',
+    };
 
     render(<Index />);
 

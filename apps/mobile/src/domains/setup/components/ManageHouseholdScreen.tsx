@@ -197,7 +197,11 @@ export function ManageHouseholdScreen() {
   useEffect(() => {
     if (!household || hasSeededRef.current) return;
     hasSeededRef.current = true;
-    setName(household.name);
+    // `?? ''` seeds the placeholder for a DRAFT household's null name (093
+    // §4.2). Empty can never be SAVED back over a real name: `isValid`
+    // requires `name.trim().length > 0`, and the diff below only builds at
+    // all when `isValid` — so an untouched empty field leaves Save disabled.
+    setName(household.name ?? '');
     setAddressLine(household.address_line ?? '');
     setTimezone(household.timezone);
     // `?? getDeviceCurrency()` is defensive, not the normal path: every real

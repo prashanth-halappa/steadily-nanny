@@ -50,6 +50,7 @@ beforeEach(() => {
   );
   useSetupProgressStore.setState({
     role: 'parent',
+    path: 'create',
     currentStep: 'CALENDAR_PERMISSION',
     householdId: 'household-1',
   });

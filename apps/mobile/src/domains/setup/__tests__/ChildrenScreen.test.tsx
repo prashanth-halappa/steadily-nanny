@@ -25,12 +25,17 @@ describe('ChildrenScreen (wizard)', () => {
     expect(source).toContain('ChildrenManager');
   });
 
-  it('still auto-creates a household on first entry', () => {
+  it('keeps the auto-create household FALLBACK for a parent who never saw HOUSEHOLD', () => {
     expect(source).toContain('useCreateHousehold');
     expect(source).toContain('useUpsertProfile');
     expect(source).toContain('buildBootstrapProfileRequest');
-    expect(source).toContain('deriveBootstrapName');
-    expect(source).toContain('parent-name-input');
+    expect(source).toContain('DEFAULT_HOUSEHOLD_NAME');
+  });
+
+  it('no longer owns the name inputs — they moved to the HOUSEHOLD step (§3.3)', () => {
+    expect(source).not.toContain('parent-name-input');
+    expect(source).not.toContain('household-name-input');
+    expect(source).not.toContain('deriveBootstrapName');
   });
 
   it('still gates Continue on at least one child and advances to INVITE', () => {
@@ -38,10 +43,10 @@ describe('ChildrenScreen (wizard)', () => {
     expect(source).toContain('SETUP_STEPS.INVITE');
   });
 
-  it('keeps its wizard testID and derives progress from the step sequence', () => {
+  it('keeps its wizard testID and derives progress from the role x path sequence', () => {
     expect(source).toContain('children-screen');
     expect(source).toContain(
-      'progress={getStepProgress(SETUP_ROLES.PARENT, SETUP_STEPS.CHILDREN)}'
+      'progress={getStepProgress(role, path, SETUP_STEPS.CHILDREN)}'
     );
   });
 });

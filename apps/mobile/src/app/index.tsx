@@ -5,9 +5,10 @@ import { hasAuthToken } from '@/src/api/client';
 import { ErrorState } from '@/src/components/custom/ErrorState';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import {
+  entryStepFor,
   getSetupStepRoute,
   getUnfinishedSetupResumeRoute,
-  SETUP_ROLES,
+  SETUP_PATHS,
   SETUP_STEPS,
 } from '@/src/domains/setup/types';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
@@ -78,19 +79,26 @@ export default function Index() {
 
     routedForKey.current = routeKey;
     if (onboarding.status === 'not-onboarded') {
-      // A parent who already owns a household (just hasn't added a child
-      // yet) resumes at the children step, not the role fork — the server
+      // A parent who already owns a household (just hasn't added a child yet)
+      // resumes inside the wizard rather than at the role fork — the server
       // already told us their role.
-      const step =
-        onboarding.role === SETUP_ROLES.PARENT
-          ? SETUP_STEPS.CHILDREN
-          : SETUP_STEPS.ROLE;
+      //
+      // `entryStepFor` is the ONE place role x path -> first-working-step
+      // lives; this used to be a hardcoded `PARENT ? CHILDREN : ROLE`
+      // ternary, one of three copies of that mapping that had drifted apart.
+      // The path falls back to `create`: owning a household IS having
+      // created one. `HouseholdScreen` adopts the existing household and
+      // pre-fills its name rather than minting a second.
+      const { path } = useSetupProgressStore.getState();
+      const step = onboarding.role
+        ? entryStepFor(onboarding.role, path ?? SETUP_PATHS.CREATE)
+        : SETUP_STEPS.ROLE;
       router.replace(getSetupStepRoute(step) as Href);
       return;
     }
 
-    const { role, currentStep } = useSetupProgressStore.getState();
-    const resumeRoute = getUnfinishedSetupResumeRoute(role, currentStep);
+    const { role, path, currentStep } = useSetupProgressStore.getState();
+    const resumeRoute = getUnfinishedSetupResumeRoute(role, path, currentStep);
     if (resumeRoute) {
       router.replace(resumeRoute as Href);
       return;

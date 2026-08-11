@@ -173,26 +173,23 @@ describe('/t/:code — every failure is the SAME opaque page', () => {
   // The API collapses all five death conditions into one 404 so the page
   // cannot confirm a code was ever real. The worker must not undo that by
   // reacting differently to any of them.
-  it.each([404, 410, 403, 500])(
-    'renders the dead-link page for an API %s, naming no reason',
-    async status => {
-      const { restore } = withStubbedFetch(
-        () => new Response('', { status })
-      );
-      const { ctx } = makeCtx();
-      const res = await worker.fetch(get(`/t/${CODE}`), { API_BASE_URL }, ctx);
-      const html = await res.text();
-      restore();
+  it.each([
+    404, 410, 403, 500,
+  ])('renders the dead-link page for an API %s, naming no reason', async status => {
+    const { restore } = withStubbedFetch(() => new Response('', { status }));
+    const { ctx } = makeCtx();
+    const res = await worker.fetch(get(`/t/${CODE}`), { API_BASE_URL }, ctx);
+    const html = await res.text();
+    restore();
 
-      expect(res.status).toBe(404);
-      expect(html).toContain("This link isn't active any more");
-      // No hint at which condition closed it, and no echo of the code.
-      expect(html).not.toContain(CODE);
-      expect(html).not.toContain('expired');
-      expect(html).not.toContain('revoked');
-      expect(html).not.toContain('redeemed');
-    }
-  );
+    expect(res.status).toBe(404);
+    expect(html).toContain("This link isn't active any more");
+    // No hint at which condition closed it, and no echo of the code.
+    expect(html).not.toContain(CODE);
+    expect(html).not.toContain('expired');
+    expect(html).not.toContain('revoked');
+    expect(html).not.toContain('redeemed');
+  });
 
   it('renders the same page when the API is unreachable', async () => {
     const { restore } = withStubbedFetch(() => {
@@ -237,8 +234,9 @@ describe('/t/:code — the receipts fire only for a code that resolved', () => {
     await Promise.all(scheduled);
     restore();
 
-    expect(calls.some(c => c.url.endsWith('/opened') && c.method === 'POST'))
-      .toBe(true);
+    expect(
+      calls.some(c => c.url.endsWith('/opened') && c.method === 'POST')
+    ).toBe(true);
     expect(calls.some(c => c.url.includes('/capture/'))).toBe(true);
   });
 

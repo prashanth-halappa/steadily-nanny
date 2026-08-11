@@ -19,6 +19,21 @@ const listPatterns = mock(() => Promise.resolve([] as unknown[]));
 const listTimesheets = mock(() => Promise.resolve([] as unknown[]));
 const listPendingChangeRequests = mock(() => Promise.resolve([] as unknown[]));
 const listMeShifts = mock(() => Promise.resolve([] as unknown[]));
+const listMembers = mock(() => Promise.resolve([] as unknown[]));
+const getCurrentProposal = mock(() => Promise.resolve(null as unknown));
+
+const CARER = '44444444-4444-4444-8444-444444444444';
+const PROPOSAL = {
+  id: '55555555-5555-4555-8555-555555555555',
+  household_id: HOUSEHOLD.id,
+  carer_id: CARER,
+  direction: 'carer',
+  status: 'proposed',
+  carer_display_name: 'Marisol',
+  created_at: '2026-08-24T09:00:00.000Z',
+  weekly_equivalent_minor: 154000,
+  terms: { rate_minor: 2800, currency: 'USD' },
+};
 
 let mockUseActiveHousehold: ReturnType<typeof mock>;
 let mockUseIsOnboarded: ReturnType<typeof mock>;
@@ -57,6 +72,14 @@ beforeAll(async () => {
       listShifts: listMeShifts,
     },
   }));
+  // §7.1 — the proposal read is per (household, carer), so a parent needs the
+  // household's carer roster before she can ask about anyone's terms.
+  mock.module('@/src/api/endpoints/household', () => ({
+    householdApi: { listMembers },
+  }));
+  mock.module('@/src/api/endpoints/termsProposals', () => ({
+    termsProposalApi: { getCurrent: getCurrentProposal },
+  }));
 
   useInboxItems = (await import('../useInboxItems')).useInboxItems;
   useAuthStore = (await import('@/src/store/auth')).useAuthStore;
@@ -67,6 +90,10 @@ beforeEach(() => {
   listTimesheets.mockReset();
   listPendingChangeRequests.mockReset();
   listMeShifts.mockReset();
+  listMembers.mockReset();
+  getCurrentProposal.mockReset();
+  listMembers.mockResolvedValue([]);
+  getCurrentProposal.mockResolvedValue(null);
   listPatterns.mockResolvedValue([]);
   listTimesheets.mockResolvedValue([]);
   listPendingChangeRequests.mockResolvedValue([]);
@@ -139,11 +166,68 @@ describe('useInboxItems isError channel', () => {
     expect(result.current.items).toEqual([]);
   });
 
+  it('surfaces isError when a terms-proposal read fails', async () => {
+    listMembers.mockResolvedValue([
+      { user_id: CARER, role: 'nanny', status: 'active' },
+    ]);
+    getCurrentProposal.mockRejectedValue(new Error('proposal boom'));
+
+    const { result } = renderHookWithProviders(() => useInboxItems());
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(result.current.items).toEqual([]);
+  });
+
+  it('surfaces isError when the carer roster a proposal read depends on fails', async () => {
+    listMembers.mockRejectedValue(new Error('members boom'));
+
+    const { result } = renderHookWithProviders(() => useInboxItems());
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+  });
+
   it('isError stays false on empty success — distinguishes from failure', async () => {
     const { result } = renderHookWithProviders(() => useInboxItems());
 
     await waitFor(() => expect(result.current.isLoading).toBe(false));
     expect(result.current.isError).toBe(false);
+    expect(result.current.items).toEqual([]);
+  });
+});
+
+// D-38's redemption leaves the nanny a `candidate` member until the terms are
+// accepted, so a roster filtered to `active` alone would hide the very
+// proposal that decides it.
+describe('useInboxItems terms proposals (§7.1)', () => {
+  it('reaches a parent through the household carer roster, candidates included', async () => {
+    listMembers.mockResolvedValue([
+      { user_id: CARER, role: 'nanny', status: 'candidate' },
+      { user_id: 'user-1', role: 'parent', status: 'active' },
+    ]);
+    getCurrentProposal.mockResolvedValue(PROPOSAL);
+
+    const { result } = renderHookWithProviders(() => useInboxItems());
+
+    await waitFor(() => expect(result.current.items.length).toBe(1));
+    expect(result.current.items[0]).toMatchObject({
+      kind: 'terms_proposal',
+      id: PROPOSAL.id,
+      carerDisplayName: 'Marisol',
+    });
+    // One read per carer, never per parent.
+    expect(getCurrentProposal).toHaveBeenCalledTimes(1);
+    expect(getCurrentProposal).toHaveBeenCalledWith(HOUSEHOLD.id, CARER);
+  });
+
+  it('asks nothing about a removed member’s terms', async () => {
+    listMembers.mockResolvedValue([
+      { user_id: CARER, role: 'nanny', status: 'removed' },
+    ]);
+
+    const { result } = renderHookWithProviders(() => useInboxItems());
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(getCurrentProposal).not.toHaveBeenCalled();
     expect(result.current.items).toEqual([]);
   });
 });

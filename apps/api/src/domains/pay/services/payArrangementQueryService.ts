@@ -97,10 +97,16 @@ export class PayArrangementQueryService {
    * private and called at the top of every method so no future read can
    * accidentally ship without it.
    *
-   * ANY-STATUS ON PURPOSE: a `removed` member keeps her role's read scope.
-   * The role arms below do all the narrowing — a removed nanny still has to
-   * satisfy `callerId === carerId`, so she reaches her own terms and no one
-   * else's.
+   * IS-OR-WAS-A-MEMBER ON PURPOSE: a `removed` member keeps her role's read
+   * scope. The role arms below do all the narrowing — a removed nanny still
+   * has to satisfy `callerId === carerId`, so she reaches her own terms and no
+   * one else's.
+   *
+   * A `candidate` is refused here from 3-O, and by the LOOKUP rather than
+   * by an arm below: `findMembershipAnyStatus` filters positively to
+   * `{active, removed}`, so a nanny whose terms nobody has agreed yet
+   * reads null and lands on the same opaque 404 a stranger gets. She has
+   * no money trail here to keep (D-49).
    */
   private async assertCanReadPay(
     callerId: string,

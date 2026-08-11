@@ -17,7 +17,7 @@ import type {
 import { logger } from '../../../middlewares/logger';
 import { HouseholdClosureRepository } from '../../availability/repositories/householdClosureRepository';
 import type { HouseholdClosure } from '../../availability/types';
-import { HouseholdRepository } from '../../household';
+import { HOUSEHOLD_STATES, HouseholdRepository } from '../../household';
 import type { ShiftWithChildren } from '../../shift/repositories/shiftRepository';
 import { ShiftRepository } from '../../shift/repositories/shiftRepository';
 import { ChildCommitmentRepository } from '../repositories/childCommitmentRepository';
@@ -160,7 +160,13 @@ export async function loadUncoveredInputsForDate(
   const closureRepo = deps.closureRepo ?? new HouseholdClosureRepository();
 
   const household = await householdRepo.findById(householdId);
-  if (!household) {
+  // A DRAFT reads as absent (§12 "Draft, cron": no reminder, no digest, no
+  // horizon job, no nudge). `null` rather than empty inputs on purpose — every
+  // caller already handles it as "the household is gone", so the exclusion
+  // needs no second branch anywhere downstream and no future caller can forget
+  // to write one. 093's trigger means a draft cannot hold a commitment or a
+  // shift anyway; this is the guard for the day something gets one in.
+  if (!household || household.state === HOUSEHOLD_STATES.DRAFT) {
     return null;
   }
 

@@ -35,6 +35,17 @@ function fakeT(key: string, params?: Record<string, unknown>): string {
     'terms.payScheduleValueBiweekly': 'Every two weeks',
     'terms.payScheduleValueSemimonthly': 'Twice a month',
     'terms.payScheduleValueMonthly': 'Monthly',
+    'terms.outsideWagesLabel': 'Outside wages',
+    'terms.outsideWagesItemWeekly': `${params?.label} ${params?.amount} a week`,
+    'terms.outsideWagesItemMonthly': `${params?.label} ${params?.amount} a month`,
+    'terms.outsideWagesItemAnnual': `${params?.label} ${params?.amount} a year`,
+    'terms.inWritingLabel': 'In writing',
+    'terms.inWritingNotice': `Notice period ${params?.weeks} weeks`,
+    'terms.inWritingProbation': `Probation ${params?.days} days`,
+    'terms.inWritingDuties': `What the job covers: ${params?.text}`,
+    'terms.inWritingDriving': `Driving: ${params?.text}`,
+    'terms.inWritingLiveIn': `Live-in: ${params?.text}`,
+    'inWriting.summary': `${params?.filled} of ${params?.total} filled in`,
     'terms.ptoBalanceLabel': 'PTO balance',
     'terms.ptoBalanceValue': `${params?.amount} left this year`,
     'terms.ptoBalanceCaption': `1 Jan – 31 Dec ${params?.year}`,
@@ -93,7 +104,7 @@ const emptyArrangement: PayArrangement = {
 };
 
 describe('buildTermRows', () => {
-  it('returns exactly eleven rows, in the spec order — the worked-holiday premium reads after paid time off, pay schedule after mileage', () => {
+  it('returns the WHOLE §3 inventory, in the spec order — a subset is how a parent agrees to terms he was never shown (3-O §7.2)', () => {
     const rows = buildTermRows(fullArrangement, fakeT as never);
     expect(rows.map(r => r.key)).toEqual([
       'overtime',
@@ -106,8 +117,94 @@ describe('buildTermRows', () => {
       'cancellations',
       'mileage',
       'paySchedule',
+      'outsideWages',
+      'inWriting',
       'ptoBalance',
     ]);
+  });
+
+  // 3-O §7.2: the review screen renders THIS list, so a term that lives only
+  // in the `terms` jsonb — a stipend, a notice period — has to be in it.
+  describe('the documentary terms bag (3-O §7.2)', () => {
+    it('lists every recurring stipend with its cadence in words', () => {
+      const rows = buildTermRows(
+        {
+          ...fullArrangement,
+          terms: {
+            recurring: [
+              {
+                label: 'Health stipend',
+                amount_minor: 20000,
+                cadence: 'monthly',
+              },
+              { label: 'Phone', amount_minor: 2500, cadence: 'weekly' },
+            ],
+          },
+        },
+        fakeT as never
+      );
+      expect(rows.find(r => r.key === 'outsideWages')?.value).toBe(
+        'Health stipend £200.00 a month · Phone £25.00 a week'
+      );
+    });
+
+    it('counts the "In writing" fields and spells each one out underneath', () => {
+      const row = buildTermRows(
+        {
+          ...fullArrangement,
+          terms: {
+            notice_period_days: 28,
+            probation_days: 90,
+            duties: 'Care for Mia and Theo',
+            driving: 'School run in our car',
+          },
+        },
+        fakeT as never
+      ).find(r => r.key === 'inWriting');
+      expect(row?.value).toBe('4 of 5 filled in');
+      expect(row?.subLine).toBe(
+        [
+          'Notice period 4 weeks',
+          'Probation 90 days',
+          'What the job covers: Care for Mia and Theo',
+          'Driving: School run in our car',
+        ].join('\n')
+      );
+    });
+
+    it('an empty bag is null on both rows — "Not set", never a fabricated 0', () => {
+      const rows = buildTermRows(
+        { ...fullArrangement, terms: {} },
+        fakeT as never
+      );
+      expect(rows.find(r => r.key === 'outsideWages')?.value).toBeNull();
+      expect(rows.find(r => r.key === 'inWriting')?.value).toBeNull();
+      expect(rows.find(r => r.key === 'inWriting')?.subLine).toBeUndefined();
+    });
+
+    it('ignores a hand-edited row of the wrong shape rather than coercing it', () => {
+      const rows = buildTermRows(
+        {
+          ...fullArrangement,
+          terms: {
+            recurring: [
+              {
+                label: 'Health stipend',
+                amount_minor: 20000,
+                cadence: 'monthly',
+              },
+              { label: 42, amount_minor: 'lots', cadence: 'monthly' },
+            ],
+            notice_period_days: 'four weeks',
+          },
+        },
+        fakeT as never
+      );
+      expect(rows.find(r => r.key === 'outsideWages')?.value).toBe(
+        'Health stipend £200.00 a month'
+      );
+      expect(rows.find(r => r.key === 'inWriting')?.value).toBeNull();
+    });
   });
 
   it('formats every set term', () => {

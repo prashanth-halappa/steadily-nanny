@@ -4,6 +4,7 @@
  * Runner orchestration with injected calendar + API deps (no native module).
  */
 import { beforeEach, describe, expect, it, mock } from 'bun:test';
+import { HOUSEHOLD_STATES } from '@steadily-nanny/shared-types/schemas/household.schema';
 import type { Shift } from '@steadily-nanny/shared-types/schemas/shift.schema';
 import { MARKER } from '../calendarSync';
 import {
@@ -77,6 +78,7 @@ function baseDeps(overrides: Partial<CalendarSyncDeps> = {}): CalendarSyncDeps {
         currency: 'GBP',
         jurisdiction: null,
         week_starts_on: 1,
+        state: HOUSEHOLD_STATES.LIVE,
         created_by: null,
         created_at: START,
         updated_at: START,

@@ -59,17 +59,18 @@ import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 import { usePayArrangementAcks } from '@/src/hooks/queries/usePayArrangementAcks';
 import { usePayArrangementHistory } from '@/src/hooks/queries/usePayArrangementHistory';
 import { usePtoBalance } from '@/src/hooks/queries/usePtoBalance';
+import { useTermsProposals } from '@/src/hooks/queries/useTermsProposals';
 import { localDateInZone } from '@/src/lib/localDate';
 import { formatMoney, formatRate } from '@/src/lib/money';
 import { showSuccessToast } from '@/src/lib/toast';
 import { useElevation } from '~/lib/design-tokens/elevation';
 import { resolveAckState } from '../utils/ackState';
 import { formatDisplayDateWithYear } from '../utils/payArrangementForm';
-import { buildTermRows } from '../utils/termRows';
+import { proposalStateWord } from '../utils/proposalTerms';
 import { buildTermsDiff, summarizeTermsDiff } from '../utils/termsDiff';
-import { AmountRow } from './AmountRow';
 import { BackRow } from './BackRow';
 import { PayChangeSheet } from './PayChangeSheet';
+import { TermsDocumentRows } from './TermsDocumentRows';
 
 /** §6's card names the headline terms only — the full diff is one tap away
  * in the history once the change lands. */
@@ -172,6 +173,10 @@ function CarerPayDetail({
     householdId,
     carerId
   );
+  // §7.1: Settings → Pay carries a row with a `pending` "Proposed" pill for as
+  // long as one is open. Nothing announces their absence — the screen is
+  // unchanged when there is no proposal (§12).
+  const proposals = useTermsProposals(householdId, carerId);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
   const elevation = useElevation();
@@ -241,6 +246,21 @@ function CarerPayDetail({
 
   // §6/D-16: `valid_from` after the household's today. Newest first, so the
   // first match is the one that starts soonest to announce.
+  const openProposal = (proposals.data ?? []).find(
+    row => row.status === 'proposed'
+  );
+  // §10: "Agreed with Marisol on 12 Aug" — the word, with a date, beside the
+  // figure, on the very card the acceptance created. The join is the
+  // proposal's own `accepted_arrangement_id`, so a card that traces to a
+  // proposal says so and one that does not stays silent.
+  const agreedProposal = arrangement
+    ? (proposals.data ?? []).find(
+        row =>
+          row.status === 'accepted' &&
+          row.accepted_arrangement_id === arrangement.id
+      )
+    : undefined;
+
   const scheduled: PayArrangement | undefined = (history.data ?? [])
     .filter(row => row.valid_from > todayISO)
     .at(-1);
@@ -318,8 +338,68 @@ function CarerPayDetail({
             </Card>
           ) : null}
 
+          {openProposal ? (
+            <View
+              testID="pay-open-proposal-row"
+              className="gap-2 rounded-row bg-card px-4 py-3"
+              style={elevation.row}
+            >
+              <Body weight="medium">
+                {t('proposal.openRowTitle', { name: carerName })}
+              </Body>
+              <StatusPill
+                testID="pay-open-proposal-pill"
+                variant={
+                  proposalStateWord(
+                    openProposal,
+                    {
+                      counterpartyName: carerName,
+                      timezone: householdTimezone,
+                    },
+                    t
+                  ).variant
+                }
+                label={
+                  proposalStateWord(
+                    openProposal,
+                    {
+                      counterpartyName: carerName,
+                      timezone: householdTimezone,
+                    },
+                    t
+                  ).label
+                }
+              />
+              <Button
+                testID="pay-open-proposal-review"
+                variant="ghost"
+                className="self-start"
+                onPress={() => router.push(`/pay/proposal/${openProposal.id}`)}
+              >
+                <Text>{t('proposal.reviewButton')}</Text>
+              </Button>
+            </View>
+          ) : null}
+
           <Card testID="pay-current-terms-card">
             <CardContent className="gap-3">
+              {agreedProposal ? (
+                <Small
+                  testID="pay-agreed-state"
+                  className="text-muted-foreground"
+                >
+                  {
+                    proposalStateWord(
+                      agreedProposal,
+                      {
+                        counterpartyName: carerName,
+                        timezone: householdTimezone,
+                      },
+                      t
+                    ).label
+                  }
+                </Small>
+              ) : null}
               <View className="flex-row flex-wrap items-center gap-2">
                 <Small className="text-muted-foreground">
                   {t('inEffectSince', {
@@ -338,18 +418,11 @@ function CarerPayDetail({
                 </H1>
                 <Body className="text-muted-foreground">/hr</Body>
               </View>
-              <View className="gap-3">
-                {buildTermRows(arrangement, t, balance.data).map(row => (
-                  <AmountRow
-                    key={row.key}
-                    testID={`pay-term-${row.key}`}
-                    label={row.label}
-                    value={row.value}
-                    valueWhenNull={row.valueWhenNull}
-                    subLine={row.subLine}
-                  />
-                ))}
-              </View>
+              <TermsDocumentRows
+                arrangement={arrangement}
+                balance={balance.data}
+                testIDPrefix="pay-term"
+              />
               <Button
                 testID="pay-change-terms-button"
                 onPress={() => setSheetOpen(true)}

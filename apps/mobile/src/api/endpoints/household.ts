@@ -17,6 +17,7 @@ import {
   type CreateHouseholdInviteInput,
   CreateHouseholdInviteSchema,
   CreateHouseholdSchema,
+  HOUSEHOLD_STATES,
   type Household,
   type HouseholdInvite,
   HouseholdInviteSchema,
@@ -64,6 +65,22 @@ const InvitePreviewSchema = z.object({
   household_name: z.string(),
   children_first_names: z.array(z.string()),
   role: z.enum(['parent', 'nanny', 'helper']),
+  /**
+   * D-34/§8.2. A `draft` invite was minted by a NANNY authoring her own terms
+   * before she has a family; redeeming it ABSORBS her into the redeemer's
+   * existing household rather than joining them to hers. The confirm sheet
+   * needs to know which kind of code it is holding before it can name the
+   * outcome, and "the redeemer has a household" alone can't tell an
+   * absorption from an ordinary second-family co-parent invite.
+   *
+   * `.default(...)` on both: a server that predates 093 answers neither, and
+   * every invite that exists today is a live household's.
+   */
+  household_state: z
+    .enum(Object.values(HOUSEHOLD_STATES))
+    .default(HOUSEHOLD_STATES.LIVE),
+  /** The draft author's display name, for §8.2's "Add Marisol to your family?". */
+  carer_name: z.string().nullable().default(null),
 });
 export type InvitePreview = z.infer<typeof InvitePreviewSchema>;
 
@@ -260,9 +277,30 @@ export const householdApi = {
     return parsed.data;
   },
 
-  /** Redeem an invite code — creates the caller's membership row. */
-  redeemInvite: async (code: string): Promise<HouseholdMember> => {
-    const validated = RedeemHouseholdInviteSchema.safeParse({ code });
+  /**
+   * Redeem an invite code — creates the caller's membership row.
+   *
+   * `targetHouseholdId` is D-34's absorption target: when a parent with ≥1
+   * live household redeems a NANNY'S draft code, the nanny joins THAT
+   * household rather than the redeemer joining her draft, and with ≥2 the
+   * parent picks which (§8.2). Omitted on every ordinary redemption, where
+   * the invite already names the household.
+   *
+   * The shared `RedeemHouseholdInviteSchema` is `{ code }` only, and a plain
+   * Zod object strips unknown keys — parsing the body through it would
+   * silently drop the target and absorb into a household nobody chose. Hence
+   * the local extend rather than a spread over `validated.data`.
+   */
+  redeemInvite: async (
+    code: string,
+    targetHouseholdId?: string
+  ): Promise<HouseholdMember> => {
+    const validated = RedeemHouseholdInviteSchema.extend({
+      target_household_id: z.uuid().optional(),
+    }).safeParse({
+      code,
+      ...(targetHouseholdId ? { target_household_id: targetHouseholdId } : {}),
+    });
     if (!validated.success) throw validated.error;
 
     const response = await apiClient.post(

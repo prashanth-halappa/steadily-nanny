@@ -353,6 +353,81 @@ describe('useIsOnboarded', () => {
     expect(result.current.membershipRole).toBeNull();
   });
 
+  // §8.2.1 / D-49. Redemption inserts a `candidate` membership; acceptance
+  // flips it to `active`. Before this, `isOnboardedForMembership` returned
+  // false for every status that was not active or removed, which would have
+  // routed a nanny who had just redeemed a code back into "Who are you?" —
+  // the exact stranding failure this hook's header documents at length.
+  it('is ONBOARDED for a candidate membership — redeeming is not the same as being hired, but it IS being set up', async () => {
+    membershipsListMock.mockResolvedValue([
+      ownerMembership({ role: 'nanny', status: 'candidate' }),
+    ]);
+    householdsListMock.mockResolvedValue([]);
+
+    const { result } = renderHookWithProviders(() => useIsOnboarded());
+
+    await waitFor(() => expect(result.current.status).toBe('onboarded'));
+    expect(result.current.role).toBe('nanny');
+    expect(result.current.householdId).toBe(HOUSEHOLD_ID);
+    // A candidate is not a past member — she has no trail to keep yet.
+    expect(result.current.isPastMember).toBe(false);
+  });
+
+  it('reports householdState as a SEPARATE field, never folded into status', async () => {
+    membershipsListMock.mockResolvedValue([
+      ownerMembership({ role: 'nanny', user_id: USER_ID }),
+    ]);
+    householdsListMock.mockResolvedValue([
+      householdRow({ created_by: USER_ID, state: 'draft' }),
+    ]);
+
+    const { result } = renderHookWithProviders(() => useIsOnboarded());
+
+    await waitFor(() => expect(result.current.status).toBe('onboarded'));
+    // status keeps its three meanings; the draft dimension rides alongside.
+    expect(result.current.householdState).toBe('draft');
+  });
+
+  it('reports householdState live for an ordinary household', async () => {
+    membershipsListMock.mockResolvedValue([
+      ownerMembership({ role: 'nanny', user_id: USER_ID }),
+    ]);
+    householdsListMock.mockResolvedValue([
+      householdRow({ created_by: 'someone-else', state: 'live' }),
+    ]);
+
+    const { result } = renderHookWithProviders(() => useIsOnboarded());
+
+    await waitFor(() => expect(result.current.status).toBe('onboarded'));
+    expect(result.current.householdState).toBe('live');
+  });
+
+  // §17: a draft dimension must not add a way for an errored query to read as
+  // "new user". The error branch comes first and reports nothing at all.
+  it('reports a null householdState on the error branch — unknown still fails toward WAIT', async () => {
+    membershipsListMock.mockRejectedValue(new Error('network down'));
+    householdsListMock.mockResolvedValue([]);
+
+    const { result } = renderHookWithProviders(() => useIsOnboarded());
+
+    await waitFor(() => expect(result.current.membershipsError).toBe(true));
+    expect(result.current.status).toBe('loading');
+    expect(result.current.householdState).toBeNull();
+  });
+
+  // The owner-needs-a-child predicate is UNTOUCHED by the draft work: a draft
+  // has no owner at all, so the two can never interact.
+  it('still holds an owner with no children at not-onboarded', async () => {
+    membershipsListMock.mockResolvedValue([ownerMembership()]);
+    householdsListMock.mockResolvedValue([householdRow({ state: 'live' })]);
+    childrenListMock.mockResolvedValue([]);
+
+    const { result } = renderHookWithProviders(() => useIsOnboarded());
+
+    await waitFor(() => expect(result.current.status).toBe('not-onboarded'));
+    expect(result.current.householdState).toBe('live');
+  });
+
   it('is onboarded as a helper with SETUP_ROLES.HELPER', async () => {
     membershipsListMock.mockResolvedValue([
       ownerMembership({

@@ -33,7 +33,6 @@ import { SetupScreenShell } from '@/src/domains/setup/components/SetupScreenShel
 import {
   getSetupStepRoute,
   getStepProgress,
-  SETUP_ROLES,
   SETUP_STEPS,
 } from '@/src/domains/setup/types';
 import { useCreateInvite } from '@/src/hooks/mutations/useCreateInvite';
@@ -44,6 +43,8 @@ export function InviteScreen() {
   const router = useRouter();
   const { t } = useTranslation('household');
   const householdId = useSetupProgressStore(s => s.householdId);
+  const role = useSetupProgressStore(s => s.role);
+  const path = useSetupProgressStore(s => s.path);
   const setCurrentStep = useSetupProgressStore(s => s.setCurrentStep);
   const createInvite = useCreateInvite(householdId ?? '');
   const revokeInvite = useRevokeInvite(householdId ?? '');
@@ -92,7 +93,7 @@ export function InviteScreen() {
   return (
     <SetupScreenShell
       testID="invite-screen"
-      progress={getStepProgress(SETUP_ROLES.PARENT, SETUP_STEPS.INVITE)}
+      progress={getStepProgress(role, path, SETUP_STEPS.INVITE)}
       title={t('invite.wizardTitle')}
       subtitle={t('invite.wizardSubtitle')}
       ctaLabel={t('invite.continueButton')}

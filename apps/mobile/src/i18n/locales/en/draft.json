@@ -1,0 +1,106 @@
+{
+  "untitledDraft": "Untitled draft",
+  "hero": {
+    "title": "Your terms",
+    "subtitle": "Draft · not shared with anyone yet"
+  },
+  "sharePrompt": {
+    "title": "Send these to a family",
+    "body": "They'll get a link with your terms. Nothing is agreed until they accept.",
+    "button": "Share my terms",
+    "offlineHint": "You'll need a connection to send this."
+  },
+  "terms": {
+    "title": "Your terms",
+    "perHour": "/hr",
+    "weekly": "{{amount}} a week at {{hours}} guaranteed hours",
+    "startsOn": "Starts {{date}}",
+    "editButton": "Edit",
+    "emptyBody": "You haven't written your terms yet.",
+    "emptyButton": "Write my terms"
+  },
+  "availability": {
+    "title": "Your availability",
+    "daysSet_one": "{{count}} day set",
+    "daysSet_other": "{{count}} days set",
+    "notSet": "Not set yet",
+    "editButton": "Edit"
+  },
+  "family": {
+    "title": "About the family",
+    "body": "Add their name and the children's names so they see something familiar.",
+    "addButton": "Add",
+    "expandButton": "Show",
+    "collapseButton": "Hide"
+  },
+  "sentTo": {
+    "eyebrow": "Sent to",
+    "noLabel": "No label",
+    "state": {
+      "sent": "Sent",
+      "opened": "Opened",
+      "viewed": "Viewed",
+      "joined": "Joined",
+      "expired": "Expired",
+      "revoked": "Revoked"
+    },
+    "timeline": {
+      "sent": "Sent {{date}}",
+      "opened": "opened {{date}}",
+      "viewed": "viewed {{date}}",
+      "joined": "joined {{date}}"
+    },
+    "moreOptions": "More options for {{name}}"
+  },
+  "rowMenu": {
+    "copyCode": "Copy code",
+    "shareAgain": "Share again",
+    "stopLink": "Stop this link",
+    "stopTitle": "Stop this link?",
+    "stopBody": "{{name}} won't be able to open your terms any more. You can send them a new link later.",
+    "stopConfirm": "Stop this link",
+    "stopCancel": "Keep it working",
+    "stopFailed": "That didn't go through. Try again."
+  },
+  "shareSheet": {
+    "title": "Send your terms",
+    "labelField": "Who are you sending this to?",
+    "labelPlaceholder": "The Bakers",
+    "labelHint": "Just for you — they never see this.",
+    "codeUntil": "Code works until {{date}}",
+    "windowLabel": "This link stops working after",
+    "window7": "7 days",
+    "window30": "30 days",
+    "consequence": "They'll see your name, your terms and a button to open the app. Your drafted terms go to them to review — nothing is agreed until they accept.",
+    "shareButton": "Share link",
+    "copyButton": "Copy code",
+    "failed": "That didn't go through. Try again.",
+    "message": "{{name}} sent you their working terms: {{url}}"
+  },
+  "archive": {
+    "button": "Archive this draft",
+    "title": "Archive this draft?",
+    "consequenceCodes": "Codes you've sent will stop working.",
+    "consequenceJoined": "Families who already joined keep the terms you sent them — this only removes the draft.",
+    "confirm": "Archive draft",
+    "cancel": "Keep this draft",
+    "failed": "That didn't go through. Try again."
+  },
+  "joined": {
+    "title": "You've joined the {{family}}",
+    "waiting": "Waiting for the {{family}} to review your terms",
+    "privacy": "You can't see the other nanny's pay or hours, and she can't see yours.",
+    "children_one": "One child — {{names}}.",
+    "children_other": "{{count}} children — {{names}}.",
+    "childWithAge": "{{name}} ({{age}})",
+    "parents_one": "One parent",
+    "parents_other": "{{count}} parents",
+    "otherCarers_one": "and one other nanny",
+    "otherCarers_other": "and {{count}} other nannies",
+    "button": "See your terms"
+  },
+  "a11y": {
+    "heroArt": "An envelope on a table beside a mug",
+    "loading": "Loading your draft"
+  }
+}

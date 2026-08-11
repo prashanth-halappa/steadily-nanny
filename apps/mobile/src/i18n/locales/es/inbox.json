@@ -50,6 +50,14 @@
       "subtitleNoDeadline": "Solicitado el {{askedDate}}",
       "deadline": "Responde antes del {{deadlineDate}}, {{deadlineTime}}",
       "cta": "Abrir el turno"
+    },
+    "termsProposal": {
+      "title": "Condiciones propuestas por {{carer}} · {{date}}",
+      "titleCountered": "La familia hizo una contraoferta · {{date}}",
+      "subtitle": "{{rate}} · {{weekly}} a la semana",
+      "subtitleRateOnly": "{{rate}}",
+      "subtitleNoFigures": "Abre para ver las condiciones.",
+      "cta": "Revisar condiciones"
     }
   }
 }

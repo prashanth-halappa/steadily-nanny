@@ -1,26 +1,33 @@
 /**
  * @module domains/setup/components/ChildrenScreen
  *
- * Parent setup step 2: add/edit/remove children. A household must exist
- * before children can be created (`POST /households`), so this screen
- * auto-creates one on first entry if the parent has none yet — there's no
- * separate "name your household" step in Wave 1, so it gets a sensible
- * default name the parent can rename later from settings.
+ * Parent · create, step 2: add/edit/remove children.
+ *
+ * The household is named on `HouseholdScreen` now (the HOUSEHOLD step, spec
+ * §3.3), which is also where it is normally created. The auto-create effect
+ * below SURVIVES as the fallback, and deliberately: a returning parent who
+ * signs out mid-wizard reaches this screen with a household on the server but
+ * nothing in local wizard state, and a parent who somehow arrives here with
+ * neither still needs children to have somewhere to go. It creates a household
+ * under a default name rather than blocking; renaming lives in Settings.
+ *
+ * A parent on the JOIN path must never reach this screen — creating a
+ * household here would hand them a second, empty family beside the one they
+ * just redeemed into. `stepsFor` keeps CHILDREN out of the join sequence; the
+ * redirect below is the belt to that braces, for a deep link or a stale route.
  */
 import { type Href, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
 import { ErrorState } from '@/src/components/custom/ErrorState';
-import { FieldLabel } from '@/src/components/ui/field-label';
-import { Input } from '@/src/components/ui/input';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { ChildrenManager } from '@/src/domains/setup/components/ChildrenManager';
 import { SetupScreenShell } from '@/src/domains/setup/components/SetupScreenShell';
 import {
   getSetupStepRoute,
   getStepProgress,
-  SETUP_ROLES,
+  SETUP_PATHS,
   SETUP_STEPS,
 } from '@/src/domains/setup/types';
 import { useCreateHousehold } from '@/src/hooks/mutations/useCreateHousehold';
@@ -28,10 +35,7 @@ import { useUpsertProfile } from '@/src/hooks/mutations/useUpsertProfile';
 import { useChildren } from '@/src/hooks/queries/useChildren';
 import { useHouseholds } from '@/src/hooks/queries/useHouseholds';
 import { useUserProfile } from '@/src/hooks/queries/useUserProfile';
-import {
-  buildBootstrapProfileRequest,
-  deriveBootstrapName,
-} from '@/src/lib/bootstrapUserProfile';
+import { buildBootstrapProfileRequest } from '@/src/lib/bootstrapUserProfile';
 import { getDeviceCurrency, getDeviceRegion } from '@/src/lib/deviceLocale';
 import { getDeviceTimeZone } from '@/src/lib/deviceTimeZone';
 import { useAuthStore } from '@/src/store/auth';
@@ -42,6 +46,8 @@ const DEFAULT_HOUSEHOLD_NAME = 'Our household';
 export function ChildrenScreen() {
   const router = useRouter();
   const session = useAuthStore(s => s.session);
+  const role = useSetupProgressStore(s => s.role);
+  const path = useSetupProgressStore(s => s.path);
   const setCurrentStep = useSetupProgressStore(s => s.setCurrentStep);
   const cachedHouseholdId = useSetupProgressStore(s => s.householdId);
 
@@ -56,19 +62,19 @@ export function ChildrenScreen() {
   // spinner with no way forward; `retryBootstrap` clears it, which — being in
   // the effect's deps — re-triggers the attempt.
   const [bootstrapFailed, setBootstrapFailed] = useState(false);
-  // Optional, typed while the bootstrap create-household call is in flight
-  // (the input only renders during that window — see `isLoadingHousehold`
-  // below). Empty stays empty; the bootstrap effect falls back to
-  // `DEFAULT_HOUSEHOLD_NAME` itself, same as before this field existed.
-  const [householdName, setHouseholdName] = useState('');
-  const [displayName, setDisplayName] = useState(() => {
-    const user = session?.user;
-    return user ? deriveBootstrapName(user) : '';
-  });
 
   const householdId = households.data?.[0]?.id ?? cachedHouseholdId ?? null;
 
+  // A joining parent has no business creating a household. Bounce before the
+  // bootstrap effect below can fire.
   useEffect(() => {
+    if (path !== SETUP_PATHS.JOIN) return;
+    setCurrentStep(SETUP_STEPS.CODE);
+    router.replace(getSetupStepRoute(SETUP_STEPS.CODE) as Href);
+  }, [path, setCurrentStep, router]);
+
+  useEffect(() => {
+    if (path === SETUP_PATHS.JOIN) return;
     if (!households.isSuccess) return;
 
     if (households.data.length === 0) {
@@ -98,11 +104,14 @@ export function ChildrenScreen() {
         try {
           if (!profileExists) {
             await upsertProfile.mutateAsync(
-              buildBootstrapProfileRequest(authUser, { name: displayName })
+              buildBootstrapProfileRequest(authUser)
             );
           }
           await createHousehold.mutateAsync({
-            name: householdName.trim() || DEFAULT_HOUSEHOLD_NAME,
+            // No name field here any more — this is the fallback path, and it
+            // only runs for someone who never saw HouseholdScreen. A default
+            // they can rename beats a wizard that refuses to move.
+            name: DEFAULT_HOUSEHOLD_NAME,
             // Device-derived prefills, same "seed, never final word" discipline
             // as `PaySetupScreen`'s currency chip — a parent can correct both
             // from Settings -> Manage household afterward. `jurisdiction` is
@@ -147,8 +156,7 @@ export function ChildrenScreen() {
     upsertProfile.isPending,
     upsertProfile.mutateAsync,
     bootstrapFailed,
-    householdName,
-    displayName,
+    path,
   ]);
 
   const children = useChildren(householdId);
@@ -175,7 +183,7 @@ export function ChildrenScreen() {
   return (
     <SetupScreenShell
       testID="children-screen"
-      progress={getStepProgress(SETUP_ROLES.PARENT, SETUP_STEPS.CHILDREN)}
+      progress={getStepProgress(role, path, SETUP_STEPS.CHILDREN)}
       title={t('children.wizardTitle')}
       subtitle={t('children.wizardSubtitle')}
       ctaLabel={t('children.continueButton')}
@@ -183,35 +191,11 @@ export function ChildrenScreen() {
       onCta={onContinue}
     >
       {isLoadingHousehold ? (
+        // The fallback window: a household is being created under a default
+        // name because this user never passed through HOUSEHOLD. No inputs
+        // here any more — a name field that appears only for as long as a
+        // network call takes is not a place to ask someone to type.
         <View className="gap-4">
-          {/* Visible for the whole create-household window (including a
-              failed/retrying attempt) — this is the only chance to set it,
-              the bootstrap create call fires automatically and there's no
-              separate "name your household" step in Wave 1 (see this
-              module's header comment). Renaming after the fact happens from
-              Settings -> Manage household instead. */}
-          <View className="gap-2">
-            <FieldLabel>{t('children.parentNameLabel')}</FieldLabel>
-            <Input
-              testID="parent-name-input"
-              accessibilityLabel={t('children.parentNameLabel')}
-              value={displayName}
-              onChangeText={setDisplayName}
-              placeholder={t('children.parentNamePlaceholder')}
-              autoCapitalize="words"
-            />
-          </View>
-          <View className="gap-2">
-            <FieldLabel>{t('children.householdNameLabel')}</FieldLabel>
-            <Input
-              testID="household-name-input"
-              accessibilityLabel={t('children.householdNameLabel')}
-              value={householdName}
-              onChangeText={setHouseholdName}
-              placeholder={t('children.householdNamePlaceholder')}
-              autoCapitalize="words"
-            />
-          </View>
           {bootstrapFailed ? (
             <ErrorState variant="generic" onRetry={retryBootstrap} />
           ) : (

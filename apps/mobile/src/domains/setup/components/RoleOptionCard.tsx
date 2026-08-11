@@ -41,7 +41,12 @@ export function RoleOptionCard({
     >
       <View className="gap-1">
         <H4 className={selected ? 'text-primary' : undefined}>{title}</H4>
-        <Body className="text-muted-foreground">{description}</Body>
+        <Body
+          testID={testID ? `${testID}-description` : undefined}
+          className="text-muted-foreground"
+        >
+          {description}
+        </Body>
       </View>
     </AnimatedPressable>
   );

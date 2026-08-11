@@ -30,12 +30,13 @@ export function CalendarPermissionScreen() {
   const router = useRouter();
   const { t } = useTranslation('auth');
   const role = useSetupProgressStore(s => s.role);
+  const path = useSetupProgressStore(s => s.path);
   const setCurrentStep = useSetupProgressStore(s => s.setCurrentStep);
   const resetSetupProgress = useSetupProgressStore(s => s.reset);
   const [isRequesting, setIsRequesting] = useState(false);
 
   const advance = () => {
-    const next = getNextSetupStep(role, SETUP_STEPS.CALENDAR_PERMISSION);
+    const next = getNextSetupStep(role, path, SETUP_STEPS.CALENDAR_PERMISSION);
     if (next) {
       setCurrentStep(next);
       router.push(getSetupStepRoute(next) as Href);
@@ -66,7 +67,7 @@ export function CalendarPermissionScreen() {
     <SetupScreenShell
       heroImage={illustrations.onboardingCalendar}
       testID="calendar-permission-screen"
-      progress={getStepProgress(role, SETUP_STEPS.CALENDAR_PERMISSION)}
+      progress={getStepProgress(role, path, SETUP_STEPS.CALENDAR_PERMISSION)}
       title={t('onboarding.calendar.title')}
       subtitle={t('onboarding.calendar.subtitle')}
       ctaLabel={t('onboarding.calendar.enableButton')}

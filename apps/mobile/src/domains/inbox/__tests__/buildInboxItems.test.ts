@@ -8,7 +8,10 @@
  */
 import { describe, expect, it } from 'bun:test';
 import { SETUP_ROLES } from '@/src/domains/setup/types';
-import { buildInboxItems } from '../utils/buildInboxItems';
+import {
+  buildInboxItems,
+  type InboxTermsProposalInput,
+} from '../utils/buildInboxItems';
 
 const ME = '11111111-1111-4111-8111-111111111111';
 const OTHER = '22222222-2222-4222-8222-222222222222';
@@ -516,5 +519,170 @@ describe('buildInboxItems — pending_shift kind (§2.2, §2.3a)', () => {
       shifts: [pendingShift],
     });
     expect(items.map(i => i.kind)).toEqual(['pending_shift', 'queried_week']);
+  });
+});
+
+// §7.1 — a live proposal belongs to the side that must ANSWER it. The person
+// who wrote it has nothing pending; showing it back to them would turn one
+// negotiation into two rows about the same contract.
+describe('buildInboxItems — terms_proposal kind (§7.1)', () => {
+  const NOW = '2026-08-25T12:00:00.000Z';
+
+  const carerProposal: InboxTermsProposalInput = {
+    id: 'prop-1',
+    household_id: 'hh-1',
+    carer_id: ME,
+    direction: 'carer',
+    status: 'proposed',
+    carer_display_name: 'Marisol',
+    created_at: '2026-08-24T09:00:00.000Z',
+    weekly_equivalent_minor: 154000,
+    terms: { rate_minor: 2800, currency: 'USD' },
+  };
+
+  const parentCounter: InboxTermsProposalInput = {
+    ...carerProposal,
+    id: 'prop-2',
+    direction: 'parent',
+  };
+
+  const base = {
+    currentUserId: ME,
+    todayISO: '2026-08-25',
+    nowISO: NOW,
+    changeRequests: [],
+    patterns: [],
+    timesheets: [],
+  };
+
+  it('gives a carer-authored proposal to the parent who must answer it', () => {
+    expect(
+      buildInboxItems({
+        ...base,
+        role: SETUP_ROLES.PARENT,
+        termsProposals: [carerProposal],
+      })
+    ).toEqual([
+      {
+        kind: 'terms_proposal',
+        id: 'prop-1',
+        householdId: 'hh-1',
+        carerDisplayName: 'Marisol',
+        proposedAt: '2026-08-24T09:00:00.000Z',
+        direction: 'carer',
+        rateMinor: 2800,
+        weeklyEquivalentMinor: 154000,
+        currency: 'USD',
+      },
+    ]);
+  });
+
+  it('never shows a proposal to the person who wrote it', () => {
+    expect(
+      buildInboxItems({
+        ...base,
+        role: SETUP_ROLES.NANNY,
+        termsProposals: [carerProposal],
+      })
+    ).toEqual([]);
+  });
+
+  it('gives a parent counter to the carer it answers', () => {
+    const items = buildInboxItems({
+      ...base,
+      role: SETUP_ROLES.NANNY,
+      termsProposals: [parentCounter],
+    });
+    expect(items.map(i => i.kind)).toEqual(['terms_proposal']);
+    expect(items.map(i => (i as { id: string }).id)).toEqual(['prop-2']);
+  });
+
+  it('is another carer’s negotiation, not hers, when the carer ids differ (D-21)', () => {
+    expect(
+      buildInboxItems({
+        ...base,
+        role: SETUP_ROLES.NANNY,
+        termsProposals: [{ ...parentCounter, carer_id: OTHER }],
+      })
+    ).toEqual([]);
+  });
+
+  // B5, the same explicit role check `pending_shift` uses: a helper cannot
+  // accept terms (the API's WRITE_ROLES is {owner, parent}), so she is
+  // excluded by construction rather than by never happening to match an id.
+  it('B5: a helper never sees a terms_proposal item', () => {
+    expect(
+      buildInboxItems({
+        ...base,
+        role: SETUP_ROLES.HELPER,
+        termsProposals: [carerProposal],
+      })
+    ).toEqual([]);
+  });
+
+  it('ignores proposals that are no longer awaiting an answer', () => {
+    for (const status of ['countered', 'accepted', 'withdrawn']) {
+      expect(
+        buildInboxItems({
+          ...base,
+          role: SETUP_ROLES.PARENT,
+          termsProposals: [{ ...carerProposal, status }],
+        })
+      ).toEqual([]);
+    }
+  });
+
+  it('carries a missing weekly figure and a missing currency through as null, never invented', () => {
+    const items = buildInboxItems({
+      ...base,
+      role: SETUP_ROLES.PARENT,
+      termsProposals: [
+        {
+          ...carerProposal,
+          weekly_equivalent_minor: null,
+          terms: { rate_minor: 2800 },
+        },
+      ],
+    });
+    expect(items[0]).toMatchObject({
+      weeklyEquivalentMinor: null,
+      currency: null,
+    });
+  });
+
+  // §2.2's table: rank 4, between a queried week (3) and a pending shift
+  // that is not within 48h (5).
+  it('sorts at rank 4 — after a queried week, before a far-off pending shift', () => {
+    const items = buildInboxItems({
+      ...base,
+      role: SETUP_ROLES.NANNY,
+      timesheets: [
+        {
+          id: 'ts-q',
+          carer_id: ME,
+          week_start: '2026-08-18',
+          status: 'queried',
+          query_note: null,
+        },
+      ],
+      shifts: [
+        {
+          id: 'shift-far',
+          carer_id: ME,
+          status: 'pending',
+          local_date: '2026-09-05',
+          starts_at: '2026-09-05T08:00:00.000Z',
+          ends_at: '2026-09-05T13:00:00.000Z',
+          created_at: '2026-08-24T00:00:00.000Z',
+        },
+      ],
+      termsProposals: [parentCounter],
+    });
+
+    expect(items.map(i => i.kind)).toEqual([
+      'queried_week',
+      'terms_proposal',
+      'pending_shift',
+    ]);
   });
 });

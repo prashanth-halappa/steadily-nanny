@@ -10,6 +10,7 @@ function createMockQueryChain(
   const chain: any = {
     select: mock(() => chain),
     eq: mock(() => chain),
+    in: mock(() => chain),
     insert: mock(() => chain),
     order: mock(() => chain),
     maybeSingle: mock(() => Promise.resolve(finalResponse)),
@@ -29,14 +30,20 @@ function createMockQueryChain(
  */
 function createCasQueryChain(rows: FakeRow[], error: unknown = null): any {
   const eqFilters: [string, unknown][] = [];
+  const inFilters: [string, unknown[]][] = [];
   let updatePatch: Record<string, unknown> | null = null;
   const matches = (row: FakeRow): boolean =>
-    eqFilters.every(([key, value]) => row[key] === value);
+    eqFilters.every(([key, value]) => row[key] === value) &&
+    inFilters.every(([key, values]) => values.includes(row[key]));
 
   const chain: any = {
     select: mock(() => chain),
     eq: mock((key: string, value: unknown) => {
       eqFilters.push([key, value]);
+      return chain;
+    }),
+    in: mock((key: string, values: unknown[]) => {
+      inFilters.push([key, values]);
       return chain;
     }),
     update: mock((patch: Record<string, unknown>) => {
@@ -134,7 +141,7 @@ describe('HouseholdMemberRepository.createMembership', () => {
 });
 
 describe('HouseholdMemberRepository.findMembershipAnyStatus', () => {
-  it('filters on household and user only — a removed row must still be found', async () => {
+  it('filters on household and user, and a removed row must still be found', async () => {
     const removed = {
       id: 'm1',
       household_id: 'h1',
@@ -155,12 +162,107 @@ describe('HouseholdMemberRepository.findMembershipAnyStatus', () => {
     ]);
   });
 
+  // D-49. Six money-read gates branch on ROLE ONLY from this lookup's result
+  // (`assertPayrollReader`, `assertPaymentReader`, and their expense, pay-terms,
+  // settlement and PTO twins), so whatever this query admits reads money. When
+  // "any status" meant `{active, removed}` that was correct; `candidate` makes
+  // it a disclosure. The filter must be POSITIVE — a `neq('status','removed')`
+  // would pass this test's sibling below and silently admit her.
+  it('applies a positive status filter of exactly [active, removed] — a candidate is invisible here', async () => {
+    const chain = createMockQueryChain({ data: null, error: null });
+    mockSupabaseService.from.mockImplementation(() => chain);
+    const repo = new HouseholdMemberRepository();
+
+    await repo.findMembershipAnyStatus('h1', 'u1');
+
+    expect(chain.in.mock.calls).toEqual([['status', ['active', 'removed']]]);
+  });
+
   it('returns null when the user has never been a member', async () => {
     mockSupabaseService.from.mockImplementation(() =>
       createMockQueryChain({ data: null, error: null })
     );
     const repo = new HouseholdMemberRepository();
     expect(await repo.findMembershipAnyStatus('h1', 'u1')).toBeNull();
+  });
+});
+
+describe('HouseholdMemberRepository.findMembershipIncludingCandidate', () => {
+  // The two callers that genuinely mean EVERY row: `redeemInvite`'s pre-check
+  // (the unique (household_id, user_id) index makes a fresh insert impossible
+  // whatever the status, so a no-op must refuse before it burns the code) and
+  // the stranded-claim self-heal (a candidate row means the redeem DID land).
+  it('applies no status filter at all, so a candidate row is returned', async () => {
+    const candidate = {
+      id: 'm1',
+      household_id: 'h1',
+      user_id: 'u1',
+      role: 'nanny',
+      status: 'candidate',
+    };
+    const chain = createMockQueryChain({ data: candidate, error: null });
+    mockSupabaseService.from.mockImplementation(() => chain);
+    const repo = new HouseholdMemberRepository();
+
+    expect(await repo.findMembershipIncludingCandidate('h1', 'u1')).toEqual(
+      candidate
+    );
+    expect(chain.eq.mock.calls).toEqual([
+      ['household_id', 'h1'],
+      ['user_id', 'u1'],
+    ]);
+    expect(chain.in.mock.calls).toEqual([]);
+  });
+
+  it('throws a DatabaseError when the query fails', async () => {
+    mockSupabaseService.from.mockImplementation(() =>
+      createMockQueryChain({ data: null, error: { message: 'boom' } })
+    );
+    const repo = new HouseholdMemberRepository();
+    await expect(
+      repo.findMembershipIncludingCandidate('h1', 'u1')
+    ).rejects.toThrow('Failed to look up household membership');
+  });
+});
+
+describe('HouseholdMemberRepository.activateCandidate', () => {
+  // The acceptance transition (§8.2.1): `reactivateMembership` CASes on
+  // `status='removed'` and `removeMembership` on `status='active'`, so a
+  // candidate row matched neither and had no way out of the state.
+  it('flips a candidate to active and returns the updated row', async () => {
+    const row = memberRow({ status: 'candidate', role: 'nanny' });
+    mockSupabaseService.from.mockImplementation(() =>
+      createCasQueryChain([row])
+    );
+    const repo = new HouseholdMemberRepository();
+
+    const result = await repo.activateCandidate('m1');
+
+    expect(result).toMatchObject({ id: 'm1', status: 'active' });
+    expect(row.status).toBe('active');
+  });
+
+  it('returns null when the row is not a candidate — the CAS predicate', async () => {
+    // A second acceptance, or a row a parent removed while he was deciding.
+    const row = memberRow({ status: 'active' });
+    mockSupabaseService.from.mockImplementation(() =>
+      createCasQueryChain([row])
+    );
+    const repo = new HouseholdMemberRepository();
+
+    expect(await repo.activateCandidate('m1')).toBeNull();
+  });
+
+  it('throws a DatabaseError when the update fails', async () => {
+    mockSupabaseService.from.mockImplementation(() =>
+      createCasQueryChain([memberRow({ status: 'candidate' })], {
+        message: 'boom',
+      })
+    );
+    const repo = new HouseholdMemberRepository();
+    await expect(repo.activateCandidate('m1')).rejects.toThrow(
+      'Failed to activate household candidate'
+    );
   });
 });
 
@@ -189,6 +291,22 @@ describe('HouseholdMemberRepository.removeMembership', () => {
     const repo = new HouseholdMemberRepository();
 
     expect(await repo.removeMembership('m1')).toBeNull();
+  });
+
+  // Declining is a removal: the parent read her terms and said no, and the row
+  // has to have somewhere to go. Widened to a two-value positive set rather
+  // than dropped — `removed` still matches neither, so the double-remove
+  // no-op above keeps working.
+  it('flips a CANDIDATE to removed too — declining is how that window ends', async () => {
+    const row = memberRow({ status: 'candidate' });
+    mockSupabaseService.from.mockImplementation(() =>
+      createCasQueryChain([row])
+    );
+    const repo = new HouseholdMemberRepository();
+
+    expect(await repo.removeMembership('m1')).toMatchObject({
+      status: 'removed',
+    });
   });
 
   it('throws a DatabaseError when the update fails', async () => {

@@ -7,6 +7,10 @@
  */
 import { beforeAll, describe, expect, it } from 'bun:test';
 import { join } from 'node:path';
+import {
+  PUSH_NOTIFICATION_TYPES,
+  PUSH_TYPE_AUDIENCE,
+} from '@steadily-nanny/shared-types';
 
 describe('NotificationPrefsScreen', () => {
   let source: string;
@@ -77,6 +81,29 @@ describe('NotificationPrefsScreen', () => {
   it('groups the money-correction types under Hours and pay', () => {
     expect(source).toContain("payment_corrected: 'hoursAndPay'");
     expect(source).toContain("reimbursement_settled: 'hoursAndPay'");
+  });
+
+  // 3-O / §13: a contract is money. All four sit with pay_terms_set rather
+  // than under Your household, where "someone joined" admin lives.
+  it('groups the four terms-proposal types under Hours and pay', () => {
+    expect(source).toContain("terms_proposal_received: 'hoursAndPay'");
+    expect(source).toContain("terms_proposal_countered: 'hoursAndPay'");
+    expect(source).toContain("terms_proposal_accepted: 'hoursAndPay'");
+    expect(source).toContain("terms_proposal_withdrawn: 'hoursAndPay'");
+  });
+
+  // §1.4 (D-38) — a user-visible change to a SHIPPED row: `invite_redeemed`
+  // widened parent -> both, and this screen derives visibility straight from
+  // `PUSH_TYPE_AUDIENCE`, so a nanny now has this toggle where she had none.
+  // Pinned here so the widening cannot be reverted silently.
+  it('surfaces the invite_redeemed toggle to a nanny now that its audience is both', () => {
+    expect(PUSH_TYPE_AUDIENCE[PUSH_NOTIFICATION_TYPES.INVITE_REDEEMED]).toBe(
+      'both'
+    );
+    expect(source).toContain(
+      "if (role === SETUP_ROLES.NANNY) return ['carer', 'both', 'any'];"
+    );
+    expect(source).toContain('PUSH_TYPE_AUDIENCE[type]');
   });
 
   it('groups visible push types under Schedule, Hours and pay, and Your household headings', () => {

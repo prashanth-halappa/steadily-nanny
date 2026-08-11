@@ -1,0 +1,106 @@
+{
+  "untitledDraft": "Borrador sin título",
+  "hero": {
+    "title": "Tus condiciones",
+    "subtitle": "Borrador · aún no lo has compartido con nadie"
+  },
+  "sharePrompt": {
+    "title": "Envíaselas a una familia",
+    "body": "Recibirán un enlace con tus condiciones. Nada queda acordado hasta que las acepten.",
+    "button": "Compartir mis condiciones",
+    "offlineHint": "Necesitas conexión para enviar esto."
+  },
+  "terms": {
+    "title": "Tus condiciones",
+    "perHour": "/h",
+    "weekly": "{{amount}} por semana con {{hours}} horas garantizadas",
+    "startsOn": "Comienza el {{date}}",
+    "editButton": "Editar",
+    "emptyBody": "Todavía no has escrito tus condiciones.",
+    "emptyButton": "Escribir mis condiciones"
+  },
+  "availability": {
+    "title": "Tu disponibilidad",
+    "daysSet_one": "{{count}} día indicado",
+    "daysSet_other": "{{count}} días indicados",
+    "notSet": "Aún sin indicar",
+    "editButton": "Editar"
+  },
+  "family": {
+    "title": "Sobre la familia",
+    "body": "Añade su apellido y los nombres de los niños para que vean algo familiar.",
+    "addButton": "Añadir",
+    "expandButton": "Mostrar",
+    "collapseButton": "Ocultar"
+  },
+  "sentTo": {
+    "eyebrow": "Enviado a",
+    "noLabel": "Sin nombre",
+    "state": {
+      "sent": "Enviado",
+      "opened": "Abierto",
+      "viewed": "Visto",
+      "joined": "Se unió",
+      "expired": "Caducado",
+      "revoked": "Anulado"
+    },
+    "timeline": {
+      "sent": "Enviado el {{date}}",
+      "opened": "abierto el {{date}}",
+      "viewed": "visto el {{date}}",
+      "joined": "se unió el {{date}}"
+    },
+    "moreOptions": "Más opciones para {{name}}"
+  },
+  "rowMenu": {
+    "copyCode": "Copiar código",
+    "shareAgain": "Compartir de nuevo",
+    "stopLink": "Desactivar este enlace",
+    "stopTitle": "¿Desactivar este enlace?",
+    "stopBody": "{{name}} ya no podrá abrir tus condiciones. Puedes enviarles un enlace nuevo más adelante.",
+    "stopConfirm": "Desactivar este enlace",
+    "stopCancel": "Dejarlo activo",
+    "stopFailed": "No se pudo completar. Inténtalo de nuevo."
+  },
+  "shareSheet": {
+    "title": "Envía tus condiciones",
+    "labelField": "¿A quién se las envías?",
+    "labelPlaceholder": "Familia Baker",
+    "labelHint": "Solo para ti — ellos nunca lo ven.",
+    "codeUntil": "El código funciona hasta el {{date}}",
+    "windowLabel": "Este enlace deja de funcionar tras",
+    "window7": "7 días",
+    "window30": "30 días",
+    "consequence": "Verán tu nombre, tus condiciones y un botón para abrir la app. Tus condiciones en borrador les llegan para que las revisen — nada queda acordado hasta que las acepten.",
+    "shareButton": "Compartir enlace",
+    "copyButton": "Copiar código",
+    "failed": "No se pudo completar. Inténtalo de nuevo.",
+    "message": "{{name}} te ha enviado sus condiciones de trabajo: {{url}}"
+  },
+  "archive": {
+    "button": "Archivar este borrador",
+    "title": "¿Archivar este borrador?",
+    "consequenceCodes": "Los códigos que has enviado dejarán de funcionar.",
+    "consequenceJoined": "Las familias que ya se unieron conservan las condiciones que les enviaste — esto solo elimina el borrador.",
+    "confirm": "Archivar borrador",
+    "cancel": "Conservar este borrador",
+    "failed": "No se pudo completar. Inténtalo de nuevo."
+  },
+  "joined": {
+    "title": "Te has unido a la {{family}}",
+    "waiting": "Esperando a que la {{family}} revise tus condiciones",
+    "privacy": "No puedes ver el pago ni las horas de la otra niñera, y ella no puede ver los tuyos.",
+    "children_one": "Un niño — {{names}}.",
+    "children_other": "{{count}} niños — {{names}}.",
+    "childWithAge": "{{name}} ({{age}})",
+    "parents_one": "Un padre o madre",
+    "parents_other": "{{count}} padres",
+    "otherCarers_one": "y otra niñera",
+    "otherCarers_other": "y otras {{count}} niñeras",
+    "button": "Ver tus condiciones"
+  },
+  "a11y": {
+    "heroArt": "Un sobre sobre una mesa junto a una taza",
+    "loading": "Cargando tu borrador"
+  }
+}

@@ -156,7 +156,11 @@
       "cover_ask_declined": "Cover request declined",
       "carer_sick_shifts_affected": "Sick day affects shifts",
       "shift_no_show_digest": "Missed clock-in summary",
-      "week_below_guarantee": "Week approved below guarantee"
+      "week_below_guarantee": "Week approved below guarantee",
+      "terms_proposal_received": "Terms proposed",
+      "terms_proposal_countered": "Terms countered",
+      "terms_proposal_accepted": "Terms agreed",
+      "terms_proposal_withdrawn": "Terms withdrawn"
     }
   }
 }

@@ -5,7 +5,10 @@
  * `mock.module('@/src/api/client', …)` seam pattern (see user.test.ts).
  */
 import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
-import type { Household } from '@steadily-nanny/shared-types/schemas/household.schema';
+import {
+  HOUSEHOLD_STATES,
+  type Household,
+} from '@steadily-nanny/shared-types/schemas/household.schema';
 
 let householdApi: any;
 let apiClient: any;
@@ -30,6 +33,7 @@ const validHousehold: Household = {
   currency: 'GBP',
   jurisdiction: null,
   week_starts_on: 1,
+  state: HOUSEHOLD_STATES.LIVE,
   created_by: '22222222-2222-4222-8222-222222222222',
   created_at: now,
   updated_at: now,

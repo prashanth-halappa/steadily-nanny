@@ -46,6 +46,7 @@ beforeEach(() => {
   );
   useSetupProgressStore.setState({
     role: 'parent',
+    path: 'create',
     currentStep: 'NOTIFICATIONS_PERMISSION',
     householdId: 'household-1',
   });
@@ -106,6 +107,7 @@ describe('NotificationsPermissionScreen', () => {
   it('a helper has no calendar step — advances straight home', () => {
     useSetupProgressStore.setState({
       role: 'helper',
+      path: 'join',
       currentStep: 'NOTIFICATIONS_PERMISSION',
       householdId: 'household-1',
     });
