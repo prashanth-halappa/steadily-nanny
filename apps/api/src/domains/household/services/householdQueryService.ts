@@ -264,7 +264,14 @@ export class HouseholdQueryService {
      * message, and support still gets the answer from the log line.
      */
     const refuse = (reason: string): never => {
-      logger.info('Public terms preview refused', { code, reason });
+      // The REASON is logged; the CODE is not. On this one route the code is
+      // the bearer secret — anyone holding it reads her pay terms — and
+      // `reason: 'code_expired'` beside a code is a log line confirming that
+      // code was real. An anonymous caller can spend guesses here, so every
+      // guess would otherwise write a candidate secret into the log. Support
+      // still gets the row of §6.2's table that fired, correlated by
+      // `requestId` like every other line.
+      logger.info('Public terms preview refused', { reason });
       throw new InviteNotFoundError(code);
     };
 

@@ -329,6 +329,19 @@ interface Segment {
   date: string;
   minutes: number;
   arrangement: PayArrangement;
+  /**
+   * This segment's OWN multiplier, overriding the bucket's.
+   *
+   * The `overtime` bucket holds minutes promoted by two different terms — the
+   * daily/weekly overtime multiplier, and the seventh consecutive day's first
+   * tier (`seventh_day_multiplier`, 078). They are separate columns because
+   * they are separate numbers: California's seventh day is 1.5× where the
+   * week's overtime might be anything the family agreed. Pricing the whole
+   * bucket at one multiplier paid the seventh day at the WEEKLY rate and then
+   * printed the weekly rate's label on it, so the row reproduced its own wrong
+   * total. Omitted = the bucket's multiplier, which is every other segment.
+   */
+  multiplier?: number;
 }
 
 /**
@@ -383,13 +396,22 @@ function toLines(
 ): EarningsLine[] {
   const lines: EarningsLine[] = [];
   for (const segment of segments) {
+    const segmentMultiplier = segment.multiplier ?? multiplier;
     const rateMinor = lineRateMinor(
       segment.arrangement.rate_minor,
-      multiplier,
+      segmentMultiplier,
       premiumIncrementOnly
     );
+    // The multiplier joins the merge key alongside the arrangement: two
+    // segments priced at different rates cannot become one row, because one
+    // row can state only one rate and one multiplier, and would therefore
+    // misprice or mislabel whichever it did not state.
     const previous = lines[lines.length - 1];
-    if (previous && previous.arrangement_id === segment.arrangement.id) {
+    if (
+      previous &&
+      previous.arrangement_id === segment.arrangement.id &&
+      previous.multiplier === segmentMultiplier
+    ) {
       previous.minutes += segment.minutes;
       previous.to_date = segment.date;
       previous.amount_minor = priceMinutes(previous.minutes, rateMinor);
@@ -399,7 +421,7 @@ function toLines(
       kind,
       minutes: segment.minutes,
       rate_minor: rateMinor,
-      multiplier,
+      multiplier: segmentMultiplier,
       amount_minor: priceMinutes(segment.minutes, rateMinor),
       from_date: segment.date,
       to_date: segment.date,
@@ -733,7 +755,19 @@ export function computeWeekEarnings(
           ? minutes
           : Math.min(minutes, seventhDayDoubletimeAfter);
       if (firstTier > 0) {
-        overtimeSegments.push({ date, minutes: firstTier, arrangement });
+        // `seventh_day_multiplier`, NOT the weekly `multiplier` this bucket is
+        // otherwise priced at: 078 made them separate columns because they are
+        // separate terms (its header: a boolean "would have priced day seven
+        // at a flat 1.5x and underpaid it"). The second tier below is the
+        // shared `doubletime_multiplier` by design — 078 again: it is "the
+        // rate of the top tier, whether that tier is reached by working a
+        // 13-hour Tuesday or by working a seventh day".
+        overtimeSegments.push({
+          date,
+          minutes: firstTier,
+          arrangement,
+          multiplier: seventhDayMultiplier,
+        });
       }
       if (minutes - firstTier > 0) {
         doubletimeSegments.push({
@@ -808,13 +842,15 @@ export function computeWeekEarnings(
     cumulativeRemainder += minutes;
   }
 
-  // `toLines` merges CONSECUTIVE same-arrangement segments into one dated
-  // line, so the overtime bucket has to be date-ascending before it gets
-  // there — it is filled in two passes (daily tiers, then the weekly rule)
-  // and a day can legitimately contribute to both. `sort` is stable, so a
-  // day's daily-overtime segment stays ahead of its weekly-overtime one and
-  // the two merge into a single honest row rather than two rows at the same
-  // rate for a nanny to reconcile.
+  // `toLines` merges CONSECUTIVE same-arrangement, same-multiplier segments
+  // into one dated line, so the overtime bucket has to be date-ascending
+  // before it gets there — it is filled in two passes (daily tiers, then the
+  // weekly rule) and a day can legitimately contribute to both. `sort` is
+  // stable, so a day's daily-overtime segment stays ahead of its
+  // weekly-overtime one and the two merge into a single honest row rather
+  // than two rows at the same rate for a nanny to reconcile. A seventh day
+  // priced at its own, different multiplier stays its own row — see
+  // `Segment.multiplier`.
   overtimeSegments.sort((a, b) => a.date.localeCompare(b.date));
 
   // ---------------------------------------------------------------------
@@ -1057,6 +1093,10 @@ export function computeWeekEarnings(
       EARNINGS_LINE_KINDS.REGULAR,
       null
     ),
+    // The weekly/daily overtime multiplier is this bucket's DEFAULT, not its
+    // only rate: the seventh day's first tier sits here too and carries its
+    // own `seventh_day_multiplier` (see `Segment.multiplier`), so a week with
+    // both emits two overtime rows at two honest rates.
     [EARNINGS_LINE_KINDS.OVERTIME]: toLines(
       overtimeSegments,
       EARNINGS_LINE_KINDS.OVERTIME,

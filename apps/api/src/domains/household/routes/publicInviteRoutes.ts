@@ -17,12 +17,25 @@
  * @module domains/household/routes/publicInviteRoutes
  */
 import { Router } from 'express';
+import { publicInviteRateLimiter } from '../../../middlewares/rateLimit';
 import { validate } from '../../../middlewares/validator';
 import { asyncHandler } from '../../../utils/asyncHandler';
 import { PublicInviteController } from '../controllers/publicInviteController';
 import { InviteCodeParamSchema } from '../schemas';
 
 const router = Router();
+
+// `/api/v1`'s `userRateLimiter` is mounted AFTER `validateSupabaseToken` and
+// keys on the user id, so it cannot cover a route that runs before auth — and
+// moving this mount behind auth would put the public terms page behind a login,
+// which is the one thing it must not be. So these two routes carry their own
+// IP-keyed limiter instead: the code is the bearer secret, a hit returns her
+// pay terms, and with no limit at all walking the 31^6 keyspace is free. It
+// sits on the router (not in `app.ts`) so the budget is spent across BOTH
+// routes together — the receipt endpoint is a write keyed on the same
+// guessable string, and its own quota would just move the enumeration one path
+// over.
+router.use(publicInviteRateLimiter);
 
 // The page itself. 404s on every row of §6.2's table, with one opaque body.
 router.get(
