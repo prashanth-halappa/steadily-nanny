@@ -49,6 +49,7 @@ import {
   ChangeRequestNotPendingError,
   ExtraShiftAlreadyExistsError,
   InvalidChangeRequestKindForRoleError,
+  NotTheAssignedCarerError,
   NotTheChangeRequestRequesterError,
   NotTheChangeRequestResponderError,
   ShiftNotFoundError,
@@ -335,7 +336,7 @@ export class ShiftChangeRequestCommandService {
   ): Promise<CreateChangeRequestResult> {
     const shift = await this.shiftQueries.getOwned(userId, shiftId);
     const membership = await this.requireMembership(userId, shift.household_id);
-    this.assertKindAllowedForRole(input.kind, membership.role);
+    this.assertKindAllowedForRole(input.kind, membership.role, shift, userId);
 
     // Refuse at OPEN time, not just on accept. A completed/cancelled shift —
     // or one with time entries behind it — is settled reality; letting a
@@ -850,7 +851,12 @@ export class ShiftChangeRequestCommandService {
     }
   }
 
-  private assertKindAllowedForRole(kind: string, role: string): void {
+  private assertKindAllowedForRole(
+    kind: string,
+    role: string,
+    shift: ShiftWithChildren,
+    userId: string
+  ): void {
     if (PARENT_KINDS.has(kind)) {
       if (!WRITE_ROLES.has(role)) {
         throw new InvalidChangeRequestKindForRoleError(kind, role);
@@ -860,6 +866,13 @@ export class ShiftChangeRequestCommandService {
     if (kind === SHIFT_CHANGE_REQUEST_KINDS.COUNTER_OFFER) {
       if (!CARER_ROLES.has(role)) {
         throw new InvalidChangeRequestKindForRoleError(kind, role);
+      }
+      // Identity, not just role — the same rule `assertCanRespond` applies on
+      // the answering side. Another active nanny in the household must not be
+      // able to renegotiate a colleague's hours, and an unassigned shift has
+      // no valid counter-offerer at all.
+      if (shift.carer_id !== userId) {
+        throw new NotTheAssignedCarerError(shift.id, kind);
       }
       return;
     }

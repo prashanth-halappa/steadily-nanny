@@ -3,6 +3,7 @@
  * the payload. mock.module BEFORE dynamic import.
  */
 import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
+import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types/schemas/notification.schema';
 import type { ShiftWithChildren } from '../../../../../src/domains/shift/repositories/shiftRepository';
 
 const confirmedShift: ShiftWithChildren = {
@@ -107,5 +108,21 @@ describe('ShiftCommandService.runningLate', () => {
       body: string;
     };
     expect(pushPayload.body).toBe("H1 Nanny1 says she's running late.");
+  });
+
+  // The wire string shipped before it was registered in the shared push-type
+  // union — pin it so registration stays a no-op for clients already out there.
+  it('pushes the registered running_late type with an unchanged payload', async () => {
+    await makeService().runningLate('carer-1', 's1');
+
+    const pushPayload = notifyHouseholdParents.mock.calls[0]?.[1] as {
+      data: Record<string, unknown>;
+    };
+    expect(pushPayload.data).toEqual({
+      type: PUSH_NOTIFICATION_TYPES.RUNNING_LATE,
+      shiftId: 's1',
+      householdId: 'h1',
+    });
+    expect(PUSH_NOTIFICATION_TYPES.RUNNING_LATE).toBe('running_late');
   });
 });

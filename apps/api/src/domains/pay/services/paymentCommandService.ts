@@ -22,9 +22,11 @@
  *    is nothing to bound a payment against; a NULL snapshot (a pre-042 week,
  *    or an unpriceable one) has no ceiling and no currency.
  * 4. **`sum(existing payments) + amount <= gross_minor`.** A cross-row SUM
- *    cannot be a row CHECK, so this service IS that constraint (067's
- *    header). Over-payment is REFUSED, never clamped (§1) — a trimmed
- *    payment is a record of money that did not move.
+ *    cannot be a row CHECK (067's header), so it is enforced INSIDE THE WRITE
+ *    by `record_timesheet_payment` (migration 077) rather than here. Over-
+ *    payment is REFUSED, never clamped (§1) — a trimmed payment is a record
+ *    of money that did not move — and the refusal carries the figures the
+ *    lock actually saw.
  *
  * NOTHING FROM THE BODY DESCRIBES THE WEEK. `household_id`, `carer_id` and
  * `currency` are copied off the timesheet and `recorded_by` off the
@@ -37,12 +39,22 @@
  * anywhere, and a mistake is prevented at write time rather than corrected by
  * editing history (067's header, the same discipline as 041/043).
  *
- * ponytail: the gate is read-then-write, so two simultaneous first payments
- * could each see `sum = 0` and both commit, together exceeding the gross.
- * Sequential retries never reach it (the first row is visible by then), and
- * the window is two parents tapping "Record payment" in the same instant.
- * Closing it needs a 051-style database function that sums and inserts in one
- * statement; the honest fix is that, not a wider pre-check.
+ * THE READ-THEN-WRITE RACE IS CLOSED (migration 077). Gate 4 used to be a
+ * sum here and an insert there, so two parents tapping "Record payment" in
+ * the same instant each saw `sum = 0` and both committed, settling the week at
+ * twice its gross — with no edit path to take the second row back. The sum,
+ * the refusal and the insert are now one `record_timesheet_payment` call
+ * behind a `FOR UPDATE` lock on the week's timesheet row, which serialises
+ * against concurrent payments AND against an in-flight approve or reopen. The
+ * window is unreachable from a unit test (Supabase is mocked everywhere), so
+ * the SQL's half of the contract is pinned as source by
+ * `tests/unit/migration077PaymentAtomicInsert.test.ts`.
+ *
+ * Gate 3 SURVIVES the move and is not redundant: it produces the correct 409
+ * before any write, and keeps the approved-and-priced judgement in one place.
+ * What it cannot do is stay true — a reopen can commit between it and the
+ * lock — which is why 077 re-checks under the lock and answers `not_payable`,
+ * and why that outcome maps back onto the same 409 here.
  *
  * @module domains/pay/services/paymentCommandService
  */
@@ -114,15 +126,14 @@ export class PaymentCommandService {
       callerId,
       timesheetId
     );
-    const week = this.assertApprovedAndPriced(timesheet);
-    await this.assertWithinGross(timesheetId, input.amount_minor, week);
+    this.assertApprovedAndPriced(timesheet);
 
-    const payment = await this.paymentRepo.create({
-      timesheet_id: timesheet.id,
-      household_id: timesheet.household_id,
-      carer_id: timesheet.carer_id,
+    // Gate 4 and the insert, in one locked statement. Only the settlement's
+    // own fields are sent: household, carer and currency are stamped inside
+    // the function from the row it locks, so they cannot drift from — or be
+    // made to disagree with — the week being paid.
+    const outcome = await this.paymentRepo.recordForTimesheet(timesheet.id, {
       amount_minor: input.amount_minor,
-      currency: week.currency,
       paid_at: input.paid_at,
       // Written explicitly rather than omitted: the column is nullable and
       // "the parent said nothing about how" is a fact worth stating.
@@ -130,8 +141,26 @@ export class PaymentCommandService {
       recorded_by: callerId,
     });
 
+    if (outcome.outcome === 'exceeds_gross') {
+      throw new PaymentExceedsGrossError(
+        timesheetId,
+        input.amount_minor,
+        outcome.alreadyPaidMinor,
+        outcome.grossMinor
+      );
+    }
+    // Gate 3 passed and then stopped being true — a reopen landed between the
+    // unlocked read and the lock. Same 409 the pre-check would have raised.
+    if (outcome.outcome === 'not_payable') {
+      throw new PaymentWeekNotApprovedError(
+        timesheet.id,
+        'week_changed_under_lock',
+        { status: outcome.status }
+      );
+    }
+
     this.notifyCarerOfPayment(timesheet);
-    return payment;
+    return outcome.payment;
   }
 
   /** Gates 1 and 2 — see the module doc. Returns the week's row. */
@@ -184,24 +213,6 @@ export class PaymentCommandService {
       grossMinor: timesheet.gross_minor,
       currency: timesheet.currency,
     };
-  }
-
-  /** Gate 4 — see the module doc. Refuses; never clamps. */
-  private async assertWithinGross(
-    timesheetId: string,
-    amountMinor: number,
-    week: PayableWeek
-  ): Promise<void> {
-    const alreadyPaidMinor =
-      await this.paymentRepo.sumForTimesheet(timesheetId);
-    if (alreadyPaidMinor + amountMinor > week.grossMinor) {
-      throw new PaymentExceedsGrossError(
-        timesheetId,
-        amountMinor,
-        alreadyPaidMinor,
-        week.grossMinor
-      );
-    }
   }
 
   /**

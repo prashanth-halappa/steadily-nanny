@@ -187,6 +187,8 @@
     "acceptedToast": "Turno confirmado",
     "freshProposal": "Un progenitor propuso este turno nuevo — acepta o propón otros para confirmar.",
     "needsReconfirm": "Un progenitor cambió estos horarios — acepta o propón otros para confirmar.",
+    "freshProposalAwaitingCarer": "Esperando que {{name}} confirme este turno nuevo.",
+    "needsReconfirmAwaitingCarer": "Horarios cambiados — esperando que {{name}} vuelva a confirmar.",
     "counterOffer": "Proponer otros horarios",
     "changesTitle": "Cambios",
     "requestMessageLabel": "Mensaje",

@@ -2,6 +2,7 @@
  * Parent-cover push — carers get a quiet FYI with BOTH sentences.
  */
 import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
+import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types/schemas/notification.schema';
 
 const household = {
   id: 'h1',
@@ -129,5 +130,25 @@ describe('ShiftCommandService.createParentCover — carer push', () => {
     expect(payload.body).toContain('9:00');
     expect(payload.body).toContain('11:20');
     expect(payload.body).toContain('Your day starts 11:20 as planned');
+  });
+
+  // The wire string shipped before it was registered in the shared push-type
+  // union — pin it so registration stays a no-op for clients already out there.
+  it('pushes the registered parent_covering type with an unchanged payload', async () => {
+    await makeService().createParentCover('parent-1', 'h1', {
+      starts_at: '2026-08-10T08:00:00.000Z',
+      ends_at: '2026-08-10T10:20:00.000Z',
+      child_id: 'child-1',
+    });
+
+    const payload = notifyUser.mock.calls[0]?.[1] as {
+      data: Record<string, unknown>;
+    };
+    expect(payload.data).toEqual({
+      type: PUSH_NOTIFICATION_TYPES.PARENT_COVERING,
+      shiftId: 'pc1',
+      householdId: 'h1',
+    });
+    expect(PUSH_NOTIFICATION_TYPES.PARENT_COVERING).toBe('parent_covering');
   });
 });

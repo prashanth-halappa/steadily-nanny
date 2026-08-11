@@ -134,6 +134,29 @@ function makeTimesheetRepo(overrides: Record<string, unknown> = {}): any {
       ...timesheet,
       ...patch,
     })),
+    // The two conditional writes, defaulted to "won the race". A test that
+    // wants a lost race stages it explicitly — losing must never be the
+    // accidental default.
+    queryFromSubmitted: mock(
+      async (_id: string, _expectedUpdatedAt: string, note: string) => ({
+        ...timesheet,
+        status: 'queried',
+        query_note: note,
+      })
+    ),
+    reopenFromApproved: mock(
+      async (_id: string, _expectedUpdatedAt: string, reason: string) => ({
+        ...timesheet,
+        status: 'submitted',
+        approved_by: null,
+        approved_at: null,
+        reopen_reason: reason,
+        gross_minor: null,
+        currency: null,
+        earnings: null,
+        earnings_computed_at: null,
+      })
+    ),
     ...overrides,
   };
 }
@@ -181,6 +204,13 @@ function makeUserService(overrides: Record<string, unknown> = {}): any {
       user_id: 'carer-1',
       name: 'Nia Rowe',
     })),
+    ...overrides,
+  };
+}
+
+function makeEventRepo(overrides: Record<string, unknown> = {}): any {
+  return {
+    insertMany: mock(async () => []),
     ...overrides,
   };
 }
@@ -1278,18 +1308,20 @@ describe('TimesheetCommandService.query', () => {
       makeHouseholdRepo(),
       makeShiftRepo(),
       makeQueries(),
-      makeUserService()
+      makeUserService(),
+      makePush(),
+      makeEarnings(),
+      makeEventRepo()
     );
 
     await svc.query('parent-1', 'ts1', { note: 'Query Thursday' });
 
-    expect(timesheetRepo.update).toHaveBeenCalledWith(
+    expect(timesheetRepo.queryFromSubmitted).toHaveBeenCalledWith(
       'ts1',
-      expect.objectContaining({
-        status: 'queried',
-        query_note: 'Query Thursday',
-      })
+      timesheet.updated_at,
+      'Query Thursday'
     );
+    expect(timesheetRepo.update).not.toHaveBeenCalled();
   });
 
   it('pushes the carer once with TIMESHEET_QUERIED when a week is queried', async () => {
@@ -1309,7 +1341,9 @@ describe('TimesheetCommandService.query', () => {
       makeShiftRepo(),
       makeQueries(),
       makeUserService(),
-      push
+      push,
+      makeEarnings(),
+      makeEventRepo()
     );
 
     await svc.query('parent-1', 'ts1', { note: 'Query Thursday' });
@@ -1350,7 +1384,9 @@ describe('TimesheetCommandService.query', () => {
       makeShiftRepo(),
       makeQueries(),
       makeUserService(),
-      push
+      push,
+      makeEarnings(),
+      makeEventRepo()
     );
 
     const result = await svc.query('parent-1', 'ts1', {
@@ -1358,7 +1394,7 @@ describe('TimesheetCommandService.query', () => {
     });
 
     expect(result.status).toBe('queried');
-    expect(timesheetRepo.update).toHaveBeenCalled();
+    expect(timesheetRepo.queryFromSubmitted).toHaveBeenCalled();
   });
 });
 
@@ -3116,14 +3152,17 @@ describe('TimesheetCommandService — mutation responses carry no snapshot colum
 
   it('query returns the wire timesheet even when the row still carries a stale snapshot', async () => {
     const timesheetRepo = makeTimesheetRepo({
-      update: mock(async (_id: string, patch: Record<string, unknown>) => ({
-        ...timesheet,
-        gross_minor: 37_000,
-        currency: 'GBP',
-        earnings: computedEarnings,
-        earnings_computed_at: '2026-08-10T09:00:00.000Z',
-        ...patch,
-      })),
+      queryFromSubmitted: mock(
+        async (_id: string, _expectedUpdatedAt: string, note: string) => ({
+          ...timesheet,
+          gross_minor: 37_000,
+          currency: 'GBP',
+          earnings: computedEarnings,
+          earnings_computed_at: '2026-08-10T09:00:00.000Z',
+          status: 'queried',
+          query_note: note,
+        })
+      ),
     });
     const svc = new TimesheetCommandService(
       makeTimeEntryRepo(),
@@ -3134,7 +3173,8 @@ describe('TimesheetCommandService — mutation responses carry no snapshot colum
       makeQueries(),
       makeUserService(),
       makePush(),
-      makeEarnings()
+      makeEarnings(),
+      makeEventRepo()
     );
 
     const queried = await svc.query('parent-1', 'ts1', { note: 'Thursday?' });
@@ -3228,10 +3268,6 @@ describe('TimesheetCommandService.reopen', () => {
 
   it('reopens an approved week: clears the snapshot and accepts corrections again', async () => {
     const timesheetRepo = makeTimesheetRepo({
-      update: mock(async (_id: string, patch: Record<string, unknown>) => ({
-        ...approvedTimesheet,
-        ...patch,
-      })),
       findByWeek: mock(async () => ({
         ...timesheet,
         status: 'submitted',
@@ -3268,27 +3304,19 @@ describe('TimesheetCommandService.reopen', () => {
     });
 
     expect(reopened.status).toBe('submitted');
-    expect(timesheetRepo.update).toHaveBeenCalledWith(
+    // ONE conditional write carries the status, the cleared approval stamp
+    // and all four snapshot columns — the repository test pins the patch
+    // itself, including that `query_note` is left alone. Display state on
+    // the row (so a cold-start carer sees why pay moved) AND permanent
+    // audit in the day-thread.
+    expect(timesheetRepo.reopenFromApproved).toHaveBeenCalledWith(
       'ts1',
-      expect.objectContaining({
-        status: 'submitted',
-        approved_by: null,
-        approved_at: null,
-        gross_minor: null,
-        currency: null,
-        earnings: null,
-        earnings_computed_at: null,
-        reopen_reason: 'Thursday hours were wrong',
-      })
+      approvedTimesheet.updated_at,
+      'Thursday hours were wrong'
     );
-    // Display state on the row (so a cold-start carer sees why pay moved)
-    // AND permanent audit in the day-thread. Never on `query_note` — that
-    // column means "a parent queried this week" and ParentWeekView renders
-    // it unconditionally as "Queried: {{note}}"; writing a reopen reason
-    // there mislabels an undo-approve as an open dispute (review finding).
-    const [, patch] = (timesheetRepo.update as ReturnType<typeof mock>).mock
-      .calls[0] as [string, Record<string, unknown>];
-    expect(patch).not.toHaveProperty('query_note');
+    expect(timesheetRepo.update).not.toHaveBeenCalled();
+    expect(reopened.approved_by).toBeNull();
+    expect(reopened.approved_at).toBeNull();
     expect(eventRepo.insertMany).toHaveBeenCalledWith([
       expect.objectContaining({
         event_type: 'timesheet_reopened',
@@ -3311,12 +3339,7 @@ describe('TimesheetCommandService.reopen', () => {
 
   it('pushes the carer once with TIMESHEET_REOPENED when a week is reopened', async () => {
     const push = makePush();
-    const timesheetRepo = makeTimesheetRepo({
-      update: mock(async (_id: string, patch: Record<string, unknown>) => ({
-        ...approvedTimesheet,
-        ...patch,
-      })),
-    });
+    const timesheetRepo = makeTimesheetRepo();
     const svc = new TimesheetCommandService(
       makeTimeEntryRepo(),
       timesheetRepo,
@@ -3355,12 +3378,7 @@ describe('TimesheetCommandService.reopen', () => {
         throw new Error('expo down');
       }),
     });
-    const timesheetRepo = makeTimesheetRepo({
-      update: mock(async (_id: string, patch: Record<string, unknown>) => ({
-        ...approvedTimesheet,
-        ...patch,
-      })),
-    });
+    const timesheetRepo = makeTimesheetRepo();
     const svc = new TimesheetCommandService(
       makeTimeEntryRepo(),
       timesheetRepo,
@@ -3388,12 +3406,7 @@ describe('TimesheetCommandService.reopen', () => {
     };
     // Both reads return approved — models parent re-approving between the
     // two undos. Each reopen appends its own day-thread row.
-    const timesheetRepo = makeTimesheetRepo({
-      update: mock(async (_id: string, patch: Record<string, unknown>) => ({
-        ...approvedTimesheet,
-        ...patch,
-      })),
-    });
+    const timesheetRepo = makeTimesheetRepo();
     const svc = new TimesheetCommandService(
       makeTimeEntryRepo(),
       timesheetRepo,
@@ -3435,12 +3448,7 @@ describe('TimesheetCommandService.reopen', () => {
     const eventRepo = {
       insertMany: mock(async () => []),
     };
-    const timesheetRepo = makeApprovingRepo({
-      update: mock(async (_id: string, patch: Record<string, unknown>) => ({
-        ...approvedTimesheet,
-        ...patch,
-      })),
-    });
+    const timesheetRepo = makeApprovingRepo();
     const svc = new TimesheetCommandService(
       makeTimeEntryRepo(),
       timesheetRepo,
@@ -3458,11 +3466,10 @@ describe('TimesheetCommandService.reopen', () => {
 
     await svc.reopen('parent-1', 'ts1', { reason: 'Thursday was wrong' });
     expect(eventRepo.insertMany).toHaveBeenCalledTimes(1);
-    expect(timesheetRepo.update).toHaveBeenCalledWith(
+    expect(timesheetRepo.reopenFromApproved).toHaveBeenCalledWith(
       'ts1',
-      expect.objectContaining({
-        reopen_reason: 'Thursday was wrong',
-      })
+      approvedTimesheet.updated_at,
+      'Thursday was wrong'
     );
 
     // Parent re-approves the (now submitted) week. The owned read after
@@ -3532,6 +3539,229 @@ describe('TimesheetCommandService.reopen', () => {
     await expect(
       svc.reopen('parent-1', 'ts1', { reason: 'changed my mind' })
     ).rejects.toBeInstanceOf(TimesheetNotActionableError);
+  });
+});
+
+// =============================================================================
+// 1-E/P6 — `query` and `reopen` carry the same compare-and-set `approve` does.
+//
+// Both are decided against a row the service read a moment earlier, and both
+// overwrite state a concurrent roll-up or approve can replace in between: a
+// query written over a week that has since been approved silently un-approves
+// it, and a reopen written over a week someone already reopened and
+// re-approved clears a snapshot nobody was disputing. Status alone is not a
+// version here for the same reason it is not one for approve.
+//
+// The lost race raises the error `assertActionable` would have raised had it
+// noticed a few milliseconds later — same situation, later observation.
+// =============================================================================
+
+const submittedAtVersionForQuery = {
+  ...timesheet,
+  status: 'submitted',
+  updated_at: VERSION_AT_READ,
+};
+
+const approvedAtVersion = {
+  ...timesheet,
+  status: 'approved',
+  approved_by: 'parent-1',
+  approved_at: '2026-08-04T18:00:00.000Z',
+  gross_minor: 14_800,
+  currency: 'GBP',
+  earnings: { status: 'ok', gross_minor: 14_800 },
+  earnings_computed_at: '2026-08-04T18:00:00.000Z',
+  updated_at: VERSION_AT_READ,
+};
+
+function makeRacedSvc(
+  timesheetRepo: any,
+  owned: Record<string, unknown>,
+  push: any = makePush()
+) {
+  return new TimesheetCommandService(
+    makeTimeEntryRepo(),
+    timesheetRepo,
+    makeParentMemberRepo(),
+    makeHouseholdRepo(),
+    makeShiftRepo(),
+    makeQueries({ getOwnedTimesheet: mock(async () => owned) }),
+    makeUserService(),
+    push,
+    makeEarnings(),
+    { insertMany: mock(async () => []) }
+  );
+}
+
+describe('TimesheetCommandService.query — the CAS carries the row version', () => {
+  it('passes the `updated_at` of the row it read into the conditional write', async () => {
+    const timesheetRepo = makeTimesheetRepo();
+    const svc = makeRacedSvc(timesheetRepo, submittedAtVersionForQuery);
+
+    await svc.query('parent-1', 'ts1', { note: 'Query Thursday' });
+
+    expect(timesheetRepo.queryFromSubmitted).toHaveBeenCalledWith(
+      'ts1',
+      VERSION_AT_READ,
+      'Query Thursday'
+    );
+  });
+
+  it('throws not-actionable when the week moved between the read and the write', async () => {
+    const push = makePush();
+    const timesheetRepo = makeTimesheetRepo({
+      queryFromSubmitted: mock(async () => null),
+    });
+    const svc = makeRacedSvc(timesheetRepo, submittedAtVersionForQuery, push);
+
+    await expect(
+      svc.query('parent-1', 'ts1', { note: 'Query Thursday' })
+    ).rejects.toBeInstanceOf(TimesheetNotActionableError);
+    // No write landed, so the carer must not be told her week was queried.
+    expect(push.notifyUser).not.toHaveBeenCalled();
+  });
+
+  it('names the race as the reason, not the status it read', async () => {
+    const svc = makeRacedSvc(
+      makeTimesheetRepo({ queryFromSubmitted: mock(async () => null) }),
+      submittedAtVersionForQuery
+    );
+
+    await expect(
+      svc.query('parent-1', 'ts1', { note: 'Query Thursday' })
+    ).rejects.toMatchObject({ metadata: { status: 'changed_since_read' } });
+  });
+});
+
+describe('TimesheetCommandService.reopen — the CAS carries the row version', () => {
+  it('passes the `updated_at` of the row it read into the conditional write', async () => {
+    const timesheetRepo = makeTimesheetRepo();
+    const svc = makeRacedSvc(timesheetRepo, approvedAtVersion);
+
+    await svc.reopen('parent-1', 'ts1', { reason: 'missed break' });
+
+    expect(timesheetRepo.reopenFromApproved).toHaveBeenCalledWith(
+      'ts1',
+      VERSION_AT_READ,
+      'missed break'
+    );
+  });
+
+  it('throws not-actionable when the week moved between the read and the write', async () => {
+    const push = makePush();
+    const timesheetRepo = makeTimesheetRepo({
+      reopenFromApproved: mock(async () => null),
+    });
+    const svc = makeRacedSvc(timesheetRepo, approvedAtVersion, push);
+
+    await expect(
+      svc.reopen('parent-1', 'ts1', { reason: 'missed break' })
+    ).rejects.toBeInstanceOf(TimesheetNotActionableError);
+    expect(push.notifyUser).not.toHaveBeenCalled();
+  });
+
+  it('names the race as the reason, not the status it read', async () => {
+    const svc = makeRacedSvc(
+      makeTimesheetRepo({ reopenFromApproved: mock(async () => null) }),
+      approvedAtVersion
+    );
+
+    await expect(
+      svc.reopen('parent-1', 'ts1', { reason: 'missed break' })
+    ).rejects.toMatchObject({ metadata: { status: 'changed_since_read' } });
+  });
+
+  it('leaves the day-thread untouched when the reopen never landed', async () => {
+    const eventRepo = { insertMany: mock(async () => []) };
+    const svc = new TimesheetCommandService(
+      makeTimeEntryRepo(),
+      makeTimesheetRepo({ reopenFromApproved: mock(async () => null) }),
+      makeParentMemberRepo(),
+      makeHouseholdRepo(),
+      makeShiftRepo(),
+      makeQueries({ getOwnedTimesheet: mock(async () => approvedAtVersion) }),
+      makeUserService(),
+      makePush(),
+      makeEarnings(),
+      eventRepo
+    );
+
+    await expect(
+      svc.reopen('parent-1', 'ts1', { reason: 'missed break' })
+    ).rejects.toBeInstanceOf(TimesheetNotActionableError);
+    expect(eventRepo.insertMany).not.toHaveBeenCalled();
+  });
+});
+
+// =============================================================================
+// 1-E/P10 — a query is a money-visible act too, so it leaves the same kind of
+// append-only day-thread row a reopen does. Write-only audit today; the week
+// thread surfaces it later. Best-effort, exactly like the reopen row: the
+// query write has already succeeded by then and must not be undone for a
+// logging failure.
+// =============================================================================
+
+describe('TimesheetCommandService.query — the day-thread audit row', () => {
+  it('appends a timesheet_queried event against the queried week', async () => {
+    const eventRepo = { insertMany: mock(async () => []) };
+    const svc = new TimesheetCommandService(
+      makeTimeEntryRepo(),
+      makeTimesheetRepo(),
+      makeParentMemberRepo(),
+      makeHouseholdRepo(),
+      makeShiftRepo(),
+      makeQueries(),
+      makeUserService(),
+      makePush(),
+      makeEarnings(),
+      eventRepo
+    );
+
+    await svc.query('parent-1', 'ts1', { note: 'Query Thursday' });
+
+    expect(eventRepo.insertMany).toHaveBeenCalledWith([
+      {
+        household_id: 'h1',
+        shift_id: null,
+        local_date: '2026-08-03',
+        actor_id: 'parent-1',
+        event_type: 'timesheet_queried',
+        payload: {
+          timesheetId: 'ts1',
+          note: 'Query Thursday',
+          weekStart: '2026-08-03',
+        },
+      },
+    ]);
+  });
+
+  it('still queries the week and pushes the carer when the day-thread append throws', async () => {
+    const push = makePush();
+    const timesheetRepo = makeTimesheetRepo();
+    const svc = new TimesheetCommandService(
+      makeTimeEntryRepo(),
+      timesheetRepo,
+      makeParentMemberRepo(),
+      makeHouseholdRepo(),
+      makeShiftRepo(),
+      makeQueries(),
+      makeUserService(),
+      push,
+      makeEarnings(),
+      {
+        insertMany: mock(async () => {
+          throw new Error('day thread down');
+        }),
+      }
+    );
+
+    const queried = await svc.query('parent-1', 'ts1', {
+      note: 'Query Thursday',
+    });
+
+    expect(queried.status).toBe('queried');
+    expect(timesheetRepo.queryFromSubmitted).toHaveBeenCalled();
+    expect(push.notifyUser).toHaveBeenCalledTimes(1);
   });
 });
 

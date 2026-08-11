@@ -187,6 +187,8 @@
     "acceptedToast": "Shift confirmed",
     "freshProposal": "A parent proposed this new shift — accept or counter-offer to confirm.",
     "needsReconfirm": "A parent changed these times — accept or counter-offer to confirm.",
+    "freshProposalAwaitingCarer": "Waiting for {{name}} to confirm this new shift.",
+    "needsReconfirmAwaitingCarer": "Times changed — waiting for {{name}} to reconfirm.",
     "counterOffer": "Counter with these times",
     "changesTitle": "Changes",
     "requestMessageLabel": "Message",

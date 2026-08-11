@@ -125,6 +125,24 @@ export class NotTheChangeRequestRequesterError extends AuthorizationError {
   }
 }
 
+/**
+ * 403 — a carer-only change request was opened by someone who is not the
+ * shift's assigned carer (including on an unassigned shift, which has no
+ * valid counter-offerer at all). Role is checked separately by
+ * `InvalidChangeRequestKindForRoleError`; this is the identity half, the
+ * open-side twin of `NotTheChangeRequestResponderError`.
+ */
+export class NotTheAssignedCarerError extends AuthorizationError {
+  constructor(shiftId: string, kind: string) {
+    super(
+      'Only the carer assigned to this shift may open this kind of change request',
+      'NOT_THE_ASSIGNED_CARER',
+      { shiftId, kind }
+    );
+    this.name = 'NotTheAssignedCarerError';
+  }
+}
+
 /** 403 — the caller's household role may not open this kind of change request. */
 export class InvalidChangeRequestKindForRoleError extends AuthorizationError {
   constructor(kind: string, role: string) {

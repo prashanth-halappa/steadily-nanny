@@ -94,6 +94,12 @@ export const PUSH_NOTIFICATION_TYPES = {
   // act on it. Never sent to the carer: she is either already there (in which
   // case the alert is wrong) or unreachable.
   SHIFT_NO_SHOW: 'shift_no_show',
+
+  // Shift-floor FYIs that shipped as emitters before they were registered
+  // here: the carer flags a late arrival to the household's parents, and a
+  // parent taking a cover window tells the carer her day still starts on time.
+  PARENT_COVERING: 'parent_covering',
+  RUNNING_LATE: 'running_late',
 } as const;
 
 export type PushNotificationType =
@@ -137,10 +143,12 @@ export const PUSH_TYPE_AUDIENCE: Record<PushNotificationType, PushAudience> = {
   [PUSH_NOTIFICATION_TYPES.HANDOFF_NOTE_ADDED]: 'both',
   [PUSH_NOTIFICATION_TYPES.HOUSEHOLD_CLOSURE_CHANGED]: 'carer',
   [PUSH_NOTIFICATION_TYPES.INVITE_REDEEMED]: 'parent',
+  [PUSH_NOTIFICATION_TYPES.PARENT_COVERING]: 'carer',
   [PUSH_NOTIFICATION_TYPES.PAYMENT_RECORDED]: 'carer',
   [PUSH_NOTIFICATION_TYPES.PAY_TERMS_SET]: 'carer',
   [PUSH_NOTIFICATION_TYPES.PTO_MARKED_PAID]: 'carer',
   [PUSH_NOTIFICATION_TYPES.PTO_USAGE_REVERSED]: 'parent',
+  [PUSH_NOTIFICATION_TYPES.RUNNING_LATE]: 'parent',
   [PUSH_NOTIFICATION_TYPES.SCHEDULE_PATTERN_AMENDED]: 'carer',
   [PUSH_NOTIFICATION_TYPES.SCHEDULE_PATTERN_RESPONDED]: 'parent',
   [PUSH_NOTIFICATION_TYPES.SCHEDULE_PATTERN_SENT]: 'carer',

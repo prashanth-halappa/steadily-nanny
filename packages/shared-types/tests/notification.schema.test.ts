@@ -46,6 +46,19 @@ describe('notification.schema push types', () => {
     ).toBe(false);
   });
 
+  // Both types were already emitted by shiftCommandService before they were
+  // registered here — the push landed with an unroutable, untoggleable type.
+  it('registers the shift-floor emitters running_late and parent_covering', () => {
+    expect(PUSH_NOTIFICATION_TYPES.RUNNING_LATE).toBe('running_late');
+    expect(PUSH_NOTIFICATION_TYPES.PARENT_COVERING).toBe('parent_covering');
+    expect(ALL_PUSH_NOTIFICATION_TYPES).toContain('running_late');
+    expect(ALL_PUSH_NOTIFICATION_TYPES).toContain('parent_covering');
+    // running_late is emitted via notifyHouseholdParents; parent_covering via
+    // notifyUser(carerId, …).
+    expect(PUSH_TYPE_AUDIENCE.running_late).toBe('parent');
+    expect(PUSH_TYPE_AUDIENCE.parent_covering).toBe('carer');
+  });
+
   // The evening digest is a distinct, independently-mutable type from the
   // immediate alert — see notificationPrefsService.test.ts for the proof
   // that muting one never mutes the other.

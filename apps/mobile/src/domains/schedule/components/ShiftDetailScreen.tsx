@@ -279,7 +279,11 @@ export function ShiftDetailScreen() {
           testID="shift-detail-fresh-proposal"
           className="mt-2 text-muted-foreground"
         >
-          {t('detail.freshProposal')}
+          {isParent
+            ? t('detail.freshProposalAwaitingCarer', {
+                name: nameFor(shift.carer_id),
+              })
+            : t('detail.freshProposal')}
         </Small>
       ) : null}
       {needsReconfirm ? (
@@ -287,7 +291,11 @@ export function ShiftDetailScreen() {
           testID="shift-detail-needs-reconfirm"
           className="mt-2 text-muted-foreground"
         >
-          {t('detail.needsReconfirm')}
+          {isParent
+            ? t('detail.needsReconfirmAwaitingCarer', {
+                name: nameFor(shift.carer_id),
+              })
+            : t('detail.needsReconfirm')}
         </Small>
       ) : null}
       {shift.is_short_notice ? (
@@ -386,7 +394,7 @@ export function ShiftDetailScreen() {
             {utcIsoToWallClockHHMM(shift.ends_at, shift.timezone)}
           </Body>
           {shift.note ? <Body>{shift.note}</Body> : null}
-          {isNanny ? (
+          {isAssignedCarer ? (
             <View className="mt-4 gap-3" testID="shift-detail-counter-form">
               <FieldLabel>{t('detail.startLabel')}</FieldLabel>
               <TimeRangePicker

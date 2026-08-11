@@ -66,6 +66,12 @@ export interface ApproveWithEarningsPatch extends TimesheetEarningsSnapshot {
 /** The status an approve may transition FROM. Anything else is a lost race. */
 const APPROVABLE_FROM: TimesheetStatus = 'submitted';
 
+/** The status a query may transition FROM. Anything else is a lost race. */
+const QUERYABLE_FROM: TimesheetStatus = 'submitted';
+
+/** The status a reopen may transition FROM. Anything else is a lost race. */
+const REOPENABLE_FROM: TimesheetStatus = 'approved';
+
 export class TimesheetRepository extends BaseRepository<TimesheetRow> {
   constructor() {
     super('timesheets');
@@ -207,6 +213,91 @@ export class TimesheetRepository extends BaseRepository<TimesheetRow> {
         'DATABASE_ERROR',
         { details: error.message, timesheetId }
       );
+    }
+    return data as TimesheetRow | null;
+  }
+
+  /**
+   * COMPARE-AND-SET `submitted` → `queried`, carrying the same two-part
+   * predicate `approveSubmittedWithEarnings` does and for the same reason.
+   *
+   * A query is decided against a row the service read before it wrote: the
+   * parent is disputing the hours THEY looked at. Between the two moments a
+   * clock-out roll-up can add hours (status untouched, so a status-only
+   * predicate is blind to it) or another parent can approve the week, and a
+   * blind write would then un-approve a week nobody was disputing and strand
+   * a frozen snapshot on a `queried` row. Pinning `updated_at` makes both
+   * interleavings a lost race the caller retries against what is actually
+   * there.
+   *
+   * Same `maybeSingle()` + `null`-for-lost-race contract as approve.
+   */
+  async queryFromSubmitted(
+    timesheetId: string,
+    expectedUpdatedAt: string,
+    note: string
+  ): Promise<TimesheetRow | null> {
+    const { data, error } = await supabaseService
+      .from(this.table)
+      .update({ status: 'queried', query_note: note })
+      .eq('id', timesheetId)
+      .eq('status', QUERYABLE_FROM)
+      .eq('updated_at', expectedUpdatedAt)
+      .select()
+      .maybeSingle();
+
+    if (error) {
+      throw new DatabaseError('Failed to query timesheet', 'DATABASE_ERROR', {
+        details: error.message,
+        timesheetId,
+      });
+    }
+    return data as TimesheetRow | null;
+  }
+
+  /**
+   * COMPARE-AND-SET `approved` → `submitted`, clearing the approval stamp AND
+   * all four snapshot columns in the SAME statement.
+   *
+   * The clear has to ride this write rather than follow it: an `approved`
+   * week with no snapshot, or a `submitted` week still wearing
+   * `gross_minor`/`approved_by`, is exactly the inconsistency migration 042's
+   * header forbids, and a second statement is a window in which it exists.
+   *
+   * The version predicate covers the race the status cannot see: between the
+   * service's read and this write, another parent can reopen and re-approve,
+   * and a status-only predicate would then discard a snapshot frozen against
+   * a decision this reopen never saw.
+   *
+   * `query_note` is deliberately NOT cleared — an undo-approve says nothing
+   * about whether a question is outstanding, and `ParentWeekView` renders
+   * that column as an open dispute.
+   */
+  async reopenFromApproved(
+    timesheetId: string,
+    expectedUpdatedAt: string,
+    reason: string
+  ): Promise<TimesheetRow | null> {
+    const { data, error } = await supabaseService
+      .from(this.table)
+      .update({
+        status: 'submitted',
+        approved_by: null,
+        approved_at: null,
+        reopen_reason: reason,
+        ...CLEARED_EARNINGS_SNAPSHOT,
+      })
+      .eq('id', timesheetId)
+      .eq('status', REOPENABLE_FROM)
+      .eq('updated_at', expectedUpdatedAt)
+      .select()
+      .maybeSingle();
+
+    if (error) {
+      throw new DatabaseError('Failed to reopen timesheet', 'DATABASE_ERROR', {
+        details: error.message,
+        timesheetId,
+      });
     }
     return data as TimesheetRow | null;
   }

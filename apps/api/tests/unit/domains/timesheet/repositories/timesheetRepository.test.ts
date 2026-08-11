@@ -223,6 +223,163 @@ describe('TimesheetRepository.approveSubmittedWithEarnings', () => {
   });
 });
 
+// =============================================================================
+// The other two status transitions a parent drives — `query` and `reopen` —
+// carry the SAME two-part predicate (1-E/P6). Both are decided against a row
+// the service read earlier, and both overwrite state a concurrent roll-up or
+// approve may have replaced in between, so status alone is no more of a
+// version here than it is for approve.
+//
+// The predicate is an `.eq` on the exact string the DB handed back, never a
+// parsed instant, so whichever serialisation the driver returns is the one
+// that goes back out (GOLDEN-FIXES #25) — both are exercised below.
+// =============================================================================
+
+const READ_VERSIONS = [
+  '2026-08-10T08:59:12.123456+00:00',
+  '2026-08-10T08:59:12.123Z',
+];
+
+describe('TimesheetRepository.queryFromSubmitted', () => {
+  it('sets the status and the note in a single update', async () => {
+    const chain = createMockQueryChain({
+      data: { id: 'ts1', status: 'queried' },
+      error: null,
+    });
+    mockSupabaseService.from.mockImplementation(() => chain);
+
+    const repo = new TimesheetRepository();
+    await repo.queryFromSubmitted('ts1', READ_VERSIONS[0], 'Query Thursday');
+
+    expect(chain.update).toHaveBeenCalledTimes(1);
+    expect(chain.update).toHaveBeenCalledWith({
+      status: 'queried',
+      query_note: 'Query Thursday',
+    });
+  });
+
+  for (const version of READ_VERSIONS) {
+    it(`constrains the update on the submitted status AND the row version (${version})`, async () => {
+      const chain = createMockQueryChain({ data: { id: 'ts1' }, error: null });
+      mockSupabaseService.from.mockImplementation(() => chain);
+
+      const repo = new TimesheetRepository();
+      await repo.queryFromSubmitted('ts1', version, 'Query Thursday');
+
+      expect(chain.eq).toHaveBeenCalledWith('id', 'ts1');
+      expect(chain.eq).toHaveBeenCalledWith('status', 'submitted');
+      expect(chain.eq).toHaveBeenCalledWith('updated_at', version);
+      expect(chain.eq).toHaveBeenCalledTimes(3);
+    });
+  }
+
+  it('never writes the version predicate as a COLUMN — it is a where, not a set', async () => {
+    const chain = createMockQueryChain({ data: { id: 'ts1' }, error: null });
+    mockSupabaseService.from.mockImplementation(() => chain);
+
+    const repo = new TimesheetRepository();
+    await repo.queryFromSubmitted('ts1', READ_VERSIONS[0], 'Query Thursday');
+
+    const [patch] = chain.update.mock.calls[0] as [Record<string, unknown>];
+    expect(patch).not.toHaveProperty('updated_at');
+  });
+
+  it('returns null when zero rows matched — the week changed under the query', async () => {
+    mockSupabaseService.from.mockImplementation(() =>
+      createMockQueryChain({ data: null, error: null })
+    );
+    const repo = new TimesheetRepository();
+    expect(
+      await repo.queryFromSubmitted('ts1', READ_VERSIONS[0], 'Query Thursday')
+    ).toBeNull();
+  });
+
+  it('raises a DatabaseError rather than looking like a lost race', async () => {
+    mockSupabaseService.from.mockImplementation(() =>
+      createMockQueryChain({ data: null, error: { message: 'boom' } })
+    );
+    const repo = new TimesheetRepository();
+    await expect(
+      repo.queryFromSubmitted('ts1', READ_VERSIONS[0], 'Query Thursday')
+    ).rejects.toThrow('Failed to query timesheet');
+  });
+});
+
+describe('TimesheetRepository.reopenFromApproved', () => {
+  it('clears all four snapshot columns and the approval stamp in the SAME write', async () => {
+    const chain = createMockQueryChain({
+      data: { id: 'ts1', status: 'submitted' },
+      error: null,
+    });
+    mockSupabaseService.from.mockImplementation(() => chain);
+
+    const repo = new TimesheetRepository();
+    await repo.reopenFromApproved(
+      'ts1',
+      READ_VERSIONS[0],
+      'Thursday was wrong'
+    );
+
+    expect(chain.update).toHaveBeenCalledTimes(1);
+    expect(chain.update).toHaveBeenCalledWith({
+      status: 'submitted',
+      approved_by: null,
+      approved_at: null,
+      reopen_reason: 'Thursday was wrong',
+      gross_minor: null,
+      currency: null,
+      earnings: null,
+      earnings_computed_at: null,
+    });
+  });
+
+  it('leaves query_note alone — an undo-approve is not an open dispute', async () => {
+    const chain = createMockQueryChain({ data: { id: 'ts1' }, error: null });
+    mockSupabaseService.from.mockImplementation(() => chain);
+
+    const repo = new TimesheetRepository();
+    await repo.reopenFromApproved('ts1', READ_VERSIONS[0], 'missed break');
+
+    const [patch] = chain.update.mock.calls[0] as [Record<string, unknown>];
+    expect(patch).not.toHaveProperty('query_note');
+  });
+
+  for (const version of READ_VERSIONS) {
+    it(`constrains the update on the approved status AND the row version (${version})`, async () => {
+      const chain = createMockQueryChain({ data: { id: 'ts1' }, error: null });
+      mockSupabaseService.from.mockImplementation(() => chain);
+
+      const repo = new TimesheetRepository();
+      await repo.reopenFromApproved('ts1', version, 'missed break');
+
+      expect(chain.eq).toHaveBeenCalledWith('id', 'ts1');
+      expect(chain.eq).toHaveBeenCalledWith('status', 'approved');
+      expect(chain.eq).toHaveBeenCalledWith('updated_at', version);
+      expect(chain.eq).toHaveBeenCalledTimes(3);
+    });
+  }
+
+  it('returns null when zero rows matched — the week changed under the reopen', async () => {
+    mockSupabaseService.from.mockImplementation(() =>
+      createMockQueryChain({ data: null, error: null })
+    );
+    const repo = new TimesheetRepository();
+    expect(
+      await repo.reopenFromApproved('ts1', READ_VERSIONS[0], 'missed break')
+    ).toBeNull();
+  });
+
+  it('raises a DatabaseError rather than leaving a half-cleared snapshot unreported', async () => {
+    mockSupabaseService.from.mockImplementation(() =>
+      createMockQueryChain({ data: null, error: { message: 'boom' } })
+    );
+    const repo = new TimesheetRepository();
+    await expect(
+      repo.reopenFromApproved('ts1', READ_VERSIONS[0], 'missed break')
+    ).rejects.toThrow('Failed to reopen timesheet');
+  });
+});
+
 describe('TimesheetRepository.existsForHousehold', () => {
   it('returns true when the household has at least one timesheet', async () => {
     mockSupabaseService.from.mockImplementation(() =>

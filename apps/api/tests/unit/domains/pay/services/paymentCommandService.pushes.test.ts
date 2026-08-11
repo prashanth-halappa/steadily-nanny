@@ -64,15 +64,29 @@ beforeEach(() => {
   notifyHouseholdParents.mockClear();
 });
 
+/**
+ * `recordForTimesheet` is the whole write path since 077 — it locks the week,
+ * refuses over-gross and inserts in one statement, and its `recorded` outcome
+ * is what gates the push below.
+ */
 function makePaymentRepo(overrides: Record<string, unknown> = {}): any {
   return {
     listForTimesheet: mock(async () => []),
     sumForTimesheet: mock(async () => 0),
-    create: mock(async (data: Record<string, unknown>) => ({
-      id: 'pay-new',
-      created_at: '2026-08-11T10:00:00.000Z',
-      ...data,
-    })),
+    recordForTimesheet: mock(
+      async (timesheetId: string, entry: Record<string, unknown>) => ({
+        outcome: 'recorded',
+        payment: {
+          id: 'pay-new',
+          timesheet_id: timesheetId,
+          household_id: 'h1',
+          carer_id: 'carer-1',
+          currency: 'GBP',
+          created_at: '2026-08-11T10:00:00.000Z',
+          ...entry,
+        },
+      })
+    ),
     ...overrides,
   };
 }

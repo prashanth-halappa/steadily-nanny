@@ -52,6 +52,11 @@ describe('NotificationPrefsScreen', () => {
     expect(source).toMatch(/mutateAsync\(\{[\s\S]*disabledTypes/);
   });
 
+  it('groups the newly-registered shift-floor types under Schedule', () => {
+    expect(source).toContain("running_late: 'schedule'");
+    expect(source).toContain("parent_covering: 'schedule'");
+  });
+
   it('groups visible push types under Schedule, Hours and pay, and Your household headings', () => {
     expect(source).toContain('notificationPrefs.groups.schedule');
     expect(source).toContain('notificationPrefs.groups.hoursAndPay');
