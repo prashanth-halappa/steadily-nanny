@@ -182,6 +182,32 @@ export const PUSH_NOTIFICATION_TYPES = {
   // arrangement — parent-targeted, so the family sees it. Blocks nothing;
   // this is the push for the record, not for an approval gate.
   PAY_TERMS_DISAGREED: 'pay_terms_disagreed',
+
+  // 3-O (D-35/D-49 — attention-and-notifications.md §1.3 N14–N17,
+  // screens-onboarding-terms-proposal.md §13). A terms PROPOSAL is a
+  // two-sided object with its own lifecycle, distinct from
+  // `pay_terms_set`/`pay_terms_backdated`, which announce an arrangement that
+  // ALREADY EXISTS. Nothing here is agreed yet — that is the whole point.
+  //
+  // All four are `hoursAndPay`, immediate, mutable, and NOT quiet-hours
+  // exempt: the exemption list is child-safety-adjacent and a contract can
+  // wait until 7am. None carries a FIGURE in its body, matching A8's
+  // deliberate omission in TIMESHEET_APPROVED — a lock screen is a public
+  // surface, and her rate is the thing she is most afraid of leaking.
+  //
+  // N14: she sent her terms; the family has to read them.
+  TERMS_PROPOSAL_RECEIVED: 'terms_proposal_received',
+  // N15: answered with changes, and the ball moved. Carer-targeted because a
+  // counter always travels to whoever did NOT write it, and a counter to a
+  // counter reuses this same type in the other direction.
+  TERMS_PROPOSAL_COUNTERED: 'terms_proposal_countered',
+  // N16: the binding act landed and a `pay_arrangements` row now exists.
+  // Carer-targeted: the parent who tapped Agree already knows.
+  TERMS_PROPOSAL_ACCEPTED: 'terms_proposal_accepted',
+  // N17: pulled before an answer. Parent-targeted so a family that was about
+  // to respond to terms that no longer stand finds out from the app rather
+  // than from an awkward phone call.
+  TERMS_PROPOSAL_WITHDRAWN: 'terms_proposal_withdrawn',
 } as const;
 
 export type PushNotificationType =
@@ -225,7 +251,16 @@ export const PUSH_TYPE_AUDIENCE: Record<PushNotificationType, PushAudience> = {
   [PUSH_NOTIFICATION_TYPES.EXTRA_SHIFT_PROPOSED]: 'carer',
   [PUSH_NOTIFICATION_TYPES.HANDOFF_NOTE_ADDED]: 'both',
   [PUSH_NOTIFICATION_TYPES.HOUSEHOLD_CLOSURE_CHANGED]: 'carer',
-  [PUSH_NOTIFICATION_TYPES.INVITE_REDEEMED]: 'parent',
+  // 3-O §13 — WIDENED from 'parent' on a shipped row, deliberately, and
+  // called out in the slice diff because it changes what appears in a
+  // nanny's notification settings.
+  //
+  // Under D-34 absorption both sides need this fact and they need different
+  // sentences: he is adding one person to a family he already knows; she is
+  // entering a home she has never seen (M25, §8.1). There is deliberately no
+  // second `nanny_invite_redeemed` type — one fact, one type, two arms of
+  // copy, role-forked at the deep link.
+  [PUSH_NOTIFICATION_TYPES.INVITE_REDEEMED]: 'both',
   [PUSH_NOTIFICATION_TYPES.PARENT_COVERING]: 'carer',
   [PUSH_NOTIFICATION_TYPES.PAYMENT_CORRECTED]: 'carer',
   [PUSH_NOTIFICATION_TYPES.PAYMENT_RECORDED]: 'carer',
@@ -264,4 +299,10 @@ export const PUSH_TYPE_AUDIENCE: Record<PushNotificationType, PushAudience> = {
   [PUSH_NOTIFICATION_TYPES.UNCOVERED_CARE_DETECTED]: 'parent',
   [PUSH_NOTIFICATION_TYPES.UNCOVERED_CARE_DIGEST]: 'parent',
   [PUSH_NOTIFICATION_TYPES.WEEK_BELOW_GUARANTEE]: 'carer',
+  // 3-O §13 (N14-N17): each goes to the side that must ACT, never the side
+  // that just acted.
+  [PUSH_NOTIFICATION_TYPES.TERMS_PROPOSAL_RECEIVED]: 'parent',
+  [PUSH_NOTIFICATION_TYPES.TERMS_PROPOSAL_COUNTERED]: 'carer',
+  [PUSH_NOTIFICATION_TYPES.TERMS_PROPOSAL_ACCEPTED]: 'carer',
+  [PUSH_NOTIFICATION_TYPES.TERMS_PROPOSAL_WITHDRAWN]: 'parent',
 } as const;

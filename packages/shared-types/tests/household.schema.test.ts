@@ -8,6 +8,7 @@ import {
   HOUSEHOLD_INVITE_STATUSES,
   HOUSEHOLD_MEMBER_STATUSES,
   HOUSEHOLD_ROLES,
+  HOUSEHOLD_STATES,
   HouseholdIdParamSchema,
   HouseholdInviteSchema,
   HouseholdMemberSchema,
@@ -49,7 +50,23 @@ describe('household.schema', () => {
 
     it('HOUSEHOLD_MEMBER_STATUSES matches household_members.status', () => {
       const values: string[] = Object.values(HOUSEHOLD_MEMBER_STATUSES);
-      expect(values.sort()).toEqual(['active', 'removed'].sort());
+      expect(values.sort()).toEqual(['active', 'removed', 'candidate'].sort());
+    });
+
+    // D-49 / §8.2.1. `candidate` is the redeemed-but-not-yet-accepted nanny.
+    // It exists so that EVERY positive `status = 'active'` filter in RLS and
+    // in the services excludes her by construction — the visibility rule is
+    // fail-closed, never enumerated.
+    it('keeps candidate distinct from active and removed', () => {
+      expect(HOUSEHOLD_MEMBER_STATUSES.CANDIDATE).toBe('candidate');
+      expect(HOUSEHOLD_MEMBER_STATUSES.CANDIDATE).not.toBe(
+        HOUSEHOLD_MEMBER_STATUSES.ACTIVE
+      );
+    });
+
+    it('HOUSEHOLD_STATES matches households.state', () => {
+      const values: string[] = Object.values(HOUSEHOLD_STATES);
+      expect(values.sort()).toEqual(['draft', 'live'].sort());
     });
 
     it('HOUSEHOLD_INVITE_ROLES matches household_invites.role (no owner)', () => {
@@ -373,6 +390,141 @@ describe('household.schema', () => {
       expect(RedeemHouseholdInviteSchema.safeParse({ code: '' }).success).toBe(
         false
       );
+    });
+  });
+
+  // ===========================================================================
+  // 3-O — draft households (D-34/D-36) and the terms-link window (D-51/M26)
+  // ===========================================================================
+
+  describe('draft households', () => {
+    const liveHousehold = {
+      id: VALID_UUID,
+      name: 'The Reyes Family',
+      timezone: 'America/Chicago',
+      address_line: null,
+      latitude: null,
+      longitude: null,
+      approval_mode: 'either',
+      approval_scope: 'short_notice_and_cancellations',
+      short_notice_hours: 24,
+      cancellation_paid_within_hours: 24,
+      currency: 'USD',
+      jurisdiction: null,
+      week_starts_on: 1,
+      state: 'live',
+      created_by: null,
+      created_at: NOW,
+      updated_at: NOW,
+    };
+    const draft = {
+      ...liveHousehold,
+      id: OTHER_UUID,
+      name: null,
+      state: 'draft',
+    };
+
+    // §4.2: a nanny is never asked for a family name she does not have yet.
+    // The draft is created with `name = null` and rendered "Untitled draft";
+    // the label is asked for at the share moment, where it is finally known.
+    it('accepts a draft household with no name', () => {
+      const parsed = HouseholdSchema.parse(draft);
+      expect(parsed.name).toBeNull();
+      expect(parsed.state).toBe('draft');
+    });
+
+    it('rejects an unknown state', () => {
+      expect(() =>
+        HouseholdSchema.parse({ ...draft, state: 'archived' })
+      ).toThrow();
+    });
+
+    // Every household that exists today is live, and every parent-created
+    // household still is. The wire default keeps a client that predates the
+    // field reading a server that has it.
+    it('defaults an absent state to live', () => {
+      const { state: _state, ...withoutState } = liveHousehold as Record<
+        string,
+        unknown
+      >;
+      expect(HouseholdSchema.parse(withoutState).state).toBe('live');
+    });
+
+    // D-36's "nothing priceable" is enforced by the membership table, not by
+    // hiding buttons — so the create body may say "draft" and nothing else.
+    it('lets a create body ask for a draft with no name', () => {
+      expect(CreateHouseholdSchema.safeParse({ state: 'draft' }).success).toBe(
+        true
+      );
+      expect(CreateHouseholdSchema.safeParse({}).success).toBe(false);
+    });
+  });
+
+  describe('HouseholdInviteSchema — the terms-link window', () => {
+    const invite = {
+      id: VALID_UUID,
+      household_id: OTHER_UUID,
+      code: 'R4K-92T',
+      email: null,
+      role: 'parent',
+      invited_by: null,
+      expires_at: NOW,
+      status: 'pending',
+      accepted_by: null,
+      accepted_at: null,
+      created_at: NOW,
+      updated_at: NOW,
+    };
+
+    // M26/§6.1: the link and the code expire on DIFFERENT clocks. The code
+    // keeps its 30 days so she can read it over the phone; the public page
+    // that carries her rate is short-lived by default.
+    it('carries a link_expires_at separate from the code expiry', () => {
+      const parsed = HouseholdInviteSchema.parse({
+        ...invite,
+        link_expires_at: NOW,
+      });
+      expect(parsed.link_expires_at).toBe(NOW);
+      expect(HouseholdInviteSchema.parse(invite).link_expires_at).toBeNull();
+    });
+
+    // §5.3: "Opened" is the web page rendering; "Viewed" is the proposal
+    // opening in the app. Whether, never how many times or from where.
+    it('carries a nullable opened_at and a share label', () => {
+      const parsed = HouseholdInviteSchema.parse({
+        ...invite,
+        opened_at: NOW,
+        label: 'The Bakers',
+      });
+      expect(parsed.opened_at).toBe(NOW);
+      expect(parsed.label).toBe('The Bakers');
+      expect(HouseholdInviteSchema.parse(invite).opened_at).toBeNull();
+      expect(HouseholdInviteSchema.parse(invite).label).toBeNull();
+    });
+
+    it('accepts a share label and a link window on create', () => {
+      const parsed = CreateHouseholdInviteSchema.parse({
+        role: 'parent',
+        label: 'The Bakers',
+        link_expires_in_days: 7,
+      });
+      expect(parsed.label).toBe('The Bakers');
+      expect(parsed.link_expires_in_days).toBe(7);
+    });
+
+    it('offers exactly the 7- and 30-day link windows', () => {
+      expect(
+        CreateHouseholdInviteSchema.safeParse({
+          role: 'parent',
+          link_expires_in_days: 30,
+        }).success
+      ).toBe(true);
+      expect(
+        CreateHouseholdInviteSchema.safeParse({
+          role: 'parent',
+          link_expires_in_days: 90,
+        }).success
+      ).toBe(false);
     });
   });
 });

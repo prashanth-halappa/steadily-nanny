@@ -31,6 +31,7 @@ export * from './schemas/notification.schema';
 export * from './schemas/notificationPrefs.schema';
 export * from './schemas/schedule.schema';
 export * from './schemas/shift.schema';
+export * from './schemas/termsProposal.schema';
 export * from './schemas/timesheet.schema';
 // Text utilities
 export * from './text';
