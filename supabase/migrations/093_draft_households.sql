@@ -326,8 +326,30 @@ create trigger refuse_draft_pay_arrangements
 -- and never revisit. All three conjuncts matter: without the `created_by`
 -- clause a second nanny redeeming into a draft would inherit authorship.
 --
--- Writes still go through the API under the service role; this policy is the
--- RLS half of the same statement, so the two halves cannot drift.
+-- IT GRANTS NO RLS WRITE POLICY, AND THAT IS THE POINT. An earlier draft of
+-- this migration added a `for update` policy on `households` for the draft
+-- author. That reintroduced exactly what 049 spent a whole migration removing:
+-- 049's architecture is that clients NEVER write directly, every write goes
+-- through the API under the service role, and each of these tables carries
+-- exactly ONE `for select` policy and no write policy at all. A nanny editing
+-- her draft goes through `householdCommandService` like every other write in
+-- the app, so the policy bought nothing and cost the invariant.
+-- `migration049LockClientWrites.test.ts` is what caught it, and it must stay
+-- green UNCHANGED — that is the proof the invariant survived 3-O.
+--
+-- So the capability is a SERVICE-layer gate whose only RLS expression is a
+-- widened READ. `households` needs no change at all: a draft author is an
+-- active `nanny` member of her own draft, so 009's existing
+-- `private.is_household_member(id)` already admits her. `household_invites`
+-- does need one, because 009 scopes invite reads to
+-- `private.is_household_parent`, and a draft has no parent — she could mint a
+-- code and then not be able to read it back.
+--
+-- That widening REPLACES 009's policy rather than sitting beside it. A second
+-- policy would OR in at the database level and still be a second policy, and
+-- 049's "exactly one select policy per table" is what makes the read surface
+-- auditable at a glance. Append-only migration discipline holds: 009 and 049
+-- are untouched on disk; this migration drops and recreates.
 -- ---------------------------------------------------------------------------
 
 create or replace function private.is_draft_author(hid uuid)
@@ -360,13 +382,20 @@ grant execute on function private.is_draft_author(uuid) to service_role;
 comment on function private.is_draft_author is
   'The §2.2 draft-author capability: the nanny who CREATED a household that is still a draft. Grants the household name, children, invites and terms authoring — nothing else — and evaluates false forever once the household goes live.';
 
-drop policy if exists "Draft authors can update their draft" on public.households;
-create policy "Draft authors can update their draft" on public.households
-  for update using (private.is_draft_author(id))
-  with check (private.is_draft_author(id));
+-- `households` deliberately gets NO policy change: 009's
+-- "Members can view their households" already admits the draft author, who is
+-- an active nanny member of her own draft.
 
-drop policy if exists "Draft authors can manage draft invites"
+-- REPLACES 009's "Parents can view invites" — one policy, select-only, both
+-- audiences. Without the second arm a draft author could mint a code and then
+-- be unable to read it back, because a draft has no parent for
+-- `is_household_parent` to find.
+drop policy if exists "Parents can view invites" on public.household_invites;
+drop policy if exists "Parents and draft authors can view invites"
   on public.household_invites;
-create policy "Draft authors can manage draft invites"
+create policy "Parents and draft authors can view invites"
   on public.household_invites
-  for select using (private.is_draft_author(household_id));
+  for select using (
+    private.is_household_parent(household_id)
+    or private.is_draft_author(household_id)
+  );

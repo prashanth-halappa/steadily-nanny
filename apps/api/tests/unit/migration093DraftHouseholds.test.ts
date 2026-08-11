@@ -181,10 +181,23 @@ describe('093 — `candidate` is fail-closed by construction (D-49)', () => {
     expect(executable).not.toContain(negated);
   });
 
-  it('leaves every positive active predicate in 009 untouched', () => {
-    expect(executable).not.toContain('is_household_member');
-    expect(executable).not.toContain('is_household_parent');
-    expect(executable).not.toContain('household_ids_for_current_user');
+  // The point is that 093 never REDEFINES one of 009's predicates — it may
+  // freely CALL them, and the widened invite read policy does exactly that.
+  // Redefining one is how a `candidate` would get admitted everywhere at once
+  // with nothing else changing, which is why this is asserted against the
+  // `create or replace` form rather than against the names appearing at all.
+  it('redefines none of 009’s positive active predicates', () => {
+    for (const predicate of [
+      'is_household_member',
+      'is_household_parent',
+      'household_ids_for_current_user',
+      'can_read_household',
+      'can_write_household',
+    ]) {
+      expect(executable).not.toContain(
+        `create or replace function private.${predicate}`
+      );
+    }
   });
 
   it('warns future readers off the negated shape in prose too', () => {
@@ -222,6 +235,39 @@ describe('093 — the draft-author capability does not widen WRITE_ROLES', () =>
 
   it('records that the capability dies when the household goes live', () => {
     expect(commentText).toContain('evaluates false forever');
+  });
+
+  // 049 spent a whole migration removing every client write policy so that
+  // "all writes go through the API under the service role" is enforced rather
+  // than merely documented. An earlier cut of 093 added a `for update` policy
+  // here for the draft author and quietly took that back — for nothing, since
+  // her edits go through `householdCommandService` like every other write.
+  // `migration049LockClientWrites.test.ts` caught it; this keeps it caught
+  // from 093's own side too.
+  it('introduces NO write policy — 049’s client lockdown stands', () => {
+    expect(executable).not.toContain('for update using');
+    expect(executable).not.toContain('for insert with check');
+    expect(executable).not.toContain('for delete using');
+    expect(executable).not.toContain('for all');
+  });
+
+  // 049's other invariant: exactly ONE `for select` policy per table, so the
+  // read surface is auditable at a glance. The draft author's read is folded
+  // INTO 009's existing invite policy rather than added beside it.
+  it('widens 009’s invite read policy rather than adding a sibling', () => {
+    expect(executable).toContain(
+      'drop policy if exists "parents can view invites" on public.household_invites'
+    );
+    expect(executable).toContain(
+      'private.is_household_parent(household_id) or private.is_draft_author(household_id)'
+    );
+  });
+
+  // She is an active nanny member of her own draft, so 009's existing
+  // member predicate already admits her. A second policy here would have been
+  // pure churn against the same invariant.
+  it('leaves the households read policy alone', () => {
+    expect(executable).not.toContain('on public.households for select');
   });
 });
 
