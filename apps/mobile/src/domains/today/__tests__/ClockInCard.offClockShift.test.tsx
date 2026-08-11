@@ -1,7 +1,7 @@
 /**
  * @module domains/today/__tests__/ClockInCard.offClockShift.test
  *
- * Wave 2-A off-clock shift selection: COVERING_SHIFT_STATUSES filter,
+ * Wave 2-A off-clock shift selection: SCHEDULED_SHIFT_STATUSES filter,
  * next-not-earliest pick, declined-today state, and no schedule claims
  * while the shifts query is in flight.
  */

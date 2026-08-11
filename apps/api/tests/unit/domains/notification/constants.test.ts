@@ -3,7 +3,10 @@
  */
 import { describe, expect, it } from 'bun:test';
 import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types/schemas/notification.schema';
-import { QUIET_HOURS_EXEMPT_TYPES } from '../../../../src/domains/notification/constants';
+import {
+  isQuietHoursExempt,
+  QUIET_HOURS_EXEMPT_TYPES,
+} from '../../../../src/domains/notification/constants';
 
 describe('QUIET_HOURS_EXEMPT_TYPES', () => {
   it('exempts only deadline-bearing types that auto-approve on timeout', () => {
@@ -36,5 +39,63 @@ describe('QUIET_HOURS_EXEMPT_TYPES', () => {
       QUIET_HOURS_EXEMPT_TYPES.has(PUSH_NOTIFICATION_TYPES.COVER_ASK_REMINDER)
     ).toBe(false);
     expect(QUIET_HOURS_EXEMPT_TYPES.size).toBe(3);
+  });
+});
+
+/**
+ * D-47 (§1.3 ‡) — the product's first CONDITIONAL exemption. An ask that dies
+ * at 21:30 for an 07:00 shift is a child with nobody booked in nine hours;
+ * deferring it to 07:00 hands the parent the news at the moment it stops being
+ * fixable. An ask expiring four days out defers like everything else.
+ */
+describe('isQuietHoursExempt — cover_ask_expired inside 12h (D-47)', () => {
+  const NOW = new Date('2026-08-13T21:30:00.000Z');
+  const expiredPush = (shiftStartsAt?: unknown) => ({
+    type: PUSH_NOTIFICATION_TYPES.COVER_ASK_EXPIRED,
+    ...(shiftStartsAt === undefined ? {} : { shiftStartsAt }),
+  });
+
+  it('breaks through when the shift starts in 9.5 hours', () => {
+    expect(
+      isQuietHoursExempt(expiredPush('2026-08-14T07:00:00.000Z'), NOW)
+    ).toBe(true);
+  });
+
+  it('defers like everything else when the shift is four days out', () => {
+    expect(
+      isQuietHoursExempt(expiredPush('2026-08-17T07:00:00.000Z'), NOW)
+    ).toBe(false);
+  });
+
+  it('is exclusive at exactly 12h', () => {
+    expect(
+      isQuietHoursExempt(expiredPush('2026-08-14T09:30:00.000Z'), NOW)
+    ).toBe(false);
+  });
+
+  it('CANNOT be self-granted: no shiftStartsAt means no exemption', () => {
+    // The condition reads a FACT about the shift off the payload. If this ever
+    // becomes a boolean the emitter sets, quiet hours stop working — any push
+    // could declare itself urgent.
+    expect(isQuietHoursExempt(expiredPush(), NOW)).toBe(false);
+    expect(isQuietHoursExempt(expiredPush(true), NOW)).toBe(false);
+    expect(isQuietHoursExempt(expiredPush('not a date'), NOW)).toBe(false);
+  });
+
+  it('leaves the unconditional D-28 list and everything else alone', () => {
+    expect(
+      isQuietHoursExempt({ type: PUSH_NOTIFICATION_TYPES.SHIFT_NO_SHOW }, NOW)
+    ).toBe(true);
+    // A sibling 3-T3 type with a shift start on it must NOT inherit the arm.
+    expect(
+      isQuietHoursExempt(
+        {
+          type: PUSH_NOTIFICATION_TYPES.COVER_ASK_DECLINED,
+          shiftStartsAt: '2026-08-14T07:00:00.000Z',
+        },
+        NOW
+      )
+    ).toBe(false);
+    expect(isQuietHoursExempt(undefined, NOW)).toBe(false);
   });
 });

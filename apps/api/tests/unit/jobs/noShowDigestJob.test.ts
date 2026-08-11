@@ -128,6 +128,15 @@ function parentsAre(...ids: string[]) {
   return { listParentUserIds: mock(async () => ids) };
 }
 
+/**
+ * D-48: no shift here has a declined cancellation. Stubbed in every call
+ * because the default lookup would otherwise reach for a real Supabase
+ * client and time the whole file out.
+ */
+function noneDisputed() {
+  return { listShiftsWithDeclinedCancel: mock(async () => new Set<string>()) };
+}
+
 describe('runNoShowDigestJob — the [07:00, 10:00) household-local window', () => {
   it.each([
     ['06:30 local, before the window', HOUR_06, 0],
@@ -144,7 +153,8 @@ describe('runNoShowDigestJob — the [07:00, 10:00) household-local window', () 
       alwaysClaims(),
       parentsAre(PARENT_ID),
       push,
-      { now: () => now }
+      { now: () => now },
+      noneDisputed()
     );
 
     expect(sent).toHaveLength(expectedSent);
@@ -163,7 +173,8 @@ describe('runNoShowDigestJob — yesterday only', () => {
       alwaysClaims(),
       parentsAre(PARENT_ID),
       push,
-      { now: () => HOUR_07 }
+      { now: () => HOUR_07 },
+      noneDisputed()
     );
 
     expect(sent).toHaveLength(0);
@@ -185,7 +196,8 @@ describe('runNoShowDigestJob — yesterday only', () => {
       alwaysClaims(),
       parentsAre(PARENT_ID),
       push,
-      { now: () => HOUR_07 }
+      { now: () => HOUR_07 },
+      noneDisputed()
     );
 
     expect(sent).toHaveLength(1);
@@ -209,7 +221,8 @@ describe('runNoShowDigestJob — coverage reuses noShowJob logic', () => {
       alwaysClaims(),
       parentsAre(PARENT_ID),
       push,
-      { now: () => HOUR_07 }
+      { now: () => HOUR_07 },
+      noneDisputed()
     );
 
     expect(sent).toHaveLength(0);
@@ -225,7 +238,8 @@ describe('runNoShowDigestJob — coverage reuses noShowJob logic', () => {
       alwaysClaims(),
       parentsAre(PARENT_ID),
       push,
-      { now: () => HOUR_07 }
+      { now: () => HOUR_07 },
+      noneDisputed()
     );
 
     expect(result.digest.sent).toBe(1);
@@ -244,7 +258,8 @@ describe('runNoShowDigestJob — already alerted (the immediate push delivered)'
       alwaysClaims(),
       parentsAre(PARENT_ID),
       push,
-      { now: () => HOUR_07 }
+      { now: () => HOUR_07 },
+      noneDisputed()
     );
 
     expect(sent).toHaveLength(0);
@@ -262,7 +277,8 @@ describe('runNoShowDigestJob — copy', () => {
       alwaysClaims(),
       parentsAre(PARENT_ID),
       push,
-      { now: () => HOUR_07 }
+      { now: () => HOUR_07 },
+      noneDisputed()
     );
 
     expect(sent[0]?.payload.body).toBe(
@@ -292,7 +308,8 @@ describe('runNoShowDigestJob — copy', () => {
       alwaysClaims(),
       parentsAre(PARENT_ID),
       push,
-      { now: () => HOUR_07 }
+      { now: () => HOUR_07 },
+      noneDisputed()
     );
 
     expect(sent[0]?.payload.body).toBe(
@@ -313,7 +330,8 @@ describe('runNoShowDigestJob — delivery + idempotency', () => {
       log,
       parentsAre(PARENT_ID, OTHER_PARENT_ID),
       push,
-      { now: () => HOUR_07 }
+      { now: () => HOUR_07 },
+      noneDisputed()
     );
 
     expect(sent).toHaveLength(2);
@@ -340,7 +358,8 @@ describe('runNoShowDigestJob — delivery + idempotency', () => {
       log,
       parentsAre(PARENT_ID),
       push,
-      { now: () => HOUR_07 }
+      { now: () => HOUR_07 },
+      noneDisputed()
     );
     const second = await runNoShowDigestJob(
       source,
@@ -349,7 +368,8 @@ describe('runNoShowDigestJob — delivery + idempotency', () => {
       log,
       parentsAre(PARENT_ID),
       push,
-      { now: () => HOUR_09 }
+      { now: () => HOUR_09 },
+      noneDisputed()
     );
 
     expect(first.digest.sent).toBe(1);
@@ -369,7 +389,8 @@ describe('runNoShowDigestJob — delivery + idempotency', () => {
       log,
       parentsAre(PARENT_ID),
       push,
-      { now: () => HOUR_07 }
+      { now: () => HOUR_07 },
+      noneDisputed()
     );
 
     expect(log.sweepStaleClaims).toHaveBeenCalledTimes(1);
@@ -386,7 +407,8 @@ describe('runNoShowDigestJob — delivery + idempotency', () => {
       log,
       parentsAre(),
       push,
-      { now: () => HOUR_07 }
+      { now: () => HOUR_07 },
+      noneDisputed()
     );
 
     expect(sent).toHaveLength(0);
@@ -420,7 +442,8 @@ describe('runNoShowDigestJob — failure isolation', () => {
       alwaysClaims(),
       parentsAre(PARENT_ID),
       push,
-      { now: () => HOUR_07 }
+      { now: () => HOUR_07 },
+      noneDisputed()
     );
 
     expect(result.digest.sent).toBe(1);

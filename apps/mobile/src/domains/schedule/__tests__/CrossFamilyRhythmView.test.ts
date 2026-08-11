@@ -98,13 +98,15 @@ describe('CrossFamilyRhythmView source', () => {
     expect(viewSource).not.toContain('colors.destructive');
   });
 
-  it('counts only COVERING_SHIFT_STATUSES toward the table and the headline counts', () => {
+  it('counts only SCHEDULED_SHIFT_STATUSES toward the table and the headline counts', () => {
     // Was `shift.status === 'cancelled'`, which excluded cancelled shifts but
     // let a DECLINED one paint a dot and inflate the clash count — the same
     // hand-rolled-predicate bug as the Today cover cards. The shared constant
     // is the only correct answer; see src/__tests__/shiftStatusPredicate.test.ts.
-    expect(viewSource).toContain('COVERING_SHIFT_STATUSES');
-    expect(viewSource).toContain('COVERING_STATUS_SET.has(shift.status)');
+    // SCHEDULED, not COVERING: this is a carer's own two-week rhythm, so an
+    // unanswered proposal is still a commitment she has to plan around (D-22).
+    expect(viewSource).toContain('SCHEDULED_SHIFT_STATUSES');
+    expect(viewSource).toContain('SCHEDULED_STATUS_SET.has(shift.status)');
     expect(viewSource).not.toContain("shift.status === 'cancelled'");
   });
 

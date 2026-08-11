@@ -39,6 +39,16 @@ describe('TodayCoverage source', () => {
     expect(coverageSource).toContain('describeUncoveredCause');
   });
 
+  // §5.4 / D-47. The countdown maths is pinned in gapEscalation.test.ts; this
+  // pins that the card is actually WIRED to it — and that escalating stays a
+  // copy change on the existing `attention` ground, never a new tone.
+  it('escalates the gap headline from the clock, and only when not demoted', () => {
+    expect(coverageSource).toContain('gapEscalationHours');
+    expect(coverageSource).toContain("t('coverage.gap.titleOneEscalated'");
+    expect(coverageSource).toMatch(/!demoted && singleWindow/);
+    expect(coverageSource).not.toContain("'critical'");
+  });
+
   it('uses opaque Card tone="attention" when gap (with demoted escape hatch)', () => {
     expect(coverageSource).toContain(
       "tone={demoted ? 'default' : 'attention'}"

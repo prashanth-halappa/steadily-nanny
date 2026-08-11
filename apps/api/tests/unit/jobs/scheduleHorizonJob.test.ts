@@ -46,7 +46,10 @@ function patternFor(overrides: Partial<SchedulePattern> = {}): SchedulePattern {
 
 /** A change-request repository that finds nothing stale. */
 function noChangeRequests() {
-  return { expirePendingOlderThan: mock(async (_cutoffIso: string) => []) };
+  return {
+    expirePendingOlderThan: mock(async (_cutoffIso: string) => []),
+    expirePendingForStartedShifts: mock(async (_nowIso: string) => []),
+  };
 }
 
 /** A no-op materialiser, for the tests that only care about the sweeps. */
@@ -68,6 +71,9 @@ function noOpJobDeps(
 ): ScheduleHorizonJobDeps {
   return {
     commitments: { listHouseholdIdsWithCommitments: mock(async () => []) },
+    // S8: injected in every test so the retention sweep never reaches for a
+    // real Supabase client (which times the whole file out, slowly).
+    events: { deleteSweptEventsOlderThan: mock(async () => 0) },
     ...overrides,
   };
 }
@@ -202,6 +208,7 @@ describe('runScheduleHorizonJob — stale change-request sweep (F-B5-5)', () => 
   it('expires pending change requests older than 7 days and reports how many', async () => {
     const patternRepo = { listAccepted: mock(async () => []) };
     const changeRequests = {
+      ...noChangeRequests(),
       expirePendingOlderThan: mock(async (_cutoffIso: string) => [
         { id: 'cr1' },
         { id: 'cr2' },
@@ -253,6 +260,7 @@ describe('runScheduleHorizonJob — stale change-request sweep (F-B5-5)', () => 
       touchedDates: [],
     }));
     const changeRequests = {
+      ...noChangeRequests(),
       expirePendingOlderThan: mock(async () => {
         throw new Error('shift_change_requests unreachable');
       }) as unknown as ReturnType<
@@ -274,6 +282,7 @@ describe('runScheduleHorizonJob — stale change-request sweep (F-B5-5)', () => 
   it('pushes to the requester when an expired row has requested_by', async () => {
     const notifyUser = mock(() => undefined);
     const changeRequests = {
+      ...noChangeRequests(),
       expirePendingOlderThan: mock(async () => [
         {
           id: 'cr-1',
@@ -324,6 +333,7 @@ describe('runScheduleHorizonJob — stale change-request sweep (F-B5-5)', () => 
     const notifyUser = mock(() => undefined);
     const findByIds = mock(async () => []);
     const changeRequests = {
+      ...noChangeRequests(),
       expirePendingOlderThan: mock(async () => [
         {
           id: 'cr-1',
@@ -433,5 +443,153 @@ describe('runScheduleHorizonJob — uncovered-care backstop sweep', () => {
       localDate: '2026-08-31',
       cause: 'nothingScheduled',
     });
+  });
+});
+
+describe('runScheduleHorizonJob — A5: a request must not outlive its shift', () => {
+  it('expires pending requests whose shift has already started, keyed on the shift not the request age', async () => {
+    setSystemTime(new Date('2026-08-11T12:00:00.000Z'));
+    const changeRequests = {
+      ...noChangeRequests(),
+      expirePendingForStartedShifts: mock(async (_nowIso: string) => [
+        { id: 'cr-started-1' },
+        { id: 'cr-started-2' },
+      ]) as unknown as ReturnType<
+        typeof noChangeRequests
+      >['expirePendingForStartedShifts'],
+    };
+
+    const result = await runScheduleHorizonJob(
+      { listAccepted: mock(async () => []) },
+      noOpMaterialiser(),
+      changeRequests,
+      noOpJobDeps()
+    );
+
+    expect(changeRequests.expirePendingForStartedShifts).toHaveBeenCalledTimes(
+      1
+    );
+    // `now`, NOT a 7-day cutoff — the whole point of A5 is that a request
+    // about tomorrow's shift is six days from the age-based cutoff.
+    const [call] = changeRequests.expirePendingForStartedShifts.mock.calls;
+    expect(call?.[0]).toBe('2026-08-11T12:00:00.000Z');
+    expect(result.changeRequestsExpiredForStartedShifts).toBe(2);
+  });
+
+  it('runs independently of the age-based arm — one throwing never skips the other', async () => {
+    const changeRequests = {
+      ...noChangeRequests(),
+      expirePendingOlderThan: mock(async () => {
+        throw new Error('age sweep unreachable');
+      }) as unknown as ReturnType<
+        typeof noChangeRequests
+      >['expirePendingOlderThan'],
+    };
+
+    const result = await runScheduleHorizonJob(
+      { listAccepted: mock(async () => []) },
+      noOpMaterialiser(),
+      changeRequests,
+      noOpJobDeps()
+    );
+
+    expect(result.changeRequestsExpired).toBe(0);
+    expect(changeRequests.expirePendingForStartedShifts).toHaveBeenCalledTimes(
+      1
+    );
+  });
+
+  it('reports 0 rather than failing the run when the started-shift arm throws', async () => {
+    const changeRequests = {
+      ...noChangeRequests(),
+      expirePendingForStartedShifts: mock(async () => {
+        throw new Error('unreachable');
+      }) as unknown as ReturnType<
+        typeof noChangeRequests
+      >['expirePendingForStartedShifts'],
+    };
+
+    const result = await runScheduleHorizonJob(
+      { listAccepted: mock(async () => [patternFor()]) },
+      noOpMaterialiser(),
+      changeRequests,
+      noOpJobDeps()
+    );
+
+    expect(result.changeRequestsExpiredForStartedShifts).toBe(0);
+    expect(result.patternsProcessed).toBe(1);
+  });
+});
+
+describe('runScheduleHorizonJob — S8: shift_events retention', () => {
+  const DAY_MS = 24 * 60 * 60 * 1000;
+
+  it('sweeps machine-generated events older than 90 days', async () => {
+    const deleteSweptEventsOlderThan = mock(
+      async (_cutoffIso: string, _types: readonly string[]) => 412
+    );
+    const before = Date.now();
+    const result = await runScheduleHorizonJob(
+      { listAccepted: mock(async () => []) },
+      noOpMaterialiser(),
+      noChangeRequests(),
+      noOpJobDeps({ events: { deleteSweptEventsOlderThan } })
+    );
+    const after = Date.now();
+
+    expect(deleteSweptEventsOlderThan).toHaveBeenCalledTimes(1);
+    const [cutoffIso] = deleteSweptEventsOlderThan.mock.calls[0] ?? [];
+    const cutoff = Date.parse(String(cutoffIso));
+    expect(cutoff).toBeGreaterThanOrEqual(before - 90 * DAY_MS);
+    expect(cutoff).toBeLessThanOrEqual(after - 90 * DAY_MS);
+    expect(result.eventsSwept).toBe(412);
+  });
+
+  it('passes an ALLOWLIST of machine-generated types, never the thread types', async () => {
+    const deleteSweptEventsOlderThan = mock(
+      async (_cutoffIso: string, _types: readonly string[]) => 0
+    );
+    await runScheduleHorizonJob(
+      { listAccepted: mock(async () => []) },
+      noOpMaterialiser(),
+      noChangeRequests(),
+      noOpJobDeps({ events: { deleteSweptEventsOlderThan } })
+    );
+
+    const types = deleteSweptEventsOlderThan.mock.calls[0]?.[1] as string[];
+    expect([...types].sort()).toEqual(['pattern_conflict', 'uncovered_care']);
+
+    // The rows a dispute is argued from. If any of these ever appears in that
+    // list, the week thread (3-T1 / D-18) and the cancellation-pay verdict
+    // become deletable, and the audit trail stops being an audit trail.
+    for (const protectedType of [
+      'timesheet_queried',
+      'timesheet_note_added',
+      'timesheet_query_withdrawn',
+      'shift_cancelled',
+      'change_request_accepted',
+      'change_request_declined',
+      'change_request_created',
+    ]) {
+      expect(types).not.toContain(protectedType);
+    }
+  });
+
+  it('a failed retention sweep is a disk-space problem, never a failed run', async () => {
+    const result = await runScheduleHorizonJob(
+      { listAccepted: mock(async () => [patternFor()]) },
+      noOpMaterialiser(),
+      noChangeRequests(),
+      noOpJobDeps({
+        events: {
+          deleteSweptEventsOlderThan: mock(async () => {
+            throw new Error('unreachable');
+          }),
+        },
+      })
+    );
+
+    expect(result.eventsSwept).toBe(0);
+    expect(result.patternsProcessed).toBe(1);
   });
 });

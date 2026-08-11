@@ -82,8 +82,36 @@ export interface UncoveredWindow {
   endsAt: string;
 }
 
-/** Statuses that actually provide cover. */
+/**
+ * Statuses that actually provide cover (D-22 / S1).
+ *
+ * `pending` is DELIBERATELY ABSENT. A shift nobody has accepted is a question,
+ * not an answer: a parent asking a carer to cover must never silence the
+ * no-one-is-booked alarm, because the alarm is the only thing standing between
+ * an unanswered ask and a morning with nobody there. Adding `pending` back
+ * here re-opens S1 in one line.
+ *
+ * If what you want is "does this shift show on someone's schedule / can she
+ * clock into it / does it belong on the widget", you want
+ * `SCHEDULED_SHIFT_STATUSES` below — a different question with a different
+ * answer, and conflating the two is what made this constant wrong.
+ */
 export const COVERING_SHIFT_STATUSES: readonly string[] = [
+  'confirmed',
+  'completed',
+];
+
+/**
+ * Statuses that put a shift on someone's schedule — the "is this row real"
+ * test, as opposed to `COVERING_SHIFT_STATUSES`' "is this cover" test.
+ *
+ * `pending` belongs here and not there: a proposal the carer has not answered
+ * is still a row she sees, may accept, and expects on her widget — while being
+ * no reassurance whatsoever to the parent wondering who is booked. `draft`,
+ * `declined` and `cancelled` are excluded from both (a declined shift once
+ * showed a parent their nanny's "plan for the day").
+ */
+export const SCHEDULED_SHIFT_STATUSES: readonly string[] = [
   'pending',
   'confirmed',
   'completed',

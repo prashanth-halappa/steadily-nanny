@@ -8,12 +8,14 @@
  */
 import type { CancellationPayReconcileResult } from '../jobs/cancellationPayReconcileJob';
 import { runCancellationPayReconcileJob } from '../jobs/cancellationPayReconcileJob';
+import { runCoverAskExpiryJob } from '../jobs/coverAskExpiryJob';
 import { runExampleMaintenanceJob } from '../jobs/exampleMaintenanceJob';
 import { runIntegrityCheckJob } from '../jobs/integrityCheckJob';
 import { runNoShowDigestJob } from '../jobs/noShowDigestJob';
 import { runNoShowJob } from '../jobs/noShowJob';
 import { runReminderJob } from '../jobs/reminderJob';
 import { runScheduleHorizonJob } from '../jobs/scheduleHorizonJob';
+import { runShiftCompletionJob } from '../jobs/shiftCompletionJob';
 import { runUncoveredDigestJob } from '../jobs/uncoveredDigestJob';
 import { createTrackedJobHandler } from './jobHandlerFactory';
 
@@ -116,6 +118,35 @@ export const JobController = {
         successCount: result.digest.sent,
         errorCount: result.errorCount,
         digest: result.digest,
+      }),
+    }
+  ),
+
+  /** POST /api/jobs/cover-ask-expiry — S1/D-47, every 5 minutes. */
+  runCoverAskExpiry: createTrackedJobHandler(
+    'cover-ask-expiry',
+    runCoverAskExpiryJob,
+    'Cover-ask expiry completed',
+    {
+      mapForJobRun: result => ({
+        totalProcessed: result.expiry.candidates,
+        successCount: result.expiredCount,
+        errorCount: result.errorCount,
+        expiry: result.expiry,
+      }),
+    }
+  ),
+
+  /** POST /api/jobs/shift-completion — S2/D-24, nightly. No push, ever. */
+  runShiftCompletion: createTrackedJobHandler(
+    'shift-completion',
+    runShiftCompletionJob,
+    'Shift completion completed',
+    {
+      mapForJobRun: result => ({
+        totalProcessed: result.completedCount,
+        successCount: result.completedCount,
+        errorCount: result.errorCount,
       }),
     }
   ),

@@ -41,7 +41,11 @@
 
 import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types/schemas/notification.schema';
 import type { Shift } from '@steadily-nanny/shared-types/schemas/shift.schema';
-import { SHIFT_STATUSES } from '@steadily-nanny/shared-types/schemas/shift.schema';
+import {
+  SHIFT_CHANGE_REQUEST_KINDS,
+  SHIFT_CHANGE_REQUEST_STATUSES,
+  SHIFT_STATUSES,
+} from '@steadily-nanny/shared-types/schemas/shift.schema';
 import type { TimeEntry } from '@steadily-nanny/shared-types/schemas/timesheet.schema';
 import { supabaseService } from '../config/supabase';
 import { ReminderLogRepository } from '../domains/notification/repositories/reminderLogRepository';
@@ -323,13 +327,107 @@ export class DefaultNoShowTimeEntryLister implements NoShowTimeEntryLister {
   }
 }
 
+/**
+ * How long a declined cancellation silences `shift_no_show` for its shift
+ * (D-48). Seven days, i.e. long enough to cover the whole disagreement, since
+ * a cancel request is only ever about one shift and the shift is over within
+ * hours of the decline.
+ */
+export const DISPUTED_CANCEL_SUPPRESSION_MS = 7 * 24 * 60 * 60 * 1000;
+
+export interface DisputedCancellationLookup {
+  /**
+   * Of `shiftIds`, which have a cancel request the carer DECLINED since
+   * `sinceIso`. One query for the batch, never one per shift.
+   */
+  listShiftsWithDeclinedCancel(
+    shiftIds: string[],
+    sinceIso: string
+  ): Promise<Set<string>>;
+}
+
+export class DefaultDisputedCancellationLookup
+  implements DisputedCancellationLookup
+{
+  async listShiftsWithDeclinedCancel(
+    shiftIds: string[],
+    sinceIso: string
+  ): Promise<Set<string>> {
+    if (shiftIds.length === 0) {
+      return new Set();
+    }
+    const { data, error } = await supabaseService
+      .from('shift_change_requests')
+      .select('shift_id')
+      .in('shift_id', shiftIds)
+      .eq('kind', SHIFT_CHANGE_REQUEST_KINDS.CANCEL)
+      .eq('status', SHIFT_CHANGE_REQUEST_STATUSES.DECLINED)
+      .gte('responded_at', sinceIso);
+
+    if (error) {
+      throw new DatabaseError(
+        'Failed to load declined cancellations for the no-show sweep',
+        'DATABASE_ERROR',
+        { details: error.message }
+      );
+    }
+    return new Set(
+      ((data ?? []) as Array<{ shift_id: string }>).map(row => row.shift_id)
+    );
+  }
+}
+
+/**
+ * D-48 / spec §6.2 — a declined cancellation means the shift STANDS, and the
+ * no-show sweep must not fire on it.
+ *
+ * The failure this closes, in Marisol's words: the family cancels an unpaid
+ * short-notice Tuesday, she declines because she believes it is paid, and the
+ * shift therefore stays `confirmed` — which is exactly what this job selects
+ * on. If she does not clock in, `shift_no_show` fires and her record reads as
+ * if she failed to turn up to a shift the family had tried to cancel. The
+ * alert names only her; the disagreement is two-sided.
+ *
+ * So the disagreement lives in the change-request thread, where BOTH positions
+ * are already recorded, rather than in an alert that names one party. Nothing
+ * about the shift or about pay changes — `resolveCancellationPaid` never ran,
+ * because there was no cancellation.
+ *
+ * SUPPRESSION, NOT DELETION: the shift keeps its ordinary record, and the
+ * morning digest is silenced by the same rule for the same reason. The window
+ * is time-boxed rather than permanent so a shift declined-then-reinstated
+ * months later is not silently exempt forever.
+ *
+ * Failure is swallowed and treated as "suppress nothing": a lookup outage must
+ * not silence a genuine no-show, which is the alert a parent most needs.
+ */
+export async function listSuppressedShiftIds(
+  disputed: DisputedCancellationLookup,
+  shiftIds: string[],
+  now: Date
+): Promise<Set<string>> {
+  try {
+    return await disputed.listShiftsWithDeclinedCancel(
+      shiftIds,
+      new Date(now.getTime() - DISPUTED_CANCEL_SUPPRESSION_MS).toISOString()
+    );
+  } catch (error) {
+    logger.error(
+      'No-show sweep: declined-cancellation lookup failed; suppressing nothing',
+      { error }
+    );
+    return new Set();
+  }
+}
+
 export async function runNoShowJob(
   candidates: NoShowCandidateSource = new DefaultNoShowCandidateSource(),
   entries: NoShowTimeEntryLister = new DefaultNoShowTimeEntryLister(),
   log: ReminderLogClaim = new ReminderLogRepository(),
   parents: ReminderParentLister = new DefaultReminderParentLister(),
   push: ReminderPushService = defaultPushService,
-  clock: ReminderJobClock = { now: () => new Date() }
+  clock: ReminderJobClock = { now: () => new Date() },
+  disputed: DisputedCancellationLookup = new DefaultDisputedCancellationLookup()
 ): Promise<NoShowJobResult> {
   const now = clock.now();
 
@@ -341,7 +439,19 @@ export async function runNoShowJob(
   const stats = emptyRuleStats();
   stats.candidates = shifts.length;
 
+  // D-48 / M17 — ONE batched lookup for the whole run, never one per shift
+  // (GOLDEN-FIXES #28). See `DISPUTED_CANCEL_SUPPRESSION_MS`.
+  const suppressed = await listSuppressedShiftIds(
+    disputed,
+    shifts.map(s => s.id),
+    now
+  );
+
   for (const shift of shifts) {
+    if (suppressed.has(shift.id)) {
+      stats.skipped++;
+      continue;
+    }
     try {
       if (!isInNoShowWindow(shift, now)) {
         stats.skipped++;

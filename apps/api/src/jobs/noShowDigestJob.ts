@@ -48,8 +48,11 @@ import { DatabaseError } from '../errors';
 import { logger } from '../middlewares/logger';
 import {
   buildNoShowKey,
+  DefaultDisputedCancellationLookup,
   DefaultNoShowTimeEntryLister,
+  type DisputedCancellationLookup,
   hasClockedIn,
+  listSuppressedShiftIds,
   type NoShowShiftCandidate,
   type NoShowTimeEntryLister,
 } from './noShowJob';
@@ -267,7 +270,8 @@ export async function runNoShowDigestJob(
   log: ReminderLogClaim = new ReminderLogRepository(),
   parents: ReminderParentLister = new DefaultReminderParentLister(),
   push: ReminderPushService = defaultPushService,
-  clock: ReminderJobClock = { now: () => new Date() }
+  clock: ReminderJobClock = { now: () => new Date() },
+  disputed: DisputedCancellationLookup = new DefaultDisputedCancellationLookup()
 ): Promise<NoShowDigestJobResult> {
   const now = clock.now();
 
@@ -353,7 +357,19 @@ export async function runNoShowDigestJob(
       const alreadyAlertedIds = await alreadyAlerted.listAlreadyAlerted(
         missed.map(s => s.id)
       );
-      const stillMissing = missed.filter(s => !alreadyAlertedIds.has(s.id));
+      // D-48 / spec §6.2: the same suppression the immediate alert applies.
+      // Silencing only the immediate leg would hand the parent the identical
+      // accusation twelve hours later through the back door — "no one clocked
+      // in for Tuesday's shift" about a shift the family had tried to cancel
+      // and the carer had refused to let them. One rule, both legs.
+      const suppressedIds = await listSuppressedShiftIds(
+        disputed,
+        missed.map(s => s.id),
+        now
+      );
+      const stillMissing = missed.filter(
+        s => !alreadyAlertedIds.has(s.id) && !suppressedIds.has(s.id)
+      );
       if (stillMissing.length === 0) {
         stats.skipped++;
         continue;

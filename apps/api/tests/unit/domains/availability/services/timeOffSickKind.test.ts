@@ -91,7 +91,10 @@ function makeService(
     overlapRepo as never,
     mock(() => undefined),
     async () => undefined,
-    makeMemberRepo()
+    makeMemberRepo(),
+    // D-23: stubbed, or a sick day with an overlap reaches for a real
+    // Supabase client and times the file out.
+    mock(async () => undefined)
   );
 }
 

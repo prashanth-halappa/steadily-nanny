@@ -16,6 +16,8 @@
   "notFoundTitle": "No encontrado",
   "notFoundBody": "Esta pantalla no existe.",
   "notFoundGoHome": "Ir al inicio",
+  "restrictedAction": "Solo {{name}} puede {{action}} en este hogar.",
+  "restrictedActionOwner": "el titular del hogar",
   "tabs": {
     "today": "Hoy",
     "schedule": "Horario",

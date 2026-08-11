@@ -65,11 +65,12 @@ beforeEach(() => {
   detectUncoveredCareForDate.mockImplementation(async () => NOTHING);
 });
 
-function makeService() {
+function makeService(over: Partial<ShiftWithChildren> = {}) {
+  const shift = { ...pendingShift, ...over };
   return new ShiftCommandService(
     {
       declinePending: mock(async (id: string) => ({
-        ...pendingShift,
+        ...shift,
         id,
         status: 'declined',
       })),
@@ -82,7 +83,7 @@ function makeService() {
         role: 'nanny',
       })),
     } as never,
-    { getOwned: mock(async () => pendingShift) } as never,
+    { getOwned: mock(async () => shift) } as never,
     { insertMany: mock(async () => []) } as never,
     // The decline push copy names the child, so the service reaches for
     // ChildQueryService. Its constructor DEFAULT is the real one, which goes
@@ -100,9 +101,16 @@ async function flushPush(): Promise<void> {
   await new Promise(resolve => setTimeout(resolve, 0));
 }
 
+// A6 is about the RECURRING decline: "one fact, one push", suppress the
+// generic `shift_declined` when uncovered detection already told the parent
+// about the resulting gap. Every test below therefore drives a `recurring`
+// shift. The `extra`/`cover` ask leg is N9's and is deliberately NOT
+// suppressible — see the last block in this file, and §1.4.
 describe('ShiftCommandService.decline — uncovered detection', () => {
+  const RECURRING = { kind: 'recurring' } as Partial<ShiftWithChildren>;
+
   it('calls detection with cause declined', async () => {
-    await makeService().decline('carer-1', 's1');
+    await makeService(RECURRING).decline('carer-1', 's1');
     await flushPush();
 
     expect(detectUncoveredCareForDate).toHaveBeenCalledWith(
@@ -135,7 +143,7 @@ describe('ShiftCommandService.decline — uncovered detection', () => {
       ],
     }));
 
-    await makeService().decline('carer-1', 's1');
+    await makeService(RECURRING).decline('carer-1', 's1');
 
     await flushPush();
 
@@ -155,7 +163,7 @@ describe('ShiftCommandService.decline — uncovered detection', () => {
       pushed: [],
     }));
 
-    await makeService().decline('carer-1', 's1');
+    await makeService(RECURRING).decline('carer-1', 's1');
     await flushPush();
 
     expect(notifyHouseholdParents).toHaveBeenCalledTimes(1);
@@ -170,7 +178,7 @@ describe('ShiftCommandService.decline — uncovered detection', () => {
   });
 
   it('fires shift_declined when the day is still covered', async () => {
-    await makeService().decline('carer-1', 's1');
+    await makeService(RECURRING).decline('carer-1', 's1');
     await flushPush();
 
     expect(notifyHouseholdParents).toHaveBeenCalledTimes(1);
@@ -183,4 +191,44 @@ describe('ShiftCommandService.decline — uncovered detection', () => {
       })
     );
   });
+});
+
+/**
+ * N9 — the bug this build would otherwise have created, pinned.
+ *
+ * Under D-22 a pending ask stops counting as cover, so the uncovered push
+ * fires at ASK time. That makes `pushed.length > 0` true by the time the carer
+ * answers, and A6's suppression would swallow EVERY cover-ask decline: the
+ * parent asks, she says no, and nobody tells them. `cover_ask_declined` is a
+ * different fact ("the person you asked has answered", not "this window is
+ * uncovered") and is deliberately outside A6's suppression set.
+ */
+describe('ShiftCommandService.decline — N9 is immune to A6 suppression', () => {
+  for (const kind of ['extra', 'cover'] as const) {
+    it(`a ${kind} ask still notifies the parent even when the uncovered push already fired`, async () => {
+      const window = {
+        childId: 'c1',
+        commitmentId: 'cm1',
+        startsAt: '2026-08-03T09:00:00.000Z',
+        endsAt: '2026-08-03T12:00:00.000Z',
+      };
+      detectUncoveredCareForDate.mockImplementation(async () => ({
+        inserted: [window],
+        pushed: [window],
+      }));
+
+      await makeService({ kind }).decline('carer-1', 's1');
+      await flushPush();
+
+      expect(notifyHouseholdParents).toHaveBeenCalledTimes(1);
+      expect(notifyHouseholdParents).toHaveBeenCalledWith(
+        'h1',
+        expect.objectContaining({
+          data: expect.objectContaining({
+            type: PUSH_NOTIFICATION_TYPES.COVER_ASK_DECLINED,
+          }),
+        })
+      );
+    });
+  }
 });

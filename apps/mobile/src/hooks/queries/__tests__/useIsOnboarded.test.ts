@@ -312,6 +312,47 @@ describe('useIsOnboarded', () => {
     expect(result.current.membershipsError).toBe(false);
   });
 
+  // S4 (attention-and-notifications.md §7): `role` collapses owner+parent so
+  // that every existing consumer keeps working; `membershipRole` is the
+  // additive sibling that keeps them apart, so a co-parent under
+  // `approval_mode='owner_only'` can be told the rule instead of learning it
+  // from a 403.
+  it('reports the RAW membership role alongside the collapsed setup role — owner', async () => {
+    membershipsListMock.mockResolvedValue([ownerMembership()]);
+    householdsListMock.mockResolvedValue([householdRow()]);
+    childrenListMock.mockResolvedValue([{ id: 'child-1', name: 'Ada' }]);
+
+    const { result } = renderHookWithProviders(() => useIsOnboarded());
+
+    await waitFor(() => expect(result.current.status).toBe('onboarded'));
+    expect(result.current.role).toBe('parent');
+    expect(result.current.membershipRole).toBe('owner');
+  });
+
+  it('reports the RAW membership role alongside the collapsed setup role — co-parent', async () => {
+    membershipsListMock.mockResolvedValue([
+      ownerMembership({ role: 'parent', user_id: USER_ID }),
+    ]);
+    householdsListMock.mockResolvedValue([
+      householdRow({ created_by: 'someone-else' }),
+    ]);
+
+    const { result } = renderHookWithProviders(() => useIsOnboarded());
+
+    await waitFor(() => expect(result.current.status).toBe('onboarded'));
+    expect(result.current.role).toBe('parent');
+    expect(result.current.membershipRole).toBe('parent');
+  });
+
+  it('leaves membershipRole null when there is no membership to read one from', async () => {
+    membershipsListMock.mockResolvedValue([]);
+
+    const { result } = renderHookWithProviders(() => useIsOnboarded());
+
+    await waitFor(() => expect(result.current.status).toBe('not-onboarded'));
+    expect(result.current.membershipRole).toBeNull();
+  });
+
   it('is onboarded as a helper with SETUP_ROLES.HELPER', async () => {
     membershipsListMock.mockResolvedValue([
       ownerMembership({

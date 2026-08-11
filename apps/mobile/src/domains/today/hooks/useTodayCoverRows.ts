@@ -53,6 +53,9 @@ const KIND_ORDER: Record<CoverKind, number> = {
 
 const ARRIVING_WINDOW_MS = 60 * 60 * 1000;
 
+/** "Does this shift provide cover" — a pending ask must never render as
+ * "Priya is covering today"; the gap card owns that window until she says
+ * yes (D-22). */
 const COVERING_STATUS_SET = new Set<string>(COVERING_SHIFT_STATUSES);
 
 function shiftRowKey(shift: Pick<Shift, 'kind' | 'carer_id'>): string {

@@ -12,6 +12,8 @@ export { KillSwitchScreen } from './KillSwitchScreen';
 export { MaintenanceScreen } from './MaintenanceScreen';
 export { NotificationSoftAskSheet } from './NotificationSoftAskSheet';
 export { OfflineBanner } from './OfflineBanner';
+export type { RestrictedActionButtonProps } from './RestrictedActionButton';
+export { RestrictedActionButton } from './RestrictedActionButton';
 export { RootErrorBoundary } from './RootErrorBoundary';
 export { RootErrorFallback } from './RootErrorFallback';
 export { SoftUpdateBanner } from './SoftUpdateBanner';

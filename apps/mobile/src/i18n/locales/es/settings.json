@@ -149,6 +149,9 @@
       "running_late": "La niñera llega tarde",
       "parent_covering": "Un padre/madre cubre el turno",
       "cover_ask_reminder": "Recordatorio de solicitud de cobertura",
+      "cover_ask_expired": "Solicitud de cobertura caducada",
+      "cover_ask_declined": "Solicitud de cobertura rechazada",
+      "carer_sick_shifts_affected": "Día de baja que afecta a turnos",
       "shift_no_show_digest": "Resumen de fichajes no realizados"
     }
   }

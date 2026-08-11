@@ -59,8 +59,14 @@ module header together.
 ### Covering shifts
 
 Only shifts whose `status` is in `COVERING_SHIFT_STATUSES` count:
-`pending`, `confirmed`, `completed`. `draft`, `declined`, and `cancelled` are
-ignored.
+`confirmed`, `completed`. `draft`, `declined`, and `cancelled` are ignored.
+
+`pending` left this list under **D-22**: a shift nobody has accepted is a
+question, not an answer, so an unanswered cover ask must not silence the
+no-one-is-booked alarm. For the *other* question — "is this shift real on
+someone's schedule / clockable / on her widget", where an unanswered proposal
+does count — use `SCHEDULED_SHIFT_STATUSES` from the same module. Conflating
+the two is what made the single constant wrong.
 
 **Per-child narrowing:** if a shift has **no** `shift_children` rows, it covers
 **every** child for the shift’s full `[starts_at, ends_at)`. If
@@ -134,6 +140,22 @@ next query/refetch — no waiting for a compensating event.
 Legacy `coverage_gap` rows were deleted in migration `070_uncovered_care.sql`
 (pre-launch). **We do not delete or retract `uncovered_care` events when cover
 is restored** — live UI ignores stale events; the thread may still list them.
+
+**S9 / D-25 — this is now a recorded decision, not an open one.** There are no
+retraction events and there will not be: the log is evidence of what was
+detected, not state. A retraction event would be a second, lagging source of
+truth for a question §4 already answers correctly by recomputing — and reading
+the log instead of recomputing is the original defect (D54) this whole section
+exists because of. The place the retraction would have gone is commented as
+such in `scheduleHorizonJob.ts`'s `SWEEPABLE_EVENT_TYPES`.
+
+**Retention (S8, 3-T3).** `uncovered_care` and `pattern_conflict` rows are aged
+out after 90 days by `scheduleHorizonJob`'s nightly sweep — they are machine
+output, keyed and deduped, and every surface recomputes without them. Ageing a
+row out is **not** retracting it: it never claimed the gap was still open, only
+that it was once seen. The sweep is allowlisted by event type and must never
+reach the day thread or the 3-T1 week thread; see
+`ShiftEventRepository.deleteSweptEventsOlderThan`.
 
 ---
 

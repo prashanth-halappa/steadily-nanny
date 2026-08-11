@@ -46,5 +46,7 @@ router.post('/integrity-checks', jobHandler(JobController.runIntegrityChecks));
 router.post('/no-show-sweep', jobHandler(JobController.runNoShowSweep));
 router.post('/no-show-digest', jobHandler(JobController.runNoShowDigest));
 router.post('/uncovered-digest', jobHandler(JobController.runUncoveredDigest));
+router.post('/cover-ask-expiry', jobHandler(JobController.runCoverAskExpiry));
+router.post('/shift-completion', jobHandler(JobController.runShiftCompletion));
 
 export default router;
