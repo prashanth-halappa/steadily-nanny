@@ -473,7 +473,25 @@ describe('PayArrangementCommandService.create — the written row', () => {
       carer_display_name: 'Nia Rowe',
       note: 'annual review',
       created_by: 'parent-1',
+      terms: {},
     });
+  });
+
+  // T9 storage (1-D): the exact "forgotten field silently never persists"
+  // trap the field-by-field insert literal invites (T17) — pin both arms.
+  it('passes a supplied terms object through to the repo create call verbatim', async () => {
+    const payRepo = makePayRepo();
+    const svc = service({ payRepo });
+    const terms = { notice_period_days: 14, driving_required: true };
+    await svc.create('parent-1', 'h1', 'carer-1', request({ terms }), NOW);
+    expect(payRepo.create.mock.calls[0][0].terms).toEqual(terms);
+  });
+
+  it('writes an empty terms object when none is supplied', async () => {
+    const payRepo = makePayRepo();
+    const svc = service({ payRepo });
+    await svc.create('parent-1', 'h1', 'carer-1', request(), NOW);
+    expect(payRepo.create.mock.calls[0][0].terms).toEqual({});
   });
 
   it('stores omitted optional terms as explicit nulls, not undefined', async () => {

@@ -490,6 +490,87 @@ describe('payArrangement.schema', () => {
     });
   });
 
+  // Phase 1, T9 storage: an opaque documentary-terms bag (notice period,
+  // probation, duties scope, ...). Passthrough only this build — nothing
+  // prices it, nothing reads it but the wire contract, and the typed shape
+  // comes with the terms UI (3-U1).
+  describe('terms (Phase 1, T9 storage)', () => {
+    const validArrangement = {
+      id: VALID_UUID,
+      household_id: VALID_UUID,
+      carer_id: VALID_UUID,
+      rate_minor: 1850,
+      bill_rate_minor: null,
+      currency: 'GBP',
+      overtime_threshold_minutes: null,
+      overtime_multiplier: 1.5,
+      guaranteed_minutes_per_week: null,
+      pto_entitlement_minutes_per_year: null,
+      mileage_rate_per_mile_minor: null,
+      cancellation_paid_within_hours: null,
+      valid_from: '2026-08-01',
+      valid_to: null,
+      carer_display_name: 'Nia Rowe',
+      note: null,
+      created_by: VALID_UUID,
+      created_at: NOW,
+    };
+
+    it('PayArrangementSchema roundtrips a nested terms object', () => {
+      const terms = {
+        notice_period_days: 14,
+        probation: { length_days: 90, notes: 'standard' },
+        driving_required: false,
+      };
+      const result = PayArrangementSchema.safeParse({
+        ...validArrangement,
+        terms,
+      });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.terms).toEqual(terms);
+      }
+    });
+
+    // `.optional()`, not `.default({})` — same reasoning as `v` in
+    // timesheet.schema.ts (Phase 1, T3): a zod default makes the INFERRED
+    // TYPE required, which would force `terms` onto every `PayArrangement`
+    // fixture repo-wide. A live row always carries `{}` (the column's own
+    // `not null default`); this only governs a fixture/pre-076 payload that
+    // omits the field.
+    it('accepts terms omitted — a live row always has one, this only governs a fixture or pre-076 payload', () => {
+      const result = PayArrangementSchema.safeParse(validArrangement);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.terms).toBeUndefined();
+      }
+    });
+
+    it('CreatePayArrangementRequestSchema accepts a passthrough terms object, preserved verbatim', () => {
+      const terms = { notice_period_days: 14 };
+      const result = CreatePayArrangementRequestSchema.safeParse({
+        rate_minor: 1850,
+        valid_from: '2026-08-01',
+        terms,
+      });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.terms).toEqual(terms);
+      }
+    });
+
+    it('CreatePayArrangementRequestSchema accepts terms omitted (server resolves the {} write)', () => {
+      const result = CreatePayArrangementRequestSchema.safeParse({
+        rate_minor: 1850,
+        valid_from: '2026-08-01',
+      });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.terms).toBeUndefined();
+      }
+    });
+  });
+
   describe('PayArrangementListResponseSchema', () => {
     it('parses an empty list', () => {
       expect(

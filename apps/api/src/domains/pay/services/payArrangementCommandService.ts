@@ -148,6 +148,10 @@ export class PayArrangementCommandService {
       carer_display_name: carerDisplayName,
       note: request.note ?? null,
       created_by: callerId,
+      // Opaque documentary-terms bag (Phase 1, T9 storage) — passthrough
+      // only, an omitted request resolves to the same empty bag the column
+      // defaults to. See payArrangement.schema.ts's comment.
+      terms: request.terms ?? {},
     });
 
     this.notifyCarerOfNewTerms(carerId, householdId);
