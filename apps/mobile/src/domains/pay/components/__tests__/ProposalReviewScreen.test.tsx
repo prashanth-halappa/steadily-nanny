@@ -114,8 +114,15 @@ mock.module('@/src/hooks/mutations/useAcceptTerms', () => ({
   }),
 }));
 mock.module('@/src/hooks/mutations/useCounterTerms', () => ({
-  useCounterTerms: () => ({ mutateAsync: mock(), isPending: false }),
+  useCounterTerms: () => ({
+    mutateAsync: mock(),
+    isPending: false,
+    isError: counterIsError,
+  }),
 }));
+
+/** What `useCounterTerms` reports as its error state for the current test. */
+let counterIsError = false;
 mock.module('@/src/hooks/mutations/useMarkProposalViewed', () => ({
   useMarkProposalViewed: () => ({ mutate: markViewed }),
 }));
@@ -156,6 +163,7 @@ beforeEach(() => {
     refetch: mock(),
   };
   chain = [proposal()];
+  counterIsError = false;
   useAuthStore.setState({
     session: { user: { id: PARENT_ID } } as unknown as never,
     user: { id: PARENT_ID } as unknown as never,
@@ -252,6 +260,21 @@ describe('ProposalReviewScreen', () => {
     fireEvent.press(getByTestId('proposal-accept-confirm'));
     await waitFor(() => expect(acceptMutateAsync).toHaveBeenCalled());
     expect(trackedNames()).not.toContain('proposal_accepted');
+  });
+
+  // GOLDEN #40: the counter sheet's failure renders inline in the sheet — a
+  // toast fired behind the open sheet is invisible.
+  it('a failed counter reports itself INSIDE the counter sheet', async () => {
+    counterIsError = true;
+    const { getByTestId } = renderWithProviders(<ProposalReviewScreen />);
+    await waitFor(() =>
+      expect(getByTestId('proposal-counter-button')).toBeTruthy()
+    );
+    fireEvent.press(getByTestId('proposal-counter-button'));
+
+    expect(getByTestId('pay-propose-submit-error').props.children).toBe(
+      'proposal.sendFailed'
+    );
   });
 
   it('the author of the round on screen is offered no answer to their own proposal', async () => {

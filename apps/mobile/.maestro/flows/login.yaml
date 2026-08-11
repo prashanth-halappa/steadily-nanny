@@ -2,36 +2,61 @@
 # Credentials: PARENT_EMAIL / PARENT_PASSWORD from apps/mobile/.env.maestro
 # (see .env.maestro.example). Seed via scripts/seed-test-users.ts.
 #
-# Preserves session when already past the welcome wall (clearState: false).
-# Callers that need a clean slate should clearState themselves or run logout.yaml first.
+# Role reset (Phase 4): reset-to-welcome.yaml signs out any live session
+# first, so the sign-in below is unconditional and a wrong start state fails
+# loudly instead of silently running as the previous flow's role.
 appId: com.jetto.steadily.nanny
 ---
-- launchApp:
-    clearState: false
+- runFlow: reset-to-welcome.yaml
 
+- tapOn:
+    id: 'welcome-sign-in-email'
+- assertVisible:
+    id: 'login-screen'
+- tapOn:
+    id: 'login-email'
+- inputText: ${PARENT_EMAIL}
+- tapOn:
+    id: 'login-password'
+- inputText: ${PARENT_PASSWORD}
+- hideKeyboard
+- tapOn:
+    id: 'login-submit'
+- extendedWaitUntil:
+    notVisible:
+      id: 'welcome-screen'
+    timeout: 20000
+- assertNotVisible:
+    id: 'login-screen'
+
+# Post-sign-in overlays, each on its own delay: the iOS Save Password system
+# dialog, then the app's notification soft-ask sheet. Both hide the entire
+# a11y tree while up — clear them before handing control back to the flow.
+- extendedWaitUntil:
+    visible:
+      text: 'Not Now'
+    timeout: 6000
+    optional: true
 - runFlow:
     when:
       visible:
-        id: 'welcome-screen'
+        text: 'Not Now'
     commands:
       - tapOn:
-          id: 'welcome-sign-in-email'
-      - assertVisible:
-          id: 'login-screen'
+          text: 'Not Now'
+      - waitForAnimationToEnd
+- extendedWaitUntil:
+    visible:
+      text: 'Maybe later'
+    timeout: 4000
+    optional: true
+- runFlow:
+    when:
+      visible:
+        text: 'Maybe later'
+    commands:
       - tapOn:
-          id: 'login-email'
-      - inputText: ${PARENT_EMAIL}
-      - tapOn:
-          id: 'login-password'
-      - inputText: ${PARENT_PASSWORD}
-      - hideKeyboard
-      - tapOn:
-          id: 'login-submit'
-      - extendedWaitUntil:
-          notVisible:
-            id: 'welcome-screen'
-          timeout: 20000
-      - assertNotVisible:
-          id: 'login-screen'
+          text: 'Maybe later'
+      - waitForAnimationToEnd
 
 - waitForAnimationToEnd

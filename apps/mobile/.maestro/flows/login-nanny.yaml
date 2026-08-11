@@ -2,36 +2,59 @@
 # Credentials: NANNY_EMAIL / NANNY_PASSWORD from apps/mobile/.env.maestro
 # (see .env.maestro.example). Seed via scripts/seed-test-users.ts.
 #
-# Same session-preserve rules as login.yaml (parent). Prefer logout.yaml
-# before switching roles on a shared simulator.
+# Same role-reset-first rules as login.yaml (parent).
 appId: com.jetto.steadily.nanny
 ---
-- launchApp:
-    clearState: false
+- runFlow: reset-to-welcome.yaml
 
+- tapOn:
+    id: 'welcome-sign-in-email'
+- assertVisible:
+    id: 'login-screen'
+- tapOn:
+    id: 'login-email'
+- inputText: ${NANNY_EMAIL}
+- tapOn:
+    id: 'login-password'
+- inputText: ${NANNY_PASSWORD}
+- hideKeyboard
+- tapOn:
+    id: 'login-submit'
+- extendedWaitUntil:
+    notVisible:
+      id: 'welcome-screen'
+    timeout: 20000
+- assertNotVisible:
+    id: 'login-screen'
+
+# Post-sign-in overlays, each on its own delay: the iOS Save Password system
+# dialog, then the app's notification soft-ask sheet. Both hide the entire
+# a11y tree while up — clear them before handing control back to the flow.
+- extendedWaitUntil:
+    visible:
+      text: 'Not Now'
+    timeout: 6000
+    optional: true
 - runFlow:
     when:
       visible:
-        id: 'welcome-screen'
+        text: 'Not Now'
     commands:
       - tapOn:
-          id: 'welcome-sign-in-email'
-      - assertVisible:
-          id: 'login-screen'
+          text: 'Not Now'
+      - waitForAnimationToEnd
+- extendedWaitUntil:
+    visible:
+      text: 'Maybe later'
+    timeout: 4000
+    optional: true
+- runFlow:
+    when:
+      visible:
+        text: 'Maybe later'
+    commands:
       - tapOn:
-          id: 'login-email'
-      - inputText: ${NANNY_EMAIL}
-      - tapOn:
-          id: 'login-password'
-      - inputText: ${NANNY_PASSWORD}
-      - hideKeyboard
-      - tapOn:
-          id: 'login-submit'
-      - extendedWaitUntil:
-          notVisible:
-            id: 'welcome-screen'
-          timeout: 20000
-      - assertNotVisible:
-          id: 'login-screen'
+          text: 'Maybe later'
+      - waitForAnimationToEnd
 
 - waitForAnimationToEnd

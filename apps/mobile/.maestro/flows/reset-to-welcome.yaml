@@ -1,0 +1,114 @@
+# Converge on the signed-out welcome wall from ANY start state: live session
+# (any screen), dev-client launcher, or dead app. The one canonical reset —
+# 00-smoke and both login flows run this first.
+#
+# Never uses clearState: wiping app data re-arms the dev client's one-time
+# "This is the developer menu" intro sheet, which then pops ASYNCHRONOUSLY
+# over a later flow and swallows every deep link (root cause of two full-suite
+# wipeouts, Phase 4). The sheet stays dismissed only while app data persists.
+appId: com.jetto.steadily.nanny
+---
+- launchApp:
+    clearState: false
+
+# If the intro sheet is up (e.g. first run after a manual reinstall), clear it.
+- runFlow:
+    when:
+      visible:
+        text: 'This is the developer menu'
+    commands:
+      - tapOn:
+          text: 'Continue'
+      - waitForAnimationToEnd
+
+# Let the relaunched app settle: a live session auto-loads the bundle to the
+# tabs; a signed-out one lands on welcome.
+- extendedWaitUntil:
+    visible:
+      id: 'tab-today'
+    timeout: 15000
+    optional: true
+- extendedWaitUntil:
+    visible:
+      id: 'welcome-screen'
+    timeout: 3000
+    optional: true
+
+# Only if NEITHER appears are we in the dev-client launcher (or the app died)
+# — and only then is it safe to force a bundle load via the
+# expo-development-client URL. Forcing it unconditionally reloads mid-mount
+# and crashes Fabric (ExpoFabricView.injectInitializer assert).
+- runFlow:
+    when:
+      notVisible:
+        id: 'welcome-screen'
+    commands:
+      - runFlow:
+          when:
+            notVisible:
+              id: 'tab-today'
+          commands:
+            # The intro sheet pops SECONDS after the launcher renders, and
+            # while it is up the dev-client URL is swallowed — so give it a
+            # bounded window to appear and clear it BEFORE the bundle load.
+            - extendedWaitUntil:
+                visible:
+                  text: 'This is the developer menu'
+                timeout: 6000
+                optional: true
+            - runFlow:
+                when:
+                  visible:
+                    text: 'This is the developer menu'
+                commands:
+                  - tapOn:
+                      text: 'Continue'
+                  - waitForAnimationToEnd
+            - openLink: steadilynanny://expo-development-client/?url=http%3A%2F%2Flocalhost%3A8081
+            - waitForAnimationToEnd
+            - runFlow:
+                when:
+                  visible:
+                    text: 'This is the developer menu'
+                commands:
+                  - tapOn:
+                      text: 'Continue'
+                  - waitForAnimationToEnd
+            - extendedWaitUntil:
+                visible:
+                  id: 'tab-today'
+                timeout: 25000
+                optional: true
+            - extendedWaitUntil:
+                visible:
+                  id: 'welcome-screen'
+                timeout: 5000
+                optional: true
+
+# Live session → sign out via the Settings tab. Signed-out edge: the
+# (private) deep link redirects to welcome and logout.yaml no-ops.
+- runFlow:
+    when:
+      notVisible:
+        id: 'welcome-screen'
+    commands:
+      - openLink: steadilynanny:///(private)/(tabs)/settings
+      - waitForAnimationToEnd
+      # Notification soft-ask sheet may be covering the tab bar — logout.yaml
+      # also guards on it, but its own guard needs the tab bar visible.
+      - runFlow:
+          when:
+            visible:
+              text: 'Maybe later'
+          commands:
+            - tapOn:
+                text: 'Maybe later'
+            - waitForAnimationToEnd
+      - runFlow: logout.yaml
+      - extendedWaitUntil:
+          visible:
+            id: 'welcome-screen'
+          timeout: 15000
+
+- assertVisible:
+    id: 'welcome-screen'

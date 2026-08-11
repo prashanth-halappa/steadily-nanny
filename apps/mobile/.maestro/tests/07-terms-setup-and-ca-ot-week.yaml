@@ -1,0 +1,186 @@
+# Scenario — parent authors pay terms in the 3-U1 setup form (common-defaults
+# preset behind the D-7 liability checkbox, then CA-style daily tiers typed by
+# hand), backdated to cover the seed weeks; then the overtime week prices
+# overtime AND double time in the breakdown sheet.
+#
+# Prerequisites: scripts/seed-phase4-fixtures.ts, which
+#   - DELETES every pay_arrangement for (household, nanny). Required, not
+#     cosmetic: PaySetupScreen's mount effect does
+#     `router.replace('/settings/pay')` the moment an arrangement exists, so
+#     the setup form is only reachable on a carer who has none. That is also
+#     why this flow never needs the PayChangeSheet path — the seeder makes
+#     setup mode the deterministic one rather than branching at runtime.
+#   - seeds a submitted timesheet + a single 13h entry on
+#     PHASE4_OT_WEEK_START (8 regular + 4 overtime + 1 double time).
+#
+# SCOPING NOTE — D-52 deleted the per-state presets; COMMON_DEFAULTS_PRESET is
+# the only one left (packages/shared-types/src/payTermsPresets.ts), and its
+# values ARE the CA-style set this flow wants (weekly 40h ×1.5, daily OT after
+# 8h, double time after 12h ×2). The flow still retypes the daily tier fields
+# after applying it, so a preset that silently stopped populating them would
+# not be papered over by the assertion below.
+#
+# SCOPING NOTE — there is no `pay-setup-daily-overtime-multiplier-input`: daily
+# overtime is deliberately paid at the WEEKLY multiplier (see the comment in
+# PayTermsGroups.tsx above the daily threshold field). Nothing to set.
+appId: com.jetto.steadily.nanny
+tags:
+  - pay
+  - money
+---
+- runFlow: ../flows/login.yaml
+
+# No settings row deep-links to setup; the route is /settings/pay/setup/<carerId>.
+- openLink: steadilynanny:///(private)/settings/pay/setup/${PHASE4_NANNY_ID}
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'pay-setup-screen'
+
+# --- Hourly rate + backdated effective date ------------------------------
+- tapOn:
+    id: 'pay-setup-rate-input'
+- eraseText
+- inputText: ${PHASE4_HOURLY_RATE}
+- hideKeyboard
+- tapOn:
+    id: 'pay-setup-date-input'
+- eraseText
+- inputText: ${PHASE4_ARRANGEMENT_VALID_FROM}
+- hideKeyboard
+# Backdating is unbounded (only the 12-month FUTURE horizon is refused), so a
+# past date must show the hint and NOT the error — this asserts the difference.
+- assertVisible:
+    id: 'pay-setup-backdating-hint'
+- assertNotVisible:
+    id: 'pay-setup-date-error'
+
+# --- Overtime group: apply the preset behind the D-7 checkbox -------------
+# TermGroup only opens by default when the group already has a value, and a
+# first-ever arrangement has none — so open it, guarded so a re-render that
+# left it open does not get toggled shut.
+- runFlow:
+    when:
+      notVisible:
+        id: 'pay-setup-group-overtime-content'
+    commands:
+      - tapOn:
+          id: 'pay-setup-group-overtime'
+      - waitForAnimationToEnd
+- assertVisible:
+    id: 'pay-setup-group-overtime-content'
+
+- tapOn:
+    id: 'pay-setup-preset-button'
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'pay-preset-sheet'
+- assertVisible:
+    id: 'pay-preset-disclaimer'
+# D-7: the confirm is `disabled` until the liability box is checked AND its
+# onPress early-returns without it. Asserting the disabled state first is what
+# makes this a test of the gate rather than of the tap order.
+- assertVisible:
+    id: 'pay-preset-confirm'
+    enabled: false
+- tapOn:
+    id: 'pay-preset-checkbox'
+- tapOn:
+    id: 'pay-preset-confirm'
+- waitForAnimationToEnd
+- assertNotVisible:
+    id: 'pay-preset-sheet'
+- assertVisible:
+    id: 'pay-setup-preset-applied-note'
+
+# --- CA-style daily tiers, typed by hand ---------------------------------
+- tapOn:
+    id: 'pay-setup-overtime-threshold-input'
+- eraseText
+- inputText: '40'
+- hideKeyboard
+- tapOn:
+    id: 'pay-setup-overtime-multiplier-input'
+- eraseText
+- inputText: '1.5'
+- hideKeyboard
+- tapOn:
+    id: 'pay-setup-daily-overtime-threshold-input'
+- eraseText
+- inputText: '8'
+- hideKeyboard
+- tapOn:
+    id: 'pay-setup-doubletime-threshold-input'
+- eraseText
+- inputText: '12'
+- hideKeyboard
+- tapOn:
+    id: 'pay-setup-doubletime-multiplier-input'
+- eraseText
+- inputText: '2'
+- hideKeyboard
+- takeScreenshot: pay-setup-ca-overtime
+
+# --- Worked-holiday multiplier (flow 09 consumes this same arrangement) ---
+- runFlow:
+    when:
+      notVisible:
+        id: 'pay-setup-group-holidays-content'
+    commands:
+      - scrollUntilVisible:
+          element:
+            id: 'pay-setup-group-holidays'
+          direction: DOWN
+          timeout: 10000
+      - tapOn:
+          id: 'pay-setup-group-holidays'
+      - waitForAnimationToEnd
+- tapOn:
+    id: 'pay-setup-worked-holiday-multiplier-input'
+- eraseText
+- inputText: ${PHASE4_HOLIDAY_MULTIPLIER}
+- hideKeyboard
+
+# --- Save ----------------------------------------------------------------
+# `pay-setup-screen-cta` is derived inside SetupScreenShell (`${testID}-cta`),
+# label "Save pay terms". It is `disabled` whenever the form does not build a
+# valid request, so an enabled assertion here is a real precondition check.
+- assertVisible:
+    id: 'pay-setup-screen-cta'
+    enabled: true
+- tapOn:
+    id: 'pay-setup-screen-cta'
+- waitForAnimationToEnd
+# The screen only calls router.back() after the create mutation resolves, so
+# leaving it is the post-condition that the arrangement actually landed.
+- extendedWaitUntil:
+    notVisible:
+      id: 'pay-setup-screen'
+    timeout: 20000
+- takeScreenshot: pay-terms-saved
+
+# --- The overtime week now prices both daily tiers -----------------------
+- openLink: steadilynanny:///(private)/(tabs)/hours?weekStart=${PHASE4_OT_WEEK_START}
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'hours-screen'
+- assertVisible:
+    id: 'hours-active-week-${PHASE4_OT_WEEK_START}'
+- assertVisible:
+    id: 'hours-earnings-line'
+- tapOn:
+    id: 'hours-earnings-line-pressable'
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'hours-earnings-breakdown'
+# The two lines this whole flow exists for. Line slugs are hand-written per
+# `line.kind` in EarningsBreakdownSheet's switch — `overtime` and `doubletime`
+# happen to match their enum values, `holiday_premium` (flow 09) does not.
+- assertVisible:
+    id: 'hours-earnings-breakdown-line-overtime'
+- assertVisible:
+    id: 'hours-earnings-breakdown-line-doubletime'
+- assertVisible:
+    id: 'hours-earnings-breakdown-line-regular-0'
+- assertVisible:
+    id: 'hours-earnings-breakdown-total'
+- takeScreenshot: ca-overtime-week-breakdown

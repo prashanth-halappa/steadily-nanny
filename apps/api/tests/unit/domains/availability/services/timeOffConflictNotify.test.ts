@@ -27,6 +27,7 @@ const row: CarerTimeOff = {
 };
 
 let TimeOffCommandService: typeof import('../../../../../src/domains/availability/services/timeOffCommandService').TimeOffCommandService;
+let buildSickShiftsAffectedPush: typeof import('../../../../../src/domains/availability/services/timeOffCommandService').buildSickShiftsAffectedPush;
 
 beforeAll(async () => {
   mock.module('../../../../../src/domains/notification', () => ({
@@ -34,7 +35,7 @@ beforeAll(async () => {
     notifyUser: mock(() => undefined),
   }));
 
-  ({ TimeOffCommandService } = await import(
+  ({ TimeOffCommandService, buildSickShiftsAffectedPush } = await import(
     '../../../../../src/domains/availability/services/timeOffCommandService'
   ));
 });
@@ -358,6 +359,33 @@ describe('TimeOffCommandService — conflict push copy by kind', () => {
     const payload = pushFor(notify.mock.calls, 'hh-reyes');
     expect(payload.body).toContain('2 shifts');
     expect(payload.body).toContain('Tue 11 Aug');
+  });
+
+  // GOLDEN #25: `starts_at` serialisations mix — an offset form ('+02:00',
+  // or Postgres's '+00:00') alongside toISOString's '.000Z'. localeCompare
+  // orders the STRINGS, so an offset-serialised shift that is temporally
+  // earliest can rank last and N10's body names the wrong date.
+  it('names the earliest shift by instant, not by string, when serialisations mix', () => {
+    const push = buildSickShiftsAffectedPush('hh-reyes', [
+      {
+        id: 's-late',
+        household_id: 'hh-reyes',
+        starts_at: '2026-08-11T23:00:00.000Z',
+        local_date: '2026-08-11',
+        timezone: 'UTC',
+      },
+      {
+        // 22:30Z — the actual earliest, but '2026-08-12…' string-ranks last.
+        id: 's-early',
+        household_id: 'hh-reyes',
+        starts_at: '2026-08-12T00:30:00+02:00',
+        local_date: '2026-08-12',
+        timezone: 'Europe/Berlin',
+      },
+    ]);
+
+    expect(push.body).toContain('Wed 12 Aug');
+    expect(push.data?.localDate).toBe('2026-08-12');
   });
 
   it('a SICK time off overlapping NOTHING falls back to time_off_requested, as today', async () => {

@@ -83,6 +83,10 @@ interface PayChangeSheetProps {
   onDismiss: () => void;
   onSubmit: (input: CreatePayArrangementRequest) => void;
   isSubmitting: boolean;
+  /** The last submit's refusal, stated INSIDE the sheet: a toast (or an
+   * inline error behind it) is not visible under an open BottomSheetBase
+   * (GOLDEN-FIXES #40). */
+  submitError?: string | null;
   /** The sheet only ever adjusts an existing arrangement — the "first
    * arrangement ever" case is `PaySetupScreen`, a full screen, not this
    * sheet. Fields seed from this. */
@@ -209,6 +213,7 @@ export function PayChangeSheet({
   onDismiss,
   onSubmit,
   isSubmitting,
+  submitError = null,
   currentArrangement,
   householdCancellationDefaultHours,
   todayISO,
@@ -480,6 +485,14 @@ export function PayChangeSheet({
           />
         </View>
 
+        {submitError ? (
+          <Small
+            testID={`${testIDPrefix}-submit-error`}
+            className="text-destructive"
+          >
+            {submitError}
+          </Small>
+        ) : null}
         <LoadingButton
           testID={`${testIDPrefix}-submit`}
           label={submitLabel}

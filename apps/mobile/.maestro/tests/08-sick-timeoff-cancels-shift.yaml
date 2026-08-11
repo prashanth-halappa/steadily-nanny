@@ -1,0 +1,108 @@
+# Scenario — nanny books a SICK day over a booked shift (3-E3's sick label +
+# 3-T3's D-23: a sick day auto-opens a `cancel` change request against every
+# overlapping shift); the parent then finds that request on the shift, and the
+# S3 three-arm paid hint states what cancelling costs.
+#
+# Flow 06 covers plain time off through TimeOffRequestForm. This one is the
+# SICK path, which is a different code path entirely: one tap, today only,
+# all-day, no form, no date picker — which is also why this flow is NOT
+# tagged `manual` the way 06 is. There is nothing fuzzy to drive.
+#
+# Prerequisites: scripts/seed-e2e-approval-fixtures.ts (its fixture 1 is the
+# confirmed shift TODAY that the sick day overlaps) then
+# scripts/seed-phase4-fixtures.ts, which clears today's sick row, the change
+# requests it opened, and puts the shift back to `confirmed` so re-runs work.
+#
+# SCOPING NOTE — the S3 three-arm paid hint is NOT shown to the parent when
+# they RESPOND to a cancel request: `shift-change-accept-*` / `-decline-*` fire
+# the mutation immediately, with no dialog (ShiftDetailScreen's changes
+# section). The three-arm sentence lives in the parent's OWN cancel dialog
+# (`shift-detail-cancel-body`, one body assembled from CANCEL_PAY_KEY +
+# `detail.cancelNeedsAccept`). So this flow asserts the auto-opened request via
+# the response affordances, and asserts the paid-hint copy by opening — and
+# then dismissing — the parent's cancel dialog on the same shift. It never
+# confirms that second request; the shipped dialog is what is under test, not a
+# second cancellation.
+#
+# SCOPING NOTE — there is no sick reason/label PICKER anywhere in the app.
+# `TimeOffRequestForm` has no `kind` field at all; `kind: 'sick'` comes only
+# from SickTimeOffButton. The "sick label" assertion is therefore the badge
+# `time-off-kind-sick-<id>` on the resulting row.
+appId: com.jetto.steadily.nanny
+tags:
+  - scheduling
+  - timeoff
+---
+# --- Nanny: book a sick day over today's confirmed shift ------------------
+- runFlow: ../flows/login-nanny.yaml
+- tapOn:
+    id: 'tab-settings'
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'settings-screen'
+- tapOn:
+    id: 'settings-request-time-off'
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'time-off-screen'
+- tapOn:
+    id: 'time-off-sick-today'
+- waitForAnimationToEnd
+# Confirm dialog title/body carry no testID — visible text is the handle.
+# (en/timeOff.json: sick.confirmTitle / sick.confirmBody)
+- assertVisible: 'Book a sick day?'
+- assertVisible: 'The family will be notified. This books today off as a sick day.'
+- tapOn:
+    id: 'time-off-sick-confirm'
+- waitForAnimationToEnd
+- assertNotVisible:
+    id: 'time-off-sick-confirm'
+# The sick BADGE is the label assertion. Row id carries a server-generated
+# uuid, so the id is matched as a regex on its stable prefix.
+- assertVisible:
+    id: 'time-off-kind-sick-.*'
+- takeScreenshot: nanny-sick-day-booked
+
+# --- Parent: the auto-opened cancel request on today's shift --------------
+# Pop back to a tab first: /(private)/settings/time-off is outside (tabs), and
+# logout.yaml is gated on `tab-settings` being visible, so it would silently
+# no-op here and the parent leg would run as the nanny (flow 06's lesson).
+- back
+- waitForAnimationToEnd
+- runFlow: ../flows/logout.yaml
+- runFlow: ../flows/login.yaml
+- openLink: steadilynanny:///(private)/schedule/shifts/${PHASE4_TODAY_SHIFT_ID}
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'shift-detail-screen'
+# D-23's actual product claim: a sick day did not just write a note, it opened
+# a request the parent has to answer. The changes section only renders when at
+# least one change request exists, so this is not tautological.
+- assertVisible:
+    id: 'shift-detail-changes'
+- assertVisible:
+    id: 'shift-change-accept-.*'
+- assertVisible:
+    id: 'shift-change-decline-.*'
+# TODO(testid): the kind ("cancellation") and status labels inside each change
+# request card have no testID (ShiftDetailScreen.tsx, the two <Body>/<Small>
+# above `shift-change-raised-by-*`). Matching them by visible text would pin
+# i18n copy, so the response affordances above stand in for "it is a cancel".
+- takeScreenshot: parent-sees-sick-cancel-request
+
+# --- Parent: the S3 three-arm paid hint ----------------------------------
+- tapOn:
+    id: 'shift-detail-cancel'
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'shift-detail-cancel-body'
+# S14 — every variant of the body ends with this clause, because the button
+# opens a REQUEST and a dialog that reads like the shift is already cancelled
+# would misrepresent it.
+- assertVisible: 'has to accept the cancellation before it'
+- takeScreenshot: parent-cancel-paid-hint
+- tapOn:
+    id: 'shift-detail-cancel-dismiss'
+- waitForAnimationToEnd
+- assertNotVisible:
+    id: 'shift-detail-cancel-body'

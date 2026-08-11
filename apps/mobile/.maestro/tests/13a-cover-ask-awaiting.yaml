@@ -1,0 +1,59 @@
+# Scenario (part A of 3) — an outstanding cover ask shows the nanny that she
+# is the one being waited on, and states the M21 deadline.
+#
+# Split from 13b because the driver has to run the expiry job BETWEEN them:
+#   run-phase4.sh → 13a → curl POST /api/jobs/cover-ask-expiry → 13b.
+# Nothing in the app expires an ask; `coverAskExpiryJob` does, and it is the
+# thing under test as much as the screen is.
+#
+# Prerequisites: scripts/seed-phase4-fixtures.ts seeds two `pending`
+# `kind: 'cover'` shifts for TOMORROW —
+#   PHASE4_EXPIRED_ASK_SHIFT_ID  `cover_ask_expires_at` one hour in the PAST
+#   PHASE4_DECLINE_ASK_SHIFT_ID  deadline 12 hours out, so the job leaves it
+#                                alone and 13b can decline it
+# The column is computed server-side at ask time (`min(created_at + 48h,
+# starts_at - 4h)`, migration 088) and cannot be backdated through the API, so
+# a past deadline is only reachable SQL-side.
+#
+# ROLE NOTE — this is the NANNY's screen, not the parent's. Every cover-ask
+# state on ShiftDetailScreen (`shift-detail-answer-by`, `-ask-expired`,
+# `-ask-withdrawn`) is gated on `isAssignedCarer`; a parent opening the same
+# shift sees none of them. The parent-side view of the same fact is flow 13b's
+# last leg.
+appId: com.jetto.steadily.nanny
+tags:
+  - scheduling
+  - coverask
+---
+- runFlow: ../flows/login-nanny.yaml
+
+# Same route the cover-ask push / inbox row opens.
+- openLink: steadilynanny:///(private)/schedule/shifts/${PHASE4_EXPIRED_ASK_SHIFT_ID}
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'shift-detail-screen'
+# Still awaiting HER answer: pending status plus the accept/decline pair, which
+# only render for the assigned carer on a pending shift.
+- assertVisible:
+    id: 'shift-detail-status-pending'
+- assertVisible:
+    id: 'shift-detail-accept'
+- assertVisible:
+    id: 'shift-detail-decline'
+# M21 — byte-identical to the inbox item's second clause, from one i18n key
+# (`inbox:items.pendingShift.deadline`). Renders only when the shift is pending
+# AND `cover_ask_expires_at` is non-null, so it is a real check on the column.
+- assertVisible:
+    id: 'shift-detail-answer-by'
+- assertNotVisible:
+    id: 'shift-detail-ask-expired'
+- takeScreenshot: nanny-cover-ask-awaiting
+
+# The second ask, so 13b can prove the job expired one and not the other.
+- openLink: steadilynanny:///(private)/schedule/shifts/${PHASE4_DECLINE_ASK_SHIFT_ID}
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'shift-detail-status-pending'
+- assertVisible:
+    id: 'shift-detail-answer-by'
+- takeScreenshot: nanny-second-cover-ask-awaiting

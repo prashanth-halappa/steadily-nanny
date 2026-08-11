@@ -1,0 +1,160 @@
+# Scenario — 3-T2's money-integrity loop on an approved week: parent records a
+# payment, corrects it, and both rows stay visible with signed amounts and an
+# honest balance; then the week export surface opens.
+#
+# ORDERING — this flow consumes the week flow 11 approves. It must run AFTER
+# 11 (and after 07, which is what puts a priced arrangement over the seed week
+# — with no gross there is no balance, and `hours-mark-paid-button` renders
+# only when `isApproved && !readOnly && balanceMinor > 0`).
+# scripts/seed-phase4-fixtures.ts deletes this week's payments on every seed,
+# so the ledger starts empty each run.
+#
+# Payments are append-only: a correction is a second row with a NEGATIVE
+# amount, never an edit (migration 085). That is exactly what the two-row
+# assertion below is for.
+#
+# SCOPING NOTE — the export CANNOT be verified past the in-app sheet.
+# `WeekExportAction` writes a temp file and calls `Sharing.shareAsync`
+# (timesheet/utils/weekExport.ts): success produces no toast, no modal and no
+# in-app state change, only the OS share sheet, which is outside the app's view
+# hierarchy. This flow therefore asserts the export SHEET and both of its
+# options and stops there — it deliberately does not tap `hours-export-csv`,
+# because a native share sheet left open strands the simulator for every flow
+# after this one (GOLDEN-FIXES #1's class of problem). Verifying the produced
+# CSV/PDF belongs in `weekExport`'s unit tests, not here.
+appId: com.jetto.steadily.nanny
+tags:
+  - money
+---
+- runFlow: ../flows/login.yaml
+- openLink: steadilynanny:///(private)/(tabs)/hours?weekStart=${PHASE4_SEED_WEEK_START}
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'hours-screen'
+- assertVisible:
+    id: 'hours-active-week-${PHASE4_SEED_WEEK_START}'
+# Approved-only section; its presence is the precondition check that flow 11
+# actually approved this week.
+- assertVisible:
+    id: 'hours-paid-state'
+- assertVisible:
+    id: 'hours-paid-state-empty'
+
+# --- Record a partial payment -------------------------------------------
+# Partial on purpose: a full settlement takes `balanceMinor` to 0, which
+# un-renders both `hours-mark-paid-button` and `hours-paid-state-balance` and
+# would make the balance assertion below vacuous.
+- tapOn:
+    id: 'hours-mark-paid-button'
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'hours-record-payment-sheet'
+- tapOn:
+    id: 'hours-record-payment-amount-input'
+- eraseText
+- inputText: '40.00'
+- hideKeyboard
+- tapOn:
+    id: 'hours-record-payment-date-chip-today'
+- tapOn:
+    id: 'hours-record-payment-method-input'
+- inputText: 'Bank transfer'
+- hideKeyboard
+- assertNotVisible:
+    id: 'hours-record-payment-overpayment-error'
+- tapOn:
+    id: 'hours-record-payment-submit'
+- waitForAnimationToEnd
+- assertNotVisible:
+    id: 'hours-record-payment-sheet'
+- assertNotVisible:
+    id: 'hours-paid-state-empty'
+- takeScreenshot: payment-recorded
+
+# --- Correct it ----------------------------------------------------------
+# Payment ids are server-generated, so the row is addressed by the stable
+# prefix of its testID as a regex.
+- tapOn:
+    id: 'hours-paid-state-line-.*-open'
+- waitForAnimationToEnd
+# PaymentDetailSheet's root takes the bare testID (`payments-detail`), unlike
+# RecordPaymentSheet / PaymentCorrectionSheet which derive `${testID}-sheet`.
+- assertVisible:
+    id: 'payments-detail'
+- assertVisible:
+    id: 'payments-detail-append-only'
+# The parent's correction trigger ("Correct this payment"). NOT the nanny's
+# `payments-detail-flag` ("This doesn't look right"), which opens a thread
+# message rather than a ledger row — same wording family, different action.
+- tapOn:
+    id: 'payments-detail-correct'
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'hours-correct-payment-sheet'
+- assertVisible:
+    id: 'hours-correct-payment-original'
+# The sheet pre-seeds the full original; a partial reversal is the harder case
+# (it must not exceed the original, and it leaves a residue on the ledger).
+- tapOn:
+    id: 'hours-correct-payment-amount-input'
+- eraseText
+- inputText: '15.00'
+- hideKeyboard
+- tapOn:
+    id: 'hours-correct-payment-reason-input'
+- inputText: 'Sent 15 too much by mistake'
+- hideKeyboard
+- assertNotVisible:
+    id: 'hours-correct-payment-amount-error'
+- tapOn:
+    id: 'hours-correct-payment-submit'
+- waitForAnimationToEnd
+- assertNotVisible:
+    id: 'hours-correct-payment-sheet'
+
+# Both rows, and the correction indented under the row it reverses. The
+# correction wrapper id only exists for `kind === 'correction'` rows, so this
+# is the append-only claim made testable.
+- assertVisible:
+    id: 'hours-paid-state-correction-.*'
+- assertVisible:
+    id: 'hours-paid-state-total'
+# Honest balance: 40 paid, 15 reversed ⇒ 25 against the week's gross, so the
+# balance line must still be there (it renders only when `balanceMinor > 0`).
+- assertVisible:
+    id: 'hours-paid-state-balance'
+- takeScreenshot: payment-corrected-ledger
+
+# --- The ledger screen shows both rows too -------------------------------
+- tapOn:
+    id: 'hours-payments-link'
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'payments-screen'
+- assertVisible:
+    id: 'payments-list'
+- assertVisible:
+    id: 'payments-row-.*'
+- takeScreenshot: payments-ledger
+- tapOn:
+    id: 'payments-back'
+- waitForAnimationToEnd
+
+# --- Export surface ------------------------------------------------------
+- assertVisible:
+    id: 'hours-screen'
+- tapOn:
+    id: 'hours-export-button'
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'hours-export-sheet'
+- assertVisible:
+    id: 'hours-export-csv'
+- assertVisible:
+    id: 'hours-export-pdf'
+- takeScreenshot: week-export-sheet
+# Deliberately NOT tapping an option — see the SCOPING NOTE in the header.
+- back
+- waitForAnimationToEnd
+- assertNotVisible:
+    id: 'hours-export-sheet'

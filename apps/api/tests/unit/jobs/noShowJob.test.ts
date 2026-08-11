@@ -554,14 +554,27 @@ describe('DefaultNoShowTimeEntryLister — voided entries are not coverage (069)
     data: unknown;
     error: unknown;
   }): any {
+    // D53-honest fake: `.neq` filters the rows the way the real client does,
+    // so the voided exclusion is exercised through the QUERY — production has
+    // no JS post-filter to lean on.
+    let rows = finalResponse.data;
     const chain: any = {
       select: mock(() => chain),
       eq: mock(() => chain),
-      neq: mock(() => chain),
+      neq: mock((column: string, value: unknown) => {
+        if (Array.isArray(rows)) {
+          rows = rows.filter(
+            (row: Record<string, unknown>) => row[column] !== value
+          );
+        }
+        return chain;
+      }),
       or: mock(() => chain),
       // biome-ignore lint/suspicious/noThenProperty: intentional thenable for the mock
       then: (resolve: (value: unknown) => unknown) =>
-        Promise.resolve(finalResponse).then(resolve),
+        Promise.resolve({ data: rows, error: finalResponse.error }).then(
+          resolve
+        ),
     };
     return chain;
   }

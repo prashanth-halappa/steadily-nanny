@@ -343,6 +343,33 @@ describe('PayArrangementScreen', () => {
     );
   });
 
+  // GOLDEN #40: the failed save renders INSIDE the still-open sheet — a
+  // toast fired behind it is invisible.
+  it('a failed save reports itself INSIDE the change sheet', async () => {
+    payCurrentMock.mockImplementation(() =>
+      Promise.resolve(arrangementFor(NANNY_A_ID))
+    );
+    payCreateMock.mockImplementation(() =>
+      Promise.reject(new Error('offline'))
+    );
+
+    const { getByTestId } = renderWithProviders(<PayArrangementScreen />);
+
+    await waitFor(() =>
+      expect(getByTestId('pay-change-terms-button')).toBeTruthy()
+    );
+    fireEvent.press(getByTestId('pay-change-terms-button'));
+
+    await waitFor(() => expect(getByTestId('pay-change-submit')).toBeTruthy());
+    fireEvent.press(getByTestId('pay-change-submit'));
+
+    await waitFor(() =>
+      expect(getByTestId('pay-change-submit-error').props.children).toBe(
+        'changeSheet.saveFailed'
+      )
+    );
+  });
+
   it('no nanny in the household: shows the "No nanny yet" empty state routing to invite', async () => {
     listMembersMock.mockImplementation(() => Promise.resolve([]));
 

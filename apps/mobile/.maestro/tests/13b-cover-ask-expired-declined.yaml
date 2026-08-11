@@ -1,0 +1,93 @@
+# Scenario (parts B and C of 3) — after the expiry job runs, the expired ask
+# reads as expired to the nanny; the ask with a live deadline is untouched and
+# she declines it; the parent then sees the declined shift.
+#
+# The driver runs `POST /api/jobs/cover-ask-expiry` (header `x-job-api-key`,
+# `JOB_API_KEY`) between 13a and this file. The job CAS's the pending shift to
+# `cancelled` with `cancelled_at` = the deadline instant and `cancelled_by`
+# NULL — deliberately null, because an expiry is not a withdrawal, and that
+# null is exactly what `isAskExpired` keys off to tell the two apart.
+# There is no `'expired'` shift status.
+#
+# SCOPING NOTE — "handed back" does not exist in this codebase, and the
+# parent-side alarm this scenario wants (`today-coverage-gap-card`) is not
+# reachable here for two reasons: TodayCoverage is TODAY-only while these asks
+# are seeded for TOMORROW (they have to be — `seed-e2e-approval-fixtures.ts`
+# looks its today-shift up with `.maybeSingle()` on `local_date`, which throws
+# the moment a second shift shares that date), and the uncovered-care banner
+# needs `child_commitments` need windows this household does not have
+# (docs/12-NEED-COVERAGE.md). The parent-side leg below asserts the fact that
+# IS on screen — the shift reads declined — rather than a coverage card that
+# would never render.
+#
+# SCOPING NOTE — there is no "pick next step" copy on shift detail for either
+# state. Expiry only removes the counter form (ShiftDetailScreen's comment
+# above `shift-detail-counter-form`); the next-step affordances
+# (`today-coverage-ask-cover`, `today-coverage-ask-someone-else`) live on the
+# parent's Today card, behind the same uncovered-care gate above.
+appId: com.jetto.steadily.nanny
+tags:
+  - scheduling
+  - coverask
+---
+# --- B: the expired ask ---------------------------------------------------
+- runFlow: ../flows/login-nanny.yaml
+- openLink: steadilynanny:///(private)/schedule/shifts/${PHASE4_EXPIRED_ASK_SHIFT_ID}
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'shift-detail-screen'
+- assertVisible:
+    id: 'shift-detail-status-cancelled'
+# Expired, not withdrawn. Both states arrive at `cancelled`; only
+# `cancelled_by IS NULL` plus a past deadline reads as expired, so asserting
+# the withdrawn line is ABSENT is what separates them.
+- assertVisible:
+    id: 'shift-detail-ask-expired'
+- assertNotVisible:
+    id: 'shift-detail-ask-withdrawn'
+# The counter form is withdrawn along with the ask — there is nothing left to
+# answer, and offering an answer box would be a lie.
+- assertNotVisible:
+    id: 'shift-detail-counter-form'
+- assertNotVisible:
+    id: 'shift-detail-accept'
+- takeScreenshot: nanny-cover-ask-expired
+
+# --- C: the ask with a live deadline survived, and she declines it --------
+- openLink: steadilynanny:///(private)/schedule/shifts/${PHASE4_DECLINE_ASK_SHIFT_ID}
+- waitForAnimationToEnd
+# Untouched by the sweep — the job must expire deadlines that have passed and
+# nothing else.
+- assertVisible:
+    id: 'shift-detail-status-pending'
+- assertVisible:
+    id: 'shift-detail-answer-by'
+- tapOn:
+    id: 'shift-detail-decline'
+- waitForAnimationToEnd
+# Dialog title/body carry no testID (en/today.json shiftDetail.decline*).
+- assertVisible: 'Decline this shift?'
+- tapOn:
+    id: 'shift-detail-decline-confirm'
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'shift-detail-status-declined'
+- assertNotVisible:
+    id: 'shift-detail-decline'
+- takeScreenshot: nanny-declined-cover-ask
+
+# --- Parent: the declined ask -------------------------------------------
+- runFlow: ../flows/logout.yaml
+- runFlow: ../flows/login.yaml
+- openLink: steadilynanny:///(private)/schedule/shifts/${PHASE4_DECLINE_ASK_SHIFT_ID}
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'shift-detail-screen'
+- assertVisible:
+    id: 'shift-detail-status-declined'
+# TODO(testid): no parent-facing "she can't cover this one — pick a next step"
+# element exists on shift detail. The nearest copy is TodayCoverage's
+# `cover.causeAsk` declined variant, which has no testID at all (the <Small>
+# holding `causeLine` carries only a React `key`) and needs the uncovered-care
+# fixture this flow does not have. Reported, not worked around.
+- takeScreenshot: parent-sees-declined-cover-ask

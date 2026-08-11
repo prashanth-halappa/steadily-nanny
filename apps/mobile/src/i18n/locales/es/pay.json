@@ -116,7 +116,8 @@
     "noteLabel": "Nota (opcional)",
     "notePlaceholder": "p. ej. Revisión anual",
     "submitButton": "Establecer nuevas condiciones",
-    "savedToast": "Nuevas condiciones guardadas"
+    "savedToast": "Nuevas condiciones guardadas",
+    "saveFailed": "No se pudo guardar. Comprueba tu conexión e inténtalo de nuevo."
   },
   "termGroups": {
     "heading": "El resto del acuerdo",
@@ -306,6 +307,7 @@
     "counterButton": "Sugerir cambios",
     "reviewButton": "Revisar estas condiciones",
     "suggestChangeButton": "Sugerir un cambio",
+    "sendFailed": "No se pudo enviar. Comprueba tu conexión e inténtalo de nuevo.",
     "withdrawButton": "Retirar",
     "openRowTitle": "Condiciones propuestas por {{name}}",
     "state": {

@@ -1,0 +1,91 @@
+# Scenario — 3-O §8.2 absorption: a nanny's draft invite code redeemed by a
+# parent who ALREADY has a live household adds her to that household instead of
+# instantiating a new one, with her terms proposal left pending.
+#
+# The branch under test is one condition in CodeEntryScreen: the absorption
+# sheet opens when `preview.household_state === 'draft' && liveHouseholds.length
+# > 0`. Flow 14 walks the other arm of the same branch (no live household ⇒ no
+# sheet), which is why both exist.
+#
+# Prerequisites: scripts/seed-phase4-fixtures.ts seeds a SECOND draft household
+# with its own fresh nanny author and its own pending code
+# (PHASE4_DRAFT_CODE_B). See flow 14's header for why the draft is seeded
+# SQL-side rather than authored in-app — `/onboarding/terms` does not exist.
+#
+# Redeemer is the EXISTING seed parent, who owns "Our household". Entry is the
+# settings variant of CodeEntryScreen (`/settings/join-household`), which has
+# no `name-input` — the wizard variant's name field is skipped for someone the
+# app already knows.
+#
+# SCOPING NOTE — this flow stops at "proposal pending" and never accepts.
+# Accepting would create a live arrangement for a throwaway nanny inside the
+# shared seed household, which every money flow above reads. The absorption
+# outcome (a `candidate` membership plus an open proposal, per migration 093's
+# household_members status and 092's one-open-proposal index) is the claim; the
+# acceptance path is already covered by flow 14.
+appId: com.jetto.steadily.nanny
+tags:
+  - onboarding
+---
+- runFlow: ../flows/login.yaml
+
+# Settings variant, not the wizard: this parent is already onboarded.
+- openLink: steadilynanny:///(private)/settings/join-household
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'code-screen'
+- tapOn:
+    id: 'code-input'
+- inputText: ${PHASE4_DRAFT_CODE_B}
+- hideKeyboard
+- tapOn:
+    id: 'code-screen-cta'
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'code-preview-card'
+- assertNotVisible:
+    id: 'code-error'
+- tapOn:
+    id: 'code-screen-cta'
+- waitForAnimationToEnd
+
+# --- The absorption fork ------------------------------------------------
+- assertVisible:
+    id: 'absorption-sheet'
+- assertVisible:
+    id: 'absorption-sheet-title'
+# TODO(testid): the sheet BODY has no testID — it is the sentence that makes
+# the promise ("they can't see your family's schedule or details until then"),
+# and it is the part of this dialog most worth pinning. Matched on a stable
+# fragment of the visible text instead.
+- assertVisible: "can't see your family's schedule or details until then"
+# The household picker only renders when the redeemer has TWO OR MORE live
+# households; this parent has one, so a single-household redeemer must get no
+# choice to make.
+- assertNotVisible:
+    id: 'absorption-household-picker'
+- takeScreenshot: absorption-dialog
+- tapOn:
+    id: 'absorption-confirm-button'
+- waitForAnimationToEnd
+- assertNotVisible:
+    id: 'absorption-sheet'
+
+# --- Her proposal is now pending in the live household -------------------
+# "You'll review them next" is the sheet's own promise; the review screen
+# opening is that promise kept, and it is also the only on-screen evidence the
+# membership landed with terms still open.
+- extendedWaitUntil:
+    visible:
+      id: 'proposal-review-screen'
+    timeout: 25000
+- assertVisible:
+    id: 'proposal-rate'
+- assertVisible:
+    id: 'proposal-agree-button'
+- takeScreenshot: absorbed-proposal-pending
+
+# Deliberately not accepting — see the SCOPING NOTE in the header.
+- tapOn:
+    id: 'proposal-back'
+- waitForAnimationToEnd

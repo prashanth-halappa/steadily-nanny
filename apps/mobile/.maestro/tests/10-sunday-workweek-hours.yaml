@@ -1,0 +1,77 @@
+# Scenario — a household whose pay week starts on SUNDAY anchors the Hours
+# week on a Sunday date, and the same parent switching between households gets
+# a different week boundary in each.
+#
+# `households.week_starts_on` (migration 075; 0=Sunday..6=Saturday, default 1)
+# has NO UI writer anywhere in the app — every week boundary in the API is
+# resolved from it (`timesheet/utils/weekStart.ts`, `weekBoundary.ts`,
+# `payPeriod.ts`, the earnings and expense services), but nothing lets a family
+# choose. So the second household is seeded SQL-side by
+# scripts/seed-phase4-fixtures.ts with `week_starts_on = 0`, the seed parent as
+# owner and the seed nanny as carer, plus an arrangement and one worked entry
+# on PHASE4_SUNDAY_WEEK_START (2026-01-04, a Sunday).
+#
+# The switcher itself is the second thing under test: HouseholdSwitcher renders
+# `null` when the user belongs to one household, so this flow is only
+# meaningful because the parent now belongs to two.
+appId: com.jetto.steadily.nanny
+tags:
+  - timesheet
+  - money
+---
+- runFlow: ../flows/login.yaml
+
+# The switcher self-renders in the Settings household section, the Today
+# header, and the Payments header — no props, no route of its own.
+- tapOn:
+    id: 'tab-settings'
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'settings-screen'
+- assertVisible:
+    id: 'household-switcher-trigger'
+- tapOn:
+    id: 'household-switcher-trigger'
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'household-switcher-sheet'
+- tapOn:
+    id: 'household-switcher-option-${PHASE4_SUNDAY_HOUSEHOLD_ID}'
+- waitForAnimationToEnd
+- assertNotVisible:
+    id: 'household-switcher-sheet'
+- takeScreenshot: switched-to-sunday-household
+
+# --- Hours in the Sunday-anchored household ------------------------------
+- openLink: steadilynanny:///(private)/(tabs)/hours?weekStart=${PHASE4_SUNDAY_WEEK_START}
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'hours-screen'
+# The marker HoursScreen exposes after consuming `weekStart` (same handle flow
+# 05 regresses). A Sunday ISO resolving to itself is the whole claim: with the
+# default Monday anchor, `weekStartOfLocalDate` would round 2026-01-04 back to
+# 2025-12-29 and this id would never appear.
+- assertVisible:
+    id: 'hours-active-week-${PHASE4_SUNDAY_WEEK_START}'
+- assertVisible:
+    id: 'hours-week-label'
+# ...and the seeded entry lands inside that Sunday-anchored week rather than
+# the previous one.
+- assertVisible:
+    id: 'hours-day-${PHASE4_SUNDAY_WEEK_START}'
+- takeScreenshot: sunday-workweek-hours
+
+# --- Switch back, so the batch leaves the parent where it found them ------
+- tapOn:
+    id: 'tab-settings'
+- waitForAnimationToEnd
+- tapOn:
+    id: 'household-switcher-trigger'
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'household-switcher-sheet'
+- tapOn:
+    id: 'household-switcher-option-${PHASE4_HOUSEHOLD_ID}'
+- waitForAnimationToEnd
+- assertNotVisible:
+    id: 'household-switcher-sheet'

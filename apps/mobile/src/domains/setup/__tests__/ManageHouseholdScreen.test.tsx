@@ -441,14 +441,18 @@ describe('ManageHouseholdScreen', () => {
 
     fireEvent.press(getByTestId('household-jurisdiction-trigger'));
     await waitFor(() =>
-      expect(getByTestId('jurisdiction-picker-sheet').props.visible).toBe(true)
+      expect(getByTestId('jurisdiction-picker-sheet-modal').props.visible).toBe(
+        true
+      )
     );
     fireEvent.press(getByTestId('jurisdiction-option-CA'));
     // `BottomSheetBase` (a real RN `Modal`) stays mounted with `visible: false`
     // rather than unmounting — same as `TimezonePickerSheet` — so the
     // dismissal check reads the prop, not presence in the tree.
     await waitFor(() =>
-      expect(getByTestId('jurisdiction-picker-sheet').props.visible).toBe(false)
+      expect(getByTestId('jurisdiction-picker-sheet-modal').props.visible).toBe(
+        false
+      )
     );
 
     fireEvent.press(getByTestId('manage-household-screen-cta'));

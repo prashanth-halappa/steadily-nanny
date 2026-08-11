@@ -1,13 +1,13 @@
 # Smoke — launches the app and asserts the (unauthenticated) welcome wall.
-# clearState: true so a prior session cannot skip past welcome.
+# Uses reset-to-welcome (signs out any live session) instead of clearState:
+# clearState re-arms the dev client's one-time intro sheet, which then pops
+# over a LATER flow and swallows its deep links (Phase 4 suite wipeout ×2).
 # Prefer testID over translated copy (docs/09-TESTING.md §7).
 appId: com.jetto.steadily.nanny
 tags:
   - critical
 ---
-- launchApp:
-    clearState: true
-- waitForAnimationToEnd
+- runFlow: ../flows/reset-to-welcome.yaml
 - assertVisible:
     id: 'welcome-screen'
 - takeScreenshot: smoke-welcome

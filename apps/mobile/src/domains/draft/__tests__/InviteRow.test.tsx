@@ -78,13 +78,19 @@ describe('InviteRow', () => {
     const { getByTestId } = renderRow();
 
     // Sheets stay mounted and flip `visible` (the PayChangeSheet convention),
-    // so the closed state is asserted on the prop, not on absence.
-    expect(getByTestId('draft-invite-menu-sheet').props.visible).toBe(false);
+    // so the closed state is asserted on the prop, not on absence. That prop
+    // lives on the `-modal` node — the bare testID sits on the sheet card,
+    // which is the only one an iOS accessibility tree can see.
+    expect(getByTestId('draft-invite-menu-sheet-modal').props.visible).toBe(
+      false
+    );
     const more = getByTestId('draft-invite-more');
     expect(more.props.hitSlop).toBeTruthy();
 
     fireEvent.press(more);
-    expect(getByTestId('draft-invite-menu-sheet').props.visible).toBe(true);
+    expect(getByTestId('draft-invite-menu-sheet-modal').props.visible).toBe(
+      true
+    );
   });
 
   it('offers copy, share again and stop this link', () => {
@@ -102,12 +108,14 @@ describe('InviteRow', () => {
     fireEvent.press(getByTestId('draft-invite-stop'));
 
     expect(props.onRevoke).not.toHaveBeenCalled();
-    expect(getByTestId('draft-invite-stop-confirm-sheet').props.visible).toBe(
-      true
-    );
+    expect(
+      getByTestId('draft-invite-stop-confirm-sheet-modal').props.visible
+    ).toBe(true);
     // One sheet at a time — BottomSheetBase enforces mutual exclusion, and
     // two open sheets would fight over the store's activeSheetId.
-    expect(getByTestId('draft-invite-menu-sheet').props.visible).toBe(false);
+    expect(getByTestId('draft-invite-menu-sheet-modal').props.visible).toBe(
+      false
+    );
 
     fireEvent.press(getByTestId('draft-invite-stop-confirm'));
     expect(props.onRevoke).toHaveBeenCalledTimes(1);

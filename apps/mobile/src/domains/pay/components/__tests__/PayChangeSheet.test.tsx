@@ -114,6 +114,22 @@ describe('PayChangeSheet', () => {
     );
   });
 
+  // GOLDEN #40: the caller's failed write is stated INSIDE the sheet — a
+  // toast (or an inline error behind it) is invisible under the open sheet.
+  it('renders the caller-supplied submitError inline above the submit button', () => {
+    const { getByTestId } = renderSheet({ submitError: "That didn't send." });
+
+    expect(getByTestId('pay-change-submit-error').props.children).toBe(
+      "That didn't send."
+    );
+  });
+
+  it('renders no error row when there is no submitError', () => {
+    const { queryByTestId } = renderSheet();
+
+    expect(queryByTestId('pay-change-submit-error')).toBeNull();
+  });
+
   // D-16 reverses the old rule this test used to encode ("never submits a
   // future date — there is no way to select one"). A scheduled raise is the
   // normal case now; only the 12-month horizon bounds it.
@@ -675,8 +691,9 @@ describe('PayChangeSheet', () => {
 
       // `BottomSheetBase` is a `Modal`, which keeps its host node in the tree
       // and flips `visible` — so the closed sheet is asserted on the prop, not
-      // on the node's absence.
-      expect(getByTestId('pay-preset-sheet').props.visible).toBe(false);
+      // on the node's absence. The prop lives on the `-modal` node; the bare
+      // testID is on the sheet card, the only node an iOS a11y tree exposes.
+      expect(getByTestId('pay-preset-sheet-modal').props.visible).toBe(false);
       expect(
         getByTestId('pay-change-daily-overtime-threshold-input').props.value
       ).toBe('');

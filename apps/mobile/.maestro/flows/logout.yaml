@@ -4,20 +4,36 @@
 # Assumes an authenticated session (tabs visible). No-op if already on welcome.
 appId: com.jetto.steadily.nanny
 ---
-# The tab wrapper's testID stopped surfacing to the accessibility tree after
-# the Phase 3 tab-layout changes (Maestro sees the icon ids, not `tab-*`).
-# Guard + tap on the visible label instead; testID surfacing is a Phase 4
-# punch-list item — restore id-based selection when it's fixed.
+# The notification soft-ask sheet ("Stay in the loop") can pop over any
+# signed-in screen once its snoozed state is wiped; it blocks every selector
+# under it. Dismiss before touching the tab bar.
 - runFlow:
     when:
       visible:
-        text: 'Settings'
+        text: 'Maybe later'
     commands:
       - tapOn:
-          text: 'Settings'
+          text: 'Maybe later'
+      - waitForAnimationToEnd
+
+- runFlow:
+    when:
+      visible:
+        id: 'tab-settings'
+    commands:
+      - tapOn:
+          id: 'tab-settings'
       - waitForAnimationToEnd
       - assertVisible:
           id: 'settings-screen'
+      - runFlow:
+          when:
+            visible:
+              text: 'Maybe later'
+          commands:
+            - tapOn:
+                text: 'Maybe later'
+            - waitForAnimationToEnd
       - scrollUntilVisible:
           element:
             id: 'settings-sign-out'
