@@ -29,13 +29,25 @@
  *
  *      ,Adjustment: <note>,adjustment,,,<signed amount_minor>,<currency>
  *
- *    `kind` is `adjustment` — the ONE value in that column that is not an
+ *    `kind` is `adjustment` — a value in that column that is not an
  *    `EARNINGS_LINE_KINDS` member, because the adjustment is deliberately not
- *    a line kind (see `timesheet.schema.ts`). It is the only record whose
- *    `amount_minor` may be NEGATIVE, and its `date`, `minutes` and
- *    `rate_minor` are EMPTY rather than `0`: it is money, not time, and a `0`
- *    rate would read as "priced at nothing". `total_gross_minor` already
- *    includes it — the frozen gross was written adjusted.
+ *    a line kind (see `timesheet.schema.ts`). Its `amount_minor` may be
+ *    NEGATIVE, and its `date`, `minutes` and `rate_minor` are EMPTY rather
+ *    than `0`: it is money, not time, and a `0` rate would read as "priced at
+ *    nothing". `total_gross_minor` already includes it — the frozen gross was
+ *    written adjusted.
+ *
+ *    Then, LAST in the line section, ONE record per settlement row recorded
+ *    against this week — every `payment` and every `correction` (D-20):
+ *
+ *      <paid_at>,Payment: <method_note>,payment,,,<amount_minor>,<currency>
+ *      <paid_at>,Correction: <reason>,correction,,,<-amount_minor>,<currency>
+ *
+ *    `minutes` and `rate_minor` are EMPTY for the adjustment's reason, and a
+ *    correction's `amount_minor` is negative. `Payment` appears alone when the
+ *    parent recorded no method note. These records are money OUT, not earnings,
+ *    and are NOT in `total_gross_minor` — see the warning about summing the
+ *    `amount_minor` column.
  *
  *    | column        | value                                                  |
  *    |---------------|--------------------------------------------------------|
@@ -54,7 +66,7 @@
  *    |---------------------|--------------------------------------------------|
  *    | total_gross_minor   | wages only — the sum of every non-reimbursement line |
  *    | reimbursements_minor| summed apart, NEVER inside gross (`docs/11-MONEY.md` §6) |
- *    | paid_to_date_minor  | sum of `payments` recorded against this week      |
+ *    | paid_to_date_minor  | SIGNED sum of the settlement rows — payments AND corrections (D-20) |
  *    | balance_due_minor   | `total_gross_minor - paid_to_date_minor`          |
  *    | carer_display_name  | the durable snapshotted name, quoted if it needs it |
  *    | week_start          | Week's first day, household-local, ISO `YYYY-MM-DD`|
@@ -74,12 +86,24 @@
  * `balance_due_minor` is a plain subtraction and is NEVER clamped at zero: an
  * over-payment must show as a negative balance, not silently vanish.
  *
+ * =============================================================================
+ * A CORRECTION AND ITS ORIGINAL BOTH SHIP. DO NOT NET THEM. (D-20)
+ * =============================================================================
+ *
+ * Two records summing to zero look like a bug to every future reader, and the
+ * tidy-up — "just net them" or "filter the reversed pair" — is one line away
+ * and destroys the only reason the correction exists. A correction and its
+ * original both ship: the export is what a payroll service and a dispute both
+ * read, and THE PAIR IS THE AUDIT TRAIL. `paid_to_date_minor` already carries
+ * the netted figure; that is the row for netting, and it is the only one.
+ *
  * Filename: `steadily-week-<week_start>-<carer-slug>.csv`, where the slug is
  * `carerSlug()` below — lowercase `[a-z0-9-]` only, so it can never break the
  * `Content-Disposition` quoting the controller wraps it in.
  *
  * @module domains/timesheet/utils/weekExportCsv
  */
+import type { Payment } from '@steadily-nanny/shared-types/schemas/payment.schema';
 import type {
   EarningsLine,
   EarningsLineKind,
@@ -131,8 +155,18 @@ export interface WeekExportCsvInput {
   timesheet: Timesheet;
   /** The FROZEN snapshot, already parsed through `WeekEarningsSchema`. */
   earnings: WeekEarningsOk;
-  /** Sum of the `payments` rows for this week, in minor units. */
-  paidToDateMinor: number;
+  /**
+   * Every settlement row recorded against this week — payments AND their
+   * corrections — in the order the repository returned them (oldest first;
+   * this module never re-sorts).
+   *
+   * THE ROWS, NOT A TOTAL. This used to be a `paidToDateMinor: number` and the
+   * rows were nowhere on the sheet, which meant the summary asserted a figure
+   * the file gave a reader no way to check. D-20 requires both, and taking the
+   * rows makes the two impossible to disagree: the total below is derived from
+   * this array and from nothing else.
+   */
+  payments: readonly Payment[];
 }
 
 /** A ready-to-send download. */
@@ -225,15 +259,60 @@ function adjustmentRecord(
   ]);
 }
 
+/**
+ * One settlement row — a payment, or the correction that reverses one (D-20).
+ *
+ * Built with the same `csvRow` as everything else, and for the same reason the
+ * adjustment is: `method_note` and `correction_reason` are FREE TEXT a parent
+ * typed, so they are the fields on this sheet most likely to hold a comma or a
+ * quote, and `csvRow` owns the RFC 4180 escaping that keeps them in one field.
+ *
+ * `minutes` and `rate_minor` are empty rather than `0`, exactly as on the
+ * adjustment: this is money, not time.
+ *
+ * The description is the row's OWN kind word plus its own free text, so a
+ * reader never has to look at the `kind` column to know which of the two they
+ * are reading. A payment with no method note is just "Payment" — a dangling
+ * colon reads as missing data rather than as "the parent did not say how".
+ */
+function settlementRecord(payment: Payment): string {
+  const description =
+    payment.kind === 'correction'
+      ? `Correction: ${payment.correction_reason ?? ''}`
+      : payment.method_note
+        ? `Payment: ${payment.method_note}`
+        : 'Payment';
+  return csvRow([
+    payment.paid_at,
+    description,
+    payment.kind,
+    '',
+    '',
+    String(payment.amount_minor),
+    payment.currency,
+  ]);
+}
+
 /** The frozen week, serialised. Pure: same input, same bytes, every time. */
 export function renderWeekExportCsv(input: WeekExportCsvInput): WeekExportCsv {
-  const { timesheet, earnings, paidToDateMinor } = input;
+  const { timesheet, earnings, payments } = input;
+  // The SIGNED sum: correction rows carry a negative `amount_minor`, so this
+  // one expression is paid-to-date WITH corrections — the same arithmetic
+  // migration 085's over-gross gate does inside the database. Do NOT filter it
+  // by `kind`; see the D-20 section of the module doc.
+  const paidToDateMinor = payments.reduce(
+    (total, payment) => total + payment.amount_minor,
+    0
+  );
   const records: string[] = [
     csvRow(HEADER),
     ...earnings.lines.map(line => lineRecord(line, earnings.currency)),
     ...(earnings.adjustment
       ? [adjustmentRecord(earnings.adjustment, earnings.currency)]
       : []),
+    // Money OUT closes the line section — every payment and every correction,
+    // both rows of a corrected pair, never netted. See the module doc.
+    ...payments.map(settlementRecord),
     // The section separator.
     '',
     csvRow(['total_gross_minor', String(earnings.gross_minor)]),

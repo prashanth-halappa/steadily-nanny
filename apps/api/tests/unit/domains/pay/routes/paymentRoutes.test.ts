@@ -53,6 +53,7 @@ let baseUrl: string;
 
 let listMock: ReturnType<typeof mock>;
 let createMock: ReturnType<typeof mock>;
+let correctMock: ReturnType<typeof mock>;
 let requireAuthMock: ReturnType<typeof mock>;
 
 beforeAll(async () => {
@@ -60,6 +61,11 @@ beforeAll(async () => {
   createMock = mock(async (..._args: unknown[]) => ({
     id: 'pay-new',
     amount_minor: 5_000,
+  }));
+  correctMock = mock(async (..._args: unknown[]) => ({
+    id: 'corr-new',
+    amount_minor: -46_200,
+    kind: 'correction',
   }));
 
   requireAuthMock = mock((req: any, _res: any, next: any) => {
@@ -86,6 +92,7 @@ beforeAll(async () => {
     () => ({
       paymentCommandService: {
         create: (...args: unknown[]) => createMock(...args),
+        correct: (...args: unknown[]) => correctMock(...args),
       },
     })
   );
@@ -121,6 +128,7 @@ afterAll(() => {
 beforeEach(() => {
   listMock.mockClear();
   createMock.mockClear();
+  correctMock.mockClear();
   requireAuthMock.mockClear();
   requireAuthMock.mockImplementation((req: any, _res: any, next: any) => {
     req.user = { id: DEFAULT_AUTH_USER_ID };
@@ -249,6 +257,136 @@ describe('paymentRoutes — mounted router', () => {
 
       expect(res.status).toBe(400);
       expect(createMock).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * The correction append (D-20). Everything the POST above proves about the
+   * body schema applies here too, plus one thing only this route has: the
+   * SECOND client-supplied uuid.
+   */
+  describe('POST /:paymentId/corrections', () => {
+    const PAYMENT_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+
+    function correct(
+      timesheetId: string,
+      paymentId: string,
+      body: unknown
+    ): Promise<Response> {
+      return fetch(
+        `${baseUrl}/timesheets/${timesheetId}/payments/${paymentId}/corrections`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        }
+      );
+    }
+
+    const VALID_BODY = {
+      amount_minor: 46_200,
+      paid_at: '2026-08-18',
+      reason: 'recorded twice',
+    };
+
+    it('passes caller, both ids and the parsed body through, and answers 201', async () => {
+      const res = await correct(TIMESHEET_ID, PAYMENT_ID, VALID_BODY);
+
+      expect(res.status).toBe(201);
+      expect(correctMock).toHaveBeenCalledWith(
+        DEFAULT_AUTH_USER_ID,
+        TIMESHEET_ID,
+        PAYMENT_ID,
+        VALID_BODY
+      );
+    });
+
+    it('answers under a `correction` key, not `payment` — the two must be tellable apart', async () => {
+      const res = await correct(TIMESHEET_ID, PAYMENT_ID, VALID_BODY);
+      const body = (await res.json()) as {
+        data: Record<string, unknown>;
+      };
+
+      expect(body.data.correction).toBeDefined();
+      expect(body.data.payment).toBeUndefined();
+    });
+
+    it('a non-uuid paymentId is rejected with 400 before the service is reached', async () => {
+      const res = await correct(TIMESHEET_ID, 'not-a-uuid', VALID_BODY);
+
+      expect(res.status).toBe(400);
+      expect(correctMock).not.toHaveBeenCalled();
+    });
+
+    it('a NEGATIVE amount is rejected — the wire carries a positive magnitude', async () => {
+      const res = await correct(TIMESHEET_ID, PAYMENT_ID, {
+        ...VALID_BODY,
+        amount_minor: -46_200,
+      });
+
+      expect(res.status).toBe(400);
+      expect(correctMock).not.toHaveBeenCalled();
+    });
+
+    it('a missing reason is rejected — a reversal with no reason is unreadable later', async () => {
+      const res = await correct(TIMESHEET_ID, PAYMENT_ID, {
+        amount_minor: 46_200,
+        paid_at: '2026-08-18',
+      });
+
+      expect(res.status).toBe(400);
+      expect(correctMock).not.toHaveBeenCalled();
+    });
+
+    it('a whitespace-only reason is rejected too', async () => {
+      const res = await correct(TIMESHEET_ID, PAYMENT_ID, {
+        ...VALID_BODY,
+        reason: '   ',
+      });
+
+      expect(res.status).toBe(400);
+      expect(correctMock).not.toHaveBeenCalled();
+    });
+
+    it('a client-supplied kind or currency never reaches the service', async () => {
+      await correct(TIMESHEET_ID, PAYMENT_ID, {
+        ...VALID_BODY,
+        kind: 'payment',
+        currency: 'USD',
+        corrects_payment_id: 'somebody-elses-row',
+      });
+
+      expect(correctMock).toHaveBeenCalledWith(
+        DEFAULT_AUTH_USER_ID,
+        TIMESHEET_ID,
+        PAYMENT_ID,
+        VALID_BODY
+      );
+    });
+
+    /**
+     * GOLDEN-FIXES #32. `makeOwnershipValidator` caches by
+     * `(userId, resourceId)` with no lookup identity, so a WIDE read lookup
+     * mounted on one route silently satisfies a NARROW write check on
+     * another. This router mounts none of it — every gate is at the top of a
+     * service method — and this assertion is what keeps someone from "tidying
+     * up" by adding one.
+     */
+    it('uses NO ownership middleware anywhere — one timesheet id, three permissions', () => {
+      const routeSource = readFileSync(
+        join(
+          __dirname,
+          '../../../../../src/domains/pay/routes/paymentRoutes.ts'
+        ),
+        'utf-8'
+      );
+      // Comments stripped: the file's header EXPLAINS why it does not use the
+      // ownership middleware, and that prose must not satisfy the assertion.
+      const code = routeSource
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/\/\/.*$/gm, '');
+      expect(code).not.toContain('authWithOwnership');
+      expect(code).not.toContain('makeOwnershipValidator');
     });
   });
 

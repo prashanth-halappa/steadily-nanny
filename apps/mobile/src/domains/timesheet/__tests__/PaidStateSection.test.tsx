@@ -33,6 +33,9 @@ function makePayment(overrides: Partial<Payment> = {}): Payment {
     household_id: '22222222-2222-4222-8222-222222222222',
     carer_id: '33333333-3333-4333-8333-333333333333',
     amount_minor: 12000,
+    kind: 'payment',
+    corrects_payment_id: null,
+    correction_reason: null,
     currency: 'GBP',
     paid_at: '2026-08-11',
     method_note: 'Bank transfer',
@@ -299,6 +302,112 @@ describe('PaidStateSection — opening a payment', () => {
     // The week-scoped rows above keep the section currency.
     expect(getByTestId('hours-paid-state-total-value').props.children).toBe(
       '£120.00'
+    );
+  });
+});
+
+// D-20, attention spec §4.1 — the spec's own worked ledger: David records one
+// £462.00 Zelle transfer twice, and corrects the duplicate.
+//
+//   £462.00   Paid 16 Aug · Zelle
+//    −£462.00 Correction 18 Aug · recorded twice
+//   £462.00   Paid 16 Aug · Zelle
+//   £462.00 paid · nothing still owed
+//
+// 46_200 + (−46_200) + 46_200 = 46_200 against a 46_200 gross, so the balance
+// row disappears entirely. Hand-computed, integer minor units throughout.
+describe('PaidStateSection — corrections', () => {
+  const original = () =>
+    makePayment({
+      id: 'p1',
+      amount_minor: 46_200,
+      paid_at: '2026-08-16',
+      method_note: 'Zelle',
+    });
+  const correction = () =>
+    makePayment({
+      id: 'c1',
+      amount_minor: -46_200,
+      kind: 'correction',
+      corrects_payment_id: 'p1',
+      correction_reason: 'recorded twice',
+      paid_at: '2026-08-18',
+      method_note: null,
+    });
+  const duplicate = () =>
+    makePayment({
+      id: 'p2',
+      amount_minor: 46_200,
+      paid_at: '2026-08-16',
+      method_note: 'Zelle',
+    });
+
+  const renderLedger = () => {
+    const payments = [original(), correction(), duplicate()];
+    return renderCard({
+      payments,
+      paidState: derivePaidState(payments, 46_200),
+    });
+  };
+
+  it('states the correction as a negative figure, and leaves the original at its full amount', () => {
+    const { getByTestId } = renderLedger();
+
+    // A ledger that quietly restates history is the thing this whole
+    // mechanism exists to avoid — p1 is untouched.
+    expect(getByTestId('hours-paid-state-line-p1-value').props.children).toBe(
+      '£462.00'
+    );
+    expect(getByTestId('hours-paid-state-line-c1-value').props.children).toBe(
+      '-£462.00'
+    );
+  });
+
+  it('renders the correction directly under the payment it corrects, indented one step', () => {
+    const { getByTestId, toJSON } = renderLedger();
+
+    const order = JSON.stringify(toJSON()).match(
+      /hours-paid-state-line-[a-z0-9]+"/g
+    );
+    expect(order).toEqual([
+      'hours-paid-state-line-p1"',
+      'hours-paid-state-line-c1"',
+      'hours-paid-state-line-p2"',
+    ]);
+    expect(
+      StyleSheet.flatten(
+        getByTestId('hours-paid-state-correction-c1').props.style
+      ).paddingLeft
+    ).toBe(spacing.md);
+  });
+
+  it('renders the reason on the row — it is what makes a reversal readable a year later', () => {
+    const { getByText } = renderLedger();
+
+    expect(getByText('recorded twice')).toBeTruthy();
+  });
+
+  it('nets the signed sum into paid-to-date and drops the balance row', () => {
+    const { getByTestId, queryByTestId } = renderLedger();
+
+    expect(getByTestId('hours-paid-state-total-value').props.children).toBe(
+      '£462.00'
+    );
+    expect(queryByTestId('hours-paid-state-balance-value')).toBeNull();
+  });
+
+  // A correction whose original is not in this list would otherwise vanish —
+  // a money row disappearing from a ledger is the worst failure this
+  // component has.
+  it('still shows a correction whose original is missing from the ledger', () => {
+    const payments = [correction()];
+    const { getByTestId } = renderCard({
+      payments,
+      paidState: derivePaidState(payments, 46_200),
+    });
+
+    expect(getByTestId('hours-paid-state-line-c1-value').props.children).toBe(
+      '-£462.00'
     );
   });
 });

@@ -24,6 +24,12 @@
  * `query_note` band is gone — the thread renders that first message to both
  * sides, which is the whole of P1.
  *
+ * 3-T2 (`docs/design/attention-and-notifications.md` §4.1): "Correct this
+ * payment" is wired HERE and nowhere else. It hangs off `PaymentDetailSheet`'s
+ * `onCorrectPress`, which only this view passes — correcting is the PAYER's
+ * act, so the nanny's view and the read-only `PaymentsScreen` simply never
+ * receive the prop, and there is no role check inside either component.
+ *
  * TIER0-CX-SPEC.md §6.2/§6.3/§7 (Phase 4, additive): the footer also carries
  * the pending-expenses review affordance (action-gated behind `!readOnly`,
  * same as approve/query — a helper sees the statement but never reviews)
@@ -32,7 +38,11 @@
  */
 
 import { FlashList } from '@shopify/flash-list';
-import type { CreatePaymentInput } from '@steadily-nanny/shared-types/schemas/payment.schema';
+import type {
+  CreatePaymentCorrectionInput,
+  CreatePaymentInput,
+  Payment,
+} from '@steadily-nanny/shared-types/schemas/payment.schema';
 import type { Href } from 'expo-router';
 import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
@@ -55,6 +65,11 @@ import { resolveMemberDisplayName } from '@/src/domains/schedule/utils/memberDis
 import { resolveWeekCarerHeaderName } from '@/src/domains/timesheet/utils/weekCarerHeaderName';
 import { useAddTimesheetThreadMessage } from '@/src/hooks/mutations/useAddTimesheetThreadMessage';
 import { useApproveTimesheet } from '@/src/hooks/mutations/useApproveTimesheet';
+import {
+  correctionRefusalMetadata,
+  useCorrectPayment,
+} from '@/src/hooks/mutations/useCorrectPayment';
+import { useMarkReimbursed } from '@/src/hooks/mutations/useMarkReimbursed';
 import { useQueryTimesheet } from '@/src/hooks/mutations/useQueryTimesheet';
 import {
   type OverPaymentMetadata,
@@ -68,6 +83,7 @@ import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
 import { useHouseholdMembers } from '@/src/hooks/queries/useHouseholdMembers';
 import { usePayments } from '@/src/hooks/queries/usePayments';
 import { usePendingExpenses } from '@/src/hooks/queries/usePendingExpenses';
+import { useReimbursementSettlements } from '@/src/hooks/queries/useReimbursementSettlements';
 import { useTimesheetThread } from '@/src/hooks/queries/useTimesheetThread';
 import { useWeekExpenses } from '@/src/hooks/queries/useWeekExpenses';
 import { useWeekTimeEntries } from '@/src/hooks/queries/useWeekTimeEntries';
@@ -95,6 +111,10 @@ import { ApproveWeekDialog } from './ApproveWeekDialog';
 import { EarningsBreakdownSheet } from './EarningsBreakdownSheet';
 import { HoursHeroBand } from './HoursHeroBand';
 import { HoursWeekSkeleton } from './HoursWeekSkeleton';
+import {
+  type PaymentCorrectionRefusal,
+  PaymentCorrectionSheet,
+} from './PaymentCorrectionSheet';
 import { PaymentDetailSheet } from './PaymentDetailSheet';
 import { PaymentsEntryRow } from './PaymentsEntryRow';
 import { QueryNoteSheet } from './QueryNoteSheet';
@@ -180,6 +200,14 @@ export function ParentWeekView({
   const reopenTimesheet = useReopenTimesheet();
   const reviewExpense = useReviewExpense();
   const recordPayment = useRecordPayment();
+  const correctPayment = useCorrectPayment();
+  // D-14: "have we paid her back what she spent". A SEPARATE record from
+  // payments — never summed into paid-to-date (see ReimbursementsCard).
+  const settlementsQuery = useReimbursementSettlements(
+    householdId,
+    weekStartISO
+  );
+  const markReimbursed = useMarkReimbursed();
   const withdrawQuery = useWithdrawTimesheetQuery();
   const addThreadMessage = useAddTimesheetThreadMessage();
   const [isQuerySheetVisible, setIsQuerySheetVisible] = useState(false);
@@ -197,6 +225,18 @@ export function ParentWeekView({
   const [overPayment, setOverPayment] = useState<OverPaymentMetadata | null>(
     null
   );
+  // D-20 (attention spec §4.1). The payment ITSELF, not its id: the detail
+  // sheet is closed before this one opens, so there is no selected row left
+  // to resolve it from — and a correction must go on reading the figure the
+  // parent was looking at when they pressed it. Cleared on dismiss.
+  const [correctingPayment, setCorrectingPayment] = useState<Payment | null>(
+    null
+  );
+  // The server's own refusal figures, held so the sheet can state the ceiling
+  // it hit. Cleared on every open and every fresh attempt — the same reason
+  // `overPayment` is.
+  const [correctionRefusal, setCorrectionRefusal] =
+    useState<PaymentCorrectionRefusal | null>(null);
   // The approval-time adjustment lives ONLY here until approve is sent —
   // Option A stages it client-side rather than persisting it, so nothing
   // exists server-side to reconcile and the nanny is never shown a figure
@@ -569,6 +609,34 @@ export function ParentWeekView({
       : null;
   const todayISO = localDateInZone(timeZone, new Date(nowMs));
 
+  // The settlement is filed against the carer's REAL id, not the bucket key
+  // `carerKeyOf` returns — a departed carer (`carer_id` NULL) has no id to
+  // file against, so the action is simply not offered for her.
+  const settlementCarerId = timesheet?.carer_id ?? null;
+  const reimbursementSettledOn =
+    settlementsQuery.data?.find(s => s.carer_id === settlementCarerId)
+      ?.settled_at ?? null;
+
+  // Screen owns the mutation, the card owns the callback — same split as
+  // `onMarkPaidPress`. The refusal is stated on the card, next to the button
+  // that caused it (GOLDEN-FIXES #40), never as a toast.
+  const handleMarkReimbursed = async () => {
+    if (!settlementCarerId || markReimbursed.isPending) return;
+    markReimbursed.reset();
+    try {
+      await markReimbursed.mutateAsync({
+        householdId,
+        input: {
+          carer_id: settlementCarerId,
+          week_start: weekStartISO,
+          settled_at: todayISO,
+        },
+      });
+    } catch {
+      // Rendered inline below; swallowed here so the rejection is handled.
+    }
+  };
+
   const handleOpenRecordPayment = () => {
     setOverPayment(null);
     setIsRecordPaymentVisible(true);
@@ -589,6 +657,36 @@ export function ParentWeekView({
     }
     setIsRecordPaymentVisible(false);
     showSuccessToast(t('paid.recordedToast'));
+  };
+
+  // D-20. The detail sheet is closed FIRST: a `BottomSheetBase` presented over
+  // an already-presented one is invisible on iOS (GOLDEN-FIXES #1's family),
+  // so the leaf must go before the correction sheet arrives.
+  const handleOpenCorrection = (payment: Payment) => {
+    setSelectedPaymentId(null);
+    setCorrectionRefusal(null);
+    setCorrectingPayment(payment);
+  };
+
+  // Same discipline as `handleRecordPayment`: the sheet is closed ONLY on
+  // success, so a refusal leaves the typed reversal and the typed reason in
+  // place, and the server's own figures are stated inline rather than in a
+  // toast the open sheet would hide (GOLDEN-FIXES #40).
+  const handleCorrectPayment = async (input: CreatePaymentCorrectionInput) => {
+    if (!timesheet || !correctingPayment || correctPayment.isPending) return;
+    setCorrectionRefusal(null);
+    try {
+      await correctPayment.mutateAsync({
+        timesheetId: timesheet.id,
+        paymentId: correctingPayment.id,
+        input,
+      });
+    } catch (error) {
+      setCorrectionRefusal(correctionRefusalMetadata(error));
+      return;
+    }
+    setCorrectingPayment(null);
+    showSuccessToast(t('paid.correctionRecordedToast'));
   };
 
   // `.mutateAsync(...).then(onFulfilled)` with no rejection handler left a
@@ -888,6 +986,21 @@ export function ParentWeekView({
               totalMinor={earningsOk ? earningsOk.reimbursements_minor : null}
               currency={expensesCurrency}
               carerName={carerName ?? undefined}
+              settledOn={reimbursementSettledOn}
+              // The one-prop role fork: only this view supplies it, so a
+              // helper (readOnly) and the nanny both get the same card
+              // without the action.
+              onMarkReimbursedPress={
+                !readOnly && settlementCarerId
+                  ? handleMarkReimbursed
+                  : undefined
+              }
+              isMarkReimbursedDisabled={markReimbursed.isPending}
+              markReimbursedError={
+                markReimbursed.error
+                  ? getLocalizedErrorMessage(markReimbursed.error, tErrors)
+                  : null
+              }
             />
             {/* Cross-week record, not gated on this week's approval — a
                 helper reads settlements too, same as ReimbursementsCard. */}
@@ -960,6 +1073,10 @@ export function ParentWeekView({
               )
             : null
         }
+        // §4.1 — correcting is the PAYER's act, so this view passes the
+        // action and `NannyWeekView`/`PaymentsScreen` do not. A helper
+        // (`readOnly`) never gets it either, the same gate as "Mark as paid".
+        onCorrectPress={readOnly ? undefined : handleOpenCorrection}
       />
 
       <ApproveWeekDialog
@@ -1007,6 +1124,18 @@ export function ParentWeekView({
           carerName={approveDialogCarerName}
           weekRangeLabel={weekRangeLabel}
           overPayment={overPayment}
+        />
+      ) : null}
+
+      {timesheet && !readOnly ? (
+        <PaymentCorrectionSheet
+          visible={correctingPayment !== null}
+          onDismiss={() => setCorrectingPayment(null)}
+          onSubmit={input => void handleCorrectPayment(input)}
+          isSubmitting={correctPayment.isPending}
+          payment={correctingPayment}
+          householdTimezone={timeZone}
+          refusal={correctionRefusal}
         />
       ) : null}
 

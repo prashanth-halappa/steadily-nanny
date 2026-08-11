@@ -73,6 +73,18 @@ export const PUSH_NOTIFICATION_TYPES = {
   // A parent recorded a settlement against an approved week (067 payments) —
   // carer-targeted: she is the one who was just paid.
   PAYMENT_RECORDED: 'payment_recorded',
+  // A parent reversed a payment they had recorded (D-20, §1.3 N5). Its own
+  // type, never a second `payment_recorded`: "money was recorded for you" and
+  // "money that was recorded for you has been taken back off the record" are
+  // opposite facts, and sending the first for the second is the kind of push
+  // that makes a nanny stop trusting the ledger. Carer-targeted — the parent
+  // who typed it already knows.
+  PAYMENT_CORRECTED: 'payment_corrected',
+  // The family repaid what she spent out of pocket (D-14, §1.3 N6). Distinct
+  // from PAYMENT_RECORDED for the reason 086's header gives at length: a
+  // reimbursement is not wages, and one push covering both would be the first
+  // step towards one table covering both.
+  REIMBURSEMENT_SETTLED: 'reimbursement_settled',
   PTO_MARKED_PAID: 'pto_marked_paid',
   TIMESHEET_APPROVED: 'timesheet_approved',
 
@@ -170,10 +182,12 @@ export const PUSH_TYPE_AUDIENCE: Record<PushNotificationType, PushAudience> = {
   [PUSH_NOTIFICATION_TYPES.HOUSEHOLD_CLOSURE_CHANGED]: 'carer',
   [PUSH_NOTIFICATION_TYPES.INVITE_REDEEMED]: 'parent',
   [PUSH_NOTIFICATION_TYPES.PARENT_COVERING]: 'carer',
+  [PUSH_NOTIFICATION_TYPES.PAYMENT_CORRECTED]: 'carer',
   [PUSH_NOTIFICATION_TYPES.PAYMENT_RECORDED]: 'carer',
   [PUSH_NOTIFICATION_TYPES.PAY_TERMS_SET]: 'carer',
   [PUSH_NOTIFICATION_TYPES.PTO_MARKED_PAID]: 'carer',
   [PUSH_NOTIFICATION_TYPES.PTO_USAGE_REVERSED]: 'parent',
+  [PUSH_NOTIFICATION_TYPES.REIMBURSEMENT_SETTLED]: 'carer',
   [PUSH_NOTIFICATION_TYPES.RUNNING_LATE]: 'parent',
   [PUSH_NOTIFICATION_TYPES.SCHEDULE_PATTERN_AMENDED]: 'carer',
   [PUSH_NOTIFICATION_TYPES.SCHEDULE_PATTERN_RESPONDED]: 'parent',

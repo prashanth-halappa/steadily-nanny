@@ -305,6 +305,31 @@ describe('the read must not prime the ownership cache for the actions', () => {
     );
     expect(approveMock).not.toHaveBeenCalled();
   });
+
+  /**
+   * D-21 opens the INVERSE direction of the same hazard, so it is pinned here
+   * too. `getOwnedTimesheet` (the ACTION lookup) asks only "is this an active
+   * member?", so an active NANNY passes it on ANOTHER carer's week and the
+   * validator caches a positive `(userId, resourceId)` entry. Since D-21 the
+   * READ is the stricter question — a nanny reads only her own rows — so if
+   * the read ever started consulting that cache, one refused action would hand
+   * her a week she must not see. It does not, because `GET /:id` carries no
+   * ownership middleware at all; this asserts the read still reaches its own
+   * service gate after an action on the same id.
+   */
+  it('an action on an id does NOT prime a later GET of the same id', async () => {
+    const approved = await postAction('approve', SEQUENCE_ID);
+    expect(approved.status).toBe(404);
+    getWeekWithEarningsMock.mockClear();
+
+    await fetch(`${baseUrl}/timesheets/${SEQUENCE_ID}`);
+
+    // The read went to the service, not to a cached answer from the action.
+    expect(getWeekWithEarningsMock).toHaveBeenCalledWith(
+      AUTH_USER_ID,
+      SEQUENCE_ID
+    );
+  });
 });
 
 describe('DELETE /time-entries/:id — void uses authWithOwnership', () => {

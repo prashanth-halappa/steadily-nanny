@@ -64,4 +64,32 @@ export class PaymentController {
       return next(error);
     }
   }
+
+  /**
+   * POST /timesheets/:timesheetId/payments/:paymentId/corrections — parents
+   * only (D-20). 201, and the response key is `correction` rather than
+   * `payment`: it IS a payments row, but a client that cannot tell the two
+   * apart at the boundary is one that will eventually render a reversal as a
+   * payment.
+   */
+  static async correct(req: Request, res: Response, next: NextFunction) {
+    try {
+      const timesheetId = req.params.timesheetId as string;
+      const paymentId = req.params.paymentId as string;
+      const correction = await paymentCommandService.correct(
+        getAuthUserId(req),
+        timesheetId,
+        paymentId,
+        req.body
+      );
+      return sendSuccessResponse(
+        res,
+        'Correction recorded',
+        { correction },
+        201
+      );
+    } catch (error) {
+      return next(error);
+    }
+  }
 }

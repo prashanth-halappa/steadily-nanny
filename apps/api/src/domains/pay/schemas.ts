@@ -26,11 +26,13 @@ export {
   PayArrangementSchema,
 } from '@steadily-nanny/shared-types/schemas/payArrangement.schema';
 export type {
+  CreatePaymentCorrectionInput,
   CreatePaymentInput,
   Payment,
   PaymentListResponse,
 } from '@steadily-nanny/shared-types/schemas/payment.schema';
 export {
+  CreatePaymentCorrectionSchema,
   CreatePaymentSchema,
   PaymentListResponseSchema,
   PaymentSchema,
@@ -84,6 +86,23 @@ export type TimesheetPaymentsParam = z.infer<
 >;
 
 /**
+ * URL params for `/timesheets/:timesheetId/payments/:paymentId/corrections`
+ * (D-20). Both ids are client-supplied on a WRITE, so neither is trusted here
+ * — this is a shape check. `paymentCommandService.correct` re-resolves the
+ * week and the caller's role, and migration 085's function then loads the
+ * payment PINNED TO THAT WEEK under its lock, so a `paymentId` guessed from
+ * another household resolves to nothing (`not_correctable`) rather than to
+ * someone else's row.
+ */
+export const PaymentCorrectionParamSchema = z.object({
+  timesheetId: z.uuid(),
+  paymentId: z.uuid(),
+});
+export type PaymentCorrectionParam = z.infer<
+  typeof PaymentCorrectionParamSchema
+>;
+
+/**
  * URL param validation for `/households/:householdId/payments` — the
  * household-wide settlement history. Same rule as above: the shape check is
  * not the authorization check. `paymentQueryService.assertPaymentReader`
@@ -94,3 +113,21 @@ export const HouseholdIdParamSchema = z.object({
   householdId: z.uuid(),
 });
 export type HouseholdIdParam = z.infer<typeof HouseholdIdParamSchema>;
+
+/**
+ * Query validation for
+ * GET /households/:householdId/reimbursement-settlements?weekStart=.
+ *
+ * Optional: omitting it means "the current household-local week", resolved
+ * server-side from the household's timezone AND `week_starts_on`
+ * (`reimbursementSettlementService.currentWeekStart`). A MALFORMED value is
+ * rejected here rather than falling back to that default — a client that
+ * sends `03-08-2026` is asking about a week it can name, and silently
+ * answering about a different one is how a settled week looks unsettled.
+ */
+export const ReimbursementSettlementListQuerySchema = z.object({
+  weekStart: z.iso.date().optional(),
+});
+export type ReimbursementSettlementListQuery = z.infer<
+  typeof ReimbursementSettlementListQuerySchema
+>;

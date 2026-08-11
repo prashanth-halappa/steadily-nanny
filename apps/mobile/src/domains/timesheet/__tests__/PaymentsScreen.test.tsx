@@ -120,6 +120,9 @@ function makePayment(overrides: Partial<Payment> = {}): Payment {
     household_id: HOUSEHOLD_ID,
     carer_id: CARER_ID,
     amount_minor: 62_400,
+    kind: 'payment',
+    corrects_payment_id: null,
+    correction_reason: null,
     currency: 'GBP',
     paid_at: '2026-08-16',
     method_note: 'Bank transfer',
@@ -669,7 +672,7 @@ describe('PaymentsScreen — CSV export', () => {
     await waitFor(() => expect(shareCsvMock).toHaveBeenCalledTimes(1));
     const csv = shareCsvMock.mock.calls[0]?.[1] as string;
     expect(csv.split('\r\n')[0]).toBe(
-      'paid_at,week_start,carer,amount_minor,currency,method_note,recorded_by,created_at'
+      'paid_at,week_start,carer,amount_minor,currency,method_note,correction_reason,recorded_by,created_at'
     );
   });
 

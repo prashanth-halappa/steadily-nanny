@@ -15,7 +15,9 @@
  * server-side (no PATCH route, no DELETE route — see
  * `apps/api/src/domains/pay/routes/paymentRoutes.ts`), and a correction is
  * recorded as another payment. The footer note says so rather than leaving
- * someone hunting for a control that does not exist.
+ * someone hunting for a control that does not exist — and since D-20 the
+ * `onCorrectPress` action below is the control that makes that sentence true
+ * (attention spec §4.1). It APPENDS a reversing row; it still edits nothing.
  *
  * `created_at` is read off the ISO string rather than through a `Date` — the
  * server's own offset is the honest answer to "when was this entered", and
@@ -66,6 +68,18 @@ interface PaymentDetailSheetProps {
    * She can say the payment looks wrong, which is the thing she actually
    * needs and currently does over iMessage. */
   onFlagPress?: (payment: Payment) => void;
+  /** §4.1 (D-20), PARENT viewer only: "Correct this payment", which appends a
+   * reversing row rather than editing this one. Passed by `ParentWeekView`
+   * and by nobody else, so "who may correct" is one call site instead of a
+   * role check in here — the same discipline `PaidStateSection`'s
+   * `onMarkPaidPress` uses. Deliberately NOT `onFlagPress`: that is the
+   * carer's voice (§3.1), correcting is the payer's act, and collapsing the
+   * two would give a nanny a control over the family's money record.
+   *
+   * Withheld on a correction row even when passed — corrections are never
+   * editable and never correctable (one level, no chains; 085's function
+   * refuses it server-side too). */
+  onCorrectPress?: (payment: Payment) => void;
   testID?: string;
 }
 
@@ -153,6 +167,7 @@ export function PaymentDetailSheet({
   paidToName,
   recordedByName,
   onFlagPress,
+  onCorrectPress,
   testID = 'payments-detail',
 }: PaymentDetailSheetProps) {
   const { t } = useTranslation('hours');
@@ -237,6 +252,19 @@ export function PaymentDetailSheet({
           >
             {t('payments.detail.appendOnly')}
           </Caption>
+
+          {onCorrectPress && payment.kind !== 'correction' ? (
+            <Pressable
+              testID={`${testID}-correct`}
+              accessibilityRole="button"
+              onPress={() => onCorrectPress(payment)}
+              className="self-start py-2"
+            >
+              <Body className="text-primary">
+                {t('payments.detail.correctAction')}
+              </Body>
+            </Pressable>
+          ) : null}
 
           {onFlagPress ? (
             <Pressable

@@ -457,3 +457,188 @@ export class PaymentExceedsGrossError extends ValidationError {
     this.name = 'PaymentExceedsGrossError';
   }
 }
+
+/**
+ * 400 — the reversal is larger than what is LEFT of the payment it corrects
+ * (D-20, migration 085).
+ *
+ * The ceiling is the ORIGINAL ROW, not the week: every correction is bounded
+ * by the payment it points at, which is what makes "you cannot un-pay more
+ * than you paid" true for the week as a whole without a second gate. A partial
+ * reversal is legitimate and common (the parent transferred £462 but only £120
+ * of it belonged to this week), so `remaining_minor` is what a second
+ * correction is measured against, not the original amount.
+ *
+ * NEVER CLAMPED TO FIT, the same rule as `PaymentExceedsGrossError` — writing
+ * the difference would record a reversal for an amount nobody asked for, and a
+ * ledger that quietly adjusts what you typed is worse than one that refuses.
+ * `metadata` carries what was asked, the original's full amount and what is
+ * still reversible, so the sheet can say "£120.00 of £462.00 is already
+ * reversed" without re-deriving it.
+ *
+ * A `ValidationError`, not a 409: nothing is racing — the request as stated
+ * cannot be satisfied, and retrying it unchanged fails identically.
+ */
+export class PaymentCorrectionExceedsOriginalError extends ValidationError {
+  constructor(
+    paymentId: string,
+    amountMinor: number,
+    originalAmountMinor: number,
+    remainingMinor: number
+  ) {
+    super(
+      'That correction is more than this payment has left to reverse',
+      'PAYMENT_CORRECTION_EXCEEDS_ORIGINAL',
+      400,
+      { paymentId, amountMinor, originalAmountMinor, remainingMinor }
+    );
+    this.name = 'PaymentCorrectionExceedsOriginalError';
+  }
+}
+
+/**
+ * 409 — there is nothing here to correct. Three arms, all in
+ * `metadata.reason`, and all answered by 085's function under its lock:
+ *
+ * - `week_missing` — the timesheet went between the service's read and the
+ *   lock. Its payments cascaded with it.
+ * - `payment_missing` — no payment with that id ON THIS WEEK. A guessed id
+ *   from another household lands here and learns nothing else.
+ * - `not_a_payment` — the target is itself a correction. One level, no
+ *   chains (spec §4.1): correcting a correction is a new payment, because a
+ *   chain of reversals is a thing nobody can read back a year later.
+ *
+ * A CONFLICT rather than a 404: the caller has already passed the week's
+ * membership gate, so this is a state answer about a household that is
+ * genuinely theirs, not an existence question. Nothing is leaked by saying so.
+ */
+export class PaymentNotCorrectableError extends ConflictError {
+  constructor(paymentId: string, reason: string, metadata?: ErrorMetadata) {
+    super('That payment cannot be corrected', 'PAYMENT_NOT_CORRECTABLE', {
+      paymentId,
+      reason,
+      ...metadata,
+    });
+    this.name = 'PaymentNotCorrectableError';
+  }
+}
+
+// =============================================================================
+// Reimbursement settlements (D-14, gap P7 — migration 086, attention spec §4.2)
+//
+// REIMBURSEMENT SETTLEMENTS ARE NOT PAYMENTS. These errors carry their own
+// codes rather than reusing the `PAYMENT_*` family deliberately: a client
+// branching on `PAYMENT_EXCEEDS_GROSS` for a repayment has already merged two
+// things the money engine keeps apart.
+// =============================================================================
+
+/**
+ * 404 — this household's settlements are not the caller's to see or write.
+ * ONE error for every failing case, the same discipline as
+ * `PaymentNotFoundError`/`ExpenseNotFoundError`:
+ *
+ * - the household doesn't exist, or the caller isn't a member of it;
+ * - the caller is a `helper` (no money surface at all);
+ * - a WRITE arrived from someone with no ACTIVE membership.
+ *
+ * The role refusal on a write is deliberately NOT this error: an active
+ * member who is a nanny gets the 403 `NotAHouseholdParentError`, because she
+ * already knows the household exists and "you are not a parent" is the
+ * actionable message — the same asymmetry `PaymentNotFoundError` documents.
+ * Discriminating detail rides in `metadata.reason`, which
+ * `BaseError.toClientJSON` only ships for 4xx.
+ */
+export class ReimbursementSettlementNotFoundError extends NotFoundError {
+  constructor(householdId: string, metadata?: ErrorMetadata) {
+    super('Reimbursement settlement not found', 'REIMBURSEMENT_NOT_FOUND', {
+      householdId,
+      ...metadata,
+    });
+    this.name = 'ReimbursementSettlementNotFoundError';
+  }
+}
+
+/**
+ * 409 — this carer has no approved reimbursements in that week, so there is
+ * nothing to record as repaid.
+ *
+ * THE ZERO ROW IS NEVER WRITTEN (`docs/11-MONEY.md` §1, and 086's
+ * `check (amount_minor >= 1)`). A £0.00 settlement states that money moved
+ * when none did, and it is worse than an error: it makes the week look
+ * settled forever, with no correction path (spec §4.2 builds none) to take it
+ * back. The amount is never clamped up to 1 to satisfy the check either —
+ * refusing is the only honest option.
+ *
+ * A CONFLICT, not a `ValidationError`: nothing the parent typed is wrong —
+ * approving a claim in that week makes the identical request succeed.
+ */
+export class NothingToSettleError extends ConflictError {
+  constructor(householdId: string, carerId: string, weekStart: string) {
+    super(
+      'There are no approved reimbursements to settle for that week',
+      'NOTHING_TO_SETTLE',
+      { householdId, carerId, weekStart }
+    );
+    this.name = 'NothingToSettleError';
+  }
+}
+
+/**
+ * 409 — an approved claim in that carer-week is denominated in a currency the
+ * household is not. Summing across currencies produces a number that is not
+ * money in any of them, so the week is REFUSED rather than partially settled
+ * or silently narrowed to the matching rows — the same escalation
+ * `earningsService` makes when a week meets two currencies
+ * (`EARNINGS_RESULT_STATUSES.CURRENCY_CHANGE`) instead of dropping the odd
+ * one out.
+ *
+ * `metadata` names both codes so the client can say which pair disagreed.
+ */
+export class SettlementCurrencyMismatchError extends ConflictError {
+  constructor(
+    householdId: string,
+    carerId: string,
+    weekStart: string,
+    householdCurrency: string,
+    claimCurrency: string
+  ) {
+    super(
+      'Those reimbursements are not all in the household’s currency',
+      'SETTLEMENT_CURRENCY_MISMATCH',
+      { householdId, carerId, weekStart, householdCurrency, claimCurrency }
+    );
+    this.name = 'SettlementCurrencyMismatchError';
+  }
+}
+
+/**
+ * 409 — translated from the `reimbursement_settlements_week_idx` unique index
+ * (23505, migration 086): this carer-week is already settled. Two parents
+ * tapping "Mark reimbursed" in the same instant is the race 077 closed for
+ * payments — but the invariant here is "at most one row", which is exactly
+ * what a unique index enforces, so the database refuses the second insert and
+ * the repository names the refusal. Same translation
+ * `expenseRepository.create` does for 051's partial index.
+ *
+ * A sequential retry lands here too, and should: the table is append-only and
+ * has no correction path (spec §4.2 — YAGNI), so "settle it again" is not an
+ * operation that exists.
+ *
+ * The three ids are optional because they come off the row being inserted —
+ * the repository reports what it tried to write, and a caller that omitted
+ * one gets `undefined` rather than a fabricated value.
+ */
+export class AlreadySettledError extends ConflictError {
+  constructor(
+    householdId: string | undefined,
+    carerId: string | undefined,
+    weekStart: string | undefined
+  ) {
+    super(
+      'These reimbursements are already marked as repaid',
+      'ALREADY_SETTLED',
+      { householdId, carerId, weekStart }
+    );
+    this.name = 'AlreadySettledError';
+  }
+}

@@ -139,6 +139,33 @@ mock.module('@/src/hooks/mutations/useRecordPayment', () => ({
   }),
   overPaymentMetadata: () => null,
 }));
+// The correction append (D-20). The parent view builds the mutation
+// unconditionally — the sheet only opens from `PaymentDetailSheet` — so it is
+// mocked for the same reason as its sibling above.
+mock.module('@/src/hooks/mutations/useCorrectPayment', () => ({
+  useCorrectPayment: () => ({
+    mutateAsync: mock(() => Promise.resolve({})),
+    isPending: false,
+  }),
+  correctionRefusalMetadata: () => null,
+}));
+
+// Reimbursement settlements (D-14): the parent view reads them
+// unconditionally to state whether she has been paid back, same "needs a
+// QueryClientProvider this screen test deliberately doesn't stand up"
+// reason as the payments hooks above. No settlement = the card's
+// unsettled state words, which change none of this screen's assertions.
+mock.module('@/src/hooks/queries/useReimbursementSettlements', () => ({
+  useReimbursementSettlements: () => ({ data: [], isLoading: false }),
+}));
+mock.module('@/src/hooks/mutations/useMarkReimbursed', () => ({
+  useMarkReimbursed: () => ({
+    mutateAsync: mock(() => Promise.resolve({})),
+    reset: mock(() => {}),
+    isPending: false,
+    error: null,
+  }),
+}));
 
 // The week thread (3-T1): both role views read it unconditionally, for the
 // same reason as the payments hooks above. An empty thread is the ~50 clean

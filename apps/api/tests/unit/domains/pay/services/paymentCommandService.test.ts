@@ -19,7 +19,7 @@ import { PaymentCommandService } from '../../../../../src/domains/pay/services/p
  * caller, never off the request body.
  *
  * Gate 4 MOVED INTO POSTGRES (migration 077). It used to be a read-then-write
- * here — `sumForTimesheet`, compare, `create` — which two parents tapping
+ * here — sum, compare, `create` — which two parents tapping
  * "Record payment" in the same instant could both pass. The sum, the refusal
  * and the insert are now one `record_timesheet_payment` call behind a
  * `FOR UPDATE` lock on the week, so this file's job for gate 4 is no longer
@@ -78,7 +78,6 @@ function recordedPayment(overrides: Record<string, unknown> = {}): any {
 function makePaymentRepo(overrides: Record<string, unknown> = {}): any {
   return {
     listForTimesheet: mock(async () => []),
-    sumForTimesheet: mock(async () => 0),
     create: mock(async (data: Record<string, unknown>) => ({
       id: 'pay-new',
       created_at: '2026-08-11T10:00:00.000Z',
@@ -309,7 +308,7 @@ describe('PaymentCommandService.create — the over-payment gate is the RPC', ()
 
     expect(paymentRepo.recordForTimesheet).toHaveBeenCalledTimes(1);
     // The window 077 closed: summing here and inserting there.
-    expect(paymentRepo.sumForTimesheet).not.toHaveBeenCalled();
+    expect(paymentRepo.create).not.toHaveBeenCalled();
     expect(paymentRepo.create).not.toHaveBeenCalled();
   });
 

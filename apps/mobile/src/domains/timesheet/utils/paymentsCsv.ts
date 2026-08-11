@@ -4,7 +4,11 @@
  * The Payments screen's CSV export: one row per recorded payment, verbatim.
  * Columns, in order:
  *
- *   paid_at,week_start,carer,amount_minor,currency,method_note,recorded_by,created_at
+ *   paid_at,week_start,carer,amount_minor,currency,method_note,correction_reason,recorded_by,created_at
+ *
+ * `amount_minor` IS SIGNED (D-20): a correction is a negative row pointing at
+ * the payment it reverses, and `correction_reason` is the "why" that makes it
+ * readable — empty on an ordinary payment.
  *
  * `week_start` and `carer` come from the same client-side timesheet join
  * `PaymentsScreen` already uses to render the row's week line — both are
@@ -57,6 +61,7 @@ const HEADER: readonly string[] = [
   'amount_minor',
   'currency',
   'method_note',
+  'correction_reason',
   'recorded_by',
   'created_at',
 ];
@@ -69,9 +74,12 @@ export interface PaymentCsvRow {
   week_start: string | null;
   /** Null for the same reason. */
   carer: string | null;
+  /** Signed — negative on a correction (D-20). */
   amount_minor: number;
   currency: string;
   method_note: string | null;
+  /** The "why" of a reversal. Null on an ordinary payment. */
+  correction_reason: string | null;
   recorded_by: string | null;
   created_at: string;
 }
@@ -84,6 +92,7 @@ function paymentRecord(row: PaymentCsvRow): string {
     String(row.amount_minor),
     row.currency,
     row.method_note ?? '',
+    row.correction_reason ?? '',
     row.recorded_by ?? '',
     row.created_at,
   ]);
@@ -95,6 +104,12 @@ function paymentRecord(row: PaymentCsvRow): string {
  * the same discipline `weekExportCsv.ts` uses for its line records.
  */
 export function buildPaymentsCsv(rows: readonly PaymentCsvRow[]): string {
+  // A CORRECTION AND ITS ORIGINAL BOTH SHIP. Do NOT net them into one row:
+  // the export is what a payroll service and a dispute both read, and the
+  // pair IS the audit trail (D-20, attention spec §4.1). Two rows summing to
+  // zero looks like a bug to every future reader, and the tidy-up — "just net
+  // them", "filter the reversed pair" — is one line away and destroys the
+  // only reason the correction exists.
   const records = [csvRow(HEADER), ...rows.map(paymentRecord)];
   return records.map(record => `${record}${CSV_LINE_TERMINATOR}`).join('');
 }

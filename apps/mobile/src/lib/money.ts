@@ -98,7 +98,11 @@ export function formatMoney(minor: number, currency: string): string {
     // when only one of the two can be had. Upgrade path is
     // `Intl.NumberFormat.formatToParts` to learn the position, which these
     // builds by definition cannot supply.
-    return `${fallbackSymbol}${formatMajorAmount(major)}`;
+    // The sign goes in FRONT of the symbol, which is where `Intl` itself puts
+    // it — a payment correction is a negative row since D-20, and "£-462.00"
+    // is not how anyone writes money.
+    const sign = major < 0 ? '-' : '';
+    return `${sign}${fallbackSymbol}${formatMajorAmount(Math.abs(major))}`;
   }
 
   return formatted;

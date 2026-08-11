@@ -926,7 +926,12 @@ describe('TimesheetQueryService.listForHouseholdWeek — removed members', () =>
     ).rejects.toBeInstanceOf(TimesheetNotFoundError);
   });
 
-  it('an ACTIVE nanny still gets the household-wide list — status, not role, is what narrows', async () => {
+  // D-21 / P8. The gate used to short-circuit on `status === 'active'` BEFORE
+  // it looked at the role, so an ACTIVE nanny read the whole household's
+  // entries — every other carer's exact clock-in times, break lengths and
+  // shift notes — and an ACTIVE helper read them too. Role decides the scope
+  // now; status decides nothing at all.
+  it('an ACTIVE nanny is FORCED to her own carer scope — role narrows, not status', async () => {
     const timeEntryRepo = makeTimeEntryRepo();
     const svc = new TimesheetQueryService(
       timeEntryRepo,
@@ -941,6 +946,72 @@ describe('TimesheetQueryService.listForHouseholdWeek — removed members', () =>
     );
 
     await svc.listForHouseholdWeek('carer-1', 'h1', '2026-08-03');
+
+    expect(timeEntryRepo.listForHouseholdWeek).toHaveBeenCalledWith(
+      'h1',
+      '2026-08-03',
+      '2026-08-10',
+      'carer-1'
+    );
+  });
+
+  it("an ACTIVE nanny's client-passed carer_id is IGNORED — P8, the whole gap", async () => {
+    const timeEntryRepo = makeTimeEntryRepo();
+    const svc = new TimesheetQueryService(
+      timeEntryRepo,
+      makeTimesheetRepo(),
+      makeMemberRepo({
+        findMembershipAnyStatus: mock(async () => ({
+          ...membership,
+          role: 'nanny',
+        })),
+      }),
+      makeHouseholdRepo()
+    );
+
+    await svc.listForHouseholdWeek('carer-1', 'h1', '2026-08-03', 'carer-2');
+
+    expect(timeEntryRepo.listForHouseholdWeek).toHaveBeenCalledWith(
+      'h1',
+      '2026-08-03',
+      '2026-08-10',
+      'carer-1'
+    );
+  });
+
+  it('an ACTIVE HELPER is denied outright — she never had a payroll surface', async () => {
+    const svc = new TimesheetQueryService(
+      makeTimeEntryRepo(),
+      makeTimesheetRepo(),
+      makeMemberRepo({
+        findMembershipAnyStatus: mock(async () => ({
+          ...membership,
+          role: 'helper',
+        })),
+      }),
+      makeHouseholdRepo()
+    );
+
+    await expect(
+      svc.listForHouseholdWeek('helper-1', 'h1', '2026-08-03')
+    ).rejects.toBeInstanceOf(TimesheetNotFoundError);
+  });
+
+  it('an ACTIVE owner still reads every carer — parents lose nothing', async () => {
+    const timeEntryRepo = makeTimeEntryRepo();
+    const svc = new TimesheetQueryService(
+      timeEntryRepo,
+      makeTimesheetRepo(),
+      makeMemberRepo({
+        findMembershipAnyStatus: mock(async () => ({
+          ...membership,
+          role: 'owner',
+        })),
+      }),
+      makeHouseholdRepo()
+    );
+
+    await svc.listForHouseholdWeek('owner-1', 'h1', '2026-08-03');
 
     expect(timeEntryRepo.listForHouseholdWeek).toHaveBeenCalledWith(
       'h1',

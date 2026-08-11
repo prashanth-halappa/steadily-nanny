@@ -153,6 +153,11 @@ export const NOTIFICATION_ROUTE_MAP: NotificationRouteMap &
   // A parent recorded a settlement — land the carer on the week it settles,
   // same Hours destination (and payload fields) as the timesheet leg.
   [PUSH_NOTIFICATION_TYPES.PAYMENT_RECORDED]: hoursHref,
+  // 3-T2 (§1.3 N5/N6): a corrected payment and a settled reimbursement are
+  // both facts about one week's money — same Hours destination and payload
+  // fields as the settlement they amend.
+  [PUSH_NOTIFICATION_TYPES.PAYMENT_CORRECTED]: hoursHref,
+  [PUSH_NOTIFICATION_TYPES.REIMBURSEMENT_SETTLED]: hoursHref,
 
   [PUSH_NOTIFICATION_TYPES.TIME_OFF_REQUESTED]: () =>
     '/(private)/settings/household-time-off',

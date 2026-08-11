@@ -28,9 +28,17 @@
  * That predicate is exported as `hasPaidStateContent` so `WeekMoneyCard` can
  * decide whether it has a card to draw at all without re-deriving it.
  *
- * `payments` is the ledger the server returned. The section never re-orders
- * it or re-derives its total from anything other than `paidState`, which is
- * itself derived once in `utils/paidState`.
+ * `payments` is the ledger the server returned. The section never re-derives
+ * its total from anything other than `paidState`, which is itself derived once
+ * in `utils/paidState`. The only re-ordering it does is D-20's grouping below.
+ *
+ * CORRECTIONS (D-20, attention spec §4.1) render as a row DIRECTLY UNDER the
+ * payment they reverse, indented one step, with the original row unchanged and
+ * keeping its full amount forever. The figure is negative, tabular, and the
+ * SAME size and colour as the row above it: it is a legitimate entry in a
+ * ledger, and colouring it destructive or badging it tells the reader
+ * something went wrong with the APP. The required reason renders on the row —
+ * it is the only thing that makes a reversal readable a year later.
  */
 import type { Payment } from '@steadily-nanny/shared-types/schemas/payment.schema';
 import { ChevronRight } from 'lucide-react-native';
@@ -72,6 +80,47 @@ export function hasPaidStateContent(
   return paidState.grossMinor !== 0 || payments.length > 0;
 }
 
+/**
+ * Each correction placed directly after the payment it corrects, with the
+ * week's own oldest-first payment order otherwise untouched (D-20).
+ *
+ * A correction whose original is NOT in this list cannot happen inside one
+ * week's ledger — but it is appended at the end rather than dropped anyway,
+ * because a money row silently disappearing is the worst failure this
+ * component has.
+ */
+function groupCorrectionsUnderOriginals(payments: Payment[]): Payment[] {
+  const correctionsFor = new Map<string, Payment[]>();
+  for (const payment of payments) {
+    if (payment.kind !== 'correction' || payment.corrects_payment_id === null) {
+      continue;
+    }
+    const siblings = correctionsFor.get(payment.corrects_payment_id);
+    if (siblings) {
+      siblings.push(payment);
+    } else {
+      correctionsFor.set(payment.corrects_payment_id, [payment]);
+    }
+  }
+
+  const ordered: Payment[] = [];
+  const placed = new Set<string>();
+  for (const payment of payments) {
+    if (payment.kind === 'correction') continue;
+    ordered.push(payment);
+    for (const correction of correctionsFor.get(payment.id) ?? []) {
+      ordered.push(correction);
+      placed.add(correction.id);
+    }
+  }
+  for (const payment of payments) {
+    if (payment.kind === 'correction' && !placed.has(payment.id)) {
+      ordered.push(payment);
+    }
+  }
+  return ordered;
+}
+
 interface PaidStateSectionProps {
   /** `null` when the week has no server gross — the section then renders
    * nothing at all. Never default this with `?? 0` at a call site. */
@@ -104,6 +153,7 @@ export function PaidStateSection({
   if (!hasPaidStateContent(paidState, payments) || !paidState) return null;
 
   const { status, paidMinor, balanceMinor } = paidState;
+  const ledger = groupCorrectionsUnderOriginals(payments);
   // Nothing left to record — offering the action would only produce a
   // refusal the server has to write the copy for.
   const canMarkPaid = onMarkPaidPress !== undefined && balanceMinor > 0;
@@ -132,25 +182,42 @@ export function PaidStateSection({
 
       {payments.length > 0 ? (
         <View className="gap-3 rounded-cell bg-muted px-4 py-3">
-          {payments.map(payment => {
+          {ledger.map(payment => {
+            const isCorrection = payment.kind === 'correction';
             // The payment's OWN currency, not the section's: this line and
             // the detail sheet it opens are one tap apart, and two spellings
             // of one figure is a trust bug. The rows above stay week-scoped.
             // Keyed here, not only on the wrapper: the unpressable branch
             // returns this element as the list item itself.
+            //
+            // A correction's figure is ALREADY negative on the wire, so the
+            // minus sign comes from the data through the one money formatter
+            // — never from a sign this component adds. Same `AmountRow`,
+            // same size, same colour as the row it corrects (see the module
+            // doc for why it is not red).
             const line = (
               <AmountRow
                 key={payment.id}
                 testID={`${testID}-line-${payment.id}`}
-                label={formatEarningsLongDate(payment.paid_at)}
+                label={
+                  isCorrection
+                    ? t('paid.correctionRow', {
+                        date: formatEarningsLongDate(payment.paid_at),
+                      })
+                    : formatEarningsLongDate(payment.paid_at)
+                }
                 value={formatMoney(payment.amount_minor, payment.currency)}
-                subLine={payment.method_note ?? undefined}
+                subLine={
+                  (isCorrection
+                    ? payment.correction_reason
+                    : payment.method_note) ?? undefined
+                }
               />
             );
             // `-open` on the wrapper, not the base testID: `AmountRow`
             // derives its money target as `${testID}-value` and moving the
             // base would silently rename a money assertion.
-            return onPaymentPress ? (
+            const row = onPaymentPress ? (
               <Pressable
                 key={payment.id}
                 testID={`${testID}-line-${payment.id}-open`}
@@ -170,6 +237,19 @@ export function PaidStateSection({
               </Pressable>
             ) : (
               line
+            );
+            // One step of indent, and nothing else: the indent IS the
+            // statement that this row belongs to the one above it.
+            return isCorrection ? (
+              <View
+                key={payment.id}
+                testID={`${testID}-correction-${payment.id}`}
+                style={{ paddingLeft: spacing.md }}
+              >
+                {row}
+              </View>
+            ) : (
+              row
             );
           })}
         </View>

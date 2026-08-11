@@ -133,6 +133,8 @@
       "expense_rejected": "Expense rejected",
       "pto_marked_paid": "Time off marked paid",
       "payment_recorded": "Payment recorded",
+      "payment_corrected": "Payment corrected",
+      "reimbursement_settled": "Reimbursement paid back",
       "shift_confirmed": "Shift confirmed",
       "shift_declined": "Shift declined",
       "shift_reminder": "Shift reminder",

@@ -59,6 +59,9 @@ function makePayment(overrides: Partial<Payment> = {}): Payment {
     household_id: '22222222-2222-4222-8222-222222222222',
     carer_id: '33333333-3333-4333-8333-333333333333',
     amount_minor: 62_400,
+    kind: 'payment',
+    corrects_payment_id: null,
+    correction_reason: null,
     currency: 'GBP',
     paid_at: '2026-08-16',
     method_note: 'Bank transfer',
@@ -222,6 +225,45 @@ describe('PaymentDetailSheet — the week link', () => {
     expect(queryByTestId('payments-detail-paid-to-chevron')).toBeNull();
     expect(queryByTestId('payments-detail-recorded-by-chevron')).toBeNull();
     expect(queryByTestId('payments-detail-method-chevron')).toBeNull();
+  });
+});
+
+// D-20, attention spec §4.1. Correcting is the PAYER's act: the action is a
+// prop the parent view passes and nobody else does, so "who may correct" is
+// one call site rather than a role check inside this component. It is NOT
+// `onFlagPress` — that is the carer's "this doesn't look right" (§3.1) and
+// the two must never collapse into one control.
+describe('PaymentDetailSheet — correcting a payment', () => {
+  it('offers the correction only when the caller passes the action', () => {
+    const { queryByTestId } = renderSheet();
+
+    expect(queryByTestId('payments-detail-correct')).toBeNull();
+  });
+
+  it('hands the payment back when the correction action is pressed', () => {
+    const onCorrectPress = mock((_payment: Payment) => {});
+    const payment = makePayment();
+    const { getByTestId } = renderSheet({ payment, onCorrectPress });
+
+    fireEvent.press(getByTestId('payments-detail-correct'));
+
+    expect(onCorrectPress).toHaveBeenCalledWith(payment);
+  });
+
+  // One level, no chains: correcting a correction is a new payment, and a
+  // chain of reversals is a thing nobody can read back a year later.
+  it('never offers to correct a correction, even when the action is passed', () => {
+    const { queryByTestId } = renderSheet({
+      payment: makePayment({
+        kind: 'correction',
+        amount_minor: -62_400,
+        corrects_payment_id: '77777777-7777-4777-8777-777777777777',
+        correction_reason: 'recorded twice',
+      }),
+      onCorrectPress: mock(() => {}),
+    });
+
+    expect(queryByTestId('payments-detail-correct')).toBeNull();
   });
 });
 

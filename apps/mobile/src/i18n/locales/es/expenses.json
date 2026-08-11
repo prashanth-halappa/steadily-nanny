@@ -60,6 +60,9 @@
     "title": "Reembolsos",
     "totalLabel": "Total a reembolsar",
     "totalUnavailable": "Total no disponible para esta semana",
+    "stateUnsettled": "Aprobado · aún sin reembolsar",
+    "stateSettled": "Reembolsado el {{date}}",
+    "markReimbursedButton": "Marcar como reembolsado",
     "note": "Reembolsado en su totalidad — no es salario ni forma parte del salario bruto."
   }
 }

@@ -5,20 +5,24 @@
 // `@steadily-nanny/shared-types/schemas/payment.schema` — never redefined
 // here.
 //
-// Three reads/writes and deliberately no update or remove: `payments` is
-// append-only server-side (there is no PATCH and no DELETE route — see
+// Deliberately no update and no remove: `payments` is append-only server-side
+// (there is no PATCH and no DELETE route — see
 // `apps/api/src/domains/pay/routes/paymentRoutes.ts`). A mistake is prevented
-// at write time by the over-payment gate, never corrected by editing history.
+// at write time by the over-payment gate, and once written it is corrected by
+// APPENDING a reversing row (`correct`, D-20 / migration 085) — never by
+// editing history.
 //
 // Every network call goes through the shared `apiClient` and unwraps the
 // standard success envelope `{ success, data, message, ... }` at
 // `response.data.data` before validating the payload with Zod.
 
 import type {
+  CreatePaymentCorrectionInput,
   CreatePaymentInput,
   Payment,
 } from '@steadily-nanny/shared-types/schemas/payment.schema';
 import {
+  CreatePaymentCorrectionSchema,
   CreatePaymentSchema,
   PaymentListResponseSchema,
   PaymentSchema,
@@ -26,10 +30,13 @@ import {
 import { z } from 'zod';
 import { apiClient } from '@/src/api/client';
 
-export { PAYMENT_METHOD_NOTE_MAX } from '@steadily-nanny/shared-types/schemas/payment.schema';
+export {
+  PAYMENT_CORRECTION_REASON_MAX,
+  PAYMENT_METHOD_NOTE_MAX,
+} from '@steadily-nanny/shared-types/schemas/payment.schema';
 // Re-exported so domain-internal imports (`@/src/api/endpoints/payments`)
 // stay stable regardless of where the wire contract itself lives.
-export type { CreatePaymentInput, Payment };
+export type { CreatePaymentCorrectionInput, CreatePaymentInput, Payment };
 
 // --- Endpoint URLs ----------------------------------------------------------
 export const paymentEndpoints = {
@@ -39,6 +46,10 @@ export const paymentEndpoints = {
   /** Read-only: every payment across every carer and week in one household. */
   forHousehold: (householdId: string) =>
     `/v1/households/${householdId}/payments`,
+  /** D-20: appends a correcting row against ONE payment. A POST, not a PATCH
+   * or a DELETE — the original is never touched. */
+  corrections: (timesheetId: string, paymentId: string) =>
+    `/v1/timesheets/${timesheetId}/payments/${paymentId}/corrections`,
 } as const;
 
 // --- API --------------------------------------------------------------------
@@ -97,5 +108,34 @@ export const paymentApi = {
       .safeParse(response.data.data);
     if (!parsed.success) throw parsed.error;
     return parsed.data.payment;
+  },
+
+  /**
+   * `POST /timesheets/:id/payments/:paymentId/corrections` — reverse a payment
+   * by APPENDING a negative row that points at it (D-20). The original keeps
+   * its full amount forever.
+   *
+   * The body carries a POSITIVE magnitude to reverse; the server owns the sign
+   * flip, and validating here BEFORE the request is what keeps a zero, a
+   * negative, or an empty reason from ever leaving the device as a plausible
+   * money write — the same reason `create` validates.
+   */
+  correct: async (
+    timesheetId: string,
+    paymentId: string,
+    input: CreatePaymentCorrectionInput
+  ): Promise<Payment> => {
+    const validated = CreatePaymentCorrectionSchema.safeParse(input);
+    if (!validated.success) throw validated.error;
+
+    const response = await apiClient.post(
+      paymentEndpoints.corrections(timesheetId, paymentId),
+      validated.data
+    );
+    const parsed = z
+      .object({ correction: PaymentSchema })
+      .safeParse(response.data.data);
+    if (!parsed.success) throw parsed.error;
+    return parsed.data.correction;
   },
 };

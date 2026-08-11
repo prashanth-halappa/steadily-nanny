@@ -29,6 +29,7 @@ import {
   payArrangementRoutes,
   paymentRoutes,
   ptoRoutes,
+  reimbursementSettlementRoutes,
 } from '../domains/pay';
 import {
   householdSchedulePatternRoutes,
@@ -128,6 +129,21 @@ router.use(
 // gate lives in the service. See docs/11-MONEY.md §6, §8.
 router.use('/households/:householdId/expenses', expenseRoutes);
 router.use('/expenses', expenseIdRoutes);
+
+// The record that the family paid an approved reimbursement BACK (D-14,
+// migration 086). Household-nested only — a settlement is one carer's week in
+// one household, so there is no flat id-scoped router, and no PATCH/DELETE
+// anywhere: the table is append-only with no correction path. Mounted BEFORE
+// the `/households/:householdId` prefix router below, the same
+// more-specific-wins ordering as every other household-nested mount.
+//
+// NOT payments, and not mounted alongside them: they are excluded from gross,
+// from payable minutes and from the payment ceiling. See the guard comment at
+// the top of `reimbursementSettlementService.ts`.
+router.use(
+  '/households/:householdId/reimbursement-settlements',
+  reimbursementSettlementRoutes
+);
 
 // Paid time off (Phase 3). A PREFIX mount, unlike its siblings above: balance
 // and ledger are carer-nested (`/carers/:carerId/pto/...`) while mark-paid is

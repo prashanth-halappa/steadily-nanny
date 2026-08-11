@@ -72,6 +72,13 @@ describe('NotificationPrefsScreen', () => {
     expect(source).toContain("timesheet_query_withdrawn: 'hoursAndPay'");
   });
 
+  // 3-T2 / §1.3 N5-N6: a correction to a payment and a settled reimbursement
+  // are the same money conversation payment_recorded already sits in.
+  it('groups the money-correction types under Hours and pay', () => {
+    expect(source).toContain("payment_corrected: 'hoursAndPay'");
+    expect(source).toContain("reimbursement_settled: 'hoursAndPay'");
+  });
+
   it('groups visible push types under Schedule, Hours and pay, and Your household headings', () => {
     expect(source).toContain('notificationPrefs.groups.schedule');
     expect(source).toContain('notificationPrefs.groups.hoursAndPay');

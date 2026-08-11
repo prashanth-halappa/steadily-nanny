@@ -26,12 +26,17 @@
  * — restated in the service, and the restatement is the point. Repositories
  * run as the service role and bypass RLS entirely, so the policy is a
  * backstop, not the check (`docs/11-MONEY.md` §8/§9): a service LOOSER than
- * the policy on the same table is a real hole. It is deliberately NARROWER
- * than `timesheetQueryService`'s "any active member may read" gate on
- * `GET /timesheets/:id` — hours are a household-wide fact, but a helper must
- * never see money and one nanny must never see another's, which is the one
- * rule every money read in this domain shares
- * (`payArrangementQueryService`, `ptoQueryService`, `expenseQueryService`).
+ * the policy on the same table is a real hole.
+ *
+ * It used to be deliberately NARROWER than `timesheetQueryService`'s gate on
+ * `GET /timesheets/:id`, which granted household scope to ANY active member.
+ * As of D-21 it is not narrower — it is the SAME, because that gate moved to
+ * match this one (a `timesheets` row carries the frozen gross, so "hours are a
+ * household-wide fact" stopped being true the day 042 landed). A helper must
+ * never see money and one nanny must never see another's; that is now the one
+ * rule EVERY payroll read in this repo shares — this service,
+ * `payArrangementQueryService`, `ptoQueryService`, `expenseQueryService` and
+ * `timesheetQueryService.assertPayrollReader`. Change one, change all five.
  *
  * THE CARER ARM IS MEMBERSHIP-INDEPENDENT, exactly like the policy's
  * `carer_id = auth.uid()`: a carer who has since been removed still reads the

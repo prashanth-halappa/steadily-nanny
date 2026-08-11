@@ -37,9 +37,13 @@ const timesheetOwnership = {
 // The week read. NO ownership middleware, deliberately — the read gate lives
 // one layer down, in `timesheetQueryService.getReadableTimesheet`, which
 // `getWeekWithEarnings` calls before it prices anything. It is a WIDER gate
-// than the actions below: a member REMOVED from the household keeps access to
-// the payroll she was part of (a departed nanny must still see the hours she
-// worked), role-scoped there.
+// than the actions below IN ONE DIRECTION and NARROWER in another, which is
+// exactly why it must not share their cache key: a member REMOVED from the
+// household keeps access to the payroll she was part of (a departed nanny must
+// still see the hours she worked), while an ACTIVE nanny is scoped to her OWN
+// rows only and an ACTIVE helper is refused outright (D-21). The actions'
+// lookup asks a different question — "is this an active member?" — and gets a
+// different answer for the same pair.
 //
 // Wiring that wider lookup into `makeOwnershipValidator` here would BREAK the
 // stricter guard below, not merely duplicate it: the validator caches by
@@ -56,8 +60,9 @@ router.get(
 
 // The payroll export — the SAME gate as the read above, and for the same
 // reason: it is the same week, in a file. No ownership middleware, so the
-// service's `getReadableTimesheet` decides (any active member; a removed
-// member keeps the payroll she was part of, role-scoped there), and no cache
+// service's `getReadableTimesheet` decides (owners/parents see every carer's
+// week, a nanny only her own, a helper none — status-independent, D-21), and
+// no cache
 // entry is left behind for the ACTION routes below to reuse.
 //
 // Only an APPROVED week exports — refused with TimesheetNotExportableError
@@ -73,7 +78,7 @@ router.get(
 // stylistic preference: `makeOwnershipValidator` caches by
 // `(userId, resourceId)` with no lookup identity (see the GET comment above),
 // so any rearrangement here risks the exact cache-poisoning class GOLDEN-FIXES
-// #31 documents. `validate(..., 'body')` sits AFTER ownership, matching
+// #32 documents. `validate(..., 'body')` sits AFTER ownership, matching
 // /query and /reopen below.
 //
 // The body is optional in shape (`{}` and `{adjustment: null}` both pass), so
@@ -106,7 +111,8 @@ router.post(
 
 // The week thread (D-18 / D-19 / D-46). The READ carries NO ownership
 // middleware for exactly the reason the GET above does not: its gate
-// (`getThread` → `getReadableTimesheet`) is WIDER than the actions', and
+// (`getThread` → `getReadableTimesheet`) answers a DIFFERENT question from
+// the actions', and
 // `makeOwnershipValidator` caches by `(userId, resourceId)` with no lookup
 // identity — one permitted thread read would leave a positive entry
 // `/approve` reuses, handing a removed parent an approval. GOLDEN-FIXES #32.

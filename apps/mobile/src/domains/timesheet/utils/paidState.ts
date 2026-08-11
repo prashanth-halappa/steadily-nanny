@@ -18,7 +18,9 @@
  * nanny is told she has been paid should be testable without a renderer.
  */
 
-/** Just the field this module needs off a `Payment` — the ledger row's amount. */
+/** Just the field this module needs off a `Payment` — the ledger row's amount.
+ * SIGNED since D-20: a correction is a negative row, so paid-to-date is one
+ * signed sum over both kinds and there is no per-site sign rule anywhere. */
 interface PaymentAmount {
   amount_minor: number;
 }
@@ -27,7 +29,9 @@ export type PaidStatus = 'unpaid' | 'partial' | 'paid';
 
 export interface WeekPaidState {
   status: PaidStatus;
-  /** Sum of every recorded payment, minor units. */
+  /** Signed sum of every ledger row, minor units — payments less corrections.
+   * A correction lowers this and RAISES `balanceMinor` by exactly as much;
+   * neither figure is ever clamped to flatter the record. */
   paidMinor: number;
   /** The week's gross (frozen once approved), minor units. */
   grossMinor: number;

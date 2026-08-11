@@ -142,5 +142,21 @@
     "exceedsGrossTitle": "That's more than this week still has left to pay.",
     "alreadyRecordedLabel": "Already recorded",
     "weekGrossLabel": "Week's gross"
+  },
+  "correctPaymentSheet": {
+    "title": "Correct this payment",
+    "original": "Paid on {{date}}",
+    "originalWithMethod": "Paid on {{date}} · {{method}}",
+    "amountLabel": "Amount to reverse",
+    "amountError": "Enter an amount, like 250 or 250.00.",
+    "exceedsOriginalError": "That's more than this payment.",
+    "exceedsOriginalTitle": "That's more than this payment has left to reverse.",
+    "originalAmountLabel": "This payment",
+    "remainingLabel": "Left to reverse",
+    "notCorrectableTitle": "This payment can't be corrected. It may already have been reversed in full, or it is itself a correction.",
+    "reasonLabel": "Why",
+    "reasonPlaceholder": "e.g. recorded twice",
+    "note": "The original stays on the record. This adds a correcting entry.",
+    "submitButton": "Record the correction"
   }
 }
