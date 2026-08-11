@@ -61,8 +61,15 @@ describe('PayArrangementController', () => {
       mock()
     );
     expect(getCurrent).toHaveBeenCalledWith('parent-1', 'h1', 'carer-1');
+    // D-6/§10: the controller attaches the server-computed weekly-equivalent
+    // at the wire edge — null here because the stub carries no
+    // `guaranteed_minutes_per_week` (no guarantee, no line, T16).
     expect(res.body.data).toEqual({
-      pay_arrangement: { id: 'pa-1', rate_minor: 1500 },
+      pay_arrangement: {
+        id: 'pa-1',
+        rate_minor: 1500,
+        weekly_equivalent_minor: null,
+      },
     });
   });
 
@@ -92,7 +99,10 @@ describe('PayArrangementController', () => {
     );
     expect(getHistory).toHaveBeenCalledWith('carer-1', 'h1', 'carer-1');
     expect(res.body.data).toEqual({
-      pay_arrangements: [{ id: 'pa-1' }, { id: 'pa-0' }],
+      pay_arrangements: [
+        { id: 'pa-1', weekly_equivalent_minor: null },
+        { id: 'pa-0', weekly_equivalent_minor: null },
+      ],
     });
   });
 
@@ -114,6 +124,8 @@ describe('PayArrangementController', () => {
     );
     expect(create).toHaveBeenCalledWith('parent-1', 'h1', 'carer-1', body);
     expect(res.statusCode).toBe(201);
+    // create's response is NOT enriched (module doc: only the read paths
+    // are) — the command service's own return value passes straight through.
     expect(res.body.data).toEqual({
       pay_arrangement: { id: 'pa-new', rate_minor: 1500 },
     });

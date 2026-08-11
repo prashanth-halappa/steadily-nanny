@@ -216,6 +216,17 @@ export const PayArrangementSchema = z.object({
   // affects a fixture or pre-076 payload that omits it, which parses with
   // `terms: undefined` rather than failing.
   terms: z.record(z.string(), z.unknown()).optional(),
+  // D-6/§10: the salary-framing figure ("$1,540.00 a week at 50 guaranteed
+  // hours") — COMPUTED, never stored. Attached at the wire edge
+  // (`payArrangementController.withWeeklyEquivalent`) by routing the
+  // arrangement through the SAME engine that prices a real week
+  // (`earningsService.weeklyEquivalentMinor`) — see that function's own
+  // "forbidden refactor" guard note before touching this field. Null when
+  // there is no `guaranteed_minutes_per_week` (no guarantee, no line — T16).
+  // `.optional()` for the same fixture reason every 078/080 column carries
+  // it: a payload from a pre-3-U1 server, or a hand-built test fixture, has
+  // no business being forced to state a figure it never computed.
+  weekly_equivalent_minor: z.int().min(0).nullable().optional(),
 });
 
 /**

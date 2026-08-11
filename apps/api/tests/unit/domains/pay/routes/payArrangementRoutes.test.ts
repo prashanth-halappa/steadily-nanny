@@ -85,9 +85,14 @@ let app: import('express').Express;
 let server: import('node:http').Server;
 let baseUrl: string;
 
+const ARRANGEMENT_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+
 let getCurrentMock: ReturnType<typeof mock>;
 let getHistoryMock: ReturnType<typeof mock>;
 let createMock: ReturnType<typeof mock>;
+let ackMock: ReturnType<typeof mock>;
+let dissentMock: ReturnType<typeof mock>;
+let listAcksMock: ReturnType<typeof mock>;
 let requireAuthMock: ReturnType<typeof mock>;
 
 beforeAll(async () => {
@@ -97,6 +102,9 @@ beforeAll(async () => {
     id: 'pa-new',
     rate_minor: 1500,
   }));
+  ackMock = mock(async () => ({ id: 'ack-1', kind: 'seen' }));
+  dissentMock = mock(async () => ({ id: 'ack-2', kind: 'disagreed' }));
+  listAcksMock = mock(async () => [{ id: 'ack-1', kind: 'seen' }]);
 
   // Stub the AUTH layer only. `middlewares/presets.ts`'s `authWithValidation`
   // imports `requireAuth` from this module — mocking it here (before the
@@ -130,6 +138,16 @@ beforeAll(async () => {
     () => ({
       payArrangementCommandService: {
         create: (...args: unknown[]) => createMock(...args),
+      },
+    })
+  );
+  mock.module(
+    '../../../../../src/domains/pay/services/payArrangementAckService',
+    () => ({
+      payArrangementAckService: {
+        ack: (...args: unknown[]) => ackMock(...args),
+        dissent: (...args: unknown[]) => dissentMock(...args),
+        listForArrangement: (...args: unknown[]) => listAcksMock(...args),
       },
     })
   );
@@ -173,6 +191,9 @@ beforeEach(() => {
   getCurrentMock.mockClear();
   getHistoryMock.mockClear();
   createMock.mockClear();
+  ackMock.mockClear();
+  dissentMock.mockClear();
+  listAcksMock.mockClear();
   requireAuthMock.mockClear();
   requireAuthMock.mockImplementation((req: any, _res: any, next: any) => {
     req.user = { id: DEFAULT_AUTH_USER_ID };
@@ -211,8 +232,14 @@ describe('payArrangementRoutes — mounted router', () => {
       };
 
       expect(res.status).toBe(200);
+      // D-6/§10: the controller attaches weekly_equivalent_minor (null here
+      // — the stub carries no guaranteed_minutes_per_week).
       expect(body.data).toEqual({
-        pay_arrangement: { id: 'pa-1', rate_minor: 1500 },
+        pay_arrangement: {
+          id: 'pa-1',
+          rate_minor: 1500,
+          weekly_equivalent_minor: null,
+        },
       });
       expect(getCurrentMock).toHaveBeenCalledWith(
         DEFAULT_AUTH_USER_ID,
@@ -296,6 +323,101 @@ describe('payArrangementRoutes — mounted router', () => {
 
       expect(res.status).toBe(400);
       expect(createMock).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('POST .../:arrangementId/ack (D-31)', () => {
+    it('a non-uuid arrangementId is rejected with 400 before the service is called', async () => {
+      const res = await fetch(
+        `${baseUrl}${pathFor(HOUSEHOLD_ID, CARER_ID, '/not-a-uuid/ack')}`,
+        { method: 'POST' }
+      );
+      expect(res.status).toBe(400);
+      expect(ackMock).not.toHaveBeenCalled();
+    });
+
+    it('a valid request reaches the controller: 201, called with auth user id + all three route params', async () => {
+      const res = await fetch(
+        `${baseUrl}${pathFor(HOUSEHOLD_ID, CARER_ID, `/${ARRANGEMENT_ID}/ack`)}`,
+        { method: 'POST' }
+      );
+      expect(res.status).toBe(201);
+      expect(ackMock).toHaveBeenCalledWith(
+        DEFAULT_AUTH_USER_ID,
+        HOUSEHOLD_ID,
+        CARER_ID,
+        ARRANGEMENT_ID
+      );
+    });
+  });
+
+  describe('POST .../:arrangementId/dissent (D-45)', () => {
+    it('a note over 280 chars is rejected with 400 before the service is called', async () => {
+      const res = await fetch(
+        `${baseUrl}${pathFor(HOUSEHOLD_ID, CARER_ID, `/${ARRANGEMENT_ID}/dissent`)}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ note: 'x'.repeat(281) }),
+        }
+      );
+      expect(res.status).toBe(400);
+      expect(dissentMock).not.toHaveBeenCalled();
+    });
+
+    it('a valid note reaches the controller: 201, note forwarded to the service', async () => {
+      const res = await fetch(
+        `${baseUrl}${pathFor(HOUSEHOLD_ID, CARER_ID, `/${ARRANGEMENT_ID}/dissent`)}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ note: 'The rate is wrong.' }),
+        }
+      );
+      expect(res.status).toBe(201);
+      expect(dissentMock).toHaveBeenCalledWith(
+        DEFAULT_AUTH_USER_ID,
+        HOUSEHOLD_ID,
+        CARER_ID,
+        ARRANGEMENT_ID,
+        'The rate is wrong.'
+      );
+    });
+
+    it('an empty body is valid — note is optional', async () => {
+      const res = await fetch(
+        `${baseUrl}${pathFor(HOUSEHOLD_ID, CARER_ID, `/${ARRANGEMENT_ID}/dissent`)}`,
+        { method: 'POST', headers: { 'Content-Type': 'application/json' } }
+      );
+      expect(res.status).toBe(201);
+      expect(dissentMock).toHaveBeenCalledWith(
+        DEFAULT_AUTH_USER_ID,
+        HOUSEHOLD_ID,
+        CARER_ID,
+        ARRANGEMENT_ID,
+        undefined
+      );
+    });
+  });
+
+  describe('GET .../:arrangementId/acks', () => {
+    it('reaches the controller: 200 with the ack list', async () => {
+      const res = await fetch(
+        `${baseUrl}${pathFor(HOUSEHOLD_ID, CARER_ID, `/${ARRANGEMENT_ID}/acks`)}`
+      );
+      const body = (await res.json()) as {
+        data: { pay_arrangement_acks: unknown[] };
+      };
+      expect(res.status).toBe(200);
+      expect(body.data.pay_arrangement_acks).toEqual([
+        { id: 'ack-1', kind: 'seen' },
+      ]);
+      expect(listAcksMock).toHaveBeenCalledWith(
+        DEFAULT_AUTH_USER_ID,
+        HOUSEHOLD_ID,
+        CARER_ID,
+        ARRANGEMENT_ID
+      );
     });
   });
 

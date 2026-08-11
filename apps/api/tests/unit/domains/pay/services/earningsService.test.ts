@@ -13,6 +13,7 @@ import { WeekEarningsSchema } from '@steadily-nanny/shared-types/schemas/timeshe
 import {
   type ComputeWeekEarningsInput,
   computeWeekEarnings,
+  weeklyEquivalentMinor,
 } from '../../../../../src/domains/pay/services/earningsService';
 import type { PayArrangement } from '../../../../../src/domains/pay/types';
 
@@ -2677,5 +2678,67 @@ describe('earningsService — the overtime rate rounds half-up in integers', () 
   it('rounds a strictly-below-half product DOWN — half-up, not always-up', () => {
     // 1000 x 1.234 is impossible (numeric(3,2)); 1010 x 1.02 = 1030.2.
     expect(overtimeLineFor(1010, 1.02).rate_minor).toBe(1030);
+  });
+});
+
+// D-6/§10: the weekly-equivalent salary framing. §10.1's forbidden-refactor
+// guard note lives on the function itself; these tests are the proof that a
+// naive `rate * hours` would disagree with it the moment overtime exists.
+describe('earningsService.weeklyEquivalentMinor (D-6 §10)', () => {
+  it('is null when there is no guarantee — never a fabricated figure (T16)', () => {
+    expect(
+      weeklyEquivalentMinor(arrangement({ guaranteed_minutes_per_week: null }))
+    ).toBeNull();
+  });
+
+  it('is null when the guarantee is zero', () => {
+    expect(
+      weeklyEquivalentMinor(arrangement({ guaranteed_minutes_per_week: 0 }))
+    ).toBeNull();
+  });
+
+  // §10's canonical example, and §10.1's canonical week: five 10-hour days,
+  // $28.00/hr, overtime after 40h at 1.5x. 40 reg + 10 OT =
+  // 40*2800 + 10*4200 = 112000 + 42000 = 154000 -> $1,540.00, NOT the naive
+  // rate*hours $1,400.00 (2800 * 50).
+  it('prices 50 guaranteed hours at $28.00/hr with weekly OT as $1,540.00, never the naive $1,400.00', () => {
+    const arr = arrangement({
+      rate_minor: 2800,
+      currency: 'USD',
+      overtime_threshold_minutes: 2400,
+      overtime_multiplier: 1.5,
+      guaranteed_minutes_per_week: 3000, // 50h
+      valid_from: '2026-01-01',
+    });
+    expect(weeklyEquivalentMinor(arr)).toBe(154_000);
+    expect(weeklyEquivalentMinor(arr)).not.toBe(140_000);
+  });
+
+  it('a guarantee within the weekly threshold prices at the plain rate — no overtime invented', () => {
+    const arr = arrangement({
+      rate_minor: 2000,
+      overtime_threshold_minutes: 2400,
+      overtime_multiplier: 1.5,
+      guaranteed_minutes_per_week: 2400, // exactly 40h
+    });
+    expect(weeklyEquivalentMinor(arr)).toBe(80_000); // 40 * 2000
+  });
+
+  // The even-spread assumption (§10: "Assumes five 10-hour days") means a
+  // guarantee that ALSO crosses the daily-OT threshold prices daily tiers
+  // too — 45h over 5 days is 9h/day: 8h regular + 1h daily OT, five times.
+  // 40 reg + 5 daily-OT, and the non-duplication invariant (§10.1) means the
+  // weekly threshold (40h) sees only the 40 regular minutes left after the
+  // daily split — no double-counted premium.
+  it('an even spread that crosses the daily-OT threshold prices the daily tier, never double-counted against the weekly one', () => {
+    const arr = arrangement({
+      rate_minor: 2000,
+      overtime_threshold_minutes: 2400,
+      overtime_multiplier: 1.5,
+      overtime_daily_threshold_minutes: 480, // 8h/day
+      guaranteed_minutes_per_week: 2700, // 45h = 5 x 9h
+    });
+    // 40 reg x 2000 = 80_000; 5h daily OT x (2000*1.5=3000) = 15_000.
+    expect(weeklyEquivalentMinor(arr)).toBe(95_000);
   });
 });

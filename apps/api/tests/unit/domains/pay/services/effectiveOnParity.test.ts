@@ -19,6 +19,21 @@
  * Vectors live in `VECTORS` below and are asserted identically against each
  * side. Nothing here re-tests the query SHAPE (that is
  * `payArrangementRepository.test.ts`'s job) — only the answer.
+ *
+ * D-16 (3-U1, `docs/design/screens-pay-terms.md` §6): "future `valid_from`
+ * allowed, engine must never price a future row early — extend `effectiveOn`
+ * tests." Both implementations ALREADY exclude `valid_from > date` (the
+ * `.lte('valid_from', date)` filter / the `candidate.valid_from > date`
+ * `continue` — see each file's own doc), so allowing
+ * `payArrangementCommandService.create` to WRITE a future-dated row required
+ * no change here: the resolution rule already treats "not yet in force" and
+ * "in force" identically whether the row was written yesterday or written
+ * three months in advance. The vectors below are the D-16-labelled proof of
+ * that, not new behaviour — "a valid_from one day AFTER the query date is
+ * not yet in force", "a future row never displaces the one actually in
+ * force" and "BOUNDARY: valid_from exactly ON the query date is already in
+ * force" (below) together are the whole round trip: SCHEDULED → stays inert
+ * → becomes the answer the instant its date arrives, never a day early.
  */
 import { beforeAll, describe, expect, it, mock } from 'bun:test';
 import type { PayArrangement } from '../../../../../src/domains/pay/types';
@@ -279,6 +294,39 @@ const VECTORS: Vector[] = [
     ],
     date: '2026-08-04',
     expected: 'pa-current',
+  },
+  {
+    // D-16: a scheduled raise written MONTHS before it takes effect (the
+    // `created_at` here is 2026-08-04, three weeks before the `created_at`
+    // of the vector above) is still invisible to every date before its
+    // `valid_from` — how far in advance it was WRITTEN never matters, only
+    // the date being priced.
+    name: 'D-16: a change scheduled months in advance stays inert until its date, however early it was written',
+    rows: [
+      row({ id: 'pa-current', valid_from: '2026-01-01' }),
+      row({
+        id: 'pa-scheduled',
+        valid_from: '2026-09-01',
+        created_at: '2026-06-01T09:00:00.000Z',
+      }),
+    ],
+    date: '2026-08-31',
+    expected: 'pa-current',
+  },
+  {
+    // D-16's other half: the SAME scheduled row becomes the answer the
+    // instant its date arrives — no lag, no re-write needed.
+    name: 'D-16: the same scheduled change is in force the day it arrives',
+    rows: [
+      row({ id: 'pa-current', valid_from: '2026-01-01' }),
+      row({
+        id: 'pa-scheduled',
+        valid_from: '2026-09-01',
+        created_at: '2026-06-01T09:00:00.000Z',
+      }),
+    ],
+    date: '2026-09-01',
+    expected: 'pa-scheduled',
   },
   {
     name: 'SAME-DAY CORRECTION: on a valid_from tie the later created_at supersedes the typo',

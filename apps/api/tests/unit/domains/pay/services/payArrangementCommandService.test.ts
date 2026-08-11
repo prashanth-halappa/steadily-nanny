@@ -41,12 +41,25 @@ function request(
   };
 }
 
+const PREVIOUS_ARRANGEMENT = {
+  id: 'pa-previous',
+  household_id: 'h1',
+  carer_id: 'carer-1',
+  rate_minor: 2000,
+  currency: 'GBP',
+  overtime_multiplier: 1.5,
+  valid_from: '2026-01-01',
+  valid_to: null,
+  created_at: '2026-01-01T09:00:00.000Z',
+};
+
 function makePayRepo(overrides: Record<string, unknown> = {}): any {
   return {
     create: mock(async (data: Record<string, unknown>) => ({
       ...createdRow,
       ...data,
     })),
+    listForCarer: mock(async () => [PREVIOUS_ARRANGEMENT]),
     ...overrides,
   };
 }
@@ -86,6 +99,32 @@ function makeUserService(name: string | null = 'Nia Rowe'): any {
   };
 }
 
+function makeTimesheetRepo(rows: any[] = []): any {
+  return { listForHousehold: mock(async () => rows) };
+}
+
+function makeWeekEarnings(
+  answers: Record<string, { status: string; gross_minor?: number }> = {}
+): any {
+  return {
+    computeForWeekWithArrangements: mock(
+      async (
+        _h: string,
+        _c: string,
+        weekStart: string,
+        arrangements: any[]
+      ) => {
+        // Test doubles key their canned answer on (weekStart, whether the
+        // NEW arrangement id is present in the supplied history) so a single
+        // fixture can express "prices lower under the new terms".
+        const isAfter = arrangements.some((a: any) => a.id === 'pa-new');
+        const key = `${weekStart}:${isAfter ? 'after' : 'before'}`;
+        return answers[key] ?? { status: 'ok', gross_minor: 1_000_00 };
+      }
+    ),
+  };
+}
+
 const PARENT = member('parent', 'parent-1');
 const CO_PARENT = member('parent', 'parent-2');
 const OWNER = member('owner', 'owner-1');
@@ -106,6 +145,8 @@ interface ServiceParts {
   householdCurrency?: string;
   userService?: any;
   push?: any;
+  timesheetRepo?: any;
+  weekEarnings?: any;
 }
 
 function service(parts: ServiceParts = {}): any {
@@ -117,7 +158,9 @@ function service(parts: ServiceParts = {}): any {
       parts.householdCurrency ?? 'GBP'
     ),
     parts.userService ?? makeUserService(),
-    parts.push ?? makePush()
+    parts.push ?? makePush(),
+    parts.timesheetRepo ?? makeTimesheetRepo(),
+    parts.weekEarnings ?? makeWeekEarnings()
   );
 }
 
@@ -251,7 +294,7 @@ describe('PayArrangementCommandService.create — D12-class carer assertion', ()
   });
 });
 
-describe('PayArrangementCommandService.create — valid_from is household-local', () => {
+describe('PayArrangementCommandService.create — valid_from, household-local (D-16)', () => {
   it('accepts today in a household EAST of UTC that has already rolled over', async () => {
     // 23:30Z is 11:30 on 2026-08-05 in Auckland. A server-UTC "today" check
     // would reject this legitimate morning entry (review finding 11).
@@ -267,19 +310,20 @@ describe('PayArrangementCommandService.create — valid_from is household-local'
     expect(payRepo.create).toHaveBeenCalledTimes(1);
   });
 
-  it('rejects tomorrow in that same household', async () => {
+  // D-16 reverses the old no-future-dating rule: a scheduled raise is now
+  // the normal case, not the edge case. `screens-pay-terms.md` §6.
+  it('accepts a scheduled future date — the T12 cut is reversed', async () => {
     const payRepo = makePayRepo();
-    const svc = service({ payRepo, timezone: 'Pacific/Auckland' });
-    await expect(
-      svc.create(
-        'parent-1',
-        'h1',
-        'carer-1',
-        request({ valid_from: '2026-08-06' }),
-        () => new Date('2026-08-04T23:30:00.000Z')
-      )
-    ).rejects.toBeInstanceOf(PayArrangementValidationError);
-    expect(payRepo.create).not.toHaveBeenCalled();
+    const svc = service({ payRepo });
+    await svc.create(
+      'parent-1',
+      'h1',
+      'carer-1',
+      request({ valid_from: '2026-09-01' }),
+      NOW
+    );
+    expect(payRepo.create).toHaveBeenCalledTimes(1);
+    expect(payRepo.create.mock.calls[0][0].valid_from).toBe('2026-09-01');
   });
 
   it('accepts today in a BST household whose local date is ahead of UTC', async () => {
@@ -296,23 +340,6 @@ describe('PayArrangementCommandService.create — valid_from is household-local'
     expect(payRepo.create).toHaveBeenCalledTimes(1);
   });
 
-  it('rejects a date the SERVER already calls today but the household does not', async () => {
-    // The mirror-image bug: 04:30Z on 2026-08-05 is still 2026-08-04 in Los
-    // Angeles, so "2026-08-05" is genuinely tomorrow for this family.
-    const payRepo = makePayRepo();
-    const svc = service({ payRepo, timezone: 'America/Los_Angeles' });
-    await expect(
-      svc.create(
-        'parent-1',
-        'h1',
-        'carer-1',
-        request({ valid_from: '2026-08-05' }),
-        () => new Date('2026-08-05T04:30:00.000Z')
-      )
-    ).rejects.toBeInstanceOf(PayArrangementValidationError);
-    expect(payRepo.create).not.toHaveBeenCalled();
-  });
-
   it('allows backdating — an open week recomputes, an approved week stays frozen', async () => {
     const payRepo = makePayRepo();
     const svc = service({ payRepo });
@@ -326,21 +353,39 @@ describe('PayArrangementCommandService.create — valid_from is household-local'
     expect(payRepo.create).toHaveBeenCalledTimes(1);
   });
 
-  it('names the reason so the client can branch on it', async () => {
+  // The T12 cut is reversed, but v1's OTHER guardrail — a bound, opposite
+  // direction — replaces it: "a future-date bound replaces the future-date
+  // refusal" (spec §6). A 13-month-out date is still refused; it protects
+  // against a fat-fingered YEAR, not against a genuine scheduled raise.
+  it('refuses a valid_from more than 12 months in the future', async () => {
     const svc = service();
     const err = await svc
       .create(
         'parent-1',
         'h1',
         'carer-1',
-        request({ valid_from: '2026-08-05' }),
+        // NOW is 2026-08-04; 12 months out is 2027-08-04, so this is one day past it.
+        request({ valid_from: '2027-08-05' }),
         NOW
       )
       .catch((error: unknown) => error);
     expect(err).toBeInstanceOf(PayArrangementValidationError);
     expect((err as { metadata?: { reason?: string } }).metadata?.reason).toBe(
-      'VALID_FROM_IN_FUTURE'
+      'VALID_FROM_TOO_FAR_IN_FUTURE'
     );
+  });
+
+  it('accepts a valid_from exactly on the 12-month horizon', async () => {
+    const payRepo = makePayRepo();
+    const svc = service({ payRepo });
+    await svc.create(
+      'parent-1',
+      'h1',
+      'carer-1',
+      request({ valid_from: '2027-08-04' }),
+      NOW
+    );
+    expect(payRepo.create).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -675,5 +720,220 @@ describe('PayArrangementCommandService.create — notifies the carer', () => {
     );
     expect(created.id).toBe('pa-new');
     expect(push.notifyUser).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('PayArrangementCommandService.create — pay_terms_set forks on valid_from (D-16, attention spec §1.4)', () => {
+  it('an immediate change (valid_from today) sends the ordinary title', async () => {
+    const push = makePush();
+    const svc = service({ push });
+    await svc.create(
+      'parent-1',
+      'h1',
+      'carer-1',
+      request({ valid_from: '2026-08-04' }),
+      NOW
+    );
+    const [, payload] = push.notifyUser.mock.calls[0];
+    expect(payload.data.type).toBe(PUSH_NOTIFICATION_TYPES.PAY_TERMS_SET);
+    expect(payload.title).toBe('Your pay terms changed.');
+  });
+
+  it('a scheduled future change names the date it takes effect', async () => {
+    const push = makePush();
+    const svc = service({ push });
+    await svc.create(
+      'parent-1',
+      'h1',
+      'carer-1',
+      request({ valid_from: '2026-09-01' }),
+      NOW
+    );
+    const [, payload] = push.notifyUser.mock.calls[0];
+    expect(payload.data.type).toBe(PUSH_NOTIFICATION_TYPES.PAY_TERMS_SET);
+    expect(payload.title).toBe('Your pay terms change on Sep 1.');
+  });
+
+  it('a backdated RAISE (no unapproved week prices lower) stays the ordinary pay_terms_set', async () => {
+    const push = makePush();
+    // Default weekEarnings fixture answers identically before/after — no
+    // week prices lower, so this is an ordinary change even though it is
+    // backdated.
+    const timesheetRepo = makeTimesheetRepo([
+      {
+        household_id: 'h1',
+        carer_id: 'carer-1',
+        week_start: '2026-07-27',
+        status: 'open',
+      },
+    ]);
+    const svc = service({ push, timesheetRepo });
+    await svc.create(
+      'parent-1',
+      'h1',
+      'carer-1',
+      request({ rate_minor: 3000, valid_from: '2026-08-01' }),
+      NOW
+    );
+    const [, payload] = push.notifyUser.mock.calls[0];
+    expect(payload.data.type).toBe(PUSH_NOTIFICATION_TYPES.PAY_TERMS_SET);
+  });
+
+  it('a backdated REDUCTION into an unapproved week sends pay_terms_backdated instead — never both (M1)', async () => {
+    const push = makePush();
+    const timesheetRepo = makeTimesheetRepo([
+      {
+        household_id: 'h1',
+        carer_id: 'carer-1',
+        week_start: '2026-07-27',
+        status: 'submitted',
+      },
+    ]);
+    const weekEarnings = makeWeekEarnings({
+      '2026-07-27:before': { status: 'ok', gross_minor: 154_000 },
+      '2026-07-27:after': { status: 'ok', gross_minor: 143_000 },
+    });
+    const svc = service({ push, timesheetRepo, weekEarnings });
+    await svc.create(
+      'parent-1',
+      'h1',
+      'carer-1',
+      request({ rate_minor: 1000, valid_from: '2026-08-01' }),
+      NOW
+    );
+    expect(push.notifyUser).toHaveBeenCalledTimes(1);
+    const [, payload] = push.notifyUser.mock.calls[0];
+    expect(payload.data.type).toBe(PUSH_NOTIFICATION_TYPES.PAY_TERMS_BACKDATED);
+    expect(payload.title).toBe('Your terms were changed back to Aug 1.');
+    // A8: no figures in the body.
+    expect(payload.body).not.toMatch(/\$|£|€|\d/);
+  });
+
+  it('an APPROVED week is excluded from the reduction check — frozen totals never reopen it', async () => {
+    const push = makePush();
+    const timesheetRepo = makeTimesheetRepo([
+      {
+        household_id: 'h1',
+        carer_id: 'carer-1',
+        week_start: '2026-07-27',
+        status: 'approved',
+      },
+    ]);
+    const weekEarnings = makeWeekEarnings({
+      // Even if this WOULD price lower, an approved week must not be checked.
+      '2026-07-27:before': { status: 'ok', gross_minor: 154_000 },
+      '2026-07-27:after': { status: 'ok', gross_minor: 100_000 },
+    });
+    const svc = service({ push, timesheetRepo, weekEarnings });
+    await svc.create(
+      'parent-1',
+      'h1',
+      'carer-1',
+      request({ rate_minor: 1000, valid_from: '2026-08-01' }),
+      NOW
+    );
+    const [, payload] = push.notifyUser.mock.calls[0];
+    expect(payload.data.type).toBe(PUSH_NOTIFICATION_TYPES.PAY_TERMS_SET);
+  });
+
+  it('a backdate with no timesheet history at all stays the ordinary pay_terms_set', async () => {
+    const push = makePush();
+    const svc = service({ push, timesheetRepo: makeTimesheetRepo([]) });
+    await svc.create(
+      'parent-1',
+      'h1',
+      'carer-1',
+      request({ rate_minor: 1000, valid_from: '2026-08-01' }),
+      NOW
+    );
+    const [, payload] = push.notifyUser.mock.calls[0];
+    expect(payload.data.type).toBe(PUSH_NOTIFICATION_TYPES.PAY_TERMS_SET);
+  });
+});
+
+describe('PayArrangementCommandService.cancelScheduled — D-16/§6, appends the revert row', () => {
+  const SCHEDULED = {
+    id: 'pa-scheduled',
+    household_id: 'h1',
+    carer_id: 'carer-1',
+    rate_minor: 3000,
+    currency: 'GBP',
+    overtime_multiplier: 1.5,
+    valid_from: '2026-09-01',
+    valid_to: null,
+    created_at: '2026-08-04T09:00:00.000Z',
+    terms: {},
+  };
+  const CURRENT = {
+    ...PREVIOUS_ARRANGEMENT,
+    id: 'pa-current',
+    rate_minor: 2500,
+  };
+
+  function payRepoWithScheduled(overrides: Record<string, unknown> = {}): any {
+    return makePayRepo({
+      findById: mock(async (id: string) =>
+        id === 'pa-scheduled' ? SCHEDULED : null
+      ),
+      effectiveOn: mock(async () => CURRENT),
+      ...overrides,
+    });
+  }
+
+  it('appends a new row carrying the CURRENTLY in-effect terms at the scheduled date', async () => {
+    const payRepo = payRepoWithScheduled();
+    const svc = service({ payRepo });
+    await svc.cancelScheduled('parent-1', 'h1', 'carer-1', 'pa-scheduled', NOW);
+
+    expect(payRepo.create).toHaveBeenCalledTimes(1);
+    const written = payRepo.create.mock.calls[0][0];
+    expect(written.rate_minor).toBe(CURRENT.rate_minor);
+    expect(written.valid_from).toBe('2026-09-01'); // the scheduled date, not today
+  });
+
+  it('notifies the carer with pay_terms_scheduled_change_cancelled, no figures, naming the date', async () => {
+    const push = makePush();
+    const svc = service({ payRepo: payRepoWithScheduled(), push });
+    await svc.cancelScheduled('parent-1', 'h1', 'carer-1', 'pa-scheduled', NOW);
+
+    expect(push.notifyUser).toHaveBeenCalledTimes(1);
+    const [recipientId, payload] = push.notifyUser.mock.calls[0];
+    expect(recipientId).toBe('carer-1');
+    expect(payload.data.type).toBe(
+      PUSH_NOTIFICATION_TYPES.PAY_TERMS_SCHEDULED_CHANGE_CANCELLED
+    );
+    expect(payload.title).toBe('A change to your terms was called off');
+    expect(payload.body).toContain('Sep 1');
+    expect(payload.body).not.toMatch(/\$|£|€/);
+  });
+
+  it('refuses to cancel a change whose date has already arrived — it is in effect', async () => {
+    const payRepo = payRepoWithScheduled({
+      findById: mock(async () => ({ ...SCHEDULED, valid_from: '2026-08-01' })),
+    });
+    const svc = service({ payRepo });
+    await expect(
+      svc.cancelScheduled('parent-1', 'h1', 'carer-1', 'pa-scheduled', NOW)
+    ).rejects.toBeInstanceOf(PayArrangementValidationError);
+    expect(payRepo.create).not.toHaveBeenCalled();
+  });
+
+  it('a helper may not cancel a scheduled change', async () => {
+    const svc = service({
+      payRepo: payRepoWithScheduled(),
+      members: { 'helper-1': HELPER, 'carer-1': NANNY },
+    });
+    await expect(
+      svc.cancelScheduled('helper-1', 'h1', 'carer-1', 'pa-scheduled', NOW)
+    ).rejects.toBeInstanceOf(NotAHouseholdParentError);
+  });
+
+  it('refuses an arrangement id that is not a scheduled row of this household/carer', async () => {
+    const svc = service({
+      payRepo: payRepoWithScheduled({ findById: mock(async () => null) }),
+    });
+    await expect(
+      svc.cancelScheduled('parent-1', 'h1', 'carer-1', 'nope', NOW)
+    ).rejects.toBeInstanceOf(PayArrangementNotFoundError);
   });
 });
