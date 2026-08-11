@@ -51,6 +51,21 @@ export const PUSH_NOTIFICATION_TYPES = {
   // final, and she may not open the app for days.
   TIMESHEET_REOPENED: 'timesheet_reopened',
 
+  // The week thread (3-T1 / D-18 / D-46 / D-19 —
+  // `docs/design/attention-and-notifications.md` §1.3 N3/N4).
+  //
+  // ONE type for the whole thread, deliberately: a parent's reply, a nanny's
+  // reply, and a nanny OPENING a thread on a week nobody queried are the same
+  // fact — someone said something about this week — with the same
+  // destination. Audience `both`; the recipient is whoever did NOT write it.
+  // Not named `timesheet_query_replied`, because a nanny-raised flag on a
+  // clean week is not a reply, and a type key that lies is one someone adds a
+  // second version of.
+  TIMESHEET_NOTE_ADDED: 'timesheet_note_added',
+  // A parent took their question back and the week is waiting on approval
+  // again (D-19). Carer-targeted: she is the one who was told to look at it.
+  TIMESHEET_QUERY_WITHDRAWN: 'timesheet_query_withdrawn',
+
   // Money leg — carer gets approval/payment outcomes; parents get submissions.
   EXPENSE_APPROVED: 'expense_approved',
   EXPENSE_REJECTED: 'expense_rejected',
@@ -161,7 +176,9 @@ export const PUSH_TYPE_AUDIENCE: Record<PushNotificationType, PushAudience> = {
   [PUSH_NOTIFICATION_TYPES.SHIFT_REMINDER]: 'carer',
   [PUSH_NOTIFICATION_TYPES.TIMESHEET_APPROVED]: 'carer',
   [PUSH_NOTIFICATION_TYPES.TIMESHEET_AWAITING_APPROVAL]: 'parent',
+  [PUSH_NOTIFICATION_TYPES.TIMESHEET_NOTE_ADDED]: 'both',
   [PUSH_NOTIFICATION_TYPES.TIMESHEET_QUERIED]: 'carer',
+  [PUSH_NOTIFICATION_TYPES.TIMESHEET_QUERY_WITHDRAWN]: 'carer',
   [PUSH_NOTIFICATION_TYPES.TIMESHEET_REOPENED]: 'carer',
   [PUSH_NOTIFICATION_TYPES.TIMESHEET_SUBMITTED]: 'parent',
   [PUSH_NOTIFICATION_TYPES.TIME_OFF_REQUESTED]: 'parent',

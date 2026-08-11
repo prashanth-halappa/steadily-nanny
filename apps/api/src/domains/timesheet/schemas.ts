@@ -16,6 +16,7 @@
 import { z } from 'zod';
 
 export type {
+  AddTimesheetThreadMessageInput,
   ApproveTimesheetInput,
   ClockInInput,
   ClockOutInput,
@@ -30,9 +31,12 @@ export type {
   TimesheetAdjustment,
   TimesheetListResponse,
   TimesheetStatus,
+  TimesheetThread,
+  TimesheetThreadMessage,
   UpdateTimeEntryInput,
 } from '@steadily-nanny/shared-types/schemas/timesheet.schema';
 export {
+  AddTimesheetThreadMessageSchema,
   ApproveTimesheetSchema,
   ClockInSchema,
   ClockOutSchema,

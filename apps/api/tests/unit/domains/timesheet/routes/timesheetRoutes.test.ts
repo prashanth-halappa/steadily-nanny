@@ -1,15 +1,21 @@
 /**
  * @module tests/unit/domains/timesheet/routes/timesheetRoutes
  *
- * The flat `/timesheets/:id` router serves FOUR routes at ONE resource id
+ * The flat `/timesheets/:id` router serves SEVEN routes at ONE resource id
  * under TWO different permissions, and keeping them apart is the whole
  * payroll audit-trail rule:
  *
- *   GET  /:id          service gate, getReadableTimesheet (a REMOVED member
- *                      may read) — NO ownership middleware, see below
- *   POST /:id/approve  ownership middleware -> getOwnedTimesheet (ACTIVE only)
- *   POST /:id/query    same
- *   POST /:id/reopen   same
+ *   GET  /:id                 service gate, getReadableTimesheet (a REMOVED
+ *                             member may read) — NO ownership middleware
+ *   GET  /:id/export.csv      same wide gate, same reason
+ *   GET  /:id/thread          same wide gate — D-18's whole point is that a
+ *                             nanny can READ what was said about her pay
+ *   POST /:id/approve         ownership middleware -> getOwnedTimesheet
+ *                             (ACTIVE only)
+ *   POST /:id/query           same
+ *   POST /:id/reopen          same
+ *   POST /:id/thread          same — speaking needs an active membership
+ *   POST /:id/withdraw-query  same
  *
  * WHY THE READ HAS NO OWNERSHIP MIDDLEWARE, pinned here because it is not
  * obvious from the route file alone: `makeOwnershipValidator` caches its
@@ -52,6 +58,9 @@ const ACTION_IDS = {
   reopen: 'cccccccc-cccc-4ccc-8ccc-ccccccccccc3',
 } as const;
 const SEQUENCE_ID = 'cccccccc-cccc-4ccc-8ccc-ccccccccccc4';
+const THREAD_READ_ID = 'cccccccc-cccc-4ccc-8ccc-ccccccccccc7';
+const THREAD_POST_ID = 'cccccccc-cccc-4ccc-8ccc-ccccccccccc8';
+const WITHDRAW_ID = 'cccccccc-cccc-4ccc-8ccc-ccccccccccc9';
 const AUTH_USER_ID = 'removed-parent-1';
 const VOID_ENTRY_ID = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1';
 const VOID_REFUSED_ID = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee2';
@@ -65,6 +74,7 @@ let getOwnedTimeEntryMock: ReturnType<typeof mock>;
 let approveMock: ReturnType<typeof mock>;
 let voidEntryMock: ReturnType<typeof mock>;
 let exportWeekCsvMock: ReturnType<typeof mock>;
+let getThreadMock: ReturnType<typeof mock>;
 
 beforeAll(async () => {
   // The removed-member state: the read gate (inside getWeekWithEarnings) lets
@@ -89,6 +99,7 @@ beforeAll(async () => {
     id: VOID_ENTRY_ID,
     status: 'voided',
   }));
+  getThreadMock = mock(async (..._args: unknown[]) => ({ messages: [] }));
   exportWeekCsvMock = mock(async (..._args: unknown[]) => ({
     filename: 'steadily-week-2026-08-03-nia-rowe.csv',
     csv: 'date,description,kind,minutes,rate_minor,amount_minor,currency\r\n',
@@ -114,6 +125,7 @@ beforeAll(async () => {
         getWeekWithEarnings: (...args: unknown[]) =>
           getWeekWithEarningsMock(...args),
         exportWeekCsv: (...args: unknown[]) => exportWeekCsvMock(...args),
+        getThread: (...args: unknown[]) => getThreadMock(...args),
       },
     })
   );
@@ -124,6 +136,8 @@ beforeAll(async () => {
         approve: (...args: unknown[]) => approveMock(...args),
         query: (...args: unknown[]) => approveMock(...args),
         reopen: (...args: unknown[]) => approveMock(...args),
+        addThreadMessage: (...args: unknown[]) => approveMock(...args),
+        withdrawQuery: (...args: unknown[]) => approveMock(...args),
         voidEntry: (...args: unknown[]) => voidEntryMock(...args),
       },
     })
@@ -168,6 +182,7 @@ beforeEach(() => {
   approveMock.mockClear();
   voidEntryMock.mockClear();
   exportWeekCsvMock.mockClear();
+  getThreadMock.mockClear();
 });
 
 const ACTION_BODIES = {
@@ -443,5 +458,81 @@ describe('POST /timesheets/:id/approve — the adjustment body', () => {
       ADJ_IDS.bodyless,
       {}
     );
+  });
+});
+
+/**
+ * The week thread (D-18 / D-19 / D-46) inherits the SAME two-permissions
+ * split this file exists to protect, and gets it wrong in the most tempting
+ * possible way if nobody pins it: the READ is the wide gate (the whole point
+ * of D-18 is that a nanny — including a departed one — can read what was said
+ * about her pay), the WRITES are ACTIVE-member-only. Wiring the read's lookup
+ * into `makeOwnershipValidator` to "match" the writes would poison the shared
+ * `(userId, resourceId)` cache for `/approve` (GOLDEN-FIXES #32).
+ */
+describe('GET /timesheets/:id/thread — the wide read gate, no ownership middleware', () => {
+  it('serves the thread for a removed member and never consults the action lookup', async () => {
+    const res = await fetch(`${baseUrl}/timesheets/${THREAD_READ_ID}/thread`);
+
+    expect(res.status).toBe(200);
+    expect(getThreadMock).toHaveBeenCalledWith(AUTH_USER_ID, THREAD_READ_ID);
+    expect(getOwnedTimesheetMock).not.toHaveBeenCalled();
+  });
+
+  it('rejects a non-uuid id with 400 before the controller runs', async () => {
+    const res = await fetch(`${baseUrl}/timesheets/not-a-uuid/thread`);
+
+    expect(res.status).toBe(400);
+    expect(getThreadMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('POST /timesheets/:id/thread — writing stays ACTIVE-only', () => {
+  it('404s for a removed member and never reaches the command service', async () => {
+    const res = await fetch(`${baseUrl}/timesheets/${THREAD_POST_ID}/thread`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ message: 'I stayed late.' }),
+    });
+
+    expect(res.status).toBe(404);
+    expect(getOwnedTimesheetMock).toHaveBeenCalledWith(
+      AUTH_USER_ID,
+      THREAD_POST_ID
+    );
+    expect(approveMock).not.toHaveBeenCalled();
+  });
+
+  // Ownership sits AHEAD of body validation, matching /approve, /query and
+  // /reopen — a stranger learns "no such week", never "your message was
+  // blank", which would confirm the week exists.
+  it('answers a blank message from a non-member with the same opaque 404, not a 400', async () => {
+    const res = await fetch(
+      `${baseUrl}/timesheets/cccccccc-cccc-4ccc-8ccc-cccccccccca1/thread`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ message: '   ' }),
+      }
+    );
+
+    expect(res.status).toBe(404);
+    expect(approveMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('POST /timesheets/:id/withdraw-query — parent exit from queried (D-19)', () => {
+  it('404s for a removed member and never reaches the command service', async () => {
+    const res = await fetch(
+      `${baseUrl}/timesheets/${WITHDRAW_ID}/withdraw-query`,
+      { method: 'POST' }
+    );
+
+    expect(res.status).toBe(404);
+    expect(getOwnedTimesheetMock).toHaveBeenCalledWith(
+      AUTH_USER_ID,
+      WITHDRAW_ID
+    );
+    expect(approveMock).not.toHaveBeenCalled();
   });
 });

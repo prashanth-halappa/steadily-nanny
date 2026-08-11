@@ -83,6 +83,7 @@ import {
   TimesheetRepository,
 } from '../repositories/timesheetRepository';
 import type {
+  AddTimesheetThreadMessageInput,
   ApproveTimesheetInput,
   ClockInInput,
   ClockOutInput,
@@ -91,6 +92,7 @@ import type {
   ReopenTimesheetInput,
   TimeEntry,
   Timesheet,
+  TimesheetThread,
   UpdateTimeEntryInput,
 } from '../types';
 import { mondayMidnightInstant } from '../utils/mondayMidnight';
@@ -100,6 +102,10 @@ import {
   weekStartOf,
   weekStartOfLocalDate,
 } from '../utils/weekStart';
+import {
+  TIMESHEET_NOTE_ADDED_EVENT,
+  TIMESHEET_QUERY_WITHDRAWN_EVENT,
+} from '../utils/weekThread';
 import { computeWorkedMinutes, sumWorkedMinutes } from '../utils/workedMinutes';
 import {
   type TimesheetQueryService,
@@ -176,6 +182,36 @@ const WRITE_ROLES: ReadonlySet<string> = new Set([
 ]);
 /** A timesheet can only be actioned once there is submitted time on it. */
 const ACTIONABLE_STATUSES: ReadonlySet<string> = new Set(['submitted']);
+/**
+ * Statuses a QUERY may be raised from — wider than `ACTIONABLE_STATUSES` by
+ * exactly one value, because a new query supersedes rather than blocks
+ * (D-19). Approve keeps the narrow set: you cannot sign a week you are still
+ * asking about.
+ */
+const QUERYABLE_STATUSES: ReadonlySet<string> = new Set([
+  'submitted',
+  'queried',
+]);
+
+/**
+ * Push bodies carry the words someone actually typed, trimmed to this
+ * (§1.4, `timesheet_queried` and `timesheet_note_added` alike). A lock screen
+ * is not a reading surface; the thread is.
+ */
+const PUSH_BODY_MAX = 140;
+
+/**
+ * The message as a push body: trimmed to `PUSH_BODY_MAX` INCLUDING the
+ * ellipsis, so the result never exceeds the budget. `null` for nothing worth
+ * sending, which lets each caller fall back to its own generic sentence.
+ */
+function trimForPush(text: string): string | null {
+  const trimmed = text.trim();
+  if (trimmed.length === 0) return null;
+  return trimmed.length <= PUSH_BODY_MAX
+    ? trimmed
+    : `${trimmed.slice(0, PUSH_BODY_MAX - 1)}…`;
+}
 /**
  * Terminal states a parent has already acted on. New hours landing here must
  * re-open the timesheet rather than silently rewrite a total the parent
@@ -1749,7 +1785,17 @@ export class TimesheetCommandService {
     };
   }
 
-  /** Owner/parent only. "Query Thursday" — names the disagreement rather than silently withholding payment. */
+  /**
+   * Owner/parent only. "Query Thursday" — names the disagreement rather than
+   * silently withholding payment.
+   *
+   * A RE-QUERY SUPERSEDES RATHER THAN BLOCKS (D-19): `queried` is an
+   * actionable status here, not a refusal. A parent who spots a second
+   * problem after asking about the first must be able to say so, and the
+   * thread shows both questions in order — no "superseded" label, the order
+   * already says it. `query_note` takes the newest text, the thread keeps
+   * every one.
+   */
   async query(
     userId: string,
     timesheetId: string,
@@ -1757,9 +1803,11 @@ export class TimesheetCommandService {
   ): Promise<Timesheet> {
     const timesheet = await this.queries.getOwnedTimesheet(userId, timesheetId);
     await this.assertWriteMember(userId, timesheet.household_id);
-    this.assertActionable(timesheet);
+    if (!QUERYABLE_STATUSES.has(timesheet.status)) {
+      throw new TimesheetNotActionableError(timesheetId, timesheet.status);
+    }
 
-    const updated = await this.timesheetRepo.queryFromSubmitted(
+    const updated = await this.timesheetRepo.queryFromActionable(
       timesheetId,
       timesheet.updated_at,
       input.note
@@ -1794,7 +1842,15 @@ export class TimesheetCommandService {
       try {
         this.push.notifyUser(updated.carer_id, {
           title: 'Hours queried',
-          body: 'A parent has a question about your hours this week.',
+          // THE BODY CARRIES THE NOTE (D-18, §1.4). This is her own pay
+          // record on her own device — there is no A8-style argument for
+          // withholding the question itself, and the whole of gap P1 was that
+          // she could not read it. The title already says which fact this is,
+          // so the note needs no prefix. Falls back to the generic sentence
+          // only if the note is somehow empty.
+          body:
+            trimForPush(input.note) ??
+            'A parent has a question about your hours this week.',
           data: {
             type: PUSH_NOTIFICATION_TYPES.TIMESHEET_QUERIED,
             timesheetId: updated.id,
@@ -1880,6 +1936,174 @@ export class TimesheetCommandService {
           body: 'A parent has reopened your hours this week.',
           data: {
             type: PUSH_NOTIFICATION_TYPES.TIMESHEET_REOPENED,
+            timesheetId: updated.id,
+            householdId: updated.household_id,
+            weekStart: updated.week_start,
+          },
+        });
+      } catch {
+        // notifyUser is sync fire-and-forget; swallow any unexpected throw
+      }
+    }
+
+    return toWireTimesheet(updated);
+  }
+
+  /**
+   * THE WEEK THREAD'S ONE WRITE (D-18 / D-46 —
+   * `docs/design/attention-and-notifications.md` §3 and §3.1). A reply from
+   * either side, and a nanny OPENING a thread on a week nobody queried, are
+   * the same act: one append-only `timesheet_note_added` row on the week.
+   *
+   * WHO MAY SPEAK, AND WHEN. The two forks are not symmetric, and the
+   * asymmetry is the decision:
+   *
+   * - **The carer may speak on any week she can see.** Her entry point on a
+   *   `submitted` or `approved` week is "This doesn't look right" (§3.1) —
+   *   the surface D-18 was missing, because everything else in the design
+   *   still assumed a parent started the conversation. An approved week whose
+   *   arithmetic is wrong is the case Marisol has actually lived through, and
+   *   telling her the record is closed is how an app becomes the thing she
+   *   screenshots rather than the thing she trusts.
+   * - **A parent may speak only while the week is `queried`.** On an approved
+   *   week the thread is history, not a chat. A parent who wants to reopen
+   *   the conversation has `query` (on a submitted week) and `reopen` (on an
+   *   approved one), both of which say something about the week's STATE — a
+   *   comment that silently did neither would be a parent talking at a record
+   *   they had already signed.
+   * - **A helper is in neither role set** and may not speak at all, the same
+   *   fall-through that keeps her out of every other write here.
+   *
+   * IT CHANGES NO STATUS AND BLOCKS NOTHING. There is no nanny-side
+   * `queried`, no new enum value, no dispute object. Approval, payment
+   * recording and export all proceed untouched; a parent is never gated
+   * behind answering her. That is precisely why it is safe to let her speak
+   * on a signed week.
+   *
+   * THE APPEND IS NOT BEST-EFFORT, unlike every other `shift_events` write in
+   * this service. Those are audits ALONGSIDE a write that already succeeded;
+   * this row IS the message. Swallowing its failure would show a person their
+   * words posted and then lose them.
+   *
+   * Returns the WHOLE thread rather than the one new message, so a client can
+   * seed its cache from the response instead of racing a refetch against its
+   * own optimistic append.
+   */
+  async addThreadMessage(
+    userId: string,
+    timesheetId: string,
+    input: AddTimesheetThreadMessageInput
+  ): Promise<TimesheetThread> {
+    const timesheet = await this.queries.getOwnedTimesheet(userId, timesheetId);
+    const isCarer =
+      timesheet.carer_id !== null && timesheet.carer_id === userId;
+    if (!isCarer) {
+      await this.assertWriteMember(userId, timesheet.household_id);
+      if (timesheet.status !== 'queried') {
+        throw new TimesheetNotActionableError(timesheetId, timesheet.status);
+      }
+    }
+
+    const message = input.message.trim();
+    await this.eventRepo.insertMany([
+      {
+        household_id: timesheet.household_id,
+        shift_id: null,
+        local_date: timesheet.week_start,
+        actor_id: userId,
+        event_type: TIMESHEET_NOTE_ADDED_EVENT,
+        payload: {
+          timesheetId,
+          weekStart: timesheet.week_start,
+          message,
+        },
+      },
+    ]);
+
+    // N3 goes to whoever did NOT write it (§1.4). Fire-and-forget: the
+    // message is already on the record and a dead Expo must not un-say it.
+    try {
+      const payload: PushPayload = {
+        title: 'A note on your hours',
+        body: trimForPush(message) ?? 'Someone added a note about this week.',
+        data: {
+          type: PUSH_NOTIFICATION_TYPES.TIMESHEET_NOTE_ADDED,
+          timesheetId,
+          householdId: timesheet.household_id,
+          weekStart: timesheet.week_start,
+        },
+      };
+      if (isCarer) {
+        this.push.notifyHouseholdParents(timesheet.household_id, payload);
+      } else if (timesheet.carer_id) {
+        this.push.notifyUser(timesheet.carer_id, payload);
+      }
+    } catch {
+      // both notifiers are sync fire-and-forget; swallow any unexpected throw
+    }
+
+    return this.queries.getThread(userId, timesheetId);
+  }
+
+  /**
+   * Owner/parent only. THE EXIT FROM `queried` (D-19, gap P2).
+   *
+   * Before this, a queried week had no parent-side exit at all: `approve`
+   * only moves a `submitted` row, so a question asked in error — or one the
+   * parent resolved by talking to her in the kitchen — froze the nanny's pay
+   * until she typed something into the app. That is David's #1 complaint,
+   * late pay through no one's fault, and it was structural.
+   *
+   * The write is the same CAS shape as `approve`/`query`: one guarded UPDATE
+   * on the version this method read, `null` for a lost race, turned into the
+   * SAME `TimesheetNotActionableError` a stale status raises, because it is
+   * the same situation noticed a few milliseconds later.
+   *
+   * THE THREAD IS NOT CLEARED. `query_note` is (see the repository method —
+   * it is scratch display state, and the thread is the record), but every
+   * `shift_events` row stays exactly where it was. "What's already been said
+   * stays on the record" is the confirm dialog's second sentence and it is
+   * load-bearing for both personas: the parent is not erasing anything, and
+   * the nanny's answer does not vanish because they changed their mind.
+   */
+  async withdrawQuery(userId: string, timesheetId: string): Promise<Timesheet> {
+    const timesheet = await this.queries.getOwnedTimesheet(userId, timesheetId);
+    await this.assertWriteMember(userId, timesheet.household_id);
+    if (timesheet.status !== 'queried') {
+      throw new TimesheetNotActionableError(timesheetId, timesheet.status);
+    }
+
+    const updated = await this.timesheetRepo.withdrawQueryFromQueried(
+      timesheetId,
+      timesheet.updated_at
+    );
+    if (!updated) {
+      throw new TimesheetNotActionableError(timesheetId, 'changed_since_read');
+    }
+
+    const auditEvent: NewShiftEventInput = {
+      household_id: timesheet.household_id,
+      shift_id: null,
+      local_date: timesheet.week_start,
+      actor_id: userId,
+      event_type: TIMESHEET_QUERY_WITHDRAWN_EVENT,
+      payload: { timesheetId, weekStart: timesheet.week_start },
+    };
+    try {
+      await this.eventRepo.insertMany([auditEvent]);
+    } catch {
+      // Day-thread append is best-effort audit here, matching `query` and
+      // `reopen`: the status write already succeeded and must not be rolled
+      // back for a logging failure.
+    }
+
+    if (updated.carer_id) {
+      try {
+        this.push.notifyUser(updated.carer_id, {
+          title: 'Query withdrawn',
+          body: 'A parent took back their question about your hours this week.',
+          data: {
+            type: PUSH_NOTIFICATION_TYPES.TIMESHEET_QUERY_WITHDRAWN,
             timesheetId: updated.id,
             householdId: updated.household_id,
             weekStart: updated.week_start,

@@ -268,6 +268,92 @@ export const QueryTimesheetSchema = z.object({
 });
 
 /**
+ * THE WEEK THREAD (D-18 / D-19 / D-46, `docs/design/attention-and-notifications.md`
+ * §3). What was SAID about a week, as opposed to what state the week is in.
+ *
+ * Storage is `shift_events` — the existing append-only day thread, keyed on
+ * `(household_id, local_date = week_start, shift_id = null)` with the
+ * timesheet id in the payload. Deliberately NO new table: `event_type` is
+ * free text (migration 015), the RLS read policy is already
+ * household-scoped, and there is no update/delete policy anywhere on it,
+ * which is exactly the append-only guarantee a dispute record needs. A
+ * second table would have had to re-earn all three.
+ *
+ * The three kinds are the three things that happen to a week's conversation,
+ * NOT three storage shapes:
+ * - `queried`         a parent asked something (event `timesheet_queried`)
+ * - `note`            anyone said something (event `timesheet_note_added`) —
+ *                     a reply from either side, or a nanny OPENING the thread
+ *                     on a week nobody queried (§3.1). One kind, because
+ *                     "someone said something about this week" is one fact.
+ * - `query_withdrawn` a parent took the question back (event
+ *                     `timesheet_query_withdrawn`). Carries no text: the
+ *                     client renders the sentence in the reader's language.
+ *
+ * `body` is therefore `''` for `query_withdrawn` and non-empty for the other
+ * two. Nothing here is ever edited or deleted — `query_note` being cleared on
+ * the next approve no longer erases the history, which is the whole point.
+ */
+export const TIMESHEET_THREAD_MESSAGE_KINDS = {
+  QUERIED: 'queried',
+  NOTE: 'note',
+  QUERY_WITHDRAWN: 'query_withdrawn',
+} as const;
+
+export type TimesheetThreadMessageKind =
+  (typeof TIMESHEET_THREAD_MESSAGE_KINDS)[keyof typeof TIMESHEET_THREAD_MESSAGE_KINDS];
+
+/**
+ * Ceiling on one thread message. Longer than the 200 an adjustment note or a
+ * payment method note gets, because this is the surface where a nanny
+ * explains why Thursday ran long — the thing she currently types into
+ * iMessage with no limit at all. Short enough that no single message can
+ * dominate the record.
+ */
+export const TIMESHEET_THREAD_MESSAGE_MAX = 1000;
+
+/**
+ * One message on the week thread.
+ *
+ * `author_name` is resolved SERVER-side and snapshotted into the response
+ * (the carer's display name for her own messages, the household's name for a
+ * parent's) so the client never has to join a membership list it may not
+ * have. Names, never roles: "Priya" and "The Ahmeds", never "Carer" and
+ * "Parent" (§3). `author_id` exists only so a client can render "You" for
+ * its own messages.
+ */
+export const TimesheetThreadMessageSchema = z.object({
+  id: z.uuid(),
+  kind: z.enum(Object.values(TIMESHEET_THREAD_MESSAGE_KINDS)),
+  /** Nullable for the same reason `approved_by` is: 033 nulls the actor on account deletion. */
+  author_id: z.uuid().nullable(),
+  author_name: z.string(),
+  /** Empty string for kinds that carry no text — see the kinds doc above. */
+  body: z.string(),
+  created_at: z.iso.datetime({ offset: true }),
+});
+
+export type TimesheetThreadMessage = z.infer<
+  typeof TimesheetThreadMessageSchema
+>;
+
+/** GET /timesheets/:id/thread response body. Oldest first — the order is the record. */
+export const TimesheetThreadSchema = z.object({
+  messages: z.array(TimesheetThreadMessageSchema),
+});
+
+export type TimesheetThread = z.infer<typeof TimesheetThreadSchema>;
+
+/** POST /timesheets/:id/thread body. */
+export const AddTimesheetThreadMessageSchema = z.object({
+  message: z.string().trim().min(1).max(TIMESHEET_THREAD_MESSAGE_MAX),
+});
+
+export type AddTimesheetThreadMessageInput = z.infer<
+  typeof AddTimesheetThreadMessageSchema
+>;
+
+/**
  * POST /timesheets/:id/reopen body — the undo for `approve`.
  *
  * An approved week that is no longer the current week is otherwise frozen
