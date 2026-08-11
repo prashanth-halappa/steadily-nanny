@@ -32,8 +32,15 @@ tags:
 - tapOn:
     id: 'hours-query-submit'
 - waitForAnimationToEnd
+# 3-T1: the question is no longer a parent-only band on `WeekTotal`
+# (`hours-query-note`, deleted — it was the literal code that made gap P1
+# true). It is the first message on the week thread, which BOTH sides read,
+# so this asserts the thread card and the parent's own words in it. The
+# per-message testID carries a server-generated row id, so the text is the
+# stable handle here.
 - assertVisible:
-    id: 'hours-query-note'
+    id: 'hours-week-thread'
+- assertVisible: 'Please check Tuesday clock-out'
 - takeScreenshot: parent-queried-week
 
 # --- Nanny: correct entry ---

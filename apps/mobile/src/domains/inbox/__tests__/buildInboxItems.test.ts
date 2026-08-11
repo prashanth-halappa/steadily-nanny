@@ -20,6 +20,7 @@ describe('buildInboxItems', () => {
       buildInboxItems({
         role: SETUP_ROLES.PARENT,
         currentUserId: ME,
+        todayISO: '2026-08-25',
         changeRequests: [],
         patterns: [],
         timesheets: [],
@@ -31,6 +32,7 @@ describe('buildInboxItems', () => {
     const items = buildInboxItems({
       role: SETUP_ROLES.NANNY,
       currentUserId: ME,
+      todayISO: '2026-08-25',
       changeRequests: [
         {
           id: 'cr-1',
@@ -72,6 +74,7 @@ describe('buildInboxItems', () => {
     const items = buildInboxItems({
       role: SETUP_ROLES.NANNY,
       currentUserId: ME,
+      todayISO: '2026-08-25',
       changeRequests: [],
       patterns: [
         {
@@ -135,6 +138,7 @@ describe('buildInboxItems', () => {
       buildInboxItems({
         role: SETUP_ROLES.NANNY,
         currentUserId: ME,
+        todayISO: '2026-08-25',
         changeRequests: [],
         patterns: [],
         timesheets,
@@ -153,6 +157,7 @@ describe('buildInboxItems', () => {
       buildInboxItems({
         role: SETUP_ROLES.PARENT,
         currentUserId: PARENT,
+        todayISO: '2026-08-25',
         changeRequests: [],
         patterns: [],
         timesheets,
@@ -192,6 +197,7 @@ describe('buildInboxItems', () => {
       buildInboxItems({
         role: SETUP_ROLES.PARENT,
         currentUserId: ME,
+        todayISO: '2026-08-25',
         changeRequests: [],
         patterns: [],
         timesheets,
@@ -210,6 +216,7 @@ describe('buildInboxItems', () => {
     const items = buildInboxItems({
       role: SETUP_ROLES.PARENT,
       currentUserId: ME,
+      todayISO: '2026-08-25',
       changeRequests: [],
       patterns: [],
       timesheets: [
@@ -233,6 +240,125 @@ describe('buildInboxItems', () => {
     ]);
   });
 
+  // D-46 / M13: her pay is late and she cannot move it herself. An inbox
+  // item, never a push — a buzz about her employer's inaction is a nudge she
+  // cannot act on. 14 days, not 3: `timesheet_awaiting_approval` starts
+  // nudging the parent at 3, and telling her a week is late before that loop
+  // has had a fair run manufactures a grievance out of a normal Friday.
+  describe('stale_submitted_week (carer-side)', () => {
+    const staleSheet = {
+      id: 'ts-stale',
+      carer_id: ME,
+      week_start: '2026-08-04',
+      status: 'submitted',
+      query_note: null,
+      total_minutes: 2310,
+      // Both wire serialisations appear across these fixtures (GOLDEN #25).
+      updated_at: '2026-08-04T18:00:00+00:00',
+    } as const;
+
+    it('surfaces a submitted week the carer sent more than 14 days ago', () => {
+      expect(
+        buildInboxItems({
+          role: SETUP_ROLES.NANNY,
+          currentUserId: ME,
+          todayISO: '2026-08-25',
+          changeRequests: [],
+          patterns: [],
+          timesheets: [staleSheet],
+        })
+      ).toEqual([
+        {
+          kind: 'stale_submitted_week',
+          id: 'ts-stale',
+          weekStart: '2026-08-04',
+          daysAgo: 21,
+          totalMinutes: 2310,
+        },
+      ]);
+    });
+
+    it('stays silent inside the 14-day window — a normal Friday is not late', () => {
+      expect(
+        buildInboxItems({
+          role: SETUP_ROLES.NANNY,
+          currentUserId: ME,
+          todayISO: '2026-08-18',
+          changeRequests: [],
+          patterns: [],
+          timesheets: [{ ...staleSheet, updated_at: '2026-08-04T18:00:00Z' }],
+        })
+      ).toEqual([]);
+    });
+
+    it('is the carer’s item only — the parent’s copy of this fact is submitted_week', () => {
+      const items = buildInboxItems({
+        role: SETUP_ROLES.PARENT,
+        currentUserId: PARENT,
+        todayISO: '2026-08-25',
+        changeRequests: [],
+        patterns: [],
+        timesheets: [staleSheet],
+      });
+
+      expect(items.map(i => i.kind)).toEqual(['submitted_week']);
+    });
+
+    it('is another carer’s week, not hers, when the ids differ', () => {
+      expect(
+        buildInboxItems({
+          role: SETUP_ROLES.NANNY,
+          currentUserId: ME,
+          todayISO: '2026-08-25',
+          changeRequests: [],
+          patterns: [],
+          timesheets: [{ ...staleSheet, carer_id: OTHER }],
+        })
+      ).toEqual([]);
+    });
+
+    // Never an item with a blank or zero figure — the same discipline the
+    // money rules apply to an unknown total.
+    it('produces no item when the row carries no submission date or no hours', () => {
+      const base = {
+        role: SETUP_ROLES.NANNY,
+        currentUserId: ME,
+        todayISO: '2026-08-25',
+        changeRequests: [],
+        patterns: [],
+      } as const;
+
+      expect(
+        buildInboxItems({
+          ...base,
+          timesheets: [{ ...staleSheet, updated_at: undefined }],
+        })
+      ).toEqual([]);
+      expect(
+        buildInboxItems({
+          ...base,
+          timesheets: [{ ...staleSheet, total_minutes: undefined }],
+        })
+      ).toEqual([]);
+    });
+
+    // The two items are the same week seen by two people, and neither
+    // resolves in place — but a carer must still never see the parent's
+    // "review and approve" row bounced back at her.
+    it('gives the carer the stale item and never the parent’s submitted_week row', () => {
+      const items = buildInboxItems({
+        role: SETUP_ROLES.NANNY,
+        currentUserId: ME,
+        todayISO: '2026-08-25',
+        changeRequests: [],
+        patterns: [],
+        timesheets: [staleSheet],
+      });
+
+      expect(items.map(i => i.kind)).toEqual(['stale_submitted_week']);
+    });
+  });
+
   it('never surfaces submitted weeks to carer/helper viewers', () => {
     const timesheets = [
       {
@@ -250,6 +376,7 @@ describe('buildInboxItems', () => {
         buildInboxItems({
           role,
           currentUserId: ME,
+          todayISO: '2026-08-25',
           changeRequests: [],
           patterns: [],
           timesheets,

@@ -31,13 +31,18 @@
       "title": "Queried week of {{week}}",
       "subtitle": "A parent asked about this week's hours.",
       "subtitleWithNote": "{{note}}",
-      "cta": "Review week"
+      "cta": "Read and reply"
     },
     "submittedWeek": {
       "title": "Week of {{week}} submitted — review and approve",
       "subtitle": "Submitted by {{carer}}.",
       "subtitleFallback": "Tap to review this week's hours.",
       "cta": "Approve week"
+    },
+    "staleSubmittedWeek": {
+      "title": "Week of {{week}} — submitted {{days}} days ago, not approved",
+      "subtitle": "{{hours}} · With the family",
+      "cta": "Open the week"
     }
   }
 }

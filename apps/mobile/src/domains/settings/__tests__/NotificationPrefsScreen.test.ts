@@ -57,6 +57,14 @@ describe('NotificationPrefsScreen', () => {
     expect(source).toContain("parent_covering: 'schedule'");
   });
 
+  // 3-T1 / §1.3 N3-N4: the week thread's two pushes are about money, and
+  // they belong with the rest of the hours-and-pay leg. §1.5b's five-group
+  // split is a later slice's job, not a reason to park these anywhere else.
+  it('groups the week-thread types under Hours and pay', () => {
+    expect(source).toContain("timesheet_note_added: 'hoursAndPay'");
+    expect(source).toContain("timesheet_query_withdrawn: 'hoursAndPay'");
+  });
+
   it('groups visible push types under Schedule, Hours and pay, and Your household headings', () => {
     expect(source).toContain('notificationPrefs.groups.schedule');
     expect(source).toContain('notificationPrefs.groups.hoursAndPay');

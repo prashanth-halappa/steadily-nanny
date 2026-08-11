@@ -8,14 +8,21 @@
  * the opposite of approve — so a frozen past week can be corrected without
  * a manual DB write.
  *
- * Daylight P0-3: Approve, Query, Reopen, the queried-note and the "waiting"
- * explainer all render INSIDE `WeekTotal` (`primaryAction`/`secondaryAction`/
- * `onReopenPress`/`queryNote`/`actionsNote`), not this component's FlashList
- * footer — they used to sit below every day row and the reimbursements
- * card, several screens down from the figure they act on. This component
- * still owns every handler, dialog and gate (`isActionable`, `readOnly`);
- * `WeekTotal` stays presentational. See that module's doc comment for the
- * card's full vertical order.
+ * Daylight P0-3: Approve, Query, Reopen and the "waiting" explainer all
+ * render INSIDE `WeekTotal` (`primaryAction`/`secondaryAction`/
+ * `tertiaryAction`/`onReopenPress`/`actionsNote`), not this component's
+ * FlashList footer — they used to sit below every day row and the
+ * reimbursements card, several screens down from the figure they act on.
+ * This component still owns every handler, dialog and gate (`isActionable`,
+ * `readOnly`); `WeekTotal` stays presentational. See that module's doc
+ * comment for the card's full vertical order.
+ *
+ * 3-T1 (`docs/design/attention-and-notifications.md` §3): the week's
+ * conversation is `WeekQueryThread`, mounted directly under `WeekTotal`, and
+ * the parent's exit from `queried` is "Withdraw the query" in the card's
+ * tertiary slot behind `WithdrawQueryDialog`. The promoted parent-only
+ * `query_note` band is gone — the thread renders that first message to both
+ * sides, which is the whole of P1.
  *
  * TIER0-CX-SPEC.md §6.2/§6.3/§7 (Phase 4, additive): the footer also carries
  * the pending-expenses review affordance (action-gated behind `!readOnly`,
@@ -46,6 +53,7 @@ import {
 } from '@/src/domains/expenses/utils/reviewErrorReason';
 import { resolveMemberDisplayName } from '@/src/domains/schedule/utils/memberDisplayName';
 import { resolveWeekCarerHeaderName } from '@/src/domains/timesheet/utils/weekCarerHeaderName';
+import { useAddTimesheetThreadMessage } from '@/src/hooks/mutations/useAddTimesheetThreadMessage';
 import { useApproveTimesheet } from '@/src/hooks/mutations/useApproveTimesheet';
 import { useQueryTimesheet } from '@/src/hooks/mutations/useQueryTimesheet';
 import {
@@ -55,13 +63,16 @@ import {
 } from '@/src/hooks/mutations/useRecordPayment';
 import { useReopenTimesheet } from '@/src/hooks/mutations/useReopenTimesheet';
 import { useReviewExpense } from '@/src/hooks/mutations/useReviewExpense';
+import { useWithdrawTimesheetQuery } from '@/src/hooks/mutations/useWithdrawTimesheetQuery';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
 import { useHouseholdMembers } from '@/src/hooks/queries/useHouseholdMembers';
 import { usePayments } from '@/src/hooks/queries/usePayments';
 import { usePendingExpenses } from '@/src/hooks/queries/usePendingExpenses';
+import { useTimesheetThread } from '@/src/hooks/queries/useTimesheetThread';
 import { useWeekExpenses } from '@/src/hooks/queries/useWeekExpenses';
 import { useWeekTimeEntries } from '@/src/hooks/queries/useWeekTimeEntries';
 import { useWeekTimesheet } from '@/src/hooks/queries/useWeekTimesheet';
+import { getLocalizedErrorMessage } from '@/src/lib/errorLocalization';
 import { localDateInZone } from '@/src/lib/localDate';
 import { formatMoney } from '@/src/lib/money';
 import { showSuccessToast } from '@/src/lib/toast';
@@ -96,7 +107,9 @@ import {
 } from './WeekAdjustmentSheet';
 import { WeekExportAction } from './WeekExportAction';
 import { WeekMoneyCard } from './WeekMoneyCard';
+import { WeekQueryThread } from './WeekQueryThread';
 import { WeekTotal } from './WeekTotal';
+import { WithdrawQueryDialog } from './WithdrawQueryDialog';
 
 interface ParentWeekViewProps {
   householdId: string;
@@ -143,6 +156,7 @@ export function ParentWeekView({
   const { t } = useTranslation('hours');
   const { t: tSchedule } = useTranslation('schedule');
   const { t: tExpenses } = useTranslation('expenses');
+  const { t: tErrors } = useTranslation('errors');
   const router = useRouter();
   // Same tab-bar dead-zone fix as Settings (BUG1) — the Hours tab's
   // FlashList needs the same real clearance a fixed magic number can't give.
@@ -166,7 +180,10 @@ export function ParentWeekView({
   const reopenTimesheet = useReopenTimesheet();
   const reviewExpense = useReviewExpense();
   const recordPayment = useRecordPayment();
+  const withdrawQuery = useWithdrawTimesheetQuery();
+  const addThreadMessage = useAddTimesheetThreadMessage();
   const [isQuerySheetVisible, setIsQuerySheetVisible] = useState(false);
+  const [isWithdrawDialogOpen, setIsWithdrawDialogOpen] = useState(false);
   const [isRecordPaymentVisible, setIsRecordPaymentVisible] = useState(false);
   // The ID, not the payment: a refetch then re-resolves the open sheet
   // against fresh data instead of pinning the snapshot that was on screen
@@ -294,6 +311,11 @@ export function ParentWeekView({
   const paymentsQuery = usePayments(
     showSettlementHistory && timesheet ? timesheet.id : null
   );
+  // §3 — what was SAID about this week. Fetched for every week, not only
+  // queried ones: the thread outlives the query (a withdrawal, a reply on an
+  // approved week) and it renders NOTHING when empty, so the ~50 clean weeks
+  // a year still look exactly as they do today.
+  const threadQuery = useTimesheetThread(timesheet?.id ?? null);
 
   const pendingExpenses = pendingExpensesQuery.data ?? [];
 
@@ -455,6 +477,10 @@ export function ParentWeekView({
   // 'approved', or already-'queried'. Gating on role alone isn't enough;
   // verified against the live API (api-timesheet's reply, 2026-08-01).
   const isActionable = timesheet?.status === TIMESHEET_STATUSES.SUBMITTED;
+  // Withdraw is the mirror of query: valid ONLY from `queried`, and the API
+  // refuses it anywhere else, so the affordance is withheld rather than
+  // shown-and-refused (same discipline as `onVoidPress` on an approved week).
+  const isQueried = timesheet?.status === TIMESHEET_STATUSES.QUERIED;
 
   const dayRows = weekDates
     .map(date => ({
@@ -610,6 +636,32 @@ export function ParentWeekView({
     void handleReopen(reason);
   };
 
+  // D-19. Same try/catch discipline as approve/query: `.mutateAsync().then()`
+  // with no rejection handler leaves an "Uncaught (in promise)" in metro.log
+  // even though the hook's own `onError` still toasts.
+  const handleWithdrawQuery = async () => {
+    if (!timesheet || !isQueried || withdrawQuery.isPending) return;
+    try {
+      await withdrawQuery.mutateAsync({ timesheetId: timesheet.id });
+    } catch {
+      return;
+    }
+  };
+
+  const handleConfirmWithdrawQuery = () => {
+    setIsWithdrawDialogOpen(false);
+    void handleWithdrawQuery();
+  };
+
+  // Confirmation is the message appearing in the thread with a name and a
+  // timestamp — no toast (§3.1). `mutate`, not `mutateAsync`: there is
+  // nothing to await, and the refusal is read off the mutation's own `error`
+  // and rendered inside the card (GOLDEN-FIXES #40).
+  const handleSendThreadMessage = (message: string) => {
+    if (!timesheet) return;
+    addThreadMessage.mutate({ timesheetId: timesheet.id, message });
+  };
+
   const handleQuerySubmit = async (note: string) => {
     if (!timesheet || !isActionable || queryTimesheet.isPending) return;
     try {
@@ -714,10 +766,6 @@ export function ParentWeekView({
               earningsReopened={reopened}
               earningsReopenReason={timesheet?.reopen_reason ?? null}
               approvedDateLabel={approvedDateLabel}
-              // Daylight P0-3: gated internally on `timesheetStatus ===
-              // 'queried'`, same belt-and-braces the old footer render used
-              // — a stale note from a since-resolved query never shows.
-              queryNote={timesheet?.query_note ?? null}
               // Walkthrough fix 1 — the reopen affordance lives in the
               // summary card, next to the status pill/gross, not below the
               // day rows. `readOnly` (a helper) never gets a handler, so a
@@ -752,12 +800,39 @@ export function ParentWeekView({
                       onPress: () => setIsQuerySheetVisible(true),
                     }
               }
+              // D-19: the parent's exit from `queried`, beside Approve. Not
+              // `destructive` — taking a question back un-approves nothing
+              // and erases nothing (the dialog's second sentence).
+              tertiaryAction={
+                readOnly || !isQueried
+                  ? null
+                  : {
+                      testID: 'hours-withdraw-query-button',
+                      label: t('withdrawQuery'),
+                      disabled: withdrawQuery.isPending,
+                      onPress: () => setIsWithdrawDialogOpen(true),
+                    }
+              }
               actionsNote={
                 readOnly || isActionable || isApproved
                   ? null
-                  : timesheet?.status === TIMESHEET_STATUSES.QUERIED
+                  : isQueried
                     ? t('waitingAfterQuery')
                     : t('waitingForHours')
+              }
+            />
+            <WeekQueryThread
+              messages={threadQuery.data?.messages ?? []}
+              currentUserId={currentUserId}
+              timeZone={timeZone}
+              timesheetStatus={timesheet?.status ?? null}
+              viewerRole="parent"
+              onSend={handleSendThreadMessage}
+              isSending={addThreadMessage.isPending}
+              sendError={
+                addThreadMessage.error
+                  ? getLocalizedErrorMessage(addThreadMessage.error, tErrors)
+                  : null
               }
             />
           </>
@@ -830,11 +905,13 @@ export function ParentWeekView({
                 paidState={paidState}
               />
             ) : null}
-            {/* Daylight P0-3: the query note, the "waiting" explainer and
-                the Approve/Query buttons all moved into the summary card
-                above (`WeekTotal`'s `queryNote`/`actionsNote`/
-                `primaryAction`/`secondaryAction`) — next to the figure they
-                act on, not several screens below every day row. */}
+            {/* Daylight P0-3: the "waiting" explainer and the Approve/Query/
+                Withdraw buttons all moved into the summary card above
+                (`WeekTotal`'s `actionsNote`/`primaryAction`/
+                `secondaryAction`/`tertiaryAction`) — next to the figure they
+                act on, not several screens below every day row. The query
+                note itself is no longer rendered anywhere on this side: it
+                is the thread's first message, shown to both. */}
             {readOnly ? null : (
               // §6.2 — above the approve actions (which now live in the card).
               <PendingExpensesRow
@@ -897,6 +974,13 @@ export function ParentWeekView({
         carerName={approveDialogCarerName}
         adjustmentLabel={adjustmentLabel}
         adjustmentDirection={adjustmentDirection}
+      />
+
+      <WithdrawQueryDialog
+        open={isWithdrawDialogOpen}
+        onOpenChange={setIsWithdrawDialogOpen}
+        onConfirm={handleConfirmWithdrawQuery}
+        isSubmitting={withdrawQuery.isPending}
       />
 
       <ReopenWeekDialog

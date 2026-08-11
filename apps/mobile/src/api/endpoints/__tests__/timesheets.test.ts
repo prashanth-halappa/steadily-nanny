@@ -335,6 +335,128 @@ describe('timesheetApi.query', () => {
   });
 });
 
+// D-18/D-19 week thread. Timestamps deliberately appear in BOTH wire
+// serialisations across these fixtures (`+00:00` and `.000Z`, GOLDEN #25) —
+// the server has emitted both shapes and `z.iso.datetime({ offset: true })`
+// accepts either, so a fixture that only ever uses one proves nothing.
+const threadMessages = [
+  {
+    id: '88888888-8888-4888-8888-888888888888',
+    kind: 'queried',
+    author_id: '99999999-9999-4999-8999-999999999999',
+    author_name: 'The Ahmeds',
+    body: 'Thursday looks about 90 minutes long — can you check?',
+    created_at: '2026-08-12T17:04:00+00:00',
+  },
+  {
+    id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    kind: 'note',
+    author_id: '33333333-3333-4333-8333-333333333333',
+    author_name: 'Ines Ferreira',
+    body: "I stayed late — Ayla's pickup ran over.",
+    created_at: '2026-08-12T19:20:00.000Z',
+  },
+];
+
+describe('timesheetApi.getThread', () => {
+  it('GETs :id/thread and returns the validated messages, oldest first', async () => {
+    apiClient.get.mockResolvedValue({
+      data: { data: { thread: { messages: threadMessages } } },
+    });
+
+    const result = await timesheetApi.getThread(validTimesheet.id);
+
+    expect(apiClient.get).toHaveBeenCalledWith(
+      `/v1/timesheets/${validTimesheet.id}/thread`
+    );
+    expect(result.messages).toHaveLength(2);
+    expect(result.messages[0].kind).toBe('queried');
+  });
+
+  it('accepts a query_withdrawn message with an empty body', async () => {
+    apiClient.get.mockResolvedValue({
+      data: {
+        data: {
+          thread: {
+            messages: [
+              {
+                id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+                kind: 'query_withdrawn',
+                author_id: null,
+                author_name: 'The Ahmeds',
+                body: '',
+                created_at: '2026-08-13T09:00:00.000Z',
+              },
+            ],
+          },
+        },
+      },
+    });
+
+    const result = await timesheetApi.getThread(validTimesheet.id);
+
+    expect(result.messages[0].body).toBe('');
+    expect(result.messages[0].author_id).toBeNull();
+  });
+});
+
+describe('timesheetApi.addThreadMessage', () => {
+  it('POSTs the trimmed message and returns the FULL updated thread', async () => {
+    apiClient.post.mockResolvedValue({
+      data: { data: { thread: { messages: threadMessages } } },
+    });
+
+    const result = await timesheetApi.addThreadMessage(validTimesheet.id, {
+      message: '  I stayed late  ',
+    });
+
+    expect(apiClient.post).toHaveBeenCalledWith(
+      `/v1/timesheets/${validTimesheet.id}/thread`,
+      { message: 'I stayed late' }
+    );
+    expect(result.messages).toHaveLength(2);
+  });
+
+  it('refuses an empty message before it reaches the network', async () => {
+    await expect(
+      timesheetApi.addThreadMessage(validTimesheet.id, { message: '   ' })
+    ).rejects.toThrow();
+    expect(apiClient.post).not.toHaveBeenCalled();
+  });
+
+  it('refuses a message over the 1000-character ceiling', async () => {
+    await expect(
+      timesheetApi.addThreadMessage(validTimesheet.id, {
+        message: 'x'.repeat(1001),
+      })
+    ).rejects.toThrow();
+    expect(apiClient.post).not.toHaveBeenCalled();
+  });
+});
+
+describe('timesheetApi.withdrawQuery', () => {
+  it('POSTs to :id/withdraw-query with no body and returns the submitted week', async () => {
+    apiClient.post.mockResolvedValue({
+      data: {
+        data: {
+          timesheet: {
+            ...validTimesheet,
+            status: 'submitted',
+            query_note: null,
+          },
+        },
+      },
+    });
+
+    const result = await timesheetApi.withdrawQuery(validTimesheet.id);
+
+    expect(apiClient.post).toHaveBeenCalledWith(
+      `/v1/timesheets/${validTimesheet.id}/withdraw-query`
+    );
+    expect(result.status).toBe('submitted');
+  });
+});
+
 describe('timesheetApi.exportCsv', () => {
   it('GETs :id/export.csv as raw text and returns the body verbatim', async () => {
     const csv =

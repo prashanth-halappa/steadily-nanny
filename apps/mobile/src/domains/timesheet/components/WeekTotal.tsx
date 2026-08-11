@@ -41,14 +41,22 @@
  *
  * Card vertical order (`CardContent`, one `gap-3`):
  * 1. Title row: `IconChip` + parent `H3` headline / nanny `StatusPill`.
- * 2. Promoted `query_note` (parent, `queried` only).
- * 3. Nanny-only "Approved by {household} on {date}." + gross `Figure28`.
- * 4. Reopened-reason caption (non-approved, wire/ephemeral reason).
- * 5. Approved-week slot — the reopen button when `onReopenPress` is
+ * 2. Nanny-only "Approved by {household} on {date}." + gross `Figure28`.
+ * 3. Reopened-reason caption (non-approved, wire/ephemeral reason).
+ * 4. Approved-week slot — the reopen button when `onReopenPress` is
  *    supplied, else the lock caption. Same slot, because they answer the
  *    same question: what can you do about an approved week?
- * 6. Pay-boundary explainer (`showPayBoundary`).
- * 7. `actionsNote`, then `primaryAction` (`size="lg"`) / `secondaryAction`.
+ * 5. Pay-boundary explainer (`showPayBoundary`).
+ * 6. `actionsNote`, then `primaryAction` (`size="lg"`) / `secondaryAction` /
+ *    `tertiaryAction`.
+ *
+ * The promoted `query_note` band used to sit at position 2, parent-only. It
+ * is GONE (`docs/design/attention-and-notifications.md` §3): that
+ * `isParentViewer && queried && queryNote` guard was the literal code that
+ * made P1 true — only the parent could read the question — and
+ * `WeekQueryThread`, mounted directly under this card, now renders that same
+ * first message to both sides. A second, parent-only rendering of it would
+ * put P1 straight back.
  *
  * The reopen *reason* caption is owned here — it is a timesheet-status fact
  * ("this week was un-approved, and here is why"), not an earnings fact.
@@ -110,15 +118,17 @@ interface WeekTotalProps {
   /** Already-formatted approved date — the parent headline's "Approved on
    * {date}" and the nanny appreciation line's "on {date}.". */
   approvedDateLabel?: string | null;
-  /** Parent-only: the timesheet's `query_note`, gated on `timesheetStatus
-   * === 'queried'` so a stale note from a since-resolved query never shows. */
-  queryNote?: string | null;
   /** Nanny-only: the household's name, for the approved appreciation line. */
   householdName?: string | null;
   /** Full-width `size="lg"` `variant="default"` action (Approve). */
   primaryAction?: WeekTotalAction | null;
   /** `variant="ghost"` action beneath the primary (Query). */
   secondaryAction?: WeekTotalAction | null;
+  /** A second `variant="ghost"` action beneath that one — the parent's
+   * "Withdraw the query" exit from `queried` (D-19). Same `WeekTotalAction`
+   * shape as the other two on purpose: an action row that grows a third
+   * mechanism is how a status card becomes a screen again. */
+  tertiaryAction?: WeekTotalAction | null;
   /** Muted explainer shown above the actions (e.g. why Approve is disabled). */
   actionsNote?: string | null;
 }
@@ -194,10 +204,10 @@ export function WeekTotal({
   onReopenPress,
   isReopenPending = false,
   approvedDateLabel = null,
-  queryNote = null,
   householdName = null,
   primaryAction = null,
   secondaryAction = null,
+  tertiaryAction = null,
   actionsNote = null,
 }: WeekTotalProps) {
   const { t } = useTranslation('hours');
@@ -230,6 +240,7 @@ export function WeekTotal({
     !showPayBoundary &&
     !primaryAction &&
     !secondaryAction &&
+    !tertiaryAction &&
     !actionsNote
   ) {
     return null;
@@ -262,11 +273,6 @@ export function WeekTotal({
               </View>
             ) : null}
           </View>
-        ) : null}
-        {isParentViewer && timesheetStatus === 'queried' && queryNote ? (
-          <Body testID="hours-query-note" className="text-muted-strong">
-            {t('queriedWithNote', { note: queryNote })}
-          </Body>
         ) : null}
         {/* Appreciation moment (P0-5): appreciation starts with not being
             kept in the dark about her own pay. Money correctness beats
@@ -362,6 +368,22 @@ export function WeekTotal({
               }
             >
               {secondaryAction.label}
+            </Text>
+          </Button>
+        ) : null}
+        {tertiaryAction ? (
+          <Button
+            testID={tertiaryAction.testID}
+            variant="ghost"
+            disabled={tertiaryAction.disabled}
+            onPress={tertiaryAction.onPress}
+          >
+            <Text
+              className={
+                tertiaryAction.destructive ? 'text-destructive' : undefined
+              }
+            >
+              {tertiaryAction.label}
             </Text>
           </Button>
         ) : null}

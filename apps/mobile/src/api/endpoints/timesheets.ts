@@ -9,18 +9,22 @@
 // `response.data.data` before validating the payload with Zod.
 
 import type {
+  AddTimesheetThreadMessageInput,
   ApproveTimesheetInput,
   QueryTimesheetInput,
   ReopenTimesheetInput,
   Timesheet,
+  TimesheetThread,
   TimesheetWeek,
 } from '@steadily-nanny/shared-types/schemas/timesheet.schema';
 import {
+  AddTimesheetThreadMessageSchema,
   ApproveTimesheetSchema,
   QueryTimesheetSchema,
   ReopenTimesheetSchema,
   TimesheetListResponseSchema,
   TimesheetSchema,
+  TimesheetThreadSchema,
   TimesheetWeekSchema,
 } from '@steadily-nanny/shared-types/schemas/timesheet.schema';
 import { z } from 'zod';
@@ -31,6 +35,8 @@ export type {
   EarningsLineKind,
   HoursOnlyReason,
   TimesheetStatus,
+  TimesheetThreadMessage,
+  TimesheetThreadMessageKind,
   WeekEarnings,
   WeekEarningsOk,
   WeekEarningsStateResult,
@@ -43,15 +49,19 @@ export {
   humanizeEarningsLineKind,
   isKnownEarningsLineKind,
   TIMESHEET_STATUSES,
+  TIMESHEET_THREAD_MESSAGE_KINDS,
+  TIMESHEET_THREAD_MESSAGE_MAX,
   WEEK_EARNINGS_STATES,
 } from '@steadily-nanny/shared-types/schemas/timesheet.schema';
 // Re-exported so domain-internal imports (`@/src/api/endpoints/timesheets`)
 // stay stable regardless of where the wire contract itself lives.
 export type {
+  AddTimesheetThreadMessageInput,
   ApproveTimesheetInput,
   QueryTimesheetInput,
   ReopenTimesheetInput,
   Timesheet,
+  TimesheetThread,
   TimesheetWeek,
 };
 
@@ -63,6 +73,9 @@ export const timesheetEndpoints = {
   approve: (timesheetId: string) => `/v1/timesheets/${timesheetId}/approve`,
   query: (timesheetId: string) => `/v1/timesheets/${timesheetId}/query`,
   reopen: (timesheetId: string) => `/v1/timesheets/${timesheetId}/reopen`,
+  thread: (timesheetId: string) => `/v1/timesheets/${timesheetId}/thread`,
+  withdrawQuery: (timesheetId: string) =>
+    `/v1/timesheets/${timesheetId}/withdraw-query`,
   exportCsv: (timesheetId: string) =>
     `/v1/timesheets/${timesheetId}/export.csv`,
 } as const;
@@ -198,6 +211,66 @@ export const timesheetApi = {
     const response = await apiClient.post(
       timesheetEndpoints.reopen(timesheetId),
       validated.data
+    );
+    const parsed = z
+      .object({ timesheet: TimesheetSchema })
+      .safeParse(response.data.data);
+    if (!parsed.success) throw parsed.error;
+    return parsed.data.timesheet;
+  },
+
+  /**
+   * `GET /timesheets/:id/thread` — what was SAID about the week, oldest
+   * first (D-18, `docs/design/attention-and-notifications.md` §3). Any
+   * active member may read it: both sides always see every message.
+   */
+  getThread: async (timesheetId: string): Promise<TimesheetThread> => {
+    const response = await apiClient.get(
+      timesheetEndpoints.thread(timesheetId)
+    );
+    const parsed = z
+      .object({ thread: TimesheetThreadSchema })
+      .safeParse(response.data.data);
+    if (!parsed.success) throw parsed.error;
+    return parsed.data.thread;
+  },
+
+  /**
+   * `POST /timesheets/:id/thread` — one message on the week's append-only
+   * log. Answers with the FULL updated thread so the caller seeds its cache
+   * instead of refetching: the message appearing IS the confirmation (§3.1).
+   *
+   * Who may post when is the server's rule (carer on `submitted`/`queried`/
+   * `approved`, parent on `queried` only); the composer mirrors it so a
+   * refusal is rare rather than routine.
+   */
+  addThreadMessage: async (
+    timesheetId: string,
+    input: AddTimesheetThreadMessageInput
+  ): Promise<TimesheetThread> => {
+    const validated = AddTimesheetThreadMessageSchema.safeParse(input);
+    if (!validated.success) throw validated.error;
+
+    const response = await apiClient.post(
+      timesheetEndpoints.thread(timesheetId),
+      validated.data
+    );
+    const parsed = z
+      .object({ thread: TimesheetThreadSchema })
+      .safeParse(response.data.data);
+    if (!parsed.success) throw parsed.error;
+    return parsed.data.thread;
+  },
+
+  /**
+   * `POST /timesheets/:id/withdraw-query` — the parent takes the question
+   * back and the week returns to `submitted` (D-19). Parents only, from
+   * `queried` only, no body. **The thread is not cleared** — the withdrawal
+   * appends its own message rather than erasing the ones before it.
+   */
+  withdrawQuery: async (timesheetId: string): Promise<Timesheet> => {
+    const response = await apiClient.post(
+      timesheetEndpoints.withdrawQuery(timesheetId)
     );
     const parsed = z
       .object({ timesheet: TimesheetSchema })

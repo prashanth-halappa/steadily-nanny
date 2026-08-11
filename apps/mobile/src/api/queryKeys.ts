@@ -156,6 +156,12 @@ export const queryKeys = {
       [...queryKeys.timesheet.all, 'list', householdId] as const,
     week: (householdId?: string, weekStart?: string) =>
       [...queryKeys.timesheet.all, 'week', householdId, weekStart] as const,
+    // What was SAID about one week (D-18). Keyed on the timesheet id, not
+    // the household week: the thread belongs to one carer's row, and in a
+    // two-carer household a week-keyed entry would serve one carer's
+    // conversation to the other.
+    thread: (timesheetId?: string) =>
+      [...queryKeys.timesheet.all, 'thread', timesheetId] as const,
   },
 
   // Cross-household "me" reads (carer's own shifts + pending change requests).

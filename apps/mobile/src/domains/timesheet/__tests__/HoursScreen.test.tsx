@@ -140,6 +140,28 @@ mock.module('@/src/hooks/mutations/useRecordPayment', () => ({
   overPaymentMetadata: () => null,
 }));
 
+// The week thread (3-T1): both role views read it unconditionally, for the
+// same reason as the payments hooks above. An empty thread is the ~50 clean
+// weeks a year, and `WeekQueryThread` renders nothing for it — so none of
+// this screen's assertions change shape.
+mock.module('@/src/hooks/queries/useTimesheetThread', () => ({
+  useTimesheetThread: () => ({ data: { messages: [] }, isLoading: false }),
+}));
+mock.module('@/src/hooks/mutations/useAddTimesheetThreadMessage', () => ({
+  useAddTimesheetThreadMessage: () => ({
+    mutate: mock(() => {}),
+    mutateAsync: mock(() => Promise.resolve({ messages: [] })),
+    isPending: false,
+    error: null,
+  }),
+}));
+mock.module('@/src/hooks/mutations/useWithdrawTimesheetQuery', () => ({
+  useWithdrawTimesheetQuery: () => ({
+    mutateAsync: mock(() => Promise.resolve({})),
+    isPending: false,
+  }),
+}));
+
 // TimeEntryDayRow now hosts a flagged-entry AlertDialog (Wave 4 CX).
 mock.module('@rn-primitives/alert-dialog', () => {
   const React = require('react');
