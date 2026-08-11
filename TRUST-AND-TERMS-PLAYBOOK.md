@@ -1,0 +1,929 @@
+# TRUST-AND-TERMS-PLAYBOOK.md
+
+Written 2026-08-10 against `main` @ `9459d9e`. This playbook turns three product
+audits — the scheduling flow, the payment flow, and the pay-terms coverage gap
+analysis — into an executable, phase-by-phase build. It is **self-contained**:
+every session that runs a phase starts fresh, reads this file plus the repo docs
+each prompt names, and needs nothing from the conversation that produced it.
+
+The build has two themes. **Trust**: close every gap and trust-buster the audits
+found (a nanny who cannot read the note disputing her hours; a payment record
+that can never be corrected; a cover request that silences the no-one-is-booked
+alarm forever). **Terms**: make Pay & terms express real US arrangements (daily
+overtime, configurable workweek, split PTO, holiday premiums) behind a simpler,
+preset-first CX — while preserving the disciplines that make this codebase
+trustworthy (append-only money, refuse-don't-clamp, never fabricate £0.00).
+
+**Out of scope, deliberately** (owner decision, 2026-08-10): intra-day rate
+rules (evening/weekend/night rates — needs a child rate-rules table; revisit on
+demand); nanny-share cost splitting (one shift, two payers — requires relaxing
+the anti-double-pay exclusion constraint from migration 055); any tax or
+withholding computation (house stance stands: "we compute, your payroll
+provider files"); UK-specific terms (gross-vs-net, statutory holiday weeks,
+pension auto-enrolment).
+
+---
+
+## §0 Definition of shippable
+
+Ship is a **verified state, not an assertion**. Phase 6 executes this list item
+by item and records each in the ledger. The app is shippable when:
+
+1. **Register closed.** Every item in §2b has a terminal disposition:
+   `shipped (slice N)`, `deferred (owner-signed in §5)`, or
+   `preserved (regression-checked)`. One unassigned item fails the gate.
+2. **Green everywhere that counts.** `bun run qc` green on `main`; the full
+   Maestro E2E suite green (exactly ONE simulator booted); AND a
+   release-profile EAS build smoke-tested on a **physical device** — sim-only
+   verification is not shippable (GOLDEN-FIXES #37: simulators manufacture
+   false results).
+3. **Compatibility ordering held.** At no point did the server emit anything a
+   shipped client cannot parse. The earnings-snapshot `v` field and tolerant
+   client (Phase 1-A) landed before any new line kind. An
+   `app_config.min_supported_version` posture for stragglers is decided and
+   recorded.
+4. **Migrations rehearsed, then applied.** The full new-migration chain ran on
+   a Supabase branch against prod-shaped data with `run_integrity_checks()`
+   clean, THEN was applied to prod **via the Supabase MCP, in order** — never
+   `supabase db push` (version-scheme mismatch makes it dangerous here).
+   Live state verified afterward: migration 054's header records that 047/048
+   once sat in-repo unapplied — check `cron.job` and applied-migrations tables,
+   do not assume.
+5. **Existing households unharmed.** GBP-era arrangements map to a household
+   currency; existing Monday `week_start` rows untouched; no frozen earnings
+   snapshot detaches from the entries that produced it.
+   *[Phase 0 correction (D-9): app is pre-launch and all existing accounts get
+   wiped in Phase 6 — this gate becomes "wipe executed and verified; no
+   pre-wipe rows survive"; grandfathering/migration work is cut.]*
+6. **i18n complete.** Every new key exists in BOTH `en` and `es`. Tests cannot
+   catch a missing or hardcoded key (`t()` echoes keys under test) — this is a
+   manual checklist sweep.
+7. **Store gates passed.** `REVIEW-CHECKLIST.md` re-scanned; refreshed
+   screenshots for changed surfaces; Play Console / App Store Connect
+   submission chains cleared (note the known ordering: Play "Sign in details"
+   blocks "Target audience" blocks "Data safety").
+8. **Personas signed off.** The Marisol and David persona agents (§2c) walked
+   the finished build's screenshots and neither raises a walk-away. Docs are
+   true: `docs/11-MONEY.md` corrected (its §10 contradicts migration 065
+   today), `docs/12-NEED-COVERAGE.md` updated if cover-ask semantics changed,
+   and `docs/design/attention-and-notifications.md` matches what ships.
+9. **Post-ship watch armed.** Sentry triage cadence scheduled for 48–72h; the
+   first-week checklist (§11) dated; rollback runbook written — migrations are
+   forward-only, so "rollback" means per-risk server-side behavior flags in
+   `app_config`, defined BEFORE the risky change ships, not after it breaks.
+
+---
+
+## §1 How to use this playbook
+
+- **One fresh Claude Code session per phase** (Phase 3 runs one session per
+  slice). Start the session, paste the phase prompt from §6–§11 verbatim, and
+  let it run. Each prompt tells the session exactly what to read first.
+- **Your involvement**: Phase 0 and Phase 2 need you present (decisions and
+  design taste). Everything else is autonomous — you read a summary, look at
+  screenshots, and say go. Each implementation session may end with at most ONE
+  question for you; everything else resolves from §5 or gets parked.
+- **Parallelism map**: Phase 1 ∥ Phase 2 (no shared files). Phase 3 engine
+  slices (3-E1→3-E4) strictly sequential; trust slices (3-T1→3-T3) sequential
+  among themselves; attention (3-N, 3-D) after Phase 2 specs; UI slices
+  (3-U1–3-U3) parallel in worktrees; 3-O after Phase 2 specs AND 3-U1 (it
+  reuses the terms form). Phase 4 runs after each wave. Phase 5
+  after ALL waves. Phase 6 last. Roughly 11–16 sessions.
+- **The ledger** (bottom of this file): every session appends a row. Every
+  slice session also **updates §2b dispositions for the items it touched**, so
+  the Phase 5 register walk is verification, not archaeology.
+- Sessions maintain this file. Phase 0 fills §5. Do not edit §2/§2b content
+  except to update dispositions and correct verified errors (note corrections
+  in place, house style).
+
+---
+
+## §2 Context pack — read this first in every session
+
+### 2.1 What the product is
+Two-sided record between a family and their nanny: schedule (shifts proposed by
+parents, accepted by the nanny), hours (clock in/out rolls into a weekly
+timesheet the parent approves), money (a pure engine prices the week from an
+effective-dated pay arrangement; approval freezes hours+gross atomically;
+parents record out-of-app payments against the frozen gross). The app **never
+moves money** and computes **no tax**.
+
+### 2.2.1 Roles
+`household_members.role ∈ {owner, parent, nanny, helper}` (CHECK in
+`supabase/migrations/009_households.sql:81`). Service-layer gates use
+`WRITE_ROLES = {owner, parent}` and `CARER_ROLES = {nanny}`; **helper is in
+neither set and appears nowhere in the shift/schedule services** — read-only by
+fall-through, not by explicit code. Mobile collapses owner+parent into one
+`SETUP_ROLES.PARENT` (`apps/mobile/src/hooks/queries/useIsOnboarded.ts:60-69`),
+so a co-parent restricted by `approval_mode='owner_only'` sees buttons and gets
+a 403 (gap S4). `approval_mode ∈ {either, owner_only}` since migration 072
+removed `ask_other`.
+
+### 2.2.2 Artifacts
+Scheduling: https://claude.ai/code/artifact/dbcff021-986c-4461-bb56-43928d52352a?via=auto_preview
+Money: https://claude.ai/code/artifact/b19221b8-9376-4cea-8280-280f23986d27?via=auto_preview
+Pay & Terms: https://claude.ai/code/artifact/a656ed6d-ff21-489b-806c-b52a13307cab?via=auto_preview
+
+### 2.3 The current pay contract (verified against code, NOT docs)
+`pay_arrangements` (migrations 041, +058 +063 +065): client-settable body is
+exactly nine fields — `rate_minor` (hourly, REQUIRED), `valid_from` (REQUIRED,
+backdate-only), `currency` (defaults 'GBP' — a US gap), `overtime_threshold_minutes`
+(weekly, null = no OT), `overtime_multiplier` (one tier, default 1.50),
+`guaranteed_minutes_per_week`, `pto_entitlement_minutes_per_year` (flat grant,
+calendar year hardcoded), `mileage_rate_per_mile_minor`,
+`cancellation_paid_within_hours` (null = explicit no-pay), plus `note`.
+`bill_rate_minor` exists, fully dormant. Append-only: a change is a new row;
+same-day corrections work via the `created_at desc` tie-break in `effectiveOn`
+— which is why `effectiveOn` must ALWAYS return one row
+(`payArrangementRepository.ts:49-74` SQL twin `earningsService.ts:265-294`,
+pinned by `effectiveOnParity.test.ts`). Migration 065 end-dates the arrangement
+on removal/leave (`valid_to`) — `docs/11-MONEY.md` §10 still claims the
+opposite and is WRONG.
+
+Earnings: pure engine `apps/api/src/domains/pay/services/earningsService.ts`
+(fetch side `weekEarningsService.ts`). Six line kinds in `EARNINGS_LINE_KINDS`:
+`regular, overtime, cancellation_paid, pto, guaranteed_topup, reimbursements`,
+plus a one-off signed approval `adjustment`. Reimbursements are excluded from
+gross, from payable minutes, and from the payment ceiling — paid outside the
+app by construction. Any unpriceable date → whole week `no_arrangement`, never
+£0.00. Rounding half-up once per line. Guaranteed top-up is unconditional
+weekly shortfall (docs claiming closure-gating are stale comments).
+
+Timesheets: `status ∈ {open, submitted, approved, queried}`; **`open` is dead**
+(nothing writes it — the week is born `submitted` by the clock-out roll-up;
+there is no nanny submit step). Approve = CAS on `status='submitted' AND
+updated_at=<pre-read version>`, freezing `gross_minor/currency/earnings/
+earnings_computed_at`. **`query` and `reopen` are plain unguarded updates** (no
+CAS). Roll-up of new hours into an approved/queried week unconditionally
+reverts to `submitted` and clears the snapshot (D1). Reopen is parent-only,
+approved-only, reason required. Query is parent-only; **the nanny cannot read
+the note, cannot reply, cannot dispute anything** (gap P1); a `queried` week
+has NO parent-side exit (gap P2). Payments (`067`): append-only evidence log,
+`method_note` free text (not an enum), currency stamped from the frozen week,
+sum ≤ frozen gross refused-not-clamped, read-then-write race documented in the
+service header (gap P5), **no correction path of any kind** (gap P3 —
+`amount_minor >= 1` forbids offsetting rows).
+
+### 2.4 The two structural blockers
+1. **Monday workweek hardcoded** — `(dow + 6) % 7` at
+   `apps/api/src/domains/timesheet/utils/weekStart.ts:78-82` and a
+   `DAYS_SINCE_MONDAY` array in
+   `apps/mobile/src/domains/timesheet/utils/week.ts`. ~20 API + ~8 mobile
+   dependents. Storage is agnostic (`timesheets.week_start` has no dow CHECK;
+   `weekEndExclusive` even documents it). `mondayMidnightInstant`
+   (overnight-shift week splitter) must move with it.
+   `user_profiles.week_starts_on` exists but is display-only everywhere.
+   FLSA needs an employer-designated FIXED recurring 7-day workweek —
+   per-household, immutable once a timesheet exists.
+2. **No daily overtime** — single weekly threshold, one multiplier. CA daily
+   8h/12h double-time and 7th-day rules inexpressible. 041's header
+   anticipates presets but the columns do not exist.
+
+### 2.5 The fleet-risk prerequisite (do FIRST)
+`EARNINGS_LINE_KINDS` is a closed enum compiled into shipped clients;
+`apps/mobile/src/api/endpoints/timesheets.ts:127-131` hard-throws on the whole
+week response if the server emits an unknown kind — the entire Hours screen
+errors. No version field exists on the frozen `earnings` jsonb; a removed/
+renamed kind or new REQUIRED field silently degrades every approved week to
+`hours_only` on re-parse. Three silent-failure sites when adding kinds:
+`EarningsBreakdownSheet` RENDERABLE_KINDS set, `WeekExportAction` partial
+label record, `EARNINGS_LINE_ORDER` non-exhaustiveness. Fix = stamp `v: 1`
+into the snapshot + tolerant client + close the three sites (Phase 1-A).
+
+### 2.6 US-default gaps
+GBP defaults: `payArrangement.schema.ts:165` wire default; SQL defaults in 041
+and 044; four `?? 'GBP'` render fallbacks. Household timezone defaults
+`'Europe/London'` (009:35). **No jurisdiction/state field anywhere** (no
+country on households; user_profiles city/country unread) — every compliance
+preset needs it. en-GB formatters in server push copy (~10 sites across
+shiftCommandService, shiftChangeRequestCommandService, uncoveredCareService,
+jobs); hand-rolled en-GB month/day names in
+`apps/mobile/src/domains/pay/utils/payArrangementForm.ts:25-63`; PTO year
+hardcoded 1 Jan–31 Dec.
+
+### 2.7 Known doc drift (fix during Phase 4/6 doc sweeps)
+- `docs/11-MONEY.md` §10 ("arrangement NOT end-dated on removal…an open
+  decision") — contradicted by migration 065 + `endForCarer`; 065 is right.
+- `041:92` and `earningsService.ts:5-6` still describe the removed
+  closure-days-only top-up gate; code is unconditional.
+- `043`'s header documents a PTO uniqueness index that 045 replaced.
+- `docs/11-MONEY.md` §8's read-circle claim does not hold for `timesheets`
+  (see gap P4).
+
+### 2.8 Key files and test anchors
+Engine: `apps/api/src/domains/pay/services/earningsService.ts` (+ 48-case
+`tests/unit/domains/pay/services/earningsService.test.ts`),
+`weekEarningsService.ts`, `effectiveOnParity.test.ts` (breaks BY DESIGN on any
+resolution-rule change). Arrangement: `packages/shared-types/src/schemas/
+payArrangement.schema.ts`, `payArrangementCommandService.ts` (insert is an
+explicit field-by-field literal — a forgotten field silently never persists),
+`payArrangementRepository.ts`. Terms UI: `apps/mobile/src/domains/pay/`
+(`PayArrangementScreen`, `PaySetupScreen`, `PayChangeSheet`, `utils/termRows.ts`,
+`utils/payArrangementForm.ts`, `MyPayScreen`). Hours UI:
+`apps/mobile/src/domains/timesheet/` (`HoursScreen` role fork,
+`ParentWeekView`, `NannyWeekView`, `WeekTotal`, `RecordPaymentSheet`,
+`PaymentsScreen`). Week math: `apps/api/src/domains/timesheet/utils/
+weekStart.ts`, mobile `utils/week.ts`. Money migrations: 041/042/043/044/045/
+050/051/053/063/065/067. Scheduling: `apps/api/src/domains/shift/` +
+`schedule/`, `shiftChangeRequestCommandService.ts` (role-gated kinds:
+parent → time_change/cancel; nanny → counter_offer; responder identity rules
+at `assertCanRespond`), `scheduleHorizonJob.ts` (84-day horizon, 7-day
+change-request expiry, 30-day uncovered sweep), `uncoveredCareService.ts`
+(72h push gate), `uncoveredDigestJob.ts`, `noShowJob.ts`, `reminderJob.ts`.
+Notifications: `packages/shared-types/src/schemas/notification.schema.ts`
+(37-type registry, total audience map), `notificationPrefsService.ts`, mobile
+`notificationRouteMap.ts`, `NotificationPrefsScreen.tsx`.
+
+### 2.9 Non-negotiable house disciplines (violating any is a review-blocker)
+Integer minor units + sibling currency, never floats, never packed strings;
+refuse-don't-clamp on every ceiling; null means an explicit "no"; never render
+a fabricated £0.00; state words on every money figure (Estimated / Approved /
+Recorded); append-only money tables (a change is a new row); opaque 404s for
+"missing or not yours"; clash warnings never block scheduling; `bun run qc`
+green before done; Bun/Biome/bun:test only (never npm/Jest/Prettier).
+
+## §2c Persona definitions (re-spawn these verbatim in Phases 2, 4, 5, 6)
+
+**MARISOL** — role-play prompt: *"You are Marisol, a 34-year-old professional
+nanny in Austin, TX. 8 years experience, ~45 hrs/week for one family,
+previously juggled two families. W-2, paid weekly by Zelle. You've been burned:
+a family that 'forgot' guaranteed hours when they travelled, a late
+cancellation that cost a day's pay, and a payroll dispute you lost for lack of
+records. Be blunt and concrete; ground reactions in incidents from your working
+life."* Her session-recorded verdicts: top gaps P1 ("the app takes their side
+by design"), P3 ("a record that can't be corrected is evidence against me"),
+P4/P8 privacy ("my wages and my minute-by-minute day visible to a coworker —
+one screenshot in a nanny Facebook group and this app is done"), S3, S1 ("the
+app manufactured a story where I'm flaky"). Missing items she named:
+guaranteed-hours shortfall alarm, pay-stub-style export, mileage visibility,
+schedule-change timestamps as evidence. Conditions on view-only terms:
+acknowledgment + change notifications + version history; presets must encode
+the law (FLSA OT), not what families wish the law was.
+
+**DAVID** — role-play prompt: *"You are David, a 39-year-old parent in San
+Jose, CA. Two kids (2 and 5); nanny ~50 hrs/week at $28/hr, W-2 through a
+payroll service; you approve hours weekly and want Friday approval to take 30
+seconds. California daily overtime applies to you. You've had one real dispute
+(a Thursday that looked 90 minutes long) and once recorded a Zelle payment
+twice. Rank by what costs you time, money, or trust with your nanny; call out
+what's overblown."* His verdicts: #1 P2 (queried deadlock = late pay through
+no one's fault), P3, P1 ("the dispute happened over iMessage anyway"), S1
+("the failure mode is nobody showing up for my 2-year-old"), P7. Trust-killers:
+P3, CA daily-OT miscomputation ("the day the app says $1,540 and payroll says
+$1,596, I believe payroll forever"), P5+S2 (no reconciliation anywhere).
+Missing: payroll-service handoff/export, guaranteed hours as a concept,
+year-end totals (FSA/child-care credit), decline-cover next step, receipt
+capture. Endorses preset-first terms and a COLLAPSED one-line "why" with a
+"same structure as last week" fast path — a screen he must read every Friday
+defeats itself.
+
+---
+
+## §2b THE OBSERVATION REGISTER
+
+Completeness contract for §0.1. Categories: **GAP** (missing capability),
+**BUSTER** (actively erodes trust), **EARN** (opportunity to earn trust),
+**PRESERVE** (existing behavior that earns trust — regression-guard it).
+Disposition column is LIVE — sessions update it. `→P0` = needs a Phase 0
+decision first.
+
+### A. Notifications & attention
+
+| # | Obs | Cat | Anchor | Disposition |
+|---|---|---|---|---|
+| A1 | No-show alert: quiet hours suppress AND the `no_show:<shiftId>` once-ever dedupe key means a suppressed alert never re-fires — a parent can never learn nobody clocked in | BUSTER | `noShowJob.ts` (claim key has no date segment; module doc accepts quiet-hour suppression) | D-26 → 3-N |
+| A2 | Evening shift reminder covers CONFIRMED shifts only → a pending cover-ask gets no reminder ever (compounds S1) | GAP | `reminderJob.processShiftReminders` | → 3-N |
+| A3 | `running_late` + `parent_covering` emitted as raw strings — absent from PUSH_NOTIFICATION_TYPES/audience/groups/route map; unmutable, fallback routing | GAP | `shiftCommandService.ts:419,637` | → 1-E |
+| A4 | Quiet-hours exemption list is exactly {SHIFT_NEEDS_RECONFIRM, SHIFT_CHANGE_REQUESTED} — membership needs revisiting as new urgent types land | GAP | `notification/constants.ts:21-25` | D-28 → 3-N |
+| A5 | Change-request expiry keyed on `created_at` (7d): a request about tomorrow's shift can outlive the shift; nothing handles "shift started with a pending request" | GAP | `scheduleHorizonJob.ts:64,178-201` | → 3-T3 |
+| A6 | SHIFT_DECLINED / SHIFT_CANCELLED suppressed when an uncovered push already fired — "one fact, one push", keyed on `pushed` not `inserted` | PRESERVE | `shiftCommandService.ts:245`, `shiftChangeRequestCommandService.ts:715` | preserve (doc in matrix) |
+| A7 | Timesheet nudge repeats daily forever (date-segmented dedupe key) | GAP | `reminderJob.ts:238-243` | D-27 → 3-N |
+| A8 | TIMESHEET_APPROVED deliberately omits the figure from the push | PRESERVE | `timesheetCommandService.ts:1579-1601` | preserve |
+| A9 | Parent-cover push fires only when cover ends exactly at the carer's next shift start ("both sentences or neither") | PRESERVE | `shiftCommandService.ts:588-628` | preserve |
+| A10 | Uncovered digest: Spanish strings live in a module comment, unwired to i18n; household-local 18:00–21:00 send window | GAP/PRESERVE | `uncoveredDigestJob.ts:56-60` | → 3-U2 (wire es); window preserve |
+| A11 | Per-type audience map is TOTAL (missing entry fails typecheck) | PRESERVE | `notification.schema.ts:125-162` | preserve; extend per new type |
+| A12 | No UI-reachable quiet window overlaps the digest's 18:00–21:00 send window (option lists 21/22/23 start) | PRESERVE | `NotificationPrefsScreen.tsx:35-36` | preserve |
+
+### B. Today screen & inbox
+
+| # | Obs | Cat | Anchor | Disposition |
+|---|---|---|---|---|
+| B1 | Nanny Today has NO attention states for money or coverage: no cover-ask-awaiting-you card (push is the only signal), no guaranteed-hours shortfall, no queried-week card beyond the inbox row | GAP | `TodayScreen.tsx` role gating; Marisol "splash pad" | design → 3-D |
+| B2 | Parent Today has no cover-ask lifecycle state: awaiting-answer / declined-pick-next-step (David: "hand the alarm back loudly") | GAP | `TodayCoverage.tsx` | design → 3-D |
+| B3 | NeedsAttentionCard filters pending_pattern because PendingScheduleCard owns it — one-owner-per-item rule | PRESERVE | `NeedsAttentionCard.tsx:62` | preserve as rule for new cards |
+| B4 | Proposal framing copy ("A parent proposed this new shift…") renders for ALL roles including the proposing parent | BUSTER (small) | `ShiftDetailScreen.tsx:142-150` | → 1-E |
+| B5 | Helper role handled by fall-through only; zero explicit HELPER mentions in shift/schedule services | GAP | grep evidence §2.2 | → 3-D (explicit + tested) |
+| B6 | HandoffChipsCard renders for every role; phase chosen by role+wall-clock, never shift state; `sentAt` shown only to author (no punctuality record) | PRESERVE | `HandoffChipsCard.tsx` | preserve |
+| B7 | Inbox items deep-link, never resolve in place | PRESERVE | `buildInboxItems.ts` | preserve |
+
+### C. Scheduling flow
+
+| # | Obs | Cat | Anchor | Disposition |
+|---|---|---|---|---|
+| S1 | Unanswered cover-ask: lands `pending`, `pending` counts as covering, alarm silenced forever; no expiry (7d sweep touches change requests only), no reminder, no chase | BUSTER | `COVERING_SHIFT_STATUSES` in `uncoveredCare.ts:86-90` | D-22 → 3-T3 |
+| S2 | `completed` status exists in enum/CHECK/immutability sets, no writer — scheduled-vs-worked never reconciles (David's "quiet accomplice") | GAP | shift status audit | D-24 → 3-T3 |
+| S3 | Paid-cancellation hint NOT in the cancel confirm dialog (sits elsewhere on the page); short-notice window configured in Manage Household while cancellation window lives in the arrangement — two homes | BUSTER | `ShiftDetailScreen.tsx:293-300` vs `:336-380` | design → 3-T3 |
+| S4 | Co-parent under owner_only sees the buttons, learns via 403 (client can't distinguish owner from parent) | GAP | `useIsOnboarded.ts:60-69` | → 3-T3 (expose role) |
+| S5 | Counter-offer form gated on isNanny only, not isAssignedCarer; server accepts (role-only gate for nanny kind) | GAP | `ShiftDetailScreen.tsx:389`; `assertKindAllowedForRole` | → 1-E |
+| S6 | = A3 | | | → 1-E |
+| S7 | Pattern timezone snapshots at draft and never re-syncs — a moved household generates old-zone instants until re-drafted; the "obvious" repair would have shifted 58 correct payroll shifts by 8h (GOLDEN #29) | GAP | `schedule_patterns.timezone` 014 | deferred (D-10: silent status quo) |
+| S8 | `shift_events` grows unbounded: nightly sweep writes uncovered events over 31 days × households | GAP | `scheduleHorizonJob.ts:70-73` ponytail | → 3-T3 (retention/compaction) |
+| S9 | `uncovered_care` events never retracted when a gap fills; UI must recompute (correct today) — decide: retraction events, or codify events-are-history | GAP | D54 deferred list | D-25 → 3-T3 (doc only) |
+| S10 | Sick-day flow writes the time-off row only; NO path cancels the overlapping shift; interplay between sick kind, cancellation pay, and PTO sick balance undefined | GAP | `SickTimeOffButton.tsx:12-15` | D-23 → 3-T3 |
+| S11 | Clash warnings never block; overlapping shifts legal; only identical windows dedupe (059/062 adopt-on-collision) | PRESERVE | 062 header | preserve |
+| S12 | Day thread append-only, no update/delete policy; supersede-on-open makes dual pending requests unreachable | PRESERVE | 015:274, 030 | preserve |
+| S13 | Time-change accepted → times move, status NOT demoted (counterparty just consented); parent PATCH with real value change → demote + reconfirm push (071 value-diff) | PRESERVE | 029/071 | preserve |
+| S14 | Cancellation is ALWAYS a two-party change request; no direct cancel endpoint; pay resolved by three-arm rule against shift-local start date | PRESERVE | `resolveCancellationPaid` | preserve |
+| S15 | Unassigned shift has no valid responder (fixed leak); nanny-opened counter answerable by ANY parent | PRESERVE | `assertCanRespond` | preserve |
+
+### D. Hours & money flow
+
+| # | Obs | Cat | Anchor | Disposition |
+|---|---|---|---|---|
+| P1 | Nanny cannot read the query note (renders parent-only), cannot reply, cannot dispute; push carries no note text | BUSTER | `WeekTotal.tsx:266-270` guard | D-18 → 3-T1 |
+| P2 | Queried week deadlocks: approve/query need `submitted`, reopen needs `approved` — no parent exit; only a nanny entry edit un-sticks | BUSTER | `assertActionable` / `reopen` gates | → 3-T1 (withdraw-query) |
+| P3 | Payments: no correction path at all (`amount_minor >= 1` forbids offsetting rows; append-only; detail sheet promises "a correction is recorded as another payment" — mechanism doesn't exist) | BUSTER | 067 + `docs/11-MONEY.md:524` | D-20 → 3-T2 |
+| P4 | `timesheets` row carries gross+earnings; RLS uses wide `can_read_household`; `assertPayrollReader` grants household scope to ANY active member — helper and second nanny can read another carer's frozen gross via GET + CSV | BUSTER | `timesheetQueryService.ts:445-495`; 040:329-333 | D-21 → 3-T2 |
+| P5 | Over-payment gate read-then-write; two simultaneous first payments can jointly exceed gross (documented in service header); fix named: 051-style sum+insert DB function | GAP | `paymentCommandService.ts:40-45` | → 1-E |
+| P6 | Query and reopen are plain updates (no CAS) while approve is CAS'd on status+version | GAP | `timesheetCommandService.ts:1754,1812` | → 1-E |
+| P7 | Approved reimbursements owed but tracked nowhere as paid/unpaid (excluded from gross/ceiling/balance by design — but then never settled anywhere) | GAP | `earningsService.ts:728-731` | D-14 → 3-T2 |
+| P8 | Time entries household-scoped: a second nanny can read exact clock times, breaks, notes via API (client narrows only) | BUSTER | RLS + DEFECT-LOG open question | D-21 → 3-T2 |
+| P9 | Dead enum values: `timesheets.status='open'` and `time_entries.status ∈ {approved, queried}` declared, never written | GAP (hygiene) | status-write audit | → 3-T2 (drop or doc) |
+| P10 | Query writes NO day-thread event (reopen does); query_note + reopen_reason cleared on next approve → dispute history invisible in the household record | GAP | `query` impl; REPO approve `:187-190` | → 1-E (event) + 3-T1 (surface) |
+| P11 | Week CSV: no employer identifiers, no period-end, no YTD — payroll-service handoff friction | GAP | `weekExportCsv.ts` columns | D-29 → 3-U3 |
+| P12 | No nanny-side pay-stub-like export; no year-end totals (FSA / child-care credit) | GAP | persona | D-29 → 3-U3 |
+| P13 | PTO over-balance marking allowed silently (deliberate, but unflagged in UI) | GAP | `ptoCommandService.markTimeOffPaid` | D-15 → 3-U3 |
+| P14 | Guaranteed hours computed (topup line) but never surfaced proactively: no nanny shortfall alarm, no parent vacation-week clarity | EARN | persona (both) | D-32 → 3-U3/3-D |
+| P15 | "Entered {date}" late-entry signal; balance never clamped; export stricter than screen; state words; oldest-first week ledger vs newest-first history; per-currency subtotals never a sum | PRESERVE | payments artifact | preserve |
+| P16 | Reopened week keeps payment rows visible, no balance stated; reopen dialog warns when payments exist | PRESERVE | `deriveReopenedPaidState` | preserve |
+| P17 | 16h session cap; break capture via ClockOutSheet (D20); inline sheet errors not toasts (GOLDEN #40); overnight split at week boundary with break apportionment | PRESERVE | timesheet svc/UI | preserve |
+| P18 | Approval adjustment: once, signed, note required, folded atomically, refused-not-clamped at both ends, gross cap checked BEFORE fold | PRESERVE | `computeSnapshot:1696-1739` | preserve |
+
+### E. Pay & terms
+
+| # | Obs | Cat | Anchor | Disposition |
+|---|---|---|---|---|
+| T1 | Monday workweek hardcoded (§2.4) | GAP | weekStart.ts / week.ts | → 3-E1 |
+| T2 | Daily/double OT inexpressible (§2.4) | GAP | 041 | → 3-E2 |
+| T3 | Snapshot unversioned + intolerant clients + 3 silent sites (§2.5) | BUSTER (latent) | timesheets.ts:127 | → 1-A |
+| T4 | GBP + London defaults; no jurisdiction (§2.6) | GAP | 009/041/044/schema | → 1-B |
+| T5 | PTO single pool, calendar-year only; no sick/vacation split, no accrual-per-hour, no carryover — state sick-leave mandates inexpressible | GAP | 043/045, `ptoQueryService.ts:35` | D-11: single pool + sick label → 3-E3 (reduced) |
+| T6 | No holiday calendar, no worked-holiday premium; paid holiday only fakeable as PTO | GAP | absence | D-12 → 3-E4 |
+| T7 | No pay frequency/pay day; the Monday week IS the pay period (FLSA OT stays weekly regardless — presentation/settlement issue only) | GAP | 017 unique index | D-17: in → 3-U3 + arrangement fields |
+| T8 | No recurring non-wage terms (health stipend, retirement, bonus) — the one-off adjustment is the only vehicle; near-universal US holiday-bonus practice unmodelled | GAP | §8 audit | D-13 → 3-U1/engine |
+| T9 | Documentary terms unmodelled (notice, probation, duties scope, driving, live-in conditions) — `note` is the dumping ground | GAP | schema | → 1-D + 3-U1 |
+| T10 | PaySetupScreen lacks PayChangeSheet's date-invalid error + mid-week consequence line; Today chip renders raw "08-10" MM-DD | GAP | `PaySetupScreen.tsx:318` | → 3-U1 |
+| T11 | Mid-week consequence warning fires only on rate/currency change — a Jan-1 mileage-rate update is silent | GAP | `payArrangementForm.ts:269-275` | → 3-U1 |
+| T12 | No scheduled future change (cut, not deferred — "Scheduled change" card absent by decision) | GAP | PaySetupScreen header | D-16: in → 3-U1 + arrangement service (engine `effectiveOn` future-row tests) |
+| T13 | Curated 27-currency list; Hermes Intl.DisplayNames risk; symbol-prefix assumption on degraded ICU | GAP (minor) | `CurrencySelect.tsx` ponytails | → 3-U2 |
+| T14 | `households.cancellation_paid_within_hours` deprecation-flagged; 063 open question (per-hour caps reuse total cap → legal rate can multiply into illegal gross — service pre-flights catch it) | GAP (hygiene) | 041:104, 063:16 | → 3-U1 decision-adjacent |
+| T15 | Terms acknowledgment/versioned change notifications absent (pay_terms_set push exists; no ack, no diff view) — Marisol's condition on view-only | GAP | persona | D-31 → 3-U1 |
+| T16 | Append-only "never edited" copy; null=explicit-no; forced cancellation choice at setup ("the one term with no blank state"); no-arrangement → no numbers never £0.00; both-role identical term rows | PRESERVE | Pay screens | preserve |
+| T17 | Insert is field-by-field literal; NO exhaustiveness check on arrangement fields — new field silently never persists if forgotten; use the 9-file checklist | GAP (process) | `payArrangementCommandService.ts:125-141` | → §3 checklist |
+| T18 | `effectiveOn` single-row + tie-break is the correction mechanism — multi-rule rates need a CHILD table, never a multi-row effectiveOn | PRESERVE (constraint) | 041:41-53 | preserve |
+
+---
+
+## §3 Execution model — sub-agents, strict TDD, and gates
+
+**The orchestrating session implements nothing.** It reads, plans, spawns,
+reviews diffs, runs gates, and reports. Implementation routing:
+
+| Work | Implementer |
+|---|---|
+| Earnings engine, migrations, frozen-snapshot/money math, auth/privacy gates | **Opus sub-agent** |
+| Screens, hooks, endpoints, i18n, jobs wiring | **Sonnet sub-agent** |
+| Mechanical renames, fixture updates, i18n key fills, repetitive edits | **cursor-agent CLI**: `cursor-agent -p "<task>"` via Bash; orchestrator reviews the diff and runs qc after |
+
+**Strict TDD, non-negotiable:** write the failing test FIRST (bun:test;
+`mock.module()` inside `beforeAll` before any dynamic import —
+docs/09-TESTING.md), then minimal green, then refactor. Engine changes extend
+the `earningsService.test.ts` case table. Fixture rules paid for in blood:
+timestamps in BOTH serialisations `+00:00` and `.000Z` (GOLDEN-FIXES #25);
+times in BOTH `HH:MM` and `HH:MM:SS` (D25/D31); never write production code
+whose shape exists to satisfy a mock (D53) — if a repo method's real query
+can't distinguish your branch, the test is lying.
+
+**Gates:** `bun run qc` from repo root green before any "done" (it never
+writes — run `bun run format` yourself before committing). Prod migrations via
+Supabase MCP only. Maestro: exactly ONE simulator booted; run flows from the
+flow dir via CLI, not `run_flow_files` (path mangling). Mobile tests from
+`apps/mobile` cwd. Metro weirdness → cold-restart before diagnosing (stale
+graph fakes bugs).
+
+**Migration discipline:** never edit an applied migration — append a new one;
+`create or replace function` with a different arg list creates an OVERLOAD
+(D46) — `drop function` with the exact old signature first; PostgREST
+`ignoreDuplicates` cannot target expression indexes (GOLDEN #31) — catch 23505
+and retry row-by-row.
+
+**Compatibility rule (until Phase 6):** waves merge to main when green, but no
+server change observable by a shipped client may be breaking — additive or
+flag-gated only. New earnings line kinds may not be EMITTED until 1-A's
+tolerant client has shipped to the fleet (coordinate with
+`min_supported_version` in Phase 5).
+
+**Decision protocol:** read §5 before working. Mid-build ambiguity: resolve
+from §5/§2b, else park it and finish everything else; end the session with at
+most ONE AskUserQuestion. Append every resolution to §5.
+
+**Session-end ritual (every session):** (1) qc + test status, (2)
+shipped/deferred list, (3) §2b dispositions updated for touched items, (4)
+ledger row appended, (5) screenshots artifact if UI changed, (6) any new §5
+decision recorded.
+
+**New-arrangement-field checklist (T17 — no compiler help exists):** migration
+→ `PayArrangementSchema` → `CreatePayArrangementRequestSchema` → command-
+service insert literal → `payArrangementForm.ts` → `termRows.ts` → sheet/setup
+seeding → `en/pay.json` + `es/pay.json` → engine (if priced) → tests at each
+layer.
+
+---
+
+## §4 PHASE 0 — Decisions session (you, ~1 hour)
+
+**Paste this prompt into a fresh session:**
+
+> Read TRUST-AND-TERMS-PLAYBOOK.md §0–§5 in full (repo root). You are running
+> Phase 0: the decisions session. Administer the questionnaire in §4 to me via
+> AskUserQuestion — batches of at most 4, in the order listed, with ASCII
+> mockup previews for the visually-shaped choices (terms-entry shape, "why"
+> surfaces, Today cards). Where I pick "Other", capture my words verbatim.
+> Write every answer into §5 as a numbered binding decision with a one-line
+> rationale. Where an answer changes a §2b disposition (e.g. an item I defer),
+> update §2b. Do not implement anything. End by appending a ledger row and
+> listing which decisions unblock which phases.
+
+**The questionnaire** (the session renders options + previews; recommended
+defaults marked ★):
+
+*Group 1 — Terms CX*
+1. Terms-entry shape: ★preset-first ("California full-time" template
+   pre-fills, then edit) / progressive groups (required core → optional
+   expanders) / wizard. Presets MUST encode statutory OT regardless (Marisol
+   non-negotiable).
+2. "Why" mechanism: ★both — one-line collapsed summary per money figure
+   ("50h = 40 reg + 8 OT + 2 daily-OT = $1,596 · same structure as last
+   week") expanding to the full breakdown + a terms glossary; or captions
+   only; or explainer sheet only. Includes picking the state-word extension
+   for terms (e.g. "Agreed" + date).
+3. Approval fast path: ★"same structure as last week" one-liner on the approve
+   dialog / no fast path.
+4. Salary framing: ★show weekly-salary equivalent alongside hourly+guaranteed
+   ("$1,400/wk guaranteed = $28 × 50h") / hourly-only presentation.
+
+*Group 2 — Jurisdiction & time*
+5. Jurisdiction model: ★US-state picker on household + preset library (launch
+   set: CA, NY, WA, MA, IL, NJ, TX, FL, CO, OR + generic-federal) / free-text
+   now, presets later.
+6. Workweek start: ★per-household, chosen at setup, immutable once any
+   timesheet exists, default Sunday for new US households / keep Monday
+   everywhere and revisit.
+7. Existing-household migration posture: ★grandfather (existing households
+   keep GBP-labelled currency and Monday weeks untouched; only new choices
+   change) / migrate-with-confirmation.
+8. Timezone-move (S7): ★on household timezone change, prompt "your usual week
+   still generates in <old zone> — re-send it to switch" / silent status quo.
+
+*Group 3 — PTO, holidays, money extras*
+9. PTO split (T5): ★two balances (vacation + sick), sick accruable per-hour
+   with state-preset rates, leave-year basis configurable (calendar ★ /
+   anniversary), carryover cap optional / single pool with a sick label.
+10. Holiday calendar (T6): ★federal-holiday list on the household, per-family
+    toggles, optional premium multiplier for worked holidays / defer entirely.
+11. Recurring non-wage terms (T8): ★model recurring stipend/bonus as arrangement
+    terms surfaced on the week ("outside wages" section) / keep as one-off
+    adjustments.
+12. Reimbursement settlement (P7): ★reimbursements become settleable — a
+    "mark reimbursed" record parallel to payments (excluded from gross ceiling
+    as today) / checklist-only flag / defer.
+13. PTO over-balance (P13): ★soft warning at mark-paid when balance would go
+    negative / stay silent.
+14. Scheduled future terms change (T12): in ("takes effect Jan 1") / ★stay
+    cut for this build.
+15. Pay frequency presentation (T7): in / ★deferred (week remains the period;
+    revisit after payroll-handoff feedback).
+
+*Group 4 — Trust & disputes*
+16. Nanny dispute channel (P1): ★nanny reads the query note AND can reply
+    with text (thread on the week, both sides visible, day-thread audited) /
+    read-only visibility / full dispute object with statuses.
+17. Queried-week exit (P2): ★parent can withdraw a query (back to submitted)
+    + query supersedes rather than blocks re-query / keep single-exit.
+18. Payment correction (P3): ★reversal entry — a linked negative-effect
+    correction row (new `kind` on payments: `correction` referencing the
+    original, sum-with-corrections drives paid-to-date; append-only preserved)
+    / void-with-reason flag / defer.
+19. Pay privacy (P4/P8): ★carer-scoped reads — helper loses payroll access
+    entirely; a nanny sees only her own timesheets/entries/gross (parents see
+    all); RLS + service scope both tightened / status quo documented.
+20. Cover-ask lifecycle (S1): ★pending cover-asks stop counting as cover for
+    the uncovered computation; expiry after 48h (configurable) with evening
+    reminder to the nanny and expiry notice to the parent; decline hands the
+    alarm back with "ask someone else / I've got it" next step / lighter:
+    reminder only.
+21. Sick-day interplay (S10): ★sick time-off auto-opens cancel change-requests
+    for overlapping shifts (parent notified; pay resolves by the normal
+    three-arm rule; sick PTO drawn if split adopted) / notify-only status quo.
+22. `completed` (S2): ★nightly job completes past confirmed shifts (enables
+    scheduled-vs-worked reconciliation surface) / drop the status from the
+    enum.
+23. Uncovered retraction (S9): ★codify events-are-history (no retraction;
+    document) / add retraction events.
+
+*Group 5 — Notifications & exports*
+24. No-show re-fire (A1): ★quiet-hour-suppressed no-show re-fires next tick
+    outside quiet hours within the 2h window, and a morning "you may have
+    missed this" digest catches the rest / status quo.
+25. Nudge nag-cap (A7): ★cap at 3 consecutive daily nudges then weekly / keep
+    daily-forever.
+26. Quiet-hours exemptions (A4): ★add no-show to exemptions; keep digest and
+    everything else non-exempt / no change.
+27. Exports (P11/P12): ★week CSV gains period-end + optional household/payroll
+    fields; add nanny pay-summary export (her weeks, gross, YTD) + parent
+    year-end total / defer some.
+28. Receipt photos on expenses: in / ★in (photo attachment at claim time) /
+    defer.
+29. Terms acknowledgment (T15): ★nanny "I've seen these terms" acknowledgment
+    with date + push on every change + visible version history (already
+    append-only) / notifications-only.
+30. Guaranteed-hours surfacing (P14): ★nanny-side shortfall line during the
+    week ("2h below your guarantee — topped up at approval") + parent
+    vacation-week note / approval-time only.
+
+---
+
+## §5 Owner decisions — (binding)
+
+| # | Date | Decision | Rationale |
+|---|---|---|---|
+| D-1 | 2026-08-10 | Pay-terms scope cut at roadmap step 8: intra-day rate rules and nanny-share cost splitting are OUT | Redesign-scale; no demand signal yet |
+| D-2 | 2026-08-10 | cursor-agent CLI is invoked by the orchestrating session via Bash; user never runs it | Keep the user out of mechanical loops |
+| D-3 | 2026-08-10 | Terms entry is **progressive groups**: required core (rate, start date, cancellation choice) up top; optional term groups (overtime, guaranteed hours, PTO, mileage, holidays, stipends, documentary) behind expanders. Jurisdiction presets (D-7) pre-fill from INSIDE the relevant groups, not as a lead-with template | Smallest required surface; presets still encode statutory OT (Marisol's condition) |
+| D-4 | 2026-08-10 | "Why" = both: collapsed one-liner per money figure ("50h = 40 reg + 8 OT + 2 DT · same structure as last week") expanding to the full breakdown, plus a terms glossary. State-word vocabulary extends to terms: "Agreed" + date | A figure that explains itself is the cheapest trust there is |
+| D-5 | 2026-08-10 | Approve dialog gets the "same structure as last week" one-liner fast path | David: a screen he must read every Friday defeats itself |
+| D-6 | 2026-08-10 | Show weekly-salary equivalent alongside hourly + guaranteed ("$1,400/wk guaranteed = $28 × 50h") | Matches how families actually talk about nanny pay |
+| D-7 | 2026-08-10 | Jurisdiction = US-state picker on household + preset library (CA, NY, WA, MA, IL, NJ, TX, FL, CO, OR + generic-federal) — **with a mandatory liability posture**: presets are labelled "a starting point, not legal advice", and applying one requires a confirmation checkbox that the family is responsible for verifying their terms. Owner verbatim: *"I dont want to take legal/tax responsibility. make it clear that they are responsible for everything and to verify. Maybe even add a checkbox to get confirmation."* | Presets encode the law; the app never owns the legal conclusion |
+| D-8 | 2026-08-10 | Workweek start: per-household, chosen at setup, immutable once any timesheet exists (typed 409), default Sunday for new US households | FLSA fixed-workweek requirement; Sunday is the common US default |
+| D-9 | 2026-08-10 | **No migration, no grandfathering.** Owner verbatim: *"The app has not launched. just delete all the existing accounts. and create new accounts. dont invest in migrating."* Pre-launch account wipe happens in Phase 6 before store release; all migration-posture work (GBP grandfathering, Monday-week preservation, re-bucketing safety) is cut to a fresh-start assertion | App is pre-launch; migration effort has zero users to protect |
+| D-10 | 2026-08-10 | Timezone-move (S7): silent status quo — no prompt; pattern keeps its drafted zone until re-drafted. Deferred | Low frequency; the auto-repair burned us once (GOLDEN #29) |
+| D-11 | 2026-08-10 | PTO stays a **single pool + sick label** on time-off rows — no split balances, no per-hour accrual, no configurable leave year this build | Simplest model that still records what a day was |
+| D-12 | 2026-08-10 | Holiday calendar in: household list seeded from the federal set, per-family toggles, optional worked-holiday premium multiplier. Owner note: *"all these should be configurable by the parent."* | Paid-holiday-as-fake-PTO is a workaround, not a record |
+| D-13 | 2026-08-10 | Recurring non-wage terms (stipend/bonus) modelled as arrangement terms, surfaced on the week in an "outside wages" section, excluded from gross/ceiling | Near-universal US practice deserves a home outside the adjustment hack |
+| D-14 | 2026-08-10 | Reimbursements become settleable: "mark reimbursed" records parallel to payments (still excluded from the gross ceiling) | Owed money tracked nowhere always becomes a dispute |
+| D-15 | 2026-08-10 | PTO over-balance: soft warning at mark-paid when balance would go negative; still allowed | Deliberate over-grant stays possible; silent overdraft does not |
+| D-16 | 2026-08-10 | Scheduled future terms change is **IN** (reverses the T12 cut): future `valid_from` allowed, "Scheduled change" card with edit/cancel; engine must never price a future row early (extend `effectiveOn` tests) | A raise agreed in advance is the normal case, not the edge case |
+| D-17 | 2026-08-10 | Pay frequency presentation is **IN** (reverses the T7 deferral): frequency + pay-day on the arrangement; weeks grouped into pay periods in presentation. FLSA OT computation stays weekly regardless | Settlement-view only; the weekly engine is untouched |
+| D-18 | 2026-08-10 | Nanny dispute channel (P1): nanny reads the query note AND can reply — a text thread on the week, both sides visible, day-thread audited | "The app takes their side by design" ends here |
+| D-19 | 2026-08-10 | Queried-week exit (P2): parent can withdraw a query (back to `submitted`); a new query supersedes rather than blocks | Kills David's #1 — late pay through no one's fault |
+| D-20 | 2026-08-10 | Payment correction (P3): linked reversal rows — new `correction` kind referencing the original; paid-to-date = sum with corrections; append-only preserved; exports show both rows and true balance | Fixes the record without ever editing it |
+| D-21 | 2026-08-10 | Pay privacy (P4/P8): carer-scoped reads — helper loses payroll access entirely; a nanny reads only her own timesheets/entries/gross; parents read all. RLS AND service scope tightened | One screenshot in a nanny Facebook group is an extinction event (Marisol) |
+| D-22 | 2026-08-10 | Cover-ask lifecycle (S1): pending cover-asks stop counting as cover; expiry after 48h (configurable); evening reminder to the nanny; expiry notice to the parent; decline hands the alarm back with "ask someone else / I've got it" | Asking must never silence the no-one-is-booked alarm |
+| D-23 | 2026-08-10 | Sick-day interplay (S10): sick time-off auto-opens cancel change-requests for overlapping shifts; parent notified; pay resolves by the normal three-arm rule; sick-labelled PTO drawn per D-11 | One action, whole record consistent |
+| D-24 | 2026-08-10 | `completed` (S2): nightly job completes past confirmed shifts; scheduled-vs-worked reconciliation surface enabled | Ends the "quiet accomplice" — the enum value finally earns its seat |
+| D-25 | 2026-08-10 | Uncovered retraction (S9): codify events-are-history — no retraction events; UI recomputes current truth; documented | The log is evidence, not state |
+| D-26 | 2026-08-10 | No-show re-fire (A1): quiet-hour-suppressed no-show re-fires next tick outside quiet hours within the 2h window; a morning "you may have missed this" digest catches the rest | A parent must always eventually learn nobody clocked in |
+| D-27 | 2026-08-10 | Timesheet nudge (A7): cap at 3 consecutive daily nudges, then weekly | Nagging past day 3 trains dismissal, not action |
+| D-28 | 2026-08-10 | Quiet-hours exemptions (A4): add no-show; digest and everything else stay non-exempt | Child-safety-adjacent facts break through; nothing else does |
+| D-29 | 2026-08-10 | Exports (P11/P12): full pack — week CSV gains period-end + optional household/payroll fields; nanny pay-summary export (weeks, gross, YTD); parent year-end total | Payroll handoff and FSA/child-care credit are real Friday jobs |
+| D-30 | 2026-08-10 | Receipt photos on expenses: **deferred** | Text + amount suffices until reimbursement volume proves otherwise |
+| D-31 | 2026-08-10 | Terms acknowledgment (T15): nanny "I've seen these terms" ack with date + push on every change + visible version history | Marisol's stated condition on view-only terms |
+| D-32 | 2026-08-10 | Guaranteed-hours surfacing (P14): in-week nanny shortfall line ("2h below your guarantee — topped up at approval") + parent vacation-week note | The guarantee only builds trust if it's visible before payday |
+| D-33 | 2026-08-10 | **Nanny-first onboarding is IN this build** (new slice 3-O + Phase 2 spec). Onboarding becomes symmetric: BOTH roles get "create a new family" or "join with an invite code". A nanny can author her terms sheet and invite the family; every new placement becomes an acquisition event. Owner verbatim: *"nanny should be able to create a contract and share it with new household as part of onboarding/after onboarding and invite parents to join . The same as what parents can do now but either way round too."* | The nanny is the repeat actor; US nannies bring their own contract to interviews |
+| D-34 | 2026-08-10 | Bootstrap model: **draft household + live-household-wins absorption + portable per-carer proposal.** A nanny-created household is a DRAFT until a parent joins. On code redemption: parent with no household → draft goes live, parent becomes owner; parent with a live household (other nanny, parallel signup) → the nanny, her terms proposal, and her entered basics transfer INTO the parent's household (proposal pending, per-carer), draft archived — no duplicate households, no merge UI. Nannies in parent-first households can raise a proposal from inside. Draft households are invisible to cron jobs/digests until live. Owner constraint verbatim: *"This should work for households who might have ended up creating an account as well… Think about all the permutations and combinations of account creation and households having parents who have another nanny beforehand or them creating an account in parallel."* | One rule covers all four connection permutations |
+| D-35 | 2026-08-10 | Binding act: nanny terms are a PROPOSAL object; **parent acceptance is what inserts the `pay_arrangements` row** (with the D-7 responsibility checkbox at acceptance; parent may counter first). `WRITE_ROLES = {owner, parent}` and append-only stay intact; D-31's record becomes "nanny proposed, parent accepted" | Acceptance by the employer is how the contract actually forms |
+| D-36 | 2026-08-10 | Draft-household scope pre-parent: terms proposal, household name, children names/ages, her availability. No shifts, no hours, no money until a parent joins (parents-with-existing-accounts case handled by D-34 absorption) | Nothing an employer-less household can produce should need pricing or approval |
+
+---
+
+## §6 PHASE 1 — Foundations (autonomous; ∥ Phase 2)
+
+**Paste into a fresh session:**
+
+> Read TRUST-AND-TERMS-PLAYBOOK.md §0–§5 (repo root), then CLAUDE.md's
+> required-reading table, docs/08-CONVENTIONS.md, docs/09-TESTING.md,
+> docs/11-MONEY.md (note §2.7 drift — trust code over that doc), and
+> GOLDEN-FIXES.md. You are running Phase 1: foundations. Enter plan mode,
+> produce a plan for the backlog below, get my approval, then execute
+> autonomously under §3's execution model (Opus sub-agents for 1-A/1-E, Sonnet
+> for 1-B/1-C/1-D; strict TDD; qc gate). Work in a feature branch; one commit
+> per item. Do NOT deploy any migration to prod — local/branch only; prod
+> application happens in Phase 6. End with the §3 session-end ritual.
+>
+> **1-A (Opus) — snapshot versioning + client tolerance (T3).** Stamp `v: 1`
+> into the frozen `earnings` jsonb at approval (`computeSnapshot`); accept
+> absent-`v` as v1 on read. Make the mobile week response tolerant of unknown
+> earnings line kinds (unknown kinds render as a generic labelled row, never
+> throw — `apps/mobile/src/api/endpoints/timesheets.ts:127-131`); close the
+> three silent sites (§2.5). Tests: old snapshot parses; unknown-kind response
+> renders; approved-week re-parse never degrades for a merely-new kind.
+> **1-B (Sonnet) — household currency + jurisdiction (T4).** Migration:
+> `households.currency char(3)` + `households.jurisdiction text` (US state
+> code, nullable). New-household onboarding sets both (device-derived
+> defaults); settings exposes them. Arrangement/expense creation derives
+> currency from the household — remove the GBP wire defaults; keep SQL
+> defaults only as a legacy floor. Timezone: US-region device → sensible
+> default, never silently London.
+> **1-C (Sonnet) — workweek column (T1 prep).** Migration:
+> `households.week_starts_on smallint not null default 1 check (0-6)`.
+> Service guard: immutable once any timesheet exists for the household
+> (typed 409). No threading yet — that is 3-E1. Settings UI shows it
+> read-only-when-locked with honest copy.
+> **1-D (Sonnet) — `pay_arrangements.terms jsonb not null default '{}'`**
+> (T9 storage). Schema + wire passthrough only; UI comes in 3-U1.
+> **1-E (Opus) — no-decision-needed guards.** (a) S5: counter-offer requires
+> the assigned carer — server (`assertKindAllowedForRole` gains identity for
+> counter_offer on assigned shifts) + client gate. (b) P6: CAS query/reopen on
+> `updated_at` like approve. (c) P5: 051-style DB function that sums existing
+> payments and inserts atomically, refusing over-gross; service calls it;
+> 23505/outcome mapping per house style. (d) A3/S6: register `running_late` +
+> `parent_covering` in PUSH_NOTIFICATION_TYPES, audience map, prefs groups,
+> route map (additive; old clients unaffected). (e) P10: `query` writes a
+> `timesheet_queried` day-thread event (append-only, best-effort like
+> reopen's). (f) B4: proposal framing copy becomes viewer-aware.
+>
+> Traps already paid for: D46 (function overloads), GOLDEN #31 (expression
+> indexes vs ignoreDuplicates), #25 (timestamp string compares), D53 (mocks).
+> DoD per item: red-first tests in place, qc green, §2b dispositions updated
+> (T3→shipped, T4→shipped, S5/P5/P6/A3/P10/B4→shipped, T9→storage-shipped).
+
+---
+
+## §7 PHASE 2 — CX design (interactive; ∥ Phase 1)
+
+**Paste into a fresh session:**
+
+> Read TRUST-AND-TERMS-PLAYBOOK.md §0–§5 + §2b/§2c (repo root), then
+> docs/design/daylight-v2.md, docs/design/screens-settings.md,
+> docs/design/screens-today.md, docs/design/screens-hours.md,
+> docs/07-MOBILE-UI-SYSTEM.md, and the current implementations:
+> apps/mobile/src/domains/pay/ (PaySetupScreen, PayChangeSheet, termRows,
+> MyPayScreen), domains/timesheet/ (ParentWeekView, NannyWeekView, WeekTotal),
+> domains/today/. You are running Phase 2: design. Use the in-repo
+> `ux-designer` agent for the design work. Produce THREE specs:
+>
+> 1. `docs/design/screens-pay-terms.md` — terms entry per §5's chosen shape
+> (presets encode statutory law), documentary jsonb terms, terms
+> acknowledgment + change history (if D'd in), My-pay updates, PaySetupScreen
+> validation parity (T10), mid-week warnings for ALL term changes (T11), the
+> "why" system per §5 (state-word vocabulary extension, collapsed one-liner +
+> expansion, glossary), salary framing per §5.
+> 2. `docs/design/attention-and-notifications.md` — (a) the **notification
+> matrix**: EVERY push type (37 existing + every new one this build adds) ×
+> audience × timing (immediate/digest/cron) × mutable × quiet-hours stance ×
+> deep-link target — one table the build follows and Phase 6 keeps true;
+> (b) Today/inbox attention states for BOTH personas per §5 decisions
+> (nanny: cover-ask-awaiting-you, guaranteed-hours shortfall, queried-week
+> with note+reply; parent: cover-ask awaiting-answer/declined-next-step,
+> reimbursements owed, terms-ack status), honoring the one-owner-per-item
+> card rule (B3); (c) dispute thread surfaces (P1/P2 per §5); (d) payment
+> correction + reimbursement settlement UX (P3/P7 per §5); (e) cover-ask
+> lifecycle states (S1 per §5); (f) late-cancel dialog carrying the paid
+> hint (S3); (g) co-parent restricted-state visibility (S4).
+> 3. `docs/design/screens-onboarding-terms-proposal.md` — per §5 D-33…D-36:
+> the symmetric onboarding fork (create new family / join with code, both
+> roles); the nanny draft-household state ("awaiting family": terms draft,
+> basics, availability, invite code — nothing priceable); the parent-side
+> proposal review with accept (D-7 checkbox) / counter; the absorption
+> dialog when a nanny's code redemption lands in an existing live household
+> ("your drafted terms will be sent to them to review"); in-household terms
+> proposals from the nanny side (both directions everywhere); proposal
+> state words ("Proposed" / "Countered" / "Agreed" + date, extending D-4's
+> vocabulary). Reuse the D-3 progressive-groups terms form for proposal
+> authoring — one form, both roles.
+>
+> Preserve list (§2b PRESERVE rows) is binding on the design: state words,
+> never-£0.00, append-only copy, one-fact-one-push, etc. All copy en-US.
+> **Persona gate before I see it:** spawn Marisol and David (§2c definitions
+> verbatim), have each review the draft specs in role; fold or explicitly
+> rebut every point in a "Persona review" appendix in each spec. Then present
+> to me as a mockup artifact + the two spec files for approval; iterate until
+> I approve. Record approval + any new decisions in §5; ledger row; update
+> §2b dispositions (design→ items now carry their slice numbers).
+
+---
+
+## §8 PHASE 3 — Implementation waves
+
+Every slice session pastes ONE of the prompts below. All share this preface —
+prepend it verbatim:
+
+> Read TRUST-AND-TERMS-PLAYBOOK.md §0–§5, §2b, §3 (repo root); CLAUDE.md's
+> table; docs/09-TESTING.md; GOLDEN-FIXES.md; docs/design/screens-pay-terms.md
+> and docs/design/attention-and-notifications.md (Phase 2 outputs); and the §5
+> decisions relevant to this slice. Work under §3's execution model — you
+> orchestrate, sub-agents implement, strict TDD, qc gate, feature branch, no
+> prod migrations. DoD: red-first tests (engine slices extend the
+> earningsService case table), qc green, the Maestro flow(s) named below green
+> on ONE simulator, screenshots artifact, §2b dispositions + ledger updated,
+> at most one question for me at the end.
+
+**3-E1 (Opus) — workweek threading.** Thread `households.week_starts_on`
+through `weekStartOf`/`weekStartOfLocalDate`/`weekEndExclusive` (signature
+gains weekStartsOn; arithmetic `(dow - weekStartsOn + 7) % 7`), the roll-up,
+the engine (`week_start` + `addDays(weekStart,6)`), expense week-scoping,
+`mondayMidnightInstant` → `weekBoundaryInstant`, and mobile `week.ts` +
+consumers (HoursScreen, ScheduleShiftsScreen, AddMissedHoursCard,
+PaymentsScreen, wallClock). *[Phase 0 correction: D-9 wipes all
+pre-launch accounts — there are no grandfathered households. Default Sunday
+for new US households per D-8; replace the migration-safety test with a
+fresh-start assertion that no `week_start` row predates the wipe.]* Maestro: full hours loop on a Sunday-start household. (Size L.)
+
+**3-E2 (Opus) — daily OT + double-time + presets.** Columns
+`overtime_daily_threshold_minutes`, `doubletime_daily_threshold_minutes`,
+`doubletime_multiplier` (nullable, null = none); new line kind `doubletime`
+(safe now — 1-A shipped; still verify emission gating vs fleet tolerance);
+engine: per-day split first, then weekly cumulative on the remainder (order
+matters — encode CA rules exactly; 7th-day rule per §5 preset definitions);
+preset library keyed by `households.jurisdiction` that POPULATES arrangement
+fields (a preset is data, not a rule engine). Case-table additions: CA
+10h-day week, 12h+ day, 7th-day, preset-vs-manual equivalence. Maestro:
+CA-preset setup + priced 50h week matching hand-computed $1,596-style figure.
+(L.)
+
+**3-E3 (Opus) — PTO per §5 D-11 (reduced).** *[Phase 0 correction: D-11 keeps
+a single pool — no split balances, no per-hour accrual, no configurable leave
+year.]* Sick/vacation label on time-off rows (records what a day was; draws
+the one pool); sick-day flow labels its draw (feeds 3-T3's D-23 interplay).
+Ledger stays append-only; corrections stay 050-style CAS'd; `pto` line
+semantics unchanged. Maestro: sick-labelled time-off week. (S.)
+
+**3-E4 (Opus) — holiday calendar + premium.** Household holiday list seeded
+from the federal set (+per-family toggles), paid-holiday day pricing, worked-
+holiday premium multiplier → new line kind per §5. Maestro: holiday-premium
+week. (M.)
+
+**3-T1 (Opus server / Sonnet UI) — nanny voice + query lifecycle.** Per §5
+D-18/D-19: nanny reads the query note; reply thread (both sides, day-thread
+audited via 1-E's event + reply events); parent withdraw-query exit from
+`queried`; WeekTotal/NannyWeekView surfaces per the attention spec; pushes
+per the matrix. Preserve: query_note semantics for the parent view. Maestro:
+query→nanny reads note→replies→parent withdraws→approves. (M.)
+
+**3-T2 (Opus) — money record integrity.** Per §5 D-20/D-21 + D-14 + P9: payment
+correction mechanism (correction rows linked to the original; paid-to-date =
+sum with corrections; export `balance_due` honest, still never clamped);
+reimbursement settlement per §5 D-14; payroll read-scope tightening (P4/P8:
+carer-scoped reads for nannies, helper excluded — service gates AND RLS,
+plus the ownership-cache poisoning lesson GOLDEN #32); drop-or-document dead
+enum values (P9). Maestro: record→correct→export shows both rows and true
+balance. (L.)
+
+**3-T3 (Opus server / Sonnet UI) — scheduling loop closure.** Per §5
+D-22…D-25 + D-10 + S3/S4/S8/A5: cover-ask lifecycle (pending no longer covers;
+expiry + evening reminder + decline-next-step per spec); late-cancel dialog
+carries the paid-hint (S3); expose membership role to the client so a
+restricted co-parent sees disabled-with-reason (S4); timezone-move: no prompt,
+S7 deferred per D-10; shift completion job in per D-24 (S2); change-request expiry escalates
+before shift start (A5); shift_events retention (S8: compaction or
+partition, designed in plan mode first); uncovered retraction: none per D-25 (S9 — codify events-are-history, doc
+only).
+Maestro: cover-ask expiry→decline→next-step; late-cancel dialog. (L.)
+
+**3-N (Sonnet) — notification matrix implementation.** Implement
+`attention-and-notifications.md`'s matrix exactly: no-show re-fire (A1 per
+D-26), cover-ask reminder (A2), nag-cap (A7 per D-27), quiet-hours membership
+(A4 per D-28), es i18n wiring for digest strings (A10), audience-map rows for
+every new type (A11 stays total). Cron changes are migrations — MCP-applied
+in Phase 6 only. Maestro: not applicable — unit + job-level tests; verify
+each new push's payload/route mapping in tests. (M.)
+
+**3-D (Sonnet) — Today & inbox cards.** Implement the attention spec's card
+states for both personas; helper handling made explicit + tested (B5);
+one-owner rule kept (B3); wrong-viewer copy already fixed in 1-E — verify.
+Maestro: nanny Today with a pending cover-ask + shortfall; parent Today with
+awaiting-answer. (M.)
+
+**3-U1 (Sonnet, worktree) — terms entry rebuild.** Per screens-pay-terms.md:
+progressive-groups flow per D-3 (required core up top; optional term groups
+behind expanders; jurisdiction presets pre-fill from INSIDE the relevant
+groups, gated by D-7's not-legal-advice confirmation checkbox), documentary
+`terms` jsonb UI, acknowledgment + change history per §5 D-31, scheduled
+future change per D-16 ("Scheduled change" card, edit/cancel), PaySetupScreen
+validation parity (T10), all-term mid-week warnings (T11),
+currency/jurisdiction surfaced. Follow §3's new-field checklist for every
+added field. Maestro: grouped setup with preset pre-fill → nanny acknowledges
+→ change terms → nanny notified. (L.)
+
+**3-U2 (Sonnet, worktree) — "why" + en-US pass.** The "why" system per spec
+(one-liner + expansion + glossary per D-4 + fast-path per D-5); en-US formatter sweep:
+replace en-GB push formatters (§2.6 list), `payArrangementForm.ts` hand-rolled
+dates → locale-aware, fix the raw "08-10" chip (T10-adjacent), currency-list
+search (T13). Every new key in en AND es. Maestro: approve dialog shows the
+one-liner; breakdown expands. (M.)
+
+**3-U3 (Sonnet, worktree; only §5-opted items) — exports & visibility.**
+Week-CSV enrichment + nanny pay-summary/YTD + parent year-end total (P11/P12
+per D-29), pay-frequency presentation (T7 per D-17: frequency + pay-day
+fields, weeks grouped into pay periods — presentation only, weekly OT engine
+untouched), guaranteed-hours shortfall surfacing (P14 per D-32), PTO
+over-balance warning (P13 per D-15). Receipt photos deferred per D-30. Export discipline: frozen
+snapshots only, integer minor units, refuse non-exportable weeks — extend,
+never weaken. (M–L.)
+
+**3-O (Opus server / Sonnet UI; after Phase 2 AND 3-U1) — symmetric
+onboarding + terms proposals.** Per §5 D-33…D-36 and
+screens-onboarding-terms-proposal.md: terms-proposal table (per-carer;
+lifecycle proposed → countered → accepted/withdrawn; append-only in spirit —
+a counter is a new row); draft households (`households` gains a draft/live
+state; nanny-creatable; excluded from every cron sweep/digest/horizon job
+until live; audit every owner-invariant path — last-parent rule,
+`CannotRemoveOwnerError` — to tolerate a no-owner draft); the symmetric
+onboarding fork (both roles: create new family / join with code); the
+redemption transaction implementing D-34's live-household-wins absorption
+(transfer nanny membership + pending proposal + entered basics into the
+parent's household; archive the draft) as a single race-safe DB function;
+parent acceptance inserts the arrangement through the EXISTING command
+service (WRITE_ROLES intact; D-7 checkbox recorded on the acceptance);
+in-household proposal entry for nannies (both directions everywhere); new
+push types registered per A11's total audience map. Reuses 3-U1's
+progressive-groups terms form for authoring. Maestro: (1) nanny-first →
+parent redeems → accepts → arrangement live; (2) nanny code redeemed into an
+existing live household → absorption → proposal pending; (3) parent-first
+household → nanny proposes → parent counters → accepts. (L.)
+
+---
+
+## §9 PHASE 4 — Wave QA (run after EACH Phase-3 slice)
+
+**Paste into a fresh session (name the wave):**
+
+> Read TRUST-AND-TERMS-PLAYBOOK.md §0–§3 + the ledger. You are running Phase 4
+> QA for wave <N>. (1) Run `/code-review` on the wave branch at high effort;
+> triage findings — fix real ones via §3 routing, log the rest. (2) Run the
+> wave's Maestro flows plus the cross-cutting set that touches its surfaces:
+> preset setup per state; CA-OT week; sick-accrual week; holiday-premium week;
+> Sunday-workweek household; query→reply→withdraw→approve; cover-ask
+> expiry→decline→next-step; payment record→correct→export; no-show during
+> quiet hours; nanny-first onboarding→parent accepts; nanny code absorbed
+> into an existing live household. ONE simulator. (3) GOLDEN-FIXES regression sweep: #25 (any new
+> timestamp comparison), #40 (any new sheet+toast), D53 (any new mock), D1
+> (reopen paths for any new money write). (4) Walk §2b's PRESERVE rows whose
+> surfaces this wave touched — each needs a passing regression test or a
+> written verification note. (5) qc green; merge to main only when all four
+> pass; ledger + dispositions; screenshots artifact. Nothing releases to
+> users — mobile ships only in Phase 6; confirm the wave's server changes are
+> additive or flag-gated (§3 compatibility rule).
+
+---
+
+## §10 PHASE 5 — Integration freeze (one session, after ALL waves)
+
+**Paste into a fresh session:**
+
+> Read TRUST-AND-TERMS-PLAYBOOK.md in FULL, including the ledger and every §2b
+> disposition. You are running Phase 5: integration freeze. (1) All wave
+> branches merged to main; full qc; FULL Maestro suite (every flow in §9, one
+> simulator). (2) **Register walk**: §2b line by line — every item must read
+> `shipped (slice)`, `deferred (D-n)`, or `preserved (verified)`. Anything
+> else becomes today's punch list: fix small items now (§3 routing), send
+> large ones back as a named wave or get my sign-off to defer (one batched
+> AskUserQuestion). (3) Cross-track integration E2E: new line kinds through
+> the "why" surfaces; matrix pushes landing on the new Today cards;
+> terms-ack → week explainer; correction rows → exports. (4) i18n parity
+> sweep en/es (manual — tests cannot catch it). (5) EAS release-profile
+> builds, both platforms; install on my physical device (hand me the QR/build
+> link); smoke the two persona journeys end-to-end; fix-and-rebuild until
+> clean. (6) Old-client drill: current production build against the new
+> server — verify nothing breaks; propose the `min_supported_version`
+> posture. (7) Migration dress rehearsal: Supabase branch with prod-shaped
+> data via MCP; apply the full new chain in order; `run_integrity_checks()`
+> clean; spot-check an existing household (currency label, Monday weeks,
+> frozen snapshots intact). (8) Write the rollback runbook: per risky
+> behavior change, its `app_config` flag or mitigation. (9) Ledger, §2b
+> final dispositions, screenshots artifact.
+
+---
+
+## §11 PHASE 6 — Ship + post-ship watch (final session)
+
+**Paste into a fresh session:**
+
+> Read TRUST-AND-TERMS-PLAYBOOK.md in FULL. You are running Phase 6: ship.
+> Execute §0 as a checklist, recording each item's evidence in the ledger:
+> (1) Prod migrations via Supabase MCP in order; verify live state after
+> (applied-migrations list + `cron.job` contents — the 054 lesson). (2) Server
+> deploy; flip any Phase-5 flags per the runbook. (3) Final persona sign-off:
+> spawn Marisol + David (§2c) against the release build's screenshots; a
+> walk-away verdict blocks ship. (4) Doc sweep: docs/11-MONEY.md corrected in
+> full (incl. §10 vs migration 065) and extended for every new term/line
+> kind; docs/12-NEED-COVERAGE.md if cover semantics changed; the notification
+> matrix doc matches what shipped; CLAUDE.md/docs/README.md rows if any new
+> doc was added. (5) REVIEW-CHECKLIST.md re-scan; store metadata +
+> screenshots for changed surfaces; EAS submit both stores; staged rollout
+> (10% → monitor → 100%). (6) Arm the watch: Sentry triage checks at +24h,
+> +48h, +72h (I will run these as micro-sessions — leave me the exact
+> queries); first-week checklist: any `unreadable_snapshot` degradations, 4xx
+> spikes on new endpoints, digest/no-show cron behavior in prod, correction-
+> row usage, cover-ask expiry volumes. (7) Close the ledger; list every
+> deferred item with its D-number and a revisit date.
+
+---
+
+## Status ledger
+
+| Phase/slice | Date | Session outcome | Notes |
+|---|---|---|---|
+| Playbook authored | 2026-08-10 | this file @ `main` 9459d9e | — |
+| Phase 0 (decisions) | 2026-08-10 | All 30 §4 questions answered; D-3…D-32 recorded in §5; every §2b `→P0` disposition resolved | Notable: D-9 (pre-launch wipe — all grandfathering/migration work cut; §0.5 + 3-E1 corrected in place); D-16/D-17 reverse the T12/T7 cuts (scheduled change + pay-frequency now IN); D-11 shrinks 3-E3 to sick labels; D-7 adds a liability-disclaimer checkbox to presets; D-10 defers S7; D-30 defers receipt photos. §8 slice prompts' D-refs corrected to final numbering |
+| Phase 0 addendum | 2026-08-10 | D-33…D-36: nanny-first onboarding IN this build — symmetric create/join onboarding, draft households with live-household-wins absorption, portable per-carer terms proposals, parent acceptance as the binding act | New slice 3-O added to §8 (after Phase 2 + 3-U1); Phase 2 gains a third spec (screens-onboarding-terms-proposal.md); session estimate now 11–16 |
