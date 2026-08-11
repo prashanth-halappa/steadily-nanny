@@ -111,7 +111,7 @@
     "timezoneConfirmConfirm": "Change time zone",
     "pickerTitle": "Choose a time zone",
     "currencyLabel": "Currency",
-    "jurisdictionLabel": "State (for pay rules)",
+    "jurisdictionLabel": "State",
     "jurisdictionChangeButton": "Change",
     "jurisdictionNoneOption": "Not set",
     "jurisdictionPickerTitle": "Choose a state",

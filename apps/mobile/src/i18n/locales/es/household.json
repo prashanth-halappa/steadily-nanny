@@ -111,7 +111,7 @@
     "timezoneConfirmConfirm": "Cambiar zona horaria",
     "pickerTitle": "Elige una zona horaria",
     "currencyLabel": "Moneda",
-    "jurisdictionLabel": "Estado (para normas de pago)",
+    "jurisdictionLabel": "Estado",
     "jurisdictionChangeButton": "Cambiar",
     "jurisdictionNoneOption": "Sin definir",
     "jurisdictionPickerTitle": "Elige un estado",
