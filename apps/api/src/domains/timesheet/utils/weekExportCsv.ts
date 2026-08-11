@@ -57,7 +57,7 @@
  *    | paid_to_date_minor  | sum of `payments` recorded against this week      |
  *    | balance_due_minor   | `total_gross_minor - paid_to_date_minor`          |
  *    | carer_display_name  | the durable snapshotted name, quoted if it needs it |
- *    | week_start          | Monday, household-local, ISO `YYYY-MM-DD`         |
+ *    | week_start          | Week's first day, household-local, ISO `YYYY-MM-DD`|
  *    | currency            | ISO-4217, uppercase                               |
  *    | approved_at         | ISO-8601 UTC — OMITTED ENTIRELY when the row has none |
  *

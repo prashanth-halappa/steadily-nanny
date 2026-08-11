@@ -13,8 +13,8 @@ import {
   formatDisplayDateWithYear,
   formatShortDate,
   formatWeekdayLong,
-  isMonday,
   isValidCalendarDate,
+  isWeekStartDay,
   type PayTermsFormState,
   parseHoursToMinutes,
 } from '../payArrangementForm';
@@ -49,13 +49,30 @@ describe('isValidCalendarDate', () => {
   });
 });
 
-describe('isMonday', () => {
-  it('2026-08-03 is a Monday', () => {
-    expect(isMonday('2026-08-03')).toBe(true);
+// 3-E1: the "does this change split a week" question is asked against the
+// HOUSEHOLD's `week_starts_on`, not a hardcoded Monday. For a Sunday-start
+// household a Monday change DOES split the week, and a Sunday one does not
+// — exactly inverted from what the old `isMonday` reported.
+describe('isWeekStartDay', () => {
+  it('2026-08-03 (Monday) is the week start for a Monday-start household', () => {
+    expect(isWeekStartDay('2026-08-03', 1)).toBe(true);
+    expect(isWeekStartDay('2026-08-04', 1)).toBe(false);
   });
 
-  it('2026-08-04 (Tuesday) is not', () => {
-    expect(isMonday('2026-08-04')).toBe(false);
+  it('2026-08-02 (Sunday) is the week start for a Sunday-start household', () => {
+    expect(isWeekStartDay('2026-08-02', 0)).toBe(true);
+    // The day a Monday-start household would call a clean boundary.
+    expect(isWeekStartDay('2026-08-03', 0)).toBe(false);
+  });
+
+  it('2026-08-01 (Saturday) is the week start for a Saturday-start household', () => {
+    expect(isWeekStartDay('2026-08-01', 6)).toBe(true);
+    expect(isWeekStartDay('2026-08-03', 6)).toBe(false);
+  });
+
+  it('rejects a non-date rather than guessing a weekday', () => {
+    expect(isWeekStartDay('2026-02-30', 1)).toBe(false);
+    expect(isWeekStartDay('', 1)).toBe(false);
   });
 });
 
@@ -260,15 +277,28 @@ describe('buildCreatePayArrangementRequest', () => {
 });
 
 describe('buildMidWeekConsequence', () => {
-  it('is null when the effective date is a Monday (no split)', () => {
+  it('is null when the effective date is the household’s week start (no split)', () => {
     expect(
-      buildMidWeekConsequence('2026-08-03', 1850, 'GBP', 1950, 'GBP')
+      buildMidWeekConsequence('2026-08-03', 1, 1850, 'GBP', 1950, 'GBP')
     ).toBeNull();
   });
 
-  it('describes the two-rate split for a non-Monday effective date', () => {
+  // The inversion 3-E1 fixes: for a Sunday-start household the Monday warns
+  // and the Sunday stays silent — the old Monday literal had it backwards,
+  // warning on the one day that does NOT split their week.
+  it('warns on a Monday but not a Sunday for a Sunday-start household', () => {
+    expect(
+      buildMidWeekConsequence('2026-08-02', 0, 1850, 'GBP', 1950, 'GBP')
+    ).toBeNull();
+    expect(
+      buildMidWeekConsequence('2026-08-03', 0, 1850, 'GBP', 1950, 'GBP')
+    ).not.toBeNull();
+  });
+
+  it('describes the two-rate split for a mid-week effective date', () => {
     const result = buildMidWeekConsequence(
       '2026-09-04',
+      1,
       1850,
       'GBP',
       1950,
@@ -284,7 +314,7 @@ describe('buildMidWeekConsequence', () => {
 
   it('is null when rate and currency are unchanged (pre-fill is not a split)', () => {
     expect(
-      buildMidWeekConsequence('2026-08-04', 1850, 'GBP', 1850, 'GBP')
+      buildMidWeekConsequence('2026-08-04', 1, 1850, 'GBP', 1850, 'GBP')
     ).toBeNull();
   });
 });

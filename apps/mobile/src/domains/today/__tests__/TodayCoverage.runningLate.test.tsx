@@ -220,6 +220,7 @@ describe('TodayCoverage — running late plan line', () => {
       <TodayCoverage
         householdId={HOUSEHOLD_ID}
         timeZone={ZONE}
+        weekStartsOn={1}
         householdChildren={[{ id: CHILD_ID, name: 'H1 Child1' } as never]}
       />
     );
@@ -251,6 +252,7 @@ describe('TodayCoverage — parent cover quiet state', () => {
       <TodayCoverage
         householdId={HOUSEHOLD_ID}
         timeZone={ZONE}
+        weekStartsOn={1}
         householdChildren={[{ id: CHILD_ID, name: 'H1 Child1' } as never]}
       />
     );

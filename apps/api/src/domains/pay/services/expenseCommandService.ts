@@ -76,7 +76,10 @@ import {
   notifyUser,
 } from '../../notification/services/householdPush';
 import { TimesheetRepository } from '../../timesheet/repositories/timesheetRepository';
-import { weekStartOfLocalDate } from '../../timesheet/utils/weekStart';
+import {
+  DEFAULT_WEEK_STARTS_ON,
+  weekStartOfLocalDate,
+} from '../../timesheet/utils/weekStart';
 import { UserService } from '../../user';
 import {
   ExpenseAmountTooLargeError,
@@ -241,7 +244,10 @@ export class ExpenseCommandService {
         data: {
           type: PUSH_NOTIFICATION_TYPES.EXPENSE_SUBMITTED,
           householdId: created.household_id,
-          weekStart: weekStartOfLocalDate(created.local_date),
+          weekStart: weekStartOfLocalDate(
+            created.local_date,
+            await this.getHouseholdWeekStartsOn(created.household_id)
+          ),
         },
       });
     } catch {
@@ -333,7 +339,10 @@ export class ExpenseCommandService {
       request.status === EXPENSE_STATUSES.APPROVED && existing.carer_id
         ? {
             carerId: existing.carer_id,
-            weekStart: weekStartOfLocalDate(existing.local_date),
+            weekStart: weekStartOfLocalDate(
+              existing.local_date,
+              await this.getHouseholdWeekStartsOn(existing.household_id)
+            ),
           }
         : null;
 
@@ -387,7 +396,10 @@ export class ExpenseCommandService {
       try {
         const expensePushData = {
           householdId: reviewed.household_id,
-          weekStart: weekStartOfLocalDate(reviewed.local_date),
+          weekStart: weekStartOfLocalDate(
+            reviewed.local_date,
+            await this.getHouseholdWeekStartsOn(reviewed.household_id)
+          ),
         };
         if (reviewed.status === EXPENSE_STATUSES.APPROVED) {
           notifyUser(reviewed.carer_id, {
@@ -620,7 +632,10 @@ export class ExpenseCommandService {
     // was written, so its week is pure calendar arithmetic — no second
     // timezone conversion (which is how a Sunday claim lands in the wrong
     // week).
-    const weekStart = weekStartOfLocalDate(existing.local_date);
+    const weekStart = weekStartOfLocalDate(
+      existing.local_date,
+      await this.getHouseholdWeekStartsOn(existing.household_id)
+    );
     const timesheet = await this.timesheetRepo.findByWeek(
       existing.household_id,
       existing.carer_id,
@@ -645,6 +660,21 @@ export class ExpenseCommandService {
   private async getHouseholdCurrency(householdId: string): Promise<string> {
     const household = await this.householdRepo.findById(householdId);
     return household?.currency ?? 'USD';
+  }
+
+  /**
+   * The household's designated workweek start (§5 D-8,
+   * `households.week_starts_on`, 0=Sunday..6=Saturday) — which week an
+   * expense's `local_date` belongs to, and therefore which timesheet's freeze
+   * locks it and which week a push deep-links to.
+   *
+   * The sibling of `getHouseholdCurrency` above, and the same defensive
+   * fallback: the gate that ran before this point already proved the caller
+   * belongs to the household, so in practice the row always loads.
+   */
+  private async getHouseholdWeekStartsOn(householdId: string): Promise<number> {
+    const household = await this.householdRepo.findById(householdId);
+    return household?.week_starts_on ?? DEFAULT_WEEK_STARTS_ON;
   }
 
   /**

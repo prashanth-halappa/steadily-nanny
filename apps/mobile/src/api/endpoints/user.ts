@@ -195,7 +195,9 @@ export const userApi = {
 
   /**
    * Update the caller's display timezone and/or week-start preference (D29).
-   * Presentation lens only — does not change Monday business-week boundaries.
+   * Presentation lens only — `user_profiles.week_starts_on` rotates calendar
+   * column order for this user and never moves a week boundary. Business
+   * weeks are anchored on `households.week_starts_on`.
    */
   updateTimeSettings: async (
     req: UpdateTimeSettingsInput

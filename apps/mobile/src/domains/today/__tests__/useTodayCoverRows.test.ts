@@ -138,7 +138,9 @@ describe('useTodayCoverRows', () => {
       isLoading: false,
     });
 
-    const { result } = renderHook(() => useTodayCoverRows(HOUSEHOLD_ID, ZONE));
+    const { result } = renderHook(() =>
+      useTodayCoverRows(HOUSEHOLD_ID, ZONE, 1)
+    );
 
     expect(result.current.rows).toHaveLength(1);
     expect(result.current.rows[0]?.name).toBe('H1 Nanny1');
@@ -158,7 +160,9 @@ describe('useTodayCoverRows', () => {
       isLoading: false,
     });
 
-    const { result } = renderHook(() => useTodayCoverRows(HOUSEHOLD_ID, ZONE));
+    const { result } = renderHook(() =>
+      useTodayCoverRows(HOUSEHOLD_ID, ZONE, 1)
+    );
 
     expect(result.current.rows).toHaveLength(0);
   });
@@ -178,7 +182,9 @@ describe('useTodayCoverRows', () => {
       isLoading: false,
     });
 
-    const { result } = renderHook(() => useTodayCoverRows(HOUSEHOLD_ID, ZONE));
+    const { result } = renderHook(() =>
+      useTodayCoverRows(HOUSEHOLD_ID, ZONE, 1)
+    );
 
     expect(result.current.rows).toHaveLength(1);
     const name = result.current.rows[0]?.name;

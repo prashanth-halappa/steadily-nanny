@@ -76,8 +76,14 @@ function makeMemberRepo(byUserId: Record<string, any>): any {
   };
 }
 
-function makeHouseholdRepo(timezone = 'Europe/London'): any {
-  return { findById: mock(async () => ({ id: 'h1', timezone })) };
+function makeHouseholdRepo(timezone = 'Europe/London', weekStartsOn = 1): any {
+  return {
+    findById: mock(async () => ({
+      id: 'h1',
+      timezone,
+      week_starts_on: weekStartsOn,
+    })),
+  };
 }
 
 const PARENT = member('parent', 'parent-1');
@@ -95,13 +101,17 @@ interface ServiceParts {
   members?: Record<string, unknown>;
   expenseRepo?: any;
   timezone?: string;
+  weekStartsOn?: number;
 }
 
 function service(parts: ServiceParts = {}): any {
   return new ExpenseQueryService(
     parts.expenseRepo ?? makeExpenseRepo(),
     makeMemberRepo(parts.members ?? { 'parent-1': PARENT, 'carer-1': NANNY }),
-    makeHouseholdRepo(parts.timezone ?? 'Europe/London')
+    makeHouseholdRepo(
+      parts.timezone ?? 'Europe/London',
+      parts.weekStartsOn ?? 1
+    )
   );
 }
 
@@ -189,6 +199,42 @@ describe('ExpenseQueryService.listForWeek — household-local week boundaries', 
       'h1',
       '2025-12-29',
       '2026-01-05'
+    );
+  });
+
+  // §5 D-8: the omitted-weekStart default must resolve against the
+  // HOUSEHOLD's own workweek, not a hardcoded Monday. Same instant, same
+  // zone, same caller as the first test in this block — only
+  // `week_starts_on` differs, so a Sunday-start household reads a window one
+  // day earlier at both ends. Getting this wrong shows the carer last week's
+  // claims and hides the ones she filed on Sunday.
+  it('defaults to the SUNDAY-start household`s own week when weekStart is omitted', async () => {
+    const expenseRepo = makeExpenseRepo();
+    const svc = service({
+      expenseRepo,
+      members: { 'parent-1': PARENT },
+      weekStartsOn: 0,
+    });
+    await svc.listForWeek('parent-1', 'h1', undefined, NOW);
+    expect(expenseRepo.listForWeek).toHaveBeenCalledWith(
+      'h1',
+      '2026-08-02',
+      '2026-08-09'
+    );
+  });
+
+  it('defaults `listApprovedForWeek` to the same household week', async () => {
+    const expenseRepo = makeExpenseRepo();
+    const svc = service({
+      expenseRepo,
+      members: { 'parent-1': PARENT },
+      weekStartsOn: 0,
+    });
+    await svc.listApprovedForWeek('parent-1', 'h1', undefined, NOW);
+    expect(expenseRepo.listApprovedForWeek).toHaveBeenCalledWith(
+      'h1',
+      '2026-08-02',
+      '2026-08-09'
     );
   });
 });

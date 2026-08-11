@@ -27,7 +27,7 @@ const HOUSEHOLD_ID = '11111111-1111-4111-8111-111111111111';
 const CARER_ID = '33333333-3333-4333-8333-333333333333';
 const TIME_ZONE = 'UTC';
 const PINNED_NOW = new Date('2026-08-06T12:00:00.000Z');
-const WEEK_START = getWeekStartISO(PINNED_NOW, TIME_ZONE);
+const WEEK_START = getWeekStartISO(PINNED_NOW, TIME_ZONE, 1);
 
 setSystemTime(PINNED_NOW);
 afterAll(() => setSystemTime());
@@ -104,7 +104,7 @@ describe('useHouseholdIsLive — voided entries (069 soft delete)', () => {
     );
 
     const { result } = renderHookWithProviders(
-      () => useHouseholdIsLive(HOUSEHOLD_ID, TIME_ZONE),
+      () => useHouseholdIsLive(HOUSEHOLD_ID, TIME_ZONE, 1),
       { queryClient }
     );
 
@@ -121,7 +121,7 @@ describe('useHouseholdIsLive — voided entries (069 soft delete)', () => {
     const queryClient = seedClient([running], running);
 
     const { result } = renderHookWithProviders(
-      () => useHouseholdIsLive(HOUSEHOLD_ID, TIME_ZONE),
+      () => useHouseholdIsLive(HOUSEHOLD_ID, TIME_ZONE, 1),
       { queryClient }
     );
 
@@ -150,7 +150,7 @@ describe('useHouseholdIsLive — voided entries (069 soft delete)', () => {
     );
 
     const { result } = renderHookWithProviders(
-      () => useHouseholdIsLive(HOUSEHOLD_ID, TIME_ZONE),
+      () => useHouseholdIsLive(HOUSEHOLD_ID, TIME_ZONE, 1),
       { queryClient }
     );
 

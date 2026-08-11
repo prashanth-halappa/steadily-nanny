@@ -161,7 +161,7 @@ beforeAll(async () => {
     error: null,
   }));
   mockUseActiveHousehold = mock(() => ({
-    household: { id: HOUSEHOLD_ID },
+    household: { id: HOUSEHOLD_ID, week_starts_on: 1 },
     householdId: HOUSEHOLD_ID,
     households: [{ id: HOUSEHOLD_ID }],
     setActiveHouseholdId: mock(),
@@ -413,7 +413,11 @@ describe('ScheduleShiftsScreen', () => {
     // Asia/Kolkata (UTC+5:30) — ~9.5h apart, so a wrong fallback chain on
     // either view is impossible to miss.
     mockUseActiveHousehold.mockImplementation(() => ({
-      household: { id: HOUSEHOLD_ID, timezone: 'America/New_York' },
+      household: {
+        id: HOUSEHOLD_ID,
+        timezone: 'America/New_York',
+        week_starts_on: 1,
+      },
       householdId: HOUSEHOLD_ID,
       households: [{ id: HOUSEHOLD_ID }],
       setActiveHouseholdId: mock(),
@@ -456,6 +460,63 @@ describe('ScheduleShiftsScreen', () => {
     expect(getByTestId('week-ribbon-cell-1-9').props.accessibilityLabel).toBe(
       'confirmed'
     );
+  });
+
+  // 3-E1: the week RANGE this screen pages through is anchored on the
+  // household's `week_starts_on`. The ribbon's column order used to be
+  // rotated by `profile.data.week_starts_on` — a per-USER display
+  // preference — so for a Sunday-start household whose parent had the
+  // Monday display preference, the first column was a Monday while the
+  // range being shown started on the Sunday. Same screen, two different
+  // first days of the week.
+  it('REGRESSION: the week ribbon’s first column is the HOUSEHOLD’s week start, not the user profile’s', () => {
+    mockUseActiveHousehold.mockImplementation(() => ({
+      household: {
+        id: HOUSEHOLD_ID,
+        timezone: 'America/New_York',
+        week_starts_on: 0,
+      },
+      householdId: HOUSEHOLD_ID,
+      households: [{ id: HOUSEHOLD_ID }],
+      setActiveHouseholdId: mock(),
+      isLoading: false,
+    }));
+    // Deliberately DISAGREES with the household — this is the value the
+    // ribbon must now ignore.
+    mockUseUserProfile.mockImplementation(() => ({
+      data: { timezone: 'America/New_York', week_starts_on: 1 },
+      isLoading: false,
+    }));
+    // One shift so the ribbon renders at all — an empty week shows the
+    // empty state instead, and there would be no columns to assert on.
+    mockUseShiftsRange.mockImplementation(() => ({
+      data: [
+        makeShift({
+          id: 'shift-ribbon-order',
+          local_date: '2026-08-03',
+          starts_at: '2026-08-03T13:00:00.000Z',
+          ends_at: '2026-08-03T21:00:00.000Z',
+          status: 'confirmed',
+        }),
+      ],
+      isLoading: false,
+      isError: false,
+      error: null,
+    }));
+
+    const { getByTestId, getAllByText } = render(<ScheduleShiftsScreen />);
+    fireEvent.press(getByTestId('calendar-view-week_ribbon'));
+
+    // i18n echoes keys in tests, so each column header renders as
+    // `weekdayShort.<postgres dow>` in rendered (column) order.
+    const headers = getAllByText(/^weekdayShort\.\d$/).map(
+      node => node.props.children
+    );
+    expect(headers.slice(0, 3)).toEqual([
+      'weekdayShort.0',
+      'weekdayShort.1',
+      'weekdayShort.2',
+    ]);
   });
 
   it('P1: "Add a one-off shift" renders at Small/14/600, not Button-sm 16 (reads as heavy as the H1)', () => {

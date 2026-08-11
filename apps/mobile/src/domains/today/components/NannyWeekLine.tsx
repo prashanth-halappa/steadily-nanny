@@ -25,16 +25,23 @@ interface NannyWeekLineProps {
   householdId: string;
   /** Household IANA zone — never the device's (GOLDEN-FIXES #21). */
   timeZone: string;
+  /** Household `week_starts_on` (0=Sunday..6=Saturday) — the week this line
+   * totals is the household's business week, not a hardcoded Monday. */
+  weekStartsOn: number;
 }
 
-export function NannyWeekLine({ householdId, timeZone }: NannyWeekLineProps) {
+export function NannyWeekLine({
+  householdId,
+  timeZone,
+  weekStartsOn,
+}: NannyWeekLineProps) {
   const { t: tToday } = useTranslation('today');
   const { t: tHours } = useTranslation('hours');
   const router = useRouter();
   const currentUserId = useAuthStore(s => s.user?.id ?? null);
   const weekStart = useMemo(
-    () => getWeekStartISO(new Date(), timeZone),
-    [timeZone]
+    () => getWeekStartISO(new Date(), timeZone, weekStartsOn),
+    [timeZone, weekStartsOn]
   );
   const entriesQuery = useWeekTimeEntries(householdId, weekStart);
   const timesheetQuery = useWeekTimesheet(householdId, weekStart);

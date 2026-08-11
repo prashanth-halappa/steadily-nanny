@@ -38,7 +38,11 @@ import {
   HouseholdMemberRepository,
   HouseholdRepository,
 } from '../../household';
-import { weekEndExclusive, weekStartOf } from '../../timesheet/utils/weekStart';
+import {
+  DEFAULT_WEEK_STARTS_ON,
+  weekEndExclusive,
+  weekStartOf,
+} from '../../timesheet/utils/weekStart';
 import { ExpenseNotFoundError } from '../errors/payErrors';
 import { ExpenseRepository } from '../repositories/expenseRepository';
 
@@ -116,13 +120,22 @@ export class ExpenseQueryService {
     return this.scopeRows(rows, scope);
   }
 
-  /** Household-local Monday of the week containing `now()`. */
+  /**
+   * The first day of the household's own workweek for the week containing
+   * `now()` — BOTH the zone and the start day come off the household row
+   * (§5 D-8), never a hardcoded Monday. The `??`s fire only when the row
+   * fails to load.
+   */
   private async currentWeekStart(
     householdId: string,
     now: () => Date
   ): Promise<string> {
     const household = await this.householdRepo.findById(householdId);
-    return weekStartOf(now(), household?.timezone ?? 'UTC');
+    return weekStartOf(
+      now(),
+      household?.timezone ?? 'UTC',
+      household?.week_starts_on ?? DEFAULT_WEEK_STARTS_ON
+    );
   }
 
   /**

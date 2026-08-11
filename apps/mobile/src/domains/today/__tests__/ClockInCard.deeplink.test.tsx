@@ -85,7 +85,7 @@ describe('ClockInCard — arriving from the Live Activity', () => {
     searchParams.clockOut = '1';
 
     const { getByTestId } = renderWithProviders(
-      <ClockInCard householdId={HOUSEHOLD_ID} timeZone="UTC" />
+      <ClockInCard householdId={HOUSEHOLD_ID} timeZone="UTC" weekStartsOn={1} />
     );
 
     await waitFor(() => expect(getByTestId('clockout-sheet')).toBeTruthy());
@@ -95,7 +95,7 @@ describe('ClockInCard — arriving from the Live Activity', () => {
     searchParams.clockOut = '1';
 
     renderWithProviders(
-      <ClockInCard householdId={HOUSEHOLD_ID} timeZone="UTC" />
+      <ClockInCard householdId={HOUSEHOLD_ID} timeZone="UTC" weekStartsOn={1} />
     );
 
     await waitFor(() =>
@@ -105,7 +105,7 @@ describe('ClockInCard — arriving from the Live Activity', () => {
 
   it('opens nothing without the param — the ordinary render is untouched', async () => {
     const { getByTestId, queryByTestId } = renderWithProviders(
-      <ClockInCard householdId={HOUSEHOLD_ID} timeZone="UTC" />
+      <ClockInCard householdId={HOUSEHOLD_ID} timeZone="UTC" weekStartsOn={1} />
     );
 
     await waitFor(() => expect(getByTestId('today-clock-out')).toBeTruthy());
@@ -117,7 +117,7 @@ describe('ClockInCard — arriving from the Live Activity', () => {
     getRunningMock.mockImplementation(() => Promise.resolve(null));
 
     const { getByTestId, queryByTestId } = renderWithProviders(
-      <ClockInCard householdId={HOUSEHOLD_ID} timeZone="UTC" />
+      <ClockInCard householdId={HOUSEHOLD_ID} timeZone="UTC" weekStartsOn={1} />
     );
 
     // Spent once the query ANSWERS, not once the card renders: the

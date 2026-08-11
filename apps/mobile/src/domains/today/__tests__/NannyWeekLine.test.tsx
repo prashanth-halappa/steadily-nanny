@@ -146,7 +146,11 @@ describe('NannyWeekLine', () => {
       isPending: true,
     }));
     const { queryByTestId } = render(
-      <NannyWeekLine householdId={HOUSEHOLD_ID} timeZone={TIME_ZONE} />
+      <NannyWeekLine
+        householdId={HOUSEHOLD_ID}
+        timeZone={TIME_ZONE}
+        weekStartsOn={1}
+      />
     );
     expect(queryByTestId('today-week-line')).toBeNull();
     expect(queryByTestId('today-week-line-card')).toBeNull();
@@ -154,7 +158,11 @@ describe('NannyWeekLine', () => {
 
   it('renders a pressable line with week duration and nanny status vocabulary', () => {
     const { getByTestId, getByText } = render(
-      <NannyWeekLine householdId={HOUSEHOLD_ID} timeZone={TIME_ZONE} />
+      <NannyWeekLine
+        householdId={HOUSEHOLD_ID}
+        timeZone={TIME_ZONE}
+        weekStartsOn={1}
+      />
     );
 
     expect(getByTestId('today-week-line')).toBeTruthy();
@@ -166,7 +174,11 @@ describe('NannyWeekLine', () => {
 
   it('routes to Hours when pressed', () => {
     const { getByTestId } = render(
-      <NannyWeekLine householdId={HOUSEHOLD_ID} timeZone={TIME_ZONE} />
+      <NannyWeekLine
+        householdId={HOUSEHOLD_ID}
+        timeZone={TIME_ZONE}
+        weekStartsOn={1}
+      />
     );
 
     fireEvent.press(getByTestId('today-week-line'));
@@ -195,7 +207,11 @@ describe('NannyWeekLine', () => {
     }));
 
     const { getByTestId, getByText, queryByTestId } = render(
-      <NannyWeekLine householdId={HOUSEHOLD_ID} timeZone={TIME_ZONE} />
+      <NannyWeekLine
+        householdId={HOUSEHOLD_ID}
+        timeZone={TIME_ZONE}
+        weekStartsOn={1}
+      />
     );
 
     expect(getByTestId('today-week-line-card')).toBeTruthy();

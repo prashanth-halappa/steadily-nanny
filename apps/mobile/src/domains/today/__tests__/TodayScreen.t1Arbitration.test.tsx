@@ -99,7 +99,12 @@ beforeAll(async () => {
 
   mock.module('@/src/hooks/queries/useActiveHousehold', () => ({
     useActiveHousehold: () => ({
-      household: { id: HOUSEHOLD_ID, name: 'T1 Household', timezone: 'UTC' },
+      household: {
+        id: HOUSEHOLD_ID,
+        name: 'T1 Household',
+        timezone: 'UTC',
+        week_starts_on: 1,
+      },
       householdId: HOUSEHOLD_ID,
       households: [{ id: HOUSEHOLD_ID, name: 'T1 Household', timezone: 'UTC' }],
       pastHouseholds: [],

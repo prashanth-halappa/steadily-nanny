@@ -112,7 +112,11 @@ afterEach(() => {
 describe('ClockInCard — D17 stale clock state on app resume', () => {
   it('an AppState resume refetches a stale running-entry query and clears the ticking timer once the server says clocked out', async () => {
     const { getByTestId, queryByTestId } = renderWithProviders(
-      <ClockInCard householdId={HOUSEHOLD_ID} timeZone="UTC" />,
+      <ClockInCard
+        householdId={HOUSEHOLD_ID}
+        timeZone="UTC"
+        weekStartsOn={1}
+      />,
       { queryClient }
     );
 
@@ -138,7 +142,11 @@ describe('ClockInCard — D17 stale clock state on app resume', () => {
 
   it('an AppState resume does not refetch a running-entry query that is still fresh (no request storm)', async () => {
     const { getByTestId } = renderWithProviders(
-      <ClockInCard householdId={HOUSEHOLD_ID} timeZone="UTC" />,
+      <ClockInCard
+        householdId={HOUSEHOLD_ID}
+        timeZone="UTC"
+        weekStartsOn={1}
+      />,
       { queryClient }
     );
 

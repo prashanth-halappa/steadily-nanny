@@ -3,16 +3,21 @@
  *
  * `weekStart.ts` answers "which week does this belong to", which is a pure
  * calendar question and needs no offset. Splitting a session that runs across
- * Sunday night needs the other half of the answer: the exact UTC moment the
- * household's own week turns over. That moment moves with the zone's offset —
+ * the household's week turnover needs the other half of the answer: the exact
+ * UTC moment that turnover happens. That moment moves with the zone's offset —
  * midnight in London is 00:00Z in winter and 23:00Z the evening before in
  * summer — so a UTC-midnight assumption misfiles a whole hour of pay into the
  * wrong week's timesheet twice a year.
  *
+ * WHICH night the turnover falls on is `households.week_starts_on` (§5 D-8),
+ * not a fixed Sunday->Monday: for a Sunday-start household the week turns over
+ * a full day earlier, so a hardcoded Monday would misfile an entire Saturday
+ * night shift rather than an hour of it.
+ *
  * Dependency-free, like its sibling: `Intl.DateTimeFormat` is the only
  * timezone database in this codebase (see `weekStart.ts`).
  *
- * @module domains/timesheet/utils/mondayMidnight
+ * @module domains/timesheet/utils/weekBoundary
  */
 import { weekEndExclusive, weekStartOf } from './weekStart';
 
@@ -50,7 +55,10 @@ function offsetMsAt(utcMs: number, timeZone: string): number {
 
 /**
  * The UTC instant at which the local week containing `afterInstant` ENDS —
- * i.e. the following household-local Monday, 00:00.
+ * i.e. 00:00 on the household's next week-start day, household-local.
+ *
+ * Always strictly AFTER `afterInstant` (it is the END of that instant's own
+ * week), which is the property `splitAtWeekBoundaries` loops on.
  *
  * Two probes rather than one: the offset has to be sampled at an instant, and
  * the instant is what we are solving for. Sampling at the naive guess and
@@ -60,13 +68,18 @@ function offsetMsAt(utcMs: number, timeZone: string): number {
  * midnight (so local midnight does not exist that night), the result is the
  * instant the clock jumps to — an hour late, but real, ordered and unique,
  * which is all the split arithmetic needs.
+ *
+ * @param weekStartsOn `households.week_starts_on`, 0=Sunday..6=Saturday.
  */
-export function mondayMidnightInstant(
+export function weekBoundaryInstant(
   afterInstant: Date,
-  timeZone: string
+  timeZone: string,
+  weekStartsOn: number
 ): Date {
-  const nextMonday = weekEndExclusive(weekStartOf(afterInstant, timeZone));
-  const naive = Date.parse(`${nextMonday}T00:00:00.000Z`);
+  const nextWeekStart = weekEndExclusive(
+    weekStartOf(afterInstant, timeZone, weekStartsOn)
+  );
+  const naive = Date.parse(`${nextWeekStart}T00:00:00.000Z`);
 
   const firstGuess = naive - offsetMsAt(naive, timeZone);
   const refined = naive - offsetMsAt(firstGuess, timeZone);

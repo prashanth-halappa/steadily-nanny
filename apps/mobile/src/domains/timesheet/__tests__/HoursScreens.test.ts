@@ -74,10 +74,14 @@ describe('HoursScreen', () => {
     expect(hoursScreenSource).not.toMatch(/useSetupProgress|localRole/);
   });
 
-  it('resolves the week boundary in the HOUSEHOLD timezone, not a bare `new Date()`', () => {
+  // Both household axes, not just the zone: `week_starts_on` decides which
+  // day the week begins on (3-E1), so a call that passed only the timezone
+  // would silently give a Sunday-start household a Monday week.
+  it('resolves the week boundary from the HOUSEHOLD timezone AND week start, not a bare `new Date()`', () => {
     expect(hoursScreenSource).toContain('household?.timezone');
+    expect(hoursScreenSource).toContain('household?.week_starts_on');
     expect(hoursScreenSource).toMatch(
-      /getWeekStartISO\(\s*new Date\(\),\s*timezone\s*\)/
+      /getWeekStartISO\(\s*new Date\(\),\s*timezone,\s*weekStartsOn\s*\)/
     );
   });
 

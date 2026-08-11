@@ -42,7 +42,10 @@ import {
 } from '@/src/domains/schedule';
 import { localDateToWeekday } from '@/src/domains/schedule/utils/shiftGrouping';
 import { canViewParentSchedule, SETUP_ROLES } from '@/src/domains/setup/types';
-import { formatDisplayDate } from '@/src/domains/timesheet/utils/week';
+import {
+  DEFAULT_WEEK_STARTS_ON,
+  formatDisplayDate,
+} from '@/src/domains/timesheet/utils/week';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
 import { useChildren } from '@/src/hooks/queries/useChildren';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
@@ -72,7 +75,11 @@ export function TodayScreen() {
   const children = useChildren(household?.id);
   // Wash while someone is on the clock — caller running OR household week
   // entry running. Stays inside this screen (below the tab navigator).
-  const isLive = useHouseholdIsLive(household?.id, household?.timezone);
+  const isLive = useHouseholdIsLive(
+    household?.id,
+    household?.timezone,
+    household?.week_starts_on
+  );
   // One T1 per screen: `resolveAttentionOwner` (its own module doc carries
   // the ranking + justification) is the single decision every
   // attention-capable card demotes against, so a fourth surface extends
@@ -90,7 +97,8 @@ export function TodayScreen() {
   // household's day: a nanny's own shifts are among these rows.
   const coverRows = useTodayCoverRows(
     household?.id ?? '',
-    household?.timezone ?? 'UTC'
+    household?.timezone ?? 'UTC',
+    household?.week_starts_on ?? DEFAULT_WEEK_STARTS_ON
   );
   const heroMood = resolveHeroMood({ isLive, rows: coverRows.rows });
   // Same tab-bar dead-zone fix as Settings (BUG1) — the floating tab bar
@@ -186,6 +194,7 @@ export function TodayScreen() {
               <ClockInCard
                 householdId={household.id}
                 timeZone={household.timezone}
+                weekStartsOn={household.week_starts_on}
                 householdName={household.name}
               />
             ) : null}
@@ -199,6 +208,7 @@ export function TodayScreen() {
               <NannyWeekLine
                 householdId={household.id}
                 timeZone={household.timezone}
+                weekStartsOn={household.week_starts_on}
               />
             ) : null}
 
@@ -207,6 +217,7 @@ export function TodayScreen() {
               <AddMissedHoursCard
                 householdId={household.id}
                 timeZone={household.timezone}
+                weekStartsOn={household.week_starts_on}
               />
             ) : null}
 
@@ -214,6 +225,7 @@ export function TodayScreen() {
               <TodayCoverage
                 householdId={household.id}
                 timeZone={household.timezone}
+                weekStartsOn={household.week_starts_on}
                 householdChildren={children.data ?? []}
                 demoted={attentionOwner !== 'uncoveredCare'}
               />

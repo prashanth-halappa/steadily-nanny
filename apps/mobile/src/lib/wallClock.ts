@@ -76,12 +76,13 @@ export function shiftInstantsFromWallClock(
 }
 
 /**
- * Monday-first week range [from, to) as UTC instants for the shift API,
- * resolved in `timeZone` — the HOUSEHOLD's zone, never the device's. This
- * used to resolve Monday off `now.getDay()` (the device's zone), the same
- * bug class as GOLDEN-FIXES #21: two people in different zones would see
- * DIFFERENT shifts for "this week" at the same instant. Reuses
- * `domains/timesheet/utils/week.ts`'s Monday resolution
+ * The current week's range [from, to) as UTC instants for the shift API,
+ * resolved in `timeZone` and anchored on `weekStartsOn` — the HOUSEHOLD's
+ * zone and the HOUSEHOLD's `week_starts_on`, never the device's zone and
+ * never a hardcoded Monday. This used to resolve Monday off `now.getDay()`
+ * (the device's zone), the same bug class as GOLDEN-FIXES #21: two people in
+ * different zones would see DIFFERENT shifts for "this week" at the same
+ * instant. Reuses `domains/timesheet/utils/week.ts`'s week-start resolution
  * (`getWeekStartISO`/`addWeeks`) and `wallClockToUtcIso`'s DST-safe
  * local->UTC conversion rather than re-deriving either, so there's exactly
  * one mechanism for "what week is it" in this codebase.
@@ -91,12 +92,13 @@ export function shiftInstantsFromWallClock(
  */
 export function currentWeekRange(
   timeZone: string,
+  weekStartsOn: number,
   now: Date = new Date()
 ): {
   from: string;
   to: string;
 } {
-  const weekStartISO = getWeekStartISO(now, timeZone);
+  const weekStartISO = getWeekStartISO(now, timeZone, weekStartsOn);
   const weekEndISO = addWeeks(weekStartISO, 1);
   return {
     from: wallClockToUtcIso(weekStartISO, '00:00', timeZone),

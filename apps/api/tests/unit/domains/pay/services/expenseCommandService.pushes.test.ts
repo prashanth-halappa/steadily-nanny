@@ -145,11 +145,29 @@ function makeTimesheetRepo(): any {
   };
 }
 
+/**
+ * Explicit, because the push payload's `weekStart` now needs the household's
+ * own `week_starts_on` (§5 D-8). Left to its default this argument becomes a
+ * REAL `HouseholdRepository` and the test reaches for the network — which is
+ * exactly how these tests started timing out rather than failing.
+ */
+function makeHouseholdRepo(weekStartsOn = 1): any {
+  return {
+    findById: mock(async () => ({
+      id: 'h1',
+      timezone: 'Europe/London',
+      currency: 'GBP',
+      week_starts_on: weekStartsOn,
+    })),
+  };
+}
+
 function service(
   parts: {
     expenseRepo?: any;
     arrangementRepo?: any;
     members?: Record<string, unknown>;
+    weekStartsOn?: number;
   } = {}
 ): any {
   return new ExpenseCommandService(
@@ -157,7 +175,8 @@ function service(
     parts.arrangementRepo ?? makeArrangementRepo(),
     makeMemberRepo(parts.members ?? { 'carer-1': NANNY, 'parent-1': PARENT }),
     makeUserService(),
-    makeTimesheetRepo()
+    makeTimesheetRepo(),
+    makeHouseholdRepo(parts.weekStartsOn ?? 1)
   );
 }
 

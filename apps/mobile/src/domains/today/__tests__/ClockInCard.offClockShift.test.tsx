@@ -170,7 +170,11 @@ beforeEach(() => {
 describe('ClockInCard — off-clock shift selection', () => {
   it('ignores declined/cancelled shifts and shows the confirmed window on the hero', async () => {
     const { getByTestId, queryByTestId, getByText } = renderWithProviders(
-      <ClockInCard householdId={HOUSEHOLD_ID} timeZone={TIME_ZONE} />
+      <ClockInCard
+        householdId={HOUSEHOLD_ID}
+        timeZone={TIME_ZONE}
+        weekStartsOn={1}
+      />
     );
 
     await waitFor(() => expect(getByTestId('today-clock-in')).toBeTruthy());
@@ -187,7 +191,11 @@ describe('ClockInCard — off-clock shift selection', () => {
 
   it('names a declined shift on a secondary line when a covering shift wins the hero', async () => {
     const { getByTestId, getByText } = renderWithProviders(
-      <ClockInCard householdId={HOUSEHOLD_ID} timeZone={TIME_ZONE} />
+      <ClockInCard
+        householdId={HOUSEHOLD_ID}
+        timeZone={TIME_ZONE}
+        weekStartsOn={1}
+      />
     );
 
     await waitFor(() => expect(getByTestId('today-clock-in')).toBeTruthy());
@@ -219,7 +227,11 @@ describe('ClockInCard — off-clock shift selection', () => {
     });
 
     const { getByTestId, getByText } = renderWithProviders(
-      <ClockInCard householdId={HOUSEHOLD_ID} timeZone={TIME_ZONE} />
+      <ClockInCard
+        householdId={HOUSEHOLD_ID}
+        timeZone={TIME_ZONE}
+        weekStartsOn={1}
+      />
     );
 
     await waitFor(() => expect(getByTestId('today-clock-in')).toBeTruthy());
@@ -241,7 +253,11 @@ describe('ClockInCard — off-clock shift selection', () => {
 
     const { getByTestId, queryByTestId, getByText, queryByText } =
       renderWithProviders(
-        <ClockInCard householdId={HOUSEHOLD_ID} timeZone={TIME_ZONE} />
+        <ClockInCard
+          householdId={HOUSEHOLD_ID}
+          timeZone={TIME_ZONE}
+          weekStartsOn={1}
+        />
       );
 
     await waitFor(() => expect(getByTestId('today-clock-in')).toBeTruthy());
@@ -270,7 +286,11 @@ describe('ClockInCard — off-clock shift selection', () => {
     });
 
     const { getByTestId, getByText } = renderWithProviders(
-      <ClockInCard householdId={HOUSEHOLD_ID} timeZone={TIME_ZONE} />
+      <ClockInCard
+        householdId={HOUSEHOLD_ID}
+        timeZone={TIME_ZONE}
+        weekStartsOn={1}
+      />
     );
 
     await waitFor(() => expect(getByTestId('today-clock-in')).toBeTruthy());
@@ -288,7 +308,11 @@ describe('ClockInCard — off-clock shift selection', () => {
     });
 
     const { getByTestId } = renderWithProviders(
-      <ClockInCard householdId={HOUSEHOLD_ID} timeZone={TIME_ZONE} />
+      <ClockInCard
+        householdId={HOUSEHOLD_ID}
+        timeZone={TIME_ZONE}
+        weekStartsOn={1}
+      />
     );
 
     await waitFor(() => expect(getByTestId('today-clock-in')).toBeTruthy());

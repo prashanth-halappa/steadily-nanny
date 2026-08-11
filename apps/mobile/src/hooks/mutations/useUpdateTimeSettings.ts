@@ -10,7 +10,11 @@ import { showErrorToast } from '@/src/lib/toast';
 
 /**
  * Persists the caller's display timezone and/or week-start preference.
- * Presentation lens only — timesheets and Hours stay Monday business weeks.
+ * Presentation lens only: this is `user_profiles.week_starts_on`, which
+ * rotates calendar column order for THIS user. It never moves a week
+ * boundary — timesheets and Hours are anchored on the HOUSEHOLD's
+ * `households.week_starts_on` (domains/timesheet/utils/week.ts), a
+ * different column answering a different question.
  */
 export function useUpdateTimeSettings() {
   const queryClient = useQueryClient();

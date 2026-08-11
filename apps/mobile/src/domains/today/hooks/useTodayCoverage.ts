@@ -19,6 +19,7 @@ import { COVERING_SHIFT_STATUSES } from '@steadily-nanny/shared-types/uncoveredC
 import { useMemo } from 'react';
 import { localDateToWeekday } from '@/src/domains/schedule/utils/shiftGrouping';
 import type { UncoveredWindowDisplay } from '@/src/domains/schedule/utils/uncoveredDisplay';
+import { DEFAULT_WEEK_STARTS_ON } from '@/src/domains/timesheet/utils/week';
 import { useShiftsRange } from '@/src/hooks/queries/useShiftsRange';
 import { addLocalDays, localDateInZone } from '@/src/lib/localDate';
 import { wallClockToUtcIso } from '@/src/lib/wallClock';
@@ -134,10 +135,19 @@ function buildPlanLines(
 
 export function useTodayCoverage(
   householdId: string | null | undefined,
-  timeZone: string | null | undefined
+  timeZone: string | null | undefined,
+  /** The household's `week_starts_on`, threaded to `useTodayCoverRows`. */
+  weekStartsOn: number | null | undefined
 ): TodayCoverage {
   const uncovered = useUncoveredToday(householdId, timeZone);
-  const coverQuery = useTodayCoverRows(householdId ?? '', timeZone ?? 'UTC');
+  // The placeholders are all reached together, on the branch where there is
+  // no household yet — the query below is disabled by the empty id, so the
+  // named default never decides a real household's week.
+  const coverQuery = useTodayCoverRows(
+    householdId ?? '',
+    timeZone ?? 'UTC',
+    weekStartsOn ?? DEFAULT_WEEK_STARTS_ON
+  );
 
   const localDate = timeZone ? localDateInZone(timeZone) : null;
   const from =

@@ -171,7 +171,8 @@ export const timeEntryApi = {
   },
 
   /**
-   * A household's entries for one week (Monday `week_start`, en-GB weeks).
+   * A household's entries for one week. `week_start` is the household's own
+   * first day of the week (`households.week_starts_on`), not a Monday.
    * `week_start` is optional server-side (defaults to the current week) —
    * this client always sends it explicitly since callers already know which
    * week they're showing.

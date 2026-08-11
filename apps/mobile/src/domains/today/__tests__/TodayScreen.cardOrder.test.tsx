@@ -131,6 +131,7 @@ beforeAll(async () => {
         id: HOUSEHOLD_ID,
         name: 'Order Household',
         timezone: 'UTC',
+        week_starts_on: 1,
       },
       householdId: HOUSEHOLD_ID,
       households: [
