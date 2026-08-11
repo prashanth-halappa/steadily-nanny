@@ -747,8 +747,12 @@ describe('ParentWeekView — staging an approval-time adjustment', () => {
       await queryClient.invalidateQueries();
     });
 
-    await waitFor(() =>
-      expect(queryByTestId('hours-money-card-adjustment')).toBeNull()
+    // invalidateQueries() refetches EVERY observed query, so the week refetch
+    // that clears the staged adjustment can land well after waitFor's 1s
+    // default under qc CPU contention (observed 4–12s). Wait explicitly.
+    await waitFor(
+      () => expect(queryByTestId('hours-money-card-adjustment')).toBeNull(),
+      { timeout: 15_000 }
     );
     expect(getByTestId('hours-money-card-add-adjustment')).toBeTruthy();
   });
