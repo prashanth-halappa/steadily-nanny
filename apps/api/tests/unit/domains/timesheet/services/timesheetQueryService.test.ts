@@ -131,7 +131,7 @@ function makeHouseholdRepo(overrides: Record<string, unknown> = {}): any {
   };
 }
 
-// §11.1.1's fast-path computer — DI'd as the 8th constructor arg (payments
+// §11.1.1's fast-path computer — DI'd as the 9th constructor arg (after 3-U3's payArrangements) (payments
 // and events default fine since neither `getWeekWithEarnings` call path
 // touches them, but a NothingUnusualService default would make a real
 // network call, so every test that calls `getWeekWithEarnings` supplies this
@@ -360,6 +360,7 @@ describe('TimesheetQueryService.getWeekWithEarnings — live weeks', () => {
         earnings,
         undefined,
         undefined,
+        undefined,
         makeNothingUnusualComputer()
       );
 
@@ -388,6 +389,7 @@ describe('TimesheetQueryService.getWeekWithEarnings — live weeks', () => {
       makeEarnings(),
       undefined,
       undefined,
+      undefined,
       makeNothingUnusualComputer()
     );
 
@@ -411,6 +413,7 @@ describe('TimesheetQueryService.getWeekWithEarnings — live weeks', () => {
       makeEarnings({ computeForWeek: mock(async () => noArrangement) }),
       undefined,
       undefined,
+      undefined,
       makeNothingUnusualComputer()
     );
 
@@ -429,6 +432,7 @@ describe('TimesheetQueryService.getWeekWithEarnings — live weeks', () => {
       makeMemberRepo(),
       makeHouseholdRepo(),
       earnings,
+      undefined,
       undefined,
       undefined,
       makeNothingUnusualComputer()
@@ -454,6 +458,7 @@ describe('TimesheetQueryService.getWeekWithEarnings — live weeks', () => {
       earnings,
       undefined,
       undefined,
+      undefined,
       makeNothingUnusualComputer()
     );
 
@@ -475,6 +480,7 @@ describe('TimesheetQueryService.getWeekWithEarnings — approved weeks are FROZE
       earnings,
       undefined,
       undefined,
+      undefined,
       makeNothingUnusualComputer()
     );
 
@@ -493,6 +499,7 @@ describe('TimesheetQueryService.getWeekWithEarnings — approved weeks are FROZE
       makeMemberRepo(),
       makeHouseholdRepo(),
       makeEarnings({ computeForWeek: mock(async () => raisedEarnings) }),
+      undefined,
       undefined,
       undefined,
       makeNothingUnusualComputer()
@@ -519,6 +526,7 @@ describe('TimesheetQueryService.getWeekWithEarnings — approved weeks are FROZE
       makeMemberRepo(),
       makeHouseholdRepo(),
       makeEarnings(),
+      undefined,
       undefined,
       undefined,
       makeNothingUnusualComputer()
@@ -550,6 +558,7 @@ describe('TimesheetQueryService.getWeekWithEarnings — approved weeks are FROZE
       makeEarnings(),
       undefined,
       undefined,
+      undefined,
       makeNothingUnusualComputer()
     );
 
@@ -576,6 +585,7 @@ describe('TimesheetQueryService.getWeekWithEarnings — the legacy arm', () => {
       makeMemberRepo(),
       makeHouseholdRepo(),
       earnings,
+      undefined,
       undefined,
       undefined,
       makeNothingUnusualComputer()
@@ -605,6 +615,7 @@ describe('TimesheetQueryService.getWeekWithEarnings — the legacy arm', () => {
       earnings,
       undefined,
       undefined,
+      undefined,
       makeNothingUnusualComputer()
     );
 
@@ -626,6 +637,7 @@ describe('TimesheetQueryService.getWeekWithEarnings — the legacy arm', () => {
       makeMemberRepo(),
       makeHouseholdRepo(),
       earnings,
+      undefined,
       undefined,
       undefined,
       makeNothingUnusualComputer()
@@ -657,6 +669,7 @@ describe('TimesheetQueryService.getWeekWithEarnings — the legacy arm', () => {
       makeMemberRepo(),
       makeHouseholdRepo(),
       makeEarnings(),
+      undefined,
       undefined,
       undefined,
       makeNothingUnusualComputer()
@@ -704,6 +717,7 @@ describe('TimesheetQueryService.getWeekWithEarnings — the legacy arm', () => {
       makeEarnings(),
       undefined,
       undefined,
+      undefined,
       makeNothingUnusualComputer()
     );
 
@@ -727,6 +741,7 @@ describe('TimesheetQueryService.getWeekWithEarnings — the legacy arm', () => {
       makeMemberRepo(),
       makeHouseholdRepo(),
       makeEarnings(),
+      undefined,
       undefined,
       undefined,
       makeNothingUnusualComputer()
@@ -759,6 +774,7 @@ describe('TimesheetQueryService.getWeekWithEarnings — the legacy arm', () => {
       makeEarnings(),
       undefined,
       undefined,
+      undefined,
       makeNothingUnusualComputer()
     );
 
@@ -777,6 +793,7 @@ describe('TimesheetQueryService.getWeekWithEarnings — the legacy arm', () => {
       makeMemberRepo(),
       makeHouseholdRepo(),
       makeEarnings(),
+      undefined,
       undefined,
       undefined,
       makeNothingUnusualComputer()
@@ -822,6 +839,7 @@ describe('TimesheetQueryService — the raw snapshot columns never reach the wir
       makeMemberRepo(),
       makeHouseholdRepo(),
       makeEarnings(),
+      undefined,
       undefined,
       undefined,
       makeNothingUnusualComputer()
@@ -1270,6 +1288,7 @@ describe('TimesheetQueryService.getWeekWithEarnings — removed members', () => 
       earnings,
       undefined,
       undefined,
+      undefined,
       makeNothingUnusualComputer()
     );
 
@@ -1293,6 +1312,7 @@ describe('TimesheetQueryService.getWeekWithEarnings — removed members', () => 
       earnings,
       undefined,
       undefined,
+      undefined,
       makeNothingUnusualComputer()
     );
 
@@ -1312,6 +1332,7 @@ describe('TimesheetQueryService.getWeekWithEarnings — removed members', () => 
       makeRemovedMemberRepo('nanny', 'carer-1'),
       makeHouseholdRepo(),
       earnings,
+      undefined,
       undefined,
       undefined,
       makeNothingUnusualComputer()
