@@ -1253,6 +1253,219 @@ describe('TimesheetCommandService.approve', () => {
     expect(timesheetRepo.approveSubmittedWithEarnings).toHaveBeenCalledTimes(1);
   });
 
+  // N17 / §2.3b (D-32 extension, 3-U3): the approved-and-still-short case
+  // REPLACES `timesheet_approved` with `week_below_guarantee` — one act, one
+  // push, never both. Emitted only when the FROZEN snapshot still carries a
+  // `guaranteed_topup` line: the top-up did its job at every OTHER week, so
+  // its presence here means the guarantee itself was still short even after
+  // topping up (or, per the spec, no arrangement covered every day).
+  it('pushes week_below_guarantee INSTEAD OF timesheet_approved when the frozen snapshot still tops up', async () => {
+    const push = makePush();
+    const timesheetRepo = makeTimesheetRepo({
+      approveSubmittedWithEarnings: mock(
+        async (_id: string, patch: Record<string, unknown>) => ({
+          ...timesheet,
+          status: 'approved',
+          ...patch,
+        })
+      ),
+    });
+    const svc = new TimesheetCommandService(
+      makeTimeEntryRepo(),
+      timesheetRepo,
+      makeMemberRepo({
+        findActiveMembership: mock(async () => ({
+          id: 'm3',
+          household_id: 'h1',
+          user_id: 'parent-1',
+          role: 'parent',
+        })),
+      }),
+      makeHouseholdRepo(),
+      makeShiftRepo(),
+      makeQueries(),
+      makeUserService(),
+      push,
+      {
+        computeForWeek: mock(
+          async (): Promise<WeekEarnings> => ({
+            status: 'ok',
+            week_start: '2026-08-03',
+            currency: 'GBP',
+            lines: [
+              {
+                kind: 'regular',
+                minutes: 2640,
+                rate_minor: 1850,
+                multiplier: null,
+                amount_minor: 81_400,
+                from_date: '2026-08-03',
+                to_date: '2026-08-07',
+                arrangement_id: '11111111-1111-4111-8111-111111111111',
+              },
+              {
+                kind: 'guaranteed_topup',
+                minutes: 360,
+                rate_minor: 1850,
+                multiplier: null,
+                amount_minor: 11_100,
+                from_date: '2026-08-03',
+                to_date: '2026-08-09',
+                arrangement_id: '11111111-1111-4111-8111-111111111111',
+              },
+            ],
+            gross_minor: 92_500,
+            reimbursements_minor: 0,
+            worked_minutes: 2640,
+            payable_minutes: 2640,
+            guaranteed_minutes_per_week: 3000,
+          })
+        ),
+      }
+    );
+
+    await svc.approve('parent-1', 'ts1');
+
+    expect(push.notifyUser).toHaveBeenCalledTimes(1);
+    expect(push.notifyUser).toHaveBeenCalledWith(
+      'carer-1',
+      expect.objectContaining({
+        data: expect.objectContaining({
+          type: PUSH_NOTIFICATION_TYPES.WEEK_BELOW_GUARANTEE,
+          timesheetId: 'ts1',
+          householdId: 'h1',
+          weekStart: '2026-08-03',
+        }),
+      })
+    );
+    const [, payload] = push.notifyUser.mock.calls[0] as [
+      string,
+      { title: string; body: string },
+    ];
+    // A8 still binds: hours in the body, the gross figure stays out.
+    expect(payload.body).not.toMatch(/£|\$|GBP|USD/);
+    expect(payload.body).toMatch(/44h/); // 2640 minutes payable = 44h
+    expect(payload.body).toMatch(/50h/); // 3000 minutes guaranteed = 50h
+    expect(payload.body).toMatch(/6h/); // shortfall = 360 minutes = 6h
+  });
+
+  it('still pushes timesheet_approved (not week_below_guarantee) when the frozen snapshot has NO top-up line', async () => {
+    const push = makePush();
+    const timesheetRepo = makeTimesheetRepo({
+      approveSubmittedWithEarnings: mock(
+        async (_id: string, patch: Record<string, unknown>) => ({
+          ...timesheet,
+          status: 'approved',
+          ...patch,
+        })
+      ),
+    });
+    const svc = new TimesheetCommandService(
+      makeTimeEntryRepo(),
+      timesheetRepo,
+      makeMemberRepo({
+        findActiveMembership: mock(async () => ({
+          id: 'm3',
+          household_id: 'h1',
+          user_id: 'parent-1',
+          role: 'parent',
+        })),
+      }),
+      makeHouseholdRepo(),
+      makeShiftRepo(),
+      makeQueries(),
+      makeUserService(),
+      push,
+      {
+        computeForWeek: mock(
+          async (): Promise<WeekEarnings> => ({
+            status: 'ok',
+            week_start: '2026-08-03',
+            currency: 'GBP',
+            lines: [
+              {
+                kind: 'regular',
+                minutes: 2400,
+                rate_minor: 1850,
+                multiplier: null,
+                amount_minor: 74_000,
+                from_date: '2026-08-03',
+                to_date: '2026-08-07',
+                arrangement_id: '11111111-1111-4111-8111-111111111111',
+              },
+            ],
+            gross_minor: 74_000,
+            reimbursements_minor: 0,
+            worked_minutes: 2400,
+            payable_minutes: 2400,
+            guaranteed_minutes_per_week: null,
+          })
+        ),
+      }
+    );
+
+    await svc.approve('parent-1', 'ts1');
+
+    expect(push.notifyUser).toHaveBeenCalledWith(
+      'carer-1',
+      expect.objectContaining({
+        data: expect.objectContaining({
+          type: PUSH_NOTIFICATION_TYPES.TIMESHEET_APPROVED,
+        }),
+      })
+    );
+  });
+
+  it('pushes plain timesheet_approved (never week_below_guarantee) for an unpriceable week — no fabricated guarantee claim', async () => {
+    const push = makePush();
+    const timesheetRepo = makeTimesheetRepo({
+      approveSubmittedWithEarnings: mock(
+        async (_id: string, patch: Record<string, unknown>) => ({
+          ...timesheet,
+          status: 'approved',
+          ...patch,
+        })
+      ),
+    });
+    const svc = new TimesheetCommandService(
+      makeTimeEntryRepo(),
+      timesheetRepo,
+      makeMemberRepo({
+        findActiveMembership: mock(async () => ({
+          id: 'm3',
+          household_id: 'h1',
+          user_id: 'parent-1',
+          role: 'parent',
+        })),
+      }),
+      makeHouseholdRepo(),
+      makeShiftRepo(),
+      makeQueries(),
+      makeUserService(),
+      push,
+      {
+        computeForWeek: mock(
+          async (): Promise<WeekEarnings> => ({
+            status: 'no_arrangement',
+            week_start: '2026-08-03',
+            unpriced_dates: ['2026-08-03'],
+          })
+        ),
+      }
+    );
+
+    await svc.approve('parent-1', 'ts1');
+
+    expect(push.notifyUser).toHaveBeenCalledWith(
+      'carer-1',
+      expect.objectContaining({
+        data: expect.objectContaining({
+          type: PUSH_NOTIFICATION_TYPES.TIMESHEET_APPROVED,
+        }),
+      })
+    );
+  });
+
   it('rejects a carer (non-parent) trying to approve', async () => {
     const svc = new TimesheetCommandService(
       makeTimeEntryRepo(),

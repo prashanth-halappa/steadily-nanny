@@ -10,11 +10,12 @@
 import { type Href, useRouter } from 'expo-router';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Pressable } from 'react-native';
+import { Pressable, View } from 'react-native';
 import { Card, CardContent } from '@/src/components/ui/card';
 import { Small } from '@/src/components/ui/typography';
 import { timesheetPillLabel } from '@/src/domains/timesheet/components/WeekTotal';
 import { formatDuration } from '@/src/domains/timesheet/utils/duration';
+import { formatEarningsDuration } from '@/src/domains/timesheet/utils/earningsFormat';
 import { sumEntryMinutes } from '@/src/domains/timesheet/utils/entryMinutes';
 import { getWeekStartISO } from '@/src/domains/timesheet/utils/week';
 import { useWeekTimeEntries } from '@/src/hooks/queries/useWeekTimeEntries';
@@ -71,6 +72,20 @@ export function NannyWeekLine({
   const statusLabel = timesheetPillLabel(timesheetStatus, 'nanny', tHours);
   const lineText = `${tToday('weekLine', { duration })} · ${statusLabel}`;
 
+  // D-32/§2.3b: the SAME copy key and the SAME rule as `WeekEarningsLine`'s
+  // in-week arm — "topped up at approval" is what makes this line safe to
+  // show at all, so the two ship from one source of truth
+  // (`hours:earningsGuaranteedShortfall`). Never shown once approved: that
+  // is a different, final fact, surfaced on Hours instead (§1.6).
+  const earningsOk =
+    timesheet?.earnings && timesheet.earnings.status === 'ok'
+      ? timesheet.earnings
+      : null;
+  const topupLine = earningsOk?.lines.find(
+    line => line.kind === 'guaranteed_topup'
+  );
+  const showGuaranteedShortfall = timesheetStatus !== 'approved' && !!topupLine;
+
   const goToHours = () => router.push('/(private)/(tabs)/hours' as Href);
 
   if (timesheetStatus === 'queried') {
@@ -90,12 +105,24 @@ export function NannyWeekLine({
   }
 
   return (
-    <Pressable
-      testID="today-week-line"
-      accessibilityRole="button"
-      onPress={goToHours}
-    >
-      <Small className="text-primary">{lineText}</Small>
-    </Pressable>
+    <View className="gap-1">
+      <Pressable
+        testID="today-week-line"
+        accessibilityRole="button"
+        onPress={goToHours}
+      >
+        <Small className="text-primary">{lineText}</Small>
+      </Pressable>
+      {showGuaranteedShortfall && topupLine ? (
+        <Small
+          testID="today-week-line-guarantee-shortfall"
+          className="text-muted-foreground"
+        >
+          {tHours('earningsGuaranteedShortfall', {
+            duration: formatEarningsDuration(topupLine.minutes),
+          })}
+        </Small>
+      ) : null}
+    </View>
   );
 }

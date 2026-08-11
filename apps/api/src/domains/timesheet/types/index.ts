@@ -11,6 +11,7 @@
 export type {
   AddTimesheetThreadMessageInput,
   ApproveTimesheetInput,
+  CarerPaySummaryQuery,
   CarerQuery,
   ClockInInput,
   ClockOutInput,
@@ -32,4 +33,5 @@ export type {
   TimesheetThreadMessage,
   UpdateTimeEntryInput,
   WeekQuery,
+  YearEndSummaryQuery,
 } from '../schemas';

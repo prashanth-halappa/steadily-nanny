@@ -56,6 +56,31 @@ function formatMultiplier(multiplier: number): string {
   return Number(multiplier.toFixed(2)).toString();
 }
 
+/**
+ * "How often you pay" (082, D-17, T7 reversal) — presentation only, one term
+ * describing itself, no cross-referenced day yet. The day (weekday or
+ * day-of-month) is a `PayChangeSheet`/`PaySetupScreen` FORM detail, not part
+ * of this read-only summary row — the frequency alone is what a parent or
+ * nanny scans this card for.
+ */
+function payScheduleValue(
+  frequency: PayArrangement['pay_frequency'],
+  t: Translate
+): string | null {
+  switch (frequency) {
+    case 'weekly':
+      return t('terms.payScheduleValueWeekly');
+    case 'biweekly':
+      return t('terms.payScheduleValueBiweekly');
+    case 'semimonthly':
+      return t('terms.payScheduleValueSemimonthly');
+    case 'monthly':
+      return t('terms.payScheduleValueMonthly');
+    default:
+      return null;
+  }
+}
+
 export function buildTermRows(
   arrangement: PayArrangement,
   t: Translate,
@@ -202,6 +227,11 @@ export function buildTermRows(
                 arrangement.currency
               ),
             }),
+    },
+    {
+      key: 'paySchedule',
+      label: t('terms.payScheduleLabel'),
+      value: payScheduleValue(arrangement.pay_frequency ?? null, t),
     },
     ptoBalanceRow,
   ];

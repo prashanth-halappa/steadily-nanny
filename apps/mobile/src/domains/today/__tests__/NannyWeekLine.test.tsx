@@ -185,6 +185,70 @@ describe('NannyWeekLine', () => {
     expect(mockPush).toHaveBeenCalledWith('/(private)/(tabs)/hours');
   });
 
+  it('shows the in-week guaranteed-hours shortfall sub-line when the topup line is present (D-32, §2.3b)', () => {
+    mockUseWeekTimesheet.mockImplementation(() => ({
+      data: [
+        {
+          id: 'ts-1',
+          household_id: HOUSEHOLD_ID,
+          carer_id: NANNY_ID,
+          week_start: WEEK_START,
+          status: 'submitted',
+          total_minutes: 480,
+          approved_at: null,
+          approved_by: null,
+          query_note: null,
+          reopen_reason: null,
+          earnings: {
+            status: 'ok',
+            week_start: WEEK_START,
+            currency: 'GBP',
+            lines: [
+              {
+                kind: 'guaranteed_topup',
+                minutes: 120,
+                rate_minor: 1850,
+                multiplier: null,
+                amount_minor: 3700,
+                from_date: WEEK_START,
+                to_date: '2026-08-09',
+                arrangement_id: 'arr-1',
+              },
+            ],
+            gross_minor: 12_100,
+            reimbursements_minor: 0,
+            worked_minutes: 480,
+            payable_minutes: 480,
+            guaranteed_minutes_per_week: 600,
+          },
+        },
+      ],
+      isLoading: false,
+      isPending: false,
+    }));
+
+    const { getByTestId } = render(
+      <NannyWeekLine
+        householdId={HOUSEHOLD_ID}
+        timeZone={TIME_ZONE}
+        weekStartsOn={1}
+      />
+    );
+
+    expect(getByTestId('today-week-line-guarantee-shortfall')).toBeTruthy();
+  });
+
+  it('shows no shortfall sub-line when the week is at/above the guarantee', () => {
+    const { queryByTestId } = render(
+      <NannyWeekLine
+        householdId={HOUSEHOLD_ID}
+        timeZone={TIME_ZONE}
+        weekStartsOn={1}
+      />
+    );
+    expect(queryByTestId('today-week-line-guarantee-shortfall')).toBeNull();
+  });
+
   it('wraps a queried week in an attention Card instead of a bare line', () => {
     mockUseWeekTimesheet.mockImplementation(() => ({
       data: [

@@ -149,7 +149,8 @@
       "running_late": "La niñera llega tarde",
       "parent_covering": "Un padre/madre cubre el turno",
       "cover_ask_reminder": "Recordatorio de solicitud de cobertura",
-      "shift_no_show_digest": "Resumen de fichajes no realizados"
+      "shift_no_show_digest": "Resumen de fichajes no realizados",
+      "week_below_guarantee": "Semana aprobada por debajo de la garantía"
     }
   }
 }

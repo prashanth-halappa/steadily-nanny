@@ -269,6 +269,38 @@ export class TimesheetNotExportableError extends ConflictError {
   }
 }
 
+/**
+ * 400 — a multi-week export (`exportCarerPaySummaryCsv`,
+ * `exportYearEndSummaryCsv`, D-29/P11/P12) was requested in a shape it
+ * cannot honestly serve:
+ *
+ * - `carer_required` — a parent (household-scope read) asked for a pay
+ *   summary with no `carerId` — D-29's "a nanny exports only her own" is
+ *   forced automatically for a nanny caller, but a parent reading the whole
+ *   household must say which carer.
+ * - `mixed_currency` — the included weeks price in more than one currency
+ *   (a rate change that also changed currency). Same "one currency, never
+ *   summed across" rule the earnings engine's `currency_change` arm applies
+ *   to a single week (`docs/11-MONEY.md` §6) — a YTD total blending two
+ *   currencies is not a number, so this refuses rather than blend.
+ */
+export class PaySummaryExportError extends ValidationError {
+  constructor(
+    reason: 'carer_required' | 'mixed_currency',
+    metadata?: ErrorMetadata
+  ) {
+    super(
+      reason === 'carer_required'
+        ? 'Choose which carer this pay summary is for'
+        : 'This range spans more than one currency and cannot be totalled honestly',
+      'PAY_SUMMARY_NOT_EXPORTABLE',
+      400,
+      { reason, ...metadata }
+    );
+    this.name = 'PaySummaryExportError';
+  }
+}
+
 /** 409 — approve/query was called on a timesheet with no submitted hours to act on. */
 export class TimesheetNotActionableError extends ConflictError {
   constructor(timesheetId: string, status: string) {

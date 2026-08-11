@@ -26,6 +26,7 @@
 import type {
   CreatePayArrangementRequest,
   PayArrangement,
+  PayFrequency,
 } from '@steadily-nanny/shared-types/schemas/payArrangement.schema';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -52,6 +53,7 @@ import {
   type PayTermsFormState,
 } from '../utils/payArrangementForm';
 import { CurrencySelect } from './CurrencySelect';
+import { PayScheduleFields } from './PayScheduleFields';
 
 interface PayChangeSheetProps {
   visible: boolean;
@@ -163,6 +165,9 @@ export function PayChangeSheet({
   >(null);
   const [cancellationHoursText, setCancellationHoursText] = useState('');
   const [note, setNote] = useState('');
+  const [payFrequency, setPayFrequency] = useState<PayFrequency | ''>('');
+  const [payDayOfWeekText, setPayDayOfWeekText] = useState('');
+  const [payDayOfMonthText, setPayDayOfMonthText] = useState('');
 
   // Re-seed every time the sheet opens, from the CURRENT arrangement — a
   // "change" usually adjusts one term, so starting from what's already
@@ -229,6 +234,21 @@ export function PayChangeSheet({
     );
     setCurrency(currentArrangement.currency);
     setNote('');
+    // 082's pay schedule, same re-seed-every-field reason as the 078 tiers
+    // above (playbook T17): a change that only touches the rate must re-send
+    // every other term unchanged, or the new append-only row silently drops
+    // the pay schedule the family already set.
+    setPayFrequency(currentArrangement.pay_frequency ?? '');
+    setPayDayOfWeekText(
+      currentArrangement.pay_day_of_week == null
+        ? ''
+        : String(currentArrangement.pay_day_of_week)
+    );
+    setPayDayOfMonthText(
+      currentArrangement.pay_day_of_month == null
+        ? ''
+        : String(currentArrangement.pay_day_of_month)
+    );
   }, [visible, currentArrangement, householdCancellationDefaultHours]);
 
   const effectiveDateISO =
@@ -283,6 +303,9 @@ export function PayChangeSheet({
     cancellationChoice,
     cancellationHoursText,
     note,
+    payFrequency,
+    payDayOfWeekText,
+    payDayOfMonthText,
     currentOvertimeMultiplier: currentArrangement.overtime_multiplier,
   };
   // Render-time only — drives the chip variants and the submit button's
@@ -589,6 +612,17 @@ export function PayChangeSheet({
             />
           ) : null}
         </View>
+
+        <PayScheduleFields
+          testIDPrefix="pay-change"
+          t={t}
+          payFrequency={payFrequency}
+          onPayFrequencyChange={setPayFrequency}
+          payDayOfWeekText={payDayOfWeekText}
+          onPayDayOfWeekTextChange={setPayDayOfWeekText}
+          payDayOfMonthText={payDayOfMonthText}
+          onPayDayOfMonthTextChange={setPayDayOfMonthText}
+        />
 
         <View className="gap-2">
           <Label>{t('changeSheet.noteLabel')}</Label>

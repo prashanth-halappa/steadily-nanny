@@ -30,6 +30,11 @@ function fakeT(key: string, params?: Record<string, unknown>): string {
     'terms.cancellationsValue': `Paid if within ${params?.hours}h of the start`,
     'terms.mileageLabel': 'Mileage',
     'terms.mileageValue': `${params?.amount} a mile`,
+    'terms.payScheduleLabel': 'Pay schedule',
+    'terms.payScheduleValueWeekly': 'Weekly',
+    'terms.payScheduleValueBiweekly': 'Every two weeks',
+    'terms.payScheduleValueSemimonthly': 'Twice a month',
+    'terms.payScheduleValueMonthly': 'Monthly',
     'terms.ptoBalanceLabel': 'PTO balance',
     'terms.ptoBalanceValue': `${params?.amount} left this year`,
     'terms.ptoBalanceCaption': `1 Jan – 31 Dec ${params?.year}`,
@@ -56,6 +61,9 @@ const fullArrangement: PayArrangement = {
   guaranteed_minutes_per_week: 2400,
   pto_entitlement_minutes_per_year: 8400,
   mileage_rate_per_mile_minor: 45,
+  pay_frequency: 'biweekly',
+  pay_day_of_week: 5,
+  pay_day_of_month: null,
   cancellation_paid_within_hours: 24,
   valid_from: '2026-04-01',
   // 065: null = still live; set only when a member is removed.
@@ -78,11 +86,14 @@ const emptyArrangement: PayArrangement = {
   guaranteed_minutes_per_week: null,
   pto_entitlement_minutes_per_year: null,
   mileage_rate_per_mile_minor: null,
+  pay_frequency: null,
+  pay_day_of_week: null,
+  pay_day_of_month: null,
   cancellation_paid_within_hours: null,
 };
 
 describe('buildTermRows', () => {
-  it('returns exactly ten rows, in the spec order — the worked-holiday premium reads after paid time off', () => {
+  it('returns exactly eleven rows, in the spec order — the worked-holiday premium reads after paid time off, pay schedule after mileage', () => {
     const rows = buildTermRows(fullArrangement, fakeT as never);
     expect(rows.map(r => r.key)).toEqual([
       'overtime',
@@ -94,6 +105,7 @@ describe('buildTermRows', () => {
       'workedHolidayPremium',
       'cancellations',
       'mileage',
+      'paySchedule',
       'ptoBalance',
     ]);
   });
@@ -106,6 +118,23 @@ describe('buildTermRows', () => {
     expect(byKey.pto).toBe('140h a year');
     expect(byKey.cancellations).toBe('Paid if within 24h of the start');
     expect(byKey.mileage).toBe('£0.45 a mile');
+    expect(byKey.paySchedule).toBe('Every two weeks');
+  });
+
+  it('pay schedule is null when unset, and formats each frequency + day', () => {
+    const unset = buildTermRows(emptyArrangement, fakeT as never);
+    expect(unset.find(r => r.key === 'paySchedule')?.value).toBeNull();
+
+    const monthly = buildTermRows(
+      {
+        ...fullArrangement,
+        pay_frequency: 'monthly',
+        pay_day_of_week: null,
+        pay_day_of_month: 15,
+      },
+      fakeT as never
+    );
+    expect(monthly.find(r => r.key === 'paySchedule')?.value).toBe('Monthly');
   });
 
   // 3-E2: the daily tier reuses `overtime_multiplier` — it deliberately has

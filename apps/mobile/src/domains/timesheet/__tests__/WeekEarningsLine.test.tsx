@@ -380,6 +380,130 @@ describe('WeekEarningsLine', () => {
     expect(getByTestId('hours-earnings-line')).toBeTruthy();
   });
 
+  // D-32/§2.3b (3-U3): the guaranteed-hours shortfall sub-lines. Never on a
+  // no-arrangement/unpriceable week (that path never reaches the `ok` arm at
+  // all, so these tests only need to pin the `ok`-arm behaviour), never a
+  // deficit-against-her framing, and the nanny/parent lines are distinct.
+  describe('guaranteed-hours shortfall (D-32, §2.3b)', () => {
+    const topupLine = {
+      kind: 'guaranteed_topup' as const,
+      minutes: 360,
+      rate_minor: 1850,
+      multiplier: null,
+      amount_minor: 11_100,
+      from_date: '2026-08-03',
+      to_date: '2026-08-09',
+      arrangement_id: 'arr-1',
+    };
+    const shortfallEarnings = {
+      ...okEarnings,
+      lines: [topupLine],
+      gross_minor: 92_500,
+      worked_minutes: 2640,
+      guaranteed_minutes_per_week: 3000,
+    };
+
+    it('nanny, IN-WEEK (not approved): the in-week shortfall sub-line renders', () => {
+      const { getByTestId } = render(
+        <WeekEarningsLine
+          earnings={shortfallEarnings}
+          timesheetStatus="submitted"
+          viewerRole="nanny"
+          carerId="carer-1"
+          carerDisplayName="Marisol"
+          totalMinutes={2640}
+        />
+      );
+      expect(
+        getByTestId('hours-earnings-line-guarantee-shortfall')
+      ).toBeTruthy();
+    });
+
+    it('nanny, APPROVED: the approved-and-short line renders instead of the in-week one', () => {
+      const { getByTestId, queryByText } = render(
+        <WeekEarningsLine
+          earnings={shortfallEarnings}
+          timesheetStatus="approved"
+          viewerRole="nanny"
+          carerId="carer-1"
+          carerDisplayName="Marisol"
+          totalMinutes={2640}
+        />
+      );
+      expect(
+        getByTestId('hours-earnings-line-guarantee-shortfall-approved')
+      ).toBeTruthy();
+      expect(queryByText('earningsGuaranteedShortfall')).toBeNull();
+    });
+
+    it('parent never sees the nanny in-week or approved-short line', () => {
+      const { queryByTestId } = render(
+        <WeekEarningsLine
+          earnings={shortfallEarnings}
+          timesheetStatus="submitted"
+          viewerRole="parent"
+          carerId="carer-1"
+          carerDisplayName="Marisol"
+          totalMinutes={2640}
+        />
+      );
+      expect(
+        queryByTestId('hours-earnings-line-guarantee-shortfall')
+      ).toBeNull();
+    });
+
+    it('parent, a zero-hours week WITH a top-up: the vacation-week note renders', () => {
+      const { getByTestId } = render(
+        <WeekEarningsLine
+          earnings={{ ...shortfallEarnings, worked_minutes: 0 }}
+          timesheetStatus="submitted"
+          viewerRole="parent"
+          carerId="carer-1"
+          carerDisplayName="Marisol"
+          totalMinutes={0}
+        />
+      );
+      expect(
+        getByTestId('hours-earnings-line-vacation-week-note')
+      ).toBeTruthy();
+    });
+
+    it('parent, hours WERE worked (not a zero-hours week): no vacation-week note', () => {
+      const { queryByTestId } = render(
+        <WeekEarningsLine
+          earnings={shortfallEarnings}
+          timesheetStatus="submitted"
+          viewerRole="parent"
+          carerId="carer-1"
+          carerDisplayName="Marisol"
+          totalMinutes={2640}
+        />
+      );
+      expect(
+        queryByTestId('hours-earnings-line-vacation-week-note')
+      ).toBeNull();
+    });
+
+    it('no line at all when the week is at/above the guarantee — absent, never a green "on track"', () => {
+      const { queryByTestId } = render(
+        <WeekEarningsLine
+          earnings={okEarnings}
+          timesheetStatus="submitted"
+          viewerRole="nanny"
+          carerId="carer-1"
+          carerDisplayName="Marisol"
+          totalMinutes={2460}
+        />
+      );
+      expect(
+        queryByTestId('hours-earnings-line-guarantee-shortfall')
+      ).toBeNull();
+      expect(
+        queryByTestId('hours-earnings-line-guarantee-shortfall-approved')
+      ).toBeNull();
+    });
+  });
+
   it('carerName folds into the accessibilityLabel only, never the visible label', () => {
     const { getByTestId } = render(
       <WeekEarningsLine

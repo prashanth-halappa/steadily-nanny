@@ -14,6 +14,7 @@
  *    where silence breeds the dispute" (spec). Save stays disabled until one
  *    is tapped.
  */
+import type { PayFrequency } from '@steadily-nanny/shared-types/schemas/payArrangement.schema';
 import { type Href, useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -28,6 +29,7 @@ import { Text } from '@/src/components/ui/text';
 import { Textarea } from '@/src/components/ui/textarea';
 import { Body, Label, Small } from '@/src/components/ui/typography';
 import { CurrencySelect } from '@/src/domains/pay/components/CurrencySelect';
+import { PayScheduleFields } from '@/src/domains/pay/components/PayScheduleFields';
 import { resolveCarerName } from '@/src/domains/schedule/utils/memberDisplayName';
 import { SetupScreenShell } from '@/src/domains/setup/components/SetupScreenShell';
 import { isParentEditorRole } from '@/src/domains/setup/types';
@@ -125,6 +127,11 @@ export function PaySetupScreen() {
   >(null);
   const [cancellationHoursText, setCancellationHoursText] = useState('');
   const [note, setNote] = useState('');
+  // 082's pay schedule — blank on a first-ever arrangement, same as the 078
+  // tiers above: there is nothing agreed yet to seed from.
+  const [payFrequency, setPayFrequency] = useState<PayFrequency | ''>('');
+  const [payDayOfWeekText, setPayDayOfWeekText] = useState('');
+  const [payDayOfMonthText, setPayDayOfMonthText] = useState('');
 
   // Seed the effective-date default and the cancellation-hours prefill ONCE,
   // the first time both the member and household have loaded — mirrors
@@ -270,6 +277,9 @@ export function PaySetupScreen() {
     cancellationChoice,
     cancellationHoursText,
     note,
+    payFrequency,
+    payDayOfWeekText,
+    payDayOfMonthText,
     // Deliberately absent: the redirect above means there is no current
     // arrangement by the time this renders, so 1.5 (the blank-threshold
     // default in `buildCreatePayArrangementRequest`) is always right here.
@@ -553,6 +563,17 @@ export function PaySetupScreen() {
           </Small>
         ) : null}
       </View>
+
+      <PayScheduleFields
+        testIDPrefix="pay-setup"
+        t={t}
+        payFrequency={payFrequency}
+        onPayFrequencyChange={setPayFrequency}
+        payDayOfWeekText={payDayOfWeekText}
+        onPayDayOfWeekTextChange={setPayDayOfWeekText}
+        payDayOfMonthText={payDayOfMonthText}
+        onPayDayOfMonthTextChange={setPayDayOfMonthText}
+      />
 
       <View className="gap-2">
         <Label>{t('changeSheet.noteLabel')}</Label>

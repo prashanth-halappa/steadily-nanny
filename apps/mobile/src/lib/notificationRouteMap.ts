@@ -180,4 +180,8 @@ export const NOTIFICATION_ROUTE_MAP: NotificationRouteMap &
   // Matrix routes it to the shifts calendar, same surface as the other
   // schedule-review pushes.
   [PUSH_NOTIFICATION_TYPES.SHIFT_NO_SHOW_DIGEST]: shiftsCalendarHref,
+
+  // 3-U3 (N17, D-32 extension): the carer's own week, same destination as
+  // every other timesheet push.
+  [PUSH_NOTIFICATION_TYPES.WEEK_BELOW_GUARANTEE]: hoursHref,
 };

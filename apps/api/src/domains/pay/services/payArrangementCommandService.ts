@@ -155,6 +155,13 @@ export class PayArrangementCommandService {
       // the normal rate", so writing it is the difference between a term the
       // parties agreed and a field somebody forgot.
       worked_holiday_multiplier: request.worked_holiday_multiplier ?? null,
+      // 082's pay schedule (D-17, T7 reversal) — presentation only, same T17
+      // reasoning as the block above: null here means "no pay schedule
+      // stated", so writing it explicitly is the difference between a
+      // schedule the parties chose and a field somebody forgot.
+      pay_frequency: request.pay_frequency ?? null,
+      pay_day_of_week: request.pay_day_of_week ?? null,
+      pay_day_of_month: request.pay_day_of_month ?? null,
       guaranteed_minutes_per_week: request.guaranteed_minutes_per_week ?? null,
       pto_entitlement_minutes_per_year:
         request.pto_entitlement_minutes_per_year ?? null,

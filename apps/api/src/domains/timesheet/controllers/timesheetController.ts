@@ -7,7 +7,12 @@ import { getAuthUserId } from '../../../utils/asyncHandler';
 import { sendSuccessResponse } from '../../../utils/responseHelpers';
 import { timesheetCommandService } from '../services/timesheetCommandService';
 import { timesheetQueryService } from '../services/timesheetQueryService';
-import type { CarerQuery, WeekQuery } from '../types';
+import type {
+  CarerPaySummaryQuery,
+  CarerQuery,
+  WeekQuery,
+  YearEndSummaryQuery,
+} from '../types';
 
 export class TimesheetController {
   /** POST /time-entries/clock-in. */
@@ -187,6 +192,69 @@ export class TimesheetController {
         getAuthUserId(req),
         id
       );
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="${filename}"`
+      );
+      return res.send(csv);
+    } catch (error) {
+      return next(error);
+    }
+  }
+
+  /**
+   * GET /households/:householdId/timesheets/pay-summary.csv (D-29, P11) —
+   * the nanny's own pay record (her weeks, gross, YTD), or a parent's
+   * carer-scoped read of one. Same download-not-envelope shape as
+   * `exportCsv`; every refusal is decided in the service.
+   */
+  static async exportCarerPaySummaryCsv(
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ) {
+    try {
+      const householdId = req.params.householdId as string;
+      const query = req.validatedQuery as unknown as CarerPaySummaryQuery;
+      const { from, to } = query.year
+        ? { from: `${query.year}-01-01`, to: `${query.year}-12-31` }
+        : { from: query.from as string, to: query.to as string };
+      const { filename, csv } =
+        await timesheetQueryService.exportCarerPaySummaryCsv(
+          getAuthUserId(req),
+          householdId,
+          { carerId: query.carer_id, from, to }
+        );
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="${filename}"`
+      );
+      return res.send(csv);
+    } catch (error) {
+      return next(error);
+    }
+  }
+
+  /**
+   * GET /households/:householdId/timesheets/year-end.csv (D-29, P12) — the
+   * parent's calendar-year payroll handoff, one row per carer.
+   */
+  static async exportYearEndSummaryCsv(
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ) {
+    try {
+      const householdId = req.params.householdId as string;
+      const { year } = req.validatedQuery as unknown as YearEndSummaryQuery;
+      const { filename, csv } =
+        await timesheetQueryService.exportYearEndSummaryCsv(
+          getAuthUserId(req),
+          householdId,
+          year
+        );
       res.setHeader('Content-Type', 'text/csv; charset=utf-8');
       res.setHeader(
         'Content-Disposition',
