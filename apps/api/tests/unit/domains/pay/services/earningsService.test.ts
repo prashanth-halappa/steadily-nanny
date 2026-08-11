@@ -8,6 +8,7 @@
  * The week under test is always Mon 2026-08-03 .. Sun 2026-08-09.
  */
 import { describe, expect, it } from 'bun:test';
+import { COMMON_DEFAULTS_PRESET } from '@steadily-nanny/shared-types/payTermsPresets';
 import { WeekEarningsSchema } from '@steadily-nanny/shared-types/schemas/timesheet.schema';
 import {
   type ComputeWeekEarningsInput,
@@ -1420,6 +1421,639 @@ describe('earningsService.computeWeekEarnings', () => {
         ['regular', 1920],
         ['guaranteed_topup', 480],
       ]);
+    });
+  });
+
+  // ===========================================================================
+  // Daily overtime, double time, and the seventh consecutive day (3-E2).
+  //
+  // READ FIRST: `docs/design/screens-pay-terms.md` §10.1 (the non-duplication
+  // invariant) and §5.3 (the preset's figures). Every gross below is
+  // hand-computed in the comment above it, in integer minor units, from
+  // `docs/design/screens-pay-terms.md`'s canonical weeks — $28.00/hr, which
+  // is the rate every worked example in that spec uses, so a figure here can
+  // be checked against a figure there without converting anything.
+  //
+  // THE ORDER UNDER TEST, stated once:
+  //   1. The seventh consecutive day, if the rule is on AND all seven days of
+  //      THIS household's workweek were worked. That day is priced whole and
+  //      contributes NOTHING to the weekly threshold.
+  //   2. Every other worked day splits into regular / daily overtime / double
+  //      time against the DAILY thresholds.
+  //   3. Weekly overtime accumulates over the REMAINDER only — the minutes no
+  //      daily tier already promoted. An hour is never both.
+  // ===========================================================================
+  describe('daily overtime, double time, seventh day (3-E2)', () => {
+    /**
+     * The launch preset's figures (`payTermsPresets.ts` — CA Wage Order 15,
+     * never named in the UI), at the spec's canonical $28.00/hr.
+     *
+     * Written out as literals rather than spread from the preset module ON
+     * PURPOSE: this is the ENGINE's case table, and it must pin what the
+     * engine does with a set of numbers, not what one particular data file
+     * currently holds. The preset-vs-manual case below is the one place the
+     * two are asserted equal, which is exactly where that assertion belongs.
+     */
+    function tieredArrangement(over: Partial<PayArrangement> = {}) {
+      return arrangement({
+        rate_minor: 2800,
+        currency: 'USD',
+        overtime_threshold_minutes: 2400, // 40h
+        overtime_multiplier: 1.5,
+        overtime_daily_threshold_minutes: 480, // 8h
+        doubletime_daily_threshold_minutes: 720, // 12h
+        doubletime_multiplier: 2,
+        seventh_day_multiplier: 1.5,
+        seventh_day_doubletime_after_minutes: 480, // 8h
+        ...over,
+      });
+    }
+
+    /** [kind, minutes, rate_minor, amount_minor] — the whole line, compactly. */
+    function shape(result: ReturnType<typeof ok>) {
+      return result.lines.map(l => [
+        l.kind,
+        l.minutes,
+        l.rate_minor,
+        l.amount_minor,
+      ]);
+    }
+
+    // -----------------------------------------------------------------------
+    // §10.1's three canonical weeks, and its named test.
+    // -----------------------------------------------------------------------
+
+    it('an hour is never both daily and weekly overtime', () => {
+      // §10.1's NAMED case. Five 10-hour days = 50h.
+      //   per day: 480 regular + 120 daily OT
+      //   week:    regular 2400, daily OT 600, remainder 2400 = the weekly
+      //            threshold exactly, so weekly OT adds NOTHING.
+      //   2400m x 2800/60 = 112_000
+      //    600m x 4200/60 =  42_000   (OT rate 2800 x 1.5 = 4200)
+      //   gross           = 154_000 = $1,540.00
+      // Fails at 40 + 20 (double-counting) and at any priced total above 50h.
+      const result = ok(
+        computeWeekEarnings(
+          input({
+            arrangements: [tieredArrangement()],
+            entries: [MON, TUE, WED, THU, FRI].map(d => worked(d, 600)),
+          })
+        )
+      );
+
+      expect(shape(result)).toEqual([
+        ['regular', 2400, 2800, 112_000],
+        ['overtime', 600, 4200, 42_000],
+      ]);
+      expect(result.gross_minor).toBe(154_000);
+      // The invariant itself, stated independently of the lines: every worked
+      // minute is priced exactly once.
+      expect(result.lines.reduce((sum, l) => sum + l.minutes, 0)).toBe(3000);
+      expect(result.worked_minutes).toBe(3000);
+      expect(WeekEarningsSchema.safeParse(result).success).toBe(true);
+    });
+
+    it('prices a 13-hour day in three tiers in one day (§10.1, the 53h week)', () => {
+      // 4 x 10h + 1 x 13h = 53h.
+      //   Mon..Thu: 480 regular + 120 daily OT each -> 1920 reg, 480 OT
+      //   Fri 780:  480 regular, 240 daily OT (8h->12h), 60 double time
+      //   week:     regular 2400, OT 720, DT 60; remainder 2400 = threshold,
+      //             so weekly OT adds nothing. §10.1: weekly says 53 - 40 =
+      //             13 premium hours; the daily route says 12 + 1 = 13. Same
+      //             thirteen hours, reached two ways, counted ONCE.
+      //   2400m x 2800/60 = 112_000
+      //    720m x 4200/60 =  50_400
+      //     60m x 5600/60 =   5_600   (DT rate 2800 x 2 = 5600)
+      //   gross           = 168_000 = $1,680.00
+      const result = ok(
+        computeWeekEarnings(
+          input({
+            arrangements: [tieredArrangement()],
+            entries: [
+              ...[MON, TUE, WED, THU].map(d => worked(d, 600)),
+              worked(FRI, 780),
+            ],
+          })
+        )
+      );
+
+      expect(shape(result)).toEqual([
+        ['regular', 2400, 2800, 112_000],
+        ['overtime', 720, 4200, 50_400],
+        ['doubletime', 60, 5600, 5_600],
+      ]);
+      expect(result.gross_minor).toBe(168_000);
+      expect(result.lines.reduce((sum, l) => sum + l.minutes, 0)).toBe(3180);
+      expect(WeekEarningsSchema.safeParse(result).success).toBe(true);
+    });
+
+    it('pays daily overtime in a SHORT week, where no weekly threshold is near', () => {
+      // Three 10-hour days = 30h, well under the 40h weekly threshold. This
+      // is the case a weekly-only engine gets wrong and cannot be talked out
+      // of: it sees 30 regular hours. The daily tier sees six premium hours.
+      //   per day:   480 regular + 120 daily OT
+      //   remainder: 1440, nowhere near 2400 -> no weekly OT
+      //   1440m x 2800/60 = 67_200
+      //    360m x 4200/60 = 25_200
+      //   gross           = 92_400 = $924.00
+      const result = ok(
+        computeWeekEarnings(
+          input({
+            arrangements: [tieredArrangement()],
+            entries: [MON, TUE, WED].map(d => worked(d, 600)),
+          })
+        )
+      );
+
+      expect(shape(result)).toEqual([
+        ['regular', 1440, 2800, 67_200],
+        ['overtime', 360, 4200, 25_200],
+      ]);
+      expect(result.gross_minor).toBe(92_400);
+    });
+
+    it('pays double time on one long day in an otherwise empty week', () => {
+      // A single 13-hour Monday, 13h in the week. Three tiers in one day with
+      // no weekly rule in sight.
+      //   480 regular, 240 daily OT (8h->12h), 60 double time
+      //   480m x 2800/60 = 22_400
+      //   240m x 4200/60 = 16_800
+      //    60m x 5600/60 =  5_600
+      //   gross          = 44_800 = $448.00
+      const result = ok(
+        computeWeekEarnings(
+          input({
+            arrangements: [tieredArrangement()],
+            entries: [worked(MON, 780)],
+          })
+        )
+      );
+
+      expect(shape(result)).toEqual([
+        ['regular', 480, 2800, 22_400],
+        ['overtime', 240, 4200, 16_800],
+        ['doubletime', 60, 5600, 5_600],
+      ]);
+      expect(result.gross_minor).toBe(44_800);
+    });
+
+    it('prices a plain 5 x 8h week as all regular, with the daily tiers armed', () => {
+      // §10.1's third canonical week. 40h, nothing over any threshold.
+      //   2400m x 2800/60 = 112_000 = $1,120.00
+      const result = ok(
+        computeWeekEarnings(
+          input({
+            arrangements: [tieredArrangement()],
+            entries: [MON, TUE, WED, THU, FRI].map(d => worked(d, 480)),
+          })
+        )
+      );
+
+      expect(shape(result)).toEqual([['regular', 2400, 2800, 112_000]]);
+      expect(result.gross_minor).toBe(112_000);
+    });
+
+    it('fires WEEKLY overtime on the remainder once the daily tiers are done with it', () => {
+      // Six 9-hour days = 54h — the case the three canonical weeks do NOT
+      // cover, because in all three the remainder lands exactly on 40h.
+      //   per day:   480 regular + 60 daily OT
+      //   remainder: 6 x 480 = 2880, threshold 2400 -> Mon..Fri fill it, so
+      //              the WHOLE of Saturday's 480 remainder is weekly OT.
+      //   premium:   360 daily OT + 480 weekly OT = 840m, all at 1.5x
+      //   2400m x 2800/60 = 112_000
+      //    840m x 4200/60 =  58_800
+      //   gross           = 170_800 = $1,708.00
+      // Note the single overtime line: Saturday carries BOTH a daily-OT and a
+      // weekly-OT segment, at the same rate under the same arrangement, so
+      // they merge — the split is arithmetic, not two rows for a nanny to
+      // reconcile.
+      const result = ok(
+        computeWeekEarnings(
+          input({
+            arrangements: [tieredArrangement()],
+            entries: [MON, TUE, WED, THU, FRI, SAT].map(d => worked(d, 540)),
+          })
+        )
+      );
+
+      expect(shape(result)).toEqual([
+        ['regular', 2400, 2800, 112_000],
+        ['overtime', 840, 4200, 58_800],
+      ]);
+      expect(result.gross_minor).toBe(170_800);
+      expect(result.lines.reduce((sum, l) => sum + l.minutes, 0)).toBe(3240);
+    });
+
+    // -----------------------------------------------------------------------
+    // The seventh consecutive day.
+    // -----------------------------------------------------------------------
+
+    it('prices the seventh day of a fully-worked workweek at 1.5x, then 2x beyond 8h', () => {
+      // Mon..Sat 8h + Sun 10h = 58h, every day of the workweek worked.
+      //   Sunday is the SEVENTH DAY (week_start + 6), priced whole:
+      //     480m at 1.5x, then 120m at 2x. It contributes NOTHING to the
+      //     weekly threshold — those hours already carry a premium.
+      //   remainder: Mon..Sat 6 x 480 = 2880 -> Mon..Fri regular (2400),
+      //              Saturday's 480 is weekly OT.
+      //   2400m x 2800/60 = 112_000
+      //    960m x 4200/60 =  67_200   (Sat 480 weekly + Sun 480 seventh-day)
+      //    120m x 5600/60 =  11_200
+      //   gross           = 190_400 = $1,904.00
+      const result = ok(
+        computeWeekEarnings(
+          input({
+            arrangements: [tieredArrangement()],
+            entries: [
+              ...[MON, TUE, WED, THU, FRI, SAT].map(d => worked(d, 480)),
+              worked(SUN, 600),
+            ],
+          })
+        )
+      );
+
+      expect(shape(result)).toEqual([
+        ['regular', 2400, 2800, 112_000],
+        ['overtime', 960, 4200, 67_200],
+        ['doubletime', 120, 5600, 11_200],
+      ]);
+      expect(result.gross_minor).toBe(190_400);
+      expect(result.worked_minutes).toBe(3480);
+      expect(result.lines.reduce((sum, l) => sum + l.minutes, 0)).toBe(3480);
+      expect(WeekEarningsSchema.safeParse(result).success).toBe(true);
+    });
+
+    it('does NOT fire the seventh-day rule when a mid-week day was missed', () => {
+      // The same Sunday, the same 10 hours — but Saturday off, so only six of
+      // the workweek's seven days were worked and Sunday is an ordinary day.
+      //   Sun 600: 480 regular-eligible remainder + 120 DAILY OT (no double
+      //            time: 600 < the 720 daily DT threshold).
+      //   remainder: Mon..Fri 2400 fills the weekly threshold exactly, so
+      //              Sunday's 480 remainder is weekly OT.
+      //   2400m x 2800/60 = 112_000
+      //    600m x 4200/60 =  42_000   (120 daily + 480 weekly, one line)
+      //   gross           = 154_000 = $1,540.00, and NO doubletime line.
+      const result = ok(
+        computeWeekEarnings(
+          input({
+            arrangements: [tieredArrangement()],
+            entries: [
+              ...[MON, TUE, WED, THU, FRI].map(d => worked(d, 480)),
+              worked(SUN, 600),
+            ],
+          })
+        )
+      );
+
+      expect(shape(result)).toEqual([
+        ['regular', 2400, 2800, 112_000],
+        ['overtime', 600, 4200, 42_000],
+      ]);
+      expect(result.lines.some(l => l.kind === 'doubletime')).toBe(false);
+      expect(result.gross_minor).toBe(154_000);
+    });
+
+    it('prices a single-tier seventh day wholly at its multiplier', () => {
+      // `seventh_day_doubletime_after_minutes` null = the rule has ONE tier
+      // (the §3 shape a non-CA state would use). The whole 10-hour Sunday
+      // prices at 1.5x and no double-time line is fabricated.
+      //   remainder 2880 -> 2400 regular + 480 weekly OT (Saturday)
+      //   Sunday 600 at 1.5x joins the same overtime line: 1080m total
+      //   2400m x 2800/60 = 112_000
+      //   1080m x 4200/60 =  75_600
+      //   gross           = 187_600 = $1,876.00
+      const result = ok(
+        computeWeekEarnings(
+          input({
+            arrangements: [
+              tieredArrangement({ seventh_day_doubletime_after_minutes: null }),
+            ],
+            entries: [
+              ...[MON, TUE, WED, THU, FRI, SAT].map(d => worked(d, 480)),
+              worked(SUN, 600),
+            ],
+          })
+        )
+      );
+
+      expect(shape(result)).toEqual([
+        ['regular', 2400, 2800, 112_000],
+        ['overtime', 1080, 4200, 75_600],
+      ]);
+      expect(result.gross_minor).toBe(187_600);
+    });
+
+    it('leaves the seventh day ordinary when the arrangement has no seventh-day rule', () => {
+      // `seventh_day_multiplier` null = explicit no. Same seven worked days
+      // as the seventh-day case, priced by the daily/weekly tiers alone.
+      //   Sun 600: 480 remainder + 120 daily OT.
+      //   remainder 7 x 480 = 3360 -> 2400 regular (Mon..Fri), Sat 480 and
+      //   Sun 480 weekly OT.
+      //   premium: 480 + 480 + 120 = 1080m at 1.5x
+      //   gross = 112_000 + 75_600 = 187_600 = $1,876.00
+      const result = ok(
+        computeWeekEarnings(
+          input({
+            arrangements: [
+              tieredArrangement({
+                seventh_day_multiplier: null,
+                seventh_day_doubletime_after_minutes: null,
+              }),
+            ],
+            entries: [
+              ...[MON, TUE, WED, THU, FRI, SAT].map(d => worked(d, 480)),
+              worked(SUN, 600),
+            ],
+          })
+        )
+      );
+
+      expect(shape(result)).toEqual([
+        ['regular', 2400, 2800, 112_000],
+        ['overtime', 1080, 4200, 75_600],
+      ]);
+      expect(result.gross_minor).toBe(187_600);
+    });
+
+    // -----------------------------------------------------------------------
+    // Which day is the seventh depends on the HOUSEHOLD's workweek (3-E1).
+    // -----------------------------------------------------------------------
+
+    it('moves the seventh day with the household week start — same hours, different answer', () => {
+      // Seven identical recorded days, Mon 03 .. Sun 09, the last one long.
+      // The hours do not move; the workweek boundary does.
+      const entries = [
+        ...[MON, TUE, WED, THU, FRI, SAT].map(d => worked(d, 480)),
+        worked(SUN, 600),
+      ];
+
+      // Monday-start household: the workweek IS Mon 03 .. Sun 09, all seven
+      // days worked, so Sunday is the seventh day -> 480 at 1.5x, 120 at 2x.
+      // gross 190_400 = $1,904.00 (the seventh-day case above).
+      const mondayStart = ok(
+        computeWeekEarnings(
+          input({ arrangements: [tieredArrangement()], entries })
+        )
+      );
+
+      // Sunday-start household: the workweek is Sun 02 .. Sat 08. Sunday 02
+      // was NOT worked, so the seventh-day rule cannot fire, and Sunday 09
+      // belongs to the NEXT workweek — it is still priced here because the
+      // engine prices the entries it is handed (the caller owns which entries
+      // belong to which week), but it is priced by the ordinary daily and
+      // weekly tiers: 480 remainder + 120 daily OT.
+      //   remainder 7 x 480 = 3360 -> 2400 regular (Mon 03..Fri 07),
+      //   Sat 08 480 and Sun 09 480 weekly OT, plus Sun 09's 120 daily OT.
+      //   gross = 112_000 + 75_600 = 187_600 = $1,876.00
+      const sundayStart = ok(
+        computeWeekEarnings({
+          week_start: '2026-08-02',
+          arrangements: [tieredArrangement({ valid_from: '2026-01-01' })],
+          entries,
+        })
+      );
+
+      expect(shape(mondayStart)).toEqual([
+        ['regular', 2400, 2800, 112_000],
+        ['overtime', 960, 4200, 67_200],
+        ['doubletime', 120, 5600, 11_200],
+      ]);
+      expect(shape(sundayStart)).toEqual([
+        ['regular', 2400, 2800, 112_000],
+        ['overtime', 1080, 4200, 75_600],
+      ]);
+      expect(mondayStart.gross_minor).toBe(190_400);
+      expect(sundayStart.gross_minor).toBe(187_600);
+    });
+
+    // -----------------------------------------------------------------------
+    // Null is an explicit no; nothing is ever fabricated.
+    // -----------------------------------------------------------------------
+
+    it('never emits a doubletime line when the arrangement has no doubletime multiplier', () => {
+      // A daily double-time THRESHOLD with no multiplier is a row 078's CHECK
+      // forbids, so this can only arrive from a hand-written row or an older
+      // client. The engine does not guess a rate and does not drop the
+      // minutes: everything above the daily overtime threshold is overtime.
+      //   13h day: 480 regular + 300 daily OT. Four 8h days: 1920 remainder.
+      //   remainder 2400 = threshold -> no weekly OT.
+      //   2400m x 2800/60 = 112_000
+      //    300m x 4200/60 =  21_000
+      //   gross           = 133_000
+      const result = ok(
+        computeWeekEarnings(
+          input({
+            arrangements: [tieredArrangement({ doubletime_multiplier: null })],
+            entries: [
+              ...[MON, TUE, WED, THU].map(d => worked(d, 480)),
+              worked(FRI, 780),
+            ],
+          })
+        )
+      );
+
+      expect(shape(result)).toEqual([
+        ['regular', 2400, 2800, 112_000],
+        ['overtime', 300, 4200, 21_000],
+      ]);
+      expect(result.gross_minor).toBe(133_000);
+      expect(result.lines.reduce((sum, l) => sum + l.minutes, 0)).toBe(2700);
+    });
+
+    it('prices double time with NO daily overtime tier beneath it without double-counting', () => {
+      // A legal 078 row: `overtime_daily_threshold_minutes` null (no daily
+      // overtime band) but a double-time threshold set. 078's ordering CHECK
+      // passes vacuously when the lower threshold is null, so this row can
+      // exist and the engine must not treat the day's minutes as BOTH
+      // remainder and double time. A 13-hour day is 720m of ordinary
+      // remainder and 60m of double time — 780 priced minutes, never 840.
+      //   remainder: 4 x 480 + 720 = 2640, threshold 2400 -> 2400 regular,
+      //              240 weekly OT (all on Friday).
+      //   2400m x 2800/60 = 112_000
+      //    240m x 4200/60 =  16_800
+      //     60m x 5600/60 =   5_600
+      //   gross           = 134_400
+      const result = ok(
+        computeWeekEarnings(
+          input({
+            arrangements: [
+              tieredArrangement({ overtime_daily_threshold_minutes: null }),
+            ],
+            entries: [
+              ...[MON, TUE, WED, THU].map(d => worked(d, 480)),
+              worked(FRI, 780),
+            ],
+          })
+        )
+      );
+
+      expect(result.lines.reduce((sum, l) => sum + l.minutes, 0)).toBe(2700);
+      expect(shape(result)).toEqual([
+        ['regular', 2400, 2800, 112_000],
+        ['overtime', 240, 4200, 16_800],
+        ['doubletime', 60, 5600, 5_600],
+      ]);
+      expect(result.gross_minor).toBe(134_400);
+    });
+
+    it('prices a week exactly as before when no daily tier is configured', () => {
+      // The pre-078 arrangement, unchanged: five 10-hour days, weekly
+      // threshold only. 50h -> 40 regular + 10 weekly OT, the SAME split the
+      // daily route reaches, but it must still reach it with the daily
+      // columns null.
+      const result = ok(
+        computeWeekEarnings(
+          input({
+            arrangements: [
+              tieredArrangement({
+                overtime_daily_threshold_minutes: null,
+                doubletime_daily_threshold_minutes: null,
+                doubletime_multiplier: null,
+                seventh_day_multiplier: null,
+                seventh_day_doubletime_after_minutes: null,
+              }),
+            ],
+            entries: [MON, TUE, WED, THU, FRI].map(d => worked(d, 600)),
+          })
+        )
+      );
+
+      expect(shape(result)).toEqual([
+        ['regular', 2400, 2800, 112_000],
+        ['overtime', 600, 4200, 42_000],
+      ]);
+      expect(result.gross_minor).toBe(154_000);
+    });
+
+    it('leaves PTO, paid cancellations and reimbursements outside every daily tier', () => {
+      // A daily tier prices WORKED minutes. PTO and a paid cancellation are
+      // not worked minutes: they must not push a day over a daily threshold,
+      // and they must not be promoted by one. Fri: 10h worked (480 + 120
+      // daily OT) plus 8h PTO on Saturday and a 4h paid cancellation on
+      // Sunday, neither of which changes a single premium minute.
+      //   worked Mon..Fri 600 each: regular 2400, daily OT 600, remainder
+      //   2400 = threshold, no weekly OT — identical to the named case.
+      //   pto 480m x 2800/60          = 22_400
+      //   cancellation 240m x 2800/60 = 11_200
+      //   gross = 112_000 + 42_000 + 22_400 + 11_200 = 187_600
+      const result = ok(
+        computeWeekEarnings(
+          input({
+            arrangements: [tieredArrangement()],
+            entries: [
+              ...[MON, TUE, WED, THU, FRI].map(d => worked(d, 600)),
+              cancelled(SUN, 240),
+            ],
+            pto_usage: [pto(SAT, 480)],
+          })
+        )
+      );
+
+      expect(shape(result)).toEqual([
+        ['regular', 2400, 2800, 112_000],
+        ['overtime', 600, 4200, 42_000],
+        ['cancellation_paid', 240, 2800, 11_200],
+        ['pto', 480, 2800, 22_400],
+      ]);
+      expect(result.gross_minor).toBe(187_600);
+      // Seven days have a record but only five were WORKED, so the
+      // seventh-day rule stays off — PTO is not a worked day.
+      expect(result.lines.some(l => l.kind === 'doubletime')).toBe(false);
+      expect(result.worked_minutes).toBe(3000);
+      expect(result.payable_minutes).toBe(3000 + 240 + 480);
+    });
+  });
+});
+
+// =============================================================================
+// The preset is DATA: applying one must be indistinguishable from typing the
+// same numbers by hand (`docs/design/screens-pay-terms.md` §5.1 — "Applying a
+// preset fills fields").
+//
+// This is the one place the engine's case table is allowed to reach into
+// `payTermsPresets.ts`, and it is the assertion that keeps the preset honest:
+// if someone edits a figure in the data file, this test does not fail — it
+// pins the EQUIVALENCE, and the hand-computed cases above pin the figures.
+// =============================================================================
+
+describe('earningsService — a preset prices identically to the same terms typed by hand', () => {
+  const PRESET_WEEK_START = '2026-08-03';
+
+  function withTerms(over: Partial<PayArrangement>): PayArrangement {
+    return {
+      id: '11111111-1111-4111-8111-111111111101',
+      household_id: '11111111-1111-4111-8111-111111111190',
+      carer_id: '11111111-1111-4111-8111-111111111191',
+      rate_minor: 2800,
+      bill_rate_minor: null,
+      currency: 'USD',
+      overtime_threshold_minutes: null,
+      overtime_multiplier: 1.5,
+      guaranteed_minutes_per_week: null,
+      pto_entitlement_minutes_per_year: null,
+      mileage_rate_per_mile_minor: null,
+      cancellation_paid_within_hours: null,
+      valid_from: '2026-01-01',
+      valid_to: null,
+      carer_display_name: 'Nia Rowe',
+      note: null,
+      created_by: '11111111-1111-4111-8111-111111111192',
+      created_at: '2026-01-01T09:00:00.000Z',
+      ...over,
+    };
+  }
+
+  // A week that exercises EVERY tier at once: six 8h days and a long seventh,
+  // so the seventh-day rule, the weekly threshold and double time all fire.
+  const entries = [
+    '2026-08-03',
+    '2026-08-04',
+    '2026-08-05',
+    '2026-08-06',
+    '2026-08-07',
+    '2026-08-08',
+  ]
+    .map(d => ({ kind: 'worked' as const, local_date: d, minutes: 480 }))
+    .concat([
+      { kind: 'worked' as const, local_date: '2026-08-09', minutes: 600 },
+    ]);
+
+  it('produces byte-identical earnings from the preset values and from hand-typed ones', () => {
+    const fromPreset = computeWeekEarnings({
+      week_start: PRESET_WEEK_START,
+      entries,
+      arrangements: [withTerms({ ...COMMON_DEFAULTS_PRESET.values })],
+    });
+
+    const byHand = computeWeekEarnings({
+      week_start: PRESET_WEEK_START,
+      entries,
+      arrangements: [
+        withTerms({
+          overtime_threshold_minutes: 2400,
+          overtime_multiplier: 1.5,
+          overtime_daily_threshold_minutes: 480,
+          doubletime_daily_threshold_minutes: 720,
+          doubletime_multiplier: 2,
+          seventh_day_multiplier: 1.5,
+          seventh_day_doubletime_after_minutes: 480,
+        }),
+      ],
+    });
+
+    expect(fromPreset).toEqual(byHand);
+    // And it is the hand-computed figure, not merely two equal wrong answers.
+    expect(ok(fromPreset).gross_minor).toBe(190_400);
+  });
+
+  it('carries the §5.3 figures — 8h/1.5x daily, 40h/1.5x weekly, 12h/2x double, seventh day 1.5x then 2x after 8h', () => {
+    expect(COMMON_DEFAULTS_PRESET.values).toEqual({
+      overtime_threshold_minutes: 2400,
+      overtime_multiplier: 1.5,
+      overtime_daily_threshold_minutes: 480,
+      doubletime_daily_threshold_minutes: 720,
+      doubletime_multiplier: 2,
+      seventh_day_multiplier: 1.5,
+      seventh_day_doubletime_after_minutes: 480,
     });
   });
 });

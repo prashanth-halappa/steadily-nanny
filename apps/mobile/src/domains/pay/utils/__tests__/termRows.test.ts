@@ -13,6 +13,13 @@ function fakeT(key: string, params?: Record<string, unknown>): string {
   const templates: Record<string, string> = {
     'terms.overtimeLabel': 'Overtime',
     'terms.overtimeValue': `After ${params?.hours}h, at ${params?.multiplier}×`,
+    'terms.dailyOvertimeLabel': 'Daily overtime',
+    'terms.dailyOvertimeValue': `After ${params?.hours}h in a day, at ${params?.multiplier}×`,
+    'terms.doubletimeLabel': 'Double time',
+    'terms.doubletimeValue': `After ${params?.hours}h in a day, at ${params?.multiplier}×`,
+    'terms.seventhDayLabel': 'Seventh consecutive day',
+    'terms.seventhDayValue': `At ${params?.multiplier}×`,
+    'terms.seventhDayTwoTierValue': `At ${params?.multiplier}×, then ${params?.doubleMultiplier}× after ${params?.hours}h`,
     'terms.guaranteedHoursLabel': 'Guaranteed hours',
     'terms.guaranteedHoursValue': `${params?.hours}h a week`,
     'terms.ptoLabel': 'Paid time off',
@@ -38,6 +45,11 @@ const fullArrangement: PayArrangement = {
   currency: 'GBP',
   overtime_threshold_minutes: 2400,
   overtime_multiplier: 1.5,
+  overtime_daily_threshold_minutes: 480,
+  doubletime_daily_threshold_minutes: 720,
+  doubletime_multiplier: 2,
+  seventh_day_multiplier: 1.5,
+  seventh_day_doubletime_after_minutes: 480,
   guaranteed_minutes_per_week: 2400,
   pto_entitlement_minutes_per_year: 8400,
   mileage_rate_per_mile_minor: 45,
@@ -54,6 +66,11 @@ const fullArrangement: PayArrangement = {
 const emptyArrangement: PayArrangement = {
   ...fullArrangement,
   overtime_threshold_minutes: null,
+  overtime_daily_threshold_minutes: null,
+  doubletime_daily_threshold_minutes: null,
+  doubletime_multiplier: null,
+  seventh_day_multiplier: null,
+  seventh_day_doubletime_after_minutes: null,
   guaranteed_minutes_per_week: null,
   pto_entitlement_minutes_per_year: null,
   mileage_rate_per_mile_minor: null,
@@ -61,10 +78,13 @@ const emptyArrangement: PayArrangement = {
 };
 
 describe('buildTermRows', () => {
-  it('returns exactly six rows, in the spec order', () => {
+  it('returns exactly nine rows, in the spec order — the three 078 tiers sit between weekly overtime and guaranteed hours', () => {
     const rows = buildTermRows(fullArrangement, fakeT as never);
     expect(rows.map(r => r.key)).toEqual([
       'overtime',
+      'dailyOvertime',
+      'doubletime',
+      'seventhDay',
       'guaranteedHours',
       'pto',
       'cancellations',
@@ -83,10 +103,66 @@ describe('buildTermRows', () => {
     expect(byKey.mileage).toBe('£0.45 a mile');
   });
 
+  // 3-E2: the daily tier reuses `overtime_multiplier` — it deliberately has
+  // no multiplier column of its own, so the row must read the weekly one.
+  it('the daily overtime row reuses the weekly overtime multiplier', () => {
+    const rows = buildTermRows(
+      { ...fullArrangement, overtime_multiplier: 1.75 },
+      fakeT as never
+    );
+    expect(rows.find(r => r.key === 'dailyOvertime')?.value).toBe(
+      'After 8h in a day, at 1.75×'
+    );
+  });
+
+  it('the double-time row uses its own shared multiplier', () => {
+    const rows = buildTermRows(fullArrangement, fakeT as never);
+    expect(rows.find(r => r.key === 'doubletime')?.value).toBe(
+      'After 12h in a day, at 2×'
+    );
+  });
+
+  it('a two-tier seventh day states both rates and where the second starts', () => {
+    const rows = buildTermRows(fullArrangement, fakeT as never);
+    expect(rows.find(r => r.key === 'seventhDay')?.value).toBe(
+      'At 1.5×, then 2× after 8h'
+    );
+  });
+
+  it('a single-tier seventh day states one rate and no second tier', () => {
+    const rows = buildTermRows(
+      { ...fullArrangement, seventh_day_doubletime_after_minutes: null },
+      fakeT as never
+    );
+    expect(rows.find(r => r.key === 'seventhDay')?.value).toBe('At 1.5×');
+  });
+
+  // A pre-078 row carries no such column at all. It must read as "no tier",
+  // never as a crash and never as a fabricated 1.5×.
+  it('an arrangement predating 078 (columns absent, not just null) reads as no tier', () => {
+    const preMigration: PayArrangement = {
+      ...fullArrangement,
+      overtime_daily_threshold_minutes: undefined,
+      doubletime_daily_threshold_minutes: undefined,
+      doubletime_multiplier: undefined,
+      seventh_day_multiplier: undefined,
+      seventh_day_doubletime_after_minutes: undefined,
+    };
+    const byKey = Object.fromEntries(
+      buildTermRows(preMigration, fakeT as never).map(r => [r.key, r.value])
+    );
+    expect(byKey.dailyOvertime).toBeNull();
+    expect(byKey.doubletime).toBeNull();
+    expect(byKey.seventhDay).toBeNull();
+  });
+
   it('a null term renders null value (caller applies "Not set")', () => {
     const rows = buildTermRows(emptyArrangement, fakeT as never);
     const byKey = Object.fromEntries(rows.map(r => [r.key, r.value]));
     expect(byKey.overtime).toBeNull();
+    expect(byKey.dailyOvertime).toBeNull();
+    expect(byKey.doubletime).toBeNull();
+    expect(byKey.seventhDay).toBeNull();
     expect(byKey.guaranteedHours).toBeNull();
     expect(byKey.pto).toBeNull();
     expect(byKey.mileage).toBeNull();

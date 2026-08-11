@@ -102,6 +102,19 @@ export function PaySetupScreen() {
   const [overtimeThresholdHoursText, setOvertimeThresholdHoursText] =
     useState('');
   const [overtimeMultiplierText, setOvertimeMultiplierText] = useState('1.5');
+  // 078's tiers start blank on a first-ever arrangement — there is nothing
+  // agreed yet to seed from, and a prefilled 8/12/1.5 would read as a term
+  // the family had already chosen.
+  const [dailyOvertimeThresholdHoursText, setDailyOvertimeThresholdHoursText] =
+    useState('');
+  const [doubletimeThresholdHoursText, setDoubletimeThresholdHoursText] =
+    useState('');
+  const [doubletimeMultiplierText, setDoubletimeMultiplierText] = useState('');
+  const [seventhDayMultiplierText, setSeventhDayMultiplierText] = useState('');
+  const [
+    seventhDayDoubletimeAfterHoursText,
+    setSeventhDayDoubletimeAfterHoursText,
+  ] = useState('');
   const [guaranteedHoursText, setGuaranteedHoursText] = useState('');
   const [ptoHoursPerYearText, setPtoHoursPerYearText] = useState('');
   const [mileageRateText, setMileageRateText] = useState('');
@@ -243,6 +256,11 @@ export function PaySetupScreen() {
     todayISO,
     overtimeThresholdHoursText,
     overtimeMultiplierText,
+    dailyOvertimeThresholdHoursText,
+    doubletimeThresholdHoursText,
+    doubletimeMultiplierText,
+    seventhDayMultiplierText,
+    seventhDayDoubletimeAfterHoursText,
     guaranteedHoursText,
     ptoHoursPerYearText,
     mileageRateText,
@@ -372,6 +390,70 @@ export function PaySetupScreen() {
         </View>
         <Small className="text-muted-foreground">
           {t('changeSheet.overtimeHint')}
+        </Small>
+      </View>
+
+      {/* 078's three further tiers (`screens-pay-terms.md` §4.3). Daily
+          overtime has no multiplier input of its own — it is paid at the
+          weekly `overtime_multiplier` above. */}
+      <View className="gap-2">
+        <Label>{t('changeSheet.dailyOvertimeAfterLabel')}</Label>
+        <Input
+          testID="pay-setup-daily-overtime-threshold-input"
+          accessibilityLabel={t('changeSheet.dailyOvertimeAfterLabel')}
+          value={dailyOvertimeThresholdHoursText}
+          onChangeText={setDailyOvertimeThresholdHoursText}
+          keyboardType="decimal-pad"
+        />
+        <Small className="text-muted-foreground">
+          {t('changeSheet.dailyOvertimeHint')}
+        </Small>
+      </View>
+
+      <View className="gap-2">
+        <Label>{t('changeSheet.doubletimeAfterLabel')}</Label>
+        <View className="flex-row gap-2">
+          <Input
+            testID="pay-setup-doubletime-threshold-input"
+            accessibilityLabel={t('changeSheet.doubletimeAfterLabel')}
+            value={doubletimeThresholdHoursText}
+            onChangeText={setDoubletimeThresholdHoursText}
+            keyboardType="decimal-pad"
+            className="flex-1"
+          />
+          <Input
+            testID="pay-setup-doubletime-multiplier-input"
+            accessibilityLabel={t('changeSheet.doubletimePaidAtLabel')}
+            value={doubletimeMultiplierText}
+            onChangeText={setDoubletimeMultiplierText}
+            keyboardType="decimal-pad"
+            className="flex-1"
+          />
+        </View>
+      </View>
+
+      <View className="gap-2">
+        <Label>{t('changeSheet.seventhDayFieldLabel')}</Label>
+        <View className="flex-row gap-2">
+          <Input
+            testID="pay-setup-seventh-day-multiplier-input"
+            accessibilityLabel={t('changeSheet.seventhDayPaidAtLabel')}
+            value={seventhDayMultiplierText}
+            onChangeText={setSeventhDayMultiplierText}
+            keyboardType="decimal-pad"
+            className="flex-1"
+          />
+          <Input
+            testID="pay-setup-seventh-day-doubletime-after-input"
+            accessibilityLabel={t('changeSheet.seventhDayDoubletimeAfterLabel')}
+            value={seventhDayDoubletimeAfterHoursText}
+            onChangeText={setSeventhDayDoubletimeAfterHoursText}
+            keyboardType="decimal-pad"
+            className="flex-1"
+          />
+        </View>
+        <Small className="text-muted-foreground">
+          {t('changeSheet.seventhDayHint')}
         </Small>
       </View>
 

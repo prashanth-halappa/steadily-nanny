@@ -1,13 +1,13 @@
 /**
  * @module domains/pay/utils/termRows
  *
- * The six `AmountRow`s every "Pay & terms" card shows, in the fixed order
+ * The nine `AmountRow`s every "Pay & terms" card shows, in the fixed order
  * TIER0-CX-SPEC.md §2 specifies, built from one `PayArrangement`. Shared
  * between the parent's current-terms card (`PayArrangementScreen`) and the
  * nanny's read-only card (`MyPayScreen`) so the two surfaces can never drift
  * on wording or order.
  *
- * The PTO balance row (6th) is the real `pto_ledger` balance (TIER0-PLAN.md
+ * The PTO balance row (last) is the real `pto_ledger` balance (TIER0-PLAN.md
  * Phase 3), passed in as `balance` — the THIRD, distinctly three-valued,
  * argument this function takes on purpose, so it maps directly onto
  * `usePtoBalance(...).data`'s own three states without the caller having to
@@ -88,6 +88,59 @@ export function buildTermRows(
               hours: arrangement.overtime_threshold_minutes / 60,
               multiplier: formatMultiplier(arrangement.overtime_multiplier),
             }),
+    },
+    // 078's three tiers, between weekly overtime and the guarantee — the
+    // order the terms document reads in (`screens-pay-terms.md` §3). Each is
+    // null when its tier is off, which the caller renders as "Not set": an
+    // explicit agreement, never a nag, and never a fabricated multiplier.
+    {
+      key: 'dailyOvertime',
+      label: t('terms.dailyOvertimeLabel'),
+      value:
+        arrangement.overtime_daily_threshold_minutes == null
+          ? null
+          : t('terms.dailyOvertimeValue', {
+              hours: arrangement.overtime_daily_threshold_minutes / 60,
+              // Reuses the WEEKLY multiplier by design — the daily tier has
+              // no multiplier column of its own (§3).
+              multiplier: formatMultiplier(arrangement.overtime_multiplier),
+            }),
+    },
+    {
+      key: 'doubletime',
+      label: t('terms.doubletimeLabel'),
+      value:
+        arrangement.doubletime_daily_threshold_minutes == null ||
+        arrangement.doubletime_multiplier == null
+          ? null
+          : t('terms.doubletimeValue', {
+              hours: arrangement.doubletime_daily_threshold_minutes / 60,
+              multiplier: formatMultiplier(arrangement.doubletime_multiplier),
+            }),
+    },
+    {
+      key: 'seventhDay',
+      label: t('terms.seventhDayLabel'),
+      value:
+        arrangement.seventh_day_multiplier == null
+          ? null
+          : arrangement.seventh_day_doubletime_after_minutes == null ||
+              arrangement.doubletime_multiplier == null
+            ? // Single-tier: one rate for the whole day.
+              t('terms.seventhDayValue', {
+                multiplier: formatMultiplier(
+                  arrangement.seventh_day_multiplier
+                ),
+              })
+            : t('terms.seventhDayTwoTierValue', {
+                multiplier: formatMultiplier(
+                  arrangement.seventh_day_multiplier
+                ),
+                doubleMultiplier: formatMultiplier(
+                  arrangement.doubletime_multiplier
+                ),
+                hours: arrangement.seventh_day_doubletime_after_minutes / 60,
+              }),
     },
     {
       key: 'guaranteedHours',

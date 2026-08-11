@@ -135,6 +135,21 @@ export class PayArrangementCommandService {
       currency,
       overtime_threshold_minutes: request.overtime_threshold_minutes ?? null,
       overtime_multiplier: request.overtime_multiplier,
+      // 078's daily tiers and the seventh consecutive day. Written even when
+      // omitted, and for the same reason `cancellation_paid_within_hours`
+      // below is: null here MEANS "this tier does not exist", so stating it
+      // at the call site is the difference between a term the parties agreed
+      // and a field somebody forgot. Playbook §2b T17 — this literal has no
+      // exhaustiveness check, so a field left out of it silently never
+      // persists and the engine prices a week under terms nobody chose.
+      overtime_daily_threshold_minutes:
+        request.overtime_daily_threshold_minutes ?? null,
+      doubletime_daily_threshold_minutes:
+        request.doubletime_daily_threshold_minutes ?? null,
+      doubletime_multiplier: request.doubletime_multiplier ?? null,
+      seventh_day_multiplier: request.seventh_day_multiplier ?? null,
+      seventh_day_doubletime_after_minutes:
+        request.seventh_day_doubletime_after_minutes ?? null,
       guaranteed_minutes_per_week: request.guaranteed_minutes_per_week ?? null,
       pto_entitlement_minutes_per_year:
         request.pto_entitlement_minutes_per_year ?? null,

@@ -23,7 +23,7 @@ const timesheet: Timesheet = {
   carer_id: 'carer-1',
   carer_display_name: 'Rowe, Nia',
   week_start: '2026-08-03',
-  total_minutes: 2580,
+  total_minutes: 2700,
   status: 'approved',
   approved_by: 'parent-1',
   approved_at: '2026-08-10T09:30:00.000Z',
@@ -57,6 +57,16 @@ const earnings: WeekEarningsOk = {
       amount_minor: 8325,
       from_date: '2026-08-08',
       to_date: '2026-08-08',
+      arrangement_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    },
+    {
+      kind: 'doubletime',
+      minutes: 120,
+      rate_minor: 3700,
+      multiplier: 2,
+      amount_minor: 7400,
+      from_date: '2026-08-09',
+      to_date: '2026-08-09',
       arrangement_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
     },
     {
@@ -100,10 +110,10 @@ const earnings: WeekEarningsOk = {
       arrangement_id: null,
     },
   ],
-  gross_minor: 106_375,
+  gross_minor: 113_775,
   reimbursements_minor: 1250,
-  worked_minutes: 2580,
-  payable_minutes: 3300,
+  worked_minutes: 2700,
+  payable_minutes: 3420,
   guaranteed_minutes_per_week: 2400,
 };
 
@@ -115,15 +125,16 @@ const EXPECTED_CSV =
     'date,description,kind,minutes,rate_minor,amount_minor,currency',
     '2026-08-03,Regular hours (to 2026-08-07),regular,2400,1850,74000,GBP',
     '2026-08-08,Overtime at 1.5x,overtime,180,2775,8325,GBP',
+    '2026-08-09,Double time at 2x,doubletime,120,3700,7400,GBP',
     '2026-08-05,"Cancelled shift, paid",cancellation_paid,240,1850,7400,GBP',
     '2026-08-06,Paid time off,pto,480,1850,14800,GBP',
     '2026-08-03,Guaranteed hours top-up (to 2026-08-09),guaranteed_topup,60,1850,1850,GBP',
     '2026-08-04,Reimbursement,reimbursements,0,0,1250,GBP',
     '',
-    'total_gross_minor,106375',
+    'total_gross_minor,113775',
     'reimbursements_minor,1250',
     'paid_to_date_minor,30000',
-    'balance_due_minor,76375',
+    'balance_due_minor,83775',
     'carer_display_name,"Rowe, Nia"',
     'week_start,2026-08-03',
     'currency,GBP',
@@ -158,9 +169,9 @@ describe('renderWeekExportCsv — the rich fixture, byte for byte', () => {
       paidToDateMinor: 0,
     });
 
-    expect(csv).toContain(`${CRLF}total_gross_minor,106375${CRLF}`);
+    expect(csv).toContain(`${CRLF}total_gross_minor,113775${CRLF}`);
     expect(csv).toContain(`${CRLF}paid_to_date_minor,0${CRLF}`);
-    expect(csv).toContain(`${CRLF}balance_due_minor,106375${CRLF}`);
+    expect(csv).toContain(`${CRLF}balance_due_minor,113775${CRLF}`);
     // The reimbursement line's 1250 is in the rows but never in the gross.
     expect(csv).toContain(`${CRLF}reimbursements_minor,1250${CRLF}`);
   });
@@ -173,7 +184,7 @@ describe('renderWeekExportCsv — the rich fixture, byte for byte', () => {
     });
 
     expect(csv).not.toContain('£');
-    expect(csv).not.toContain('1063.75');
+    expect(csv).not.toContain('1137.75');
     expect(csv).not.toContain('740.00');
     // Every amount-bearing field is bare digits (a leading '-' allowed on the
     // balance): no symbol, no decimal point, no thousands separator.
@@ -188,7 +199,7 @@ describe('renderWeekExportCsv — the rich fixture, byte for byte', () => {
     // Read the numeric columns from the END — only `description` can carry a
     // comma of its own.
     const dataRows = rows.filter(row => /^\d{4}-\d{2}-\d{2},/.test(row));
-    expect(dataRows).toHaveLength(6);
+    expect(dataRows).toHaveLength(7);
     for (const row of dataRows) {
       const fields = row.split(',');
       expect(fields.at(-1)).toBe('GBP');
@@ -266,9 +277,9 @@ describe('renderWeekExportCsv — a line kind this build does not know', () => {
       paidToDateMinor: 30_000,
     });
 
-    expect(csv).toContain(`${CRLF}total_gross_minor,106375${CRLF}`);
+    expect(csv).toContain(`${CRLF}total_gross_minor,113775${CRLF}`);
     expect(csv).toContain(`${CRLF}reimbursements_minor,1250${CRLF}`);
-    expect(csv).toContain(`${CRLF}balance_due_minor,76375${CRLF}`);
+    expect(csv).toContain(`${CRLF}balance_due_minor,83775${CRLF}`);
   });
 });
 
@@ -305,7 +316,7 @@ describe('carerSlug', () => {
 describe('renderWeekExportCsv — the parent adjustment line', () => {
   const adjusted: WeekEarningsOk = {
     ...earnings,
-    gross_minor: 104_375,
+    gross_minor: 111_775,
     adjustment: {
       amount_minor: -2000,
       note: 'Advance repaid',
@@ -324,8 +335,8 @@ describe('renderWeekExportCsv — the parent adjustment line', () => {
     const rows = csv.split(CRLF);
     // Immediately after the last line record, immediately before the blank
     // separator — the adjustment closes the line section.
-    expect(rows[7]).toBe(',Adjustment: Advance repaid,adjustment,,,-2000,GBP');
-    expect(rows[8]).toBe('');
+    expect(rows[8]).toBe(',Adjustment: Advance repaid,adjustment,,,-2000,GBP');
+    expect(rows[9]).toBe('');
   });
 
   it('needs no change to the totals — the frozen gross was written adjusted', () => {
@@ -335,8 +346,8 @@ describe('renderWeekExportCsv — the parent adjustment line', () => {
       paidToDateMinor: 30_000,
     });
 
-    expect(csv).toContain(`${CRLF}total_gross_minor,104375${CRLF}`);
-    expect(csv).toContain(`${CRLF}balance_due_minor,74375${CRLF}`);
+    expect(csv).toContain(`${CRLF}total_gross_minor,111775${CRLF}`);
+    expect(csv).toContain(`${CRLF}balance_due_minor,81775${CRLF}`);
     // Untouched: a deduction from WAGES never moves the reimbursement total.
     expect(csv).toContain(`${CRLF}reimbursements_minor,1250${CRLF}`);
   });
@@ -346,7 +357,7 @@ describe('renderWeekExportCsv — the parent adjustment line', () => {
       timesheet,
       earnings: {
         ...adjusted,
-        gross_minor: 108_875,
+        gross_minor: 116_275,
         adjustment: {
           amount_minor: 2500,
           note: 'Late pickup',

@@ -129,6 +129,49 @@ export function parseHoursToMinutes(text: string): number | null {
 }
 
 /**
+ * API TWIN: `OvertimeMultiplierSchema` (shared-types payArrangement.schema)
+ * — a `numeric(3,2)` column: at least 1, at most 9.99, at most two decimals.
+ * The epsilon form avoids `multipleOf(0.01)`'s float false negatives
+ * (8.88 / 0.01 !== 888). One function, because 078 added three more columns
+ * bounded by exactly this shape (`doubletime_multiplier`,
+ * `seventh_day_multiplier`) and four copies of it eventually disagree.
+ */
+function isValidMultiplier(multiplier: number): boolean {
+  return (
+    Number.isFinite(multiplier) &&
+    multiplier >= 1 &&
+    multiplier <= 9.99 &&
+    Math.abs(multiplier * 100 - Math.round(multiplier * 100)) < 1e-9
+  );
+}
+
+/**
+ * Three-valued, because a tier's field has three states and conflating two of
+ * them is how a refusal turns into a silent correction:
+ *   `null`      — blank, an explicit "no tier" (valid, never an error)
+ *   a number    — a valid value
+ *   `undefined` — typed but invalid; the caller must REFUSE (playbook §2.9's
+ *                 refuse-don't-clamp), never fall back to the blank arm.
+ */
+function parseOptionalThresholdMinutes(
+  text: string
+): number | null | undefined {
+  const trimmed = text.trim();
+  if (trimmed === '') return null;
+  const minutes = parseHoursToMinutes(trimmed);
+  // 078's `> 0` domain floors: "after 0 hours in a day" is not a tier.
+  return minutes === null || minutes <= 0 ? undefined : minutes;
+}
+
+/** Same three-valued contract as `parseOptionalThresholdMinutes`. */
+function parseOptionalMultiplier(text: string): number | null | undefined {
+  const trimmed = text.trim();
+  if (trimmed === '') return null;
+  const multiplier = Number(trimmed);
+  return isValidMultiplier(multiplier) ? multiplier : undefined;
+}
+
+/**
  * The household's current `cancellation_paid_within_hours` column allows
  * `0` (= no pay); the arrangement models that as `null`, never `0` (review
  * finding 10). This is the zero-maps-to-no-pay mapping, applied once here
@@ -150,6 +193,25 @@ export interface PayTermsFormState {
   todayISO: string;
   overtimeThresholdHoursText: string;
   overtimeMultiplierText: string;
+  /**
+   * The 078 tiers. Every one of these is REQUIRED on the state (never
+   * optional) so the compiler names both forms the day a sixth is added —
+   * playbook T17's failure mode is a new column that some screen forgets to
+   * pass, which then silently never persists, and `?:` is exactly how that
+   * happens.
+   *
+   * Daily overtime deliberately has NO multiplier field of its own: it is
+   * paid at `overtime_multiplier`, the weekly one
+   * (`docs/design/screens-pay-terms.md` §3).
+   */
+  dailyOvertimeThresholdHoursText: string;
+  doubletimeThresholdHoursText: string;
+  /** Shared: the daily double-time tier AND the seventh day's second tier
+   * are both paid at this rate (078's header — two columns holding the same
+   * number is two columns that eventually disagree). */
+  doubletimeMultiplierText: string;
+  seventhDayMultiplierText: string;
+  seventhDayDoubletimeAfterHoursText: string;
   guaranteedHoursText: string;
   ptoHoursPerYearText: string;
   mileageRateText: string;
@@ -195,19 +257,62 @@ export function buildCreatePayArrangementRequest(
     const minutes = parseHoursToMinutes(thresholdTrimmed);
     if (minutes === null || minutes <= 0) return null;
     const multiplier = Number(state.overtimeMultiplierText.trim());
-    // API TWIN: OvertimeMultiplierSchema (shared-types payArrangement.schema)
-    // — numeric(3,2) column: max 9.99, at most two decimals. The epsilon form
-    // avoids multipleOf(0.01)'s float false negatives (8.88 / 0.01 !== 888).
-    if (
-      !Number.isFinite(multiplier) ||
-      multiplier < 1 ||
-      multiplier > 9.99 ||
-      Math.abs(multiplier * 100 - Math.round(multiplier * 100)) >= 1e-9
-    ) {
-      return null;
-    }
+    if (!isValidMultiplier(multiplier)) return null;
     overtimeThresholdMinutes = minutes;
     overtimeMultiplier = multiplier;
+  }
+
+  // ---------------------------------------------------------------------
+  // 078's daily tiers and the seventh day. Every branch below REFUSES
+  // (returns null, disabling the caller's save button) rather than clamping
+  // or dropping a field — playbook §2.9. Each cross-field rule below names
+  // the migration CHECK it mirrors: the DB is the last line, this is the
+  // fast-fail so a parent is told before the network call, not after.
+  // ---------------------------------------------------------------------
+  const dailyOvertimeThresholdMinutes = parseOptionalThresholdMinutes(
+    state.dailyOvertimeThresholdHoursText
+  );
+  if (dailyOvertimeThresholdMinutes === undefined) return null;
+
+  const doubletimeThresholdMinutes = parseOptionalThresholdMinutes(
+    state.doubletimeThresholdHoursText
+  );
+  if (doubletimeThresholdMinutes === undefined) return null;
+
+  const doubletimeMultiplier = parseOptionalMultiplier(
+    state.doubletimeMultiplierText
+  );
+  if (doubletimeMultiplier === undefined) return null;
+
+  const seventhDayMultiplier = parseOptionalMultiplier(
+    state.seventhDayMultiplierText
+  );
+  if (seventhDayMultiplier === undefined) return null;
+
+  const seventhDayDoubletimeAfterMinutes = parseOptionalThresholdMinutes(
+    state.seventhDayDoubletimeAfterHoursText
+  );
+  if (seventhDayDoubletimeAfterMinutes === undefined) return null;
+
+  // pay_arrangements_doubletime_daily_needs_multiplier
+  if (doubletimeThresholdMinutes !== null && doubletimeMultiplier === null) {
+    return null;
+  }
+  // pay_arrangements_daily_tiers_ordered — strictly greater, so "double time
+  // after 8h, overtime after 8h" is refused too, not silently collapsed.
+  if (
+    doubletimeThresholdMinutes !== null &&
+    dailyOvertimeThresholdMinutes !== null &&
+    doubletimeThresholdMinutes <= dailyOvertimeThresholdMinutes
+  ) {
+    return null;
+  }
+  // pay_arrangements_seventh_day_second_tier_needs_multiplier
+  if (
+    seventhDayDoubletimeAfterMinutes !== null &&
+    (seventhDayMultiplier === null || doubletimeMultiplier === null)
+  ) {
+    return null;
   }
 
   let guaranteedMinutesPerWeek: number | null = null;
@@ -254,6 +359,14 @@ export function buildCreatePayArrangementRequest(
     currency: state.currency,
     overtime_threshold_minutes: overtimeThresholdMinutes,
     overtime_multiplier: overtimeMultiplier,
+    // All five are always present, `null` when the tier is off — never
+    // omitted. A key the request doesn't carry is a column the insert never
+    // writes (playbook T17).
+    overtime_daily_threshold_minutes: dailyOvertimeThresholdMinutes,
+    doubletime_daily_threshold_minutes: doubletimeThresholdMinutes,
+    doubletime_multiplier: doubletimeMultiplier,
+    seventh_day_multiplier: seventhDayMultiplier,
+    seventh_day_doubletime_after_minutes: seventhDayDoubletimeAfterMinutes,
     guaranteed_minutes_per_week: guaranteedMinutesPerWeek,
     pto_entitlement_minutes_per_year: ptoEntitlementMinutesPerYear,
     mileage_rate_per_mile_minor: mileageRatePerMileMinor,

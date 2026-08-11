@@ -80,6 +80,18 @@ interface PayChangeSheetProps {
   householdWeekStartsOn: number;
 }
 
+/** A minutes column as an hours field's text. Absent or null (078: an
+ * explicit "no tier") seeds an EMPTY field — never a fabricated 8 or 1.5,
+ * which would read as a term the family already agreed. */
+function minutesToHoursText(minutes: number | null | undefined): string {
+  return minutes == null ? '' : String(minutes / 60);
+}
+
+/** Same, for the nullable multiplier columns. */
+function multiplierToText(multiplier: number | null | undefined): string {
+  return multiplier == null ? '' : String(multiplier);
+}
+
 function EffectiveDateChip({
   testID,
   selected,
@@ -131,6 +143,16 @@ export function PayChangeSheet({
   const [overtimeThresholdHoursText, setOvertimeThresholdHoursText] =
     useState('');
   const [overtimeMultiplierText, setOvertimeMultiplierText] = useState('1.5');
+  const [dailyOvertimeThresholdHoursText, setDailyOvertimeThresholdHoursText] =
+    useState('');
+  const [doubletimeThresholdHoursText, setDoubletimeThresholdHoursText] =
+    useState('');
+  const [doubletimeMultiplierText, setDoubletimeMultiplierText] = useState('');
+  const [seventhDayMultiplierText, setSeventhDayMultiplierText] = useState('');
+  const [
+    seventhDayDoubletimeAfterHoursText,
+    setSeventhDayDoubletimeAfterHoursText,
+  ] = useState('');
   const [guaranteedHoursText, setGuaranteedHoursText] = useState('');
   const [ptoHoursPerYearText, setPtoHoursPerYearText] = useState('');
   const [mileageRateText, setMileageRateText] = useState('');
@@ -150,11 +172,29 @@ export function PayChangeSheet({
     setEffectiveChoice('today');
     setEarlierDateText('');
     setOvertimeThresholdHoursText(
-      currentArrangement.overtime_threshold_minutes === null
-        ? ''
-        : String(currentArrangement.overtime_threshold_minutes / 60)
+      minutesToHoursText(currentArrangement.overtime_threshold_minutes)
     );
     setOvertimeMultiplierText(String(currentArrangement.overtime_multiplier));
+    // The 078 tiers, seeded exactly like the weekly pair above: a change that
+    // only touches the rate must re-send every other term unchanged, or the
+    // new (append-only) row silently drops the tiers (playbook T17).
+    setDailyOvertimeThresholdHoursText(
+      minutesToHoursText(currentArrangement.overtime_daily_threshold_minutes)
+    );
+    setDoubletimeThresholdHoursText(
+      minutesToHoursText(currentArrangement.doubletime_daily_threshold_minutes)
+    );
+    setDoubletimeMultiplierText(
+      multiplierToText(currentArrangement.doubletime_multiplier)
+    );
+    setSeventhDayMultiplierText(
+      multiplierToText(currentArrangement.seventh_day_multiplier)
+    );
+    setSeventhDayDoubletimeAfterHoursText(
+      minutesToHoursText(
+        currentArrangement.seventh_day_doubletime_after_minutes
+      )
+    );
     setGuaranteedHoursText(
       currentArrangement.guaranteed_minutes_per_week === null
         ? ''
@@ -226,6 +266,11 @@ export function PayChangeSheet({
     todayISO,
     overtimeThresholdHoursText,
     overtimeMultiplierText,
+    dailyOvertimeThresholdHoursText,
+    doubletimeThresholdHoursText,
+    doubletimeMultiplierText,
+    seventhDayMultiplierText,
+    seventhDayDoubletimeAfterHoursText,
     guaranteedHoursText,
     ptoHoursPerYearText,
     mileageRateText,
@@ -384,6 +429,74 @@ export function PayChangeSheet({
             className="text-muted-foreground"
           >
             {t('changeSheet.overtimeHint')}
+          </Small>
+        </View>
+
+        {/* 078's three further tiers, inside the same overtime block
+            (`screens-pay-terms.md` §4.3). Daily overtime gets NO multiplier
+            input: it is paid at the weekly `overtime_multiplier` above, and a
+            second column for the same number is a second number that
+            eventually disagrees. */}
+        <View className="gap-2">
+          <Label>{t('changeSheet.dailyOvertimeAfterLabel')}</Label>
+          <Input
+            testID="pay-change-daily-overtime-threshold-input"
+            accessibilityLabel={t('changeSheet.dailyOvertimeAfterLabel')}
+            value={dailyOvertimeThresholdHoursText}
+            onChangeText={setDailyOvertimeThresholdHoursText}
+            keyboardType="decimal-pad"
+          />
+          <Small className="text-muted-foreground">
+            {t('changeSheet.dailyOvertimeHint')}
+          </Small>
+        </View>
+
+        <View className="gap-2">
+          <Label>{t('changeSheet.doubletimeAfterLabel')}</Label>
+          <View className="flex-row gap-2">
+            <Input
+              testID="pay-change-doubletime-threshold-input"
+              accessibilityLabel={t('changeSheet.doubletimeAfterLabel')}
+              value={doubletimeThresholdHoursText}
+              onChangeText={setDoubletimeThresholdHoursText}
+              keyboardType="decimal-pad"
+              className="flex-1"
+            />
+            <Input
+              testID="pay-change-doubletime-multiplier-input"
+              accessibilityLabel={t('changeSheet.doubletimePaidAtLabel')}
+              value={doubletimeMultiplierText}
+              onChangeText={setDoubletimeMultiplierText}
+              keyboardType="decimal-pad"
+              className="flex-1"
+            />
+          </View>
+        </View>
+
+        <View className="gap-2">
+          <Label>{t('changeSheet.seventhDayFieldLabel')}</Label>
+          <View className="flex-row gap-2">
+            <Input
+              testID="pay-change-seventh-day-multiplier-input"
+              accessibilityLabel={t('changeSheet.seventhDayPaidAtLabel')}
+              value={seventhDayMultiplierText}
+              onChangeText={setSeventhDayMultiplierText}
+              keyboardType="decimal-pad"
+              className="flex-1"
+            />
+            <Input
+              testID="pay-change-seventh-day-doubletime-after-input"
+              accessibilityLabel={t(
+                'changeSheet.seventhDayDoubletimeAfterLabel'
+              )}
+              value={seventhDayDoubletimeAfterHoursText}
+              onChangeText={setSeventhDayDoubletimeAfterHoursText}
+              keyboardType="decimal-pad"
+              className="flex-1"
+            />
+          </View>
+          <Small className="text-muted-foreground">
+            {t('changeSheet.seventhDayHint')}
           </Small>
         </View>
 

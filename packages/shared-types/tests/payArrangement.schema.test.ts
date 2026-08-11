@@ -608,4 +608,149 @@ describe('payArrangement.schema', () => {
       ).toBe(true);
     });
   });
+
+  // ==========================================================================
+  // The 078 tiers: daily overtime, daily double time, and the seventh
+  // consecutive day. Five columns, all nullable, all optional on the wire.
+  // ==========================================================================
+  describe('daily tiers and the seventh day (078)', () => {
+    const TIER_FIELDS = [
+      'overtime_daily_threshold_minutes',
+      'doubletime_daily_threshold_minutes',
+      'doubletime_multiplier',
+      'seventh_day_multiplier',
+      'seventh_day_doubletime_after_minutes',
+    ] as const;
+
+    const base = {
+      id: VALID_UUID,
+      household_id: VALID_UUID,
+      carer_id: VALID_UUID,
+      rate_minor: 2800,
+      bill_rate_minor: null,
+      currency: 'USD',
+      overtime_threshold_minutes: 2400,
+      overtime_multiplier: 1.5,
+      guaranteed_minutes_per_week: null,
+      pto_entitlement_minutes_per_year: null,
+      mileage_rate_per_mile_minor: null,
+      cancellation_paid_within_hours: null,
+      valid_from: '2026-08-01',
+      valid_to: null,
+      carer_display_name: 'Nia Rowe',
+      note: null,
+      created_by: VALID_UUID,
+      // Both serialisations of the same instant appear across this repo's
+      // fixtures (GOLDEN-FIXES #25); the offset form is the one the wire
+      // schema is least often exercised with, so it is the one used here.
+      created_at: '2026-08-01T08:00:00+00:00',
+    };
+
+    const withTiers = {
+      ...base,
+      overtime_daily_threshold_minutes: 480,
+      doubletime_daily_threshold_minutes: 720,
+      doubletime_multiplier: 2,
+      seventh_day_multiplier: 1.5,
+      seventh_day_doubletime_after_minutes: 480,
+    };
+
+    it('parses an arrangement carrying every tier', () => {
+      const parsed = PayArrangementSchema.safeParse(withTiers);
+      expect(parsed.success).toBe(true);
+      expect(parsed.success && parsed.data).toMatchObject({
+        overtime_daily_threshold_minutes: 480,
+        doubletime_daily_threshold_minutes: 720,
+        doubletime_multiplier: 2,
+        seventh_day_multiplier: 1.5,
+        seventh_day_doubletime_after_minutes: 480,
+      });
+    });
+
+    it('parses a PRE-078 row that omits all five — weekly overtime only', () => {
+      const parsed = PayArrangementSchema.safeParse(base);
+      expect(parsed.success).toBe(true);
+      for (const field of TIER_FIELDS) {
+        expect(parsed.success && parsed.data[field]).toBeUndefined();
+      }
+    });
+
+    for (const field of TIER_FIELDS) {
+      it(`accepts a null ${field} — an explicit "no such tier"`, () => {
+        expect(
+          PayArrangementSchema.safeParse({ ...withTiers, [field]: null })
+            .success
+        ).toBe(true);
+      });
+    }
+
+    it('rejects a zero threshold — null means no tier, zero means nothing', () => {
+      for (const field of [
+        'overtime_daily_threshold_minutes',
+        'doubletime_daily_threshold_minutes',
+        'seventh_day_doubletime_after_minutes',
+      ] as const) {
+        expect(
+          PayArrangementSchema.safeParse({ ...withTiers, [field]: 0 }).success
+        ).toBe(false);
+      }
+    });
+
+    it('holds the new multipliers to the same numeric(3,2) bounds as overtime_multiplier', () => {
+      for (const field of [
+        'doubletime_multiplier',
+        'seventh_day_multiplier',
+      ] as const) {
+        // Below 1 would be a "premium" that pays LESS than the base rate.
+        expect(
+          PayArrangementSchema.safeParse({ ...withTiers, [field]: 0.9 }).success
+        ).toBe(false);
+        // Above what numeric(3,2) can hold — Postgres would 500 on overflow.
+        expect(
+          PayArrangementSchema.safeParse({ ...withTiers, [field]: 10 }).success
+        ).toBe(false);
+        // Three decimals: numeric(3,2) would silently ROUND, which is the
+        // lossy conversion docs/11-MONEY.md §1 exists to prevent.
+        expect(
+          PayArrangementSchema.safeParse({ ...withTiers, [field]: 1.555 })
+            .success
+        ).toBe(false);
+        expect(
+          PayArrangementSchema.safeParse({ ...withTiers, [field]: 2 }).success
+        ).toBe(true);
+      }
+    });
+
+    it('accepts the tiers on a create request', () => {
+      const parsed = CreatePayArrangementRequestSchema.safeParse({
+        rate_minor: 2800,
+        currency: 'USD',
+        overtime_threshold_minutes: 2400,
+        overtime_multiplier: 1.5,
+        overtime_daily_threshold_minutes: 480,
+        doubletime_daily_threshold_minutes: 720,
+        doubletime_multiplier: 2,
+        seventh_day_multiplier: 1.5,
+        seventh_day_doubletime_after_minutes: 480,
+        valid_from: '2026-08-01',
+      });
+      expect(parsed.success).toBe(true);
+      expect(parsed.success && parsed.data.doubletime_multiplier).toBe(2);
+    });
+
+    it('gives the tiers NO wire default — the app never invents a statutory term', () => {
+      // `overtime_multiplier` defaults to 1.5 (a shape 041 already had). None
+      // of these may: a default here would promise a family a daily-overtime
+      // tier nobody agreed to, which is exactly the liability D-7's preset
+      // posture exists to avoid. They arrive only when typed or preset-filled.
+      const parsed = CreatePayArrangementRequestSchema.safeParse({
+        rate_minor: 2800,
+        valid_from: '2026-08-01',
+      });
+      expect(parsed.success).toBe(true);
+      for (const field of TIER_FIELDS) {
+        expect(parsed.success && parsed.data[field]).toBeUndefined();
+      }
+    });
+  });
 });

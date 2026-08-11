@@ -241,6 +241,46 @@ describe('WeekExportAction — Share PDF', () => {
     expect(html).toContain('£276.12');
   });
 
+  it('prints the double-time row under its own copy key, not the humanized fallback', async () => {
+    const { getByTestId } = renderAction({
+      earnings: {
+        ...okEarnings,
+        lines: [
+          ...okEarnings.lines,
+          {
+            kind: 'doubletime',
+            minutes: 120,
+            rate_minor: 3700,
+            multiplier: 2,
+            amount_minor: 7400,
+            from_date: '2026-08-08',
+            to_date: '2026-08-08',
+            arrangement_id: 'arr-1',
+          },
+        ],
+        gross_minor: 31012,
+      },
+      paidState: {
+        status: 'partial',
+        paidMinor: 12000,
+        grossMinor: 31012,
+        balanceMinor: 19012,
+      },
+    });
+    fireEvent.press(getByTestId('hours-export-button'));
+    fireEvent.press(getByTestId('hours-export-pdf'));
+
+    await waitFor(() => expect(sharePdfMock).toHaveBeenCalled());
+    const html = sharePdfMock.mock.calls[0]?.[0] ?? '';
+    // Key-echo `t` (bun.setup.ts): the KEY in the label cell proves the copy
+    // map resolved it; the humanized "Doubletime" in that same cell would
+    // prove it did not. Matched with the cell prefix because the key itself
+    // ends in the fallback's spelling.
+    expect(html).toContain('label">earningsLineDoubletime<');
+    expect(html).not.toContain('label">Doubletime<');
+    expect(html).toContain('£74.00');
+  });
+
   it('still produces a receipt for a week with no priced lines', async () => {
     const { getByTestId } = renderAction({
       earnings: null,
