@@ -593,6 +593,9 @@ defaults marked ★):
 | D-34 | 2026-08-10 | Bootstrap model: **draft household + live-household-wins absorption + portable per-carer proposal.** A nanny-created household is a DRAFT until a parent joins. On code redemption: parent with no household → draft goes live, parent becomes owner; parent with a live household (other nanny, parallel signup) → the nanny, her terms proposal, and her entered basics transfer INTO the parent's household (proposal pending, per-carer), draft archived — no duplicate households, no merge UI. Nannies in parent-first households can raise a proposal from inside. Draft households are invisible to cron jobs/digests until live. Owner constraint verbatim: *"This should work for households who might have ended up creating an account as well… Think about all the permutations and combinations of account creation and households having parents who have another nanny beforehand or them creating an account in parallel."* | One rule covers all four connection permutations |
 | D-35 | 2026-08-10 | Binding act: nanny terms are a PROPOSAL object; **parent acceptance is what inserts the `pay_arrangements` row** (with the D-7 responsibility checkbox at acceptance; parent may counter first). `WRITE_ROLES = {owner, parent}` and append-only stay intact; D-31's record becomes "nanny proposed, parent accepted" | Acceptance by the employer is how the contract actually forms |
 | D-36 | 2026-08-10 | Draft-household scope pre-parent: terms proposal, household name, children names/ages, her availability. No shifts, no hours, no money until a parent joins (parents-with-existing-accounts case handled by D-34 absorption) | Nothing an employer-less household can produce should need pricing or approval |
+| D-37 | 2026-08-10 | **Web terms preview on the invite.** Each nanny invite resolves to a read-only web page — terms summary, nanny's name, "review and respond in the app" CTA — with the code embedded in a universal link so redemption survives install. Hosted on the existing nanny.getsteadily.app infra (Lovable + CF Worker, `infra/nanny-site`). Designed in Phase 2 spec 3; built with 3-O, or the first fast-follow if it threatens the schedule | The terms sheet is the viral object; a bare XXX-XXX code stalls the parent at the highest-intent moment |
+| D-38 | 2026-08-10 | **Redemption clones; the draft persists.** A code redemption never consumes the nanny's draft: it clones the proposal into the connecting family's household (no-household parent → a live household is instantiated from the draft, per D-34; existing household → absorption, per D-34). The draft survives as her reusable template until she archives it — so she can interview with several families in parallel, and "the wrong family redeemed it" cannot cost her the draft. Bakes into 3-O's redemption DB function | Interview-stage nannies fan out; the nanny-side permutations deserve the same care D-34 gave the parent side |
+| D-39 | 2026-08-10 | **Acquisition funnel instrumented from day one.** ~8 PostHog events named in the Phase 2 onboarding spec and emitted in 3-O: `draft_created`, `terms_shared`, `link_opened`, `code_redeemed`, `proposal_viewed`, `proposal_countered`, `proposal_accepted`, `first_week_approved`; funnel conversion joins the §11 first-week checklist | The loop is the business; naming events now is near-free, retrofitting is archaeology |
 
 ---
 
@@ -680,7 +683,7 @@ defaults marked ★):
 > correction + reimbursement settlement UX (P3/P7 per §5); (e) cover-ask
 > lifecycle states (S1 per §5); (f) late-cancel dialog carrying the paid
 > hint (S3); (g) co-parent restricted-state visibility (S4).
-> 3. `docs/design/screens-onboarding-terms-proposal.md` — per §5 D-33…D-36:
+> 3. `docs/design/screens-onboarding-terms-proposal.md` — per §5 D-33…D-39:
 > the symmetric onboarding fork (create new family / join with code, both
 > roles); the nanny draft-household state ("awaiting family": terms draft,
 > basics, availability, invite code — nothing priceable); the parent-side
@@ -822,7 +825,8 @@ snapshots only, integer minor units, refuse non-exportable weeks — extend,
 never weaken. (M–L.)
 
 **3-O (Opus server / Sonnet UI; after Phase 2 AND 3-U1) — symmetric
-onboarding + terms proposals.** Per §5 D-33…D-36 and
+onboarding + terms proposals.** Per §5 D-33…D-39 (D-37 web preview, D-38
+clone-not-consume redemption, D-39 funnel events) and
 screens-onboarding-terms-proposal.md: terms-proposal table (per-carer;
 lifecycle proposed → countered → accepted/withdrawn; append-only in spirit —
 a counter is a new row); draft households (`households` gains a draft/live
@@ -915,7 +919,8 @@ household → nanny proposes → parent counters → accepts. (L.)
 > +48h, +72h (I will run these as micro-sessions — leave me the exact
 > queries); first-week checklist: any `unreadable_snapshot` degradations, 4xx
 > spikes on new endpoints, digest/no-show cron behavior in prod, correction-
-> row usage, cover-ask expiry volumes. (7) Close the ledger; list every
+> row usage, cover-ask expiry volumes, onboarding funnel conversion (the
+> D-39 events, draft_created → first_week_approved). (7) Close the ledger; list every
 > deferred item with its D-number and a revisit date.
 
 ---
@@ -927,3 +932,4 @@ household → nanny proposes → parent counters → accepts. (L.)
 | Playbook authored | 2026-08-10 | this file @ `main` 9459d9e | — |
 | Phase 0 (decisions) | 2026-08-10 | All 30 §4 questions answered; D-3…D-32 recorded in §5; every §2b `→P0` disposition resolved | Notable: D-9 (pre-launch wipe — all grandfathering/migration work cut; §0.5 + 3-E1 corrected in place); D-16/D-17 reverse the T12/T7 cuts (scheduled change + pay-frequency now IN); D-11 shrinks 3-E3 to sick labels; D-7 adds a liability-disclaimer checkbox to presets; D-10 defers S7; D-30 defers receipt photos. §8 slice prompts' D-refs corrected to final numbering |
 | Phase 0 addendum | 2026-08-10 | D-33…D-36: nanny-first onboarding IN this build — symmetric create/join onboarding, draft households with live-household-wins absorption, portable per-carer terms proposals, parent acceptance as the binding act | New slice 3-O added to §8 (after Phase 2 + 3-U1); Phase 2 gains a third spec (screens-onboarding-terms-proposal.md); session estimate now 11–16 |
+| Phase 0 addendum 2 | 2026-08-10 | D-37…D-39 from the adoption review: web terms preview on the invite (nanny.getsteadily.app), clone-not-consume redemption (multi-family interviewing), PostHog funnel events named for 3-O | §7 spec 3 + 3-O D-ref ranges extended; §11 first-week checklist gains funnel conversion |
