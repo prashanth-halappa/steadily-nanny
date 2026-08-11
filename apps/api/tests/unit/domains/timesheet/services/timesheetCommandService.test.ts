@@ -2144,7 +2144,10 @@ describe('TimesheetCommandService.approve — freezing the earnings snapshot', (
       approved_at: expect.any(String),
       gross_minor: 14_800,
       currency: 'GBP',
-      earnings: computedEarnings,
+      // `v: 1` stamps the FORMAT of the frozen jsonb, not the week: a reader
+      // that meets a `v` it does not know refuses the snapshot rather than
+      // reinterpreting it (`timesheet.schema.ts`).
+      earnings: { ...computedEarnings, v: 1 },
       earnings_computed_at: expect.any(String),
     });
     // The general-purpose update must NOT be used: it has no status
@@ -2204,7 +2207,7 @@ describe('TimesheetCommandService.approve — freezing the earnings snapshot', (
       .calls[0] as [string, Record<string, unknown>];
     expect(patch.gross_minor).toBe(99_900);
     expect(patch.currency).toBe('EUR');
-    expect(patch.earnings).toEqual(other);
+    expect(patch.earnings).toEqual({ ...other, v: 1 });
   });
 
   it('freezes an unpriceable week as the no_arrangement arm, with no amount at all — never £0.00', async () => {
@@ -2232,7 +2235,9 @@ describe('TimesheetCommandService.approve — freezing the earnings snapshot', (
       .calls[0] as [string, Record<string, unknown>];
     expect(patch.gross_minor).toBeNull();
     expect(patch.currency).toBeNull();
-    expect(patch.earnings).toEqual(noArrangement);
+    // Stamped on the unpriceable arms too — the format claim is about the
+    // jsonb, and every arm the approve path writes is jsonb.
+    expect(patch.earnings).toEqual({ ...noArrangement, v: 1 });
   });
 
   it('approves a departed carer’s week with an empty snapshot rather than inventing a figure', async () => {
@@ -2682,6 +2687,7 @@ describe('TimesheetCommandService.approve — freezes figures computed by the RE
       status: 'no_arrangement',
       week_start: '2026-08-03',
       unpriced_dates: ['2026-08-03', '2026-08-09'],
+      v: 1,
     });
   });
 });
@@ -6287,6 +6293,17 @@ describe('TimesheetCommandService.approve — the parent adjustment', () => {
 
     const patch = patchOf(timesheetRepo);
     expect(patch.gross_minor).toBe(17_300);
+    expect(patch.earnings).toEqual({
+      ...computedEarnings,
+      gross_minor: 17_300,
+      adjustment: {
+        amount_minor: 2_500,
+        note: 'Late pickup on Thursday',
+        created_by: 'parent-1',
+        created_at: patch.approved_at as string,
+      },
+      v: 1,
+    });
     const frozen = patch.earnings as Extract<WeekEarnings, { status: 'ok' }>;
     expect(frozen.gross_minor).toBe(17_300);
     expect(frozen.adjustment).toEqual({
@@ -6372,7 +6389,7 @@ describe('TimesheetCommandService.approve — the parent adjustment', () => {
 
     const patch = patchOf(timesheetRepo);
     expect(patch.gross_minor).toBe(14_800);
-    expect(patch.earnings).toEqual(computedEarnings);
+    expect(patch.earnings).toEqual({ ...computedEarnings, v: 1 });
     expect(patch.earnings).not.toHaveProperty('adjustment');
   });
 
@@ -6382,7 +6399,10 @@ describe('TimesheetCommandService.approve — the parent adjustment', () => {
 
     await svc.approve('parent-1', 'ts1', { adjustment: null });
 
-    expect(patchOf(timesheetRepo).earnings).toEqual(computedEarnings);
+    expect(patchOf(timesheetRepo).earnings).toEqual({
+      ...computedEarnings,
+      v: 1,
+    });
   });
 
   it('allows a deduction that lands the week on exactly zero', async () => {
@@ -6519,7 +6539,7 @@ describe('TimesheetCommandService.approve — the parent adjustment', () => {
     const patch = patchOf(timesheetRepo);
     expect(patch.gross_minor).toBeNull();
     expect(patch.currency).toBeNull();
-    expect(patch.earnings).toEqual(noArrangement);
+    expect(patch.earnings).toEqual({ ...noArrangement, v: 1 });
   });
 
   it('REFUSES an adjustment on a currency_change week', async () => {

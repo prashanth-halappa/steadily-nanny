@@ -238,6 +238,110 @@ describe('EarningsBreakdownSheet', () => {
     ).toBeNull();
   });
 
+  // The fleet rule: a server that starts emitting a seventh kind reaches
+  // clients that predate it. This sheet must show the row rather than drop
+  // it — a missing row makes the total stop equalling the visible sum, which
+  // is the one thing §4.2 says it must never do.
+  describe('a line kind this build does not know', () => {
+    function unknownKindEarnings(): WeekEarningsOk {
+      return baseEarnings({
+        lines: [
+          {
+            kind: 'regular',
+            minutes: 2400,
+            rate_minor: 1850,
+            multiplier: null,
+            amount_minor: 74000,
+            from_date: '2026-08-03',
+            to_date: '2026-08-07',
+            arrangement_id: 'arr-1',
+          },
+          {
+            kind: 'night_differential',
+            minutes: 120,
+            rate_minor: 2000,
+            multiplier: null,
+            amount_minor: 4000,
+            from_date: '2026-08-08',
+            to_date: '2026-08-08',
+            arrangement_id: 'arr-1',
+          },
+        ],
+        gross_minor: 78000,
+        worked_minutes: 2520,
+        payable_minutes: 2520,
+      });
+    }
+
+    it('renders a generic row: humanized label, its amount, and the generic subline', () => {
+      const { getByTestId, getByText } = render(
+        <EarningsBreakdownSheet
+          visible
+          onDismiss={() => {}}
+          earnings={unknownKindEarnings()}
+          weekRangeLabel="3 Aug – 9 Aug"
+        />
+      );
+
+      const row = getByTestId('hours-earnings-breakdown-line-unknown-1');
+      expect(row).toBeTruthy();
+      // The label is NOT a translation key — there is no copy for a kind this
+      // build has never seen, so the wire value is humanized in place.
+      expect(getByText('Night differential')).toBeTruthy();
+      expect(
+        getByTestId('hours-earnings-breakdown-line-unknown-1-value').props
+          .children
+      ).toBe('£40.00');
+      expect(getByText('earningsLineUnknownSubline')).toBeTruthy();
+    });
+
+    it('leaves the known rows exactly as they were', () => {
+      const { getByTestId } = render(
+        <EarningsBreakdownSheet
+          visible
+          onDismiss={() => {}}
+          earnings={unknownKindEarnings()}
+          weekRangeLabel="3 Aug – 9 Aug"
+        />
+      );
+
+      expect(
+        getByTestId('hours-earnings-breakdown-line-regular-0')
+      ).toBeTruthy();
+      expect(getByTestId('hours-earnings-breakdown-total').props.children).toBe(
+        '£780.00'
+      );
+    });
+
+    it('still keeps reimbursements out of the rows — the ONE exclusion', () => {
+      const { queryByText } = render(
+        <EarningsBreakdownSheet
+          visible
+          onDismiss={() => {}}
+          earnings={baseEarnings({
+            lines: [
+              {
+                kind: 'reimbursements',
+                minutes: 0,
+                rate_minor: 0,
+                multiplier: null,
+                amount_minor: 1250,
+                from_date: '2026-08-04',
+                to_date: '2026-08-04',
+                arrangement_id: null,
+              },
+            ],
+            reimbursements_minor: 1250,
+          })}
+          weekRangeLabel="3 Aug – 9 Aug"
+        />
+      );
+
+      expect(queryByText('Reimbursements')).toBeNull();
+      expect(queryByText('£12.50')).toBeNull();
+    });
+  });
+
   it('always renders the payroll footer note', () => {
     const { getByText } = render(
       <EarningsBreakdownSheet

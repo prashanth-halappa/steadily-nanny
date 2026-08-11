@@ -81,6 +81,7 @@
   "earningsLineTopup": "Guaranteed hours top-up",
   "earningsLineTopupSubline": "{{duration}} to reach the agreed {{guaranteed}}",
   "earningsLineTopupZeroHoursSubline": "Your family was away this week.",
+  "earningsLineUnknownSubline": "{{duration}} at {{rate}}",
   "earningsGrossPay": "Gross pay",
   "earningsReimbursementsNote": "Expenses are listed separately and are not part of gross pay.",
   "earningsFooterNote": "Based on the hours recorded in Steadily. Tax and deductions are handled by your payroll.",

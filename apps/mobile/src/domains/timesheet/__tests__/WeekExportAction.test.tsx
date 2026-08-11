@@ -200,6 +200,47 @@ describe('WeekExportAction — Share PDF', () => {
     expect(html).toContain('£116.12');
   });
 
+  it('prints a row for a line kind this build does not know — the rows must still sum to the total', async () => {
+    // Dropping the row would print a receipt whose lines add up to less than
+    // the gross beside them, which is worse than an unfamiliar label.
+    const { getByTestId } = renderAction({
+      earnings: {
+        ...okEarnings,
+        lines: [
+          ...okEarnings.lines,
+          {
+            kind: 'night_differential',
+            minutes: 120,
+            rate_minor: 2000,
+            multiplier: null,
+            amount_minor: 4000,
+            from_date: '2026-08-08',
+            to_date: '2026-08-08',
+            arrangement_id: 'arr-1',
+          },
+        ],
+        gross_minor: 27612,
+      },
+      paidState: {
+        status: 'partial',
+        paidMinor: 12000,
+        grossMinor: 27612,
+        balanceMinor: 15612,
+      },
+    });
+    fireEvent.press(getByTestId('hours-export-button'));
+    fireEvent.press(getByTestId('hours-export-pdf'));
+
+    await waitFor(() => expect(sharePdfMock).toHaveBeenCalled());
+    const html = sharePdfMock.mock.calls[0]?.[0] ?? '';
+    // Humanized in place — there is no copy key for a kind this build has
+    // never seen.
+    expect(html).toContain('Night differential');
+    expect(html).toContain('£40.00');
+    // £236.12 + £40.00 === the £276.12 gross printed below them.
+    expect(html).toContain('£276.12');
+  });
+
   it('still produces a receipt for a week with no priced lines', async () => {
     const { getByTestId } = renderAction({
       earnings: null,

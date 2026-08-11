@@ -38,6 +38,8 @@ export {
   EARNINGS_LINE_ORDER,
   EARNINGS_RESULT_STATUSES,
   HOURS_ONLY_REASONS,
+  humanizeEarningsLineKind,
+  isKnownEarningsLineKind,
   TIMESHEET_STATUSES,
   WEEK_EARNINGS_STATES,
 } from '@/src/api/endpoints/timesheets';

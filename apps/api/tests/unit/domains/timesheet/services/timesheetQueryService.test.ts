@@ -615,6 +615,95 @@ describe('TimesheetQueryService.getWeekWithEarnings — the legacy arm', () => {
     );
   });
 
+  it('reads a snapshot carrying a line kind THIS BUILD HAS NEVER HEARD OF, intact', async () => {
+    // The fleet rule from the client side, applied on the server: a seventh
+    // kind must not turn a real approved week into hours-only. The line is
+    // carried through verbatim — the reader does not have to understand a
+    // kind to hand it on.
+    mockLogger.error.mockClear();
+    const withUnknownKind = {
+      ...okEarnings,
+      lines: [
+        {
+          kind: 'night_differential',
+          minutes: 120,
+          rate_minor: 2000,
+          multiplier: null,
+          amount_minor: 4000,
+          from_date: '2026-08-03',
+          to_date: '2026-08-03',
+          arrangement_id: ARRANGEMENT_ID,
+        },
+      ],
+    };
+    const svc = new TimesheetQueryService(
+      makeTimeEntryRepo(),
+      makeTimesheetRepo({
+        findById: mock(async () => ({
+          ...approvedTimesheet,
+          earnings: withUnknownKind,
+        })),
+      }),
+      makeMemberRepo(),
+      makeHouseholdRepo(),
+      makeEarnings()
+    );
+
+    const week = await svc.getWeekWithEarnings('u1', 'ts1');
+
+    expect(week.earnings.status).toBe('ok');
+    expect(week.earnings).toEqual(withUnknownKind);
+    expect(mockLogger.error).not.toHaveBeenCalled();
+  });
+
+  it('degrades a v: 2 snapshot to hours-only and LOGS it — an unknown format is refused, never guessed at', async () => {
+    mockLogger.error.mockClear();
+    const svc = new TimesheetQueryService(
+      makeTimeEntryRepo(),
+      makeTimesheetRepo({
+        findById: mock(async () => ({
+          ...approvedTimesheet,
+          earnings: { ...okEarnings, v: 2 },
+        })),
+      }),
+      makeMemberRepo(),
+      makeHouseholdRepo(),
+      makeEarnings()
+    );
+
+    const week = await svc.getWeekWithEarnings('u1', 'ts1');
+
+    expect(week.earnings).toEqual({
+      status: 'hours_only',
+      week_start: '2026-08-03',
+      reason: 'unreadable_snapshot',
+    });
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ timesheetId: 'ts1' })
+    );
+  });
+
+  it('reads back a v: 1 snapshot exactly as the approve path wrote it', async () => {
+    const svc = new TimesheetQueryService(
+      makeTimeEntryRepo(),
+      makeTimesheetRepo({
+        findById: mock(async () => ({
+          ...approvedTimesheet,
+          earnings: { ...okEarnings, v: 1 },
+        })),
+      }),
+      makeMemberRepo(),
+      makeHouseholdRepo(),
+      makeEarnings()
+    );
+
+    expect((await svc.getWeekWithEarnings('u1', 'ts1')).earnings).toEqual({
+      ...okEarnings,
+      v: 1,
+    });
+  });
+
   it('treats a non-object snapshot (string, number) as unreadable too', async () => {
     const svc = new TimesheetQueryService(
       makeTimeEntryRepo(),

@@ -40,6 +40,8 @@ export {
   EARNINGS_LINE_ORDER,
   EARNINGS_RESULT_STATUSES,
   HOURS_ONLY_REASONS,
+  humanizeEarningsLineKind,
+  isKnownEarningsLineKind,
   TIMESHEET_STATUSES,
   WEEK_EARNINGS_STATES,
 } from '@steadily-nanny/shared-types/schemas/timesheet.schema';

@@ -5,6 +5,8 @@ import {
   EARNINGS_RESULT_STATUSES,
   EarningsLineSchema,
   HOURS_ONLY_REASONS,
+  humanizeEarningsLineKind,
+  isKnownEarningsLineKind,
   TimesheetWeekResponseSchema,
   TimesheetWeekSchema,
   WEEK_EARNINGS_STATES,
@@ -120,10 +122,55 @@ describe('timesheet.schema — earnings', () => {
       ).toBe(true);
     });
 
-    it('rejects an unknown line kind', () => {
+    it('ACCEPTS an unknown line kind and preserves it verbatim', () => {
+      // The fleet rule: a server that starts emitting a seventh kind must not
+      // fail the whole week parse inside every shipped client — one unknown
+      // row would error the entire Hours screen. The kind survives unchanged
+      // so the client can humanize it rather than guess at it.
+      const parsed = EarningsLineSchema.safeParse({
+        ...validLine,
+        kind: 'bonus',
+      });
+      expect(parsed.success).toBe(true);
+      expect(parsed.success && parsed.data.kind).toBe('bonus');
+    });
+
+    it('still rejects a non-string kind — tolerant is not credulous', () => {
       expect(
-        EarningsLineSchema.safeParse({ ...validLine, kind: 'bonus' }).success
+        EarningsLineSchema.safeParse({ ...validLine, kind: 42 }).success
       ).toBe(false);
+    });
+
+    it('still rejects an empty-string kind — a row with no kind at all is a defect', () => {
+      expect(
+        EarningsLineSchema.safeParse({ ...validLine, kind: '' }).success
+      ).toBe(false);
+    });
+  });
+
+  describe('isKnownEarningsLineKind / humanizeEarningsLineKind', () => {
+    it('recognises every kind this build knows about', () => {
+      for (const kind of Object.values(EARNINGS_LINE_KINDS)) {
+        expect(isKnownEarningsLineKind(kind)).toBe(true);
+      }
+    });
+
+    it('does not recognise a kind from a newer server', () => {
+      expect(isKnownEarningsLineKind('bonus')).toBe(false);
+    });
+
+    it('humanizes a snake_case kind into a readable label', () => {
+      expect(humanizeEarningsLineKind('night_differential')).toBe(
+        'Night differential'
+      );
+    });
+  });
+
+  describe('EARNINGS_LINE_ORDER totality', () => {
+    it('names every kind exactly once — a new kind must not be silently unordered', () => {
+      expect([...EARNINGS_LINE_ORDER].sort()).toEqual(
+        Object.values(EARNINGS_LINE_KINDS).sort()
+      );
     });
   });
 
@@ -186,6 +233,52 @@ describe('timesheet.schema — earnings', () => {
     it('rejects an unknown status', () => {
       expect(
         WeekEarningsSchema.safeParse({ ...validOk, status: 'maybe' }).success
+      ).toBe(false);
+    });
+  });
+
+  describe('the snapshot format version', () => {
+    const noArrangement = {
+      status: EARNINGS_RESULT_STATUSES.NO_ARRANGEMENT,
+      week_start: '2026-08-03',
+      unpriced_dates: ['2026-08-03'],
+    };
+    const currencyChange = {
+      status: EARNINGS_RESULT_STATUSES.CURRENCY_CHANGE,
+      week_start: '2026-08-03',
+      currencies: ['GBP', 'EUR'],
+    };
+
+    it('parses a snapshot with NO v at all — absent IS v1', () => {
+      expect(WeekEarningsSchema.safeParse(validOk).success).toBe(true);
+      expect(WeekEarningsSchema.safeParse(noArrangement).success).toBe(true);
+      expect(WeekEarningsSchema.safeParse(currencyChange).success).toBe(true);
+    });
+
+    it('parses an explicit v: 1 on every arm', () => {
+      expect(WeekEarningsSchema.safeParse({ ...validOk, v: 1 }).success).toBe(
+        true
+      );
+      expect(
+        WeekEarningsSchema.safeParse({ ...noArrangement, v: 1 }).success
+      ).toBe(true);
+      expect(
+        WeekEarningsSchema.safeParse({ ...currencyChange, v: 1 }).success
+      ).toBe(true);
+    });
+
+    it('FAILS a v: 2 snapshot on every arm — an unknown format degrades loudly', () => {
+      // Refusing is the point: a v2 writer must ship its reader first, and a
+      // build that quietly reinterpreted a format it has never seen would
+      // print a wrong figure under an Approved label.
+      expect(WeekEarningsSchema.safeParse({ ...validOk, v: 2 }).success).toBe(
+        false
+      );
+      expect(
+        WeekEarningsSchema.safeParse({ ...noArrangement, v: 2 }).success
+      ).toBe(false);
+      expect(
+        WeekEarningsSchema.safeParse({ ...currencyChange, v: 2 }).success
       ).toBe(false);
     });
   });
