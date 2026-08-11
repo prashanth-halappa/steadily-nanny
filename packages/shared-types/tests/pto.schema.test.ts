@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test';
+import { CARER_TIME_OFF_KINDS } from '../src/schemas/availability.schema';
 import {
   MarkTimeOffPaidRequestSchema,
   PTO_LEDGER_KINDS,
@@ -94,6 +95,54 @@ describe('pto.schema', () => {
       expect(
         PtoLedgerEntrySchema.safeParse({ ...validAccrual, kind: 'bonus' })
           .success
+      ).toBe(false);
+    });
+
+    // §5 D-11 / migration 079. The draw records what a paid day WAS —
+    // `leave_kind` is 068's `carer_time_off.kind` snapshotted onto the ledger
+    // row by `apply_pto_correction` under its lock. It labels the draw; it
+    // does NOT split the pool, and `PtoBalanceSchema` stays one balance.
+    it('carries a sick leave_kind through to the parsed row (the D-23 label 3-T3 reads)', () => {
+      const parsed = PtoLedgerEntrySchema.parse({
+        ...validAccrual,
+        kind: PTO_LEDGER_KINDS.USAGE,
+        minutes: -480,
+        time_off_id: VALID_UUID,
+        leave_kind: CARER_TIME_OFF_KINDS.SICK,
+      });
+      expect(parsed.leave_kind).toBe(CARER_TIME_OFF_KINDS.SICK);
+    });
+
+    it('carries a personal leave_kind through to the parsed row', () => {
+      const parsed = PtoLedgerEntrySchema.parse({
+        ...validAccrual,
+        kind: PTO_LEDGER_KINDS.USAGE,
+        minutes: -480,
+        time_off_id: VALID_UUID,
+        leave_kind: CARER_TIME_OFF_KINDS.PERSONAL,
+      });
+      expect(parsed.leave_kind).toBe(CARER_TIME_OFF_KINDS.PERSONAL);
+    });
+
+    it('accepts a null leave_kind — an accrual row draws no leave', () => {
+      expect(
+        PtoLedgerEntrySchema.safeParse({ ...validAccrual, leave_kind: null })
+          .success
+      ).toBe(true);
+    });
+
+    it('accepts a row with no leave_kind at all (pre-079 data, append-only)', () => {
+      expect(PtoLedgerEntrySchema.safeParse(validAccrual).success).toBe(true);
+    });
+
+    it('rejects a leave_kind outside 068’s check constraint', () => {
+      // 068 pinned ('personal', 'sick'). D-11 adds no third leave kind and no
+      // second pool, so 'vacation' is not a value this wire ever carries.
+      expect(
+        PtoLedgerEntrySchema.safeParse({
+          ...validAccrual,
+          leave_kind: 'vacation',
+        }).success
       ).toBe(false);
     });
 

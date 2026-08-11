@@ -265,7 +265,10 @@ export class PtoLedgerRepository extends BaseRepository<PtoLedgerEntry> {
       p_time_off_id: args.timeOffId,
       p_expected: args.expected,
       // household_id, kind and time_off_id are ignored by the function —
-      // it takes them from the locked parameters (050's header).
+      // it takes them from the locked parameters (050's header). Since 079,
+      // `leave_kind` is stamped the same way, from the locked
+      // `carer_time_off` row, so `NewPtoLedgerRow` deliberately has no such
+      // field: no caller can label (or mislabel) its own draw.
       p_rows: args.rows,
       p_require_confirmed: args.requireConfirmed,
     });

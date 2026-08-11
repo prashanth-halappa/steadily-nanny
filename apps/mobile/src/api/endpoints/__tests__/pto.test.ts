@@ -141,6 +141,34 @@ describe('ptoApi.getLedger', () => {
     expect(result[0]?.kind).toBe('usage');
     expect(result[0]?.minutes).toBeLessThan(0);
   });
+
+  // §5 D-11 / migration 079. `leave_kind` is snapshotted onto the draw by
+  // `apply_pto_correction`; a Zod object STRIPS what it does not declare, so
+  // without this the label would reach the client and be silently dropped —
+  // exactly how `household_member_id` degraded before F4.
+  it('carries the sick leave_kind through the response schema unstripped', async () => {
+    apiClient.get.mockResolvedValue({
+      data: {
+        data: {
+          pto_ledger_entries: [{ ...validLedgerEntry, leave_kind: 'sick' }],
+        },
+      },
+    });
+
+    const result = await ptoApi.getLedger(HOUSEHOLD_ID, CARER_ID, 2026);
+
+    expect(result[0]?.leave_kind).toBe('sick');
+  });
+
+  it('parses a pre-079 row that carries no leave_kind at all', async () => {
+    apiClient.get.mockResolvedValue({
+      data: { data: { pto_ledger_entries: [validLedgerEntry] } },
+    });
+
+    const result = await ptoApi.getLedger(HOUSEHOLD_ID, CARER_ID, 2026);
+
+    expect(result[0]?.leave_kind).toBeUndefined();
+  });
 });
 
 describe('ptoApi.markPaid', () => {

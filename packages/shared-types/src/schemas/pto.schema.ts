@@ -20,6 +20,11 @@
  */
 
 import { z } from 'zod';
+// The ONE definition of the sick/personal discriminator, from the table that
+// owns it (`carer_time_off.kind`, migration 068). Imported rather than
+// re-declared so the ledger's snapshot can never drift from the leave it
+// snapshots — 079's check constraint mirrors 068's for the same reason.
+import { CARER_TIME_OFF_KINDS } from './availability.schema';
 
 // =============================================================================
 // Const-maps — mirror the SQL `check` constraints exactly.
@@ -115,6 +120,26 @@ export const PtoLedgerEntrySchema = z.object({
   // Usage rows only — the FK to a cross-household carer_time_off row. Null
   // on accrual/adjustment rows, which are not tied to a specific time off.
   time_off_id: z.uuid().nullable(),
+  // What the paid day WAS (§5 D-11, migration 079): 068's
+  // `carer_time_off.kind` snapshotted onto the draw by
+  // `apply_pto_correction` from the row it holds locked.
+  //
+  // A LABEL, NOT A SECOND POOL. D-11 keeps PTO a single pool — one grant,
+  // one balance, `sum(minutes)` — so `PtoBalanceSchema` stays one set of
+  // totals and nothing here splits it. This field only records which kind
+  // of day the household paid for, which is what 3-T3's D-23 interplay
+  // reads and what a ledger history would render.
+  //
+  // NOT DERIVED FROM `time_off_id` ON READ, for the reasons 079's header
+  // sets out: the FK is `on delete set null`, `carer_time_off.kind` is
+  // PATCHable while this ledger is append-only, and `carer_time_off` is
+  // household-less. Same snapshot discipline as `carer_display_name`.
+  //
+  // NULLABLE + OPTIONAL, like `household_member_id` above and for the same
+  // two reasons: an `accrual` row draws no leave, and a row serialized by a
+  // pre-079 server carries no such field. Declaring it is what keeps the
+  // value from being STRIPPED on the way to the client (the F4 lesson).
+  leave_kind: z.enum(Object.values(CARER_TIME_OFF_KINDS)).nullable().optional(),
   // Snapshotted at insert time from the carer's profile — never derived on
   // read, so the name survives the profile being deleted.
   carer_display_name: z.string(),
