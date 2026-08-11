@@ -28,6 +28,10 @@ tags:
   - onboarding
 ---
 - runFlow: ../flows/login.yaml
+- runFlow:
+    file: ../flows/select-household.yaml
+    env:
+      HOUSEHOLD_ID: ${PHASE4_HOUSEHOLD_ID}
 
 # Settings variant, not the wizard: this parent is already onboarded.
 - openLink: steadilynanny:///(private)/settings/join-household
@@ -58,12 +62,18 @@ tags:
 # the promise ("they can't see your family's schedule or details until then"),
 # and it is the part of this dialog most worth pinning. Matched on a stable
 # fragment of the visible text instead.
-- assertVisible: "can't see your family's schedule or details until then"
-# The household picker only renders when the redeemer has TWO OR MORE live
-# households; this parent has one, so a single-household redeemer must get no
-# choice to make.
-- assertNotVisible:
+- assertVisible: ".*can't see your family's schedule or details until then.*"
+# The picker renders whenever the redeemer has TWO OR MORE live households
+# (`AbsorptionConfirmSheet`: `households.length > 1`). The seed parent owns
+# THREE — two called "Our household" plus the Sunday-workweek one that
+# `seed-phase4-fixtures.ts` creates — so it is here, and the flow must SAY
+# which household absorbs her. The sheet defaults `selectedId` to
+# `households[0]`, i.e. whatever order the API returned, so leaving it to the
+# default would silently absorb her into an arbitrary household.
+- assertVisible:
     id: 'absorption-household-picker'
+- tapOn:
+    id: 'absorption-household-${PHASE4_HOUSEHOLD_ID}'
 - takeScreenshot: absorption-dialog
 - tapOn:
     id: 'absorption-confirm-button'
@@ -72,9 +82,24 @@ tags:
     id: 'absorption-sheet'
 
 # --- Her proposal is now pending in the live household -------------------
-# "You'll review them next" is the sheet's own promise; the review screen
-# opening is that promise kept, and it is also the only on-screen evidence the
-# membership landed with terms still open.
+# The settings variant's `onJoined` replaces to the HOME TAB (see
+# app/(private)/settings/join-household.tsx) — it does not open the proposal,
+# so the sheet's "you'll review them next" is not literally the next screen.
+# The inbox is where the open proposal surfaces; `useInboxItems` deliberately
+# includes `candidate` members, which is what an absorbed carer is until the
+# terms are accepted, so her row being there IS the evidence the membership
+# landed with terms still open.
+- extendedWaitUntil:
+    visible:
+      id: 'today-header'
+    timeout: 25000
+- openLink: steadilynanny:///(private)/inbox
+- extendedWaitUntil:
+    visible:
+      id: 'inbox-list'
+    timeout: 25000
+- tapOn:
+    id: 'inbox-item-terms_proposal-.*'
 - extendedWaitUntil:
     visible:
       id: 'proposal-review-screen'

@@ -35,6 +35,10 @@ tags:
 ---
 # --- Nanny: book a sick day over today's confirmed shift ------------------
 - runFlow: ../flows/login-nanny.yaml
+- runFlow:
+    file: ../flows/select-household.yaml
+    env:
+      HOUSEHOLD_ID: ${PHASE4_HOUSEHOLD_ID}
 - tapOn:
     id: 'tab-settings'
 - waitForAnimationToEnd
@@ -50,7 +54,11 @@ tags:
 - waitForAnimationToEnd
 # Confirm dialog title/body carry no testID — visible text is the handle.
 # (en/timeOff.json: sick.confirmTitle / sick.confirmBody)
-- assertVisible: 'Book a sick day?'
+# Text selectors are REGEX and are matched against the whole string, so a
+# bare `?` is an optional-quantifier on the preceding char and never matches
+# the literal question mark. Wrapped rather than escaped, so the same form
+# works for the substring assertions below.
+- assertVisible: '.*Book a sick day.*'
 - assertVisible: 'The family will be notified. This books today off as a sick day.'
 - tapOn:
     id: 'time-off-sick-confirm'
@@ -71,6 +79,10 @@ tags:
 - waitForAnimationToEnd
 - runFlow: ../flows/logout.yaml
 - runFlow: ../flows/login.yaml
+- runFlow:
+    file: ../flows/select-household.yaml
+    env:
+      HOUSEHOLD_ID: ${PHASE4_HOUSEHOLD_ID}
 - openLink: steadilynanny:///(private)/schedule/shifts/${PHASE4_TODAY_SHIFT_ID}
 - waitForAnimationToEnd
 - assertVisible:
@@ -99,7 +111,9 @@ tags:
 # S14 — every variant of the body ends with this clause, because the button
 # opens a REQUEST and a dialog that reads like the shift is already cancelled
 # would misrepresent it.
-- assertVisible: 'has to accept the cancellation before it'
+# A SUBSTRING of `shift-detail-cancel-body` (which is the pay sentence plus
+# this clause), so it must be wrapped to match at all.
+- assertVisible: '.*has to accept the cancellation before it.*'
 - takeScreenshot: parent-cancel-paid-hint
 - tapOn:
     id: 'shift-detail-cancel-dismiss'

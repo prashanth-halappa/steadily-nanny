@@ -51,6 +51,14 @@ set +a
 PHASE4_TEST_PASSWORD="${PHASE4_TEST_PASSWORD:-${PARENT_PASSWORD}}"
 
 # --- seed -----------------------------------------------------------------
+# The legacy fixtures FIRST, and with --reset: flows 11/12 consume the same
+# seed week that flows 02/03/04 do, so a batch run that starts from a week left
+# `approved` by the last run fails on a disabled Query button rather than on
+# anything under test. `--reset` is idempotent and only touches the seed-owned
+# week (2026-01-05) — see that script's module doc.
+print "==> resetting legacy E2E fixtures"
+bun run "${REPO_ROOT}/scripts/seed-e2e-approval-fixtures.ts" --reset
+
 print "==> seeding Phase 4 fixtures"
 SEED_LOG="$(mktemp -t phase4-seed)"
 bun run "${REPO_ROOT}/scripts/seed-phase4-fixtures.ts" | tee "${SEED_LOG}"

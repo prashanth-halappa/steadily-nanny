@@ -1,0 +1,65 @@
+# Point the app at a specific household, and clear the notification soft-ask
+# on the way past. Callers pass HOUSEHOLD_ID.
+#
+# WHY THIS EXISTS — the active household is CLIENT-side state that survives
+# sign-out/sign-in on the same simulator, and the seed parent owns THREE live
+# households (two both named "Our household", plus "PHASE4 Sunday household"
+# which `seed-phase4-fixtures.ts` creates). A flow that just logs in reads
+# whichever household the app happened to have selected last: flow 07 opened
+# the Sunday household's pay hub — which already HAS an arrangement, so
+# `PaySetupScreen` redirected straight back out — instead of the setup form it
+# is about. Nothing in the flow said "Sunday household"; that is exactly what
+# makes it worth an explicit step rather than a comment.
+#
+# Also the reliable place to clear the "Stay in the loop" soft-ask: it is
+# ASYNC, so login.yaml's bounded window can miss it and it then pops over a
+# later screen and hides the whole a11y tree beneath it (seen on flow 07).
+#
+# Safe to call unconditionally — `HouseholdSwitcher` renders null for a user
+# with a single household, and the guard below makes that a no-op.
+appId: com.jetto.steadily.nanny
+---
+# The soft-ask FIRST, and on its own bounded window: while it is up it hides
+# the whole hierarchy underneath, tab bar included, so tapping `tab-settings`
+# before clearing it fails with "Element not found" on a tab that is plainly
+# there.
+- extendedWaitUntil:
+    visible:
+      text: 'Maybe later'
+    timeout: 6000
+    optional: true
+- runFlow:
+    when:
+      visible:
+        text: 'Maybe later'
+    commands:
+      - tapOn:
+          text: 'Maybe later'
+      - waitForAnimationToEnd
+- tapOn:
+    id: 'tab-settings'
+- waitForAnimationToEnd
+# It can also arrive AFTER the tab switch — same sheet, different moment.
+- runFlow:
+    when:
+      visible:
+        text: 'Maybe later'
+    commands:
+      - tapOn:
+          text: 'Maybe later'
+      - waitForAnimationToEnd
+- runFlow:
+    when:
+      visible:
+        id: 'household-switcher-trigger'
+    commands:
+      - tapOn:
+          id: 'household-switcher-trigger'
+      - waitForAnimationToEnd
+      - assertVisible:
+          id: 'household-switcher-sheet'
+      - tapOn:
+          id: 'household-switcher-option-${HOUSEHOLD_ID}'
+      - waitForAnimationToEnd
+      - assertNotVisible:
+          id: 'household-switcher-sheet'

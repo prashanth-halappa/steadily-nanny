@@ -27,6 +27,10 @@ tags:
   - money
 ---
 - runFlow: ../flows/login.yaml
+- runFlow:
+    file: ../flows/select-household.yaml
+    env:
+      HOUSEHOLD_ID: ${PHASE4_HOUSEHOLD_ID}
 - openLink: steadilynanny:///(private)/(tabs)/hours?weekStart=${PHASE4_SEED_WEEK_START}
 - waitForAnimationToEnd
 - assertVisible:
@@ -49,17 +53,20 @@ tags:
 - waitForAnimationToEnd
 - assertVisible:
     id: 'hours-record-payment-sheet'
+# No `hideKeyboard` anywhere in these sheets: Maestro's iOS dismiss gesture
+# lands on the sheet's own primary button, which here would RECORD the payment
+# with only the amount filled in and close the sheet under the remaining steps
+# (the same mechanism that broke flows 04 and 11 — see flow 04's note). The
+# fields below are all reachable with the keyboard up; the sheet lifts clear.
 - tapOn:
     id: 'hours-record-payment-amount-input'
 - eraseText
 - inputText: '40.00'
-- hideKeyboard
 - tapOn:
     id: 'hours-record-payment-date-chip-today'
 - tapOn:
     id: 'hours-record-payment-method-input'
 - inputText: 'Bank transfer'
-- hideKeyboard
 - assertNotVisible:
     id: 'hours-record-payment-overpayment-error'
 - tapOn:
@@ -95,15 +102,14 @@ tags:
     id: 'hours-correct-payment-original'
 # The sheet pre-seeds the full original; a partial reversal is the harder case
 # (it must not exceed the original, and it leaves a residue on the ledger).
+# Same sheet rule as the record sheet above.
 - tapOn:
     id: 'hours-correct-payment-amount-input'
 - eraseText
 - inputText: '15.00'
-- hideKeyboard
 - tapOn:
     id: 'hours-correct-payment-reason-input'
 - inputText: 'Sent 15 too much by mistake'
-- hideKeyboard
 - assertNotVisible:
     id: 'hours-correct-payment-amount-error'
 - tapOn:

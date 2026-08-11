@@ -28,7 +28,13 @@ tags:
 - tapOn:
     id: 'hours-query-note-input'
 - inputText: 'Please check Tuesday clock-out'
-- hideKeyboard
+# NO `hideKeyboard` before the send in a BottomSheetBase composer. Maestro's
+# iOS keyboard-dismiss gesture lands on the sheet's own primary button — it
+# SENDS the note, the sheet closes, and the explicit tap below then fails with
+# "Element not found: hours-query-submit" on a week that was in fact queried
+# (verified 2026-08-11: the `timesheet_queried` event was written five seconds
+# BEFORE the submit command started). Tapping the button directly with the
+# keyboard still up works; the sheet lifts clear of it.
 - tapOn:
     id: 'hours-query-submit'
 - waitForAnimationToEnd
@@ -59,7 +65,7 @@ tags:
     id: 'clockout-finish-time'
 - eraseText
 - inputText: '17:45'
-- hideKeyboard
+# Same sheet-composer rule as the query note above — no `hideKeyboard`.
 - tapOn:
     id: 'clockout-confirm'
 - waitForAnimationToEnd
@@ -79,6 +85,15 @@ tags:
     id: 'hours-screen'
 - tapOn:
     id: 'hours-approve-button'
+- waitForAnimationToEnd
+# The button only OPENS `ApproveWeekDialog` (ParentWeekView's onPress is
+# `setIsApproveDialogOpen(true)`); `handleConfirmApprove` runs from the
+# dialog's confirm alone. Without these two steps the week is never approved
+# and the assertion below fails on a still-enabled button.
+- assertVisible:
+    id: 'hours-approve-dialog'
+- tapOn:
+    id: 'hours-approve-dialog-confirm'
 - waitForAnimationToEnd
 # hours-approve-button renders (and is merely `disabled`) regardless of
 # actionability, and hours-timesheet-status always renders — neither proves

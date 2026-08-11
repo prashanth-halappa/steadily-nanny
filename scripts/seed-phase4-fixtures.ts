@@ -83,6 +83,17 @@ import { assertLocalSupabaseUrl } from './localSupabaseGuard';
 const NANNY_EMAIL = 'nanny@steadilynanny.test';
 const PARENT_EMAIL = 'parent@steadilynanny.test';
 const HOUSEHOLD_NAME = 'Our household';
+/**
+ * The zone for households this script CREATES (the Sunday household, the two
+ * drafts) and for the throwaway user profiles it mints.
+ *
+ * It is NOT the zone for rows written into the SHARED seed household — those
+ * use `households.timezone`, read at run time. Hardcoding one zone for both is
+ * what made flow 08 undrivable: with the shared household on
+ * America/Los_Angeles, a London "today" rolls over eight hours early, so on
+ * any evening run this script reset TOMORROW's shift and handed the flow an id
+ * for a shift the app does not consider today at all.
+ */
 const TIMEZONE = 'Europe/London';
 const CURRENCY = 'GBP';
 const TEST_PASSWORD = 'SteadilyTest!2026';
@@ -450,11 +461,12 @@ async function main(): Promise<void> {
   // active member of.
   const { data: candidates, error: hhError } = await db
     .from('households')
-    .select('id')
+    .select('id, timezone')
     .eq('name', HOUSEHOLD_NAME);
   if (hhError) throw hhError;
 
   let householdId: string | null = null;
+  let householdTimezone: string | null = null;
   for (const candidate of candidates ?? []) {
     const { data: membership } = await db
       .from('household_members')
@@ -465,6 +477,7 @@ async function main(): Promise<void> {
       .maybeSingle();
     if (membership) {
       householdId = candidate.id;
+      householdTimezone = candidate.timezone;
       break;
     }
   }
@@ -475,7 +488,10 @@ async function main(): Promise<void> {
     );
     process.exit(1);
   }
-  console.log(`[found]   household -> ${householdId}`);
+  // Every wall-clock time written into the SHARED household is nominal in this
+  // zone, and so are its "today"/"tomorrow" — see TIMEZONE's doc.
+  const householdTz = householdTimezone ?? TIMEZONE;
+  console.log(`[found]   household -> ${householdId} (${householdTz})`);
 
   // --- 1. Clear arrangements so flow 07's setup screen is reachable --------
   const { data: clearedArrangements, error: clearError } = await db
@@ -499,7 +515,7 @@ async function main(): Promise<void> {
     entryDate: OT_ENTRY_DATE,
     clockIn: OT_ENTRY_IN,
     clockOut: OT_ENTRY_OUT,
-    timezone: TIMEZONE,
+    timezone: householdTz,
     label: 'overtime week (flow 07)',
   });
 
@@ -526,7 +542,7 @@ async function main(): Promise<void> {
     entryDate: HOLIDAY_WEEK_START,
     clockIn: '09:00',
     clockOut: '17:00',
-    timezone: TIMEZONE,
+    timezone: householdTz,
     label: 'holiday week (flow 09)',
   });
 
@@ -581,6 +597,28 @@ async function main(): Promise<void> {
       { onConflict: 'user_id,household_id' }
     );
   if (sundayMembersError) throw sundayMembersError;
+
+  // A child is what makes this household ONBOARDED. `useIsOnboarded` treats an
+  // owner as set up only once the ACTIVE household has >= 1 child, and the
+  // active household is sticky client-side state — so a childless second
+  // household does not just look empty, it sends the seed parent into the
+  // onboarding wizard on their next sign-in and every flow after that fails on
+  // a missing tab bar (seen on flow 07). One child costs nothing and keeps the
+  // household a legitimate one to switch into.
+  const { data: sundayChild } = await db
+    .from('children')
+    .select('id')
+    .eq('household_id', sundayHouseholdId)
+    .maybeSingle();
+  if (!sundayChild) {
+    const { error } = await db.from('children').insert({
+      household_id: sundayHouseholdId,
+      name: 'Sunday Kid',
+      avatar_initial: 'S',
+    });
+    if (error) throw error;
+    console.log('[created] Sunday household child');
+  }
 
   const { data: sundayArrangement } = await db
     .from('pay_arrangements')
@@ -684,7 +722,7 @@ async function main(): Promise<void> {
   // its today-shift up with `.eq('local_date', today).maybeSingle()`, which
   // throws the moment a second shift shares that date. Seeding these on today
   // would break the other seeder.
-  const tomorrow = addDaysISO(localDateOf(new Date(), TIMEZONE), 1);
+  const tomorrow = addDaysISO(localDateOf(new Date(), householdTz), 1);
 
   const { error: coverClearError } = await db
     .from('shifts')
@@ -703,9 +741,9 @@ async function main(): Promise<void> {
     .insert({
       household_id: householdId,
       carer_id: nannyId,
-      starts_at: zonedWallTimeToUtcIso(tomorrow, '18:00', TIMEZONE),
-      ends_at: zonedWallTimeToUtcIso(tomorrow, '21:00', TIMEZONE),
-      timezone: TIMEZONE,
+      starts_at: zonedWallTimeToUtcIso(tomorrow, '18:00', householdTz),
+      ends_at: zonedWallTimeToUtcIso(tomorrow, '21:00', householdTz),
+      timezone: householdTz,
       local_date: '1900-01-01', // overwritten by the trigger
       kind: 'cover',
       status: 'pending',
@@ -723,9 +761,9 @@ async function main(): Promise<void> {
     .insert({
       household_id: householdId,
       carer_id: nannyId,
-      starts_at: zonedWallTimeToUtcIso(tomorrow, '21:30', TIMEZONE),
-      ends_at: zonedWallTimeToUtcIso(tomorrow, '22:30', TIMEZONE),
-      timezone: TIMEZONE,
+      starts_at: zonedWallTimeToUtcIso(tomorrow, '21:30', householdTz),
+      ends_at: zonedWallTimeToUtcIso(tomorrow, '22:30', householdTz),
+      timezone: householdTz,
       local_date: '1900-01-01',
       kind: 'cover',
       status: 'pending',
@@ -751,13 +789,13 @@ async function main(): Promise<void> {
   // `cancel` change request against every overlapping shift. Re-running the
   // flow needs three things back at their start state: no sick row for today,
   // no leftover change request, and the today-shift `confirmed` again.
-  const today = localDateOf(new Date(), TIMEZONE);
+  const today = localDateOf(new Date(), householdTz);
   const todayEndUtc = zonedWallTimeToUtcIso(
     addDaysISO(today, 1),
     '00:00',
-    TIMEZONE
+    householdTz
   );
-  const todayStartUtc = zonedWallTimeToUtcIso(today, '00:00', TIMEZONE);
+  const todayStartUtc = zonedWallTimeToUtcIso(today, '00:00', householdTz);
 
   const { error: timeOffClearError } = await db
     .from('carer_time_off')
