@@ -224,6 +224,13 @@ export async function runCalendarSync(deps: CalendarSyncDeps): Promise<void> {
     const desired: DesiredEvent[] = [];
 
     for (const household of households) {
+      // Only a DRAFT household has a null name (093 §4.2): a nanny's private
+      // terms sketch with no family yet. Per D-34 drafts stay out of every
+      // downstream consumer, and the device calendar is one — a phone event
+      // for a household nobody can name is noise, not information. (Drafts
+      // have no materialised shifts either, so this skips nothing real.)
+      if (household.name === null) continue;
+
       const membership = membershipByHousehold.get(household.id);
       const role = syncRoleForMembership(membership?.role);
       const carerOnly = isCarerRole(membership?.role);

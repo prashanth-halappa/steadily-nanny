@@ -67,6 +67,18 @@ import { PayScheduleFields } from './PayScheduleFields';
 import { PayTermsGroups } from './PayTermsGroups';
 
 interface PayChangeSheetProps {
+  /**
+   * `change` is a parent writing a new arrangement over an existing one.
+   * `propose` is 3-O's terms proposal — the SAME form, which is the whole
+   * point (`screens-pay-terms.md` §4: "Setup, change, and 3-O's nanny
+   * proposal are one form rendered in three modes"). Had 3-O grown a second
+   * terms form, the two surfaces would have drifted on wording inside a
+   * release. The mode changes the header, the submit label, and whether the
+   * consequence card renders. Nothing else.
+   */
+  mode?: 'change' | 'propose';
+  /** Who will read the proposal — named in `propose`'s subtitle. */
+  counterpartyName?: string;
   visible: boolean;
   onDismiss: () => void;
   onSubmit: (input: CreatePayArrangementRequest) => void;
@@ -87,6 +99,13 @@ interface PayChangeSheetProps {
   /** IANA timezone — recomputes "today" at submit time so a sheet left open
    * across midnight never submits a stale date (review finding 11). */
   householdTimezone: string;
+  /**
+   * The date the form OPENS on, when it should not be today: a counter
+   * pre-fills the start date the other side proposed, so answering a
+   * Monday-start offer on a Friday does not silently move the start to
+   * Friday. Omitted, the field seeds to `todayISO` as it always did.
+   */
+  initialEffectiveDateISO?: string;
   /** Household `week_starts_on` (0=Sunday..6=Saturday). Decides which
    * effective dates split a week, and so whether §7.3's consequence card
    * shows — a Monday literal would warn a Sunday-start household on exactly
@@ -115,12 +134,13 @@ function multiplierToText(multiplier: number | null | undefined): string {
 function seedFormState(
   arrangement: PayArrangement,
   householdCancellationDefaultHours: number,
-  todayISO: string
+  todayISO: string,
+  initialEffectiveDateISO?: string
 ): PayTermsFormState {
   return {
     rateText: minorToMajorText(arrangement.rate_minor),
     currency: arrangement.currency,
-    effectiveDateISO: todayISO,
+    effectiveDateISO: initialEffectiveDateISO ?? todayISO,
     todayISO,
     overtimeThresholdHoursText: minutesToHoursText(
       arrangement.overtime_threshold_minutes
@@ -182,6 +202,8 @@ function seedFormState(
 }
 
 export function PayChangeSheet({
+  mode = 'change',
+  counterpartyName,
   visible,
   onDismiss,
   onSubmit,
@@ -189,10 +211,19 @@ export function PayChangeSheet({
   currentArrangement,
   householdCancellationDefaultHours,
   todayISO,
+  initialEffectiveDateISO,
   householdTimezone,
   householdWeekStartsOn,
 }: PayChangeSheetProps) {
   const { t } = useTranslation('pay');
+  const proposing = mode === 'propose';
+  const testIDPrefix = proposing ? 'pay-propose' : 'pay-change';
+  // Literal `t()` calls per branch — see `AcceptTermsSheet` for why a ternary
+  // INSIDE `t(...)` hides the second key from the locale-key guard.
+  const title = proposing ? t('proposeSheet.title') : t('changeSheet.title');
+  const submitLabel = proposing
+    ? t('proposeSheet.submitButton')
+    : t('changeSheet.submitButton');
 
   // Seeded from the arrangement, NOT `getDeviceCurrency()`: an existing
   // arrangement's currency is a stored fact about the employment, and the
@@ -201,7 +232,8 @@ export function PayChangeSheet({
     seedFormState(
       currentArrangement,
       householdCancellationDefaultHours,
-      todayISO
+      todayISO,
+      initialEffectiveDateISO
     )
   );
   const patch = (next: Partial<PayTermsFormState>) =>
@@ -224,10 +256,16 @@ export function PayChangeSheet({
       seedFormState(
         currentArrangement,
         householdCancellationDefaultHours,
-        todayRef.current
+        todayRef.current,
+        initialEffectiveDateISO
       )
     );
-  }, [visible, currentArrangement, householdCancellationDefaultHours]);
+  }, [
+    visible,
+    currentArrangement,
+    householdCancellationDefaultHours,
+    initialEffectiveDateISO,
+  ]);
 
   // Render-time only — drives the submit button's enabled state. This value
   // must NOT be what gets submitted (review finding 11).
@@ -236,21 +274,24 @@ export function PayChangeSheet({
   // T11 / §7.3: a sentence per CHANGED term, from the same `buildTermsDiff`
   // the version history renders — one function, so the history can never
   // describe a change differently from how it was reviewed (§8.5).
-  const consequences = request
-    ? buildTermsChangeConsequence(
-        buildTermsDiff(
-          currentArrangement,
-          {
-            ...currentArrangement,
-            ...request,
-            currency: request.currency ?? currentArrangement.currency,
-            note: request.note ?? null,
-          },
-          t
-        ),
-        isWeekStartDay(form.effectiveDateISO, householdWeekStartsOn)
-      )
-    : [];
+  // A proposal prices NOTHING — it is a message about money, never a record
+  // of it — so the consequence card has nothing true to say here.
+  const consequences =
+    request && !proposing
+      ? buildTermsChangeConsequence(
+          buildTermsDiff(
+            currentArrangement,
+            {
+              ...currentArrangement,
+              ...request,
+              currency: request.currency ?? currentArrangement.currency,
+              note: request.note ?? null,
+            },
+            t
+          ),
+          isWeekStartDay(form.effectiveDateISO, householdWeekStartsOn)
+        )
+      : [];
 
   const handleSubmit = () => {
     // Recomputed HERE, not read from the `todayISO` prop closed over at
@@ -273,22 +314,27 @@ export function PayChangeSheet({
 
   return (
     <BottomSheetBase
-      sheetId="pay-change"
+      sheetId={testIDPrefix}
       visible={visible}
       onDismiss={onDismiss}
-      testID="pay-change-sheet"
+      testID={`${testIDPrefix}-sheet`}
       fitContent
       showCloseButton
     >
       <View className="gap-4 px-6 pb-4">
-        <H4>{t('changeSheet.title')}</H4>
+        <H4>{title}</H4>
+        {proposing ? (
+          <Small testID="pay-propose-subtitle" className="text-muted-strong">
+            {t('proposeSheet.subtitle', { name: counterpartyName ?? '' })}
+          </Small>
+        ) : null}
 
         <View className="gap-2">
           <Label>{t('changeSheet.currencyLabel')}</Label>
           <CurrencySelect
             value={form.currency}
             onChange={currency => patch({ currency })}
-            testIDPrefix="pay-change"
+            testIDPrefix={testIDPrefix}
           />
         </View>
 
@@ -296,13 +342,13 @@ export function PayChangeSheet({
           <Label>{t('changeSheet.rateLabel')}</Label>
           <View className="flex-row items-center gap-2">
             <Body
-              testID="pay-change-currency-prefix"
+              testID={`${testIDPrefix}-currency-prefix`}
               className="text-muted-foreground"
             >
               {currencySymbol(form.currency)}
             </Body>
             <Input
-              testID="pay-change-rate-input"
+              testID={`${testIDPrefix}-rate-input`}
               accessibilityLabel={t('changeSheet.rateLabel')}
               value={form.rateText}
               onChangeText={rateText => patch({ rateText })}
@@ -319,7 +365,7 @@ export function PayChangeSheet({
         </View>
 
         <EffectiveDateField
-          testIDPrefix="pay-change"
+          testIDPrefix={testIDPrefix}
           value={form.effectiveDateISO}
           onChange={effectiveDateISO => patch({ effectiveDateISO })}
           todayISO={todayISO}
@@ -329,12 +375,12 @@ export function PayChangeSheet({
             tone="attention" card in mutedStrong (Rule M — mutedForeground
             fails AA on surfaceAttention). Inline, never a toast (GOLDEN #40). */}
         {consequences.length > 0 ? (
-          <Card testID="pay-change-consequence-card" tone="attention">
+          <Card testID={`${testIDPrefix}-consequence-card`} tone="attention">
             <View className="gap-2 p-4">
               {consequences.map((consequence, index) => (
                 <Small
                   key={consequence.key}
-                  testID={`pay-change-consequence-${index}`}
+                  testID={`${testIDPrefix}-consequence-${index}`}
                   className="text-muted-strong"
                 >
                   {t(consequence.key, consequence.params)}
@@ -348,7 +394,7 @@ export function PayChangeSheet({
           <Label>{t('changeSheet.cancellationsFieldLabel')}</Label>
           <View className="flex-row flex-wrap gap-2">
             <Button
-              testID="pay-change-cancellation-chip-window"
+              testID={`${testIDPrefix}-cancellation-chip-window`}
               variant={
                 form.cancellationChoice === 'window' ? 'default' : 'outline'
               }
@@ -366,7 +412,7 @@ export function PayChangeSheet({
               </Text>
             </Button>
             <Button
-              testID="pay-change-cancellation-chip-none"
+              testID={`${testIDPrefix}-cancellation-chip-none`}
               variant={
                 form.cancellationChoice === 'none' ? 'default' : 'outline'
               }
@@ -386,7 +432,7 @@ export function PayChangeSheet({
           </View>
           {form.cancellationChoice === 'window' ? (
             <Input
-              testID="pay-change-cancellation-hours-input"
+              testID={`${testIDPrefix}-cancellation-hours-input`}
               accessibilityLabel={t('changeSheet.cancellationHoursLabel')}
               value={form.cancellationHoursText}
               onChangeText={cancellationHoursText =>
@@ -398,7 +444,7 @@ export function PayChangeSheet({
         </View>
 
         <PayTermsGroups
-          testIDPrefix="pay-change"
+          testIDPrefix={testIDPrefix}
           state={form}
           onChange={patch}
           seed={currentArrangement}
@@ -409,7 +455,7 @@ export function PayChangeSheet({
             part of PayTermsGroups' D-3 expanders (spec §4.3 lists it as its
             own, always-visible block). */}
         <PayScheduleFields
-          testIDPrefix="pay-change"
+          testIDPrefix={testIDPrefix}
           t={t}
           payFrequency={form.payFrequency}
           onPayFrequencyChange={payFrequency => patch({ payFrequency })}
@@ -426,7 +472,7 @@ export function PayChangeSheet({
         <View className="gap-2">
           <Label>{t('changeSheet.noteLabel')}</Label>
           <Textarea
-            testID="pay-change-note-input"
+            testID={`${testIDPrefix}-note-input`}
             accessibilityLabel={t('changeSheet.noteLabel')}
             value={form.note}
             onChangeText={note => patch({ note })}
@@ -435,8 +481,8 @@ export function PayChangeSheet({
         </View>
 
         <LoadingButton
-          testID="pay-change-submit"
-          label={t('changeSheet.submitButton')}
+          testID={`${testIDPrefix}-submit`}
+          label={submitLabel}
           isLoading={isSubmitting}
           disabled={!request}
           onPress={handleSubmit}

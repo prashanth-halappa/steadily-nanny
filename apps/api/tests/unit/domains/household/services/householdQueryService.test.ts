@@ -24,6 +24,7 @@ const household: Household = {
   currency: 'GBP',
   jurisdiction: null,
   week_starts_on: 1,
+  state: 'live',
   created_by: 'u1',
   created_at: 't',
   updated_at: 't',
@@ -54,6 +55,9 @@ const invite: HouseholdInvite = {
   status: 'pending',
   accepted_by: null,
   accepted_at: null,
+  link_expires_at: null,
+  opened_at: null,
+  label: null,
   created_at: 't',
   updated_at: 't',
 };
@@ -290,6 +294,8 @@ describe('HouseholdQueryService.previewInvite', () => {
       household_name: 'The Smiths',
       children_first_names: ['Maya'],
       role: 'nanny',
+      household_state: 'live',
+      carer_name: null,
     });
   });
 
@@ -381,6 +387,72 @@ describe('HouseholdQueryService.previewInvite', () => {
       household_name: 'The Smiths',
       children_first_names: ['Maya'],
       role: 'nanny',
+      household_state: 'live',
+      carer_name: null,
     });
+  });
+});
+
+/**
+ * §8.2 — the absorption confirm sheet fires from THIS call. "The redeemer
+ * already has a live household" cannot tell a nanny's draft code apart from an
+ * ordinary co-parent invite to a second family, so the kind of code has to
+ * come from the server.
+ */
+describe('HouseholdQueryService.previewInvite — a nanny-authored draft', () => {
+  const draft = {
+    ...household,
+    id: 'h-draft',
+    name: null,
+    state: 'draft',
+    created_by: 'u-nanny',
+  };
+  const proposalRepo: any = {
+    findOpenForCarer: mock(async () => ({
+      carer_display_name: 'Marisol Mendez',
+    })),
+  };
+
+  function draftSvc(overrides: Record<string, unknown> = {}) {
+    return new HouseholdQueryService(
+      makeHouseholdRepo({ findById: mock(async () => draft) }),
+      makeMemberRepo(),
+      makeInviteRepo(),
+      undefined,
+      { ...proposalRepo, ...overrides } as any
+    );
+  }
+
+  it('answers, and says which kind of code it is', async () => {
+    const preview = await draftSvc().previewInvite('ABC-234');
+
+    expect(preview.household_state).toBe('draft');
+    expect(preview.carer_name).toBe('Marisol M.');
+  });
+
+  it('names her the same way the public page does — first name, last initial', async () => {
+    // Same helper as `termsPreview`, so the sheet and the web page can never
+    // introduce her differently.
+    const preview = await draftSvc().previewInvite('ABC-234');
+    expect(preview.carer_name).not.toContain('Mendez');
+  });
+
+  it('discloses no family name and no children — a draft has neither to give', async () => {
+    // The "children" in a draft are the placeholders SHE typed while pricing
+    // her own week. They are not this family's children and must not be
+    // rendered as though they were.
+    const preview = await draftSvc().previewInvite('ABC-234');
+
+    expect(preview.household_name).toBe('');
+    expect(preview.children_first_names).toEqual([]);
+  });
+
+  it('still answers when she has no open proposal to name her', async () => {
+    const preview = await draftSvc({
+      findOpenForCarer: mock(async () => null),
+    }).previewInvite('ABC-234');
+
+    expect(preview.household_state).toBe('draft');
+    expect(preview.carer_name).toBeNull();
   });
 });

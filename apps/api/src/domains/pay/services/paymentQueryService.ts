@@ -139,6 +139,12 @@ export class PaymentQueryService {
    * trail, not a live surface that vanishes with the badge. A removed
    * owner/parent keeps the household view for the same reason.
    *
+   * A `candidate` is refused from 3-O, and by the LOOKUP rather than by an arm
+   * below: `findMembershipAnyStatus` filters positively to `{active, removed}`,
+   * so a nanny whose terms nobody has agreed yet reads null here and takes the
+   * same opaque 404 a stranger takes. There is no audit trail to keep for
+   * somebody who has not been paid anything (D-49).
+   *
    * A helper is denied in BOTH statuses: she never had a money surface to
    * keep (the rule every read in this domain shares). Every denial is the
    * SAME `PaymentNotFoundError`, so a non-member learns nothing about a

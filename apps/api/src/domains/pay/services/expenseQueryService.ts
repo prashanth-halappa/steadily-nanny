@@ -143,10 +143,16 @@ export class ExpenseQueryService {
    * Returns the SCOPE the caller is entitled to rather than a boolean, so
    * every read method narrows its rows the same way.
    *
-   * ANY-STATUS ON PURPOSE: a `removed` member keeps her role's read scope
-   * (module doc). The role arms below already do all the narrowing that
+   * IS-OR-WAS-A-MEMBER ON PURPOSE: a `removed` member keeps her role's read
+   * scope (module doc). The role arms below already do all the narrowing that
    * needs doing — a removed nanny lands on the `own` arm exactly like an
    * active one, so she can never reach carer-2's rows.
+   *
+   * A `candidate` is refused here from 3-O, and by the LOOKUP rather than
+   * by an arm below: `findMembershipAnyStatus` filters positively to
+   * `{active, removed}`, so a nanny whose terms nobody has agreed yet
+   * reads null and lands on the same opaque 404 a stranger gets. She has
+   * no money trail here to keep (D-49).
    */
   private async assertCanRead(
     callerId: string,

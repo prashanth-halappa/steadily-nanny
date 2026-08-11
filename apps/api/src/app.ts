@@ -7,6 +7,7 @@ import helmet from 'helmet';
 import { APP_IDENTITY } from './config/app.identity';
 import helmetConfig from './config/helmetConfig';
 import Sentry from './config/sentry';
+import publicInviteRoutes from './domains/household/routes/publicInviteRoutes';
 import { validateSupabaseToken } from './middlewares/auth';
 import { cacheControl } from './middlewares/cacheControl';
 import { errorHandler } from './middlewares/errorHandler';
@@ -60,6 +61,12 @@ app.use(morganMiddleware);
 app.use('/api/jobs', jobRoutes);
 // App status: pre-auth (optional token resolved inside for per-user betaAllPro).
 app.use('/api/app', appStatusRoutes);
+// The public terms page's two routes (3-O §6.2): the invite CODE is the bearer
+// secret, and the reader is a parent who has been sent a link and has no
+// account yet. Mounted before `validateSupabaseToken` below for that reason;
+// every other `/api/v1/household-invites/...` path falls through this router
+// to the authenticated stack, because an Express Router next()s on a miss.
+app.use('/api/v1/household-invites', publicInviteRoutes);
 // SETUP: mount any signed webhook routes here (their own shared secret, not a
 // Supabase token) — e.g. `app.use('/api/webhooks', myWebhookRoutes)`. The raw
 // body needed for signature verification is captured above for any

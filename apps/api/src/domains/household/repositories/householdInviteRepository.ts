@@ -10,7 +10,36 @@ import { supabaseService } from '../../../config/supabase';
 import { DatabaseError } from '../../../errors';
 import { BaseRepository } from '../../../shared/repositories/baseRepository';
 import { HOUSEHOLD_INVITE_STATUSES } from '../schemas';
-import type { HouseholdInvite } from '../types';
+import type { HouseholdInvite, HouseholdMember } from '../types';
+
+/**
+ * Every `outcome` 094's `redeem_draft_household_invite` can answer with.
+ *
+ * OUTCOMES, NOT EXCEPTIONS (077's pattern): the function raises nothing, and
+ * the service maps each of these to the API's own error types. That is what
+ * keeps the opaque-404 convention owned by TypeScript, where the rest of it
+ * lives, instead of half-expressed in SQL error codes.
+ */
+export type RedeemDraftOutcome =
+  | {
+      outcome: 'redeemed';
+      instantiated: boolean;
+      household_id: string;
+      draft_household_id: string;
+      carer_id: string;
+      membership: HouseholdMember;
+      proposal: { id: string } | null;
+    }
+  | { outcome: 'already_member'; household_id: string; status: string }
+  | { outcome: 'proposal_already_open'; household_id: string }
+  | {
+      outcome:
+        | 'invite_unavailable'
+        | 'not_a_draft_invite'
+        | 'draft_has_no_author'
+        | 'self_redemption'
+        | 'target_not_permitted';
+    };
 
 export class HouseholdInviteRepository extends BaseRepository<HouseholdInvite> {
   constructor() {
@@ -97,6 +126,80 @@ export class HouseholdInviteRepository extends BaseRepository<HouseholdInvite> {
       });
     }
     return data as HouseholdInvite | null;
+  }
+
+  /**
+   * Redeem a NANNY-AUTHORED (draft) invite through 094, which does target
+   * resolution, household instantiation, both membership inserts, the children
+   * and proposal copies and the claim inside ONE transaction.
+   *
+   * A database function rather than seven service calls for the reason 094's
+   * header gives at length: today's path does its CAS and then does more work,
+   * which is why it needs a stranded-claim self-heal, and that crash window
+   * gets LARGER once redemption does this much. Here a rolled-back transaction
+   * never claimed anything, so there is nothing to heal.
+   *
+   * `targetHouseholdId` null means "instantiate a new live household from the
+   * draft"; non-null is §8.2's absorption target, explicitly picked by the
+   * parent so absorption can never silently choose a household.
+   */
+  async redeemDraftHousehold(
+    code: string,
+    redeemerId: string,
+    targetHouseholdId: string | null
+  ): Promise<RedeemDraftOutcome> {
+    const { data, error } = await supabaseService.rpc(
+      'redeem_draft_household_invite',
+      {
+        p_code: code,
+        p_redeemer_id: redeemerId,
+        p_target_household_id: targetHouseholdId,
+      }
+    );
+
+    if (error) {
+      throw new DatabaseError(
+        'Failed to redeem draft invite',
+        'DATABASE_ERROR',
+        { details: error.message }
+      );
+    }
+    const payload = data as RedeemDraftOutcome | null;
+    if (!payload?.outcome) {
+      // No answer at all is not "not a draft": falling through to the ordinary
+      // path on a silent failure would run a second redemption attempt against
+      // a code the function may already have claimed.
+      throw new DatabaseError(
+        'Unrecognised draft redemption outcome',
+        'DATABASE_ERROR',
+        { outcome: null }
+      );
+    }
+    return payload;
+  }
+
+  /**
+   * Stamp the first time the public terms page rendered for this code (§5.3
+   * "Opened"), called unauthenticated by the CF worker.
+   *
+   * `is('opened_at', null)` makes it idempotent AND makes the timestamp mean
+   * what §5.3 says it means: the FIRST open, never the latest. A second render
+   * matches zero rows, which is the point — the answer she wants is "did this
+   * reach them", deliberately not how many times, from where, or for how long.
+   */
+  async stampOpened(code: string): Promise<void> {
+    const { error } = await supabaseService
+      .from(this.table)
+      .update({ opened_at: new Date().toISOString() })
+      .eq('code', code)
+      .is('opened_at', null);
+
+    if (error) {
+      throw new DatabaseError('Failed to stamp invite open', 'DATABASE_ERROR', {
+        details: error.message,
+        code,
+      });
+    }
   }
 
   /**

@@ -9,7 +9,11 @@ import { supabaseService } from '../../../config/supabase';
 import { DatabaseError } from '../../../errors';
 import { BaseRepository } from '../../../shared/repositories/baseRepository';
 import { AlreadyMemberError } from '../errors/householdErrors';
-import type { HouseholdMember } from '../types';
+import {
+  HOUSEHOLD_MEMBER_STATUSES,
+  HOUSEHOLD_MEMBERSHIP_STATUSES,
+} from '../schemas';
+import type { HouseholdMember, HouseholdMemberStatus } from '../types';
 
 /** Postgres unique_violation error code. */
 const UNIQUE_VIOLATION = '23505';
@@ -48,12 +52,66 @@ export class HouseholdMemberRepository extends BaseRepository<HouseholdMember> {
   }
 
   /**
-   * The user's membership row for a household whatever its status — including
-   * `removed`. Used to tell "this invite was redeemed and the membership
-   * exists (or existed)" from "the redeem never landed at all"; the active-only
-   * lookup can't, because a removed member looks identical to a stranger.
+   * The user's membership row for a household, active or `removed`.
+   *
+   * This is the MONEY-READ lookup: `assertPayrollReader`, `assertPaymentReader`
+   * and their expense, pay-terms, settlement and PTO twins all call it and then
+   * branch on ROLE ALONE. A removed nanny must still read the hours she worked
+   * and the pay she was owed — payroll is an audit trail, not a live surface
+   * that vanishes with the badge — so "is, or once was, a member here" is
+   * exactly the question, and this is exactly the answer.
+   *
+   * The name predates `candidate` (D-49). When statuses were `{active,
+   * removed}`, "any status" and "is or was a member" were the same set; they
+   * are not any more. A `candidate` is a nanny who redeemed a code into a live
+   * household and whose terms are not accepted yet — she has no money trail to
+   * keep and must read none of the family's, so she is excluded here and every
+   * one of those six gates refuses her with its own opaque 404, unchanged.
+   *
+   * The filter is a POSITIVE `in (...)` list and must stay one. A
+   * `neq('status', 'removed')` computes the same set today and admits every
+   * status added tomorrow — the one shape that would grant a candidate the
+   * household's money with nothing failing (093's header, spec §17).
+   *
+   * Use `findMembershipIncludingCandidate` where "does a row exist at all" is
+   * genuinely the question.
    */
   async findMembershipAnyStatus(
+    householdId: string,
+    userId: string
+  ): Promise<HouseholdMember | null> {
+    const { data, error } = await supabaseService
+      .from(this.table)
+      .select('*')
+      .eq('household_id', householdId)
+      .eq('user_id', userId)
+      .in('status', HOUSEHOLD_MEMBERSHIP_STATUSES)
+      .maybeSingle();
+
+    if (error) {
+      throw new DatabaseError(
+        'Failed to look up household membership',
+        'DATABASE_ERROR',
+        { details: error.message, householdId, userId }
+      );
+    }
+    return data as HouseholdMember | null;
+  }
+
+  /**
+   * The user's membership row whatever its status, `candidate` included.
+   *
+   * Two callers, both asking "does a row exist at all" rather than "may this
+   * person read anything": `redeemInvite`'s pre-check (the unique
+   * `(household_id, user_id)` index makes a fresh insert impossible for a row
+   * in ANY state, and refusing before the claim is what stops a no-op burning
+   * a single-use code) and the stranded-claim self-heal (a candidate row means
+   * the redeem DID land, so there is nothing stranded to release).
+   *
+   * GRANTS NOTHING. Every caller must decide access from the status it reads
+   * back, never from the row merely existing.
+   */
+  async findMembershipIncludingCandidate(
     householdId: string,
     userId: string
   ): Promise<HouseholdMember | null> {
@@ -131,7 +189,7 @@ export class HouseholdMemberRepository extends BaseRepository<HouseholdMember> {
 
   private async listRowsByUser(
     userId: string,
-    status?: 'active' | 'removed'
+    status?: HouseholdMemberStatus
   ): Promise<HouseholdMember[]> {
     const base = supabaseService
       .from(this.table)
@@ -173,7 +231,7 @@ export class HouseholdMemberRepository extends BaseRepository<HouseholdMember> {
 
   private async listHouseholdIdsByStatus(
     userId: string,
-    status: 'active' | 'removed'
+    status: HouseholdMemberStatus
   ): Promise<string[]> {
     const { data, error } = await supabaseService
       .from(this.table)
@@ -194,18 +252,28 @@ export class HouseholdMemberRepository extends BaseRepository<HouseholdMember> {
   }
 
   /**
-   * Soft-remove a membership. Compare-and-set on `status = 'active'`, so a
-   * second remove — a retry, or the other parent tapping at the same moment —
-   * matches zero rows and returns null instead of reporting a fresh removal.
-   * The row is never deleted: `time_entries` and `shifts` reference the member,
-   * and their history has to survive the person leaving.
+   * Soft-remove a membership. Compare-and-set on the two statuses a person can
+   * be removed FROM, so a second remove — a retry, or the other parent tapping
+   * at the same moment — matches zero rows and returns null instead of
+   * reporting a fresh removal. The row is never deleted: `time_entries` and
+   * `shifts` reference the member, and their history has to survive the person
+   * leaving.
+   *
+   * `candidate` is in the set because declining is how that window ends (D-49):
+   * the parent read her terms and said no, and without it her row had no exit —
+   * `reactivateMembership` CASes on `removed` and this CASed on `active`, so
+   * she would have been stuck pending forever. Still a positive list, so
+   * `removed` matches neither and the double-remove no-op is unaffected.
    */
   async removeMembership(memberId: string): Promise<HouseholdMember | null> {
     const { data, error } = await supabaseService
       .from(this.table)
-      .update({ status: 'removed' })
+      .update({ status: HOUSEHOLD_MEMBER_STATUSES.REMOVED })
       .eq('id', memberId)
-      .eq('status', 'active')
+      .in('status', [
+        HOUSEHOLD_MEMBER_STATUSES.ACTIVE,
+        HOUSEHOLD_MEMBER_STATUSES.CANDIDATE,
+      ])
       .select()
       .maybeSingle();
 
@@ -243,6 +311,40 @@ export class HouseholdMemberRepository extends BaseRepository<HouseholdMember> {
     if (error) {
       throw new DatabaseError(
         'Failed to reactivate household member',
+        'DATABASE_ERROR',
+        { details: error.message, memberId }
+      );
+    }
+    return data as HouseholdMember | null;
+  }
+
+  /**
+   * The acceptance transition (§8.2.1): a `candidate` becomes a full member.
+   *
+   * Called by the terms-proposal service inside the same transaction that
+   * inserts the `pay_arrangements` row — one state change, one moment, and it
+   * is the moment a human agreed. Nothing else in the codebase may flip this
+   * status: the member PATCH refuses everything but `removed`, so household
+   * access still costs either a single-use code or an accepted proposal.
+   *
+   * CAS'd on `status = 'candidate'` for the same reason its two siblings CAS:
+   * a second acceptance, or an acceptance racing the parent's decline, must
+   * match zero rows rather than resurrect a removed member. `role` and
+   * `can_edit` are deliberately untouched — 094 already wrote them as
+   * `nanny`/false, and acceptance is not a promotion.
+   */
+  async activateCandidate(memberId: string): Promise<HouseholdMember | null> {
+    const { data, error } = await supabaseService
+      .from(this.table)
+      .update({ status: HOUSEHOLD_MEMBER_STATUSES.ACTIVE })
+      .eq('id', memberId)
+      .eq('status', HOUSEHOLD_MEMBER_STATUSES.CANDIDATE)
+      .select()
+      .maybeSingle();
+
+    if (error) {
+      throw new DatabaseError(
+        'Failed to activate household candidate',
         'DATABASE_ERROR',
         { details: error.message, memberId }
       );

@@ -195,7 +195,11 @@ export function TodayScreen() {
                 householdId={household.id}
                 timeZone={household.timezone}
                 weekStartsOn={household.week_starts_on}
-                householdName={household.name}
+                // A DRAFT household has no name yet (093 §4.2). This prop is
+                // the multi-household disambiguator ("Clocked into X"), so
+                // `undefined` would hide the one line telling her WHICH
+                // household she is on the clock for — label it instead.
+                householdName={household.name ?? t('household:untitledDraft')}
               />
             ) : null}
 

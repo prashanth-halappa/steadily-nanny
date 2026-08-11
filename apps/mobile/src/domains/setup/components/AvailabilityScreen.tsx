@@ -16,7 +16,6 @@ import { SetupScreenShell } from '@/src/domains/setup/components/SetupScreenShel
 import {
   getSetupStepRoute,
   getStepProgress,
-  SETUP_ROLES,
   SETUP_STEPS,
 } from '@/src/domains/setup/types';
 import { useAvailability } from '@/src/hooks/queries/useAvailability';
@@ -25,6 +24,8 @@ import { useSetupProgressStore } from '@/src/store/setupProgress';
 export function AvailabilityScreen() {
   const router = useRouter();
   const { t } = useTranslation('household');
+  const role = useSetupProgressStore(s => s.role);
+  const path = useSetupProgressStore(s => s.path);
   const setCurrentStep = useSetupProgressStore(s => s.setCurrentStep);
 
   const availability = useAvailability();
@@ -42,7 +43,7 @@ export function AvailabilityScreen() {
   return (
     <SetupScreenShell
       testID="availability-screen"
-      progress={getStepProgress(SETUP_ROLES.NANNY, SETUP_STEPS.AVAILABILITY)}
+      progress={getStepProgress(role, path, SETUP_STEPS.AVAILABILITY)}
       title={t('availability.wizardTitle')}
       subtitle={t('availability.wizardSubtitle')}
       ctaLabel={t('availability.finishButton')}

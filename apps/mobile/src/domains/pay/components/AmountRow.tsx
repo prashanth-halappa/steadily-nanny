@@ -49,7 +49,12 @@ export function AmountRow({
         </Body>
       </View>
       {subLine ? (
-        <Small className="text-muted-foreground">{subLine}</Small>
+        <Small
+          testID={testID ? `${testID}-subline` : undefined}
+          className="text-muted-foreground"
+        >
+          {subLine}
+        </Small>
       ) : null}
     </View>
   );

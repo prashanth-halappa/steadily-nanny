@@ -49,10 +49,19 @@ const updateNameMock = mock((req: { name: string }) => {
   return Promise.resolve({ user_id: 'user-1', name: req.name });
 });
 
+// The absorption confirm (§8.2) reads the redeemer's live households, so this
+// screen now mounts `useHouseholds` in both variants.
+const listHouseholdsMock = mock((): Promise<unknown[]> => Promise.resolve([]));
+const listPastHouseholdsMock = mock(
+  (): Promise<unknown[]> => Promise.resolve([])
+);
+
 mock.module('@/src/api/endpoints/household', () => ({
   householdApi: {
     previewInvite: previewInviteMock,
     redeemInvite: redeemInviteMock,
+    list: listHouseholdsMock,
+    listPast: listPastHouseholdsMock,
   },
 }));
 mock.module('@/src/api/endpoints/user', () => ({

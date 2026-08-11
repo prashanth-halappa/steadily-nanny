@@ -41,6 +41,8 @@ import {
   shiftRoutes,
 } from '../domains/shift';
 import dayThreadRoutes from '../domains/shift/routes/dayThreadRoutes';
+import termsProposalItemRoutes from '../domains/termsProposal/routes/termsProposalItemRoutes';
+import termsProposalRoutes from '../domains/termsProposal/routes/termsProposalRoutes';
 import {
   householdTimeEntryRoutes,
   householdTimesheetRoutes,
@@ -118,6 +120,23 @@ router.use(
   '/households/:householdId/carers/:carerId/pay-arrangements',
   payArrangementRoutes
 );
+
+// Terms proposals (3-O, D-35) — the same carer-nested scope, because a
+// proposal concerns exactly one carer and a household with two nannies has
+// two independent negotiations (D-21). A proposal is a MESSAGE about money,
+// never a record of it: acceptance inserts the real arrangement through the
+// router directly above, under the accepting parent's own credentials.
+// Append-only, so no PATCH and no DELETE — a counter is a new row.
+router.use(
+  '/households/:householdId/carers/:carerId/terms-proposals',
+  termsProposalRoutes
+);
+// The ITEM half, id-scoped: the review screen opens from a push carrying only
+// `data.proposalId` and must paint without first resolving the pair (§12). The
+// row supplies its own household and carer, and the service gates on those —
+// no ownership middleware anywhere on it (GOLDEN-FIXES #32, and the read
+// circle here is genuinely wider than the accept gate).
+router.use('/terms-proposals', termsProposalItemRoutes);
 
 // Expenses and mileage (Phase 4). Nested-then-flat, the same split as shifts
 // and time entries: the household scopes listing and creation, then a flat

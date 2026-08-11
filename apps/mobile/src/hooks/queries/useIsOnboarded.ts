@@ -3,6 +3,7 @@ import {
   HOUSEHOLD_ROLES,
   type HouseholdMember,
   type HouseholdRole,
+  type HouseholdState,
 } from '@steadily-nanny/shared-types/schemas/household.schema';
 import { useCallback } from 'react';
 import { SETUP_ROLES, type SetupRole } from '@/src/domains/setup/types';
@@ -32,6 +33,19 @@ export interface OnboardingState {
   /** The relevant household id for the resolved membership. Null while
    * loading or if none exists yet. */
   householdId: string | null;
+  /**
+   * Whether the resolved household is a nanny-authored DRAFT or a live one
+   * (D-34). Null while loading, on the error branch, or when the household
+   * row is not readable — a `candidate` membership does not put its household
+   * in `GET /households`, so "she has redeemed but not been accepted" reports
+   * null here rather than guessing.
+   *
+   * DELIBERATELY NOT FOLDED INTO `status`. That field already carries three
+   * meanings (loading / onboarded / not-onboarded) and every caller branches
+   * on it; a fourth would be read wrong by at least one of them. This is a
+   * separate dimension and it rides separately.
+   */
+  householdState: HouseholdState | null;
   /**
    * The resolved membership is `removed` — the user was taken out of this
    * household but keeps read-only access to the hours and pay she accrued in
@@ -91,6 +105,14 @@ function isOnboardedForMembership(
   // her as not-onboarded routes her into the signup wizard, which puts the
   // hours and pay she is still owed permanently out of reach.
   if (membership.status === HOUSEHOLD_MEMBER_STATUSES.REMOVED) {
+    return true;
+  }
+  // A CANDIDATE is set up too (§8.2.1). She has finished her wizard and
+  // redeemed a code; the family has simply not accepted her terms yet.
+  // Redemption is not hiring, but it is not un-signing-up either — this
+  // branch used to be a bare `!== ACTIVE -> false`, which would have routed
+  // her straight back into "Who are you?".
+  if (membership.status === HOUSEHOLD_MEMBER_STATUSES.CANDIDATE) {
     return true;
   }
   if (membership.status !== HOUSEHOLD_MEMBER_STATUSES.ACTIVE) {
@@ -194,6 +216,16 @@ export function useIsOnboarded(): OnboardingState {
     ? membershipRoleToSetupRole(membership.role)
     : null;
 
+  // The household row for whichever membership we resolved, from either list.
+  // Null when it isn't readable — most notably a `candidate`, whose household
+  // is deliberately absent from `GET /households` (§8.2.1's fail-closed
+  // visibility). Reporting null there is honest; guessing 'live' would not be.
+  const resolvedHousehold =
+    [...activeHousehold.households, ...activeHousehold.pastHouseholds].find(
+      household => household.id === resolvedHouseholdId
+    ) ?? null;
+  const householdState = resolvedHousehold?.state ?? null;
+
   const needsChildCount =
     membership?.role === HOUSEHOLD_ROLES.OWNER && resolvedHouseholdId;
 
@@ -210,6 +242,7 @@ export function useIsOnboarded(): OnboardingState {
       role: null,
       membershipRole: null,
       householdId: null,
+      householdState: null,
       isPastMember: false,
       membershipsError: true,
       retryMemberships,
@@ -222,6 +255,7 @@ export function useIsOnboarded(): OnboardingState {
       role: null,
       membershipRole: null,
       householdId: null,
+      householdState: null,
       isPastMember: false,
       membershipsError: false,
       retryMemberships,
@@ -234,6 +268,7 @@ export function useIsOnboarded(): OnboardingState {
       role: null,
       membershipRole: null,
       householdId: null,
+      householdState: null,
       isPastMember: false,
       membershipsError: false,
       retryMemberships,
@@ -246,6 +281,7 @@ export function useIsOnboarded(): OnboardingState {
       role: setupRole,
       membershipRole: membership.role,
       householdId: resolvedHouseholdId,
+      householdState,
       isPastMember,
       membershipsError: false,
       retryMemberships,
@@ -260,6 +296,7 @@ export function useIsOnboarded(): OnboardingState {
     role: setupRole,
     membershipRole: membership.role,
     householdId: resolvedHouseholdId,
+    householdState,
     isPastMember,
     membershipsError: false,
     retryMemberships,

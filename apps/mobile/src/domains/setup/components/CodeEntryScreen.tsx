@@ -14,14 +14,33 @@
  * snapshots the member's display name, and a null one renders as the 'Carer'
  * fallback on every money surface her family sees.
  *
- * The invitee never explicitly picks "I'm a helper" — RoleScreen's
- * non-parent fork just leads here. Which household role they actually got
- * (nanny vs. helper) is only known once the invite is redeemed, so THIS is
- * where the local wizard role is resolved and set — `stepsForRole` then
+ * The invitee never explicitly picks "I'm a helper" — the JOIN path leads
+ * here for both roles. Which household role they actually got (nanny, helper
+ * or co-parent) is only known once the invite is redeemed, so THIS is where
+ * the local wizard role is resolved and set; `stepsFor(role, 'join')` then
  * branches correctly for the remaining steps (helper skips availability and
  * calendar sync; nanny gets both).
+ *
+ * TWO ENTRY MODES, SUPPORTED EVERY TIME (D-50, spec §3.4). The mockups showed
+ * the code already filled in, which raised the fair question of how the app
+ * knew it. It does not, always:
+ *   a — arrived by link (`/t/:code` handed it in as `initialCode`)
+ *   b — opened on her own: empty field, autoFocus, and that is the DEFAULT
+ *       assumption everywhere. Any state that only works when a code arrived
+ *       by link is a bug.
+ * Resolution order on mount, first hit wins: route param, then a pending deep
+ * link replayed after sign-in, then (deferred, see below) the clipboard, then
+ * nothing.
+ *
+ * PRE-FILLING NEVER AUTO-SUBMITS, and the field is never read-only. Redemption
+ * is single-use (`claimPending`'s CAS), so auto-redeeming a mis-routed link
+ * would burn a code nobody meant to spend; and a wrong or stale code has to be
+ * correctable in place, or the only recovery is reinstalling the app.
  */
-import { HOUSEHOLD_ROLES } from '@steadily-nanny/shared-types/schemas/household.schema';
+import {
+  HOUSEHOLD_ROLES,
+  HOUSEHOLD_STATES,
+} from '@steadily-nanny/shared-types/schemas/household.schema';
 import { type Href, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -34,17 +53,20 @@ import { Input } from '@/src/components/ui/input';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { Text } from '@/src/components/ui/text';
 import { Body, H3 } from '@/src/components/ui/typography';
+import { AbsorptionConfirmSheet } from '@/src/domains/setup/components/AbsorptionConfirmSheet';
 import { SetupScreenShell } from '@/src/domains/setup/components/SetupScreenShell';
 import {
   getNextSetupStep,
   getSetupStepRoute,
   getStepProgress,
+  SETUP_PATHS,
   SETUP_ROLES,
   SETUP_STEPS,
 } from '@/src/domains/setup/types';
 import { useRedeemInvite } from '@/src/hooks/mutations/useRedeemInvite';
 import { useUpdateName } from '@/src/hooks/mutations/useUpdateName';
 import { useUpsertProfile } from '@/src/hooks/mutations/useUpsertProfile';
+import { useHouseholds } from '@/src/hooks/queries/useHouseholds';
 import { useInvitePreview } from '@/src/hooks/queries/useInvitePreview';
 import { useUserProfile } from '@/src/hooks/queries/useUserProfile';
 import {
@@ -52,7 +74,11 @@ import {
   deriveBootstrapName,
 } from '@/src/lib/bootstrapUserProfile';
 import { useAuthStore } from '@/src/store/auth';
+import { usePendingDeepLinkStore } from '@/src/store/pendingDeepLinkStore';
 import { useSetupProgressStore } from '@/src/store/setupProgress';
+
+/** `nanny.getsteadily.app/t/R4K-92T` -> `R4K-92T`. */
+const DEEP_LINK_CODE_PATTERN = /\/t\/([A-Za-z0-9-]+)/;
 
 export interface CodeEntryScreenProps {
   /**
@@ -67,26 +93,65 @@ export interface CodeEntryScreenProps {
    * user on this device permanently.
    */
   onJoined?: (householdId: string) => void;
+  /**
+   * Mode (a): the code the OS handed us via `/t/:code`. Step 1 of §3.4's
+   * resolution order; the route file reads the URL, this component owns the
+   * rest of the order.
+   */
+  initialCode?: string;
 }
 
-export function CodeEntryScreen({ onJoined }: CodeEntryScreenProps = {}) {
+/**
+ * §3.4's resolution order, run ONCE as lazy `useState` init so a re-render
+ * cannot re-consume the pending link or stomp what she has since typed.
+ */
+function resolveInitialCode(initialCode?: string): string {
+  // 1. A code on the route params.
+  if (initialCode) return initialCode;
+  // 2. A link tapped while signed out, replayed once routing is ready.
+  //    Already built, 10-minute TTL.
+  const pending = usePendingDeepLinkStore.getState().consumePendingLink();
+  const fromPending = pending?.match(DEEP_LINK_CODE_PATTERN)?.[1];
+  if (fromPending) return fromPending;
+  // 3. DELIBERATELY DEFERRED: the clipboard, when it matches XXX-XXX (§6.4
+  //    step 2). It needs `expo-clipboard`, which is not installed and is a
+  //    NATIVE dependency — adding it means a dev-client rebuild, and §6.4 is
+  //    explicit that it should be added deliberately, not discovered. Nothing
+  //    in this flow may DEPEND on it: the printed code (§6.2) is the floor and
+  //    mode b below redeems it in six keystrokes.
+  // 4. Nothing — mode b, and the default assumption everywhere.
+  return '';
+}
+
+export function CodeEntryScreen({
+  onJoined,
+  initialCode,
+}: CodeEntryScreenProps = {}) {
   const { t } = useTranslation('auth');
   const { t: tHousehold } = useTranslation('household');
   const router = useRouter();
+  const role = useSetupProgressStore(s => s.role);
+  const persistedPath = useSetupProgressStore(s => s.path);
   const setRole = useSetupProgressStore(s => s.setRole);
   const setCurrentStep = useSetupProgressStore(s => s.setCurrentStep);
   const signOut = useAuthStore(s => s.signOut);
   const authUser = useAuthStore(s => s.session?.user) ?? null;
-  const [code, setCode] = useState('');
+  const [code, setCode] = useState(() => resolveInitialCode(initialCode));
   const [submittedCode, setSubmittedCode] = useState<string | null>(null);
   const [nameDraft, setNameDraft] = useState<string | null>(null);
   const [nameError, setNameError] = useState(false);
+  const [isAbsorptionSheetOpen, setAbsorptionSheetOpen] = useState(false);
+
+  // Reaching this screen at all IS the join path. `?? JOIN` covers the deep
+  // link that jumps straight to CODE without passing the start fork.
+  const path = persistedPath ?? SETUP_PATHS.JOIN;
 
   const preview = useInvitePreview(submittedCode ?? '');
   const profile = useUserProfile();
   const upsertProfile = useUpsertProfile();
   const updateName = useUpdateName();
   const redeemInvite = useRedeemInvite();
+  const households = useHouseholds();
 
   // Untouched field falls back to the saved name, then to the same auth
   // derivation the parent bootstrap uses — never to an empty box.
@@ -100,29 +165,42 @@ export function CodeEntryScreen({ onJoined }: CodeEntryScreenProps = {}) {
     setSubmittedCode(code.trim());
   };
 
-  // A nanny (or the invite-code path off RoleScreen — see that screen's
-  // header comment) who lands here without a code in hand used to be
-  // trapped: no back, no sign-out. `replace`, not `back()` — RoleScreen
-  // itself navigates here with `router.replace`, which drops RoleScreen
-  // from history, so a bare `back()` would skip past it to whatever
-  // preceded RoleScreen instead of returning to the role fork.
+  // Someone who lands here without a code in hand used to be trapped: no
+  // back, no sign-out. `replace`, not `back()` — StartScreen navigates here
+  // with `router.replace`, which drops it from history, so a bare `back()`
+  // would skip past the fork to whatever preceded it.
   const onBack = () => {
     // Settings variant: `back()` is correct here — this route was pushed onto
-    // the private stack, not `replace`d over RoleScreen.
+    // the private stack, not `replace`d over the wizard.
     if (onJoined) {
       router.back();
       return;
     }
-    router.replace(getSetupStepRoute(SETUP_STEPS.ROLE) as Href);
+    router.replace(getSetupStepRoute(SETUP_STEPS.START) as Href);
   };
 
-  const onJoin = () => {
+  /**
+   * §8.2 — a parent who ALREADY has a live household is redeeming a nanny's
+   * DRAFT code. The nanny is absorbed into their family; nothing about that
+   * family changes. Confirm BEFORE redemption completes, and with ≥2
+   * households make the target an explicit choice, because otherwise
+   * absorption silently picks one and the parent finds out later.
+   *
+   * No fork in the sheet: absorption is the only correct outcome (D-34), and
+   * offering "create a separate household instead" would manufacture exactly
+   * the duplicate-household mess D-34 exists to prevent.
+   */
+  const liveHouseholds = (households.data ?? []).filter(
+    household => household.state === HOUSEHOLD_STATES.LIVE
+  );
+  const needsAbsorptionConfirm =
+    preview.data?.household_state === HOUSEHOLD_STATES.DRAFT &&
+    liveHouseholds.length > 0;
+
+  /** The actual redemption. `targetHouseholdId` is set only by the sheet. */
+  const runJoin = (targetHouseholdId?: string) => {
     if (!submittedCode) return;
     const trimmedName = name.trim();
-    if (!onJoined && !trimmedName) {
-      setNameError(true);
-      return;
-    }
 
     void (async () => {
       try {
@@ -144,26 +222,26 @@ export function CodeEntryScreen({ onJoined }: CodeEntryScreenProps = {}) {
             });
           }
         }
-        const membership = await redeemInvite.mutateAsync(submittedCode);
+        const membership = await redeemInvite.mutateAsync({
+          code: submittedCode,
+          ...(targetHouseholdId ? { targetHouseholdId } : {}),
+        });
         // BEFORE the role/step resolution below — never write the persisted
         // wizard state for an already-onboarded user (see CodeEntryScreenProps).
         if (onJoined) {
           onJoined(membership.household_id);
           return;
         }
-        // A co-parent invite (server role 'parent', see HOUSEHOLD_ROLES) is
-        // JOINING a household the redeem above already gave them — unlike
-        // RoleScreen's own PARENT fork, which is the household's FIRST
-        // member and must create it via CHILDREN -> INVITE. Mapping to
-        // SETUP_ROLES.PARENT here is still correct (it is the role), but the
-        // step entry point can't be CODE's "next" within the parent
-        // sequence: `stepsForRole(PARENT)` doesn't contain CODE at all
-        // (that array is [ROLE, CHILDREN, INVITE, NOTIFICATIONS_PERMISSION,
-        // CALENDAR_PERMISSION]), so `getNextSetupStep` returns null and the
-        // existing `?? NOTIFICATIONS_PERMISSION` fallback below already
-        // lands a joining co-parent past CHILDREN/INVITE — exactly the
-        // "already has a household" entry point they need. No fallback
-        // route change required; this comment documents why that's safe.
+        // The redeemed membership, not the picked role, is the truth: a
+        // co-parent invite grants server role 'parent', and this is the only
+        // moment the app learns which of nanny / helper / co-parent it is.
+        //
+        // The old `?? NOTIFICATIONS_PERMISSION` fallback here existed ONLY
+        // because `stepsForRole(PARENT)` had no CODE in it, so
+        // `getNextSetupStep` returned null for a joining co-parent. CODE is
+        // in every join sequence now (D-33), so all three roles chain
+        // properly and the fallback is unreachable — kept as a total-function
+        // guard, not as routing logic.
         const resolvedRole =
           membership.role === HOUSEHOLD_ROLES.HELPER
             ? SETUP_ROLES.HELPER
@@ -172,7 +250,7 @@ export function CodeEntryScreen({ onJoined }: CodeEntryScreenProps = {}) {
               : SETUP_ROLES.NANNY;
         setRole(resolvedRole);
         const next =
-          getNextSetupStep(resolvedRole, SETUP_STEPS.CODE) ??
+          getNextSetupStep(resolvedRole, path, SETUP_STEPS.CODE) ??
           SETUP_STEPS.NOTIFICATIONS_PERMISSION;
         setCurrentStep(next);
         router.push(getSetupStepRoute(next) as Href);
@@ -182,6 +260,19 @@ export function CodeEntryScreen({ onJoined }: CodeEntryScreenProps = {}) {
     })();
   };
 
+  const onJoin = () => {
+    if (!submittedCode) return;
+    if (!onJoined && !name.trim()) {
+      setNameError(true);
+      return;
+    }
+    if (needsAbsorptionConfirm) {
+      setAbsorptionSheetOpen(true);
+      return;
+    }
+    runJoin();
+  };
+
   const isJoining =
     redeemInvite.isPending || upsertProfile.isPending || updateName.isPending;
 
@@ -189,9 +280,7 @@ export function CodeEntryScreen({ onJoined }: CodeEntryScreenProps = {}) {
     <SetupScreenShell
       testID="code-screen"
       progress={
-        onJoined
-          ? undefined
-          : getStepProgress(SETUP_ROLES.NANNY, SETUP_STEPS.CODE)
+        onJoined ? undefined : getStepProgress(role, path, SETUP_STEPS.CODE)
       }
       onBack={onBack}
       backLabel={t('common:back')}
@@ -245,7 +334,12 @@ export function CodeEntryScreen({ onJoined }: CodeEntryScreenProps = {}) {
           }}
           placeholder={t('onboarding.code.placeholder')}
           autoCapitalize="characters"
-          autoFocus={Boolean(onJoined)}
+          // Never read-only, even when pre-filled: a wrong or stale code has
+          // to be correctable in place (§3.4), or the only recovery from a
+          // mis-routed link is reinstalling the app. `autoFocus` only when
+          // there is nothing to read — a pre-filled field wants reading, not
+          // a keyboard over it.
+          autoFocus={Boolean(onJoined) || code.length === 0}
         />
       </View>
 
@@ -290,6 +384,22 @@ export function CodeEntryScreen({ onJoined }: CodeEntryScreenProps = {}) {
           <Text>{t('onboarding.code.signOut')}</Text>
         </Button>
       )}
+
+      <AbsorptionConfirmSheet
+        visible={isAbsorptionSheetOpen}
+        carerName={preview.data?.carer_name ?? null}
+        households={liveHouseholds}
+        isJoining={isJoining}
+        onDismiss={() => setAbsorptionSheetOpen(false)}
+        onConfirm={householdId => {
+          setAbsorptionSheetOpen(false);
+          // The chosen target goes straight into the redemption rather than
+          // through state: a `setState` here would not have landed by the
+          // time `runJoin` read it, and absorbing into the wrong family is
+          // not a mistake a re-render can take back.
+          runJoin(householdId);
+        }}
+      />
     </SetupScreenShell>
   );
 }

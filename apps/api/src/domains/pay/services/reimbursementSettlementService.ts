@@ -252,7 +252,12 @@ export class ReimbursementSettlementService {
     );
   }
 
-  /** The read gate — see the module doc's table. ANY membership status. */
+  /**
+   * The read gate — see the module doc's table. Any membership status that
+   * means "is, or once was, a member here": `findMembershipAnyStatus` filters
+   * positively to `{active, removed}`, so a 3-O `candidate` reads null and
+   * gets the same opaque 404 a stranger gets (D-49).
+   */
   private async assertCanRead(
     callerId: string,
     householdId: string

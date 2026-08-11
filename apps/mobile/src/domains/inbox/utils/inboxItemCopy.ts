@@ -14,14 +14,11 @@
  * `tSchedule`'s `weekday.*` keys in scope; duplicating them into this
  * namespace for one kind was not worth it).
  *
- * The kinds this build's spec assigns to Today/inbox but does not ship here
- * — `terms_proposal`, `reimbursement_owed`, `terms_ack` — are NOT arms of
- * `InboxItem` at all (not stubbed, not partially wired): the ack/proposal
- * wire does not exist on `main` yet (3-U1's territory), and reimbursements
- * have no household-wide "which weeks are unsettled" read (only a per-week
- * one) without a new aggregate endpoint this mobile-only slice does not add.
- * See the slice report for the full reasoning; a future slice adds the case
- * here when the data exists, never before.
+ * `reimbursement_owed` and `terms_ack` are still NOT arms of `InboxItem` at
+ * all (not stubbed, not partially wired): the ack wire does not exist on
+ * `main` yet, and reimbursements have no household-wide "which weeks are
+ * unsettled" read (only a per-week one) without a new aggregate endpoint.
+ * A future slice adds the case here when the data exists, never before.
  */
 import type { Href } from 'expo-router';
 import type { InboxItem } from '@/src/domains/inbox/utils/buildInboxItems';
@@ -32,6 +29,7 @@ import {
 } from '@/src/domains/timesheet/utils/duration';
 import { formatDisplayDate } from '@/src/domains/timesheet/utils/week';
 import { localDateInZone } from '@/src/lib/localDate';
+import { formatMoney, formatRate } from '@/src/lib/money';
 
 export type InboxItemT = (key: string, opts?: Record<string, string>) => string;
 
@@ -49,7 +47,16 @@ export function hrefForItem(item: InboxItem): Href {
       return `/(private)/(tabs)/hours?weekStart=${item.weekStart}` as Href;
     case 'pending_shift':
       return `/(private)/schedule/shifts/${item.id}` as Href;
+    // §7.2 — the review screen IS the proposal, in view mode.
+    case 'terms_proposal':
+      return `/(private)/pay/proposal/${item.id}` as Href;
   }
+}
+
+/** The day a proposal was sent, in the reader's zone — §10's law is that the
+ * state word never appears without its date. */
+function proposedOn(proposedAt: string, timeZone: string): string {
+  return formatDisplayDate(localDateInZone(timeZone, new Date(proposedAt)));
 }
 
 export function titleForItem(
@@ -89,6 +96,19 @@ export function titleForItem(
         start: formatClockTime(item.startsAt, timeZone),
         end: formatClockTime(item.endsAt, timeZone),
       });
+    // "Terms proposed by Marisol · 24 Aug" — §10's state word with a date,
+    // and no figure at all (the same discipline the push copy keeps, §13).
+    // A counter names the other side instead: the carer's own name on a row
+    // she has to ANSWER would read like her own proposal came back to her.
+    case 'terms_proposal':
+      return item.direction === 'carer'
+        ? t('items.termsProposal.title', {
+            carer: item.carerDisplayName,
+            date: proposedOn(item.proposedAt, timeZone),
+          })
+        : t('items.termsProposal.titleCountered', {
+            date: proposedOn(item.proposedAt, timeZone),
+          });
   }
 }
 
@@ -134,6 +154,21 @@ export function subtitleForItem(
               localDateInZone(timeZone, new Date(item.createdAt))
             ),
           });
+    // The figures live here, never in the title. The weekly equivalent is the
+    // server's (`weekly_equivalent_minor`) — a client-side rate x hours prints
+    // $1,400 where the truth is $1,540 once overtime applies (§17, D23) — and
+    // with no currency on the proposal's terms there is no honest way to
+    // render either amount, so the row names none.
+    case 'terms_proposal': {
+      if (!item.currency) return t('items.termsProposal.subtitleNoFigures');
+      const rate = formatRate(item.rateMinor, item.currency);
+      return item.weeklyEquivalentMinor === null
+        ? t('items.termsProposal.subtitleRateOnly', { rate })
+        : t('items.termsProposal.subtitle', {
+            rate,
+            weekly: formatMoney(item.weeklyEquivalentMinor, item.currency),
+          });
+    }
   }
 }
 
@@ -152,6 +187,8 @@ export function ctaForItem(item: InboxItem, t: InboxItemT): string {
       return t('items.staleSubmittedWeek.cta');
     case 'pending_shift':
       return t('items.pendingShift.cta');
+    case 'terms_proposal':
+      return t('items.termsProposal.cta');
   }
 }
 
@@ -163,6 +200,11 @@ export function ctaForItem(item: InboxItem, t: InboxItemT): string {
  * `pending_shift` outside the window or already past it, stays `null` — an
  * expired ask is "Expired", never a red deadline that lied about still
  * being open.
+ *
+ * `terms_proposal` in particular has no deadline BY DESIGN (§7.5): a
+ * proposal never expires and there is no round limit, because two people
+ * negotiating a contract is not a workflow to time out. There is no date to
+ * colour, so this stays null for it forever, not until some later slice.
  */
 export function deadlineForItem(
   item: InboxItem,

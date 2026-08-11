@@ -19,6 +19,9 @@ function pendingInvite(
     status: 'pending',
     accepted_by: null,
     accepted_at: null,
+    link_expires_at: null,
+    opened_at: null,
+    label: null,
     created_at: 't',
     updated_at: 't',
     ...overrides,
@@ -27,12 +30,14 @@ function pendingInvite(
 
 let HouseholdCommandService: typeof import('../../../../../src/domains/household/services/householdCommandService').HouseholdCommandService;
 let notifyHouseholdParents: ReturnType<typeof mock>;
+let notifyUser: ReturnType<typeof mock>;
 
 beforeAll(async () => {
   notifyHouseholdParents = mock(() => undefined);
+  notifyUser = mock(() => undefined);
   mock.module('../../../../../src/domains/notification', () => ({
     notifyHouseholdParents,
-    notifyUser: mock(() => undefined),
+    notifyUser,
   }));
 
   ({ HouseholdCommandService } = await import(
@@ -42,6 +47,7 @@ beforeAll(async () => {
 
 beforeEach(() => {
   notifyHouseholdParents.mockClear();
+  notifyUser.mockClear();
 });
 
 function makeMemberRepo(overrides: Record<string, unknown> = {}) {
@@ -56,7 +62,7 @@ function makeMemberRepo(overrides: Record<string, unknown> = {}) {
       ...data,
     })),
     findActiveMembership: mock(async () => null),
-    findMembershipAnyStatus: mock(async () => null),
+    findMembershipIncludingCandidate: mock(async () => null),
     reactivateMembership: mock(async (id: string, role: string) => ({
       id,
       role,
@@ -102,14 +108,21 @@ function makeHouseholdRepo() {
     create: mock(),
     update: mock(),
     delete: mock(),
-    findById: mock(async () => ({ id: 'h1', timezone: 'Europe/London' })),
+    // `state` matters from 3-O: `redeemInvite` reads the invite's household to
+    // decide whether this is a nanny-authored draft (094's path) or the
+    // parent-authored one these tests pin. 'live' keeps them on the latter.
+    findById: mock(async () => ({
+      id: 'h1',
+      timezone: 'Europe/London',
+      state: 'live',
+    })),
   };
 }
 
 describe('HouseholdCommandService.redeemInvite — invite_redeemed', () => {
   it('notifies household parents with the redeemed role in the body', async () => {
     const svc = new HouseholdCommandService(
-      { create: mock(), update: mock(), delete: mock() } as never,
+      makeHouseholdRepo() as never,
       makeMemberRepo() as never,
       makeInviteRepo({
         findByCode: mock(async () => pendingInvite({ role: 'parent' })),
@@ -136,7 +149,7 @@ describe('HouseholdCommandService.redeemInvite — invite_redeemed', () => {
     for (const role of ['nanny', 'helper'] as const) {
       notifyHouseholdParents.mockClear();
       const svc = new HouseholdCommandService(
-        { create: mock(), update: mock(), delete: mock() } as never,
+        makeHouseholdRepo() as never,
         makeMemberRepo() as never,
         makeInviteRepo({
           findByCode: mock(async () => pendingInvite({ role })),
@@ -163,9 +176,9 @@ describe('HouseholdCommandService.redeemInvite — invite_redeemed', () => {
     // Reactivation is a join as far as the household is concerned: the parents
     // who did not send the invite still need to know someone regained access.
     const svc = new HouseholdCommandService(
-      { create: mock(), update: mock(), delete: mock() } as never,
+      makeHouseholdRepo() as never,
       makeMemberRepo({
-        findMembershipAnyStatus: mock(async () => ({
+        findMembershipIncludingCandidate: mock(async () => ({
           id: 'm-old',
           household_id: 'h1',
           user_id: 'u2',
@@ -175,7 +188,13 @@ describe('HouseholdCommandService.redeemInvite — invite_redeemed', () => {
       }) as never,
       makeInviteRepo() as never,
       { getMembership: mock() } as never,
-      { ensureProfile: mock(async () => {}) } as never
+      { ensureProfile: mock(async () => {}) } as never,
+      { findRunningInHousehold: mock(async () => null) } as never,
+      { endForCarer: mock(async () => []) } as never,
+      // The rejoin push appends the carried-over PTO sentence, so this arm
+      // reaches the ledger. Left defaulted it constructs a real repository and
+      // the test dies on a network timeout rather than an assertion.
+      makePtoRepo() as never
     );
 
     await svc.redeemInvite('u2', { code: 'ABC-234' });
@@ -199,7 +218,7 @@ describe('HouseholdCommandService.redeemInvite — invite_redeemed', () => {
       throw new Error('expo down');
     });
     const svc = new HouseholdCommandService(
-      { create: mock(), update: mock(), delete: mock() } as never,
+      makeHouseholdRepo() as never,
       makeMemberRepo() as never,
       makeInviteRepo() as never,
       { getMembership: mock() } as never,
@@ -225,7 +244,7 @@ describe('HouseholdCommandService.redeemInvite — carried-over PTO in the rejoi
     return new HouseholdCommandService(
       makeHouseholdRepo() as never,
       makeMemberRepo({
-        findMembershipAnyStatus: mock(async () => removedMember),
+        findMembershipIncludingCandidate: mock(async () => removedMember),
       }) as never,
       makeInviteRepo() as never,
       { getMembership: mock() } as never,
@@ -359,5 +378,88 @@ describe('HouseholdCommandService.leave — parents are told', () => {
     await expect(leaveSvc('nanny').leave('u2', 'h1')).resolves.toMatchObject({
       status: 'removed',
     });
+  });
+});
+
+/**
+ * §13 — `invite_redeemed` is WIDENED to audience `both`, not split into a
+ * second type. One fact, one type, two arms of copy.
+ */
+describe('HouseholdCommandService.redeemInvite — the draft carer arm', () => {
+  const draftInviteRepo = () =>
+    makeInviteRepo({
+      redeemDraftHousehold: mock(async () => ({
+        outcome: 'redeemed',
+        instantiated: true,
+        household_id: 'h-target',
+        draft_household_id: 'h-draft',
+        carer_id: 'u-nanny',
+        membership: {
+          id: 'm-joined',
+          household_id: 'h-target',
+          user_id: 'u-nanny',
+          role: 'nanny',
+          can_edit: false,
+          status: 'active',
+        },
+        proposal: { id: 'p1' },
+      })),
+    });
+
+  function draftSvc() {
+    return new HouseholdCommandService(
+      {
+        create: mock(),
+        update: mock(),
+        delete: mock(),
+        findById: mock(async () => ({
+          id: 'h-draft',
+          timezone: 'America/Chicago',
+          name: 'The Ahmeds',
+          state: 'draft',
+        })),
+      } as never,
+      makeMemberRepo() as never,
+      draftInviteRepo() as never,
+      { getMembership: mock() } as never,
+      { ensureProfile: mock(async () => {}) } as never
+    );
+  }
+
+  it('tells the CARER her code was used, with the proposal to route to', async () => {
+    await draftSvc().redeemInvite('u-parent', { code: 'ABC-234' });
+
+    expect(notifyUser).toHaveBeenCalledWith(
+      'u-nanny',
+      expect.objectContaining({
+        body: expect.stringContaining('Your terms are with them to review'),
+        data: expect.objectContaining({
+          type: PUSH_NOTIFICATION_TYPES.INVITE_REDEEMED,
+          householdId: 'h-target',
+          proposalId: 'p1',
+        }),
+      })
+    );
+  });
+
+  it('carries no figure in the carer body — a lock screen is a public surface (A8)', async () => {
+    await draftSvc().redeemInvite('u-parent', { code: 'ABC-234' });
+
+    const body = String((notifyUser.mock.calls[0] as any[])[1].body);
+    expect(body).not.toMatch(/[0-9]/);
+  });
+
+  it('still fires the parent arm, excluding the parent who just tapped', async () => {
+    await draftSvc().redeemInvite('u-parent', { code: 'ABC-234' });
+
+    expect(notifyHouseholdParents).toHaveBeenCalledWith(
+      'h-target',
+      expect.objectContaining({
+        data: expect.objectContaining({
+          type: PUSH_NOTIFICATION_TYPES.INVITE_REDEEMED,
+        }),
+      }),
+      { excludeUserId: 'u-parent' }
+    );
   });
 });

@@ -28,6 +28,17 @@ const upsertProfileMock = mock(
 );
 const listChildrenMock = mock(() => Promise.resolve([]));
 
+const mockPush = mock();
+const mockReplace = mock();
+mock.module('expo-router', () => ({
+  useRouter: () => ({
+    push: mockPush,
+    replace: mockReplace,
+    back: mock(),
+    navigate: mock(),
+  }),
+}));
+
 mock.module('@/src/api/endpoints/household', () => ({
   householdApi: {
     list: listHouseholdsMock,
@@ -68,10 +79,13 @@ beforeEach(() => {
   createHouseholdMock.mockClear();
   getProfileMock.mockClear();
   upsertProfileMock.mockClear();
+  mockPush.mockClear();
+  mockReplace.mockClear();
   getProfileMock.mockImplementation(() =>
     Promise.resolve({ user_id: 'user-1', name: 'Ana' })
   );
-  useSetupProgressStore.setState({ householdId: null } as never);
+  useSetupProgressStore.getState().reset();
+  useSetupProgressStore.setState({ role: 'parent', path: 'create' } as never);
   useAuthStore.setState({
     session: {
       user: { id: 'user-1', email: 'ana@example.com', user_metadata: {} },
@@ -101,33 +115,22 @@ describe('ChildrenScreen — bootstrap failure surfacing (F-B11-6)', () => {
   });
 });
 
-describe('ChildrenScreen — naming the household at creation (W1-E fix 3)', () => {
-  it('passes a typed household name to the create mutation', async () => {
-    createHouseholdMock.mockImplementationOnce(() =>
-      Promise.resolve({ id: 'household-1', name: 'The Ruiz Family' })
-    );
-    const screen = renderWithProviders(<ChildrenScreen />);
-
-    fireEvent.changeText(
-      screen.getByTestId('household-name-input'),
-      'The Ruiz Family'
-    );
-
-    await waitFor(() => expect(createHouseholdMock).toHaveBeenCalledTimes(1));
-    expect(createHouseholdMock.mock.calls[0]?.[0]).toEqual({
-      name: 'The Ruiz Family',
-      timezone: 'America/Los_Angeles',
-      currency: 'GBP',
-    });
-  });
-
-  it('falls back to the default household name when the input is left empty', async () => {
+describe('ChildrenScreen — the name inputs moved to HOUSEHOLD (spec §3.3)', () => {
+  it('no longer renders either name field — they live on HouseholdScreen now', async () => {
     createHouseholdMock.mockImplementationOnce(() =>
       Promise.resolve({ id: 'household-1', name: 'Our household' })
     );
     const screen = renderWithProviders(<ChildrenScreen />);
 
-    expect(screen.getByTestId('household-name-input').props.value).toBe('');
+    expect(screen.queryByTestId('household-name-input')).toBeNull();
+    expect(screen.queryByTestId('parent-name-input')).toBeNull();
+  });
+
+  it('still auto-creates a household under the default name — the fallback survives', async () => {
+    createHouseholdMock.mockImplementationOnce(() =>
+      Promise.resolve({ id: 'household-1', name: 'Our household' })
+    );
+    renderWithProviders(<ChildrenScreen />);
 
     await waitFor(() => expect(createHouseholdMock).toHaveBeenCalledTimes(1));
     expect(createHouseholdMock.mock.calls[0]?.[0]).toEqual({
@@ -138,30 +141,15 @@ describe('ChildrenScreen — naming the household at creation (W1-E fix 3)', () 
   });
 });
 
-describe('ChildrenScreen — parent display name at bootstrap', () => {
-  beforeEach(() => {
-    getProfileMock.mockImplementation(() =>
-      Promise.resolve(undefined as never)
+describe('ChildrenScreen — a JOINING parent must never reach this screen', () => {
+  it('bounces to CODE and creates nothing', async () => {
+    useSetupProgressStore.setState({ role: 'parent', path: 'join' } as never);
+    renderWithProviders(<ChildrenScreen />);
+
+    await waitFor(() =>
+      expect(useSetupProgressStore.getState().currentStep).toBe('CODE')
     );
-  });
-
-  it('renders the name field pre-filled from auth metadata', () => {
-    const screen = renderWithProviders(<ChildrenScreen />);
-
-    expect(screen.getByTestId('parent-name-input').props.value).toBe('ana');
-  });
-
-  it('submits the edited display name with the bootstrap profile upsert', async () => {
-    createHouseholdMock.mockImplementationOnce(() =>
-      Promise.resolve({ id: 'household-1', name: 'Our household' })
-    );
-    const screen = renderWithProviders(<ChildrenScreen />);
-
-    fireEvent.changeText(screen.getByTestId('parent-name-input'), 'Maria Ruiz');
-
-    await waitFor(() => expect(upsertProfileMock).toHaveBeenCalledTimes(1));
-    expect(upsertProfileMock.mock.calls[0]?.[0]).toMatchObject({
-      name: 'Maria Ruiz',
-    });
+    expect(mockReplace).toHaveBeenCalledWith('/onboarding/code');
+    expect(createHouseholdMock).not.toHaveBeenCalled();
   });
 });

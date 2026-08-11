@@ -1,28 +1,38 @@
 /**
  * @module domains/setup/__tests__/setupTypes.test
  *
- * The client-only role-fork step machine (`domains/setup/types`) — WS-F
- * extended every role's sequence with two shared permission-priming steps
- * (NOTIFICATIONS_PERMISSION, CALENDAR_PERMISSION). Locks in the exact order
- * per role, that every step has a route, that `getNextSetupStep` chains
- * correctly to the true end of each sequence, and that the last step of
- * every sequence always reports full progress.
+ * The client-only step machine (`domains/setup/types`). D-33 made it
+ * role x path rather than role-alone: `stepsForRole(role)` became
+ * `stepsFor(role, path)`, and BOTH a parent and a nanny can now either create
+ * a household or join one with a code. Locks in the exact four sequences plus
+ * the helper row from `screens-onboarding-terms-proposal.md` §3.3, that every
+ * step has a route, that `getNextSetupStep` chains to the true end of each
+ * sequence, and that the last step of every sequence reports full progress.
+ *
+ * `entryStepFor` is the single role x path -> first-working-step mapping. It
+ * exists because that mapping was hardcoded in three separate places
+ * (RoleScreen, app/index.tsx, CodeEntryScreen's post-redeem fallback) and the
+ * three had already drifted apart.
  */
 import { describe, expect, it } from 'bun:test';
 import {
+  entryStepFor,
   getNextSetupStep,
   getSetupStepRoute,
   getStepProgress,
+  SETUP_PATHS,
   SETUP_ROLES,
   SETUP_STEP_ROUTES,
   SETUP_STEPS,
-  stepsForRole,
+  stepsFor,
 } from '../types';
 
-describe('stepsForRole', () => {
-  it('parent: role -> children -> invite -> notifications -> calendar', () => {
-    expect(stepsForRole(SETUP_ROLES.PARENT)).toEqual([
+describe('stepsFor — the four D-33 sequences', () => {
+  it('parent · create: role -> start -> household -> children -> invite -> notifications -> calendar', () => {
+    expect(stepsFor(SETUP_ROLES.PARENT, SETUP_PATHS.CREATE)).toEqual([
       SETUP_STEPS.ROLE,
+      SETUP_STEPS.START,
+      SETUP_STEPS.HOUSEHOLD,
       SETUP_STEPS.CHILDREN,
       SETUP_STEPS.INVITE,
       SETUP_STEPS.NOTIFICATIONS_PERMISSION,
@@ -30,9 +40,34 @@ describe('stepsForRole', () => {
     ]);
   });
 
-  it('nanny: role -> code -> availability -> notifications -> calendar', () => {
-    expect(stepsForRole(SETUP_ROLES.NANNY)).toEqual([
+  it('parent · join: role -> start -> code -> notifications -> calendar (never children — that would make a second household)', () => {
+    expect(stepsFor(SETUP_ROLES.PARENT, SETUP_PATHS.JOIN)).toEqual([
       SETUP_STEPS.ROLE,
+      SETUP_STEPS.START,
+      SETUP_STEPS.CODE,
+      SETUP_STEPS.NOTIFICATIONS_PERMISSION,
+      SETUP_STEPS.CALENDAR_PERMISSION,
+    ]);
+    expect(stepsFor(SETUP_ROLES.PARENT, SETUP_PATHS.JOIN)).not.toContain(
+      SETUP_STEPS.CHILDREN
+    );
+  });
+
+  it('nanny · create: role -> start -> terms -> availability -> notifications -> calendar', () => {
+    expect(stepsFor(SETUP_ROLES.NANNY, SETUP_PATHS.CREATE)).toEqual([
+      SETUP_STEPS.ROLE,
+      SETUP_STEPS.START,
+      SETUP_STEPS.TERMS,
+      SETUP_STEPS.AVAILABILITY,
+      SETUP_STEPS.NOTIFICATIONS_PERMISSION,
+      SETUP_STEPS.CALENDAR_PERMISSION,
+    ]);
+  });
+
+  it('nanny · join: role -> start -> code -> availability -> notifications -> calendar', () => {
+    expect(stepsFor(SETUP_ROLES.NANNY, SETUP_PATHS.JOIN)).toEqual([
+      SETUP_STEPS.ROLE,
+      SETUP_STEPS.START,
       SETUP_STEPS.CODE,
       SETUP_STEPS.AVAILABILITY,
       SETUP_STEPS.NOTIFICATIONS_PERMISSION,
@@ -40,25 +75,72 @@ describe('stepsForRole', () => {
     ]);
   });
 
-  it('helper: role -> code -> notifications (no availability, no calendar)', () => {
-    expect(stepsForRole(SETUP_ROLES.HELPER)).toEqual([
+  it('helper: role -> start -> code -> notifications, whichever path was picked (the role is only ever resolved at redeem)', () => {
+    const helperSequence = [
       SETUP_STEPS.ROLE,
+      SETUP_STEPS.START,
       SETUP_STEPS.CODE,
       SETUP_STEPS.NOTIFICATIONS_PERMISSION,
-    ]);
+    ];
+    expect(stepsFor(SETUP_ROLES.HELPER, SETUP_PATHS.JOIN)).toEqual(
+      helperSequence
+    );
+    expect(stepsFor(SETUP_ROLES.HELPER, SETUP_PATHS.CREATE)).toEqual(
+      helperSequence
+    );
   });
 
-  it('null role: just the role fork', () => {
-    expect(stepsForRole(null)).toEqual([SETUP_STEPS.ROLE]);
+  it('no role yet: just the role fork', () => {
+    expect(stepsFor(null, null)).toEqual([SETUP_STEPS.ROLE]);
+    expect(stepsFor(null, SETUP_PATHS.CREATE)).toEqual([SETUP_STEPS.ROLE]);
+  });
+
+  it('role picked but no path yet: the start fork is the only next step', () => {
+    expect(stepsFor(SETUP_ROLES.PARENT, null)).toEqual([
+      SETUP_STEPS.ROLE,
+      SETUP_STEPS.START,
+    ]);
+    expect(stepsFor(SETUP_ROLES.NANNY, null)).toEqual([
+      SETUP_STEPS.ROLE,
+      SETUP_STEPS.START,
+    ]);
+  });
+});
+
+describe('entryStepFor', () => {
+  it('is the step right after START for every role x path', () => {
+    expect(entryStepFor(SETUP_ROLES.PARENT, SETUP_PATHS.CREATE)).toBe(
+      SETUP_STEPS.HOUSEHOLD
+    );
+    expect(entryStepFor(SETUP_ROLES.PARENT, SETUP_PATHS.JOIN)).toBe(
+      SETUP_STEPS.CODE
+    );
+    expect(entryStepFor(SETUP_ROLES.NANNY, SETUP_PATHS.CREATE)).toBe(
+      SETUP_STEPS.TERMS
+    );
+    expect(entryStepFor(SETUP_ROLES.NANNY, SETUP_PATHS.JOIN)).toBe(
+      SETUP_STEPS.CODE
+    );
+    expect(entryStepFor(SETUP_ROLES.HELPER, SETUP_PATHS.JOIN)).toBe(
+      SETUP_STEPS.CODE
+    );
+  });
+
+  it('falls back to the last step the machine can name — never off the end of the sequence', () => {
+    expect(entryStepFor(null, null)).toBe(SETUP_STEPS.ROLE);
+    expect(entryStepFor(SETUP_ROLES.PARENT, null)).toBe(SETUP_STEPS.START);
   });
 });
 
 describe('SETUP_STEP_ROUTES', () => {
-  it('has a route entry for every step, including the two new ones', () => {
+  it('has a route entry for every step, including START, HOUSEHOLD and TERMS', () => {
     for (const step of Object.values(SETUP_STEPS)) {
       expect(typeof getSetupStepRoute(step)).toBe('string');
       expect(getSetupStepRoute(step).length).toBeGreaterThan(0);
     }
+    expect(SETUP_STEP_ROUTES.START).toBe('/onboarding/start');
+    expect(SETUP_STEP_ROUTES.HOUSEHOLD).toBe('/onboarding/household');
+    expect(SETUP_STEP_ROUTES.TERMS).toBe('/onboarding/terms');
     expect(SETUP_STEP_ROUTES.NOTIFICATIONS_PERMISSION).toBe(
       '/onboarding/notifications'
     );
@@ -67,62 +149,90 @@ describe('SETUP_STEP_ROUTES', () => {
 });
 
 describe('getNextSetupStep', () => {
-  it('chains a parent all the way to calendar, then stops', () => {
-    expect(getNextSetupStep(SETUP_ROLES.PARENT, SETUP_STEPS.ROLE)).toBe(
-      SETUP_STEPS.CHILDREN
-    );
-    expect(getNextSetupStep(SETUP_ROLES.PARENT, SETUP_STEPS.INVITE)).toBe(
-      SETUP_STEPS.NOTIFICATIONS_PERMISSION
-    );
+  it('chains a creating parent all the way to calendar, then stops', () => {
+    const next = (step: (typeof SETUP_STEPS)[keyof typeof SETUP_STEPS]) =>
+      getNextSetupStep(SETUP_ROLES.PARENT, SETUP_PATHS.CREATE, step);
+    expect(next(SETUP_STEPS.ROLE)).toBe(SETUP_STEPS.START);
+    expect(next(SETUP_STEPS.START)).toBe(SETUP_STEPS.HOUSEHOLD);
+    expect(next(SETUP_STEPS.HOUSEHOLD)).toBe(SETUP_STEPS.CHILDREN);
+    expect(next(SETUP_STEPS.INVITE)).toBe(SETUP_STEPS.NOTIFICATIONS_PERMISSION);
+    expect(next(SETUP_STEPS.CALENDAR_PERMISSION)).toBeNull();
+  });
+
+  it('a JOINING co-parent leaves CODE for notifications — no fallback needed, CODE is in their sequence now', () => {
     expect(
-      getNextSetupStep(SETUP_ROLES.PARENT, SETUP_STEPS.NOTIFICATIONS_PERMISSION)
-    ).toBe(SETUP_STEPS.CALENDAR_PERMISSION);
-    expect(
-      getNextSetupStep(SETUP_ROLES.PARENT, SETUP_STEPS.CALENDAR_PERMISSION)
-    ).toBeNull();
+      getNextSetupStep(SETUP_ROLES.PARENT, SETUP_PATHS.JOIN, SETUP_STEPS.CODE)
+    ).toBe(SETUP_STEPS.NOTIFICATIONS_PERMISSION);
   });
 
   it('a helper stops after notifications — no calendar step to chain to', () => {
-    expect(getNextSetupStep(SETUP_ROLES.HELPER, SETUP_STEPS.CODE)).toBe(
-      SETUP_STEPS.NOTIFICATIONS_PERMISSION
-    );
     expect(
-      getNextSetupStep(SETUP_ROLES.HELPER, SETUP_STEPS.NOTIFICATIONS_PERMISSION)
+      getNextSetupStep(SETUP_ROLES.HELPER, SETUP_PATHS.JOIN, SETUP_STEPS.CODE)
+    ).toBe(SETUP_STEPS.NOTIFICATIONS_PERMISSION);
+    expect(
+      getNextSetupStep(
+        SETUP_ROLES.HELPER,
+        SETUP_PATHS.JOIN,
+        SETUP_STEPS.NOTIFICATIONS_PERMISSION
+      )
     ).toBeNull();
   });
 
-  it('a nanny chains through availability to notifications and calendar', () => {
-    expect(getNextSetupStep(SETUP_ROLES.NANNY, SETUP_STEPS.CODE)).toBe(
-      SETUP_STEPS.AVAILABILITY
-    );
-    expect(getNextSetupStep(SETUP_ROLES.NANNY, SETUP_STEPS.AVAILABILITY)).toBe(
-      SETUP_STEPS.NOTIFICATIONS_PERMISSION
-    );
+  it('a joining nanny chains through availability to notifications and calendar', () => {
+    expect(
+      getNextSetupStep(SETUP_ROLES.NANNY, SETUP_PATHS.JOIN, SETUP_STEPS.CODE)
+    ).toBe(SETUP_STEPS.AVAILABILITY);
+    expect(
+      getNextSetupStep(
+        SETUP_ROLES.NANNY,
+        SETUP_PATHS.JOIN,
+        SETUP_STEPS.AVAILABILITY
+      )
+    ).toBe(SETUP_STEPS.NOTIFICATIONS_PERMISSION);
+  });
+
+  it('an authoring nanny chains terms -> availability', () => {
+    expect(
+      getNextSetupStep(SETUP_ROLES.NANNY, SETUP_PATHS.CREATE, SETUP_STEPS.TERMS)
+    ).toBe(SETUP_STEPS.AVAILABILITY);
   });
 });
 
 describe('getStepProgress', () => {
-  it('the last step of every role sequence always reports full progress', () => {
+  it('the last step of every sequence reports full progress', () => {
     expect(
-      getStepProgress(SETUP_ROLES.PARENT, SETUP_STEPS.CALENDAR_PERMISSION)
+      getStepProgress(
+        SETUP_ROLES.PARENT,
+        SETUP_PATHS.CREATE,
+        SETUP_STEPS.CALENDAR_PERMISSION
+      )
     ).toBe(1);
     expect(
-      getStepProgress(SETUP_ROLES.NANNY, SETUP_STEPS.CALENDAR_PERMISSION)
+      getStepProgress(
+        SETUP_ROLES.NANNY,
+        SETUP_PATHS.CREATE,
+        SETUP_STEPS.CALENDAR_PERMISSION
+      )
     ).toBe(1);
     expect(
-      getStepProgress(SETUP_ROLES.HELPER, SETUP_STEPS.NOTIFICATIONS_PERMISSION)
+      getStepProgress(
+        SETUP_ROLES.HELPER,
+        SETUP_PATHS.JOIN,
+        SETUP_STEPS.NOTIFICATIONS_PERMISSION
+      )
     ).toBe(1);
   });
 
-  it('progress increases monotonically through a role sequence', () => {
-    const steps = stepsForRole(SETUP_ROLES.PARENT);
-    const progressValues = steps.map(step =>
-      getStepProgress(SETUP_ROLES.PARENT, step)
-    );
-    for (let i = 1; i < progressValues.length; i++) {
-      expect(progressValues[i]).toBeGreaterThan(
-        progressValues[i - 1] as number
-      );
+  it('progress increases monotonically through every sequence', () => {
+    for (const role of [SETUP_ROLES.PARENT, SETUP_ROLES.NANNY]) {
+      for (const path of [SETUP_PATHS.CREATE, SETUP_PATHS.JOIN]) {
+        const values = stepsFor(role, path).map(step =>
+          getStepProgress(role, path, step)
+        );
+        for (let i = 1; i < values.length; i++) {
+          expect(values[i]).toBeGreaterThan(values[i - 1] as number);
+        }
+      }
     }
   });
 });

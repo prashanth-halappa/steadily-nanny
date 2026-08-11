@@ -77,3 +77,6 @@ apps/mobile/*.png
 apps/mobile/assets/_staging/
 supabase/.branches/
 .claude/worktrees/
+
+# Wrangler local dev state (miniflare caches, D1 sqlite) — never committed.
+infra/nanny-site/.wrangler/

@@ -13,7 +13,12 @@
  *                        nanny-actionable in a single tap.
  *   2. `uncoveredCare` — a child may be uncovered RIGHT NOW; immediate and
  *                        consequential, but nobody's pay is silently wrong.
- *   3. `inbox`         — real obligations (approvals, queries), but they
+ *   3. `termsProposal` — terms awaiting an answer (§7.1). Below uncovered
+ *                        care because a child with nobody booked outranks a
+ *                        contract; above the inbox because until it is
+ *                        answered there is no agreed rate, so every future
+ *                        figure this app shows is blocked behind it.
+ *   4. `inbox`         — real obligations (approvals, queries), but they
  *                        wait safely — nothing decays by staying pending an
  *                        extra hour.
  *
@@ -21,15 +26,25 @@
  * pending pattern is already represented in the inbox, and `NeedsAttentionCard`
  * suppresses `pending_pattern` there so the two never say the same thing).
  */
-export type AttentionOwner = 'overdue' | 'uncoveredCare' | 'inbox' | null;
+export type AttentionOwner =
+  | 'overdue'
+  | 'uncoveredCare'
+  | 'termsProposal'
+  | 'inbox'
+  | null;
 
 export function resolveAttentionOwner(inputs: {
   overdue: boolean;
   hasUncoveredCare: boolean;
+  /** §7.1's L1 case: a `proposed` proposal for a carer with no live
+   * arrangement. Optional so callers that predate the rung keep compiling —
+   * an omitted flag is "no proposal", never a silently-owned T1 slot. */
+  hasTermsProposal?: boolean;
   hasInboxItems: boolean;
 }): AttentionOwner {
   if (inputs.overdue) return 'overdue';
   if (inputs.hasUncoveredCare) return 'uncoveredCare';
+  if (inputs.hasTermsProposal) return 'termsProposal';
   if (inputs.hasInboxItems) return 'inbox';
   return null;
 }

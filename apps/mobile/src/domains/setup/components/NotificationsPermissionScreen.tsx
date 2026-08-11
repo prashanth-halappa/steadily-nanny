@@ -33,6 +33,7 @@ export function NotificationsPermissionScreen() {
   const router = useRouter();
   const { t } = useTranslation('auth');
   const role = useSetupProgressStore(s => s.role);
+  const path = useSetupProgressStore(s => s.path);
   const setCurrentStep = useSetupProgressStore(s => s.setCurrentStep);
   const resetSetupProgress = useSetupProgressStore(s => s.reset);
   const recordPrompt = useNotificationStore(s => s.recordPrompt);
@@ -44,7 +45,11 @@ export function NotificationsPermissionScreen() {
   }, [recordPrompt]);
 
   const advance = () => {
-    const next = getNextSetupStep(role, SETUP_STEPS.NOTIFICATIONS_PERMISSION);
+    const next = getNextSetupStep(
+      role,
+      path,
+      SETUP_STEPS.NOTIFICATIONS_PERMISSION
+    );
     if (next) {
       setCurrentStep(next);
       router.push(getSetupStepRoute(next) as Href);
@@ -72,7 +77,11 @@ export function NotificationsPermissionScreen() {
     <SetupScreenShell
       heroImage={illustrations.onboardingNotifications}
       testID="notifications-permission-screen"
-      progress={getStepProgress(role, SETUP_STEPS.NOTIFICATIONS_PERMISSION)}
+      progress={getStepProgress(
+        role,
+        path,
+        SETUP_STEPS.NOTIFICATIONS_PERMISSION
+      )}
       title={t('onboarding.notifications.title')}
       subtitle={t('onboarding.notifications.subtitle')}
       ctaLabel={t('onboarding.notifications.enableButton')}

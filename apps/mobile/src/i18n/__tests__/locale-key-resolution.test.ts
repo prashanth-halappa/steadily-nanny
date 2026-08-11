@@ -52,6 +52,17 @@ const APPROVAL_SCOPE_VALUES = [
   'short_notice_and_cancellations',
 ] as const;
 const SETUP_ROLE_VALUES = ['parent', 'nanny', 'helper'] as const;
+// §5.3's six invite state words and the four timeline milestones. Declared
+// from the SPEC, not from `inviteState.ts`, so this check stays a check.
+const INVITE_STATE_WORDS = [
+  'sent',
+  'opened',
+  'viewed',
+  'joined',
+  'expired',
+  'revoked',
+] as const;
+const INVITE_TIMELINE_KEYS = ['sent', 'opened', 'viewed', 'joined'] as const;
 const CLASH_WARNING_KEYS = [
   'clash.busyOverlap',
   'clash.outsideAvailability',
@@ -89,6 +100,16 @@ interface TemplateKeyDeclaration {
  * A NEW undeclared template fails the suite — that is the permanent gap close.
  */
 const TEMPLATE_KEY_DECLARATIONS: readonly TemplateKeyDeclaration[] = [
+  {
+    pattern: /^sentTo\.state\.\$\{[^}]+\}$/,
+    values: INVITE_STATE_WORDS,
+    keyPattern: 'sentTo.state.$1',
+  },
+  {
+    pattern: /^sentTo\.timeline\.\$\{[^}]+\}$/,
+    values: INVITE_TIMELINE_KEYS,
+    keyPattern: 'sentTo.timeline.$1',
+  },
   {
     pattern: /^notificationPrefs\.types\.\$\{[^}]+\}$/,
     values: ALL_PUSH_NOTIFICATION_TYPES,

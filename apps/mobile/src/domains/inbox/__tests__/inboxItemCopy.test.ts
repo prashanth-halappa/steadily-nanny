@@ -146,3 +146,86 @@ describe('pending_shift copy', () => {
     }
   });
 });
+
+describe('terms_proposal copy (§7.2, §10)', () => {
+  const NOW = Date.parse('2026-08-25T12:00:00.000Z');
+
+  function makeItem(overrides: Partial<InboxItem> = {}): InboxItem {
+    return {
+      kind: 'terms_proposal',
+      id: 'prop-1',
+      householdId: 'hh-1',
+      carerDisplayName: 'Marisol',
+      proposedAt: '2026-08-24T09:00:00.000Z',
+      direction: 'carer',
+      rateMinor: 2800,
+      weeklyEquivalentMinor: 154000,
+      currency: 'USD',
+      ...overrides,
+    } as InboxItem;
+  }
+
+  it('opens the review screen for the proposal it is about', () => {
+    expect(hrefForItem(makeItem())).toBe('/(private)/pay/proposal/prop-1');
+  });
+
+  it('names who proposed, and counters name the other side instead', () => {
+    expect(titleForItem(makeItem(), t, ZONE)).toBe('items.termsProposal.title');
+    expect(titleForItem(makeItem({ direction: 'parent' }), t, ZONE)).toBe(
+      'items.termsProposal.titleCountered'
+    );
+    expect(ctaForItem(makeItem(), t)).toBe('items.termsProposal.cta');
+  });
+
+  it('puts the figures in the subtitle, and drops to the rate alone with no weekly equivalent', () => {
+    expect(subtitleForItem(makeItem(), t, ZONE)).toBe(
+      'items.termsProposal.subtitle'
+    );
+    expect(
+      subtitleForItem(makeItem({ weeklyEquivalentMinor: null }), t, ZONE)
+    ).toBe('items.termsProposal.subtitleRateOnly');
+  });
+
+  // The proposal carries the pay-arrangement REQUEST, whose currency is
+  // optional (the server resolves it from the household). No currency, no
+  // figure — never a bare number or an invented symbol on a contract.
+  it('says nothing about money when the proposal carries no currency', () => {
+    expect(subtitleForItem(makeItem({ currency: null }), t, ZONE)).toBe(
+      'items.termsProposal.subtitleNoFigures'
+    );
+  });
+
+  // §7.5: proposals deliberately never expire — two people negotiating is not
+  // a workflow to time out, so there is no deadline line to colour.
+  it('has no deadline — a proposal never expires', () => {
+    expect(deadlineForItem(makeItem(), t, ZONE, NOW)).toBeNull();
+  });
+
+  it('uses §10 state words with a date, and keeps every figure out of the title', async () => {
+    for (const language of ['en', 'es'] as const) {
+      const copy = (await locale(language)).items.termsProposal;
+      expect(copy.title).toContain('{{carer}}');
+      expect(copy.title).toContain('{{date}}');
+      expect(copy.titleCountered).toContain('{{date}}');
+      expect(copy.subtitle).toContain('{{rate}}');
+      expect(copy.subtitle).toContain('{{weekly}}');
+      expect(copy.subtitleRateOnly).toContain('{{rate}}');
+      expect(copy.subtitleNoFigures.length).toBeGreaterThan(0);
+      expect(copy.cta.length).toBeGreaterThan(0);
+      // No figure in the title, matching the push discipline (§13).
+      for (const key of ['title', 'titleCountered'] as const) {
+        expect(copy[key]).not.toContain('{{rate}}');
+        expect(copy[key]).not.toContain('{{weekly}}');
+      }
+      // §10: never a verdict about a person, and "Agreed" is this flow's
+      // word — an inbox row about an open proposal claims neither.
+      for (const key of ['title', 'titleCountered', 'subtitle', 'cta']) {
+        const text = copy[key].toLowerCase();
+        expect(text).not.toContain('approv');
+        expect(text).not.toContain('aprob');
+        expect(text).not.toContain('pending approval');
+        expect(text).not.toContain('!');
+      }
+    }
+  });
+});

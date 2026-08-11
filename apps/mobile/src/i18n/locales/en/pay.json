@@ -5,7 +5,7 @@
   "noCancellationPay": "No cancellation pay",
   "inEffectSince": "In effect since {{date}}",
   "changeTermsButton": "Change terms",
-  "appendOnlyNote": "Terms are never edited or removed — a change is a new record.",
+  "appendOnlyNote": "You can change terms later. Changes are added to the record, never edited over.",
   "historyHeading": "History",
   "historyFrom": "From {{date}}",
   "historyFromSetBy": "From {{date}} · set by {{name}} on {{createdDate}}",
@@ -44,7 +44,18 @@
     "payScheduleValueMonthly": "Monthly",
     "ptoBalanceLabel": "PTO balance",
     "ptoBalanceValue": "{{amount}} left this year",
-    "ptoBalanceCaption": "1 Jan – 31 Dec {{year}}"
+    "ptoBalanceCaption": "1 Jan – 31 Dec {{year}}",
+    "outsideWagesLabel": "Outside wages",
+    "outsideWagesItemWeekly": "{{label}} {{amount}} a week",
+    "outsideWagesItemMonthly": "{{label}} {{amount}} a month",
+    "outsideWagesItemAnnual": "{{label}} {{amount}} a year",
+    "inWritingLabel": "In writing",
+    "inWritingNotice": "Notice period {{weeks}} weeks",
+    "inWritingProbation": "Probation {{days}} days",
+    "inWritingDuties": "What the job covers: {{text}}",
+    "inWritingDriving": "Driving: {{text}}",
+    "inWritingLiveIn": "Live-in: {{text}}",
+    "startsLabel": "Starts"
   },
   "currencySearchPlaceholder": "Search currencies",
   "currencySearchEmpty": "No currencies match",
@@ -270,5 +281,48 @@
     "reasonPlaceholder": "e.g. recorded twice",
     "note": "The original stays on the record. This adds a correcting entry.",
     "submitButton": "Record the correction"
+  },
+  "perHour": "/hr",
+  "proposeSheet": {
+    "title": "Suggest changes",
+    "subtitle": "{{name}} will see what you changed.",
+    "submitButton": "Send these terms"
+  },
+  "proposal": {
+    "you": "you",
+    "theFamily": "the family",
+    "by": "By {{name}}",
+    "was": "was {{value}}",
+    "wasRate": "was {{value}}/hr",
+    "evenSpreadCaveat": "Assumes five 10-hour days. Longer days add daily overtime.",
+    "historyHeading": "How we got here",
+    "reviewTitle": "{{name}}'s terms",
+    "reviewTitleFamily": "Terms from {{name}}",
+    "reviewTitleFallback": "Terms",
+    "agreeButton": "Agree to these terms",
+    "counterButton": "Suggest changes",
+    "reviewButton": "Review these terms",
+    "suggestChangeButton": "Suggest a change",
+    "withdrawButton": "Withdraw",
+    "openRowTitle": "Proposed terms from {{name}}",
+    "state": {
+      "proposed": "Proposed {{date}}",
+      "countered": "Countered {{date}}",
+      "agreedWith": "Agreed with {{name}} on {{date}}",
+      "withdrawn": "Withdrawn {{date}}",
+      "proposedBy": "Proposed by {{name}} · {{date}}",
+      "counteredBy": "Countered by {{name}} · {{date}}"
+    },
+    "accept": {
+      "title": "Agree to these terms?",
+      "summary": "{{amount}} a week at {{hours}} guaranteed hours. Starts {{date}}.",
+      "summaryNoWeekly": "Starts {{date}}.",
+      "responsibilityParent": "I'm responsible for checking these terms are right for our family. Steadily Nanny records what we agree — it doesn't give legal or tax advice.",
+      "responsibilityCarer": "I've checked these terms and I'm agreeing to them. Steadily Nanny records what we agree — it doesn't give legal or tax advice.",
+      "confirm": "Agree",
+      "cancel": "Cancel",
+      "offline": "You'll need a connection to send this.",
+      "failed": "That didn't send. Check your connection and try again."
+    }
   }
 }

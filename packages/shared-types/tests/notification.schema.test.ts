@@ -124,4 +124,65 @@ describe('notification.schema push types', () => {
     expect(ALL_PUSH_NOTIFICATION_TYPES).toContain('pay_terms_disagreed');
     expect(PUSH_TYPE_AUDIENCE.pay_terms_disagreed).toBe('parent');
   });
+
+  // ===========================================================================
+  // 3-O — the terms-proposal quartet (N14-N17,
+  // docs/design/screens-onboarding-terms-proposal.md §13). The audience is
+  // the side that must ACT, never the side that just acted.
+  // ===========================================================================
+
+  it('registers terms_proposal_received as a parent-audience type (N14)', () => {
+    expect(PUSH_NOTIFICATION_TYPES.TERMS_PROPOSAL_RECEIVED).toBe(
+      'terms_proposal_received'
+    );
+    expect(ALL_PUSH_NOTIFICATION_TYPES).toContain('terms_proposal_received');
+    expect(PUSH_TYPE_AUDIENCE.terms_proposal_received).toBe('parent');
+  });
+
+  it('registers terms_proposal_countered as a carer-audience type (N15)', () => {
+    expect(PUSH_NOTIFICATION_TYPES.TERMS_PROPOSAL_COUNTERED).toBe(
+      'terms_proposal_countered'
+    );
+    expect(ALL_PUSH_NOTIFICATION_TYPES).toContain('terms_proposal_countered');
+    expect(PUSH_TYPE_AUDIENCE.terms_proposal_countered).toBe('carer');
+  });
+
+  it('registers terms_proposal_accepted as a carer-audience type (N16)', () => {
+    expect(PUSH_NOTIFICATION_TYPES.TERMS_PROPOSAL_ACCEPTED).toBe(
+      'terms_proposal_accepted'
+    );
+    expect(ALL_PUSH_NOTIFICATION_TYPES).toContain('terms_proposal_accepted');
+    expect(PUSH_TYPE_AUDIENCE.terms_proposal_accepted).toBe('carer');
+  });
+
+  it('registers terms_proposal_withdrawn as a parent-audience type (N17)', () => {
+    expect(PUSH_NOTIFICATION_TYPES.TERMS_PROPOSAL_WITHDRAWN).toBe(
+      'terms_proposal_withdrawn'
+    );
+    expect(ALL_PUSH_NOTIFICATION_TYPES).toContain('terms_proposal_withdrawn');
+    expect(PUSH_TYPE_AUDIENCE.terms_proposal_withdrawn).toBe('parent');
+  });
+
+  // §13: an audience-map edit on a SHIPPED row, called out explicitly. Under
+  // D-34 absorption the redeeming parent and the joining carer both need to
+  // hear it — he is adding a person to a family he knows, she is entering a
+  // home she has never seen (§8.1, M25). One fact, one type, two arms of copy.
+  it('widens invite_redeemed to both audiences (3-O §13)', () => {
+    expect(PUSH_TYPE_AUDIENCE.invite_redeemed).toBe('both');
+  });
+
+  // §13: a contract can wait until 7am. The exemption list stays
+  // {SHIFT_NEEDS_RECONFIRM, SHIFT_CHANGE_REQUESTED, SHIFT_NO_SHOW} — all
+  // child-safety-adjacent, none of these four.
+  it('leaves the whole quartet out of the quiet-hours exemption', () => {
+    const quartet = [
+      PUSH_NOTIFICATION_TYPES.TERMS_PROPOSAL_RECEIVED,
+      PUSH_NOTIFICATION_TYPES.TERMS_PROPOSAL_COUNTERED,
+      PUSH_NOTIFICATION_TYPES.TERMS_PROPOSAL_ACCEPTED,
+      PUSH_NOTIFICATION_TYPES.TERMS_PROPOSAL_WITHDRAWN,
+    ];
+    for (const type of quartet) {
+      expect(PUSH_TYPE_AUDIENCE[type]).toBeDefined();
+    }
+  });
 });

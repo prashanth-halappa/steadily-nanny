@@ -150,6 +150,51 @@ mock.module('@/src/api/endpoints/pto', () => ({
   ptoApi: { getBalance: ptoBalanceMock },
 }));
 
+// 3-O §9.1 — the one write this screen now offers.
+const proposeMock = mock<(input: unknown) => Promise<unknown>>(() =>
+  Promise.resolve({})
+);
+const withdrawMock = mock<() => Promise<unknown>>(() => Promise.resolve({}));
+mock.module('@/src/hooks/queries/useTermsProposals', () => ({
+  useTermsProposals: () => ({ data: proposalRows }),
+}));
+mock.module('@/src/hooks/mutations/useProposeTerms', () => ({
+  useProposeTerms: () => ({ mutateAsync: proposeMock, isPending: false }),
+}));
+mock.module('@/src/hooks/mutations/useWithdrawTerms', () => ({
+  useWithdrawTerms: () => ({ mutate: withdrawMock, isPending: false }),
+}));
+
+/** What `useTermsProposals` resolves to for the current test. */
+let proposalRows: unknown[] = [];
+
+const openProposal = (proposedBy: string) => ({
+  id: 'prop-1',
+  household_id: HOUSEHOLD_A,
+  carer_id: NANNY_ID,
+  proposed_by: proposedBy,
+  direction: proposedBy === NANNY_ID ? 'carer' : 'parent',
+  status: 'proposed',
+  terms: {
+    rate_minor: 2000,
+    currency: 'GBP',
+    overtime_multiplier: 1.5,
+    valid_from: '2026-09-01',
+  },
+  note: null,
+  supersedes_id: null,
+  from_invite_id: null,
+  carer_display_name: 'Priya',
+  weekly_equivalent_minor: null,
+  viewed_at: null,
+  responded_at: null,
+  accepted_by: null,
+  accepted_arrangement_id: null,
+  responsibility_confirmed: false,
+  created_at: now,
+  updated_at: now,
+});
+
 beforeAll(async () => {
   MyPayScreen = (await import('../MyPayScreen')).MyPayScreen;
 });
@@ -165,6 +210,11 @@ beforeEach(() => {
   ackMock.mockReset();
   dissentMock.mockReset();
   ptoBalanceMock.mockReset();
+  proposeMock.mockReset();
+  withdrawMock.mockReset();
+  proposeMock.mockImplementation(() => Promise.resolve({}));
+  withdrawMock.mockImplementation(() => Promise.resolve({}));
+  proposalRows = [];
   routerBack.mockClear();
 
   payHistoryMock.mockImplementation(() => Promise.resolve([]));
@@ -463,5 +513,68 @@ describe('MyPayScreen', () => {
     expect(getByTestId('my-pay-history-diff-arr-older').props.children).toBe(
       'history.firstTermsSet'
     );
+  });
+
+  // ---------------------------------------------------------------------
+  // 3-O §9.1 — proposals from My pay. The same object, the same review
+  // screen and the same accept sheet a nanny-first onboarding produces:
+  // one lifecycle, not two.
+  // ---------------------------------------------------------------------
+  describe('suggesting a change (§9.1)', () => {
+    it('offers exactly one write per card, below the history toggle', async () => {
+      const { getByTestId } = renderWithProviders(<MyPayScreen />);
+      await waitFor(() =>
+        expect(getByTestId(`my-pay-suggest-change-${HOUSEHOLD_A}`)).toBeTruthy()
+      );
+    });
+
+    it('a household she was REMOVED from offers no write at all', async () => {
+      listMock.mockImplementation(() => Promise.resolve([householdA]));
+      listPastMock.mockImplementation(() => Promise.resolve([householdPast]));
+      const { getByTestId, queryByTestId } = renderWithProviders(
+        <MyPayScreen />
+      );
+      await waitFor(() =>
+        expect(getByTestId(`my-pay-household-${HOUSEHOLD_PAST}`)).toBeTruthy()
+      );
+      expect(
+        queryByTestId(`my-pay-suggest-change-${HOUSEHOLD_PAST}`)
+      ).toBeNull();
+      // …and the gate is per-household, not a blanket one: the family she
+      // still works for keeps its affordance.
+      expect(getByTestId(`my-pay-suggest-change-${HOUSEHOLD_A}`)).toBeTruthy();
+    });
+
+    it('while HER proposal is open the card offers Withdraw instead, beside a pending pill', async () => {
+      proposalRows = [openProposal(NANNY_ID)];
+      const { getByTestId, queryByTestId } = renderWithProviders(
+        <MyPayScreen />
+      );
+      await waitFor(() =>
+        expect(
+          getByTestId(`my-pay-proposal-withdraw-${HOUSEHOLD_A}`)
+        ).toBeTruthy()
+      );
+      expect(getByTestId(`my-pay-proposal-pill-${HOUSEHOLD_A}`)).toBeTruthy();
+      expect(queryByTestId(`my-pay-suggest-change-${HOUSEHOLD_A}`)).toBeNull();
+
+      fireEvent.press(getByTestId(`my-pay-proposal-withdraw-${HOUSEHOLD_A}`));
+      await waitFor(() => expect(withdrawMock).toHaveBeenCalled());
+    });
+
+    it('when THEY countered, the ball is hers and the card sends her to the review surface', async () => {
+      proposalRows = [openProposal('parent-a')];
+      const { getByTestId, queryByTestId } = renderWithProviders(
+        <MyPayScreen />
+      );
+      await waitFor(() =>
+        expect(
+          getByTestId(`my-pay-proposal-review-${HOUSEHOLD_A}`)
+        ).toBeTruthy()
+      );
+      expect(
+        queryByTestId(`my-pay-proposal-withdraw-${HOUSEHOLD_A}`)
+      ).toBeNull();
+    });
   });
 });

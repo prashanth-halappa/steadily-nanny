@@ -7,6 +7,8 @@
  *
  * @module domains/household/services/householdQueryService
  */
+import { logger } from '../../../middlewares/logger';
+import { TermsProposalRepository } from '../../termsProposal/repositories/termsProposalRepository';
 import {
   HouseholdNotFoundError,
   InviteNotFoundError,
@@ -15,12 +17,13 @@ import { HouseholdHolidayRepository } from '../repositories/householdHolidayRepo
 import { HouseholdInviteRepository } from '../repositories/householdInviteRepository';
 import { HouseholdMemberRepository } from '../repositories/householdMemberRepository';
 import { HouseholdRepository } from '../repositories/householdRepository';
-import { HOUSEHOLD_INVITE_STATUSES } from '../schemas';
+import { HOUSEHOLD_INVITE_STATUSES, HOUSEHOLD_STATES } from '../schemas';
 import type {
   Household,
   HouseholdHoliday,
   HouseholdMember,
   InvitePreview,
+  TermsPreviewSource,
 } from '../types';
 
 export class HouseholdQueryService {
@@ -28,7 +31,14 @@ export class HouseholdQueryService {
     private readonly householdRepo: HouseholdRepository = new HouseholdRepository(),
     private readonly memberRepo: HouseholdMemberRepository = new HouseholdMemberRepository(),
     private readonly inviteRepo: HouseholdInviteRepository = new HouseholdInviteRepository(),
-    private readonly holidayRepo: HouseholdHolidayRepository = new HouseholdHolidayRepository()
+    private readonly holidayRepo: HouseholdHolidayRepository = new HouseholdHolidayRepository(),
+    // The repository directly, never the terms-proposal domain's services or
+    // barrel: those reach back here for membership, and the import would close
+    // a cycle. `termsProposalRepository` imports nothing from this domain.
+    private readonly proposalRepo: Pick<
+      TermsProposalRepository,
+      'findOpenForCarer'
+    > = new TermsProposalRepository()
   ) {}
 
   /** List the households the caller actively belongs to. */
@@ -174,14 +184,158 @@ export class HouseholdQueryService {
     if (!household) {
       throw new InviteNotFoundError(code);
     }
+
+    // A NANNY-AUTHORED DRAFT answers, but with a different set of facts,
+    // because a draft has none of the ones this endpoint was written to give.
+    //
+    // `household_state` is what §8.2's confirm sheet fires on: redeeming her
+    // code ABSORBS her into the redeemer's own household rather than joining
+    // him to hers, and "the redeemer already has a household" cannot tell that
+    // apart from an ordinary co-parent invite to a second family. The client
+    // cannot derive it, so the server says it.
+    //
+    // What it must NOT answer with: the "children" in a draft are placeholders
+    // SHE typed while pricing her own week — not this family's children, and
+    // rendering them as though they were is worse than saying nothing. There
+    // is no family name either; a draft is `name = null` by 093's CHECK.
+    if (household.state === HOUSEHOLD_STATES.DRAFT) {
+      const proposal = household.created_by
+        ? await this.proposalRepo.findOpenForCarer(
+            household.id,
+            household.created_by
+          )
+        : null;
+      return {
+        household_name: '',
+        children_first_names: [],
+        role: invite.role,
+        household_state: HOUSEHOLD_STATES.DRAFT,
+        // The same helper `termsPreview` uses, so the sheet and the public page
+        // cannot introduce her by two different names.
+        carer_name: proposal
+          ? firstNameLastInitial(proposal.carer_display_name)
+          : null,
+      };
+    }
+
     const childrenFirstNames =
       await this.householdRepo.listActiveChildFirstNames(invite.household_id);
     return {
-      household_name: household.name,
+      // Non-null for a live household by 093's `households_live_has_name`
+      // CHECK; the fallback is for the type, not for a case that can happen.
+      household_name: household.name ?? '',
       children_first_names: childrenFirstNames,
       role: invite.role,
+      household_state: HOUSEHOLD_STATES.LIVE,
+      carer_name: null,
     };
   }
+
+  /**
+   * The public terms page's data (§6.2) — UNAUTHENTICATED, because the code
+   * IS the bearer secret and nothing else guards this.
+   *
+   * THE 404 TABLE IS THE CONTRACT, and every row below returns the SAME opaque
+   * `InviteNotFoundError` `previewInvite` uses. That convention is not relaxed
+   * for a nicer error: naming the reason confirms the code was real to
+   * somebody typing strings, and the worker renders one page — "This link
+   * isn't active any more. Ask for a new one." — in every case.
+   *
+   * Two of these rows are not merely correctness. The rate is on that page
+   * only because Marisol cleared it on three standing conditions (D-51): a
+   * per-invite off switch she controls, a short-lived public link, and the page
+   * DEAD the instant the code is redeemed. The `status !== 'pending'` and
+   * `link_expires_at` checks below are two of the three. Cutting either takes
+   * the rate off the page and re-opens the owner decision — it does not
+   * silently degrade.
+   *
+   * What crosses the wire is deliberately thin: her first name and last
+   * initial, her terms, the code. Never the children's names, the family's
+   * name, her surname, an address or any contact detail — and never her
+   * private recipient label, which is hers alone (§6.1).
+   */
+  async termsPreview(code: string): Promise<TermsPreviewSource> {
+    /**
+     * The reason goes to the LOG, never into the error. `BaseError`'s
+     * client-safe serialisation ships `metadata` on a 4xx (BaseError.ts:64),
+     * which is right where the reason is a private detail for a member and
+     * wrong here: this caller is anonymous, and "expired" versus "no such
+     * code" is precisely the distinction §6.2 refuses to draw. One page, one
+     * message, and support still gets the answer from the log line.
+     */
+    const refuse = (reason: string): never => {
+      logger.info('Public terms preview refused', { code, reason });
+      throw new InviteNotFoundError(code);
+    };
+
+    const invite = await this.inviteRepo.findByCode(code);
+    if (!invite) {
+      return refuse('no_such_code');
+    }
+    // Redeemed, revoked, or a code somebody already used: one test, and it
+    // fires the INSTANT redemption flips the status.
+    if (invite.status !== HOUSEHOLD_INVITE_STATUSES.PENDING) {
+      return refuse('not_pending');
+    }
+    // The code's own 30 days. Nothing flips `status` to 'expired' on a
+    // schedule, so a status check alone would keep every long-dead row alive.
+    if (new Date(invite.expires_at).getTime() < Date.now()) {
+      return refuse('code_expired');
+    }
+    // The PAGE's separate, shorter clock. A null means an invite minted before
+    // this window existed — which is a parent-authored one, refused below
+    // anyway — and "no window" reads as closed, never as open forever.
+    if (
+      !invite.link_expires_at ||
+      new Date(invite.link_expires_at).getTime() < Date.now()
+    ) {
+      return refuse('link_expired');
+    }
+
+    const household = await this.householdRepo.findById(invite.household_id);
+    if (!household || household.state !== HOUSEHOLD_STATES.DRAFT) {
+      return refuse('not_a_draft_invite');
+    }
+    // The draft's author is the carer whose terms these are — read from
+    // `created_by` for the same reason 094 does, and her proposal is the one
+    // open round in her own draft.
+    const proposal = household.created_by
+      ? await this.proposalRepo.findOpenForCarer(
+          household.id,
+          household.created_by
+        )
+      : null;
+    if (!proposal) {
+      return refuse('no_open_proposal');
+    }
+
+    return {
+      code: invite.code,
+      carer_name: firstNameLastInitial(proposal.carer_display_name),
+      proposed_at: proposal.created_at,
+      link_expires_at: invite.link_expires_at,
+      // An explicit `terms.currency` still wins downstream; this is the
+      // household's, the same resolution the arrangement write makes.
+      currency: household.currency,
+      proposal,
+    };
+  }
+}
+
+/**
+ * "Marisol Mendez" -> "Marisol M." (§6.2: her first name and last initial
+ * only). A single-word name is returned as-is rather than initialled away —
+ * "Marisol" is already less than her full name, and "M." on its own names
+ * nobody.
+ */
+function firstNameLastInitial(displayName: string): string {
+  const parts = displayName.trim().split(/\s+/).filter(Boolean);
+  if (parts.length <= 1) {
+    return parts[0] ?? '';
+  }
+  const first = parts[0];
+  const last = parts[parts.length - 1] ?? '';
+  return `${first} ${last.charAt(0).toUpperCase()}.`;
 }
 
 // Singleton for controllers/routes that don't need DI.

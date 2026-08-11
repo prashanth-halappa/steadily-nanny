@@ -9,6 +9,7 @@
 import { supabaseService } from '../../../config/supabase';
 import { DatabaseError } from '../../../errors';
 import { BaseRepository } from '../../../shared/repositories/baseRepository';
+import { HOUSEHOLD_STATES } from '../schemas';
 import type { Household } from '../types';
 
 export class HouseholdRepository extends BaseRepository<Household> {
@@ -35,6 +36,36 @@ export class HouseholdRepository extends BaseRepository<Household> {
       );
     }
     return (data ?? []) as Household[];
+  }
+
+  /**
+   * Of these households, the ones that are LIVE — the draft-exclusion filter
+   * for the two scheduled jobs that enumerate households rather than rows
+   * (§12 "Draft, cron", 093's CRON AUDIT).
+   *
+   * Deliberately NOT folded into `findByIds`: that one is on the normal product
+   * path (`householdQueryService.listForUser`), and a nanny must still see the
+   * draft she is standing in. One extra `in (...)` query rather than a lookup
+   * per household — the caller has the whole set in hand (GOLDEN-FIXES #28).
+   */
+  async listLiveIds(ids: string[]): Promise<string[]> {
+    if (ids.length === 0) {
+      return [];
+    }
+    const { data, error } = await supabaseService
+      .from(this.table)
+      .select('id')
+      .in('id', ids)
+      .eq('state', HOUSEHOLD_STATES.LIVE);
+
+    if (error) {
+      throw new DatabaseError(
+        'Failed to filter households by state',
+        'DATABASE_ERROR',
+        { details: error.message }
+      );
+    }
+    return ((data ?? []) as { id: string }[]).map(row => row.id);
   }
 
   /**

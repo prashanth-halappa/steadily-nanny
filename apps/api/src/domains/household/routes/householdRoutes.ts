@@ -22,7 +22,7 @@ import {
   HouseholdInviteParamSchema,
   HouseholdMemberParamSchema,
   InviteCodeParamSchema,
-  RedeemHouseholdInviteSchema,
+  RedeemHouseholdInviteBodySchema,
   SetHouseholdHolidaysRequestSchema,
   UpdateHouseholdInviteSchema,
   UpdateHouseholdMemberSchema,
@@ -46,9 +46,15 @@ const householdOwnership = {
 // so 'invites' is matched as a literal segment, not swallowed by :householdId. ---
 
 // Redeem — no ownership concept yet (the caller isn't a member until this runs).
+// The SERVER-side body schema: the shared one plus §8.2's optional
+// `target_household_id`, the household a parent explicitly picked to absorb her
+// into. `validate()` writes the parsed object back over `req.body` and Zod
+// strips unknown keys, so validating with the shared schema here would silently
+// drop the target and every absorption would instantiate a second household —
+// the exact duplicate-family mess D-34 exists to prevent.
 router.post(
   '/invites/redeem',
-  ...authWithValidation(RedeemHouseholdInviteSchema, 'body'),
+  ...authWithValidation(RedeemHouseholdInviteBodySchema, 'body'),
   asyncHandler(HouseholdController.redeemInvite)
 );
 

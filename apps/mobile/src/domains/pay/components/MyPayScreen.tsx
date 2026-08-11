@@ -13,6 +13,16 @@
  * or parent deep-linking here sees an honest not-available state, same
  * pattern as `ManageHouseholdScreen`'s.
  *
+ * 3-O §9.1: this screen is no longer read-only. It gains exactly ONE write
+ * per household card — "Suggest a change" — and with it the write gate its
+ * old header comment said it did not need: a nanny a family has removed must
+ * not be able to propose new terms to them. `useIsOnboarded` already exposes
+ * `isPastMember`; that is the whole gate.
+ *
+ * A proposal from My pay is the SAME object as a nanny-first onboarding
+ * proposal, reviewed on the same screen and accepted through the same sheet.
+ * One lifecycle, not two — which is what "both directions everywhere" buys.
+ *
  * D-31/D-41 (`docs/design/screens-pay-terms.md` §8.2/§8.3): pressing "I've
  * seen these terms" records the DATE SHE SAW THEM and nothing more. Every
  * string this screen renders for that fact says so — "Seen by {name} on
@@ -36,12 +46,15 @@ import { EmptyState } from '@/src/components/ui/empty-state';
 import { InlineError } from '@/src/components/ui/inline-error';
 import { LoadingButton } from '@/src/components/ui/loading-button';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
+import { StatusPill } from '@/src/components/ui/status-pill';
 import { Text } from '@/src/components/ui/text';
 import { Textarea } from '@/src/components/ui/textarea';
 import { Body, H1, H4, Small } from '@/src/components/ui/typography';
 import { SETUP_ROLES } from '@/src/domains/setup/types';
 import { useAckPayArrangement } from '@/src/hooks/mutations/useAckPayArrangement';
 import { useDissentPayArrangement } from '@/src/hooks/mutations/useDissentPayArrangement';
+import { useProposeTerms } from '@/src/hooks/mutations/useProposeTerms';
+import { useWithdrawTerms } from '@/src/hooks/mutations/useWithdrawTerms';
 import { useCurrentPayArrangement } from '@/src/hooks/queries/useCurrentPayArrangement';
 import { useHouseholds } from '@/src/hooks/queries/useHouseholds';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
@@ -49,16 +62,21 @@ import { usePastHouseholds } from '@/src/hooks/queries/usePastHouseholds';
 import { usePayArrangementAcks } from '@/src/hooks/queries/usePayArrangementAcks';
 import { usePayArrangementHistory } from '@/src/hooks/queries/usePayArrangementHistory';
 import { usePtoBalance } from '@/src/hooks/queries/usePtoBalance';
+import { useTermsProposals } from '@/src/hooks/queries/useTermsProposals';
 import { localDateInZone } from '@/src/lib/localDate';
 import { formatMoney } from '@/src/lib/money';
 import { useAuthStore } from '@/src/store/auth';
 import { useElevation } from '~/lib/design-tokens/elevation';
 import { resolveAckState } from '../utils/ackState';
 import { formatDisplayDateWithYear } from '../utils/payArrangementForm';
-import { buildTermRows } from '../utils/termRows';
+import {
+  proposalHistoryLabel,
+  proposalStateWord,
+} from '../utils/proposalTerms';
 import { buildTermsDiff, summarizeTermsDiff } from '../utils/termsDiff';
-import { AmountRow } from './AmountRow';
 import { BackRow } from './BackRow';
+import { PayChangeSheet } from './PayChangeSheet';
+import { TermsDocumentRows } from './TermsDocumentRows';
 
 /**
  * The version immediately before `id` in the append-only history (newest
@@ -130,18 +148,27 @@ function DissentSheet({
 function MyPayHouseholdCard({
   household,
   carerId,
+  canWrite,
 }: {
   household: Household;
   carerId: string;
+  /** §9.1's one gate: false for a household she was removed from. She keeps
+   * every figure she earned there and loses the ability to propose new terms
+   * to a family she no longer works for. */
+  canWrite: boolean;
 }) {
   const { t } = useTranslation('pay');
+  const router = useRouter();
   const current = useCurrentPayArrangement(household.id, carerId);
   const history = usePayArrangementHistory(household.id, carerId);
   const acks = usePayArrangementAcks(household.id, carerId, current.data?.id);
   const ackTerms = useAckPayArrangement(household.id, carerId);
   const dissentTerms = useDissentPayArrangement(household.id, carerId);
+  const proposals = useTermsProposals(household.id, carerId);
+  const proposeTerms = useProposeTerms(household.id, carerId);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [dissentOpen, setDissentOpen] = useState(false);
+  const [proposeOpen, setProposeOpen] = useState(false);
   const elevation = useElevation();
 
   // This household's own local year — each card is per-family, so the
@@ -167,6 +194,28 @@ function MyPayHouseholdCard({
       : formatDisplayDateWithYear(
           localDateInZone(household.timezone, new Date(ackState.createdAt))
         );
+  // Exactly one proposal can be open at a time; everything else is history —
+  // one read, not a `current` and a `history` that can disagree.
+  const openProposal = (proposals.data ?? []).find(
+    row => row.status === 'proposed'
+  );
+  // Unconditional, like every hook: an empty id simply has nothing to
+  // withdraw, and the button that would call it is not on screen.
+  const withdrawTerms = useWithdrawTerms(openProposal?.id ?? '');
+  // A household with no name yet is still a household she is negotiating
+  // with — it reads as "the family" rather than as a blank.
+  const householdName = household.name ?? t('proposal.theFamily');
+  const openProposalState = openProposal
+    ? proposalStateWord(
+        openProposal,
+        { counterpartyName: householdName, timezone: household.timezone },
+        t
+      )
+    : null;
+  // Hers to withdraw, or theirs to answer — the owner flips with every
+  // counter, and the card names which side is waiting rather than showing her
+  // a Withdraw button for a round she did not write (§7.5).
+  const openProposalIsHers = openProposal?.proposed_by === carerId;
   const carerName = arrangement?.carer_display_name;
   // D-41: 'seen' NEVER renders as agreement. See this module's header.
   const ackStateWord =
@@ -250,18 +299,11 @@ function MyPayHouseholdCard({
               </H1>
               <Body className="text-muted-foreground">/hr</Body>
             </View>
-            <View className="gap-3">
-              {buildTermRows(arrangement, t, balance.data).map(row => (
-                <AmountRow
-                  key={row.key}
-                  testID={`my-pay-term-${household.id}-${row.key}`}
-                  label={row.label}
-                  value={row.value}
-                  valueWhenNull={row.valueWhenNull}
-                  subLine={row.subLine}
-                />
-              ))}
-            </View>
+            <TermsDocumentRows
+              arrangement={arrangement}
+              balance={balance.data}
+              testIDPrefix={`my-pay-term-${household.id}`}
+            />
             <Small className="text-muted-foreground">
               {t('inEffectSince', {
                 date: formatDisplayDateWithYear(arrangement.valid_from),
@@ -280,8 +322,82 @@ function MyPayHouseholdCard({
             >
               <Text>{t('myPay.historyButton')}</Text>
             </Button>
+            {openProposal && openProposalState ? (
+              <>
+                <StatusPill
+                  testID={`my-pay-proposal-pill-${household.id}`}
+                  variant={openProposalState.variant}
+                  label={openProposalState.label}
+                />
+                {openProposalIsHers ? (
+                  <Button
+                    testID={`my-pay-proposal-withdraw-${household.id}`}
+                    variant="ghost"
+                    onPress={() => withdrawTerms.mutate()}
+                  >
+                    <Text className="text-destructive">
+                      {t('proposal.withdrawButton')}
+                    </Text>
+                  </Button>
+                ) : (
+                  <Button
+                    testID={`my-pay-proposal-review-${household.id}`}
+                    variant="ghost"
+                    onPress={() =>
+                      router.push(`/pay/proposal/${openProposal.id}`)
+                    }
+                  >
+                    <Text>{t('proposal.reviewButton')}</Text>
+                  </Button>
+                )}
+              </>
+            ) : canWrite ? (
+              <Button
+                testID={`my-pay-suggest-change-${household.id}`}
+                variant="ghost"
+                onPress={() => setProposeOpen(true)}
+              >
+                <Text>{t('proposal.suggestChangeButton')}</Text>
+              </Button>
+            ) : null}
             {historyOpen ? (
               <View className="gap-2" testID={`my-pay-history-${household.id}`}>
+                {/* Withdrawn and countered rounds stay here — nothing in this
+                    domain is deleted (§9.1). */}
+                {(proposals.data ?? [])
+                  .filter(row => row.status !== 'proposed')
+                  .map(row => (
+                    <View
+                      key={row.id}
+                      testID={`my-pay-proposal-history-${row.id}`}
+                      className="flex-row items-center gap-2"
+                    >
+                      <StatusPill
+                        testID={`my-pay-proposal-history-pill-${row.id}`}
+                        variant={
+                          proposalStateWord(
+                            row,
+                            {
+                              counterpartyName: householdName,
+                              timezone: household.timezone,
+                            },
+                            t
+                          ).variant
+                        }
+                        label={proposalHistoryLabel(
+                          row,
+                          {
+                            authorName:
+                              row.proposed_by === carerId
+                                ? t('proposal.you')
+                                : householdName,
+                            timezone: household.timezone,
+                          },
+                          t
+                        )}
+                      />
+                    </View>
+                  ))}
                 {(history.data ?? []).map((row, index) => {
                   // §8.5: what CHANGED, not just the rate. The oldest row has
                   // no predecessor and says so rather than diffing nothing.
@@ -324,6 +440,30 @@ function MyPayHouseholdCard({
                 })}
               </View>
             ) : null}
+            {/* 3-U1's form, pre-filled from the CURRENT arrangement. A nanny
+                who joined a parent-first household in 2024 and wants a raise
+                in 2026 uses identical machinery to a nanny-first onboarding —
+                which is the point of there being one form. */}
+            <PayChangeSheet
+              mode="propose"
+              counterpartyName={householdName}
+              visible={proposeOpen}
+              onDismiss={() => setProposeOpen(false)}
+              onSubmit={terms => {
+                proposeTerms
+                  .mutateAsync({ terms })
+                  .then(() => setProposeOpen(false))
+                  .catch(() => undefined);
+              }}
+              isSubmitting={proposeTerms.isPending}
+              currentArrangement={arrangement}
+              householdCancellationDefaultHours={
+                household.cancellation_paid_within_hours ?? 0
+              }
+              householdTimezone={household.timezone}
+              householdWeekStartsOn={household.week_starts_on ?? 1}
+              todayISO={localDateInZone(household.timezone)}
+            />
             <DissentSheet
               householdId={household.id}
               visible={dissentOpen}
@@ -352,12 +492,19 @@ export function MyPayScreen() {
   const onboarding = useIsOnboarded();
   const households = useHouseholds();
   // Households she was REMOVED from belong here too: the pay she is still
-  // owed by a family she left is exactly what this screen exists to show.
-  // Read-only by nature — this screen offers no writes to gate.
+  // owed by a family she left is exactly what this screen exists to show —
+  // read-only, because §9.1's "Suggest a change" is a write and a past member
+  // has nothing to renegotiate.
   const pastHouseholds = usePastHouseholds();
   const payableHouseholds = [
-    ...(households.data ?? []),
-    ...(pastHouseholds.data ?? []),
+    ...(households.data ?? []).map(household => ({
+      household,
+      canWrite: true,
+    })),
+    ...(pastHouseholds.data ?? []).map(household => ({
+      household,
+      canWrite: false,
+    })),
   ];
   const userId = useAuthStore(s => s.user?.id ?? null);
 
@@ -435,11 +582,12 @@ export function MyPayScreen() {
         <ErrorState variant="network" onRetry={() => households.refetch()} />
       ) : !userId ? null : (
         <View className="mt-4 gap-3">
-          {payableHouseholds.map(household => (
+          {payableHouseholds.map(({ household, canWrite }) => (
             <MyPayHouseholdCard
               key={household.id}
               household={household}
               carerId={userId}
+              canWrite={canWrite && !onboarding.isPastMember}
             />
           ))}
         </View>

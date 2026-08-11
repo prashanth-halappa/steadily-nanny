@@ -49,13 +49,68 @@ export const HOUSEHOLD_ROLES = {
 export type HouseholdRole =
   (typeof HOUSEHOLD_ROLES)[keyof typeof HOUSEHOLD_ROLES];
 
-/** household_members.status */
+/**
+ * household_members.status
+ *
+ * MATCHED PAIR with the CHECK in 009_households.sql, widened by
+ * 093_draft_households.sql.
+ *
+ * `candidate` (D-49, screens-onboarding-terms-proposal.md §8.2.1) is the
+ * nanny who has redeemed a code into a LIVE household but whose terms the
+ * family has not accepted yet. Redemption is not hiring: until acceptance she
+ * must read nothing of that household — not the schedule, not the children,
+ * not the other carer.
+ *
+ * That rule is enforced FAIL-CLOSED rather than enumerated. Every RLS
+ * predicate and every service gate in this codebase filters
+ * `status = 'active'` POSITIVELY (`009:163`, `:185`, `:203`, the partial
+ * index at `:104-106`, `findActiveMembership`), so a `candidate` row matches
+ * none of them and reads nothing by default. The single exception is her own
+ * proposal, scoped to `terms_proposals.carer_id = auth.uid()`.
+ *
+ * DO NOT "simplify" any of those filters to `status != 'removed'`. A negated
+ * filter is the one shape that would silently grant a candidate full
+ * household read access, and nothing would fail.
+ */
 export const HOUSEHOLD_MEMBER_STATUSES = {
   ACTIVE: 'active',
   REMOVED: 'removed',
+  CANDIDATE: 'candidate',
 } as const;
 export type HouseholdMemberStatus =
   (typeof HOUSEHOLD_MEMBER_STATUSES)[keyof typeof HOUSEHOLD_MEMBER_STATUSES];
+
+/**
+ * The two statuses that mean "is, or once was, a member of this household".
+ *
+ * This is the set the money-read gates want when they ask "who is this
+ * person here?" — a removed nanny keeps her own audit trail, a candidate has
+ * no trail to keep. Kept as a POSITIVE list so a future status is excluded
+ * by construction rather than by somebody remembering to exclude it.
+ */
+export const HOUSEHOLD_MEMBERSHIP_STATUSES: readonly HouseholdMemberStatus[] = [
+  HOUSEHOLD_MEMBER_STATUSES.ACTIVE,
+  HOUSEHOLD_MEMBER_STATUSES.REMOVED,
+];
+
+/**
+ * households.state (D-34/D-36, 093_draft_households.sql).
+ *
+ * A `draft` is a household a NANNY created to author her own terms before she
+ * has a family. It has no owner and no parent member — her membership is
+ * `role='nanny'` — which is what makes D-36's "nothing priceable" a property
+ * of the membership table rather than of hidden buttons: `pay_arrangements`
+ * inserts are gated on `WRITE_ROLES = {owner, parent}`, so in a draft there
+ * is literally nobody who can insert one.
+ *
+ * Drafts are invisible to every cron sweep, digest and horizon job (D-34).
+ */
+export const HOUSEHOLD_STATES = {
+  DRAFT: 'draft',
+  LIVE: 'live',
+} as const;
+export type HouseholdState =
+  (typeof HOUSEHOLD_STATES)[keyof typeof HOUSEHOLD_STATES];
 
 /** household_invites.role — a subset of HOUSEHOLD_ROLES; an invite can never grant 'owner'. */
 export const HOUSEHOLD_INVITE_ROLES = {
@@ -107,7 +162,16 @@ const HouseholdWeekStartsOnSchema = z.int().min(0).max(6);
 /** The persisted entity as returned to clients. */
 export const HouseholdSchema = z.object({
   id: z.uuid(),
-  name: z.string().min(1),
+  /**
+   * NULLABLE since 093 (§4.2). A nanny authoring a terms draft is never asked
+   * for a family name — she has not met them yet, and a wizard that demands
+   * one before she has it is why interview-stage tools get abandoned. A draft
+   * is created with `name = null` and rendered "Untitled draft"; the label is
+   * asked for at the SHARE moment, where it is finally useful and finally
+   * known. Every live household still has one (see CreateHouseholdSchema's
+   * refine).
+   */
+  name: z.string().min(1).nullable(),
   timezone: z.string().min(1),
   address_line: z.string().nullable(),
   latitude: z.number().nullable(),
@@ -119,32 +183,74 @@ export const HouseholdSchema = z.object({
   currency: HouseholdCurrencySchema,
   jurisdiction: HouseholdJurisdictionSchema.nullable(),
   week_starts_on: HouseholdWeekStartsOnSchema,
+  /**
+   * `.default(HOUSEHOLD_STATES.LIVE)` keeps a client on this schema working
+   * against a server that predates the column, and every household that
+   * exists today IS live. The SQL column carries the same default, so no
+   * backfill was needed.
+   */
+  state: z.enum(Object.values(HOUSEHOLD_STATES)).default(HOUSEHOLD_STATES.LIVE),
   created_by: z.uuid().nullable(),
   created_at: z.iso.datetime({ offset: true }),
   updated_at: z.iso.datetime({ offset: true }),
 });
 
-/** POST body — what a client sends to create one. */
-export const CreateHouseholdSchema = z.object({
-  name: z.string().min(1, 'name is required'),
-  timezone: z.string().min(1).optional(),
-  address_line: z.string().optional(),
-  latitude: z.number().optional(),
-  longitude: z.number().optional(),
-  approval_mode: z.enum(Object.values(HOUSEHOLD_APPROVAL_MODES)).optional(),
-  approval_scope: z.enum(Object.values(HOUSEHOLD_APPROVAL_SCOPES)).optional(),
-  short_notice_hours: z.int().min(0).max(336).optional(),
-  cancellation_paid_within_hours: z.int().min(0).max(336).optional(),
-  currency: HouseholdCurrencySchema.optional(),
-  jurisdiction: HouseholdJurisdictionSchema.nullable().optional(),
-  week_starts_on: HouseholdWeekStartsOnSchema.optional(),
-});
+/**
+ * POST body — what a client sends to create one.
+ *
+ * `name` is optional ONLY for a draft. The refine below is the wire's half of
+ * the "a live household always has a name" invariant; the service and the
+ * SQL CHECK in 093 carry the other halves.
+ */
+export const CreateHouseholdSchema = z
+  .object({
+    name: z.string().min(1, 'name is required').optional(),
+    state: z.enum(Object.values(HOUSEHOLD_STATES)).optional(),
+    timezone: z.string().min(1).optional(),
+    address_line: z.string().optional(),
+    latitude: z.number().optional(),
+    longitude: z.number().optional(),
+    approval_mode: z.enum(Object.values(HOUSEHOLD_APPROVAL_MODES)).optional(),
+    approval_scope: z.enum(Object.values(HOUSEHOLD_APPROVAL_SCOPES)).optional(),
+    short_notice_hours: z.int().min(0).max(336).optional(),
+    cancellation_paid_within_hours: z.int().min(0).max(336).optional(),
+    currency: HouseholdCurrencySchema.optional(),
+    jurisdiction: HouseholdJurisdictionSchema.nullable().optional(),
+    week_starts_on: HouseholdWeekStartsOnSchema.optional(),
+  })
+  .refine(
+    data =>
+      data.state === HOUSEHOLD_STATES.DRAFT ||
+      (data.name !== undefined && data.name.length > 0),
+    { message: 'name is required unless the household is a draft' }
+  );
 
-/** PATCH body — every field optional, but at least one must be present. */
-export const UpdateHouseholdSchema = CreateHouseholdSchema.partial().refine(
-  data => Object.keys(data).length > 0,
-  { message: 'at least one field is required' }
-);
+/**
+ * PATCH body — every field optional, but at least one must be present.
+ *
+ * `state` is NOT patchable: a draft goes live exactly once, inside the
+ * redemption function (094), in the same transaction that makes a parent its
+ * owner. A household that could be flipped live by a PATCH would be a
+ * household with no owner and full cron exposure.
+ */
+export const UpdateHouseholdSchema = z
+  .object({
+    name: z.string().min(1).optional(),
+    timezone: z.string().min(1).optional(),
+    address_line: z.string().optional(),
+    latitude: z.number().optional(),
+    longitude: z.number().optional(),
+    approval_mode: z.enum(Object.values(HOUSEHOLD_APPROVAL_MODES)).optional(),
+    approval_scope: z.enum(Object.values(HOUSEHOLD_APPROVAL_SCOPES)).optional(),
+    short_notice_hours: z.int().min(0).max(336).optional(),
+    cancellation_paid_within_hours: z.int().min(0).max(336).optional(),
+    currency: HouseholdCurrencySchema.optional(),
+    jurisdiction: HouseholdJurisdictionSchema.nullable().optional(),
+    week_starts_on: HouseholdWeekStartsOnSchema.optional(),
+  })
+  .refine(data => Object.keys(data).length > 0, {
+    message: 'at least one field is required',
+  });
 
 /** URL param validation for /households/:householdId routes. */
 export const HouseholdIdParamSchema = z.object({
@@ -252,14 +358,56 @@ export const HouseholdInviteSchema = z.object({
   status: z.enum(Object.values(HOUSEHOLD_INVITE_STATUSES)),
   accepted_by: z.uuid().nullable(),
   accepted_at: z.iso.datetime({ offset: true }).nullable(),
+  /**
+   * When the PUBLIC terms page at `/t/:code` stops rendering (M26, §6.1).
+   *
+   * A SEPARATE clock from `expires_at`, deliberately. The code keeps its 30
+   * days because a family may reasonably take three weeks to decide and she
+   * may read the code out over the phone. The web page is the surface that
+   * carries her RATE in public, and 30 days of a live URL is 30 days of
+   * exposure for a conversation that is usually over in a week.
+   *
+   * This is one of Marisol's three standing conditions for the rate being on
+   * that page at all (D-51). Defaulted to `created_at + 7 days` in SQL.
+   * `.nullable()` covers invites minted before 093.
+   */
+  link_expires_at: z.iso.datetime({ offset: true }).nullable().default(null),
+  /**
+   * When the web page first rendered for this code (§5.3 "Opened"), stamped
+   * by the CF worker. Whether it reached them — never how many times, from
+   * where, or for how long. Between sending her terms and hearing back this
+   * is the only question the nanny has.
+   */
+  opened_at: z.iso.datetime({ offset: true }).nullable().default(null),
+  /**
+   * Her private label for the recipient ("The Bakers"), asked for at the
+   * share moment. FOR HER EYES ONLY — it never leaves the API to anyone but
+   * the inviting household, and it is never on the public page.
+   */
+  label: z.string().nullable().default(null),
   created_at: z.iso.datetime({ offset: true }),
   updated_at: z.iso.datetime({ offset: true }),
 });
+
+/**
+ * The two link windows §6.1's share sheet offers, in days. 7 is the default:
+ * the public surface is short-lived unless she says otherwise.
+ */
+export const INVITE_LINK_WINDOW_DAYS = [7, 30] as const;
+export const DEFAULT_INVITE_LINK_WINDOW_DAYS = 7;
 
 /** POST body — what a parent sends to invite someone. `code` is server-assigned. */
 export const CreateHouseholdInviteSchema = z.object({
   email: z.email().optional(),
   role: z.enum(Object.values(HOUSEHOLD_INVITE_ROLES)),
+  /** §6.1 — optional, hers, never shown to the recipient. */
+  label: z.string().min(1).max(80).optional(),
+  /**
+   * A closed pair, not a free integer: the share sheet is a two-chip toggle,
+   * and an arbitrary window would be a setting nobody asked for and a longer
+   * public exposure than D-51 permits.
+   */
+  link_expires_in_days: z.union([z.literal(7), z.literal(30)]).optional(),
 });
 
 /** PATCH body — the only legitimate client transition is revoking a pending invite. */

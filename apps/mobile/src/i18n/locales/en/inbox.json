@@ -50,6 +50,14 @@
       "subtitleNoDeadline": "Asked {{askedDate}}",
       "deadline": "Answer by {{deadlineDate}}, {{deadlineTime}}",
       "cta": "Open the shift"
+    },
+    "termsProposal": {
+      "title": "Terms proposed by {{carer}} · {{date}}",
+      "titleCountered": "Terms countered by the family · {{date}}",
+      "subtitle": "{{rate}} · {{weekly}} a week",
+      "subtitleRateOnly": "{{rate}}",
+      "subtitleNoFigures": "Open to see the terms.",
+      "cta": "Review terms"
     }
   }
 }

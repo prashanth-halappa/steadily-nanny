@@ -160,6 +160,13 @@ const listAcksMock = mock<() => Promise<unknown[]>>(() => Promise.resolve([]));
 const cancelScheduledMock = mock<
   (h: string, c: string, a: string) => Promise<unknown>
 >(() => Promise.resolve({}));
+// 3-O's proposal row (§7.1). Mocked at the HOOK boundary — another slice
+// owns the hook and the HTTP shape under it. Empty here: this file's subject
+// is the terms card, and §12 says nothing announces a proposal's absence.
+mock.module('@/src/hooks/queries/useTermsProposals', () => ({
+  useTermsProposals: () => ({ data: [] }),
+}));
+
 mock.module('@/src/api/endpoints/payArrangements', () => ({
   payArrangementApi: {
     getCurrent: payCurrentMock,

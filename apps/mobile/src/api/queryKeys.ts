@@ -197,6 +197,34 @@ export const queryKeys = {
       ] as const,
   },
 
+  // Terms proposals (D-35/D-38/D-49): the negotiation that happens BEFORE any
+  // pay arrangement exists. Scoped to the same (householdId, carerId) pair as
+  // `pay` — two nannies in one household run two independent negotiations and
+  // must never see each other's (D-21).
+  //
+  // `history` is NOT foldable into `current`. A counter is a NEW row pointing
+  // at the one it answered (`supersedes_id`), never an edit over it, so
+  // `current` is one live row while the chain behind it is the audit trail
+  // §7.2 renders as "How we got here". Deriving one from the other would mean
+  // either caching the whole chain to show one card, or throwing the chain
+  // away to keep the card cheap. Hence two keys — and hence every mutation
+  // invalidates BOTH: a counter changes what "current" resolves to AND appends
+  // to the chain.
+  termsProposal: {
+    all: ['termsProposal'] as const,
+    current: (householdId?: string, carerId?: string) =>
+      [
+        ...queryKeys.termsProposal.all,
+        'current',
+        householdId,
+        carerId,
+      ] as const,
+    list: (householdId?: string, carerId?: string) =>
+      [...queryKeys.termsProposal.all, 'list', householdId, carerId] as const,
+    detail: (proposalId?: string) =>
+      [...queryKeys.termsProposal.all, 'detail', proposalId] as const,
+  },
+
   // Paid time off (Phase 3). Balance is per calendar year — the year is part
   // of the key so switching years refetches rather than showing last year's
   // figure under this year's heading.

@@ -1,9 +1,11 @@
-import { Tabs } from 'expo-router';
+import { HOUSEHOLD_STATES } from '@steadily-nanny/shared-types/schemas/household.schema';
+import { Redirect, Tabs } from 'expo-router';
 import { CalendarDays, Clock, Home, Settings } from 'lucide-react-native';
 import { useTranslation } from 'react-i18next';
 import { Pressable, type PressableProps } from 'react-native';
 import { useThemeColors } from '@/lib/design-tokens';
 import { useElevation } from '@/lib/design-tokens/elevation';
+import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
 
 /**
  * Main tab bar — Today / Schedule / Hours / Settings for every role, all
@@ -32,6 +34,22 @@ export default function TabsLayout() {
   const colors = useThemeColors();
   const elevation = useElevation();
   const { t } = useTranslation('common');
+  const { household } = useActiveHousehold();
+
+  // §5.1, D-36: while the active household is a DRAFT this shell is replaced
+  // wholesale by one route. Not hidden tabs and not honest empty states — in
+  // a draft there are structurally no shifts, no timesheets, no money and no
+  // other person, so three of four tabs would be permanently empty BY DESIGN,
+  // and a nanny opening a brand-new app to three empty rooms concludes it is
+  // broken rather than that she is early.
+  //
+  // Resolves to null while the household list is still loading, so a slow
+  // query renders the tabs briefly rather than redirecting on a guess. If she
+  // ALSO belongs to a live household, the household switcher moves her
+  // between the full app and the draft screen.
+  if (household?.state === HOUSEHOLD_STATES.DRAFT) {
+    return <Redirect href="/(private)/draft" />;
+  }
 
   return (
     <Tabs

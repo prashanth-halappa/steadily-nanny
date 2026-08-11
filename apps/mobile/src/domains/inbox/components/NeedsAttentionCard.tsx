@@ -59,7 +59,13 @@ export function NeedsAttentionCard({
   // (`PendingScheduleCard`, same status/carer_id gate, same destination) —
   // filtered out here entirely rather than just skipped for the headline,
   // so it can never inflate the "N more" count either.
-  const items = allItems.filter(item => item.kind !== 'pending_pattern');
+  // A terms proposal is the same story on the other side of the ladder
+  // (§7.1/B3): it has its own T1 card and its own rung in
+  // `resolveAttentionOwner`, so it must not headline here or inflate the
+  // count either.
+  const items = allItems.filter(
+    item => item.kind !== 'pending_pattern' && item.kind !== 'terms_proposal'
+  );
 
   if (isLoading || items.length === 0) {
     return null;

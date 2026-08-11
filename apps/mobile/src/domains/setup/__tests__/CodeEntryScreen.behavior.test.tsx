@@ -13,6 +13,7 @@
 import { beforeEach, describe, expect, it, mock } from 'bun:test';
 import { fireEvent, waitFor } from '@testing-library/react-native';
 import { useAuthStore } from '@/src/store/auth';
+import { usePendingDeepLinkStore } from '@/src/store/pendingDeepLinkStore';
 import { useSetupProgressStore } from '@/src/store/setupProgress';
 import { renderWithProviders } from '@/src/test-utils';
 import { CodeEntryScreen } from '../components/CodeEntryScreen';
@@ -29,20 +30,37 @@ mock.module('expo-router', () => ({
   }),
 }));
 
-const INVITE_PREVIEW = {
+interface PreviewFixture {
+  household_name: string;
+  children_first_names: string[];
+  household_state: string;
+  carer_name: string | null;
+}
+
+const INVITE_PREVIEW: PreviewFixture = {
   household_name: 'The Ruiz family',
   children_first_names: ['Mia'],
+  household_state: 'live',
+  carer_name: null,
 };
 const MEMBERSHIP = { id: 'member-1', household_id: 'household-1' };
+
+function liveHousehold(id: string, name: string) {
+  return { id, name, state: 'live' };
+}
 
 /** Every profile/redeem write, in the order it actually hit the wire. */
 let callOrder: string[] = [];
 
-const previewInviteMock = mock(() => Promise.resolve(INVITE_PREVIEW));
-const redeemInviteMock = mock(() => {
-  callOrder.push('redeemInvite');
-  return Promise.resolve(MEMBERSHIP);
-});
+const previewInviteMock = mock(
+  (): Promise<PreviewFixture> => Promise.resolve(INVITE_PREVIEW)
+);
+const redeemInviteMock = mock(
+  (_code: string, _targetHouseholdId?: string): Promise<unknown> => {
+    callOrder.push('redeemInvite');
+    return Promise.resolve(MEMBERSHIP);
+  }
+);
 const getProfileMock = mock(() => Promise.resolve(null as unknown));
 const upsertProfileMock = mock((req: { name: string }) => {
   callOrder.push('upsertProfile');
@@ -53,10 +71,17 @@ const updateNameMock = mock((req: { name: string }) => {
   return Promise.resolve({ user_id: 'user-1', name: req.name });
 });
 
+const listHouseholdsMock = mock((): Promise<unknown[]> => Promise.resolve([]));
+const listPastHouseholdsMock = mock(
+  (): Promise<unknown[]> => Promise.resolve([])
+);
+
 mock.module('@/src/api/endpoints/household', () => ({
   householdApi: {
     previewInvite: previewInviteMock,
     redeemInvite: redeemInviteMock,
+    list: listHouseholdsMock,
+    listPast: listPastHouseholdsMock,
   },
 }));
 mock.module('@/src/api/endpoints/user', () => ({
@@ -73,6 +98,13 @@ mock.module('@/src/lib/userDevice', () => ({
 beforeEach(() => {
   callOrder = [];
   previewInviteMock.mockClear();
+  previewInviteMock.mockImplementation(() => Promise.resolve(INVITE_PREVIEW));
+  listHouseholdsMock.mockClear();
+  listHouseholdsMock.mockImplementation(() => Promise.resolve([]));
+  listPastHouseholdsMock.mockClear();
+  listPastHouseholdsMock.mockImplementation(() => Promise.resolve([]));
+  usePendingDeepLinkStore.setState({ pendingHref: null, setAt: null });
+  useSetupProgressStore.getState().reset();
   redeemInviteMock.mockClear();
   upsertProfileMock.mockClear();
   updateNameMock.mockClear();
@@ -241,14 +273,14 @@ describe('CodeEntryScreen — role branch (WS-F)', () => {
 });
 
 describe('CodeEntryScreen — trapped-nanny escape hatches (W1-E fix 2)', () => {
-  it('renders a back affordance that returns to the role screen', () => {
+  it('renders a back affordance that returns to the start fork', () => {
     const screen = renderWithProviders(<CodeEntryScreen />);
 
     const back = screen.getByTestId('code-screen-back');
     expect(back).toBeTruthy();
     fireEvent.press(back);
 
-    expect(mockReplace).toHaveBeenCalledWith('/onboarding/role');
+    expect(mockReplace).toHaveBeenCalledWith('/onboarding/start');
   });
 
   it('renders a sign-out affordance that calls the auth store sign-out', () => {
@@ -259,5 +291,219 @@ describe('CodeEntryScreen — trapped-nanny escape hatches (W1-E fix 2)', () => 
     fireEvent.press(signOutButton);
 
     expect(mockSignOut).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('CodeEntryScreen — two entry modes (D-50, §3.4)', () => {
+  it('mode b is the default: empty field, nothing pre-filled', () => {
+    const screen = renderWithProviders(<CodeEntryScreen />);
+
+    expect(screen.getByTestId('code-input').props.value).toBe('');
+  });
+
+  it('mode a, step 1: a code on the route params pre-fills the field', () => {
+    const screen = renderWithProviders(
+      <CodeEntryScreen initialCode="R4K-92T" />
+    );
+
+    expect(screen.getByTestId('code-input').props.value).toBe('R4K-92T');
+  });
+
+  it('mode a, step 2: a link tapped while signed out is replayed into the field', () => {
+    usePendingDeepLinkStore.getState().setPendingLink('/t/B7Q-31M');
+
+    const screen = renderWithProviders(<CodeEntryScreen />);
+
+    expect(screen.getByTestId('code-input').props.value).toBe('B7Q-31M');
+    // Consumed, so a remount cannot yank her back to a code she has moved on
+    // from — the store's own single-use contract.
+    expect(usePendingDeepLinkStore.getState().pendingHref).toBeNull();
+  });
+
+  it('a route param wins over a pending link — first hit in the resolution order', () => {
+    usePendingDeepLinkStore.getState().setPendingLink('/t/B7Q-31M');
+
+    const screen = renderWithProviders(
+      <CodeEntryScreen initialCode="R4K-92T" />
+    );
+
+    expect(screen.getByTestId('code-input').props.value).toBe('R4K-92T');
+  });
+
+  it('PRE-FILLING NEVER AUTO-SUBMITS — redemption is single-use, so a mis-routed link must not burn a code', async () => {
+    renderWithProviders(<CodeEntryScreen initialCode="R4K-92T" />);
+
+    await waitFor(() => expect(previewInviteMock).not.toHaveBeenCalled());
+    expect(redeemInviteMock).not.toHaveBeenCalled();
+  });
+
+  it('the field is NEVER read-only in mode a — a wrong or stale code has to be correctable in place', () => {
+    const screen = renderWithProviders(
+      <CodeEntryScreen initialCode="R4K-92T" />
+    );
+
+    const input = screen.getByTestId('code-input');
+    expect(input.props.editable).not.toBe(false);
+    fireEvent.changeText(input, 'ZZZ-999');
+    expect(screen.getByTestId('code-input').props.value).toBe('ZZZ-999');
+  });
+});
+
+describe('CodeEntryScreen — absorption confirm (§8.2 / D-34)', () => {
+  const DRAFT_PREVIEW = {
+    household_name: "Marisol's terms",
+    children_first_names: [],
+    household_state: 'draft',
+    carer_name: 'Marisol',
+  };
+
+  it('opens the sheet BEFORE redemption when a parent with a live household redeems a draft code', async () => {
+    previewInviteMock.mockImplementation(() => Promise.resolve(DRAFT_PREVIEW));
+    listHouseholdsMock.mockImplementation(() =>
+      Promise.resolve([liveHousehold('household-9', 'The Ahmeds')])
+    );
+    const screen = renderWithProviders(<CodeEntryScreen />);
+
+    await enterCode(screen);
+    fireEvent.press(screen.getByTestId('code-screen-cta'));
+
+    await waitFor(() =>
+      expect(screen.getByTestId('absorption-sheet-title')).toBeTruthy()
+    );
+    expect(redeemInviteMock).not.toHaveBeenCalled();
+  });
+
+  it('passes the chosen household as the redemption target once confirmed', async () => {
+    previewInviteMock.mockImplementation(() => Promise.resolve(DRAFT_PREVIEW));
+    listHouseholdsMock.mockImplementation(() =>
+      Promise.resolve([liveHousehold('household-9', 'The Ahmeds')])
+    );
+    const screen = renderWithProviders(<CodeEntryScreen />);
+
+    await enterCode(screen);
+    fireEvent.press(screen.getByTestId('code-screen-cta'));
+    await waitFor(() =>
+      expect(screen.getByTestId('absorption-confirm-button')).toBeTruthy()
+    );
+    fireEvent.press(screen.getByTestId('absorption-confirm-button'));
+
+    await waitFor(() => expect(redeemInviteMock).toHaveBeenCalledTimes(1));
+    expect(redeemInviteMock.mock.calls[0]).toEqual(['R4K-92T', 'household-9']);
+  });
+
+  it('shows a household picker ONLY when the parent has two or more', async () => {
+    previewInviteMock.mockImplementation(() => Promise.resolve(DRAFT_PREVIEW));
+    listHouseholdsMock.mockImplementation(() =>
+      Promise.resolve([liveHousehold('household-9', 'The Ahmeds')])
+    );
+    const single = renderWithProviders(<CodeEntryScreen />);
+    await enterCode(single);
+    fireEvent.press(single.getByTestId('code-screen-cta'));
+    await waitFor(() =>
+      expect(single.getByTestId('absorption-confirm-button')).toBeTruthy()
+    );
+    expect(single.queryByTestId('absorption-household-picker')).toBeNull();
+    single.unmount();
+
+    listHouseholdsMock.mockImplementation(() =>
+      Promise.resolve([
+        liveHousehold('household-9', 'The Ahmeds'),
+        liveHousehold('household-10', 'The Ahmeds (weekends)'),
+      ])
+    );
+    const multi = renderWithProviders(<CodeEntryScreen />);
+    await enterCode(multi);
+    fireEvent.press(multi.getByTestId('code-screen-cta'));
+    await waitFor(() =>
+      expect(multi.getByTestId('absorption-household-picker')).toBeTruthy()
+    );
+    expect(multi.getByTestId('absorption-household-household-10')).toBeTruthy();
+  });
+
+  it('absorbs into the household the parent picked, not the default', async () => {
+    previewInviteMock.mockImplementation(() => Promise.resolve(DRAFT_PREVIEW));
+    listHouseholdsMock.mockImplementation(() =>
+      Promise.resolve([
+        liveHousehold('household-9', 'The Ahmeds'),
+        liveHousehold('household-10', 'The Ahmeds (weekends)'),
+      ])
+    );
+    const screen = renderWithProviders(<CodeEntryScreen />);
+
+    await enterCode(screen);
+    fireEvent.press(screen.getByTestId('code-screen-cta'));
+    await waitFor(() =>
+      expect(screen.getByTestId('absorption-household-picker')).toBeTruthy()
+    );
+    fireEvent.press(screen.getByTestId('absorption-household-household-10'));
+    fireEvent.press(screen.getByTestId('absorption-confirm-button'));
+
+    await waitFor(() => expect(redeemInviteMock).toHaveBeenCalledTimes(1));
+    expect(redeemInviteMock.mock.calls[0]).toEqual(['R4K-92T', 'household-10']);
+  });
+
+  it('no sheet for a parent with NO household — redemption instantiates the family from the draft', async () => {
+    previewInviteMock.mockImplementation(() => Promise.resolve(DRAFT_PREVIEW));
+    listHouseholdsMock.mockImplementation(() => Promise.resolve([]));
+    const screen = renderWithProviders(<CodeEntryScreen />);
+
+    await enterCode(screen);
+    fireEvent.press(screen.getByTestId('code-screen-cta'));
+
+    // Redemption running straight through IS the assertion: the positive
+    // case above proves the sheet gates it, so "redeemed, untargeted" can
+    // only mean no confirm intervened. (`BottomSheetBase` keeps its subtree
+    // mounted behind an invisible `<Modal>` for the exit animation, so a
+    // queryByTestId here would find the hidden copy and prove nothing.)
+    await waitFor(() => expect(redeemInviteMock).toHaveBeenCalledTimes(1));
+    expect(redeemInviteMock.mock.calls[0]).toEqual(['R4K-92T', undefined]);
+  });
+
+  it('no sheet for an ordinary LIVE household invite, even with a household already', async () => {
+    listHouseholdsMock.mockImplementation(() =>
+      Promise.resolve([liveHousehold('household-9', 'The Ahmeds')])
+    );
+    const screen = renderWithProviders(<CodeEntryScreen />);
+
+    await enterCode(screen);
+    fireEvent.press(screen.getByTestId('code-screen-cta'));
+
+    await waitFor(() => expect(redeemInviteMock).toHaveBeenCalledTimes(1));
+    expect(redeemInviteMock.mock.calls[0]).toEqual(['R4K-92T', undefined]);
+  });
+
+  it('cancelling redeems nothing — a confirm can be declined', async () => {
+    previewInviteMock.mockImplementation(() => Promise.resolve(DRAFT_PREVIEW));
+    listHouseholdsMock.mockImplementation(() =>
+      Promise.resolve([liveHousehold('household-9', 'The Ahmeds')])
+    );
+    const screen = renderWithProviders(<CodeEntryScreen />);
+
+    await enterCode(screen);
+    fireEvent.press(screen.getByTestId('code-screen-cta'));
+    await waitFor(() =>
+      expect(screen.getByTestId('absorption-cancel-button')).toBeTruthy()
+    );
+    fireEvent.press(screen.getByTestId('absorption-cancel-button'));
+
+    expect(redeemInviteMock).not.toHaveBeenCalled();
+  });
+
+  it('offers NO "create a separate household instead" fork — absorption is the only correct outcome (D-34)', async () => {
+    previewInviteMock.mockImplementation(() => Promise.resolve(DRAFT_PREVIEW));
+    listHouseholdsMock.mockImplementation(() =>
+      Promise.resolve([liveHousehold('household-9', 'The Ahmeds')])
+    );
+    const screen = renderWithProviders(<CodeEntryScreen />);
+
+    await enterCode(screen);
+    fireEvent.press(screen.getByTestId('code-screen-cta'));
+    await waitFor(() =>
+      expect(screen.getByTestId('absorption-confirm-button')).toBeTruthy()
+    );
+
+    // Exactly two actions: confirm, and cancel.
+    expect(screen.getByTestId('absorption-cancel-button')).toBeTruthy();
+    expect(screen.queryByTestId('absorption-separate-household')).toBeNull();
   });
 });

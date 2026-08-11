@@ -11,6 +11,7 @@ function makeHousehold(overrides: Partial<Household> = {}): Household {
   return {
     id: 'h1',
     name: 'The Smiths',
+    state: 'live',
     timezone: 'Europe/London',
     address_line: null,
     latitude: null,

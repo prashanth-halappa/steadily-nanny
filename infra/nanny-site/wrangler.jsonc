@@ -1,3 +1,31 @@
+// DEPLOY PREREQUISITES for the /t/:code terms page (D-37, 3-O).
+//
+// Not filled in here on purpose — one is environment-specific and the other is
+// a secret, and a wrong value is worse than a missing one: `API_BASE_URL`
+// pointing at the wrong environment would serve one household's terms from
+// another's database, and `/t/:code` is public.
+//
+//   API_BASE_URL      the origin of `apps/api`, no trailing slash. The worker
+//                     calls `${API_BASE_URL}/api/v1/household-invites/:code/
+//                     terms-preview` and `.../opened`. Set with
+//                     `wrangler deploy --var API_BASE_URL:https://…` or add a
+//                     `vars` block per environment.
+//                     WITHOUT IT the page fails CLOSED — every /t/:code
+//                     renders the opaque dead-link 404, which is the correct
+//                     failure but looks exactly like a revoked code, so check
+//                     this first when the page is "broken".
+//
+//   POSTHOG_API_KEY   optional. Enables §11's `link_opened` capture, the one
+//                     funnel event no client can emit because at that moment
+//                     nobody has opened the app. Absent = no analytics call at
+//                     all, and the page is otherwise unaffected.
+//                     Set with `wrangler secret put POSTHOG_API_KEY`, never as
+//                     a plain `var` — it lands in the deployed bundle.
+//   POSTHOG_HOST      optional, defaults to https://us.i.posthog.com.
+//
+// Android universal links stay UNVERIFIED until the Play App Signing SHA-256
+// fingerprint is added to ANDROID_SHA256_CERT_FINGERPRINTS in worker.js — see
+// the block there. iOS is unaffected and works the day this ships.
 {
   "name": "nanny-getsteadily",
   "main": "worker.js",

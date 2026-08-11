@@ -86,6 +86,12 @@ const PUSH_TYPE_GROUP: Record<PushNotificationType, NotificationGroup> = {
   shift_no_show: 'schedule',
   shift_no_show_digest: 'schedule',
   shift_reminder: 'schedule',
+  // 3-O (§13): a contract is money, not household admin — these four belong
+  // beside pay_terms_set, not under Your household with "someone joined".
+  terms_proposal_accepted: 'hoursAndPay',
+  terms_proposal_countered: 'hoursAndPay',
+  terms_proposal_received: 'hoursAndPay',
+  terms_proposal_withdrawn: 'hoursAndPay',
   timesheet_approved: 'hoursAndPay',
   timesheet_awaiting_approval: 'hoursAndPay',
   timesheet_note_added: 'hoursAndPay',
