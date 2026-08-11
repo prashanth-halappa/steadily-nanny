@@ -66,6 +66,16 @@
 -- condition, not merely a permission — a parent removed from the household
 -- between the service's read and this call must not absorb a nanny into it.
 --
+-- INHERITED FROM 093: while the source household is a draft it can hold no
+-- row in `shifts`, `child_commitments`, `timesheets`, `time_entries` or
+-- `pay_arrangements` — 093's `refuse_write_in_draft_household` trigger
+-- guarantees it on all five. That is why the instantiate path below copies
+-- only the household settings, the children and the proposal: there is
+-- provably nothing else to carry, and a future table added to that guarded
+-- list must be considered here too. The transition is one-way (draft -> live)
+-- and the trigger is BEFORE INSERT only, so nothing this function writes
+-- after flipping state needs to re-validate against it.
+--
 -- DEPLOY RISK: none until 3-O's service dispatches to it.
 -- ---------------------------------------------------------------------------
 

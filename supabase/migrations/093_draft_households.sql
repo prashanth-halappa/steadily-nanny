@@ -75,6 +75,17 @@
 -- consequence of the membership gates into something the database refuses,
 -- so a future write path cannot quietly reintroduce cron exposure.
 --
+-- THE FIVE GUARDED TABLES, named here so the list is findable from the top:
+--   public.shifts
+--   public.child_commitments
+--   public.timesheets
+--   public.time_entries
+--   public.pay_arrangements
+-- Adding a sixth cron-visible table means adding a trigger in the same
+-- change. `apps/api/tests/unit/migration093DraftHouseholds.test.ts` asserts
+-- all five, so forgetting one is a red test rather than a silent digest fired
+-- at a nanny who has no family yet.
+--
 -- The two jobs that DO enumerate households both route through
 -- `childCommitmentRepository.listHouseholdIdsWithCommitments()`, whose caller
 -- set is jobs-only — that is where the TypeScript-side filter belongs, and
