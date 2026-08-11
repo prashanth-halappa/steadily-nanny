@@ -321,12 +321,9 @@ export class DefaultNoShowTimeEntryLister implements NoShowTimeEntryLister {
       );
     }
 
-    // 069: voided did not happen — it is not coverage. The `.neq` above is the
-    // real filter; this drops any voided row a dumb mock still hands back.
-    return (data ?? []).filter(
-      (row): row is NoShowTimeEntry =>
-        (row as { status?: string }).status !== 'voided'
-    );
+    // 069: voided did not happen — it is not coverage. The `.neq` above is
+    // the filter.
+    return data ?? [];
   }
 }
 

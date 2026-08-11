@@ -114,6 +114,22 @@ describe('PayChangeSheet', () => {
     );
   });
 
+  // GOLDEN #40: the caller's failed write is stated INSIDE the sheet — a
+  // toast (or an inline error behind it) is invisible under the open sheet.
+  it('renders the caller-supplied submitError inline above the submit button', () => {
+    const { getByTestId } = renderSheet({ submitError: "That didn't send." });
+
+    expect(getByTestId('pay-change-submit-error').props.children).toBe(
+      "That didn't send."
+    );
+  });
+
+  it('renders no error row when there is no submitError', () => {
+    const { queryByTestId } = renderSheet();
+
+    expect(queryByTestId('pay-change-submit-error')).toBeNull();
+  });
+
   // D-16 reverses the old rule this test used to encode ("never submits a
   // future date — there is no way to select one"). A scheduled raise is the
   // normal case now; only the 12-month horizon bounds it.

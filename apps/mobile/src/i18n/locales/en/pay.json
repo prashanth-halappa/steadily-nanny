@@ -116,7 +116,8 @@
     "noteLabel": "Note (optional)",
     "notePlaceholder": "e.g. Annual review",
     "submitButton": "Set new terms",
-    "savedToast": "New terms saved"
+    "savedToast": "New terms saved",
+    "saveFailed": "That didn't save. Check your connection and try again."
   },
   "termGroups": {
     "heading": "The rest of the agreement",
@@ -306,6 +307,7 @@
     "counterButton": "Suggest changes",
     "reviewButton": "Review these terms",
     "suggestChangeButton": "Suggest a change",
+    "sendFailed": "That didn't send. Check your connection and try again.",
     "withdrawButton": "Withdraw",
     "openRowTitle": "Proposed terms from {{name}}",
     "state": {

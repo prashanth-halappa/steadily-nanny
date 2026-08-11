@@ -285,11 +285,12 @@ export function ProposalReviewScreen() {
               setCounterOpen(false);
               router.back();
             })
-            // The mutation's own onError toast already reported it; the sheet
+            // Failure renders inline INSIDE the sheet (GOLDEN #40), which
             // stays open with every typed value intact.
             .catch(() => undefined);
         }}
         isSubmitting={counter.isPending}
+        submitError={counter.isError ? t('proposal.sendFailed') : null}
         currentArrangement={arrangement}
         householdCancellationDefaultHours={
           household?.cancellation_paid_within_hours ?? 0

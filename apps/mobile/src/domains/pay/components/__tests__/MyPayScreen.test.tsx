@@ -159,7 +159,11 @@ mock.module('@/src/hooks/queries/useTermsProposals', () => ({
   useTermsProposals: () => ({ data: proposalRows }),
 }));
 mock.module('@/src/hooks/mutations/useProposeTerms', () => ({
-  useProposeTerms: () => ({ mutateAsync: proposeMock, isPending: false }),
+  useProposeTerms: () => ({
+    mutateAsync: proposeMock,
+    isPending: false,
+    isError: proposeIsError,
+  }),
 }));
 mock.module('@/src/hooks/mutations/useWithdrawTerms', () => ({
   useWithdrawTerms: () => ({ mutate: withdrawMock, isPending: false }),
@@ -167,6 +171,8 @@ mock.module('@/src/hooks/mutations/useWithdrawTerms', () => ({
 
 /** What `useTermsProposals` resolves to for the current test. */
 let proposalRows: unknown[] = [];
+/** What `useProposeTerms` reports as its error state for the current test. */
+let proposeIsError = false;
 
 const openProposal = (proposedBy: string) => ({
   id: 'prop-1',
@@ -215,6 +221,7 @@ beforeEach(() => {
   proposeMock.mockImplementation(() => Promise.resolve({}));
   withdrawMock.mockImplementation(() => Promise.resolve({}));
   proposalRows = [];
+  proposeIsError = false;
   routerBack.mockClear();
 
   payHistoryMock.mockImplementation(() => Promise.resolve([]));
@@ -483,6 +490,34 @@ describe('MyPayScreen', () => {
         )
       );
     });
+
+    // GOLDEN #40: a failure inside a sheet stays inside the sheet — the card
+    // error behind the open sheet is a message nobody reads.
+    it('a failed dissent reports itself INSIDE the sheet, with her note kept', async () => {
+      dissentMock.mockImplementation(() =>
+        Promise.reject(new Error('offline'))
+      );
+
+      const { getByTestId } = renderWithProviders(<MyPayScreen />);
+
+      await waitFor(() =>
+        expect(getByTestId(`my-pay-ack-disagree-${HOUSEHOLD_A}`)).toBeTruthy()
+      );
+      fireEvent.press(getByTestId(`my-pay-ack-disagree-${HOUSEHOLD_A}`));
+      fireEvent.changeText(
+        getByTestId(`my-pay-dissent-note-${HOUSEHOLD_A}`),
+        'The rate went down.'
+      );
+      fireEvent.press(getByTestId(`my-pay-dissent-submit-${HOUSEHOLD_A}`));
+
+      await waitFor(() =>
+        expect(getByTestId(`my-pay-dissent-error-${HOUSEHOLD_A}`)).toBeTruthy()
+      );
+      // The sheet stays open with her typed note intact.
+      expect(
+        getByTestId(`my-pay-dissent-note-${HOUSEHOLD_A}`).props.value
+      ).toBe('The rate went down.');
+    });
   });
 
   // §8.5 — the history says WHAT changed, computed by the same
@@ -543,6 +578,23 @@ describe('MyPayScreen', () => {
       // …and the gate is per-household, not a blanket one: the family she
       // still works for keeps its affordance.
       expect(getByTestId(`my-pay-suggest-change-${HOUSEHOLD_A}`)).toBeTruthy();
+    });
+
+    // GOLDEN #40: the propose sheet's failure renders inline in the sheet —
+    // a toast (or an error behind it) is invisible under the open sheet.
+    it('a failed proposal reports itself INSIDE the propose sheet', async () => {
+      proposeIsError = true;
+
+      const { getByTestId } = renderWithProviders(<MyPayScreen />);
+
+      await waitFor(() =>
+        expect(getByTestId(`my-pay-suggest-change-${HOUSEHOLD_A}`)).toBeTruthy()
+      );
+      fireEvent.press(getByTestId(`my-pay-suggest-change-${HOUSEHOLD_A}`));
+
+      expect(getByTestId('pay-propose-submit-error').props.children).toBe(
+        'proposal.sendFailed'
+      );
     });
 
     it('while HER proposal is open the card offers Withdraw instead, beside a pending pill', async () => {

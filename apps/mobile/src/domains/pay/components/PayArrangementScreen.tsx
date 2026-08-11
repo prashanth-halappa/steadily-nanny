@@ -274,8 +274,8 @@ function CarerPayDetail({
         setSheetOpen(false);
         showSuccessToast(t('changeSheet.savedToast'));
       })
-      // Failure already surfaced by the mutation's onError toast — the sheet
-      // stays open with the typed values (ClockOutSheet discipline).
+      // Failure renders inline INSIDE the sheet (GOLDEN #40), which stays
+      // open with the typed values (ClockOutSheet discipline).
       .catch(() => undefined);
   };
 
@@ -505,6 +505,9 @@ function CarerPayDetail({
             onDismiss={() => setSheetOpen(false)}
             onSubmit={handleSubmit}
             isSubmitting={createArrangement.isPending}
+            submitError={
+              createArrangement.isError ? t('changeSheet.saveFailed') : null
+            }
             currentArrangement={arrangement}
             householdCancellationDefaultHours={
               householdCancellationDefaultHours
