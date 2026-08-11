@@ -235,6 +235,7 @@ const TEMPLATE_KEY_DECLARATIONS: readonly TemplateKeyDeclaration[] = [
       'earningsStructureKindHolidayPremium',
       'earningsStructureKindCancellationPaid',
       'earningsStructureKindPto',
+      'earningsStructureKindPaidHoliday',
       'earningsStructureKindGuaranteedTopup',
     ],
     keyPattern: 'hours:$1',

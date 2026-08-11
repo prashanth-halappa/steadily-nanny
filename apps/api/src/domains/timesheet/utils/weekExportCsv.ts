@@ -147,6 +147,7 @@ const LINE_LABELS: Record<EarningsLineKind, string> = {
   [EARNINGS_LINE_KINDS.HOLIDAY_PREMIUM]: 'Holiday premium',
   [EARNINGS_LINE_KINDS.CANCELLATION_PAID]: 'Cancelled shift, paid',
   [EARNINGS_LINE_KINDS.PTO]: 'Paid time off',
+  [EARNINGS_LINE_KINDS.PAID_HOLIDAY]: 'Paid holiday',
   [EARNINGS_LINE_KINDS.GUARANTEED_TOPUP]: 'Guaranteed hours top-up',
   [EARNINGS_LINE_KINDS.REIMBURSEMENTS]: 'Reimbursement',
 };

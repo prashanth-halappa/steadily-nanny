@@ -22,6 +22,8 @@ function fakeT(key: string, params?: Record<string, unknown>): string {
     'terms.seventhDayTwoTierValue': `At ${params?.multiplier}×, then ${params?.doubleMultiplier}× after ${params?.hours}h`,
     'terms.workedHolidayPremiumLabel': 'Worked-holiday premium',
     'terms.workedHolidayPremiumValue': `${params?.multiplier}× when worked`,
+    'terms.paidHolidayHoursLabel': 'Unworked holidays',
+    'terms.paidHolidayHoursValue': `${params?.hours}h paid`,
     'terms.guaranteedHoursLabel': 'Guaranteed hours',
     'terms.guaranteedHoursValue': `${params?.hours}h a week`,
     'terms.ptoLabel': 'Paid time off',
@@ -114,6 +116,7 @@ describe('buildTermRows', () => {
       'guaranteedHours',
       'pto',
       'workedHolidayPremium',
+      'paidHolidayHours',
       'cancellations',
       'mileage',
       'paySchedule',
@@ -285,6 +288,25 @@ describe('buildTermRows', () => {
     expect(rows.find(r => r.key === 'workedHolidayPremium')?.value).toBeNull();
   });
 
+  // 3-E5: the holidays group's other half — what an observed holiday NOBODY
+  // WORKED credits (§5 D-53). Its own row beside the premium, because the two
+  // answer different days and a family may agree either, both or neither.
+  it('the unworked-holiday row states the agreed hours', () => {
+    const rows = buildTermRows(
+      { ...fullArrangement, holiday_hours_minutes: 480 },
+      fakeT as never
+    );
+    expect(rows.find(r => r.key === 'paidHolidayHours')?.value).toBe('8h paid');
+  });
+
+  it('a null credit reads as not-set — never a fabricated 8h', () => {
+    const rows = buildTermRows(
+      { ...fullArrangement, holiday_hours_minutes: null },
+      fakeT as never
+    );
+    expect(rows.find(r => r.key === 'paidHolidayHours')?.value).toBeNull();
+  });
+
   // A pre-078 row carries no such column at all. It must read as "no tier",
   // never as a crash and never as a fabricated 1.5×.
   it('an arrangement predating 078 (columns absent, not just null) reads as no tier', () => {
@@ -296,6 +318,7 @@ describe('buildTermRows', () => {
       seventh_day_multiplier: undefined,
       seventh_day_doubletime_after_minutes: undefined,
       worked_holiday_multiplier: undefined,
+      holiday_hours_minutes: undefined,
     };
     const byKey = Object.fromEntries(
       buildTermRows(preMigration, fakeT as never).map(r => [r.key, r.value])
@@ -304,6 +327,7 @@ describe('buildTermRows', () => {
     expect(byKey.doubletime).toBeNull();
     expect(byKey.seventhDay).toBeNull();
     expect(byKey.workedHolidayPremium).toBeNull();
+    expect(byKey.paidHolidayHours).toBeNull();
   });
 
   it('a null term renders null value (caller applies "Not set")', () => {

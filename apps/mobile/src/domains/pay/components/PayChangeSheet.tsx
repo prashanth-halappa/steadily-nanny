@@ -164,6 +164,7 @@ function seedFormState(
     workedHolidayMultiplierText: multiplierToText(
       arrangement.worked_holiday_multiplier
     ),
+    holidayHoursText: minutesToHoursText(arrangement.holiday_hours_minutes),
     guaranteedHoursText: minutesToHoursText(
       arrangement.guaranteed_minutes_per_week
     ),
@@ -448,7 +449,6 @@ export function PayChangeSheet({
           state={form}
           onChange={patch}
           seed={currentArrangement}
-          todayISO={todayISO}
         />
 
         {/* 082's pay schedule (D-17, T7 reversal) — presentation only, not

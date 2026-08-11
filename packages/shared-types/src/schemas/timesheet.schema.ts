@@ -527,6 +527,38 @@ export const EARNINGS_LINE_KINDS = {
    * `WeekExportAction`'s copy map, `weekExportCsv`'s label map).
    */
   HOLIDAY_PREMIUM: 'holiday_premium',
+  /**
+   * The UNWORKED-holiday credit (3-E5, §5 D-53): a fixed hour credit, paid
+   * once for each date the household observes as a holiday (080's
+   * `household_holidays`) that NOBODY WORKED, at that day's ordinary rate,
+   * from `pay_arrangements.holiday_hours_minutes` (095). Null there = no
+   * credit, which is every household's behaviour before 095 existed.
+   *
+   * WHY NOT REUSE `pto`. It would price identically — same base rate, same
+   * "outside every overtime threshold", same effect on the guaranteed top-up
+   * — and it would still be a lie on the payslip. `pto` is drawn from an
+   * accrued entitlement that a ledger tracks a balance for
+   * (`pto_entitlement_minutes_per_year`, 079's ledger); a holiday credit
+   * draws on nothing and reduces no balance. Labelling it "Paid time off"
+   * would tell a nanny a day of her leave was spent on a day she never
+   * booked, and would make the two figures on her PTO card stop reconciling.
+   * A line kind is a claim about WHICH entitlement paid, not just about how
+   * the arithmetic ran.
+   *
+   * MUTUALLY EXCLUSIVE WITH `holiday_premium`, by construction: the premium
+   * needs worked minutes on the date and the credit needs none, so a single
+   * date can only ever earn one of them.
+   *
+   * WHY EMITTING THIS IS SAFE. The same two reasons as `doubletime` and
+   * `holiday_premium` above: 1-A made `kind` an open string with
+   * `humanizeEarningsLineKind` on every read site, so a build that has never
+   * heard of it renders "Paid holiday" beside a correct amount; and §5 D-9
+   * wipes every account before store release, so there is no older client to
+   * be tolerant for. The known-kind sites in this repo are closed anyway
+   * (`EarningsBreakdownSheet`, `WeekExportAction`'s copy map, `weekExportCsv`'s
+   * label map, and `earningsFormat`'s short-label map).
+   */
+  PAID_HOLIDAY: 'paid_holiday',
   CANCELLATION_PAID: 'cancellation_paid',
   GUARANTEED_TOPUP: 'guaranteed_topup',
   PTO: 'pto',
@@ -558,6 +590,12 @@ export const EARNINGS_LINE_ORDER = [
   EARNINGS_LINE_KINDS.HOLIDAY_PREMIUM,
   EARNINGS_LINE_KINDS.CANCELLATION_PAID,
   EARNINGS_LINE_KINDS.PTO,
+  // Directly after `pto`, because it reads as the same kind of row: minutes
+  // nobody worked, paid at the ordinary rate, outside every threshold. The
+  // top-up follows both because it is the week's residual — what neither the
+  // worked hours nor these credits already covered — and only makes sense
+  // read last.
+  EARNINGS_LINE_KINDS.PAID_HOLIDAY,
   EARNINGS_LINE_KINDS.GUARANTEED_TOPUP,
   EARNINGS_LINE_KINDS.REIMBURSEMENTS,
 ] as const satisfies readonly EarningsLineKind[];
