@@ -1,0 +1,124 @@
+# Scenario — 3-T1's full query lifecycle on the week thread: parent queries
+# with a note → nanny READS it in the thread and REPLIES → parent reads the
+# reply, WITHDRAWS the query, then approves.
+#
+# Flow 04 already covers query → nanny corrects an entry → approve. This one is
+# the thread-and-withdraw path: the two legs 04 does not touch are the nanny's
+# composer (`hours-week-thread-composer` / `-send`) and
+# `hours-withdraw-query-button` → `hours-withdraw-query-dialog-confirm`.
+#
+# ORDERING — this flow APPROVES the seed week at the end, which would break
+# flow 04 and every re-run. Two things make the batch repeatable:
+#   1. run-phase4.sh orders this AFTER 04, and
+#   2. scripts/seed-phase4-fixtures.ts resets the seed week to `submitted` on
+#      every seed — deleting its payments, deleting its thread events (week
+#      thread messages are `shift_events` rows with `shift_id = null` and
+#      `local_date = week_start`; there is no thread table), and clearing the
+#      approval columns.
+# Flow 12 then consumes the approved week this flow leaves behind.
+appId: com.jetto.steadily.nanny
+tags:
+  - timesheet
+  - money
+---
+# --- Parent: query the submitted week ------------------------------------
+- runFlow: ../flows/login.yaml
+- openLink: steadilynanny:///(private)/(tabs)/hours?weekStart=${PHASE4_SEED_WEEK_START}
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'hours-screen'
+- assertVisible:
+    id: 'hours-active-week-${PHASE4_SEED_WEEK_START}'
+- tapOn:
+    id: 'hours-query-button'
+- waitForAnimationToEnd
+# The parent's QueryNoteSheet is mounted with no outer testID (ParentWeekView
+# passes none), so the input is the handle for "the sheet is open".
+- assertVisible:
+    id: 'hours-query-note-input'
+- tapOn:
+    id: 'hours-query-note-input'
+- inputText: 'Thursday looks short — can you check?'
+- hideKeyboard
+- tapOn:
+    id: 'hours-query-submit'
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'hours-week-thread'
+- assertVisible: 'Thursday looks short — can you check?'
+- takeScreenshot: parent-opened-thread
+
+# --- Nanny: read the note on the thread and reply ------------------------
+- runFlow: ../flows/logout.yaml
+- runFlow: ../flows/login-nanny.yaml
+- openLink: steadilynanny:///(private)/(tabs)/hours?weekStart=${PHASE4_SEED_WEEK_START}
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'hours-screen'
+# BOTH sides read the same thread — that is 3-T1's claim, and the parent's own
+# words appearing on the nanny's screen is the only proof of it.
+- assertVisible:
+    id: 'hours-week-thread'
+- assertVisible: 'Thursday looks short — can you check?'
+# The composer is shown to a nanny on a `queried` week (and on a submitted one)
+# by `showComposerFor`.
+- assertVisible:
+    id: 'hours-week-thread-composer'
+- tapOn:
+    id: 'hours-week-thread-composer'
+- inputText: 'Checked — Thursday is right, I left at 17:00.'
+- hideKeyboard
+- tapOn:
+    id: 'hours-week-thread-send'
+- waitForAnimationToEnd
+# The composer clears only on a successful send, so an empty composer plus the
+# reply on the thread is a real post-condition on the mutation.
+- assertVisible: 'Checked — Thursday is right, I left at 17:00.'
+- assertNotVisible:
+    id: 'hours-week-thread-error'
+- takeScreenshot: nanny-replied-on-thread
+
+# --- Parent: read the reply, withdraw the query, approve -----------------
+- runFlow: ../flows/logout.yaml
+- runFlow: ../flows/login.yaml
+- openLink: steadilynanny:///(private)/(tabs)/hours?weekStart=${PHASE4_SEED_WEEK_START}
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'hours-screen'
+- assertVisible:
+    id: 'hours-week-thread'
+- assertVisible: 'Checked — Thursday is right, I left at 17:00.'
+
+# The withdraw trigger only renders for a non-readOnly parent on a `queried`
+# week, so its presence is itself the assertion that the query is still open.
+- assertVisible:
+    id: 'hours-withdraw-query-button'
+- tapOn:
+    id: 'hours-withdraw-query-button'
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'hours-withdraw-query-dialog'
+- tapOn:
+    id: 'hours-withdraw-query-dialog-confirm'
+- waitForAnimationToEnd
+# Withdrawn ⇒ back to `submitted` ⇒ the trigger's own render condition is
+# false. This is the post-condition, not a screenshot.
+- assertNotVisible:
+    id: 'hours-withdraw-query-button'
+- takeScreenshot: parent-withdrew-query
+
+- tapOn:
+    id: 'hours-approve-button'
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'hours-approve-dialog'
+- tapOn:
+    id: 'hours-approve-dialog-confirm'
+- waitForAnimationToEnd
+# `hours-approve-button` renders regardless of actionability and is merely
+# `disabled`; `isActionable` is submitted-only, so it flipping false is what
+# proves the approve landed (same reasoning as flow 04).
+- assertVisible:
+    id: 'hours-approve-button'
+    enabled: false
+- takeScreenshot: parent-approved-after-withdraw

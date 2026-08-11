@@ -1,0 +1,57 @@
+# Scenario — a week containing an observed household holiday that the nanny
+# actually worked prices a holiday-premium line in the earnings breakdown.
+#
+# Prerequisites: scripts/seed-phase4-fixtures.ts seeds
+#   - a `household_holidays` row (`martin_luther_king_jr_day`, observed=true)
+#   - a submitted timesheet for PHASE4_HOLIDAY_WEEK_START and a worked entry
+#     ON that date. 2026-01-19 is both the third Monday of January (the
+#     holiday, resolved by `observedHolidayDatesInRange`) and the Monday the
+#     week starts on.
+# and flow 07 must have run first — it is what sets
+# `worked_holiday_multiplier` on the arrangement, via
+# `pay-setup-worked-holiday-multiplier-input`. Without a multiplier there is
+# no premium to price.
+#
+# SCOPING NOTE (3-E4 ledger) — there is NO holiday toggle-list UI. 3-E4 owed
+# it to 3-U1 and it never landed: nothing in apps/mobile writes
+# `household_holidays`, and `householdHolidayRepository` has no mobile caller
+# for the toggle set. So the observed calendar is seeded SQL-side and this
+# flow verifies PRICING SURFACES ONLY — it cannot verify that a parent can
+# choose which holidays their household observes, because they cannot.
+#
+# Earnings for a non-approved week are computed LIVE on read
+# (`timesheetQueryService.earningsFor` only reads the frozen snapshot once a
+# week is `approved`), so a seeded timesheet prices against whatever
+# arrangement flow 07 saved — no recompute job needed between them.
+appId: com.jetto.steadily.nanny
+tags:
+  - pay
+  - money
+---
+- runFlow: ../flows/login.yaml
+- openLink: steadilynanny:///(private)/(tabs)/hours?weekStart=${PHASE4_HOLIDAY_WEEK_START}
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'hours-screen'
+- assertVisible:
+    id: 'hours-active-week-${PHASE4_HOLIDAY_WEEK_START}'
+- assertVisible:
+    id: 'hours-earnings-line'
+- tapOn:
+    id: 'hours-earnings-line-pressable'
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'hours-earnings-breakdown'
+# Slug is `holiday-premium`, NOT the enum value `holiday_premium` — the slugs
+# in EarningsBreakdownSheet's switch are hand-written per case, so this id
+# cannot be derived from EARNINGS_LINE_KINDS.
+- assertVisible:
+    id: 'hours-earnings-breakdown-line-holiday-premium'
+# The subline is where the multiplier reaches the parent. AmountRow derives
+# `${testID}-subline` for every line, so this addresses the sentence itself
+# rather than the row that contains it.
+- assertVisible:
+    id: 'hours-earnings-breakdown-line-holiday-premium-subline'
+- assertVisible:
+    id: 'hours-earnings-breakdown-total'
+- takeScreenshot: holiday-premium-week-breakdown

@@ -1,0 +1,136 @@
+# Scenario — 3-O's nanny-first journey, parent half: a family with no
+# household redeems a nanny's draft invite code by hand (D-50), reviews the
+# terms she proposed, and accepts behind the D-7 responsibility checkbox —
+# after which the arrangement is live and the pay hub shows it.
+#
+# BLOCKER, reported not worked around — the NANNY half of this journey cannot
+# be driven. `SETUP_STEP_ROUTES.TERMS = '/onboarding/terms'`
+# (domains/setup/types/index.ts) and `DraftHomeScreen` pushes to it, but
+# `apps/mobile/src/app/onboarding/terms.tsx` DOES NOT EXIST — the onboarding
+# route directory has no `terms` file. A nanny signing up and choosing "create"
+# dead-ends at the write-your-terms step, so there is no in-app path from a
+# fresh nanny to an invite code.
+# Consequently scripts/seed-phase4-fixtures.ts creates the draft SQL-side (a
+# `state='draft'` household authored by a fresh nanny with `role='nanny'`,
+# `status='active'` — the shape `redeem_draft_household_invite` requires — plus
+# a `pending` household_invites row and a `proposed` terms_proposals row) and
+# the driver passes the code as PHASE4_DRAFT_CODE_A. That is the task's stated
+# fallback, and it is also the only option: `copyTextFrom: invite-code-value`
+# would work fine (InviteCodeCard does put the code in a testID'd element) but
+# the screen that renders it is unreachable.
+#
+# SIGN-UP NOTE — the parent account is seeded CONFIRMED via the admin API
+# rather than registered through `register-screen`. `auth.signUp` navigates
+# nowhere and there is no check-your-inbox screen anywhere in the app, so
+# whether a fresh registration lands in a session depends entirely on the local
+# Supabase project's confirmation setting. Seeding removes that coin flip. The
+# register screen's own testIDs (`register-email`, `register-password`,
+# `register-submit`) are exercised by nothing today.
+appId: com.jetto.steadily.nanny
+tags:
+  - onboarding
+---
+# The fresh parent, not PARENT_EMAIL — login.yaml takes its credentials from
+# env, so the subflow is reused with this run's account.
+- runFlow:
+    file: ../flows/login.yaml
+    env:
+      PARENT_EMAIL: ${PHASE4_NEW_PARENT_EMAIL}
+      PARENT_PASSWORD: ${PHASE4_TEST_PASSWORD}
+
+# A user with no household lands in the onboarding wizard, not the tabs.
+- extendedWaitUntil:
+    visible:
+      id: 'role-screen'
+    timeout: 25000
+- tapOn:
+    id: 'role-parent'
+- tapOn:
+    id: 'role-screen-cta'
+- waitForAnimationToEnd
+
+# Second fork: create a family vs join with a code.
+- assertVisible:
+    id: 'start-screen'
+- tapOn:
+    id: 'start-join'
+- tapOn:
+    id: 'start-screen-cta'
+- waitForAnimationToEnd
+
+# --- D-50: the code typed by hand ---------------------------------------
+- assertVisible:
+    id: 'code-screen'
+- tapOn:
+    id: 'name-input'
+- inputText: 'Phase4 Fresh Parent'
+- hideKeyboard
+- tapOn:
+    id: 'code-input'
+- inputText: ${PHASE4_DRAFT_CODE_A}
+- hideKeyboard
+# The CTA is pressed TWICE by design: the first press checks the code and
+# renders the preview, the second joins. Asserting the preview between them is
+# what makes the second press meaningful rather than a double-tap.
+- tapOn:
+    id: 'code-screen-cta'
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'code-preview-card'
+- assertNotVisible:
+    id: 'code-error'
+- takeScreenshot: fresh-parent-code-preview
+- tapOn:
+    id: 'code-screen-cta'
+- waitForAnimationToEnd
+
+# A fresh parent has no live household, so the absorption sheet must NOT
+# appear — it is gated on `liveHouseholds.length > 0`. Flow 15 is the other
+# side of that branch, and asserting its absence here is what keeps the two
+# flows from proving the same thing.
+- assertNotVisible:
+    id: 'absorption-sheet'
+
+# --- Terms proposal: review, then accept behind D-7 ----------------------
+- extendedWaitUntil:
+    visible:
+      id: 'proposal-review-screen'
+    timeout: 25000
+- assertVisible:
+    id: 'proposal-rate'
+- assertVisible:
+    id: 'proposal-state-pill'
+- takeScreenshot: parent-reviews-proposal
+- tapOn:
+    id: 'proposal-agree-button'
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'proposal-accept-sheet'
+- assertVisible:
+    id: 'proposal-accept-summary'
+# D-7 — `terms_proposals_accepted_needs_confirmation` refuses an accepted
+# proposal without `responsibility_confirmed`, and the button is disabled until
+# the box is checked. Asserting the disabled state first tests the gate.
+- assertVisible:
+    id: 'proposal-accept-confirm'
+    enabled: false
+- tapOn:
+    id: 'proposal-accept-checkbox'
+- tapOn:
+    id: 'proposal-accept-confirm'
+- waitForAnimationToEnd
+
+# The screen only `router.replace('/settings/pay')`s once the mutation
+# resolves, so landing on the pay hub with a current-terms card is the
+# post-condition that the arrangement is live.
+- extendedWaitUntil:
+    visible:
+      id: 'pay-screen'
+    timeout: 25000
+- assertVisible:
+    id: 'pay-current-terms-card'
+- assertVisible:
+    id: 'pay-current-rate'
+- assertNotVisible:
+    id: 'pay-empty-no-arrangement'
+- takeScreenshot: nanny-first-arrangement-live
