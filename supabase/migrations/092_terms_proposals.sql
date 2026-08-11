@@ -212,4 +212,4 @@ create policy "Parents and the carer can view terms proposals"
 drop trigger if exists set_terms_proposals_updated_at on public.terms_proposals;
 create trigger set_terms_proposals_updated_at
   before update on public.terms_proposals
-  for each row execute function private.set_updated_at();
+  for each row execute function public.set_updated_at();
