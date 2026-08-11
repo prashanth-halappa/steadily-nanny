@@ -323,6 +323,9 @@ async function main(): Promise<void> {
         week_start: SEED_TIMESHEET_WEEK_START,
         total_minutes: SEED_TIMESHEET_TOTAL_MINUTES,
         status: 'submitted',
+        // 043's anonymity snapshot — NOT NULL since the column landed; the
+        // display name is snapshotted at write time, never joined.
+        carer_display_name: 'Test Nanny',
       })
       .select('id')
       .single();
@@ -507,6 +510,8 @@ async function main(): Promise<void> {
         status: 'submitted',
         local_date: '1900-01-01', // overwritten by the trigger
         timezone: TIMEZONE,
+        // 043's anonymity snapshot — NOT NULL since the column landed.
+        carer_display_name: 'Test Nanny',
       })
       .select('id')
       .single();
