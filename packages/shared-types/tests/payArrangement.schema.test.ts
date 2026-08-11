@@ -723,6 +723,111 @@ describe('payArrangement.schema', () => {
   });
 
   // ==========================================================================
+  // The unworked-holiday credit (095, 3-E5, §5 D-53). The other half of the
+  // holidays group: 080 says what a WORKED holiday pays, this says what an
+  // UNWORKED observed one credits. Null = no credit, which is exactly the
+  // behaviour every household had before this column existed.
+  // ==========================================================================
+  describe('holiday_hours_minutes (095)', () => {
+    const base = {
+      id: VALID_UUID,
+      household_id: VALID_UUID,
+      carer_id: VALID_UUID,
+      rate_minor: 2800,
+      bill_rate_minor: null,
+      currency: 'USD',
+      overtime_threshold_minutes: 2400,
+      overtime_multiplier: 1.5,
+      guaranteed_minutes_per_week: null,
+      pto_entitlement_minutes_per_year: null,
+      mileage_rate_per_mile_minor: null,
+      cancellation_paid_within_hours: null,
+      valid_from: '2026-08-01',
+      valid_to: null,
+      carer_display_name: 'Nia Rowe',
+      note: null,
+      created_by: VALID_UUID,
+      // The `+00:00` serialisation here against the `.000Z` one in the 080
+      // block above — both forms of the same instant appear across this
+      // repo's fixtures and both must parse (GOLDEN-FIXES #25).
+      created_at: '2026-08-01T08:00:00+00:00',
+    };
+
+    it('parses an arrangement carrying an 8h credit', () => {
+      const parsed = PayArrangementSchema.safeParse({
+        ...base,
+        holiday_hours_minutes: 480,
+      });
+      expect(parsed.success).toBe(true);
+      expect(parsed.success && parsed.data.holiday_hours_minutes).toBe(480);
+    });
+
+    it('parses a PRE-095 row that omits it — no credit, the terms it was agreed under', () => {
+      const parsed = PayArrangementSchema.safeParse(base);
+      expect(parsed.success).toBe(true);
+      expect(
+        parsed.success && parsed.data.holiday_hours_minutes
+      ).toBeUndefined();
+    });
+
+    it('accepts null — an explicit "an unworked holiday credits nothing"', () => {
+      expect(
+        PayArrangementSchema.safeParse({
+          ...base,
+          holiday_hours_minutes: null,
+        }).success
+      ).toBe(true);
+    });
+
+    it('refuses zero and negatives — a credit of no hours is not a term', () => {
+      // 095's CHECK is `> 0` for the same reason: null already says "no
+      // credit", so a stored 0 would be a second spelling of the same
+      // agreement, and the engine would have to guess which one meant it.
+      for (const minutes of [0, -60]) {
+        expect(
+          PayArrangementSchema.safeParse({
+            ...base,
+            holiday_hours_minutes: minutes,
+          }).success
+        ).toBe(false);
+      }
+    });
+
+    it('refuses a fractional minute — the column is an integer', () => {
+      expect(
+        PayArrangementSchema.safeParse({
+          ...base,
+          holiday_hours_minutes: 480.5,
+        }).success
+      ).toBe(false);
+    });
+
+    it('accepts it on a create request, with NO wire default', () => {
+      const parsed = CreatePayArrangementRequestSchema.safeParse({
+        rate_minor: 2800,
+        currency: 'USD',
+        valid_from: '2026-08-01',
+        holiday_hours_minutes: 480,
+      });
+      expect(parsed.success).toBe(true);
+      expect(parsed.success && parsed.data.holiday_hours_minutes).toBe(480);
+
+      // Omitted stays omitted. A default of 8h would promise every family a
+      // paid holiday nobody agreed to — the same D-7 liability the 078 tiers
+      // and 080's premium both refuse a default for.
+      const omitted = CreatePayArrangementRequestSchema.safeParse({
+        rate_minor: 2800,
+        currency: 'USD',
+        valid_from: '2026-08-01',
+      });
+      expect(omitted.success).toBe(true);
+      expect(
+        omitted.success && omitted.data.holiday_hours_minutes
+      ).toBeUndefined();
+    });
+  });
+
+  // ==========================================================================
   // The 078 tiers: daily overtime, daily double time, and the seventh
   // consecutive day. Five columns, all nullable, all optional on the wire.
   // ==========================================================================

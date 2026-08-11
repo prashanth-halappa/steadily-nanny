@@ -32,10 +32,7 @@
  * card and the nanny's card use.
  */
 
-import {
-  COMMON_DEFAULTS_PRESET,
-  isPresetReviewStale,
-} from '@steadily-nanny/shared-types/payTermsPresets';
+import { COMMON_DEFAULTS_PRESET } from '@steadily-nanny/shared-types/payTermsPresets';
 import type { PayArrangement } from '@steadily-nanny/shared-types/schemas/payArrangement.schema';
 import {
   Banknote,
@@ -62,7 +59,6 @@ import { currencySymbol, formatMoney } from '@/src/lib/money';
 import { useAuthStore } from '@/src/store/auth';
 import {
   buildCreatePayArrangementRequest,
-  formatMonthYear,
   type PayTermsFormState,
   type StipendFormRow,
 } from '../utils/payArrangementForm';
@@ -115,8 +111,6 @@ export interface PayTermsGroupsProps {
    * equivalent — never used to READ a live value.
    */
   seed: PayArrangement | null;
-  /** Household-local today — §5.2's preset staleness gate. */
-  todayISO: string;
 }
 
 /**
@@ -162,30 +156,31 @@ function summaryValues(
  * §5.2's liability moment, in full. `BottomSheetBase` because it is the only
  * sanctioned sheet (GOLDEN-FIXES #1), including from inside another one.
  *
- * D-44, owner verbatim: *"Don't mention California defaults anywhere at all."*
- * Every string this renders comes from `preset.*` in the catalogue, and not
- * one of them names a state — not the title, the body, the disclaimer, or the
- * accessibility labels. The `jurisdiction: 'CA'` on the preset data is internal
- * provenance and is never read here.
+ * D-52, owner verbatim: *"We should never call out anything about
+ * jurisdiction presets anywhere in the app… Just say most common values are
+ * input. Make sure that you are complying with local laws and put the onus on
+ * the user."* Every string this renders comes from `preset.*` in the
+ * catalogue: the values are "the most common values", nothing names a place
+ * they came from, and the disclaimer plus D-7's checkbox put verifying
+ * compliance with local law on the family.
+ *
+ * There is no review date and no staleness warning here any more (D-52
+ * removed the metadata behind them): a "reviewed in August 2026" line is a
+ * claim that somebody checked these figures against a body of law, which is
+ * exactly the conclusion this app never owns.
  */
 function PresetConfirmSheet({
   visible,
   onDismiss,
   onConfirm,
-  todayISO,
 }: {
   visible: boolean;
   onDismiss: () => void;
   onConfirm: () => void;
-  todayISO: string;
 }) {
   const { t } = useTranslation('pay');
   const colors = useThemeColors();
   const [accepted, setAccepted] = useState(false);
-  const stale = isPresetReviewStale(COMMON_DEFAULTS_PRESET, todayISO);
-  const [month, year] = formatMonthYear(
-    COMMON_DEFAULTS_PRESET.reviewed_on
-  ).split(' ');
 
   return (
     <BottomSheetBase
@@ -204,12 +199,6 @@ function PresetConfirmSheet({
             legal outcome does not get to be a footnote. */}
         <Body testID="pay-preset-disclaimer" className="text-muted-strong">
           {t('preset.disclaimer')}
-        </Body>
-        <Body
-          testID="pay-preset-reviewed"
-          className={stale ? 'text-warning-ink' : 'text-muted-strong'}
-        >
-          {t('preset.reviewed', { month, year })}
         </Body>
 
         {/* A plain Pressable rather than `components/ui/checkbox` for the same
@@ -271,7 +260,6 @@ export function PayTermsGroups({
   state,
   onChange,
   seed,
-  todayISO,
 }: PayTermsGroupsProps) {
   const { t } = useTranslation('pay');
   const [presetSheetOpen, setPresetSheetOpen] = useState(false);
@@ -555,15 +543,22 @@ export function PayTermsGroups({
         </View>
       </TermGroup>
 
-      {/* 3-E4's half of the holidays group. WHICH dates the family observes is
-          a household-level toggle list (3-E4's own surface) — this arrangement
-          carries only what a worked one pays, because a second carer may have
-          agreed a different premium against the same list. */}
+      {/* The arrangement's half of the holidays group — BOTH terms. WHICH
+          dates the family observes is a household-level toggle list (3-E4's
+          own surface); what those dates are worth is a term of HER
+          employment, because a second carer may have agreed differently
+          against the same list. Two fields, and they answer two different
+          days: 3-E4's premium is for a holiday she WORKED, 3-E5's credit is
+          for one nobody did. The engine keeps them mutually exclusive per
+          date, so a family may set either, both, or neither. */}
       <TermGroup
         icon={PartyPopper}
         label={t('termGroups.holidays')}
         collapsedSummary={summary.workedHolidayPremium ?? t('notSet')}
-        defaultOpen={seed?.worked_holiday_multiplier != null}
+        defaultOpen={
+          seed?.worked_holiday_multiplier != null ||
+          seed?.holiday_hours_minutes != null
+        }
         testID={`${testIDPrefix}-group-holidays`}
       >
         <View className="gap-2">
@@ -579,6 +574,23 @@ export function PayTermsGroups({
           />
           <Small className="text-muted-foreground">
             {t('changeSheet.workedHolidayPremiumHint')}
+          </Small>
+        </View>
+
+        {/* 3-E5 / §5 D-53. Hours, not a multiplier: a holiday nobody worked
+            has no hours of its own to multiply, which is exactly why 3-E4
+            could not answer this and why it needed a column. */}
+        <View className="gap-2">
+          <Label>{t('changeSheet.paidHolidayHoursFieldLabel')}</Label>
+          <Input
+            testID={`${testIDPrefix}-holiday-hours-input`}
+            accessibilityLabel={t('changeSheet.paidHolidayHoursFieldLabel')}
+            value={state.holidayHoursText}
+            onChangeText={text => onChange({ holidayHoursText: text })}
+            keyboardType="decimal-pad"
+          />
+          <Small className="text-muted-foreground">
+            {t('changeSheet.paidHolidayHoursHint')}
           </Small>
         </View>
       </TermGroup>
@@ -770,7 +782,6 @@ export function PayTermsGroups({
         visible={presetSheetOpen}
         onDismiss={() => setPresetSheetOpen(false)}
         onConfirm={applyPreset}
-        todayISO={todayISO}
       />
     </View>
   );

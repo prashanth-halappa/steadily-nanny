@@ -235,6 +235,21 @@ export function EarningsBreakdownSheet({
             subLine={t('earningsLinePtoSubline', { duration, rate })}
           />
         );
+      // 3-E5 / §5 D-53. Its own row, never folded into `pto`: a holiday
+      // credit draws on no accrued balance, so labelling it "Paid time off"
+      // would tell a nanny a day of her leave was spent on a day she never
+      // booked. `rate` is the ordinary hourly rate, hence the same "at"
+      // wording as `pto` — this is not an increment row.
+      case EARNINGS_LINE_KINDS.PAID_HOLIDAY:
+        return (
+          <AmountRow
+            key={key}
+            testID={`${testID}-line-paid-holiday`}
+            label={t('earningsLinePaidHoliday')}
+            value={amount}
+            subLine={t('earningsLinePaidHolidaySubline', { duration, rate })}
+          />
+        );
       case EARNINGS_LINE_KINDS.GUARANTEED_TOPUP:
         return (
           <View key={key} className="gap-1">

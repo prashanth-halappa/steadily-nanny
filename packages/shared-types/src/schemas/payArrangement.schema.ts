@@ -195,6 +195,28 @@ export const PayArrangementSchema = z.object({
   // ---------------------------------------------------------------------
   worked_holiday_multiplier: OvertimeMultiplierSchema.nullable().optional(),
   // ---------------------------------------------------------------------
+  // The UNWORKED-holiday credit (095, 3-E5, §5 D-53) — the other half of the
+  // holidays contract. 080 says what hours WORKED on an observed holiday pay;
+  // this says what an observed holiday NOBODY WORKED is worth: a fixed hour
+  // credit, priced once per such date at that day's ordinary rate.
+  //
+  // NULL = NO CREDIT, and that is every household's behaviour before 095
+  // existed. 3-E4 deliberately left this as a gap rather than infer an answer
+  // (her scheduled hours? a fixed eight? an average?) because inventing one
+  // is the thing the engine must never do. D-53 closes it with a stated term
+  // instead. No default and no backfill, for the same D-7 liability reason
+  // the 078 tiers and 080's premium refuse one (§5 D-9).
+  //
+  // MINUTES, like every other duration column here — never hours. An
+  // hours-valued column would need a converter between the form and the
+  // engine, and that converter is where a factor-of-60 defect lives.
+  //
+  // `.min(1)`, matching 095's `> 0` CHECK: null already spells "no credit",
+  // so a stored zero would be a second spelling of one agreement and the
+  // engine would have to guess which was meant.
+  // ---------------------------------------------------------------------
+  holiday_hours_minutes: z.int().min(1).nullable().optional(),
+  // ---------------------------------------------------------------------
   // Pay frequency + pay day (082, D-17, T7 reversal,
   // `docs/design/screens-pay-terms.md` §4.3 "Pay schedule").
   //
@@ -304,6 +326,10 @@ export const CreatePayArrangementRequestSchema = z.object({
   // No wire default, for the same reason the 078 tiers have none: a default
   // here would promise every family a holiday premium nobody agreed to.
   worked_holiday_multiplier: OvertimeMultiplierSchema.nullable().optional(),
+  // 095's unworked-holiday credit (3-E5, D-53). No wire default, same reason:
+  // a default of 8h would promise every family a paid holiday nobody agreed
+  // to. Omitted resolves to null in the command service.
+  holiday_hours_minutes: z.int().min(1).nullable().optional(),
   // 082's pay schedule — presentation only, see `PayArrangementSchema`'s
   // comment. No wire default: an omitted schedule is "not stated", never an
   // invented "weekly".

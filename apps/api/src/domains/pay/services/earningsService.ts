@@ -179,8 +179,9 @@ export interface ComputeWeekEarningsInput {
    * against, and a caller that has not wired holidays through must never
    * accidentally pay a premium.
    *
-   * Dates outside `[week_start, week_start+6]` are harmless — a date with no
-   * worked minutes inside the week prices nothing either way.
+   * Dates outside `[week_start, week_start+6]` are harmless — the worked
+   * premium needs worked minutes on the date, and the unworked credit
+   * (3-E5) only ever looks at the seven dates inside the week.
    */
   observed_holidays?: readonly string[];
 }
@@ -511,18 +512,68 @@ export function computeWeekEarnings(
     expense => expense.local_date >= weekStart && expense.local_date <= weekEnd
   );
 
+  const weekDates: string[] = [];
+  for (let offset = 0; offset < DAYS_PER_WEEK; offset += 1) {
+    weekDates.push(addDays(weekStart, offset));
+  }
+
+  const workedDates = sortedDates(workedByDate).filter(
+    date => (workedByDate.get(date) ?? 0) > 0
+  );
+  const lastWorkedDate = workedDates[workedDates.length - 1];
+  const observedHolidays = new Set(input.observed_holidays ?? []);
+
+  // ---------------------------------------------------------------------
+  // WHICH ARRANGEMENT STATES THE WEEK'S TERMS — the week's LAST WORKED DAY,
+  // falling back to its last calendar day when nothing was worked. Every
+  // threshold and every multiplier below is read off this ONE row; only the
+  // per-day RATES vary by date. See the long rationale at `overtimeConfig`.
+  //
+  // Resolved here, before `requiredDates`, purely because the unworked-holiday
+  // credit is one of its terms and the credit ADDS DATES the week must be
+  // able to price. Its own date is in `requiredDates` either way (a worked
+  // date, or `weekEnd`), so a null here still fails loudly a few lines down.
+  // ---------------------------------------------------------------------
+  const configDate = lastWorkedDate ?? weekEnd;
+  const configArrangement = effectiveOn(arrangements, configDate);
+
+  // ---------------------------------------------------------------------
+  // THE UNWORKED-HOLIDAY CREDIT (3-E5, §5 D-53) — which dates earn one.
+  //
+  // One per date in THIS week that the household observes AND nobody worked.
+  // The zero-worked-minutes gate is what makes the credit and 3-E4's premium
+  // mutually exclusive by construction: the premium needs worked minutes on
+  // the date, this needs none, so a single date can only ever earn one.
+  //
+  // A credit date is a date the week now has to PRICE, which is why it joins
+  // `requiredDates`: a credit the engine silently skipped would report a
+  // gross wrong by a whole day. That only bites when a credit term exists —
+  // a household with no `holiday_hours_minutes` needs no rate for a day
+  // nobody worked, exactly as before 095.
+  // ---------------------------------------------------------------------
+  const holidayCreditMinutes = configArrangement?.holiday_hours_minutes ?? null;
+  const paidHolidayDates =
+    holidayCreditMinutes !== null && holidayCreditMinutes > 0
+      ? weekDates.filter(
+          date =>
+            observedHolidays.has(date) && (workedByDate.get(date) ?? 0) === 0
+        )
+      : [];
+
   // Dates the week must be able to price. Every entry's date needs a rate, so
-  // does every dated PTO usage day (it prices at its own day's rate too), and
-  // so does the week's LAST DAY: it governs the overtime terms, the
-  // guaranteed minutes, and the rate a top-up (or an undated legacy PTO line)
-  // pays at, so a week with no arrangement on or before it cannot be priced
-  // at all — including a zero-hours closure week with no entries whatsoever.
+  // does every dated PTO usage day (it prices at its own day's rate too), so
+  // does every credited holiday (same reason), and so does the week's LAST
+  // DAY: it governs the overtime terms, the guaranteed minutes, and the rate
+  // a top-up (or an undated legacy PTO line) pays at, so a week with no
+  // arrangement on or before it cannot be priced at all — including a
+  // zero-hours closure week with no entries whatsoever.
   // Reimbursement dates do NOT need to resolve to an arrangement — their
   // amount is already frozen, not priced by this engine.
   const requiredDates = [
     ...new Set([
       ...input.entries.map(entry => entry.local_date),
       ...ptoByDate.keys(),
+      ...paidHolidayDates,
       weekEnd,
     ]),
   ].sort();
@@ -593,15 +644,12 @@ export function computeWeekEarnings(
   // A week with no worked minutes falls back to the last calendar day, which
   // changes nothing (no worked minutes can exceed any threshold) but keeps
   // the config non-null for the rest of the function.
+  //
+  // Resolved up with `configDate`/`configArrangement` above (the credit needs
+  // it before `requiredDates` is built) — and non-null by then, because
+  // `configDate` is itself one of the required dates that just resolved.
   // ---------------------------------------------------------------------
-  const workedDates = sortedDates(workedByDate).filter(
-    date => (workedByDate.get(date) ?? 0) > 0
-  );
-  const lastWorkedDate = workedDates[workedDates.length - 1];
-  const overtimeConfig =
-    lastWorkedDate === undefined
-      ? lastDayArrangement
-      : (resolved.get(lastWorkedDate) as PayArrangement);
+  const overtimeConfig = configArrangement as PayArrangement;
   const threshold = overtimeConfig.overtime_threshold_minutes;
   const multiplier = overtimeConfig.overtime_multiplier;
   // 078's tiers, read off the SAME arrangement as the weekly pair above. A
@@ -642,10 +690,6 @@ export function computeWeekEarnings(
   // worked days (seven worked days that include one from the week before is
   // not this week's seventh day).
   // ---------------------------------------------------------------------
-  const weekDates: string[] = [];
-  for (let offset = 0; offset < DAYS_PER_WEEK; offset += 1) {
-    weekDates.push(addDays(weekStart, offset));
-  }
   const seventhDayDate = weekDates[DAYS_PER_WEEK - 1] as string;
   const seventhDayApplies =
     seventhDayMultiplier !== null &&
@@ -823,7 +867,6 @@ export function computeWeekEarnings(
   // and the minutes are not dropped because they were never this line's to
   // begin with — they are already priced above.
   // ---------------------------------------------------------------------
-  const observedHolidays = new Set(input.observed_holidays ?? []);
   const workedHolidayMultiplier =
     overtimeConfig.worked_holiday_multiplier ?? null;
   const holidayPremiumSegments: Segment[] =
@@ -890,6 +933,50 @@ export function computeWeekEarnings(
       : [];
   const ptoUsageMinutes = usingDatedPto ? total(ptoByDate) : legacyPtoMinutes;
 
+  // ---------------------------------------------------------------------
+  // THE UNWORKED-HOLIDAY CREDIT (3-E5, §5 D-53) — the segments. Which dates
+  // earn one was decided up at `paidHolidayDates` (before `requiredDates`,
+  // because a credited date has to be priceable); this is the pricing.
+  //
+  // THE COMPOSITION RULES, in full, because a later reader will need all
+  // four and only two of them are visible from this expression:
+  //
+  //  1. MUTUALLY EXCLUSIVE WITH 3-E4's PREMIUM, by construction. The gate is
+  //     ZERO worked minutes on the date, and the premium's gate is worked
+  //     minutes on the date, so one observed holiday can only ever earn one
+  //     of the two. That is the honest reading of the terms: the premium
+  //     rewards working a day off, the credit pays for not having to.
+  //  2. OUTSIDE EVERY OVERTIME THRESHOLD — daily, weekly and the seventh
+  //     day — exactly like `pto`. Nothing above this point knows these
+  //     minutes exist: the three pricing steps walk `workedDates` alone, and
+  //     a credited date is by definition not one. So a credit can never
+  //     promote a worked hour into a higher tier, and can never itself be
+  //     promoted. §5 D-53: "the credit counts like PTO (outside OT
+  //     thresholds)".
+  //  3. PAYABLE, so it reduces a guaranteed-hours shortfall — again exactly
+  //     like `pto` (see `payableMinutes` below). A week that credited a
+  //     holiday must not ALSO top up for the same hours; that would pay one
+  //     absence twice.
+  //  4. PRICED AT ITS OWN DAY'S ARRANGEMENT, like `regular` and `pto` and
+  //     unlike the top-up: two credited holidays either side of a mid-week
+  //     raise split into two dated lines at two rates. The MINUTES come from
+  //     `overtimeConfig` instead, because how many hours a holiday is worth
+  //     is a TERM — the same "the week is negotiated and signed off as one
+  //     unit" rule every threshold and multiplier here follows.
+  //
+  // `> 0`, not `!== null`: 095's CHECK already refuses a stored zero, and a
+  // £0.00 credit row would tell a nanny her family agreed a paid holiday and
+  // then paid her nothing for it — a fabricated figure (§2.9). Same
+  // emission-gating reasoning as `doubletime` and `holiday_premium`.
+  // ---------------------------------------------------------------------
+  const paidHolidaySegments: Segment[] = paidHolidayDates.map(date => ({
+    date,
+    minutes: holidayCreditMinutes ?? 0,
+    arrangement: resolved.get(date) as PayArrangement,
+  }));
+  const paidHolidayMinutes =
+    paidHolidaySegments.length * (holidayCreditMinutes ?? 0);
+
   // Reimbursements are NOT priced by the engine — mileage was already priced
   // (and a plain expense was always a flat amount) at expense approval,
   // frozen into `amount_minor`. One line per approved item, chronological,
@@ -918,16 +1005,19 @@ export function computeWeekEarnings(
   // 2026-08-09, `docs/11-MONEY.md` §7). When payable minutes fall short of
   // `guaranteed_minutes_per_week`, the engine emits a single top-up line for
   // the FULL shortfall — no closure-day gate, no schedule-based cap.
-  // Payable minutes already include worked time, paid cancellations, and PTO
-  // usage, so a week that paid for those minutes never also tops up for them
-  // — no double pay by construction.
+  // Payable minutes already include worked time, paid cancellations, PTO
+  // usage and unworked-holiday credits, so a week that paid for those minutes
+  // never also tops up for them — no double pay by construction.
   // The guaranteed minutes and the rate come from the week's LAST DAY
   // arrangement, for the same "the week is one unit" reason as the overtime
   // terms — and because a zero-hours week has no other date to ask.
   // ---------------------------------------------------------------------
   const workedMinutes = total(workedByDate);
   const payableMinutes =
-    workedMinutes + total(cancelledByDate) + ptoUsageMinutes;
+    workedMinutes +
+    total(cancelledByDate) +
+    ptoUsageMinutes +
+    paidHolidayMinutes;
 
   const guaranteedMinutes = lastDayArrangement.guaranteed_minutes_per_week;
   const shortfall =
@@ -999,6 +1089,14 @@ export function computeWeekEarnings(
     [EARNINGS_LINE_KINDS.PTO]: usingDatedPto
       ? toLines(ptoSegments, EARNINGS_LINE_KINDS.PTO, null)
       : legacyPtoLines,
+    // The ordinary rate, no multiplier — the credit pays the day, it does not
+    // reward working it. `paidHolidayDates` is week-ascending, which is what
+    // `toLines`' consecutive-segment merge needs.
+    [EARNINGS_LINE_KINDS.PAID_HOLIDAY]: toLines(
+      paidHolidaySegments,
+      EARNINGS_LINE_KINDS.PAID_HOLIDAY,
+      null
+    ),
     [EARNINGS_LINE_KINDS.GUARANTEED_TOPUP]: topupLines,
     [EARNINGS_LINE_KINDS.REIMBURSEMENTS]: reimbursementLines,
   };

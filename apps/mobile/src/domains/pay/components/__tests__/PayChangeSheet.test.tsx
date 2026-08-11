@@ -446,6 +446,83 @@ describe('PayChangeSheet', () => {
     });
   });
 
+  // 3-E5 / `holiday_hours_minutes` (095, §5 D-53). Same T17 hazard, and the
+  // one that bites hardest: an unseeded credit means a parent who edits only
+  // the rate silently cancels the family's paid holidays.
+  describe('the unworked-holiday credit', () => {
+    it('seeds from the current arrangement, in hours', () => {
+      const { getByTestId } = renderSheet({
+        currentArrangement: {
+          ...currentArrangement,
+          holiday_hours_minutes: 480,
+        },
+      });
+
+      expect(getByTestId('pay-change-holiday-hours-input').props.value).toBe(
+        '8'
+      );
+    });
+
+    it('a null column seeds an empty field, never a fabricated 8', () => {
+      const { getByTestId } = renderSheet();
+
+      fireEvent.press(getByTestId('pay-change-group-holidays'));
+      expect(getByTestId('pay-change-holiday-hours-input').props.value).toBe(
+        ''
+      );
+    });
+
+    it('a rate-only change re-sends the seeded credit unchanged', () => {
+      const { getByTestId, onSubmit } = renderSheet({
+        currentArrangement: {
+          ...currentArrangement,
+          holiday_hours_minutes: 450,
+        },
+      });
+
+      fireEvent.changeText(getByTestId('pay-change-rate-input'), '19.50');
+      fireEvent.press(getByTestId('pay-change-submit'));
+
+      expect(onSubmit).toHaveBeenCalledWith(
+        expect.objectContaining({ holiday_hours_minutes: 450 })
+      );
+    });
+
+    it('sends null when the field is left blank', () => {
+      const { getByTestId, onSubmit } = renderSheet();
+
+      fireEvent.press(getByTestId('pay-change-submit'));
+
+      expect(onSubmit).toHaveBeenCalledWith(
+        expect.objectContaining({ holiday_hours_minutes: null })
+      );
+    });
+
+    it('refuses to submit a typed zero rather than reading it as "no credit"', () => {
+      const { getByTestId, onSubmit } = renderSheet();
+
+      fireEvent.press(getByTestId('pay-change-group-holidays'));
+      fireEvent.changeText(getByTestId('pay-change-holiday-hours-input'), '0');
+      fireEvent.press(getByTestId('pay-change-submit'));
+
+      expect(onSubmit).not.toHaveBeenCalled();
+    });
+
+    it('opens the holidays group when only the credit is set', () => {
+      // §4.2: "a group opens when it has a value". The group carries two
+      // terms now, so either one must open it.
+      const { getByTestId } = renderSheet({
+        currentArrangement: {
+          ...currentArrangement,
+          holiday_hours_minutes: 480,
+        },
+      });
+      expect(getByTestId('pay-change-holiday-hours-input').props.value).toBe(
+        '8'
+      );
+    });
+  });
+
   // 3-E4 / `worked_holiday_multiplier`. Same T17 hazard as the 078 five: a
   // column this sheet never seeds is a term a rate change silently drops.
   describe('the worked-holiday premium', () => {
@@ -605,29 +682,52 @@ describe('PayChangeSheet', () => {
       ).toBe('');
     });
 
-    // D-44, owner verbatim: "Don't mention California defaults anywhere at
-    // all." No user-visible string names a state — not the button, not the
-    // sheet, not a hint, not an accessibility label.
+    // D-52, owner verbatim: "We should never call out anything about
+    // jurisdiction presets anywhere in the app… Just say most common values
+    // are input." No user-visible string names a state or a review date — not
+    // the button, not the sheet, not a hint, not an accessibility label.
     //
     // Asserted against the CATALOGUE, not the render: `react-i18next` is
     // key-echoing under bun:test (bun.setup.ts:593), so every `t()` call in a
     // rendered tree returns "preset.title" rather than the copy — a render
     // assertion here could never fail no matter what the English said. The
     // strings themselves are the only thing worth checking.
-    it('names no state in any preset string, in either language', () => {
+    it('names no state or jurisdiction in any preset string, in either language', () => {
       for (const catalogue of [enPay, esPay]) {
         for (const value of Object.values(catalogue.preset)) {
-          expect(value).not.toMatch(/California|Wage Order|\bCA\b/i);
+          expect(value).not.toMatch(
+            /California|Wage Order|\bCA\b|jurisdicci|jurisdiction|reviewed|revisado/i
+          );
         }
       }
     });
 
-    it('renders the preset sheet from those strings and nothing hardcoded', () => {
-      const { getByTestId } = openPresetSheet();
+    // D-52 removed the review metadata, so the sheet has no review line and
+    // no staleness warning to render. The disclaimer and the D-7 checkbox are
+    // what carries the liability posture now, and both must say so: the
+    // values are the most common ones, and following local law is the
+    // family's own job.
+    it('renders the preset sheet from those strings, with no review line', () => {
+      const { getByTestId, queryByTestId } = openPresetSheet();
 
       expect(getByTestId('pay-preset-sheet')).toBeTruthy();
       expect(getByTestId('pay-preset-disclaimer')).toBeTruthy();
-      expect(getByTestId('pay-preset-reviewed')).toBeTruthy();
+      expect(queryByTestId('pay-preset-reviewed')).toBeNull();
+    });
+
+    it('puts local-law compliance on the family, in the disclaimer AND the checkbox', () => {
+      for (const catalogue of [enPay, esPay]) {
+        // Not legal advice, and the values are "the most common" ones.
+        expect(catalogue.preset.disclaimer).toMatch(
+          /not legal advice|no asesoramiento legal/i
+        );
+        expect(catalogue.preset.disclaimer).toMatch(
+          /most common values|valores más comunes/i
+        );
+        // The onus, said out loud on both surfaces.
+        expect(catalogue.preset.disclaimer).toMatch(/law|ley/i);
+        expect(catalogue.preset.checkbox).toMatch(/laws|leyes/i);
+      }
     });
   });
 

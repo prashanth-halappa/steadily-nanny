@@ -38,9 +38,8 @@ const MAX_FUTURE_MONTHS = 12;
 
 /**
  * The horizon date, `months` months after `dateISO` — same UTC-Date-rollover
- * technique as the server's `addMonthsISO` (and `payTermsPresets.ts`'s
- * `isPresetReviewStale`), so client and server can never quietly disagree
- * about where the 12-month line falls.
+ * technique as the server's `addMonthsISO`, so client and server can never
+ * quietly disagree about where the 12-month line falls.
  */
 function addMonthsISO(dateISO: string, months: number): string {
   const [y, m, d] = dateISO.split('-').map(Number);
@@ -125,18 +124,6 @@ export function formatShortDate(dateISO: string): string {
   return new Intl.DateTimeFormat(i18n.language, {
     month: 'short',
     day: 'numeric',
-  }).format(toLocalDate(dateISO));
-}
-
-/** "Aug 2026" — for §5.2's preset review date, the one place a month and a
- * year appear without a day. Here rather than in the sheet so the en-US pass
- * finds every date formatter in one file. Intl, same as every other
- * formatter here (3-U2) — never a hand-rolled month array. */
-export function formatMonthYear(dateISO: string): string {
-  if (!isValidCalendarDate(dateISO)) return dateISO;
-  return new Intl.DateTimeFormat(i18n.language, {
-    month: 'short',
-    year: 'numeric',
   }).format(toLocalDate(dateISO));
 }
 
@@ -254,6 +241,14 @@ export interface PayTermsFormState {
    * never a fabricated 1.5.
    */
   workedHolidayMultiplierText: string;
+  /**
+   * 3-E5's `holiday_hours_minutes` (095, §5 D-53) — the holidays group's
+   * other half. HOURS in the field, minutes in the column, like every other
+   * duration on this form. Blank is null ("a holiday nobody works is
+   * unpaid"), never a fabricated eight; REQUIRED on the state, not optional,
+   * for the same T17 reason the 078 tiers are.
+   */
+  holidayHoursText: string;
   guaranteedHoursText: string;
   ptoHoursPerYearText: string;
   mileageRateText: string;
@@ -560,6 +555,18 @@ export function buildCreatePayArrangementRequest(
   );
   if (workedHolidayMultiplier === undefined) return null;
 
+  // 3-E5. Blank is null, and a typed zero is a REFUSAL rather than a silent
+  // null: 095's CHECK is `> 0` because null already spells "no credit", so
+  // "0" is a value the column cannot hold and the form must not translate it
+  // into the other agreement on the parent's behalf (§2.9's refuse-don't-
+  // clamp).
+  let holidayHoursMinutes: number | null = null;
+  if (state.holidayHoursText.trim() !== '') {
+    const minutes = parseHoursToMinutes(state.holidayHoursText);
+    if (minutes === null || minutes <= 0) return null;
+    holidayHoursMinutes = minutes;
+  }
+
   let guaranteedMinutesPerWeek: number | null = null;
   if (state.guaranteedHoursText.trim() !== '') {
     const minutes = parseHoursToMinutes(state.guaranteedHoursText);
@@ -642,6 +649,7 @@ export function buildCreatePayArrangementRequest(
     seventh_day_multiplier: seventhDayMultiplier,
     seventh_day_doubletime_after_minutes: seventhDayDoubletimeAfterMinutes,
     worked_holiday_multiplier: workedHolidayMultiplier,
+    holiday_hours_minutes: holidayHoursMinutes,
     pay_frequency: payFrequency,
     pay_day_of_week: payDayOfWeek,
     pay_day_of_month: payDayOfMonth,

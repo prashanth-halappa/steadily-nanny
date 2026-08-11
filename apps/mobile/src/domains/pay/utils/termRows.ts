@@ -285,6 +285,20 @@ export function buildTermRows(
               ),
             }),
     },
+    // 3-E5 (§5 D-53), the holidays group's other half: what an observed
+    // holiday NOBODY WORKED credits. Null is a real agreement here too ("a
+    // holiday nobody works is unpaid"), so it renders as the group's blank
+    // rather than an invented figure.
+    {
+      key: 'paidHolidayHours',
+      label: t('terms.paidHolidayHoursLabel'),
+      value:
+        arrangement.holiday_hours_minutes == null
+          ? null
+          : t('terms.paidHolidayHoursValue', {
+              hours: arrangement.holiday_hours_minutes / 60,
+            }),
+    },
     {
       key: 'cancellations',
       label: t('terms.cancellationsLabel'),

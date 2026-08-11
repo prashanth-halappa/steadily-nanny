@@ -101,8 +101,8 @@ const MONTHS_ABBR = [
 
 /**
  * The horizon date, `months` months after `dateISO` — same UTC-Date-rollover
- * technique as `payTermsPresets.ts`'s `isPresetReviewStale`, so the two
- * "how far is 12 months" answers in this domain can never quietly disagree.
+ * technique as the mobile form's own `addMonthsISO`, so the two "how far is
+ * 12 months" answers in this domain can never quietly disagree.
  */
 function addMonthsISO(dateISO: string, months: number): string {
   const [y, m, d] = dateISO.split('-').map(Number);
@@ -230,6 +230,11 @@ export class PayArrangementCommandService {
       // the normal rate", so writing it is the difference between a term the
       // parties agreed and a field somebody forgot.
       worked_holiday_multiplier: request.worked_holiday_multiplier ?? null,
+      // 095's unworked-holiday credit (3-E5, D-53). Same T17 reason again:
+      // null here MEANS "an unworked observed holiday credits nothing", which
+      // is a term, not an oversight — and a key this literal omits is a column
+      // the insert never writes.
+      holiday_hours_minutes: request.holiday_hours_minutes ?? null,
       // 082's pay schedule (D-17, T7 reversal) — presentation only, same T17
       // reasoning as the block above: null here means "no pay schedule
       // stated", so writing it explicitly is the difference between a
@@ -373,6 +378,7 @@ export class PayArrangementCommandService {
         currentlyInEffect.seventh_day_doubletime_after_minutes ?? null,
       worked_holiday_multiplier:
         currentlyInEffect.worked_holiday_multiplier ?? null,
+      holiday_hours_minutes: currentlyInEffect.holiday_hours_minutes ?? null,
       guaranteed_minutes_per_week:
         currentlyInEffect.guaranteed_minutes_per_week,
       pto_entitlement_minutes_per_year:

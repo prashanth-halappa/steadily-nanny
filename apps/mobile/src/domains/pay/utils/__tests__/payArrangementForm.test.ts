@@ -27,6 +27,7 @@ const baseState: PayTermsFormState = {
   todayISO: '2026-08-04',
   overtimeThresholdHoursText: '',
   overtimeMultiplierText: '1.50',
+  holidayHoursText: '',
   dailyOvertimeThresholdHoursText: '',
   doubletimeThresholdHoursText: '',
   doubletimeMultiplierText: '',
@@ -160,6 +161,7 @@ describe('buildCreatePayArrangementRequest', () => {
       seventh_day_multiplier: null,
       seventh_day_doubletime_after_minutes: null,
       worked_holiday_multiplier: null,
+      holiday_hours_minutes: null,
       pay_frequency: null,
       pay_day_of_week: null,
       pay_day_of_month: null,
@@ -181,6 +183,7 @@ describe('buildCreatePayArrangementRequest', () => {
       seventhDayMultiplierText: '1.5',
       seventhDayDoubletimeAfterHoursText: '8',
       workedHolidayMultiplierText: '1.5',
+      holidayHoursText: '8',
       guaranteedHoursText: '40',
       ptoHoursPerYearText: '140',
       mileageRateText: '0.45',
@@ -201,6 +204,7 @@ describe('buildCreatePayArrangementRequest', () => {
       seventh_day_multiplier: 1.5,
       seventh_day_doubletime_after_minutes: 480,
       worked_holiday_multiplier: 1.5,
+      holiday_hours_minutes: 480,
       pay_frequency: 'biweekly',
       pay_day_of_week: 5,
       pay_day_of_month: null,
@@ -523,6 +527,62 @@ describe('buildCreatePayArrangementRequest', () => {
           seventhDayDoubletimeAfterHoursText: '0',
         })
       ).toBeNull();
+    });
+  });
+
+  // 3-E5 / `holiday_hours_minutes` (095, §5 D-53). HOURS in the field,
+  // minutes in the request — and a typed zero is refused rather than
+  // silently turned into the null that already means "no credit".
+  describe('the unworked-holiday credit', () => {
+    it('carries the key explicitly as null when blank — never a fabricated 8h', () => {
+      const result = buildCreatePayArrangementRequest(baseState);
+      expect(result).toHaveProperty('holiday_hours_minutes', null);
+    });
+
+    it('converts typed hours to minutes', () => {
+      expect(
+        buildCreatePayArrangementRequest({
+          ...baseState,
+          holidayHoursText: '8',
+        })?.holiday_hours_minutes
+      ).toBe(480);
+      expect(
+        buildCreatePayArrangementRequest({
+          ...baseState,
+          holidayHoursText: '7.5',
+        })?.holiday_hours_minutes
+      ).toBe(450);
+    });
+
+    it('REFUSES a typed zero rather than reading it as "no credit"', () => {
+      // 095's CHECK is `> 0` because null already spells "no credit". A form
+      // that quietly mapped "0" onto null would be deciding which of two
+      // agreements the parent meant (§2.9: refuse, never clamp).
+      expect(
+        buildCreatePayArrangementRequest({
+          ...baseState,
+          holidayHoursText: '0',
+        })
+      ).toBeNull();
+    });
+
+    it('refuses a negative or unparsable value rather than dropping the field', () => {
+      for (const text of ['-4', 'eight', '8h']) {
+        expect(
+          buildCreatePayArrangementRequest({
+            ...baseState,
+            holidayHoursText: text,
+          })
+        ).toBeNull();
+      }
+    });
+
+    it('stands alone — setting it changes no other holiday term', () => {
+      const result = buildCreatePayArrangementRequest({
+        ...baseState,
+        holidayHoursText: '8',
+      });
+      expect(result?.worked_holiday_multiplier).toBeNull();
     });
   });
 

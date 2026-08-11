@@ -283,6 +283,16 @@ export function renderTermRows(
         : `${trimZeros(terms.worked_holiday_multiplier)}× when worked`,
     ],
     [
+      // 3-E5 / §5 D-53 — the holidays group's other half. Same position as
+      // `termRows.ts`'s `paidHolidayHours` row; the order-agreement test
+      // derives this sequence from that file, so the two can only move
+      // together.
+      'Unworked holidays',
+      terms.holiday_hours_minutes == null
+        ? null
+        : `${hours(terms.holiday_hours_minutes)}h paid`,
+    ],
+    [
       'Cancellations',
       terms.cancellation_paid_within_hours == null
         ? null

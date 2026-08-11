@@ -1446,8 +1446,9 @@ describe('earningsService.computeWeekEarnings', () => {
   // ===========================================================================
   describe('daily overtime, double time, seventh day (3-E2)', () => {
     /**
-     * The launch preset's figures (`payTermsPresets.ts` — CA Wage Order 15,
-     * never named in the UI), at the spec's canonical $28.00/hr.
+     * The launch preset's figures (`payTermsPresets.ts` — the common
+     * defaults, keyed by nothing since D-52), at the spec's canonical
+     * $28.00/hr.
      *
      * Written out as literals rather than spread from the preset module ON
      * PURPOSE: this is the ENGINE's case table, and it must pin what the
@@ -2161,15 +2162,16 @@ describe('earningsService.computeWeekEarnings', () => {
       expect(shape(omitted)).toEqual(shape(disabled));
     });
 
-    it('pays nothing for an observed holiday NOBODY WORKED', () => {
-      // THE DELIBERATE GAP, and it is a gap in the model, not in this code.
-      // Nothing on the arrangement, on the household, or in D-12 says how
-      // many hours a paid-but-not-worked holiday is worth — not her scheduled
-      // hours, not a fixed eight, not an average. Pricing one would mean the
-      // engine inventing a number, which is the one thing it must never do
-      // (§2.9). What ALREADY pays an unworked holiday is the guaranteed-hours
-      // top-up (the companion case below) or a time-off day marked paid.
-      // Carried to the owner as this slice's open question.
+    it('pays nothing for an observed holiday NOBODY WORKED, with no credit term', () => {
+      // 3-E4's deliberate gap, now closed by §5 D-53 with an explicit TERM
+      // rather than an inference: `holiday_hours_minutes` on the arrangement.
+      // `holidayArrangement()` does not set it, so this case pins the
+      // unchanged behaviour — nothing on the arrangement says how many hours
+      // an unworked holiday is worth, so the engine prices none, exactly as
+      // before (§2.9: never invent a number). The credit's own cases live in
+      // the 3-E5 block below. What ALSO pays an unworked holiday without any
+      // credit term is the guaranteed-hours top-up (the companion case
+      // below) or a time-off day marked paid.
       const result = ok(
         computeWeekEarnings(
           input({
@@ -2503,6 +2505,440 @@ describe('earningsService.computeWeekEarnings', () => {
         )
       );
       expect(result.lines.some(l => l.kind === 'holiday_premium')).toBe(false);
+    });
+  });
+
+  // =========================================================================
+  // THE UNWORKED-HOLIDAY CREDIT (3-E5, §5 D-53) — the other half of the
+  // holidays contract, and the answer to 3-E4's parked question.
+  //
+  // `pay_arrangements.holiday_hours_minutes` (095) is a fixed hour credit,
+  // priced once for each observed holiday in the week that NOBODY WORKED, at
+  // that day's ordinary rate. Null = no credit, which is every household's
+  // behaviour before this column existed.
+  //
+  // Four composition rules, one case each below:
+  //
+  //  1. MUTUALLY EXCLUSIVE WITH THE PREMIUM, by construction. A worked
+  //     observed holiday takes 3-E4's premium and no credit; an unworked one
+  //     takes the credit and no premium (there are no worked minutes for a
+  //     premium to sit on). The gate is zero worked minutes on the date, so
+  //     the two can never both fire on one day.
+  //  2. OUTSIDE EVERY OVERTIME THRESHOLD, exactly like `pto`. Credit minutes
+  //     are not worked minutes: they never enter the daily bands, never
+  //     enter the weekly remainder, and never push a worked hour into a
+  //     higher tier.
+  //  3. PAYABLE, so they reduce a guaranteed-hours shortfall — again exactly
+  //     like `pto`. A week that credited a holiday must not ALSO top up for
+  //     the same hours; that is double pay for one absence.
+  //  4. A CREDIT DATE MUST PRICE. It is a date the week now needs a rate
+  //     for, so an unpriceable one fails the WHOLE week (`no_arrangement`)
+  //     rather than quietly dropping the credit — §2.9's "a half-priced week
+  //     is a wrong number, not a partial one".
+  // =========================================================================
+  describe('the unworked-holiday credit (3-E5)', () => {
+    function shape(result: ReturnType<typeof ok>) {
+      return result.lines.map(l => [
+        l.kind,
+        l.minutes,
+        l.rate_minor,
+        l.amount_minor,
+      ]);
+    }
+
+    /** $28.00/hr, 40h weekly at 1.5x, an 8h holiday credit. */
+    function creditArrangement(over: Partial<PayArrangement> = {}) {
+      return arrangement({
+        rate_minor: 2800,
+        currency: 'USD',
+        overtime_threshold_minutes: 2400,
+        overtime_multiplier: 1.5,
+        holiday_hours_minutes: 480,
+        ...over,
+      });
+    }
+
+    it('credits the agreed hours for an observed holiday nobody worked', () => {
+      // Mon–Thu worked 8h each = 32h; Friday observed and not worked.
+      //   regular      1920m x 2800/60 = 89_600
+      //   paid_holiday  480m x 2800/60 = 22_400
+      //   gross                        = 112_000 = $1,120.00
+      // By hand: 32 worked hours at $28 = $896, plus 8 credited hours at $28
+      // = $224. $896 + $224 = $1,120.
+      const result = ok(
+        computeWeekEarnings(
+          input({
+            arrangements: [creditArrangement()],
+            entries: [MON, TUE, WED, THU].map(d => worked(d, 480)),
+            observed_holidays: [FRI],
+          })
+        )
+      );
+
+      expect(shape(result)).toEqual([
+        ['regular', 1920, 2800, 89_600],
+        ['paid_holiday', 480, 2800, 22_400],
+      ]);
+      expect(result.gross_minor).toBe(112_000);
+      // Credited minutes are NOT worked minutes — the timesheet total must
+      // not grow by hours nobody was there for.
+      expect(result.worked_minutes).toBe(1920);
+      // They ARE payable: the week paid for them, so a guarantee must not
+      // pay for them again (rule 3, its own case below).
+      expect(result.payable_minutes).toBe(2400);
+      expect(WeekEarningsSchema.safeParse(result).success).toBe(true);
+    });
+
+    it('dates the credit to the holiday itself, at that day’s arrangement', () => {
+      const result = ok(
+        computeWeekEarnings(
+          input({
+            arrangements: [creditArrangement()],
+            entries: [worked(MON, 480)],
+            observed_holidays: [FRI],
+          })
+        )
+      );
+      const credit = result.lines.find(l => l.kind === 'paid_holiday');
+      expect(credit?.from_date).toBe(FRI);
+      expect(credit?.to_date).toBe(FRI);
+      expect(credit?.arrangement_id).toBe(ARR_ID_A);
+      // The ordinary rate, never a multiple: the credit pays the day, it does
+      // not reward working it. `multiplier` is null for the same reason
+      // `regular` and `pto` carry null.
+      expect(credit?.multiplier).toBeNull();
+      expect(credit?.rate_minor).toBe(2800);
+    });
+
+    it('RULE 1 — a WORKED observed holiday takes the premium and NO credit', () => {
+      // Both terms agreed on one arrangement, both holidays observed, one
+      // worked and one not. The two must never land on the same date: paying
+      // a full-day credit on top of the hours she actually worked would pay
+      // that day twice over.
+      const result = ok(
+        computeWeekEarnings(
+          input({
+            arrangements: [
+              creditArrangement({ worked_holiday_multiplier: 1.5 }),
+            ],
+            entries: [MON, TUE, WED, THU]
+              .map(d => worked(d, 480))
+              .concat([
+                // Friday is observed AND worked — premium, no credit.
+                worked(FRI, 480),
+              ]),
+            observed_holidays: [FRI],
+          })
+        )
+      );
+
+      expect(shape(result)).toEqual([
+        ['regular', 2400, 2800, 112_000],
+        // 3-E4's uplift alone: 2800 x 1.5 - 2800 = 1400.
+        ['holiday_premium', 480, 1400, 11_200],
+      ]);
+      expect(result.lines.some(l => l.kind === 'paid_holiday')).toBe(false);
+      expect(result.gross_minor).toBe(123_200);
+    });
+
+    it('RULE 1 — the two split across two holidays in one week', () => {
+      // Thursday observed and worked, Friday observed and not. One premium,
+      // one credit, no overlap.
+      const result = ok(
+        computeWeekEarnings(
+          input({
+            arrangements: [creditArrangement({ worked_holiday_multiplier: 2 })],
+            entries: [MON, TUE, WED, THU].map(d => worked(d, 480)),
+            observed_holidays: [THU, FRI],
+          })
+        )
+      );
+
+      expect(shape(result)).toEqual([
+        ['regular', 1920, 2800, 89_600],
+        // 2800 x 2 - 2800 = 2800 uplift, on Thursday's 480 worked minutes.
+        ['holiday_premium', 480, 2800, 22_400],
+        ['paid_holiday', 480, 2800, 22_400],
+      ]);
+      expect(result.gross_minor).toBe(134_400);
+    });
+
+    it('RULE 2 — credit minutes stay OUTSIDE the weekly overtime accumulation', () => {
+      // 40 worked hours exactly, so the week sits ON the 40h threshold, plus
+      // an 8h credit. If the credit joined the weekly accumulation the last
+      // 8 worked hours would be promoted to overtime and the week would pay
+      // $1,344 instead of $1,344... — no: it would pay 32 reg + 8 OT + 8
+      // credit = 89_600 + 33_600 + 22_400 = 145_600. It must be 40 reg + 8
+      // credit = 112_000 + 22_400 = 134_400.
+      const result = ok(
+        computeWeekEarnings(
+          input({
+            arrangements: [creditArrangement()],
+            entries: [MON, TUE, WED, THU, FRI].map(d => worked(d, 480)),
+            observed_holidays: [SAT],
+          })
+        )
+      );
+
+      expect(shape(result)).toEqual([
+        ['regular', 2400, 2800, 112_000],
+        ['paid_holiday', 480, 2800, 22_400],
+      ]);
+      expect(result.lines.some(l => l.kind === 'overtime')).toBe(false);
+      expect(result.gross_minor).toBe(134_400);
+    });
+
+    it('RULE 2 — nor into the DAILY bands: a credit never becomes double time', () => {
+      // A 12h daily double-time threshold and an 8h credit on an unworked
+      // day. Nothing about the credit can reach a daily band, because the
+      // day has no worked minutes for a band to split.
+      const result = ok(
+        computeWeekEarnings(
+          input({
+            arrangements: [
+              creditArrangement({
+                overtime_daily_threshold_minutes: 480,
+                doubletime_daily_threshold_minutes: 720,
+                doubletime_multiplier: 2,
+              }),
+            ],
+            entries: [worked(MON, 480)],
+            observed_holidays: [FRI],
+          })
+        )
+      );
+      expect(shape(result)).toEqual([
+        ['regular', 480, 2800, 22_400],
+        ['paid_holiday', 480, 2800, 22_400],
+      ]);
+    });
+
+    it('RULE 3 — the credit reduces a guaranteed-hours shortfall, exactly like PTO', () => {
+      // 40h guaranteed, 32h worked, one 8h holiday credit. The credit closes
+      // the gap, so there is NO top-up — the same "payable minutes already
+      // include it, so the week never tops up for them" arithmetic PTO gets.
+      const withCredit = ok(
+        computeWeekEarnings(
+          input({
+            arrangements: [
+              creditArrangement({ guaranteed_minutes_per_week: 2400 }),
+            ],
+            entries: [MON, TUE, WED, THU].map(d => worked(d, 480)),
+            observed_holidays: [FRI],
+          })
+        )
+      );
+      expect(withCredit.lines.map(l => l.kind)).toEqual([
+        'regular',
+        'paid_holiday',
+      ]);
+      expect(withCredit.gross_minor).toBe(112_000); // 40h at $28, once
+
+      // The same week with PTO instead of a credit pays the identical gross,
+      // which is the point: D-53 says the credit "counts like PTO", and the
+      // cheapest way to be sure is to assert the two produce the same money.
+      const withPto = ok(
+        computeWeekEarnings(
+          input({
+            arrangements: [
+              creditArrangement({
+                holiday_hours_minutes: null,
+                guaranteed_minutes_per_week: 2400,
+              }),
+            ],
+            entries: [MON, TUE, WED, THU].map(d => worked(d, 480)),
+            pto_usage: [pto(FRI, 480)],
+            observed_holidays: [FRI],
+          })
+        )
+      );
+      expect(withPto.gross_minor).toBe(withCredit.gross_minor);
+      expect(withPto.payable_minutes).toBe(withCredit.payable_minutes);
+    });
+
+    it('RULE 3 — a PARTIAL credit leaves the rest of the shortfall to the top-up', () => {
+      // 40h guaranteed, 24h worked, a 4h credit on Friday. Payable is 28h, so
+      // the top-up covers the remaining 12h — never re-covering the credited
+      // four.
+      const result = ok(
+        computeWeekEarnings(
+          input({
+            arrangements: [
+              creditArrangement({
+                holiday_hours_minutes: 240,
+                guaranteed_minutes_per_week: 2400,
+              }),
+            ],
+            entries: [MON, TUE, WED].map(d => worked(d, 480)),
+            observed_holidays: [FRI],
+          })
+        )
+      );
+      expect(shape(result)).toEqual([
+        ['regular', 1440, 2800, 67_200],
+        ['paid_holiday', 240, 2800, 11_200],
+        ['guaranteed_topup', 720, 2800, 33_600],
+      ]);
+      expect(result.payable_minutes).toBe(1680); // 1440 worked + 240 credited
+      expect(result.gross_minor).toBe(112_000); // still exactly 40h at $28
+    });
+
+    it('emits NOTHING when the arrangement has no credit term', () => {
+      // Null means "an unworked holiday credits nothing" — today's behaviour,
+      // and the terms every pre-095 family agreed under. A £0.00 credit row
+      // would tell a nanny her family agreed a paid holiday and then paid her
+      // nothing for it (§2.9's never-fabricate rule).
+      const result = ok(
+        computeWeekEarnings(
+          input({
+            arrangements: [creditArrangement({ holiday_hours_minutes: null })],
+            entries: [MON, TUE, WED, THU].map(d => worked(d, 480)),
+            observed_holidays: [FRI],
+          })
+        )
+      );
+      expect(shape(result)).toEqual([['regular', 1920, 2800, 89_600]]);
+    });
+
+    it('emits nothing for a PRE-095 arrangement that omits the column entirely', () => {
+      // Undefined and null must read the same (§5 D-9: no backfill).
+      const { holiday_hours_minutes: _omitted, ...preMigration } =
+        creditArrangement();
+      const result = ok(
+        computeWeekEarnings(
+          input({
+            arrangements: [preMigration as PayArrangement],
+            entries: [worked(MON, 480)],
+            observed_holidays: [FRI],
+          })
+        )
+      );
+      expect(result.lines.some(l => l.kind === 'paid_holiday')).toBe(false);
+    });
+
+    it('credits nothing for a DISABLED holiday — the date never reaches the engine', () => {
+      const result = ok(
+        computeWeekEarnings(
+          input({
+            arrangements: [creditArrangement()],
+            entries: [MON, TUE, WED, THU].map(d => worked(d, 480)),
+            observed_holidays: [],
+          })
+        )
+      );
+      expect(shape(result)).toEqual([['regular', 1920, 2800, 89_600]]);
+
+      // Omitting the field entirely is the same as an empty list.
+      const omitted = ok(
+        computeWeekEarnings(
+          input({
+            arrangements: [creditArrangement()],
+            entries: [MON, TUE, WED, THU].map(d => worked(d, 480)),
+          })
+        )
+      );
+      expect(shape(omitted)).toEqual(shape(result));
+    });
+
+    it('ignores an observed date outside the week', () => {
+      const result = ok(
+        computeWeekEarnings(
+          input({
+            arrangements: [creditArrangement()],
+            entries: [worked(MON, 480)],
+            observed_holidays: ['2026-07-04', '2026-12-25'],
+          })
+        )
+      );
+      expect(result.lines.some(l => l.kind === 'paid_holiday')).toBe(false);
+    });
+
+    it('RULE 4 — an unpriceable credit date fails the WHOLE week', () => {
+      // The arrangement starts on the Wednesday, and the family observes the
+      // Monday. The credit has no rate to price at, and a week that silently
+      // skipped it would report a gross that is wrong by a day — so the whole
+      // week refuses, and names the date that needs a rate.
+      const result = computeWeekEarnings(
+        input({
+          arrangements: [creditArrangement({ valid_from: WED })],
+          entries: [WED, THU, FRI].map(d => worked(d, 480)),
+          observed_holidays: [MON],
+        })
+      );
+      expect(result.status).toBe('no_arrangement');
+      expect(
+        result.status === 'no_arrangement' ? result.unpriced_dates : []
+      ).toEqual([MON]);
+    });
+
+    it('RULE 4 — the same week prices fine when there is NO credit term', () => {
+      // The companion to the case above: an unworked holiday with no credit
+      // term needs no rate, so a date before the arrangement starts is
+      // harmless. This is what keeps rule 4 from being a behaviour change for
+      // every household that never agreed a credit.
+      const result = ok(
+        computeWeekEarnings(
+          input({
+            arrangements: [
+              creditArrangement({
+                valid_from: WED,
+                holiday_hours_minutes: null,
+              }),
+            ],
+            entries: [WED, THU, FRI].map(d => worked(d, 480)),
+            observed_holidays: [MON],
+          })
+        )
+      );
+      expect(result.gross_minor).toBe(67_200); // 1440m x 2800/60
+    });
+
+    it('prices a mid-week rate change per credited day, like every other line', () => {
+      // Two observed, unworked holidays either side of a Thursday raise. The
+      // credit is dated, so each prices at ITS OWN day's arrangement — the
+      // same rule `regular` and `pto` follow, never one week-wide rate.
+      const before = creditArrangement({
+        id: ARR_ID_A,
+        valid_from: '2026-01-01',
+      });
+      const after = creditArrangement({
+        id: ARR_ID_B,
+        rate_minor: 3000,
+        valid_from: THU,
+      });
+      const result = ok(
+        computeWeekEarnings(
+          input({
+            arrangements: [before, after],
+            entries: [worked(WED, 480)],
+            observed_holidays: [TUE, FRI],
+          })
+        )
+      );
+      const credits = result.lines.filter(l => l.kind === 'paid_holiday');
+      expect(
+        credits.map(l => [l.from_date, l.rate_minor, l.amount_minor])
+      ).toEqual([
+        [TUE, 2800, 22_400],
+        [FRI, 3000, 24_000],
+      ]);
+    });
+
+    it('credits a zero-hours week with nothing but the holiday', () => {
+      // No entries at all, one observed holiday. The week still prices: the
+      // last day resolves an arrangement, and the credit is the only line.
+      const result = ok(
+        computeWeekEarnings(
+          input({
+            arrangements: [creditArrangement()],
+            entries: [],
+            observed_holidays: [WED],
+          })
+        )
+      );
+      expect(shape(result)).toEqual([['paid_holiday', 480, 2800, 22_400]]);
+      expect(result.worked_minutes).toBe(0);
+      expect(result.payable_minutes).toBe(480);
     });
   });
 });

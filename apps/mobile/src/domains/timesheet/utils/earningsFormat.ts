@@ -116,6 +116,7 @@ const SHORT_KIND_KEYS: Partial<Record<string, string>> = {
   [EARNINGS_LINE_KINDS.CANCELLATION_PAID]:
     'earningsStructureKindCancellationPaid',
   [EARNINGS_LINE_KINDS.PTO]: 'earningsStructureKindPto',
+  [EARNINGS_LINE_KINDS.PAID_HOLIDAY]: 'earningsStructureKindPaidHoliday',
   [EARNINGS_LINE_KINDS.GUARANTEED_TOPUP]:
     'earningsStructureKindGuaranteedTopup',
 };

@@ -63,6 +63,13 @@ describe('timesheet.schema — earnings', () => {
         // `doubletime` was: `kind` is an open string with a humanizing
         // fallback on every read site (1-A), and the app is pre-launch (D-9).
         HOLIDAY_PREMIUM: 'holiday_premium',
+        // 3-E5 (§5 D-53): the UNWORKED-holiday credit — a fixed hour credit
+        // at the day's ordinary rate for each observed holiday nobody worked,
+        // from `pay_arrangements.holiday_hours_minutes` (095). Its own kind,
+        // not `pto`: a holiday credit draws on no accrual ledger and calling
+        // it "Paid time off" on a payslip would be a lie about which
+        // entitlement was spent.
+        PAID_HOLIDAY: 'paid_holiday',
         CANCELLATION_PAID: 'cancellation_paid',
         GUARANTEED_TOPUP: 'guaranteed_topup',
         PTO: 'pto',
@@ -84,6 +91,11 @@ describe('timesheet.schema — earnings', () => {
         'holiday_premium',
         'cancellation_paid',
         'pto',
+        // Directly after `pto`, because it is the same kind of row: minutes
+        // nobody worked, paid at the ordinary rate, outside every overtime
+        // threshold. The top-up follows both because it is the week's
+        // residual and has to be read last.
+        'paid_holiday',
         'guaranteed_topup',
         'reimbursements',
       ]);

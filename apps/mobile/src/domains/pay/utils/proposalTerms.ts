@@ -63,6 +63,7 @@ export function arrangementFromProposal(
     seventh_day_doubletime_after_minutes:
       terms.seventh_day_doubletime_after_minutes ?? null,
     worked_holiday_multiplier: terms.worked_holiday_multiplier ?? null,
+    holiday_hours_minutes: terms.holiday_hours_minutes ?? null,
     pay_frequency: terms.pay_frequency ?? null,
     pay_day_of_week: terms.pay_day_of_week ?? null,
     pay_day_of_month: terms.pay_day_of_month ?? null,

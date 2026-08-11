@@ -82,6 +82,7 @@ function blankFormState(currency: string, todayISO: string): PayTermsFormState {
     seventhDayMultiplierText: '',
     seventhDayDoubletimeAfterHoursText: '',
     workedHolidayMultiplierText: '',
+    holidayHoursText: '',
     guaranteedHoursText: '',
     ptoHoursPerYearText: '',
     mileageRateText: '',
@@ -388,7 +389,6 @@ export function PaySetupScreen() {
         state={form}
         onChange={patch}
         seed={null}
-        todayISO={todayISO}
       />
 
       {/* 082's pay schedule (D-17, T7 reversal) — presentation only, not part

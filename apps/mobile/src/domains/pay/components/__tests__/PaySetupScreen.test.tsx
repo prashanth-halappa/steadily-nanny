@@ -603,6 +603,53 @@ describe('PaySetupScreen', () => {
     });
   });
 
+  // 3-E5 / `holiday_hours_minutes` (095, §5 D-53). Blank must reach the API
+  // as an explicit null, and a typed value in hours must arrive in minutes.
+  describe('the unworked-holiday credit', () => {
+    it('starts blank and sends null when untouched', async () => {
+      const { getByTestId } = renderWithProviders(<PaySetupScreen />);
+
+      await waitFor(() =>
+        expect(getByTestId('pay-setup-rate-input')).toBeTruthy()
+      );
+      fireEvent.press(getByTestId('pay-setup-group-holidays'));
+      expect(getByTestId('pay-setup-holiday-hours-input').props.value).toBe('');
+
+      fireEvent.changeText(getByTestId('pay-setup-rate-input'), '18.50');
+      fireEvent.press(getByTestId('pay-setup-cancellation-chip-none'));
+      fireEvent.press(getByTestId('pay-setup-screen-cta'));
+
+      await waitFor(() =>
+        expect(payCreateMock).toHaveBeenCalledWith(
+          HOUSEHOLD_ID,
+          NANNY_ID,
+          expect.objectContaining({ holiday_hours_minutes: null })
+        )
+      );
+    });
+
+    it('submits typed HOURS as minutes', async () => {
+      const { getByTestId } = renderWithProviders(<PaySetupScreen />);
+
+      await waitFor(() =>
+        expect(getByTestId('pay-setup-rate-input')).toBeTruthy()
+      );
+      fireEvent.changeText(getByTestId('pay-setup-rate-input'), '18.50');
+      fireEvent.press(getByTestId('pay-setup-group-holidays'));
+      fireEvent.changeText(getByTestId('pay-setup-holiday-hours-input'), '8');
+      fireEvent.press(getByTestId('pay-setup-cancellation-chip-none'));
+      fireEvent.press(getByTestId('pay-setup-screen-cta'));
+
+      await waitFor(() =>
+        expect(payCreateMock).toHaveBeenCalledWith(
+          HOUSEHOLD_ID,
+          NANNY_ID,
+          expect.objectContaining({ holiday_hours_minutes: 480 })
+        )
+      );
+    });
+  });
+
   // 3-E4 / `worked_holiday_multiplier`. Blank must reach the API as an
   // explicit null — a first-ever arrangement that omits the key persists no
   // premium and no record that none was agreed (T17).
