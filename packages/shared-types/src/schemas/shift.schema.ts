@@ -162,6 +162,21 @@ export const ShiftSchema = z.object({
   cancelled_by: z.uuid().nullable(),
   cancellation_paid: z.boolean(),
   cancellation_message: z.string().nullable(),
+  /**
+   * D-47: the instant an unanswered ask stops being answerable, COMPUTED AND
+   * STORED AT ASK TIME (`min(created + 48h, starts − 4h)`, 1h floor, never
+   * after `starts_at`). Null on every shift that is not an outstanding ask.
+   *
+   * Stored rather than derived because the whole point is that the deadline is
+   * a KNOWN INSTANT: a sweep that recomputes "48h after creation" lands after
+   * a next-morning shift has already started, which is the failure D-47
+   * exists to prevent. Both surfaces render it from this one column, so the
+   * carer's inbox item and her shift detail can never quote two deadlines.
+   *
+   * `.optional()` alongside `.nullable()` on purpose — migration 088 adds the
+   * column, and a response assembled before it lands must still parse.
+   */
+  cover_ask_expires_at: z.iso.datetime({ offset: true }).nullable().optional(),
   ical_uid: z.string(),
   sequence: z.int(),
   created_by: z.uuid().nullable(),

@@ -246,7 +246,44 @@ export class ShiftCommandService {
       });
     }
 
-    if (uncovered.pushed.length === 0) {
+    // N9 / D-22, spec §1.4 — READ THIS BEFORE "CLEANING UP" THE A6 CHECK BELOW.
+    //
+    // A6 suppresses `shift_declined` when an uncovered push already fired for
+    // the same window, and it is correct: one fact, one push. But under D-22 a
+    // pending ask no longer counts as cover, which means the uncovered push now
+    // fires AT ASK TIME. Left alone, that makes `uncovered.pushed.length === 0`
+    // false for every cover-ask decline — so EVERY decline would be suppressed
+    // and the parent would never learn she said no. This build creates that
+    // bug; `cover_ask_declined` is the fix.
+    //
+    // It is a genuinely different fact from "this window is uncovered", which
+    // the parent already knows because asking never silenced it: it is "the
+    // person you asked has answered." So it is deliberately NOT one of the
+    // types A6 suppresses, and A6 itself is untouched. Do not fold this branch
+    // back into the one below to save a few lines — the saving is the bug.
+    const isAskDecline =
+      shift.kind === SHIFT_KINDS.EXTRA || shift.kind === SHIFT_KINDS.COVER;
+
+    if (isAskDecline) {
+      void this.buildDeclinePushBody(userId, shift)
+        .catch(() => 'The nanny cannot cover that one.')
+        .then(body => {
+          try {
+            notifyHouseholdParents(shift.household_id, {
+              title: 'Answer on your cover request',
+              body,
+              data: {
+                type: PUSH_NOTIFICATION_TYPES.COVER_ASK_DECLINED,
+                shiftId: updated.id,
+                householdId: shift.household_id,
+                localDate: shift.local_date,
+              },
+            });
+          } catch {
+            // notifyHouseholdParents is sync fire-and-forget; swallow.
+          }
+        });
+    } else if (uncovered.pushed.length === 0) {
       // Fire-and-forget, and NOT awaited: the enriched copy needs a member
       // lookup and a child lookup, and neither belongs on the critical path of
       // her decline. A slow or failing directory read must never delay — or

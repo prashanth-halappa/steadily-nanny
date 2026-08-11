@@ -48,6 +48,7 @@ import {
 } from '../domains/schedule/services/schedulePatternCommandService';
 import type { SchedulePattern } from '../domains/schedule/types';
 import { ShiftChangeRequestRepository } from '../domains/shift/repositories/shiftChangeRequestRepository';
+import { ShiftEventRepository } from '../domains/shift/repositories/shiftEventRepository';
 import { ShiftRepository } from '../domains/shift/repositories/shiftRepository';
 import { localDateOf } from '../domains/timesheet/utils/weekStart';
 import { logger } from '../middlewares/logger';
@@ -64,6 +65,49 @@ import { logger } from '../middlewares/logger';
 const EXPIRY_DAYS = 7;
 
 /**
+ * S8 retention — how long machine-generated `shift_events` rows are kept.
+ *
+ * 90 days, chosen against what actually reads them, not by feel. The uncovered
+ * digest's deepest lookback is the previous household-local day plus a
+ * 3-day "closing in" recompute (docs/12-NEED-COVERAGE.md §5); the day thread
+ * renders one date at a time. Ninety days is a full quarter of "why was that
+ * Tuesday uncovered" audit, comfortably past any conversation about it and
+ * past a pay period plus a dispute window — and short enough that the table
+ * stops being unbounded, which is the whole finding.
+ *
+ * ponytail: a plain windowed DELETE, not partitioning and not compaction.
+ * Partitioning `shift_events` by month means a table rewrite, re-issuing the
+ * RLS policy, and touching seven RPCs that insert into it (019/027/029/030/
+ * 031/034/071) — a large, risky change to buy a fast DROP PARTITION nobody is
+ * waiting on. Compaction (keep the newest row per key) is worse: it must
+ * understand every payload shape to know what "the same fact" means, and gets
+ * it wrong the first time a new event type lands. Upgrade path if the volume
+ * ever justifies it: partition by `created_at` month and drop whole
+ * partitions, keeping the same allowlist so thread rows stay outside it.
+ */
+const EVENT_RETENTION_DAYS = 90;
+
+/**
+ * The allowlist S8 sweeps. MACHINE OUTPUT ONLY — see
+ * `ShiftEventRepository.deleteSweptEventsOlderThan` for why this must never
+ * become a denylist, and for the list of types that must never be added.
+ *
+ * S9 / D-25 — THIS IS WHERE UNCOVERED RETRACTION WOULD HAVE GONE, and it is
+ * deliberately absent. When a gap is filled, no compensating event is written
+ * and no existing row is edited: the log is evidence of what was detected, not
+ * state, and every surface recomputes current truth from live shifts,
+ * commitments and closures. The original defect this feature was born from was
+ * a banner that read the event log instead of recomputing, and a retraction
+ * event would rebuild exactly that — a second, lagging source of truth for a
+ * question already answered correctly. Aging a row out is not retracting it:
+ * it never said the gap was still open, only that it was once seen.
+ */
+const SWEEPABLE_EVENT_TYPES: readonly string[] = [
+  'uncovered_care',
+  'pattern_conflict',
+];
+
+/**
  * Uncovered-care backstop window — one `detectUncoveredCareForDate` call per
  * household-local day in `[today, today + UNCOVERED_DETECTION_DAYS]`.
  *
@@ -77,6 +121,10 @@ export interface ScheduleHorizonJobResult {
   successCount: number;
   errorCount: number;
   changeRequestsExpired: number;
+  /** A5: of those, the ones expired because their shift had already started. */
+  changeRequestsExpiredForStartedShifts: number;
+  /** S8: machine-generated `shift_events` rows aged out this run. */
+  eventsSwept: number;
   message: string;
 }
 
@@ -94,7 +142,13 @@ export type HorizonMaterialisationService = Pick<
 /** The narrow change-request-expiry contract this job depends on, for injecting a fake in tests. */
 export type HorizonChangeRequestExpiryRepository = Pick<
   ShiftChangeRequestRepository,
-  'expirePendingOlderThan'
+  'expirePendingOlderThan' | 'expirePendingForStartedShifts'
+>;
+
+/** The narrow retention contract (S8), for injecting a fake in tests. */
+export type HorizonEventRetentionRepository = Pick<
+  ShiftEventRepository,
+  'deleteSweptEventsOlderThan'
 >;
 
 export type HorizonShiftLookupRepository = Pick<ShiftRepository, 'findByIds'>;
@@ -121,6 +175,7 @@ export interface ScheduleHorizonJobDeps {
   households?: HorizonHouseholdRepository;
   detectUncovered?: HorizonUncoveredDetector;
   notifyUser?: HorizonUserNotifier;
+  events?: HorizonEventRetentionRepository;
 }
 
 export async function runScheduleHorizonJob(
@@ -152,13 +207,20 @@ export async function runScheduleHorizonJob(
     deps
   );
 
+  const changeRequestsExpiredForStartedShifts =
+    await expireChangeRequestsForStartedShifts(changeRequests, deps);
+
   await sweepUncoveredCare(deps);
+
+  const eventsSwept = await sweepOldMachineEvents(deps);
 
   return {
     patternsProcessed: patterns.length,
     successCount,
     errorCount,
     changeRequestsExpired,
+    changeRequestsExpiredForStartedShifts,
+    eventsSwept,
     message: `Rolled the materialisation horizon forward for ${successCount}/${patterns.length} accepted schedule pattern(s)`,
   };
 }
@@ -194,6 +256,88 @@ async function expireStaleChangeRequests(
     return expired.length;
   } catch (error) {
     logger.error('Schedule horizon job: shift_change_requests expiry failed', {
+      error,
+    });
+    return 0;
+  }
+}
+
+/**
+ * A5 — the arm the `created_at` sweep above structurally cannot cover.
+ *
+ * `expireStaleChangeRequests` keys on age, so a request opened yesterday about
+ * tomorrow's 08:00 shift is six days from its cutoff: it sits `pending` right
+ * through the morning it was about, telling both sides a decision is still
+ * available for a shift that already happened. This arm closes any pending
+ * request whose shift has started.
+ *
+ * `expired`, NOT auto-accepted and NOT auto-declined (spec §6.2). The terminal
+ * rule for the case that matters — an unanswered CANCEL request — is that the
+ * shift STANDS: silence never cancels a shift, for the same reason silence
+ * never approves one, and the shift's own record carries what actually
+ * happened. Nothing here touches the shift row.
+ *
+ * ponytail: `starts_at <= now`, not "starts within N hours". Expiring a
+ * request while the counterparty could still legitimately answer it would take
+ * a decision away from them to satisfy a tidiness goal. The nightly tick means
+ * a request is closed by the next morning at the latest rather than seven days
+ * later, which is the actual defect; sub-day precision buys nothing, because
+ * the shift is already over either way. If a product reason for closing it AT
+ * the start instant appears, the 5-minute `coverAskExpiryJob` is the tick to
+ * hang it on — not a faster horizon job.
+ *
+ * The requester gets the same `change_request_expired` push the age-based arm
+ * sends: same fact, same words, and a second type for "expired because the
+ * shift arrived" would be one fact with two names.
+ */
+async function expireChangeRequestsForStartedShifts(
+  changeRequests: HorizonChangeRequestExpiryRepository,
+  deps: ScheduleHorizonJobDeps
+): Promise<number> {
+  try {
+    const expired = await changeRequests.expirePendingForStartedShifts(
+      new Date().toISOString()
+    );
+    try {
+      await notifyExpiredChangeRequests(expired, deps);
+    } catch (error) {
+      logger.error('Schedule horizon job: started-shift expiry push failed', {
+        error,
+      });
+    }
+    return expired.length;
+  } catch (error) {
+    logger.error(
+      'Schedule horizon job: started-shift change-request expiry failed',
+      { error }
+    );
+    return 0;
+  }
+}
+
+/**
+ * S8 — age out machine-generated `shift_events`.
+ *
+ * Isolated and swallowed like every other arm: a retention sweep failing is a
+ * disk-space problem, never a reason to fail a run that already rolled the
+ * horizon forward. See `SWEEPABLE_EVENT_TYPES` for what is in scope and
+ * `ShiftEventRepository.deleteSweptEventsOlderThan` for why the list is an
+ * allowlist.
+ */
+async function sweepOldMachineEvents(
+  deps: ScheduleHorizonJobDeps
+): Promise<number> {
+  const eventRepo = deps.events ?? new ShiftEventRepository();
+  try {
+    const cutoff = new Date(
+      Date.now() - EVENT_RETENTION_DAYS * 24 * 60 * 60 * 1000
+    ).toISOString();
+    return await eventRepo.deleteSweptEventsOlderThan(
+      cutoff,
+      SWEEPABLE_EVENT_TYPES
+    );
+  } catch (error) {
+    logger.error('Schedule horizon job: shift_events retention sweep failed', {
       error,
     });
     return 0;

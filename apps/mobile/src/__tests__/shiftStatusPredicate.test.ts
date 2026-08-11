@@ -8,8 +8,13 @@ import { Glob } from 'bun';
  * `declined` and `draft` shifts — a declined shift was once shown to a parent as their
  * nanny's plan for the day and to the nanny as a shift she was due at.
  *
- * The one correct answer is `COVERING_SHIFT_STATUSES` from shared-types:
- *   import { COVERING_SHIFT_STATUSES } from '@steadily-nanny/shared-types/uncoveredCare';
+ * The correct answer is one of TWO shared-types constants, and which one turns
+ * on the question the call site is actually asking (D-22):
+ *   - `COVERING_SHIFT_STATUSES`  — "does this shift PROVIDE COVER?" A pending
+ *     ask is not cover, so it is absent. Parent-facing "who has the children".
+ *   - `SCHEDULED_SHIFT_STATUSES` — "is this shift REAL on someone's schedule /
+ *     clockable / on her widget?" A pending ask is, so it is present.
+ *   import { … } from '@steadily-nanny/shared-types/uncoveredCare';
  * Prefer a module-scope `Set` when filtering in a loop.
  */
 /**

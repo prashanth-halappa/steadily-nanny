@@ -102,8 +102,8 @@ function makeCarerMemberRepo(): any {
   };
 }
 
-function makeQueries(): any {
-  return { getOwned: mock(async () => pendingShift) };
+function makeQueries(overrides: Partial<ShiftWithChildren> = {}): any {
+  return { getOwned: mock(async () => ({ ...pendingShift, ...overrides })) };
 }
 
 /**
@@ -141,7 +141,16 @@ async function flushPush(): Promise<void> {
 }
 
 describe('ShiftCommandService.decline — pushes', () => {
-  it('pushes household parents with shift_declined exactly once', async () => {
+  // -------------------------------------------------------------------------
+  // N9 / D-22 (3-T3). The fixture is an `extra` shift — i.e. a cover ask — so
+  // this now takes the `cover_ask_declined` leg. That is the whole point of
+  // N9: under D-22 a pending ask no longer counts as cover, so the uncovered
+  // push fires at ASK time, and A6 would have suppressed `shift_declined` on
+  // every single cover-ask decline. The parent would never have learned she
+  // said no. The enriched body is unchanged — only the type and title differ,
+  // because the fact differs ("she answered", not "this window is uncovered").
+  // -------------------------------------------------------------------------
+  it('pushes cover_ask_declined exactly once for an ask, immune to A6 suppression', async () => {
     await makeService().decline('carer-1', 's1');
     await flushPush();
 
@@ -151,19 +160,41 @@ describe('ShiftCommandService.decline — pushes', () => {
       { title: string; body: string; data: Record<string, unknown> },
     ];
     expect(householdId).toBe('h1');
-    expect(payload.title).toBe('Shift declined');
-    // The whole point of the change: a parent can triage this from the lock
-    // screen. "The nanny declined a pending shift." told them nothing — not
-    // who, not when, not which child.
+    expect(payload.title).toBe('Answer on your cover request');
+    // The whole point of the earlier change, preserved: a parent can triage
+    // this from the lock screen. "The nanny declined a pending shift." told
+    // them nothing — not who, not when, not which child.
     expect(payload.body).toBe(
       'Ines turned down Mon 3 Aug, 9:00 am–6:00 pm (Ada).'
     );
-    // Field-exact: the mobile route map reads shiftId/householdId off `data`.
     expect(payload.data).toEqual({
-      type: PUSH_NOTIFICATION_TYPES.SHIFT_DECLINED,
+      type: PUSH_NOTIFICATION_TYPES.COVER_ASK_DECLINED,
       shiftId: 's1',
       householdId: 'h1',
+      localDate: '2026-08-03',
     });
+  });
+
+  it('a RECURRING decline still takes the shift_declined leg, still A6-suppressed by an uncovered push', async () => {
+    // N9 is scoped to asks. A pattern shift the carer declines is the case A6
+    // was written for and it must keep behaving exactly as before.
+    const svc = new ShiftCommandService(
+      makeShiftRepo(),
+      makeCarerMemberRepo(),
+      makeQueries({ kind: 'recurring' }),
+      makeEventRepo(),
+      makeChildren()
+    );
+    await svc.decline('carer-1', 's1');
+    await flushPush();
+
+    expect(notifyHouseholdParents).toHaveBeenCalledTimes(1);
+    const [, payload] = notifyHouseholdParents.mock.calls[0] as [
+      string,
+      { title: string; data: Record<string, unknown> },
+    ];
+    expect(payload.title).toBe('Shift declined');
+    expect(payload.data.type).toBe(PUSH_NOTIFICATION_TYPES.SHIFT_DECLINED);
   });
 
   it('never pushes the declining carer herself', async () => {

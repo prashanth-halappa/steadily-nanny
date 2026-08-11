@@ -7,6 +7,7 @@ import {
   type CoveredShiftInput,
   computeUncovered,
   type NeedWindowInput,
+  SCHEDULED_SHIFT_STATUSES,
   type UncoveredWindow,
   uncoveredKey,
 } from '../src/uncoveredCare';
@@ -417,7 +418,7 @@ describe('computeUncovered', () => {
     expectOneWindow(windows, '09:00', '17:00');
   });
 
-  it('15d. pending shift does cover → []', () => {
+  it('15d. pending shift does NOT cover → need fully uncovered (D-22)', () => {
     const windows = run({
       shifts: [
         makeShift({
@@ -428,7 +429,7 @@ describe('computeUncovered', () => {
         }),
       ],
     });
-    expect(windows).toEqual([]);
+    expectOneWindow(windows, '09:00', '17:00');
   });
 
   it('15e. completed shift does cover → []', () => {
@@ -568,10 +569,26 @@ describe('uncoveredKey', () => {
   });
 });
 
-describe('COVERING_SHIFT_STATUSES', () => {
-  it('includes pending, confirmed, and completed', () => {
-    expect(COVERING_SHIFT_STATUSES).toContain('pending');
-    expect(COVERING_SHIFT_STATUSES).toContain('confirmed');
-    expect(COVERING_SHIFT_STATUSES).toContain('completed');
+describe('COVERING_SHIFT_STATUSES (D-22)', () => {
+  it('a pending ask is NOT cover — asking must never silence the alarm', () => {
+    expect(COVERING_SHIFT_STATUSES).not.toContain('pending');
+    expect([...COVERING_SHIFT_STATUSES].sort()).toEqual([
+      'completed',
+      'confirmed',
+    ]);
+  });
+
+  it('SCHEDULED_SHIFT_STATUSES still carries pending — it is a different question', () => {
+    expect([...SCHEDULED_SHIFT_STATUSES].sort()).toEqual([
+      'completed',
+      'confirmed',
+      'pending',
+    ]);
+  });
+
+  it('the two sets differ by exactly `pending`', () => {
+    expect(
+      SCHEDULED_SHIFT_STATUSES.filter(s => !COVERING_SHIFT_STATUSES.includes(s))
+    ).toEqual(['pending']);
   });
 });

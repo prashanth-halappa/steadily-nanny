@@ -36,6 +36,60 @@ export const QUIET_HOURS_EXEMPT_TYPES: ReadonlySet<PushNotificationType> =
   ]);
 
 /**
+ * How close a shift must be for `cover_ask_expired` to break through quiet
+ * hours (D-47, spec §1.3 ‡).
+ */
+export const COVER_ASK_EXPIRY_EXEMPT_WITHIN_MS = 12 * 60 * 60 * 1000;
+
+/**
+ * Is this specific push exempt from quiet hours?
+ *
+ * The set above is the unconditional, closed D-28 list and stays exactly that.
+ * **D-47 adds the product's first CONDITIONAL exemption**, and it is a
+ * deliberate, owner-decided extension rather than someone widening the list
+ * because a type "feels urgent":
+ *
+ *   `cover_ask_expired` breaks through ONLY when the shift the ask was about
+ *   starts within 12 hours.
+ *
+ * An ask that dies at 21:30 for an 07:00 shift is a child with nobody booked
+ * in nine hours; deferring it to 07:00 hands the parent the news at the moment
+ * it stops being fixable. An ask expiring four days out defers like everything
+ * else — same shape as the `shift_no_show` exemption, child-safety-adjacent
+ * facts break through and nothing else does.
+ *
+ * The condition reads the shift's own start instant off the payload. That is a
+ * FACT the emitter carries, not a self-granted exemption flag: a payload
+ * without `shiftStartsAt`, or with one more than 12h out, defers normally. Do
+ * not "simplify" this into a boolean the caller sets — a push that can declare
+ * itself exempt is a quiet-hours setting that does not work.
+ */
+export function isQuietHoursExempt(
+  data: Record<string, unknown> | undefined,
+  now: Date = new Date()
+): boolean {
+  const type = typeof data?.type === 'string' ? data.type : undefined;
+  if (type === undefined) {
+    return false;
+  }
+  if (QUIET_HOURS_EXEMPT_TYPES.has(type as PushNotificationType)) {
+    return true;
+  }
+  if (type === PUSH_NOTIFICATION_TYPES.COVER_ASK_EXPIRED) {
+    const startsAt = data?.shiftStartsAt;
+    if (typeof startsAt !== 'string') {
+      return false;
+    }
+    const untilStart = Date.parse(startsAt) - now.getTime();
+    return (
+      Number.isFinite(untilStart) &&
+      untilStart < COVER_ASK_EXPIRY_EXEMPT_WITHIN_MS
+    );
+  }
+  return false;
+}
+
+/**
  * Permission states a device may be PUSHED to.
  *
  * `provisional` is the silent iOS channel (Notification Center, no prompt)

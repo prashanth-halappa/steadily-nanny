@@ -68,7 +68,15 @@ function makeQueries(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function makeOverlapRepo(shifts: { id: string; household_id: string }[]) {
+function makeOverlapRepo(
+  shifts: Array<{
+    id: string;
+    household_id: string;
+    starts_at?: string;
+    local_date?: string;
+    timezone?: string;
+  }>
+) {
   return {
     listConfirmedForCarerInRange: mock(async () => shifts),
   };
@@ -246,65 +254,177 @@ describe('TimeOffCommandService — conflict push copy by kind', () => {
     return call[1];
   }
 
-  it('a SICK time off over 1 shift reads as sickness, not as a holiday request', async () => {
+  // -------------------------------------------------------------------------
+  // D-23 / S10 SUPERSEDES 068's SICK ARM OF THIS PUSH.
+  //
+  // 068 branched `carer_time_off_conflict`'s copy on kind, which was right for
+  // what existed then: nothing cancelled the overlapping shifts, so the push
+  // was the family's only signal and had to carry the urgency itself. D-23
+  // changes the underlying act — a sick day now auto-opens a cancel change
+  // request per overlapping shift — and matrix row N10 says the whole thing
+  // gets ONE push, not `time_off_requested` plus N × `shift_change_requested`
+  // plus a conflict push (A6). So on the sick-with-overlap path the conflict
+  // push is not re-worded, it is REPLACED.
+  //
+  // The personal-kind pins below are untouched and must stay byte-identical:
+  // planned time off still cancels nothing, so its push is still the whole
+  // signal.
+  // -------------------------------------------------------------------------
+  it('a SICK time off over 1 shift emits N10 only — one fact, one push', async () => {
     const notify = mock(() => undefined);
-    const svc = new TimeOffCommandService(
-      makeTimeOffRepo() as never,
-      makeQueries() as never,
-      makeOverlapRepo([{ id: 's1', household_id: 'hh-reyes' }]) as never,
-      notify,
-      async () => undefined,
-      makeMemberRepo() as never
-    );
-
-    await svc.create('nanny-1', {
-      starts_at: '2026-08-10T08:00:00Z',
-      ends_at: '2026-08-10T18:00:00Z',
-      kind: 'sick',
-    });
-
-    const payload = pushFor(notify.mock.calls, 'hh-reyes');
-    expect(payload.title).toBe('Carer has called in sick');
-    expect(payload.body).toBe(
-      'Your carer has called in sick and will miss 1 booked shift.'
-    );
-    expect(payload.data).toEqual(
-      expect.objectContaining({
-        type: PUSH_NOTIFICATION_TYPES.CARER_TIME_OFF_CONFLICT,
-        householdId: 'hh-reyes',
-        affectedShiftCount: 1,
-        kind: 'sick',
-      })
-    );
-    // The holiday-request phrasing must be nowhere near a sick day.
-    expect(payload.body).not.toContain('taken time off');
-  });
-
-  it('a SICK time off over several shifts pluralises the sickness copy', async () => {
-    const notify = mock(() => undefined);
+    const openCancel = mock(async () => undefined);
     const svc = new TimeOffCommandService(
       makeTimeOffRepo() as never,
       makeQueries() as never,
       makeOverlapRepo([
-        { id: 's1', household_id: 'hh-reyes' },
-        { id: 's2', household_id: 'hh-reyes' },
+        {
+          id: 's1',
+          household_id: 'hh-reyes',
+          starts_at: '2026-08-11T08:00:00Z',
+          local_date: '2026-08-11',
+          timezone: 'UTC',
+        },
       ]) as never,
       notify,
       async () => undefined,
-      makeMemberRepo() as never
+      makeMemberRepo() as never,
+      openCancel
     );
 
-    await svc.create('nanny-1', {
-      starts_at: '2026-08-10T08:00:00Z',
+    const result = await svc.create('nanny-1', {
+      starts_at: '2026-08-11T08:00:00Z',
       ends_at: '2026-08-11T18:00:00Z',
       kind: 'sick',
     });
 
+    // The cancel request is opened on her behalf — S10's missing path.
+    expect(openCancel).toHaveBeenCalledTimes(1);
+    expect(openCancel).toHaveBeenCalledWith('s1', 'nanny-1');
+    expect(result.affected_shift_count).toBe(1);
+
+    // Exactly one push for the household, and it is N10.
+    expect(notify.mock.calls).toHaveLength(1);
     const payload = pushFor(notify.mock.calls, 'hh-reyes');
-    expect(payload.title).toBe('Carer has called in sick');
-    expect(payload.body).toBe(
-      'Your carer has called in sick and will miss 2 booked shifts.'
+    expect(payload.data).toEqual(
+      expect.objectContaining({
+        type: PUSH_NOTIFICATION_TYPES.CARER_SICK_SHIFTS_AFFECTED,
+        householdId: 'hh-reyes',
+        affectedShiftCount: 1,
+      })
     );
+    expect(payload.body).toContain('1 shift');
+    expect(payload.body).toContain('Tue 11 Aug');
+    // The holiday-request phrasing must be nowhere near a sick day.
+    expect(payload.body).not.toContain('taken time off');
+  });
+
+  it('a SICK time off over several shifts still emits ONE push, naming the count and the earliest date', async () => {
+    const notify = mock(() => undefined);
+    const openCancel = mock(async () => undefined);
+    const svc = new TimeOffCommandService(
+      makeTimeOffRepo() as never,
+      makeQueries() as never,
+      makeOverlapRepo([
+        // Deliberately out of order: the body must name the EARLIEST.
+        {
+          id: 's2',
+          household_id: 'hh-reyes',
+          starts_at: '2026-08-12T08:00:00Z',
+          local_date: '2026-08-12',
+          timezone: 'UTC',
+        },
+        {
+          id: 's1',
+          household_id: 'hh-reyes',
+          starts_at: '2026-08-11T08:00:00Z',
+          local_date: '2026-08-11',
+          timezone: 'UTC',
+        },
+      ]) as never,
+      notify,
+      async () => undefined,
+      makeMemberRepo() as never,
+      openCancel
+    );
+
+    await svc.create('nanny-1', {
+      starts_at: '2026-08-11T08:00:00Z',
+      ends_at: '2026-08-12T18:00:00Z',
+      kind: 'sick',
+    });
+
+    expect(openCancel).toHaveBeenCalledTimes(2);
+    expect(notify.mock.calls).toHaveLength(1);
+    const payload = pushFor(notify.mock.calls, 'hh-reyes');
+    expect(payload.body).toContain('2 shifts');
+    expect(payload.body).toContain('Tue 11 Aug');
+  });
+
+  it('a SICK time off overlapping NOTHING falls back to time_off_requested, as today', async () => {
+    const notify = mock(() => undefined);
+    const openCancel = mock(async () => undefined);
+    const svc = new TimeOffCommandService(
+      makeTimeOffRepo() as never,
+      makeQueries() as never,
+      makeOverlapRepo([]) as never,
+      notify,
+      async () => undefined,
+      makeMemberRepo() as never,
+      openCancel
+    );
+
+    await svc.create('nanny-1', {
+      starts_at: '2026-08-11T08:00:00Z',
+      ends_at: '2026-08-11T18:00:00Z',
+      kind: 'sick',
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(openCancel).not.toHaveBeenCalled();
+  });
+
+  it('one cancel request failing to open never abandons the rest, and never fails her sick day', async () => {
+    const notify = mock(() => undefined);
+    const openCancel = mock(async (shiftId: string) => {
+      if (shiftId === 's-bad') throw new Error('rpc unreachable');
+      return undefined;
+    });
+    const svc = new TimeOffCommandService(
+      makeTimeOffRepo() as never,
+      makeQueries() as never,
+      makeOverlapRepo([
+        {
+          id: 's-bad',
+          household_id: 'hh-reyes',
+          starts_at: '2026-08-11T08:00:00Z',
+          local_date: '2026-08-11',
+          timezone: 'UTC',
+        },
+        {
+          id: 's-good',
+          household_id: 'hh-reyes',
+          starts_at: '2026-08-12T08:00:00Z',
+          local_date: '2026-08-12',
+          timezone: 'UTC',
+        },
+      ]) as never,
+      notify,
+      async () => undefined,
+      makeMemberRepo() as never,
+      openCancel
+    );
+
+    const result = await svc.create('nanny-1', {
+      starts_at: '2026-08-11T08:00:00Z',
+      ends_at: '2026-08-12T18:00:00Z',
+      kind: 'sick',
+    });
+
+    expect(openCancel).toHaveBeenCalledTimes(2);
+    // Only the ones that actually opened are counted or announced.
+    expect(result.affected_shift_count).toBe(1);
+    expect(pushFor(notify.mock.calls, 'hh-reyes').body).toContain('1 shift');
   });
 
   // Byte-identical regression pin for every family already on the app.

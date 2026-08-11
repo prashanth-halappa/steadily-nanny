@@ -101,9 +101,11 @@ describe('ClockInCard', () => {
     expect(cardSource).not.toContain('live={Boolean(entry)}');
   });
 
-  it('filters off-clock shifts with COVERING_SHIFT_STATUSES, not a hand-rolled cancelled check', () => {
-    expect(cardSource).toContain('COVERING_SHIFT_STATUSES');
-    expect(cardSource).toContain('COVERING_STATUS_SET');
+  // The question here is "is this shift on HER schedule / can she clock into
+  // it", not "does it cover the children" — so `pending` still counts (D-22).
+  it('filters off-clock shifts with SCHEDULED_SHIFT_STATUSES, not a hand-rolled cancelled check', () => {
+    expect(cardSource).toContain('SCHEDULED_SHIFT_STATUSES');
+    expect(cardSource).toContain('SCHEDULED_STATUS_SET');
     expect(cardSource).not.toMatch(/s\.status !== 'cancelled'/);
   });
 

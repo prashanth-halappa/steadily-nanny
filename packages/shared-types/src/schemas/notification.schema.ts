@@ -137,6 +137,25 @@ export const PUSH_NOTIFICATION_TYPES = {
   // that had no clock-in and no confirmed shift_no_show claim — see
   // jobs/noShowDigestJob.ts.
   SHIFT_NO_SHOW_DIGEST: 'shift_no_show_digest',
+
+  // 3-T3 / D-22 + D-47, matrix rows N8-N10
+  // (docs/design/attention-and-notifications.md §1.3).
+  //
+  // N8: the ask died without an answer. Sent AT the stored
+  // `shifts.cover_ask_expires_at` instant, and quiet-hours exempt when the
+  // shift itself starts within 12h — see `isQuietHoursExempt`.
+  COVER_ASK_EXPIRED: 'cover_ask_expired',
+  // N9: she answered, and the answer was no. DELIBERATELY NOT `shift_declined`
+  // (§1.4): A6 suppresses `shift_declined` once an uncovered push has fired
+  // for the same window, and under D-22 the uncovered push now fires at ASK
+  // time — so reusing `shift_declined` would suppress every cover-ask decline
+  // and the parent would never learn she said no. A6 is untouched; this type
+  // is simply not one of the ones it suppresses.
+  COVER_ASK_DECLINED: 'cover_ask_declined',
+  // N10: one push for a sick day, not `time_off_requested` plus N ×
+  // `shift_change_requested` (A6). D-23 auto-opens a cancel request per
+  // overlapping shift; this batches the lot.
+  CARER_SICK_SHIFTS_AFFECTED: 'carer_sick_shifts_affected',
 } as const;
 
 export type PushNotificationType =
@@ -199,6 +218,11 @@ export const PUSH_TYPE_AUDIENCE: Record<PushNotificationType, PushAudience> = {
   [PUSH_NOTIFICATION_TYPES.SHIFT_NEEDS_RECONFIRM]: 'carer',
   [PUSH_NOTIFICATION_TYPES.SHIFT_NO_SHOW]: 'parent',
   [PUSH_NOTIFICATION_TYPES.SHIFT_NO_SHOW_DIGEST]: 'parent',
+  // 3-T3: all three are the parent's alarm coming back — the person who
+  // asked is the person owed the answer.
+  [PUSH_NOTIFICATION_TYPES.COVER_ASK_EXPIRED]: 'parent',
+  [PUSH_NOTIFICATION_TYPES.COVER_ASK_DECLINED]: 'parent',
+  [PUSH_NOTIFICATION_TYPES.CARER_SICK_SHIFTS_AFFECTED]: 'parent',
   [PUSH_NOTIFICATION_TYPES.SHIFT_REMINDER]: 'carer',
   [PUSH_NOTIFICATION_TYPES.TIMESHEET_APPROVED]: 'carer',
   [PUSH_NOTIFICATION_TYPES.TIMESHEET_AWAITING_APPROVAL]: 'parent',

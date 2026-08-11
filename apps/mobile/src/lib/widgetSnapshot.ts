@@ -72,6 +72,9 @@ export const ARRIVING_WINDOW_MS = 60 * 60 * 1000;
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
+/** The PARENT leg: "who has the children" — a pending ask is a question, not
+ * an answer, so this stays COVERING while the nanny leg
+ * (`useWidgetSnapshotSync.ts`) uses SCHEDULED. */
 const COVERING_STATUS_SET = new Set<string>(COVERING_SHIFT_STATUSES);
 
 /** Row ranking, mirroring `NannyLiveStatusCard`'s KIND_ORDER. */

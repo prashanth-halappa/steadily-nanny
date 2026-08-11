@@ -108,6 +108,16 @@ function parentsAre(...ids: string[]) {
   return { listParentUserIds: mock(async () => ids) };
 }
 
+/**
+ * D-48: no shift in these fixtures has a declined cancellation. Stubbed in
+ * every call because the default lookup would otherwise reach for a real
+ * Supabase client and time the whole file out. The suppression itself is
+ * covered in `noShowJob.disputedCancel.test.ts`.
+ */
+function noneDisputed() {
+  return { listShiftsWithDeclinedCancel: mock(async () => new Set<string>()) };
+}
+
 describe('runNoShowJob — the 20-minute window', () => {
   it.each([
     ['19 minutes after the start, still inside the grace period', minutes(19)],
@@ -124,7 +134,8 @@ describe('runNoShowJob — the 20-minute window', () => {
       log,
       parentsAre(PARENT_ID),
       push,
-      { now: () => at(offset) }
+      { now: () => at(offset) },
+      noneDisputed()
     );
 
     expect(result.noShow.sent).toBe(0);
@@ -145,7 +156,8 @@ describe('runNoShowJob — the 20-minute window', () => {
       alwaysClaims(),
       parentsAre(PARENT_ID),
       push,
-      { now: () => at(offset) }
+      { now: () => at(offset) },
+      noneDisputed()
     );
 
     expect(result.noShow.sent).toBe(1);
@@ -165,7 +177,8 @@ describe('runNoShowJob — she is already on the clock', () => {
       alwaysClaims(),
       parentsAre(PARENT_ID),
       push,
-      { now: () => at(minutes(25)) }
+      { now: () => at(minutes(25)) },
+      noneDisputed()
     );
 
     expect(result.noShow.sent).toBe(0);
@@ -184,7 +197,8 @@ describe('runNoShowJob — she is already on the clock', () => {
       alwaysClaims(),
       parentsAre(PARENT_ID),
       push,
-      { now: () => at(minutes(25)) }
+      { now: () => at(minutes(25)) },
+      noneDisputed()
     );
 
     expect(result.noShow.sent).toBe(0);
@@ -206,7 +220,8 @@ describe('runNoShowJob — she is already on the clock', () => {
       alwaysClaims(),
       parentsAre(PARENT_ID),
       push,
-      { now: () => at(minutes(25)) }
+      { now: () => at(minutes(25)) },
+      noneDisputed()
     );
 
     expect(result.noShow.sent).toBe(0);
@@ -228,7 +243,8 @@ describe('runNoShowJob — she is already on the clock', () => {
       alwaysClaims(),
       parentsAre(PARENT_ID),
       push,
-      { now: () => at(minutes(25)) }
+      { now: () => at(minutes(25)) },
+      noneDisputed()
     );
 
     expect(result.noShow.sent).toBe(0);
@@ -250,7 +266,8 @@ describe('runNoShowJob — she is already on the clock', () => {
       alwaysClaims(),
       parentsAre(PARENT_ID),
       push,
-      { now: () => at(minutes(25)) }
+      { now: () => at(minutes(25)) },
+      noneDisputed()
     );
 
     expect(result.noShow.sent).toBe(1);
@@ -269,7 +286,8 @@ describe('runNoShowJob — shifts that are not candidates', () => {
       alwaysClaims(),
       parentsAre(PARENT_ID),
       push,
-      { now: () => at(minutes(25)) }
+      { now: () => at(minutes(25)) },
+      noneDisputed()
     );
 
     expect(result.noShow.sent).toBe(0);
@@ -291,7 +309,8 @@ describe('runNoShowJob — shifts that are not candidates', () => {
       alwaysClaims(),
       parentsAre(PARENT_ID),
       push,
-      { now: () => at(minutes(25)) }
+      { now: () => at(minutes(25)) },
+      noneDisputed()
     );
 
     expect(result.noShow.sent).toBe(0);
@@ -308,7 +327,8 @@ describe('runNoShowJob — shifts that are not candidates', () => {
       log,
       parentsAre(),
       push,
-      { now: () => at(minutes(25)) }
+      { now: () => at(minutes(25)) },
+      noneDisputed()
     );
 
     expect(result.noShow.sent).toBe(0);
@@ -327,7 +347,8 @@ describe('runNoShowJob — delivery', () => {
       alwaysClaims(),
       parentsAre(PARENT_ID, OTHER_PARENT_ID),
       push,
-      { now: () => at(minutes(25)) }
+      { now: () => at(minutes(25)) },
+      noneDisputed()
     );
 
     expect(result.noShow.sent).toBe(2);
@@ -343,7 +364,8 @@ describe('runNoShowJob — delivery', () => {
       alwaysClaims(),
       parentsAre(PARENT_ID),
       push,
-      { now: () => at(minutes(25)) }
+      { now: () => at(minutes(25)) },
+      noneDisputed()
     );
 
     expect(sent[0]?.payload.title).toBe('No one has clocked in');
@@ -369,7 +391,8 @@ describe('runNoShowJob — delivery', () => {
       alwaysClaims(),
       parentsAre(PARENT_ID),
       push,
-      { now: () => at(minutes(25)) }
+      { now: () => at(minutes(25)) },
+      noneDisputed()
     );
 
     // 07:00Z on 2026-08-06 is 00:00 PDT.
@@ -392,7 +415,8 @@ describe('runNoShowJob — delivery', () => {
       log,
       parentsAre(PARENT_ID),
       push,
-      { now: () => at(minutes(25)) }
+      { now: () => at(minutes(25)) },
+      noneDisputed()
     );
 
     expect(log.claim).not.toHaveBeenCalled();
@@ -410,13 +434,25 @@ describe('runNoShowJob — idempotency', () => {
     const entryLister = entries();
     const parents = parentsAre(PARENT_ID, OTHER_PARENT_ID);
 
-    const first = await runNoShowJob(source, entryLister, log, parents, push, {
-      now: () => at(minutes(25)),
-    });
+    const first = await runNoShowJob(
+      source,
+      entryLister,
+      log,
+      parents,
+      push,
+      { now: () => at(minutes(25)) },
+      noneDisputed()
+    );
     // Ten minutes later, the next pg_cron tick — same shift, still no entry.
-    const second = await runNoShowJob(source, entryLister, log, parents, push, {
-      now: () => at(minutes(35)),
-    });
+    const second = await runNoShowJob(
+      source,
+      entryLister,
+      log,
+      parents,
+      push,
+      { now: () => at(minutes(35)) },
+      noneDisputed()
+    );
 
     expect(first.noShow.sent).toBe(2);
     expect(second.noShow.sent).toBe(0);
@@ -441,7 +477,8 @@ describe('runNoShowJob — idempotency', () => {
       log,
       parentsAre(PARENT_ID),
       push,
-      { now: () => at(minutes(25)) }
+      { now: () => at(minutes(25)) },
+      noneDisputed()
     );
 
     expect(log.sweepStaleClaims).toHaveBeenCalledTimes(1);
@@ -470,7 +507,8 @@ describe('runNoShowJob — failure isolation', () => {
       log,
       parentsAre(PARENT_ID),
       push,
-      { now: () => at(minutes(25)) }
+      { now: () => at(minutes(25)) },
+      noneDisputed()
     );
 
     expect(result.noShow.sent).toBe(1);
@@ -490,7 +528,8 @@ describe('runNoShowJob — failure isolation', () => {
       alwaysClaims(),
       parentsAre(PARENT_ID),
       push,
-      { now: () => at(minutes(25)) }
+      { now: () => at(minutes(25)) },
+      noneDisputed()
     );
 
     expect(result.errorCount).toBe(0);
@@ -563,7 +602,8 @@ describe('DefaultNoShowTimeEntryLister — voided entries are not coverage (069)
       alwaysClaims(),
       parentsAre(PARENT_ID),
       push,
-      { now: () => at(minutes(25)) }
+      { now: () => at(minutes(25)) },
+      noneDisputed()
     );
 
     expect(result.noShow.sent).toBe(1);
@@ -581,7 +621,8 @@ describe('DefaultNoShowTimeEntryLister — voided entries are not coverage (069)
       alwaysClaims(),
       parentsAre(PARENT_ID),
       push,
-      { now: () => at(minutes(25)) }
+      { now: () => at(minutes(25)) },
+      noneDisputed()
     );
 
     expect(chain.neq).toHaveBeenCalledWith('status', 'voided');

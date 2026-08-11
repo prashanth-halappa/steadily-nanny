@@ -16,6 +16,19 @@ export interface OnboardingState {
   status: OnboardingStatus;
   /** Derived from server membership. Null while loading or genuinely unset. */
   role: SetupRole | null;
+  /**
+   * The RAW `household_members.role` for the same membership `role` is
+   * derived from — `owner` and `parent` kept apart, which `role` deliberately
+   * collapses (S4, `docs/design/attention-and-notifications.md` §7).
+   *
+   * ADDITIVE. `role` is unchanged and every existing consumer of it is
+   * correct; this exists so a surface that needs to know WHICH kind of parent
+   * is reading (the `approval_mode='owner_only'` restricted state) can ask,
+   * instead of showing a co-parent an Approve button that 403s. Consumed via
+   * `useRestrictedAction`, never as a second write gate of its own — the
+   * server's gate is still the one that decides.
+   */
+  membershipRole: HouseholdRole | null;
   /** The relevant household id for the resolved membership. Null while
    * loading or if none exists yet. */
   householdId: string | null;
@@ -195,6 +208,7 @@ export function useIsOnboarded(): OnboardingState {
     return {
       status: 'loading',
       role: null,
+      membershipRole: null,
       householdId: null,
       isPastMember: false,
       membershipsError: true,
@@ -206,6 +220,7 @@ export function useIsOnboarded(): OnboardingState {
     return {
       status: 'loading',
       role: null,
+      membershipRole: null,
       householdId: null,
       isPastMember: false,
       membershipsError: false,
@@ -217,6 +232,7 @@ export function useIsOnboarded(): OnboardingState {
     return {
       status: 'not-onboarded',
       role: null,
+      membershipRole: null,
       householdId: null,
       isPastMember: false,
       membershipsError: false,
@@ -228,6 +244,7 @@ export function useIsOnboarded(): OnboardingState {
     return {
       status: 'loading',
       role: setupRole,
+      membershipRole: membership.role,
       householdId: resolvedHouseholdId,
       isPastMember,
       membershipsError: false,
@@ -241,6 +258,7 @@ export function useIsOnboarded(): OnboardingState {
   return {
     status: onboarded ? 'onboarded' : 'not-onboarded',
     role: setupRole,
+    membershipRole: membership.role,
     householdId: resolvedHouseholdId,
     isPastMember,
     membershipsError: false,

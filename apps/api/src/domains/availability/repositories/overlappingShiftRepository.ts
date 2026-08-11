@@ -13,6 +13,14 @@ import { DatabaseError } from '../../../errors';
 export interface OverlappingBookedShift {
   id: string;
   household_id: string;
+  /**
+   * D-23: N10's body names the EARLIEST affected date ("3 shifts from Tue 12
+   * Aug"), so the batch push needs more than a count. `local_date` is the
+   * household-local day the shift belongs to, already trigger-maintained.
+   */
+  starts_at: string;
+  local_date: string;
+  timezone: string;
 }
 
 export class OverlappingShiftRepository {
@@ -31,7 +39,7 @@ export class OverlappingShiftRepository {
   ): Promise<OverlappingBookedShift[]> {
     const { data, error } = await supabaseService
       .from(this.table)
-      .select('id, household_id')
+      .select('id, household_id, starts_at, local_date, timezone')
       .eq('carer_id', carerId)
       .eq('status', SHIFT_STATUSES.CONFIRMED)
       .lt('starts_at', to)

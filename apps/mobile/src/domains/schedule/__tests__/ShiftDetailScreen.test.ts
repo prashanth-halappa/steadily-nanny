@@ -62,8 +62,40 @@ describe('ShiftDetailScreen source', () => {
     expect(source).toContain('StatusPill');
     expect(source).toContain('STATUS_TO_VARIANT');
     expect(source).toContain('shift-detail-status');
-    expect(source).toContain('detail.shortNoticePaidHint');
+    expect(source).toContain('shift-detail-short-notice-hint');
     expect(source).toContain('detail.awaitingNannyConfirm');
+  });
+
+  // §6.1 (D21): the arrangement's window is the ONLY cancellation window.
+  // The hint and the dialog must read ONE derived answer, never two — the
+  // old copy asserted a paid outcome straight off `is_short_notice`, a flag
+  // computed from an unrelated column, and could contradict the dialog.
+  it('S3/§6.1: the short-notice hint and the cancel dialog read the same arrangement-derived answer', () => {
+    expect(source).toContain('resolveCancellationPayOutcome');
+    expect(source).toContain('useCurrentPayArrangement');
+    expect(source).not.toContain('detail.shortNoticePaidHint');
+    // One derivation, rendered in both places.
+    expect(source.match(/resolveCancellationPayOutcome\(/g)?.length).toBe(1);
+    expect(source).toContain('{cancelPaySentence}');
+    expect(source).toContain('cancelDialogBody');
+    expect(source).toContain('shift-detail-cancel-body');
+    // S14 — the third sentence is in every variant, not a branch.
+    expect(source).toContain('detail.cancelNeedsAccept');
+  });
+
+  it('S3: no hand-rolled currency formatting reaches the dialog', () => {
+    expect(source).not.toContain('toFixed(2)');
+    expect(source).not.toContain('/ 100');
+  });
+
+  it('S4: the cancel action is disabled WITH A REASON, never hidden', () => {
+    expect(source).toContain('RestrictedActionButton');
+    expect(source).toContain('useRestrictedAction');
+    expect(source).toContain('reason={cancelReason}');
+    // Mirrors the server, which gates a co-parent's cancel only on short
+    // notice — computed live, never off the authored `is_short_notice` flag.
+    expect(source).toContain('hoursUntilStart(shift.starts_at)');
+    expect(source).toContain('household.short_notice_hours');
   });
 
   it('names who raised (and who responded to) each change request', () => {

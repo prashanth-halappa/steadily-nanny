@@ -212,4 +212,54 @@ export class ShiftEventRepository {
     }
     return created;
   }
+
+  /**
+   * S8 retention — the ONLY delete on this table, and it is allowlisted.
+   *
+   * `shift_events` grows without bound: the nightly sweep writes an
+   * `uncovered_care` row per uncovered window per household per day across a
+   * 30-day horizon, and `pattern_conflict` re-fires on every re-materialisation.
+   * Those rows are MACHINE OUTPUT — keyed, deduped, `actor_id` null, and
+   * recomputed from live data by every surface that renders them
+   * (docs/12-NEED-COVERAGE.md §4: "compute live; do not accumulate"). Deleting
+   * an old one destroys no evidence, because the row was never the source of
+   * truth for anything.
+   *
+   * `types` IS AN ALLOWLIST AND MUST STAY ONE. A denylist ("delete everything
+   * except the thread types") would make every event type added after this
+   * line silently deletable, including the next dispute-bearing one. The
+   * append-only guarantee that matters — no UPDATE and no DELETE policy on the
+   * table, so nothing but the service role can touch it, and the day thread and
+   * the 3-T1 week thread are untouchable through every normal path — is
+   * unchanged: this method adds no policy, it is one service-role sweep with a
+   * hardcoded set of machine-generated types.
+   *
+   * NEVER add `timesheet_queried`, `timesheet_note_added`,
+   * `timesheet_query_withdrawn` (the week thread — the dispute record D-18/D-19
+   * exist for), `shift_cancelled` (it carries the cancellation-pay verdict),
+   * or any `change_request_*` row to that set.
+   */
+  async deleteSweptEventsOlderThan(
+    cutoffIso: string,
+    types: readonly string[]
+  ): Promise<number> {
+    if (types.length === 0) {
+      return 0;
+    }
+    const { data, error } = await supabaseService
+      .from(this.table)
+      .delete()
+      .in('event_type', [...types])
+      .lt('created_at', cutoffIso)
+      .select('id');
+
+    if (error) {
+      throw new DatabaseError(
+        'Failed to sweep old shift events',
+        'DATABASE_ERROR',
+        { details: error.message, cutoffIso }
+      );
+    }
+    return (data ?? []).length;
+  }
 }

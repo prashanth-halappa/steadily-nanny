@@ -18,6 +18,7 @@ import { StatusPill } from '@/src/components/ui/status-pill';
 import { Body, H3, H4, Small } from '@/src/components/ui/typography';
 import { useHouseholdCarers } from '@/src/domains/schedule/hooks/useHouseholdCarers';
 import { resolveCarerName } from '@/src/domains/schedule/utils/memberDisplayName';
+import { localDateToWeekday } from '@/src/domains/schedule/utils/shiftGrouping';
 import {
   describeUncoveredCause,
   inferUncoveredCauseDetail,
@@ -29,7 +30,11 @@ import { useHouseholdMembers } from '@/src/hooks/queries/useHouseholdMembers';
 import { useShiftsRange } from '@/src/hooks/queries/useShiftsRange';
 import { addLocalDays, localDateInZone } from '@/src/lib/localDate';
 import { utcIsoToWallClockHHMM, wallClockToUtcIso } from '@/src/lib/wallClock';
-import { type PlanLine, useTodayCoverage } from '../hooks/useTodayCoverage';
+import {
+  gapEscalationHours,
+  type PlanLine,
+  useTodayCoverage,
+} from '../hooks/useTodayCoverage';
 
 interface TodayCoverageProps {
   householdId: string;
@@ -255,14 +260,35 @@ export function TodayCoverage({
     ? carerFirstName(resolveCarerName(singleCarer, ''))
     : '';
 
-  const gapHeadline =
-    windows.length === 1 && singleWindow
-      ? t('coverage.gap.titleOne', {
-          childName: childName(singleWindow.childId, householdChildren),
-          start: formatClockTime(singleWindow.startsAt, timeZone),
-          end: formatClockTime(singleWindow.endsAt, timeZone),
-        })
-      : t('coverage.gap.titleMany', { count: windows.length });
+  // §5.4 (D-47): inside 12h the headline stops describing the gap and starts
+  // counting down to it. Demoted the card has already lost arbitration to
+  // something more urgent, so it must not shout — and the tone stays
+  // `attention`, never `critical`: the escalation is copy, not a new register.
+  const escalationHours =
+    !demoted && singleWindow
+      ? gapEscalationHours(singleWindow.startsAt, Date.now())
+      : null;
+
+  const gapHeadline = (() => {
+    if (!singleWindow) {
+      return t('coverage.gap.titleMany', { count: windows.length });
+    }
+    const start = formatClockTime(singleWindow.startsAt, timeZone);
+    const end = formatClockTime(singleWindow.endsAt, timeZone);
+    if (escalationHours !== null) {
+      return t('coverage.gap.titleOneEscalated', {
+        weekday: tSchedule(`weekday.${localDateToWeekday(state.localDate)}`),
+        start,
+        end,
+        count: escalationHours,
+      });
+    }
+    return t('coverage.gap.titleOne', {
+      childName: childName(singleWindow.childId, householdChildren),
+      start,
+      end,
+    });
+  })();
 
   const extraHref = (() => {
     if (!singleWindow) return null;

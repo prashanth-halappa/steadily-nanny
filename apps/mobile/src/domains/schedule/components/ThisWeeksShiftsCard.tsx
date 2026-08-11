@@ -13,7 +13,7 @@
  */
 import type { HouseholdMember } from '@steadily-nanny/shared-types/schemas/household.schema';
 import type { Shift } from '@steadily-nanny/shared-types/schemas/shift.schema';
-import { COVERING_SHIFT_STATUSES } from '@steadily-nanny/shared-types/uncoveredCare';
+import { SCHEDULED_SHIFT_STATUSES } from '@steadily-nanny/shared-types/uncoveredCare';
 import { type Href, useRouter } from 'expo-router';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -34,7 +34,9 @@ import { useAuthStore } from '@/src/store/auth';
 import { useElevation } from '~/lib/design-tokens/elevation';
 import { spacing } from '~/lib/design-tokens/spacing';
 
-const COVERING_STATUS_SET = new Set<string>(COVERING_SHIFT_STATUSES);
+/** "Is this shift real on my schedule" — the card renders a `pending` row
+ * with its own "Waiting" pill, so dropping pending would hide her own ask. */
+const SCHEDULED_STATUS_SET = new Set<string>(SCHEDULED_SHIFT_STATUSES);
 
 type ShiftStatusVariant = NonNullable<StatusPillProps['variant']>;
 
@@ -98,7 +100,7 @@ export function ThisWeeksShiftsCard() {
     return (shiftsQuery.data ?? [])
       .filter(
         s =>
-          COVERING_STATUS_SET.has(s.status) &&
+          SCHEDULED_STATUS_SET.has(s.status) &&
           new Date(s.ends_at).getTime() >= now
       )
       .sort((a, b) => a.starts_at.localeCompare(b.starts_at))

@@ -30,8 +30,41 @@ import {
 } from './useTodayCoverRows';
 import { useUncoveredToday } from './useUncoveredToday';
 
+/** "Does this shift provide cover" — under D-22 a pending ask does not, which
+ * is what keeps the gap card up for the whole ask lifecycle (§2.4a). */
 const COVERING_STATUS_SET = new Set<string>(COVERING_SHIFT_STATUSES);
 const ARRIVING_WINDOW_MS = 60 * 60 * 1000;
+const ESCALATION_THRESHOLD_MS = 12 * 60 * 60 * 1000;
+const MS_PER_HOUR = 60 * 60 * 1000;
+
+/**
+ * §5.4 (D-47) — the gap card's self-escalation, as whole hours until the
+ * uncovered window starts, or `null` when it should not escalate.
+ *
+ * Entirely client-side and derived from the clock: no push, no job, no server
+ * state. The card already recomputes on focus, so a boolean over `Date.now()`
+ * is the whole mechanism.
+ *
+ * Rounding is DOWN, not to nearest: 9h40m reads "in 9 hours". Overstating the
+ * runway is the one error direction that matters on a card whose entire job is
+ * to say nobody is booked. The floor at 1 exists because minutes are banned
+ * here (§5.4 — this is the only countdown in the product, and it is in whole
+ * hours), so the last hour reads "in 1 hour" rather than counting to zero.
+ */
+export function gapEscalationHours(
+  startsAt: string,
+  nowMs: number
+): number | null {
+  const msUntil = Date.parse(startsAt) - nowMs;
+  if (
+    !Number.isFinite(msUntil) ||
+    msUntil <= 0 ||
+    msUntil >= ESCALATION_THRESHOLD_MS
+  ) {
+    return null;
+  }
+  return Math.max(1, Math.floor(msUntil / MS_PER_HOUR));
+}
 
 export type TodayCoverage =
   | { status: 'loading' }

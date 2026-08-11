@@ -17,7 +17,7 @@ import {
 } from '@steadily-nanny/shared-types';
 import { ValidationError } from '../../../errors';
 import { logger } from '../../../middlewares/logger';
-import { QUIET_HOURS_EXEMPT_TYPES } from '../constants';
+import { isQuietHoursExempt } from '../constants';
 import {
   NotificationPrefsRepository,
   type NotificationPrefsRow,
@@ -112,8 +112,8 @@ export async function updatePrefs(
  * Whether `sendToUser` should attempt Expo delivery for this payload.
  * Fail-open on prefs errors and on invalid quiet-hours timezones. Unknown /
  * missing `data.type` is treated as enabled (cannot match an opt-out).
- * Deadline-bearing types in `QUIET_HOURS_EXEMPT_TYPES` still deliver during
- * quiet hours (opt-out still wins).
+ * Deadline-bearing types still deliver during quiet hours, per
+ * `isQuietHoursExempt` (opt-out still wins over the exemption).
  */
 export async function shouldDeliverPush(
   userId: string,
@@ -180,7 +180,8 @@ export async function shouldDeliverPush(
     typeof eventType === 'string'
       ? (eventType as PushNotificationType)
       : undefined;
-  const exempt = type !== undefined && QUIET_HOURS_EXEMPT_TYPES.has(type);
+  // D-28's closed list, plus D-47's one conditional arm — see `constants.ts`.
+  const exempt = isQuietHoursExempt(payload.data, now);
 
   if (exempt) {
     logger.info('Quiet hours active but push type is exempt; delivering', {
