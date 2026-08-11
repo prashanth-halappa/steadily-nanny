@@ -84,6 +84,30 @@ export function buildTermsDiff(
   return rows;
 }
 
+/**
+ * §8.5's one-line diff summary — "Hourly rate £18.50 → £20.00 · Guaranteed
+ * hours 45h a week → 50h a week". The SAME rows §7 reviewed, joined; a
+ * history row that described a change differently from how it was reviewed
+ * is exactly what sharing `buildTermsDiff` exists to prevent.
+ *
+ * `limit` trims the sentence for the scheduled-change card (§6), which has
+ * room for the headline terms only. An empty diff yields an empty string —
+ * callers decide what "nothing changed" should read as.
+ */
+export function summarizeTermsDiff(
+  diff: readonly TermDiffRow[],
+  limit = diff.length
+): string {
+  return diff
+    .slice(0, limit)
+    .map(row =>
+      row.before === null
+        ? `${row.label} ${row.after}`
+        : `${row.label} ${row.before} → ${row.after}`
+    )
+    .join(' · ');
+}
+
 export interface TermsChangeConsequence {
   /** i18n key + params, ready for `t(key, params)`. */
   key: string;

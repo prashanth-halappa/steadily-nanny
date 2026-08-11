@@ -183,6 +183,18 @@ export const queryKeys = {
       [...queryKeys.pay.all, 'current', householdId, carerId] as const,
     history: (householdId?: string, carerId?: string) =>
       [...queryKeys.pay.all, 'history', householdId, carerId] as const,
+    // D-31 ack/dissent rows (081) hang off ONE arrangement version, not off
+    // the (household, carer) pair — a new version starts with no acks, so
+    // the arrangement id has to be in the key or the previous version's
+    // "Seen" would be shown against terms nobody has read yet.
+    acks: (householdId?: string, carerId?: string, arrangementId?: string) =>
+      [
+        ...queryKeys.pay.all,
+        'acks',
+        householdId,
+        carerId,
+        arrangementId,
+      ] as const,
   },
 
   // Paid time off (Phase 3). Balance is per calendar year — the year is part

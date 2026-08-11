@@ -16,7 +16,7 @@ const VALID_ACK = {
   id: '11111111-1111-4111-8111-111111111111',
   arrangement_id: '22222222-2222-4222-8222-222222222222',
   carer_id: '33333333-3333-4333-8333-333333333333',
-  kind: 'seen',
+  kind: 'seen' as const,
   note: null,
   created_at: '2026-08-11T09:00:00.000Z',
 };
@@ -27,7 +27,11 @@ describe('PayArrangementAckSchema', () => {
   });
 
   it('parses a disagreed row carrying an optional note', () => {
-    const row = { ...VALID_ACK, kind: 'disagreed', note: 'The rate is wrong.' };
+    const row = {
+      ...VALID_ACK,
+      kind: 'disagreed' as const,
+      note: 'The rate is wrong.',
+    };
     expect(PayArrangementAckSchema.parse(row)).toEqual(row);
   });
 

@@ -50,7 +50,8 @@
     "chipEarlier": "An earlier date",
     "dateInputLabel": "Date",
     "datePlaceholder": "YYYY-MM-DD",
-    "dateInvalid": "Enter a date of today or earlier, as YYYY-MM-DD.",
+    "dateInvalid": "Enter a real date, as YYYY-MM-DD.",
+    "dateTooFarAhead": "A change can start up to 12 months from today.",
     "backdatingHint": "Weeks that are already approved keep their approved totals.",
     "midWeekConsequence": "This week will be paid at two rates: {{oldRate}} up to {{oldUntil}}, then {{newRate}} from {{newFrom}}.",
     "overtimeAfterLabel": "Overtime after",
@@ -79,6 +80,51 @@
     "notePlaceholder": "e.g. Annual review",
     "submitButton": "Set new terms",
     "savedToast": "New terms saved"
+  },
+  "termGroups": {
+    "heading": "The rest of the agreement",
+    "overtime": "Overtime",
+    "guaranteedHours": "Guaranteed hours",
+    "pto": "Paid time off",
+    "holidays": "Holidays",
+    "mileage": "Mileage",
+    "outsideWages": "Outside wages",
+    "inWriting": "In writing",
+    "weeklyEquivalent": "{{amount}} a week at {{hours}} guaranteed hours"
+  },
+  "preset": {
+    "button": "Use common defaults",
+    "title": "Common overtime defaults",
+    "body": "Overtime after 8 hours in a day and 40 in a week, at 1.5×. Double time after 12 hours in a day, at 2×. A seventh consecutive day worked is paid as overtime.",
+    "disclaimer": "The most common values — a starting point, not legal advice. Check each one against what you've agreed.",
+    "reviewed": "Reviewed {{month}} {{year}}.",
+    "checkbox": "I'll check these terms are right for our family.",
+    "confirm": "Use these defaults",
+    "cancel": "Cancel",
+    "appliedNote": "Most common values are populated — check each one and update anything that doesn't match what you've agreed."
+  },
+  "outsideWages": {
+    "hint": "These are paid outside the hourly wage. Steadily shows them on the week but never adds them to the week's gross.",
+    "labelFieldLabel": "What it's for",
+    "labelPlaceholder": "e.g. Health stipend",
+    "amountFieldLabel": "Amount",
+    "cadenceWeekly": "Weekly",
+    "cadenceMonthly": "Monthly",
+    "cadenceAnnual": "Annual",
+    "removeRow": "Remove this payment",
+    "addRow": "+ Add a recurring payment",
+    "summary_one": "{{count}} recurring payment",
+    "summary_other": "{{count}} recurring payments"
+  },
+  "inWriting": {
+    "noticePeriodLabel": "Notice period (weeks)",
+    "probationLabel": "Probation (days)",
+    "dutiesLabel": "What the job covers",
+    "dutiesPlaceholder": "e.g. Care for Mia and Theo, meals and cleanup for the kids, their laundry, school pickup.",
+    "drivingLabel": "Driving",
+    "drivingPlaceholder": "e.g. School run in our car; mileage paid for errands.",
+    "hint": "Documentation of what you've agreed. None of it changes what a week pays.",
+    "summary": "{{filled}} of {{total}} filled in"
   },
   "setup": {
     "title": "Set up pay for {{name}}",
@@ -157,6 +203,35 @@
     "pto": "The yearly grant changes now. Time off already marked paid isn't recalculated.",
     "holidays": "Holidays already worked and approved keep what they paid.",
     "checkTheWeek": "A change partway through a week means this week's total may not match what your payroll service works out. Check the week before you send it."
+  },
+  "ack": {
+    "changedTitle": "Your terms changed on {{date}}",
+    "firstTitle": "Your pay terms are set",
+    "seenButton": "I've seen these terms",
+    "disagreeButton": "I don't agree with this",
+    "reassurance": "This records the date you saw them. It isn't an agreement to them, and it doesn't give anything up.",
+    "recordFailed": "That didn't record. Check your connection and try again.",
+    "seenBy": "Seen by {{name}} on {{date}}",
+    "seen": "Seen {{date}}",
+    "notSeenYet": "Not seen yet",
+    "disagreed": "Disagreed {{date}}",
+    "historySeen": "Seen {{date}}"
+  },
+  "dissent": {
+    "title": "Tell them what's wrong",
+    "placeholder": "What doesn't look right?",
+    "hint": "This is recorded with the date and your family sees it. It doesn't change the terms, and it doesn't stop them applying — it puts your side on the record.",
+    "submit": "Record this"
+  },
+  "scheduledChange": {
+    "title": "New terms start {{date}}",
+    "editButton": "Edit",
+    "cancelButton": "Cancel this",
+    "confirmTitle": "Call off this change?",
+    "confirmBody": "The scheduled change won't take effect. Both the change and this cancellation stay in the history.",
+    "confirmKeep": "Keep it",
+    "confirmCancel": "Call it off",
+    "cancelFailed": "That didn't go through. If the start date has already arrived, these terms are in effect — change them instead."
   },
   "correctPaymentSheet": {
     "title": "Correct this payment",

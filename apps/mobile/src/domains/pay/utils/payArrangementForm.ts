@@ -18,7 +18,11 @@
  */
 import type { CreatePayArrangementRequest } from '@steadily-nanny/shared-types/schemas/payArrangement.schema';
 import { addLocalDays } from '@/src/lib/localDate';
-import { formatMoney, parseMajorToMinor } from '@/src/lib/money';
+import {
+  formatMoney,
+  minorToMajorText,
+  parseMajorToMinor,
+} from '@/src/lib/money';
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -82,6 +86,21 @@ function addMonthsISO(dateISO: string, months: number): string {
   return `${yy}-${mm}-${dd}`;
 }
 
+/**
+ * D-16's horizon, as its own predicate so the DATE FIELD can name which of the
+ * two refusals it is looking at. `buildCreatePayArrangementRequest` returning
+ * `null` is a single "something is wrong" signal — fine for disabling Save,
+ * useless for telling a parent whether they typed February 30th or a raise
+ * three years out. Both callers use this and the request builder below calls
+ * it too, so the line can only move in one place.
+ */
+export function isBeyondFutureHorizon(
+  dateISO: string,
+  todayISO: string
+): boolean {
+  return dateISO > addMonthsISO(todayISO, MAX_FUTURE_MONTHS);
+}
+
 /** A local (non-UTC-shifting) `Date` for a nominal "yyyy-mm-dd" string. */
 function toLocalDate(dateISO: string): Date {
   const [y, m, d] = dateISO.split('-').map(Number);
@@ -127,6 +146,15 @@ export function formatShortDate(dateISO: string): string {
   if (!isValidCalendarDate(dateISO)) return dateISO;
   const [, m, d] = dateISO.split('-').map(Number);
   return `${d} ${MONTHS_ABBR[(m ?? 1) - 1]}`;
+}
+
+/** "Aug 2026" — for §5.2's preset review date, the one place a month and a
+ * year appear without a day. Here rather than in the sheet so the en-US pass
+ * finds every date formatter in one file. */
+export function formatMonthYear(dateISO: string): string {
+  if (!isValidCalendarDate(dateISO)) return dateISO;
+  const [y, m] = dateISO.split('-').map(Number);
+  return `${MONTHS_ABBR[(m ?? 1) - 1]} ${y}`;
 }
 
 /** "1 Apr 2026" — with year, for "In effect since" / history rows. */
@@ -378,6 +406,66 @@ function buildTermsBag(
 }
 
 /**
+ * `buildTermsBag` read backwards: the stored jsonb turned back into the form
+ * fields that produced it, so re-opening the change sheet shows what was
+ * agreed rather than a blank group. The pair lives in one file deliberately —
+ * the weeks/days conversion has to be inverted EXACTLY, and a reader that
+ * lived in the component would be the second place the unit is decided.
+ *
+ * The bag is `Record<string, unknown>` on the wire (deliberately untyped until
+ * this slice, see the schema's own comment), so every read is narrowed here
+ * and anything of the wrong shape is dropped rather than coerced — a
+ * hand-edited row must not be able to put a number into a Textarea.
+ */
+export function readTermsBag(
+  terms: Record<string, unknown> | undefined
+): Pick<
+  PayTermsFormState,
+  | 'noticePeriodWeeksText'
+  | 'probationDaysText'
+  | 'dutiesText'
+  | 'drivingText'
+  | 'liveInText'
+  | 'stipends'
+> {
+  const noticeDays = terms?.notice_period_days;
+  const probationDays = terms?.probation_days;
+  const recurring = terms?.recurring;
+
+  return {
+    noticePeriodWeeksText:
+      typeof noticeDays === 'number' ? String(noticeDays / 7) : '',
+    probationDaysText:
+      typeof probationDays === 'number' ? String(probationDays) : '',
+    dutiesText: typeof terms?.duties === 'string' ? terms.duties : '',
+    drivingText: typeof terms?.driving === 'string' ? terms.driving : '',
+    liveInText: typeof terms?.live_in === 'string' ? terms.live_in : '',
+    stipends: Array.isArray(recurring)
+      ? recurring.flatMap((row): StipendFormRow[] => {
+          if (typeof row !== 'object' || row === null) return [];
+          const { label, amount_minor, cadence } = row as Record<
+            string,
+            unknown
+          >;
+          if (typeof label !== 'string' || typeof amount_minor !== 'number') {
+            return [];
+          }
+          return [
+            {
+              label,
+              amountText: minorToMajorText(amount_minor),
+              cadence:
+                cadence === 'monthly' || cadence === 'annual'
+                  ? cadence
+                  : 'weekly',
+            },
+          ];
+        })
+      : [],
+  };
+}
+
+/**
  * Builds the POST body, or `null` if any field is invalid — including a
  * missing cancellation choice, which the setup flow requires explicitly
  * (TIER0-CX-SPEC.md §2 "First-time setup": "this is the one term where
@@ -396,9 +484,7 @@ export function buildCreatePayArrangementRequest(
   // check `payArrangementCommandService.create`'s `addMonthsISO` makes
   // server-side; this is the client's fast-fail twin, never the source of
   // truth). ISO "yyyy-mm-dd" strings compare correctly lexicographically.
-  if (
-    state.effectiveDateISO > addMonthsISO(state.todayISO, MAX_FUTURE_MONTHS)
-  ) {
+  if (isBeyondFutureHorizon(state.effectiveDateISO, state.todayISO)) {
     return null;
   }
 

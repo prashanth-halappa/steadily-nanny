@@ -135,3 +135,122 @@ describe('payArrangementApi.create', () => {
     expect(apiClient.post).not.toHaveBeenCalled();
   });
 });
+
+// --- D-31/D-45 ack + dissent, D-16 cancel-scheduled -------------------------
+
+const ARRANGEMENT_ID = validArrangement.id;
+const ackUrlBase = `/v1/households/${HOUSEHOLD_ID}/carers/${CARER_ID}/pay-arrangements/${ARRANGEMENT_ID}`;
+const seenRow = {
+  id: '66666666-6666-4666-8666-666666666666',
+  arrangement_id: ARRANGEMENT_ID,
+  carer_id: CARER_ID,
+  kind: 'seen',
+  note: null,
+  created_at: now,
+};
+
+describe('payArrangementApi.ack', () => {
+  it('POSTs .../ack with no body and returns the validated row', async () => {
+    apiClient.post.mockResolvedValue({
+      data: { data: { pay_arrangement_ack: seenRow } },
+    });
+
+    const result = await payArrangementApi.ack(
+      HOUSEHOLD_ID,
+      CARER_ID,
+      ARRANGEMENT_ID
+    );
+
+    expect(apiClient.post).toHaveBeenCalledWith(`${ackUrlBase}/ack`);
+    expect(result.kind).toBe('seen');
+  });
+});
+
+describe('payArrangementApi.dissent', () => {
+  it('POSTs .../dissent with the note and returns the validated row', async () => {
+    apiClient.post.mockResolvedValue({
+      data: {
+        data: {
+          pay_arrangement_ack: {
+            ...seenRow,
+            kind: 'disagreed',
+            note: 'The new rate is lower.',
+          },
+        },
+      },
+    });
+
+    const result = await payArrangementApi.dissent(
+      HOUSEHOLD_ID,
+      CARER_ID,
+      ARRANGEMENT_ID,
+      'The new rate is lower.'
+    );
+
+    expect(apiClient.post).toHaveBeenCalledWith(`${ackUrlBase}/dissent`, {
+      note: 'The new rate is lower.',
+    });
+    expect(result.kind).toBe('disagreed');
+  });
+
+  it('refuses a note over 280 characters without calling the API', async () => {
+    await expect(
+      payArrangementApi.dissent(
+        HOUSEHOLD_ID,
+        CARER_ID,
+        ARRANGEMENT_ID,
+        'x'.repeat(281)
+      )
+    ).rejects.toThrow();
+    expect(apiClient.post).not.toHaveBeenCalled();
+  });
+});
+
+describe('payArrangementApi.listAcks', () => {
+  it('GETs .../acks and returns the validated rows', async () => {
+    apiClient.get.mockResolvedValue({
+      data: { data: { pay_arrangement_acks: [seenRow] } },
+    });
+
+    const result = await payArrangementApi.listAcks(
+      HOUSEHOLD_ID,
+      CARER_ID,
+      ARRANGEMENT_ID
+    );
+
+    expect(apiClient.get).toHaveBeenCalledWith(`${ackUrlBase}/acks`);
+    expect(result).toHaveLength(1);
+    expect(result[0].kind).toBe('seen');
+  });
+
+  it('throws on a malformed row rather than returning it', async () => {
+    apiClient.get.mockResolvedValue({
+      data: {
+        data: { pay_arrangement_acks: [{ ...seenRow, kind: 'agreed' }] },
+      },
+    });
+
+    await expect(
+      payArrangementApi.listAcks(HOUSEHOLD_ID, CARER_ID, ARRANGEMENT_ID)
+    ).rejects.toThrow();
+  });
+});
+
+describe('payArrangementApi.cancelScheduled', () => {
+  it('POSTs .../cancel-scheduled and returns the appended revert row', async () => {
+    apiClient.post.mockResolvedValue({
+      data: { data: { pay_arrangement: validArrangement } },
+    });
+
+    const result = await payArrangementApi.cancelScheduled(
+      HOUSEHOLD_ID,
+      CARER_ID,
+      ARRANGEMENT_ID
+    );
+
+    expect(apiClient.post).toHaveBeenCalledWith(
+      `${ackUrlBase}/cancel-scheduled`
+    );
+    expect(result.id).toBe(ARRANGEMENT_ID);
+  });
+});
