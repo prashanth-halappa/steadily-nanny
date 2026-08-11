@@ -8,6 +8,7 @@
  */
 import type { Href } from 'expo-router';
 import type { InboxItem } from '@/src/domains/inbox/utils/buildInboxItems';
+import { formatDuration } from '@/src/domains/timesheet/utils/duration';
 import { formatDisplayDate } from '@/src/domains/timesheet/utils/week';
 
 export type InboxItemT = (key: string, opts?: Record<string, string>) => string;
@@ -21,6 +22,8 @@ export function hrefForItem(item: InboxItem): Href {
     case 'queried_week':
       return `/(private)/(tabs)/hours?weekStart=${item.weekStart}` as Href;
     case 'submitted_week':
+      return `/(private)/(tabs)/hours?weekStart=${item.weekStart}` as Href;
+    case 'stale_submitted_week':
       return `/(private)/(tabs)/hours?weekStart=${item.weekStart}` as Href;
   }
 }
@@ -42,6 +45,13 @@ export function titleForItem(item: InboxItem, t: InboxItemT): string {
     case 'submitted_week':
       return t('items.submittedWeek.title', {
         week: formatDisplayDate(item.weekStart),
+      });
+    // "Week of 4 Aug — submitted 21 days ago, not approved". It says how
+    // long and stops: a fact about a date, not a verdict about a family.
+    case 'stale_submitted_week':
+      return t('items.staleSubmittedWeek.title', {
+        week: formatDisplayDate(item.weekStart),
+        days: String(item.daysAgo),
       });
   }
 }
@@ -66,6 +76,10 @@ export function subtitleForItem(
       return item.carerDisplayName
         ? t('items.submittedWeek.subtitle', { carer: item.carerDisplayName })
         : t('items.submittedWeek.subtitleFallback');
+    case 'stale_submitted_week':
+      return t('items.staleSubmittedWeek.subtitle', {
+        hours: formatDuration(item.totalMinutes),
+      });
   }
 }
 
@@ -80,6 +94,8 @@ export function ctaForItem(item: InboxItem, t: InboxItemT): string {
       return t('items.queriedWeek.cta');
     case 'submitted_week':
       return t('items.submittedWeek.cta');
+    case 'stale_submitted_week':
+      return t('items.staleSubmittedWeek.cta');
   }
 }
 

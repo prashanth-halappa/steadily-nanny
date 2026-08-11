@@ -94,6 +94,11 @@ export const NOTIFICATION_ROUTE_MAP: NotificationRouteMap &
   [PUSH_NOTIFICATION_TYPES.TIMESHEET_REOPENED]: hoursHref,
   [PUSH_NOTIFICATION_TYPES.TIMESHEET_APPROVED]: hoursHref,
   [PUSH_NOTIFICATION_TYPES.TIMESHEET_AWAITING_APPROVAL]: hoursHref,
+  // The week thread (3-T1, §1.3 N3/N4). Both land on the week the
+  // conversation is about — `WeekQueryThread` renders there and nowhere
+  // else, so there is no separate thread route to send them to.
+  [PUSH_NOTIFICATION_TYPES.TIMESHEET_NOTE_ADDED]: hoursHref,
+  [PUSH_NOTIFICATION_TYPES.TIMESHEET_QUERY_WITHDRAWN]: hoursHref,
 
   // Expenses render inside the Hours tab — no dedicated expense route.
   [PUSH_NOTIFICATION_TYPES.EXPENSE_SUBMITTED]: hoursHref,

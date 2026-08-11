@@ -26,16 +26,30 @@
  * when the week has approved claims. Reimbursements are NOT wages
  * (docs/11-MONEY.md §6): they render in their own card, visually and
  * semantically separate from the money line above.
+ *
+ * 3-T1 / M12 (`docs/design/attention-and-notifications.md` §3.1): she can
+ * open a conversation too. `WeekQueryThread` sits under `WeekTotal`, and
+ * "This doesn't look right" under the money card opens the same composer on
+ * a `submitted` or `approved` week. It changes NO status, blocks nothing,
+ * and edits no money — it writes one message on an append-only log. The
+ * copy is deliberately unloaded: not "Dispute", not "Raise an issue".
+ *
+ * `queried` is NOT a read-only state here, and must never become one — only
+ * `approved` is. Correcting the day IS how a query resolves (D16): she fixes
+ * Thursday, the roll-up returns the week to `submitted`, the parent
+ * approves. A thread that lets her argue but not correct the record is P1
+ * with extra steps.
  */
 import { FlashList } from '@shopify/flash-list';
 import type { Href } from 'expo-router';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { View } from 'react-native';
+import { Pressable, View } from 'react-native';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { useTabBarScrollPadding } from '@/lib/layout/useTabBarScrollPadding';
 import { ErrorState } from '@/src/components/custom/ErrorState';
+import { Body } from '@/src/components/ui/typography';
 import { ExpenseAddSheet } from '@/src/domains/expenses/components/ExpenseAddSheet';
 import { ExpensesListCard } from '@/src/domains/expenses/components/ExpensesListCard';
 import { ReimbursementsCard } from '@/src/domains/expenses/components/ReimbursementsCard';
@@ -48,6 +62,7 @@ import {
   ClockOutSheet,
   type ClockOutSheetSubmitInput,
 } from '@/src/domains/today/components/ClockOutSheet';
+import { useAddTimesheetThreadMessage } from '@/src/hooks/mutations/useAddTimesheetThreadMessage';
 import { useCreateExpense } from '@/src/hooks/mutations/useCreateExpense';
 import { useUpdateExpense } from '@/src/hooks/mutations/useUpdateExpense';
 import { useUpdateTimeEntry } from '@/src/hooks/mutations/useUpdateTimeEntry';
@@ -57,10 +72,13 @@ import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
 import { useCurrentPayArrangement } from '@/src/hooks/queries/useCurrentPayArrangement';
 import { useHouseholdMembers } from '@/src/hooks/queries/useHouseholdMembers';
 import { usePayments } from '@/src/hooks/queries/usePayments';
+import { useTimesheetThread } from '@/src/hooks/queries/useTimesheetThread';
 import { useWeekExpenses } from '@/src/hooks/queries/useWeekExpenses';
 import { useWeekTimeEntries } from '@/src/hooks/queries/useWeekTimeEntries';
 import { useWeekTimesheet } from '@/src/hooks/queries/useWeekTimesheet';
+import { getLocalizedErrorMessage } from '@/src/lib/errorLocalization';
 import { localDateInZone } from '@/src/lib/localDate';
+import { formatMoney } from '@/src/lib/money';
 import { useIsOnline } from '@/src/lib/network';
 import { showSuccessToast } from '@/src/lib/toast';
 import { useAuthStore } from '@/src/store/auth';
@@ -76,10 +94,12 @@ import { HoursHeroBand } from './HoursHeroBand';
 import { HoursWeekSkeleton } from './HoursWeekSkeleton';
 import { PaymentDetailSheet } from './PaymentDetailSheet';
 import { PaymentsEntryRow } from './PaymentsEntryRow';
+import { QueryNoteSheet } from './QueryNoteSheet';
 import { TimeEntryDayRow } from './TimeEntryDayRow';
 import { VoidEntryDialog } from './VoidEntryDialog';
 import { WeekExportAction } from './WeekExportAction';
 import { WeekMoneyCard } from './WeekMoneyCard';
+import { WeekQueryThread } from './WeekQueryThread';
 import { WeekTotal } from './WeekTotal';
 
 interface NannyWeekViewProps {
@@ -198,6 +218,15 @@ export function NannyWeekView({
   );
   const [isAddExpenseVisible, setIsAddExpenseVisible] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
+  // §3.1. Null means closed; the object carries the sentence her message is
+  // prefixed with — empty from the week, and the payment's date and amount
+  // from a payment row, so the record says WHICH payment she meant.
+  const [flagSheet, setFlagSheet] = useState<{ prefix: string } | null>(null);
+  // She opened a thread on an approved week: §3's read-only rule relaxes
+  // exactly this far and the composer comes back for the conversation that
+  // resulted. Session-scoped on purpose — it is a fact about this visit, not
+  // about the week.
+  const [composerReopened, setComposerReopened] = useState(false);
   // F-B1-3: BOTH household week reads are household-wide, not self-scoped —
   // in a two-carer household the entries list carries the other carer's
   // hours and the timesheet list carries her pay. Everything below is
@@ -219,6 +248,36 @@ export function NannyWeekView({
   const paymentsQuery = usePayments(
     showSettlementHistory && timesheet ? timesheet.id : null
   );
+  // §3 — fetched for every week, not only queried ones: the thread outlives
+  // the query, and it renders NOTHING when empty.
+  const threadQuery = useTimesheetThread(timesheet?.id ?? null);
+  const addThreadMessage = useAddTimesheetThreadMessage();
+
+  // Confirmation is the message appearing in the thread with her name and a
+  // timestamp — no toast, no "your dispute has been filed" (§3.1).
+  const handleSendThreadMessage = (message: string) => {
+    if (!timesheet) return;
+    addThreadMessage.mutate({ timesheetId: timesheet.id, message });
+  };
+
+  /**
+   * §3.1's send. Closes only on success, so a refusal leaves what she typed
+   * in place, and reopens the inline composer so the conversation she just
+   * started has somewhere to continue — including on an approved week.
+   */
+  const handleSubmitFlag = (note: string) => {
+    if (!timesheet || !flagSheet) return;
+    addThreadMessage
+      .mutateAsync({
+        timesheetId: timesheet.id,
+        message: `${flagSheet.prefix}${note}`,
+      })
+      .then(() => {
+        setFlagSheet(null);
+        setComposerReopened(true);
+      })
+      .catch(() => undefined);
+  };
 
   const handleOpenAddExpense = () => {
     setEditingExpense(null);
@@ -467,6 +526,21 @@ export function NannyWeekView({
               earningsReopened={reopened}
               earningsReopenReason={timesheet?.reopen_reason ?? null}
             />
+            <WeekQueryThread
+              messages={threadQuery.data?.messages ?? []}
+              currentUserId={currentUserId}
+              timeZone={timeZone}
+              timesheetStatus={timesheet?.status ?? null}
+              viewerRole="nanny"
+              composerReopened={composerReopened}
+              onSend={handleSendThreadMessage}
+              isSending={addThreadMessage.isPending}
+              sendError={
+                addThreadMessage.error
+                  ? getLocalizedErrorMessage(addThreadMessage.error, tErrors)
+                  : null
+              }
+            />
           </>
         }
         ListFooterComponent={
@@ -493,6 +567,20 @@ export function NannyWeekView({
               settlementCurrency={settlementCurrency}
               onPaymentPress={payment => setSelectedPaymentId(payment.id)}
             />
+            {/* §3.1 (M12): the one place a nanny can say a figure is wrong
+                without waiting to be asked. On a `submitted` or `approved`
+                week only — a `queried` week already has the composer open,
+                and an `open` week is still hers to correct directly. */}
+            {!readOnly && (timesheet?.status === 'submitted' || isApproved) ? (
+              <Pressable
+                testID="hours-flag-link"
+                accessibilityRole="button"
+                onPress={() => setFlagSheet({ prefix: '' })}
+                className="mb-4 self-start py-2"
+              >
+                <Body className="text-primary">{t('thread.flagLink')}</Body>
+              </Pressable>
+            ) : null}
             {/* §7 fixed order item 3 — after day rows, approved-only,
                 never rendered when the week has no approved claims. */}
             <ReimbursementsCard
@@ -589,6 +677,44 @@ export function NannyWeekView({
                 membersByUserId,
                 memberLabels
               )
+            : null
+        }
+        // §3.1's second placement. The payment sheet CLOSES first: the flag
+        // composer is another BottomSheetBase, and a sheet opened over a
+        // sheet is invisible on iOS (GOLDEN-FIXES #40's family). The prefix
+        // stamps the payment's date and amount into her message so the
+        // record says which payment she meant.
+        onFlagPress={
+          readOnly
+            ? undefined
+            : payment => {
+                setSelectedPaymentId(null);
+                setFlagSheet({
+                  prefix: t('thread.flagPaymentPrefix', {
+                    amount: formatMoney(payment.amount_minor, payment.currency),
+                    date: formatEarningsLongDate(payment.paid_at),
+                  }),
+                });
+              }
+        }
+      />
+
+      {/* The same one-note composer the parent's Query uses — same shape,
+          same act, one keyboard behaviour to keep right. */}
+      <QueryNoteSheet
+        sheetId="hours-flag"
+        testID="hours-flag-sheet"
+        visible={flagSheet !== null}
+        onDismiss={() => setFlagSheet(null)}
+        onSubmit={handleSubmitFlag}
+        isSubmitting={addThreadMessage.isPending}
+        title={t('thread.flagTitle')}
+        hint={t('thread.flagHint')}
+        placeholder={t('thread.flagPlaceholder')}
+        submitLabel={t('thread.flagSubmit')}
+        submitError={
+          addThreadMessage.error
+            ? getLocalizedErrorMessage(addThreadMessage.error, tErrors)
             : null
         }
       />

@@ -28,7 +28,9 @@
  *
  * @module domains/timesheet/services/timesheetQueryService
  */
+import type { ShiftEvent } from '@steadily-nanny/shared-types/schemas/shift.schema';
 import type {
+  TimesheetThread,
   TimesheetWeek,
   WeekEarningsStateResult,
 } from '@steadily-nanny/shared-types/schemas/timesheet.schema';
@@ -53,6 +55,7 @@ import {
   type WeekEarningsComputer,
   weekEarningsService,
 } from '../../pay/services/weekEarningsService';
+import { ShiftEventRepository } from '../../shift/repositories/shiftEventRepository';
 import {
   TimeEntryNotFoundError,
   TimesheetNotExportableError,
@@ -74,6 +77,7 @@ import {
   weekEndExclusive,
   weekStartOf,
 } from '../utils/weekStart';
+import { toThreadMessages } from '../utils/weekThread';
 
 /** Roles that read the WHOLE household's payroll, active or removed. */
 const PAYROLL_HOUSEHOLD_READ_ROLES: ReadonlySet<string> = new Set([
@@ -98,6 +102,19 @@ export interface WeekPaymentTotalReader {
   sumForTimesheet(timesheetId: string): Promise<number>;
 }
 
+/**
+ * The one thing this service needs from the day thread: the rows on a date.
+ * Narrowed to a single method for the same reason `WeekPaymentTotalReader` is
+ * — the dependency stays a read and stays injectable, and this service can
+ * never grow a write into `shift_events` by accident.
+ */
+export interface DayThreadReader {
+  listForHouseholdDate(
+    householdId: string,
+    localDate: string
+  ): Promise<ShiftEvent[]>;
+}
+
 export class TimesheetQueryService {
   constructor(
     private readonly timeEntryRepo: TimeEntryRepository = new TimeEntryRepository(),
@@ -105,7 +122,10 @@ export class TimesheetQueryService {
     private readonly memberRepo: HouseholdMemberRepository = new HouseholdMemberRepository(),
     private readonly householdRepo: HouseholdRepository = new HouseholdRepository(),
     private readonly earnings: WeekEarningsComputer = weekEarningsService,
-    private readonly payments: WeekPaymentTotalReader = new PaymentRepository()
+    private readonly payments: WeekPaymentTotalReader = new PaymentRepository(),
+    // The week thread's store. Appended at the END so every existing caller
+    // and test on the six-arg constructor keeps working unchanged.
+    private readonly events: DayThreadReader = new ShiftEventRepository()
   ) {}
 
   /** The caller's own open (running) entry, or null. No membership check — this is always the caller's own data. */
@@ -309,6 +329,45 @@ export class TimesheetQueryService {
     return {
       ...toWireTimesheet(row),
       earnings: await this.earningsFor(row),
+    };
+  }
+
+  /**
+   * THE WEEK THREAD: what was SAID about a week, both sides, oldest first
+   * (D-18, gap P1 — `docs/design/attention-and-notifications.md` §3).
+   *
+   * READ GATE: `getReadableTimesheet`, byte-identical to the week read's and
+   * DELIBERATELY the wider of the two gates in this service. The whole of P1
+   * is that the nanny could not read what a parent said about her pay;
+   * handing this the ACTION gate (`getOwnedTimesheet`) would let a departed
+   * nanny read the hours she worked but not the dispute about them, which is
+   * the same defect wearing a different hat. Same argument as the export.
+   *
+   * Do NOT wire this into `makeOwnershipValidator` on the route — see
+   * `getReadableTimesheet`'s doc and GOLDEN-FIXES #32. One permitted thread
+   * read would leave a positive `(userId, resourceId)` cache entry that
+   * `/approve` then reuses.
+   *
+   * Returns `{ messages: [] }` for a clean week rather than throwing: on the
+   * ~50 quiet weeks a year there is genuinely nothing to say, and the client
+   * renders nothing at all (D16).
+   */
+  async getThread(
+    userId: string,
+    timesheetId: string
+  ): Promise<TimesheetThread> {
+    const row = await this.getReadableTimesheet(userId, timesheetId);
+    const [events, household] = await Promise.all([
+      this.events.listForHouseholdDate(row.household_id, row.week_start),
+      this.householdRepo.findById(row.household_id),
+    ]);
+    return {
+      messages: toThreadMessages(events, {
+        timesheetId: row.id,
+        carerId: row.carer_id,
+        carerName: row.carer_display_name,
+        householdName: household?.name,
+      }),
     };
   }
 

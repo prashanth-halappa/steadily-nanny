@@ -86,6 +86,11 @@ beforeAll(async () => {
         opts ? `${key}(${JSON.stringify(opts)})` : key,
       i18n: { language: 'en', changeLanguage: mock() },
     }),
+    // `inboxItemCopy` reaches `formatDuration`, which reads the shared i18n
+    // instance, whose own module imports this. A mock that answers only
+    // `useTranslation` makes that import a hard SyntaxError rather than a
+    // missing translation — the whole file fails to load.
+    initReactI18next: { type: '3rdParty', init: mock() },
   }));
   mock.module('@/src/domains/inbox/hooks/useInboxItems', () => ({
     useInboxItems: mockUseInboxItems,

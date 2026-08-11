@@ -12,6 +12,7 @@ function createMockQueryChain(
   const chain: any = {
     select: mock(() => chain),
     eq: mock(() => chain),
+    in: mock(() => chain),
     order: mock(() => chain),
     insert: mock(() => chain),
     update: mock(() => chain),
@@ -240,7 +241,7 @@ const READ_VERSIONS = [
   '2026-08-10T08:59:12.123Z',
 ];
 
-describe('TimesheetRepository.queryFromSubmitted', () => {
+describe('TimesheetRepository.queryFromActionable', () => {
   it('sets the status and the note in a single update', async () => {
     const chain = createMockQueryChain({
       data: { id: 'ts1', status: 'queried' },
@@ -249,7 +250,7 @@ describe('TimesheetRepository.queryFromSubmitted', () => {
     mockSupabaseService.from.mockImplementation(() => chain);
 
     const repo = new TimesheetRepository();
-    await repo.queryFromSubmitted('ts1', READ_VERSIONS[0], 'Query Thursday');
+    await repo.queryFromActionable('ts1', READ_VERSIONS[0], 'Query Thursday');
 
     expect(chain.update).toHaveBeenCalledTimes(1);
     expect(chain.update).toHaveBeenCalledWith({
@@ -259,17 +260,21 @@ describe('TimesheetRepository.queryFromSubmitted', () => {
   });
 
   for (const version of READ_VERSIONS) {
-    it(`constrains the update on the submitted status AND the row version (${version})`, async () => {
+    // The status predicate is an `in`, not an `eq`, since D-19: a NEW query
+    // supersedes rather than blocks, so `queried` is a legal FROM state as
+    // well as the destination. The version predicate is unchanged and still
+    // the thing that makes the write safe.
+    it(`constrains the update on the queryable statuses AND the row version (${version})`, async () => {
       const chain = createMockQueryChain({ data: { id: 'ts1' }, error: null });
       mockSupabaseService.from.mockImplementation(() => chain);
 
       const repo = new TimesheetRepository();
-      await repo.queryFromSubmitted('ts1', version, 'Query Thursday');
+      await repo.queryFromActionable('ts1', version, 'Query Thursday');
 
       expect(chain.eq).toHaveBeenCalledWith('id', 'ts1');
-      expect(chain.eq).toHaveBeenCalledWith('status', 'submitted');
+      expect(chain.in).toHaveBeenCalledWith('status', ['submitted', 'queried']);
       expect(chain.eq).toHaveBeenCalledWith('updated_at', version);
-      expect(chain.eq).toHaveBeenCalledTimes(3);
+      expect(chain.eq).toHaveBeenCalledTimes(2);
     });
   }
 
@@ -278,7 +283,7 @@ describe('TimesheetRepository.queryFromSubmitted', () => {
     mockSupabaseService.from.mockImplementation(() => chain);
 
     const repo = new TimesheetRepository();
-    await repo.queryFromSubmitted('ts1', READ_VERSIONS[0], 'Query Thursday');
+    await repo.queryFromActionable('ts1', READ_VERSIONS[0], 'Query Thursday');
 
     const [patch] = chain.update.mock.calls[0] as [Record<string, unknown>];
     expect(patch).not.toHaveProperty('updated_at');
@@ -290,7 +295,7 @@ describe('TimesheetRepository.queryFromSubmitted', () => {
     );
     const repo = new TimesheetRepository();
     expect(
-      await repo.queryFromSubmitted('ts1', READ_VERSIONS[0], 'Query Thursday')
+      await repo.queryFromActionable('ts1', READ_VERSIONS[0], 'Query Thursday')
     ).toBeNull();
   });
 
@@ -300,8 +305,78 @@ describe('TimesheetRepository.queryFromSubmitted', () => {
     );
     const repo = new TimesheetRepository();
     await expect(
-      repo.queryFromSubmitted('ts1', READ_VERSIONS[0], 'Query Thursday')
+      repo.queryFromActionable('ts1', READ_VERSIONS[0], 'Query Thursday')
     ).rejects.toThrow('Failed to query timesheet');
+  });
+});
+
+/**
+ * The parent's exit from `queried` (D-19, gap P2). Before this a queried week
+ * had no parent-side exit at all — `approve` only moves a `submitted` row, so
+ * a question asked in error froze the nanny's pay until she answered it.
+ */
+describe('TimesheetRepository.withdrawQueryFromQueried', () => {
+  it('returns the week to submitted and clears the scratch note in one write', async () => {
+    const chain = createMockQueryChain({
+      data: { id: 'ts1', status: 'submitted' },
+      error: null,
+    });
+    mockSupabaseService.from.mockImplementation(() => chain);
+
+    const repo = new TimesheetRepository();
+    await repo.withdrawQueryFromQueried('ts1', READ_VERSIONS[0]);
+
+    expect(chain.update).toHaveBeenCalledWith({
+      status: 'submitted',
+      query_note: null,
+    });
+  });
+
+  for (const version of READ_VERSIONS) {
+    it(`constrains on the queried status AND the row version (${version})`, async () => {
+      const chain = createMockQueryChain({ data: { id: 'ts1' }, error: null });
+      mockSupabaseService.from.mockImplementation(() => chain);
+
+      const repo = new TimesheetRepository();
+      await repo.withdrawQueryFromQueried('ts1', version);
+
+      expect(chain.eq).toHaveBeenCalledWith('id', 'ts1');
+      expect(chain.eq).toHaveBeenCalledWith('status', 'queried');
+      expect(chain.eq).toHaveBeenCalledWith('updated_at', version);
+      expect(chain.eq).toHaveBeenCalledTimes(3);
+    });
+  }
+
+  it('never touches approved_by/approved_at — a queried week was never approved', async () => {
+    const chain = createMockQueryChain({ data: { id: 'ts1' }, error: null });
+    mockSupabaseService.from.mockImplementation(() => chain);
+
+    const repo = new TimesheetRepository();
+    await repo.withdrawQueryFromQueried('ts1', READ_VERSIONS[0]);
+
+    const [patch] = chain.update.mock.calls[0] as [Record<string, unknown>];
+    expect(patch).not.toHaveProperty('approved_by');
+    expect(patch).not.toHaveProperty('updated_at');
+  });
+
+  it('returns null when zero rows matched — the week changed under the withdraw', async () => {
+    mockSupabaseService.from.mockImplementation(() =>
+      createMockQueryChain({ data: null, error: null })
+    );
+    const repo = new TimesheetRepository();
+    expect(
+      await repo.withdrawQueryFromQueried('ts1', READ_VERSIONS[0])
+    ).toBeNull();
+  });
+
+  it('raises a DatabaseError rather than looking like a lost race', async () => {
+    mockSupabaseService.from.mockImplementation(() =>
+      createMockQueryChain({ data: null, error: { message: 'boom' } })
+    );
+    const repo = new TimesheetRepository();
+    await expect(
+      repo.withdrawQueryFromQueried('ts1', READ_VERSIONS[0])
+    ).rejects.toThrow('Failed to withdraw timesheet query');
   });
 });
 

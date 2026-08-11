@@ -13,6 +13,7 @@ import { validate } from '../../../middlewares/validator';
 import { asyncHandler } from '../../../utils/asyncHandler';
 import { TimesheetController } from '../controllers/timesheetController';
 import {
+  AddTimesheetThreadMessageSchema,
   ApproveTimesheetSchema,
   QueryTimesheetSchema,
   ReopenTimesheetSchema,
@@ -101,6 +102,35 @@ router.post(
   ...authWithOwnership(TimesheetIdParamSchema, timesheetOwnership),
   validate(ReopenTimesheetSchema, 'body'),
   asyncHandler(TimesheetController.reopen)
+);
+
+// The week thread (D-18 / D-19 / D-46). The READ carries NO ownership
+// middleware for exactly the reason the GET above does not: its gate
+// (`getThread` → `getReadableTimesheet`) is WIDER than the actions', and
+// `makeOwnershipValidator` caches by `(userId, resourceId)` with no lookup
+// identity — one permitted thread read would leave a positive entry
+// `/approve` reuses, handing a removed parent an approval. GOLDEN-FIXES #32.
+router.get(
+  '/:id/thread',
+  ...authWithValidation(TimesheetIdParamSchema),
+  asyncHandler(TimesheetController.getThread)
+);
+
+// The WRITES do take the ownership preset — an ACTIVE membership is the floor
+// for saying anything, and role/status gating (carer any week, parent only a
+// queried one) is enforced one layer down in the command service, matching
+// /approve, /query and /reopen.
+router.post(
+  '/:id/thread',
+  ...authWithOwnership(TimesheetIdParamSchema, timesheetOwnership),
+  validate(AddTimesheetThreadMessageSchema, 'body'),
+  asyncHandler(TimesheetController.addThreadMessage)
+);
+
+router.post(
+  '/:id/withdraw-query',
+  ...authWithOwnership(TimesheetIdParamSchema, timesheetOwnership),
+  asyncHandler(TimesheetController.withdrawQuery)
 );
 
 export default router;

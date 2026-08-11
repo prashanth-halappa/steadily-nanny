@@ -522,26 +522,16 @@ describe('WeekTotal', () => {
       expect(getByText('statusApproved')).toBeTruthy();
     });
 
-    it('promotes the query note into the card, directly under the headline, when queried', () => {
-      const { getByTestId } = render(
+    // §3: the promoted, parent-only `query_note` band is GONE. It was the
+    // literal code that made P1 true (only the parent could read the
+    // question), and `WeekQueryThread` now renders that same first message
+    // to both sides. A second, parent-only rendering of it would be P1 back.
+    it('never promotes a query note into the card — the thread owns that message now', () => {
+      const { queryByTestId } = render(
         <WeekTotal
           testID="hours-week-total"
           timesheetStatus="queried"
           earningsRole="parent"
-          queryNote="Thursday looks longer than expected"
-        />
-      );
-
-      expect(getByTestId('hours-query-note')).toBeTruthy();
-    });
-
-    it('never shows the query note when status is not queried, even if one is supplied', () => {
-      const { queryByTestId } = render(
-        <WeekTotal
-          testID="hours-week-total"
-          timesheetStatus="submitted"
-          earningsRole="parent"
-          queryNote="Stale note"
         />
       );
 
@@ -784,6 +774,62 @@ describe('WeekTotal', () => {
 
       expect(queryByTestId('hours-approve-button')).toBeNull();
       expect(queryByTestId('hours-query-button')).toBeNull();
+    });
+
+    // D-19: the parent's exit from `queried` sits on the same action row as
+    // Approve, as a third ghost slot — the same `WeekTotalAction` shape, not
+    // a new mechanism.
+    it('renders a tertiary ghost action beneath the secondary one', () => {
+      const onPress = mock(() => {});
+      const { getByTestId } = render(
+        <WeekTotal
+          testID="hours-week-total"
+          timesheetStatus="queried"
+          earningsRole="parent"
+          tertiaryAction={{
+            testID: 'hours-withdraw-query-button',
+            label: 'Withdraw the query',
+            onPress,
+          }}
+        />
+      );
+
+      const button = getByTestId('hours-withdraw-query-button');
+      expect(button.props.variant).toBe('ghost');
+      button.props.onPress?.();
+      expect(onPress).toHaveBeenCalledTimes(1);
+    });
+
+    it('renders no tertiary action when none is supplied', () => {
+      const { queryByTestId } = render(
+        <WeekTotal
+          testID="hours-week-total"
+          timesheetStatus="queried"
+          earningsRole="parent"
+        />
+      );
+
+      expect(queryByTestId('hours-withdraw-query-button')).toBeNull();
+    });
+
+    it('disables the tertiary action while its mutation is in flight', () => {
+      const { getByTestId } = render(
+        <WeekTotal
+          testID="hours-week-total"
+          timesheetStatus="queried"
+          earningsRole="parent"
+          tertiaryAction={{
+            testID: 'hours-withdraw-query-button',
+            label: 'Withdraw the query',
+            onPress: () => {},
+            disabled: true,
+          }}
+        />
+      );
+
+      expect(getByTestId('hours-withdraw-query-button').props.disabled).toBe(
+        true
+      );
     });
   });
 });

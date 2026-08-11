@@ -66,8 +66,19 @@ export interface ApproveWithEarningsPatch extends TimesheetEarningsSnapshot {
 /** The status an approve may transition FROM. Anything else is a lost race. */
 const APPROVABLE_FROM: TimesheetStatus = 'submitted';
 
-/** The status a query may transition FROM. Anything else is a lost race. */
-const QUERYABLE_FROM: TimesheetStatus = 'submitted';
+/**
+ * The statuses a query may transition FROM. Anything else is a lost race.
+ *
+ * `queried` is in the set because a NEW query supersedes rather than blocks
+ * (D-19): a parent who spots a second problem must be able to say so, and
+ * refusing would strand the week in a state whose only exit was the very
+ * action being refused. The thread shows both queries in order — no
+ * "superseded" label, the order already says it.
+ */
+const QUERYABLE_FROM: readonly TimesheetStatus[] = ['submitted', 'queried'];
+
+/** The status a withdraw-query may transition FROM. */
+const WITHDRAWABLE_FROM: TimesheetStatus = 'queried';
 
 /** The status a reopen may transition FROM. Anything else is a lost race. */
 const REOPENABLE_FROM: TimesheetStatus = 'approved';
@@ -218,8 +229,9 @@ export class TimesheetRepository extends BaseRepository<TimesheetRow> {
   }
 
   /**
-   * COMPARE-AND-SET `submitted` → `queried`, carrying the same two-part
-   * predicate `approveSubmittedWithEarnings` does and for the same reason.
+   * COMPARE-AND-SET `submitted`/`queried` → `queried`, carrying the same
+   * two-part predicate `approveSubmittedWithEarnings` does and for the same
+   * reason.
    *
    * A query is decided against a row the service read before it wrote: the
    * parent is disputing the hours THEY looked at. Between the two moments a
@@ -232,7 +244,7 @@ export class TimesheetRepository extends BaseRepository<TimesheetRow> {
    *
    * Same `maybeSingle()` + `null`-for-lost-race contract as approve.
    */
-  async queryFromSubmitted(
+  async queryFromActionable(
     timesheetId: string,
     expectedUpdatedAt: string,
     note: string
@@ -241,7 +253,7 @@ export class TimesheetRepository extends BaseRepository<TimesheetRow> {
       .from(this.table)
       .update({ status: 'queried', query_note: note })
       .eq('id', timesheetId)
-      .eq('status', QUERYABLE_FROM)
+      .in('status', QUERYABLE_FROM)
       .eq('updated_at', expectedUpdatedAt)
       .select()
       .maybeSingle();
@@ -251,6 +263,49 @@ export class TimesheetRepository extends BaseRepository<TimesheetRow> {
         details: error.message,
         timesheetId,
       });
+    }
+    return data as TimesheetRow | null;
+  }
+
+  /**
+   * COMPARE-AND-SET `queried` → `submitted` — the parent's exit from a
+   * queried week (D-19, gap P2). Without it a queried week had NO parent-side
+   * exit at all: `approve` only moves a `submitted` row, so a question asked
+   * in error froze the nanny's pay until she typed something back.
+   *
+   * Same `updated_at` predicate as approve/query, for the same reason: between
+   * the service's read and this write a roll-up can add hours (which already
+   * returns the week to `submitted` unconditionally, D1) or a co-parent can
+   * re-query, and a status-only predicate is blind to both.
+   *
+   * `query_note` IS cleared, and that is not a loss: the question now lives
+   * permanently in the append-only thread (`utils/weekThread.ts`), so the
+   * scratch column can go back to meaning exactly what it says — "a question
+   * is outstanding on this week". Leaving it set on a `submitted` row would
+   * recreate the stale-note bug class `approveSubmittedWithEarnings` clears it
+   * to avoid. The thread itself is untouched: "What's already been said stays
+   * on the record" is the confirm dialog's second sentence and it is
+   * load-bearing for both personas.
+   */
+  async withdrawQueryFromQueried(
+    timesheetId: string,
+    expectedUpdatedAt: string
+  ): Promise<TimesheetRow | null> {
+    const { data, error } = await supabaseService
+      .from(this.table)
+      .update({ status: 'submitted', query_note: null })
+      .eq('id', timesheetId)
+      .eq('status', WITHDRAWABLE_FROM)
+      .eq('updated_at', expectedUpdatedAt)
+      .select()
+      .maybeSingle();
+
+    if (error) {
+      throw new DatabaseError(
+        'Failed to withdraw timesheet query',
+        'DATABASE_ERROR',
+        { details: error.message, timesheetId }
+      );
     }
     return data as TimesheetRow | null;
   }

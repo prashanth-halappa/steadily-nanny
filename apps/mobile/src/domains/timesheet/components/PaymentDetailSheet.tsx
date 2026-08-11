@@ -58,6 +58,14 @@ interface PaymentDetailSheetProps {
   /** Resolved household member name, or null when `recorded_by` is null or
    * no longer resolvable. Never a raw uuid. */
   recordedByName: string | null;
+  /** §3.1 (M12), carer viewer only: "This doesn't look right" on a payment
+   * row. The caller owns everything about it — closing this sheet, stamping
+   * the payment's date and amount into the message, and writing it to the
+   * week's thread. Omitted (parent viewer, read-only member) renders no
+   * link: correcting a payment is the PAYER's act (§4.1) and stays theirs.
+   * She can say the payment looks wrong, which is the thing she actually
+   * needs and currently does over iMessage. */
+  onFlagPress?: (payment: Payment) => void;
   testID?: string;
 }
 
@@ -144,6 +152,7 @@ export function PaymentDetailSheet({
   weekStart,
   paidToName,
   recordedByName,
+  onFlagPress,
   testID = 'payments-detail',
 }: PaymentDetailSheetProps) {
   const { t } = useTranslation('hours');
@@ -228,6 +237,17 @@ export function PaymentDetailSheet({
           >
             {t('payments.detail.appendOnly')}
           </Caption>
+
+          {onFlagPress ? (
+            <Pressable
+              testID={`${testID}-flag`}
+              accessibilityRole="button"
+              onPress={() => onFlagPress(payment)}
+              className="self-start py-2"
+            >
+              <Body className="text-primary">{t('thread.flagLink')}</Body>
+            </Pressable>
+          ) : null}
         </View>
       ) : null}
     </BottomSheetBase>

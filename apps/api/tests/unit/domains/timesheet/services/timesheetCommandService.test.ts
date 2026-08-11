@@ -141,7 +141,7 @@ function makeTimesheetRepo(overrides: Record<string, unknown> = {}): any {
     // The two conditional writes, defaulted to "won the race". A test that
     // wants a lost race stages it explicitly — losing must never be the
     // accidental default.
-    queryFromSubmitted: mock(
+    queryFromActionable: mock(
       async (_id: string, _expectedUpdatedAt: string, note: string) => ({
         ...timesheet,
         status: 'queried',
@@ -1320,7 +1320,7 @@ describe('TimesheetCommandService.query', () => {
 
     await svc.query('parent-1', 'ts1', { note: 'Query Thursday' });
 
-    expect(timesheetRepo.queryFromSubmitted).toHaveBeenCalledWith(
+    expect(timesheetRepo.queryFromActionable).toHaveBeenCalledWith(
       'ts1',
       timesheet.updated_at,
       'Query Thursday'
@@ -1398,7 +1398,7 @@ describe('TimesheetCommandService.query', () => {
     });
 
     expect(result.status).toBe('queried');
-    expect(timesheetRepo.queryFromSubmitted).toHaveBeenCalled();
+    expect(timesheetRepo.queryFromActionable).toHaveBeenCalled();
   });
 });
 
@@ -3156,7 +3156,7 @@ describe('TimesheetCommandService — mutation responses carry no snapshot colum
 
   it('query returns the wire timesheet even when the row still carries a stale snapshot', async () => {
     const timesheetRepo = makeTimesheetRepo({
-      queryFromSubmitted: mock(
+      queryFromActionable: mock(
         async (_id: string, _expectedUpdatedAt: string, note: string) => ({
           ...timesheet,
           gross_minor: 37_000,
@@ -3604,7 +3604,7 @@ describe('TimesheetCommandService.query — the CAS carries the row version', ()
 
     await svc.query('parent-1', 'ts1', { note: 'Query Thursday' });
 
-    expect(timesheetRepo.queryFromSubmitted).toHaveBeenCalledWith(
+    expect(timesheetRepo.queryFromActionable).toHaveBeenCalledWith(
       'ts1',
       VERSION_AT_READ,
       'Query Thursday'
@@ -3614,7 +3614,7 @@ describe('TimesheetCommandService.query — the CAS carries the row version', ()
   it('throws not-actionable when the week moved between the read and the write', async () => {
     const push = makePush();
     const timesheetRepo = makeTimesheetRepo({
-      queryFromSubmitted: mock(async () => null),
+      queryFromActionable: mock(async () => null),
     });
     const svc = makeRacedSvc(timesheetRepo, submittedAtVersionForQuery, push);
 
@@ -3627,7 +3627,7 @@ describe('TimesheetCommandService.query — the CAS carries the row version', ()
 
   it('names the race as the reason, not the status it read', async () => {
     const svc = makeRacedSvc(
-      makeTimesheetRepo({ queryFromSubmitted: mock(async () => null) }),
+      makeTimesheetRepo({ queryFromActionable: mock(async () => null) }),
       submittedAtVersionForQuery
     );
 
@@ -3764,7 +3764,7 @@ describe('TimesheetCommandService.query — the day-thread audit row', () => {
     });
 
     expect(queried.status).toBe('queried');
-    expect(timesheetRepo.queryFromSubmitted).toHaveBeenCalled();
+    expect(timesheetRepo.queryFromActionable).toHaveBeenCalled();
     expect(push.notifyUser).toHaveBeenCalledTimes(1);
   });
 });

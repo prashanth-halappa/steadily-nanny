@@ -65,6 +65,18 @@ describe('NOTIFICATION_ROUTE_MAP resolvers', () => {
     expect(
       resolve(PUSH_NOTIFICATION_TYPES.TIMESHEET_REOPENED, timesheetPayload)
     ).toBe(hoursHref);
+
+    // 3-T1 (§1.3 N3/N4): both week-thread pushes land on the week the
+    // conversation is about — the thread renders there and nowhere else.
+    expect(
+      resolve(PUSH_NOTIFICATION_TYPES.TIMESHEET_NOTE_ADDED, timesheetPayload)
+    ).toBe(hoursHref);
+    expect(
+      resolve(
+        PUSH_NOTIFICATION_TYPES.TIMESHEET_QUERY_WITHDRAWN,
+        timesheetPayload
+      )
+    ).toBe(hoursHref);
   });
 
   it('routes pattern-sent to the respond screen via patternId', () => {

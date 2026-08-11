@@ -342,6 +342,12 @@ mock.module('@/src/api/endpoints/timesheets', () => {
       },
       approve: approveMock,
       query: queryMock,
+      // 3-T1: the view reads the thread on every week. Empty is the clean
+      // week, and `WeekQueryThread` renders nothing for it — but the call
+      // has to resolve, or `invalidateQueries()` below waits on a rejection.
+      getThread: () => Promise.resolve({ messages: [] }),
+      addThreadMessage: () => Promise.resolve({ messages: [] }),
+      withdrawQuery: () => Promise.resolve({}),
     },
   };
 });
@@ -747,12 +753,18 @@ describe('ParentWeekView — staging an approval-time adjustment', () => {
       await queryClient.invalidateQueries();
     });
 
-    // invalidateQueries() refetches EVERY observed query, so the week refetch
-    // that clears the staged adjustment can land well after waitFor's 1s
-    // default under qc CPU contention (observed 4–12s). Wait explicitly.
+    // Longer window than the 1s default, and it is the HARNESS that needs it,
+    // not the component. `bun.setup.ts` registers no RTL `cleanup`, so by the
+    // time this test runs every earlier `render()` in the file is still
+    // mounted with a live QueryClient refetching against the same endpoint
+    // mocks — each `waitFor` poll then costs whole seconds. Instrumenting
+    // ParentWeekView's drop effect shows it DOES fire with the rolled-up
+    // `updated_at` in file order exactly as it does in isolation; only the
+    // poll that observes the resulting commit was timing out. The assertion
+    // itself is unchanged: "sent means spent" still has to hold.
     await waitFor(
       () => expect(queryByTestId('hours-money-card-adjustment')).toBeNull(),
-      { timeout: 15_000 }
+      { timeout: 15000 }
     );
     expect(getByTestId('hours-money-card-add-adjustment')).toBeTruthy();
   });

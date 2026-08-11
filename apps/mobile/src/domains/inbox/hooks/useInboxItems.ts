@@ -85,11 +85,12 @@ export function useInboxItems() {
       buildInboxItems({
         role,
         currentUserId,
+        todayISO: today,
         changeRequests,
         patterns,
         timesheets,
       }),
-    [role, currentUserId, changeRequests, patterns, timesheets]
+    [role, currentUserId, today, changeRequests, patterns, timesheets]
   );
 
   // Initial load only — background refetch must not blank the list.

@@ -139,6 +139,49 @@ describe('NannyWeekView', () => {
     expect(nannyWeekViewSource).toContain('useTabBarScrollPadding');
     expect(nannyWeekViewSource).toContain('paddingBottom: tabBarScrollPadding');
   });
+
+  // §3: one component, mounted by both week views directly under WeekTotal —
+  // the status card says what state the agreement is in, the thread says what
+  // was said about it.
+  it('mounts WeekQueryThread directly under WeekTotal', () => {
+    expect(nannyWeekViewSource).toContain('WeekQueryThread');
+    expect(nannyWeekViewSource).toMatch(
+      /<WeekTotal[\s\S]*?\/>\s*<WeekQueryThread/
+    );
+  });
+
+  // D16, and the whole mechanism by which a query resolves: the parent asks
+  // about Thursday, she FIXES Thursday, the roll-up returns the week to
+  // `submitted`. Only `approved` is read-only.
+  it('never gates day-row editing on a queried week — only an approved one is read-only', () => {
+    expect(nannyWeekViewSource).not.toMatch(
+      /readOnly[^\n]*===\s*['"]queried['"]/
+    );
+    expect(nannyWeekViewSource).not.toMatch(
+      /onEditEntry=\{[^}]*queried[^}]*\}/
+    );
+    // The only status the edit path refuses is `approved`, and that decision
+    // lives in `isEntryEditable`, one directory over.
+    expect(nannyWeekViewSource).toContain(
+      'onEditEntry={readOnly ? undefined : openEditor}'
+    );
+  });
+
+  // §3.1 (M12): the nanny's own entry point. Deliberately unloaded copy, no
+  // status change, no new state — a message on an append-only log.
+  it('offers "This doesn’t look right" below the money card, through BottomSheetBase', () => {
+    expect(nannyWeekViewSource).toContain('hours-flag-link');
+    expect(nannyWeekViewSource).toContain('thread.flagLink');
+    expect(nannyWeekViewSource).toContain('QueryNoteSheet');
+    expect(nannyWeekViewSource).not.toMatch(
+      /import\s*\{[^}]*\bModal\b[^}]*\}\s*from\s*'react-native'/
+    );
+  });
+
+  it('never changes the week’s status from the flag entry point', () => {
+    expect(nannyWeekViewSource).not.toContain('queryTimesheet');
+    expect(nannyWeekViewSource).toContain('useAddTimesheetThreadMessage');
+  });
 });
 
 describe('ParentWeekView', () => {
@@ -208,6 +251,48 @@ describe('ParentWeekView', () => {
     expect(parentWeekViewSource).toContain('useTabBarScrollPadding');
     expect(parentWeekViewSource).toContain(
       'paddingBottom: tabBarScrollPadding'
+    );
+  });
+
+  it('mounts WeekQueryThread directly under WeekTotal', () => {
+    expect(parentWeekViewSource).toContain('WeekQueryThread');
+    expect(parentWeekViewSource).toMatch(
+      /<WeekTotal[\s\S]*?\/>\s*<WeekQueryThread/
+    );
+  });
+
+  // P1: the promoted, parent-only `query_note` band is gone from WeekTotal,
+  // so nothing may keep feeding it.
+  it('no longer hands WeekTotal a queryNote — the thread renders that message to both sides', () => {
+    expect(parentWeekViewSource).not.toContain('queryNote={');
+  });
+
+  // D-19: an AlertDialog, not a sheet — there is no text input to meet a
+  // keyboard, which is the only reason ReopenWeekDialog is a sheet.
+  it('puts withdraw-query behind an AlertDialog confirm, beside Approve', () => {
+    expect(parentWeekViewSource).toContain('WithdrawQueryDialog');
+    expect(parentWeekViewSource).toContain('hours-withdraw-query-button');
+    expect(parentWeekViewSource).toContain('tertiaryAction');
+    expect(parentWeekViewSource).toContain('useWithdrawTimesheetQuery');
+  });
+
+  it('REGRESSION: the withdraw mutateAsync call is try/caught, never a bare .then()', () => {
+    expect(parentWeekViewSource).not.toMatch(/void withdrawQuery\.mutateAsync/);
+    expect(parentWeekViewSource).toMatch(
+      /try\s*\{\s*await withdrawQuery\.mutateAsync/
+    );
+  });
+});
+
+describe('WithdrawQueryDialog', () => {
+  it('is an AlertDialog with no text input — the record is not re-litigated here', async () => {
+    const source = await readSource('WithdrawQueryDialog.tsx');
+    expect(source).toContain('AlertDialog');
+    // The doc comment names both in backticks to explain why they are the
+    // wrong tools here — check for actual imports, not the substring.
+    expect(source).not.toMatch(/import\s*\{[^}]*\bTextarea\b[^}]*\}\s*from/);
+    expect(source).not.toMatch(
+      /import\s*\{[^}]*\bBottomSheetBase\b[^}]*\}\s*from/
     );
   });
 });

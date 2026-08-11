@@ -31,13 +31,18 @@
       "title": "Semana consultada del {{week}}",
       "subtitle": "Un padre/madre preguntó por las horas de esta semana.",
       "subtitleWithNote": "{{note}}",
-      "cta": "Revisar semana"
+      "cta": "Leer y responder"
     },
     "submittedWeek": {
       "title": "Semana del {{week}} enviada — revisar y aprobar",
       "subtitle": "Enviada por {{carer}}.",
       "subtitleFallback": "Toca para revisar las horas de esta semana.",
       "cta": "Aprobar semana"
+    },
+    "staleSubmittedWeek": {
+      "title": "Semana del {{week}} — enviada hace {{days}} días, sin aprobar",
+      "subtitle": "{{hours}} · Con la familia",
+      "cta": "Abrir la semana"
     }
   }
 }

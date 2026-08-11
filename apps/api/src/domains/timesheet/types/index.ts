@@ -9,6 +9,7 @@
  * @module domains/timesheet/types
  */
 export type {
+  AddTimesheetThreadMessageInput,
   ApproveTimesheetInput,
   CarerQuery,
   ClockInInput,
@@ -27,6 +28,8 @@ export type {
   TimesheetIdParam,
   TimesheetListResponse,
   TimesheetStatus,
+  TimesheetThread,
+  TimesheetThreadMessage,
   UpdateTimeEntryInput,
   WeekQuery,
 } from '../schemas';

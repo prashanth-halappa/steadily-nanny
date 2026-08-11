@@ -234,6 +234,59 @@ export class TimesheetController {
     }
   }
 
+  /**
+   * GET /timesheets/:id/thread — what was said about this week, both sides.
+   *
+   * No ownership middleware on the route, deliberately: the gate lives in
+   * `timesheetQueryService.getThread`, which is the WIDER read gate. See the
+   * route file and GOLDEN-FIXES #32.
+   */
+  static async getThread(req: Request, res: Response, next: NextFunction) {
+    try {
+      const id = req.params.id as string;
+      const thread = await timesheetQueryService.getThread(
+        getAuthUserId(req),
+        id
+      );
+      return sendSuccessResponse(res, 'Timesheet thread fetched', { thread });
+    } catch (error) {
+      return next(error);
+    }
+  }
+
+  /** POST /timesheets/:id/thread — a reply from either side (D-18 / D-46). */
+  static async addThreadMessage(
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ) {
+    try {
+      const id = req.params.id as string;
+      const thread = await timesheetCommandService.addThreadMessage(
+        getAuthUserId(req),
+        id,
+        req.body
+      );
+      return sendSuccessResponse(res, 'Note added', { thread }, 201);
+    } catch (error) {
+      return next(error);
+    }
+  }
+
+  /** POST /timesheets/:id/withdraw-query — parents only. Exit from queried (D-19). */
+  static async withdrawQuery(req: Request, res: Response, next: NextFunction) {
+    try {
+      const id = req.params.id as string;
+      const timesheet = await timesheetCommandService.withdrawQuery(
+        getAuthUserId(req),
+        id
+      );
+      return sendSuccessResponse(res, 'Query withdrawn', { timesheet });
+    } catch (error) {
+      return next(error);
+    }
+  }
+
   /** POST /timesheets/:id/reopen — parents only. Undo for approve. */
   static async reopen(req: Request, res: Response, next: NextFunction) {
     try {
