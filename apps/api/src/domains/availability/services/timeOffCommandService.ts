@@ -142,8 +142,10 @@ export function buildSickShiftsAffectedPush(
   householdId: string,
   shifts: readonly OverlappingBookedShift[]
 ): PushPayload {
-  const sorted = [...shifts].sort((a, b) =>
-    a.starts_at.localeCompare(b.starts_at)
+  // Date.parse, never a string compare: starts_at serialisations mix offset
+  // and 'Z' forms, which do not string-order by instant (GOLDEN #25).
+  const sorted = [...shifts].sort(
+    (a, b) => Date.parse(a.starts_at) - Date.parse(b.starts_at)
   );
   const earliest = sorted[0];
   const count = sorted.length;

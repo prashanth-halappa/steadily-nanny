@@ -104,12 +104,14 @@ function DissentSheet({
   onDismiss,
   onSubmit,
   isSubmitting,
+  isError,
 }: {
   householdId: string;
   visible: boolean;
   onDismiss: () => void;
   onSubmit: (note: string | undefined) => void;
   isSubmitting: boolean;
+  isError: boolean;
 }) {
   const { t } = useTranslation('pay');
   const [note, setNote] = useState('');
@@ -134,6 +136,14 @@ function DissentSheet({
           maxLength={280}
         />
         <Small className="text-muted-foreground">{t('dissent.hint')}</Small>
+        {/* GOLDEN #40: a failure inside a sheet stays inside the sheet — an
+            error on the card behind the open sheet is a message nobody reads. */}
+        {isError ? (
+          <InlineError
+            testID={`my-pay-dissent-error-${householdId}`}
+            message={t('ack.recordFailed')}
+          />
+        ) : null}
         <LoadingButton
           testID={`my-pay-dissent-submit-${householdId}`}
           label={t('dissent.submit')}
@@ -456,6 +466,9 @@ function MyPayHouseholdCard({
                   .catch(() => undefined);
               }}
               isSubmitting={proposeTerms.isPending}
+              submitError={
+                proposeTerms.isError ? t('proposal.sendFailed') : null
+              }
               currentArrangement={arrangement}
               householdCancellationDefaultHours={
                 household.cancellation_paid_within_hours ?? 0
@@ -469,11 +482,12 @@ function MyPayHouseholdCard({
               visible={dissentOpen}
               onDismiss={() => setDissentOpen(false)}
               isSubmitting={dissentTerms.isPending}
+              isError={dissentTerms.isError}
               onSubmit={note => {
                 dissentTerms
                   .mutateAsync({ arrangementId: arrangement.id, note })
                   .then(() => setDissentOpen(false))
-                  // Failure stays inline on the card behind the sheet; the
+                  // Failure renders inline INSIDE the sheet (GOLDEN #40); the
                   // sheet keeps her typed note rather than losing it.
                   .catch(() => undefined);
               }}

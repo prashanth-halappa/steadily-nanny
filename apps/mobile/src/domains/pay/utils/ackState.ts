@@ -34,8 +34,13 @@ function newestOfKind(
   return acks
     .filter(row => row.kind === kind)
     .reduce<PayArrangementAck | undefined>(
+      // Date.parse, never a string compare: created_at arrives in mixed
+      // serialisations ('…+00:00' vs '….mmmZ'), which do not string-order
+      // by instant (GOLDEN #25).
       (newest, row) =>
-        !newest || row.created_at > newest.created_at ? row : newest,
+        !newest || Date.parse(row.created_at) > Date.parse(newest.created_at)
+          ? row
+          : newest,
       undefined
     );
 }

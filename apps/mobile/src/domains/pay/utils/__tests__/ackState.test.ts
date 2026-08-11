@@ -53,4 +53,22 @@ describe('resolveAckState', () => {
 
     expect(state.kind).toBe('disagreed');
   });
+
+  // GOLDEN #25: `created_at` arrives in MIXED serialisations — Postgres emits
+  // '…+00:00' (bare seconds when the fraction is zero) while client-written
+  // rows carry `toISOString()`'s '.mmmZ'. A raw string compare ranks 'Z'
+  // (0x5A) above '.' and '+', so the bare-'Z' row always wins newestOfKind
+  // regardless of which instant is actually newer.
+  it('orders mixed created_at serialisations by instant, not by string', () => {
+    const state = resolveAckState([
+      row('disagreed', '2026-08-12T09:00:00Z', 'the older note'),
+      row('disagreed', '2026-08-12T09:00:00.500+00:00', 'the newer note'),
+    ]);
+
+    expect(state).toEqual({
+      kind: 'disagreed',
+      createdAt: '2026-08-12T09:00:00.500+00:00',
+      note: 'the newer note',
+    });
+  });
 });
