@@ -134,12 +134,25 @@ describe('the 10 Aug incident never happens again', () => {
     );
   });
 
+  it('never selects a pending shift — an unanswered ask is not cover (D-22)', () => {
+    // `pickCoverShift` feeds the parent's "who has the children today" row.
+    // A proposal nobody has accepted must not render as "Priya is covering":
+    // the gap card owns that window until someone says yes.
+    expect(
+      pickCoverShift([shift({ status: 'pending' })], NINE_AM)
+    ).toBeUndefined();
+    // ...and it must not outrank a real one, whatever the order.
+    const withPending = [shift({ status: 'pending' }), CONFIRMED_1122];
+    expect(pickCoverShift(withPending, NINE_AM)?.id).toBe(CONFIRMED_1122.id);
+  });
+
   it('holds the shared contract the whole fix rests on', () => {
     // If someone widens this constant, every surface silently regresses.
+    // `pending` left this list under D-22 — for "is this shift on someone's
+    // schedule", the answer is `SCHEDULED_SHIFT_STATUSES`, not this.
     expect([...COVERING_SHIFT_STATUSES].sort()).toEqual([
       'completed',
       'confirmed',
-      'pending',
     ]);
   });
 });

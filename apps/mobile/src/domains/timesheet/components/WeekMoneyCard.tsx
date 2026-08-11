@@ -66,6 +66,8 @@ interface WeekMoneyCardProps {
    * a handler the row is inert and the "Add an adjustment" affordance never
    * renders at all. */
   onAdjustmentPress?: () => void;
+  /** §11.1.1's fast-path clause — forwarded verbatim to `WeekEarningsLine`. */
+  nothingUnusual?: boolean | null;
 }
 
 export function WeekMoneyCard({
@@ -88,6 +90,7 @@ export function WeekMoneyCard({
   onPaymentPress,
   adjustment = null,
   onAdjustmentPress,
+  nothingUnusual = null,
 }: WeekMoneyCardProps) {
   const { t } = useTranslation('hours');
   const earningsKind = weekEarningsSectionKind({
@@ -118,6 +121,7 @@ export function WeekMoneyCard({
             earningsError={earningsError}
             onRetryEarnings={onRetryEarnings}
             onPress={onPressBreakdown}
+            nothingUnusual={nothingUnusual}
           />
         )}
         {/* Between the gross and the settlement, NOT inside

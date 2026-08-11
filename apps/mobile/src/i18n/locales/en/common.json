@@ -16,6 +16,8 @@
   "notFoundTitle": "Not found",
   "notFoundBody": "This screen doesn't exist.",
   "notFoundGoHome": "Go home",
+  "restrictedAction": "Only {{name}} can {{action}} in this household.",
+  "restrictedActionOwner": "the household owner",
   "tabs": {
     "today": "Today",
     "schedule": "Schedule",

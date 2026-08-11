@@ -52,7 +52,10 @@ const PUSH_TYPE_GROUP: Record<PushNotificationType, NotificationGroup> = {
   change_request_expired: 'schedule',
   change_request_withdrawn: 'schedule',
   clock_out_reminder: 'hoursAndPay',
+  carer_sick_shifts_affected: 'schedule',
   co_parent_action_fyi: 'household',
+  cover_ask_declined: 'schedule',
+  cover_ask_expired: 'schedule',
   cover_ask_reminder: 'schedule',
   expense_approved: 'hoursAndPay',
   expense_rejected: 'hoursAndPay',
@@ -93,6 +96,7 @@ const PUSH_TYPE_GROUP: Record<PushNotificationType, NotificationGroup> = {
   time_off_requested: 'schedule',
   uncovered_care_detected: 'schedule',
   uncovered_care_digest: 'schedule',
+  week_below_guarantee: 'hoursAndPay',
 };
 
 const GROUP_ORDER: NotificationGroup[] = [

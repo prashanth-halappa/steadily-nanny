@@ -345,6 +345,12 @@ export class ShiftRepository extends BaseRepository<Shift> {
     reason?: string | null;
     created_by?: string | null;
     is_short_notice?: boolean;
+    /**
+     * D-47. Set ONLY at ask time, by the caller, and never recomputed — see
+     * `domains/shift/utils/coverAskExpiry.ts`. Omitted (or null) on every
+     * shift that is not an outstanding ask.
+     */
+    cover_ask_expires_at?: string | null;
   }): Promise<Shift> {
     const { data: created, error } = await supabaseService
       .from(this.table)
@@ -363,6 +369,7 @@ export class ShiftRepository extends BaseRepository<Shift> {
         reason: data.reason ?? null,
         created_by: data.created_by ?? null,
         cancellation_paid: false,
+        cover_ask_expires_at: data.cover_ask_expires_at ?? null,
         sequence: 0,
       })
       .select()

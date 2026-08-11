@@ -3,7 +3,8 @@
  *
  * Pure date/number helpers + the one function that turns typed form state
  * into a `CreatePayArrangementRequest` (or `null` when anything is invalid).
- * Kept dependency-free from React so it is exhaustively unit-testable
+ * Kept dependency-free from React (the `i18n` singleton import is not React
+ * and carries no component lifecycle) so it is exhaustively unit-testable
  * (docs/TIER0-CX-SPEC.md §1's money discipline: "never Math.round(x * 100)
  * on a float without the string path" applies just as much to dates here —
  * every date is a nominal "yyyy-mm-dd" string, resolved with an explicit
@@ -16,7 +17,11 @@
  * command service enforces them again, server-side, per TIER0-PLAN.md owner
  * decision 4 — this is a fast-fail UX check, not the source of truth).
  */
-import type { CreatePayArrangementRequest } from '@steadily-nanny/shared-types/schemas/payArrangement.schema';
+import type {
+  CreatePayArrangementRequest,
+  PayFrequency,
+} from '@steadily-nanny/shared-types/schemas/payArrangement.schema';
+import i18n from '@/src/i18n';
 import { addLocalDays } from '@/src/lib/localDate';
 import {
   formatMoney,
@@ -25,46 +30,6 @@ import {
 } from '@/src/lib/money';
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-
-const WEEKDAYS_LONG = [
-  'Sunday',
-  'Monday',
-  'Tuesday',
-  'Wednesday',
-  'Thursday',
-  'Friday',
-  'Saturday',
-] as const;
-
-const MONTHS_LONG = [
-  'January',
-  'February',
-  'March',
-  'April',
-  'May',
-  'June',
-  'July',
-  'August',
-  'September',
-  'October',
-  'November',
-  'December',
-] as const;
-
-const MONTHS_ABBR = [
-  'Jan',
-  'Feb',
-  'Mar',
-  'Apr',
-  'May',
-  'Jun',
-  'Jul',
-  'Aug',
-  'Sep',
-  'Oct',
-  'Nov',
-  'Dec',
-] as const;
 
 /** D-16 (spec §6): how far into the future `valid_from` may be set — a bound,
  * not a refusal, mirroring `payArrangementCommandService`'s server-side
@@ -132,36 +97,57 @@ export function isWeekStartDay(dateISO: string, weekStartsOn: number): boolean {
   return toLocalDate(dateISO).getDay() === weekStartsOn;
 }
 
-/** "3 September" style, no year — for the mid-week consequence line and the
- * "Today (4 Aug)" chip is handled separately (needs no year, no weekday). */
+/**
+ * "Thursday, September 3" (en-US) — no year — for the mid-week consequence
+ * line; the "Today (Aug 4)" chip is handled separately (needs no year, no
+ * weekday, `formatShortDate` below).
+ *
+ * §2.6 / D-4 — was a hand-rolled `WEEKDAYS_LONG`/`MONTHS_LONG` array pair
+ * (en-GB day-before-month order, "Thursday 3 September"). `Intl`, keyed off
+ * `i18n.language` (the app's own language setting, not the device's — same
+ * reasoning and same call shape as `earningsFormat.ts`'s
+ * `formatEarningsMultiplier`), gets both the locale-correct WORD ORDER and
+ * the translated month/weekday name for free — a Spanish reader gets
+ * "jueves, 3 de septiembre", not an English month name mid-sentence.
+ */
 export function formatWeekdayLong(dateISO: string): string {
   if (!isValidCalendarDate(dateISO)) return dateISO;
-  const [, m, d] = dateISO.split('-').map(Number);
-  const date = toLocalDate(dateISO);
-  return `${WEEKDAYS_LONG[date.getDay()]} ${d} ${MONTHS_LONG[(m ?? 1) - 1]}`;
+  return new Intl.DateTimeFormat(i18n.language, {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+  }).format(toLocalDate(dateISO));
 }
 
-/** "4 Aug" — no year, for the "Today (…)" chip label. */
+/** "Aug 4" (en-US) — no year, for the "Today (…)" chip label. */
 export function formatShortDate(dateISO: string): string {
   if (!isValidCalendarDate(dateISO)) return dateISO;
-  const [, m, d] = dateISO.split('-').map(Number);
-  return `${d} ${MONTHS_ABBR[(m ?? 1) - 1]}`;
+  return new Intl.DateTimeFormat(i18n.language, {
+    month: 'short',
+    day: 'numeric',
+  }).format(toLocalDate(dateISO));
 }
 
 /** "Aug 2026" — for §5.2's preset review date, the one place a month and a
  * year appear without a day. Here rather than in the sheet so the en-US pass
- * finds every date formatter in one file. */
+ * finds every date formatter in one file. Intl, same as every other
+ * formatter here (3-U2) — never a hand-rolled month array. */
 export function formatMonthYear(dateISO: string): string {
   if (!isValidCalendarDate(dateISO)) return dateISO;
-  const [y, m] = dateISO.split('-').map(Number);
-  return `${MONTHS_ABBR[(m ?? 1) - 1]} ${y}`;
+  return new Intl.DateTimeFormat(i18n.language, {
+    month: 'short',
+    year: 'numeric',
+  }).format(toLocalDate(dateISO));
 }
 
-/** "1 Apr 2026" — with year, for "In effect since" / history rows. */
+/** "Apr 1, 2026" (en-US) — with year, for "In effect since" / history rows. */
 export function formatDisplayDateWithYear(dateISO: string): string {
   if (!isValidCalendarDate(dateISO)) return dateISO;
-  const [y, m, d] = dateISO.split('-').map(Number);
-  return `${d} ${MONTHS_ABBR[(m ?? 1) - 1]} ${y}`;
+  return new Intl.DateTimeFormat(i18n.language, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  }).format(toLocalDate(dateISO));
 }
 
 /** Parses a typed hours field ("40", "1.5") to integer minutes. Blank -> null
@@ -274,6 +260,16 @@ export interface PayTermsFormState {
   cancellationChoice: 'window' | 'none' | null;
   cancellationHoursText: string;
   note: string;
+  /**
+   * 082 (D-17, T7 reversal). PRESENTATION ONLY — `''` means "no pay schedule
+   * stated". Two day fields, not one: `payDayOfWeekText` reads only for
+   * weekly/biweekly, `payDayOfMonthText` only for semimonthly/monthly (see
+   * `payArrangement.schema.ts`'s comment). Both are plain optional text —
+   * a chosen frequency with no day typed is still a valid request.
+   */
+  payFrequency: PayFrequency | '';
+  payDayOfWeekText: string;
+  payDayOfMonthText: string;
   /**
    * The CURRENT arrangement's `overtime_multiplier` — carried through
    * unchanged when the threshold field is blank (review finding 6), so a
@@ -601,6 +597,32 @@ export function buildCreatePayArrangementRequest(
     cancellationPaidWithinHours = hours;
   }
 
+  // ---------------------------------------------------------------------
+  // 082's pay schedule (D-17, T7 reversal). PRESENTATION ONLY — see
+  // `payArrangement.schema.ts`'s comment. Which day field is READ depends on
+  // the chosen frequency; the other is always sent as null, never whatever
+  // stale text sits in the field the family isn't using.
+  // ---------------------------------------------------------------------
+  const payFrequency: PayFrequency | null =
+    state.payFrequency === '' ? null : state.payFrequency;
+  let payDayOfWeek: number | null = null;
+  let payDayOfMonth: number | null = null;
+  if (payFrequency === 'weekly' || payFrequency === 'biweekly') {
+    const trimmed = state.payDayOfWeekText.trim();
+    if (trimmed !== '') {
+      const day = Number(trimmed);
+      if (!Number.isInteger(day) || day < 0 || day > 6) return null;
+      payDayOfWeek = day;
+    }
+  } else if (payFrequency === 'semimonthly' || payFrequency === 'monthly') {
+    const trimmed = state.payDayOfMonthText.trim();
+    if (trimmed !== '') {
+      const day = Number(trimmed);
+      if (!Number.isInteger(day) || day < 1 || day > 31) return null;
+      payDayOfMonth = day;
+    }
+  }
+
   const trimmedNote = state.note.trim();
 
   const terms = buildTermsBag(state);
@@ -620,6 +642,9 @@ export function buildCreatePayArrangementRequest(
     seventh_day_multiplier: seventhDayMultiplier,
     seventh_day_doubletime_after_minutes: seventhDayDoubletimeAfterMinutes,
     worked_holiday_multiplier: workedHolidayMultiplier,
+    pay_frequency: payFrequency,
+    pay_day_of_week: payDayOfWeek,
+    pay_day_of_month: payDayOfMonth,
     guaranteed_minutes_per_week: guaranteedMinutesPerWeek,
     pto_entitlement_minutes_per_year: ptoEntitlementMinutesPerYear,
     mileage_rate_per_mile_minor: mileageRatePerMileMinor,

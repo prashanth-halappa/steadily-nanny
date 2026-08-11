@@ -504,7 +504,7 @@ describe('runUncoveredDigestJob — copy', () => {
 
     expect(sent[0]?.payload.title).toBe('No one booked yet');
     expect(sent[0]?.payload.body).toBe(
-      "No one's booked for Ivy on Mon 10 Aug, 8:00 pm – 9:00 pm."
+      "No one's booked for Ivy on Mon Aug 10, 8:00 pm – 9:00 pm."
     );
     expect(sent[0]?.payload).toMatchObject({
       data: {
@@ -552,7 +552,7 @@ describe('runUncoveredDigestJob — copy', () => {
     );
 
     expect(sent[0]?.payload.body).toBe(
-      "No one's booked for Mon 10 Aug and Tue 11 Aug."
+      "No one's booked for Mon Aug 10 and Tue Aug 11."
     );
   });
 
@@ -580,7 +580,7 @@ describe('runUncoveredDigestJob — copy', () => {
     );
 
     expect(sent[0]?.payload.body).toBe(
-      "No one's booked for Mon 10 Aug and 3 other days."
+      "No one's booked for Mon Aug 10 and 3 other days."
     );
   });
 });

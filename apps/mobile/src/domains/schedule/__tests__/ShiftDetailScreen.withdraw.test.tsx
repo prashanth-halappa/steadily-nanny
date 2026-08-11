@@ -97,6 +97,19 @@ beforeAll(async () => {
   mock.module('@/src/hooks/queries/useShift', () => ({
     useShift: mockUseShift,
   }));
+  // S3/S4 (3-T3): the screen now reads the carer's arrangement for the
+  // cancel dialog's pay sentence and the household for the co-parent
+  // restricted state. Stubbed here so this suite keeps testing its own
+  // subject — see ShiftDetailScreen.cancelPay.test.tsx for their behaviour.
+  mock.module('@/src/hooks/queries/useCurrentPayArrangement', () => ({
+    useCurrentPayArrangement: () => ({ data: null, isLoading: false }),
+  }));
+  mock.module('@/src/hooks/queries/useHouseholds', () => ({
+    useHouseholds: () => ({ data: [], isLoading: false }),
+  }));
+  mock.module('@/src/hooks/queries/useRestrictedAction', () => ({
+    useRestrictedAction: () => ({ disabled: false, reason: null }),
+  }));
   mock.module('@/src/hooks/queries/useShiftEvents', () => ({
     useShiftEvents: () => ({ data: [], isLoading: false }),
   }));

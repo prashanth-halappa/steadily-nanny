@@ -36,7 +36,10 @@ export function isWithinQuietHours(
   timeZone: string
 ): boolean {
   try {
-    const parts = new Intl.DateTimeFormat('en-GB', {
+    // `hourCycle: 'h23'` forces 24h regardless of locale — internal gating
+    // only, never rendered, so the en-US tag (§2.6 sweep, was `en-GB`) is a
+    // no-op on the extracted hour/minute.
+    const parts = new Intl.DateTimeFormat('en-US', {
       timeZone,
       hour: '2-digit',
       minute: '2-digit',

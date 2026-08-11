@@ -109,7 +109,7 @@ describe('UncoveredCareService.raiseUncoveredOnce — cause-aware gap push', () 
       body: string;
     };
     expect(payload.body).toContain('H1 Nanny1 turned down');
-    expect(payload.body).toContain('Mon 10 Aug');
+    expect(payload.body).toContain('Mon Aug 10');
     expect(payload.body).toContain('6:00 am');
     expect(payload.body).toContain('8:00 pm');
     expect(payload.body).toContain('H1 Child1');

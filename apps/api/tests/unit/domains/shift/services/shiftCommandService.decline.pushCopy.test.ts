@@ -139,7 +139,7 @@ describe('ShiftCommandService.decline — push copy', () => {
       body: string;
     };
     expect(payload.body).toBe(
-      'H1 Nanny1 turned down Mon 10 Aug, 6:00 am–8:00 pm (H1 Child1).'
+      'H1 Nanny1 turned down Mon Aug 10, 6:00 am–8:00 pm (H1 Child1).'
     );
   });
 });

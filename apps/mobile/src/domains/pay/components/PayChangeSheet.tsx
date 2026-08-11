@@ -63,6 +63,7 @@ import {
 } from '../utils/termsDiff';
 import { CurrencySelect } from './CurrencySelect';
 import { EffectiveDateField } from './EffectiveDateField';
+import { PayScheduleFields } from './PayScheduleFields';
 import { PayTermsGroups } from './PayTermsGroups';
 
 interface PayChangeSheetProps {
@@ -163,6 +164,19 @@ function seedFormState(
           : '',
     note: '',
     currentOvertimeMultiplier: arrangement.overtime_multiplier,
+    // 082's pay schedule, same re-seed-every-field reason as every other
+    // term above (playbook T17): a change that only touches the rate must
+    // re-send the pay schedule unchanged, or the new append-only row
+    // silently drops what the family already set.
+    payFrequency: arrangement.pay_frequency ?? '',
+    payDayOfWeekText:
+      arrangement.pay_day_of_week == null
+        ? ''
+        : String(arrangement.pay_day_of_week),
+    payDayOfMonthText:
+      arrangement.pay_day_of_month == null
+        ? ''
+        : String(arrangement.pay_day_of_month),
     ...readTermsBag(arrangement.terms),
   };
 }
@@ -389,6 +403,24 @@ export function PayChangeSheet({
           onChange={patch}
           seed={currentArrangement}
           todayISO={todayISO}
+        />
+
+        {/* 082's pay schedule (D-17, T7 reversal) — presentation only, not
+            part of PayTermsGroups' D-3 expanders (spec §4.3 lists it as its
+            own, always-visible block). */}
+        <PayScheduleFields
+          testIDPrefix="pay-change"
+          t={t}
+          payFrequency={form.payFrequency}
+          onPayFrequencyChange={payFrequency => patch({ payFrequency })}
+          payDayOfWeekText={form.payDayOfWeekText}
+          onPayDayOfWeekTextChange={payDayOfWeekText =>
+            patch({ payDayOfWeekText })
+          }
+          payDayOfMonthText={form.payDayOfMonthText}
+          onPayDayOfMonthTextChange={payDayOfMonthText =>
+            patch({ payDayOfMonthText })
+          }
         />
 
         <View className="gap-2">

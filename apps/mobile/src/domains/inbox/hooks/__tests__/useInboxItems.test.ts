@@ -18,6 +18,7 @@ const HOUSEHOLD = {
 const listPatterns = mock(() => Promise.resolve([] as unknown[]));
 const listTimesheets = mock(() => Promise.resolve([] as unknown[]));
 const listPendingChangeRequests = mock(() => Promise.resolve([] as unknown[]));
+const listMeShifts = mock(() => Promise.resolve([] as unknown[]));
 
 let mockUseActiveHousehold: ReturnType<typeof mock>;
 let mockUseIsOnboarded: ReturnType<typeof mock>;
@@ -53,7 +54,7 @@ beforeAll(async () => {
   mock.module('@/src/api/endpoints/me', () => ({
     meApi: {
       listPendingChangeRequests,
-      listShifts: mock(() => Promise.resolve([])),
+      listShifts: listMeShifts,
     },
   }));
 
@@ -65,9 +66,11 @@ beforeEach(() => {
   listPatterns.mockReset();
   listTimesheets.mockReset();
   listPendingChangeRequests.mockReset();
+  listMeShifts.mockReset();
   listPatterns.mockResolvedValue([]);
   listTimesheets.mockResolvedValue([]);
   listPendingChangeRequests.mockResolvedValue([]);
+  listMeShifts.mockResolvedValue([]);
 
   mockUseActiveHousehold.mockImplementation(() => ({
     household: HOUSEHOLD,
@@ -118,6 +121,16 @@ describe('useInboxItems isError channel', () => {
 
   it('surfaces isError when timesheets query fails', async () => {
     listTimesheets.mockRejectedValue(new Error('ts boom'));
+
+    const { result } = renderHookWithProviders(() => useInboxItems());
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(result.current.isLoading).toBe(false);
+    expect(result.current.items).toEqual([]);
+  });
+
+  it('surfaces isError when the me/shifts fan-in fails', async () => {
+    listMeShifts.mockRejectedValue(new Error('shifts boom'));
 
     const { result } = renderHookWithProviders(() => useInboxItems());
 

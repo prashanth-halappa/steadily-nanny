@@ -195,7 +195,15 @@
     "responseLabel": "Respuesta",
     "acceptChange": "Aceptar",
     "declineChange": "Rechazar",
-    "shortNoticePaidHint": "Dentro de la ventana de cancelación pagada.",
+    "cancelPayPaid": "Esto está dentro de tu ventana de cancelación de {{hours}} horas, así que el turno se paga igualmente: {{duration}} a {{amount}}.",
+    "cancelPayPaidUnpriced": "Esto está dentro de tu ventana de cancelación de {{hours}} horas, así que el turno se paga igualmente.",
+    "cancelPayUnpaid": "Esto está fuera de tu ventana de cancelación de {{hours}} horas, así que el turno no se paga.",
+    "cancelPayNoCancellationTerms": "Tus condiciones de pago no incluyen pago por cancelación, así que el turno no se paga.",
+    "cancelPayUnknown": "No hay condiciones de pago configuradas, así que no podemos decir si este turno se paga.",
+    "cancelNeedsAccept": "{{name}} tiene que aceptar la cancelación para que sea definitiva.",
+    "restrictedActionCancelShift": "cancelar turnos de última hora",
+    "askExpired": "Esta solicitud venció el {{weekday}} a las {{time}}.",
+    "askWithdrawn": "La familia retiró esta solicitud.",
     "awaitingNannyConfirm": "Esperando confirmación de la niñera",
     "raisedBy": "Solicitado por {{name}}",
     "respondedBy": "Respondido por {{name}}",
@@ -293,6 +301,9 @@
     "rowMeta": "{{childName}} · {{cause}}",
     "askToCover": "Pide a {{carerName}} que empiece a las {{start}}",
     "askSomeoneToCover": "Pide a una niñera que cubra {{start}} – {{end}}",
+    "askAgain": "Pide de nuevo a {{carerName}}",
+    "askSomeoneElse": "Pide a otra niñera",
+    "restrictedActionAskCover": "pedir a otra niñera que cubra este turno",
     "iveGotIt": "Yo me encargo",
     "parentCoveringRow": "Te encargas tú",
     "parentCoveringBy": "Se encarga {{parentName}}",
@@ -311,6 +322,11 @@
     "causeNamed": {
       "cancelled": "Se canceló el turno de {{carerName}} de {{start}} – {{end}}",
       "declined": "{{carerName}} rechazó {{start}} – {{end}}"
+    },
+    "causeAsk": {
+      "pending": "{{start}} – {{end}} sigue sin cubrir. Se lo pediste a {{carerName}} el {{askedDay}}.",
+      "declined": "{{start}} – {{end}} sigue sin cubrir. {{carerName}} no puede cubrir este turno.",
+      "expired": "{{start}} – {{end}} sigue sin cubrir. La solicitud a {{carerName}} venció el {{expiredDay}}."
     }
   }
 }

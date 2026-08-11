@@ -129,10 +129,19 @@ export const NOTIFICATION_ROUTE_MAP: NotificationRouteMap &
   [PUSH_NOTIFICATION_TYPES.COVER_ASK_REMINDER]: shiftDetailHref,
 
   [PUSH_NOTIFICATION_TYPES.CARER_TIME_OFF_CONFLICT]: shiftsCalendarHref,
+  // 3-T3 (§1.3 N10): a sick day is a fact about the SET of shifts it hit, not
+  // about any one of them — the calendar is the only surface showing the set.
+  [PUSH_NOTIFICATION_TYPES.CARER_SICK_SHIFTS_AFFECTED]: shiftsCalendarHref,
   [PUSH_NOTIFICATION_TYPES.UNCOVERED_CARE_DETECTED]: uncoveredCareHref,
   // Evening digest carries the same householdId + earliest-affected-date
   // payload shape as the immediate alert, so it reuses the resolver.
   [PUSH_NOTIFICATION_TYPES.UNCOVERED_CARE_DIGEST]: uncoveredCareHref,
+  // 3-T3 (§1.3 N8/N9): an ask that expired or was declined hands the window
+  // back to the parent uncovered — the same fact the uncovered alert carries,
+  // so the same destination. Not shift detail: the shift is over as a
+  // question, and what she needs is the gap and its actions (§2.4a).
+  [PUSH_NOTIFICATION_TYPES.COVER_ASK_EXPIRED]: uncoveredCareHref,
+  [PUSH_NOTIFICATION_TYPES.COVER_ASK_DECLINED]: uncoveredCareHref,
 
   [PUSH_NOTIFICATION_TYPES.HOUSEHOLD_CLOSURE_CHANGED]: scheduleTabHref,
 
@@ -195,4 +204,8 @@ export const NOTIFICATION_ROUTE_MAP: NotificationRouteMap &
   // Matrix routes it to the shifts calendar, same surface as the other
   // schedule-review pushes.
   [PUSH_NOTIFICATION_TYPES.SHIFT_NO_SHOW_DIGEST]: shiftsCalendarHref,
+
+  // 3-U3 (N17, D-32 extension): the carer's own week, same destination as
+  // every other timesheet push.
+  [PUSH_NOTIFICATION_TYPES.WEEK_BELOW_GUARANTEE]: hoursHref,
 };

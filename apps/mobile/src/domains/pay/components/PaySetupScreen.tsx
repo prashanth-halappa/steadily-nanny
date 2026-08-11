@@ -35,6 +35,7 @@ import { Textarea } from '@/src/components/ui/textarea';
 import { Body, Label, Small } from '@/src/components/ui/typography';
 import { CurrencySelect } from '@/src/domains/pay/components/CurrencySelect';
 import { EffectiveDateField } from '@/src/domains/pay/components/EffectiveDateField';
+import { PayScheduleFields } from '@/src/domains/pay/components/PayScheduleFields';
 import { PayTermsGroups } from '@/src/domains/pay/components/PayTermsGroups';
 import { resolveCarerName } from '@/src/domains/schedule/utils/memberDisplayName';
 import { SetupScreenShell } from '@/src/domains/setup/components/SetupScreenShell';
@@ -92,6 +93,11 @@ function blankFormState(currency: string, todayISO: string): PayTermsFormState {
     dutiesText: '',
     drivingText: '',
     stipends: [],
+    // 082's pay schedule — blank on a first-ever arrangement, same as every
+    // other optional term above: nothing is agreed yet to seed from.
+    payFrequency: '',
+    payDayOfWeekText: '',
+    payDayOfMonthText: '',
     // Deliberately absent: `currentOvertimeMultiplier`. The redirect below
     // means there is no current arrangement by the time this renders, so 1.5
     // (the blank-threshold default in `buildCreatePayArrangementRequest`) is
@@ -383,6 +389,24 @@ export function PaySetupScreen() {
         onChange={patch}
         seed={null}
         todayISO={todayISO}
+      />
+
+      {/* 082's pay schedule (D-17, T7 reversal) — presentation only, not part
+          of PayTermsGroups' D-3 expanders (spec §4.3 lists it as its own,
+          always-visible block, same as the required core). */}
+      <PayScheduleFields
+        testIDPrefix="pay-setup"
+        t={t}
+        payFrequency={form.payFrequency}
+        onPayFrequencyChange={payFrequency => patch({ payFrequency })}
+        payDayOfWeekText={form.payDayOfWeekText}
+        onPayDayOfWeekTextChange={payDayOfWeekText =>
+          patch({ payDayOfWeekText })
+        }
+        payDayOfMonthText={form.payDayOfMonthText}
+        onPayDayOfMonthTextChange={payDayOfMonthText =>
+          patch({ payDayOfMonthText })
+        }
       />
 
       <View className="gap-2">

@@ -10,6 +10,7 @@ import { AlertCircle } from 'lucide-react-native';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Pressable, View } from 'react-native';
+import { RestrictedActionButton } from '@/src/components/custom/RestrictedActionButton';
 import { Button } from '@/src/components/ui/button';
 import { Card } from '@/src/components/ui/card';
 import { IconChip } from '@/src/components/ui/icon-chip';
@@ -18,18 +19,26 @@ import { StatusPill } from '@/src/components/ui/status-pill';
 import { Body, H3, H4, Small } from '@/src/components/ui/typography';
 import { useHouseholdCarers } from '@/src/domains/schedule/hooks/useHouseholdCarers';
 import { resolveCarerName } from '@/src/domains/schedule/utils/memberDisplayName';
+import { localDateToWeekday } from '@/src/domains/schedule/utils/shiftGrouping';
 import {
+  describeAskCause,
   describeUncoveredCause,
+  inferAskState,
   inferUncoveredCauseDetail,
 } from '@/src/domains/schedule/utils/uncoveredDisplay';
 import { formatClockTime } from '@/src/domains/timesheet/utils/duration';
 import { useCreateParentCover } from '@/src/hooks/mutations/useCreateParentCover';
 import { useDayThread } from '@/src/hooks/queries/useDayThread';
 import { useHouseholdMembers } from '@/src/hooks/queries/useHouseholdMembers';
+import { useRestrictedAction } from '@/src/hooks/queries/useRestrictedAction';
 import { useShiftsRange } from '@/src/hooks/queries/useShiftsRange';
 import { addLocalDays, localDateInZone } from '@/src/lib/localDate';
 import { utcIsoToWallClockHHMM, wallClockToUtcIso } from '@/src/lib/wallClock';
-import { type PlanLine, useTodayCoverage } from '../hooks/useTodayCoverage';
+import {
+  gapEscalationHours,
+  type PlanLine,
+  useTodayCoverage,
+} from '../hooks/useTodayCoverage';
 
 interface TodayCoverageProps {
   householdId: string;
@@ -156,6 +165,14 @@ export function TodayCoverage({
   const carersQuery = useHouseholdCarers(householdId);
   const membersQuery = useHouseholdMembers(householdId);
   const createCover = useCreateParentCover();
+  // §7 — the same server gate `createExtraShift` consults for a co-parent
+  // under `approval_mode='owner_only'` (`ApprovalGateAction: 'extra_shift'`).
+  // `createParentCover` ("I've got it") is NOT gated server-side, so it stays
+  // unrestricted here on purpose.
+  const askCoverRestriction = useRestrictedAction({
+    householdId,
+    action: tSchedule('cover.restrictedActionAskCover'),
+  });
 
   const localDate = localDateInZone(timeZone);
   const tomorrow = addLocalDays(localDate, 1);
@@ -255,16 +272,39 @@ export function TodayCoverage({
     ? carerFirstName(resolveCarerName(singleCarer, ''))
     : '';
 
-  const gapHeadline =
-    windows.length === 1 && singleWindow
-      ? t('coverage.gap.titleOne', {
-          childName: childName(singleWindow.childId, householdChildren),
-          start: formatClockTime(singleWindow.startsAt, timeZone),
-          end: formatClockTime(singleWindow.endsAt, timeZone),
-        })
-      : t('coverage.gap.titleMany', { count: windows.length });
+  // §5.4 (D-47): inside 12h the headline stops describing the gap and starts
+  // counting down to it. Demoted the card has already lost arbitration to
+  // something more urgent, so it must not shout — and the tone stays
+  // `attention`, never `critical`: the escalation is copy, not a new register.
+  const escalationHours =
+    !demoted && singleWindow
+      ? gapEscalationHours(singleWindow.startsAt, Date.now())
+      : null;
 
-  const extraHref = (() => {
+  const gapHeadline = (() => {
+    if (!singleWindow) {
+      return t('coverage.gap.titleMany', { count: windows.length });
+    }
+    const start = formatClockTime(singleWindow.startsAt, timeZone);
+    const end = formatClockTime(singleWindow.endsAt, timeZone);
+    if (escalationHours !== null) {
+      return t('coverage.gap.titleOneEscalated', {
+        weekday: tSchedule(`weekday.${localDateToWeekday(state.localDate)}`),
+        start,
+        end,
+        count: escalationHours,
+      });
+    }
+    return t('coverage.gap.titleOne', {
+      childName: childName(singleWindow.childId, householdChildren),
+      start,
+      end,
+    });
+  })();
+
+  // §2.4a — `carerId` omitted builds the "ask someone else" href (opens the
+  // picker); passed explicitly it re-targets the same carer ("ask again").
+  const extraHrefFor = (carerId: string | null): Href | null => {
     if (!singleWindow) return null;
     const start = utcIsoToWallClockHHMM(singleWindow.startsAt, timeZone);
     const end = utcIsoToWallClockHHMM(singleWindow.endsAt, timeZone);
@@ -274,11 +314,62 @@ export function TodayCoverage({
       end,
       childId: singleWindow.childId,
     });
-    if (singleCarer?.user_id) {
-      params.set('carerId', singleCarer.user_id);
+    if (carerId) {
+      params.set('carerId', carerId);
     }
     return `/(private)/schedule/shifts/extra?${params.toString()}` as Href;
+  };
+  const extraHref = extraHrefFor(singleCarer?.user_id ?? null);
+
+  // §2.4a — the cover-ask lifecycle overlaying the gap's original cause, for
+  // the SAME window the action row acts on. A separate fact from `cause`
+  // above: `cause` is why the window opened, this is what has since been
+  // done about it.
+  const askState = singleWindow
+    ? inferAskState(singleWindow, shiftsQuery.data ?? [], Date.now())
+    : null;
+  const askCarerName = askState
+    ? resolveCarerName(
+        membersQuery.data?.find(m => m.user_id === askState.shift.carer_id),
+        t('today:carerFallback')
+      )
+    : null;
+
+  // §2.4a's action-row table, one branch per ask state. `escalated` (§5.4) is
+  // driven purely by the clock and stays on the plain "ask" copy when there is
+  // no ask yet — only an outstanding ask changes what the primary button says.
+  const defaultAskLabel = singleWindow
+    ? singleCarerFirstName
+      ? tSchedule('cover.askToCover', {
+          carerName: singleCarerFirstName,
+          start: formatClockTime(singleWindow.startsAt, timeZone),
+        })
+      : tSchedule('cover.askSomeoneToCover', {
+          start: formatClockTime(singleWindow.startsAt, timeZone),
+          end: formatClockTime(singleWindow.endsAt, timeZone),
+        })
+    : '';
+  const primaryAsk = (() => {
+    if (askState?.state === 'expired') {
+      return {
+        label: tSchedule('cover.askAgain', { carerName: askCarerName ?? '' }),
+        href: extraHrefFor(askState.shift.carer_id),
+      };
+    }
+    if (askState) {
+      // pending or declined: someone has already answered (or is answering)
+      // this exact question — the next step is a DIFFERENT person, not them.
+      return {
+        label: tSchedule('cover.askSomeoneElse'),
+        href: extraHrefFor(null),
+      };
+    }
+    return { label: defaultAskLabel, href: extraHref };
   })();
+  // §2.4a's table has no "hours wrong" link on any ask-lifecycle row — it is
+  // the "none asked" default's third action, not a permanent fixture.
+  const showHoursWrongLink = !askState;
+  const showAskSomeoneElseSecondary = askState?.state === 'expired';
 
   // Rule M (daylight-v2 §2.3): on the ochre `surfaceAttention` ground
   // `mutedForeground` measures 4.28:1 and fails AA at these sizes. Demoted the
@@ -319,6 +410,34 @@ export function TodayCoverage({
         </View>
 
         {visible.map(window => {
+          // The one window this card acts on ALSO carries the ask-lifecycle
+          // line (§2.4a) — a second `inferAskState` call per window would be
+          // redundant work for windows the action row never touches, and
+          // B3's "one owner" already scopes the ask state to the window with
+          // actions.
+          const isActedWindow =
+            singleWindow !== undefined &&
+            window.childId === singleWindow.childId &&
+            window.commitmentId === singleWindow.commitmentId &&
+            window.startsAt === singleWindow.startsAt;
+          if (isActedWindow && askState) {
+            const causeLine = describeAskCause({
+              state: askState.state,
+              window,
+              shift: askState.shift,
+              carerName: askCarerName ?? t('today:carerFallback'),
+              timeZone,
+              t: tSchedule,
+            });
+            return (
+              <Small
+                key={`${window.childId}|${window.commitmentId}|${window.startsAt}`}
+                className={detailMutedClass}
+              >
+                {causeLine}
+              </Small>
+            );
+          }
           const causeDetail = inferUncoveredCauseDetail(
             window,
             shiftsQuery.data ?? []
@@ -354,28 +473,36 @@ export function TodayCoverage({
           </Small>
         ) : null}
 
-        {singleWindow && extraHref ? (
+        {singleWindow && primaryAsk.href ? (
           <View className="gap-2">
             {/* L1's action is a full-width filled button at `lg` (56pt); the
                 demoted rung gets a ghost link instead, because a card that
-                lost arbitration must not out-shout the one that won it. */}
-            <Button
+                lost arbitration must not out-shout the one that won it.
+                Restricted via §7's `extra_shift` gate — the same one
+                `createExtraShift` consults server-side for a co-parent under
+                `owner_only`. */}
+            <RestrictedActionButton
               testID="today-coverage-ask-cover"
               size={demoted ? 'sm' : 'lg'}
               variant={demoted ? 'ghost' : 'default'}
               className={demoted ? 'self-start px-0' : 'w-full'}
-              onPress={() => router.push(extraHref)}
-            >
-              {singleCarerFirstName
-                ? tSchedule('cover.askToCover', {
-                    carerName: singleCarerFirstName,
-                    start: formatClockTime(singleWindow.startsAt, timeZone),
-                  })
-                : tSchedule('cover.askSomeoneToCover', {
-                    start: formatClockTime(singleWindow.startsAt, timeZone),
-                    end: formatClockTime(singleWindow.endsAt, timeZone),
-                  })}
-            </Button>
+              label={primaryAsk.label}
+              reason={askCoverRestriction.reason}
+              onPress={() => router.push(primaryAsk.href as Href)}
+            />
+            {showAskSomeoneElseSecondary ? (
+              <RestrictedActionButton
+                testID="today-coverage-ask-someone-else"
+                size="sm"
+                variant="outline"
+                label={tSchedule('cover.askSomeoneElse')}
+                reason={askCoverRestriction.reason}
+                onPress={() => {
+                  const href = extraHrefFor(null);
+                  if (href) router.push(href);
+                }}
+              />
+            ) : null}
             <Button
               testID="today-coverage-parent-cover"
               size="sm"
@@ -392,16 +519,18 @@ export function TodayCoverage({
             >
               {tSchedule('cover.iveGotIt')}
             </Button>
-            <Pressable
-              testID="today-coverage-hours-wrong"
-              accessibilityRole="button"
-              hitSlop={8}
-              onPress={() => router.push('/settings/children' as Href)}
-            >
-              <Small className="text-primary" weight="medium">
-                {tSchedule('cover.hoursWrong')}
-              </Small>
-            </Pressable>
+            {showHoursWrongLink ? (
+              <Pressable
+                testID="today-coverage-hours-wrong"
+                accessibilityRole="button"
+                hitSlop={8}
+                onPress={() => router.push('/settings/children' as Href)}
+              >
+                <Small className="text-primary" weight="medium">
+                  {tSchedule('cover.hoursWrong')}
+                </Small>
+              </Pressable>
+            ) : null}
           </View>
         ) : null}
       </Card>

@@ -90,6 +90,9 @@ mock.module('@/src/hooks/mutations/useCreateParentCover', () => ({
 mock.module('@/src/domains/today/hooks/useHouseholdIsLive', () => ({
   useHouseholdIsLive: () => false,
 }));
+mock.module('@/src/hooks/queries/useRestrictedAction', () => ({
+  useRestrictedAction: () => ({ disabled: false, reason: null }),
+}));
 mock.module('expo-router', () => ({
   useRouter: () => ({ push: mock(), back: mock() }),
   // `src/lib/pushNotification.ts` imports the imperative `router`, and this

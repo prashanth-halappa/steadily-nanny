@@ -99,6 +99,24 @@ const OvertimeMultiplierSchema = z
       'overtime_multiplier must have at most two decimal places (numeric(3,2))',
   });
 
+/**
+ * How often this family pays (082, D-17, T7 reversal). PRESENTATION ONLY —
+ * see `082_pay_arrangement_schedule.sql`'s header. The earnings engine never
+ * reads this value; a case in `earningsService.test.ts` pins that pricing is
+ * identical with and without it set.
+ */
+export const PAY_FREQUENCIES = {
+  WEEKLY: 'weekly',
+  BIWEEKLY: 'biweekly',
+  SEMIMONTHLY: 'semimonthly',
+  MONTHLY: 'monthly',
+} as const;
+export type PayFrequency =
+  (typeof PAY_FREQUENCIES)[keyof typeof PAY_FREQUENCIES];
+const PayFrequencySchema = z.enum(
+  Object.values(PAY_FREQUENCIES) as [PayFrequency, ...PayFrequency[]]
+);
+
 /** The persisted entity as returned to clients. */
 export const PayArrangementSchema = z.object({
   id: z.uuid(),
@@ -176,6 +194,26 @@ export const PayArrangementSchema = z.object({
   // the parties.
   // ---------------------------------------------------------------------
   worked_holiday_multiplier: OvertimeMultiplierSchema.nullable().optional(),
+  // ---------------------------------------------------------------------
+  // Pay frequency + pay day (082, D-17, T7 reversal,
+  // `docs/design/screens-pay-terms.md` §4.3 "Pay schedule").
+  //
+  // NULL IS AN EXPLICIT NO on all three, the same rule as every tier above:
+  // no pay schedule stated. `.optional()` as well as `.nullable()` for the
+  // same fixture reason the 078/080 columns carry it — a live row always
+  // carries the column; this only affects a fixture or pre-082 payload.
+  //
+  // TWO DAY COLUMNS, NOT ONE: `pay_day_of_week` (0=Sun..6=Sat) is read only
+  // when `pay_frequency` is weekly/biweekly; `pay_day_of_month` (1-31, the
+  // FIRST cutoff) only when it is semimonthly/monthly. Semimonthly's second
+  // cutoff is always the calendar's own last day of the month and is never
+  // stored (082's header). This is presentation only — nothing here feeds the
+  // earnings engine, which prices one week at a time regardless of how the
+  // family groups weeks for their own reading.
+  // ---------------------------------------------------------------------
+  pay_frequency: PayFrequencySchema.nullable().optional(),
+  pay_day_of_week: z.int().min(0).max(6).nullable().optional(),
+  pay_day_of_month: z.int().min(1).max(31).nullable().optional(),
   // Null = no guaranteed-hours top-up.
   guaranteed_minutes_per_week: z.int().min(0).nullable(),
   // Null = no PTO entitlement. Read by Phase 3's ledger accrual.
@@ -266,6 +304,12 @@ export const CreatePayArrangementRequestSchema = z.object({
   // No wire default, for the same reason the 078 tiers have none: a default
   // here would promise every family a holiday premium nobody agreed to.
   worked_holiday_multiplier: OvertimeMultiplierSchema.nullable().optional(),
+  // 082's pay schedule — presentation only, see `PayArrangementSchema`'s
+  // comment. No wire default: an omitted schedule is "not stated", never an
+  // invented "weekly".
+  pay_frequency: PayFrequencySchema.nullable().optional(),
+  pay_day_of_week: z.int().min(0).max(6).nullable().optional(),
+  pay_day_of_month: z.int().min(1).max(31).nullable().optional(),
   guaranteed_minutes_per_week: z.int().min(0).nullable().optional(),
   pto_entitlement_minutes_per_year: z.int().min(0).nullable().optional(),
   mileage_rate_per_mile_minor: z

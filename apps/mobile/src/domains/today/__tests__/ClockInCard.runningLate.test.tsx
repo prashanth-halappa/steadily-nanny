@@ -13,6 +13,10 @@ import {
   mock,
   setSystemTime,
 } from 'bun:test';
+import {
+  TIME_ENTRY_KINDS,
+  TIME_ENTRY_STATUSES,
+} from '@steadily-nanny/shared-types/schemas/timesheet.schema';
 import { fireEvent, waitFor } from '@testing-library/react-native';
 import { useAuthStore } from '@/src/store/auth';
 import { renderWithProviders } from '@/src/test-utils';
@@ -122,6 +126,12 @@ beforeAll(async () => {
       clockIn: clockInMock,
       clockOut: clockOutMock,
     },
+    // §11.1's `earningsStructureLine` chain pulls these re-exported
+    // constants in transitively — real, pure, sync values, so this mock
+    // stays a complete stand-in instead of throwing on a named export it
+    // never provided.
+    TIME_ENTRY_KINDS,
+    TIME_ENTRY_STATUSES,
   }));
   mock.module('@/src/api/endpoints/shifts', () => ({
     shiftApi: {

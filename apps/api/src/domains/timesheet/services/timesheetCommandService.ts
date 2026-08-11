@@ -32,8 +32,10 @@ import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types/schemas/no
 import { MAX_MONEY_MINOR } from '@steadily-nanny/shared-types/schemas/payArrangement.schema';
 import type { WeekEarnings } from '@steadily-nanny/shared-types/schemas/timesheet.schema';
 import {
+  EARNINGS_LINE_KINDS,
   EARNINGS_RESULT_STATUSES,
   MAX_SESSION_SPAN_MS,
+  WeekEarningsSchema,
 } from '@steadily-nanny/shared-types/schemas/timesheet.schema';
 import { logger } from '../../../middlewares/logger';
 import {
@@ -212,6 +214,42 @@ function trimForPush(text: string): string | null {
   return trimmed.length <= PUSH_BODY_MAX
     ? trimmed
     : `${trimmed.slice(0, PUSH_BODY_MAX - 1)}…`;
+}
+
+const PUSH_MONTH_ABBR = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+] as const;
+
+/**
+ * "4 Aug" — for the `week_below_guarantee` push body only (N17,
+ * §2.3b): "Your week of 4 Aug was approved at 44h — 6h under your 50h
+ * guarantee." Push copy in this file is fixed English (see the module doc's
+ * i18n note on `trimForPush`'s callers) — no locale, matching the app's
+ * existing hardcoded push strings.
+ */
+function formatPushWeekDate(weekStart: string): string {
+  const [, m, d] = weekStart.split('-').map(Number);
+  const month = PUSH_MONTH_ABBR[(m ?? 1) - 1] ?? '';
+  return `${d ?? ''} ${month}`;
+}
+
+/** Minutes to "44h" (or "44h 30m" when not a whole hour) — the N17 push body's
+ * only number format, deliberately hours only (§1.6/§2.3b — never the gross). */
+function formatPushHours(minutes: number): string {
+  const wholeHours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  return remainder === 0 ? `${wholeHours}h` : `${wholeHours}h ${remainder}m`;
 }
 /**
  * Terminal states a parent has already acted on. New hours landing here must
@@ -1679,29 +1717,96 @@ export class TimesheetCommandService {
     // failure must never fail the approval write the parent already completed.
     if (approved.carer_id) {
       try {
-        this.push.notifyUser(approved.carer_id, {
-          title: 'Hours approved',
-          // Body copy only — same type, same title, same payload, so nothing
-          // downstream forks on this. The FIGURE is deliberately absent: a
-          // lock screen carries no state label, and `docs/11-MONEY.md` §3
-          // forbids an unlabelled amount. "Open Hours to see it" is the
-          // honest version.
-          body: adjustment
-            ? 'A parent approved your hours this week, with an adjustment included.'
-            : 'A parent approved your hours this week.',
-          data: {
-            type: PUSH_NOTIFICATION_TYPES.TIMESHEET_APPROVED,
-            timesheetId: approved.id,
-            householdId: approved.household_id,
-            weekStart: approved.week_start,
-          },
-        });
+        this.push.notifyUser(
+          approved.carer_id,
+          this.approvalPushPayload(
+            approved.id,
+            approved.household_id,
+            approved.week_start,
+            snapshot.earnings,
+            !!adjustment
+          )
+        );
       } catch {
         // notifyUser is sync fire-and-forget; swallow any unexpected throw
       }
     }
 
     return toWireTimesheet(approved);
+  }
+
+  /**
+   * N17 / §2.3b (D-32 extension, 3-U3): `week_below_guarantee` REPLACES
+   * `timesheet_approved` — never both — for a week whose FROZEN snapshot
+   * still carries a `guaranteed_topup` line. The unconditional top-up
+   * (`earningsService.ts`) already made this week whole for every OTHER
+   * shortfall; a line surviving into the SNAPSHOT means the guarantee
+   * itself was still short, or no arrangement covered every day — a fact
+   * about her pay, final now that the snapshot is frozen, not a mid-week
+   * figure in motion (§1.6's "wrong an hour later" reasoning stops applying
+   * the moment it freezes).
+   *
+   * A8 still binds on the money here exactly as it does for the plain
+   * approval push: the hours are the subject, the gross figure stays OUT of
+   * the body. `snapshot.earnings` is only ever non-null on the `ok` arm (see
+   * `computeSnapshot`), which is also the only arm a `guaranteed_topup` line
+   * could exist on — an unpriceable week never fabricates a guarantee claim.
+   */
+  private approvalPushPayload(
+    timesheetId: string,
+    householdId: string,
+    weekStart: string,
+    rawEarnings: TimesheetEarningsSnapshot['earnings'],
+    hasAdjustment: boolean
+  ): PushPayload {
+    // `rawEarnings` is `unknown` (the interface's own doc comment: "every
+    // reader must parse it through WeekEarningsSchema") — the SAME rule
+    // `earningsFor` applies on the read side. A parse failure here falls
+    // through to the plain approval push below, never a fabricated
+    // guarantee claim built on a shape that isn't actually `ok`.
+    const parsed = WeekEarningsSchema.safeParse(rawEarnings);
+    const earnings = parsed.success ? parsed.data : null;
+    const topup =
+      earnings?.status === 'ok'
+        ? earnings.lines.find(
+            line => line.kind === EARNINGS_LINE_KINDS.GUARANTEED_TOPUP
+          )
+        : undefined;
+    if (
+      topup &&
+      earnings?.status === 'ok' &&
+      earnings.guaranteed_minutes_per_week !== null
+    ) {
+      const payableMinutes =
+        earnings.guaranteed_minutes_per_week - topup.minutes;
+      return {
+        title: 'Hours approved',
+        body: `Your week of ${formatPushWeekDate(weekStart)} was approved at ${formatPushHours(payableMinutes)} — ${formatPushHours(topup.minutes)} under your ${formatPushHours(earnings.guaranteed_minutes_per_week)} guarantee.`,
+        data: {
+          type: PUSH_NOTIFICATION_TYPES.WEEK_BELOW_GUARANTEE,
+          timesheetId,
+          householdId,
+          weekStart,
+        },
+      };
+    }
+    return {
+      title: 'Hours approved',
+      // Body copy only — same type, same title, same payload, so nothing
+      // downstream forks on this. The FIGURE is deliberately absent: a
+      // lock screen carries no state label, and `docs/11-MONEY.md` §3
+      // forbids an unlabelled amount. "Open Hours to see it" is the
+      // honest version.
+      body: hasAdjustment
+        ? 'A parent approved your hours this week, with an adjustment included.'
+        : 'A parent approved your hours this week.',
+      data: {
+        type: PUSH_NOTIFICATION_TYPES.TIMESHEET_APPROVED,
+        timesheetId,
+        householdId,
+        weekStart,
+      },
+    };
   }
 
   /**

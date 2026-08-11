@@ -49,6 +49,8 @@
   "coverage": {
     "gap": {
       "titleOne": "No one's with {{childName}} from {{start}} to {{end}}",
+      "titleOneEscalated_one": "{{weekday}} {{start}} – {{end}} starts in {{count}} hour and no one is booked.",
+      "titleOneEscalated_other": "{{weekday}} {{start}} – {{end}} starts in {{count}} hours and no one is booked.",
       "titleMany": "{{count}} gaps today",
       "windowLine": "{{childName}} · {{start}} – {{end}} · {{cause}}",
       "windowAllDay": "{{childName}} · all day · {{cause}}",
@@ -164,7 +166,6 @@
     "declineConfirmCancel": "Cancel",
     "declineConfirmConfirm": "Decline",
     "cancelConfirmTitle": "Request to cancel this shift?",
-    "cancelConfirmBody": "This sends a cancellation request — it won't cancel the shift until confirmed.",
     "cancelConfirmCancel": "Keep shift",
     "cancelConfirmConfirm": "Request cancel",
     "withdrawCta": "Withdraw",

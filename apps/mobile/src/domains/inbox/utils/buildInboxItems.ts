@@ -14,9 +14,28 @@
  *    sent more than 14 days ago (D-46 / M13). The carer's copy of the same
  *    week the item above is the parent's; they are different items for
  *    different people, and neither resolves in place.
+ *  - pending shifts: status === 'pending' AND carer_id === me AND role is
+ *    the nanny — a cover-ask, an extra-shift proposal, and a
+ *    demoted-shift-needing-reconfirm are all the SAME fact ("a shift is
+ *    waiting on your answer") and share one kind (§2.2). The role check is
+ *    explicit, not left to the carer_id match alone (B5) — a helper is never
+ *    a real carer_id match by data, but this makes the exclusion true by
+ *    construction, not by happenstance, and is pinned by a test.
+ *
+ * §2.2's urgency ordering: items are sorted by `sortKey` ascending (a rank
+ * per kind, `pending_shift` forking on whether the shift starts within 48h),
+ * ties broken by the date the item concerns, soonest first. Ranks the spec
+ * assigns to kinds this build does not add (`terms_proposal`,
+ * `reimbursement_owed`, `terms_ack` — see the module doc on `inboxItemCopy.ts`
+ * for why) are reserved rather than reused, so a later slice slots in without
+ * renumbering everything here.
  */
 
-import { isParentEditorRole, type SetupRole } from '@/src/domains/setup/types';
+import {
+  isParentEditorRole,
+  SETUP_ROLES,
+  type SetupRole,
+} from '@/src/domains/setup/types';
 
 export type InboxChangeRequestInput = {
   id: string;
@@ -57,6 +76,18 @@ export type InboxTimesheetInput = {
   updated_at?: string;
 };
 
+export type InboxShiftInput = {
+  id: string;
+  carer_id: string | null;
+  status: string;
+  local_date: string;
+  starts_at: string;
+  ends_at: string;
+  created_at: string;
+  /** Null on any shift that is not an outstanding ask (migration 088). */
+  cover_ask_expires_at?: string | null;
+};
+
 export type InboxItem =
   | {
       kind: 'change_request';
@@ -88,6 +119,15 @@ export type InboxItem =
       weekStart: string;
       daysAgo: number;
       totalMinutes: number;
+    }
+  | {
+      kind: 'pending_shift';
+      id: string;
+      localDate: string;
+      startsAt: string;
+      endsAt: string;
+      createdAt: string;
+      coverAskExpiresAt: string | null;
     };
 
 /**
@@ -114,11 +154,16 @@ export function buildInboxItems(input: {
   /** Today in the household's zone — the clock `stale_submitted_week` is
    * measured against. */
   todayISO: string;
+  /** The current instant, for §2.2's ordering (`pending_shift`'s within-48h
+   * fork) — injectable for deterministic tests, defaults to `Date.now()`. */
+  nowISO?: string;
   changeRequests: readonly InboxChangeRequestInput[];
   patterns: readonly InboxPatternInput[];
   timesheets: readonly InboxTimesheetInput[];
+  shifts?: readonly InboxShiftInput[];
 }): InboxItem[] {
   const me = input.currentUserId ?? null;
+  const nowMs = input.nowISO ? Date.parse(input.nowISO) : Date.now();
   const items: InboxItem[] = [];
 
   for (const req of input.changeRequests) {
@@ -190,5 +235,82 @@ export function buildInboxItems(input: {
     });
   }
 
+  // §2.2/§2.3a — B5: the role check is explicit, not left to the carer_id
+  // match alone. See the module doc.
+  if (input.role === SETUP_ROLES.NANNY) {
+    for (const shift of input.shifts ?? []) {
+      if (shift.status !== 'pending') continue;
+      if (!me || shift.carer_id !== me) continue;
+      items.push({
+        kind: 'pending_shift',
+        id: shift.id,
+        localDate: shift.local_date,
+        startsAt: shift.starts_at,
+        endsAt: shift.ends_at,
+        createdAt: shift.created_at,
+        coverAskExpiresAt: shift.cover_ask_expires_at ?? null,
+      });
+    }
+  }
+
+  items.sort((a, b) => compareItems(a, b, nowMs));
   return items;
+}
+
+/**
+ * §2.2's urgency ordering. Rank ascending; a lower number renders first.
+ * Ranks 4/8/9 belong to kinds this build does not add (`terms_proposal`,
+ * `reimbursement_owed`, `terms_ack`) and are deliberately left unassigned
+ * here rather than reused, so a later slice's kind slots in at its spec'd
+ * rank without renumbering every other kind.
+ */
+function sortKey(item: InboxItem, nowMs: number): number {
+  if (item.kind === 'pending_shift') {
+    const hoursUntilStart = (Date.parse(item.startsAt) - nowMs) / 3_600_000;
+    return hoursUntilStart <= 48 ? 1 : 5;
+  }
+  switch (item.kind) {
+    case 'change_request':
+      return 2;
+    case 'queried_week':
+      return 3;
+    // Not in §2.2's table (patterns predate this build) — bucketed with
+    // "pending_shift, all others": both are a schedule response waiting on
+    // her, neither D-22-deadline-bearing.
+    case 'pending_pattern':
+      return 5;
+    case 'submitted_week':
+      return 6;
+    case 'stale_submitted_week':
+      return 7;
+  }
+}
+
+/** The date each kind's copy is "about", for the ordering's soonest-first tie-break. */
+function sortDateFor(item: InboxItem): string | null {
+  switch (item.kind) {
+    case 'pending_shift':
+      return item.startsAt;
+    case 'pending_pattern':
+      return item.dtstart;
+    case 'queried_week':
+    case 'submitted_week':
+    case 'stale_submitted_week':
+      return item.weekStart;
+    // change_request carries no date on this shape — insertion order stands
+    // (a stable sort's fallback), which is an acceptable tie-break: two
+    // change requests competing for the same rank is rare, and neither one
+    // decays faster than the other in a way this shape can see.
+    case 'change_request':
+      return null;
+  }
+}
+
+function compareItems(a: InboxItem, b: InboxItem, nowMs: number): number {
+  const rankDiff = sortKey(a, nowMs) - sortKey(b, nowMs);
+  if (rankDiff !== 0) return rankDiff;
+  const dateA = sortDateFor(a);
+  const dateB = sortDateFor(b);
+  if (dateA && dateB) return Date.parse(dateA) - Date.parse(dateB);
+  return 0;
 }

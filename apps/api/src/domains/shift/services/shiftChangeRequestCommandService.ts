@@ -69,6 +69,7 @@ import type {
   CreateShiftChangeRequestInput,
   RespondToShiftChangeRequestInput,
 } from '../types';
+import { computeCoverAskExpiry } from '../utils/coverAskExpiry';
 import {
   type ShiftChangeRequestQueryService,
   shiftChangeRequestQueryService,
@@ -160,7 +161,9 @@ function isCancellationPaid(
 }
 
 /**
- * The three-arm cancellation-pay rule (owner decision 5, review finding 10).
+ * The three-arm cancellation-pay rule (owner decision 5, review finding 10),
+ * as amended by **D-48: there is ONE cancellation window**.
+ *
  * `arrangement` is the carer's pay arrangement effective on the SHIFT's
  * household-local start date — never the accept date, never today, and never
  * the shift's own `local_date`, which migration 015 derives from the shift's
@@ -168,29 +171,39 @@ function isCancellationPaid(
  * by the caller (`respond`) before `planAcceptedChange` runs, so this stays
  * pure and synchronous:
  *
- * 1. Arrangement exists, window is a number → that window governs, full stop
- *    (even if the household's own column would say otherwise).
+ * 1. Arrangement exists, window is a number → that window governs, full stop.
  * 2. Arrangement exists, window is explicitly `null` → NOT paid. This is a
- *    deliberate no-cancellation-pay agreement, not the absence of one, and it
- *    overrides the household fallback even when the household's window would
- *    have covered this cancellation.
- * 3. No arrangement at all → fall back to `household.cancellation_paid_within_hours`
- *    (legacy behaviour, including its `0`-means-no-pay semantics — `0` is
- *    never greater than `hoursUntilStart`, so `isCancellationPaid` already
- *    resolves that case correctly without special-casing it here).
+ *    deliberate no-cancellation-pay agreement, not the absence of one.
+ * 3. **No arrangement at all → NOT paid.** This arm CHANGED in 3-T3. It used
+ *    to fall back to `households.cancellation_paid_within_hours` (009), the
+ *    column 041:107 already flagged for deprecation. D-48 removes that
+ *    fallback and this function was its last reader.
+ *
+ * ARM 3 IS STRICTER THAN WHAT IT REPLACES, and that is the point. A household
+ * whose column said 24 used to pay a no-arrangement cancellation and now does
+ * not. Two homes for one number eventually print two contradictory sentences
+ * on one screen — the cancel dialog saying "outside your 24-hour window, so it
+ * isn't paid" beside a pill reading "Short notice", which every nanny reads as
+ * "this one is paid". The arrangement is the agreement; a household default is
+ * not an agreement with anybody. A family that wants cancellation pay sets it
+ * where the rest of the pay terms live.
+ *
+ * The household row is still a parameter and still used — `isShortNotice`
+ * reads `household.short_notice_hours`, a DIFFERENT column answering a
+ * different question ("does this change need the owner's sign-off?"), which
+ * D-48 does not touch.
  */
 function resolveCancellationPaid(
   startsAt: string,
-  arrangement: PayArrangement | null,
-  household: Household
+  arrangement: PayArrangement | null
 ): boolean {
-  if (arrangement) {
-    return (
-      arrangement.cancellation_paid_within_hours !== null &&
-      isCancellationPaid(startsAt, arrangement.cancellation_paid_within_hours)
-    );
+  if (!arrangement) {
+    return false;
   }
-  return isCancellationPaid(startsAt, household.cancellation_paid_within_hours);
+  return (
+    arrangement.cancellation_paid_within_hours !== null &&
+    isCancellationPaid(startsAt, arrangement.cancellation_paid_within_hours)
+  );
 }
 
 /**
@@ -240,8 +253,7 @@ export function planAcceptedChange(
   if (request.kind === SHIFT_CHANGE_REQUEST_KINDS.CANCEL) {
     const cancellationPaid = resolveCancellationPaid(
       shift.starts_at,
-      arrangement,
-      household
+      arrangement
     );
     rpcArgs.p_set_cancel = true;
     rpcArgs.p_cancelled_at = new Date().toISOString();
@@ -533,6 +545,12 @@ export class ShiftChangeRequestCommandService {
         note: input.note ?? null,
         reason: input.reason ?? null,
         created_by: createdBy,
+        // D-47: the deadline is stamped HERE, at ask time, and never
+        // recomputed. Only when the ask names a carer — an unassigned
+        // proposal has nobody to expire on. See `coverAskExpiry.ts`.
+        cover_ask_expires_at: input.carer_id
+          ? computeCoverAskExpiry(new Date(), input.starts_at)
+          : null,
       });
     } catch (error) {
       if (!(error instanceof ExtraShiftAlreadyExistsError)) {
@@ -1300,36 +1318,45 @@ function formatShiftWindow12h(
   return `${startTime} – ${endTime}`;
 }
 
+// en-US, month-before-day ("Thu Aug 9") per §2.6, matching
+// `shiftCommandService.ts`'s `formatPushShortDate` — same `.replace(',', '')`
+// strip of the weekday comma en-US prints ("Thu, Aug 9").
 function formatShiftAskDateLabel(instantIso: string, timezone: string): string {
   const instant = new Date(instantIso);
   try {
-    return new Intl.DateTimeFormat('en-GB', {
+    return new Intl.DateTimeFormat('en-US', {
       weekday: 'short',
       day: 'numeric',
       month: 'short',
       timeZone: timezone,
-    }).format(instant);
+    })
+      .format(instant)
+      .replace(',', '');
   } catch {
-    return new Intl.DateTimeFormat('en-GB', {
+    return new Intl.DateTimeFormat('en-US', {
       weekday: 'short',
       day: 'numeric',
       month: 'short',
       timeZone: 'UTC',
-    }).format(instant);
+    })
+      .format(instant)
+      .replace(',', '');
   }
 }
 
+// `hourCycle: 'h23'` forces 24h regardless of locale — the swap below is for
+// consistency (§2.6's sweep), not a visible output change.
 function formatLocalTime24h(instantIso: string, timezone: string): string {
   const instant = new Date(instantIso);
   try {
-    return new Intl.DateTimeFormat('en-GB', {
+    return new Intl.DateTimeFormat('en-US', {
       timeZone: timezone,
       hour: '2-digit',
       minute: '2-digit',
       hourCycle: 'h23',
     }).format(instant);
   } catch {
-    return new Intl.DateTimeFormat('en-GB', {
+    return new Intl.DateTimeFormat('en-US', {
       timeZone: 'UTC',
       hour: '2-digit',
       minute: '2-digit',
@@ -1359,7 +1386,7 @@ function formatLocalTime12h(instantIso: string, timezone: string): string {
 
 function formatShiftDayLabel(localDate: string, timezone: string): string {
   try {
-    return new Intl.DateTimeFormat('en-GB', {
+    return new Intl.DateTimeFormat('en-US', {
       weekday: 'long',
       timeZone: timezone,
     }).format(new Date(`${localDate}T12:00:00`));

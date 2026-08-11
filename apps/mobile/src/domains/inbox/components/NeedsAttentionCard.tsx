@@ -70,7 +70,7 @@ export function NeedsAttentionCard({
     // Unreachable — items.length === 0 already returned above.
     throw new Error('NeedsAttentionCard: unreachable empty items');
   }
-  const deadline = deadlineForItem(headline, t, timeZone);
+  const deadline = deadlineForItem(headline, t, timeZone, Date.now());
   const moreCount = items.length - 1;
 
   return (
@@ -79,7 +79,7 @@ export function NeedsAttentionCard({
       tone={demoted ? 'default' : 'attention'}
       className="gap-3 p-5.5"
     >
-      <H3>{titleForItem(headline, t)}</H3>
+      <H3>{titleForItem(headline, t, timeZone)}</H3>
       {deadline ? (
         <MetadataLabel className="text-destructive">{deadline}</MetadataLabel>
       ) : null}

@@ -500,6 +500,8 @@ describe('PayArrangementCommandService.create — the written row', () => {
         seventh_day_multiplier: 1.5,
         seventh_day_doubletime_after_minutes: 480,
         worked_holiday_multiplier: 1.5,
+        pay_frequency: 'biweekly',
+        pay_day_of_week: 5,
         guaranteed_minutes_per_week: 1800,
         pto_entitlement_minutes_per_year: 16800,
         mileage_rate_per_mile_minor: 45,
@@ -522,6 +524,9 @@ describe('PayArrangementCommandService.create — the written row', () => {
       seventh_day_multiplier: 1.5,
       seventh_day_doubletime_after_minutes: 480,
       worked_holiday_multiplier: 1.5,
+      pay_frequency: 'biweekly',
+      pay_day_of_week: 5,
+      pay_day_of_month: null,
       guaranteed_minutes_per_week: 1800,
       pto_entitlement_minutes_per_year: 16800,
       mileage_rate_per_mile_minor: 45,
@@ -639,6 +644,42 @@ describe('PayArrangementCommandService.create — the written row', () => {
     const written = payRepo.create.mock.calls[0][0];
     expect(written).toHaveProperty('worked_holiday_multiplier');
     expect(written.worked_holiday_multiplier).toBeNull();
+  });
+
+  // 082 / T17: pay frequency + pay day, presentation only — same trap as
+  // 078/080, same two-arm test shape.
+  it('persists the 082 pay-schedule fields verbatim', async () => {
+    const payRepo = makePayRepo();
+    const svc = service({ payRepo });
+    await svc.create(
+      'parent-1',
+      'h1',
+      'carer-1',
+      request({
+        pay_frequency: 'semimonthly',
+        pay_day_of_month: 15,
+      }),
+      NOW
+    );
+    const written = payRepo.create.mock.calls[0][0];
+    expect(written.pay_frequency).toBe('semimonthly');
+    expect(written.pay_day_of_week).toBeNull();
+    expect(written.pay_day_of_month).toBe(15);
+  });
+
+  it('writes the 082 pay-schedule fields as explicit nulls when omitted', async () => {
+    const payRepo = makePayRepo();
+    const svc = service({ payRepo });
+    await svc.create('parent-1', 'h1', 'carer-1', request(), NOW);
+    const written = payRepo.create.mock.calls[0][0];
+    for (const column of [
+      'pay_frequency',
+      'pay_day_of_week',
+      'pay_day_of_month',
+    ] as const) {
+      expect(written).toHaveProperty(column);
+      expect(written[column]).toBeNull();
+    }
   });
 
   it('never writes bill_rate_minor — dormant until Tier 2 invoicing', async () => {

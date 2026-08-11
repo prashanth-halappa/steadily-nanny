@@ -218,7 +218,10 @@ export function getLocalClock(
       month: '2-digit',
       day: '2-digit',
     }).format(instant);
-    const parts = new Intl.DateTimeFormat('en-GB', {
+    // `hourCycle: 'h23'` forces 24h regardless of locale — internal gating
+    // only, never rendered, so the en-US tag (§2.6 sweep, was `en-GB`) is a
+    // no-op on the extracted hour.
+    const parts = new Intl.DateTimeFormat('en-US', {
       timeZone,
       hour: '2-digit',
       minute: '2-digit',
@@ -282,11 +285,19 @@ class DefaultReminderCandidateSource implements ReminderCandidateSource {
       now.getTime() + 48 * 60 * 60 * 1000
     ).toISOString();
 
-    // A2: a CONFIRMED shift (any kind) OR a PENDING cover-ask (kind='cover')
-    // — a pending ask assigned to a carer who hasn't answered yet. Every
-    // other pending shift (recurring/extra awaiting first confirmation) is
-    // deliberately excluded: this reminder is about a shift that already has
-    // a carer's name on it, confirmed or asked.
+    // A2: a CONFIRMED shift (any kind) OR a PENDING ask assigned to a carer
+    // who has not answered yet. `recurring` stays excluded: a materialised
+    // week awaiting first acceptance is a standing arrangement, not a question
+    // somebody is waiting on an answer to tonight.
+    //
+    // 3-T3 WIDENED THE ASK ARM FROM `cover` TO `cover, extra`, and it is a fix
+    // rather than a scope creep. 3-N wrote this against `kind = 'cover'`
+    // because the spec calls a cover-ask a cover-kind shift — but NOTHING in
+    // the product has ever written `kind = 'cover'`. The ask a parent actually
+    // sends from the uncovered card is an `extra` shift
+    // (`createExtraShift` → `SHIFT_KINDS.EXTRA`), so `cover_ask_reminder` had
+    // zero possible candidates and N7 could never fire. `cover` stays in the
+    // list so the kind means something the day it is written.
     const { data, error } = await supabaseService
       .from('shifts')
       .select('id, household_id, carer_id, starts_at, kind, status')
@@ -294,7 +305,7 @@ class DefaultReminderCandidateSource implements ReminderCandidateSource {
       .gte('starts_at', windowStart)
       .lt('starts_at', windowEnd)
       .or(
-        `status.eq.${SHIFT_STATUSES.CONFIRMED},and(kind.eq.${SHIFT_KINDS.COVER},status.eq.${SHIFT_STATUSES.PENDING})`
+        `status.eq.${SHIFT_STATUSES.CONFIRMED},and(kind.in.(${SHIFT_KINDS.COVER},${SHIFT_KINDS.EXTRA}),status.eq.${SHIFT_STATUSES.PENDING})`
       );
 
     if (error) {
@@ -512,11 +523,13 @@ async function processShiftReminders(
         continue;
       }
 
-      // A2: a PENDING cover-ask (kind='cover') gets its own type/key —
+      // A2: a PENDING ask (kind `cover` or `extra`) gets its own type/key —
       // everything else (any CONFIRMED shift) keeps the ordinary reminder.
-      // The candidate query above never returns a third combination.
+      // The candidate query above never returns a third combination. See that
+      // query for why `extra` is in the set.
       const isPendingCoverAsk =
-        shift.kind === SHIFT_KINDS.COVER &&
+        (shift.kind === SHIFT_KINDS.COVER ||
+          shift.kind === SHIFT_KINDS.EXTRA) &&
         shift.status === SHIFT_STATUSES.PENDING;
 
       const reminderKey = isPendingCoverAsk

@@ -19,9 +19,11 @@ export type {
   CreatePayArrangementRequest,
   PayArrangement,
   PayArrangementListResponse,
+  PayFrequency,
 } from '@steadily-nanny/shared-types/schemas/payArrangement.schema';
 export {
   CreatePayArrangementRequestSchema,
+  PAY_FREQUENCIES,
   PayArrangementListResponseSchema,
   PayArrangementSchema,
 } from '@steadily-nanny/shared-types/schemas/payArrangement.schema';

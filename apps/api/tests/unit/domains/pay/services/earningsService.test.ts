@@ -2742,3 +2742,62 @@ describe('earningsService.weeklyEquivalentMinor (D-6 §10)', () => {
     expect(weeklyEquivalentMinor(arr)).toBe(95_000);
   });
 });
+
+// 082 (D-17, T7 reversal): pay_frequency/pay_day_of_week/pay_day_of_month are
+// PRESENTATION ONLY. This pins that the engine's output is byte-identical
+// with and without them set — the FLSA weekly OT engine stays untouched, and
+// pay-period grouping happens strictly downstream of this function.
+describe('earningsService — pay_frequency/pay_day are presentation-only (D-17)', () => {
+  it('prices an identical week whether or not the arrangement carries a pay schedule', () => {
+    const entries = [
+      worked(MON, 480),
+      worked(TUE, 480),
+      worked(WED, 480),
+      worked(THU, 480),
+      worked(FRI, 600), // 44h worked -> some overtime
+    ];
+    const withoutSchedule = ok(
+      computeWeekEarnings(input({ entries, arrangements: [arrangement()] }))
+    );
+    const withSchedule = ok(
+      computeWeekEarnings(
+        input({
+          entries,
+          arrangements: [
+            arrangement({
+              pay_frequency: 'biweekly',
+              pay_day_of_week: 5,
+              pay_day_of_month: null,
+            }),
+          ],
+        })
+      )
+    );
+    expect(withSchedule).toEqual(withoutSchedule);
+  });
+
+  it('is identical across every pay_frequency value, including semimonthly/monthly day-of-month', () => {
+    const entries = [worked(MON, 480)];
+    const baseline = ok(
+      computeWeekEarnings(input({ entries, arrangements: [arrangement()] }))
+    );
+    for (const [pay_frequency, pay_day_of_week, pay_day_of_month] of [
+      ['weekly', 0, null],
+      ['biweekly', 5, null],
+      ['semimonthly', null, 15],
+      ['monthly', null, 1],
+    ] as const) {
+      const result = ok(
+        computeWeekEarnings(
+          input({
+            entries,
+            arrangements: [
+              arrangement({ pay_frequency, pay_day_of_week, pay_day_of_month }),
+            ],
+          })
+        )
+      );
+      expect(result).toEqual(baseline);
+    }
+  });
+});

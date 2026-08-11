@@ -296,6 +296,59 @@ export class ShiftChangeRequestRepository extends BaseRepository<ShiftChangeRequ
     return (data ?? []) as ShiftChangeRequest[];
   }
 
+  /**
+   * A5: expire pending requests whose SHIFT has already started.
+   *
+   * The `created_at`-keyed 7-day sweep above cannot see this case at all — a
+   * request opened yesterday about tomorrow's 08:00 shift is six days from its
+   * cutoff, so it sits `pending` long after the morning it was about, claiming
+   * a decision is still available for a shift that already happened.
+   *
+   * Two round trips, never a per-row loop (GOLDEN-FIXES #28): one embedded
+   * read to find the ids, one bulk update to flip them. PostgREST cannot
+   * express a join in an UPDATE, and `shifts!inner(...)` on the read is how
+   * the filter reaches the parent table. The update re-asserts `pending` so a
+   * request answered between the two statements is left alone.
+   */
+  async expirePendingForStartedShifts(
+    nowIso: string
+  ): Promise<ShiftChangeRequest[]> {
+    const { data: due, error: readError } = await supabaseService
+      .from(this.table)
+      .select('id, shifts!inner(starts_at)')
+      .eq('status', SHIFT_CHANGE_REQUEST_STATUSES.PENDING)
+      .lte('shifts.starts_at', nowIso);
+
+    if (readError) {
+      throw new DatabaseError(
+        'Failed to find change requests for started shifts',
+        'DATABASE_ERROR',
+        { details: readError.message, nowIso }
+      );
+    }
+
+    const ids = ((due ?? []) as Array<{ id: string }>).map(row => row.id);
+    if (ids.length === 0) {
+      return [];
+    }
+
+    const { data, error } = await supabaseService
+      .from(this.table)
+      .update({ status: SHIFT_CHANGE_REQUEST_STATUSES.EXPIRED })
+      .eq('status', SHIFT_CHANGE_REQUEST_STATUSES.PENDING)
+      .in('id', ids)
+      .select();
+
+    if (error) {
+      throw new DatabaseError(
+        'Failed to expire change requests for started shifts',
+        'DATABASE_ERROR',
+        { details: error.message, nowIso }
+      );
+    }
+    return (data ?? []) as ShiftChangeRequest[];
+  }
+
   private handleAcceptOutcome(
     changeRequestId: string,
     payload: RpcOutcomePayload

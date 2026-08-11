@@ -363,8 +363,15 @@ describe('planAcceptedChange — cancellation-pay three-arm rule (owner decision
     expect(plan.rpcArgs.p_cancellation_paid).toBe(false);
   });
 
-  it('arm 3 — no arrangement: household window (24h) governs and pays inside it', () => {
-    const householdWindow24 = {
+  // ARM 3 CHANGED IN 3-T3 (D-48). It used to fall back to
+  // `households.cancellation_paid_within_hours`; that column has no readers
+  // now, and no arrangement means no cancellation pay. This is STRICTER than
+  // what it replaces and the change is deliberate — two homes for one number
+  // eventually print two contradictory sentences on one screen. The household
+  // fixture below is given a window that WOULD have paid, precisely so this
+  // test fails if the fallback is ever reinstated.
+  it('arm 3 — no arrangement: NOT paid, even inside a household window that would once have paid (D-48)', () => {
+    const householdWouldHavePaid = {
       ...household,
       cancellation_paid_within_hours: 24,
     };
@@ -372,27 +379,40 @@ describe('planAcceptedChange — cancellation-pay three-arm rule (owner decision
       'carer-1',
       pendingRequest,
       soonShift,
-      householdWindow24 as any,
-      null,
-      null
-    );
-    expect(plan.rpcArgs.p_cancellation_paid).toBe(true);
-  });
-
-  it('arm 3 — no arrangement: household window 0 means no cancellation pay (legacy semantics preserved)', () => {
-    const householdWindow0 = {
-      ...household,
-      cancellation_paid_within_hours: 0,
-    };
-    const plan = planAcceptedChange(
-      'carer-1',
-      pendingRequest,
-      soonShift,
-      householdWindow0 as any,
+      householdWouldHavePaid as any,
       null,
       null
     );
     expect(plan.rpcArgs.p_cancellation_paid).toBe(false);
+  });
+
+  it('arm 3 — the household column is inert whatever it says: 0, 24 and 999 all produce the same answer', () => {
+    for (const window of [0, 24, 999]) {
+      const plan = planAcceptedChange(
+        'carer-1',
+        pendingRequest,
+        soonShift,
+        { ...household, cancellation_paid_within_hours: window } as any,
+        null,
+        null
+      );
+      expect(plan.rpcArgs.p_cancellation_paid).toBe(false);
+    }
+  });
+
+  it('short notice still reads households.short_notice_hours — D-48 did not touch that column', () => {
+    // The two columns answer different questions ("is this paid?" vs "does
+    // this need the owner's sign-off?"). Collapsing them would quietly move a
+    // permission gate.
+    const plan = planAcceptedChange(
+      'carer-1',
+      pendingRequest,
+      soonShift,
+      { ...household, short_notice_hours: 24 } as any,
+      null,
+      null
+    );
+    expect(plan.rpcArgs.p_is_short_notice).toBe(true);
   });
 
   it('date-basis pin: the arrangement effective on the shift date governs even when a later one exists as of accept time', () => {

@@ -23,7 +23,7 @@
 import DateTimePicker from '@react-native-community/datetimepicker';
 import type { Shift } from '@steadily-nanny/shared-types/schemas/shift.schema';
 import type { TimeEntry } from '@steadily-nanny/shared-types/schemas/timesheet.schema';
-import { COVERING_SHIFT_STATUSES } from '@steadily-nanny/shared-types/uncoveredCare';
+import { SCHEDULED_SHIFT_STATUSES } from '@steadily-nanny/shared-types/uncoveredCare';
 import { Fragment, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
@@ -55,7 +55,9 @@ import {
 } from '@/src/lib/wallClock';
 import { useAuthStore } from '@/src/store/auth';
 
-const COVERING_STATUS_SET = new Set<string>(COVERING_SHIFT_STATUSES);
+/** "Was this shift on her schedule and did she log nothing against it" — a
+ * day she worked on an unanswered ask is still a day of missing hours. */
+const SCHEDULED_STATUS_SET = new Set<string>(SCHEDULED_SHIFT_STATUSES);
 
 function hasMissedHoursDay(
   shifts: readonly Shift[],
@@ -72,7 +74,7 @@ function hasMissedHoursDay(
   );
   return shifts.some(
     shift =>
-      COVERING_STATUS_SET.has(shift.status) &&
+      SCHEDULED_STATUS_SET.has(shift.status) &&
       shift.carer_id === currentUserId &&
       weekDates.includes(shift.local_date) &&
       !entryDates.has(shift.local_date)

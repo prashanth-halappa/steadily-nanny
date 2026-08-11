@@ -27,7 +27,7 @@
  */
 
 import type { Shift } from '@steadily-nanny/shared-types/schemas/shift.schema';
-import { COVERING_SHIFT_STATUSES } from '@steadily-nanny/shared-types/uncoveredCare';
+import { SCHEDULED_SHIFT_STATUSES } from '@steadily-nanny/shared-types/uncoveredCare';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -94,7 +94,9 @@ interface ClockInCardProps {
 
 const ARRIVING_WINDOW_MS = 60 * 60 * 1000;
 
-const COVERING_STATUS_SET = new Set<string>(COVERING_SHIFT_STATUSES);
+/** "Is this shift on HER schedule / can she clock into it" — not "does it
+ * cover the children", so an unanswered proposal still counts (D-22). */
+const SCHEDULED_STATUS_SET = new Set<string>(SCHEDULED_SHIFT_STATUSES);
 
 /**
  * Above this elapsed time the discard confirmation names the duration being
@@ -266,19 +268,19 @@ export function ClockInCard({
     return todays[0] ?? null;
   }, [weekEntries.data, today, currentUserId, entry]);
 
-  const relevantCoveringShift = useMemo(() => {
+  const relevantScheduledShift = useMemo(() => {
     const todayShifts = (shifts.data ?? [])
       .filter(s => s.local_date === today && s.carer_id === currentUserId)
       .sort((a, b) => a.starts_at.localeCompare(b.starts_at));
-    const coveringShifts = todayShifts.filter(s =>
-      COVERING_STATUS_SET.has(s.status)
+    const scheduledShifts = todayShifts.filter(s =>
+      SCHEDULED_STATUS_SET.has(s.status)
     );
     const now = Date.now();
-    const stillActive = coveringShifts.find(
+    const stillActive = scheduledShifts.find(
       s => new Date(s.ends_at).getTime() > now
     );
     if (stillActive) return stillActive;
-    return coveringShifts.at(-1);
+    return scheduledShifts.at(-1);
   }, [shifts.data, today, currentUserId]);
 
   const offClockShift: OffClockShiftState = useMemo(() => {
@@ -306,7 +308,7 @@ export function ClockInCard({
         }
       : undefined;
 
-    const next = relevantCoveringShift;
+    const next = relevantScheduledShift;
 
     if (!next && declinedLine) {
       return {
@@ -334,42 +336,42 @@ export function ClockInCard({
       end: formatClockTime(next.ends_at, timeZone),
       ...declinedSecondary,
     };
-  }, [shifts.data, today, timeZone, currentUserId, relevantCoveringShift]);
+  }, [shifts.data, today, timeZone, currentUserId, relevantScheduledShift]);
 
   const runningLateSent = useMemo(() => {
-    if (!relevantCoveringShift) return false;
+    if (!relevantScheduledShift) return false;
     if (sendRunningLate.isSuccess) return true;
     return (dayThread.data ?? []).some(
       event =>
         event.event_type === 'running_late' &&
-        event.shift_id === relevantCoveringShift.id
+        event.shift_id === relevantScheduledShift.id
     );
-  }, [dayThread.data, relevantCoveringShift, sendRunningLate.isSuccess]);
+  }, [dayThread.data, relevantScheduledShift, sendRunningLate.isSuccess]);
 
   const showRunningLate =
     !entry &&
     (offClockShift.kind === 'scheduled' || offClockShift.kind === 'arriving') &&
-    relevantCoveringShift;
+    relevantScheduledShift;
 
   const shiftMetaLine = useMemo(() => {
-    if (!relevantCoveringShift) return null;
+    if (!relevantScheduledShift) return null;
     const status =
-      relevantCoveringShift.status === 'pending'
+      relevantScheduledShift.status === 'pending'
         ? t('awaitingYourAnswer')
-        : relevantCoveringShift.status === 'confirmed'
+        : relevantScheduledShift.status === 'confirmed'
           ? t('coverage.status.confirmed')
           : undefined;
     const household =
       isMultiHousehold && householdName ? householdName : undefined;
     const names = childNamesFor(
-      relevantCoveringShift,
+      relevantScheduledShift,
       childNameById,
       childFullNameById
     );
     const children = names.length > 0 ? names.join(', ') : undefined;
     return formatShiftMetaLine({ status, household, children });
   }, [
-    relevantCoveringShift,
+    relevantScheduledShift,
     isMultiHousehold,
     householdName,
     childNameById,
@@ -776,7 +778,7 @@ export function ClockInCard({
                 disabled={sendRunningLate.isPending}
                 onPress={() => {
                   void sendRunningLate.mutateAsync({
-                    shiftId: relevantCoveringShift.id,
+                    shiftId: relevantScheduledShift.id,
                   });
                 }}
               >

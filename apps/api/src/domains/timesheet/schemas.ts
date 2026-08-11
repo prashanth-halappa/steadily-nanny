@@ -101,3 +101,38 @@ export const WeekQuerySchema = CarerQuerySchema.extend({
   week_start: z.iso.date().optional(),
 });
 export type WeekQuery = z.infer<typeof WeekQuerySchema>;
+
+/**
+ * Query validation for
+ * GET /households/:householdId/timesheets/pay-summary.csv (D-29, P11) — the
+ * nanny's own pay record, or a parent's carer-scoped read of one.
+ *
+ * `carer_id` is REQUIRED at the schema level for a parent's request; the
+ * service resolves it differently for a nanny caller (forced to her own,
+ * `PaySummaryExportError` never fires for her) — see
+ * `timesheetQueryService.exportCarerPaySummaryCsv`'s doc. Kept optional
+ * HERE, not required, because the shape check cannot know the caller's role.
+ *
+ * Either `year` alone, or `from`+`to` together — D-29's "a week, a date
+ * range, or a year" collapse to one range concept: a year resolves to its
+ * own Jan 1 – Dec 31 bounds server-side (`resolvePaySummaryRange`), and "a
+ * week" is simply a `from`/`to` pair seven days apart.
+ */
+export const CarerPaySummaryQuerySchema = z
+  .object({
+    carer_id: z.uuid().optional(),
+    year: z.coerce.number().int().min(2000).max(2100).optional(),
+    from: z.iso.date().optional(),
+    to: z.iso.date().optional(),
+  })
+  .refine(
+    q => q.year !== undefined || (q.from !== undefined && q.to !== undefined),
+    { message: 'Supply either year, or both from and to' }
+  );
+export type CarerPaySummaryQuery = z.infer<typeof CarerPaySummaryQuerySchema>;
+
+/** Query validation for GET /households/:householdId/timesheets/year-end.csv (D-29, P12). */
+export const YearEndSummaryQuerySchema = z.object({
+  year: z.coerce.number().int().min(2000).max(2100),
+});
+export type YearEndSummaryQuery = z.infer<typeof YearEndSummaryQuerySchema>;

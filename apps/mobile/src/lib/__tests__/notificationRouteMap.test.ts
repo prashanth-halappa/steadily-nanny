@@ -223,6 +223,34 @@ describe('NOTIFICATION_ROUTE_MAP resolvers', () => {
     ).toBe('/(private)/schedule/shifts?householdId=hh-1');
   });
 
+  // 3-T3 (§1.3 N8/N9): both are "the ask you were waiting on is over and the
+  // window is uncovered again" — same fact, same destination as the alert
+  // that first named the gap.
+  it('routes cover_ask_expired and cover_ask_declined to the uncovered deep link', () => {
+    const payload = { householdId: 'hh-1', localDate: '2026-03-23' };
+    const expected = resolve(
+      PUSH_NOTIFICATION_TYPES.UNCOVERED_CARE_DETECTED,
+      payload
+    );
+
+    expect(resolve(PUSH_NOTIFICATION_TYPES.COVER_ASK_EXPIRED, payload)).toBe(
+      expected
+    );
+    expect(resolve(PUSH_NOTIFICATION_TYPES.COVER_ASK_DECLINED, payload)).toBe(
+      expected
+    );
+  });
+
+  // 3-T3 (§1.3 N10): a sick day is about the SET of shifts it hit, not any
+  // one of them — the calendar is the only surface that shows the set.
+  it('routes carer_sick_shifts_affected to the shifts calendar', () => {
+    expect(
+      resolve(PUSH_NOTIFICATION_TYPES.CARER_SICK_SHIFTS_AFFECTED, {
+        householdId: 'hh-1',
+      })
+    ).toBe('/(private)/schedule/shifts?householdId=hh-1');
+  });
+
   it('is usable as the injected NotificationRouteMap type', () => {
     const map: NotificationRouteMap = NOTIFICATION_ROUTE_MAP;
     expect(Object.keys(map).length).toBe(ALL_PUSH_NOTIFICATION_TYPES.length);

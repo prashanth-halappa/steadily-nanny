@@ -24,6 +24,7 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ScrollView, View } from 'react-native';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
+import { RestrictedActionButton } from '@/src/components/custom/RestrictedActionButton';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -51,8 +52,16 @@ import {
   shiftChangeRequestKindLabelKey,
   shiftChangeRequestStatusLabelKey,
 } from '@/src/domains/schedule/constants/changeRequestKinds';
+import {
+  type CancellationPayVariant,
+  hoursUntilStart,
+  resolveCancellationPayOutcome,
+} from '@/src/domains/schedule/utils/cancellationPay';
+import { isCoverAskUrgent } from '@/src/domains/schedule/utils/coverAskDeadline';
 import { resolveMemberDisplayName } from '@/src/domains/schedule/utils/memberDisplayName';
+import { localDateToWeekday } from '@/src/domains/schedule/utils/shiftGrouping';
 import { isParentEditorRole, SETUP_ROLES } from '@/src/domains/setup/types';
+import { formatClockTime } from '@/src/domains/timesheet/utils/duration';
 import { formatDisplayDate } from '@/src/domains/timesheet/utils/week';
 import { useAcceptShift } from '@/src/hooks/mutations/useAcceptShift';
 import { useCreateShiftChangeRequest } from '@/src/hooks/mutations/useCreateShiftChangeRequest';
@@ -61,12 +70,16 @@ import { useRespondToShiftChangeRequest } from '@/src/hooks/mutations/useRespond
 import { useUpdateShift } from '@/src/hooks/mutations/useUpdateShift';
 import { useWithdrawChangeRequest } from '@/src/hooks/mutations/useWithdrawChangeRequest';
 import { useChildren } from '@/src/hooks/queries/useChildren';
+import { useCurrentPayArrangement } from '@/src/hooks/queries/useCurrentPayArrangement';
 import { useHouseholdMembers } from '@/src/hooks/queries/useHouseholdMembers';
+import { useHouseholds } from '@/src/hooks/queries/useHouseholds';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
+import { useRestrictedAction } from '@/src/hooks/queries/useRestrictedAction';
 import { useShift } from '@/src/hooks/queries/useShift';
 import { useShiftChangeRequests } from '@/src/hooks/queries/useShiftChangeRequests';
 import { useShiftEvents } from '@/src/hooks/queries/useShiftEvents';
 import { useUserProfile } from '@/src/hooks/queries/useUserProfile';
+import { localDateInZone } from '@/src/lib/localDate';
 import { showSuccessToast } from '@/src/lib/toast';
 import {
   formatInstantDisplay,
@@ -103,8 +116,28 @@ const STATUS_TO_LABEL_KEY: Record<Shift['status'], string> = {
   completed: 'shifts.statusCompleted',
 };
 
+/**
+ * The pay sentence the cancel dialog opens with, one per outcome
+ * (`docs/design/attention-and-notifications.md` §6). `pending` says nothing
+ * at all: the arrangement query hasn't answered, and a dialog that guesses
+ * about someone's pay is worse than one that stays quiet about it.
+ *
+ * `paid` splits on whether the shift can be PRICED — see the lookup below.
+ */
+const CANCEL_PAY_KEY: Record<CancellationPayVariant, string | null> = {
+  pending: null,
+  unknown: 'detail.cancelPayUnknown',
+  noCancellationTerms: 'detail.cancelPayNoCancellationTerms',
+  unpaid: 'detail.cancelPayUnpaid',
+  paid: 'detail.cancelPayPaid',
+};
+
 export function ShiftDetailScreen() {
-  const { t } = useTranslation(['schedule', 'today']);
+  // 'inbox' added for M21: the deadline sentence shares ONE i18n key
+  // (`inbox:items.pendingShift.deadline`) with `NeedsAttentionCard`'s
+  // `deadlineForItem` — "byte-identical string... a deadline that lives
+  // only on the card she tapped away from is a deadline she cannot check."
+  const { t } = useTranslation(['schedule', 'today', 'inbox']);
   const elevation = useElevation();
   const router = useRouter();
   const params = useLocalSearchParams<{ shiftId?: string }>();
@@ -123,6 +156,18 @@ export function ShiftDetailScreen() {
   const respondChange = useRespondToShiftChangeRequest();
   const withdrawChange = useWithdrawChangeRequest();
   const changeRequests = useShiftChangeRequests(shiftId);
+  // The carer's own arrangement — the ONE cancellation window in the product
+  // (§6.1 / D21). `households.cancellation_paid_within_hours` is deprecated
+  // and is never consulted here.
+  const payArrangement = useCurrentPayArrangement(
+    shiftQuery.data?.household_id,
+    shiftQuery.data?.carer_id
+  );
+  const households = useHouseholds();
+  const cancelRestriction = useRestrictedAction({
+    householdId: shiftQuery.data?.household_id,
+    action: t('detail.restrictedActionCancelShift'),
+  });
 
   const shift = shiftQuery.data;
   const isParent = isParentEditorRole(onboarding.role);
@@ -148,6 +193,25 @@ export function ShiftDetailScreen() {
     shift.sequence === 0;
   const needsReconfirm =
     Boolean(isPendingParentProposed) && !isFreshExtraProposal;
+  // §5.3/M21 — the cover-ask lifecycle, DERIVED, never a wire status of its
+  // own. `expired` = cancelled + `cancelled_by` null + the stamped expiry
+  // already past; `withdrawn` = cancelled WITH `cancelled_by` set (the
+  // parent did it). Both only mean anything for the assigned carer.
+  const coverAskExpiresAt = shift?.cover_ask_expires_at ?? null;
+  const isAskExpired =
+    Boolean(isAssignedCarer) &&
+    shift?.status === 'cancelled' &&
+    shift.cancelled_by === null &&
+    coverAskExpiresAt !== null &&
+    Date.parse(coverAskExpiresAt) <= Date.now();
+  const isAskWithdrawn =
+    Boolean(isAssignedCarer) &&
+    shift?.status === 'cancelled' &&
+    shift.cancelled_by !== null;
+  const showAnswerByDeadline =
+    Boolean(isAssignedCarer) &&
+    shift?.status === 'pending' &&
+    coverAskExpiresAt !== null;
   const readerTimeZone = profile.data?.timezone;
   const showShiftZone =
     Boolean(shift?.timezone) &&
@@ -245,6 +309,47 @@ export function ShiftDetailScreen() {
     );
   }
 
+  // S3 / D-48. ONE answer, read by both the dialog and the muted hint below
+  // the pills, so the screen can never print two contradictory sentences
+  // about the same shift (§6.1).
+  const cancelPay = resolveCancellationPayOutcome(shift, payArrangement.data);
+  const cancelPayKey =
+    cancelPay.variant === 'paid' && cancelPay.amount === null
+      ? // Hours known, rate not: keep "still paid", drop the money clause
+        // rather than invent a figure (docs/11-MONEY.md).
+        'detail.cancelPayPaidUnpriced'
+      : CANCEL_PAY_KEY[cancelPay.variant];
+  const cancelPaySentence = cancelPayKey
+    ? t(cancelPayKey, {
+        hours: cancelPay.hours,
+        duration: cancelPay.duration,
+        amount: cancelPay.amount,
+      })
+    : null;
+  // S14: there is no direct cancel endpoint. Pressing the button opens a
+  // request, and a dialog that reads like the shift is already cancelled
+  // misrepresents what the button does — so this sentence is in every variant.
+  const cancelDialogBody = [
+    cancelPaySentence,
+    t('detail.cancelNeedsAccept', { name: nameFor(shift.carer_id) }),
+  ]
+    .filter(Boolean)
+    .join(' ');
+
+  // S4 §7. The server gates a co-parent's cancel ONLY when the shift is short
+  // notice (`shiftChangeRequestCommandService.create`), so this mirrors that
+  // condition exactly — disabling a cancel the co-parent is actually allowed
+  // to make would be the same lie in the other direction. Computed LIVE from
+  // `short_notice_hours`, never from `shift.is_short_notice`: that flag is
+  // stamped when the shift is authored, so a shift booked three weeks out
+  // still reads false on the morning it starts.
+  const household = households.data?.find(h => h.id === shift.household_id);
+  const cancelReason =
+    household !== undefined &&
+    hoursUntilStart(shift.starts_at) < household.short_notice_hours
+      ? cancelRestriction.reason
+      : null;
+
   return (
     <ScrollView
       testID="shift-detail-screen"
@@ -298,12 +403,56 @@ export function ShiftDetailScreen() {
             : t('detail.needsReconfirm')}
         </Small>
       ) : null}
-      {shift.is_short_notice ? (
+      {shift.is_short_notice && cancelPaySentence ? (
         <Small
           testID="shift-detail-short-notice-hint"
           className="mt-2 text-muted-foreground"
         >
-          {t('detail.shortNoticePaidHint')}
+          {cancelPaySentence}
+        </Small>
+      ) : null}
+
+      {/* §5.3/M21 — byte-identical to the inbox item's second clause, from
+          one i18n key. A deadline that lives only on the card she tapped
+          away from is a deadline she cannot check. Red inside the same
+          urgent window as `NeedsAttentionCard`'s `deadlineForItem`
+          (`coverAskDeadline.ts` — "same rule, same threshold"). */}
+      {showAnswerByDeadline && coverAskExpiresAt ? (
+        <Small
+          testID="shift-detail-answer-by"
+          className={
+            isCoverAskUrgent(coverAskExpiresAt, Date.now())
+              ? 'mt-2 text-destructive'
+              : 'mt-2 text-muted-foreground'
+          }
+        >
+          {t('inbox:items.pendingShift.deadline', {
+            deadlineDate: formatDisplayDate(
+              localDateInZone(shift.timezone, new Date(coverAskExpiresAt))
+            ),
+            deadlineTime: formatClockTime(coverAskExpiresAt, shift.timezone),
+          })}
+        </Small>
+      ) : null}
+      {isAskExpired && coverAskExpiresAt ? (
+        <Small
+          testID="shift-detail-ask-expired"
+          className="mt-2 text-muted-foreground"
+        >
+          {t('detail.askExpired', {
+            weekday: t(
+              `weekday.${localDateToWeekday(localDateInZone(shift.timezone, new Date(coverAskExpiresAt)))}`
+            ),
+            time: formatClockTime(coverAskExpiresAt, shift.timezone),
+          })}
+        </Small>
+      ) : null}
+      {isAskWithdrawn ? (
+        <Small
+          testID="shift-detail-ask-withdrawn"
+          className="mt-2 text-muted-foreground"
+        >
+          {t('detail.askWithdrawn')}
         </Small>
       ) : null}
 
@@ -342,14 +491,15 @@ export function ShiftDetailScreen() {
             <Text>{t('detail.save')}</Text>
           </Button>
           {shift.status !== 'cancelled' ? (
-            <Button
+            <RestrictedActionButton
               testID="shift-detail-cancel"
               variant="outline"
+              size="default"
+              label={t('detail.cancelShift')}
+              reason={cancelReason}
               disabled={createChange.isPending}
               onPress={() => setCancelConfirmOpen(true)}
-            >
-              <Text>{t('detail.cancelShift')}</Text>
-            </Button>
+            />
           ) : null}
           <AlertDialog
             open={cancelConfirmOpen}
@@ -360,8 +510,8 @@ export function ShiftDetailScreen() {
                 <AlertDialogTitle>
                   {t('today:shiftDetail.cancelConfirmTitle')}
                 </AlertDialogTitle>
-                <AlertDialogDescription>
-                  {t('today:shiftDetail.cancelConfirmBody')}
+                <AlertDialogDescription testID="shift-detail-cancel-body">
+                  {cancelDialogBody}
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
@@ -394,7 +544,11 @@ export function ShiftDetailScreen() {
             {utcIsoToWallClockHHMM(shift.ends_at, shift.timezone)}
           </Body>
           {shift.note ? <Body>{shift.note}</Body> : null}
-          {isAssignedCarer ? (
+          {/* §5.3 — "the same defect class as S4": an expired or withdrawn
+              ask must not offer Accept/Decline/Counter, which would exist
+              only to return an error. The reason line above already told
+              her why; the form simply does not render. */}
+          {isAssignedCarer && !isAskExpired && !isAskWithdrawn ? (
             <View className="mt-4 gap-3" testID="shift-detail-counter-form">
               <FieldLabel>{t('detail.startLabel')}</FieldLabel>
               <TimeRangePicker

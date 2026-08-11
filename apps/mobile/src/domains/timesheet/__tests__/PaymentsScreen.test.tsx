@@ -22,6 +22,16 @@
  */
 import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 import type { Payment } from '@steadily-nanny/shared-types/schemas/payment.schema';
+import {
+  EARNINGS_LINE_KINDS,
+  EARNINGS_LINE_ORDER,
+  EARNINGS_RESULT_STATUSES,
+  HOURS_ONLY_REASONS,
+  humanizeEarningsLineKind,
+  isKnownEarningsLineKind,
+  TIMESHEET_STATUSES,
+  WEEK_EARNINGS_STATES,
+} from '@steadily-nanny/shared-types/schemas/timesheet.schema';
 import { fireEvent, waitFor } from '@testing-library/react-native';
 import type React from 'react';
 import { renderWithProviders } from '@/src/test-utils';
@@ -71,6 +81,18 @@ mock.module('@/src/domains/household/components/HouseholdSwitcher', () => ({
 }));
 mock.module('@/src/api/endpoints/timesheets', () => ({
   timesheetApi: { list: timesheetListMock },
+  // §11.1's `earningsStructureLine` (utils/earningsFormat.ts) now imports
+  // these re-exported constants through the domain's `types` barrel — real,
+  // pure, sync values from the shared schema, so this mock stays a complete
+  // stand-in instead of throwing on a named export it never provided.
+  EARNINGS_LINE_KINDS,
+  EARNINGS_LINE_ORDER,
+  EARNINGS_RESULT_STATUSES,
+  HOURS_ONLY_REASONS,
+  humanizeEarningsLineKind,
+  isKnownEarningsLineKind,
+  TIMESHEET_STATUSES,
+  WEEK_EARNINGS_STATES,
 }));
 mock.module('@/src/components/custom/BottomSheetBase', () => {
   const R = require('react');

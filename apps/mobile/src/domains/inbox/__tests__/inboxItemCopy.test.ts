@@ -11,6 +11,7 @@ import { join } from 'node:path';
 import type { InboxItem } from '../utils/buildInboxItems';
 import {
   ctaForItem,
+  deadlineForItem,
   hrefForItem,
   subtitleForItem,
   titleForItem,
@@ -73,5 +74,75 @@ describe('queried_week cta', () => {
     expect((await locale('es')).items.queriedWeek.cta.length).toBeGreaterThan(
       0
     );
+  });
+});
+
+// §2.2/§2.3a — cover-ask-awaiting-you and extra-shift-proposed share this kind.
+describe('pending_shift copy', () => {
+  const NOW = Date.parse('2026-08-25T12:00:00.000Z');
+
+  function makeItem(overrides: Partial<InboxItem> = {}): InboxItem {
+    return {
+      kind: 'pending_shift',
+      id: 'shift-1',
+      localDate: '2026-08-26',
+      startsAt: '2026-08-26T08:00:00.000Z',
+      endsAt: '2026-08-26T13:00:00.000Z',
+      createdAt: '2026-08-24T00:00:00.000Z',
+      coverAskExpiresAt: '2026-08-27T18:00:00.000Z',
+      ...overrides,
+    } as InboxItem;
+  }
+
+  it('opens the shift it is about', () => {
+    expect(hrefForItem(makeItem())).toBe('/(private)/schedule/shifts/shift-1');
+  });
+
+  it('has title/subtitle/cta keys', () => {
+    expect(titleForItem(makeItem(), t, ZONE)).toBe('items.pendingShift.title');
+    expect(subtitleForItem(makeItem(), t, ZONE)).toBe(
+      'items.pendingShift.subtitle'
+    );
+    expect(ctaForItem(makeItem(), t)).toBe('items.pendingShift.cta');
+  });
+
+  it('falls back to a subtitle without the expiry when there is none stamped', () => {
+    expect(
+      subtitleForItem(makeItem({ coverAskExpiresAt: null }), t, ZONE)
+    ).toBe('items.pendingShift.subtitleNoDeadline');
+  });
+
+  // M21: `deadlineForItem` is reserved for Rule B's one coloured-text
+  // exception, and this is what it was reserved for — but only inside the
+  // urgent window (§5.3/M21, `COVER_ASK_URGENT_HOURS`).
+  it('deadlineForItem is null well outside the urgent window', () => {
+    expect(deadlineForItem(makeItem(), t, ZONE, NOW)).toBeNull();
+  });
+
+  it('deadlineForItem returns the deadline string inside the urgent window', () => {
+    const item = makeItem({ coverAskExpiresAt: '2026-08-25T20:00:00.000Z' });
+    expect(deadlineForItem(item, t, ZONE, NOW)).toBe(
+      'items.pendingShift.deadline'
+    );
+  });
+
+  it('deadlineForItem is null once the ask has expired — that state is "Expired", not a deadline', () => {
+    const item = makeItem({ coverAskExpiresAt: '2026-08-25T10:00:00.000Z' });
+    expect(deadlineForItem(item, t, ZONE, NOW)).toBeNull();
+  });
+
+  it('deadlineForItem is null for every other kind', () => {
+    expect(deadlineForItem(staleItem, t, ZONE, NOW)).toBeNull();
+  });
+
+  it('has both-language strings, no default export gaps', async () => {
+    for (const language of ['en', 'es'] as const) {
+      const copy = (await locale(language)).items.pendingShift;
+      expect(copy.title).toContain('{{');
+      expect(copy.subtitle).toContain('{{');
+      expect(copy.subtitleNoDeadline.length).toBeGreaterThan(0);
+      expect(copy.deadline).toContain('{{');
+      expect(copy.cta.length).toBeGreaterThan(0);
+    }
   });
 });

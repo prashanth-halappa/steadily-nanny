@@ -49,6 +49,8 @@
   "coverage": {
     "gap": {
       "titleOne": "Nadie está con {{childName}} de {{start}} a {{end}}",
+      "titleOneEscalated_one": "{{weekday}} de {{start}} a {{end}} empieza en {{count}} hora y no hay nadie asignado.",
+      "titleOneEscalated_other": "{{weekday}} de {{start}} a {{end}} empieza en {{count}} horas y no hay nadie asignado.",
       "titleMany": "{{count}} huecos hoy",
       "windowLine": "{{childName}} · {{start}} – {{end}} · {{cause}}",
       "windowAllDay": "{{childName}} · todo el día · {{cause}}",
@@ -164,7 +166,6 @@
     "declineConfirmCancel": "Cancelar",
     "declineConfirmConfirm": "Rechazar",
     "cancelConfirmTitle": "¿Solicitar cancelar este turno?",
-    "cancelConfirmBody": "Esto envía una solicitud de cancelación — el turno no se cancelará hasta que se confirme.",
     "cancelConfirmCancel": "Mantener turno",
     "cancelConfirmConfirm": "Solicitar cancelación",
     "withdrawCta": "Retirar",

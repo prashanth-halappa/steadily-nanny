@@ -62,16 +62,18 @@
  * 3. ONE EMPTY record (the section separator), then the summary records, each
  *    `key,value`, in this fixed order:
  *
- *    | key                 | value                                            |
- *    |---------------------|--------------------------------------------------|
- *    | total_gross_minor   | wages only — the sum of every non-reimbursement line |
- *    | reimbursements_minor| summed apart, NEVER inside gross (`docs/11-MONEY.md` §6) |
- *    | paid_to_date_minor  | SIGNED sum of the settlement rows — payments AND corrections (D-20) |
- *    | balance_due_minor   | `total_gross_minor - paid_to_date_minor`          |
- *    | carer_display_name  | the durable snapshotted name, quoted if it needs it |
- *    | week_start          | Week's first day, household-local, ISO `YYYY-MM-DD`|
- *    | currency            | ISO-4217, uppercase                               |
- *    | approved_at         | ISO-8601 UTC — OMITTED ENTIRELY when the row has none |
+ *    | key                    | value                                            |
+ *    |------------------------|---------------------------------------------------|
+ *    | total_gross_minor      | wages only — the sum of every non-reimbursement line |
+ *    | reimbursements_minor   | summed apart, NEVER inside gross (`docs/11-MONEY.md` §6) |
+ *    | paid_to_date_minor     | SIGNED sum of the settlement rows — payments AND corrections (D-20) |
+ *    | balance_due_minor      | `total_gross_minor - paid_to_date_minor`          |
+ *    | carer_display_name     | the durable snapshotted name, quoted if it needs it |
+ *    | household_display_name | OMITTED ENTIRELY when the caller supplies none (082, D-29 — optional household identifier) |
+ *    | week_start             | Week's first day, household-local, ISO `YYYY-MM-DD`|
+ *    | period_end             | OMITTED ENTIRELY when the caller supplies none (082, D-29 — the pay period this week belongs to, PRESENTATION ONLY, resolved by the caller via `domains/pay/utils/payPeriod.ts` — this module never derives it) |
+ *    | currency               | ISO-4217, uppercase                               |
+ *    | approved_at            | ISO-8601 UTC — OMITTED ENTIRELY when the row has none |
  *
  *    `reimbursements_minor` is on the sheet because the line records include
  *    reimbursement rows whose amounts are deliberately NOT in gross: without
@@ -167,6 +169,21 @@ export interface WeekExportCsvInput {
    * this array and from nothing else.
    */
   payments: readonly Payment[];
+  /**
+   * The pay period this week belongs to (082, D-17, D-29, P12) — already
+   * resolved by the caller via `domains/pay/utils/payPeriod.ts`. This module
+   * stays pure and never derives it: `null`/omitted means no pay schedule is
+   * stated (or the caller has none to offer), and the `period_end` summary
+   * key is OMITTED ENTIRELY rather than emitting a fabricated date.
+   */
+  periodEnd?: string | null;
+  /**
+   * An optional household/payroll identifier (082, D-29, P12) — honest and
+   * never invented: there is no dedicated "payroll id" field anywhere in this
+   * app, so the caller passes the household's own display name (or omits the
+   * field). OMITTED ENTIRELY when absent, same discipline as `periodEnd`.
+   */
+  householdDisplayName?: string | null;
 }
 
 /** A ready-to-send download. */
@@ -295,7 +312,8 @@ function settlementRecord(payment: Payment): string {
 
 /** The frozen week, serialised. Pure: same input, same bytes, every time. */
 export function renderWeekExportCsv(input: WeekExportCsvInput): WeekExportCsv {
-  const { timesheet, earnings, payments } = input;
+  const { timesheet, earnings, payments, periodEnd, householdDisplayName } =
+    input;
   // The SIGNED sum: correction rows carry a negative `amount_minor`, so this
   // one expression is paid-to-date WITH corrections — the same arithmetic
   // migration 085's over-gross gate does inside the database. Do NOT filter it
@@ -323,9 +341,15 @@ export function renderWeekExportCsv(input: WeekExportCsvInput): WeekExportCsv {
       String(earnings.gross_minor - paidToDateMinor),
     ]),
     csvRow(['carer_display_name', timesheet.carer_display_name ?? '']),
-    csvRow(['week_start', timesheet.week_start]),
-    csvRow(['currency', earnings.currency]),
   ];
+  if (householdDisplayName) {
+    records.push(csvRow(['household_display_name', householdDisplayName]));
+  }
+  records.push(csvRow(['week_start', timesheet.week_start]));
+  if (periodEnd) {
+    records.push(csvRow(['period_end', periodEnd]));
+  }
+  records.push(csvRow(['currency', earnings.currency]));
   if (timesheet.approved_at) {
     records.push(csvRow(['approved_at', timesheet.approved_at]));
   }
