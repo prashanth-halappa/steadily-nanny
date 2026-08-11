@@ -79,4 +79,12 @@ router.get(
   asyncHandler(PayArrangementController.listAcks)
 );
 
+// D-16/§6 — appends the revert row (see cancelScheduled's own doc); parents
+// only, same gate as the arrangement write above.
+router.post(
+  '/:arrangementId/cancel-scheduled',
+  ...authWithValidation(HouseholdCarerArrangementParamSchema, 'params'),
+  asyncHandler(PayArrangementController.cancelScheduled)
+);
+
 export default router;

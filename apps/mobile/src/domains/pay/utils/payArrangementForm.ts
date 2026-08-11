@@ -62,6 +62,26 @@ const MONTHS_ABBR = [
   'Dec',
 ] as const;
 
+/** D-16 (spec §6): how far into the future `valid_from` may be set — a bound,
+ * not a refusal, mirroring `payArrangementCommandService`'s server-side
+ * check exactly (`MAX_FUTURE_MONTHS`). */
+const MAX_FUTURE_MONTHS = 12;
+
+/**
+ * The horizon date, `months` months after `dateISO` — same UTC-Date-rollover
+ * technique as the server's `addMonthsISO` (and `payTermsPresets.ts`'s
+ * `isPresetReviewStale`), so client and server can never quietly disagree
+ * about where the 12-month line falls.
+ */
+function addMonthsISO(dateISO: string, months: number): string {
+  const [y, m, d] = dateISO.split('-').map(Number);
+  const dt = new Date(Date.UTC(y ?? 0, (m ?? 1) - 1 + months, d ?? 1));
+  const yy = dt.getUTCFullYear();
+  const mm = String(dt.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(dt.getUTCDate()).padStart(2, '0');
+  return `${yy}-${mm}-${dd}`;
+}
+
 /** A local (non-UTC-shifting) `Date` for a nominal "yyyy-mm-dd" string. */
 function toLocalDate(dateISO: string): Date {
   const [y, m, d] = dateISO.split('-').map(Number);
@@ -236,6 +256,125 @@ export interface PayTermsFormState {
    * default.
    */
   currentOvertimeMultiplier?: number;
+
+  // -------------------------------------------------------------------
+  // 3-U1 additions — the `terms` jsonb groups (spec §3/§4.3). Optional,
+  // unlike the 078 tiers above: these are administrative text and
+  // non-wage line items, never priced by the engine, so a screen that
+  // omits them (or hasn't been rebuilt onto the "In writing"/"Outside
+  // wages" groups yet) gets the same `terms` bag it always did — `{}` —
+  // rather than being forced to state five blank strings.
+  // -------------------------------------------------------------------
+  /** "In writing" §4.3 — UI shows weeks, storage is `terms.notice_period_days`. */
+  noticePeriodWeeksText?: string;
+  probationDaysText?: string;
+  /** Documentation only — feeds no pricing, selects no preset (§5.3). */
+  dutiesText?: string;
+  drivingText?: string;
+  liveInText?: string;
+  /** "Outside wages" §4.3/D-13 — `terms.recurring[]`, excluded from gross. */
+  stipends?: readonly StipendFormRow[];
+  /**
+   * §5.2's recorded confirmation — set the moment a preset is applied,
+   * carried through unchanged by every later re-render until the parent
+   * edits a filled field (the caller's job; this module only writes it
+   * through when present). `undefined` when no preset has been applied.
+   */
+  presetStamp?: PresetStamp;
+}
+
+/** One "Outside wages" row (D-13) — amount as major-unit text, like every
+ * other money field in this form. */
+export interface StipendFormRow {
+  label: string;
+  amountText: string;
+  cadence: 'weekly' | 'monthly' | 'annual';
+}
+
+/** §5.2's recorded confirmation, written into `terms.preset`. */
+export interface PresetStamp {
+  id: string;
+  version: number;
+  applied_at: string;
+  confirmed_by: string;
+}
+
+/**
+ * Builds the `terms` jsonb bag from the "In writing" and "Outside wages"
+ * groups (spec §3/§4.3) — the ONE place these fields turn into the
+ * documentary-terms shape the server stores verbatim. `undefined` means
+ * REFUSE (an invalid stipend amount), matching the refuse-not-clamp
+ * discipline the 078 tiers use above. An empty bag `{}` — not `undefined` —
+ * when nothing in these groups was filled in, matching the server's own
+ * "omitted request resolves to `{}`" default (`payArrangementCommandService`).
+ *
+ * `state.presetStamp`, when present, is written through unchanged into
+ * `terms.preset` — §5.2: "Applying a preset writes
+ * `terms.preset = { id, version, applied_at, confirmed_by }`". Nothing in
+ * this function decides WHEN to stamp one; that is the caller's job the
+ * moment the D-7 confirm sheet is accepted.
+ */
+function buildTermsBag(
+  state: PayTermsFormState
+): Record<string, unknown> | undefined {
+  const terms: Record<string, unknown> = {};
+
+  const noticeWeeksTrimmed = (state.noticePeriodWeeksText ?? '').trim();
+  if (noticeWeeksTrimmed !== '') {
+    const weeks = Number(noticeWeeksTrimmed);
+    if (!Number.isFinite(weeks) || weeks < 0) return undefined;
+    // UI asks for weeks (§4.3: "Notice period [4] weeks"); storage is DAYS
+    // (§3: `terms.notice_period_days`) — converted here, once, so no reader
+    // has to know the UI unit ever differed from the stored one.
+    terms.notice_period_days = Math.round(weeks * 7);
+  }
+
+  const probationTrimmed = (state.probationDaysText ?? '').trim();
+  if (probationTrimmed !== '') {
+    const days = Number(probationTrimmed);
+    if (!Number.isFinite(days) || days < 0 || !Number.isInteger(days)) {
+      return undefined;
+    }
+    terms.probation_days = days;
+  }
+
+  // Documentation only — feeds no pricing, selects no preset (§5.3).
+  // Trimmed to '' being the same as "not filled in": an empty string typed
+  // and then deleted must not linger in the stored bag as a blank field.
+  const duties = (state.dutiesText ?? '').trim();
+  if (duties !== '') terms.duties = duties;
+  const driving = (state.drivingText ?? '').trim();
+  if (driving !== '') terms.driving = driving;
+  const liveIn = (state.liveInText ?? '').trim();
+  if (liveIn !== '') terms.live_in = liveIn;
+
+  if (state.stipends && state.stipends.length > 0) {
+    const recurring: {
+      label: string;
+      amount_minor: number;
+      cadence: string;
+    }[] = [];
+    for (const stipend of state.stipends) {
+      const label = stipend.label.trim();
+      const amountMinor = parseMajorToMinor(stipend.amountText);
+      // A row with neither a label nor an amount typed is an empty row the
+      // UI offered and the parent never filled in — skipped, not refused.
+      if (label === '' && stipend.amountText.trim() === '') continue;
+      if (label === '' || amountMinor === null) return undefined;
+      recurring.push({
+        label,
+        amount_minor: amountMinor,
+        cadence: stipend.cadence,
+      });
+    }
+    if (recurring.length > 0) terms.recurring = recurring;
+  }
+
+  if (state.presetStamp) {
+    terms.preset = { ...state.presetStamp };
+  }
+
+  return terms;
 }
 
 /**
@@ -251,8 +390,17 @@ export function buildCreatePayArrangementRequest(
   if (rateMinor === null) return null;
 
   if (!isValidCalendarDate(state.effectiveDateISO)) return null;
-  // ISO "yyyy-mm-dd" strings compare correctly lexicographically.
-  if (state.effectiveDateISO > state.todayISO) return null;
+  // D-16 (spec §6) reverses the old no-future-dating rule: a scheduled raise
+  // is the normal case now, bounded in the OPPOSITE direction — a
+  // `valid_from` more than 12 months out is refused (the same shape of
+  // check `payArrangementCommandService.create`'s `addMonthsISO` makes
+  // server-side; this is the client's fast-fail twin, never the source of
+  // truth). ISO "yyyy-mm-dd" strings compare correctly lexicographically.
+  if (
+    state.effectiveDateISO > addMonthsISO(state.todayISO, MAX_FUTURE_MONTHS)
+  ) {
+    return null;
+  }
 
   let overtimeThresholdMinutes: number | null = null;
   // Blank threshold: carry the current arrangement's multiplier through
@@ -369,6 +517,9 @@ export function buildCreatePayArrangementRequest(
 
   const trimmedNote = state.note.trim();
 
+  const terms = buildTermsBag(state);
+  if (terms === undefined) return null;
+
   return {
     rate_minor: rateMinor,
     currency: state.currency,
@@ -388,6 +539,7 @@ export function buildCreatePayArrangementRequest(
     mileage_rate_per_mile_minor: mileageRatePerMileMinor,
     cancellation_paid_within_hours: cancellationPaidWithinHours,
     valid_from: state.effectiveDateISO,
+    terms,
     note: trimmedNote === '' ? undefined : trimmedNote,
   };
 }

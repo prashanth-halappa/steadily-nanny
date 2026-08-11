@@ -166,4 +166,32 @@ export class PayArrangementController {
       return next(error);
     }
   }
+
+  /**
+   * POST .../pay-arrangements/:arrangementId/cancel-scheduled — D-16/§6.
+   * Parents only; refuses once the scheduled date has arrived.
+   */
+  static async cancelScheduled(
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ) {
+    try {
+      const householdId = req.params.householdId as string;
+      const carerId = req.params.carerId as string;
+      const arrangementId = req.params.arrangementId as string;
+      const pay_arrangement =
+        await payArrangementCommandService.cancelScheduled(
+          getAuthUserId(req),
+          householdId,
+          carerId,
+          arrangementId
+        );
+      return sendSuccessResponse(res, 'Scheduled change cancelled', {
+        pay_arrangement,
+      });
+    } catch (error) {
+      return next(error);
+    }
+  }
 }

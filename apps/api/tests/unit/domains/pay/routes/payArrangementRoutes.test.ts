@@ -90,6 +90,7 @@ const ARRANGEMENT_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 let getCurrentMock: ReturnType<typeof mock>;
 let getHistoryMock: ReturnType<typeof mock>;
 let createMock: ReturnType<typeof mock>;
+let cancelScheduledMock: ReturnType<typeof mock>;
 let ackMock: ReturnType<typeof mock>;
 let dissentMock: ReturnType<typeof mock>;
 let listAcksMock: ReturnType<typeof mock>;
@@ -100,6 +101,10 @@ beforeAll(async () => {
   getHistoryMock = mock(async () => [{ id: 'pa-1' }]);
   createMock = mock(async (..._args: unknown[]) => ({
     id: 'pa-new',
+    rate_minor: 1500,
+  }));
+  cancelScheduledMock = mock(async () => ({
+    id: 'pa-reverted',
     rate_minor: 1500,
   }));
   ackMock = mock(async () => ({ id: 'ack-1', kind: 'seen' }));
@@ -138,6 +143,7 @@ beforeAll(async () => {
     () => ({
       payArrangementCommandService: {
         create: (...args: unknown[]) => createMock(...args),
+        cancelScheduled: (...args: unknown[]) => cancelScheduledMock(...args),
       },
     })
   );
@@ -191,6 +197,7 @@ beforeEach(() => {
   getCurrentMock.mockClear();
   getHistoryMock.mockClear();
   createMock.mockClear();
+  cancelScheduledMock.mockClear();
   ackMock.mockClear();
   dissentMock.mockClear();
   listAcksMock.mockClear();
@@ -413,6 +420,31 @@ describe('payArrangementRoutes — mounted router', () => {
         { id: 'ack-1', kind: 'seen' },
       ]);
       expect(listAcksMock).toHaveBeenCalledWith(
+        DEFAULT_AUTH_USER_ID,
+        HOUSEHOLD_ID,
+        CARER_ID,
+        ARRANGEMENT_ID
+      );
+    });
+  });
+
+  describe('POST .../:arrangementId/cancel-scheduled (D-16/§6)', () => {
+    it('a non-uuid arrangementId is rejected with 400 before the service is called', async () => {
+      const res = await fetch(
+        `${baseUrl}${pathFor(HOUSEHOLD_ID, CARER_ID, '/not-a-uuid/cancel-scheduled')}`,
+        { method: 'POST' }
+      );
+      expect(res.status).toBe(400);
+      expect(cancelScheduledMock).not.toHaveBeenCalled();
+    });
+
+    it('a valid request reaches the controller: 200, called with auth user id + all three route params', async () => {
+      const res = await fetch(
+        `${baseUrl}${pathFor(HOUSEHOLD_ID, CARER_ID, `/${ARRANGEMENT_ID}/cancel-scheduled`)}`,
+        { method: 'POST' }
+      );
+      expect(res.status).toBe(200);
+      expect(cancelScheduledMock).toHaveBeenCalledWith(
         DEFAULT_AUTH_USER_ID,
         HOUSEHOLD_ID,
         CARER_ID,

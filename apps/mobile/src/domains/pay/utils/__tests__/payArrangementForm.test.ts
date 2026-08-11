@@ -145,6 +145,7 @@ describe('buildCreatePayArrangementRequest', () => {
       worked_holiday_multiplier: null,
       cancellation_paid_within_hours: null,
       valid_from: '2026-08-04',
+      terms: {},
       note: undefined,
     });
   });
@@ -183,6 +184,7 @@ describe('buildCreatePayArrangementRequest', () => {
       mileage_rate_per_mile_minor: 45,
       cancellation_paid_within_hours: 24,
       valid_from: '2026-08-04',
+      terms: {},
       note: 'Annual review',
     });
   });
@@ -193,11 +195,34 @@ describe('buildCreatePayArrangementRequest', () => {
     ).toBeNull();
   });
 
-  it('rejects a future effective date — no scheduled changes in v1 (owner decision 4)', () => {
+  // D-16 reverses the old no-future-dating rule (owner decision 4): a
+  // scheduled raise is now the normal case, bounded by a 12-month horizon
+  // in the OPPOSITE direction (spec §6).
+  it('accepts a scheduled future effective date', () => {
     expect(
       buildCreatePayArrangementRequest({
         ...baseState,
         effectiveDateISO: '2026-08-05',
+        todayISO: '2026-08-04',
+      })?.valid_from
+    ).toBe('2026-08-05');
+  });
+
+  it('accepts a future date exactly on the 12-month horizon', () => {
+    expect(
+      buildCreatePayArrangementRequest({
+        ...baseState,
+        effectiveDateISO: '2027-08-04',
+        todayISO: '2026-08-04',
+      })?.valid_from
+    ).toBe('2027-08-04');
+  });
+
+  it('rejects a future date more than 12 months out', () => {
+    expect(
+      buildCreatePayArrangementRequest({
+        ...baseState,
+        effectiveDateISO: '2027-08-05',
         todayISO: '2026-08-04',
       })
     ).toBeNull();
@@ -585,5 +610,128 @@ describe('buildMidWeekConsequence', () => {
     expect(
       buildMidWeekConsequence('2026-08-04', 1, 1850, 'GBP', 1850, 'GBP')
     ).toBeNull();
+  });
+});
+
+// 3-U1 — the "In writing" and "Outside wages" groups (spec §3/§4.3), and the
+// D-7 preset stamp (§5.2).
+describe('buildCreatePayArrangementRequest — the terms jsonb bag', () => {
+  it('converts the UI notice-period WEEKS field into stored DAYS', () => {
+    const result = buildCreatePayArrangementRequest({
+      ...baseState,
+      noticePeriodWeeksText: '4',
+    });
+    expect(result?.terms).toEqual({ notice_period_days: 28 });
+  });
+
+  it('refuses a negative notice period', () => {
+    expect(
+      buildCreatePayArrangementRequest({
+        ...baseState,
+        noticePeriodWeeksText: '-1',
+      })
+    ).toBeNull();
+  });
+
+  it('stores probation days as an integer, verbatim', () => {
+    const result = buildCreatePayArrangementRequest({
+      ...baseState,
+      probationDaysText: '90',
+    });
+    expect(result?.terms).toEqual({ probation_days: 90 });
+  });
+
+  it('refuses a non-integer probation length', () => {
+    expect(
+      buildCreatePayArrangementRequest({
+        ...baseState,
+        probationDaysText: '90.5',
+      })
+    ).toBeNull();
+  });
+
+  it('stores duties/driving/live-in verbatim, trimmed, and omits an untouched field', () => {
+    const result = buildCreatePayArrangementRequest({
+      ...baseState,
+      dutiesText: '  Care for the kids, meals, school pickup.  ',
+      drivingText: 'School run in our car.',
+    });
+    expect(result?.terms).toEqual({
+      duties: 'Care for the kids, meals, school pickup.',
+      driving: 'School run in our car.',
+    });
+  });
+
+  it('a blank documentary field never lands in the stored bag', () => {
+    const result = buildCreatePayArrangementRequest({
+      ...baseState,
+      dutiesText: '   ',
+    });
+    expect(result?.terms).toEqual({});
+  });
+
+  it('stores a stipend row as recurring[] with the amount in minor units', () => {
+    const result = buildCreatePayArrangementRequest({
+      ...baseState,
+      stipends: [
+        { label: 'Health stipend', amountText: '200.00', cadence: 'monthly' },
+      ],
+    });
+    expect(result?.terms).toEqual({
+      recurring: [
+        { label: 'Health stipend', amount_minor: 20_000, cadence: 'monthly' },
+      ],
+    });
+  });
+
+  it('skips a fully-blank stipend row (the ghost "add a row" left untouched)', () => {
+    const result = buildCreatePayArrangementRequest({
+      ...baseState,
+      stipends: [{ label: '', amountText: '', cadence: 'monthly' }],
+    });
+    expect(result?.terms).toEqual({});
+  });
+
+  it('refuses a stipend with a label but no valid amount', () => {
+    expect(
+      buildCreatePayArrangementRequest({
+        ...baseState,
+        stipends: [
+          { label: 'Health stipend', amountText: '', cadence: 'monthly' },
+        ],
+      })
+    ).toBeNull();
+  });
+
+  it('writes the preset stamp through unchanged into terms.preset (§5.2)', () => {
+    const result = buildCreatePayArrangementRequest({
+      ...baseState,
+      presetStamp: {
+        id: 'common-defaults',
+        version: 1,
+        applied_at: '2026-08-11T09:00:00.000Z',
+        confirmed_by: 'parent-1',
+      },
+    });
+    expect(result?.terms?.preset).toEqual({
+      id: 'common-defaults',
+      version: 1,
+      applied_at: '2026-08-11T09:00:00.000Z',
+      confirmed_by: 'parent-1',
+    });
+  });
+
+  it('every group together builds one combined terms bag', () => {
+    const result = buildCreatePayArrangementRequest({
+      ...baseState,
+      noticePeriodWeeksText: '2',
+      dutiesText: 'Care for Mia and Theo.',
+      stipends: [{ label: 'Bonus', amountText: '500', cadence: 'annual' }],
+    });
+    expect(result?.terms).toEqual({
+      notice_period_days: 14,
+      duties: 'Care for Mia and Theo.',
+      recurring: [{ label: 'Bonus', amount_minor: 50_000, cadence: 'annual' }],
+    });
   });
 });

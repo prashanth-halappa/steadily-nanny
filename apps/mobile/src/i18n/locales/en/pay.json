@@ -143,6 +143,21 @@
     "alreadyRecordedLabel": "Already recorded",
     "weekGrossLabel": "Week's gross"
   },
+  "history": {
+    "diffRateLabel": "Hourly rate",
+    "notSet": "Not set",
+    "firstTermsSet": "First terms set"
+  },
+  "consequence": {
+    "rate": "This week is paid at two rates — the old one up to the day before, the new one from this date on.",
+    "weeklyOvertimeOrGuarantee": "Overtime and guaranteed hours are figured from the terms in effect on the last day of the week, so this whole week uses the new ones.",
+    "dailyTiers": "Daily overtime is figured day by day, so these apply from this date onward. Earlier days in the week keep the old ones.",
+    "cancellations": "Cancellation pay is decided against each shift's own start date, so shifts already cancelled keep what they were owed.",
+    "mileage": "Mileage already approved keeps the rate it was approved at. Only new approvals use the new rate.",
+    "pto": "The yearly grant changes now. Time off already marked paid isn't recalculated.",
+    "holidays": "Holidays already worked and approved keep what they paid.",
+    "checkTheWeek": "A change partway through a week means this week's total may not match what your payroll service works out. Check the week before you send it."
+  },
   "correctPaymentSheet": {
     "title": "Correct this payment",
     "original": "Paid on {{date}}",

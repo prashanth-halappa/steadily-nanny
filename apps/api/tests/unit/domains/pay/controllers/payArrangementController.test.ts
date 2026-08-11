@@ -4,11 +4,13 @@ let PayArrangementController: any;
 let getCurrent: any;
 let getHistory: any;
 let create: any;
+let cancelScheduled: any;
 
 beforeAll(async () => {
   getCurrent = mock(async () => ({ id: 'pa-1', rate_minor: 1500 }));
   getHistory = mock(async () => [{ id: 'pa-1' }, { id: 'pa-0' }]);
   create = mock(async () => ({ id: 'pa-new', rate_minor: 1500 }));
+  cancelScheduled = mock(async () => ({ id: 'pa-reverted', rate_minor: 1500 }));
 
   mock.module(
     '../../../../../src/domains/pay/services/payArrangementQueryService',
@@ -19,7 +21,7 @@ beforeAll(async () => {
   mock.module(
     '../../../../../src/domains/pay/services/payArrangementCommandService',
     () => ({
-      payArrangementCommandService: { create },
+      payArrangementCommandService: { create, cancelScheduled },
     })
   );
 
@@ -166,5 +168,30 @@ describe('PayArrangementController', () => {
     );
     expect(next).toHaveBeenCalled();
     expect(res.body).toBeUndefined();
+  });
+
+  it('cancelScheduled passes the caller and every route id through', async () => {
+    const res = mockRes();
+    await PayArrangementController.cancelScheduled(
+      {
+        user: { id: 'parent-1' },
+        params: {
+          householdId: 'h1',
+          carerId: 'carer-1',
+          arrangementId: 'pa-scheduled',
+        },
+      } as any,
+      res,
+      mock()
+    );
+    expect(cancelScheduled).toHaveBeenCalledWith(
+      'parent-1',
+      'h1',
+      'carer-1',
+      'pa-scheduled'
+    );
+    expect(res.body.data).toEqual({
+      pay_arrangement: { id: 'pa-reverted', rate_minor: 1500 },
+    });
   });
 });
