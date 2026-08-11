@@ -238,6 +238,68 @@ describe('EarningsBreakdownSheet', () => {
     ).toBeNull();
   });
 
+  // 3-E2: the top premium tier. It is a KNOWN kind in this build, so it must
+  // get its own localised copy — a row falling through to the humanized
+  // fallback is a row with no translation.
+  describe('the double-time row', () => {
+    function doubletimeEarnings(): WeekEarningsOk {
+      return baseEarnings({
+        lines: [
+          {
+            kind: 'regular',
+            minutes: 2400,
+            rate_minor: 1850,
+            multiplier: null,
+            amount_minor: 74000,
+            from_date: '2026-08-03',
+            to_date: '2026-08-07',
+            arrangement_id: 'arr-1',
+          },
+          {
+            kind: 'doubletime',
+            minutes: 120,
+            rate_minor: 3700,
+            multiplier: 2,
+            amount_minor: 7400,
+            from_date: '2026-08-08',
+            to_date: '2026-08-08',
+            arrangement_id: 'arr-1',
+          },
+        ],
+        gross_minor: 81400,
+        worked_minutes: 2520,
+        payable_minutes: 2520,
+      });
+    }
+
+    it('renders its own label, amount and multiplier subline — never the unknown-kind fallback', () => {
+      const { getByTestId, getByText, queryByTestId, queryByText } = render(
+        <EarningsBreakdownSheet
+          visible
+          onDismiss={() => {}}
+          earnings={doubletimeEarnings()}
+          weekRangeLabel="3 Aug – 9 Aug"
+        />
+      );
+
+      expect(
+        getByTestId('hours-earnings-breakdown-line-doubletime')
+      ).toBeTruthy();
+      expect(
+        getByTestId('hours-earnings-breakdown-line-doubletime-value').props
+          .children
+      ).toBe('£74.00');
+      expect(getByText('earningsLineDoubletime')).toBeTruthy();
+      expect(getByText('earningsLineDoubletimeSubline')).toBeTruthy();
+      // The fallback row, and its humanized label, must both be absent.
+      expect(
+        queryByTestId('hours-earnings-breakdown-line-unknown-1')
+      ).toBeNull();
+      expect(queryByText('Doubletime')).toBeNull();
+      expect(queryByText('earningsLineUnknownSubline')).toBeNull();
+    });
+  });
+
   // The fleet rule: a server that starts emitting a seventh kind reaches
   // clients that predate it. This sheet must show the row rather than drop
   // it — a missing row makes the total stop equalling the visible sum, which

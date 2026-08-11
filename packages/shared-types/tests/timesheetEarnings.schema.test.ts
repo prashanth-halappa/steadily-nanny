@@ -48,6 +48,13 @@ describe('timesheet.schema — earnings', () => {
       expect(EARNINGS_LINE_KINDS).toEqual({
         REGULAR: 'regular',
         OVERTIME: 'overtime',
+        // 3-E2: the top premium tier — minutes beyond a day's double-time
+        // threshold, or beyond the seventh consecutive day's second tier
+        // (078). Safe to EMIT because `kind` is an open string on the wire
+        // and every read site already routes an unknown kind through
+        // `humanizeEarningsLineKind` (1-A), and because the app is pre-launch
+        // (§5 D-9) so there is no older client to be tolerant for.
+        DOUBLETIME: 'doubletime',
         CANCELLATION_PAID: 'cancellation_paid',
         GUARANTEED_TOPUP: 'guaranteed_topup',
         PTO: 'pto',
@@ -59,11 +66,25 @@ describe('timesheet.schema — earnings', () => {
       expect(EARNINGS_LINE_ORDER).toEqual([
         'regular',
         'overtime',
+        // Directly under overtime — the premium tiers read as a ladder, and
+        // it is the order `docs/design/screens-pay-terms.md` §12.1's pay
+        // record prints (Regular / Overtime / Double time).
+        'doubletime',
         'cancellation_paid',
         'pto',
         'guaranteed_topup',
         'reimbursements',
       ]);
+    });
+
+    it('lists every kind exactly once in the render order', () => {
+      // The engine builds its output as `Record<EarningsLineKind, Line[]>`
+      // and flat-maps it through this array, so a kind missing here is a kind
+      // whose lines are computed and then silently dropped — the breakdown
+      // would stop summing to the total beside it.
+      expect([...EARNINGS_LINE_ORDER].sort()).toEqual(
+        Object.values(EARNINGS_LINE_KINDS).sort()
+      );
     });
 
     it('EARNINGS_RESULT_STATUSES names the three arms', () => {

@@ -554,18 +554,153 @@ export function computeWeekEarnings(
       : (resolved.get(lastWorkedDate) as PayArrangement);
   const threshold = overtimeConfig.overtime_threshold_minutes;
   const multiplier = overtimeConfig.overtime_multiplier;
+  // 078's tiers, read off the SAME arrangement as the weekly pair above. A
+  // threshold is a term, not a fact about a day, so all of them come from one
+  // place for the same "the week is negotiated and signed off as one unit"
+  // reason — and `?? null` because the columns are optional on the wire for
+  // pre-078 rows and fixtures (see `payArrangement.schema.ts`).
+  const dailyThreshold =
+    overtimeConfig.overtime_daily_threshold_minutes ?? null;
+  const doubletimeMultiplier = overtimeConfig.doubletime_multiplier ?? null;
+  // A double-time THRESHOLD with no multiplier prices nothing: 078 forbids
+  // the combination, and inventing a rate for it would be fabricating money.
+  // The minutes are not dropped — they simply stay in the tier below.
+  const doubletimeThreshold =
+    doubletimeMultiplier === null
+      ? null
+      : (overtimeConfig.doubletime_daily_threshold_minutes ?? null);
+  const seventhDayMultiplier = overtimeConfig.seventh_day_multiplier ?? null;
+  // Same rule as above for the seventh day's second tier.
+  const seventhDayDoubletimeAfter =
+    doubletimeMultiplier === null
+      ? null
+      : (overtimeConfig.seventh_day_doubletime_after_minutes ?? null);
 
+  // ---------------------------------------------------------------------
+  // The seventh consecutive day — WHICH day, and whether the rule applies.
+  //
+  // "The seventh consecutive day of the workweek" is the seventh DATE of
+  // THIS household's own week (`week_start + 6`), never "Sunday": 3-E1 made
+  // `week_start` the household's chosen first day, so for a Sunday-start
+  // family the seventh day is a Saturday. Resolving a weekday name here
+  // instead would silently pay the wrong day for every household that is not
+  // Monday-start.
+  //
+  // "Consecutive" means all seven were worked. One missed Wednesday and the
+  // Sunday is an ordinary day, priced by the daily tiers like any other —
+  // which is why this checks every date in the span rather than counting
+  // worked days (seven worked days that include one from the week before is
+  // not this week's seventh day).
+  // ---------------------------------------------------------------------
+  const weekDates: string[] = [];
+  for (let offset = 0; offset < DAYS_PER_WEEK; offset += 1) {
+    weekDates.push(addDays(weekStart, offset));
+  }
+  const seventhDayDate = weekDates[DAYS_PER_WEEK - 1] as string;
+  const seventhDayApplies =
+    seventhDayMultiplier !== null &&
+    weekDates.every(date => (workedByDate.get(date) ?? 0) > 0);
+
+  // ---------------------------------------------------------------------
+  // Pricing order (`docs/design/screens-pay-terms.md` §10.1, CA Wage Order
+  // 15). Three steps, and the order is the whole rule:
+  //
+  //   1. The seventh day, if it applies, is priced WHOLE at its own tiers and
+  //      contributes NOTHING to the weekly threshold.
+  //   2. Every other worked day splits into regular / daily overtime / double
+  //      time against the DAILY thresholds.
+  //   3. Weekly overtime accumulates over the REMAINDER only — the minutes no
+  //      daily tier already promoted.
+  //
+  // §10.1: "Five 10-hour days is 40 regular + 10 overtime, never 40 + 20 —
+  // the 10 hours are daily overtime AND they are the hours above 40 in the
+  // week; they are the same hours." Weekly overtime never re-examines an
+  // hour a daily tier already promoted, and double time is never demoted by
+  // a weekly rule. Doing step 3 on total worked minutes instead of on the
+  // remainder is exactly the double-count that produces $1,596 where payroll
+  // says $1,540.
+  // ---------------------------------------------------------------------
   const regularSegments: Segment[] = [];
   const overtimeSegments: Segment[] = [];
-  let cumulativeWorked = 0;
+  const doubletimeSegments: Segment[] = [];
+  /** Day minutes left over after the daily tiers — the weekly rule's input. */
+  const remainderByDate = new Map<string, number>();
+
   for (const date of workedDates) {
     const minutes = workedByDate.get(date) ?? 0;
     const arrangement = resolved.get(date) as PayArrangement;
-    // Null threshold = no overtime for this arrangement; everything is regular.
+
+    if (seventhDayApplies && date === seventhDayDate) {
+      // Step 1. Priced whole, at the seventh-day tiers — and deliberately
+      // NOT added to `remainderByDate`, so not one of these minutes can be
+      // counted a second time by the weekly rule.
+      const firstTier =
+        seventhDayDoubletimeAfter === null
+          ? minutes
+          : Math.min(minutes, seventhDayDoubletimeAfter);
+      if (firstTier > 0) {
+        overtimeSegments.push({ date, minutes: firstTier, arrangement });
+      }
+      if (minutes - firstTier > 0) {
+        doubletimeSegments.push({
+          date,
+          minutes: minutes - firstTier,
+          arrangement,
+        });
+      }
+      continue;
+    }
+
+    // Step 2. The day as three CUMULATIVE bands, each capped by its own
+    // threshold, so the three always sum to exactly `minutes`.
+    //
+    // Taking `min` of BOTH caps for the bottom band is not belt-and-braces:
+    // 078 permits a double-time threshold with a NULL daily-overtime
+    // threshold (its ordering CHECK passes vacuously when the lower one is
+    // null), and computing the bottom band from the daily threshold alone
+    // would then leave the whole day in the remainder AND emit a double-time
+    // band for its top — the same minutes priced twice, which is §10.1's
+    // non-duplication invariant broken in the one direction its named test
+    // does not look. Null threshold = that band is unbounded, exactly as
+    // before 078.
+    const belowDaily =
+      dailyThreshold === null ? minutes : Math.min(minutes, dailyThreshold);
+    const belowDoubletime =
+      doubletimeThreshold === null
+        ? minutes
+        : Math.min(minutes, doubletimeThreshold);
+    const dailyRegular = Math.min(belowDaily, belowDoubletime);
+    const doubletimeMinutes = minutes - belowDoubletime;
+    const dailyOvertime = minutes - dailyRegular - doubletimeMinutes;
+
+    if (dailyOvertime > 0) {
+      overtimeSegments.push({ date, minutes: dailyOvertime, arrangement });
+    }
+    if (doubletimeMinutes > 0) {
+      doubletimeSegments.push({
+        date,
+        minutes: doubletimeMinutes,
+        arrangement,
+      });
+    }
+    if (dailyRegular > 0) {
+      remainderByDate.set(date, dailyRegular);
+    }
+  }
+
+  // Step 3. The weekly threshold, over the remainder alone.
+  let cumulativeRemainder = 0;
+  for (const date of workedDates) {
+    const minutes = remainderByDate.get(date) ?? 0;
+    if (minutes === 0) {
+      continue;
+    }
+    const arrangement = resolved.get(date) as PayArrangement;
+    // Null threshold = no weekly overtime for this arrangement.
     const regularRoom =
       threshold === null
         ? minutes
-        : Math.max(0, Math.min(minutes, threshold - cumulativeWorked));
+        : Math.max(0, Math.min(minutes, threshold - cumulativeRemainder));
     if (regularRoom > 0) {
       regularSegments.push({ date, minutes: regularRoom, arrangement });
     }
@@ -576,8 +711,17 @@ export function computeWeekEarnings(
         arrangement,
       });
     }
-    cumulativeWorked += minutes;
+    cumulativeRemainder += minutes;
   }
+
+  // `toLines` merges CONSECUTIVE same-arrangement segments into one dated
+  // line, so the overtime bucket has to be date-ascending before it gets
+  // there — it is filled in two passes (daily tiers, then the weekly rule)
+  // and a day can legitimately contribute to both. `sort` is stable, so a
+  // day's daily-overtime segment stays ahead of its weekly-overtime one and
+  // the two merge into a single honest row rather than two rows at the same
+  // rate for a nanny to reconcile.
+  overtimeSegments.sort((a, b) => a.date.localeCompare(b.date));
 
   const cancellationSegments: Segment[] = sortedDates(cancelledByDate)
     .filter(date => (cancelledByDate.get(date) ?? 0) > 0)
@@ -713,6 +857,15 @@ export function computeWeekEarnings(
       overtimeSegments,
       EARNINGS_LINE_KINDS.OVERTIME,
       multiplier
+    ),
+    // `doubletimeMultiplier` is non-null wherever a segment exists — the two
+    // thresholds that feed this bucket are both nulled out above when it is
+    // absent, so there is no path to a double-time line with no rate to price
+    // it at. The `?? 1` is a type-narrowing floor, never a fallback rate.
+    [EARNINGS_LINE_KINDS.DOUBLETIME]: toLines(
+      doubletimeSegments,
+      EARNINGS_LINE_KINDS.DOUBLETIME,
+      doubletimeMultiplier ?? 1
     ),
     [EARNINGS_LINE_KINDS.CANCELLATION_PAID]: toLines(
       cancellationSegments,

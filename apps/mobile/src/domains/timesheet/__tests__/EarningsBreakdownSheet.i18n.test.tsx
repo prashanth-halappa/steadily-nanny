@@ -104,6 +104,67 @@ describe('EarningsBreakdownSheet — overtime multiplier i18n (review finding 9a
   });
 });
 
+// 3-E2's `doubletime` row carries a multiplier exactly like `overtime` does,
+// so it inherits the same hazard: the raw JS number interpolated straight
+// into the subline prints the period-decimal English form in every locale.
+describe('EarningsBreakdownSheet — double-time multiplier i18n', () => {
+  afterEach(async () => {
+    capturedTCalls.length = 0;
+    await i18n.changeLanguage('en');
+  });
+
+  function doubletimeEarnings(multiplier: number): WeekEarningsOk {
+    return {
+      ...overtimeEarnings(),
+      lines: [
+        {
+          kind: 'doubletime',
+          minutes: 120,
+          rate_minor: 3700,
+          multiplier,
+          amount_minor: 7400,
+          from_date: '2026-08-08',
+          to_date: '2026-08-08',
+          arrangement_id: 'arr-1',
+        },
+      ],
+      gross_minor: 7400,
+    };
+  }
+
+  it('passes the multiplier as a formatted STRING, not the raw number', () => {
+    render(
+      <EarningsBreakdownSheet
+        visible
+        onDismiss={() => {}}
+        earnings={doubletimeEarnings(2)}
+        weekRangeLabel="3 Aug – 9 Aug"
+      />
+    );
+    const call = capturedTCalls.find(
+      c => c.key === 'earningsLineDoubletimeSubline'
+    );
+    expect(call?.options?.multiplier).toBe('2');
+    expect(typeof call?.options?.multiplier).toBe('string');
+  });
+
+  it('uses the locale decimal separator in Spanish', async () => {
+    await i18n.changeLanguage('es');
+    render(
+      <EarningsBreakdownSheet
+        visible
+        onDismiss={() => {}}
+        earnings={doubletimeEarnings(2.5)}
+        weekRangeLabel="3 Ago – 9 Ago"
+      />
+    );
+    const call = capturedTCalls.find(
+      c => c.key === 'earningsLineDoubletimeSubline'
+    );
+    expect(call?.options?.multiplier).toBe('2,5');
+  });
+});
+
 // The adjustment's reason is free text a parent typed. It must reach the
 // carer VERBATIM as an interpolated value — never treated as a key, and
 // never reworded — which the key-echo suite cannot see.

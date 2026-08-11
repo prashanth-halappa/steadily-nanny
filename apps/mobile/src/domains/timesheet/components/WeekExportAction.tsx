@@ -56,6 +56,7 @@ import { type ExportKind, ExportWeekSheet } from './ExportWeekSheet';
 const LINE_COPY_KEY: Partial<Record<EarningsLineKind, string>> = {
   [EARNINGS_LINE_KINDS.REGULAR]: 'earningsLineRegular',
   [EARNINGS_LINE_KINDS.OVERTIME]: 'earningsLineOvertime',
+  [EARNINGS_LINE_KINDS.DOUBLETIME]: 'earningsLineDoubletime',
   [EARNINGS_LINE_KINDS.CANCELLATION_PAID]: 'earningsLineCancellation',
   [EARNINGS_LINE_KINDS.PTO]: 'earningsLinePto',
   [EARNINGS_LINE_KINDS.GUARANTEED_TOPUP]: 'earningsLineTopup',

@@ -186,6 +186,15 @@ describe('PaySetupScreen', () => {
     expect(getByTestId('pay-setup-chip-today')).toBeTruthy();
     expect(getByTestId('pay-setup-chip-earlier')).toBeTruthy();
     expect(getByTestId('pay-setup-overtime-threshold-input')).toBeTruthy();
+    expect(
+      getByTestId('pay-setup-daily-overtime-threshold-input')
+    ).toBeTruthy();
+    expect(getByTestId('pay-setup-doubletime-threshold-input')).toBeTruthy();
+    expect(getByTestId('pay-setup-doubletime-multiplier-input')).toBeTruthy();
+    expect(getByTestId('pay-setup-seventh-day-multiplier-input')).toBeTruthy();
+    expect(
+      getByTestId('pay-setup-seventh-day-doubletime-after-input')
+    ).toBeTruthy();
     expect(getByTestId('pay-setup-guaranteed-hours-input')).toBeTruthy();
     expect(getByTestId('pay-setup-pto-hours-input')).toBeTruthy();
     expect(getByTestId('pay-setup-mileage-rate-input')).toBeTruthy();
@@ -368,6 +377,114 @@ describe('PaySetupScreen', () => {
         expect.objectContaining({ currency: 'EUR' })
       )
     );
+  });
+
+  // 3-E2 / migration 078. Setup starts blank on all five, and a blank tier
+  // must reach the API as an explicit null rather than be dropped (T17).
+  describe('078 daily tiers and the seventh day', () => {
+    it('starts every new field blank and sends all five as null when untouched', async () => {
+      const { getByTestId } = renderWithProviders(<PaySetupScreen />);
+
+      await waitFor(() =>
+        expect(getByTestId('pay-setup-rate-input')).toBeTruthy()
+      );
+      expect(
+        getByTestId('pay-setup-daily-overtime-threshold-input').props.value
+      ).toBe('');
+      expect(
+        getByTestId('pay-setup-seventh-day-multiplier-input').props.value
+      ).toBe('');
+
+      fireEvent.changeText(getByTestId('pay-setup-rate-input'), '18.50');
+      fireEvent.press(getByTestId('pay-setup-cancellation-chip-none'));
+      fireEvent.press(getByTestId('pay-setup-screen-cta'));
+
+      await waitFor(() =>
+        expect(payCreateMock).toHaveBeenCalledWith(
+          HOUSEHOLD_ID,
+          NANNY_ID,
+          expect.objectContaining({
+            overtime_daily_threshold_minutes: null,
+            doubletime_daily_threshold_minutes: null,
+            doubletime_multiplier: null,
+            seventh_day_multiplier: null,
+            seventh_day_doubletime_after_minutes: null,
+          })
+        )
+      );
+    });
+
+    it('submits every typed tier', async () => {
+      const { getByTestId } = renderWithProviders(<PaySetupScreen />);
+
+      await waitFor(() =>
+        expect(getByTestId('pay-setup-rate-input')).toBeTruthy()
+      );
+      fireEvent.changeText(getByTestId('pay-setup-rate-input'), '18.50');
+      fireEvent.changeText(
+        getByTestId('pay-setup-overtime-threshold-input'),
+        '40'
+      );
+      fireEvent.changeText(
+        getByTestId('pay-setup-daily-overtime-threshold-input'),
+        '8'
+      );
+      fireEvent.changeText(
+        getByTestId('pay-setup-doubletime-threshold-input'),
+        '12'
+      );
+      fireEvent.changeText(
+        getByTestId('pay-setup-doubletime-multiplier-input'),
+        '2'
+      );
+      fireEvent.changeText(
+        getByTestId('pay-setup-seventh-day-multiplier-input'),
+        '1.5'
+      );
+      fireEvent.changeText(
+        getByTestId('pay-setup-seventh-day-doubletime-after-input'),
+        '8'
+      );
+      fireEvent.press(getByTestId('pay-setup-cancellation-chip-none'));
+      fireEvent.press(getByTestId('pay-setup-screen-cta'));
+
+      await waitFor(() =>
+        expect(payCreateMock).toHaveBeenCalledWith(
+          HOUSEHOLD_ID,
+          NANNY_ID,
+          expect.objectContaining({
+            overtime_threshold_minutes: 2400,
+            overtime_multiplier: 1.5,
+            overtime_daily_threshold_minutes: 480,
+            doubletime_daily_threshold_minutes: 720,
+            doubletime_multiplier: 2,
+            seventh_day_multiplier: 1.5,
+            seventh_day_doubletime_after_minutes: 480,
+          })
+        )
+      );
+    });
+
+    it('keeps Save disabled on a seventh-day second tier with no double-time multiplier to pay it at', async () => {
+      const { getByTestId } = renderWithProviders(<PaySetupScreen />);
+
+      await waitFor(() =>
+        expect(getByTestId('pay-setup-rate-input')).toBeTruthy()
+      );
+      fireEvent.changeText(getByTestId('pay-setup-rate-input'), '18.50');
+      fireEvent.press(getByTestId('pay-setup-cancellation-chip-none'));
+      expect(getByTestId('pay-setup-screen-cta').props.disabled).toBe(false);
+
+      fireEvent.changeText(
+        getByTestId('pay-setup-seventh-day-multiplier-input'),
+        '1.5'
+      );
+      fireEvent.changeText(
+        getByTestId('pay-setup-seventh-day-doubletime-after-input'),
+        '8'
+      );
+      expect(getByTestId('pay-setup-screen-cta').props.disabled).toBe(true);
+    });
   });
 
   it('saves through the real mutation and returns on success', async () => {

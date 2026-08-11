@@ -168,6 +168,23 @@ export function EarningsBreakdownSheet({
             })}
           />
         );
+      case EARNINGS_LINE_KINDS.DOUBLETIME:
+        return (
+          <AmountRow
+            key={key}
+            testID={`${testID}-line-doubletime`}
+            label={t('earningsLineDoubletime')}
+            value={amount}
+            // review finding 9a again: a LOCALE-FORMATTED STRING, never the
+            // raw JS number — the premium tiers share the hazard because they
+            // share the shape.
+            subLine={t('earningsLineDoubletimeSubline', {
+              duration,
+              rate,
+              multiplier: formatEarningsMultiplier(line.multiplier ?? 2),
+            })}
+          />
+        );
       case EARNINGS_LINE_KINDS.CANCELLATION_PAID: {
         // review finding 9b: "paid under your cancellation policy" is
         // parent-voiced (her own family's policy) — wrong when this same

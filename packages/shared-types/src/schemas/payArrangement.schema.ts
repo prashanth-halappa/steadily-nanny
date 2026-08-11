@@ -120,6 +120,38 @@ export const PayArrangementSchema = z.object({
   // Null = no overtime for this arrangement.
   overtime_threshold_minutes: z.int().min(1).nullable(),
   overtime_multiplier: OvertimeMultiplierSchema,
+  // ---------------------------------------------------------------------
+  // Daily tiers, the seventh day, and why all five are `.nullable().optional()`
+  // (078, `docs/design/screens-pay-terms.md` §3).
+  //
+  // NULL IS AN EXPLICIT NO on every one of them: no daily overtime tier, no
+  // daily double-time tier, no double time at all, no seventh-day rule, no
+  // seventh-day second tier. A pre-078 arrangement therefore reads as
+  // "weekly overtime only", which is exactly the terms it was agreed under —
+  // no backfill and no default anywhere (§5 D-9).
+  //
+  // OPTIONAL as well as nullable, for the same reason `terms` above is
+  // (Phase 1, T3): a live row always carries the column, so `.optional()`
+  // only affects a FIXTURE or a payload written before 078. Making them
+  // required-nullable would force five new keys onto every
+  // `PayArrangement`-typed object in the repo — dozens of fixtures across
+  // domains this slice has no business touching — to buy nothing the null
+  // already says.
+  //
+  // `doubletime_multiplier` is SHARED between the daily double-time tier and
+  // the seventh day's second tier: it is the rate of the top tier however
+  // that tier is reached. Two columns holding the same number is two columns
+  // that eventually disagree. 078 pins the pairing (a tier that pays double
+  // time requires this multiplier) and the ordering
+  // (`doubletime_daily_threshold_minutes > overtime_daily_threshold_minutes`)
+  // as CHECK constraints; the engine refuses rather than clamps if a row ever
+  // arrives inconsistent anyway.
+  // ---------------------------------------------------------------------
+  overtime_daily_threshold_minutes: z.int().min(1).nullable().optional(),
+  doubletime_daily_threshold_minutes: z.int().min(1).nullable().optional(),
+  doubletime_multiplier: OvertimeMultiplierSchema.nullable().optional(),
+  seventh_day_multiplier: OvertimeMultiplierSchema.nullable().optional(),
+  seventh_day_doubletime_after_minutes: z.int().min(1).nullable().optional(),
   // Null = no guaranteed-hours top-up.
   guaranteed_minutes_per_week: z.int().min(0).nullable(),
   // Null = no PTO entitlement. Read by Phase 3's ledger accrual.
@@ -185,6 +217,17 @@ export const CreatePayArrangementRequestSchema = z.object({
   currency: CurrencyCodeSchema.optional(),
   overtime_threshold_minutes: z.int().min(1).nullable().optional(),
   overtime_multiplier: OvertimeMultiplierSchema.default(1.5),
+  // The 078 tiers. No wire DEFAULT on any of them, unlike
+  // `overtime_multiplier`: a default here would be this app inventing a
+  // statutory term for a family it knows nothing about, which is the exact
+  // liability the D-7 preset posture exists to avoid. They arrive only
+  // because a parent typed them or applied a preset that filled them
+  // (`payTermsPresets.ts`). Omitted resolves to null in the command service.
+  overtime_daily_threshold_minutes: z.int().min(1).nullable().optional(),
+  doubletime_daily_threshold_minutes: z.int().min(1).nullable().optional(),
+  doubletime_multiplier: OvertimeMultiplierSchema.nullable().optional(),
+  seventh_day_multiplier: OvertimeMultiplierSchema.nullable().optional(),
+  seventh_day_doubletime_after_minutes: z.int().min(1).nullable().optional(),
   guaranteed_minutes_per_week: z.int().min(0).nullable().optional(),
   pto_entitlement_minutes_per_year: z.int().min(0).nullable().optional(),
   mileage_rate_per_mile_minor: z

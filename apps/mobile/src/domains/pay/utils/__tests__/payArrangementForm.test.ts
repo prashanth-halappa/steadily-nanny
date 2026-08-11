@@ -26,6 +26,11 @@ const baseState: PayTermsFormState = {
   todayISO: '2026-08-04',
   overtimeThresholdHoursText: '',
   overtimeMultiplierText: '1.50',
+  dailyOvertimeThresholdHoursText: '',
+  doubletimeThresholdHoursText: '',
+  doubletimeMultiplierText: '',
+  seventhDayMultiplierText: '',
+  seventhDayDoubletimeAfterHoursText: '',
   guaranteedHoursText: '',
   ptoHoursPerYearText: '',
   mileageRateText: '',
@@ -131,6 +136,11 @@ describe('buildCreatePayArrangementRequest', () => {
       guaranteed_minutes_per_week: null,
       pto_entitlement_minutes_per_year: null,
       mileage_rate_per_mile_minor: null,
+      overtime_daily_threshold_minutes: null,
+      doubletime_daily_threshold_minutes: null,
+      doubletime_multiplier: null,
+      seventh_day_multiplier: null,
+      seventh_day_doubletime_after_minutes: null,
       cancellation_paid_within_hours: null,
       valid_from: '2026-08-04',
       note: undefined,
@@ -142,6 +152,11 @@ describe('buildCreatePayArrangementRequest', () => {
       ...baseState,
       overtimeThresholdHoursText: '40',
       overtimeMultiplierText: '1.5',
+      dailyOvertimeThresholdHoursText: '8',
+      doubletimeThresholdHoursText: '12',
+      doubletimeMultiplierText: '2',
+      seventhDayMultiplierText: '1.5',
+      seventhDayDoubletimeAfterHoursText: '8',
       guaranteedHoursText: '40',
       ptoHoursPerYearText: '140',
       mileageRateText: '0.45',
@@ -154,6 +169,11 @@ describe('buildCreatePayArrangementRequest', () => {
       currency: 'GBP',
       overtime_threshold_minutes: 2400,
       overtime_multiplier: 1.5,
+      overtime_daily_threshold_minutes: 480,
+      doubletime_daily_threshold_minutes: 720,
+      doubletime_multiplier: 2,
+      seventh_day_multiplier: 1.5,
+      seventh_day_doubletime_after_minutes: 480,
       guaranteed_minutes_per_week: 2400,
       pto_entitlement_minutes_per_year: 8400,
       mileage_rate_per_mile_minor: 45,
@@ -272,6 +292,183 @@ describe('buildCreatePayArrangementRequest', () => {
         currentOvertimeMultiplier: 2.0,
       });
       expect(result?.overtime_multiplier).toBe(1.75);
+    });
+  });
+
+  // 3-E2 / migration 078. Every rule below is a refusal, never a correction:
+  // the builder returns `null` and the screen's save button stays disabled,
+  // rather than quietly storing a tier nobody agreed to (playbook §2.9).
+  describe('078 daily tiers and the seventh day', () => {
+    it('carries all five keys explicitly even when every tier is off (T17: a field that is never sent is a field that never persists)', () => {
+      const result = buildCreatePayArrangementRequest(baseState);
+      expect(result).toHaveProperty('overtime_daily_threshold_minutes', null);
+      expect(result).toHaveProperty('doubletime_daily_threshold_minutes', null);
+      expect(result).toHaveProperty('doubletime_multiplier', null);
+      expect(result).toHaveProperty('seventh_day_multiplier', null);
+      expect(result).toHaveProperty(
+        'seventh_day_doubletime_after_minutes',
+        null
+      );
+    });
+
+    it('a daily overtime threshold alone is enough — it reuses overtime_multiplier, it has none of its own', () => {
+      const result = buildCreatePayArrangementRequest({
+        ...baseState,
+        overtimeThresholdHoursText: '40',
+        overtimeMultiplierText: '1.5',
+        dailyOvertimeThresholdHoursText: '8',
+      });
+      expect(result?.overtime_daily_threshold_minutes).toBe(480);
+      expect(result?.overtime_multiplier).toBe(1.5);
+      expect(result?.doubletime_multiplier).toBeNull();
+    });
+
+    it('rejects an unparsable daily overtime threshold', () => {
+      expect(
+        buildCreatePayArrangementRequest({
+          ...baseState,
+          dailyOvertimeThresholdHoursText: 'eight',
+        })
+      ).toBeNull();
+    });
+
+    it('rejects a zero daily overtime threshold — 078 checks > 0, and "after 0 hours" is not a tier', () => {
+      expect(
+        buildCreatePayArrangementRequest({
+          ...baseState,
+          dailyOvertimeThresholdHoursText: '0',
+        })
+      ).toBeNull();
+    });
+
+    it('rejects a double-time threshold with no double-time multiplier (078 doubletime_daily_needs_multiplier)', () => {
+      expect(
+        buildCreatePayArrangementRequest({
+          ...baseState,
+          doubletimeThresholdHoursText: '12',
+          doubletimeMultiplierText: '',
+        })
+      ).toBeNull();
+    });
+
+    it('rejects a double-time multiplier outside the numeric(3,2) bounds, same check as the weekly one', () => {
+      const withDoubletimeMultiplier = (doubletimeMultiplierText: string) =>
+        buildCreatePayArrangementRequest({
+          ...baseState,
+          doubletimeThresholdHoursText: '12',
+          doubletimeMultiplierText,
+        });
+      expect(withDoubletimeMultiplier('0.5')).toBeNull();
+      expect(withDoubletimeMultiplier('50')).toBeNull();
+      expect(withDoubletimeMultiplier('1.555')).toBeNull();
+      expect(withDoubletimeMultiplier('9.99')?.doubletime_multiplier).toBe(
+        9.99
+      );
+      expect(withDoubletimeMultiplier('8.88')?.doubletime_multiplier).toBe(
+        8.88
+      );
+    });
+
+    it('rejects inverted daily tiers — double time must come strictly after daily overtime (078 daily_tiers_ordered)', () => {
+      expect(
+        buildCreatePayArrangementRequest({
+          ...baseState,
+          dailyOvertimeThresholdHoursText: '8',
+          doubletimeThresholdHoursText: '6',
+          doubletimeMultiplierText: '2',
+        })
+      ).toBeNull();
+    });
+
+    it('rejects EQUAL daily tiers — the constraint is strictly greater, not greater-or-equal', () => {
+      expect(
+        buildCreatePayArrangementRequest({
+          ...baseState,
+          dailyOvertimeThresholdHoursText: '8',
+          doubletimeThresholdHoursText: '8',
+          doubletimeMultiplierText: '2',
+        })
+      ).toBeNull();
+    });
+
+    it('accepts a double-time tier with no daily overtime tier — the ordering rule only bites when both are set', () => {
+      const result = buildCreatePayArrangementRequest({
+        ...baseState,
+        doubletimeThresholdHoursText: '12',
+        doubletimeMultiplierText: '2',
+      });
+      expect(result?.doubletime_daily_threshold_minutes).toBe(720);
+      expect(result?.overtime_daily_threshold_minutes).toBeNull();
+    });
+
+    it('a single-tier seventh day needs only its own multiplier', () => {
+      const result = buildCreatePayArrangementRequest({
+        ...baseState,
+        seventhDayMultiplierText: '1.5',
+      });
+      expect(result?.seventh_day_multiplier).toBe(1.5);
+      expect(result?.seventh_day_doubletime_after_minutes).toBeNull();
+    });
+
+    it('rejects a seventh-day second tier with no seventh-day multiplier (078 seventh_day_second_tier_needs_multiplier)', () => {
+      expect(
+        buildCreatePayArrangementRequest({
+          ...baseState,
+          seventhDayMultiplierText: '',
+          seventhDayDoubletimeAfterHoursText: '8',
+          doubletimeMultiplierText: '2',
+        })
+      ).toBeNull();
+    });
+
+    it('rejects a seventh-day second tier with no double-time multiplier to pay it at', () => {
+      expect(
+        buildCreatePayArrangementRequest({
+          ...baseState,
+          seventhDayMultiplierText: '1.5',
+          seventhDayDoubletimeAfterHoursText: '8',
+          doubletimeMultiplierText: '',
+        })
+      ).toBeNull();
+    });
+
+    it('accepts a two-tier seventh day when both multipliers are present, with no daily double-time threshold at all', () => {
+      const result = buildCreatePayArrangementRequest({
+        ...baseState,
+        seventhDayMultiplierText: '1.5',
+        seventhDayDoubletimeAfterHoursText: '8',
+        doubletimeMultiplierText: '2',
+      });
+      expect(result?.seventh_day_multiplier).toBe(1.5);
+      expect(result?.seventh_day_doubletime_after_minutes).toBe(480);
+      expect(result?.doubletime_multiplier).toBe(2);
+      expect(result?.doubletime_daily_threshold_minutes).toBeNull();
+    });
+
+    it('rejects a seventh-day multiplier outside the numeric(3,2) bounds', () => {
+      expect(
+        buildCreatePayArrangementRequest({
+          ...baseState,
+          seventhDayMultiplierText: '1.555',
+        })
+      ).toBeNull();
+      expect(
+        buildCreatePayArrangementRequest({
+          ...baseState,
+          seventhDayMultiplierText: '0.5',
+        })
+      ).toBeNull();
+    });
+
+    it('rejects a zero seventh-day second-tier threshold', () => {
+      expect(
+        buildCreatePayArrangementRequest({
+          ...baseState,
+          seventhDayMultiplierText: '1.5',
+          doubletimeMultiplierText: '2',
+          seventhDayDoubletimeAfterHoursText: '0',
+        })
+      ).toBeNull();
     });
   });
 });

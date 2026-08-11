@@ -475,6 +475,26 @@ export type TimesheetListResponse = z.infer<typeof TimesheetListResponseSchema>;
 export const EARNINGS_LINE_KINDS = {
   REGULAR: 'regular',
   OVERTIME: 'overtime',
+  /**
+   * The top premium tier (3-E2): minutes beyond a day's double-time threshold,
+   * or beyond the seventh consecutive day's second-tier threshold, priced at
+   * `pay_arrangements.doubletime_multiplier` (078).
+   *
+   * WHY EMITTING THIS IS SAFE NOW. Playbook §3's compatibility rule says a new
+   * line kind may not be EMITTED until the tolerant client has shipped to the
+   * fleet. Both halves of that condition hold: 1-A already made `kind` an open
+   * string on `EarningsLineSchema` with `isKnownEarningsLineKind` /
+   * `humanizeEarningsLineKind` on every read site, so a build that has never
+   * heard of `doubletime` renders "Double time" beside the correct amount
+   * instead of failing the week parse; and §5 D-9 settles the fleet question
+   * outright — the app is pre-launch and every account is wiped before store
+   * release, so there is no older client in anyone's hands to be tolerant FOR.
+   * The three known-kind sites in this repo are closed anyway
+   * (`EarningsBreakdownSheet`, `WeekExportAction`'s copy map, and
+   * `weekExportCsv`'s label map), because a kind rendered by the fallback is a
+   * kind with no localisation.
+   */
+  DOUBLETIME: 'doubletime',
   CANCELLATION_PAID: 'cancellation_paid',
   GUARANTEED_TOPUP: 'guaranteed_topup',
   PTO: 'pto',
@@ -494,6 +514,10 @@ export type EarningsLineKind =
 export const EARNINGS_LINE_ORDER = [
   EARNINGS_LINE_KINDS.REGULAR,
   EARNINGS_LINE_KINDS.OVERTIME,
+  // Directly under overtime — the premium tiers read as a ladder, which is
+  // also the order `docs/design/screens-pay-terms.md` §12.1's pay record
+  // prints them in (Regular / Overtime / Double time).
+  EARNINGS_LINE_KINDS.DOUBLETIME,
   EARNINGS_LINE_KINDS.CANCELLATION_PAID,
   EARNINGS_LINE_KINDS.PTO,
   EARNINGS_LINE_KINDS.GUARANTEED_TOPUP,

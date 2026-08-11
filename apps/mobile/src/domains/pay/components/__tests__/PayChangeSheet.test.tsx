@@ -246,6 +246,113 @@ describe('PayChangeSheet', () => {
     expect(queryByTestId('pay-change-midweek-consequence')).toBeNull();
   });
 
+  // 3-E2 / migration 078. The sheet seeds every term from the arrangement —
+  // T17's failure mode is a new column that is never seeded and never sent,
+  // so a change to the rate silently wipes the daily tiers.
+  describe('078 daily tiers and the seventh day', () => {
+    const tieredArrangement: PayArrangement = {
+      ...currentArrangement,
+      overtime_threshold_minutes: 2400,
+      overtime_multiplier: 1.5,
+      overtime_daily_threshold_minutes: 480,
+      doubletime_daily_threshold_minutes: 720,
+      doubletime_multiplier: 2,
+      seventh_day_multiplier: 1.5,
+      seventh_day_doubletime_after_minutes: 480,
+    };
+
+    it('seeds all five fields from the current arrangement', () => {
+      const { getByTestId } = renderSheet({
+        currentArrangement: tieredArrangement,
+      });
+
+      expect(
+        getByTestId('pay-change-daily-overtime-threshold-input').props.value
+      ).toBe('8');
+      expect(
+        getByTestId('pay-change-doubletime-threshold-input').props.value
+      ).toBe('12');
+      expect(
+        getByTestId('pay-change-doubletime-multiplier-input').props.value
+      ).toBe('2');
+      expect(
+        getByTestId('pay-change-seventh-day-multiplier-input').props.value
+      ).toBe('1.5');
+      expect(
+        getByTestId('pay-change-seventh-day-doubletime-after-input').props.value
+      ).toBe('8');
+    });
+
+    it('a null column seeds an empty field, never a fabricated default', () => {
+      const { getByTestId } = renderSheet();
+
+      for (const testID of [
+        'pay-change-daily-overtime-threshold-input',
+        'pay-change-doubletime-threshold-input',
+        'pay-change-doubletime-multiplier-input',
+        'pay-change-seventh-day-multiplier-input',
+        'pay-change-seventh-day-doubletime-after-input',
+      ]) {
+        expect(getByTestId(testID).props.value).toBe('');
+      }
+    });
+
+    it('a rate-only change re-sends every seeded tier unchanged', () => {
+      const { getByTestId, onSubmit } = renderSheet({
+        currentArrangement: tieredArrangement,
+      });
+
+      fireEvent.changeText(getByTestId('pay-change-rate-input'), '19.50');
+      fireEvent.press(getByTestId('pay-change-submit'));
+
+      expect(onSubmit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          overtime_daily_threshold_minutes: 480,
+          doubletime_daily_threshold_minutes: 720,
+          doubletime_multiplier: 2,
+          seventh_day_multiplier: 1.5,
+          seventh_day_doubletime_after_minutes: 480,
+        })
+      );
+    });
+
+    it('sends all five as null when every tier is left blank', () => {
+      const { getByTestId, onSubmit } = renderSheet();
+
+      fireEvent.press(getByTestId('pay-change-submit'));
+
+      expect(onSubmit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          overtime_daily_threshold_minutes: null,
+          doubletime_daily_threshold_minutes: null,
+          doubletime_multiplier: null,
+          seventh_day_multiplier: null,
+          seventh_day_doubletime_after_minutes: null,
+        })
+      );
+    });
+
+    it('refuses to submit inverted daily tiers rather than reordering them', () => {
+      const { getByTestId, onSubmit } = renderSheet();
+
+      fireEvent.changeText(
+        getByTestId('pay-change-daily-overtime-threshold-input'),
+        '8'
+      );
+      fireEvent.changeText(
+        getByTestId('pay-change-doubletime-threshold-input'),
+        '6'
+      );
+      fireEvent.changeText(
+        getByTestId('pay-change-doubletime-multiplier-input'),
+        '2'
+      );
+      fireEvent.press(getByTestId('pay-change-submit'));
+
+      expect(onSubmit).not.toHaveBeenCalled();
+    });
+  });
+
   it('on failure the sheet keeps the typed rate rather than resetting (ClockOutSheet discipline)', () => {
     const { getByTestId } = renderSheet();
 

@@ -91,6 +91,8 @@
   "earningsLineRegularSublineFrom": "{{duration}} a {{rate}} (desde el {{date}})",
   "earningsLineOvertime": "Horas extra pagadas",
   "earningsLineOvertimeSubline": "{{duration}} a {{rate}} ({{multiplier}}×)",
+  "earningsLineDoubletime": "Pago doble",
+  "earningsLineDoubletimeSubline": "{{duration}} a {{rate}} ({{multiplier}}×)",
   "earningsLineCancellation": "Cancelada con poco aviso",
   "earningsLineCancellationSublineParent": "{{duration}} a {{rate}} · pagada según tu política de cancelación",
   "earningsLineCancellationSublineNanny": "{{duration}} a {{rate}} · pagada según la política de cancelación de tu familia",

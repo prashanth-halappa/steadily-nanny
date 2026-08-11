@@ -449,6 +449,11 @@ describe('PayArrangementCommandService.create — the written row', () => {
         currency: 'GBP',
         overtime_threshold_minutes: 2400,
         overtime_multiplier: 1.25,
+        overtime_daily_threshold_minutes: 480,
+        doubletime_daily_threshold_minutes: 720,
+        doubletime_multiplier: 2,
+        seventh_day_multiplier: 1.5,
+        seventh_day_doubletime_after_minutes: 480,
         guaranteed_minutes_per_week: 1800,
         pto_entitlement_minutes_per_year: 16800,
         mileage_rate_per_mile_minor: 45,
@@ -465,6 +470,11 @@ describe('PayArrangementCommandService.create — the written row', () => {
       currency: 'GBP',
       overtime_threshold_minutes: 2400,
       overtime_multiplier: 1.25,
+      overtime_daily_threshold_minutes: 480,
+      doubletime_daily_threshold_minutes: 720,
+      doubletime_multiplier: 2,
+      seventh_day_multiplier: 1.5,
+      seventh_day_doubletime_after_minutes: 480,
       guaranteed_minutes_per_week: 1800,
       pto_entitlement_minutes_per_year: 16800,
       mileage_rate_per_mile_minor: 45,
@@ -506,6 +516,56 @@ describe('PayArrangementCommandService.create — the written row', () => {
     expect(written.cancellation_paid_within_hours).toBeNull();
     expect(written.mileage_rate_per_mile_minor).toBeNull();
     expect(written.note).toBeNull();
+  });
+
+  // 3-E2 / T17. The insert is a field-by-field literal with NO exhaustiveness
+  // check, so a new arrangement column is one forgotten line away from never
+  // persisting — and the failure is silent: the row saves, the parent sees
+  // her terms echoed back from the form she just filled, and the engine
+  // prices every week afterwards under terms nobody chose. These two tests
+  // are the only compiler this layer has.
+  it('persists the 078 daily/seventh-day tiers verbatim', async () => {
+    const payRepo = makePayRepo();
+    const svc = service({ payRepo });
+    await svc.create(
+      'parent-1',
+      'h1',
+      'carer-1',
+      request({
+        overtime_daily_threshold_minutes: 480,
+        doubletime_daily_threshold_minutes: 720,
+        doubletime_multiplier: 2,
+        seventh_day_multiplier: 1.5,
+        seventh_day_doubletime_after_minutes: 480,
+      }),
+      NOW
+    );
+    const written = payRepo.create.mock.calls[0][0];
+    expect(written.overtime_daily_threshold_minutes).toBe(480);
+    expect(written.doubletime_daily_threshold_minutes).toBe(720);
+    expect(written.doubletime_multiplier).toBe(2);
+    expect(written.seventh_day_multiplier).toBe(1.5);
+    expect(written.seventh_day_doubletime_after_minutes).toBe(480);
+  });
+
+  it('writes the 078 tiers as explicit nulls when omitted — null is the term "no such tier"', async () => {
+    const payRepo = makePayRepo();
+    const svc = service({ payRepo });
+    await svc.create('parent-1', 'h1', 'carer-1', request(), NOW);
+    const written = payRepo.create.mock.calls[0][0];
+    for (const column of [
+      'overtime_daily_threshold_minutes',
+      'doubletime_daily_threshold_minutes',
+      'doubletime_multiplier',
+      'seventh_day_multiplier',
+      'seventh_day_doubletime_after_minutes',
+    ] as const) {
+      // `toHaveProperty` first: an omitted key and an explicit null are the
+      // same row in Postgres but not the same intent at the call site, and
+      // only the explicit form survives a future NOT NULL DEFAULT.
+      expect(written).toHaveProperty(column);
+      expect(written[column]).toBeNull();
+    }
   });
 
   it('never writes bill_rate_minor — dormant until Tier 2 invoicing', async () => {

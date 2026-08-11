@@ -41,9 +41,9 @@
  *    |---------------|--------------------------------------------------------|
  *    | date          | the line's `from_date` (household-local, ISO `YYYY-MM-DD`) |
  *    | description   | human label; carries the multiplier and the `to_date` when the line spans days — see `describeLine` |
- *    | kind          | the snapshot's `kind` VERBATIM: `regular`, `overtime`, `cancellation_paid`, `pto`, `guaranteed_topup`, `reimbursements` |
+ *    | kind          | the snapshot's `kind` VERBATIM: `regular`, `overtime`, `doubletime`, `cancellation_paid`, `pto`, `guaranteed_topup`, `reimbursements` |
  *    | minutes       | integer; `0` on a reimbursement line (it is not time)   |
- *    | rate_minor    | integer MINOR units per hour as displayed on the row (overtime carries the already-multiplied rate); `0` on a reimbursement line |
+ *    | rate_minor    | integer MINOR units per hour as displayed on the row (overtime and double time carry the already-multiplied rate); `0` on a reimbursement line |
  *    | amount_minor  | integer MINOR units                                     |
  *    | currency      | ISO-4217, uppercase; one currency per week by construction |
  *
@@ -117,6 +117,7 @@ const HEADER: readonly string[] = [
 const LINE_LABELS: Record<EarningsLineKind, string> = {
   [EARNINGS_LINE_KINDS.REGULAR]: 'Regular hours',
   [EARNINGS_LINE_KINDS.OVERTIME]: 'Overtime',
+  [EARNINGS_LINE_KINDS.DOUBLETIME]: 'Double time',
   [EARNINGS_LINE_KINDS.CANCELLATION_PAID]: 'Cancelled shift, paid',
   [EARNINGS_LINE_KINDS.PTO]: 'Paid time off',
   [EARNINGS_LINE_KINDS.GUARANTEED_TOPUP]: 'Guaranteed hours top-up',
@@ -157,7 +158,7 @@ export function carerSlug(name: string | null | undefined): string {
 }
 
 /**
- * The `description` column: the kind's label, plus the overtime multiplier
+ * The `description` column: the kind's label, plus the premium-tier multiplier
  * (the rate on the row is already multiplied, so the reader can check it), plus
  * the closing date when the line spans more than one day — a mid-week raise
  * splits `regular` into two dated lines, and a top-up spans the whole week.
@@ -169,8 +170,11 @@ function describeLine(line: EarningsLine): string {
   const label = isKnownEarningsLineKind(line.kind)
     ? LINE_LABELS[line.kind]
     : humanizeEarningsLineKind(line.kind);
+  const isPremiumTier =
+    line.kind === EARNINGS_LINE_KINDS.OVERTIME ||
+    line.kind === EARNINGS_LINE_KINDS.DOUBLETIME;
   const withMultiplier =
-    line.kind === EARNINGS_LINE_KINDS.OVERTIME && line.multiplier !== null
+    isPremiumTier && line.multiplier !== null
       ? `${label} at ${line.multiplier}x`
       : label;
   return line.to_date === line.from_date
