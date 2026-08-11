@@ -12,7 +12,11 @@
  */
 import { afterEach, describe, expect, it } from 'bun:test';
 import { getLocales } from 'expo-localization';
-import { getDeviceCurrency, getDeviceLocale } from '../deviceLocale';
+import {
+  getDeviceCurrency,
+  getDeviceLocale,
+  getDeviceRegion,
+} from '../deviceLocale';
 
 const mockGetLocales = getLocales as unknown as {
   mockImplementation: (fn: () => unknown) => void;
@@ -71,5 +75,24 @@ describe('getDeviceLocale', () => {
       throw new Error('native module unavailable');
     });
     expect(getDeviceLocale()).toBe('en-GB');
+  });
+});
+
+describe('getDeviceRegion', () => {
+  it('returns the ISO region code', () => {
+    mockGetLocales.mockImplementation(() => [{ regionCode: 'US' }]);
+    expect(getDeviceRegion()).toBe('US');
+  });
+
+  it('returns null when the platform reports no region', () => {
+    mockGetLocales.mockImplementation(() => [{ languageTag: 'en-GB' }]);
+    expect(getDeviceRegion()).toBeNull();
+  });
+
+  it('returns null when the native module throws', () => {
+    mockGetLocales.mockImplementation(() => {
+      throw new Error('native module unavailable');
+    });
+    expect(getDeviceRegion()).toBeNull();
   });
 });

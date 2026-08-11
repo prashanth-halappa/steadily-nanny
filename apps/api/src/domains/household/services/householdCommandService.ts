@@ -18,6 +18,7 @@ import { PtoLedgerRepository } from '../../pay/repositories/ptoLedgerRepository'
 // barrel: the barrel pulls in the timesheet services, and one of those reaching
 // back for household membership would close an import cycle.
 import { TimeEntryRepository } from '../../timesheet/repositories/timeEntryRepository';
+import { TimesheetRepository } from '../../timesheet/repositories/timesheetRepository';
 import { localDateOf } from '../../timesheet/utils/weekStart';
 import { UserService } from '../../user/services/userService';
 import {
@@ -34,6 +35,7 @@ import {
   MemberHasRunningEntryError,
   MemberNotFoundError,
   NotAHouseholdParentError,
+  WeekStartLockedError,
 } from '../errors/householdErrors';
 import { HouseholdInviteRepository } from '../repositories/householdInviteRepository';
 import { HouseholdMemberRepository } from '../repositories/householdMemberRepository';
@@ -96,7 +98,11 @@ export class HouseholdCommandService {
     private readonly ptoLedger: Pick<
       PtoLedgerRepository,
       'listForCarerYear'
-    > = new PtoLedgerRepository()
+    > = new PtoLedgerRepository(),
+    private readonly timesheets: Pick<
+      TimesheetRepository,
+      'existsForHousehold'
+    > = new TimesheetRepository()
   ) {}
 
   /**
@@ -136,7 +142,16 @@ export class HouseholdCommandService {
     return household;
   }
 
-  /** Update mutable household fields. Owner/parent only. */
+  /**
+   * Update mutable household fields. Owner/parent only.
+   *
+   * `week_starts_on` gets one extra guard: it defines pay-week boundaries
+   * (FLSA fixed workweek, 075_household_week_starts_on.sql), so once any
+   * timesheet has been recorded it can no longer move — moving it would
+   * reprice weeks nobody re-approved. The existence check runs ONLY when the
+   * field is present AND differs from the current value, so an unrelated
+   * update (or resubmitting the same value) never pays for the extra query.
+   */
   async update(
     userId: string,
     householdId: string,
@@ -144,6 +159,18 @@ export class HouseholdCommandService {
   ): Promise<Household> {
     const membership = await this.queries.getMembership(userId, householdId);
     this.assertWriteRole(householdId, membership);
+
+    if (input.week_starts_on !== undefined) {
+      const current = await this.householdRepo.findById(householdId);
+      if (current && input.week_starts_on !== current.week_starts_on) {
+        const hasTimesheets =
+          await this.timesheets.existsForHousehold(householdId);
+        if (hasTimesheets) {
+          throw new WeekStartLockedError(householdId);
+        }
+      }
+    }
+
     return this.householdRepo.update(householdId, input);
   }
 

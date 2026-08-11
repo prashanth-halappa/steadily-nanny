@@ -21,6 +21,7 @@ function makeHousehold(overrides: Partial<Household> = {}): Household {
     cancellation_paid_within_hours: 24,
     currency: 'GBP',
     jurisdiction: null,
+    week_starts_on: 1,
     created_by: 'u1',
     created_at: 't',
     updated_at: 't',

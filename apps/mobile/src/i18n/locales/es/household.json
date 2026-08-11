@@ -98,6 +98,9 @@
     "jurisdictionChangeButton": "Cambiar",
     "jurisdictionNoneOption": "Sin definir",
     "jurisdictionPickerTitle": "Elige un estado",
+    "weekStartLabel": "La semana empieza el",
+    "weekStartHint": "Esto define la semana de pago de tu hogar — las horas de cada cuidador se suman según esta referencia.",
+    "weekStartLockedHint": "Bloqueado porque ya se han registrado horas — esto define las semanas de pago.",
     "approvalModeLabel": "Quién aprueba los cambios",
     "approvalMode": {
       "either": "Cualquiera de los padres puede decidir",

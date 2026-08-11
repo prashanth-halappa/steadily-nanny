@@ -76,6 +76,7 @@ function baseDeps(overrides: Partial<CalendarSyncDeps> = {}): CalendarSyncDeps {
         cancellation_paid_within_hours: 24,
         currency: 'GBP',
         jurisdiction: null,
+        week_starts_on: 1,
         created_by: null,
         created_at: START,
         updated_at: START,

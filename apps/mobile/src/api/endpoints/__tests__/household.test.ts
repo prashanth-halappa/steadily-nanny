@@ -29,6 +29,7 @@ const validHousehold: Household = {
   cancellation_paid_within_hours: 24,
   currency: 'GBP',
   jurisdiction: null,
+  week_starts_on: 1,
   created_by: '22222222-2222-4222-8222-222222222222',
   created_at: now,
   updated_at: now,

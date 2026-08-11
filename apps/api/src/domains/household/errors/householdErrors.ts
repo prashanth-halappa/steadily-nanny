@@ -213,3 +213,20 @@ export class AlreadyMemberError extends ConflictError {
     this.name = 'AlreadyMemberError';
   }
 }
+
+/**
+ * 409 — `week_starts_on` cannot change once any timesheet exists for the
+ * household. It defines pay-week boundaries (FLSA fixed workweek,
+ * 075_household_week_starts_on.sql); moving it after hours have been
+ * recorded against the old boundary would reprice weeks nobody re-approved.
+ */
+export class WeekStartLockedError extends ConflictError {
+  constructor(householdId: string) {
+    super(
+      'Week start cannot change once hours have been recorded — it defines pay weeks',
+      'WEEK_START_LOCKED',
+      { householdId }
+    );
+    this.name = 'WeekStartLockedError';
+  }
+}

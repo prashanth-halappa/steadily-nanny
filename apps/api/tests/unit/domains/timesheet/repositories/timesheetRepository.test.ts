@@ -4,7 +4,10 @@ let TimesheetRepository: any;
 let mockSupabaseService: any;
 
 function createMockQueryChain(
-  finalResponse: { data: unknown; error: unknown } = { data: null, error: null }
+  finalResponse: { data: unknown; error: unknown; count?: number } = {
+    data: null,
+    error: null,
+  }
 ): any {
   const chain: any = {
     select: mock(() => chain),
@@ -217,6 +220,42 @@ describe('TimesheetRepository.approveSubmittedWithEarnings', () => {
     await expect(
       repo.approveSubmittedWithEarnings('ts1', snapshotPatch, READ_VERSION)
     ).rejects.toThrow('Failed to approve timesheet with earnings');
+  });
+});
+
+describe('TimesheetRepository.existsForHousehold', () => {
+  it('returns true when the household has at least one timesheet', async () => {
+    mockSupabaseService.from.mockImplementation(() =>
+      createMockQueryChain({ data: null, error: null, count: 3 })
+    );
+    const repo = new TimesheetRepository();
+    expect(await repo.existsForHousehold('h1')).toBe(true);
+  });
+
+  it('returns false when the household has no timesheets', async () => {
+    mockSupabaseService.from.mockImplementation(() =>
+      createMockQueryChain({ data: null, error: null, count: 0 })
+    );
+    const repo = new TimesheetRepository();
+    expect(await repo.existsForHousehold('h1')).toBe(false);
+  });
+
+  it('scopes the count to the given household', async () => {
+    const chain = createMockQueryChain({ data: null, error: null, count: 0 });
+    mockSupabaseService.from.mockImplementation(() => chain);
+    const repo = new TimesheetRepository();
+    await repo.existsForHousehold('h1');
+    expect(chain.eq).toHaveBeenCalledWith('household_id', 'h1');
+  });
+
+  it('raises a DatabaseError rather than returning a wrong existence answer', async () => {
+    mockSupabaseService.from.mockImplementation(() =>
+      createMockQueryChain({ data: null, error: { message: 'boom' } })
+    );
+    const repo = new TimesheetRepository();
+    await expect(repo.existsForHousehold('h1')).rejects.toThrow(
+      'Failed to check timesheets for household'
+    );
   });
 });
 

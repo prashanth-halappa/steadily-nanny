@@ -14,6 +14,7 @@ import {
   MemberHasRunningEntryError,
   MemberNotFoundError,
   NotAHouseholdParentError,
+  WeekStartLockedError,
 } from '../../../../../src/domains/household/errors/householdErrors';
 import { HouseholdCommandService } from '../../../../../src/domains/household/services/householdCommandService';
 import type {
@@ -36,6 +37,7 @@ const household: Household = {
   cancellation_paid_within_hours: 24,
   currency: 'GBP',
   jurisdiction: null,
+  week_starts_on: 1,
   created_by: 'u1',
   created_at: 't',
   updated_at: 't',
@@ -434,6 +436,89 @@ describe('HouseholdCommandService.update', () => {
     await expect(
       svc.update('u1', 'h1', { name: 'New name' })
     ).rejects.toBeInstanceOf(NotAHouseholdParentError);
+  });
+});
+
+describe('HouseholdCommandService.update — week_starts_on lock (T1)', () => {
+  function makeTimesheetRepo(exists: boolean): any {
+    return { existsForHousehold: mock(async () => exists) };
+  }
+
+  it('refuses a changed week_starts_on with WeekStartLockedError when a timesheet exists', async () => {
+    const timesheets = makeTimesheetRepo(true);
+    const svc = new HouseholdCommandService(
+      makeHouseholdRepo(),
+      makeMemberRepo(),
+      makeInviteRepo(),
+      makeQueries('parent'),
+      stubUsers,
+      undefined,
+      undefined,
+      undefined,
+      timesheets
+    );
+    await expect(
+      svc.update('u1', 'h1', { week_starts_on: 0 })
+    ).rejects.toBeInstanceOf(WeekStartLockedError);
+    expect(timesheets.existsForHousehold).toHaveBeenCalledWith('h1');
+  });
+
+  it('allows a changed week_starts_on when no timesheet exists', async () => {
+    const timesheets = makeTimesheetRepo(false);
+    const householdRepo = makeHouseholdRepo();
+    const svc = new HouseholdCommandService(
+      householdRepo,
+      makeMemberRepo(),
+      makeInviteRepo(),
+      makeQueries('parent'),
+      stubUsers,
+      undefined,
+      undefined,
+      undefined,
+      timesheets
+    );
+    const result = await svc.update('u1', 'h1', { week_starts_on: 0 });
+    expect(result.week_starts_on).toBe(0);
+    expect(householdRepo.update).toHaveBeenCalledWith('h1', {
+      week_starts_on: 0,
+    });
+  });
+
+  it('sends a same-value week_starts_on through WITHOUT calling the existence check — no false lock, no wasted query', async () => {
+    const timesheets = makeTimesheetRepo(true);
+    const svc = new HouseholdCommandService(
+      makeHouseholdRepo(),
+      makeMemberRepo(),
+      makeInviteRepo(),
+      makeQueries('parent'),
+      stubUsers,
+      undefined,
+      undefined,
+      undefined,
+      timesheets
+    );
+    // `household` fixture's week_starts_on is 1 — same value in, no lock.
+    await expect(
+      svc.update('u1', 'h1', { week_starts_on: 1 })
+    ).resolves.toBeTruthy();
+    expect(timesheets.existsForHousehold).not.toHaveBeenCalled();
+  });
+
+  it('never calls the existence check when week_starts_on is absent from the input', async () => {
+    const timesheets = makeTimesheetRepo(true);
+    const svc = new HouseholdCommandService(
+      makeHouseholdRepo(),
+      makeMemberRepo(),
+      makeInviteRepo(),
+      makeQueries('parent'),
+      stubUsers,
+      undefined,
+      undefined,
+      undefined,
+      timesheets
+    );
+    await svc.update('u1', 'h1', { name: 'New name' });
+    expect(timesheets.existsForHousehold).not.toHaveBeenCalled();
   });
 });
 

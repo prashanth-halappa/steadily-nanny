@@ -119,9 +119,25 @@ function isValidBoundedInt(value: string, max: number): boolean {
   return Number.isInteger(n) && n >= 0 && n <= max;
 }
 
+const WEEK_START_OPTIONS = [0, 1, 2, 3, 4, 5, 6] as const;
+
+/** True for a 409 whose `metadata.reason` is the household domain's week-start lock. */
+function isWeekStartLockedError(error: unknown): boolean {
+  const err = error as {
+    response?: {
+      status?: number;
+      data?: { error?: { metadata?: { reason?: string } } };
+    };
+  };
+  return (
+    err?.response?.status === 409 &&
+    err.response?.data?.error?.metadata?.reason === 'WEEK_START_LOCKED'
+  );
+}
+
 export function ManageHouseholdScreen() {
   const router = useRouter();
-  const { t } = useTranslation('household');
+  const { t } = useTranslation(['household', 'schedule']);
   const { t: tCommon } = useTranslation('common');
   const { t: tSettings } = useTranslation('settings');
   const onboarding = useIsOnboarded();
@@ -153,6 +169,11 @@ export function ManageHouseholdScreen() {
   const [timezone, setTimezone] = useState('');
   const [currency, setCurrency] = useState('');
   const [jurisdiction, setJurisdiction] = useState<string | null>(null);
+  const [weekStartsOn, setWeekStartsOn] = useState(1);
+  // T1: attempt-and-refuse — the client has no cheap "does a timesheet
+  // exist" signal (useWeekTimesheet lists by week only), so the row starts
+  // editable and locks only once the server actually refuses a change.
+  const [weekStartLocked, setWeekStartLocked] = useState(false);
   const [approvalMode, setApprovalMode] = useState<HouseholdApprovalMode>(
     HOUSEHOLD_APPROVAL_MODES.EITHER
   );
@@ -185,6 +206,7 @@ export function ManageHouseholdScreen() {
     // crashes `CurrencySelect` on an empty value.
     setCurrency(household.currency ?? getDeviceCurrency());
     setJurisdiction(household.jurisdiction ?? null);
+    setWeekStartsOn(household.week_starts_on ?? 1);
     setApprovalMode(household.approval_mode);
     setApprovalScope(household.approval_scope);
     setShortNoticeHours(String(household.short_notice_hours));
@@ -275,6 +297,10 @@ export function ManageHouseholdScreen() {
     const householdJurisdiction = household.jurisdiction ?? null;
     if (jurisdiction !== householdJurisdiction)
       diff.jurisdiction = jurisdiction;
+    const householdWeekStartsOn = household.week_starts_on ?? 1;
+    if (weekStartsOn !== householdWeekStartsOn) {
+      diff.week_starts_on = weekStartsOn;
+    }
     if (approvalMode !== household.approval_mode) {
       diff.approval_mode = approvalMode;
     }
@@ -300,8 +326,14 @@ export function ManageHouseholdScreen() {
         input: diff,
       });
       showSuccessToast(t('householdSettings.savedToast'));
-    } catch {
-      // useUpdateHousehold's onError already surfaces a toast.
+    } catch (error) {
+      // useUpdateHousehold's onError already surfaces a generic toast. T1:
+      // the client has no cheap up-front signal that a timesheet exists, so
+      // this is the one place that actually learns the row is locked —
+      // surface the specific copy and keep it locked from here on.
+      if (isWeekStartLockedError(error)) {
+        setWeekStartLocked(true);
+      }
     }
   };
 
@@ -462,6 +494,47 @@ export function ManageHouseholdScreen() {
             </Small>
           </View>
         </AnimatedPressable>
+      </View>
+
+      <View className="gap-2" testID="household-week-start-section">
+        <FieldLabel>{t('householdSettings.weekStartLabel')}</FieldLabel>
+        {weekStartLocked ? (
+          <>
+            <Body>{t(`schedule:weekday.${weekStartsOn}`)}</Body>
+            <Small
+              testID="household-week-start-locked-hint"
+              className="text-muted-foreground"
+            >
+              {t('householdSettings.weekStartLockedHint')}
+            </Small>
+          </>
+        ) : (
+          <>
+            <View className="flex-row flex-wrap gap-2">
+              {WEEK_START_OPTIONS.map(day => (
+                <AnimatedPressable
+                  key={day}
+                  testID={`household-week-start-${day}`}
+                  onPress={() => setWeekStartsOn(day)}
+                >
+                  <Small
+                    className={cn(
+                      'rounded-chip border px-3 py-2',
+                      day === weekStartsOn
+                        ? 'border-primary bg-primary/10 text-primary'
+                        : 'border-border text-foreground'
+                    )}
+                  >
+                    {t(`schedule:weekday.${day}`)}
+                  </Small>
+                </AnimatedPressable>
+              ))}
+            </View>
+            <Small className="text-muted-foreground">
+              {t('householdSettings.weekStartHint')}
+            </Small>
+          </>
+        )}
       </View>
 
       <View className="gap-2">

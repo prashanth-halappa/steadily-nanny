@@ -210,4 +210,26 @@ export class TimesheetRepository extends BaseRepository<TimesheetRow> {
     }
     return data as TimesheetRow | null;
   }
+
+  /**
+   * Whether ANY timesheet has ever been recorded for a household — the
+   * household domain's `week_starts_on` lock guard (it defines pay-week
+   * boundaries, so it may not move once a week has been recorded against the
+   * old one). Same head/count shape as `timeEntryRepository.hasTimeEntries`.
+   */
+  async existsForHousehold(householdId: string): Promise<boolean> {
+    const { count, error } = await supabaseService
+      .from(this.table)
+      .select('id', { count: 'exact', head: true })
+      .eq('household_id', householdId);
+
+    if (error) {
+      throw new DatabaseError(
+        'Failed to check timesheets for household',
+        'DATABASE_ERROR',
+        { details: error.message, householdId }
+      );
+    }
+    return (count ?? 0) > 0;
+  }
 }

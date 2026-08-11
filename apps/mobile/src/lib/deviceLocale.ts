@@ -43,3 +43,18 @@ export function getDeviceCurrency(): string {
     return 'USD';
   }
 }
+
+/**
+ * The device's ISO-3166 region code, e.g. `"US"` — country-level only, never
+ * a US state (there is no `getDeviceJurisdiction`). Nullable: unlike
+ * currency, there is no safe default to fall back to — callers that need a
+ * yes/no US check (e.g. onboarding's `week_starts_on` default, D-8) compare
+ * against `'US'` explicitly rather than trusting an invented fallback.
+ */
+export function getDeviceRegion(): string | null {
+  try {
+    return getLocales()[0]?.regionCode ?? null;
+  } catch {
+    return null;
+  }
+}

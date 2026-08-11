@@ -98,6 +98,9 @@
     "jurisdictionChangeButton": "Change",
     "jurisdictionNoneOption": "Not set",
     "jurisdictionPickerTitle": "Choose a state",
+    "weekStartLabel": "Week starts on",
+    "weekStartHint": "This defines your household's pay week — every carer's hours are totaled against it.",
+    "weekStartLockedHint": "Locked because hours have been recorded — it defines pay weeks.",
     "approvalModeLabel": "Who approves changes",
     "approvalMode": {
       "either": "Either parent can decide",

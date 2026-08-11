@@ -231,7 +231,7 @@ at `assertCanRespond`), `scheduleHorizonJob.ts` (84-day horizon, 7-day
 change-request expiry, 30-day uncovered sweep), `uncoveredCareService.ts`
 (72h push gate), `uncoveredDigestJob.ts`, `noShowJob.ts`, `reminderJob.ts`.
 Notifications: `packages/shared-types/src/schemas/notification.schema.ts`
-(37-type registry, total audience map), `notificationPrefsService.ts`, mobile
+(36-type registry — corrected 2026-08-11 during Phase 2, previously miscounted as 37; total audience map), `notificationPrefsService.ts`, mobile
 `notificationRouteMap.ts`, `NotificationPrefsScreen.tsx`.
 
 ### 2.9 Non-negotiable house disciplines (violating any is a review-blocker)
@@ -308,8 +308,8 @@ decision first.
 
 | # | Obs | Cat | Anchor | Disposition |
 |---|---|---|---|---|
-| B1 | Nanny Today has NO attention states for money or coverage: no cover-ask-awaiting-you card (push is the only signal), no guaranteed-hours shortfall, no queried-week card beyond the inbox row | GAP | `TodayScreen.tsx` role gating; Marisol "splash pad" | design → 3-D |
-| B2 | Parent Today has no cover-ask lifecycle state: awaiting-answer / declined-pick-next-step (David: "hand the alarm back loudly") | GAP | `TodayCoverage.tsx` | design → 3-D |
+| B1 | Nanny Today has NO attention states for money or coverage: no cover-ask-awaiting-you card (push is the only signal), no guaranteed-hours shortfall, no queried-week card beyond the inbox row | GAP | `TodayScreen.tsx` role gating; Marisol "splash pad" | designed (attention spec §2.3) → 3-D |
+| B2 | Parent Today has no cover-ask lifecycle state: awaiting-answer / declined-pick-next-step (David: "hand the alarm back loudly") | GAP | `TodayCoverage.tsx` | designed (attention spec §2.4) → 3-D |
 | B3 | NeedsAttentionCard filters pending_pattern because PendingScheduleCard owns it — one-owner-per-item rule | PRESERVE | `NeedsAttentionCard.tsx:62` | preserve as rule for new cards |
 | B4 | Proposal framing copy ("A parent proposed this new shift…") renders for ALL roles including the proposing parent | BUSTER (small) | `ShiftDetailScreen.tsx:142-150` | → 1-E |
 | B5 | Helper role handled by fall-through only; zero explicit HELPER mentions in shift/schedule services | GAP | grep evidence §2.2 | → 3-D (explicit + tested) |
@@ -320,10 +320,10 @@ decision first.
 
 | # | Obs | Cat | Anchor | Disposition |
 |---|---|---|---|---|
-| S1 | Unanswered cover-ask: lands `pending`, `pending` counts as covering, alarm silenced forever; no expiry (7d sweep touches change requests only), no reminder, no chase | BUSTER | `COVERING_SHIFT_STATUSES` in `uncoveredCare.ts:86-90` | D-22 → 3-T3 |
+| S1 | Unanswered cover-ask: lands `pending`, `pending` counts as covering, alarm silenced forever; no expiry (7d sweep touches change requests only), no reminder, no chase | BUSTER | `COVERING_SHIFT_STATUSES` in `uncoveredCare.ts:86-90` | designed (attention spec §5; D-22 + D-47) → 3-T3 |
 | S2 | `completed` status exists in enum/CHECK/immutability sets, no writer — scheduled-vs-worked never reconciles (David's "quiet accomplice") | GAP | shift status audit | D-24 → 3-T3 |
-| S3 | Paid-cancellation hint NOT in the cancel confirm dialog (sits elsewhere on the page); short-notice window configured in Manage Household while cancellation window lives in the arrangement — two homes | BUSTER | `ShiftDetailScreen.tsx:293-300` vs `:336-380` | design → 3-T3 |
-| S4 | Co-parent under owner_only sees the buttons, learns via 403 (client can't distinguish owner from parent) | GAP | `useIsOnboarded.ts:60-69` | → 3-T3 (expose role) |
+| S3 | Paid-cancellation hint NOT in the cancel confirm dialog (sits elsewhere on the page); short-notice window configured in Manage Household while cancellation window lives in the arrangement — two homes | BUSTER | `ShiftDetailScreen.tsx:293-300` vs `:336-380` | designed (attention spec §6; D-48 single window) → 3-T3 |
+| S4 | Co-parent under owner_only sees the buttons, learns via 403 (client can't distinguish owner from parent) | GAP | `useIsOnboarded.ts:60-69` | designed (attention spec §7) → 3-T3 (expose role) |
 | S5 | Counter-offer form gated on isNanny only, not isAssignedCarer; server accepts (role-only gate for nanny kind) | GAP | `ShiftDetailScreen.tsx:389`; `assertKindAllowedForRole` | → 1-E |
 | S6 | = A3 | | | → 1-E |
 | S7 | Pattern timezone snapshots at draft and never re-syncs — a moved household generates old-zone instants until re-drafted; the "obvious" repair would have shifted 58 correct payroll shifts by 8h (GOLDEN #29) | GAP | `schedule_patterns.timezone` 014 | deferred (D-10: silent status quo) |
@@ -340,20 +340,20 @@ decision first.
 
 | # | Obs | Cat | Anchor | Disposition |
 |---|---|---|---|---|
-| P1 | Nanny cannot read the query note (renders parent-only), cannot reply, cannot dispute; push carries no note text | BUSTER | `WeekTotal.tsx:266-270` guard | D-18 → 3-T1 |
-| P2 | Queried week deadlocks: approve/query need `submitted`, reopen needs `approved` — no parent exit; only a nanny entry edit un-sticks | BUSTER | `assertActionable` / `reopen` gates | → 3-T1 (withdraw-query) |
-| P3 | Payments: no correction path at all (`amount_minor >= 1` forbids offsetting rows; append-only; detail sheet promises "a correction is recorded as another payment" — mechanism doesn't exist) | BUSTER | 067 + `docs/11-MONEY.md:524` | D-20 → 3-T2 |
+| P1 | Nanny cannot read the query note (renders parent-only), cannot reply, cannot dispute; push carries no note text | BUSTER | `WeekTotal.tsx:266-270` guard | designed (attention spec §3; D-18 + D-46) → 3-T1 |
+| P2 | Queried week deadlocks: approve/query need `submitted`, reopen needs `approved` — no parent exit; only a nanny entry edit un-sticks | BUSTER | `assertActionable` / `reopen` gates | designed (attention spec §3) → 3-T1 (withdraw-query) |
+| P3 | Payments: no correction path at all (`amount_minor >= 1` forbids offsetting rows; append-only; detail sheet promises "a correction is recorded as another payment" — mechanism doesn't exist) | BUSTER | 067 + `docs/11-MONEY.md:524` | designed (attention spec §4.1) → 3-T2 |
 | P4 | `timesheets` row carries gross+earnings; RLS uses wide `can_read_household`; `assertPayrollReader` grants household scope to ANY active member — helper and second nanny can read another carer's frozen gross via GET + CSV | BUSTER | `timesheetQueryService.ts:445-495`; 040:329-333 | D-21 → 3-T2 |
 | P5 | Over-payment gate read-then-write; two simultaneous first payments can jointly exceed gross (documented in service header); fix named: 051-style sum+insert DB function | GAP | `paymentCommandService.ts:40-45` | → 1-E |
 | P6 | Query and reopen are plain updates (no CAS) while approve is CAS'd on status+version | GAP | `timesheetCommandService.ts:1754,1812` | → 1-E |
-| P7 | Approved reimbursements owed but tracked nowhere as paid/unpaid (excluded from gross/ceiling/balance by design — but then never settled anywhere) | GAP | `earningsService.ts:728-731` | D-14 → 3-T2 |
+| P7 | Approved reimbursements owed but tracked nowhere as paid/unpaid (excluded from gross/ceiling/balance by design — but then never settled anywhere) | GAP | `earningsService.ts:728-731` | designed (attention spec §4.2) → 3-T2 |
 | P8 | Time entries household-scoped: a second nanny can read exact clock times, breaks, notes via API (client narrows only) | BUSTER | RLS + DEFECT-LOG open question | D-21 → 3-T2 |
 | P9 | Dead enum values: `timesheets.status='open'` and `time_entries.status ∈ {approved, queried}` declared, never written | GAP (hygiene) | status-write audit | → 3-T2 (drop or doc) |
 | P10 | Query writes NO day-thread event (reopen does); query_note + reopen_reason cleared on next approve → dispute history invisible in the household record | GAP | `query` impl; REPO approve `:187-190` | → 1-E (event) + 3-T1 (surface) |
 | P11 | Week CSV: no employer identifiers, no period-end, no YTD — payroll-service handoff friction | GAP | `weekExportCsv.ts` columns | D-29 → 3-U3 |
 | P12 | No nanny-side pay-stub-like export; no year-end totals (FSA / child-care credit) | GAP | persona | D-29 → 3-U3 |
 | P13 | PTO over-balance marking allowed silently (deliberate, but unflagged in UI) | GAP | `ptoCommandService.markTimeOffPaid` | D-15 → 3-U3 |
-| P14 | Guaranteed hours computed (topup line) but never surfaced proactively: no nanny shortfall alarm, no parent vacation-week clarity | EARN | persona (both) | D-32 → 3-U3/3-D |
+| P14 | Guaranteed hours computed (topup line) but never surfaced proactively: no nanny shortfall alarm, no parent vacation-week clarity | EARN | persona (both) | designed (attention spec §1.6/§2.3; D-32 + D-46 push) → 3-U3/3-D |
 | P15 | "Entered {date}" late-entry signal; balance never clamped; export stricter than screen; state words; oldest-first week ledger vs newest-first history; per-currency subtotals never a sum | PRESERVE | payments artifact | preserve |
 | P16 | Reopened week keeps payment rows visible, no balance stated; reopen dialog warns when payments exist | PRESERVE | `deriveReopenedPaidState` | preserve |
 | P17 | 16h session cap; break capture via ClockOutSheet (D20); inline sheet errors not toasts (GOLDEN #40); overnight split at week boundary with break apportionment | PRESERVE | timesheet svc/UI | preserve |
@@ -371,13 +371,13 @@ decision first.
 | T6 | No holiday calendar, no worked-holiday premium; paid holiday only fakeable as PTO | GAP | absence | D-12 → 3-E4 |
 | T7 | No pay frequency/pay day; the Monday week IS the pay period (FLSA OT stays weekly regardless — presentation/settlement issue only) | GAP | 017 unique index | D-17: in → 3-U3 + arrangement fields |
 | T8 | No recurring non-wage terms (health stipend, retirement, bonus) — the one-off adjustment is the only vehicle; near-universal US holiday-bonus practice unmodelled | GAP | §8 audit | D-13 → 3-U1/engine |
-| T9 | Documentary terms unmodelled (notice, probation, duties scope, driving, live-in conditions) — `note` is the dumping ground | GAP | schema | → 1-D + 3-U1 |
-| T10 | PaySetupScreen lacks PayChangeSheet's date-invalid error + mid-week consequence line; Today chip renders raw "08-10" MM-DD | GAP | `PaySetupScreen.tsx:318` | → 3-U1 |
-| T11 | Mid-week consequence warning fires only on rate/currency change — a Jan-1 mileage-rate update is silent | GAP | `payArrangementForm.ts:269-275` | → 3-U1 |
+| T9 | Documentary terms unmodelled (notice, probation, duties scope, driving, live-in conditions) — `note` is the dumping ground | GAP | schema | designed (pay-terms spec §3–§4) → 1-D + 3-U1 |
+| T10 | PaySetupScreen lacks PayChangeSheet's date-invalid error + mid-week consequence line; Today chip renders raw "08-10" MM-DD | GAP | `PaySetupScreen.tsx:318` | designed (pay-terms spec §4/§7; D-42 date field) → 3-U1 |
+| T11 | Mid-week consequence warning fires only on rate/currency change — a Jan-1 mileage-rate update is silent | GAP | `payArrangementForm.ts:269-275` | designed (pay-terms spec §7.3) → 3-U1 |
 | T12 | No scheduled future change (cut, not deferred — "Scheduled change" card absent by decision) | GAP | PaySetupScreen header | D-16: in → 3-U1 + arrangement service (engine `effectiveOn` future-row tests) |
 | T13 | Curated 27-currency list; Hermes Intl.DisplayNames risk; symbol-prefix assumption on degraded ICU | GAP (minor) | `CurrencySelect.tsx` ponytails | → 3-U2 |
-| T14 | `households.cancellation_paid_within_hours` deprecation-flagged; 063 open question (per-hour caps reuse total cap → legal rate can multiply into illegal gross — service pre-flights catch it) | GAP (hygiene) | 041:104, 063:16 | → 3-U1 decision-adjacent |
-| T15 | Terms acknowledgment/versioned change notifications absent (pay_terms_set push exists; no ack, no diff view) — Marisol's condition on view-only | GAP | persona | D-31 → 3-U1 |
+| T14 | `households.cancellation_paid_within_hours` deprecation-flagged; 063 open question (per-hour caps reuse total cap → legal rate can multiply into illegal gross — service pre-flights catch it) | GAP (hygiene) | 041:104, 063:16 | resolved (D-48: arrangement is the only window) → 3-T3/3-U1 |
+| T15 | Terms acknowledgment/versioned change notifications absent (pay_terms_set push exists; no ack, no diff view) — Marisol's condition on view-only | GAP | persona | designed (pay-terms spec §8; D-41 + D-45) → 3-U1 |
 | T16 | Append-only "never edited" copy; null=explicit-no; forced cancellation choice at setup ("the one term with no blank state"); no-arrangement → no numbers never £0.00; both-role identical term rows | PRESERVE | Pay screens | preserve |
 | T17 | Insert is field-by-field literal; NO exhaustiveness check on arrangement fields — new field silently never persists if forgotten; use the 9-file checklist | GAP (process) | `payArrangementCommandService.ts:125-141` | → §3 checklist |
 | T18 | `effectiveOn` single-row + tie-break is the correction mechanism — multi-rule rates need a CHILD table, never a multi-row effectiveOn | PRESERVE (constraint) | 041:41-53 | preserve |
@@ -596,6 +596,18 @@ defaults marked ★):
 | D-37 | 2026-08-10 | **Web terms preview on the invite.** Each nanny invite resolves to a read-only web page — terms summary, nanny's name, "review and respond in the app" CTA — with the code embedded in a universal link so redemption survives install. Hosted on the existing nanny.getsteadily.app infra (Lovable + CF Worker, `infra/nanny-site`). Designed in Phase 2 spec 3; built with 3-O, or the first fast-follow if it threatens the schedule | The terms sheet is the viral object; a bare XXX-XXX code stalls the parent at the highest-intent moment |
 | D-38 | 2026-08-10 | **Redemption clones; the draft persists.** A code redemption never consumes the nanny's draft: it clones the proposal into the connecting family's household (no-household parent → a live household is instantiated from the draft, per D-34; existing household → absorption, per D-34). The draft survives as her reusable template until she archives it — so she can interview with several families in parallel, and "the wrong family redeemed it" cannot cost her the draft. Bakes into 3-O's redemption DB function | Interview-stage nannies fan out; the nanny-side permutations deserve the same care D-34 gave the parent side |
 | D-39 | 2026-08-10 | **Acquisition funnel instrumented from day one.** ~8 PostHog events named in the Phase 2 onboarding spec and emitted in 3-O: `draft_created`, `terms_shared`, `link_opened`, `code_redeemed`, `proposal_viewed`, `proposal_countered`, `proposal_accepted`, `first_week_approved`; funnel conversion joins the §11 first-week checklist | The loop is the business; naming events now is near-free, retrofitting is archaeology |
+| D-40 | 2026-08-11 | **Phase 2 specs approved**: `docs/design/screens-pay-terms.md`, `docs/design/attention-and-notifications.md`, `docs/design/screens-onboarding-terms-proposal.md` + mockup artifact. Persona gate passed — Marisol + David reviewed in role; every point folded or owner-adjudicated, zero rebuttals; appendices in each spec | Phase 3 slices build from these three documents |
+| D-41 | 2026-08-11 | State-word split (amends D-4): the nanny ack renders **"Seen by {name} on {date}"**; **"Agreed"** is reserved for accepted 3-O proposals | A receipt must not read as consent; Marisol-endorsed |
+| D-42 | 2026-08-11 | Terms effective date is a **single date field defaulting to today** — no today/earlier/future pills; existing guardrails unchanged. A backdated change that lowers any unapproved week's pay pushes as `pay_terms_backdated`, naming affected weeks with before→after totals shown to BOTH parties | Marisol walk-away: the parent's consequence line gets computed for her too |
+| D-43 | 2026-08-11 | **CA duties/classification question deferred entirely**; the preset is ONE set of values (CA Wage Order 15 arm: daily OT after 8h at 1.5×, double time after 12h, seventh-day rules). Owner verbatim: *"dont even ask this question. this should be deferred. I don't want to get into legalese about nanny work versus domestic worker."* David's misclassification dissent preserved in both spec appendices with a revisit trigger | Protective arm as the single default |
+| D-44 | 2026-08-11 | **No state labelling in UI** (amends D-7): launch ships one unlabelled common-defaults preset (values CA-derived, documented spec-internally only); no state name in any user-facing string; the eleven-state library + state-keyed preset UI deferred. The D-7 liability checkbox and "a starting point, not legal advice" posture stay | Owner: *"Just use CA defaults"*, then *"Don't mention California defaults anywhere at all"* |
+| D-45 | 2026-08-11 | Dissent row ships with the ack (extends D-31): "I don't agree with this" writes a dated row beside the ack, blocks nothing, parent notified (`pay_terms_disagreed`) | Silence must not be the only thing on her record |
+| D-46 | 2026-08-11 | Nanny can OPEN the money thread (extends D-18): "This doesn't look right" on a week or payment writes the append-only day-thread event (`timesheet_note_added`), changes no status. Plus: carer inbox item for stale submitted weeks (14d, inbox-only); `week_below_guarantee` push at approval (extends D-32) | The record must be two-sided before it counts as evidence |
+| D-47 | 2026-08-11 | Cover-ask expiry (extends D-22/D-28) = `min(48h, shift start − 4h)`, 1h floor, scheduled at ask time (sweep is backstop); parent gap card self-escalates at T−12h regardless of answer; expiry push quiet-hours-exempt inside 12h | David walk-away: expiry must leave time to ask someone else |
+| D-48 | 2026-08-11 | **One cancellation window**: the arrangement's `cancellation_paid_within_hours` is the only one; the household short-notice field loses all readers; no arrangement → cancellation not paid (stricter than today's household fallback — noted for 3-T3); a DECLINED cancellation means the shift stands, with `shift_no_show` suppressed 7d for that shift | Two homes for one number was S3's root cause |
+| D-49 | 2026-08-11 | Absorption creates a **`candidate` membership**: the nanny sees nothing of a live household (schedule, children, other carer) until the parent accepts her proposal; fail-closed against every `status='active'` filter (resolves D-34's visibility gap) | Redemption is not hiring |
+| D-50 | 2026-08-11 | Invite-code entry is **dual-mode** (extends D-37): manual XXX-XXX entry is the default assumption; a link arrival prefills the field (editable, never auto-submits); the web page prints the copyable code | Users open apps independently of links |
+| D-51 | 2026-08-11 | The nanny's rate stays on the D-37 web page, **conditional on all three**: per-row invite revoke, 7-day default terms-link expiry, page 404s on redemption. Cutting any one takes the rate off the page | Marisol's acceptance was explicitly conditional |
 
 ---
 
@@ -712,7 +724,7 @@ Every slice session pastes ONE of the prompts below. All share this preface —
 prepend it verbatim:
 
 > Read TRUST-AND-TERMS-PLAYBOOK.md §0–§5, §2b, §3 (repo root); CLAUDE.md's
-> table; docs/09-TESTING.md; GOLDEN-FIXES.md; docs/design/screens-pay-terms.md
+> table; docs/09-TESTING.md; GOLDEN-FIXES.md; https://claude.ai/code/artifact/a9c3a368-e4f1-451e-b588-8b5f9d278245?via=auto_preview, docs/design/screens-onboarding-terms-proposal.md, docs/design/screens-pay-terms.md
 > and docs/design/attention-and-notifications.md (Phase 2 outputs); and the §5
 > decisions relevant to this slice. Work under §3's execution model — you
 > orchestrate, sub-agents implement, strict TDD, qc gate, feature branch, no
@@ -933,3 +945,4 @@ household → nanny proposes → parent counters → accepts. (L.)
 | Phase 0 (decisions) | 2026-08-10 | All 30 §4 questions answered; D-3…D-32 recorded in §5; every §2b `→P0` disposition resolved | Notable: D-9 (pre-launch wipe — all grandfathering/migration work cut; §0.5 + 3-E1 corrected in place); D-16/D-17 reverse the T12/T7 cuts (scheduled change + pay-frequency now IN); D-11 shrinks 3-E3 to sick labels; D-7 adds a liability-disclaimer checkbox to presets; D-10 defers S7; D-30 defers receipt photos. §8 slice prompts' D-refs corrected to final numbering |
 | Phase 0 addendum | 2026-08-10 | D-33…D-36: nanny-first onboarding IN this build — symmetric create/join onboarding, draft households with live-household-wins absorption, portable per-carer terms proposals, parent acceptance as the binding act | New slice 3-O added to §8 (after Phase 2 + 3-U1); Phase 2 gains a third spec (screens-onboarding-terms-proposal.md); session estimate now 11–16 |
 | Phase 0 addendum 2 | 2026-08-10 | D-37…D-39 from the adoption review: web terms preview on the invite (nanny.getsteadily.app), clone-not-consume redemption (multi-family interviewing), PostHog funnel events named for 3-O | §7 spec 3 + 3-O D-ref ranges extended; §11 first-week checklist gains funnel conversion |
+| Phase 2 (CX design) | 2026-08-11 | Three specs shipped, persona-gated, owner-approved (two revision rounds): `screens-pay-terms.md`, `attention-and-notifications.md`, `screens-onboarding-terms-proposal.md` + 16-frame mockup artifact. D-40…D-51 recorded; §2b design→ rows now carry spec §s + slices | Marisol/David gate: 4 walk-aways all folded, zero rebuttals, dissents on deferred items preserved in spec appendices. Notification matrix = 36 existing (§2.8 count corrected in place) + 20 new. Build notes surfaced for slices: 3-O needs D-16 future `valid_from` (3-U1 before 3-O holds); Android universal links blocked on Play signing fingerprint in `infra/nanny-site/worker.js`; no server-side PostHog — `link_opened` from the CF worker, rest client-emitted; D-48 makes no-arrangement cancellations unpaid (stricter than today's household fallback — 3-T3 must note it) |

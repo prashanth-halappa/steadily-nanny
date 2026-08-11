@@ -79,6 +79,7 @@ describe('household.schema', () => {
       cancellation_paid_within_hours: 24,
       currency: 'GBP',
       jurisdiction: null,
+      week_starts_on: 1,
       created_by: VALID_UUID,
       created_at: NOW,
       updated_at: NOW,
@@ -136,6 +137,27 @@ describe('household.schema', () => {
           .success
       ).toBe(false);
     });
+
+    it.each([
+      0, 1, 2, 3, 4, 5, 6,
+    ])('accepts week_starts_on %p (0=Sunday..6=Saturday)', day => {
+      expect(
+        HouseholdSchema.safeParse({ ...validHousehold, week_starts_on: day })
+          .success
+      ).toBe(true);
+    });
+
+    it.each([7, -1, 1.5])('rejects an out-of-range week_starts_on %p', day => {
+      expect(
+        HouseholdSchema.safeParse({ ...validHousehold, week_starts_on: day })
+          .success
+      ).toBe(false);
+    });
+
+    it('rejects a missing week_starts_on — the column is not-null', () => {
+      const { week_starts_on: _week_starts_on, ...rest } = validHousehold;
+      expect(HouseholdSchema.safeParse(rest).success).toBe(false);
+    });
   });
 
   describe('CreateHouseholdSchema', () => {
@@ -166,6 +188,24 @@ describe('household.schema', () => {
           jurisdiction: null,
         }).success
       ).toBe(true);
+    });
+
+    it('accepts an explicit week_starts_on', () => {
+      expect(
+        CreateHouseholdSchema.safeParse({
+          name: 'The Reyes Family',
+          week_starts_on: 0,
+        }).success
+      ).toBe(true);
+    });
+
+    it('rejects an out-of-range week_starts_on', () => {
+      expect(
+        CreateHouseholdSchema.safeParse({
+          name: 'The Reyes Family',
+          week_starts_on: 7,
+        }).success
+      ).toBe(false);
     });
 
     it('rejects a lowercase currency code', () => {
