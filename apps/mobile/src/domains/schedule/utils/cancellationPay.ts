@@ -8,12 +8,12 @@
  *
  * It mirrors the server's `resolveCancellationPaid`
  * (`apps/api/src/domains/shift/services/shiftChangeRequestCommandService.ts`)
- * arm for arm, with ONE deliberate difference (D-48): the server still falls
- * back to `households.cancellation_paid_within_hours` when the carer has no
- * arrangement. This does not. Without an arrangement the week cannot be
- * priced at all, and "there are no pay terms set, so we can't say" is the
- * honest thing to show — a confident "isn't paid" would be a claim we have
- * no basis for. The server-side fallback is being removed in the same slice.
+ * arm for arm. Both sides now agree that no arrangement means no cancellation
+ * pay (D-48): the server's old fallback to
+ * `households.cancellation_paid_within_hours` was removed in 3-T3, so the
+ * "ONE deliberate difference" this comment used to describe no longer exists.
+ * Without an arrangement the week cannot be priced at all, and "there are no
+ * pay terms set, so we can't say" is the honest thing to show.
  *
  * The arrangement's window is the ONLY cancellation window in the product
  * (§6.1 / D21). `households.cancellation_paid_within_hours` is deprecated and
