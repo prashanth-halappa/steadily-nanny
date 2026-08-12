@@ -935,27 +935,56 @@ async function main(): Promise<void> {
   });
 
   // --- Driver contract -----------------------------------------------------
+  // ONE guard at the contract boundary, instead of an error check at each of the
+  // ~18 `maybeSingle()` lookups that feed it.
+  //
+  // Every value below is interpolated into a Maestro `-e KEY=VALUE` flag, and
+  // several are then interpolated into deep links. An EMPTY one does not fail —
+  // it produces a valid-looking URL like `.../shifts/` that lands somewhere
+  // unexpected, and the flow dies several steps later on an unrelated-looking
+  // assertion. That is exactly how flow 08 went red in the Phase 5 suite:
+  // `.maybeSingle()` errored on duplicate rows, the `{ data }`-only destructure
+  // swallowed it, and the id silently became ''.
+  //
+  // Failing loudly HERE turns that whole class into one obvious error message,
+  // and covers future lookups without anyone remembering to check them.
+  const contract: Array<[string, string]> = [
+    ['PHASE4_HOUSEHOLD_ID', String(householdId)],
+    ['PHASE4_NANNY_ID', String(nannyId)],
+    ['PHASE4_PARENT_ID', String(parentId)],
+    ['PHASE4_SEED_WEEK_START', String(SEED_WEEK_START)],
+    ['PHASE4_OT_WEEK_START', String(OT_WEEK_START)],
+    ['PHASE4_HOLIDAY_WEEK_START', String(HOLIDAY_WEEK_START)],
+    ['PHASE4_SUNDAY_HOUSEHOLD_ID', String(sundayHouseholdId)],
+    ['PHASE4_SUNDAY_WEEK_START', String(SUNDAY_WEEK_START)],
+    ['PHASE4_ARRANGEMENT_VALID_FROM', String(ARRANGEMENT_VALID_FROM)],
+    ['PHASE4_HOURLY_RATE', String(HOURLY_RATE_MAJOR)],
+    ['PHASE4_HOLIDAY_MULTIPLIER', String(WORKED_HOLIDAY_MULTIPLIER)],
+    ['PHASE4_TODAY_SHIFT_ID', String(todayShift?.id ?? '')],
+    ['PHASE4_EXPIRED_ASK_SHIFT_ID', String(expiredAsk.id)],
+    ['PHASE4_DECLINE_ASK_SHIFT_ID', String(declineAsk.id)],
+    ['PHASE4_NEW_PARENT_EMAIL', String(freshParentEmail)],
+    ['PHASE4_NEW_PARENT_ID', String(freshParentId)],
+    ['PHASE4_DRAFT_CODE_A', String(draftA.code)],
+    ['PHASE4_DRAFT_HOUSEHOLD_A', String(draftA.householdId)],
+    ['PHASE4_DRAFT_CODE_B', String(draftB.code)],
+    ['PHASE4_DRAFT_HOUSEHOLD_B', String(draftB.householdId)],
+  ];
+  const emptyKeys = contract.filter(
+    ([, v]) => v === '' || v === 'undefined' || v === 'null'
+  );
+  if (emptyKeys.length > 0) {
+    throw new Error(
+      `seeder produced empty contract values: ${emptyKeys.map(([k]) => k).join(', ')}. ` +
+        'A lookup failed silently — check for duplicate rows breaking a `.maybeSingle()`, ' +
+        'whose error is discarded by a `{ data }`-only destructure.'
+    );
+  }
+
   console.log('\n# --- eval me (run-phase4.sh) ---');
-  console.log(`PHASE4_HOUSEHOLD_ID=${householdId}`);
-  console.log(`PHASE4_NANNY_ID=${nannyId}`);
-  console.log(`PHASE4_PARENT_ID=${parentId}`);
-  console.log(`PHASE4_SEED_WEEK_START=${SEED_WEEK_START}`);
-  console.log(`PHASE4_OT_WEEK_START=${OT_WEEK_START}`);
-  console.log(`PHASE4_HOLIDAY_WEEK_START=${HOLIDAY_WEEK_START}`);
-  console.log(`PHASE4_SUNDAY_HOUSEHOLD_ID=${sundayHouseholdId}`);
-  console.log(`PHASE4_SUNDAY_WEEK_START=${SUNDAY_WEEK_START}`);
-  console.log(`PHASE4_ARRANGEMENT_VALID_FROM=${ARRANGEMENT_VALID_FROM}`);
-  console.log(`PHASE4_HOURLY_RATE=${HOURLY_RATE_MAJOR}`);
-  console.log(`PHASE4_HOLIDAY_MULTIPLIER=${WORKED_HOLIDAY_MULTIPLIER}`);
-  console.log(`PHASE4_TODAY_SHIFT_ID=${todayShift?.id ?? ''}`);
-  console.log(`PHASE4_EXPIRED_ASK_SHIFT_ID=${expiredAsk.id}`);
-  console.log(`PHASE4_DECLINE_ASK_SHIFT_ID=${declineAsk.id}`);
-  console.log(`PHASE4_NEW_PARENT_EMAIL=${freshParentEmail}`);
-  console.log(`PHASE4_NEW_PARENT_ID=${freshParentId}`);
-  console.log(`PHASE4_DRAFT_CODE_A=${draftA.code}`);
-  console.log(`PHASE4_DRAFT_HOUSEHOLD_A=${draftA.householdId}`);
-  console.log(`PHASE4_DRAFT_CODE_B=${draftB.code}`);
-  console.log(`PHASE4_DRAFT_HOUSEHOLD_B=${draftB.householdId}`);
+  for (const [key, value] of contract) {
+    console.log(`${key}=${value}`);
+  }
 }
 
 await main();
