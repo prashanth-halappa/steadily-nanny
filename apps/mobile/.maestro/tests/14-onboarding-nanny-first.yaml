@@ -3,13 +3,19 @@
 # terms she proposed, and accepts behind the D-7 responsibility checkbox —
 # after which the arrangement is live and the pay hub shows it.
 #
-# BLOCKER, reported not worked around — the NANNY half of this journey cannot
-# be driven. `SETUP_STEP_ROUTES.TERMS = '/onboarding/terms'`
-# (domains/setup/types/index.ts) and `DraftHomeScreen` pushes to it, but
-# `apps/mobile/src/app/onboarding/terms.tsx` DOES NOT EXIST — the onboarding
-# route directory has no `terms` file. A nanny signing up and choosing "create"
-# dead-ends at the write-your-terms step, so there is no in-app path from a
-# fresh nanny to an invite code.
+# HISTORICAL BLOCKER — FIXED 2026-08-12 (Phase 5, D-55). This header used to
+# say the nanny half could not be driven because `SETUP_STEP_ROUTES.TERMS`
+# named `/onboarding/terms`, which had no route file, so a nanny choosing
+# "create" dead-ended on `+not-found`. That is no longer true:
+# `apps/mobile/src/app/(private)/draft/terms.tsx` now EXISTS and
+# `SETUP_STEP_ROUTES.TERMS` points at `/(private)/draft/terms`. It lives
+# outside `/onboarding` deliberately — that layout bounces any user the server
+# already calls onboarded, which a nanny holding a draft membership is.
+#
+# The SQL-side seeding below is therefore no longer forced by a dead route; it
+# is kept because it is still the faster and more deterministic way to reach a
+# redeemable code. Driving the nanny half through the UI is now POSSIBLE and
+# would be a worthwhile flow of its own — it is the D-39 funnel's first half.
 # Consequently scripts/seed-phase4-fixtures.ts creates the draft SQL-side (a
 # `state='draft'` household authored by a fresh nanny with `role='nanny'`,
 # `status='active'` — the shape `redeem_draft_household_invite` requires — plus
