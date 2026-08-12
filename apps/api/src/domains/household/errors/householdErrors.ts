@@ -9,6 +9,7 @@ import {
   ValidationError,
 } from '../../../errors';
 import type { ErrorMetadata } from '../../../errors/BaseError';
+import { isValidInviteCodeFormat } from '../utils/inviteCode';
 
 /**
  * 404 — the household does not exist OR the caller is not an active member of
@@ -50,7 +51,10 @@ export class NotAHouseholdParentError extends AuthorizationError {
  */
 export class InviteNotFoundError extends NotFoundError {
   constructor(identifier: string, metadata?: ErrorMetadata) {
-    super('Invite not found', 'INVITE_NOT_FOUND', { identifier, ...metadata });
+    const safeMetadata = isValidInviteCodeFormat(identifier)
+      ? metadata
+      : { identifier, ...metadata };
+    super('Invite not found', 'INVITE_NOT_FOUND', safeMetadata);
     this.name = 'InviteNotFoundError';
   }
 }

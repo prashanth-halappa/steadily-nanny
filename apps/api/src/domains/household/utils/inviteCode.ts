@@ -8,6 +8,7 @@
  *
  * @module domains/household/utils/inviteCode
  */
+import { randomInt } from 'node:crypto';
 import { DatabaseError } from '../../../errors';
 
 /** A-Z minus I/L/O, plus 2-9 minus 0/1. 31 characters. */
@@ -20,7 +21,7 @@ const MAX_GENERATION_ATTEMPTS = 10;
 function randomSegment(length: number): string {
   let segment = '';
   for (let i = 0; i < length; i += 1) {
-    const index = Math.floor(Math.random() * INVITE_CODE_ALPHABET.length);
+    const index = randomInt(INVITE_CODE_ALPHABET.length);
     segment += INVITE_CODE_ALPHABET[index];
   }
   return segment;

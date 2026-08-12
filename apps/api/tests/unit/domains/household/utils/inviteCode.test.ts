@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'bun:test';
+import { describe, expect, it, spyOn } from 'bun:test';
 import {
   generateInviteCode,
   generateUniqueInviteCode,
@@ -20,7 +20,17 @@ describe('generateInviteCode', () => {
       const code = generateInviteCode();
       expect(code).toMatch(/^[A-Z2-9]{3}-[A-Z2-9]{3}$/);
       expect(isValidInviteCodeFormat(code)).toBe(true);
+      for (const char of code.replace('-', '')) {
+        expect(INVITE_CODE_ALPHABET).toContain(char);
+      }
     }
+  });
+
+  it('does not use Math.random', () => {
+    const randomSpy = spyOn(Math, 'random');
+    generateInviteCode();
+    expect(randomSpy).not.toHaveBeenCalled();
+    randomSpy.mockRestore();
   });
 });
 

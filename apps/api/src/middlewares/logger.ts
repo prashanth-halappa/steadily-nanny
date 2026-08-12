@@ -5,6 +5,7 @@ import Transport from 'winston-transport';
 import { env } from '../config/env';
 import Sentry from '../config/sentry';
 import { BaseError, isExpectedClientError } from '../errors';
+import { redactLoggedUrl } from '../utils/redactLoggedUrl';
 
 /**
  * True when a structured log's meta denotes an EXPECTED operational client error
@@ -94,7 +95,17 @@ export const logHttpAccess = (message: string): void => {
   logger.http(message.trim());
 };
 
+/**
+ * Morgan's `:url` token, overridden so an invite code never reaches the access
+ * log. Exported so the redaction is testable without standing up morgan — the
+ * registration below is the only wiring.
+ */
+export const redactedUrlToken = (req: Request): string =>
+  redactLoggedUrl(req.originalUrl || req.url || '');
+
 /** Morgan HTTP access log → winston. */
+morgan.token<Request>('url', redactedUrlToken);
+
 export const morganMiddleware = morgan(
   ':method :url :status :res[content-length] - :response-time ms',
   {
@@ -113,7 +124,7 @@ export const logError = (error: Error, req: Request): void => {
   } = {
     message: error.message,
     stack: error.stack,
-    path: req.path,
+    path: redactLoggedUrl(req.path),
     method: req.method,
     requestId: req.id,
     timestamp: new Date().toISOString(),
