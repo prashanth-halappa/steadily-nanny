@@ -6,6 +6,7 @@
  * @module tests/unit/domains/termsProposal/services/fixtures
  */
 import { mock } from 'bun:test';
+import type { HouseholdMember } from '../../../../../src/domains/household';
 
 export const HOUSEHOLD_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 export const CARER_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
@@ -13,6 +14,11 @@ export const PARENT_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 export const HELPER_ID = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
 export const PROPOSAL_ID = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
 export const PRIOR_ID = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+export const FIXTURE_CREATED_AT = new Date(
+  Date.now() - 2 * DAY_MS
+).toISOString();
 
 /** A well-formed `CreatePayArrangementRequest` — the spec's worked example. */
 export function terms(overrides: Record<string, unknown> = {}) {
@@ -45,22 +51,36 @@ export function proposal(overrides: Record<string, unknown> = {}) {
     accepted_by: null,
     accepted_arrangement_id: null,
     responsibility_confirmed: false,
-    created_at: '2026-08-10T09:00:00.000Z',
-    updated_at: '2026-08-10T09:00:00.000Z',
+    created_at: FIXTURE_CREATED_AT,
+    updated_at: FIXTURE_CREATED_AT,
     ...overrides,
   };
 }
 
+const USER_ID_BY_ROLE: Record<HouseholdMember['role'], string> = {
+  owner: PARENT_ID,
+  parent: PARENT_ID,
+  nanny: CARER_ID,
+  helper: HELPER_ID,
+};
+
 export function member(
-  role: string,
-  status = 'active',
-  overrides: Record<string, unknown> = {}
-) {
+  role: HouseholdMember['role'],
+  status: HouseholdMember['status'] = 'active',
+  overrides: Partial<HouseholdMember> = {}
+): HouseholdMember {
   return {
     id: `member-${role}-${status}`,
+    household_id: HOUSEHOLD_ID,
+    user_id: USER_ID_BY_ROLE[role],
     role,
+    can_edit: role === 'owner' || role === 'parent',
     status,
     display_name_override: null,
+    colour: null,
+    joined_at: FIXTURE_CREATED_AT,
+    created_at: FIXTURE_CREATED_AT,
+    updated_at: FIXTURE_CREATED_AT,
     ...overrides,
   };
 }

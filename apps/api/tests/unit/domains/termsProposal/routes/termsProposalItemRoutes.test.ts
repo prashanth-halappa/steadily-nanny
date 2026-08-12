@@ -33,6 +33,7 @@ const HOUSEHOLD_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const CARER_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const PROPOSAL_ID = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
 const MOUNT_PATH = '/terms-proposals';
+const FIXTURE_VIEWED_AT = new Date().toISOString();
 
 const VALID_TERMS = {
   rate_minor: 2800,
@@ -71,7 +72,7 @@ beforeAll(async () => {
   acceptMock = mock(async () => proposalRow({ status: 'accepted' }));
   withdrawMock = mock(async () => proposalRow({ status: 'withdrawn' }));
   markViewedMock = mock(async () =>
-    proposalRow({ viewed_at: '2026-08-11T15:00:00.000Z' })
+    proposalRow({ viewed_at: FIXTURE_VIEWED_AT })
   );
 
   mock.module('../../../../../src/middlewares/auth', () => ({

@@ -14,7 +14,8 @@
  *
  * @module tests/unit/domains/termsProposal/services/termsProposalCommandService.accept
  */
-import { describe, expect, it } from 'bun:test';
+import { describe, expect, it, spyOn } from 'bun:test';
+import { HouseholdMemberRepository } from '../../../../../src/domains/household';
 import { TermsProposalCommandService } from '../../../../../src/domains/termsProposal/services/termsProposalCommandService';
 import {
   CARER_ID,
@@ -206,6 +207,29 @@ describe('TermsProposalCommandService.accept — §8.2.1, the candidate flip', (
     const svc = service({ candidates });
     await svc.accept(PARENT_ID, PROPOSAL_ID, CONFIRMED);
     expect(candidates.activateCandidate).toHaveBeenCalledTimes(1);
+  });
+
+  it('the production default activates the candidate via HouseholdMemberRepository', async () => {
+    const activateSpy = spyOn(
+      HouseholdMemberRepository.prototype,
+      'activateCandidate'
+    ).mockImplementation(async () => member('nanny', 'active'));
+
+    const svc = new TermsProposalCommandService(
+      makeProposalRepo(),
+      makeMemberRepo({
+        [CARER_ID]: member('nanny', 'candidate'),
+        [PARENT_ID]: member('parent'),
+      }),
+      makeHouseholdRepo(),
+      makeUserService(),
+      makePush(),
+      makeArrangements()
+    );
+
+    await svc.accept(PARENT_ID, PROPOSAL_ID, CONFIRMED);
+    expect(activateSpy).toHaveBeenCalledWith('member-nanny-candidate');
+    activateSpy.mockRestore();
   });
 });
 

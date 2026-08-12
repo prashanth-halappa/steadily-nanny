@@ -93,15 +93,8 @@ export interface ArrangementCreator {
 
 /**
  * §8.2.1's `candidate` -> `active` flip, as a CAS on `status = 'candidate'`.
- *
- * TODO(3-O): the default is `null` because
- * `householdMemberRepository.activateCandidate` is landing in the household
- * slice's own branch and does not exist here yet. WHEN IT MERGES, change the
- * constructor default below to `new HouseholdMemberRepository()` and delete
- * this note — until then a candidate acceptance fails LOUDLY at
- * `payArrangementCommandService`'s active-nanny assertion rather than
- * silently half-completing. Do NOT add a second activation mechanism here to
- * work around it; one CAS, one owner.
+ * An already-active nanny no-ops — the update matches zero rows and returns
+ * null without error.
  */
 export interface CandidateActivator {
   activateCandidate: (memberId: string) => Promise<unknown>;
@@ -154,8 +147,7 @@ export class TermsProposalCommandService {
       notifyHouseholdParents,
     },
     private readonly arrangements: ArrangementCreator = payArrangementCommandService,
-    // See `CandidateActivator`'s TODO for why this default is null.
-    private readonly candidates: CandidateActivator | null = null
+    private readonly candidates: CandidateActivator | null = new HouseholdMemberRepository()
   ) {}
 
   /**

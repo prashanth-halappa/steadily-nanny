@@ -27,7 +27,9 @@ import {
   terms,
 } from './fixtures';
 
-const NOW = () => new Date('2026-08-11T15:00:00.000Z');
+const NOW = () => new Date();
+const DAY_MS = 24 * 60 * 60 * 1000;
+const FIXTURE_VIEWED_AT = new Date(Date.now() - 3 * DAY_MS).toISOString();
 
 function service(
   parts: {
@@ -499,12 +501,12 @@ describe('TermsProposalCommandService.markViewed — one-way, never the author',
 
   it('an already-viewed proposal is never re-stamped', async () => {
     const proposalRepo = makeProposalRepo({
-      findById: async () => proposal({ viewed_at: '2026-08-10T10:00:00.000Z' }),
+      findById: async () => proposal({ viewed_at: FIXTURE_VIEWED_AT }),
     });
     const svc = service({ proposalRepo });
     const row = await svc.markViewed(PARENT_ID, PROPOSAL_ID);
     expect(proposalRepo.stampViewed).not.toHaveBeenCalled();
-    expect(row.viewed_at).toBe('2026-08-10T10:00:00.000Z');
+    expect(row.viewed_at).toBe(FIXTURE_VIEWED_AT);
   });
 
   it('a helper cannot mark anything viewed', async () => {

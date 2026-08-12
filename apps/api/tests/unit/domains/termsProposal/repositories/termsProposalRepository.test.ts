@@ -98,6 +98,15 @@ function withRows(rows: FakeRow[], error: unknown = null): void {
   );
 }
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+const FIXTURE_CREATED_AT = new Date(Date.now() - 2 * DAY_MS)
+  .toISOString()
+  .replace('.000Z', '+00:00');
+const FIXTURE_STAMP_AT = new Date().toISOString();
+const FIXTURE_PRIOR_VIEWED_AT = new Date(Date.now() - 3 * DAY_MS)
+  .toISOString()
+  .replace('.000Z', '+00:00');
+
 function row(overrides: FakeRow = {}): FakeRow {
   return {
     id: 'tp-1',
@@ -108,7 +117,7 @@ function row(overrides: FakeRow = {}): FakeRow {
     status: 'proposed',
     terms: { rate_minor: 2800 },
     viewed_at: null,
-    created_at: '2026-08-10T09:00:00+00:00',
+    created_at: FIXTURE_CREATED_AT,
     ...overrides,
   };
 }
@@ -226,7 +235,7 @@ describe('TermsProposalRepository.resolve — CAS on status=proposed', () => {
     const repo = new TermsProposalRepository();
     const updated = await repo.resolve('tp-1', {
       status: 'countered',
-      responded_at: '2026-08-11T15:00:00.000Z',
+      responded_at: FIXTURE_STAMP_AT,
     });
     expect(updated?.status).toBe('countered');
     expect(
@@ -248,8 +257,8 @@ describe('TermsProposalRepository.stampViewed — one-way', () => {
   it('only writes when viewed_at is still null', async () => {
     withRows([row()]);
     const repo = new TermsProposalRepository();
-    const stamped = await repo.stampViewed('tp-1', '2026-08-11T15:00:00.000Z');
-    expect(stamped?.viewed_at).toBe('2026-08-11T15:00:00.000Z');
+    const stamped = await repo.stampViewed('tp-1', FIXTURE_STAMP_AT);
+    expect(stamped?.viewed_at).toBe(FIXTURE_STAMP_AT);
     expect(lastCalls.find(call => call.method === 'is')?.args).toEqual([
       'viewed_at',
       null,
@@ -257,10 +266,8 @@ describe('TermsProposalRepository.stampViewed — one-way', () => {
   });
 
   it('never re-stamps a row that already carries a viewed_at', async () => {
-    withRows([row({ viewed_at: '2026-08-10T10:00:00+00:00' })]);
+    withRows([row({ viewed_at: FIXTURE_PRIOR_VIEWED_AT })]);
     const repo = new TermsProposalRepository();
-    expect(
-      await repo.stampViewed('tp-1', '2026-08-11T15:00:00.000Z')
-    ).toBeNull();
+    expect(await repo.stampViewed('tp-1', FIXTURE_STAMP_AT)).toBeNull();
   });
 });
