@@ -22,6 +22,7 @@
  */
 import {
   afterAll,
+  afterEach,
   beforeAll,
   beforeEach,
   describe,
@@ -211,5 +212,59 @@ describe('POST /v1/household-invites/:code/opened', () => {
     );
 
     expect(res.status).toBe(204);
+  });
+});
+
+/**
+ * The routes above are mounted BEFORE `validateSupabaseToken` in `app.ts`, and
+ * `/api/v1`'s `userRateLimiter` is mounted after it — so these two, and only
+ * these two, would otherwise take unlimited unauthenticated traffic. The code
+ * is the bearer secret and a hit returns the carer's pay terms, so "no limit
+ * at all" makes walking the 31^6 keyspace free. This is a property of the
+ * ROUTER's own wiring, which is why it is asserted here.
+ */
+describe('rate limiting', () => {
+  const previousEnv = process.env.NODE_ENV;
+
+  beforeEach(() => {
+    // Both limiters skip themselves under NODE_ENV=test so they never
+    // interfere with the rest of the suite; this block is the one place that
+    // deliberately turns the limiter ON. Every other test in this file runs
+    // skipped, so none of them spend the budget asserted below.
+    process.env.NODE_ENV = 'development';
+  });
+
+  afterEach(() => {
+    process.env.NODE_ENV = previousEnv;
+  });
+
+  it('refuses the public routes with 429 once one IP exceeds the budget', async () => {
+    const { PUBLIC_INVITE_MAX_REQUESTS } = await import(
+      '../../../../../src/middlewares/rateLimit'
+    );
+
+    const statuses: number[] = [];
+    for (let i = 0; i < PUBLIC_INVITE_MAX_REQUESTS + 1; i += 1) {
+      const res = await fetch(
+        `${baseUrl}/api/v1/household-invites/${CODE}/terms-preview`
+      );
+      statuses.push(res.status);
+    }
+
+    // The whole budget is spendable — a family reloading the page is never the
+    // one who gets refused.
+    expect(statuses.slice(0, PUBLIC_INVITE_MAX_REQUESTS)).toEqual(
+      new Array(PUBLIC_INVITE_MAX_REQUESTS).fill(200)
+    );
+    expect(statuses[PUBLIC_INVITE_MAX_REQUESTS]).toBe(429);
+
+    // ONE budget across both public routes: the receipt endpoint is a write
+    // keyed on the same guessable string, so letting it keep its own quota
+    // would just move the enumeration one path over.
+    const opened = await fetch(
+      `${baseUrl}/api/v1/household-invites/${CODE}/opened`,
+      { method: 'POST' }
+    );
+    expect(opened.status).toBe(429);
   });
 });
