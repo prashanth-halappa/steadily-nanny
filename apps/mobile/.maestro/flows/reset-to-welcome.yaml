@@ -66,6 +66,41 @@ appId: com.jetto.steadily.nanny
                   - waitForAnimationToEnd
             - openLink: steadilynanny://expo-development-client/?url=http%3A%2F%2Flocalhost%3A8081
             - waitForAnimationToEnd
+            # First custom-scheme open after a REINSTALL raises the iOS
+            # system alert `Open in "Steadily Nanny"?`, which stacks ON TOP of
+            # the re-armed dev-menu intro sheet. It is not that sheet and
+            # nothing else here clears it; while it is up the deep link has
+            # not been followed at all, so the bundle never loads and the run
+            # dies on a missing welcome-screen. Like the intro sheet it is
+            # async, so it needs its own bounded window rather than a bare
+            # guard — checked too early, it simply is not there yet.
+            # ANCHORED. Maestro text selectors match as a SUBSTRING, so a
+            # bare `Open` also matches this alert's own title
+            # (`Open in "Steadily Nanny"?`) — and the title comes first, so
+            # the tap lands on a label and the alert never closes.
+            - extendedWaitUntil:
+                visible:
+                  text: '^Open$'
+                timeout: 8000
+                optional: true
+            - runFlow:
+                when:
+                  visible:
+                    text: '^Open$'
+                commands:
+                  - tapOn:
+                      text: '^Open$'
+                  - waitForAnimationToEnd
+            # The intro sheet RE-ARMS after the bundle load on a fresh
+            # install and pops again once the JS is up, so this second pass
+            # needs its own bounded window exactly like the first — a bare
+            # guard evaluates while the bundle is still loading and sees
+            # nothing.
+            - extendedWaitUntil:
+                visible:
+                  text: 'This is the developer menu'
+                timeout: 20000
+                optional: true
             - runFlow:
                 when:
                   visible:

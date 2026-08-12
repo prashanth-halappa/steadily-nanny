@@ -45,12 +45,28 @@ tags:
     id: 'pay-setup-rate-input'
 - eraseText
 - inputText: ${PHASE4_HOURLY_RATE}
-- hideKeyboard
+- tapOn:
+    point: 50%,20%
+- waitForAnimationToEnd
+# The date input sits UNDER the keyboard once the rate field has focus, and
+# two things that look like they should fix that do not:
+#   - `hideKeyboard` does not dismiss it on this screen at all (verified: the
+#     date landed in the RATE field, because focus never moved and eraseText +
+#     inputText went to whatever was still focused);
+#   - `scrollUntilVisible` no-ops, because Maestro's visibility test is
+#     hierarchy-based, not occlusion-based — the field is already "visible" to
+#     it while being physically behind the keyboard, so it never scrolls and
+#     the tap still lands on a key.
+# An explicit swipe is the only one that moves the content: it lifts
+# "Takes effect from" above the keyboard, and THEN the tap reaches the field.
+- swipe:
+    start: 50%,60%
+    end: 50%,35%
+- waitForAnimationToEnd
 - tapOn:
     id: 'pay-setup-date-input'
 - eraseText
 - inputText: ${PHASE4_ARRANGEMENT_VALID_FROM}
-- hideKeyboard
 # Backdating is unbounded (only the 12-month FUTURE horizon is refused), so a
 # past date must show the hint and NOT the error — this asserts the difference.
 - assertVisible:
@@ -101,27 +117,37 @@ tags:
     id: 'pay-setup-overtime-threshold-input'
 - eraseText
 - inputText: '40'
-- hideKeyboard
+- tapOn:
+    point: 50%,20%
+- waitForAnimationToEnd
 - tapOn:
     id: 'pay-setup-overtime-multiplier-input'
 - eraseText
 - inputText: '1.5'
-- hideKeyboard
+- tapOn:
+    point: 50%,20%
+- waitForAnimationToEnd
 - tapOn:
     id: 'pay-setup-daily-overtime-threshold-input'
 - eraseText
 - inputText: '8'
-- hideKeyboard
+- tapOn:
+    point: 50%,20%
+- waitForAnimationToEnd
 - tapOn:
     id: 'pay-setup-doubletime-threshold-input'
 - eraseText
 - inputText: '12'
-- hideKeyboard
+- tapOn:
+    point: 50%,20%
+- waitForAnimationToEnd
 - tapOn:
     id: 'pay-setup-doubletime-multiplier-input'
 - eraseText
 - inputText: '2'
-- hideKeyboard
+- tapOn:
+    point: 50%,20%
+- waitForAnimationToEnd
 - takeScreenshot: pay-setup-ca-overtime
 
 # --- Worked-holiday multiplier (flow 09 consumes this same arrangement) ---
@@ -142,7 +168,9 @@ tags:
     id: 'pay-setup-worked-holiday-multiplier-input'
 - eraseText
 - inputText: ${PHASE4_HOLIDAY_MULTIPLIER}
-- hideKeyboard
+- tapOn:
+    point: 50%,20%
+- waitForAnimationToEnd
 
 # --- Save ----------------------------------------------------------------
 # `pay-setup-screen-cta` is derived inside SetupScreenShell (`${testID}-cta`),
