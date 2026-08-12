@@ -185,7 +185,7 @@
   "earningsStructureKindOvertime": "extra",
   "earningsStructureKindDoubletime": "doble",
   "earningsStructureKindHolidayPremium": "feriado",
-  "earningsStructureKindCancellationPaid": "cancel",
+  "earningsStructureKindCancellationPaid": "canc",
   "earningsStructureKindPto": "PTO",
   "earningsStructureKindPaidHoliday": "festivo",
   "earningsStructureKindGuaranteedTopup": "compl",

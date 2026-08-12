@@ -85,6 +85,7 @@ beforeAll(async () => {
   });
   mock.module('@/src/domains/inbox', () => ({
     NeedsAttentionCard: NeedsAttentionCardSpy,
+    TermsProposalCard: () => null,
     // Non-empty: this file is specifically about overdue-vs-inbox
     // precedence, so there has to be an inbox item for "not overdue" to
     // mean "inbox owns it" rather than "nothing owns it".

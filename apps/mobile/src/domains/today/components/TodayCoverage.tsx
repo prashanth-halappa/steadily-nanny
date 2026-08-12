@@ -7,13 +7,24 @@
 import type { Child } from '@steadily-nanny/shared-types/schemas/child.schema';
 import { type Href, useRouter } from 'expo-router';
 import { AlertCircle } from 'lucide-react-native';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Pressable, View } from 'react-native';
 import { RestrictedActionButton } from '@/src/components/custom/RestrictedActionButton';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/src/components/ui/alert-dialog';
 import { Button } from '@/src/components/ui/button';
 import { Card } from '@/src/components/ui/card';
 import { IconChip } from '@/src/components/ui/icon-chip';
+import { InlineError } from '@/src/components/ui/inline-error';
 import { LiveDot } from '@/src/components/ui/live-dot';
 import { StatusPill } from '@/src/components/ui/status-pill';
 import { Body, H3, H4, Small } from '@/src/components/ui/typography';
@@ -28,10 +39,12 @@ import {
 } from '@/src/domains/schedule/utils/uncoveredDisplay';
 import { formatClockTime } from '@/src/domains/timesheet/utils/duration';
 import { useCreateParentCover } from '@/src/hooks/mutations/useCreateParentCover';
+import { useWithdrawCoverAsk } from '@/src/hooks/mutations/useWithdrawCoverAsk';
 import { useDayThread } from '@/src/hooks/queries/useDayThread';
 import { useHouseholdMembers } from '@/src/hooks/queries/useHouseholdMembers';
 import { useRestrictedAction } from '@/src/hooks/queries/useRestrictedAction';
 import { useShiftsRange } from '@/src/hooks/queries/useShiftsRange';
+import { getLocalizedErrorMessage } from '@/src/lib/errorLocalization';
 import { addLocalDays, localDateInZone } from '@/src/lib/localDate';
 import { utcIsoToWallClockHHMM, wallClockToUtcIso } from '@/src/lib/wallClock';
 import {
@@ -160,11 +173,15 @@ export function TodayCoverage({
 }: TodayCoverageProps) {
   const { t } = useTranslation('today');
   const { t: tSchedule } = useTranslation('schedule');
+  const { t: tError } = useTranslation('errors');
   const router = useRouter();
   const state = useTodayCoverage(householdId, timeZone, weekStartsOn);
+  const [withdrawConfirmOpen, setWithdrawConfirmOpen] = useState(false);
+  const [withdrawError, setWithdrawError] = useState<string | null>(null);
   const carersQuery = useHouseholdCarers(householdId);
   const membersQuery = useHouseholdMembers(householdId);
   const createCover = useCreateParentCover();
+  const withdrawCoverAsk = useWithdrawCoverAsk();
   // §7 — the same server gate `createExtraShift` consults for a co-parent
   // under `approval_mode='owner_only'` (`ApprovalGateAction: 'extra_shift'`).
   // `createParentCover` ("I've got it") is NOT gated server-side, so it stays
@@ -172,6 +189,10 @@ export function TodayCoverage({
   const askCoverRestriction = useRestrictedAction({
     householdId,
     action: tSchedule('cover.restrictedActionAskCover'),
+  });
+  const withdrawAskRestriction = useRestrictedAction({
+    householdId,
+    action: tSchedule('cover.restrictedActionWithdrawAsk'),
   });
 
   const localDate = localDateInZone(timeZone);
@@ -370,6 +391,20 @@ export function TodayCoverage({
   // the "none asked" default's third action, not a permanent fixture.
   const showHoursWrongLink = !askState;
   const showAskSomeoneElseSecondary = askState?.state === 'expired';
+  const showWithdrawAskLink = askState?.state === 'pending';
+
+  const handleWithdrawConfirm = () => {
+    if (askState?.state !== 'pending') return;
+    setWithdrawError(null);
+    void withdrawCoverAsk
+      .mutateAsync(askState.shift.id)
+      .then(() => {
+        setWithdrawConfirmOpen(false);
+      })
+      .catch(error => {
+        setWithdrawError(getLocalizedErrorMessage(error, tError));
+      });
+  };
 
   // Rule M (daylight-v2 §2.3): on the ochre `surfaceAttention` ground
   // `mutedForeground` measures 4.28:1 and fails AA at these sizes. Demoted the
@@ -530,6 +565,93 @@ export function TodayCoverage({
                   {tSchedule('cover.hoursWrong')}
                 </Small>
               </Pressable>
+            ) : null}
+            {showWithdrawAskLink ? (
+              <View>
+                <Pressable
+                  testID="today-coverage-withdraw-ask"
+                  accessibilityRole="button"
+                  accessibilityState={{
+                    disabled: withdrawAskRestriction.disabled,
+                  }}
+                  accessibilityHint={withdrawAskRestriction.reason ?? undefined}
+                  hitSlop={8}
+                  disabled={withdrawAskRestriction.disabled}
+                  onPress={() => {
+                    setWithdrawError(null);
+                    setWithdrawConfirmOpen(true);
+                  }}
+                >
+                  <Small
+                    className={
+                      withdrawAskRestriction.disabled
+                        ? 'text-muted-foreground'
+                        : 'text-primary'
+                    }
+                    weight="medium"
+                  >
+                    {tSchedule('cover.withdrawAsk')}
+                  </Small>
+                </Pressable>
+                {withdrawAskRestriction.reason ? (
+                  <Small
+                    testID="today-coverage-withdraw-ask-reason"
+                    className="mt-2 text-muted-foreground"
+                  >
+                    {withdrawAskRestriction.reason}
+                  </Small>
+                ) : null}
+                <AlertDialog
+                  open={withdrawConfirmOpen}
+                  onOpenChange={open => {
+                    if (!open) {
+                      setWithdrawConfirmOpen(false);
+                      setWithdrawError(null);
+                    }
+                  }}
+                >
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>
+                        {tSchedule('cover.withdrawAskConfirmTitle')}
+                      </AlertDialogTitle>
+                      <AlertDialogDescription>
+                        {tSchedule('cover.withdrawAskConfirmBody', {
+                          carerName: askCarerName ?? t('today:carerFallback'),
+                        })}
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    {withdrawError ? (
+                      <InlineError
+                        testID="today-coverage-withdraw-ask-error"
+                        message={withdrawError}
+                      />
+                    ) : null}
+                    <AlertDialogFooter>
+                      <AlertDialogCancel
+                        testID="today-coverage-withdraw-ask-keep"
+                        onPress={() => {
+                          setWithdrawConfirmOpen(false);
+                          setWithdrawError(null);
+                        }}
+                      >
+                        <Small>
+                          {tSchedule('cover.withdrawAskConfirmKeep')}
+                        </Small>
+                      </AlertDialogCancel>
+                      <AlertDialogAction
+                        testID="today-coverage-withdraw-ask-confirm"
+                        disabled={withdrawCoverAsk.isPending}
+                        onPress={handleWithdrawConfirm}
+                      >
+                        <Small>
+                          {tSchedule('cover.withdrawAskConfirmWithdraw')}
+                        </Small>
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </View>
             ) : null}
           </View>
         ) : null}

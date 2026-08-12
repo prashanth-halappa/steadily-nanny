@@ -58,6 +58,17 @@
       "subtitleRateOnly": "{{rate}}",
       "subtitleNoFigures": "Abre para ver las condiciones.",
       "cta": "Revisar condiciones"
+    },
+    "termsAck": {
+      "titleChanged": "Tus condiciones de pago cambiaron el {{date}}",
+      "titleFirst": "Tus condiciones de pago están definidas",
+      "subtitle": "Abre Mi pago para leerlas y registrar que las has visto.",
+      "cta": "Abrir Mi pago"
+    },
+    "reimbursementOwed": {
+      "title": "Aún se deben {{amount}} en reembolsos",
+      "subtitle": "Aprobados para la semana del {{week}}",
+      "cta": "Abrir la semana"
     }
   }
 }

@@ -154,7 +154,7 @@ export function EarningsBreakdownSheet({
         return (
           <AmountRow
             key={key}
-            testID={`${testID}-line-overtime`}
+            testID={`${testID}-line-overtime-${index}`}
             label={t('earningsLineOvertime')}
             value={amount}
             // review finding 9a: `multiplier` below is a LOCALE-FORMATTED

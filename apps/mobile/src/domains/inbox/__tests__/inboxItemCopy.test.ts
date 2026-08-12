@@ -229,3 +229,90 @@ describe('terms_proposal copy (§7.2, §10)', () => {
     }
   });
 });
+
+describe('terms_ack copy (§2.2 rank 9)', () => {
+  function makeItem(overrides: Partial<InboxItem> = {}): InboxItem {
+    return {
+      kind: 'terms_ack',
+      id: 'arr-1',
+      householdId: 'hh-1',
+      validFrom: '2026-08-01',
+      isFirstTerms: true,
+      ...overrides,
+    } as InboxItem;
+  }
+
+  it('opens My pay', () => {
+    expect(hrefForItem(makeItem())).toBe('/(private)/settings/my-pay');
+  });
+
+  it('uses first vs changed title keys', () => {
+    expect(titleForItem(makeItem(), t, ZONE)).toBe('items.termsAck.titleFirst');
+    expect(titleForItem(makeItem({ isFirstTerms: false }), t, ZONE)).toBe(
+      'items.termsAck.titleChanged'
+    );
+  });
+
+  it('has subtitle and cta keys', () => {
+    expect(subtitleForItem(makeItem(), t, ZONE)).toBe(
+      'items.termsAck.subtitle'
+    );
+    expect(ctaForItem(makeItem(), t)).toBe('items.termsAck.cta');
+  });
+
+  it('has no deadline', () => {
+    expect(deadlineForItem(makeItem(), t, ZONE)).toBeNull();
+  });
+
+  it('has both-language strings', async () => {
+    for (const language of ['en', 'es'] as const) {
+      const copy = (await locale(language)).items.termsAck;
+      expect(copy.titleChanged).toContain('{{date}}');
+      expect(copy.titleFirst.length).toBeGreaterThan(0);
+      expect(copy.subtitle.length).toBeGreaterThan(0);
+      expect(copy.cta.length).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe('reimbursement_owed copy (§2.2 rank 8)', () => {
+  const item: InboxItem = {
+    kind: 'reimbursement_owed',
+    id: 'hh-1:carer-1:2026-08-17',
+    householdId: 'hh-1',
+    weekStart: '2026-08-17',
+    amountMinor: 3480,
+    currency: 'GBP',
+  };
+
+  it('deep-links to the Hours week it is about', () => {
+    expect(hrefForItem(item)).toBe(
+      '/(private)/(tabs)/hours?weekStart=2026-08-17'
+    );
+  });
+
+  it('has title/subtitle/cta keys', () => {
+    expect(titleForItem(item, t, ZONE)).toBe('items.reimbursementOwed.title');
+    expect(subtitleForItem(item, t, ZONE)).toBe(
+      'items.reimbursementOwed.subtitle'
+    );
+    expect(ctaForItem(item, t)).toBe('items.reimbursementOwed.cta');
+  });
+
+  it('has no deadline', () => {
+    expect(deadlineForItem(item, t, ZONE)).toBeNull();
+  });
+
+  it('uses Approved in the subtitle and still owed in the title, in both languages', async () => {
+    for (const language of ['en', 'es'] as const) {
+      const copy = (await locale(language)).items.reimbursementOwed;
+      expect(copy.title).toContain('{{amount}}');
+      expect(copy.subtitle).toContain('{{week}}');
+      const subtitle = copy.subtitle.toLowerCase();
+      expect(subtitle.includes('approv') || subtitle.includes('aprob')).toBe(
+        true
+      );
+      expect(copy.cta.length).toBeGreaterThan(0);
+    }
+  });
+});

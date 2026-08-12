@@ -17,6 +17,7 @@ import {
 import type { ChildCommitment } from '@steadily-nanny/shared-types/schemas/child.schema';
 import type { Shift } from '@steadily-nanny/shared-types/schemas/shift.schema';
 import { SHIFT_KINDS } from '@steadily-nanny/shared-types/schemas/shift.schema';
+import { fireEvent, waitFor } from '@testing-library/react-native';
 import i18n from '@/src/i18n';
 import { renderWithProviders } from '@/src/test-utils';
 
@@ -125,6 +126,8 @@ function household() {
   ];
 }
 
+let mockWithdrawCoverAsk: ReturnType<typeof mock>;
+
 beforeAll(async () => {
   await i18n.changeLanguage('en');
 
@@ -142,6 +145,16 @@ beforeAll(async () => {
     }),
     Trans: ({ children }: { children: unknown }) => children,
     initReactI18next: { type: '3rdParty', init: mock() },
+  }));
+
+  mockWithdrawCoverAsk = mock(() => Promise.resolve({}));
+  mock.module('@/src/hooks/mutations/useWithdrawCoverAsk', () => ({
+    useWithdrawCoverAsk: () => ({
+      mutateAsync: mockWithdrawCoverAsk,
+      isPending: false,
+      error: null,
+      reset: mock(),
+    }),
   }));
 
   mockShiftsRange = mock(() => ({ data: [], isLoading: false }));
@@ -283,6 +296,67 @@ describe('TodayCoverage — cover-ask lifecycle cause line + actions (§2.4a)', 
     const tree = renderCoverage([makeShift()]);
     const rendered = JSON.stringify(tree.toJSON());
     expect(rendered).toContain('Only David can do this.');
+    mockRestrictedAction.mockReturnValue({ disabled: false, reason: null });
+  });
+});
+
+describe('TodayCoverage — withdraw the ask (§2.4a)', () => {
+  it('shows a ghost Withdraw link only while the ask is pending', () => {
+    const ask = makeAsk({ status: 'pending' });
+    const tree = renderCoverage([makeShift(), ask]);
+    tree.getByTestId('today-coverage-withdraw-ask');
+    expect(JSON.stringify(tree.toJSON())).toContain(
+      i18n.t('schedule:cover.withdrawAsk')
+    );
+  });
+
+  it('does not show Withdraw for declined, expired, or no-ask gaps', () => {
+    const declined = renderCoverage([
+      makeShift(),
+      makeAsk({ status: 'declined' }),
+    ]);
+    expect(() => declined.getByTestId('today-coverage-withdraw-ask')).toThrow();
+
+    const expired = renderCoverage([
+      makeShift(),
+      makeAsk({
+        status: 'cancelled',
+        cancelled_by: null,
+        cover_ask_expires_at: '2026-08-09T18:00:00.000Z',
+      }),
+    ]);
+    expect(() => expired.getByTestId('today-coverage-withdraw-ask')).toThrow();
+
+    const plain = renderCoverage([makeShift()]);
+    expect(() => plain.getByTestId('today-coverage-withdraw-ask')).toThrow();
+  });
+
+  it('opens the confirm dialog with spec copy and withdraws on confirm', async () => {
+    const ask = makeAsk({ status: 'pending', id: 'ask-withdraw-1' });
+    const tree = renderCoverage([makeShift(), ask]);
+
+    fireEvent.press(tree.getByTestId('today-coverage-withdraw-ask'));
+    expect(JSON.stringify(tree.toJSON())).toContain(
+      i18n.t('schedule:cover.withdrawAskConfirmTitle')
+    );
+    expect(mockWithdrawCoverAsk).not.toHaveBeenCalled();
+
+    fireEvent.press(tree.getByTestId('today-coverage-withdraw-ask-confirm'));
+    await waitFor(() =>
+      expect(mockWithdrawCoverAsk).toHaveBeenCalledWith('ask-withdraw-1')
+    );
+  });
+
+  it('disables Withdraw with a reason when a co-parent is restricted', () => {
+    mockRestrictedAction.mockImplementation(({ action }: { action: string }) =>
+      action.includes('withdraw')
+        ? { disabled: true, reason: 'Only David can withdraw this ask.' }
+        : { disabled: false, reason: null }
+    );
+    const ask = makeAsk({ status: 'pending' });
+    const tree = renderCoverage([makeShift(), ask]);
+    const rendered = JSON.stringify(tree.toJSON());
+    expect(rendered).toContain('Only David can withdraw this ask.');
     mockRestrictedAction.mockReturnValue({ disabled: false, reason: null });
   });
 });

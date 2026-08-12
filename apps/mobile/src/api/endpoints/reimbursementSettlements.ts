@@ -19,11 +19,13 @@
 import type {
   CreateReimbursementSettlementInput,
   ReimbursementSettlement,
+  UnsettledReimbursementWeek,
 } from '@steadily-nanny/shared-types/schemas/reimbursementSettlement.schema';
 import {
   CreateReimbursementSettlementSchema,
   ReimbursementSettlementListResponseSchema,
   ReimbursementSettlementSchema,
+  UnsettledReimbursementListResponseSchema,
 } from '@steadily-nanny/shared-types/schemas/reimbursementSettlement.schema';
 import { z } from 'zod';
 import { apiClient } from '@/src/api/client';
@@ -31,7 +33,11 @@ import { apiClient } from '@/src/api/client';
 export { SETTLEMENT_NOTE_MAX } from '@steadily-nanny/shared-types/schemas/reimbursementSettlement.schema';
 // Re-exported so domain-internal imports stay stable regardless of where the
 // wire contract itself lives.
-export type { CreateReimbursementSettlementInput, ReimbursementSettlement };
+export type {
+  CreateReimbursementSettlementInput,
+  ReimbursementSettlement,
+  UnsettledReimbursementWeek,
+};
 
 // --- Endpoint URLs ----------------------------------------------------------
 export const reimbursementSettlementEndpoints = {
@@ -56,6 +62,20 @@ export const reimbursementSettlementApi = {
     );
     if (!parsed.success) throw parsed.error;
     return parsed.data.settlements;
+  },
+
+  /** Household-wide aggregate of approved-but-unsettled reimbursement weeks. */
+  listUnsettled: async (
+    householdId: string
+  ): Promise<UnsettledReimbursementWeek[]> => {
+    const response = await apiClient.get(
+      `${reimbursementSettlementEndpoints.forHousehold(householdId)}/unsettled`
+    );
+    const parsed = UnsettledReimbursementListResponseSchema.safeParse(
+      response.data.data
+    );
+    if (!parsed.success) throw parsed.error;
+    return parsed.data.weeks;
   },
 
   /** Record that one carer's approved reimbursements for one week went back.

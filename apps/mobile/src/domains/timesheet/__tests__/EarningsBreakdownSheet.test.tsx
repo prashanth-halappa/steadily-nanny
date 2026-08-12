@@ -93,7 +93,9 @@ describe('EarningsBreakdownSheet', () => {
     );
 
     expect(getByTestId('hours-earnings-breakdown-line-regular-0')).toBeTruthy();
-    expect(getByTestId('hours-earnings-breakdown-line-overtime')).toBeTruthy();
+    expect(
+      getByTestId('hours-earnings-breakdown-line-overtime-1')
+    ).toBeTruthy();
     expect(
       getByTestId('hours-earnings-breakdown-line-cancellation')
     ).toBeTruthy();
@@ -365,6 +367,57 @@ describe('EarningsBreakdownSheet', () => {
     });
   });
 
+  // 3-E5 / §5 D-53. Its own row, never folded into `pto` — a holiday credit
+  // draws on no accrued balance, so labelling it "Paid time off" would tell a
+  // nanny a day of her leave was spent on a day she never booked.
+  describe('the paid holiday row', () => {
+    function paidHolidayEarnings(): WeekEarningsOk {
+      return baseEarnings({
+        lines: [
+          {
+            kind: 'paid_holiday',
+            minutes: 480,
+            rate_minor: 2800,
+            multiplier: null,
+            amount_minor: 22_400,
+            from_date: '2026-08-04',
+            to_date: '2026-08-04',
+            arrangement_id: 'arr-1',
+          },
+        ],
+        gross_minor: 22_400,
+        worked_minutes: 0,
+        payable_minutes: 480,
+      });
+    }
+
+    it('renders its own label, amount and rate subline — never the unknown-kind fallback', () => {
+      const { getByTestId, getByText, queryByTestId, queryByText } = render(
+        <EarningsBreakdownSheet
+          visible
+          onDismiss={() => {}}
+          earnings={paidHolidayEarnings()}
+          weekRangeLabel="3 Aug – 9 Aug"
+        />
+      );
+
+      expect(
+        getByTestId('hours-earnings-breakdown-line-paid-holiday')
+      ).toBeTruthy();
+      expect(
+        getByTestId('hours-earnings-breakdown-line-paid-holiday-value').props
+          .children
+      ).toBe('£224.00');
+      expect(getByText('earningsLinePaidHoliday')).toBeTruthy();
+      expect(getByText('earningsLinePaidHolidaySubline')).toBeTruthy();
+      expect(
+        queryByTestId('hours-earnings-breakdown-line-unknown-0')
+      ).toBeNull();
+      expect(queryByText('Paid holiday')).toBeNull();
+      expect(queryByText('earningsLineUnknownSubline')).toBeNull();
+    });
+  });
+
   // The fleet rule: a server that starts emitting a seventh kind reaches
   // clients that predate it. This sheet must show the row rather than drop
   // it — a missing row makes the total stop equalling the visible sum, which
@@ -467,6 +520,52 @@ describe('EarningsBreakdownSheet', () => {
       expect(queryByText('Reimbursements')).toBeNull();
       expect(queryByText('£12.50')).toBeNull();
     });
+  });
+
+  it('indexes overtime row testIDs when a week has more than one', () => {
+    const earnings = baseEarnings({
+      lines: [
+        {
+          kind: 'overtime',
+          minutes: 120,
+          rate_minor: 2775,
+          multiplier: 1.5,
+          amount_minor: 5550,
+          from_date: '2026-08-03',
+          to_date: '2026-08-04',
+          arrangement_id: 'arr-1',
+        },
+        {
+          kind: 'overtime',
+          minutes: 60,
+          rate_minor: 2775,
+          multiplier: 1.5,
+          amount_minor: 2775,
+          from_date: '2026-08-05',
+          to_date: '2026-08-05',
+          arrangement_id: 'arr-1',
+        },
+      ],
+      gross_minor: 8325,
+      worked_minutes: 180,
+      payable_minutes: 180,
+    });
+
+    const { getByTestId } = render(
+      <EarningsBreakdownSheet
+        visible
+        onDismiss={() => {}}
+        earnings={earnings}
+        weekRangeLabel="3 Aug – 9 Aug"
+      />
+    );
+
+    expect(
+      getByTestId('hours-earnings-breakdown-line-overtime-0')
+    ).toBeTruthy();
+    expect(
+      getByTestId('hours-earnings-breakdown-line-overtime-1')
+    ).toBeTruthy();
   });
 
   it('always renders the payroll footer note', () => {

@@ -4,4 +4,5 @@
  */
 export { InboxScreen } from './components/InboxScreen';
 export { NeedsAttentionCard } from './components/NeedsAttentionCard';
+export { TermsProposalCard } from './components/TermsProposalCard';
 export { useInboxItems } from './hooks/useInboxItems';

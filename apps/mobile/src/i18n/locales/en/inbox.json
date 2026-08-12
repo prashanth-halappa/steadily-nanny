@@ -58,6 +58,17 @@
       "subtitleRateOnly": "{{rate}}",
       "subtitleNoFigures": "Open to see the terms.",
       "cta": "Review terms"
+    },
+    "termsAck": {
+      "titleChanged": "Your pay terms changed on {{date}}",
+      "titleFirst": "Your pay terms are set",
+      "subtitle": "Open My pay to read them and record that you've seen them.",
+      "cta": "Open My pay"
+    },
+    "reimbursementOwed": {
+      "title": "{{amount}} in reimbursements is still owed",
+      "subtitle": "Approved for the week of {{week}}",
+      "cta": "Open the week"
     }
   }
 }

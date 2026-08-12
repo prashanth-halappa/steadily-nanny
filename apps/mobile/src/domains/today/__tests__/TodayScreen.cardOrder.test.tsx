@@ -73,6 +73,7 @@ mock.module('@/src/domains/schedule', () => ({
 }));
 mock.module('@/src/domains/inbox', () => ({
   NeedsAttentionCard: marker('needs-attention'),
+  TermsProposalCard: marker('terms-proposal'),
   useInboxItems: () => ({ items: [], isLoading: false }),
 }));
 mock.module('@/src/domains/today/hooks/useUncoveredToday', () => ({
@@ -174,6 +175,12 @@ describe('TodayScreen — card order', () => {
     expect(order.indexOf('needs-attention')).toBeLessThan(
       order.indexOf('clock-in')
     );
+    expect(order.indexOf('terms-proposal')).toBeLessThan(
+      order.indexOf('clock-in')
+    );
+    expect(order.indexOf('terms-proposal')).toBeLessThan(
+      order.indexOf('pending-schedule')
+    );
     expect(order.indexOf('pending-schedule')).toBeLessThan(
       order.indexOf('clock-in')
     );
@@ -189,6 +196,9 @@ describe('TodayScreen — card order', () => {
     const order = renderOrder('parent');
 
     expect(order.indexOf('needs-attention')).toBeLessThan(
+      order.indexOf('today-coverage')
+    );
+    expect(order.indexOf('terms-proposal')).toBeLessThan(
       order.indexOf('today-coverage')
     );
     expect(order.indexOf('needs-attention')).toBeLessThan(

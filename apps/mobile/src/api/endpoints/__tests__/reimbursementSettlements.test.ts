@@ -135,3 +135,45 @@ describe('reimbursementSettlementApi.create', () => {
     expect(apiClient.post).not.toHaveBeenCalled();
   });
 });
+
+describe('reimbursementSettlementApi.listUnsettled', () => {
+  it('GETs /unsettled and unwraps the { weeks } envelope', async () => {
+    const week = {
+      carer_id: CARER_ID,
+      week_start: WEEK_START,
+      amount_minor: 3480,
+      currency: 'GBP',
+    };
+    apiClient.get.mockResolvedValue({
+      data: { data: { weeks: [week] } },
+    });
+
+    const result = await reimbursementSettlementApi.listUnsettled(HOUSEHOLD_ID);
+
+    expect(apiClient.get).toHaveBeenCalledWith(
+      `/v1/households/${HOUSEHOLD_ID}/reimbursement-settlements/unsettled`
+    );
+    expect(result).toEqual([week]);
+  });
+
+  it('rejects a response whose week row is malformed', async () => {
+    apiClient.get.mockResolvedValue({
+      data: {
+        data: {
+          weeks: [
+            {
+              carer_id: CARER_ID,
+              week_start: WEEK_START,
+              amount_minor: 0,
+              currency: 'GBP',
+            },
+          ],
+        },
+      },
+    });
+
+    await expect(
+      reimbursementSettlementApi.listUnsettled(HOUSEHOLD_ID)
+    ).rejects.toThrow();
+  });
+});

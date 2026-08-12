@@ -272,6 +272,12 @@ export const queryKeys = {
         householdId,
         weekStart,
       ] as const,
+    unsettled: (householdId?: string) =>
+      [
+        ...queryKeys.reimbursementSettlements.all,
+        'unsettled',
+        householdId,
+      ] as const,
   },
 } as const;
 

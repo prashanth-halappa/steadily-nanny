@@ -586,6 +586,30 @@ describe('WeekEarningsLine', () => {
       );
     });
 
+    it('falls back to the structure line when the week carries the three new premium kinds', () => {
+      const { getByTestId } = render(
+        <WeekEarningsLine
+          earnings={{
+            ...okEarnings,
+            lines: [
+              line(),
+              line({ kind: 'doubletime', minutes: 60, multiplier: 2 }),
+              line({ kind: 'holiday_premium', minutes: 480, multiplier: 1.5 }),
+              line({ kind: 'paid_holiday', minutes: 480 }),
+            ],
+          }}
+          timesheetStatus="submitted"
+          viewerRole="parent"
+          carerId="carer-1"
+          carerDisplayName="Amara"
+          totalMinutes={2940}
+        />
+      );
+      expect(getByTestId('hours-earnings-line-rate').props.children).toBe(
+        '37h = 20 reg + 1 DT + 8 holiday + 8 holiday'
+      );
+    });
+
     it('falls back to the structure line when any line carries an overtime multiplier', () => {
       const { getByTestId } = render(
         <WeekEarningsLine

@@ -35,7 +35,11 @@ import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { ScreenWash } from '@/src/components/ui/screen-wash';
 import { H1, Small } from '@/src/components/ui/typography';
 import { HouseholdSwitcher } from '@/src/domains/household';
-import { NeedsAttentionCard, useInboxItems } from '@/src/domains/inbox';
+import {
+  NeedsAttentionCard,
+  TermsProposalCard,
+  useInboxItems,
+} from '@/src/domains/inbox';
 import {
   PendingScheduleCard,
   ThisWeeksShiftsCard,
@@ -86,10 +90,14 @@ export function TodayScreen() {
   // the ladder there instead of colliding with these two.
   const { overdue: clockOutOverdue } = useOverdueClockOut();
   const inbox = useInboxItems();
+  const hasTermsProposal =
+    !inbox.isLoading &&
+    inbox.items.some(item => item.kind === 'terms_proposal');
   const uncoveredToday = useUncoveredToday(household?.id, household?.timezone);
   const attentionOwner = resolveAttentionOwner({
     overdue: clockOutOverdue,
     hasUncoveredCare: uncoveredToday.status === 'uncovered',
+    hasTermsProposal,
     hasInboxItems: !inbox.isLoading && inbox.items.length > 0,
   });
   // Same rows the coverage surface reads, off the same React Query keys, so
@@ -185,6 +193,7 @@ export function TodayScreen() {
                 respond CTA fell below the fold, and it is the only route into
                 the accept flow. See TodayScreen.cardOrder.test.tsx. */}
             <NeedsAttentionCard demoted={attentionOwner !== 'inbox'} />
+            <TermsProposalCard demoted={attentionOwner !== 'termsProposal'} />
             <PendingScheduleCard />
 
             {/* Not on a household she was REMOVED from: every write there is

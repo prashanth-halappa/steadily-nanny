@@ -170,6 +170,18 @@ describe('earningsStructureLine (§11.1)', () => {
     expect(earningsStructureLine(okEarnings([]))).toBeNull();
   });
 
+  it('names the three Phase-3 premium kinds in the same collapsed line the breakdown expands', () => {
+    const earnings = okEarnings([
+      line({ kind: 'regular', minutes: 2400 }),
+      line({ kind: 'doubletime', minutes: 60, multiplier: 2 }),
+      line({ kind: 'holiday_premium', minutes: 480, multiplier: 1.5 }),
+      line({ kind: 'paid_holiday', minutes: 480 }),
+    ]);
+    expect(earningsStructureLine(earnings)).toBe(
+      '57h = 40 reg + 1 DT + 8 holiday + 8 holiday'
+    );
+  });
+
   it('translates the short kind labels in Spanish', async () => {
     await i18n.changeLanguage('es');
     const earnings = okEarnings([

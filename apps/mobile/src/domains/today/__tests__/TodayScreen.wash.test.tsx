@@ -56,6 +56,7 @@ mock.module('@/src/domains/schedule', () => ({
 }));
 mock.module('@/src/domains/inbox', () => ({
   NeedsAttentionCard: () => null,
+  TermsProposalCard: () => null,
   useInboxItems: () => ({ items: [], isLoading: false }),
 }));
 mock.module('@/src/domains/today/hooks/useUncoveredToday', () => ({

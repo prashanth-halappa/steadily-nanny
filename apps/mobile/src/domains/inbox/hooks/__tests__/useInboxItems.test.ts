@@ -21,6 +21,9 @@ const listPendingChangeRequests = mock(() => Promise.resolve([] as unknown[]));
 const listMeShifts = mock(() => Promise.resolve([] as unknown[]));
 const listMembers = mock(() => Promise.resolve([] as unknown[]));
 const getCurrentProposal = mock(() => Promise.resolve(null as unknown));
+const listUnsettledReimbursements = mock(() =>
+  Promise.resolve([] as unknown[])
+);
 
 const CARER = '44444444-4444-4444-8444-444444444444';
 const PROPOSAL = {
@@ -80,6 +83,9 @@ beforeAll(async () => {
   mock.module('@/src/api/endpoints/termsProposals', () => ({
     termsProposalApi: { getCurrent: getCurrentProposal },
   }));
+  mock.module('@/src/api/endpoints/reimbursementSettlements', () => ({
+    reimbursementSettlementApi: { listUnsettled: listUnsettledReimbursements },
+  }));
 
   useInboxItems = (await import('../useInboxItems')).useInboxItems;
   useAuthStore = (await import('@/src/store/auth')).useAuthStore;
@@ -92,8 +98,10 @@ beforeEach(() => {
   listMeShifts.mockReset();
   listMembers.mockReset();
   getCurrentProposal.mockReset();
+  listUnsettledReimbursements.mockReset();
   listMembers.mockResolvedValue([]);
   getCurrentProposal.mockResolvedValue(null);
+  listUnsettledReimbursements.mockResolvedValue([]);
   listPatterns.mockResolvedValue([]);
   listTimesheets.mockResolvedValue([]);
   listPendingChangeRequests.mockResolvedValue([]);

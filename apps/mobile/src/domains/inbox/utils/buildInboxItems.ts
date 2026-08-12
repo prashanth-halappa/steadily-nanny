@@ -26,19 +26,22 @@
  *    (a carer-authored one is the parent's item, a parent counter is the
  *    carer's) — never to whoever wrote it. Same explicit role check as
  *    `pending_shift` (B5).
+ *  - terms ack: nanny-only, active member, live arrangement, ack state
+ *    still `none` — surfaces on NeedsAttentionCard, resolves on My pay.
  *
  * §2.2's urgency ordering: items are sorted by `sortKey` ascending (a rank
  * per kind, `pending_shift` forking on whether the shift starts within 48h),
- * ties broken by the date the item concerns, soonest first. Ranks the spec
- * assigns to kinds this build does not add (`reimbursement_owed`, `terms_ack`
- * — see the module doc on `inboxItemCopy.ts` for why) are reserved rather
- * than reused, so a later slice slots in without renumbering everything here.
+ * ties broken by the date the item concerns, soonest first.
+ *  - reimbursement_owed: parent/owner-only (§2.2 rank 8), one row per
+ *    carer-week from the household unsettled aggregate — never a zero.
  */
 
 import {
   TERMS_PROPOSAL_STATUSES,
   type TermsProposalDirection,
 } from '@steadily-nanny/shared-types';
+import type { PayArrangementAck } from '@steadily-nanny/shared-types/schemas/payArrangementAck.schema';
+import { resolveAckState } from '@/src/domains/pay/utils/ackState';
 import {
   isParentEditorRole,
   SETUP_ROLES,
@@ -115,6 +118,24 @@ export type InboxTermsProposalInput = {
   terms: { rate_minor: number; currency?: string | undefined };
 };
 
+/** One live arrangement the nanny has not acked yet — built in `useInboxItems`. */
+export type InboxTermsAckInput = {
+  household_id: string;
+  arrangement_id: string;
+  valid_from: string;
+  is_first_terms: boolean;
+  acks: readonly PayArrangementAck[];
+};
+
+/** One carer-week whose approved reimbursements are still owed back. */
+export type InboxUnsettledReimbursementInput = {
+  household_id: string;
+  carer_id: string;
+  week_start: string;
+  amount_minor: number;
+  currency: string;
+};
+
 export type InboxItem =
   | {
       kind: 'change_request';
@@ -171,6 +192,21 @@ export type InboxItem =
       /** Null when the proposal's terms carry none — the copy then names no
        * figure at all rather than an amount with an invented symbol. */
       currency: string | null;
+    }
+  | {
+      kind: 'terms_ack';
+      id: string;
+      householdId: string;
+      validFrom: string;
+      isFirstTerms: boolean;
+    }
+  | {
+      kind: 'reimbursement_owed';
+      id: string;
+      householdId: string;
+      weekStart: string;
+      amountMinor: number;
+      currency: string;
     };
 
 /**
@@ -205,6 +241,11 @@ export function buildInboxItems(input: {
   timesheets: readonly InboxTimesheetInput[];
   shifts?: readonly InboxShiftInput[];
   termsProposals?: readonly InboxTermsProposalInput[];
+  termsAcks?: readonly InboxTermsAckInput[];
+  unsettledReimbursements?: readonly InboxUnsettledReimbursementInput[];
+  /** When true, the viewer is a removed member — nanny inbox kinds that
+   * require an active membership (e.g. `terms_ack`) are suppressed. */
+  isPastMember?: boolean;
 }): InboxItem[] {
   const me = input.currentUserId ?? null;
   const nowMs = input.nowISO ? Date.parse(input.nowISO) : Date.now();
@@ -326,16 +367,44 @@ export function buildInboxItems(input: {
     });
   }
 
+  // §2.2 rank 9 — nanny-only; resolves on My pay, not on Today.
+  if (input.role === SETUP_ROLES.NANNY && !input.isPastMember) {
+    for (const row of input.termsAcks ?? []) {
+      if (resolveAckState(row.acks).kind !== 'none') continue;
+      items.push({
+        kind: 'terms_ack',
+        id: row.arrangement_id,
+        householdId: row.household_id,
+        validFrom: row.valid_from,
+        isFirstTerms: row.is_first_terms,
+      });
+    }
+  }
+
+  // §2.2 rank 8 — parent/owner only; one row per carer-week with approved
+  // reimbursements still owed. Weeks with nothing owed are absent from the
+  // aggregate — never fabricate a zero here.
+  if (isParentEditorRole(input.role)) {
+    for (const week of input.unsettledReimbursements ?? []) {
+      if (week.amount_minor < 1) continue;
+      items.push({
+        kind: 'reimbursement_owed',
+        id: `${week.household_id}:${week.carer_id}:${week.week_start}`,
+        householdId: week.household_id,
+        weekStart: week.week_start,
+        amountMinor: week.amount_minor,
+        currency: week.currency,
+      });
+    }
+  }
+
   items.sort((a, b) => compareItems(a, b, nowMs));
   return items;
 }
 
 /**
  * §2.2's urgency ordering. Rank ascending; a lower number renders first.
- * Ranks 8/9 belong to kinds this build does not add (`reimbursement_owed`,
- * `terms_ack`) and are deliberately left unassigned here rather than reused,
- * so a later slice's kind slots in at its spec'd rank without renumbering
- * every other kind.
+ * Rank 8 belongs to `reimbursement_owed` (parent/owner only).
  */
 function sortKey(item: InboxItem, nowMs: number): number {
   if (item.kind === 'pending_shift') {
@@ -360,6 +429,10 @@ function sortKey(item: InboxItem, nowMs: number): number {
       return 6;
     case 'stale_submitted_week':
       return 7;
+    case 'reimbursement_owed':
+      return 8;
+    case 'terms_ack':
+      return 9;
   }
 }
 
@@ -373,11 +446,14 @@ function sortDateFor(item: InboxItem): string | null {
     case 'queried_week':
     case 'submitted_week':
     case 'stale_submitted_week':
+    case 'reimbursement_owed':
       return item.weekStart;
     // The day it was sent — the oldest unanswered proposal first, which is
     // the one that has been blocking longest.
     case 'terms_proposal':
       return item.proposedAt;
+    case 'terms_ack':
+      return item.validFrom;
     // change_request carries no date on this shape — insertion order stands
     // (a stable sort's fallback), which is an acceptable tie-break: two
     // change requests competing for the same rank is rare, and neither one

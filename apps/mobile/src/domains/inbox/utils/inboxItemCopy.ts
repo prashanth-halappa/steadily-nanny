@@ -13,15 +13,10 @@
  * stays on the parent-facing `TodayCoverage` cause line, which already has
  * `tSchedule`'s `weekday.*` keys in scope; duplicating them into this
  * namespace for one kind was not worth it).
- *
- * `reimbursement_owed` and `terms_ack` are still NOT arms of `InboxItem` at
- * all (not stubbed, not partially wired): the ack wire does not exist on
- * `main` yet, and reimbursements have no household-wide "which weeks are
- * unsettled" read (only a per-week one) without a new aggregate endpoint.
- * A future slice adds the case here when the data exists, never before.
  */
 import type { Href } from 'expo-router';
 import type { InboxItem } from '@/src/domains/inbox/utils/buildInboxItems';
+import { formatDisplayDateWithYear } from '@/src/domains/pay/utils/payArrangementForm';
 import { isCoverAskUrgent } from '@/src/domains/schedule/utils/coverAskDeadline';
 import {
   formatClockTime,
@@ -50,6 +45,10 @@ export function hrefForItem(item: InboxItem): Href {
     // §7.2 — the review screen IS the proposal, in view mode.
     case 'terms_proposal':
       return `/(private)/pay/proposal/${item.id}` as Href;
+    case 'terms_ack':
+      return '/(private)/settings/my-pay' as Href;
+    case 'reimbursement_owed':
+      return `/(private)/(tabs)/hours?weekStart=${item.weekStart}` as Href;
   }
 }
 
@@ -109,6 +108,16 @@ export function titleForItem(
         : t('items.termsProposal.titleCountered', {
             date: proposedOn(item.proposedAt, timeZone),
           });
+    case 'terms_ack':
+      return item.isFirstTerms
+        ? t('items.termsAck.titleFirst')
+        : t('items.termsAck.titleChanged', {
+            date: formatDisplayDateWithYear(item.validFrom),
+          });
+    case 'reimbursement_owed':
+      return t('items.reimbursementOwed.title', {
+        amount: formatMoney(item.amountMinor, item.currency),
+      });
   }
 }
 
@@ -169,6 +178,12 @@ export function subtitleForItem(
             weekly: formatMoney(item.weeklyEquivalentMinor, item.currency),
           });
     }
+    case 'terms_ack':
+      return t('items.termsAck.subtitle');
+    case 'reimbursement_owed':
+      return t('items.reimbursementOwed.subtitle', {
+        week: formatDisplayDate(item.weekStart),
+      });
   }
 }
 
@@ -189,6 +204,10 @@ export function ctaForItem(item: InboxItem, t: InboxItemT): string {
       return t('items.pendingShift.cta');
     case 'terms_proposal':
       return t('items.termsProposal.cta');
+    case 'terms_ack':
+      return t('items.termsAck.cta');
+    case 'reimbursement_owed':
+      return t('items.reimbursementOwed.cta');
   }
 }
 

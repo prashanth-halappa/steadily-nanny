@@ -80,6 +80,8 @@ export function deriveReopenedPaidState(
   if (payments.length === 0) return null;
 
   const paidMinor = sumPaymentsMinor(payments);
+  if (paidMinor <= 0) return null;
+
   return {
     status: 'paid',
     paidMinor,

@@ -322,6 +322,42 @@ describe('WeekExportAction — Share PDF', () => {
     expect(html).toContain('£112.00');
   });
 
+  it('prints the paid holiday row under its own copy key, not the humanized fallback', async () => {
+    const { getByTestId } = renderAction({
+      earnings: {
+        ...okEarnings,
+        lines: [
+          ...okEarnings.lines,
+          {
+            kind: 'paid_holiday',
+            minutes: 480,
+            rate_minor: 2800,
+            multiplier: null,
+            amount_minor: 22_400,
+            from_date: '2026-08-04',
+            to_date: '2026-08-04',
+            arrangement_id: 'arr-1',
+          },
+        ],
+        gross_minor: 45_812,
+      },
+      paidState: {
+        status: 'partial',
+        paidMinor: 12000,
+        grossMinor: 45_812,
+        balanceMinor: 33_812,
+      },
+    });
+    fireEvent.press(getByTestId('hours-export-button'));
+    fireEvent.press(getByTestId('hours-export-pdf'));
+
+    await waitFor(() => expect(sharePdfMock).toHaveBeenCalled());
+    const html = sharePdfMock.mock.calls[0]?.[0] ?? '';
+    expect(html).toContain('label">earningsLinePaidHoliday<');
+    expect(html).not.toContain('label">Paid holiday<');
+    expect(html).toContain('£224.00');
+  });
+
   it('still produces a receipt for a week with no priced lines', async () => {
     const { getByTestId } = renderAction({
       earnings: null,

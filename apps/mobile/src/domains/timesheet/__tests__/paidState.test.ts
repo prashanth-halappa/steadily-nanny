@@ -145,4 +145,10 @@ describe('deriveReopenedPaidState', () => {
       balanceMinor: 0,
     });
   });
+
+  it('is null when corrections net the ledger to zero — never "Paid" over 0.00', () => {
+    expect(
+      deriveReopenedPaidState([payment(23_612), payment(-23_612)])
+    ).toBeNull();
+  });
 });

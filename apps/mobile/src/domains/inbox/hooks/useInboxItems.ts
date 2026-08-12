@@ -20,10 +20,13 @@ import {
 import { useQueries } from '@tanstack/react-query';
 import { useCallback, useMemo } from 'react';
 import { householdApi } from '@/src/api/endpoints/household';
+import { payArrangementApi } from '@/src/api/endpoints/payArrangements';
+import { reimbursementSettlementApi } from '@/src/api/endpoints/reimbursementSettlements';
 import { schedulePatternApi } from '@/src/api/endpoints/schedulePatterns';
 import { termsProposalApi } from '@/src/api/endpoints/termsProposals';
 import { timesheetApi } from '@/src/api/endpoints/timesheets';
 import { queryKeys } from '@/src/api/queryKeys';
+import type { InboxTermsAckInput } from '@/src/domains/inbox/utils/buildInboxItems';
 import { buildInboxItems } from '@/src/domains/inbox/utils/buildInboxItems';
 import { isParentEditorRole, SETUP_ROLES } from '@/src/domains/setup/types';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
@@ -41,6 +44,7 @@ export function useInboxItems() {
   const isInitialized = useAuthStore(s => s.isInitialized);
   const onboarding = useIsOnboarded();
   const role = onboarding.role;
+  const isPastMember = onboarding.isPastMember;
   const active = useActiveHousehold();
   const households = active.households;
   const timeZone = active.household?.timezone ?? 'UTC';
@@ -78,6 +82,16 @@ export function useInboxItems() {
       queryFn: () => timesheetApi.list(h.id),
       staleTime: QUERY_TIMING.STALE_1M,
       enabled: baseEnabled && isValidId(h.id),
+    })),
+  });
+
+  // §2.2 rank 8 — parent/owner only; one aggregate per household.
+  const unsettledReimbursementQueries = useQueries({
+    queries: households.map(h => ({
+      queryKey: queryKeys.reimbursementSettlements.unsettled(h.id),
+      queryFn: () => reimbursementSettlementApi.listUnsettled(h.id),
+      staleTime: QUERY_TIMING.STALE_1M,
+      enabled: baseEnabled && isValidId(h.id) && isParentEditorRole(role),
     })),
   });
 
@@ -131,6 +145,68 @@ export function useInboxItems() {
     })),
   });
 
+  // §2.2 rank 9 — nanny-only ack rows need the live arrangement + its ack list.
+  const arrangementQueries = useQueries({
+    queries: households.map(h => ({
+      queryKey: queryKeys.pay.current(h.id, currentUserId ?? undefined),
+      queryFn: () =>
+        payArrangementApi.getCurrent(h.id, currentUserId as string),
+      staleTime: QUERY_TIMING.STALE_1M,
+      enabled:
+        baseEnabled &&
+        role === SETUP_ROLES.NANNY &&
+        !isPastMember &&
+        isValidId(h.id) &&
+        isValidId(currentUserId),
+    })),
+  });
+
+  const arrangementHistoryQueries = useQueries({
+    queries: households.map((h, index) => {
+      const arrangement = arrangementQueries[index]?.data;
+      return {
+        queryKey: queryKeys.pay.history(h.id, currentUserId ?? undefined),
+        queryFn: () =>
+          payArrangementApi.getHistory(h.id, currentUserId as string),
+        staleTime: QUERY_TIMING.STALE_1M,
+        enabled:
+          baseEnabled &&
+          role === SETUP_ROLES.NANNY &&
+          !isPastMember &&
+          isValidId(h.id) &&
+          isValidId(currentUserId) &&
+          arrangement != null,
+      };
+    }),
+  });
+
+  const arrangementAckQueries = useQueries({
+    queries: households.map((h, index) => {
+      const arrangement = arrangementQueries[index]?.data;
+      return {
+        queryKey: queryKeys.pay.acks(
+          h.id,
+          currentUserId ?? undefined,
+          arrangement?.id
+        ),
+        queryFn: () =>
+          payArrangementApi.listAcks(
+            h.id,
+            currentUserId as string,
+            arrangement?.id as string
+          ),
+        staleTime: QUERY_TIMING.STALE_1M,
+        enabled:
+          baseEnabled &&
+          role === SETUP_ROLES.NANNY &&
+          !isPastMember &&
+          isValidId(h.id) &&
+          isValidId(currentUserId) &&
+          isValidId(arrangement?.id),
+      };
+    }),
+  });
+
   const changeRequests = useMemo(
     () => changeRequestsQuery.data ?? [],
     [changeRequestsQuery.data]
@@ -158,27 +234,75 @@ export function useInboxItems() {
     [proposalQueries]
   );
 
+  const termsAcks = useMemo((): InboxTermsAckInput[] => {
+    if (role !== SETUP_ROLES.NANNY || isPastMember || !currentUserId) {
+      return [];
+    }
+    const rows: InboxTermsAckInput[] = [];
+    for (let index = 0; index < households.length; index++) {
+      const arrangement = arrangementQueries[index]?.data;
+      if (!arrangement) continue;
+      const history = arrangementHistoryQueries[index]?.data ?? [];
+      const historyIndex = history.findIndex(row => row.id === arrangement.id);
+      const isFirstTerms =
+        historyIndex < 0 || history[historyIndex + 1] == null;
+      rows.push({
+        household_id: households[index]?.id ?? '',
+        arrangement_id: arrangement.id,
+        valid_from: arrangement.valid_from,
+        is_first_terms: isFirstTerms,
+        acks: arrangementAckQueries[index]?.data ?? [],
+      });
+    }
+    return rows;
+  }, [
+    role,
+    isPastMember,
+    currentUserId,
+    households,
+    arrangementQueries,
+    arrangementHistoryQueries,
+    arrangementAckQueries,
+  ]);
+
+  const unsettledReimbursements = useMemo(
+    () =>
+      unsettledReimbursementQueries.flatMap((q, index) =>
+        (q.data ?? []).map(week => ({
+          ...week,
+          household_id: households[index]?.id ?? '',
+        }))
+      ),
+    [unsettledReimbursementQueries, households]
+  );
+
   const items = useMemo(
     () =>
       buildInboxItems({
         role,
         currentUserId,
         todayISO: today,
+        isPastMember,
         changeRequests,
         patterns,
         timesheets,
         shifts: meShifts,
         termsProposals,
+        termsAcks,
+        unsettledReimbursements,
       }),
     [
       role,
       currentUserId,
       today,
+      isPastMember,
       changeRequests,
       patterns,
       timesheets,
       meShifts,
       termsProposals,
+      termsAcks,
+      unsettledReimbursements,
     ]
   );
 
@@ -191,7 +315,11 @@ export function useInboxItems() {
     changeRequestsQuery.isLoading ||
     meShiftsQuery.isLoading ||
     membersQueries.some(q => q.isLoading) ||
-    proposalQueries.some(q => q.isLoading);
+    proposalQueries.some(q => q.isLoading) ||
+    arrangementQueries.some(q => q.isLoading) ||
+    arrangementHistoryQueries.some(q => q.isLoading) ||
+    arrangementAckQueries.some(q => q.isLoading) ||
+    unsettledReimbursementQueries.some(q => q.isLoading);
 
   const isError =
     active.isError ||
@@ -200,13 +328,21 @@ export function useInboxItems() {
     changeRequestsQuery.isError ||
     meShiftsQuery.isError ||
     membersQueries.some(q => q.isError) ||
-    proposalQueries.some(q => q.isError);
+    proposalQueries.some(q => q.isError) ||
+    arrangementQueries.some(q => q.isError) ||
+    arrangementHistoryQueries.some(q => q.isError) ||
+    arrangementAckQueries.some(q => q.isError) ||
+    unsettledReimbursementQueries.some(q => q.isError);
 
   const refetch = useCallback(() => {
     for (const q of patternsQueries) void q.refetch();
     for (const q of timesheetsQueries) void q.refetch();
     for (const q of membersQueries) void q.refetch();
     for (const q of proposalQueries) void q.refetch();
+    for (const q of arrangementQueries) void q.refetch();
+    for (const q of arrangementHistoryQueries) void q.refetch();
+    for (const q of arrangementAckQueries) void q.refetch();
+    for (const q of unsettledReimbursementQueries) void q.refetch();
     void changeRequestsQuery.refetch();
     void meShiftsQuery.refetch();
   }, [
@@ -214,6 +350,10 @@ export function useInboxItems() {
     timesheetsQueries,
     membersQueries,
     proposalQueries,
+    arrangementQueries,
+    arrangementHistoryQueries,
+    arrangementAckQueries,
+    unsettledReimbursementQueries,
     changeRequestsQuery,
     meShiftsQuery,
   ]);

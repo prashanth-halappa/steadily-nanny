@@ -166,6 +166,15 @@ beforeAll(async () => {
   }));
   mockDayThread = mock(() => ({ data: [], isLoading: false }));
 
+  mock.module('@/src/hooks/mutations/useWithdrawCoverAsk', () => ({
+    useWithdrawCoverAsk: () => ({
+      mutateAsync: mock(() => Promise.resolve({})),
+      isPending: false,
+      error: null,
+      reset: mock(),
+    }),
+  }));
+
   mock.module('@/src/hooks/queries/useWeekTimeEntries', () => ({
     useWeekTimeEntries: mockWeekEntries,
   }));

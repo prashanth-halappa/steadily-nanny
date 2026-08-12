@@ -31,6 +31,8 @@ export const shiftEndpoints = {
   update: (shiftId: string) => `/v1/shifts/${shiftId}`,
   accept: (shiftId: string) => `/v1/shifts/${shiftId}/accept`,
   decline: (shiftId: string) => `/v1/shifts/${shiftId}/decline`,
+  withdrawCoverAsk: (shiftId: string) =>
+    `/v1/shifts/${shiftId}/withdraw-cover-ask`,
   runningLate: (shiftId: string) => `/v1/shifts/${shiftId}/running-late`,
   parentCover: (householdId: string) =>
     `/v1/households/${householdId}/shifts/parent-cover`,
@@ -136,6 +138,16 @@ export const shiftApi = {
    */
   decline: async (shiftId: string): Promise<Shift> => {
     const response = await apiClient.post(shiftEndpoints.decline(shiftId));
+    const parsed = ShiftEnvelopeSchema.safeParse(response.data.data);
+    if (!parsed.success) throw parsed.error;
+    return parsed.data.shift;
+  },
+
+  /** Parent-only: retract an unanswered cover ask. Body-less POST. */
+  withdrawCoverAsk: async (shiftId: string): Promise<Shift> => {
+    const response = await apiClient.post(
+      shiftEndpoints.withdrawCoverAsk(shiftId)
+    );
     const parsed = ShiftEnvelopeSchema.safeParse(response.data.data);
     if (!parsed.success) throw parsed.error;
     return parsed.data.shift;

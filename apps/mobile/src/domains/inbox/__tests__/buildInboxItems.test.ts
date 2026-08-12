@@ -7,9 +7,11 @@
  * seeing parent-only surfaces.
  */
 import { describe, expect, it } from 'bun:test';
+import type { PayArrangementAck } from '@steadily-nanny/shared-types/schemas/payArrangementAck.schema';
 import { SETUP_ROLES } from '@/src/domains/setup/types';
 import {
   buildInboxItems,
+  type InboxTermsAckInput,
   type InboxTermsProposalInput,
 } from '../utils/buildInboxItems';
 
@@ -683,6 +685,224 @@ describe('buildInboxItems — terms_proposal kind (§7.1)', () => {
       'queried_week',
       'terms_proposal',
       'pending_shift',
+    ]);
+  });
+});
+
+// §2.2 rank 9 — nanny-only ack prompt surfaced as an inbox row, not its own card.
+describe('buildInboxItems — terms_ack kind', () => {
+  const ARRANGEMENT_ID = 'arr-1';
+  const base = {
+    currentUserId: ME,
+    todayISO: '2026-08-25',
+    changeRequests: [],
+    patterns: [],
+    timesheets: [],
+    isPastMember: false,
+  };
+
+  function payAck(
+    kind: PayArrangementAck['kind'],
+    created_at: string
+  ): PayArrangementAck {
+    return {
+      id: `ack-${kind}`,
+      arrangement_id: ARRANGEMENT_ID,
+      carer_id: ME,
+      kind,
+      note: null,
+      created_at,
+    };
+  }
+
+  const liveAck: InboxTermsAckInput = {
+    household_id: 'hh-1',
+    arrangement_id: ARRANGEMENT_ID,
+    valid_from: '2026-08-01',
+    is_first_terms: true,
+    acks: [],
+  };
+
+  it('includes terms_ack for a nanny with a live arrangement and no ack yet', () => {
+    expect(
+      buildInboxItems({
+        ...base,
+        role: SETUP_ROLES.NANNY,
+        termsAcks: [liveAck],
+      })
+    ).toEqual([
+      {
+        kind: 'terms_ack',
+        id: ARRANGEMENT_ID,
+        householdId: 'hh-1',
+        validFrom: '2026-08-01',
+        isFirstTerms: true,
+      },
+    ]);
+  });
+
+  it('excludes terms_ack once she has recorded seen', () => {
+    expect(
+      buildInboxItems({
+        ...base,
+        role: SETUP_ROLES.NANNY,
+        termsAcks: [
+          {
+            ...liveAck,
+            acks: [payAck('seen', '2026-08-02T10:00:00.000Z')],
+          },
+        ],
+      })
+    ).toEqual([]);
+  });
+
+  it('excludes terms_ack once she has disagreed', () => {
+    expect(
+      buildInboxItems({
+        ...base,
+        role: SETUP_ROLES.NANNY,
+        termsAcks: [
+          {
+            ...liveAck,
+            acks: [payAck('disagreed', '2026-08-02T10:00:00.000Z')],
+          },
+        ],
+      })
+    ).toEqual([]);
+  });
+
+  it('never shows terms_ack to a parent', () => {
+    expect(
+      buildInboxItems({
+        ...base,
+        role: SETUP_ROLES.PARENT,
+        termsAcks: [liveAck],
+      })
+    ).toEqual([]);
+  });
+
+  it('never shows terms_ack to a past member', () => {
+    expect(
+      buildInboxItems({
+        ...base,
+        role: SETUP_ROLES.NANNY,
+        isPastMember: true,
+        termsAcks: [liveAck],
+      })
+    ).toEqual([]);
+  });
+
+  it('sorts terms_ack after stale_submitted_week (rank 9)', () => {
+    const items = buildInboxItems({
+      ...base,
+      role: SETUP_ROLES.NANNY,
+      timesheets: [
+        {
+          id: 'ts-stale',
+          carer_id: ME,
+          week_start: '2026-08-04',
+          status: 'submitted',
+          query_note: null,
+          updated_at: '2026-08-01',
+          total_minutes: 1200,
+        },
+      ],
+      termsAcks: [liveAck],
+    });
+
+    expect(items.map(i => i.kind)).toEqual([
+      'stale_submitted_week',
+      'terms_ack',
+    ]);
+  });
+});
+
+// §2.2 rank 8 — parent-only unsettled reimbursement weeks, one row per carer-week.
+describe('buildInboxItems — reimbursement_owed kind', () => {
+  const base = {
+    currentUserId: PARENT,
+    todayISO: '2026-08-25',
+    changeRequests: [],
+    patterns: [],
+    timesheets: [],
+  };
+
+  const unsettledWeek = {
+    household_id: 'hh-1',
+    carer_id: ME,
+    week_start: '2026-08-17',
+    amount_minor: 3480,
+    currency: 'GBP',
+  };
+
+  it('includes one reimbursement_owed row per unsettled carer-week for a parent', () => {
+    expect(
+      buildInboxItems({
+        ...base,
+        role: SETUP_ROLES.PARENT,
+        unsettledReimbursements: [unsettledWeek],
+      })
+    ).toEqual([
+      {
+        kind: 'reimbursement_owed',
+        id: 'hh-1:11111111-1111-4111-8111-111111111111:2026-08-17',
+        householdId: 'hh-1',
+        weekStart: '2026-08-17',
+        amountMinor: 3480,
+        currency: 'GBP',
+      },
+    ]);
+  });
+
+  it('never shows reimbursement_owed to a nanny', () => {
+    expect(
+      buildInboxItems({
+        ...base,
+        role: SETUP_ROLES.NANNY,
+        unsettledReimbursements: [unsettledWeek],
+      })
+    ).toEqual([]);
+  });
+
+  it('never shows reimbursement_owed to a helper', () => {
+    expect(
+      buildInboxItems({
+        ...base,
+        role: SETUP_ROLES.HELPER,
+        unsettledReimbursements: [unsettledWeek],
+      })
+    ).toEqual([]);
+  });
+
+  it('omits weeks with nothing owed — never fabricates a zero', () => {
+    expect(
+      buildInboxItems({
+        ...base,
+        role: SETUP_ROLES.PARENT,
+        unsettledReimbursements: [],
+      })
+    ).toEqual([]);
+  });
+
+  it('sorts reimbursement_owed after submitted_week (rank 8 vs 6)', () => {
+    const items = buildInboxItems({
+      ...base,
+      role: SETUP_ROLES.PARENT,
+      timesheets: [
+        {
+          id: 'ts-submitted',
+          carer_id: ME,
+          week_start: '2026-08-04',
+          status: 'submitted',
+          query_note: null,
+        },
+      ],
+      unsettledReimbursements: [unsettledWeek],
+    });
+
+    expect(items.map(i => i.kind)).toEqual([
+      'submitted_week',
+      'reimbursement_owed',
     ]);
   });
 });
