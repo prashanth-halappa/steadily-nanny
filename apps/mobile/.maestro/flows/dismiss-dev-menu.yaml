@@ -7,6 +7,24 @@
 # second sheet the whole time. Confirmed via manual probe 2026-08-12: tapping
 # 'Continue' lands on the Reload/Go-home menu, and closing THAT (its own 'X',
 # top-right of that card) reveals the real, healthy screen underneath.
+#
+# Beyond swallowing taps, a stuck sheet hides the WHOLE a11y tree beneath it,
+# which corrupts every visibility guard in reset-to-welcome.yaml — not just
+# this one. `tab-today`/`welcome-screen` both read as not-visible while it's
+# up, so the launcher-recovery arm can wrongly conclude the app is dead and
+# force a bundle reload mid-mount. Contributing factor in flow 03's original
+# "app crashed or stopped, no .ips, splash-screen failure frame" mystery —
+# not confirmed as the sole cause (a similar signature recurred on 02/11 even
+# with this file's fix in place, so treat the relaunch-crash class as still
+# open).
+#
+# `point: '90%,48%'` below is a screen-geometry dependency, calibrated on
+# iPhone 16 Pro (402x874pt / 1206x2622px). No accessibility label or text
+# exists on the second sheet's close control to select by instead — it's a
+# bare icon button from React Native's own dev-menu overlay, outside app
+# control. If this ever misses (different device/OS/sheet layout), the
+# symptom is the WHOLE suite failing `welcome-screen is visible`, since every
+# flow's login routes through this file.
 appId: com.jetto.steadily.nanny
 ---
 - runFlow:
