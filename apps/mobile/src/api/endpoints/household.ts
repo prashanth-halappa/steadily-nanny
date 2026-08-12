@@ -286,6 +286,14 @@ export const householdApi = {
    * parent picks which (§8.2). Omitted on every ordinary redemption, where
    * the invite already names the household.
    *
+   * `weekStartsOn` is D-8's FLSA workweek for the household the server
+   * INSTANTIATES from a draft when there is no absorption target (096). It
+   * belongs on this request because the redeemer is the employer and their
+   * device is the only one present: nothing ever sets `week_starts_on` on a
+   * nanny-authored draft, so without it a US family onboarded through 3-O
+   * takes the SQL default of Monday and D-8 locks it. Ignored on every other
+   * path — an existing family's pay week is not this device's to change.
+   *
    * The shared `RedeemHouseholdInviteSchema` is `{ code }` only, and a plain
    * Zod object strips unknown keys — parsing the body through it would
    * silently drop the target and absorb into a household nobody chose. Hence
@@ -293,13 +301,16 @@ export const householdApi = {
    */
   redeemInvite: async (
     code: string,
-    targetHouseholdId?: string
+    targetHouseholdId?: string,
+    weekStartsOn?: number
   ): Promise<HouseholdMember> => {
     const validated = RedeemHouseholdInviteSchema.extend({
       target_household_id: z.uuid().optional(),
+      week_starts_on: z.number().int().min(0).max(6).optional(),
     }).safeParse({
       code,
       ...(targetHouseholdId ? { target_household_id: targetHouseholdId } : {}),
+      ...(weekStartsOn !== undefined ? { week_starts_on: weekStartsOn } : {}),
     });
     if (!validated.success) throw validated.error;
 
