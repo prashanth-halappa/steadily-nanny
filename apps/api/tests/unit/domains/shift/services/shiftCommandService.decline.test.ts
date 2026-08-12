@@ -128,7 +128,14 @@ function makeQueries(
  * `mockClear()`).
  */
 async function flushPush(): Promise<void> {
-  await new Promise(resolve => setTimeout(resolve, 0));
+  // Several ticks, not one: the push branch awaits a chain of lookups before
+  // it sends, and each `await` needs its own turn of the loop. A single tick
+  // drains the chain only when every lookup happens to resolve synchronously,
+  // which is why one was enough on an idle machine and not under `qc`'s
+  // parallelism — the failure reappeared as a leaked call in the next test.
+  for (let i = 0; i < 10; i += 1) {
+    await new Promise(resolve => setTimeout(resolve, 0));
+  }
 }
 
 describe('ShiftCommandService.decline', () => {
