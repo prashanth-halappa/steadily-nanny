@@ -91,7 +91,47 @@ tags:
 - assertNotVisible:
     id: 'absorption-sheet'
 
+# --- Finish the wizard ---------------------------------------------------
+# Redeeming the code does NOT open the proposal — `CodeEntryScreen` pushes the
+# next SETUP step. For parent x join that is
+# [ROLE, START, CODE, NOTIFICATIONS_PERMISSION, CALENDAR_PERMISSION], so two
+# permission primers stand between the join and the tabs.
+#
+# `-skip`, never `-cta`: the CTAs fire the real OS permission dialogs, which
+# are system alerts this suite has no business answering. Both skips route
+# through `advance()`, and the last one calls `resetSetupProgress()` — which is
+# what releases the wizard and replaces to the tabs.
+- extendedWaitUntil:
+    visible:
+      id: 'notifications-permission-screen'
+    timeout: 25000
+- tapOn:
+    id: 'notifications-permission-screen-skip'
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'calendar-permission-screen'
+- tapOn:
+    id: 'calendar-permission-screen-skip'
+- extendedWaitUntil:
+    visible:
+      id: 'today-header'
+    timeout: 25000
+
 # --- Terms proposal: review, then accept behind D-7 ----------------------
+# The INBOX, not Settings > Pay. `pay-open-proposal-review` is nested inside
+# `PayArrangementScreen`'s arrangement-exists arm, so a carer whose FIRST
+# terms are still proposed renders `pay-empty-no-arrangement` and the review
+# row does not exist — which is precisely this case. Reported as a product
+# defect; the inbox is the surface that does carry the row.
+# The proposal id is minted by the redeem (migration 094 copies the draft's
+# row), so it cannot come from an env var — matched on its stable prefix.
+- openLink: steadilynanny:///(private)/inbox
+- extendedWaitUntil:
+    visible:
+      id: 'inbox-list'
+    timeout: 25000
+- tapOn:
+    id: 'inbox-item-terms_proposal-.*'
 - extendedWaitUntil:
     visible:
       id: 'proposal-review-screen'

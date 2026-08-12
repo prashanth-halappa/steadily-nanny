@@ -142,11 +142,16 @@ export class HouseholdInviteRepository extends BaseRepository<HouseholdInvite> {
    * `targetHouseholdId` null means "instantiate a new live household from the
    * draft"; non-null is §8.2's absorption target, explicitly picked by the
    * parent so absorption can never silently choose a household.
+   *
+   * `weekStartsOn` is D-8's workweek for an INSTANTIATED household only (096);
+   * null keeps whatever the draft carries. Absorption never reads it — an
+   * existing family's pay week is not the redeeming device's to change.
    */
   async redeemDraftHousehold(
     code: string,
     redeemerId: string,
-    targetHouseholdId: string | null
+    targetHouseholdId: string | null,
+    weekStartsOn: number | null
   ): Promise<RedeemDraftOutcome> {
     const { data, error } = await supabaseService.rpc(
       'redeem_draft_household_invite',
@@ -154,6 +159,7 @@ export class HouseholdInviteRepository extends BaseRepository<HouseholdInvite> {
         p_code: code,
         p_redeemer_id: redeemerId,
         p_target_household_id: targetHouseholdId,
+        p_week_starts_on: weekStartsOn,
       }
     );
 

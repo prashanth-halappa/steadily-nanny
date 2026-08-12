@@ -402,7 +402,33 @@ describe('redeemInvite — dispatch to the draft redemption function', () => {
     expect(inviteRepo.redeemDraftHousehold).toHaveBeenCalledWith(
       'ABC-234',
       'u-parent',
-      'h-target'
+      'h-target',
+      null
+    );
+  });
+
+  it('carries the REDEEMER’s week start into an instantiated household (D-8)', async () => {
+    // Nothing ever sets `week_starts_on` on a nanny-authored draft, so 094
+    // would otherwise copy 075's SQL default of 1 (Monday) into a brand-new
+    // live household — an FLSA workweek a US family never chose, locked the
+    // moment a timesheet exists. The employer's device decides it, exactly as
+    // it does on the parent-authored create path.
+    const { inviteRepo, svc } = redeemWith({
+      outcome: 'redeemed',
+      household_id: 'h-target',
+      membership: membershipRow,
+    });
+
+    await svc.redeemInvite('u-parent', {
+      code: 'ABC-234',
+      week_starts_on: 0,
+    });
+
+    expect(inviteRepo.redeemDraftHousehold).toHaveBeenCalledWith(
+      'ABC-234',
+      'u-parent',
+      null,
+      0
     );
   });
 
@@ -418,6 +444,7 @@ describe('redeemInvite — dispatch to the draft redemption function', () => {
     expect(inviteRepo.redeemDraftHousehold).toHaveBeenCalledWith(
       'ABC-234',
       'u-parent',
+      null,
       null
     );
   });

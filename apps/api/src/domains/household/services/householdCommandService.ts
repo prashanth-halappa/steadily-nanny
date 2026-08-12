@@ -454,7 +454,11 @@ export class HouseholdCommandService {
       userId,
       // "No live household of my own" is null, which 094 reads as
       // "instantiate one from the draft" (§2.1 row 1).
-      input.target_household_id ?? null
+      input.target_household_id ?? null,
+      // D-8. Only the instantiate branch reads it; null there means "keep the
+      // draft's value", which is 075's default. See the schema's note for why
+      // the redeemer's device is the honest source for an FLSA workweek.
+      input.week_starts_on ?? null
     );
 
     switch (result.outcome) {

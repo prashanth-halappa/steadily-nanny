@@ -23,6 +23,10 @@ tags:
 ---
 # --- Parent: query the submitted week ------------------------------------
 - runFlow: ../flows/login.yaml
+- runFlow:
+    file: ../flows/select-household.yaml
+    env:
+      HOUSEHOLD_ID: ${PHASE4_HOUSEHOLD_ID}
 - openLink: steadilynanny:///(private)/(tabs)/hours?weekStart=${PHASE4_SEED_WEEK_START}
 - waitForAnimationToEnd
 - assertVisible:
@@ -39,7 +43,10 @@ tags:
 - tapOn:
     id: 'hours-query-note-input'
 - inputText: 'Thursday looks short — can you check?'
-- hideKeyboard
+# NO `hideKeyboard` in a BottomSheetBase composer: Maestro's iOS dismiss
+# gesture lands on the sheet's own send button, so the note goes out early and
+# the explicit tap below then fails on an already-closed sheet (see flow 04's
+# note for the verified evidence). The direct tap works with the keyboard up.
 - tapOn:
     id: 'hours-query-submit'
 - waitForAnimationToEnd
@@ -51,6 +58,10 @@ tags:
 # --- Nanny: read the note on the thread and reply ------------------------
 - runFlow: ../flows/logout.yaml
 - runFlow: ../flows/login-nanny.yaml
+- runFlow:
+    file: ../flows/select-household.yaml
+    env:
+      HOUSEHOLD_ID: ${PHASE4_HOUSEHOLD_ID}
 - openLink: steadilynanny:///(private)/(tabs)/hours?weekStart=${PHASE4_SEED_WEEK_START}
 - waitForAnimationToEnd
 - assertVisible:
@@ -67,7 +78,7 @@ tags:
 - tapOn:
     id: 'hours-week-thread-composer'
 - inputText: 'Checked — Thursday is right, I left at 17:00.'
-- hideKeyboard
+# Same rule as the query composer above — no `hideKeyboard` before the send.
 - tapOn:
     id: 'hours-week-thread-send'
 - waitForAnimationToEnd
@@ -81,6 +92,10 @@ tags:
 # --- Parent: read the reply, withdraw the query, approve -----------------
 - runFlow: ../flows/logout.yaml
 - runFlow: ../flows/login.yaml
+- runFlow:
+    file: ../flows/select-household.yaml
+    env:
+      HOUSEHOLD_ID: ${PHASE4_HOUSEHOLD_ID}
 - openLink: steadilynanny:///(private)/(tabs)/hours?weekStart=${PHASE4_SEED_WEEK_START}
 - waitForAnimationToEnd
 - assertVisible:

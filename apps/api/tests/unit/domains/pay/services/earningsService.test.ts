@@ -1777,6 +1777,129 @@ describe('earningsService.computeWeekEarnings', () => {
     });
 
     // -----------------------------------------------------------------------
+    // The seventh day's OWN multiplier. Every case above sets
+    // `seventh_day_multiplier` equal to `overtime_multiplier`, which is
+    // exactly why the two could be confused for one number: both tiers land
+    // in the `overtime` bucket, and one multiplier priced the whole bucket.
+    // These two cases pull them apart — the only shape in which the seventh
+    // day's rate is observable at all.
+    // -----------------------------------------------------------------------
+
+    /**
+     * Every priced line reproduces its OWN total from the multiplier it
+     * DISPLAYS: a row saying "(1.5×)" must have been priced at 1.5×. Guards
+     * the number and the label from ever drifting apart.
+     */
+    function rateMatchesLabel(result: ReturnType<typeof ok>, base: number) {
+      for (const line of result.lines) {
+        if (line.multiplier === null) {
+          continue;
+        }
+        expect([line.kind, line.rate_minor]).toEqual([
+          line.kind,
+          Math.round((base * Math.round(line.multiplier * 100)) / 100),
+        ]);
+      }
+    }
+
+    it('prices a single-tier seventh day at ITS OWN multiplier, never the weekly overtime one', () => {
+      // Weekly overtime 1.5x, seventh day 2x — DIFFERENT numbers, the shape
+      // every case above is blind to.
+      // Mon..Sat 8h + Sun 10h = 58h, all seven days worked, single-tier
+      // seventh day (`seventh_day_doubletime_after_minutes` null).
+      //   Sunday priced WHOLE at the SEVENTH-DAY rate 2800 x 2 = 5600:
+      //     600m x 5600/60 =  56_000
+      //   remainder: Mon..Sat 6 x 480 = 2880 -> Mon..Fri regular (2400),
+      //              Saturday's 480 is WEEKLY overtime at 2800 x 1.5 = 4200:
+      //   2400m x 2800/60 = 112_000
+      //    480m x 4200/60 =  33_600
+      //   gross           = 201_600 = $2,016.00
+      // Priced at the weekly multiplier instead it comes to 187_600 — the
+      // seventh day short by $140.00, on a row that would still say "(1.5x)".
+      const result = ok(
+        computeWeekEarnings(
+          input({
+            arrangements: [
+              tieredArrangement({
+                seventh_day_multiplier: 2,
+                seventh_day_doubletime_after_minutes: null,
+              }),
+            ],
+            entries: [
+              ...[MON, TUE, WED, THU, FRI, SAT].map(d => worked(d, 480)),
+              worked(SUN, 600),
+            ],
+          })
+        )
+      );
+
+      // Two overtime rows, deliberately NOT merged: same arrangement, but the
+      // weekly tier and the seventh day are priced at different rates, and one
+      // merged row could not honestly state either.
+      expect(shape(result)).toEqual([
+        ['regular', 2400, 2800, 112_000],
+        ['overtime', 480, 4200, 33_600],
+        ['overtime', 600, 5600, 56_000],
+      ]);
+      expect(result.lines.map(l => [l.kind, l.multiplier])).toEqual([
+        ['regular', null],
+        ['overtime', 1.5],
+        ['overtime', 2],
+      ]);
+      rateMatchesLabel(result, 2800);
+      expect(result.gross_minor).toBe(201_600);
+      expect(result.lines.reduce((sum, l) => sum + l.minutes, 0)).toBe(3480);
+      expect(result.worked_minutes).toBe(3480);
+      expect(WeekEarningsSchema.safeParse(result).success).toBe(true);
+    });
+
+    it('prices BOTH seventh-day tiers at their own multipliers, weekly overtime at its', () => {
+      // Three distinct multipliers in one week: weekly OT 1.5x, seventh day
+      // 2x, double time 2.5x. Same seven days as above, second tier armed.
+      //   Sunday whole: 480m at 2x, then 120m at the double-time 2.5x.
+      //     480m x 5600/60 =  44_800
+      //     120m x 7000/60 =  14_000   (2800 x 2.5 = 7000)
+      //   remainder: Mon..Fri regular 2400, Saturday 480 weekly OT at 1.5x.
+      //   2400m x 2800/60 = 112_000
+      //    480m x 4200/60 =  33_600
+      //   gross           = 204_400 = $2,044.00
+      // With the bucket's weekly multiplier on the first tier: 193_200.
+      const result = ok(
+        computeWeekEarnings(
+          input({
+            arrangements: [
+              tieredArrangement({
+                seventh_day_multiplier: 2,
+                doubletime_multiplier: 2.5,
+              }),
+            ],
+            entries: [
+              ...[MON, TUE, WED, THU, FRI, SAT].map(d => worked(d, 480)),
+              worked(SUN, 600),
+            ],
+          })
+        )
+      );
+
+      expect(shape(result)).toEqual([
+        ['regular', 2400, 2800, 112_000],
+        ['overtime', 480, 4200, 33_600],
+        ['overtime', 480, 5600, 44_800],
+        ['doubletime', 120, 7000, 14_000],
+      ]);
+      expect(result.lines.map(l => [l.kind, l.multiplier])).toEqual([
+        ['regular', null],
+        ['overtime', 1.5],
+        ['overtime', 2],
+        ['doubletime', 2.5],
+      ]);
+      rateMatchesLabel(result, 2800);
+      expect(result.gross_minor).toBe(204_400);
+      expect(result.lines.reduce((sum, l) => sum + l.minutes, 0)).toBe(3480);
+      expect(WeekEarningsSchema.safeParse(result).success).toBe(true);
+    });
+
+    // -----------------------------------------------------------------------
     // Which day is the seventh depends on the HOUSEHOLD's workweek (3-E1).
     // -----------------------------------------------------------------------
 

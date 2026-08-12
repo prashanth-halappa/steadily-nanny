@@ -49,7 +49,17 @@
  * Run AFTER scripts/seed-test-users.ts (needs both test accounts to exist)
  * and after the nanny has joined "Our household" (flow 4).
  *
- * Usage: bun run scripts/seed-e2e-approval-fixtures.ts
+ * Usage: bun run scripts/seed-e2e-approval-fixtures.ts [--reset]
+ *
+ * `--reset` puts the five fixtures back at their pre-flow state BEFORE the
+ * insert pass, which is what makes Maestro flows 02/03/04 re-runnable: each of
+ * them consumes its fixture (02 accepts the extra shift, 03 demotes the
+ * confirmed one, 04 queries + approves the week), and without a reset the
+ * second run finds a disabled control and fails somewhere unrelated to the
+ * behaviour under test. It only ever touches rows in the seed-owned week
+ * (2026-01-05) plus that week's timesheet — never the household's real data —
+ * which is why it is safe to make it the default in the runner while the
+ * bare (never-updates) run stays the default for a human.
  *
  * @module scripts/seed-e2e-approval-fixtures
  */
@@ -65,7 +75,16 @@ const PARENT_EMAIL = 'parent@steadilynanny.test';
  *  project; the nanny belongs to both. Disambiguated below by also
  *  requiring the PARENT (not the LEAKCANARY "Other Parent") to be an owner. */
 const HOUSEHOLD_NAME = 'Our household';
-const TIMEZONE = 'Europe/London';
+/**
+ * FALLBACK ONLY. Every fixture is written in the HOUSEHOLD's timezone, read
+ * from `households.timezone` at run time — see `main`. Hardcoding a zone here
+ * is what made flow 04 unrunnable: the fixtures were written as Europe/London
+ * wall-clock into a household that is America/Los_Angeles, so a 09:00-17:00
+ * entry rendered as 01:00-09:00 on screen (the app is right — HoursScreen
+ * displays in `household.timezone`), and the flow's 17:45 correction then
+ * spanned 16h45m and was refused by the 16-hour cap.
+ */
+const FALLBACK_TIMEZONE = 'Europe/London';
 
 /** A Monday, chosen to sit well before the household's real schedule
  *  pattern (which starts materialising shifts in Feb 2026) and before any
@@ -201,6 +220,144 @@ function zonedWallTimeToUtcIso(
   return new Date(utc).toISOString();
 }
 
+/**
+ * Put the five fixtures back at their pre-flow state — see the `--reset` note
+ * in the module doc. Scoped to the seed-owned week by `local_date` /
+ * `week_start`, so it can never reach the household's real rows.
+ *
+ * Everything here is an UPDATE back to the seeding values (or a DELETE of a
+ * row a flow created), never an insert: the insert pass that follows fills in
+ * anything genuinely missing.
+ */
+async function resetFixtures(
+  householdId: string,
+  nannyId: string,
+  timezone: string
+): Promise<void> {
+  const { data: timesheet } = await db
+    .from('timesheets')
+    .select('id')
+    .eq('household_id', householdId)
+    .eq('carer_id', nannyId)
+    .eq('week_start', SEED_TIMESHEET_WEEK_START)
+    .maybeSingle();
+
+  if (timesheet) {
+    const { error: paymentsError } = await db
+      .from('payments')
+      .delete()
+      .eq('timesheet_id', timesheet.id);
+    if (paymentsError) throw paymentsError;
+
+    const { error: resetError } = await db
+      .from('timesheets')
+      .update({
+        status: 'submitted',
+        approved_by: null,
+        approved_at: null,
+        query_note: null,
+        reopen_reason: null,
+        earnings: null,
+        earnings_computed_at: null,
+        gross_minor: null,
+      })
+      .eq('id', timesheet.id);
+    if (resetError) throw resetError;
+  }
+
+  // Week-thread messages are `shift_events` rows with `shift_id = null` and
+  // `local_date = week_start` (weekThread.ts — there is no thread table), so
+  // clearing them is what puts the query flows back at an empty thread.
+  const { error: threadError } = await db
+    .from('shift_events')
+    .delete()
+    .eq('household_id', householdId)
+    .eq('local_date', SEED_TIMESHEET_WEEK_START)
+    .is('shift_id', null);
+  if (threadError) throw threadError;
+
+  // Times AND zone, not just the status: rows seeded before this script read
+  // the household's timezone hold Europe/London instants, which render hours
+  // off on screen and put flow 04's correction over the 16-hour cap.
+  const { error: entryError } = await db
+    .from('time_entries')
+    .update({
+      status: 'submitted',
+      timezone,
+      clock_in_at: zonedWallTimeToUtcIso(
+        SEED_TIME_ENTRY_LOCAL_DATE,
+        '09:00',
+        timezone
+      ),
+      clock_out_at: zonedWallTimeToUtcIso(
+        SEED_TIME_ENTRY_LOCAL_DATE,
+        '17:00',
+        timezone
+      ),
+    })
+    .eq('household_id', householdId)
+    .eq('carer_id', nannyId)
+    .eq('local_date', SEED_TIME_ENTRY_LOCAL_DATE);
+  if (entryError) throw entryError;
+
+  // Flow 02 accepts the extra shift; flow 03 edits the confirmed one, which
+  // demotes it AND bumps `sequence` and rewrites the times — so the times go
+  // back too, not just the status.
+  const { error: extraError } = await db
+    .from('shifts')
+    .update({
+      status: 'pending',
+      sequence: 0,
+      origin: 'parent_proposed',
+      timezone,
+      starts_at: zonedWallTimeToUtcIso(
+        SEED_EXTRA_SHIFT_LOCAL_DATE,
+        '08:00',
+        timezone
+      ),
+      ends_at: zonedWallTimeToUtcIso(
+        SEED_EXTRA_SHIFT_LOCAL_DATE,
+        '13:00',
+        timezone
+      ),
+    })
+    .eq('household_id', householdId)
+    .eq('carer_id', nannyId)
+    .eq('local_date', SEED_EXTRA_SHIFT_LOCAL_DATE)
+    .eq('kind', 'extra');
+  if (extraError) throw extraError;
+
+  const { error: demotedError } = await db
+    .from('shifts')
+    .update({
+      status: 'confirmed',
+      timezone,
+      sequence: 0,
+      origin: 'system_generated',
+      starts_at: zonedWallTimeToUtcIso(
+        SEED_DEMOTED_SHIFT_LOCAL_DATE,
+        '09:00',
+        timezone
+      ),
+      ends_at: zonedWallTimeToUtcIso(
+        SEED_DEMOTED_SHIFT_LOCAL_DATE,
+        '17:00',
+        timezone
+      ),
+    })
+    .eq('household_id', householdId)
+    .eq('carer_id', nannyId)
+    .eq('local_date', SEED_DEMOTED_SHIFT_LOCAL_DATE)
+    .eq('kind', 'cover');
+  if (demotedError) throw demotedError;
+
+  console.log(
+    `[reset]   seed week ${SEED_TIMESHEET_WEEK_START} -> submitted; ` +
+      'extra shift -> pending, cover shift -> confirmed 09:00-17:00, ' +
+      'payments + thread events cleared'
+  );
+}
+
 async function main(): Promise<void> {
   const nannyId = await findUserByEmail(NANNY_EMAIL);
   if (!nannyId) {
@@ -221,11 +378,12 @@ async function main(): Promise<void> {
   // which has no nanny member) by requiring an ACTIVE nanny membership too.
   const { data: candidateHouseholds, error: householdError } = await db
     .from('households')
-    .select('id, name')
+    .select('id, name, timezone')
     .eq('name', HOUSEHOLD_NAME);
   if (householdError) throw householdError;
 
   let householdId: string | null = null;
+  let householdTimezone: string | null = null;
   for (const candidate of candidateHouseholds ?? []) {
     const { data: membership } = await db
       .from('household_members')
@@ -236,6 +394,7 @@ async function main(): Promise<void> {
       .maybeSingle();
     if (membership) {
       householdId = candidate.id;
+      householdTimezone = candidate.timezone;
       break;
     }
   }
@@ -246,12 +405,19 @@ async function main(): Promise<void> {
     );
     process.exit(0);
   }
+  // Every wall-clock time below is nominal in THIS zone — see FALLBACK_TIMEZONE.
+  const timezone = householdTimezone ?? FALLBACK_TIMEZONE;
   console.log(`[found]   household "${HOUSEHOLD_NAME}" -> ${householdId}`);
+  console.log(`[found]   timezone ${timezone}`);
   console.log(`[found]   nanny ${NANNY_EMAIL} -> ${nannyId}`);
   console.log(`[found]   parent ${PARENT_EMAIL} -> ${parentId}`);
 
+  if (process.argv.includes('--reset')) {
+    await resetFixtures(householdId, nannyId, timezone);
+  }
+
   // --- Fixture 1: a shift scheduled for TODAY -------------------------------
-  const today = localDateOf(new Date(), TIMEZONE);
+  const today = localDateOf(new Date(), timezone);
   const { data: existingShift } = await db
     .from('shifts')
     .select('id, starts_at, ends_at, status')
@@ -267,8 +433,8 @@ async function main(): Promise<void> {
       `[skip]    shift already exists for today (${today}) -> ${todayShiftId}`
     );
   } else {
-    const startsAt = zonedWallTimeToUtcIso(today, '08:00', TIMEZONE);
-    const endsAt = zonedWallTimeToUtcIso(today, '17:00', TIMEZONE);
+    const startsAt = zonedWallTimeToUtcIso(today, '08:00', timezone);
+    const endsAt = zonedWallTimeToUtcIso(today, '17:00', timezone);
     const { data: created, error } = await db
       .from('shifts')
       .insert({
@@ -276,7 +442,7 @@ async function main(): Promise<void> {
         carer_id: nannyId,
         starts_at: startsAt,
         ends_at: endsAt,
-        timezone: TIMEZONE,
+        timezone: timezone,
         local_date: '1900-01-01', // overwritten by the trigger; proves it fires
         kind: 'extra', // not part of the Mon/Wed recurring pattern
         status: 'confirmed',
@@ -288,7 +454,7 @@ async function main(): Promise<void> {
     if (error) throw error;
     todayShiftId = created.id;
     console.log(
-      `[created] confirmed shift for today (${today}, 08:00-17:00 ${TIMEZONE}) -> ${todayShiftId}`
+      `[created] confirmed shift for today (${today}, 08:00-17:00 ${timezone}) -> ${todayShiftId}`
     );
   }
 
@@ -366,12 +532,12 @@ async function main(): Promise<void> {
     const startsAt = zonedWallTimeToUtcIso(
       SEED_EXTRA_SHIFT_LOCAL_DATE,
       '08:00',
-      TIMEZONE
+      timezone
     );
     const endsAt = zonedWallTimeToUtcIso(
       SEED_EXTRA_SHIFT_LOCAL_DATE,
       '13:00',
-      TIMEZONE
+      timezone
     );
     const { data: created, error } = await db
       .from('shifts')
@@ -380,7 +546,7 @@ async function main(): Promise<void> {
         carer_id: nannyId,
         starts_at: startsAt,
         ends_at: endsAt,
-        timezone: TIMEZONE,
+        timezone: timezone,
         local_date: '1900-01-01', // overwritten by the trigger
         kind: 'extra',
         status: 'pending',
@@ -393,7 +559,7 @@ async function main(): Promise<void> {
     if (error) throw error;
     extraShiftId = created.id;
     console.log(
-      `[created] pending extra shift (${SEED_EXTRA_SHIFT_LOCAL_DATE}, 08:00-13:00 ${TIMEZONE}) -> ${extraShiftId}`
+      `[created] pending extra shift (${SEED_EXTRA_SHIFT_LOCAL_DATE}, 08:00-13:00 ${timezone}) -> ${extraShiftId}`
     );
   }
 
@@ -428,12 +594,12 @@ async function main(): Promise<void> {
     const startsAt = zonedWallTimeToUtcIso(
       SEED_DEMOTED_SHIFT_LOCAL_DATE,
       '09:00',
-      TIMEZONE
+      timezone
     );
     const endsAt = zonedWallTimeToUtcIso(
       SEED_DEMOTED_SHIFT_LOCAL_DATE,
       '17:00',
-      TIMEZONE
+      timezone
     );
     const { data: created, error } = await db
       .from('shifts')
@@ -442,7 +608,7 @@ async function main(): Promise<void> {
         carer_id: nannyId,
         starts_at: startsAt,
         ends_at: endsAt,
-        timezone: TIMEZONE,
+        timezone: timezone,
         local_date: '1900-01-01', // overwritten by the trigger
         kind: 'cover',
         status: 'confirmed',
@@ -455,7 +621,7 @@ async function main(): Promise<void> {
     if (error) throw error;
     demotedShiftId = created.id;
     console.log(
-      `[created] confirmed shift (${SEED_DEMOTED_SHIFT_LOCAL_DATE}, 09:00-17:00 ${TIMEZONE}) -> ${demotedShiftId}`
+      `[created] confirmed shift (${SEED_DEMOTED_SHIFT_LOCAL_DATE}, 09:00-17:00 ${timezone}) -> ${demotedShiftId}`
     );
   }
 
@@ -490,12 +656,12 @@ async function main(): Promise<void> {
     const clockInAt = zonedWallTimeToUtcIso(
       SEED_TIME_ENTRY_LOCAL_DATE,
       '09:00',
-      TIMEZONE
+      timezone
     );
     const clockOutAt = zonedWallTimeToUtcIso(
       SEED_TIME_ENTRY_LOCAL_DATE,
       '17:00',
-      TIMEZONE
+      timezone
     );
     const { data: created, error } = await db
       .from('time_entries')
@@ -509,7 +675,7 @@ async function main(): Promise<void> {
         kind: 'worked',
         status: 'submitted',
         local_date: '1900-01-01', // overwritten by the trigger
-        timezone: TIMEZONE,
+        timezone: timezone,
         // 043's anonymity snapshot — NOT NULL since the column landed.
         carer_display_name: 'Test Nanny',
       })
@@ -518,7 +684,7 @@ async function main(): Promise<void> {
     if (error) throw error;
     timeEntryId = created.id;
     console.log(
-      `[created] submitted time entry (${SEED_TIME_ENTRY_LOCAL_DATE}, 09:00-17:00 ${TIMEZONE}) -> ${timeEntryId}`
+      `[created] submitted time entry (${SEED_TIME_ENTRY_LOCAL_DATE}, 09:00-17:00 ${timezone}) -> ${timeEntryId}`
     );
   }
 

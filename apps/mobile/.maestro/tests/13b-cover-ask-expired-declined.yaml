@@ -32,6 +32,10 @@ tags:
 ---
 # --- B: the expired ask ---------------------------------------------------
 - runFlow: ../flows/login-nanny.yaml
+- runFlow:
+    file: ../flows/select-household.yaml
+    env:
+      HOUSEHOLD_ID: ${PHASE4_HOUSEHOLD_ID}
 - openLink: steadilynanny:///(private)/schedule/shifts/${PHASE4_EXPIRED_ASK_SHIFT_ID}
 - waitForAnimationToEnd
 - assertVisible:
@@ -66,7 +70,8 @@ tags:
     id: 'shift-detail-decline'
 - waitForAnimationToEnd
 # Dialog title/body carry no testID (en/today.json shiftDetail.decline*).
-- assertVisible: 'Decline this shift?'
+# Regex: the bare `?` would quantify the preceding character (see flow 08).
+- assertVisible: '.*Decline this shift.*'
 - tapOn:
     id: 'shift-detail-decline-confirm'
 - waitForAnimationToEnd
@@ -79,6 +84,10 @@ tags:
 # --- Parent: the declined ask -------------------------------------------
 - runFlow: ../flows/logout.yaml
 - runFlow: ../flows/login.yaml
+- runFlow:
+    file: ../flows/select-household.yaml
+    env:
+      HOUSEHOLD_ID: ${PHASE4_HOUSEHOLD_ID}
 - openLink: steadilynanny:///(private)/schedule/shifts/${PHASE4_DECLINE_ASK_SHIFT_ID}
 - waitForAnimationToEnd
 - assertVisible:

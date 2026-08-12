@@ -19,24 +19,44 @@ tags:
     id: 'shift-detail-screen'
 - assertVisible:
     id: 'shift-detail-edit'
-# HARNESS-BLOCKED (Phase 4, 2026-08-11) — this flow cannot drive the time edit.
-# It was written against text inputs (`shift-detail-end` + inputText); the
-# screen now renders `TimeRangePicker`, whose two fields are NATIVE
-# `DateTimePicker`s. Their `shift-detail-times-start` / `-end` testIDs do not
-# reach the iOS accessibility tree at all (verified: "Element not found"
-# against a picker plainly on screen), so there is nothing to tap, and the
-# wheel that a tap would open has no stable anchor either.
+# Driving the native time picker (unblocked 2026-08-11; the older
+# HARNESS-BLOCKED note claimed `shift-detail-times-start` / `-end` never reach
+# the iOS accessibility tree — they DO. `maestro hierarchy` on this screen
+# shows both with real bounds and their rendered values, e.g. "5:00 PM").
 #
-# The behavior itself is NOT unverified: S13 (time change demotes to pending +
-# reconfirm push; note-only edit does not demote) is pinned by
-# `shiftCommandService.acceptConsent.test.ts` and
-# `shiftChangeRequestCommandService.test.ts`, both green.
+# The three steps below are one interaction with an iOS compact
+# `DateTimePicker`, and each is here for a reason:
+#   1. tap the field   — opens the hour/minute/AM-PM wheel in a POPOVER that
+#                        covers the screen and swallows every other selector.
+#   2. swipe the wheel — the popover's rows are NOT in the accessibility tree
+#                        (only the three SELECTED values are), so there is
+#                        nothing to tap; a swipe on the minutes column is the
+#                        only way to move it. Any change demotes the shift, so
+#                        this deliberately does not care WHICH minute it lands
+#                        on — it only has to leave the range valid, which any
+#                        minute does against a 09:00 start.
+#   3. tap the margin  — the popover only closes on a tap OUTSIDE it. 2% x is
+#                        the left gutter, clear of both the popover (x≥78pt)
+#                        and every control (content starts at x=22pt). Do NOT
+#                        dismiss near the bottom: 92% lands on the tab bar and
+#                        navigates to Today (verified).
 #
-# To unblock: give TimeRangePicker a tappable, id-carrying wrapper the E2E
-# layer can address, then restore the edit leg below.
+# The percentages are tied to the iPhone 16 Pro's 402x874pt screen that this
+# suite runs on. On a materially different screen, re-derive them from
+# `maestro hierarchy` rather than nudging them blind.
 - tapOn:
     id: 'shift-detail-times-end'
 - waitForAnimationToEnd
+- swipe:
+    start: 45%,60%
+    end: 45%,54%
+- waitForAnimationToEnd
+- tapOn:
+    point: 2%,50%
+- waitForAnimationToEnd
+# The popover is gone only if the screen underneath is addressable again.
+- assertVisible:
+    id: 'shift-detail-save'
 - tapOn:
     id: 'shift-detail-save'
 - waitForAnimationToEnd

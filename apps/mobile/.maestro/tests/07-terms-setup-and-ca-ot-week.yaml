@@ -29,6 +29,10 @@ tags:
   - money
 ---
 - runFlow: ../flows/login.yaml
+- runFlow:
+    file: ../flows/select-household.yaml
+    env:
+      HOUSEHOLD_ID: ${PHASE4_HOUSEHOLD_ID}
 
 # No settings row deep-links to setup; the route is /settings/pay/setup/<carerId>.
 - openLink: steadilynanny:///(private)/settings/pay/setup/${PHASE4_NANNY_ID}

@@ -72,7 +72,7 @@ describe('runCoverAskExpiryJob', () => {
     expect(push.notifyUser).toHaveBeenCalledTimes(1);
   });
 
-  it('SENDS BEFORE IT FLIPS — a process death must not close an ask nobody was told about', async () => {
+  it('FLIPS BEFORE IT SENDS — the CAS is the only thing that knows the ask is still unanswered', async () => {
     const order: string[] = [];
     const push = {
       canDeliver: mock(async () => true),
@@ -96,7 +96,27 @@ describe('runCoverAskExpiryJob', () => {
       clock
     );
 
-    expect(order).toEqual(['send', 'flip']);
+    expect(order).toEqual(['flip', 'send']);
+  });
+
+  it('NEVER tells a parent nobody is coming when the carer accepted inside the tick window', async () => {
+    // She accepts at 05:38; the 05:40 tick still has her ask in its `due` list.
+    // The CAS is what discovers that, so nothing may be sent before it runs —
+    // `cover_ask_expired:<shiftId>` is once-ever and nothing retracts it.
+    const push = makePush();
+
+    const result = await runCoverAskExpiryJob(
+      { listDueAsks: mock(async () => [askFor()]) },
+      { expireAsk: mock(async () => false) },
+      makeLog() as never,
+      makeParents(),
+      push as never,
+      clock
+    );
+
+    expect(push.notifyUser).not.toHaveBeenCalled();
+    expect(result.expiredCount).toBe(0);
+    expect(result.errorCount).toBe(0);
   });
 
   it('records the DEADLINE as the cancellation instant, not the moment the tick happened', async () => {
@@ -162,20 +182,6 @@ describe('runCoverAskExpiryJob', () => {
     expect([...EXPIRING_ASK_KINDS].sort()).toEqual(['cover', 'extra']);
   });
 
-  it('loses the race gracefully when the carer answered between the query and the flip', async () => {
-    const result = await runCoverAskExpiryJob(
-      { listDueAsks: mock(async () => [askFor()]) },
-      { expireAsk: mock(async () => false) }, // CAS found it no longer pending
-      makeLog() as never,
-      makeParents(),
-      makePush() as never,
-      clock
-    );
-
-    expect(result.expiredCount).toBe(0);
-    expect(result.errorCount).toBe(0);
-  });
-
   it('one failing ask never abandons the rest of the batch', async () => {
     const expireAsk = mock(async (id: string) => {
       if (id === 'ask-bad') throw new Error('db down');
@@ -212,6 +218,33 @@ describe('runCoverAskExpiryJob', () => {
     );
 
     expect(log.sweepStaleClaims).toHaveBeenCalledTimes(1);
+  });
+
+  it('flags a capped batch rather than dropping the remainder in silence', async () => {
+    const mod = await import('../../../src/jobs/coverAskExpiryJob');
+    const full = Array.from({ length: mod.EXPIRY_BATCH_LIMIT }, (_, i) =>
+      askFor({ id: `ask-${i}` })
+    );
+
+    const capped = await runCoverAskExpiryJob(
+      { listDueAsks: mock(async () => full) },
+      { expireAsk: mock(async () => true) },
+      makeLog() as never,
+      makeParents(),
+      makePush() as never,
+      clock
+    );
+    expect(capped.batchCapped).toBe(true);
+
+    const notCapped = await runCoverAskExpiryJob(
+      { listDueAsks: mock(async () => full.slice(0, 1)) },
+      { expireAsk: mock(async () => true) },
+      makeLog() as never,
+      makeParents(),
+      makePush() as never,
+      clock
+    );
+    expect(notCapped.batchCapped).toBe(false);
   });
 
   it('reports rather than throws when the candidate query fails', async () => {

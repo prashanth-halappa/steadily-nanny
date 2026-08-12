@@ -29,6 +29,10 @@ tags:
   - money
 ---
 - runFlow: ../flows/login.yaml
+- runFlow:
+    file: ../flows/select-household.yaml
+    env:
+      HOUSEHOLD_ID: ${PHASE4_HOUSEHOLD_ID}
 - openLink: steadilynanny:///(private)/(tabs)/hours?weekStart=${PHASE4_HOLIDAY_WEEK_START}
 - waitForAnimationToEnd
 - assertVisible:

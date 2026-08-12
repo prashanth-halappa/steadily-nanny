@@ -16,6 +16,12 @@ export interface RedeemInviteVariables {
    * chooses it; nothing else may.
    */
   targetHouseholdId?: string;
+  /**
+   * D-8: the FLSA workweek for a household the server INSTANTIATES from a
+   * nanny's draft (096). Device-derived by the caller, read only on that one
+   * path, and never a change to a household that already exists.
+   */
+  weekStartsOn?: number;
 }
 
 /**
@@ -29,8 +35,8 @@ export function useRedeemInvite() {
   const { t } = useTranslation('errors');
 
   return useMutation<HouseholdMember, Error, RedeemInviteVariables>({
-    mutationFn: ({ code, targetHouseholdId }) =>
-      householdApi.redeemInvite(code, targetHouseholdId),
+    mutationFn: ({ code, targetHouseholdId, weekStartsOn }) =>
+      householdApi.redeemInvite(code, targetHouseholdId, weekStartsOn),
     onSuccess: membership => {
       setHouseholdId(membership.household_id);
       queryClient.invalidateQueries({ queryKey: queryKeys.household.all });

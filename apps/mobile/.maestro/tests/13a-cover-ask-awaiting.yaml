@@ -26,6 +26,10 @@ tags:
   - coverask
 ---
 - runFlow: ../flows/login-nanny.yaml
+- runFlow:
+    file: ../flows/select-household.yaml
+    env:
+      HOUSEHOLD_ID: ${PHASE4_HOUSEHOLD_ID}
 
 # Same route the cover-ask push / inbox row opens.
 - openLink: steadilynanny:///(private)/schedule/shifts/${PHASE4_EXPIRED_ASK_SHIFT_ID}
