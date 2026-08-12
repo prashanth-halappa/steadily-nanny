@@ -102,22 +102,19 @@ tags:
 - assertVisible:
     id: 'pay-setup-group-overtime-content'
 
-# HARNESS-BLOCKED (2026-08-11, qa-sonnet): this tap reliably reports
-# COMPLETED (Maestro found `pay-setup-preset-button`, single instance,
-# enabled=true, unobstructed bounds — checked in two separate failed runs'
-# hierarchy dumps) but `pay-preset-sheet` never appears; no `pay-preset-*`
-# element exists anywhere in the post-tap hierarchy either time. The handler
-# is a bare `onPress={() => setPresetSheetOpen(true)}`
-# (PayTermsGroups.tsx:467) — no async gate, nothing that should need more
-# than the `waitForAnimationToEnd` already here. Tried: an extra
-# `waitForAnimationToEnd` before the tap (in case the group's just-opened
-# content was still settling) — no change, reverted. Not yet determined
-# whether this is a genuine tap-delivery gap in the harness (the group
-# above IS the newly-fixed keyboard-swipe path, so a leftover gesture
-# recognizer conflict is plausible) or a real regression in the button
-# itself — needs an interactive run (`maestro studio` or manual tap) to
-# settle, which this session did not have time for. Everything below this
-# line, through the end of the file, is UNVERIFIED this session.
+# `pay-setup-preset-button` is the LAST child of this group, deliberately
+# (PayTermsGroups.tsx §5.1: "presets never lead", the offer sits after every
+# field). It is in the hierarchy and Maestro reports the tap COMPLETED
+# ("dispatched", not "reacted to"), but the sheet never opened — the
+# keyboard from the date field above was still up and covering the bottom
+# ~45% of the screen, so the tap landed on the keyboard's input-accessory
+# band, not the button. `hideKeyboard` + scroll the button into view first.
+- hideKeyboard
+- scrollUntilVisible:
+    element:
+      id: 'pay-setup-preset-button'
+    direction: DOWN
+    timeout: 10000
 - tapOn:
     id: 'pay-setup-preset-button'
 - waitForAnimationToEnd

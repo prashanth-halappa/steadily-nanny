@@ -30,6 +30,24 @@ REPO_ROOT="/Users/prashanthhalappa/Documents/Steadily-Nanny/steadily-nanny"
 MAESTRO_DIR="${REPO_ROOT}/apps/mobile/.maestro"
 ENV_FILE="${REPO_ROOT}/apps/mobile/.env.maestro"
 API_BASE="${API_BASE:-http://localhost:8080}"
+SIM_UDID="${SIM_UDID:-3DE35533-5F01-4D79-80AC-15CF0DCDFECE}"
+
+# --- simulator prep (2026-08-11) -------------------------------------------
+# iOS QuickType's predictive bar sits on top of app buttons near the
+# keyboard — invisible to `maestro hierarchy` — and can eat a tap or commit
+# a stray suggested word into whatever was just typed (flow 11's "Y").
+# Disabling it is a standing simulator setting, not per-flow: re-run this on
+# a fresh simulator or after `clearState`.
+print "==> disabling iOS QuickType prediction on the simulator"
+xcrun simctl spawn "${SIM_UDID}" defaults write com.apple.Preferences KeyboardPrediction -bool false
+xcrun simctl spawn "${SIM_UDID}" defaults write com.apple.Preferences KeyboardAutocorrection -bool false
+xcrun simctl spawn "${SIM_UDID}" defaults write com.apple.Preferences KeyboardShowPredictionBar -bool false
+
+# A cold Metro bundle can take ~15s to build; reset-to-welcome's wait windows
+# are tuned for a warm one and fail as if the app were wedged. Warm it here
+# so the first flow isn't the one that pays for the rebuild.
+print "==> warming the Metro bundle"
+curl -s -o /dev/null --max-time 120 "http://localhost:8081/node_modules/expo-router/entry.bundle?platform=ios&dev=true" || true
 
 # --- credentials ----------------------------------------------------------
 if [[ ! -f "${ENV_FILE}" ]]; then

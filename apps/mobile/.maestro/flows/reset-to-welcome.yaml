@@ -6,6 +6,20 @@
 # "This is the developer menu" intro sheet, which then pops ASYNCHRONOUSLY
 # over a later flow and swallows every deep link (root cause of two full-suite
 # wipeouts, Phase 4). The sheet stays dismissed only while app data persists.
+#
+# KNOWN GAP (2026-08-11, qa-sonnet): this handles two states — "fully
+# onboarded" (tabs visible, sign out below) and "signed out" (welcome-screen,
+# no-op) — but not a third: authenticated with no household yet, mid the
+# onboarding wizard. That screen has no tab bar and no sign-out reachable
+# from here, so a flow that fails partway through onboarding (14, 15) leaves
+# the account stuck there, and every later flow's reset-to-welcome then
+# fails right here too. Recovery today is manual: `xcrun simctl terminate`
+# + `launch` (plain `launchApp` does not force a real process restart), or a
+# full `clearState:true` relaunch walking the re-armed intro sheet by hand.
+# A real fix would add a third arm here that detects an onboarding screen
+# (e.g. `role-screen`/`code-screen`) and recovers via one of those — not
+# attempted this session; it is not a one-liner given how many onboarding
+# screens can be mid-flight.
 appId: com.jetto.steadily.nanny
 ---
 - launchApp:
