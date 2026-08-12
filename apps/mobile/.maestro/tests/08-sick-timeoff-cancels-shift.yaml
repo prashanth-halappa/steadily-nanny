@@ -66,9 +66,15 @@ tags:
 - assertNotVisible:
     id: 'time-off-sick-confirm'
 # The sick BADGE is the label assertion. Row id carries a server-generated
-# uuid, so the id is matched as a regex on its stable prefix.
-- assertVisible:
-    id: 'time-off-kind-sick-.*'
+# uuid, so the id is matched as a regex on its stable prefix. A pre-existing
+# seeded time-off row on the same date sorts above the new one, pushing it
+# below the fold — same "assertVisible on a bare id doesn't mean it's on
+# SCREEN" gap as `shift-change-accept-.*` above, confirmed via screenshot
+# showing a second matching-date row cut off at the bottom (2026-08-12).
+- scrollUntilVisible:
+    element:
+      id: 'time-off-kind-sick-.*'
+    direction: DOWN
 - takeScreenshot: nanny-sick-day-booked
 
 # --- Parent: the auto-opened cancel request on today's shift --------------

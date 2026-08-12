@@ -36,30 +36,41 @@ appId: com.jetto.steadily.nanny
       - tapOn:
           text: 'Maybe later'
       - waitForAnimationToEnd
-- tapOn:
-    id: 'tab-settings'
-- waitForAnimationToEnd
-# It can also arrive AFTER the tab switch — same sheet, different moment.
+# Guarded, not a bare tapOn: a freshly-onboarding user (no household yet,
+# still in the wizard) has no tab bar at all, so 'tab-settings' does not
+# exist — confirmed root cause of flow 14's "Element not found: tab-settings"
+# (2026-08-12). The header's "safe to call unconditionally" claim only
+# accounted for HouseholdSwitcher rendering null; it did not account for the
+# tab bar itself being absent pre-onboarding-completion.
 - runFlow:
     when:
       visible:
-        text: 'Maybe later'
+        id: 'tab-settings'
     commands:
       - tapOn:
-          text: 'Maybe later'
+          id: 'tab-settings'
       - waitForAnimationToEnd
-- runFlow:
-    when:
-      visible:
-        id: 'household-switcher-trigger'
-    commands:
-      - tapOn:
-          id: 'household-switcher-trigger'
-      - waitForAnimationToEnd
-      - assertVisible:
-          id: 'household-switcher-sheet'
-      - tapOn:
-          id: 'household-switcher-option-${HOUSEHOLD_ID}'
-      - waitForAnimationToEnd
-      - assertNotVisible:
-          id: 'household-switcher-sheet'
+      # It can also arrive AFTER the tab switch — same sheet, different moment.
+      - runFlow:
+          when:
+            visible:
+              text: 'Maybe later'
+          commands:
+            - tapOn:
+                text: 'Maybe later'
+            - waitForAnimationToEnd
+      - runFlow:
+          when:
+            visible:
+              id: 'household-switcher-trigger'
+          commands:
+            - tapOn:
+                id: 'household-switcher-trigger'
+            - waitForAnimationToEnd
+            - assertVisible:
+                id: 'household-switcher-sheet'
+            - tapOn:
+                id: 'household-switcher-option-${HOUSEHOLD_ID}'
+            - waitForAnimationToEnd
+            - assertNotVisible:
+                id: 'household-switcher-sheet'
