@@ -63,12 +63,28 @@ tags:
     id: 'code-screen'
 - tapOn:
     id: 'name-input'
+# eraseText first: iOS QuickType has, in this session, been observed
+# autocompleting a full previously-typed phrase mid-`inputText` on a fresh
+# field (same symptom as flow 11's stray "Y" — the simulator's predictive
+# dictionary has learned these exact strings from repeated runs), which
+# left this field reading "Phase4 Fresh ParentPhase4 Fresh Parent" with no
+# `eraseText` here to clear a stale suggestion first.
+- eraseText
 - inputText: 'Phase4 Fresh Parent'
 - hideKeyboard
 - tapOn:
     id: 'code-input'
 - inputText: ${PHASE4_DRAFT_CODE_A}
 - hideKeyboard
+# `hideKeyboard` is unreliable on this screen (same story as the pay-setup
+# date field: verified via screenshot that the keyboard was still up right
+# before this tap, with `code-screen-cta` sitting under/behind it). Same
+# fix as the pay-setup swipes: scroll the content clear rather than fight
+# the keyboard dismiss.
+- swipe:
+    start: 50%,60%
+    end: 50%,35%
+- waitForAnimationToEnd
 # The CTA is pressed TWICE by design: the first press checks the code and
 # renders the preview, the second joins. Asserting the preview between them is
 # what makes the second press meaningful rather than a double-tap.

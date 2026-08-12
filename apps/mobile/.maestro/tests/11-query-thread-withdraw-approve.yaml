@@ -78,7 +78,23 @@ tags:
 - tapOn:
     id: 'hours-week-thread-composer'
 - inputText: 'Checked — Thursday is right, I left at 17:00.'
-# Same rule as the query composer above — no `hideKeyboard` before the send.
+# HARNESS-BLOCKED (2026-08-11, qa-sonnet): reproduced twice, once on stale
+# seed data and once on a freshly reset week — same result both times. The
+# composer ends up reading "...17:00.Y" (a stray "Y" appended, no space) and
+# the send never fires (composer stays populated, message never lands on the
+# thread — `hours-week-thread-send` bounds were [44,561][358,609] in the
+# failure hierarchy, i.e. right at the keyboard's top edge). Best working
+# theory: `hours-week-thread-send` sits close enough to the keyboard that
+# iOS's native QuickType predictive-text bar — a system overlay, invisible
+# to Maestro's RN hierarchy — renders on top of it, so the tap lands on the
+# "Y" suggestion pill (visible in the failure screenshot) instead of the
+# button beneath it. Same "visibility is hierarchy-based, not
+# occlusion-based" trap as the pay-setup swipe fixes above, but the
+# established fix there (an explicit swipe) does not obviously apply to a
+# text composer, and this flow's own comment above already documents that
+# `hideKeyboard` here causes a DIFFERENT bug (the dismiss gesture itself
+# lands on the send button and fires early). Did not attempt a fix — the two
+# known mitigations conflict, and this needs a decision, not a guess.
 - tapOn:
     id: 'hours-week-thread-send'
 - waitForAnimationToEnd

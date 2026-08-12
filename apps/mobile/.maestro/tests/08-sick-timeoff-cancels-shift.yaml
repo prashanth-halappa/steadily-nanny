@@ -90,6 +90,19 @@ tags:
 # D-23's actual product claim: a sick day did not just write a note, it opened
 # a request the parent has to answer. The changes section only renders when at
 # least one change request exists, so this is not tautological.
+# HARNESS-BLOCKED or DEFECT, unresolved (2026-08-11, qa-sonnet): reproduced
+# twice. The Changes card renders (`shift-change-raised-by-<id>` /
+# `-created-<id>` are both present, "Requested by Test Nanny" / "Pending"
+# visible) but NEITHER role-gated block does — not accept/decline, not
+# withdraw/awaiting either. Confirmed via a manual settings deep-link
+# mid-run that the session really is the parent (Test Parent /
+# parent@steadilynanny.test), so `isOwnRequest` in
+# ShiftDetailScreen.tsx:662-663 (`req.requested_by !== null &&
+# req.requested_by === currentUserId`) should be false and the
+# `!isOwnRequest` branch (line 733) should render — it does not. Have not
+# ruled out a `currentUserId` hydration race right after the role-switch
+# login lands on this deep-linked screen. Not changing app behavior to
+# chase this further per the routing rule — recording it and moving on.
 - assertVisible:
     id: 'shift-detail-changes'
 - assertVisible:

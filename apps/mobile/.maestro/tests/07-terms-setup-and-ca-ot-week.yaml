@@ -74,6 +74,19 @@ tags:
 - assertNotVisible:
     id: 'pay-setup-date-error'
 
+# The keyboard is STILL up from the date field (same story as the rate→date
+# transition above: hideKeyboard is a no-op on this screen, scrollUntilVisible
+# no-ops because Maestro's visibility check is hierarchy-based, not
+# occlusion-based). Left alone, `pay-setup-group-overtime` sits right at the
+# keyboard's top edge and either swallows the tap or opens content that
+# renders behind the keyboard — "Element not found: pay-setup-preset-button"
+# either way. Same swipe fix, same reason: scroll the content, don't fight
+# the keyboard.
+- swipe:
+    start: 50%,60%
+    end: 50%,35%
+- waitForAnimationToEnd
+
 # --- Overtime group: apply the preset behind the D-7 checkbox -------------
 # TermGroup only opens by default when the group already has a value, and a
 # first-ever arrangement has none — so open it, guarded so a re-render that
@@ -89,6 +102,22 @@ tags:
 - assertVisible:
     id: 'pay-setup-group-overtime-content'
 
+# HARNESS-BLOCKED (2026-08-11, qa-sonnet): this tap reliably reports
+# COMPLETED (Maestro found `pay-setup-preset-button`, single instance,
+# enabled=true, unobstructed bounds — checked in two separate failed runs'
+# hierarchy dumps) but `pay-preset-sheet` never appears; no `pay-preset-*`
+# element exists anywhere in the post-tap hierarchy either time. The handler
+# is a bare `onPress={() => setPresetSheetOpen(true)}`
+# (PayTermsGroups.tsx:467) — no async gate, nothing that should need more
+# than the `waitForAnimationToEnd` already here. Tried: an extra
+# `waitForAnimationToEnd` before the tap (in case the group's just-opened
+# content was still settling) — no change, reverted. Not yet determined
+# whether this is a genuine tap-delivery gap in the harness (the group
+# above IS the newly-fixed keyboard-swipe path, so a leftover gesture
+# recognizer conflict is plausible) or a real regression in the button
+# itself — needs an interactive run (`maestro studio` or manual tap) to
+# settle, which this session did not have time for. Everything below this
+# line, through the end of the file, is UNVERIFIED this session.
 - tapOn:
     id: 'pay-setup-preset-button'
 - waitForAnimationToEnd
