@@ -64,6 +64,7 @@ import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types/schemas/no
 import type {
   CreateReimbursementSettlementInput,
   ReimbursementSettlement,
+  UnsettledReimbursementWeek,
 } from '@steadily-nanny/shared-types/schemas/reimbursementSettlement.schema';
 import {
   HOUSEHOLD_ROLES,
@@ -73,10 +74,16 @@ import {
 } from '../../household';
 import { notifyUser } from '../../notification/services/householdPush';
 import type { PushPayload } from '../../notification/types';
+import { TimesheetNotFoundError } from '../../timesheet/errors/timesheetErrors';
+import {
+  type PayrollReadScope,
+  timesheetQueryService,
+} from '../../timesheet/services/timesheetQueryService';
 import {
   DEFAULT_WEEK_STARTS_ON,
   weekEndExclusive,
   weekStartOf,
+  weekStartOfLocalDate,
 } from '../../timesheet/utils/weekStart';
 import {
   NothingToSettleError,
@@ -100,13 +107,22 @@ const SETTLEMENT_PARENT_ROLES: ReadonlySet<string> = new Set([
 /** What the read gate resolved: everyone's rows, or one carer's. */
 type ReadScope = { kind: 'household' } | { kind: 'own'; carerId: string };
 
+/** Injectable payroll-read gate — defaults to `timesheetQueryService`. */
+export interface PayrollReadScopeResolver {
+  resolvePayrollReadScope(
+    userId: string,
+    householdId: string
+  ): Promise<PayrollReadScope>;
+}
+
 export class ReimbursementSettlementService {
   constructor(
     private readonly settlementRepo: ReimbursementSettlementRepository = new ReimbursementSettlementRepository(),
     private readonly expenseRepo: ExpenseRepository = new ExpenseRepository(),
     private readonly memberRepo: HouseholdMemberRepository = new HouseholdMemberRepository(),
     private readonly householdRepo: HouseholdRepository = new HouseholdRepository(),
-    private readonly push: SettlementPushNotifier = { notifyUser }
+    private readonly push: SettlementPushNotifier = { notifyUser },
+    private readonly payrollReader: PayrollReadScopeResolver = timesheetQueryService
   ) {}
 
   /**
@@ -133,6 +149,105 @@ export class ReimbursementSettlementService {
       return rows;
     }
     return rows.filter(row => row.carer_id === scope.carerId);
+  }
+
+  /**
+   * Every household-local week with approved reimbursements that have NOT been
+   * settled yet — one row per (carer, week_start) with the owed total in
+   * integer minor units. READ GATING: `timesheetQueryService.assertPayrollReader`
+   * via `resolvePayrollReadScope` — parents see every carer, a nanny only hers,
+   * a helper gets the opaque 404. Weeks with nothing owed return an empty list,
+   * never a zero row; currency-mismatched weeks are omitted entirely.
+   */
+  async listUnsettled(
+    callerId: string,
+    householdId: string
+  ): Promise<UnsettledReimbursementWeek[]> {
+    const scope = await this.resolvePayrollReadScope(callerId, householdId);
+
+    const household = await this.householdRepo.findById(householdId);
+    if (!household) {
+      throw new ReimbursementSettlementNotFoundError(householdId, {
+        reason: 'household_not_accessible',
+      });
+    }
+
+    const weekStartsOn = household.week_starts_on ?? DEFAULT_WEEK_STARTS_ON;
+    const householdCurrency = household.currency;
+
+    const approved =
+      await this.expenseRepo.listApprovedForHousehold(householdId);
+    const settlements = await this.settlementRepo.listForHousehold(householdId);
+
+    const settledKeys = new Set(
+      settlements.map(row => `${row.carer_id}:${row.week_start}`)
+    );
+
+    const grouped = new Map<
+      string,
+      {
+        carerId: string;
+        weekStart: string;
+        total: number;
+        currencies: Set<string>;
+      }
+    >();
+
+    for (const claim of approved) {
+      if (!claim.carer_id) {
+        continue;
+      }
+      if (scope.kind === 'own' && claim.carer_id !== scope.carerId) {
+        continue;
+      }
+      const weekStart = weekStartOfLocalDate(claim.local_date, weekStartsOn);
+      const key = `${claim.carer_id}:${weekStart}`;
+      if (settledKeys.has(key)) {
+        continue;
+      }
+      if (claim.amount_minor == null) {
+        continue;
+      }
+
+      const bucket = grouped.get(key) ?? {
+        carerId: claim.carer_id,
+        weekStart,
+        total: 0,
+        currencies: new Set<string>(),
+      };
+      bucket.total += claim.amount_minor;
+      bucket.currencies.add(claim.currency);
+      grouped.set(key, bucket);
+    }
+
+    const weeks: UnsettledReimbursementWeek[] = [];
+    for (const bucket of grouped.values()) {
+      if (bucket.total === 0) {
+        continue;
+      }
+      if (
+        bucket.currencies.size !== 1 ||
+        !bucket.currencies.has(householdCurrency)
+      ) {
+        continue;
+      }
+      weeks.push({
+        carer_id: bucket.carerId,
+        week_start: bucket.weekStart,
+        amount_minor: bucket.total,
+        currency: householdCurrency,
+      });
+    }
+
+    weeks.sort((a, b) => {
+      const byWeek = a.week_start.localeCompare(b.week_start);
+      if (byWeek !== 0) {
+        return byWeek;
+      }
+      return a.carer_id.localeCompare(b.carer_id);
+    });
+
+    return weeks;
   }
 
   /**
@@ -250,6 +365,32 @@ export class ReimbursementSettlementService {
       household?.timezone ?? 'UTC',
       household?.week_starts_on ?? DEFAULT_WEEK_STARTS_ON
     );
+  }
+
+  /**
+   * `timesheetQueryService.assertPayrollReader`, restated as a cross-domain read
+   * gate — see `listUnsettled`. Maps `TimesheetNotFoundError` to this domain's
+   * opaque 404 so callers learn nothing about a household that isn't theirs.
+   */
+  private async resolvePayrollReadScope(
+    callerId: string,
+    householdId: string
+  ): Promise<PayrollReadScope> {
+    try {
+      return await this.payrollReader.resolvePayrollReadScope(
+        callerId,
+        householdId
+      );
+    } catch (error) {
+      if (error instanceof TimesheetNotFoundError) {
+        throw new ReimbursementSettlementNotFoundError(householdId, {
+          reason:
+            (error.metadata?.reason as string | undefined) ??
+            'household_not_accessible',
+        });
+      }
+      throw error;
+    }
   }
 
   /**

@@ -182,6 +182,29 @@ export class ExpenseRepository extends BaseRepository<Expense> {
    * `weekEarningsService` consumes `payArrangementRepository.listForCarer`:
    * a household-scoped fetch the caller narrows to one carer in process.
    */
+  /**
+   * Every APPROVED claim in a household — the unsettled-reimbursement aggregate
+   * folds these by carer and household-local week. Household-scoped only;
+   * carer narrowing lives in the service (`assertPayrollReader` scope).
+   */
+  async listApprovedForHousehold(householdId: string): Promise<Expense[]> {
+    const { data, error } = await supabaseService
+      .from(this.table)
+      .select('*')
+      .eq('household_id', householdId)
+      .eq('status', 'approved')
+      .order('local_date', { ascending: true });
+
+    if (error) {
+      throw new DatabaseError(
+        'Failed to list approved expenses for household',
+        'DATABASE_ERROR',
+        { details: error.message, householdId }
+      );
+    }
+    return (data ?? []) as Expense[];
+  }
+
   async listApprovedForWeek(
     householdId: string,
     weekStart: string,

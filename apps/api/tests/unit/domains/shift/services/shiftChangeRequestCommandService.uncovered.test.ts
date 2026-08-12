@@ -6,6 +6,12 @@ import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types/schemas/notification.schema';
 import type { ShiftWithChildren } from '../../../../../src/domains/shift/repositories/shiftRepository';
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+const DIGEST_WINDOW_START = new Date(Date.now() + 28 * DAY_MS).toISOString();
+const DIGEST_WINDOW_END = new Date(
+  Date.now() + 28 * DAY_MS + 3 * 60 * 60 * 1000
+).toISOString();
+
 const household = {
   id: 'h1',
   name: 'Smiths',
@@ -195,8 +201,8 @@ describe('ShiftChangeRequestCommandService.cancel — uncovered detection', () =
         {
           childId: 'c1',
           commitmentId: 'cm1',
-          startsAt: '2026-08-13T09:00:00.000Z',
-          endsAt: '2026-08-13T12:00:00.000Z',
+          startsAt: DIGEST_WINDOW_START,
+          endsAt: DIGEST_WINDOW_END,
         },
       ],
       pushed: [],

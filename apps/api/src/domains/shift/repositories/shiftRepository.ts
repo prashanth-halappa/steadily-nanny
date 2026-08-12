@@ -188,6 +188,50 @@ export class ShiftRepository extends BaseRepository<Shift> {
   }
 
   /**
+   * CAS pending → cancelled for a parent withdrawing an unanswered cover ask.
+   * `cancelled_by` is the withdrawing parent — the discriminator from EXPIRY,
+   * which lands on `cancelled` with `cancelled_by` null (migration 088 /
+   * `coverAskExpiryJob`). Same status, different actor: expired means nobody
+   * acted; withdrawn means the family retracted the question.
+   */
+  async withdrawCoverAsk(
+    shiftId: string,
+    cancelledBy: string,
+    cancelledAt: string
+  ): Promise<Shift> {
+    await this.assertMutable(shiftId);
+    const { data, error } = await supabaseService
+      .from(this.table)
+      .update({
+        status: 'cancelled',
+        cancelled_at: cancelledAt,
+        cancelled_by: cancelledBy,
+        cancellation_paid: false,
+      })
+      .eq('id', shiftId)
+      .eq('status', 'pending')
+      .select()
+      .maybeSingle();
+
+    if (error) {
+      throw new DatabaseError(
+        'Failed to withdraw cover ask',
+        'DATABASE_ERROR',
+        { details: error.message, shiftId }
+      );
+    }
+    if (!data) {
+      throw new ValidationError(
+        'Only a pending shift can be withdrawn',
+        'SHIFT_NOT_PENDING',
+        400,
+        { shiftId }
+      );
+    }
+    return data as Shift;
+  }
+
+  /**
    * Shifts overlapping `[from, to)`, each carrying its `shift_children` —
    * the primary calendar feed, sized to avoid an N+1 per-shift children
    * fetch. Overlap semantics match `busyBlockRepository.listForCarer`: a

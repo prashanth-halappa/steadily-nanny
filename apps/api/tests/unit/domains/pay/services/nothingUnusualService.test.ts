@@ -16,6 +16,9 @@ import {
   wasTimeEntryEdited,
 } from '../../../../../src/domains/pay/services/nothingUnusualService';
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+const FIXTURE_TS = new Date(Date.now() - 2 * DAY_MS).toISOString();
+
 function baseInput(
   over: Partial<NothingUnusualInput> = {}
 ): NothingUnusualInput {
@@ -380,7 +383,7 @@ describe('NothingUnusualService.computeForWeek — impure wrapper', () => {
           timeEntry({
             status: 'voided',
             shift_id: null,
-            updated_at: '2026-08-10T00:00:00.000Z',
+            updated_at: FIXTURE_TS,
           }),
         ]),
       }),

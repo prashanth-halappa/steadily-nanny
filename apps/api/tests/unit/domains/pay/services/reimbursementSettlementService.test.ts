@@ -20,6 +20,10 @@ import {
 } from '../../../../../src/domains/pay/errors/payErrors';
 import { ReimbursementSettlementService } from '../../../../../src/domains/pay/services/reimbursementSettlementService';
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+const FIXTURE_TS = new Date(Date.now() - 2 * DAY_MS).toISOString();
+const FIXTURE_TS_OFFSET = FIXTURE_TS.replace('.000Z', '+00:00');
+
 /**
  * `+00:00` deliberately on one fixture and `.000Z` on the other — the two
  * legal serialisations of a `timestamptz` (GOLDEN-FIXES #25), so anything
@@ -39,7 +43,7 @@ function settlementRow(
     settled_at: '2026-08-10',
     note: 'Cash on Friday',
     recorded_by: 'parent-1',
-    created_at: '2026-08-10T09:00:00+00:00',
+    created_at: FIXTURE_TS_OFFSET,
     ...overrides,
   };
 }
@@ -85,7 +89,7 @@ function makeSettlementRepo(overrides: Record<string, unknown> = {}): any {
       settlementRow({
         id: 'theirs',
         carer_id: 'carer-2',
-        created_at: '2026-08-10T09:00:00.000Z',
+        created_at: FIXTURE_TS,
       }),
     ]),
     create: mock(async (data: Record<string, unknown>) =>

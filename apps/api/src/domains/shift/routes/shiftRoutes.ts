@@ -94,4 +94,11 @@ router.delete(
   asyncHandler(ShiftController.removeParentCover)
 );
 
+// Parent withdraw an unanswered cover ask — owner/parent only in the service.
+router.post(
+  '/:shiftId/withdraw-cover-ask',
+  ...authWithOwnership(ShiftIdParamSchema, shiftOwnership),
+  asyncHandler(ShiftController.withdrawCoverAsk)
+);
+
 export default router;

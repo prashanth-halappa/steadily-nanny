@@ -33,6 +33,12 @@ import {
 const router = Router({ mergeParams: true });
 
 router.get(
+  '/unsettled',
+  ...authWithValidation(HouseholdIdParamSchema, 'params'),
+  asyncHandler(ReimbursementSettlementController.listUnsettled)
+);
+
+router.get(
   '/',
   ...authWithValidation(HouseholdIdParamSchema, 'params'),
   validate(ReimbursementSettlementListQuerySchema, 'query'),

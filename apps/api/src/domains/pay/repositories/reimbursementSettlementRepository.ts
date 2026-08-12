@@ -40,6 +40,31 @@ export class ReimbursementSettlementRepository extends BaseRepository<Reimbursem
    * week (086: "the household-local first day of the week these claims fall
    * in"), unlike an expense's `local_date`.
    */
+  /**
+   * Every settlement recorded against one household — used by the unsettled
+   * aggregate to know which carer-weeks are already repaid. Household-scoped
+   * only; carer narrowing lives in the service.
+   */
+  async listForHousehold(
+    householdId: string
+  ): Promise<ReimbursementSettlement[]> {
+    const { data, error } = await supabaseService
+      .from(this.table)
+      .select('*')
+      .eq('household_id', householdId)
+      .order('week_start', { ascending: false })
+      .order('created_at', { ascending: true });
+
+    if (error) {
+      throw new DatabaseError(
+        'Failed to list reimbursement settlements for household',
+        'DATABASE_ERROR',
+        { details: error.message, householdId }
+      );
+    }
+    return (data ?? []) as ReimbursementSettlement[];
+  }
+
   async listForWeek(
     householdId: string,
     weekStart: string

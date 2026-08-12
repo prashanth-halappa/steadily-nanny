@@ -3,7 +3,20 @@
  * household timezone. mock.module BEFORE dynamic import.
  */
 import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
+import {
+  formatPushShortDate,
+  formatPushTime12h,
+} from '../../../../../src/domains/child/services/uncoveredCareService';
 import type { ShiftWithChildren } from '../../../../../src/domains/shift/repositories/shiftRepository';
+import { localDateOf } from '../../../../../src/domains/timesheet/utils/weekStart';
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const TIMEZONE = 'Europe/London';
+const FUTURE_START = new Date(Date.now() + 28 * DAY_MS).toISOString();
+const FUTURE_END = new Date(
+  Date.now() + 28 * DAY_MS + 14 * 60 * 60 * 1000
+).toISOString();
+const FUTURE_LOCAL_DATE = localDateOf(new Date(FUTURE_START), TIMEZONE);
 
 const CHILD_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 
@@ -11,10 +24,10 @@ const pendingShift: ShiftWithChildren = {
   id: 's1',
   household_id: 'h1',
   carer_id: 'carer-1',
-  starts_at: '2026-08-10T05:00:00.000Z',
-  ends_at: '2026-08-10T19:00:00.000Z',
-  timezone: 'Europe/London',
-  local_date: '2026-08-10',
+  starts_at: FUTURE_START,
+  ends_at: FUTURE_END,
+  timezone: TIMEZONE,
+  local_date: FUTURE_LOCAL_DATE,
   kind: 'extra',
   status: 'pending',
   source_pattern_id: null,
@@ -139,7 +152,7 @@ describe('ShiftCommandService.decline — push copy', () => {
       body: string;
     };
     expect(payload.body).toBe(
-      'H1 Nanny1 turned down Mon Aug 10, 6:00 am–8:00 pm (H1 Child1).'
+      `H1 Nanny1 turned down ${formatPushShortDate(FUTURE_LOCAL_DATE, TIMEZONE)}, ${formatPushTime12h(FUTURE_START, TIMEZONE)}–${formatPushTime12h(FUTURE_END, TIMEZONE)} (H1 Child1).`
     );
   });
 });

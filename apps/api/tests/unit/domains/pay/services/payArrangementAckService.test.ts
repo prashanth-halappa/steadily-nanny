@@ -6,6 +6,8 @@ import { PayArrangementAckService } from '../../../../../src/domains/pay/service
 const HOUSEHOLD_ID = 'h1';
 const CARER_ID = 'carer-1';
 const ARRANGEMENT_ID = 'pa-1';
+const DAY_MS = 24 * 60 * 60 * 1000;
+const FIXTURE_CREATED_AT = new Date(Date.now() - 2 * DAY_MS).toISOString();
 
 const ARRANGEMENT = {
   id: ARRANGEMENT_ID,
@@ -22,7 +24,7 @@ function makeAckRepo(overrides: Record<string, unknown> = {}): any {
     create: mock(async (row: Record<string, unknown>) => ({
       id: 'ack-1',
       note: null,
-      created_at: '2026-08-11T09:00:00.000Z',
+      created_at: FIXTURE_CREATED_AT,
       ...row,
     })),
     listForArrangement: mock(async () => []),

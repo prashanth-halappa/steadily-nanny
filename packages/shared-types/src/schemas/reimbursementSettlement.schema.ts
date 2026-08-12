@@ -74,8 +74,28 @@ export const ReimbursementSettlementListResponseSchema = z.object({
   settlements: z.array(ReimbursementSettlementSchema),
 });
 
+/**
+ * One household-local week whose approved reimbursements have not been
+ * settled yet — the aggregate the Today inbox `reimbursement_owed` item needs.
+ * Integer minor units only, always with a sibling `currency` field; a week with
+ * nothing owed is simply absent from the list.
+ */
+export const UnsettledReimbursementWeekSchema = z.object({
+  carer_id: z.uuid(),
+  week_start: z.iso.date(),
+  amount_minor: z.int().min(1).max(MAX_MONEY_MINOR),
+  currency: CurrencyCodeSchema,
+});
+
+export const UnsettledReimbursementListResponseSchema = z.object({
+  weeks: z.array(UnsettledReimbursementWeekSchema),
+});
+
 export type ReimbursementSettlement = z.infer<
   typeof ReimbursementSettlementSchema
+>;
+export type UnsettledReimbursementWeek = z.infer<
+  typeof UnsettledReimbursementWeekSchema
 >;
 export type CreateReimbursementSettlementInput = z.infer<
   typeof CreateReimbursementSettlementSchema

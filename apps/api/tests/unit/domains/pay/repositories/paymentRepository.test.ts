@@ -26,6 +26,15 @@ import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
  * would pass this file and 500 in production.
  */
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+const FIXTURE_TS = new Date(Date.now() - 2 * DAY_MS).toISOString();
+const FIXTURE_TS_RECENT_BASE = new Date(Date.now() - 1 * DAY_MS);
+FIXTURE_TS_RECENT_BASE.setUTCHours(9, 0, 0, 0);
+const FIXTURE_TS_MORNING = FIXTURE_TS_RECENT_BASE.toISOString();
+const FIXTURE_TS_EVENING = new Date(
+  FIXTURE_TS_RECENT_BASE.getTime() + 8 * 60 * 60 * 1000
+).toISOString();
+
 interface FakeRow {
   [key: string]: unknown;
 }
@@ -93,7 +102,7 @@ function paymentRow(overrides: FakeRow = {}): FakeRow {
     paid_at: '2026-08-10',
     method_note: 'Bank transfer',
     recorded_by: 'parent-1',
-    created_at: '2026-08-10T09:00:00.000Z',
+    created_at: FIXTURE_TS,
     ...overrides,
   };
 }
@@ -255,12 +264,12 @@ describe('PaymentRepository.listForHousehold', () => {
       paymentRow({
         id: 'pay-first',
         paid_at: '2026-08-11',
-        created_at: '2026-08-11T09:00:00.000Z',
+        created_at: FIXTURE_TS_MORNING,
       }),
       paymentRow({
         id: 'pay-second',
         paid_at: '2026-08-11',
-        created_at: '2026-08-11T17:00:00.000Z',
+        created_at: FIXTURE_TS_EVENING,
       }),
     ]);
 

@@ -16,6 +16,11 @@
 import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types/schemas/notification.schema';
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+const FIXTURE_TS = new Date(Date.now() - 2 * DAY_MS).toISOString();
+const FIXTURE_TS_RECENT = new Date(Date.now() - 1 * DAY_MS).toISOString();
+const FIXTURE_TS_RECENT_OFFSET = FIXTURE_TS_RECENT.replace('.000Z', '+00:00');
+
 const APPROVED_TIMESHEET = {
   id: 'ts-1',
   household_id: 'h1',
@@ -25,13 +30,13 @@ const APPROVED_TIMESHEET = {
   total_minutes: 2_400,
   status: 'approved',
   approved_by: 'parent-1',
-  approved_at: '2026-08-10T09:00:00.000Z',
+  approved_at: FIXTURE_TS,
   query_note: null,
   reopen_reason: null,
   gross_minor: 80_000,
   currency: 'GBP',
   earnings: { status: 'ok' },
-  earnings_computed_at: '2026-08-10T09:00:00.000Z',
+  earnings_computed_at: FIXTURE_TS,
   created_at: 't',
   updated_at: 't',
 };
@@ -81,7 +86,7 @@ function makePaymentRepo(overrides: Record<string, unknown> = {}): any {
           household_id: 'h1',
           carer_id: 'carer-1',
           currency: 'GBP',
-          created_at: '2026-08-11T10:00:00.000Z',
+          created_at: FIXTURE_TS_RECENT,
           ...entry,
         },
       })
@@ -230,7 +235,7 @@ describe('paymentCommandService.correct — PAYMENT_CORRECTED push', () => {
             corrects_payment_id: paymentId,
             correction_reason: entry.reason,
             currency: 'GBP',
-            created_at: '2026-08-18T10:00:00+00:00',
+            created_at: FIXTURE_TS_RECENT_OFFSET,
             ...entry,
           },
         })

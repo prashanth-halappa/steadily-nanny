@@ -187,6 +187,24 @@ export class ShiftController {
     }
   }
 
+  /** Parent withdraw unanswered cover ask: POST /shifts/:shiftId/withdraw-cover-ask. */
+  static async withdrawCoverAsk(
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ) {
+    try {
+      const shiftId = req.params.shiftId as string;
+      const shift = await shiftCommandService.withdrawCoverAsk(
+        getAuthUserId(req),
+        shiftId
+      );
+      return sendSuccessResponse(res, 'Cover ask withdrawn', { shift });
+    } catch (error) {
+      return next(error);
+    }
+  }
+
   /**
    * Household/date day thread: GET /households/:householdId/day-thread?local_date=
    * Includes nullable-shift_id events; does not widen the shift-scoped events route.

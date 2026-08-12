@@ -109,7 +109,7 @@ const PAYROLL_HOUSEHOLD_READ_ROLES: ReadonlySet<string> = new Set([
  * What `assertPayrollReader` resolved: every carer's rows, or one carer's.
  * Same shape and same purpose as `expenseQueryService`'s `ReadScope`.
  */
-type PayrollReadScope =
+export type PayrollReadScope =
   | { kind: 'household' }
   | { kind: 'own'; carerId: string };
 
@@ -843,6 +843,18 @@ export class TimesheetQueryService {
    * `expenseQueryService.scopeRows`. `getReadableTimesheet` applies the same
    * scope row-wise and 404s on a mismatch.
    */
+  /**
+   * The payroll read gate shared across every money read in this repo — see
+   * `assertPayrollReader`'s module doc. Exposed for cross-domain reads that must
+   * not invent a second gate (`reimbursementSettlementService.listUnsettled`).
+   */
+  async resolvePayrollReadScope(
+    userId: string,
+    householdId: string
+  ): Promise<PayrollReadScope> {
+    return this.assertPayrollReader(userId, householdId);
+  }
+
   private async assertPayrollReader(
     userId: string,
     householdId: string

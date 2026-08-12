@@ -29,6 +29,10 @@ import { PaymentCommandService } from '../../../../../src/domains/pay/services/p
  * its three outcomes into the right typed error with the figures the lock saw.
  */
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+const FIXTURE_TS = new Date(Date.now() - 2 * DAY_MS).toISOString();
+const FIXTURE_TS_RECENT = new Date(Date.now() - 1 * DAY_MS).toISOString();
+
 const APPROVED_TIMESHEET = {
   id: 'ts-1',
   household_id: 'h1',
@@ -38,13 +42,13 @@ const APPROVED_TIMESHEET = {
   total_minutes: 2_400,
   status: 'approved',
   approved_by: 'parent-1',
-  approved_at: '2026-08-10T09:00:00.000Z',
+  approved_at: FIXTURE_TS,
   query_note: null,
   reopen_reason: null,
   gross_minor: 80_000,
   currency: 'GBP',
   earnings: { status: 'ok' },
-  earnings_computed_at: '2026-08-10T09:00:00.000Z',
+  earnings_computed_at: FIXTURE_TS,
   created_at: 't',
   updated_at: 't',
 };
@@ -69,7 +73,7 @@ function recordedPayment(overrides: Record<string, unknown> = {}): any {
       paid_at: '2026-08-11',
       method_note: 'Bank transfer',
       recorded_by: 'parent-1',
-      created_at: '2026-08-11T10:00:00.000Z',
+      created_at: FIXTURE_TS_RECENT,
       ...overrides,
     },
   };
@@ -80,7 +84,7 @@ function makePaymentRepo(overrides: Record<string, unknown> = {}): any {
     listForTimesheet: mock(async () => []),
     create: mock(async (data: Record<string, unknown>) => ({
       id: 'pay-new',
-      created_at: '2026-08-11T10:00:00.000Z',
+      created_at: FIXTURE_TS_RECENT,
       ...data,
     })),
     recordForTimesheet: mock(

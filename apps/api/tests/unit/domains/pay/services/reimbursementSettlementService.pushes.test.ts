@@ -39,6 +39,10 @@ beforeEach(() => {
   notifyHouseholdParents.mockClear();
 });
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+const FIXTURE_TS = new Date(Date.now() - 2 * DAY_MS).toISOString();
+const FIXTURE_TS_OFFSET = FIXTURE_TS.replace('.000Z', '+00:00');
+
 const VALID_INPUT = {
   carer_id: 'carer-1',
   week_start: '2026-08-03',
@@ -52,7 +56,7 @@ function makeSettlementRepo(overrides: Record<string, unknown> = {}): any {
     create: mock(async (data: Record<string, unknown>) => ({
       id: 'set-new',
       note: null,
-      created_at: '2026-08-10T09:00:00+00:00',
+      created_at: FIXTURE_TS_OFFSET,
       ...data,
     })),
     ...overrides,

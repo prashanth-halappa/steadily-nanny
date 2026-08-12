@@ -40,6 +40,21 @@ export class ReimbursementSettlementController {
     }
   }
 
+  static async listUnsettled(req: Request, res: Response, next: NextFunction) {
+    try {
+      const householdId = req.params.householdId as string;
+      const weeks = await reimbursementSettlementService.listUnsettled(
+        getAuthUserId(req),
+        householdId
+      );
+      return sendSuccessResponse(res, 'Unsettled reimbursements fetched', {
+        weeks,
+      });
+    } catch (error) {
+      return next(error);
+    }
+  }
+
   /**
    * POST /households/:householdId/reimbursement-settlements — parents only.
    * The body names WHICH carer-week is being settled and nothing about the

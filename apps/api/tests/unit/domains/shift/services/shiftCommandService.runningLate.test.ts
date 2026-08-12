@@ -5,15 +5,23 @@
 import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types/schemas/notification.schema';
 import type { ShiftWithChildren } from '../../../../../src/domains/shift/repositories/shiftRepository';
+import { localDateOf } from '../../../../../src/domains/timesheet/utils/weekStart';
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const TIMEZONE = 'Europe/London';
+const FUTURE_START = new Date(Date.now() + 28 * DAY_MS).toISOString();
+const FUTURE_END = new Date(
+  Date.now() + 28 * DAY_MS + 9 * 60 * 60 * 1000
+).toISOString();
 
 const confirmedShift: ShiftWithChildren = {
   id: 's1',
   household_id: 'h1',
   carer_id: 'carer-1',
-  starts_at: '2026-08-10T08:00:00.000Z',
-  ends_at: '2026-08-10T17:00:00.000Z',
-  timezone: 'Europe/London',
-  local_date: '2026-08-10',
+  starts_at: FUTURE_START,
+  ends_at: FUTURE_END,
+  timezone: TIMEZONE,
+  local_date: localDateOf(new Date(FUTURE_START), TIMEZONE),
   kind: 'recurring',
   status: 'confirmed',
   source_pattern_id: null,

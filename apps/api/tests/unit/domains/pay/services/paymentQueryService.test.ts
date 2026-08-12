@@ -2,6 +2,9 @@ import { describe, expect, it, mock } from 'bun:test';
 import { PaymentNotFoundError } from '../../../../../src/domains/pay/errors/payErrors';
 import { PaymentQueryService } from '../../../../../src/domains/pay/services/paymentQueryService';
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+const FIXTURE_TS = new Date(Date.now() - 1 * DAY_MS).toISOString();
+
 /**
  * `paymentQueryService.listForTimesheet` — who may see what a week was paid.
  *
@@ -43,7 +46,7 @@ const PAYMENTS = [
     paid_at: '2026-08-11',
     method_note: 'Bank transfer',
     recorded_by: 'parent-1',
-    created_at: '2026-08-11T10:00:00.000Z',
+    created_at: FIXTURE_TS,
   },
 ];
 

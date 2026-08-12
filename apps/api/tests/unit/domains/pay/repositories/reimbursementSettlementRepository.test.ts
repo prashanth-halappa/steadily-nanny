@@ -16,6 +16,10 @@ import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+const FIXTURE_TS = new Date(Date.now() - 2 * DAY_MS).toISOString();
+const FIXTURE_TS_OFFSET = FIXTURE_TS.replace('.000Z', '+00:00');
+
 interface FakeRow {
   [key: string]: unknown;
 }
@@ -88,7 +92,7 @@ function settlement(overrides: FakeRow = {}): FakeRow {
     recorded_by: 'parent-1',
     // `+00:00`, PostgREST's serialisation — not the JS `.000Z` form
     // (GOLDEN-FIXES #25).
-    created_at: '2026-08-10T09:00:00+00:00',
+    created_at: FIXTURE_TS_OFFSET,
     ...overrides,
   };
 }

@@ -43,11 +43,20 @@ let server: import('node:http').Server;
 let baseUrl: string;
 
 let listMock: ReturnType<typeof mock>;
+let listUnsettledMock: ReturnType<typeof mock>;
 let createMock: ReturnType<typeof mock>;
 let requireAuthMock: ReturnType<typeof mock>;
 
 beforeAll(async () => {
   listMock = mock(async () => [{ id: 'set-1', amount_minor: 14_600 }]);
+  listUnsettledMock = mock(async () => [
+    {
+      carer_id: CARER_ID,
+      week_start: '2026-08-03',
+      amount_minor: 2_240,
+      currency: 'GBP',
+    },
+  ]);
   createMock = mock(async () => ({ id: 'set-new', amount_minor: 14_600 }));
 
   requireAuthMock = mock((req: any, _res: any, next: any) => {
@@ -66,6 +75,7 @@ beforeAll(async () => {
     () => ({
       reimbursementSettlementService: {
         listForWeek: (...args: unknown[]) => listMock(...args),
+        listUnsettled: (...args: unknown[]) => listUnsettledMock(...args),
         create: (...args: unknown[]) => createMock(...args),
       },
     })
@@ -103,6 +113,7 @@ afterAll(() => {
 
 beforeEach(() => {
   listMock.mockClear();
+  listUnsettledMock.mockClear();
   createMock.mockClear();
   requireAuthMock.mockClear();
   requireAuthMock.mockImplementation((req: any, _res: any, next: any) => {
@@ -155,6 +166,20 @@ describe('reimbursementSettlementRoutes — GET', () => {
       DEFAULT_AUTH_USER_ID,
       HOUSEHOLD_ID,
       '2026-08-03'
+    );
+  });
+
+  it('GET /unsettled returns the { weeks } envelope', async () => {
+    const res = await fetch(`${baseUrl}${pathFor(HOUSEHOLD_ID)}/unsettled`);
+    const json = (await res.json()) as {
+      data: { weeks: { amount_minor: number }[] };
+    };
+
+    expect(res.status).toBe(200);
+    expect(json.data.weeks[0]?.amount_minor).toBe(2_240);
+    expect(listUnsettledMock).toHaveBeenCalledWith(
+      DEFAULT_AUTH_USER_ID,
+      HOUSEHOLD_ID
     );
   });
 

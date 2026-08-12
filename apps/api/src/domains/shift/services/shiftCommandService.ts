@@ -487,6 +487,92 @@ export class ShiftCommandService {
   }
 
   /**
+   * Parent withdraws an unanswered cover ask — retracts the question while the
+   * carer has not answered. Owner/parent only (`WRITE_ROLES`). The ask must
+   * still be `pending` with a stamped `cover_ask_expires_at` (extra/cover kinds
+   * only). Lands on `cancelled` WITH `cancelled_by` set to distinguish from
+   * expiry (`cancelled_by` null — see migration 088). Re-runs uncovered-care
+   * detection so the gap becomes visible again (D-22/S1).
+   */
+  async withdrawCoverAsk(userId: string, shiftId: string): Promise<Shift> {
+    const shift = await this.queries.getOwned(userId, shiftId);
+    await this.assertWriteMember(userId, shift.household_id);
+
+    if (!this.isOutstandingCoverAsk(shift)) {
+      throw new ValidationError(
+        'Only an unanswered cover ask can be withdrawn',
+        'COVER_ASK_NOT_WITHDRAWABLE',
+        400,
+        {
+          shiftId,
+          status: shift.status,
+          kind: shift.kind,
+          cover_ask_expires_at: shift.cover_ask_expires_at,
+        }
+      );
+    }
+
+    if (shift.status !== SHIFT_STATUSES.PENDING) {
+      throw new ValidationError(
+        'Only a pending shift can be withdrawn',
+        'SHIFT_NOT_PENDING',
+        400,
+        { shiftId, status: shift.status }
+      );
+    }
+
+    const cancelledAt = new Date().toISOString();
+    const updated = await this.shiftRepo.withdrawCoverAsk(
+      shiftId,
+      userId,
+      cancelledAt
+    );
+
+    try {
+      await this.eventRepo.insertMany([
+        {
+          household_id: shift.household_id,
+          shift_id: shift.id,
+          local_date: shift.local_date,
+          actor_id: userId,
+          event_type: 'cover_ask_withdrawn',
+          payload: {
+            key: shift.id,
+          },
+        },
+      ]);
+    } catch (error) {
+      logger.warn(
+        'Failed to record cover_ask_withdrawn event; shift is still withdrawn',
+        {
+          shiftId: shift.id,
+          householdId: shift.household_id,
+          error: error instanceof Error ? error.message : String(error),
+        }
+      );
+    }
+
+    try {
+      await detectUncoveredCareForDate({
+        householdId: shift.household_id,
+        localDate: shift.local_date,
+        cause: 'cancelled',
+        actorId: userId,
+        excludeUserId: userId,
+      });
+    } catch (error) {
+      logger.error('Uncovered-care detection failed after cover-ask withdraw', {
+        shiftId: shift.id,
+        householdId: shift.household_id,
+        localDate: shift.local_date,
+        error,
+      });
+    }
+
+    return updated;
+  }
+
+  /**
    * A parent edits a shift's time and/or note. Owner/parent only. Validates
    * the RESULTING range (existing time for any field the caller omitted),
    * since a one-sided `starts_at`-only edit can still violate
@@ -698,6 +784,15 @@ export class ShiftCommandService {
     } catch {
       // notifyUser is fire-and-forget; never fail the write.
     }
+  }
+
+  /** Outstanding cover ask: extra/cover with a carer and a stamped fuse (088). */
+  private isOutstandingCoverAsk(shift: Shift): boolean {
+    return (
+      shift.cover_ask_expires_at != null &&
+      shift.carer_id != null &&
+      (shift.kind === SHIFT_KINDS.EXTRA || shift.kind === SHIFT_KINDS.COVER)
+    );
   }
 
   private async assertWriteMember(
