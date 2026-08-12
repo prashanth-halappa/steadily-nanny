@@ -249,6 +249,20 @@ function zonedWallTimeToUtcIso(
   return new Date(utc).toISOString();
 }
 
+/** Inverse of `zonedWallTimeToUtcIso`: a UTC instant → its `HH:MM` wall time in
+ *  `timeZone`. Used to move a fixture shift to another DATE while keeping the
+ *  time of day the household actually sees — re-deriving the wall time is what
+ *  keeps that correct across a DST boundary, where adding a 24h delta to the
+ *  stored UTC would drift by an hour. */
+function utcIsoToZonedWallTime(iso: string, timeZone: string): string {
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(new Date(iso));
+}
+
 function localDateOf(instant: Date, timeZone: string): string {
   return new Intl.DateTimeFormat('en-CA', {
     timeZone,
@@ -805,14 +819,71 @@ async function main(): Promise<void> {
     .gt('ends_at', todayStartUtc);
   if (timeOffClearError) throw timeOffClearError;
 
-  const { data: todayShift } = await db
+  // `PHASE4_TODAY_SHIFT_ID` MUST come back non-empty: flow 08 deep-links to
+  // `.../shifts/${id}`, and an empty id lands on a screen that never renders
+  // `shift-detail-screen`. It silently came back empty during the Phase 5 suite
+  // and cost a red flow.
+  //
+  // ROOT CAUSE, measured not assumed: there were TWO `kind='extra'` shifts on
+  // today's date, and `.maybeSingle()` ERRORS on multiple rows. The original
+  // call destructured only `{ data }`, so that error was swallowed and the id
+  // came out empty with no warning. This file's own comment at the tomorrow-
+  // shift fixture already recorded that `.maybeSingle()` "throws the moment a
+  // second shift shares that date" — the lesson simply had not been applied
+  // here. So: order + limit(1) instead of maybeSingle's uniqueness assumption,
+  // and surface the error rather than discarding it.
+  const { data: todayMatches, error: todayShiftError } = await db
     .from('shifts')
     .select('id')
     .eq('household_id', householdId)
     .eq('carer_id', nannyId)
     .eq('local_date', today)
     .eq('kind', 'extra')
-    .maybeSingle();
+    .order('created_at', { ascending: false })
+    .limit(1);
+  if (todayShiftError) throw todayShiftError;
+  let todayShift = todayMatches?.[0] ?? null;
+
+  // Secondary case, also real: nothing on today at all, because
+  // `seed-e2e-approval-fixtures.ts` created the shift on whatever calendar day
+  // it last ran. Roll the most recent extra shift forward rather than creating
+  // a new one — moving it preserves the row's identity and anything already
+  // pointing at it.
+  if (!todayShift) {
+    const { data: staleShift } = await db
+      .from('shifts')
+      .select('id, starts_at, ends_at, local_date')
+      .eq('household_id', householdId)
+      .eq('carer_id', nannyId)
+      .eq('kind', 'extra')
+      .order('local_date', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (staleShift) {
+      // Keep the wall-clock times, move the DATE. Re-deriving the instants from
+      // the household zone (rather than adding a day-delta to the stored UTC)
+      // is what keeps this correct across a DST boundary.
+      const startWall = utcIsoToZonedWallTime(
+        staleShift.starts_at,
+        householdTz
+      );
+      const endWall = utcIsoToZonedWallTime(staleShift.ends_at, householdTz);
+      const { error: rollError } = await db
+        .from('shifts')
+        .update({
+          local_date: today,
+          starts_at: zonedWallTimeToUtcIso(today, startWall, householdTz),
+          ends_at: zonedWallTimeToUtcIso(today, endWall, householdTz),
+        })
+        .eq('id', staleShift.id);
+      if (rollError) throw rollError;
+      console.log(
+        `[rolled]  extra shift ${staleShift.id} ${staleShift.local_date} -> ${today} (flow 08's today-shift)`
+      );
+      todayShift = { id: staleShift.id };
+    }
+  }
 
   if (todayShift) {
     const { error: crClearError } = await db
