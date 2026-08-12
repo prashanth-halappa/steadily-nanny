@@ -1,0 +1,27 @@
+# The RN dev menu is TWO stacked sheets, not one. Tapping 'Continue' on the
+# intro card ("This is the developer menu...") only ADVANCES to a second
+# sheet (Reload / Go home / TOOLS) — it does not close the overlay. All three
+# dismiss points in reset-to-welcome.yaml used to tap 'Continue' and assume
+# that closed the whole thing, so the flow span until timeout with the app
+# already correctly on the welcome/tabs screen underneath, covered by the
+# second sheet the whole time. Confirmed via manual probe 2026-08-12: tapping
+# 'Continue' lands on the Reload/Go-home menu, and closing THAT (its own 'X',
+# top-right of that card) reveals the real, healthy screen underneath.
+appId: com.jetto.steadily.nanny
+---
+- runFlow:
+    when:
+      visible:
+        text: 'This is the developer menu'
+    commands:
+      - tapOn:
+          text: 'Continue'
+      - waitForAnimationToEnd
+      - runFlow:
+          when:
+            visible:
+              text: 'Go home'
+          commands:
+            - tapOn:
+                point: '90%,48%'
+            - waitForAnimationToEnd
