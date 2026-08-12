@@ -2,24 +2,18 @@
 # (any screen), dev-client launcher, or dead app. The one canonical reset —
 # 00-smoke and both login flows run this first.
 #
-# Never uses clearState: wiping app data re-arms the dev client's one-time
-# "This is the developer menu" intro sheet, which then pops ASYNCHRONOUSLY
+# Avoids clearState in the normal path: wiping app data re-arms the dev client's
+# one-time "This is the developer menu" intro sheet, which then pops ASYNCHRONOUSLY
 # over a later flow and swallows every deep link (root cause of two full-suite
 # wipeouts, Phase 4). The sheet stays dismissed only while app data persists.
+# Exception: onboarding-stuck-clearstate.yaml (third state below) — see header.
 #
-# KNOWN GAP (2026-08-11, qa-sonnet): this handles two states — "fully
-# onboarded" (tabs visible, sign out below) and "signed out" (welcome-screen,
-# no-op) — but not a third: authenticated with no household yet, mid the
-# onboarding wizard. That screen has no tab bar and no sign-out reachable
-# from here, so a flow that fails partway through onboarding (14, 15) leaves
-# the account stuck there, and every later flow's reset-to-welcome then
-# fails right here too. Recovery today is manual: `xcrun simctl terminate`
-# + `launch` (plain `launchApp` does not force a real process restart), or a
-# full `clearState:true` relaunch walking the re-armed intro sheet by hand.
-# A real fix would add a third arm here that detects an onboarding screen
-# (e.g. `role-screen`/`code-screen`) and recovers via one of those — not
-# attempted this session; it is not a one-liner given how many onboarding
-# screens can be mid-flight.
+# Third state (2026-08-11): authenticated with no household yet, mid the
+# onboarding wizard — no tab bar, so the settings-tab logout arm below never
+# runs. Flows 14/15 leave accounts here when they fail partway. CodeEntryScreen's
+# wizard variant exposes `code-screen-sign-out` (not the settings/join variant);
+# role/start/household/children/permission screens do not. Two arms below: tap
+# sign-out when it exists, else `clearState:true` via onboarding-stuck-clearstate.yaml.
 appId: com.jetto.steadily.nanny
 ---
 - launchApp:
@@ -48,10 +42,77 @@ appId: com.jetto.steadily.nanny
     timeout: 3000
     optional: true
 
-# Only if NEITHER appears are we in the dev-client launcher (or the app died)
-# — and only then is it safe to force a bundle load via the
-# expo-development-client URL. Forcing it unconditionally reloads mid-mount
-# and crashes Fabric (ExpoFabricView.injectInitializer assert).
+# --- Third state: mid-onboarding wizard (no tabs, no welcome) ---------------
+# Cheapest path first — CodeEntryScreen's wizard-only sign-out
+# (`apps/mobile/src/domains/setup/components/CodeEntryScreen.tsx`).
+- runFlow:
+    when:
+      visible:
+        id: 'code-screen-sign-out'
+    commands:
+      - tapOn:
+          id: 'code-screen-sign-out'
+      - waitForAnimationToEnd
+      - extendedWaitUntil:
+          visible:
+            id: 'welcome-screen'
+          timeout: 15000
+
+# Every other wizard route file under apps/mobile/src/app/onboarding/ — real
+# testIDs from the screen components, no sign-out on any of them.
+- runFlow:
+    when:
+      visible:
+        id: 'role-screen'
+    commands:
+      - runFlow: onboarding-stuck-clearstate.yaml
+- runFlow:
+    when:
+      visible:
+        id: 'start-screen'
+    commands:
+      - runFlow: onboarding-stuck-clearstate.yaml
+- runFlow:
+    when:
+      visible:
+        id: 'household-screen'
+    commands:
+      - runFlow: onboarding-stuck-clearstate.yaml
+- runFlow:
+    when:
+      visible:
+        id: 'children-screen'
+    commands:
+      - runFlow: onboarding-stuck-clearstate.yaml
+- runFlow:
+    when:
+      visible:
+        id: 'notifications-permission-screen'
+    commands:
+      - runFlow: onboarding-stuck-clearstate.yaml
+- runFlow:
+    when:
+      visible:
+        id: 'calendar-permission-screen'
+    commands:
+      - runFlow: onboarding-stuck-clearstate.yaml
+- runFlow:
+    when:
+      visible:
+        id: 'availability-screen'
+    commands:
+      - runFlow: onboarding-stuck-clearstate.yaml
+- runFlow:
+    when:
+      visible:
+        id: 'invite-screen'
+    commands:
+      - runFlow: onboarding-stuck-clearstate.yaml
+
+# Only if NEITHER tabs NOR welcome NOR a wizard screen appears are we in the
+# dev-client launcher (or the app died) — and only then is it safe to force a
+# bundle load via the expo-development-client URL. Forcing it unconditionally
+# reloads mid-mount and crashes Fabric (ExpoFabricView.injectInitializer assert).
 - runFlow:
     when:
       notVisible:

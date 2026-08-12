@@ -32,6 +32,9 @@ beforeAll(async () => {
   ).PaySummaryExportError;
 });
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+const FIXTURE_SNAPSHOT_AT = new Date(Date.now() - 2 * DAY_MS).toISOString();
+
 const okSnapshot = (grossMinor: number, reimbursementsMinor = 0) => ({
   status: 'ok',
   week_start: '2026-08-03',
@@ -54,15 +57,15 @@ function tsRow(over: Record<string, unknown> = {}): any {
     total_minutes: 2400,
     status: 'approved',
     approved_by: 'parent-1',
-    approved_at: '2026-08-10T09:30:00.000Z',
+    approved_at: FIXTURE_SNAPSHOT_AT,
     query_note: null,
     reopen_reason: null,
     created_at: '2026-08-03T00:00:00.000Z',
-    updated_at: '2026-08-10T09:30:00.000Z',
+    updated_at: FIXTURE_SNAPSHOT_AT,
     gross_minor: 168_000,
     currency: 'USD',
     earnings: okSnapshot(168_000),
-    earnings_computed_at: '2026-08-10T09:30:00.000Z',
+    earnings_computed_at: FIXTURE_SNAPSHOT_AT,
     ...over,
   };
 }

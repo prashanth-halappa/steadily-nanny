@@ -17,6 +17,17 @@ import { TIMESHEET_THREAD_MESSAGE_KINDS } from '@steadily-nanny/shared-types/sch
 import { TimesheetNotFoundError } from '../../../../../src/domains/timesheet/errors/timesheetErrors';
 import { TimesheetQueryService } from '../../../../../src/domains/timesheet/services/timesheetQueryService';
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+const queriedInstant = new Date(Date.now() - 14 * DAY_MS);
+queriedInstant.setUTCHours(17, 4, 0, 0);
+const THREAD_QUERIED_AT = queriedInstant
+  .toISOString()
+  .replace('.000Z', '+00:00');
+const THREAD_REPLY_AT = new Date(
+  queriedInstant.getTime() + (2 * 60 + 16) * 60 * 1000
+).toISOString();
+const THREAD_UPDATED_AT = queriedInstant.toISOString();
+
 const timesheet = {
   id: 'ts1',
   household_id: 'h1',
@@ -31,7 +42,7 @@ const timesheet = {
   reopen_reason: null,
   // GOLDEN-FIXES #25 — both serialisations across this file's fixtures.
   created_at: '2026-08-03T00:00:00+00:00',
-  updated_at: '2026-08-10T17:04:00.000Z',
+  updated_at: THREAD_UPDATED_AT,
 };
 
 const queriedEvent = {
@@ -42,7 +53,7 @@ const queriedEvent = {
   actor_id: 'parent-1',
   event_type: 'timesheet_queried',
   payload: { timesheetId: 'ts1', note: 'Thursday looks long' },
-  created_at: '2026-08-10T17:04:00+00:00',
+  created_at: THREAD_QUERIED_AT,
 };
 
 const replyEvent = {
@@ -53,7 +64,7 @@ const replyEvent = {
   actor_id: 'carer-1',
   event_type: 'timesheet_note_added',
   payload: { timesheetId: 'ts1', message: 'I stayed late.' },
-  created_at: '2026-08-10T19:20:00.000Z',
+  created_at: THREAD_REPLY_AT,
 };
 
 function makeService(overrides: Record<string, unknown> = {}): any {

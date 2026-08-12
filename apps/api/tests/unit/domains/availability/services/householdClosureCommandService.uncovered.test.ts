@@ -1,24 +1,31 @@
 /**
  * Closure removal triggers uncovered-care detection per expanded local date.
  */
-import {
-  afterEach,
-  beforeAll,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  mock,
-  setSystemTime,
-} from 'bun:test';
+import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 import type { HouseholdClosure } from '../../../../../src/domains/availability/types';
 import type { HouseholdMember } from '../../../../../src/domains/household/types';
+import {
+  addDays,
+  localDatesCovered,
+} from '../../../../../src/domains/pay/utils/localDateSpan';
+import { localDateOf } from '../../../../../src/domains/timesheet/utils/weekStart';
+
+const TIMEZONE = 'UTC';
+const NOW = new Date();
+const today = localDateOf(NOW, TIMEZONE);
+const closureStartsAt = `${today}T00:00:00Z`;
+const closureEndsAt = `${addDays(today, 3)}T00:00:00Z`;
+const expectedDates = localDatesCovered(
+  closureStartsAt,
+  closureEndsAt,
+  TIMEZONE
+).filter(date => date >= today && date <= addDays(today, 30));
 
 const closure: HouseholdClosure = {
   id: 'c1',
   household_id: 'h1',
-  starts_at: '2026-08-10T00:00:00Z',
-  ends_at: '2026-08-13T00:00:00Z',
+  starts_at: closureStartsAt,
+  ends_at: closureEndsAt,
   message: null,
   created_by: 'parent-1',
   created_at: 't',
@@ -28,7 +35,7 @@ const closure: HouseholdClosure = {
 const household = {
   id: 'h1',
   name: 'Smiths',
-  timezone: 'UTC',
+  timezone: TIMEZONE,
 };
 
 let HouseholdClosureCommandService: typeof import('../../../../../src/domains/availability/services/householdClosureCommandService').HouseholdClosureCommandService;
@@ -55,21 +62,9 @@ beforeAll(async () => {
   ));
 });
 
-// `remove` clamps the closure span to `[today, today + 30]` against the REAL
-// clock, and the assertions below name absolute dates. Without pinning `now`
-// this file passes until the day the fixture's first date falls behind today,
-// then fails forever — it did exactly that at 2026-08-11T00:00Z, taking `qc`
-// red for a reason that had nothing to do with whatever was being changed.
-const FIXED_NOW = new Date('2026-08-10T12:00:00.000Z');
-
 beforeEach(() => {
-  setSystemTime(FIXED_NOW);
   detectUncoveredCareBestEffort.mockClear();
   notifyUser.mockClear();
-});
-
-afterEach(() => {
-  setSystemTime();
 });
 
 function membership(
@@ -112,7 +107,8 @@ describe('HouseholdClosureCommandService.remove — uncovered detection', () => 
     const dates = detectUncoveredCareBestEffort.mock.calls.map(
       (call: unknown[]) => (call[0] as { localDate: string }).localDate
     );
-    expect(dates).toEqual(['2026-08-10', '2026-08-11', '2026-08-12']);
+    expect(dates).toEqual(expectedDates);
+    expect(dates).toHaveLength(3);
     expect(detectUncoveredCareBestEffort).toHaveBeenCalledWith(
       expect.objectContaining({
         householdId: 'h1',

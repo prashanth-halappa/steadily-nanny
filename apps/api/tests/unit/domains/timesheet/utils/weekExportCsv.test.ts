@@ -17,6 +17,20 @@ import {
   renderWeekExportCsv,
 } from '../../../../../src/domains/timesheet/utils/weekExportCsv';
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+const HOUR_MS = 60 * 60 * 1000;
+const FIXTURE_SNAPSHOT_AT = new Date(Date.now() - 2 * DAY_MS).toISOString();
+const FIXTURE_PAYMENT_CREATED_MS = Date.now() - 3 * DAY_MS;
+const FIXTURE_PAYMENT_CREATED_AT = new Date(FIXTURE_PAYMENT_CREATED_MS)
+  .toISOString()
+  .replace('.000Z', '+00:00');
+const FIXTURE_DUPLICATE_CREATED_AT = new Date(
+  FIXTURE_PAYMENT_CREATED_MS + 2 * DAY_MS
+).toISOString();
+const FIXTURE_CORRECTION_CREATED_AT = new Date(
+  FIXTURE_PAYMENT_CREATED_MS + 2 * DAY_MS + 60_000
+).toISOString();
+
 /**
  * One recorded payment. The settlement rows are what make `paid_to_date_minor`
  * checkable rather than asserted — D-20 requires the export to carry the rows
@@ -39,7 +53,7 @@ const PAID_30000: Payment = {
   paid_at: '2026-08-16',
   method_note: 'Zelle',
   recorded_by: 'parent-1',
-  created_at: '2026-08-16T18:04:00+00:00',
+  created_at: FIXTURE_PAYMENT_CREATED_AT,
 };
 
 /** A comma in the display name — the escaping case, on a real field. */
@@ -52,11 +66,11 @@ const timesheet: Timesheet = {
   total_minutes: 2700,
   status: 'approved',
   approved_by: 'parent-1',
-  approved_at: '2026-08-10T09:30:00.000Z',
+  approved_at: FIXTURE_SNAPSHOT_AT,
   query_note: null,
   reopen_reason: null,
   created_at: '2026-08-03T00:00:00.000Z',
-  updated_at: '2026-08-10T09:30:00.000Z',
+  updated_at: FIXTURE_SNAPSHOT_AT,
 };
 
 /** Every line kind the snapshot can hold, in EARNINGS_LINE_ORDER. */
@@ -182,7 +196,7 @@ const EXPECTED_CSV =
     'carer_display_name,"Rowe, Nia"',
     'week_start,2026-08-03',
     'currency,GBP',
-    'approved_at,2026-08-10T09:30:00.000Z',
+    `approved_at,${FIXTURE_SNAPSHOT_AT}`,
   ].join(CRLF) + CRLF;
 
 describe('renderWeekExportCsv — the rich fixture, byte for byte', () => {
@@ -346,7 +360,7 @@ describe('renderWeekExportCsv — payments and corrections (D-20)', () => {
     ...PAID_30000,
     id: 'pay-2',
     paid_at: '2026-08-16',
-    created_at: '2026-08-18T08:15:00.000Z',
+    created_at: FIXTURE_DUPLICATE_CREATED_AT,
   };
 
   /** The reversal of the duplicate, in full. */
@@ -363,7 +377,7 @@ describe('renderWeekExportCsv — payments and corrections (D-20)', () => {
     paid_at: '2026-08-18',
     method_note: null,
     recorded_by: 'parent-1',
-    created_at: '2026-08-18T08:16:00.000Z',
+    created_at: FIXTURE_CORRECTION_CREATED_AT,
   };
 
   it('ships BOTH rows — the original keeps its full amount, the correction is its own record', () => {
@@ -479,6 +493,60 @@ describe('renderWeekExportCsv — payments and corrections (D-20)', () => {
     expect(csv).not.toContain(',correction,');
     expect(csv).toContain(`${CRLF}paid_to_date_minor,0${CRLF}`);
   });
+
+  it('a fully-reversed week reads unpaid — paid_to_date 0 and balance_due is the full gross, never clamped', () => {
+    const paid: Payment = { ...PAID_30000, amount_minor: 121_175 };
+    const reversed: Payment = {
+      ...CORRECTION,
+      amount_minor: -121_175,
+      correction_reason: 'wrong week',
+    };
+    const { csv } = renderWeekExportCsv({
+      timesheet,
+      earnings,
+      payments: [paid, reversed],
+    });
+
+    expect(csv).toContain(
+      `${CRLF}2026-08-16,Payment: Zelle,payment,,,121175,GBP${CRLF}`
+    );
+    expect(csv).toContain(
+      `${CRLF}2026-08-18,Correction: wrong week,correction,,,-121175,GBP${CRLF}`
+    );
+    expect(csv).toContain(`${CRLF}paid_to_date_minor,0${CRLF}`);
+    expect(csv).toContain(`${CRLF}balance_due_minor,121175${CRLF}`);
+    expect(csv).not.toContain('balance_due_minor,0');
+  });
+});
+
+describe('renderWeekExportCsv — paid_holiday label (3-E5)', () => {
+  it('prints the paid holiday line under its own export label', () => {
+    const withPaidHoliday: WeekEarningsOk = {
+      ...earnings,
+      lines: [
+        ...earnings.lines.filter(l => l.kind !== 'pto'),
+        {
+          kind: 'paid_holiday',
+          minutes: 480,
+          rate_minor: 1850,
+          multiplier: null,
+          amount_minor: 14_800,
+          from_date: '2026-08-04',
+          to_date: '2026-08-04',
+          arrangement_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        },
+      ],
+    };
+    const { csv } = renderWeekExportCsv({
+      timesheet,
+      earnings: withPaidHoliday,
+      payments: [],
+    });
+
+    expect(csv).toContain(
+      `${CRLF}2026-08-04,Paid holiday,paid_holiday,480,1850,14800,GBP${CRLF}`
+    );
+  });
 });
 
 describe('carerSlug', () => {
@@ -519,7 +587,7 @@ describe('renderWeekExportCsv — the parent adjustment line', () => {
       amount_minor: -2000,
       note: 'Advance repaid',
       created_by: 'parent-1',
-      created_at: '2026-08-10T09:30:00.000Z',
+      created_at: FIXTURE_SNAPSHOT_AT,
     },
   };
 
@@ -560,7 +628,7 @@ describe('renderWeekExportCsv — the parent adjustment line', () => {
           amount_minor: 2500,
           note: 'Late pickup',
           created_by: 'parent-1',
-          created_at: '2026-08-10T09:30:00.000Z',
+          created_at: FIXTURE_SNAPSHOT_AT,
         },
       },
       payments: [],
@@ -580,7 +648,7 @@ describe('renderWeekExportCsv — the parent adjustment line', () => {
           amount_minor: -2000,
           note: 'Advance, as agreed — she said "next week"\nfollow up',
           created_by: 'parent-1',
-          created_at: '2026-08-10T09:30:00.000Z',
+          created_at: FIXTURE_SNAPSHOT_AT,
         },
       },
       payments: [],
@@ -710,7 +778,7 @@ describe('renderWeekExportCsv — period-end + household identifier (082, D-29)'
       'week_start,2026-08-03',
       'period_end,2026-08-16',
       'currency,GBP',
-      'approved_at,2026-08-10T09:30:00.000Z',
+      `approved_at,${FIXTURE_SNAPSHOT_AT}`,
       '',
     ]);
   });

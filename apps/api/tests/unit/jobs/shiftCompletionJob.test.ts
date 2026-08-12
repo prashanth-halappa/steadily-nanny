@@ -13,7 +13,7 @@ beforeAll(async () => {
   COMPLETION_GRACE_MS = mod.COMPLETION_GRACE_MS;
 });
 
-const NOW = new Date('2026-08-11T03:40:00.000Z');
+const NOW = new Date();
 const clock = { now: () => NOW };
 
 function worked(id: string): EndedConfirmedShift {

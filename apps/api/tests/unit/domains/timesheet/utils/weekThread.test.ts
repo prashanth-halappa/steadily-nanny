@@ -23,6 +23,24 @@ import { describe, expect, it } from 'bun:test';
 import { TIMESHEET_THREAD_MESSAGE_KINDS } from '@steadily-nanny/shared-types/schemas/timesheet.schema';
 import { toThreadMessages } from '../../../../../src/domains/timesheet/utils/weekThread';
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+const queriedInstant = new Date(Date.now() - 14 * DAY_MS);
+queriedInstant.setUTCHours(17, 4, 0, 0);
+const THREAD_QUERIED_AT = queriedInstant
+  .toISOString()
+  .replace('.000Z', '+00:00');
+const THREAD_REPLY_AT = new Date(
+  queriedInstant.getTime() + (2 * 60 + 16) * 60 * 1000
+).toISOString();
+const THREAD_WITHDRAWN_AT = new Date(
+  queriedInstant.getTime() + (14 * 60 + 56) * 60 * 1000
+)
+  .toISOString()
+  .replace('.000Z', '+00:00');
+const THREAD_REQUERY_AT = new Date(
+  queriedInstant.getTime() + (39 * 60 + 56) * 60 * 1000
+).toISOString();
+
 // GOLDEN-FIXES #25: timestamps appear in BOTH serialisations across these
 // fixtures — Postgres hands back `+00:00`, every hand-written fixture in this
 // repo used to say `.000Z`, and a parser that only ever saw one is a parser
@@ -39,7 +57,7 @@ const queriedEvent = {
     weekStart: '2026-08-03',
     note: 'Thursday looks about 90 minutes long — can you check?',
   },
-  created_at: '2026-08-10T17:04:00+00:00',
+  created_at: THREAD_QUERIED_AT,
 };
 
 const replyEvent = {
@@ -54,7 +72,7 @@ const replyEvent = {
     weekStart: '2026-08-03',
     message: "I stayed late — Ayla's pickup ran over. I've fixed Thursday.",
   },
-  created_at: '2026-08-10T19:20:00.000Z',
+  created_at: THREAD_REPLY_AT,
 };
 
 const withdrawnEvent = {
@@ -65,7 +83,7 @@ const withdrawnEvent = {
   actor_id: 'parent-1',
   event_type: 'timesheet_query_withdrawn',
   payload: { timesheetId: 'ts1', weekStart: '2026-08-03' },
-  created_at: '2026-08-11T08:00:00+00:00',
+  created_at: THREAD_WITHDRAWN_AT,
 };
 
 const context = {
@@ -89,7 +107,7 @@ describe('toThreadMessages', () => {
         author_id: 'parent-1',
         author_name: 'The Ahmeds',
         body: 'Thursday looks about 90 minutes long — can you check?',
-        created_at: '2026-08-10T17:04:00+00:00',
+        created_at: THREAD_QUERIED_AT,
       },
       {
         id: replyEvent.id,
@@ -97,7 +115,7 @@ describe('toThreadMessages', () => {
         author_id: 'carer-1',
         author_name: 'Priya Nair',
         body: "I stayed late — Ayla's pickup ran over. I've fixed Thursday.",
-        created_at: '2026-08-10T19:20:00.000Z',
+        created_at: THREAD_REPLY_AT,
       },
       {
         id: withdrawnEvent.id,
@@ -105,7 +123,7 @@ describe('toThreadMessages', () => {
         author_id: 'parent-1',
         author_name: 'The Ahmeds',
         body: '',
-        created_at: '2026-08-11T08:00:00+00:00',
+        created_at: THREAD_WITHDRAWN_AT,
       },
     ]);
   });
@@ -157,7 +175,7 @@ describe('toThreadMessages', () => {
     const reQuery = {
       ...queriedEvent,
       id: '77777777-7777-4777-8777-777777777777',
-      created_at: '2026-08-12T09:00:00.000Z',
+      created_at: THREAD_REQUERY_AT,
       payload: { ...queriedEvent.payload, note: 'And Friday too, sorry.' },
     };
 

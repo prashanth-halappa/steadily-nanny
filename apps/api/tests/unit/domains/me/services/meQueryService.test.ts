@@ -6,8 +6,9 @@ import { describe, expect, it, mock } from 'bun:test';
 import { MeQueryService } from '../../../../../src/domains/me/services/meQueryService';
 import type { ShiftWithChildren } from '../../../../../src/domains/shift/repositories/shiftRepository';
 
+const DAY_MS = 24 * 60 * 60 * 1000;
 const from = '2026-08-03T00:00:00.000Z';
-const to = '2026-08-10T00:00:00.000Z';
+const to = new Date(Date.now()).toISOString();
 
 function makeShift(
   overrides: Partial<ShiftWithChildren> &

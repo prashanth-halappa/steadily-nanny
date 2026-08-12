@@ -244,7 +244,7 @@ tags:
 # `line.kind` in EarningsBreakdownSheet's switch — `overtime` and `doubletime`
 # happen to match their enum values, `holiday_premium` (flow 09) does not.
 - assertVisible:
-    id: 'hours-earnings-breakdown-line-overtime'
+    id: 'hours-earnings-breakdown-line-overtime-1'
 - assertVisible:
     id: 'hours-earnings-breakdown-line-doubletime'
 - assertVisible:

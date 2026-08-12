@@ -1,6 +1,9 @@
 import { describe, expect, it, mock } from 'bun:test';
 import type { WeekEarnings } from '@steadily-nanny/shared-types/schemas/timesheet.schema';
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+const FIXTURE_SNAPSHOT_AT = new Date(Date.now() - 2 * DAY_MS).toISOString();
+
 // The house logger, stubbed so the degraded-snapshot path's `logger.error`
 // is assertable. Registered before the service is imported below.
 const mockLogger = {
@@ -332,11 +335,11 @@ const approvedTimesheet = {
   ...timesheet,
   status: 'approved',
   approved_by: 'parent-1',
-  approved_at: '2026-08-10T09:00:00.000Z',
+  approved_at: FIXTURE_SNAPSHOT_AT,
   gross_minor: 14_800,
   currency: 'GBP',
   earnings: okEarnings,
-  earnings_computed_at: '2026-08-10T09:00:00.000Z',
+  earnings_computed_at: FIXTURE_SNAPSHOT_AT,
 };
 
 function makeEarnings(overrides: Record<string, unknown> = {}): any {

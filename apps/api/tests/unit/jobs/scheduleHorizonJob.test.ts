@@ -448,7 +448,8 @@ describe('runScheduleHorizonJob — uncovered-care backstop sweep', () => {
 
 describe('runScheduleHorizonJob — A5: a request must not outlive its shift', () => {
   it('expires pending requests whose shift has already started, keyed on the shift not the request age', async () => {
-    setSystemTime(new Date('2026-08-11T12:00:00.000Z'));
+    const now = new Date();
+    setSystemTime(now);
     const changeRequests = {
       ...noChangeRequests(),
       expirePendingForStartedShifts: mock(async (_nowIso: string) => [
@@ -472,7 +473,7 @@ describe('runScheduleHorizonJob — A5: a request must not outlive its shift', (
     // `now`, NOT a 7-day cutoff — the whole point of A5 is that a request
     // about tomorrow's shift is six days from the age-based cutoff.
     const [call] = changeRequests.expirePendingForStartedShifts.mock.calls;
-    expect(call?.[0]).toBe('2026-08-11T12:00:00.000Z');
+    expect(call?.[0]).toBe(now.toISOString());
     expect(result.changeRequestsExpiredForStartedShifts).toBe(2);
   });
 

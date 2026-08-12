@@ -16,6 +16,11 @@
 import { describe, expect, it } from 'bun:test';
 import { toWireTimesheet } from '../../../../../src/domains/timesheet/utils/toWireTimesheet';
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+const FIXTURE_EARNINGS_COMPUTED_AT = new Date(
+  Date.now() - 2 * DAY_MS
+).toISOString();
+
 const row = {
   id: 'ts-1',
   household_id: 'h1',
@@ -34,7 +39,7 @@ const row = {
   gross_minor: 14_800,
   currency: 'GBP',
   earnings: { status: 'ok' },
-  earnings_computed_at: '2026-08-10T09:00:00.000Z',
+  earnings_computed_at: FIXTURE_EARNINGS_COMPUTED_AT,
 };
 
 describe('toWireTimesheet', () => {

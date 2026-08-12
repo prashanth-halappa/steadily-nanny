@@ -5,6 +5,26 @@ import type { CarerTimeOff } from '../../../../../src/domains/availability/types
 import { AuthorizationError, ValidationError } from '../../../../../src/errors';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const HOUR_MS = 60 * 60 * 1000;
+
+/** Format a UTC instant as an ISO string with a fixed numeric offset (e.g. -08:00). */
+function toOffsetIso(instant: Date, offsetHours: number): string {
+  const local = new Date(instant.getTime() + offsetHours * HOUR_MS);
+  const y = local.getUTCFullYear();
+  const m = String(local.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(local.getUTCDate()).padStart(2, '0');
+  const h = String(local.getUTCHours()).padStart(2, '0');
+  const min = String(local.getUTCMinutes()).padStart(2, '0');
+  const sec = String(local.getUTCSeconds()).padStart(2, '0');
+  const sign = offsetHours >= 0 ? '+' : '-';
+  const absOffset = String(Math.abs(offsetHours)).padStart(2, '0');
+  return `${y}-${m}-${day}T${h}:${min}:${sec}${sign}${absOffset}:00`;
+}
+
+const CREATE_START = new Date(Date.now() + 28 * DAY_MS).toISOString();
+const CREATE_END = new Date(Date.now() + 30 * DAY_MS).toISOString();
+const UPDATE_START = new Date(Date.now() + 29 * DAY_MS).toISOString();
+const UPDATE_END = new Date(Date.now() + 31 * DAY_MS).toISOString();
 
 const row: CarerTimeOff = {
   id: 't1',
@@ -76,16 +96,16 @@ describe('TimeOffCommandService.create', () => {
     );
 
     const result = await svc.create('u1', {
-      starts_at: '2026-08-10T00:00:00Z',
-      ends_at: '2026-08-12T00:00:00Z',
+      starts_at: CREATE_START,
+      ends_at: CREATE_END,
       all_day: true,
     });
 
     expect(timeOffRepo.create).toHaveBeenCalledWith(
       expect.objectContaining({
         user_id: 'u1',
-        starts_at: '2026-08-10T00:00:00Z',
-        ends_at: '2026-08-12T00:00:00Z',
+        starts_at: CREATE_START,
+        ends_at: CREATE_END,
         all_day: true,
       })
     );
@@ -262,15 +282,15 @@ describe('TimeOffCommandService.update', () => {
     );
 
     const result = await svc.update('u1', 't1', {
-      starts_at: '2026-08-11T00:00:00Z',
-      ends_at: '2026-08-13T00:00:00Z',
+      starts_at: UPDATE_START,
+      ends_at: UPDATE_END,
       message: 'Extended by a day',
     });
 
     expect(queries.getOwned).toHaveBeenCalledWith('u1', 't1');
     expect(timeOffRepo.update).toHaveBeenCalledWith('t1', {
-      starts_at: '2026-08-11T00:00:00Z',
-      ends_at: '2026-08-13T00:00:00Z',
+      starts_at: UPDATE_START,
+      ends_at: UPDATE_END,
       message: 'Extended by a day',
       sequence: 1,
     });
@@ -356,15 +376,20 @@ describe('TimeOffCommandService.update', () => {
   // EITHER implementation and prove nothing.
 
   it('rejects a range that is invalid by Date-instant but "valid" by lexicographic string order', async () => {
-    // ends_at (stored, no offset): 2026-08-12T02:00:00Z
-    // starts_at (patched, -08:00): 2026-08-11T20:00:00-08:00 = 2026-08-12T04:00:00Z
+    // ends_at (stored, no offset): day at 02:00 UTC
+    // starts_at (patched, -08:00): previous calendar day 20:00 local = day 04:00 UTC
     // True instants: ends (02:00) is BEFORE starts (04:00) — genuinely invalid.
-    // String order: '2026-08-12T02...' > '2026-08-11T20...' — lexicographic
+    // String order: stored ends sorts AFTER patched starts — lexicographic
     // compare says ends > starts, i.e. wrongly "valid". Reverting line 87 to
     // a string compare makes this test's `rejects` assertion fail.
+    const rangeBase = new Date(Date.now() + 35 * DAY_MS);
+    rangeBase.setUTCHours(2, 0, 0, 0);
+    const storedEndsAt = rangeBase.toISOString();
+    const startsInstant = new Date(rangeBase.getTime() + 2 * HOUR_MS);
+    const patchedStartsAt = toOffsetIso(startsInstant, -8);
     const storedRow = {
       ...row,
-      ends_at: '2026-08-12T02:00:00Z',
+      ends_at: storedEndsAt,
     };
     const timeOffRepo = makeTimeOffRepo();
     const queries = makeQueries({
@@ -377,22 +402,27 @@ describe('TimeOffCommandService.update', () => {
     );
 
     await expect(
-      svc.update('u1', 't1', { starts_at: '2026-08-11T20:00:00-08:00' })
+      svc.update('u1', 't1', { starts_at: patchedStartsAt })
     ).rejects.toBeInstanceOf(ValidationError);
     expect(timeOffRepo.update).not.toHaveBeenCalled();
   });
 
   it('accepts a range that is valid by Date-instant but "invalid" by lexicographic string order — the mirror case', async () => {
-    // starts_at (stored, no offset): 2026-08-12T04:00:00Z
-    // ends_at (patched, -08:00): 2026-08-11T20:30:00-08:00 = 2026-08-12T04:30:00Z
+    // starts_at (stored, no offset): day at 04:00 UTC
+    // ends_at (patched, -08:00): previous calendar day 20:30 local = day 04:30 UTC
     // True instants: ends (04:30) is AFTER starts (04:00) — genuinely valid,
-    // a 30-minute span. String order: '2026-08-11T20...' < '2026-08-12T04...'
+    // a 30-minute span. String order: patched ends sorts BEFORE stored starts
     // — lexicographic compare says ends <= starts, i.e. wrongly "invalid".
     // Reverting line 87 to a string compare makes this throw instead of
     // reaching the repository.
+    const rangeBase = new Date(Date.now() + 35 * DAY_MS);
+    rangeBase.setUTCHours(4, 0, 0, 0);
+    const storedStartsAt = rangeBase.toISOString();
+    const endsInstant = new Date(rangeBase.getTime() + 30 * 60 * 1000);
+    const patchedEndsAt = toOffsetIso(endsInstant, -8);
     const storedRow = {
       ...row,
-      starts_at: '2026-08-12T04:00:00Z',
+      starts_at: storedStartsAt,
     };
     const timeOffRepo = makeTimeOffRepo();
     const queries = makeQueries({
@@ -405,17 +435,17 @@ describe('TimeOffCommandService.update', () => {
     );
 
     const result = await svc.update('u1', 't1', {
-      ends_at: '2026-08-11T20:30:00-08:00',
+      ends_at: patchedEndsAt,
     });
 
     expect(timeOffRepo.update).toHaveBeenCalledWith(
       't1',
       expect.objectContaining({
-        ends_at: '2026-08-11T20:30:00-08:00',
+        ends_at: patchedEndsAt,
         sequence: 1,
       })
     );
-    expect(result.carer_time_off.ends_at).toBe('2026-08-11T20:30:00-08:00');
+    expect(result.carer_time_off.ends_at).toBe(patchedEndsAt);
   });
 
   it('rejects edits to past time off (ends_at already before now)', async () => {
@@ -501,8 +531,8 @@ describe('TimeOffCommandService — active-membership gate', () => {
 
     await expect(
       svc.create('removed-nanny', {
-        starts_at: '2026-08-10T00:00:00Z',
-        ends_at: '2026-08-12T00:00:00Z',
+        starts_at: CREATE_START,
+        ends_at: CREATE_END,
         all_day: true,
       })
     ).rejects.toBeInstanceOf(AuthorizationError);
@@ -556,8 +586,8 @@ describe('TimeOffCommandService — active-membership gate', () => {
     );
 
     await svc.create('u1', {
-      starts_at: '2026-08-10T00:00:00Z',
-      ends_at: '2026-08-12T00:00:00Z',
+      starts_at: CREATE_START,
+      ends_at: CREATE_END,
       all_day: true,
     });
 

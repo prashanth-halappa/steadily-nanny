@@ -6,11 +6,15 @@
 import { describe, expect, it } from 'bun:test';
 import { BusyBlocksQuerySchema } from '../../../../../src/domains/availability/schemas';
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+const RANGE_FROM = new Date(Date.now()).toISOString();
+const RANGE_TO = new Date(Date.now() + 7 * DAY_MS).toISOString();
+
 describe('BusyBlocksQuerySchema — range refine (F-B7-4)', () => {
   it('rejects a plainly inverted range', () => {
     expect(
       BusyBlocksQuerySchema.safeParse({
-        from: '2026-08-10T00:00:00.000Z',
+        from: RANGE_TO,
         to: '2026-08-03T00:00:00.000Z',
       }).success
     ).toBe(false);
@@ -48,8 +52,8 @@ describe('BusyBlocksQuerySchema — range refine (F-B7-4)', () => {
   it('accepts an ordinary same-offset range', () => {
     expect(
       BusyBlocksQuerySchema.safeParse({
-        from: '2026-08-03T00:00:00.000Z',
-        to: '2026-08-10T00:00:00.000Z',
+        from: RANGE_FROM,
+        to: RANGE_TO,
       }).success
     ).toBe(true);
   });

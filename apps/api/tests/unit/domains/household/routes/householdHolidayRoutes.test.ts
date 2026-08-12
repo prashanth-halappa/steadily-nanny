@@ -39,6 +39,10 @@ const OTHER_HOUSEHOLD_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 const OTHER_HOUSEHOLD_ID_2 = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
 const AUTH_USER_ID = 'parent-1';
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+const FIXTURE_TS = new Date(Date.now() - 2 * DAY_MS).toISOString();
+const FIXTURE_TS_OFFSET = FIXTURE_TS.replace('.000Z', '+00:00');
+
 // BOTH timestamp serialisations across the fixtures (GOLDEN-FIXES #25).
 const ROWS = [
   {
@@ -46,16 +50,16 @@ const ROWS = [
     household_id: HOUSEHOLD_ID,
     holiday_key: 'independence_day',
     observed: true,
-    created_at: '2026-08-11T09:00:00+00:00',
-    updated_at: '2026-08-11T09:00:00+00:00',
+    created_at: FIXTURE_TS_OFFSET,
+    updated_at: FIXTURE_TS_OFFSET,
   },
   {
     id: '22222222-2222-4222-8222-222222222222',
     household_id: HOUSEHOLD_ID,
     holiday_key: 'labor_day',
     observed: false,
-    created_at: '2026-08-11T09:00:00.000Z',
-    updated_at: '2026-08-11T09:00:00.000Z',
+    created_at: FIXTURE_TS,
+    updated_at: FIXTURE_TS,
   },
 ];
 

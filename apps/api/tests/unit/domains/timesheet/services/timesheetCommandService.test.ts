@@ -3091,10 +3091,21 @@ describe('TimesheetCommandService.rollUpIntoTimesheet — reopen clears the earn
 // were computed from (`docs/11-MONEY.md` §3, docs/DEFECT-LOG.md D1).
 // =============================================================================
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 /** `updated_at` of the row `approve` reads before it computes anything. */
-const VERSION_AT_READ = '2026-08-10T08:59:12.123456+00:00';
+const _versionAtReadInstant = new Date(Date.now() - 2 * DAY_MS);
+_versionAtReadInstant.setUTCHours(8, 59, 12, 123);
+const VERSION_AT_READ = _versionAtReadInstant
+  .toISOString()
+  .replace('.123Z', '.123456+00:00');
 /** ...and what the trigger stamps once a concurrent roll-up has written. */
-const VERSION_AFTER_ROLLUP = '2026-08-10T08:59:12.987654+00:00';
+const VERSION_AFTER_ROLLUP = _versionAtReadInstant
+  .toISOString()
+  .replace('.123Z', '.987654+00:00');
+const FIXTURE_EARNINGS_COMPUTED_AT = new Date(
+  Date.now() - 2 * DAY_MS
+).toISOString();
 
 const submittedAtVersion = {
   ...timesheet,
@@ -3379,7 +3390,7 @@ describe('TimesheetCommandService — mutation responses carry no snapshot colum
           gross_minor: 37_000,
           currency: 'GBP',
           earnings: computedEarnings,
-          earnings_computed_at: '2026-08-10T09:00:00.000Z',
+          earnings_computed_at: FIXTURE_EARNINGS_COMPUTED_AT,
           status: 'queried',
           query_note: note,
         })

@@ -57,4 +57,11 @@ appId: com.jetto.steadily.nanny
           text: 'Maybe later'
       - waitForAnimationToEnd
 
+# Same household reset as login.yaml — nanny sessions inherit the parent's
+# last-selected household on a shared simulator.
+- runFlow:
+    file: select-household.yaml
+    env:
+      HOUSEHOLD_ID: ${PHASE4_HOUSEHOLD_ID}
+
 - waitForAnimationToEnd

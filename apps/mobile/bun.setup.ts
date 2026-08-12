@@ -1,4 +1,4 @@
-import { mock } from 'bun:test';
+import { afterEach, mock } from 'bun:test';
 import React from 'react';
 import { mockIllustrationsModule } from '@/lib/test/mockIllustrations';
 
@@ -1063,3 +1063,18 @@ mock.module('@shopify/flash-list', () => ({
     );
   },
 }));
+
+// Unmount every rendered tree after each test. Without this, component trees
+// accumulate within a file — timers, subscriptions, and in-flight react-query
+// refetches from an earlier test keep running during later ones. That is the
+// root cause of position-dependent flakes: a test passes in isolation but fails
+// under the full one-file-per-process run when a prior test's tree outruns
+// waitFor's default budget.
+//
+// Load via require here (not a top-of-file import): @testing-library/react-native
+// pulls in react-native at module-eval time, which must happen after the
+// mock.module('react-native', …) registrations above.
+const { cleanup } = require('@testing-library/react-native');
+afterEach(() => {
+  cleanup();
+});

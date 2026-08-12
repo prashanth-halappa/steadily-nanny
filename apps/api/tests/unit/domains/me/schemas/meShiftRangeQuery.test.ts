@@ -6,6 +6,10 @@
 import { describe, expect, it } from 'bun:test';
 import { MeShiftRangeQuerySchema } from '../../../../../src/domains/me/schemas';
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+const RANGE_FROM = new Date(Date.now()).toISOString();
+const RANGE_TO = new Date(Date.now() + 7 * DAY_MS).toISOString();
+
 describe('MeShiftRangeQuerySchema — instant compare (F-B7-3)', () => {
   it('rejects a range that is inverted by instant but ordered as text', () => {
     expect(
@@ -37,8 +41,8 @@ describe('MeShiftRangeQuerySchema — instant compare (F-B7-3)', () => {
   it('accepts an ordinary same-offset range', () => {
     expect(
       MeShiftRangeQuerySchema.safeParse({
-        from: '2026-08-03T00:00:00.000Z',
-        to: '2026-08-10T00:00:00.000Z',
+        from: RANGE_FROM,
+        to: RANGE_TO,
       }).success
     ).toBe(true);
   });

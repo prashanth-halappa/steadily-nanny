@@ -22,6 +22,8 @@ import type {
 
 const CODE = 'R4K-92T';
 const CARER_ID = 'u-nanny';
+const DAY_MS = 24 * 60 * 60 * 1000;
+const FIXTURE_CREATED_AT = new Date(Date.now() - 2 * DAY_MS).toISOString();
 
 const draft: Household = {
   id: 'h-draft',
@@ -39,8 +41,8 @@ const draft: Household = {
   week_starts_on: 1,
   state: 'draft',
   created_by: CARER_ID,
-  created_at: '2026-08-10T00:00:00.000Z',
-  updated_at: '2026-08-10T00:00:00.000Z',
+  created_at: FIXTURE_CREATED_AT,
+  updated_at: FIXTURE_CREATED_AT,
 };
 
 function invite(overrides: Partial<HouseholdInvite> = {}): HouseholdInvite {
@@ -58,8 +60,8 @@ function invite(overrides: Partial<HouseholdInvite> = {}): HouseholdInvite {
     link_expires_at: '2999-01-01T00:00:00Z',
     opened_at: null,
     label: 'The Bakers',
-    created_at: '2026-08-10T00:00:00.000Z',
-    updated_at: '2026-08-10T00:00:00.000Z',
+    created_at: FIXTURE_CREATED_AT,
+    updated_at: FIXTURE_CREATED_AT,
     ...overrides,
   };
 }
@@ -81,8 +83,8 @@ const proposal = {
   accepted_by: null,
   accepted_arrangement_id: null,
   responsibility_confirmed: false,
-  created_at: '2026-08-10T00:00:00.000Z',
-  updated_at: '2026-08-10T00:00:00.000Z',
+  created_at: FIXTURE_CREATED_AT,
+  updated_at: FIXTURE_CREATED_AT,
 };
 
 function makeService(parts: {
@@ -129,7 +131,7 @@ describe('householdQueryService.termsPreview — the happy path', () => {
       code: CODE,
       currency: 'USD',
       link_expires_at: '2999-01-01T00:00:00Z',
-      proposed_at: '2026-08-10T00:00:00.000Z',
+      proposed_at: FIXTURE_CREATED_AT,
     });
     expect(preview.proposal.id).toBe('p1');
   });

@@ -23,13 +23,14 @@ const CARER_ID = '11111111-1111-4111-8111-111111111111';
 const ROW_ID = '22222222-2222-4222-8222-222222222222';
 
 const HOUR_MS = 60 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** Fixed-shape row with wire-valid values, so the shared schema can parse it. */
 const row: CarerTimeOff = {
   id: ROW_ID,
   user_id: CARER_ID,
-  starts_at: '2026-08-10T00:00:00Z',
-  ends_at: '2026-08-12T00:00:00Z',
+  starts_at: new Date(Date.now() + 28 * DAY_MS).toISOString(),
+  ends_at: new Date(Date.now() + 30 * DAY_MS).toISOString(),
   all_day: true,
   kind: 'personal',
   message: null,
@@ -104,8 +105,8 @@ describe('TimeOffCommandService.create — kind is persisted', () => {
     const svc = makeService(timeOffRepo);
 
     const result = await svc.create(CARER_ID, {
-      starts_at: '2026-08-10T00:00:00Z',
-      ends_at: '2026-08-11T00:00:00Z',
+      starts_at: new Date(Date.now() + 28 * DAY_MS).toISOString(),
+      ends_at: new Date(Date.now() + 29 * DAY_MS).toISOString(),
       all_day: true,
       kind: 'sick',
     });
@@ -124,8 +125,8 @@ describe('TimeOffCommandService.create — kind is persisted', () => {
     const svc = makeService(timeOffRepo);
 
     const result = await svc.create(CARER_ID, {
-      starts_at: '2026-08-10T00:00:00Z',
-      ends_at: '2026-08-12T00:00:00Z',
+      starts_at: new Date(Date.now() + 28 * DAY_MS).toISOString(),
+      ends_at: new Date(Date.now() + 30 * DAY_MS).toISOString(),
       all_day: true,
     });
 
@@ -249,8 +250,8 @@ describe('sick time off on the wire', () => {
     );
 
     const result = await svc.create(CARER_ID, {
-      starts_at: '2026-08-10T00:00:00Z',
-      ends_at: '2026-08-11T00:00:00Z',
+      starts_at: new Date(Date.now() + 28 * DAY_MS).toISOString(),
+      ends_at: new Date(Date.now() + 29 * DAY_MS).toISOString(),
       kind: 'sick',
     });
 

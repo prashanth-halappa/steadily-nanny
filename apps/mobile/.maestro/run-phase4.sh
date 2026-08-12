@@ -33,15 +33,27 @@ API_BASE="${API_BASE:-http://localhost:8080}"
 SIM_UDID="${SIM_UDID:-3DE35533-5F01-4D79-80AC-15CF0DCDFECE}"
 
 # --- simulator prep (2026-08-11) -------------------------------------------
-# iOS QuickType's predictive bar sits on top of app buttons near the
-# keyboard — invisible to `maestro hierarchy` — and can eat a tap or commit
-# a stray suggested word into whatever was just typed (flow 11's "Y").
-# Disabling it is a standing simulator setting, not per-flow: re-run this on
-# a fresh simulator or after `clearState`.
-print "==> disabling iOS QuickType prediction on the simulator"
-xcrun simctl spawn "${SIM_UDID}" defaults write com.apple.Preferences KeyboardPrediction -bool false
-xcrun simctl spawn "${SIM_UDID}" defaults write com.apple.Preferences KeyboardAutocorrection -bool false
-xcrun simctl spawn "${SIM_UDID}" defaults write com.apple.Preferences KeyboardShowPredictionBar -bool false
+disable_ios_quicktype() {
+  # iOS QuickType's predictive bar sits on top of app buttons near the
+  # keyboard — invisible to `maestro hierarchy` — and can eat a tap or commit
+  # a stray suggested word into whatever was just typed (flow 11's "Y").
+  # Disabling it is a standing simulator setting, not per-flow: re-run this on
+  # a fresh simulator or after `clearState`. The write takes effect only after
+  # Keyboard.app restarts — Maestro relaunching the app between flows usually
+  # suffices; if a field still autocorrects, dismiss and refocus once.
+  print "==> disabling iOS QuickType prediction on the simulator (best-effort)"
+  if ! xcrun simctl list devices 2>/dev/null | grep -q '(Booted)'; then
+    print "warn: no booted simulator — skipping QuickType disable"
+    return 0
+  fi
+  local key
+  for key in KeyboardPrediction KeyboardAutocorrection KeyboardShowPredictionBar; do
+    if ! xcrun simctl spawn booted defaults write com.apple.Preferences "${key}" -bool false 2>/dev/null; then
+      print "warn: defaults write ${key} failed (continuing)"
+    fi
+  done
+}
+disable_ios_quicktype
 
 # A cold Metro bundle can take ~15s to build; reset-to-welcome's wait windows
 # are tuned for a warm one and fail as if the app were wedged. Warm it here

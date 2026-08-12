@@ -33,6 +33,9 @@ import {
 import type { AddressInfo } from 'node:net';
 
 const CODE = 'R4K-92T';
+const DAY_MS = 24 * 60 * 60 * 1000;
+const FIXTURE_CREATED_AT = new Date(Date.now() - 2 * DAY_MS).toISOString();
+const FIXTURE_LINK_EXPIRES_AT = new Date(Date.now() + 7 * DAY_MS).toISOString();
 
 let server: import('node:http').Server;
 let baseUrl: string;
@@ -63,8 +66,8 @@ function proposalRow() {
     accepted_by: null,
     accepted_arrangement_id: null,
     responsibility_confirmed: false,
-    created_at: '2026-08-10T00:00:00.000Z',
-    updated_at: '2026-08-10T00:00:00.000Z',
+    created_at: FIXTURE_CREATED_AT,
+    updated_at: FIXTURE_CREATED_AT,
   };
 }
 
@@ -72,8 +75,8 @@ beforeAll(async () => {
   termsPreview = mock(async () => ({
     code: CODE,
     carer_name: 'Marisol M.',
-    proposed_at: '2026-08-10T00:00:00.000Z',
-    link_expires_at: '2026-08-17T00:00:00.000Z',
+    proposed_at: FIXTURE_CREATED_AT,
+    link_expires_at: FIXTURE_LINK_EXPIRES_AT,
     currency: 'USD',
     proposal: proposalRow(),
   }));

@@ -4,6 +4,7 @@
  */
 import { beforeAll, describe, expect, it, mock } from 'bun:test';
 import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types/schemas/notification.schema';
+import { localDateOf } from '../../../src/domains/timesheet/utils/weekStart';
 import type { ExpiringAsk } from '../../../src/jobs/coverAskExpiryJob';
 
 let runCoverAskExpiryJob: typeof import('../../../src/jobs/coverAskExpiryJob').runCoverAskExpiryJob;
@@ -17,7 +18,9 @@ beforeAll(async () => {
   EXPIRING_ASK_KINDS = mod.EXPIRING_ASK_KINDS;
 });
 
-const NOW = new Date('2026-08-14T03:05:00.000Z');
+const NOW = new Date();
+const SHIFT_START = new Date(NOW.getTime() + 4 * 60 * 60 * 1000).toISOString();
+const ASK_EXPIRES_AT = new Date(NOW.getTime() - 5 * 60 * 1000).toISOString();
 const clock = { now: () => NOW };
 
 function askFor(over: Partial<ExpiringAsk> = {}): ExpiringAsk {
@@ -25,10 +28,10 @@ function askFor(over: Partial<ExpiringAsk> = {}): ExpiringAsk {
     id: 'ask-1',
     household_id: 'h1',
     carer_id: 'carer-1',
-    starts_at: '2026-08-14T07:00:00.000Z',
+    starts_at: SHIFT_START,
     timezone: 'Europe/London',
-    local_date: '2026-08-14',
-    cover_ask_expires_at: '2026-08-14T03:00:00.000Z',
+    local_date: localDateOf(new Date(SHIFT_START), 'Europe/London'),
+    cover_ask_expires_at: ASK_EXPIRES_AT,
     ...over,
   };
 }
@@ -132,7 +135,7 @@ describe('runCoverAskExpiryJob', () => {
       clock
     );
 
-    expect(expireAsk).toHaveBeenCalledWith('ask-1', '2026-08-14T03:00:00.000Z');
+    expect(expireAsk).toHaveBeenCalledWith('ask-1', ASK_EXPIRES_AT);
   });
 
   it('falls back to the shift start for a legacy ask with no stored deadline', async () => {
@@ -149,7 +152,7 @@ describe('runCoverAskExpiryJob', () => {
       clock
     );
 
-    expect(expireAsk).toHaveBeenCalledWith('ask-1', '2026-08-14T07:00:00.000Z');
+    expect(expireAsk).toHaveBeenCalledWith('ask-1', SHIFT_START);
   });
 
   it('carries shiftStartsAt so the quiet-hours exemption is decided from a fact, not a flag', async () => {
@@ -169,7 +172,7 @@ describe('runCoverAskExpiryJob', () => {
       { data: Record<string, unknown> },
     ];
     expect(payload.data.type).toBe(PUSH_NOTIFICATION_TYPES.COVER_ASK_EXPIRED);
-    expect(payload.data.shiftStartsAt).toBe('2026-08-14T07:00:00.000Z');
+    expect(payload.data.shiftStartsAt).toBe(SHIFT_START);
   });
 
   it('claims once ever per shift, so a crashed run never double-notifies', () => {

@@ -59,4 +59,14 @@ appId: com.jetto.steadily.nanny
           text: 'Maybe later'
       - waitForAnimationToEnd
 
+# Active household is client-side state that survives sign-out — the seed parent
+# owns three live households after scripts/seed-phase4-fixtures.ts runs, and
+# flow 10 leaves the Sunday one selected unless every login resets here.
+# select-household.yaml is a no-op when HouseholdSwitcher renders null (single-
+# household user); see its header for the full evidence chain.
+- runFlow:
+    file: select-household.yaml
+    env:
+      HOUSEHOLD_ID: ${PHASE4_HOUSEHOLD_ID}
+
 - waitForAnimationToEnd

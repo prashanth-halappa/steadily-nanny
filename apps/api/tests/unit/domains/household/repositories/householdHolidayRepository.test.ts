@@ -11,6 +11,10 @@
 import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 import { US_FEDERAL_HOLIDAY_KEYS } from '@steadily-nanny/shared-types/usFederalHolidays';
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+const FIXTURE_TS = new Date(Date.now() - 2 * DAY_MS).toISOString();
+const FIXTURE_TS_OFFSET = FIXTURE_TS.replace('.000Z', '+00:00');
+
 let HouseholdHolidayRepository: any;
 let mockSupabaseService: any;
 
@@ -52,8 +56,8 @@ function holidayRow(overrides: Record<string, unknown> = {}) {
     household_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
     holiday_key: 'independence_day',
     observed: true,
-    created_at: '2026-08-11T09:00:00+00:00',
-    updated_at: '2026-08-11T09:00:00.000Z',
+    created_at: FIXTURE_TS_OFFSET,
+    updated_at: FIXTURE_TS,
     ...overrides,
   };
 }

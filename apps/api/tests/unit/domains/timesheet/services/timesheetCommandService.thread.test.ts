@@ -30,6 +30,11 @@ import {
 } from '../../../../../src/domains/timesheet/errors/timesheetErrors';
 import { TimesheetCommandService } from '../../../../../src/domains/timesheet/services/timesheetCommandService';
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+const queriedInstant = new Date(Date.now() - 14 * DAY_MS);
+queriedInstant.setUTCHours(17, 4, 0, 0);
+const THREAD_UPDATED_AT = queriedInstant.toISOString();
+
 // GOLDEN-FIXES #25 — both timestamp serialisations across the fixtures.
 const queriedTimesheet = {
   id: 'ts1',
@@ -44,7 +49,7 @@ const queriedTimesheet = {
   query_note: 'Thursday looks long',
   reopen_reason: null,
   created_at: '2026-08-03T00:00:00+00:00',
-  updated_at: '2026-08-10T17:04:00.000Z',
+  updated_at: THREAD_UPDATED_AT,
 };
 
 const parentMembership = {
@@ -313,7 +318,7 @@ describe('withdrawQuery — the parent’s exit from queried (D-19, gap P2)', ()
 
     expect(timesheetRepo.withdrawQueryFromQueried).toHaveBeenCalledWith(
       'ts1',
-      '2026-08-10T17:04:00.000Z'
+      THREAD_UPDATED_AT
     );
     expect(result.status).toBe('submitted');
   });

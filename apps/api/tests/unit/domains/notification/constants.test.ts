@@ -49,28 +49,31 @@ describe('QUIET_HOURS_EXEMPT_TYPES', () => {
  * fixable. An ask expiring four days out defers like everything else.
  */
 describe('isQuietHoursExempt — cover_ask_expired inside 12h (D-47)', () => {
-  const NOW = new Date('2026-08-13T21:30:00.000Z');
+  const NOW = new Date();
+  const SHIFT_IN_9_5H = new Date(
+    NOW.getTime() + 9.5 * 60 * 60 * 1000
+  ).toISOString();
+  const SHIFT_IN_4_DAYS = new Date(
+    NOW.getTime() + 4 * 24 * 60 * 60 * 1000
+  ).toISOString();
+  const SHIFT_IN_12H = new Date(
+    NOW.getTime() + 12 * 60 * 60 * 1000
+  ).toISOString();
   const expiredPush = (shiftStartsAt?: unknown) => ({
     type: PUSH_NOTIFICATION_TYPES.COVER_ASK_EXPIRED,
     ...(shiftStartsAt === undefined ? {} : { shiftStartsAt }),
   });
 
   it('breaks through when the shift starts in 9.5 hours', () => {
-    expect(
-      isQuietHoursExempt(expiredPush('2026-08-14T07:00:00.000Z'), NOW)
-    ).toBe(true);
+    expect(isQuietHoursExempt(expiredPush(SHIFT_IN_9_5H), NOW)).toBe(true);
   });
 
   it('defers like everything else when the shift is four days out', () => {
-    expect(
-      isQuietHoursExempt(expiredPush('2026-08-17T07:00:00.000Z'), NOW)
-    ).toBe(false);
+    expect(isQuietHoursExempt(expiredPush(SHIFT_IN_4_DAYS), NOW)).toBe(false);
   });
 
   it('is exclusive at exactly 12h', () => {
-    expect(
-      isQuietHoursExempt(expiredPush('2026-08-14T09:30:00.000Z'), NOW)
-    ).toBe(false);
+    expect(isQuietHoursExempt(expiredPush(SHIFT_IN_12H), NOW)).toBe(false);
   });
 
   it('CANNOT be self-granted: no shiftStartsAt means no exemption', () => {
@@ -91,7 +94,7 @@ describe('isQuietHoursExempt — cover_ask_expired inside 12h (D-47)', () => {
       isQuietHoursExempt(
         {
           type: PUSH_NOTIFICATION_TYPES.COVER_ASK_DECLINED,
-          shiftStartsAt: '2026-08-14T07:00:00.000Z',
+          shiftStartsAt: SHIFT_IN_9_5H,
         },
         NOW
       )

@@ -10,6 +10,12 @@ import { beforeAll, describe, expect, it, mock } from 'bun:test';
 import type { Payment } from '@steadily-nanny/shared-types/schemas/payment.schema';
 import type { WeekEarnings } from '@steadily-nanny/shared-types/schemas/timesheet.schema';
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+const FIXTURE_SNAPSHOT_AT = new Date(Date.now() - 2 * DAY_MS).toISOString();
+const FIXTURE_PAYMENT_CREATED_AT = new Date(Date.now() - DAY_MS)
+  .toISOString()
+  .replace('.000Z', '+00:00');
+
 /** One recorded payment — the export prints the ROW and derives the total. */
 const PAID_30000: Payment = {
   id: 'pay-1',
@@ -24,7 +30,7 @@ const PAID_30000: Payment = {
   paid_at: '2026-08-16',
   method_note: 'Zelle',
   recorded_by: 'parent-1',
-  created_at: '2026-08-16T18:04:00+00:00',
+  created_at: FIXTURE_PAYMENT_CREATED_AT,
 };
 
 let TimesheetQueryService: typeof import('../../../../../src/domains/timesheet/services/timesheetQueryService').TimesheetQueryService;
@@ -87,15 +93,15 @@ const approvedRow: any = {
   total_minutes: 2400,
   status: 'approved',
   approved_by: 'parent-1',
-  approved_at: '2026-08-10T09:30:00.000Z',
+  approved_at: FIXTURE_SNAPSHOT_AT,
   query_note: null,
   reopen_reason: null,
   created_at: '2026-08-03T00:00:00.000Z',
-  updated_at: '2026-08-10T09:30:00.000Z',
+  updated_at: FIXTURE_SNAPSHOT_AT,
   gross_minor: 74_000,
   currency: 'GBP',
   earnings: snapshot,
-  earnings_computed_at: '2026-08-10T09:30:00.000Z',
+  earnings_computed_at: FIXTURE_SNAPSHOT_AT,
 };
 
 const membership = {
@@ -195,7 +201,7 @@ describe('exportWeekCsv — the happy path', () => {
     expect(csv).toContain('\r\ntotal_gross_minor,74000\r\n');
     expect(csv).toContain('\r\npaid_to_date_minor,30000\r\n');
     expect(csv).toContain('\r\nbalance_due_minor,44000\r\n');
-    expect(csv).toContain('\r\napproved_at,2026-08-10T09:30:00.000Z\r\n');
+    expect(csv).toContain(`\r\napproved_at,${FIXTURE_SNAPSHOT_AT}\r\n`);
   });
 
   it('exports for a REMOVED nanny reading her own week — the same gate as the week read', async () => {

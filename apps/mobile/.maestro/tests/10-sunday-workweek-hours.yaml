@@ -21,26 +21,12 @@ tags:
 ---
 - runFlow: ../flows/login.yaml
 
-# The switcher self-renders in the Settings household section, the Today
-# header, and the Payments header — no props, no route of its own.
-- tapOn:
-    id: 'tab-settings'
-- waitForAnimationToEnd
-- assertVisible:
-    id: 'settings-screen'
-- assertVisible:
-    id: 'household-switcher-trigger'
-- tapOn:
-    id: 'household-switcher-trigger'
-- waitForAnimationToEnd
-- assertVisible:
-    id: 'household-switcher-sheet'
-- tapOn:
-    id: 'household-switcher-option-${PHASE4_SUNDAY_HOUSEHOLD_ID}'
-- waitForAnimationToEnd
-- assertNotVisible:
-    id: 'household-switcher-sheet'
-- takeScreenshot: switched-to-sunday-household
+# login.yaml already selected PHASE4_HOUSEHOLD_ID (Monday anchor). Switch to
+# the Sunday household for THIS flow only — the next flow's login.yaml resets.
+- runFlow:
+    file: ../flows/select-household.yaml
+    env:
+      HOUSEHOLD_ID: ${PHASE4_SUNDAY_HOUSEHOLD_ID}
 
 # --- Hours in the Sunday-anchored household ------------------------------
 - openLink: steadilynanny:///(private)/(tabs)/hours?weekStart=${PHASE4_SUNDAY_WEEK_START}
@@ -60,18 +46,3 @@ tags:
 - assertVisible:
     id: 'hours-day-${PHASE4_SUNDAY_WEEK_START}'
 - takeScreenshot: sunday-workweek-hours
-
-# --- Switch back, so the batch leaves the parent where it found them ------
-- tapOn:
-    id: 'tab-settings'
-- waitForAnimationToEnd
-- tapOn:
-    id: 'household-switcher-trigger'
-- waitForAnimationToEnd
-- assertVisible:
-    id: 'household-switcher-sheet'
-- tapOn:
-    id: 'household-switcher-option-${PHASE4_HOUSEHOLD_ID}'
-- waitForAnimationToEnd
-- assertNotVisible:
-    id: 'household-switcher-sheet'

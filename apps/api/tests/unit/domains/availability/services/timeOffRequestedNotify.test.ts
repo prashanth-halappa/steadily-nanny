@@ -7,11 +7,15 @@ import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types/schemas/no
 import type { CarerTimeOff } from '../../../../../src/domains/availability/types';
 import type { HouseholdMember } from '../../../../../src/domains/household/types';
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+const FUTURE_START = new Date(Date.now() + 28 * DAY_MS).toISOString();
+const FUTURE_END = new Date(Date.now() + 30 * DAY_MS).toISOString();
+
 const row: CarerTimeOff = {
   id: 't1',
   user_id: 'nanny-1',
-  starts_at: '2026-08-10T00:00:00Z',
-  ends_at: '2026-08-12T00:00:00Z',
+  starts_at: FUTURE_START,
+  ends_at: FUTURE_END,
   all_day: true,
   kind: 'personal',
   message: null,
@@ -93,8 +97,8 @@ describe('TimeOffCommandService.create — time_off_requested', () => {
     );
 
     await svc.create('nanny-1', {
-      starts_at: '2026-08-10T00:00:00Z',
-      ends_at: '2026-08-12T00:00:00Z',
+      starts_at: FUTURE_START,
+      ends_at: FUTURE_END,
     });
 
     expect(notify).toHaveBeenCalledTimes(2);
@@ -142,8 +146,8 @@ describe('TimeOffCommandService.create — time_off_requested', () => {
     );
 
     await svc.create('nanny-1', {
-      starts_at: '2026-08-10T00:00:00Z',
-      ends_at: '2026-08-12T00:00:00Z',
+      starts_at: FUTURE_START,
+      ends_at: FUTURE_END,
     });
 
     expect(notify).toHaveBeenCalledTimes(2);
@@ -180,8 +184,8 @@ describe('TimeOffCommandService.create — time_off_requested', () => {
     );
 
     await svc.create('nanny-1', {
-      starts_at: '2026-08-10T00:00:00Z',
-      ends_at: '2026-08-12T00:00:00Z',
+      starts_at: FUTURE_START,
+      ends_at: FUTURE_END,
       kind: 'sick',
     });
 
@@ -214,8 +218,8 @@ describe('TimeOffCommandService.create — time_off_requested', () => {
     );
 
     await svc.create('nanny-1', {
-      starts_at: '2026-08-10T00:00:00Z',
-      ends_at: '2026-08-12T00:00:00Z',
+      starts_at: FUTURE_START,
+      ends_at: FUTURE_END,
     });
 
     expect(notify).toHaveBeenCalledTimes(1);
@@ -249,8 +253,8 @@ describe('TimeOffCommandService.create — time_off_requested', () => {
     );
 
     const result = await svc.create('nanny-1', {
-      starts_at: '2026-08-10T00:00:00Z',
-      ends_at: '2026-08-12T00:00:00Z',
+      starts_at: FUTURE_START,
+      ends_at: FUTURE_END,
     });
 
     expect(result.carer_time_off.id).toBe('t-new');

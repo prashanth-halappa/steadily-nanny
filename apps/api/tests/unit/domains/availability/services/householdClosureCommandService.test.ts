@@ -6,11 +6,16 @@ import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types/schemas/no
 import type { HouseholdClosure } from '../../../../../src/domains/availability/types';
 import type { HouseholdMember } from '../../../../../src/domains/household/types';
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+const CLOSURE_START_ISO = new Date(Date.now() + 28 * DAY_MS).toISOString();
+const CLOSURE_END_ISO = new Date(Date.now() + 30 * DAY_MS).toISOString();
+const CLOSURE_UPDATE_END_ISO = new Date(Date.now() + 32 * DAY_MS).toISOString();
+
 const closure: HouseholdClosure = {
   id: 'c1',
   household_id: 'h1',
-  starts_at: '2026-08-10T00:00:00Z',
-  ends_at: '2026-08-12T00:00:00Z',
+  starts_at: CLOSURE_START_ISO,
+  ends_at: CLOSURE_END_ISO,
   message: null,
   created_by: 'parent-1',
   created_at: 't',
@@ -113,8 +118,8 @@ describe('HouseholdClosureCommandService — household_closure_changed', () => {
     );
 
     await svc.create('parent-1', 'h1', {
-      starts_at: '2026-08-10T00:00:00Z',
-      ends_at: '2026-08-12T00:00:00Z',
+      starts_at: CLOSURE_START_ISO,
+      ends_at: CLOSURE_END_ISO,
     });
 
     expect(notifyUser).toHaveBeenCalledTimes(2);
@@ -142,7 +147,7 @@ describe('HouseholdClosureCommandService — household_closure_changed', () => {
     );
 
     await svc.update('parent-1', 'h1', 'c1', {
-      ends_at: '2026-08-14T00:00:00Z',
+      ends_at: CLOSURE_UPDATE_END_ISO,
     });
 
     expect(notifyUser).toHaveBeenCalledWith(
@@ -198,8 +203,8 @@ describe('HouseholdClosureCommandService — household_closure_changed', () => {
 
     await expect(
       svc.create('parent-1', 'h1', {
-        starts_at: '2026-08-10T00:00:00Z',
-        ends_at: '2026-08-12T00:00:00Z',
+        starts_at: CLOSURE_START_ISO,
+        ends_at: CLOSURE_END_ISO,
       })
     ).resolves.toMatchObject({ id: 'c-new' });
   });

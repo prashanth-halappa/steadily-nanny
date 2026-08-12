@@ -12,6 +12,49 @@ import type { CarerTimeOff } from '../../../../../src/domains/availability/types
 import type { HouseholdMember } from '../../../../../src/domains/household/types';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const HOUR_MS = 60 * 60 * 1000;
+
+const CREATE_START = new Date(Date.now() + 28 * DAY_MS).toISOString();
+const CREATE_END = new Date(Date.now() + 30 * DAY_MS).toISOString();
+const UPDATE_START = new Date(Date.now() + 29 * DAY_MS).toISOString();
+const UPDATE_END = new Date(Date.now() + 31 * DAY_MS).toISOString();
+
+/** Format like the sick-shift push body: "Tue 11 Aug". */
+function shortWeekdayDate(iso: string, timeZone = 'UTC'): string {
+  return new Intl.DateTimeFormat('en-GB', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    timeZone,
+  }).format(new Date(iso));
+}
+
+/** ISO instant with a fixed numeric offset (e.g. +02:00). */
+function toOffsetIso(instant: Date, offsetHours: number): string {
+  const local = new Date(instant.getTime() + offsetHours * HOUR_MS);
+  const y = local.getUTCFullYear();
+  const m = String(local.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(local.getUTCDate()).padStart(2, '0');
+  const h = String(local.getUTCHours()).padStart(2, '0');
+  const min = String(local.getUTCMinutes()).padStart(2, '0');
+  const sec = String(local.getUTCSeconds()).padStart(2, '0');
+  const sign = offsetHours >= 0 ? '+' : '-';
+  const absOffset = String(Math.abs(offsetHours)).padStart(2, '0');
+  return `${y}-${m}-${day}T${h}:${min}:${sec}${sign}${absOffset}:00`;
+}
+
+function utcDateOnly(iso: string): string {
+  return iso.slice(0, 10);
+}
+
+// Sick-day fixtures: one calendar day at 08:00–18:00 UTC, two consecutive days.
+const SICK_DAY_START = new Date(Date.now() + 32 * DAY_MS);
+SICK_DAY_START.setUTCHours(8, 0, 0, 0);
+const SICK_DAY_END = new Date(SICK_DAY_START.getTime() + 10 * HOUR_MS);
+const SICK_DAY2_START = new Date(SICK_DAY_START.getTime() + DAY_MS);
+SICK_DAY2_START.setUTCHours(8, 0, 0, 0);
+const SICK_DAY2_END = new Date(SICK_DAY2_START.getTime() + 10 * HOUR_MS);
+const SICK_RANGE_END = new Date(SICK_DAY2_START.getTime() + 10 * HOUR_MS);
 
 const row: CarerTimeOff = {
   id: 't1',
@@ -114,8 +157,8 @@ describe('TimeOffCommandService.create — conflict scan', () => {
     );
 
     const result = await svc.create('nanny-1', {
-      starts_at: '2026-08-10T00:00:00Z',
-      ends_at: '2026-08-12T00:00:00Z',
+      starts_at: CREATE_START,
+      ends_at: CREATE_END,
       all_day: true,
     });
 
@@ -123,8 +166,8 @@ describe('TimeOffCommandService.create — conflict scan', () => {
     expect(result.carer_time_off.id).toBe('t-new');
     expect(overlapRepo.listConfirmedForCarerInRange).toHaveBeenCalledWith(
       'nanny-1',
-      '2026-08-10T00:00:00Z',
-      '2026-08-12T00:00:00Z'
+      CREATE_START,
+      CREATE_END
     );
     expect(notify).toHaveBeenCalledTimes(2);
 
@@ -178,8 +221,8 @@ describe('TimeOffCommandService.create — conflict scan', () => {
     );
 
     const result = await svc.create('nanny-1', {
-      starts_at: '2026-08-10T00:00:00Z',
-      ends_at: '2026-08-12T00:00:00Z',
+      starts_at: CREATE_START,
+      ends_at: CREATE_END,
     });
 
     expect(result.affected_shift_count).toBe(0);
@@ -201,8 +244,8 @@ describe('TimeOffCommandService.create — conflict scan', () => {
     );
 
     const result = await svc.create('nanny-1', {
-      starts_at: '2026-08-10T00:00:00Z',
-      ends_at: '2026-08-12T00:00:00Z',
+      starts_at: CREATE_START,
+      ends_at: CREATE_END,
     });
 
     expect(result.carer_time_off.id).toBe('t-new');
@@ -226,8 +269,8 @@ describe('TimeOffCommandService.create — conflict scan', () => {
     );
 
     const result = await svc.create('nanny-1', {
-      starts_at: '2026-08-10T00:00:00Z',
-      ends_at: '2026-08-12T00:00:00Z',
+      starts_at: CREATE_START,
+      ends_at: CREATE_END,
     });
 
     expect(result.carer_time_off.id).toBe('t-new');
@@ -278,6 +321,7 @@ describe('TimeOffCommandService — conflict push copy by kind', () => {
   // signal.
   // -------------------------------------------------------------------------
   it('a SICK time off over 1 shift emits N10 only — one fact, one push', async () => {
+    const shiftStart = SICK_DAY_START.toISOString();
     const notify = mock(() => undefined);
     const openCancel = mock(async () => undefined);
     const svc = new TimeOffCommandService(
@@ -287,8 +331,8 @@ describe('TimeOffCommandService — conflict push copy by kind', () => {
         {
           id: 's1',
           household_id: 'hh-reyes',
-          starts_at: '2026-08-11T08:00:00Z',
-          local_date: '2026-08-11',
+          starts_at: shiftStart,
+          local_date: utcDateOnly(shiftStart),
           timezone: 'UTC',
         },
       ]) as never,
@@ -299,8 +343,8 @@ describe('TimeOffCommandService — conflict push copy by kind', () => {
     );
 
     const result = await svc.create('nanny-1', {
-      starts_at: '2026-08-11T08:00:00Z',
-      ends_at: '2026-08-11T18:00:00Z',
+      starts_at: shiftStart,
+      ends_at: SICK_DAY_END.toISOString(),
       kind: 'sick',
     });
 
@@ -320,12 +364,14 @@ describe('TimeOffCommandService — conflict push copy by kind', () => {
       })
     );
     expect(payload.body).toContain('1 shift');
-    expect(payload.body).toContain('Tue 11 Aug');
+    expect(payload.body).toContain(shortWeekdayDate(shiftStart));
     // The holiday-request phrasing must be nowhere near a sick day.
     expect(payload.body).not.toContain('taken time off');
   });
 
   it('a SICK time off over several shifts still emits ONE push, naming the count and the earliest date', async () => {
+    const day1Start = SICK_DAY_START.toISOString();
+    const day2Start = SICK_DAY2_START.toISOString();
     const notify = mock(() => undefined);
     const openCancel = mock(async () => undefined);
     const svc = new TimeOffCommandService(
@@ -336,15 +382,15 @@ describe('TimeOffCommandService — conflict push copy by kind', () => {
         {
           id: 's2',
           household_id: 'hh-reyes',
-          starts_at: '2026-08-12T08:00:00Z',
-          local_date: '2026-08-12',
+          starts_at: day2Start,
+          local_date: utcDateOnly(day2Start),
           timezone: 'UTC',
         },
         {
           id: 's1',
           household_id: 'hh-reyes',
-          starts_at: '2026-08-11T08:00:00Z',
-          local_date: '2026-08-11',
+          starts_at: day1Start,
+          local_date: utcDateOnly(day1Start),
           timezone: 'UTC',
         },
       ]) as never,
@@ -355,8 +401,8 @@ describe('TimeOffCommandService — conflict push copy by kind', () => {
     );
 
     await svc.create('nanny-1', {
-      starts_at: '2026-08-11T08:00:00Z',
-      ends_at: '2026-08-12T18:00:00Z',
+      starts_at: day1Start,
+      ends_at: SICK_RANGE_END.toISOString(),
       kind: 'sick',
     });
 
@@ -364,7 +410,7 @@ describe('TimeOffCommandService — conflict push copy by kind', () => {
     expect(notify.mock.calls).toHaveLength(1);
     const payload = pushFor(notify.mock.calls, 'hh-reyes');
     expect(payload.body).toContain('2 shifts');
-    expect(payload.body).toContain('Tue 11 Aug');
+    expect(payload.body).toContain(shortWeekdayDate(day1Start));
   });
 
   // GOLDEN #25: `starts_at` serialisations mix — an offset form ('+02:00',
@@ -372,26 +418,35 @@ describe('TimeOffCommandService — conflict push copy by kind', () => {
   // orders the STRINGS, so an offset-serialised shift that is temporally
   // earliest can rank last and N10's body names the wrong date.
   it('names the earliest shift by instant, not by string, when serialisations mix', () => {
+    const dayBase = new Date(Date.now() + 33 * DAY_MS);
+    dayBase.setUTCHours(0, 0, 0, 0);
+    const sLate = new Date(dayBase.getTime() + 23 * HOUR_MS).toISOString();
+    const sEarlyInstant = new Date(dayBase.getTime() + 22.5 * HOUR_MS);
+    const sEarly = toOffsetIso(sEarlyInstant, 2);
+    const sEarlyLocalDate = sEarly.slice(0, 10);
+
     const push = buildSickShiftsAffectedPush('hh-reyes', [
       {
         id: 's-late',
         household_id: 'hh-reyes',
-        starts_at: '2026-08-11T23:00:00.000Z',
-        local_date: '2026-08-11',
+        starts_at: sLate,
+        local_date: utcDateOnly(sLate),
         timezone: 'UTC',
       },
       {
-        // 22:30Z — the actual earliest, but '2026-08-12…' string-ranks last.
+        // 22:30Z — the actual earliest, but a later calendar-day string-ranks last.
         id: 's-early',
         household_id: 'hh-reyes',
-        starts_at: '2026-08-12T00:30:00+02:00',
-        local_date: '2026-08-12',
+        starts_at: sEarly,
+        local_date: sEarlyLocalDate,
         timezone: 'Europe/Berlin',
       },
     ]);
 
-    expect(push.body).toContain('Wed 12 Aug');
-    expect(push.data?.localDate).toBe('2026-08-12');
+    expect(push.body).toContain(
+      shortWeekdayDate(sEarlyInstant.toISOString(), 'Europe/Berlin')
+    );
+    expect(push.data?.localDate).toBe(sEarlyLocalDate);
   });
 
   it('a SICK time off overlapping NOTHING falls back to time_off_requested, as today', async () => {
@@ -408,8 +463,8 @@ describe('TimeOffCommandService — conflict push copy by kind', () => {
     );
 
     await svc.create('nanny-1', {
-      starts_at: '2026-08-11T08:00:00Z',
-      ends_at: '2026-08-11T18:00:00Z',
+      starts_at: SICK_DAY_START.toISOString(),
+      ends_at: SICK_DAY_END.toISOString(),
       kind: 'sick',
     });
     await Promise.resolve();
@@ -419,6 +474,8 @@ describe('TimeOffCommandService — conflict push copy by kind', () => {
   });
 
   it('one cancel request failing to open never abandons the rest, and never fails her sick day', async () => {
+    const day1Start = SICK_DAY_START.toISOString();
+    const day2Start = SICK_DAY2_START.toISOString();
     const notify = mock(() => undefined);
     const openCancel = mock(async (shiftId: string) => {
       if (shiftId === 's-bad') throw new Error('rpc unreachable');
@@ -431,15 +488,15 @@ describe('TimeOffCommandService — conflict push copy by kind', () => {
         {
           id: 's-bad',
           household_id: 'hh-reyes',
-          starts_at: '2026-08-11T08:00:00Z',
-          local_date: '2026-08-11',
+          starts_at: day1Start,
+          local_date: utcDateOnly(day1Start),
           timezone: 'UTC',
         },
         {
           id: 's-good',
           household_id: 'hh-reyes',
-          starts_at: '2026-08-12T08:00:00Z',
-          local_date: '2026-08-12',
+          starts_at: day2Start,
+          local_date: utcDateOnly(day2Start),
           timezone: 'UTC',
         },
       ]) as never,
@@ -450,8 +507,8 @@ describe('TimeOffCommandService — conflict push copy by kind', () => {
     );
 
     const result = await svc.create('nanny-1', {
-      starts_at: '2026-08-11T08:00:00Z',
-      ends_at: '2026-08-12T18:00:00Z',
+      starts_at: day1Start,
+      ends_at: SICK_RANGE_END.toISOString(),
       kind: 'sick',
     });
 
@@ -478,8 +535,8 @@ describe('TimeOffCommandService — conflict push copy by kind', () => {
     );
 
     await svc.create('nanny-1', {
-      starts_at: '2026-08-10T00:00:00Z',
-      ends_at: '2026-08-12T00:00:00Z',
+      starts_at: CREATE_START,
+      ends_at: CREATE_END,
       all_day: true,
     });
 
@@ -550,15 +607,15 @@ describe('TimeOffCommandService.update — conflict scan', () => {
     );
 
     const result = await svc.update('nanny-1', 't1', {
-      starts_at: '2026-08-11T00:00:00Z',
-      ends_at: '2026-08-13T00:00:00Z',
+      starts_at: UPDATE_START,
+      ends_at: UPDATE_END,
     });
 
     expect(result.affected_shift_count).toBe(2);
     expect(overlapRepo.listConfirmedForCarerInRange).toHaveBeenCalledWith(
       'nanny-1',
-      '2026-08-11T00:00:00Z',
-      '2026-08-13T00:00:00Z'
+      UPDATE_START,
+      UPDATE_END
     );
     expect(notify).toHaveBeenCalledTimes(1);
     expect(notify).toHaveBeenCalledWith(

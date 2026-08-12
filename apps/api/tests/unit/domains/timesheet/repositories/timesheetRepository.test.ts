@@ -153,17 +153,24 @@ describe('TimesheetRepository.recentApprovedGross', () => {
 // safe against a concurrent roll-up (docs/11-MONEY.md §3, review finding 13).
 // =============================================================================
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+const FIXTURE_SNAPSHOT_AT = new Date(Date.now() - 2 * DAY_MS).toISOString();
+const readVersionInstant = new Date(Date.now() - 2 * DAY_MS);
+readVersionInstant.setUTCHours(8, 59, 12, 123);
+
 const snapshotPatch = {
   approved_by: 'parent-1',
-  approved_at: '2026-08-10T09:00:00.000Z',
+  approved_at: FIXTURE_SNAPSHOT_AT,
   gross_minor: 14_800,
   currency: 'GBP',
   earnings: { status: 'ok', gross_minor: 14_800 },
-  earnings_computed_at: '2026-08-10T09:00:00.000Z',
+  earnings_computed_at: FIXTURE_SNAPSHOT_AT,
 };
 
 /** The `updated_at` of the row the service read BEFORE computing earnings. */
-const READ_VERSION = '2026-08-10T08:59:12.123456+00:00';
+const READ_VERSION = readVersionInstant
+  .toISOString()
+  .replace('.123Z', '.123456+00:00');
 
 describe('TimesheetRepository.approveSubmittedWithEarnings', () => {
   it('sets the status AND all four snapshot columns in a single update', async () => {
@@ -182,11 +189,11 @@ describe('TimesheetRepository.approveSubmittedWithEarnings', () => {
       query_note: null,
       reopen_reason: null,
       approved_by: 'parent-1',
-      approved_at: '2026-08-10T09:00:00.000Z',
+      approved_at: FIXTURE_SNAPSHOT_AT,
       gross_minor: 14_800,
       currency: 'GBP',
       earnings: { status: 'ok', gross_minor: 14_800 },
-      earnings_computed_at: '2026-08-10T09:00:00.000Z',
+      earnings_computed_at: FIXTURE_SNAPSHOT_AT,
     });
   });
 
@@ -286,8 +293,8 @@ describe('TimesheetRepository.approveSubmittedWithEarnings', () => {
 // =============================================================================
 
 const READ_VERSIONS = [
-  '2026-08-10T08:59:12.123456+00:00',
-  '2026-08-10T08:59:12.123Z',
+  READ_VERSION,
+  `${readVersionInstant.toISOString().slice(0, 23)}Z`,
 ];
 
 describe('TimesheetRepository.queryFromActionable', () => {

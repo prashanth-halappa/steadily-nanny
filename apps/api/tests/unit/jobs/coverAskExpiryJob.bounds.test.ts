@@ -60,7 +60,7 @@ beforeAll(async () => {
     .supabaseService;
 });
 
-const NOW = new Date('2026-08-14T03:05:00.000Z');
+const NOW = new Date();
 
 describe('DefaultCoverAskExpirySource — the sweep has a floor and a ceiling', () => {
   it('floors how far back it reaches, and caps the batch', async () => {
