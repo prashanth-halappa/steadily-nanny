@@ -614,8 +614,15 @@ describe('ParentWeekView — recording a payment', () => {
     fireEvent.press(getByTestId('hours-mark-paid-button'));
     fireEvent.press(getByTestId('hours-record-payment-submit'));
 
-    await waitFor(() =>
-      expect(queryByTestId('hours-record-payment-sheet')).toBeNull()
+    // This is the one path in the file that settles through BOTH of
+    // useRecordPayment's onSuccess invalidations (payment.all + timesheet.all)
+    // before the sheet closes, and react-test-renderer working through that
+    // refetch/re-render cascade routinely outruns testing-library's 1000ms
+    // default — verified via `console.error` instrumentation that the state
+    // update itself is correct and lands well before 15s, just not before 1s.
+    await waitFor(
+      () => expect(queryByTestId('hours-record-payment-sheet')).toBeNull(),
+      { timeout: 15000 }
     );
     expect(showSuccessToastMock).toHaveBeenCalledWith('paid.recordedToast');
   });

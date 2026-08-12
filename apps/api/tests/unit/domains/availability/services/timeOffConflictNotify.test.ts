@@ -11,11 +11,17 @@ import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types/schemas/no
 import type { CarerTimeOff } from '../../../../../src/domains/availability/types';
 import type { HouseholdMember } from '../../../../../src/domains/household/types';
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 const row: CarerTimeOff = {
   id: 't1',
   user_id: 'nanny-1',
-  starts_at: '2026-08-10T00:00:00Z',
-  ends_at: '2026-08-12T00:00:00Z',
+  // Anchored to Date.now(): `update()`'s "reject edits to past time off"
+  // check compares this row's ends_at against the real clock, and a fixed
+  // 2026 literal is exactly the timebomb that check catches — it already
+  // tripped once (see the identical fix in timeOffCommandService.test.ts).
+  starts_at: new Date(Date.now() + 28 * DAY_MS).toISOString(),
+  ends_at: new Date(Date.now() + 30 * DAY_MS).toISOString(),
   all_day: true,
   kind: 'personal',
   message: null,

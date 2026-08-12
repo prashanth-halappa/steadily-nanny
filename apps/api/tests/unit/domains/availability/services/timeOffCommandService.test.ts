@@ -4,11 +4,18 @@ import { TimeOffCommandService } from '../../../../../src/domains/availability/s
 import type { CarerTimeOff } from '../../../../../src/domains/availability/types';
 import { AuthorizationError, ValidationError } from '../../../../../src/errors';
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 const row: CarerTimeOff = {
   id: 't1',
   user_id: 'u1',
-  starts_at: '2026-08-10T00:00:00Z',
-  ends_at: '2026-08-12T00:00:00Z',
+  // Anchored to Date.now() rather than a fixed literal: this row backs
+  // `update()`'s "reject edits to past time off" check (ends_at vs.
+  // Date.now()), and a hardcoded 2026 date is exactly the timebomb that
+  // check is designed to catch — it already tripped once. Same convention as
+  // shiftChangeRequestCommandService.test.ts's `Date.now() + N` fixtures.
+  starts_at: new Date(Date.now() + 28 * DAY_MS).toISOString(),
+  ends_at: new Date(Date.now() + 30 * DAY_MS).toISOString(),
   all_day: true,
   kind: 'personal',
   message: null,
@@ -298,8 +305,12 @@ describe('TimeOffCommandService.update', () => {
       makeOverlapRepo()
     );
 
+    // Must land after row.ends_at (now itself Date.now()-relative) to stay a
+    // genuine range-invalid case rather than a coincidentally-past literal.
     await expect(
-      svc.update('u1', 't1', { starts_at: '2026-08-13T00:00:00Z' })
+      svc.update('u1', 't1', {
+        starts_at: new Date(Date.now() + 31 * DAY_MS).toISOString(),
+      })
     ).rejects.toBeInstanceOf(ValidationError);
     expect(timeOffRepo.update).not.toHaveBeenCalled();
   });

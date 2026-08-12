@@ -117,6 +117,20 @@ function makeQueries(
   };
 }
 
+/**
+ * `pendingShift.kind` is `'extra'`, so every successful decline in this file
+ * takes the `isAskDecline` push branch — deliberately NOT awaited by
+ * `decline()` (same reasoning as `shiftCommandService.decline.pushes.test.ts`'s
+ * `flushPush`). Without draining the queue here, that push lands a microtask
+ * into whichever test runs next and inflates ITS `notifyHouseholdParents`
+ * count — exactly what made "refuses to decline a %s shift" flaky under load
+ * (2 leaked calls from the two tests above it, landing after that test's own
+ * `mockClear()`).
+ */
+async function flushPush(): Promise<void> {
+  await new Promise(resolve => setTimeout(resolve, 0));
+}
+
 describe('ShiftCommandService.decline', () => {
   it('lets the assigned carer decline a pending shift and writes a day-thread event', async () => {
     const shiftRepo = makeShiftRepo();
@@ -143,6 +157,7 @@ describe('ShiftCommandService.decline', () => {
       },
     ]);
     expect(result.status).toBe('declined');
+    await flushPush();
   });
 
   it('still returns the declined shift when the day-thread event write fails', async () => {
@@ -164,6 +179,7 @@ describe('ShiftCommandService.decline', () => {
 
     expect(result.status).toBe('declined');
     expect(shiftRepo.declinePending).toHaveBeenCalledWith('s1');
+    await flushPush();
   });
 
   it.each([
