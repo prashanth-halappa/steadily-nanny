@@ -140,7 +140,7 @@ describe('SETUP_STEP_ROUTES', () => {
     }
     expect(SETUP_STEP_ROUTES.START).toBe('/onboarding/start');
     expect(SETUP_STEP_ROUTES.HOUSEHOLD).toBe('/onboarding/household');
-    expect(SETUP_STEP_ROUTES.TERMS).toBe('/onboarding/terms');
+    expect(SETUP_STEP_ROUTES.TERMS).toBe('/(private)/draft/terms');
     expect(SETUP_STEP_ROUTES.NOTIFICATIONS_PERMISSION).toBe(
       '/onboarding/notifications'
     );

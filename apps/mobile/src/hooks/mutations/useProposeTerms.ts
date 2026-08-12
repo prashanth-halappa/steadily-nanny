@@ -15,8 +15,12 @@ import { showErrorToast } from '@/src/lib/toast';
  * about money, not a record of it — nothing is priced and no arrangement
  * exists until a parent accepts.
  *
- * Invalidates BOTH caches: the new row is what "current" resolves to AND it
- * appends to the chain §7.2 renders (see `queryKeys.termsProposal`).
+ * Invalidates the whole `termsProposal` prefix, not the two exact keys: the
+ * new row is what "current" resolves to, it appends to the chain §7.2
+ * renders, AND it is what the nanny's draft home reads under
+ * `draftQueries`' `['termsProposal', 'draft', householdId]` — a key the two
+ * exact invalidations could not match, so writing her terms left the card
+ * that sent her here showing the old ones.
  */
 export function useProposeTerms(householdId: string, carerId: string) {
   const queryClient = useQueryClient();
@@ -26,10 +30,7 @@ export function useProposeTerms(householdId: string, carerId: string) {
     mutationFn: input => termsProposalApi.propose(householdId, carerId, input),
     onSuccess: () => {
       queryClient.invalidateQueries({
-        queryKey: queryKeys.termsProposal.current(householdId, carerId),
-      });
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.termsProposal.list(householdId, carerId),
+        queryKey: queryKeys.termsProposal.all,
       });
     },
     onError: error => {

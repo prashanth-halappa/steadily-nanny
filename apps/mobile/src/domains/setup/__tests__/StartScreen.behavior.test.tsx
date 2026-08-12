@@ -77,7 +77,7 @@ describe('StartScreen — both cards for both roles (D-33)', () => {
 
     expect(useSetupProgressStore.getState().path).toBe('create');
     expect(useSetupProgressStore.getState().currentStep).toBe('TERMS');
-    expect(mockReplace).toHaveBeenCalledWith('/onboarding/terms');
+    expect(mockReplace).toHaveBeenCalledWith('/(private)/draft/terms');
   });
 
   it('nanny · join routes to CODE', () => {

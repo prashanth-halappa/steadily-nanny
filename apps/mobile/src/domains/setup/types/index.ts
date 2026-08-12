@@ -71,7 +71,15 @@ export const SETUP_STEP_ROUTES: Record<SetupStep, string> = {
   HOUSEHOLD: '/onboarding/household',
   CHILDREN: '/onboarding/children',
   INVITE: '/onboarding/invite',
-  TERMS: '/onboarding/terms',
+  // NOT under /onboarding: `onboarding/_layout` bounces any user the server
+  // already calls onboarded, and a nanny holding a draft membership IS
+  // onboarded server-side — so reaching her own terms must not depend on
+  // device-local wizard state that a reinstall clears. The route file lives at
+  // `app/(private)/draft/terms.tsx` beside the draft home for that reason.
+  // Phase 5: this previously named `/onboarding/terms`, which had NO route
+  // file at all — nanny -> create -> CTA dead-ended on `+not-found`, so there
+  // was no in-app nanny-first path to an invite code.
+  TERMS: '/(private)/draft/terms',
   CODE: '/onboarding/code',
   AVAILABILITY: '/onboarding/availability',
   NOTIFICATIONS_PERMISSION: '/onboarding/notifications',

@@ -19,6 +19,7 @@
  */
 import type {
   CreatePayArrangementRequest,
+  PayArrangement,
   PayFrequency,
 } from '@steadily-nanny/shared-types/schemas/payArrangement.schema';
 import i18n from '@/src/i18n';
@@ -453,6 +454,145 @@ export function readTermsBag(
           ];
         })
       : [],
+  };
+}
+
+/**
+ * A form with nothing agreed yet: `PaySetupScreen`'s first-ever arrangement,
+ * and the nanny's first terms proposal in her own draft (D-36). Every optional
+ * term starts blank on purpose — there is nothing to seed from, and a
+ * pre-filled 8/12/1.5 would read as a term the other side had already chosen.
+ *
+ * `currentOvertimeMultiplier` is deliberately absent: with no current
+ * arrangement, 1.5 (the blank-threshold default in
+ * `buildCreatePayArrangementRequest`) is always the right answer here.
+ */
+export function blankPayTermsFormState(
+  currency: string,
+  todayISO: string
+): PayTermsFormState {
+  return {
+    rateText: '',
+    currency,
+    effectiveDateISO: todayISO,
+    todayISO,
+    overtimeThresholdHoursText: '',
+    overtimeMultiplierText: '1.5',
+    dailyOvertimeThresholdHoursText: '',
+    doubletimeThresholdHoursText: '',
+    doubletimeMultiplierText: '',
+    seventhDayMultiplierText: '',
+    seventhDayDoubletimeAfterHoursText: '',
+    workedHolidayMultiplierText: '',
+    holidayHoursText: '',
+    guaranteedHoursText: '',
+    ptoHoursPerYearText: '',
+    mileageRateText: '',
+    cancellationChoice: null,
+    cancellationHoursText: '',
+    note: '',
+    noticePeriodWeeksText: '',
+    probationDaysText: '',
+    dutiesText: '',
+    drivingText: '',
+    stipends: [],
+    payFrequency: '',
+    payDayOfWeekText: '',
+    payDayOfMonthText: '',
+  };
+}
+
+/** A minutes column as an hours field's text. Absent or null (078: an
+ * explicit "no tier") seeds an EMPTY field — never a fabricated 8 or 1.5,
+ * which would read as a term the family already agreed. */
+function minutesToHoursText(minutes: number | null | undefined): string {
+  return minutes == null ? '' : String(minutes / 60);
+}
+
+/** Same, for the nullable multiplier columns. */
+function multiplierToText(multiplier: number | null | undefined): string {
+  return multiplier == null ? '' : String(multiplier);
+}
+
+/**
+ * An existing arrangement as form text. EVERY column the row carries is
+ * seeded, including the ones the calling screen never touches — a change that
+ * only adjusts the rate must re-send everything else unchanged, or the new
+ * (append-only) row silently drops the terms it didn't restate (T17).
+ *
+ * Shared by `PayChangeSheet` and the draft terms form, which reaches it
+ * through `proposalTermsToArrangement`: a proposal's `terms` payload IS a
+ * `CreatePayArrangementRequest`, so editing her open round and changing an
+ * agreed arrangement seed from one function and cannot drift apart.
+ */
+export function seedPayTermsFormState(
+  arrangement: PayArrangement,
+  householdCancellationDefaultHours: number,
+  todayISO: string,
+  initialEffectiveDateISO?: string
+): PayTermsFormState {
+  return {
+    rateText: minorToMajorText(arrangement.rate_minor),
+    currency: arrangement.currency,
+    effectiveDateISO: initialEffectiveDateISO ?? todayISO,
+    todayISO,
+    overtimeThresholdHoursText: minutesToHoursText(
+      arrangement.overtime_threshold_minutes
+    ),
+    overtimeMultiplierText: String(arrangement.overtime_multiplier),
+    dailyOvertimeThresholdHoursText: minutesToHoursText(
+      arrangement.overtime_daily_threshold_minutes
+    ),
+    doubletimeThresholdHoursText: minutesToHoursText(
+      arrangement.doubletime_daily_threshold_minutes
+    ),
+    doubletimeMultiplierText: multiplierToText(
+      arrangement.doubletime_multiplier
+    ),
+    seventhDayMultiplierText: multiplierToText(
+      arrangement.seventh_day_multiplier
+    ),
+    seventhDayDoubletimeAfterHoursText: minutesToHoursText(
+      arrangement.seventh_day_doubletime_after_minutes
+    ),
+    workedHolidayMultiplierText: multiplierToText(
+      arrangement.worked_holiday_multiplier
+    ),
+    holidayHoursText: minutesToHoursText(arrangement.holiday_hours_minutes),
+    guaranteedHoursText: minutesToHoursText(
+      arrangement.guaranteed_minutes_per_week
+    ),
+    ptoHoursPerYearText: minutesToHoursText(
+      arrangement.pto_entitlement_minutes_per_year
+    ),
+    mileageRateText:
+      arrangement.mileage_rate_per_mile_minor === null
+        ? ''
+        : minorToMajorText(arrangement.mileage_rate_per_mile_minor),
+    cancellationChoice:
+      arrangement.cancellation_paid_within_hours === null ? 'none' : 'window',
+    cancellationHoursText:
+      arrangement.cancellation_paid_within_hours !== null
+        ? String(arrangement.cancellation_paid_within_hours)
+        : householdCancellationDefaultHours > 0
+          ? String(householdCancellationDefaultHours)
+          : '',
+    note: '',
+    currentOvertimeMultiplier: arrangement.overtime_multiplier,
+    // 082's pay schedule, same re-seed-every-field reason as every other
+    // term above (playbook T17): a change that only touches the rate must
+    // re-send the pay schedule unchanged, or the new append-only row
+    // silently drops what the family already set.
+    payFrequency: arrangement.pay_frequency ?? '',
+    payDayOfWeekText:
+      arrangement.pay_day_of_week == null
+        ? ''
+        : String(arrangement.pay_day_of_week),
+    payDayOfMonthText:
+      arrangement.pay_day_of_month == null
+        ? ''
+        : String(arrangement.pay_day_of_month),
+    ...readTermsBag(arrangement.terms),
   };
 }
 

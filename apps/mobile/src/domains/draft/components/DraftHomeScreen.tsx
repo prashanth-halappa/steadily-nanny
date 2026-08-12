@@ -67,11 +67,14 @@ import { InviteRow } from './InviteRow';
 import { type ShareTermsInput, ShareTermsSheet } from './ShareTermsSheet';
 
 /**
- * 3-U1's terms form in `mode="propose"`. Named here rather than inlined so
- * the dependency is greppable: until that route lands, Edit is the only thing
- * on this screen that goes nowhere.
+ * 3-U1's terms form, composed for a draft in `DraftTermsScreen`. It used to
+ * name `/onboarding/terms`, which has no route file — every tap here landed
+ * on `+not-found`, so a nanny could not write the terms this card invites her
+ * to write. It lives beside the draft home in `(private)` and not under
+ * `/onboarding` because `onboarding/_layout` bounces users the server already
+ * calls onboarded, which she is.
  */
-const TERMS_ROUTE = '/onboarding/terms' as Href;
+const TERMS_ROUTE = '/(private)/draft/terms' as Href;
 const AVAILABILITY_ROUTE = '/(private)/settings/availability' as Href;
 
 export function DraftHomeScreen() {

@@ -19,6 +19,12 @@
     "emptyBody": "Todavía no has escrito tus condiciones.",
     "emptyButton": "Escribir mis condiciones"
   },
+  "termsForm": {
+    "title": "Tus condiciones",
+    "subtitle": "Lo que pides. Nada queda acordado hasta que una familia lo acepte.",
+    "submitButton": "Guardar mis condiciones",
+    "savedToast": "Condiciones guardadas"
+  },
   "availability": {
     "title": "Tu disponibilidad",
     "daysSet_one": "{{count}} día indicado",

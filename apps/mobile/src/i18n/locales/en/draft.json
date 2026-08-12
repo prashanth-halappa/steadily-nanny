@@ -19,6 +19,12 @@
     "emptyBody": "You haven't written your terms yet.",
     "emptyButton": "Write my terms"
   },
+  "termsForm": {
+    "title": "Your terms",
+    "subtitle": "What you're asking for. Nothing is agreed until a family accepts it.",
+    "submitButton": "Save my terms",
+    "savedToast": "Terms saved"
+  },
   "availability": {
     "title": "Your availability",
     "daysSet_one": "{{count}} day set",

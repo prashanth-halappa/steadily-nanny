@@ -26,17 +26,13 @@ import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { BackButton } from '@/src/components/ui/back-button';
-import { Button } from '@/src/components/ui/button';
 import { EmptyState } from '@/src/components/ui/empty-state';
-import { Input } from '@/src/components/ui/input';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
-import { Text } from '@/src/components/ui/text';
 import { Textarea } from '@/src/components/ui/textarea';
-import { Body, Label, Small } from '@/src/components/ui/typography';
-import { CurrencySelect } from '@/src/domains/pay/components/CurrencySelect';
-import { EffectiveDateField } from '@/src/domains/pay/components/EffectiveDateField';
+import { Label } from '@/src/components/ui/typography';
 import { PayScheduleFields } from '@/src/domains/pay/components/PayScheduleFields';
 import { PayTermsGroups } from '@/src/domains/pay/components/PayTermsGroups';
+import { PayTermsRequiredCore } from '@/src/domains/pay/components/PayTermsRequiredCore';
 import { resolveCarerName } from '@/src/domains/schedule/utils/memberDisplayName';
 import { SetupScreenShell } from '@/src/domains/setup/components/SetupScreenShell';
 import { isParentEditorRole } from '@/src/domains/setup/types';
@@ -47,13 +43,9 @@ import { useHouseholdMembers } from '@/src/hooks/queries/useHouseholdMembers';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 import { getDeviceCurrency } from '@/src/lib/deviceLocale';
 import { localDateInZone } from '@/src/lib/localDate';
-import {
-  currencySymbol,
-  minorToMajorText,
-  parseMajorToMinor,
-} from '@/src/lib/money';
 import { showSuccessToast } from '@/src/lib/toast';
 import {
+  blankPayTermsFormState,
   buildCreatePayArrangementRequest,
   type PayTermsFormState,
 } from '../utils/payArrangementForm';
@@ -63,47 +55,6 @@ function normalizeParam(
 ): string | undefined {
   if (value == null) return undefined;
   return Array.isArray(value) ? value[0] : value;
-}
-
-/** A first-ever arrangement starts blank on every optional term: there is
- * nothing agreed yet to seed from, and a pre-filled 8/12/1.5 would read as a
- * term the family had already chosen. */
-function blankFormState(currency: string, todayISO: string): PayTermsFormState {
-  return {
-    rateText: '',
-    currency,
-    effectiveDateISO: todayISO,
-    todayISO,
-    overtimeThresholdHoursText: '',
-    overtimeMultiplierText: '1.5',
-    dailyOvertimeThresholdHoursText: '',
-    doubletimeThresholdHoursText: '',
-    doubletimeMultiplierText: '',
-    seventhDayMultiplierText: '',
-    seventhDayDoubletimeAfterHoursText: '',
-    workedHolidayMultiplierText: '',
-    holidayHoursText: '',
-    guaranteedHoursText: '',
-    ptoHoursPerYearText: '',
-    mileageRateText: '',
-    cancellationChoice: null,
-    cancellationHoursText: '',
-    note: '',
-    noticePeriodWeeksText: '',
-    probationDaysText: '',
-    dutiesText: '',
-    drivingText: '',
-    stipends: [],
-    // 082's pay schedule — blank on a first-ever arrangement, same as every
-    // other optional term above: nothing is agreed yet to seed from.
-    payFrequency: '',
-    payDayOfWeekText: '',
-    payDayOfMonthText: '',
-    // Deliberately absent: `currentOvertimeMultiplier`. The redirect below
-    // means there is no current arrangement by the time this renders, so 1.5
-    // (the blank-threshold default in `buildCreatePayArrangementRequest`) is
-    // always right here. Editing an existing arrangement is PayChangeSheet's.
-  };
 }
 
 export function PaySetupScreen() {
@@ -144,7 +95,7 @@ export function PaySetupScreen() {
   // it be overridden, because currency belongs to the employment arrangement
   // and not to whichever phone happens to be creating it.
   const [form, setForm] = useState<PayTermsFormState>(() =>
-    blankFormState(getDeviceCurrency(), todayISO)
+    blankPayTermsFormState(getDeviceCurrency(), todayISO)
   );
   const patch = (next: Partial<PayTermsFormState>) =>
     setForm(current => ({ ...current, ...next }));
@@ -297,90 +248,12 @@ export function PaySetupScreen() {
       onBack={() => router.back()}
       backLabel={tCommon('back')}
     >
-      <View className="gap-2">
-        <Label>{t('changeSheet.currencyLabel')}</Label>
-        <CurrencySelect
-          value={form.currency}
-          onChange={currency => patch({ currency })}
-          testIDPrefix="pay-setup"
-        />
-      </View>
-
-      <View className="gap-2">
-        <Label>{t('changeSheet.rateLabel')}</Label>
-        <View className="flex-row items-center gap-2">
-          <Body
-            testID="pay-setup-currency-prefix"
-            className="text-muted-foreground"
-          >
-            {currencySymbol(form.currency)}
-          </Body>
-          <Input
-            testID="pay-setup-rate-input"
-            accessibilityLabel={t('changeSheet.rateLabel')}
-            value={form.rateText}
-            onChangeText={rateText => patch({ rateText })}
-            onBlur={() => {
-              const minor = parseMajorToMinor(form.rateText);
-              if (minor !== null) patch({ rateText: minorToMajorText(minor) });
-            }}
-            keyboardType="decimal-pad"
-            className="flex-1"
-          />
-        </View>
-      </View>
-
-      {/* T10: the SAME date field the change sheet renders, so setup can no
-          longer accept a date the change flow would refuse. */}
-      <EffectiveDateField
+      <PayTermsRequiredCore
         testIDPrefix="pay-setup"
-        value={form.effectiveDateISO}
-        onChange={effectiveDateISO => patch({ effectiveDateISO })}
+        state={form}
+        onChange={patch}
         todayISO={todayISO}
       />
-
-      <View className="gap-2">
-        <Label>{t('changeSheet.cancellationsFieldLabel')}</Label>
-        <View className="flex-row flex-wrap gap-2">
-          <Button
-            testID="pay-setup-cancellation-chip-window"
-            variant={
-              form.cancellationChoice === 'window' ? 'default' : 'outline'
-            }
-            size="sm"
-            onPress={() => patch({ cancellationChoice: 'window' })}
-          >
-            <Text>{t('changeSheet.cancellationWindowChip')}</Text>
-          </Button>
-          <Button
-            testID="pay-setup-cancellation-chip-none"
-            variant={form.cancellationChoice === 'none' ? 'default' : 'outline'}
-            size="sm"
-            onPress={() => patch({ cancellationChoice: 'none' })}
-          >
-            <Text>{t('changeSheet.cancellationNoneChip')}</Text>
-          </Button>
-        </View>
-        {form.cancellationChoice === 'window' ? (
-          <Input
-            testID="pay-setup-cancellation-hours-input"
-            accessibilityLabel={t('changeSheet.cancellationHoursLabel')}
-            value={form.cancellationHoursText}
-            onChangeText={cancellationHoursText =>
-              patch({ cancellationHoursText })
-            }
-            keyboardType="number-pad"
-          />
-        ) : null}
-        {form.cancellationChoice === null ? (
-          <Small
-            testID="pay-setup-cancellation-required-hint"
-            className="text-muted-foreground"
-          >
-            {t('setup.cancellationRequiredHint')}
-          </Small>
-        ) : null}
-      </View>
 
       {/* No `seed` — there is no arrangement yet, so every group is closed
           and D-6's weekly-equivalent line has nothing stored to render. */}
