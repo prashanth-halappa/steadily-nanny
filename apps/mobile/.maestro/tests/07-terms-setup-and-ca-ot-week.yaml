@@ -139,41 +139,38 @@ tags:
     id: 'pay-setup-preset-applied-note'
 
 # --- CA-style daily tiers, typed by hand ---------------------------------
+# `tapOn: point: 50%,20%` (blank-space dismiss) is what this section used to
+# use between fields. Once the Overtime group is open and scrolled, that
+# fixed relative point lands on the group's OWN collapse toggle instead of
+# blank space, closing it and taking every field below out of the
+# hierarchy — confirmed via a hierarchy dump showing the group summary
+# ("After 40h, at 1.5×") collapsed after the first one. `hideKeyboard`
+# dismisses without tapping any coordinate, so it can't hit the toggle.
 - tapOn:
     id: 'pay-setup-overtime-threshold-input'
 - eraseText
 - inputText: '40'
-- tapOn:
-    point: 50%,20%
-- waitForAnimationToEnd
+- hideKeyboard
 - tapOn:
     id: 'pay-setup-overtime-multiplier-input'
 - eraseText
 - inputText: '1.5'
-- tapOn:
-    point: 50%,20%
-- waitForAnimationToEnd
+- hideKeyboard
 - tapOn:
     id: 'pay-setup-daily-overtime-threshold-input'
 - eraseText
 - inputText: '8'
-- tapOn:
-    point: 50%,20%
-- waitForAnimationToEnd
+- hideKeyboard
 - tapOn:
     id: 'pay-setup-doubletime-threshold-input'
 - eraseText
 - inputText: '12'
-- tapOn:
-    point: 50%,20%
-- waitForAnimationToEnd
+- hideKeyboard
 - tapOn:
     id: 'pay-setup-doubletime-multiplier-input'
 - eraseText
 - inputText: '2'
-- tapOn:
-    point: 50%,20%
-- waitForAnimationToEnd
+- hideKeyboard
 - takeScreenshot: pay-setup-ca-overtime
 
 # --- Worked-holiday multiplier (flow 09 consumes this same arrangement) ---
@@ -197,6 +194,19 @@ tags:
 - tapOn:
     point: 50%,20%
 - waitForAnimationToEnd
+
+# Cancellations: "the one term with no blank state" (screen copy) — the CTA
+# stays disabled without a choice here, and this flow never made one. Added
+# last, right before the CTA: doing it earlier (next to the date field it
+# sits beside on screen) disturbed the swipe/keyboard choreography for the
+# Overtime group that follows.
+- scrollUntilVisible:
+    element:
+      id: 'pay-setup-cancellation-chip-none'
+    direction: UP
+    timeout: 10000
+- tapOn:
+    id: 'pay-setup-cancellation-chip-none'
 
 # --- Save ----------------------------------------------------------------
 # `pay-setup-screen-cta` is derived inside SetupScreenShell (`${testID}-cta`),
