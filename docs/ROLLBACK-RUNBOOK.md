@@ -240,7 +240,38 @@ freeze. Recorded here so the first person to see the symptom knows the cause.
    sum and the settlement insert are separate statements with no `FOR UPDATE`
    (unlike the payment ceiling in 077). The unique index still guarantees one
    settlement row, but its `amount_minor` is fixed at read time, so expenses
-   approved in the gap can disagree with the card. **Same class as P5.**
+   approved in the gap are left out of it. **Same class as P5.**
+
+   **CORRECTION (2026-08-12, David persona gate) — the sentence above used to
+   read "can disagree with the card", and that materially understated it.**
+   The card never shows `amount_minor` at all, so there is nothing for it to
+   visibly disagree with. `ParentWeekView.tsx:617-618` reads only
+   `?.settled_at` off the settlement row and pairs that DATE with a **live**
+   total from `earnings.reimbursements_minor`, then asserts one repaid the
+   other. Two different sources, never compared. So the failure is not a
+   visible mismatch a parent could question — it is **silent, permanent and
+   unremediable**: £30 approved, a settlement that captured only £24.60, a
+   card reading "Total to reimburse £30.00 / Reimbursed on 12 August", and the
+   £5.40 dropped from the owed list forever, because
+   `reimbursementSettlementService.listUnsettled` suppresses on the EXISTENCE
+   of a settlement row and never on its amount. `086` deliberately gives that
+   table no correction path.
+
+   **The cheap mitigation is a label, not a transaction.** Rendering the
+   settled amount beside the date — "Reimbursed £24.60 on 12 August" under
+   "Total to reimburse £30.00" — makes the race visible the moment it happens,
+   which is all a ledger has to do. That is a far smaller change than the
+   `FOR UPDATE` function and is what makes accepting this race defensible
+   rather than merely cheap. Until it ships, use the detection query in
+   `docs/POST-SHIP-WATCH.md` §6b — the drift is invisible in the product but
+   it IS detectable in SQL.
+
+   Related, and pointed the other way: `NannyWeekView.tsx:587` renders
+   `ReimbursementsCard` but never passes `settledOn`, so the carer's card reads
+   "not reimbursed yet" permanently after she has been paid back. The prop
+   exists and the card is built to use it — the "supplied by the PARENT view
+   only" note in that file attaches to `onMarkReimbursedPress`, not to
+   `settledOn`.
 
 ---
 

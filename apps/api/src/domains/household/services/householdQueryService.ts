@@ -120,13 +120,22 @@ export class HouseholdQueryService {
     return this.memberRepo.listByUser(userId);
   }
 
-  /** List a household's active members. Caller must already be a member. */
+  /**
+   * List a household's member roster for display and client-side fan-out reads.
+   * Caller must already be a member.
+   *
+   * Returns `active` and `candidate` rows, not `removed`. The mobile inbox
+   * fans terms-proposal queries from this list, and D-38 leaves a nanny a
+   * `candidate` until acceptance — precisely when the parent must see her
+   * proposal. Push audiences and shift authorization still resolve through
+   * `listActiveByHousehold`, not here.
+   */
   async listMembers(
     userId: string,
     householdId: string
   ): Promise<HouseholdMember[]> {
     await this.getMembership(userId, householdId);
-    return this.memberRepo.listActiveByHousehold(householdId);
+    return this.memberRepo.listNonRemovedByHousehold(householdId);
   }
 
   /**

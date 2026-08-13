@@ -224,11 +224,28 @@ describe('ReimbursementsCard', () => {
     );
 
     expect(getByTestId('reimbursements-card-state').props.children).toBe(
-      'reimbursements.stateSettled|{"date":"18 August"}'
+      'reimbursements.stateSettledDateOnly|{"date":"18 August"}'
     );
     expect(
       queryByTestId('reimbursements-card-mark-reimbursed-button')
     ).toBeNull();
+  });
+
+  it('settled with amount: states the settlement amount and date', () => {
+    const { getByTestId } = render(
+      <ReimbursementsCard
+        testID="reimbursements-card"
+        approvedExpenses={[makeExpense()]}
+        totalMinor={1200}
+        currency="GBP"
+        settledOn="2026-08-18"
+        settledAmountMinor={1000}
+      />
+    );
+
+    expect(getByTestId('reimbursements-card-state').props.children).toBe(
+      'reimbursements.stateSettled|{"amount":"£10.00","date":"18 August"}'
+    );
   });
 
   // GOLDEN-FIXES #40: the refusal belongs next to the button that caused it.

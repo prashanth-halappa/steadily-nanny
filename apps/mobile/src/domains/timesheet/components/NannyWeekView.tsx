@@ -72,6 +72,7 @@ import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
 import { useCurrentPayArrangement } from '@/src/hooks/queries/useCurrentPayArrangement';
 import { useHouseholdMembers } from '@/src/hooks/queries/useHouseholdMembers';
 import { usePayments } from '@/src/hooks/queries/usePayments';
+import { useReimbursementSettlements } from '@/src/hooks/queries/useReimbursementSettlements';
 import { useTimesheetThread } from '@/src/hooks/queries/useTimesheetThread';
 import { useWeekExpenses } from '@/src/hooks/queries/useWeekExpenses';
 import { useWeekTimeEntries } from '@/src/hooks/queries/useWeekTimeEntries';
@@ -165,6 +166,10 @@ export function NannyWeekView({
   const entriesQuery = useWeekTimeEntries(householdId, weekStartISO);
   const timesheetQuery = useWeekTimesheet(householdId, weekStartISO);
   const expensesQuery = useWeekExpenses(householdId, weekStartISO);
+  const settlementsQuery = useReimbursementSettlements(
+    householdId,
+    weekStartISO
+  );
   // Her own arrangement — only read here for the add sheet's mileage-rate
   // hint (TIER0-CX-SPEC.md §6.1); the money line above already covers the
   // rest of what an arrangement is for.
@@ -453,6 +458,13 @@ export function NannyWeekView({
   // exists, else her own arrangement's currency, else the house default.
   const weekExpenses = expensesQuery.data ?? [];
   const approvedExpenses = weekExpenses.filter(e => e.status === 'approved');
+  const reimbursementSettlement =
+    currentUserId != null
+      ? (settlementsQuery.data?.find(s => s.carer_id === currentUserId) ?? null)
+      : null;
+  const reimbursementSettledOn = reimbursementSettlement?.settled_at ?? null;
+  const reimbursementSettledAmountMinor =
+    reimbursementSettlement?.amount_minor ?? null;
   const expensesCurrency =
     earningsOk?.currency ??
     arrangementQuery.data?.currency ??
@@ -588,6 +600,8 @@ export function NannyWeekView({
               approvedExpenses={approvedExpenses}
               totalMinor={earningsOk ? earningsOk.reimbursements_minor : null}
               currency={expensesCurrency}
+              settledOn={reimbursementSettledOn}
+              settledAmountMinor={reimbursementSettledAmountMinor}
             />
             {/* Daylight P1: "Add an expense" is now ExpensesListCard's own
                 footer action (it used to float here on a bare mt-4,

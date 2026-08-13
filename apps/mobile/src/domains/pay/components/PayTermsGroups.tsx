@@ -376,6 +376,29 @@ export function PayTermsGroups({
           >
             {t('changeSheet.overtimeHint')}
           </Small>
+          {(() => {
+            const thresholdTrimmed = state.overtimeThresholdHoursText.trim();
+            const multiplierTrimmed = state.overtimeMultiplierText.trim();
+            if (thresholdTrimmed === '' || multiplierTrimmed === '') {
+              return null;
+            }
+            const threshold = Number(thresholdTrimmed);
+            const multiplier = Number(multiplierTrimmed);
+            if (!Number.isFinite(threshold) || !Number.isFinite(multiplier)) {
+              return null;
+            }
+            if (threshold <= 40 && multiplier >= 1.5) {
+              return null;
+            }
+            return (
+              <Small
+                testID={`${testIDPrefix}-overtime-floor-caution`}
+                className="text-muted-foreground"
+              >
+                {t('changeSheet.overtimeFloorCaution')}
+              </Small>
+            );
+          })()}
         </View>
 
         {/* 078's three further tiers. Daily overtime gets NO multiplier input:

@@ -77,12 +77,12 @@ describe('nothingUnusualForWeek — pure predicate', () => {
     ).toBe(true);
   });
 
-  it('true when there are fewer than 4 trailing weeks — no baseline to test against', () => {
+  it('false when there are fewer than 4 trailing weeks — no baseline to reassure against', () => {
     expect(
       nothingUnusualForWeek(
         baseInput({ grossMinor: 999_999, trailingGrossHistory: [15_400] })
       )
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it('false when the gross is quietly double the trailing median', () => {
@@ -374,6 +374,58 @@ describe('NothingUnusualService.computeForWeek — impure wrapper', () => {
       okEarnings
     );
     expect(findByIds).not.toHaveBeenCalled();
+  });
+
+  it('false when fewer than 4 prior approved weeks — no median baseline yet', async () => {
+    const svc = new NothingUnusualService(
+      makeTimeEntryRepo(),
+      makeShiftRepo(),
+      makeTimesheetRepo({
+        recentApprovedGross: mock(async () => [15_400, 15_500]),
+      })
+    );
+    expect(
+      await svc.computeForWeek(
+        'h1',
+        'carer-1',
+        '2026-08-03',
+        'submitted',
+        okEarnings
+      )
+    ).toBe(false);
+  });
+
+  it('still evaluates the median band normally with 4 or more trailing weeks', async () => {
+    const svc = new NothingUnusualService(
+      makeTimeEntryRepo(),
+      makeShiftRepo(),
+      makeTimesheetRepo({
+        recentApprovedGross: mock(async () => [15_400, 15_400, 15_400, 15_400]),
+      })
+    );
+    expect(
+      await svc.computeForWeek(
+        'h1',
+        'carer-1',
+        '2026-08-03',
+        'submitted',
+        okEarnings
+      )
+    ).toBe(true);
+
+    const outlier = new NothingUnusualService(
+      makeTimeEntryRepo(),
+      makeShiftRepo(),
+      makeTimesheetRepo({
+        recentApprovedGross: mock(async () => [15_400, 15_400, 15_400, 15_400]),
+      })
+    );
+    expect(
+      await outlier.computeForWeek('h1', 'carer-1', '2026-08-03', 'submitted', {
+        ...okEarnings,
+        gross_minor: 30_800,
+      })
+    ).toBe(false);
   });
 
   it('excludes voided entries from every check', async () => {

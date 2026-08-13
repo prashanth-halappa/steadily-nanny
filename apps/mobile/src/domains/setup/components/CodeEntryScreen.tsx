@@ -42,7 +42,7 @@ import {
   HOUSEHOLD_STATES,
 } from '@steadily-nanny/shared-types/schemas/household.schema';
 import { type Href, useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
 import { Button } from '@/src/components/ui/button';
@@ -59,6 +59,7 @@ import {
   getNextSetupStep,
   getSetupStepRoute,
   getStepProgress,
+  isSetupStepAfterCode,
   SETUP_PATHS,
   SETUP_ROLES,
   SETUP_STEPS,
@@ -133,6 +134,7 @@ export function CodeEntryScreen({
   const router = useRouter();
   const role = useSetupProgressStore(s => s.role);
   const persistedPath = useSetupProgressStore(s => s.path);
+  const persistedCurrentStep = useSetupProgressStore(s => s.currentStep);
   const setRole = useSetupProgressStore(s => s.setRole);
   const setCurrentStep = useSetupProgressStore(s => s.setCurrentStep);
   const signOut = useAuthStore(s => s.signOut);
@@ -142,17 +144,40 @@ export function CodeEntryScreen({
   const [nameDraft, setNameDraft] = useState<string | null>(null);
   const [nameError, setNameError] = useState(false);
   const [isAbsorptionSheetOpen, setAbsorptionSheetOpen] = useState(false);
+  const [hasRedeemed, setHasRedeemed] = useState(false);
+  const [postRedeemError, setPostRedeemError] = useState<string | null>(null);
 
   // Reaching this screen at all IS the join path. `?? JOIN` covers the deep
   // link that jumps straight to CODE without passing the start fork.
   const path = persistedPath ?? SETUP_PATHS.JOIN;
 
-  const preview = useInvitePreview(submittedCode ?? '');
+  // Only remount recovery — not the in-flight redeem on this mount. Advancing
+  // `currentStep` during `runJoin` must not swap the preview UI for the
+  // resuming shell before navigation completes (or fails visibly).
+  const mountedPastCode = useRef(
+    !onJoined && isSetupStepAfterCode(role, path, persistedCurrentStep)
+  );
+  const isResumingPastCode = mountedPastCode.current;
+
+  // Redeem invalidates memberships; the onboarding layout unmounts the Stack
+  // while `useIsOnboarded` refetches. Persisted `currentStep` survives that
+  // remount — resume immediately instead of showing an empty code form.
+  useLayoutEffect(() => {
+    if (!isResumingPastCode) return;
+    router.replace(getSetupStepRoute(persistedCurrentStep) as Href);
+  }, [isResumingPastCode, persistedCurrentStep, router]);
+
   const profile = useUserProfile();
   const upsertProfile = useUpsertProfile();
   const updateName = useUpdateName();
   const redeemInvite = useRedeemInvite();
   const households = useHouseholds();
+  const isJoining =
+    redeemInvite.isPending || upsertProfile.isPending || updateName.isPending;
+  const lockInvitePreview = hasRedeemed || isJoining;
+  const preview = useInvitePreview(submittedCode ?? '', {
+    enabled: !lockInvitePreview,
+  });
 
   // Untouched field falls back to the saved name, then to the same auth
   // derivation the parent bootstrap uses — never to an empty box.
@@ -163,8 +188,13 @@ export function CodeEntryScreen({
 
   const onCheckCode = () => {
     if (!code.trim()) return;
+    setPostRedeemError(null);
     setSubmittedCode(code.trim());
   };
+
+  const invitePreview = preview.data;
+  const showInvitePreview = Boolean(invitePreview);
+  const showPreviewLookupError = preview.isError && !lockInvitePreview;
 
   // Someone who lands here without a code in hand used to be trapped: no
   // back, no sign-out. `replace`, not `back()` — StartScreen navigates here
@@ -195,7 +225,7 @@ export function CodeEntryScreen({
     household => household.state === HOUSEHOLD_STATES.LIVE
   );
   const needsAbsorptionConfirm =
-    preview.data?.household_state === HOUSEHOLD_STATES.DRAFT &&
+    invitePreview?.household_state === HOUSEHOLD_STATES.DRAFT &&
     liveHouseholds.length > 0;
 
   /** The actual redemption. `targetHouseholdId` is set only by the sheet. */
@@ -204,7 +234,9 @@ export function CodeEntryScreen({
     const trimmedName = name.trim();
 
     void (async () => {
+      let redeemed = false;
       try {
+        setPostRedeemError(null);
         // Settings variant: no name field, so nothing to persist. Skipping the
         // block also closes a real hazard — with `profile` still unresolved,
         // the `else if (authUser)` arm would upsert the BOOTSTRAP PLACEHOLDER
@@ -237,6 +269,8 @@ export function CodeEntryScreen({
           // the default by omission.
           ...(getDeviceRegion() === 'US' ? { weekStartsOn: 0 } : {}),
         });
+        redeemed = true;
+        setHasRedeemed(true);
         // BEFORE the role/step resolution below — never write the persisted
         // wizard state for an already-onboarded user (see CodeEntryScreenProps).
         if (onJoined) {
@@ -264,8 +298,11 @@ export function CodeEntryScreen({
           getNextSetupStep(resolvedRole, path, SETUP_STEPS.CODE) ??
           SETUP_STEPS.NOTIFICATIONS_PERMISSION;
         setCurrentStep(next);
-        router.push(getSetupStepRoute(next) as Href);
+        router.replace(getSetupStepRoute(next) as Href);
       } catch {
+        if (redeemed) {
+          setPostRedeemError(t('onboarding.code.postRedeemError'));
+        }
         // Each mutation toasts its own failure; redeem also renders inline.
       }
     })();
@@ -284,8 +321,23 @@ export function CodeEntryScreen({
     runJoin();
   };
 
-  const isJoining =
-    redeemInvite.isPending || upsertProfile.isPending || updateName.isPending;
+  if (isResumingPastCode) {
+    return (
+      <SetupScreenShell
+        testID="code-screen-resuming"
+        progress={
+          onJoined ? undefined : getStepProgress(role, path, SETUP_STEPS.CODE)
+        }
+        title={t('onboarding.code.title')}
+        subtitle={t('onboarding.code.resumingSubtitle')}
+        ctaLabel={t('common:continue')}
+        ctaDisabled
+        onCta={() => {}}
+      >
+        <LoadingIndicator />
+      </SetupScreenShell>
+    );
+  }
 
   return (
     <SetupScreenShell
@@ -304,10 +356,12 @@ export function CodeEntryScreen({
           : t('onboarding.code.subtitle')
       }
       ctaLabel={
-        preview.data ? t('onboarding.code.joinHousehold') : t('common:continue')
+        showInvitePreview
+          ? t('onboarding.code.joinHousehold')
+          : t('common:continue')
       }
-      ctaDisabled={preview.data ? isJoining : code.trim().length === 0}
-      onCta={preview.data ? onJoin : onCheckCode}
+      ctaDisabled={showInvitePreview ? isJoining : code.trim().length === 0}
+      onCta={showInvitePreview ? onJoin : onCheckCode}
     >
       {onJoined ? null : (
         <View className="gap-2">
@@ -342,6 +396,8 @@ export function CodeEntryScreen({
           onChangeText={text => {
             setCode(text);
             setSubmittedCode(null);
+            setHasRedeemed(false);
+            setPostRedeemError(null);
           }}
           placeholder={t('onboarding.code.placeholder')}
           autoCapitalize="characters"
@@ -356,21 +412,23 @@ export function CodeEntryScreen({
 
       {preview.isFetching ? <LoadingIndicator /> : null}
 
-      {preview.isError ? (
+      {showPreviewLookupError ? (
         <FieldError testID="code-error">
           {t('onboarding.code.invalidError')}
         </FieldError>
       ) : null}
 
-      {preview.data ? (
+      {showInvitePreview && invitePreview ? (
         <Card testID="code-preview-card" className="gap-2 p-5.5">
-          <H3 testID="code-preview-household">{preview.data.household_name}</H3>
-          {preview.data.children_first_names.length > 0 ? (
+          <H3 testID="code-preview-household">
+            {invitePreview.household_name}
+          </H3>
+          {invitePreview.children_first_names.length > 0 ? (
             <Body
               testID="code-preview-children"
               className="text-muted-foreground"
             >
-              {preview.data.children_first_names.join(', ')}
+              {invitePreview.children_first_names.join(', ')}
             </Body>
           ) : null}
         </Card>
@@ -378,6 +436,10 @@ export function CodeEntryScreen({
 
       {redeemInvite.isError ? (
         <FieldError>{t('onboarding.code.redeemError')}</FieldError>
+      ) : null}
+
+      {postRedeemError ? (
+        <FieldError testID="post-redeem-error">{postRedeemError}</FieldError>
       ) : null}
 
       {/* Second escape hatch alongside `onBack`: someone who signed up
@@ -398,7 +460,7 @@ export function CodeEntryScreen({
 
       <AbsorptionConfirmSheet
         visible={isAbsorptionSheetOpen}
-        carerName={preview.data?.carer_name ?? null}
+        carerName={invitePreview?.carer_name ?? null}
         households={liveHouseholds}
         isJoining={isJoining}
         onDismiss={() => setAbsorptionSheetOpen(false)}

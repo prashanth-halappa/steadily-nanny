@@ -39,8 +39,16 @@ export function useRedeemInvite() {
       householdApi.redeemInvite(code, targetHouseholdId, weekStartsOn),
     onSuccess: membership => {
       setHouseholdId(membership.household_id);
-      queryClient.invalidateQueries({ queryKey: queryKeys.household.all });
-      queryClient.invalidateQueries({ queryKey: queryKeys.user.memberships() });
+      // Defer invalidation so `CodeEntryScreen` can persist role/step and
+      // navigate BEFORE `useIsOnboarded` refetches. An immediate invalidate
+      // flips the onboarding layout to `loading`, unmounts the wizard Stack,
+      // and remounts CODE with empty local state while the invite is gone.
+      queueMicrotask(() => {
+        queryClient.invalidateQueries({ queryKey: queryKeys.household.all });
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.user.memberships(),
+        });
+      });
     },
     onError: error => {
       showErrorToast(getLocalizedErrorMessage(error, t));

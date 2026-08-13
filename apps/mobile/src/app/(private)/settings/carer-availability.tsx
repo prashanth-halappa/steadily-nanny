@@ -1,6 +1,7 @@
 /**
  * Parent read-only view of the household nanny's stated availability.
  */
+import { HOUSEHOLD_MEMBER_STATUSES } from '@steadily-nanny/shared-types/schemas/household.schema';
 import { useRouter } from 'expo-router';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -23,8 +24,12 @@ export default function CarerAvailabilityScreen() {
   const members = useHouseholdMembers(active.householdId);
   const nannyId = useMemo(
     () =>
-      (members.data ?? []).find(m => m.role === 'nanny' || m.role === 'helper')
-        ?.user_id ?? null,
+      // Members endpoint includes candidates for the terms-proposal inbox; a candidate has no availability to manage.
+      (members.data ?? []).find(
+        m =>
+          (m.role === 'nanny' || m.role === 'helper') &&
+          m.status === HOUSEHOLD_MEMBER_STATUSES.ACTIVE
+      )?.user_id ?? null,
     [members.data]
   );
   const availability = useAvailabilityForCarer(nannyId);

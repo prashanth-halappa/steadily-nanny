@@ -78,14 +78,44 @@ tags:
 - tapOn:
     id: 'hours-week-thread-composer'
 - inputText: 'Checked — Thursday is right, I left at 17:00.'
-# FIXED (2026-08-11) at the simulator level rather than in this flow: the
-# stray "Y" and the swallowed tap were iOS's native QuickType predictive-text
-# bar sitting on top of `hours-week-thread-send` — a system overlay Maestro's
-# RN hierarchy cannot see, so it conflicts with ANY flow-level fix (a swipe
-# still leaves the bar there; `hideKeyboard` here fires the send early, per
-# the comment above). Disabling prediction on the simulator removes the bar
-# for every flow instead of fighting it per-flow — see run-phase4.sh's
-# header for the exact commands and why they must be run before any launch.
+# CORRECTED 2026-08-12 (Phase 6) from a live hierarchy dump. THREE claims in
+# the note that used to sit here are false, and each one sent the fix the wrong
+# way:
+#
+#  (a) "a system overlay Maestro's RN hierarchy cannot see" — it IS in the
+#      hierarchy: `resource-id=SystemInputAssistantView` at [0,539][402,583],
+#      containing `accessibilityText=Typing Predictions` with the suggestion
+#      chips as children ("Y" at [0,539][134,583], "YEARS" at [134,539]...).
+#      It is directly selectable, which is why the guard below can key on it.
+#  (b) "FIXED at the simulator level" — it is NOT. The three
+#      `defaults write com.apple.Preferences Keyboard*` writes run, read back as
+#      0, and the bar is still on screen. Do not trust that fix.
+#  (c) "`hideKeyboard` here fires the send early" — it cannot. The composer is
+#      a `Textarea` (WeekQueryThread.tsx:169) with NO `onSubmitEditing` and no
+#      `blurOnSubmit` send; the only send path is the button's `onPress`.
+#
+# THE REAL PROBLEM IS OCCLUSION, AND IT IS TOTAL. `hours-week-thread-send`
+# occupies [44,561][358,609]. The predictions bar covers y 539-583 and the
+# keyboard covers y 583-816. So EVERY pixel of the send button is behind one or
+# the other, and no amount of scrolling or tap-offsetting can reach it — the
+# keyboard must actually go away first. Maestro reports the tap COMPLETED
+# either way, and a prediction chip gets committed into the field, which is
+# where the stray "Y" came from.
+- hideKeyboard
+- runFlow:
+    when:
+      visible:
+        text: 'Typing Predictions'
+    commands:
+      # `hideKeyboard` is unreliable in this app (recorded on pay-setup too).
+      # Fall back to tapping non-interactive content: `hours-total` is a
+      # testID'd text at [22,193][380,241], far above the keyboard, with no
+      # onPress — so the touch falls through to the scroll view and dismisses.
+      - tapOn:
+          id: 'hours-total'
+      - waitForAnimationToEnd
+- assertNotVisible:
+    text: 'Typing Predictions'
 - tapOn:
     id: 'hours-week-thread-send'
 - waitForAnimationToEnd

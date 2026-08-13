@@ -8,15 +8,19 @@ import { useAuthStore } from '@/src/store/auth';
  * `R4K-92T`) before the nanny redeems it — shows household name + children
  * first names only.
  */
-export function useInvitePreview(code: string) {
+export function useInvitePreview(
+  code: string,
+  options?: { enabled?: boolean }
+) {
   const session = useAuthStore(s => s.session);
   const isInitialized = useAuthStore(s => s.isInitialized);
   const trimmed = code.trim();
+  const enabled = options?.enabled ?? true;
 
   return useQuery({
     queryKey: queryKeys.household.invitePreview(trimmed),
     queryFn: () => householdApi.previewInvite(trimmed),
-    enabled: !!session && isInitialized && trimmed.length > 0,
+    enabled: enabled && !!session && isInitialized && trimmed.length > 0,
     retry: false,
   });
 }

@@ -77,6 +77,7 @@
     "overtimeAfterLabel": "Horas extra después de",
     "overtimePaidAtLabel": "Se paga a",
     "overtimeHint": "Deja una fila en blanco si no corresponde.",
+    "overtimeFloorCaution": "La mayoría de los acuerdos usan 40 horas a 1,5×. Son las condiciones de vuestra familia — comprueba que cumplen las normas de vuestra zona.",
     "dailyOvertimeAfterLabel": "Horas extra diarias después de (horas en un día)",
     "dailyOvertimeHint": "Se paga a la tarifa de horas extra de arriba.",
     "doubletimeAfterLabel": "Pago doble después de (horas en un día)",
@@ -141,7 +142,7 @@
     "appliedNote": "Se han rellenado los valores más comunes — revisa cada uno y cambia lo que no coincida con lo acordado."
   },
   "outsideWages": {
-    "hint": "Estos se pagan fuera del salario por hora. Steadily los muestra en la semana pero nunca los suma al bruto de la semana.",
+    "hint": "Estos se pagan fuera del salario por hora y nunca se suman al bruto de la semana.",
     "labelFieldLabel": "Para qué es",
     "labelPlaceholder": "p. ej. Ayuda para el seguro médico",
     "amountFieldLabel": "Importe",

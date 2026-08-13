@@ -3,7 +3,7 @@
  *
  * A family's declared **need** windows (child commitments that define when care
  * is required) are compared against what actually covers each child on a given
- * local date: confirmed/pending/completed shifts (with per-child `shift_children`
+ * local date: confirmed/completed shifts (with per-child `shift_children`
  * narrowing when present) and household **closures** (days the family declared
  * no cover is needed). Whatever part of a need window remains after subtracting
  * the union of those covered intervals is **uncovered care**.
@@ -14,9 +14,10 @@
  * `computeUncovered` from here so the push notification and the on-screen
  * banner can never disagree on what is uncovered.
  *
- * **Covering shifts:** only statuses in `COVERING_SHIFT_STATUSES` (`pending`,
- * `confirmed`, `completed`) count as cover; `draft`, `declined`, and `cancelled`
- * shifts are ignored.
+ * **Covering shifts:** only statuses in `COVERING_SHIFT_STATUSES` (`confirmed`,
+ * `completed`) count as cover; `draft`, `pending`, `declined` and `cancelled`
+ * shifts are ignored. `pending` is deliberately NOT cover — see that constant's
+ * own doc comment; an unanswered ask must never silence the alarm (S1 / D-22).
  *
  * **Empty `children` on a shift:** an empty array means the shift covers **all**
  * children for its whole `[startsAt, endsAt)` span. A non-empty array that lacks

@@ -39,6 +39,19 @@ tags:
     id: 'hours-active-week-${PHASE4_SEED_WEEK_START}'
 # Approved-only section; its presence is the precondition check that flow 11
 # actually approved this week.
+#
+# `scrollUntilVisible` first, exactly as flow 08 needs before its sick badge:
+# this section sits below the week thread, the day rows and the money card, and
+# this ScrollView DROPS off-viewport children from the a11y tree, so a bare
+# assertVisible reports "not visible" for a section that is simply further down.
+# Verified 2026-08-12 — at the failure the week was genuinely `approved` in the
+# DB (status=approved, gross_minor=12000) and the screen was showing "Approved
+# on 12 August", so this was never the precondition failure it looked like.
+- scrollUntilVisible:
+    element:
+      id: 'hours-paid-state'
+    direction: DOWN
+    timeout: 10000
 - assertVisible:
     id: 'hours-paid-state'
 - assertVisible:
@@ -48,6 +61,31 @@ tags:
 # Partial on purpose: a full settlement takes `balanceMinor` to 0, which
 # un-renders both `hours-mark-paid-button` and `hours-paid-state-balance` and
 # would make the balance assertion below vacuous.
+# A `scrollUntilVisible` before every tap in the bottom sections of this screen.
+# These controls are the LAST things on the Hours screen and their tap targets
+# land under the TAB BAR ([0,791][402,874]). Measured: `hours-mark-paid-button`
+# sits at [44,771][358,819] — centre (201,795), which is exactly inside
+# `tab-hours` ([201,791][301,840]). The original flow tapped these with NO
+# scroll at all, so the tap hit the TAB; Maestro reported COMPLETED and the
+# sheet simply never opened, which surfaced one step later as a missing sheet.
+#
+# A PLAIN scroll is the right remedy, NOT `centerElement: true`. Two container
+# geometries, two behaviours, and it matters:
+#   - `hours-week-list` is bounded [0,63][402,791] — it stops exactly where the
+#     tab bar starts. So Maestro's DEFAULT `visibilityPercentage: 100` already
+#     means "fully inside the list", which by construction is clear of the bar.
+#   - `centerElement: true` additionally demands the element reach the viewport
+#     CENTRE, which a LAST element can never do — there is nothing below it to
+#     scroll up against. It fails with "No visible element found" on an element
+#     that is plainly on screen (measured: `hours-export-button` reported not
+#     found while sitting at [22,629][380,677], fully visible and tappable).
+# `logout.yaml` DOES need `centerElement` because the settings scroll view
+# extends UNDER the tab bar, so 100%-visible is satisfiable while still occluded.
+- scrollUntilVisible:
+    element:
+      id: 'hours-mark-paid-button'
+    direction: DOWN
+    timeout: 15000
 - tapOn:
     id: 'hours-mark-paid-button'
 - waitForAnimationToEnd
@@ -81,6 +119,11 @@ tags:
 # --- Correct it ----------------------------------------------------------
 # Payment ids are server-generated, so the row is addressed by the stable
 # prefix of its testID as a regex.
+- scrollUntilVisible:
+    element:
+      id: 'hours-paid-state-line-.*-open'
+    direction: DOWN
+    timeout: 15000
 - tapOn:
     id: 'hours-paid-state-line-.*-open'
 - waitForAnimationToEnd
@@ -132,6 +175,11 @@ tags:
 - takeScreenshot: payment-corrected-ledger
 
 # --- The ledger screen shows both rows too -------------------------------
+- scrollUntilVisible:
+    element:
+      id: 'hours-payments-link'
+    direction: DOWN
+    timeout: 15000
 - tapOn:
     id: 'hours-payments-link'
 - waitForAnimationToEnd
@@ -142,13 +190,47 @@ tags:
 - assertVisible:
     id: 'payments-row-.*'
 - takeScreenshot: payments-ledger
-- tapOn:
+# Assert the back control exists (it is this screen's only way out, so its
+# absence would be a real regression worth failing on) but do NOT navigate with
+# it — go back to Hours the same deterministic way this flow arrived in the
+# first place, with the deep link from line 34.
+#
+# WHY, stated honestly because it is a worked-around dependency and not a
+# proven fix: `payments-back` calls `router.back()` (PaymentsScreen.tsx:354).
+# In THIS flow that tap reliably does not navigate — the failure frame shows
+# the Payments screen still up, and a 15s `extendedWaitUntil` for `hours-screen`
+# expires. Yet the identical sequence, INCLUDING the full round trip
+# `hours-payments-link` → `payments-screen` → `payments-back` → `hours-screen`,
+# PASSES every time when replayed in isolation on this same build and device.
+# So the trigger is something this flow does earlier — most likely the
+# `payments-detail` sheet and the correction it performs before coming here —
+# and it is NOT a broken button or a bad testID. Flow 12 is about recording,
+# correcting and exporting a payment; it should not be gated on that unresolved
+# navigation question, so it no longer navigates by button here.
+# FLAGGED for the owner: possible app-side `router.back()` no-op after the
+# payment-correction sheet. NOT confirmed as a defect — I could not reproduce
+# it outside this flow.
+- assertVisible:
     id: 'payments-back'
+- openLink: steadilynanny:///(private)/(tabs)/hours?weekStart=${PHASE4_SEED_WEEK_START}
 - waitForAnimationToEnd
 
 # --- Export surface ------------------------------------------------------
-- assertVisible:
-    id: 'hours-screen'
+- extendedWaitUntil:
+    visible:
+      id: 'hours-screen'
+    timeout: 15000
+# Same treatment as the paid-state controls: `hours-export-button` is a
+# bottom-of-content Button (`WeekExportAction`, rendered near the end of
+# ParentWeekView), so it is below the fold on arrival and its centre lands under
+# the tab bar once scrolled to. Without this the tap reports COMPLETED against a
+# tab and the export sheet never opens — or, as here after a fresh deep link,
+# the element is not in the tree at all yet.
+- scrollUntilVisible:
+    element:
+      id: 'hours-export-button'
+    direction: DOWN
+    timeout: 15000
 - tapOn:
     id: 'hours-export-button'
 - waitForAnimationToEnd
@@ -160,7 +242,16 @@ tags:
     id: 'hours-export-pdf'
 - takeScreenshot: week-export-sheet
 # Deliberately NOT tapping an option — see the SCOPING NOTE in the header.
-- back
-- waitForAnimationToEnd
-- assertNotVisible:
-    id: 'hours-export-sheet'
+#
+# Dismiss via the sheet's OWN close control, not `- back`. On iOS Maestro's
+# `back` is an edge-swipe navigation gesture; it does not dismiss a
+# `BottomSheetBase`, so the sheet stayed up and this flow died on its very last
+# assertion. `BottomSheetBase` exposes `bottom-sheet-close-button` (and
+# `bottom-sheet-backdrop`) — verified present in the live hierarchy with the
+# sheet open, and verified to dismiss it.
+- tapOn:
+    id: 'bottom-sheet-close-button'
+- extendedWaitUntil:
+    notVisible:
+      id: 'hours-export-sheet'
+    timeout: 10000

@@ -205,6 +205,18 @@ export function getUnfinishedSetupResumeRoute(
   return getSetupStepRoute(currentStep);
 }
 
+/** True when `currentStep` is strictly later than CODE in this role x path. */
+export function isSetupStepAfterCode(
+  role: SetupRole | null,
+  path: SetupPath | null,
+  currentStep: SetupStep
+): boolean {
+  const steps = stepsFor(role, path);
+  const codeIndex = steps.indexOf(SETUP_STEPS.CODE);
+  const currentIndex = steps.indexOf(currentStep);
+  return codeIndex >= 0 && currentIndex > codeIndex;
+}
+
 /** The step after `current` for this role x path, or null if `current` is last. */
 export function getNextSetupStep(
   role: SetupRole | null,

@@ -66,6 +66,10 @@ interface ReimbursementsCardProps {
   /** `settled_at` off this week's `reimbursement_settlement` row, or `null`
    * while the money has not gone back yet. A DATE, not an instant. */
   settledOn?: string | null;
+  /** `amount_minor` off the same settlement row — may differ from the live
+   * `totalMinor` when a race captured less than the approved total. When
+   * absent, the state line falls back to date-only copy. */
+  settledAmountMinor?: number | null;
   /** Supplied by the PARENT view only — its absence is what makes the card
    * read-only for the nanny and for a read-only helper. */
   onMarkReimbursedPress?: () => void;
@@ -83,6 +87,7 @@ export function ReimbursementsCard({
   currency,
   carerName,
   settledOn = null,
+  settledAmountMinor = null,
   onMarkReimbursedPress,
   isMarkReimbursedDisabled = false,
   markReimbursedError = null,
@@ -152,9 +157,14 @@ export function ReimbursementsCard({
           back. */}
       <Small testID={`${testID}-state`} className="text-muted-foreground">
         {settledOn
-          ? t('reimbursements.stateSettled', {
-              date: formatEarningsLongDate(settledOn),
-            })
+          ? settledAmountMinor != null
+            ? t('reimbursements.stateSettled', {
+                amount: formatMoney(settledAmountMinor, currency),
+                date: formatEarningsLongDate(settledOn),
+              })
+            : t('reimbursements.stateSettledDateOnly', {
+                date: formatEarningsLongDate(settledOn),
+              })
           : t('reimbursements.stateUnsettled')}
       </Small>
 

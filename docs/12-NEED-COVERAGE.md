@@ -297,6 +297,59 @@ drops out of `computeUncovered` like any other cover.
 Double-tap guard: `shiftRepository.findParentCoverInWindow` before insert
 (check-then-act; no unique index yet).
 
+### Cover asks (`extra` / `cover` shifts)
+
+A parent **ask for cover** creates a `kind = extra` or `kind = cover` shift with
+`status = pending` and a named `carer_id` — the same write path as
+`createExtraShift` (`shiftChangeRequestCommandService.ts`), which stamps
+`cover_ask_expires_at` at ask time via `computeCoverAskExpiry`
+(`apps/api/src/domains/shift/utils/coverAskExpiry.ts`).
+
+**Pending does not count as cover (D-22).** Only `confirmed` and `completed` are
+in `COVERING_SHIFT_STATUSES` (`uncoveredCare.ts:99–102`). A pending ask is a
+question, not an answer: the uncovered alarm and Today gap card stay up for the
+whole ask lifecycle. For schedule/clock/widget questions where pending *does*
+count, use `SCHEDULED_SHIFT_STATUSES` from the same module (§2).
+
+**Expiry (`cover_ask_expires_at`, migration `088_cover_ask_expiry.sql`).**
+Written once at ask time, never recomputed:
+
+```
+cover_ask_expires_at = min(created_at + 48h, starts_at − 4h)
+```
+
+with a **1h floor** when the shift is less than ~5h away (`COVER_ASK_MIN_FUSE_HOURS`
+in `coverAskExpiry.ts`), and never after `starts_at`. Nullable on every row
+that is not an outstanding named ask (unassigned proposals and `recurring`
+materialisations do not get a fuse).
+
+`coverAskExpiryJob` runs **every 5 minutes** (`088`, `3-58/5 * * * *`) and is
+the primary path: it CAS-flips `pending → cancelled` with `cancelled_by = null`
+(`coverAskExpiryJob.ts` — null actor is deliberate; there is no `expired`
+status enum). The parent gets `cover_ask_expired` (`COVER_ASK_EXPIRED`) only
+after a successful flip. The job's query also closes asks whose `starts_at` has
+passed (backstop for null-deadline legacy rows and missed ticks). **`scheduleHorizonJob`
+does not sweep cover asks** — only change requests.
+
+**Withdrawal vs expiry:** a parent `withdraw-cover-ask` lands on the same
+`cancelled` status but sets `cancelled_by` to the withdrawing parent
+(`shiftRepository.withdrawCoverAsk`). Mobile reads `cancelled_by === null` +
+stamped `cover_ask_expires_at` as **expired** display state (no separate wire
+enum).
+
+**Decline hands the alarm back (D-22 / N9).** When the carer declines an
+`extra`/`cover` ask, `shiftCommandService.decline` sends
+`cover_ask_declined` to parents — **not** `shift_declined`, because A6 would
+suppress the latter when an `uncovered_care_detected` push already fired for
+the same window. The parent Today gap card shows the declined cause line and
+`Ask someone else` / `I've got it` actions (`attention-and-notifications.md`
+§2.4a).
+
+**No `uncovered_care` retraction (S9 / D-25).** Booking cover, withdrawing an
+ask, or letting one expire does **not** delete or retract `shift_events` rows.
+Live UI recomputes via `computeUncovered` (§4). Migration `088` records the same
+decision in its header.
+
 ### Invisible to pay / clock math
 
 `parent_cover` must never create wages or clockable work:

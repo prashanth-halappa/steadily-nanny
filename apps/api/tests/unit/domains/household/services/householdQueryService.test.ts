@@ -75,6 +75,7 @@ function makeMemberRepo(overrides: Record<string, unknown> = {}): any {
   return {
     findActiveMembership: mock(async () => membership),
     listActiveByHousehold: mock(async () => [membership]),
+    listNonRemovedByHousehold: mock(async () => [membership]),
     listActiveHouseholdIds: mock(async () => ['h1']),
     listRemovedHouseholdIds: mock(async () => []),
     listActiveByUser: mock(async () => [membership]),
@@ -215,6 +216,29 @@ describe('HouseholdQueryService.listMembers', () => {
       makeInviteRepo()
     );
     expect(await svc.listMembers('u1', 'h1')).toEqual([membership]);
+    expect(memberRepo.listNonRemovedByHousehold).toHaveBeenCalledWith('h1');
+    expect(memberRepo.listActiveByHousehold).not.toHaveBeenCalled();
+  });
+
+  // D-38 / §7.1: the inbox fans terms-proposal queries from this roster and
+  // deliberately includes `candidate` rows — acceptance is when they matter most.
+  it('returns a candidate nanny the active-only roster would have hidden', async () => {
+    const candidate: HouseholdMember = {
+      ...membership,
+      id: 'm2',
+      user_id: 'u2',
+      role: 'nanny',
+      status: 'candidate',
+    };
+    const memberRepo = makeMemberRepo({
+      listNonRemovedByHousehold: mock(async () => [membership, candidate]),
+    });
+    const svc = new HouseholdQueryService(
+      makeHouseholdRepo(),
+      memberRepo,
+      makeInviteRepo()
+    );
+    expect(await svc.listMembers('u1', 'h1')).toEqual([membership, candidate]);
   });
 
   it('throws HouseholdNotFoundError for a non-member', async () => {

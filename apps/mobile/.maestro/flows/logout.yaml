@@ -34,11 +34,37 @@ appId: com.jetto.steadily.nanny
             - tapOn:
                 text: 'Maybe later'
             - waitForAnimationToEnd
+      # 25s, not 10s. `settings-sign-out` is the LAST control on a long
+      # settings page (households list → Account → Language → Legal & help →
+      # then the button, settings.tsx:516). Caught in the act 2026-08-12: the
+      # failure frame showed the page scrolled only as far as "Legal & help",
+      # i.e. the scroll was still working when the 10s budget expired. The
+      # element is not missing and not gated — it is an unconditional
+      # top-level Button — so "Element not found: settings-sign-out" here has
+      # always meant "ran out of scrolling time", which is what made this look
+      # like a third unfixed gap in the reset path.
+      # `centerElement: true` is the load-bearing part, not the timeout.
+      # MEASURED 2026-08-12 from a live hierarchy dump at the exact failure:
+      # `settings-sign-out` sits at [22,818][380,866] and the TAB BAR occupies
+      # [0,791][402,874] — so the button's centre (201,842) is inside the tab
+      # bar, and a plain `scrollUntilVisible` stops as soon as the button is in
+      # the hierarchy (visibility is hierarchy-based, not occlusion-based),
+      # then taps the tab bar instead. Maestro reports both COMPLETED.
+      # `centerElement` forces the scroll to continue until the button is
+      # centred in the viewport, clear of the tab bar. Safe to centre here
+      # precisely because this is the LAST control on the page, so there is
+      # nothing to overshoot into.
+      #
+      # This is 13a's root cause. "Element not found: settings-sign-out" was
+      # only the shallower half of it — with more scroll budget the element IS
+      # found, and the tap then silently lands on the tab bar instead. The
+      # button is unconditional (settings.tsx:516); nothing about it is gated.
       - scrollUntilVisible:
           element:
             id: 'settings-sign-out'
           direction: DOWN
-          timeout: 10000
+          centerElement: true
+          timeout: 25000
       - tapOn:
           id: 'settings-sign-out'
       - extendedWaitUntil:

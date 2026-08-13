@@ -418,13 +418,27 @@ async function main(): Promise<void> {
 
   // --- Fixture 1: a shift scheduled for TODAY -------------------------------
   const today = localDateOf(new Date(), timezone);
-  const { data: existingShift } = await db
+  // `local_date = today` is NOT a unique key — the nanny can hold several rows
+  // there (this fixture's `extra`, plus any `cover` ask a Phase 4 flow seeded).
+  // `.maybeSingle()` ERRORS on multiple rows, and a `{ data }`-only destructure
+  // swallows that error, yielding null and sending the code below down the
+  // INSERT path, where it re-inserts a shift that already exists and dies on
+  // `shifts_extra_window_unique` (23505). That is the same swallowed-error class
+  // as the flow-08 defect, and it is what made `--reset` non-idempotent. So:
+  // order + limit(1) instead of an unwarranted uniqueness assumption, and
+  // surface the error rather than discarding it.
+  const { data: existingShifts, error: todayShiftError } = await db
     .from('shifts')
     .select('id, starts_at, ends_at, status')
     .eq('household_id', householdId)
     .eq('carer_id', nannyId)
     .eq('local_date', today)
-    .maybeSingle();
+    .eq('kind', 'extra')
+    .neq('status', 'cancelled')
+    .order('starts_at', { ascending: true })
+    .limit(1);
+  if (todayShiftError) throw todayShiftError;
+  const existingShift = existingShifts?.[0];
 
   let todayShiftId: string;
   if (existingShift) {

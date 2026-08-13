@@ -18,6 +18,7 @@ import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 import type { Expense } from '@steadily-nanny/shared-types/schemas/expense.schema';
 import * as expenseSchemaModule from '@steadily-nanny/shared-types/schemas/expense.schema';
 import * as payArrangementSchemaModule from '@steadily-nanny/shared-types/schemas/payArrangement.schema';
+import type { ReimbursementSettlement } from '@steadily-nanny/shared-types/schemas/reimbursementSettlement.schema';
 import * as timesheetSchemaModule from '@steadily-nanny/shared-types/schemas/timesheet.schema';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
@@ -278,7 +279,17 @@ const updateExpenseMock = mock(() =>
 );
 const withdrawExpenseMock = mock(() => Promise.resolve(undefined));
 const getCurrentArrangementMock = mock(() => Promise.resolve(null));
+const listReimbursementSettlementsForWeekMock = mock(
+  (): Promise<ReimbursementSettlement[]> => Promise.resolve([])
+);
 
+mock.module('@/src/api/endpoints/reimbursementSettlements', () => ({
+  reimbursementSettlementApi: {
+    listForWeek: listReimbursementSettlementsForWeekMock,
+    listUnsettled: mock(() => Promise.resolve([])),
+    create: mock(),
+  },
+}));
 mock.module('@/src/api/endpoints/expenses', () => {
   const shared = expenseSchemaModule;
   return {
@@ -397,6 +408,7 @@ beforeEach(() => {
   updateExpenseMock.mockReset();
   withdrawExpenseMock.mockReset();
   getCurrentArrangementMock.mockReset();
+  listReimbursementSettlementsForWeekMock.mockReset();
   listHouseholdsMock.mockReset();
   routerPush.mockClear();
 
@@ -417,6 +429,9 @@ beforeEach(() => {
   );
   withdrawExpenseMock.mockImplementation(() => Promise.resolve(undefined));
   getCurrentArrangementMock.mockImplementation(() => Promise.resolve(null));
+  listReimbursementSettlementsForWeekMock.mockImplementation(() =>
+    Promise.resolve([])
+  );
 
   useAuthStore.setState({
     session: { user: { id: NANNY_ID } } as unknown as never,
@@ -1051,6 +1066,52 @@ describe('NannyWeekView — expenses & the statement (Phase 4)', () => {
       getByTestId('reimbursements-card-line-expense-approved-value').props
         .children
     ).toBe('US$12.00');
+  });
+
+  it('shows the settled reimbursement state after settlement, with no mark-reimbursed control', async () => {
+    listReimbursementSettlementsForWeekMock.mockImplementation(() =>
+      Promise.resolve([
+        {
+          id: '00000000-0000-4000-8000-000000000001',
+          household_id: HOUSEHOLD_ID,
+          carer_id: NANNY_ID,
+          week_start: WEEK_START,
+          amount_minor: 1200,
+          currency: 'GBP',
+          settled_at: '2026-08-18',
+          note: null,
+          recorded_by: '00000000-0000-4000-8000-000000000002',
+          created_at: now,
+        },
+      ])
+    );
+    listExpensesForWeekMock.mockImplementation(() =>
+      Promise.resolve([
+        makeExpense({ id: 'expense-approved', status: 'approved' }),
+      ])
+    );
+    getByIdMock.mockImplementation(() =>
+      Promise.resolve(
+        makeTimesheetWeek(
+          { status: 'approved' },
+          { ...okEarnings, reimbursements_minor: 1200 }
+        )
+      )
+    );
+
+    const { getByTestId, queryByTestId } = renderNannyView();
+
+    await waitFor(() =>
+      expect(getByTestId('reimbursements-card-state')).toBeTruthy()
+    );
+    // Global i18n mock echoes the key only — the with-amount settled key
+    // proves both settlement date and amount_minor reached the card.
+    expect(getByTestId('reimbursements-card-state').props.children).toBe(
+      'reimbursements.stateSettled'
+    );
+    expect(
+      queryByTestId('reimbursements-card-mark-reimbursed-button')
+    ).toBeNull();
   });
 });
 

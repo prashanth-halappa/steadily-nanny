@@ -139,6 +139,12 @@ export class HouseholdMemberRepository extends BaseRepository<HouseholdMember> {
    * are indistinguishable everywhere the roster is shown. The embed rides the
    * `user_id -> user_profiles(user_id)` FK (migration 009), same shape as
    * `shiftRepository`'s `shift_children` reads.
+   *
+   * ACTIVE ONLY — candidates are deliberately excluded. A `candidate` is a
+   * nanny who redeemed a code but whose terms are not accepted yet (D-49); she
+   * must not receive household pushes, shift rights, or any other surface that
+   * treats this list as "who is live in this household today". Use
+   * `listNonRemovedByHousehold` for the one read that must include her.
    */
   async listActiveByHousehold(householdId: string): Promise<HouseholdMember[]> {
     const { data, error } = await supabaseService
@@ -146,6 +152,50 @@ export class HouseholdMemberRepository extends BaseRepository<HouseholdMember> {
       .select('*, user_profiles(name)')
       .eq('household_id', householdId)
       .eq('status', 'active')
+      .order('joined_at', { ascending: true });
+
+    if (error) {
+      throw new DatabaseError(
+        'Failed to list household members',
+        'DATABASE_ERROR',
+        { details: error.message, householdId }
+      );
+    }
+    return ((data ?? []) as MemberRowWithProfile[]).map(
+      ({ user_profiles, ...member }) => ({
+        ...member,
+        profile_name: user_profiles?.name ?? null,
+      })
+    );
+  }
+
+  /**
+   * Every non-removed member of a household — `active` plus `candidate` —
+   * oldest-joined first, with the same `profile_name` embed as the active-only
+   * sibling above.
+   *
+   * THIS IS THE ROSTER READ FOR `GET /v1/households/:id/members` ONLY. The
+   * mobile inbox fans terms-proposal queries from it, and D-38's redemption
+   * leaves the nanny a `candidate` until acceptance — precisely when the parent
+   * must see and accept her proposal. Every other caller that needs "who is
+   * live in this household" must keep using `listActiveByHousehold`; widening
+   * that method would change push audiences and shift authorization.
+   *
+   * The filter is a POSITIVE `in (...)` list and must stay one — never
+   * `neq('status', 'removed')`, which would admit every status added tomorrow
+   * (093's column comment, spec §17).
+   */
+  async listNonRemovedByHousehold(
+    householdId: string
+  ): Promise<HouseholdMember[]> {
+    const { data, error } = await supabaseService
+      .from(this.table)
+      .select('*, user_profiles(name)')
+      .eq('household_id', householdId)
+      .in('status', [
+        HOUSEHOLD_MEMBER_STATUSES.ACTIVE,
+        HOUSEHOLD_MEMBER_STATUSES.CANDIDATE,
+      ])
       .order('joined_at', { ascending: true });
 
     if (error) {

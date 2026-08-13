@@ -112,14 +112,26 @@ append-only `shift_events`.
 
 **`effectiveOn` is the only place the resolution rule lives.** The
 arrangement effective on a date is the row with the **greatest `valid_from
-<= date`**, ties broken by **`created_at desc`**. That tie-break is the
-deliberate, only correction mechanism for a same-day mistake: insert a
-second row with the same `valid_from` and the right rate; the newer
+<= date`** among rows still in force on that date (`valid_to is null or
+valid_to >= date`), ties broken by **`created_at desc`**. That tie-break
+is the deliberate, only correction mechanism for a same-day mistake: insert
+a second row with the same `valid_from` and the right rate; the newer
 `created_at` wins and the typo is superseded, never mutated. Implement this
 in exactly one repository method
 (`payArrangementRepository.effectiveOn(householdId, carerId, date)`); every
 other call site — engine, screens, mid-week-split preview — calls it rather
 than re-deriving the rule.
+
+**`valid_to` end-dates without breaking append-only (065).** Member removal
+and a nanny leaving both call `payArrangementRepository.endForCarer` before
+the membership flips, setting `valid_to` on every still-live row for that
+`(household, carer)` to the household-local removal day — **inclusive**, so
+a morning already worked that day still prices. `valid_to` is a lifecycle
+column and the only field on this table with an update path; rate, currency,
+and every other money field stay append-only. `listForCarer` stays
+unfiltered so past weeks keep resolving the terms that were in force when
+they were worked; the exclusion is per-date inside `effectiveOn`, exactly as
+the engine's in-memory resolver does it.
 
 **Why no unique constraint on `(household_id, carer_id, valid_from)`:**
 combined with append-only and no-future-dating, uniqueness would make a
@@ -150,6 +162,16 @@ breakdown is **snapshotted** onto the timesheet row (`gross_minor`,
 `currency`, `earnings` jsonb, `earnings_computed_at`). From then the
 approved figure is read from the snapshot, never recomputed, even if the
 arrangement later changes.
+
+**The frozen `earnings` jsonb carries a format version `v`.** Every
+non-null snapshot the approve path writes stamps `v: 1`; **absent means
+v1** — weeks frozen before the field existed need no backfill.
+`WeekEarningsSchema` accepts only `v: 1` (optional); an unknown format
+degrades the week to `unreadable_snapshot` rather than being reinterpreted
+by a build that has never seen the shape — the opposite of `kind`'s
+open-string tolerance, because an unknown format may change every field's
+meaning. A `v: 2` writer may ship only after a reader that recognises it
+has shipped to the fleet.
 
 **Both halves of that predicate are load-bearing** (Phase 2 review, finding
 1). The status arm only catches a roll-up that *re-opens* an approved week.
@@ -257,6 +279,34 @@ free.
   your family — …"), and the CSV export carries the signed row. Payments Gate 4
   (§11) needed no change: the frozen column already holds the adjusted figure.
 
+### Earnings line kinds and render order
+
+The engine emits priced rows as `EarningsLine` objects with an open-string
+`kind` on the wire (tolerant reads) but only ever constructs
+`EARNINGS_LINE_KINDS.*` literals at emission time. **Render order** —
+breakdown sheet, CSV, mobile — is `EARNINGS_LINE_ORDER` in
+`timesheet.schema.ts`, which `earningsService` follows via
+`EARNINGS_LINE_ORDER.flatMap`:
+
+1. `regular` — weekly-threshold remainder after daily tiers.
+2. `overtime` — daily and weekly overtime, including the seventh day's first
+   tier when it uses `seventh_day_multiplier` (078).
+3. `doubletime` — minutes above the daily double-time threshold or the
+   seventh day's second tier, at `doubletime_multiplier` (078).
+4. `holiday_premium` — the worked-holiday **uplift only** (080, §12).
+5. `cancellation_paid` — agreed paid cancellation minutes at the base rate.
+6. `pto` — dated paid-time-off usage at each day's rate (§5).
+7. `paid_holiday` — unworked observed-holiday credit at the ordinary rate
+   (095, §12).
+8. `guaranteed_topup` — weekly shortfall against guaranteed hours (§7).
+9. `reimbursements` — approved expenses/mileage; summed into
+   `reimbursements_minor`, never `gross_minor` (§6).
+
+Empty kinds are omitted. **Pricing order** inside the engine is not the same
+as render order — seventh-day and daily bands run before weekly overtime,
+premiums and credits are layered on top — but the emitted lines always sort
+into the table above.
+
 ---
 
 ## 4. No arrangement → no numbers, never £0.00
@@ -302,10 +352,11 @@ Three rules follow, and all three are load-bearing:
   (8h → 6h writes `+120`); re-submitting the same number writes nothing and
   succeeds; submitting `0` fully reverses. Nothing is ever updated or
   deleted, and no second `usage` row is written for a day already marked —
-  the partial unique index (per `(household, time_off, day)` since migration
-  045) stands, and the delta path is what makes a correction possible under
-  it. This is the ONLY way to fix a mis-marked figure; do not add an update
-  path.
+  the partial unique index `pto_ledger_one_usage_per_time_off_day_idx` (per
+  `(household, time_off, day)`, migration **045** — it replaces 043's
+  per-time-off `pto_ledger_one_usage_per_time_off_idx`) stands, and the
+  delta path is what makes a correction possible under it. This is the ONLY
+  way to fix a mis-marked figure; do not add an update path.
 - **A marking is one row PER COVERED DAY, and the days sum to the total
   exactly.** A multi-day time off used to record its whole total on the start
   date, so a fortnight marked 80h paid priced 80h in week one and nothing in
@@ -368,9 +419,10 @@ pattern elsewhere without writing down the same anonymity argument.
 
 Expenses and mileage appear on the weekly statement as a **separate
 reimbursement section**, summed independently and excluded from both the
-gross-pay line and the overtime calculation — no `regular`/`overtime`/
-`cancellation_paid`/`guaranteed_topup`/`pto` line item ever includes a
-reimbursement penny. This matches how payroll and tax treat the two
+gross-pay line and the overtime calculation — no wage line kind
+(`regular`, `overtime`, `doubletime`, `holiday_premium`, `cancellation_paid`,
+`pto`, `paid_holiday`, or `guaranteed_topup`) ever includes a reimbursement
+penny. This matches how payroll and tax treat the two
 categories: wages are earned income; a reimbursement pays back money the
 nanny already spent on the family's behalf.
 
@@ -388,10 +440,11 @@ expect the guarantee to mean what it says on the label.
 
 The engine implements these definitions exactly, not an approximation:
 
-- **Payable minutes** = worked + `cancellation_paid` + PTO usage. Guaranteed
-  hours compare against payable minutes, so a week that already used paid
-  PTO or a paid cancellation never *also* tops up on top of them — no
-  double pay by construction.
+- **Payable minutes** = worked + `cancellation_paid` + PTO usage + unworked
+  `paid_holiday` credits (095). Guaranteed hours compare against payable
+  minutes, so a week that already used paid PTO, a paid cancellation, or a
+  holiday credit never *also* tops up on top of them — no double pay by
+  construction.
 - `guaranteed_topup = max(0, guaranteed_minutes_per_week − payable minutes)`
   — the full shortfall, never capped by closure-day lost minutes or any
   schedule-derived figure.
@@ -404,10 +457,12 @@ The engine implements these definitions exactly, not an approximation:
 ## 8. RLS on money tables: select-only, service-role writes
 
 `pay_arrangements` (041), `pto_ledger` (043), `expenses` (044), `payments`
-(067), `reimbursement_settlements` (086) — and, since **D-21 / migration 087**,
+(067), `reimbursement_settlements` (086), `pay_arrangement_acks` (081, select
+via join through `pay_arrangements`) — and, since **D-21 / migration 087**,
 `timesheets` and `time_entries` — all follow one RLS stance: a single
-**select** policy, and **no insert/update/delete policy at all**. Every write
-goes through the API under the service role, exactly like `shifts`.
+**select** policy, and **no insert/update/delete policy at all** (acks excepted:
+the carer may **insert** her own `seen`/`disagreed` row; see §14). Every other
+write goes through the API under the service role, exactly like `shifts`.
 
 Those last two were the exception until August 2026 and it was a real hole
 (gaps P4/P8). 017/018 gave them `can_read_household` — *any active member* —
@@ -415,26 +470,37 @@ which was fine when a timesheet was a row of hours, and stopped being fine the
 day 042 froze `gross_minor` and the `earnings` snapshot onto it. A HELPER and a
 SECOND NANNY could read another carer's weekly pay via `GET /timesheets/:id`,
 the household list and the CSV export, and read her exact clock times, break
-lengths and shift notes off `time_entries`. 087 repoints both at the predicate
-below and `timesheetQueryService.assertPayrollReader` moved with it, in the same
+lengths and shift notes off `time_entries`. 087 repoints both at the money-read
+predicate below; `timesheetQueryService.assertPayrollReader` moved in the same
 commit — a backstop wider than the check IS the door.
 
-The select policy is the same on all of them:
+The **money read circle** at RLS is the same predicate on every table above:
 
 ```sql
 using (private.can_write_household(household_id) or carer_id = (select auth.uid()))
 ```
 
-**Parents and owners, plus the carer reading her own rows. Helpers and other
-carers are denied.** That is the product rule (`docs/TIER0-CX-SPEC.md`) and it
-is what all five query services enforce (`payArrangementQueryService`,
-`ptoQueryService`, `expenseQueryService`, `paymentQueryService`, and
-`timesheetQueryService.assertPayrollReader`): a helper never sees pay, and one
-nanny never sees another's. An earlier draft used
-`private.can_read_household` — *every active member* — which was wider than
-both. PostgREST is a real door: a policy looser than the service does not make
-the service's refusal safer, it makes it cosmetic. The carer can always read
-her own terms, because opaque pay is the disease this feature treats.
+That is necessary but, for **`timesheets` and `time_entries`, not sufficient**
+to describe who may read payroll through the API. PostgREST would still let any
+carer pass the self-arm on her own rows; the service gate is what enforces the
+product rule by **role, status second** (`assertPayrollReader`):
+
+- **Owner or parent** — household scope: every carer's weeks, entries, exports,
+  and payment lists.
+- **Nanny** — **forced** own scope: `{kind: 'own', carerId: callerId}`. A
+  client-supplied `carer_id` is discarded on list and export paths; she never
+  reads another carer's payroll.
+- **Helper** — refused outright, active or removed. No payroll surface, ever.
+
+The four pure-money query services (`payArrangementQueryService`,
+`ptoQueryService`, `expenseQueryService`, `paymentQueryService`) enforce the
+same role-shaped scope through their own `assert*` gates;
+`reimbursementSettlementService` delegates to `assertPayrollReader` for the
+same shape. An earlier draft used `private.can_read_household` on the hours
+tables — *every active member* — which was wider than all of the above.
+PostgREST is a real door: a policy looser than the service does not make the
+service's refusal safer, it makes it cosmetic. A nanny can always read her own
+terms and her own weeks, because opaque pay is the disease this feature treats.
 
 **Membership STATUS is not part of that rule, in either direction.** Every
 payroll read resolves scope from the ROLE and accepts a `removed` member: a
@@ -516,11 +582,16 @@ their existing row flipped back to `active`
 `(household_id, user_id)` constraint makes a second row impossible. **The
 same row coming back is what makes this a money question:**
 
-- **The pay arrangement is not end-dated on removal, and not re-derived on
-  rejoin.** Arrangements are effective-dated and append-only per
-  `(household, carer)` (§2), so the one that was live when the carer left is
-  still the one that resolves after they return — at the old rate, with no
-  gap recorded. Nobody is prompted to write a new row.
+- **The pay arrangement IS end-dated on removal (065).**
+  `householdCommandService.removeMember` calls
+  `payArrangementRepository.endForCarer` **before** the membership flips,
+  setting `valid_to` on every still-live row to the household-local removal
+  day (inclusive — §2). A nanny's `leaveHousehold` path does the same when
+  the leaver is a nanny; a parent or helper leaving has no arrangement to
+  end. After a rejoin there is **no live arrangement** until the parent
+  writes a new row: `effectiveOn` excludes ended rows for dates after
+  `valid_to`, so the engine returns `no_arrangement` (§4), never the old rate
+  silently resumed.
 - **The PTO balance is not reset or re-derived.** It is a household-side
   ledger (§5), so accrual and usage from the previous stint carry straight
   over into the new one.
@@ -530,11 +601,9 @@ same row coming back is what makes this a money question:**
   reactivates them as a parent, and `can_edit` resets to `false` regardless
   of what they held before.
 
-None of this is a decision that has been made; it is what the code does
-today because reactivation reuses the row. Whether a rejoin should end-date
-the arrangement, snapshot or reset the PTO balance, or refuse a role change
-is an **open owner decision** — see `audit/RESIDUAL-RISK.md`. Do not add
-money-side behaviour to the rejoin path before that lands.
+Reactivation reuses the membership row; payroll terms do not. A carer who
+returns must have fresh terms written before any week totals again — that is
+the intended product behaviour, not a gap waiting on an owner decision.
 
 ## 11. The settlement ledger: payments are facts, never a second source of truth
 
@@ -731,10 +800,71 @@ mean the same thing — the normal rate — and emitting a £0.00 uplift row wou
 tell a nanny her family agreed a holiday premium and then paid her nothing for
 it. Never a fabricated figure (§4).
 
-**A paid holiday nobody worked prices nothing, deliberately.** Nothing on the
-arrangement, on the household, or in D-12 says how many hours an unworked paid
-holiday is worth — not her scheduled hours, not a fixed eight, not an average.
-Pricing one would mean inventing a number. What already pays an unworked
-holiday is the guaranteed-hours top-up (§7) or a time-off day marked paid
-(§5). Giving "which holidays are paid" a pricing meaning of its own needs an
-hours term that no decision has yet made — carried as 3-E4's open question.
+**An unworked observed holiday prices a `paid_holiday` line (095, D-53).**
+When `pay_arrangements.holiday_hours_minutes` is set, each observed holiday
+date in the week with **zero worked minutes** earns one credit at that day's
+ordinary rate — a `paid_holiday` line, outside every overtime threshold and
+counting toward `payable_minutes` so the guaranteed top-up (§7) never pays
+the same absence twice. Null means no credit (pre-095 behaviour unchanged).
+The credit and the worked-holiday premium are **mutually exclusive** on one
+date: premium needs worked minutes, credit needs none. Do not label the
+credit `pto` — it draws on no entitlement ledger (§5).
+
+---
+
+## 13. Daily overtime, double time, and the seventh day (078)
+
+Five nullable columns on `pay_arrangements` (migration 078), all read off the
+week's **last worked day** arrangement — the same "the week is one unit" rule
+as weekly overtime threshold and multiplier (§3's engine header):
+
+| Column | Null means |
+|---|---|
+| `overtime_daily_threshold_minutes` | No daily overtime tier |
+| `doubletime_daily_threshold_minutes` | No daily double-time tier |
+| `doubletime_multiplier` | No double time at all |
+| `seventh_day_multiplier` | No seventh-consecutive-day rule |
+| `seventh_day_doubletime_after_minutes` | Seventh day is single-tier only |
+
+**Pricing order** (`docs/design/screens-pay-terms.md` §10.1): (1) if all
+seven calendar days of the household workweek were worked, the seventh day
+prices whole at its own tiers and contributes nothing to the weekly
+threshold; (2) every other day splits into regular / daily overtime /
+doubletime against the daily thresholds; (3) weekly overtime accumulates over
+the **remainder** only — minutes no daily tier already promoted. Double time
+uses the shared `doubletime_multiplier` whether reached by a long Tuesday or
+by the seventh day's second tier. Postgres CHECK constraints enforce tier
+ordering (`doubletime_daily_threshold_minutes >
+overtime_daily_threshold_minutes` when both set) and refuse a double-time
+threshold without a multiplier — refuse, never clamp (§1).
+
+Pre-078 rows read as weekly-overtime-only with no backfill. Emission gates
+match §12: no line is fabricated when the rate to price it at is absent.
+
+---
+
+## 14. Documentary terms, pay schedule, and acknowledgments (076, 082, 081)
+
+**`terms` jsonb (076)** — notice period, duties, live-in conditions, and
+other agreed-but-unpriced fields. Opaque passthrough this build: stored and
+returned, never read by the engine (`z.record(z.string(), z.unknown())` on
+the wire until a typed shape lands). `NOT NULL DEFAULT '{}'` so "no terms
+yet" and "explicitly empty" are one shape.
+
+**Pay schedule columns (082, D-17)** — `pay_frequency`
+(`weekly`/`biweekly`/`semimonthly`/`monthly`), `pay_day_of_week` (0=Sun…6=Sat,
+for weekly/biweekly), `pay_day_of_month` (1–31, first cutoff for
+semimonthly/monthly; the second semimonthly cutoff is always the calendar's
+last day and is not stored). **Presentation only** — the earnings engine
+never reads them; overtime and freeze semantics stay weekly regardless. Null
+on each means "not stated". `computePayPeriodEnd` and the week CSV may use
+them for grouping labels.
+
+**`pay_arrangement_acks` (081, D-31/D-45)** — append-only rows recording
+that the **carer** saw (`kind = 'seen'`) or disagreed with (`kind =
+'disagreed'`, optional 280-char `note`) one arrangement version. One row per
+`(arrangement_id, carer_id, kind)`; parents cannot write on her behalf. A
+dissent blocks nothing — terms stay in force and weeks keep pricing. RLS:
+select through the same money read circle as `pay_arrangements`; insert only
+when `carer_id = auth.uid()` matches the arrangement's carer. No update or
+delete path.

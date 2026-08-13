@@ -118,11 +118,25 @@ tags:
 - takeScreenshot: parent-sees-sick-cancel-request
 
 # --- Parent: the S3 three-arm paid hint ----------------------------------
+# Scroll to the control before tapping, and WAIT for the dialog rather than
+# asserting instantly. The step immediately above scrolls DOWN to the change-
+# request section, which leaves `shift-detail-cancel` somewhere else on a long
+# shift-detail page — and this suite's recurring failure mode is a tap that
+# Maestro reports COMPLETED while it actually lands on whatever is covering the
+# control (Maestro's visibility test is hierarchy-based, not occlusion-based).
+# The dialog is then a state change, not an animation, so `waitForAnimationToEnd`
+# does not cover it either.
+- scrollUntilVisible:
+    element:
+      id: 'shift-detail-cancel'
+    direction: DOWN
+    timeout: 15000
 - tapOn:
     id: 'shift-detail-cancel'
-- waitForAnimationToEnd
-- assertVisible:
-    id: 'shift-detail-cancel-body'
+- extendedWaitUntil:
+    visible:
+      id: 'shift-detail-cancel-body'
+    timeout: 15000
 # S14 — every variant of the body ends with this clause, because the button
 # opens a REQUEST and a dialog that reads like the shift is already cancelled
 # would misrepresent it.

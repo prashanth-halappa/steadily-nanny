@@ -55,6 +55,45 @@ disable_ios_quicktype() {
 }
 disable_ios_quicktype
 
+suppress_dev_menu_intro() {
+  # The expo-dev-client "This is the developer menu" intro card is the single
+  # biggest source of false failures in this suite: while it is up it REPLACES
+  # the whole a11y tree (a hierarchy dump returns only the sheet and the status
+  # bar), so every `visible:`/`notVisible:` guard in reset-to-welcome.yaml reads
+  # wrong and its launcher-recovery arm force-reloads the bundle mid-mount.
+  #
+  # It is gated on ONE preference — `EXDevMenuIsOnboardingFinished`, read by
+  # `DevMenuPreferences.isOnboardingFinished`
+  # (node_modules/expo-dev-menu/ios/Modules/DevMenuPreferences.swift:8). Setting
+  # it means the sheet never appears at all, which beats dismissing it: it also
+  # pops ASYNCHRONOUSLY several seconds after launch, so an in-flow guard placed
+  # right after `launchApp` evaluates before it is there and passes over it.
+  # flows/dismiss-dev-menu.yaml stays as the fallback for the one place that
+  # legitimately re-arms it (clearState wipes this preference).
+  #
+  # It must be written into the APP CONTAINER plist. `simctl spawn <udid>
+  # defaults write com.jetto.steadily.nanny ...` looks right and is USELESS —
+  # it lands in the simulator's device-wide preferences domain, which the
+  # sandboxed app never reads. Verified by reading back both paths.
+  print "==> suppressing the expo-dev-client intro sheet"
+  local container plist
+  if ! container="$(xcrun simctl get_app_container "${SIM_UDID}" com.jetto.steadily.nanny data 2>/dev/null)"; then
+    print "warn: app not installed on ${SIM_UDID} — skipping intro-sheet suppression"
+    return 0
+  fi
+  plist="${container}/Library/Preferences/com.jetto.steadily.nanny.plist"
+  if [[ ! -f "${plist}" ]]; then
+    print "warn: ${plist} does not exist yet — skipping (launch the app once, then re-run)"
+    return 0
+  fi
+  # Terminate first: a running app can flush its cached defaults back over this.
+  xcrun simctl terminate "${SIM_UDID}" com.jetto.steadily.nanny 2>/dev/null || true
+  if ! plutil -replace EXDevMenuIsOnboardingFinished -bool true "${plist}"; then
+    print "warn: plutil -replace failed (continuing; the YAML fallback still applies)"
+  fi
+}
+suppress_dev_menu_intro
+
 # A cold Metro bundle can take ~15s to build; reset-to-welcome's wait windows
 # are tuned for a warm one and fail as if the app were wedged. Warm it here
 # so the first flow isn't the one that pays for the rebuild.

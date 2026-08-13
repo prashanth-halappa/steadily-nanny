@@ -354,6 +354,68 @@ describe('ApproveWeekDialog', () => {
     );
   });
 
+  it('renders the structure line under the body when supplied and earnings are ok', () => {
+    const { getByTestId } = render(
+      <ApproveWeekDialog
+        open
+        onOpenChange={() => {}}
+        onConfirm={() => {}}
+        isSubmitting={false}
+        weekRangeLabel="3 – 9 August"
+        hoursLabel="41h 00m"
+        grossLabel="£236.12"
+        earningsStatus="ok"
+        carerName="Amara"
+        adjustmentLabel={null}
+        structureLine="53h = 40 reg + 12 OT + 1 DT"
+      />
+    );
+
+    expect(getByTestId('hours-approve-dialog-structure').props.children).toBe(
+      '53h = 40 reg + 12 OT + 1 DT'
+    );
+  });
+
+  it('omits the structure line when earnings are not ok', () => {
+    const { queryByTestId } = render(
+      <ApproveWeekDialog
+        open
+        onOpenChange={() => {}}
+        onConfirm={() => {}}
+        isSubmitting={false}
+        weekRangeLabel="3 – 9 August"
+        hoursLabel="41h 00m"
+        grossLabel={null}
+        earningsStatus="no_arrangement"
+        carerName="Amara"
+        adjustmentLabel={null}
+        structureLine="53h = 40 reg + 12 OT + 1 DT"
+      />
+    );
+
+    expect(queryByTestId('hours-approve-dialog-structure')).toBeNull();
+  });
+
+  it('omits the structure line when earnings span a currency change', () => {
+    const { queryByTestId } = render(
+      <ApproveWeekDialog
+        open
+        onOpenChange={() => {}}
+        onConfirm={() => {}}
+        isSubmitting={false}
+        weekRangeLabel="3 – 9 August"
+        hoursLabel="41h 00m"
+        grossLabel={null}
+        earningsStatus="currency_change"
+        carerName="Amara"
+        adjustmentLabel={null}
+        structureLine="53h = 40 reg + 12 OT + 1 DT"
+      />
+    );
+
+    expect(queryByTestId('hours-approve-dialog-structure')).toBeNull();
+  });
+
   it('renders nothing (dialog closed) when open is false', () => {
     const { queryByTestId } = render(
       <ApproveWeekDialog

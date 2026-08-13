@@ -82,14 +82,25 @@ tags:
     id: 'code-input'
 - inputText: ${PHASE4_DRAFT_CODE_A}
 - hideKeyboard
-# `hideKeyboard` is unreliable on this screen (same story as the pay-setup
-# date field: verified via screenshot that the keyboard was still up right
-# before this tap, with `code-screen-cta` sitting under/behind it). Same
-# fix as the pay-setup swipes: scroll the content clear rather than fight
-# the keyboard dismiss.
-- swipe:
-    start: 50%,60%
-    end: 50%,35%
+# The diagnosis above was right and the remedy was wrong. MEASURED 2026-08-12:
+# `code-screen-cta` sits at [22,760][380,808] — centre (201,784) — while the
+# keyboard occupies [0,539][402,874]. The CTA is ENTIRELY behind it, so the
+# swipe cannot help: swiping scrolls the CONTENT, but this CTA is pinned
+# OUTSIDE the scroll view (the scroll body is [0,172][402,760]; the CTA sits
+# below it), so no amount of scrolling moves it out from under the keyboard.
+# The tap therefore landed on a key, no preview request was ever issued — the
+# API log has ZERO `invites/:code/preview` lines for these runs — and the flow
+# died on a missing `code-preview-card` that never had a chance to render.
+# THAT is flow 14's long-standing failure, and it is a harness bug.
+#
+# The keyboard has to actually go away. `hideKeyboard` genuinely is unreliable
+# here, so tap non-interactive content instead: the screen title "Join your
+# household" ([22,194][380,234]) is far above the keyboard and has no onPress,
+# so the touch falls through and dismisses. Deliberately NOT selecting on
+# "Invite code" — that string is also the `code-input`'s own accessibilityLabel,
+# so it would match the input and just refocus it.
+- tapOn:
+    text: 'Join your household'
 - waitForAnimationToEnd
 # The CTA is pressed TWICE by design: the first press checks the code and
 # renders the preview, the second joins. Asserting the preview between them is
@@ -97,8 +108,17 @@ tags:
 - tapOn:
     id: 'code-screen-cta'
 - waitForAnimationToEnd
-- assertVisible:
-    id: 'code-preview-card'
+# `waitForAnimationToEnd` waits for ANIMATION, not for a network query, and the
+# card is gated on `preview.data` (CodeEntryScreen.tsx:366) — i.e. on the
+# `GET /v1/households/invites/:code/preview` round trip having RESOLVED. A bare
+# assertVisible here races that request and fails on a screen that is merely
+# still fetching, which is indistinguishable in the failure frame from a code
+# that was rejected. Wait for the card; `code-error` is then checked after, so
+# a genuine rejection still fails loudly rather than being waited out.
+- extendedWaitUntil:
+    visible:
+      id: 'code-preview-card'
+    timeout: 15000
 - assertNotVisible:
     id: 'code-error'
 - takeScreenshot: fresh-parent-code-preview

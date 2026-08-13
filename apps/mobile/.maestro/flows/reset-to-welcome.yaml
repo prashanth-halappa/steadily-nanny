@@ -20,7 +20,25 @@ appId: com.jetto.steadily.nanny
     clearState: false
 
 # If the intro sheet is up (e.g. first run after a manual reinstall), clear it.
-- runFlow: dismiss-dev-menu.yaml
+#
+# The bounded wait is load-bearing and this call site was the one missing it
+# (the two below already had one). The sheet pops ASYNCHRONOUSLY a second or two
+# after launch, so a bare guard here evaluates before it exists, passes over it,
+# and the sheet then covers every assertion that follows — which surfaces as
+# `welcome-screen is visible` failing. Normally the driver's
+# `EXDevMenuIsOnboardingFinished` preference means the sheet never appears at
+# all, but that preference lives in the APP CONTAINER and a reinstall generates
+# a new container and wipes it (observed 2026-08-12: container UUID changed and
+# the key was gone). So this is the arm that has to survive a reinstall.
+- repeat:
+    times: 3
+    commands:
+      - extendedWaitUntil:
+          visible:
+            text: 'Runtime version'
+          timeout: 6000
+          optional: true
+      - runFlow: dismiss-dev-menu.yaml
 
 # Let the relaunched app settle: a live session auto-loads the bundle to the
 # tabs; a signed-out one lands on welcome.
@@ -121,7 +139,7 @@ appId: com.jetto.steadily.nanny
             # bounded window to appear and clear it BEFORE the bundle load.
             - extendedWaitUntil:
                 visible:
-                  text: 'This is the developer menu'
+                  text: 'Runtime version'
                 timeout: 6000
                 optional: true
             - runFlow: dismiss-dev-menu.yaml
@@ -159,7 +177,7 @@ appId: com.jetto.steadily.nanny
             # nothing.
             - extendedWaitUntil:
                 visible:
-                  text: 'This is the developer menu'
+                  text: 'Runtime version'
                 timeout: 20000
                 optional: true
             - runFlow: dismiss-dev-menu.yaml
@@ -199,5 +217,17 @@ appId: com.jetto.steadily.nanny
             id: 'welcome-screen'
           timeout: 15000
 
-- assertVisible:
-    id: 'welcome-screen'
+# LOOP the dismissal, do not assume one pass clears it. The sheet pops
+# ASYNCHRONOUSLY and can arrive after EVERY guard above has already run —
+# measured repeatedly on 2026-08-12: the app sat correctly on the welcome
+# screen with the intro card over it, and this file failed on its own closing
+# assertion. A single dismiss races the pop; three bounded passes cover a sheet
+# arriving up to ~18s late. Each pass is a no-op when the sheet is absent.
+# A bounded wait, not a bare assert. Every arm above ends in a state change
+# that is asynchronous (sign-out clears auth then navigates; a bundle load
+# mounts the app), and an instant assert here turns a slow-but-correct reset
+# into a failure attributed to whichever flow happened to call it.
+- extendedWaitUntil:
+    visible:
+      id: 'welcome-screen'
+    timeout: 10000

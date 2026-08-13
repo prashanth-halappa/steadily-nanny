@@ -45,8 +45,17 @@ tags:
 - tapOn:
     id: 'code-screen-cta'
 - waitForAnimationToEnd
-- assertVisible:
-    id: 'code-preview-card'
+# `waitForAnimationToEnd` waits for ANIMATION, not for a network query, and the
+# card is gated on `preview.data` (CodeEntryScreen.tsx:366) — i.e. on the
+# `GET /v1/households/invites/:code/preview` round trip having RESOLVED. A bare
+# assertVisible here races that request and fails on a screen that is merely
+# still fetching, which is indistinguishable in the failure frame from a code
+# that was rejected. Wait for the card; `code-error` is then checked after, so
+# a genuine rejection still fails loudly rather than being waited out.
+- extendedWaitUntil:
+    visible:
+      id: 'code-preview-card'
+    timeout: 15000
 - assertNotVisible:
     id: 'code-error'
 - tapOn:
@@ -98,6 +107,18 @@ tags:
     visible:
       id: 'inbox-list'
     timeout: 25000
+# Scroll first. The inbox is a list and the seeded household already carries
+# several older items (one `change_request` and four `submitted_week` rows were
+# above it on the run that exposed this), so the proposal row sits below the
+# fold and the bare tap failed with "Element not found" on a row that exists.
+# Confirmed present in the DB at that moment: a `terms_proposals` row for this
+# household with `status=proposed`, `direction=carer` — so the absorption had
+# worked and only the harness was looking in the wrong place.
+- scrollUntilVisible:
+    element:
+      id: 'inbox-item-terms_proposal-.*'
+    direction: DOWN
+    timeout: 15000
 - tapOn:
     id: 'inbox-item-terms_proposal-.*'
 - extendedWaitUntil:

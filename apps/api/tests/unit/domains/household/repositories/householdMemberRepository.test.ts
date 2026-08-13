@@ -512,4 +512,62 @@ describe('HouseholdMemberRepository.listActiveByHousehold', () => {
     const result = await repo.listActiveByHousehold('h1');
     expect(result[0].profile_name).toBeNull();
   });
+
+  // Pin the separation from `listNonRemovedByHousehold`: push audiences and
+  // shift authorization must never widen to candidates via a quiet refactor.
+  it('filters on status = active only — a candidate row is excluded at the query', async () => {
+    const chain = createMockQueryChain({ data: [], error: null });
+    mockSupabaseService.from.mockImplementation(() => chain);
+    const repo = new HouseholdMemberRepository();
+
+    await repo.listActiveByHousehold('h1');
+
+    expect(chain.eq.mock.calls).toContainEqual(['status', 'active']);
+    expect(chain.in.mock.calls).toEqual([]);
+  });
+});
+
+describe('HouseholdMemberRepository.listNonRemovedByHousehold', () => {
+  // `GET /v1/households/:id/members` is the one read the mobile inbox fans
+  // proposal queries from; D-38 leaves the nanny a `candidate` until acceptance.
+  it('filters on status in [active, candidate] — never a negated removed test', async () => {
+    const chain = createMockQueryChain({ data: [], error: null });
+    mockSupabaseService.from.mockImplementation(() => chain);
+    const repo = new HouseholdMemberRepository();
+
+    await repo.listNonRemovedByHousehold('h1');
+
+    expect(chain.in.mock.calls).toEqual([['status', ['active', 'candidate']]]);
+    expect(
+      chain.eq.mock.calls.filter((call: unknown[]) => call[0] === 'status')
+    ).toEqual([]);
+  });
+
+  it('joins the profile name onto each row as profile_name', async () => {
+    const rows = [
+      {
+        id: 'm1',
+        household_id: 'h1',
+        user_id: 'u1',
+        role: 'nanny',
+        status: 'candidate',
+        user_profiles: { name: 'Amara' },
+      },
+    ];
+    let selectArg = '';
+    mockSupabaseService.from.mockImplementation(() => {
+      const chain = createMockQueryChain({ data: rows, error: null });
+      chain.select = mock((arg: string) => {
+        selectArg = arg;
+        return chain;
+      });
+      return chain;
+    });
+    const repo = new HouseholdMemberRepository();
+    const result = await repo.listNonRemovedByHousehold('h1');
+
+    expect(selectArg).toContain('user_profiles');
+    expect(result[0].profile_name).toBe('Amara');
+    expect(result[0].status).toBe('candidate');
+  });
 });

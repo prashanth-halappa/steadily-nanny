@@ -26,8 +26,7 @@
  *
  * A fast path that is occasionally WRONG is worse than no fast path at all
  * (the spec's own words) — every criterion below is a reason to say NO, and
- * the predicate never guesses when data is missing (see `isWithinMedianBand`
- * ponytail note for the one deliberate exception: no baseline yet).
+ * the predicate never guesses when data is missing.
  */
 import type {
   TimeEntry,
@@ -81,17 +80,17 @@ function median(values: readonly number[]): number {
 }
 
 /**
- * ponytail: fewer than `TRAILING_WEEKS` prior approved weeks means there is
- * no baseline to test against — vacuously "within band" rather than
- * blocking the fast path on every new placement's first month. Upgrade
- * path: shrink the requirement if a shorter baseline proves reliable
- * enough in practice.
+ * Fewer than `TRAILING_WEEKS` prior approved weeks means there is no median
+ * baseline — return false so the approve dialog stays silent rather than
+ * claiming "nothing unusual" on the screen where money is committed. A fast
+ * path that is occasionally wrong is worse than no fast path (this module's
+ * own stated principle).
  */
 function isWithinMedianBand(
   grossMinor: number,
   history: readonly number[]
 ): boolean {
-  if (history.length < TRAILING_WEEKS) return true;
+  if (history.length < TRAILING_WEEKS) return false;
   const m = median(history);
   if (m === 0) return grossMinor === 0;
   return Math.abs(grossMinor - m) <= m * MEDIAN_BAND_FRACTION;

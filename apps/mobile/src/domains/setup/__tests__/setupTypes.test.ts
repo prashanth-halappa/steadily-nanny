@@ -20,6 +20,7 @@ import {
   getNextSetupStep,
   getSetupStepRoute,
   getStepProgress,
+  isSetupStepAfterCode,
   SETUP_PATHS,
   SETUP_ROLES,
   SETUP_STEP_ROUTES,
@@ -234,5 +235,27 @@ describe('getStepProgress', () => {
         }
       }
     }
+  });
+});
+
+describe('isSetupStepAfterCode', () => {
+  it('is true when persisted progress has moved past CODE on the join path', () => {
+    expect(
+      isSetupStepAfterCode(
+        SETUP_ROLES.PARENT,
+        SETUP_PATHS.JOIN,
+        SETUP_STEPS.NOTIFICATIONS_PERMISSION
+      )
+    ).toBe(true);
+  });
+
+  it('is false while the user is still on CODE', () => {
+    expect(
+      isSetupStepAfterCode(
+        SETUP_ROLES.PARENT,
+        SETUP_PATHS.JOIN,
+        SETUP_STEPS.CODE
+      )
+    ).toBe(false);
   });
 });

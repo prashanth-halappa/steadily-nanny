@@ -26,6 +26,7 @@ describe('CodeEntryScreen i18n', () => {
     expect(screenSource).toContain("t('onboarding.code.placeholder')");
     expect(screenSource).toContain("t('onboarding.code.invalidError')");
     expect(screenSource).toContain("t('onboarding.code.redeemError')");
+    expect(screenSource).toContain("t('onboarding.code.postRedeemError')");
     expect(screenSource).not.toContain('Enter your invite code');
     expect(screenSource).not.toContain('Join household');
     expect(screenSource).not.toContain("That code doesn't look right");

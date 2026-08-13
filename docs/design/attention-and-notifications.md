@@ -8,12 +8,12 @@ This document governs **who gets told what, when, and where the app puts the
 thing that is waiting on them.** It is implemented by slice 3-N (matrix) and 3-D
 (cards), and Phase 6 §0.8 checks it still matches what shipped.
 
-**Correction to the playbook, verified in code:** §2.8 and §7 both call this a
-"37-type registry". It is **36**. `PUSH_NOTIFICATION_TYPES` has 36 keys,
-`PUSH_TYPE_AUDIENCE` 36 rows, `NOTIFICATION_ROUTE_MAP` 36 entries, and
-`PUSH_TYPE_GROUP` (`NotificationPrefsScreen.tsx:40–77`) 36 rows. Counted with
-`grep -c "\[PUSH_NOTIFICATION_TYPES\." apps/mobile/src/lib/notificationRouteMap.ts`.
-This spec enumerates all 36 and adds 20, for **56**. All 20 are unconditional.
+**Shipped registry count (verified in code, 2026-08-12):** `PUSH_NOTIFICATION_TYPES`
+has **55** keys, `PUSH_TYPE_AUDIENCE` 55 rows, `NOTIFICATION_ROUTE_MAP` 55
+entries, and `PUSH_TYPE_GROUP` (`NotificationPrefsScreen.tsx:48–106`) 55 rows.
+The playbook's older "36-type" / "37-type" figures are stale. §1.2 + §1.3
+together enumerate all **55** shipped types. **`pay_terms_took_effect` (draft
+N12) is not in the registry** — deferred punch-list item; see §1.6.
 
 ---
 
@@ -58,11 +58,14 @@ see §2.4.
 Resolver shorthand used below: `hours` = `hoursHref`, `shift` = `shiftDetailHref`,
 `patternRespond` = `patternRespondHref`, `scheduleTab` = `scheduleTabHref`,
 `shiftsCal` = `shiftsCalendarHref`, `uncovered` = `uncoveredCareHref`,
+`proposalReview` = `proposalReviewHref` (`/(private)/pay/proposal/:proposalId`,
+requires `data.proposalId`), `settings/pay` = `/(private)/settings/pay`,
 `home` = `/(private)/(tabs)/home`.
 
-### 1.2 The matrix — 36 existing
+### 1.2 The matrix — 36 baseline (pre-3-N / 3-T3)
 
 Sorted as `PUSH_TYPE_AUDIENCE` is sorted, so a reviewer can diff the two by eye.
+§1.3 adds the **19** types shipped in this build (55 total in the registry).
 
 | Type key | Audience | Timing | Group | Quiet | Deep link | Notes |
 |---|---|---|---|---|---|---|
@@ -79,7 +82,7 @@ Sorted as `PUSH_TYPE_AUDIENCE` is sorted, so a reviewer can diff the two by eye.
 | `extra_shift_proposed` | carer | immediate | schedule | — | `shift` | Now also raises a `pending_shift` inbox item (§2.3) |
 | `handoff_note_added` | both | immediate | schedule | — | `home` | B6: phase by role + wall clock, never shift state |
 | `household_closure_changed` | carer | immediate | schedule | — | `scheduleTab` | A closure moves her paid days |
-| `invite_redeemed` | parent → **both** | immediate | household | — | `settings/household` → **forked** | **CHANGED by D-38**, see §1.4 |
+| `invite_redeemed` | **both** | immediate | household | — | **forked** — parent → `settings/household`; carer → `proposalReview` or `draft` | **CHANGED by D-38**, see §1.4 |
 | `payment_recorded` | carer | immediate | hoursAndPay | — | `hours` | |
 | `pay_terms_set` | carer | immediate | hoursAndPay | — | `settings/my-pay` | **Copy forks on future `valid_from`** (D-16) and is **suppressed on proposal acceptance** (§1.4) |
 | `pto_marked_paid` | carer | immediate | hoursAndPay | — | `settings/my-pay` | |
@@ -103,7 +106,7 @@ Sorted as `PUSH_TYPE_AUDIENCE` is sorted, so a reviewer can diff the two by eye.
 | `uncovered_care_detected` | parent | immediate, **gated to windows starting within 72h** (`uncoveredCareService.ts:57`) | schedule | — | `uncovered` | Everything further out is tagged `push_gate: 'digest'` |
 | `uncovered_care_digest` | parent | cron — `uncoveredDigestJob`, hourly, household-local `[18:00, 21:00)` | schedule | — (**A12: never exempt**) | `uncovered` | Key is date-segmented → once per household per day |
 
-### 1.3 The matrix — 17 new
+### 1.3 The matrix — 19 shipped (plus draft N12 not built)
 
 Every row here needs, in one commit: the `PUSH_NOTIFICATION_TYPES` key, the
 `PUSH_TYPE_AUDIENCE` row (A11 — total map, typecheck enforces it), the
@@ -119,48 +122,36 @@ Every row here needs, in one commit: the `PUSH_NOTIFICATION_TYPES` key, the
 | N5 | `payment_corrected` | carer | immediate | hoursAndPay | — | `hours` | 3-T2, D-20 |
 | N6 | `reimbursement_settled` | carer | immediate | hoursAndPay | — | `hours` | 3-T2, D-14 |
 | N7 | `cover_ask_reminder` | carer | cron — `reminderJob`, hourly, local `[18:00, 22:00)` | schedule | — | `shift` | 3-N, D-22 + A2 |
-| N8 | `cover_ask_expired` | parent | **immediate at the expiry instant** (scheduled send, not a sweep) | schedule | **exempt ‡** | `uncovered` | 3-T3, D-22 — see §5.3 |
+| N8 | `cover_ask_expired` | parent | cron — `coverAskExpiryJob`, every 5m (`088_cover_ask_expiry.sql`) | schedule | **exempt ‡** | `uncovered` | 3-T3, D-22 + D-47 — see §5.2/§5.3 |
 | N9 | `cover_ask_declined` | parent | immediate | schedule | — | `uncovered` | 3-T3, D-22 — **exempt from A6 suppression**, see §1.4 |
-| N10 | `carer_sick_shifts_affected` | parent | immediate | schedule | **exempt †** | `shiftsCal` | 3-T3, D-23 |
-| N11 | `shift_no_show_digest` | parent | cron — new morning sweep, local `[07:00, 10:00)` | schedule | — | `shiftsCal` | 3-N, D-26 |
-| N12 | `pay_terms_took_effect` | carer | cron — `reminderJob`, hourly, local 09:00 on `valid_from` | hoursAndPay | — | `settings/my-pay` | 3-U1, D-16 |
-| N13 | `terms_proposal_received` | parent | immediate | hoursAndPay | — | proposal review | 3-O, D-33/D-35 |
-| N14 | `terms_proposal_countered` | carer | immediate | hoursAndPay | — | proposal review | 3-O, D-35 |
-| N15 | `terms_proposal_accepted` | carer | immediate | hoursAndPay | — | `settings/my-pay` | 3-O, D-35 |
-| N16 | `terms_proposal_withdrawn` | parent | immediate | hoursAndPay | — | proposal review | 3-O |
-| N17 | `week_below_guarantee` | carer | immediate, **at approval** | hoursAndPay | — | `hours` | 3-U3, D-32 extension — **replaces** `timesheet_approved` for that week (§1.4) |
-| N18 | `pay_terms_backdated` | carer | immediate | hoursAndPay | — | `settings/my-pay?arrangementId=` → opens the what-changed sheet | 3-U1, `screens-pay-terms.md` §7.4 (M1) |
-| N19 | `pay_terms_scheduled_change_cancelled` | carer | immediate | hoursAndPay | — | `settings/my-pay` | 3-U1, `screens-pay-terms.md` §6.1 (M4) |
-| N20 | `pay_terms_disagreed` | parent | immediate | hoursAndPay | — | `settings/pay-arrangement` | 3-U1, **D-45** — `screens-pay-terms.md` §8.3.1 owns the copy |
+| N10 | `carer_sick_shifts_affected` | parent | immediate | schedule | — | `shiftsCal` | 3-T3, D-23 — **not** in `QUIET_HOURS_EXEMPT_TYPES` (§9.1) |
+| N11 | `shift_no_show_digest` | parent | cron — `noShowDigestJob`, local `[07:00, 10:00)` | schedule | — | `shiftsCal` | 3-N, D-26 |
+| N12 | `terms_proposal_received` | parent | immediate | hoursAndPay | — | `proposalReview` | 3-O, D-33/D-35 |
+| N13 | `terms_proposal_countered` | carer | immediate | hoursAndPay | — | `proposalReview` | 3-O, D-35 |
+| N14 | `terms_proposal_accepted` | carer | immediate | hoursAndPay | — | `settings/my-pay` | 3-O, D-35 |
+| N15 | `terms_proposal_withdrawn` | parent | immediate | hoursAndPay | — | `proposalReview` | 3-O |
+| N16 | `week_below_guarantee` | carer | immediate, **at approval** | hoursAndPay | — | `hours` | 3-U3, D-32 extension — **replaces** `timesheet_approved` for that week (§1.4) |
+| N17 | `pay_terms_backdated` | carer | immediate | hoursAndPay | — | `settings/my-pay` | 3-U1, `screens-pay-terms.md` §7.4 (M1) |
+| N18 | `pay_terms_scheduled_change_cancelled` | carer | immediate | hoursAndPay | — | `settings/my-pay` | 3-U1, `screens-pay-terms.md` §6.1 (M4) |
+| N19 | `pay_terms_disagreed` | parent | immediate | hoursAndPay | — | `settings/pay` | 3-U1, **D-45** — `screens-pay-terms.md` §8.3.1 owns the copy |
 
-**N18–N20 are cross-spec: this table owns the rows, `screens-pay-terms.md` owns
+**N17–N19 are cross-spec: this table owns the rows, `screens-pay-terms.md` owns
 the copy.** Do not restate their titles/bodies here — one home per string, and
 that spec's §6.1/§7.4/§8.3.1 have them.
 
 Three notes the rows cannot carry:
 
-- **N18 replaces `pay_terms_set` when the change reaches back** (A6). A
-  backdated *reduction* touching any unapproved week emits N18 instead of
+- **N17 replaces `pay_terms_set` when the change reaches back** (A6). A
+  backdated *reduction* touching any unapproved week emits N17 instead of
   `pay_terms_set` — never both. A backdated raise, and any change effective
   today or later, stays `pay_terms_set` with its D-16 fork (§1.4). A8 holds:
   no figures in the body, the before → after table lives in the sheet.
-- **N19 replaces `pay_terms_set` on cancellation of a scheduled change.** Same
+- **N18 replaces `pay_terms_set` on cancellation of a scheduled change.** Same
   rule, same reason: "the raise you were told about isn't happening" is not
   "your terms changed", and sending the generic body takes the employer's side.
-  N12 `pay_terms_took_effect` must **not** fire for a change that was cancelled
-  — cancel its scheduled send along with the arrangement row.
 - **None of the three is quiet-hours exempt.** A backdated pay cut is
   infuriating, not urgent; nothing here is child-safety-adjacent, so D-28
   applies unmodified.
-
-**† N10 is the one extension to D-28's exemption list, and it needs owner
-confirmation** (§9, open question 1). Reasoning: D-23 makes a sick day
-auto-open cancel change requests, and `shift_change_requested` is exempt
-because it is deadline-bearing. N10 exists *only* to batch those requests into
-one push (A6). Marking the batch non-exempt would mean batching an exempt fact
-silently downgraded it — a nanny reporting sick at 22:30 for a 07:00 start, and
-the parent not finding out until morning, is the exact failure the exemption
-list exists to prevent.
 
 **‡ N8 is exempt only when the expiring ask is for a shift starting within 12
 hours** (§9, open question 3). An ask that dies at 21:30 for a 07:00 shift is a
@@ -171,7 +162,7 @@ exemption: child-safety-adjacent facts break through, nothing else does.
 
 **Naming is canonical here (D17).** `docs/design/screens-onboarding-terms-proposal.md`
 drafted `terms_proposed` / `terms_countered` / `terms_accepted` and a separate
-`nanny_invite_redeemed`. **Those names are superseded by N13–N16 and by the
+`nanny_invite_redeemed`. **Those names are superseded by N12–N15 and by the
 widened `invite_redeemed`.** One registry, one set of literals — the audience
 map, the prefs groups, the route map and the exhaustiveness test all key on
 these strings, and two specs naming the same push two ways is how a route map
@@ -209,11 +200,12 @@ whole of P1 is that she cannot read it.
 **`cover_ask_declined` is deliberately NOT `shift_declined` (N9).** A6 suppresses
 `shift_declined` when an uncovered push already fired for the same window
 (`shiftCommandService.ts:249`). Under D-22 a pending cover-ask stops counting as
-cover, so the uncovered push now fires *at ask time* — which means, with no
-change, **every cover-ask decline would be suppressed and the parent would never
-learn she said no.** This build creates that bug; N9 is the fix. It is a
-different fact from "this window is uncovered" (which the parent already knows,
-because asking never silenced it): it is "the person you asked has answered."
+cover, so the uncovered alarm is **not silenced by asking** — and if an
+`uncovered_care_detected` push already fired for that window, **every cover-ask
+decline would be suppressed and the parent would never learn she said no.**
+N9 is the fix. It is a different fact from "this window is uncovered" (which the
+parent already knows, because asking never silenced it): it is "the person you
+asked has answered."
 A6 stands unmodified; N9 is simply not one of the types it suppresses. Write
 this reasoning into the emitter's module doc — the next person to read A6 will
 otherwise "clean it up".
@@ -242,9 +234,9 @@ week nobody queried is not a reply, and a type key that lies is a type key
 someone re-adds a second version of. Body carries the message, trimmed to 140
 characters, same rule as `timesheet_queried`.
 
-**`week_below_guarantee` REPLACES `timesheet_approved` (N17, A6).** When an
+**`week_below_guarantee` REPLACES `timesheet_approved` (N16, A6).** When an
 approved week's frozen snapshot pays below the arrangement's
-`guaranteed_minutes_per_week`, the carer gets N17 instead of
+`guaranteed_minutes_per_week`, the carer gets N16 instead of
 `timesheet_approved` — never both. One act, one push. The body says the fact
 and nothing else: "Your week of 4 Aug was approved at 44h — 6h under your
 50h guarantee." **A8 still binds on the money**: the hours are the subject and
@@ -254,12 +246,10 @@ and the week priced; an unpriceable week emits plain `timesheet_approved`,
 because "below your guarantee" against no known guarantee is a fabricated
 claim. See §2.3b for why this is the *only* guarantee push.
 
-**`pay_terms_took_effect` (N12) is a cron, not a write.** The morning a
-scheduled arrangement becomes live, at local 09:00, reusing `reminderJob`'s
-existing hourly tick and date-segmented claim key
-(`pay_terms_took_effect:<arrangementId>` — no date segment needed; it fires
-once ever). This is the row that makes D-16 trustworthy: a raise agreed in
-March must announce itself in June.
+**`pay_terms_took_effect` (draft N12) is NOT SHIPPED.** The morning-a-scheduled-
+`valid_from` cron push was deferred (punch list with 3-D owed items). Scheduled
+changes are announced at creation via `pay_terms_set` with the D-16
+`valid_from` fork (§1.4); there is no second morning cron in the registry.
 
 **`invite_redeemed` widens to `both` (D-38).** Nanny-first onboarding means the
 *nanny* is the one waiting to hear that a family redeemed her code. One type,
@@ -304,7 +294,7 @@ must be at least 3 hours wide and must not be fully contained in
 ### 1.5b Preference groups — a recommendation for 3-N (D22)
 
 Three groups (`schedule`, `hoursAndPay`, `household` —
-`NotificationPrefsScreen.tsx:38`) carried 36 types. At 53 they stop being a
+`NotificationPrefsScreen.tsx:38`) carried 36 types. At 55 they stop being a
 preference and start being a blast radius: **a parent who mutes `hoursAndPay`
 to stop expense chatter also mutes `timesheet_awaiting_approval`, the one push
 that gets Friday approval done**, plus `payment_corrected` and every terms
@@ -333,9 +323,10 @@ holds expense noise — those two are the loop, not chatter.
 | Fact | Decision | Where it surfaces instead |
 |---|---|---|
 | Shift completed (D-24, S2) | **No push.** A nightly job marking yesterday's confirmed shifts `completed` is bookkeeping; a buzz saying "your shift finished" tells nobody anything they were not present for. | The reconciliation surface the status enables (3-T3), and the day rows on Hours. |
-| Guaranteed-hours shortfall **during the week** (D-32, P14) | **No push.** The figure changes with every clock-out and resolves itself at approval (the top-up is unconditional, `earningsService.ts`). Pushing a number that is wrong an hour later is how a trustworthy app becomes a muted one. | `NannyWeekLine` sub-line on Today (§2.3b) and the Hours money card. **The approved-and-still-short case is different and does push — N17**, §2.3b. |
+| Guaranteed-hours shortfall **during the week** (D-32, P14) | **No push.** The figure changes with every clock-out and resolves itself at approval (the top-up is unconditional, `earningsService.ts`). Pushing a number that is wrong an hour later is how a trustworthy app becomes a muted one. | `NannyWeekLine` sub-line on Today (§2.3b) and the Hours money card. **The approved-and-still-short case is different and does push — N16**, §2.3b. |
 | Nanny acknowledged the terms (D-31) | **No push in either direction.** An earlier draft had a `terms_acknowledged` push to the parent; it is **deleted**. The parent is not waiting on it, the nanny's tap is not news, and it contradicted this table's own third row. | The Seen / Not seen yet row on Pay & terms (§2.4c), and an inbox item for the nanny while it is unseen (§2.3). |
 | Terms not yet acknowledged (D-31) | **No push to the parent.** The obligation is the nanny's; nudging the parent about someone else's tap is noise. | A status row on Pay & terms for the parent (§2.4c), an inbox item for the nanny (§2.3). |
+| Scheduled pay-terms took-effect morning push (`pay_terms_took_effect`, draft N12) | **NOT SHIPPED** — deferred punch-list item. Scheduled changes are announced at creation via `pay_terms_set` with the D-16 `valid_from` fork (§1.4). | `settings/my-pay` when the arrangement row is written; no morning cron. |
 
 ---
 
@@ -437,7 +428,7 @@ figure is tabular. When the week is at or above the guarantee, the line is
 (`screens-hours.md` §8).
 
 *The approved-and-still-short case is not this line, and it does push (M14 /
-N17).* Once a week is approved, the shortfall is **final** — she cannot
+N16).* Once a week is approved, the shortfall is **final** — she cannot
 self-resolve it, and its existence means either the top-up did not fire or no
 arrangement covered those days. That is a defect in her pay, not a mid-week
 figure in motion, and §1.6's "the number is wrong an hour later" reasoning
@@ -840,10 +831,11 @@ and omitted everywhere else, never a role check inside the component.
 
 ## §5 Cover-ask lifecycle (S1 · D-22)
 
-A cover-ask is a `cover`-kind shift (`SHIFT_KINDS.COVER`) created `pending` and
-assigned to a carer. Today `pending` is in `COVERING_SHIFT_STATUSES`
-(`packages/shared-types/src/uncoveredCare.ts:86–90`), which is the single line
-that silences the alarm forever.
+A cover-ask is a `cover`- or `extra`-kind shift (`SHIFT_KINDS.COVER` /
+`SHIFT_KINDS.EXTRA`) created `pending` and assigned to a carer. Under **D-22**
+`pending` is **not** in `COVERING_SHIFT_STATUSES`
+(`packages/shared-types/src/uncoveredCare.ts:99–102`), which is the line that
+used to silence the alarm when a parent asked.
 
 ### 5.1 States
 
@@ -909,13 +901,7 @@ would expire before it was read is worse than one with a short fuse.
 
 **Two consequences, both mandatory:**
 
-1. **The expiry push is scheduled, not swept (N8).** `expires_at` is a known
-   instant, so `cover_ask_expired` is enqueued for that instant when the ask is
-   created (and cancelled if the ask is answered or withdrawn). It is **not**
-   `scheduleHorizonJob`'s nightly sweep and not the hourly reminder tick —
-   near a shift start, sweep latency is the whole failure. The nightly sweep
-   stays as a **backstop only**: it closes asks whose scheduled send was missed,
-   and it must never be the primary path.
+1. **The expiry push is sent by `coverAskExpiryJob`, every 5 minutes** (`088_cover_ask_expiry.sql`, `3-58/5 * * * *`). `cover_ask_expires_at` is a known instant written at ask time, so the job closes the ask when `cover_ask_expires_at <= now` (or when `starts_at` has passed — the second arm closes pre-088 rows with a null deadline and is the backstop for missed ticks). It is **not** `scheduleHorizonJob`'s nightly sweep and not the hourly reminder tick — near a shift start, sweep latency is the whole failure.
 2. **N8 is quiet-hours exempt when the shift starts within 12h** (§1.3 ‡).
    Deferring "the ask just died and nobody is booked for 7:00 AM" to 07:00 hands
    the parent the news at the moment it stops being actionable.
@@ -1156,10 +1142,10 @@ that looks unrelated.
 
 | Rule | Where it lives | How this build touches it |
 |---|---|---|
-| A6 one-fact-one-push, keyed on `pushed` | `shiftCommandService.ts:249`, `shiftChangeRequestCommandService.ts:715` | Unmodified. N9 is a new type deliberately outside its set; N10, N15 and N17 each *replace* a push rather than adding one — §1.4 |
-| A8 approved push omits the figure | `timesheetCommandService.ts:1592` | Unmodified — and N17 inherits it (hours in the body, gross out) |
+| A6 one-fact-one-push, keyed on `pushed` | `shiftCommandService.ts:249`, `shiftChangeRequestCommandService.ts:715` | Unmodified. N9 is a new type deliberately outside its set; N10, N14 and N16 each *replace* a push rather than adding one — §1.4 |
+| A8 approved push omits the figure | `timesheetCommandService.ts:1592` | Unmodified — and N16 inherits it (hours in the body, gross out) |
 | A9 parent-cover both sentences or neither | `shiftCommandService.ts:587–645` (`notifyCarersParentCover`) | N2 registers the type; the emission condition does not change |
-| A11 audience map is total | `notification.schema.ts:125` | 20 new rows; `invite_redeemed` widens to `both` |
+| A11 audience map is total | `notification.schema.ts:239` | 19 shipped rows in §1.3; `invite_redeemed` widens to `both` |
 | A12 quiet window never swallows a digest window | `NotificationPrefsScreen.tsx:35–36` | Extended to a written rule — §1.5 |
 | B3 one owner per item | `NeedsAttentionCard.tsx:62` | §2.2 assigns an owner to every new item |
 | B6 handoff phase by role + wall clock | `HandoffChipsCard.tsx` | Untouched |
@@ -1180,28 +1166,28 @@ that looks unrelated.
 Two open, four resolved. Kept in place rather than deleted so a Phase 3 session
 can see what was asked and what came back.
 
-1. **N10 quiet-hours exemption.** `carer_sick_shifts_affected` is specced
-   exempt, which extends D-28's list by one. The alternative is non-exempt, and
-   a sick report at 22:30 for a 07:00 start reaching the parent at 07:00.
-   Recommendation: exempt.
+1. ~~**N10 quiet-hours exemption.**~~ **RESOLVED — NOT adopted.** Shipped code
+   keeps `carer_sick_shifts_affected` **out** of `QUIET_HOURS_EXEMPT_TYPES`
+   (`notification/constants.ts:31–36`). Only the closed D-28 set plus the
+   conditional `cover_ask_expired` exemption apply.
 2. **Cover-ask expiry default.** 48h is D-22's number; this spec makes it
    configurable and caps it at `starts_at − 4h` (§5.2). Confirm 48h is the
    default and 4h is the lead.
 3. ~~**N8 quiet-hours exemption inside 12h**~~ (§1.3 ‡) — **RESOLVED, D-47.**
    Adopted. `cover_ask_expired` is exempt when the shift starts within 12h,
-   deferred otherwise. D-28's list is now `{SHIFT_NEEDS_RECONFIRM,
-   SHIFT_CHANGE_REQUESTED, SHIFT_NO_SHOW}` plus the two conditional entries
-   (N8 inside 12h, N10 per item 1).
+   deferred otherwise. D-28's unconditional list is
+   `{SHIFT_NEEDS_RECONFIRM, SHIFT_CHANGE_REQUESTED, SHIFT_NO_SHOW}` plus the
+   conditional `cover_ask_expired` entry (inside 12h only).
 4. ~~**Nanny-raised thread entry, "This doesn't look right"**~~ (§3.1) —
    **RESOLVED, D-46.** Adopted as specced: no status change, no block, no new
    state.
-5. ~~**`week_below_guarantee` push at approval**~~ (N17, §2.3b) — **RESOLVED,
+5. ~~**`week_below_guarantee` push at approval**~~ (N16, §2.3b) — **RESOLVED,
    D-46.** Adopted, replacing `timesheet_approved` for that week.
-6. ~~**N20 `pay_terms_disagreed`**~~ — **RESOLVED, D-45.** The dissent row is
-   in, so N20 is unconditional. Copy stays in `screens-pay-terms.md` §8.3.1.
+6. ~~**N19 `pay_terms_disagreed`**~~ — **RESOLVED, D-45.** The dissent row is
+   in, so N19 is unconditional. Copy stays in `screens-pay-terms.md` §8.3.1.
 
 Two further recommendations that need no decision but should be read before
-3-N starts: the **preference-group split** (§1.5b — 53 types in 3 groups means
+3-N starts: the **preference-group split** (§1.5b — 55 types in 3 groups means
 muting expense chatter also mutes the Friday approval reminder), and the
 **single cancellation window** (§6.1 — decided here rather than punted, and it
 deletes a field from Manage Household).

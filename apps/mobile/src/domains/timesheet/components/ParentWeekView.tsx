@@ -97,6 +97,7 @@ import { TIMESHEET_STATUSES } from '../types';
 import { carerKeyOf } from '../utils/carerKey';
 import { formatDuration, formatOvertimeDelta } from '../utils/duration';
 import {
+  earningsStructureLine,
   formatEarningsDuration,
   formatEarningsLongDate,
 } from '../utils/earningsFormat';
@@ -613,9 +614,11 @@ export function ParentWeekView({
   // `carerKeyOf` returns — a departed carer (`carer_id` NULL) has no id to
   // file against, so the action is simply not offered for her.
   const settlementCarerId = timesheet?.carer_id ?? null;
-  const reimbursementSettledOn =
-    settlementsQuery.data?.find(s => s.carer_id === settlementCarerId)
-      ?.settled_at ?? null;
+  const reimbursementSettlement =
+    settlementsQuery.data?.find(s => s.carer_id === settlementCarerId) ?? null;
+  const reimbursementSettledOn = reimbursementSettlement?.settled_at ?? null;
+  const reimbursementSettledAmountMinor =
+    reimbursementSettlement?.amount_minor ?? null;
 
   // Screen owns the mutation, the card owns the callback — same split as
   // `onMarkPaidPress`. The refusal is stated on the card, next to the button
@@ -988,6 +991,7 @@ export function ParentWeekView({
               currency={expensesCurrency}
               carerName={carerName ?? undefined}
               settledOn={reimbursementSettledOn}
+              settledAmountMinor={reimbursementSettledAmountMinor}
               // The one-prop role fork: only this view supplies it, so a
               // helper (readOnly) and the nanny both get the same card
               // without the action.
@@ -1093,6 +1097,7 @@ export function ParentWeekView({
         adjustmentLabel={adjustmentLabel}
         adjustmentDirection={adjustmentDirection}
         nothingUnusual={timesheet?.nothing_unusual ?? null}
+        structureLine={earningsOk ? earningsStructureLine(earningsOk) : null}
       />
 
       <WithdrawQueryDialog

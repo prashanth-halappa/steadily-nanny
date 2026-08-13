@@ -273,22 +273,28 @@ describe('ShiftDetailScreen — the cancel dialog carries the paid outcome', () 
     }
   });
 
-  it('§6.1: the short-notice HINT reads the same answer, not a pay claim off is_short_notice', () => {
-    shortNotice = true;
-    shiftStartOffsetHours = 48;
+  it('§6.1: the hint renders inside the paid window even when is_short_notice is false', () => {
+    shortNotice = false;
+    shiftStartOffsetHours = 2;
     arrangement = paidArrangement();
 
-    const { getByTestId } = render(<ShiftDetailScreen />);
+    const { getByTestId, queryByTestId } = render(<ShiftDetailScreen />);
     const hint = String(
       getByTestId('shift-detail-short-notice-hint').props.children
     );
 
-    // The pill still says "short notice" — a timing fact.
-    expect(getByTestId('shift-detail-short-notice')).toBeTruthy();
-    // The hint no longer asserts a paid outcome the arrangement contradicts.
-    expect(hint).not.toContain('shortNoticePaidHint');
-    expect(hint).toContain('detail.cancelPayUnpaid');
+    expect(queryByTestId('shift-detail-short-notice')).toBeNull();
+    expect(hint).toContain('detail.cancelPayPaid');
+  });
+
+  it('§6.1: the hint does not render when the outcome variant is not paid', () => {
     shortNotice = false;
+    shiftStartOffsetHours = 48;
+    arrangement = paidArrangement();
+
+    const { queryByTestId } = render(<ShiftDetailScreen />);
+
+    expect(queryByTestId('shift-detail-short-notice-hint')).toBeNull();
   });
 });
 

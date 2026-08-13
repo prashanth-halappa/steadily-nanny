@@ -32,6 +32,7 @@ import {
   AlertDialogTitle,
 } from '@/src/components/ui/alert-dialog';
 import { Text } from '@/src/components/ui/text';
+import { Small } from '@/src/components/ui/typography';
 
 interface ApproveWeekDialogProps {
   open: boolean;
@@ -62,6 +63,9 @@ interface ApproveWeekDialogProps {
    * a staged adjustment (decided THIS approval, after the server's read)
    * always wins, and every non-`ok` status keeps its own body untouched. */
   nothingUnusual?: boolean | null;
+  /** `earningsStructureLine(earnings)` — rendered under the body on `ok`
+   * weeks only, so the parent sees the hour arithmetic before locking in. */
+  structureLine?: string | null;
 }
 
 export function ApproveWeekDialog({
@@ -77,6 +81,7 @@ export function ApproveWeekDialog({
   adjustmentLabel,
   adjustmentDirection,
   nothingUnusual = null,
+  structureLine = null,
 }: ApproveWeekDialogProps) {
   const { t } = useTranslation('hours');
 
@@ -114,6 +119,14 @@ export function ApproveWeekDialog({
               name: carerName,
             })}
           </AlertDialogDescription>
+          {showsGross && structureLine ? (
+            <Small
+              testID="hours-approve-dialog-structure"
+              className="text-muted-foreground"
+            >
+              {structureLine}
+            </Small>
+          ) : null}
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel testID="hours-approve-dialog-cancel">

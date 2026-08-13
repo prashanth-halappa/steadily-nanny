@@ -77,6 +77,7 @@
     "overtimeAfterLabel": "Overtime after",
     "overtimePaidAtLabel": "Paid at",
     "overtimeHint": "Leave a row blank if it doesn't apply.",
+    "overtimeFloorCaution": "Most arrangements use 40 hours at 1.5×. These are your family's terms to set — check they meet the rules where you live.",
     "dailyOvertimeAfterLabel": "Daily overtime after (hours in a day)",
     "dailyOvertimeHint": "Paid at the overtime rate above.",
     "doubletimeAfterLabel": "Double time after (hours in a day)",
@@ -141,7 +142,7 @@
     "appliedNote": "Most common values are populated — check each one and update anything that doesn't match what you've agreed."
   },
   "outsideWages": {
-    "hint": "These are paid outside the hourly wage. Steadily shows them on the week but never adds them to the week's gross.",
+    "hint": "These are paid outside the hourly wage and are never added to the week's gross.",
     "labelFieldLabel": "What it's for",
     "labelPlaceholder": "e.g. Health stipend",
     "amountFieldLabel": "Amount",

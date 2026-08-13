@@ -1,45 +1,50 @@
-# The RN dev menu is TWO stacked sheets, not one. Tapping 'Continue' on the
-# intro card ("This is the developer menu...") only ADVANCES to a second
-# sheet (Reload / Go home / TOOLS) — it does not close the overlay. All three
-# dismiss points in reset-to-welcome.yaml used to tap 'Continue' and assume
-# that closed the whole thing, so the flow span until timeout with the app
-# already correctly on the welcome/tabs screen underneath, covered by the
-# second sheet the whole time. Confirmed via manual probe 2026-08-12: tapping
-# 'Continue' lands on the Reload/Go-home menu, and closing THAT (its own 'X',
-# top-right of that card) reveals the real, healthy screen underneath.
+# Dismiss the Expo dev-client menu overlay. ONE tap on its own close button.
 #
-# Beyond swallowing taps, a stuck sheet hides the WHOLE a11y tree beneath it,
-# which corrupts every visibility guard in reset-to-welcome.yaml — not just
-# this one. `tab-today`/`welcome-screen` both read as not-visible while it's
-# up, so the launcher-recovery arm can wrongly conclude the app is dead and
-# force a bundle reload mid-mount. Contributing factor in flow 03's original
-# "app crashed or stopped, no .ips, splash-screen failure frame" mystery —
-# not confirmed as the sole cause (a similar signature recurred on 02/11 even
-# with this file's fix in place, so treat the relaunch-crash class as still
-# open).
+# CORRECTED 2026-08-12 (Phase 6), with a live hierarchy dump — the previous
+# version of this file was built on two wrong premises and reliably failed:
 #
-# `point: '90%,48%'` below is a screen-geometry dependency, calibrated on
-# iPhone 16 Pro (402x874pt / 1206x2622px). No accessibility label or text
-# exists on the second sheet's close control to select by instead — it's a
-# bare icon button from React Native's own dev-menu overlay, outside app
-# control. If this ever misses (different device/OS/sheet layout), the
-# symptom is the WHOLE suite failing `welcome-screen is visible`, since every
-# flow's login routes through this file.
+#  WRONG: "the dev menu is TWO stacked sheets; Continue advances to the second".
+#  ACTUAL: it is ONE sheet whose body is a paged scroll container holding BOTH
+#  pages AT THE SAME TIME. A single `maestro hierarchy` while it is up returns
+#  the intro page (`dev-tools` image, "This is the developer menu...",
+#  `Continue`) AND the menu page (`Reload`, `Go home`, `TOOLS`, ...) as sibling
+#  subtrees under the same card, each with its own scroll bar ("2 pages" and
+#  "3 pages"). So `when: visible: text: 'Go home'` was ALREADY true before
+#  anything was tapped — the old inner conditional proved nothing.
+#
+#  WRONG: "no accessibility label or text exists on the close control, so it
+#  must be tapped by screen geometry (`point: '90%,48%'`)".
+#  ACTUAL: the header carries `accessibilityText=Close; resource-id=xmark` at
+#  [344,401][378,436]. It is directly selectable. The geometry dependency and
+#  its whole device-calibration caveat are gone.
+#
+#  And `tapOn: text: 'Continue'` is a NO-OP here: Maestro reports the tap
+#  COMPLETED and the sheet does not change at all (probed twice — the intro
+#  page was still up, pixel-identical, with the app correctly on the welcome
+#  screen behind it). That COMPLETED-but-no-effect report is why the failure
+#  looked like a wedged app rather than a missed tap.
+#
+# Why this matters beyond one tap: while the sheet is up it REPLACES the whole
+# a11y tree — a dump returns only the sheet and the status bar, nothing of the
+# app. So every `visible:`/`notVisible:` guard in reset-to-welcome.yaml reads
+# wrong, and its launcher-recovery arm can wrongly conclude the app is dead and
+# force a bundle reload mid-mount.
+#
+# `Runtime version` is the sheet's header subtitle, present on BOTH pages and
+# on no app screen — one guard that matches the sheet in either state.
 appId: com.jetto.steadily.nanny
 ---
-- runFlow:
-    when:
-      visible:
-        text: 'This is the developer menu'
-    commands:
-      - tapOn:
-          text: 'Continue'
-      - waitForAnimationToEnd
-      - runFlow:
-          when:
-            visible:
-              text: 'Go home'
-          commands:
-            - tapOn:
-                point: '90%,48%'
-            - waitForAnimationToEnd
+# NO GUARD. An `optional` tap is already a no-op when the sheet is absent, and
+# the guard was the unreliable half: measured 2026-08-12, `tapOn: id: xmark`
+# dismisses the sheet 100% of the time in isolation, while
+# `when: visible: text: 'Runtime version'` repeatedly evaluated FALSE with the
+# sheet plainly on screen — so the dismiss never ran and every later assertion
+# read through a covered screen. Dropping the conditional removes the failure
+# mode instead of tuning around it.
+#
+# `xmark` is the dev-client sheet's own close control
+# (accessibilityText=Close). No app screen renders that resource-id.
+- tapOn:
+    id: 'xmark'
+    optional: true
+- waitForAnimationToEnd

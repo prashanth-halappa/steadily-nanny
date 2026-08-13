@@ -20,7 +20,10 @@
  * Delegates the fetch to `householdApi.listMembers` / central query keys so
  * other screens (e.g. shift detail actor labels) share one cache.
  */
-import type { HouseholdMember } from '@steadily-nanny/shared-types/schemas/household.schema';
+import {
+  HOUSEHOLD_MEMBER_STATUSES,
+  type HouseholdMember,
+} from '@steadily-nanny/shared-types/schemas/household.schema';
 import { useQuery } from '@tanstack/react-query';
 import { householdApi } from '@/src/api/endpoints/household';
 import { queryKeys } from '@/src/api/queryKeys';
@@ -40,8 +43,15 @@ export function useHouseholdCarers(householdId: string | null | undefined) {
   return useQuery({
     queryKey: queryKeys.household.members(householdId ?? undefined),
     queryFn: () => householdApi.listMembers(householdId as string),
+    // The members endpoint intentionally includes candidate rows for the
+    // parent's terms-proposal inbox. A candidate must never appear in carer
+    // pickers — every server write gate requires an active membership.
     select: (members: HouseholdMember[]) =>
-      members.filter(member => isCarerRole(member.role)),
+      members.filter(
+        member =>
+          isCarerRole(member.role) &&
+          member.status === HOUSEHOLD_MEMBER_STATUSES.ACTIVE
+      ),
     staleTime: QUERY_TIMING.STALE_5M,
     enabled: !!session && isInitialized && isValidId(householdId),
   });

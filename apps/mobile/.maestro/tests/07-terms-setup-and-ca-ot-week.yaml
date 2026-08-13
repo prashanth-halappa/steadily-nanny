@@ -191,8 +191,26 @@ tags:
     id: 'pay-setup-worked-holiday-multiplier-input'
 - eraseText
 - inputText: ${PHASE4_HOLIDAY_MULTIPLIER}
-- tapOn:
-    point: 50%,20%
+# `hideKeyboard`, NOT `tapOn: point: 50%,20%`. This was the last surviving
+# instance of the blind-fixed-point dismiss that the comment above the daily
+# tiers already indicts, and it is the ROOT CAUSE of this flow's long-standing
+# failure — measured 2026-08-12, not theorised:
+#
+# By this point the form is scrolled so that `pay-setup-preset-button` (label
+# "Use common defaults", pay.json `preset.button`) sits at ~20% of screen
+# height. So 50%,20% lands ON THAT BUTTON and RE-OPENS the preset sheet. The
+# sheet then covers the form and hides the a11y tree beneath it, so the
+# `scrollUntilVisible` for `pay-setup-cancellation-chip-none` below can never
+# find the chip; the chip is never selected; and the Save CTA therefore stays
+# disabled. That disabled CTA was read in Phase 5 as an app defect — it is
+# this stray tap, one step earlier.
+#
+# Proof: at the failure the live hierarchy still contained
+# `resource-id=pay-preset-sheet`, with `pay-preset-checkbox` reading
+# `value=checkbox, unchecked` and `pay-preset-confirm` carrying NO `enabled`
+# attribute — i.e. a FRESHLY re-opened sheet, not the one the flow had already
+# confirmed and closed successfully several steps earlier.
+- hideKeyboard
 - waitForAnimationToEnd
 
 # Cancellations: "the one term with no blank state" (screen copy) — the CTA
@@ -200,13 +218,65 @@ tags:
 # last, right before the CTA: doing it earlier (next to the date field it
 # sits beside on screen) disturbed the swipe/keyboard choreography for the
 # Overtime group that follows.
+# `centerElement: true` and DOWN, not a bare `direction: UP` — measured from a
+# live hierarchy dump at the moment this used to fail:
+#   - the form is at scroll offset 0% (TOP) when we arrive, so UP had nowhere to
+#     go and the scroll was a no-op;
+#   - the chip's bounds were [22,780][205,828] while the scroll viewport ends at
+#     760 and the NUMERIC KEYBOARD occupied [0,566][402,874]. The chip was both
+#     below the fold AND behind the keyboard.
+# Maestro's visibility test is hierarchy-based, not occlusion-based (as two
+# other comments in this file already record), so `scrollUntilVisible` decided
+# the chip was already "visible", scrolled nothing, and the `tapOn` dispatched
+# at (113,804) — which is the '.' key of the number pad, not the chip. Maestro
+# reported it COMPLETED. `centerElement` forces the chip to the middle of the
+# viewport (~y456), clear of the keyboard, so the tap reaches it.
+# Three steps, because two things are wrong at once here and each needs its own
+# fix. Measured from live hierarchy dumps at 0% and 100% scroll offsets:
+#
+#  (1) SCROLL OFFSET IS UNKNOWN on arrival. A bare `direction: UP` assumed we
+#      were below the cancellations; a bare `direction: DOWN` overshot to 100%
+#      and the chip left the a11y tree entirely (this ScrollView drops
+#      off-viewport children, so an overshoot is unrecoverable). So establish a
+#      KNOWN offset first by scrolling UP to the form's first field.
+#  (2) THE NUMERIC KEYBOARD IS UP, occupying [0,566][402,874] and covering the
+#      chip's row. Maestro's visibility test is hierarchy-based, not
+#      occlusion-based, so it happily "finds" the chip and taps a number key
+#      instead (the '.' key, at the chip's exact centre). `hideKeyboard` does
+#      not work on this screen — recorded twice above. What DOES work is a tap
+#      on non-interactive content, which is all `point: 50%,20%` ever was: at
+#      scroll-top that coordinate is the screen TITLE. Anchoring to the title's
+#      own text instead of the coordinate is what makes it stop breaking when
+#      the form is scrolled somewhere else.
+- scrollUntilVisible:
+    element:
+      id: 'pay-setup-rate-input'
+    direction: UP
+    timeout: 10000
+# Tap `pay-setup-backdating-hint` to dismiss the keyboard: it is a `<Small>`
+# with a testID, NON-INTERACTIVE (no onPress, so it is not a touch responder
+# and the tap falls through to the ScrollView, whose default
+# keyboardShouldPersistTaps='never' dismisses the keyboard), and after the
+# scroll above it sits at [22,392][380,434] — comfortably clear of the
+# keyboard's [0,566] top edge. The screen TITLE was the obvious choice and does
+# NOT work: after this scroll it is at y=-71, above the viewport, and Maestro
+# reports "Element not found".
+- tapOn:
+    id: 'pay-setup-backdating-hint'
+- waitForAnimationToEnd
 - scrollUntilVisible:
     element:
       id: 'pay-setup-cancellation-chip-none'
-    direction: UP
+    direction: DOWN
     timeout: 10000
 - tapOn:
     id: 'pay-setup-cancellation-chip-none'
+# Post-condition, so a swallowed tap fails HERE by name instead of surfacing one
+# step later as a mysteriously disabled CTA — which is exactly how this was
+# mis-read as an app defect. The hint renders ONLY while
+# `state.cancellationChoice === null` (PayTermsRequiredCore.tsx:135).
+- assertNotVisible:
+    id: 'pay-setup-cancellation-required-hint'
 
 # --- Save ----------------------------------------------------------------
 # `pay-setup-screen-cta` is derived inside SetupScreenShell (`${testID}-cta`),

@@ -236,7 +236,9 @@ export function ShiftDetailScreen() {
   const [startTime, setStartTime] = useState('09:00');
   const [endTime, setEndTime] = useState('17:00');
   const [note, setNote] = useState('');
-  const [hydrated, setHydrated] = useState(false);
+  // Per shift id: expo-router reuses this screen across shiftId navigations,
+  // but a refetch of the SAME id must not clobber in-progress edits.
+  const [hydratedFor, setHydratedFor] = useState<string | null>(null);
   const [declineConfirmOpen, setDeclineConfirmOpen] = useState(false);
   const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
   // The change-request id currently confirming withdrawal, or null — a list
@@ -247,12 +249,12 @@ export function ShiftDetailScreen() {
   );
 
   useEffect(() => {
-    if (!shift || hydrated) return;
+    if (!shift || hydratedFor === shift.id) return;
     setStartTime(utcIsoToWallClockHHMM(shift.starts_at, shift.timezone));
     setEndTime(utcIsoToWallClockHHMM(shift.ends_at, shift.timezone));
     setNote(shift.note ?? '');
-    setHydrated(true);
-  }, [shift, hydrated]);
+    setHydratedFor(shift.id);
+  }, [shift, hydratedFor]);
 
   const isRangeValid = isEndAfterStart(startTime, endTime);
 
@@ -280,7 +282,7 @@ export function ShiftDetailScreen() {
       return;
     }
     showSuccessToast(t('detail.savedToast'));
-    setHydrated(false);
+    setHydratedFor(null);
   };
 
   if (shiftQuery.isLoading || onboarding.status === 'loading') {
@@ -403,7 +405,7 @@ export function ShiftDetailScreen() {
             : t('detail.needsReconfirm')}
         </Small>
       ) : null}
-      {shift.is_short_notice && cancelPaySentence ? (
+      {cancelPay.variant === 'paid' && cancelPaySentence ? (
         <Small
           testID="shift-detail-short-notice-hint"
           className="mt-2 text-muted-foreground"
@@ -696,6 +698,16 @@ export function ShiftDetailScreen() {
                     className="text-muted-foreground"
                   >
                     {t('detail.awaitingNannyConfirm')}
+                  </Small>
+                ) : null}
+                {req.kind === 'cancel' &&
+                req.status === 'pending' &&
+                cancelPaySentence ? (
+                  <Small
+                    testID={`shift-change-cancel-pay-${req.id}`}
+                    className="text-muted-foreground"
+                  >
+                    {cancelPaySentence}
                   </Small>
                 ) : null}
                 {req.status !== 'pending' && req.responded_by ? (
