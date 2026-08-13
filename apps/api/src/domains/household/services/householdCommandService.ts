@@ -469,7 +469,14 @@ export class HouseholdCommandService {
           result,
           await this.familyNameForCarerPush(invite, result.household_id)
         );
-        return result.membership;
+        // 094's `membership` field is the NANNY row it just inserted (the
+        // carer join), not the redeemer's. Ordinary redeemInvite returns the
+        // caller's membership so CodeEntryScreen can resolve setup role —
+        // returning the carer's row here made a joining parent land on
+        // Availability (nanny sequence) instead of notifications. Always
+        // hand back the redeemer's own active row (owner on instantiate,
+        // their existing parent/owner row on absorb).
+        return this.queries.getMembership(userId, result.household_id);
       case 'not_a_draft_invite':
         // The household went live between our read and the call — impossible
         // today (094 is the only writer of that transition and it does not

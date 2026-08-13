@@ -252,6 +252,28 @@ describe('CodeEntryScreen — role branch (WS-F)', () => {
     expect(useSetupProgressStore.getState().role).toBe('parent');
   });
 
+  it('an OWNER membership from nanny-first draft redeem maps to parent setup role — not nanny/Availability (Phase 6 B2)', async () => {
+    // 094 instantiate makes the redeemer owner. redeemInvite returns that
+    // row; without OWNER→PARENT mapping the wizard fell through to NANNY.
+    redeemInviteMock.mockImplementationOnce(() => {
+      callOrder.push('redeemInvite');
+      return Promise.resolve({ ...MEMBERSHIP, role: 'owner' });
+    });
+    const screen = renderWithProviders(<CodeEntryScreen />);
+
+    await enterCode(screen);
+    fireEvent.press(screen.getByTestId('code-screen-cta'));
+
+    await waitFor(() => expect(redeemInviteMock).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(useSetupProgressStore.getState().currentStep).toBe(
+        'NOTIFICATIONS_PERMISSION'
+      )
+    );
+    expect(useSetupProgressStore.getState().role).toBe('parent');
+    expect(mockReplace).toHaveBeenCalledWith('/onboarding/notifications');
+  });
+
   it('a helper membership skips availability entirely and advances straight to NOTIFICATIONS_PERMISSION', async () => {
     redeemInviteMock.mockImplementationOnce(() => {
       callOrder.push('redeemInvite');

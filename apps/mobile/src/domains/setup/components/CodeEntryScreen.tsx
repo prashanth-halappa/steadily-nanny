@@ -278,8 +278,14 @@ export function CodeEntryScreen({
           return;
         }
         // The redeemed membership, not the picked role, is the truth: a
-        // co-parent invite grants server role 'parent', and this is the only
-        // moment the app learns which of nanny / helper / co-parent it is.
+        // co-parent invite grants server role 'parent', and a nanny-first draft
+        // redeem (094 instantiate) grants 'owner'. This is the only moment the
+        // app learns which of nanny / helper / co-parent / owner-parent it is.
+        //
+        // OWNER maps to SETUP_ROLES.PARENT: setup has no separate owner fork
+        // (owner is a write-authority distinction on live households, not a
+        // wizard path). Without this, draft redeem returned role=owner and
+        // fell through to NANNY → Availability (Phase 6 Maestro B2).
         //
         // The old `?? NOTIFICATIONS_PERMISSION` fallback here existed ONLY
         // because `stepsForRole(PARENT)` had no CODE in it, so
@@ -290,7 +296,8 @@ export function CodeEntryScreen({
         const resolvedRole =
           membership.role === HOUSEHOLD_ROLES.HELPER
             ? SETUP_ROLES.HELPER
-            : membership.role === HOUSEHOLD_ROLES.PARENT
+            : membership.role === HOUSEHOLD_ROLES.PARENT ||
+                membership.role === HOUSEHOLD_ROLES.OWNER
               ? SETUP_ROLES.PARENT
               : SETUP_ROLES.NANNY;
         setRole(resolvedRole);

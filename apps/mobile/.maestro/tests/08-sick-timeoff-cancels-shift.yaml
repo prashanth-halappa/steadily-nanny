@@ -13,16 +13,12 @@
 # scripts/seed-phase4-fixtures.ts, which clears today's sick row, the change
 # requests it opened, and puts the shift back to `confirmed` so re-runs work.
 #
-# SCOPING NOTE — the S3 three-arm paid hint is NOT shown to the parent when
-# they RESPOND to a cancel request: `shift-change-accept-*` / `-decline-*` fire
-# the mutation immediately, with no dialog (ShiftDetailScreen's changes
-# section). The three-arm sentence lives in the parent's OWN cancel dialog
-# (`shift-detail-cancel-body`, one body assembled from CANCEL_PAY_KEY +
-# `detail.cancelNeedsAccept`). So this flow asserts the auto-opened request via
-# the response affordances, and asserts the paid-hint copy by opening — and
-# then dismissing — the parent's cancel dialog on the same shift. It never
-# confirms that second request; the shipped dialog is what is under test, not a
-# second cancellation.
+# SCOPING NOTE — the S3 three-arm paid hint used to be asserted by opening the
+# parent's OWN cancel dialog (`shift-detail-cancel-body`). Phase 6 R1 put the
+# same sentence on the cancel-request card (`shift-change-cancel-pay-*`), which
+# is the surface the parent actually answers on a sick-day cancel. This flow
+# asserts that card copy; the parent's own-cancel dialog remains covered by
+# unit tests (`ShiftDetailScreen.cancelPay.test.tsx`).
 #
 # SCOPING NOTE — there is no sick reason/label PICKER anywhere in the app.
 # `TimeOffRequestForm` has no `kind` field at all; `kind: 'sick'` comes only
@@ -117,35 +113,18 @@ tags:
 # i18n copy, so the response affordances above stand in for "it is a cancel".
 - takeScreenshot: parent-sees-sick-cancel-request
 
-# --- Parent: the S3 three-arm paid hint ----------------------------------
-# Scroll to the control before tapping, and WAIT for the dialog rather than
-# asserting instantly. The step immediately above scrolls DOWN to the change-
-# request section, which leaves `shift-detail-cancel` somewhere else on a long
-# shift-detail page — and this suite's recurring failure mode is a tap that
-# Maestro reports COMPLETED while it actually lands on whatever is covering the
-# control (Maestro's visibility test is hierarchy-based, not occlusion-based).
-# The dialog is then a state change, not an animation, so `waitForAnimationToEnd`
-# does not cover it either.
-- scrollUntilVisible:
-    element:
-      id: 'shift-detail-cancel'
-    direction: DOWN
-    timeout: 15000
-- tapOn:
-    id: 'shift-detail-cancel'
-- extendedWaitUntil:
-    visible:
-      id: 'shift-detail-cancel-body'
-    timeout: 15000
-# S14 — every variant of the body ends with this clause, because the button
-# opens a REQUEST and a dialog that reads like the shift is already cancelled
-# would misrepresent it.
-# A SUBSTRING of `shift-detail-cancel-body` (which is the pay sentence plus
-# this clause), so it must be wrapped to match at all.
-- assertVisible: '.*has to accept the cancellation before it.*'
+# --- Parent: the S3/R1 pay sentence on the cancel-request card --------------
+# Phase 6 R1 put `cancelPaySentence` on the request card the parent answers
+# (`shift-change-cancel-pay-*`). That is the product claim for the CARER half
+# of S3 (the parent half still lives in `shift-detail-cancel-body`). Asserting
+# it HERE — on the card already scrolled into view — replaces the old dance of
+# scrolling back UP to `shift-detail-cancel` and opening a second cancel dialog
+# on a shift that already has a pending cancel request. That dance was the
+# Phase 6 B1 red: Maestro reported the tap COMPLETED while the dialog never
+# opened (occlusion / wrong scroll direction after the Changes section).
+- assertVisible:
+    id: 'shift-change-cancel-pay-.*'
+# The no-arrangement fixture lands on the unpaid arm; substring match so the
+# priced arm still passes if terms are present.
+- assertVisible: '.*(isn.t paid|still paid|cancellation pay).*'
 - takeScreenshot: parent-cancel-paid-hint
-- tapOn:
-    id: 'shift-detail-cancel-dismiss'
-- waitForAnimationToEnd
-- assertNotVisible:
-    id: 'shift-detail-cancel-body'

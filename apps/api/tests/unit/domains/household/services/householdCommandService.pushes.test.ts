@@ -421,7 +421,16 @@ describe('HouseholdCommandService.redeemInvite — the draft carer arm', () => {
       } as never,
       makeMemberRepo() as never,
       draftInviteRepo() as never,
-      { getMembership: mock() } as never,
+      {
+        getMembership: mock(async () => ({
+          id: 'm-owner',
+          household_id: 'h-target',
+          user_id: 'u-parent',
+          role: 'owner',
+          can_edit: true,
+          status: 'active',
+        })),
+      } as never,
       { ensureProfile: mock(async () => {}) } as never
     );
   }

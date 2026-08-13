@@ -384,7 +384,29 @@ describe('redeemInvite — dispatch to the draft redemption function', () => {
     const inviteRepo = makeInviteRepo({
       redeemDraftHousehold: mock(async () => payload),
     });
-    return { inviteRepo, svc: makeService({ inviteRepo }) };
+    // Redeemer is the OWNER of the instantiated household — 094 returns the
+    // nanny row in `membership`, but redeemInvite must hand the client the
+    // caller's own row so setup role resolves correctly.
+    const redeemerMembership = {
+      id: 'm-owner',
+      household_id: 'h-target',
+      user_id: 'u-parent',
+      role: 'owner',
+      can_edit: true,
+      status: 'active',
+      display_name_override: null,
+      colour: null,
+      joined_at: 't',
+      created_at: 't',
+      updated_at: 't',
+    };
+    return {
+      inviteRepo,
+      svc: makeService({
+        inviteRepo,
+        queries: makeQueries(redeemerMembership as HouseholdMember),
+      }),
+    };
   }
 
   it('passes the code, the redeemer and the picked target household to the RPC', async () => {
@@ -449,7 +471,11 @@ describe('redeemInvite — dispatch to the draft redemption function', () => {
     );
   });
 
-  it('returns the membership the function created', async () => {
+  it('returns the REDEEMER membership, not the carer row 094 inserted', async () => {
+    // 094's `membership` field is the nanny join. Handing that to mobile made
+    // CodeEntryScreen resolve SETUP_ROLES.NANNY and route a joining parent to
+    // Availability (Phase 6 Maestro B2). The ordinary redeemInvite contract is
+    // "the caller's membership" — keep that here.
     const { svc } = redeemWith({
       outcome: 'redeemed',
       household_id: 'h-target',
@@ -458,7 +484,11 @@ describe('redeemInvite — dispatch to the draft redemption function', () => {
 
     const result = await svc.redeemInvite('u-parent', { code: 'ABC-234' });
 
-    expect(result).toMatchObject({ id: 'm-joined', status: 'candidate' });
+    expect(result).toMatchObject({
+      id: 'm-owner',
+      user_id: 'u-parent',
+      role: 'owner',
+    });
   });
 
   it.each([
