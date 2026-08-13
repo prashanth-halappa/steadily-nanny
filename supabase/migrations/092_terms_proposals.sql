@@ -1,10 +1,11 @@
 -- ---------------------------------------------------------------------------
 -- 092_terms_proposals.sql — the terms PROPOSAL object (3-O, D-35 / D-38)
 --
--- REPO FILE ONLY — never applied to any environment as part of Phase 3 slice
--- 3-O (TRUST-AND-TERMS-PLAYBOOK.md §3). Phase 6 applies the rehearsed
--- migration chain via the Supabase MCP, in order, never `supabase db push`.
---
+-- APPLIED TO PROD 2026-08-12 (Phase 6) via Supabase MCP `apply_migration`,
+-- in order with the rest of the 074→096 chain — never `supabase db push`
+-- (version-scheme mismatch). Live tip after apply:
+-- `redeem_draft_invite_week_starts_on`. Do not re-apply.
+
 -- Spec: docs/design/screens-onboarding-terms-proposal.md §7, §9, §10.
 -- Wire:  packages/shared-types/src/schemas/termsProposal.schema.ts
 --

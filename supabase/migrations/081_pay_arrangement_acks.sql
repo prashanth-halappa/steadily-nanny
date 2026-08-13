@@ -1,9 +1,10 @@
 -- 081 The nanny's acknowledgment of her pay terms, and her dissent (D-31, D-45)
 --
--- REPO FILE ONLY — never applied to any environment as part of Phase 3 slice
--- 3-U1 (TRUST-AND-TERMS-PLAYBOOK.md §3). Phase 6 applies the rehearsed
--- migration chain via the Supabase MCP, in order, never `supabase db push`.
---
+-- APPLIED TO PROD 2026-08-12 (Phase 6) via Supabase MCP `apply_migration`,
+-- in order with the rest of the 074→096 chain — never `supabase db push`
+-- (version-scheme mismatch). Live tip after apply:
+-- `redeem_draft_invite_week_starts_on`. Do not re-apply.
+
 -- WHAT THIS IS (`docs/design/screens-pay-terms.md` §8.1/§8.3.1)
 -- An ack is a DIFFERENT fact about an immutable `pay_arrangements` row,
 -- written later by a different person (the carer), never a column on that

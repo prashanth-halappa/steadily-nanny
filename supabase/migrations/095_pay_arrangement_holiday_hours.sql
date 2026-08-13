@@ -1,9 +1,10 @@
 -- 095 What an UNWORKED observed holiday is worth
 --
--- REPO FILE ONLY — never applied to any environment as part of Phase 3 slice
--- 3-E5 (TRUST-AND-TERMS-PLAYBOOK.md §3). Phase 6 applies the rehearsed
--- migration chain via the Supabase MCP, in order, never `supabase db push`.
---
+-- APPLIED TO PROD 2026-08-12 (Phase 6) via Supabase MCP `apply_migration`,
+-- in order with the rest of the 074→096 chain — never `supabase db push`
+-- (version-scheme mismatch). Live tip after apply:
+-- `redeem_draft_invite_week_starts_on`. Do not re-apply.
+
 -- WHY THIS MIGRATION EXISTS (§5 D-53, closing 3-E4's parked question)
 -- 080 shipped half the holidays contract. `worked_holiday_multiplier` says
 -- what hours WORKED on a household-observed holiday pay, and D-12's calendar

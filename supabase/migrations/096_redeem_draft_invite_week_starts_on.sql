@@ -3,10 +3,11 @@
 -- FLSA workweek comes from the REDEEMER, not from the draft's SQL default
 -- (D-8, §5)
 --
--- REPO FILE ONLY — never applied to any environment. Phase 6 applies the
--- rehearsed migration chain via the Supabase MCP, in order, never
--- `supabase db push`.
---
+-- APPLIED TO PROD 2026-08-12 (Phase 6) via Supabase MCP `apply_migration`,
+-- in order with the rest of the 074→096 chain — never `supabase db push`
+-- (version-scheme mismatch). Live tip after apply:
+-- `redeem_draft_invite_week_starts_on`. Do not re-apply.
+
 -- ---------------------------------------------------------------------------
 -- THE BUG
 -- ---------------------------------------------------------------------------

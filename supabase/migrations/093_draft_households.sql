@@ -2,10 +2,11 @@
 -- 093_draft_households.sql — draft households, the `candidate` membership,
 -- and the terms-link window (3-O, D-34 / D-36 / D-49 / D-51)
 --
--- REPO FILE ONLY — never applied to any environment as part of Phase 3 slice
--- 3-O (TRUST-AND-TERMS-PLAYBOOK.md §3). Phase 6 applies the rehearsed
--- migration chain via the Supabase MCP, in order, never `supabase db push`.
---
+-- APPLIED TO PROD 2026-08-12 (Phase 6) via Supabase MCP `apply_migration`,
+-- in order with the rest of the 074→096 chain — never `supabase db push`
+-- (version-scheme mismatch). Live tip after apply:
+-- `redeem_draft_invite_week_starts_on`. Do not re-apply.
+
 -- Spec: docs/design/screens-onboarding-terms-proposal.md §2.1, §2.2, §5,
 --       §6.1, §8.2.1, §12.
 --

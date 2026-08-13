@@ -1,10 +1,10 @@
 -- 090 no-show morning catch-up digest pg_cron job
 --
--- REPO FILE ONLY — never applied to any environment as part of Phase 3
--- slice 3-N (see TRUST-AND-TERMS-PLAYBOOK.md §3). Phase 6 applies the
--- rehearsed migration chain via the Supabase MCP, in order, never
--- `supabase db push`.
---
+-- APPLIED TO PROD 2026-08-12 (Phase 6) via Supabase MCP `apply_migration`,
+-- in order with the rest of the 074→096 chain — never `supabase db push`
+-- (version-scheme mismatch). Live tip after apply:
+-- `redeem_draft_invite_week_starts_on`. Do not re-apply.
+
 -- Schedules an hourly HTTP POST to POST /api/jobs/no-show-digest, which
 -- tells a household's parents (once, in the morning) about yesterday's
 -- confirmed shifts that had no clock-in and whose immediate no-show alert

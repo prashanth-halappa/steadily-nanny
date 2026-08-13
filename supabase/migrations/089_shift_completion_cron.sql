@@ -1,9 +1,10 @@
 -- 089 nightly shift-completion pg_cron job (S2 · D-24)
 --
--- REPO FILE ONLY — never applied to any environment as part of Phase 3 slice
--- 3-T3 (see TRUST-AND-TERMS-PLAYBOOK.md §3). Phase 6 applies the rehearsed
--- migration chain via the Supabase MCP, in order, never `supabase db push`.
---
+-- APPLIED TO PROD 2026-08-12 (Phase 6) via Supabase MCP `apply_migration`,
+-- in order with the rest of the 074→096 chain — never `supabase db push`
+-- (version-scheme mismatch). Live tip after apply:
+-- `redeem_draft_invite_week_starts_on`. Do not re-apply.
+
 -- ---------------------------------------------------------------------------
 -- WHY THIS JOB EXISTS
 -- ---------------------------------------------------------------------------

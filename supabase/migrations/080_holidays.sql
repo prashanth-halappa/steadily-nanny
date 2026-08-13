@@ -1,9 +1,10 @@
 -- 080 The holiday calendar, and what a worked holiday pays
 --
--- REPO FILE ONLY — never applied to any environment as part of Phase 3 slice
--- 3-E4 (TRUST-AND-TERMS-PLAYBOOK.md §3). Phase 6 applies the rehearsed
--- migration chain via the Supabase MCP, in order, never `supabase db push`.
---
+-- APPLIED TO PROD 2026-08-12 (Phase 6) via Supabase MCP `apply_migration`,
+-- in order with the rest of the 074→096 chain — never `supabase db push`
+-- (version-scheme mismatch). Live tip after apply:
+-- `redeem_draft_invite_week_starts_on`. Do not re-apply.
+
 -- WHY THIS MIGRATION EXISTS (§5 D-12, gap T6)
 -- A paid holiday was only fakeable as PTO, and a worked holiday paid the
 -- ordinary rate with no way to say otherwise. D-12: "Holiday calendar in:

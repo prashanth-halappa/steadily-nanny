@@ -32,24 +32,27 @@ that does not exist.
 
 ## §2 Scheduled jobs — the primary kill switches
 
-Live in prod today (verified 2026-08-12):
+Live in prod today (verified 2026-08-12 after Phase 6 apply of 088/089/090):
 
 ```
 cancellation-pay-reconcile   25 * * * *
+cover-ask-expiry             3-58/5 * * * *
 integrity-checks             10 4 * * *
+no-show-digest               50 * * * *
 no-show-sweep                */10 * * * *
 reminders-hourly             5 * * * *
 schedule-horizon             0 3 * * *
+shift-completion             40 3 * * *
 uncovered-digest             35 * * * *
 ```
 
-**This build adds three more** (migrations 088, 089, 090):
+**New in this build** (migrations 088, 089, 090 — now applied):
 
 | Job | Migration | Schedule | Risk it carries | Kill switch |
 |---|---|---|---|---|
-| `cover-ask-expiry` | 088 | `*/5 * * * *` | D-22/D-47. Expires unanswered cover asks by writing `status='cancelled'`, `cancelled_by=null`. A bug here **mass-cancels shifts**. Highest-blast-radius new job. | `select cron.unschedule('cover-ask-expiry');` |
+| `cover-ask-expiry` | 088 | `3-58/5 * * * *` | D-22/D-47. Expires unanswered cover asks by writing `status='cancelled'`, `cancelled_by=null`. A bug here **mass-cancels shifts**. Highest-blast-radius new job. | `select cron.unschedule('cover-ask-expiry');` |
 | `shift-completion` | 089 | nightly 03:40 | D-24/S2. Batch-writes `completed` on past confirmed shifts. Wrong window = wrong statuses at scale. | `select cron.unschedule('shift-completion');` |
-| `no-show-digest` | 090 | `[07:00,10:00)` sweep | D-26/A1. Morning "you may have missed this" digest. Worst case is push noise, not data damage. | `select cron.unschedule('no-show-digest');` |
+| `no-show-digest` | 090 | `50 * * * *` (job window still `[07:00,10:00)`) | D-26/A1. Morning "you may have missed this" digest. Worst case is push noise, not data damage. | `select cron.unschedule('no-show-digest');` |
 
 Verify names against reality before trusting this table — migration 054's
 header records that 047/048 once sat in-repo unapplied:
