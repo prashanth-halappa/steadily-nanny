@@ -15,33 +15,13 @@
 # refuses the TERMS, not the membership), and 092's one-open-round index
 # would otherwise let a stray retry collide with flow 16's already-accepted
 # round on the same pair.
-# STATUS 2026-08-15 — NOT YET GREEN. This flow reaches, and PASSES, the whole
-# offer half: the sheet opens, the rate lands, the submit enables, the sheet
-# closes, and `invite-offer-summary` renders the saved offer
-# ("CA$22.50/hr · starts Aug 15, 2026" + "Draft offer · nobody has seen this
-# yet"). It then stalls on `invite-generate-button`: the tap reports COMPLETED
-# against a button that is visible, enabled and geometrically clear of the
-# footer (y592-640 vs the CTA at y760-808), yet `onGenerate` never runs —
-# `hasStarted` stays false, InviteCodeCard never mounts, and NO invite POST
-# reaches the API. Ruled out: keyboard occlusion, stale scroll coordinates,
-# `centerElement` (fails — the button is the last element), and a disabled
-# CTA. Unresolved.
-#
-# THE FEATURE ITSELF IS VERIFIED, independently of this flow, straight through
-# the API against the local stack: offer attaches to the invite, is absent
-# from the public preview, promotes on redeem into a `direction: 'parent'`
-# proposal carrying `from_invite_id`, the CARER accepts it (B1 — this 404'd
-# before the fix), and the resulting `pay_arrangements` row is written under
-# the AUTHORING PARENT's identity, not hers (§17 held). See the session's
-# `verify-p8-b1.ts`. So the red here is test-harness debt, not product risk.
-#
-# ALSO RULED OUT (probe run 2026-08-15): a stranded touch-blocking overlay from
-# the closing BottomSheetBase — the GOLDEN-FIXES #1 failure mode, and the best
-# remaining theory. A throwaway probe toggled the role picker BEFORE opening
-# the offer sheet (control) and AGAIN after it closed; both passed, so touches
-# reach the screen fine afterwards. Yet in that same probe a tap on
-# `invite-generate-button` still produced no invite POST. So it is specific to
-# that control, not to the sheet, and not to our feature.
+# STATUS 2026-08-15 — GREEN. The earlier stall on `invite-generate-button` was
+# a Maestro artifact (the occlusion class), NOT a product bug — see flow 16's
+# header for the full writeup: the button's unscrolled a11y frame
+# ([22,814][380,862]) sat fully inside the 874pt screen so scrollUntilVisible
+# no-oped and assertVisible passed, while the pixels were clipped behind the
+# pinned footer; every tap landed at (201,838) in the footer's dead padding.
+# Fixed with a real `scroll` swipe before the tap.
 appId: com.jetto.steadily.nanny
 tags:
   - pay
@@ -206,19 +186,17 @@ tags:
     timeout: 8000
 - assertVisible:
     id: 'invite-offer-summary'
-# The offer card makes this screen taller than it was before P8 — summary +
-# draft-state line + Edit button — which pushes `invite-generate-button` below
-# the fold on this device. Scroll to it before tapping, or the tap reports
-# COMPLETED against something else and no invite is ever minted.
-- scrollUntilVisible:
-    element:
-      id: 'invite-generate-button'
-    direction: DOWN
-    timeout: 10000
-# Let the scroll settle and force a fresh hierarchy read before tapping —
-# a tap dispatched against pre-scroll coordinates reports COMPLETED and
-# misses (the button sits at y592-640, clear of the y760 footer, so this is
-# staleness rather than occlusion).
+# The occlusion class, one more shape: with the P8 offer summary on screen,
+# `invite-generate-button`'s UNSCROLLED a11y frame is [22,814][380,862] —
+# fully inside the 874pt screen — so `scrollUntilVisible` (frame-based,
+# occlusion-blind) NO-OPS and `assertVisible` passes, while the pixels are
+# clipped behind the pinned footer (CTA y760-808 + its pb-8/safe-area down to
+# y874). Every tap went to (201,838), the footer's dead padding BELOW the
+# CTA, and reported COMPLETED (maestro.log, all 2026-08-15 runs). A real
+# `scroll` swipe moves the ScrollView to its bottom, landing the button at
+# ~y584-632 — genuinely clear of the footer — so the id-tap's refreshed
+# frame meets real pixels.
+- scroll
 - waitForAnimationToEnd
 - assertVisible:
     id: 'invite-generate-button'
@@ -226,8 +204,11 @@ tags:
 - tapOn:
     id: 'invite-generate-button'
 - waitForAnimationToEnd
-- assertVisible:
-    id: 'invite-code-value'
+# Bounded wait, not a bare assert — the mint is a live POST round-trip.
+- extendedWaitUntil:
+    visible:
+      id: 'invite-code-value'
+    timeout: 15000
 - takeScreenshot: decline-parent-minted-offer-invite
 - copyTextFrom:
     id: 'invite-code-value'
@@ -305,6 +286,23 @@ tags:
 - assertNotVisible:
     id: 'absorption-sheet'
 
+# NANNY x JOIN inserts AVAILABILITY between CODE and the permission screens —
+# see flow 16's matching block for the full why. Finish is disabled until a
+# day is selected; toggle Monday (Postgres dow 1).
+- extendedWaitUntil:
+    visible:
+      id: 'availability-screen'
+    timeout: 25000
+- tapOn:
+    id: 'availability-week-strip-day-1'
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'availability-screen-cta'
+    enabled: true
+- tapOn:
+    id: 'availability-screen-cta'
+- waitForAnimationToEnd
+
 - extendedWaitUntil:
     visible:
       id: 'notifications-permission-screen'
@@ -337,6 +335,16 @@ tags:
     visible:
       id: 'proposal-review-screen'
     timeout: 25000
+# The agree/counter/decline stack sits IN-SCROLL below the full terms
+# document, fully off-screen on this device — scroll to it. Safe to use
+# scrollUntilVisible here (unlike invite-generate-button): this screen has no
+# pinned footer, so a frame inside the screen IS real pixels.
+- scrollUntilVisible:
+    element:
+      id: 'proposal-decline-button'
+    direction: DOWN
+    timeout: 10000
+- waitForAnimationToEnd
 - assertVisible:
     id: 'proposal-decline-button'
 - tapOn:
@@ -380,13 +388,38 @@ tags:
     timeout: 25000
 - tapOn:
     id: 'pay-setup-rate-input'
+- eraseText
 - inputText: '20.00'
-- hideKeyboard
+# `hideKeyboard` does NOT dismiss on this screen (flow 07, verified: focus
+# never moves and later input lands in the still-focused rate field, while
+# the chips and CTA sit under the keyboard — occlusion class). Tap empty
+# space near the top instead, exactly as flow 07 does.
+- tapOn:
+    point: 50%,20%
+- waitForAnimationToEnd
+- scrollUntilVisible:
+    element:
+      id: 'pay-setup-cancellation-chip-none'
+    direction: DOWN
+    timeout: 10000
 - tapOn:
     id: 'pay-setup-cancellation-chip-none'
+# Fails HERE by name if the chip tap was swallowed, instead of one step later
+# as a mysteriously disabled CTA (flow 07's post-condition).
+- assertNotVisible:
+    id: 'pay-setup-cancellation-required-hint'
+- assertVisible:
+    id: 'pay-setup-screen-cta'
+    enabled: true
 - tapOn:
     id: 'pay-setup-screen-cta'
 - waitForAnimationToEnd
+# The screen only calls router.back() after the create mutation resolves, so
+# leaving it is the post-condition that the arrangement actually landed.
+- extendedWaitUntil:
+    notVisible:
+      id: 'pay-setup-screen'
+    timeout: 20000
 # `handleSubmit` does `router.back()`, not a fixed redirect — re-open the pay
 # hub explicitly rather than trust where "back" lands from a deep link.
 - openLink: steadilynanny:///(private)/settings/pay

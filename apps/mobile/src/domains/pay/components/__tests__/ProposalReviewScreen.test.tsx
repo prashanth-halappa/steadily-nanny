@@ -135,10 +135,12 @@ mock.module('@/src/hooks/mutations/useDeclineTerms', () => ({
     isPending: false,
   }),
 }));
+/** The viewer's role for the current test — the accept redirect forks on it. */
+let onboardedRole: 'parent' | 'nanny' = 'parent';
 mock.module('@/src/hooks/queries/useIsOnboarded', () => ({
   useIsOnboarded: () => ({
     status: 'onboarded',
-    role: 'parent',
+    role: onboardedRole,
     householdId: HOUSEHOLD_ID,
     isPastMember: false,
   }),
@@ -177,6 +179,7 @@ beforeEach(() => {
   };
   chain = [proposal()];
   counterIsError = false;
+  onboardedRole = 'parent';
   useAuthStore.setState({
     session: { user: { id: PARENT_ID } } as unknown as never,
     user: { id: PARENT_ID } as unknown as never,
@@ -255,6 +258,41 @@ describe('ProposalReviewScreen', () => {
     await waitFor(() => expect(trackedNames()).toContain('proposal_accepted'));
     await waitFor(() =>
       expect(routerReplace).toHaveBeenCalledWith('/settings/pay')
+    );
+  });
+
+  it("a carer's accept lands on my-pay, not the parent-only pay screen (B1)", async () => {
+    // `/settings/pay` gates a carer to `pay-not-available`
+    // (PayArrangementScreen's `isParentEditorRole` check) — routing her there
+    // after accepting a parent's offer showed "Not available" instead of the
+    // terms she just agreed to.
+    onboardedRole = 'nanny';
+    const fromParent = proposal({
+      direction: 'parent',
+      proposed_by: PARENT_ID,
+    });
+    proposalResult = {
+      data: fromParent,
+      isPending: false,
+      isError: false,
+      refetch: mock(),
+    };
+    chain = [fromParent];
+    useAuthStore.setState({
+      session: { user: { id: NANNY_ID } } as unknown as never,
+      user: { id: NANNY_ID } as unknown as never,
+      isInitialized: true,
+    } as never);
+
+    const { getByTestId } = renderWithProviders(<ProposalReviewScreen />);
+    await waitFor(() =>
+      expect(getByTestId('proposal-agree-button')).toBeTruthy()
+    );
+    fireEvent.press(getByTestId('proposal-agree-button'));
+    fireEvent.press(getByTestId('proposal-accept-checkbox'));
+    fireEvent.press(getByTestId('proposal-accept-confirm'));
+    await waitFor(() =>
+      expect(routerReplace).toHaveBeenCalledWith('/settings/my-pay')
     );
   });
 

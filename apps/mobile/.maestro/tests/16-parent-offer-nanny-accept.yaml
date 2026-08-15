@@ -18,33 +18,32 @@
 # there was no route blocker on the PARENT side the way flow 14's nanny half
 # has one (see that flow's header), so there is nothing to fall back to SQL
 # for.
-# STATUS 2026-08-15 — NOT YET GREEN. This flow reaches, and PASSES, the whole
-# offer half: the sheet opens, the rate lands, the submit enables, the sheet
-# closes, and `invite-offer-summary` renders the saved offer
-# ("CA$22.50/hr · starts Aug 15, 2026" + "Draft offer · nobody has seen this
-# yet"). It then stalls on `invite-generate-button`: the tap reports COMPLETED
-# against a button that is visible, enabled and geometrically clear of the
-# footer (y592-640 vs the CTA at y760-808), yet `onGenerate` never runs —
-# `hasStarted` stays false, InviteCodeCard never mounts, and NO invite POST
-# reaches the API. Ruled out: keyboard occlusion, stale scroll coordinates,
-# `centerElement` (fails — the button is the last element), and a disabled
-# CTA. Unresolved.
+# STATUS 2026-08-15 — GREEN. The earlier stall on `invite-generate-button` was
+# a Maestro artifact (the occlusion class), NOT a product bug. Root cause:
+# the button's unscrolled a11y frame was [22,814][380,862] — fully inside the
+# 874pt screen, so `scrollUntilVisible` (frame-based, occlusion-blind) never
+# scrolled and `assertVisible` passed — while its pixels were clipped behind
+# the pinned footer; every tap landed at (201,838), the footer's dead padding
+# below the CTA. (The y592-640 bounds previously cited here came from a
+# hierarchy read after a manual/centered scroll, not the tap-time frame —
+# maestro.log records [22,814][380,862] at every actual tap.) Fixed with a
+# real `scroll` swipe before the tap; a user who scrolls the button into view
+# taps it normally, which this flow now proves end to end.
 #
-# THE FEATURE ITSELF IS VERIFIED, independently of this flow, straight through
-# the API against the local stack: offer attaches to the invite, is absent
-# from the public preview, promotes on redeem into a `direction: 'parent'`
-# proposal carrying `from_invite_id`, the CARER accepts it (B1 — this 404'd
-# before the fix), and the resulting `pay_arrangements` row is written under
-# the AUTHORING PARENT's identity, not hers (§17 held). See the session's
-# `verify-p8-b1.ts`. So the red here is test-harness debt, not product risk.
+# Driving past the stall surfaced one REAL product bug (fixed, D56): the
+# post-accept redirect sent the CARER to `/settings/pay` — the parent-only
+# management surface, which gates her to `pay-not-available` — instead of her
+# own `/settings/my-pay`. It also exposed a flow gap the stall had masked:
+# the NANNY x JOIN wizard inserts an AVAILABILITY step flow 14's parent
+# joiner never sees.
 #
-# ALSO RULED OUT (probe run 2026-08-15): a stranded touch-blocking overlay from
-# the closing BottomSheetBase — the GOLDEN-FIXES #1 failure mode, and the best
-# remaining theory. A throwaway probe toggled the role picker BEFORE opening
-# the offer sheet (control) and AGAIN after it closed; both passed, so touches
-# reach the screen fine afterwards. Yet in that same probe a tap on
-# `invite-generate-button` still produced no invite POST. So it is specific to
-# that control, not to the sheet, and not to our feature.
+# THE FEATURE ITSELF IS ALSO VERIFIED server-side, independently of this flow,
+# straight through the API against the local stack: offer attaches to the
+# invite, is absent from the public preview, promotes on redeem into a
+# `direction: 'parent'` proposal carrying `from_invite_id`, the CARER accepts
+# it (B1 — this 404'd before the fix), and the resulting `pay_arrangements`
+# row is written under the AUTHORING PARENT's identity, not hers (§17 held).
+# See the session's `verify-p8-b1.ts`.
 appId: com.jetto.steadily.nanny
 tags:
   - pay
@@ -212,19 +211,17 @@ tags:
     timeout: 8000
 - assertVisible:
     id: 'invite-offer-summary'
-# The offer card makes this screen taller than it was before P8 — summary +
-# draft-state line + Edit button — which pushes `invite-generate-button` below
-# the fold on this device. Scroll to it before tapping, or the tap reports
-# COMPLETED against something else and no invite is ever minted.
-- scrollUntilVisible:
-    element:
-      id: 'invite-generate-button'
-    direction: DOWN
-    timeout: 10000
-# Let the scroll settle and force a fresh hierarchy read before tapping —
-# a tap dispatched against pre-scroll coordinates reports COMPLETED and
-# misses (the button sits at y592-640, clear of the y760 footer, so this is
-# staleness rather than occlusion).
+# The occlusion class, one more shape: with the P8 offer summary on screen,
+# `invite-generate-button`'s UNSCROLLED a11y frame is [22,814][380,862] —
+# fully inside the 874pt screen — so `scrollUntilVisible` (frame-based,
+# occlusion-blind) NO-OPS and `assertVisible` passes, while the pixels are
+# clipped behind the pinned footer (CTA y760-808 + its pb-8/safe-area down to
+# y874). Every tap went to (201,838), the footer's dead padding BELOW the
+# CTA, and reported COMPLETED (maestro.log, all 2026-08-15 runs). A real
+# `scroll` swipe moves the ScrollView to its bottom, landing the button at
+# ~y584-632 — genuinely clear of the footer — so the id-tap's refreshed
+# frame meets real pixels.
+- scroll
 - waitForAnimationToEnd
 - assertVisible:
     id: 'invite-generate-button'
@@ -232,8 +229,11 @@ tags:
 - tapOn:
     id: 'invite-generate-button'
 - waitForAnimationToEnd
-- assertVisible:
-    id: 'invite-code-value'
+# Bounded wait, not a bare assert — the mint is a live POST round-trip.
+- extendedWaitUntil:
+    visible:
+      id: 'invite-code-value'
+    timeout: 15000
 - takeScreenshot: parent-minted-offer-invite
 - copyTextFrom:
     id: 'invite-code-value'
@@ -318,6 +318,25 @@ tags:
 - assertNotVisible:
     id: 'absorption-sheet'
 
+# NANNY x JOIN inserts AVAILABILITY between CODE and the permission screens
+# (`stepsForRole` in domains/setup/types) — flow 14's joiner is a PARENT,
+# whose join path has no availability step, so this block has no precedent
+# there. Finish is disabled until a day is selected (AvailabilityScreen's
+# `ctaDisabled={selectedDays.length === 0}`); toggle Monday (Postgres dow 1).
+- extendedWaitUntil:
+    visible:
+      id: 'availability-screen'
+    timeout: 25000
+- tapOn:
+    id: 'availability-week-strip-day-1'
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'availability-screen-cta'
+    enabled: true
+- tapOn:
+    id: 'availability-screen-cta'
+- waitForAnimationToEnd
+
 - extendedWaitUntil:
     visible:
       id: 'notifications-permission-screen'
@@ -356,6 +375,16 @@ tags:
 - assertVisible:
     id: 'proposal-state-pill'
 - takeScreenshot: nanny-reviews-parent-offer
+# The agree/counter/decline stack sits IN-SCROLL below the full terms
+# document (~16 rows), fully off-screen on this device — scroll to it. Safe
+# to use scrollUntilVisible here (unlike invite-generate-button): this screen
+# has no pinned footer, so a frame inside the screen IS real pixels.
+- scrollUntilVisible:
+    element:
+      id: 'proposal-agree-button'
+    direction: DOWN
+    timeout: 10000
+- waitForAnimationToEnd
 - tapOn:
     id: 'proposal-agree-button'
 - waitForAnimationToEnd
@@ -372,18 +401,20 @@ tags:
 - tapOn:
     id: 'proposal-accept-confirm'
 - waitForAnimationToEnd
-# `router.replace('/settings/pay')` only fires once the arrangement insert
-# has RETURNED — landing here IS the evidence B1's accept actually worked.
+# The post-accept `router.replace` fires only once the arrangement insert has
+# RETURNED — landing on the carer's own pay surface IS the evidence B1's
+# accept worked. `my-pay-screen`, NOT `pay-screen`: `/settings/pay` is the
+# PARENT's management surface and gates a carer to `pay-not-available` — the
+# original redirect sent her there and this flow's first run past the tap
+# caught it (fixed in ProposalReviewScreen's accept redirect, now role-forked).
 - extendedWaitUntil:
     visible:
-      id: 'pay-screen'
+      id: 'my-pay-screen'
     timeout: 25000
 - assertVisible:
-    id: 'pay-current-terms-card'
-- assertVisible:
-    id: 'pay-current-rate'
+    id: 'my-pay-household-.*'
 - assertNotVisible:
-    id: 'pay-empty-no-arrangement'
+    id: 'my-pay-empty-.*'
 - takeScreenshot: nanny-accepted-parent-offer
 
 # --- Same arrangement, visible on the PARENT'S side ------------------------

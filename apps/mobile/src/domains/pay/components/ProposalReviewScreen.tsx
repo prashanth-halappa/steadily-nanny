@@ -202,7 +202,11 @@ export function ProposalReviewScreen() {
           });
         }
         setAcceptOpen(false);
-        router.replace('/settings/pay');
+        // `/settings/pay` is the PARENT's management surface — a carer is
+        // gated to `pay-not-available` there (PayArrangementScreen's
+        // `isParentEditorRole` check). A carer who just accepted (the B1
+        // path) lands on her own read-only surface instead.
+        router.replace(isNanny ? '/settings/my-pay' : '/settings/pay');
       })
       // The failure is already rendered inline in the sheet, which stays open
       // with the box still checked (§12). A second report here would be the

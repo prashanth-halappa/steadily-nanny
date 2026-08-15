@@ -1766,7 +1766,10 @@ its test must follow the header, not a snapshot of it.
 
 ## D56 — P8/B1 verified end to end through the API after the E2E flow stalled
 
-**Status:** NOT A DEFECT (verification record) · 2026-08-15.
+**Status:** RESOLVED · 2026-08-15. The stall was the Maestro occlusion class,
+not a product bug — but driving past it surfaced a REAL product bug in the
+post-accept redirect (see the resolution block at the end). Flows 16 and 17
+are both green (`EXIT=0`).
 
 Maestro flows 16/17 (parent pay offer → redeem → accept/decline) reach and PASS
 the entire offer half in the real app — the sheet opens, the rate lands, submit
@@ -1779,8 +1782,8 @@ the footer (y592-640 vs the CTA at y760-808), yet `onGenerate` never runs —
 reaches the API. Ruled out: keyboard occlusion (`Dictate` asserted absent),
 stale scroll coordinates (settle + fresh-read assert added), `centerElement`
 (fails outright — the button is the LAST element, nothing below to scroll
-against), and a disabled control. **Unresolved; it is harness debt on
-pre-existing invite UI, not on P8 code.**
+against), and a disabled control. *(Since resolved — see the resolution block
+below; the "geometrically clear of the footer" premise was itself wrong.)*
 
 **So the chain was verified directly against the API on the local stack**, which
 proves more than the UI path would have:
@@ -1814,3 +1817,32 @@ specific to that one control, not to the sheet, and not to P8.
 exists to prove, verify the feature through the layer beneath rather than
 letting harness debt gate the release. The API check took minutes, and it
 proved an invariant (insert identity) that no UI assertion would have caught.
+
+**Resolution (same day).** `maestro.log` settled it: at every actual tap the
+button's a11y frame was `[22,814][380,862]` — the UNSCROLLED position — and
+the tap went to (201,838). That frame is fully inside the 874pt screen, so
+`scrollUntilVisible` (100% visibility, frame-based, occlusion-blind) never
+scrolled and `assertVisible` passed; but the pixels were clipped behind
+`SetupScreenShell`'s pinned footer (CTA y760-808 + `pb-8`/safe-area down to
+y874), so the tap landed in the footer's dead padding BELOW the CTA and
+reported COMPLETED. The y592-640 bounds in the paragraph above came from a
+hierarchy read after a manual/centered scroll, not the tap-time frame — that
+mismeasurement is what made "geometry: clear of the footer" look ruled out.
+The occlusion class, one more shape. **Purely a harness artifact:** a real
+user sees the button only after scrolling it into the viewport, where it taps
+normally — which the now-green flows prove on-device. Fix: a real `- scroll`
+swipe before the tap in flows 16/17 (plus two flow gaps the stall had been
+masking: the NANNY x JOIN wizard's AVAILABILITY step, and flow 07's
+keyboard-dismiss pattern for `PaySetupScreen`).
+
+**But driving past the stall surfaced a real product bug (fixed):**
+`ProposalReviewScreen`'s accept success handler did
+`router.replace('/settings/pay')` for EVERY accepter — and `/settings/pay`
+(PayArrangementScreen) is the parent's management surface, which gates a
+carer to `pay-not-available`. So a carer accepting a parent's offer — the
+exact path B1 built — accepted successfully and then landed on "Not
+available. Pay & terms is managed by a parent on this household." instead of
+the terms she just agreed to. Fixed by forking the redirect on role
+(`isNanny ? '/settings/my-pay' : '/settings/pay'`), with a component test
+covering the carer branch (`ProposalReviewScreen.test.tsx`). Flow 16 now
+asserts the carer lands on `my-pay-screen` with the arrangement rendered.
