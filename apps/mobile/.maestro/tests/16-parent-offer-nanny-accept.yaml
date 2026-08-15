@@ -37,6 +37,14 @@
 # before the fix), and the resulting `pay_arrangements` row is written under
 # the AUTHORING PARENT's identity, not hers (§17 held). See the session's
 # `verify-p8-b1.ts`. So the red here is test-harness debt, not product risk.
+#
+# ALSO RULED OUT (probe run 2026-08-15): a stranded touch-blocking overlay from
+# the closing BottomSheetBase — the GOLDEN-FIXES #1 failure mode, and the best
+# remaining theory. A throwaway probe toggled the role picker BEFORE opening
+# the offer sheet (control) and AGAIN after it closed; both passed, so touches
+# reach the screen fine afterwards. Yet in that same probe a tap on
+# `invite-generate-button` still produced no invite POST. So it is specific to
+# that control, not to the sheet, and not to our feature.
 appId: com.jetto.steadily.nanny
 tags:
   - pay

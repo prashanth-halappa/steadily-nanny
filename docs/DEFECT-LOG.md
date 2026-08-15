@@ -1800,6 +1800,16 @@ That last row is the one that matters: `proposed_by = created_by` and
 inserts an arrangement" holds even though she performed the acceptance — which
 is exactly the discipline B1's fix was built around.
 
+**Overlay theory ruled out (probe, same session).** The best remaining
+explanation was GOLDEN-FIXES #1 — a closing `BottomSheetBase` stranding a
+transparent, touch-blocking layer, which would look exactly like this
+(element visible and enabled in the a11y tree, tap COMPLETED, no effect). A
+throwaway probe toggled the invite role picker BEFORE opening the offer sheet
+as a control, and AGAIN after it closed. Both passed. Touches reach the screen
+normally after the sheet dismisses. In that same probe, a tap on
+`invite-generate-button` still produced no invite POST — so the problem is
+specific to that one control, not to the sheet, and not to P8.
+
 **Lesson:** when an E2E flow stalls on a step unrelated to the feature it
 exists to prove, verify the feature through the layer beneath rather than
 letting harness debt gate the release. The API check took minutes, and it
