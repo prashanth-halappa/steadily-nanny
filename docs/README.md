@@ -46,6 +46,7 @@ The contract between apps lives in `shared-types`: the API validates requests wi
 | 11 | [MONEY](./11-MONEY.md) | Minor-unit + currency-column convention, pay arrangements (effective-dated, append-only), compute-live/freeze-at-approval, no-arrangement-never-zero, PTO ledger, reimbursements-are-not-wages, money-table RLS stance |
 | 12 | [NEED-COVERAGE](./12-NEED-COVERAGE.md) | Per-child need windows vs shift cover, `computeUncovered` in shared-types, live UI vs append-only `uncovered_care` events, detection triggers, `parent_cover`, role visibility, push dedupe |
 | — | [ROLLBACK-RUNBOOK](./ROLLBACK-RUNBOOK.md) | Per-risk rollback and kill-switch runbook — which scheduled jobs to unschedule, deploy ordering, and accepted open risks |
+| — | [ONBOARDING-PAY-SCHEDULE-GAPS](./ONBOARDING-PAY-SCHEDULE-GAPS.md) | Parent/nanny onboarding permutations, use-case support matrix, and open gaps across onboarding / pay / schedule |
 
 **If you're an AI agent building a new feature:** read 01–02 for the toolchain, 03 for the shared contract, then 04/05 (API) and 06/07 (mobile) for the layer you're working in, with 08/09 always in effect. Follow 10 as the execution order for a brand-new app built from this pattern.
 

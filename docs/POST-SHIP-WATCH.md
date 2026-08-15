@@ -37,19 +37,39 @@ select * from run_integrity_checks();
 **Bad:** any non-zero violation count. That is a money-consistency failure —
 go to `ROLLBACK-RUNBOOK.md` §10 step 3 and stop writes before investigating.
 
-Confirm the cron actually ran, rather than assuming:
+Confirm the cron actually ran, rather than assuming — **and use the right
+table, because this one is a trap.**
+
+> **CORRECTED 2026-08-14 (first live watch).** An earlier version of this
+> section told you to look in `job_runs` and to treat an absent row as "cron
+> not firing". **That is wrong and it cries wolf.** `integrity-checks` is a
+> pure SQL cron that calls `run_integrity_checks()` directly; it never goes
+> through the API's job handler, and the job handler is the only thing that
+> writes `job_runs`. So `integrity-checks` has **zero rows in `job_runs` by
+> design, forever.** Verified live: `job_runs` had no `%integrity%` row at all,
+> while `cron.job_run_details` showed it firing at 04:10 and succeeding.
 
 ```sql
-select job_name, status, started_at, completed_at,
-       total_processed, success_count, error_count, error_message
-from job_runs
-where job_name = 'integrity-checks'
-order by started_at desc
-limit 5;
+-- The right check for SQL-only crons: cron's own history, not job_runs.
+select j.jobname, j.schedule, j.active,
+       max(d.start_time)                                     as last_fire,
+       (array_agg(d.status ORDER BY d.start_time DESC))[1]   as last_status,
+       (array_agg(d.return_message ORDER BY d.start_time DESC))[1] as last_msg
+from cron.job j
+left join cron.job_run_details d on d.jobid = j.jobid
+group by j.jobid, j.jobname, j.schedule, j.active
+order by j.jobname;
 ```
 
-**Bad:** no row in the last 24h (cron not firing), or `status` in
-(`failed`, `partial`).
+**Good:** every job `active = true`, `last_fire` within its own schedule's
+period, `last_status = 'succeeded'`.
+**Bad:** `last_status = 'failed'`, or a `last_fire` older than the schedule
+implies.
+
+`job_runs` remains the right table for the API-driven jobs (`reminders`,
+`no-show-sweep`, `cover-ask-expiry`, `shift-completion`, `uncovered-digest`,
+`cancellation-pay-reconcile`, `no-show-digest`) because those DO route through
+the job handler — that is where §2's volume query gets its counts.
 
 ---
 
@@ -69,6 +89,13 @@ order by jobid;
 `integrity-checks`, `no-show-sweep`, `uncovered-digest`) plus
 `cover-ask-expiry` (*/5), `shift-completion` (03:40) and `no-show-digest`.
 **Bad:** fewer than nine, or any `active = false`.
+**Verified live 2026-08-14:** all nine present and `active`, every one
+`succeeded` on its last fire.
+
+> **Name mismatch between the two tables — do not read it as a missing job.**
+> `cron.job` calls it **`reminders-hourly`**; `job_runs` records it as
+> **`reminders`**. They are the same job. Match on intent, not on string
+> equality, when comparing the two queries below.
 
 Then their volumes — this is where a runaway shows up:
 
