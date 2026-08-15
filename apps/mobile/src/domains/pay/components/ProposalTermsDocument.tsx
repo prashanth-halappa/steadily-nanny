@@ -79,9 +79,18 @@ export function ProposalTermsDocument({
       .map(row => [row.key, t('proposal.was', { value: row.before })])
   );
 
-  const state = proposalStateWord(proposal, { counterpartyName, timezone }, t);
   const authorName =
     proposal.proposed_by === viewerId ? t('proposal.you') : counterpartyName;
+  // B4 — the decliner is always the AUTHOR's counterparty, so this is
+  // `authorName`'s branches swapped: the author's own screen reads "the
+  // other side" (counterpartyName); the decliner's own screen reads "you".
+  const declinedByName =
+    proposal.proposed_by === viewerId ? counterpartyName : t('proposal.you');
+  const state = proposalStateWord(
+    proposal,
+    { counterpartyName, timezone, declinedByName },
+    t
+  );
 
   const weeklyMinor = proposal.weekly_equivalent_minor;
   const guaranteedMinutes = arrangement.guaranteed_minutes_per_week;

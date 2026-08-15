@@ -8,6 +8,9 @@
  * @module domains/household/services/householdCommandService
  */
 import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types/schemas/notification.schema';
+// Straight from the shared package, not via the terms-proposal domain: that
+// package is a leaf and imports nothing of ours, so there is no cycle to dodge.
+import { TERMS_PROPOSAL_DIRECTIONS } from '@steadily-nanny/shared-types/schemas/termsProposal.schema';
 import { ConflictError } from '../../../errors';
 import { logger } from '../../../middlewares/logger';
 import { notifyHouseholdParents, notifyUser } from '../../notification';
@@ -19,6 +22,14 @@ import { PtoLedgerRepository } from '../../pay/repositories/ptoLedgerRepository'
 // Imported from the repository module directly, NOT the timesheet domain
 // barrel: the barrel pulls in the timesheet services, and one of those reaching
 // back for household membership would close an import cycle.
+// The ERRORS module directly, not the terms-proposal barrel: the barrel pulls
+// `termsProposalCommandService`, which imports `../../household`. This module
+// imports nothing but `../../../errors`, so the edge is a leaf.
+import {
+  OpenTermsProposalExistsError,
+  TermsProposalValidationError,
+} from '../../termsProposal/errors/termsProposalErrors';
+import { TermsProposalRepository } from '../../termsProposal/repositories/termsProposalRepository';
 import { TimeEntryRepository } from '../../timesheet/repositories/timeEntryRepository';
 import { TimesheetRepository } from '../../timesheet/repositories/timesheetRepository';
 import { localDateOf } from '../../timesheet/utils/weekStart';
@@ -37,6 +48,7 @@ import {
   MemberHasRunningEntryError,
   MemberNotFoundError,
   NotAHouseholdParentError,
+  PayOfferNotForRoleError,
   WeekStartLockedError,
 } from '../errors/householdErrors';
 import { HouseholdHolidayRepository } from '../repositories/householdHolidayRepository';
@@ -85,15 +97,78 @@ const WRITE_ROLES: ReadonlySet<string> = new Set([
  */
 const STRANDED_CLAIM_MS = 15 * 60 * 1000;
 
+/**
+ * The same literal `payArrangementCommandService`, `termsProposalCommandService`
+ * and 033's backfill all use, so an unnamed carer reads identically across the
+ * whole payroll record. Private in each of them, hence the repetition.
+ */
+const UNNAMED_CARER_DISPLAY_NAME = 'Carer';
+
+/**
+ * D-16's future horizon for a pay start date, in months. The THIRD copy of
+ * this constant: `payArrangementCommandService` owns the original and
+ * `termsProposalCommandService` already mirrors it, both keeping the constant
+ * and their `addMonthsISO` helper module-private, so neither can be imported.
+ * Importing the terms-proposal SERVICE would be worse than a mirror anyway —
+ * it imports `../../household`, so the edge would close a cycle.
+ *
+ * The three must not drift. An offer that passes here and is refused at
+ * promotion is terms a parent typed and a nanny never sees; one that passes
+ * here and is refused at ACCEPTANCE is worse still, because both sides have
+ * already agreed by then.
+ *
+ * ponytail: a third private copy, not an extraction. Lift all three into a
+ * shared `pay` util the next time `payArrangementCommandService` is open —
+ * doing it from here means editing a file another session owns.
+ */
+const MAX_FUTURE_MONTHS = 12;
+
+/**
+ * The horizon date, `months` after `dateISO`. Same UTC-Date-rollover technique
+ * as the two copies named above, character for character, so the three "how
+ * far is 12 months" answers cannot disagree.
+ */
+function addMonthsISO(dateISO: string, months: number): string {
+  const [y, m, d] = dateISO.split('-').map(Number);
+  const dt = new Date(Date.UTC(y ?? 0, (m ?? 1) - 1 + months, d ?? 1));
+  const yy = dt.getUTCFullYear();
+  const mm = String(dt.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(dt.getUTCDate()).padStart(2, '0');
+  return `${yy}-${mm}-${dd}`;
+}
+
+/**
+ * Is this offer's start date still reachable? Measured in HOUSEHOLD-local
+ * time, never server-UTC: east of UTC the server is already on tomorrow, and
+ * 041's header records the same trap for `valid_from`.
+ *
+ * A PAST date is fine and stays fine — 076's effective-arrangement rule reads
+ * the greatest `valid_from <= date`, so back-dating terms to the day she
+ * actually started is the ordinary case. Only the future is bounded.
+ */
+function isWithinFutureHorizon(
+  validFrom: string,
+  timezone: string,
+  now: Date
+): boolean {
+  // ISO dates compare correctly as strings — both sides are YYYY-MM-DD.
+  return (
+    validFrom <= addMonthsISO(localDateOf(now, timezone), MAX_FUTURE_MONTHS)
+  );
+}
+
 export class HouseholdCommandService {
   constructor(
     private readonly householdRepo: HouseholdRepository = new HouseholdRepository(),
     private readonly memberRepo: HouseholdMemberRepository = new HouseholdMemberRepository(),
     private readonly inviteRepo: HouseholdInviteRepository = new HouseholdInviteRepository(),
     private readonly queries: HouseholdQueryService = householdQueryService,
+    // `getProfileById` joined `ensureProfile` here for P8: the promoted
+    // proposal snapshots the carer's display name at insert (033 discipline,
+    // and 092 makes the column `not null`).
     private readonly users: Pick<
       typeof UserService,
-      'ensureProfile'
+      'ensureProfile' | 'getProfileById'
     > = UserService,
     private readonly timeEntries: Pick<
       TimeEntryRepository,
@@ -114,7 +189,13 @@ export class HouseholdCommandService {
     private readonly holidays: Pick<
       HouseholdHolidayRepository,
       'upsertMany' | 'listForHousehold' | 'seedFederalSet'
-    > = new HouseholdHolidayRepository()
+    > = new HouseholdHolidayRepository(),
+    // P8's promotion target. The REPOSITORY, never the terms-proposal domain
+    // barrel — see the import note at the top of this file.
+    private readonly proposals: Pick<
+      TermsProposalRepository,
+      'create'
+    > = new TermsProposalRepository()
   ) {}
 
   /**
@@ -259,14 +340,27 @@ export class HouseholdCommandService {
    * URL is a month of exposure for a conversation usually over in a week. It is
    * one of the three conditions the rate is on that page at all — cutting it
    * takes the rate off the page (see 093's header and §6.2).
+   *
+   * From P8 the invite may also carry a non-binding pay OFFER (098). It is
+   * stored, never acted on: it becomes a `terms_proposals` row only when a
+   * nanny redeems the code, and dies with the invite if nobody does.
+   *
+   * `now` is injectable purely so the horizon boundary can be tested on both
+   * sides of midnight; production callers never pass it (same convention as
+   * `removeMember` and `leave`).
    */
   async createInvite(
     userId: string,
     householdId: string,
-    input: CreateHouseholdInviteInput
+    input: CreateHouseholdInviteInput,
+    now: () => Date = () => new Date()
   ): Promise<HouseholdInvite> {
     const membership = await this.queries.getMembership(userId, householdId);
     await this.assertWriteRoleOrDraftAuthor(householdId, membership);
+
+    if (input.pay_offer) {
+      await this.assertOfferable(householdId, input.role, input.pay_offer, now);
+    }
 
     const code = await generateUniqueInviteCode(async candidate => {
       const existing = await this.inviteRepo.findByCode(candidate);
@@ -286,10 +380,53 @@ export class HouseholdCommandService {
       role: input.role,
       invited_by: userId,
       label: input.label ?? null,
+      // Explicit null, not an omitted key: "no terms offered" is a fact about
+      // this invite, and the house rule is that null means a stated no.
+      pay_offer: input.pay_offer ?? null,
       link_expires_at: new Date(
         Date.now() + linkWindowDays * 24 * 60 * 60 * 1000
       ).toISOString(),
     });
+  }
+
+  /**
+   * The two things an offer must satisfy before it is allowed onto an invite.
+   *
+   * ROLE. Pay is per-carer (D-21) and the only thing an offer can become is a
+   * proposal scoped to the redeeming NANNY, so terms on a co-parent or helper
+   * invite are a client bug. Refused rather than dropped: terms that silently
+   * evaporate are the failure a parent would only notice weeks later, when the
+   * nanny asks what she is being paid.
+   *
+   * HORIZON. Checked HERE and not only at promotion, for the same reason
+   * `termsProposalCommandService.validateTerms` checks it at proposal time
+   * rather than at acceptance: he can fix a fat-fingered year while his hands
+   * are still on the keyboard. A date already past the horizon here would be
+   * dropped at redemption — the code would work, and the terms would not
+   * arrive.
+   */
+  private async assertOfferable(
+    householdId: string,
+    role: string,
+    offer: { valid_from: string },
+    now: () => Date
+  ): Promise<void> {
+    if (role !== HOUSEHOLD_ROLES.NANNY) {
+      throw new PayOfferNotForRoleError(role);
+    }
+    const household = await this.householdRepo.findById(householdId);
+    if (
+      !isWithinFutureHorizon(
+        offer.valid_from,
+        household?.timezone ?? 'UTC',
+        now()
+      )
+    ) {
+      throw new TermsProposalValidationError('VALID_FROM_TOO_FAR_IN_FUTURE', {
+        householdId,
+        validFrom: offer.valid_from,
+      });
+    }
   }
 
   /**
@@ -307,7 +444,8 @@ export class HouseholdCommandService {
    */
   async redeemInvite(
     userId: string,
-    input: RedeemHouseholdInviteBody
+    input: RedeemHouseholdInviteBody,
+    now: () => Date = () => new Date()
   ): Promise<HouseholdMember> {
     // Same FK as `create`, and this path has no client-side bootstrap at all:
     // a nanny's first ever API call can be this one.
@@ -403,6 +541,8 @@ export class HouseholdCommandService {
       }
     }
 
+    await this.promoteOfferToProposal(invite, userId, now);
+
     const roleLabel = this.roleLabel(invite.role);
     // Same push type either way — "someone has access again" is the same alert
     // to a parent who did not send the invite; only the wording differs.
@@ -428,6 +568,122 @@ export class HouseholdCommandService {
     }
 
     return membership;
+  }
+
+  /**
+   * P8 — turn the inviting parent's pay OFFER into a real terms proposal she
+   * can answer. The mirror of D-38: a nanny's draft proposal is CLONED into
+   * the family's household on redemption (096), and a parent's offer is
+   * PROMOTED into hers. One mechanism, two directions, and neither side's
+   * terms become money until the other side accepts.
+   *
+   * ================================================================
+   * NOTHING HERE MAY THROW. THAT IS THE WHOLE DESIGN.
+   * ================================================================
+   *
+   * By the time this runs she has claimed the code and her membership row
+   * exists. The claim is single-use and already burned — there is no
+   * compensation left to run and no second attempt she could make. A throw
+   * from here would therefore strand a real nanny OUTSIDE a household she
+   * legitimately joined, holding a code that no longer works, and the thing
+   * lost would be a rate she has not agreed to yet. Every failure below costs
+   * a proposal and never the join; the worst outcome is that she lands exactly
+   * where she would have without P8, and a parent proposes terms the ordinary
+   * way from the pay screen.
+   *
+   * The three cases, in the order they are reached:
+   *
+   * - NO PARENT LEFT TO NAME. 009 declares `invited_by ... on delete set
+   *   null`, and 092 makes `proposed_by` NOT NULL. There is nobody honest to
+   *   put in that column, so there is no proposal to write.
+   * - A STALE START DATE. An invite lives 30 days, so terms written near the
+   *   12-month horizon can be out of reach by the time she types the code.
+   *   The parent's date is never rewritten to make it fit (§7.4: the record
+   *   says what was agreed) — the promotion is skipped and logged.
+   * - AN OPEN ROUND ALREADY EXISTS. `OpenTermsProposalExistsError`, which the
+   *   repository translates from a 23505 by NAMING 092's partial index rather
+   *   than trusting the bare code (GOLDEN-FIXES #31). They are already
+   *   negotiating; a second round is not this path's to open.
+   *
+   * NO PUSH, DELIBERATELY. She is by construction inside the app at this
+   * instant — she just typed the code — and the proposal is on her Today
+   * screen before the notification could land. The `INVITE_REDEEMED` push to
+   * the PARENTS is untouched below and still fires; only the redundant one to
+   * her is omitted.
+   */
+  private async promoteOfferToProposal(
+    invite: HouseholdInvite,
+    carerId: string,
+    now: () => Date
+  ): Promise<void> {
+    const offer = invite.pay_offer;
+    if (invite.role !== HOUSEHOLD_ROLES.NANNY || !offer) {
+      return;
+    }
+
+    try {
+      const proposedBy = invite.invited_by;
+      if (!proposedBy) {
+        logger.info('Pay offer not promoted — the inviting parent is gone', {
+          inviteId: invite.id,
+        });
+        return;
+      }
+
+      const household = await this.householdRepo.findById(invite.household_id);
+      if (
+        !isWithinFutureHorizon(
+          offer.valid_from,
+          household?.timezone ?? 'UTC',
+          now()
+        )
+      ) {
+        logger.info('Pay offer not promoted — valid_from is past the horizon', {
+          inviteId: invite.id,
+          validFrom: offer.valid_from,
+        });
+        return;
+      }
+
+      const profile = await this.users.getProfileById(carerId);
+      await this.proposals.create({
+        household_id: invite.household_id,
+        carer_id: carerId,
+        // The parent who WROTE the terms, not the person who typed the code.
+        // §10 renders this as the actor in every state line, and she must not
+        // be shown as the author of terms she is being asked to accept.
+        proposed_by: proposedBy,
+        direction: TERMS_PROPOSAL_DIRECTIONS.PARENT,
+        terms: offer,
+        // He wrote these before he had met her; there is nothing addressed to
+        // her to carry, and an invented note would be words he never typed.
+        note: null,
+        // A first round by definition — nothing existed here to answer.
+        supersedes_id: null,
+        from_invite_id: invite.id,
+        // 033 discipline: snapshot at insert so the negotiation stays legible
+        // after her profile is gone. Same 'Carer' literal the pay domain and
+        // `termsProposalCommandService` fall back to.
+        carer_display_name: profile?.name ?? UNNAMED_CARER_DISPLAY_NAME,
+        // `status` is deliberately absent: 092 defaults it to 'proposed', and
+        // `termsProposalCommandService.propose` omits it for the same reason.
+      });
+    } catch (error) {
+      if (error instanceof OpenTermsProposalExistsError) {
+        logger.info('Pay offer not promoted — a round is already open', {
+          inviteId: invite.id,
+          householdId: invite.household_id,
+          carerId,
+        });
+        return;
+      }
+      logger.error('Pay offer promotion failed — the join stands', {
+        inviteId: invite.id,
+        householdId: invite.household_id,
+        carerId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   /**

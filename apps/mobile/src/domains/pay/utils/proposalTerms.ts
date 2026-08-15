@@ -110,7 +110,7 @@ export function buildProposalChain(
   return chain;
 }
 
-type StateKind = 'proposed' | 'countered' | 'agreed' | 'withdrawn';
+type StateKind = 'proposed' | 'countered' | 'agreed' | 'withdrawn' | 'declined';
 
 /** The date the state word is about: when it was answered, or when it was
  * written. Household-local, because the day terms were proposed is a day in
@@ -121,7 +121,10 @@ function stateDate(
   timezone: string
 ): string {
   const timestamp =
-    kind === 'agreed' || kind === 'withdrawn' || proposal.status === 'countered'
+    kind === 'agreed' ||
+    kind === 'withdrawn' ||
+    kind === 'declined' ||
+    proposal.status === 'countered'
       ? (proposal.responded_at ?? proposal.created_at)
       : proposal.created_at;
   return formatShortDate(localDateInZone(timezone, new Date(timestamp)));
@@ -130,6 +133,9 @@ function stateDate(
 function stateKind(proposal: TermsProposal): StateKind {
   if (proposal.status === 'accepted') return 'agreed';
   if (proposal.status === 'withdrawn') return 'withdrawn';
+  // B4 — a distinct fact from withdrawn: the COUNTERPARTY refused, not the
+  // author pulling her own ask. Never merge these two branches.
+  if (proposal.status === 'declined') return 'declined';
   if (proposal.status === 'countered') return 'countered';
   return proposal.supersedes_id ? 'countered' : 'proposed';
 }
@@ -151,7 +157,20 @@ export interface ProposalStateWord {
  */
 export function proposalStateWord(
   proposal: TermsProposal,
-  opts: { counterpartyName: string; timezone: string },
+  opts: {
+    counterpartyName: string;
+    timezone: string;
+    /**
+     * Who declined it, ALREADY resolved by the caller as "you" or the
+     * counterparty's name (the `authorName` convention `ProposalTermsDocument`
+     * and `MyPayScreen` already use, applied to the opposite fact — this util
+     * never calls `t('proposal.you')` itself). Falls back to
+     * `counterpartyName` when omitted, since declined never reaches the
+     * call sites that don't know the viewer (PayArrangementScreen's `open`
+     * row excludes it by construction; §9.1).
+     */
+    declinedByName?: string;
+  },
   t: Translate
 ): ProposalStateWord {
   const kind = stateKind(proposal);
@@ -169,6 +188,16 @@ export function proposalStateWord(
       return {
         variant: 'cancelled',
         label: t('proposal.state.withdrawn', { date }),
+      };
+    // B4 — grey, like withdrawn, but NEVER the same word: withdrawn is the
+    // author pulling her own ask, declined is the counterparty refusing it.
+    case 'declined':
+      return {
+        variant: 'cancelled',
+        label: t('proposal.state.declinedBy', {
+          name: opts.declinedByName ?? opts.counterpartyName,
+          date,
+        }),
       };
     case 'countered':
       return {

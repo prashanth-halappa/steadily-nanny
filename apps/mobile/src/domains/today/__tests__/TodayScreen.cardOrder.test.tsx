@@ -18,7 +18,7 @@
  * Hooks are mocked via `mock.module()` in `beforeAll` before the dynamic
  * import, per docs/09-TESTING.md / TodayScreen.wash.test.tsx.
  */
-import { beforeAll, describe, expect, it, mock } from 'bun:test';
+import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 import { render } from '@testing-library/react-native';
 
 mock.module('@/lib/animations/useReducedMotion', () => ({
@@ -67,6 +67,10 @@ function marker(name: string) {
 mock.module('@/src/domains/household', () => ({
   HouseholdSwitcher: () => null,
 }));
+mock.module('@/src/domains/draft', () => ({
+  JoinedHouseholdCard: marker('joined-household'),
+  SendMyTermsCard: marker('send-my-terms'),
+}));
 mock.module('@/src/domains/schedule', () => ({
   PendingScheduleCard: marker('pending-schedule'),
   ThisWeeksShiftsCard: marker('this-weeks-shifts'),
@@ -107,7 +111,24 @@ mock.module('@/src/domains/today/components/HandoffChipsCard', () => ({
 const HOUSEHOLD_ID = 'household-order-1';
 
 let TodayScreen: typeof import('../components/TodayScreen').TodayScreen;
+/**
+ * The signed-in nanny's membership row. `joined_at` is what gates §8.1's
+ * arrival card, so tests move it rather than the dismissal flag.
+ */
+function memberJoined(daysAgo: number) {
+  return {
+    user_id: 'order-user-1',
+    role: 'nanny',
+    status: 'active',
+    joined_at: new Date(
+      Date.now() - daysAgo * 24 * 60 * 60 * 1000
+    ).toISOString(),
+  };
+}
+let mockMembers: ReturnType<typeof memberJoined>[] = [];
 let mockUseIsOnboarded: ReturnType<typeof mock>;
+let mockIsCardDismissed: ReturnType<typeof mock>;
+let mockDismissCard: ReturnType<typeof mock>;
 
 beforeAll(async () => {
   mockUseIsOnboarded = mock(() => ({
@@ -116,6 +137,9 @@ beforeAll(async () => {
     householdId: HOUSEHOLD_ID,
   }));
 
+  mock.module('expo-router', () => ({
+    useRouter: () => ({ push: mock(), back: mock() }),
+  }));
   mock.module('@/src/domains/today/hooks/useHouseholdIsLive', () => ({
     useHouseholdIsLive: mock(() => false),
   }));
@@ -133,6 +157,7 @@ beforeAll(async () => {
         name: 'Order Household',
         timezone: 'UTC',
         week_starts_on: 1,
+        state: 'live',
       },
       householdId: HOUSEHOLD_ID,
       households: [
@@ -150,6 +175,27 @@ beforeAll(async () => {
   mock.module('@/src/hooks/queries/useChildren', () => ({
     useChildren: mock(() => ({ data: [], isLoading: false })),
   }));
+  mock.module('@/src/hooks/queries/useHouseholdMembers', () => ({
+    useHouseholdMembers: mock(() => ({
+      data: mockMembers,
+      isLoading: false,
+    })),
+  }));
+  mock.module('@/src/store/auth', () => ({
+    useAuthStore: (selector: (s: unknown) => unknown) =>
+      selector({ session: { user: { id: 'order-user-1' } } }),
+  }));
+  mockIsCardDismissed = mock(() => false);
+  mockDismissCard = mock();
+  mock.module('@/src/store/todayCardDismissalStore', () => ({
+    useTodayCardDismissalStore: (
+      selector: (s: {
+        isDismissed: typeof mockIsCardDismissed;
+        dismiss: typeof mockDismissCard;
+      }) => unknown
+    ) =>
+      selector({ isDismissed: mockIsCardDismissed, dismiss: mockDismissCard }),
+  }));
 
   const mod = await import('../components/TodayScreen');
   TodayScreen = mod.TodayScreen;
@@ -166,6 +212,12 @@ function renderOrder(role: 'nanny' | 'parent'): string[] {
     node => node.props.accessibilityLabel as string
   );
 }
+
+beforeEach(() => {
+  mockIsCardDismissed?.mockImplementation(() => false);
+  // Freshly joined by default — the case §8.1's card exists for.
+  mockMembers = [memberJoined(1)];
+});
 
 describe('TodayScreen — card order', () => {
   it("puts the nanny's attention cards above every routine card", () => {
@@ -247,6 +299,56 @@ describe('TodayScreen — card order', () => {
     expect(order).toContain('add-missed-hours');
     expect(order.indexOf('nanny-week-line')).toBeLessThan(
       order.indexOf('add-missed-hours')
+    );
+  });
+
+  // B5 — JoinedHouseholdCard was complete and tested but no screen mounted
+  // it. §8.1: renders once, above everything else, nanny-only.
+  it("mounts the joined-household card above the nanny's attention group", () => {
+    const order = renderOrder('nanny');
+
+    expect(order).toContain('joined-household');
+    expect(order.indexOf('joined-household')).toBeLessThan(
+      order.indexOf('needs-attention')
+    );
+  });
+
+  it('does not mount the joined-household card for a parent', () => {
+    const order = renderOrder('parent');
+    expect(order).not.toContain('joined-household');
+  });
+
+  it('does not mount the joined-household card once already dismissed', () => {
+    mockIsCardDismissed.mockImplementation(() => true);
+    const order = renderOrder('nanny');
+    expect(order).not.toContain('joined-household');
+  });
+
+  // The dismissal store starts EMPTY on every install, so "not dismissed" on
+  // its own would announce her arrival to a nanny who has worked here for
+  // months — every existing user, once, the first time she opens the update.
+  // `joined_at` is the only clock that can tell the two apart.
+  it('does not mount the joined-household card for a long-standing member', () => {
+    mockMembers = [memberJoined(90)];
+    const order = renderOrder('nanny');
+    expect(order).not.toContain('joined-household');
+  });
+
+  it('does not mount the joined-household card when her membership is unreadable', () => {
+    mockMembers = [];
+    const order = renderOrder('nanny');
+    expect(order).not.toContain('joined-household');
+  });
+
+  // §9.2 — an L3, one-time offer to send a self-authored draft's terms to
+  // the family actually joined. Below the attention group, never a rung on
+  // attentionOwner (`attention-and-notifications.md` §2.5).
+  it("mounts SendMyTermsCard below the nanny's attention group", () => {
+    const order = renderOrder('nanny');
+
+    expect(order).toContain('send-my-terms');
+    expect(order.indexOf('pending-schedule')).toBeLessThan(
+      order.indexOf('send-my-terms')
     );
   });
 });

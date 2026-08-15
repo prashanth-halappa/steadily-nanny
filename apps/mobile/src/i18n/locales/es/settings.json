@@ -160,7 +160,9 @@
       "terms_proposal_received": "Condiciones propuestas",
       "terms_proposal_countered": "Contraoferta de condiciones",
       "terms_proposal_accepted": "Condiciones acordadas",
-      "terms_proposal_withdrawn": "Condiciones retiradas"
+      "terms_proposal_withdrawn": "Condiciones retiradas",
+      "terms_proposal_declined": "Condiciones rechazadas",
+      "terms_offer_accepted": "Condiciones acordadas"
     }
   }
 }

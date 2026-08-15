@@ -10,6 +10,10 @@
  */
 
 import { z } from 'zod';
+// The invite's pay OFFER is a full arrangement request (P8, 098). No cycle:
+// `payArrangement.schema` imports nothing but zod, and `termsProposal.schema`
+// already leans on it the same way for the `terms` bag it carries.
+import { CreatePayArrangementRequestSchema } from './payArrangement.schema';
 
 // =============================================================================
 // Const-maps — mirror the SQL `check` constraints exactly. If these drift,
@@ -385,6 +389,28 @@ export const HouseholdInviteSchema = z.object({
    * the inviting household, and it is never on the public page.
    */
   label: z.string().nullable().default(null),
+  /**
+   * The inviting parent's pay OFFER (P8, 098) — non-binding, and the mirror
+   * of what a nanny's draft already does for her side.
+   *
+   * A parent cannot record terms before a nanny exists: `pay_arrangements`
+   * and `terms_proposals` are both `(household_id, carer_id)`-scoped, and
+   * during onboarding there is no carer. So the terms ride the CODE. When a
+   * nanny redeems it, `redeemInvite` promotes this into a real
+   * `direction: 'parent'` terms proposal she reviews and accepts through the
+   * flow 3-O already shipped.
+   *
+   * It never binds on its own — nothing is priced from it — and it dies with
+   * the invite: revoke or expire the code and the offer goes with it.
+   *
+   * A `CreatePayArrangementRequest` and not a looser shape, for 092's reason:
+   * one wire contract makes "what he offered is what she is asked to accept"
+   * a property of the type system rather than a promise in a doc.
+   *
+   * `.default(null)` like `label` and `opened_at` above — a row read before
+   * 098 is applied, or by a client that predates it, has no column to send.
+   */
+  pay_offer: CreatePayArrangementRequestSchema.nullable().default(null),
   created_at: z.iso.datetime({ offset: true }),
   updated_at: z.iso.datetime({ offset: true }),
 });
@@ -408,6 +434,17 @@ export const CreateHouseholdInviteSchema = z.object({
    * public exposure than D-51 permits.
    */
   link_expires_in_days: z.union([z.literal(7), z.literal(30)]).optional(),
+  /**
+   * P8 — the terms this parent is offering, written before he has a nanny to
+   * hang them on. Optional: most invites carry none, and an omitted offer is
+   * "nothing stated", never an invented rate.
+   *
+   * Only meaningful on a NANNY invite — pay is per-carer (D-21), so a
+   * co-parent or helper invite carrying terms is a client bug and
+   * `createInvite` refuses it rather than storing something nobody will ever
+   * read.
+   */
+  pay_offer: CreatePayArrangementRequestSchema.optional(),
 });
 
 /** PATCH body — the only legitimate client transition is revoking a pending invite. */

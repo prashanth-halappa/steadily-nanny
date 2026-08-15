@@ -30,6 +30,20 @@ mock.module('expo-router', () => ({
   }),
 }));
 
+const setActiveHouseholdIdMock = mock((_householdId: string) => {});
+mock.module('@/src/hooks/queries/useActiveHousehold', () => ({
+  useActiveHousehold: () => ({
+    household: null,
+    householdId: null,
+    households: [],
+    pastHouseholds: [],
+    isPastHousehold: false,
+    setActiveHouseholdId: setActiveHouseholdIdMock,
+    isLoading: false,
+    isError: false,
+  }),
+}));
+
 interface PreviewFixture {
   household_name: string;
   children_first_names: string[];
@@ -105,6 +119,7 @@ beforeEach(() => {
   listPastHouseholdsMock.mockImplementation(() => Promise.resolve([]));
   usePendingDeepLinkStore.setState({ pendingHref: null, setAt: null });
   useSetupProgressStore.getState().reset();
+  setActiveHouseholdIdMock.mockClear();
   redeemInviteMock.mockClear();
   upsertProfileMock.mockClear();
   updateNameMock.mockClear();
@@ -291,6 +306,35 @@ describe('CodeEntryScreen — role branch (WS-F)', () => {
       )
     );
     expect(useSetupProgressStore.getState().role).toBe('helper');
+  });
+});
+
+describe('CodeEntryScreen — active household after redeem (B3)', () => {
+  it('sets the active household to the redeemed membership on success', async () => {
+    const screen = renderWithProviders(<CodeEntryScreen />);
+
+    await enterCode(screen);
+    fireEvent.press(screen.getByTestId('code-screen-cta'));
+
+    await waitFor(() => expect(redeemInviteMock).toHaveBeenCalledTimes(1));
+    expect(setActiveHouseholdIdMock).toHaveBeenCalledWith(
+      MEMBERSHIP.household_id
+    );
+  });
+
+  it('does not set the active household when redeem fails', async () => {
+    redeemInviteMock.mockImplementationOnce(() => {
+      callOrder.push('redeemInvite');
+      return Promise.reject(new Error('invalid code'));
+    });
+
+    const screen = renderWithProviders(<CodeEntryScreen />);
+
+    await enterCode(screen);
+    fireEvent.press(screen.getByTestId('code-screen-cta'));
+
+    await waitFor(() => expect(redeemInviteMock).toHaveBeenCalledTimes(1));
+    expect(setActiveHouseholdIdMock).not.toHaveBeenCalled();
   });
 });
 

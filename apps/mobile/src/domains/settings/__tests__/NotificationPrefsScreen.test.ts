@@ -92,6 +92,13 @@ describe('NotificationPrefsScreen', () => {
     expect(source).toContain("terms_proposal_withdrawn: 'hoursAndPay'");
   });
 
+  // B4 / Part 2 — the counterparty's refusal and its parent-audience
+  // acceptance twin are the same contract conversation, not household admin.
+  it('groups terms_proposal_declined and terms_offer_accepted under Hours and pay', () => {
+    expect(source).toContain("terms_proposal_declined: 'hoursAndPay'");
+    expect(source).toContain("terms_offer_accepted: 'hoursAndPay'");
+  });
+
   // §1.4 (D-38) — a user-visible change to a SHIPPED row: `invite_redeemed`
   // widened parent -> both, and this screen derives visibility straight from
   // `PUSH_TYPE_AUDIENCE`, so a nanny now has this toggle where she had none.

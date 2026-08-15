@@ -45,6 +45,10 @@
  *    invite code comes from is not reachable in the app today.
  * 8. A fresh CONFIRMED parent account for flow 14, so the nanny-first journey
  *    has a redeemer who has never seen a household.
+ * 9. Two more fresh CONFIRMED (parent, nanny) pairs, neither with a household
+ *    — flows 16 (P8 pay-offer + B1 carer-accept) and 17 (B4 decline) each
+ *    drive the whole thing live (household, invite, offer all minted through
+ *    the app), so all they need from here is bare accounts.
  *
  * IDEMPOTENCY
  * Everything keyed on a stable identity is looked up before insert. The three
@@ -934,6 +938,35 @@ async function main(): Promise<void> {
     label: 'flow 15 draft (absorption)',
   });
 
+  // 9. Two more fresh CONFIRMED pairs (a parent + a nanny, NEITHER with a
+  //    household), for flows 16/17 — P8's parent-authored pay OFFER and B4's
+  //    decline. Deliberately NOT pre-built households/invites like the drafts
+  //    above: unlike the nanny-draft leg (still blocked on a missing route,
+  //    see the header), the PARENT side of P8 is fully drivable through the
+  //    app today (`HouseholdScreen` -> `ChildrenScreen` -> `InviteScreen`'s
+  //    offer card), so the flows mint the household and the offer live and
+  //    only need bare confirmed accounts here.
+  const offerParentEmail = `phase4-offer-parent-${suffix}@steadilynanny.test`;
+  const offerParentId = await createConfirmedUser(
+    offerParentEmail,
+    'Phase4 Offer Parent'
+  );
+  const offerNannyEmail = `phase4-offer-nanny-${suffix}@steadilynanny.test`;
+  const offerNannyId = await createConfirmedUser(
+    offerNannyEmail,
+    'Phase4 Offer Nanny'
+  );
+  const declineParentEmail = `phase4-decline-parent-${suffix}@steadilynanny.test`;
+  const declineParentId = await createConfirmedUser(
+    declineParentEmail,
+    'Phase4 Decline Parent'
+  );
+  const declineNannyEmail = `phase4-decline-nanny-${suffix}@steadilynanny.test`;
+  const declineNannyId = await createConfirmedUser(
+    declineNannyEmail,
+    'Phase4 Decline Nanny'
+  );
+
   // --- Driver contract -----------------------------------------------------
   // ONE guard at the contract boundary, instead of an error check at each of the
   // ~18 `maybeSingle()` lookups that feed it.
@@ -969,6 +1002,14 @@ async function main(): Promise<void> {
     ['PHASE4_DRAFT_HOUSEHOLD_A', String(draftA.householdId)],
     ['PHASE4_DRAFT_CODE_B', String(draftB.code)],
     ['PHASE4_DRAFT_HOUSEHOLD_B', String(draftB.householdId)],
+    ['PHASE4_OFFER_PARENT_EMAIL', String(offerParentEmail)],
+    ['PHASE4_OFFER_PARENT_ID', String(offerParentId)],
+    ['PHASE4_OFFER_NANNY_EMAIL', String(offerNannyEmail)],
+    ['PHASE4_OFFER_NANNY_ID', String(offerNannyId)],
+    ['PHASE4_DECLINE_PARENT_EMAIL', String(declineParentEmail)],
+    ['PHASE4_DECLINE_PARENT_ID', String(declineParentId)],
+    ['PHASE4_DECLINE_NANNY_EMAIL', String(declineNannyEmail)],
+    ['PHASE4_DECLINE_NANNY_ID', String(declineNannyId)],
   ];
   const emptyKeys = contract.filter(
     ([, v]) => v === '' || v === 'undefined' || v === 'null'

@@ -26,11 +26,18 @@ Live pay is always per `(household_id, carer_id)`. A nanny in two families has
 two independent arrangement histories. There is no household-level live contract
 and no pre-nanny `pay_arrangements` row.
 
-**Parent draft terms** (offer before a nanny joins) is **not built**. The
-least-invasive shape is a household/invite **offer template**
-(`CreatePayArrangementRequest` bag) that binds on redeem into a
-`direction: parent` proposal (soft) or arrangement + Seen (hard) — never a
-null-carer arrangement.
+**Parent draft terms** (offer before a nanny joins) **shipped 2026-08-15**, in
+the soft-bind shape sketched below: a `CreatePayArrangementRequest` bag on the
+**invite** (`household_invites.pay_offer`, 098), promoted on redeem into a
+`direction: parent` proposal she answers. Never a null-carer arrangement.
+
+The symmetry is one level up from where it first looks. Each side's terms ride
+whatever artifact carries the connection: the nanny's proposal rides her draft
+household + code, the parent's offer rides the invite. Both sit in limbo until
+redeem joins the two halves, and only then does a real proposal exist. That is
+also why the offer is a column on the code rather than a row beside the money —
+revoke the invite and the terms go with it, and a second nanny invited later
+gets her own offer or none (pay is per-carer, D-21).
 
 ---
 
@@ -77,7 +84,7 @@ Legend: **Yes** = shipped end-to-end · **Partial** = core works, UX/edge gap ·
 | P5 | Parent invite as co-parent / helper | **Yes** | Role picker |
 | P6 | Co-parent · join | **Yes** | No second HH |
 | P7 | Helper · join | **Yes** | |
-| P8 | Parent sets pay **during onboarding** (before nanny) | **No** | No TERMS step |
+| P8 | Parent sets pay **during onboarding** (before nanny) | **Yes** | Offer rides the invite (`household_invites.pay_offer`, 098); promoted to a `direction: parent` proposal on redeem. Card on the existing INVITE step — no new wizard step |
 | P9 | Arrangement with **no** nanny assigned | **No** | Per-carer model |
 | P10 | Parent · create when HH exists: **rename** instead of create | **Partial** | Adopts `[0]`; no PATCH name |
 | P11 | Hard-block second parent-owned HH | **No** | API allows another `create` |
@@ -85,19 +92,19 @@ Legend: **Yes** = shipped end-to-end · **Partial** = core works, UX/edge gap ·
 | P13 | Parent redeems nanny draft, has HH → absorb + candidate | **Yes** | |
 | P14 | Parent has ≥2 HHs → picker then absorb | **Yes** | |
 | P15 | Parent accepts proposal → arrangement + activate candidate | **Yes** | D-35 / D-49 |
-| P16 | Parent counters → nanny accepts | **Yes** | |
+| P16 | Parent counters → nanny accepts | **Yes** | Was marked Yes while broken: `accept` refused every carer-side caller, so her Agree 404’d. Fixed 2026-08-15 — the gate now derives the answering side from `direction`, and the arrangement insert runs under the author’s parent identity |
 | P17 | Parallel signup → absorb | **Yes** | = P13 |
 
 ### 4.2 Nanny-led → parent linked → pay attached
 
 | ID | Use case | Supported? | Notes |
 |---|---|---|---|
-| N1 | Nanny · create: terms → draft → share | **Yes** | |
+| N1 | Nanny · create: terms → draft → share | **Yes** | Was marked Yes while broken: no client ever sent `state: 'draft'`, so she never got a draft household and Save on the terms step was permanently disabled — Maestro 14 passed only because the seed script built the draft in SQL. Fixed 2026-08-15 in `StartScreen` |
 | N2–N4 | Parent redeems → accept / counter → Agreed | **Yes** | |
 | N5–N6 | Wrong family / multi-interview; draft survives | **Yes** | D-38 |
 | N7 | Nanny · join parent code (no draft) | **Yes** | Then P3/P4 |
 | N8 | Nanny · join while holding a draft | **Yes** (join) | Draft survives |
-| N9 | Today card **“Send my terms”** from draft (§9.2) | **No** | Spec’d; UI not found |
+| N9 | Today card **“Send my terms”** from draft (§9.2) | **Yes** | `SendMyTermsCard`; becomes **“Counter with my terms”** (carrying `supersedes_id`) when a round is already open, which is what resolves the offer-meets-her-draft collision. `valid_from` is reset to the live household’s today — her draft’s date was written for a different family |
 | N10 | Multiple live HHs, different arrangements each | **Yes** | Switcher |
 | N11 | Nanny inserts live `pay_arrangements` | **No** | `WRITE_ROLES` |
 | N12 | Draft HH produces priced weeks | **No** | D-36 |
@@ -119,8 +126,9 @@ Legend: **Yes** = shipped end-to-end · **Partial** = core works, UX/edge gap ·
 
 | Gap | Status | Pointer |
 |---|---|---|
-| Parent draft / offer terms before nanny exists | **Not built** | §1 above; soft bind → parent-direction proposal recommended |
-| §9.2 “Send my terms” after join-while-holding-draft | **Missing UI** | Spec §9.2; join works |
+| Parent draft / offer terms before nanny exists | **Shipped** 2026-08-15 | Soft bind, as recommended: `household_invites.pay_offer` (098) → `direction: parent` proposal promoted in `redeemInvite`. Promotion can never fail the join |
+| §9.2 “Send my terms” after join-while-holding-draft | **Shipped** 2026-08-15 | `SendMyTermsCard`; counters an open round rather than competing with it |
+| A `candidate` member cannot see the household she joined | **Not built** | `listActiveHouseholdIds` is `status='active'` only; `GET /households` excludes candidates and `GET /households/:id` 404s for one. So on the nanny-first **absorption** path she is invisible to herself between redeem and acceptance, and §8.1’s waiting variant cannot render honestly. Needs a candidate-readable route. Found 2026-08-15 while mounting `JoinedHouseholdCard`. Does **not** affect the parent-offer path (she redeems a live invite and arrives `active`) |
 | Android App Links for terms URLs | **Blocked** | `ANDROID_SHA256_CERT_FINGERPRINTS = []` in `infra/nanny-site/worker.js` → assetlinks 503 |
 | Parent onboarding rename-if-exists | **Partial** | `HouseholdScreen` adopts; rename = Settings |
 | One-household-per-parent API guard | **Not built** | |
@@ -160,8 +168,10 @@ Invite revoke and cover-ask withdraw were earlier punch-list items and are
 
 ## 6. Priority if closing gaps
 
-1. Parent draft offer (product)
-2. §9.2 send-draft-after-join (spec hole)
+1. ~~Parent draft offer (product)~~ — **shipped 2026-08-15**
+2. ~~§9.2 send-draft-after-join (spec hole)~~ — **shipped 2026-08-15**
+2b. Candidate-readable household route (§5.1) — the absorption path's blind
+    window, surfaced by the §8.1 card having nowhere honest to render
 3. Android universal-links fingerprint (acquisition)
 4. D-54 week outside-wages + N12 took-effect push (pay completeness)
 5. Mobile export download buttons (API ready)
@@ -173,14 +183,37 @@ choices.
 
 ---
 
-## 7. Enabling parent draft (design sketch)
+## 7. Parent offer — as built (2026-08-15)
 
-Do **not** allow `pay_arrangements` with a null/pending carer.
+Still true, and load-bearing: **never** a `pay_arrangements` row with a
+null/pending carer.
 
-1. Persist an **offer** = `CreatePayArrangementRequest` on the live household or
-   pending nanny invite.
-2. Add a TERMS/offer step to `parent · create` (reuse progressive-groups form).
-3. On nanny redeem: promote to `terms_proposals` with `direction: parent`
-   (**soft**, recommended) or insert arrangement + Seen (**hard**).
-4. Keep `assertActiveNanny` intact — bind only after membership exists
-   (same ordering lesson as candidate → active before accept).
+1. The offer is a `CreatePayArrangementRequest` on the **pending nanny invite**
+   (`household_invites.pay_offer`, 098) — not on the household. Per-invite means
+   it dies on revoke, a helper/co-parent invite simply carries null, and a
+   second nanny gets her own. `createInvite` refuses an offer on any non-nanny
+   invite rather than storing terms nobody will read.
+2. **No new wizard step.** An offer card on the existing INVITE step, with no
+   Skip button — absence is the default. Editing later lives on
+   `ManageInviteScreen`, never under `/settings/pay/*` (a pay screen with no
+   carer reads as an arrangement, which is the confusion this feature exists to
+   avoid). Editing revokes and re-mints, so the code changes — the screen says
+   so, because a parent may already have shared the old one.
+3. On nanny redeem, `redeemInvite` promotes it to `terms_proposals` with
+   `direction: parent` (**soft bind**) and stamps `from_invite_id`, whose
+   meaning is now bidirectional — the same slot records a nanny's cloned draft
+   (D-38) or a parent's promoted offer.
+4. `assertActiveNanny` is untouched. She redeems a live invite and lands
+   `active`, so candidate activation no-ops and the accept path is unchanged.
+5. **The promotion may never throw.** By then the code is claimed and her
+   membership exists, so a failure would strand a real nanny outside a
+   household she legitimately joined — over a rate she has not agreed to yet.
+   No parent left to name, a `valid_from` gone stale across the invite's 30-day
+   life, or a round already open: each logs and the join stands.
+6. The offer is never in the public invite preview. She meets a figure only as
+   a real proposal with a real date.
+
+The binding act is unchanged and remains the only one: **accept inserts the
+arrangement**. What changed is that a carer may now perform it on a
+parent-authored round (see P16) — the insert still runs under the authoring
+parent's identity, so `WRITE_ROLES` holds and the nanny never inserts money.

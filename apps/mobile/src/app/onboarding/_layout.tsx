@@ -14,8 +14,23 @@
  * `onboarded` status does.
  *
  * Paint gate: only mount the wizard Stack when status is confirmed
- * `not-onboarded`. While loading or while bouncing an onboarded user home,
- * show the same spinner shell as Index — never flash "Who are you?".
+ * `not-onboarded` (or onboarded-but-engaged — see below). While loading or
+ * while bouncing an onboarded user home, show the same spinner shell as
+ * Index — never flash "Who are you?".
+ *
+ * MID-WIZARD LOADING LATCH (R7): once this layout has painted the wizard
+ * during THIS mount, keep the Stack mounted across transient `loading`
+ * frames (`needsChildCount && children.isPending`, cleared query cache).
+ * Unmounting would destroy every wizard screen's local React state (typed
+ * household name, children names/ages).
+ *
+ * The latch is a useRef — NOT a check against `wizardEngaged`.
+ * `wizardEngaged` comes from the persisted setup store (`role` survives
+ * app restarts and is only cleared by `reset()`). Keying off it would, on
+ * a cold start with a stale persisted `role`, mount the Stack during the
+ * first loading frame and flash "Who are you?" — exactly what the paint
+ * gate exists to prevent. A fresh mount starts with the latch false, so
+ * cold-start behaviour is unchanged.
  *
  * WIZARD-OWNS-COMPLETION EXCEPTION: `useIsOnboarded`'s server predicate can
  * flip to `onboarded` PARTWAY through the client-side step sequence — e.g.
@@ -34,7 +49,7 @@
  * stranded-nanny repro above), where `role` is still null.
  */
 import { type Href, Stack, useRouter } from 'expo-router';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
@@ -45,6 +60,9 @@ export default function OnboardingLayout() {
   const router = useRouter();
   const onboarding = useIsOnboarded();
   const wizardEngaged = useSetupProgressStore(s => s.role !== null);
+  // Mount-scoped: "wizard has painted at least once on THIS mount".
+  // See MID-WIZARD LOADING LATCH above — must not key off wizardEngaged.
+  const wizardPaintedRef = useRef(false);
 
   useEffect(() => {
     if (onboarding.membershipsError) return;
@@ -58,9 +76,11 @@ export default function OnboardingLayout() {
   const showWizard =
     !onboarding.membershipsError &&
     (onboarding.status === 'not-onboarded' ||
-      (onboarding.status === 'onboarded' && wizardEngaged));
+      (onboarding.status === 'onboarded' && wizardEngaged) ||
+      (onboarding.status === 'loading' && wizardPaintedRef.current));
 
   if (showWizard) {
+    wizardPaintedRef.current = true;
     return (
       <SafeAreaView style={{ flex: 1 }} edges={['top']}>
         <Stack screenOptions={{ headerShown: false }} />
@@ -68,10 +88,10 @@ export default function OnboardingLayout() {
     );
   }
 
-  // loading, onboarded-and-not-engaged (redirect in flight), or
-  // membershipsError — never paint RoleScreen. Index owns the network
-  // ErrorState for membershipsError when the user is still on `/`; here we
-  // just wait / bounce.
+  // loading (before first paint), onboarded-and-not-engaged (redirect in
+  // flight), or membershipsError — never paint RoleScreen. Index owns the
+  // network ErrorState for membershipsError when the user is still on `/`;
+  // here we just wait / bounce.
   return (
     <View
       testID="onboarding-layout-loading"

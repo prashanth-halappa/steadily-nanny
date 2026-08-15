@@ -47,8 +47,15 @@ mock.module('@/src/components/ui/empty-state', () => {
 });
 
 // Keep the tree light — wash wiring is the only subject under test.
+mock.module('expo-router', () => ({
+  useRouter: () => ({ push: mock(), back: mock() }),
+}));
 mock.module('@/src/domains/household', () => ({
   HouseholdSwitcher: () => null,
+}));
+mock.module('@/src/domains/draft', () => ({
+  JoinedHouseholdCard: () => null,
+  SendMyTermsCard: () => null,
 }));
 mock.module('@/src/domains/schedule', () => ({
   PendingScheduleCard: () => null,
@@ -132,6 +139,21 @@ beforeAll(async () => {
   }));
   mock.module('@/src/hooks/queries/useChildren', () => ({
     useChildren: mockUseChildren,
+  }));
+  mock.module('@/src/hooks/queries/useHouseholdMembers', () => ({
+    useHouseholdMembers: mock(() => ({ data: [], isLoading: false })),
+  }));
+  mock.module('@/src/store/auth', () => ({
+    useAuthStore: (selector: (s: unknown) => unknown) =>
+      selector({ session: { user: { id: 'wash-user-1' } } }),
+  }));
+  mock.module('@/src/store/todayCardDismissalStore', () => ({
+    useTodayCardDismissalStore: (
+      selector: (s: {
+        isDismissed: () => boolean;
+        dismiss: () => void;
+      }) => unknown
+    ) => selector({ isDismissed: () => false, dismiss: () => {} }),
   }));
 
   const mod = await import('../components/TodayScreen');

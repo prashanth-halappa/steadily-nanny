@@ -21,12 +21,20 @@
 
 import type { HouseholdInviteRole } from '@steadily-nanny/shared-types/schemas/household.schema';
 import { HOUSEHOLD_INVITE_ROLES } from '@steadily-nanny/shared-types/schemas/household.schema';
+import type { CreatePayArrangementRequest } from '@steadily-nanny/shared-types/schemas/payArrangement.schema';
 import { type Href, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Share, View } from 'react-native';
 import { Button } from '@/src/components/ui/button';
+import { Card } from '@/src/components/ui/card';
 import { Text } from '@/src/components/ui/text';
+import { Body, Small } from '@/src/components/ui/typography';
+import { PayChangeSheet } from '@/src/domains/pay/components/PayChangeSheet';
+import {
+  formatDisplayDateWithYear,
+  offerRequestToArrangementStub,
+} from '@/src/domains/pay/utils/payArrangementForm';
 import { InviteCodeCard } from '@/src/domains/setup/components/InviteCodeCard';
 import { InviteRolePicker } from '@/src/domains/setup/components/InviteRolePicker';
 import { SetupScreenShell } from '@/src/domains/setup/components/SetupScreenShell';
@@ -37,6 +45,10 @@ import {
 } from '@/src/domains/setup/types';
 import { useCreateInvite } from '@/src/hooks/mutations/useCreateInvite';
 import { useRevokeInvite } from '@/src/hooks/mutations/useRevokeInvite';
+import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
+import { getDeviceCurrency } from '@/src/lib/deviceLocale';
+import { localDateInZone } from '@/src/lib/localDate';
+import { formatRate } from '@/src/lib/money';
 import { useSetupProgressStore } from '@/src/store/setupProgress';
 
 export function InviteScreen() {
@@ -53,6 +65,19 @@ export function InviteScreen() {
     HOUSEHOLD_INVITE_ROLES.NANNY
   );
 
+  // P8 — a pay OFFER drafted alongside a nanny invite (§ InviteScreen module
+  // doc for the wire contract). Purely local until Generate is tapped: the
+  // offer rides the SAME createInvite call that mints the code, never a
+  // second request.
+  const { household } = useActiveHousehold();
+  const currency = household?.currency ?? getDeviceCurrency();
+  const timezone = household?.timezone ?? 'UTC';
+  const todayISO = localDateInZone(timezone);
+  const [payOffer, setPayOffer] = useState<CreatePayArrangementRequest | null>(
+    null
+  );
+  const [offerSheetVisible, setOfferSheetVisible] = useState(false);
+
   const invite = createInvite.data ?? null;
   const code = invite?.code ?? null;
 
@@ -61,7 +86,11 @@ export function InviteScreen() {
   const onGenerate = () => {
     if (!householdId || createInvite.isPending) return;
     setHasStarted(true);
-    createInvite.mutate({ role: selectedRole });
+    createInvite.mutate(
+      selectedRole === HOUSEHOLD_INVITE_ROLES.NANNY && payOffer
+        ? { role: selectedRole, pay_offer: payOffer }
+        : { role: selectedRole }
+    );
   };
 
   const onShare = () => {
@@ -126,6 +155,48 @@ export function InviteScreen() {
             selected={selectedRole}
             onSelect={setSelectedRole}
           />
+          {/* P8: an offer only means something on a NANNY invite — pay is
+              per-carer, and a co-parent/helper invite has nobody to price. No
+              Skip control — absence of a drafted offer already reads as "no
+              offer", so a Skip button would imply a decision was required. */}
+          {selectedRole === HOUSEHOLD_INVITE_ROLES.NANNY ? (
+            <Card testID="invite-offer-card" className="gap-3 p-4">
+              {payOffer ? (
+                <View className="gap-1">
+                  <Body testID="invite-offer-summary">
+                    {t('invite.offer.summary', {
+                      rate: formatRate(
+                        payOffer.rate_minor,
+                        payOffer.currency ?? currency
+                      ),
+                      date: formatDisplayDateWithYear(payOffer.valid_from),
+                    })}
+                  </Body>
+                  <Small
+                    testID="invite-offer-draft-state"
+                    className="text-muted-foreground"
+                  >
+                    {t('invite.offer.draftState')}
+                  </Small>
+                  <Button
+                    testID="invite-offer-edit-button"
+                    variant="outline"
+                    onPress={() => setOfferSheetVisible(true)}
+                  >
+                    <Text>{t('invite.offer.editButton')}</Text>
+                  </Button>
+                </View>
+              ) : (
+                <Button
+                  testID="invite-offer-add-button"
+                  variant="outline"
+                  onPress={() => setOfferSheetVisible(true)}
+                >
+                  <Text>{t('invite.offer.addButton')}</Text>
+                </Button>
+              )}
+            </Card>
+          ) : null}
           <Button
             testID="invite-generate-button"
             onPress={onGenerate}
@@ -135,6 +206,30 @@ export function InviteScreen() {
           </Button>
         </>
       )}
+
+      <PayChangeSheet
+        mode="offer"
+        visible={offerSheetVisible}
+        onDismiss={() => setOfferSheetVisible(false)}
+        onSubmit={request => {
+          setPayOffer(request);
+          setOfferSheetVisible(false);
+        }}
+        isSubmitting={false}
+        currentArrangement={
+          payOffer
+            ? offerRequestToArrangementStub(payOffer, currency)
+            : undefined
+        }
+        defaultCurrency={currency}
+        initialEffectiveDateISO={payOffer?.valid_from}
+        householdCancellationDefaultHours={
+          household?.cancellation_paid_within_hours ?? 0
+        }
+        todayISO={todayISO}
+        householdTimezone={timezone}
+        householdWeekStartsOn={household?.week_starts_on ?? 0}
+      />
     </SetupScreenShell>
   );
 }

@@ -24,6 +24,9 @@
  * the scroll viewport, so a nanny with a week waiting saw no call to action.
  */
 
+import { HOUSEHOLD_STATES } from '@steadily-nanny/shared-types/schemas/household.schema';
+import { type Href, useRouter } from 'expo-router';
+import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Image, ScrollView, View } from 'react-native';
 import { illustrations } from '@/assets/illustrations';
@@ -34,6 +37,7 @@ import { EmptyState } from '@/src/components/ui/empty-state';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { ScreenWash } from '@/src/components/ui/screen-wash';
 import { H1, Small } from '@/src/components/ui/typography';
+import { JoinedHouseholdCard, SendMyTermsCard } from '@/src/domains/draft';
 import { HouseholdSwitcher } from '@/src/domains/household';
 import {
   NeedsAttentionCard,
@@ -52,19 +56,31 @@ import {
 } from '@/src/domains/timesheet/utils/week';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
 import { useChildren } from '@/src/hooks/queries/useChildren';
+import { useHouseholdMembers } from '@/src/hooks/queries/useHouseholdMembers';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 import { localDateInZone } from '@/src/lib/localDate';
+import { useAuthStore } from '@/src/store/auth';
+import { useTodayCardDismissalStore } from '@/src/store/todayCardDismissalStore';
 import { useHouseholdIsLive } from '../hooks/useHouseholdIsLive';
 import { useOverdueClockOut } from '../hooks/useOverdueClockOut';
 import { useTodayCoverRows } from '../hooks/useTodayCoverRows';
 import { useUncoveredToday } from '../hooks/useUncoveredToday';
 import { resolveAttentionOwner } from '../utils/attentionOwner';
 import { HERO_MOOD_ILLUSTRATION, resolveHeroMood } from '../utils/heroMood';
+import { buildJoinedComposition } from '../utils/joinedComposition';
 import { AddMissedHoursCard } from './AddMissedHoursCard';
 import { ClockInCard } from './ClockInCard';
 import { HandoffChipsCard } from './HandoffChipsCard';
 import { NannyWeekLine } from './NannyWeekLine';
 import { TodayCoverage } from './TodayCoverage';
+
+/**
+ * How recently she must have joined for §8.1's arrival card to still be true.
+ * A week: long enough to survive not opening the app for a few days after
+ * starting a placement, short enough that it can never read as news about a
+ * household she has worked in for months.
+ */
+const JOINED_CARD_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 export function TodayScreen() {
   const { t } = useTranslation('today');
@@ -73,10 +89,15 @@ export function TodayScreen() {
   // in-flight wizard UI state and can be empty/stale for a parent whose
   // household was seeded directly, or who signed in on a fresh device. See
   // useIsOnboarded's header comment.
+  const router = useRouter();
   const onboarding = useIsOnboarded();
   const activeHousehold = useActiveHousehold();
   const household = activeHousehold.household;
   const children = useChildren(household?.id);
+  const myUserId = useAuthStore(s => s.session?.user?.id);
+  const householdMembers = useHouseholdMembers(household?.id);
+  const isCardDismissed = useTodayCardDismissalStore(s => s.isDismissed);
+  const dismissCard = useTodayCardDismissalStore(s => s.dismiss);
   // Wash while someone is on the clock — caller running OR household week
   // entry running. Stays inside this screen (below the tab navigator).
   const isLive = useHouseholdIsLive(
@@ -109,6 +130,46 @@ export function TodayScreen() {
     household?.week_starts_on ?? DEFAULT_WEEK_STARTS_ON
   );
   const heroMood = resolveHeroMood({ isLive, rows: coverRows.rows });
+  // §8.1 — "You've joined the {family}", once, per household. Nanny-only:
+  // she is the one walking into a placement she has never seen. LIVE-only:
+  // her OWN draft household is not something she "joined". A `candidate`
+  // membership (redeemed, terms not yet accepted) cannot reach this branch
+  // at all today — `useActiveHousehold` resolves a household from `active`
+  // memberships only (`householdMemberRepository.listActiveHouseholdIds`),
+  // so a true candidate's `household` here is null and the empty-state
+  // branch below renders instead. The §8.2.1 "waiting" variant this card
+  // supports needs an API change to be honest (a route a candidate can
+  // actually read); out of scope for a mobile-only change.
+  const joinedCardKey = household ? `joinedHousehold:${household.id}` : null;
+  // "You've joined the {family}" is an ARRIVAL card, and the dismissal store
+  // starts empty on every install. Without a clock, the not-yet-dismissed
+  // condition is true for a nanny who joined a year ago, and she is greeted
+  // on her next launch by news of her own arrival. Her membership's
+  // `joined_at` is the only honest one available — the store cannot tell
+  // "never seen it" apart from "seen it before the store existed".
+  const myMembership = (householdMembers.data ?? []).find(
+    m => m.user_id === myUserId
+  );
+  const joinedRecently =
+    myMembership !== undefined &&
+    Date.now() - new Date(myMembership.joined_at).getTime() <
+      JOINED_CARD_MAX_AGE_MS;
+  const showJoinedCard =
+    onboarding.role === SETUP_ROLES.NANNY &&
+    !onboarding.isPastMember &&
+    !!household &&
+    household.state === HOUSEHOLD_STATES.LIVE &&
+    !!joinedCardKey &&
+    !isCardDismissed(joinedCardKey) &&
+    !children.isLoading &&
+    !householdMembers.isLoading &&
+    joinedRecently;
+  // The first render with `showJoinedCard` true IS the reveal — this card has
+  // no "Not now" of its own (unlike `SendMyTermsCard`) to hang a dismissal
+  // off, so marking it seen here is what makes it a "renders once" card.
+  useEffect(() => {
+    if (showJoinedCard && joinedCardKey) dismissCard(joinedCardKey);
+  }, [showJoinedCard, joinedCardKey, dismissCard]);
   // Same tab-bar dead-zone fix as Settings (BUG1) — the floating tab bar
   // overlays this screen's content instead of reserving its own layout
   // space, so a fixed paddingBottom is not safe-area-aware.
@@ -184,6 +245,23 @@ export function TodayScreen() {
               </View>
             ) : null}
 
+            {/* §8.1 — once per household, above everything else: she was not
+                present when the family redeemed her code, and this is the
+                "after" half of that. */}
+            {showJoinedCard && household ? (
+              <JoinedHouseholdCard
+                familyName={household.name ?? t('household:untitledDraft')}
+                composition={buildJoinedComposition(
+                  children.data ?? [],
+                  householdMembers.data ?? [],
+                  myUserId
+                )}
+                onSeeTerms={() =>
+                  router.push('/(private)/settings/my-pay' as Href)
+                }
+              />
+            ) : null}
+
             {/* Both of these render nothing unless something is genuinely
                 waiting on this person — deliberately not empty states. A card
                 announcing its own absence is noise on the screen people open
@@ -195,6 +273,12 @@ export function TodayScreen() {
             <NeedsAttentionCard demoted={attentionOwner !== 'inbox'} />
             <TermsProposalCard demoted={attentionOwner !== 'termsProposal'} />
             <PendingScheduleCard />
+
+            {/* §9.2 — an L3, non-urgent, one-time offer. Below the attention
+                group on purpose (`attention-and-notifications.md` §2.5: no
+                new `demoted` prop, no attentionOwner rung). Self-contained —
+                no props, same shape as PendingScheduleCard. */}
+            <SendMyTermsCard />
 
             {/* Not on a household she was REMOVED from: every write there is
                 refused server-side, so the button would only ever fail. */}

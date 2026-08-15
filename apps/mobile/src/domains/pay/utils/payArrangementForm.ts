@@ -803,6 +803,60 @@ export function buildCreatePayArrangementRequest(
   };
 }
 
+/**
+ * A pay OFFER (P8, an invite's `pay_offer`) has no `PayArrangement` — no id,
+ * no carer, nothing persisted. `PayChangeSheet` only knows how to seed a form
+ * from one (`seedPayTermsFormState`), so re-opening the sheet on an offer
+ * already written into an invite needs a stand-in shaped like a real
+ * arrangement. Same trick as `domains/draft/utils/proposalTerms.ts`'s
+ * `proposalTermsToArrangement` (a nanny's draft terms have no arrangement
+ * either) — an independent copy here because an invite offer has no
+ * carer/proposal id to hand it.
+ */
+export function offerRequestToArrangementStub(
+  offer: CreatePayArrangementRequest,
+  fallbackCurrency: string
+): PayArrangement {
+  return {
+    // Identity fields exist because the type demands them; nothing that reads
+    // this stub cares about them, and nothing is ever persisted from it.
+    id: 'invite-offer-draft',
+    household_id: '',
+    carer_id: null,
+    carer_display_name: '',
+    rate_minor: offer.rate_minor,
+    bill_rate_minor: null,
+    currency: offer.currency ?? fallbackCurrency,
+    overtime_threshold_minutes: offer.overtime_threshold_minutes ?? null,
+    overtime_multiplier: offer.overtime_multiplier,
+    overtime_daily_threshold_minutes:
+      offer.overtime_daily_threshold_minutes ?? null,
+    doubletime_daily_threshold_minutes:
+      offer.doubletime_daily_threshold_minutes ?? null,
+    doubletime_multiplier: offer.doubletime_multiplier ?? null,
+    seventh_day_multiplier: offer.seventh_day_multiplier ?? null,
+    seventh_day_doubletime_after_minutes:
+      offer.seventh_day_doubletime_after_minutes ?? null,
+    worked_holiday_multiplier: offer.worked_holiday_multiplier ?? null,
+    holiday_hours_minutes: offer.holiday_hours_minutes ?? null,
+    pay_frequency: offer.pay_frequency ?? null,
+    pay_day_of_week: offer.pay_day_of_week ?? null,
+    pay_day_of_month: offer.pay_day_of_month ?? null,
+    guaranteed_minutes_per_week: offer.guaranteed_minutes_per_week ?? null,
+    pto_entitlement_minutes_per_year:
+      offer.pto_entitlement_minutes_per_year ?? null,
+    mileage_rate_per_mile_minor: offer.mileage_rate_per_mile_minor ?? null,
+    cancellation_paid_within_hours:
+      offer.cancellation_paid_within_hours ?? null,
+    valid_from: offer.valid_from,
+    valid_to: null,
+    note: offer.note ?? null,
+    created_by: '',
+    created_at: new Date(0).toISOString(),
+    terms: offer.terms ?? {},
+  };
+}
+
 export interface MidWeekConsequence {
   oldRateLabel: string;
   oldUntilLabel: string;

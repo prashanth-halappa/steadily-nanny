@@ -2,6 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import {
   AcceptTermsProposalRequestSchema,
   CreateTermsProposalRequestSchema,
+  OPEN_TERMS_PROPOSAL_STATUSES,
   TERMS_PROPOSAL_DIRECTIONS,
   TERMS_PROPOSAL_STATUSES,
   TermsProposalListResponseSchema,
@@ -45,10 +46,10 @@ const validProposal = {
 
 describe('termsProposal.schema', () => {
   describe('const-maps match the SQL check constraints', () => {
-    it('TERMS_PROPOSAL_STATUSES matches terms_proposals.status', () => {
+    it('TERMS_PROPOSAL_STATUSES matches terms_proposals.status (097)', () => {
       const values: string[] = Object.values(TERMS_PROPOSAL_STATUSES);
       expect(values.sort()).toEqual(
-        ['proposed', 'countered', 'accepted', 'withdrawn'].sort()
+        ['proposed', 'countered', 'accepted', 'withdrawn', 'declined'].sort()
       );
     });
 
@@ -58,9 +59,30 @@ describe('termsProposal.schema', () => {
     });
   });
 
+  // B4: declined is TERMINAL, exactly like withdrawn/accepted/countered — a
+  // round the counterparty refused is not still awaiting an answer. This is
+  // load-bearing for mobile's `findOpenTermsProposal`
+  // (useTermsProposals.ts), which drives whether the pay screen shows a live
+  // negotiation and whether PaySetupPromptCard hides.
+  describe('OPEN_TERMS_PROPOSAL_STATUSES', () => {
+    it('stays exactly [proposed] — declined never counts as open', () => {
+      expect(OPEN_TERMS_PROPOSAL_STATUSES).toEqual(['proposed']);
+      expect(OPEN_TERMS_PROPOSAL_STATUSES).not.toContain('declined');
+    });
+  });
+
   describe('TermsProposalSchema', () => {
     it('accepts a well-formed carer-authored proposal', () => {
       expect(TermsProposalSchema.parse(validProposal).status).toBe('proposed');
+    });
+
+    it('accepts a declined proposal — the counterparty`s refusal (B4)', () => {
+      const parsed = TermsProposalSchema.parse({
+        ...validProposal,
+        status: 'declined',
+        responded_at: NOW,
+      });
+      expect(parsed.status).toBe('declined');
     });
 
     it('rejects an unknown status', () => {

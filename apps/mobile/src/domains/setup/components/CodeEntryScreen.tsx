@@ -67,6 +67,7 @@ import {
 import { useRedeemInvite } from '@/src/hooks/mutations/useRedeemInvite';
 import { useUpdateName } from '@/src/hooks/mutations/useUpdateName';
 import { useUpsertProfile } from '@/src/hooks/mutations/useUpsertProfile';
+import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
 import { useHouseholds } from '@/src/hooks/queries/useHouseholds';
 import { useInvitePreview } from '@/src/hooks/queries/useInvitePreview';
 import { useUserProfile } from '@/src/hooks/queries/useUserProfile';
@@ -171,6 +172,7 @@ export function CodeEntryScreen({
   const upsertProfile = useUpsertProfile();
   const updateName = useUpdateName();
   const redeemInvite = useRedeemInvite();
+  const { setActiveHouseholdId } = useActiveHousehold();
   const households = useHouseholds();
   const isJoining =
     redeemInvite.isPending || upsertProfile.isPending || updateName.isPending;
@@ -271,6 +273,11 @@ export function CodeEntryScreen({
         });
         redeemed = true;
         setHasRedeemed(true);
+        // Point the active household at the family she just joined BEFORE
+        // navigation. Without this, a nanny who also holds a draft keeps
+        // falling back to households[0] (often the draft) and the tabs
+        // layout hard-redirects her to /(private)/draft forever (B3).
+        setActiveHouseholdId(membership.household_id);
         // BEFORE the role/step resolution below — never write the persisted
         // wizard state for an already-onboarded user (see CodeEntryScreenProps).
         if (onJoined) {

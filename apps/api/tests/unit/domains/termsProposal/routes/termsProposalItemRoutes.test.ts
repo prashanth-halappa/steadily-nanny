@@ -65,12 +65,14 @@ let baseUrl: string;
 let getByIdMock: ReturnType<typeof mock>;
 let acceptMock: ReturnType<typeof mock>;
 let withdrawMock: ReturnType<typeof mock>;
+let declineMock: ReturnType<typeof mock>;
 let markViewedMock: ReturnType<typeof mock>;
 
 beforeAll(async () => {
   getByIdMock = mock(async () => proposalRow());
   acceptMock = mock(async () => proposalRow({ status: 'accepted' }));
   withdrawMock = mock(async () => proposalRow({ status: 'withdrawn' }));
+  declineMock = mock(async () => proposalRow({ status: 'declined' }));
   markViewedMock = mock(async () =>
     proposalRow({ viewed_at: FIXTURE_VIEWED_AT })
   );
@@ -107,6 +109,7 @@ beforeAll(async () => {
         propose: mock(async () => proposalRow()),
         accept: (...args: unknown[]) => acceptMock(...args),
         withdraw: (...args: unknown[]) => withdrawMock(...args),
+        decline: (...args: unknown[]) => declineMock(...args),
         markViewed: (...args: unknown[]) => markViewedMock(...args),
       },
     })
@@ -145,6 +148,7 @@ beforeEach(() => {
   getByIdMock.mockClear();
   acceptMock.mockClear();
   withdrawMock.mockClear();
+  declineMock.mockClear();
   markViewedMock.mockClear();
 });
 
@@ -218,6 +222,14 @@ describe('termsProposalItemRoutes — withdraw and viewed', () => {
     const res = await fetch(`${item()}/viewed`, { method: 'POST' });
     expect(res.status).toBe(200);
     expect(markViewedMock.mock.calls[0]).toEqual(['parent-1', PROPOSAL_ID]);
+  });
+
+  // B4 — the counterparty's refusal.
+  it('POST /:proposalId/decline resolves the row', async () => {
+    const res = await fetch(`${item()}/decline`, { method: 'POST' });
+    expect(res.status).toBe(200);
+    expect((await res.json()).data.terms_proposal.status).toBe('declined');
+    expect(declineMock.mock.calls[0]).toEqual(['parent-1', PROPOSAL_ID]);
   });
 
   it('there is no PATCH and no DELETE — the table is append-only', async () => {

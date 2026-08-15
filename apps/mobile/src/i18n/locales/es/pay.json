@@ -17,6 +17,7 @@
   "noArrangementTitle": "Aún no hay condiciones de pago",
   "noArrangementDescription": "Establece una tarifa por hora y Steadily podrá totalizar la semana para ambos.",
   "setPayTermsAction": "Establecer condiciones de pago",
+  "reviewProposedTermsAction": "Revisar condiciones propuestas",
   "terms": {
     "overtimeLabel": "Horas extra",
     "overtimeValue": "Después de {{hours}}h, a {{multiplier}}×",
@@ -310,12 +311,14 @@
     "suggestChangeButton": "Sugerir un cambio",
     "sendFailed": "No se pudo enviar. Comprueba tu conexión e inténtalo de nuevo.",
     "withdrawButton": "Retirar",
+    "declineButton": "Rechazar",
     "openRowTitle": "Condiciones propuestas por {{name}}",
     "state": {
       "proposed": "Propuesto el {{date}}",
       "countered": "Contrapropuesto el {{date}}",
       "agreedWith": "Acordado con {{name}} el {{date}}",
       "withdrawn": "Retirado el {{date}}",
+      "declinedBy": "Rechazado por {{name}} · {{date}}",
       "proposedBy": "Propuesto por {{name}} · {{date}}",
       "counteredBy": "Contrapropuesto por {{name}} · {{date}}"
     },
@@ -329,6 +332,12 @@
       "cancel": "Cancelar",
       "offline": "Necesitas conexión para enviar esto.",
       "failed": "No se pudo enviar. Comprueba tu conexión e inténtalo de nuevo."
+    },
+    "decline": {
+      "title": "¿Rechazar estas condiciones?",
+      "body": "Se les avisará de que estas condiciones fueron rechazadas. Cualquiera de las partes puede iniciar una nueva ronda en cualquier momento.",
+      "cancel": "Cancelar",
+      "confirm": "Rechazar"
     }
   }
 }

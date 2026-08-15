@@ -178,12 +178,20 @@ export const NOTIFICATION_ROUTE_MAP: NotificationRouteMap &
   [PUSH_NOTIFICATION_TYPES.TERMS_PROPOSAL_RECEIVED]: proposalReviewHref,
   [PUSH_NOTIFICATION_TYPES.TERMS_PROPOSAL_COUNTERED]: proposalReviewHref,
   [PUSH_NOTIFICATION_TYPES.TERMS_PROPOSAL_WITHDRAWN]: proposalReviewHref,
+  // B4 — like WITHDRAWN, the record is worth seeing: the review screen still
+  // renders the `declined` pill in history.
+  [PUSH_NOTIFICATION_TYPES.TERMS_PROPOSAL_DECLINED]: proposalReviewHref,
   // N15 is the one that is NOT a pending decision: once terms are agreed
   // there is nothing to review, and the arrangement on her My pay screen is
   // now the fact. Same static destination as PAY_TERMS_SET, for the same
   // reason — that screen fetches every household she belongs to itself.
   [PUSH_NOTIFICATION_TYPES.TERMS_PROPOSAL_ACCEPTED]: () =>
     '/(private)/settings/my-pay',
+  // Part 2 (B4 follow-on) — the parent-audience twin. Same "nothing left to
+  // review" shape as TERMS_PROPOSAL_ACCEPTED, but for the family: the
+  // household pay hub, same destination as PAY_TERMS_DISAGREED.
+  [PUSH_NOTIFICATION_TYPES.TERMS_OFFER_ACCEPTED]: () =>
+    '/(private)/settings/pay',
 
   // A carer cancelled time off a parent had already marked paid;
   // `ptoCommandService.reconcileCancelledTimeOff` notifies that household's

@@ -415,6 +415,36 @@ describe('runNoShowDigestJob — delivery + idempotency', () => {
     expect(result.digest.skipped).toBe(1);
     expect(log.claim).not.toHaveBeenCalled();
   });
+
+  it('defers the digest when quiet hours refuse delivery — the claim is not burned', async () => {
+    const { log, claims } = statefulLog();
+    const sent: Array<{ userId: string; payload: PushPayload }> = [];
+    const push: ReminderPushService = {
+      canDeliver: mock(async () => false),
+      notifyUser: mock(async (userId, payload) => {
+        sent.push({ userId, payload });
+        return { sent: 1 };
+      }),
+      notifyHouseholdParents: mock(async () => {}),
+    };
+
+    const result = await runNoShowDigestJob(
+      candidatesFake([shift()]),
+      entries(),
+      noneAlerted(),
+      log,
+      parentsAre(PARENT_ID),
+      push,
+      { now: () => HOUR_07 },
+      noneDisputed()
+    );
+
+    expect(sent).toHaveLength(0);
+    expect(claims.size).toBe(0);
+    expect(log.claim).not.toHaveBeenCalled();
+    expect(result.digest.sent).toBe(0);
+    expect(result.digest.skipped).toBe(1);
+  });
 });
 
 describe('runNoShowDigestJob — failure isolation', () => {

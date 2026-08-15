@@ -22,6 +22,7 @@ function pendingInvite(
     link_expires_at: null,
     opened_at: null,
     label: null,
+    pay_offer: null,
     created_at: 't',
     updated_at: 't',
     ...overrides,

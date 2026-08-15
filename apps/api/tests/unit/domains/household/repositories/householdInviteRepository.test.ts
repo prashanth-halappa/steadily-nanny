@@ -20,6 +20,7 @@ let lastChain: any;
 function createFakeQuery(rows: FakeRow[], error: unknown = null): any {
   const eqFilters: [string, unknown][] = [];
   let updatePatch: Record<string, unknown> | null = null;
+  let insertedRow: Record<string, unknown> | null = null;
 
   const matches = (row: FakeRow): boolean =>
     eqFilters.every(([key, value]) => row[key] === value);
@@ -33,6 +34,18 @@ function createFakeQuery(rows: FakeRow[], error: unknown = null): any {
     update: mock((patch: Record<string, unknown>) => {
       updatePatch = patch;
       return chain;
+    }),
+    // `create` is inherited from `BaseRepository`, which hands the whole
+    // object to `.insert()` and reads the row back through `.single()`. The
+    // echo below is what makes a round-trip assertion mean something: a
+    // column dropped on the way in is a column missing on the way out.
+    insert: mock((row: Record<string, unknown>) => {
+      insertedRow = row;
+      return chain;
+    }),
+    single: mock(async () => {
+      if (error) return { data: null, error };
+      return { data: { id: 'i-new', ...insertedRow }, error: null };
     }),
     maybeSingle: mock(async () => {
       if (error) return { data: null, error };
@@ -239,5 +252,56 @@ describe('HouseholdInviteRepository.releaseClaim', () => {
     await expect(repo.releaseClaim('i1', 'u2')).rejects.toThrow(
       'Failed to release invite claim'
     );
+  });
+});
+
+/**
+ * P8 — the parent's pay offer (098) rides the invite row itself. `create` is
+ * inherited from `BaseRepository` and every read here selects `*`, so the
+ * column travels for free TODAY. This test exists to keep it that way: the
+ * failure mode it guards is somebody later narrowing the insert to a field
+ * list or the select to named columns, at which point the offer silently
+ * stops reaching redemption and a nanny joins to no proposal, with nothing
+ * else in the suite going red.
+ */
+describe('HouseholdInviteRepository — the pay offer (P8)', () => {
+  const offer = { rate_minor: 2800, valid_from: '2026-09-01' };
+
+  it('round-trips pay_offer through create', async () => {
+    withRows([]);
+    const repo = new HouseholdInviteRepository();
+    const created = await repo.create({
+      household_id: 'h1',
+      code: 'ABC-234',
+      role: 'nanny',
+      invited_by: 'u1',
+      pay_offer: offer,
+    });
+
+    expect(lastChain.insert).toHaveBeenCalledWith(
+      expect.objectContaining({ pay_offer: offer })
+    );
+    expect(created.pay_offer).toEqual(offer);
+  });
+
+  it('writes an explicit null when there is no offer — absent is not "unset"', async () => {
+    withRows([]);
+    const repo = new HouseholdInviteRepository();
+    const created = await repo.create({
+      household_id: 'h1',
+      code: 'ABC-234',
+      role: 'parent',
+      invited_by: 'u1',
+      pay_offer: null,
+    });
+
+    expect(created.pay_offer).toBeNull();
+  });
+
+  it('reads the offer back off a stored row', async () => {
+    withRows([invite({ pay_offer: offer })]);
+    const repo = new HouseholdInviteRepository();
+    const found = await repo.findByCode('ABC-234');
+    expect(found?.pay_offer).toEqual(offer);
   });
 });

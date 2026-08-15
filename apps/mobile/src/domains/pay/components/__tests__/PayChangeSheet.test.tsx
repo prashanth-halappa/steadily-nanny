@@ -12,12 +12,17 @@
  * all, which is the point of §4.2.
  */
 import { beforeEach, describe, expect, it, mock } from 'bun:test';
-import type { PayArrangement } from '@steadily-nanny/shared-types/schemas/payArrangement.schema';
+import type {
+  CreatePayArrangementRequest,
+  PayArrangement,
+} from '@steadily-nanny/shared-types/schemas/payArrangement.schema';
 import { fireEvent, render } from '@testing-library/react-native';
 import type * as React from 'react';
+import enHousehold from '@/src/i18n/locales/en/household.json';
 import enPay from '@/src/i18n/locales/en/pay.json';
 import esPay from '@/src/i18n/locales/es/pay.json';
 import { useAuthStore } from '@/src/store/auth';
+import { offerRequestToArrangementStub } from '../../utils/payArrangementForm';
 import { PayChangeSheet } from '../PayChangeSheet';
 
 mock.module('@/lib/animations/useReducedMotion', () => ({
@@ -988,5 +993,94 @@ describe('PayChangeSheet', () => {
         'AUD'
       );
     });
+  });
+});
+
+// P8 (mobile half) — the invite offer card opens THIS sheet in a third mode:
+// the first statement of terms for a person who has not been hired yet, so
+// there is no counterparty name, no "suggest a change" framing, and (since
+// there is no currentArrangement to diff against) no §7.3 consequence card.
+describe('PayChangeSheet mode="offer"', () => {
+  it('titles itself from the household offer copy, with no counterparty subtitle', () => {
+    // The test i18n setup echoes t() keys rather than resolving locale
+    // strings (see other test files' notes on this) — assert the KEY, not
+    // the English string, and confirm it's the household-namespace key
+    // (not pay.json's `changeSheet.title`/`proposeSheet.title`).
+    const { getByText, queryByTestId } = renderSheet({
+      mode: 'offer',
+      currentArrangement: undefined,
+      defaultCurrency: 'USD',
+    });
+
+    expect(getByText('invite.offer.sheetTitle')).toBeTruthy();
+    expect(enHousehold.invite.offer.sheetTitle).toBeTruthy();
+    expect(queryByTestId('pay-offer-subtitle')).toBeNull();
+    expect(queryByTestId('pay-propose-subtitle')).toBeNull();
+  });
+
+  it('never renders the change-sheet consequence card, even mid-week with a rate typed', () => {
+    const { getByTestId, queryByTestId } = renderSheet({
+      mode: 'offer',
+      currentArrangement: undefined,
+      defaultCurrency: 'USD',
+    });
+
+    fireEvent.changeText(getByTestId('pay-offer-rate-input'), '19.50');
+    expect(queryByTestId('pay-offer-consequence-card')).toBeNull();
+  });
+
+  it('with no prior offer, seeds a BLANK form from the given default currency and today', () => {
+    const { getByTestId } = renderSheet({
+      mode: 'offer',
+      currentArrangement: undefined,
+      defaultCurrency: 'EUR',
+    });
+
+    expect(getByTestId('pay-offer-date-input').props.value).toBe(TODAY_ISO);
+    expect(getByTestId('pay-offer-currency-prefix').props.children).toBe('€');
+    expect(getByTestId('pay-offer-rate-input').props.value).toBe('');
+  });
+
+  it('submits a valid offer request', () => {
+    const { getByTestId, onSubmit } = renderSheet({
+      mode: 'offer',
+      currentArrangement: undefined,
+      defaultCurrency: 'USD',
+    });
+
+    fireEvent.changeText(getByTestId('pay-offer-rate-input'), '20.00');
+    fireEvent.press(getByTestId('pay-offer-cancellation-chip-none'));
+    fireEvent.press(getByTestId('pay-offer-submit'));
+
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ rate_minor: 2000, valid_from: TODAY_ISO })
+    );
+  });
+
+  // Editing an already-drafted offer (ManageInviteScreen) round-trips through
+  // `offerRequestToArrangementStub` — the same "no real arrangement yet, need
+  // something to seed a form from" trick `proposalTermsToArrangement` uses
+  // for a nanny's own draft, independently copied since an invite offer has
+  // no carer/proposal id to hand it.
+  it('editing an existing offer round-trips: seeds the form from the prior request', () => {
+    const priorOffer: CreatePayArrangementRequest = {
+      rate_minor: 1800,
+      currency: 'GBP',
+      overtime_multiplier: 1.5,
+      valid_from: '2026-08-10',
+    };
+    const { getByTestId } = renderSheet({
+      mode: 'offer',
+      currentArrangement: offerRequestToArrangementStub(priorOffer, 'GBP'),
+      defaultCurrency: 'GBP',
+      // `seedPayTermsFormState` seeds the DATE from `initialEffectiveDateISO`
+      // (a "change" proposes a NEW date, never redisplays the old one) — the
+      // caller re-opening a prior offer for editing supplies its `valid_from`
+      // explicitly, same as `ProposalReviewScreen` pre-filling a countered date.
+      initialEffectiveDateISO: priorOffer.valid_from,
+    });
+
+    expect(getByTestId('pay-offer-rate-input').props.value).toBe('18.00');
+    expect(getByTestId('pay-offer-date-input').props.value).toBe('2026-08-10');
   });
 });

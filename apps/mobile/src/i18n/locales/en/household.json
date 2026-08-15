@@ -74,6 +74,15 @@
       }
     },
     "codeMeta": "{{role}} invite · expires {{date}}",
+    "offer": {
+      "addButton": "Add a pay offer",
+      "editButton": "Edit offer",
+      "summary": "{{rate}} · starts {{date}}",
+      "draftState": "Draft offer · nobody has seen this yet",
+      "sheetTitle": "Offer pay terms",
+      "submitButton": "Save offer",
+      "editReplacesCode": "Changing this replaces the invite code — you'll need to share the new one."
+    },
     "absorb": {
       "title": "Add {{name}} to your family?",
       "body": "{{name}} has proposed terms — you'll review them next. They join {{household}} once you agree, and they can't see your family's schedule or details until then. Nothing changes for anyone already in your family.",

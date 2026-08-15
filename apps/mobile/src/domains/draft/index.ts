@@ -3,6 +3,7 @@ export { DraftHomeScreen } from './components/DraftHomeScreen';
 export { InviteRow } from './components/InviteRow';
 export type { JoinedComposition } from './components/JoinedHouseholdCard';
 export { JoinedHouseholdCard } from './components/JoinedHouseholdCard';
+export { SendMyTermsCard } from './components/SendMyTermsCard';
 export { ShareTermsSheet } from './components/ShareTermsSheet';
 export {
   useArchiveDraft,

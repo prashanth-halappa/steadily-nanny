@@ -32,8 +32,15 @@ mock.module('@/src/components/ui/empty-state', () => {
   const React = require('react');
   return { EmptyState: () => React.createElement('View') };
 });
+mock.module('expo-router', () => ({
+  useRouter: () => ({ push: mock(), back: mock() }),
+}));
 mock.module('@/src/domains/household', () => ({
   HouseholdSwitcher: () => null,
+}));
+mock.module('@/src/domains/draft', () => ({
+  JoinedHouseholdCard: () => null,
+  SendMyTermsCard: () => null,
 }));
 mock.module('@/src/domains/schedule', () => ({
   PendingScheduleCard: () => null,
@@ -123,6 +130,21 @@ beforeAll(async () => {
   }));
   mock.module('@/src/hooks/queries/useChildren', () => ({
     useChildren: () => ({ data: [], isLoading: false }),
+  }));
+  mock.module('@/src/hooks/queries/useHouseholdMembers', () => ({
+    useHouseholdMembers: () => ({ data: [], isLoading: false }),
+  }));
+  mock.module('@/src/store/auth', () => ({
+    useAuthStore: (selector: (s: unknown) => unknown) =>
+      selector({ session: { user: { id: 't1-user-1' } } }),
+  }));
+  mock.module('@/src/store/todayCardDismissalStore', () => ({
+    useTodayCardDismissalStore: (
+      selector: (s: {
+        isDismissed: () => boolean;
+        dismiss: () => void;
+      }) => unknown
+    ) => selector({ isDismissed: () => false, dismiss: () => {} }),
   }));
 
   const mod = await import('../components/TodayScreen');

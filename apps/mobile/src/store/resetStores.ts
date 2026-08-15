@@ -12,10 +12,12 @@
 import { useActiveHouseholdStore } from './activeHousehold';
 import { useNotificationStore } from './notificationStore';
 import { useSetupProgressStore } from './setupProgress';
+import { useTodayCardDismissalStore } from './todayCardDismissalStore';
 
 /** Reset every user-scoped store to its initial state. */
 export const resetUserScopedStores = (): void => {
   useSetupProgressStore.getState().reset();
   useNotificationStore.getState().reset();
   useActiveHouseholdStore.getState().reset();
+  useTodayCardDismissalStore.getState().reset();
 };

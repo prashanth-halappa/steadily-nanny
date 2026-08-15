@@ -13,21 +13,40 @@
  * Reuses `InviteCodeCard` for the code/retry display so both screens render
  * identical UI once a code exists. `SetupScreenShell`'s CTA goes back to
  * wherever the parent came from (no progress bar, no "next step").
+ *
+ * P8: also lets a parent see and change the pay OFFER on a nanny invite —
+ * before minting (a local draft, same as InviteScreen) and after minting, on
+ * the invite this session just created. There is no PATCH for `pay_offer`
+ * (`UpdateHouseholdInviteSchema` only allows `status: 'revoked'`), so
+ * changing an already-minted offer is a revoke-then-recreate: the invite's
+ * CODE changes as a side effect, since a new invite always mints a new one.
  */
 import type { HouseholdInviteRole } from '@steadily-nanny/shared-types/schemas/household.schema';
 import { HOUSEHOLD_INVITE_ROLES } from '@steadily-nanny/shared-types/schemas/household.schema';
+import type { CreatePayArrangementRequest } from '@steadily-nanny/shared-types/schemas/payArrangement.schema';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Share, View } from 'react-native';
 import { Button } from '@/src/components/ui/button';
+import { Card } from '@/src/components/ui/card';
 import { Text } from '@/src/components/ui/text';
+import { Body, Small } from '@/src/components/ui/typography';
+import { PayChangeSheet } from '@/src/domains/pay/components/PayChangeSheet';
+import {
+  formatDisplayDateWithYear,
+  offerRequestToArrangementStub,
+} from '@/src/domains/pay/utils/payArrangementForm';
 import { InviteCodeCard } from '@/src/domains/setup/components/InviteCodeCard';
 import { InviteRolePicker } from '@/src/domains/setup/components/InviteRolePicker';
 import { SetupScreenShell } from '@/src/domains/setup/components/SetupScreenShell';
 import { useCreateInvite } from '@/src/hooks/mutations/useCreateInvite';
 import { useRevokeInvite } from '@/src/hooks/mutations/useRevokeInvite';
+import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
+import { getDeviceCurrency } from '@/src/lib/deviceLocale';
+import { localDateInZone } from '@/src/lib/localDate';
+import { formatRate } from '@/src/lib/money';
 
 export function ManageInviteScreen() {
   const router = useRouter();
@@ -43,12 +62,28 @@ export function ManageInviteScreen() {
     HOUSEHOLD_INVITE_ROLES.NANNY
   );
 
+  // P8's offer card — same shape as InviteScreen's pre-mint draft, PLUS
+  // (below) the post-mint edit path this screen alone offers.
+  const { household } = useActiveHousehold();
+  const currency = household?.currency ?? getDeviceCurrency();
+  const timezone = household?.timezone ?? 'UTC';
+  const todayISO = localDateInZone(timezone);
+  const [payOffer, setPayOffer] = useState<CreatePayArrangementRequest | null>(
+    null
+  );
+  const [offerSheetVisible, setOfferSheetVisible] = useState(false);
+
   const invite = createInvite.data ?? null;
   const code = invite?.code ?? null;
+  const isReplacingOffer = revokeInvite.isPending || createInvite.isPending;
 
   const onGenerate = () => {
     setHasStarted(true);
-    createInvite.mutate({ role: selectedRole });
+    createInvite.mutate(
+      selectedRole === HOUSEHOLD_INVITE_ROLES.NANNY && payOffer
+        ? { role: selectedRole, pay_offer: payOffer }
+        : { role: selectedRole }
+    );
   };
 
   const onShare = () => {
@@ -68,6 +103,83 @@ export function ManageInviteScreen() {
       },
     });
   };
+
+  // No PATCH exists for `pay_offer` — revoke the pending invite, then mint a
+  // fresh one carrying the new offer. `hasStarted` stays true throughout:
+  // this replaces the code InviteCodeCard shows, it doesn't return to the
+  // role picker.
+  const onSubmitOffer = (request: CreatePayArrangementRequest) => {
+    if (hasStarted && invite) {
+      revokeInvite.mutate(invite.id, {
+        onSuccess: () => {
+          createInvite.mutate(
+            { role: invite.role, pay_offer: request },
+            { onSuccess: () => setOfferSheetVisible(false) }
+          );
+        },
+      });
+      return;
+    }
+    setPayOffer(request);
+    setOfferSheetVisible(false);
+  };
+
+  // Which offer the sheet is editing: the not-yet-minted draft, or the
+  // already-minted invite's offer once a code exists.
+  const offerForEdit = hasStarted ? (invite?.pay_offer ?? null) : payOffer;
+
+  const offerCard = (
+    <Card testID="invite-offer-card" className="gap-3 p-4">
+      {offerForEdit ? (
+        <View className="gap-1">
+          <Body testID="invite-offer-summary">
+            {t('invite.offer.summary', {
+              rate: formatRate(
+                offerForEdit.rate_minor,
+                offerForEdit.currency ?? currency
+              ),
+              date: formatDisplayDateWithYear(offerForEdit.valid_from),
+            })}
+          </Body>
+          <Small
+            testID="invite-offer-draft-state"
+            className="text-muted-foreground"
+          >
+            {t('invite.offer.draftState')}
+          </Small>
+          {/* Only once a code exists: there is no PATCH for `pay_offer`, so
+              editing revokes this invite and mints a new one. A parent who
+              has already texted the old code would otherwise find it dead
+              with nothing on screen having said so. */}
+          {hasStarted && invite ? (
+            <Small
+              testID="invite-offer-edit-replaces-code"
+              className="text-muted-foreground"
+            >
+              {t('invite.offer.editReplacesCode')}
+            </Small>
+          ) : null}
+          <Button
+            testID="invite-offer-edit-button"
+            variant="outline"
+            disabled={isReplacingOffer}
+            onPress={() => setOfferSheetVisible(true)}
+          >
+            <Text>{t('invite.offer.editButton')}</Text>
+          </Button>
+        </View>
+      ) : (
+        <Button
+          testID="invite-offer-add-button"
+          variant="outline"
+          disabled={isReplacingOffer}
+          onPress={() => setOfferSheetVisible(true)}
+        >
+          <Text>{t('invite.offer.addButton')}</Text>
+        </Button>
+      )}
+    </Card>
+  );
 
   return (
     <SetupScreenShell
@@ -98,6 +210,10 @@ export function ManageInviteScreen() {
           >
             <Text>{t('invite.shareButton')}</Text>
           </Button>
+          {/* P8: only a NANNY invite has anyone to price. */}
+          {invite && invite.role === HOUSEHOLD_INVITE_ROLES.NANNY
+            ? offerCard
+            : null}
         </View>
       ) : (
         <>
@@ -105,6 +221,9 @@ export function ManageInviteScreen() {
             selected={selectedRole}
             onSelect={setSelectedRole}
           />
+          {/* No Skip control — absence of a drafted offer already reads as
+              "no offer" (see InviteScreen). */}
+          {selectedRole === HOUSEHOLD_INVITE_ROLES.NANNY ? offerCard : null}
           <Button
             testID="invite-generate-button"
             onPress={onGenerate}
@@ -114,6 +233,27 @@ export function ManageInviteScreen() {
           </Button>
         </>
       )}
+
+      <PayChangeSheet
+        mode="offer"
+        visible={offerSheetVisible}
+        onDismiss={() => setOfferSheetVisible(false)}
+        onSubmit={onSubmitOffer}
+        isSubmitting={isReplacingOffer}
+        currentArrangement={
+          offerForEdit
+            ? offerRequestToArrangementStub(offerForEdit, currency)
+            : undefined
+        }
+        defaultCurrency={currency}
+        initialEffectiveDateISO={offerForEdit?.valid_from}
+        householdCancellationDefaultHours={
+          household?.cancellation_paid_within_hours ?? 0
+        }
+        todayISO={todayISO}
+        householdTimezone={timezone}
+        householdWeekStartsOn={household?.week_starts_on ?? 0}
+      />
     </SetupScreenShell>
   );
 }

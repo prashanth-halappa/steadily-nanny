@@ -17,6 +17,7 @@
   "noArrangementTitle": "No pay terms set yet",
   "noArrangementDescription": "Set an hourly rate and Steadily can total the week for both of you.",
   "setPayTermsAction": "Set pay terms",
+  "reviewProposedTermsAction": "Review proposed terms",
   "terms": {
     "overtimeLabel": "Overtime",
     "overtimeValue": "After {{hours}}h, at {{multiplier}}×",
@@ -310,12 +311,14 @@
     "suggestChangeButton": "Suggest a change",
     "sendFailed": "That didn't send. Check your connection and try again.",
     "withdrawButton": "Withdraw",
+    "declineButton": "Decline",
     "openRowTitle": "Proposed terms from {{name}}",
     "state": {
       "proposed": "Proposed {{date}}",
       "countered": "Countered {{date}}",
       "agreedWith": "Agreed with {{name}} on {{date}}",
       "withdrawn": "Withdrawn {{date}}",
+      "declinedBy": "Declined by {{name}} · {{date}}",
       "proposedBy": "Proposed by {{name}} · {{date}}",
       "counteredBy": "Countered by {{name}} · {{date}}"
     },
@@ -329,6 +332,12 @@
       "cancel": "Cancel",
       "offline": "You'll need a connection to send this.",
       "failed": "That didn't send. Check your connection and try again."
+    },
+    "decline": {
+      "title": "Decline these terms?",
+      "body": "They'll be told these terms were declined. Either side can start a new round any time.",
+      "cancel": "Cancel",
+      "confirm": "Decline"
     }
   }
 }

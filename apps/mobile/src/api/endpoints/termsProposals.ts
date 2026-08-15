@@ -56,6 +56,8 @@ export const termsProposalEndpoints = {
   accept: (proposalId: string) => `/v1/terms-proposals/${proposalId}/accept`,
   withdraw: (proposalId: string) =>
     `/v1/terms-proposals/${proposalId}/withdraw`,
+  // B4 — the counterparty's refusal, distinct from withdraw.
+  decline: (proposalId: string) => `/v1/terms-proposals/${proposalId}/decline`,
   viewed: (proposalId: string) => `/v1/terms-proposals/${proposalId}/viewed`,
 } as const;
 
@@ -186,6 +188,21 @@ export const termsProposalApi = {
   withdraw: async (proposalId: string): Promise<TermsProposal> => {
     const response = await apiClient.post(
       termsProposalEndpoints.withdraw(proposalId)
+    );
+    const parsed = TermsProposalResponseSchema.safeParse(response.data.data);
+    if (!parsed.success) throw parsed.error;
+    return parsed.data.terms_proposal;
+  },
+
+  /**
+   * B4 — the COUNTERPARTY's refusal. NOT a delete and NOT `withdraw`: the
+   * row goes `declined` and stays in the chain, and `declined` is a distinct
+   * fact from `withdrawn` (the author's own exit) — see the shared schema's
+   * header.
+   */
+  decline: async (proposalId: string): Promise<TermsProposal> => {
+    const response = await apiClient.post(
+      termsProposalEndpoints.decline(proposalId)
     );
     const parsed = TermsProposalResponseSchema.safeParse(response.data.data);
     if (!parsed.success) throw parsed.error;

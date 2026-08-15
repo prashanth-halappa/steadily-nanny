@@ -49,7 +49,11 @@ describe('InviteScreen (wizard)', () => {
   it('shows a role picker and passes the selected role to createInvite', () => {
     expect(source).toContain('InviteRolePicker');
     expect(source).toContain('selectedRole');
-    expect(source).toContain('createInvite.mutate({ role: selectedRole })');
+    // P8 widened this call to optionally carry a drafted `pay_offer`, so the
+    // exact literal call is no longer a single fixed string — the role still
+    // reaches the mutate call (`{ role: selectedRole }`, the no-offer arm)
+    // and the "pay offer card" describe block below covers the offer arm.
+    expect(source).toContain('{ role: selectedRole }');
   });
 
   it('mints the code from an explicit tap, the same shape as ManageInviteScreen', () => {
@@ -85,5 +89,42 @@ describe('InviteScreen (wizard)', () => {
     // left showing a stuck spinner instead of returning to the role picker.
     expect(source).toContain('createInvite.reset()');
     expect(source).toContain('setHasStarted(false)');
+  });
+
+  // P8 (mobile half): a parent may record a pay OFFER while inviting a nanny.
+  // The offer rides the invite code itself — there is no carer yet to hang a
+  // real arrangement on — so it must reach the server in the SAME
+  // createInvite call that mints the code, never a second request.
+  describe('pay offer card (P8)', () => {
+    it('renders the offer card only when the selected role is nanny', () => {
+      expect(source).toContain('selectedRole === HOUSEHOLD_INVITE_ROLES.NANNY');
+      expect(source).toContain('invite-offer-card');
+    });
+
+    it('attaches the drafted offer to the SAME mutate call that mints the code', () => {
+      expect(source).toContain('pay_offer: payOffer');
+      // Still exactly one mutate call — the offer is an argument to it, not a
+      // second request.
+      expect(source.match(/createInvite\.mutate\(/g)?.length).toBe(1);
+    });
+
+    it('sends no pay_offer key at all when nothing was drafted', () => {
+      expect(source).toContain('{ role: selectedRole }');
+    });
+
+    it('has no Skip control — absence of a drafted offer already means "no offer"', () => {
+      expect(body).not.toContain('invite-offer-skip');
+      expect(body).not.toContain('SkipButton');
+    });
+
+    it('shows the draft state line and never a weekly total', () => {
+      expect(source).toContain("t('invite.offer.draftState')");
+      expect(body).not.toContain('weekly_equivalent_minor');
+    });
+
+    it('opens PayChangeSheet in offer mode', () => {
+      expect(source).toContain('PayChangeSheet');
+      expect(source).toContain('mode="offer"');
+    });
   });
 });

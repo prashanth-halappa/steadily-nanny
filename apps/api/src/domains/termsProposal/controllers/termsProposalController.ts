@@ -178,6 +178,26 @@ export class TermsProposalController {
   }
 
   /**
+   * POST /terms-proposals/:proposalId/decline — B4, the counterparty's
+   * refusal. Distinct from `withdraw`: the AUTHOR pulls her own round, the
+   * COUNTERPARTY declines someone else's.
+   */
+  static async decline(req: Request, res: Response, next: NextFunction) {
+    try {
+      const proposalId = req.params.proposalId as string;
+      const declined = await termsProposalCommandService.decline(
+        getAuthUserId(req),
+        proposalId
+      );
+      return sendSuccessResponse(res, 'Terms proposal declined', {
+        terms_proposal: withWeeklyEquivalent(declined),
+      });
+    } catch (error) {
+      return next(error);
+    }
+  }
+
+  /**
    * POST /terms-proposals/:proposalId/viewed — §5.3's receipt.
    *
    * A POST rather than a side effect of `getById`: that read is also what the

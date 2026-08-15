@@ -43,6 +43,7 @@ import { SETUP_ROLES } from '@/src/domains/setup/types';
 import { DEFAULT_WEEK_STARTS_ON } from '@/src/domains/timesheet/utils/week';
 import { useAcceptTerms } from '@/src/hooks/mutations/useAcceptTerms';
 import { useCounterTerms } from '@/src/hooks/mutations/useCounterTerms';
+import { useDeclineTerms } from '@/src/hooks/mutations/useDeclineTerms';
 import { useMarkProposalViewed } from '@/src/hooks/mutations/useMarkProposalViewed';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
@@ -59,6 +60,7 @@ import {
 } from '../utils/proposalTerms';
 import { AcceptTermsSheet } from './AcceptTermsSheet';
 import { BackRow } from './BackRow';
+import { DeclineTermsDialog } from './DeclineTermsDialog';
 import { PayChangeSheet } from './PayChangeSheet';
 import { ProposalTermsDocument } from './ProposalTermsDocument';
 
@@ -104,9 +106,11 @@ export function ProposalReviewScreen() {
     data?.carer_id ?? ''
   );
   const markViewed = useMarkProposalViewed(proposalId);
+  const decline = useDeclineTerms(proposalId);
 
   const [acceptOpen, setAcceptOpen] = useState(false);
   const [counterOpen, setCounterOpen] = useState(false);
+  const [declineOpen, setDeclineOpen] = useState(false);
   const openedAt = useRef(Date.now());
 
   const household = activeHousehold.household;
@@ -206,6 +210,19 @@ export function ProposalReviewScreen() {
       .catch(() => undefined);
   };
 
+  // B4 — the counterparty's refusal. `useDeclineTerms` already reports a
+  // failure via its own toast (same shape as `useWithdrawTerms`), so there is
+  // nothing further to render here on catch.
+  const handleDecline = () => {
+    decline
+      .mutateAsync()
+      .then(() => {
+        setDeclineOpen(false);
+        router.back();
+      })
+      .catch(() => undefined);
+  };
+
   return (
     <ScrollView
       testID="proposal-review-screen"
@@ -251,6 +268,15 @@ export function ProposalReviewScreen() {
               {t('proposal.counterButton')}
             </Text>
           </Button>
+          <Button
+            testID="proposal-decline-button"
+            variant="ghost"
+            onPress={() => setDeclineOpen(true)}
+          >
+            <Text className="text-foreground">
+              {t('proposal.declineButton')}
+            </Text>
+          </Button>
         </View>
       ) : null}
 
@@ -263,6 +289,13 @@ export function ProposalReviewScreen() {
         isOnline={isOnline}
         onAgree={handleAgree}
         onDismiss={() => setAcceptOpen(false)}
+      />
+
+      <DeclineTermsDialog
+        open={declineOpen}
+        onOpenChange={setDeclineOpen}
+        onConfirm={handleDecline}
+        isSubmitting={decline.isPending}
       />
 
       {/* 3-U1's form, pre-filled from the proposal. D-16 is live server-side,

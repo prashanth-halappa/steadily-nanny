@@ -14,6 +14,7 @@ import {
   MemberHasRunningEntryError,
   MemberNotFoundError,
   NotAHouseholdParentError,
+  PayOfferNotForRoleError,
   WeekStartLockedError,
 } from '../../../../../src/domains/household/errors/householdErrors';
 import { HouseholdCommandService } from '../../../../../src/domains/household/services/householdCommandService';
@@ -22,6 +23,10 @@ import type {
   HouseholdInvite,
   HouseholdMember,
 } from '../../../../../src/domains/household/types';
+import {
+  OpenTermsProposalExistsError,
+  TermsProposalValidationError,
+} from '../../../../../src/domains/termsProposal/errors/termsProposalErrors';
 import { DatabaseError } from '../../../../../src/errors';
 
 const household: Household = {
@@ -77,6 +82,7 @@ function pendingInvite(
     link_expires_at: null,
     opened_at: null,
     label: null,
+    pay_offer: null,
     created_at: 't',
     updated_at: 't',
     ...overrides,
@@ -2012,5 +2018,385 @@ describe('HouseholdCommandService.leave', () => {
 
     await expect(svc.leave('u1', 'h1', AT_NOON_UTC)).rejects.toThrow('boom');
     expect(memberRepo.removeMembership).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * P8 — the parent's pay OFFER, written before he has a nanny to hang it on.
+ *
+ * Two refusals are worth their tests here. A non-nanny invite carrying terms
+ * is a client bug that would store a rate nobody will ever be shown (pay is
+ * per-carer, D-21), and an offer whose `valid_from` is already impossible is
+ * one the promotion would have to drop on redemption — better refused at the
+ * keyboard, where he can fix it, than silently dropped a month later.
+ */
+describe('HouseholdCommandService.createInvite — the pay offer (P8)', () => {
+  // Shaped as the wire hands it over: `CreatePayArrangementRequestSchema`
+  // defaults `overtime_multiplier`, so a parsed offer always carries one.
+  const offer = {
+    rate_minor: 2800,
+    overtime_multiplier: 1.5,
+    valid_from: '2026-09-01',
+  };
+
+  function makeSvc(inviteRepo: any, role: HouseholdMember['role'] = 'owner') {
+    return new HouseholdCommandService(
+      makeHouseholdRepo(),
+      makeMemberRepo(),
+      inviteRepo,
+      makeQueries(role),
+      stubUsers
+    );
+  }
+
+  it('stores the offer on a nanny invite', async () => {
+    const inviteRepo = makeInviteRepo({ findByCode: mock(async () => null) });
+    await makeSvc(inviteRepo).createInvite(
+      'u1',
+      'h1',
+      { role: 'nanny', pay_offer: offer },
+      AT_NOON_UTC
+    );
+
+    expect(inviteRepo.create).toHaveBeenCalledWith(
+      expect.objectContaining({ role: 'nanny', pay_offer: offer })
+    );
+  });
+
+  it('writes an explicit null when no offer was given', async () => {
+    const inviteRepo = makeInviteRepo({ findByCode: mock(async () => null) });
+    await makeSvc(inviteRepo).createInvite('u1', 'h1', { role: 'nanny' });
+
+    expect(inviteRepo.create).toHaveBeenCalledWith(
+      expect.objectContaining({ pay_offer: null })
+    );
+  });
+
+  it('refuses an offer on a parent invite — pay is per-carer (D-21)', async () => {
+    const inviteRepo = makeInviteRepo({ findByCode: mock(async () => null) });
+    await expect(
+      makeSvc(inviteRepo).createInvite('u1', 'h1', {
+        role: 'parent',
+        pay_offer: offer,
+      })
+    ).rejects.toBeInstanceOf(PayOfferNotForRoleError);
+    expect(inviteRepo.create).not.toHaveBeenCalled();
+  });
+
+  it('refuses an offer on a helper invite', async () => {
+    const inviteRepo = makeInviteRepo({ findByCode: mock(async () => null) });
+    await expect(
+      makeSvc(inviteRepo).createInvite('u1', 'h1', {
+        role: 'helper',
+        pay_offer: offer,
+      })
+    ).rejects.toBeInstanceOf(PayOfferNotForRoleError);
+  });
+
+  it('still allows a parent or helper invite with no offer', async () => {
+    const inviteRepo = makeInviteRepo({ findByCode: mock(async () => null) });
+    await makeSvc(inviteRepo).createInvite('u1', 'h1', { role: 'helper' });
+    expect(inviteRepo.create).toHaveBeenCalledTimes(1);
+  });
+
+  // D-16's horizon, measured in HOUSEHOLD-local time: the fixture household is
+  // Europe/London, so noon UTC on 1 Jul 2026 is the 1st there and the horizon
+  // lands on 1 Jul 2027 exactly.
+  it('accepts a valid_from on the last day of the 12-month horizon', async () => {
+    const inviteRepo = makeInviteRepo({ findByCode: mock(async () => null) });
+    await makeSvc(inviteRepo).createInvite(
+      'u1',
+      'h1',
+      { role: 'nanny', pay_offer: { ...offer, valid_from: '2027-07-01' } },
+      AT_NOON_UTC
+    );
+    expect(inviteRepo.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses a valid_from one day beyond the horizon', async () => {
+    const inviteRepo = makeInviteRepo({ findByCode: mock(async () => null) });
+    await expect(
+      makeSvc(inviteRepo).createInvite(
+        'u1',
+        'h1',
+        { role: 'nanny', pay_offer: { ...offer, valid_from: '2027-07-02' } },
+        AT_NOON_UTC
+      )
+    ).rejects.toBeInstanceOf(TermsProposalValidationError);
+    expect(inviteRepo.create).not.toHaveBeenCalled();
+  });
+
+  // A past start date is legitimate — 076's effective-arrangement rule reads
+  // the greatest `valid_from <= date`, and back-dating terms to the day she
+  // actually started is the ordinary case, not an error.
+  it('accepts a valid_from in the past', async () => {
+    const inviteRepo = makeInviteRepo({ findByCode: mock(async () => null) });
+    await makeSvc(inviteRepo).createInvite(
+      'u1',
+      'h1',
+      { role: 'nanny', pay_offer: { ...offer, valid_from: '2020-01-01' } },
+      AT_NOON_UTC
+    );
+    expect(inviteRepo.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses before the role gate is passed — a nanny cannot write an offer', async () => {
+    const inviteRepo = makeInviteRepo({ findByCode: mock(async () => null) });
+    await expect(
+      makeSvc(inviteRepo, 'nanny').createInvite('u1', 'h1', {
+        role: 'nanny',
+        pay_offer: offer,
+      })
+    ).rejects.toBeInstanceOf(NotAHouseholdParentError);
+  });
+});
+
+/**
+ * P8 — promoting the parent's offer on redemption.
+ *
+ * THE FAILURE POLICY IS THE POINT OF THIS BLOCK. She has already claimed the
+ * code and her membership row exists by the time promotion runs; the claim is
+ * burned and cannot be handed back. So NOTHING here may throw — a promotion
+ * that fails must cost her a proposal, never the household she legitimately
+ * joined. Every test below that ends in `.resolves` is guarding that, and a
+ * refactor that lets one of these errors escape would strand a real nanny
+ * outside a real family with a code that no longer works.
+ */
+describe('HouseholdCommandService.redeemInvite — promoting the pay offer (P8)', () => {
+  // Shaped as the wire hands it over: `CreatePayArrangementRequestSchema`
+  // defaults `overtime_multiplier`, so a parsed offer always carries one.
+  const offer = {
+    rate_minor: 2800,
+    overtime_multiplier: 1.5,
+    valid_from: '2026-09-01',
+  };
+
+  function makeProposals(overrides: Record<string, unknown> = {}): any {
+    return {
+      create: mock(async (row: Record<string, unknown>) => ({
+        id: 'p-new',
+        ...row,
+      })),
+      ...overrides,
+    };
+  }
+
+  function makeUsers(name: string | null = 'Nia'): any {
+    return {
+      ensureProfile: mock(async () => {}),
+      getProfileById: mock(async () => (name === null ? null : { name })),
+    };
+  }
+
+  function makeSvc({
+    inviteRepo = makeInviteRepo(),
+    memberRepo = makeMemberRepo(),
+    proposals = makeProposals(),
+    users = makeUsers(),
+  }: Record<string, any> = {}) {
+    return new HouseholdCommandService(
+      makeHouseholdRepo(),
+      memberRepo,
+      inviteRepo,
+      makeQueries(),
+      users,
+      makeTimeEntries(),
+      makePayArrangements(),
+      stubPtoLedger,
+      { existsForHousehold: mock(async () => false) } as any,
+      stubHolidays,
+      proposals
+    );
+  }
+
+  function offerInvite(overrides: Partial<HouseholdInvite> = {}): any {
+    return makeInviteRepo({
+      findByCode: mock(async () =>
+        pendingInvite({ role: 'nanny', pay_offer: offer, ...overrides })
+      ),
+    });
+  }
+
+  it('promotes the offer into a parent-direction proposal for the redeemer', async () => {
+    const proposals = makeProposals();
+    const svc = makeSvc({ inviteRepo: offerInvite(), proposals });
+
+    const membership = await svc.redeemInvite(
+      'u-nanny',
+      { code: 'ABC-234' },
+      AT_NOON_UTC
+    );
+
+    expect(membership.role).toBe('nanny');
+    expect(proposals.create).toHaveBeenCalledWith({
+      household_id: 'h1',
+      carer_id: 'u-nanny',
+      // The PARENT who wrote the terms, never the person who typed the code.
+      // Getting this backwards makes §10 render "Proposed by Nia" on terms
+      // she is being asked to accept.
+      proposed_by: 'u1',
+      direction: 'parent',
+      terms: offer,
+      note: null,
+      supersedes_id: null,
+      from_invite_id: 'i1',
+      carer_display_name: 'Nia',
+    });
+  });
+
+  // 092 defaults `status` to 'proposed', and `NewTermsProposalRow` has no such
+  // field — the same insert shape `termsProposalCommandService.propose` uses.
+  it('leaves status to the column default rather than inventing one', async () => {
+    const proposals = makeProposals();
+    await makeSvc({ inviteRepo: offerInvite(), proposals }).redeemInvite(
+      'u-nanny',
+      { code: 'ABC-234' },
+      AT_NOON_UTC
+    );
+    expect(proposals.create.mock.calls[0][0].status).toBeUndefined();
+  });
+
+  it('falls back to "Carer" when the redeemer has no profile name', async () => {
+    const proposals = makeProposals();
+    await makeSvc({
+      inviteRepo: offerInvite(),
+      proposals,
+      users: makeUsers(null),
+    }).redeemInvite('u-nanny', { code: 'ABC-234' }, AT_NOON_UTC);
+
+    expect(proposals.create.mock.calls[0][0].carer_display_name).toBe('Carer');
+  });
+
+  it('joins her anyway when she already has an open round in this household', async () => {
+    const proposals = makeProposals({
+      create: mock(async () => {
+        throw new OpenTermsProposalExistsError('h1', 'u-nanny');
+      }),
+    });
+    const svc = makeSvc({ inviteRepo: offerInvite(), proposals });
+
+    const membership = await svc.redeemInvite(
+      'u-nanny',
+      { code: 'ABC-234' },
+      AT_NOON_UTC
+    );
+
+    expect(membership.role).toBe('nanny');
+  });
+
+  it('joins her anyway when the proposal insert fails for any other reason', async () => {
+    const proposals = makeProposals({
+      create: mock(async () => {
+        throw new DatabaseError('boom', 'DATABASE_ERROR');
+      }),
+    });
+    const svc = makeSvc({ inviteRepo: offerInvite(), proposals });
+
+    await expect(
+      svc.redeemInvite('u-nanny', { code: 'ABC-234' }, AT_NOON_UTC)
+    ).resolves.toMatchObject({ role: 'nanny' });
+  });
+
+  // An invite lives 30 days, so a start date written in month 12 can be out of
+  // reach by the time she types the code. The parent's date is NEVER rewritten
+  // to make it fit (§7.4) — the promotion is skipped and she joins with no
+  // terms, which is exactly where she would have been without P8.
+  it('skips a promotion whose valid_from has drifted past the horizon', async () => {
+    const proposals = makeProposals();
+    const inviteRepo = offerInvite({
+      pay_offer: { ...offer, valid_from: '2027-07-02' },
+    });
+
+    const membership = await makeSvc({ inviteRepo, proposals }).redeemInvite(
+      'u-nanny',
+      { code: 'ABC-234' },
+      AT_NOON_UTC
+    );
+
+    expect(membership.role).toBe('nanny');
+    expect(proposals.create).not.toHaveBeenCalled();
+  });
+
+  it('does not promote when the invite carries no offer', async () => {
+    const proposals = makeProposals();
+    await makeSvc({ proposals }).redeemInvite(
+      'u-nanny',
+      { code: 'ABC-234' },
+      AT_NOON_UTC
+    );
+    expect(proposals.create).not.toHaveBeenCalled();
+  });
+
+  // Defence in depth: `createInvite` refuses this shape, so a row like it can
+  // only predate the guard or come from a direct database write. Pay is
+  // per-carer (D-21) and a co-parent has no carer_id to scope a proposal to.
+  it('never promotes an offer that somehow rode a non-nanny invite', async () => {
+    const proposals = makeProposals();
+    const inviteRepo = offerInvite({ role: 'parent' });
+
+    await makeSvc({ inviteRepo, proposals }).redeemInvite(
+      'u-parent',
+      { code: 'ABC-234' },
+      AT_NOON_UTC
+    );
+
+    expect(proposals.create).not.toHaveBeenCalled();
+  });
+
+  // 009 declares `invited_by ... on delete set null`, so the parent who wrote
+  // the terms can be gone by redemption. `terms_proposals.proposed_by` is
+  // `not null` (092), and there is nobody honest to name — skip it.
+  it('skips the promotion when the inviting parent no longer exists', async () => {
+    const proposals = makeProposals();
+    const inviteRepo = offerInvite({ invited_by: null });
+
+    const membership = await makeSvc({ inviteRepo, proposals }).redeemInvite(
+      'u-nanny',
+      { code: 'ABC-234' },
+      AT_NOON_UTC
+    );
+
+    expect(membership.role).toBe('nanny');
+    expect(proposals.create).not.toHaveBeenCalled();
+  });
+
+  // A removed nanny redeeming a fresh code takes the reactivation branch. Her
+  // old arrangement was end-dated on removal (065), so terms are exactly what
+  // she needs on the way back in — the promotion belongs on this arm too.
+  it('promotes on a rejoin as well as a first join', async () => {
+    const proposals = makeProposals();
+    const memberRepo = makeMemberRepo({
+      findMembershipIncludingCandidate: mock(async () => ({
+        id: 'm-old',
+        status: 'removed',
+      })),
+    });
+
+    await makeSvc({
+      inviteRepo: offerInvite(),
+      memberRepo,
+      proposals,
+    }).redeemInvite('u-nanny', { code: 'ABC-234' }, AT_NOON_UTC);
+
+    expect(memberRepo.reactivateMembership).toHaveBeenCalled();
+    expect(proposals.create).toHaveBeenCalledWith(
+      expect.objectContaining({ carer_id: 'u-nanny', direction: 'parent' })
+    );
+  });
+
+  // The membership on this path stays `active`, unlike 094/096's `candidate`:
+  // she was invited BY NAME, she is hired, only the rate is open. That is what
+  // keeps `assertActiveNanny` passing when she accepts.
+  it('leaves the membership active — only the rate is open', async () => {
+    const memberRepo = makeMemberRepo();
+    await makeSvc({ inviteRepo: offerInvite(), memberRepo }).redeemInvite(
+      'u-nanny',
+      { code: 'ABC-234' },
+      AT_NOON_UTC
+    );
+
+    expect(memberRepo.createMembership).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'active' })
+    );
   });
 });

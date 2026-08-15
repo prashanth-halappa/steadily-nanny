@@ -527,4 +527,93 @@ describe('household.schema', () => {
       ).toBe(false);
     });
   });
+
+  /**
+   * P8 — the parent's pay OFFER (098). The mirror of the nanny direction: her
+   * terms ride her draft and are cloned in on redemption, his ride the invite
+   * and are promoted into a `direction: 'parent'` proposal on redemption.
+   *
+   * The offer is exactly a `CreatePayArrangementRequest` and NOT a second,
+   * looser shape, for the reason 092's header gives about `terms_proposals`:
+   * one wire contract means "what he offered is what she is asked to accept"
+   * is a property of the type system, not a promise in a doc.
+   */
+  describe('the pay offer on an invite (P8)', () => {
+    const offer = { rate_minor: 2800, valid_from: '2026-09-01' };
+    const invite = {
+      id: VALID_UUID,
+      household_id: OTHER_UUID,
+      code: 'R4K-92T',
+      email: null,
+      role: 'nanny',
+      invited_by: VALID_UUID,
+      expires_at: NOW,
+      status: 'pending',
+      accepted_by: null,
+      accepted_at: null,
+      created_at: NOW,
+      updated_at: NOW,
+    };
+
+    it('carries the offer on the row', () => {
+      const parsed = HouseholdInviteSchema.parse({
+        ...invite,
+        pay_offer: offer,
+      });
+      expect(parsed.pay_offer?.rate_minor).toBe(2800);
+      expect(parsed.pay_offer?.valid_from).toBe('2026-09-01');
+    });
+
+    // An invite with no offer is the ordinary case and must stay the cheapest
+    // one to write: absent reads as null, exactly like `label` and `opened_at`
+    // do since 093. This is also what stops a client shipped before 098 from
+    // failing to parse a row the API has not started returning the column for.
+    it('reads an absent offer as an explicit null, never undefined', () => {
+      expect(HouseholdInviteSchema.parse(invite).pay_offer).toBeNull();
+      expect(
+        HouseholdInviteSchema.parse({ ...invite, pay_offer: null }).pay_offer
+      ).toBeNull();
+    });
+
+    it('refuses an offer that is not a valid arrangement request', () => {
+      expect(
+        HouseholdInviteSchema.safeParse({
+          ...invite,
+          // Negative money. 041's non-negative floor, reached through the same
+          // schema that guards the real `pay_arrangements` insert.
+          pay_offer: { rate_minor: -1, valid_from: '2026-09-01' },
+        }).success
+      ).toBe(false);
+      expect(
+        HouseholdInviteSchema.safeParse({
+          ...invite,
+          pay_offer: { rate_minor: 2800 },
+        }).success
+      ).toBe(false);
+    });
+
+    it('accepts an offer on create, and stays optional there', () => {
+      const parsed = CreateHouseholdInviteSchema.parse({
+        role: 'nanny',
+        pay_offer: offer,
+      });
+      expect(parsed.pay_offer?.rate_minor).toBe(2800);
+      // The default that `CreatePayArrangementRequestSchema` applies survives
+      // the nesting — an offer written today prices overtime the same way the
+      // arrangement it becomes will.
+      expect(parsed.pay_offer?.overtime_multiplier).toBe(1.5);
+      expect(
+        CreateHouseholdInviteSchema.parse({ role: 'nanny' }).pay_offer
+      ).toBeUndefined();
+    });
+
+    it('refuses a malformed offer on create rather than dropping the field', () => {
+      expect(
+        CreateHouseholdInviteSchema.safeParse({
+          role: 'nanny',
+          pay_offer: { rate_minor: 2800, valid_from: 'next tuesday' },
+        }).success
+      ).toBe(false);
+    });
+  });
 });

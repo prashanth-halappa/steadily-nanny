@@ -59,12 +59,25 @@ mock.module('@/src/domains/timeOff/components/TimeOffDateRangePicker', () => {
 
 const HOUSEHOLD_ID = '5d4b0b70-edd9-4218-b7df-a28d234f7e06';
 
+/** Days from now, as an instant — keeps fixtures off the wall calendar. */
+function daysFromNow(days: number): string {
+  return new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
+}
+
+/**
+ * An UPCOMING closure by default, because that is the only kind with a Remove
+ * control (`isPastTimeOff(ends_at)` hides it). These dates were once written
+ * as fixed 2026-08-10/13 literals and silently became past on 2026-08-14,
+ * turning two passing tests red with no code change — the "already-past" case
+ * below pins its own era with explicit 2020 dates, so only this default needs
+ * to move with the clock.
+ */
 function makeClosure(overrides: Partial<Record<string, unknown>> = {}) {
   return {
     id: '22222222-2222-4222-8222-222222222222',
     household_id: HOUSEHOLD_ID,
-    starts_at: '2026-08-10T00:00:00.000Z',
-    ends_at: '2026-08-13T00:00:00.000Z',
+    starts_at: daysFromNow(3),
+    ends_at: daysFromNow(6),
     message: null,
     created_by: '11111111-1111-4111-8111-111111111111',
     created_at: '2026-08-01T00:00:00.000Z',

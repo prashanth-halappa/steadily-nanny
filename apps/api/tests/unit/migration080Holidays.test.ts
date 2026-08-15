@@ -204,7 +204,12 @@ describe('080 — the documentation contract', () => {
     expect(comments).toContain('arrangement');
   });
 
-  it('says the file is repo-only and never applied by this slice', () => {
-    expect(comments).toContain('repo file only');
+  // Was "repo file only" until Phase 6 actually applied this migration and
+  // rewrote the header without touching the assertion. The header is the
+  // source of truth about a migration's own application state; what has to
+  // stay documented now is that it IS applied and must not be run again.
+  it('says the file is applied to prod and must not be re-applied', () => {
+    expect(comments).toContain('applied to prod');
+    expect(comments).toContain('do not re-apply');
   });
 });

@@ -8,6 +8,10 @@
  * once `useCurrentPayArrangement` resolves a non-null arrangement — no
  * dismiss action needed because the underlying condition it reports is gone.
  *
+ * B2: also disappears while an OPEN terms proposal exists for that carer —
+ * inviting "Set pay" over a live negotiation would bypass it. Same open
+ * predicate as PayArrangementScreen (`findOpenTermsProposal`).
+ *
  * Deliberately its own tiny component (one per carer) rather than a loop
  * inside the parent screen calling a hook per iteration — React's rules of
  * hooks forbid a variable-length `.map` calling `useCurrentPayArrangement`
@@ -22,6 +26,10 @@ import { Card, CardContent } from '@/src/components/ui/card';
 import { Text } from '@/src/components/ui/text';
 import { Body, Small } from '@/src/components/ui/typography';
 import { useCurrentPayArrangement } from '@/src/hooks/queries/useCurrentPayArrangement';
+import {
+  findOpenTermsProposal,
+  useTermsProposals,
+} from '@/src/hooks/queries/useTermsProposals';
 
 interface PaySetupPromptCardProps {
   householdId: string;
@@ -37,12 +45,21 @@ export function PaySetupPromptCard({
   const { t } = useTranslation('pay');
   const router = useRouter();
   const current = useCurrentPayArrangement(householdId, carerId);
+  const proposals = useTermsProposals(householdId, carerId);
+  const openProposal = findOpenTermsProposal(proposals.data);
 
-  // Loading, errored, or already has an arrangement — render nothing. This
-  // is an invitation to finish a gap, not a status widget; there is nothing
-  // useful to say here while we don't yet know there IS a gap, and once an
-  // arrangement exists the card's whole reason to exist is gone.
-  if (current.isPending || current.isError || current.data !== null) {
+  // Loading, errored, already has an arrangement, or an open proposal is
+  // live — render nothing. This is an invitation to finish a gap, not a
+  // status widget; there is nothing useful to say here while we don't yet
+  // know there IS a gap, once an arrangement exists the card's whole reason
+  // to exist is gone, and with an open proposal the parent should review
+  // that negotiation rather than write terms over it (B2).
+  if (
+    current.isPending ||
+    current.isError ||
+    current.data !== null ||
+    openProposal
+  ) {
     return null;
   }
 

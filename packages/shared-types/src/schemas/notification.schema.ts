@@ -208,6 +208,18 @@ export const PUSH_NOTIFICATION_TYPES = {
   // to respond to terms that no longer stand finds out from the app rather
   // than from an awkward phone call.
   TERMS_PROPOSAL_WITHDRAWN: 'terms_proposal_withdrawn',
+  // B4: the COUNTERPARTY refused, either direction — distinct from
+  // TERMS_PROPOSAL_WITHDRAWN, which is the AUTHOR pulling her own round. One
+  // type covers both directions (audience 'both' below) because a refusal
+  // carries no figure to leak either way.
+  TERMS_PROPOSAL_DECLINED: 'terms_proposal_declined',
+  // Part 2 (B4 follow-on): TERMS_PROPOSAL_ACCEPTED's audience was fixed to
+  // 'carer' from when only a parent could accept. Once a carer can accept a
+  // `direction: 'parent'` round (the parent-offer flow), that fixed audience
+  // can no longer cover her acceptance — the family authored the offer and
+  // hears nothing. This is the parent-audience twin, emitted instead of
+  // TERMS_PROPOSAL_ACCEPTED when the ACCEPTER is the carer.
+  TERMS_OFFER_ACCEPTED: 'terms_offer_accepted',
 } as const;
 
 export type PushNotificationType =
@@ -305,4 +317,11 @@ export const PUSH_TYPE_AUDIENCE: Record<PushNotificationType, PushAudience> = {
   [PUSH_NOTIFICATION_TYPES.TERMS_PROPOSAL_COUNTERED]: 'carer',
   [PUSH_NOTIFICATION_TYPES.TERMS_PROPOSAL_ACCEPTED]: 'carer',
   [PUSH_NOTIFICATION_TYPES.TERMS_PROPOSAL_WITHDRAWN]: 'parent',
+  // B4 — either side can be the counterparty who declines, so 'both', same
+  // shape as CHANGE_REQUEST_DECLINED above.
+  [PUSH_NOTIFICATION_TYPES.TERMS_PROPOSAL_DECLINED]: 'both',
+  // Part 2 — the parent-audience twin of TERMS_PROPOSAL_ACCEPTED, emitted
+  // when the ACCEPTER is the carer so the family (who authored the offer)
+  // hears it instead of the type going nowhere.
+  [PUSH_NOTIFICATION_TYPES.TERMS_OFFER_ACCEPTED]: 'parent',
 } as const;

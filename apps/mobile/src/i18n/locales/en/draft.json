@@ -105,6 +105,16 @@
     "otherCarers_other": "and {{count}} other nannies",
     "button": "See your terms"
   },
+  "sendTerms": {
+    "title": "You have a terms draft",
+    "body": "Send it to {{family}} to review?",
+    "counterTitle": "{{family}} has proposed terms",
+    "counterBody": "Counter with the terms from your draft?",
+    "button": "Send my terms",
+    "counterButton": "Counter with my terms",
+    "notNow": "Not now",
+    "sendFailed": "That didn't go through. Try again."
+  },
   "a11y": {
     "heroArt": "An envelope on a table beside a mug",
     "loading": "Loading your draft"

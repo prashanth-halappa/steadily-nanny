@@ -14,17 +14,18 @@
  */
 import { beforeEach, describe, expect, it, mock } from 'bun:test';
 import { renderWithProviders } from '@/src/test-utils';
-import { draftHousehold, draftProposal } from './fixtures';
+import { draftHousehold, draftProposal, liveHousehold } from './fixtures';
 
 let isOnline = true;
 let invitesPending = false;
 let proposalPending = false;
+let households = [draftHousehold];
 
 mock.module('@/src/hooks/queries/useActiveHousehold', () => ({
   useActiveHousehold: () => ({
     household: draftHousehold,
     householdId: draftHousehold.id,
-    households: [draftHousehold],
+    households,
     pastHouseholds: [],
     isPastHousehold: false,
     setActiveHouseholdId: mock(),
@@ -63,6 +64,7 @@ describe('DraftHomeScreen — loading', () => {
     isOnline = true;
     invitesPending = false;
     proposalPending = false;
+    households = [draftHousehold];
   });
 
   it('renders the hero band immediately — it needs no network', () => {
@@ -101,6 +103,7 @@ describe('DraftHomeScreen — offline', () => {
     isOnline = true;
     invitesPending = false;
     proposalPending = false;
+    households = [draftHousehold];
   });
 
   it('puts the banner above the hero band and disables Share', () => {
@@ -126,5 +129,27 @@ describe('DraftHomeScreen — offline', () => {
 
     expect(queryByTestId('draft-share-offline')).toBeNull();
     expect(getByTestId('draft-share-button').props.disabled).toBe(false);
+  });
+});
+
+describe('DraftHomeScreen — household switcher (B3)', () => {
+  beforeEach(() => {
+    isOnline = true;
+    invitesPending = false;
+    proposalPending = false;
+    households = [draftHousehold];
+  });
+
+  it('renders the household switcher when she also belongs to a live family', () => {
+    households = [draftHousehold, liveHousehold];
+    const { getByTestId } = renderWithProviders(<DraftHomeScreen />);
+
+    expect(getByTestId('household-switcher')).toBeTruthy();
+  });
+
+  it('does not render the household switcher when the draft is her only household', () => {
+    const { queryByTestId } = renderWithProviders(<DraftHomeScreen />);
+
+    expect(queryByTestId('household-switcher')).toBeNull();
   });
 });

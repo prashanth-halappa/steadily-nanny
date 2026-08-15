@@ -42,15 +42,22 @@ import { CreatePayArrangementRequestSchema } from './payArrangement.schema';
 /**
  * terms_proposals.status — the lifecycle in §10's state words.
  *
- * `proposed` -> `countered` (superseded by a new row) | `accepted` | `withdrawn`.
- * There is no `expired` and no round limit: two people negotiating is not a
- * workflow to time out, and a draft household generates no cron anyway (D-34).
+ * `proposed` -> `countered` (superseded by a new row) | `accepted` |
+ * `withdrawn` | `declined` (097, B4). There is no `expired` and no round
+ * limit: two people negotiating is not a workflow to time out, and a draft
+ * household generates no cron anyway (D-34).
+ *
+ * `withdrawn` VS `declined` — DIFFERENT FACTS, NEVER OVERLOADED. `withdrawn`
+ * is the AUTHOR taking her own ask back; `declined` is the COUNTERPARTY
+ * refusing it. Honest state words are this codebase's house style (§10) —
+ * see `direction`, which exists for the identical "who did it" precision.
  */
 export const TERMS_PROPOSAL_STATUSES = {
   PROPOSED: 'proposed',
   COUNTERED: 'countered',
   ACCEPTED: 'accepted',
   WITHDRAWN: 'withdrawn',
+  DECLINED: 'declined',
 } as const;
 export type TermsProposalStatus =
   (typeof TERMS_PROPOSAL_STATUSES)[keyof typeof TERMS_PROPOSAL_STATUSES];
@@ -71,7 +78,13 @@ export const TERMS_PROPOSAL_DIRECTIONS = {
 export type TermsProposalDirection =
   (typeof TERMS_PROPOSAL_DIRECTIONS)[keyof typeof TERMS_PROPOSAL_DIRECTIONS];
 
-/** The statuses that mean "this proposal is still live and awaiting an answer". */
+/**
+ * The statuses that mean "this proposal is still live and awaiting an
+ * answer". `declined` is TERMINAL, same as `accepted`/`countered`/`withdrawn`
+ * — a round the counterparty refused is not still open. Load-bearing: mobile's
+ * `findOpenTermsProposal` (useTermsProposals.ts) drives whether the pay
+ * screen shows a live negotiation and whether `PaySetupPromptCard` hides.
+ */
 export const OPEN_TERMS_PROPOSAL_STATUSES: readonly TermsProposalStatus[] = [
   TERMS_PROPOSAL_STATUSES.PROPOSED,
 ];

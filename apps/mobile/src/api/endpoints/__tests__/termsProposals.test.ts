@@ -261,6 +261,30 @@ describe('termsProposalApi.withdraw', () => {
   });
 });
 
+describe('termsProposalApi.decline', () => {
+  // B4 — the counterparty's refusal, distinct from withdraw.
+  it('POSTs .../decline and returns the declined proposal', async () => {
+    apiClient.post.mockResolvedValue({
+      data: {
+        data: {
+          terms_proposal: {
+            ...validProposal,
+            status: 'declined',
+            responded_at: now,
+          },
+        },
+      },
+    });
+
+    const result = await termsProposalApi.decline(PROPOSAL_ID);
+
+    expect(apiClient.post).toHaveBeenCalledWith(
+      `/v1/terms-proposals/${PROPOSAL_ID}/decline`
+    );
+    expect(result.status).toBe('declined');
+  });
+});
+
 describe('termsProposalApi.markViewed', () => {
   it('POSTs .../viewed and returns the proposal carrying viewed_at', async () => {
     apiClient.post.mockResolvedValue({

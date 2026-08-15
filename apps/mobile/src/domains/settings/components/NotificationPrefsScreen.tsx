@@ -92,6 +92,10 @@ const PUSH_TYPE_GROUP: Record<PushNotificationType, NotificationGroup> = {
   terms_proposal_countered: 'hoursAndPay',
   terms_proposal_received: 'hoursAndPay',
   terms_proposal_withdrawn: 'hoursAndPay',
+  // B4 / Part 2 — the counterparty's refusal and its parent-audience
+  // acceptance twin are the same contract conversation as the four above.
+  terms_proposal_declined: 'hoursAndPay',
+  terms_offer_accepted: 'hoursAndPay',
   timesheet_approved: 'hoursAndPay',
   timesheet_awaiting_approval: 'hoursAndPay',
   timesheet_note_added: 'hoursAndPay',

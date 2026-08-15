@@ -163,6 +163,32 @@ describe('notification.schema push types', () => {
     expect(PUSH_TYPE_AUDIENCE.terms_proposal_withdrawn).toBe('parent');
   });
 
+  // B4 — the counterparty's refusal. Can land on either side depending on
+  // who authored the round, so unlike the accept split below this stays ONE
+  // type at 'both' — same shape as CHANGE_REQUEST_DECLINED.
+  it('registers terms_proposal_declined as a both-audience type (B4)', () => {
+    expect(PUSH_NOTIFICATION_TYPES.TERMS_PROPOSAL_DECLINED).toBe(
+      'terms_proposal_declined'
+    );
+    expect(ALL_PUSH_NOTIFICATION_TYPES).toContain('terms_proposal_declined');
+    expect(PUSH_TYPE_AUDIENCE.terms_proposal_declined).toBe('both');
+  });
+
+  // B4/Part 2 — once a CARER can accept a `direction: 'parent'` round (the
+  // parent-offer flow), `terms_proposal_accepted`'s carer-only audience can no
+  // longer cover the acceptance: the family authored it and gets nothing.
+  // TERMS_OFFER_ACCEPTED is the parent-audience twin — same
+  // one-type-per-audience shape as RECEIVED/COUNTERED above — emitted when
+  // the ACCEPTER is the carer, so the family (who authored the offer) hears
+  // it instead.
+  it('registers terms_offer_accepted as a parent-audience type (Part 2)', () => {
+    expect(PUSH_NOTIFICATION_TYPES.TERMS_OFFER_ACCEPTED).toBe(
+      'terms_offer_accepted'
+    );
+    expect(ALL_PUSH_NOTIFICATION_TYPES).toContain('terms_offer_accepted');
+    expect(PUSH_TYPE_AUDIENCE.terms_offer_accepted).toBe('parent');
+  });
+
   // §13: an audience-map edit on a SHIPPED row, called out explicitly. Under
   // D-34 absorption the redeeming parent and the joining carer both need to
   // hear it — he is adding a person to a family he knows, she is entering a

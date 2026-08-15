@@ -74,6 +74,15 @@
       }
     },
     "codeMeta": "Invitación de {{role}} · caduca el {{date}}",
+    "offer": {
+      "addButton": "Añadir una oferta de pago",
+      "editButton": "Editar oferta",
+      "summary": "{{rate}} · comienza el {{date}}",
+      "draftState": "Oferta borrador · nadie la ha visto todavía",
+      "sheetTitle": "Ofrecer condiciones de pago",
+      "submitButton": "Guardar oferta",
+      "editReplacesCode": "Cambiar esto reemplaza el código de invitación: tendrás que compartir el nuevo."
+    },
     "absorb": {
       "title": "¿Añadir a {{name}} a tu familia?",
       "body": "{{name}} ha propuesto unas condiciones y las revisarás a continuación. Se unirá a {{household}} cuando las aceptes y, hasta entonces, no podrá ver el horario ni los datos de tu familia. Nada cambia para quienes ya forman parte de ella.",

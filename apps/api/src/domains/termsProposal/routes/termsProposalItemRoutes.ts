@@ -64,6 +64,14 @@ router.post(
   asyncHandler(TermsProposalController.withdraw)
 );
 
+// B4 — the counterparty's refusal. `withdraw` is the author's own exit;
+// `decline` is the answer from the side that was asked.
+router.post(
+  '/:proposalId/decline',
+  ...authWithValidation(TermsProposalIdParamSchema, 'params'),
+  asyncHandler(TermsProposalController.decline)
+);
+
 // §5.3's one-way "Viewed" receipt — see the controller for why it is a POST
 // and not a side effect of the GET above.
 router.post(

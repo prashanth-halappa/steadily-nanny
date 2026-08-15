@@ -43,6 +43,7 @@ import {
   MetadataLabel,
   Small,
 } from '@/src/components/ui/typography';
+import { HouseholdSwitcher } from '@/src/domains/household/components/HouseholdSwitcher';
 import { AmountRow } from '@/src/domains/pay/components/AmountRow';
 import { buildTermRows } from '@/src/domains/pay/utils/termRows';
 import { useCreateInvite } from '@/src/hooks/mutations/useCreateInvite';
@@ -146,15 +147,11 @@ export function DraftHomeScreen() {
           <View className="flex-1">
             {/* Only when there is something to be confused with: a nanny
                 interviewing while employed switches between this screen and
-                a real household, and a draft genuinely has no name (§4.2). */}
-            {households.length > 1 ? (
-              <MetadataLabel
-                testID="draft-hero-eyebrow"
-                className="text-muted-strong"
-              >
-                {household?.name ?? t('untitledDraft')}
-              </MetadataLabel>
-            ) : null}
+                a real household, and a draft genuinely has no name (§4.2).
+                The switcher is the escape hatch off a stranded draft (B3) —
+                Today/Payments/Settings mount it, but this screen used to
+                render only a plain label with no way to leave. */}
+            {households.length > 1 ? <HouseholdSwitcher /> : null}
             <H1 testID="draft-hero-title">{t('hero.title')}</H1>
             <Small
               testID="draft-hero-subtitle"

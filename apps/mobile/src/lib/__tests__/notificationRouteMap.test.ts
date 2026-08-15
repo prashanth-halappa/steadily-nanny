@@ -279,6 +279,29 @@ describe('NOTIFICATION_ROUTE_MAP resolvers', () => {
     ).toBe('/(private)/settings/my-pay');
   });
 
+  // B4 — the counterparty's refusal. Like WITHDRAWN, the record is worth
+  // seeing: the review screen still renders the declined pill in history.
+  it('routes a declined proposal to the review screen', () => {
+    expect(
+      resolve(PUSH_NOTIFICATION_TYPES.TERMS_PROPOSAL_DECLINED, {
+        proposalId: 'prop-1',
+        householdId: 'hh-1',
+      })
+    ).toBe('/(private)/pay/proposal/prop-1');
+  });
+
+  // Part 2 — the parent-audience twin of TERMS_PROPOSAL_ACCEPTED. Same
+  // "nothing left to review" shape, but for the family: the household pay
+  // hub, not the carer's own My pay screen.
+  it('routes an accepted offer to the household pay hub, not the review screen', () => {
+    expect(
+      resolve(PUSH_NOTIFICATION_TYPES.TERMS_OFFER_ACCEPTED, {
+        proposalId: 'prop-1',
+        householdId: 'hh-1',
+      })
+    ).toBe('/(private)/settings/pay');
+  });
+
   // §1.4 (D-38): one type, two arms. The role comes off the payload the
   // emitter built, the same way `isQuietHoursExempt` reads `shiftStartsAt` —
   // the resolver signature stays `(data)`.

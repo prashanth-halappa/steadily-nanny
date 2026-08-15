@@ -5,9 +5,11 @@
  * module writes is priced, no timesheet can reference it, and the earnings
  * engine never sees it. The BINDING ACT is `accept`, and acceptance inserts a
  * real `pay_arrangements` row by CALLING the existing
- * `payArrangementCommandService.create` under the accepting parent's own
- * credentials — `WRITE_ROLES = {owner, parent}` is untouched and the nanny
- * never inserts an arrangement (§17). This table is how she ASKS.
+ * `payArrangementCommandService.create` under a PARENT's own credentials —
+ * the accepter's when a parent accepts, the AUTHOR's when the carer accepts a
+ * parent-authored round. Either way `WRITE_ROLES = {owner, parent}` is
+ * untouched and the nanny never inserts an arrangement (§17). This table is
+ * how she ASKS.
  *
  * FOUR VERBS, AND WHAT EACH ONE MAY NOT DO
  *
@@ -228,7 +230,17 @@ export class TermsProposalCommandService {
   }
 
   /**
-   * §7.3 — THE BINDING ACT. Parents/owner only, on a `proposed` round only.
+   * §7.3 — THE BINDING ACT, on a `proposed` round only.
+   *
+   * WHO MAY PERFORM IT: THE ROUND'S COUNTERPARTY, not "the family". A carer
+   * accepts a `direction: 'parent'` round (P16's parent counter, and the
+   * parent-offer flow); a parent accepts a `direction: 'carer'` round. Neither
+   * side may accept its OWN authorship — that is an ask agreeing with itself,
+   * and it collapses to the same opaque 404 as a stray id.
+   *
+   * §17 IS UNMOVED BY THAT. The `pay_arrangements` insert still runs under a
+   * PARENT's credentials in both directions — see the call below for the
+   * identity swap that keeps it so.
    *
    * ORDER, AND WHY IT DIFFERS FROM THE SPEC'S PROSE. §7.3 lists the
    * arrangement insert first and the `candidate` -> `active` flip last. That
@@ -262,13 +274,10 @@ export class TermsProposalCommandService {
       proposalId
     );
     const { household_id: householdId, carer_id: carerId } = proposal;
-    if (side.kind !== 'parent') {
-      // A nanny accepting her OWN proposal lands here, and must: acceptance
-      // is what turns an ask into money, and §17 keeps that on the family's
-      // side of the table.
+    if (side.kind !== this.answeringSide(proposal)) {
       throw new TermsProposalNotFoundError({
         proposalId,
-        reason: 'acceptance_is_the_family_side',
+        reason: 'acceptance_is_the_counterparty_side',
       });
     }
 
@@ -285,8 +294,16 @@ export class TermsProposalCommandService {
     // The ONE insert path into `pay_arrangements` (§17). The proposal is
     // stamped only AFTER this returns — if it throws, the row stays
     // `proposed` and nothing about the negotiation has changed.
+    //
+    // THE IDENTITY IS NOT ALWAYS THE CALLER. When the CARER accepts, she is
+    // the counterparty, not a pay-write role — so what goes in is the PARENT
+    // WHO AUTHORED the round, whose terms are the ones being bound. By
+    // construction of `propose`, a `direction: 'parent'` row's `proposed_by`
+    // IS that parent. `PAY_WRITE_ROLES` and `assertActiveNanny` are untouched
+    // and both still fire; §17's "the nanny never inserts an arrangement"
+    // stays literally true. `accepted_by` below still records who tapped.
     const arrangement = await this.arrangements.create(
-      callerId,
+      side.kind === 'carer' ? proposal.proposed_by : callerId,
       householdId,
       carerId,
       proposal.terms
@@ -307,7 +324,7 @@ export class TermsProposalCommandService {
       throw new TermsProposalNotActionableError(proposalId, 'lost_race');
     }
 
-    this.notifyCarerOfAcceptance(accepted);
+    this.notifyOfAcceptance(accepted, side.kind);
     return accepted;
   }
 
@@ -347,6 +364,42 @@ export class TermsProposalCommandService {
 
     this.notifyOfWithdrawal(withdrawn);
     return withdrawn;
+  }
+
+  /**
+   * B4 — the COUNTERPARTY refuses a round, either direction. The other half
+   * of `withdraw`: that closes the AUTHOR's own ask, this closes it from the
+   * side that was asked. Same gate shape as `accept` (`answeringSide`), same
+   * CAS write as every other terminal status, but creates NO money — no
+   * `pay_arrangements` insert, no candidate activation. `declined` is not
+   * `withdrawn` wearing a different label; see 097's column comment.
+   */
+  async decline(
+    callerId: string,
+    proposalId: string,
+    now: () => Date = () => new Date()
+  ): Promise<TermsProposalRow> {
+    const { proposal, side } = await this.loadAnswerableForCaller(
+      callerId,
+      proposalId
+    );
+    if (side.kind !== this.answeringSide(proposal)) {
+      throw new TermsProposalNotFoundError({
+        proposalId,
+        reason: 'decline_is_the_counterparty_side',
+      });
+    }
+
+    const declined = await this.proposalRepo.resolve(proposalId, {
+      status: TERMS_PROPOSAL_STATUSES.DECLINED,
+      responded_at: now().toISOString(),
+    });
+    if (!declined) {
+      throw new TermsProposalNotActionableError(proposalId, 'lost_race');
+    }
+
+    this.notifyOfDecline(declined);
+    return declined;
   }
 
   /**
@@ -473,6 +526,21 @@ export class TermsProposalCommandService {
   }
 
   /**
+   * The round's COUNTERPARTY answers it — shared by `accept` and `decline`,
+   * the two lifecycle writes gated on WHICH SIDE, never authorship alone (that
+   * is `withdraw`'s gate instead). `direction` names the side that WROTE the
+   * round, so the side allowed to answer it is always the other one: a
+   * `direction: 'parent'` round (P16's parent counter, and the parent-offer
+   * flow) is answered by the carer; a `direction: 'carer'` round is answered
+   * by a parent. Neither side may answer its own authorship.
+   */
+  private answeringSide(proposal: TermsProposalRow): ProposalSide['kind'] {
+    return proposal.direction === TERMS_PROPOSAL_DIRECTIONS.PARENT
+      ? 'carer'
+      : 'parent';
+  }
+
+  /**
    * The `terms` payload is a full `CreatePayArrangementRequest`, and it is
    * validated HERE as well as at the wire: the wire schema guards the shape,
    * and this guards the two things the shape cannot.
@@ -579,9 +647,38 @@ export class TermsProposalCommandService {
     }
   }
 
-  /** N16 (§13) — to the carer, whose terms are now real. No figure (A8). */
-  private notifyCarerOfAcceptance(proposal: TermsProposalRow): void {
+  /**
+   * N16 (§13) — to the side that did NOT just tap Agree. No figure (A8).
+   *
+   * TWO TYPES, ONE PER AUDIENCE — same shape as `notifyOfNewRound`'s
+   * RECEIVED/COUNTERED split, and for the same reason `PUSH_TYPE_AUDIENCE` is
+   * a total `Record`: one type cannot honestly carry two fixed audiences.
+   * `TERMS_PROPOSAL_ACCEPTED` predates this feature's carer-accepts-an-offer
+   * shape and was wired carer-audience only; rather than widen it to `'both'`
+   * (which would put a "your acceptance was accepted" toggle in the accepter's
+   * own settings), a parent-audience twin — `TERMS_OFFER_ACCEPTED` — carries
+   * the other direction. `accepterSide` is the side that just tapped Agree
+   * (`side.kind` from `accept`'s own gate), so the recipient is always the
+   * other one.
+   */
+  private notifyOfAcceptance(
+    proposal: TermsProposalRow,
+    accepterSide: ProposalSide['kind']
+  ): void {
     try {
+      if (accepterSide === 'carer') {
+        // She accepted a `direction: 'parent'` round — the family's own offer
+        // — so the family is the side that just learned nothing; tell them.
+        this.push.notifyHouseholdParents(proposal.household_id, {
+          title: 'Terms were agreed',
+          body: 'Open Steadily to see what was agreed.',
+          data: this.deepLink(
+            PUSH_NOTIFICATION_TYPES.TERMS_OFFER_ACCEPTED,
+            proposal
+          ),
+        });
+        return;
+      }
       this.push.notifyUser(proposal.carer_id, {
         title: 'Your terms were agreed',
         body: 'Open My pay to see what was agreed.',
@@ -591,7 +688,7 @@ export class TermsProposalCommandService {
         ),
       });
     } catch {
-      // notifyUser is sync fire-and-forget; swallow any unexpected throw.
+      // Both helpers are sync fire-and-forget; swallow any unexpected throw.
     }
   }
 
@@ -618,6 +715,43 @@ export class TermsProposalCommandService {
       });
     } catch {
       // notifyHouseholdParents is sync fire-and-forget; swallow any throw.
+    }
+  }
+
+  /**
+   * B4 — to the AUTHOR, when the counterparty refuses. `direction` names who
+   * wrote the round, so the author is always that side, and the recipient is
+   * whichever helper reaches that side — the mirror of `notifyOfNewRound`'s
+   * branching, since this is the fact reaching the other end of the same
+   * relationship. ONE type, `'both'` audience (`PUSH_TYPE_AUDIENCE`) — a
+   * decline can land on either side depending on who authored, so unlike
+   * acceptance's split this stays one type rather than growing a
+   * per-direction pair for a refusal that carries no figure to leak either
+   * way.
+   */
+  private notifyOfDecline(proposal: TermsProposalRow): void {
+    try {
+      if (proposal.direction === TERMS_PROPOSAL_DIRECTIONS.CARER) {
+        this.push.notifyUser(proposal.carer_id, {
+          title: 'Your terms were declined',
+          body: 'Open My pay to see the record.',
+          data: this.deepLink(
+            PUSH_NOTIFICATION_TYPES.TERMS_PROPOSAL_DECLINED,
+            proposal
+          ),
+        });
+        return;
+      }
+      this.push.notifyHouseholdParents(proposal.household_id, {
+        title: 'Your terms proposal was declined',
+        body: 'Open Steadily to see the record.',
+        data: this.deepLink(
+          PUSH_NOTIFICATION_TYPES.TERMS_PROPOSAL_DECLINED,
+          proposal
+        ),
+      });
+    } catch {
+      // Both helpers are sync fire-and-forget; swallow any unexpected throw.
     }
   }
 

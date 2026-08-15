@@ -4,11 +4,13 @@ import { useActiveHouseholdStore } from '../activeHousehold';
 import { useNotificationStore } from '../notificationStore';
 import { resetUserScopedStores } from '../resetStores';
 import { useSetupProgressStore } from '../setupProgress';
+import { useTodayCardDismissalStore } from '../todayCardDismissalStore';
 
 beforeEach(() => {
   useSetupProgressStore.getState().reset();
   useNotificationStore.getState().reset();
   useActiveHouseholdStore.getState().reset();
+  useTodayCardDismissalStore.getState().reset();
 });
 
 describe('resetUserScopedStores', () => {
@@ -33,5 +35,19 @@ describe('resetUserScopedStores', () => {
     resetUserScopedStores();
 
     expect(useActiveHouseholdStore.getState().preferredHouseholdId).toBeNull();
+  });
+
+  it('resets Today card dismissals (no stale dismissal across accounts)', () => {
+    useTodayCardDismissalStore
+      .getState()
+      .dismiss('joinedHousehold:household-1');
+
+    resetUserScopedStores();
+
+    expect(
+      useTodayCardDismissalStore
+        .getState()
+        .isDismissed('joinedHousehold:household-1')
+    ).toBe(false);
   });
 });

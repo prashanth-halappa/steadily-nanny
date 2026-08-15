@@ -105,6 +105,16 @@
     "otherCarers_other": "y otras {{count}} niñeras",
     "button": "Ver tus condiciones"
   },
+  "sendTerms": {
+    "title": "Tienes un borrador de condiciones",
+    "body": "¿Enviárselo a la familia {{family}} para que lo revise?",
+    "counterTitle": "La familia {{family}} ha propuesto condiciones",
+    "counterBody": "¿Contraproponer con las condiciones de tu borrador?",
+    "button": "Enviar mis condiciones",
+    "counterButton": "Contraproponer con mis condiciones",
+    "notNow": "Ahora no",
+    "sendFailed": "No se pudo completar. Inténtalo de nuevo."
+  },
   "a11y": {
     "heroArt": "Un sobre sobre una mesa junto a una taza",
     "loading": "Cargando tu borrador"

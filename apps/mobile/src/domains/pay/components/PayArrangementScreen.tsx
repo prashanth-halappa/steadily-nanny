@@ -59,7 +59,10 @@ import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 import { usePayArrangementAcks } from '@/src/hooks/queries/usePayArrangementAcks';
 import { usePayArrangementHistory } from '@/src/hooks/queries/usePayArrangementHistory';
 import { usePtoBalance } from '@/src/hooks/queries/usePtoBalance';
-import { useTermsProposals } from '@/src/hooks/queries/useTermsProposals';
+import {
+  findOpenTermsProposal,
+  useTermsProposals,
+} from '@/src/hooks/queries/useTermsProposals';
 import { localDateInZone } from '@/src/lib/localDate';
 import { formatMoney, formatRate } from '@/src/lib/money';
 import { showSuccessToast } from '@/src/lib/toast';
@@ -244,11 +247,9 @@ function CarerPayDetail({
           } as const)
         : ({ variant: 'pending', label: t('ack.notSeenYet') } as const);
 
-  // §6/D-16: `valid_from` after the household's today. Newest first, so the
-  // first match is the one that starts soonest to announce.
-  const openProposal = (proposals.data ?? []).find(
-    row => row.status === 'proposed'
-  );
+  // §7.1 / B2: the live negotiation, if any — same predicate as
+  // PaySetupPromptCard via `findOpenTermsProposal`.
+  const openProposal = findOpenTermsProposal(proposals.data);
   // §10: "Agreed with Marisol on 12 Aug" — the word, with a date, beside the
   // figure, on the very card the acceptance created. The join is the
   // proposal's own `accepted_arrangement_id`, so a card that traces to a
@@ -282,6 +283,51 @@ function CarerPayDetail({
   return (
     <View className="mt-4 gap-4" testID={`pay-detail-${carerId}`}>
       {showCarerName ? <H4 testID="pay-carer-name">{carerName}</H4> : null}
+      {/* B2: hoist above the arrangement ternary so an open negotiation is
+          visible even when there are no terms yet (empty state used to hide
+          this row and invite writing an arrangement over it). */}
+      {openProposal ? (
+        <View
+          testID="pay-open-proposal-row"
+          className="gap-2 rounded-row bg-card px-4 py-3"
+          style={elevation.row}
+        >
+          <Body weight="medium">
+            {t('proposal.openRowTitle', { name: carerName })}
+          </Body>
+          <StatusPill
+            testID="pay-open-proposal-pill"
+            variant={
+              proposalStateWord(
+                openProposal,
+                {
+                  counterpartyName: carerName,
+                  timezone: householdTimezone,
+                },
+                t
+              ).variant
+            }
+            label={
+              proposalStateWord(
+                openProposal,
+                {
+                  counterpartyName: carerName,
+                  timezone: householdTimezone,
+                },
+                t
+              ).label
+            }
+          />
+          <Button
+            testID="pay-open-proposal-review"
+            variant="ghost"
+            className="self-start"
+            onPress={() => router.push(`/pay/proposal/${openProposal.id}`)}
+          >
+            <Text>{t('proposal.reviewButton')}</Text>
+          </Button>
+        </View>
+      ) : null}
       {!arrangement ? (
         <View testID="pay-empty-no-arrangement">
           <EmptyState
@@ -289,8 +335,16 @@ function CarerPayDetail({
             image={illustrations.emptyPay}
             title={t('noArrangementTitle')}
             description={t('noArrangementDescription')}
-            action={() => router.push(`/settings/pay/setup/${carerId}`)}
-            actionLabel={t('setPayTermsAction')}
+            action={() =>
+              openProposal
+                ? router.push(`/pay/proposal/${openProposal.id}`)
+                : router.push(`/settings/pay/setup/${carerId}`)
+            }
+            actionLabel={
+              openProposal
+                ? t('reviewProposedTermsAction')
+                : t('setPayTermsAction')
+            }
           />
         </View>
       ) : (
@@ -336,49 +390,6 @@ function CarerPayDetail({
                 ) : null}
               </CardContent>
             </Card>
-          ) : null}
-
-          {openProposal ? (
-            <View
-              testID="pay-open-proposal-row"
-              className="gap-2 rounded-row bg-card px-4 py-3"
-              style={elevation.row}
-            >
-              <Body weight="medium">
-                {t('proposal.openRowTitle', { name: carerName })}
-              </Body>
-              <StatusPill
-                testID="pay-open-proposal-pill"
-                variant={
-                  proposalStateWord(
-                    openProposal,
-                    {
-                      counterpartyName: carerName,
-                      timezone: householdTimezone,
-                    },
-                    t
-                  ).variant
-                }
-                label={
-                  proposalStateWord(
-                    openProposal,
-                    {
-                      counterpartyName: carerName,
-                      timezone: householdTimezone,
-                    },
-                    t
-                  ).label
-                }
-              />
-              <Button
-                testID="pay-open-proposal-review"
-                variant="ghost"
-                className="self-start"
-                onPress={() => router.push(`/pay/proposal/${openProposal.id}`)}
-              >
-                <Text>{t('proposal.reviewButton')}</Text>
-              </Button>
-            </View>
           ) : null}
 
           <Card testID="pay-current-terms-card">

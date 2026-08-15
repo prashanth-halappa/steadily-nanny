@@ -219,6 +219,28 @@ export class AlreadyMemberError extends ConflictError {
 }
 
 /**
+ * 400 — a co-parent or helper invite arrived carrying pay terms (P8).
+ *
+ * Pay is per-carer (D-21): an offer only means something for a NANNY, because
+ * the only thing it can ever become is a `terms_proposals` row scoped to the
+ * carer who redeemed the code. Storing one on a parent invite would put a rate
+ * on a row nobody will ever be shown it from — refused rather than silently
+ * dropped, so the client bug surfaces at the keyboard instead of as terms that
+ * quietly evaporated.
+ */
+export class PayOfferNotForRoleError extends ValidationError {
+  constructor(role: string) {
+    super(
+      'Pay terms can only be offered to a nanny',
+      'PAY_OFFER_NOT_FOR_ROLE',
+      400,
+      { role }
+    );
+    this.name = 'PayOfferNotForRoleError';
+  }
+}
+
+/**
  * 409 — `week_starts_on` cannot change once any timesheet exists for the
  * household. It defines pay-week boundaries (FLSA fixed workweek,
  * 075_household_week_starts_on.sql); moving it after hours have been

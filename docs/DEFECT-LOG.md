@@ -1715,3 +1715,92 @@ true now. Events are `uncovered_care` audit + push dedupe only. Canonical record
 **Consciously deferred:** evening/Sunday digest pushes; push i18n (hardcoded
 English like every other emitter); "extend adjacent shift" as a fix action;
 retracting `uncovered_care` events when fixed; backfilling historical days.
+
+---
+
+## D55 — `bun run qc` had been red on `main` since the Phase 6 ship commit
+
+**Status:** FIXED · found 2026-08-15 while gating the parent-offer build.
+
+**Symptom:** The repo's one hard rule is "`bun run qc` green before done"
+(`CLAUDE.md`). It was not green, and had not been since `620d247`. Six tests
+failed across two unrelated causes, none of them in code anybody had touched.
+
+**Cause 1 — assertions outlived the thing they asserted (3 tests).**
+`migration090`, `migration080` and `migration095`'s contract tests each assert
+their migration says *"repo file only — never applied"*. Phase 6 applied all
+three to prod and rewrote their headers to say so; the assertions were left
+behind. The tests were not wrong when written — they were describing a state
+the migration then left.
+
+**Cause 2 — fixtures pinned to the wall calendar (13 tests, 3 files).**
+`HouseholdClosuresScreen`, `TimeOffRow` and `TimeOffScreen` each seeded a
+fixture ending `2026-08-13T00:00:00.000Z`. Every Edit/Cancel/Remove control in
+those screens renders only while `ends_at` is still ahead of *now*. On
+2026-08-14 the fixture became past and the controls correctly stopped
+rendering — thirteen tests went red with no code change, on a date nobody
+chose. Each file already had a companion "already-past" case pinned to 2020,
+so the *intent* was always relative; only the default was absolute.
+
+**Why it survived:** Both causes are invisible to review. Nothing in a diff
+shows a date crossing, and a migration header and its test live in different
+trees. And a suite that is *already* red hides its next regression: with six
+known failures, a seventh is noise.
+
+**Fix:** Re-point the three migration assertions at what is now true — applied,
+when, and *do not re-apply* (the fact that actually protects the database).
+Give the three fixtures a `daysFromNow()` helper so the default is upcoming by
+construction; the 2020 past-cases keep their literals, which makes the pairing
+explicit rather than accidental.
+
+**Verified pre-existing before touching anything:** each failing file was
+confirmed unmodified by the in-flight work, and the mobile failures were
+reproduced against a clean `HEAD` in a detached worktree.
+
+**Lesson:** A test whose fixture is a literal date has a shelf life. If the
+code under test compares against `Date.now()`, the fixture has to as well —
+and if a migration's header is the source of truth for whether it is applied,
+its test must follow the header, not a snapshot of it.
+
+---
+
+## D56 — P8/B1 verified end to end through the API after the E2E flow stalled
+
+**Status:** NOT A DEFECT (verification record) · 2026-08-15.
+
+Maestro flows 16/17 (parent pay offer → redeem → accept/decline) reach and PASS
+the entire offer half in the real app — the sheet opens, the rate lands, submit
+enables, the sheet closes, and `invite-offer-summary` renders the saved offer
+("CA$22.50/hr · starts Aug 15, 2026" above "Draft offer · nobody has seen this
+yet"). They then stall tapping `invite-generate-button`: the tap reports
+COMPLETED against a button that is visible, enabled, and geometrically clear of
+the footer (y592-640 vs the CTA at y760-808), yet `onGenerate` never runs —
+`hasStarted` stays false, `InviteCodeCard` never mounts, and no invite POST
+reaches the API. Ruled out: keyboard occlusion (`Dictate` asserted absent),
+stale scroll coordinates (settle + fresh-read assert added), `centerElement`
+(fails outright — the button is the LAST element, nothing below to scroll
+against), and a disabled control. **Unresolved; it is harness debt on
+pre-existing invite UI, not on P8 code.**
+
+**So the chain was verified directly against the API on the local stack**, which
+proves more than the UI path would have:
+
+| Step | Result |
+|---|---|
+| `pay_offer` attaches to a nanny invite | 201, round-trips on the row |
+| offer absent from the public invite preview | confirmed (D-51 exposure rule holds) |
+| redeem promotes it | `terms_proposals` row, `direction='parent'`, `from_invite_id` set |
+| `proposed_by` | the inviting PARENT, not the redeeming nanny |
+| **carer accepts it (B1)** | **200 "Terms agreed"** — this 404'd before the fix |
+| arrangement created | `rate_minor=2250`, currency + `valid_from` from the offer |
+| **who wrote the arrangement** | **the AUTHORING PARENT, not the accepting carer** |
+
+That last row is the one that matters: `proposed_by = created_by` and
+`accepted_by <> created_by` on the same accepted round. §17's "the nanny never
+inserts an arrangement" holds even though she performed the acceptance — which
+is exactly the discipline B1's fix was built around.
+
+**Lesson:** when an E2E flow stalls on a step unrelated to the feature it
+exists to prove, verify the feature through the layer beneath rather than
+letting harness debt gate the release. The API check took minutes, and it
+proved an invariant (insert identity) that no UI assertion would have caught.

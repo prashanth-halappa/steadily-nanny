@@ -204,3 +204,77 @@ describe('OnboardingLayout — wizard actively engaged (WS-F)', () => {
     expect(queryByTestId('onboarding-stack-mock')).toBeNull();
   });
 });
+
+describe('OnboardingLayout — mid-wizard loading latch (R7)', () => {
+  it('keeps the Stack mounted across a transient loading frame after the wizard has painted', () => {
+    // THE BUG: after household/children resolve, useIsOnboarded returns
+    // `loading` for a frame (needsChildCount && children.isPending). That
+    // must not unmount the Stack and wipe typed names/ages.
+    useSetupProgressStore.getState().setRole('parent');
+    onboardingState = {
+      status: 'not-onboarded',
+      role: 'parent',
+      householdId: 'h1',
+      membershipsError: false,
+    };
+
+    const { rerender, getByTestId, queryByTestId } = render(
+      <OnboardingLayout />
+    );
+    expect(getByTestId('onboarding-stack-mock')).toBeTruthy();
+
+    onboardingState = {
+      status: 'loading',
+      role: 'parent',
+      householdId: 'h1',
+      membershipsError: false,
+    };
+    rerender(<OnboardingLayout />);
+
+    expect(getByTestId('onboarding-stack-mock')).toBeTruthy();
+    expect(queryByTestId('onboarding-layout-loading')).toBeNull();
+  });
+
+  it('does not paint the wizard on cold start with stale persisted role while loading', () => {
+    // Latch must be mount-scoped — NOT keyed off wizardEngaged. A cold
+    // start with persisted role would otherwise flash "Who are you?".
+    useSetupProgressStore.getState().setRole('parent');
+    onboardingState = {
+      status: 'loading',
+      role: null,
+      householdId: null,
+      membershipsError: false,
+    };
+
+    const { getByTestId, queryByTestId } = render(<OnboardingLayout />);
+
+    expect(getByTestId('onboarding-layout-loading')).toBeTruthy();
+    expect(queryByTestId('onboarding-stack-mock')).toBeNull();
+  });
+
+  it('drops the Stack when membershipsError arrives during loading after the wizard painted', () => {
+    useSetupProgressStore.getState().setRole('parent');
+    onboardingState = {
+      status: 'not-onboarded',
+      role: 'parent',
+      householdId: 'h1',
+      membershipsError: false,
+    };
+
+    const { rerender, getByTestId, queryByTestId } = render(
+      <OnboardingLayout />
+    );
+    expect(getByTestId('onboarding-stack-mock')).toBeTruthy();
+
+    onboardingState = {
+      status: 'loading',
+      role: 'parent',
+      householdId: 'h1',
+      membershipsError: true,
+    };
+    rerender(<OnboardingLayout />);
+
+    expect(getByTestId('onboarding-layout-loading')).toBeTruthy();
+    expect(queryByTestId('onboarding-stack-mock')).toBeNull();
+  });
+});

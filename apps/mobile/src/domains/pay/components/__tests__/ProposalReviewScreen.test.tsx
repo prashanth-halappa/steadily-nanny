@@ -99,6 +99,9 @@ const acceptMutateAsync = mock<(input: unknown) => Promise<unknown>>(() =>
   )
 );
 const markViewed = mock();
+const declineMutateAsync = mock<() => Promise<unknown>>(() =>
+  Promise.resolve(proposal({ status: 'declined' }))
+);
 
 mock.module('@/src/hooks/queries/useTermsProposal', () => ({
   useTermsProposal: () => proposalResult,
@@ -126,6 +129,12 @@ let counterIsError = false;
 mock.module('@/src/hooks/mutations/useMarkProposalViewed', () => ({
   useMarkProposalViewed: () => ({ mutate: markViewed }),
 }));
+mock.module('@/src/hooks/mutations/useDeclineTerms', () => ({
+  useDeclineTerms: () => ({
+    mutateAsync: declineMutateAsync,
+    isPending: false,
+  }),
+}));
 mock.module('@/src/hooks/queries/useIsOnboarded', () => ({
   useIsOnboarded: () => ({
     status: 'onboarded',
@@ -151,6 +160,10 @@ beforeEach(() => {
   routerReplace.mockClear();
   acceptMutateAsync.mockClear();
   markViewed.mockClear();
+  declineMutateAsync.mockClear();
+  declineMutateAsync.mockImplementation(() =>
+    Promise.resolve(proposal({ status: 'declined' }))
+  );
   acceptMutateAsync.mockImplementation(() =>
     Promise.resolve(
       proposal({ status: 'accepted', accepted_arrangement_id: 'arr-9' })
@@ -277,6 +290,44 @@ describe('ProposalReviewScreen', () => {
     );
   });
 
+  // B4 — the counterparty's refusal. Confirm-before-firing (§ refusing terms
+  // is not an accidental tap): the mutation must not fire on the button tap
+  // alone, only after the confirm dialog's own confirm.
+  it('declining requires a confirm — the tap alone does not call the mutation', async () => {
+    const { getByTestId } = renderWithProviders(<ProposalReviewScreen />);
+    await waitFor(() =>
+      expect(getByTestId('proposal-decline-button')).toBeTruthy()
+    );
+    fireEvent.press(getByTestId('proposal-decline-button'));
+    expect(declineMutateAsync).not.toHaveBeenCalled();
+    expect(getByTestId('proposal-decline-dialog')).toBeTruthy();
+  });
+
+  it('confirming the decline dialog calls the mutation and returns to the previous screen', async () => {
+    const { getByTestId } = renderWithProviders(<ProposalReviewScreen />);
+    await waitFor(() =>
+      expect(getByTestId('proposal-decline-button')).toBeTruthy()
+    );
+    fireEvent.press(getByTestId('proposal-decline-button'));
+    fireEvent.press(getByTestId('proposal-decline-dialog-confirm'));
+    await waitFor(() => expect(declineMutateAsync).toHaveBeenCalledTimes(1));
+  });
+
+  it('cancelling the decline dialog fires nothing', async () => {
+    const { getByTestId, queryByTestId } = renderWithProviders(
+      <ProposalReviewScreen />
+    );
+    await waitFor(() =>
+      expect(getByTestId('proposal-decline-button')).toBeTruthy()
+    );
+    fireEvent.press(getByTestId('proposal-decline-button'));
+    fireEvent.press(getByTestId('proposal-decline-dialog-cancel'));
+    await waitFor(() =>
+      expect(queryByTestId('proposal-decline-dialog')).toBeNull()
+    );
+    expect(declineMutateAsync).not.toHaveBeenCalled();
+  });
+
   it('the author of the round on screen is offered no answer to their own proposal', async () => {
     const own = proposal({ proposed_by: PARENT_ID, direction: 'parent' });
     proposalResult = {
@@ -292,5 +343,6 @@ describe('ProposalReviewScreen', () => {
     await waitFor(() => expect(getByTestId('proposal-title')).toBeTruthy());
     expect(queryByTestId('proposal-agree-button')).toBeNull();
     expect(queryByTestId('proposal-counter-button')).toBeNull();
+    expect(queryByTestId('proposal-decline-button')).toBeNull();
   });
 });

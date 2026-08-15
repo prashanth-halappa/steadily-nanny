@@ -122,8 +122,13 @@ describe('095 — the documentation contract', () => {
     expect(comments).toContain('no credit');
   });
 
-  it('says out loud that it is a repo file, applied in Phase 6', () => {
-    expect(comments).toContain('repo file only');
+  // Was "repo file only" until Phase 6 applied it and rewrote the header
+  // without touching the assertion. The header is the source of truth about a
+  // migration's own application state; what has to stay documented now is
+  // that it IS applied, when, and that it must not be run again.
+  it('says out loud that it was applied to prod in Phase 6 and must not be re-applied', () => {
+    expect(comments).toContain('applied to prod');
     expect(comments).toContain('phase 6');
+    expect(comments).toContain('do not re-apply');
   });
 });

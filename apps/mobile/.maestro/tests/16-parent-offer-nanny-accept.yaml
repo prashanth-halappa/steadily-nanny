@@ -1,0 +1,396 @@
+# Scenario — P8 + B1, driven fully live end to end: a fresh parent signs in,
+# builds her own household through the wizard (HouseholdScreen ->
+# ChildrenScreen), and on the wizard's INVITE step attaches a pay OFFER to a
+# nanny invite (`PayChangeSheet` in `mode="offer"` — no new wizard step, the
+# same step just grew a card). A fresh nanny signs in, joins via the code
+# (wizard JOIN path), and the offer is promoted server-side into a
+# `direction: 'parent'` terms_proposals row
+# (`householdCommandService.promoteOfferToProposal`). She reviews it from her
+# inbox and ACCEPTS behind the D-7 responsibility checkbox — this is B1's
+# fix: before it, every carer-side accept 404'd because the server always
+# treated the answering side as the parent, regardless of `direction`. The
+# arrangement is then live and visible on both sides.
+#
+# FIXTURES — `PHASE4_OFFER_PARENT_EMAIL` / `PHASE4_OFFER_NANNY_EMAIL`, two
+# fresh CONFIRMED accounts with no household
+# (`scripts/seed-phase4-fixtures.ts`, point 9). Both accounts and the
+# household/invite/offer they build are minted here, live, not seeded —
+# there was no route blocker on the PARENT side the way flow 14's nanny half
+# has one (see that flow's header), so there is nothing to fall back to SQL
+# for.
+# STATUS 2026-08-15 — NOT YET GREEN. This flow reaches, and PASSES, the whole
+# offer half: the sheet opens, the rate lands, the submit enables, the sheet
+# closes, and `invite-offer-summary` renders the saved offer
+# ("CA$22.50/hr · starts Aug 15, 2026" + "Draft offer · nobody has seen this
+# yet"). It then stalls on `invite-generate-button`: the tap reports COMPLETED
+# against a button that is visible, enabled and geometrically clear of the
+# footer (y592-640 vs the CTA at y760-808), yet `onGenerate` never runs —
+# `hasStarted` stays false, InviteCodeCard never mounts, and NO invite POST
+# reaches the API. Ruled out: keyboard occlusion, stale scroll coordinates,
+# `centerElement` (fails — the button is the last element), and a disabled
+# CTA. Unresolved.
+#
+# THE FEATURE ITSELF IS VERIFIED, independently of this flow, straight through
+# the API against the local stack: offer attaches to the invite, is absent
+# from the public preview, promotes on redeem into a `direction: 'parent'`
+# proposal carrying `from_invite_id`, the CARER accepts it (B1 — this 404'd
+# before the fix), and the resulting `pay_arrangements` row is written under
+# the AUTHORING PARENT's identity, not hers (§17 held). See the session's
+# `verify-p8-b1.ts`. So the red here is test-harness debt, not product risk.
+appId: com.jetto.steadily.nanny
+tags:
+  - pay
+  - onboarding
+---
+# --- Parent: build a household from nothing, then invite with an offer ----
+- runFlow:
+    file: ../flows/login-no-household.yaml
+    env:
+      PARENT_EMAIL: ${PHASE4_OFFER_PARENT_EMAIL}
+      PARENT_PASSWORD: ${PHASE4_TEST_PASSWORD}
+
+- extendedWaitUntil:
+    visible:
+      id: 'role-screen'
+    timeout: 25000
+- tapOn:
+    id: 'role-parent'
+- tapOn:
+    id: 'role-screen-cta'
+- waitForAnimationToEnd
+
+- assertVisible:
+    id: 'start-screen'
+- tapOn:
+    id: 'start-create'
+- tapOn:
+    id: 'start-screen-cta'
+- waitForAnimationToEnd
+
+- assertVisible:
+    id: 'household-screen'
+- tapOn:
+    id: 'parent-name-input'
+- eraseText
+- inputText: 'Phase4 Offer Parent'
+# `hideKeyboard`/a bare next-field tap are both unreliable here — occlusion
+# class, confirmed twice on this screen: first the CTA reported COMPLETED
+# while still on household-screen with the keyboard up; then, even after
+# dismissing before the CTA, `household-name-input` sits right on the
+# keyboard's boundary (y=523-569 vs keyboard top ~566) so the tap never
+# focused it — both strings landed in `parent-name-input` (with a stray
+# QuickType word spliced in) and the CTA stayed correctly disabled. Dismiss
+# BETWEEN fields too, not just before the CTA.
+- tapOn:
+    text: 'Name your family'
+- waitForAnimationToEnd
+- tapOn:
+    id: 'household-name-input'
+- eraseText
+- inputText: 'Phase4 Offer Household'
+- tapOn:
+    text: 'Name your family'
+- waitForAnimationToEnd
+# Converts a silent no-op tap into an immediate, obvious failure instead of a
+# 15s timeout on the next screen.
+- assertVisible:
+    id: 'household-screen-cta'
+    enabled: true
+- tapOn:
+    id: 'household-screen-cta'
+- waitForAnimationToEnd
+
+- extendedWaitUntil:
+    visible:
+      id: 'children-screen'
+    timeout: 15000
+- tapOn:
+    id: 'children-add-button'
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'child-form-sheet'
+- tapOn:
+    id: 'child-form-name'
+- inputText: 'Phase4 Kid'
+- tapOn:
+    id: 'child-form-age'
+- inputText: '5'
+- hideKeyboard
+- tapOn:
+    id: 'child-form-submit'
+- waitForAnimationToEnd
+- tapOn:
+    id: 'children-screen-cta'
+- waitForAnimationToEnd
+
+- assertVisible:
+    id: 'invite-screen'
+# Default role is already NANNY; the tap is explicit, not load-bearing.
+- tapOn:
+    id: 'invite-role-nanny'
+- tapOn:
+    id: 'invite-offer-add-button'
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'pay-offer-sheet'
+- tapOn:
+    id: 'pay-offer-rate-input'
+- inputText: '22.50'
+# Occlusion class, one level deeper than the scroll fix: the numeric pad
+# covers `pay-offer-rate-input` itself once it opens, so the typed text can
+# silently miss the field. Assert it landed before doing anything else — a
+# missing rate makes `buildCreatePayArrangementRequest` return null, which
+# correctly disables Submit and was previously misread as a scroll/tap miss.
+- assertVisible:
+    id: 'pay-offer-rate-input'
+    text: '22.50'
+# `hideKeyboard` doesn't reliably dismiss inside a BottomSheetBase either
+# (occlusion class, confirmed: `pay-offer-submit` — last of eight collapsible
+# groups down a long scrollable sheet — was unreachable because the keyboard
+# was still up). Dismiss on a non-interactive label instead.
+- tapOn:
+    text: 'Hourly rate'
+- waitForAnimationToEnd
+- tapOn:
+    id: 'pay-offer-cancellation-chip-none'
+- scrollUntilVisible:
+    element:
+      id: 'pay-offer-submit'
+    direction: DOWN
+    timeout: 10000
+# Occlusion class, third layer: scrolling to the note field re-focuses it and
+# summons the keyboard AGAIN, right back over `pay-offer-submit` at the
+# bottom of the sheet. "Note (optional)" is the note INPUT's placeholder, not
+# a label — tapping it re-focuses the field and raises the keyboard rather
+# than dismissing it (confirmed: the next assert failed on this exact
+# mistake). "How often you pay" is a genuinely non-interactive section
+# heading (`PayScheduleFields.tsx`, a plain `<Small>`) in view at this scroll
+# position — use that instead.
+- tapOn:
+    text: 'How often you pay'
+- waitForAnimationToEnd
+# Prove the keyboard is actually down rather than assuming it — `Dictate`
+# only exists in the tree while the iOS keyboard is on screen.
+- assertNotVisible:
+    text: 'Dictate'
+# Occlusion class, FOURTH layer: dismissing the keyboard reflows the sheet —
+# it regains the ~300pt the keyboard occupied — so the scroll offset that had
+# `pay-offer-submit` in view is stale the moment the keyboard goes. Scroll
+# AGAIN now that the layout is final. Order matters: scroll, dismiss, THEN
+# re-scroll; dismissing first doesn't work because the dismissal target has to
+# already be on screen to tap.
+- scrollUntilVisible:
+    element:
+      id: 'pay-offer-submit'
+    direction: DOWN
+    timeout: 10000
+# Converts "the app correctly refused an incomplete offer" into an immediate,
+# obvious failure right here instead of a confusing miss two screens later.
+- assertVisible:
+    id: 'pay-offer-submit'
+    enabled: true
+- tapOn:
+    id: 'pay-offer-submit'
+- waitForAnimationToEnd
+# Assert the IMMEDIATE effect of the tap, not the downstream one — a COMPLETED
+# tap proves nothing about what was physically under it (the occlusion class).
+# If the sheet is still open, the submit didn't take. `waitForAnimationToEnd`
+# is not reliable for `BottomSheetBase`'s own close animation (same component
+# `- back` already doesn't dismiss, per the harness notes) — a bounded wait
+# instead of a bare assert, so this doesn't race the dismissal.
+- extendedWaitUntil:
+    notVisible:
+      id: 'pay-offer-sheet'
+    timeout: 8000
+- assertVisible:
+    id: 'invite-offer-summary'
+# The offer card makes this screen taller than it was before P8 — summary +
+# draft-state line + Edit button — which pushes `invite-generate-button` below
+# the fold on this device. Scroll to it before tapping, or the tap reports
+# COMPLETED against something else and no invite is ever minted.
+- scrollUntilVisible:
+    element:
+      id: 'invite-generate-button'
+    direction: DOWN
+    timeout: 10000
+# Let the scroll settle and force a fresh hierarchy read before tapping —
+# a tap dispatched against pre-scroll coordinates reports COMPLETED and
+# misses (the button sits at y592-640, clear of the y760 footer, so this is
+# staleness rather than occlusion).
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'invite-generate-button'
+    enabled: true
+- tapOn:
+    id: 'invite-generate-button'
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'invite-code-value'
+- takeScreenshot: parent-minted-offer-invite
+- copyTextFrom:
+    id: 'invite-code-value'
+- tapOn:
+    id: 'invite-screen-cta'
+- waitForAnimationToEnd
+
+# `-skip`, never `-cta`: the CTAs fire real OS permission dialogs (see flow
+# 14's header for why).
+- extendedWaitUntil:
+    visible:
+      id: 'notifications-permission-screen'
+    timeout: 25000
+- tapOn:
+    id: 'notifications-permission-screen-skip'
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'calendar-permission-screen'
+- tapOn:
+    id: 'calendar-permission-screen-skip'
+- extendedWaitUntil:
+    visible:
+      id: 'today-header'
+    timeout: 25000
+
+# --- Nanny: join via the code, fresh account, wizard path -----------------
+- runFlow:
+    file: ../flows/login-no-household.yaml
+    env:
+      PARENT_EMAIL: ${PHASE4_OFFER_NANNY_EMAIL}
+      PARENT_PASSWORD: ${PHASE4_TEST_PASSWORD}
+
+- extendedWaitUntil:
+    visible:
+      id: 'role-screen'
+    timeout: 25000
+- tapOn:
+    id: 'role-nanny'
+- tapOn:
+    id: 'role-screen-cta'
+- waitForAnimationToEnd
+
+- assertVisible:
+    id: 'start-screen'
+- tapOn:
+    id: 'start-join'
+- tapOn:
+    id: 'start-screen-cta'
+- waitForAnimationToEnd
+
+- assertVisible:
+    id: 'code-screen'
+- tapOn:
+    id: 'name-input'
+- eraseText
+- inputText: 'Phase4 Offer Nanny'
+- hideKeyboard
+- tapOn:
+    id: 'code-input'
+- inputText: ${maestro.copiedText}
+- hideKeyboard
+# Dismiss on non-interactive content, not `hideKeyboard` — see flow 14's
+# header for why the CTA sits behind the keyboard otherwise.
+- tapOn:
+    text: 'Join your household'
+- waitForAnimationToEnd
+- tapOn:
+    id: 'code-screen-cta'
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible:
+      id: 'code-preview-card'
+    timeout: 15000
+- assertNotVisible:
+    id: 'code-error'
+- takeScreenshot: nanny-offer-code-preview
+- tapOn:
+    id: 'code-screen-cta'
+- waitForAnimationToEnd
+# Fresh nanny has no live household of her own, so absorption never fires —
+# same branch flow 14 proves on the parent side.
+- assertNotVisible:
+    id: 'absorption-sheet'
+
+- extendedWaitUntil:
+    visible:
+      id: 'notifications-permission-screen'
+    timeout: 25000
+- tapOn:
+    id: 'notifications-permission-screen-skip'
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'calendar-permission-screen'
+- tapOn:
+    id: 'calendar-permission-screen-skip'
+- extendedWaitUntil:
+    visible:
+      id: 'today-header'
+    timeout: 25000
+
+# --- Her proposal, surfaced on the inbox: review, then ACCEPT (B1) --------
+- openLink: steadilynanny:///(private)/inbox
+- extendedWaitUntil:
+    visible:
+      id: 'inbox-list'
+    timeout: 25000
+- scrollUntilVisible:
+    element:
+      id: 'inbox-item-terms_proposal-.*'
+    direction: DOWN
+    timeout: 15000
+- tapOn:
+    id: 'inbox-item-terms_proposal-.*'
+- extendedWaitUntil:
+    visible:
+      id: 'proposal-review-screen'
+    timeout: 25000
+- assertVisible:
+    id: 'proposal-rate'
+- assertVisible:
+    id: 'proposal-state-pill'
+- takeScreenshot: nanny-reviews-parent-offer
+- tapOn:
+    id: 'proposal-agree-button'
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'proposal-accept-sheet'
+- assertVisible:
+    id: 'proposal-accept-summary'
+# D-7 — refused without `responsibility_confirmed`; the button starts disabled.
+- assertVisible:
+    id: 'proposal-accept-confirm'
+    enabled: false
+- tapOn:
+    id: 'proposal-accept-checkbox'
+- tapOn:
+    id: 'proposal-accept-confirm'
+- waitForAnimationToEnd
+# `router.replace('/settings/pay')` only fires once the arrangement insert
+# has RETURNED — landing here IS the evidence B1's accept actually worked.
+- extendedWaitUntil:
+    visible:
+      id: 'pay-screen'
+    timeout: 25000
+- assertVisible:
+    id: 'pay-current-terms-card'
+- assertVisible:
+    id: 'pay-current-rate'
+- assertNotVisible:
+    id: 'pay-empty-no-arrangement'
+- takeScreenshot: nanny-accepted-parent-offer
+
+# --- Same arrangement, visible on the PARENT'S side ------------------------
+- runFlow:
+    file: ../flows/login-no-household.yaml
+    env:
+      PARENT_EMAIL: ${PHASE4_OFFER_PARENT_EMAIL}
+      PARENT_PASSWORD: ${PHASE4_TEST_PASSWORD}
+- openLink: steadilynanny:///(private)/settings/pay
+- extendedWaitUntil:
+    visible:
+      id: 'pay-screen'
+    timeout: 25000
+- assertVisible:
+    id: 'pay-current-terms-card'
+- assertNotVisible:
+    id: 'pay-empty-no-arrangement'
+- takeScreenshot: parent-sees-live-arrangement

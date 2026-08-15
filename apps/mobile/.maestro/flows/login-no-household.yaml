@@ -1,0 +1,70 @@
+# Reusable sign-in for an account that owns NO household of its own — the
+# fresh-parent/fresh-nanny onboarding flows (16, 17; mirrors flow 14's
+# PHASE4_NEW_PARENT_EMAIL usage). Same as `login.yaml` up to the point where
+# that flow calls `select-household.yaml` with the SHARED
+# `PHASE4_HOUSEHOLD_ID` — this variant skips that call entirely.
+#
+# WHY THIS HAS TO EXIST, NOT JUST AN OPTIONAL SELECT: `select-household.yaml`
+# no-ops only for a user with a SINGLE household (`HouseholdSwitcher` renders
+# null). A wizard-onboarding fresh account starts with none, which is also
+# a no-op — but flows 16/17 mint a new household on EVERY run under the same
+# seeded account (nothing here deletes the old ones), so by the second or
+# third run that account owns several and the switcher DOES render. Calling
+# `select-household.yaml` with `PHASE4_HOUSEHOLD_ID` (the unrelated SHARED
+# household) then tries to tap an option this account was never a member of,
+# and dies on `household-switcher-option-<id>` not found — confirmed
+# 2026-08-15. Credentials: PARENT_EMAIL / PARENT_PASSWORD from the caller's
+# env block, same convention as login.yaml (reused for a nanny sign-in too).
+appId: com.jetto.steadily.nanny
+---
+- runFlow: reset-to-welcome.yaml
+
+- tapOn:
+    id: 'welcome-sign-in-email'
+- assertVisible:
+    id: 'login-screen'
+- tapOn:
+    id: 'login-email'
+- inputText: ${PARENT_EMAIL}
+- tapOn:
+    id: 'login-password'
+- inputText: ${PARENT_PASSWORD}
+- hideKeyboard
+- tapOn:
+    id: 'login-submit'
+- extendedWaitUntil:
+    notVisible:
+      id: 'welcome-screen'
+    timeout: 20000
+- assertNotVisible:
+    id: 'login-screen'
+
+# Post-sign-in overlays, each on its own delay — same as login.yaml.
+- extendedWaitUntil:
+    visible:
+      text: 'Not Now'
+    timeout: 6000
+    optional: true
+- runFlow:
+    when:
+      visible:
+        text: 'Not Now'
+    commands:
+      - tapOn:
+          text: 'Not Now'
+      - waitForAnimationToEnd
+- extendedWaitUntil:
+    visible:
+      text: 'Maybe later'
+    timeout: 4000
+    optional: true
+- runFlow:
+    when:
+      visible:
+        text: 'Maybe later'
+    commands:
+      - tapOn:
+          text: 'Maybe later'
+      - waitForAnimationToEnd
+
+- waitForAnimationToEnd

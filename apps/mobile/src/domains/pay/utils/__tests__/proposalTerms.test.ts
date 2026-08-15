@@ -25,6 +25,7 @@ function fakeT(key: string, params?: Record<string, unknown>): string {
     'proposal.state.countered': `Countered ${params?.date}`,
     'proposal.state.agreedWith': `Agreed with ${params?.name} on ${params?.date}`,
     'proposal.state.withdrawn': `Withdrawn ${params?.date}`,
+    'proposal.state.declinedBy': `Declined by ${params?.name} · ${params?.date}`,
     'proposal.state.proposedBy': `Proposed by ${params?.name} · ${params?.date}`,
     'proposal.state.counteredBy': `Countered by ${params?.name} · ${params?.date}`,
   };
@@ -211,6 +212,37 @@ describe('proposalStateWord', () => {
     expect(state.label).toBe('Withdrawn Aug 11');
   });
 
+  // B4 — the counterparty's refusal. Grey, same as withdrawn, but names WHO
+  // declined. The CALLER resolves "you" vs the counterparty's name (same
+  // convention as `authorName` in `ProposalTermsDocument`/`MyPayScreen`) and
+  // passes it through `declinedByName` — this util never calls `t()` for it.
+  it('declined is grey, and names whoever the caller resolved as the decliner', () => {
+    const state = proposalStateWord(
+      {
+        ...baseProposal,
+        status: 'declined',
+        responded_at: '2026-08-14T10:00:00.000Z',
+      },
+      { ...opts, declinedByName: 'Marisol' },
+      fakeT
+    );
+    expect(state.variant).toBe('cancelled');
+    expect(state.label).toBe('Declined by Marisol · Aug 14');
+  });
+
+  it('falls back to the counterparty name when the caller passes none', () => {
+    const state = proposalStateWord(
+      {
+        ...baseProposal,
+        status: 'declined',
+        responded_at: '2026-08-14T10:00:00.000Z',
+      },
+      opts,
+      fakeT
+    );
+    expect(state.label).toBe('Declined by Marisol · Aug 14');
+  });
+
   it('never says "Pending approval", "Awaiting sign-off", "Accepted" or "Approved"', () => {
     const forbidden =
       /pending approval|awaiting sign-off|accepted|approved|contract active/i;
@@ -219,6 +251,7 @@ describe('proposalStateWord', () => {
       'countered',
       'accepted',
       'withdrawn',
+      'declined',
     ] as const) {
       const { label } = proposalStateWord(
         { ...baseProposal, status, responded_at: '2026-08-12T18:00:00.000Z' },

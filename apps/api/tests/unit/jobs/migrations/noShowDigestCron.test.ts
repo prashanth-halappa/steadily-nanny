@@ -67,10 +67,17 @@ describe('090_no_show_digest_cron.sql', () => {
     );
   });
 
-  it('documents that this migration is a repo file only — never applied as part of 3-N', async () => {
+  // Was "repo file only — never applied as part of 3-N" until Phase 6 applied
+  // it (620d247 rewrote this header and left the assertion behind, which is
+  // why `bun run qc` came off that commit red). The header is the source of
+  // truth about a migration's own application state, so the test follows it:
+  // what must stay documented now is that it IS applied, and how — the two
+  // facts that stop someone re-running it or reaching for `db push`.
+  it('documents that this migration is applied to prod and must not be re-applied', async () => {
     const sql = await Bun.file(migrationPath).text();
 
-    expect(sql.toLowerCase()).toMatch(/repo file only/);
-    expect(sql.toLowerCase()).toMatch(/never applied/);
+    expect(sql.toLowerCase()).toMatch(/applied to prod/);
+    expect(sql.toLowerCase()).toMatch(/do not re-apply/);
+    expect(sql.toLowerCase()).toMatch(/never `supabase db push`/);
   });
 });

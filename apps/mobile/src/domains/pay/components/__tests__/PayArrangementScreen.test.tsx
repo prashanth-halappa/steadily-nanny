@@ -161,11 +161,43 @@ const cancelScheduledMock = mock<
   (h: string, c: string, a: string) => Promise<unknown>
 >(() => Promise.resolve({}));
 // 3-O's proposal row (§7.1). Mocked at the HOOK boundary — another slice
-// owns the hook and the HTTP shape under it. Empty here: this file's subject
-// is the terms card, and §12 says nothing announces a proposal's absence.
+// owns the hook and the HTTP shape under it. Empty by default: §12 says
+// nothing announces a proposal's absence. Mutable so B2 can inject an
+// open proposal without remocking the module.
+let proposalRows: unknown[] = [];
 mock.module('@/src/hooks/queries/useTermsProposals', () => ({
-  useTermsProposals: () => ({ data: [] }),
+  useTermsProposals: () => ({ data: proposalRows }),
+  findOpenTermsProposal: (
+    proposals: readonly { status: string }[] | null | undefined
+  ) => (proposals ?? []).find(row => row.status === 'proposed'),
 }));
+
+const openProposalRow = {
+  id: 'prop-open-1',
+  household_id: HOUSEHOLD_ID,
+  carer_id: NANNY_A_ID,
+  proposed_by: NANNY_A_ID,
+  direction: 'carer',
+  status: 'proposed',
+  terms: {
+    rate_minor: 2000,
+    currency: 'GBP',
+    overtime_multiplier: 1.5,
+    valid_from: '2026-09-01',
+  },
+  note: null,
+  supersedes_id: null,
+  from_invite_id: null,
+  carer_display_name: 'Priya',
+  weekly_equivalent_minor: null,
+  viewed_at: null,
+  responded_at: null,
+  accepted_by: null,
+  accepted_arrangement_id: null,
+  responsibility_confirmed: false,
+  created_at: now,
+  updated_at: now,
+};
 
 mock.module('@/src/api/endpoints/payArrangements', () => ({
   payArrangementApi: {
@@ -203,6 +235,7 @@ beforeEach(() => {
   routerPush.mockClear();
   routerBack.mockClear();
   searchParams = {};
+  proposalRows = [];
 
   listAcksMock.mockImplementation(() => Promise.resolve([]));
   cancelScheduledMock.mockImplementation(() => Promise.resolve({}));
@@ -243,6 +276,69 @@ describe('PayArrangementScreen', () => {
     expect(routerPush).toHaveBeenCalledWith(
       `/settings/pay/setup/${NANNY_A_ID}`
     );
+  });
+
+  // B2 — an open terms proposal must surface even when there is no
+  // arrangement yet; "Set pay" must not bypass a live negotiation.
+  describe('open proposal with no arrangement (B2)', () => {
+    it('no arrangement + open proposal: renders pay-open-proposal-row', async () => {
+      proposalRows = [openProposalRow];
+
+      const { getByTestId } = renderWithProviders(<PayArrangementScreen />);
+
+      await waitFor(() =>
+        expect(getByTestId('pay-empty-no-arrangement')).toBeTruthy()
+      );
+      expect(getByTestId('pay-open-proposal-row')).toBeTruthy();
+    });
+
+    it('no arrangement + open proposal: empty-state CTA routes to the proposal, not setup', async () => {
+      proposalRows = [openProposalRow];
+
+      const { getByTestId, getByLabelText, queryByLabelText } =
+        renderWithProviders(<PayArrangementScreen />);
+
+      await waitFor(() =>
+        expect(getByTestId('pay-empty-no-arrangement')).toBeTruthy()
+      );
+      expect(queryByLabelText('setPayTermsAction')).toBeNull();
+      fireEvent.press(getByLabelText('reviewProposedTermsAction'));
+      expect(routerPush).toHaveBeenCalledWith(
+        `/pay/proposal/${openProposalRow.id}`
+      );
+      expect(routerPush).not.toHaveBeenCalledWith(
+        `/settings/pay/setup/${NANNY_A_ID}`
+      );
+    });
+
+    it('no arrangement + NO open proposal: empty-state CTA still routes to setup with the original label', async () => {
+      const { getByTestId, getByLabelText, queryByTestId } =
+        renderWithProviders(<PayArrangementScreen />);
+
+      await waitFor(() =>
+        expect(getByTestId('pay-empty-no-arrangement')).toBeTruthy()
+      );
+      expect(queryByTestId('pay-open-proposal-row')).toBeNull();
+      fireEvent.press(getByLabelText('setPayTermsAction'));
+      expect(routerPush).toHaveBeenCalledWith(
+        `/settings/pay/setup/${NANNY_A_ID}`
+      );
+    });
+
+    it('arrangement + open proposal: pay-open-proposal-row still renders', async () => {
+      proposalRows = [openProposalRow];
+      payCurrentMock.mockImplementation(() =>
+        Promise.resolve(arrangementFor(NANNY_A_ID))
+      );
+      payHistoryMock.mockImplementation(() =>
+        Promise.resolve([arrangementFor(NANNY_A_ID)])
+      );
+
+      const { getByTestId } = renderWithProviders(<PayArrangementScreen />);
+
+      await waitFor(() => expect(getByTestId('pay-current-rate')).toBeTruthy());
+      expect(getByTestId('pay-open-proposal-row')).toBeTruthy();
+    });
   });
 
   it('one active nanny WITH an arrangement: renders the rate, all six term rows, and the history row', async () => {
