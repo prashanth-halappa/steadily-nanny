@@ -140,13 +140,15 @@ describe('NannyWeekView', () => {
     expect(nannyWeekViewSource).toContain('paddingBottom: tabBarScrollPadding');
   });
 
-  // §3: one component, mounted by both week views directly under WeekTotal —
+  // §3: one component, mounted by both week views in the status header —
   // the status card says what state the agreement is in, the thread says what
-  // was said about it.
+  // was said about it. On the nanny view the week-closed receipt (there is
+  // no submit act by design) sits between them when the week has closed.
   it('mounts WeekQueryThread directly under WeekTotal', () => {
     expect(nannyWeekViewSource).toContain('WeekQueryThread');
+    expect(nannyWeekViewSource).toContain('hours-week-closed-receipt');
     expect(nannyWeekViewSource).toMatch(
-      /<WeekTotal[\s\S]*?\/>\s*<WeekQueryThread/
+      /<WeekTotal[\s\S]*?\/>\s*\{showWeekClosedReceipt \? \([\s\S]*?<WeekQueryThread/
     );
   });
 

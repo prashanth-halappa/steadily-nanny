@@ -27,12 +27,18 @@
  * (docs/11-MONEY.md §6): they render in their own card, visually and
  * semantically separate from the money line above.
  *
+ * There is no submit act by design (timesheet.schema.ts). Once her last
+ * scheduled shift of the current week has ended and she has hours, a
+ * `ReceiptCard` sits directly under `WeekTotal` as her closing beat. It
+ * does not fire on an approved week — the appreciation block owns that.
+ *
  * 3-T1 / M12 (`docs/design/attention-and-notifications.md` §3.1): she can
- * open a conversation too. `WeekQueryThread` sits under `WeekTotal`, and
- * "This doesn't look right" under the money card opens the same composer on
- * a `submitted` or `approved` week. It changes NO status, blocks nothing,
- * and edits no money — it writes one message on an append-only log. The
- * copy is deliberately unloaded: not "Dispute", not "Raise an issue".
+ * open a conversation too. `WeekQueryThread` sits under that receipt (or
+ * under `WeekTotal` when there is none), and "This doesn't look right"
+ * under the money card opens the same composer on a `submitted` or
+ * `approved` week. It changes NO status, blocks nothing, and edits no
+ * money — it writes one message on an append-only log. The copy is
+ * deliberately unloaded: not "Dispute", not "Raise an issue".
  *
  * `queried` is NOT a read-only state here, and must never become one — only
  * `approved` is. Correcting the day IS how a query resolves (D16): she fixes
@@ -49,6 +55,7 @@ import { Pressable, View } from 'react-native';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { useTabBarScrollPadding } from '@/lib/layout/useTabBarScrollPadding';
 import { ErrorState } from '@/src/components/custom/ErrorState';
+import { ReceiptCard } from '@/src/components/ui/receipt-card';
 import { Body } from '@/src/components/ui/typography';
 import { ExpenseAddSheet } from '@/src/domains/expenses/components/ExpenseAddSheet';
 import { ExpensesListCard } from '@/src/domains/expenses/components/ExpensesListCard';
@@ -73,15 +80,17 @@ import { useCurrentPayArrangement } from '@/src/hooks/queries/useCurrentPayArran
 import { useHouseholdMembers } from '@/src/hooks/queries/useHouseholdMembers';
 import { usePayments } from '@/src/hooks/queries/usePayments';
 import { useReimbursementSettlements } from '@/src/hooks/queries/useReimbursementSettlements';
+import { useShiftsRange } from '@/src/hooks/queries/useShiftsRange';
 import { useTimesheetThread } from '@/src/hooks/queries/useTimesheetThread';
 import { useWeekExpenses } from '@/src/hooks/queries/useWeekExpenses';
 import { useWeekTimeEntries } from '@/src/hooks/queries/useWeekTimeEntries';
 import { useWeekTimesheet } from '@/src/hooks/queries/useWeekTimesheet';
 import { getLocalizedErrorMessage } from '@/src/lib/errorLocalization';
-import { localDateInZone } from '@/src/lib/localDate';
+import { addLocalDays, localDateInZone } from '@/src/lib/localDate';
 import { formatMoney } from '@/src/lib/money';
 import { useIsOnline } from '@/src/lib/network';
 import { showSuccessToast } from '@/src/lib/toast';
+import { wallClockToUtcIso } from '@/src/lib/wallClock';
 import { useAuthStore } from '@/src/store/auth';
 import type { TimeEntry } from '../types';
 import { formatDuration, formatOvertimeDelta } from '../utils/duration';
@@ -90,6 +99,7 @@ import { scheduledMinutesFor, sumEntryMinutes } from '../utils/entryMinutes';
 import { derivePaidState, deriveReopenedPaidState } from '../utils/paidState';
 import { useReopenedNotice } from '../utils/reopenedNotice';
 import { describeTimeEntryWriteError } from '../utils/timeEntryWriteError';
+import { weekClosedReceipt } from '../utils/weekClosed';
 import { EarningsBreakdownSheet } from './EarningsBreakdownSheet';
 import { HoursHeroBand } from './HoursHeroBand';
 import { HoursWeekSkeleton } from './HoursWeekSkeleton';
@@ -165,6 +175,15 @@ export function NannyWeekView({
   const activeHousehold = useActiveHousehold();
   const entriesQuery = useWeekTimeEntries(householdId, weekStartISO);
   const timesheetQuery = useWeekTimesheet(householdId, weekStartISO);
+  // Inclusive weekDates[0]..weekDates[6] as a [from, to) instant range —
+  // `useShiftsRange` 400s on a plain YYYY-MM-DD.
+  const weekFromDate = weekDates[0] ?? weekStartISO;
+  const weekLastDate = weekDates[6] ?? weekFromDate;
+  const shiftsQuery = useShiftsRange(
+    householdId,
+    wallClockToUtcIso(weekFromDate, '00:00', timeZone),
+    wallClockToUtcIso(addLocalDays(weekLastDate, 1), '00:00', timeZone)
+  );
   const expensesQuery = useWeekExpenses(householdId, weekStartISO);
   const settlementsQuery = useReimbursementSettlements(
     householdId,
@@ -426,6 +445,15 @@ export function NannyWeekView({
     ? (entries.find(e => e.id === saveRefusal.overlappingEntryId) ?? null)
     : null;
   const totalMinutes = sumEntryMinutes(entries, nowMs);
+  const showWeekClosedReceipt = weekClosedReceipt({
+    shifts: shiftsQuery.data ?? [],
+    carerId: currentUserId,
+    nowMs,
+    totalMinutes,
+    status: timesheet?.status ?? null,
+    weekDates,
+    timeZone,
+  });
   const weekHoursLabel =
     entries.length > 0 && totalMinutes === 0
       ? formatDuration(60).replace('1', '0')
@@ -538,6 +566,18 @@ export function NannyWeekView({
               earningsReopened={reopened}
               earningsReopenReason={timesheet?.reopen_reason ?? null}
             />
+            {showWeekClosedReceipt ? (
+              <ReceiptCard
+                testID="hours-week-closed-receipt"
+                receiptKey={`weekClosed:${householdId}:${weekStartISO}`}
+                title={t('receipts.weekClosed.title', {
+                  hours: weekHoursLabel,
+                })}
+                body={t('receipts.weekClosed.body', {
+                  household: activeHousehold.household?.name ?? '',
+                })}
+              />
+            ) : null}
             <WeekQueryThread
               messages={threadQuery.data?.messages ?? []}
               currentUserId={currentUserId}

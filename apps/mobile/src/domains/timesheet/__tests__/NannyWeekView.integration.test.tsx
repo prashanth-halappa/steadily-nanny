@@ -282,7 +282,29 @@ const getCurrentArrangementMock = mock(() => Promise.resolve(null));
 const listReimbursementSettlementsForWeekMock = mock(
   (): Promise<ReimbursementSettlement[]> => Promise.resolve([])
 );
+const listShiftsMock = mock((): Promise<unknown[]> => Promise.resolve([]));
 
+function makeShift(overrides: Partial<Record<string, unknown>> = {}) {
+  return {
+    id: 'shift-1',
+    household_id: HOUSEHOLD_ID,
+    carer_id: NANNY_ID,
+    starts_at: '2026-08-07T08:00:00.000Z',
+    ends_at: '2026-08-07T16:00:00.000Z',
+    timezone: 'UTC',
+    local_date: '2026-08-07',
+    kind: 'recurring',
+    status: 'confirmed',
+    ...overrides,
+  };
+}
+
+mock.module('@/src/api/endpoints/shifts', () => ({
+  shiftApi: {
+    range: listShiftsMock,
+    getById: mock(),
+  },
+}));
 mock.module('@/src/api/endpoints/reimbursementSettlements', () => ({
   reimbursementSettlementApi: {
     listForWeek: listReimbursementSettlementsForWeekMock,
@@ -410,11 +432,13 @@ beforeEach(() => {
   getCurrentArrangementMock.mockReset();
   listReimbursementSettlementsForWeekMock.mockReset();
   listHouseholdsMock.mockReset();
+  listShiftsMock.mockReset();
   routerPush.mockClear();
 
   listHouseholdsMock.mockImplementation(() =>
     Promise.resolve([makeHousehold()])
   );
+  listShiftsMock.mockImplementation(() => Promise.resolve([]));
   listEntriesMock.mockImplementation(() => Promise.resolve([makeEntry()]));
   listTimesheetsMock.mockImplementation(() =>
     Promise.resolve([makeTimesheet()])
@@ -1112,6 +1136,37 @@ describe('NannyWeekView — expenses & the statement (Phase 4)', () => {
     expect(
       queryByTestId('reimbursements-card-mark-reimbursed-button')
     ).toBeNull();
+  });
+});
+
+describe('NannyWeekView — week-closed receipt', () => {
+  it('renders the week-closed receipt under the week total when the week has closed', async () => {
+    listShiftsMock.mockImplementation(() => Promise.resolve([makeShift()]));
+
+    const { getByTestId } = renderNannyView();
+
+    await waitFor(() =>
+      expect(getByTestId('hours-week-closed-receipt')).toBeTruthy()
+    );
+    expect(getByTestId('hours-week-total')).toBeTruthy();
+  });
+
+  it('renders no receipt while a shift is still ahead', async () => {
+    listShiftsMock.mockImplementation(() =>
+      Promise.resolve([
+        makeShift({
+          starts_at: '2026-08-09T14:00:00.000Z',
+          ends_at: '2026-08-09T18:00:00.000Z',
+          local_date: '2026-08-09',
+        }),
+      ])
+    );
+
+    const { getByTestId, queryByTestId } = renderNannyView();
+
+    await waitFor(() => expect(getByTestId('hours-week-total')).toBeTruthy());
+    await waitFor(() => expect(listShiftsMock).toHaveBeenCalled());
+    expect(queryByTestId('hours-week-closed-receipt')).toBeNull();
   });
 });
 
