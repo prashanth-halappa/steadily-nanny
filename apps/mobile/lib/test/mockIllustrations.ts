@@ -10,8 +10,13 @@ export function mockIllustrationsModule() {
   mock.module('@/assets/splash.png', () => ({ default: stubImage }));
   mock.module('@/assets/illustrations', () => ({
     illustrations: {
+      todayQuiet: stubImage,
+      todayHere: stubImage,
+      todayDone: stubImage,
       welcomeHero: stubImage,
       onboardingRole: stubImage,
+      onboardingNotifications: stubImage,
+      onboardingCalendar: stubImage,
       emptySchedule: stubImage,
       emptyInbox: stubImage,
       emptyHours: stubImage,

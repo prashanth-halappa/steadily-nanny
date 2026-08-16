@@ -18,6 +18,10 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import {
+  getAnimationConfig,
+  useReducedMotion,
+} from '@/lib/animations/useReducedMotion';
+import {
   type ThemeColors,
   useThemeColors,
 } from '@/lib/design-tokens/useThemeColors';
@@ -167,6 +171,9 @@ export function ConfettiOverlay({
   isActive,
   onComplete,
 }: ConfettiOverlayProps) {
+  const reducedMotion = useReducedMotion();
+  const animationConfig = getAnimationConfig(reducedMotion);
+  const isStatic = animationConfig.celebration.type === 'static';
   const themeColors = useThemeColors();
   const confettiPalette = useMemo(
     () => confettiColorsFromTheme(themeColors),
@@ -179,15 +186,19 @@ export function ConfettiOverlay({
 
   useEffect(() => {
     if (isActive && onComplete) {
+      if (isStatic) {
+        onComplete();
+        return undefined;
+      }
       // Auto-complete after the longest particle finishes
       const maxDuration = Math.max(...particles.map(p => p.delay + p.duration));
       const timer = setTimeout(onComplete, maxDuration + 100);
       return () => clearTimeout(timer);
     }
     return undefined;
-  }, [isActive, onComplete, particles]);
+  }, [isActive, isStatic, onComplete, particles]);
 
-  if (!isActive) return null;
+  if (!isActive || isStatic) return null;
 
   return React.createElement(
     View,

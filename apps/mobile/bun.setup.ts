@@ -694,6 +694,18 @@ const animationsMock = {
     heavy: mock(() => {}),
   },
   triggerHaptic: mock(() => {}),
+  useMilestone: mock(() => ({ easing: null, showConfetti: false })),
+  MILESTONE_TIERS: {
+    silent: { haptic: null, easing: null, confetti: false },
+    acknowledged: {
+      haptic: 'encouragement',
+      easing: 'gentleRise',
+      confetti: false,
+    },
+    receipt: { haptic: 'achievement', easing: 'gentleRise', confetti: false },
+    moment: { haptic: 'celebration', easing: 'celebrationPop', confetti: true },
+  },
+  ConfettiOverlay: () => null,
 };
 mock.module('@/lib/animations', () => animationsMock);
 

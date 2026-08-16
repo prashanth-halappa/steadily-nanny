@@ -107,49 +107,49 @@ export const hapticFeedback = {
 
 export const HAPTIC_PATTERNS = {
   // Standard feedback
-  light: () => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light),
-  medium: () => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium),
-  heavy: () => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy),
+  light: () => triggerImpactFeedback(Haptics.ImpactFeedbackStyle.Light),
+  medium: () => triggerImpactFeedback(Haptics.ImpactFeedbackStyle.Medium),
+  heavy: () => triggerImpactFeedback(Haptics.ImpactFeedbackStyle.Heavy),
 
   // Contextual patterns for signature animations
   explore: () => {
     // Gentle tap for exploration
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    void triggerImpactFeedback(Haptics.ImpactFeedbackStyle.Light);
   },
 
   achievement: async () => {
     // Success pattern: medium → light → light
-    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setTimeout(async () => {
-      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    await triggerImpactFeedback(Haptics.ImpactFeedbackStyle.Medium);
+    setTimeout(() => {
+      void triggerImpactFeedback(Haptics.ImpactFeedbackStyle.Light);
     }, 100);
-    setTimeout(async () => {
-      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setTimeout(() => {
+      void triggerImpactFeedback(Haptics.ImpactFeedbackStyle.Light);
     }, 200);
   },
 
   milestone: async () => {
     // Crescendo pattern: light → medium → heavy
-    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setTimeout(async () => {
-      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    await triggerImpactFeedback(Haptics.ImpactFeedbackStyle.Light);
+    setTimeout(() => {
+      void triggerImpactFeedback(Haptics.ImpactFeedbackStyle.Medium);
     }, 150);
-    setTimeout(async () => {
-      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+    setTimeout(() => {
+      void triggerImpactFeedback(Haptics.ImpactFeedbackStyle.Heavy);
     }, 300);
   },
 
   celebration: async () => {
     // Double tap for celebration
-    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setTimeout(async () => {
-      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    await triggerImpactFeedback(Haptics.ImpactFeedbackStyle.Medium);
+    setTimeout(() => {
+      void triggerImpactFeedback(Haptics.ImpactFeedbackStyle.Light);
     }, 100);
   },
 
   encouragement: () => {
     // Gentle, warm tap
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    void triggerImpactFeedback(Haptics.ImpactFeedbackStyle.Light);
   },
 
   selection: () => Haptics.selectionAsync(),

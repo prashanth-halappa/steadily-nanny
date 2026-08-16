@@ -4,6 +4,7 @@
  */
 
 export * from './AnimatedPressable';
+export * from './celebrations';
 export * from './constants';
 export * from './easing';
 export * from './haptics';
