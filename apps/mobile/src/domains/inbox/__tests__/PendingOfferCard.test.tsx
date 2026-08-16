@@ -297,6 +297,49 @@ describe('PendingOfferCard — actions', () => {
   });
 });
 
+/** Walk children in tree order; skip the node's own testID. */
+function leadingTestId(node: {
+  props: { children?: unknown };
+}): string | undefined {
+  const walk = (n: unknown): string | undefined => {
+    if (!n || typeof n !== 'object') return undefined;
+    const el = n as { props?: { testID?: string; children?: unknown } };
+    if (el.props?.testID) return el.props.testID;
+    const kids = Array.isArray(el.props?.children)
+      ? el.props.children
+      : el.props?.children != null
+        ? [el.props.children]
+        : [];
+    for (const kid of kids) {
+      const id = walk(kid);
+      if (id) return id;
+    }
+    return undefined;
+  };
+  const kids = Array.isArray(node.props.children)
+    ? node.props.children
+    : node.props.children != null
+      ? [node.props.children]
+      : [];
+  for (const kid of kids) {
+    const id = walk(kid);
+    if (id) return id;
+  }
+  return undefined;
+}
+
+describe('PendingOfferCard — person', () => {
+  it('leads with the carer avatar', () => {
+    const tree = renderPinned();
+    const card = tree.getByTestId('today-pending-offer-card');
+    const avatar = tree.getByTestId('today-pending-offer-avatar');
+
+    expect(leadingTestId(card)).toBe('today-pending-offer-avatar');
+    expect(avatar.props.accessibilityLabel).toBe('Marisol');
+    expect(tree.getByTestId('today-pending-offer-title')).toBeTruthy();
+  });
+});
+
 describe('PendingOfferCard — when it does not mount', () => {
   it('renders nothing with no sent offer', () => {
     mockItems = [];

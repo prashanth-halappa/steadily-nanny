@@ -95,6 +95,37 @@ function setItems(items: InboxItem[]) {
   }));
 }
 
+/** Walk children in tree order; skip the node's own testID. */
+function leadingTestId(node: {
+  props: { children?: unknown };
+}): string | undefined {
+  const walk = (n: unknown): string | undefined => {
+    if (!n || typeof n !== 'object') return undefined;
+    const el = n as { props?: { testID?: string; children?: unknown } };
+    if (el.props?.testID) return el.props.testID;
+    const kids = Array.isArray(el.props?.children)
+      ? el.props.children
+      : el.props?.children != null
+        ? [el.props.children]
+        : [];
+    for (const kid of kids) {
+      const id = walk(kid);
+      if (id) return id;
+    }
+    return undefined;
+  };
+  const kids = Array.isArray(node.props.children)
+    ? node.props.children
+    : node.props.children != null
+      ? [node.props.children]
+      : [];
+  for (const kid of kids) {
+    const id = walk(kid);
+    if (id) return id;
+  }
+  return undefined;
+}
+
 beforeAll(async () => {
   mockUseInboxItems = mock(() => ({
     items: [] as InboxItem[],
@@ -317,6 +348,26 @@ describe('NeedsAttentionCard', () => {
     const { queryByTestId } = render(<NeedsAttentionCard />);
 
     expect(queryByTestId('today-needs-attention-card')).toBeNull();
+  });
+
+  it('leads with the person avatar when the top item names one', () => {
+    setItems([SUBMITTED_WEEK]);
+
+    const { getByTestId } = render(<NeedsAttentionCard />);
+    const card = getByTestId('today-needs-attention-card');
+    const avatar = getByTestId('today-needs-attention-avatar');
+
+    expect(leadingTestId(card)).toBe('today-needs-attention-avatar');
+    expect(avatar.props.accessibilityLabel).toBe('Test Nanny');
+  });
+
+  it('renders no avatar when the item names nobody', () => {
+    setItems([CHANGE_REQUEST]);
+
+    const { getByTestId, queryByTestId } = render(<NeedsAttentionCard />);
+
+    expect(getByTestId('today-needs-attention-card')).toBeTruthy();
+    expect(queryByTestId('today-needs-attention-avatar')).toBeNull();
   });
 
   // `demoted` is deleted. Emphasis is a fact about WHERE the card is mounted:

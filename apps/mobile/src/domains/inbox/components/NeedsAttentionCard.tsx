@@ -30,9 +30,11 @@ import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
 import { Button } from '@/src/components/ui/button';
 import { Card } from '@/src/components/ui/card';
+import { PersonAvatar } from '@/src/components/ui/person-avatar';
 import { Text } from '@/src/components/ui/text';
 import { Body, H3, MetadataLabel } from '@/src/components/ui/typography';
 import { useInboxItems } from '@/src/domains/inbox/hooks/useInboxItems';
+import { personOf } from '@/src/domains/inbox/utils/buildInboxItems';
 import {
   ctaForItem,
   deadlineForItem,
@@ -80,6 +82,7 @@ export function NeedsAttentionCard() {
   }
   const deadline = deadlineForItem(headline, t, timeZone, Date.now());
   const moreCount = items.length - 1;
+  const person = personOf(headline);
 
   return (
     <Card
@@ -87,7 +90,17 @@ export function NeedsAttentionCard() {
       tone={tone}
       className="gap-3 p-5.5"
     >
-      <H3>{titleForItem(headline, t, timeZone)}</H3>
+      <View className="flex-row items-center gap-3">
+        {person ? (
+          <PersonAvatar
+            testID="today-needs-attention-avatar"
+            name={person.name}
+            colour={person.colour}
+            size="sm"
+          />
+        ) : null}
+        <H3 className="flex-1">{titleForItem(headline, t, timeZone)}</H3>
+      </View>
       {deadline ? (
         <MetadataLabel className="text-destructive">{deadline}</MetadataLabel>
       ) : null}
