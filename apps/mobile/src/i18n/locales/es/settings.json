@@ -19,7 +19,7 @@
   "getHelp": "Obtener ayuda",
   "appVersion": "Versión {{version}}",
   "carerAvailability": "Disponibilidad de la niñera",
-  "carerAvailability.summary": "{{days}} días a la semana · {{hours}}h",
+  "carerAvailabilitySummary": "{{days}} días a la semana · {{hours}}h",
   "carerAvailabilityEmpty": "Aún no hay niñera en este hogar",
   "carerAvailabilityNone": "{{name}} aún no ha indicado su disponibilidad.",
   "carerTimeOff": "Ausencias de la niñera",

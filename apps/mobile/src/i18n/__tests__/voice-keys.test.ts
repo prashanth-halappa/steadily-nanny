@@ -74,7 +74,7 @@ const VOICE_KEYS: ReadonlyArray<readonly [Namespace, string]> = [
   ['pay', 'moments.termsAgreed.cta'],
   ['pay', 'ack.recordedNow'],
   ['pay', 'dissent.recordedNow'],
-  ['settings', 'carerAvailability.summary'],
+  ['settings', 'carerAvailabilitySummary'],
   ['settings', 'householdTimeOff.summary_one'],
   ['settings', 'householdTimeOff.summary_other'],
 ];
@@ -94,14 +94,15 @@ for (const ns of namespaces) {
 }
 
 /**
- * Nested walk first; fall back to a literal dotted JSON key. Needed because
- * `settings.carerAvailability` is already a string title, so
- * `carerAvailability.summary` cannot nest under it.
+ * Resolve the way i18next does: walk nested objects. A dotted key whose
+ * parent is a string (or otherwise not an object) is missing — a flat JSON
+ * key like `"carerAvailability.summary"` next to `"carerAvailability": "…"`
+ * is unreachable at runtime and must not count as present.
  */
 function getAtPath(obj: Record<string, unknown>, path: string): unknown {
   const parts = path.split('.');
   let current: unknown = obj;
-  for (let i = 0; i < parts.length; i++) {
+  for (const key of parts) {
     if (
       current === null ||
       typeof current !== 'object' ||
@@ -109,14 +110,7 @@ function getAtPath(obj: Record<string, unknown>, path: string): unknown {
     ) {
       return undefined;
     }
-    const record = current as Record<string, unknown>;
-    const remainder = parts.slice(i).join('.');
-    if (remainder in record && typeof record[remainder] === 'string') {
-      return record[remainder];
-    }
-    const key = parts[i];
-    if (key === undefined) return undefined;
-    current = record[key];
+    current = (current as Record<string, unknown>)[key];
   }
   return current;
 }
@@ -131,6 +125,19 @@ function extractPlaceholders(value: string): string[] {
 }
 
 describe('Pass-1 voice keys', () => {
+  it('walks nested objects and treats a dotted key whose parent is a string as missing', () => {
+    const ns: Record<string, unknown> = {
+      carerAvailability: 'Nanny availability',
+      'carerAvailability.summary': '{{days}} days a week · {{hours}}h',
+      householdTimeOff: {
+        summary_one: '{{count}} day off coming up · next {{date}}',
+      },
+    };
+    expect(hasPath(ns, 'carerAvailability')).toBe(true);
+    expect(hasPath(ns, 'carerAvailability.summary')).toBe(false);
+    expect(hasPath(ns, 'householdTimeOff.summary_one')).toBe(true);
+  });
+
   it('every Pass-1 voice key exists in en and es with identical {{placeholders}}', () => {
     for (const [namespace, dottedKey] of VOICE_KEYS) {
       const enNs = enLocales[namespace];

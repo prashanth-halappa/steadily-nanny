@@ -19,7 +19,7 @@
   "getHelp": "Get help",
   "appVersion": "Version {{version}}",
   "carerAvailability": "Nanny availability",
-  "carerAvailability.summary": "{{days}} days a week · {{hours}}h",
+  "carerAvailabilitySummary": "{{days}} days a week · {{hours}}h",
   "carerAvailabilityEmpty": "No nanny in this household yet",
   "carerAvailabilityNone": "{{name}} hasn't set her availability yet.",
   "carerTimeOff": "Nanny time off",

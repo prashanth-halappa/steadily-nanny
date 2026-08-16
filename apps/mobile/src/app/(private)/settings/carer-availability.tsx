@@ -77,7 +77,7 @@ export default function CarerAvailabilityScreen() {
     }
     if (windows.length === 0) return null;
     const hours = windows.reduce((sum, w) => sum + w.minutes, 0) / 60;
-    return t('carerAvailability.summary', {
+    return t('carerAvailabilitySummary', {
       days: windows.length,
       hours,
     });
