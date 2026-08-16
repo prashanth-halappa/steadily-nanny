@@ -53,6 +53,9 @@ let paymentsResult: QueryLike;
 let onboardingResult: { role: string | null; status: string };
 let activeHouseholdResult: {
   householdId: string | null;
+  household: { id: string; name: string } | null;
+  households: { id: string; name: string }[];
+  pastHouseholds: { id: string; name: string }[];
   isPastHousehold: boolean;
   isLoading: boolean;
 };
@@ -177,6 +180,9 @@ beforeEach(() => {
   onboardingResult = { role: 'parent', status: 'onboarded' };
   activeHouseholdResult = {
     householdId: HOUSEHOLD_ID,
+    household: { id: HOUSEHOLD_ID, name: 'The Halappas' },
+    households: [{ id: HOUSEHOLD_ID, name: 'The Halappas' }],
+    pastHouseholds: [],
     isPastHousehold: false,
     isLoading: false,
   };
@@ -252,6 +258,9 @@ describe('PaymentsScreen — states', () => {
   it('tells a past member her record is read-only', () => {
     activeHouseholdResult = {
       householdId: HOUSEHOLD_ID,
+      household: { id: HOUSEHOLD_ID, name: 'The Halappas' },
+      households: [{ id: HOUSEHOLD_ID, name: 'The Halappas' }],
+      pastHouseholds: [],
       isPastHousehold: true,
       isLoading: false,
     };
@@ -556,6 +565,65 @@ describe('PaymentsScreen — role', () => {
 
     expect(queryByText('payments.emptyBodyNanny')).toBeTruthy();
     expect(queryByText('payments.emptyBodyParent')).toBeNull();
+  });
+
+  it('names the family on each row for a nanny with two households', async () => {
+    onboardingResult = { role: 'nanny', status: 'onboarded' };
+    activeHouseholdResult = {
+      householdId: HOUSEHOLD_ID,
+      household: { id: HOUSEHOLD_ID, name: 'The Halappas' },
+      households: [
+        { id: HOUSEHOLD_ID, name: 'The Halappas' },
+        {
+          id: '77777777-7777-4777-8777-777777777777',
+          name: 'The Patels',
+        },
+      ],
+      pastHouseholds: [],
+      isPastHousehold: false,
+      isLoading: false,
+    };
+    paymentsResult = {
+      data: [
+        makePayment({ id: 'p-1' }),
+        makePayment({ id: 'p-2', paid_at: '2026-08-09' }),
+      ],
+      isPending: false,
+      isError: false,
+      refetch: refetchMock,
+    };
+
+    const { getByTestId } = renderWithProviders(<PaymentsScreen />);
+
+    await waitFor(() =>
+      expect(getByTestId('payments-row-p-1-avatar')).toBeTruthy()
+    );
+    expect(
+      getByTestId('payments-row-p-1-avatar').props.accessibilityLabel
+    ).toBe('The Halappas');
+    expect(
+      getByTestId('payments-row-p-2-avatar').props.accessibilityLabel
+    ).toBe('The Halappas');
+  });
+
+  it('names nobody for a nanny with a single household', async () => {
+    onboardingResult = { role: 'nanny', status: 'onboarded' };
+    paymentsResult = {
+      data: [makePayment({ id: 'p-1' })],
+      isPending: false,
+      isError: false,
+      refetch: refetchMock,
+    };
+
+    const { getByTestId, queryByTestId } = renderWithProviders(
+      <PaymentsScreen />
+    );
+
+    // Wait for the join so a missing avatar is a decision, not a race.
+    await waitFor(() =>
+      expect(getByTestId('payments-row-p-1-week')).toBeTruthy()
+    );
+    expect(queryByTestId('payments-row-p-1-avatar')).toBeNull();
   });
 });
 
