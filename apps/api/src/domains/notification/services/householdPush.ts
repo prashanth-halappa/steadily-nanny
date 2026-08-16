@@ -4,15 +4,14 @@
  *
  * @module domains/notification/services/householdPush
  */
+// Straight from the shared package rather than through the household barrel:
+// the constant is a leaf, and the barrel is what this module's tests replace
+// wholesale to stub the repository.
+import { PARENT_ROLES } from '@steadily-nanny/shared-types/schemas/household.schema';
 import { logger } from '../../../middlewares/logger';
-import { HOUSEHOLD_ROLES, HouseholdMemberRepository } from '../../household';
+import { HouseholdMemberRepository } from '../../household';
 import type { PushPayload } from '../types';
 import { sendToUser } from './pushDispatchService';
-
-const PARENT_ROLES: ReadonlySet<string> = new Set([
-  HOUSEHOLD_ROLES.OWNER,
-  HOUSEHOLD_ROLES.PARENT,
-]);
 
 async function listParentUserIds(householdId: string): Promise<string[]> {
   const members = await new HouseholdMemberRepository().listActiveByHousehold(

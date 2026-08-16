@@ -241,6 +241,45 @@ export class PayOfferNotForRoleError extends ValidationError {
 }
 
 /**
+ * 409 — one live household per parent (§8/A4). The caller already speaks for a
+ * family, and creating or joining a second would silently abandon the first —
+ * with a nanny's schedule, hours and pay history inside it.
+ *
+ * `existingHouseholdId` is the caller's OWN household, so naming it leaks
+ * nothing about anybody else, and the client needs it: the escape hatch A4
+ * insists on ("invite them to {existingName} instead") cannot be offered
+ * without knowing which household is in the way.
+ */
+export class ParentAlreadyHasHouseholdError extends ConflictError {
+  constructor(existingHouseholdId: string) {
+    super(
+      'You are already set up with a family',
+      'PARENT_ALREADY_HAS_HOUSEHOLD',
+      { existingHouseholdId }
+    );
+    this.name = 'ParentAlreadyHasHouseholdError';
+  }
+}
+
+/**
+ * 409 — the household still has a carer, so it may not be archived (A4: the
+ * destructive option is HIDDEN when a carer is attached, and a hidden button
+ * is not a constraint). Her schedule, hours and pay history live there and she
+ * has no say in this; removing her is a deliberate, separate act with its own
+ * consequences (`removeMember` end-dates her pay).
+ */
+export class HouseholdHasCarerError extends ConflictError {
+  constructor(householdId: string) {
+    super(
+      'This household still has a carer — remove them before closing it',
+      'HOUSEHOLD_HAS_CARER',
+      { householdId }
+    );
+    this.name = 'HouseholdHasCarerError';
+  }
+}
+
+/**
  * 409 — `week_starts_on` cannot change once any timesheet exists for the
  * household. It defines pay-week boundaries (FLSA fixed workweek,
  * 075_household_week_starts_on.sql); moving it after hours have been

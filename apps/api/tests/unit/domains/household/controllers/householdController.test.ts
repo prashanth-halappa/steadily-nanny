@@ -14,6 +14,7 @@ let createInvite: any;
 let redeemInvite: any;
 let removeMember: any;
 let revokeInvite: any;
+let archive: any;
 
 beforeAll(async () => {
   listForUser = mock(async () => [{ id: 'h1' }]);
@@ -31,6 +32,7 @@ beforeAll(async () => {
   redeemInvite = mock(async () => ({ id: 'm-new', role: 'nanny' }));
   removeMember = mock(async () => ({ id: 'm-target', status: 'removed' }));
   revokeInvite = mock(async () => ({ id: 'i1', status: 'revoked' }));
+  archive = mock(async () => ({ id: 'm-owner', status: 'removed' }));
 
   mock.module(
     '../../../../../src/domains/household/services/householdQueryService',
@@ -54,6 +56,7 @@ beforeAll(async () => {
         redeemInvite,
         removeMember,
         revokeInvite,
+        archive,
       },
     })
   );
@@ -91,6 +94,7 @@ beforeEach(() => {
     redeemInvite,
     removeMember,
     revokeInvite,
+    archive,
   ]) {
     m.mockClear?.();
   }
@@ -281,6 +285,38 @@ describe('HouseholdController', () => {
     );
     expect(revokeInvite).toHaveBeenCalledWith('u1', 'h1', 'i1');
     expect(res.body.data).toEqual({ invite: { id: 'i1', status: 'revoked' } });
+  });
+
+  it('archive answers with the caller’s own now-removed membership', async () => {
+    const res = mockRes();
+    await HouseholdController.archive(
+      { user: { id: 'u1' }, params: { householdId: 'h1' } } as any,
+      res,
+      mock()
+    );
+    expect(archive).toHaveBeenCalledWith('u1', 'h1');
+    expect(res.body.data).toEqual({
+      household_member: { id: 'm-owner', status: 'removed' },
+    });
+  });
+
+  it('archive forwards the service refusal instead of shaping its own', async () => {
+    // Every rule — not a member, still has a carer, a nanny who should use
+    // `leave` — lives in the command service. The controller has no opinion.
+    archive.mockImplementationOnce(async () => {
+      const { HouseholdHasCarerError } = await import(
+        '../../../../../src/domains/household/errors/householdErrors'
+      );
+      throw new HouseholdHasCarerError('h1');
+    });
+    const res = mockRes();
+    const next = mock();
+    await HouseholdController.archive(
+      { user: { id: 'u1' }, params: { householdId: 'h1' } } as any,
+      res,
+      next
+    );
+    expect(next.mock.calls[0]?.[0]).toMatchObject({ statusCode: 409 });
   });
 
   it('forwards service errors to next()', async () => {

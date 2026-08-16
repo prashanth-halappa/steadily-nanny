@@ -138,6 +138,19 @@ router.post(
   asyncHandler(HouseholdController.leave)
 );
 
+// Archive the household — close it, never delete it (A4/A10). Wired exactly
+// like `/members/leave` above and for the same reasons: the ownership preset
+// (active membership, 404 otherwise) is the whole authorization the ROUTE
+// owes, and there is no body to validate because the caller is the subject.
+// The role rules — parent or draft author only, and never while a carer is
+// still attached — belong to the command service, which is the only place that
+// can see the household's state and its roster.
+router.post(
+  '/:householdId/archive',
+  ...authWithOwnership(HouseholdIdParamSchema, householdOwnership),
+  asyncHandler(HouseholdController.archive)
+);
+
 // Remove a member — parents only (role check in the command service). The
 // controller accepts only `status: 'removed'`; see its doc comment.
 router.patch(

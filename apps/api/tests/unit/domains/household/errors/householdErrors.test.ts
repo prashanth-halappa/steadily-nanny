@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'bun:test';
-import { InviteNotFoundError } from '../../../../../src/domains/household/errors/householdErrors';
+import {
+  HouseholdHasCarerError,
+  InviteNotFoundError,
+  ParentAlreadyHasHouseholdError,
+} from '../../../../../src/domains/household/errors/householdErrors';
 
 describe('InviteNotFoundError', () => {
   const SECRET_CODE = 'ABC-234';
@@ -28,5 +32,37 @@ describe('InviteNotFoundError', () => {
       statusCode: 404,
       isOperational: true,
     });
+  });
+});
+
+describe('ParentAlreadyHasHouseholdError', () => {
+  const EXISTING_ID = '550e8400-e29b-41d4-a716-446655440000';
+
+  it('is a 409 carrying the reason the client branches on', () => {
+    const error = new ParentAlreadyHasHouseholdError(EXISTING_ID);
+    expect(error.statusCode).toBe(409);
+    expect(error.metadata?.reason).toBe('PARENT_ALREADY_HAS_HOUSEHOLD');
+  });
+
+  // It is the caller's OWN household, so naming it leaks nothing — and the
+  // escape-hatch sheet needs the id to offer "invite them here instead".
+  it('names the household the caller already has', () => {
+    const error = new ParentAlreadyHasHouseholdError(EXISTING_ID);
+    expect(error.metadata?.existingHouseholdId).toBe(EXISTING_ID);
+    expect(error.toClientJSON().error.metadata).toMatchObject({
+      reason: 'PARENT_ALREADY_HAS_HOUSEHOLD',
+      existingHouseholdId: EXISTING_ID,
+    });
+  });
+});
+
+describe('HouseholdHasCarerError', () => {
+  const HOUSEHOLD_ID = '550e8400-e29b-41d4-a716-446655440001';
+
+  it('is a 409 carrying HOUSEHOLD_HAS_CARER', () => {
+    const error = new HouseholdHasCarerError(HOUSEHOLD_ID);
+    expect(error.statusCode).toBe(409);
+    expect(error.metadata?.reason).toBe('HOUSEHOLD_HAS_CARER');
+    expect(error.metadata?.householdId).toBe(HOUSEHOLD_ID);
   });
 });
