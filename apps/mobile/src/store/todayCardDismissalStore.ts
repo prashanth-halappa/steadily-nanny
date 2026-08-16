@@ -10,6 +10,12 @@
  *     (`SendMyTermsCard.tsx`) so joining a second family re-offers it.
  *   - the §8.1 joined-household card keys by `joinedHousehold:${householdId}`
  *     (`TodayScreen.tsx`) so it shows once per household joined.
+ *   - the parent-side nanny-joined moment keys by `nannyJoined:${householdId}:${nannyUserId}`
+ *     (`TodayScreen.tsx`) so a second nanny joining is its own reveal.
+ *   - the first clock-in moment keys by `firstClockIn:${householdId}`
+ *     (`TodayScreen.tsx`) so it fires once per relationship.
+ *   - the first week-approved moment keys by `firstWeekApproved:${householdId}`
+ *     (`TodayScreen.tsx`) so a later approved week is not a moment.
  *
  * Persisted to MMKV so a dismissal survives app restarts; reset on
  * account switch (`resetStores.ts`) so one user's dismissals don't hide a

@@ -54,6 +54,11 @@ mock.module('@/src/components/ui/empty-state', () => {
 mock.module('@/src/domains/household', () => ({
   HouseholdSwitcher: () => null,
 }));
+mock.module('@/src/domains/draft', () => ({
+  JoinedHouseholdCard: () => null,
+  SendMyTermsCard: () => null,
+  DraftHomeScreen: () => null,
+}));
 mock.module('@/src/domains/schedule', () => ({
   PendingScheduleCard: () => null,
   ThisWeeksShiftsCard: () => null,
@@ -68,6 +73,27 @@ mock.module('@/src/domains/today/components/HandoffChipsCard', () => ({
 mock.module('@/src/domains/today/components/ThisWeekCard', () => ({
   ThisWeekCard: () => null,
 }));
+mock.module(
+  '@/src/domains/today/components/EmergencyContactPromptCard',
+  () => ({
+    EmergencyContactPromptCard: () => null,
+  })
+);
+mock.module('@/src/domains/today/components/CrossFamilyStrip', () => ({
+  CrossFamilyStrip: () => null,
+}));
+mock.module('@/src/domains/today/components/NannyJoinedMomentCard', () => ({
+  NannyJoinedMomentCard: () => null,
+}));
+mock.module('@/src/domains/today/components/FirstClockInMomentCard', () => ({
+  FirstClockInMomentCard: () => null,
+}));
+mock.module(
+  '@/src/domains/today/components/FirstWeekApprovedMomentCard',
+  () => ({
+    FirstWeekApprovedMomentCard: () => null,
+  })
+);
 mock.module('@/src/hooks/queries/useWeekTimeEntries', () => ({
   useWeekTimeEntries: () => ({ data: [], isLoading: false }),
 }));
@@ -76,6 +102,9 @@ mock.module('@/src/hooks/queries/useShiftsRange', () => ({
 }));
 mock.module('@/src/hooks/queries/useHouseholdMembers', () => ({
   useHouseholdMembers: () => ({ data: [], isLoading: false }),
+}));
+mock.module('@/src/hooks/queries/useHouseholdTimesheets', () => ({
+  useHouseholdTimesheets: () => ({ data: [], isLoading: false }),
 }));
 mock.module('@/src/hooks/queries/useHouseholdClosures', () => ({
   useHouseholdClosures: () => ({ data: [], isLoading: false }),

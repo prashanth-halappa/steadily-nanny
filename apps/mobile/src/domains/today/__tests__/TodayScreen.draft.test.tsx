@@ -92,6 +92,18 @@ mock.module('@/src/domains/today/components/NannyWeekLine', () => ({
 mock.module('@/src/domains/today/components/HandoffChipsCard', () => ({
   HandoffChipsCard: () => null,
 }));
+mock.module('@/src/domains/today/components/NannyJoinedMomentCard', () => ({
+  NannyJoinedMomentCard: () => null,
+}));
+mock.module('@/src/domains/today/components/FirstClockInMomentCard', () => ({
+  FirstClockInMomentCard: () => null,
+}));
+mock.module(
+  '@/src/domains/today/components/FirstWeekApprovedMomentCard',
+  () => ({
+    FirstWeekApprovedMomentCard: () => null,
+  })
+);
 mock.module('@/src/domains/today/hooks/useOverdueClockOut', () => ({
   useOverdueClockOut: () => ({
     overdue: false,
@@ -141,6 +153,9 @@ beforeAll(async () => {
   }));
   mock.module('@/src/hooks/queries/useHouseholdMembers', () => ({
     useHouseholdMembers: () => ({ data: [], isLoading: false }),
+  }));
+  mock.module('@/src/hooks/queries/useHouseholdTimesheets', () => ({
+    useHouseholdTimesheets: () => ({ data: [], isLoading: false }),
   }));
   mock.module('@/src/store/auth', () => ({
     useAuthStore: (selector: (s: unknown) => unknown) =>

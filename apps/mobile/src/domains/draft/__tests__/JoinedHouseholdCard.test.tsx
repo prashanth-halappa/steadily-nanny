@@ -10,9 +10,17 @@
  * D-21 makes the answer no, and this sentence is the only place the app ever
  * says so. It is a fact, not a reassurance.
  */
-import { describe, expect, it, mock } from 'bun:test';
+import { beforeAll, describe, expect, it, mock } from 'bun:test';
+import { join } from 'node:path';
 import { renderWithProviders } from '@/src/test-utils';
 import { JoinedHouseholdCard } from '../components/JoinedHouseholdCard';
+
+const cardPath = join(__dirname, '../components/JoinedHouseholdCard.tsx');
+let cardSource: string;
+
+beforeAll(async () => {
+  cardSource = await Bun.file(cardPath).text();
+});
 
 const composition = {
   children: [
@@ -33,7 +41,9 @@ describe('JoinedHouseholdCard', () => {
       />
     );
 
-    expect(getByTestId('draft-joined-title')).toBeTruthy();
+    expect(getByTestId('draft-joined-title').props.children).toBe(
+      'joined.title'
+    );
   });
 
   it('states D-21 to the person it protects', () => {
@@ -103,5 +113,11 @@ describe('JoinedHouseholdCard', () => {
 
     const line = String(getByTestId('draft-joined-composition').props.children);
     expect(line).not.toContain('otherCarers');
+  });
+
+  it('renders through MomentCard rather than an attention-toned Card', () => {
+    expect(cardSource).toContain("from '@/src/components/ui/moment-card'");
+    expect(cardSource).toContain('MomentCard');
+    expect(cardSource).not.toContain('tone="attention"');
   });
 });
