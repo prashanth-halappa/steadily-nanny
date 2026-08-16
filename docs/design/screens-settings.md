@@ -182,6 +182,8 @@ same identity hero, the same grouping, the same chips.
   consequence strings do this and are good.
 - App version is a fact, not a brand moment. `Small mutedForeground`, no logo.
 
+**Voice:** `docs/design/screens-today.md` section 7 governs all copy in this screen, including the milestone-tier tables.
+
 ---
 
 ## 7. Illustration

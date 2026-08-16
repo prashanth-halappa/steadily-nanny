@@ -237,16 +237,77 @@ passes underneath it.
 
 ---
 
-## 7. Copy tone
+## 7. Voice
+
+The voice is named, factual, and addressed to the person reading. It may
+acknowledge that something finished. It may never grade them on it, tell them
+how to feel, or speak about them in the third person on their own screen.
+
+**Still binding.**
 
 - Name people. "Priya arrives at 11:22", not "carer scheduled".
-- State facts about the schedule, never verdicts about a person. The existing
-  decision to kill "You're covered today · you can breathe" in favour of
-  `cover.allCovered` (both keys since deleted with `CoverCard` itself, and
-  fenced by `today-key-contract.test.ts`) was right; do not reintroduce
-  reassurance copy.
-- Sentence case, no exclamation marks, no emoji.
-- Times: `11:22 AM – 7:22 PM` with an en dash and hair spaces, tabular.
-- The nanny is never referred to in the third person on her own screen, and the
-  parent is never addressed as a manager. No "your staff", no "shift coverage
-  rate", no "resource".
+- State facts and consequences, never verdicts about a person.
+- No all-clear push. `docs/12-NEED-COVERAGE.md` §5's decision stands: nothing
+  uncovered ⇒ silence, not an "all clear". That rule is about notification
+  fatigue, not in-app tone.
+- Sentence case. Times: `11:22 AM – 7:22 PM`, en dash, tabular.
+- The nanny is never third-person on her own screen; the parent is never
+  addressed as a manager. No "your staff", no "shift coverage rate", no
+  "resource".
+
+**Retired.**
+
+- The blanket ban on acknowledgement. It was written against sentimentality
+  and was over-applied to everything, including motion, colour and imagery
+  which it never governed. The app may now state that something finished.
+- The blanket ban on exclamation marks. One is allowed, in a moment-tier
+  title only (Table A). Everywhere else, still none.
+
+**The test that replaces the ban.**
+
+> Say what happened, to the person it happened to, in the order they care
+> about it. Never grade them on it.
+
+- Passes: "Aisha worked 41 hours with you this week. Nothing unusual." — a
+  fact, addressed to the reader, leading with what she did.
+- Fails: "Great job approving on time!" — it grades the reader.
+- Fails: "You're covered today · you can breathe" — it tells someone how to
+  feel.
+
+**Reference strings** (the only two `"!"` violations in the codebase; a
+sibling stream amends them). They are existing confirmations being
+de-exclaimed, not moment-tier titles:
+
+- `schedule:sendSuccessTitle` `"Sent!"` → `"Sent."`
+- `schedule:respond.acceptedToast` `"Accepted! Shifts have been added to your
+  calendar."` → `"Accepted — the shifts are on your calendar."`
+
+`apps/mobile/src/i18n/__tests__/voice-guard.test.ts` (added by that stream)
+fails the build on any en/es value containing `"!"` outside a `moments.*`
+key.
+
+### Table A — milestone tiers
+
+| Tier | Surface | Haptic | Motion | Confetti | Copy rule |
+|---|---|---|---|---|---|
+| **silent** | nothing — the screen just updates | none | none | no | no copy |
+| **acknowledged** | inline confirmation on the surface that changed, or a toast only once a sheet has closed | `light` | `gentleRise` | no | state the fact in three words or fewer |
+| **receipt** | a **persistent** positive-toned card, not a toast that vanishes | `achievement` | `gentleRise` | no | the figure and who it involves |
+| **moment** | full-surface: illustration, the `Achievement` type rung, the milestone haptic crescendo | `milestone` | `celebrationPop` | one restrained pass | one exclamation mark permitted in the title |
+
+### Table B — event to tier
+
+| Event | Tier | Why |
+|---|---|---|
+| Terms agreed (both sides) | **moment** | the most consequential act in the product; today it silently drops you on a settings page |
+| Nanny joins the household (BOTH sides) | **moment** | today she gets the best surface in the app and the parent gets a push and silence |
+| First clock-in ever | **moment** | once per relationship |
+| First week approved | **moment** | once per relationship |
+| Later week approvals | **receipt** | the ritual, not the milestone |
+| Week closed (her last scheduled shift has ended) | **receipt** | she has no submit act by design, so this is her closing beat |
+| Clock-out | **receipt** | already built this way |
+| Terms read / disagreement recorded / entry voided / correction saved / query sent | **acknowledged** | the write already happened; name it once |
+| Everything else | **silent** | the screen updating is the confirmation; do not invent a beat |
+
+Only four events ever reach moment tier and three of them happen once per
+relationship — the confetti works precisely because it is almost never spent.

@@ -180,6 +180,8 @@ reading banners.
 - Statuses are sentence case single words: Confirmed, Pending, Declined,
   Cancelled, Short notice.
 
+**Voice:** `docs/design/screens-today.md` section 7 governs all copy in this screen, including the milestone-tier tables.
+
 ---
 
 ## 7. Illustration
