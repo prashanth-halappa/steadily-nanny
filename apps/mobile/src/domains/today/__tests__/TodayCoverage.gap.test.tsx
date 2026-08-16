@@ -13,9 +13,11 @@ import {
   mock,
   setSystemTime,
 } from 'bun:test';
+import { join } from 'node:path';
 import type { ChildCommitment } from '@steadily-nanny/shared-types/schemas/child.schema';
 import type { Shift } from '@steadily-nanny/shared-types/schemas/shift.schema';
 import { SHIFT_KINDS } from '@steadily-nanny/shared-types/schemas/shift.schema';
+import { View } from 'react-native';
 import { formatClockTime } from '@/src/domains/timesheet/utils/duration';
 import i18n from '@/src/i18n';
 // `renderWithProviders`, not bare `render`: the card now reads the day thread
@@ -321,10 +323,11 @@ describe('TodayCoverage — 10 Aug 2026 gap + plan', () => {
   // Daylight v2's single largest fix: this sentence was `Body weight="medium"`
   // (16/24/500) — SMALLER than the handoff card's H4 title below it, on a
   // ground 4% off white. "A title is never smaller than the title of a less
-  // important card" (daylight-v2 §3.2), so at L1 it is an H3 and demoted it
-  // drops exactly one rung to H4. Sizes, not class names, because the
-  // typography factory emits size inline.
-  it('sets the gap headline at H3 when it owns the screen, H4 when demoted', () => {
+  // important card" (daylight-v2 §3.2), so it is an H3. There is no demoted
+  // rung any more: a parent's `uncoveredCare` can only ever lose Today's slot
+  // to nanny-only rungs, so when this card renders a gap it renders promoted.
+  // Sizes, not class names, because the typography factory emits size inline.
+  it('sets the gap headline at H3 — the only look it has', () => {
     const atL1 = renderWithProviders(
       <TodayCoverage
         householdId={HOUSEHOLD_ID}
@@ -337,20 +340,33 @@ describe('TodayCoverage — 10 Aug 2026 gap + plan', () => {
       mergedStyle(atL1.getByTestId('today-coverage-gap-headline').props.style)
         .fontSize
     ).toBe(20);
+  });
 
-    const demoted = renderWithProviders(
+  // The handoff chips fold in here on the parent side (#9's merge), so the
+  // card has to have a bottom to fold them into — under the plan lines, not
+  // between the gap card and them.
+  it('renders a footer beneath the plan lines', () => {
+    const tree = renderWithProviders(
       <TodayCoverage
         householdId={HOUSEHOLD_ID}
         timeZone={ZONE}
         weekStartsOn={1}
         householdChildren={[{ id: CHILD_ID, name: 'H1 Child1' } as never]}
-        demoted
+        footer={<View testID="coverage-footer" />}
       />
     );
+
+    expect(tree.getByTestId('coverage-footer')).toBeTruthy();
     expect(
-      mergedStyle(
-        demoted.getByTestId('today-coverage-gap-headline').props.style
-      ).fontSize
-    ).toBe(18);
+      testIdIndex(tree, 'today-coverage-plan-confirmed-1122')
+    ).toBeLessThan(testIdIndex(tree, 'coverage-footer'));
+  });
+
+  // The mechanic itself is gone, not just unused — one slot, one occupant.
+  it('SOURCE: carries no `demoted` prop or branch any more', async () => {
+    const source = await Bun.file(
+      join(__dirname, '../components/TodayCoverage.tsx')
+    ).text();
+    expect(source).not.toContain('demoted');
   });
 });

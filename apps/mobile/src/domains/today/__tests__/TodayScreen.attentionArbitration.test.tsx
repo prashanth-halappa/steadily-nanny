@@ -19,8 +19,12 @@
  * (overdue vs inbox) already has its own dedicated coverage in
  * `TodayScreen.t1Arbitration.test.tsx`; this file is about the NEW pair
  * (inbox vs coverage-gap) the follow-up audit found.
+ *
+ * Since the pinned slot landed, "who owns the tint" and "who owns the slot"
+ * are the same question, so the newest case asserts both at once.
  */
 import { beforeAll, describe, expect, it, mock } from 'bun:test';
+import { within } from '@testing-library/react-native';
 import type { InboxItem } from '@/src/domains/inbox/utils/buildInboxItems';
 // `renderWithProviders`, not bare `render`: the coverage surface now reads the
 // day thread (to know whether the carer has said she's running late), and that
@@ -57,14 +61,12 @@ mock.module('@/src/domains/schedule', () => ({
 mock.module('@/src/domains/today/components/ClockInCard', () => ({
   ClockInCard: () => null,
 }));
-mock.module('@/src/domains/today/components/AddMissedHoursCard', () => ({
-  AddMissedHoursCard: () => null,
-}));
 mock.module('@/src/domains/today/components/HandoffChipsCard', () => ({
   HandoffChipsCard: () => null,
 }));
-mock.module('@/src/domains/today/components/NannyWeekLine', () => ({
-  NannyWeekLine: () => null,
+// The three merged week cards behind one block; irrelevant to arbitration.
+mock.module('@/src/domains/today/components/ThisWeekCard', () => ({
+  ThisWeekCard: () => null,
 }));
 mock.module('@/src/hooks/queries/useWeekTimeEntries', () => ({
   useWeekTimeEntries: () => ({ data: [], isLoading: false }),
@@ -214,6 +216,30 @@ function countAttentionCards(
 }
 
 describe('TodayScreen — one T1 per screen (attention arbitration)', () => {
+  // The whole guarantee in one case: the gap owns the slot, the inbox card
+  // is still on screen (in the feed, at default tone), and exactly ONE
+  // attention ground exists anywhere.
+  it('parent + coverage gap + inbox item: coverage in the slot, inbox outside it, one attention ground', () => {
+    mockUseInboxItems.mockReturnValue({
+      items: [CHANGE_REQUEST],
+      isLoading: false,
+    });
+    mockUseUncoveredToday.mockReturnValue(UNCOVERED_STATE);
+    mockUseOverdueClockOut.mockReturnValue({
+      overdue: false,
+      clockInAt: null,
+      shiftEndsAt: null,
+    });
+
+    const tree = renderWithProviders(<TodayScreen />);
+    const slot = within(tree.getByTestId('today-pinned-slot'));
+
+    expect(slot.getByTestId('today-coverage-gap-card')).toBeTruthy();
+    expect(slot.queryByTestId('today-needs-attention-card')).toBeNull();
+    expect(tree.getByTestId('today-needs-attention-card')).toBeTruthy();
+    expect(countAttentionCards(tree.queryByTestId)).toBe(1);
+  });
+
   it('parent + inbox item + uncovered care today: exactly one attention surface (uncovered wins)', () => {
     mockUseInboxItems.mockReturnValue({
       items: [CHANGE_REQUEST],

@@ -213,5 +213,8 @@
   "cancelledShift": {
     "paid": "Tu turno de {{start}} a {{end}} se canceló. Aun así se te pagará.",
     "unpaid": "Tu turno de {{start}} a {{end}} se canceló — son {{duration}} menos esta semana."
+  },
+  "thisWeek": {
+    "title": "Esta semana"
   }
 }

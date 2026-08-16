@@ -87,4 +87,28 @@ describe('resolveAttentionOwner', () => {
       })
     ).toBe('inbox');
   });
+
+  // A5/A1 — the rung the clock-in hard block adds, at the TOP. Both
+  // neighbours asserted here so the ordering cannot drift either way.
+  it('a terms block wins over an overdue clock-out — the block stops the record existing at all', () => {
+    expect(
+      resolveAttentionOwner({
+        termsBlocked: true,
+        overdue: true,
+        hasUncoveredCare: true,
+        hasTermsProposal: true,
+        hasInboxItems: true,
+      })
+    ).toBe('termsBlocked');
+  });
+
+  it('treats an omitted termsBlocked flag as not blocked', () => {
+    expect(
+      resolveAttentionOwner({
+        overdue: true,
+        hasUncoveredCare: false,
+        hasInboxItems: false,
+      })
+    ).toBe('overdue');
+  });
 });
