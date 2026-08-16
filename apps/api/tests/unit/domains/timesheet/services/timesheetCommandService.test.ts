@@ -1,4 +1,24 @@
 import { describe, expect, it, mock } from 'bun:test';
+
+/**
+ * The terms gate, stubbed to "agreed", registered BEFORE the service is
+ * imported below (same shape as `timesheetQueryService.test.ts`'s logger
+ * stub).
+ *
+ * This file constructs `TimesheetCommandService` 121 times POSITIONALLY and
+ * never reaches for `mock.module` otherwise, so the gate's default constructor
+ * argument — the real singleton, holding a real `PayArrangementRepository` on
+ * a real Supabase client — would run in every clock-in, retroactive-entry and
+ * correction case here. Stubbing the module keeps all 121 call sites on the
+ * nine/ten-arg constructor and makes this file the regression proof that
+ * NOTHING changes when terms are in force. The gate's own refusal behaviour is
+ * tested in `timesheetCommandService.termsGate.test.ts`.
+ */
+mock.module('../../../../../src/domains/pay/services/termsGateService', () => ({
+  termsGateService: { assertAgreed: mock(async () => undefined) },
+  TermsGateService: class {},
+}));
+
 import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types/schemas/notification.schema';
 import type { WeekEarnings } from '@steadily-nanny/shared-types/schemas/timesheet.schema';
 import { WeekEarningsService } from '../../../../../src/domains/pay/services/weekEarningsService';
