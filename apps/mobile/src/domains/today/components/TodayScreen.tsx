@@ -39,6 +39,7 @@
  */
 
 import { HOUSEHOLD_STATES } from '@steadily-nanny/shared-types/schemas/household.schema';
+import { TIMESHEET_STATUSES } from '@steadily-nanny/shared-types/schemas/timesheet.schema';
 import { type Href, useRouter } from 'expo-router';
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -65,6 +66,7 @@ import {
 } from '@/src/domains/inbox';
 import { usePendingOffer } from '@/src/domains/inbox/hooks/usePendingOffer';
 import { PendingScheduleCard } from '@/src/domains/schedule';
+import { resolveCarerName } from '@/src/domains/schedule/utils/memberDisplayName';
 import { localDateToWeekday } from '@/src/domains/schedule/utils/shiftGrouping';
 import { canViewParentSchedule, SETUP_ROLES } from '@/src/domains/setup/types';
 import {
@@ -74,11 +76,13 @@ import {
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
 import { useChildren } from '@/src/hooks/queries/useChildren';
 import { useHouseholdMembers } from '@/src/hooks/queries/useHouseholdMembers';
+import { useHouseholdTimesheets } from '@/src/hooks/queries/useHouseholdTimesheets';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 import { localDateInZone } from '@/src/lib/localDate';
 import { useAuthStore } from '@/src/store/auth';
 import { useTodayCardDismissalStore } from '@/src/store/todayCardDismissalStore';
 import { useHouseholdIsLive } from '../hooks/useHouseholdIsLive';
+import { useMomentOnce } from '../hooks/useMomentOnce';
 import { useOverdueClockOut } from '../hooks/useOverdueClockOut';
 import { useTermsGate } from '../hooks/useTermsGate';
 import { useTodayCoverRows } from '../hooks/useTodayCoverRows';
@@ -91,7 +95,10 @@ import { ClockInBlockedCard } from './ClockInBlockedCard';
 import { ClockInCard } from './ClockInCard';
 import { CrossFamilyStrip } from './CrossFamilyStrip';
 import { EmergencyContactPromptCard } from './EmergencyContactPromptCard';
+import { FirstClockInMomentCard } from './FirstClockInMomentCard';
+import { FirstWeekApprovedMomentCard } from './FirstWeekApprovedMomentCard';
 import { HandoffChipsCard } from './HandoffChipsCard';
+import { NannyJoinedMomentCard } from './NannyJoinedMomentCard';
 import { PinnedSlot } from './PinnedSlot';
 import { ThisWeekCard } from './ThisWeekCard';
 import { TodayCoverage } from './TodayCoverage';
@@ -240,6 +247,48 @@ export function TodayScreen() {
   useEffect(() => {
     if (showJoinedCard && joinedCardKey) dismissCard(joinedCardKey);
   }, [showJoinedCard, joinedCardKey, dismissCard]);
+  // Stream U3 — parent-side joined moment + the two "first" moments. Hooks
+  // stay unconditional (the draft early-return is below). Keys are null
+  // until every gate is honest, so useMomentOnce does not persist a miss.
+  const timesheets = useHouseholdTimesheets(household?.id);
+  const recentNannyMember = [...(householdMembers.data ?? [])]
+    .filter(m => m.role === 'nanny')
+    .filter(
+      m => Date.now() - new Date(m.joined_at).getTime() < JOINED_CARD_MAX_AGE_MS
+    )
+    .sort(
+      (a, b) =>
+        new Date(b.joined_at).getTime() - new Date(a.joined_at).getTime()
+    )[0];
+  const parentJoinedKey =
+    isParentView &&
+    household?.state === HOUSEHOLD_STATES.LIVE &&
+    !householdMembers.isLoading &&
+    recentNannyMember &&
+    household
+      ? `nannyJoined:${household.id}:${recentNannyMember.user_id}`
+      : null;
+  const showParentJoinedMoment = useMomentOnce(parentJoinedKey);
+  const firstClockInKey =
+    activeNanny && clockInAt !== null && joinedRecently && household
+      ? `firstClockIn:${household.id}`
+      : null;
+  const showFirstClockInMoment = useMomentOnce(firstClockInKey);
+  const herApprovedTimesheets = (timesheets.data ?? []).filter(
+    sheet =>
+      sheet.carer_id === myUserId &&
+      sheet.status === TIMESHEET_STATUSES.APPROVED
+  );
+  const firstApprovedTimesheet =
+    herApprovedTimesheets.length === 1 ? herApprovedTimesheets[0] : undefined;
+  const firstWeekApprovedKey =
+    activeNanny &&
+    !timesheets.isLoading &&
+    herApprovedTimesheets.length === 1 &&
+    household
+      ? `firstWeekApproved:${household.id}`
+      : null;
+  const showFirstWeekApprovedMoment = useMomentOnce(firstWeekApprovedKey);
   // Same tab-bar dead-zone fix as Settings (BUG1) — the floating tab bar
   // overlays this screen's content instead of reserving its own layout
   // space, so a fixed paddingBottom is not safe-area-aware.
@@ -413,6 +462,31 @@ export function TodayScreen() {
                 onSeeTerms={() =>
                   router.push('/(private)/settings/my-pay' as Href)
                 }
+              />
+            ) : null}
+            {showParentJoinedMoment && recentNannyMember ? (
+              <NannyJoinedMomentCard
+                name={resolveCarerName(recentNannyMember, '')}
+                family={household.name ?? t('household:untitledDraft')}
+                carerId={recentNannyMember.user_id}
+                momentKey={parentJoinedKey}
+              />
+            ) : null}
+            {showFirstClockInMoment ? (
+              <FirstClockInMomentCard
+                family={household.name ?? t('household:untitledDraft')}
+                momentKey={firstClockInKey}
+              />
+            ) : null}
+            {showFirstWeekApprovedMoment && firstApprovedTimesheet ? (
+              <FirstWeekApprovedMomentCard
+                householdName={household.name ?? t('household:untitledDraft')}
+                totalMinutes={firstApprovedTimesheet.total_minutes}
+                approvedAt={
+                  firstApprovedTimesheet.approved_at ??
+                  firstApprovedTimesheet.week_start
+                }
+                momentKey={firstWeekApprovedKey}
               />
             ) : null}
 

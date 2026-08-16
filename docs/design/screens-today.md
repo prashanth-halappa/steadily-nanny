@@ -60,6 +60,10 @@ every visit now (`ScreenWash kind="brand"`, apricot only while live).
 │  gap 16
 │  L1 slot        — attention owner, or nothing
 │  L2 slot        — live / clock card
+│  feed           — child chips (parent), then moment cards (nanny-joined /
+│                   joined-household, first clock-in, first week-approved)
+│                   before NeedsAttention, then attention / routine cards.
+│                   Moments are never slot occupants.
 │  L3 stack       — routine cards, gap 12
 │  L4 block       — "Next up", bare ground
 └
@@ -178,15 +182,20 @@ exactly what L4 should be. **Do not touch it**, except:
 `TodayScreen.tsx` already forks on `canViewParentSchedule(onboarding.role)` and
 `SETUP_ROLES.NANNY`. The rungs differ, the layout does not.
 
-**Parent / helper** — hero band, child chips, `NeedsAttentionCard`,
+**Parent / helper** — hero band, child chips, **nanny-joined moment** (when a
+nanny joined in the last 7 days and the parent has not seen it — both sides of
+the relationship get a moment, not a push-and-silence), `NeedsAttentionCard`,
 `PendingScheduleCard`, `TodayCoverage`, `HandoffChipsCard` (morning),
 `ThisWeeksShiftsCard`. L1 candidates: uncovered care (`TodayCoverage` gap),
-inbox.
+inbox. The joined moment is a feed card, never a slot occupant.
 
 **Nanny** — hero band, **no child chips** (the chip row is parent-gated at
-`:132`, correct), `NeedsAttentionCard`, `PendingScheduleCard`, `ClockInCard`,
+`:132`, correct), `JoinedHouseholdCard` (her arrival), first clock-in moment
+(on the clock, joined recently, unseen), first week-approved moment (exactly
+one of her timesheets is approved, unseen), `NeedsAttentionCard`,
+`PendingScheduleCard`, `ClockInCard`,
 `AddMissedHoursCard`, `HandoffChipsCard` (evening), `ThisWeeksShiftsCard`.
-L1 candidates: overdue clock-out, inbox.
+L1 candidates: overdue clock-out, inbox. Moment cards are feed-only.
 
 `ClockInCard` is the nanny's anchor and is already the best-tuned card in the
 app — the off-clock hero is an `H3` invitation, the on-clock state is the

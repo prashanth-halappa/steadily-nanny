@@ -134,6 +134,18 @@ mock.module(
 mock.module('@/src/domains/today/components/CrossFamilyStrip', () => ({
   CrossFamilyStrip: () => null,
 }));
+mock.module('@/src/domains/today/components/NannyJoinedMomentCard', () => ({
+  NannyJoinedMomentCard: () => null,
+}));
+mock.module('@/src/domains/today/components/FirstClockInMomentCard', () => ({
+  FirstClockInMomentCard: () => null,
+}));
+mock.module(
+  '@/src/domains/today/components/FirstWeekApprovedMomentCard',
+  () => ({
+    FirstWeekApprovedMomentCard: () => null,
+  })
+);
 
 const HOUSEHOLD_ID = 'household-order-1';
 
@@ -231,6 +243,9 @@ beforeAll(async () => {
       data: mockMembers,
       isLoading: false,
     })),
+  }));
+  mock.module('@/src/hooks/queries/useHouseholdTimesheets', () => ({
+    useHouseholdTimesheets: () => ({ data: [], isLoading: false }),
   }));
   mock.module('@/src/store/auth', () => ({
     useAuthStore: (selector: (s: unknown) => unknown) =>

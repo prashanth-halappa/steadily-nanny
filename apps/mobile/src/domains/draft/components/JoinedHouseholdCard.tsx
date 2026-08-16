@@ -23,14 +23,12 @@
  * Renders on the §9.2 path too. It is about JOINING, not about who held the
  * code.
  */
-import { PartyPopper } from 'lucide-react-native';
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
 import { Button } from '@/src/components/ui/button';
-import { Card, CardContent } from '@/src/components/ui/card';
-import { IconChip } from '@/src/components/ui/icon-chip';
+import { MomentCard } from '@/src/components/ui/moment-card';
 import { Text } from '@/src/components/ui/text';
-import { Body, H3, Small } from '@/src/components/ui/typography';
+import { Body, Small } from '@/src/components/ui/typography';
 
 export interface JoinedComposition {
   /** First names and ages only — the same fact set `previewInvite` already
@@ -78,12 +76,14 @@ export function JoinedHouseholdCard({
   const { t } = useTranslation('draft');
 
   return (
-    <Card testID="draft-joined-card" tone="attention">
-      <CardContent className="gap-3">
-        <IconChip tone="brand" icon={PartyPopper} />
-        <H3 testID="draft-joined-title">
-          {t('joined.title', { family: familyName })}
-        </H3>
+    <View testID="draft-joined-card">
+      <MomentCard
+        testID="draft-joined"
+        illustration="welcomeHero"
+        title={t('joined.title', { family: familyName })}
+        body=""
+        momentKey={null}
+      >
         {composition ? (
           <Body testID="draft-joined-composition" className="text-muted-strong">
             {compositionLine(composition, t)}
@@ -105,7 +105,7 @@ export function JoinedHouseholdCard({
             <Text>{t('joined.button')}</Text>
           </Button>
         </View>
-      </CardContent>
-    </Card>
+      </MomentCard>
+    </View>
   );
 }
