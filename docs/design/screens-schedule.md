@@ -33,6 +33,8 @@ tab to reconcile.
 │
 │  ┌ HERO BAND ──────────────────────── no card, on the wash
 │  │  H1 "Schedule"                              32/40/600
+│  │  Small subtitle                             mutedStrong
+│  │  Small lead line                            mutedStrong  ← role-forked
 │  │  Small "Week of 10 Aug" mutedStrong         14/21 tabular
 │  │  Figure "38h 30m this week"  28/34/700 tabular foreground   ← new anchor
 │  └───────────────────────────────────────────────────────
@@ -42,8 +44,10 @@ tab to reconcile.
 │  CalendarViewSwitcher             (agenda | rhythm — nanny only for rhythm)
 │
 │  FlashList: day groups
-│     ┌ DayGroup header   "Monday · 10 Aug"      DayGroup 17/24/600
+│     ┌ DayHeader (shared) "Monday · 10 Aug"     DayGroup 17/24/600
+│     │                   "Today" chip when isToday
 │     │                   "8h 00m"               Figure  tabular   right
+│     ├ NowLine                    highlight     (today only, static)
 │     ├ L1  uncovered row      surfaceAttention
 │     ├ L2  live shift row     surfaceLive          (today only)
 │     ├ L3  shift row          card + elevation.row
@@ -120,15 +124,32 @@ View  rounded-row  p-4  bg-surfaceAttention  + elevation.cardProminent
 
 ### 3.2 Day-group header
 
-`AgendaView.tsx:646–656`. `DayGroup` (17/24/600) label on the left, day total on
-the right as `Figure`. Two changes: the total gets `tabular` (it is a column of
-figures down the page and currently is not), and the header gets **8px more top
-padding** — `pt-4 pb-1` is 4:1 asymmetric, which glues each header to the group
-above rather than the group below it. Use `pt-6 pb-2`.
+`DayHeader` (`src/components/ui/day-header.tsx`) is the shared primitive —
+`AgendaView` must not inline this markup. `DayGroup` (17/24/600) label on the
+left, day total on the right as `Figure`. Two changes: the total gets `tabular`
+(it is a column of figures down the page and currently is not), and the header
+gets **8px more top padding** — `pt-4 pb-1` is 4:1 asymmetric, which glues each
+header to the group above rather than the group below it. Use `pt-6 pb-2`.
 
 Today's header additionally gets a `chipPlum` "Today" pill at
 `metadataLabel` — the week strip says where you are, but the list scrolls
-independently of it.
+independently of it. TestIDs stay on the primitive:
+`schedule-day-today-${localDate}` and `schedule-day-total-${localDate}`.
+
+### 3.3 Now-line
+
+The agenda is otherwise nine identical rows. `NowLine`
+(`src/components/ui/now-line.tsx`) is a static apricot line inserted into
+today's section — after the last shift that has already started, before the
+next one; at the top of the section when nothing has started yet. It is
+computed once per render from `Date.now()`, the same precedent as `LiveDot`
+on a live shift row: **not a ticking clock**, no `setInterval`. One now-line
+at most, and none on a week that does not contain today. `AgendaItem` carries
+a `now` variant; FlashList `getItemType` / `keyExtractor` treat it like any
+other row. TestID: `schedule-now-line`.
+
+The screen hero band also carries a role-forked lead line under the subtitle
+(`schedule:lead.nanny` / `schedule:lead.parent`, testID `schedule-lead`).
 
 ---
 

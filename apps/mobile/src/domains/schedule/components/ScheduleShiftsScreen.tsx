@@ -44,7 +44,12 @@ import {
 } from '@/src/domains/schedule/components/CalendarViewSwitcher';
 import { CrossFamilyRhythmView } from '@/src/domains/schedule/components/CrossFamilyRhythmView';
 import { WeekRibbonView } from '@/src/domains/schedule/components/WeekRibbonView';
-import { totalCoveringMinutes } from '@/src/domains/schedule/utils/shiftGrouping';
+import { useHouseholdCarers } from '@/src/domains/schedule/hooks/useHouseholdCarers';
+import { resolveCarerName } from '@/src/domains/schedule/utils/memberDisplayName';
+import {
+  RESOLVED_STATUSES,
+  totalCoveringMinutes,
+} from '@/src/domains/schedule/utils/shiftGrouping';
 import { timeOffCoversLocalDate } from '@/src/domains/schedule/utils/timeOffOverlap';
 import { withCauses } from '@/src/domains/schedule/utils/uncoveredDisplay';
 import { computeUncoveredWeek } from '@/src/domains/schedule/utils/uncoveredWeek';
@@ -162,6 +167,7 @@ export function ScheduleShiftsScreen({
   const timeOffQuery = useHouseholdTimeOff(activeHousehold.householdId);
   const commitmentsQuery = useHouseholdCommitments(activeHousehold.householdId);
   const closuresQuery = useHouseholdClosures(activeHousehold.householdId);
+  const carersQuery = useHouseholdCarers(activeHousehold.householdId);
   const timeOff = timeOffQuery.data ?? [];
 
   const isLoading = activeHousehold.isLoading || shiftsQuery.isLoading;
@@ -180,6 +186,16 @@ export function ScheduleShiftsScreen({
     () => totalCoveringMinutes(shifts),
     [shifts]
   );
+  const coveringShifts = useMemo(
+    () => shifts.filter(shift => !RESOLVED_STATUSES.has(shift.status)),
+    [shifts]
+  );
+  const coveringDayCount = useMemo(
+    () => new Set(coveringShifts.map(shift => shift.local_date)).size,
+    [coveringShifts]
+  );
+  const nannyFirstName =
+    resolveCarerName(carersQuery.data?.[0], '').trim().split(/\s+/)[0] ?? '';
   const uncoveredWeek = useMemo(() => {
     if (!canViewCover) {
       return { byDay: {} as Record<string, never[]>, totalCount: 0 };
@@ -283,6 +299,15 @@ export function ScheduleShiftsScreen({
   const subtitle = isNannyVoice
     ? t('shifts.nannySubtitle', { familyName })
     : t('shifts.parentSubtitle');
+  const lead = isNannyVoice
+    ? t('lead.nanny', {
+        count: coveringShifts.length,
+        hours: formatDuration(weekTotalMinutes),
+      })
+    : t('lead.parent', {
+        name: nannyFirstName,
+        count: coveringDayCount,
+      });
 
   const showCrossFamily =
     calendarView === CALENDAR_VIEWS.CROSS_FAMILY &&
@@ -338,6 +363,9 @@ export function ScheduleShiftsScreen({
           ) : null}
         </View>
         <Small className="text-muted-strong">{subtitle}</Small>
+        <Small testID="schedule-lead" className="text-muted-strong">
+          {lead}
+        </Small>
         <Small tabular className="text-muted-strong">
           {weekRangeLabel}
         </Small>

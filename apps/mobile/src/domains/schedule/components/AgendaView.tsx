@@ -20,20 +20,15 @@ import { Pressable, View } from 'react-native';
 import { useTabBarScrollPadding } from '@/lib/layout/useTabBarScrollPadding';
 import { cn } from '@/lib/utils';
 import { Button } from '@/src/components/ui/button';
+import { DayHeader } from '@/src/components/ui/day-header';
 import { IconChip } from '@/src/components/ui/icon-chip';
 import { LiveDot } from '@/src/components/ui/live-dot';
+import { NowLine } from '@/src/components/ui/now-line';
 import {
   StatusPill,
   type StatusPillProps,
 } from '@/src/components/ui/status-pill';
-import {
-  Body,
-  DayGroup,
-  Figure,
-  H4,
-  MetadataLabel,
-  Small,
-} from '@/src/components/ui/typography';
+import { Body, Figure, H4, Small } from '@/src/components/ui/typography';
 import { useHouseholdCarers } from '@/src/domains/schedule/hooks/useHouseholdCarers';
 import {
   resolveCarerName,
@@ -114,6 +109,7 @@ export type AgendaItem =
       totalMinutes: number | null;
       isToday: boolean;
     }
+  | { type: 'now'; key: string }
   | { type: 'away'; key: string; localDate: string; message: string | null }
   | {
       type: 'uncovered';
@@ -495,6 +491,9 @@ export function AgendaView({
   const currentUserId = useAuthStore(s => s.session?.user?.id ?? null);
   const membersQuery = useHouseholdMembers(householdId);
   const todayLocalDate = localDateInZone(displayTimeZone ?? householdTimeZone);
+  // "You are here" in today's section. Computed once per render, not a
+  // ticking clock: same precedent as LiveDot on a live shift row.
+  const nowMs = Date.now();
   const membersByUserId = useMemo(
     () =>
       new Map(
@@ -618,7 +617,18 @@ export function AgendaView({
       }
       timed.sort((a, b) => a.at - b.at);
 
+      const isToday = localDate === todayLocalDate;
+      let nowLinePlaced = false;
+      const placeNowLine = () => {
+        if (!isToday || nowLinePlaced) return;
+        result.push({ type: 'now', key: 'now-line' });
+        nowLinePlaced = true;
+      };
+
       for (const row of timed) {
+        if (row.at > nowMs) {
+          placeNowLine();
+        }
         if (row.kind === 'shift') {
           result.push({ type: 'shift', key: row.shift.id, shift: row.shift });
         } else {
@@ -631,6 +641,7 @@ export function AgendaView({
           });
         }
       }
+      placeNowLine();
     }
     return result;
   }, [
@@ -641,6 +652,7 @@ export function AgendaView({
     uncoveredByDay,
     focusUncoveredKey,
     todayLocalDate,
+    nowMs,
     t,
   ]);
 
@@ -671,27 +683,21 @@ export function AgendaView({
         renderItem={({ item }) => {
           if (item.type === 'header') {
             return (
-              <View className="flex-row items-center justify-between px-5.5 pt-6 pb-2">
-                <View className="flex-row items-center gap-2">
-                  <DayGroup>{item.label}</DayGroup>
-                  {item.isToday ? (
-                    <View
-                      testID={`schedule-day-today-${item.localDate}`}
-                      className="rounded-chip bg-chip-plum px-2 py-0.5"
-                    >
-                      <MetadataLabel className="text-primary">
-                        {tCommon('tabs.today')}
-                      </MetadataLabel>
-                    </View>
-                  ) : null}
-                </View>
-                {item.totalMinutes !== null ? (
-                  <Figure testID={`schedule-day-total-${item.localDate}`}>
-                    {formatDuration(item.totalMinutes)}
-                  </Figure>
-                ) : null}
-              </View>
+              <DayHeader
+                label={item.label}
+                localDate={item.localDate}
+                isToday={item.isToday}
+                todayLabel={tCommon('tabs.today')}
+                total={
+                  item.totalMinutes !== null
+                    ? formatDuration(item.totalMinutes)
+                    : null
+                }
+              />
             );
+          }
+          if (item.type === 'now') {
+            return <NowLine testID="schedule-now-line" />;
           }
           if (item.type === 'away') {
             return (
