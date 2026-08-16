@@ -171,6 +171,9 @@ export type InboxItem =
       id: string;
       weekStart: string;
       carerDisplayName: string | null;
+      /** Present when the week names a carer the parent can recognise. */
+      personName?: string;
+      personColour?: string;
     }
   | {
       kind: 'stale_submitted_week';
@@ -193,6 +196,8 @@ export type InboxItem =
       id: string;
       householdId: string;
       carerDisplayName: string;
+      personName?: string;
+      personColour?: string;
       proposedAt: string;
       /** Who WROTE it — which is what decides whose item this is. */
       direction: TermsProposalDirection;
@@ -212,6 +217,8 @@ export type InboxItem =
        * offer is BLOCKING is filtered by it. */
       carerId: string;
       carerDisplayName: string;
+      personName?: string;
+      personColour?: string;
       proposedAt: string;
       /** When the other side first opened it, or null. */
       viewedAt: string | null;
@@ -233,6 +240,27 @@ export type InboxItem =
       amountMinor: number;
       currency: string;
     };
+
+/** Who a row is about, when it names someone. Colour only when the source
+ * actually has one — PersonAvatar hashes the name otherwise. */
+export interface InboxPerson {
+  name: string;
+  colour?: string;
+}
+
+export function personOf(item: InboxItem): InboxPerson | undefined {
+  switch (item.kind) {
+    case 'submitted_week':
+    case 'terms_proposal':
+    case 'terms_proposal_sent': {
+      const name = item.personName ?? item.carerDisplayName;
+      if (!name) return undefined;
+      return item.personColour ? { name, colour: item.personColour } : { name };
+    }
+    default:
+      return undefined;
+  }
+}
 
 /**
  * How long a week may sit `submitted` before the carer gets told (D-46).
@@ -321,6 +349,9 @@ export function buildInboxItems(input: {
         id: sheet.id,
         weekStart: sheet.week_start,
         carerDisplayName: sheet.carer_display_name ?? null,
+        ...(sheet.carer_display_name
+          ? { personName: sheet.carer_display_name }
+          : {}),
       });
     }
   }
@@ -384,6 +415,7 @@ export function buildInboxItems(input: {
       id: proposal.id,
       householdId: proposal.household_id,
       carerDisplayName: proposal.carer_display_name,
+      personName: proposal.carer_display_name,
       proposedAt: proposal.created_at,
       direction: proposal.direction,
       rateMinor: proposal.terms.rate_minor,
@@ -409,6 +441,7 @@ export function buildInboxItems(input: {
       householdId: proposal.household_id,
       carerId: proposal.carer_id,
       carerDisplayName: proposal.carer_display_name,
+      personName: proposal.carer_display_name,
       proposedAt: proposal.created_at,
       viewedAt: proposal.viewed_at ?? null,
       direction: proposal.direction,

@@ -43,6 +43,7 @@ import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
 import { Button } from '@/src/components/ui/button';
 import { Card } from '@/src/components/ui/card';
+import { PersonAvatar } from '@/src/components/ui/person-avatar';
 import { Text } from '@/src/components/ui/text';
 import { Body, Caption, H3 } from '@/src/components/ui/typography';
 import { formatDuration } from '@/src/domains/timesheet/utils/duration';
@@ -51,6 +52,7 @@ import { usePinnedTone } from '@/src/domains/today/components/PinnedSlot';
 import { useWithdrawTerms } from '@/src/hooks/mutations/useWithdrawTerms';
 import { localDateInZone } from '@/src/lib/localDate';
 import { usePendingOffer } from '../hooks/usePendingOffer';
+import { personOf } from '../utils/buildInboxItems';
 
 /** Day 10 — the point the day counter unlocks taking the offer back. */
 const WITHDRAW_FROM_DAY = 10;
@@ -100,6 +102,7 @@ export function PendingOfferCard({ nowMs = Date.now() }: { nowMs?: number }) {
   // Never on a blocking offer: when she is standing in the house unable to
   // record her hours, the fix is to move the terms, not to drop them.
   const canWithdraw = !blocking && state.days >= WITHDRAW_FROM_DAY;
+  const person = personOf(offer);
 
   return (
     <Card
@@ -113,7 +116,19 @@ export function PendingOfferCard({ nowMs = Date.now() }: { nowMs?: number }) {
       tone={blocking ? tone : 'default'}
       className="gap-3 p-5.5"
     >
-      <H3 testID="today-pending-offer-title">{title}</H3>
+      <View className="flex-row items-center gap-3">
+        {person ? (
+          <PersonAvatar
+            testID="today-pending-offer-avatar"
+            name={person.name}
+            colour={person.colour}
+            size="sm"
+          />
+        ) : null}
+        <H3 testID="today-pending-offer-title" className="flex-1">
+          {title}
+        </H3>
+      </View>
       <Body
         testID="today-pending-offer-subtitle"
         className="text-muted-foreground"

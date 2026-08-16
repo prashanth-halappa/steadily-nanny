@@ -213,6 +213,7 @@ describe('buildInboxItems', () => {
         id: 'ts-sub-1',
         weekStart: '2026-08-04',
         carerDisplayName: 'Jamie Carer',
+        personName: 'Jamie Carer',
       },
     ]);
   });
@@ -570,6 +571,7 @@ describe('buildInboxItems — terms_proposal kind (§7.1)', () => {
         id: 'prop-1',
         householdId: 'hh-1',
         carerDisplayName: 'Marisol',
+        personName: 'Marisol',
         proposedAt: '2026-08-24T09:00:00.000Z',
         direction: 'carer',
         rateMinor: 2800,
@@ -755,6 +757,7 @@ describe('buildInboxItems — terms_proposal_sent kind (A7)', () => {
         householdId: 'hh-1',
         carerId: OTHER,
         carerDisplayName: 'Marisol',
+        personName: 'Marisol',
         proposedAt: '2026-08-24T09:00:00.000Z',
         viewedAt: '2026-08-24T18:00:00.000Z',
         direction: 'parent',
@@ -1056,5 +1059,163 @@ describe('buildInboxItems — reimbursement_owed kind', () => {
       'submitted_week',
       'reimbursement_owed',
     ]);
+  });
+});
+
+// The attention surfaces name a person in copy but showed nobody. These
+// three kinds already know who in their source data; the rest do not.
+describe('buildInboxItems — person on the item', () => {
+  const NOW = '2026-08-25T12:00:00.000Z';
+  const base = {
+    currentUserId: ME,
+    todayISO: '2026-08-25',
+    nowISO: NOW,
+    changeRequests: [] as const,
+    patterns: [] as const,
+    timesheets: [] as const,
+  };
+
+  it('carries the person name on submitted_week, terms_proposal and terms_proposal_sent items', () => {
+    const submitted = buildInboxItems({
+      ...base,
+      role: SETUP_ROLES.PARENT,
+      timesheets: [
+        {
+          id: 'ts-sub-1',
+          carer_id: OTHER,
+          week_start: '2026-08-04',
+          status: 'submitted',
+          query_note: null,
+          carer_display_name: 'Jamie Carer',
+        },
+      ],
+    });
+    expect(submitted[0]).toMatchObject({
+      kind: 'submitted_week',
+      personName: 'Jamie Carer',
+    });
+
+    const proposal: InboxTermsProposalInput = {
+      id: 'prop-1',
+      household_id: 'hh-1',
+      carer_id: ME,
+      direction: 'carer',
+      status: 'proposed',
+      carer_display_name: 'Marisol',
+      created_at: '2026-08-24T09:00:00.000Z',
+      weekly_equivalent_minor: 154000,
+      terms: { rate_minor: 2800, currency: 'USD' },
+    };
+    const answerable = buildInboxItems({
+      ...base,
+      role: SETUP_ROLES.PARENT,
+      termsProposals: [proposal],
+    });
+    expect(answerable[0]).toMatchObject({
+      kind: 'terms_proposal',
+      personName: 'Marisol',
+    });
+
+    const sent = buildInboxItems({
+      ...base,
+      role: SETUP_ROLES.PARENT,
+      termsProposals: [
+        { ...proposal, id: 'prop-2', carer_id: OTHER, direction: 'parent' },
+      ],
+    });
+    expect(sent[0]).toMatchObject({
+      kind: 'terms_proposal_sent',
+      personName: 'Marisol',
+    });
+  });
+
+  it('leaves the person absent on kinds that concern nobody in particular', () => {
+    const items = buildInboxItems({
+      ...base,
+      role: SETUP_ROLES.NANNY,
+      changeRequests: [
+        {
+          id: 'cr-1',
+          shift_id: 'shift-1',
+          requested_by: OTHER,
+          kind: 'time_change',
+          status: 'pending',
+        },
+      ],
+      patterns: [
+        {
+          id: 'pat-1',
+          carer_id: ME,
+          status: 'pending',
+          dtstart: '2026-08-05',
+        },
+      ],
+      timesheets: [
+        {
+          id: 'ts-q',
+          carer_id: ME,
+          week_start: '2026-07-28',
+          status: 'queried',
+          query_note: null,
+        },
+        {
+          id: 'ts-stale',
+          carer_id: ME,
+          week_start: '2026-08-04',
+          status: 'submitted',
+          query_note: null,
+          total_minutes: 2310,
+          updated_at: '2026-08-04T18:00:00+00:00',
+        },
+      ],
+      shifts: [
+        {
+          id: 'shift-ask-1',
+          carer_id: ME,
+          status: 'pending',
+          local_date: '2026-08-26',
+          starts_at: '2026-08-26T08:00:00.000Z',
+          ends_at: '2026-08-26T13:00:00.000Z',
+          created_at: '2026-08-24T00:00:00.000Z',
+        },
+      ],
+      termsAcks: [
+        {
+          household_id: 'hh-1',
+          arrangement_id: 'arr-1',
+          valid_from: '2026-08-01',
+          is_first_terms: true,
+          acks: [],
+        },
+      ],
+    });
+
+    const parentItems = buildInboxItems({
+      ...base,
+      role: SETUP_ROLES.PARENT,
+      currentUserId: PARENT,
+      timesheets: [
+        {
+          id: 'ts-sub-2',
+          carer_id: OTHER,
+          week_start: '2026-08-04',
+          status: 'submitted',
+          query_note: null,
+        },
+      ],
+      unsettledReimbursements: [
+        {
+          household_id: 'hh-1',
+          carer_id: ME,
+          week_start: '2026-08-17',
+          amount_minor: 3480,
+          currency: 'GBP',
+        },
+      ],
+    });
+
+    for (const item of [...items, ...parentItems]) {
+      expect(item).not.toHaveProperty('personName');
+    }
   });
 });

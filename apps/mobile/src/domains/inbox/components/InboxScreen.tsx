@@ -16,8 +16,10 @@ import { ErrorState } from '@/src/components/custom/ErrorState';
 import { BackButton } from '@/src/components/ui/back-button';
 import { EmptyState } from '@/src/components/ui/empty-state';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
+import { PersonAvatar } from '@/src/components/ui/person-avatar';
 import { Body, H1, MetadataLabel, Small } from '@/src/components/ui/typography';
 import { useInboxItems } from '@/src/domains/inbox/hooks/useInboxItems';
+import { personOf } from '@/src/domains/inbox/utils/buildInboxItems';
 import {
   hrefForItem,
   subtitleForItem,
@@ -79,29 +81,42 @@ export function InboxScreen() {
               <Body testID="inbox-lead" className="text-muted-foreground">
                 {t('lead', { count: items.length })}
               </Body>
-              {items.map(item => (
-                <Pressable
-                  key={`${item.kind}-${item.id}`}
-                  testID={`inbox-item-${item.kind}-${item.id}`}
-                  accessibilityRole="button"
-                  onPress={() => router.push(hrefForItem(item))}
-                  className="gap-1 rounded-row bg-card p-4"
-                  style={elevation.row}
-                >
-                  <MetadataLabel
-                    testID={`inbox-item-kind-${item.kind}`}
-                    className="text-muted-foreground"
+              {items.map(item => {
+                const person = personOf(item);
+                return (
+                  <Pressable
+                    key={`${item.kind}-${item.id}`}
+                    testID={`inbox-item-${item.kind}-${item.id}`}
+                    accessibilityRole="button"
+                    onPress={() => router.push(hrefForItem(item))}
+                    className="flex-row items-center gap-3 rounded-row bg-card p-4"
+                    style={elevation.row}
                   >
-                    {t(`kinds.${item.kind}`)}
-                  </MetadataLabel>
-                  <Body weight="semibold">
-                    {titleForItem(item, t, timeZone)}
-                  </Body>
-                  <Small className="text-muted-foreground">
-                    {subtitleForItem(item, t, timeZone)}
-                  </Small>
-                </Pressable>
-              ))}
+                    {person ? (
+                      <PersonAvatar
+                        testID={`inbox-item-avatar-${item.id}`}
+                        name={person.name}
+                        colour={person.colour}
+                        size="sm"
+                      />
+                    ) : null}
+                    <View className="min-w-0 flex-1 gap-1">
+                      <MetadataLabel
+                        testID={`inbox-item-kind-${item.kind}`}
+                        className="text-muted-foreground"
+                      >
+                        {t(`kinds.${item.kind}`)}
+                      </MetadataLabel>
+                      <Body weight="semibold">
+                        {titleForItem(item, t, timeZone)}
+                      </Body>
+                      <Small className="text-muted-foreground">
+                        {subtitleForItem(item, t, timeZone)}
+                      </Small>
+                    </View>
+                  </Pressable>
+                );
+              })}
             </View>
           )}
         </View>

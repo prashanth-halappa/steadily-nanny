@@ -73,6 +73,37 @@ beforeEach(() => {
   }));
 });
 
+/** Walk children in tree order; skip the node's own testID. */
+function leadingTestId(node: {
+  props: { children?: unknown };
+}): string | undefined {
+  const walk = (n: unknown): string | undefined => {
+    if (!n || typeof n !== 'object') return undefined;
+    const el = n as { props?: { testID?: string; children?: unknown } };
+    if (el.props?.testID) return el.props.testID;
+    const kids = Array.isArray(el.props?.children)
+      ? el.props.children
+      : el.props?.children != null
+        ? [el.props.children]
+        : [];
+    for (const kid of kids) {
+      const id = walk(kid);
+      if (id) return id;
+    }
+    return undefined;
+  };
+  const kids = Array.isArray(node.props.children)
+    ? node.props.children
+    : node.props.children != null
+      ? [node.props.children]
+      : [];
+  for (const kid of kids) {
+    const id = walk(kid);
+    if (id) return id;
+  }
+  return undefined;
+}
+
 describe('InboxScreen', () => {
   it('shows the empty state when there is nothing pending', () => {
     const { getByTestId, queryByTestId } = render(<InboxScreen />);
@@ -257,6 +288,30 @@ describe('InboxScreen', () => {
     expect(getByTestId('inbox-item-kind-change_request')).toBeTruthy();
     expect(getByTestId('inbox-item-kind-pending_pattern')).toBeTruthy();
     expect(getByTestId('inbox-item-kind-queried_week')).toBeTruthy();
+  });
+
+  it('leads a row with the person avatar when the item names one', () => {
+    mockUseInboxItems.mockImplementation(() => ({
+      isLoading: false,
+      isError: false,
+      refetch: mockRefetch,
+      items: [
+        {
+          kind: 'submitted_week',
+          id: 'ts-2',
+          weekStart: '2026-08-04',
+          carerDisplayName: 'Jamie Carer',
+        },
+      ] satisfies InboxItem[],
+    }));
+
+    const { getByTestId } = render(<InboxScreen />);
+    const row = getByTestId('inbox-item-submitted_week-ts-2');
+    const avatar = getByTestId('inbox-item-avatar-ts-2');
+
+    expect(leadingTestId(row)).toBe('inbox-item-avatar-ts-2');
+    expect(avatar.props.accessibilityLabel).toBe('Jamie Carer');
+    expect(getByTestId('inbox-item-kind-submitted_week')).toBeTruthy();
   });
 
   it('renders no lead line when the inbox is empty', () => {
