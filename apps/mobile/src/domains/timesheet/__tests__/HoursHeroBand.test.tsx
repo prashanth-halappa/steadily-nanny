@@ -182,3 +182,48 @@ describe('HoursHeroBand — optional lines', () => {
     expect(renderBand().queryByTestId('hours-past-member-note')).toBeNull();
   });
 });
+
+describe('HoursHeroBand — week shape', () => {
+  const mondayHeavy: number[] = [0, 480, 0, 240, 0, 0, 0];
+
+  it('renders the week bars when per-day minutes are supplied', () => {
+    const { getByTestId, queryByTestId } = renderBand({
+      dayMinutes: mondayHeavy,
+    });
+
+    expect(getByTestId('hours-week-bars')).toBeTruthy();
+    expect(queryByTestId('hours-total-skeleton')).toBeNull();
+  });
+
+  it('renders the split track when scheduled minutes are supplied', () => {
+    const { getByTestId } = renderBand({
+      dayMinutes: mondayHeavy,
+      scheduledMinutes: 480,
+    });
+
+    expect(getByTestId('hours-split-track')).toBeTruthy();
+  });
+
+  it('renders the lead line for the nanny and for the parent', () => {
+    const nanny = renderBand({ lead: 'lead.nanny' });
+    expect(nanny.getByTestId('hours-lead').props.children).toBe('lead.nanny');
+    nanny.unmount();
+
+    const parent = renderBand({ lead: 'lead.parent' });
+    expect(parent.getByTestId('hours-lead').props.children).toBe('lead.parent');
+  });
+
+  it('renders neither the bars nor the track while the week is still loading', () => {
+    const { queryByTestId, getByTestId } = renderBand({
+      totalLabel: null,
+      dayMinutes: mondayHeavy,
+      scheduledMinutes: 480,
+      lead: 'lead.nanny',
+    });
+
+    expect(getByTestId('hours-total-skeleton')).toBeTruthy();
+    expect(queryByTestId('hours-week-bars')).toBeNull();
+    expect(queryByTestId('hours-split-track')).toBeNull();
+    expect(queryByTestId('hours-lead')).toBeNull();
+  });
+});

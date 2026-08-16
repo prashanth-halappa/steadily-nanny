@@ -2096,6 +2096,16 @@ describe('ParentWeekView — Daylight v2 statement layout', () => {
     expect(queryByTestId('hours-paid-state')).toBeNull();
   });
 
+  it('passes per-day minutes and scheduled minutes into the hero band', async () => {
+    const { getByTestId } = renderParentView();
+
+    await waitFor(() => expect(getByTestId('hours-week-total')).toBeTruthy());
+    const hero = within(getByTestId('hours-hero-band'));
+    expect(hero.getByTestId('hours-week-bars')).toBeTruthy();
+    expect(hero.getByTestId('hours-split-track')).toBeTruthy();
+    expect(hero.getByTestId('hours-lead').props.children).toBe('lead.parent');
+  });
+
   it('shows the week skeleton, never a full-screen spinner, while the hours load', async () => {
     listEntriesMock.mockImplementation(
       () => new Promise<ReturnType<typeof makeEntry>[]>(() => {})

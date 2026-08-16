@@ -12,8 +12,9 @@ here is judged on whether hours and money are unambiguous, legible, and hard to
 misread — warmth is secondary and precision is not negotiable.
 
 > **As shipped (Daylight v2).** The full statement rebuild in §1–§5 landed:
-> `HoursHeroBand.tsx` owns the H1, week nav, the 40/48/700 tabular figure and
-> the delta caption; `WeekTotal.tsx` slimmed to the status card only (it
+> `HoursHeroBand.tsx` owns the H1, week nav, the 40/48/700 tabular figure,
+> a role-resolved lead sentence, a per-day bar chart, a worked-vs-scheduled
+> track, and the delta caption; `WeekTotal.tsx` slimmed to the status card only (it
 > renders nothing when it has nothing to say about the agreement);
 > `WeekMoneyCard.tsx` merges `WeekEarningsLine` and the paid state
 > (`PaidStateCard` was renamed `PaidStateSection` — it no longer renders a
@@ -80,9 +81,13 @@ without it.
 │  ┌ HERO BAND ──────────────────────────── no card, on the wash
 │  │  H1 "Hours"                                     32/40/600
 │  │  WeekNavHeader   ‹  10–16 Aug  ›   tabular, mutedStrong, 44pt targets
+│  │  [parent] Body  carer name
+│  │  Small          lead sentence   hours:lead.nanny | hours:lead.parent
 │  │
 │  │  SignatureHeroBold  "38h 30m"   40/48/700 tabular foreground  11.29:1
 │  │  MetadataLabel      "14m over scheduled"  13/18/600 mutedStrong
+│  │  WeekBars           one bar per day, today emphasised
+│  │  SplitTrack         worked vs scheduled (omitted when there is no roster)
 │  └──────────────────────────────────────────────────────
 │
 │  gap 16
@@ -106,6 +111,16 @@ the question the tab exists for; it does not need a container. At
 `signature.heroBold` 40/48/**700** (up from 600) tabular on the wash it reads at
 11.29:1 and is unambiguously the largest thing on the screen — which, on a
 screen about how many hours were worked, it should be.
+
+**The bars and the track are data, not decoration.**
+[`art-direction.md`](./art-direction.md) still forbids a hero *image* on Hours:
+an illustration beside a number someone is paid on costs credibility. A bar
+per day of *her own hours*, and a worked-vs-scheduled track, are the same
+record as the figure — they turn the total into a week she can see at a
+glance. They do not ship while the week is still loading (the figure slot is
+a skeleton; charting a fabricated week would be the same lie as painting
+`0m`). `WeekBars` / `SplitTrack` live under the figure; the lead sentence
+(`hours:lead.nanny` / `hours:lead.parent`) sits above it.
 
 If the L-sized restructure in §1 is not taken, the minimum viable version is:
 **move only the figure and the week nav into the hero band, and leave the rest of
@@ -284,3 +299,8 @@ missing buttons reads as a bug on a screen about money.
 at all. No hero illustration — on the money screen the figure is the hero, and
 an image beside it would be the one place in this app where decoration sits next
 to a number someone gets paid on.
+
+That ban is about *images*, not about the week's own numbers. The per-day bars
+and the worked-vs-scheduled track in the hero band are the hours themselves,
+drawn as a shape. They are the same data as the figure, not a picture next to
+it.
