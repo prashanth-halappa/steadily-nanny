@@ -194,4 +194,8 @@ illustration above it is padding between a person and the row they came for.
 Illustrations belong on the *pushed* settings screens in their empty states,
 where they already are and should stay: `empty-children`, `empty-pay`,
 `empty-time-off`, `empty-household`, `empty-no-carer`. All get the `chipPlum`
-circle ground and the `H3` title from the v2 `EmptyState` restyle.
+circle ground and the `H3` title from the v2 `EmptyState` restyle. **This
+family** (nanny/helper) is the exception: a modest `emptyHousehold`
+illustration sits beside the title, and each child row carries a
+`PersonAvatar` coloured from the child record — the screen is opened on a
+bad afternoon, and a grey name-line does not identify anyone.

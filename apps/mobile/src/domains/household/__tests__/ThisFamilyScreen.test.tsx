@@ -11,10 +11,66 @@
  */
 import { beforeAll, describe, expect, it, mock } from 'bun:test';
 import { join } from 'node:path';
-import { render } from '@testing-library/react-native';
+import { render, within } from '@testing-library/react-native';
+import { ageFromBirthDate } from '@/src/domains/setup/childAge';
 
 const screenPath = join(__dirname, '../components/ThisFamilyScreen.tsx');
 let screenSource: string;
+
+const MIA_COLOUR = '#4C7A6A';
+const LEO_COLOUR = '#A85E6E';
+const MIA_BIRTH_DATE = '2022-01-01';
+
+function flattenStyle(style: unknown): Record<string, unknown> {
+  return Object.assign({}, ...[style].flat(Infinity).filter(Boolean));
+}
+
+function backgroundsOn(node: {
+  children: Array<string | { props?: { style?: unknown }; children?: unknown }>;
+  props?: { style?: unknown };
+}): string[] {
+  const colours: string[] = [];
+  const visit = (value: unknown): void => {
+    if (value == null || typeof value !== 'object') return;
+    if (Array.isArray(value)) {
+      for (const child of value) visit(child);
+      return;
+    }
+    const rec = value as {
+      props?: { style?: unknown; children?: unknown };
+      children?: unknown;
+    };
+    const bg = flattenStyle(rec.props?.style).backgroundColor;
+    if (typeof bg === 'string') colours.push(bg);
+    visit(rec.children);
+    visit(rec.props?.children);
+  };
+  visit(node);
+  return colours;
+}
+
+function collectTestIds(node: unknown): string[] {
+  const ids: string[] = [];
+  const visit = (value: unknown): void => {
+    if (value == null) return;
+    if (Array.isArray(value)) {
+      for (const child of value) visit(child);
+      return;
+    }
+    if (typeof value !== 'object') return;
+    const rec = value as {
+      props?: { testID?: string; children?: unknown };
+      children?: unknown;
+    };
+    if (typeof rec.props?.testID === 'string') {
+      ids.push(rec.props.testID);
+    }
+    visit(rec.children);
+    visit(rec.props?.children);
+  };
+  visit(node);
+  return ids;
+}
 
 describe('ThisFamilyScreen — source (Pattern A)', () => {
   beforeAll(async () => {
@@ -59,6 +115,14 @@ describe('ThisFamilyScreen — source (Pattern A)', () => {
 
   it('routes the terms row to the existing pay screen', () => {
     expect(screenSource).toContain('/settings/my-pay');
+  });
+
+  it('identifies children with PersonAvatar and header art from emptyHousehold', () => {
+    expect(screenSource).toContain('PersonAvatar');
+    expect(screenSource).toContain('avatar_initial');
+    expect(screenSource).toContain('child.colour');
+    expect(screenSource).toContain('illustrations.emptyHousehold');
+    expect(screenSource).toContain('testID="this-family-art"');
   });
 });
 
@@ -118,9 +182,18 @@ describe('ThisFamilyScreen — render (Pattern B)', () => {
         {
           id: 'child-1',
           name: 'Mia',
-          birth_date: '2022-01-01',
+          birth_date: MIA_BIRTH_DATE,
           routine_notes: 'nut allergy',
-          colour: null,
+          colour: MIA_COLOUR,
+          avatar_initial: 'K',
+        },
+        {
+          id: 'child-2',
+          name: 'Leo',
+          birth_date: '2020-06-15',
+          routine_notes: 'nap at 1',
+          colour: LEO_COLOUR,
+          avatar_initial: null,
         },
       ],
       isLoading: false,
@@ -151,5 +224,45 @@ describe('ThisFamilyScreen — render (Pattern B)', () => {
     const { getByText } = render(<ThisFamilyScreen />);
     expect(getByText(/Mia/)).toBeTruthy();
     expect(getByText(/nut allergy/)).toBeTruthy();
+  });
+
+  it('renders each child with an avatar coloured from the child record', () => {
+    const { getByTestId, getByText } = render(<ThisFamilyScreen />);
+
+    expect(backgroundsOn(getByTestId('this-family-child-child-1'))).toContain(
+      MIA_COLOUR
+    );
+    expect(backgroundsOn(getByTestId('this-family-child-child-2'))).toContain(
+      LEO_COLOUR
+    );
+    // Distinct initial proves we prefer `avatar_initial` over the name.
+    expect(getByText('K')).toBeTruthy();
+    // Null initial falls back to the name's first letter.
+    expect(getByText('L')).toBeTruthy();
+  });
+
+  it('keeps the age and the routine note on the row', () => {
+    const { getByTestId } = render(<ThisFamilyScreen />);
+    const row = getByTestId('this-family-child-child-1');
+    const age = ageFromBirthDate(MIA_BIRTH_DATE);
+
+    expect(within(row).getByText(/Mia/)).toBeTruthy();
+    expect(within(row).getByText(new RegExp(String(age)))).toBeTruthy();
+    expect(within(row).getByText(/nut allergy/)).toBeTruthy();
+  });
+
+  it('renders the children section below the emergency contacts', () => {
+    const { toJSON } = render(<ThisFamilyScreen />);
+    const ids = collectTestIds(toJSON());
+    const emergencyIdx = ids.indexOf('this-family-if-something-happens');
+    const childrenIdx = ids.indexOf('this-family-children');
+
+    expect(emergencyIdx).toBeGreaterThan(-1);
+    expect(childrenIdx).toBeGreaterThan(emergencyIdx);
+  });
+
+  it('renders the household illustration in the header', () => {
+    const { getByTestId } = render(<ThisFamilyScreen />);
+    expect(getByTestId('this-family-art')).toBeTruthy();
   });
 });

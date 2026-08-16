@@ -22,11 +22,20 @@
  */
 import { type Href, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
-import { Linking, Pressable, ScrollView, Share, View } from 'react-native';
+import {
+  Image,
+  Linking,
+  Pressable,
+  ScrollView,
+  Share,
+  View,
+} from 'react-native';
+import { illustrations } from '@/assets/illustrations';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { BackButton } from '@/src/components/ui/back-button';
 import { Button } from '@/src/components/ui/button';
 import { Card } from '@/src/components/ui/card';
+import { PersonAvatar } from '@/src/components/ui/person-avatar';
 import { Text } from '@/src/components/ui/text';
 import { Body, H1, H3, Small } from '@/src/components/ui/typography';
 import { resolveCarerName } from '@/src/domains/schedule/utils/memberDisplayName';
@@ -73,23 +82,33 @@ export function ThisFamilyScreen() {
       contentContainerStyle={SCREEN_CONTENT_STYLE}
     >
       <BackButton onPress={() => router.back()} label={tCommon('back')} />
-      <H1 className="mt-1">{household?.name ?? t('untitledDraft')}</H1>
-
-      <Pressable
-        testID="this-family-address"
-        accessibilityRole="button"
-        disabled={!household?.address_line}
-        onPress={() =>
-          household?.address_line
-            ? void Share.share({ message: household.address_line })
-            : undefined
-        }
-        className="mt-1"
-      >
-        <Body className="text-muted-foreground">
-          {household?.address_line ?? t('thisFamily.addressEmpty')}
-        </Body>
-      </Pressable>
+      <View className="mt-1 flex-row items-start justify-between gap-3">
+        <View className="flex-1">
+          <H1>{household?.name ?? t('untitledDraft')}</H1>
+          <Pressable
+            testID="this-family-address"
+            accessibilityRole="button"
+            disabled={!household?.address_line}
+            onPress={() =>
+              household?.address_line
+                ? void Share.share({ message: household.address_line })
+                : undefined
+            }
+            className="mt-1"
+          >
+            <Body className="text-muted-foreground">
+              {household?.address_line ?? t('thisFamily.addressEmpty')}
+            </Body>
+          </Pressable>
+        </View>
+        <Image
+          testID="this-family-art"
+          accessibilityRole="image"
+          source={illustrations.emptyHousehold}
+          style={{ width: 80, height: 80 }}
+          resizeMode="contain"
+        />
+      </View>
 
       <View testID="this-family-if-something-happens" className="mt-6 gap-2">
         <H3>{t('thisFamily.ifSomethingHappens')}</H3>
@@ -162,9 +181,14 @@ export function ThisFamilyScreen() {
                 <View
                   key={child.id}
                   testID={`this-family-child-${child.id}`}
-                  className="gap-0.5 px-4 py-3"
+                  className="flex-row items-center gap-3 px-4 py-3"
                 >
-                  <Body>
+                  <PersonAvatar
+                    name={child.avatar_initial ?? child.name}
+                    colour={child.colour ?? undefined}
+                    size="sm"
+                  />
+                  <Body className="flex-1">
                     {child.name}
                     {age !== null ? ` · ${age}` : ''}
                     {child.routine_notes ? ` · ${child.routine_notes}` : ''}
