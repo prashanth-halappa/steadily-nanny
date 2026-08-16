@@ -67,6 +67,19 @@ tags:
 - tapOn:
     text: 'Name your family'
 - waitForAnimationToEnd
+# Phone is now a required field on this step (099/contact-fields — S8) —
+# `HouseholdScreen.onContinue` early-returns with `phoneError: 'required'`
+# and never calls `advance()` when it's blank, so a blank phone leaves the
+# flow stuck on `household-screen` until the next hard wait times out
+# (measured 2026-08-16 via flow 16: `children-screen` timeout after 15s).
+# Any 5+ digit string satisfies `PhoneNumberSchema` (loose by design — see
+# its module doc).
+- tapOn:
+    id: 'phone-input'
+- inputText: '5551234567'
+- tapOn:
+    text: 'Name your family'
+- waitForAnimationToEnd
 - tapOn:
     id: 'household-name-input'
 - eraseText
