@@ -22,6 +22,9 @@ describe('CodeEntryScreen i18n', () => {
     expect(screenSource).toContain("t('onboarding.code.nameLabel')");
     expect(screenSource).toContain("t('onboarding.code.namePlaceholder')");
     expect(screenSource).toContain("t('onboarding.code.nameRequired')");
+    expect(screenSource).toContain("tHousehold('setup.phoneLabel')");
+    expect(screenSource).toContain("tHousehold('setup.phoneHintNanny')");
+    expect(screenSource).toContain("tHousehold('setup.phoneInvalid')");
     expect(screenSource).toContain("t('onboarding.code.inviteCodeLabel')");
     expect(screenSource).toContain("t('onboarding.code.placeholder')");
     expect(screenSource).toContain("t('onboarding.code.invalidError')");

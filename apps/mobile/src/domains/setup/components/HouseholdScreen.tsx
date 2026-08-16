@@ -1,8 +1,12 @@
 /**
  * @module domains/setup/components/HouseholdScreen
  *
- * Parent · create, step 1 (spec §3.3): name the family and yourself, then
- * create the household.
+ * Parent · create, step 1 (spec §3.3): name the family and yourself, give
+ * your mobile number, then create the household.
+ *
+ * The number lives here because this is the one moment the parent is already
+ * thinking about who is in the household. Required: a parent without a
+ * number leaves the nanny with no one to call.
  *
  * WHY THIS SCREEN EXISTS. Both inputs used to live inside `ChildrenScreen`,
  * rendered ONLY while the auto-create call was in flight (`isLoadingHousehold`)
@@ -15,6 +19,7 @@
  * no local wizard state, and that path must still work. This screen is where a
  * name is TYPED; that one is where a household is guaranteed to EXIST.
  */
+import { PhoneNumberSchema } from '@steadily-nanny/shared-types/schemas/contact.schema';
 import {
   HOUSEHOLD_MEMBER_STATUSES,
   HOUSEHOLD_ROLES,
@@ -24,6 +29,7 @@ import { type Href, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
+import { FieldError } from '@/src/components/ui/field-error';
 import { FieldLabel } from '@/src/components/ui/field-label';
 import { Input } from '@/src/components/ui/input';
 import { Small } from '@/src/components/ui/typography';
@@ -87,6 +93,10 @@ export function HouseholdScreen() {
     const user = session?.user;
     return user ? deriveBootstrapName(user) : '';
   });
+  const [phone, setPhone] = useState('');
+  const [phoneError, setPhoneError] = useState<'required' | 'invalid' | null>(
+    null
+  );
 
   // Adopt an existing household's name into the field once the list resolves.
   // A parent who signed out mid-wizard comes back to a household that already
@@ -97,44 +107,86 @@ export function HouseholdScreen() {
     if (existing) setHouseholdName(current => current || (existing.name ?? ''));
   }, [existing]);
 
+  // A returning parent who already saved a number should see it, not an
+  // empty box that looks like we lost it.
+  useEffect(() => {
+    const saved = profile.data?.phone;
+    if (saved) setPhone(current => current || saved);
+  }, [profile.data?.phone]);
+
   const trimmedHouseholdName = householdName.trim();
   const canContinue = trimmedHouseholdName.length > 0;
+  const isBusy =
+    createHousehold.isPending ||
+    updateHousehold.isPending ||
+    upsertProfile.isPending;
 
   const advance = () => {
     setCurrentStep(SETUP_STEPS.CHILDREN);
     router.push(getSetupStepRoute(SETUP_STEPS.CHILDREN) as Href);
   };
 
-  const onContinue = () => {
-    if (
-      !canContinue ||
-      createHousehold.isPending ||
-      updateHousehold.isPending
-    ) {
+  /**
+   * Phone is required on this step, so every continue path has to persist it
+   * — including rename/adopt, which previously skipped the profile write.
+   * When a row already exists, reuse its city/country rather than the
+   * bootstrap placeholders that would overwrite a real location.
+   */
+  const persistProfile = async (validatedPhone: string) => {
+    const authUser = session?.user;
+    if (!authUser) return;
+    const trimmedName = displayName.trim();
+    if (!profile.data?.user_id) {
+      await upsertProfile.mutateAsync({
+        ...buildBootstrapProfileRequest(authUser, { name: trimmedName }),
+        phone: validatedPhone,
+      });
       return;
     }
+    await upsertProfile.mutateAsync({
+      name: trimmedName || profile.data.name || deriveBootstrapName(authUser),
+      city: profile.data.city?.trim() || '—',
+      country: profile.data.country?.trim() || '—',
+      phone: validatedPhone,
+    });
+  };
+
+  const onContinue = () => {
+    if (!canContinue || isBusy) {
+      return;
+    }
+
+    if (!phone.trim()) {
+      setPhoneError('required');
+      return;
+    }
+    const parsedPhone = PhoneNumberSchema.safeParse(phone);
+    if (!parsedPhone.success) {
+      setPhoneError('invalid');
+      return;
+    }
+    const validatedPhone = parsedPhone.data;
 
     // Already have one: adopt it rather than minting a second family.
     // §8a — a LIVE household also gets the typed name PATCHed here (only
     // when it actually changed), because this IS its rename screen now.
     if (existing) {
       setHouseholdId(existing.id);
-      if (isRenameMode && trimmedHouseholdName !== (existing.name ?? '')) {
-        void (async () => {
-          try {
+      void (async () => {
+        try {
+          await persistProfile(validatedPhone);
+          if (isRenameMode && trimmedHouseholdName !== (existing.name ?? '')) {
             await updateHousehold.mutateAsync({
               householdId: existing.id,
               input: { name: trimmedHouseholdName },
             });
-            advance();
-          } catch {
-            // `useUpdateHousehold` toasts its own failure; staying put with
-            // the typed name intact IS the retry affordance.
           }
-        })();
-        return;
-      }
-      advance();
+          advance();
+        } catch {
+          // `useUpdateHousehold`/`useUpsertProfile` toast their own failure;
+          // staying put with the typed values intact IS the retry affordance.
+        }
+      })();
       return;
     }
 
@@ -143,11 +195,7 @@ export function HouseholdScreen() {
 
     void (async () => {
       try {
-        if (!profile.data?.user_id) {
-          await upsertProfile.mutateAsync(
-            buildBootstrapProfileRequest(authUser, { name: displayName.trim() })
-          );
-        }
+        await persistProfile(validatedPhone);
         await createHousehold.mutateAsync({
           name: trimmedHouseholdName,
           // Device-derived prefills, same "seed, never final word" discipline
@@ -183,9 +231,7 @@ export function HouseholdScreen() {
       title={t('setup.wizardTitle')}
       subtitle={t('setup.wizardSubtitle')}
       ctaLabel={t(isRenameMode ? 'setup.saveButton' : 'setup.continueButton')}
-      ctaDisabled={
-        !canContinue || createHousehold.isPending || updateHousehold.isPending
-      }
+      ctaDisabled={!canContinue || isBusy}
       onCta={onContinue}
     >
       <View className="gap-2">
@@ -198,6 +244,36 @@ export function HouseholdScreen() {
           placeholder={t('setup.parentNamePlaceholder')}
           autoCapitalize="words"
         />
+      </View>
+      <View className="gap-2">
+        <FieldLabel>{t('setup.phoneLabel')}</FieldLabel>
+        <Input
+          testID="phone-input"
+          accessibilityLabel={t('setup.phoneLabel')}
+          value={phone}
+          onChangeText={text => {
+            setPhone(text);
+            if (phoneError) setPhoneError(null);
+          }}
+          placeholder={t('setup.phonePlaceholder')}
+          keyboardType="phone-pad"
+          textContentType="telephoneNumber"
+          autoComplete="tel"
+          error={phoneError !== null}
+        />
+        <Small testID="phone-hint" className="text-muted-foreground">
+          {t('setup.phoneHint')}
+        </Small>
+        {phoneError === 'required' ? (
+          <FieldError testID="phone-error">
+            {t('setup.phoneRequired')}
+          </FieldError>
+        ) : null}
+        {phoneError === 'invalid' ? (
+          <FieldError testID="phone-error">
+            {t('setup.phoneInvalid')}
+          </FieldError>
+        ) : null}
       </View>
       <View className="gap-2">
         <FieldLabel>{t('setup.householdNameLabel')}</FieldLabel>

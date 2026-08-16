@@ -1,14 +1,18 @@
 /**
  * @module domains/setup/components/CodeEntryScreen
  *
- * Nanny setup step 1: give your name, enter a household invite code, preview
- * who it's for (household name + children's first names — nothing more, see
- * `InvitePreviewSchema`), then redeem it to join.
+ * Nanny setup step 1: give your name and (optionally) your mobile number,
+ * enter a household invite code, preview who it's for (household name +
+ * children's first names — nothing more, see `InvitePreviewSchema`), then
+ * redeem it to join.
  *
  * The name lives here rather than on its own screen because the parent flow
  * has no name step either — it derives one from auth metadata during the
  * `ChildrenScreen` bootstrap. Same derivation pre-fills this field, so the
- * nanny confirms or corrects a name instead of typing one cold.
+ * nanny confirms or corrects a name instead of typing one cold. The number
+ * sits next to it for the same reason: she is already saying who she is, and
+ * the family needs a way to reach her. Optional — she can skip and add it
+ * later.
  *
  * ORDER MATTERS: the profile write runs BEFORE `redeemInvite`. Joining
  * snapshots the member's display name, and a null one renders as the 'Carer'
@@ -37,6 +41,7 @@
  * would burn a code nobody meant to spend; and a wrong or stale code has to be
  * correctable in place, or the only recovery is reinstalling the app.
  */
+import { PhoneNumberSchema } from '@steadily-nanny/shared-types/schemas/contact.schema';
 import {
   HOUSEHOLD_INVITE_ROLES,
   HOUSEHOLD_MEMBER_STATUSES,
@@ -54,7 +59,7 @@ import { FieldLabel } from '@/src/components/ui/field-label';
 import { Input } from '@/src/components/ui/input';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { Text } from '@/src/components/ui/text';
-import { Body, H3 } from '@/src/components/ui/typography';
+import { Body, H3, Small } from '@/src/components/ui/typography';
 import { resolveCarerName } from '@/src/domains/schedule/utils/memberDisplayName';
 import { AbsorptionConfirmSheet } from '@/src/domains/setup/components/AbsorptionConfirmSheet';
 import { HouseholdDecisionSheet } from '@/src/domains/setup/components/HouseholdDecisionSheet';
@@ -151,6 +156,8 @@ export function CodeEntryScreen({
   const [submittedCode, setSubmittedCode] = useState<string | null>(null);
   const [nameDraft, setNameDraft] = useState<string | null>(null);
   const [nameError, setNameError] = useState(false);
+  const [phoneDraft, setPhoneDraft] = useState<string | null>(null);
+  const [phoneError, setPhoneError] = useState(false);
   const [isAbsorptionSheetOpen, setAbsorptionSheetOpen] = useState(false);
   const [hasRedeemed, setHasRedeemed] = useState(false);
   const [postRedeemError, setPostRedeemError] = useState<string | null>(null);
@@ -200,6 +207,7 @@ export function CodeEntryScreen({
     nameDraft ??
     profile.data?.name ??
     (authUser ? deriveBootstrapName(authUser) : '');
+  const phone = phoneDraft ?? profile.data?.phone ?? '';
 
   const onCheckCode = () => {
     if (!code.trim()) return;
@@ -313,16 +321,26 @@ export function CodeEntryScreen({
         // the `else if (authUser)` arm would upsert the BOOTSTRAP PLACEHOLDER
         // city/country over this user's real profile.
         if (!onJoined) {
+          const trimmedPhone = phone.trim();
           if (profile.data?.user_id) {
             // PATCH, not upsert: an existing row already has real city/country
             // that the bootstrap payload's placeholders would overwrite.
             if (trimmedName !== profile.data.name) {
               await updateName.mutateAsync({ name: trimmedName });
             }
+            if (trimmedPhone) {
+              await upsertProfile.mutateAsync({
+                name: trimmedName,
+                city: profile.data.city?.trim() || '—',
+                country: profile.data.country?.trim() || '—',
+                phone: trimmedPhone,
+              });
+            }
           } else if (authUser) {
             await upsertProfile.mutateAsync({
               ...buildBootstrapProfileRequest(authUser),
               name: trimmedName,
+              ...(trimmedPhone ? { phone: trimmedPhone } : {}),
             });
           }
         }
@@ -406,6 +424,16 @@ export function CodeEntryScreen({
       setNameError(true);
       return;
     }
+    if (!onJoined) {
+      const trimmedPhone = phone.trim();
+      if (trimmedPhone) {
+        const parsedPhone = PhoneNumberSchema.safeParse(trimmedPhone);
+        if (!parsedPhone.success) {
+          setPhoneError(true);
+          return;
+        }
+      }
+    }
     if (needsAbsorptionConfirm) {
       setAbsorptionSheetOpen(true);
       return;
@@ -479,6 +507,34 @@ export function CodeEntryScreen({
           {nameError ? (
             <FieldError testID="name-error">
               {t('onboarding.code.nameRequired')}
+            </FieldError>
+          ) : null}
+        </View>
+      )}
+
+      {onJoined ? null : (
+        <View className="gap-2">
+          <FieldLabel>{tHousehold('setup.phoneLabel')}</FieldLabel>
+          <Input
+            testID="phone-input"
+            accessibilityLabel={tHousehold('setup.phoneLabel')}
+            value={phone}
+            onChangeText={text => {
+              setPhoneDraft(text);
+              if (phoneError) setPhoneError(false);
+            }}
+            placeholder={tHousehold('setup.phonePlaceholder')}
+            keyboardType="phone-pad"
+            textContentType="telephoneNumber"
+            autoComplete="tel"
+            error={phoneError}
+          />
+          <Small testID="phone-hint" className="text-muted-foreground">
+            {tHousehold('setup.phoneHintNanny')}
+          </Small>
+          {phoneError ? (
+            <FieldError testID="phone-error">
+              {tHousehold('setup.phoneInvalid')}
             </FieldError>
           ) : null}
         </View>
