@@ -2125,6 +2125,38 @@ describe('ParentWeekView — Daylight v2 statement layout', () => {
   });
 });
 
+describe('ParentWeekView — hours lead subject', () => {
+  it('renders name-less lead copy when the carer cannot be resolved', async () => {
+    // Zero entries this week + more than one nanny/helper: the header
+    // genuinely cannot say whose week it is, so the lead must not start
+    // with a blank name ("has 0m this week.").
+    listEntriesMock.mockImplementation(() => Promise.resolve([]));
+    listTimesheetsMock.mockImplementation(() => Promise.resolve([]));
+    listMembersMock.mockImplementation(() =>
+      Promise.resolve([
+        householdMember,
+        {
+          ...householdMember,
+          id: 'member-carer-b',
+          user_id: 'carer-bea',
+        },
+      ])
+    );
+
+    const { getByTestId } = renderParentView();
+
+    await waitFor(() => expect(getByTestId('hours-lead')).toBeTruthy());
+    expect(getByTestId('hours-lead').props.children).toBe('lead.parentNoCarer');
+  });
+
+  it('renders the named lead when the carer resolves', async () => {
+    const { getByTestId } = renderParentView();
+
+    await waitFor(() => expect(getByTestId('hours-lead')).toBeTruthy());
+    expect(getByTestId('hours-lead').props.children).toBe('lead.parent');
+  });
+});
+
 describe('ParentWeekView — voided entries (069)', () => {
   const CARER_B_ID = 'carer-bea';
   const TIMESHEET_B_ID = 'ts-2';

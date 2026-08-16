@@ -266,7 +266,8 @@
   },
   "lead": {
     "nanny": "{{hours}} esta semana con {{family}}.",
-    "parent": "{{name}} tiene {{hours}} esta semana."
+    "parent": "{{name}} tiene {{hours}} esta semana.",
+    "parentNoCarer": "{{hours}} registradas esta semana."
   },
   "entryCorrectedToast": "Corrección guardada.",
   "entryRemovedToast": "Entrada eliminada."
