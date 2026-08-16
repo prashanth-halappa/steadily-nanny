@@ -19,11 +19,16 @@
   "getHelp": "Get help",
   "appVersion": "Version {{version}}",
   "carerAvailability": "Nanny availability",
+  "carerAvailability.summary": "{{days}} days a week · {{hours}}h",
   "carerAvailabilityEmpty": "No nanny in this household yet",
   "carerAvailabilityNone": "{{name}} hasn't set her availability yet.",
   "carerTimeOff": "Nanny time off",
   "carerTimeOffHint": "Booked time off — status only; approval isn't in the app yet.",
   "carerTimeOffEmpty": "No time off booked",
+  "householdTimeOff": {
+    "summary_one": "{{count}} day off coming up · next {{date}}",
+    "summary_other": "{{count}} days off coming up · next {{date}}"
+  },
   "role": {
     "owner": "Parent (owner)",
     "parent": "Parent",

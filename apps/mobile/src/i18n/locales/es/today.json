@@ -254,5 +254,33 @@
       "termsBlock": "Las condiciones bloquean el turno de hoy",
       "pendingShift": "Un turno necesita respuesta"
     }
+  },
+  "moments": {
+    "nannyJoined": {
+      "title": "{{name}} se ha unido a {{family}}",
+      "body": "A partir de ahora puede ver la semana y fichar la entrada.",
+      "cta": "Ver el perfil de {{name}}"
+    },
+    "firstClockIn": {
+      "title": "¡Tu primer fichaje con {{family}}!",
+      "body": "A partir de ahora cada hora que trabajes queda registrada — y en la pestaña Horas de la familia al momento."
+    },
+    "firstWeekApproved": {
+      "title": "¡Tu primera semana, aprobada!",
+      "body": "{{household}} aprobó {{hours}} el {{date}}. Tu pago está en la pestaña Horas."
+    }
+  },
+  "lead": {
+    "parent": {
+      "here": "{{name}} está aquí.",
+      "done": "El cuidado de hoy ya está hecho.",
+      "quiet": "Nada programado hoy."
+    },
+    "nanny": {
+      "here": "En horario desde las {{time}}.",
+      "scheduled": "Hoy estás con {{family}}, {{start}} – {{end}}.",
+      "done": "Salida {{time}} — {{duration}} hoy.",
+      "quiet": "Nada programado hoy."
+    }
   }
 }

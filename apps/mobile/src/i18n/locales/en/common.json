@@ -64,5 +64,8 @@
     "almostThere": "Almost there…",
     "settingUp": "Setting things up…",
     "oneSecond": "One second…"
+  },
+  "moments": {
+    "continue": "Continue"
   }
 }

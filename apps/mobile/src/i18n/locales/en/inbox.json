@@ -91,5 +91,19 @@
     "ctaSee": "See what you sent",
     "ctaChange": "Change what you sent",
     "withdraw": "Withdraw"
+  },
+  "lead_one": "{{count}} thing waiting on you.",
+  "lead_other": "{{count}} things waiting on you.",
+  "kinds": {
+    "change_request": "Schedule change",
+    "pending_pattern": "Proposed schedule",
+    "queried_week": "Queried week",
+    "submitted_week": "Week to approve",
+    "stale_submitted_week": "Week to approve",
+    "pending_shift": "Cover ask",
+    "terms_proposal": "Terms",
+    "terms_proposal_sent": "Terms",
+    "terms_ack": "Terms",
+    "reimbursement_owed": "Reimbursement"
   }
 }

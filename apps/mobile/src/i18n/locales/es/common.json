@@ -64,5 +64,8 @@
     "almostThere": "Casi listo…",
     "settingUp": "Configurando…",
     "oneSecond": "Un segundo…"
+  },
+  "moments": {
+    "continue": "Continuar"
   }
 }
