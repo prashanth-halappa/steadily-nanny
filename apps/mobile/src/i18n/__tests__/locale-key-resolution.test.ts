@@ -74,6 +74,20 @@ const UNCOVERED_CAUSE_VALUES = [
   'closureRemoved',
   'nothingScheduled',
 ] as const;
+// InboxScreen kind eyebrows — listed from the InboxItem discriminant,
+// not from locales/en/inbox.json, so this check stays a check.
+const INBOX_KIND_VALUES = [
+  'change_request',
+  'pending_pattern',
+  'queried_week',
+  'submitted_week',
+  'stale_submitted_week',
+  'pending_shift',
+  'terms_proposal',
+  'terms_proposal_sent',
+  'terms_ack',
+  'reimbursement_owed',
+] as const;
 
 type LocaleCode = 'en' | 'es';
 type NamespaceMap = Record<string, Record<string, unknown>>;
@@ -239,6 +253,12 @@ const TEMPLATE_KEY_DECLARATIONS: readonly TemplateKeyDeclaration[] = [
       'earningsStructureKindGuaranteedTopup',
     ],
     keyPattern: 'hours:$1',
+  },
+  {
+    // InboxScreen kind eyebrow — `t(\`kinds.${item.kind}\`)`.
+    pattern: /^kinds\.\$\{[^}]+\}$/,
+    values: INBOX_KIND_VALUES,
+    keyPattern: 'kinds.$1',
   },
 ];
 

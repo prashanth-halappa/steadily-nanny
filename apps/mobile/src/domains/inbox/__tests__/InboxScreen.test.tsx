@@ -197,4 +197,72 @@ describe('InboxScreen', () => {
       '/(private)/(tabs)/hours?weekStart=2026-08-04'
     );
   });
+
+  it('renders the lead line with the item count', () => {
+    mockUseInboxItems.mockImplementation(() => ({
+      isLoading: false,
+      isError: false,
+      refetch: mockRefetch,
+      items: [
+        {
+          kind: 'change_request',
+          id: 'cr-1',
+          shiftId: 'shift-1',
+          requestKind: 'time_change',
+        },
+        {
+          kind: 'submitted_week',
+          id: 'ts-2',
+          weekStart: '2026-08-04',
+          carerDisplayName: 'Jamie Carer',
+        },
+      ] satisfies InboxItem[],
+    }));
+
+    const { getByTestId, queryByTestId } = render(<InboxScreen />);
+
+    expect(queryByTestId('inbox-empty')).toBeNull();
+    expect(getByTestId('inbox-lead')).toBeTruthy();
+  });
+
+  it('renders a kind eyebrow on each row', () => {
+    mockUseInboxItems.mockImplementation(() => ({
+      isLoading: false,
+      isError: false,
+      refetch: mockRefetch,
+      items: [
+        {
+          kind: 'change_request',
+          id: 'cr-1',
+          shiftId: 'shift-1',
+          requestKind: 'time_change',
+        },
+        {
+          kind: 'pending_pattern',
+          id: 'pat-1',
+          patternId: 'pat-1',
+          dtstart: '2026-08-05',
+        },
+        {
+          kind: 'queried_week',
+          id: 'ts-1',
+          weekStart: '2026-07-28',
+          queryNote: 'Break looks long',
+        },
+      ] satisfies InboxItem[],
+    }));
+
+    const { getByTestId } = render(<InboxScreen />);
+
+    expect(getByTestId('inbox-item-kind-change_request')).toBeTruthy();
+    expect(getByTestId('inbox-item-kind-pending_pattern')).toBeTruthy();
+    expect(getByTestId('inbox-item-kind-queried_week')).toBeTruthy();
+  });
+
+  it('renders no lead line when the inbox is empty', () => {
+    const { getByTestId, queryByTestId } = render(<InboxScreen />);
+
+    expect(getByTestId('inbox-empty')).toBeTruthy();
+    expect(queryByTestId('inbox-lead')).toBeNull();
+  });
 });
