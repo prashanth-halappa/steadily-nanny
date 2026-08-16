@@ -11,7 +11,11 @@
  * statement that this is a different, one-purpose screen. She has exactly one
  * job — get a family to respond — and the screen is about that job.
  *
- * THE L1 SLOT MOVES ONCE (§5.2). The share card is the one thing to do until
+ * THE L1 SLOT MOVES TWICE (§5.2). Before she has written terms, the share
+ * card's button is structurally dead — there is nothing to send — so the
+ * terms card leads instead, and the share card demotes with a stated reason
+ * (a disabled button that doesn't say why is a bug, not a design choice).
+ * Once terms exist, the share card takes L1: it's the one thing to do until
  * a code is out in the world. After that nothing here is urgent — she is
  * waiting on somebody else — so the share card demotes to L3 and NO card
  * claims L1. Manufacturing urgency at that point would be exactly the
@@ -106,7 +110,12 @@ export function DraftHomeScreen() {
   // A code out in the world is what empties the L1 slot — including one she
   // has since revoked. The draft has been shared; that fact does not un-happen.
   const hasSent = invites.length > 0;
-  const canShare = isOnline && proposal !== null;
+  const hasTerms = proposal !== null;
+  // The L1 slot follows the one action she can actually take: write terms
+  // first (the share button is dead until she does), then share them. Once
+  // sent, neither card is L1 — she's waiting on somebody else (§5.2).
+  const shareIsL1 = hasTerms && !hasSent;
+  const canShare = isOnline && hasTerms;
   const now = new Date();
 
   const arrangement = proposal
@@ -130,6 +139,120 @@ export function DraftHomeScreen() {
     setLastInvite(minted);
     return minted;
   };
+
+  // ---- the share card: L1 only once terms exist and are unsent ----
+  const shareCard = (
+    <Card
+      testID={shareIsL1 ? 'draft-share-card-l1' : 'draft-share-card-l3'}
+      tone={shareIsL1 ? 'attention' : 'default'}
+    >
+      <CardContent className="gap-3">
+        <IconChip tone="brand" icon={Send} />
+        {shareIsL1 ? (
+          <H3>{t('sharePrompt.title')}</H3>
+        ) : (
+          <H4>{t('sharePrompt.title')}</H4>
+        )}
+        <Body className="text-muted-strong">{t('sharePrompt.body')}</Body>
+        {/* A disabled button always states its reason. Offline wins when
+            both apply — a connection is the more immediate blocker. */}
+        {!isOnline ? (
+          <Small testID="draft-share-offline" className="text-muted-strong">
+            {t('sharePrompt.offlineHint')}
+          </Small>
+        ) : !hasTerms ? (
+          <Small testID="draft-share-needs-terms" className="text-muted-strong">
+            {t('sharePrompt.needsTermsHint')}
+          </Small>
+        ) : null}
+        <Button
+          testID="draft-share-button"
+          size={shareIsL1 ? 'lg' : 'default'}
+          variant={shareIsL1 ? 'default' : 'outline'}
+          disabled={!canShare}
+          onPress={() => setShareOpen(true)}
+        >
+          <Text>{t('sharePrompt.button')}</Text>
+        </Button>
+      </CardContent>
+    </Card>
+  );
+
+  // ---- the terms document, view mode: L1 until she has written terms ----
+  const termsCard = (
+    <Card testID="draft-terms-card" tone={hasTerms ? 'default' : 'attention'}>
+      <CardContent className="gap-3">
+        <View className="flex-row items-center gap-2">
+          <IconChip tone="hours" icon={Wallet} />
+          {hasTerms ? <H4>{t('terms.title')}</H4> : <H3>{t('terms.title')}</H3>}
+        </View>
+        {arrangement && proposal ? (
+          <>
+            <View className="flex-row items-baseline gap-1">
+              <Figure28 testID="draft-terms-rate" tabular>
+                {formatMoney(arrangement.rate_minor, arrangement.currency)}
+              </Figure28>
+              <Body className="text-muted-foreground">
+                {t('terms.perHour')}
+              </Body>
+            </View>
+            {/* Server-computed, or absent. Never `rate × hours`. */}
+            {weekly ? (
+              <Small
+                testID="draft-terms-weekly"
+                className="text-muted-foreground"
+              >
+                {t('terms.weekly', {
+                  amount: weekly,
+                  hours: (arrangement.guaranteed_minutes_per_week ?? 0) / 60,
+                })}
+              </Small>
+            ) : null}
+            <View className="gap-3">
+              {buildTermRows(arrangement, tPay, null).map(row => (
+                <AmountRow
+                  key={row.key}
+                  testID={`draft-term-${row.key}`}
+                  label={row.label}
+                  value={row.value}
+                  valueWhenNull={row.valueWhenNull}
+                  subLine={row.subLine}
+                />
+              ))}
+            </View>
+            <Small className="text-muted-foreground">
+              {t('terms.startsOn', {
+                date: formatDateLong(arrangement.valid_from),
+              })}
+            </Small>
+            <Button
+              testID="draft-terms-edit"
+              variant="ghost"
+              onPress={() => router.push(TERMS_ROUTE)}
+            >
+              <Text>{t('terms.editButton')}</Text>
+            </Button>
+          </>
+        ) : (
+          <View testID="draft-terms-empty" className="gap-3">
+            <Body className="text-muted-foreground">
+              {t('terms.emptyBody')}
+            </Body>
+            {/* This branch only ever renders when there are no terms — the
+                one action she can take, so it's the loud filled button. */}
+            <Button
+              testID="draft-terms-write"
+              variant="default"
+              size="lg"
+              onPress={() => router.push(TERMS_ROUTE)}
+            >
+              <Text>{t('terms.emptyButton')}</Text>
+            </Button>
+          </View>
+        )}
+      </CardContent>
+    </Card>
+  );
 
   return (
     <View testID="draft-home" className="flex-1 bg-background">
@@ -179,115 +302,19 @@ export function DraftHomeScreen() {
           </View>
         ) : (
           <View className="mt-4 gap-3">
-            {/* ---- the share card: L1 until a code exists, L3 after ---- */}
-            <Card
-              testID={hasSent ? 'draft-share-card-l3' : 'draft-share-card-l1'}
-              tone={hasSent ? 'default' : 'attention'}
-            >
-              <CardContent className="gap-3">
-                <IconChip tone="brand" icon={Send} />
-                {hasSent ? (
-                  <H4>{t('sharePrompt.title')}</H4>
-                ) : (
-                  <H3>{t('sharePrompt.title')}</H3>
-                )}
-                <Body className="text-muted-strong">
-                  {t('sharePrompt.body')}
-                </Body>
-                {!isOnline ? (
-                  <Small
-                    testID="draft-share-offline"
-                    className="text-muted-strong"
-                  >
-                    {t('sharePrompt.offlineHint')}
-                  </Small>
-                ) : null}
-                <Button
-                  testID="draft-share-button"
-                  size={hasSent ? 'default' : 'lg'}
-                  variant={hasSent ? 'outline' : 'default'}
-                  disabled={!canShare}
-                  onPress={() => setShareOpen(true)}
-                >
-                  <Text>{t('sharePrompt.button')}</Text>
-                </Button>
-              </CardContent>
-            </Card>
-
-            {/* ---- the terms document, view mode ---- */}
-            <Card testID="draft-terms-card">
-              <CardContent className="gap-3">
-                <View className="flex-row items-center gap-2">
-                  <IconChip tone="hours" icon={Wallet} />
-                  <H4>{t('terms.title')}</H4>
-                </View>
-                {arrangement && proposal ? (
-                  <>
-                    <View className="flex-row items-baseline gap-1">
-                      <Figure28 testID="draft-terms-rate" tabular>
-                        {formatMoney(
-                          arrangement.rate_minor,
-                          arrangement.currency
-                        )}
-                      </Figure28>
-                      <Body className="text-muted-foreground">
-                        {t('terms.perHour')}
-                      </Body>
-                    </View>
-                    {/* Server-computed, or absent. Never `rate × hours`. */}
-                    {weekly ? (
-                      <Small
-                        testID="draft-terms-weekly"
-                        className="text-muted-foreground"
-                      >
-                        {t('terms.weekly', {
-                          amount: weekly,
-                          hours:
-                            (arrangement.guaranteed_minutes_per_week ?? 0) / 60,
-                        })}
-                      </Small>
-                    ) : null}
-                    <View className="gap-3">
-                      {buildTermRows(arrangement, tPay, null).map(row => (
-                        <AmountRow
-                          key={row.key}
-                          testID={`draft-term-${row.key}`}
-                          label={row.label}
-                          value={row.value}
-                          valueWhenNull={row.valueWhenNull}
-                          subLine={row.subLine}
-                        />
-                      ))}
-                    </View>
-                    <Small className="text-muted-foreground">
-                      {t('terms.startsOn', {
-                        date: formatDateLong(arrangement.valid_from),
-                      })}
-                    </Small>
-                    <Button
-                      testID="draft-terms-edit"
-                      variant="ghost"
-                      onPress={() => router.push(TERMS_ROUTE)}
-                    >
-                      <Text>{t('terms.editButton')}</Text>
-                    </Button>
-                  </>
-                ) : (
-                  <View testID="draft-terms-empty" className="gap-3">
-                    <Body className="text-muted-foreground">
-                      {t('terms.emptyBody')}
-                    </Body>
-                    <Button
-                      testID="draft-terms-write"
-                      variant="ghost"
-                      onPress={() => router.push(TERMS_ROUTE)}
-                    >
-                      <Text>{t('terms.emptyButton')}</Text>
-                    </Button>
-                  </View>
-                )}
-              </CardContent>
-            </Card>
+            {/* ---- L1 leads: the terms card while unwritten, the share
+                card once there's something to send (§5.2, D-defect) ---- */}
+            {hasTerms ? (
+              <>
+                {shareCard}
+                {termsCard}
+              </>
+            ) : (
+              <>
+                {termsCard}
+                {shareCard}
+              </>
+            )}
 
             {/* ---- availability: the SHARED editor, never a fork (§17) ---- */}
             <Card testID="draft-availability-card">
