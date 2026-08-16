@@ -268,6 +268,22 @@ export function ScheduleShiftsScreen({
     !showUnavailable &&
     !showQueryError &&
     (shifts.length > 0 || weekHasAway);
+  // S12: "Schedule" means "my shifts this week" to a nanny and "the
+  // household's weekly pattern" to a parent — the tab label stays uniform
+  // (direction doc §11a) but the voice forks here, inside the screen. A
+  // helper gets the PARENT voice, not a third one: `canViewParentSchedule`
+  // already treats parent+helper as one audience for this exact screen (they
+  // see the household's schedule, read-only), so the heading follows suit.
+  const isNannyVoice = onboarding.role === SETUP_ROLES.NANNY;
+  const familyName =
+    activeHousehold.household?.name ?? t('household:untitledDraft');
+  const heading = isNannyVoice
+    ? t('shifts.nannyHeading')
+    : t('shifts.parentHeading');
+  const subtitle = isNannyVoice
+    ? t('shifts.nannySubtitle', { familyName })
+    : t('shifts.parentSubtitle');
+
   const showCrossFamily =
     calendarView === CALENDAR_VIEWS.CROSS_FAMILY &&
     // TIER0-CX-SPEC §5.2: household names are nanny-only. The switcher
@@ -301,7 +317,7 @@ export function ScheduleShiftsScreen({
       ) : null}
       <View className="gap-1">
         <View className="flex-row items-center justify-between gap-2">
-          <H1>{t('shifts.screenTitle')}</H1>
+          <H1>{heading}</H1>
           {canAddExtra ? (
             // Small/14/600, not a ghost Button (16 @600) — it was reading
             // as heavy as the H1 beside it.
@@ -321,6 +337,7 @@ export function ScheduleShiftsScreen({
             </Pressable>
           ) : null}
         </View>
+        <Small className="text-muted-strong">{subtitle}</Small>
         <Small tabular className="text-muted-strong">
           {weekRangeLabel}
         </Small>

@@ -127,6 +127,10 @@
   },
   "shifts": {
     "screenTitle": "Turnos",
+    "nannyHeading": "Esta semana",
+    "nannySubtitle": "Tus turnos con {{familyName}}.",
+    "parentHeading": "Horario",
+    "parentSubtitle": "El patrón semanal y lo que está pendiente de ti.",
     "loading": "Cargando…",
     "extraNotAvailableTitle": "No disponible",
     "extraNotAvailableDescription": "Añadir un turno puntual lo gestiona un progenitor de este hogar.",

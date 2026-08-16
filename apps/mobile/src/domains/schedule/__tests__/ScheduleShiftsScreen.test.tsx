@@ -538,6 +538,67 @@ describe('ScheduleShiftsScreen', () => {
     expect(style.fontWeight).toBe('600');
   });
 
+  describe('S12: role-forked H1/subtitle (same screen, two voices)', () => {
+    it('shows the nanny voice — "This week" / shifts-with-family — for role nanny', () => {
+      mockUseIsOnboarded.mockImplementation(() => ({
+        role: 'nanny',
+        status: 'onboarded',
+      }));
+      mockUseShiftsRange.mockImplementation(() => ({
+        data: [],
+        isLoading: false,
+        isError: false,
+        error: null,
+      }));
+
+      const { getByText, queryByText } = render(<ScheduleShiftsScreen />);
+
+      expect(getByText('shifts.nannyHeading')).toBeTruthy();
+      expect(getByText('shifts.nannySubtitle')).toBeTruthy();
+      expect(queryByText('shifts.parentHeading')).toBeNull();
+      expect(queryByText('shifts.parentSubtitle')).toBeNull();
+    });
+
+    it('shows the parent voice — "Schedule" / weekly-pattern — for role parent', () => {
+      mockUseIsOnboarded.mockImplementation(() => ({
+        role: 'parent',
+        status: 'onboarded',
+      }));
+      mockUseShiftsRange.mockImplementation(() => ({
+        data: [],
+        isLoading: false,
+        isError: false,
+        error: null,
+      }));
+
+      const { getByText, queryByText } = render(<ScheduleShiftsScreen />);
+
+      expect(getByText('shifts.parentHeading')).toBeTruthy();
+      expect(getByText('shifts.parentSubtitle')).toBeTruthy();
+      expect(queryByText('shifts.nannyHeading')).toBeNull();
+      expect(queryByText('shifts.nannySubtitle')).toBeNull();
+    });
+
+    it('gives a helper the PARENT voice, not a third one — helper sees the household schedule same as a parent', () => {
+      mockUseIsOnboarded.mockImplementation(() => ({
+        role: 'helper',
+        status: 'onboarded',
+      }));
+      mockUseShiftsRange.mockImplementation(() => ({
+        data: [],
+        isLoading: false,
+        isError: false,
+        error: null,
+      }));
+
+      const { getByText, queryByText } = render(<ScheduleShiftsScreen />);
+
+      expect(getByText('shifts.parentHeading')).toBeTruthy();
+      expect(getByText('shifts.parentSubtitle')).toBeTruthy();
+      expect(queryByText('shifts.nannyHeading')).toBeNull();
+    });
+  });
+
   it('REGRESSION P0-Rhythm-gate: a parent NEVER sees CrossFamilyRhythmView, even if the persisted view preference is somehow already "cross_family" (TIER0-CX-SPEC §5.2 — real household names are nanny-only)', () => {
     // Defense in depth: CalendarViewSwitcher already hides this option from
     // a parent, but the render gate must not depend on that alone — a
