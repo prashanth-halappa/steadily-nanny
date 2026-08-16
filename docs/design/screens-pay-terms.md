@@ -1567,6 +1567,8 @@ the household rather than silently omitting the buttons.
   if a state statute uses it (this build says "paid time off"), "workweek" as
   one word when naming the FLSA concept.
 
+**Voice:** `docs/design/screens-today.md` section 7 governs all copy in this screen, including the milestone-tier tables.
+
 ---
 
 ## 16. Blast radius

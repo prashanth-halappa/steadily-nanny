@@ -253,6 +253,8 @@ missing buttons reads as a bug on a screen about money.
   This is a record, not a performance review.
 - Amounts always carry their currency symbol and always come from `formatMoney`.
 
+**Voice:** `docs/design/screens-today.md` section 7 governs all copy in this screen, including the milestone-tier tables.
+
 ---
 
 ## 9. Illustration
