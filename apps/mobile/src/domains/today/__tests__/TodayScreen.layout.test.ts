@@ -70,4 +70,15 @@ describe('TodayScreen layout', () => {
     expect(headerAt).toBeLessThan(slotAt);
     expect(slotAt).toBeLessThan(scrollAt);
   });
+
+  it('renders the lead line directly under the date', () => {
+    const dateAt = screenSource.indexOf('testID="today-date"');
+    const leadAt = screenSource.indexOf('testID="today-lead"');
+    const slotAt = screenSource.indexOf('<PinnedSlot>{');
+
+    expect(dateAt).toBeGreaterThan(-1);
+    expect(leadAt).toBeGreaterThan(-1);
+    expect(leadAt).toBeGreaterThan(dateAt);
+    expect(leadAt).toBeLessThan(slotAt);
+  });
 });

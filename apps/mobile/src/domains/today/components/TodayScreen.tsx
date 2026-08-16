@@ -51,7 +51,7 @@ import { ChildChip } from '@/src/components/ui/child-chip';
 import { EmptyState } from '@/src/components/ui/empty-state';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { ScreenWash } from '@/src/components/ui/screen-wash';
-import { H1, Small } from '@/src/components/ui/typography';
+import { Body, H1, Small } from '@/src/components/ui/typography';
 import {
   DraftHomeScreen,
   JoinedHouseholdCard,
@@ -69,6 +69,7 @@ import { PendingScheduleCard } from '@/src/domains/schedule';
 import { resolveCarerName } from '@/src/domains/schedule/utils/memberDisplayName';
 import { localDateToWeekday } from '@/src/domains/schedule/utils/shiftGrouping';
 import { canViewParentSchedule, SETUP_ROLES } from '@/src/domains/setup/types';
+import { formatClockTime } from '@/src/domains/timesheet/utils/duration';
 import {
   DEFAULT_WEEK_STARTS_ON,
   formatDisplayDate,
@@ -91,6 +92,8 @@ import { resolveAttentionOwner } from '../utils/attentionOwner';
 import { HERO_MOOD_ILLUSTRATION, resolveHeroMood } from '../utils/heroMood';
 import { buildJoinedComposition } from '../utils/joinedComposition';
 import { resolveSlotOccupant } from '../utils/slotOccupant';
+import type { TodayLead } from '../utils/todayLead';
+import { resolveTodayLead } from '../utils/todayLead';
 import { ClockInBlockedCard } from './ClockInBlockedCard';
 import { ClockInCard } from './ClockInCard';
 import { CrossFamilyStrip } from './CrossFamilyStrip';
@@ -116,6 +119,35 @@ const HEADER_STYLE = {
   paddingTop: SCREEN_CONTENT_STYLE.padding,
   paddingBottom: 8,
 } as const;
+
+/**
+ * Locale-key guard extracts the first string literal inside `t()`, so each
+ * lead key is its own call — never `t(cond ? a : b)` and never a template.
+ */
+function todayLeadText(
+  t: (key: string, options?: Record<string, string | number>) => string,
+  lead: TodayLead | null
+): string | null {
+  if (!lead) return null;
+  switch (lead.key) {
+    case 'lead.parent.here':
+      return t('lead.parent.here', lead.params);
+    case 'lead.parent.done':
+      return t('lead.parent.done', lead.params);
+    case 'lead.parent.quiet':
+      return t('lead.parent.quiet', lead.params);
+    case 'lead.nanny.here':
+      return t('lead.nanny.here', lead.params);
+    case 'lead.nanny.scheduled':
+      return t('lead.nanny.scheduled', lead.params);
+    case 'lead.nanny.done':
+      return t('lead.nanny.done', lead.params);
+    case 'lead.nanny.quiet':
+      return t('lead.nanny.quiet', lead.params);
+    default:
+      return null;
+  }
+}
 
 export function TodayScreen() {
   const { t } = useTranslation('today');
@@ -208,6 +240,21 @@ export function TodayScreen() {
     household?.week_starts_on ?? DEFAULT_WEEK_STARTS_ON
   );
   const heroMood = resolveHeroMood({ isLive, rows: coverRows.rows });
+  const todayLead = resolveTodayLead({
+    hasHousehold: household != null,
+    isParentView,
+    activeNanny,
+    mood: heroMood,
+    rows: coverRows.rows,
+    family: household
+      ? (household.name ?? t('household:untitledDraft'))
+      : undefined,
+    time:
+      clockInAt && household
+        ? formatClockTime(clockInAt, household.timezone)
+        : undefined,
+  });
+  const leadLine = todayLeadText(t, todayLead);
   // §8.1 — "You've joined the {family}", once, per household. Nanny-only:
   // she is the one walking into a placement she has never seen. LIVE-only:
   // her OWN draft household is not something she "joined". A `candidate`
@@ -402,6 +449,11 @@ export function TodayScreen() {
                   }`}
                 </Small>
               </Pressable>
+            ) : null}
+            {leadLine ? (
+              <Body testID="today-lead" className="mt-1 text-muted-strong">
+                {leadLine}
+              </Body>
             ) : null}
           </View>
           {/* Transparent PNG on purpose — the wash gradient passes under it. */}
