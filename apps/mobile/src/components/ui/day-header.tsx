@@ -4,7 +4,8 @@
  * Agenda day-section header, extracted so later streams can share it.
  * Keeps the existing `schedule-day-today-${localDate}` and
  * `schedule-day-total-${localDate}` testIDs. Presentational: no queries,
- * no domain imports.
+ * no domain imports. The total is a pre-formatted duration string from
+ * the caller — this primitive does not count minutes or format them.
  */
 
 import { useTranslation } from 'react-i18next';
@@ -15,35 +16,24 @@ import {
   MetadataLabel,
 } from '@/src/components/ui/typography';
 
-const MINUTES_PER_HOUR = 60;
-
 interface DayHeaderProps {
   label: string;
   localDate: string;
   isToday: boolean;
-  totalMinutes: number | null;
+  /**
+   * Pre-formatted duration ("8h", "0m", "1h 30m"). `null` means omit the
+   * total element entirely — distinct from `"0m"`, which is a real zero
+   * (every shift that day was cancelled/declined).
+   */
+  total: string | null;
   testID?: string;
-}
-
-/**
- * Compact English duration matching the agenda's current totals
- * (`8h` / `45m` / `1h 30m`). Lives here so this primitive does not
- * import the timesheet domain.
- */
-function formatDayTotal(totalMinutes: number): string {
-  const minutes = Math.max(0, Math.floor(totalMinutes));
-  const hours = Math.floor(minutes / MINUTES_PER_HOUR);
-  const remainder = minutes % MINUTES_PER_HOUR;
-  if (hours === 0) return `${remainder}m`;
-  if (remainder === 0) return `${hours}h`;
-  return `${hours}h ${remainder}m`;
 }
 
 export function DayHeader({
   label,
   localDate,
   isToday,
-  totalMinutes,
+  total,
   testID,
 }: DayHeaderProps) {
   const { t } = useTranslation('common');
@@ -66,10 +56,8 @@ export function DayHeader({
           </View>
         ) : null}
       </View>
-      {totalMinutes !== null ? (
-        <Figure testID={`schedule-day-total-${localDate}`}>
-          {formatDayTotal(totalMinutes)}
-        </Figure>
+      {total !== null ? (
+        <Figure testID={`schedule-day-total-${localDate}`}>{total}</Figure>
       ) : null}
     </View>
   );

@@ -483,7 +483,6 @@ export function AgendaView({
   listHeader,
 }: AgendaViewProps) {
   const { t } = useTranslation('schedule');
-  const { t: tCommon } = useTranslation('common');
   // Same tab-bar dead-zone fix as Settings (BUG1) — this is one of the
   // Schedule tab's own scrollable views, so it needs the same real
   // clearance a fixed magic number can't give.
@@ -687,7 +686,6 @@ export function AgendaView({
                 label={item.label}
                 localDate={item.localDate}
                 isToday={item.isToday}
-                todayLabel={tCommon('tabs.today')}
                 total={
                   item.totalMinutes !== null
                     ? formatDuration(item.totalMinutes)
