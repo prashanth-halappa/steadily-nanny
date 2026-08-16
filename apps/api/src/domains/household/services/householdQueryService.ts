@@ -17,7 +17,11 @@ import { HouseholdHolidayRepository } from '../repositories/householdHolidayRepo
 import { HouseholdInviteRepository } from '../repositories/householdInviteRepository';
 import { HouseholdMemberRepository } from '../repositories/householdMemberRepository';
 import { HouseholdRepository } from '../repositories/householdRepository';
-import { HOUSEHOLD_INVITE_STATUSES, HOUSEHOLD_STATES } from '../schemas';
+import {
+  HOUSEHOLD_INVITE_STATUSES,
+  HOUSEHOLD_MEMBER_STATUSES,
+  HOUSEHOLD_STATES,
+} from '../schemas';
 import type {
   Household,
   HouseholdHoliday,
@@ -129,13 +133,37 @@ export class HouseholdQueryService {
    * `candidate` until acceptance — precisely when the parent must see her
    * proposal. Push audiences and shift authorization still resolve through
    * `listActiveByHousehold`, not here.
+   *
+   * THIS IS ALSO THE ONE PLACE A PHONE NUMBER IS EXPOSED (099).
+   * `user_profiles` RLS is owner-only and stays that way; a member's number
+   * rides out on the repository's profile embed as `profile_phone`, and both
+   * halves of the exposure rule are enforced right here:
+   *
+   * - The CALLER must be an ACTIVE member — `getMembership` resolves through
+   *   `findActiveMembership`, so a removed or candidate caller gets
+   *   `HouseholdNotFoundError` and no roster at all.
+   * - The SUBJECT must be an ACTIVE member — every other row keeps its place
+   *   in the list (the inbox fans proposal queries from candidates) but loses
+   *   its number. A candidate has redeemed a code and is waiting on terms;
+   *   neither side has agreed to be reachable by the other yet.
+   *
+   * The subject test is POSITIVE (`=== ACTIVE`), never `!== 'candidate'`, for
+   * the reason `HOUSEHOLD_MEMBER_STATUSES`' own comment gives: a status added
+   * tomorrow must be silent by construction rather than by somebody
+   * remembering to exclude it.
    */
   async listMembers(
     userId: string,
     householdId: string
   ): Promise<HouseholdMember[]> {
     await this.getMembership(userId, householdId);
-    return this.memberRepo.listNonRemovedByHousehold(householdId);
+    const members =
+      await this.memberRepo.listNonRemovedByHousehold(householdId);
+    return members.map(member =>
+      member.status === HOUSEHOLD_MEMBER_STATUSES.ACTIVE
+        ? member
+        : { ...member, profile_phone: null }
+    );
   }
 
   /**

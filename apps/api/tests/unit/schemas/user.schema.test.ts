@@ -90,3 +90,77 @@ describe('UpsertProfileSchema', () => {
     expect(result.success).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// phone (099_contact_fields) — the number a nanny actually dials.
+//
+// Loose on purpose: a UK parent types "07700 900123", not E.164. The gate is
+// "does this look like a phone number at all", not "is this dialable from
+// Nairobi" — a false rejection here costs the one field that matters when
+// something has happened to a child.
+// ---------------------------------------------------------------------------
+describe('profile phone validation', () => {
+  const accepted = [
+    '07700 900123',
+    '+44 7700 900123',
+    '+1 (415) 555-0134',
+    '020 7946 0018',
+    '+353-1-234-5678',
+  ];
+
+  const rejected = [
+    'call me',
+    'ring the office x',
+    '07700-CALLME',
+    '1234', // too few digits to be anybody's number
+    '(((-)))', // punctuation only
+    `+${'1'.repeat(40)}`, // over 32 characters
+  ];
+
+  for (const value of accepted) {
+    it(`UpdateProfileSchema accepts ${value}`, () => {
+      expect(UpdateProfileSchema.safeParse({ phone: value }).success).toBe(
+        true
+      );
+    });
+    it(`UpsertProfileSchema accepts ${value}`, () => {
+      expect(
+        UpsertProfileSchema.safeParse({ name: 'Maya', phone: value }).success
+      ).toBe(true);
+    });
+  }
+
+  for (const value of rejected) {
+    it(`UpdateProfileSchema rejects ${JSON.stringify(value)}`, () => {
+      expect(UpdateProfileSchema.safeParse({ phone: value }).success).toBe(
+        false
+      );
+    });
+  }
+
+  it('trims surrounding whitespace rather than storing it', () => {
+    const result = UpdateProfileSchema.safeParse({ phone: '  07700 900123  ' });
+    expect(result.success).toBe(true);
+    expect(result.success ? result.data.phone : null).toBe('07700 900123');
+  });
+
+  it('accepts a 32-character number but not a 33-character one (post-trim)', () => {
+    const thirtyTwo = `+${'1'.repeat(31)}`;
+    expect(thirtyTwo.length).toBe(32);
+    expect(UpdateProfileSchema.safeParse({ phone: thirtyTwo }).success).toBe(
+      true
+    );
+    expect(
+      UpdateProfileSchema.safeParse({ phone: `${thirtyTwo}1` }).success
+    ).toBe(false);
+  });
+
+  it('is optional on both schemas — nothing forces a number', () => {
+    expect(UpdateProfileSchema.safeParse({ name: 'Maya' }).success).toBe(true);
+    expect(UpsertProfileSchema.safeParse({ name: 'Maya' }).success).toBe(true);
+  });
+
+  it('accepts null on PATCH so a parent can take their number back down', () => {
+    expect(UpdateProfileSchema.safeParse({ phone: null }).success).toBe(true);
+  });
+});

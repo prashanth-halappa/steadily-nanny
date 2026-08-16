@@ -68,6 +68,10 @@ export class UserService {
           // PATCH /users/me. Same conditional-spread shape as
           // `additional_data` above.
           ...(profileData.timezone ? { timezone: profileData.timezone } : {}),
+          // Same conditional spread, same reason (099): a client that didn't
+          // ask for a number must not clobber one already set by a
+          // PATCH /users/me. Clearing a number is the PATCH's job, via null.
+          ...(profileData.phone ? { phone: profileData.phone } : {}),
           updated_at: new Date().toISOString(),
         },
         { onConflict: 'user_id' }
@@ -94,7 +98,7 @@ export class UserService {
     const { data, error } = await supabaseService
       .from('user_profiles')
       .select(
-        'user_id, name, city, country, preferred_locale, timezone, week_starts_on, additional_data'
+        'user_id, name, city, country, phone, preferred_locale, timezone, week_starts_on, additional_data'
       )
       .eq('user_id', userId)
       .maybeSingle();

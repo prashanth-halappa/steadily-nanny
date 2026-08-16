@@ -9,6 +9,11 @@ export interface UserProfileRequest {
   additional_data?: Record<string, unknown>;
   /** Optional — "seeded from the device" at signup. See `UserProfile.timezone`. */
   timezone?: string;
+  /**
+   * Optional — asked for on the HOUSEHOLD onboarding step (099). Free text as
+   * typed; see `UserProfile.phone`.
+   */
+  phone?: string;
 }
 
 export interface UserProfileResponse {
