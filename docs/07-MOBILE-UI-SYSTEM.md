@@ -312,3 +312,4 @@ Rules of thumb:
 | Typography factory | `src/components/ui/typography/factory.tsx` |
 | Icon registration | `lib/icons/registry.ts` |
 | Primitives library | `src/components/ui/*` |
+| PersonAvatar (name hashes to `category.accent1/2/3`; unnamed stays `bg-muted`) | `src/components/ui/person-avatar.tsx` |
