@@ -93,16 +93,19 @@ interface PayChangeSheetProps {
    * inline error behind it) is not visible under an open BottomSheetBase
    * (GOLDEN-FIXES #40). */
   submitError?: string | null;
-  /** The sheet usually adjusts an existing arrangement — the "first
-   * arrangement ever" case is `PaySetupScreen`, a full screen, not this
-   * sheet. Fields seed from this. Omitted only in `mode="offer"` when there
-   * is no prior offer yet, in which case the form seeds blank from
-   * `defaultCurrency` instead (an offer editing a PRIOR offer still passes
-   * one — see `offerRequestToArrangementStub`). */
+  /** The sheet usually adjusts an existing arrangement. Fields seed from
+   * this; OMIT IT and the form seeds blank from `defaultCurrency` instead,
+   * in ANY mode. Two callers rely on the blank branch: `mode="offer"` with no
+   * prior offer yet (an offer editing a PRIOR offer still passes one — see
+   * `offerRequestToArrangementStub`), and A1's `ClockInBlockedCard`, whose
+   * `nothingSent` variant proposes terms for a carer who has no arrangement
+   * at all — that absence IS the block. The branch is keyed on
+   * `!currentArrangement`, never on the mode: "there is nothing to seed from"
+   * is a fact about the data, not about which button was pressed. */
   currentArrangement?: PayArrangement;
-  /** `mode="offer"` only, and only read when `currentArrangement` is absent:
-   * the currency a blank offer form seeds with (the household's, not the
-   * device's — same reasoning as `PaySetupScreen`'s device-currency prefill). */
+  /** Read only when `currentArrangement` is absent: the currency a blank form
+   * seeds with (the household's, not the device's — same reasoning as
+   * `PaySetupScreen`'s device-currency prefill). */
   defaultCurrency?: string;
   /** For the cancellation-hours default when the current arrangement has no
    * per-nanny window set — the household's fallback column. */

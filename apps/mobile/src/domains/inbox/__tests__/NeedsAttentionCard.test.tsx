@@ -71,6 +71,17 @@ const TERMS_PROPOSAL: InboxItem = {
   currency: 'USD',
 };
 
+const TERMS_PROPOSAL_SENT: InboxItem = {
+  kind: 'terms_proposal_sent',
+  id: 'prop-2',
+  householdId: 'hh-1',
+  carerId: 'carer-1',
+  carerDisplayName: 'Marisol',
+  proposedAt: '2026-08-24T09:00:00.000Z',
+  viewedAt: null,
+  direction: 'parent',
+};
+
 let NeedsAttentionCard: typeof import('../components/NeedsAttentionCard').NeedsAttentionCard;
 let mockUseInboxItems: ReturnType<typeof mock>;
 let mockPush: ReturnType<typeof mock>;
@@ -279,6 +290,29 @@ describe('NeedsAttentionCard', () => {
 
   it('renders nothing when the only item is a terms proposal — that is its own T1 card', () => {
     setItems([TERMS_PROPOSAL]);
+
+    const { queryByTestId } = render(<NeedsAttentionCard />);
+
+    expect(queryByTestId('today-needs-attention-card')).toBeNull();
+  });
+
+  // A7 — the author's row has `PendingOfferCard`, exactly as the answerer's
+  // has `TermsProposalCard`. Same treatment for the same reason: two cards
+  // about one negotiation is the collision the pinned slot exists to end,
+  // and this row must not inflate "N more" either.
+  it('excludes a sent-offer row entirely: headline is the other item, no "more" line', () => {
+    setItems([TERMS_PROPOSAL_SENT, QUERIED_WEEK]);
+
+    const { getByText, queryByText } = render(<NeedsAttentionCard />);
+
+    expect(
+      getByText('items.queriedWeek.title({"week":"28 Jul"})')
+    ).toBeTruthy();
+    expect(queryByText(/moreItems/)).toBeNull();
+  });
+
+  it('renders nothing when the only item is a sent offer — never headlines one', () => {
+    setItems([TERMS_PROPOSAL_SENT]);
 
     const { queryByTestId } = render(<NeedsAttentionCard />);
 

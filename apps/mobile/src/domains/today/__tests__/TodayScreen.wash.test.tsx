@@ -64,6 +64,7 @@ mock.module('@/src/domains/schedule', () => ({
 mock.module('@/src/domains/inbox', () => ({
   NeedsAttentionCard: () => null,
   TermsProposalCard: () => null,
+  PendingOfferCard: () => null,
   useInboxItems: () => ({ items: [], isLoading: false }),
 }));
 mock.module('@/src/domains/today/hooks/useUncoveredToday', () => ({
@@ -80,6 +81,22 @@ mock.module('@/src/domains/today/components/ThisWeekCard', () => ({
 }));
 mock.module('@/src/domains/today/components/HandoffChipsCard', () => ({
   HandoffChipsCard: () => null,
+}));
+mock.module('@/src/domains/inbox/hooks/usePendingOffer', () => ({
+  // A7's offer, absent — this file is about the live wash, and the real hook
+  // needs a QueryClient this file deliberately does not build.
+  usePendingOffer: () => ({
+    offer: null,
+    state: null,
+    scheduledMinutesToday: 0,
+    isBlocking: false,
+    timeZone: 'UTC',
+  }),
+}));
+mock.module('@/src/domains/today/hooks/useTermsGate', () => ({
+  // A1's gate, open — this file is about a different arbitration, and the
+  // real hook needs a QueryClient this file deliberately does not build.
+  useTermsGate: () => ({ status: 'open', proposal: null, familyName: '' }),
 }));
 mock.module('@/src/domains/today/hooks/useOverdueClockOut', () => ({
   useOverdueClockOut: () => ({

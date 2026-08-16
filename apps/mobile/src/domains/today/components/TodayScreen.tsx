@@ -55,9 +55,11 @@ import { JoinedHouseholdCard, SendMyTermsCard } from '@/src/domains/draft';
 import { HouseholdSwitcher } from '@/src/domains/household';
 import {
   NeedsAttentionCard,
+  PendingOfferCard,
   TermsProposalCard,
   useInboxItems,
 } from '@/src/domains/inbox';
+import { usePendingOffer } from '@/src/domains/inbox/hooks/usePendingOffer';
 import { PendingScheduleCard } from '@/src/domains/schedule';
 import { localDateToWeekday } from '@/src/domains/schedule/utils/shiftGrouping';
 import { canViewParentSchedule, SETUP_ROLES } from '@/src/domains/setup/types';
@@ -74,12 +76,14 @@ import { useAuthStore } from '@/src/store/auth';
 import { useTodayCardDismissalStore } from '@/src/store/todayCardDismissalStore';
 import { useHouseholdIsLive } from '../hooks/useHouseholdIsLive';
 import { useOverdueClockOut } from '../hooks/useOverdueClockOut';
+import { useTermsGate } from '../hooks/useTermsGate';
 import { useTodayCoverRows } from '../hooks/useTodayCoverRows';
 import { useUncoveredToday } from '../hooks/useUncoveredToday';
 import { resolveAttentionOwner } from '../utils/attentionOwner';
 import { HERO_MOOD_ILLUSTRATION, resolveHeroMood } from '../utils/heroMood';
 import { buildJoinedComposition } from '../utils/joinedComposition';
 import { resolveSlotOccupant } from '../utils/slotOccupant';
+import { ClockInBlockedCard } from './ClockInBlockedCard';
 import { ClockInCard } from './ClockInCard';
 import { HandoffChipsCard } from './HandoffChipsCard';
 import { PinnedSlot } from './PinnedSlot';
@@ -136,15 +140,39 @@ export function TodayScreen() {
   const hasTermsProposal =
     !inbox.isLoading &&
     inbox.items.some(item => item.kind === 'terms_proposal');
+  // The two kinds `NeedsAttentionCard` filters out must not count towards
+  // "the inbox needs the slot" either, or the slot is handed to a card that
+  // then renders nothing — an empty pinned zone with the real card sitting
+  // in the feed below it. Both have their own card AND their own rung, so
+  // neither is ever lost by being excluded here.
+  const hasInboxItems =
+    !inbox.isLoading &&
+    inbox.items.some(
+      item =>
+        item.kind !== 'terms_proposal' && item.kind !== 'terms_proposal_sent'
+    );
   const uncoveredToday = useUncoveredToday(household?.id, household?.timezone);
+  // A1's hard block. Nanny-only and active-member-only: a parent has no
+  // clock to block, and every write on a household she was removed from is
+  // refused anyway, so blocking there would explain the wrong refusal.
+  const termsGate = useTermsGate(household?.id);
+  const termsBlocked = activeNanny && termsGate.status === 'blocked';
+  // A7's parent-side half. `usePendingOffer` is the SAME hook the card reads,
+  // so the ladder and the card can never disagree about whether this offer is
+  // loud — a slot pinned with a card that has decided it is quiet is the
+  // stacked-attention bug the ladder exists to prevent. Consequence ONLY: a
+  // stale offer never reaches this flag, however old it gets.
+  const pendingOffer = usePendingOffer();
   const attentionOwner = resolveAttentionOwner({
+    termsBlocked,
+    hasBlockingSentOffer: pendingOffer.isBlocking,
     overdue: clockOutOverdue,
     // Parent-visible roles ONLY: a nanny never sees `TodayCoverage`, so
     // letting a coverage gap own her ladder handed the slot to a card she
     // cannot see.
     hasUncoveredCare: isParentView && uncoveredToday.status === 'uncovered',
     hasTermsProposal,
-    hasInboxItems: !inbox.isLoading && inbox.items.length > 0,
+    hasInboxItems,
   });
   const slotOccupant = resolveSlotOccupant({
     role: onboarding.role,
@@ -246,8 +274,11 @@ export function TodayScreen() {
         return <TermsProposalCard />;
       case 'inbox':
         return <NeedsAttentionCard />;
+      case 'blockedClockIn':
+        return <ClockInBlockedCard household={household} />;
+      case 'pendingOffer':
+        return <PendingOfferCard />;
       default:
-        // `blockedClockIn` is resolvable but has no card yet — S4 lands it.
         return null;
     }
   })();
@@ -353,7 +384,17 @@ export function TodayScreen() {
                 end. In the feed they keep their content and CTA at default
                 tone (`usePinnedTone`). */}
             {slotOccupant === 'inbox' ? null : <NeedsAttentionCard />}
-            {slotOccupant === 'termsProposal' ? null : <TermsProposalCard />}
+            {/* Quiet on every day it is not blocking, which is nearly all of
+                them — it renders nothing at all when there is no live offer
+                he wrote. */}
+            {slotOccupant === 'pendingOffer' ? null : <PendingOfferCard />}
+            {/* Not while blocked: the blocked card IS the review CTA, and a
+                second card about the same unanswered proposal is exactly the
+                collision the pinned slot exists to end. */}
+            {slotOccupant === 'termsProposal' ||
+            slotOccupant === 'blockedClockIn' ? null : (
+              <TermsProposalCard />
+            )}
             <PendingScheduleCard />
 
             {/* §9.2 — an L3, non-urgent, one-time offer. Below the attention
@@ -363,7 +404,13 @@ export function TodayScreen() {
 
             {/* Not on a household she was REMOVED from: every write there is
                 refused server-side, so the button would only ever fail. */}
-            {activeNanny && slotOccupant !== 'clockIn' ? clockInCard : null}
+            {/* A clock-in button she cannot use is not a smaller version of
+                the block — it is the block denied. */}
+            {activeNanny &&
+            slotOccupant !== 'clockIn' &&
+            slotOccupant !== 'blockedClockIn'
+              ? clockInCard
+              : null}
 
             <ThisWeekCard
               householdId={household.id}

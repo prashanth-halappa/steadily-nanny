@@ -118,6 +118,36 @@ describe('AddMissedHoursCard', () => {
     expect(queryByTestId('today-missed-hours-sheet')).toBeNull();
   });
 
+  // A1's recovery path. The blocked card promised her these hours could be
+  // added "once terms are agreed"; this headline is that promise arriving,
+  // and it says WHY the hours are worth adding — the rate she just agreed.
+  it('leads with the post-acceptance headline when asked, and stays plain otherwise', () => {
+    const withHeadline = render(
+      <AddMissedHoursCard
+        householdId={HOUSEHOLD_ID}
+        timeZone={TIME_ZONE}
+        weekStartsOn={1}
+        firstRunHeadline
+      />
+    );
+    expect(
+      String(
+        withHeadline.getByTestId('today-missed-hours-headline').props.children
+      )
+    ).toBe('missedHours.afterTermsHeadline');
+
+    const plain = render(
+      <AddMissedHoursCard
+        householdId={HOUSEHOLD_ID}
+        timeZone={TIME_ZONE}
+        weekStartsOn={1}
+      />
+    );
+    expect(plain.queryByTestId('today-missed-hours-headline')).toBeNull();
+    // The recovery affordance itself is unchanged either way.
+    expect(plain.getByTestId('today-missed-hours-cta')).toBeTruthy();
+  });
+
   it('opens the sheet with a TimeRangePicker and a note field on press', () => {
     const { getByTestId } = render(
       <AddMissedHoursCard

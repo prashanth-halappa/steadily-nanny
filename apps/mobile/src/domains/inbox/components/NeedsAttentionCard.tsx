@@ -57,8 +57,16 @@ export function NeedsAttentionCard() {
   // (§7.1/B3): it has its own T1 card and its own rung in
   // `resolveAttentionOwner`, so it must not headline here or inflate the
   // count either.
+  // A7's `terms_proposal_sent` is filtered on exactly the same grounds as
+  // `terms_proposal`: it has its own card (`PendingOfferCard`) and its own
+  // rung, and it is the ONE row here that waits on somebody else — headlining
+  // it would put a card the viewer cannot resolve at the top of a list of
+  // things he can.
   const items = allItems.filter(
-    item => item.kind !== 'pending_pattern' && item.kind !== 'terms_proposal'
+    item =>
+      item.kind !== 'pending_pattern' &&
+      item.kind !== 'terms_proposal' &&
+      item.kind !== 'terms_proposal_sent'
   );
 
   if (isLoading || items.length === 0) {

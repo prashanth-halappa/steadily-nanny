@@ -115,6 +115,13 @@ export function getTimeEntryEditErrorKey(error: unknown): string | undefined {
   if (err.response?.status === 409 && reason === 'TIME_ENTRY_NOT_EDITABLE') {
     return 'errors:entryNotEditable';
   }
+  // A1/A9. The terms gate is a policy on time RECORDS, not a button state —
+  // `createRetroactiveEntry` and `updateEntry` carry the same guard as
+  // `clockIn`, so every correction sheet can meet this 409 too. It gets the
+  // blocked card's own sentence, never a code and never "forbidden".
+  if (err.response?.status === 409 && reason === 'TERMS_NOT_AGREED') {
+    return 'errors:termsNotAgreed';
+  }
   if (err.response?.status !== 400) return undefined;
   if (reason === 'CLOCK_SPAN_TOO_LONG') return 'errors:clockSpanTooLong';
   if (reason === 'CLOCK_OUT_CHANGES_WEEK') return 'errors:clockOutChangesWeek';

@@ -140,6 +140,19 @@ describe('resolveSlotOccupant', () => {
     ).toBeNull();
   });
 
+  // A7 — the parent's pending offer, and only while it is BLOCKING. A stale
+  // offer never reaches the ladder at all, so it never reaches this slot.
+  it("a blocking sent offer puts the parent's pending-offer card in the slot", () => {
+    expect(
+      resolveSlotOccupant({
+        role: SETUP_ROLES.PARENT,
+        isPastMember: false,
+        onClock: false,
+        attentionOwner: 'sentOfferBlocking',
+      })
+    ).toBe('pendingOffer');
+  });
+
   it('a role that has not resolved yet gets an empty slot', () => {
     expect(
       resolveSlotOccupant({

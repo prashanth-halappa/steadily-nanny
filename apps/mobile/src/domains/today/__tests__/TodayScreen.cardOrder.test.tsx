@@ -79,6 +79,7 @@ mock.module('@/src/domains/schedule', () => ({
 mock.module('@/src/domains/inbox', () => ({
   NeedsAttentionCard: marker('needs-attention'),
   TermsProposalCard: marker('terms-proposal'),
+  PendingOfferCard: marker('pending-offer'),
   useInboxItems: () => mockInboxItems(),
 }));
 mock.module('@/src/domains/today/hooks/useUncoveredToday', () => ({
@@ -91,6 +92,9 @@ mock.module('@/src/domains/today/hooks/useTodayCoverRows', () => ({
 }));
 mock.module('@/src/domains/today/components/ClockInCard', () => ({
   ClockInCard: marker('clock-in'),
+}));
+mock.module('@/src/domains/today/components/ClockInBlockedCard', () => ({
+  ClockInBlockedCard: marker('clock-in-blocked'),
 }));
 // The three merged cards are one block now — its own file's tests cover which
 // children it gathers; here it is a single position in the feed.
@@ -133,6 +137,8 @@ function memberJoined(daysAgo: number) {
 }
 let mockMembers: ReturnType<typeof memberJoined>[] = [];
 let mockInboxItems: () => { items: { kind: string }[]; isLoading: boolean };
+let mockTermsGate: ReturnType<typeof mock>;
+let mockPendingOffer: ReturnType<typeof mock>;
 let mockUncovered: () => { status: string; localDate: string };
 let mockUseIsOnboarded: ReturnType<typeof mock>;
 let mockUseOverdueClockOut: ReturnType<typeof mock>;
@@ -159,6 +165,24 @@ beforeAll(async () => {
   }));
   mock.module('@/src/domains/today/hooks/useOverdueClockOut', () => ({
     useOverdueClockOut: mockUseOverdueClockOut,
+  }));
+  mockTermsGate = mock(() => ({
+    status: 'open',
+    proposal: null,
+    familyName: 'Order Household',
+  }));
+  mock.module('@/src/domains/today/hooks/useTermsGate', () => ({
+    useTermsGate: mockTermsGate,
+  }));
+  mockPendingOffer = mock(() => ({
+    offer: null,
+    state: null,
+    scheduledMinutesToday: 0,
+    isBlocking: false,
+    timeZone: 'UTC',
+  }));
+  mock.module('@/src/domains/inbox/hooks/usePendingOffer', () => ({
+    usePendingOffer: mockPendingOffer,
   }));
   mock.module('@/src/hooks/queries/useActiveHousehold', () => ({
     useActiveHousehold: mock(() => ({
@@ -241,6 +265,177 @@ beforeEach(() => {
     clockInAt: null,
     shiftEndsAt: null,
   }));
+  mockTermsGate?.mockImplementation(() => ({
+    status: 'open',
+    proposal: null,
+    familyName: 'Order Household',
+  }));
+  mockPendingOffer?.mockImplementation(() => ({
+    offer: null,
+    state: null,
+    scheduledMinutesToday: 0,
+    isBlocking: false,
+    timeZone: 'UTC',
+  }));
+});
+
+/** A live offer THIS viewer sent, with or without today's consequence. */
+function sentOffer(isBlocking: boolean) {
+  mockPendingOffer.mockImplementation(() => ({
+    offer: {
+      kind: 'terms_proposal_sent',
+      id: 'prop-sent-1',
+      householdId: HOUSEHOLD_ID,
+      carerId: 'carer-1',
+      carerDisplayName: 'Marisol',
+      proposedAt: '2026-08-01T09:00:00.000Z',
+      viewedAt: null,
+      direction: 'parent',
+    },
+    state: {
+      variant: isBlocking ? 'blocking' : 'stale',
+      opened: false,
+      days: 20,
+    },
+    scheduledMinutesToday: isBlocking ? 360 : 0,
+    isBlocking,
+    timeZone: 'UTC',
+  }));
+  mockInboxItems = () => ({
+    items: [{ kind: 'terms_proposal_sent' }],
+    isLoading: false,
+  });
+}
+
+describe('TodayScreen — A7, the parent who is the bottleneck', () => {
+  it('pins the pending-offer card when her shift today cannot be recorded', () => {
+    sentOffer(true);
+
+    const { pinned, feed } = renderScreen('parent');
+
+    expect(pinned).toEqual(['pending-offer']);
+    expect(feed).not.toContain('pending-offer');
+  });
+
+  // THE RULE, at the screen level: a 20-day-old offer with no shift today
+  // stays in the feed. Age changes copy, never position and never tone.
+  it('leaves a stale offer with no shift today in the feed, slot empty', () => {
+    sentOffer(false);
+
+    const { pinned, feed } = renderScreen('parent');
+
+    expect(pinned).toEqual([]);
+    expect(feed).toContain('pending-offer');
+  });
+
+  it('lets her own terms block outrank his sent offer', () => {
+    sentOffer(true);
+    blockTerms();
+
+    const { pinned } = renderScreen('nanny');
+
+    expect(pinned).toEqual(['clock-in-blocked']);
+  });
+
+  it('beats an overdue clock-out — the block prevents every record, not one', () => {
+    sentOffer(true);
+    mockUseOverdueClockOut.mockImplementation(() => ({
+      overdue: true,
+      clockInAt: '2026-08-10T08:00:00.000Z',
+      shiftEndsAt: '2026-08-10T16:00:00.000Z',
+    }));
+
+    const { pinned } = renderScreen('parent');
+
+    expect(pinned).toEqual(['pending-offer']);
+  });
+});
+
+/** A1's gate, closed: the arrangement query settled with nothing. */
+function blockTerms(variant = 'familySent') {
+  mockTermsGate.mockImplementation(() => ({
+    status: 'blocked',
+    variant,
+    proposal: {
+      id: 'proposal-1',
+      direction: 'parent',
+      created_at: '2026-08-12T09:00:00.000Z',
+    },
+    familyName: 'Order Household',
+  }));
+}
+
+describe('TodayScreen — A1, the clock-in hard block', () => {
+  it('gives the blocked card the slot, above everything the ladder can name', () => {
+    blockTerms();
+    mockInboxItems = () => ({
+      items: [{ kind: 'change_request' }],
+      isLoading: false,
+    });
+    mockUseOverdueClockOut.mockImplementation(() => ({
+      overdue: true,
+      clockInAt: '2026-08-10T08:00:00.000Z',
+      shiftEndsAt: '2026-08-10T16:00:00.000Z',
+    }));
+
+    const { pinned } = renderScreen('nanny');
+
+    expect(pinned).toEqual(['clock-in-blocked']);
+  });
+
+  // The blocked card IS the review CTA. A clock-in button she cannot use and
+  // a second card about the same unanswered proposal are both noise on the
+  // one screen where she needs a single, obvious next step.
+  it('mounts neither the clock nor the terms-proposal card ANYWHERE while blocked', () => {
+    blockTerms();
+    mockInboxItems = () => ({
+      items: [{ kind: 'terms_proposal' }],
+      isLoading: false,
+    });
+
+    const { all } = renderScreen('nanny');
+
+    expect(all).not.toContain('clock-in');
+    expect(all).not.toContain('terms-proposal');
+    expect(all.filter(n => n === 'clock-in-blocked')).toHaveLength(1);
+  });
+
+  it('never blocks a parent — the gate is hers alone', () => {
+    blockTerms();
+
+    const { pinned, all } = renderScreen('parent');
+
+    expect(pinned).toEqual([]);
+    expect(all).not.toContain('clock-in-blocked');
+  });
+
+  it('never blocks a household she was removed from', () => {
+    blockTerms();
+
+    const { all } = renderScreen('nanny', true);
+
+    expect(all).not.toContain('clock-in-blocked');
+  });
+
+  it('gives the clock back the slot the moment terms are agreed', () => {
+    const { pinned, all } = renderScreen('nanny');
+
+    expect(pinned).toEqual(['clock-in']);
+    expect(all).not.toContain('clock-in-blocked');
+  });
+
+  // A gate still resolving is not a work stoppage — see useTermsGate.
+  it('does not block while the gate is still loading', () => {
+    mockTermsGate.mockImplementation(() => ({
+      status: 'loading',
+      proposal: null,
+      familyName: 'Order Household',
+    }));
+
+    const { pinned } = renderScreen('nanny');
+
+    expect(pinned).toEqual(['clock-in']);
+  });
 });
 
 describe('TodayScreen — the pinned slot holds exactly one thing', () => {

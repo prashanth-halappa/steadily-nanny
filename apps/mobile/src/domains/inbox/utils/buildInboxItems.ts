@@ -26,6 +26,13 @@
  *    (a carer-authored one is the parent's item, a parent counter is the
  *    carer's) — never to whoever wrote it. Same explicit role check as
  *    `pending_shift` (B5).
+ *  - terms proposal SENT (A7): the mirror of the row above, for the person who
+ *    WROTE it. Until this existed a parent who sent terms had no Today signal
+ *    at all — his only trace was a settings row titled "Proposed terms from
+ *    {carerName}", which names the wrong author — so under A1 the one person
+ *    who can unblock a work stoppage could not see it. It is not "pending
+ *    work" in the same sense (it waits on somebody else), which is why it
+ *    ranks last.
  *  - terms ack: nanny-only, active member, live arrangement, ack state
  *    still `none` — surfaces on NeedsAttentionCard, resolves on My pay.
  *
@@ -116,6 +123,10 @@ export type InboxTermsProposalInput = {
   created_at: string;
   weekly_equivalent_minor: number | null;
   terms: { rate_minor: number; currency?: string | undefined };
+  /** Stamped when the NON-author first opened the review screen — "opened",
+   * never "agreed" (§1's vocabulary). Optional so pre-A7 fixtures still
+   * type-check; absent reads as never opened. */
+  viewed_at?: string | null;
 };
 
 /** One live arrangement the nanny has not acked yet — built in `useInboxItems`. */
@@ -192,6 +203,20 @@ export type InboxItem =
       /** Null when the proposal's terms carry none — the copy then names no
        * figure at all rather than an amount with an invented symbol. */
       currency: string | null;
+    }
+  | {
+      kind: 'terms_proposal_sent';
+      id: string;
+      householdId: string;
+      /** Whose terms these are — the shift lookup that decides whether this
+       * offer is BLOCKING is filtered by it. */
+      carerId: string;
+      carerDisplayName: string;
+      proposedAt: string;
+      /** When the other side first opened it, or null. */
+      viewedAt: string | null;
+      /** Who wrote it. Always the viewer's own side, by construction. */
+      direction: TermsProposalDirection;
     }
   | {
       kind: 'terms_ack';
@@ -367,6 +392,29 @@ export function buildInboxItems(input: {
     });
   }
 
+  // A7 — the AUTHOR's own row, the mirror of the loop above. Role is checked
+  // explicitly on both sides (B5): a helper authors nothing, and a nanny sees
+  // only her own negotiation (D-21).
+  for (const proposal of input.termsProposals ?? []) {
+    if (proposal.status !== TERMS_PROPOSAL_STATUSES.PROPOSED) continue;
+    if (proposal.direction === 'parent') {
+      if (!isParentEditorRole(input.role)) continue;
+    } else {
+      if (input.role !== SETUP_ROLES.NANNY) continue;
+      if (!me || proposal.carer_id !== me) continue;
+    }
+    items.push({
+      kind: 'terms_proposal_sent',
+      id: proposal.id,
+      householdId: proposal.household_id,
+      carerId: proposal.carer_id,
+      carerDisplayName: proposal.carer_display_name,
+      proposedAt: proposal.created_at,
+      viewedAt: proposal.viewed_at ?? null,
+      direction: proposal.direction,
+    });
+  }
+
   // §2.2 rank 9 — nanny-only; resolves on My pay, not on Today.
   if (input.role === SETUP_ROLES.NANNY && !input.isPastMember) {
     for (const row of input.termsAcks ?? []) {
@@ -433,6 +481,10 @@ function sortKey(item: InboxItem, nowMs: number): number {
       return 8;
     case 'terms_ack':
       return 9;
+    // Last. Every other row is waiting on the VIEWER; this one is waiting on
+    // somebody else, so it must never push an answerable item down the list.
+    case 'terms_proposal_sent':
+      return 10;
   }
 }
 
@@ -451,6 +503,7 @@ function sortDateFor(item: InboxItem): string | null {
     // The day it was sent — the oldest unanswered proposal first, which is
     // the one that has been blocking longest.
     case 'terms_proposal':
+    case 'terms_proposal_sent':
       return item.proposedAt;
     case 'terms_ack':
       return item.validFrom;

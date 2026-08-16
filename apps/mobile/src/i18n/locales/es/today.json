@@ -157,7 +157,8 @@
     "noteLabel": "Nota (opcional)",
     "notePlaceholder": "¿Algo que anotar?",
     "submit": "Añadir horas",
-    "addedToast": "Horas añadidas"
+    "addedToast": "Horas añadidas",
+    "afterTermsHeadline": "¿Trabajaste antes de acordar las condiciones? Añade esas horas ahora: se pagarán a la tarifa que acabas de acordar."
   },
   "shiftDetail": {
     "declineCta": "Rechazar",
@@ -216,5 +217,16 @@
   },
   "thisWeek": {
     "title": "Esta semana"
+  },
+  "clockInBlocked": {
+    "title": "Podrás fichar cuando se acuerden las condiciones",
+    "bodyFamilySent": "La familia {{familyName}} te envió sus condiciones el {{date}}. Acéptalas y podrás fichar de inmediato.",
+    "bodyYouSent": "Enviaste tus condiciones el {{date}}. La familia {{familyName}} aún no ha respondido.",
+    "bodyNothingSent": "Todavía nadie ha fijado tu tarifa. Envía tus condiciones a la familia {{familyName}} y podrás empezar a fichar.",
+    "ctaFamilySent": "Revisar estas condiciones",
+    "ctaYouSent": "Ver lo que enviaste",
+    "ctaNothingSent": "Enviar mis condiciones",
+    "footnote": "Las horas trabajadas antes de acordar las condiciones no se pueden fichar. Anótalas por tu cuenta: podrás añadirlas aquí en cuanto se acuerden.",
+    "sendFailed": "No se pudo enviar. Inténtalo de nuevo."
   }
 }

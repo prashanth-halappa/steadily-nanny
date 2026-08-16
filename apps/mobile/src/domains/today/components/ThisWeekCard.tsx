@@ -21,8 +21,18 @@ import { Pressable, View } from 'react-native';
 import { MetadataLabel } from '@/src/components/ui/typography';
 import { ThisWeeksShiftsCard } from '@/src/domains/schedule';
 import { SETUP_ROLES, type SetupRole } from '@/src/domains/setup/types';
+import { useCurrentPayArrangement } from '@/src/hooks/queries/useCurrentPayArrangement';
+import { useAuthStore } from '@/src/store/auth';
 import { AddMissedHoursCard } from './AddMissedHoursCard';
 import { NannyWeekLine } from './NannyWeekLine';
+
+/**
+ * How long after terms are agreed the recovery headline stays true. A week:
+ * long enough to catch the hours she worked during the block even if she does
+ * not open the app for a few days, short enough that "the rate you just
+ * agreed" never appears months into a placement.
+ */
+const NEW_ARRANGEMENT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 interface ThisWeekCardProps {
   householdId: string;
@@ -43,6 +53,19 @@ export function ThisWeekCard({
   const { t } = useTranslation('today');
   const router = useRouter();
   const activeNanny = role === SETUP_ROLES.NANNY && !isPastMember;
+  // A1's worst case, recovered. The clock-in block has no escape hatch, so
+  // she may well have worked hours she could not clock; a brand-new
+  // arrangement is exactly the moment those hours become addable, and the
+  // only window in which "the rate you just agreed" is a true sentence.
+  const myUserId = useAuthStore(s => s.session?.user?.id);
+  const arrangement = useCurrentPayArrangement(
+    activeNanny ? householdId : null,
+    activeNanny ? myUserId : null
+  );
+  const arrangementCreatedAt = arrangement.data?.created_at;
+  const justAgreedTerms =
+    !!arrangementCreatedAt &&
+    Date.now() - Date.parse(arrangementCreatedAt) < NEW_ARRANGEMENT_MAX_AGE_MS;
   const href = (
     role === SETUP_ROLES.NANNY
       ? '/(private)/(tabs)/hours'
@@ -75,6 +98,9 @@ export function ThisWeekCard({
           householdId={householdId}
           timeZone={timeZone}
           weekStartsOn={weekStartsOn}
+          // The card itself only renders when there is a missed day to
+          // recover, so this never puts a headline above nothing.
+          firstRunHeadline={justAgreedTerms}
         />
       ) : null}
 

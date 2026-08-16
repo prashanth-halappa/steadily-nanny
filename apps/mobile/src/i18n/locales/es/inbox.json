@@ -69,6 +69,27 @@
       "title": "Aún se deben {{amount}} en reembolsos",
       "subtitle": "Aprobados para la semana del {{week}}",
       "cta": "Abrir la semana"
+    },
+    "termsProposalSent": {
+      "title": "Condiciones que enviaste a {{carer}} · {{date}}",
+      "subtitleOpened": "Enviadas el {{date}} · abiertas, sin responder.",
+      "subtitleNotOpened": "Enviadas el {{date}} · aún sin abrir.",
+      "cta": "Ver lo que enviaste"
     }
+  },
+  "pendingOfferCard": {
+    "titleSentToday": "Condiciones enviadas a {{carer}}",
+    "titleWaiting": "Esperando la respuesta de {{carer}}",
+    "titleStale": "Enviadas hace {{days}} días. Nadie ha respondido.",
+    "titleBlocking": "{{carer}} no puede fichar",
+    "subtitleSentToday": "Enviadas hoy. Aún sin abrir.",
+    "subtitleSentTodayOpened": "Enviadas hoy · abiertas, sin responder.",
+    "subtitleOpened": "Enviadas el {{date}} · abiertas, sin responder.",
+    "subtitleNotOpened": "Enviadas el {{date}} · aún sin abrir.",
+    "subtitleBlocking": "Sus horas no se pueden registrar hasta que se acuerden las condiciones. Enviadas el {{date}}.",
+    "scheduledToday": "{{carer}} tiene {{hours}} horas programadas hoy que aún no se pueden registrar.",
+    "ctaSee": "Ver lo que enviaste",
+    "ctaChange": "Cambiar lo que enviaste",
+    "withdraw": "Retirar"
   }
 }

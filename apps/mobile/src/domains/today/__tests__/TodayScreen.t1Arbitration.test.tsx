@@ -89,6 +89,22 @@ beforeAll(async () => {
   mock.module('@/src/domains/today/hooks/useOverdueClockOut', () => ({
     useOverdueClockOut: mockUseOverdueClockOut,
   }));
+  mock.module('@/src/domains/inbox/hooks/usePendingOffer', () => ({
+    // A7's offer, absent — this file is about overdue-vs-inbox, and the real
+    // hook needs a QueryClient this file deliberately does not build.
+    usePendingOffer: () => ({
+      offer: null,
+      state: null,
+      scheduledMinutesToday: 0,
+      isBlocking: false,
+      timeZone: 'UTC',
+    }),
+  }));
+  mock.module('@/src/domains/today/hooks/useTermsGate', () => ({
+    // A1's gate, open — this file is about a different arbitration, and the
+    // real hook needs a QueryClient this file deliberately does not build.
+    useTermsGate: () => ({ status: 'open', proposal: null, familyName: '' }),
+  }));
 
   mock.module('@/src/domains/inbox', () => {
     const React = require('react');
@@ -96,6 +112,7 @@ beforeAll(async () => {
       NeedsAttentionCard: () =>
         React.createElement('View', { testID: 'needs-attention-spy' }),
       TermsProposalCard: () => null,
+      PendingOfferCard: () => null,
       // Non-empty: this file is specifically about overdue-vs-inbox
       // precedence, so there has to be an inbox item for "not overdue" to
       // mean "inbox owns it" rather than "nothing owns it".
