@@ -89,6 +89,7 @@ import { buildJoinedComposition } from '../utils/joinedComposition';
 import { resolveSlotOccupant } from '../utils/slotOccupant';
 import { ClockInBlockedCard } from './ClockInBlockedCard';
 import { ClockInCard } from './ClockInCard';
+import { CrossFamilyStrip } from './CrossFamilyStrip';
 import { EmergencyContactPromptCard } from './EmergencyContactPromptCard';
 import { HandoffChipsCard } from './HandoffChipsCard';
 import { PinnedSlot } from './PinnedSlot';
@@ -309,6 +310,12 @@ export function TodayScreen() {
           someone is on the clock. The screen used to be flat warm grey for
           the other sixteen hours of the day (daylight-v2 §4.3). */}
       <ScreenWash testID="today-live-wash" kind={isLive ? 'live' : 'brand'} />
+
+      {/* P5/S10 — cross-family, unscoped by design: renders above every
+          household-scoped surface on this screen (never in `PinnedSlot`,
+          never a `Card`) and is null for the common case (nothing urgent
+          in her other families, or a parent's single-household account). */}
+      <CrossFamilyStrip />
 
       {/* Hero band — no card, no ground of its own: it IS the top of the
           wash, and the wash is what separates it from the cards below. It is

@@ -239,5 +239,20 @@
     "relationshipLabel": "Cómo lo conoces (opcional)",
     "saveButton": "Guardar",
     "saveFailed": "No se pudo guardar. Inténtalo de nuevo."
+  },
+  "crossFamily": {
+    "line": {
+      "runningClock": "{{familyName}} · sigue fichada desde las {{time}}",
+      "termsBlock": "{{familyName}} · las condiciones bloquean el turno de hoy",
+      "pendingShift": "{{familyName}} · un turno necesita respuesta"
+    },
+    "moreSuffix": "· {{count}} más",
+    "switchCta": "Cambiar",
+    "sheetTitle": "Otras familias",
+    "sheetReason": {
+      "runningClock": "Sigue fichada desde las {{time}}",
+      "termsBlock": "Las condiciones bloquean el turno de hoy",
+      "pendingShift": "Un turno necesita respuesta"
+    }
   }
 }

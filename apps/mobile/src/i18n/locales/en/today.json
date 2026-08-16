@@ -239,5 +239,20 @@
     "relationshipLabel": "How you know them (optional)",
     "saveButton": "Save",
     "saveFailed": "That didn't save. Try again."
+  },
+  "crossFamily": {
+    "line": {
+      "runningClock": "{{familyName}} · still clocked in since {{time}}",
+      "termsBlock": "{{familyName}} · terms block today's shift",
+      "pendingShift": "{{familyName}} · shift needs an answer"
+    },
+    "moreSuffix": "· {{count}} more",
+    "switchCta": "Switch",
+    "sheetTitle": "Other families",
+    "sheetReason": {
+      "runningClock": "Still clocked in since {{time}}",
+      "termsBlock": "Terms block today's shift",
+      "pendingShift": "Shift needs an answer"
+    }
   }
 }
