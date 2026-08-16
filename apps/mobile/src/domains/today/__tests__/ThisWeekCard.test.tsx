@@ -1,0 +1,98 @@
+/**
+ * @module domains/today/__tests__/ThisWeekCard.test
+ *
+ * #9's merge: three routine cards (`NannyWeekLine`, `AddMissedHoursCard`,
+ * `ThisWeeksShiftsCard`) became one labelled block in the feed. It is a
+ * COMPOSITION, not a rewrite — the three keep their own files, their own
+ * tests and their own behaviour; this card only decides which of them a given
+ * viewer sees, and gives them a heading that routes somewhere.
+ */
+import { beforeAll, describe, expect, it, mock } from 'bun:test';
+import { fireEvent, render } from '@testing-library/react-native';
+import { SETUP_ROLES } from '@/src/domains/setup/types';
+
+const HOUSEHOLD_ID = 'household-week-1';
+
+function marker(name: string) {
+  const React = require('react');
+  return () => React.createElement('View', { testID: name });
+}
+
+let ThisWeekCard: typeof import('../components/ThisWeekCard').ThisWeekCard;
+let mockPush: ReturnType<typeof mock>;
+
+beforeAll(async () => {
+  mockPush = mock();
+  mock.module('expo-router', () => ({
+    useRouter: () => ({ push: mockPush, back: mock() }),
+  }));
+  mock.module('@/src/domains/today/components/NannyWeekLine', () => ({
+    NannyWeekLine: marker('nanny-week-line-stub'),
+  }));
+  mock.module('@/src/domains/today/components/AddMissedHoursCard', () => ({
+    AddMissedHoursCard: marker('add-missed-hours-stub'),
+  }));
+  mock.module('@/src/domains/schedule', () => ({
+    ThisWeeksShiftsCard: marker('this-weeks-shifts-stub'),
+  }));
+
+  const mod = await import('../components/ThisWeekCard');
+  ThisWeekCard = mod.ThisWeekCard;
+});
+
+function renderCard(role: 'nanny' | 'parent', isPastMember = false) {
+  return render(
+    <ThisWeekCard
+      householdId={HOUSEHOLD_ID}
+      timeZone="UTC"
+      weekStartsOn={1}
+      role={role === 'nanny' ? SETUP_ROLES.NANNY : SETUP_ROLES.PARENT}
+      isPastMember={isPastMember}
+    />
+  );
+}
+
+describe('ThisWeekCard', () => {
+  it('gathers the nanny-only week cards for an active nanny', () => {
+    const { getByTestId } = renderCard('nanny');
+
+    expect(getByTestId('today-this-week-card')).toBeTruthy();
+    expect(getByTestId('nanny-week-line-stub')).toBeTruthy();
+    expect(getByTestId('add-missed-hours-stub')).toBeTruthy();
+    expect(getByTestId('this-weeks-shifts-stub')).toBeTruthy();
+  });
+
+  it('shows a parent only the shifts half — the other two are her pay, not his', () => {
+    const { queryByTestId, getByTestId } = renderCard('parent');
+
+    expect(getByTestId('this-weeks-shifts-stub')).toBeTruthy();
+    expect(queryByTestId('nanny-week-line-stub')).toBeNull();
+    expect(queryByTestId('add-missed-hours-stub')).toBeNull();
+  });
+
+  // Every write on a household she was removed from 403s server-side.
+  it('drops the nanny-only cards for a past member', () => {
+    const { queryByTestId, getByTestId } = renderCard('nanny', true);
+
+    expect(getByTestId('this-weeks-shifts-stub')).toBeTruthy();
+    expect(queryByTestId('nanny-week-line-stub')).toBeNull();
+    expect(queryByTestId('add-missed-hours-stub')).toBeNull();
+  });
+
+  it('routes the eyebrow to Hours for a nanny and Schedule for a parent', () => {
+    const nanny = renderCard('nanny');
+    fireEvent.press(nanny.getByTestId('today-this-week-eyebrow'));
+    expect(mockPush).toHaveBeenLastCalledWith('/(private)/(tabs)/hours');
+
+    const parent = renderCard('parent');
+    fireEvent.press(parent.getByTestId('today-this-week-eyebrow'));
+    expect(mockPush).toHaveBeenLastCalledWith('/(private)/(tabs)/schedule');
+  });
+
+  it('localizes the eyebrow through the today namespace', () => {
+    const { getByTestId } = renderCard('parent');
+    expect(
+      String(getByTestId('today-this-week-eyebrow-label').props.children)
+    ).toBe('thisWeek.title');
+  });
+});

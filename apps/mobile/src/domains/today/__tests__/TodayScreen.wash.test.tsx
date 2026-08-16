@@ -72,14 +72,11 @@ mock.module('@/src/domains/today/hooks/useUncoveredToday', () => ({
 mock.module('@/src/domains/today/components/ClockInCard', () => ({
   ClockInCard: () => null,
 }));
-mock.module('@/src/domains/today/components/AddMissedHoursCard', () => ({
-  AddMissedHoursCard: () => null,
-}));
 mock.module('@/src/domains/today/components/TodayCoverage', () => ({
   TodayCoverage: () => null,
 }));
-mock.module('@/src/domains/today/components/NannyWeekLine', () => ({
-  NannyWeekLine: () => null,
+mock.module('@/src/domains/today/components/ThisWeekCard', () => ({
+  ThisWeekCard: () => null,
 }));
 mock.module('@/src/domains/today/components/HandoffChipsCard', () => ({
   HandoffChipsCard: () => null,

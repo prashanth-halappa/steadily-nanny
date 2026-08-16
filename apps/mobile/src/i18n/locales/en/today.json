@@ -213,5 +213,8 @@
   "cancelledShift": {
     "paid": "Your {{start}} – {{end}} shift was cancelled. You'll still be paid for it.",
     "unpaid": "Your {{start}} – {{end}} shift was cancelled — that's {{duration}} off this week's hours."
+  },
+  "thisWeek": {
+    "title": "This week"
   }
 }

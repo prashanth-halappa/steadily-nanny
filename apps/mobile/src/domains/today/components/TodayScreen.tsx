@@ -1,8 +1,27 @@
 /**
  * @module domains/today/components/TodayScreen
  *
- * The first tab after setup, for both roles. Shows household context, the
- * nanny's clock-in card, and the entry points into the schedule.
+ * The first tab after setup, for both roles. It is ONE CONTROL PLUS A FEED,
+ * and the layout now says so.
+ *
+ * The screen used to be eleven possible cards in a single ScrollView, with
+ * sort ORDER as the only thing keeping the most important control on screen.
+ * That is unenforceable: one more child chip or a two-line family name pushes
+ * the top card under the fold, and it did — the respond CTA rendered at
+ * y 881–929 with the viewport ending at 873, and the tap landed on the Hours
+ * tab underneath. A test can pin an order; nothing can pin pixels.
+ *
+ * So the column is: `ScreenWash` → a STATIC header (H1, date line, hero art)
+ * → `<PinnedSlot>` holding at most ONE item → the scrolling feed. The slot is
+ * a plain sibling `View` in normal flow, so it RESERVES its height and the
+ * ScrollView's `flex-1` shrinks under it — `useTabBarScrollPadding` can only
+ * ever help scrolled content, which is why a floating element was the bug.
+ * The household switcher and the child chips scroll with the feed.
+ *
+ * `resolveSlotOccupant` (fed by `resolveAttentionOwner`) is the only thing
+ * that decides what is pinned, and `usePinnedTone` is the only thing that
+ * decides what looks urgent — no card carries an emphasis prop of its own any
+ * more. A card cannot shout unless it is the slot's single child.
  *
  * Wave B: a nanny can be an accepted member of several households, so WHICH
  * household's data this screen shows can no longer be `households.data?.[0]`
@@ -17,11 +36,6 @@
  * "parent proposes, nanny accepts" was only reachable by hand-typing a deep
  * link, which means it was not really shipped. It renders NOTHING when there is
  * no pending week, so it costs an ordinary day nothing.
- *
- * For the same reason it, and `NeedsAttentionCard`, come FIRST: a card that is
- * invisible unless it needs action costs nothing at the top and is useless at
- * the bottom. Below the routine cards the respond CTA rendered past the end of
- * the scroll viewport, so a nanny with a week waiting saw no call to action.
  */
 
 import { HOUSEHOLD_STATES } from '@steadily-nanny/shared-types/schemas/household.schema';
@@ -44,10 +58,7 @@ import {
   TermsProposalCard,
   useInboxItems,
 } from '@/src/domains/inbox';
-import {
-  PendingScheduleCard,
-  ThisWeeksShiftsCard,
-} from '@/src/domains/schedule';
+import { PendingScheduleCard } from '@/src/domains/schedule';
 import { localDateToWeekday } from '@/src/domains/schedule/utils/shiftGrouping';
 import { canViewParentSchedule, SETUP_ROLES } from '@/src/domains/setup/types';
 import {
@@ -68,10 +79,11 @@ import { useUncoveredToday } from '../hooks/useUncoveredToday';
 import { resolveAttentionOwner } from '../utils/attentionOwner';
 import { HERO_MOOD_ILLUSTRATION, resolveHeroMood } from '../utils/heroMood';
 import { buildJoinedComposition } from '../utils/joinedComposition';
-import { AddMissedHoursCard } from './AddMissedHoursCard';
+import { resolveSlotOccupant } from '../utils/slotOccupant';
 import { ClockInCard } from './ClockInCard';
 import { HandoffChipsCard } from './HandoffChipsCard';
-import { NannyWeekLine } from './NannyWeekLine';
+import { PinnedSlot } from './PinnedSlot';
+import { ThisWeekCard } from './ThisWeekCard';
 import { TodayCoverage } from './TodayCoverage';
 
 /**
@@ -81,6 +93,12 @@ import { TodayCoverage } from './TodayCoverage';
  * household she has worked in for months.
  */
 const JOINED_CARD_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+
+const HEADER_STYLE = {
+  paddingHorizontal: SCREEN_CONTENT_STYLE.padding,
+  paddingTop: SCREEN_CONTENT_STYLE.padding,
+  paddingBottom: 8,
+} as const;
 
 export function TodayScreen() {
   const { t } = useTranslation('today');
@@ -105,11 +123,15 @@ export function TodayScreen() {
     household?.timezone,
     household?.week_starts_on
   );
-  // One T1 per screen: `resolveAttentionOwner` (its own module doc carries
-  // the ranking + justification) is the single decision every
-  // attention-capable card demotes against, so a fourth surface extends
-  // the ladder there instead of colliding with these two.
-  const { overdue: clockOutOverdue } = useOverdueClockOut();
+  const isParentView = canViewParentSchedule(onboarding.role);
+  const isPastMember = !!onboarding.isPastMember;
+  const activeNanny = onboarding.role === SETUP_ROLES.NANNY && !isPastMember;
+  // One occupant per screen: `resolveAttentionOwner` (its own module doc
+  // carries the ranking + justification) ranks the obligations, and
+  // `resolveSlotOccupant` maps that onto the single thing the slot holds.
+  // A sixth surface extends the ladder there instead of inventing its own
+  // emphasis.
+  const { overdue: clockOutOverdue, clockInAt } = useOverdueClockOut();
   const inbox = useInboxItems();
   const hasTermsProposal =
     !inbox.isLoading &&
@@ -117,9 +139,18 @@ export function TodayScreen() {
   const uncoveredToday = useUncoveredToday(household?.id, household?.timezone);
   const attentionOwner = resolveAttentionOwner({
     overdue: clockOutOverdue,
-    hasUncoveredCare: uncoveredToday.status === 'uncovered',
+    // Parent-visible roles ONLY: a nanny never sees `TodayCoverage`, so
+    // letting a coverage gap own her ladder handed the slot to a card she
+    // cannot see.
+    hasUncoveredCare: isParentView && uncoveredToday.status === 'uncovered',
     hasTermsProposal,
     hasInboxItems: !inbox.isLoading && inbox.items.length > 0,
+  });
+  const slotOccupant = resolveSlotOccupant({
+    role: onboarding.role,
+    isPastMember,
+    onClock: clockInAt !== null,
+    attentionOwner,
   });
   // Same rows the coverage surface reads, off the same React Query keys, so
   // the hero illustration costs no extra network. Both roles read the whole
@@ -155,8 +186,7 @@ export function TodayScreen() {
     Date.now() - new Date(myMembership.joined_at).getTime() <
       JOINED_CARD_MAX_AGE_MS;
   const showJoinedCard =
-    onboarding.role === SETUP_ROLES.NANNY &&
-    !onboarding.isPastMember &&
+    activeNanny &&
     !!household &&
     household.state === HOUSEHOLD_STATES.LIVE &&
     !!joinedCardKey &&
@@ -175,21 +205,64 @@ export function TodayScreen() {
   // space, so a fixed paddingBottom is not safe-area-aware.
   const tabBarScrollPadding = useTabBarScrollPadding();
 
+  const clockInCard = household ? (
+    <ClockInCard
+      householdId={household.id}
+      timeZone={household.timezone}
+      weekStartsOn={household.week_starts_on}
+      // A DRAFT household has no name yet (093 §4.2). This prop is the
+      // multi-household disambiguator ("Clocked into X"), so `undefined`
+      // would hide the one line telling her WHICH household she is on the
+      // clock for — label it instead.
+      householdName={household.name ?? t('household:untitledDraft')}
+    />
+  ) : null;
+  const handoffCard =
+    household && onboarding.role ? (
+      <HandoffChipsCard
+        householdId={household.id}
+        timeZone={household.timezone}
+        role={onboarding.role}
+      />
+    ) : null;
+
+  const pinned = (() => {
+    if (!household) return null;
+    switch (slotOccupant) {
+      case 'clockIn':
+        return clockInCard;
+      case 'coverageGap':
+        // No `footer` here: the slot holds exactly one thing, so the handoff
+        // chips stand alone in the feed instead.
+        return (
+          <TodayCoverage
+            householdId={household.id}
+            timeZone={household.timezone}
+            weekStartsOn={household.week_starts_on}
+            householdChildren={children.data ?? []}
+          />
+        );
+      case 'termsProposal':
+        return <TermsProposalCard />;
+      case 'inbox':
+        return <NeedsAttentionCard />;
+      default:
+        // `blockedClockIn` is resolvable but has no card yet — S4 lands it.
+        return null;
+    }
+  })();
+
   return (
     <View className="flex-1 bg-background">
       {/* Always mounted now, brand plum by default and apricot only while
           someone is on the clock. The screen used to be flat warm grey for
           the other sixteen hours of the day (daylight-v2 §4.3). */}
       <ScreenWash testID="today-live-wash" kind={isLive ? 'live' : 'brand'} />
-      <ScrollView
-        className="flex-1"
-        contentContainerStyle={{
-          ...SCREEN_CONTENT_STYLE,
-          paddingBottom: tabBarScrollPadding,
-        }}
-      >
-        {/* Hero band — no card, no ground of its own: it IS the top of the
-            wash, and the wash is what separates it from the cards below. */}
+
+      {/* Hero band — no card, no ground of its own: it IS the top of the
+          wash, and the wash is what separates it from the cards below. It is
+          static so the slot beneath it is at a knowable y. */}
+      <View style={HEADER_STYLE}>
         <View className="flex-row items-start justify-between gap-3">
           <View className="flex-1">
             <H1 testID="today-header">{t('screenTitle')}</H1>
@@ -223,14 +296,25 @@ export function TodayScreen() {
             resizeMode="contain"
           />
         </View>
+      </View>
 
+      {/* THE slot. One item, outside the ScrollView, in normal flow. */}
+      <PinnedSlot>{activeHousehold.isLoading ? null : pinned}</PinnedSlot>
+
+      <ScrollView
+        className="flex-1"
+        contentContainerStyle={{
+          paddingHorizontal: SCREEN_CONTENT_STYLE.padding,
+          paddingBottom: tabBarScrollPadding,
+        }}
+      >
         {activeHousehold.isLoading ? (
           <LoadingIndicator />
         ) : household ? (
-          <View className="mt-2 gap-4">
+          <View className="gap-4">
             <HouseholdSwitcher />
 
-            {canViewParentSchedule(onboarding.role) ? (
+            {isParentView ? (
               <View
                 className="flex-row flex-wrap gap-2"
                 testID="today-children"
@@ -245,10 +329,10 @@ export function TodayScreen() {
               </View>
             ) : null}
 
-            {/* §8.1 — once per household, above everything else: she was not
-                present when the family redeemed her code, and this is the
-                "after" half of that. */}
-            {showJoinedCard && household ? (
+            {/* §8.1 — once per household, above everything else in the feed:
+                she was not present when the family redeemed her code, and
+                this is the "after" half of that. */}
+            {showJoinedCard ? (
               <JoinedHouseholdCard
                 familyName={household.name ?? t('household:untitledDraft')}
                 composition={buildJoinedComposition(
@@ -263,80 +347,49 @@ export function TodayScreen() {
             ) : null}
 
             {/* Both of these render nothing unless something is genuinely
-                waiting on this person — deliberately not empty states. A card
-                announcing its own absence is noise on the screen people open
-                most, which is exactly why they can sit ABOVE the routine cards
-                for free: on an ordinary day there is nothing here to scroll
-                past. Order is load-bearing — behind the routine cards the
-                respond CTA fell below the fold, and it is the only route into
-                the accept flow. See TodayScreen.cardOrder.test.tsx. */}
-            <NeedsAttentionCard demoted={attentionOwner !== 'inbox'} />
-            <TermsProposalCard demoted={attentionOwner !== 'termsProposal'} />
+                waiting on this person — deliberately not empty states. When
+                one of them owns the slot it is NOT mounted again here: two
+                copies of one obligation is the collision the slot exists to
+                end. In the feed they keep their content and CTA at default
+                tone (`usePinnedTone`). */}
+            {slotOccupant === 'inbox' ? null : <NeedsAttentionCard />}
+            {slotOccupant === 'termsProposal' ? null : <TermsProposalCard />}
             <PendingScheduleCard />
 
             {/* §9.2 — an L3, non-urgent, one-time offer. Below the attention
-                group on purpose (`attention-and-notifications.md` §2.5: no
-                new `demoted` prop, no attentionOwner rung). Self-contained —
+                group on purpose, and never a slot occupant. Self-contained —
                 no props, same shape as PendingScheduleCard. */}
             <SendMyTermsCard />
 
             {/* Not on a household she was REMOVED from: every write there is
                 refused server-side, so the button would only ever fail. */}
-            {onboarding.role === SETUP_ROLES.NANNY &&
-            !onboarding.isPastMember ? (
-              <ClockInCard
-                householdId={household.id}
-                timeZone={household.timezone}
-                weekStartsOn={household.week_starts_on}
-                // A DRAFT household has no name yet (093 §4.2). This prop is
-                // the multi-household disambiguator ("Clocked into X"), so
-                // `undefined` would hide the one line telling her WHICH
-                // household she is on the clock for — label it instead.
-                householdName={household.name ?? t('household:untitledDraft')}
-              />
-            ) : null}
+            {activeNanny && slotOccupant !== 'clockIn' ? clockInCard : null}
 
-            {/* Forgotten clock-in recovery — same active-membership guard
-                as ClockInCard: a write here 403s server-side on a household
-                she was removed from, so offering the affordance there would
-                be a lie. */}
-            {onboarding.role === SETUP_ROLES.NANNY &&
-            !onboarding.isPastMember ? (
-              <NannyWeekLine
-                householdId={household.id}
-                timeZone={household.timezone}
-                weekStartsOn={household.week_starts_on}
-              />
-            ) : null}
+            <ThisWeekCard
+              householdId={household.id}
+              timeZone={household.timezone}
+              weekStartsOn={household.week_starts_on}
+              role={onboarding.role}
+              isPastMember={isPastMember}
+            />
 
-            {onboarding.role === SETUP_ROLES.NANNY &&
-            !onboarding.isPastMember ? (
-              <AddMissedHoursCard
-                householdId={household.id}
-                timeZone={household.timezone}
-                weekStartsOn={household.week_starts_on}
-              />
-            ) : null}
-
-            {canViewParentSchedule(onboarding.role) ? (
+            {isParentView && slotOccupant !== 'coverageGap' ? (
               <TodayCoverage
                 householdId={household.id}
                 timeZone={household.timezone}
                 weekStartsOn={household.week_starts_on}
                 householdChildren={children.data ?? []}
-                demoted={attentionOwner !== 'uncoveredCare'}
+                // A handoff IS a coverage fact (#9's merge), so it folds in
+                // here rather than standing as its own card.
+                footer={handoffCard}
               />
             ) : null}
 
-            {onboarding.role ? (
-              <HandoffChipsCard
-                householdId={household.id}
-                timeZone={household.timezone}
-                role={onboarding.role}
-              />
-            ) : null}
-
-            <ThisWeeksShiftsCard />
+            {/* Standalone only where there is no coverage surface to fold
+                into: a nanny never has one, and a parent's is in the slot. */}
+            {!isParentView || slotOccupant === 'coverageGap'
+              ? handoffCard
+              : null}
           </View>
         ) : null}
 

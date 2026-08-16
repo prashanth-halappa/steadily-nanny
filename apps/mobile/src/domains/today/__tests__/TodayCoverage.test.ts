@@ -42,17 +42,18 @@ describe('TodayCoverage source', () => {
   // §5.4 / D-47. The countdown maths is pinned in gapEscalation.test.ts; this
   // pins that the card is actually WIRED to it — and that escalating stays a
   // copy change on the existing `attention` ground, never a new tone.
-  it('escalates the gap headline from the clock, and only when not demoted', () => {
+  it('escalates the gap headline from the clock', () => {
     expect(coverageSource).toContain('gapEscalationHours');
     expect(coverageSource).toContain("t('coverage.gap.titleOneEscalated'");
-    expect(coverageSource).toMatch(/!demoted && singleWindow/);
     expect(coverageSource).not.toContain("'critical'");
   });
 
-  it('uses opaque Card tone="attention" when gap (with demoted escape hatch)', () => {
-    expect(coverageSource).toContain(
-      "tone={demoted ? 'default' : 'attention'}"
-    );
+  // The pinned slot is the emphasis now, so this card has ONE look: a gap it
+  // renders is a gap that owns the slot (a parent's `uncoveredCare` can only
+  // lose to nanny-only rungs).
+  it('uses opaque Card tone="attention" when gap, with no demoted branch left', () => {
+    expect(coverageSource).toContain('tone="attention"');
+    expect(coverageSource).not.toContain('demoted');
   });
 
   it('is role-gated on TodayScreen for parent and helper only', () => {

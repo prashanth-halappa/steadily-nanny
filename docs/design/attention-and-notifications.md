@@ -332,29 +332,50 @@ holds expense noise — those two are the loop, not chatter.
 
 ## §2 Today & inbox — attention states, both personas
 
-### 2.1 The ladder does not grow
+### 2.1 The ladder grows only by displacement
 
-`resolveAttentionOwner` (`apps/mobile/src/domains/today/utils/attentionOwner.ts:26`)
-stays at three rungs — `overdue` > `uncoveredCare` > `inbox` — with its existing
-test (`TodayScreen.t1Arbitration.test.tsx`). Its module doc already warns that
-extending the ladder means adding a rung *here* and never a fourth ad-hoc
-boolean on a fourth card; this spec's answer is that **nothing new needs a
-rung.** Everything lands as an inbox item (owned by `NeedsAttentionCard`, which
-is already the `inbox` rung) or inside a card that already owns the fact.
+`resolveAttentionOwner`
+(`apps/mobile/src/domains/today/utils/attentionOwner.ts:43`) has **five** rungs:
+
+| # | Rung | Why here |
+|---|---|---|
+| 1 | `termsBlocked` | The clock-in block sits above `overdue` **because an overdue clock-out corrupts a record that exists, while the block prevents the record existing at all.** |
+| 2 | `overdue` | An overdue clock-out corrupts the pay record while unresolved, and is nanny-actionable in one tap |
+| 3 | `uncoveredCare` | A child may be uncovered right now — immediate, but nobody's pay is silently wrong |
+| 4 | `termsProposal` | Until it is answered there is no agreed rate, so every future figure is blocked behind it |
+| 5 | `inbox` | Real obligations, but they wait safely for an hour |
+
+**The rule that replaces "the ladder does not grow":** adding a rung requires
+naming *which rung it displaces*, in the module doc and in
+`attentionOwner.test.ts`. The constraint is now structural rather than a style
+convention (which drifted twice): the ladder feeds `resolveSlotOccupant`
+(`.../utils/slotOccupant.ts:30`), and the slot physically holds **one**
+occupant. A rung that displaces nothing is not a rung — it belongs in the feed.
+
+Everything else in this spec still lands as an inbox item (owned by
+`NeedsAttentionCard`, the `inbox` rung) or inside a card that already owns the
+fact.
 
 ### 2.2 Owner map — every item this build adds
 
-| Item | Owner surface | Rung | Persona | B3 note |
+"Rung" is no longer a tone — it is a PLACE. Either a card is the pinned slot's
+single occupant (attention tone, above the feed, never under the fold) or it is
+in the scrolling feed at default tone. `resolveSlotOccupant` decides which;
+`usePinnedTone()` (`.../components/PinnedSlot.tsx:30`) is the only thing that
+reads it.
+
+| Item | Owner surface | Slot occupant / feed | Persona | B3 note |
 |---|---|---|---|---|
-| Cover-ask awaiting you | `NeedsAttentionCard` via new inbox kind `pending_shift` | L1 when `attentionOwner === 'inbox'`, else L3 | nanny | Nothing else renders a pending shift on Today |
+| Cover-ask awaiting you | `NeedsAttentionCard` via new inbox kind `pending_shift` | slot when `slotOccupant === 'inbox'`, else feed | nanny | Nothing else renders a pending shift on Today |
 | Extra shift proposed | same `pending_shift` kind | as above | nanny | Closes the same gap for `extra_shift_proposed`, free |
 | Queried week + note | existing inbox kind `queried_week` | as above | nanny | Already owned; §3 adds the note and reply on Hours |
 | Terms awaiting your acknowledgment | new inbox kind `terms_ack` | as above | nanny | New; deep-links to My pay |
-| Terms proposal awaiting you | new inbox kind `terms_proposal` | as above | parent | New (3-O) |
+| Terms proposal awaiting you | new inbox kind `terms_proposal` | `TermsProposalCard` — slot when `slotOccupant === 'termsProposal'`, else feed | parent | New (3-O) |
 | Reimbursements owed | new inbox kind `reimbursement_owed` | as above | parent | New; deep-links to the week |
 | **Week submitted long ago, still not approved** | new inbox kind `stale_submitted_week` | as above | **nanny** | New (M13). The parent's copy of this fact is `submitted_week`; they are different items for different people about the same week, and neither resolves in place |
-| Guaranteed-hours shortfall | `NannyWeekLine` sub-line | L4 (bare ground) | nanny | Not an obligation — never competes for L1 |
-| Cover-ask awaiting answer / declined / expired | `TodayCoverage` gap card cause line | L1/L3, follows the gap | parent | **Same fact as the gap** — a second card would violate B3 |
+| Guaranteed-hours shortfall | `NannyWeekLine` sub-line, inside `ThisWeekCard` | feed, always (bare ground) | nanny | Not an obligation — never eligible for the slot |
+| Cover-ask awaiting answer / declined / expired | `TodayCoverage` gap card cause line | follows the gap: slot when `slotOccupant === 'coverageGap'` | parent | **Same fact as the gap** — a second card would violate B3 |
+| Handoff chips | folded into `TodayCoverage`'s `footer` for a parent; standalone for a nanny, or for a parent when coverage is in the slot | feed, always | both | The slot holds exactly one thing and carries no footer |
 | Terms acknowledgment status | Pay & terms screen row | — | parent | Not on Today at all |
 
 `buildInboxItems.ts` gains three kinds for the nanny (`pending_shift`,
@@ -380,7 +401,7 @@ item concerns, soonest first):
 | 8 | `reimbursement_owed` | Real money, no deadline |
 | 9 | `terms_ack` | A tap, whenever |
 
-`pending_pattern` keeps its exclusion at `NeedsAttentionCard.tsx:62` and is not
+`pending_pattern` keeps its exclusion at `NeedsAttentionCard.tsx:61` and is not
 in this list.
 
 ### 2.3 Nanny — the four states she does not have today
@@ -388,7 +409,7 @@ in this list.
 **(a) Cover-ask awaiting you.** Gap B1: today the push is the only signal.
 
 ```
-Card tone="attention"  p-5.5  gap-3          ← L1 (or default when demoted)
+Card tone={usePinnedTone()}  p-5.5  gap-3    ← attention in the slot, default in the feed
   H3    Can you cover Tuesday, 8:00 AM – 1:00 PM?
   Body  Asked yesterday · answer by Thursday 6:00 PM       mutedStrong
   Button size="lg" variant="default" full width   "Open the shift"
@@ -538,16 +559,34 @@ No pill, no colour, no nudge button. It is a record of what happened, and the
 absence of a Seen date is a fact the parent may want at some point, not an
 alarm today.
 
-### 2.5 Demotion
+### 2.5 The pinned slot
 
-Unchanged mechanics: `TodayScreen.tsx:179` passes
-`demoted={attentionOwner !== 'inbox'}` to `NeedsAttentionCard` and
-`TodayScreen.tsx:218` passes `demoted={attentionOwner !== 'uncoveredCare'}` to
-`TodayCoverage`. What demotion
-does, per `daylight-v2.md` §5.1 and as built: `tone="attention"` → `default`,
-`H3` → `H4`, `IconChip` `brand` → `schedule`, filled `lg` button → ghost `sm`.
-Every new item above inherits this for free by living inside those two cards.
-No new card in this spec has its own `demoted` prop, and none should.
+**`demoted` is deleted.** It was a prop each card implemented itself, changing
+tone, heading level *and* button variant, and it existed only because the
+screen had no layout to express priority with — so priority was smuggled into
+per-card styling. It drifted from its own spec twice (three rungs documented
+against four shipped; "no new card has its own `demoted` prop" while
+`TermsProposalCard` had one), and sort order alone had already failed on device
+(the respond CTA at y 881–929 with the viewport ending at 873, its tap landing
+on the Hours tab underneath).
+
+What replaces it, in three pieces:
+
+| Piece | File | Job |
+|---|---|---|
+| `PinnedSlot` | `apps/mobile/src/domains/today/components/PinnedSlot.tsx:39` | A plain `View` mounted as a sibling **above** the feed's `ScrollView` (`TodayScreen.tsx:302`), in normal flow, so it RESERVES height instead of floating. Holds at most ONE item. Empty, it has zero height. |
+| `usePinnedTone()` | same file, `:30` | **The only source of tone.** Returns `'attention'` inside the slot and `'default'` everywhere else. A card cannot be attention-toned unless it is the slot's single child. |
+| `resolveSlotOccupant` | `.../utils/slotOccupant.ts:30` | **The selector.** `(role, isPastMember, onClock, attentionOwner)` → `'blockedClockIn' \| 'clockIn' \| 'coverageGap' \| 'termsProposal' \| 'inbox' \| null`. A running timer beats every T1; a terms block beats even that; a parent on an ordinary day gets an empty slot. |
+
+A card that loses the slot is **not** hidden and **not** restyled by hand — it
+renders in the feed with its content and CTA intact, at default tone, because
+that is what `usePinnedTone()` returns there. `TodayScreen` never mounts the
+same card twice: the feed skips whichever card the slot is holding.
+
+No card carries an emphasis prop, and none should. Pinned by
+`TodayScreen.layout.test.ts` (slot before the ScrollView, never out of flow, no
+`demoted` left in the screen) and `TodayScreen.cardOrder.test.tsx` (exactly one
+occupant, plus the feed order beneath it).
 
 ---
 

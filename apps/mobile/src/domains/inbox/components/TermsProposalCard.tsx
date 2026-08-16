@@ -7,6 +7,9 @@
  * `PendingScheduleCard` and `NeedsAttentionCard`: renders null when there
  * is nothing to answer, deep-links via `hrefForItem` / `inboxItemCopy`,
  * never resolves in place.
+ *
+ * Tone is positional (`usePinnedTone`), never a `demoted` prop: attention
+ * only as the single occupant of Today's `PinnedSlot`.
  */
 import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
@@ -21,15 +24,12 @@ import {
   subtitleForItem,
   titleForItem,
 } from '@/src/domains/inbox/utils/inboxItemCopy';
+import { usePinnedTone } from '@/src/domains/today/components/PinnedSlot';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
 
-interface TermsProposalCardProps {
-  /** Drops to default tone when another surface owns Today's one T1 slot. */
-  demoted?: boolean;
-}
-
-export function TermsProposalCard({ demoted = false }: TermsProposalCardProps) {
+export function TermsProposalCard() {
   const { t } = useTranslation('inbox');
+  const tone = usePinnedTone();
   const router = useRouter();
   const active = useActiveHousehold();
   const timeZone = active.household?.timezone ?? 'UTC';
@@ -43,7 +43,7 @@ export function TermsProposalCard({ demoted = false }: TermsProposalCardProps) {
   return (
     <Card
       testID="today-terms-proposal-card"
-      tone={demoted ? 'default' : 'attention'}
+      tone={tone}
       className="gap-3 p-5.5"
     >
       <H3>{titleForItem(proposal, t, timeZone)}</H3>

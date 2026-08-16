@@ -4,10 +4,11 @@
  * §7.1 / B3: `terms_proposal` has exactly ONE owner on Today — this card.
  * `NeedsAttentionCard` filters the kind out; this file pins that the
  * dedicated card renders when a proposal is pending, deep-links (never
- * resolves in place), and respects `demoted`.
+ * resolves in place), and wears the attention tone ONLY inside `PinnedSlot`.
  */
 import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 import { fireEvent, render } from '@testing-library/react-native';
+import { PinnedSlot } from '@/src/domains/today/components/PinnedSlot';
 import { palette } from '~/lib/design-tokens/palette';
 import type { InboxItem } from '../utils/buildInboxItems';
 
@@ -110,10 +111,14 @@ describe('TermsProposalCard', () => {
     expect(queryByTestId('today-terms-proposal-card')).toBeNull();
   });
 
-  it('renders on the T1 attention-toned ground when not demoted', () => {
+  it('renders on the T1 attention-toned ground inside the pinned slot', () => {
     setItems([TERMS_PROPOSAL]);
 
-    const { getByTestId } = render(<TermsProposalCard />);
+    const { getByTestId } = render(
+      <PinnedSlot>
+        <TermsProposalCard />
+      </PinnedSlot>
+    );
 
     const card = getByTestId('today-terms-proposal-card');
     const styleArray = [card.props.style].flat();
@@ -144,10 +149,11 @@ describe('TermsProposalCard', () => {
     expect(mockPush).toHaveBeenCalledWith('/(private)/pay/proposal/prop-1');
   });
 
-  it('demoted renders at default tone while keeping content and CTA', () => {
+  // `demoted` is deleted — the feed mount is simply outside the slot.
+  it('renders at default tone in the feed while keeping content and CTA', () => {
     setItems([TERMS_PROPOSAL]);
 
-    const { getByTestId } = render(<TermsProposalCard demoted />);
+    const { getByTestId } = render(<TermsProposalCard />);
 
     const card = getByTestId('today-terms-proposal-card');
     const styleArray = [card.props.style].flat();
