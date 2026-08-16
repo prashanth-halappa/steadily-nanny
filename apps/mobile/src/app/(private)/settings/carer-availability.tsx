@@ -23,6 +23,7 @@ import { resolveCarerName } from '@/src/domains/schedule/utils/memberDisplayName
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
 import { useAvailabilityForCarer } from '@/src/hooks/queries/useAvailabilityForCarer';
 import { useHouseholdMembers } from '@/src/hooks/queries/useHouseholdMembers';
+import { timeToMinutes } from '@/src/lib/displayTime';
 
 function normalizeParam(
   value: string | string[] | undefined
@@ -56,6 +57,32 @@ export default function CarerAvailabilityScreen() {
   const nannyId = nannyMember?.user_id ?? null;
   const availability = useAvailabilityForCarer(nannyId);
 
+  // One line under the H1 so a parent doesn't have to scan every weekday
+  // row to learn the shape of the week. Hidden when there's no window to
+  // count — empty, unset, or still loading is all "nothing true to say."
+  const availabilitySummary = useMemo(() => {
+    const windows: { minutes: number }[] = [];
+    for (const row of availability.data ?? []) {
+      if (
+        !row.is_available ||
+        row.earliest_start == null ||
+        row.latest_finish == null
+      ) {
+        continue;
+      }
+      const minutes =
+        timeToMinutes(row.latest_finish) - timeToMinutes(row.earliest_start);
+      if (minutes <= 0) continue;
+      windows.push({ minutes });
+    }
+    if (windows.length === 0) return null;
+    const hours = windows.reduce((sum, w) => sum + w.minutes, 0) / 60;
+    return t('carerAvailability.summary', {
+      days: windows.length,
+      hours,
+    });
+  }, [availability.data, t]);
+
   return (
     <ScrollView
       testID="settings-carer-availability-screen"
@@ -64,6 +91,14 @@ export default function CarerAvailabilityScreen() {
     >
       <BackButton onPress={() => router.back()} label={tCommon('back')} />
       <H1 className="mt-1">{t('carerAvailability')}</H1>
+      {availabilitySummary ? (
+        <Small
+          testID="carer-availability-summary"
+          className="mt-1 text-muted-foreground"
+        >
+          {availabilitySummary}
+        </Small>
+      ) : null}
       {members.isLoading || availability.isLoading ? (
         <LoadingIndicator />
       ) : !nannyId ? (

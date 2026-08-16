@@ -16,6 +16,17 @@ import { renderWithProviders } from '@/src/test-utils';
 
 let CarerAvailabilityScreen: typeof import('../carer-availability').default;
 
+// The global preload's `t` echoes the bare key and drops interpolation
+// options; the summary assertion needs days/hours visible in the text.
+mock.module('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string, opts?: Record<string, unknown>) =>
+      opts ? `${key}(${JSON.stringify(opts)})` : key,
+    i18n: { language: 'en', changeLanguage: mock() },
+  }),
+  initReactI18next: { type: '3rdParty', init: mock() },
+}));
+
 mock.module('expo-router', () => ({
   useRouter: () => ({
     push: mock(),
@@ -85,6 +96,29 @@ const activeNanny = buildMember({
   status: HOUSEHOLD_MEMBER_STATUSES.ACTIVE,
 });
 
+function buildAvailabilityRow(
+  weekday: number,
+  earliest_start: string,
+  latest_finish: string
+) {
+  return {
+    id: `00000000-0000-4000-8000-${String(weekday).padStart(12, '0')}`,
+    user_id: ACTIVE_NANNY_ID,
+    weekday,
+    is_available: true,
+    earliest_start,
+    latest_finish,
+    evening_mode: 'sometimes',
+    created_at: now,
+    updated_at: now,
+  };
+}
+
+/** Mon–Fri, 09:00–17:00 → 5 days, 40 weekly hours. */
+const weekdayWindows = [1, 2, 3, 4, 5].map(day =>
+  buildAvailabilityRow(day, '09:00', '17:00')
+);
+
 const listMock = mock(() => Promise.resolve([household]));
 const listMembersMock = mock<() => Promise<HouseholdMember[]>>(() =>
   Promise.resolve([candidateNanny, activeNanny])
@@ -127,5 +161,29 @@ describe('carer-availability route', () => {
       expect(getForUserMock).toHaveBeenCalledWith(ACTIVE_NANNY_ID);
     });
     expect(getForUserMock).not.toHaveBeenCalledWith(CANDIDATE_NANNY_ID);
+  });
+
+  it('summarises the days worked and the weekly hours', async () => {
+    getForUserMock.mockImplementation(() => Promise.resolve(weekdayWindows));
+
+    const { getByTestId } = renderWithProviders(<CarerAvailabilityScreen />);
+
+    await waitFor(() =>
+      expect(getByTestId('carer-availability-summary')).toBeTruthy()
+    );
+    expect(getByTestId('carer-availability-summary').props.children).toBe(
+      'carerAvailability.summary({"days":5,"hours":40})'
+    );
+  });
+
+  it('renders no summary when the carer has set no availability', async () => {
+    const { getByTestId, queryByTestId } = renderWithProviders(
+      <CarerAvailabilityScreen />
+    );
+
+    await waitFor(() =>
+      expect(getByTestId('carer-availability-none')).toBeTruthy()
+    );
+    expect(queryByTestId('carer-availability-summary')).toBeNull();
   });
 });
