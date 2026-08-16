@@ -118,6 +118,15 @@ mock.module('@/src/domains/today/components/TodayCoverage', () => {
 mock.module('@/src/domains/today/components/HandoffChipsCard', () => ({
   HandoffChipsCard: marker('handoff-chips'),
 }));
+// S9 — self-contained, no ORDER_MARKER of its own (it never competes for the
+// slot); its own file owns render-condition tests. Real hooks need a
+// QueryClient this file deliberately does not build.
+mock.module(
+  '@/src/domains/today/components/EmergencyContactPromptCard',
+  () => ({
+    EmergencyContactPromptCard: () => null,
+  })
+);
 
 const HOUSEHOLD_ID = 'household-order-1';
 

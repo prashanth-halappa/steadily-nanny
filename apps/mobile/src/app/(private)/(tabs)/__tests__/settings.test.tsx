@@ -66,6 +66,19 @@ describe('SettingsScreen', () => {
     expect(screenSource).toContain('/settings/availability');
   });
 
+  // S9 / direction §4 — the nanny's map of where she works, above the rest
+  // of her household group.
+  it('wires a nanny/helper-only "This family" row, above availability', () => {
+    expect(screenSource).toContain('settings-this-family');
+    expect(screenSource).toContain('/settings/this-family');
+    const thisFamilyIdx = screenSource.indexOf('settings-this-family');
+    const availabilityIdx = screenSource.indexOf(
+      'settings-manage-availability'
+    );
+    expect(thisFamilyIdx).toBeGreaterThan(-1);
+    expect(availabilityIdx).toBeGreaterThan(thisFamilyIdx);
+  });
+
   it('wires Time & calendar settings (D29 display timezone / week start)', () => {
     expect(screenSource).toContain('settings-time');
     expect(screenSource).toContain('/settings/time');

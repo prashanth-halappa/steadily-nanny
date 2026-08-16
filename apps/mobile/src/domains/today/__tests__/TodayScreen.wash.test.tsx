@@ -83,6 +83,12 @@ mock.module('@/src/domains/today/components/ThisWeekCard', () => ({
 mock.module('@/src/domains/today/components/HandoffChipsCard', () => ({
   HandoffChipsCard: () => null,
 }));
+mock.module(
+  '@/src/domains/today/components/EmergencyContactPromptCard',
+  () => ({
+    EmergencyContactPromptCard: () => null,
+  })
+);
 mock.module('@/src/domains/inbox/hooks/usePendingOffer', () => ({
   // A7's offer, absent — this file is about the live wash, and the real hook
   // needs a QueryClient this file deliberately does not build.

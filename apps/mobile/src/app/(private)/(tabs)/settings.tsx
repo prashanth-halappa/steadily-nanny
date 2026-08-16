@@ -351,6 +351,18 @@ export default function SettingsScreen() {
                   </>
                 ) : (
                   <>
+                    {/* S9 / direction §4 — her map of where she works: the
+                        family's address and who to call, above everything
+                        else on the screen. */}
+                    <SettingsNavRow
+                      testID="settings-this-family"
+                      label={t('household:thisFamily.navLabel')}
+                      icon={Home}
+                      tone="schedule"
+                      onPress={() =>
+                        router.push('/settings/this-family' as Href)
+                      }
+                    />
                     <SettingsNavRow
                       testID="settings-manage-availability"
                       label={t('household:availability.manageTitle')}

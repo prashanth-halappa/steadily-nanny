@@ -228,5 +228,16 @@
     "ctaNothingSent": "Send my terms",
     "footnote": "Hours worked before terms are agreed can't be clocked. Keep your own note of them — you'll be able to add them here once terms are agreed.",
     "sendFailed": "That didn't send. Try again."
+  },
+  "emergencyContactPrompt": {
+    "title": "One more number for {{name}}",
+    "body": "If she can't reach you and something's happened, who should she call? A partner, a grandparent, a neighbour — anyone who could get here.",
+    "cta": "Add their number",
+    "notNow": "Not now",
+    "nameLabel": "Their name",
+    "phoneLabel": "Their number",
+    "relationshipLabel": "How you know them (optional)",
+    "saveButton": "Save",
+    "saveFailed": "That didn't save. Try again."
   }
 }
