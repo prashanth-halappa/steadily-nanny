@@ -207,6 +207,12 @@ mock.module('@/src/api/endpoints/payArrangements', () => ({
     listHistory: mock(() => Promise.resolve([])),
   },
 }));
+mock.module('@/src/api/endpoints/shifts', () => ({
+  shiftApi: {
+    range: mock(() => Promise.resolve([])),
+    getById: mock(),
+  },
+}));
 
 // WP-C: she now resolves who recorded a payment, so the members read is
 // hers too. Never reset between tests — nothing here varies it.

@@ -174,6 +174,9 @@ mock.module('@/src/hooks/mutations/useMarkReimbursed', () => ({
 mock.module('@/src/hooks/queries/useTimesheetThread', () => ({
   useTimesheetThread: () => ({ data: { messages: [] }, isLoading: false }),
 }));
+mock.module('@/src/hooks/queries/useShiftsRange', () => ({
+  useShiftsRange: () => ({ data: [], isLoading: false }),
+}));
 mock.module('@/src/hooks/mutations/useAddTimesheetThreadMessage', () => ({
   useAddTimesheetThreadMessage: () => ({
     mutate: mock(() => {}),

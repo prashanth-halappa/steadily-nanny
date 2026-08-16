@@ -52,6 +52,8 @@ HERO BAND     the figure and the agreement state, on the wash, no card
   ─────────────────────────────────────────────
 STATUS CARD   L1 or positive — the one thing to do or the settled fact
   ─────────────────────────────────────────────
+WEEK CLOSED   nanny receipt — closing beat; no submit act by design
+  ─────────────────────────────────────────────
 DAY ROWS      L3 — what happened, per day
   ─────────────────────────────────────────────
 MONEY CARD    L3 — gross, breakdown link, paid state
@@ -85,11 +87,19 @@ without it.
 │
 │  gap 16
 │  ┌ STATUS CARD ─────────── L1 | positive | default  (WeekTotal, slimmed)
+│  ┌ WEEK-CLOSED RECEIPT ─── nanny only (`ReceiptCard`, persistent)
 │  ┌ DAY ROWS ────────────── L3  TimeEntryDayRow ×n
 │  ┌ MONEY CARD ──────────── L3  WeekEarningsLine + PaidStateCard
 │  ┌ EXTRAS ──────────────── L4  expenses, reimbursements, export
 └
 ```
+
+**Week-closed receipt.** There is deliberately no carer-facing submit act
+(timesheet.schema.ts PRODUCT DECISION). When her last scheduled shift of the
+current week has ended and she has hours on the clock, a persistent positive
+`ReceiptCard` (`hours-week-closed-receipt`) sits directly under `WeekTotal` as
+her closing beat. It does not fire on an approved week — `WeekTotal`'s
+appreciation block already owns that settled fact.
 
 **The figure moves out of the card and into the hero band.** It is the answer to
 the question the tab exists for; it does not need a container. At
@@ -224,7 +234,9 @@ Both roles get the same skeleton; the fork is who acts.
 her paid state. She never sees an Approve button
 and never sees another carer's hours (the `currentUserId` filters at `:282–284`
 and `:159–161` fail *closed*, which is the correct instinct for a money screen
-and must not be softened).
+and must not be softened). When her last scheduled shift of the current week
+has ended and she has hours, the week-closed receipt under `WeekTotal` is her
+closing beat — there is no submit button, by design.
 
 **Parent** (`ParentWeekView`) — the carer's name above the figure, Approve and
 Query as the card's actions, reopen on an approved week. `readOnly` for helpers
