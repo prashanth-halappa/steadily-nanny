@@ -450,13 +450,12 @@ describe('NannyWeekView — earnings arms', () => {
     expect(getByTestId('hours-earnings-line-amount').props.children).toBe(
       '£148.00'
     );
-    // P0-5: the person whose pay it is can now see her own week's status —
-    // worded from her side ("With the family", not "Ready for your
-    // approval", which is about someone else's action).
-    expect(getByTestId('hours-timesheet-status')).toBeTruthy();
-    expect(getByTestId('hours-timesheet-status-label').props.children).toBe(
-      'nannyStatusSubmitted'
-    );
+    // U2: a submitted week is a three-step timeline, not the "With the
+    // family" pill — that sentence hid whether anyone had opened the hours.
+    expect(getByTestId('hours-status-timeline')).toBeTruthy();
+    expect(getByTestId('hours-timeline-logged')).toBeTruthy();
+    expect(getByTestId('hours-timeline-opened')).toBeTruthy();
+    expect(getByTestId('hours-timeline-waiting')).toBeTruthy();
   });
 
   it('tapping the money line opens the breakdown sheet, read-only', async () => {
@@ -620,12 +619,12 @@ describe('NannyWeekView — the statement blocks own the right facts', () => {
     expect(hero.getByTestId('hours-week-next')).toBeTruthy();
 
     // `WeekTotal` is the STATUS card now: the figure and the nav moved out,
-    // the pill stayed.
+    // and a submitted week owns the timeline rather than the old pill.
     const statusCard = within(getByTestId('hours-week-total'));
     expect(statusCard.queryByTestId('hours-total')).toBeNull();
     expect(statusCard.queryByTestId('hours-week-prev')).toBeNull();
-    expect(statusCard.getByTestId('hours-timesheet-status')).toBeTruthy();
-    expect(statusCard.getByTestId('hours-status-chip')).toBeTruthy();
+    expect(statusCard.getByTestId('hours-status-timeline')).toBeTruthy();
+    expect(statusCard.queryByTestId('hours-timesheet-status')).toBeNull();
     // …and the money line moved down into the money card, not up into here.
     expect(statusCard.queryByTestId('hours-earnings-line-amount')).toBeNull();
     expect(queryByTestId('hours-past-member-note')).toBeNull();

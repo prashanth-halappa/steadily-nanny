@@ -334,3 +334,8 @@ jobs:
         working-directory: apps/api
         env:
           NODE_ENV: test
+      - name: Timesheet parent_viewed_at trigger integration test
+        run: bun test tests/integration/timesheetParentViewed.integration.test.ts
+        working-directory: apps/api
+        env:
+          NODE_ENV: test

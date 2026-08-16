@@ -139,4 +139,10 @@ router.post(
   asyncHandler(TimesheetController.withdrawQuery)
 );
 
+router.post(
+  '/:id/viewed',
+  ...authWithOwnership(TimesheetIdParamSchema, timesheetOwnership),
+  asyncHandler(TimesheetController.markParentViewed)
+);
+
 export default router;

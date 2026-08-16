@@ -230,6 +230,20 @@ describe('timesheet.schema', () => {
     it('accepts a timesheet with no household_member_id (pre-058 data)', () => {
       expect(TimesheetSchema.safeParse(validTimesheet).success).toBe(true);
     });
+
+    it('TimesheetSchema accepts parent_viewed_at as null, an ISO string, or absent', () => {
+      expect(
+        TimesheetSchema.safeParse({ ...validTimesheet, parent_viewed_at: null })
+          .success
+      ).toBe(true);
+      expect(
+        TimesheetSchema.safeParse({
+          ...validTimesheet,
+          parent_viewed_at: '2026-08-16T12:00:00.000Z',
+        }).success
+      ).toBe(true);
+      expect(TimesheetSchema.safeParse(validTimesheet).success).toBe(true);
+    });
   });
 
   describe('QueryTimesheetSchema', () => {

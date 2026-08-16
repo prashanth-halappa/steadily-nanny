@@ -457,6 +457,30 @@ describe('timesheetApi.withdrawQuery', () => {
   });
 });
 
+describe('timesheetApi.markViewed', () => {
+  it('markViewed posts to /v1/timesheets/:id/viewed and parses the timesheet envelope', async () => {
+    const viewedAt = '2026-08-16T12:00:00.000Z';
+    apiClient.post.mockResolvedValue({
+      data: {
+        data: {
+          timesheet: {
+            ...validTimesheet,
+            status: 'submitted',
+            parent_viewed_at: viewedAt,
+          },
+        },
+      },
+    });
+
+    const result = await timesheetApi.markViewed(validTimesheet.id);
+
+    expect(apiClient.post).toHaveBeenCalledWith(
+      `/v1/timesheets/${validTimesheet.id}/viewed`
+    );
+    expect(result.parent_viewed_at).toBe(viewedAt);
+  });
+});
+
 describe('timesheetApi.exportCsv', () => {
   it('GETs :id/export.csv as raw text and returns the body verbatim', async () => {
     const csv =

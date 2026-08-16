@@ -19,6 +19,7 @@ function createMockQueryChain(
     order: mock(() => chain),
     insert: mock(() => chain),
     update: mock(() => chain),
+    is: mock(() => chain),
     maybeSingle: mock(() => Promise.resolve(finalResponse)),
     single: mock(() => Promise.resolve(finalResponse)),
     // biome-ignore lint/suspicious/noThenProperty: intentional thenable for the mock
@@ -622,5 +623,26 @@ describe('TimesheetRepository.listForHousehold — optional carer filter (F-B1-3
     const result = await repo.listForHousehold('h1');
 
     expect(result.map((r: FakeTimesheetRow) => r.id)).toEqual(['ts1', 'ts2']);
+  });
+});
+
+const VIEWED_AT = '2026-08-16T12:00:00.000Z';
+
+describe('TimesheetRepository.stampParentViewed — one-way', () => {
+  it('stampParentViewed updates only while parent_viewed_at is null and returns null when already stamped', async () => {
+    const stamped = { id: 'ts1', parent_viewed_at: VIEWED_AT };
+    const chain = createMockQueryChain({ data: stamped, error: null });
+    mockSupabaseService.from.mockImplementation(() => chain);
+
+    const repo = new TimesheetRepository();
+    expect(await repo.stampParentViewed('ts1', VIEWED_AT)).toEqual(stamped);
+    expect(chain.update).toHaveBeenCalledWith({ parent_viewed_at: VIEWED_AT });
+    expect(chain.eq).toHaveBeenCalledWith('id', 'ts1');
+    expect(chain.is).toHaveBeenCalledWith('parent_viewed_at', null);
+    expect(chain.maybeSingle).toHaveBeenCalled();
+
+    const already = createMockQueryChain({ data: null, error: null });
+    mockSupabaseService.from.mockImplementation(() => already);
+    expect(await repo.stampParentViewed('ts1', VIEWED_AT)).toBeNull();
   });
 });

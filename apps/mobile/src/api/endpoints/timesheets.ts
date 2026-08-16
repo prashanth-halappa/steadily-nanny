@@ -76,6 +76,7 @@ export const timesheetEndpoints = {
   thread: (timesheetId: string) => `/v1/timesheets/${timesheetId}/thread`,
   withdrawQuery: (timesheetId: string) =>
     `/v1/timesheets/${timesheetId}/withdraw-query`,
+  viewed: (id: string) => `/v1/timesheets/${id}/viewed`,
   exportCsv: (timesheetId: string) =>
     `/v1/timesheets/${timesheetId}/export.csv`,
 } as const;
@@ -271,6 +272,22 @@ export const timesheetApi = {
   withdrawQuery: async (timesheetId: string): Promise<Timesheet> => {
     const response = await apiClient.post(
       timesheetEndpoints.withdrawQuery(timesheetId)
+    );
+    const parsed = z
+      .object({ timesheet: TimesheetSchema })
+      .safeParse(response.data.data);
+    if (!parsed.success) throw parsed.error;
+    return parsed.data.timesheet;
+  },
+
+  /**
+   * `POST /timesheets/:id/viewed` — the parent's one-way Hours receipt.
+   * Whether, never how many times: the server stamps `parent_viewed_at`
+   * once and ignores every later call. No body.
+   */
+  markViewed: async (timesheetId: string): Promise<Timesheet> => {
+    const response = await apiClient.post(
+      timesheetEndpoints.viewed(timesheetId)
     );
     const parsed = z
       .object({ timesheet: TimesheetSchema })

@@ -12,6 +12,7 @@ let voidEntry: any;
 let approve: any;
 let queryTimesheet: any;
 let reopen: any;
+let markParentViewed: any;
 
 beforeAll(async () => {
   getRunning = mock(async () => null);
@@ -32,6 +33,11 @@ beforeAll(async () => {
   approve = mock(async () => ({ id: 'ts1', status: 'approved' }));
   queryTimesheet = mock(async () => ({ id: 'ts1', status: 'queried' }));
   reopen = mock(async () => ({ id: 'ts1', status: 'submitted' }));
+  markParentViewed = mock(async () => ({
+    id: 'ts1',
+    status: 'submitted',
+    parent_viewed_at: '2026-08-16T12:00:00.000Z',
+  }));
 
   mock.module(
     '../../../../../src/domains/timesheet/services/timesheetQueryService',
@@ -55,6 +61,7 @@ beforeAll(async () => {
         approve,
         query: queryTimesheet,
         reopen,
+        markParentViewed,
       },
     })
   );
@@ -92,6 +99,7 @@ beforeEach(() => {
     approve,
     queryTimesheet,
     reopen,
+    markParentViewed,
   ]) {
     m.mockClear?.();
   }
@@ -308,6 +316,24 @@ describe('TimesheetController', () => {
     });
     expect(res.body.data).toEqual({
       timesheet: { id: 'ts1', status: 'submitted' },
+    });
+  });
+
+  it('markParentViewed responds 200 with the timesheet envelope', async () => {
+    const res = mockRes();
+    await TimesheetController.markParentViewed(
+      { user: { id: 'parent-1' }, params: { id: 'ts1' } } as any,
+      res,
+      mock()
+    );
+    expect(markParentViewed).toHaveBeenCalledWith('parent-1', 'ts1');
+    expect(res.statusCode).toBe(200);
+    expect(res.body.data).toEqual({
+      timesheet: {
+        id: 'ts1',
+        status: 'submitted',
+        parent_viewed_at: '2026-08-16T12:00:00.000Z',
+      },
     });
   });
 

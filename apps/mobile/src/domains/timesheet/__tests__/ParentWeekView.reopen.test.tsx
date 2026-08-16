@@ -326,6 +326,7 @@ mock.module('@/src/api/endpoints/timesheets', () => {
       approve: approveMock,
       query: queryMock,
       reopen: reopenMock,
+      markViewed: mock(() => Promise.resolve({})),
     },
   };
 });
