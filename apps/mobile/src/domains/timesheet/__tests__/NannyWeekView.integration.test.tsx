@@ -706,6 +706,16 @@ describe('NannyWeekView — the statement blocks own the right facts', () => {
     expect(moneyCard.getByTestId('hours-earnings-line-pressable')).toBeTruthy();
   });
 
+  it('passes per-day minutes and scheduled minutes into the hero band', async () => {
+    const { getByTestId } = renderNannyView();
+
+    await waitFor(() => expect(getByTestId('hours-total')).toBeTruthy());
+    const hero = within(getByTestId('hours-hero-band'));
+    expect(hero.getByTestId('hours-week-bars')).toBeTruthy();
+    expect(hero.getByTestId('hours-split-track')).toBeTruthy();
+    expect(hero.getByTestId('hours-lead').props.children).toBe('lead.nanny');
+  });
+
   it('shows the skeleton, not a full-screen spinner, while the hours load', async () => {
     let releaseEntries: (entries: unknown[]) => void = () => {};
     listEntriesMock.mockImplementation(

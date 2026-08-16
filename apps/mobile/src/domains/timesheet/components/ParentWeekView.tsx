@@ -109,6 +109,7 @@ import {
   sumPaymentsMinor,
 } from '../utils/paidState';
 import { useReopenedNotice } from '../utils/reopenedNotice';
+import { DEFAULT_WEEK_STARTS_ON } from '../utils/week';
 import { ApproveWeekDialog } from './ApproveWeekDialog';
 import { EarningsBreakdownSheet } from './EarningsBreakdownSheet';
 import { HoursHeroBand } from './HoursHeroBand';
@@ -513,10 +514,8 @@ export function ParentWeekView({
     entries.length > 0 && totalMinutes === 0
       ? formatDuration(60).replace('1', '0')
       : formatDuration(totalMinutes);
-  const overtimeLabel = formatOvertimeDelta(
-    totalMinutes,
-    scheduledMinutesFor(entries)
-  );
+  const scheduledMinutes = scheduledMinutesFor(entries);
+  const overtimeLabel = formatOvertimeDelta(totalMinutes, scheduledMinutes);
   // The selected TAB is the identity — not `carer_id`, which is NULL on every
   // row of a departed carer's tab. Reading raw ids here left this empty for
   // her, and `resolveWeekCarerHeaderName`'s no-entries branch then named the
@@ -641,6 +640,24 @@ export function ParentWeekView({
       ? formatMoney(sumPaymentsMinor(payments), settlementCurrency)
       : null;
   const todayISO = localDateInZone(timeZone, new Date(nowMs));
+  const weekStartsOn =
+    activeHousehold.household?.week_starts_on ?? DEFAULT_WEEK_STARTS_ON;
+  const dayMinutes = [0, 0, 0, 0, 0, 0, 0];
+  for (let i = 0; i < weekDates.length; i++) {
+    const date = weekDates[i];
+    if (!date) continue;
+    dayMinutes[(weekStartsOn + i) % 7] = sumEntryMinutes(
+      entries.filter(entry => entry.local_date === date),
+      nowMs
+    );
+  }
+  const todayOffset = weekDates.indexOf(todayISO);
+  const todayIndex =
+    todayOffset === -1 ? null : (weekStartsOn + todayOffset) % 7;
+  const lead = t('lead.parent', {
+    name: carerName ?? '',
+    hours: weekHoursLabel,
+  });
 
   // The settlement is filed against the carer's REAL id, not the bucket key
   // `carerKeyOf` returns — a departed carer (`carer_id` NULL) has no id to
@@ -833,6 +850,11 @@ export function ParentWeekView({
               overtimeLabel={overtimeLabel}
               carerName={carerName}
               isPastMember={isPastMember}
+              dayMinutes={dayMinutes}
+              scheduledMinutes={scheduledMinutes}
+              weekStartsOn={weekStartsOn}
+              todayIndex={todayIndex}
+              lead={lead}
             />
             {/* F-B1-3: two carers, two pay records, two approvals. One
                 carer at a time, so the figure above is always the figure

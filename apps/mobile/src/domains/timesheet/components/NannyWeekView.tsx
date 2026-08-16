@@ -99,6 +99,7 @@ import { scheduledMinutesFor, sumEntryMinutes } from '../utils/entryMinutes';
 import { derivePaidState, deriveReopenedPaidState } from '../utils/paidState';
 import { useReopenedNotice } from '../utils/reopenedNotice';
 import { describeTimeEntryWriteError } from '../utils/timeEntryWriteError';
+import { DEFAULT_WEEK_STARTS_ON } from '../utils/week';
 import { weekClosedReceipt } from '../utils/weekClosed';
 import { EarningsBreakdownSheet } from './EarningsBreakdownSheet';
 import { HoursHeroBand } from './HoursHeroBand';
@@ -464,11 +465,27 @@ export function NannyWeekView({
     entries.length > 0 && totalMinutes === 0
       ? formatDuration(60).replace('1', '0')
       : formatDuration(totalMinutes);
-  const overtimeLabel = formatOvertimeDelta(
-    totalMinutes,
-    scheduledMinutesFor(entries)
-  );
+  const scheduledMinutes = scheduledMinutesFor(entries);
+  const overtimeLabel = formatOvertimeDelta(totalMinutes, scheduledMinutes);
   const todayISO = localDateInZone(timeZone, new Date(nowMs));
+  const weekStartsOn =
+    activeHousehold.household?.week_starts_on ?? DEFAULT_WEEK_STARTS_ON;
+  const dayMinutes = [0, 0, 0, 0, 0, 0, 0];
+  for (let i = 0; i < weekDates.length; i++) {
+    const date = weekDates[i];
+    if (!date) continue;
+    dayMinutes[(weekStartsOn + i) % 7] = sumEntryMinutes(
+      entries.filter(entry => entry.local_date === date),
+      nowMs
+    );
+  }
+  const todayOffset = weekDates.indexOf(todayISO);
+  const todayIndex =
+    todayOffset === -1 ? null : (weekStartsOn + todayOffset) % 7;
+  const lead = t('lead.nanny', {
+    hours: weekHoursLabel,
+    family: activeHousehold.household?.name ?? '',
+  });
 
   const dayRows = weekDates
     .map(date => ({
@@ -566,6 +583,11 @@ export function NannyWeekView({
               totalLabel={weekHoursLabel}
               overtimeLabel={overtimeLabel}
               isPastMember={isPastMember}
+              dayMinutes={dayMinutes}
+              scheduledMinutes={scheduledMinutes}
+              weekStartsOn={weekStartsOn}
+              todayIndex={todayIndex}
+              lead={lead}
             />
             <WeekTotal
               testID="hours-week-total"
