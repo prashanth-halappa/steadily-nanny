@@ -306,6 +306,14 @@ tags:
     visible:
       id: 'availability-screen'
     timeout: 25000
+# The screen's own `extendedWaitUntil` only proves the ROOT view mounted —
+# measured 2026-08-16: the day-1 tap dispatched (hierarchy showed
+# `availability-week-strip-day-1` present, `enabled=true`) but its `selected`
+# stayed `false` and the CTA stayed `enabled=false`, meaning the tap landed
+# before the strip's press handler was wired up, same "visible but not yet
+# interactive" gap the household-screen swipe/dismiss comments elsewhere in
+# this file already document. One settle beat fixes it.
+- waitForAnimationToEnd
 - tapOn:
     id: 'availability-week-strip-day-1'
 - waitForAnimationToEnd
