@@ -104,6 +104,7 @@ function makeHouseholdRepo(overrides: Record<string, unknown> = {}): any {
     delete: mock(async () => {}),
     findById: mock(async () => household),
     findByIds: mock(async () => [household]),
+    listLiveIds: mock(async () => []),
     listActiveChildFirstNames: mock(async () => []),
     ...overrides,
   };
@@ -135,6 +136,10 @@ function makeMemberRepo(overrides: Record<string, unknown> = {}): any {
     findActiveMembership: mock(async () => null),
     findMembershipIncludingCandidate: mock(async () => null),
     findById: mock(async () => null),
+    // §8's one-live-household-per-parent guard and A6's draft auto-archive
+    // both read this. Empty by default — the caller belongs nowhere else.
+    listActiveByUser: mock(async () => []),
+    listActiveByHousehold: mock(async () => []),
     removeMembership: mock(async (id: string) => ({
       ...membershipFor('nanny'),
       id,

@@ -7,7 +7,7 @@
  * parent-authored flow, and a draft is a different world with its own
  * fixtures. Nothing here may change an assertion over there.
  */
-import { describe, expect, it, mock } from 'bun:test';
+import { describe, expect, it, mock, spyOn } from 'bun:test';
 import {
   AlreadyMemberError,
   CannotLeaveAsOwnerError,
@@ -20,6 +20,7 @@ import type {
   HouseholdInvite,
   HouseholdMember,
 } from '../../../../../src/domains/household/types';
+import { logger } from '../../../../../src/middlewares/logger';
 
 const NANNY_ID = 'u-nanny';
 
@@ -109,6 +110,10 @@ function makeHouseholdRepo(household: Household = draftHousehold): any {
     delete: mock(async () => {}),
     findById: mock(async () => household),
     findByIds: mock(async () => [household]),
+    // §8's one-live-household-per-parent guard filters the caller's parent
+    // memberships through this. Empty by default: these fixtures are about
+    // drafts, and a draft never reaches the guard.
+    listLiveIds: mock(async () => []),
     listActiveChildFirstNames: mock(async () => []),
   };
 }
@@ -128,6 +133,8 @@ function makeMemberRepo(overrides: Record<string, unknown> = {}): any {
     findMembershipAnyStatus: mock(async () => null),
     findMembershipIncludingCandidate: mock(async () => null),
     findById: mock(async () => null),
+    listActiveByUser: mock(async () => []),
+    listActiveByHousehold: mock(async () => []),
     removeMembership: mock(async (id: string) => ({
       ...draftAuthorMembership(),
       id,
@@ -661,5 +668,121 @@ describe('redeemInvite reads membership with the lookup that can SEE a candidate
       })
     ).rejects.toThrow(/already/i);
     expect(inviteRepo.releaseClaim).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * A6 — a nanny's draft is auto-archived the moment she joins a live family.
+ *
+ * Why the service and not 094: the RPC is applied to production and stays
+ * frozen, and its header records that it deliberately leaves the draft
+ * standing. That permanent zombie is the root cause of the shell-swap trap
+ * (§0), so the retirement happens on this side of the boundary — best-effort,
+ * because a redemption that already committed must never be undone over it.
+ */
+describe('A6 — auto-archiving the draft on redemption', () => {
+  function draftRedemptionService(
+    memberRepoOverrides: Record<string, unknown> = {}
+  ) {
+    const memberRepo = makeMemberRepo({
+      // The author's own row in her own draft — the one that gets retired.
+      findActiveMembership: mock(async () => draftAuthorMembership()),
+      ...memberRepoOverrides,
+    });
+    const inviteRepo = makeInviteRepo({
+      redeemDraftHousehold: mock(async () => ({
+        outcome: 'redeemed',
+        household_id: 'h-target',
+        carer_id: NANNY_ID,
+        proposal: null,
+      })),
+    });
+    const svc = makeService({
+      inviteRepo,
+      memberRepo,
+      queries: makeQueries(
+        draftAuthorMembership({
+          id: 'm-owner',
+          household_id: 'h-target',
+          user_id: 'u-parent',
+          role: 'owner',
+        })
+      ),
+    });
+    return { svc, memberRepo, inviteRepo };
+  }
+
+  it('retires the AUTHOR’s draft membership, not the redeemer’s', async () => {
+    const { svc, memberRepo } = draftRedemptionService();
+
+    await svc.redeemInvite('u-parent', { code: 'ABC-234' });
+
+    expect(memberRepo.findActiveMembership).toHaveBeenCalledWith(
+      'h-draft',
+      NANNY_ID
+    );
+    expect(memberRepo.removeMembership).toHaveBeenCalledWith('m-draft');
+  });
+
+  it('logs an archive failure and lets the redemption stand', async () => {
+    // The join has already committed inside 094. A throw here would strand a
+    // real nanny outside a household she legitimately joined, over a tidy-up.
+    const loggerError = spyOn(logger, 'error').mockImplementation(() => logger);
+    const { svc } = draftRedemptionService({
+      removeMembership: mock(async () => {
+        throw new Error('boom');
+      }),
+    });
+
+    const result = await svc.redeemInvite('u-parent', { code: 'ABC-234' });
+
+    expect(result).toMatchObject({ id: 'm-owner' });
+    expect(loggerError).toHaveBeenCalled();
+    loggerError.mockRestore();
+  });
+});
+
+describe('A6 — the other direction: she joins a family the ordinary way', () => {
+  // Her code was never redeemed; the family invited her instead. The draft is
+  // just as dead, and just as much a zombie in her switcher.
+  function ordinaryJoinService(household: Household) {
+    const memberRepo = makeMemberRepo({
+      listActiveByUser: mock(async () => [draftAuthorMembership()]),
+      findActiveMembership: mock(async () => draftAuthorMembership()),
+    });
+    const svc = makeService({
+      householdRepo: makeHouseholdRepo(household),
+      inviteRepo: makeInviteRepo({
+        // A parent-authored, LIVE household invite — the ordinary path. The
+        // household read for the DRAFT sweep is `findByIds`, which the repo
+        // fake answers with this same fixture.
+        findByCode: mock(async () =>
+          invite({ household_id: 'h1', role: 'nanny' })
+        ),
+      }),
+      memberRepo,
+    });
+    return { svc, memberRepo };
+  }
+
+  it('archives the drafts SHE authored when she redeems a nanny invite', async () => {
+    const { svc, memberRepo } = ordinaryJoinService(draftHousehold);
+
+    await svc.redeemInvite(NANNY_ID, { code: 'ABC-234' });
+
+    expect(memberRepo.removeMembership).toHaveBeenCalledWith('m-draft');
+  });
+
+  it('leaves someone else’s draft alone', async () => {
+    // `created_by` is checked as well as `state`: a second nanny sitting in a
+    // draft must never archive it out from under its author.
+    const { svc, memberRepo } = ordinaryJoinService({
+      ...draftHousehold,
+      created_by: 'u-someone-else',
+    });
+
+    await svc.redeemInvite(NANNY_ID, { code: 'ABC-234' });
+
+    expect(memberRepo.removeMembership).not.toHaveBeenCalled();
   });
 });

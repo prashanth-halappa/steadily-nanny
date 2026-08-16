@@ -62,6 +62,9 @@ function makeMemberRepo(overrides: Record<string, unknown> = {}) {
       ...data,
     })),
     findActiveMembership: mock(async () => null),
+    // §8's one-live-household-per-parent guard reads this before the create.
+    // Empty: these fixtures are about the holiday seed, not about the cap.
+    listActiveByUser: mock(async () => []),
     ...overrides,
   };
 }

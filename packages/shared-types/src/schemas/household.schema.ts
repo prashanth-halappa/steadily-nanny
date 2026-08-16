@@ -54,6 +54,27 @@ export type HouseholdRole =
   (typeof HOUSEHOLD_ROLES)[keyof typeof HOUSEHOLD_ROLES];
 
 /**
+ * The roles that SPEAK FOR THE FAMILY: the owner and a co-parent.
+ *
+ * One definition, because the answer must be the same everywhere it is asked.
+ * It was previously re-declared, identically, in the terms-proposal access
+ * util, the household push fan-out and the handoff command service — three
+ * copies of a set whose membership decides who can accept terms, who gets a
+ * "someone joined" push, and who may edit a handoff note. A widened role
+ * (agency, TIER0 Phase 0-B) that lands in two of three is a silent
+ * authorization hole, so the set lives beside the role map it is drawn from.
+ *
+ * A POSITIVE list, like every other role/status set in this file: a role added
+ * tomorrow is excluded by construction rather than by somebody remembering.
+ * Typed `ReadonlySet<string>` rather than `ReadonlySet<HouseholdRole>` because
+ * every caller tests a `role` column read back as a plain string.
+ */
+export const PARENT_ROLES: ReadonlySet<string> = new Set([
+  HOUSEHOLD_ROLES.OWNER,
+  HOUSEHOLD_ROLES.PARENT,
+]);
+
+/**
  * household_members.status
  *
  * MATCHED PAIR with the CHECK in 009_households.sql, widened by

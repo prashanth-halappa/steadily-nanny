@@ -14,6 +14,7 @@ import {
   HOUSEHOLD_ROLES,
   type HouseholdQueryService,
   householdQueryService,
+  PARENT_ROLES,
 } from '../../household';
 import { HouseholdMemberRepository } from '../../household/repositories/householdMemberRepository';
 import { notifyHouseholdParents, notifyUser } from '../../notification';
@@ -28,11 +29,6 @@ import {
   type HandoffQueryService,
   handoffQueryService,
 } from './handoffQueryService';
-
-const PARENT_ROLES: ReadonlySet<string> = new Set([
-  HOUSEHOLD_ROLES.OWNER,
-  HOUSEHOLD_ROLES.PARENT,
-]);
 
 /** Nanny only — matches schedule/shift carer resolution. */
 const CARER_ROLES: ReadonlySet<string> = new Set([HOUSEHOLD_ROLES.NANNY]);
