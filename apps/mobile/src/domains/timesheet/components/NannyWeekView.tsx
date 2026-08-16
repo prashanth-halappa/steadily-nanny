@@ -341,7 +341,10 @@ export function NannyWeekView({
     setIsVoidConfirmOpen(false);
     voidEntry
       .mutateAsync({ entryId: editing.id })
-      .then(() => closeEditor())
+      .then(() => {
+        closeEditor();
+        showSuccessToast(t('entryRemovedToast'));
+      })
       .catch((error: unknown) => {
         setSaveRefusal(
           describeTimeEntryWriteError(error, tErrors, timeZone, isOnline)
@@ -368,7 +371,10 @@ export function NannyWeekView({
       // Only close on success — the sheet keeps the typed correction so a
       // refusal (an approved week, a bad time) is one retype away, same
       // reasoning as ClockInCard's clock-out.
-      .then(() => closeEditor())
+      .then(() => {
+        closeEditor();
+        showSuccessToast(t('entryCorrectedToast'));
+      })
       .catch((error: unknown) => {
         setSaveRefusal(
           describeTimeEntryWriteError(error, tErrors, timeZone, isOnline)

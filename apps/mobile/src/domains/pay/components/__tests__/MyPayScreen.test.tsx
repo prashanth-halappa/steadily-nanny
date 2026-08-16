@@ -507,6 +507,51 @@ describe('MyPayScreen', () => {
       );
     });
 
+    it('shows the recorded line once the terms acknowledgement succeeds', async () => {
+      const { getByTestId } = renderWithProviders(<MyPayScreen />);
+
+      await waitFor(() =>
+        expect(getByTestId(`my-pay-ack-seen-${HOUSEHOLD_A}`)).toBeTruthy()
+      );
+      fireEvent.press(getByTestId(`my-pay-ack-seen-${HOUSEHOLD_A}`));
+
+      await waitFor(() =>
+        expect(
+          getByTestId(`my-pay-ack-recorded-${HOUSEHOLD_A}`).props.children
+        ).toBe('ack.recordedNow')
+      );
+    });
+
+    it('shows the recorded line once a disagreement is submitted', async () => {
+      const { getByTestId } = renderWithProviders(<MyPayScreen />);
+
+      await waitFor(() =>
+        expect(getByTestId(`my-pay-ack-disagree-${HOUSEHOLD_A}`)).toBeTruthy()
+      );
+      fireEvent.press(getByTestId(`my-pay-ack-disagree-${HOUSEHOLD_A}`));
+      fireEvent.press(getByTestId(`my-pay-dissent-submit-${HOUSEHOLD_A}`));
+
+      await waitFor(() =>
+        expect(
+          getByTestId(`my-pay-dissent-recorded-${HOUSEHOLD_A}`).props.children
+        ).toBe('dissent.recordedNow')
+      );
+    });
+
+    it('shows neither line before either act', async () => {
+      const { getByTestId, queryByTestId } = renderWithProviders(
+        <MyPayScreen />
+      );
+
+      await waitFor(() =>
+        expect(getByTestId(`my-pay-ack-state-${HOUSEHOLD_A}`)).toBeTruthy()
+      );
+      expect(queryByTestId(`my-pay-ack-recorded-${HOUSEHOLD_A}`)).toBeNull();
+      expect(
+        queryByTestId(`my-pay-dissent-recorded-${HOUSEHOLD_A}`)
+      ).toBeNull();
+    });
+
     // GOLDEN #40: a failure inside a sheet stays inside the sheet — the card
     // error behind the open sheet is a message nobody reads.
     it('a failed dissent reports itself INSIDE the sheet, with her note kept', async () => {

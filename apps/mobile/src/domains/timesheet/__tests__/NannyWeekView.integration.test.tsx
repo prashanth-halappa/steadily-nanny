@@ -264,6 +264,9 @@ const getByIdMock = mock((_timesheetId?: string) =>
   Promise.resolve(makeTimesheetWeek())
 );
 const updateEntryMock = mock(() => Promise.resolve(makeEntry()));
+const voidEntryMock = mock(() =>
+  Promise.resolve(makeEntry({ status: 'voided' }))
+);
 // Phase 4 (additive): the week's own expense/mileage claims + her pay
 // arrangement (read only for the add sheet's mileage-rate hint). Mocked so
 // this pre-existing suite never makes a real network call now that
@@ -327,7 +330,11 @@ mock.module('@/src/api/endpoints/timeEntries', () => {
   const shared = timesheetSchemaModule;
   return {
     ...shared,
-    timeEntryApi: { listForWeek: listEntriesMock, update: updateEntryMock },
+    timeEntryApi: {
+      listForWeek: listEntriesMock,
+      update: updateEntryMock,
+      void: voidEntryMock,
+    },
   };
 });
 mock.module('@/src/api/endpoints/timesheets', () => {
@@ -351,6 +358,12 @@ mock.module('@/src/api/endpoints/timesheets', () => {
     },
   };
 });
+
+const showSuccessToastMock = mock((_m: string) => {});
+mock.module('@/src/lib/toast', () => ({
+  showErrorToast: mock((_m: string) => {}),
+  showSuccessToast: showSuccessToastMock,
+}));
 
 let NannyWeekView: typeof import('../components/NannyWeekView').NannyWeekView;
 let getWeekDates: typeof import('../utils/week').getWeekDates;
@@ -403,6 +416,8 @@ beforeEach(() => {
   listTimesheetsMock.mockReset();
   getByIdMock.mockReset();
   updateEntryMock.mockReset();
+  voidEntryMock.mockReset();
+  showSuccessToastMock.mockReset();
   listExpensesForWeekMock.mockReset();
   createExpenseMock.mockReset();
   updateExpenseMock.mockReset();
@@ -420,6 +435,10 @@ beforeEach(() => {
     Promise.resolve([makeTimesheet()])
   );
   getByIdMock.mockImplementation(() => Promise.resolve(makeTimesheetWeek()));
+  updateEntryMock.mockImplementation(() => Promise.resolve(makeEntry()));
+  voidEntryMock.mockImplementation(() =>
+    Promise.resolve(makeEntry({ status: 'voided' }))
+  );
   listExpensesForWeekMock.mockImplementation(() => Promise.resolve([]));
   createExpenseMock.mockImplementation(() =>
     Promise.resolve({ id: 'expense-new', status: 'pending' })
@@ -1304,5 +1323,49 @@ describe('NannyWeekView — breakdown on landing', () => {
 
     await waitFor(() => expect(getByTestId('hours-total')).toBeTruthy());
     expect(queryByTestId('hours-earnings-breakdown')).toBeNull();
+  });
+});
+
+// Acknowledged tier (U7): correcting or voiding her own hours must confirm
+// the same way logging a bus fare already does. GOLDEN-FIXES #40 — the toast
+// fires only after closeEditor(), or it is invisible over the open sheet.
+describe('NannyWeekView — acknowledging a correction', () => {
+  async function openEditor(
+    getByTestId: ReturnType<typeof renderNannyView>['getByTestId']
+  ) {
+    await waitFor(() =>
+      expect(getByTestId('hours-edit-entry-entry-1')).toBeTruthy()
+    );
+    fireEvent.press(getByTestId('hours-edit-entry-entry-1'));
+    await waitFor(() =>
+      expect(getByTestId('clockout-sheet-modal').props.visible).toBe(true)
+    );
+  }
+
+  it('voiding an entry closes the editor and confirms with the entry-removed toast', async () => {
+    const { getByTestId } = renderNannyView();
+    await openEditor(getByTestId);
+
+    fireEvent.press(getByTestId('clockout-void'));
+    await waitFor(() =>
+      expect(getByTestId('hours-void-dialog-confirm')).toBeTruthy()
+    );
+    fireEvent.press(getByTestId('hours-void-dialog-confirm'));
+
+    await waitFor(() =>
+      expect(getByTestId('clockout-sheet-modal').props.visible).toBe(false)
+    );
+    expect(showSuccessToastMock).toHaveBeenCalledWith('entryRemovedToast');
+  });
+
+  it('saving a correction confirms with the correction-saved toast', async () => {
+    const { getByTestId } = renderNannyView();
+    await openEditor(getByTestId);
+
+    fireEvent.press(getByTestId('clockout-confirm'));
+
+    await waitFor(() =>
+      expect(showSuccessToastMock).toHaveBeenCalledWith('entryCorrectedToast')
+    );
   });
 });
