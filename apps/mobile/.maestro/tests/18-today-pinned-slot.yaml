@@ -1,0 +1,49 @@
+# Scenario — P1: Today's pinned slot (`PinnedSlot.tsx`) is a static sibling
+# ABOVE the feed's ScrollView, not a floating overlay and not part of the
+# scrolling content — see `TodayScreen.tsx`'s module doc for why (the old
+# layout let the top card fall under the fold; this one reserves its height
+# in normal flow so it can't). This flow proves the header + slot render and
+# that the feed beneath still scrolls independently of them.
+appId: com.jetto.steadily.nanny
+tags:
+  - today
+---
+# --- Parent: header + pinned slot present, feed scrolls beneath it --------
+- runFlow: ../flows/login.yaml
+# login.yaml's select-household.yaml step ends on the Settings tab (it opens
+# the switcher from there and never taps back) — go to Today explicitly.
+- tapOn:
+    id: 'tab-today'
+- waitForAnimationToEnd
+
+- assertVisible:
+    id: 'today-header'
+- assertVisible:
+    id: 'today-pinned-slot'
+- takeScreenshot: today-pinned-slot-before-scroll
+
+- scrollUntilVisible:
+    element:
+      id: 'today-this-week-card'
+    direction: DOWN
+    timeout: 10000
+- assertVisible:
+    id: 'today-this-week-card'
+# The header/slot region is a sibling ABOVE the ScrollView, so it's still on
+# screen after scrolling the feed beneath it — that's the whole claim.
+- assertVisible:
+    id: 'today-header'
+- takeScreenshot: today-pinned-slot-after-scroll
+
+# --- Nanny: on an ordinary day the slot's occupant is the clock-in control -
+- runFlow: ../flows/login-nanny.yaml
+- tapOn:
+    id: 'tab-today'
+- waitForAnimationToEnd
+
+- assertVisible:
+    id: 'today-header'
+- assertVisible:
+    id: 'today-pinned-slot'
+- assertVisible:
+    id: 'today-clock-card'

@@ -19,8 +19,12 @@
  * (overdue vs inbox) already has its own dedicated coverage in
  * `TodayScreen.t1Arbitration.test.tsx`; this file is about the NEW pair
  * (inbox vs coverage-gap) the follow-up audit found.
+ *
+ * Since the pinned slot landed, "who owns the tint" and "who owns the slot"
+ * are the same question, so the newest case asserts both at once.
  */
 import { beforeAll, describe, expect, it, mock } from 'bun:test';
+import { within } from '@testing-library/react-native';
 import type { InboxItem } from '@/src/domains/inbox/utils/buildInboxItems';
 // `renderWithProviders`, not bare `render`: the coverage surface now reads the
 // day thread (to know whether the carer has said she's running late), and that
@@ -57,14 +61,12 @@ mock.module('@/src/domains/schedule', () => ({
 mock.module('@/src/domains/today/components/ClockInCard', () => ({
   ClockInCard: () => null,
 }));
-mock.module('@/src/domains/today/components/AddMissedHoursCard', () => ({
-  AddMissedHoursCard: () => null,
-}));
 mock.module('@/src/domains/today/components/HandoffChipsCard', () => ({
   HandoffChipsCard: () => null,
 }));
-mock.module('@/src/domains/today/components/NannyWeekLine', () => ({
-  NannyWeekLine: () => null,
+// The three merged week cards behind one block; irrelevant to arbitration.
+mock.module('@/src/domains/today/components/ThisWeekCard', () => ({
+  ThisWeekCard: () => null,
 }));
 mock.module('@/src/hooks/queries/useWeekTimeEntries', () => ({
   useWeekTimeEntries: () => ({ data: [], isLoading: false }),
@@ -125,6 +127,8 @@ const UNCOVERED_STATE = {
 let mockUseOverdueClockOut: ReturnType<typeof mock>;
 let mockUseInboxItems: ReturnType<typeof mock>;
 let mockUseUncoveredToday: ReturnType<typeof mock>;
+let mockUseIsOnboarded: ReturnType<typeof mock>;
+let mockUseTermsGate: ReturnType<typeof mock>;
 let TodayScreen: typeof import('../components/TodayScreen').TodayScreen;
 
 beforeAll(async () => {
@@ -168,12 +172,24 @@ beforeAll(async () => {
       isLoading: false,
     }),
   }));
+  mockUseIsOnboarded = mock(() => ({
+    status: 'onboarded',
+    role: 'parent',
+    householdId: HOUSEHOLD_ID,
+  }));
   mock.module('@/src/hooks/queries/useIsOnboarded', () => ({
-    useIsOnboarded: () => ({
-      status: 'onboarded',
-      role: 'parent',
-      householdId: HOUSEHOLD_ID,
-    }),
+    useIsOnboarded: mockUseIsOnboarded,
+  }));
+  // A1's gate. Left REAL below it: `ClockInBlockedCard` is one of the
+  // attention-capable cards this file counts, so stubbing it would defeat
+  // the count.
+  mockUseTermsGate = mock(() => ({
+    status: 'open',
+    proposal: null,
+    familyName: 'Attn Household',
+  }));
+  mock.module('@/src/domains/today/hooks/useTermsGate', () => ({
+    useTermsGate: mockUseTermsGate,
   }));
   mock.module('@/src/hooks/queries/useChildren', () => ({
     useChildren: () => ({ data: [], isLoading: false }),
@@ -188,10 +204,11 @@ beforeAll(async () => {
 
 const ATTENTION_BG = palette.light.surfaceAttention.hex;
 
-/** The two attention-capable T1 cards this file exercises together. */
+/** The attention-capable T1 cards this file exercises together. */
 const ATTENTION_CANDIDATE_TEST_IDS = [
   'today-needs-attention-card',
   'today-coverage-gap-card',
+  'today-clock-in-blocked-card',
 ];
 
 function hasAttentionBackground(style: unknown): boolean {
@@ -214,6 +231,30 @@ function countAttentionCards(
 }
 
 describe('TodayScreen — one T1 per screen (attention arbitration)', () => {
+  // The whole guarantee in one case: the gap owns the slot, the inbox card
+  // is still on screen (in the feed, at default tone), and exactly ONE
+  // attention ground exists anywhere.
+  it('parent + coverage gap + inbox item: coverage in the slot, inbox outside it, one attention ground', () => {
+    mockUseInboxItems.mockReturnValue({
+      items: [CHANGE_REQUEST],
+      isLoading: false,
+    });
+    mockUseUncoveredToday.mockReturnValue(UNCOVERED_STATE);
+    mockUseOverdueClockOut.mockReturnValue({
+      overdue: false,
+      clockInAt: null,
+      shiftEndsAt: null,
+    });
+
+    const tree = renderWithProviders(<TodayScreen />);
+    const slot = within(tree.getByTestId('today-pinned-slot'));
+
+    expect(slot.getByTestId('today-coverage-gap-card')).toBeTruthy();
+    expect(slot.queryByTestId('today-needs-attention-card')).toBeNull();
+    expect(tree.getByTestId('today-needs-attention-card')).toBeTruthy();
+    expect(countAttentionCards(tree.queryByTestId)).toBe(1);
+  });
+
   it('parent + inbox item + uncovered care today: exactly one attention surface (uncovered wins)', () => {
     mockUseInboxItems.mockReturnValue({
       items: [CHANGE_REQUEST],
@@ -267,5 +308,42 @@ describe('TodayScreen — one T1 per screen (attention arbitration)', () => {
     const { queryByTestId } = renderWithProviders(<TodayScreen />);
 
     expect(countAttentionCards(queryByTestId)).toBe(0);
+  });
+
+  // The block is the ladder's TOP rung, so it wins the slot outright. What
+  // this case pins is the harder half: `NeedsAttentionCard` is still on the
+  // screen (she has real pending work) and must go quiet, or a nanny who
+  // cannot start work gets two loud cards competing to explain why.
+  it('nanny + terms block + inbox item: the blocked card owns the only attention ground', () => {
+    mockUseIsOnboarded.mockReturnValue({
+      status: 'onboarded',
+      role: 'nanny',
+      householdId: HOUSEHOLD_ID,
+    });
+    mockUseTermsGate.mockReturnValue({
+      status: 'blocked',
+      variant: 'familySent',
+      proposal: {
+        id: 'proposal-attn-1',
+        direction: 'parent',
+        created_at: '2026-03-20T09:00:00.000Z',
+      },
+      familyName: 'Attn Household',
+    });
+    mockUseInboxItems.mockReturnValue({
+      items: [CHANGE_REQUEST],
+      isLoading: false,
+    });
+    mockUseUncoveredToday.mockReturnValue({
+      status: 'covered',
+      localDate: '2026-03-23',
+    });
+
+    const tree = renderWithProviders(<TodayScreen />);
+    const slot = within(tree.getByTestId('today-pinned-slot'));
+
+    expect(slot.getByTestId('today-clock-in-blocked-card')).toBeTruthy();
+    expect(tree.getByTestId('today-needs-attention-card')).toBeTruthy();
+    expect(countAttentionCards(tree.queryByTestId)).toBe(1);
   });
 });

@@ -44,6 +44,9 @@ export function hrefForItem(item: InboxItem): Href {
       return `/(private)/schedule/shifts/${item.id}` as Href;
     // §7.2 — the review screen IS the proposal, in view mode.
     case 'terms_proposal':
+    // A7 — the same screen, in view mode: it is where a sent proposal lives
+    // too, and there is no second surface for "the thing I sent".
+    case 'terms_proposal_sent':
       return `/(private)/pay/proposal/${item.id}` as Href;
     case 'terms_ack':
       return '/(private)/settings/my-pay' as Href;
@@ -108,6 +111,15 @@ export function titleForItem(
         : t('items.termsProposal.titleCountered', {
             date: proposedOn(item.proposedAt, timeZone),
           });
+    // A7 — names the carer it was SENT TO. "Terms you sent Marisol" is the
+    // author's own sentence; "Terms proposed by Marisol" (the row above) is
+    // the answerer's, and swapping them names the wrong author, which is the
+    // exact bug this kind exists to fix.
+    case 'terms_proposal_sent':
+      return t('items.termsProposalSent.title', {
+        carer: item.carerDisplayName,
+        date: proposedOn(item.proposedAt, timeZone),
+      });
     case 'terms_ack':
       return item.isFirstTerms
         ? t('items.termsAck.titleFirst')
@@ -178,6 +190,17 @@ export function subtitleForItem(
             weekly: formatMoney(item.weeklyEquivalentMinor, item.currency),
           });
     }
+    // §1's law: the state word never appears without its date, and "opened"
+    // never appears without "not answered" attached — `viewed_at` is stamped
+    // automatically on open, so it is evidence of attention and nothing more.
+    case 'terms_proposal_sent':
+      return item.viewedAt
+        ? t('items.termsProposalSent.subtitleOpened', {
+            date: proposedOn(item.proposedAt, timeZone),
+          })
+        : t('items.termsProposalSent.subtitleNotOpened', {
+            date: proposedOn(item.proposedAt, timeZone),
+          });
     case 'terms_ack':
       return t('items.termsAck.subtitle');
     case 'reimbursement_owed':
@@ -204,6 +227,8 @@ export function ctaForItem(item: InboxItem, t: InboxItemT): string {
       return t('items.pendingShift.cta');
     case 'terms_proposal':
       return t('items.termsProposal.cta');
+    case 'terms_proposal_sent':
+      return t('items.termsProposalSent.cta');
     case 'terms_ack':
       return t('items.termsAck.cta');
     case 'reimbursement_owed':

@@ -385,6 +385,27 @@ describe('householdApi.redeemInvite', () => {
     await expect(householdApi.redeemInvite('')).rejects.toThrow();
     expect(apiClient.post).not.toHaveBeenCalled();
   });
+
+  it('forwards archiveHouseholdId as archive_household_id (§8.2c join-and-close)', async () => {
+    apiClient.post.mockResolvedValue({
+      data: { data: { membership: validMembership } },
+    });
+
+    await householdApi.redeemInvite(
+      'R4K-92T',
+      undefined,
+      undefined,
+      '55555555-5555-4555-8555-555555555555'
+    );
+
+    expect(apiClient.post).toHaveBeenCalledWith(
+      '/v1/households/invites/redeem',
+      {
+        code: 'R4K-92T',
+        archive_household_id: '55555555-5555-4555-8555-555555555555',
+      }
+    );
+  });
 });
 
 describe('householdApi.leave', () => {

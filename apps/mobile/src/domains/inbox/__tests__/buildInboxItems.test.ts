@@ -579,14 +579,17 @@ describe('buildInboxItems — terms_proposal kind (§7.1)', () => {
     ]);
   });
 
-  it('never shows a proposal to the person who wrote it', () => {
+  // The author still never gets the ANSWERABLE kind — there is nothing for
+  // her to answer. A7 gives her the author's own kind instead; see the
+  // `terms_proposal_sent` block below.
+  it('never shows the answerable proposal to the person who wrote it', () => {
     expect(
       buildInboxItems({
         ...base,
         role: SETUP_ROLES.NANNY,
         termsProposals: [carerProposal],
-      })
-    ).toEqual([]);
+      }).map(i => i.kind)
+    ).not.toContain('terms_proposal');
   });
 
   it('gives a parent counter to the carer it answers', () => {
@@ -597,6 +600,18 @@ describe('buildInboxItems — terms_proposal kind (§7.1)', () => {
     });
     expect(items.map(i => i.kind)).toEqual(['terms_proposal']);
     expect(items.map(i => (i as { id: string }).id)).toEqual(['prop-2']);
+  });
+
+  it('sorts at rank 4 relative to the author’s own rank-10 row', () => {
+    const items = buildInboxItems({
+      ...base,
+      role: SETUP_ROLES.PARENT,
+      termsProposals: [carerProposal, { ...parentCounter, carer_id: OTHER }],
+    });
+    expect(items.map(i => i.kind)).toEqual([
+      'terms_proposal',
+      'terms_proposal_sent',
+    ]);
   });
 
   it('is another carer’s negotiation, not hers, when the carer ids differ (D-21)', () => {
@@ -685,6 +700,143 @@ describe('buildInboxItems — terms_proposal kind (§7.1)', () => {
       'queried_week',
       'terms_proposal',
       'pending_shift',
+    ]);
+  });
+});
+
+// A7 — the AUTHOR's side of a live proposal. Until this kind existed, a
+// parent who wrote the terms had no Today signal at all; his only trace was
+// a settings row titled "Proposed terms from {carerName}", which names the
+// wrong author. Under A1 that is a work stoppage the responsible party
+// cannot see.
+describe('buildInboxItems — terms_proposal_sent kind (A7)', () => {
+  const NOW = '2026-08-25T12:00:00.000Z';
+
+  const carerProposal: InboxTermsProposalInput = {
+    id: 'prop-1',
+    household_id: 'hh-1',
+    carer_id: ME,
+    direction: 'carer',
+    status: 'proposed',
+    carer_display_name: 'Marisol',
+    created_at: '2026-08-24T09:00:00.000Z',
+    weekly_equivalent_minor: 154000,
+    terms: { rate_minor: 2800, currency: 'USD' },
+    viewed_at: null,
+  };
+  const parentProposal: InboxTermsProposalInput = {
+    ...carerProposal,
+    id: 'prop-2',
+    carer_id: OTHER,
+    direction: 'parent',
+    viewed_at: '2026-08-24T18:00:00.000Z',
+  };
+
+  const base = {
+    currentUserId: ME,
+    todayISO: '2026-08-25',
+    nowISO: NOW,
+    changeRequests: [],
+    patterns: [],
+    timesheets: [],
+  };
+
+  it('gives the parent who WROTE the terms his own row, carrying who and when', () => {
+    const items = buildInboxItems({
+      ...base,
+      role: SETUP_ROLES.PARENT,
+      termsProposals: [parentProposal],
+    });
+
+    expect(items).toEqual([
+      {
+        kind: 'terms_proposal_sent',
+        id: 'prop-2',
+        householdId: 'hh-1',
+        carerId: OTHER,
+        carerDisplayName: 'Marisol',
+        proposedAt: '2026-08-24T09:00:00.000Z',
+        viewedAt: '2026-08-24T18:00:00.000Z',
+        direction: 'parent',
+      },
+    ]);
+  });
+
+  it('gives the carer who wrote hers the same row', () => {
+    const items = buildInboxItems({
+      ...base,
+      role: SETUP_ROLES.NANNY,
+      termsProposals: [carerProposal],
+    });
+
+    expect(items.map(i => i.kind)).toEqual(['terms_proposal_sent']);
+    expect(items[0]).toMatchObject({ carerId: ME, viewedAt: null });
+  });
+
+  it('never gives the author’s row to the side that must answer', () => {
+    expect(
+      buildInboxItems({
+        ...base,
+        role: SETUP_ROLES.PARENT,
+        termsProposals: [carerProposal],
+      }).map(i => i.kind)
+    ).toEqual(['terms_proposal']);
+  });
+
+  // D-21: a nanny must never see another carer's negotiation, authored or not.
+  it('is not hers when the proposal names a different carer', () => {
+    expect(
+      buildInboxItems({
+        ...base,
+        role: SETUP_ROLES.NANNY,
+        termsProposals: [{ ...carerProposal, carer_id: OTHER }],
+      })
+    ).toEqual([]);
+  });
+
+  it('B5: a helper never sees an author row either', () => {
+    expect(
+      buildInboxItems({
+        ...base,
+        role: SETUP_ROLES.HELPER,
+        termsProposals: [parentProposal, carerProposal],
+      })
+    ).toEqual([]);
+  });
+
+  it('is a LIVE proposal only — a settled one is history, not pending work', () => {
+    for (const status of ['countered', 'accepted', 'withdrawn', 'declined']) {
+      expect(
+        buildInboxItems({
+          ...base,
+          role: SETUP_ROLES.PARENT,
+          termsProposals: [{ ...parentProposal, status }],
+        })
+      ).toEqual([]);
+    }
+  });
+
+  // Rank 10 — last. It is the one row on the list that is waiting on somebody
+  // ELSE, so it sits below even the ack prompt.
+  it('sorts after terms_ack, at the bottom of the list', () => {
+    const items = buildInboxItems({
+      ...base,
+      role: SETUP_ROLES.NANNY,
+      termsProposals: [carerProposal],
+      termsAcks: [
+        {
+          household_id: 'hh-1',
+          arrangement_id: 'arr-1',
+          valid_from: '2026-08-01',
+          is_first_terms: true,
+          acks: [],
+        },
+      ],
+    });
+
+    expect(items.map(i => i.kind)).toEqual([
+      'terms_ack',
+      'terms_proposal_sent',
     ]);
   });
 });

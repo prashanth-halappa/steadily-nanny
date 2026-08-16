@@ -2,14 +2,18 @@
  * @module domains/today/__tests__/TodayScreen.t1Arbitration.test
  *
  * "One T1 per screen" (cross-agent audit finding): `ClockInCard`'s overdue
- * state and `NeedsAttentionCard` are two independent `tone="attention"`
- * triggers. An overdue clock-out corrupts the pay record while unresolved,
- * so it wins — `TodayScreen` demotes `NeedsAttentionCard` to default tone
- * whenever `useOverdueClockOut` says the current user's own clock-out is
- * overdue, reusing that single hook rather than a second overdue rule.
+ * state and `NeedsAttentionCard` are two independent claims on the same
+ * attention. An overdue clock-out corrupts the pay record while unresolved,
+ * so it wins.
+ *
+ * It used to win by DEMOTING the loser's tone. It now wins by POSITION: the
+ * clock takes the pinned slot and the inbox card drops into the feed. That is
+ * a stronger guarantee — a demoted card still occupied the same pixels at the
+ * top of the screen, and the slot's occupant is the only thing that cannot be
+ * pushed under the fold.
  */
 import { beforeAll, describe, expect, it, mock } from 'bun:test';
-import { render } from '@testing-library/react-native';
+import { render, within } from '@testing-library/react-native';
 
 mock.module('@/lib/animations/useReducedMotion', () => ({
   useReducedMotion: mock(() => false),
@@ -41,26 +45,38 @@ mock.module('@/src/domains/household', () => ({
 mock.module('@/src/domains/draft', () => ({
   JoinedHouseholdCard: () => null,
   SendMyTermsCard: () => null,
+  DraftHomeScreen: () => null,
 }));
 mock.module('@/src/domains/schedule', () => ({
   PendingScheduleCard: () => null,
   ThisWeeksShiftsCard: () => null,
 }));
-mock.module('@/src/domains/today/components/ClockInCard', () => ({
-  ClockInCard: () => null,
-}));
-mock.module('@/src/domains/today/components/AddMissedHoursCard', () => ({
-  AddMissedHoursCard: () => null,
+mock.module('@/src/domains/today/components/ClockInCard', () => {
+  const React = require('react');
+  return {
+    ClockInCard: () => React.createElement('View', { testID: 'clock-in-spy' }),
+  };
+});
+mock.module('@/src/domains/today/components/ThisWeekCard', () => ({
+  ThisWeekCard: () => null,
 }));
 mock.module('@/src/domains/today/components/TodayCoverage', () => ({
   TodayCoverage: () => null,
 }));
-mock.module('@/src/domains/today/components/NannyWeekLine', () => ({
-  NannyWeekLine: () => null,
-}));
 mock.module('@/src/domains/today/components/HandoffChipsCard', () => ({
   HandoffChipsCard: () => null,
 }));
+// P5/S10 — self-contained, unscoped; real hooks need a QueryClient this file
+// deliberately does not build.
+mock.module('@/src/domains/today/components/CrossFamilyStrip', () => ({
+  CrossFamilyStrip: () => null,
+}));
+mock.module(
+  '@/src/domains/today/components/EmergencyContactPromptCard',
+  () => ({
+    EmergencyContactPromptCard: () => null,
+  })
+);
 mock.module('@/src/domains/today/hooks/useHouseholdIsLive', () => ({
   useHouseholdIsLive: () => false,
 }));
@@ -71,8 +87,8 @@ mock.module('@/src/domains/today/hooks/useTodayCoverRows', () => ({
 }));
 
 const HOUSEHOLD_ID = 'household-t1-1';
+const SLOT = 'today-pinned-slot';
 let mockUseOverdueClockOut: ReturnType<typeof mock>;
-let NeedsAttentionCardSpy: ReturnType<typeof mock>;
 
 let TodayScreen: typeof import('../components/TodayScreen').TodayScreen;
 
@@ -85,22 +101,39 @@ beforeAll(async () => {
   mock.module('@/src/domains/today/hooks/useOverdueClockOut', () => ({
     useOverdueClockOut: mockUseOverdueClockOut,
   }));
-
-  NeedsAttentionCardSpy = mock((_props: { demoted?: boolean }) => {
-    const React = require('react');
-    return React.createElement('View', { testID: 'needs-attention-spy' });
-  });
-  mock.module('@/src/domains/inbox', () => ({
-    NeedsAttentionCard: NeedsAttentionCardSpy,
-    TermsProposalCard: () => null,
-    // Non-empty: this file is specifically about overdue-vs-inbox
-    // precedence, so there has to be an inbox item for "not overdue" to
-    // mean "inbox owns it" rather than "nothing owns it".
-    useInboxItems: () => ({
-      items: [{ kind: 'change_request' }],
-      isLoading: false,
+  mock.module('@/src/domains/inbox/hooks/usePendingOffer', () => ({
+    // A7's offer, absent — this file is about overdue-vs-inbox, and the real
+    // hook needs a QueryClient this file deliberately does not build.
+    usePendingOffer: () => ({
+      offer: null,
+      state: null,
+      scheduledMinutesToday: 0,
+      isBlocking: false,
+      timeZone: 'UTC',
     }),
   }));
+  mock.module('@/src/domains/today/hooks/useTermsGate', () => ({
+    // A1's gate, open — this file is about a different arbitration, and the
+    // real hook needs a QueryClient this file deliberately does not build.
+    useTermsGate: () => ({ status: 'open', proposal: null, familyName: '' }),
+  }));
+
+  mock.module('@/src/domains/inbox', () => {
+    const React = require('react');
+    return {
+      NeedsAttentionCard: () =>
+        React.createElement('View', { testID: 'needs-attention-spy' }),
+      TermsProposalCard: () => null,
+      PendingOfferCard: () => null,
+      // Non-empty: this file is specifically about overdue-vs-inbox
+      // precedence, so there has to be an inbox item for "not overdue" to
+      // mean "inbox owns it" rather than "nothing owns it".
+      useInboxItems: () => ({
+        items: [{ kind: 'change_request' }],
+        isLoading: false,
+      }),
+    };
+  });
   mock.module('@/src/domains/today/hooks/useUncoveredToday', () => ({
     useUncoveredToday: () => ({ status: 'covered', localDate: '2026-03-23' }),
   }));
@@ -151,34 +184,35 @@ beforeAll(async () => {
   TodayScreen = mod.TodayScreen;
 });
 
-describe('TodayScreen — one T1 per screen (overdue clock-out vs inbox)', () => {
-  it('does not demote NeedsAttentionCard when nothing is overdue', () => {
+describe('TodayScreen — one slot occupant (overdue clock-out vs inbox)', () => {
+  it('pins the inbox card when nothing is overdue', () => {
     mockUseOverdueClockOut.mockReturnValue({
       overdue: false,
       clockInAt: null,
       shiftEndsAt: null,
     });
 
-    render(<TodayScreen />);
+    const { getByTestId } = render(<TodayScreen />);
+    const slot = within(getByTestId(SLOT));
 
-    const props = NeedsAttentionCardSpy.mock.calls[0]?.[0] as {
-      demoted?: boolean;
-    };
-    expect(props.demoted).toBeFalsy();
+    expect(slot.getByTestId('needs-attention-spy')).toBeTruthy();
+    expect(slot.queryByTestId('clock-in-spy')).toBeNull();
   });
 
-  it('demotes NeedsAttentionCard when the clock-out is overdue — the overdue clock wins', () => {
+  it('puts the inbox card OUTSIDE the slot when the clock-out is overdue — the overdue clock wins', () => {
     mockUseOverdueClockOut.mockReturnValue({
       overdue: true,
       clockInAt: '2026-08-06T08:00:00.000Z',
       shiftEndsAt: null,
     });
 
-    render(<TodayScreen />);
+    const tree = render(<TodayScreen />);
+    const slot = within(tree.getByTestId(SLOT));
 
-    const lastCall = NeedsAttentionCardSpy.mock.calls[
-      NeedsAttentionCardSpy.mock.calls.length - 1
-    ]?.[0] as { demoted?: boolean };
-    expect(lastCall.demoted).toBe(true);
+    expect(slot.getByTestId('clock-in-spy')).toBeTruthy();
+    expect(slot.queryByTestId('needs-attention-spy')).toBeNull();
+    // It is still on screen, just in the feed at default tone — the
+    // obligation does not disappear because something outranked it.
+    expect(tree.getByTestId('needs-attention-spy')).toBeTruthy();
   });
 });

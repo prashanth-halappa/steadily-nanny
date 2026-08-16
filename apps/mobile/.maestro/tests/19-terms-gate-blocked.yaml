@@ -1,0 +1,46 @@
+# Scenario — A1/P2: a nanny with no agreed pay terms on the active household
+# cannot clock in. `ClockInBlockedCard` owns Today's pinned slot instead of
+# the clock-in control, and no clock-in affordance exists anywhere on the
+# screen (neither in the slot nor in the feed — see `TodayScreen.tsx`'s
+# `activeNanny && slotOccupant !== 'clockIn' && slotOccupant !== 'blockedClockIn'
+# ? clockInCard : null` — the feed copy is deliberately withheld while
+# blocked, not just the slot).
+#
+# FIXTURE NOTE (2026-08-16): `PHASE4_HOUSEHOLD_ID` ("Our household") starts
+# every `seed-phase4-fixtures.ts` run with NO pay_arrangement for the nanny —
+# that clearing is the documented first line of that script's job. This flow
+# depends on that being true when it runs; if a prior flow (07) has since
+# created an arrangement there in the same session, void it first:
+#   delete from pay_arrangements
+#   where household_id = '<PHASE4_HOUSEHOLD_ID>' and carer_id = '<PHASE4_NANNY_ID>';
+# The API-side guard (409 + reason=TERMS_NOT_AGREED) is proven independently
+# with curl — see the validation ledger — this flow only proves the UI half.
+appId: com.jetto.steadily.nanny
+tags:
+  - today
+  - pay
+---
+- runFlow: ../flows/login-nanny.yaml
+# login-nanny.yaml ends by opening the household switcher from the Settings
+# tab and never navigates back — go to Today explicitly (same reasoning as
+# flow 18).
+- tapOn:
+    id: 'tab-today'
+- waitForAnimationToEnd
+
+- assertVisible:
+    id: 'today-header'
+- assertVisible:
+    id: 'today-pinned-slot'
+- assertVisible:
+    id: 'today-clock-in-blocked-title'
+- assertVisible:
+    id: 'today-clock-in-blocked-cta'
+- assertVisible:
+    id: 'today-clock-in-blocked-footnote'
+# The block owns the WHOLE screen's clock affordance, not just the slot.
+- assertNotVisible:
+    id: 'today-clock-card'
+- assertNotVisible:
+    id: 'today-clock-in'
+- takeScreenshot: terms-gate-blocked

@@ -570,4 +570,66 @@ describe('HouseholdMemberRepository.listNonRemovedByHousehold', () => {
     expect(result[0].profile_name).toBe('Amara');
     expect(result[0].status).toBe('candidate');
   });
+
+  // 099. The phone rides the SAME embed as the name — `user_profiles` RLS is
+  // untouched and stays owner-only, so this join is the only route a
+  // co-member's number ever takes out of the database. The repository returns
+  // it raw for every non-removed row; whose number actually goes on the wire
+  // is `householdQueryService.listMembers`' decision, not this one's.
+  it('joins the profile phone onto each row as profile_phone', async () => {
+    const rows = [
+      {
+        id: 'm1',
+        household_id: 'h1',
+        user_id: 'u1',
+        role: 'parent',
+        status: 'active',
+        user_profiles: { name: 'Amara', phone: '07700 900123' },
+      },
+      {
+        id: 'm2',
+        household_id: 'h1',
+        user_id: 'u2',
+        role: 'nanny',
+        status: 'active',
+        user_profiles: { name: 'Bea', phone: null },
+      },
+    ];
+    let selectArg = '';
+    mockSupabaseService.from.mockImplementation(() => {
+      const chain = createMockQueryChain({ data: rows, error: null });
+      chain.select = mock((arg: string) => {
+        selectArg = arg;
+        return chain;
+      });
+      return chain;
+    });
+    const repo = new HouseholdMemberRepository();
+    const result = await repo.listNonRemovedByHousehold('h1');
+
+    expect(selectArg).toContain('user_profiles(name, phone)');
+    expect(result[0].profile_phone).toBe('07700 900123');
+    // A member who never gave a number is null, not undefined — the roster
+    // says "no number" rather than "field missing".
+    expect(result[1].profile_phone).toBeNull();
+  });
+
+  it('is null when the profile row itself is gone', async () => {
+    const rows = [
+      {
+        id: 'm1',
+        household_id: 'h1',
+        user_id: 'u1',
+        role: 'parent',
+        status: 'active',
+        user_profiles: null,
+      },
+    ];
+    mockSupabaseService.from.mockImplementation(() =>
+      createMockQueryChain({ data: rows, error: null })
+    );
+    const repo = new HouseholdMemberRepository();
+    const result = await repo.listNonRemovedByHousehold('h1');
+    expect(result[0].profile_phone).toBeNull();
+  });
 });

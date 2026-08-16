@@ -147,6 +147,77 @@ describe('pending_shift copy', () => {
   });
 });
 
+// A7 — the author's own row. Its whole job is to be honest about a state
+// word: `viewed_at` is stamped AUTOMATICALLY on open, so the row must never
+// say "opened" without "not answered" attached (§1's rule).
+describe('terms_proposal_sent copy (A7)', () => {
+  const NOW = Date.parse('2026-08-25T12:00:00.000Z');
+
+  function makeItem(overrides: Record<string, unknown> = {}): InboxItem {
+    return {
+      kind: 'terms_proposal_sent',
+      id: 'prop-9',
+      householdId: 'hh-1',
+      carerId: 'carer-9',
+      carerDisplayName: 'Marisol',
+      proposedAt: '2026-08-24T09:00:00.000Z',
+      viewedAt: null,
+      direction: 'parent',
+      ...overrides,
+    } as InboxItem;
+  }
+
+  it('opens the same review screen, in view mode', () => {
+    expect(hrefForItem(makeItem())).toBe('/(private)/pay/proposal/prop-9');
+  });
+
+  it('names the carer it was sent to, and the verb is "see", not "review"', () => {
+    expect(titleForItem(makeItem(), t, ZONE)).toBe(
+      'items.termsProposalSent.title'
+    );
+    expect(ctaForItem(makeItem(), t)).toBe('items.termsProposalSent.cta');
+  });
+
+  it('forks the subtitle on opened, which is the whole point of the row', () => {
+    expect(subtitleForItem(makeItem(), t, ZONE)).toBe(
+      'items.termsProposalSent.subtitleNotOpened'
+    );
+    expect(
+      subtitleForItem(
+        makeItem({ viewedAt: '2026-08-24T18:00:00.000Z' }),
+        t,
+        ZONE
+      )
+    ).toBe('items.termsProposalSent.subtitleOpened');
+  });
+
+  it('has no deadline — a proposal never expires (§7.5)', () => {
+    expect(deadlineForItem(makeItem(), t, ZONE, NOW)).toBeNull();
+  });
+
+  it('never lets "opened" stand alone, in either language', async () => {
+    for (const language of ['en', 'es'] as const) {
+      const copy = (await locale(language)).items.termsProposalSent;
+      expect(copy.title).toContain('{{carer}}');
+      expect(copy.subtitleOpened).toContain('{{date}}');
+      expect(copy.subtitleNotOpened).toContain('{{date}}');
+      expect(copy.cta.length).toBeGreaterThan(0);
+      // "Opened" without "not answered" is the exact misread §1 exists to
+      // kill: seen is not agreed, in either direction.
+      const opened = copy.subtitleOpened.toLowerCase();
+      expect(
+        opened.includes('not answered') || opened.includes('sin responder')
+      ).toBe(true);
+      for (const key of ['title', 'subtitleOpened', 'subtitleNotOpened']) {
+        const text = copy[key].toLowerCase();
+        expect(text).not.toContain('agreed');
+        expect(text).not.toContain('acordad');
+        expect(text).not.toContain('approv');
+      }
+    }
+  });
+});
+
 describe('terms_proposal copy (§7.2, §10)', () => {
   const NOW = Date.parse('2026-08-25T12:00:00.000Z');
 

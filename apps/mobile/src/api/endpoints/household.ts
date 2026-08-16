@@ -294,6 +294,13 @@ export const householdApi = {
    * takes the SQL default of Monday and D-8 locks it. Ignored on every other
    * path — an existing family's pay week is not this device's to change.
    *
+   * `archiveHouseholdId` is §8's "join & close" outcome: a parent who already
+   * owns a live household, redeeming a SECOND parent-role invite, picked the
+   * destructive option in `HouseholdDecisionSheet` rather than the escape
+   * hatch. The server archives that household (own membership -> removed) in
+   * the same transaction as the redeem, so there is never a window where the
+   * caller holds two live parent households.
+   *
    * The shared `RedeemHouseholdInviteSchema` is `{ code }` only, and a plain
    * Zod object strips unknown keys — parsing the body through it would
    * silently drop the target and absorb into a household nobody chose. Hence
@@ -302,15 +309,20 @@ export const householdApi = {
   redeemInvite: async (
     code: string,
     targetHouseholdId?: string,
-    weekStartsOn?: number
+    weekStartsOn?: number,
+    archiveHouseholdId?: string
   ): Promise<HouseholdMember> => {
     const validated = RedeemHouseholdInviteSchema.extend({
       target_household_id: z.uuid().optional(),
       week_starts_on: z.number().int().min(0).max(6).optional(),
+      archive_household_id: z.uuid().optional(),
     }).safeParse({
       code,
       ...(targetHouseholdId ? { target_household_id: targetHouseholdId } : {}),
       ...(weekStartsOn !== undefined ? { week_starts_on: weekStartsOn } : {}),
+      ...(archiveHouseholdId
+        ? { archive_household_id: archiveHouseholdId }
+        : {}),
     });
     if (!validated.success) throw validated.error;
 

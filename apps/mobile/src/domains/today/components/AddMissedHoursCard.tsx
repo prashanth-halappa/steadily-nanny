@@ -89,12 +89,22 @@ interface AddMissedHoursCardProps {
    * "this week" for a missed-hours prompt is the household's business week,
    * not a hardcoded Monday. */
   weekStartsOn: number;
+  /**
+   * A1's recovery path, once. The clock-in block has no escape hatch, so the
+   * realistic worst case is that she worked anyway — `ClockInBlockedCard`'s
+   * footnote warned her before it happened and named this route afterwards.
+   * `ThisWeekCard` asks for the headline in the first week after an
+   * arrangement is created, which is the only window where "the rate you just
+   * agreed" is true. It never changes what the CTA does.
+   */
+  firstRunHeadline?: boolean;
 }
 
 export function AddMissedHoursCard({
   householdId,
   timeZone,
   weekStartsOn,
+  firstRunHeadline = false,
 }: AddMissedHoursCardProps) {
   const { t } = useTranslation('today');
   const { t: tErrors } = useTranslation('errors');
@@ -205,6 +215,17 @@ export function AddMissedHoursCard({
 
   return (
     <Fragment>
+      {/* Above the CTA, and only in the window `ThisWeekCard` opens: it
+          answers "why now" (the rate she just agreed) in the one place the
+          answer is true. */}
+      {firstRunHeadline ? (
+        <Body
+          testID="today-missed-hours-headline"
+          className="text-muted-foreground"
+        >
+          {t('missedHours.afterTermsHeadline')}
+        </Body>
+      ) : null}
       {/* A recovery affordance, not a peer of "Clock in" — left-aligned
           and Small so it reads as a link, not a centred section heading,
           and pulled tight (-mt-2) under the clock card above it rather

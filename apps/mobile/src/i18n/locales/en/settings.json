@@ -20,7 +20,7 @@
   "appVersion": "Version {{version}}",
   "carerAvailability": "Nanny availability",
   "carerAvailabilityEmpty": "No nanny in this household yet",
-  "carerAvailabilityNone": "Your nanny hasn't shared availability yet",
+  "carerAvailabilityNone": "{{name}} hasn't set her availability yet.",
   "carerTimeOff": "Nanny time off",
   "carerTimeOffHint": "Booked time off — status only; approval isn't in the app yet.",
   "carerTimeOffEmpty": "No time off booked",

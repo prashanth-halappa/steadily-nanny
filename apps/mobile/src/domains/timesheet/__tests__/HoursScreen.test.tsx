@@ -498,6 +498,32 @@ describe('HoursScreen — loading week keeps its title and week label', () => {
   });
 });
 
+// D-36 §S6 item 4: the draft is HERS — nothing can insert a time entry into
+// a draft household (093), so this is a true empty state, never "the family
+// is still setting up" (there is no family yet).
+describe('HoursScreen — draft household empty state (D-36)', () => {
+  it('shows the draft empty state instead of the week views', () => {
+    mockUseActiveHousehold.mockImplementation(() => ({
+      household: {
+        id: HOUSEHOLD_ID,
+        timezone: TIMEZONE,
+        week_starts_on: 1,
+        state: 'draft',
+      },
+      householdId: HOUSEHOLD_ID,
+      households: [],
+      setActiveHouseholdId: mock(),
+      isLoading: false,
+    }));
+
+    const { getByTestId, queryByTestId } = render(<HoursScreen />);
+
+    expect(getByTestId('hours-draft-empty')).toBeTruthy();
+    expect(queryByTestId('hours-loading')).toBeNull();
+    expect(queryByTestId('hours-total')).toBeNull();
+  });
+});
+
 // `isPastMember` is now a prop in its own right, distinct from `readOnly` —
 // the removed member is TOLD her record stays rather than silently losing
 // every button. A view that only received `readOnly` could not tell the two

@@ -62,6 +62,7 @@ export {
   HouseholdMemberListResponseSchema,
   HouseholdMemberSchema,
   HouseholdSchema,
+  PARENT_ROLES,
   RedeemHouseholdInviteSchema,
   UpdateHouseholdInviteSchema,
   UpdateHouseholdMemberSchema,
@@ -97,14 +98,24 @@ export {
  * path gets Sunday. Ignored on every other path, absorption included, where
  * an existing household's setting is nobody's to overwrite.
  *
- * Deliberately NOT in the shared wire package. Both fields are meaningful only
- * to the draft-redemption path and only to this server; every other client of
- * `RedeemHouseholdInviteSchema` sends a code and nothing else, and Zod objects
- * are non-strict, so an older client is unaffected either way.
+ * `archive_household_id` is §8/A4's consent token, and it is the OPPOSITE of
+ * `target_household_id`: that one says "fold her into the family I already
+ * have", this one says "close the family I already have and join theirs".
+ * Present only when the parent tapped the destructive option in the decision
+ * sheet, and only ever his OWN live household. Its absence is what makes
+ * "one live household per parent" a refusal rather than a silent abandonment —
+ * see `householdCommandService.redeemInvite`, which archives it AFTER every
+ * validity check and BEFORE the claim.
+ *
+ * Deliberately NOT in the shared wire package. All three fields are meaningful
+ * only to this server; every other client of `RedeemHouseholdInviteSchema`
+ * sends a code and nothing else, and Zod objects are non-strict, so an older
+ * client is unaffected either way.
  */
 export const RedeemHouseholdInviteBodySchema = RedeemInvite.extend({
   target_household_id: z.uuid().optional(),
   week_starts_on: z.int().min(0).max(6).optional(),
+  archive_household_id: z.uuid().optional(),
 });
 export type RedeemHouseholdInviteBody = z.infer<
   typeof RedeemHouseholdInviteBodySchema

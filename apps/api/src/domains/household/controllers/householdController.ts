@@ -189,6 +189,29 @@ export class HouseholdController {
     }
   }
 
+  /**
+   * Close a household without deleting anything (A4/A10). The same HTTP shape
+   * as `leave` — a POST with no body and no member id, because the caller IS
+   * the subject — and the same division of labour: every refusal (not a
+   * member, a carer still attached, a nanny who should be leaving instead)
+   * lives in the command service, and the response is the caller's own,
+   * now-`removed` membership row.
+   */
+  static async archive(req: Request, res: Response, next: NextFunction) {
+    try {
+      const householdId = req.params.householdId as string;
+      const household_member = await householdCommandService.archive(
+        getAuthUserId(req),
+        householdId
+      );
+      return sendSuccessResponse(res, 'Household archived', {
+        household_member,
+      });
+    } catch (error) {
+      return next(error);
+    }
+  }
+
   /** PATCH an invite. The schema allows only `status: 'revoked'`. */
   static async updateInvite(req: Request, res: Response, next: NextFunction) {
     try {

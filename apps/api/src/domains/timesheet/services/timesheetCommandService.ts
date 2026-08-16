@@ -49,6 +49,10 @@ import {
 } from '../../notification/services/householdPush';
 import type { PushPayload } from '../../notification/types';
 import {
+  type TermsGateService,
+  termsGateService,
+} from '../../pay/services/termsGateService';
+import {
   type WeekEarningsComputer,
   weekEarningsService,
 } from '../../pay/services/weekEarningsService';
@@ -101,6 +105,7 @@ import { toWireTimesheet } from '../utils/toWireTimesheet';
 import { weekBoundaryInstant } from '../utils/weekBoundary';
 import {
   DEFAULT_WEEK_STARTS_ON,
+  localDateOf,
   weekEndExclusive,
   weekStartOf,
   weekStartOfLocalDate,
@@ -455,7 +460,14 @@ export class TimesheetCommandService {
     private readonly eventRepo: Pick<
       ShiftEventRepository,
       'insertMany'
-    > = new ShiftEventRepository()
+    > = new ShiftEventRepository(),
+    // The hard block (direction doc A1): no time record may be created or
+    // corrected for a day with no pay arrangement in force. LAST parameter
+    // and defaulted, so every existing positional construction keeps working.
+    private readonly termsGate: Pick<
+      TermsGateService,
+      'assertAgreed'
+    > = termsGateService
   ) {}
 
   /**
@@ -496,6 +508,18 @@ export class TimesheetCommandService {
     }
 
     const clockInAt = now();
+    // THE hard block (A1). `householdRepo.findById` is hoisted above the
+    // write path purely to get the zone: the gate is asked about the
+    // household-LOCAL date, never the UTC one, or a 09:00 Auckland clock-in
+    // on the first day of new terms would be refused as "yesterday".
+    const household = await this.householdRepo.findById(input.household_id);
+    const timeZone = household?.timezone ?? 'UTC';
+    await this.termsGate.assertAgreed(
+      input.household_id,
+      userId,
+      localDateOf(clockInAt, timeZone)
+    );
+
     // A clock-in landing INSIDE an existing completed entry — most often a
     // paid-cancellation span, which covers the whole shift — can never be
     // clocked out: every clock-out fails the overlap check, and the stranded
@@ -525,17 +549,14 @@ export class TimesheetCommandService {
       );
     }
 
-    const [household, carerDisplayName] = await Promise.all([
-      this.householdRepo.findById(input.household_id),
-      this.resolveCarerDisplayName(userId),
-    ]);
+    const carerDisplayName = await this.resolveCarerDisplayName(userId);
     return this.timeEntryRepo.clockIn({
       household_id: input.household_id,
       carer_id: userId,
       carer_display_name: carerDisplayName,
       shift_id: shiftId,
       clock_in_at: clockInAt.toISOString(),
-      timezone: household?.timezone ?? 'UTC',
+      timezone: timeZone,
       kind: 'worked',
       status: 'running',
     });
@@ -565,6 +586,12 @@ export class TimesheetCommandService {
    * `assertClockOrder` exactly like a correction — the client may move the
    * finish EARLIER (or a minute of drift later), never invent future hours.
    * Omitted, this behaves as it always has: the server's own clock.
+   *
+   * DELIBERATELY NOT TERMS-GATED, unlike the other three write paths. A
+   * `running` row already exists — created before this guard shipped, or
+   * before terms lapsed on a member removal — and must always be closeable:
+   * refusing would strand it, and `time_entries_one_running_per_carer` would
+   * then block every future clock-in with no way out (the F-B2-4 class).
    */
   async clockOut(
     userId: string,
@@ -940,6 +967,15 @@ export class TimesheetCommandService {
 
     const household = await this.householdRepo.findById(input.household_id);
     const timeZone = household?.timezone ?? 'UTC';
+    // Same hard block as `clockIn` — asked about the day the HOURS fall on,
+    // not today. Without it "Add missed hours" is a silent bypass of A1 (§3's
+    // footnote), which is the whole reason the guard is a policy on time
+    // records rather than a button state.
+    await this.termsGate.assertAgreed(
+      input.household_id,
+      userId,
+      localDateOf(new Date(clockInAt), timeZone)
+    );
     const weekStartsOn = household?.week_starts_on ?? DEFAULT_WEEK_STARTS_ON;
     const weekStart = weekStartOf(new Date(clockInAt), timeZone, weekStartsOn);
     if (
@@ -1356,6 +1392,19 @@ export class TimesheetCommandService {
     if (!originalClockInAt) {
       throw new InvalidClockTimesError('MISSING_CLOCK_TIME', { timeEntryId });
     }
+    // Same hard block, anchored on the ROW: its own household and the local
+    // date it was written under (recomputed from the frozen `clock_in_at` +
+    // `timezone` pair the rest of this method anchors on, rather than
+    // trusting the denormalised `local_date`). The carer is `userId` — the
+    // caller `getOwnedTimeEntry` just proved owns this entry — for the same
+    // reason `clockOut`'s roll-up passes it: `entry.carer_id` is nullable
+    // once a deleted carer's rows survive without it.
+    await this.termsGate.assertAgreed(
+      entry.household_id,
+      userId,
+      localDateOf(new Date(originalClockInAt), entry.timezone)
+    );
+
     const { clockInAt, clockOutAt } = this.assertClockOrder(
       input.clock_in_at ?? originalClockInAt,
       input.clock_out_at ?? entry.clock_out_at

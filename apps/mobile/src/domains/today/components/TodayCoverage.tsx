@@ -3,11 +3,20 @@
  *
  * One parent coverage surface — need-centric headline, shift-centric plan lines
  * below. T4 on the bare ground except gap (`attention`) and live (`live`) cards.
+ *
+ * This card has ONE look — no quiet second rung, no per-card emphasis prop.
+ * A gap it renders is a gap that owns Today's pinned slot: a parent's `uncoveredCare` can only ever lose the slot
+ * to nanny-only rungs (`termsBlocked`, `overdue`, a running clock), so the
+ * promoted look is the only look it needs. `TodayScreen` skips the FEED mount
+ * entirely when this surface is the slot's occupant.
+ *
+ * `footer` is where the handoff chips fold in on the parent side (#9's
+ * merge) — under the plan lines, in every non-loading state.
  */
 import type { Child } from '@steadily-nanny/shared-types/schemas/child.schema';
 import { type Href, useRouter } from 'expo-router';
 import { AlertCircle } from 'lucide-react-native';
-import { useMemo, useState } from 'react';
+import { type ReactNode, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Pressable, View } from 'react-native';
 import { RestrictedActionButton } from '@/src/components/custom/RestrictedActionButton';
@@ -27,7 +36,7 @@ import { IconChip } from '@/src/components/ui/icon-chip';
 import { InlineError } from '@/src/components/ui/inline-error';
 import { LiveDot } from '@/src/components/ui/live-dot';
 import { StatusPill } from '@/src/components/ui/status-pill';
-import { Body, H3, H4, Small } from '@/src/components/ui/typography';
+import { Body, H3, Small } from '@/src/components/ui/typography';
 import { useHouseholdCarers } from '@/src/domains/schedule/hooks/useHouseholdCarers';
 import { resolveCarerName } from '@/src/domains/schedule/utils/memberDisplayName';
 import { localDateToWeekday } from '@/src/domains/schedule/utils/shiftGrouping';
@@ -60,7 +69,9 @@ interface TodayCoverageProps {
    * week-entries query so it reads the household's own business week. */
   weekStartsOn: number;
   householdChildren: readonly Child[];
-  demoted?: boolean;
+  /** Rendered at the bottom of every non-loading state — the parent-side
+   * handoff-chips fold. */
+  footer?: ReactNode;
 }
 
 function childName(childId: string, children: readonly Child[]): string {
@@ -169,7 +180,7 @@ export function TodayCoverage({
   timeZone,
   weekStartsOn,
   householdChildren,
-  demoted = false,
+  footer,
 }: TodayCoverageProps) {
   const { t } = useTranslation('today');
   const { t: tSchedule } = useTranslation('schedule');
@@ -226,28 +237,34 @@ export function TodayCoverage({
 
   if (state.status === 'setup') {
     return (
-      <Pressable
-        accessibilityRole="button"
-        onPress={() => router.push('/settings/children' as Href)}
-      >
-        <Card testID="today-coverage" className="gap-1 p-5.5">
-          <Body weight="medium">{t('cover.setup.title')}</Body>
-          <Body className="text-sm text-muted-foreground">
-            {t('cover.setup.body')}
-          </Body>
-        </Card>
-      </Pressable>
+      <View className="gap-3">
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => router.push('/settings/children' as Href)}
+        >
+          <Card testID="today-coverage" className="gap-1 p-5.5">
+            <Body weight="medium">{t('cover.setup.title')}</Body>
+            <Body className="text-sm text-muted-foreground">
+              {t('cover.setup.body')}
+            </Body>
+          </Card>
+        </Pressable>
+        {footer}
+      </View>
     );
   }
 
   if (state.status === 'noNeedToday') {
     const weekday = tSchedule(`weekday.${state.weekday}`);
     return (
-      <View testID="today-coverage" className="gap-1">
-        <Body weight="medium">{t('cover.noNeed.title')}</Body>
-        <Body className="text-sm text-muted-foreground">
-          {t('cover.noNeed.body', { weekday })}
-        </Body>
+      <View className="gap-3">
+        <View testID="today-coverage" className="gap-1">
+          <Body weight="medium">{t('cover.noNeed.title')}</Body>
+          <Body className="text-sm text-muted-foreground">
+            {t('cover.noNeed.body', { weekday })}
+          </Body>
+        </View>
+        {footer}
       </View>
     );
   }
@@ -271,8 +288,9 @@ export function TodayCoverage({
 
   if (state.status === 'booked') {
     return (
-      <View testID="today-coverage" className="gap-2">
+      <View testID="today-coverage" className="gap-3">
         {planLines}
+        {footer}
       </View>
     );
   }
@@ -294,13 +312,11 @@ export function TodayCoverage({
     : '';
 
   // §5.4 (D-47): inside 12h the headline stops describing the gap and starts
-  // counting down to it. Demoted the card has already lost arbitration to
-  // something more urgent, so it must not shout — and the tone stays
-  // `attention`, never `critical`: the escalation is copy, not a new register.
-  const escalationHours =
-    !demoted && singleWindow
-      ? gapEscalationHours(singleWindow.startsAt, Date.now())
-      : null;
+  // counting down to it. The tone stays `attention`, never `critical`: the
+  // escalation is copy, not a new register.
+  const escalationHours = singleWindow
+    ? gapEscalationHours(singleWindow.startsAt, Date.now())
+    : null;
 
   const gapHeadline = (() => {
     if (!singleWindow) {
@@ -407,41 +423,30 @@ export function TodayCoverage({
   };
 
   // Rule M (daylight-v2 §2.3): on the ochre `surfaceAttention` ground
-  // `mutedForeground` measures 4.28:1 and fails AA at these sizes. Demoted the
-  // card is plain white, where `mutedForeground` is fine and correct.
-  const detailMutedClass = demoted
-    ? 'text-muted-foreground'
-    : 'text-muted-strong';
+  // `mutedForeground` measures 4.28:1 and fails AA at these sizes.
+  const detailMutedClass = 'text-muted-strong';
 
   return (
     <View testID="today-coverage" className="gap-3">
       <Card
         testID="today-coverage-gap-card"
-        tone={demoted ? 'default' : 'attention'}
+        tone="attention"
         className="gap-3 p-5.5"
       >
         {/* The single largest fix in the v2 audit: this sentence — a child is
             not covered right now — used to be 16/24/500, smaller than the
-            handoff card's title below it. At L1 it is an H3; demoted it drops
-            a whole rung to H4 on a plain white card, and the chip drops out of
-            the brand register with it (daylight-v2 §2.4: an attention ground
-            already carries the message, so its chip is never a category hue —
-            and a card that is NOT the one thing to do never wears plum). */}
+            handoff card's title below it. It is an H3, and the chip stays in
+            the brand register, because this card only ever renders as the
+            pinned slot's occupant. */}
         <View className="flex-row items-center gap-3">
           <IconChip
             testID="today-coverage-gap-chip"
-            tone={demoted ? 'schedule' : 'brand'}
+            tone="brand"
             icon={AlertCircle}
           />
-          {demoted ? (
-            <H4 testID="today-coverage-gap-headline" className="flex-1">
-              {gapHeadline}
-            </H4>
-          ) : (
-            <H3 testID="today-coverage-gap-headline" className="flex-1">
-              {gapHeadline}
-            </H3>
-          )}
+          <H3 testID="today-coverage-gap-headline" className="flex-1">
+            {gapHeadline}
+          </H3>
         </View>
 
         {visible.map(window => {
@@ -510,17 +515,15 @@ export function TodayCoverage({
 
         {singleWindow && primaryAsk.href ? (
           <View className="gap-2">
-            {/* L1's action is a full-width filled button at `lg` (56pt); the
-                demoted rung gets a ghost link instead, because a card that
-                lost arbitration must not out-shout the one that won it.
-                Restricted via §7's `extra_shift` gate — the same one
+            {/* The slot's action is a full-width filled button at `lg`
+                (56pt). Restricted via §7's `extra_shift` gate — the same one
                 `createExtraShift` consults server-side for a co-parent under
                 `owner_only`. */}
             <RestrictedActionButton
               testID="today-coverage-ask-cover"
-              size={demoted ? 'sm' : 'lg'}
-              variant={demoted ? 'ghost' : 'default'}
-              className={demoted ? 'self-start px-0' : 'w-full'}
+              size="lg"
+              variant="default"
+              className="w-full"
               label={primaryAsk.label}
               reason={askCoverRestriction.reason}
               onPress={() => router.push(primaryAsk.href as Href)}
@@ -658,6 +661,7 @@ export function TodayCoverage({
       </Card>
 
       {planLines}
+      {footer}
     </View>
   );
 }

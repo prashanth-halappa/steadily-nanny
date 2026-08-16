@@ -1,0 +1,99 @@
+# Scenario — P3/D-36: a draft household no longer strands its owner out of
+# the tab shell. `(private)/(tabs)/_layout.tsx` used to redirect a draft
+# household out of the tabs entirely; now the tabs stay mounted always —
+# `TodayScreen` renders `DraftHomeScreen` as its body, and Schedule/Hours show
+# their own honest draft empty states instead of bouncing away. This is the
+# regression that stranded a WORKING nanny (one live household plus an
+# unrelated draft one she also authors) the moment her active household
+# flipped to the draft — so the highest-value assertion here is simply that
+# the tab bar is still there.
+#
+# FIXTURE: `NANNY_DRAFT_HOUSEHOLD_ID` — a third household for the shared seed
+# nanny, state='draft', created via psql on 2026-08-16 (see .env.maestro's
+# comment above that var for the exact statements if it needs re-creating;
+# not produced by seed-phase4-fixtures.ts, so a fresh seed run drops it).
+appId: com.jetto.steadily.nanny
+tags:
+  - today
+  - draft
+---
+- runFlow: ../flows/login-nanny.yaml
+# login-nanny.yaml's select-household.yaml step ends on the Settings tab
+# (it opens the switcher from there and never taps back) — same pattern as
+# flows 18/19. Switch to the draft household from there.
+- tapOn:
+    id: 'tab-settings'
+- waitForAnimationToEnd
+- runFlow:
+    when:
+      visible:
+        text: 'Maybe later'
+    commands:
+      - tapOn:
+          text: 'Maybe later'
+      - waitForAnimationToEnd
+- extendedWaitUntil:
+    visible:
+      id: 'household-switcher-trigger'
+    timeout: 4000
+    optional: true
+- tapOn:
+    id: 'household-switcher-trigger'
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'household-switcher-sheet'
+- tapOn:
+    id: 'household-switcher-option-${NANNY_DRAFT_HOUSEHOLD_ID}'
+- waitForAnimationToEnd
+- assertNotVisible:
+    id: 'household-switcher-sheet'
+
+# --- Today: the tab bar is still here, and the body is the draft home ----
+- tapOn:
+    id: 'tab-today'
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'tab-today'
+- assertVisible:
+    id: 'tab-schedule'
+- assertVisible:
+    id: 'tab-hours'
+- assertVisible:
+    id: 'tab-settings'
+- assertVisible:
+    id: 'draft-home'
+- assertVisible:
+    id: 'draft-hero-title'
+- takeScreenshot: draft-keeps-tabs-today
+
+# --- Schedule: honest draft empty state, tab bar still present -----------
+- tapOn:
+    id: 'tab-schedule'
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'schedule-tab-draft-empty'
+- assertVisible:
+    id: 'tab-today'
+- assertVisible:
+    id: 'tab-schedule'
+- assertVisible:
+    id: 'tab-hours'
+- assertVisible:
+    id: 'tab-settings'
+- takeScreenshot: draft-keeps-tabs-schedule
+
+# --- Hours: same story ----------------------------------------------------
+- tapOn:
+    id: 'tab-hours'
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'hours-draft-empty'
+- assertVisible:
+    id: 'tab-today'
+- assertVisible:
+    id: 'tab-schedule'
+- assertVisible:
+    id: 'tab-hours'
+- assertVisible:
+    id: 'tab-settings'
+- takeScreenshot: draft-keeps-tabs-hours

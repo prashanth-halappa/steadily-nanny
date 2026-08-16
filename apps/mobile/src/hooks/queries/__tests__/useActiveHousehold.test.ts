@@ -120,6 +120,22 @@ describe('useActiveHousehold', () => {
     );
   });
 
+  it('setActiveHouseholdId(null) clears the preference (§S6 item 6: after a draft archive with no other live household)', async () => {
+    useActiveHouseholdStore.getState().setPreferredHouseholdId('household-b');
+    householdsListMock.mockResolvedValue([HOUSEHOLD_A]);
+
+    const { result } = renderHookWithProviders(() => useActiveHousehold());
+    await waitFor(() => expect(result.current.householdId).toBe('household-a'));
+
+    act(() => {
+      result.current.setActiveHouseholdId(null);
+    });
+
+    await waitFor(() =>
+      expect(useActiveHouseholdStore.getState().preferredHouseholdId).toBeNull()
+    );
+  });
+
   it('exposes past households separately and never inside the active list', async () => {
     householdsListMock.mockResolvedValue([HOUSEHOLD_A]);
     householdsListPastMock.mockResolvedValue([HOUSEHOLD_PAST]);

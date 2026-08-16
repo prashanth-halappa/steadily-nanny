@@ -11,6 +11,7 @@
  * banner and `/(private)/schedule/usual-week` for the pushed detail screen.
  */
 
+import { HOUSEHOLD_STATES } from '@steadily-nanny/shared-types/schemas/household.schema';
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
 import { illustrations } from '@/assets/illustrations';
@@ -22,12 +23,14 @@ import {
   ScheduleShiftsScreen,
 } from '@/src/domains/schedule';
 import { SETUP_ROLES } from '@/src/domains/setup/types';
+import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 import { useSchedulePatterns } from '@/src/hooks/queries/useSchedulePatterns';
 
 export default function ScheduleRoute() {
   const { t } = useTranslation('schedule');
   const onboarding = useIsOnboarded();
+  const activeHousehold = useActiveHousehold();
   const patterns = useSchedulePatterns(
     onboarding.role !== SETUP_ROLES.NANNY ? onboarding.householdId : null
   );
@@ -42,6 +45,24 @@ export default function ScheduleRoute() {
 
   if (onboarding.status === 'loading') {
     return <LoadingIndicator testID="schedule-tab-loading" />;
+  }
+
+  // D-36 §S6 item 4: the draft is HERS — she authored it, set her own rate
+  // and invited a family. No shifts exist because nothing can insert one
+  // into a draft household (093), so this is a true empty state, not a
+  // loading gap — never "the family is still setting up", there is no
+  // family yet.
+  if (activeHousehold.household?.state === HOUSEHOLD_STATES.DRAFT) {
+    return (
+      <View testID="schedule-tab-draft-empty" style={{ flex: 1 }}>
+        <EmptyState
+          variant="inline"
+          image={illustrations.emptySchedule}
+          title={t('tab.draftEmptyTitle')}
+          description={t('tab.draftEmptyDescription')}
+        />
+      </View>
+    );
   }
 
   if (onboarding.role === null) {

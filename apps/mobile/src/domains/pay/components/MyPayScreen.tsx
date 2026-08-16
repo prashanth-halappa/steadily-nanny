@@ -24,8 +24,8 @@
  * One lifecycle, not two — which is what "both directions everywhere" buys.
  *
  * D-31/D-41 (`docs/design/screens-pay-terms.md` §8.2/§8.3): pressing "I've
- * seen these terms" records the DATE SHE SAW THEM and nothing more. Every
- * string this screen renders for that fact says so — "Seen by {name} on
+ * read these terms" records the DATE SHE READ THEM and nothing more. Every
+ * string this screen renders for that fact says so — "Read by {name} on
  * {date}", never a word implying she agreed to them. The ack gates NOTHING:
  * all terms, all history, and every figure read the same before and after.
  */

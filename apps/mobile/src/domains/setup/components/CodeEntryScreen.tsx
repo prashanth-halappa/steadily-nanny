@@ -1,14 +1,18 @@
 /**
  * @module domains/setup/components/CodeEntryScreen
  *
- * Nanny setup step 1: give your name, enter a household invite code, preview
- * who it's for (household name + children's first names — nothing more, see
- * `InvitePreviewSchema`), then redeem it to join.
+ * Nanny setup step 1: give your name and (optionally) your mobile number,
+ * enter a household invite code, preview who it's for (household name +
+ * children's first names — nothing more, see `InvitePreviewSchema`), then
+ * redeem it to join.
  *
  * The name lives here rather than on its own screen because the parent flow
  * has no name step either — it derives one from auth metadata during the
  * `ChildrenScreen` bootstrap. Same derivation pre-fills this field, so the
- * nanny confirms or corrects a name instead of typing one cold.
+ * nanny confirms or corrects a name instead of typing one cold. The number
+ * sits next to it for the same reason: she is already saying who she is, and
+ * the family needs a way to reach her. Optional — she can skip and add it
+ * later.
  *
  * ORDER MATTERS: the profile write runs BEFORE `redeemInvite`. Joining
  * snapshots the member's display name, and a null one renders as the 'Carer'
@@ -37,14 +41,17 @@
  * would burn a code nobody meant to spend; and a wrong or stale code has to be
  * correctable in place, or the only recovery is reinstalling the app.
  */
+import { PhoneNumberSchema } from '@steadily-nanny/shared-types/schemas/contact.schema';
 import {
+  HOUSEHOLD_INVITE_ROLES,
+  HOUSEHOLD_MEMBER_STATUSES,
   HOUSEHOLD_ROLES,
   HOUSEHOLD_STATES,
 } from '@steadily-nanny/shared-types/schemas/household.schema';
 import { type Href, useRouter } from 'expo-router';
 import { useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { View } from 'react-native';
+import { Share, View } from 'react-native';
 import { Button } from '@/src/components/ui/button';
 import { Card } from '@/src/components/ui/card';
 import { FieldError } from '@/src/components/ui/field-error';
@@ -52,8 +59,10 @@ import { FieldLabel } from '@/src/components/ui/field-label';
 import { Input } from '@/src/components/ui/input';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { Text } from '@/src/components/ui/text';
-import { Body, H3 } from '@/src/components/ui/typography';
+import { Body, H3, Small } from '@/src/components/ui/typography';
+import { resolveCarerName } from '@/src/domains/schedule/utils/memberDisplayName';
 import { AbsorptionConfirmSheet } from '@/src/domains/setup/components/AbsorptionConfirmSheet';
+import { HouseholdDecisionSheet } from '@/src/domains/setup/components/HouseholdDecisionSheet';
 import { SetupScreenShell } from '@/src/domains/setup/components/SetupScreenShell';
 import {
   getNextSetupStep,
@@ -64,10 +73,12 @@ import {
   SETUP_ROLES,
   SETUP_STEPS,
 } from '@/src/domains/setup/types';
+import { useCreateInvite } from '@/src/hooks/mutations/useCreateInvite';
 import { useRedeemInvite } from '@/src/hooks/mutations/useRedeemInvite';
 import { useUpdateName } from '@/src/hooks/mutations/useUpdateName';
 import { useUpsertProfile } from '@/src/hooks/mutations/useUpsertProfile';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
+import { useHouseholdMembers } from '@/src/hooks/queries/useHouseholdMembers';
 import { useHouseholds } from '@/src/hooks/queries/useHouseholds';
 import { useInvitePreview } from '@/src/hooks/queries/useInvitePreview';
 import { useUserProfile } from '@/src/hooks/queries/useUserProfile';
@@ -76,6 +87,7 @@ import {
   deriveBootstrapName,
 } from '@/src/lib/bootstrapUserProfile';
 import { getDeviceRegion } from '@/src/lib/deviceLocale';
+import { getLocalizedErrorMessage } from '@/src/lib/errorLocalization';
 import { useAuthStore } from '@/src/store/auth';
 import { usePendingDeepLinkStore } from '@/src/store/pendingDeepLinkStore';
 import { useSetupProgressStore } from '@/src/store/setupProgress';
@@ -144,6 +156,8 @@ export function CodeEntryScreen({
   const [submittedCode, setSubmittedCode] = useState<string | null>(null);
   const [nameDraft, setNameDraft] = useState<string | null>(null);
   const [nameError, setNameError] = useState(false);
+  const [phoneDraft, setPhoneDraft] = useState<string | null>(null);
+  const [phoneError, setPhoneError] = useState(false);
   const [isAbsorptionSheetOpen, setAbsorptionSheetOpen] = useState(false);
   const [hasRedeemed, setHasRedeemed] = useState(false);
   const [postRedeemError, setPostRedeemError] = useState<string | null>(null);
@@ -176,7 +190,13 @@ export function CodeEntryScreen({
   const households = useHouseholds();
   const isJoining =
     redeemInvite.isPending || upsertProfile.isPending || updateName.isPending;
-  const lockInvitePreview = hasRedeemed || isJoining;
+  // `redeemInvite.isSuccess` closes the gap between the mutation settling
+  // and `setHasRedeemed(true)` (a few lines into `runJoin`'s success branch)
+  // actually committing — belt-and-suspenders alongside
+  // `useRedeemInvite`'s own predicate-scoped invalidation, which is what
+  // actually keeps a post-redeem refetch from hitting the now-consumed code
+  // (`CodeEntryScreen.redeemStability.test.tsx`).
+  const lockInvitePreview = hasRedeemed || isJoining || redeemInvite.isSuccess;
   const preview = useInvitePreview(submittedCode ?? '', {
     enabled: !lockInvitePreview,
   });
@@ -187,6 +207,7 @@ export function CodeEntryScreen({
     nameDraft ??
     profile.data?.name ??
     (authUser ? deriveBootstrapName(authUser) : '');
+  const phone = phoneDraft ?? profile.data?.phone ?? '';
 
   const onCheckCode = () => {
     if (!code.trim()) return;
@@ -230,8 +251,64 @@ export function CodeEntryScreen({
     invitePreview?.household_state === HOUSEHOLD_STATES.DRAFT &&
     liveHouseholds.length > 0;
 
-  /** The actual redemption. `targetHouseholdId` is set only by the sheet. */
-  const runJoin = (targetHouseholdId?: string) => {
+  /**
+   * §8c (direction workstream 8 / plan §S6) — the OTHER shape of "he already
+   * has a household": redeeming a SECOND parent-role invite to a LIVE
+   * household, rather than absorbing a nanny's draft. Offer the escape hatch
+   * BEFORE either outcome, every time — never during first onboarding (no
+   * existing household), never for a nanny/helper invite (those never
+   * collide with "one household per parent").
+   */
+  const existingLiveHousehold = liveHouseholds[0] ?? null;
+  const needsHouseholdDecision =
+    invitePreview?.household_state === HOUSEHOLD_STATES.LIVE &&
+    invitePreview.role === HOUSEHOLD_INVITE_ROLES.PARENT &&
+    !!existingLiveHousehold;
+  const [isDecisionSheetOpen, setDecisionSheetOpen] = useState(false);
+  const [decisionError, setDecisionError] = useState<string | null>(null);
+  const existingMembers = useHouseholdMembers(existingLiveHousehold?.id);
+  const attachedNanny = (existingMembers.data ?? []).find(
+    member =>
+      member.role === HOUSEHOLD_ROLES.NANNY &&
+      member.status === HOUSEHOLD_MEMBER_STATUSES.ACTIVE
+  );
+  const nannyName = attachedNanny
+    ? resolveCarerName(attachedNanny, tHousehold('invite.absorb.carerFallback'))
+    : null;
+  const createExistingInvite = useCreateInvite(existingLiveHousehold?.id ?? '');
+  const { t: tErrors } = useTranslation('errors');
+
+  /**
+   * The escape hatch: mint a parent invite for the household she already
+   * owns instead of the one on the code, share it, then land on the
+   * waiting-for-them state — the same screen a first invite lands on.
+   */
+  const onInviteInstead = () => {
+    if (!existingLiveHousehold) return;
+    void (async () => {
+      try {
+        setDecisionError(null);
+        const invite = await createExistingInvite.mutateAsync({
+          role: HOUSEHOLD_INVITE_ROLES.PARENT,
+        });
+        await Share.share({
+          message: tHousehold('decision.shareMessage', {
+            code: invite.code,
+            nannyName: nannyName ?? tHousehold('invite.absorb.carerFallback'),
+          }),
+        });
+        setDecisionSheetOpen(false);
+        router.replace('/settings/invite' as Href);
+      } catch (error) {
+        setDecisionError(getLocalizedErrorMessage(error, tErrors));
+      }
+    })();
+  };
+
+  /** The actual redemption. `targetHouseholdId` is set only by the
+   * absorption sheet; `archiveHouseholdId` only by the decision sheet's
+   * "join & close". */
+  const runJoin = (targetHouseholdId?: string, archiveHouseholdId?: string) => {
     if (!submittedCode) return;
     const trimmedName = name.trim();
 
@@ -244,22 +321,33 @@ export function CodeEntryScreen({
         // the `else if (authUser)` arm would upsert the BOOTSTRAP PLACEHOLDER
         // city/country over this user's real profile.
         if (!onJoined) {
+          const trimmedPhone = phone.trim();
           if (profile.data?.user_id) {
             // PATCH, not upsert: an existing row already has real city/country
             // that the bootstrap payload's placeholders would overwrite.
             if (trimmedName !== profile.data.name) {
               await updateName.mutateAsync({ name: trimmedName });
             }
+            if (trimmedPhone) {
+              await upsertProfile.mutateAsync({
+                name: trimmedName,
+                city: profile.data.city?.trim() || '—',
+                country: profile.data.country?.trim() || '—',
+                phone: trimmedPhone,
+              });
+            }
           } else if (authUser) {
             await upsertProfile.mutateAsync({
               ...buildBootstrapProfileRequest(authUser),
               name: trimmedName,
+              ...(trimmedPhone ? { phone: trimmedPhone } : {}),
             });
           }
         }
         const membership = await redeemInvite.mutateAsync({
           code: submittedCode,
           ...(targetHouseholdId ? { targetHouseholdId } : {}),
+          ...(archiveHouseholdId ? { archiveHouseholdId } : {}),
           // D-8: a US-region device gets a Sunday-start pay week. Only the
           // server's INSTANTIATE branch reads it (096) — the case where a
           // parent with no household redeems a nanny's draft code and the
@@ -322,14 +410,37 @@ export function CodeEntryScreen({
     })();
   };
 
+  /** The destructive fallback: redeem the code AND archive the household
+   * she already owns, atomically, server-side. */
+  const onJoinAndClose = () => {
+    if (!existingLiveHousehold) return;
+    setDecisionError(null);
+    runJoin(undefined, existingLiveHousehold.id);
+  };
+
   const onJoin = () => {
     if (!submittedCode) return;
     if (!onJoined && !name.trim()) {
       setNameError(true);
       return;
     }
+    if (!onJoined) {
+      const trimmedPhone = phone.trim();
+      if (trimmedPhone) {
+        const parsedPhone = PhoneNumberSchema.safeParse(trimmedPhone);
+        if (!parsedPhone.success) {
+          setPhoneError(true);
+          return;
+        }
+      }
+    }
     if (needsAbsorptionConfirm) {
       setAbsorptionSheetOpen(true);
+      return;
+    }
+    if (needsHouseholdDecision) {
+      setDecisionError(null);
+      setDecisionSheetOpen(true);
       return;
     }
     runJoin();
@@ -396,6 +507,34 @@ export function CodeEntryScreen({
           {nameError ? (
             <FieldError testID="name-error">
               {t('onboarding.code.nameRequired')}
+            </FieldError>
+          ) : null}
+        </View>
+      )}
+
+      {onJoined ? null : (
+        <View className="gap-2">
+          <FieldLabel>{tHousehold('setup.phoneLabel')}</FieldLabel>
+          <Input
+            testID="phone-input"
+            accessibilityLabel={tHousehold('setup.phoneLabel')}
+            value={phone}
+            onChangeText={text => {
+              setPhoneDraft(text);
+              if (phoneError) setPhoneError(false);
+            }}
+            placeholder={tHousehold('setup.phonePlaceholder')}
+            keyboardType="phone-pad"
+            textContentType="telephoneNumber"
+            autoComplete="tel"
+            error={phoneError}
+          />
+          <Small testID="phone-hint" className="text-muted-foreground">
+            {tHousehold('setup.phoneHintNanny')}
+          </Small>
+          {phoneError ? (
+            <FieldError testID="phone-error">
+              {tHousehold('setup.phoneInvalid')}
             </FieldError>
           ) : null}
         </View>
@@ -485,6 +624,22 @@ export function CodeEntryScreen({
           // time `runJoin` read it, and absorbing into the wrong family is
           // not a mistake a re-render can take back.
           runJoin(householdId);
+        }}
+      />
+      <HouseholdDecisionSheet
+        visible={isDecisionSheetOpen}
+        existingName={
+          existingLiveHousehold?.name ?? tHousehold('untitledDraft')
+        }
+        otherName={invitePreview?.household_name ?? ''}
+        nannyName={nannyName}
+        isBusy={createExistingInvite.isPending || isJoining}
+        errorMessage={decisionError}
+        onInviteInstead={onInviteInstead}
+        onJoinAndClose={onJoinAndClose}
+        onCancel={() => {
+          setDecisionSheetOpen(false);
+          setDecisionError(null);
         }}
       />
     </SetupScreenShell>

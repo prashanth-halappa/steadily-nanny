@@ -47,4 +47,5 @@ export * from './services/paymentQueryService';
 export * from './services/ptoCommandService';
 export * from './services/ptoQueryService';
 export * from './services/reimbursementSettlementService';
+export * from './services/termsGateService';
 export * from './services/weekEarningsService';

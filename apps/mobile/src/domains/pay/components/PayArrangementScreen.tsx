@@ -292,8 +292,10 @@ function CarerPayDetail({
           className="gap-2 rounded-row bg-card px-4 py-3"
           style={elevation.row}
         >
-          <Body weight="medium">
-            {t('proposal.openRowTitle', { name: carerName })}
+          <Body testID="pay-open-proposal-title" weight="medium">
+            {openProposal.direction === 'parent'
+              ? t('proposal.openRowTitleSent', { name: carerName })
+              : t('proposal.openRowTitleReceived', { name: carerName })}
           </Body>
           <StatusPill
             testID="pay-open-proposal-pill"

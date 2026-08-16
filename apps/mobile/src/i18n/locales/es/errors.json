@@ -14,6 +14,7 @@
   "noPayArrangementMileage": "El kilometraje necesita una tarifa de pago — pide a los padres que configuren el pago primero.",
   "notHouseholdOwner": "Solo el dueño del hogar puede hacer esto — tu hogar está configurado para cambios solo del dueño.",
   "alreadyClockedIn": "Ya has fichado la entrada en otro turno. Ficha la salida primero.",
+  "termsNotAgreed": "Podrás fichar cuando se acuerden las condiciones.",
   "cancelViaDelete": "Cancela el tiempo libre utilizando la opción de eliminar en su lugar.",
   "entryNotEditable": "Este registro ya no se puede cambiar — la semana ya fue aprobada. Pide a tu familia que la consulte.",
   "entryVoided": "Este registro fue anulado y ya no cuenta para tus horas.",
@@ -23,6 +24,8 @@
   "timeEntryOverlaps": "Esa salida se solapa con otro registro del {{day}} ({{range}}). Todavía tienes la entrada abierta — abre Horas, acorta ese registro y vuelve a fichar la salida.",
   "timeEntryOverlapsRunning": "Eso choca con un turno del {{day}} en el que todavía tienes la entrada abierta. Ficha la salida de ese primero y luego añade estas horas.",
   "memberHasRunningEntry": "Esta persona tiene la entrada fichada en un turno. Pídele que fiche la salida primero e inténtalo de nuevo.",
+  "parentAlreadyHasHousehold": "Ya tienes un hogar configurado — invítalos a unirse a él en su lugar.",
+  "householdHasCarer": "Ya hay una niñera trabajando en ese hogar, así que no se puede cerrar ahora mismo. Elimínala primero si aún quieres hacerlo.",
   "tryAgain": "Inténtalo de nuevo",
   "goBack": "Volver",
   "states": {

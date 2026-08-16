@@ -15,6 +15,22 @@ export interface UserProfile {
   country: string | null;
   preferred_locale?: string | null;
   /**
+   * `user_profiles.phone` (099) — this person's own mobile number, as they
+   * typed it. Free text, never normalised to E.164; validated loosely at the
+   * wire edge by `PhoneNumberSchema`
+   * (`packages/shared-types/src/schemas/contact.schema.ts`), which is the
+   * only gate the column has.
+   *
+   * NOT READABLE BY CO-MEMBERS THROUGH RLS — 002's owner-only policies on
+   * `user_profiles` are untouched by 099. A co-member sees it only as the
+   * joined `HouseholdMember.profile_phone` on the household members read, and
+   * only when both parties are ACTIVE members of that household.
+   *
+   * OPTIONAL here for the same reason as `timezone` below — existing
+   * construction sites predate it.
+   */
+  phone?: string | null;
+  /**
    * The user's own IANA time zone (e.g. `Europe/London`), "seeded from the
    * device" at signup — display only, never a source of truth for a stored
    * instant. Null until set. Validated server-side against the real IANA

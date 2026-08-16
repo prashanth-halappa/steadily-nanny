@@ -56,6 +56,7 @@ mock.module('@/src/domains/household', () => ({
 mock.module('@/src/domains/draft', () => ({
   JoinedHouseholdCard: () => null,
   SendMyTermsCard: () => null,
+  DraftHomeScreen: () => null,
 }));
 mock.module('@/src/domains/schedule', () => ({
   PendingScheduleCard: () => null,
@@ -64,6 +65,7 @@ mock.module('@/src/domains/schedule', () => ({
 mock.module('@/src/domains/inbox', () => ({
   NeedsAttentionCard: () => null,
   TermsProposalCard: () => null,
+  PendingOfferCard: () => null,
   useInboxItems: () => ({ items: [], isLoading: false }),
 }));
 mock.module('@/src/domains/today/hooks/useUncoveredToday', () => ({
@@ -72,17 +74,41 @@ mock.module('@/src/domains/today/hooks/useUncoveredToday', () => ({
 mock.module('@/src/domains/today/components/ClockInCard', () => ({
   ClockInCard: () => null,
 }));
-mock.module('@/src/domains/today/components/AddMissedHoursCard', () => ({
-  AddMissedHoursCard: () => null,
-}));
 mock.module('@/src/domains/today/components/TodayCoverage', () => ({
   TodayCoverage: () => null,
 }));
-mock.module('@/src/domains/today/components/NannyWeekLine', () => ({
-  NannyWeekLine: () => null,
+mock.module('@/src/domains/today/components/ThisWeekCard', () => ({
+  ThisWeekCard: () => null,
 }));
 mock.module('@/src/domains/today/components/HandoffChipsCard', () => ({
   HandoffChipsCard: () => null,
+}));
+// P5/S10 — self-contained, unscoped; real hooks need a QueryClient this file
+// deliberately does not build.
+mock.module('@/src/domains/today/components/CrossFamilyStrip', () => ({
+  CrossFamilyStrip: () => null,
+}));
+mock.module(
+  '@/src/domains/today/components/EmergencyContactPromptCard',
+  () => ({
+    EmergencyContactPromptCard: () => null,
+  })
+);
+mock.module('@/src/domains/inbox/hooks/usePendingOffer', () => ({
+  // A7's offer, absent — this file is about the live wash, and the real hook
+  // needs a QueryClient this file deliberately does not build.
+  usePendingOffer: () => ({
+    offer: null,
+    state: null,
+    scheduledMinutesToday: 0,
+    isBlocking: false,
+    timeZone: 'UTC',
+  }),
+}));
+mock.module('@/src/domains/today/hooks/useTermsGate', () => ({
+  // A1's gate, open — this file is about a different arbitration, and the
+  // real hook needs a QueryClient this file deliberately does not build.
+  useTermsGate: () => ({ status: 'open', proposal: null, familyName: '' }),
 }));
 mock.module('@/src/domains/today/hooks/useOverdueClockOut', () => ({
   useOverdueClockOut: () => ({

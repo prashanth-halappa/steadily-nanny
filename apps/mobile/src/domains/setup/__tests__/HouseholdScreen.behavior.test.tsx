@@ -41,8 +41,19 @@ const upsertProfileMock = mock(
     Promise.resolve({ user_id: 'user-1', name: 'Ana' })
 );
 
+const listMembersMock = mock((): Promise<unknown[]> => Promise.resolve([]));
+const updateHouseholdMock = mock(
+  (_householdId: string, _input: { name?: string }) =>
+    Promise.resolve({ id: 'household-9', name: 'The Ahmeds' })
+);
+
 mock.module('@/src/api/endpoints/household', () => ({
-  householdApi: { list: listHouseholdsMock, create: createHouseholdMock },
+  householdApi: {
+    list: listHouseholdsMock,
+    create: createHouseholdMock,
+    listMembers: listMembersMock,
+    update: updateHouseholdMock,
+  },
 }));
 mock.module('@/src/api/endpoints/user', () => ({
   userApi: { getProfile: getProfileMock, upsertProfile: upsertProfileMock },
@@ -62,6 +73,12 @@ beforeEach(() => {
   createHouseholdMock.mockClear();
   getProfileMock.mockClear();
   upsertProfileMock.mockClear();
+  listMembersMock.mockClear();
+  updateHouseholdMock.mockClear();
+  listMembersMock.mockImplementation(() => Promise.resolve([]));
+  updateHouseholdMock.mockImplementation(() =>
+    Promise.resolve({ id: 'household-9', name: 'The Ahmeds (renamed)' })
+  );
   listHouseholdsMock.mockImplementation(() => Promise.resolve([]));
   getProfileMock.mockImplementation(() =>
     Promise.resolve({ user_id: 'user-1', name: 'Ana' })
@@ -115,6 +132,7 @@ describe('HouseholdScreen — a screen of its own for the two names', () => {
       screen.getByTestId('household-name-input'),
       'The Ruiz Family'
     );
+    fireEvent.changeText(screen.getByTestId('phone-input'), '07700 900123');
     fireEvent.press(screen.getByTestId('household-screen-cta'));
 
     await waitFor(() => expect(createHouseholdMock).toHaveBeenCalledTimes(1));
@@ -135,6 +153,7 @@ describe('HouseholdScreen — a screen of its own for the two names', () => {
     );
 
     fireEvent.changeText(screen.getByTestId('parent-name-input'), 'Maria Ruiz');
+    fireEvent.changeText(screen.getByTestId('phone-input'), '07700 900123');
     fireEvent.changeText(screen.getByTestId('household-name-input'), 'Ruiz');
     fireEvent.press(screen.getByTestId('household-screen-cta'));
 
@@ -157,6 +176,7 @@ describe('HouseholdScreen — a screen of its own for the two names', () => {
     expect(mockPush).not.toHaveBeenCalled();
 
     fireEvent.changeText(screen.getByTestId('household-name-input'), 'Ruiz');
+    fireEvent.changeText(screen.getByTestId('phone-input'), '07700 900123');
     fireEvent.press(screen.getByTestId('household-screen-cta'));
     await waitFor(() => expect(createHouseholdMock).toHaveBeenCalledTimes(1));
   });
@@ -173,6 +193,7 @@ describe('HouseholdScreen — a screen of its own for the two names', () => {
       )
     );
 
+    fireEvent.changeText(screen.getByTestId('phone-input'), '07700 900123');
     fireEvent.press(screen.getByTestId('household-screen-cta'));
 
     await waitFor(() =>
@@ -189,5 +210,191 @@ describe('HouseholdScreen — a screen of its own for the two names', () => {
     );
     fireEvent.press(screen.getByTestId('household-screen-back'));
     expect(mockReplace).toHaveBeenCalledWith('/onboarding/start');
+  });
+});
+
+// §8a (direction workstream 8 / plan §S6) — a parent who already owns a
+// LIVE household must RENAME it here, never mint a second one. CTA reads
+// "Save", not "Continue"/"Create"; the hint names the nanny who sees it.
+describe('HouseholdScreen — rename mode for an existing LIVE household (§8a)', () => {
+  it('shows "Save" as the CTA and prefills the current name', async () => {
+    listHouseholdsMock.mockImplementation(() =>
+      Promise.resolve([
+        { id: 'household-9', name: 'The Ahmeds', state: 'live' },
+      ])
+    );
+    const screen = renderWithProviders(<HouseholdScreen />);
+
+    await waitFor(() =>
+      expect(screen.getByTestId('household-name-input').props.value).toBe(
+        'The Ahmeds'
+      )
+    );
+    expect(screen.getByText('setup.saveButton')).toBeTruthy();
+  });
+
+  it('shows the hint naming the first active nanny on the household', async () => {
+    listHouseholdsMock.mockImplementation(() =>
+      Promise.resolve([
+        { id: 'household-9', name: 'The Ahmeds', state: 'live' },
+      ])
+    );
+    listMembersMock.mockImplementation(() =>
+      Promise.resolve([
+        {
+          id: 'member-1',
+          household_id: 'household-9',
+          role: 'nanny',
+          status: 'active',
+          profile_name: 'Marisol',
+        },
+      ])
+    );
+    const screen = renderWithProviders(<HouseholdScreen />);
+
+    await waitFor(() =>
+      expect(screen.getByTestId('household-name-hint')).toBeTruthy()
+    );
+  });
+
+  it('omits the hint entirely when there is no active nanny yet', async () => {
+    listHouseholdsMock.mockImplementation(() =>
+      Promise.resolve([
+        { id: 'household-9', name: 'The Ahmeds', state: 'live' },
+      ])
+    );
+    listMembersMock.mockImplementation(() => Promise.resolve([]));
+    const screen = renderWithProviders(<HouseholdScreen />);
+
+    await waitFor(() =>
+      expect(screen.getByTestId('household-name-input')).toBeTruthy()
+    );
+    expect(screen.queryByTestId('household-name-hint')).toBeNull();
+  });
+
+  it('PATCHes only the name when it changed, then advances — never creates', async () => {
+    listHouseholdsMock.mockImplementation(() =>
+      Promise.resolve([
+        { id: 'household-9', name: 'The Ahmeds', state: 'live' },
+      ])
+    );
+    const screen = renderWithProviders(<HouseholdScreen />);
+
+    await waitFor(() =>
+      expect(screen.getByTestId('household-name-input').props.value).toBe(
+        'The Ahmeds'
+      )
+    );
+    fireEvent.changeText(
+      screen.getByTestId('household-name-input'),
+      'The Ahmed Family'
+    );
+    fireEvent.changeText(screen.getByTestId('phone-input'), '07700 900123');
+    fireEvent.press(screen.getByTestId('household-screen-cta'));
+
+    await waitFor(() => expect(updateHouseholdMock).toHaveBeenCalledTimes(1));
+    expect(updateHouseholdMock).toHaveBeenCalledWith('household-9', {
+      name: 'The Ahmed Family',
+    });
+    expect(createHouseholdMock).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(useSetupProgressStore.getState().householdId).toBe('household-9')
+    );
+    expect(mockPush).toHaveBeenCalledWith('/onboarding/children');
+  });
+
+  it('does not PATCH when the name is unchanged', async () => {
+    listHouseholdsMock.mockImplementation(() =>
+      Promise.resolve([
+        { id: 'household-9', name: 'The Ahmeds', state: 'live' },
+      ])
+    );
+    const screen = renderWithProviders(<HouseholdScreen />);
+
+    await waitFor(() =>
+      expect(screen.getByTestId('household-name-input').props.value).toBe(
+        'The Ahmeds'
+      )
+    );
+    fireEvent.changeText(screen.getByTestId('phone-input'), '07700 900123');
+    fireEvent.press(screen.getByTestId('household-screen-cta'));
+
+    await waitFor(() =>
+      expect(useSetupProgressStore.getState().householdId).toBe('household-9')
+    );
+    expect(updateHouseholdMock).not.toHaveBeenCalled();
+    expect(createHouseholdMock).not.toHaveBeenCalled();
+  });
+});
+
+// The nanny holding a child with a split lip has no number to call. This is
+// the one moment the parent is already naming who is in the household, so
+// the number lives here — a field, not a wizard step. Required: a parent
+// without a number defeats the purpose. Inline error, never a toast.
+describe('HouseholdScreen — parent mobile number', () => {
+  it('renders the field with the parent label and hint', async () => {
+    const screen = renderWithProviders(<HouseholdScreen />);
+    await waitFor(() => expect(screen.getByTestId('phone-input')).toBeTruthy());
+
+    expect(screen.getByText('setup.phoneLabel')).toBeTruthy();
+    expect(screen.getByText('setup.phoneHint')).toBeTruthy();
+    expect(screen.queryByText('setup.phoneHintNanny')).toBeNull();
+
+    const input = screen.getByTestId('phone-input');
+    expect(input.props.keyboardType).toBe('phone-pad');
+    expect(input.props.textContentType).toBe('telephoneNumber');
+    expect(input.props.autoComplete).toBe('tel');
+  });
+
+  it('submits a valid number through the existing profile upsert', async () => {
+    getProfileMock.mockImplementation(() => Promise.resolve(undefined));
+    const screen = renderWithProviders(<HouseholdScreen />);
+    await waitFor(() =>
+      expect(screen.getByTestId('household-name-input')).toBeTruthy()
+    );
+
+    fireEvent.changeText(screen.getByTestId('parent-name-input'), 'Maria Ruiz');
+    fireEvent.changeText(screen.getByTestId('phone-input'), '07700 900123');
+    fireEvent.changeText(screen.getByTestId('household-name-input'), 'Ruiz');
+    fireEvent.press(screen.getByTestId('household-screen-cta'));
+
+    await waitFor(() => expect(upsertProfileMock).toHaveBeenCalledTimes(1));
+    expect(upsertProfileMock.mock.calls[0]?.[0]).toMatchObject({
+      name: 'Maria Ruiz',
+      phone: '07700 900123',
+    });
+  });
+
+  it('cannot continue with an empty number — shows an inline error, never creates', async () => {
+    const screen = renderWithProviders(<HouseholdScreen />);
+    await waitFor(() =>
+      expect(screen.getByTestId('household-name-input')).toBeTruthy()
+    );
+
+    fireEvent.changeText(screen.getByTestId('household-name-input'), 'Ruiz');
+    fireEvent.press(screen.getByTestId('household-screen-cta'));
+
+    await waitFor(() => expect(screen.getByTestId('phone-error')).toBeTruthy());
+    expect(screen.getByText('setup.phoneRequired')).toBeTruthy();
+    expect(createHouseholdMock).not.toHaveBeenCalled();
+    expect(upsertProfileMock).not.toHaveBeenCalled();
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  it('cannot continue with an invalid number — shows an inline error, never creates', async () => {
+    const screen = renderWithProviders(<HouseholdScreen />);
+    await waitFor(() =>
+      expect(screen.getByTestId('household-name-input')).toBeTruthy()
+    );
+
+    fireEvent.changeText(screen.getByTestId('household-name-input'), 'Ruiz');
+    fireEvent.changeText(screen.getByTestId('phone-input'), 'ask Amara');
+    fireEvent.press(screen.getByTestId('household-screen-cta'));
+
+    await waitFor(() => expect(screen.getByTestId('phone-error')).toBeTruthy());
+    expect(screen.getByText('setup.phoneInvalid')).toBeTruthy();
+    expect(createHouseholdMock).not.toHaveBeenCalled();
+    expect(upsertProfileMock).not.toHaveBeenCalled();
+    expect(mockPush).not.toHaveBeenCalled();
   });
 });

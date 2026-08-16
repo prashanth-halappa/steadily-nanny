@@ -87,4 +87,66 @@ describe('resolveAttentionOwner', () => {
       })
     ).toBe('inbox');
   });
+
+  // A5/A1 — the rung the clock-in hard block adds, at the TOP. Both
+  // neighbours asserted here so the ordering cannot drift either way.
+  it('a terms block wins over an overdue clock-out — the block stops the record existing at all', () => {
+    expect(
+      resolveAttentionOwner({
+        termsBlocked: true,
+        overdue: true,
+        hasUncoveredCare: true,
+        hasTermsProposal: true,
+        hasInboxItems: true,
+      })
+    ).toBe('termsBlocked');
+  });
+
+  it('treats an omitted termsBlocked flag as not blocked', () => {
+    expect(
+      resolveAttentionOwner({
+        overdue: true,
+        hasUncoveredCare: false,
+        hasInboxItems: false,
+      })
+    ).toBe('overdue');
+  });
+
+  // A7 — the parent's half of the same block. It DISPLACES `overdue`: an
+  // overdue clock-out is one record to correct after the fact, while an
+  // unanswered offer with a nanny standing in the hall stops every record
+  // from existing. Both neighbours asserted so the ordering cannot drift.
+  it('a blocking sent offer wins over an overdue clock-out', () => {
+    expect(
+      resolveAttentionOwner({
+        hasBlockingSentOffer: true,
+        overdue: true,
+        hasUncoveredCare: true,
+        hasTermsProposal: true,
+        hasInboxItems: true,
+      })
+    ).toBe('sentOfferBlocking');
+  });
+
+  it('her own terms block still outranks his sent offer', () => {
+    expect(
+      resolveAttentionOwner({
+        termsBlocked: true,
+        hasBlockingSentOffer: true,
+        overdue: false,
+        hasUncoveredCare: false,
+        hasInboxItems: false,
+      })
+    ).toBe('termsBlocked');
+  });
+
+  it('treats an omitted sent-offer flag as no sent offer', () => {
+    expect(
+      resolveAttentionOwner({
+        overdue: false,
+        hasUncoveredCare: true,
+        hasInboxItems: false,
+      })
+    ).toBe('uncoveredCare');
+  });
 });

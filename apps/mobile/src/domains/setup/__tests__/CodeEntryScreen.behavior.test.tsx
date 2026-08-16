@@ -76,7 +76,7 @@ const redeemInviteMock = mock(
   }
 );
 const getProfileMock = mock(() => Promise.resolve(null as unknown));
-const upsertProfileMock = mock((req: { name: string }) => {
+const upsertProfileMock = mock((req: { name: string; phone?: string }) => {
   callOrder.push('upsertProfile');
   return Promise.resolve({ user_id: 'user-1', name: req.name });
 });
@@ -227,6 +227,70 @@ describe('CodeEntryScreen — nanny name (GAP 1)', () => {
     await waitFor(() =>
       expect(screen.getByTestId('name-input').props.value).toBe('ana')
     );
+  });
+});
+
+// Same thought as the name field: she is already saying who she is, and the
+// family needs a number for the 07:40 "the bus isn't moving" call. Optional
+// — she can skip and add it later. Invalid junk is still blocked inline.
+describe('CodeEntryScreen — nanny mobile number', () => {
+  it('renders the field with the nanny label and hint', async () => {
+    const screen = renderWithProviders(<CodeEntryScreen />);
+    await waitFor(() => expect(screen.getByTestId('phone-input')).toBeTruthy());
+
+    expect(screen.getByText('setup.phoneLabel')).toBeTruthy();
+    expect(screen.getByText('setup.phoneHintNanny')).toBeTruthy();
+    expect(screen.queryByText('setup.phoneHint')).toBeNull();
+
+    const input = screen.getByTestId('phone-input');
+    expect(input.props.keyboardType).toBe('phone-pad');
+    expect(input.props.textContentType).toBe('telephoneNumber');
+    expect(input.props.autoComplete).toBe('tel');
+  });
+
+  it('submits a valid number through the existing profile upsert', async () => {
+    const screen = renderWithProviders(<CodeEntryScreen />);
+
+    await enterCode(screen);
+    fireEvent.changeText(screen.getByTestId('name-input'), 'Ana Ruiz');
+    fireEvent.changeText(screen.getByTestId('phone-input'), '07700 900123');
+    fireEvent.press(screen.getByTestId('code-screen-cta'));
+
+    await waitFor(() => expect(redeemInviteMock).toHaveBeenCalledTimes(1));
+    expect(callOrder).toEqual(['upsertProfile', 'redeemInvite']);
+    expect(upsertProfileMock.mock.calls[0]?.[0]).toMatchObject({
+      name: 'Ana Ruiz',
+      phone: '07700 900123',
+    });
+  });
+
+  it('can continue without a number — the field is optional for the nanny', async () => {
+    const screen = renderWithProviders(<CodeEntryScreen />);
+
+    await enterCode(screen);
+    fireEvent.changeText(screen.getByTestId('name-input'), 'Ana Ruiz');
+    fireEvent.press(screen.getByTestId('code-screen-cta'));
+
+    await waitFor(() => expect(redeemInviteMock).toHaveBeenCalledTimes(1));
+    expect(screen.queryByTestId('phone-error')).toBeNull();
+    expect(upsertProfileMock.mock.calls[0]?.[0]).toMatchObject({
+      name: 'Ana Ruiz',
+    });
+    expect(upsertProfileMock.mock.calls[0]?.[0].phone).toBeUndefined();
+  });
+
+  it('blocks an invalid number with an inline error and does not redeem', async () => {
+    const screen = renderWithProviders(<CodeEntryScreen />);
+
+    await enterCode(screen);
+    fireEvent.changeText(screen.getByTestId('name-input'), 'Ana Ruiz');
+    fireEvent.changeText(screen.getByTestId('phone-input'), 'ask Amara');
+    fireEvent.press(screen.getByTestId('code-screen-cta'));
+
+    await waitFor(() => expect(screen.getByTestId('phone-error')).toBeTruthy());
+    expect(screen.getByText('setup.phoneInvalid')).toBeTruthy();
+    expect(redeemInviteMock).not.toHaveBeenCalled();
+    expect(upsertProfileMock).not.toHaveBeenCalled();
   });
 });
 

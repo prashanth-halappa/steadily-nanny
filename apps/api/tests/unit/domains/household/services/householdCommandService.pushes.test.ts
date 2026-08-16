@@ -64,6 +64,9 @@ function makeMemberRepo(overrides: Record<string, unknown> = {}) {
     })),
     findActiveMembership: mock(async () => null),
     findMembershipIncludingCandidate: mock(async () => null),
+    // §8's one-live-household guard and A6's draft auto-archive both read
+    // this. Empty: these fixtures are about pushes.
+    listActiveByUser: mock(async () => []),
     reactivateMembership: mock(async (id: string, role: string) => ({
       id,
       role,
@@ -117,6 +120,8 @@ function makeHouseholdRepo() {
       timezone: 'Europe/London',
       state: 'live',
     })),
+    findByIds: mock(async () => []),
+    listLiveIds: mock(async () => []),
   };
 }
 

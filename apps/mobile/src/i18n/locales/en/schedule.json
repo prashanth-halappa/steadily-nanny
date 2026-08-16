@@ -1,7 +1,9 @@
 {
   "tab": {
     "emptyTitle": "No household yet",
-    "emptyDescription": "Once you're added to a household, its schedule will show up here."
+    "emptyDescription": "Once you're added to a household, its schedule will show up here.",
+    "draftEmptyTitle": "No shifts yet",
+    "draftEmptyDescription": "You haven't started with a family."
   },
   "build": {
     "screenTitle": "Build your usual week",
@@ -125,6 +127,10 @@
   },
   "shifts": {
     "screenTitle": "Shifts",
+    "nannyHeading": "This week",
+    "nannySubtitle": "Your shifts with {{familyName}}.",
+    "parentHeading": "Schedule",
+    "parentSubtitle": "The weekly pattern and anything waiting on you.",
     "loading": "Loading…",
     "extraNotAvailableTitle": "Not available",
     "extraNotAvailableDescription": "Adding a one-off shift is managed by a parent on this household.",

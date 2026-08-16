@@ -339,6 +339,40 @@ describe('PayArrangementScreen', () => {
       await waitFor(() => expect(getByTestId('pay-current-rate')).toBeTruthy());
       expect(getByTestId('pay-open-proposal-row')).toBeTruthy();
     });
+
+    // Parent authored → "Terms you sent …"; carer authored → "Terms from …".
+    // react-i18next is key-echo-mocked, so the rendered title IS the key.
+    it('parent-authored open proposal: the row title is Terms you sent', async () => {
+      proposalRows = [
+        {
+          ...openProposalRow,
+          direction: 'parent',
+          proposed_by: PARENT_USER_ID,
+        },
+      ];
+
+      const { getByTestId } = renderWithProviders(<PayArrangementScreen />);
+
+      await waitFor(() =>
+        expect(getByTestId('pay-open-proposal-row')).toBeTruthy()
+      );
+      expect(getByTestId('pay-open-proposal-title').props.children).toBe(
+        'proposal.openRowTitleSent'
+      );
+    });
+
+    it('carer-authored open proposal: the row title is Terms from', async () => {
+      proposalRows = [openProposalRow];
+
+      const { getByTestId } = renderWithProviders(<PayArrangementScreen />);
+
+      await waitFor(() =>
+        expect(getByTestId('pay-open-proposal-row')).toBeTruthy()
+      );
+      expect(getByTestId('pay-open-proposal-title').props.children).toBe(
+        'proposal.openRowTitleReceived'
+      );
+    });
   });
 
   it('one active nanny WITH an arrangement: renders the rate, all six term rows, and the history row', async () => {

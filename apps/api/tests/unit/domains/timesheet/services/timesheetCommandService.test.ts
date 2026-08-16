@@ -1,4 +1,24 @@
 import { describe, expect, it, mock } from 'bun:test';
+
+/**
+ * The terms gate, stubbed to "agreed", registered BEFORE the service is
+ * imported below (same shape as `timesheetQueryService.test.ts`'s logger
+ * stub).
+ *
+ * This file constructs `TimesheetCommandService` 121 times POSITIONALLY and
+ * never reaches for `mock.module` otherwise, so the gate's default constructor
+ * argument — the real singleton, holding a real `PayArrangementRepository` on
+ * a real Supabase client — would run in every clock-in, retroactive-entry and
+ * correction case here. Stubbing the module keeps all 121 call sites on the
+ * nine/ten-arg constructor and makes this file the regression proof that
+ * NOTHING changes when terms are in force. The gate's own refusal behaviour is
+ * tested in `timesheetCommandService.termsGate.test.ts`.
+ */
+mock.module('../../../../../src/domains/pay/services/termsGateService', () => ({
+  termsGateService: { assertAgreed: mock(async () => undefined) },
+  TermsGateService: class {},
+}));
+
 import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types/schemas/notification.schema';
 import type { WeekEarnings } from '@steadily-nanny/shared-types/schemas/timesheet.schema';
 import { WeekEarningsService } from '../../../../../src/domains/pay/services/weekEarningsService';
@@ -2099,8 +2119,18 @@ describe('recordCancellationPaidEntry', () => {
     // assertClockOrder's CLOCK_OUT_IN_FUTURE bound must NOT apply here:
     // short-notice cancel accepts before the shift starts, so ends_at is
     // intentionally in the future. Only ends_at > starts_at is required.
-    const startsAt = new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString();
-    const endsAt = new Date(Date.now() + 14 * 60 * 60 * 1000).toISOString();
+    // Anchored to 08:00 UTC TOMORROW, not `now + 6h`. The shift is eight hours
+    // long, so a now-relative window crosses Europe/London midnight (the
+    // fixture's zone) whenever the suite runs late morning — and the service
+    // then correctly splits the entry into two day fragments, failing an
+    // assertion that expects one. 08:00 UTC + 8h never crosses local midnight
+    // at either UK offset, and tomorrow is always still in the future.
+    const anchor = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    anchor.setUTCHours(8, 0, 0, 0);
+    const startsAt = anchor.toISOString();
+    const endsAt = new Date(
+      anchor.getTime() + 8 * 60 * 60 * 1000
+    ).toISOString();
     const futureShift = {
       ...paidShift,
       starts_at: startsAt,

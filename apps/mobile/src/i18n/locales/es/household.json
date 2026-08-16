@@ -7,7 +7,15 @@
     "parentNamePlaceholder": "p. ej. Ana Ruiz",
     "householdNameLabel": "Nombre de la familia",
     "householdNamePlaceholder": "p. ej. La familia Ruiz",
-    "continueButton": "Continuar"
+    "phoneLabel": "Tu número de móvil",
+    "phoneHint": "Tu niñera lo verá. Así es como te localiza durante el día.",
+    "phoneHintNanny": "La familia lo verá. Así es como te localizan.",
+    "phonePlaceholder": "p. ej. 07700 900123",
+    "phoneRequired": "Introduce tu número de móvil.",
+    "phoneInvalid": "Eso no parece un número de teléfono.",
+    "continueButton": "Continuar",
+    "saveButton": "Guardar",
+    "householdNameHint": "Este es el nombre que ve {{nannyName}}."
   },
   "switcher": {
     "triggerLabel": "Cambiar de hogar",
@@ -90,6 +98,15 @@
       "confirmButton": "Añadir a {{name}}",
       "carerFallback": "esta niñera"
     }
+  },
+  "decision": {
+    "title": "Ya tienes configurado {{existingName}}",
+    "bodyCarer": "{{nannyName}} está en él, y su horario, sus horas y su historial de pagos están ahí. Unirte a otra familia cerraría este hogar.",
+    "bodyNoCarer": "Unirte a {{otherName}} cerraría {{existingName}}. No se elimina nada — simplemente ya no podrás añadir más cosas a él.",
+    "wallLine": "Para unirte a otra familia, primero tendrías que eliminar a {{nannyName}} de {{existingName}}. Sus horas quedan registradas de todos modos.",
+    "inviteInsteadButton": "Invítalos a {{existingName}} en su lugar",
+    "joinAndCloseButton": "Unirme a {{otherName}} y cerrar {{existingName}}",
+    "shareMessage": "Únete a nuestra familia en Steadily. Código: {{code}}. Así el horario, las horas y el historial de pagos de {{nannyName}} quedan en un solo lugar para los dos."
   },
   "availability": {
     "wizardTitle": "¿Cuándo estás disponible?",
@@ -200,5 +217,26 @@
       "readback": "{{daysSummary}}, {{start}}–{{end}} para {{childName}}.",
       "submit": "Añadir horas"
     }
+  },
+  "thisFamily": {
+    "navLabel": "Esta familia",
+    "addressEmpty": "Aún no se ha añadido una dirección",
+    "ifSomethingHappens": "Si pasa algo",
+    "callButton": "Llamar",
+    "callLabel": "Llamar a {{name}}",
+    "childrenTitle": "Los niños",
+    "childrenEmpty": "Aún no hay niños añadidos",
+    "termsRow": "Tus condiciones con esta familia",
+    "daysOffTitle": "Días libres y cierres",
+    "daysOffEmpty": "No hay días libres programados"
+  },
+  "carerProfile": {
+    "withYouSince": "Contigo desde {{date}}",
+    "callButton": "Llamar",
+    "messageButton": "Mensaje",
+    "payRow": "Pago y condiciones",
+    "availabilityRow": "Disponibilidad",
+    "timeOffRow": "Días libres",
+    "removeButton": "Eliminar de este hogar"
   }
 }

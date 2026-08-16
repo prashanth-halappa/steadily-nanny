@@ -157,7 +157,8 @@
     "noteLabel": "Nota (opcional)",
     "notePlaceholder": "¿Algo que anotar?",
     "submit": "Añadir horas",
-    "addedToast": "Horas añadidas"
+    "addedToast": "Horas añadidas",
+    "afterTermsHeadline": "¿Trabajaste antes de acordar las condiciones? Añade esas horas ahora: se pagarán a la tarifa que acabas de acordar."
   },
   "shiftDetail": {
     "declineCta": "Rechazar",
@@ -213,5 +214,45 @@
   "cancelledShift": {
     "paid": "Tu turno de {{start}} a {{end}} se canceló. Aun así se te pagará.",
     "unpaid": "Tu turno de {{start}} a {{end}} se canceló — son {{duration}} menos esta semana."
+  },
+  "thisWeek": {
+    "title": "Esta semana"
+  },
+  "clockInBlocked": {
+    "title": "Podrás fichar cuando se acuerden las condiciones",
+    "bodyFamilySent": "La familia {{familyName}} te envió sus condiciones el {{date}}. Acéptalas y podrás fichar de inmediato.",
+    "bodyYouSent": "Enviaste tus condiciones el {{date}}. La familia {{familyName}} aún no ha respondido.",
+    "bodyNothingSent": "Todavía nadie ha fijado tu tarifa. Envía tus condiciones a la familia {{familyName}} y podrás empezar a fichar.",
+    "ctaFamilySent": "Revisar estas condiciones",
+    "ctaYouSent": "Ver lo que enviaste",
+    "ctaNothingSent": "Enviar mis condiciones",
+    "footnote": "Las horas trabajadas antes de acordar las condiciones no se pueden fichar. Anótalas por tu cuenta: podrás añadirlas aquí en cuanto se acuerden.",
+    "sendFailed": "No se pudo enviar. Inténtalo de nuevo."
+  },
+  "emergencyContactPrompt": {
+    "title": "Un número más para {{name}}",
+    "body": "Si ella no puede localizarte y algo ha pasado, ¿a quién debería llamar? Una pareja, un abuelo, un vecino — cualquiera que pueda llegar rápido.",
+    "cta": "Añadir su número",
+    "notNow": "Ahora no",
+    "nameLabel": "Su nombre",
+    "phoneLabel": "Su número",
+    "relationshipLabel": "Cómo lo conoces (opcional)",
+    "saveButton": "Guardar",
+    "saveFailed": "No se pudo guardar. Inténtalo de nuevo."
+  },
+  "crossFamily": {
+    "line": {
+      "runningClock": "{{familyName}} · sigue fichada desde las {{time}}",
+      "termsBlock": "{{familyName}} · las condiciones bloquean el turno de hoy",
+      "pendingShift": "{{familyName}} · un turno necesita respuesta"
+    },
+    "moreSuffix": "· {{count}} más",
+    "switchCta": "Cambiar",
+    "sheetTitle": "Otras familias",
+    "sheetReason": {
+      "runningClock": "Sigue fichada desde las {{time}}",
+      "termsBlock": "Las condiciones bloquean el turno de hoy",
+      "pendingShift": "Un turno necesita respuesta"
+    }
   }
 }

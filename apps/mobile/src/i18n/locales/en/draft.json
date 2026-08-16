@@ -8,7 +8,8 @@
     "title": "Send these to a family",
     "body": "They'll get a link with your terms. Nothing is agreed until they accept.",
     "button": "Share my terms",
-    "offlineHint": "You'll need a connection to send this."
+    "offlineHint": "You'll need a connection to send this.",
+    "needsTermsHint": "Write your terms first, then you can send them."
   },
   "terms": {
     "title": "Your terms",
@@ -45,7 +46,7 @@
     "state": {
       "sent": "Sent",
       "opened": "Opened",
-      "viewed": "Viewed",
+      "viewed": "Opened, not answered",
       "joined": "Joined",
       "expired": "Expired",
       "revoked": "Revoked"
@@ -53,7 +54,7 @@
     "timeline": {
       "sent": "Sent {{date}}",
       "opened": "opened {{date}}",
-      "viewed": "viewed {{date}}",
+      "viewed": "opened {{date}}, not answered",
       "joined": "joined {{date}}"
     },
     "moreOptions": "More options for {{name}}"

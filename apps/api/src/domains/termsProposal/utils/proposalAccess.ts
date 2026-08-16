@@ -36,14 +36,9 @@
 import {
   HOUSEHOLD_MEMBER_STATUSES,
   HOUSEHOLD_ROLES,
+  PARENT_ROLES,
 } from '@steadily-nanny/shared-types/schemas/household.schema';
 import { TermsProposalNotFoundError } from '../errors/termsProposalErrors';
-
-/** Roles that speak for the family. Mirrors the pay domain's `PAY_WRITE_ROLES`. */
-const PARENT_ROLES: ReadonlySet<string> = new Set([
-  HOUSEHOLD_ROLES.OWNER,
-  HOUSEHOLD_ROLES.PARENT,
-]);
 
 /**
  * The statuses a CARER may hold and still touch her own proposal. A positive

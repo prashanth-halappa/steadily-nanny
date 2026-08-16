@@ -618,12 +618,13 @@ export function ManageHouseholdScreen() {
       <View className="gap-2" testID="household-members-section">
         <FieldLabel>{t('householdSettings.membersSectionTitle')}</FieldLabel>
         <View className="gap-2">
-          {activeMembers.map(member => (
-            <View
-              key={member.id}
-              testID={`household-member-row-${member.id}`}
-              className="flex-row items-center justify-between rounded-row border border-border bg-background px-4 py-3"
-            >
+          {activeMembers.map(member => {
+            // Only a carer has a profile screen to open (pay, availability,
+            // time off) — a co-parent's row stays inert here.
+            const isCarer =
+              member.role === HOUSEHOLD_ROLES.NANNY ||
+              member.role === HOUSEHOLD_ROLES.HELPER;
+            const nameBlock = (
               <View className="flex-1 gap-0.5">
                 <Body>
                   {resolveCarerName(member, t(`settings:role.${member.role}`))}
@@ -632,24 +633,48 @@ export function ManageHouseholdScreen() {
                   {t(`settings:role.${member.role}`)}
                 </Small>
               </View>
-              {canRemoveMember(member) ? (
-                <AnimatedPressable
-                  testID={`household-member-remove-${member.id}`}
-                  accessibilityLabel={t('householdSettings.removeMemberLabel', {
-                    name: resolveCarerName(
-                      member,
-                      t(`settings:role.${member.role}`)
-                    ),
-                  })}
-                  onPress={() => setMemberToRemove(member)}
-                >
-                  <Small className="text-destructive">
-                    {t('householdSettings.removeMemberButton')}
-                  </Small>
-                </AnimatedPressable>
-              ) : null}
-            </View>
-          ))}
+            );
+            return (
+              <View
+                key={member.id}
+                testID={`household-member-row-${member.id}`}
+                className="flex-row items-center justify-between rounded-row border border-border bg-background px-4 py-3"
+              >
+                {isCarer ? (
+                  <AnimatedPressable
+                    testID={`household-member-open-${member.id}`}
+                    className="flex-1"
+                    onPress={() =>
+                      router.push(`/settings/carer/${member.user_id}` as Href)
+                    }
+                  >
+                    {nameBlock}
+                  </AnimatedPressable>
+                ) : (
+                  nameBlock
+                )}
+                {canRemoveMember(member) ? (
+                  <AnimatedPressable
+                    testID={`household-member-remove-${member.id}`}
+                    accessibilityLabel={t(
+                      'householdSettings.removeMemberLabel',
+                      {
+                        name: resolveCarerName(
+                          member,
+                          t(`settings:role.${member.role}`)
+                        ),
+                      }
+                    )}
+                    onPress={() => setMemberToRemove(member)}
+                  >
+                    <Small className="text-destructive">
+                      {t('householdSettings.removeMemberButton')}
+                    </Small>
+                  </AnimatedPressable>
+                ) : null}
+              </View>
+            );
+          })}
         </View>
       </View>
 

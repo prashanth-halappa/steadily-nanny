@@ -46,6 +46,15 @@ describe('TodayScreen i18n', () => {
     expect(screenSource).not.toContain('testID="today-household-name"');
   });
 
+  // S9 / direction §4 — the date/household-name line is now the shortest
+  // route to "This family" for a nanny/helper (parent has no such screen).
+  it('makes the date line pressable into This family for nanny/helper only', () => {
+    expect(screenSource).toContain('testID="today-family-link"');
+    expect(screenSource).toContain('/settings/this-family');
+    expect(screenSource).toContain('SETUP_ROLES.NANNY');
+    expect(screenSource).toContain('SETUP_ROLES.HELPER');
+  });
+
   // TodayCalmCard is GONE, and must not come back. It rendered "Everything's
   // covered" from inbox-empty + not-live + a cover row existing — it never
   // consulted `useUncoveredToday`, so it sat directly above "H1 Child1 isn't

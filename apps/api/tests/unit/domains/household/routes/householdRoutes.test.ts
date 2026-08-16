@@ -64,6 +64,7 @@ let removeMemberMock: ReturnType<typeof mock>;
 let revokeInviteMock: ReturnType<typeof mock>;
 let redeemInviteMock: ReturnType<typeof mock>;
 let leaveMock: ReturnType<typeof mock>;
+let archiveMock: ReturnType<typeof mock>;
 let getOwnedMock: ReturnType<typeof mock>;
 
 function patch(path: string, body: unknown): Promise<Response> {
@@ -92,6 +93,10 @@ beforeAll(async () => {
   }));
   redeemInviteMock = mock(async (..._args: unknown[]) => ({ id: 'm-new' }));
   leaveMock = mock(async (..._args: unknown[]) => ({
+    id: MEMBER_ID,
+    status: 'removed',
+  }));
+  archiveMock = mock(async (..._args: unknown[]) => ({
     id: MEMBER_ID,
     status: 'removed',
   }));
@@ -127,6 +132,7 @@ beforeAll(async () => {
         revokeInvite: (...args: any[]) => revokeInviteMock(...args),
         redeemInvite: (...args: any[]) => redeemInviteMock(...args),
         leave: (...args: any[]) => leaveMock(...args),
+        archive: (...args: any[]) => archiveMock(...args),
         create: mock(async () => ({})),
         update: mock(async () => ({})),
         createInvite: mock(async () => ({})),
@@ -167,6 +173,7 @@ beforeEach(() => {
   revokeInviteMock.mockClear();
   redeemInviteMock.mockClear();
   leaveMock.mockClear();
+  archiveMock.mockClear();
 });
 
 describe('PATCH /households/:householdId/members/:memberId', () => {
@@ -324,6 +331,29 @@ describe('POST /households/:householdId/members/leave', () => {
 
     expect(res.status).toBe(400);
     expect(leaveMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('POST /households/:householdId/archive', () => {
+  // The route mobile has been calling since `DraftHomeScreen` shipped, and
+  // 404ing on. Same shape as `/members/leave`: the caller is the subject, so
+  // there is no body and no member id.
+  it('passes the caller and household through, answering with the membership', async () => {
+    const res = await post(`/households/${HOUSEHOLD_ID}/archive`);
+
+    expect(res.status).toBe(200);
+    expect(archiveMock).toHaveBeenCalledWith(AUTH_USER_ID, HOUSEHOLD_ID);
+    const body = (await res.json()) as {
+      data: { household_member: { status: string } };
+    };
+    expect(body.data.household_member.status).toBe('removed');
+  });
+
+  it('rejects a non-uuid householdId with 400 BEFORE the service', async () => {
+    const res = await post('/households/not-a-uuid/archive');
+
+    expect(res.status).toBe(400);
+    expect(archiveMock).not.toHaveBeenCalled();
   });
 });
 

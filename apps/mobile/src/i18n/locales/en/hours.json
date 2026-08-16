@@ -1,5 +1,9 @@
 {
   "title": "Hours",
+  "draftEmpty": {
+    "title": "Nothing to track yet",
+    "description": "Hours start when a family accepts your terms."
+  },
   "previousWeek": "Previous week",
   "nextWeek": "Next week",
   "yourWeek": "Your week",

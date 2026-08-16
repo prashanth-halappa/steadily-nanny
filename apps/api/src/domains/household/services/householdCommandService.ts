@@ -40,6 +40,7 @@ import {
   CannotLeaveWhileClockedInError,
   CannotRemoveOwnerError,
   CannotRemoveSelfError,
+  HouseholdHasCarerError,
   InviteAlreadyAcceptedError,
   InviteExpiredError,
   InviteNotFoundError,
@@ -48,6 +49,7 @@ import {
   MemberHasRunningEntryError,
   MemberNotFoundError,
   NotAHouseholdParentError,
+  ParentAlreadyHasHouseholdError,
   PayOfferNotForRoleError,
   WeekStartLockedError,
 } from '../errors/householdErrors';
@@ -61,6 +63,7 @@ import {
   HOUSEHOLD_MEMBER_STATUSES,
   HOUSEHOLD_ROLES,
   HOUSEHOLD_STATES,
+  PARENT_ROLES,
 } from '../schemas';
 import type {
   CreateHouseholdInput,
@@ -218,6 +221,16 @@ export class HouseholdCommandService {
     userId: string,
     input: CreateHouseholdInput
   ): Promise<Household> {
+    const isDraft = input.state === HOUSEHOLD_STATES.DRAFT;
+    // §8/A4 — one live family per parent. A DRAFT is exempt and must stay
+    // exempt: it is nanny-authored, its only membership is `role='nanny'`, and
+    // guarding it would stop a nanny who works for a family from ever writing
+    // her own terms. Checked BEFORE the household insert, so a refusal leaves
+    // nothing half-created to roll back.
+    if (!isDraft) {
+      await this.assertNoOtherLiveParentHousehold(userId);
+    }
+
     // `created_by` and the owner membership both FK to user_profiles, and
     // nothing else creates that row on this path.
     await this.users.ensureProfile(userId);
@@ -227,7 +240,6 @@ export class HouseholdCommandService {
       created_by: userId,
     });
 
-    const isDraft = input.state === HOUSEHOLD_STATES.DRAFT;
     try {
       await this.memberRepo.createMembership({
         household_id: household.id,
@@ -261,6 +273,135 @@ export class HouseholdCommandService {
     }
 
     return household;
+  }
+
+  /**
+   * The LIVE households this user speaks for, as a parent — the set §8's
+   * "one household per parent" is a cap on.
+   *
+   * Two reads, both existing ones, in the only order that is cheap: membership
+   * first (`listActiveByUser`, one query, already the shape the mobile app
+   * learns its own roles from), filtered to `PARENT_ROLES` in memory, then a
+   * single `listLiveIds` over whatever survives. A carer-only user pays for
+   * the first query and nothing else, which is the common case by a distance.
+   *
+   * ACTIVE memberships only, deliberately: a household the caller was removed
+   * from — or ARCHIVED, which is the same row state (see `archive`) — is not
+   * one he speaks for any more, and must not block him joining another.
+   */
+  private async liveParentHouseholdIds(
+    userId: string,
+    exceptHouseholdId?: string
+  ): Promise<string[]> {
+    const memberships = await this.memberRepo.listActiveByUser(userId);
+    const candidateIds = memberships
+      .filter(
+        m => PARENT_ROLES.has(m.role) && m.household_id !== exceptHouseholdId
+      )
+      .map(m => m.household_id);
+    if (candidateIds.length === 0) {
+      return [];
+    }
+    return this.householdRepo.listLiveIds(candidateIds);
+  }
+
+  /**
+   * §8/A4 — refuse if this user already speaks for a live family.
+   *
+   * The constraint has to live HERE and not in a dialog: `redeemInvite` and
+   * `create` would both happily write a second parent membership, and the
+   * household the parent silently abandons is the one holding a nanny's
+   * schedule, her hours and her pay history. A sheet that can be dismissed is
+   * a suggestion.
+   *
+   * The error NAMES the household in the way — it is the caller's own, so
+   * nothing leaks, and the escape hatch ("invite them to {existingName}
+   * instead") cannot be offered without it.
+   */
+  async assertNoOtherLiveParentHousehold(
+    userId: string,
+    exceptHouseholdId?: string
+  ): Promise<void> {
+    const existing = (
+      await this.liveParentHouseholdIds(userId, exceptHouseholdId)
+    )[0];
+    if (existing) {
+      throw new ParentAlreadyHasHouseholdError(existing);
+    }
+  }
+
+  /**
+   * Close a household the caller is done with — ARCHIVE, never delete. Hours,
+   * timesheets and pay history are the product (A4), and a nanny's record of
+   * what she was owed must outlive the family's decision to move on.
+   *
+   * ================================================================
+   * ARCHIVED == THE CALLER'S OWN MEMBERSHIP SET TO `removed`.
+   * NO NEW COLUMN, NO THIRD `households.state`.
+   * ================================================================
+   *
+   * That one row edit already means everything "archived" has to mean, because
+   * four mechanisms are keyed off it and were shipped before this method
+   * existed:
+   * - `householdQueryService.listPastForUser` reads exactly `removed`, so the
+   *   household lands in the switcher's "Past households" section rather than
+   *   vanishing (A10) — a parent who archived by mistake can still read it.
+   * - `listForUser` is active-only, so it leaves his live list on the spot.
+   * - Every write in this codebase is gated on an ACTIVE membership, so the
+   *   household is read-only for him from that instant, with no per-table work.
+   * - For a DRAFT, 094's `draft_has_no_author` check refuses every outstanding
+   *   code the moment the author's membership stops being active — so
+   *   archiving a draft also kills the links she shared, which is precisely
+   *   what A6's auto-archive needs.
+   *
+   * A migration would buy a column that says what these four already say, and
+   * 094 is applied to production and must stay frozen.
+   *
+   * Who may archive: a parent (owner included — unlike `leave`, which refuses
+   * the owner to keep a household from being orphaned; here being orphaned is
+   * the POINT), or the §2.2 draft author closing her own draft. A nanny or
+   * helper in a live household is refused and must use `leave` — walking out
+   * of a job is not the same act as closing a family, and `leave` carries the
+   * clocked-in refusal and the pay end-date that this one has no business
+   * doing.
+   *
+   * A LIVE household with another active NANNY in it is refused outright
+   * (A4: the destructive option is HIDDEN when a carer is attached — and
+   * hidden is not enforced). Removing her is a separate, deliberate act with
+   * its own consequences; it must not happen as a side effect of a parent
+   * tidying up. A draft is exempt: its only member IS the nanny, and she is
+   * the one archiving.
+   */
+  async archive(userId: string, householdId: string): Promise<HouseholdMember> {
+    // Throws HouseholdNotFoundError for both "no such household" and "not a
+    // member" — a stranger learns nothing either way.
+    const membership = await this.queries.getMembership(userId, householdId);
+    const household = await this.householdRepo.findById(householdId);
+
+    if (
+      !PARENT_ROLES.has(membership.role) &&
+      !isDraftAuthor(household, membership)
+    ) {
+      throw new NotAHouseholdParentError(householdId, membership.role);
+    }
+
+    if (household?.state === HOUSEHOLD_STATES.LIVE) {
+      const others = await this.memberRepo.listActiveByHousehold(householdId);
+      if (
+        others.some(
+          m => m.id !== membership.id && m.role === HOUSEHOLD_ROLES.NANNY
+        )
+      ) {
+        throw new HouseholdHasCarerError(householdId);
+      }
+    }
+
+    const removed = await this.memberRepo.removeMembership(membership.id);
+    if (!removed) {
+      // CAS matched nothing: already archived, or the other parent won the race.
+      throw new MemberNotFoundError(membership.id);
+    }
+    return removed;
   }
 
   /**
@@ -507,6 +648,15 @@ export class HouseholdCommandService {
       throw new AlreadyMemberError(invite.household_id);
     }
 
+    // §8/A4 — LAST of the checks, FIRST of the writes. A nanny or helper code
+    // is untouched: a carer legitimately belongs to several families.
+    if (PARENT_ROLES.has(invite.role)) {
+      await this.resolveParentHouseholdConflict(
+        userId,
+        input.archive_household_id
+      );
+    }
+
     const claimed = await this.inviteRepo.claimPending(invite.id, userId);
     if (!claimed) {
       throw new InviteAlreadyAcceptedError(code);
@@ -543,6 +693,13 @@ export class HouseholdCommandService {
 
     await this.promoteOfferToProposal(invite, userId, now);
 
+    // A6, the other direction: she authored a draft to write her own terms,
+    // then a family invited her the ordinary way instead and her code was
+    // never redeemed. Same zombie draft, same fix.
+    if (invite.role === HOUSEHOLD_ROLES.NANNY) {
+      await this.archiveOwnDrafts(userId);
+    }
+
     const roleLabel = this.roleLabel(invite.role);
     // Same push type either way — "someone has access again" is the same alert
     // to a parent who did not send the invite; only the wording differs.
@@ -568,6 +725,48 @@ export class HouseholdCommandService {
     }
 
     return membership;
+  }
+
+  /**
+   * §8/A4's three outcomes for a parent-role code, in one place: proceed,
+   * refuse, or close the old family first.
+   *
+   * ================================================================
+   * ORDER: VALIDATE -> ARCHIVE -> CLAIM. DELIBERATE.
+   * ================================================================
+   *
+   * Every reason the code could be refused — revoked, expired, already
+   * accepted, already a member — has run by the time this is called, so a
+   * parent never loses his household to a code that was never going to work.
+   * The claim CAS runs immediately AFTER, which leaves exactly one losable
+   * race: two people redeeming the same code in the same instant, where the
+   * loser has already archived. That is accepted, and it is the cheaper half
+   * of the trade — claim-first would archive AFTER the code is burned, so any
+   * failure in the archive strands a parent in two households with a code he
+   * cannot re-use.
+   *
+   * `archive_household_id` must name a household in the caller's OWN live
+   * parent set; anything else falls through to the refusal, because "close
+   * that one instead" is not an instruction a client gets to give about a
+   * household it does not speak for. The `others` filter does both jobs at
+   * once — an absent, wrong, or foreign id leaves the conflicting household in
+   * the list and throws BEFORE anything is archived.
+   */
+  private async resolveParentHouseholdConflict(
+    userId: string,
+    archiveHouseholdId?: string
+  ): Promise<void> {
+    const live = await this.liveParentHouseholdIds(userId);
+    const blocking = live.filter(id => id !== archiveHouseholdId)[0];
+    if (blocking) {
+      throw new ParentAlreadyHasHouseholdError(blocking);
+    }
+    if (archiveHouseholdId && live.includes(archiveHouseholdId)) {
+      // Not best-effort: `archive` refuses a household with a carer still in
+      // it (A4), and that refusal has to reach the parent as the refusal of
+      // the whole redemption, not as a swallowed log line.
+      await this.archive(userId, archiveHouseholdId);
+    }
   }
 
   /**
@@ -705,6 +904,16 @@ export class HouseholdCommandService {
     input: RedeemHouseholdInviteBody,
     invite: HouseholdInvite
   ): Promise<HouseholdMember | null> {
+    // §8/A4, server backstop. With no `target_household_id` 094 INSTANTIATES a
+    // household — a second live family for a parent who already has one,
+    // reached through the back door rather than through a co-parent code. The
+    // mobile client already forces the absorb branch; this is what makes it
+    // true rather than polite. An ABSORB is exempt by construction: it joins
+    // her to the household he already has.
+    if (!input.target_household_id) {
+      await this.assertNoOtherLiveParentHousehold(userId);
+    }
+
     const result = await this.inviteRepo.redeemDraftHousehold(
       code,
       userId,
@@ -719,6 +928,15 @@ export class HouseholdCommandService {
 
     switch (result.outcome) {
       case 'redeemed':
+        // A6 — her draft has done its job: a family joined with her code and
+        // she now belongs to a LIVE household. 094 leaves the draft standing
+        // forever (see its header), and that zombie is what makes the shell
+        // swap trap her later. Archived HERE rather than in 094 because 094 is
+        // applied to production and stays frozen.
+        await this.archiveDraftForAuthor(
+          invite.household_id,
+          invite.invited_by
+        );
         this.notifyDraftRedemption(
           result.household_id,
           userId,
@@ -759,6 +977,86 @@ export class HouseholdCommandService {
           outcome: result.outcome,
         });
         throw new InviteNotFoundError(code);
+    }
+  }
+
+  /**
+   * A6's auto-archive: retire the author's membership in a draft that has
+   * served its purpose.
+   *
+   * ==================================================================
+   * NEVER THROWS, AND THAT IS THE POINT.
+   * ==================================================================
+   *
+   * By the time this runs a real family has already joined and, on the 094
+   * path, the whole redemption has committed. The worst a failure can cost is
+   * a stale draft in her switcher — today's status quo — and the manual
+   * archive button fixes it in one tap. Undoing a redemption over it would be
+   * absurd, so every error is logged and swallowed.
+   *
+   * Deliberately NOT routed through `archive()`: the rule checks there answer
+   * "may this person close this household", and nobody is asking. The subject
+   * is the draft's own author, the household is her own draft, and the answer
+   * was decided when she shared the code.
+   */
+  private async archiveDraftForAuthor(
+    householdId: string,
+    authorId: string | null
+  ): Promise<void> {
+    if (!authorId) {
+      return;
+    }
+    try {
+      const membership = await this.memberRepo.findActiveMembership(
+        householdId,
+        authorId
+      );
+      if (membership) {
+        await this.memberRepo.removeMembership(membership.id);
+      }
+    } catch (error) {
+      logger.error('Draft auto-archive failed — the redemption stands', {
+        householdId,
+        authorId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  /**
+   * Every draft this user authored and still actively belongs to, archived.
+   *
+   * Two existing reads and no new repository method: `listActiveByUser` gives
+   * the household ids, `findByIds` gives their state and authorship in one
+   * query rather than one per household (GOLDEN-FIXES #28). `created_by` is
+   * checked as well as `state`, so a second nanny who somehow sits in someone
+   * else's draft never archives it out from under its author.
+   *
+   * A LIST rather than a single lookup because nothing stops a nanny drafting
+   * terms twice; in practice it is zero or one. Same never-throws posture as
+   * `archiveDraftForAuthor`.
+   */
+  private async archiveOwnDrafts(userId: string): Promise<void> {
+    try {
+      const memberships = await this.memberRepo.listActiveByUser(userId);
+      const ids = memberships.map(m => m.household_id);
+      if (ids.length === 0) {
+        return;
+      }
+      const households = await this.householdRepo.findByIds(ids);
+      for (const household of households) {
+        if (
+          household.state === HOUSEHOLD_STATES.DRAFT &&
+          household.created_by === userId
+        ) {
+          await this.archiveDraftForAuthor(household.id, userId);
+        }
+      }
+    } catch (error) {
+      logger.error('Draft auto-archive sweep failed — the join stands', {
+        userId,
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 

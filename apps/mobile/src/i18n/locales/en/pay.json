@@ -182,7 +182,7 @@
     "subtitle": "What each family has agreed with you. Only that family can see their own terms.",
     "historyButton": "See history",
     "emptyTitle": "No pay terms yet",
-    "emptyDescription": "This family hasn't set your rate in Steadily yet. Your hours are still being recorded.",
+    "emptyDescription": "This family hasn't agreed your terms in Steadily yet. Hours can be added here once terms are agreed.",
     "notAvailableTitle": "Not available",
     "notAvailableDescription": "My pay is for nannies — you're not signed in as one on this account."
   },
@@ -246,15 +246,15 @@
   "ack": {
     "changedTitle": "Your terms changed on {{date}}",
     "firstTitle": "Your pay terms are set",
-    "seenButton": "I've seen these terms",
+    "seenButton": "I've read these terms",
     "disagreeButton": "I don't agree with this",
     "reassurance": "This records the date you saw them. It isn't an agreement to them, and it doesn't give anything up.",
     "recordFailed": "That didn't record. Check your connection and try again.",
-    "seenBy": "Seen by {{name}} on {{date}}",
-    "seen": "Seen {{date}}",
-    "notSeenYet": "Not seen yet",
+    "seenBy": "Read by {{name}} on {{date}}",
+    "seen": "Read {{date}}",
+    "notSeenYet": "Not read yet",
     "disagreed": "Disagreed {{date}}",
-    "historySeen": "Seen {{date}}"
+    "historySeen": "Read {{date}}"
   },
   "dissent": {
     "title": "Tell them what's wrong",
@@ -312,7 +312,9 @@
     "sendFailed": "That didn't send. Check your connection and try again.",
     "withdrawButton": "Withdraw",
     "declineButton": "Decline",
-    "openRowTitle": "Proposed terms from {{name}}",
+    "openRowTitleSent": "Terms you sent {{name}}",
+    "openRowTitleReceived": "Terms from {{name}}",
+    "notAgreedYet": "Nothing here is agreed until someone taps Agree. Opening this doesn't commit you.",
     "state": {
       "proposed": "Proposed {{date}}",
       "countered": "Countered {{date}}",

@@ -5,7 +5,7 @@
  * greps the component's source text — deleting the `items.length === 0`
  * early return still leaves that string in the file's comments, so the
  * source scan stays green on a gutted component. This file RENDERS the card:
- * invisible-when-idle, the T1 tone (and its `demoted` opt-out),
+ * invisible-when-idle, the T1 tone (attention ONLY inside `PinnedSlot`),
  * headline/deadline/"more" copy from `inboxItemCopy.ts`, the primary CTA
  * deep-linking to the headline item, the "see all" ghost button only past
  * one item, and that `pending_pattern` is filtered out entirely — it's
@@ -18,6 +18,7 @@
  */
 import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 import { fireEvent, render } from '@testing-library/react-native';
+import { PinnedSlot } from '@/src/domains/today/components/PinnedSlot';
 import { palette } from '~/lib/design-tokens/palette';
 import type { InboxItem } from '../utils/buildInboxItems';
 
@@ -68,6 +69,17 @@ const TERMS_PROPOSAL: InboxItem = {
   rateMinor: 2800,
   weeklyEquivalentMinor: 154000,
   currency: 'USD',
+};
+
+const TERMS_PROPOSAL_SENT: InboxItem = {
+  kind: 'terms_proposal_sent',
+  id: 'prop-2',
+  householdId: 'hh-1',
+  carerId: 'carer-1',
+  carerDisplayName: 'Marisol',
+  proposedAt: '2026-08-24T09:00:00.000Z',
+  viewedAt: null,
+  direction: 'parent',
 };
 
 let NeedsAttentionCard: typeof import('../components/NeedsAttentionCard').NeedsAttentionCard;
@@ -137,10 +149,14 @@ describe('NeedsAttentionCard', () => {
     expect(queryByTestId('today-needs-attention-card')).toBeNull();
   });
 
-  it("renders on the T1 attention-toned ground (Card's tone, not a bar)", () => {
+  it("renders on the T1 attention-toned ground inside the pinned slot (Card's tone, not a bar)", () => {
     setItems([CHANGE_REQUEST]);
 
-    const { getByTestId } = render(<NeedsAttentionCard />);
+    const { getByTestId } = render(
+      <PinnedSlot>
+        <NeedsAttentionCard />
+      </PinnedSlot>
+    );
 
     const card = getByTestId('today-needs-attention-card');
     const styleArray = [card.props.style].flat();
@@ -280,10 +296,36 @@ describe('NeedsAttentionCard', () => {
     expect(queryByTestId('today-needs-attention-card')).toBeNull();
   });
 
-  it('demoted renders at default tone — no tinted ground, content and CTA still intact', () => {
+  // A7 — the author's row has `PendingOfferCard`, exactly as the answerer's
+  // has `TermsProposalCard`. Same treatment for the same reason: two cards
+  // about one negotiation is the collision the pinned slot exists to end,
+  // and this row must not inflate "N more" either.
+  it('excludes a sent-offer row entirely: headline is the other item, no "more" line', () => {
+    setItems([TERMS_PROPOSAL_SENT, QUERIED_WEEK]);
+
+    const { getByText, queryByText } = render(<NeedsAttentionCard />);
+
+    expect(
+      getByText('items.queriedWeek.title({"week":"28 Jul"})')
+    ).toBeTruthy();
+    expect(queryByText(/moreItems/)).toBeNull();
+  });
+
+  it('renders nothing when the only item is a sent offer — never headlines one', () => {
+    setItems([TERMS_PROPOSAL_SENT]);
+
+    const { queryByTestId } = render(<NeedsAttentionCard />);
+
+    expect(queryByTestId('today-needs-attention-card')).toBeNull();
+  });
+
+  // `demoted` is deleted. Emphasis is a fact about WHERE the card is mounted:
+  // in the feed it keeps its content and CTA on the plain ground, and only the
+  // slot's single occupant may wear the attention tint.
+  it('renders at default tone in the feed — no tinted ground, content and CTA still intact', () => {
     setItems([CHANGE_REQUEST]);
 
-    const { getByTestId } = render(<NeedsAttentionCard demoted />);
+    const { getByTestId } = render(<NeedsAttentionCard />);
 
     const card = getByTestId('today-needs-attention-card');
     const styleArray = [card.props.style].flat();

@@ -39,6 +39,15 @@ export const ERROR_CODE_TO_I18N_KEY: Record<string, string> = {
   // AuthorizationError metadata.reason — owner_only household gate
   // (apps/api/src/errors/AuthorizationError.ts).
   NOT_OWNER: 'errors:notHouseholdOwner',
+  // redeemInvite metadata.reason (§8c, apps/api household domain) — a
+  // parent-role invite refused because the redeemer already has a live
+  // parent household; the mobile-side answer is HouseholdDecisionSheet, not
+  // this toast, but the redeem itself still needs a localized message for
+  // the sheet's inline error.
+  PARENT_ALREADY_HAS_HOUSEHOLD: 'errors:parentAlreadyHasHousehold',
+  // redeemInvite metadata.reason — "join & close" refused because a carer is
+  // attached to the household being archived.
+  HOUSEHOLD_HAS_CARER: 'errors:householdHasCarer',
 };
 
 interface ErrorLike {

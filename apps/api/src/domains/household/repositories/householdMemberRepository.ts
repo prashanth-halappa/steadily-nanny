@@ -20,7 +20,9 @@ const UNIQUE_VIOLATION = '23505';
 
 /** A member row as PostgREST returns it with the profile embed attached. */
 type MemberRowWithProfile = HouseholdMember & {
-  user_profiles?: { name: string | null } | null;
+  // `phone` is optional because only `listNonRemovedByHousehold` selects it —
+  // the active-only sibling asks for the name alone (099).
+  user_profiles?: { name: string | null; phone?: string | null } | null;
 };
 
 export class HouseholdMemberRepository extends BaseRepository<HouseholdMember> {
@@ -184,13 +186,20 @@ export class HouseholdMemberRepository extends BaseRepository<HouseholdMember> {
    * The filter is a POSITIVE `in (...)` list and must stay one — never
    * `neq('status', 'removed')`, which would admit every status added tomorrow
    * (093's column comment, spec §17).
+   *
+   * The embed also carries `phone` (099), and this is the ONLY read in the
+   * codebase that selects it for anybody but its owner — `user_profiles` RLS
+   * stays owner-only, so a co-member's number leaves the database here or
+   * nowhere. It comes back RAW for every row: deciding whose number actually
+   * goes on the wire is `householdQueryService.listMembers`' job, not this
+   * one's, and that service nulls it on every non-`active` row.
    */
   async listNonRemovedByHousehold(
     householdId: string
   ): Promise<HouseholdMember[]> {
     const { data, error } = await supabaseService
       .from(this.table)
-      .select('*, user_profiles(name)')
+      .select('*, user_profiles(name, phone)')
       .eq('household_id', householdId)
       .in('status', [
         HOUSEHOLD_MEMBER_STATUSES.ACTIVE,
@@ -209,6 +218,7 @@ export class HouseholdMemberRepository extends BaseRepository<HouseholdMember> {
       ({ user_profiles, ...member }) => ({
         ...member,
         profile_name: user_profiles?.name ?? null,
+        profile_phone: user_profiles?.phone ?? null,
       })
     );
   }

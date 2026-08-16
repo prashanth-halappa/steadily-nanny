@@ -22,6 +22,14 @@ import {
 } from '@/src/test-utils';
 
 const HOUSEHOLD_ID = '00000000-0000-4000-8000-000000000001';
+/** The signed-in carer — `pay.current` is keyed by (household, carer), and on
+ * a clock-in the carer is always whoever is holding the phone. */
+const CARER_ID = '00000000-0000-4000-8000-0000000000ca';
+
+mock.module('@/src/store/auth', () => ({
+  useAuthStore: (selector: (s: unknown) => unknown) =>
+    selector({ session: { user: { id: CARER_ID } } }),
+}));
 
 const clockInMock = mock(() =>
   Promise.resolve({ id: 'entry-1', status: 'running' })
@@ -166,6 +174,77 @@ describe('useClockIn', () => {
 
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect(invalidateSpy).not.toHaveBeenCalled();
+  });
+
+  // A1. The server is the guard, so this 409 is the FIRST the app may hear
+  // that terms are not agreed — the gate's arrangement query can easily be
+  // holding a stale non-null (she was blocked while the screen was open, or
+  // an arrangement was voided elsewhere). Refetching it is what turns a
+  // refused tap into the blocked card explaining itself, instead of a toast
+  // over a clock-in button that still looks usable.
+  it('A1: refetches the current arrangement on TERMS_NOT_AGREED, so the card flips to blocked', async () => {
+    clockInMock.mockImplementationOnce(() =>
+      Promise.reject({
+        response: {
+          status: 409,
+          data: {
+            error: {
+              code: 'CONFLICT',
+              metadata: { reason: 'TERMS_NOT_AGREED' },
+            },
+          },
+        },
+      })
+    );
+    const { result, queryClient } = renderHookWithProviders(
+      () => useClockIn(),
+      { queryClient: createClockMutationTestClient() }
+    );
+    const invalidateSpy = spyOn(queryClient, 'invalidateQueries');
+
+    await act(async () => {
+      await expect(
+        result.current.mutateAsync({ household_id: HOUSEHOLD_ID })
+      ).rejects.toBeTruthy();
+    });
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: queryKeys.pay.current(HOUSEHOLD_ID, CARER_ID),
+    });
+    expect(showErrorToastMock).toHaveBeenCalledWith('errors:termsNotAgreed');
+  });
+
+  it('leaves the arrangement cache alone for every other CONFLICT reason', async () => {
+    clockInMock.mockImplementationOnce(() =>
+      Promise.reject({
+        response: {
+          status: 409,
+          data: {
+            error: {
+              code: 'CONFLICT',
+              metadata: { reason: 'TIMESHEET_NOT_ACTIONABLE' },
+            },
+          },
+        },
+      })
+    );
+    const { result, queryClient } = renderHookWithProviders(
+      () => useClockIn(),
+      { queryClient: createClockMutationTestClient() }
+    );
+    const invalidateSpy = spyOn(queryClient, 'invalidateQueries');
+
+    await act(async () => {
+      await expect(
+        result.current.mutateAsync({ household_id: HOUSEHOLD_ID })
+      ).rejects.toBeTruthy();
+    });
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(invalidateSpy).not.toHaveBeenCalledWith({
+      queryKey: queryKeys.pay.current(HOUSEHOLD_ID, CARER_ID),
+    });
   });
 
   it('does NOT show the "already clocked in" copy for a different CONFLICT reason', async () => {

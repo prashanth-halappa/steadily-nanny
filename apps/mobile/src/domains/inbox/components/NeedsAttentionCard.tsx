@@ -18,11 +18,12 @@
  * headline selection, which still let a sole pending pattern render here
  * AND on `PendingScheduleCard` — two stacked cards for one obligation.
  *
- * `demoted` (default `false`) drops the card to default tone — no
- * `surfaceAttention` ground — while keeping its content and CTA.
- * `TodayScreen` is the only place that sees every T1-eligible card at once,
- * so it owns deciding when something else (an overdue clock-out) should win
- * the screen's one T1 slot; this card never checks for that itself.
+ * TONE IS POSITIONAL. `usePinnedTone()` returns `'attention'` only when this
+ * card is the single child of Today's `PinnedSlot`, and `'default'`
+ * everywhere else — the card keeps its content and CTA in the feed, it just
+ * stops shouting. It never decides that for itself, and there is no `demoted`
+ * prop to pass: `resolveSlotOccupant` picks the occupant, the slot supplies
+ * the tone.
  */
 import { type Href, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
@@ -38,19 +39,12 @@ import {
   hrefForItem,
   titleForItem,
 } from '@/src/domains/inbox/utils/inboxItemCopy';
+import { usePinnedTone } from '@/src/domains/today/components/PinnedSlot';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
 
-interface NeedsAttentionCardProps {
-  /** Renders at default tone (no attention ground) while keeping content
-   * and CTA — for when `TodayScreen` has a higher-priority T1 (an overdue
-   * clock-out) and needs this card to step back. */
-  demoted?: boolean;
-}
-
-export function NeedsAttentionCard({
-  demoted = false,
-}: NeedsAttentionCardProps) {
+export function NeedsAttentionCard() {
   const { t } = useTranslation('inbox');
+  const tone = usePinnedTone();
   const router = useRouter();
   const active = useActiveHousehold();
   const timeZone = active.household?.timezone ?? 'UTC';
@@ -63,8 +57,16 @@ export function NeedsAttentionCard({
   // (§7.1/B3): it has its own T1 card and its own rung in
   // `resolveAttentionOwner`, so it must not headline here or inflate the
   // count either.
+  // A7's `terms_proposal_sent` is filtered on exactly the same grounds as
+  // `terms_proposal`: it has its own card (`PendingOfferCard`) and its own
+  // rung, and it is the ONE row here that waits on somebody else — headlining
+  // it would put a card the viewer cannot resolve at the top of a list of
+  // things he can.
   const items = allItems.filter(
-    item => item.kind !== 'pending_pattern' && item.kind !== 'terms_proposal'
+    item =>
+      item.kind !== 'pending_pattern' &&
+      item.kind !== 'terms_proposal' &&
+      item.kind !== 'terms_proposal_sent'
   );
 
   if (isLoading || items.length === 0) {
@@ -82,7 +84,7 @@ export function NeedsAttentionCard({
   return (
     <Card
       testID="today-needs-attention-card"
-      tone={demoted ? 'default' : 'attention'}
+      tone={tone}
       className="gap-3 p-5.5"
     >
       <H3>{titleForItem(headline, t, timeZone)}</H3>
