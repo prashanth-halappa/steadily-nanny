@@ -181,6 +181,7 @@ Threshold: 4.5:1 (3:1 only applies at ≥18.66px bold or ≥24px regular). **`su
 The `ui/` directory holds design-system primitives. The split:
 - **`src/components/ui/*`** — generic, product-agnostic primitives (button, text, card, input, dialog, skeleton…). Built on headless `@rn-primitives/*` (slot, portal, accessible behaviors) + CVA variants. No business logic.
 - **`src/components/<area>/*` and `src/domains/<feature>/components/*`** — composed, feature-aware components. These import `ui/` primitives; they never reimplement styling primitives.
+- **Shape primitives** (`WeekBars`, `SplitTrack`, `WeekDots`, `NowLine`, `DayHeader`) — presentational week/day chrome; see `docs/design/daylight-v2.md` §6.11.
 
 ### `cn` — class composition
 
