@@ -88,18 +88,18 @@ export function ApproveWeekDialog({
   const hasAdjustment = adjustmentLabel !== null && adjustmentDirection != null;
   const okBodyKey =
     hasAdjustment && adjustmentDirection === 'deducted'
-      ? 'approveDialogBodyAdjustmentDeducted'
+      ? 'approveDialog.bodyAdjustmentDeducted'
       : hasAdjustment
-        ? 'approveDialogBodyAdjustmentAdded'
+        ? 'approveDialog.bodyAdjustmentAdded'
         : nothingUnusual
-          ? 'approveDialogBodyNothingUnusual'
-          : 'approveDialogBody';
+          ? 'approveDialog.bodyNothingUnusual'
+          : 'approveDialog.body';
   const bodyKey =
     earningsStatus === 'ok'
       ? okBodyKey
       : earningsStatus === 'currency_change'
-        ? 'approveDialogBodyCurrencyChange'
-        : 'approveDialogBodyNoArrangement';
+        ? 'approveDialog.bodyCurrencyChange'
+        : 'approveDialog.bodyNoArrangement';
   const showsGross = earningsStatus === 'ok';
 
   return (
@@ -107,11 +107,12 @@ export function ApproveWeekDialog({
       <AlertDialogContent testID="hours-approve-dialog">
         <AlertDialogHeader>
           <AlertDialogTitle testID="hours-approve-dialog-title">
-            {t('approveDialogTitle', { range: weekRangeLabel })}
+            {t('approveDialog.title', { name: carerName, hours: hoursLabel })}
           </AlertDialogTitle>
           <AlertDialogDescription testID="hours-approve-dialog-body">
             {t(bodyKey, {
               hours: hoursLabel,
+              range: weekRangeLabel,
               ...(showsGross ? { gross: grossLabel } : {}),
               ...(showsGross && hasAdjustment
                 ? { adjustment: adjustmentLabel }
@@ -130,14 +131,14 @@ export function ApproveWeekDialog({
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel testID="hours-approve-dialog-cancel">
-            <Text>{t('approveDialogCancel')}</Text>
+            <Text>{t('approveDialog.cancel')}</Text>
           </AlertDialogCancel>
           <AlertDialogAction
             testID="hours-approve-dialog-confirm"
             disabled={isSubmitting}
             onPress={onConfirm}
           >
-            <Text>{t('approveDialogConfirm')}</Text>
+            <Text>{t('approveDialog.confirm')}</Text>
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

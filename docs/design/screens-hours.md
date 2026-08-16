@@ -263,6 +263,7 @@ missing buttons reads as a bug on a screen about money.
 
 ## 8. Copy tone
 
+- The weekly approve dialog opens with what she did (`{{name}} worked {{hours}}`), then the figures, then what locks — same data and the same six-way ladder, opposite register.
 - Say the number, then say what it is. "38h 30m" then "this week", not "Total
   hours worked this week: 38h 30m".
 - Status sentences are written from the reader's side. The nanny's week is "With

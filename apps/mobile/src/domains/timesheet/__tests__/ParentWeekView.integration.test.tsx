@@ -633,7 +633,7 @@ describe('ParentWeekView — approve dialog', () => {
 
     await waitFor(() =>
       expect(getByTestId('hours-approve-dialog-body').props.children).toBe(
-        'approveDialogBody'
+        'approveDialog.body'
       )
     );
 
@@ -665,7 +665,7 @@ describe('ParentWeekView — approve dialog', () => {
 
     await waitFor(() =>
       expect(getByTestId('hours-approve-dialog-body').props.children).toBe(
-        'approveDialogBodyNoArrangement'
+        'approveDialog.bodyNoArrangement'
       )
     );
   });
@@ -714,7 +714,7 @@ describe('ParentWeekView — staging an approval-time adjustment', () => {
     fireEvent.press(getByTestId('hours-approve-button'));
     await waitFor(() =>
       expect(getByTestId('hours-approve-dialog-body').props.children).toBe(
-        'approveDialogBodyAdjustmentDeducted'
+        'approveDialog.bodyAdjustmentDeducted'
       )
     );
     fireEvent.press(getByTestId('hours-approve-dialog-confirm'));
