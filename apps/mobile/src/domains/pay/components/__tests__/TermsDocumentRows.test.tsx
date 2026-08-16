@@ -55,14 +55,37 @@ const arrangement: PayArrangement = {
   created_at: '2026-08-10T15:00:00.000Z',
 };
 
+/** Every §3 row has a value, so the order-equality contract still walks the
+ * full inventory. The sparse fixture above leaves six fields null (and
+ * `recurring` empty) — that is the case the drop-nulls rule is for. */
+const fullArrangement: PayArrangement = {
+  ...arrangement,
+  doubletime_daily_threshold_minutes: 720,
+  doubletime_multiplier: 2,
+  seventh_day_multiplier: 1.5,
+  seventh_day_doubletime_after_minutes: 480,
+  holiday_hours_minutes: 480,
+  mileage_rate_per_mile_minor: 45,
+  pay_day_of_month: 15,
+  terms: {
+    notice_period_days: 28,
+    recurring: [
+      { label: 'Health stipend', amount_minor: 20000, cadence: 'monthly' },
+    ],
+  },
+};
+
 /** The prefixes the three surfaces really pass. */
 const PARENT_DOCUMENT = 'pay-term';
 const MY_PAY = 'my-pay-term-hh-1';
 const PROPOSAL_REVIEW = 'proposal-term';
 
-function keysRenderedWith(testIDPrefix: string): string[] {
+function keysRenderedWith(
+  testIDPrefix: string,
+  input: PayArrangement = arrangement
+): string[] {
   const { toJSON } = render(
-    <TermsDocumentRows arrangement={arrangement} testIDPrefix={testIDPrefix} />
+    <TermsDocumentRows arrangement={input} testIDPrefix={testIDPrefix} />
   );
   const ids: string[] = [];
   const walk = (node: unknown): void => {
@@ -92,19 +115,62 @@ function keysRenderedWith(testIDPrefix: string): string[] {
 
 describe('the one terms document, rendered on three surfaces', () => {
   it('renders the same group keys in the same order for the same input', () => {
-    const parent = keysRenderedWith(PARENT_DOCUMENT);
-    const nanny = keysRenderedWith(MY_PAY);
-    const proposal = keysRenderedWith(PROPOSAL_REVIEW);
+    const parent = keysRenderedWith(PARENT_DOCUMENT, fullArrangement);
+    const nanny = keysRenderedWith(MY_PAY, fullArrangement);
+    const proposal = keysRenderedWith(PROPOSAL_REVIEW, fullArrangement);
 
     expect(parent).toEqual(nanny);
     expect(nanny).toEqual(proposal);
     // …and that one order is the §3 inventory, not a shorter list all three
     // happen to agree on.
     expect(parent).toEqual(
-      buildTermRows(arrangement, (key: string) => key).map(row => row.key)
+      buildTermRows(fullArrangement, (key: string) => key).map(row => row.key)
     );
     expect(parent).toContain('outsideWages');
     expect(parent).toContain('inWriting');
+  });
+
+  it('drops null-valued rows on every surface, and keeps the set ones', () => {
+    const rows = buildTermRows(arrangement, (key: string) => key);
+    const present = rows.filter(row => row.value !== null).map(row => row.key);
+    const absent = rows.filter(row => row.value === null).map(row => row.key);
+    // The sparse fixture's six null fields + empty `recurring` must actually
+    // produce null rows — otherwise this test would green against a fully
+    // populated arrangement and stop guarding the drop.
+    expect(absent).toEqual(
+      expect.arrayContaining([
+        'doubletime',
+        'seventhDay',
+        'paidHolidayHours',
+        'mileage',
+        'outsideWages',
+      ])
+    );
+
+    for (const prefix of [PARENT_DOCUMENT, MY_PAY, PROPOSAL_REVIEW]) {
+      const { getByTestId, queryByTestId } = render(
+        <TermsDocumentRows arrangement={arrangement} testIDPrefix={prefix} />
+      );
+      for (const key of present) {
+        expect(getByTestId(`${prefix}-${key}`)).toBeTruthy();
+      }
+      for (const key of absent) {
+        expect(queryByTestId(`${prefix}-${key}`)).toBeNull();
+      }
+    }
+  });
+
+  it('a PTO-balance row with value: "" still renders while the ledger query is in flight', () => {
+    // Entitlement is set on `arrangement`; `balance` omitted is `undefined`
+    // — `buildTermRows` maps that to `value: ''`, which is not null.
+    const { getByTestId } = render(
+      <TermsDocumentRows
+        arrangement={arrangement}
+        testIDPrefix={PARENT_DOCUMENT}
+      />
+    );
+    expect(getByTestId('pay-term-ptoBalance')).toBeTruthy();
+    expect(getByTestId('pay-term-ptoBalance-value').props.children).toBe('');
   });
 
   it('all three surfaces route through this component and none builds its own rows', () => {

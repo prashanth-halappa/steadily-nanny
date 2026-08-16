@@ -375,7 +375,7 @@ describe('PayArrangementScreen', () => {
     });
   });
 
-  it('one active nanny WITH an arrangement: renders the rate, all six term rows, and the history row', async () => {
+  it('one active nanny WITH an arrangement: renders the rate and history, and omits unset term rows', async () => {
     payCurrentMock.mockImplementation(() =>
       Promise.resolve(arrangementFor(NANNY_A_ID))
     );
@@ -383,17 +383,41 @@ describe('PayArrangementScreen', () => {
       Promise.resolve([arrangementFor(NANNY_A_ID)])
     );
 
-    const { getByTestId } = renderWithProviders(<PayArrangementScreen />);
+    const { getByTestId, queryByTestId } = renderWithProviders(
+      <PayArrangementScreen />
+    );
 
     await waitFor(() => expect(getByTestId('pay-current-rate')).toBeTruthy());
     expect(getByTestId('pay-current-rate').props.children).toBe('£18.50');
-    expect(getByTestId('pay-term-overtime')).toBeTruthy();
+    expect(queryByTestId('pay-term-overtime')).toBeNull();
+    expect(queryByTestId('pay-term-guaranteedHours')).toBeNull();
+    expect(queryByTestId('pay-term-pto')).toBeNull();
+    expect(queryByTestId('pay-term-cancellations')).toBeNull();
+    expect(queryByTestId('pay-term-mileage')).toBeNull();
+    expect(queryByTestId('pay-term-ptoBalance')).toBeNull();
+    expect(getByTestId(`pay-history-arr-${NANNY_A_ID}`)).toBeTruthy();
+  });
+
+  // The sibling above proves the unset rows vanish; this proves the screen is
+  // still WIRED to the document — without it, `TermsDocumentRows` returning
+  // nothing at all would satisfy every assertion on this screen.
+  it('one active nanny WITH terms set: renders each term row that has a value', async () => {
+    payCurrentMock.mockImplementation(() =>
+      Promise.resolve({
+        ...arrangementFor(NANNY_A_ID),
+        overtime_threshold_minutes: 2400,
+        guaranteed_minutes_per_week: 3000,
+        cancellation_paid_within_hours: 24,
+        mileage_rate_per_mile_minor: 45,
+      })
+    );
+
+    const { getByTestId } = renderWithProviders(<PayArrangementScreen />);
+
+    await waitFor(() => expect(getByTestId('pay-term-overtime')).toBeTruthy());
     expect(getByTestId('pay-term-guaranteedHours')).toBeTruthy();
-    expect(getByTestId('pay-term-pto')).toBeTruthy();
     expect(getByTestId('pay-term-cancellations')).toBeTruthy();
     expect(getByTestId('pay-term-mileage')).toBeTruthy();
-    expect(getByTestId('pay-term-ptoBalance')).toBeTruthy();
-    expect(getByTestId(`pay-history-arr-${NANNY_A_ID}`)).toBeTruthy();
   });
 
   it('an entitlement is set: fetches and renders the real PTO balance figure + caption, not the placeholder', async () => {
@@ -434,18 +458,17 @@ describe('PayArrangementScreen', () => {
     );
   });
 
-  it('no entitlement set: the balance row reads "Not set" and never fetches a balance', async () => {
+  it('no entitlement set: the balance row is absent and never fetches a balance', async () => {
     payCurrentMock.mockImplementation(() =>
       Promise.resolve(arrangementFor(NANNY_A_ID))
     );
 
-    const { getByTestId } = renderWithProviders(<PayArrangementScreen />);
-
-    await waitFor(() =>
-      expect(getByTestId('pay-term-ptoBalance-value').props.children).toBe(
-        'notSet'
-      )
+    const { getByTestId, queryByTestId } = renderWithProviders(
+      <PayArrangementScreen />
     );
+
+    await waitFor(() => expect(getByTestId('pay-current-rate')).toBeTruthy());
+    expect(queryByTestId('pay-term-ptoBalance')).toBeNull();
     expect(ptoBalanceMock).not.toHaveBeenCalled();
   });
 

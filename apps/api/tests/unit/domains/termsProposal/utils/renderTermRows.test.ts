@@ -102,6 +102,40 @@ function terms(overrides: Record<string, unknown> = {}) {
   };
 }
 
+/**
+ * The ordering pin has to see EVERY row, including the ones the partial
+ * `terms()` fixture leaves unset. After T16 stopped printing "Not set" for
+ * a null, that partial fixture would render five rows and the pin would
+ * stop exercising double time, seventh day, cancellations, mileage, the
+ * pay schedule, holiday hours, outside wages and in-writing — the exact
+ * inventory it exists to lock. This fixture fills each of those so the
+ * comparison against `termRows.ts` still walks the whole list.
+ */
+function fullyPopulatedTerms() {
+  return terms({
+    doubletime_daily_threshold_minutes: 720,
+    doubletime_multiplier: 2,
+    seventh_day_multiplier: 1.5,
+    seventh_day_doubletime_after_minutes: 480,
+    worked_holiday_multiplier: 1.5,
+    holiday_hours_minutes: 480,
+    cancellation_paid_within_hours: 24,
+    mileage_rate_per_mile_minor: 67,
+    pay_frequency: 'weekly',
+    terms: {
+      recurring: [
+        {
+          label: 'health stipend',
+          amount_minor: 20_000,
+          cadence: 'monthly',
+        },
+      ],
+      notice_period_days: 14,
+      duties: 'School run.',
+    },
+  });
+}
+
 const render = (t: Record<string, unknown>) => renderTermRows(t as any, 'USD');
 
 describe('renderTermRows — the four-surface ordering contract', () => {
@@ -113,7 +147,7 @@ describe('renderTermRows — the four-surface ordering contract', () => {
     const expected = mobileRowKeys()
       .map(key => labels[key])
       .filter((label): label is string => label !== undefined);
-    expect(render(terms()).map(row => row.label)).toEqual([
+    expect(render(fullyPopulatedTerms()).map(row => row.label)).toEqual([
       ...expected,
       'Starts',
     ]);
@@ -174,29 +208,35 @@ describe('renderTermsHeader — the server-computed figure, never rate x hours',
 });
 
 describe('renderTermRows — T16 survives the flattening to plain strings', () => {
-  it('a null cancellation term is an AGREEMENT, not a blank', () => {
+  it('drops the Overtime row when overtime_threshold_minutes is null', () => {
+    const rows = render(terms({ overtime_threshold_minutes: null }));
+    expect(rows.map(r => r.label)).not.toContain('Overtime');
+  });
+
+  it('drops the Cancellations row when cancellation_paid_within_hours is null', () => {
     const rows = render(terms({ cancellation_paid_within_hours: null }));
-    const row = rows.find(r => r.label === 'Cancellations');
-    expect(row?.value).toBe('No cancellation pay');
+    expect(rows.map(r => r.label)).not.toContain('Cancellations');
   });
 
-  it('every other null term reads "Not set", never a fabricated $0.00', () => {
-    const rows = render(terms({ mileage_rate_per_mile_minor: null }));
-    expect(rows.find(r => r.label === 'Mileage')?.value).toBe('Not set');
-    const joined = rows.map(r => r.value).join(' ');
-    expect(joined).not.toContain('$0.00');
+  it('never prints "Not set" in any row value', () => {
+    const values = render(terms()).map(r => r.value);
+    expect(values.some(value => value.includes('Not set'))).toBe(false);
   });
 
-  it('an empty proposal renders every row rather than hiding the gaps', () => {
-    const rows = render(
-      terms({
-        overtime_threshold_minutes: null,
-        overtime_daily_threshold_minutes: null,
-        guaranteed_minutes_per_week: null,
-        pto_entitlement_minutes_per_year: null,
-      })
+  it('never prints "No cancellation pay" in any row value', () => {
+    const values = render(terms({ cancellation_paid_within_hours: null })).map(
+      r => r.value
     );
-    expect(rows.filter(r => r.value === 'Not set').length).toBeGreaterThan(4);
+    expect(values.some(value => value.includes('No cancellation pay'))).toBe(
+      false
+    );
+  });
+
+  it('a set cancellation window still renders its row normally', () => {
+    const rows = render(terms({ cancellation_paid_within_hours: 24 }));
+    expect(rows.find(r => r.label === 'Cancellations')?.value).toBe(
+      'Paid if within 24h of the start'
+    );
   });
 });
 
@@ -249,7 +289,7 @@ describe('renderTermRows — the term values themselves', () => {
     const rows = render(
       terms({ terms: { recurring: [{ label: 'x' }, 'nonsense'] } })
     );
-    expect(rows.find(r => r.label === 'Outside wages')?.value).toBe('Not set');
+    expect(rows.find(r => r.label === 'Outside wages')).toBeUndefined();
   });
 
   it('reports "In writing" as a count only — §6.2 keeps the block collapsed', () => {
