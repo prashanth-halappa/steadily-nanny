@@ -19,6 +19,8 @@ import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
 import { useHouseholdMembers } from '@/src/hooks/queries/useHouseholdMembers';
 import { useHouseholdTimeOff } from '@/src/hooks/queries/useHouseholdTimeOff';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
+import { localDateInZone } from '@/src/lib/localDate';
+import { formatDateShort } from '@/src/utils/dateFormatting';
 
 export default function HouseholdTimeOffScreen() {
   const { t } = useTranslation('settings');
@@ -37,6 +39,29 @@ export default function HouseholdTimeOffScreen() {
 
   const rows = (timeOff.data ?? []).filter(r => r.status !== 'cancelled');
 
+  // One line under the H1: how many bookings are still ahead, and the
+  // soonest start. Hidden when nothing is booked (or everything is past) —
+  // "0 days off coming up" would be a sentence with nothing true in it.
+  const timezone = active.household?.timezone ?? 'UTC';
+  const today = localDateInZone(timezone);
+  const upcoming = rows.filter(
+    row => localDateInZone(timezone, new Date(row.starts_at)) >= today
+  );
+  let nextDate: string | null = null;
+  for (const row of upcoming) {
+    const startDate = localDateInZone(timezone, new Date(row.starts_at));
+    if (nextDate == null || startDate < nextDate) {
+      nextDate = startDate;
+    }
+  }
+  const timeOffSummary =
+    nextDate == null
+      ? null
+      : t('householdTimeOff.summary', {
+          count: upcoming.length,
+          date: formatDateShort(nextDate),
+        });
+
   const nameForCarer = (userId: string): string =>
     resolveCarerName(
       (members.data ?? []).find(m => m.user_id === userId),
@@ -51,6 +76,14 @@ export default function HouseholdTimeOffScreen() {
     >
       <BackButton onPress={() => router.back()} label={tCommon('back')} />
       <H1 className="mt-1">{t('carerTimeOff')}</H1>
+      {timeOffSummary ? (
+        <Small
+          testID="household-time-off-summary"
+          className="mt-1 text-muted-foreground"
+        >
+          {timeOffSummary}
+        </Small>
+      ) : null}
       <Small className="mt-1 text-muted-foreground">
         {t('carerTimeOffHint')}
       </Small>

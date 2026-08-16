@@ -35,6 +35,16 @@ mock.module('@/lib/useColorScheme', () => ({
 }));
 
 const routerBack = mock();
+// The global preload's `t` echoes the bare key and drops interpolation
+// options; the summary assertion needs count/date visible in the text.
+mock.module('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string, opts?: Record<string, unknown>) =>
+      opts ? `${key}(${JSON.stringify(opts)})` : key,
+    i18n: { language: 'en', changeLanguage: mock() },
+  }),
+  initReactI18next: { type: '3rdParty', init: mock() },
+}));
 mock.module('expo-router', () => ({
   useRouter: () => ({
     push: mock(),
@@ -279,5 +289,29 @@ describe('household-time-off route (parent mark-paid entry point)', () => {
     await waitFor(() =>
       expect(getByTestId('household-time-off-empty')).toBeTruthy()
     );
+  });
+
+  it('summarises the count and the next date', async () => {
+    const { getByTestId } = renderWithProviders(<HouseholdTimeOffScreen />);
+
+    await waitFor(() =>
+      expect(getByTestId('household-time-off-summary')).toBeTruthy()
+    );
+    expect(getByTestId('household-time-off-summary').props.children).toBe(
+      'householdTimeOff.summary({"count":1,"date":"Aug 24"})'
+    );
+  });
+
+  it('renders no summary when nothing is booked', async () => {
+    listForHouseholdMock.mockImplementation(() => Promise.resolve([]));
+
+    const { getByTestId, queryByTestId } = renderWithProviders(
+      <HouseholdTimeOffScreen />
+    );
+
+    await waitFor(() =>
+      expect(getByTestId('household-time-off-empty')).toBeTruthy()
+    );
+    expect(queryByTestId('household-time-off-summary')).toBeNull();
   });
 });
