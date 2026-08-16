@@ -45,7 +45,7 @@
     "state": {
       "sent": "Sent",
       "opened": "Opened",
-      "viewed": "Viewed",
+      "viewed": "Opened, not answered",
       "joined": "Joined",
       "expired": "Expired",
       "revoked": "Revoked"
@@ -53,7 +53,7 @@
     "timeline": {
       "sent": "Sent {{date}}",
       "opened": "opened {{date}}",
-      "viewed": "viewed {{date}}",
+      "viewed": "opened {{date}}, not answered",
       "joined": "joined {{date}}"
     },
     "moreOptions": "More options for {{name}}"

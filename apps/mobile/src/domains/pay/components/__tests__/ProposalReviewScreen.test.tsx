@@ -383,4 +383,56 @@ describe('ProposalReviewScreen', () => {
     expect(queryByTestId('proposal-counter-button')).toBeNull();
     expect(queryByTestId('proposal-decline-button')).toBeNull();
   });
+
+  // OPENED is automatic; ANSWERED is the tap. This line sits under the
+  // title and above the figures on every loaded render, both sides, before
+  // anyone has tapped Agree.
+  describe('proposal.notAgreedYet', () => {
+    function expectNoticeAboveFigures(
+      screen: ReturnType<typeof renderWithProviders>
+    ) {
+      expect(screen.getByTestId('proposal-not-agreed-yet').props.children).toBe(
+        'proposal.notAgreedYet'
+      );
+      expect(screen.getByTestId('proposal-rate')).toBeTruthy();
+      const tree = JSON.stringify(screen.toJSON());
+      expect(tree.indexOf('proposal-not-agreed-yet')).toBeLessThan(
+        tree.indexOf('proposal-rate')
+      );
+    }
+
+    it('parent viewing: renders proposal.notAgreedYet above the figures', async () => {
+      const screen = renderWithProviders(<ProposalReviewScreen />);
+      await waitFor(() =>
+        expect(screen.getByTestId('proposal-not-agreed-yet')).toBeTruthy()
+      );
+      expectNoticeAboveFigures(screen);
+    });
+
+    it('nanny viewing: renders proposal.notAgreedYet above the figures', async () => {
+      onboardedRole = 'nanny';
+      const fromParent = proposal({
+        direction: 'parent',
+        proposed_by: PARENT_ID,
+      });
+      proposalResult = {
+        data: fromParent,
+        isPending: false,
+        isError: false,
+        refetch: mock(),
+      };
+      chain = [fromParent];
+      useAuthStore.setState({
+        session: { user: { id: NANNY_ID } } as unknown as never,
+        user: { id: NANNY_ID } as unknown as never,
+        isInitialized: true,
+      } as never);
+
+      const screen = renderWithProviders(<ProposalReviewScreen />);
+      await waitFor(() =>
+        expect(screen.getByTestId('proposal-not-agreed-yet')).toBeTruthy()
+      );
+      expectNoticeAboveFigures(screen);
+    });
+  });
 });
