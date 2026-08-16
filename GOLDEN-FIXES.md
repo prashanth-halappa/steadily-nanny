@@ -295,6 +295,12 @@ Format: **Symptom → Root cause → Where the fix lives in this repo → What n
 
 ---
 
+**43. A git worktree resolves `@steadily-nanny/shared-types` to the MAIN checkout, so shared-types edits silently do nothing**
+- **Symptom:** you edit `packages/shared-types/src/...` inside a `git worktree`, and every consumer keeps seeing the old shape. Tests pass that should be red; `tsc` reports "has no exported member" for a symbol you just added. Two independent agents hit this on the same day.
+- **Root cause:** a fresh worktree has no `node_modules`. Bun resolves by walking up the directory tree, and because worktrees created under `.claude/worktrees/` (or anywhere inside the repo) sit *below* the main checkout, the walk finds the main checkout's `node_modules/@steadily-nanny/shared-types` and stops there. You are editing one copy of the package and importing another.
+- **Where the fix lives:** in the worktree, symlink it before doing anything else — `mkdir -p node_modules/@steadily-nanny && ln -s ../../packages/shared-types node_modules/@steadily-nanny/shared-types`. It is gitignored, so it never lands in a commit (`git ls-files node_modules` must stay empty).
+- **What not to do:** don't conclude "the schema change had no effect" and start editing consumers to match the stale type. Don't `bun install` inside the worktree to fix it — that materialises a second full dependency tree per worktree. And when a worktree's test result contradicts the source you can read on screen, check module resolution *before* you doubt the test.
+
 ## Documented-only (v1 slim) — not shipped in this template
 
 These fixes are real and were expensive to learn, but the feature they protect is intentionally **not** part of this template's v1 scope (see `PORTING.md` for the full exclusion list and why). The lesson is preserved here so it isn't lost; port the feature in from your reference app first, then re-apply the fix.
