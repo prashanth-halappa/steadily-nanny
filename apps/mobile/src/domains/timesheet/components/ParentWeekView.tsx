@@ -654,10 +654,14 @@ export function ParentWeekView({
   const todayOffset = weekDates.indexOf(todayISO);
   const todayIndex =
     todayOffset === -1 ? null : (weekStartsOn + todayOffset) % 7;
-  const lead = t('lead.parent', {
-    name: carerName ?? '',
-    hours: weekHoursLabel,
-  });
+  const lead = carerName
+    ? t('lead.parent', {
+        name: carerName,
+        hours: weekHoursLabel,
+      })
+    : t('lead.parentNoCarer', {
+        hours: weekHoursLabel,
+      });
 
   // The settlement is filed against the carer's REAL id, not the bucket key
   // `carerKeyOf` returns — a departed carer (`carer_id` NULL) has no id to

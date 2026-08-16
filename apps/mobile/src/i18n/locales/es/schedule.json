@@ -342,7 +342,9 @@
     }
   },
   "lead": {
-    "nanny": "{{count}} turnos esta semana, {{hours}} en total.",
-    "parent": "{{name}} está con los niños {{count}} días esta semana."
+    "nanny_one": "{{count}} turno esta semana, {{hours}} en total.",
+    "nanny_other": "{{count}} turnos esta semana, {{hours}} en total.",
+    "parent_one": "{{name}} está con los niños {{count}} día esta semana.",
+    "parent_other": "{{name}} está con los niños {{count}} días esta semana."
   }
 }

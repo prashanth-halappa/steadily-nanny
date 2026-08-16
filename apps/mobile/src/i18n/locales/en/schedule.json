@@ -342,7 +342,9 @@
     }
   },
   "lead": {
-    "nanny": "{{count}} shifts this week, {{hours}} in all.",
-    "parent": "{{name}} is with the children {{count}} days this week."
+    "nanny_one": "{{count}} shift this week, {{hours}} in all.",
+    "nanny_other": "{{count}} shifts this week, {{hours}} in all.",
+    "parent_one": "{{name}} is with the children {{count}} day this week.",
+    "parent_other": "{{name}} is with the children {{count}} days this week."
   }
 }
