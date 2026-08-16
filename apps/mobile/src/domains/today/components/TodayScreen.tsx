@@ -11,12 +11,12 @@
  * y 881–929 with the viewport ending at 873, and the tap landed on the Hours
  * tab underneath. A test can pin an order; nothing can pin pixels.
  *
- * So the column is: `ScreenWash` → a STATIC header (H1, date line, hero art)
- * → `<PinnedSlot>` holding at most ONE item → the scrolling feed. The slot is
- * a plain sibling `View` in normal flow, so it RESERVES its height and the
- * ScrollView's `flex-1` shrinks under it — `useTabBarScrollPadding` can only
- * ever help scrolled content, which is why a floating element was the bug.
- * The household switcher and the child chips scroll with the feed.
+ * So the column is: `ScreenWash` → `CrossFamilyStrip` → one ScrollView
+ * holding the header (H1, date line, hero art) → `<PinnedSlot>` with at most
+ * ONE item → the feed. The whole screen scrolls: the pinned slot is
+ * "pinned" in the sense of ranking, not position — it is always the FIRST
+ * card, never a floating one, so `useTabBarScrollPadding` still applies to
+ * everything below it.
  *
  * `resolveSlotOccupant` (fed by `resolveAttentionOwner`) is the only thing
  * that decides what is pinned, and `usePinnedTone` is the only thing that
@@ -113,6 +113,10 @@ import { TodayCoverage } from './TodayCoverage';
  * household she has worked in for months.
  */
 const JOINED_CARD_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+
+const FEED_STYLE = {
+  paddingHorizontal: SCREEN_CONTENT_STYLE.padding,
+} as const;
 
 const HEADER_STYLE = {
   paddingHorizontal: SCREEN_CONTENT_STYLE.padding,
@@ -413,76 +417,73 @@ export function TodayScreen() {
           in her other families, or a parent's single-household account). */}
       <CrossFamilyStrip />
 
-      {/* Hero band — no card, no ground of its own: it IS the top of the
-          wash, and the wash is what separates it from the cards below. It is
-          static so the slot beneath it is at a knowable y. */}
-      <View style={HEADER_STYLE}>
-        <View className="flex-row items-start justify-between gap-3">
-          <View className="flex-1">
-            <H1 testID="today-header">{t('screenTitle')}</H1>
-            {/* Folded into the H1 block: the date always shows (a screen
+      <ScrollView
+        className="flex-1"
+        contentContainerStyle={{ paddingBottom: tabBarScrollPadding }}
+      >
+        {/* Hero band — no card, no ground of its own: it IS the top of the
+          wash, and the wash is what separates it from the cards below. It
+          scrolls with the feed. */}
+        <View style={HEADER_STYLE}>
+          <View className="flex-row items-start justify-between gap-3">
+            <View className="flex-1">
+              <H1 testID="today-header">{t('screenTitle')}</H1>
+              {/* Folded into the H1 block: the date always shows (a screen
                 called Today with no date on it is odd), and the household
                 name joins it on the same line — but only when there's
                 nothing to switch between. Mirrors HouseholdSwitcher's own
                 bail-out; rendering both would print the household twice.
                 `text-muted-strong`, not `text-muted-foreground`: this line
                 sits on the wash, where mutedForeground is 4.28:1 (Rule M). */}
-            {household ? (
-              <Pressable
-                testID="today-family-link"
-                disabled={!canOpenThisFamily}
-                accessibilityRole={canOpenThisFamily ? 'button' : undefined}
-                onPress={
-                  canOpenThisFamily
-                    ? () =>
-                        router.push('/(private)/settings/this-family' as Href)
-                    : undefined
-                }
-              >
-                <Small testID="today-date" className="mt-1 text-muted-strong">
-                  {`${tSchedule(`weekday.${localDateToWeekday(localDateInZone(household.timezone))}`)} ${formatDisplayDate(localDateInZone(household.timezone))}${
-                    activeHousehold.households.length +
-                      activeHousehold.pastHouseholds.length <=
-                      1 && !activeHousehold.isPastHousehold
-                      ? ` · ${household.name}`
-                      : ''
-                  }`}
-                </Small>
-              </Pressable>
-            ) : null}
-            {leadLine ? (
-              <Body testID="today-lead" className="mt-1 text-muted-strong">
-                {leadLine}
-              </Body>
-            ) : null}
+              {household ? (
+                <Pressable
+                  testID="today-family-link"
+                  disabled={!canOpenThisFamily}
+                  accessibilityRole={canOpenThisFamily ? 'button' : undefined}
+                  onPress={
+                    canOpenThisFamily
+                      ? () =>
+                          router.push('/(private)/settings/this-family' as Href)
+                      : undefined
+                  }
+                >
+                  <Small testID="today-date" className="mt-1 text-muted-strong">
+                    {`${tSchedule(`weekday.${localDateToWeekday(localDateInZone(household.timezone))}`)} ${formatDisplayDate(localDateInZone(household.timezone))}${
+                      activeHousehold.households.length +
+                        activeHousehold.pastHouseholds.length <=
+                        1 && !activeHousehold.isPastHousehold
+                        ? ` · ${household.name}`
+                        : ''
+                    }`}
+                  </Small>
+                </Pressable>
+              ) : null}
+              {leadLine ? (
+                <Body testID="today-lead" className="mt-1 text-muted-strong">
+                  {leadLine}
+                </Body>
+              ) : null}
+            </View>
+            {/* Transparent PNG on purpose — the wash gradient passes under it. */}
+            <Image
+              testID={`today-hero-art-${heroMood}`}
+              accessibilityRole="image"
+              accessibilityElementsHidden
+              importantForAccessibility="no-hide-descendants"
+              source={illustrations[HERO_MOOD_ILLUSTRATION[heroMood]]}
+              style={{ width: 104, height: 104 }}
+              resizeMode="contain"
+            />
           </View>
-          {/* Transparent PNG on purpose — the wash gradient passes under it. */}
-          <Image
-            testID={`today-hero-art-${heroMood}`}
-            accessibilityRole="image"
-            accessibilityElementsHidden
-            importantForAccessibility="no-hide-descendants"
-            source={illustrations[HERO_MOOD_ILLUSTRATION[heroMood]]}
-            style={{ width: 104, height: 104 }}
-            resizeMode="contain"
-          />
         </View>
-      </View>
 
-      {/* THE slot. One item, outside the ScrollView, in normal flow. */}
-      <PinnedSlot>{activeHousehold.isLoading ? null : pinned}</PinnedSlot>
+        {/* THE slot. One item, first thing in the feed. */}
+        <PinnedSlot>{activeHousehold.isLoading ? null : pinned}</PinnedSlot>
 
-      <ScrollView
-        className="flex-1"
-        contentContainerStyle={{
-          paddingHorizontal: SCREEN_CONTENT_STYLE.padding,
-          paddingBottom: tabBarScrollPadding,
-        }}
-      >
         {activeHousehold.isLoading ? (
           <LoadingIndicator />
         ) : household ? (
-          <View className="gap-4">
+          <View className="gap-4" style={FEED_STYLE}>
             <HouseholdSwitcher />
 
             {isParentView ? (
@@ -613,7 +614,7 @@ export function TodayScreen() {
         {/* Only an honest empty state while there is no household at all. Once
             there is one, the cards above carry the schedule story. */}
         {activeHousehold.isLoading || household ? null : (
-          <View className="mt-8" testID="today-empty">
+          <View className="mt-8" style={FEED_STYLE} testID="today-empty">
             <EmptyState
               variant="inline"
               image={illustrations.emptyToday}

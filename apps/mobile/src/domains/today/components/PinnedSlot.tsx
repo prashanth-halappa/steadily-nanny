@@ -1,13 +1,13 @@
 /**
  * @module domains/today/components/PinnedSlot
  *
- * Today's one pinned control. A plain `View` rendered as a SIBLING ABOVE the
- * feed's `ScrollView` inside `TodayScreen`'s `flex-1` column — normal flow,
- * so its intrinsic height is reserved and the ScrollView's `flex-1` shrinks
- * under it. No measurement pass, no layout callback, and deliberately never
- * taken out of flow: a floating element reserves nothing, which is precisely
- * how the respond CTA ended up under the tab bar (y 881–929, viewport ending
- * at 873).
+ * Today's one pinned control. A plain `View` rendered as the FIRST child of
+ * the feed's `ScrollView` in `TodayScreen` — normal flow, no measurement
+ * pass, no layout callback, and deliberately never taken out of flow: a
+ * floating element reserves nothing, which is precisely how the respond CTA
+ * ended up under the tab bar (y 881–929, viewport ending at 873). "Pinned"
+ * is about RANK, not position: it is always the top card, and it scrolls
+ * with everything else.
  *
  * It also carries the tone. `usePinnedTone()` is the ONLY source of emphasis
  * left on this screen — the per-card opt-out prop it replaces is gone. A card reads `'attention'` when it is the slot's

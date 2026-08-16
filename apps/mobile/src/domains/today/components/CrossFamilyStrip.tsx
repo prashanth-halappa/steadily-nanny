@@ -4,7 +4,7 @@
  * P5 (A2). Today stays scoped to ONE household, so anything urgent in a
  * nanny's OTHER families is invisible until she switches — and she has no
  * reason to switch unless she already knows. This strip is the exception:
- * a compact line above the (unscoped) static header for the few things that
+ * a compact line above the (unscoped) scrolling header for the few things that
  * genuinely cannot wait (`utils/crossFamilyAlerts.ts` owns which three
  * facts qualify — everything else survives until she switches).
  *
@@ -22,8 +22,8 @@
  *    point: its value is scarcity.
  *
  * Self-contained, no props — mounted once in `TodayScreen`, above the
- * static header, OUTSIDE the ScrollView (`TodayScreen.layout.test.ts` pins
- * the order). Reads the SAME `useMeShifts` window `useInboxItems` already
+ * header and OUTSIDE the ScrollView, so it never scrolls away
+ * (`TodayScreen.layout.test.ts` pins the order). Reads the SAME `useMeShifts` window `useInboxItems` already
  * queries (`-7`/`+21` days) so the two share one cache entry rather than
  * doubling the request.
  */

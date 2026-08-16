@@ -1,12 +1,12 @@
 /**
  * @module domains/today/__tests__/TodayScreen.layout.test
  *
- * Pattern A — the one claim no render test can make. `PinnedSlot` reserves
- * layout height only while it is a SIBLING ABOVE the ScrollView in normal
- * flow. Move it inside the scroll and every behavioural test still passes
- * while the fold bug is back; give it `position: 'absolute'` and it floats
- * over the feed, which is exactly how the respond CTA's tap landed on the
- * Hours tab (y 881–929, viewport ending at 873).
+ * Pattern A — the one claim no render test can make. The whole screen
+ * scrolls now, so what is pinned about `PinnedSlot` is its RANK: it must be
+ * the first thing in the feed, above the household switcher, and it must
+ * stay in normal flow. Give it `position: 'absolute'` and it floats over the
+ * feed, which is exactly how the respond CTA's tap landed on the Hours tab
+ * (y 881–929, viewport ending at 873).
  *
  * A rendered tree cannot tell you any of that — React Native's test renderer
  * runs no Yoga layout — so the file order is the check.
@@ -25,22 +25,22 @@ beforeAll(async () => {
 });
 
 describe('TodayScreen layout', () => {
-  it('mounts the pinned slot BEFORE the ScrollView, so its height is reserved', () => {
-    const slotAt = screenSource.indexOf('<PinnedSlot>{');
+  it('scrolls the whole screen: header and slot live INSIDE the ScrollView', () => {
     const scrollAt = screenSource.indexOf('<ScrollView');
-
-    expect(slotAt).toBeGreaterThan(-1);
-    expect(scrollAt).toBeGreaterThan(-1);
-    expect(slotAt).toBeLessThan(scrollAt);
-  });
-
-  it('keeps the header static, above the slot', () => {
     const headerAt = screenSource.indexOf('testID="today-header"');
     const slotAt = screenSource.indexOf('<PinnedSlot>{');
-    const scrollAt = screenSource.indexOf('<ScrollView');
 
-    expect(headerAt).toBeLessThan(slotAt);
-    expect(headerAt).toBeLessThan(scrollAt);
+    expect(scrollAt).toBeGreaterThan(-1);
+    expect(headerAt).toBeGreaterThan(scrollAt);
+    expect(slotAt).toBeGreaterThan(headerAt);
+  });
+
+  it('keeps the slot above the household switcher, the first card in the feed', () => {
+    const slotAt = screenSource.indexOf('<PinnedSlot>{');
+    const switcherAt = screenSource.indexOf('<HouseholdSwitcher />');
+
+    expect(switcherAt).toBeGreaterThan(-1);
+    expect(slotAt).toBeLessThan(switcherAt);
   });
 
   it('never floats the slot over the feed', () => {
@@ -59,16 +59,14 @@ describe('TodayScreen layout', () => {
   // P5/S10 — the cross-family strip renders BEFORE everything else: it is
   // not scoped to the active household at all, so it must not sit behind
   // (or compete with) the header, the slot, or the feed.
-  it('mounts the cross-family strip before the header, before the slot, before the ScrollView', () => {
+  it('mounts the cross-family strip before the ScrollView, so it never scrolls away', () => {
     const stripAt = screenSource.indexOf('<CrossFamilyStrip');
-    const headerAt = screenSource.indexOf('testID="today-header"');
-    const slotAt = screenSource.indexOf('<PinnedSlot>{');
     const scrollAt = screenSource.indexOf('<ScrollView');
+    const headerAt = screenSource.indexOf('testID="today-header"');
 
     expect(stripAt).toBeGreaterThan(-1);
+    expect(stripAt).toBeLessThan(scrollAt);
     expect(stripAt).toBeLessThan(headerAt);
-    expect(headerAt).toBeLessThan(slotAt);
-    expect(slotAt).toBeLessThan(scrollAt);
   });
 
   it('renders the lead line directly under the date', () => {
