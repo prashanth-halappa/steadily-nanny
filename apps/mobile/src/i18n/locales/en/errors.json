@@ -24,6 +24,8 @@
   "timeEntryOverlaps": "That finish overlaps another entry on {{day}} ({{range}}). You're still on the clock — open Hours, shorten that entry, then clock out again.",
   "timeEntryOverlapsRunning": "That clashes with a shift you're still clocked into on {{day}}. Clock out of that one first, then add these hours.",
   "memberHasRunningEntry": "This person is clocked in on a shift. Ask them to clock out first, then try removing them again.",
+  "parentAlreadyHasHousehold": "You already have a household set up — invite them to join it instead.",
+  "householdHasCarer": "A nanny already works in that household, so it can't be closed right now. Remove her first if you still want to.",
   "tryAgain": "Try again",
   "goBack": "Go back",
   "states": {

@@ -33,6 +33,10 @@ describe('TabsLayout', () => {
     expect(layoutSource).not.toContain('canViewParentSchedule');
   });
 
+  it('never redirects a draft household out of the tabs (D-36 §0) — DraftHomeScreen is Today’s body instead', () => {
+    expect(layoutSource).not.toContain('Redirect');
+  });
+
   it('localizes tab titles via common:tabs.* keys', () => {
     expect(layoutSource).toContain("useTranslation('common')");
     expect(layoutSource).toContain("t('tabs.today')");

@@ -15,12 +15,19 @@
  * no local wizard state, and that path must still work. This screen is where a
  * name is TYPED; that one is where a household is guaranteed to EXIST.
  */
+import {
+  HOUSEHOLD_MEMBER_STATUSES,
+  HOUSEHOLD_ROLES,
+  HOUSEHOLD_STATES,
+} from '@steadily-nanny/shared-types/schemas/household.schema';
 import { type Href, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
 import { FieldLabel } from '@/src/components/ui/field-label';
 import { Input } from '@/src/components/ui/input';
+import { Small } from '@/src/components/ui/typography';
+import { resolveCarerName } from '@/src/domains/schedule/utils/memberDisplayName';
 import { SetupScreenShell } from '@/src/domains/setup/components/SetupScreenShell';
 import {
   getSetupStepRoute,
@@ -28,7 +35,9 @@ import {
   SETUP_STEPS,
 } from '@/src/domains/setup/types';
 import { useCreateHousehold } from '@/src/hooks/mutations/useCreateHousehold';
+import { useUpdateHousehold } from '@/src/hooks/mutations/useUpdateHousehold';
 import { useUpsertProfile } from '@/src/hooks/mutations/useUpsertProfile';
+import { useHouseholdMembers } from '@/src/hooks/queries/useHouseholdMembers';
 import { useHouseholds } from '@/src/hooks/queries/useHouseholds';
 import { useUserProfile } from '@/src/hooks/queries/useUserProfile';
 import {
@@ -53,8 +62,25 @@ export function HouseholdScreen() {
   const profile = useUserProfile();
   const upsertProfile = useUpsertProfile();
   const createHousehold = useCreateHousehold();
+  const updateHousehold = useUpdateHousehold();
 
   const existing = households.data?.[0] ?? null;
+  // §8a (direction workstream 8) — he already owns a LIVE household, so this
+  // step is a RENAME, not a second create. A draft (`existing.state` absent
+  // or `draft`) never reaches here for a parent, but the gate is explicit
+  // rather than assumed.
+  const isRenameMode = existing?.state === HOUSEHOLD_STATES.LIVE;
+  const existingMembers = useHouseholdMembers(
+    isRenameMode ? existing.id : undefined
+  );
+  const attachedNanny = (existingMembers.data ?? []).find(
+    member =>
+      member.role === HOUSEHOLD_ROLES.NANNY &&
+      member.status === HOUSEHOLD_MEMBER_STATUSES.ACTIVE
+  );
+  const nannyName = attachedNanny
+    ? resolveCarerName(attachedNanny, t('invite.absorb.carerFallback'))
+    : null;
 
   const [householdName, setHouseholdName] = useState('');
   const [displayName, setDisplayName] = useState(() => {
@@ -80,12 +106,34 @@ export function HouseholdScreen() {
   };
 
   const onContinue = () => {
-    if (!canContinue || createHousehold.isPending) return;
+    if (
+      !canContinue ||
+      createHousehold.isPending ||
+      updateHousehold.isPending
+    ) {
+      return;
+    }
 
-    // Already have one: adopt it rather than minting a second family. The
-    // rename path is Settings -> Manage household, not a PATCH from the wizard.
+    // Already have one: adopt it rather than minting a second family.
+    // §8a — a LIVE household also gets the typed name PATCHed here (only
+    // when it actually changed), because this IS its rename screen now.
     if (existing) {
       setHouseholdId(existing.id);
+      if (isRenameMode && trimmedHouseholdName !== (existing.name ?? '')) {
+        void (async () => {
+          try {
+            await updateHousehold.mutateAsync({
+              householdId: existing.id,
+              input: { name: trimmedHouseholdName },
+            });
+            advance();
+          } catch {
+            // `useUpdateHousehold` toasts its own failure; staying put with
+            // the typed name intact IS the retry affordance.
+          }
+        })();
+        return;
+      }
       advance();
       return;
     }
@@ -134,8 +182,10 @@ export function HouseholdScreen() {
       backLabel={t('common:back')}
       title={t('setup.wizardTitle')}
       subtitle={t('setup.wizardSubtitle')}
-      ctaLabel={t('setup.continueButton')}
-      ctaDisabled={!canContinue || createHousehold.isPending}
+      ctaLabel={t(isRenameMode ? 'setup.saveButton' : 'setup.continueButton')}
+      ctaDisabled={
+        !canContinue || createHousehold.isPending || updateHousehold.isPending
+      }
       onCta={onContinue}
     >
       <View className="gap-2">
@@ -159,6 +209,13 @@ export function HouseholdScreen() {
           placeholder={t('setup.householdNamePlaceholder')}
           autoCapitalize="words"
         />
+        {/* §8a — omitted entirely when there is no active nanny yet: naming
+            nobody in particular is worse than saying nothing. */}
+        {isRenameMode && nannyName ? (
+          <Small testID="household-name-hint" className="text-muted-foreground">
+            {t('setup.householdNameHint', { nannyName })}
+          </Small>
+        ) : null}
       </View>
     </SetupScreenShell>
   );

@@ -31,6 +31,16 @@ const mockUseIsOnboarded = mock(
   })
 );
 
+const mockUseActiveHousehold = mock(
+  (): { household: { state: 'draft' | 'live' } | null } => ({
+    household: null,
+  })
+);
+
+mock.module('@/src/hooks/queries/useActiveHousehold', () => ({
+  useActiveHousehold: mockUseActiveHousehold,
+}));
+
 mock.module('@/src/hooks/queries/useIsOnboarded', () => ({
   useIsOnboarded: mockUseIsOnboarded,
 }));
@@ -144,6 +154,8 @@ beforeEach(() => {
   mockUseSchedulePatterns.mockReset();
   mockUseSchedulePatterns.mockImplementation(() => ({ data: undefined }));
   mockPush.mockReset();
+  mockUseActiveHousehold.mockReset();
+  mockUseActiveHousehold.mockImplementation(() => ({ household: null }));
 });
 
 describe('ScheduleRoute — role fork (Wave A3 + role === null triage)', () => {
@@ -191,6 +203,24 @@ describe('ScheduleRoute — role fork (Wave A3 + role === null triage)', () => {
 
     fireEvent.press(getByTestId('error-state-mock'));
     expect(mockRetryMemberships).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows the draft empty state — honest, hers, never "the family is still setting up" (D-36 §S6 item 4)', () => {
+    mockUseIsOnboarded.mockImplementation(() => ({
+      status: 'onboarded' as const,
+      role: 'nanny' as const,
+      householdId: 'draft-1',
+      membershipsError: false,
+      retryMemberships: mockRetryMemberships,
+    }));
+    mockUseActiveHousehold.mockImplementation(() => ({
+      household: { state: 'draft' as const },
+    }));
+
+    const { getByTestId, queryByTestId } = render(<ScheduleRoute />);
+
+    expect(getByTestId('schedule-tab-draft-empty')).toBeTruthy();
+    expect(queryByTestId('schedule-shifts-screen-mock')).toBeNull();
   });
 
   it('routes nanny role to ScheduleShiftsScreen without back', () => {

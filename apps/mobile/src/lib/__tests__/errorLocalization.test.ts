@@ -91,6 +91,43 @@ describe('getLocalizedErrorMessage', () => {
       );
     });
 
+    it('maps PARENT_ALREADY_HAS_HOUSEHOLD metadata.reason to errors:parentAlreadyHasHousehold (§8c)', () => {
+      const error = {
+        response: {
+          status: 409,
+          data: {
+            error: {
+              code: 'CONFLICT',
+              metadata: {
+                reason: 'PARENT_ALREADY_HAS_HOUSEHOLD',
+                existingHouseholdId: 'household-1',
+              },
+            },
+          },
+        },
+      };
+      expect(getLocalizedErrorMessage(error, t)).toBe(
+        'errors:parentAlreadyHasHousehold'
+      );
+    });
+
+    it('maps HOUSEHOLD_HAS_CARER metadata.reason to errors:householdHasCarer (§8c)', () => {
+      const error = {
+        response: {
+          status: 409,
+          data: {
+            error: {
+              code: 'CONFLICT',
+              metadata: { reason: 'HOUSEHOLD_HAS_CARER' },
+            },
+          },
+        },
+      };
+      expect(getLocalizedErrorMessage(error, t)).toBe(
+        'errors:householdHasCarer'
+      );
+    });
+
     it('maps INTERNAL_ERROR to errors:server', () => {
       expect(
         getLocalizedErrorMessage(envelopeError(ERROR_CODES.INTERNAL_ERROR), t)

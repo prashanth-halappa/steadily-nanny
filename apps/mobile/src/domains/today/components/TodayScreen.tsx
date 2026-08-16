@@ -51,7 +51,11 @@ import { EmptyState } from '@/src/components/ui/empty-state';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { ScreenWash } from '@/src/components/ui/screen-wash';
 import { H1, Small } from '@/src/components/ui/typography';
-import { JoinedHouseholdCard, SendMyTermsCard } from '@/src/domains/draft';
+import {
+  DraftHomeScreen,
+  JoinedHouseholdCard,
+  SendMyTermsCard,
+} from '@/src/domains/draft';
 import { HouseholdSwitcher } from '@/src/domains/household';
 import {
   NeedsAttentionCard,
@@ -232,6 +236,15 @@ export function TodayScreen() {
   // overlays this screen's content instead of reserving its own layout
   // space, so a fixed paddingBottom is not safe-area-aware.
   const tabBarScrollPadding = useTabBarScrollPadding();
+
+  // §S6 item 4 / D-36: while the active household is a draft, this screen IS
+  // `DraftHomeScreen` — self-contained (own scroll, own H1, own switcher),
+  // never the slot+feed body below. After every hook this component calls,
+  // so the branch never skips one (rules of hooks), and before the slot
+  // occupant is computed — a draft has no slot to fill.
+  if (household?.state === HOUSEHOLD_STATES.DRAFT) {
+    return <DraftHomeScreen />;
+  }
 
   const clockInCard = household ? (
     <ClockInCard

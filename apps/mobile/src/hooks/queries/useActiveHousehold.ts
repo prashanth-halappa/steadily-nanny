@@ -59,8 +59,11 @@ export interface UseActiveHouseholdResult {
   isPastHousehold: boolean;
   /** Persist a new preferred household (e.g. from the switcher UI). Must be
    * an id present in `households` or `pastHouseholds` to take effect on the
-   * next read. */
-  setActiveHouseholdId: (householdId: string) => void;
+   * next read. `null` clears the preference — used after archiving a draft
+   * that had no other live household to fall back to (§S6 item 6), so this
+   * hook re-resolves to `households[0]` on the next read rather than
+   * sticking on the id that just moved into `pastHouseholds`. */
+  setActiveHouseholdId: (householdId: string | null) => void;
   /** True while the households query has not yet resolved (TanStack
    * `isPending` — includes pending+idle, not only in-flight fetches). */
   isLoading: boolean;
@@ -114,7 +117,7 @@ export function useActiveHousehold(): UseActiveHouseholdResult {
     household !== null && pastHouseholds.some(h => h.id === household.id);
 
   const setActiveHouseholdId = useCallback(
-    (householdId: string) => setPreferredHouseholdId(householdId),
+    (householdId: string | null) => setPreferredHouseholdId(householdId),
     [setPreferredHouseholdId]
   );
 

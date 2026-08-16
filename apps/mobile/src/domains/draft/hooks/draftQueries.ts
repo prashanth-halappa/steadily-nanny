@@ -24,6 +24,7 @@
  * figure the screen may print (§17).
  */
 import {
+  HOUSEHOLD_STATES,
   type HouseholdInvite,
   HouseholdInviteSchema,
 } from '@steadily-nanny/shared-types/schemas/household.schema';
@@ -32,9 +33,11 @@ import {
   TermsProposalSchema,
 } from '@steadily-nanny/shared-types/schemas/termsProposal.schema';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { apiClient } from '@/src/api/client';
+import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
 import { QUERY_TIMING } from '@/src/hooks/queries/utils';
 import { getLocalizedErrorMessage } from '@/src/lib/errorLocalization';
 import { showErrorToast } from '@/src/lib/toast';
@@ -103,6 +106,8 @@ export function useDraftProposal(householdId: string | undefined) {
 export function useArchiveDraft(householdId: string) {
   const { t } = useTranslation('errors');
   const queryClient = useQueryClient();
+  const router = useRouter();
+  const { households, setActiveHouseholdId } = useActiveHousehold();
 
   return useMutation<void, Error, void>({
     mutationFn: async () => {
@@ -110,6 +115,20 @@ export function useArchiveDraft(householdId: string) {
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['household'] });
+      // The just-archived draft is about to fall out of `households` and
+      // into `pastHouseholds` server-side, but that hasn't round-tripped
+      // yet — without repointing the preference NOW, `useActiveHousehold`
+      // keeps resolving straight back onto it (it's still the preferred id)
+      // and the archive looks like it did nothing. Fall back to the next
+      // LIVE household from THIS read of the list, excluding the one just
+      // archived; `null` when there isn't one, which clears the preference
+      // rather than pointing at a dangling id.
+      const firstLiveHouseholdId =
+        households.find(
+          h => h.id !== householdId && h.state === HOUSEHOLD_STATES.LIVE
+        )?.id ?? null;
+      setActiveHouseholdId(firstLiveHouseholdId);
+      router.replace('/(private)/(tabs)/home');
     },
     onError: error => {
       showErrorToast(getLocalizedErrorMessage(error, t));

@@ -71,6 +71,7 @@ mock.module('@/src/domains/household', () => ({
 mock.module('@/src/domains/draft', () => ({
   JoinedHouseholdCard: marker('joined-household'),
   SendMyTermsCard: marker('send-my-terms'),
+  DraftHomeScreen: () => null,
 }));
 mock.module('@/src/domains/schedule', () => ({
   PendingScheduleCard: marker('pending-schedule'),

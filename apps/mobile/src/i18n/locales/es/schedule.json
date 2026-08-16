@@ -1,7 +1,9 @@
 {
   "tab": {
     "emptyTitle": "Aún no hay un hogar",
-    "emptyDescription": "Cuando te añadan a un hogar, su horario aparecerá aquí."
+    "emptyDescription": "Cuando te añadan a un hogar, su horario aparecerá aquí.",
+    "draftEmptyTitle": "Aún no hay turnos",
+    "draftEmptyDescription": "Todavía no has empezado con una familia."
   },
   "build": {
     "screenTitle": "Construye tu semana habitual",

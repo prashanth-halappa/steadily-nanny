@@ -42,12 +42,14 @@
  * household is active.
  */
 
+import { HOUSEHOLD_STATES } from '@steadily-nanny/shared-types/schemas/household.schema';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ScrollView, View } from 'react-native';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { useTabBarScrollPadding } from '@/lib/layout/useTabBarScrollPadding';
+import { EmptyState } from '@/src/components/ui/empty-state';
 import { ScreenWash } from '@/src/components/ui/screen-wash';
 import { H1 } from '@/src/components/ui/typography';
 import {
@@ -261,6 +263,31 @@ export function HoursScreen() {
             isPreviousDisabled={isPreviousWeekDisabled}
             isNextDisabled={isNextWeekDisabled}
           />
+        </ScrollView>
+      </View>
+    );
+  }
+
+  // D-36 §S6 item 4: the draft is HERS — nothing can insert a time entry
+  // into a draft household (093), so this is a true empty state, never "the
+  // family is still setting up" (there is no family yet).
+  if (household?.state === HOUSEHOLD_STATES.DRAFT) {
+    return (
+      <View testID="hours-screen" className="flex-1 bg-background">
+        <ScreenWash kind="brand" />
+        <ScrollView
+          contentContainerStyle={{
+            ...SCREEN_CONTENT_STYLE,
+            paddingBottom: tabBarScrollPadding,
+          }}
+        >
+          <View testID="hours-draft-empty">
+            <EmptyState
+              variant="inline"
+              title={t('draftEmpty.title')}
+              description={t('draftEmpty.description')}
+            />
+          </View>
         </ScrollView>
       </View>
     );

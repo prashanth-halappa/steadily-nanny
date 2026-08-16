@@ -56,6 +56,7 @@ mock.module('@/src/domains/household', () => ({
 mock.module('@/src/domains/draft', () => ({
   JoinedHouseholdCard: () => null,
   SendMyTermsCard: () => null,
+  DraftHomeScreen: () => null,
 }));
 mock.module('@/src/domains/schedule', () => ({
   PendingScheduleCard: () => null,
