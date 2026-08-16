@@ -695,7 +695,15 @@ export function AgendaView({
             );
           }
           if (item.type === 'now') {
-            return <NowLine testID="schedule-now-line" />;
+            return (
+              <NowLine
+                label={formatShiftTime(
+                  new Date(nowMs).toISOString(),
+                  displayTimeZone
+                )}
+                testID="schedule-now-line"
+              />
+            );
           }
           if (item.type === 'away') {
             return (

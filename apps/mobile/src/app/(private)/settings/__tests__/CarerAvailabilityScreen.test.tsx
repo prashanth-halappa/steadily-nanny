@@ -123,7 +123,9 @@ const listMock = mock(() => Promise.resolve([household]));
 const listMembersMock = mock<() => Promise<HouseholdMember[]>>(() =>
   Promise.resolve([candidateNanny, activeNanny])
 );
-const getForUserMock = mock(() => Promise.resolve([]));
+const getForUserMock = mock<() => Promise<typeof weekdayWindows>>(() =>
+  Promise.resolve([])
+);
 
 mock.module('@/src/api/endpoints/household', () => ({
   householdApi: { list: listMock, listMembers: listMembersMock },
@@ -172,7 +174,7 @@ describe('carer-availability route', () => {
       expect(getByTestId('carer-availability-summary')).toBeTruthy()
     );
     expect(getByTestId('carer-availability-summary').props.children).toBe(
-      'carerAvailability.summary({"days":5,"hours":40})'
+      'carerAvailabilitySummary({"days":5,"hours":40})'
     );
   });
 
