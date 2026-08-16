@@ -642,3 +642,28 @@ export class AlreadySettledError extends ConflictError {
     this.name = 'AlreadySettledError';
   }
 }
+
+/**
+ * 409 — no pay arrangement is in force for this (household, carer) on the day
+ * being recorded, so no time record may be created or corrected for it
+ * (direction doc A1: the clock-in block is hard, with no escape hatch).
+ *
+ * The message is DELIBERATELY the blocked clock-in card's own title (A9), not
+ * a code and not the word "forbidden": any client that surfaces this string
+ * raw still says something true and kind. `reason` is the machine half, and
+ * the mobile client switches on it (`timeEntryMutationUtils.ts`).
+ *
+ * Thrown for `clockIn`, `createRetroactiveEntry` and `updateEntry` alike —
+ * gating only the button would leave "Add missed hours" as a silent bypass.
+ * `clockOut` is deliberately NOT gated: an entry that is already running must
+ * always be closeable.
+ */
+export class TermsNotAgreedError extends ConflictError {
+  constructor(householdId: string, carerId: string) {
+    super('Clock-in opens when terms are agreed.', 'TERMS_NOT_AGREED', {
+      householdId,
+      carerId,
+    });
+    this.name = 'TermsNotAgreedError';
+  }
+}
