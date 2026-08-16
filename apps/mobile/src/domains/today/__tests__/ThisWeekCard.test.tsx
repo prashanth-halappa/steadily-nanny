@@ -20,6 +20,8 @@ function marker(name: string) {
 
 let ThisWeekCard: typeof import('../components/ThisWeekCard').ThisWeekCard;
 let mockPush: ReturnType<typeof mock>;
+let mockArrangement: ReturnType<typeof mock>;
+let lastMissedHoursProps: Record<string, unknown> | null = null;
 
 beforeAll(async () => {
   mockPush = mock();
@@ -29,8 +31,24 @@ beforeAll(async () => {
   mock.module('@/src/domains/today/components/NannyWeekLine', () => ({
     NannyWeekLine: marker('nanny-week-line-stub'),
   }));
-  mock.module('@/src/domains/today/components/AddMissedHoursCard', () => ({
-    AddMissedHoursCard: marker('add-missed-hours-stub'),
+  mock.module('@/src/domains/today/components/AddMissedHoursCard', () => {
+    const React = require('react');
+    return {
+      AddMissedHoursCard: (props: Record<string, unknown>) => {
+        lastMissedHoursProps = props;
+        return React.createElement('View', {
+          testID: 'add-missed-hours-stub',
+        });
+      },
+    };
+  });
+  mockArrangement = mock(() => ({ data: null }));
+  mock.module('@/src/hooks/queries/useCurrentPayArrangement', () => ({
+    useCurrentPayArrangement: mockArrangement,
+  }));
+  mock.module('@/src/store/auth', () => ({
+    useAuthStore: (selector: (s: unknown) => unknown) =>
+      selector({ session: { user: { id: 'carer-week-1' } } }),
   }));
   mock.module('@/src/domains/schedule', () => ({
     ThisWeeksShiftsCard: marker('this-weeks-shifts-stub'),
@@ -94,5 +112,48 @@ describe('ThisWeekCard', () => {
     expect(
       String(getByTestId('today-this-week-eyebrow-label').props.children)
     ).toBe('thisWeek.title');
+  });
+});
+
+/**
+ * A1's worst case, handled without an escape hatch. She worked nine hours
+ * before terms existed; the blocked card warned her and named the route. This
+ * is that route arriving, once, in the days right after acceptance — and then
+ * quietly going back to being the ordinary recovery affordance.
+ */
+describe('ThisWeekCard — the post-acceptance headline', () => {
+  function arrangementAgedDays(days: number) {
+    mockArrangement.mockImplementation(() => ({
+      data: {
+        id: 'arr-1',
+        created_at: new Date(
+          Date.now() - days * 24 * 60 * 60 * 1000
+        ).toISOString(),
+      },
+    }));
+  }
+
+  it('asks for the headline in the first week of a brand-new arrangement', () => {
+    arrangementAgedDays(2);
+
+    renderCard('nanny');
+
+    expect(lastMissedHoursProps?.firstRunHeadline).toBe(true);
+  });
+
+  it('stops asking once the arrangement is a week old', () => {
+    arrangementAgedDays(8);
+
+    renderCard('nanny');
+
+    expect(lastMissedHoursProps?.firstRunHeadline).toBe(false);
+  });
+
+  it('does not ask when there is no arrangement at all — she is still blocked', () => {
+    mockArrangement.mockImplementation(() => ({ data: null }));
+
+    renderCard('nanny');
+
+    expect(lastMissedHoursProps?.firstRunHeadline).toBe(false);
   });
 });

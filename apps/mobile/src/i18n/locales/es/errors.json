@@ -14,6 +14,7 @@
   "noPayArrangementMileage": "El kilometraje necesita una tarifa de pago — pide a los padres que configuren el pago primero.",
   "notHouseholdOwner": "Solo el dueño del hogar puede hacer esto — tu hogar está configurado para cambios solo del dueño.",
   "alreadyClockedIn": "Ya has fichado la entrada en otro turno. Ficha la salida primero.",
+  "termsNotAgreed": "Podrás fichar cuando se acuerden las condiciones.",
   "cancelViaDelete": "Cancela el tiempo libre utilizando la opción de eliminar en su lugar.",
   "entryNotEditable": "Este registro ya no se puede cambiar — la semana ya fue aprobada. Pide a tu familia que la consulte.",
   "entryVoided": "Este registro fue anulado y ya no cuenta para tus horas.",

@@ -127,6 +127,8 @@ const UNCOVERED_STATE = {
 let mockUseOverdueClockOut: ReturnType<typeof mock>;
 let mockUseInboxItems: ReturnType<typeof mock>;
 let mockUseUncoveredToday: ReturnType<typeof mock>;
+let mockUseIsOnboarded: ReturnType<typeof mock>;
+let mockUseTermsGate: ReturnType<typeof mock>;
 let TodayScreen: typeof import('../components/TodayScreen').TodayScreen;
 
 beforeAll(async () => {
@@ -170,12 +172,24 @@ beforeAll(async () => {
       isLoading: false,
     }),
   }));
+  mockUseIsOnboarded = mock(() => ({
+    status: 'onboarded',
+    role: 'parent',
+    householdId: HOUSEHOLD_ID,
+  }));
   mock.module('@/src/hooks/queries/useIsOnboarded', () => ({
-    useIsOnboarded: () => ({
-      status: 'onboarded',
-      role: 'parent',
-      householdId: HOUSEHOLD_ID,
-    }),
+    useIsOnboarded: mockUseIsOnboarded,
+  }));
+  // A1's gate. Left REAL below it: `ClockInBlockedCard` is one of the
+  // attention-capable cards this file counts, so stubbing it would defeat
+  // the count.
+  mockUseTermsGate = mock(() => ({
+    status: 'open',
+    proposal: null,
+    familyName: 'Attn Household',
+  }));
+  mock.module('@/src/domains/today/hooks/useTermsGate', () => ({
+    useTermsGate: mockUseTermsGate,
   }));
   mock.module('@/src/hooks/queries/useChildren', () => ({
     useChildren: () => ({ data: [], isLoading: false }),
@@ -190,10 +204,11 @@ beforeAll(async () => {
 
 const ATTENTION_BG = palette.light.surfaceAttention.hex;
 
-/** The two attention-capable T1 cards this file exercises together. */
+/** The attention-capable T1 cards this file exercises together. */
 const ATTENTION_CANDIDATE_TEST_IDS = [
   'today-needs-attention-card',
   'today-coverage-gap-card',
+  'today-clock-in-blocked-card',
 ];
 
 function hasAttentionBackground(style: unknown): boolean {
@@ -293,5 +308,42 @@ describe('TodayScreen — one T1 per screen (attention arbitration)', () => {
     const { queryByTestId } = renderWithProviders(<TodayScreen />);
 
     expect(countAttentionCards(queryByTestId)).toBe(0);
+  });
+
+  // The block is the ladder's TOP rung, so it wins the slot outright. What
+  // this case pins is the harder half: `NeedsAttentionCard` is still on the
+  // screen (she has real pending work) and must go quiet, or a nanny who
+  // cannot start work gets two loud cards competing to explain why.
+  it('nanny + terms block + inbox item: the blocked card owns the only attention ground', () => {
+    mockUseIsOnboarded.mockReturnValue({
+      status: 'onboarded',
+      role: 'nanny',
+      householdId: HOUSEHOLD_ID,
+    });
+    mockUseTermsGate.mockReturnValue({
+      status: 'blocked',
+      variant: 'familySent',
+      proposal: {
+        id: 'proposal-attn-1',
+        direction: 'parent',
+        created_at: '2026-03-20T09:00:00.000Z',
+      },
+      familyName: 'Attn Household',
+    });
+    mockUseInboxItems.mockReturnValue({
+      items: [CHANGE_REQUEST],
+      isLoading: false,
+    });
+    mockUseUncoveredToday.mockReturnValue({
+      status: 'covered',
+      localDate: '2026-03-23',
+    });
+
+    const tree = renderWithProviders(<TodayScreen />);
+    const slot = within(tree.getByTestId('today-pinned-slot'));
+
+    expect(slot.getByTestId('today-clock-in-blocked-card')).toBeTruthy();
+    expect(tree.getByTestId('today-needs-attention-card')).toBeTruthy();
+    expect(countAttentionCards(tree.queryByTestId)).toBe(1);
   });
 });

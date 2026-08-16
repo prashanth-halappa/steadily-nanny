@@ -19,6 +19,7 @@ import { getLocalizedErrorMessage } from '@/src/lib/errorLocalization';
 import { startOnTheClock } from '@/src/lib/liveActivity';
 import { useIsOnline } from '@/src/lib/network';
 import { showErrorToast } from '@/src/lib/toast';
+import { useAuthStore } from '@/src/store/auth';
 import {
   buildOptimisticRunningEntry,
   clockMutationRetry,
@@ -46,16 +47,26 @@ interface ClockInMutationContext {
 const ALREADY_CLOCKED_IN_REASON = 'ALREADY_CLOCKED_IN';
 
 /**
+ * A1's terms gate, refused server-side (`termsGateService`). The API guards
+ * the RECORD, not the button, so this is the same 409 `createRetroactiveEntry`
+ * and `updateEntry` raise — `getTimeEntryEditErrorKey` maps it for the sheets,
+ * and this hook maps it for the one caller with no sheet open.
+ */
+const TERMS_NOT_AGREED_REASON = 'TERMS_NOT_AGREED';
+
+function conflictReason(error: unknown): string | undefined {
+  return ((error ?? {}) as ApiErrorLike).response?.data?.error?.metadata
+    ?.reason;
+}
+
+/**
  * "Only one running entry per carer" is enforced by a DB partial unique
  * index. Per the design brief this must be shown plainly, not folded into
  * the generic "conflict" copy, so it gets its own i18n key
  * (`errors:alreadyClockedIn`).
  */
 function isAlreadyClockedInError(error: unknown): boolean {
-  const err = (error ?? {}) as ApiErrorLike;
-  return (
-    err.response?.data?.error?.metadata?.reason === ALREADY_CLOCKED_IN_REASON
-  );
+  return conflictReason(error) === ALREADY_CLOCKED_IN_REASON;
 }
 
 function isShift(value: unknown, shiftId: string): value is Shift {
@@ -106,6 +117,9 @@ export function useClockIn(householdTimezone?: string, householdName?: string) {
   const queryClient = useQueryClient();
   const { t } = useTranslation('errors');
   const isOnline = useIsOnline();
+  // The carer is always whoever is holding the phone — `pay.current` is keyed
+  // by (household, carer) and the clock-in body carries only the household.
+  const carerId = useAuthStore(s => s.session?.user?.id);
 
   return useMutation<TimeEntry, Error, ClockInInput, ClockInMutationContext>({
     mutationFn: input => timeEntryApi.clockIn(input),
@@ -141,7 +155,7 @@ export function useClockIn(householdTimezone?: string, householdName?: string) {
         householdName ?? ''
       );
     },
-    onError: (error, _variables, context) => {
+    onError: (error, variables, context) => {
       if (context?.previous !== undefined) {
         queryClient.setQueryData(
           queryKeys.timeEntry.running(),
@@ -158,7 +172,9 @@ export function useClockIn(householdTimezone?: string, householdName?: string) {
             isOnline,
             isAlreadyClockedInError(error)
               ? 'errors:alreadyClockedIn'
-              : undefined
+              : conflictReason(error) === TERMS_NOT_AGREED_REASON
+                ? 'errors:termsNotAgreed'
+                : undefined
           )
         )
       );
@@ -172,6 +188,18 @@ export function useClockIn(householdTimezone?: string, householdName?: string) {
       // claiming "Clock in" while a running entry existed the whole time.
       if (isAlreadyClockedInError(error)) {
         queryClient.invalidateQueries({ queryKey: queryKeys.timeEntry.all });
+      }
+
+      // A1: this refusal is often the FIRST the app hears that terms are not
+      // agreed — the gate's arrangement query can be holding a stale non-null
+      // (blocked while the screen sat open, or an arrangement voided
+      // elsewhere). Refetching it is what turns a refused tap into
+      // `ClockInBlockedCard` explaining itself, instead of a toast over a
+      // clock-in button that still looks usable.
+      if (conflictReason(error) === TERMS_NOT_AGREED_REASON) {
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.pay.current(variables.household_id, carerId),
+        });
       }
     },
   });

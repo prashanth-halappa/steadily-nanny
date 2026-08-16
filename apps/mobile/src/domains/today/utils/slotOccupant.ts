@@ -21,6 +21,7 @@ import type { AttentionOwner } from './attentionOwner';
 
 export type SlotOccupant =
   | 'blockedClockIn'
+  | 'pendingOffer'
   | 'clockIn'
   | 'coverageGap'
   | 'termsProposal'
@@ -37,6 +38,10 @@ export function resolveSlotOccupant(inputs: {
   const activeNanny = inputs.role === SETUP_ROLES.NANNY && !inputs.isPastMember;
 
   if (inputs.attentionOwner === 'termsBlocked') return 'blockedClockIn';
+  // Ahead of the running-timer check below for the same reason the ladder
+  // puts it there — and moot in practice, since it is a parent-only verdict
+  // and a parent has no clock.
+  if (inputs.attentionOwner === 'sentOfferBlocking') return 'pendingOffer';
   if (activeNanny && inputs.onClock) return 'clockIn';
 
   switch (inputs.attentionOwner) {

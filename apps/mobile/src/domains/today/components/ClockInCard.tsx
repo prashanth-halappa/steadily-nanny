@@ -1,11 +1,22 @@
 /**
  * @module domains/today/components/ClockInCard
  *
- * The nanny's clock-in card on the Today screen. Location is reassurance,
- * never a gate — this never blocks clock-in on anything (no permission
- * prompt, no schedule-window check: "Starting early? Clock in whenever — we
- * record what happened, not what was planned"). Once running, shows a live
+ * The nanny's clock-in card on the Today screen. It blocks on NOTHING it can
+ * see: location is reassurance, never a gate, and there is no permission
+ * prompt and no schedule-window check ("Starting early? Clock in whenever —
+ * we record what happened, not what was planned"). Once running, shows a live
  * elapsed timer via `useElapsedTimer` (its own file, own cleanup tests).
+ *
+ * EXACTLY ONE THING BLOCKS CLOCK-IN, and this card never renders while it
+ * does. A1's terms gate is a policy on time RECORDS, not a button state — the
+ * API refuses `clockIn`, `createRetroactiveEntry` and `updateEntry` alike with
+ * `409 metadata.reason = 'TERMS_NOT_AGREED'` until an arrangement exists — so
+ * it is answered a layer up, by `useTermsGate` feeding `resolveAttentionOwner`
+ * and `resolveSlotOccupant`. When the gate is closed `ClockInBlockedCard`
+ * takes this card's slot and this card is not mounted anywhere on the screen.
+ * DO NOT add a disabled state or a lock icon here: a greyed-out button reads
+ * as her fault and teaches nothing, which is the whole reason the block gets
+ * its own card that names who owes the next move.
  *
  * No NativeWind `className` on an `Animated.View` here on purpose — the
  * timer is plain text driven by React state, not Reanimated, so the

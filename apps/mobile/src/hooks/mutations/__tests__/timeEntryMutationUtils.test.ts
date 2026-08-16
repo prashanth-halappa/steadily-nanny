@@ -126,6 +126,17 @@ describe('getTimeEntryEditErrorKey', () => {
     ).toBe('errors:entryNotEditable');
   });
 
+  // A1/A9. The API guard is on the RECORD, not the button, so it refuses
+  // `createRetroactiveEntry` and `updateEntry` with the same 409 it gives
+  // `clockIn` — and this mapping is what makes "Add missed hours" say the
+  // card's own sentence instead of "that conflicts with the current state".
+  // Never a code, never "forbidden".
+  it('maps the terms-gate 409 to the same sentence the blocked card leads with', () => {
+    expect(getTimeEntryEditErrorKey(refusal(409, 'TERMS_NOT_AGREED'))).toBe(
+      'errors:termsNotAgreed'
+    );
+  });
+
   it('maps a void refusal (reason voided) on 409 to entryVoided', () => {
     expect(getTimeEntryEditErrorKey(refusal(409, 'voided'))).toBe(
       'errors:entryVoided'

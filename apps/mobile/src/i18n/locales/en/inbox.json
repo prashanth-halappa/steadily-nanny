@@ -69,6 +69,27 @@
       "title": "{{amount}} in reimbursements is still owed",
       "subtitle": "Approved for the week of {{week}}",
       "cta": "Open the week"
+    },
+    "termsProposalSent": {
+      "title": "Terms you sent {{carer}} · {{date}}",
+      "subtitleOpened": "Sent {{date}} · opened, not answered.",
+      "subtitleNotOpened": "Sent {{date}} · not opened yet.",
+      "cta": "See what you sent"
     }
+  },
+  "pendingOfferCard": {
+    "titleSentToday": "Terms sent to {{carer}}",
+    "titleWaiting": "Waiting on {{carer}} to answer",
+    "titleStale": "Sent {{days}} days ago. Nothing's been answered.",
+    "titleBlocking": "{{carer}} can't clock in",
+    "subtitleSentToday": "Sent today. Not opened yet.",
+    "subtitleSentTodayOpened": "Sent today · opened, not answered.",
+    "subtitleOpened": "Sent {{date}} · opened, not answered.",
+    "subtitleNotOpened": "Sent {{date}} · not opened yet.",
+    "subtitleBlocking": "Her hours can't be recorded until terms are agreed. Sent {{date}}.",
+    "scheduledToday": "{{carer}} has {{hours}} hours scheduled today that can't be recorded yet.",
+    "ctaSee": "See what you sent",
+    "ctaChange": "Change what you sent",
+    "withdraw": "Withdraw"
   }
 }

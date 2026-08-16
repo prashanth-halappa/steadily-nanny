@@ -14,6 +14,7 @@
   "noPayArrangementMileage": "Mileage needs a pay rate — ask the parents to set up pay first.",
   "notHouseholdOwner": "Only the household owner can do this — your household is set to owner-only changes.",
   "alreadyClockedIn": "You're already clocked in on another shift. Clock out of it first.",
+  "termsNotAgreed": "Clock-in opens when terms are agreed.",
   "cancelViaDelete": "Cancel time off by using the delete option instead.",
   "entryNotEditable": "This entry can't be changed any more — the week has already been approved. Ask your household to query it.",
   "entryVoided": "This entry was voided and no longer counts toward your hours.",
